@@ -33,6 +33,42 @@ Use the JSON output for CI, dashboards, and machine-readable regression checks.
 Use the Markdown output for quick human triage in PRs, demo-readiness reviews,
 and scene owner handoffs.
 
+## `ur5_2f_test` real-workspace Scene3D GUI evidence
+
+Use this focused smoke path when a PR needs real-workspace Workcell Builder
+Scene3D evidence for the supported `ur5_2f_test` scene. Run it from the ROS
+workspace layout used for Workcell Studio validation, not from an unrelated
+temporary checkout.
+
+Build and source the builder package first:
+
+```bash
+cd /home/user/workcell_ws
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --packages-select workcell_builder
+source install/setup.bash
+```
+
+Then run the Scene3D GUI smoke capture against `ur5_2f_test`:
+
+```bash
+cd /home/user/workcell_ws/src/easy_manipulation_deployment
+python3 scripts/run_workcell_builder_scene3d_gui_smoke.py --repo-root "$PWD" --workspace-root /home/user/workcell_ws --scene ur5_2f_test --output "$PWD/scenes/ur5_2f_test/generated/scene3d_gui_smoke.json" --screenshot "$PWD/scenes/ur5_2f_test/generated/scene3d_gui_smoke.png" --timeout-sec 30
+```
+
+Expected evidence files:
+
+- `scenes/ur5_2f_test/generated/scene3d_gui_smoke.json`
+- `scenes/ur5_2f_test/generated/scene3d_gui_smoke.png`
+- stdout and stderr tail log paths recorded in the JSON evidence file
+
+This evidence confirms that the Workcell Builder Scene3D GUI smoke path could
+open the selected scene and record visual/log artifacts in that workspace. It
+does **not** launch real hardware, does **not** enable real robot motion, and
+does **not** prove fake-hardware RViz/MoveIt readiness by itself. Treat it as
+Scene3D GUI evidence that complements, but does not replace, the fake-hardware
+RViz/MoveIt launch validation and broader scene readiness matrix.
+
 ## Status definitions
 
 The matrix uses these status values:

@@ -12,7 +12,6 @@ import argparse
 import json
 import os
 import shlex
-import shutil
 import sys
 from collections import Counter
 from datetime import datetime, timezone
@@ -25,6 +24,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT_DEFAULT = SCRIPT_DIR.parents[0]
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
+if str(REPO_ROOT_DEFAULT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT_DEFAULT))
 
 from check_scene_readiness import check_readiness  # noqa: E402
 from supported_scene_catalog import default_catalog_path, load_supported_scene_catalog  # noqa: E402
@@ -32,6 +33,7 @@ from validate_builder_generated_scene import validate_scene as validate_builder_
 from validate_cell_definition import load_yaml as load_cell_yaml  # noqa: E402
 from validate_cell_definition import validate_cell_definition  # noqa: E402
 from validate_scene3d_visual_quality_matrix import evaluate_scene as evaluate_scene3d_visual_quality  # noqa: E402
+from workcell_studio_path_resolver import describe_resolution, resolve_workspace_root, resolve_workcell_builder_executable  # noqa: E402
 
 SCHEMA_VERSION = "workcell_studio_scene_readiness_matrix/v1"
 PASS = "PASS"
@@ -316,16 +318,37 @@ def _check_cell_definition(scene_dir: Path) -> dict[str, Any]:
     )
 
 
+def _smoke_indicates_runtime_screenshot_evidence(smoke_json: Path) -> bool:
+    if not smoke_json.is_file():
+        return False
+    payload, error = _load_json_file(smoke_json)
+    if error or not isinstance(payload, dict):
+        return False
+    if bool(payload.get("screenshot_available")):
+        return True
+    if str(payload.get("screenshot_path") or "").strip():
+        return True
+    for key in ("render_debug_counters", "counters", "static_scene3d_visual_evidence"):
+        nested = payload.get(key)
+        if isinstance(nested, dict) and bool(nested.get("runtime_available")):
+            return True
+    return bool(payload.get("runtime_available"))
+
+
 def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     mesh_index = scene_dir / "generated" / "scene_visual_mesh_index.json"
     smoke_json = scene_dir / "generated" / "scene3d_gui_smoke.json"
+    screenshot_path = scene_dir / "generated" / "scene3d_gui_smoke.png" if _smoke_indicates_runtime_screenshot_evidence(smoke_json) else None
     visual = evaluate_scene3d_visual_quality(
         scene_name=scene_name,
         scene_dir=scene_dir,
         mesh_index_path=mesh_index,
         smoke_json_path=smoke_json,
+        screenshot_path=screenshot_path,
     )
     blockers = [str(item) for item in visual.get("blockers", [])]
+    visual_blocker_reasons = [str(item) for item in visual.get("blocker_reasons", [])]
+    physical_blockers = [blocker for blocker in blockers if not blocker.startswith("screenshot_missing:") and blocker != "screenshot_missing"]
     warnings = [str(item) for item in visual.get("warnings", [])]
     visual_status = str(visual.get("visual_quality_status") or "").upper()
     runtime_available = bool(visual.get("runtime_available"))
@@ -338,7 +361,9 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
         visual_quality_status=visual.get("visual_quality_status"),
         mesh_index_path=str(mesh_index),
         smoke_json=str(smoke_json),
+        screenshot_path=str(screenshot_path) if screenshot_path is not None else None,
         blockers=blockers,
+        blocker_reasons=visual_blocker_reasons,
         warnings=warnings,
         runtime_available=runtime_available,
         counters={
@@ -372,9 +397,9 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
     elif physical_rendered <= 0:
         physical_state = FAIL
         physical_message = "no credible physical mesh/primitive render evidence was recorded"
-    elif blockers:
+    elif physical_blockers:
         physical_state = FAIL
-        physical_message = "physical render evidence exists but visual-quality blockers remain"
+        physical_message = "physical render evidence exists but physical visual-quality blockers remain"
     else:
         physical_state = PASS
         physical_message = "credible physical mesh/primitive visual evidence is present"
@@ -385,6 +410,7 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
         physical_rendered_count=physical_rendered,
         runtime_available=runtime_available,
         mesh_failure_summary_by_reason_code=visual.get("mesh_failure_summary_by_reason_code", {}),
+        blockers=physical_blockers,
     )
     return visual_result, physical_result
 
@@ -403,16 +429,10 @@ def _ros_humble_available() -> bool:
     return Path("/opt/ros/humble/setup.bash").is_file() or os.environ.get("ROS_DISTRO") == "humble"
 
 
-def _workcell_builder_executable_found(repo_root: Path) -> bool:
-    if shutil.which("workcell_builder"):
-        return True
-    for candidate in (
-        repo_root / "install" / "workcell_builder" / "lib" / "workcell_builder" / "workcell_builder",
-        repo_root / "build" / "workcell_builder" / "workcell_builder",
-    ):
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return True
-    return False
+def _resolve_workcell_builder_executable_evidence(workspace_root: Path | None) -> tuple[bool, dict[str, Any]]:
+    executable = resolve_workcell_builder_executable(workspace_root)
+    evidence = describe_resolution()
+    return executable is not None, evidence
 
 
 def _ros_launch_smoke_state(ros_available: bool, launch_check: dict[str, Any]) -> dict[str, Any]:
@@ -531,10 +551,10 @@ def _write_markdown(payload: dict[str, Any], path: Path) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def build_matrix(repo_root: Path, catalog_path: Path, output_dir: Path) -> dict[str, Any]:
+def build_matrix(repo_root: Path, workspace_root: Path | None, catalog_path: Path, output_dir: Path) -> dict[str, Any]:
     catalog, entries, catalog_errors = load_supported_scene_catalog(catalog_path)
     ros_available = _ros_humble_available()
-    builder_found = _workcell_builder_executable_found(repo_root)
+    builder_found, builder_evidence = _resolve_workcell_builder_executable_evidence(workspace_root)
 
     enabled_supported_entries = [
         entry
@@ -559,7 +579,7 @@ def build_matrix(repo_root: Path, catalog_path: Path, output_dir: Path) -> dict[
         "schema_version": SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "repo_root": str(repo_root),
-        "workspace_root": str(repo_root.parent),
+        "workspace_root": str(workspace_root) if workspace_root else None,
         "catalog_path": str(catalog_path),
         "catalog_schema_version": catalog.get("schema_version"),
         "catalog_errors": catalog_errors,
@@ -569,12 +589,19 @@ def build_matrix(repo_root: Path, catalog_path: Path, output_dir: Path) -> dict[
         "commands": commands,
         "ros_humble_available": ros_available,
         "workcell_builder_executable_found": builder_found,
+        "workcell_builder_executable_resolution": builder_evidence,
     }
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", type=Path, default=REPO_ROOT_DEFAULT)
+    parser.add_argument(
+        "--workspace-root",
+        type=Path,
+        default=None,
+        help="ROS workspace root; inferred from --repo-root when omitted",
+    )
     parser.add_argument(
         "--catalog",
         "--supported-scenes",
@@ -590,11 +617,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     repo_root = args.repo_root.resolve()
+    workspace_root = resolve_workspace_root(repo_root, args.workspace_root) or repo_root
     catalog_path = (args.catalog.resolve() if args.catalog else default_catalog_path(repo_root).resolve())
     output_dir = (args.output_dir.resolve() if args.output_dir else (repo_root / "build" / "workcell_studio_scene_readiness").resolve())
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    payload = build_matrix(repo_root, catalog_path, output_dir)
+    payload = build_matrix(repo_root, workspace_root, catalog_path, output_dir)
     json_path = output_dir / "scene_readiness_summary.json"
     md_path = output_dir / "scene_readiness_summary.md"
     json_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
