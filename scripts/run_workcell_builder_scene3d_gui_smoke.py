@@ -9,7 +9,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 from scripts.workcell_studio_script_bootstrap import ensure_repo_root_on_sys_path
 ensure_repo_root_on_sys_path(__file__)
-from scripts.workcell_studio_path_resolver import resolve_repo_root, resolve_workspace_root, resolve_workcell_builder_executable, workcell_builder_executable_candidates
+from scripts.workcell_studio_path_resolver import describe_resolution, resolve_repo_root, resolve_workspace_root, resolve_workcell_builder_executable, workcell_builder_executable_candidates
 from scripts.scene_root_resolver import resolve_scene_root
 from scripts.scene3d_scene_discovery import discover_scene3d_scenes
 
@@ -166,7 +166,7 @@ def _discover_scene_targets(repo_root: Path) -> list[dict[str, Any]]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo-root", type=Path, default=_REPO_ROOT)
-    ap.add_argument("--workspace-root", type=Path, default=_REPO_ROOT)
+    ap.add_argument("--workspace-root", type=Path, default=None)
     ap.add_argument("--executable", type=Path, default=None)
     ap.add_argument("--scene", default=None)
     ap.add_argument("--all-scenes", action="store_true")
@@ -193,10 +193,11 @@ def main() -> int:
         raise SystemExit("--output is required unless --all-scenes is used")
 
     repo_root = resolve_repo_root(explicit_repo_root=args.repo_root)
-    workspace_root = resolve_workspace_root(repo_root, args.workspace_root)
-    exe = args.executable or resolve_workcell_builder_executable(workspace_root)
+    workspace_root = resolve_workspace_root(repo_root, args.workspace_root) or repo_root
+    exe = resolve_workcell_builder_executable(workspace_root, args.executable)
+    executable_resolution = describe_resolution()
     if exe is None and not args.all_scenes:
-        searched = [str(p) for p in _resolve_executable_candidates(workspace_root or repo_root)]
+        searched = list(executable_resolution.get("searched_executable_paths") or [str(p) for p in _resolve_executable_candidates(workspace_root)])
         scene_dir = _resolve_single_scene_dir(repo_root, args.scene, args.scene_path)
         static_evidence = _static_scene3d_visual_evidence(scene_dir)
         fail_payload = {
@@ -207,6 +208,7 @@ def main() -> int:
             "workspace_root": str(workspace_root),
             "executable": None,
             "searched_paths": searched,
+            "executable_resolution": executable_resolution,
             "blockers": ["unable_to_resolve_workcell_builder_executable"],
             "warnings": ["runtime_gui_unavailable_static_scene3d_visual_evidence_recorded"],
             "screenshot_available": False,
@@ -286,6 +288,8 @@ def main() -> int:
                 _write_json(scene_json, payload)
         summary = {
             "schema": EXPECTED_SCHEMA, "mode": "all_scenes", "output_dir": str(out_dir), "totals": totals, "results": per_scene,
+            "repo_root": str(repo_root), "workspace_root": str(workspace_root), "executable": str(exe) if exe else None,
+            "executable_resolution": executable_resolution,
             "supported_scene_count": len(per_scene),
             "legacy_incomplete_count": len(legacy_incomplete),
             "ignored_non_scene_count": len(ignored_non_scenes),
@@ -344,6 +348,8 @@ def main() -> int:
         "repo_root": str(repo_root),
         "workspace_root": str(workspace_root),
         "executable": str(exe),
+        "searched_paths": list(executable_resolution.get("searched_executable_paths") or []),
+        "executable_resolution": executable_resolution,
         "child_command": " ".join(shlex.quote(x) for x in cmd),
         "cwd": str(repo_root),
         "env": {k: child_env.get(k, "") for k in ["DISPLAY", "WAYLAND_DISPLAY", "QT_QPA_PLATFORM", "QT_OPENGL", "LIBGL_ALWAYS_SOFTWARE", "XDG_SESSION_TYPE"]},
