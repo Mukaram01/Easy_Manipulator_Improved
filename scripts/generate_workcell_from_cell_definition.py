@@ -264,13 +264,25 @@ def _render_scene_visual_mesh_index(package_name: str, cell_definition_path: Pat
 
 def _render_cmakelists(package_name: str) -> str:
     template_path = TEMPLATE_DIR / "CMakeLists_example.txt"
+    contract_installs = """
+install(DIRECTORY config generated layout launch urdf
+  DESTINATION share/${PROJECT_NAME}
+)
+install(FILES environment.yaml cell_definition.yaml scene_manifest.yaml
+  DESTINATION share/${PROJECT_NAME}
+)
+"""
     if template_path.is_file():
         text = template_path.read_text(encoding="utf-8")
-        return text.replace("project(workcellexample)", f"project({package_name})")
+        text = text.replace("project(workcellexample)", f"project({package_name})")
+        if "install(DIRECTORY config generated layout" not in text:
+            text = text.replace("ament_package()", contract_installs + "ament_package()")
+        return text
     return f"""cmake_minimum_required(VERSION 3.5)
 project({package_name})
 find_package(ament_cmake REQUIRED)
-install(DIRECTORY launch config urdf generated DESTINATION share/${{PROJECT_NAME}})
+install(DIRECTORY launch config layout urdf generated DESTINATION share/${{PROJECT_NAME}})
+install(FILES environment.yaml cell_definition.yaml scene_manifest.yaml DESTINATION share/${{PROJECT_NAME}})
 ament_package()
 """
 
@@ -990,6 +1002,337 @@ def _run_optional_bundle_export(
         warnings.append(f"Optional commissioning bundle export skipped: {exc}")
 
 
+
+def _safe_load_yaml_file(path: Path) -> Any:
+    with path.open("r", encoding="utf-8") as handle:
+        return yaml.safe_load(handle)
+
+
+def _snapshot_scene_package_inputs(
+    cell_definition_path: Path,
+    package_dir: Path,
+    loaded_cell_definition: dict[str, Any],
+    warnings: list[str],
+) -> dict[str, Any]:
+    """Read all source-side inputs before any package directory overwrite."""
+    scene_dir = cell_definition_path.parent
+    snapshot: dict[str, Any] = {
+        "source_scene_dir": scene_dir,
+        "source_cell_definition_path": cell_definition_path,
+        "cell_definition_text": cell_definition_path.read_text(encoding="utf-8"),
+        "environment": None,
+        "environment_text": None,
+        "layout_ref_path": None,
+        "layout_ref_data": None,
+        "canonical_layout_path": None,
+        "canonical_layout_data": None,
+        "existing_scene_manifest": None,
+    }
+
+    environment_path = scene_dir / "environment.yaml"
+    if environment_path.is_file():
+        snapshot["environment_text"] = environment_path.read_text(encoding="utf-8")
+        try:
+            snapshot["environment"] = yaml.safe_load(snapshot["environment_text"]) or {}
+        except Exception as exc:
+            warnings.append(f"Existing environment.yaml could not be parsed; synthesizing environment.yaml: {exc}")
+
+    environment = loaded_cell_definition.get("environment", {}) if isinstance(loaded_cell_definition.get("environment"), dict) else {}
+    layout_ref = environment.get("layout")
+    if isinstance(layout_ref, str) and layout_ref.strip():
+        resolved_layout = _resolve_layout_path(layout_ref, cell_definition_path)
+        if resolved_layout and resolved_layout.is_file():
+            snapshot["layout_ref_path"] = resolved_layout
+            try:
+                snapshot["layout_ref_data"] = _safe_load_yaml_file(resolved_layout)
+            except Exception as exc:
+                warnings.append(f"Referenced environment.layout could not be parsed ({resolved_layout}): {exc}")
+        else:
+            warnings.append(f"Referenced environment.layout source not found before generation: {layout_ref}")
+
+    canonical_layout = scene_dir / "layout" / "workcell_studio_layout.yaml"
+    if canonical_layout.is_file():
+        snapshot["canonical_layout_path"] = canonical_layout
+        try:
+            snapshot["canonical_layout_data"] = _safe_load_yaml_file(canonical_layout)
+        except Exception as exc:
+            warnings.append(f"Canonical layout/workcell_studio_layout.yaml could not be parsed: {exc}")
+
+    manifest_path = scene_dir / "scene_manifest.yaml"
+    if manifest_path.is_file():
+        try:
+            snapshot["existing_scene_manifest"] = _safe_load_yaml_file(manifest_path) or {}
+        except Exception as exc:
+            warnings.append(f"Existing scene_manifest.yaml metadata was not reusable: {exc}")
+
+    if package_dir == scene_dir:
+        warnings.append("Output package directory matches source scene directory; source inputs were snapshotted before overwrite.")
+    return snapshot
+
+
+def _synthesize_environment(loaded: dict[str, Any], package_name: str, source_snapshot: dict[str, Any]) -> dict[str, Any]:
+    environment = copy.deepcopy(source_snapshot.get("environment")) if isinstance(source_snapshot.get("environment"), dict) else {}
+    if not environment:
+        cell = loaded.get("cell", {}) if isinstance(loaded.get("cell"), dict) else {}
+        robot = loaded.get("robot", {}) if isinstance(loaded.get("robot"), dict) else {}
+        end_effector = loaded.get("end_effector", {}) if isinstance(loaded.get("end_effector"), dict) else {}
+        camera = loaded.get("camera", {}) if isinstance(loaded.get("camera"), dict) else {}
+        task = loaded.get("task", {}) if isinstance(loaded.get("task"), dict) else {}
+        environment = {
+            "schema_version": "workcell_scene/v1",
+            "scene": {"id": cell.get("id", package_name), "name": cell.get("name", package_name)},
+            "robot": {"id": robot.get("model", "unknown"), "profile": robot.get("model", "unknown")},
+            "tool": {"id": end_effector.get("id", "unknown_tool"), "profile": end_effector.get("type", "unknown")},
+            "camera": copy.deepcopy(camera),
+            "task": {"template": task.get("type", "custom")},
+            "workspace": {"bounds": {"x_min": -1.0, "x_max": 1.0, "y_min": -1.0, "y_max": 1.0, "z_min": 0.0, "z_max": 1.8}},
+            "metadata": {"generated_by": "generate_workcell_from_cell_definition.py", "source": "cell_definition.yaml"},
+        }
+    safety = environment.get("safety") if isinstance(environment.get("safety"), dict) else {}
+    safety["fake_hardware_first"] = True
+    safety["real_hardware_enabled"] = False
+    safety["runtime_execution_enabled"] = False
+    safety["motion_command_sent"] = False
+    environment["safety"] = safety
+    metadata = environment.get("metadata") if isinstance(environment.get("metadata"), dict) else {}
+    metadata.setdefault("generated_by", "generate_workcell_from_cell_definition.py")
+    metadata["source_cell_definition"] = str(source_snapshot.get("source_cell_definition_path", "cell_definition.yaml"))
+    metadata["generated_at"] = datetime.now(timezone.utc).isoformat()
+    environment["metadata"] = metadata
+    return environment
+
+
+def _build_contract_layout(package_name: str, loaded: dict[str, Any], source_snapshot: dict[str, Any]) -> dict[str, Any]:
+    if source_snapshot.get("canonical_layout_data") is not None:
+        layout = source_snapshot["canonical_layout_data"]
+    elif source_snapshot.get("layout_ref_data") is not None:
+        layout = source_snapshot["layout_ref_data"]
+    else:
+        cell = loaded.get("cell", {}) if isinstance(loaded.get("cell"), dict) else {}
+        layout = {
+            "schema_version": "workcell_studio_layout/v1",
+            "scene": {"id": cell.get("id", package_name), "name": cell.get("name", package_name)},
+            "items": [],
+            "metadata": {"generated_by": "generate_workcell_from_cell_definition.py", "source": "empty_fallback"},
+        }
+    normalized = _normalize_workcell_studio_layout(copy.deepcopy(layout))
+    metadata = normalized.get("metadata") if isinstance(normalized.get("metadata"), dict) else {}
+    metadata.setdefault("generated_by", "generate_workcell_from_cell_definition.py")
+    metadata.setdefault("scene_package", package_name)
+    metadata.setdefault("generated_at", datetime.now(timezone.utc).isoformat())
+    normalized["metadata"] = metadata
+    return normalized
+
+
+def _render_placeholder_scene_xacro(package_name: str, warnings: list[str]) -> str:
+    warning = "Generated conservative placeholder urdf/scene.urdf.xacro; approved robot/environment geometry must be connected before runtime use."
+    if warning not in warnings:
+        warnings.append(warning)
+    return (
+        '<?xml version="1.0"?>\n'
+        f'<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="{package_name}_scene">\n'
+        '  <xacro:arg name="use_fake_hardware" default="true"/>\n'
+        '  <!-- Offline-safe placeholder: no real robot drivers or hardware interfaces are declared here. -->\n'
+        '  <link name="world"/>\n'
+        '  <link name="generated_scene_anchor"/>\n'
+        '  <joint name="world_to_generated_scene_anchor" type="fixed">\n'
+        '    <parent link="world"/>\n'
+        '    <child link="generated_scene_anchor"/>\n'
+        '    <origin xyz="0 0 0" rpy="0 0 0"/>\n'
+        '  </joint>\n'
+        '</robot>\n'
+    )
+
+
+def _fallback_visual_mesh_index(package_name: str, package_dir: Path, blockers: list[str]) -> dict[str, Any]:
+    return {
+        "schema_version": "scene_visual_mesh_index/v1",
+        "scene_name": package_name,
+        "status": "FALLBACK_EMPTY",
+        "safe_for_preview": True,
+        "source_urdf_xacro_path": str(package_dir / "urdf" / "scene.urdf.xacro"),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "visual_count": 0,
+        "candidate_mesh_count": 0,
+        "emitted_visual_count": 0,
+        "resolved": 0,
+        "unresolved": 0,
+        "visual_items": [],
+        "blockers": blockers,
+    }
+
+
+def _build_scene_package_readiness(
+    package_name: str,
+    package_dir: Path,
+    required_files: list[Path],
+    warnings: list[str],
+    blockers: list[str] | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    contract_files = []
+    missing = []
+    for path in required_files:
+        rel = path.relative_to(package_dir).as_posix()
+        exists = path.is_file()
+        contract_files.append({"path": rel, "exists": exists})
+        if not exists:
+            missing.append(f"missing required contract file: {rel}")
+    readiness_blockers = list(blockers or []) + missing
+    payload = {
+        "schema_version": "scene_package_readiness/v1",
+        "package_name": package_name,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "status": "BLOCKED" if readiness_blockers else ("WARN" if warnings else "PASS"),
+        "safety": {
+            "fake_hardware_first": True,
+            "runtime_execution_enabled": False,
+            "real_hardware_driver_launch_default": False,
+        },
+        "contract_files": contract_files,
+        "warnings": warnings,
+        "blockers": readiness_blockers,
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
+def write_scene_package_contract(
+    *,
+    package_dir: Path,
+    package_name: str,
+    cell_definition_path: Path,
+    loaded: dict[str, Any],
+    scene_manifest: dict[str, Any],
+    task_recipe: dict[str, Any],
+    asset_tracking: dict[str, Any],
+    source_snapshot: dict[str, Any],
+    warnings: list[str],
+    scene_generator: Any,
+    scene_contract: Any | None = None,
+    dry_result: Any | None = None,
+    readiness_extra: dict[str, Any] | None = None,
+) -> list[Path]:
+    """Write the generated scene package contract from one authoritative helper."""
+    (package_dir / "config").mkdir(parents=True, exist_ok=True)
+    (package_dir / "launch").mkdir(parents=True, exist_ok=True)
+    (package_dir / "layout").mkdir(parents=True, exist_ok=True)
+    (package_dir / "urdf").mkdir(parents=True, exist_ok=True)
+    (package_dir / "generated").mkdir(parents=True, exist_ok=True)
+
+    scene_manifest = copy.deepcopy(scene_manifest)
+    scene_manifest.setdefault("files", {})
+    if isinstance(scene_manifest["files"], dict):
+        scene_manifest["files"].update(
+            {
+                "package_xml": "package.xml",
+                "cmakelists": "CMakeLists.txt",
+                "environment": "environment.yaml",
+                "cell_definition": "cell_definition.yaml",
+                "scene_manifest": "scene_manifest.yaml",
+                "workcell_studio_layout": "layout/workcell_studio_layout.yaml",
+                "demo_launch": "launch/demo.launch.py",
+                "urdf_xacro": "urdf/scene.urdf.xacro",
+                "visual_mesh_index": "generated/scene_visual_mesh_index.json",
+                "validation_report": "generated/validation_report.md",
+                "scene_package_readiness": "generated/scene_package_readiness.json",
+            }
+        )
+    scene_manifest["safety"] = {
+        "fake_hardware_first": True,
+        "runtime_execution_enabled": False,
+        "real_hardware_driver_launch_default": False,
+    }
+
+    scene_manifest_path = package_dir / "scene_manifest.yaml"
+    task_recipe_path = package_dir / "config" / "task_recipe.yaml"
+    scene_manifest_text = _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, scene_manifest)
+    task_recipe_text = _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, task_recipe)
+
+    (package_dir / "package.xml").write_text(_render_package_xml(package_name), encoding="utf-8")
+    (package_dir / "CMakeLists.txt").write_text(_render_cmakelists(package_name), encoding="utf-8")
+    (package_dir / "environment.yaml").write_text(
+        _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, _synthesize_environment(loaded, package_name, source_snapshot)),
+        encoding="utf-8",
+    )
+    (package_dir / "cell_definition.yaml").write_text(str(source_snapshot["cell_definition_text"]), encoding="utf-8")
+    scene_manifest_path.write_text(scene_manifest_text, encoding="utf-8")
+    (package_dir / "workcell.yaml").write_text(scene_manifest_text, encoding="utf-8")
+    task_recipe_path.write_text(task_recipe_text, encoding="utf-8")
+    (package_dir / "generated" / "task_recipe.preview.yaml").write_text(task_recipe_text, encoding="utf-8")
+    (package_dir / "generated" / "scene_manifest.preview.yaml").write_text(scene_manifest_text, encoding="utf-8")
+    (package_dir / "layout" / "workcell_studio_layout.yaml").write_text(
+        yaml.safe_dump(_build_contract_layout(package_name, loaded, source_snapshot), sort_keys=False),
+        encoding="utf-8",
+    )
+    (package_dir / "launch" / "demo.launch.py").write_text(_render_demo_launch(package_name, cell_definition_path), encoding="utf-8")
+    (package_dir / "urdf" / "scene.urdf.xacro").write_text(_render_placeholder_scene_xacro(package_name, warnings), encoding="utf-8")
+    (package_dir / "generated" / "scene_visual_mesh_index.json").write_text(
+        json.dumps(
+            _fallback_visual_mesh_index(
+                package_name,
+                package_dir,
+                ["Full visual mesh extraction is not run by generate_workcell_from_cell_definition.py; fallback index emitted."],
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    if dry_result is not None and scene_contract is not None:
+        _write_validation_report(package_dir / "generated" / "validation_report.md", scene_manifest, scene_contract, dry_result)
+    else:
+        (package_dir / "generated" / "validation_report.md").write_text(
+            _header_markdown(cell_definition_path)
+            + "# Generated Scene Validation Report\n\n- Status: **PENDING**\n- Dry-run status: not evaluated yet.\n",
+            encoding="utf-8",
+        )
+
+    (package_dir / "launch" / "README.md").write_text(
+        _header_markdown(cell_definition_path)
+        + "# Launch placeholders\n\nGenerated package includes offline-safe demo.launch.py for review. Reuse validated scene launch assets after review.\n",
+        encoding="utf-8",
+    )
+    (package_dir / "urdf" / "README.md").write_text(
+        _header_markdown(cell_definition_path)
+        + "# URDF placeholders\n\nReview and connect approved robot/environment geometry assets manually.\n",
+        encoding="utf-8",
+    )
+    (package_dir / "urdf" / "generated_asset_metadata.yaml").write_text(
+        _header_yaml(cell_definition_path)
+        + _yaml_text_from(
+            scene_generator,
+            {
+                "schema_version": "generated_asset_metadata/v1",
+                "supported_assets": asset_tracking["supported"],
+                "unsupported_assets": asset_tracking["unsupported"],
+            },
+        ),
+        encoding="utf-8",
+    )
+
+    required_files = [
+        package_dir / "package.xml",
+        package_dir / "CMakeLists.txt",
+        package_dir / "environment.yaml",
+        package_dir / "cell_definition.yaml",
+        package_dir / "scene_manifest.yaml",
+        package_dir / "layout" / "workcell_studio_layout.yaml",
+        package_dir / "launch" / "demo.launch.py",
+        package_dir / "urdf" / "scene.urdf.xacro",
+        package_dir / "generated" / "scene_visual_mesh_index.json",
+        package_dir / "generated" / "validation_report.md",
+        package_dir / "generated" / "scene_package_readiness.json",
+    ]
+    readiness = _build_scene_package_readiness(package_name, package_dir, required_files, warnings, extra=readiness_extra)
+    (package_dir / "generated" / "scene_package_readiness.json").write_text(
+        json.dumps(readiness, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return required_files
+
+
 def _summarize_plan_failure(plan_result: Any, dry_result: Any, manifest_path: Path) -> str:
     dry_status = getattr(dry_result, "status", "UNKNOWN")
     matched_rule = getattr(plan_result, "matched_rule_id", "(n/a)") or "(n/a)"
@@ -1053,9 +1396,10 @@ def generate_package(
         "unsupported": asset_tracking["unsupported"],
     }
 
-    package_dir = output_dir / package_name
-    if package_dir.exists() and not force:
-        print(f"FAIL: Output package already exists: {package_dir} (use --force to overwrite)")
+    final_package_dir = output_dir / package_name
+    source_snapshot = _snapshot_scene_package_inputs(cell_definition_path, final_package_dir, loaded, warnings)
+    if final_package_dir.exists() and not force:
+        print(f"FAIL: Output package already exists: {final_package_dir} (use --force to overwrite)")
         return 1
 
     source_environment_snapshot = _snapshot_input_file(_source_environment_yaml_path(cell_definition_path))
@@ -1073,9 +1417,14 @@ def generate_package(
         print(f"WARN count: {len(warnings)}")
         for warning in warnings:
             print(f"WARN: {warning}")
-        print(f"Would write package to: {package_dir}")
+        print(f"Would write package to: {final_package_dir}")
         return 0
 
+    output_dir.mkdir(parents=True, exist_ok=True)
+    staging_dir = output_dir / f"{package_name}.tmp-generation"
+    if staging_dir.exists():
+        shutil.rmtree(staging_dir)
+    package_dir = staging_dir
     if package_dir.exists():
         shutil.rmtree(package_dir)
 
@@ -1099,9 +1448,19 @@ def generate_package(
         _write_snapshot(source_environment_layout_snapshot, package_dir / "generated" / "environment_layout.yaml")
 
     scene_manifest_path = package_dir / "scene_manifest.yaml"
-    workcell_yaml_path = package_dir / "workcell.yaml"
     task_recipe_path = package_dir / "config" / "task_recipe.yaml"
 
+    required_contract_files = write_scene_package_contract(
+        package_dir=package_dir,
+        package_name=package_name,
+        cell_definition_path=cell_definition_path,
+        loaded=loaded,
+        scene_manifest=scene_manifest,
+        task_recipe=task_recipe,
+        asset_tracking=asset_tracking,
+        source_snapshot=source_snapshot,
+        warnings=warnings,
+        scene_generator=scene_generator,
     scene_manifest_text = _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, scene_manifest)
     task_recipe_text = _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, task_recipe)
 
@@ -1123,7 +1482,7 @@ def generate_package(
 
     (package_dir / "README.md").write_text(
         _header_markdown(cell_definition_path)
-        + _build_readme(loaded, package_name, cell_definition_path, package_dir, warnings, scene_generator, summary.capability_summary),
+        + _build_readme(loaded, package_name, cell_definition_path, final_package_dir, warnings, scene_generator, summary.capability_summary),
         encoding="utf-8",
     )
 
@@ -1196,6 +1555,29 @@ def generate_package(
         finally:
             plan_generator.OUTPUT_DIR = original_plan_dir
 
+    required_contract_files = write_scene_package_contract(
+        package_dir=package_dir,
+        package_name=package_name,
+        cell_definition_path=cell_definition_path,
+        loaded=loaded,
+        scene_manifest=scene_manifest,
+        task_recipe=task_recipe,
+        asset_tracking=asset_tracking,
+        source_snapshot=source_snapshot,
+        warnings=warnings,
+        scene_generator=scene_generator,
+        scene_contract=scene_contract,
+        dry_result=dry_result,
+        readiness_extra={
+            "dry_run_status": getattr(dry_result, "status", "UNKNOWN"),
+            "source_inputs": {
+                "environment_yaml": str(source_snapshot["source_scene_dir"] / "environment.yaml"),
+                "cell_definition_yaml": str(source_snapshot["source_cell_definition_path"]),
+                "environment_layout": str(source_snapshot.get("layout_ref_path") or ""),
+                "workcell_studio_layout": str(source_snapshot.get("canonical_layout_path") or ""),
+                "existing_scene_manifest_used_as_metadata": bool(source_snapshot.get("existing_scene_manifest")),
+            },
+        },
     _write_scene_visual_mesh_index(package_name, package_dir, warnings)
     _write_validation_report(
         package_dir / "generated" / "validation_report.md",
@@ -1216,13 +1598,15 @@ def generate_package(
     detected_example_path.write_text(_yaml_text_from(scene_generator, detected_example), encoding="utf-8")
     env_objects_path.write_text(_yaml_text_from(scene_generator, env_objects), encoding="utf-8")
     destinations_path.write_text(_yaml_text_from(scene_generator, destinations), encoding="utf-8")
+    final_task_recipe_path = final_package_dir / "config" / "task_recipe.yaml"
+    final_detected_example_path = final_package_dir / "generated" / "generated_detected_objects_example.yaml"
     preflight_cmd = (
         f"python3 scripts/run_cell_readiness_check.py --scene-package {package_name} "
-        f"--task-recipe {task_recipe_path} --detected-objects {detected_example_path} --json"
+        f"--task-recipe {final_task_recipe_path} --detected-objects {final_detected_example_path} --json"
     )
     gated_cmd = (
         f"python3 scripts/run_generated_cell_cycle.py --scene-package {package_name} "
-        f"--task-recipe {task_recipe_path} --detected-objects {detected_example_path} "
+        f"--task-recipe {final_task_recipe_path} --detected-objects {final_detected_example_path} "
         f"--output-dir /tmp/{package_name}_gated_dry_run --min-objects 1 --once --dry-run --no-replay --require-preflight --json"
     )
     runtime = loaded.get("runtime", {}) if isinstance(loaded.get("runtime"), dict) else {}
@@ -1237,10 +1621,10 @@ def generate_package(
         "robot": loaded.get("robot", {}),
         "end_effector": loaded.get("end_effector", {}),
         "camera": loaded.get("camera", {}),
-        "task_recipe_path": str(task_recipe_path),
-        "detected_objects_example_path": str(detected_example_path),
-        "environment_objects_path": str(env_objects_path),
-        "destinations_path": str(destinations_path),
+        "task_recipe_path": str(final_task_recipe_path),
+        "detected_objects_example_path": str(final_detected_example_path),
+        "environment_objects_path": str(final_package_dir / "generated" / "generated_environment_objects.yaml"),
+        "destinations_path": str(final_package_dir / "generated" / "generated_destinations.yaml"),
         "warnings": warnings,
         "tracked_assets": asset_tracking["tracked"],
         "unsupported_assets": asset_tracking["unsupported"],
@@ -1261,6 +1645,33 @@ def generate_package(
     if bool(commissioning.get("export_bundle", False)):
         _run_optional_bundle_export(bundle_exporter, package_name, scene_manifest_path, package_dir / "generated", warnings)
 
+    backup_dir = output_dir / f"{package_name}.previous-generation"
+    if backup_dir.exists():
+        shutil.rmtree(backup_dir)
+    try:
+        if final_package_dir.exists():
+            final_package_dir.rename(backup_dir)
+        package_dir.rename(final_package_dir)
+    except Exception:
+        if final_package_dir.exists():
+            shutil.rmtree(final_package_dir)
+        if backup_dir.exists():
+            backup_dir.rename(final_package_dir)
+        raise
+    else:
+        if backup_dir.exists():
+            shutil.rmtree(backup_dir)
+
+    final_contract_files = [final_package_dir / path.relative_to(staging_dir) for path in required_contract_files]
+    missing_contract_files = [path for path in final_contract_files if not path.is_file()]
+    status = "PASS" if not warnings and not missing_contract_files else "WARN"
+    print(f"{status}: generated package at {final_package_dir}")
+    for contract_path in final_contract_files:
+        rel = contract_path.relative_to(final_package_dir).as_posix()
+        prefix = "PASS" if contract_path.is_file() else "FAIL"
+        print(f"{prefix}: {rel} -> {contract_path}")
+    print(f"PASS: README.md -> {final_package_dir / 'README.md'}")
+    print(f"PASS: commissioning_summary -> {final_package_dir / 'generated' / 'commissioning_summary.md'}")
     status = "PASS" if not warnings else "WARN"
     print(f"{status}: generated package at {package_dir}")
     print(f"PASS: package.xml -> {package_dir / 'package.xml'}")
