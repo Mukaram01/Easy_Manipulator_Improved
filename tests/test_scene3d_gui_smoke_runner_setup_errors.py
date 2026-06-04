@@ -61,11 +61,22 @@ def test_gui_smoke_unresolved_workspace_records_null_and_path_search(tmp_path, m
     out = tmp_path / "smoke.json"
     shot = tmp_path / "smoke.png"
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
+def test_gui_smoke_invalid_explicit_executable_writes_blocked_json(tmp_path):
+    repo = Path(__file__).resolve().parents[1]
+    out = tmp_path / "smoke.json"
+    bad_exe = tmp_path / "not_executable_workcell_builder"
+    bad_exe.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    bad_exe.chmod(0o644)
+
     cmd = [
         "python3",
         str(repo / "scripts/run_workcell_builder_scene3d_gui_smoke.py"),
         "--repo-root",
         str(repo),
+        "--workspace-root",
+        str(repo),
+        "--executable",
+        str(bad_exe),
         "--scene",
         "ur5_2f_test",
         "--output",
@@ -80,3 +91,13 @@ def test_gui_smoke_unresolved_workspace_records_null_and_path_search(tmp_path, m
     assert payload["workspace_root"] is None
     assert "workspace_root_inference_failed_path_only_executable_search" in payload["warnings"]
     assert all("install/workcell_builder" not in p for p in payload["searched_paths"])
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    assert proc.returncode != 0
+    assert out.exists()
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["status"] == "BLOCKED"
+    assert payload["explicit_executable"] == str(bad_exe)
+    assert payload["searched_paths"] == [str(bad_exe.resolve())]
+    assert payload["blockers"] == ["explicit_workcell_builder_executable_missing_or_not_executable"]
+    assert "guidance" in payload
