@@ -135,6 +135,15 @@ def _only_scene(report: dict[str, Any]) -> dict[str, Any]:
 
 
 def test_ready_scene_records_launch_smoke_as_blocked_without_execution(tmp_path: Path, minimal_scene_factory: Any) -> None:
+    report = _single_scene_report(tmp_path, minimal_scene_factory, "ready_scene")
+
+    scene = _only_scene(report)
+    assert scene["overall_status"] == "BLOCKED"
+    launch_state = scene["categories"]["ros_launch_smoke_skip_evaluation_state"]
+    assert launch_state["status"] == "BLOCKED"
+    assert "does not execute ros2 launch" in launch_state["message"]
+
+
 def test_parse_args_accepts_supported_scenes_alias_for_catalog() -> None:
     args = matrix.parse_args(["--supported-scenes", "scenes/supported_scenes.yaml"])
 
@@ -304,6 +313,83 @@ def test_visual_quality_failure_propagates_current_visual_category_status(
     assert scene["categories"]["scene3d_visual_quality_summary"]["visual_quality_status"] == "FAIL"
     assert scene["categories"]["scene3d_visual_quality_summary"]["blockers"]
 
+
+def test_scene3d_runtime_unavailable_blocks_runtime_visual_evidence(
+    tmp_path: Path,
+    minimal_scene_factory: Any,
+) -> None:
+    scene_dir, entry = minimal_scene_factory(
+        "scene3d_runtime_unavailable",
+        repo_root=tmp_path,
+        mesh_index_payload={"items": [{"id": "fixture_box", "primitive_type": "box"}]},
+    )
+    _write_valid_cell_definition(scene_dir, "scene3d_runtime_unavailable")
+    (scene_dir / "generated" / "scene3d_gui_smoke.json").write_text(
+        json.dumps(
+            {
+                "schema": "workcell_studio_scene3d_gui_smoke/v1",
+                "status": "FAIL",
+                "runtime_available": False,
+                "screenshot_available": False,
+                "resolved_executable": None,
+                "searched_paths": ["/missing/workcell_builder"],
+                "render_debug_counters": {"runtime_available": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+    catalog = _write_catalog(tmp_path, [entry])
+
+    report = _build_matrix(tmp_path, catalog, ros_available=True)
+
+    scene = _only_scene(report)
+    visual_summary = scene["categories"]["scene3d_visual_quality_summary"]
+    physical_evidence = scene["categories"]["credible_physical_visual_evidence"]
+    assert visual_summary["status"] == "BLOCKED"
+    assert physical_evidence["status"] == "BLOCKED"
+    for category in (visual_summary, physical_evidence):
+        assert category["smoke_status"] == "FAIL"
+        assert category["runtime_available"] is False
+        assert category["screenshot_available"] is False
+        assert category["resolved_executable"] is None
+        assert category["searched_paths"] == ["/missing/workcell_builder"]
+
+
+def test_scene3d_blocked_smoke_status_blocks_visual_summary(
+    tmp_path: Path,
+    minimal_scene_factory: Any,
+) -> None:
+    scene_dir, entry = minimal_scene_factory(
+        "scene3d_blocked_smoke_status",
+        repo_root=tmp_path,
+        mesh_index_payload={"items": [{"id": "fixture_box", "primitive_type": "box"}]},
+    )
+    _write_valid_cell_definition(scene_dir, "scene3d_blocked_smoke_status")
+    (scene_dir / "generated" / "scene3d_gui_smoke.json").write_text(
+        json.dumps(
+            {
+                "schema": "workcell_studio_scene3d_gui_smoke/v1",
+                "status": "BLOCKED",
+                "runtime_available": True,
+                "screenshot_available": True,
+                "resolved_executable": "/tmp/workcell_builder",
+                "searched_paths": ["/tmp/workcell_builder"],
+                "primitive_rendered_count": 1,
+                "rendered_count": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    catalog = _write_catalog(tmp_path, [entry])
+
+    report = _build_matrix(tmp_path, catalog, ros_available=True)
+
+    scene = _only_scene(report)
+    visual_summary = scene["categories"]["scene3d_visual_quality_summary"]
+    assert visual_summary["status"] == "BLOCKED"
+    assert visual_summary["visual_quality_status"] == "PASS"
+    assert visual_summary["smoke_status"] == "BLOCKED"
+    assert visual_summary["runtime_available"] is True
 
 def test_ros_humble_unavailable_records_launch_smoke_as_safely_skipped(
     tmp_path: Path,
