@@ -23,8 +23,11 @@
   use_fake_hardware="$(arg use_fake_hardware)">
   <origin xyz="0 0 0" rpy="0 0 0"/>
 </xacro:ur_robot>
-   
- <!-- Arm-only hardware variant: no physical gripper attached to tool0. -->
+
+ <xacro:include filename="$(find robotiq_3f_gripper_description)/urdf/robotiq-3f-gripper_articulated.urdf.xacro"/>
+ <xacro:robotiq-3f-gripper_articulated prefix="" parent="tool0">
+	<origin xyz="0 0 0" rpy="0 0 0"/>
+ </xacro:robotiq-3f-gripper_articulated>
 
  <xacro:include filename="$(find workbench_description)/urdf/table.urdf.xacro"/>
  <xacro:table prefix="" parent="world">
@@ -39,9 +42,9 @@
 
  <link name="ee_palm" />
  <joint name="base_to_palm" type="fixed">
-    <parent link="tool0"/>
+    <parent link="palm"/>
     <child link="ee_palm"/>
-    <origin xyz="0 0 0.18" rpy="0 0 0"/>
+    <origin xyz="0 0 0.0875" rpy="0 0 0"/>
  </joint>
 
 </robot>

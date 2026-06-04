@@ -4,6 +4,7 @@ cell:
   name: ur5_3f_test
 robot:
   model: ur5
+  capability: ur5
   planning_group: manipulator
   base_frame: world
   tool_link: tool0
@@ -11,6 +12,7 @@ robot:
   safe_joint_state: []
 end_effector:
   id: robotiq_3f
+  capability: robotiq_3f
   type: finger
   brand: robotiq
   grasp_frame: tool0
