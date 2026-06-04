@@ -6,12 +6,13 @@ robot:
   id: ur5
   profile: ur5
 tool:
-  id: robotiq_2f
-  profile: robotiq_2f
+  id: robotiq_3f
+  profile: robotiq_3f
+  capability: robotiq_3f
 compatibility:
   status: COMPATIBLE
   robot: ur5
-  tool: robotiq_2f
+  tool: robotiq_3f
 placed_objects:
 camera:
   enabled: false

@@ -109,7 +109,7 @@ scenes:
     scene_path: scenes/ur5_3f_test
     support_level: supported
     status: blocked
-    known_blocker: "post-regeneration readiness matrix: static cell_definition camera/object contract has been restored; Scene3D runtime smoke evidence remains blocked because generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable. The scene_visual_mesh_index.json artifact has been regenerated with repo-local xacro-lite expansion and is no longer the catalog blocker."
+    known_blocker: "3F contract aligned across manifest, cell_definition, environment, and URDF using the bundled robotiq_3f capability/assets; remaining blocker is Scene3D runtime smoke evidence because generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable, so install/source the ROS Humble workcell_builder executable and rerun the scene smoke/readiness matrix."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_3f_test --json
