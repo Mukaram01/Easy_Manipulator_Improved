@@ -7,12 +7,14 @@ import argparse
 import copy
 import importlib.util
 import json
+import math
 import shutil
 import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from xml.sax.saxutils import escape
 
 import yaml
 
@@ -24,6 +26,7 @@ SCENE_CONTRACT_PATH = SCRIPTS_DIR / "validate_scene_contract.py"
 DRY_RUN_PATH = SCRIPTS_DIR / "dry_run_task_recipe.py"
 PLAN_PATH = SCRIPTS_DIR / "generate_task_execution_plan.py"
 BUNDLE_EXPORT_PATH = SCRIPTS_DIR / "export_workcell_bundle.py"
+MESH_INDEX_EXTRACTOR_PATH = SCRIPTS_DIR / "extract_scene_urdf_visual_mesh_index.py"
 TEMPLATE_DIR = REPO_ROOT / "workcell_builder" / "workcell_builder" / "templates" / "ros2" / "humble"
 
 SUPPORTED_TASK_TYPES = {
@@ -181,6 +184,84 @@ def _render_package_xml(package_name: str) -> str:
 """
 
 
+def _snapshot_input_file(path: Path | None) -> tuple[Path, str] | None:
+    if path is None or not path.is_file():
+        return None
+    return path, path.read_text(encoding="utf-8")
+
+
+def _write_snapshot(snapshot: tuple[Path, str] | None, destination: Path) -> bool:
+    if snapshot is None:
+        return False
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(snapshot[1], encoding="utf-8")
+    return True
+
+
+def _source_environment_yaml_path(cell_definition_path: Path) -> Path | None:
+    candidate = cell_definition_path.parent / "environment.yaml"
+    return candidate if candidate.is_file() else None
+
+
+def _source_workcell_studio_layout_path(cell_definition_path: Path) -> Path | None:
+    candidate = cell_definition_path.parent / "layout" / "workcell_studio_layout.yaml"
+    return candidate if candidate.is_file() else None
+
+
+def _render_environment_yaml(cell_def: dict[str, Any], scene_generator: Any, cell_definition_path: Path) -> str:
+    environment = cell_def.get("environment", {}) if isinstance(cell_def.get("environment"), dict) else {}
+    cell = cell_def.get("cell", {}) if isinstance(cell_def.get("cell"), dict) else {}
+    payload = {
+        "schema_version": "workcell_environment/v1",
+        "generated_from": str(cell_definition_path),
+        "frame": environment.get("frame", cell.get("planning_frame", "world")),
+        "robot": cell_def.get("robot", {}),
+        "end_effector": cell_def.get("end_effector", {}),
+        "camera": cell_def.get("camera", {}),
+        "environment": environment,
+        "objects": cell_def.get("objects", []),
+        "support_surfaces": environment.get("support_surfaces", []),
+        "assets": environment.get("assets", []),
+        "fake_hardware_first": True,
+        "runtime_execution_enabled": False,
+    }
+    return _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, payload)
+
+
+def _render_scene_urdf_xacro(package_name: str, cell_def: dict[str, Any], cell_definition_path: Path) -> str:
+    environment = cell_def.get("environment", {}) if isinstance(cell_def.get("environment"), dict) else {}
+    cell = cell_def.get("cell", {}) if isinstance(cell_def.get("cell"), dict) else {}
+    robot = cell_def.get("robot", {}) if isinstance(cell_def.get("robot"), dict) else {}
+    frame = str(environment.get("frame") or cell.get("planning_frame") or "world")
+    robot_model = str(robot.get("model") or "unknown_robot")
+    return (
+        '<?xml version="1.0"?>\n'
+        f'<!-- GENERATED FILE - DO NOT EDIT DIRECTLY. Generated from {cell_definition_path} -->\n'
+        f'<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="{package_name}">\n'
+        f'  <!-- Offline-safe placeholder URDF for Workcell Studio review; robot_model={robot_model}. -->\n'
+        f'  <link name="{frame}"/>\n'
+        '</robot>\n'
+    )
+
+
+def _render_scene_visual_mesh_index(package_name: str, cell_definition_path: Path) -> dict[str, Any]:
+    return {
+        "schema_version": "scene_visual_mesh_index/v1",
+        "scene_name": package_name,
+        "visual_count": 0,
+        "resolved": 0,
+        "unresolved": 0,
+        "safe_for_preview": True,
+        "source_urdf_xacro_path": "urdf/scene.urdf.xacro",
+        "generator": "scripts/generate_workcell_from_cell_definition.py",
+        "source_cell_definition": str(cell_definition_path),
+        "visual_items": [],
+        "notes": [
+            "Generated placeholder visual mesh index; regenerate from expanded URDF when approved mesh assets are available."
+        ],
+    }
+
+
 def _render_cmakelists(package_name: str) -> str:
     template_path = TEMPLATE_DIR / "CMakeLists_example.txt"
     contract_installs = """
@@ -206,6 +287,185 @@ ament_package()
 """
 
 
+
+
+def _xml_attr(value: Any) -> str:
+    return escape(str(value), {'"': '&quot;', "'": '&apos;'})
+
+
+def _safe_xml_comment(text: str) -> str:
+    return str(text).replace("--", "-").replace("<", "(").replace(">", ")")
+
+
+def _safe_link_name(value: Any, fallback: str) -> str:
+    raw = str(value or fallback).strip() or fallback
+    safe = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in raw)
+    if not safe or safe[0].isdigit():
+        safe = f"link_{safe}"
+    return safe
+
+
+def _coerce_float_list(value: Any, default: list[float], expected_len: int) -> list[float]:
+    if isinstance(value, list):
+        out: list[float] = []
+        for item in value[:expected_len]:
+            try:
+                out.append(float(item))
+            except (TypeError, ValueError):
+                break
+        if len(out) == expected_len:
+            return out
+    return list(default)
+
+
+def _pose_xyz_rpy(entry: dict[str, Any]) -> tuple[list[float], list[float]]:
+    pose = entry.get("pose") if isinstance(entry.get("pose"), dict) else {}
+    xyz = entry.get("pose_xyz", pose.get("xyz"))
+    rpy = entry.get("pose_rpy", pose.get("rpy"))
+    return (
+        _coerce_float_list(xyz, [0.0, 0.0, 0.0], 3),
+        _coerce_float_list(rpy, [0.0, 0.0, 0.0], 3),
+    )
+
+
+def _dimensions_xyz(entry: dict[str, Any], default: list[float]) -> list[float]:
+    dimensions = entry.get("dimensions")
+    primitive = entry.get("primitive") if isinstance(entry.get("primitive"), dict) else {}
+    if not isinstance(dimensions, list):
+        dimensions = primitive.get("dimensions") or primitive.get("size")
+    coerced = _coerce_float_list(dimensions, default, 3)
+    return [max(0.001, value) for value in coerced]
+
+
+def _iter_scene_urdf_placeholders(cell_def: dict[str, Any]) -> list[dict[str, Any]]:
+    placeholders: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def append(entry: Any, role: str, default_size: list[float]) -> None:
+        if not isinstance(entry, dict):
+            return
+        item_id = str(entry.get("id", entry.get("name", f"{role}_{len(placeholders)+1}"))).strip()
+        if not item_id:
+            item_id = f"{role}_{len(placeholders)+1}"
+        link_name = _safe_link_name(item_id, f"{role}_{len(placeholders)+1}")
+        if link_name in seen:
+            suffix = 2
+            base = link_name
+            while f"{base}_{suffix}" in seen:
+                suffix += 1
+            link_name = f"{base}_{suffix}"
+        seen.add(link_name)
+        xyz, rpy = _pose_xyz_rpy(entry)
+        placeholders.append(
+            {
+                "id": item_id,
+                "link_name": link_name,
+                "role": role,
+                "type": str(entry.get("type", entry.get("shape", role))),
+                "xyz": xyz,
+                "rpy": rpy,
+                "dimensions": _dimensions_xyz(entry, default_size),
+            }
+        )
+
+    top_surfaces = cell_def.get("support_surfaces", []) if isinstance(cell_def.get("support_surfaces"), list) else []
+    for surface in top_surfaces:
+        append(surface, "support_surface", [1.0, 1.0, 0.05])
+
+    environment = cell_def.get("environment", {}) if isinstance(cell_def.get("environment"), dict) else {}
+    env_surfaces = environment.get("support_surfaces", []) if isinstance(environment.get("support_surfaces"), list) else []
+    for surface in env_surfaces:
+        append(surface, "support_surface", [1.0, 1.0, 0.05])
+
+    assets = cell_def.get("assets", []) if isinstance(cell_def.get("assets"), list) else []
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
+        asset_type = str(asset.get("type", asset.get("role", "asset"))).strip().lower()
+        role = "support_surface" if asset_type in SUPPORTED_LAYOUT_ASSET_TYPES else "asset"
+        append(asset, role, [0.25, 0.25, 0.25])
+
+    objects = cell_def.get("objects", []) if isinstance(cell_def.get("objects"), list) else []
+    for obj in objects:
+        append(obj, "object", [0.05, 0.05, 0.05])
+
+    return placeholders
+
+
+def _render_scene_urdf_xacro(
+    package_name: str,
+    cell_def: dict[str, Any],
+    asset_tracking: dict[str, Any],
+    warnings: list[str],
+) -> str:
+    """Render a conservative scene-only xacro for offline review.
+
+    The generated xacro intentionally contains no hardware interfaces, ros2_control blocks,
+    transmissions, driver plugin configuration, or motion-execution wiring. It is a stable
+    placeholder scene contract for RViz/MoveIt review flows until approved robot/tool geometry
+    is connected separately.
+    """
+    robot = cell_def.get("robot", {}) if isinstance(cell_def.get("robot"), dict) else {}
+    end_effector = cell_def.get("end_effector", {}) if isinstance(cell_def.get("end_effector"), dict) else {}
+    robot_geometry_refs = [robot.get(key) for key in ("urdf", "xacro", "mesh", "mesh_path", "description_package")]
+    tool_geometry_refs = [end_effector.get(key) for key in ("urdf", "xacro", "mesh", "mesh_path", "description_package")]
+    if not any(str(ref).strip() for ref in robot_geometry_refs if ref is not None):
+        warnings.append("scene.urdf.xacro uses a placeholder robot comment because robot geometry is not available in cell_definition.yaml.")
+    if not any(str(ref).strip() for ref in tool_geometry_refs if ref is not None):
+        warnings.append("scene.urdf.xacro uses a placeholder tool comment because end-effector geometry is not available in cell_definition.yaml.")
+
+    placeholders = _iter_scene_urdf_placeholders(cell_def)
+    tracked_count = len(asset_tracking.get("tracked", [])) if isinstance(asset_tracking, dict) else 0
+    unsupported_count = len(asset_tracking.get("unsupported", [])) if isinstance(asset_tracking, dict) else 0
+    lines = [
+        "<?xml version=\"1.0\"?>",
+        f"<!-- GENERATED FILE - conservative offline placeholder for {_safe_xml_comment(package_name)}. -->",
+        "<!-- No hardware interfaces, ros2_control blocks, transmissions, or real robot drivers are declared here. -->",
+        f"<!-- Asset tracking summary: tracked={tracked_count}, unsupported={unsupported_count}. See urdf/generated_asset_metadata.yaml. -->",
+        f"<robot name=\"{_xml_attr(package_name)}\" xmlns:xacro=\"http://www.ros.org/wiki/xacro\">",
+        "  <link name=\"world\" />",
+        "",
+        "  <!-- Robot geometry placeholder: connect an approved robot description during reviewed simulation setup. -->",
+        f"  <!-- Requested robot model: {_safe_xml_comment(robot.get('model', 'unknown'))}; planning group: {_safe_xml_comment(robot.get('planning_group', 'unknown'))}. -->",
+        "  <!-- Tool geometry placeholder: connect approved end-effector geometry separately; no execution readiness is implied. -->",
+        f"  <!-- Requested end effector: {_safe_xml_comment(end_effector.get('id', 'unknown'))} ({_safe_xml_comment(end_effector.get('type', 'unknown'))}). -->",
+    ]
+    if not placeholders:
+        lines.extend(
+            [
+                "",
+                "  <!-- No support surfaces or objects were available in cell_definition.yaml for placeholder visuals. -->",
+            ]
+        )
+    for item in placeholders:
+        xyz = " ".join(f"{value:.6g}" for value in item["xyz"])
+        rpy = " ".join(f"{value:.6g}" for value in item["rpy"])
+        size = " ".join(f"{value:.6g}" for value in item["dimensions"])
+        link_name = _xml_attr(item["link_name"])
+        material = "workcell_support_placeholder" if item["role"] == "support_surface" else "workcell_object_placeholder"
+        rgba = "0.45 0.45 0.45 0.55" if item["role"] == "support_surface" else "0.1 0.45 0.9 0.75"
+        lines.extend(
+            [
+                "",
+                f"  <!-- Placeholder {item['role']}: {_safe_xml_comment(item['id'])} ({_safe_xml_comment(item['type'])}). -->",
+                f"  <link name=\"{link_name}\">",
+                "    <visual>",
+                "      <origin xyz=\"0 0 0\" rpy=\"0 0 0\" />",
+                "      <geometry>",
+                f"        <box size=\"{_xml_attr(size)}\" />",
+                "      </geometry>",
+                f"      <material name=\"{material}\"><color rgba=\"{rgba}\" /></material>",
+                "    </visual>",
+                "  </link>",
+                f"  <joint name=\"world_to_{link_name}\" type=\"fixed\">",
+                "    <parent link=\"world\" />",
+                f"    <child link=\"{link_name}\" />",
+                f"    <origin xyz=\"{_xml_attr(xyz)}\" rpy=\"{_xml_attr(rpy)}\" />",
+                "  </joint>",
+            ]
+        )
+    lines.append("</robot>")
+    return "\n".join(lines) + "\n"
 
 
 def _render_demo_launch(package_name: str, source_path: Path) -> str:
@@ -235,6 +495,7 @@ def _render_demo_launch(package_name: str, source_path: Path) -> str:
         "        ),\n"
         f"        LogInfo(msg=[\"[generated scene] package={package_name} source={source_path}\"]),\n"
         "        LogInfo(msg=[\"[generated scene] offline review launch active (no real hardware drivers).\"]),\n"
+        "        LogInfo(msg=[\"[generated scene] placeholder scene xacro is visual-review metadata only; no execution readiness is implied.\"]),\n"
         "        LogInfo(msg=[\"[generated scene] use_fake_hardware:=\", use_fake_hardware]),\n"
         "        LogInfo(msg=[\"[generated scene] launch_rviz:=\", launch_rviz]),\n"
         "    ])\n"
@@ -307,7 +568,13 @@ def _build_readme(
     return "\n".join(lines)
 
 
-def _write_validation_report(report_path: Path, manifest: dict[str, Any], scene_contract: Any, dry_result: Any) -> None:
+def _write_validation_report(
+    report_path: Path,
+    manifest: dict[str, Any],
+    scene_contract: Any,
+    dry_result: Any,
+    generation_warnings: list[str] | None = None,
+) -> None:
     task_status, task_notes = scene_contract.validate_task_recipe_block(manifest)
     lines = [
         "# Generated Scene Validation Report",
@@ -319,9 +586,12 @@ def _write_validation_report(report_path: Path, manifest: dict[str, Any], scene_
         "",
         "## Notes",
     ]
-    for note in list(task_notes) + list(dry_result.notes):
+    notes = list(task_notes) + list(dry_result.notes)
+    if generation_warnings:
+        notes.extend(generation_warnings)
+    for note in notes:
         lines.append(f"- {note}")
-    if len(lines) == 8:
+    if not notes:
         lines.append("- None")
     lines.append("")
     report_path.write_text("\n".join(lines), encoding="utf-8")
@@ -383,24 +653,236 @@ def _build_destinations_export(task_recipe: dict[str, Any]) -> dict[str, Any]:
 
 def _build_environment_objects(cell_def: dict[str, Any]) -> dict[str, Any]:
     objects = []
-    for key, role in [("support_surfaces", "support_surface"), ("environment", "environment"), ("assets", "asset"), ("objects", "object")]:
+
+    def append_entry(entry: dict[str, Any], key: str, role: str) -> None:
+        pose = entry.get("pose") if isinstance(entry.get("pose"), dict) else {}
+        if not pose and (entry.get("pose_xyz") is not None or entry.get("pose_rpy") is not None):
+            pose = {
+                "xyz": entry.get("pose_xyz", [0.0, 0.0, 0.0]),
+                "rpy": entry.get("pose_rpy", [0.0, 0.0, 0.0]),
+                "frame": entry.get("frame", "world"),
+            }
+        objects.append(
+            {
+                "id": entry.get("id", entry.get("name")),
+                "type": entry.get("type", entry.get("shape", key.rstrip("s"))),
+                "role": entry.get("role", role),
+                "dimensions": entry.get("dimensions"),
+                "pose": pose,
+                "primitive_fallback": entry.get("primitive", {"shape": entry.get("shape", "box")}),
+                "mesh": entry.get("mesh") or entry.get("mesh_path"),
+            }
+        )
+
+    for key, role in [("support_surfaces", "support_surface"), ("assets", "asset"), ("objects", "object")]:
         entries = cell_def.get(key, []) if isinstance(cell_def.get(key), list) else []
         for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            objects.append(
-                {
-                    "id": entry.get("id", entry.get("name")),
-                    "type": entry.get("type", key.rstrip("s")),
-                    "role": entry.get("role", role),
-                    "dimensions": entry.get("dimensions"),
-                    "pose": entry.get("pose"),
-                    "primitive_fallback": entry.get("primitive", {"shape": "box"}),
-                    "mesh": entry.get("mesh") or entry.get("mesh_path"),
-                }
-            )
+            if isinstance(entry, dict):
+                append_entry(entry, key, role)
+
+    environment = cell_def.get("environment", {}) if isinstance(cell_def.get("environment"), dict) else {}
+    for key, role in [("support_surfaces", "support_surface"), ("assets", "asset"), ("objects", "object")]:
+        entries = environment.get(key, []) if isinstance(environment.get(key), list) else []
+        for entry in entries:
+            if isinstance(entry, dict):
+                append_entry(entry, f"environment.{key}", role)
+
     return {"schema_version": "environment_objects/v1", "objects": objects}
 
+
+def _float_list(values: Any, size: int, default: float = 0.0) -> list[float]:
+    raw = values if isinstance(values, list) else []
+    out: list[float] = []
+    for idx in range(size):
+        try:
+            value = float(raw[idx]) if idx < len(raw) else default
+            out.append(value if math.isfinite(value) else default)
+        except Exception:
+            out.append(default)
+    return out
+
+
+def _xml_attr(value: Any) -> str:
+    return escape(str(value), {'"': '&quot;'})
+
+
+def _render_scene_urdf_xacro(package_name: str, env_objects: dict[str, Any], cell_definition_path: Path) -> str:
+    """Render a deterministic, preview-only scene URDF from generated environment metadata."""
+    lines = [
+        "<?xml version=\"1.0\"?>",
+        f"<!-- GENERATED FILE - DO NOT EDIT DIRECTLY. Source cell_definition YAML: {_xml_attr(cell_definition_path)} -->",
+        f"<robot name=\"{_xml_attr(package_name)}_scene\">",
+        "  <link name=\"world\"/>",
+    ]
+    objects = env_objects.get("objects") if isinstance(env_objects.get("objects"), list) else []
+    emitted_ids: set[str] = set()
+    for idx, obj in enumerate(objects):
+        if not isinstance(obj, dict):
+            continue
+        raw_id = str(obj.get("id") or f"generated_object_{idx + 1}")
+        safe_id = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in raw_id).strip("_") or f"generated_object_{idx + 1}"
+        if safe_id in emitted_ids:
+            safe_id = f"{safe_id}_{idx + 1}"
+        emitted_ids.add(safe_id)
+        pose = obj.get("pose") if isinstance(obj.get("pose"), dict) else {}
+        xyz = _float_list(pose.get("xyz"), 3, 0.0)
+        rpy = _float_list(pose.get("rpy"), 3, 0.0)
+        dims = _float_list(obj.get("dimensions"), 3, 0.1)
+        dims = [max(0.001, abs(v)) for v in dims]
+        mesh_ref = str(obj.get("mesh") or "").strip()
+        link_name = f"{safe_id}_link"
+        joint_name = f"{safe_id}_joint"
+        visual_name = f"{safe_id}_visual"
+        lines.extend(
+            [
+                f"  <link name=\"{_xml_attr(link_name)}\">",
+                f"    <visual name=\"{_xml_attr(visual_name)}\">",
+                "      <origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>",
+                "      <geometry>",
+            ]
+        )
+        if mesh_ref:
+            lines.append(f"        <mesh filename=\"{_xml_attr(mesh_ref)}\" scale=\"1 1 1\"/>")
+        else:
+            lines.append(f"        <box size=\"{dims[0]:.6g} {dims[1]:.6g} {dims[2]:.6g}\"/>")
+        lines.extend(
+            [
+                "      </geometry>",
+                "    </visual>",
+                "  </link>",
+                f"  <joint name=\"{_xml_attr(joint_name)}\" type=\"fixed\">",
+                "    <parent link=\"world\"/>",
+                f"    <child link=\"{_xml_attr(link_name)}\"/>",
+                f"    <origin xyz=\"{xyz[0]:.6g} {xyz[1]:.6g} {xyz[2]:.6g}\" rpy=\"{rpy[0]:.6g} {rpy[1]:.6g} {rpy[2]:.6g}\"/>",
+                "  </joint>",
+            ]
+        )
+    lines.append("</robot>")
+    return "\n".join(lines) + "\n"
+
+
+def _fallback_scene_visual_mesh_index(
+    package_name: str,
+    package_dir: Path,
+    urdf_path: Path,
+    reason: str,
+    warning_text: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "scene_visual_mesh_index/v1",
+        "scene_name": package_name,
+        "visual_count": 0,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "resolved": 0,
+        "unresolved": 0,
+        "extractor_version": "fallback",
+        "extraction_mode": "fallback_empty_safe_preview",
+        "source_urdf_xacro_path": str(urdf_path),
+        "source_mtime": urdf_path.stat().st_mtime if urdf_path.exists() else None,
+        "safe_for_preview": True,
+        "candidate_mesh_count": 0,
+        "emitted_visual_count": 0,
+        "renderable_mesh_count": 0,
+        "renderable_item_count": 0,
+        "visual_items": [],
+        "items": [],
+        "blockers": [],
+        "warnings": [warning_text],
+        "fallback_reason": reason,
+        "stale_index": False,
+        "stale_reasons": [],
+        "package_resolution_diagnostics": {"resolved_packages": [], "shadowed_packages": [], "resolution_paths": []},
+        "generated_package_dir": str(package_dir),
+    }
+
+
+def _write_scene_visual_mesh_index(package_name: str, package_dir: Path, warnings: list[str]) -> str | None:
+    """Best-effort visual mesh index generation with a preview-safe fallback contract."""
+    generated_dir = package_dir / "generated"
+    index_path = generated_dir / "scene_visual_mesh_index.json"
+    urdf_path = package_dir / "urdf" / "scene.urdf.xacro"
+
+    def write_fallback(reason: str) -> str:
+        warning_text = f"Visual mesh extraction fallback for {index_path}: {reason}"
+        payload = _fallback_scene_visual_mesh_index(package_name, package_dir, urdf_path, reason, warning_text)
+        generated_dir.mkdir(parents=True, exist_ok=True)
+        index_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        warnings.append(warning_text)
+        return warning_text
+
+    if not urdf_path.is_file():
+        return write_fallback(f"source URDF/Xacro does not exist: {urdf_path}")
+    if not MESH_INDEX_EXTRACTOR_PATH.is_file():
+        return write_fallback(f"mesh index extractor is unavailable: {MESH_INDEX_EXTRACTOR_PATH}")
+
+    try:
+        extractor = _load_module("generated_scene_visual_mesh_index_extractor", MESH_INDEX_EXTRACTOR_PATH)
+        xargs = {"use_fake_hardware": "true", "robot_prefix": "", "tool_prefix": ""}
+        xml_text = ""
+        mode = "best_effort_recursive"
+        fallback_reason = ""
+        xacro_cmd: list[str] = []
+        try:
+            expanded_result = extractor.expand_xacro(urdf_path, package_dir, xargs)
+            if isinstance(expanded_result, tuple) and len(expanded_result) >= 4:
+                xml_text, _, fallback_reason, xacro_cmd = expanded_result[:4]
+            elif isinstance(expanded_result, tuple) and len(expanded_result) == 3:
+                xml_text, mode_hint, fallback_reason = expanded_result
+                if mode_hint and not xml_text:
+                    mode = str(mode_hint)
+            if xml_text:
+                mode = "xacro_lite_expanded" if xacro_cmd and xacro_cmd[0] == "xacro-lite" else "xacro_expanded"
+        except Exception as exc:
+            fallback_reason = f"xacro expansion skipped: {exc}"
+        if not xml_text:
+            xml_text = urdf_path.read_text(encoding="utf-8", errors="ignore")
+        package_map, package_diagnostics = extractor.discover_package_map(package_dir)
+        items = extractor.extract_from_urdf(xml_text, package_map)
+        mesh_items = [item for item in items if item.get("geometry_type") == "mesh"]
+        if not mesh_items:
+            return write_fallback(f"no meshes were found in {urdf_path}")
+        unresolved = [
+            item
+            for item in items
+            if any(extractor.contains_placeholder(item.get(key, "")) for key in ("id", "link", "parent_link"))
+        ]
+        safe_for_preview = len(unresolved) == 0 and mode in {"xacro_expanded", "xacro_lite_expanded", "best_effort_recursive"}
+        payload = {
+            "schema_version": "scene_visual_mesh_index/v1",
+            "scene_name": package_name,
+            "visual_count": len(items),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "resolved": sum(1 for item in items if item.get("resolved")),
+            "unresolved": sum(1 for item in items if not item.get("resolved")),
+            "extractor_version": getattr(extractor, "EXTRACTOR_VERSION", "unknown"),
+            "extraction_mode": mode,
+            "xacro_available": extractor.discover_xacro_command()[1],
+            "source_urdf_xacro_path": str(urdf_path),
+            "source_mtime": urdf_path.stat().st_mtime if urdf_path.exists() else None,
+            "source_expanded_urdf_path": "generated/expanded_scene_preview.urdf" if mode == "xacro_expanded" else "",
+            "fallback_reason": fallback_reason or "",
+            "safe_for_preview": safe_for_preview,
+            "unresolved_placeholder_count": len(unresolved),
+            "candidate_mesh_count": len(mesh_items),
+            "emitted_visual_count": len(items),
+            "renderable_mesh_count": sum(
+                1 for item in mesh_items if item.get("render_expected", True)
+            ),
+            "renderable_item_count": sum(1 for item in items if item.get("render_expected", True)),
+            "visual_items": items,
+            "items": items,
+            "blockers": [],
+            "warnings": [fallback_reason] if fallback_reason else [],
+            "stale_index": False,
+            "stale_reasons": [],
+            "xacro_command": xacro_cmd,
+            "package_resolution_diagnostics": package_diagnostics,
+        }
+        generated_dir.mkdir(parents=True, exist_ok=True)
+        index_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return None
+    except Exception as exc:  # pragma: no cover - defensive optional tooling guard
+        return write_fallback(f"mesh index extraction failed but package generation continues: {exc}")
 
 def _resolve_layout_path(layout_path: str, cell_definition_path: Path) -> Path | None:
     raw = Path(layout_path).expanduser()
@@ -920,6 +1402,16 @@ def generate_package(
         print(f"FAIL: Output package already exists: {final_package_dir} (use --force to overwrite)")
         return 1
 
+    source_environment_snapshot = _snapshot_input_file(_source_environment_yaml_path(cell_definition_path))
+    resolved_layout_path = None
+    environment = loaded.get("environment", {}) if isinstance(loaded.get("environment"), dict) else {}
+    layout_ref = environment.get("layout")
+    if isinstance(layout_ref, str) and layout_ref.strip():
+        resolved_layout_path = _resolve_layout_path(layout_ref, cell_definition_path)
+    source_environment_layout_snapshot = _snapshot_input_file(resolved_layout_path)
+    source_workcell_layout_snapshot = _snapshot_input_file(_source_workcell_studio_layout_path(cell_definition_path))
+    source_cell_definition_snapshot = _snapshot_input_file(cell_definition_path)
+
     if dry_run:
         print(f"PASS: dry-run successful for package '{package_name}'")
         print(f"WARN count: {len(warnings)}")
@@ -933,6 +1425,27 @@ def generate_package(
     if staging_dir.exists():
         shutil.rmtree(staging_dir)
     package_dir = staging_dir
+    if package_dir.exists():
+        shutil.rmtree(package_dir)
+
+    (package_dir / "config").mkdir(parents=True, exist_ok=True)
+    (package_dir / "launch").mkdir(parents=True, exist_ok=True)
+    (package_dir / "layout").mkdir(parents=True, exist_ok=True)
+    (package_dir / "urdf").mkdir(parents=True, exist_ok=True)
+    (package_dir / "generated").mkdir(parents=True, exist_ok=True)
+
+    if not _write_snapshot(source_workcell_layout_snapshot, package_dir / "layout" / "workcell_studio_layout.yaml"):
+        layout_source = source_environment_layout_snapshot
+        if layout_source is not None:
+            loaded_layout = yaml.safe_load(layout_source[1])
+            normalized_layout = _normalize_workcell_studio_layout(loaded_layout)
+            (package_dir / "layout" / "workcell_studio_layout.yaml").write_text(
+                yaml.safe_dump(normalized_layout, sort_keys=False),
+                encoding="utf-8",
+            )
+    if source_environment_layout_snapshot is not None:
+        _write_snapshot(source_environment_layout_snapshot, package_dir / "environment_layout.yaml")
+        _write_snapshot(source_environment_layout_snapshot, package_dir / "generated" / "environment_layout.yaml")
 
     scene_manifest_path = package_dir / "scene_manifest.yaml"
     task_recipe_path = package_dir / "config" / "task_recipe.yaml"
@@ -948,6 +1461,23 @@ def generate_package(
         source_snapshot=source_snapshot,
         warnings=warnings,
         scene_generator=scene_generator,
+    scene_manifest_text = _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, scene_manifest)
+    task_recipe_text = _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, task_recipe)
+
+    (package_dir / "package.xml").write_text(_render_package_xml(package_name), encoding="utf-8")
+    (package_dir / "CMakeLists.txt").write_text(_render_cmakelists(package_name), encoding="utf-8")
+    if not _write_snapshot(source_environment_snapshot, package_dir / "environment.yaml"):
+        (package_dir / "environment.yaml").write_text(
+            _render_environment_yaml(loaded, scene_generator, cell_definition_path), encoding="utf-8"
+        )
+    scene_manifest_path.write_text(scene_manifest_text, encoding="utf-8")
+    workcell_yaml_path.write_text(scene_manifest_text, encoding="utf-8")
+    task_recipe_path.write_text(task_recipe_text, encoding="utf-8")
+    (package_dir / "generated" / "task_recipe.preview.yaml").write_text(task_recipe_text, encoding="utf-8")
+    (package_dir / "generated" / "scene_manifest.preview.yaml").write_text(scene_manifest_text, encoding="utf-8")
+    (package_dir / "urdf" / "scene.urdf.xacro").write_text(
+        _render_scene_urdf_xacro(package_name, loaded, asset_tracking, warnings),
+        encoding="utf-8",
     )
 
     (package_dir / "README.md").write_text(
@@ -959,6 +1489,54 @@ def generate_package(
     commissioning_summary = scene_generator.build_commissioning_summary(loaded, warnings, summary.capability_summary)
     (package_dir / "generated" / "commissioning_summary.md").write_text(
         _header_markdown(cell_definition_path) + commissioning_summary,
+        encoding="utf-8",
+    )
+
+    if not _write_snapshot(source_cell_definition_snapshot, package_dir / "cell_definition.yaml"):
+        shutil.copy2(cell_definition_path, package_dir / "cell_definition.yaml")
+
+    (package_dir / "launch" / "demo.launch.py").write_text(
+        _render_demo_launch(package_name, cell_definition_path),
+        encoding="utf-8",
+    )
+
+    (package_dir / "launch" / "README.md").write_text(
+        _header_markdown(cell_definition_path)
+        + "# Launch placeholders\n\nGenerated package includes offline-safe demo.launch.py for review. Reuse validated scene launch assets after review.\n",
+        encoding="utf-8",
+    )
+    (package_dir / "urdf" / "README.md").write_text(
+        _header_markdown(cell_definition_path)
+        + "# URDF placeholders\n\nReview and connect approved robot/environment geometry assets manually.\n",
+        encoding="utf-8",
+    )
+    (package_dir / "urdf" / "scene.urdf.xacro").write_text(
+        _render_scene_urdf_xacro(package_name, loaded, cell_definition_path),
+        encoding="utf-8",
+    )
+    (package_dir / "generated" / "scene_visual_mesh_index.json").write_text(
+        json.dumps(_render_scene_visual_mesh_index(package_name, cell_definition_path), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (package_dir / "urdf" / "generated_asset_metadata.yaml").write_text(
+        _header_yaml(cell_definition_path)
+        + _yaml_text_from(
+            scene_generator,
+            {
+                "schema_version": "generated_asset_metadata/v1",
+                "supported_assets": asset_tracking["supported"],
+                "unsupported_assets": asset_tracking["unsupported"],
+            },
+        ),
+        encoding="utf-8",
+    )
+
+    env_objects = _build_environment_objects(loaded)
+    env_objects["tracked_assets"] = asset_tracking["tracked"]
+    env_objects["unsupported_assets"] = asset_tracking["unsupported"]
+    scene_urdf_path = package_dir / "urdf" / "scene.urdf.xacro"
+    scene_urdf_path.write_text(
+        _render_scene_urdf_xacro(package_name, env_objects, cell_definition_path),
         encoding="utf-8",
     )
 
@@ -1000,6 +1578,13 @@ def generate_package(
                 "existing_scene_manifest_used_as_metadata": bool(source_snapshot.get("existing_scene_manifest")),
             },
         },
+    _write_scene_visual_mesh_index(package_name, package_dir, warnings)
+    _write_validation_report(
+        package_dir / "generated" / "validation_report.md",
+        scene_manifest,
+        scene_contract,
+        dry_result,
+        generation_warnings=warnings,
     )
 
     generated_dir = package_dir / "generated"
@@ -1009,9 +1594,6 @@ def generate_package(
     summary_path = generated_dir / "generated_workcell_summary.json"
     command_script_path = generated_dir / "generated_gated_dry_run_command.sh"
     detected_example = _build_detected_objects_example(loaded, task_recipe)
-    env_objects = _build_environment_objects(loaded)
-    env_objects["tracked_assets"] = asset_tracking["tracked"]
-    env_objects["unsupported_assets"] = asset_tracking["unsupported"]
     destinations = _build_destinations_export(task_recipe)
     detected_example_path.write_text(_yaml_text_from(scene_generator, detected_example), encoding="utf-8")
     env_objects_path.write_text(_yaml_text_from(scene_generator, env_objects), encoding="utf-8")
@@ -1090,6 +1672,14 @@ def generate_package(
         print(f"{prefix}: {rel} -> {contract_path}")
     print(f"PASS: README.md -> {final_package_dir / 'README.md'}")
     print(f"PASS: commissioning_summary -> {final_package_dir / 'generated' / 'commissioning_summary.md'}")
+    status = "PASS" if not warnings else "WARN"
+    print(f"{status}: generated package at {package_dir}")
+    print(f"PASS: package.xml -> {package_dir / 'package.xml'}")
+    print(f"PASS: scene_manifest.yaml -> {scene_manifest_path}")
+    print(f"PASS: scene.urdf.xacro -> {package_dir / 'urdf' / 'scene.urdf.xacro'}")
+    print(f"PASS: README.md -> {package_dir / 'README.md'}")
+    print(f"PASS: commissioning_summary -> {package_dir / 'generated' / 'commissioning_summary.md'}")
+    print(f"PASS: validation_report -> {package_dir / 'generated' / 'validation_report.md'}")
     for warning in warnings:
         print(f"WARN: {warning}")
     return 0
