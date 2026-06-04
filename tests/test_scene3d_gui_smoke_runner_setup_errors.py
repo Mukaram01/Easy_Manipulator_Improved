@@ -56,6 +56,11 @@ def test_gui_smoke_explicit_workspace_no_unboundlocalerror(tmp_path):
     assert "UnboundLocalError" not in combined
 
 
+def test_gui_smoke_unresolved_workspace_records_null_and_path_search(tmp_path, monkeypatch):
+    repo = Path(__file__).resolve().parents[1]
+    out = tmp_path / "smoke.json"
+    shot = tmp_path / "smoke.png"
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
 def test_gui_smoke_invalid_explicit_executable_writes_blocked_json(tmp_path):
     repo = Path(__file__).resolve().parents[1]
     out = tmp_path / "smoke.json"
@@ -76,6 +81,16 @@ def test_gui_smoke_invalid_explicit_executable_writes_blocked_json(tmp_path):
         "ur5_2f_test",
         "--output",
         str(out),
+        "--screenshot",
+        str(shot),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=tmp_path)
+    assert proc.returncode != 0
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["repo_root"] == str(repo)
+    assert payload["workspace_root"] is None
+    assert "workspace_root_inference_failed_path_only_executable_search" in payload["warnings"]
+    assert all("install/workcell_builder" not in p for p in payload["searched_paths"])
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     assert proc.returncode != 0

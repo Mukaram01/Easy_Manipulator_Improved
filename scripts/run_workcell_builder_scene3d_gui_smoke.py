@@ -222,8 +222,8 @@ def _discover_scene_targets(repo_root: Path) -> list[dict[str, Any]]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--repo-root", type=Path, default=_REPO_ROOT)
-    ap.add_argument("--workspace-root", type=Path, default=_REPO_ROOT)
+    ap.add_argument("--repo-root", type=Path, default=None)
+    ap.add_argument("--workspace-root", type=Path, default=None)
     ap.add_argument("--executable", type=Path, default=None)
     ap.add_argument("--scene", default=None)
     ap.add_argument("--all-scenes", action="store_true")
@@ -249,8 +249,17 @@ def main() -> int:
     if not args.all_scenes and args.output is None:
         raise SystemExit("--output is required unless --all-scenes is used")
 
-    repo_root = resolve_repo_root(explicit_repo_root=args.repo_root)
+    repo_root = resolve_repo_root(start=Path.cwd(), explicit_repo_root=args.repo_root)
     workspace_root = resolve_workspace_root(repo_root, args.workspace_root)
+    workspace_root_inference_failed = workspace_root is None
+    workspace_root_json = str(workspace_root) if workspace_root is not None else None
+    resolution_warnings = []
+    if workspace_root_inference_failed:
+        resolution_warnings.append("workspace_root_inference_failed_path_only_executable_search")
+    exe = args.executable or resolve_workcell_builder_executable(workspace_root)
+    if exe is None and not args.all_scenes:
+        searched = [str(p) for p in _resolve_executable_candidates(workspace_root)]
+        warnings = ["runtime_gui_unavailable_static_scene3d_visual_evidence_recorded", *resolution_warnings]
     if args.executable:
         exe = resolve_workcell_builder_executable(workspace_root, explicit_executable=args.executable)
     else:
@@ -301,6 +310,11 @@ def main() -> int:
             "status": "BLOCKED",
             "scene": args.scene or (args.scene_path.name if args.scene_path else None),
             "repo_root": str(repo_root),
+            "workspace_root": workspace_root_json,
+            "executable": None,
+            "searched_paths": searched,
+            "blockers": ["unable_to_resolve_workcell_builder_executable"],
+            "warnings": warnings,
             "workspace_root": str(workspace_root) if workspace_root else None,
             "explicit_executable": str(args.executable),
             "searched_paths": searched,
@@ -362,9 +376,11 @@ def main() -> int:
             scene_json = out_dir / f"scene3d_gui_smoke_{scene_name}.json"
             scene_png = out_dir / f"scene3d_gui_smoke_{scene_name}.png"
             cmd = [
-                sys.executable, str(Path(__file__).resolve()), "--repo-root", str(repo_root), "--workspace-root", str(workspace_root),
+                sys.executable, str(Path(__file__).resolve()), "--repo-root", str(repo_root),
                 "--scene", scene_name, "--output", str(scene_json), "--screenshot", str(scene_png),
             ]
+            if workspace_root is not None:
+                cmd += ["--workspace-root", str(workspace_root)]
             if exe:
                 cmd += ["--executable", str(exe)]
             cmd += ["--timeout-sec", str(args.timeout_sec)]
@@ -424,7 +440,7 @@ def main() -> int:
                 payload["scene_level_blockers"] = blockers
                 _write_json(scene_json, payload)
         summary = {
-            "schema": EXPECTED_SCHEMA, "mode": "all_scenes", "output_dir": str(out_dir), "totals": totals, "results": per_scene,
+            "schema": EXPECTED_SCHEMA, "mode": "all_scenes", "repo_root": str(repo_root), "workspace_root": workspace_root_json, "output_dir": str(out_dir), "totals": totals, "results": per_scene,
             "supported_scene_count": len(per_scene),
             "legacy_incomplete_count": len(legacy_incomplete),
             "ignored_non_scene_count": len(ignored_non_scenes),
@@ -457,6 +473,8 @@ def main() -> int:
                 "status": "FAIL",
                 "scene": args.scene or sp.name,
                 "scene_path": str(sp),
+                "repo_root": str(repo_root),
+                "workspace_root": workspace_root_json,
                 "blockers": [f"scene_path_missing_required_files:{','.join(missing)}"],
                 "warnings": [],
             }
@@ -481,7 +499,7 @@ def main() -> int:
         "scene": args.scene or (args.scene_path.name if args.scene_path else None),
         "scene_path": str(args.scene_path) if args.scene_path else None,
         "repo_root": str(repo_root),
-        "workspace_root": str(workspace_root),
+        "workspace_root": workspace_root_json,
         "executable": str(exe),
         "child_command": " ".join(shlex.quote(x) for x in cmd),
         "cwd": str(repo_root),
@@ -490,6 +508,7 @@ def main() -> int:
         "stdout_log_path": str(stdout_log),
         "stderr_log_path": str(stderr_log),
         "screenshot_path": str(args.screenshot) if args.screenshot else None,
+        "resolution_warnings": resolution_warnings,
     }
 
     timed_out = False
@@ -540,6 +559,13 @@ def main() -> int:
         try:
             payload=json.loads(args.output.read_text(encoding="utf-8"))
             app_status=payload.get("status","UNKNOWN")
+            payload["repo_root"] = str(repo_root)
+            payload["workspace_root"] = workspace_root_json
+            payload.setdefault("executable", str(exe))
+            if resolution_warnings:
+                existing_warnings = payload.get("warnings") if isinstance(payload.get("warnings"), list) else []
+                payload["warnings"] = [*existing_warnings, *[w for w in resolution_warnings if w not in existing_warnings]]
+            _write_json(args.output, payload)
         except Exception:
             payload = {}
         if args.scene_path:
