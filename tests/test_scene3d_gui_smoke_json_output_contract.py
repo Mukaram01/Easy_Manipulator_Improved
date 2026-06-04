@@ -16,6 +16,11 @@ def test_wrapper_writes_fail_json_with_child_diagnostics(tmp_path):
     payload = json.loads(out.read_text(encoding='utf-8'))
     assert payload['status'] == 'FAIL'
     assert 'blockers' in payload and 'app_smoke_json_missing' in payload['blockers']
+    assert 'ros_humble_available' in payload
+    assert payload.get('ros_humble_setup_path') == '/opt/ros/humble/setup.bash'
+    if payload.get('ros_humble_available') is False:
+        assert 'ros_humble_missing' in payload['blockers']
+        assert 'ROS Humble is not available' in payload['blocker_messages']['ros_humble_missing']
 
 
 def test_wrapper_does_not_reuse_stale_success_json(tmp_path):
@@ -37,6 +42,35 @@ def test_wrapper_does_not_reuse_stale_success_json(tmp_path):
     assert payload.get('screenshot_available') is False
 
 
+def test_wrapper_records_ros_missing_when_explicit_executable_writes_pass(tmp_path):
+    repo = Path(__file__).resolve().parents[1]
+    fake_builder = tmp_path / 'fake_builder'
+    fake_builder.write_text(
+        '#!/usr/bin/env bash\n'
+        'out=""\n'
+        'while [[ $# -gt 0 ]]; do\n'
+        '  if [[ "$1" == "--smoke-output" ]]; then out="$2"; shift 2; else shift; fi\n'
+        'done\n'
+        'printf \'{"schema":"workcell_studio_scene3d_gui_smoke/v1","status":"PASS"}\\n\' > "$out"\n',
+        encoding='utf-8',
+    )
+    fake_builder.chmod(0o755)
+    out = tmp_path / 'smoke.json'
+    cmd = [
+        'python3', str(repo / 'scripts/run_workcell_builder_scene3d_gui_smoke.py'),
+        '--repo-root', str(repo), '--workspace-root', str(tmp_path), '--scene', 'ur5_2f_test',
+        '--output', str(out), '--executable', str(fake_builder), '--timeout-sec', '2',
+    ]
+    rc = subprocess.run(cmd, text=True, capture_output=True)
+    payload = json.loads(out.read_text(encoding='utf-8'))
+    if payload.get('ros_humble_available') is False:
+        assert rc.returncode != 0
+        assert payload['status'] == 'FAIL'
+        assert 'ros_humble_missing' in payload['blockers']
+        assert 'ROS Humble is not available' in payload['blocker_messages']['ros_humble_missing']
+    else:
+        assert rc.returncode == 0
+        assert payload['status'] == 'PASS'
 def test_missing_executable_is_blocked_with_static_non_runtime_evidence(tmp_path):
     repo = Path(__file__).resolve().parents[1]
     out = tmp_path / 'smoke.json'

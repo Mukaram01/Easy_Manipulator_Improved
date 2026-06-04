@@ -15,6 +15,64 @@ from scripts.scene3d_scene_discovery import discover_scene3d_scenes
 
 EXPECTED_SCHEMA = "workcell_studio_scene3d_gui_smoke/v1"
 
+ROS_HUMBLE_SETUP_PATH = Path("/opt/ros/humble/setup.bash")
+ROS_HUMBLE_MISSING_MESSAGE = (
+    "ROS Humble is not available: /opt/ros/humble/setup.bash was not found "
+    "and ROS_DISTRO is not humble"
+)
+
+
+def _ros_humble_available() -> bool:
+    return ROS_HUMBLE_SETUP_PATH.is_file() or os.environ.get("ROS_DISTRO") == "humble"
+
+
+def _ros_humble_environment() -> dict[str, Any]:
+    return {
+        "ros_humble_available": _ros_humble_available(),
+        "ros_distro": os.environ.get("ROS_DISTRO", ""),
+        "ros_humble_setup_path": str(ROS_HUMBLE_SETUP_PATH),
+    }
+
+
+def _add_ros_humble_context(payload: dict[str, Any]) -> dict[str, Any]:
+    payload.update(_ros_humble_environment())
+    return payload
+
+
+def _append_unique(values: list[str], value: str) -> None:
+    if value not in values:
+        values.append(value)
+
+
+def _record_ros_humble_missing(payload: dict[str, Any], *, as_blocker: bool) -> None:
+    _add_ros_humble_context(payload)
+    if payload.get("ros_humble_available") is True:
+        return
+    messages = payload.get("blocker_messages")
+    if not isinstance(messages, dict):
+        messages = {}
+    messages["ros_humble_missing"] = ROS_HUMBLE_MISSING_MESSAGE
+    payload["blocker_messages"] = messages
+    target_key = "blockers" if as_blocker else "warnings"
+    values = payload.get(target_key)
+    if not isinstance(values, list):
+        values = []
+    _append_unique(values, "ros_humble_missing")
+    payload[target_key] = values
+    warning_messages = payload.get("warning_messages")
+    if not isinstance(warning_messages, dict):
+        warning_messages = {}
+    warning_messages["ros_humble_missing"] = ROS_HUMBLE_MISSING_MESSAGE
+    payload["warning_messages"] = warning_messages
+
+
+def _executable_can_run(exe: Path | str) -> bool:
+    exe_str = str(exe)
+    if os.sep not in exe_str and shutil.which(exe_str):
+        return True
+    path = Path(exe_str)
+    return path.is_file() and os.access(path, os.X_OK)
+
 def _tail(text: str, lines: int = 40) -> str:
     parts = (text or "").splitlines()
     return "\n".join(parts[-lines:])
@@ -312,6 +370,9 @@ def main() -> int:
         raise SystemExit("--output is required unless --all-scenes is used")
 
     repo_root = resolve_repo_root(explicit_repo_root=args.repo_root)
+    workspace_root = resolve_workspace_root(repo_root, args.workspace_root)
+    ros_env = _ros_humble_environment()
+    exe = args.executable or resolve_workcell_builder_executable(workspace_root)
     workspace_root = resolve_workspace_root(repo_root, args.workspace_root) or repo_root
     exe = resolve_workcell_builder_executable(workspace_root, args.executable)
     executable_resolution = describe_resolution()
@@ -372,6 +433,9 @@ def main() -> int:
                 "static_zones_overlays_renderable": static_evidence.get("zones_overlays_renderable", 0),
             },
         }
+        _add_ros_humble_context(fail_payload)
+        if not ros_env["ros_humble_available"]:
+            _record_ros_humble_missing(fail_payload, as_blocker=True)
         _write_json(args.output, fail_payload)
         print("status=BLOCKED smoke_status=MISSING_EXECUTABLE")
         print("searched_paths=" + " | ".join(searched))
@@ -502,6 +566,9 @@ def main() -> int:
             "legacy_incomplete_scenes": legacy_incomplete,
             "ignored_non_scene_folders": ignored_non_scenes,
         }
+        _add_ros_humble_context(summary)
+        if not ros_env["ros_humble_available"] and exe is None:
+            _record_ros_humble_missing(summary, as_blocker=True)
         _write_json(out_dir / "scene3d_gui_smoke_summary.json", summary)
         md = ["# Scene3D GUI Smoke Summary", "",
               f"- supported_scene_count: {len(per_scene)}",
@@ -534,10 +601,34 @@ def main() -> int:
                 "blockers": [f"scene_path_missing_required_files:{','.join(missing)}"],
                 "warnings": [],
             }
+            _add_ros_humble_context(fail_payload)
+            if not ros_env["ros_humble_available"]:
+                _record_ros_humble_missing(fail_payload, as_blocker=False)
             _write_json(args.output, fail_payload)
             print("status=FAIL smoke_status=SCENE_PATH_INVALID")
             return 1
         args.scene_path = sp
+
+    if exe is not None and not _executable_can_run(exe):
+        fail_payload = {
+            "schema": EXPECTED_SCHEMA,
+            "status": "FAIL",
+            "scene": args.scene or (args.scene_path.name if args.scene_path else None),
+            "scene_path": str(args.scene_path) if args.scene_path else None,
+            "repo_root": str(repo_root),
+            "workspace_root": str(workspace_root),
+            "executable": str(exe),
+            "blockers": ["explicit_workcell_builder_executable_not_runnable" if args.executable else "resolved_workcell_builder_executable_not_runnable"],
+            "warnings": [],
+            "screenshot_available": False,
+        }
+        _add_ros_humble_context(fail_payload)
+        if not ros_env["ros_humble_available"]:
+            _record_ros_humble_missing(fail_payload, as_blocker=True)
+        _write_json(args.output, fail_payload)
+        print("status=FAIL smoke_status=EXECUTABLE_NOT_RUNNABLE")
+        print("executable=" + str(exe))
+        return 1
 
     cmd = build_cmd(exe, args)
     cmd, xwarn, extra_env = with_xvfb(cmd, args.xvfb)
@@ -559,6 +650,7 @@ def main() -> int:
         "repo_root": str(repo_root),
         "workspace_root": workspace_root_json,
         "executable": str(exe),
+        **ros_env,
         "resolved_executable": str(exe),
         "searched_paths": searched_paths,
         "child_command": " ".join(shlex.quote(x) for x in cmd),
@@ -604,6 +696,8 @@ def main() -> int:
 
     blockers = list(xwarn)
     warnings: list[str] = []
+    if not ros_env["ros_humble_available"]:
+        _append_unique(warnings, "ros_humble_missing")
     if timed_out: blockers.append("child_process_timed_out")
     if subprocess_exception:
         blockers.append("child_process_spawn_failed")
@@ -621,6 +715,11 @@ def main() -> int:
             _write_json(args.output, payload)
         except Exception:
             payload = {}
+        _add_ros_humble_context(payload)
+        if not ros_env["ros_humble_available"]:
+            _record_ros_humble_missing(payload, as_blocker=True)
+            payload["status"] = "FAIL"
+            app_status = "FAIL"
             payload = json.loads(args.output.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
                 raise ValueError("app smoke JSON root is not an object")
@@ -674,6 +773,14 @@ def main() -> int:
                 _write_json(args.output, payload)
                 print(f"status=FAIL smoke_status=EXPLICIT_SCENE_PATH_MISMATCH wrapper_status={wrapper_status} expected_scene_path={expected_scene_path} actual_scene_path={actual_scene_path}")
                 return 1
+        _write_json(args.output, payload)
+        wrapper_pass = rc == 0 and ros_env["ros_humble_available"]
+        status_label = "PASS" if wrapper_pass else "FAIL"
+        print(f"status={status_label} smoke_status=APP_JSON_PRESENT wrapper_status={status_label} app_status={app_status} returncode={rc} timed_out={timed_out}")
+        print("child_command=" + diag["child_command"])
+        print("stdout_log_path=" + str(stdout_log))
+        print("stderr_log_path=" + str(stderr_log))
+        return 0 if wrapper_pass else 1
         wrapper_status = "PASS" if rc == 0 and str(app_status).upper() in {"PASS", "OK"} else "FAIL"
         print(f"status={wrapper_status} smoke_status=APP_JSON_PRESENT wrapper_status={wrapper_status} app_status={app_status} returncode={rc} timed_out={timed_out}")
         print("child_command=" + diag["child_command"])
@@ -702,6 +809,8 @@ def main() -> int:
         "blockers": blockers,
         "warnings": warnings,
     }
+    if not ros_env["ros_humble_available"]:
+        _record_ros_humble_missing(fail_payload, as_blocker=bool(args.executable))
     if subprocess_exception:
         fail_payload["subprocess_exception"] = subprocess_exception
         fail_payload["guidance"] = _executable_guidance()
