@@ -422,6 +422,25 @@ def main() -> int:
                 _write_json(args.output, payload)
                 print(f"status=FAIL smoke_status=EXPLICIT_SCENE_PATH_MISMATCH expected_scene_path={expected_scene_path} actual_scene_path={actual_scene_path}")
                 return 1
+        screenshot_missing = bool(args.screenshot and rc == 0 and not args.screenshot.exists())
+        if args.screenshot:
+            payload["screenshot_path"] = str(args.screenshot)
+            payload["screenshot_available"] = bool(args.screenshot.exists())
+        if screenshot_missing:
+            blockers = list(payload.get("blockers") or [])
+            if "screenshot_missing" not in blockers:
+                blockers.append("screenshot_missing")
+            payload["blockers"] = blockers
+            payload["status"] = "FAIL"
+            _write_json(args.output, payload)
+            print(f"status=FAIL smoke_status=SCREENSHOT_MISSING wrapper_status=PASS app_status={app_status} returncode={rc} timed_out={timed_out}")
+            print("child_command=" + diag["child_command"])
+            print("stdout_log_path=" + str(stdout_log))
+            print("stderr_log_path=" + str(stderr_log))
+            return 0
+
+        if args.screenshot and payload:
+            _write_json(args.output, payload)
         print(f"status=PASS smoke_status=APP_JSON_PRESENT wrapper_status=PASS app_status={app_status} returncode={rc} timed_out={timed_out}")
         print("child_command=" + diag["child_command"])
         print("stdout_log_path=" + str(stdout_log))
