@@ -200,6 +200,8 @@ def _write_blocked_executable_payload(
     payload: dict[str, Any] = {
         "schema": EXPECTED_SCHEMA,
         "status": status,
+        "smoke_status": "MISSING_EXECUTABLE",
+        "runtime_available": False,
         "scene": args.scene or (args.scene_path.name if args.scene_path else None),
         "repo_root": str(repo_root),
         "workspace_root": str(workspace_root) if workspace_root else None,
@@ -378,65 +380,14 @@ def main() -> int:
     executable_resolution = describe_resolution()
     if exe is None and not args.all_scenes:
         searched = list(executable_resolution.get("searched_executable_paths") or [str(p) for p in _resolve_executable_candidates(workspace_root)])
-        scene_dir = _resolve_single_scene_dir(repo_root, args.scene, args.scene_path)
-        static_evidence = _static_scene3d_visual_evidence(scene_dir)
-        message = (
-            "workcell_builder executable was not found; build workcell_builder in a ROS Humble "
-            "workspace and source install/setup.bash, or pass --executable"
+        _write_blocked_executable_payload(
+            args.output,
+            repo_root=repo_root,
+            workspace_root=workspace_root,
+            args=args,
+            searched=searched,
+            blocker="workcell_builder_executable_missing",
         )
-        fail_payload = {
-            "schema": EXPECTED_SCHEMA,
-            "status": "BLOCKED",
-            "runtime_available": False,
-            "scene": args.scene or (args.scene_path.name if args.scene_path else None),
-            "repo_root": str(repo_root),
-            "workspace_root": workspace_root_json,
-            "executable": None,
-            "searched_paths": searched,
-            "executable_resolution": executable_resolution,
-            "blockers": ["unable_to_resolve_workcell_builder_executable"],
-            "warnings": warnings,
-            "workspace_root": str(workspace_root) if workspace_root else None,
-            "explicit_executable": str(args.executable),
-            "searched_paths": searched,
-            "blockers": [blocker],
-            "guidance": _executable_guidance(),
-            "totals": {"PASS": 0, "FAIL": 0, "BLOCKED": 1, "LEGACY_INCOMPLETE": 0},
-            "results": [],
-        }
-        _write_json(out_dir / "scene3d_gui_smoke_summary.json", summary)
-        print(f"status=BLOCKED smoke_status={blocker}")
-            "message": message,
-            "smoke_status": "MISSING_EXECUTABLE",
-            "blockers": ["workcell_builder_executable_missing"],
-            "warnings": ["runtime_gui_unavailable_static_scene3d_visual_evidence_recorded"],
-            "screenshot_available": False,
-            "scene_dir": str(scene_dir) if scene_dir else None,
-            "static_scene3d_visual_evidence": static_evidence,
-            "non_runtime_static_headless_renderability_counts": {
-                "runtime_available": False,
-                "physical_mesh_items_renderable": static_evidence.get("physical_mesh_items_renderable", 0),
-                "primitive_fallback_items_renderable": static_evidence.get("primitive_fallback_items_renderable", 0),
-                "zones_overlays_renderable": static_evidence.get("zones_overlays_renderable", 0),
-                "note": "Static/headless renderability counts are non-runtime evidence and do not prove GUI rendering passed.",
-            },
-            "render_debug_counters": {
-                "runtime_available": False,
-                "physical_mesh_items_rendered": 0,
-                "primitive_fallback_items_rendered": 0,
-                "zones_overlays_rendered": 0,
-                "skipped_helper_static_fallback_items": static_evidence.get("skipped_helper_static_fallback_items", 0),
-                "unresolved_transform_items": static_evidence.get("unresolved_transform_items", 0),
-                "missing_mesh_items": static_evidence.get("missing_mesh_items", 0),
-                "static_physical_mesh_items_renderable": static_evidence.get("physical_mesh_items_renderable", 0),
-                "static_primitive_fallback_items_renderable": static_evidence.get("primitive_fallback_items_renderable", 0),
-                "static_zones_overlays_renderable": static_evidence.get("zones_overlays_renderable", 0),
-            },
-        }
-        _add_ros_humble_context(fail_payload)
-        if not ros_env["ros_humble_available"]:
-            _record_ros_humble_missing(fail_payload, as_blocker=True)
-        _write_json(args.output, fail_payload)
         print("status=BLOCKED smoke_status=MISSING_EXECUTABLE")
         print("searched_paths=" + " | ".join(searched))
         return 1
@@ -709,20 +660,12 @@ def main() -> int:
 
     if args.output.exists():
         try:
-            payload=json.loads(args.output.read_text(encoding="utf-8"))
-            payload = _enforce_physical_render_evidence(payload)
-            app_status=payload.get("status","UNKNOWN")
-            _write_json(args.output, payload)
-        except Exception:
-            payload = {}
-        _add_ros_humble_context(payload)
-        if not ros_env["ros_humble_available"]:
-            _record_ros_humble_missing(payload, as_blocker=True)
-            payload["status"] = "FAIL"
-            app_status = "FAIL"
             payload = json.loads(args.output.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
                 raise ValueError("app smoke JSON root is not an object")
+            payload = _enforce_physical_render_evidence(payload)
+            app_status = str(payload.get("status", "UNKNOWN") or "UNKNOWN")
+            _add_ros_humble_context(payload)
         except Exception as exc:  # noqa: BLE001
             blockers.append(f"app_smoke_json_unreadable:{exc}")
             fail_payload = {
@@ -773,29 +716,16 @@ def main() -> int:
                 _write_json(args.output, payload)
                 print(f"status=FAIL smoke_status=EXPLICIT_SCENE_PATH_MISMATCH wrapper_status={wrapper_status} expected_scene_path={expected_scene_path} actual_scene_path={actual_scene_path}")
                 return 1
-        _write_json(args.output, payload)
-        wrapper_pass = rc == 0 and ros_env["ros_humble_available"]
-        status_label = "PASS" if wrapper_pass else "FAIL"
-        print(f"status={status_label} smoke_status=APP_JSON_PRESENT wrapper_status={status_label} app_status={app_status} returncode={rc} timed_out={timed_out}")
-        print("child_command=" + diag["child_command"])
-        print("stdout_log_path=" + str(stdout_log))
-        print("stderr_log_path=" + str(stderr_log))
-        return 0 if wrapper_pass else 1
         wrapper_status = "PASS" if rc == 0 and str(app_status).upper() in {"PASS", "OK"} else "FAIL"
+        if str(app_status).upper() == "BLOCKED" or timed_out:
+            wrapper_status = "BLOCKED"
+        payload["wrapper_status"] = wrapper_status
+        _write_json(args.output, payload)
         print(f"status={wrapper_status} smoke_status=APP_JSON_PRESENT wrapper_status={wrapper_status} app_status={app_status} returncode={rc} timed_out={timed_out}")
         print("child_command=" + diag["child_command"])
         print("stdout_log_path=" + str(stdout_log))
         print("stderr_log_path=" + str(stderr_log))
-        return 0 if rc == 0 and str(app_status).upper() in {"PASS", "OK"} else 1
-        _write_json(args.output, payload)
-        effective_status = app_status
-        if app_status.upper() not in {"FAIL", "BLOCKED"} and wrapper_status != "PASS":
-            effective_status = wrapper_status
-        print(f"status={effective_status} smoke_status=APP_JSON_PRESENT wrapper_status={wrapper_status} app_status={app_status} returncode={rc} timed_out={timed_out}")
-        print("child_command=" + diag["child_command"])
-        print("stdout_log_path=" + str(stdout_log))
-        print("stderr_log_path=" + str(stderr_log))
-        return 0 if wrapper_status == "PASS" and app_status.upper() not in {"FAIL", "BLOCKED"} else 1
+        return 0 if wrapper_status == "PASS" else 1
 
     blockers.append("app_smoke_json_missing")
     if "--scene3d-smoke" in diag["child_command"] and "--smoke-output" in diag["child_command"]:

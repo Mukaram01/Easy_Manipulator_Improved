@@ -406,11 +406,9 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
     warnings = [str(item) for item in visual.get("warnings", [])]
     visual_status = str(visual.get("visual_quality_status") or "").upper()
     runtime_blocked = smoke_evidence["smoke_status"] == BLOCKED or smoke_evidence["runtime_available"] is False
-    summary_state = PASS if visual_status == PASS else FAIL
-    if not mesh_index.is_file() or not smoke_json.is_file() or runtime_blocked:
     runtime_available = bool(visual.get("runtime_available"))
     summary_state = PASS if visual_status == PASS else FAIL
-    if visual_status == BLOCKED or not mesh_index.is_file() or not smoke_json.is_file() or not runtime_available:
+    if visual_status == BLOCKED or not mesh_index.is_file() or not smoke_json.is_file() or runtime_blocked or not runtime_available:
         summary_state = BLOCKED
     if summary_state == PASS:
         summary_message = "Scene3D visual-quality evidence passes"
@@ -418,6 +416,8 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
         summary_message = "Scene3D runtime GUI evidence is blocked or unavailable; visual evidence cannot be evaluated as a failure"
     else:
         summary_message = "Scene3D visual-quality evidence is blocked or failing"
+    smoke_context = dict(smoke_evidence)
+    smoke_context.pop("runtime_available", None)
     visual_result = _result(
         summary_state,
         summary_message,
@@ -441,7 +441,7 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
             "helper_overlay_count": visual.get("helper_overlay_count", 0),
             "diagnostic_fallback_count": visual.get("diagnostic_fallback_count", 0),
         },
-        **smoke_evidence,
+        **smoke_context,
     )
 
     source_count = int(visual.get("mesh_source_count") or 0) + int(visual.get("primitive_source_count") or 0)
@@ -477,7 +477,7 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
         physical_rendered_count=physical_rendered,
         runtime_available=runtime_available,
         mesh_failure_summary_by_reason_code=visual.get("mesh_failure_summary_by_reason_code", {}),
-        **smoke_evidence,
+        **smoke_context,
         blockers=physical_blockers,
     )
     return visual_result, physical_result
