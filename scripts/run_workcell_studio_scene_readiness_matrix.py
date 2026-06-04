@@ -316,16 +316,37 @@ def _check_cell_definition(scene_dir: Path) -> dict[str, Any]:
     )
 
 
+def _smoke_indicates_runtime_screenshot_evidence(smoke_json: Path) -> bool:
+    if not smoke_json.is_file():
+        return False
+    payload, error = _load_json_file(smoke_json)
+    if error or not isinstance(payload, dict):
+        return False
+    if bool(payload.get("screenshot_available")):
+        return True
+    if str(payload.get("screenshot_path") or "").strip():
+        return True
+    for key in ("render_debug_counters", "counters", "static_scene3d_visual_evidence"):
+        nested = payload.get(key)
+        if isinstance(nested, dict) and bool(nested.get("runtime_available")):
+            return True
+    return bool(payload.get("runtime_available"))
+
+
 def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     mesh_index = scene_dir / "generated" / "scene_visual_mesh_index.json"
     smoke_json = scene_dir / "generated" / "scene3d_gui_smoke.json"
+    screenshot_path = scene_dir / "generated" / "scene3d_gui_smoke.png" if _smoke_indicates_runtime_screenshot_evidence(smoke_json) else None
     visual = evaluate_scene3d_visual_quality(
         scene_name=scene_name,
         scene_dir=scene_dir,
         mesh_index_path=mesh_index,
         smoke_json_path=smoke_json,
+        screenshot_path=screenshot_path,
     )
     blockers = [str(item) for item in visual.get("blockers", [])]
+    visual_blocker_reasons = [str(item) for item in visual.get("blocker_reasons", [])]
+    physical_blockers = [blocker for blocker in blockers if not blocker.startswith("screenshot_missing:") and blocker != "screenshot_missing"]
     warnings = [str(item) for item in visual.get("warnings", [])]
     visual_status = str(visual.get("visual_quality_status") or "").upper()
     summary_state = PASS if visual_status == PASS else FAIL
@@ -337,7 +358,9 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
         visual_quality_status=visual.get("visual_quality_status"),
         mesh_index_path=str(mesh_index),
         smoke_json=str(smoke_json),
+        screenshot_path=str(screenshot_path) if screenshot_path is not None else None,
         blockers=blockers,
+        blocker_reasons=visual_blocker_reasons,
         warnings=warnings,
         counters={
             "total_payload_count": visual.get("total_payload_count", 0),
@@ -366,9 +389,9 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
     elif physical_rendered <= 0:
         physical_state = FAIL
         physical_message = "no credible physical mesh/primitive render evidence was recorded"
-    elif blockers:
+    elif physical_blockers:
         physical_state = FAIL
-        physical_message = "physical render evidence exists but visual-quality blockers remain"
+        physical_message = "physical render evidence exists but physical visual-quality blockers remain"
     else:
         physical_state = PASS
         physical_message = "credible physical mesh/primitive visual evidence is present"
@@ -378,6 +401,7 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
         source_geometry_count=source_count,
         physical_rendered_count=physical_rendered,
         mesh_failure_summary_by_reason_code=visual.get("mesh_failure_summary_by_reason_code", {}),
+        blockers=physical_blockers,
     )
     return visual_result, physical_result
 
