@@ -706,8 +706,60 @@ def _xml_attr(value: Any) -> str:
     return escape(str(value), {'"': '&quot;'})
 
 
-def _render_scene_urdf_xacro(package_name: str, env_objects: dict[str, Any], cell_definition_path: Path) -> str:
-    """Render a deterministic, preview-only scene URDF from generated environment metadata."""
+def _render_scene_urdf_xacro(
+    package_name: str,
+    env_objects: dict[str, Any],
+    cell_definition_path: Path | dict[str, Any],
+    warnings: list[str] | None = None,
+) -> str:
+    """Render a deterministic, preview-only scene URDF from generated environment metadata.
+
+    The fourth argument is retained for older unit tests/callers that passed
+    ``asset_tracking`` and ``warnings`` into the former renderer overload.
+    """
+    if isinstance(cell_definition_path, dict):
+        # Compatibility path for older callers that pass a full cell definition,
+        # asset tracking, and a warnings list. Keep this conservative placeholder
+        # contract separate from the generated environment-object renderer below.
+        cell_def = env_objects
+        asset_tracking = cell_definition_path
+        if warnings is not None:
+            warnings.append("scene.urdf.xacro uses a placeholder robot comment because robot geometry is not available in cell_definition.yaml.")
+            warnings.append("scene.urdf.xacro uses a placeholder tool comment because end-effector geometry is not available in cell_definition.yaml.")
+        placeholders = _iter_scene_urdf_placeholders(cell_def)
+        tracked_count = len(asset_tracking.get("tracked", [])) if isinstance(asset_tracking, dict) else 0
+        unsupported_count = len(asset_tracking.get("unsupported", [])) if isinstance(asset_tracking, dict) else 0
+        lines = [
+            "<?xml version=\"1.0\"?>",
+            f"<!-- GENERATED FILE - conservative offline placeholder for {_safe_xml_comment(package_name)}. -->",
+            "<!-- No hardware interfaces, ros2_control blocks, transmissions, or real robot drivers are declared here. -->",
+            f"<!-- Asset tracking summary: tracked={tracked_count}, unsupported={unsupported_count}. See urdf/generated_asset_metadata.yaml. -->",
+            f"<robot name=\"{_xml_attr(package_name)}\" xmlns:xacro=\"http://www.ros.org/wiki/xacro\">",
+            "  <link name=\"world\" />",
+        ]
+        for item in placeholders:
+            xyz = " ".join(f"{value:.6g}" for value in item["xyz"])
+            rpy = " ".join(f"{value:.6g}" for value in item["rpy"])
+            size = " ".join(f"{value:.6g}" for value in item["dimensions"])
+            link_name = _xml_attr(item["link_name"])
+            lines.extend(
+                [
+                    f"  <link name=\"{link_name}\">",
+                    "    <visual>",
+                    "      <geometry>",
+                    f"        <box size=\"{_xml_attr(size)}\" />",
+                    "      </geometry>",
+                    "    </visual>",
+                    "  </link>",
+                    f"  <joint name=\"world_to_{link_name}\" type=\"fixed\">",
+                    "    <parent link=\"world\" />",
+                    f"    <child link=\"{link_name}\" />",
+                    f"    <origin xyz=\"{_xml_attr(xyz)}\" rpy=\"{_xml_attr(rpy)}\" />",
+                    "  </joint>",
+                ]
+            )
+        lines.append("</robot>")
+        return "\n".join(lines) + "\n"
     lines = [
         "<?xml version=\"1.0\"?>",
         f"<!-- GENERATED FILE - DO NOT EDIT DIRECTLY. Source cell_definition YAML: {_xml_attr(cell_definition_path)} -->",
@@ -777,7 +829,7 @@ def _fallback_scene_visual_mesh_index(
         "unresolved": 0,
         "extractor_version": "fallback",
         "extraction_mode": "fallback_empty_safe_preview",
-        "source_urdf_xacro_path": str(urdf_path),
+        "source_urdf_xacro_path": "urdf/scene.urdf.xacro",
         "source_mtime": urdf_path.stat().st_mtime if urdf_path.exists() else None,
         "safe_for_preview": True,
         "candidate_mesh_count": 0,
@@ -857,7 +909,7 @@ def _write_scene_visual_mesh_index(package_name: str, package_dir: Path, warning
             "extractor_version": getattr(extractor, "EXTRACTOR_VERSION", "unknown"),
             "extraction_mode": mode,
             "xacro_available": extractor.discover_xacro_command()[1],
-            "source_urdf_xacro_path": str(urdf_path),
+            "source_urdf_xacro_path": "urdf/scene.urdf.xacro",
             "source_mtime": urdf_path.stat().st_mtime if urdf_path.exists() else None,
             "source_expanded_urdf_path": "generated/expanded_scene_preview.urdf" if mode == "xacro_expanded" else "",
             "fallback_reason": fallback_reason or "",
@@ -1026,6 +1078,7 @@ def _snapshot_scene_package_inputs(
         "layout_ref_data": None,
         "canonical_layout_path": None,
         "canonical_layout_data": None,
+        "canonical_layout_text": None,
         "existing_scene_manifest": None,
     }
 
@@ -1053,6 +1106,7 @@ def _snapshot_scene_package_inputs(
     canonical_layout = scene_dir / "layout" / "workcell_studio_layout.yaml"
     if canonical_layout.is_file():
         snapshot["canonical_layout_path"] = canonical_layout
+        snapshot["canonical_layout_text"] = canonical_layout.read_text(encoding="utf-8")
         try:
             snapshot["canonical_layout_data"] = _safe_load_yaml_file(canonical_layout)
         except Exception as exc:
@@ -1252,22 +1306,36 @@ def write_scene_package_contract(
 
     (package_dir / "package.xml").write_text(_render_package_xml(package_name), encoding="utf-8")
     (package_dir / "CMakeLists.txt").write_text(_render_cmakelists(package_name), encoding="utf-8")
-    (package_dir / "environment.yaml").write_text(
-        _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, _synthesize_environment(loaded, package_name, source_snapshot)),
-        encoding="utf-8",
-    )
+    environment_text = source_snapshot.get("environment_text")
+    if isinstance(environment_text, str):
+        (package_dir / "environment.yaml").write_text(environment_text, encoding="utf-8")
+    else:
+        (package_dir / "environment.yaml").write_text(
+            _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, _synthesize_environment(loaded, package_name, source_snapshot)),
+            encoding="utf-8",
+        )
     (package_dir / "cell_definition.yaml").write_text(str(source_snapshot["cell_definition_text"]), encoding="utf-8")
     scene_manifest_path.write_text(scene_manifest_text, encoding="utf-8")
     (package_dir / "workcell.yaml").write_text(scene_manifest_text, encoding="utf-8")
     task_recipe_path.write_text(task_recipe_text, encoding="utf-8")
     (package_dir / "generated" / "task_recipe.preview.yaml").write_text(task_recipe_text, encoding="utf-8")
     (package_dir / "generated" / "scene_manifest.preview.yaml").write_text(scene_manifest_text, encoding="utf-8")
-    (package_dir / "layout" / "workcell_studio_layout.yaml").write_text(
-        yaml.safe_dump(_build_contract_layout(package_name, loaded, source_snapshot), sort_keys=False),
+    canonical_layout_text = source_snapshot.get("canonical_layout_text")
+    if isinstance(canonical_layout_text, str):
+        (package_dir / "layout" / "workcell_studio_layout.yaml").write_text(canonical_layout_text, encoding="utf-8")
+    else:
+        (package_dir / "layout" / "workcell_studio_layout.yaml").write_text(
+            yaml.safe_dump(_build_contract_layout(package_name, loaded, source_snapshot), sort_keys=False),
+            encoding="utf-8",
+        )
+    (package_dir / "launch" / "demo.launch.py").write_text(_render_demo_launch(package_name, cell_definition_path), encoding="utf-8")
+    env_objects = _build_environment_objects(loaded)
+    env_objects["tracked_assets"] = asset_tracking["tracked"]
+    env_objects["unsupported_assets"] = asset_tracking["unsupported"]
+    (package_dir / "urdf" / "scene.urdf.xacro").write_text(
+        _render_scene_urdf_xacro(package_name, env_objects, cell_definition_path),
         encoding="utf-8",
     )
-    (package_dir / "launch" / "demo.launch.py").write_text(_render_demo_launch(package_name, cell_definition_path), encoding="utf-8")
-    (package_dir / "urdf" / "scene.urdf.xacro").write_text(_render_placeholder_scene_xacro(package_name, warnings), encoding="utf-8")
     (package_dir / "generated" / "scene_visual_mesh_index.json").write_text(
         json.dumps(
             _fallback_visual_mesh_index(
@@ -1434,124 +1502,31 @@ def generate_package(
     (package_dir / "urdf").mkdir(parents=True, exist_ok=True)
     (package_dir / "generated").mkdir(parents=True, exist_ok=True)
 
-    if not _write_snapshot(source_workcell_layout_snapshot, package_dir / "layout" / "workcell_studio_layout.yaml"):
-        layout_source = source_environment_layout_snapshot
-        if layout_source is not None:
-            loaded_layout = yaml.safe_load(layout_source[1])
-            normalized_layout = _normalize_workcell_studio_layout(loaded_layout)
-            (package_dir / "layout" / "workcell_studio_layout.yaml").write_text(
-                yaml.safe_dump(normalized_layout, sort_keys=False),
-                encoding="utf-8",
-            )
     if source_environment_layout_snapshot is not None:
         _write_snapshot(source_environment_layout_snapshot, package_dir / "environment_layout.yaml")
         _write_snapshot(source_environment_layout_snapshot, package_dir / "generated" / "environment_layout.yaml")
 
     scene_manifest_path = package_dir / "scene_manifest.yaml"
-    task_recipe_path = package_dir / "config" / "task_recipe.yaml"
-
-    required_contract_files = write_scene_package_contract(
-        package_dir=package_dir,
-        package_name=package_name,
-        cell_definition_path=cell_definition_path,
-        loaded=loaded,
-        scene_manifest=scene_manifest,
-        task_recipe=task_recipe,
-        asset_tracking=asset_tracking,
-        source_snapshot=source_snapshot,
-        warnings=warnings,
-        scene_generator=scene_generator,
-    scene_manifest_text = _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, scene_manifest)
-    task_recipe_text = _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, task_recipe)
-
-    (package_dir / "package.xml").write_text(_render_package_xml(package_name), encoding="utf-8")
-    (package_dir / "CMakeLists.txt").write_text(_render_cmakelists(package_name), encoding="utf-8")
-    if not _write_snapshot(source_environment_snapshot, package_dir / "environment.yaml"):
-        (package_dir / "environment.yaml").write_text(
-            _render_environment_yaml(loaded, scene_generator, cell_definition_path), encoding="utf-8"
-        )
-    scene_manifest_path.write_text(scene_manifest_text, encoding="utf-8")
-    workcell_yaml_path.write_text(scene_manifest_text, encoding="utf-8")
-    task_recipe_path.write_text(task_recipe_text, encoding="utf-8")
-    (package_dir / "generated" / "task_recipe.preview.yaml").write_text(task_recipe_text, encoding="utf-8")
-    (package_dir / "generated" / "scene_manifest.preview.yaml").write_text(scene_manifest_text, encoding="utf-8")
-    (package_dir / "urdf" / "scene.urdf.xacro").write_text(
-        _render_scene_urdf_xacro(package_name, loaded, asset_tracking, warnings),
-        encoding="utf-8",
-    )
-
-    (package_dir / "README.md").write_text(
-        _header_markdown(cell_definition_path)
-        + _build_readme(loaded, package_name, cell_definition_path, final_package_dir, warnings, scene_generator, summary.capability_summary),
-        encoding="utf-8",
-    )
-
-    commissioning_summary = scene_generator.build_commissioning_summary(loaded, warnings, summary.capability_summary)
-    (package_dir / "generated" / "commissioning_summary.md").write_text(
-        _header_markdown(cell_definition_path) + commissioning_summary,
-        encoding="utf-8",
-    )
-
-    if not _write_snapshot(source_cell_definition_snapshot, package_dir / "cell_definition.yaml"):
-        shutil.copy2(cell_definition_path, package_dir / "cell_definition.yaml")
-
-    (package_dir / "launch" / "demo.launch.py").write_text(
-        _render_demo_launch(package_name, cell_definition_path),
-        encoding="utf-8",
-    )
-
-    (package_dir / "launch" / "README.md").write_text(
-        _header_markdown(cell_definition_path)
-        + "# Launch placeholders\n\nGenerated package includes offline-safe demo.launch.py for review. Reuse validated scene launch assets after review.\n",
-        encoding="utf-8",
-    )
-    (package_dir / "urdf" / "README.md").write_text(
-        _header_markdown(cell_definition_path)
-        + "# URDF placeholders\n\nReview and connect approved robot/environment geometry assets manually.\n",
-        encoding="utf-8",
-    )
-    (package_dir / "urdf" / "scene.urdf.xacro").write_text(
-        _render_scene_urdf_xacro(package_name, loaded, cell_definition_path),
-        encoding="utf-8",
-    )
-    (package_dir / "generated" / "scene_visual_mesh_index.json").write_text(
-        json.dumps(_render_scene_visual_mesh_index(package_name, cell_definition_path), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    (package_dir / "urdf" / "generated_asset_metadata.yaml").write_text(
-        _header_yaml(cell_definition_path)
-        + _yaml_text_from(
-            scene_generator,
-            {
-                "schema_version": "generated_asset_metadata/v1",
-                "supported_assets": asset_tracking["supported"],
-                "unsupported_assets": asset_tracking["unsupported"],
-            },
-        ),
-        encoding="utf-8",
-    )
+    dry_scene_manifest_path = package_dir / "generated" / "scene_manifest.dry_run.yaml"
+    dry_scene_manifest_text = _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, scene_manifest)
+    dry_scene_manifest_path.write_text(dry_scene_manifest_text, encoding="utf-8")
 
     env_objects = _build_environment_objects(loaded)
     env_objects["tracked_assets"] = asset_tracking["tracked"]
     env_objects["unsupported_assets"] = asset_tracking["unsupported"]
-    scene_urdf_path = package_dir / "urdf" / "scene.urdf.xacro"
-    scene_urdf_path.write_text(
-        _render_scene_urdf_xacro(package_name, env_objects, cell_definition_path),
-        encoding="utf-8",
-    )
 
-    dry_result = dry_runner.evaluate_scene(package_name, scene_manifest_path)
+    dry_result = dry_runner.evaluate_scene(package_name, dry_scene_manifest_path)
 
     with tempfile.TemporaryDirectory(prefix="generated_workcell_plan_") as tmp_plan_dir:
         original_plan_dir = plan_generator.OUTPUT_DIR
         plan_generator.OUTPUT_DIR = Path(tmp_plan_dir)
         try:
-            plan_result = plan_generator.evaluate_scene(package_name, scene_manifest_path)
+            plan_result = plan_generator.evaluate_scene(package_name, dry_scene_manifest_path)
             if plan_result.status == "PASS" and plan_result.markdown_path and plan_result.json_path:
                 shutil.copy2(plan_result.markdown_path, package_dir / "generated" / "execution_plan.md")
                 shutil.copy2(plan_result.json_path, package_dir / "generated" / "execution_plan.json")
             else:
-                warnings.append(_summarize_plan_failure(plan_result, dry_result, scene_manifest_path))
+                warnings.append(_summarize_plan_failure(plan_result, dry_result, dry_scene_manifest_path))
         finally:
             plan_generator.OUTPUT_DIR = original_plan_dir
 
@@ -1578,6 +1553,28 @@ def generate_package(
                 "existing_scene_manifest_used_as_metadata": bool(source_snapshot.get("existing_scene_manifest")),
             },
         },
+    )
+
+    (package_dir / "README.md").write_text(
+        _header_markdown(cell_definition_path)
+        + _build_readme(
+            loaded,
+            package_name,
+            cell_definition_path,
+            final_package_dir,
+            warnings,
+            scene_generator,
+            summary.capability_summary,
+        ),
+        encoding="utf-8",
+    )
+
+    commissioning_summary = scene_generator.build_commissioning_summary(loaded, warnings, summary.capability_summary)
+    (package_dir / "generated" / "commissioning_summary.md").write_text(
+        _header_markdown(cell_definition_path) + commissioning_summary,
+        encoding="utf-8",
+    )
+
     _write_scene_visual_mesh_index(package_name, package_dir, warnings)
     _write_validation_report(
         package_dir / "generated" / "validation_report.md",
@@ -1672,14 +1669,6 @@ def generate_package(
         print(f"{prefix}: {rel} -> {contract_path}")
     print(f"PASS: README.md -> {final_package_dir / 'README.md'}")
     print(f"PASS: commissioning_summary -> {final_package_dir / 'generated' / 'commissioning_summary.md'}")
-    status = "PASS" if not warnings else "WARN"
-    print(f"{status}: generated package at {package_dir}")
-    print(f"PASS: package.xml -> {package_dir / 'package.xml'}")
-    print(f"PASS: scene_manifest.yaml -> {scene_manifest_path}")
-    print(f"PASS: scene.urdf.xacro -> {package_dir / 'urdf' / 'scene.urdf.xacro'}")
-    print(f"PASS: README.md -> {package_dir / 'README.md'}")
-    print(f"PASS: commissioning_summary -> {package_dir / 'generated' / 'commissioning_summary.md'}")
-    print(f"PASS: validation_report -> {package_dir / 'generated' / 'validation_report.md'}")
     for warning in warnings:
         print(f"WARN: {warning}")
     return 0
