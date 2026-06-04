@@ -7,11 +7,14 @@ import argparse
 import copy
 import importlib.util
 import json
+import math
 import shutil
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from xml.sax.saxutils import escape
 
 import yaml
 
@@ -23,6 +26,7 @@ SCENE_CONTRACT_PATH = SCRIPTS_DIR / "validate_scene_contract.py"
 DRY_RUN_PATH = SCRIPTS_DIR / "dry_run_task_recipe.py"
 PLAN_PATH = SCRIPTS_DIR / "generate_task_execution_plan.py"
 BUNDLE_EXPORT_PATH = SCRIPTS_DIR / "export_workcell_bundle.py"
+MESH_INDEX_EXTRACTOR_PATH = SCRIPTS_DIR / "extract_scene_urdf_visual_mesh_index.py"
 TEMPLATE_DIR = REPO_ROOT / "workcell_builder" / "workcell_builder" / "templates" / "ros2" / "humble"
 
 SUPPORTED_TASK_TYPES = {
@@ -294,7 +298,13 @@ def _build_readme(
     return "\n".join(lines)
 
 
-def _write_validation_report(report_path: Path, manifest: dict[str, Any], scene_contract: Any, dry_result: Any) -> None:
+def _write_validation_report(
+    report_path: Path,
+    manifest: dict[str, Any],
+    scene_contract: Any,
+    dry_result: Any,
+    generation_warnings: list[str] | None = None,
+) -> None:
     task_status, task_notes = scene_contract.validate_task_recipe_block(manifest)
     lines = [
         "# Generated Scene Validation Report",
@@ -306,9 +316,12 @@ def _write_validation_report(report_path: Path, manifest: dict[str, Any], scene_
         "",
         "## Notes",
     ]
-    for note in list(task_notes) + list(dry_result.notes):
+    notes = list(task_notes) + list(dry_result.notes)
+    if generation_warnings:
+        notes.extend(generation_warnings)
+    for note in notes:
         lines.append(f"- {note}")
-    if len(lines) == 8:
+    if not notes:
         lines.append("- None")
     lines.append("")
     report_path.write_text("\n".join(lines), encoding="utf-8")
@@ -370,24 +383,236 @@ def _build_destinations_export(task_recipe: dict[str, Any]) -> dict[str, Any]:
 
 def _build_environment_objects(cell_def: dict[str, Any]) -> dict[str, Any]:
     objects = []
-    for key, role in [("support_surfaces", "support_surface"), ("environment", "environment"), ("assets", "asset"), ("objects", "object")]:
+
+    def append_entry(entry: dict[str, Any], key: str, role: str) -> None:
+        pose = entry.get("pose") if isinstance(entry.get("pose"), dict) else {}
+        if not pose and (entry.get("pose_xyz") is not None or entry.get("pose_rpy") is not None):
+            pose = {
+                "xyz": entry.get("pose_xyz", [0.0, 0.0, 0.0]),
+                "rpy": entry.get("pose_rpy", [0.0, 0.0, 0.0]),
+                "frame": entry.get("frame", "world"),
+            }
+        objects.append(
+            {
+                "id": entry.get("id", entry.get("name")),
+                "type": entry.get("type", entry.get("shape", key.rstrip("s"))),
+                "role": entry.get("role", role),
+                "dimensions": entry.get("dimensions"),
+                "pose": pose,
+                "primitive_fallback": entry.get("primitive", {"shape": entry.get("shape", "box")}),
+                "mesh": entry.get("mesh") or entry.get("mesh_path"),
+            }
+        )
+
+    for key, role in [("support_surfaces", "support_surface"), ("assets", "asset"), ("objects", "object")]:
         entries = cell_def.get(key, []) if isinstance(cell_def.get(key), list) else []
         for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            objects.append(
-                {
-                    "id": entry.get("id", entry.get("name")),
-                    "type": entry.get("type", key.rstrip("s")),
-                    "role": entry.get("role", role),
-                    "dimensions": entry.get("dimensions"),
-                    "pose": entry.get("pose"),
-                    "primitive_fallback": entry.get("primitive", {"shape": "box"}),
-                    "mesh": entry.get("mesh") or entry.get("mesh_path"),
-                }
-            )
+            if isinstance(entry, dict):
+                append_entry(entry, key, role)
+
+    environment = cell_def.get("environment", {}) if isinstance(cell_def.get("environment"), dict) else {}
+    for key, role in [("support_surfaces", "support_surface"), ("assets", "asset"), ("objects", "object")]:
+        entries = environment.get(key, []) if isinstance(environment.get(key), list) else []
+        for entry in entries:
+            if isinstance(entry, dict):
+                append_entry(entry, f"environment.{key}", role)
+
     return {"schema_version": "environment_objects/v1", "objects": objects}
 
+
+def _float_list(values: Any, size: int, default: float = 0.0) -> list[float]:
+    raw = values if isinstance(values, list) else []
+    out: list[float] = []
+    for idx in range(size):
+        try:
+            value = float(raw[idx]) if idx < len(raw) else default
+            out.append(value if math.isfinite(value) else default)
+        except Exception:
+            out.append(default)
+    return out
+
+
+def _xml_attr(value: Any) -> str:
+    return escape(str(value), {'"': '&quot;'})
+
+
+def _render_scene_urdf_xacro(package_name: str, env_objects: dict[str, Any], cell_definition_path: Path) -> str:
+    """Render a deterministic, preview-only scene URDF from generated environment metadata."""
+    lines = [
+        "<?xml version=\"1.0\"?>",
+        f"<!-- GENERATED FILE - DO NOT EDIT DIRECTLY. Source cell_definition YAML: {_xml_attr(cell_definition_path)} -->",
+        f"<robot name=\"{_xml_attr(package_name)}_scene\">",
+        "  <link name=\"world\"/>",
+    ]
+    objects = env_objects.get("objects") if isinstance(env_objects.get("objects"), list) else []
+    emitted_ids: set[str] = set()
+    for idx, obj in enumerate(objects):
+        if not isinstance(obj, dict):
+            continue
+        raw_id = str(obj.get("id") or f"generated_object_{idx + 1}")
+        safe_id = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in raw_id).strip("_") or f"generated_object_{idx + 1}"
+        if safe_id in emitted_ids:
+            safe_id = f"{safe_id}_{idx + 1}"
+        emitted_ids.add(safe_id)
+        pose = obj.get("pose") if isinstance(obj.get("pose"), dict) else {}
+        xyz = _float_list(pose.get("xyz"), 3, 0.0)
+        rpy = _float_list(pose.get("rpy"), 3, 0.0)
+        dims = _float_list(obj.get("dimensions"), 3, 0.1)
+        dims = [max(0.001, abs(v)) for v in dims]
+        mesh_ref = str(obj.get("mesh") or "").strip()
+        link_name = f"{safe_id}_link"
+        joint_name = f"{safe_id}_joint"
+        visual_name = f"{safe_id}_visual"
+        lines.extend(
+            [
+                f"  <link name=\"{_xml_attr(link_name)}\">",
+                f"    <visual name=\"{_xml_attr(visual_name)}\">",
+                "      <origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>",
+                "      <geometry>",
+            ]
+        )
+        if mesh_ref:
+            lines.append(f"        <mesh filename=\"{_xml_attr(mesh_ref)}\" scale=\"1 1 1\"/>")
+        else:
+            lines.append(f"        <box size=\"{dims[0]:.6g} {dims[1]:.6g} {dims[2]:.6g}\"/>")
+        lines.extend(
+            [
+                "      </geometry>",
+                "    </visual>",
+                "  </link>",
+                f"  <joint name=\"{_xml_attr(joint_name)}\" type=\"fixed\">",
+                "    <parent link=\"world\"/>",
+                f"    <child link=\"{_xml_attr(link_name)}\"/>",
+                f"    <origin xyz=\"{xyz[0]:.6g} {xyz[1]:.6g} {xyz[2]:.6g}\" rpy=\"{rpy[0]:.6g} {rpy[1]:.6g} {rpy[2]:.6g}\"/>",
+                "  </joint>",
+            ]
+        )
+    lines.append("</robot>")
+    return "\n".join(lines) + "\n"
+
+
+def _fallback_scene_visual_mesh_index(
+    package_name: str,
+    package_dir: Path,
+    urdf_path: Path,
+    reason: str,
+    warning_text: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "scene_visual_mesh_index/v1",
+        "scene_name": package_name,
+        "visual_count": 0,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "resolved": 0,
+        "unresolved": 0,
+        "extractor_version": "fallback",
+        "extraction_mode": "fallback_empty_safe_preview",
+        "source_urdf_xacro_path": str(urdf_path),
+        "source_mtime": urdf_path.stat().st_mtime if urdf_path.exists() else None,
+        "safe_for_preview": True,
+        "candidate_mesh_count": 0,
+        "emitted_visual_count": 0,
+        "renderable_mesh_count": 0,
+        "renderable_item_count": 0,
+        "visual_items": [],
+        "items": [],
+        "blockers": [],
+        "warnings": [warning_text],
+        "fallback_reason": reason,
+        "stale_index": False,
+        "stale_reasons": [],
+        "package_resolution_diagnostics": {"resolved_packages": [], "shadowed_packages": [], "resolution_paths": []},
+        "generated_package_dir": str(package_dir),
+    }
+
+
+def _write_scene_visual_mesh_index(package_name: str, package_dir: Path, warnings: list[str]) -> str | None:
+    """Best-effort visual mesh index generation with a preview-safe fallback contract."""
+    generated_dir = package_dir / "generated"
+    index_path = generated_dir / "scene_visual_mesh_index.json"
+    urdf_path = package_dir / "urdf" / "scene.urdf.xacro"
+
+    def write_fallback(reason: str) -> str:
+        warning_text = f"Visual mesh extraction fallback for {index_path}: {reason}"
+        payload = _fallback_scene_visual_mesh_index(package_name, package_dir, urdf_path, reason, warning_text)
+        generated_dir.mkdir(parents=True, exist_ok=True)
+        index_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        warnings.append(warning_text)
+        return warning_text
+
+    if not urdf_path.is_file():
+        return write_fallback(f"source URDF/Xacro does not exist: {urdf_path}")
+    if not MESH_INDEX_EXTRACTOR_PATH.is_file():
+        return write_fallback(f"mesh index extractor is unavailable: {MESH_INDEX_EXTRACTOR_PATH}")
+
+    try:
+        extractor = _load_module("generated_scene_visual_mesh_index_extractor", MESH_INDEX_EXTRACTOR_PATH)
+        xargs = {"use_fake_hardware": "true", "robot_prefix": "", "tool_prefix": ""}
+        xml_text = ""
+        mode = "best_effort_recursive"
+        fallback_reason = ""
+        xacro_cmd: list[str] = []
+        try:
+            expanded_result = extractor.expand_xacro(urdf_path, package_dir, xargs)
+            if isinstance(expanded_result, tuple) and len(expanded_result) >= 4:
+                xml_text, _, fallback_reason, xacro_cmd = expanded_result[:4]
+            elif isinstance(expanded_result, tuple) and len(expanded_result) == 3:
+                xml_text, mode_hint, fallback_reason = expanded_result
+                if mode_hint and not xml_text:
+                    mode = str(mode_hint)
+            if xml_text:
+                mode = "xacro_lite_expanded" if xacro_cmd and xacro_cmd[0] == "xacro-lite" else "xacro_expanded"
+        except Exception as exc:
+            fallback_reason = f"xacro expansion skipped: {exc}"
+        if not xml_text:
+            xml_text = urdf_path.read_text(encoding="utf-8", errors="ignore")
+        package_map, package_diagnostics = extractor.discover_package_map(package_dir)
+        items = extractor.extract_from_urdf(xml_text, package_map)
+        mesh_items = [item for item in items if item.get("geometry_type") == "mesh"]
+        if not mesh_items:
+            return write_fallback(f"no meshes were found in {urdf_path}")
+        unresolved = [
+            item
+            for item in items
+            if any(extractor.contains_placeholder(item.get(key, "")) for key in ("id", "link", "parent_link"))
+        ]
+        safe_for_preview = len(unresolved) == 0 and mode in {"xacro_expanded", "xacro_lite_expanded", "best_effort_recursive"}
+        payload = {
+            "schema_version": "scene_visual_mesh_index/v1",
+            "scene_name": package_name,
+            "visual_count": len(items),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "resolved": sum(1 for item in items if item.get("resolved")),
+            "unresolved": sum(1 for item in items if not item.get("resolved")),
+            "extractor_version": getattr(extractor, "EXTRACTOR_VERSION", "unknown"),
+            "extraction_mode": mode,
+            "xacro_available": extractor.discover_xacro_command()[1],
+            "source_urdf_xacro_path": str(urdf_path),
+            "source_mtime": urdf_path.stat().st_mtime if urdf_path.exists() else None,
+            "source_expanded_urdf_path": "generated/expanded_scene_preview.urdf" if mode == "xacro_expanded" else "",
+            "fallback_reason": fallback_reason or "",
+            "safe_for_preview": safe_for_preview,
+            "unresolved_placeholder_count": len(unresolved),
+            "candidate_mesh_count": len(mesh_items),
+            "emitted_visual_count": len(items),
+            "renderable_mesh_count": sum(
+                1 for item in mesh_items if item.get("render_expected", True)
+            ),
+            "renderable_item_count": sum(1 for item in items if item.get("render_expected", True)),
+            "visual_items": items,
+            "items": items,
+            "blockers": [],
+            "warnings": [fallback_reason] if fallback_reason else [],
+            "stale_index": False,
+            "stale_reasons": [],
+            "xacro_command": xacro_cmd,
+            "package_resolution_diagnostics": package_diagnostics,
+        }
+        generated_dir.mkdir(parents=True, exist_ok=True)
+        index_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return None
+    except Exception as exc:  # pragma: no cover - defensive optional tooling guard
+        return write_fallback(f"mesh index extraction failed but package generation continues: {exc}")
 
 def _resolve_layout_path(layout_path: str, cell_definition_path: Path) -> Path | None:
     raw = Path(layout_path).expanduser()
@@ -662,6 +887,15 @@ def generate_package(
         encoding="utf-8",
     )
 
+    env_objects = _build_environment_objects(loaded)
+    env_objects["tracked_assets"] = asset_tracking["tracked"]
+    env_objects["unsupported_assets"] = asset_tracking["unsupported"]
+    scene_urdf_path = package_dir / "urdf" / "scene.urdf.xacro"
+    scene_urdf_path.write_text(
+        _render_scene_urdf_xacro(package_name, env_objects, cell_definition_path),
+        encoding="utf-8",
+    )
+
     dry_result = dry_runner.evaluate_scene(package_name, scene_manifest_path)
 
     with tempfile.TemporaryDirectory(prefix="generated_workcell_plan_") as tmp_plan_dir:
@@ -677,7 +911,14 @@ def generate_package(
         finally:
             plan_generator.OUTPUT_DIR = original_plan_dir
 
-    _write_validation_report(package_dir / "generated" / "validation_report.md", scene_manifest, scene_contract, dry_result)
+    _write_scene_visual_mesh_index(package_name, package_dir, warnings)
+    _write_validation_report(
+        package_dir / "generated" / "validation_report.md",
+        scene_manifest,
+        scene_contract,
+        dry_result,
+        generation_warnings=warnings,
+    )
 
     generated_dir = package_dir / "generated"
     detected_example_path = generated_dir / "generated_detected_objects_example.yaml"
@@ -686,9 +927,6 @@ def generate_package(
     summary_path = generated_dir / "generated_workcell_summary.json"
     command_script_path = generated_dir / "generated_gated_dry_run_command.sh"
     detected_example = _build_detected_objects_example(loaded, task_recipe)
-    env_objects = _build_environment_objects(loaded)
-    env_objects["tracked_assets"] = asset_tracking["tracked"]
-    env_objects["unsupported_assets"] = asset_tracking["unsupported"]
     destinations = _build_destinations_export(task_recipe)
     detected_example_path.write_text(_yaml_text_from(scene_generator, detected_example), encoding="utf-8")
     env_objects_path.write_text(_yaml_text_from(scene_generator, env_objects), encoding="utf-8")
