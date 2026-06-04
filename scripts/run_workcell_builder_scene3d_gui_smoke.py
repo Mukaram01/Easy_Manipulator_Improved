@@ -453,6 +453,7 @@ def main() -> int:
             stale_path.unlink()
     child_env = os.environ.copy()
     child_env.update(extra_env)
+    searched_paths = [str(p) for p in _resolve_executable_candidates(workspace_root or repo_root)]
     diag = {
         "schema": EXPECTED_SCHEMA,
         "scene": args.scene or (args.scene_path.name if args.scene_path else None),
@@ -460,8 +461,8 @@ def main() -> int:
         "repo_root": str(repo_root),
         "workspace_root": workspace_root_json,
         "executable": str(exe),
-        "searched_paths": list(executable_resolution.get("searched_executable_paths") or []),
-        "executable_resolution": executable_resolution,
+        "resolved_executable": str(exe),
+        "searched_paths": searched_paths,
         "child_command": " ".join(shlex.quote(x) for x in cmd),
         "cwd": str(repo_root),
         "env": {k: child_env.get(k, "") for k in ["DISPLAY", "WAYLAND_DISPLAY", "QT_QPA_PLATFORM", "QT_OPENGL", "LIBGL_ALWAYS_SOFTWARE", "XDG_SESSION_TYPE"]},
@@ -515,58 +516,69 @@ def main() -> int:
     if rc not in (0, None): blockers.append("child_process_returned_nonzero")
 
     if args.output.exists():
-        app_status="UNKNOWN"
-        payload: dict[str, Any] = {}
         try:
-            payload=json.loads(args.output.read_text(encoding="utf-8"))
-            app_status=payload.get("status","UNKNOWN")
-            payload["repo_root"] = str(repo_root)
-            payload["workspace_root"] = workspace_root_json
-            payload.setdefault("executable", str(exe))
-            if resolution_warnings:
-                existing_warnings = payload.get("warnings") if isinstance(payload.get("warnings"), list) else []
-                payload["warnings"] = [*existing_warnings, *[w for w in resolution_warnings if w not in existing_warnings]]
-            _write_json(args.output, payload)
-        except Exception:
-            payload = {}
+            payload = json.loads(args.output.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("app smoke JSON root is not an object")
+        except Exception as exc:  # noqa: BLE001
+            blockers.append(f"app_smoke_json_unreadable:{exc}")
+            fail_payload = {
+                **diag,
+                "status": "FAIL",
+                "wrapper_status": "FAIL",
+                "blockers": blockers,
+                "warnings": warnings,
+            }
+            _write_json(args.output, fail_payload)
+            print(f"status=FAIL smoke_status=APP_JSON_UNREADABLE error={exc}")
+            print("child_command=" + diag["child_command"])
+            print("stdout_log_path=" + str(stdout_log))
+            print("stderr_log_path=" + str(stderr_log))
+            return 1
+
+        app_status = str(payload.get("status", "UNKNOWN") or "UNKNOWN")
+        wrapper_status = "BLOCKED" if timed_out else ("FAIL" if rc not in (0, None) else "PASS")
+        wrapper_evidence = {
+            "wrapper_status": wrapper_status,
+            "resolved_executable": diag["resolved_executable"],
+            "searched_paths": diag["searched_paths"],
+            "repo_root": diag["repo_root"],
+            "workspace_root": diag["workspace_root"],
+            "scene_path": diag["scene_path"],
+            "child_command": diag["child_command"],
+            "child_returncode": rc,
+            "timed_out": timed_out,
+            "stdout_log_path": str(stdout_log),
+            "stderr_log_path": str(stderr_log),
+            "stdout_tail": stdout_tail,
+            "stderr_tail": stderr_tail,
+            "screenshot_path": diag["screenshot_path"],
+            "screenshot_available": diag["screenshot_available"],
+        }
+        payload.update(wrapper_evidence)
         if args.scene_path:
             expected_scene_path = str(args.scene_path.resolve())
             counters = payload.get("counters") if isinstance(payload.get("counters"), dict) else {}
             actual_scene_path = str(counters.get("inspector_scene_path") or counters.get("selected_scene_path") or "").strip()
             if Path(actual_scene_path).as_posix() != Path(expected_scene_path).as_posix():
-                blockers = list(payload.get("blockers") or [])
-                blockers.append("explicit_scene_path_not_loaded")
+                scene_path_blockers = list(payload.get("blockers") or [])
+                scene_path_blockers.append("explicit_scene_path_not_loaded")
                 payload["status"] = "FAIL"
                 payload["expected_scene_path"] = expected_scene_path
                 payload["actual_scene_path"] = actual_scene_path
-                payload["blockers"] = blockers
+                payload["blockers"] = scene_path_blockers
                 _write_json(args.output, payload)
-                print(f"status=FAIL smoke_status=EXPLICIT_SCENE_PATH_MISMATCH expected_scene_path={expected_scene_path} actual_scene_path={actual_scene_path}")
+                print(f"status=FAIL smoke_status=EXPLICIT_SCENE_PATH_MISMATCH wrapper_status={wrapper_status} expected_scene_path={expected_scene_path} actual_scene_path={actual_scene_path}")
                 return 1
-        screenshot_missing = bool(args.screenshot and rc == 0 and not args.screenshot.exists())
-        if args.screenshot:
-            payload["screenshot_path"] = str(args.screenshot)
-            payload["screenshot_available"] = bool(args.screenshot.exists())
-        if screenshot_missing:
-            blockers = list(payload.get("blockers") or [])
-            if "screenshot_missing" not in blockers:
-                blockers.append("screenshot_missing")
-            payload["blockers"] = blockers
-            payload["status"] = "FAIL"
-            _write_json(args.output, payload)
-            print(f"status=FAIL smoke_status=SCREENSHOT_MISSING wrapper_status=PASS app_status={app_status} returncode={rc} timed_out={timed_out}")
-            print("child_command=" + diag["child_command"])
-            print("stdout_log_path=" + str(stdout_log))
-            print("stderr_log_path=" + str(stderr_log))
-            return 0
-
-        if args.screenshot and payload:
-            _write_json(args.output, payload)
-        print(f"status=PASS smoke_status=APP_JSON_PRESENT wrapper_status=PASS app_status={app_status} returncode={rc} timed_out={timed_out}")
+        _write_json(args.output, payload)
+        effective_status = app_status
+        if app_status.upper() not in {"FAIL", "BLOCKED"} and wrapper_status != "PASS":
+            effective_status = wrapper_status
+        print(f"status={effective_status} smoke_status=APP_JSON_PRESENT wrapper_status={wrapper_status} app_status={app_status} returncode={rc} timed_out={timed_out}")
         print("child_command=" + diag["child_command"])
         print("stdout_log_path=" + str(stdout_log))
         print("stderr_log_path=" + str(stderr_log))
-        return 0 if rc == 0 else 1
+        return 0 if wrapper_status == "PASS" and app_status.upper() not in {"FAIL", "BLOCKED"} else 1
 
     blockers.append("app_smoke_json_missing")
     if "--scene3d-smoke" in diag["child_command"] and "--smoke-output" in diag["child_command"]:
