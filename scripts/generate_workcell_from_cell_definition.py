@@ -12,6 +12,7 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+from xml.sax.saxutils import escape
 
 import yaml
 
@@ -195,6 +196,185 @@ ament_package()
 
 
 
+def _xml_attr(value: Any) -> str:
+    return escape(str(value), {'"': '&quot;', "'": '&apos;'})
+
+
+def _safe_xml_comment(text: str) -> str:
+    return str(text).replace("--", "-").replace("<", "(").replace(">", ")")
+
+
+def _safe_link_name(value: Any, fallback: str) -> str:
+    raw = str(value or fallback).strip() or fallback
+    safe = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in raw)
+    if not safe or safe[0].isdigit():
+        safe = f"link_{safe}"
+    return safe
+
+
+def _coerce_float_list(value: Any, default: list[float], expected_len: int) -> list[float]:
+    if isinstance(value, list):
+        out: list[float] = []
+        for item in value[:expected_len]:
+            try:
+                out.append(float(item))
+            except (TypeError, ValueError):
+                break
+        if len(out) == expected_len:
+            return out
+    return list(default)
+
+
+def _pose_xyz_rpy(entry: dict[str, Any]) -> tuple[list[float], list[float]]:
+    pose = entry.get("pose") if isinstance(entry.get("pose"), dict) else {}
+    xyz = entry.get("pose_xyz", pose.get("xyz"))
+    rpy = entry.get("pose_rpy", pose.get("rpy"))
+    return (
+        _coerce_float_list(xyz, [0.0, 0.0, 0.0], 3),
+        _coerce_float_list(rpy, [0.0, 0.0, 0.0], 3),
+    )
+
+
+def _dimensions_xyz(entry: dict[str, Any], default: list[float]) -> list[float]:
+    dimensions = entry.get("dimensions")
+    primitive = entry.get("primitive") if isinstance(entry.get("primitive"), dict) else {}
+    if not isinstance(dimensions, list):
+        dimensions = primitive.get("dimensions") or primitive.get("size")
+    coerced = _coerce_float_list(dimensions, default, 3)
+    return [max(0.001, value) for value in coerced]
+
+
+def _iter_scene_urdf_placeholders(cell_def: dict[str, Any]) -> list[dict[str, Any]]:
+    placeholders: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def append(entry: Any, role: str, default_size: list[float]) -> None:
+        if not isinstance(entry, dict):
+            return
+        item_id = str(entry.get("id", entry.get("name", f"{role}_{len(placeholders)+1}"))).strip()
+        if not item_id:
+            item_id = f"{role}_{len(placeholders)+1}"
+        link_name = _safe_link_name(item_id, f"{role}_{len(placeholders)+1}")
+        if link_name in seen:
+            suffix = 2
+            base = link_name
+            while f"{base}_{suffix}" in seen:
+                suffix += 1
+            link_name = f"{base}_{suffix}"
+        seen.add(link_name)
+        xyz, rpy = _pose_xyz_rpy(entry)
+        placeholders.append(
+            {
+                "id": item_id,
+                "link_name": link_name,
+                "role": role,
+                "type": str(entry.get("type", entry.get("shape", role))),
+                "xyz": xyz,
+                "rpy": rpy,
+                "dimensions": _dimensions_xyz(entry, default_size),
+            }
+        )
+
+    top_surfaces = cell_def.get("support_surfaces", []) if isinstance(cell_def.get("support_surfaces"), list) else []
+    for surface in top_surfaces:
+        append(surface, "support_surface", [1.0, 1.0, 0.05])
+
+    environment = cell_def.get("environment", {}) if isinstance(cell_def.get("environment"), dict) else {}
+    env_surfaces = environment.get("support_surfaces", []) if isinstance(environment.get("support_surfaces"), list) else []
+    for surface in env_surfaces:
+        append(surface, "support_surface", [1.0, 1.0, 0.05])
+
+    assets = cell_def.get("assets", []) if isinstance(cell_def.get("assets"), list) else []
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
+        asset_type = str(asset.get("type", asset.get("role", "asset"))).strip().lower()
+        role = "support_surface" if asset_type in SUPPORTED_LAYOUT_ASSET_TYPES else "asset"
+        append(asset, role, [0.25, 0.25, 0.25])
+
+    objects = cell_def.get("objects", []) if isinstance(cell_def.get("objects"), list) else []
+    for obj in objects:
+        append(obj, "object", [0.05, 0.05, 0.05])
+
+    return placeholders
+
+
+def _render_scene_urdf_xacro(
+    package_name: str,
+    cell_def: dict[str, Any],
+    asset_tracking: dict[str, Any],
+    warnings: list[str],
+) -> str:
+    """Render a conservative scene-only xacro for offline review.
+
+    The generated xacro intentionally contains no hardware interfaces, ros2_control blocks,
+    transmissions, driver plugin configuration, or motion-execution wiring. It is a stable
+    placeholder scene contract for RViz/MoveIt review flows until approved robot/tool geometry
+    is connected separately.
+    """
+    robot = cell_def.get("robot", {}) if isinstance(cell_def.get("robot"), dict) else {}
+    end_effector = cell_def.get("end_effector", {}) if isinstance(cell_def.get("end_effector"), dict) else {}
+    robot_geometry_refs = [robot.get(key) for key in ("urdf", "xacro", "mesh", "mesh_path", "description_package")]
+    tool_geometry_refs = [end_effector.get(key) for key in ("urdf", "xacro", "mesh", "mesh_path", "description_package")]
+    if not any(str(ref).strip() for ref in robot_geometry_refs if ref is not None):
+        warnings.append("scene.urdf.xacro uses a placeholder robot comment because robot geometry is not available in cell_definition.yaml.")
+    if not any(str(ref).strip() for ref in tool_geometry_refs if ref is not None):
+        warnings.append("scene.urdf.xacro uses a placeholder tool comment because end-effector geometry is not available in cell_definition.yaml.")
+
+    placeholders = _iter_scene_urdf_placeholders(cell_def)
+    tracked_count = len(asset_tracking.get("tracked", [])) if isinstance(asset_tracking, dict) else 0
+    unsupported_count = len(asset_tracking.get("unsupported", [])) if isinstance(asset_tracking, dict) else 0
+    lines = [
+        "<?xml version=\"1.0\"?>",
+        f"<!-- GENERATED FILE - conservative offline placeholder for {_safe_xml_comment(package_name)}. -->",
+        "<!-- No hardware interfaces, ros2_control blocks, transmissions, or real robot drivers are declared here. -->",
+        f"<!-- Asset tracking summary: tracked={tracked_count}, unsupported={unsupported_count}. See urdf/generated_asset_metadata.yaml. -->",
+        f"<robot name=\"{_xml_attr(package_name)}\" xmlns:xacro=\"http://www.ros.org/wiki/xacro\">",
+        "  <link name=\"world\" />",
+        "",
+        "  <!-- Robot geometry placeholder: connect an approved robot description during reviewed simulation setup. -->",
+        f"  <!-- Requested robot model: {_safe_xml_comment(robot.get('model', 'unknown'))}; planning group: {_safe_xml_comment(robot.get('planning_group', 'unknown'))}. -->",
+        "  <!-- Tool geometry placeholder: connect approved end-effector geometry separately; no execution readiness is implied. -->",
+        f"  <!-- Requested end effector: {_safe_xml_comment(end_effector.get('id', 'unknown'))} ({_safe_xml_comment(end_effector.get('type', 'unknown'))}). -->",
+    ]
+    if not placeholders:
+        lines.extend(
+            [
+                "",
+                "  <!-- No support surfaces or objects were available in cell_definition.yaml for placeholder visuals. -->",
+            ]
+        )
+    for item in placeholders:
+        xyz = " ".join(f"{value:.6g}" for value in item["xyz"])
+        rpy = " ".join(f"{value:.6g}" for value in item["rpy"])
+        size = " ".join(f"{value:.6g}" for value in item["dimensions"])
+        link_name = _xml_attr(item["link_name"])
+        material = "workcell_support_placeholder" if item["role"] == "support_surface" else "workcell_object_placeholder"
+        rgba = "0.45 0.45 0.45 0.55" if item["role"] == "support_surface" else "0.1 0.45 0.9 0.75"
+        lines.extend(
+            [
+                "",
+                f"  <!-- Placeholder {item['role']}: {_safe_xml_comment(item['id'])} ({_safe_xml_comment(item['type'])}). -->",
+                f"  <link name=\"{link_name}\">",
+                "    <visual>",
+                "      <origin xyz=\"0 0 0\" rpy=\"0 0 0\" />",
+                "      <geometry>",
+                f"        <box size=\"{_xml_attr(size)}\" />",
+                "      </geometry>",
+                f"      <material name=\"{material}\"><color rgba=\"{rgba}\" /></material>",
+                "    </visual>",
+                "  </link>",
+                f"  <joint name=\"world_to_{link_name}\" type=\"fixed\">",
+                "    <parent link=\"world\" />",
+                f"    <child link=\"{link_name}\" />",
+                f"    <origin xyz=\"{_xml_attr(xyz)}\" rpy=\"{_xml_attr(rpy)}\" />",
+                "  </joint>",
+            ]
+        )
+    lines.append("</robot>")
+    return "\n".join(lines) + "\n"
+
+
 def _render_demo_launch(package_name: str, source_path: Path) -> str:
     return (
         "#!/usr/bin/env python3\n"
@@ -222,6 +402,7 @@ def _render_demo_launch(package_name: str, source_path: Path) -> str:
         "        ),\n"
         f"        LogInfo(msg=[\"[generated scene] package={package_name} source={source_path}\"]),\n"
         "        LogInfo(msg=[\"[generated scene] offline review launch active (no real hardware drivers).\"]),\n"
+        "        LogInfo(msg=[\"[generated scene] placeholder scene xacro is visual-review metadata only; no execution readiness is implied.\"]),\n"
         "        LogInfo(msg=[\"[generated scene] use_fake_hardware:=\", use_fake_hardware]),\n"
         "        LogInfo(msg=[\"[generated scene] launch_rviz:=\", launch_rviz]),\n"
         "    ])\n"
@@ -619,6 +800,10 @@ def generate_package(
     task_recipe_path.write_text(task_recipe_text, encoding="utf-8")
     (package_dir / "generated" / "task_recipe.preview.yaml").write_text(task_recipe_text, encoding="utf-8")
     (package_dir / "generated" / "scene_manifest.preview.yaml").write_text(scene_manifest_text, encoding="utf-8")
+    (package_dir / "urdf" / "scene.urdf.xacro").write_text(
+        _render_scene_urdf_xacro(package_name, loaded, asset_tracking, warnings),
+        encoding="utf-8",
+    )
 
     (package_dir / "README.md").write_text(
         _header_markdown(cell_definition_path)
@@ -742,6 +927,7 @@ def generate_package(
     print(f"{status}: generated package at {package_dir}")
     print(f"PASS: package.xml -> {package_dir / 'package.xml'}")
     print(f"PASS: scene_manifest.yaml -> {scene_manifest_path}")
+    print(f"PASS: scene.urdf.xacro -> {package_dir / 'urdf' / 'scene.urdf.xacro'}")
     print(f"PASS: README.md -> {package_dir / 'README.md'}")
     print(f"PASS: commissioning_summary -> {package_dir / 'generated' / 'commissioning_summary.md'}")
     print(f"PASS: validation_report -> {package_dir / 'generated' / 'validation_report.md'}")
