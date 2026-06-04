@@ -228,40 +228,6 @@ def _render_environment_yaml(cell_def: dict[str, Any], scene_generator: Any, cel
     return _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, payload)
 
 
-def _render_scene_urdf_xacro(package_name: str, cell_def: dict[str, Any], cell_definition_path: Path) -> str:
-    environment = cell_def.get("environment", {}) if isinstance(cell_def.get("environment"), dict) else {}
-    cell = cell_def.get("cell", {}) if isinstance(cell_def.get("cell"), dict) else {}
-    robot = cell_def.get("robot", {}) if isinstance(cell_def.get("robot"), dict) else {}
-    frame = str(environment.get("frame") or cell.get("planning_frame") or "world")
-    robot_model = str(robot.get("model") or "unknown_robot")
-    return (
-        '<?xml version="1.0"?>\n'
-        f'<!-- GENERATED FILE - DO NOT EDIT DIRECTLY. Generated from {cell_definition_path} -->\n'
-        f'<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="{package_name}">\n'
-        f'  <!-- Offline-safe placeholder URDF for Workcell Studio review; robot_model={robot_model}. -->\n'
-        f'  <link name="{frame}"/>\n'
-        '</robot>\n'
-    )
-
-
-def _render_scene_visual_mesh_index(package_name: str, cell_definition_path: Path) -> dict[str, Any]:
-    return {
-        "schema_version": "scene_visual_mesh_index/v1",
-        "scene_name": package_name,
-        "visual_count": 0,
-        "resolved": 0,
-        "unresolved": 0,
-        "safe_for_preview": True,
-        "source_urdf_xacro_path": "urdf/scene.urdf.xacro",
-        "generator": "scripts/generate_workcell_from_cell_definition.py",
-        "source_cell_definition": str(cell_definition_path),
-        "visual_items": [],
-        "notes": [
-            "Generated placeholder visual mesh index; regenerate from expanded URDF when approved mesh assets are available."
-        ],
-    }
-
-
 def _render_cmakelists(package_name: str) -> str:
     template_path = TEMPLATE_DIR / "CMakeLists_example.txt"
     contract_installs = """
@@ -390,82 +356,6 @@ def _iter_scene_urdf_placeholders(cell_def: dict[str, Any]) -> list[dict[str, An
         append(obj, "object", [0.05, 0.05, 0.05])
 
     return placeholders
-
-
-def _render_scene_urdf_xacro(
-    package_name: str,
-    cell_def: dict[str, Any],
-    asset_tracking: dict[str, Any],
-    warnings: list[str],
-) -> str:
-    """Render a conservative scene-only xacro for offline review.
-
-    The generated xacro intentionally contains no hardware interfaces, ros2_control blocks,
-    transmissions, driver plugin configuration, or motion-execution wiring. It is a stable
-    placeholder scene contract for RViz/MoveIt review flows until approved robot/tool geometry
-    is connected separately.
-    """
-    robot = cell_def.get("robot", {}) if isinstance(cell_def.get("robot"), dict) else {}
-    end_effector = cell_def.get("end_effector", {}) if isinstance(cell_def.get("end_effector"), dict) else {}
-    robot_geometry_refs = [robot.get(key) for key in ("urdf", "xacro", "mesh", "mesh_path", "description_package")]
-    tool_geometry_refs = [end_effector.get(key) for key in ("urdf", "xacro", "mesh", "mesh_path", "description_package")]
-    if not any(str(ref).strip() for ref in robot_geometry_refs if ref is not None):
-        warnings.append("scene.urdf.xacro uses a placeholder robot comment because robot geometry is not available in cell_definition.yaml.")
-    if not any(str(ref).strip() for ref in tool_geometry_refs if ref is not None):
-        warnings.append("scene.urdf.xacro uses a placeholder tool comment because end-effector geometry is not available in cell_definition.yaml.")
-
-    placeholders = _iter_scene_urdf_placeholders(cell_def)
-    tracked_count = len(asset_tracking.get("tracked", [])) if isinstance(asset_tracking, dict) else 0
-    unsupported_count = len(asset_tracking.get("unsupported", [])) if isinstance(asset_tracking, dict) else 0
-    lines = [
-        "<?xml version=\"1.0\"?>",
-        f"<!-- GENERATED FILE - conservative offline placeholder for {_safe_xml_comment(package_name)}. -->",
-        "<!-- No hardware interfaces, ros2_control blocks, transmissions, or real robot drivers are declared here. -->",
-        f"<!-- Asset tracking summary: tracked={tracked_count}, unsupported={unsupported_count}. See urdf/generated_asset_metadata.yaml. -->",
-        f"<robot name=\"{_xml_attr(package_name)}\" xmlns:xacro=\"http://www.ros.org/wiki/xacro\">",
-        "  <link name=\"world\" />",
-        "",
-        "  <!-- Robot geometry placeholder: connect an approved robot description during reviewed simulation setup. -->",
-        f"  <!-- Requested robot model: {_safe_xml_comment(robot.get('model', 'unknown'))}; planning group: {_safe_xml_comment(robot.get('planning_group', 'unknown'))}. -->",
-        "  <!-- Tool geometry placeholder: connect approved end-effector geometry separately; no execution readiness is implied. -->",
-        f"  <!-- Requested end effector: {_safe_xml_comment(end_effector.get('id', 'unknown'))} ({_safe_xml_comment(end_effector.get('type', 'unknown'))}). -->",
-    ]
-    if not placeholders:
-        lines.extend(
-            [
-                "",
-                "  <!-- No support surfaces or objects were available in cell_definition.yaml for placeholder visuals. -->",
-            ]
-        )
-    for item in placeholders:
-        xyz = " ".join(f"{value:.6g}" for value in item["xyz"])
-        rpy = " ".join(f"{value:.6g}" for value in item["rpy"])
-        size = " ".join(f"{value:.6g}" for value in item["dimensions"])
-        link_name = _xml_attr(item["link_name"])
-        material = "workcell_support_placeholder" if item["role"] == "support_surface" else "workcell_object_placeholder"
-        rgba = "0.45 0.45 0.45 0.55" if item["role"] == "support_surface" else "0.1 0.45 0.9 0.75"
-        lines.extend(
-            [
-                "",
-                f"  <!-- Placeholder {item['role']}: {_safe_xml_comment(item['id'])} ({_safe_xml_comment(item['type'])}). -->",
-                f"  <link name=\"{link_name}\">",
-                "    <visual>",
-                "      <origin xyz=\"0 0 0\" rpy=\"0 0 0\" />",
-                "      <geometry>",
-                f"        <box size=\"{_xml_attr(size)}\" />",
-                "      </geometry>",
-                f"      <material name=\"{material}\"><color rgba=\"{rgba}\" /></material>",
-                "    </visual>",
-                "  </link>",
-                f"  <joint name=\"world_to_{link_name}\" type=\"fixed\">",
-                "    <parent link=\"world\" />",
-                f"    <child link=\"{link_name}\" />",
-                f"    <origin xyz=\"{_xml_attr(xyz)}\" rpy=\"{_xml_attr(rpy)}\" />",
-                "  </joint>",
-            ]
-        )
-    lines.append("</robot>")
-    return "\n".join(lines) + "\n"
 
 
 def _render_demo_launch(package_name: str, source_path: Path) -> str:
@@ -1198,24 +1088,6 @@ def _render_placeholder_scene_xacro(package_name: str, warnings: list[str]) -> s
     )
 
 
-def _fallback_visual_mesh_index(package_name: str, package_dir: Path, blockers: list[str]) -> dict[str, Any]:
-    return {
-        "schema_version": "scene_visual_mesh_index/v1",
-        "scene_name": package_name,
-        "status": "FALLBACK_EMPTY",
-        "safe_for_preview": True,
-        "source_urdf_xacro_path": str(package_dir / "urdf" / "scene.urdf.xacro"),
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "visual_count": 0,
-        "candidate_mesh_count": 0,
-        "emitted_visual_count": 0,
-        "resolved": 0,
-        "unresolved": 0,
-        "visual_items": [],
-        "blockers": blockers,
-    }
-
-
 def _build_scene_package_readiness(
     package_name: str,
     package_dir: Path,
@@ -1336,21 +1208,15 @@ def write_scene_package_contract(
         _render_scene_urdf_xacro(package_name, env_objects, cell_definition_path),
         encoding="utf-8",
     )
-    (package_dir / "generated" / "scene_visual_mesh_index.json").write_text(
-        json.dumps(
-            _fallback_visual_mesh_index(
-                package_name,
-                package_dir,
-                ["Full visual mesh extraction is not run by generate_workcell_from_cell_definition.py; fallback index emitted."],
-            ),
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    _write_scene_visual_mesh_index(package_name, package_dir, warnings)
     if dry_result is not None and scene_contract is not None:
-        _write_validation_report(package_dir / "generated" / "validation_report.md", scene_manifest, scene_contract, dry_result)
+        _write_validation_report(
+            package_dir / "generated" / "validation_report.md",
+            scene_manifest,
+            scene_contract,
+            dry_result,
+            generation_warnings=warnings,
+        )
     else:
         (package_dir / "generated" / "validation_report.md").write_text(
             _header_markdown(cell_definition_path)
@@ -1573,15 +1439,6 @@ def generate_package(
     (package_dir / "generated" / "commissioning_summary.md").write_text(
         _header_markdown(cell_definition_path) + commissioning_summary,
         encoding="utf-8",
-    )
-
-    _write_scene_visual_mesh_index(package_name, package_dir, warnings)
-    _write_validation_report(
-        package_dir / "generated" / "validation_report.md",
-        scene_manifest,
-        scene_contract,
-        dry_result,
-        generation_warnings=warnings,
     )
 
     generated_dir = package_dir / "generated"
