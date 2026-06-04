@@ -107,8 +107,13 @@ def test_gui_smoke_accepts_scene_path(monkeypatch, tmp_path: Path):
         calls.append(cmd)
         return type("P", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
+    for rel in ["package.xml", "scene_manifest.yaml", "cell_definition.yaml", "launch/demo.launch.py"]:
+        p = tmp_path / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("x", encoding="utf-8")
+
     monkeypatch.setattr(smoke.subprocess, "run", fake_run)
-    monkeypatch.setattr(smoke, "resolve_repo_root", lambda explicit_repo_root=None: tmp_path)
+    monkeypatch.setattr(smoke, "resolve_repo_root", lambda start=None, explicit_repo_root=None: tmp_path)
     monkeypatch.setattr(smoke, "resolve_workspace_root", lambda repo_root, explicit_workspace_root=None: tmp_path)
     monkeypatch.setattr(smoke, "resolve_workcell_builder_executable", lambda workspace_root: Path("/bin/true"))
     monkeypatch.setattr(smoke.sys, "argv", ["prog", "--scene-path", str(tmp_path), "--output", str(out), "--screenshot", str(shot), "--timeout-sec", "1"])
@@ -132,7 +137,7 @@ def test_gui_smoke_fails_if_explicit_scene_path_not_loaded(monkeypatch, tmp_path
         return type('P', (), {'returncode': 0, 'stdout': '', 'stderr': ''})()
 
     monkeypatch.setattr(smoke.subprocess, 'run', fake_run)
-    monkeypatch.setattr(smoke, 'resolve_repo_root', lambda explicit_repo_root=None: tmp_path)
+    monkeypatch.setattr(smoke, 'resolve_repo_root', lambda start=None, explicit_repo_root=None: tmp_path)
     monkeypatch.setattr(smoke, 'resolve_workspace_root', lambda repo_root, explicit_workspace_root=None: tmp_path)
     monkeypatch.setattr(smoke, 'resolve_workcell_builder_executable', lambda workspace_root: Path('/bin/true'))
     monkeypatch.setattr(smoke.sys, 'argv', ['prog', '--scene-path', str(pkg), '--output', str(out), '--screenshot', str(shot), '--timeout-sec', '1'])
