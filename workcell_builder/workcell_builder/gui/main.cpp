@@ -649,6 +649,9 @@ private:
       candidate_json["mesh_rendered_count"] = candidate.counters.mesh_rendered_count;
       candidate_json["urdf_primitive_source_count"] = candidate.counters.urdf_primitive_source_count;
       candidate_json["urdf_primitive_rendered_count"] = candidate.counters.urdf_primitive_rendered_count;
+      candidate_json["primitive_fallback_rendered_count"] = candidate.counters.primitive_fallback_rendered_count;
+      candidate_json["valid_physical_fallback_count"] = candidate.counters.valid_physical_fallback_count;
+      candidate_json["overlay_rendered_count"] = candidate.counters.overlay_rendered_count;
       candidate_json["placeholder_count"] = candidate.counters.placeholder_count;
       candidate_json["missing_geometry_count"] = candidate.counters.missing_geometry_count;
       candidate_json["wireframe_fallback_count"] = candidate.counters.wireframe_fallback_count;
@@ -747,6 +750,9 @@ private:
       counters["generated_fallback_count"] = rc.generated_fallback_count;
       counters["editable_layout_count"] = rc.editable_layout_count;
       counters["primitive_fallback_count"] = rc.primitive_fallback_count;
+      counters["primitive_fallback_rendered_count"] = rc.primitive_fallback_rendered_count;
+      counters["valid_physical_fallback_count"] = rc.valid_physical_fallback_count;
+      counters["overlay_rendered_count"] = rc.overlay_rendered_count;
       counters["locked_generated_urdf_visual_count"] = rc.locked_generated_urdf_visual_count;
       counters["overlay_count"] = rc.overlay_count;
       counters["selectable_count"] = qMax(0, rc.visible_count - rc.overlay_count);

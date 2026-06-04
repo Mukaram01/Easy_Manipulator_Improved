@@ -102,7 +102,8 @@ void finalize_visual_quality(Scene3DViewportWidget::RenderDebugCounters & counte
   counters.total_payload_count = counters.preview_items_count;
   counters.mesh_backed_count = counters.mesh_source_count;
   counters.overlay_count = counters.overlay_helper_count;
-  counters.primitive_fallback_count = counters.urdf_primitive_rendered_count;
+  counters.overlay_rendered_count = counters.overlay_helper_count;
+  counters.valid_physical_fallback_count = counters.primitive_fallback_rendered_count;
 
   QStringList warnings;
   QString status = QStringLiteral("PASS");
@@ -584,6 +585,11 @@ bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it)
 
 bool is_raw_generated_bounds_only_item(const ScenePreviewWidget::PreviewItem & it)
 {
+  const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
+  const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
+  if (visual_source == QStringLiteral("primitive_fallback") || source_layer == QStringLiteral("primitive_fallback")) {
+    return false;
+  }
   const bool generated_or_locked = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
   if (!generated_or_locked || !item_has_explicit_primitive_dimensions(it)) return false;
   return item_has_credible_mesh_handoff(it) || item_has_valid_urdf_primitive(it);
@@ -908,6 +914,7 @@ void Scene3DViewportWidget::paintGL()
   int mesh_rendered_count = 0;
   int urdf_primitive_source_count = 0;
   int urdf_primitive_rendered_count = 0;
+  int primitive_fallback_count = 0;
   int placeholder_count = 0;
   int missing_geometry_count = 0;
   int wireframe_box_count = 0;
@@ -966,8 +973,9 @@ void Scene3DViewportWidget::paintGL()
       int item_wireframe_box_count = 0;
       int item_urdf_primitive_count = 0;
       int item_missing_geometry_count = 0;
+      int item_primitive_fallback_count = 0;
       draw_truthful_item_geometry(*it, &item_placeholder_count, &item_mesh_backed_count, &item_wireframe_box_count,
-                                  &item_urdf_primitive_count, &item_missing_geometry_count);
+                                  &item_urdf_primitive_count, &item_missing_geometry_count, &item_primitive_fallback_count);
       ++rendered_item_count;
       if (count_in_stats) {
         placeholder_count += item_placeholder_count;
@@ -975,6 +983,7 @@ void Scene3DViewportWidget::paintGL()
         urdf_primitive_rendered_count += item_urdf_primitive_count;
         missing_geometry_count += item_missing_geometry_count;
         wireframe_box_count += item_wireframe_box_count;
+        primitive_fallback_count += item_primitive_fallback_count;
       }
       if (it->id == selected_id) {
         const ItemBounds bounds = item_bounds_for_role(*it);
@@ -995,7 +1004,10 @@ void Scene3DViewportWidget::paintGL()
   last_render_counters.placeholder_count = placeholder_count;
   last_render_counters.missing_geometry_count = missing_geometry_count;
   last_render_counters.wireframe_fallback_count = wireframe_box_count;
-  last_render_counters.primitive_fallback_count = urdf_primitive_rendered_count;
+  last_render_counters.primitive_fallback_rendered_count = primitive_fallback_count;
+  last_render_counters.primitive_fallback_count = primitive_fallback_count;
+  last_render_counters.valid_physical_fallback_count = primitive_fallback_count;
+  last_render_counters.overlay_rendered_count = overlay_count;
   last_render_counters.last_paint_completed = true;
   finalize_visual_quality(last_render_counters);
   last_render_counters.smoke_fallback_render_used = false;
@@ -1009,6 +1021,7 @@ void Scene3DViewportWidget::paintGL()
            << "mesh_sources=" << mesh_source_count
            << "placeholder=" << placeholder_count
            << "overlay=" << overlay_count
+           << "primitive_fallback_rendered_count=" << last_render_counters.primitive_fallback_rendered_count
            << "mesh_rendered_count=" << last_render_counters.mesh_rendered_count
            << "generated_fallback_count=" << last_render_counters.generated_fallback_count
            << "labels_drawn=" << last_render_counters.labels_drawn
@@ -1186,6 +1199,7 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
   int mesh_source_count = 0;
   int urdf_primitive_source_count = 0;
   int urdf_primitive_rendered_count = 0;
+  int primitive_fallback_count = 0;
   int placeholder_count = 0;
   int missing_geometry_count = 0;
   int wireframe_fallback_count = 0;
@@ -1230,12 +1244,17 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
     if (overlay_helper) ++overlay_count;
     if (generated_urdf) ++locked_urdf_count;
     if (it.linked_to_editable_layout_state) ++editable_layout_count;
+    const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
+    const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
+    const bool intentional_primitive_fallback = source_layer == QStringLiteral("primitive_fallback") || visual_source == QStringLiteral("primitive_fallback");
     if (!overlay_helper && item_has_credible_mesh_handoff(it)) {
       ++mesh_source_count;
+      if (intentional_primitive_fallback && item_has_explicit_dimensions(it)) ++primitive_fallback_count;
     } else if (!overlay_helper && generated_urdf && item_has_explicit_dimensions(it)) {
       ++urdf_primitive_source_count;
       ++urdf_primitive_rendered_count;
-      ++wireframe_fallback_count;
+      if (intentional_primitive_fallback) ++primitive_fallback_count;
+      else ++wireframe_fallback_count;
     } else if (!overlay_helper && !item_has_explicit_dimensions(it)) {
       ++placeholder_count;
       ++missing_geometry_count;
@@ -1280,7 +1299,10 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
   last_render_counters.placeholder_count = placeholder_count;
   last_render_counters.missing_geometry_count = missing_geometry_count;
   last_render_counters.wireframe_fallback_count = wireframe_fallback_count;
-  last_render_counters.primitive_fallback_count = urdf_primitive_rendered_count;
+  last_render_counters.primitive_fallback_rendered_count = primitive_fallback_count;
+  last_render_counters.primitive_fallback_count = primitive_fallback_count;
+  last_render_counters.valid_physical_fallback_count = primitive_fallback_count;
+  last_render_counters.overlay_rendered_count = overlay_count;
   last_render_counters.overlay_helper_count = overlay_count;
   last_render_counters.overlay_count = overlay_count;
   last_render_counters.locked_generated_urdf_visual_count = locked_urdf_count;
@@ -1391,7 +1413,8 @@ bool Scene3DViewportWidget::draw_urdf_primitive_geometry(const ScenePreviewWidge
 
 bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget::PreviewItem & it, int * out_placeholder_count,
                                                         int * out_mesh_count, int * out_wireframe_count,
-                                                        int * out_urdf_primitive_count, int * out_missing_geometry_count)
+                                                        int * out_urdf_primitive_count, int * out_missing_geometry_count,
+                                                        int * out_primitive_fallback_count)
 {
   const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
   const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
@@ -1436,6 +1459,8 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     }
   }
   if (item_has_explicit_dimensions(it)) {
+    const bool intentional_primitive_fallback =
+      source_layer == QStringLiteral("primitive_fallback") || visual_source == QStringLiteral("primitive_fallback");
     if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes || is_raw_generated_bounds_only_item(it)) {
       draw_missing_geometry_marker(it);
       ++last_render_counters.generated_fallback_count;
@@ -1448,6 +1473,10 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     const QColor fallback_line = it.linked_to_editable_layout_state ? QColor(148, 163, 184, 150) : QColor(148, 163, 184, 76);
     draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, fallback_fill, true);
     draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, fallback_line, it.linked_to_editable_layout_state ? 1.1f : 0.75f);
+    if (intentional_primitive_fallback) {
+      if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);
+      return true;
+    }
     if (out_wireframe_count) ++(*out_wireframe_count);
     return false;
   }

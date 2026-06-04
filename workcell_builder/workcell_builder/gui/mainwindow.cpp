@@ -7534,8 +7534,10 @@ void MainWindow::populate_scene_hierarchy()
           p.lock_reason = "generated URDF visual";
           p.robot_base_frame = chain_base_frame.trimmed().isEmpty() ? QStringLiteral("unknown") : chain_base_frame;
           p.source_layer = QStringLiteral("generated_urdf_visual");
+          const bool explicit_primitive_fallback = workcell_builder::yaml_map_key(v, "primitive_fallback").as<bool>(false) ||
+            QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "transform_status")).compare(QStringLiteral("static_fallback"), Qt::CaseInsensitive) == 0;
           p.active_visual_source = (geometry_type == "mesh") ? QStringLiteral("mesh_preview")
-                                                              : QStringLiteral("urdf_primitive");
+                                      : (explicit_primitive_fallback ? QStringLiteral("primitive_fallback") : QStringLiteral("urdf_primitive"));
           p.linked_to_editable_layout_state = false;
           p.editable = false;
           p.selectable = true;
@@ -7707,7 +7709,7 @@ void MainWindow::populate_scene_hierarchy()
             if (is_primitive) {
               p.mesh_available = false;
               p.has_mesh_metadata = false;
-              p.active_visual_source = QStringLiteral("urdf_primitive");
+              p.active_visual_source = explicit_primitive_fallback ? QStringLiteral("primitive_fallback") : QStringLiteral("urdf_primitive");
             } else {
               p.mesh_available = true;
               p.has_mesh_metadata = true;
