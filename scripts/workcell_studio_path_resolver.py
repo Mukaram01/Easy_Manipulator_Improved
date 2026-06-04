@@ -74,9 +74,15 @@ def resolve_workcell_builder_executable(workspace_root: Path | None, explicit_ex
     if explicit_executable:
         exe = Path(explicit_executable).expanduser().resolve()
         searched.append(exe)
+        _LAST["explicit_executable"] = str(exe)
         _LAST["searched_executable_paths"] = [str(p) for p in searched]
-        return exe if exe.exists() and os.access(exe, os.X_OK) else None
+        _LAST["explicit_executable_exists"] = exe.exists()
+        _LAST["explicit_executable_is_executable"] = exe.exists() and os.access(exe, os.X_OK)
+        return exe if _LAST["explicit_executable_is_executable"] else None
 
+    _LAST.pop("explicit_executable", None)
+    _LAST.pop("explicit_executable_exists", None)
+    _LAST.pop("explicit_executable_is_executable", None)
     searched.extend(workcell_builder_executable_candidates(workspace_root))
     _LAST["searched_executable_paths"] = [str(p) for p in searched]
     for p in searched:
