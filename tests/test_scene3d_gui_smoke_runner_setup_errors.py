@@ -33,6 +33,12 @@ def test_gui_smoke_missing_workspace_writes_fail_json(tmp_path):
     assert "executable" in payload
     assert "searched_paths" in payload
     assert payload.get("screenshot_available") is False
+    assert "ros_humble_available" in payload
+    assert "ros_distro" in payload
+    assert payload.get("ros_humble_setup_path") == "/opt/ros/humble/setup.bash"
+    if payload.get("ros_humble_available") is False:
+        assert "ros_humble_missing" in payload["blockers"]
+        assert "ROS Humble is not available" in payload["blocker_messages"]["ros_humble_missing"]
 
 
 def test_gui_smoke_explicit_workspace_no_unboundlocalerror(tmp_path):
@@ -54,3 +60,50 @@ def test_gui_smoke_explicit_workspace_no_unboundlocalerror(tmp_path):
     proc = subprocess.run(cmd, capture_output=True, text=True)
     combined = (proc.stdout or "") + (proc.stderr or "")
     assert "UnboundLocalError" not in combined
+
+
+def test_gui_smoke_unresolved_workspace_records_null_and_path_search(tmp_path, monkeypatch):
+    repo = Path(__file__).resolve().parents[1]
+    out = tmp_path / "smoke.json"
+    shot = tmp_path / "smoke.png"
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+def test_gui_smoke_invalid_explicit_executable_writes_blocked_json(tmp_path):
+    repo = Path(__file__).resolve().parents[1]
+    out = tmp_path / "smoke.json"
+    bad_exe = tmp_path / "not_executable_workcell_builder"
+    bad_exe.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    bad_exe.chmod(0o644)
+
+    cmd = [
+        "python3",
+        str(repo / "scripts/run_workcell_builder_scene3d_gui_smoke.py"),
+        "--repo-root",
+        str(repo),
+        "--workspace-root",
+        str(repo),
+        "--executable",
+        str(bad_exe),
+        "--scene",
+        "ur5_2f_test",
+        "--output",
+        str(out),
+        "--screenshot",
+        str(shot),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=tmp_path)
+    assert proc.returncode != 0
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["repo_root"] == str(repo)
+    assert payload["workspace_root"] is None
+    assert "workspace_root_inference_failed_path_only_executable_search" in payload["warnings"]
+    assert all("install/workcell_builder" not in p for p in payload["searched_paths"])
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    assert proc.returncode != 0
+    assert out.exists()
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["status"] == "BLOCKED"
+    assert payload["explicit_executable"] == str(bad_exe)
+    assert payload["searched_paths"] == [str(bad_exe.resolve())]
+    assert payload["blockers"] == ["explicit_workcell_builder_executable_missing_or_not_executable"]
+    assert "guidance" in payload
