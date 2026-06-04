@@ -3,12 +3,12 @@
   "visual_count": 11,
   "resolved": 11,
   "unresolved": 0,
-  "generated_at": "2026-06-03T14:54:14.516324+00:00",
+  "generated_at": "2026-06-04T15:59:53.460363+00:00",
   "extractor_version": "2.5",
   "extraction_mode": "xacro_lite_expanded",
   "xacro_available": false,
   "source_urdf_xacro_path": "/workspace/Easy_Manipulator_Improved/scenes/ur5_2f_test/urdf/scene.urdf.xacro",
-  "source_mtime": 1780498117.494885,
+  "source_mtime": 1780588418.720323,
   "source_expanded_urdf_path": "",
   "fallback_reason": "xacro executable unavailable; used safe repo-local xacro-lite expansion; skipped unresolved macros: ur_robot",
   "safe_for_preview": true,
@@ -628,12 +628,6 @@
   "package_resolution_diagnostics": {
     "resolved_packages": [
       {
-        "package_name": "table_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description/package.xml"
-      },
-      {
         "package_name": "table_clamp_camera_mount_description",
         "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_clamp_camera_mount_description",
         "source_tier": "repo_assets",
@@ -646,40 +640,10 @@
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/vslot_camera_frame_description/package.xml"
       },
       {
-        "package_name": "realsense2_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description",
+        "package_name": "simple_conveyor_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/simple_conveyor_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/package.xml"
-      },
-      {
-        "package_name": "tslot_camera_frame_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description/package.xml"
-      },
-      {
-        "package_name": "workbench_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/package.xml"
-      },
-      {
-        "package_name": "overhead_camera_gantry_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/overhead_camera_gantry_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/overhead_camera_gantry_description/package.xml"
-      },
-      {
-        "package_name": "flat_plate_camera_bracket_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description/package.xml"
-      },
-      {
-        "package_name": "pipe_camera_stand_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/pipe_camera_stand_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/pipe_camera_stand_description/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/simple_conveyor_description/package.xml"
       },
       {
         "package_name": "sorting_bin_description",
@@ -688,10 +652,46 @@
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/sorting_bin_description/package.xml"
       },
       {
-        "package_name": "simple_conveyor_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/simple_conveyor_description",
+        "package_name": "overhead_camera_gantry_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/overhead_camera_gantry_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/simple_conveyor_description/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/overhead_camera_gantry_description/package.xml"
+      },
+      {
+        "package_name": "realsense2_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/package.xml"
+      },
+      {
+        "package_name": "table_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description/package.xml"
+      },
+      {
+        "package_name": "flat_plate_camera_bracket_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description/package.xml"
+      },
+      {
+        "package_name": "workbench_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/package.xml"
+      },
+      {
+        "package_name": "pipe_camera_stand_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/pipe_camera_stand_description",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/pipe_camera_stand_description/package.xml"
+      },
+      {
+        "package_name": "tslot_camera_frame_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description/package.xml"
       },
       {
         "package_name": "panda_moveit_config",
@@ -706,10 +706,16 @@
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_description/package.xml"
       },
       {
-        "package_name": "ur10_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur10_moveit_config",
+        "package_name": "fanuc_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur10_moveit_config/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description/package.xml"
+      },
+      {
+        "package_name": "fanuc_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config/package.xml"
       },
       {
         "package_name": "ur3_moveit_config",
@@ -724,16 +730,46 @@
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur5_moveit_config/package.xml"
       },
       {
-        "package_name": "fanuc_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config",
+        "package_name": "ur10_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur10_moveit_config",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur10_moveit_config/package.xml"
       },
       {
-        "package_name": "fanuc_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description",
+        "package_name": "single_suction_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description/package.xml"
+      },
+      {
+        "package_name": "single_suction_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config/package.xml"
+      },
+      {
+        "package_name": "robotiq_3f_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_moveit_config/package.xml"
+      },
+      {
+        "package_name": "robotiq_3f_gripper_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/package.xml"
+      },
+      {
+        "package_name": "onrobot_airpick4_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config/package.xml"
+      },
+      {
+        "package_name": "onrobot_airpick4_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/package.xml"
       },
       {
         "package_name": "robotiq_85_description",
@@ -746,51 +782,10 @@
         "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config",
         "source_tier": "repo_assets",
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config/package.xml"
-      },
-      {
-        "package_name": "single_suction_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config/package.xml"
-      },
-      {
-        "package_name": "single_suction_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description/package.xml"
-      },
-      {
-        "package_name": "onrobot_airpick4_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/package.xml"
-      },
-      {
-        "package_name": "onrobot_airpick4_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config/package.xml"
-      },
-      {
-        "package_name": "robotiq_3f_gripper_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/package.xml"
-      },
-      {
-        "package_name": "robotiq_3f_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_moveit_config/package.xml"
       }
     ],
     "shadowed_packages": [],
     "resolution_paths": [
-      {
-        "package_name": "table_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description",
-        "source_tier": "repo_assets"
-      },
       {
         "package_name": "table_clamp_camera_mount_description",
         "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_clamp_camera_mount_description",
@@ -802,33 +797,8 @@
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "realsense2_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "tslot_camera_frame_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "workbench_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "overhead_camera_gantry_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/overhead_camera_gantry_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "flat_plate_camera_bracket_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "pipe_camera_stand_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/pipe_camera_stand_description",
+        "package_name": "simple_conveyor_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/simple_conveyor_description",
         "source_tier": "repo_assets"
       },
       {
@@ -837,8 +807,38 @@
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "simple_conveyor_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/simple_conveyor_description",
+        "package_name": "overhead_camera_gantry_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/overhead_camera_gantry_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "realsense2_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "table_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "flat_plate_camera_bracket_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "workbench_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "pipe_camera_stand_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/pipe_camera_stand_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "tslot_camera_frame_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description",
         "source_tier": "repo_assets"
       },
       {
@@ -852,8 +852,13 @@
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "ur10_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur10_moveit_config",
+        "package_name": "fanuc_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "fanuc_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config",
         "source_tier": "repo_assets"
       },
       {
@@ -867,13 +872,38 @@
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "fanuc_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config",
+        "package_name": "ur10_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur10_moveit_config",
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "fanuc_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description",
+        "package_name": "single_suction_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "single_suction_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "robotiq_3f_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_moveit_config",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "robotiq_3f_gripper_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "onrobot_airpick4_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "onrobot_airpick4_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
         "source_tier": "repo_assets"
       },
       {
@@ -884,36 +914,6 @@
       {
         "package_name": "robotiq_85_moveit_config",
         "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "single_suction_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "single_suction_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "onrobot_airpick4_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "onrobot_airpick4_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "robotiq_3f_gripper_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "robotiq_3f_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_moveit_config",
         "source_tier": "repo_assets"
       }
     ]
