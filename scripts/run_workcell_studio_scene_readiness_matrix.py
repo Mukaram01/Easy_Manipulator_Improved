@@ -351,8 +351,9 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
     physical_blockers = [blocker for blocker in blockers if not blocker.startswith("screenshot_missing:") and blocker != "screenshot_missing"]
     warnings = [str(item) for item in visual.get("warnings", [])]
     visual_status = str(visual.get("visual_quality_status") or "").upper()
+    runtime_available = bool(visual.get("runtime_available"))
     summary_state = PASS if visual_status == PASS else FAIL
-    if not mesh_index.is_file() or not smoke_json.is_file():
+    if visual_status == BLOCKED or not mesh_index.is_file() or not smoke_json.is_file() or not runtime_available:
         summary_state = BLOCKED
     visual_result = _result(
         summary_state,
@@ -364,6 +365,7 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
         blockers=blockers,
         blocker_reasons=visual_blocker_reasons,
         warnings=warnings,
+        runtime_available=runtime_available,
         counters={
             "total_payload_count": visual.get("total_payload_count", 0),
             "mesh_source_count": visual.get("mesh_source_count", 0),
@@ -371,6 +373,7 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
             "mesh_rendered_count": visual.get("mesh_rendered_count", 0),
             "primitive_rendered_count": visual.get("primitive_rendered_count", 0),
             "physical_rendered_count": visual.get("physical_rendered_count", 0),
+            "runtime_available": runtime_available,
             "credible_physical_rendered_count": visual.get("credible_physical_rendered_count", 0),
             "helper_overlay_count": visual.get("helper_overlay_count", 0),
             "diagnostic_fallback_count": visual.get("diagnostic_fallback_count", 0),
@@ -385,6 +388,9 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
     elif not smoke_json.is_file():
         physical_state = BLOCKED
         physical_message = "Scene3D GUI smoke evidence is missing; physical rendered evidence cannot be evaluated"
+    elif not runtime_available:
+        physical_state = BLOCKED
+        physical_message = "Scene3D runtime is unavailable; physical rendered evidence is not evaluated from static renderability counts"
     elif source_count <= 0:
         physical_state = FAIL
         physical_message = "mesh index does not contain credible mesh or primitive source geometry"
@@ -402,6 +408,7 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
         physical_message,
         source_geometry_count=source_count,
         physical_rendered_count=physical_rendered,
+        runtime_available=runtime_available,
         mesh_failure_summary_by_reason_code=visual.get("mesh_failure_summary_by_reason_code", {}),
         blockers=physical_blockers,
     )
