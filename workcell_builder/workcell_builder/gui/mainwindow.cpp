@@ -7458,9 +7458,12 @@ void MainWindow::populate_scene_hierarchy()
           const YAML::Node visual_origin = workcell_builder::yaml_map_key(v, "visual_origin");
           const YAML::Node visual_origin_xyz = workcell_builder::yaml_map_key(visual_origin, "xyz");
           const YAML::Node visual_origin_rpy = workcell_builder::yaml_map_key(visual_origin, "rpy");
-          const QString chain_status = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "chain_status"));
-          const QString chain_base_frame = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "base_frame"));
-          if (robot_base_frame == QStringLiteral("unknown") && !chain_base_frame.trimmed().isEmpty()) robot_base_frame = chain_base_frame;
+          const QString transform_status = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "transform_status")).trimmed().toLower();
+          QString parent_link = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "parent_link")).trimmed();
+          if (parent_link.isEmpty()) {
+            parent_link = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "base_frame")).trimmed();
+          }
+          if (robot_base_frame == QStringLiteral("unknown") && !parent_link.isEmpty()) robot_base_frame = parent_link;
           const bool has_visual_metadata =
             !id.trimmed().isEmpty() &&
             !QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link")).trimmed().isEmpty() &&
@@ -7532,10 +7535,11 @@ void MainWindow::populate_scene_hierarchy()
           p.editable = false;
           p.selectable = true;
           p.lock_reason = "generated URDF visual";
-          p.robot_base_frame = chain_base_frame.trimmed().isEmpty() ? QStringLiteral("unknown") : chain_base_frame;
+          p.robot_base_frame = parent_link.isEmpty() ? QStringLiteral("unknown") : parent_link;
           p.source_layer = QStringLiteral("generated_urdf_visual");
           const bool explicit_primitive_fallback = workcell_builder::yaml_map_key(v, "primitive_fallback").as<bool>(false) ||
-            QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "transform_status")).compare(QStringLiteral("static_fallback"), Qt::CaseInsensitive) == 0;
+            transform_status == QStringLiteral("static_fallback") ||
+            transform_status == QStringLiteral("static_fallback_parent");
           p.active_visual_source = (geometry_type == "mesh") ? QStringLiteral("mesh_preview")
                                       : (explicit_primitive_fallback ? QStringLiteral("primitive_fallback") : QStringLiteral("urdf_primitive"));
           p.linked_to_editable_layout_state = false;
@@ -7553,11 +7557,17 @@ void MainWindow::populate_scene_hierarchy()
           p.yaw = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(rpy,2).as<double>(0.0), QStringLiteral("pose.rpy[2]"), &p.warnings);
           p.chain_pose_x = p.x; p.chain_pose_y = p.y; p.chain_pose_z = p.z;
           p.chain_pose_roll = p.roll; p.chain_pose_pitch = p.pitch; p.chain_pose_yaw = p.yaw;
-          p.transform_chain_applied = chain_status.compare(QStringLiteral("ok"), Qt::CaseInsensitive) == 0 || chain_status.trimmed().isEmpty();
+          const bool transform_status_resolved =
+            transform_status == QStringLiteral("resolved") ||
+            transform_status == QStringLiteral("ok") ||
+            transform_status == QStringLiteral("static_fallback") ||
+            transform_status == QStringLiteral("static_fallback_parent");
+          p.transform_chain_applied = transform_status_resolved;
           if (p.transform_chain_applied) ++transform_chain_applied_count;
           if (!p.transform_chain_applied) {
             ++missing_chain_warning_count;
-            p.warnings << QStringLiteral("Preview warning: missing/broken URDF chain; identity fallback avoided");
+            const QString transform_status_for_warning = transform_status.isEmpty() ? QStringLiteral("missing") : transform_status;
+            p.warnings << QStringLiteral("Preview warning: missing/broken URDF chain; identity fallback avoided (transform_status=%1)").arg(transform_status_for_warning);
           }
           if (world_xyz && world_rpy && world_xyz.IsSequence() && world_rpy.IsSequence() && world_xyz.size() >= 3 && world_rpy.size() >= 3) {
             p.base_pose_x = workcell_builder::yaml_seq_index(world_xyz,0).as<double>(0.0);

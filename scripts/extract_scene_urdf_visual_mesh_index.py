@@ -338,7 +338,9 @@ def append_static_robot_primitive_fallbacks(items, urdf_text, fallback_reason):
             'chain_pose': {'xyz': xyz, 'rpy': rpy},
             'world_pose': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
             'visual_origin': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
+            'link_transform_status': 'static_fallback',
             'transform_status': 'static_fallback',
+            'transform_chain': [],
             'render_expected': True,
             'resolved': True,
             'primitive_fallback': True,
@@ -376,6 +378,7 @@ def resolve_static_tool0_children(items):
         item['pose'] = pose
         item['chain_pose'] = {'xyz': shifted, 'rpy': pose.get('rpy', [0.0, 0.0, 0.0])}
         item['transform_status'] = 'static_fallback_parent'
+        item['transform_chain'] = item.get('transform_chain') if isinstance(item.get('transform_chain'), list) else []
         item['render_skip_reason'] = ''
         item['warning'] = 'static_parent_resolved:tool0 via Scene3D UR5 primitive fallback'
         item['static_parent_resolved'] = True
