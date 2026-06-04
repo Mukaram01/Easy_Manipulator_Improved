@@ -210,6 +210,89 @@ def _check_manifest_refs(scene_dir: Path) -> dict[str, Any]:
     return _result(PASS, f"manifest local-file references resolved ({len(checked)} checked)", checked=checked)
 
 
+def _check_tool_metadata_consistency(scene_dir: Path) -> dict[str, Any]:
+    """Check that scene-local tool declarations do not contradict each other.
+
+    This is intentionally metadata-only and does not resolve ROS packages.  It
+    preserves known blocked/failing states such as a scene folder declaring one
+    end effector in cell_definition.yaml while environment.yaml or
+    scene_manifest.yaml advertises another/no tool.
+    """
+    observed: dict[str, Any] = {}
+    errors: list[str] = []
+
+    cell_path = scene_dir / "cell_definition.yaml"
+    env_path = scene_dir / "environment.yaml"
+    manifest_path = scene_dir / "scene_manifest.yaml"
+
+    cell, cell_error = _load_yaml_file(cell_path) if cell_path.is_file() else ({}, None)
+    env, env_error = _load_yaml_file(env_path) if env_path.is_file() else ({}, None)
+    manifest, manifest_error = _load_yaml_file(manifest_path) if manifest_path.is_file() else ({}, None)
+
+    for label, error in (("cell_definition.yaml", cell_error), ("environment.yaml", env_error), ("scene_manifest.yaml", manifest_error)):
+        if error:
+            errors.append(f"{label} is not parseable for tool consistency check: {error}")
+
+    cell_ee = cell.get("end_effector") if isinstance(cell, dict) and isinstance(cell.get("end_effector"), dict) else {}
+    env_tool = env.get("tool") if isinstance(env, dict) and isinstance(env.get("tool"), dict) else {}
+    manifest_ee = manifest.get("end_effector") if isinstance(manifest, dict) and isinstance(manifest.get("end_effector"), dict) else {}
+
+    cell_ee_id = str(cell_ee.get("id") or cell_ee.get("capability") or "").strip()
+    env_tool_id = str(env_tool.get("id") or env_tool.get("profile") or "").strip()
+    manifest_ee_type = str(manifest_ee.get("type") or "").strip()
+    manifest_ee_brand = str(manifest_ee.get("brand") or "").strip()
+
+    def family(value: str) -> str | None:
+        lowered = value.lower()
+        if "3f" in lowered or "three" in lowered:
+            return "three_finger_gripper"
+        if "2f" in lowered or "two" in lowered:
+            return "two_finger_gripper"
+        if "suction" in lowered or "vacuum" in lowered or "airpick" in lowered:
+            return "suction"
+        if "finger" in lowered or "gripper" in lowered:
+            return "finger_gripper"
+        if lowered == "none":
+            return "none"
+        return None
+
+    cell_family = family(cell_ee_id)
+    env_family = family(env_tool_id)
+    manifest_family = family(manifest_ee_type)
+    warnings: list[str] = []
+    observed = {
+        "cell_definition_end_effector_id": cell_ee_id or None,
+        "environment_tool_id": env_tool_id or None,
+        "manifest_end_effector_type": manifest_ee_type or None,
+        "manifest_end_effector_brand": manifest_ee_brand or None,
+        "cell_definition_family": cell_family,
+        "environment_tool_family": env_family,
+        "manifest_end_effector_family": manifest_family,
+    }
+
+    if cell_ee_id and env_tool_id and cell_ee_id != env_tool_id:
+        if cell_family and env_family and cell_family != env_family:
+            errors.append(
+                "Tool metadata mismatch: cell_definition.yaml end_effector.id "
+                f"'{cell_ee_id}' resolves to '{cell_family}' but environment.yaml tool.id/profile "
+                f"'{env_tool_id}' resolves to '{env_family}'."
+            )
+        else:
+            warnings.append(
+                "Tool metadata names differ but resolve to the same broad family: "
+                f"cell_definition.yaml end_effector.id '{cell_ee_id}', environment.yaml tool.id/profile '{env_tool_id}'."
+            )
+    if manifest_family == "none" and (cell_ee_id or env_tool_id):
+        errors.append(
+            "Tool metadata mismatch: scene_manifest.yaml end_effector.type is 'none' "
+            "while scene-local tool/end_effector metadata declares a tool."
+        )
+
+    if errors:
+        return _result(FAIL, "tool/end-effector metadata is inconsistent", observed=observed, errors=errors, warnings=warnings)
+    return _result(PASS, "tool/end-effector metadata has no explicit contradictions", observed=observed, warnings=warnings)
+
+
 def _check_cell_definition(scene_dir: Path) -> dict[str, Any]:
     path = scene_dir / "cell_definition.yaml"
     if not path.is_file():
@@ -355,6 +438,7 @@ def _evaluate_scene(repo_root: Path, entry: Any, ros_available: bool) -> dict[st
         categories[key] = _check_readiness_json(scene_dir) if key == "generated_scene_package_readiness_json" else _check_file(scene_dir, rel_path, required=required)
 
     categories["cell_definition_validation"] = _check_cell_definition(scene_dir)
+    categories["tool_metadata_consistency"] = _check_tool_metadata_consistency(scene_dir)
     categories["manifest_local_file_references"] = _check_manifest_refs(scene_dir)
 
     scene3d_summary, physical_visual = _check_scene3d(entry.scene_name, scene_dir)
