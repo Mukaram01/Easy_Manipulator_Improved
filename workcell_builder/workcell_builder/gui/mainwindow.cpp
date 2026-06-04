@@ -7343,51 +7343,31 @@ void MainWindow::populate_scene_hierarchy()
   QSet<QString> preview_ids;
   for (const auto &existing : preview_items) preview_ids.insert(existing.id);
   const fs::path urdf_visual_index = d / "generated" / "scene_visual_mesh_index.json";
-  bool refresh_urdf_visual_index = !fs::exists(urdf_visual_index);
-  if (fs::exists(urdf_visual_index)) {
+  QString visual_index_warning_reason;
+  if (!fs::exists(urdf_visual_index)) {
+    visual_index_warning_reason = QStringLiteral("missing");
+  } else {
     try {
       const YAML::Node existing_index = YAML::LoadFile(urdf_visual_index.string());
       const bool safe_for_preview = workcell_builder::yaml_map_key(existing_index, "safe_for_preview").as<bool>(false);
+      const bool stale_index = workcell_builder::yaml_map_key(existing_index, "stale_index").as<bool>(false);
+      const int stale_or_unsafe_count = workcell_builder::yaml_map_key(existing_index, "stale_or_unsafe_count").as<int>(0);
       if (!safe_for_preview) {
-        refresh_urdf_visual_index = true;
-        append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
+        visual_index_warning_reason = QStringLiteral("unsafe/best-effort");
+      } else if (stale_index || stale_or_unsafe_count > 0) {
+        visual_index_warning_reason = QStringLiteral("stale");
       }
+    } catch (const std::exception &e) {
+      visual_index_warning_reason = QStringLiteral("unreadable: %1").arg(QString::fromUtf8(e.what()));
     } catch (...) {
-      refresh_urdf_visual_index = true;
+      visual_index_warning_reason = QStringLiteral("unreadable");
     }
   }
-  if (refresh_urdf_visual_index) {
-    const QString regen_scene_key =
-      QString::fromStdString(d.string()) + "::" + QString::fromStdString(d.filename().string());
-    append_studio_log("Visual mesh index stale; regenerating");
-    const QString extractor_script_path = resolve_scene3d_extractor_script_path(d);
-    if (extractor_script_path.isEmpty()) {
-      if (visual_index_script_missing_reported_scene_key_ != regen_scene_key || !visual_index_regen_throttle_session_active_) {
-        append_studio_log(
-          QString("Visual mesh index regeneration skipped for scene '%1': helper script missing. Searched strategy: resolved extractor path with --prefer-xacro.")
-          .arg(QString::fromStdString(d.filename().string())));
-        visual_index_script_missing_reported_scene_key_ = regen_scene_key;
-      }
-      visual_index_regen_throttle_session_active_ = true;
-      append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
-    } else {
-      QStringList regen_args;
-      regen_args << extractor_script_path << "--scene" << QString::fromStdString(d.filename().string()) << "--prefer-xacro";
-      const int code = QProcess::execute("python3", regen_args);
-      if (code == 0) {
-        append_studio_log("Visual mesh index regenerated with xacro");
-      } else {
-        if (visual_index_regen_failure_reported_scene_key_ != regen_scene_key || !visual_index_regen_throttle_session_active_) {
-          append_studio_log(
-            QString("Visual mesh index regeneration failed for scene '%1' (exit=%2).")
-            .arg(QString::fromStdString(d.filename().string()))
-            .arg(code));
-          visual_index_regen_failure_reported_scene_key_ = regen_scene_key;
-        }
-        visual_index_regen_throttle_session_active_ = true;
-        append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
-      }
-    }
+  if (!visual_index_warning_reason.isEmpty()) {
+    append_studio_log(
+      QString("Visual mesh index %1 for scene '%2'; Scene3D will not regenerate generated/scene_visual_mesh_index.json during UI scene load. Run the scene package generator or an explicit extractor command in a ROS/workspace validation flow to refresh this generated artifact.")
+      .arg(visual_index_warning_reason, QString::fromStdString(d.filename().string())));
+    append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
   }
   int visual_index_loaded_count = 0;
   int visual_preview_added_count = 0;
