@@ -33,6 +33,12 @@ def test_gui_smoke_missing_workspace_writes_fail_json(tmp_path):
     assert "executable" in payload
     assert "searched_paths" in payload
     assert payload.get("screenshot_available") is False
+    assert "ros_humble_available" in payload
+    assert "ros_distro" in payload
+    assert payload.get("ros_humble_setup_path") == "/opt/ros/humble/setup.bash"
+    if payload.get("ros_humble_available") is False:
+        assert "ros_humble_missing" in payload["blockers"]
+        assert "ROS Humble is not available" in payload["blocker_messages"]["ros_humble_missing"]
 
 
 def test_gui_smoke_explicit_workspace_no_unboundlocalerror(tmp_path):
