@@ -104,14 +104,37 @@ def _package_search_paths(scene_dir=None, workspace_root=None):
                 seen.add(pkg_dir); package_dirs.append(pkg_dir)
     return roots, package_dirs
 
+def _dedupe_path_entries(entries):
+    out=[]
+    seen=set()
+    for entry in entries:
+        entry=str(entry).strip() if entry else ''
+        if not entry or entry in seen:
+            continue
+        seen.add(entry)
+        out.append(entry)
+    return out
+
 def xacro_env(scene_dir, workspace_root=None):
     roots, package_dirs = _package_search_paths(scene_dir, workspace_root)
     rp=[str(p) for p in [*roots, *package_dirs, *(p.parent for p in package_dirs)] if p]
     old=os.environ.get('ROS_PACKAGE_PATH','')
-    if old: rp.extend(old.split(':'))
+    if old: rp.extend(old.split(os.pathsep))
     env=dict(os.environ)
-    env['ROS_PACKAGE_PATH']=':'.join(dict.fromkeys([p for p in rp if p]))
-    env['AMENT_PREFIX_PATH']=os.environ.get('AMENT_PREFIX_PATH','')
+    env['ROS_PACKAGE_PATH']=os.pathsep.join(_dedupe_path_entries(rp))
+
+    ament_prefix_entries=[]
+    inherited_ament=os.environ.get('AMENT_PREFIX_PATH','')
+    if inherited_ament:
+        ament_prefix_entries.extend(inherited_ament.split(os.pathsep))
+    if workspace_root:
+        workspace_install=Path(workspace_root)/'install'
+        if workspace_install.exists():
+            ament_prefix_entries.append(str(workspace_install))
+    ros_humble=Path('/opt/ros/humble')
+    if ros_humble.exists():
+        ament_prefix_entries.append(str(ros_humble))
+    env['AMENT_PREFIX_PATH']=os.pathsep.join(_dedupe_path_entries(ament_prefix_entries))
     return env
 
 def discover_xacro_command():
