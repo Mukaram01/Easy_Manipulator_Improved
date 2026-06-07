@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -53,22 +54,48 @@ def resolve_install_setup(workspace_root: Path | None) -> Path | None:
 def workcell_builder_executable_candidates(workspace_root: Path | None) -> list[Path]:
     candidates: list[Path] = []
 
-    if workspace_root:
-        candidates.extend([
-            workspace_root / "install" / "workcell_builder" / "bin" / "workcell_builder",
-            workspace_root / "install" / "workcell_builder" / "lib" / "workcell_builder" / "workcell_builder",
-            workspace_root / "install" / "bin" / "workcell_builder",
-        ])
+    def add_candidate(candidate: Path | str | None) -> None:
+        if not candidate:
+            return
+        candidate_path = Path(candidate).expanduser()
+        if candidate_path not in candidates:
+            candidates.append(candidate_path)
 
-    path_hit = shutil.which("workcell_builder")
-    if path_hit:
-        candidates.append(Path(path_hit))
+    add_candidate(os.environ.get("WORKCELL_BUILDER_EXECUTABLE"))
 
     if workspace_root:
-        candidates.extend([
-            workspace_root / "build" / "workcell_builder" / "workcell_builder",
-            workspace_root / "build" / "workcell_builder" / "workcell_builder" / "workcell_builder",
-        ])
+        add_candidate(
+            workspace_root
+            / "install"
+            / "workcell_builder"
+            / "lib"
+            / "workcell_builder"
+            / "workcell_builder"
+        )
+        add_candidate(workspace_root / "install" / "workcell_builder" / "bin" / "workcell_builder")
+        add_candidate(workspace_root / "install" / "bin" / "workcell_builder")
+
+    add_candidate(shutil.which("workcell_builder"))
+
+    ros2 = shutil.which("ros2")
+    if ros2:
+        try:
+            result = subprocess.run(
+                [ros2, "pkg", "prefix", "workcell_builder"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            result = None
+        if result and result.returncode == 0:
+            prefix_text = result.stdout.strip().splitlines()
+            if prefix_text:
+                prefix = Path(prefix_text[0]).expanduser()
+                add_candidate(prefix / "lib" / "workcell_builder" / "workcell_builder")
+                add_candidate(prefix / "bin" / "workcell_builder")
+                add_candidate(prefix / ".." / "bin" / "workcell_builder")
 
     return candidates
 
