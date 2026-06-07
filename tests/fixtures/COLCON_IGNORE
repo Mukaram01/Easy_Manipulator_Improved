@@ -1,0 +1,1 @@
+Test fixture data only: do not let colcon recursively discover package.xml files under tests/fixtures as buildable ROS packages.
