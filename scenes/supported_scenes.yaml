@@ -96,8 +96,8 @@ scenes:
     package_name: ur5_2f_test
     scene_path: scenes/ur5_2f_test
     support_level: supported
-    status: blocked
-    known_blocker: "Scene3D runtime smoke evidence remains blocked because generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable, indicating the ROS Humble/ament workcell_builder executable is unavailable in this container."
+    status: supported
+    known_blocker: ""
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_test --json
