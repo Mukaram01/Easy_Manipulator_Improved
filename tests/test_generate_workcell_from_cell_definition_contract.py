@@ -293,3 +293,126 @@ def test_cli_force_in_place_regeneration_keeps_source_layout_and_environment(
     assert (package_dir / "layout" / "workcell_studio_layout.yaml").read_text(
         encoding="utf-8"
     ) == expected_workcell_layout
+
+
+def test_visual_mesh_index_passes_workspace_root_to_extractor(tmp_path: Path, monkeypatch) -> None:
+    from scripts import generate_workcell_from_cell_definition as generator
+
+    workspace_root = tmp_path / "ws"
+    package_dir = (
+        workspace_root / "src" / "easy_manipulation_deployment" / "scenes" / "demo_scene"
+    )
+    (package_dir / "urdf").mkdir(parents=True)
+    (package_dir / "urdf" / "scene.urdf.xacro").write_text(
+        '<robot name="demo"><link name="world"><visual><geometry>'
+        '<mesh filename="package://demo_assets/meshes/part.stl"/>'
+        "</geometry></visual></link></robot>",
+        encoding="utf-8",
+    )
+    extractor = tmp_path / "fake_extractor.py"
+    extractor.write_text(
+        """
+import os
+from pathlib import Path
+EXTRACTOR_VERSION = 'test'
+EXPECTED_WORKSPACE_ROOT = Path(os.environ['EXPECTED_WORKSPACE_ROOT'])
+
+def expand_xacro(urdf_path, scene_dir=None, xacro_args=None, workspace_root=None):
+    assert xacro_args == {'use_fake_hardware': 'true', 'robot_prefix': '', 'tool_prefix': ''}
+    assert Path(workspace_root) == EXPECTED_WORKSPACE_ROOT
+    return (Path(urdf_path).read_text(encoding='utf-8'), '', '', ['xacro'])
+
+def discover_package_map(scene_dir, workspace_root=None, package_names=None):
+    assert Path(workspace_root) == EXPECTED_WORKSPACE_ROOT
+    assert package_names == ['demo_assets']
+    return {'demo_assets': EXPECTED_WORKSPACE_ROOT / 'src' / 'demo_assets'}, {'resolution_paths': []}
+
+def extract_referenced_package_names(text):
+    return ['demo_assets']
+
+def extract_from_urdf(xml_text, package_map):
+    return [{'id': 'mesh', 'link': 'world', 'parent_link': 'world', 'geometry_type': 'mesh', 'resolved': True, 'render_expected': True}]
+
+def contains_placeholder(text):
+    return False
+
+def discover_xacro_command():
+    return ('xacro', True, '')
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(generator, "MESH_INDEX_EXTRACTOR_PATH", extractor)
+    monkeypatch.setenv("EXPECTED_WORKSPACE_ROOT", str(workspace_root.resolve()))
+    warnings: list[str] = []
+
+    assert generator._write_scene_visual_mesh_index("demo_scene", package_dir, warnings) is None
+
+    payload = json.loads(
+        (package_dir / "generated" / "scene_visual_mesh_index.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["workspace_root"] == str(workspace_root.resolve())
+    assert payload["xacro_command"] == ["xacro"]
+    assert payload["visual_readiness"]["status"] == "PASS"
+    assert warnings == []
+
+
+def test_visual_mesh_index_warns_when_xacro_expansion_falls_back(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from scripts import generate_workcell_from_cell_definition as generator
+
+    package_dir = tmp_path / "scene"
+    (package_dir / "urdf").mkdir(parents=True)
+    (package_dir / "urdf" / "scene.urdf.xacro").write_text(
+        '<robot name="demo"><link name="world"><visual><geometry>'
+        '<mesh filename="package://missing_assets/meshes/part.stl"/>'
+        "</geometry></visual></link></robot>",
+        encoding="utf-8",
+    )
+    extractor = tmp_path / "fallback_extractor.py"
+    extractor.write_text(
+        """
+EXTRACTOR_VERSION = 'test'
+
+def expand_xacro(urdf_path, scene_dir=None, xacro_args=None, workspace_root=None):
+    return ('', 'best_effort_recursive', 'xacro unavailable in test', [])
+
+def discover_package_map(scene_dir, workspace_root=None, package_names=None):
+    return {}, {'resolution_paths': []}
+
+def extract_referenced_package_names(text):
+    return ['missing_assets']
+
+def extract_from_urdf(xml_text, package_map):
+    return [{'id': 'mesh', 'link': 'world', 'parent_link': 'world', 'geometry_type': 'mesh', 'resolved': False, 'render_expected': False}]
+
+def contains_placeholder(text):
+    return False
+
+def discover_xacro_command():
+    return ('', False, 'xacro unavailable in test')
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(generator, "MESH_INDEX_EXTRACTOR_PATH", extractor)
+    warnings: list[str] = []
+
+    assert generator._write_scene_visual_mesh_index("demo_scene", package_dir, warnings) is None
+
+    payload = json.loads(
+        (package_dir / "generated" / "scene_visual_mesh_index.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["safe_for_preview"] is False
+    assert payload["visual_readiness"]["status"] == "WARN"
+    assert any(
+        "fully expanded xacro" in reason
+        for reason in payload["visual_readiness"]["reasons"]
+    )
+    assert any(
+        "primitive fallback alone" in reason
+        for reason in payload["visual_readiness"]["reasons"]
+    )
