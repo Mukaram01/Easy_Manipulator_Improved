@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, copy, json, os, re, shutil, subprocess, math, collections
+import argparse, collections, copy, importlib, importlib.util, json, math, os, re, shutil, subprocess
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -10,6 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SCENES_ROOT = ROOT / "scenes"
 EXTRACTOR_VERSION = "2.5"
 PLACEHOLDER_RE = re.compile(r"(\$\{[^}]+\}|\$\(arg\s+[^)]+\)|\$\(find\s+[^)]+\))")
+REPO_LOCAL_ASSET_PRECEDENCE_PACKAGES = {
+    "robotiq_85_description",
+    "workbench_description",
+    "realsense2_description",
+}
 
 def read_yaml(path):
     try:return yaml.safe_load(Path(path).read_text()) if Path(path).exists() else None
@@ -43,9 +48,87 @@ def contains_placeholder(v): return bool(PLACEHOLDER_RE.search(json.dumps(v) if 
 def sanitize(s): return re.sub(r'[^A-Za-z0-9_]+','_',str(s or 'unnamed')).strip('_') or 'unnamed'
 def tag_name(e): return e.tag.split('}')[-1]
 
-def discover_package_map(scene_dir, workspace_root=None):
-    out={}
-    diagnostics={'resolved_packages':[], 'shadowed_packages':[], 'resolution_paths':[]}
+def _package_name_from_xml(pkg_xml):
+    pkg_dir = Path(pkg_xml).parent
+    pkg_name = pkg_dir.name
+    parse_error = ''
+    try:
+        xml_root = ET.parse(pkg_xml).getroot()
+        name_node = xml_root.find('name')
+        if name_node is not None and (name_node.text or '').strip():
+            pkg_name = name_node.text.strip()
+    except Exception as e:
+        parse_error = str(e)
+    return pkg_name, parse_error
+
+def _ros_resolution_env(workspace_root=None):
+    env=dict(os.environ)
+    ament_prefix_entries=[]
+    inherited_ament=os.environ.get('AMENT_PREFIX_PATH','')
+    if inherited_ament:
+        ament_prefix_entries.extend(inherited_ament.split(os.pathsep))
+    if workspace_root:
+        workspace_install=Path(workspace_root)/'install'
+        if workspace_install.exists():
+            ament_prefix_entries.append(str(workspace_install))
+    ros_humble=Path('/opt/ros/humble')
+    if ros_humble.exists():
+        ament_prefix_entries.append(str(ros_humble))
+    if ament_prefix_entries:
+        env['AMENT_PREFIX_PATH']=os.pathsep.join(_dedupe_path_entries(ament_prefix_entries))
+    return env
+
+def resolve_ros_package_share(package_name, workspace_root=None):
+    """Resolve a ROS package share directory through installed ROS mechanisms.
+
+    Returns ``(share_path, source_tier, diagnostics)``. ``share_path`` is ``None``
+    when neither ament index nor ``ros2 pkg prefix`` can resolve the package.
+    """
+    diagnostics={'package_name':package_name,'attempts':[]}
+    if not package_name:
+        diagnostics['error']='empty_package_name'
+        return None, '', diagnostics
+
+    has_ament_index = importlib.util.find_spec('ament_index_python') is not None
+    has_ament_packages = has_ament_index and importlib.util.find_spec('ament_index_python.packages') is not None
+    if has_ament_packages:
+        ament_packages = importlib.import_module('ament_index_python.packages')
+        try:
+            share = Path(ament_packages.get_package_share_directory(package_name))
+            diagnostics['attempts'].append({'source_tier':'ament_index','root_path':str(share),'status':'resolved'})
+            if share.exists():
+                return share, 'ament_index', diagnostics
+            diagnostics['attempts'][-1]['status']='missing_path'
+        except Exception as e:
+            diagnostics['attempts'].append({'source_tier':'ament_index','status':'unresolved','error':str(e)})
+    else:
+        diagnostics['attempts'].append({'source_tier':'ament_index','status':'unavailable','error':'ament_index_python.packages import unavailable'})
+
+    ros2 = shutil.which('ros2') or ('/opt/ros/humble/bin/ros2' if Path('/opt/ros/humble/bin/ros2').exists() else '')
+    if ros2:
+        try:
+            proc=subprocess.run(
+                [ros2,'pkg','prefix',package_name],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                env=_ros_resolution_env(workspace_root),
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                share = Path(proc.stdout.strip())/'share'/package_name
+                diagnostics['attempts'].append({'source_tier':'ros2_pkg_prefix','prefix':proc.stdout.strip(),'root_path':str(share),'status':'resolved' if share.exists() else 'missing_path'})
+                if share.exists():
+                    return share, 'ros2_pkg_prefix', diagnostics
+            else:
+                diagnostics['attempts'].append({'source_tier':'ros2_pkg_prefix','status':'unresolved','error':(proc.stderr or proc.stdout or '').strip()})
+        except Exception as e:
+            diagnostics['attempts'].append({'source_tier':'ros2_pkg_prefix','status':'unresolved','error':str(e)})
+    else:
+        diagnostics['attempts'].append({'source_tier':'ros2_pkg_prefix','status':'unavailable','error':'ros2 executable unavailable'})
+
+    return None, '', diagnostics
+
+def _fallback_package_candidates(scene_dir, workspace_root=None):
     ws = Path(workspace_root) if workspace_root else None
     roots=[
         ('scene_generated_package', scene_dir/'generated'),
@@ -55,33 +138,74 @@ def discover_package_map(scene_dir, workspace_root=None):
         ('repo_assets', ROOT/'assets'),
         ('ros_humble_share', Path('/opt/ros/humble/share')),
     ]
+    candidates=[]
     for tier, root in roots:
         if root is None or not root.exists():
             continue
         for pkg_xml in root.rglob('package.xml'):
             pkg_dir = pkg_xml.parent
-            pkg_name = pkg_dir.name
-            parse_error = ''
-            try:
-                xml_root = ET.parse(pkg_xml).getroot()
-                name_node = xml_root.find('name')
-                if name_node is not None and (name_node.text or '').strip():
-                    pkg_name = name_node.text.strip()
-            except Exception as e:
-                parse_error = str(e)
+            pkg_name, parse_error = _package_name_from_xml(pkg_xml)
             candidate={'package_name':pkg_name,'root_path':str(pkg_dir),'source_tier':tier,'package_xml':str(pkg_xml)}
             if parse_error:
                 candidate['name_fallback']='directory_name'
                 candidate['parse_error']=parse_error
-            if pkg_name in out:
-                diagnostics['shadowed_packages'].append({
-                    **candidate,
-                    'shadowed_by':str(out[pkg_name]),
-                })
-                continue
-            out[pkg_name]=pkg_dir
-            diagnostics['resolved_packages'].append(candidate)
-            diagnostics['resolution_paths'].append({'package_name':pkg_name,'root_path':str(pkg_dir),'source_tier':tier})
+            candidates.append(candidate)
+    return candidates
+
+def _record_package_resolution(out, diagnostics, candidate):
+    pkg_name = candidate['package_name']
+    if pkg_name in out:
+        diagnostics['shadowed_packages'].append({
+            **candidate,
+            'shadowed_by':str(out[pkg_name]),
+        })
+        return False
+    out[pkg_name]=Path(candidate['root_path'])
+    diagnostics['resolved_packages'].append(candidate)
+    diagnostics['resolution_paths'].append({'package_name':pkg_name,'root_path':candidate['root_path'],'source_tier':candidate['source_tier']})
+    return True
+
+def extract_referenced_package_names(text):
+    text = text or ''
+    names=set(re.findall(r"package://([^/\s\"\']+)", text))
+    names.update(n.strip() for n in re.findall(r'\$\(find\s+([^)]+)\)', text) if n.strip())
+    return sorted(names)
+
+def discover_package_map(scene_dir, workspace_root=None, package_names=None):
+    out={}
+    diagnostics={'resolved_packages':[], 'shadowed_packages':[], 'resolution_paths':[], 'ros_resolution_attempts':[], 'unresolved_packages':[]}
+    fallback_candidates=_fallback_package_candidates(Path(scene_dir), workspace_root=workspace_root)
+    by_name=collections.OrderedDict()
+    for candidate in fallback_candidates:
+        by_name.setdefault(candidate['package_name'], []).append(candidate)
+    for pkg_name in package_names or []:
+        by_name.setdefault(pkg_name, [])
+
+    for pkg_name, candidates in by_name.items():
+        repo_local_candidates=[c for c in candidates if c['source_tier'] in {'repo_assets','workspace_src_easy_manipulation_deployment_assets','workspace_src_assets'}]
+        if pkg_name in REPO_LOCAL_ASSET_PRECEDENCE_PACKAGES and repo_local_candidates:
+            _record_package_resolution(out, diagnostics, repo_local_candidates[0])
+            for candidate in candidates:
+                if candidate is not repo_local_candidates[0]:
+                    diagnostics['shadowed_packages'].append({**candidate,'shadowed_by':str(out[pkg_name])})
+            continue
+
+        share_path, source_tier, ros_diag = resolve_ros_package_share(pkg_name, workspace_root=workspace_root)
+        diagnostics['ros_resolution_attempts'].append(ros_diag)
+        if share_path:
+            ros_candidate={'package_name':pkg_name,'root_path':str(share_path),'source_tier':source_tier,'package_xml':str(share_path/'package.xml')}
+            _record_package_resolution(out, diagnostics, ros_candidate)
+            for candidate in candidates:
+                if Path(candidate['root_path']).resolve() != share_path.resolve():
+                    diagnostics['shadowed_packages'].append({**candidate,'shadowed_by':str(out[pkg_name])})
+            continue
+
+        if not candidates:
+            diagnostics['unresolved_packages'].append({'package_name':pkg_name,'source_tier':'unresolved','reason':'not_found_by_ament_ros2_or_package_xml_scan'})
+            continue
+        _record_package_resolution(out, diagnostics, candidates[0])
+        for candidate in candidates[1:]:
+            diagnostics['shadowed_packages'].append({**candidate,'shadowed_by':str(out[pkg_name])})
     return out, diagnostics
 
 def _package_search_paths(scene_dir=None, workspace_root=None):
@@ -273,9 +397,10 @@ def _expand_lite_node(node, args, package_map, macros):
 
 def expand_xacro_lite(urdf_path, scene_dir=None, xacro_args=None, workspace_root=None):
     scene_dir = scene_dir or Path(urdf_path).parents[1]; xacro_args = dict(xacro_args or {})
-    package_map, diagnostics = discover_package_map(scene_dir, workspace_root=workspace_root)
+    source_text = Path(urdf_path).read_text(errors='ignore') if Path(urdf_path).exists() else ''
+    package_map, diagnostics = discover_package_map(scene_dir, workspace_root=workspace_root, package_names=extract_referenced_package_names(source_text))
     try:
-        root=ET.parse(urdf_path).getroot()
+        root=ET.fromstring(source_text) if source_text else ET.parse(urdf_path).getroot()
     except Exception as e:
         return None, False, f'xacro lite parse failed: {e}', None
     args=dict(xacro_args)
@@ -530,7 +655,7 @@ def main():
         if a.require_xacro and not xacro_avail:
             print('xacro executable unavailable (required)'); return 2
         if not xml_text: xml_text=(urdf_path.read_text(errors='ignore') if urdf_path.exists() else '<robot/>')
-        package_map, package_diagnostics = discover_package_map(scene_dir, workspace_root=(a.workspace_root or None))
+        package_map, package_diagnostics = discover_package_map(scene_dir, workspace_root=(a.workspace_root or None), package_names=extract_referenced_package_names(xml_text))
         try: items=extract_from_urdf(xml_text, package_map)
         except Exception: items=[]
         static_robot_fallback_count = append_static_robot_primitive_fallbacks(items, xml_text, fallback_reason)
