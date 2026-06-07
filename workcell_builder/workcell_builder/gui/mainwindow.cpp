@@ -72,12 +72,14 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QMap>
+#include <QHash>
 #include <QSplitter>
 #include <QScrollArea>
 #include <QGroupBox>
 #include <QMetaObject>
 #include <QPointer>
 #include <QProgressDialog>
+#include <QProcessEnvironment>
 #include <QSettings>
 #include <QLineEdit>
 #include <QFormLayout>
@@ -7343,31 +7345,137 @@ void MainWindow::populate_scene_hierarchy()
   QSet<QString> preview_ids;
   for (const auto &existing : preview_items) preview_ids.insert(existing.id);
   const fs::path urdf_visual_index = d / "generated" / "scene_visual_mesh_index.json";
+  const QString scene_name = QString::fromStdString(d.filename().string());
+  const QString workspace_root = detect_workspace_root();
   QString visual_index_warning_reason;
-  if (!fs::exists(urdf_visual_index)) {
-    visual_index_warning_reason = QStringLiteral("missing");
-  } else {
+  QString visual_index_refresh_blocker;
+  bool visual_index_needs_refresh = false;
+
+  auto inspect_visual_index_refresh_need = [&]() {
+    visual_index_warning_reason.clear();
+    visual_index_needs_refresh = false;
+    if (!fs::exists(urdf_visual_index)) {
+      visual_index_warning_reason = QStringLiteral("missing");
+      visual_index_needs_refresh = true;
+      return;
+    }
     try {
       const YAML::Node existing_index = YAML::LoadFile(urdf_visual_index.string());
       const bool safe_for_preview = workcell_builder::yaml_map_key(existing_index, "safe_for_preview").as<bool>(false);
       const bool stale_index = workcell_builder::yaml_map_key(existing_index, "stale_index").as<bool>(false);
       const int stale_or_unsafe_count = workcell_builder::yaml_map_key(existing_index, "stale_or_unsafe_count").as<int>(0);
+      const int visual_count = workcell_builder::yaml_map_key(existing_index, "visual_count").as<int>(-1);
+      const int emitted_visual_count = workcell_builder::yaml_map_key(existing_index, "emitted_visual_count").as<int>(-1);
+      const int candidate_mesh_count = workcell_builder::yaml_map_key(existing_index, "candidate_mesh_count").as<int>(-1);
+      const int renderable_item_count = workcell_builder::yaml_map_key(existing_index, "renderable_item_count").as<int>(-1);
+      const int renderable_mesh_count = workcell_builder::yaml_map_key(existing_index, "renderable_mesh_count").as<int>(-1);
+      const YAML::Node visual_items = workcell_builder::yaml_map_key(existing_index, "visual_items");
+      const bool empty_visual_items = visual_items && visual_items.IsSequence() && visual_items.size() == 0;
       if (!safe_for_preview) {
         visual_index_warning_reason = QStringLiteral("unsafe/best-effort");
       } else if (stale_index || stale_or_unsafe_count > 0) {
         visual_index_warning_reason = QStringLiteral("stale");
+      } else if (empty_visual_items || visual_count == 0 || emitted_visual_count == 0 ||
+                 (candidate_mesh_count == 0 && renderable_item_count <= 0 && renderable_mesh_count <= 0)) {
+        visual_index_warning_reason = QStringLiteral("poor preview counters: visual_count=%1 emitted_visual_count=%2 candidate_mesh_count=%3 renderable_item_count=%4 renderable_mesh_count=%5")
+          .arg(visual_count)
+          .arg(emitted_visual_count)
+          .arg(candidate_mesh_count)
+          .arg(renderable_item_count)
+          .arg(renderable_mesh_count);
       }
+      visual_index_needs_refresh = !visual_index_warning_reason.isEmpty();
     } catch (const std::exception &e) {
       visual_index_warning_reason = QStringLiteral("unreadable: %1").arg(QString::fromUtf8(e.what()));
+      visual_index_needs_refresh = true;
     } catch (...) {
       visual_index_warning_reason = QStringLiteral("unreadable");
+      visual_index_needs_refresh = true;
     }
-  }
-  if (!visual_index_warning_reason.isEmpty()) {
-    append_studio_log(
-      QString("Visual mesh index %1 for scene '%2'; Scene3D will not regenerate generated/scene_visual_mesh_index.json during UI scene load. Run the scene package generator or an explicit extractor command in a ROS/workspace validation flow to refresh this generated artifact.")
-      .arg(visual_index_warning_reason, QString::fromStdString(d.filename().string())));
-    append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
+  };
+
+  auto run_visual_index_refresh = [&]() -> bool {
+    QString script;
+    if (!helper_script_exists("extract_scene_urdf_visual_mesh_index.py", &script)) {
+      visual_index_refresh_blocker = QStringLiteral("extractor script not found in helper script search paths");
+      return false;
+    }
+    if (workspace_root.trimmed().isEmpty() || !QDir(workspace_root).exists()) {
+      visual_index_refresh_blocker = QStringLiteral("workspace root is empty or does not exist");
+      return false;
+    }
+    const bool ros_setup_exists = QFileInfo::exists(QStringLiteral("/opt/ros/humble/setup.bash"));
+    const bool workspace_install_setup_exists = QFileInfo::exists(workspace_root + QStringLiteral("/install/setup.bash"));
+    const bool ros_environment_present = ros_setup_exists ||
+      !qgetenv("ROS_DISTRO").trimmed().isEmpty() ||
+      !qgetenv("AMENT_PREFIX_PATH").trimmed().isEmpty();
+    if (!ros_environment_present) {
+      visual_index_refresh_blocker = QStringLiteral("ROS/workspace environment is unavailable (no /opt/ros/humble/setup.bash, ROS_DISTRO, or AMENT_PREFIX_PATH)");
+      return false;
+    }
+
+    QProcess process;
+    process.setWorkingDirectory(workspace_root);
+    QStringList command_parts;
+    if (ros_setup_exists) {
+      command_parts << QStringLiteral("source /opt/ros/humble/setup.bash");
+    }
+    if (workspace_install_setup_exists) {
+      command_parts << QStringLiteral("source install/setup.bash");
+    }
+    command_parts << QStringLiteral("python3 \"$VISUAL_INDEX_EXTRACTOR\" --scene \"$VISUAL_INDEX_SCENE\" --workspace-root \"$VISUAL_INDEX_WORKSPACE_ROOT\"");
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert(QStringLiteral("VISUAL_INDEX_EXTRACTOR"), script);
+    env.insert(QStringLiteral("VISUAL_INDEX_SCENE"), scene_name);
+    env.insert(QStringLiteral("VISUAL_INDEX_WORKSPACE_ROOT"), workspace_root);
+    process.setProcessEnvironment(env);
+    const QString command = command_parts.join(QStringLiteral(" && "));
+    append_studio_log(QString("Visual mesh index refresh: preview-only metadata command for scene '%1' at %2 (no RViz/MoveIt/controllers/real hardware launched).")
+      .arg(scene_name, QString::fromStdString(urdf_visual_index.string())));
+    process.start(QStringLiteral("/bin/bash"), QStringList() << QStringLiteral("-lc") << command);
+    if (!process.waitForFinished(120000)) {
+      process.kill();
+      process.waitForFinished(3000);
+      visual_index_refresh_blocker = QStringLiteral("extractor timed out after 120s");
+      return false;
+    }
+    const int exit_code = process.exitCode();
+    const QString stdout_text = QString::fromUtf8(process.readAllStandardOutput()).trimmed();
+    const QString stderr_text = QString::fromUtf8(process.readAllStandardError()).trimmed();
+    if (exit_code != 0) {
+      visual_index_refresh_blocker = QStringLiteral("extractor exited with code %1; stderr=%2; stdout=%3")
+        .arg(exit_code)
+        .arg(stderr_text.left(500), stdout_text.left(500));
+      return false;
+    }
+    if (!fs::exists(urdf_visual_index)) {
+      visual_index_refresh_blocker = QStringLiteral("extractor exited successfully but did not write the index file");
+      return false;
+    }
+    if (!stdout_text.isEmpty()) {
+      append_studio_log(QString("Visual mesh index refresh stdout: %1").arg(stdout_text.left(500)));
+    }
+    append_studio_log(QString("Visual mesh index refreshed for scene '%1'; reloading generated/scene_visual_mesh_index.json before assembling preview items.").arg(scene_name));
+    return true;
+  };
+
+  inspect_visual_index_refresh_need();
+  if (visual_index_needs_refresh) {
+    const QString original_reason = visual_index_warning_reason;
+    if (run_visual_index_refresh()) {
+      inspect_visual_index_refresh_need();
+      if (visual_index_warning_reason.isEmpty()) {
+        append_studio_log(QString("Visual mesh index refresh cleared '%1' for scene '%2'.").arg(original_reason, scene_name));
+      } else {
+        append_studio_log(QString("Visual mesh index refresh completed for scene '%1' but index is still %2 at %3 (workspace root: %4).")
+          .arg(scene_name, visual_index_warning_reason, QString::fromStdString(urdf_visual_index.string()), workspace_root));
+      }
+    } else {
+      append_studio_log(
+        QString("Visual mesh index %1 for scene '%2' at %3 (workspace root: %4). Automatic preview-only refresh could not run: %5. Run python3 scripts/extract_scene_urdf_visual_mesh_index.py --scene %2 --workspace-root %4 from a ROS/workspace environment to refresh this generated artifact.")
+        .arg(original_reason, scene_name, QString::fromStdString(urdf_visual_index.string()), workspace_root, visual_index_refresh_blocker));
+      append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
+    }
   }
   int visual_index_loaded_count = 0;
   int visual_preview_added_count = 0;
@@ -7375,6 +7483,91 @@ void MainWindow::populate_scene_hierarchy()
   auto add_skip_reason = [&](const QString & reason) {
     const QString key = canonical_skip_reason_key(reason);
     skip_reason_counts[key] = skip_reason_counts.value(key, 0) + 1;
+  };
+  auto normalized_equivalence_token = [](QString value) {
+    value = value.trimmed().toLower().replace('-', '_').replace(' ', '_');
+    value.replace(QRegularExpression(QStringLiteral("[^a-z0-9_]+")), QStringLiteral("_"));
+    value.replace(QRegularExpression(QStringLiteral("_+")), QStringLiteral("_"));
+    while (value.startsWith('_')) value.remove(0, 1);
+    while (value.endsWith('_')) value.chop(1);
+    return value;
+  };
+  auto normalized_equivalence_basename = [&](const QString & value) {
+    QString trimmed = value.trimmed();
+    if (trimmed.startsWith(QStringLiteral("package://"))) trimmed = trimmed.mid(QStringLiteral("package://").size());
+    if (trimmed.startsWith(QStringLiteral("file://"))) trimmed = trimmed.mid(QStringLiteral("file://").size());
+    const QString basename = QFileInfo(trimmed).fileName();
+    return normalized_equivalence_token(basename.isEmpty() ? trimmed : basename);
+  };
+  auto approximate_pose_token = [](double value) {
+    return QString::number(static_cast<int>(std::llround(value * 20.0)));  // 5 cm / radian-ish buckets for equivalence only.
+  };
+  auto normalized_item_role = [&](const ScenePreviewWidget::PreviewItem & item) {
+    return normalized_equivalence_token(normalize_role(item.role, item.category + " " + item.display_name + " " + item.id));
+  };
+  auto physical_asset_role = [&](const ScenePreviewWidget::PreviewItem & item) {
+    const QString role = normalized_item_role(item);
+    return role == QStringLiteral("robot") ||
+           role == QStringLiteral("end_effector_tool") ||
+           role == QStringLiteral("camera") ||
+           role == QStringLiteral("support_surface_table") ||
+           role == QStringLiteral("conveyor") ||
+           role == QStringLiteral("object");
+  };
+  auto equivalence_keys_for_item = [&](const ScenePreviewWidget::PreviewItem & item) {
+    QSet<QString> keys;
+    const QString role = normalized_item_role(item);
+    if (role.isEmpty()) return keys;
+    const QString link = normalized_equivalence_token(item.display_name.isEmpty() ? item.id : item.display_name);
+    const QString id_token = normalized_equivalence_token(item.id);
+    const QString package_basename = normalized_equivalence_basename(item.package_uri);
+    const QString source_basename = normalized_equivalence_basename(item.source_path.isEmpty() ? item.mesh_path : item.source_path);
+    const QString pose = QStringLiteral("%1_%2_%3_%4_%5_%6")
+      .arg(approximate_pose_token(item.x), approximate_pose_token(item.y), approximate_pose_token(item.z),
+           approximate_pose_token(item.roll), approximate_pose_token(item.pitch), approximate_pose_token(item.yaw));
+    if (!link.isEmpty()) keys.insert(QStringLiteral("role_link:%1:%2").arg(role, link));
+    if (!id_token.isEmpty()) keys.insert(QStringLiteral("role_link:%1:%2").arg(role, id_token));
+    if (!package_basename.isEmpty()) keys.insert(QStringLiteral("role_package_basename:%1:%2").arg(role, package_basename));
+    if (!source_basename.isEmpty()) keys.insert(QStringLiteral("role_source_basename:%1:%2").arg(role, source_basename));
+    keys.insert(QStringLiteral("role_pose:%1:%2").arg(role, pose));
+    if (!link.isEmpty()) keys.insert(QStringLiteral("role_link_pose:%1:%2:%3").arg(role, link, pose));
+    if (!source_basename.isEmpty()) keys.insert(QStringLiteral("role_source_pose:%1:%2:%3").arg(role, source_basename, pose));
+    return keys;
+  };
+  auto is_true_editable_source_of_truth = [](const ScenePreviewWidget::PreviewItem & item) {
+    return item.source_layer == QStringLiteral("editable_layout") &&
+           item.linked_to_editable_layout_state &&
+           item.editable &&
+           !item.locked;
+  };
+  auto is_authoritative_mesh_index_visual = [&](const ScenePreviewWidget::PreviewItem & item) {
+    if (!physical_asset_role(item)) return false;
+    if (!item.locked || item.linked_to_editable_layout_state || item.editable) return false;
+    if (item.category != QStringLiteral("URDF Visual")) return false;
+    const QString visual_source = canonical_scene3d_token(item.active_visual_source);
+    const QString source_layer = canonical_scene3d_token(item.source_layer);
+    const QString source_path = item.source_path.trimmed();
+    const bool source_path_points_to_mesh_file =
+      !source_path.isEmpty() &&
+      !source_path.startsWith(QStringLiteral("package://"), Qt::CaseInsensitive) &&
+      !source_path.startsWith(QStringLiteral("file://"), Qt::CaseInsensitive);
+    const bool has_authoritative_geometry =
+      (visual_source == QStringLiteral("mesh_preview") &&
+       (item.mesh_available || !item.mesh_path.trimmed().isEmpty() || source_path_points_to_mesh_file)) ||
+      visual_source == QStringLiteral("urdf_primitive");
+    return source_layer == QStringLiteral("locked_generated_urdf_visual") && has_authoritative_geometry;
+  };
+  auto is_lower_fidelity_generated_placeholder = [&](const ScenePreviewWidget::PreviewItem & item) {
+    if (is_true_editable_source_of_truth(item)) return false;
+    if (!physical_asset_role(item)) return false;
+    const QString layer = canonical_scene3d_token(item.source_layer);
+    const QString visual_source = canonical_scene3d_token(item.active_visual_source);
+    const QString text = normalized_equivalence_token(item.id + " " + item.display_name + " " + item.category + " " + item.lock_reason + " " + item.mesh_load_warning + " " + item.warnings.join(" "));
+    if (visual_source == QStringLiteral("primitive_fallback") || layer == QStringLiteral("primitive_fallback")) return true;
+    if (text.contains(QStringLiteral("placeholder")) || text.contains(QStringLiteral("generated_bounds")) ||
+        text.contains(QStringLiteral("bounds_only")) || text.contains(QStringLiteral("raw_bounds"))) return true;
+    if (layer == QStringLiteral("locked_generated_urdf_visual") && item.category != QStringLiteral("URDF Visual")) return true;
+    return false;
   };
   int non_mesh_geometry_added = 0;
   int non_mesh_geometry_unsupported = 0;
@@ -7516,7 +7709,7 @@ void MainWindow::populate_scene_hierarchy()
           p.selectable = true;
           p.lock_reason = "generated URDF visual";
           p.robot_base_frame = parent_link.isEmpty() ? QStringLiteral("unknown") : parent_link;
-          p.source_layer = QStringLiteral("generated_urdf_visual");
+          p.source_layer = QStringLiteral("locked_generated_urdf_visual");
           const bool explicit_primitive_fallback = workcell_builder::yaml_map_key(v, "primitive_fallback").as<bool>(false) ||
             transform_status == QStringLiteral("static_fallback") ||
             transform_status == QStringLiteral("static_fallback_parent");
@@ -7678,7 +7871,7 @@ void MainWindow::populate_scene_hierarchy()
             p.mesh_available = false;
             p.has_mesh_metadata = true;
             p.active_visual_source = QStringLiteral("primitive_fallback");
-            p.source_layer = QStringLiteral("generated_urdf_visual");
+            p.source_layer = QStringLiteral("locked_generated_urdf_visual");
             p.editable = false;
             p.selectable = true;
             p.lock_reason = QStringLiteral("generated URDF visual");
@@ -7768,6 +7961,66 @@ void MainWindow::populate_scene_hierarchy()
     add_preview_item("fixture_place", "place target fixture", "Place Target / Fixture", "place target", "ready", scene_source, true);
     add_preview_item("safety_zone_a", "safety zone", "Safety", "safety zone", "warning", scene_source, false);
     add_preview_item("warning_marker_a", "warning marker", "Safety", "warning marker", "warning", scene_source, false);
+  }
+
+  QHash<QString, QStringList> authoritative_visual_equivalence_map;
+  for (const auto & item : preview_items) {
+    if (!is_authoritative_mesh_index_visual(item)) continue;
+    for (const QString & key : equivalence_keys_for_item(item)) {
+      authoritative_visual_equivalence_map[key].append(item.id);
+    }
+  }
+
+  QMap<QString, int> placeholder_suppression_reason_counts;
+  int suppressed_preview_placeholder_count = 0;
+  int preserved_editable_source_count = 0;
+  QVector<ScenePreviewWidget::PreviewItem> unsuppressed_preview_items;
+  unsuppressed_preview_items.reserve(preview_items.size());
+  for (const auto & item : preview_items) {
+    if (is_true_editable_source_of_truth(item)) {
+      ++preserved_editable_source_count;
+      unsuppressed_preview_items.push_back(item);
+      continue;
+    }
+    bool equivalent_to_authoritative_visual = false;
+    if (is_lower_fidelity_generated_placeholder(item)) {
+      for (const QString & key : equivalence_keys_for_item(item)) {
+        if (authoritative_visual_equivalence_map.contains(key)) {
+          equivalent_to_authoritative_visual = true;
+          break;
+        }
+      }
+    }
+    if (equivalent_to_authoritative_visual) {
+      ++suppressed_preview_placeholder_count;
+      placeholder_suppression_reason_counts[QStringLiteral("suppressed_raw_placeholder_equivalent_mesh_index")] += 1;
+      continue;
+    }
+    unsuppressed_preview_items.push_back(item);
+  }
+  preview_items = unsuppressed_preview_items;
+  if (suppressed_preview_placeholder_count > 0) {
+    QStringList suppression_tokens;
+    for (auto it = placeholder_suppression_reason_counts.cbegin(); it != placeholder_suppression_reason_counts.cend(); ++it) {
+      suppression_tokens << QString("%1=%2").arg(it.key()).arg(it.value());
+    }
+    append_studio_log(QString("Preview placeholder suppression: %1 (authoritative_mesh_index_equivalence_keys=%2 preserved_editable_source_of_truth=%3)")
+      .arg(suppression_tokens.join(' '))
+      .arg(authoritative_visual_equivalence_map.size())
+      .arg(preserved_editable_source_count));
+  } else if (!authoritative_visual_equivalence_map.isEmpty()) {
+    append_studio_log(QString("Preview placeholder suppression: none (authoritative_mesh_index_equivalence_keys=%1 preserved_editable_source_of_truth=%2)")
+      .arg(authoritative_visual_equivalence_map.size())
+      .arg(preserved_editable_source_count));
+  }
+
+  scene_hierarchy_tree_->clear();
+  hierarchy_groups.clear();
+  for (const QString &gn : {QString("Editable Layout"), QString("Mesh Preview"), QString("Generated URDF Visuals"), QString("Primitive Fallbacks"), QString("Cameras"), QString("Robot / Tooling"), QString("Overlays / Helpers"), QString("Warnings / Missing Assets")}) ensure_group(gn);
+  for (const auto & p : preview_items) {
+    if (allowed_scene_roles.contains(p.role) && include_preview_item_in_hierarchy(p)) {
+      add_tree_node(p);
+    }
   }
 
   const std::vector<std::string> key_files = {

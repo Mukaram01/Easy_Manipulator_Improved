@@ -28,13 +28,24 @@ def test_draw_mesh_preview_has_explicit_mesh_preview_mode_branches():
         assert token in body, f"expected explicit branch token in draw path: {token}"
 
 
-def test_draw_mesh_preview_draws_cached_triangles_not_just_unit_cube_fallback():
+def test_draw_mesh_preview_draws_cached_triangles_without_counting_invalid_mesh_as_rendered():
     body = _draw_mesh_preview_fn_body()
     assert "for (const auto & tri :" in body
     assert ".mesh.triangles" in body
 
-    fallback_pos = body.find("draw_unit_cube_triangles(")
+    invalid_guard_pos = body.find("if (!cache.valid || cache.mesh.triangles.isEmpty())")
     triangles_loop_pos = body.find("for (const auto & tri :")
-    assert fallback_pos != -1, "expected primitive fallback call for invalid mesh path"
-    assert triangles_loop_pos != -1, "expected explicit triangle iteration draw path"
-    assert triangles_loop_pos > fallback_pos, "expected non-fallback mesh draw path after fallback guard"
+    assert invalid_guard_pos != -1, "expected invalid mesh guard before triangle rendering"
+    assert "draw_unit_cube_triangles(color);" not in body, "invalid meshes must not be counted as successful mesh rendering"
+    assert "return false;" in body[invalid_guard_pos:triangles_loop_pos], "invalid meshes should fall through to primitive fallback accounting"
+    assert triangles_loop_pos > invalid_guard_pos, "expected non-fallback mesh draw path after invalid mesh guard"
+
+
+def test_generated_bounds_suppression_and_mesh_reject_codes_are_specific():
+    src = CPP.read_text(encoding="utf-8")
+    assert "return !item_has_mesh_uri_or_path(it) && !item_has_valid_urdf_primitive(it);" in src
+    assert "REJECT_RAW_GENERATED_BOUNDS_SUPPRESSED: generated bounds item has no mesh URI/path and no URDF primitive" in src
+    assert "REJECT_MESH_PARSE_FAILED" in src
+    assert "REJECT_MESH_BOUNDS_FAILED" in src
+    assert "semantic_mesh_fallback" in src
+    assert "if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);" in src
