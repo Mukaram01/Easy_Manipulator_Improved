@@ -823,7 +823,7 @@ struct LabelDrawCandidate
 };
 
 
-}
+}  // namespace
 
 
 Scene3DViewportWidget::Scene3DViewportWidget(QWidget * parent) : QOpenGLWidget(parent) { setMinimumHeight(420); setAcceptDrops(true); }
@@ -1619,7 +1619,6 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
       return true;
     }
     const bool generated_or_locked = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
-    const NormalizedRole role = classify_item_role(it);
     const bool semantic_mesh_fallback = generated_or_locked && has_mesh_handoff &&
                                         (role == NormalizedRole::Table || role == NormalizedRole::Camera);
     if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes || is_raw_generated_bounds_only_item(it)) {
