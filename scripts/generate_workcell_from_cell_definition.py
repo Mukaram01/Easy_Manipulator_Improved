@@ -8,6 +8,7 @@ import copy
 import importlib.util
 import json
 import math
+import os
 import shutil
 import sys
 import tempfile
@@ -703,6 +704,42 @@ def _render_scene_urdf_xacro(
     return "\n".join(lines) + "\n"
 
 
+def _workspace_root_from_path(path: Path) -> Path | None:
+    """Infer a colcon workspace root from a generated package path when possible."""
+    resolved = path.expanduser().resolve()
+    for candidate in (resolved, *resolved.parents):
+        if candidate.name == "src":
+            return candidate.parent
+        if candidate.name in {"install", "build", "log"}:
+            return candidate.parent
+    return None
+
+
+def _determine_workspace_root(
+    package_dir: Path, workspace_root: Path | str | None = None
+) -> Path | None:
+    """Resolve the workspace root used for xacro/package URI discovery.
+
+    Caller-provided roots win, then explicit environment variables, then a
+    best-effort inference from common colcon workspace layouts such as
+    <workspace>/src/.../<scene_package> or <workspace>/install/share/....
+    """
+    if workspace_root:
+        return Path(workspace_root).expanduser().resolve()
+
+    for env_name in (
+        "WORKSPACE_ROOT",
+        "COLCON_WORKSPACE_ROOT",
+        "ROS_WORKSPACE",
+        "WORKCELL_WORKSPACE_ROOT",
+    ):
+        raw = os.environ.get(env_name, "").strip()
+        if raw:
+            return Path(raw).expanduser().resolve()
+
+    return _workspace_root_from_path(package_dir)
+
+
 def _fallback_scene_visual_mesh_index(
     package_name: str,
     package_dir: Path,
@@ -738,11 +775,17 @@ def _fallback_scene_visual_mesh_index(
     }
 
 
-def _write_scene_visual_mesh_index(package_name: str, package_dir: Path, warnings: list[str]) -> str | None:
+def _write_scene_visual_mesh_index(
+    package_name: str,
+    package_dir: Path,
+    warnings: list[str],
+    workspace_root: Path | str | None = None,
+) -> str | None:
     """Best-effort visual mesh index generation with a preview-safe fallback contract."""
     generated_dir = package_dir / "generated"
     index_path = generated_dir / "scene_visual_mesh_index.json"
     urdf_path = package_dir / "urdf" / "scene.urdf.xacro"
+    resolved_workspace_root = _determine_workspace_root(package_dir, workspace_root=workspace_root)
 
     def write_fallback(reason: str) -> str:
         warning_text = f"Visual mesh extraction fallback for {index_path}: {reason}"
@@ -765,7 +808,12 @@ def _write_scene_visual_mesh_index(package_name: str, package_dir: Path, warning
         fallback_reason = ""
         xacro_cmd: list[str] = []
         try:
-            expanded_result = extractor.expand_xacro(urdf_path, package_dir, xargs)
+            expanded_result = extractor.expand_xacro(
+                urdf_path,
+                package_dir,
+                xargs,
+                workspace_root=resolved_workspace_root,
+            )
             if isinstance(expanded_result, tuple) and len(expanded_result) >= 4:
                 xml_text, _, fallback_reason, xacro_cmd = expanded_result[:4]
             elif isinstance(expanded_result, tuple) and len(expanded_result) == 3:
@@ -778,7 +826,13 @@ def _write_scene_visual_mesh_index(package_name: str, package_dir: Path, warning
             fallback_reason = f"xacro expansion skipped: {exc}"
         if not xml_text:
             xml_text = urdf_path.read_text(encoding="utf-8", errors="ignore")
-        package_map, package_diagnostics = extractor.discover_package_map(package_dir)
+        package_map, package_diagnostics = extractor.discover_package_map(
+            package_dir,
+            workspace_root=resolved_workspace_root,
+            package_names=extractor.extract_referenced_package_names(xml_text)
+            if hasattr(extractor, "extract_referenced_package_names")
+            else None,
+        )
         items = extractor.extract_from_urdf(xml_text, package_map)
         mesh_items = [item for item in items if item.get("geometry_type") == "mesh"]
         if not mesh_items:
@@ -788,7 +842,25 @@ def _write_scene_visual_mesh_index(package_name: str, package_dir: Path, warning
             for item in items
             if any(extractor.contains_placeholder(item.get(key, "")) for key in ("id", "link", "parent_link"))
         ]
-        safe_for_preview = len(unresolved) == 0 and mode in {"xacro_expanded", "xacro_lite_expanded", "best_effort_recursive"}
+        renderable_mesh_count = sum(
+            1 for item in mesh_items if item.get("render_expected", True)
+        )
+        renderable_item_count = sum(1 for item in items if item.get("render_expected", True))
+        safe_for_preview = len(unresolved) == 0 and mode in {"xacro_expanded", "xacro_lite_expanded"}
+        visual_readiness_reasons: list[str] = []
+        if not safe_for_preview:
+            visual_readiness_reasons.append(
+                "visual mesh index was not produced from a fully expanded xacro"
+                if mode not in {"xacro_expanded", "xacro_lite_expanded"}
+                else "visual mesh index contains unresolved xacro placeholders"
+            )
+        if renderable_mesh_count <= 0:
+            visual_readiness_reasons.append(
+                "no renderable mesh-backed visual was resolved; primitive fallback alone is not a PASS condition"
+            )
+        if fallback_reason:
+            visual_readiness_reasons.append(str(fallback_reason))
+        visual_readiness_status = "PASS" if not visual_readiness_reasons else "WARN"
         payload = {
             "schema_version": "scene_visual_mesh_index/v1",
             "scene_name": package_name,
@@ -807,10 +879,8 @@ def _write_scene_visual_mesh_index(package_name: str, package_dir: Path, warning
             "unresolved_placeholder_count": len(unresolved),
             "candidate_mesh_count": len(mesh_items),
             "emitted_visual_count": len(items),
-            "renderable_mesh_count": sum(
-                1 for item in mesh_items if item.get("render_expected", True)
-            ),
-            "renderable_item_count": sum(1 for item in items if item.get("render_expected", True)),
+            "renderable_mesh_count": renderable_mesh_count,
+            "renderable_item_count": renderable_item_count,
             "visual_items": items,
             "items": items,
             "blockers": [],
@@ -818,6 +888,12 @@ def _write_scene_visual_mesh_index(package_name: str, package_dir: Path, warning
             "stale_index": False,
             "stale_reasons": [],
             "xacro_command": xacro_cmd,
+            "workspace_root": str(resolved_workspace_root) if resolved_workspace_root else "",
+            "visual_readiness": {
+                "status": visual_readiness_status,
+                "reasons": visual_readiness_reasons,
+            },
+            "status": visual_readiness_status,
             "package_resolution_diagnostics": package_diagnostics,
         }
         generated_dir.mkdir(parents=True, exist_ok=True)
@@ -1139,6 +1215,7 @@ def write_scene_package_contract(
     scene_contract: Any | None = None,
     dry_result: Any | None = None,
     readiness_extra: dict[str, Any] | None = None,
+    workspace_root: Path | str | None = None,
 ) -> list[Path]:
     """Write the generated scene package contract from one authoritative helper."""
     (package_dir / "config").mkdir(parents=True, exist_ok=True)
@@ -1208,7 +1285,7 @@ def write_scene_package_contract(
         _render_scene_urdf_xacro(package_name, env_objects, cell_definition_path),
         encoding="utf-8",
     )
-    _write_scene_visual_mesh_index(package_name, package_dir, warnings)
+    _write_scene_visual_mesh_index(package_name, package_dir, warnings, workspace_root=workspace_root)
     if dry_result is not None and scene_contract is not None:
         _write_validation_report(
             package_dir / "generated" / "validation_report.md",
@@ -1288,6 +1365,7 @@ def generate_package(
     package_name: str,
     force: bool,
     dry_run: bool,
+    workspace_root: Path | str | None = None,
 ) -> int:
     if not VALIDATOR_PATH.is_file():
         print(f"FAIL: Missing required validation tool: {VALIDATOR_PATH}")
@@ -1409,6 +1487,7 @@ def generate_package(
         scene_generator=scene_generator,
         scene_contract=scene_contract,
         dry_result=dry_result,
+        workspace_root=workspace_root,
         readiness_extra={
             "dry_run_status": getattr(dry_result, "status", "UNKNOWN"),
             "source_inputs": {
@@ -1538,6 +1617,12 @@ def main() -> int:
     parser.add_argument("--package-name", type=str, required=True, help="Output ROS package name")
     parser.add_argument("--force", action="store_true", help="Overwrite existing generated package directory")
     parser.add_argument("--dry-run", action="store_true", help="Validate and preview actions without writing files")
+    parser.add_argument(
+        "--workspace-root",
+        type=Path,
+        default=None,
+        help="Optional colcon workspace root used to resolve package:// meshes during preview index generation",
+    )
     args = parser.parse_args()
 
     return generate_package(
@@ -1546,6 +1631,7 @@ def main() -> int:
         package_name=args.package_name.strip(),
         force=args.force,
         dry_run=args.dry_run,
+        workspace_root=args.workspace_root.resolve() if args.workspace_root else None,
     )
 
 
