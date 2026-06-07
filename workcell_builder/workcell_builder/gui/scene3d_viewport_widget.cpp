@@ -93,6 +93,21 @@ QString preferred_mesh_source_for_item(const ScenePreviewWidget::PreviewItem & i
   if (item_has_valid_resolved_mesh_source(item)) return item.resolved_source_path_original.trimmed();
   if (!item.package_uri.trimmed().isEmpty()) return item.package_uri.trimmed();
   return item.source_path.trimmed();
+QString mesh_candidate_suffix(const QString & raw_path)
+{
+  QString path = raw_path.trimmed();
+  if (path.isEmpty()) return QString();
+  const int fragment_pos = path.indexOf(QLatin1Char('#'));
+  if (fragment_pos >= 0) path = path.left(fragment_pos);
+  const int query_pos = path.indexOf(QLatin1Char('?'));
+  if (query_pos >= 0) path = path.left(query_pos);
+  return QFileInfo(path).suffix().toLower();
+}
+
+bool has_supported_mesh_extension(const QString & raw_path)
+{
+  const QString ext = mesh_candidate_suffix(raw_path);
+  return ext == QStringLiteral("dae") || ext == QStringLiteral("stl") || ext == QStringLiteral("obj");
 }
 
 bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item)
@@ -100,6 +115,12 @@ bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item
   return item.mesh_available ||
          item.has_mesh_metadata ||
          item_has_mesh_uri_or_path(item);
+  if (item.mesh_available) return true;
+  if (!item.mesh_path.trimmed().isEmpty()) return true;
+  if (!item.has_mesh_metadata) return false;
+  return has_supported_mesh_extension(item.mesh_path) ||
+         has_supported_mesh_extension(item.package_uri) ||
+         has_supported_mesh_extension(item.source_path);
 }
 
 bool item_has_valid_urdf_primitive(const ScenePreviewWidget::PreviewItem & item)
@@ -566,6 +587,7 @@ bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it);
 
 bool include_in_fit_bounds(const ScenePreviewWidget::PreviewItem & it, bool include_overlays)
 {
+  // FIT_PHYSICAL_ONLY_FILTER keeps default camera fit focused on physical scene geometry.
   if (include_overlays) return true;
   const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
   const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);

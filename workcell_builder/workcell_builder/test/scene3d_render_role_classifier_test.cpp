@@ -106,21 +106,43 @@ TEST(Scene3DRenderRoleClassifier, AcceptsCanonicalAndLegacyGeneratedUrdfTokens)
   EXPECT_EQ(Scene3DViewportWidget::render_role_for_test(legacy), "generated_urdf_mesh");
 }
 
-TEST(Scene3DRenderRoleClassifier, IngestCountsMetadataSourcePathMeshHandoff)
+TEST(Scene3DRenderRoleClassifier, IngestCountsOnlyPhysicalMeshHandoffs)
 {
   ASSERT_NE(ensure_app(), nullptr);
 
-  ScenePreviewWidget::PreviewItem metadata_only = make_item("metadata_source_only");
-  metadata_only.mesh_available = false;
-  metadata_only.mesh_path.clear();
-  metadata_only.has_mesh_metadata = true;
-  metadata_only.source_path = "package://workcell_builder/meshes/metadata_only.stl";
+  ScenePreviewWidget::PreviewItem mesh_metadata_source = make_item("metadata_mesh_source");
+  mesh_metadata_source.mesh_available = false;
+  mesh_metadata_source.mesh_path.clear();
+  mesh_metadata_source.has_mesh_metadata = true;
+  mesh_metadata_source.source_path = "package://workcell_builder/meshes/metadata_only.stl";
+
+  ScenePreviewWidget::PreviewItem mesh_package_uri = make_item("metadata_package_uri");
+  mesh_package_uri.mesh_available = false;
+  mesh_package_uri.mesh_path.clear();
+  mesh_package_uri.has_mesh_metadata = true;
+  mesh_package_uri.package_uri = "package://workcell_builder/meshes/metadata_only.dae";
+  mesh_package_uri.source_path = "config/workcell_studio_layout.yaml";
+
+  ScenePreviewWidget::PreviewItem explicit_mesh_path = make_item("explicit_mesh_path");
+  explicit_mesh_path.mesh_available = false;
+  explicit_mesh_path.mesh_path = "meshes/manual_handoff.obj";
+  explicit_mesh_path.has_mesh_metadata = false;
+  explicit_mesh_path.source_path = "config/environment.yaml";
+
+  ScenePreviewWidget::PreviewItem layout_source = make_item("layout_source");
+  layout_source.mesh_available = false;
+  layout_source.mesh_path.clear();
+  layout_source.has_mesh_metadata = true;
+  layout_source.source_path = "config/workcell_studio_layout.yaml";
 
   Scene3DViewportWidget viewport;
-  viewport.ingest_preview_items(QVector<ScenePreviewWidget::PreviewItem>{metadata_only});
+  viewport.ingest_preview_items(QVector<ScenePreviewWidget::PreviewItem>{
+    mesh_metadata_source, mesh_package_uri, explicit_mesh_path, layout_source
+  });
 
   const auto counters = viewport.render_debug_counters();
-  EXPECT_GT(counters.mesh_backed_count, 0);
+  EXPECT_EQ(counters.mesh_source_count, 3);
+  EXPECT_EQ(counters.mesh_backed_count, 3);
   EXPECT_EQ(counters.mesh_rendered_count, 0);
   EXPECT_FALSE(counters.last_paint_completed);
 }

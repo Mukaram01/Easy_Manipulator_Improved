@@ -78,6 +78,7 @@
 #include <QMetaObject>
 #include <QPointer>
 #include <QProgressDialog>
+#include <QProcessEnvironment>
 #include <QSettings>
 #include <QLineEdit>
 #include <QFormLayout>
@@ -7343,31 +7344,137 @@ void MainWindow::populate_scene_hierarchy()
   QSet<QString> preview_ids;
   for (const auto &existing : preview_items) preview_ids.insert(existing.id);
   const fs::path urdf_visual_index = d / "generated" / "scene_visual_mesh_index.json";
+  const QString scene_name = QString::fromStdString(d.filename().string());
+  const QString workspace_root = detect_workspace_root();
   QString visual_index_warning_reason;
-  if (!fs::exists(urdf_visual_index)) {
-    visual_index_warning_reason = QStringLiteral("missing");
-  } else {
+  QString visual_index_refresh_blocker;
+  bool visual_index_needs_refresh = false;
+
+  auto inspect_visual_index_refresh_need = [&]() {
+    visual_index_warning_reason.clear();
+    visual_index_needs_refresh = false;
+    if (!fs::exists(urdf_visual_index)) {
+      visual_index_warning_reason = QStringLiteral("missing");
+      visual_index_needs_refresh = true;
+      return;
+    }
     try {
       const YAML::Node existing_index = YAML::LoadFile(urdf_visual_index.string());
       const bool safe_for_preview = workcell_builder::yaml_map_key(existing_index, "safe_for_preview").as<bool>(false);
       const bool stale_index = workcell_builder::yaml_map_key(existing_index, "stale_index").as<bool>(false);
       const int stale_or_unsafe_count = workcell_builder::yaml_map_key(existing_index, "stale_or_unsafe_count").as<int>(0);
+      const int visual_count = workcell_builder::yaml_map_key(existing_index, "visual_count").as<int>(-1);
+      const int emitted_visual_count = workcell_builder::yaml_map_key(existing_index, "emitted_visual_count").as<int>(-1);
+      const int candidate_mesh_count = workcell_builder::yaml_map_key(existing_index, "candidate_mesh_count").as<int>(-1);
+      const int renderable_item_count = workcell_builder::yaml_map_key(existing_index, "renderable_item_count").as<int>(-1);
+      const int renderable_mesh_count = workcell_builder::yaml_map_key(existing_index, "renderable_mesh_count").as<int>(-1);
+      const YAML::Node visual_items = workcell_builder::yaml_map_key(existing_index, "visual_items");
+      const bool empty_visual_items = visual_items && visual_items.IsSequence() && visual_items.size() == 0;
       if (!safe_for_preview) {
         visual_index_warning_reason = QStringLiteral("unsafe/best-effort");
       } else if (stale_index || stale_or_unsafe_count > 0) {
         visual_index_warning_reason = QStringLiteral("stale");
+      } else if (empty_visual_items || visual_count == 0 || emitted_visual_count == 0 ||
+                 (candidate_mesh_count == 0 && renderable_item_count <= 0 && renderable_mesh_count <= 0)) {
+        visual_index_warning_reason = QStringLiteral("poor preview counters: visual_count=%1 emitted_visual_count=%2 candidate_mesh_count=%3 renderable_item_count=%4 renderable_mesh_count=%5")
+          .arg(visual_count)
+          .arg(emitted_visual_count)
+          .arg(candidate_mesh_count)
+          .arg(renderable_item_count)
+          .arg(renderable_mesh_count);
       }
+      visual_index_needs_refresh = !visual_index_warning_reason.isEmpty();
     } catch (const std::exception &e) {
       visual_index_warning_reason = QStringLiteral("unreadable: %1").arg(QString::fromUtf8(e.what()));
+      visual_index_needs_refresh = true;
     } catch (...) {
       visual_index_warning_reason = QStringLiteral("unreadable");
+      visual_index_needs_refresh = true;
     }
-  }
-  if (!visual_index_warning_reason.isEmpty()) {
-    append_studio_log(
-      QString("Visual mesh index %1 for scene '%2'; Scene3D will not regenerate generated/scene_visual_mesh_index.json during UI scene load. Run the scene package generator or an explicit extractor command in a ROS/workspace validation flow to refresh this generated artifact.")
-      .arg(visual_index_warning_reason, QString::fromStdString(d.filename().string())));
-    append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
+  };
+
+  auto run_visual_index_refresh = [&]() -> bool {
+    QString script;
+    if (!helper_script_exists("extract_scene_urdf_visual_mesh_index.py", &script)) {
+      visual_index_refresh_blocker = QStringLiteral("extractor script not found in helper script search paths");
+      return false;
+    }
+    if (workspace_root.trimmed().isEmpty() || !QDir(workspace_root).exists()) {
+      visual_index_refresh_blocker = QStringLiteral("workspace root is empty or does not exist");
+      return false;
+    }
+    const bool ros_setup_exists = QFileInfo::exists(QStringLiteral("/opt/ros/humble/setup.bash"));
+    const bool workspace_install_setup_exists = QFileInfo::exists(workspace_root + QStringLiteral("/install/setup.bash"));
+    const bool ros_environment_present = ros_setup_exists ||
+      !qgetenv("ROS_DISTRO").trimmed().isEmpty() ||
+      !qgetenv("AMENT_PREFIX_PATH").trimmed().isEmpty();
+    if (!ros_environment_present) {
+      visual_index_refresh_blocker = QStringLiteral("ROS/workspace environment is unavailable (no /opt/ros/humble/setup.bash, ROS_DISTRO, or AMENT_PREFIX_PATH)");
+      return false;
+    }
+
+    QProcess process;
+    process.setWorkingDirectory(workspace_root);
+    QStringList command_parts;
+    if (ros_setup_exists) {
+      command_parts << QStringLiteral("source /opt/ros/humble/setup.bash");
+    }
+    if (workspace_install_setup_exists) {
+      command_parts << QStringLiteral("source install/setup.bash");
+    }
+    command_parts << QStringLiteral("python3 \"$VISUAL_INDEX_EXTRACTOR\" --scene \"$VISUAL_INDEX_SCENE\" --workspace-root \"$VISUAL_INDEX_WORKSPACE_ROOT\"");
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert(QStringLiteral("VISUAL_INDEX_EXTRACTOR"), script);
+    env.insert(QStringLiteral("VISUAL_INDEX_SCENE"), scene_name);
+    env.insert(QStringLiteral("VISUAL_INDEX_WORKSPACE_ROOT"), workspace_root);
+    process.setProcessEnvironment(env);
+    const QString command = command_parts.join(QStringLiteral(" && "));
+    append_studio_log(QString("Visual mesh index refresh: preview-only metadata command for scene '%1' at %2 (no RViz/MoveIt/controllers/real hardware launched).")
+      .arg(scene_name, QString::fromStdString(urdf_visual_index.string())));
+    process.start(QStringLiteral("/bin/bash"), QStringList() << QStringLiteral("-lc") << command);
+    if (!process.waitForFinished(120000)) {
+      process.kill();
+      process.waitForFinished(3000);
+      visual_index_refresh_blocker = QStringLiteral("extractor timed out after 120s");
+      return false;
+    }
+    const int exit_code = process.exitCode();
+    const QString stdout_text = QString::fromUtf8(process.readAllStandardOutput()).trimmed();
+    const QString stderr_text = QString::fromUtf8(process.readAllStandardError()).trimmed();
+    if (exit_code != 0) {
+      visual_index_refresh_blocker = QStringLiteral("extractor exited with code %1; stderr=%2; stdout=%3")
+        .arg(exit_code)
+        .arg(stderr_text.left(500), stdout_text.left(500));
+      return false;
+    }
+    if (!fs::exists(urdf_visual_index)) {
+      visual_index_refresh_blocker = QStringLiteral("extractor exited successfully but did not write the index file");
+      return false;
+    }
+    if (!stdout_text.isEmpty()) {
+      append_studio_log(QString("Visual mesh index refresh stdout: %1").arg(stdout_text.left(500)));
+    }
+    append_studio_log(QString("Visual mesh index refreshed for scene '%1'; reloading generated/scene_visual_mesh_index.json before assembling preview items.").arg(scene_name));
+    return true;
+  };
+
+  inspect_visual_index_refresh_need();
+  if (visual_index_needs_refresh) {
+    const QString original_reason = visual_index_warning_reason;
+    if (run_visual_index_refresh()) {
+      inspect_visual_index_refresh_need();
+      if (visual_index_warning_reason.isEmpty()) {
+        append_studio_log(QString("Visual mesh index refresh cleared '%1' for scene '%2'.").arg(original_reason, scene_name));
+      } else {
+        append_studio_log(QString("Visual mesh index refresh completed for scene '%1' but index is still %2 at %3 (workspace root: %4).")
+          .arg(scene_name, visual_index_warning_reason, QString::fromStdString(urdf_visual_index.string()), workspace_root));
+      }
+    } else {
+      append_studio_log(
+        QString("Visual mesh index %1 for scene '%2' at %3 (workspace root: %4). Automatic preview-only refresh could not run: %5. Run python3 scripts/extract_scene_urdf_visual_mesh_index.py --scene %2 --workspace-root %4 from a ROS/workspace environment to refresh this generated artifact.")
+        .arg(original_reason, scene_name, QString::fromStdString(urdf_visual_index.string()), workspace_root, visual_index_refresh_blocker));
+      append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
+    }
   }
   int visual_index_loaded_count = 0;
   int visual_preview_added_count = 0;
