@@ -40,6 +40,112 @@ def test_xacro_env_preserves_and_extends_package_lookup(monkeypatch, tmp_path):
     assert ros_package_entries.count(str(ROOT / 'assets')) == 1
 
 
+def _write_package_xml(pkg_dir: Path, name: str):
+    pkg_dir.mkdir(parents=True, exist_ok=True)
+    (pkg_dir / 'package.xml').write_text(
+        f'<package format="3"><name>{name}</name><version>0.0.0</version><description>test</description><maintainer email="test@example.com">Test</maintainer><license>Apache-2.0</license></package>',
+        encoding='utf-8',
+    )
+
+
+def test_discover_package_map_prefers_ros_resolution_before_scan_fallback(monkeypatch, tmp_path):
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    scene_dir = tmp_path / 'scene'
+    fallback_pkg = scene_dir / 'generated' / 'custom_description'
+    resolved_pkg = tmp_path / 'install' / 'share' / 'custom_description'
+    _write_package_xml(fallback_pkg, 'custom_description')
+    _write_package_xml(resolved_pkg, 'custom_description')
+
+    def fake_resolve(package_name, workspace_root=None):
+        if package_name == 'custom_description':
+            return resolved_pkg, 'ament_index', {'package_name': package_name, 'attempts': [{'source_tier': 'ament_index', 'status': 'resolved'}]}
+        return None, '', {'package_name': package_name, 'attempts': []}
+
+    monkeypatch.setattr(mesh_index, 'resolve_ros_package_share', fake_resolve)
+
+    package_map, diagnostics = mesh_index.discover_package_map(scene_dir)
+
+    assert package_map['custom_description'] == resolved_pkg
+    resolved = [p for p in diagnostics['resolved_packages'] if p['package_name'] == 'custom_description']
+    assert resolved and resolved[0]['source_tier'] == 'ament_index'
+    shadowed = [p for p in diagnostics['shadowed_packages'] if p['package_name'] == 'custom_description']
+    assert shadowed and shadowed[0]['source_tier'] == 'scene_generated_package'
+
+
+def test_discover_package_map_preserves_repo_local_asset_precedence(monkeypatch, tmp_path):
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    installed_pkg = tmp_path / 'install' / 'share' / 'robotiq_85_description'
+    _write_package_xml(installed_pkg, 'robotiq_85_description')
+
+    def fake_resolve(package_name, workspace_root=None):
+        if package_name == 'robotiq_85_description':
+            return installed_pkg, 'ament_index', {'package_name': package_name, 'attempts': [{'source_tier': 'ament_index', 'status': 'resolved'}]}
+        return None, '', {'package_name': package_name, 'attempts': []}
+
+    monkeypatch.setattr(mesh_index, 'resolve_ros_package_share', fake_resolve)
+
+    package_map, diagnostics = mesh_index.discover_package_map(ROOT / 'scenes' / 'ur5_2f_test')
+
+    assert package_map['robotiq_85_description'] == ROOT / 'assets' / 'end_effectors' / 'robotiq_85_gripper' / 'robotiq_85_description'
+    resolved = [p for p in diagnostics['resolved_packages'] if p['package_name'] == 'robotiq_85_description']
+    assert resolved and resolved[0]['source_tier'] == 'repo_assets'
+
+
+def test_discover_package_map_resolves_referenced_packages_without_scanned_package_xml(monkeypatch, tmp_path):
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    scene_dir = tmp_path / 'scene'
+    scene_dir.mkdir()
+    resolved_pkg = tmp_path / 'install' / 'share' / 'uri_only_description'
+    _write_package_xml(resolved_pkg, 'uri_only_description')
+
+    def fake_resolve(package_name, workspace_root=None):
+        if package_name == 'uri_only_description':
+            return resolved_pkg, 'ros2_pkg_prefix', {'package_name': package_name, 'attempts': [{'source_tier': 'ros2_pkg_prefix', 'status': 'resolved'}]}
+        return None, '', {'package_name': package_name, 'attempts': []}
+
+    monkeypatch.setattr(mesh_index, 'resolve_ros_package_share', fake_resolve)
+
+    package_map, diagnostics = mesh_index.discover_package_map(
+        scene_dir,
+        package_names=mesh_index.extract_referenced_package_names('<mesh filename="package://uri_only_description/meshes/tool.stl"/>'),
+    )
+
+    assert package_map['uri_only_description'] == resolved_pkg
+    resolved = [p for p in diagnostics['resolved_packages'] if p['package_name'] == 'uri_only_description']
+    assert resolved and resolved[0]['source_tier'] == 'ros2_pkg_prefix'
+
+
+def test_resolve_ros_package_share_uses_ros2_pkg_prefix_when_ament_unavailable(monkeypatch, tmp_path):
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    prefix = tmp_path / 'ros_overlay'
+    share = prefix / 'share' / 'prefix_only_description'
+    share.mkdir(parents=True)
+
+    monkeypatch.setattr(mesh_index.importlib.util, 'find_spec', lambda name: None)
+    monkeypatch.setattr(mesh_index.shutil, 'which', lambda name: '/usr/bin/ros2' if name == 'ros2' else None)
+
+    class Result:
+        returncode = 0
+        stdout = str(prefix) + '\n'
+        stderr = ''
+
+    def fake_run(cmd, **kwargs):
+        assert cmd == ['/usr/bin/ros2', 'pkg', 'prefix', 'prefix_only_description']
+        return Result()
+
+    monkeypatch.setattr(mesh_index.subprocess, 'run', fake_run)
+
+    resolved, source_tier, diagnostics = mesh_index.resolve_ros_package_share('prefix_only_description')
+
+    assert resolved == share
+    assert source_tier == 'ros2_pkg_prefix'
+    assert diagnostics['attempts'][-1]['source_tier'] == 'ros2_pkg_prefix'
+
+
 def _xyz_from_item(item: dict):
     pose = item.get('world_pose') or item.get('computed_world_pose') or item.get('pose') or {}
     xyz = pose.get('xyz')
