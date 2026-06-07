@@ -599,8 +599,6 @@ bool is_raw_generated_bounds_only_item(const ScenePreviewWidget::PreviewItem & i
 bool is_overlay_visual_role(NormalizedRole role)
 {
   switch (role) {
-    case NormalizedRole::PickZone:
-    case NormalizedRole::PlaceBin:
     case NormalizedRole::SafetyZone:
     case NormalizedRole::WarningAnchor:
       return true;
@@ -1416,6 +1414,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
                                                         int * out_urdf_primitive_count, int * out_missing_geometry_count,
                                                         int * out_primitive_fallback_count)
 {
+  const NormalizedRole role = classify_item_role(it);
   const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
   const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
   const bool helper_overlay = is_overlay_only_item(it) || source_layer == "overlay" || visual_source == "overlay";
@@ -1461,6 +1460,36 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   if (item_has_explicit_dimensions(it)) {
     const bool intentional_primitive_fallback =
       source_layer == QStringLiteral("primitive_fallback") || visual_source == QStringLiteral("primitive_fallback");
+    const bool semantic_physical_primitive =
+      role == NormalizedRole::Table || role == NormalizedRole::Conveyor ||
+      role == NormalizedRole::Camera || role == NormalizedRole::PickZone ||
+      role == NormalizedRole::PlaceBin || role == NormalizedRole::Object;
+    if (semantic_physical_primitive) {
+      switch (role) {
+        case NormalizedRole::Table:
+          draw_table_slab(it);
+          break;
+        case NormalizedRole::Conveyor:
+          draw_conveyor(it);
+          break;
+        case NormalizedRole::Camera:
+          draw_camera_body_with_frustum(it);
+          break;
+        case NormalizedRole::PickZone:
+          draw_pick_zone(it);
+          break;
+        case NormalizedRole::PlaceBin:
+          draw_place_target_bin(it);
+          break;
+        case NormalizedRole::Object:
+          draw_object_cube(it);
+          break;
+        default:
+          break;
+      }
+      if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);
+      return true;
+    }
     if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes || is_raw_generated_bounds_only_item(it)) {
       draw_missing_geometry_marker(it);
       ++last_render_counters.generated_fallback_count;
@@ -1992,7 +2021,6 @@ void Scene3DViewportWidget::draw_place_target_bin(const ScenePreviewWidget::Prev
 }
 void Scene3DViewportWidget::draw_object_cube(const ScenePreviewWidget::PreviewItem & it)
 {
-  if (draw_mesh_preview_if_available(it, item_color(it), true)) return;
   const double cube = qMax(0.05, qMin(it.sx, qMin(it.sy, it.sz)));
   draw_box(it.x, it.y, it.z, cube, cube, cube, item_color(it));
 }
