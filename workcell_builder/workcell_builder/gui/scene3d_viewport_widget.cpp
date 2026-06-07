@@ -74,53 +74,12 @@ double snap_rotation_value(double raw_rad, Scene3DViewportWidget::SnapMode mode)
   return step_rad > 0.0 ? std::round(raw_rad / step_rad) * step_rad : raw_rad;
 }
 
-bool item_has_valid_resolved_mesh_source(const ScenePreviewWidget::PreviewItem & item)
-{
-  return !item.resolved_source_path_stale && !item.resolved_source_path_original.trimmed().isEmpty();
-}
-
-bool item_has_mesh_uri_or_path(const ScenePreviewWidget::PreviewItem & item)
-{
-  return !item.mesh_path.trimmed().isEmpty() ||
-         item_has_valid_resolved_mesh_source(item) ||
-         !item.package_uri.trimmed().isEmpty() ||
-         !item.source_path.trimmed().isEmpty();
-}
-
-QString preferred_mesh_source_for_item(const ScenePreviewWidget::PreviewItem & item)
-{
-  if (!item.mesh_path.trimmed().isEmpty()) return item.mesh_path.trimmed();
-  if (item_has_valid_resolved_mesh_source(item)) return item.resolved_source_path_original.trimmed();
-  if (!item.package_uri.trimmed().isEmpty()) return item.package_uri.trimmed();
-  return item.source_path.trimmed();
-QString mesh_candidate_suffix(const QString & raw_path)
-{
-  QString path = raw_path.trimmed();
-  if (path.isEmpty()) return QString();
-  const int fragment_pos = path.indexOf(QLatin1Char('#'));
-  if (fragment_pos >= 0) path = path.left(fragment_pos);
-  const int query_pos = path.indexOf(QLatin1Char('?'));
-  if (query_pos >= 0) path = path.left(query_pos);
-  return QFileInfo(path).suffix().toLower();
-}
-
-bool has_supported_mesh_extension(const QString & raw_path)
-{
-  const QString ext = mesh_candidate_suffix(raw_path);
-  return ext == QStringLiteral("dae") || ext == QStringLiteral("stl") || ext == QStringLiteral("obj");
-}
-
 bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item)
 {
   return item.mesh_available ||
          item.has_mesh_metadata ||
-         item_has_mesh_uri_or_path(item);
-  if (item.mesh_available) return true;
-  if (!item.mesh_path.trimmed().isEmpty()) return true;
-  if (!item.has_mesh_metadata) return false;
-  return has_supported_mesh_extension(item.mesh_path) ||
-         has_supported_mesh_extension(item.package_uri) ||
-         has_supported_mesh_extension(item.source_path);
+         !item.mesh_path.trimmed().isEmpty() ||
+         !item.source_path.trimmed().isEmpty();
 }
 
 bool item_has_valid_urdf_primitive(const ScenePreviewWidget::PreviewItem & item)
@@ -587,7 +546,6 @@ bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it);
 
 bool include_in_fit_bounds(const ScenePreviewWidget::PreviewItem & it, bool include_overlays)
 {
-  // FIT_PHYSICAL_ONLY_FILTER keeps default camera fit focused on physical scene geometry.
   if (include_overlays) return true;
   const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
   const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
@@ -625,59 +583,6 @@ bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it)
          lock_reason.contains("robotmodel") || lock_reason.contains("urdf visual");
 }
 
-bool is_scene_fit_physical_context_role(NormalizedRole role)
-{
-  switch (role) {
-    case NormalizedRole::Table:
-    case NormalizedRole::Conveyor:
-    case NormalizedRole::Camera:
-    case NormalizedRole::PickZone:
-    case NormalizedRole::PlaceBin:
-    case NormalizedRole::Object:
-      return true;
-    case NormalizedRole::RobotBase:
-    case NormalizedRole::SafetyZone:
-    case NormalizedRole::WarningAnchor:
-    case NormalizedRole::Generic:
-      return false;
-  }
-  return false;
-}
-
-bool is_scene_fit_helper_or_warning_item(const ScenePreviewWidget::PreviewItem & it)
-{
-  const NormalizedRole role = classify_item_role(it);
-  if (role == NormalizedRole::SafetyZone || role == NormalizedRole::WarningAnchor) return true;
-
-  const QString role_text = normalized_token(it.role);
-  const QString category = normalized_token(it.category);
-  const QString lock_reason = normalized_token(it.lock_reason);
-  const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
-  const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
-  const QString mix = role_text + "|" + category + "|" + lock_reason + "|" + source_layer + "|" + visual_source;
-
-  if (mix.contains("warning") || mix.contains("badge") || mix.contains("anchor")) return true;
-  if (mix.contains("helper") || mix.contains("guide") || mix.contains("gizmo")) return true;
-
-  const bool overlay_only = source_layer == QStringLiteral("overlay") || visual_source == QStringLiteral("overlay") ||
-                            role_text.contains("overlay") || category.contains("overlay") || lock_reason.contains("overlay");
-  return overlay_only && !is_scene_fit_physical_context_role(role);
-}
-
-bool include_in_scene_fit_context_bounds(const ScenePreviewWidget::PreviewItem & it)
-{
-  const NormalizedRole role = classify_item_role(it);
-  if (!is_scene_fit_physical_context_role(role)) return false;
-  if (is_scene_fit_helper_or_warning_item(it)) return false;
-
-  // FIT_PHYSICAL_ONLY_FILTER / FIT_EXCLUDE_OVERLAY_ONLY: default fit ignores warning/helper overlays.
-  // FIT_CONTEXT_PHYSICAL_ROLES: keep table/camera/conveyor/bin/zone/object context in the
-  // default Scene fit while leaving warning markers and overlay-only helpers out.
-  const bool has_truthful_bounds = item_has_credible_mesh_handoff(it) || item_has_explicit_primitive_dimensions(it);
-  if (role == NormalizedRole::Object) return item_has_explicit_primitive_dimensions(it);
-  return has_truthful_bounds;
-}
-
 bool is_raw_generated_bounds_only_item(const ScenePreviewWidget::PreviewItem & it)
 {
   const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
@@ -687,19 +592,15 @@ bool is_raw_generated_bounds_only_item(const ScenePreviewWidget::PreviewItem & i
   }
   const bool generated_or_locked = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
   if (!generated_or_locked || !item_has_explicit_primitive_dimensions(it)) return false;
-
-  // Raw generated bounds are only the generator's coarse box dimensions.  A
-  // xacro-expanded generated_urdf_visual that carries a real mesh handoff
-  // (mesh_path, resolved_source_path_original, package_uri, or source_path) is
-  // an authoritative mesh-index visual even when that mesh later fails to parse.
-  // Likewise, URDF primitives are real geometry rather than raw bounds.
-  return !item_has_mesh_uri_or_path(it) && !item_has_valid_urdf_primitive(it);
+  return item_has_credible_mesh_handoff(it) || item_has_valid_urdf_primitive(it);
 }
 
 
 bool is_overlay_visual_role(NormalizedRole role)
 {
   switch (role) {
+    case NormalizedRole::PickZone:
+    case NormalizedRole::PlaceBin:
     case NormalizedRole::SafetyZone:
     case NormalizedRole::WarningAnchor:
       return true;
@@ -823,7 +724,7 @@ struct LabelDrawCandidate
 };
 
 
-}  // namespace
+}
 
 
 Scene3DViewportWidget::Scene3DViewportWidget(QWidget * parent) : QOpenGLWidget(parent) { setMinimumHeight(420); setAcceptDrops(true); }
@@ -909,60 +810,35 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
 void Scene3DViewportWidget::fit_scene() {
   QVector3D bmin, bmax;
   bool has_generated_mesh_focus = false;
-
-  if (fit_include_overlays) {
-    if (!scene_bounds_from_visible_items(bmin, bmax, true)) {
-      set_isometric_view();
-      return;
-    }
-  } else {
-    bool has_default_scene_fit_bounds = false;
-    QVector3D fit_min(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
-    QVector3D fit_max(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
-
-    auto expand_fit_bounds = [&](const ItemBounds & bounds) {
-      fit_min.setX(std::min(fit_min.x(), static_cast<float>(bounds.x)));
-      fit_min.setY(std::min(fit_min.y(), static_cast<float>(bounds.y)));
-      fit_min.setZ(std::min(fit_min.z(), static_cast<float>(bounds.z)));
-      fit_max.setX(std::max(fit_max.x(), static_cast<float>(bounds.x + bounds.sx)));
-      fit_max.setY(std::max(fit_max.y(), static_cast<float>(bounds.y + bounds.sy)));
-      fit_max.setZ(std::max(fit_max.z(), static_cast<float>(bounds.z + bounds.sz)));
-      has_default_scene_fit_bounds = true;
-    };
-
-    for (const auto & it : items) {
-      // FIT_GENERATED_MESH_FOCUS: generated robot/gripper meshes still seed the default scene fit.
-      if (include_in_fit_bounds(it, false)) {
-        const bool generated_urdf = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
-        const bool mesh_backed = item_has_credible_mesh_handoff(it);
-        if (generated_urdf && mesh_backed) {
-          expand_fit_bounds(item_bounds_for_role(it));
-          has_generated_mesh_focus = true;
-        }
-      }
-
-      // FIT_PHYSICAL_CONTEXT_ROLES: widen Scene fit to include the surrounding physical cell context.
-      if (include_in_scene_fit_context_bounds(it)) {
-        expand_fit_bounds(item_bounds_for_role(it));
-      }
-    }
-
-    if (has_default_scene_fit_bounds) {
-      bmin = fit_min;
-      bmax = fit_max;
-    } else if (!scene_bounds_from_visible_items(bmin, bmax, false)) {
-      set_isometric_view();  // FIT_FALLBACK_ISO_IF_NO_PHYSICAL
-      return;
-    }
+  QVector3D mesh_min(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+  QVector3D mesh_max(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+  for (const auto & it : items) {
+    if (!include_in_fit_bounds(it, false)) continue;
+    const bool generated_urdf = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
+    const bool mesh_backed = item_has_credible_mesh_handoff(it);
+    if (!generated_urdf || !mesh_backed) continue;
+    const ItemBounds bounds = item_bounds_for_role(it);
+    mesh_min.setX(std::min(mesh_min.x(), static_cast<float>(bounds.x)));
+    mesh_min.setY(std::min(mesh_min.y(), static_cast<float>(bounds.y)));
+    mesh_min.setZ(std::min(mesh_min.z(), static_cast<float>(bounds.z)));
+    mesh_max.setX(std::max(mesh_max.x(), static_cast<float>(bounds.x + bounds.sx)));
+    mesh_max.setY(std::max(mesh_max.y(), static_cast<float>(bounds.y + bounds.sy)));
+    mesh_max.setZ(std::max(mesh_max.z(), static_cast<float>(bounds.z + bounds.sz)));
+    has_generated_mesh_focus = true;
   }
-
+  if (has_generated_mesh_focus) {
+    bmin = mesh_min;
+    bmax = mesh_max;
+  } else if (!scene_bounds_from_visible_items(bmin, bmax, fit_include_overlays)) {
+    set_isometric_view();
+    return;
+  }
   orbit_offset_ = (bmin + bmax) * 0.5f;
   const QVector3D ext = bmax - bmin;
   const double radius = qMax(0.25, 0.5 * qSqrt(ext.x() * ext.x() + ext.y() * ext.y() + ext.z() * ext.z()));
   scene_radius_ = radius;
   const double fov = qDegreesToRadians(50.0);
-  const double fit_padding = has_generated_mesh_focus ? 1.20 : 1.05;
-  const double fit_distance = (radius / qTan(fov * 0.5)) * fit_padding;
+  const double fit_distance = (radius / qTan(fov * 0.5)) * 0.95;
   distance_ = qBound(min_distance_, fit_distance, max_distance_);
   pitch_ = qBound(0.28, pitch_, 0.9);
   orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.10, radius * 0.05)));
@@ -1291,7 +1167,7 @@ void Scene3DViewportWidget::paintGL()
                      .arg(overlay_count).arg(missing_geometry_count));
   painter.drawText(QRectF(20.0, 66.0, 344.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
                    QString("Physical %1 • Locked URDF %2 • Fit: %3")
-                     .arg(physical_item_count).arg(locked_urdf_count).arg(fit_include_overlays ? "all_items" : "scene_context"));
+                     .arg(physical_item_count).arg(locked_urdf_count).arg(fit_include_overlays ? "all_items" : "generated_visuals"));
   if (drag_asset_preview_visible_) {
     const double x = (drag_asset_screen_pos_.x() - width() * 0.5) / 50.0;
     const double y = (height() * 0.6 - drag_asset_screen_pos_.y()) / 50.0;
@@ -1540,7 +1416,6 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
                                                         int * out_urdf_primitive_count, int * out_missing_geometry_count,
                                                         int * out_primitive_fallback_count)
 {
-  const NormalizedRole role = classify_item_role(it);
   const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
   const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
   const bool helper_overlay = is_overlay_only_item(it) || source_layer == "overlay" || visual_source == "overlay";
@@ -1557,9 +1432,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   if ((is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) && !it.has_material_color) {
     visual_color = QColor("#cfd4da");
   }
-  const bool has_mesh_handoff = item_has_credible_mesh_handoff(it);
   if (draw_mesh_preview_if_available(it, visual_color, true)) {
-    // Readiness counters must only report actual triangle mesh rendering.
     if (out_mesh_count) ++(*out_mesh_count);
     return true;
   }
@@ -1588,54 +1461,13 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   if (item_has_explicit_dimensions(it)) {
     const bool intentional_primitive_fallback =
       source_layer == QStringLiteral("primitive_fallback") || visual_source == QStringLiteral("primitive_fallback");
-    const bool semantic_physical_primitive =
-      role == NormalizedRole::Table || role == NormalizedRole::Conveyor ||
-      role == NormalizedRole::Camera || role == NormalizedRole::PickZone ||
-      role == NormalizedRole::PlaceBin || role == NormalizedRole::Object;
-    if (semantic_physical_primitive) {
-      switch (role) {
-        case NormalizedRole::Table:
-          draw_table_slab(it);
-          break;
-        case NormalizedRole::Conveyor:
-          draw_conveyor(it);
-          break;
-        case NormalizedRole::Camera:
-          draw_camera_body_with_frustum(it);
-          break;
-        case NormalizedRole::PickZone:
-          draw_pick_zone(it);
-          break;
-        case NormalizedRole::PlaceBin:
-          draw_place_target_bin(it);
-          break;
-        case NormalizedRole::Object:
-          draw_object_cube(it);
-          break;
-        default:
-          break;
-      }
-      if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);
-      return true;
-    }
-    const bool generated_or_locked = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
-    const bool semantic_mesh_fallback = generated_or_locked && has_mesh_handoff &&
-                                        (role == NormalizedRole::Table || role == NormalizedRole::Camera);
     if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes || is_raw_generated_bounds_only_item(it)) {
       draw_missing_geometry_marker(it);
       ++last_render_counters.generated_fallback_count;
       if (out_placeholder_count) ++(*out_placeholder_count);
       if (out_missing_geometry_count) ++(*out_missing_geometry_count);
-      if (is_raw_generated_bounds_only_item(it)) {
-        warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_RAW_GENERATED_BOUNDS_SUPPRESSED: generated bounds item has no mesh URI/path and no URDF primitive"), it.source_path);
-      }
+      warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_RAW_GENERATED_BOUNDS_SUPPRESSED: mesh or URDF primitive source should provide geometry"), it.source_path);
       return false;
-    }
-    if (semantic_mesh_fallback) {
-      if (role == NormalizedRole::Table) draw_table_slab(it);
-      else draw_camera_body_with_frustum(it);
-      if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);
-      return true;
     }
     const QColor fallback_fill = it.linked_to_editable_layout_state ? QColor(148, 163, 184, 72) : QColor(148, 163, 184, 28);
     const QColor fallback_line = it.linked_to_editable_layout_state ? QColor(148, 163, 184, 150) : QColor(148, 163, 184, 76);
@@ -1971,25 +1803,21 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   }
 
   const bool meshes_only_mode = (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes);
-  const NormalizedRole role = classify_item_role(it);
-  const bool semantic_mesh_fallback_anchor = (role == NormalizedRole::Table || role == NormalizedRole::Camera);
   if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
     // explicit branch kept for static mesh-preview contract checks
   } else if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Auto) {
     // explicit branch kept for static mesh-preview contract checks
   }
   const auto warn_for_mode = [&](const QString & reason, const QString & path) {
-    if (meshes_only_mode || semantic_mesh_fallback_anchor || qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS")) {
-      warn_mesh_fallback_once(it.id, reason, path);
-    }
+    if (meshes_only_mode || qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS")) warn_mesh_fallback_once(it.id, reason, path);
   };
 
-  const QString mesh_source = preferred_mesh_source_for_item(it);
-  if (!it.has_mesh_metadata && mesh_source.trimmed().isEmpty()) {
+  if (!it.has_mesh_metadata) {
     warn_for_mode(QStringLiteral("REJECT_MESH_METADATA_MISSING: mesh metadata missing"), it.source_path);
     return false;
   }
 
+  const QString mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
   if (mesh_source.trimmed().isEmpty()) {
     warn_for_mode(QStringLiteral("REJECT_MESH_SOURCE_MISSING: mesh source missing"), mesh_source);
     return false;
@@ -2001,15 +1829,14 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
     return false;
   };
   if (!entry.loaded || !entry.valid || entry.oversized || entry.mesh.triangles.isEmpty()) {
-    const QString detail = entry.warning.trimmed().isEmpty()
-      ? (entry.failure_reason_code.trimmed().isEmpty() ? QStringLiteral("mesh parse/load failed") : entry.failure_reason_code)
-      : entry.warning;
-    if (entry.oversized) return reject(QStringLiteral("REJECT_MESH_BOUNDS_FAILED"), detail);
-    return reject(QStringLiteral("REJECT_MESH_PARSE_FAILED"), detail);
+    if (!entry.loaded) return reject(QStringLiteral("parse_failed"));
+    if (!entry.valid) return reject(entry.failure_reason_code.trimmed().isEmpty() ? QStringLiteral("parse_failed") : entry.failure_reason_code, entry.warning);
+    if (entry.oversized) return reject(QStringLiteral("unreasonable_bounds"), entry.warning);
+    return reject(QStringLiteral("zero_triangle_mesh"), entry.warning);
   }
   QString final_span_reason;
   if (!validate_mesh_final_span(it, entry, mesh_source, final_span_reason)) {
-    return reject(QStringLiteral("REJECT_MESH_BOUNDS_FAILED"), final_span_reason);
+    return reject(QStringLiteral("unreasonable_bounds"), final_span_reason);
   }
 
   glPushMatrix();
@@ -2031,8 +1858,9 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
 
   const MeshCacheEntry & cache = entry;
   if (!cache.valid || cache.mesh.triangles.isEmpty()) {
+    draw_unit_cube_triangles(color);
     glPopMatrix();
-    return false;
+    return true;
   }
 
   const QVector3D default_up_normal(0.0f, 1.0f, 0.0f);
@@ -2164,6 +1992,7 @@ void Scene3DViewportWidget::draw_place_target_bin(const ScenePreviewWidget::Prev
 }
 void Scene3DViewportWidget::draw_object_cube(const ScenePreviewWidget::PreviewItem & it)
 {
+  if (draw_mesh_preview_if_available(it, item_color(it), true)) return;
   const double cube = qMax(0.05, qMin(it.sx, qMin(it.sy, it.sz)));
   draw_box(it.x, it.y, it.z, cube, cube, cube, item_color(it));
 }
@@ -2357,13 +2186,10 @@ Scene3DViewportWidget::ItemBounds Scene3DViewportWidget::item_bounds_for_role(co
   if (mesh_world_bounds_for_item(item, mesh_bounds)) return mesh_bounds;
 
   const NormalizedRole role = classify_item_role(item);
-  if (role == NormalizedRole::Object) {
-    if (item_has_explicit_dimensions(item)) return { item.x, item.y, item.z, item.sx, item.sy, item.sz };
-    const double cube = qMax(0.05, qMin(item.sx, qMin(item.sy, item.sz)));
-    return { item.x, item.y, item.z, cube, cube, cube };
-  }
-  if (role == NormalizedRole::WarningAnchor) {
-    const double cube = qMax(0.04, qMin(item.sx, qMin(item.sy, item.sz)));
+  if (role == NormalizedRole::Object || role == NormalizedRole::WarningAnchor) {
+    const double cube = (role == NormalizedRole::Object)
+      ? qMax(0.05, qMin(item.sx, qMin(item.sy, item.sz)))
+      : qMax(0.04, qMin(item.sx, qMin(item.sy, item.sz)));
     return { item.x, item.y, item.z, cube, cube, cube };
   }
   return { item.x, item.y, item.z, item.sx, item.sy, item.sz };
