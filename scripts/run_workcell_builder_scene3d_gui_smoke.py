@@ -548,7 +548,7 @@ def main() -> int:
                 "scene": args.scene or sp.name,
                 "scene_path": str(sp),
                 "repo_root": str(repo_root),
-                "workspace_root": workspace_root_json,
+                "workspace_root": str(workspace_root),
                 "blockers": [f"scene_path_missing_required_files:{','.join(missing)}"],
                 "warnings": [],
             }
@@ -593,13 +593,17 @@ def main() -> int:
     child_env = os.environ.copy()
     child_env.update(extra_env)
     searched_paths = [str(p) for p in _resolve_executable_candidates(workspace_root or repo_root)]
+    try:
+        resolution_warnings = list(executable_resolution.get("warnings") or executable_resolution.get("resolution_warnings") or [])
+    except NameError:
+        resolution_warnings = []
     diag = {
         "schema": EXPECTED_SCHEMA,
         "runtime_available": True,
         "scene": args.scene or (args.scene_path.name if args.scene_path else None),
         "scene_path": str(args.scene_path) if args.scene_path else None,
         "repo_root": str(repo_root),
-        "workspace_root": workspace_root_json,
+        "workspace_root": str(workspace_root),
         "executable": str(exe),
         **ros_env,
         "resolved_executable": str(exe),
