@@ -1,10 +1,43 @@
 from pathlib import Path
 import json
+import os
 import subprocess
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_xacro_env_preserves_and_extends_package_lookup(monkeypatch, tmp_path):
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    workspace_root = tmp_path / 'workcell_ws'
+    workspace_install = workspace_root / 'install'
+    workspace_install.mkdir(parents=True)
+    inherited_prefix = os.pathsep.join(['/existing/overlay', str(workspace_install), '/existing/overlay'])
+    inherited_ros_package_path = os.pathsep.join([str(ROOT / 'assets'), '/extra/packages'])
+    monkeypatch.setenv('AMENT_PREFIX_PATH', inherited_prefix)
+    monkeypatch.setenv('ROS_PACKAGE_PATH', inherited_ros_package_path)
+
+    original_exists = mesh_index.Path.exists
+
+    def fake_exists(path):
+        if str(path) == '/opt/ros/humble':
+            return True
+        return original_exists(path)
+
+    monkeypatch.setattr(mesh_index.Path, 'exists', fake_exists)
+
+    env = mesh_index.xacro_env(ROOT / 'scenes' / 'ur5_2f_test', workspace_root=workspace_root)
+
+    ament_entries = env['AMENT_PREFIX_PATH'].split(os.pathsep)
+    assert ament_entries == ['/existing/overlay', str(workspace_install), '/opt/ros/humble']
+
+    ros_package_entries = env['ROS_PACKAGE_PATH'].split(os.pathsep)
+    assert str(ROOT / 'assets') in ros_package_entries
+    assert str(ROOT / 'workcell_builder' / 'workcell_builder' / 'assets') in ros_package_entries
+    assert '/extra/packages' in ros_package_entries
+    assert ros_package_entries.count(str(ROOT / 'assets')) == 1
 
 
 def _xyz_from_item(item: dict):
