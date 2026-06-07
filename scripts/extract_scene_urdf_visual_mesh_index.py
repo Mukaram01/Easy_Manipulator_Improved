@@ -8,7 +8,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENES_ROOT = ROOT / "scenes"
-EXTRACTOR_VERSION = "2.5"
+EXTRACTOR_VERSION = "2.6"
+UR5_VISUAL_MESH_URI_PREFIX = "package://ur_description/meshes/ur5/visual/"
 PLACEHOLDER_RE = re.compile(r"(\$\{[^}]+\}|\$\(arg\s+[^)]+\)|\$\(find\s+[^)]+\))")
 REPO_LOCAL_ASSET_PRECEDENCE_PACKAGES = {
     "robotiq_85_description",
@@ -452,14 +453,36 @@ def expand_xacro(urdf_path, scene_dir=None, xacro_args=None, workspace_root=None
 
 
 
-def append_static_robot_primitive_fallbacks(items, urdf_text, fallback_reason):
-    """Add bounded robot primitives when xacro-lite cannot expand a known robot macro.
+def _contains_unresolved_ur_robot(text):
+    text = text or ''
+    lowered = text.lower()
+    if 'ur_robot' not in lowered:
+        return False
+    return bool(re.search(r"<\s*(?:[A-Za-z_][\w.-]*:)?ur_robot\b", text, re.IGNORECASE)) or 'ur_robot' in lowered
+
+def _has_ur5_visual_mesh_uri(items):
+    for item in items or []:
+        uri_candidates = [item.get('package_uri'), item.get('source_path')]
+        if any(str(uri or '').startswith(UR5_VISUAL_MESH_URI_PREFIX) for uri in uri_candidates):
+            return True
+    return False
+
+def append_static_robot_primitive_fallbacks(items, urdf_text, fallback_reason, extraction_mode='best_effort_recursive', source_xacro_text=''):
+    """Add bounded robot primitives when real xacro UR mesh expansion is unavailable.
 
     These entries are preview-only visual fallbacks for Scene3D. They do not alter
     launch files, controllers, or runtime robot behaviour.
     """
-    reason = (fallback_reason or '').lower()
-    if 'ur_robot' not in reason and '<xacro:ur_robot' not in (urdf_text or ''):
+    fallback_eligible_modes = {'xacro_lite_expanded', 'best_effort_recursive', 'best_effort', 'raw_fallback', 'raw'}
+    if extraction_mode not in fallback_eligible_modes:
+        return 0
+    if _has_ur5_visual_mesh_uri(items):
+        return 0
+    if not (
+        _contains_unresolved_ur_robot(fallback_reason)
+        or _contains_unresolved_ur_robot(source_xacro_text)
+        or _contains_unresolved_ur_robot(urdf_text)
+    ):
         return 0
     existing_ids = {str(i.get('id') or '') for i in items}
     specs = [
@@ -625,7 +648,7 @@ def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--scene'); ap.add_argument('--all',action='store_true'); ap.add_argument('--prefer-xacro-expanded',action='store_true',default=True); ap.add_argument('--fallback-best-effort',action='store_true',default=True); ap.add_argument('--fail-on-unexpanded',action='store_true'); ap.add_argument('--xacro-arg',action='append',default=[]); ap.add_argument('--use-fake-hardware',default='true'); ap.add_argument('--robot-prefix',default=''); ap.add_argument('--tool-prefix',default=''); ap.add_argument('--no-write',action='store_true'); ap.add_argument('--prefer-xacro',action='store_true'); ap.add_argument('--require-xacro',action='store_true'); ap.add_argument('--workspace-root',default=os.environ.get('WORKSPACE_ROOT',''))
     a=ap.parse_args()
     scenes=[SCENES_ROOT/a.scene] if a.scene else sorted([p for p in SCENES_ROOT.iterdir() if p.is_dir()])
-    report={'scene_count':0,'visual_count':0,'resolved':0,'unresolved':0,'xacro_expanded_count':0,'best_effort_count':0,'scenes':[]}
+    report={'scene_count':0,'visual_count':0,'resolved':0,'unresolved':0,'xacro_expanded_count':0,'best_effort_count':0,'real_xacro_expanded_count':0,'scenes':[]}
     for scene_dir in scenes:
         manifest=read_yaml(scene_dir/'scene_manifest.yaml') or {}
         urdf_path=scene_dir/(((manifest.get('files') or {}).get('urdf_xacro')) or 'urdf/scene.urdf.xacro')
@@ -633,7 +656,7 @@ def main():
         for ent in a.xacro_arg:
             if '=' in ent:
                 k,v=ent.split('=',1); xargs[k.strip()]=v.strip()
-        mode='best_effort_recursive'; fallback_reason=''; _,xacro_avail,missing_reason=discover_xacro_command(); expanded_path=''; xacro_cmd=[]; xml_text=''
+        mode='best_effort_recursive'; fallback_reason=''; _,xacro_avail,missing_reason=discover_xacro_command(); expanded_path=''; xacro_cmd=[]; xml_text=''; real_xacro_command_succeeded=False; source_xacro_text=urdf_path.read_text(errors='ignore') if urdf_path.exists() else ''
         if (a.prefer_xacro or a.prefer_xacro_expanded or a.require_xacro):
             try:
                 expanded_result = expand_xacro(urdf_path,scene_dir,xargs,workspace_root=(a.workspace_root or None))
@@ -651,24 +674,33 @@ def main():
                 mode='xacro_lite_expanded' if xacro_cmd and xacro_cmd[0] == 'xacro-lite' else 'xacro_expanded'
                 expanded_path='' if mode == 'xacro_lite_expanded' else 'generated/expanded_scene_preview.urdf'
                 fallback_reason=err if mode == 'xacro_lite_expanded' else ''
+                real_xacro_command_succeeded=bool(mode == 'xacro_expanded' and xacro_cmd and xacro_cmd[0] != 'xacro-lite')
             else: fallback_reason=err or missing_reason
         if a.require_xacro and not xacro_avail:
             print('xacro executable unavailable (required)'); return 2
-        if not xml_text: xml_text=(urdf_path.read_text(errors='ignore') if urdf_path.exists() else '<robot/>')
+        if not xml_text: xml_text=(source_xacro_text if source_xacro_text else '<robot/>')
         package_map, package_diagnostics = discover_package_map(scene_dir, workspace_root=(a.workspace_root or None), package_names=extract_referenced_package_names(xml_text))
         try: items=extract_from_urdf(xml_text, package_map)
         except Exception: items=[]
-        static_robot_fallback_count = append_static_robot_primitive_fallbacks(items, xml_text, fallback_reason)
+        static_robot_fallback_count = 0
+        fallback_ur_robot_unresolved = (
+            _contains_unresolved_ur_robot(fallback_reason)
+            or _contains_unresolved_ur_robot(source_xacro_text)
+            or _contains_unresolved_ur_robot(xml_text)
+        )
+        if mode in {'xacro_lite_expanded', 'best_effort_recursive', 'best_effort', 'raw_fallback', 'raw'} and fallback_ur_robot_unresolved and not _has_ur5_visual_mesh_uri(items):
+            static_robot_fallback_count = append_static_robot_primitive_fallbacks(items, xml_text, fallback_reason, mode, source_xacro_text)
         static_parent_resolved_count = resolve_static_tool0_children(items)
         unresolved=[i for i in items if any(contains_placeholder(i.get(k,'')) for k in ('id','link','parent_link'))]
-        safe=bool(items) and (len(unresolved)==0) and (mode in ('xacro_expanded','xacro_lite_expanded'))
+        fallback_only_ur5_preview=static_robot_fallback_count > 0 and not _has_ur5_visual_mesh_uri(items)
+        safe=bool(items) and (len(unresolved)==0) and (mode in ('xacro_expanded','xacro_lite_expanded')) and not fallback_only_ur5_preview
         mesh_format_counts=dict(collections.Counter((Path(i.get('resolved_source_path') or i.get('source_path') or '').suffix.lower() or 'unknown') for i in items if i.get('geometry_type')=='mesh'))
         transform_status_counts=dict(collections.Counter(str(i.get('transform_status') or 'unknown') for i in items))
         renderable_count=sum(1 for i in items if i.get('render_expected', True))
         renderable_mesh_count=sum(1 for i in items if i.get('geometry_type')=='mesh' and i.get('render_expected', True))
         source_mtime=urdf_path.stat().st_mtime if urdf_path.exists() else None
         has_transform_collapse_warning=bool(items) and len({tuple((i.get('pose') or {}).get('xyz') or []) for i in items}) <= 1 and len(items) > 1
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':str(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':expanded_path,'fallback_reason':fallback_reason,'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'visual_items':items,'xacro_command':xacro_cmd,'package_resolution_diagnostics':package_diagnostics}
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':str(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':expanded_path,'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'visual_items':items,'xacro_command':xacro_cmd,'package_resolution_diagnostics':package_diagnostics}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True)
@@ -678,6 +710,7 @@ def main():
         report['resolved']+=sum(1 for i in items if i.get('resolved'))
         report['unresolved']+=sum(1 for i in items if not i.get('resolved'))
         report['xacro_expanded_count']+=int(mode in ('xacro_expanded','xacro_lite_expanded'))
+        report['real_xacro_expanded_count']+=int(real_xacro_command_succeeded)
         report['best_effort_count']+=int(mode not in ('xacro_expanded','xacro_lite_expanded'))
         report.setdefault('mesh_format_counts', {})
         for ext,count in mesh_format_counts.items(): report['mesh_format_counts'][ext]=report['mesh_format_counts'].get(ext,0)+count
@@ -686,7 +719,7 @@ def main():
         report['candidate_mesh_count']=report.get('candidate_mesh_count',0)+len(items)
         report['emitted_visual_count']=report.get('emitted_visual_count',0)+len(items)
         report['unresolved_placeholder_count']=report.get('unresolved_placeholder_count',0)+len(unresolved)
-        report['scenes'].append({'scene':scene_dir.name,'extraction_mode':mode,'xacro_available':payload['xacro_available'],'expanded_urdf_written':bool(expanded_path),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'mesh_backed_count':sum(1 for i in items if i.get('geometry_type')=='mesh'),'skipped_count':sum(1 for i in items if i.get('render_skip_reason')),'fallback_reason':fallback_reason,'urdf_primitive_count':sum(1 for i in items if i.get('geometry_type') in ('box','cylinder','sphere','capsule')),'primitive_fallback_count':static_robot_fallback_count,'stale_index':False,'status':'PASS' if safe else 'WARN'})
+        report['scenes'].append({'scene':scene_dir.name,'extraction_mode':mode,'xacro_available':payload['xacro_available'],'xacro_real_command_succeeded':real_xacro_command_succeeded,'expanded_urdf_written':bool(expanded_path),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'mesh_backed_count':sum(1 for i in items if i.get('geometry_type')=='mesh'),'skipped_count':sum(1 for i in items if i.get('render_skip_reason')),'fallback_reason':fallback_reason,'urdf_primitive_count':sum(1 for i in items if i.get('geometry_type') in ('box','cylinder','sphere','capsule')),'primitive_fallback_count':static_robot_fallback_count,'stale_index':False,'status':'PASS' if safe else 'WARN'})
         if a.require_xacro and mode not in ('xacro_expanded','xacro_lite_expanded'): return 2
     (ROOT/'build').mkdir(exist_ok=True)
     (ROOT/'build/workcell_studio_urdf_visual_mesh_index_report.json').write_text(json.dumps(report,indent=2)+'\n')

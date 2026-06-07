@@ -365,6 +365,83 @@ def test_require_xacro_strict_nonzero_on_simulated_xacro_failure(monkeypatch):
         sys.argv = original_argv
     assert rc != 0
 
+
+def test_static_ur_robot_fallback_is_gated_by_expansion_mode_and_mesh_presence():
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    source_xacro = '<robot xmlns:xacro="http://ros.org/wiki/xacro"><xacro:ur_robot name="ur5"/></robot>'
+    items = []
+    assert mesh_index.append_static_robot_primitive_fallbacks(
+        items,
+        '<robot/>',
+        'skipped unresolved macros: ur_robot',
+        'xacro_expanded',
+        source_xacro,
+    ) == 0
+    assert items == []
+
+    items = [
+        {
+            'geometry_type': 'mesh',
+            'package_uri': 'package://ur_description/meshes/ur5/visual/base.dae',
+            'source_path': 'package://ur_description/meshes/ur5/visual/base.dae',
+        }
+    ]
+    assert mesh_index.append_static_robot_primitive_fallbacks(
+        items,
+        '<robot/>',
+        'skipped unresolved macros: ur_robot',
+        'xacro_lite_expanded',
+        source_xacro,
+    ) == 0
+    assert len(items) == 1
+
+    items = []
+    added = mesh_index.append_static_robot_primitive_fallbacks(
+        items,
+        '<robot/>',
+        'skipped unresolved macros: ur_robot',
+        'xacro_lite_expanded',
+        source_xacro,
+    )
+    assert added > 0
+    assert all(item.get('category') == 'robot_static_primitive_fallback' for item in items)
+
+
+def test_main_marks_xacro_lite_static_ur5_fallback_preview_unsafe(monkeypatch, tmp_path):
+    import sys
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    scenes_root = tmp_path / 'scenes'
+    scene = scenes_root / 'lite_scene'
+    (scene / 'urdf').mkdir(parents=True)
+    (scene / 'urdf' / 'scene.urdf.xacro').write_text(
+        '<robot xmlns:xacro="http://ros.org/wiki/xacro"><xacro:ur_robot name="ur5"/></robot>',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(mesh_index, 'SCENES_ROOT', scenes_root)
+    monkeypatch.setattr(mesh_index, 'discover_xacro_command', lambda: (None, False, 'xacro executable unavailable'))
+    monkeypatch.setattr(
+        mesh_index,
+        'expand_xacro',
+        lambda *args, **kwargs: ('<robot name="lite_scene"/>', True, 'skipped unresolved macros: ur_robot', ['xacro-lite', 'scene.urdf.xacro']),
+    )
+
+    original_argv = sys.argv
+    try:
+        sys.argv = ['extract_scene_urdf_visual_mesh_index.py', '--scene', 'lite_scene']
+        rc = mesh_index.main()
+    finally:
+        sys.argv = original_argv
+
+    assert rc == 0
+    index = scene / 'generated' / 'scene_visual_mesh_index.json'
+    payload = json.loads(index.read_text(encoding='utf-8'))
+    assert payload['extraction_mode'] == 'xacro_lite_expanded'
+    assert payload['xacro_real_command_succeeded'] is False
+    assert payload['static_robot_primitive_fallback_count'] > 0
+    assert payload['safe_for_preview'] is False
+
 def test_synthetic_chain_transform_composition_and_primitives():
     import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
     xml = '''<robot name="t"><link name="root"/><link name="link1"/><link name="link2"/>
