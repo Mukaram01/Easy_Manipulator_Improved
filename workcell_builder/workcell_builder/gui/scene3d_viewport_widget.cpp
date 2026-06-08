@@ -1017,9 +1017,10 @@ void Scene3DViewportWidget::paintGL()
       int item_urdf_primitive_count = 0;
       int item_missing_geometry_count = 0;
       int item_primitive_fallback_count = 0;
-      draw_truthful_item_geometry(*it, &item_placeholder_count, &item_mesh_backed_count, &item_wireframe_box_count,
-                                  &item_urdf_primitive_count, &item_missing_geometry_count, &item_primitive_fallback_count);
-      ++rendered_item_count;
+      const bool drew_physical_geometry =
+        draw_truthful_item_geometry(*it, &item_placeholder_count, &item_mesh_backed_count, &item_wireframe_box_count,
+                                    &item_urdf_primitive_count, &item_missing_geometry_count, &item_primitive_fallback_count);
+      if (drew_physical_geometry) ++rendered_item_count;
       if (count_in_stats) {
         placeholder_count += item_placeholder_count;
         mesh_rendered_count += item_mesh_backed_count;
