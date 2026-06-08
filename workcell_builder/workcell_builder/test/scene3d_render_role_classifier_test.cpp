@@ -146,3 +146,32 @@ TEST(Scene3DRenderRoleClassifier, IngestCountsOnlyPhysicalMeshHandoffs)
   EXPECT_EQ(counters.mesh_rendered_count, 0);
   EXPECT_FALSE(counters.last_paint_completed);
 }
+
+TEST(Scene3DRenderRoleClassifier, SemanticRolesUseCleanPrimitiveWhenDimensionsExist)
+{
+  auto pick_zone = make_item("pick_zone");
+  pick_zone.role = "pick_zone";
+  pick_zone.mesh_available = false;
+  pick_zone.mesh_path.clear();
+  pick_zone.has_mesh_metadata = false;
+
+  EXPECT_TRUE(Scene3DViewportWidget::should_draw_clean_semantic_primitive_for_test(pick_zone));
+  EXPECT_TRUE(Scene3DViewportWidget::should_draw_as_solid_for_test(pick_zone, ScenePreviewWidget::MeshPreviewMode::Meshes));
+  EXPECT_FALSE(Scene3DViewportWidget::should_suppress_missing_geometry_marker_for_test(pick_zone));
+}
+
+TEST(Scene3DRenderRoleClassifier, SemanticRolesWithoutDimensionsSuppressMissingGeometryMarker)
+{
+  auto object = make_item("object_without_size");
+  object.role = "object";
+  object.mesh_available = false;
+  object.mesh_path.clear();
+  object.has_mesh_metadata = false;
+  object.sx = 0.0;
+  object.sy = 0.0;
+  object.sz = 0.0;
+
+  EXPECT_FALSE(Scene3DViewportWidget::should_draw_clean_semantic_primitive_for_test(object));
+  EXPECT_TRUE(Scene3DViewportWidget::should_suppress_missing_geometry_marker_for_test(object));
+  EXPECT_FALSE(Scene3DViewportWidget::should_draw_as_wireframe_for_test(object, ScenePreviewWidget::MeshPreviewMode::Auto));
+}
