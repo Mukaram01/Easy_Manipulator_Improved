@@ -119,7 +119,7 @@ TEST(Scene3DRenderRoleClassifier, IngestCountsOnlyPhysicalMeshHandoffs)
   ScenePreviewWidget::PreviewItem mesh_package_uri = make_item("metadata_package_uri");
   mesh_package_uri.mesh_available = false;
   mesh_package_uri.mesh_path.clear();
-  mesh_package_uri.has_mesh_metadata = true;
+  mesh_package_uri.has_mesh_metadata = false;
   mesh_package_uri.package_uri = "package://workcell_builder/meshes/metadata_only.dae";
   mesh_package_uri.source_path = "config/workcell_studio_layout.yaml";
 
@@ -129,20 +129,35 @@ TEST(Scene3DRenderRoleClassifier, IngestCountsOnlyPhysicalMeshHandoffs)
   explicit_mesh_path.has_mesh_metadata = false;
   explicit_mesh_path.source_path = "config/environment.yaml";
 
+  ScenePreviewWidget::PreviewItem source_mesh_path = make_item("source_mesh_path");
+  source_mesh_path.mesh_available = false;
+  source_mesh_path.mesh_path.clear();
+  source_mesh_path.has_mesh_metadata = false;
+  source_mesh_path.source_path = "assets/meshes/source_handoff.glb?version=1";
+
   ScenePreviewWidget::PreviewItem layout_source = make_item("layout_source");
+  layout_source.role = "pick_zone";
   layout_source.mesh_available = false;
   layout_source.mesh_path.clear();
-  layout_source.has_mesh_metadata = true;
+  layout_source.has_mesh_metadata = false;
   layout_source.source_path = "config/workcell_studio_layout.yaml";
+
+  ScenePreviewWidget::PreviewItem authoring_package_uri = make_item("authoring_package_uri");
+  authoring_package_uri.role = "object_a";
+  authoring_package_uri.mesh_available = false;
+  authoring_package_uri.mesh_path.clear();
+  authoring_package_uri.has_mesh_metadata = false;
+  authoring_package_uri.package_uri = "package://workcell_builder/config/environment.yaml";
+  authoring_package_uri.source_path = "config/environment.yaml";
 
   Scene3DViewportWidget viewport;
   viewport.ingest_preview_items(QVector<ScenePreviewWidget::PreviewItem>{
-    mesh_metadata_source, mesh_package_uri, explicit_mesh_path, layout_source
+    mesh_metadata_source, mesh_package_uri, explicit_mesh_path, source_mesh_path, layout_source, authoring_package_uri
   });
 
   const auto counters = viewport.render_debug_counters();
-  EXPECT_EQ(counters.mesh_source_count, 3);
-  EXPECT_EQ(counters.mesh_backed_count, 3);
+  EXPECT_EQ(counters.mesh_source_count, 4);
+  EXPECT_EQ(counters.mesh_backed_count, 4);
   EXPECT_EQ(counters.mesh_rendered_count, 0);
   EXPECT_FALSE(counters.last_paint_completed);
 }

@@ -74,12 +74,36 @@ double snap_rotation_value(double raw_rad, Scene3DViewportWidget::SnapMode mode)
   return step_rad > 0.0 ? std::round(raw_rad / step_rad) * step_rad : raw_rad;
 }
 
+QString path_without_uri_suffixes(QString path)
+{
+  path = path.trimmed();
+  const int fragment_index = path.indexOf(QLatin1Char('#'));
+  if (fragment_index >= 0) path = path.left(fragment_index);
+  const int query_index = path.indexOf(QLatin1Char('?'));
+  if (query_index >= 0) path = path.left(query_index);
+  return path.trimmed();
+}
+
+bool path_has_mesh_asset_extension(const QString & path)
+{
+  const QString suffix = QFileInfo(path_without_uri_suffixes(path)).suffix().toLower();
+  return suffix == QStringLiteral("dae") ||
+         suffix == QStringLiteral("stl") ||
+         suffix == QStringLiteral("obj") ||
+         suffix == QStringLiteral("glb") ||
+         suffix == QStringLiteral("gltf");
+}
+
 bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item)
 {
+  const QString mesh_path = item.mesh_path.trimmed();
+  const QString package_uri = item.package_uri.trimmed();
+  const QString source_path = item.source_path.trimmed();
   return item.mesh_available ||
          item.has_mesh_metadata ||
-         !item.mesh_path.trimmed().isEmpty() ||
-         !item.source_path.trimmed().isEmpty();
+         !mesh_path.isEmpty() ||
+         (!package_uri.isEmpty() && path_has_mesh_asset_extension(package_uri)) ||
+         (!source_path.isEmpty() && path_has_mesh_asset_extension(source_path));
 }
 
 bool item_has_valid_urdf_primitive(const ScenePreviewWidget::PreviewItem & item)
