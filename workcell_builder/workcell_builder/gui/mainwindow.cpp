@@ -7492,8 +7492,25 @@ void MainWindow::populate_scene_hierarchy()
     while (value.endsWith('_')) value.chop(1);
     return value;
   };
+  auto path_has_mesh_asset_extension = [](QString path) {
+    path = path.trimmed();
+    const int fragment_index = path.indexOf(QLatin1Char('#'));
+    if (fragment_index >= 0) path = path.left(fragment_index);
+    const int query_index = path.indexOf(QLatin1Char('?'));
+    if (query_index >= 0) path = path.left(query_index);
+    const QString suffix = QFileInfo(path).suffix().toLower();
+    return suffix == QStringLiteral("dae") ||
+           suffix == QStringLiteral("stl") ||
+           suffix == QStringLiteral("obj") ||
+           suffix == QStringLiteral("glb") ||
+           suffix == QStringLiteral("gltf");
+  };
   auto normalized_equivalence_basename = [&](const QString & value) {
     QString trimmed = value.trimmed();
+    const int fragment_index = trimmed.indexOf(QLatin1Char('#'));
+    if (fragment_index >= 0) trimmed = trimmed.left(fragment_index);
+    const int query_index = trimmed.indexOf(QLatin1Char('?'));
+    if (query_index >= 0) trimmed = trimmed.left(query_index);
     if (trimmed.startsWith(QStringLiteral("package://"))) trimmed = trimmed.mid(QStringLiteral("package://").size());
     if (trimmed.startsWith(QStringLiteral("file://"))) trimmed = trimmed.mid(QStringLiteral("file://").size());
     const QString basename = QFileInfo(trimmed).fileName();
@@ -7520,18 +7537,18 @@ void MainWindow::populate_scene_hierarchy()
     if (role.isEmpty()) return keys;
     const QString link = normalized_equivalence_token(item.display_name.isEmpty() ? item.id : item.display_name);
     const QString id_token = normalized_equivalence_token(item.id);
-    const QString package_basename = normalized_equivalence_basename(item.package_uri);
-    const QString source_basename = normalized_equivalence_basename(item.source_path.isEmpty() ? item.mesh_path : item.source_path);
     const QString pose = QStringLiteral("%1_%2_%3_%4_%5_%6")
       .arg(approximate_pose_token(item.x), approximate_pose_token(item.y), approximate_pose_token(item.z),
            approximate_pose_token(item.roll), approximate_pose_token(item.pitch), approximate_pose_token(item.yaw));
     if (!link.isEmpty()) keys.insert(QStringLiteral("role_link:%1:%2").arg(role, link));
     if (!id_token.isEmpty()) keys.insert(QStringLiteral("role_link:%1:%2").arg(role, id_token));
-    if (!package_basename.isEmpty()) keys.insert(QStringLiteral("role_package_basename:%1:%2").arg(role, package_basename));
-    if (!source_basename.isEmpty()) keys.insert(QStringLiteral("role_source_basename:%1:%2").arg(role, source_basename));
+    for (const QString & path_value : {item.package_uri, item.mesh_path, item.source_path, item.resolved_source_path_original}) {
+      const QString source_basename = normalized_equivalence_basename(path_value);
+      if (source_basename.isEmpty()) continue;
+      keys.insert(QStringLiteral("role_source_basename:%1:%2").arg(role, source_basename));
+      keys.insert(QStringLiteral("source_pose:%1:%2").arg(source_basename, pose));
+    }
     keys.insert(QStringLiteral("role_pose:%1:%2").arg(role, pose));
-    if (!link.isEmpty()) keys.insert(QStringLiteral("role_link_pose:%1:%2:%3").arg(role, link, pose));
-    if (!source_basename.isEmpty()) keys.insert(QStringLiteral("role_source_pose:%1:%2:%3").arg(role, source_basename, pose));
     return keys;
   };
   auto is_true_editable_source_of_truth = [](const ScenePreviewWidget::PreviewItem & item) {
@@ -7546,22 +7563,22 @@ void MainWindow::populate_scene_hierarchy()
     if (item.category != QStringLiteral("URDF Visual")) return false;
     const QString visual_source = canonical_scene3d_token(item.active_visual_source);
     const QString source_layer = canonical_scene3d_token(item.source_layer);
-    const QString source_path = item.source_path.trimmed();
-    const bool source_path_points_to_mesh_file =
-      !source_path.isEmpty() &&
-      !source_path.startsWith(QStringLiteral("package://"), Qt::CaseInsensitive) &&
-      !source_path.startsWith(QStringLiteral("file://"), Qt::CaseInsensitive);
-    const bool has_authoritative_geometry =
-      (visual_source == QStringLiteral("mesh_preview") &&
-       (item.mesh_available || !item.mesh_path.trimmed().isEmpty() || source_path_points_to_mesh_file)) ||
-      visual_source == QStringLiteral("urdf_primitive");
-    return source_layer == QStringLiteral("locked_generated_urdf_visual") && has_authoritative_geometry;
+    if (source_layer != QStringLiteral("locked_generated_urdf_visual") || visual_source != QStringLiteral("mesh_preview")) return false;
+    const bool has_valid_mesh_reference =
+      path_has_mesh_asset_extension(item.resolved_source_path_original) ||
+      path_has_mesh_asset_extension(item.mesh_path) ||
+      path_has_mesh_asset_extension(item.package_uri) ||
+      path_has_mesh_asset_extension(item.source_path);
+    return item.mesh_available || item.has_mesh_metadata || has_valid_mesh_reference;
   };
   auto is_lower_fidelity_generated_placeholder = [&](const ScenePreviewWidget::PreviewItem & item) {
     if (is_true_editable_source_of_truth(item)) return false;
+    if (item.editable || item.linked_to_editable_layout_state) return false;
+    if (is_authoritative_mesh_index_visual(item)) return false;
     if (!physical_asset_role(item)) return false;
     const QString layer = canonical_scene3d_token(item.source_layer);
     const QString visual_source = canonical_scene3d_token(item.active_visual_source);
+    if (visual_source == QStringLiteral("urdf_primitive")) return false;
     const QString text = normalized_equivalence_token(item.id + " " + item.display_name + " " + item.category + " " + item.lock_reason + " " + item.mesh_load_warning + " " + item.warnings.join(" "));
     if (visual_source == QStringLiteral("primitive_fallback") || layer == QStringLiteral("primitive_fallback")) return true;
     if (text.contains(QStringLiteral("placeholder")) || text.contains(QStringLiteral("generated_bounds")) ||
@@ -7971,7 +7988,16 @@ void MainWindow::populate_scene_hierarchy()
     }
   }
 
+  auto suppression_reason_for_equivalence_key = [](const QString & key) {
+    if (key.startsWith(QStringLiteral("role_link:"))) return QStringLiteral("normalized_role_plus_link_or_display_name");
+    if (key.startsWith(QStringLiteral("role_source_basename:"))) return QStringLiteral("normalized_role_plus_source_basename");
+    if (key.startsWith(QStringLiteral("role_pose:"))) return QStringLiteral("normalized_role_plus_approximate_pose");
+    if (key.startsWith(QStringLiteral("source_pose:"))) return QStringLiteral("normalized_source_basename_plus_approximate_pose");
+    return QStringLiteral("equivalent_authoritative_mesh_index_visual");
+  };
+
   QMap<QString, int> placeholder_suppression_reason_counts;
+  QStringList placeholder_suppression_diagnostics;
   int suppressed_preview_placeholder_count = 0;
   int preserved_editable_source_count = 0;
   QVector<ScenePreviewWidget::PreviewItem> unsuppressed_preview_items;
@@ -7982,18 +8008,23 @@ void MainWindow::populate_scene_hierarchy()
       unsuppressed_preview_items.push_back(item);
       continue;
     }
-    bool equivalent_to_authoritative_visual = false;
+    QString matched_equivalence_key;
     if (is_lower_fidelity_generated_placeholder(item)) {
       for (const QString & key : equivalence_keys_for_item(item)) {
         if (authoritative_visual_equivalence_map.contains(key)) {
-          equivalent_to_authoritative_visual = true;
+          matched_equivalence_key = key;
           break;
         }
       }
     }
-    if (equivalent_to_authoritative_visual) {
+    if (!matched_equivalence_key.isEmpty()) {
       ++suppressed_preview_placeholder_count;
-      placeholder_suppression_reason_counts[QStringLiteral("suppressed_raw_placeholder_equivalent_mesh_index")] += 1;
+      const QString reason = suppression_reason_for_equivalence_key(matched_equivalence_key);
+      placeholder_suppression_reason_counts[reason] += 1;
+      if (placeholder_suppression_diagnostics.size() < 12) {
+        placeholder_suppression_diagnostics << QStringLiteral("%1=>%2 via %3")
+          .arg(item.id, authoritative_visual_equivalence_map.value(matched_equivalence_key).join(QLatin1Char('|')), reason);
+      }
       continue;
     }
     unsuppressed_preview_items.push_back(item);
@@ -8004,8 +8035,9 @@ void MainWindow::populate_scene_hierarchy()
     for (auto it = placeholder_suppression_reason_counts.cbegin(); it != placeholder_suppression_reason_counts.cend(); ++it) {
       suppression_tokens << QString("%1=%2").arg(it.key()).arg(it.value());
     }
-    append_studio_log(QString("Preview placeholder suppression: %1 (authoritative_mesh_index_equivalence_keys=%2 preserved_editable_source_of_truth=%3)")
+    append_studio_log(QString("Preview placeholder suppression diagnostics: %1 (examples=%2 authoritative_mesh_index_equivalence_keys=%3 preserved_editable_source_of_truth=%4; suppressed items are omitted without viewport warning placeholders)")
       .arg(suppression_tokens.join(' '))
+      .arg(placeholder_suppression_diagnostics.join(QStringLiteral("; ")))
       .arg(authoritative_visual_equivalence_map.size())
       .arg(preserved_editable_source_count));
   } else if (!authoritative_visual_equivalence_map.isEmpty()) {
