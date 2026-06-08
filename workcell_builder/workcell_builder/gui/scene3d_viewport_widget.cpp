@@ -131,7 +131,7 @@ void finalize_visual_quality(Scene3DViewportWidget::RenderDebugCounters & counte
   }
   if (counters.missing_geometry_count > 0) {
     if (status == QStringLiteral("PASS")) status = QStringLiteral("WARNING");
-    warnings.append(QStringLiteral("missing_geometry_rendered_as_warning_markers"));
+    warnings.append(QStringLiteral("missing_geometry_requires_diagnostics"));
   }
   if (counters.placeholder_count > 0) {
     if (status == QStringLiteral("PASS")) status = QStringLiteral("WARNING");
@@ -596,6 +596,25 @@ bool is_raw_generated_bounds_only_item(const ScenePreviewWidget::PreviewItem & i
 }
 
 
+
+bool is_clean_semantic_primitive_role(NormalizedRole role)
+{
+  switch (role) {
+    case NormalizedRole::PickZone:
+    case NormalizedRole::PlaceBin:
+    case NormalizedRole::Conveyor:
+    case NormalizedRole::Object:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool should_suppress_missing_geometry_marker_for_semantic_role(const ScenePreviewWidget::PreviewItem & it)
+{
+  return is_clean_semantic_primitive_role(classify_item_role(it)) && !item_has_explicit_primitive_dimensions(it);
+}
+
 bool is_overlay_visual_role(NormalizedRole role)
 {
   switch (role) {
@@ -983,6 +1002,9 @@ void Scene3DViewportWidget::paintGL()
         urdf_primitive_rendered_count += item_urdf_primitive_count;
         missing_geometry_count += item_missing_geometry_count;
         wireframe_box_count += item_wireframe_box_count;
+        primitive_fallback_count += item_primitive_fallback_count;
+      } else {
+        missing_geometry_count += item_missing_geometry_count;
         primitive_fallback_count += item_primitive_fallback_count;
       }
       if (it->id == selected_id) {
@@ -1436,6 +1458,22 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     if (out_mesh_count) ++(*out_mesh_count);
     return true;
   }
+  const NormalizedRole semantic_role = classify_item_role(it);
+  if (is_clean_semantic_primitive_role(semantic_role)) {
+    if (item_has_explicit_primitive_dimensions(it)) {
+      if (draw_clean_semantic_primitive(it)) {
+        if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);
+        return true;
+      }
+    } else {
+      // Semantic authoring roles without dimensions remain diagnostics-only.
+      // They are still counted as missing geometry for readiness/status, but the
+      // main 3D viewport intentionally avoids large red missing-geometry markers.
+      if (out_missing_geometry_count) ++(*out_missing_geometry_count);
+      return false;
+    }
+  }
+
   const QString missing_reason = placeholder_reason_for_item(it);
   if (!missing_reason.isEmpty()) {
     draw_missing_geometry_marker(it);
@@ -1575,6 +1613,7 @@ bool Scene3DViewportWidget::should_include_in_default_fit_for_test(const ScenePr
 bool Scene3DViewportWidget::should_draw_as_solid_for_test(const ScenePreviewWidget::PreviewItem & item,
                                                            ScenePreviewWidget::MeshPreviewMode mode)
 {
+  if (should_draw_clean_semantic_primitive_for_test(item)) return true;
   const QString role = render_role_for_test(item);
   if (role == "helper_overlay" || role == "missing_mesh_fallback") return false;
   if (mode == ScenePreviewWidget::MeshPreviewMode::Meshes && !item.mesh_available) return false;
@@ -1587,7 +1626,18 @@ bool Scene3DViewportWidget::should_draw_as_wireframe_for_test(const ScenePreview
   Q_UNUSED(mode);
   const QString role = render_role_for_test(item);
   if (item_has_valid_urdf_primitive(item)) return false;
+  if (should_suppress_missing_geometry_marker_for_semantic_role(item)) return false;
   return role == "helper_overlay" || role == "missing_mesh_fallback";
+}
+
+bool Scene3DViewportWidget::should_draw_clean_semantic_primitive_for_test(const ScenePreviewWidget::PreviewItem & item)
+{
+  return is_clean_semantic_primitive_role(classify_item_role(item)) && item_has_explicit_primitive_dimensions(item);
+}
+
+bool Scene3DViewportWidget::should_suppress_missing_geometry_marker_for_test(const ScenePreviewWidget::PreviewItem & item)
+{
+  return should_suppress_missing_geometry_marker_for_semantic_role(item);
 }
 
 bool Scene3DViewportWidget::try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical,
@@ -2007,6 +2057,56 @@ void Scene3DViewportWidget::draw_warning_badge_anchor(const ScenePreviewWidget::
 {
   const double cube = qMax(0.04, qMin(it.sx, qMin(it.sy, it.sz)));
   draw_box(it.x, it.y, it.z, cube, cube, cube, QColor("#f59e0b"));
+}
+
+bool Scene3DViewportWidget::draw_clean_semantic_primitive(const ScenePreviewWidget::PreviewItem & it)
+{
+  const NormalizedRole role = classify_item_role(it);
+  if (!is_clean_semantic_primitive_role(role) || !item_has_explicit_primitive_dimensions(it)) return false;
+
+  QColor fill = item_color(it);
+  QColor line = fill.lighter(role == NormalizedRole::Object ? 130 : 145);
+  switch (role) {
+    case NormalizedRole::PickZone:
+      fill.setAlpha(34);
+      line.setAlpha(96);
+      break;
+    case NormalizedRole::PlaceBin:
+      fill.setAlpha(38);
+      line.setAlpha(110);
+      break;
+    case NormalizedRole::Conveyor:
+      fill.setAlpha(48);
+      line.setAlpha(120);
+      break;
+    case NormalizedRole::Object:
+      fill.setAlpha(64);
+      line.setAlpha(128);
+      break;
+    default:
+      return false;
+  }
+
+  if (item_has_explicit_dimensions(it)) {
+    draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, fill, true);
+    draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, line, role == NormalizedRole::Object ? 0.9f : 1.0f);
+    if (role == NormalizedRole::Conveyor) {
+      const double mid_y = it.y + it.sy + 0.01;
+      const double start_x = it.x + it.sx * 0.25;
+      const double end_x = it.x + it.sx * 0.75;
+      const double z = it.z + it.sz * 0.5;
+      glColor4f(line.redF(), line.greenF(), line.blueF(), 0.72f);
+      glLineWidth(1.5f);
+      glBegin(GL_LINES);
+      glVertex3f(start_x, mid_y, z); glVertex3f(end_x, mid_y, z);
+      glVertex3f(end_x, mid_y, z); glVertex3f(end_x - 0.08, mid_y, z - 0.06);
+      glVertex3f(end_x, mid_y, z); glVertex3f(end_x - 0.08, mid_y, z + 0.06);
+      glEnd();
+    }
+    return true;
+  }
+
+  return draw_urdf_primitive_geometry(it, fill);
 }
 
 void Scene3DViewportWidget::draw_box(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, bool translucent)

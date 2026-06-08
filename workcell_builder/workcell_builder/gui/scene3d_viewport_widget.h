@@ -137,6 +137,8 @@ public:
                                             ScenePreviewWidget::MeshPreviewMode mode);
   static bool should_draw_as_wireframe_for_test(const ScenePreviewWidget::PreviewItem & item,
                                                 ScenePreviewWidget::MeshPreviewMode mode);
+  static bool should_draw_clean_semantic_primitive_for_test(const ScenePreviewWidget::PreviewItem & item);
+  static bool should_suppress_missing_geometry_marker_for_test(const ScenePreviewWidget::PreviewItem & item);
 
 protected:
   void initializeGL() override;
@@ -192,6 +194,7 @@ private:
   void draw_missing_geometry_marker(const ScenePreviewWidget::PreviewItem & it);
   void draw_safety_zone(const ScenePreviewWidget::PreviewItem & it);
   void draw_warning_badge_anchor(const ScenePreviewWidget::PreviewItem & it);
+  bool draw_clean_semantic_primitive(const ScenePreviewWidget::PreviewItem & it);
   bool draw_mesh_preview_if_available(const ScenePreviewWidget::PreviewItem & it, const QColor & color, bool preview_path = true);
   void draw_unit_cube_triangles(const QColor & color);
   QPoint last_;
