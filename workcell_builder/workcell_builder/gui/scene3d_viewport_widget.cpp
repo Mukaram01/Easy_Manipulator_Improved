@@ -1461,12 +1461,16 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   if (item_has_explicit_dimensions(it)) {
     const bool intentional_primitive_fallback =
       source_layer == QStringLiteral("primitive_fallback") || visual_source == QStringLiteral("primitive_fallback");
-    if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes || is_raw_generated_bounds_only_item(it)) {
+    const bool raw_generated_bounds_only = is_raw_generated_bounds_only_item(it);
+    if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes || raw_generated_bounds_only) {
+      if (raw_generated_bounds_only) {
+        warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_RAW_GENERATED_BOUNDS_SUPPRESSED: mesh or URDF primitive source should provide geometry"), it.source_path);
+        return false;
+      }
       draw_missing_geometry_marker(it);
       ++last_render_counters.generated_fallback_count;
       if (out_placeholder_count) ++(*out_placeholder_count);
-      if (out_missing_geometry_count) ++(*out_missing_geometry_count);
-      warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_RAW_GENERATED_BOUNDS_SUPPRESSED: mesh or URDF primitive source should provide geometry"), it.source_path);
+      warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_PRIMITIVE_SUPPRESSED_BY_MESH_ONLY_MODE: semantic primitive dimensions available but disabled"), it.source_path);
       return false;
     }
     const QColor fallback_fill = it.linked_to_editable_layout_state ? QColor(148, 163, 184, 72) : QColor(148, 163, 184, 28);
