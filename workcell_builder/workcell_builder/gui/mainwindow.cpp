@@ -607,6 +607,15 @@ static QMap<QString, QString> discover_visual_mesh_package_map(const fs::path & 
   scan_root(QString::fromStdString((repo_root / "assets/environment").string()));
   scan_root(QString::fromStdString((repo_root / "assets/robots").string()));
   scan_root(QString::fromStdString((repo_root / "assets/end_effectors").string()));
+  const fs::path universal_robot_assets = repo_root / "assets/robots/universal_robot";
+  const fs::path ur_description_assets = universal_robot_assets / "ur_description";
+  if (!package_map.contains(QStringLiteral("ur_description"))) {
+    if (fs::exists(ur_description_assets / "meshes/ur5/visual")) {
+      package_map.insert(QStringLiteral("ur_description"), QString::fromStdString(ur_description_assets.string()));
+    } else if (fs::exists(universal_robot_assets / "meshes/ur5/visual")) {
+      package_map.insert(QStringLiteral("ur_description"), QString::fromStdString(universal_robot_assets.string()));
+    }
+  }
   scan_root(QStringLiteral("/opt/ros/humble/share"));
   return package_map;
 }
@@ -7751,7 +7760,8 @@ void MainWindow::populate_scene_hierarchy()
             transform_status == QStringLiteral("resolved") ||
             transform_status == QStringLiteral("ok") ||
             transform_status == QStringLiteral("static_fallback") ||
-            transform_status == QStringLiteral("static_fallback_parent");
+            transform_status == QStringLiteral("static_fallback_parent") ||
+            transform_status == QStringLiteral("static_mesh_resolved");
           p.transform_chain_applied = transform_status_resolved;
           if (p.transform_chain_applied) ++transform_chain_applied_count;
           if (!p.transform_chain_applied) {
