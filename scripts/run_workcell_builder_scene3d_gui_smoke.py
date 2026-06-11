@@ -111,6 +111,26 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def _path_str(path: Path | None) -> str | None:
+    return str(path) if path is not None else None
+
+
+def _workspace_resolution_warnings(workspace_root: Path | None, explicit_workspace_root: Path | None) -> list[str]:
+    warnings: list[str] = []
+    if workspace_root is None:
+        warnings.append("workspace_root_inference_failed_path_only_executable_search")
+    elif explicit_workspace_root is not None and not workspace_root.exists():
+        warnings.append("explicit_workspace_root_does_not_exist")
+    return warnings
+
+
+def _merge_unique(base: list[str], extra: list[str]) -> list[str]:
+    merged = list(base)
+    for item in extra:
+        _append_unique(merged, item)
+    return merged
+
+
 def _ros_humble_available() -> bool:
     return Path("/opt/ros/humble/setup.bash").is_file() or os.environ.get("ROS_DISTRO") == "humble"
 
@@ -194,6 +214,7 @@ def _write_blocked_executable_payload(
     blocker: str,
     exception: str | None = None,
     status: str = "BLOCKED",
+    warnings: list[str] | None = None,
 ) -> None:
     scene_dir = _resolve_single_scene_dir(repo_root, args.scene, args.scene_path)
     static_evidence = _static_scene3d_visual_evidence(scene_dir)
@@ -204,13 +225,13 @@ def _write_blocked_executable_payload(
         "runtime_available": False,
         "scene": args.scene or (args.scene_path.name if args.scene_path else None),
         "repo_root": str(repo_root),
-        "workspace_root": str(workspace_root) if workspace_root else None,
+        "workspace_root": _path_str(workspace_root) if workspace_root else None,
         "executable": None,
         "explicit_executable": str(args.executable) if args.executable else None,
         "searched_paths": searched,
         "blockers": [blocker],
         "guidance": _executable_guidance(),
-        "warnings": ["runtime_gui_unavailable_static_scene3d_visual_evidence_recorded"],
+        "warnings": _merge_unique(["runtime_gui_unavailable_static_scene3d_visual_evidence_recorded"], warnings or []),
         "screenshot_available": False,
         "scene_dir": str(scene_dir) if scene_dir else None,
         "static_scene3d_visual_evidence": static_evidence,
@@ -229,6 +250,7 @@ def _write_blocked_executable_payload(
     }
     if exception:
         payload["subprocess_exception"] = exception
+    _add_ros_humble_context(payload)
     _write_json(output, payload)
 
 
@@ -373,9 +395,8 @@ def main() -> int:
 
     repo_root = resolve_repo_root(explicit_repo_root=args.repo_root)
     workspace_root = resolve_workspace_root(repo_root, args.workspace_root)
+    workspace_warnings = _workspace_resolution_warnings(workspace_root, args.workspace_root)
     ros_env = _ros_humble_environment()
-    exe = args.executable or resolve_workcell_builder_executable(workspace_root)
-    workspace_root = resolve_workspace_root(repo_root, args.workspace_root) or repo_root
     exe = resolve_workcell_builder_executable(workspace_root, args.executable)
     executable_resolution = describe_resolution()
     if exe is None and not args.all_scenes:
@@ -386,7 +407,8 @@ def main() -> int:
             workspace_root=workspace_root,
             args=args,
             searched=searched,
-            blocker="workcell_builder_executable_missing",
+            blocker="explicit_workcell_builder_executable_missing_or_not_executable" if args.executable else "workcell_builder_executable_missing",
+            warnings=workspace_warnings,
         )
         print("status=BLOCKED smoke_status=MISSING_EXECUTABLE")
         print("searched_paths=" + " | ".join(searched))
@@ -401,10 +423,10 @@ def main() -> int:
             "runtime_available": False,
             "scene": args.scene or (args.scene_path.name if args.scene_path else None),
             "repo_root": str(repo_root),
-            "workspace_root": str(workspace_root),
+            "workspace_root": _path_str(workspace_root),
             "executable": str(exe),
             "blockers": ["ros_humble_unavailable"],
-            "warnings": ["runtime_gui_unavailable_static_scene3d_visual_evidence_recorded"],
+            "warnings": _merge_unique(["runtime_gui_unavailable_static_scene3d_visual_evidence_recorded"], workspace_warnings),
             "screenshot_available": False,
             "scene_dir": str(scene_dir) if scene_dir else None,
             "static_scene3d_visual_evidence": static_evidence,
@@ -473,6 +495,7 @@ def main() -> int:
                     searched=list(describe_resolution().get("searched_executable_paths") or []),
                     blocker="child_process_spawn_failed",
                     exception=run_exception,
+                    warnings=workspace_warnings,
                 )
             payload: dict[str, Any] = {}
             if scene_json.exists():
@@ -509,8 +532,9 @@ def main() -> int:
                 _write_json(scene_json, payload)
         summary = {
             "schema": EXPECTED_SCHEMA, "mode": "all_scenes", "output_dir": str(out_dir), "totals": totals, "results": per_scene,
-            "repo_root": str(repo_root), "workspace_root": str(workspace_root), "executable": str(exe) if exe else None,
+            "repo_root": str(repo_root), "workspace_root": _path_str(workspace_root), "executable": str(exe) if exe else None,
             "executable_resolution": executable_resolution,
+            "resolution_warnings": workspace_warnings,
             "supported_scene_count": len(per_scene),
             "legacy_incomplete_count": len(legacy_incomplete),
             "ignored_non_scene_count": len(ignored_non_scenes),
@@ -548,9 +572,9 @@ def main() -> int:
                 "scene": args.scene or sp.name,
                 "scene_path": str(sp),
                 "repo_root": str(repo_root),
-                "workspace_root": str(workspace_root),
+                "workspace_root": _path_str(workspace_root),
                 "blockers": [f"scene_path_missing_required_files:{','.join(missing)}"],
-                "warnings": [],
+                "warnings": list(workspace_warnings),
             }
             _add_ros_humble_context(fail_payload)
             if not ros_env["ros_humble_available"]:
@@ -567,10 +591,10 @@ def main() -> int:
             "scene": args.scene or (args.scene_path.name if args.scene_path else None),
             "scene_path": str(args.scene_path) if args.scene_path else None,
             "repo_root": str(repo_root),
-            "workspace_root": str(workspace_root),
+            "workspace_root": _path_str(workspace_root),
             "executable": str(exe),
             "blockers": ["explicit_workcell_builder_executable_not_runnable" if args.executable else "resolved_workcell_builder_executable_not_runnable"],
-            "warnings": [],
+            "warnings": list(workspace_warnings),
             "screenshot_available": False,
         }
         _add_ros_humble_context(fail_payload)
@@ -592,9 +616,9 @@ def main() -> int:
             stale_path.unlink()
     child_env = os.environ.copy()
     child_env.update(extra_env)
-    searched_paths = [str(p) for p in _resolve_executable_candidates(workspace_root or repo_root)]
+    searched_paths = list(executable_resolution.get("searched_executable_paths") or [str(p) for p in _resolve_executable_candidates(workspace_root)])
     try:
-        resolution_warnings = list(executable_resolution.get("warnings") or executable_resolution.get("resolution_warnings") or [])
+        resolution_warnings = _merge_unique(list(executable_resolution.get("warnings") or executable_resolution.get("resolution_warnings") or []), workspace_warnings)
     except NameError:
         resolution_warnings = []
     diag = {
@@ -603,7 +627,7 @@ def main() -> int:
         "scene": args.scene or (args.scene_path.name if args.scene_path else None),
         "scene_path": str(args.scene_path) if args.scene_path else None,
         "repo_root": str(repo_root),
-        "workspace_root": str(workspace_root),
+        "workspace_root": _path_str(workspace_root),
         "executable": str(exe),
         **ros_env,
         "resolved_executable": str(exe),
@@ -650,7 +674,7 @@ def main() -> int:
     diag.update({"child_returncode": rc, "timed_out": timed_out, "stdout_tail": stdout_tail, "stderr_tail": stderr_tail, "screenshot_available": bool(args.screenshot and args.screenshot.exists())})
 
     blockers = list(xwarn)
-    warnings: list[str] = []
+    warnings: list[str] = list(workspace_warnings)
     if not ros_env["ros_humble_available"]:
         _append_unique(warnings, "ros_humble_missing")
     if timed_out: blockers.append("child_process_timed_out")
