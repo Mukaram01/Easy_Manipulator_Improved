@@ -24,6 +24,22 @@ camera:
 environment:
   frame: world
   layout: layout/workcell_studio_layout.yaml
+  support_surfaces:
+  - id: support_surface_table
+    type: table
+    frame: world
+    pose_xyz:
+    - 0.55
+    - 0.0
+    - 0.06
+    pose_rpy:
+    - 0.0
+    - 0.0
+    - 0.0
+    dimensions:
+    - 1.2
+    - 0.8
+    - 0.08
 objects:
 - id: commissioning_object
   frame: world
