@@ -62,8 +62,10 @@ def workcell_builder_executable_candidates(workspace_root: Path | None) -> list[
             candidates.append(candidate_path)
 
     add_candidate(os.environ.get("WORKCELL_BUILDER_EXECUTABLE"))
+    add_candidate(shutil.which("workcell_builder"))
 
     if workspace_root:
+        add_candidate(workspace_root / "install" / "workcell_builder" / "bin" / "workcell_builder")
         add_candidate(
             workspace_root
             / "install"
@@ -72,10 +74,18 @@ def workcell_builder_executable_candidates(workspace_root: Path | None) -> list[
             / "workcell_builder"
             / "workcell_builder"
         )
-        add_candidate(workspace_root / "install" / "workcell_builder" / "bin" / "workcell_builder")
         add_candidate(workspace_root / "install" / "bin" / "workcell_builder")
 
-    add_candidate(shutil.which("workcell_builder"))
+    real_workspace = Path("/home/user/workcell_ws")
+    add_candidate(real_workspace / "install" / "workcell_builder" / "bin" / "workcell_builder")
+    add_candidate(
+        real_workspace
+        / "install"
+        / "workcell_builder"
+        / "lib"
+        / "workcell_builder"
+        / "workcell_builder"
+    )
 
     ros2 = shutil.which("ros2")
     if ros2:
