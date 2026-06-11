@@ -1244,11 +1244,13 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
   int skipped_item_count = 0;
   int rendered_item_count = 0;
   int mesh_source_count = 0;
+  int mesh_rendered_count = 0;
   int urdf_primitive_source_count = 0;
   int urdf_primitive_rendered_count = 0;
   int primitive_fallback_count = 0;
   int placeholder_count = 0;
   int missing_geometry_count = 0;
+  int generated_fallback_count = 0;
   int wireframe_fallback_count = 0;
   int overlay_count = 0;
   int locked_urdf_count = 0;
@@ -1294,7 +1296,8 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
     const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
     const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
     const bool intentional_primitive_fallback = source_layer == QStringLiteral("primitive_fallback") || visual_source == QStringLiteral("primitive_fallback");
-    if (!overlay_helper && item_has_credible_mesh_handoff(it)) {
+    const bool physical_mesh_source = !overlay_helper && item_has_credible_mesh_handoff(it);
+    if (physical_mesh_source) {
       ++mesh_source_count;
       if (intentional_primitive_fallback && item_has_explicit_dimensions(it)) ++primitive_fallback_count;
     } else if (!overlay_helper && generated_urdf && item_has_explicit_dimensions(it)) {
@@ -1305,6 +1308,7 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
     } else if (!overlay_helper && !item_has_explicit_dimensions(it)) {
       ++placeholder_count;
       ++missing_geometry_count;
+      ++generated_fallback_count;
     } else if (!overlay_helper) {
       ++wireframe_fallback_count;
     }
@@ -1322,6 +1326,7 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
     painter.setPen(QPen(item_color(it).lighter(135), it.id == selected_id ? 3.0 : 1.5));
     painter.drawRect(rect);
     ++rendered_item_count;
+    if (physical_mesh_source) ++mesh_rendered_count;
   }
 
   painter.setPen(QColor("#e2e8f0"));
@@ -1340,11 +1345,12 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
   last_render_counters.unique_visible_item_count = unique_visible_ids.size();
   last_render_counters.mesh_source_count = mesh_source_count;
   last_render_counters.mesh_backed_count = mesh_source_count;
-  last_render_counters.mesh_rendered_count = 0;
+  last_render_counters.mesh_rendered_count = mesh_rendered_count;
   last_render_counters.urdf_primitive_source_count = urdf_primitive_source_count;
   last_render_counters.urdf_primitive_rendered_count = urdf_primitive_rendered_count;
   last_render_counters.placeholder_count = placeholder_count;
   last_render_counters.missing_geometry_count = missing_geometry_count;
+  last_render_counters.generated_fallback_count = generated_fallback_count;
   last_render_counters.wireframe_fallback_count = wireframe_fallback_count;
   last_render_counters.primitive_fallback_rendered_count = primitive_fallback_count;
   last_render_counters.primitive_fallback_count = primitive_fallback_count;
