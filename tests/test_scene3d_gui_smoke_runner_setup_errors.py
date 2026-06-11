@@ -53,7 +53,7 @@ def test_gui_smoke_missing_explicit_workspace_writes_truthful_fail_json(tmp_path
     assert payload.get("ros_humble_setup_path") == "/opt/ros/humble/setup.bash"
 
 
-def test_gui_smoke_unresolved_workspace_records_null_and_path_only_search(tmp_path):
+def test_gui_smoke_unresolved_workspace_records_truthful_workspace_and_search_path_evidence(tmp_path):
     repo = _repo()
     out = tmp_path / "smoke.json"
     shot = tmp_path / "smoke.png"
@@ -76,8 +76,14 @@ def test_gui_smoke_unresolved_workspace_records_null_and_path_only_search(tmp_pa
     assert payload["status"] == "BLOCKED"
     assert payload["repo_root"] == str(repo)
     assert payload["workspace_root"] is None
+    assert payload["explicit_executable"] is None
+    assert payload["blockers"] == ["workcell_builder_executable_missing"]
     assert "workspace_root_inference_failed_path_only_executable_search" in payload["warnings"]
-    assert all("install/workcell_builder" not in p for p in payload["searched_paths"])
+    searched_paths = payload["searched_paths"]
+    assert searched_paths
+    assert all(Path(p).is_absolute() for p in searched_paths)
+    assert all(str(repo / "install" / "workcell_builder") not in p for p in searched_paths)
+    assert any("/home/user/workcell_ws/install/workcell_builder" in p for p in searched_paths)
 
 
 def test_gui_smoke_invalid_explicit_executable_writes_blocked_json(tmp_path):
