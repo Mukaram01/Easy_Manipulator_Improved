@@ -36,19 +36,29 @@ def test_invalid_explicit_executable_reports_only_explicit_path(tmp_path):
     assert resolve_workcell_builder_executable(ws, explicit_executable=not_executable) is None
     assert describe_resolution().get('searched_executable_paths') == [str(not_executable.resolve())]
 
-def test_workcell_builder_candidate_order_prefers_env_then_install_paths(tmp_path, monkeypatch):
+def test_workcell_builder_candidate_order_prefers_env_then_path_then_install_paths(tmp_path, monkeypatch):
     ws = tmp_path / 'robot_ws'
     env_exe = tmp_path / 'custom_workcell_builder'
+    path_exe = tmp_path / 'path_workcell_builder'
     monkeypatch.setenv('WORKCELL_BUILDER_EXECUTABLE', str(env_exe))
-    monkeypatch.setattr('scripts.workcell_studio_path_resolver.shutil.which', lambda name: None)
+
+    def fake_which(name):
+        if name == 'workcell_builder':
+            return str(path_exe)
+        return None
+
+    monkeypatch.setattr('scripts.workcell_studio_path_resolver.shutil.which', fake_which)
 
     candidates = workcell_builder_executable_candidates(ws)
 
-    assert candidates[:4] == [
+    assert candidates[:7] == [
         env_exe,
-        ws / 'install' / 'workcell_builder' / 'lib' / 'workcell_builder' / 'workcell_builder',
+        path_exe,
         ws / 'install' / 'workcell_builder' / 'bin' / 'workcell_builder',
+        ws / 'install' / 'workcell_builder' / 'lib' / 'workcell_builder' / 'workcell_builder',
         ws / 'install' / 'bin' / 'workcell_builder',
+        Path('/home/user/workcell_ws/install/workcell_builder/bin/workcell_builder'),
+        Path('/home/user/workcell_ws/install/workcell_builder/lib/workcell_builder/workcell_builder'),
     ]
 
 
@@ -98,4 +108,4 @@ def test_resolve_records_candidate_metadata_for_env_override(tmp_path, monkeypat
         'executable': True,
         'selected': True,
     }
-    assert len(evidence) == 4
+    assert len(evidence) == 6
