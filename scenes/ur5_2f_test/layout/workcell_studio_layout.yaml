@@ -1,12 +1,121 @@
 schema_version: workcell_studio_layout/v1
 items:
-  - id: robot_base
-    type: robot
+  - id: support_surface_table
+    type: support_surface
+    role: support_surface
+    category: work_surface
+    display_name: Commissioning Work Surface
+    editable: true
+    locked: false
+    source_layer: editable_layout
+    source: layout/workcell_studio_layout.yaml
     pose:
-      xyz: [0.0, 0.0, 0.0]
+      xyz: [0.55, 0.0, 0.06]
       rpy: [0.0, 0.0, 0.0]
-  - id: table_main
-    type: table
+    dimensions: [1.2, 0.8, 0.08]
+    geometry_type: box
+    primitive_geometry_type: box
+    material:
+      color: [0.55, 0.58, 0.62, 1.0]
+  - id: pick_zone_commissioning
+    type: pick_zone
+    role: pick_zone
+    category: work_surface
+    display_name: Commissioning Pick Zone
+    editable: true
+    locked: false
+    source_layer: editable_layout
+    source: layout/workcell_studio_layout.yaml
     pose:
-      xyz: [0.5, 0.0, 0.0]
+      xyz: [0.45, 0.25, 0.105]
       rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.35, 0.30, 0.01]
+    geometry_type: box
+    primitive_geometry_type: box
+    material:
+      color: [0.12, 0.55, 1.0, 0.45]
+  - id: place_zone_default
+    type: place_zone
+    role: place_zone
+    category: work_surface
+    display_name: Default Place Zone
+    editable: true
+    locked: false
+    source_layer: editable_layout
+    source: layout/workcell_studio_layout.yaml
+    pose:
+      xyz: [0.55, -0.28, 0.105]
+      rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.35, 0.30, 0.01]
+    geometry_type: box
+    primitive_geometry_type: box
+    material:
+      color: [0.10, 0.75, 0.35, 0.45]
+  - id: target_bin_default
+    type: target_bin
+    role: target_bin
+    category: place_zone
+    display_name: Default Target Bin
+    editable: true
+    locked: false
+    source_layer: editable_layout
+    source: layout/workcell_studio_layout.yaml
+    pose:
+      xyz: [0.55, -0.28, 0.19]
+      rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.35, 0.25, 0.18]
+    geometry_type: box
+    primitive_geometry_type: box
+    material:
+      color: [0.95, 0.68, 0.20, 0.65]
+  - id: realsense_overhead
+    type: realsense
+    role: camera
+    category: camera
+    display_name: Overhead RealSense Camera
+    editable: true
+    locked: false
+    source_layer: editable_layout
+    source: layout/workcell_studio_layout.yaml
+    pose:
+      xyz: [0.35, 0.0, 0.85]
+      rpy: [0.0, 1.5708, 0.0]
+    dimensions: [0.08, 0.08, 0.06]
+    geometry_type: box
+    primitive_geometry_type: box
+    material:
+      color: [0.08, 0.09, 0.10, 1.0]
+  - id: safety_zone_keepout
+    type: safety_zone
+    role: keepout
+    category: safety_zone
+    display_name: Robot/Table Keepout Boundary
+    editable: true
+    locked: false
+    source_layer: editable_layout
+    source: layout/workcell_studio_layout.yaml
+    pose:
+      xyz: [0.35, 0.0, 0.102]
+      rpy: [0.0, 0.0, 0.0]
+    dimensions: [2.0, 1.6, 0.01]
+    geometry_type: box
+    primitive_geometry_type: box
+    material:
+      color: [1.0, 0.15, 0.12, 0.18]
+  - id: home_pose_safe
+    type: home_pose
+    role: home_pose
+    category: safety_zone
+    display_name: Safe Home Pose Marker
+    editable: true
+    locked: false
+    source_layer: editable_layout
+    source: layout/workcell_studio_layout.yaml
+    pose:
+      xyz: [0.25, 0.0, 0.45]
+      rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.08, 0.08, 0.08]
+    geometry_type: sphere
+    primitive_geometry_type: sphere
+    material:
+      color: [0.55, 0.25, 1.0, 0.85]
