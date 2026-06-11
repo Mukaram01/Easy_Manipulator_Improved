@@ -1,25 +1,38 @@
 schema: workcell_builder_task_intent/v1
 scene_package: scenes/ur5_2f_test
 task:
-  id: ur5_2f_test_preview_task
+  id: default_task
   type: pick_place
   family: pick_place
   mode: simulation_preview
 pick:
   source:
-    type: zone
-    id: pick_zone_main
+    type: pick_zone
+    id: commissioning_pick_pose
+  object_filter:
+    object_id: commissioning_object
 place:
   target:
     type: destination
-    id: bin_red
+    id: default_drop_zone
+    frame: world
+    pose_xyz:
+    - 0.5
+    - -0.3
+    - 0.1
+    pose_rpy:
+    - 0.0
+    - 0.0
+    - 0.0
   release_strategy: tool_release
+  retreat_axis: z_up
+  retreat_distance_m: 0.1
 grasp:
   strategy_ref: finger_pinch_basic
   approach_axis: z_down
   approach_distance_m: 0.12
   retreat_axis: z_up
-  retreat_distance_m: 0.10
+  retreat_distance_m: 0.1
 safety:
   preview_only: true
   use_fake_hardware: true
@@ -33,3 +46,9 @@ provenance:
   mode: generated_readiness_metadata
   sources:
   - environment.yaml
+routing:
+  rules:
+  - id: default_place
+    when:
+      always: true
+    destination: default_drop_zone

@@ -33,22 +33,44 @@ camera:
   camera_id: UNKNOWN_CAMERA
   frame_id: UNKNOWN_FRAME
   pose:
-    - -0.55
-    - 0.55
-    - 0.4
-    - 0.0
-    - 0.0
-    - 0.0
-  rgb_topic: 
-  depth_topic: 
-  pointcloud_topic: 
+  - -0.55
+  - 0.55
+  - 0.4
+  - 0.0
+  - 0.0
+  - 0.0
+  rgb_topic: null
+  depth_topic: null
+  pointcloud_topic: null
 task:
+  id: default_task
   template: pick_place
+  type: pick_place
+  mode: simulation_preview
+  source_object: commissioning_object
   pick:
-    source_ref: pick_zone_main
-    object_ref: red_box_001
+    source_ref: commissioning_pick_pose
+    object_ref: commissioning_object
+    object_source: commissioning_object
   place:
-    target_ref: bin_red
+    target_ref: default_drop_zone
+    release_strategy: tool_release
+  destinations:
+  - id: default_drop_zone
+    frame: world
+    pose_xyz:
+    - 0.5
+    - -0.3
+    - 0.1
+    pose_rpy:
+    - 0.0
+    - 0.0
+    - 0.0
+  rules:
+  - id: default_place
+    when:
+      always: true
+    destination: default_drop_zone
   grasp:
     strategy: finger_pinch_basic
     approach_axis: z_down
@@ -56,20 +78,20 @@ task:
     approach_distance_m: 0.12
     retreat_distance_m: 0.1
     allowed_roll_angles_deg:
-      - 0.0
+    - 0.0
     allowed_yaw_angles_deg:
-      - 0.0
-      - 90.0
-      - 180.0
-      - 270.0
+    - 0.0
+    - 90.0
+    - 180.0
+    - 270.0
     tool_offset_xyz:
-      - 0.0
-      - 0.0
-      - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
     tool_offset_rpy:
-      - 0.0
-      - 0.0
-      - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
     suction_cups: null
 workspace:
   bounds:
@@ -80,10 +102,9 @@ workspace:
     z_min: 0.0
     z_max: 1.8
   zones:
-    -
-      id: robot_base_exclusion
-      type: exclusion
-      shape: circle
+  - id: robot_base_exclusion
+    type: exclusion
+    shape: circle
 safety:
   fake_hardware_first: true
   real_hardware_enabled: false
@@ -93,5 +114,39 @@ metadata:
   generated_by: workcell_builder
   scene_schema_version: workcell_scene/v1
   scene_schema_warnings:
-    - camera disabled: no camera selection
+  - camera disabled: no camera selection
   scene_schema_blockers: []
+task_zones:
+- id: commissioning_pick_pose
+  type: pick_zone
+  frame: world
+  shape: box
+  pose_xyz:
+  - 0.45
+  - 0.25
+  - 0.1
+  pose_rpy:
+  - 0.0
+  - 0.0
+  - 0.0
+  dimensions:
+  - 0.2
+  - 0.2
+  - 0.1
+  object_ref: commissioning_object
+- id: default_drop_zone
+  type: place_target
+  frame: world
+  shape: box
+  pose_xyz:
+  - 0.5
+  - -0.3
+  - 0.1
+  pose_rpy:
+  - 0.0
+  - 0.0
+  - 0.0
+  dimensions:
+  - 0.2
+  - 0.2
+  - 0.1
