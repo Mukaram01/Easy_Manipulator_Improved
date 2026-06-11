@@ -22,6 +22,49 @@ The command reads `scenes/supported_scenes.yaml` as the supported-scene catalog
 and writes the readiness report artifacts under
 `build/workcell_studio_scene_readiness`.
 
+
+## `ur5_2f_test` fake-hardware-only canary readiness
+
+Use this focused canary when a PR or release check needs `ur5_2f_test`
+evidence from an actual ROS 2 Humble Workcell Studio workspace. This is a
+**fake-hardware-only** sequence. It must not be used as proof of real robot
+motion, real controller readiness, or safe commissioning. Real-hardware work
+requires separate guarded flags, preflight checks, and operator safety review.
+
+Run the canary exactly from the expected ROS workspace layout:
+
+```bash
+cd /home/user/workcell_ws
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --packages-select workcell_builder ur5_2f_test
+source install/setup.bash
+cd /home/user/workcell_ws/src/easy_manipulation_deployment
+python3 scripts/run_workcell_builder_scene3d_gui_smoke.py --repo-root "$PWD" --workspace-root /home/user/workcell_ws --scene ur5_2f_test --output /tmp/ur5_2f_scene3d_smoke.json --screenshot /tmp/ur5_2f_scene3d_smoke.png
+python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_test --json
+python3 scripts/run_workcell_studio_scene_readiness_matrix.py --supported-scenes scenes/supported_scenes.yaml --output-dir build/workcell_studio_scene_readiness
+ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
+```
+
+Canary status meanings:
+
+- **PASS** requires actual runtime evidence from a real ROS 2 Humble workspace:
+  successful package build, Scene3D smoke JSON/screenshot, generated-scene
+  validation output, readiness-matrix output, and a fake-hardware RViz/MoveIt
+  launch attempt for `ur5_2f_test`.
+- **BLOCKED** means required runtime or environment evidence is missing, such as
+  ROS Humble not being sourced, the workspace not being built, the
+  `ur5_2f_test` package not being available, GUI/screenshot capture not being
+  possible, or the fake-hardware launch not being evaluated.
+- **FAIL** means the required evidence was collected but one or more commands
+  reported a real validation, build, smoke, readiness, or fake-hardware launch
+  failure.
+
+The repository copy of
+`scenes/ur5_2f_test/generated/scene3d_gui_smoke.json` must be regenerated from
+the real ROS 2 Humble workspace before it can serve as canary evidence. A stale
+checked-in JSON file, a local non-ROS checkout run, or a hand-edited evidence
+file is not sufficient for PASS.
+
 ## Output files
 
 The readiness matrix writes these files:
