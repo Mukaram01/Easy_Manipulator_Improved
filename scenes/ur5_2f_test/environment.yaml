@@ -4,15 +4,30 @@ scene:
   name: ur5_2f_test
 robot:
   id: ur5
+  model: ur5
   profile: ur5
+  world_frame: world
+  base_frame: base_link
+  planning_group: manipulator
+  tool_mount_link: tool0
 tool:
-  id: robotiq_2f
-  profile: robotiq_2f
+  id: robotiq_85_gripper
+  model: robotiq_85_gripper
+  profile: robotiq_85_gripper
+  mount_link: tool0
+  grasp_frame: ee_palm
+end_effector:
+  id: robotiq_85_gripper
+  type: finger
+  model: robotiq_85_gripper
+  profile: robotiq_85_gripper
+  mount_link: tool0
+  grasp_frame: ee_palm
 compatibility:
   status: COMPATIBLE
   robot: ur5
-  tool: robotiq_2f
-placed_objects: null
+  tool: robotiq_85_gripper
+placed_objects:
 camera:
   enabled: false
   camera_id: UNKNOWN_CAMERA

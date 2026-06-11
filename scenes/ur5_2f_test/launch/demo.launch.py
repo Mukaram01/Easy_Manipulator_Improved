@@ -14,7 +14,13 @@ from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
 scene_pkg = "ur5_2f_test"
+robot_model = "ur5"
+planning_group = "manipulator"
+world_frame = "world"
 robot_base_link = "base_link"
+tool_mount_link = "tool0"
+gripper_profile = "robotiq_85_gripper"
+grasp_frame = "ee_palm"
 robot_moveit_pkg = "ur5_moveit_config"
 
 
@@ -162,9 +168,13 @@ def _launch_setup(context):
         scene_pkg,
         "urdf/scene.urdf.xacro",
         mappings={
-            "ur_type": "ur5",
-            "name": "ur5",
+            "ur_type": robot_model,
+            "name": robot_model,
             "tf_prefix": "",
+            "world_frame": world_frame,
+            "tool_mount_link": tool_mount_link,
+            "gripper_profile": gripper_profile,
+            "grasp_frame": grasp_frame,
             "use_fake_hardware": use_fake_hardware.perform(context),
         },
     )
@@ -289,7 +299,7 @@ def _launch_setup(context):
             "--yaw",
             "0.0",
             "--frame-id",
-            "world",
+            world_frame,
             "--child-frame-id",
             robot_base_link,
         ],

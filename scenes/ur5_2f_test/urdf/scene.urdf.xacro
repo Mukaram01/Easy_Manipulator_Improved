@@ -5,16 +5,22 @@
  <xacro:arg name="ur_type" default="ur5"/>
  <xacro:arg name="name" default="$(arg ur_type)"/>
  <xacro:arg name="tf_prefix" default=""/>
+ <xacro:arg name="world_frame" default="world"/>
+ <xacro:arg name="tool_mount_link" default="tool0"/>
+ <xacro:arg name="gripper_profile" default="robotiq_85_gripper"/>
+ <xacro:arg name="grasp_frame" default="ee_palm"/>
  <xacro:arg name="use_fake_hardware" default="true"/>
 
- <link name="world"/>
+ <!-- Contract: world_frame is the scene/world frame; UR creates base_link as the robot base. -->
+ <!-- Contract: tool_mount_link is tool0; gripper_profile is robotiq_85_gripper; grasp_frame is ee_palm. -->
+ <link name="$(arg world_frame)"/>
 
 <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
 
 <xacro:ur_robot
   name="$(arg name)"
   tf_prefix="$(arg tf_prefix)"
-  parent="world"
+  parent="$(arg world_frame)"
   safety_limits="true"
   joint_limits_parameters_file="$(find ur_description)/config/$(arg ur_type)/joint_limits.yaml"
   kinematics_parameters_file="$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml"
@@ -25,7 +31,7 @@
 </xacro:ur_robot>
 
  <xacro:include filename="$(find robotiq_85_description)/urdf/robotiq_85_gripper.urdf.xacro"/>
- <xacro:robotiq_85_gripper prefix="" parent="tool0">
+ <xacro:robotiq_85_gripper prefix="" parent="$(arg tool_mount_link)">
 	<origin xyz="0 0 0" rpy="1.5707 -1.5707 0"/>
  </xacro:robotiq_85_gripper>
 
@@ -47,7 +53,7 @@
  </xacro:if>
 
  <xacro:include filename="$(find workbench_description)/urdf/table.urdf.xacro"/>
- <xacro:table prefix="" parent="world">
+ <xacro:table prefix="" parent="$(arg world_frame)">
 	<origin xyz="0 0 0" rpy="0 0 0"/>
  </xacro:table>
  
@@ -66,10 +72,10 @@
     <origin xyz="0 0 0" rpy="1.57079506 0 1.57079506"/>
  </joint>
  
- <link name="ee_palm" />
- <joint name="base_to_palm" type="fixed">
-    <parent link="tool0"/>
-    <child link="ee_palm"/>
+ <link name="$(arg grasp_frame)" />
+ <joint name="tool0_to_grasp_frame" type="fixed">
+    <parent link="$(arg tool_mount_link)"/>
+    <child link="$(arg grasp_frame)"/>
     <origin xyz="0 0 0.14" rpy="0 0 0"/>
  </joint>
 
