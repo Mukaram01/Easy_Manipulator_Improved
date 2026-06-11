@@ -21,7 +21,12 @@ install(DIRECTORY urdf
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(DIRECTORY config generated layout
+  DESTINATION share/${PROJECT_NAME}
+)
+
 install(FILES
+  cell_definition.yaml
   environment.yaml
   scene_manifest.yaml
   DESTINATION share/${PROJECT_NAME}
