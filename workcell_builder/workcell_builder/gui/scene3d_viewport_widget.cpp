@@ -548,9 +548,11 @@ enum class NormalizedRole
   Conveyor,
   Camera,
   PickZone,
+  PlaceZone,
   PlaceBin,
   Object,
   SafetyZone,
+  HomePose,
   WarningAnchor,
   Generic
 };
@@ -668,12 +670,21 @@ NormalizedRole classify_item_role(const ScenePreviewWidget::PreviewItem & it)
   const QString mix = role + "|" + category;
 
   if (mix.contains("robot_base") || mix.contains("robot")) return NormalizedRole::RobotBase;
-  if (mix.contains("support_surface") || mix.contains("table") || mix.contains("work_surface")) return NormalizedRole::Table;
+  if (mix.contains("home_pose") || mix.contains("home_position") || mix.contains("safe_pose") ||
+      mix.contains("safety_pose") || mix.contains("stow_pose") || mix.contains("park_pose")) return NormalizedRole::HomePose;
+  if (mix.contains("support_surface") || mix.contains("table") || mix.contains("work_surface") ||
+      mix.contains("workbench") || mix.contains("fixture_surface")) return NormalizedRole::Table;
   if (mix.contains("conveyor") || mix.contains("belt")) return NormalizedRole::Conveyor;
-  if (mix.contains("camera") || mix.contains("sensor")) return NormalizedRole::Camera;
-  if (mix.contains("pick_zone") || mix.contains("pick_area") || mix.contains("pick")) return NormalizedRole::PickZone;
-  if (mix.contains("place_zone") || mix.contains("place_target") || mix.contains("place") || mix.contains("bin")) return NormalizedRole::PlaceBin;
-  if (mix.contains("safety_zone") || mix.contains("safety")) return NormalizedRole::SafetyZone;
+  if (mix.contains("camera") || mix.contains("sensor") || mix.contains("realsense") ||
+      mix.contains("depth_camera") || mix.contains("rgbd")) return NormalizedRole::Camera;
+  if (mix.contains("pick_zone") || mix.contains("pick_area") || mix.contains("pick_region")) return NormalizedRole::PickZone;
+  if (mix.contains("place_zone") || mix.contains("place_area") || mix.contains("drop_zone") ||
+      mix.contains("drop_area")) return NormalizedRole::PlaceZone;
+  if (mix.contains("place_target") || mix.contains("target_bin") || mix.contains("sorting_bin") ||
+      mix.contains("part_bin") || mix.contains("bin") || mix.contains("container") ||
+      mix.contains("tote") || mix.contains("tray")) return NormalizedRole::PlaceBin;
+  if (mix.contains("safety_zone") || mix.contains("safety_boundary") || mix.contains("keepout") ||
+      mix.contains("keep_out") || mix.contains("hazard_zone")) return NormalizedRole::SafetyZone;
   if (mix.contains("warning_anchor") || mix.contains("warning_badge")) return NormalizedRole::WarningAnchor;
   if (mix.contains("object") || mix.contains("part") || mix.contains("item")) return NormalizedRole::Object;
   return NormalizedRole::Generic;
@@ -740,9 +751,14 @@ bool is_raw_generated_bounds_only_item(const ScenePreviewWidget::PreviewItem & i
 bool is_clean_semantic_primitive_role(NormalizedRole role)
 {
   switch (role) {
-    case NormalizedRole::PickZone:
+    case NormalizedRole::Table:
     case NormalizedRole::PlaceBin:
     case NormalizedRole::Conveyor:
+    case NormalizedRole::PickZone:
+    case NormalizedRole::PlaceZone:
+    case NormalizedRole::Camera:
+    case NormalizedRole::SafetyZone:
+    case NormalizedRole::HomePose:
     case NormalizedRole::Object:
       return true;
     default:
@@ -759,7 +775,7 @@ bool is_overlay_visual_role(NormalizedRole role)
 {
   switch (role) {
     case NormalizedRole::PickZone:
-    case NormalizedRole::PlaceBin:
+    case NormalizedRole::PlaceZone:
     case NormalizedRole::SafetyZone:
     case NormalizedRole::WarningAnchor:
       return true;
@@ -774,8 +790,10 @@ bool is_critical_label_role(NormalizedRole role)
     case NormalizedRole::RobotBase:
     case NormalizedRole::Camera:
     case NormalizedRole::PickZone:
+    case NormalizedRole::PlaceZone:
     case NormalizedRole::PlaceBin:
     case NormalizedRole::SafetyZone:
+    case NormalizedRole::HomePose:
       return true;
     default:
       return false;
@@ -801,9 +819,11 @@ QColor item_color(const ScenePreviewWidget::PreviewItem & it)
     case NormalizedRole::Conveyor: return QColor("#06b6d4");
     case NormalizedRole::Camera: return QColor("#38bdf8");
     case NormalizedRole::PickZone: return QColor("#22c55e");
+    case NormalizedRole::PlaceZone: return QColor("#a855f7");
     case NormalizedRole::PlaceBin: return QColor("#fb7185");
     case NormalizedRole::Object: return QColor("#94a3b8");
     case NormalizedRole::SafetyZone: return QColor("#f59e0b");
+    case NormalizedRole::HomePose: return QColor("#e2e8f0");
     case NormalizedRole::WarningAnchor: return QColor("#fbbf24");
     case NormalizedRole::Generic: return QColor("#94a3b8");
   }
@@ -1577,8 +1597,13 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
 {
   const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
   const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
+  const NormalizedRole semantic_role = classify_item_role(it);
   const bool helper_overlay = is_overlay_only_item(it) || source_layer == "overlay" || visual_source == "overlay";
   if (helper_overlay) {
+    if (is_clean_semantic_primitive_role(semantic_role) && draw_clean_semantic_primitive(it)) {
+      if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);
+      return true;
+    }
     if (item_has_explicit_dimensions(it)) {
       draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(148, 163, 184, 58), 0.75f);
       if (out_wireframe_count) ++(*out_wireframe_count);
@@ -1603,17 +1628,14 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     }
     return true;
   }
-  const NormalizedRole semantic_role = classify_item_role(it);
   if (is_clean_semantic_primitive_role(semantic_role)) {
-    if (item_has_explicit_primitive_dimensions(it)) {
-      if (draw_clean_semantic_primitive(it)) {
-        if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);
-        return true;
-      }
-    } else {
-      // Semantic authoring roles without dimensions remain diagnostics-only.
-      // They are still counted as missing geometry for readiness/status, but the
-      // main 3D viewport intentionally avoids large red missing-geometry markers.
+    if (draw_clean_semantic_primitive(it)) {
+      if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);
+      return true;
+    }
+    // Recognized semantic roles that still cannot be rendered remain diagnostics-only.
+    // Unknown physical items continue through the missing-geometry path below.
+    if (!item_has_explicit_primitive_dimensions(it)) {
       if (out_missing_geometry_count) ++(*out_missing_geometry_count);
       return false;
     }
@@ -1793,7 +1815,7 @@ bool Scene3DViewportWidget::should_draw_as_wireframe_for_test(const ScenePreview
 
 bool Scene3DViewportWidget::should_draw_clean_semantic_primitive_for_test(const ScenePreviewWidget::PreviewItem & item)
 {
-  return is_clean_semantic_primitive_role(classify_item_role(item)) && item_has_explicit_primitive_dimensions(item);
+  return is_clean_semantic_primitive_role(classify_item_role(item));
 }
 
 bool Scene3DViewportWidget::should_suppress_missing_geometry_marker_for_test(const ScenePreviewWidget::PreviewItem & item)
@@ -2175,32 +2197,121 @@ void Scene3DViewportWidget::draw_robot_base_with_axis(const ScenePreviewWidget::
   glVertex3f(it.x + it.sx * 0.5, it.y + qMax(0.2, it.sy * 2.0), it.z + it.sz * 0.5);
   glEnd();
 }
-void Scene3DViewportWidget::draw_table_slab(const ScenePreviewWidget::PreviewItem & it) { draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, item_color(it)); }
+void Scene3DViewportWidget::draw_table_slab(const ScenePreviewWidget::PreviewItem & it)
+{
+  // support_surface/table: solid low-profile tabletop with a subtle outline.
+  const double thickness = qBound(0.025, it.sy > 0.001 ? it.sy : 0.06, 0.12);
+  const QColor fill(100, 116, 139, 220);
+  draw_box(it.x, it.y, it.z, qMax(0.05, it.sx), thickness, qMax(0.05, it.sz), fill, false);
+  draw_box_outline(it.x, it.y, it.z, qMax(0.05, it.sx), thickness, qMax(0.05, it.sz), QColor(203, 213, 225, 92), 0.85f);
+}
+
 void Scene3DViewportWidget::draw_conveyor(const ScenePreviewWidget::PreviewItem & it)
 {
-  draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, item_color(it));
-  const double mid_y = it.y + it.sy + 0.01;
-  const double start_x = it.x + it.sx * 0.25, end_x = it.x + it.sx * 0.75, z = it.z + it.sz * 0.5;
-  glColor4f(0.92f, 0.98f, 1.0f, 1.0f);
+  // conveyor: belt rectangle with a direction arrow in the local +X direction.
+  const QColor belt_fill(8, 145, 178, 120);
+  const QColor belt_line(165, 243, 252, 170);
+  draw_box(it.x, it.y, it.z, qMax(0.05, it.sx), qMax(0.02, it.sy), qMax(0.05, it.sz), belt_fill, true);
+  draw_box_outline(it.x, it.y, it.z, qMax(0.05, it.sx), qMax(0.02, it.sy), qMax(0.05, it.sz), belt_line, 1.0f);
+  const double top_y = it.y + qMax(0.02, it.sy) + 0.012;
+  const double start_x = it.x + qMax(0.05, it.sx) * 0.24;
+  const double end_x = it.x + qMax(0.05, it.sx) * 0.76;
+  const double mid_z = it.z + qMax(0.05, it.sz) * 0.5;
+  const double arrow = qMin(0.12, qMax(0.04, qMax(0.05, it.sx) * 0.08));
+  glColor4f(belt_line.redF(), belt_line.greenF(), belt_line.blueF(), 0.86f);
   glLineWidth(2.0f);
   glBegin(GL_LINES);
-  glVertex3f(start_x, mid_y, z); glVertex3f(end_x, mid_y, z);
-  glVertex3f(end_x, mid_y, z); glVertex3f(end_x - 0.08, mid_y, z - 0.06);
-  glVertex3f(end_x, mid_y, z); glVertex3f(end_x - 0.08, mid_y, z + 0.06);
+  glVertex3f(start_x, top_y, mid_z); glVertex3f(end_x, top_y, mid_z);
+  glVertex3f(end_x, top_y, mid_z); glVertex3f(end_x - arrow, top_y, mid_z - arrow * 0.65);
+  glVertex3f(end_x, top_y, mid_z); glVertex3f(end_x - arrow, top_y, mid_z + arrow * 0.65);
   glEnd();
 }
+
 void Scene3DViewportWidget::draw_camera_body_with_frustum(const ScenePreviewWidget::PreviewItem & it)
 {
-  draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, item_color(it));
-  if (show_camera_fov) draw_frustum(QColor(56, 189, 248, 58), true);
+  // camera: independent Workcell Studio cue, not an EPD/RealSense runtime dependency.
+  const double sx = qMax(0.06, it.sx > 0.001 ? it.sx : 0.10);
+  const double sy = qMax(0.04, it.sy > 0.001 ? it.sy : 0.06);
+  const double sz = qMax(0.04, it.sz > 0.001 ? it.sz : 0.07);
+  const QColor body(56, 189, 248, 210);
+  const QColor frustum(125, 211, 252, 120);
+  draw_box(it.x, it.y, it.z, sx, sy, sz, body, false);
+  draw_box_outline(it.x, it.y, it.z, sx, sy, sz, QColor(224, 242, 254, 160), 0.9f);
+
+  const double lens_x = it.x + sx;
+  const double lens_y = it.y + sy * 0.5;
+  const double lens_z = it.z + sz * 0.5;
+  const double range = qMax(0.25, sx * 2.8);
+  const double half_w = qMax(0.10, sz * 1.4);
+  const double half_h = qMax(0.08, sy * 1.6);
+  const double far_x = lens_x + range;
+  glColor4f(frustum.redF(), frustum.greenF(), frustum.blueF(), 0.62f);
+  glLineWidth(1.1f);
+  glBegin(GL_LINES);
+  glVertex3f(lens_x, lens_y, lens_z); glVertex3f(far_x, lens_y - half_h, lens_z - half_w);
+  glVertex3f(lens_x, lens_y, lens_z); glVertex3f(far_x, lens_y - half_h, lens_z + half_w);
+  glVertex3f(lens_x, lens_y, lens_z); glVertex3f(far_x, lens_y + half_h, lens_z - half_w);
+  glVertex3f(lens_x, lens_y, lens_z); glVertex3f(far_x, lens_y + half_h, lens_z + half_w);
+  glVertex3f(far_x, lens_y - half_h, lens_z - half_w); glVertex3f(far_x, lens_y - half_h, lens_z + half_w);
+  glVertex3f(far_x, lens_y - half_h, lens_z + half_w); glVertex3f(far_x, lens_y + half_h, lens_z + half_w);
+  glVertex3f(far_x, lens_y + half_h, lens_z + half_w); glVertex3f(far_x, lens_y + half_h, lens_z - half_w);
+  glVertex3f(far_x, lens_y + half_h, lens_z - half_w); glVertex3f(far_x, lens_y - half_h, lens_z - half_w);
+  glEnd();
 }
-void Scene3DViewportWidget::draw_pick_zone(const ScenePreviewWidget::PreviewItem & it) { draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(34, 197, 94, 36), true); draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(34, 197, 94, 78), 0.75f); }
+
+void Scene3DViewportWidget::draw_pick_zone(const ScenePreviewWidget::PreviewItem & it)
+{
+  // pick/place zones: translucent floor/table overlays; labels are supplied by the 2D label pass.
+  const double h = qMax(0.006, qMin(it.sy > 0.001 ? it.sy : 0.01, 0.025));
+  draw_box(it.x, it.y, it.z, qMax(0.05, it.sx), h, qMax(0.05, it.sz), QColor(34, 197, 94, 38), true);
+  draw_box_outline(it.x, it.y, it.z, qMax(0.05, it.sx), h, qMax(0.05, it.sz), QColor(134, 239, 172, 110), 1.0f);
+}
+
+void Scene3DViewportWidget::draw_place_zone(const ScenePreviewWidget::PreviewItem & it)
+{
+  // place_zone: purple translucent floor/table overlay with a label through the 2D label pass.
+  const double h = qMax(0.006, qMin(it.sy > 0.001 ? it.sy : 0.01, 0.025));
+  draw_box(it.x, it.y, it.z, qMax(0.05, it.sx), h, qMax(0.05, it.sz), QColor(168, 85, 247, 36), true);
+  draw_box_outline(it.x, it.y, it.z, qMax(0.05, it.sx), h, qMax(0.05, it.sz), QColor(216, 180, 254, 110), 1.0f);
+}
+
 void Scene3DViewportWidget::draw_place_target_bin(const ScenePreviewWidget::PreviewItem & it)
 {
-  draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, item_color(it), true);
-  const double wall = qMax(0.02, qMin(it.sx, it.sz) * 0.1);
-  draw_box_outline(it.x + wall, it.y + wall, it.z + wall, qMax(0.01, it.sx - 2 * wall), qMax(0.01, it.sy - wall), qMax(0.01, it.sz - 2 * wall), QColor(254, 205, 211, 120), 1.0f);
+  // bin/place target: translucent container-like box with visible rim and inner cavity.
+  const double sx = qMax(0.06, it.sx);
+  const double sy = qMax(0.04, it.sy);
+  const double sz = qMax(0.06, it.sz);
+  draw_box(it.x, it.y, it.z, sx, sy, sz, QColor(251, 113, 133, 52), true);
+  draw_box_outline(it.x, it.y, it.z, sx, sy, sz, QColor(254, 205, 211, 135), 1.1f);
+  const double wall = qMax(0.015, qMin(sx, sz) * 0.10);
+  draw_box_outline(it.x + wall, it.y + wall, it.z + wall,
+                   qMax(0.01, sx - 2 * wall), qMax(0.01, sy - wall), qMax(0.01, sz - 2 * wall),
+                   QColor(254, 205, 211, 125), 0.85f);
 }
+
+void Scene3DViewportWidget::draw_safety_zone(const ScenePreviewWidget::PreviewItem & it)
+{
+  // safety zone: amber translucent boundary. This is visual only; it does not certify safety.
+  draw_box(it.x, it.y, it.z, qMax(0.05, it.sx), qMax(0.006, it.sy), qMax(0.05, it.sz), QColor(245, 158, 11, 34), true);
+  draw_box_outline(it.x, it.y, it.z, qMax(0.05, it.sx), qMax(0.006, it.sy), qMax(0.05, it.sz), QColor(251, 191, 36, 118), 1.2f);
+}
+
+void Scene3DViewportWidget::draw_home_pose_marker(const ScenePreviewWidget::PreviewItem & it)
+{
+  // home/safety pose: small labeled pose marker / axis triad; labels are supplied by the 2D label pass.
+  const double cx = it.x + qMax(0.0, it.sx) * 0.5;
+  const double cy = it.y + qMax(0.0, it.sy) * 0.5;
+  const double cz = it.z + qMax(0.0, it.sz) * 0.5;
+  const double axis = qMax(0.10, qMax(qMax(it.sx, it.sy), it.sz));
+  draw_box(cx - 0.018, cy - 0.018, cz - 0.018, 0.036, 0.036, 0.036, QColor(226, 232, 240, 210), false);
+  glLineWidth(2.0f);
+  glBegin(GL_LINES);
+  glColor4f(0.95f, 0.20f, 0.20f, 1.0f); glVertex3f(cx, cy, cz); glVertex3f(cx + axis, cy, cz);
+  glColor4f(0.20f, 0.85f, 0.35f, 1.0f); glVertex3f(cx, cy, cz); glVertex3f(cx, cy + axis, cz);
+  glColor4f(0.25f, 0.45f, 1.0f, 1.0f); glVertex3f(cx, cy, cz); glVertex3f(cx, cy, cz + axis);
+  glEnd();
+}
+
 void Scene3DViewportWidget::draw_object_cube(const ScenePreviewWidget::PreviewItem & it)
 {
   if (draw_mesh_preview_if_available(it, item_color(it), true)) return;
@@ -2213,7 +2324,6 @@ void Scene3DViewportWidget::draw_missing_geometry_marker(const ScenePreviewWidge
   draw_box(it.x, it.y, it.z, marker, marker, marker, QColor(239, 68, 68, 96), true);
   draw_box_outline(it.x, it.y, it.z, marker, marker, marker, QColor(252, 165, 165, 150), 1.0f);
 }
-void Scene3DViewportWidget::draw_safety_zone(const ScenePreviewWidget::PreviewItem & it) { draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(245, 158, 11, 32), true); draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(245, 158, 11, 72), 0.75f); }
 void Scene3DViewportWidget::draw_warning_badge_anchor(const ScenePreviewWidget::PreviewItem & it)
 {
   const double cube = qMax(0.04, qMin(it.sx, qMin(it.sy, it.sz)));
@@ -2223,51 +2333,83 @@ void Scene3DViewportWidget::draw_warning_badge_anchor(const ScenePreviewWidget::
 bool Scene3DViewportWidget::draw_clean_semantic_primitive(const ScenePreviewWidget::PreviewItem & it)
 {
   const NormalizedRole role = classify_item_role(it);
-  if (!is_clean_semantic_primitive_role(role) || !item_has_explicit_primitive_dimensions(it)) return false;
+  if (!is_clean_semantic_primitive_role(role)) return false;
 
-  QColor fill = item_color(it);
-  QColor line = fill.lighter(role == NormalizedRole::Object ? 130 : 145);
+  const bool has_dimensions = item_has_explicit_dimensions(it);
+  ScenePreviewWidget::PreviewItem draw_item = it;
+  if (!has_dimensions) {
+    // Semantic roles may be authored before full geometry is available. Render a
+    // small, role-specific cue instead of a red unknown-geometry marker. Truly
+    // unknown items still fall through to missing-geometry diagnostics.
+    switch (role) {
+      case NormalizedRole::Camera:
+        draw_item.sx = 0.10; draw_item.sy = 0.06; draw_item.sz = 0.07;
+        break;
+      case NormalizedRole::HomePose:
+        draw_item.sx = 0.12; draw_item.sy = 0.12; draw_item.sz = 0.12;
+        break;
+      case NormalizedRole::SafetyZone:
+      case NormalizedRole::PickZone:
+      case NormalizedRole::PlaceZone:
+        draw_item.sx = 0.60; draw_item.sy = 0.01; draw_item.sz = 0.60;
+        break;
+      case NormalizedRole::Table:
+        draw_item.sx = 0.80; draw_item.sy = 0.05; draw_item.sz = 0.60;
+        break;
+      case NormalizedRole::PlaceBin:
+        draw_item.sx = 0.35; draw_item.sy = 0.18; draw_item.sz = 0.25;
+        break;
+      case NormalizedRole::Conveyor:
+        draw_item.sx = 0.80; draw_item.sy = 0.05; draw_item.sz = 0.28;
+        break;
+      case NormalizedRole::Object:
+        draw_item.sx = 0.06; draw_item.sy = 0.06; draw_item.sz = 0.06;
+        break;
+      default:
+        return false;
+    }
+  }
+
   switch (role) {
-    case NormalizedRole::PickZone:
-      fill.setAlpha(34);
-      line.setAlpha(96);
-      break;
+    case NormalizedRole::Table:
+      draw_table_slab(draw_item);
+      return true;
     case NormalizedRole::PlaceBin:
-      fill.setAlpha(38);
-      line.setAlpha(110);
-      break;
+      draw_place_target_bin(draw_item);
+      return true;
     case NormalizedRole::Conveyor:
-      fill.setAlpha(48);
-      line.setAlpha(120);
-      break;
-    case NormalizedRole::Object:
+      draw_conveyor(draw_item);
+      return true;
+    case NormalizedRole::PickZone:
+      draw_pick_zone(draw_item);
+      return true;
+    case NormalizedRole::PlaceZone:
+      draw_place_zone(draw_item);
+      return true;
+    case NormalizedRole::Camera:
+      draw_camera_body_with_frustum(draw_item);
+      return true;
+    case NormalizedRole::SafetyZone:
+      draw_safety_zone(draw_item);
+      return true;
+    case NormalizedRole::HomePose:
+      draw_home_pose_marker(draw_item);
+      return true;
+    case NormalizedRole::Object: {
+      QColor fill = item_color(draw_item);
+      QColor line = fill.lighter(130);
       fill.setAlpha(64);
       line.setAlpha(128);
-      break;
+      if (item_has_explicit_dimensions(draw_item)) {
+        draw_box(draw_item.x, draw_item.y, draw_item.z, draw_item.sx, draw_item.sy, draw_item.sz, fill, true);
+        draw_box_outline(draw_item.x, draw_item.y, draw_item.z, draw_item.sx, draw_item.sy, draw_item.sz, line, 0.9f);
+        return true;
+      }
+      return draw_urdf_primitive_geometry(draw_item, fill);
+    }
     default:
       return false;
   }
-
-  if (item_has_explicit_dimensions(it)) {
-    draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, fill, true);
-    draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, line, role == NormalizedRole::Object ? 0.9f : 1.0f);
-    if (role == NormalizedRole::Conveyor) {
-      const double mid_y = it.y + it.sy + 0.01;
-      const double start_x = it.x + it.sx * 0.25;
-      const double end_x = it.x + it.sx * 0.75;
-      const double z = it.z + it.sz * 0.5;
-      glColor4f(line.redF(), line.greenF(), line.blueF(), 0.72f);
-      glLineWidth(1.5f);
-      glBegin(GL_LINES);
-      glVertex3f(start_x, mid_y, z); glVertex3f(end_x, mid_y, z);
-      glVertex3f(end_x, mid_y, z); glVertex3f(end_x - 0.08, mid_y, z - 0.06);
-      glVertex3f(end_x, mid_y, z); glVertex3f(end_x - 0.08, mid_y, z + 0.06);
-      glEnd();
-    }
-    return true;
-  }
-
-  return draw_urdf_primitive_geometry(it, fill);
 }
 
 void Scene3DViewportWidget::draw_box(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, bool translucent)

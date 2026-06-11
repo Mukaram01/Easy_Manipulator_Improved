@@ -189,7 +189,9 @@ private:
   void draw_conveyor(const ScenePreviewWidget::PreviewItem & it);
   void draw_camera_body_with_frustum(const ScenePreviewWidget::PreviewItem & it);
   void draw_pick_zone(const ScenePreviewWidget::PreviewItem & it);
+  void draw_place_zone(const ScenePreviewWidget::PreviewItem & it);
   void draw_place_target_bin(const ScenePreviewWidget::PreviewItem & it);
+  void draw_home_pose_marker(const ScenePreviewWidget::PreviewItem & it);
   void draw_object_cube(const ScenePreviewWidget::PreviewItem & it);
   void draw_missing_geometry_marker(const ScenePreviewWidget::PreviewItem & it);
   void draw_safety_zone(const ScenePreviewWidget::PreviewItem & it);
