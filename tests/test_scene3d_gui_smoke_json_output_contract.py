@@ -117,6 +117,11 @@ def test_smoke_fallback_render_preserves_counter_gate():
     assert 'rc_after_paint.visible_count > 0' in main_cpp
     assert 'rc_after_paint.rendered_count <= 0' in main_cpp
     assert 'last_render_counters.rendered_count = rendered_item_count' in viewport_cpp
+    assert 'const bool physical_mesh_source = !overlay_helper && item_has_credible_mesh_handoff(it);' in viewport_cpp
+    assert 'if (physical_mesh_source) ++mesh_rendered_count;' in viewport_cpp
+    assert 'last_render_counters.mesh_rendered_count = mesh_rendered_count;' in viewport_cpp
+    assert '++generated_fallback_count;' in viewport_cpp
+    assert 'last_render_counters.generated_fallback_count = generated_fallback_count;' in viewport_cpp
     assert 'return rendered_item_count > 0' in viewport_cpp
 
 
