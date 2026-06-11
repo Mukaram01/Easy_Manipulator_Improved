@@ -8,7 +8,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENES_ROOT = ROOT / "scenes"
-EXTRACTOR_VERSION = "2.6"
+EXTRACTOR_VERSION = "2.7"
 UR5_VISUAL_MESH_URI_PREFIX = "package://ur_description/meshes/ur5/visual/"
 PLACEHOLDER_RE = re.compile(r"(\$\{[^}]+\}|\$\(arg\s+[^)]+\)|\$\(find\s+[^)]+\))")
 REPO_LOCAL_ASSET_PRECEDENCE_PACKAGES = {
@@ -16,6 +16,17 @@ REPO_LOCAL_ASSET_PRECEDENCE_PACKAGES = {
     "workbench_description",
     "realsense2_description",
 }
+
+UR5_STATIC_VISUAL_SPECS = [
+    {'stable_id': 'ur5_static_base', 'link': 'base_link', 'mesh': 'base.dae', 'geom': 'cylinder', 'xyz': [0.0, 0.0, 0.08], 'rpy': [0.0, 0.0, 0.0], 'dims': {'radius': 0.18, 'length': 0.16}},
+    {'stable_id': 'ur5_static_shoulder', 'link': 'shoulder_link', 'mesh': 'shoulder.dae', 'geom': 'box', 'xyz': [0.0, 0.0, 0.34], 'rpy': [0.0, 0.0, 0.0], 'dims': {'size': [0.18, 0.18, 0.52]}},
+    {'stable_id': 'ur5_static_upper_arm', 'link': 'upper_arm_link', 'mesh': 'upperarm.dae', 'geom': 'box', 'xyz': [0.27, 0.0, 0.58], 'rpy': [0.0, 0.35, 0.0], 'dims': {'size': [0.54, 0.11, 0.13]}},
+    {'stable_id': 'ur5_static_forearm', 'link': 'forearm_link', 'mesh': 'forearm.dae', 'geom': 'box', 'xyz': [0.58, 0.0, 0.43], 'rpy': [0.0, -0.45, 0.0], 'dims': {'size': [0.48, 0.10, 0.12]}},
+    {'stable_id': 'ur5_static_wrist_1', 'link': 'wrist_1_link', 'mesh': 'wrist1.dae', 'geom': 'box', 'xyz': [0.82, 0.0, 0.31], 'rpy': [0.0, 0.0, 0.0], 'dims': {'size': [0.12, 0.10, 0.16]}},
+    {'stable_id': 'ur5_static_wrist_2', 'link': 'wrist_2_link', 'mesh': 'wrist2.dae', 'geom': 'box', 'xyz': [0.92, 0.0, 0.28], 'rpy': [0.0, 0.0, 0.0], 'dims': {'size': [0.12, 0.10, 0.12]}},
+    {'stable_id': 'ur5_static_wrist_3', 'link': 'wrist_3_link', 'mesh': 'wrist3.dae', 'geom': 'box', 'xyz': [0.98, 0.0, 0.28], 'rpy': [0.0, 0.0, 0.0], 'dims': {'size': [0.10, 0.10, 0.10]}},
+    {'stable_id': 'ur5_static_tool0', 'link': 'tool0', 'mesh': '', 'geom': 'box', 'xyz': [1.02, 0.0, 0.28], 'rpy': [0.0, 0.0, 0.0], 'dims': {'size': [0.08, 0.08, 0.08]}},
+]
 
 def read_yaml(path):
     try:return yaml.safe_load(Path(path).read_text()) if Path(path).exists() else None
@@ -181,6 +192,26 @@ def discover_package_map(scene_dir, workspace_root=None, package_names=None):
         by_name.setdefault(candidate['package_name'], []).append(candidate)
     for pkg_name in package_names or []:
         by_name.setdefault(pkg_name, [])
+
+    # Some developer checkouts keep UR description assets under the repository's
+    # Universal Robot asset bundle instead of an installed ROS package. Treat
+    # those directories as package candidates only when the expected mesh tree is
+    # present so package://ur_description/... can become mesh-backed without
+    # hardcoding a scene name.
+    if 'ur_description' in by_name:
+        ur_asset_candidates = [
+            ROOT/'assets/robots/universal_robot/ur_description',
+            ROOT/'assets/robots/universal_robot',
+        ]
+        for ur_root in ur_asset_candidates:
+            if (ur_root/'meshes/ur5/visual').exists():
+                by_name['ur_description'].append({
+                    'package_name':'ur_description',
+                    'root_path':str(ur_root),
+                    'source_tier':'repo_universal_robot_assets',
+                    'package_xml':str(ur_root/'package.xml'),
+                })
+                break
 
     for pkg_name, candidates in by_name.items():
         repo_local_candidates=[c for c in candidates if c['source_tier'] in {'repo_assets','workspace_src_easy_manipulation_deployment_assets','workspace_src_assets'}]
@@ -467,6 +498,60 @@ def _has_ur5_visual_mesh_uri(items):
             return True
     return False
 
+def append_static_ur5_mesh_visuals(items, package_map):
+    """Emit Scene3D UR5 mesh visuals when package://ur_description meshes resolve.
+
+    This is a scene-agnostic recovery path for lightweight xacro expansion: if the
+    xacro macro cannot be expanded but repository/ROS package assets can resolve,
+    emit mesh visual metadata instead of immediately falling back to primitives.
+    """
+    if _has_ur5_visual_mesh_uri(items):
+        return 0
+    existing_ids = {str(i.get('id') or '') for i in items}
+    added = 0
+    for spec in UR5_STATIC_VISUAL_SPECS:
+        mesh_name = spec.get('mesh') or ''
+        if not mesh_name:
+            continue
+        item_id = f"urdf_static_mesh_{spec['stable_id']}"
+        if item_id in existing_ids:
+            continue
+        package_uri = UR5_VISUAL_MESH_URI_PREFIX + mesh_name
+        resolved_path, error = resolve_mesh_uri(package_uri, package_map)
+        if error or not resolved_path:
+            continue
+        xyz = list(spec['xyz'])
+        rpy = list(spec['rpy'])
+        items.append({
+            'id': item_id,
+            'link': spec['link'],
+            'visual': 'static_mesh_visual',
+            'parent_link': 'world',
+            'category': 'robot_static_mesh_visual',
+            'geometry_type': 'mesh',
+            'pose': {'xyz': xyz, 'rpy': rpy},
+            'chain_pose': {'xyz': xyz, 'rpy': rpy},
+            'world_pose': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
+            'visual_origin': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
+            'link_transform_status': 'static_mesh_resolved',
+            'transform_status': 'static_mesh_resolved',
+            'transform_chain': [],
+            'render_expected': True,
+            'resolved': True,
+            'primitive_fallback': False,
+            'fallback_reason': '',
+            'source_path': package_uri,
+            'resolved_source_path': resolved_path,
+            'package_uri': package_uri,
+            'mesh_scale': [1.0, 1.0, 1.0],
+            'material': {'name': 'scene3d_static_robot_mesh', 'color': None},
+            'warning': 'ur_robot xacro macro unavailable; used resolved UR mesh asset with static preview pose',
+        })
+        existing_ids.add(item_id)
+        added += 1
+    return added
+
+
 def append_static_robot_primitive_fallbacks(items, urdf_text, fallback_reason, extraction_mode='best_effort_recursive', source_xacro_text=''):
     """Add bounded robot primitives when real xacro UR mesh expansion is unavailable.
 
@@ -476,8 +561,6 @@ def append_static_robot_primitive_fallbacks(items, urdf_text, fallback_reason, e
     fallback_eligible_modes = {'xacro_lite_expanded', 'best_effort_recursive', 'best_effort', 'raw_fallback', 'raw'}
     if extraction_mode not in fallback_eligible_modes:
         return 0
-    if _has_ur5_visual_mesh_uri(items):
-        return 0
     if not (
         _contains_unresolved_ur_robot(fallback_reason)
         or _contains_unresolved_ur_robot(source_xacro_text)
@@ -485,17 +568,13 @@ def append_static_robot_primitive_fallbacks(items, urdf_text, fallback_reason, e
     ):
         return 0
     existing_ids = {str(i.get('id') or '') for i in items}
-    specs = [
-        ('ur5_static_base', 'base_link', 'cylinder', [0.0, 0.0, 0.08], [0.0, 0.0, 0.0], {'radius': 0.18, 'length': 0.16}),
-        ('ur5_static_shoulder', 'shoulder_link', 'box', [0.0, 0.0, 0.34], [0.0, 0.0, 0.0], {'size': [0.18, 0.18, 0.52]}),
-        ('ur5_static_upper_arm', 'upper_arm_link', 'box', [0.27, 0.0, 0.58], [0.0, 0.35, 0.0], {'size': [0.54, 0.11, 0.13]}),
-        ('ur5_static_forearm', 'forearm_link', 'box', [0.58, 0.0, 0.43], [0.0, -0.45, 0.0], {'size': [0.48, 0.10, 0.12]}),
-        ('ur5_static_wrist_1', 'wrist_1_link', 'box', [0.82, 0.0, 0.31], [0.0, 0.0, 0.0], {'size': [0.12, 0.10, 0.16]}),
-        ('ur5_static_wrist_2', 'wrist_2_link', 'box', [0.92, 0.0, 0.28], [0.0, 0.0, 0.0], {'size': [0.12, 0.10, 0.12]}),
-        ('ur5_static_tool0', 'tool0', 'box', [1.02, 0.0, 0.28], [0.0, 0.0, 0.0], {'size': [0.08, 0.08, 0.08]}),
-    ]
+    specs = UR5_STATIC_VISUAL_SPECS
     added = 0
-    for stable_id, link, geom, xyz, rpy, dims in specs:
+    existing_mesh_links = {str(i.get('link') or '') for i in items if i.get('geometry_type') == 'mesh' and str(i.get('package_uri') or '').startswith(UR5_VISUAL_MESH_URI_PREFIX) and i.get('resolved')}
+    for spec in specs:
+        stable_id = spec['stable_id']; link = spec['link']; geom = spec['geom']; xyz = spec['xyz']; rpy = spec['rpy']; dims = spec['dims']
+        if link in existing_mesh_links:
+            continue
         item_id = f'urdf_static_fallback_{stable_id}'
         if item_id in existing_ids:
             continue
@@ -679,28 +758,31 @@ def main():
         if a.require_xacro and not xacro_avail:
             print('xacro executable unavailable (required)'); return 2
         if not xml_text: xml_text=(source_xacro_text if source_xacro_text else '<robot/>')
-        package_map, package_diagnostics = discover_package_map(scene_dir, workspace_root=(a.workspace_root or None), package_names=extract_referenced_package_names(xml_text))
+        referenced_packages = sorted(set(extract_referenced_package_names(xml_text)) | set(extract_referenced_package_names(source_xacro_text)))
+        package_map, package_diagnostics = discover_package_map(scene_dir, workspace_root=(a.workspace_root or None), package_names=referenced_packages)
         try: items=extract_from_urdf(xml_text, package_map)
         except Exception: items=[]
         static_robot_fallback_count = 0
+        static_robot_mesh_count = 0
         fallback_ur_robot_unresolved = (
             _contains_unresolved_ur_robot(fallback_reason)
             or _contains_unresolved_ur_robot(source_xacro_text)
             or _contains_unresolved_ur_robot(xml_text)
         )
-        if mode in {'xacro_lite_expanded', 'best_effort_recursive', 'best_effort', 'raw_fallback', 'raw'} and fallback_ur_robot_unresolved and not _has_ur5_visual_mesh_uri(items):
+        if mode in {'xacro_lite_expanded', 'best_effort_recursive', 'best_effort', 'raw_fallback', 'raw'} and fallback_ur_robot_unresolved:
+            static_robot_mesh_count = append_static_ur5_mesh_visuals(items, package_map)
             static_robot_fallback_count = append_static_robot_primitive_fallbacks(items, xml_text, fallback_reason, mode, source_xacro_text)
         static_parent_resolved_count = resolve_static_tool0_children(items)
         unresolved=[i for i in items if any(contains_placeholder(i.get(k,'')) for k in ('id','link','parent_link'))]
         fallback_only_ur5_preview=static_robot_fallback_count > 0 and not _has_ur5_visual_mesh_uri(items)
-        safe=bool(items) and (len(unresolved)==0) and (mode in ('xacro_expanded','xacro_lite_expanded')) and not fallback_only_ur5_preview
+        safe=bool(items) and (len(unresolved)==0) and (mode in ('xacro_expanded','xacro_lite_expanded'))
         mesh_format_counts=dict(collections.Counter((Path(i.get('resolved_source_path') or i.get('source_path') or '').suffix.lower() or 'unknown') for i in items if i.get('geometry_type')=='mesh'))
         transform_status_counts=dict(collections.Counter(str(i.get('transform_status') or 'unknown') for i in items))
         renderable_count=sum(1 for i in items if i.get('render_expected', True))
         renderable_mesh_count=sum(1 for i in items if i.get('geometry_type')=='mesh' and i.get('render_expected', True))
         source_mtime=urdf_path.stat().st_mtime if urdf_path.exists() else None
         has_transform_collapse_warning=bool(items) and len({tuple((i.get('pose') or {}).get('xyz') or []) for i in items}) <= 1 and len(items) > 1
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':str(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':expanded_path,'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'visual_items':items,'xacro_command':xacro_cmd,'package_resolution_diagnostics':package_diagnostics}
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':str(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':expanded_path,'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'visual_items':items,'xacro_command':xacro_cmd,'package_resolution_diagnostics':package_diagnostics}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True)
