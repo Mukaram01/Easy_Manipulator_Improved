@@ -121,6 +121,107 @@ bool item_has_explicit_primitive_dimensions(const ScenePreviewWidget::PreviewIte
   return item_has_valid_urdf_primitive(item) || (item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001);
 }
 
+bool primitive_local_bounds_for_item(const ScenePreviewWidget::PreviewItem & item, QVector3D & out_min, QVector3D & out_max)
+{
+  const QString type = item.primitive_geometry_type.trimmed().toLower().replace(QLatin1Char('-'), QLatin1Char('_')).replace(QLatin1Char(' '), QLatin1Char('_'));
+  if (type == QStringLiteral("cylinder")) {
+    if (item.primitive_radius <= 0.001 || item.primitive_length <= 0.001) return false;
+    const float r = static_cast<float>(item.primitive_radius);
+    const float h = static_cast<float>(item.primitive_length);
+    // draw_urdf_primitive_geometry renders cylinders along the local Y axis.
+    out_min = QVector3D(-r, -h * 0.5f, -r);
+    out_max = QVector3D(r, h * 0.5f, r);
+    return true;
+  }
+  if (type == QStringLiteral("sphere")) {
+    if (item.primitive_radius <= 0.001) return false;
+    const float r = static_cast<float>(item.primitive_radius);
+    out_min = QVector3D(-r, -r, -r);
+    out_max = QVector3D(r, r, r);
+    return true;
+  }
+  if (type == QStringLiteral("capsule")) {
+    if (item.primitive_radius <= 0.001 || item.primitive_length <= 0.001) return false;
+    const float r = static_cast<float>(item.primitive_radius);
+    const float h = static_cast<float>(item.primitive_length);
+    // Capsule is drawn as a local-Y cylinder plus radius-sized end spheres.
+    out_min = QVector3D(-r, -h * 0.5f - r, -r);
+    out_max = QVector3D(r, h * 0.5f + r, r);
+    return true;
+  }
+  if (type == QStringLiteral("box") &&
+      item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001) {
+    out_min = QVector3D(static_cast<float>(-item.sx * 0.5),
+                        static_cast<float>(-item.sy * 0.5),
+                        static_cast<float>(-item.sz * 0.5));
+    out_max = QVector3D(static_cast<float>(item.sx * 0.5),
+                        static_cast<float>(item.sy * 0.5),
+                        static_cast<float>(item.sz * 0.5));
+    return true;
+  }
+  if (type.isEmpty() && item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001) {
+    // Semantic fallback/editable boxes are rendered as axis-aligned min-corner boxes.
+    out_min = QVector3D(0.0f, 0.0f, 0.0f);
+    out_max = QVector3D(static_cast<float>(item.sx), static_cast<float>(item.sy), static_cast<float>(item.sz));
+    return true;
+  }
+  return false;
+}
+
+struct PrimitiveWorldBounds { double x, y, z, sx, sy, sz; };
+
+bool primitive_world_bounds_for_item(const ScenePreviewWidget::PreviewItem & item, PrimitiveWorldBounds & out_bounds)
+{
+  QVector3D lmin, lmax;
+  if (!primitive_local_bounds_for_item(item, lmin, lmax)) return false;
+
+  const QString type = item.primitive_geometry_type.trimmed().toLower().replace(QLatin1Char('-'), QLatin1Char('_')).replace(QLatin1Char(' '), QLatin1Char('_'));
+  const bool axis_aligned_scene_box = (type.isEmpty() || type == QStringLiteral("box")) &&
+                                      !item_has_valid_urdf_primitive(item);
+  if (axis_aligned_scene_box) {
+    out_bounds = { item.x, item.y, item.z, item.sx, item.sy, item.sz };
+    return true;
+  }
+
+  QMatrix4x4 transform;
+  transform.translate(item.x, item.y, item.z);
+  transform.rotate(qRadiansToDegrees(item.roll), 1.0f, 0.0f, 0.0f);
+  transform.rotate(qRadiansToDegrees(item.pitch), 0.0f, 1.0f, 0.0f);
+  transform.rotate(qRadiansToDegrees(item.yaw), 0.0f, 0.0f, 1.0f);
+  if (item.visual_origin_applied) {
+    transform.translate(item.visual_origin_x, item.visual_origin_y, item.visual_origin_z);
+    transform.rotate(qRadiansToDegrees(item.visual_origin_roll), 1.0f, 0.0f, 0.0f);
+    transform.rotate(qRadiansToDegrees(item.visual_origin_pitch), 0.0f, 1.0f, 0.0f);
+    transform.rotate(qRadiansToDegrees(item.visual_origin_yaw), 0.0f, 0.0f, 1.0f);
+  }
+  transform.scale(item.mesh_scale_x, item.mesh_scale_y, item.mesh_scale_z);
+
+  QVector3D wmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+  QVector3D wmax(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+  for (int xi = 0; xi < 2; ++xi) {
+    for (int yi = 0; yi < 2; ++yi) {
+      for (int zi = 0; zi < 2; ++zi) {
+        const QVector3D local_corner(
+          xi == 0 ? lmin.x() : lmax.x(),
+          yi == 0 ? lmin.y() : lmax.y(),
+          zi == 0 ? lmin.z() : lmax.z());
+        const QVector3D world_corner = transform * local_corner;
+        wmin.setX(qMin(wmin.x(), world_corner.x()));
+        wmin.setY(qMin(wmin.y(), world_corner.y()));
+        wmin.setZ(qMin(wmin.z(), world_corner.z()));
+        wmax.setX(qMax(wmax.x(), world_corner.x()));
+        wmax.setY(qMax(wmax.y(), world_corner.y()));
+        wmax.setZ(qMax(wmax.z(), world_corner.z()));
+      }
+    }
+  }
+  out_bounds = { wmin.x(), wmin.y(), wmin.z(),
+                 qMax(0.0f, wmax.x() - wmin.x()),
+                 qMax(0.0f, wmax.y() - wmin.y()),
+                 qMax(0.0f, wmax.z() - wmin.z()) };
+  return true;
+}
+
 void finalize_visual_quality(Scene3DViewportWidget::RenderDebugCounters & counters)
 {
   counters.total_payload_count = counters.preview_items_count;
@@ -576,7 +677,7 @@ bool include_in_fit_bounds(const ScenePreviewWidget::PreviewItem & it, bool incl
   const bool helper_overlay = is_overlay_only_item(it) || source_layer == "overlay" || visual_source == "overlay";
   const bool generated_urdf_visual = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
   const bool mesh_backed = item_has_credible_mesh_handoff(it);
-  const bool explicit_primitive = it.sx > 0.001 && it.sy > 0.001 && it.sz > 0.001;
+  const bool explicit_primitive = item_has_explicit_primitive_dimensions(it);
   const bool missing_geometry = !mesh_backed && !explicit_primitive;
   const bool missing_mesh_fallback = missing_geometry && !it.linked_to_editable_layout_state && !generated_urdf_visual;
   if (helper_overlay) return false;
@@ -852,27 +953,7 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
 }
 void Scene3DViewportWidget::fit_scene() {
   QVector3D bmin, bmax;
-  bool has_generated_mesh_focus = false;
-  QVector3D mesh_min(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
-  QVector3D mesh_max(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
-  for (const auto & it : items) {
-    if (!include_in_fit_bounds(it, false)) continue;
-    const bool generated_urdf = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
-    const bool mesh_backed = item_has_credible_mesh_handoff(it);
-    if (!generated_urdf || !mesh_backed) continue;
-    const ItemBounds bounds = item_bounds_for_role(it);
-    mesh_min.setX(std::min(mesh_min.x(), static_cast<float>(bounds.x)));
-    mesh_min.setY(std::min(mesh_min.y(), static_cast<float>(bounds.y)));
-    mesh_min.setZ(std::min(mesh_min.z(), static_cast<float>(bounds.z)));
-    mesh_max.setX(std::max(mesh_max.x(), static_cast<float>(bounds.x + bounds.sx)));
-    mesh_max.setY(std::max(mesh_max.y(), static_cast<float>(bounds.y + bounds.sy)));
-    mesh_max.setZ(std::max(mesh_max.z(), static_cast<float>(bounds.z + bounds.sz)));
-    has_generated_mesh_focus = true;
-  }
-  if (has_generated_mesh_focus) {
-    bmin = mesh_min;
-    bmax = mesh_max;
-  } else if (!scene_bounds_from_visible_items(bmin, bmax, fit_include_overlays)) {
+  if (!scene_bounds_from_visible_items(bmin, bmax, fit_include_overlays)) {
     set_isometric_view();
     return;
   }
@@ -2319,6 +2400,11 @@ Scene3DViewportWidget::ItemBounds Scene3DViewportWidget::item_bounds_for_role(co
 {
   ItemBounds mesh_bounds{};
   if (mesh_world_bounds_for_item(item, mesh_bounds)) return mesh_bounds;
+  PrimitiveWorldBounds primitive_bounds{};
+  if (primitive_world_bounds_for_item(item, primitive_bounds)) {
+    return { primitive_bounds.x, primitive_bounds.y, primitive_bounds.z,
+             primitive_bounds.sx, primitive_bounds.sy, primitive_bounds.sz };
+  }
 
   const NormalizedRole role = classify_item_role(item);
   if (role == NormalizedRole::Object || role == NormalizedRole::WarningAnchor) {
