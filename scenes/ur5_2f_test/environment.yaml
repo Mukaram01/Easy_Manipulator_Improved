@@ -27,17 +27,117 @@ compatibility:
   status: COMPATIBLE
   robot: ur5
   tool: robotiq_85_gripper
-placed_objects:
+environment:
+  frame: world
+  layout: layout/workcell_studio_layout.yaml
+  support_surfaces:
+  - id: support_surface_table
+    type: table
+    role: support_surface
+    category: work_surface
+    frame: world
+    pose_xyz:
+    - 0.55
+    - 0.0
+    - 0.06
+    pose_rpy:
+    - 0.0
+    - 0.0
+    - 0.0
+    dimensions:
+    - 1.2
+    - 0.8
+    - 0.08
+    layout_item_ref: support_surface_table
+  assets:
+  - id: target_bin_default
+    type: target_bin
+    role: target_bin
+    category: place_zone
+    frame: world
+    pose_xyz:
+    - 0.55
+    - -0.28
+    - 0.19
+    pose_rpy:
+    - 0.0
+    - 0.0
+    - 0.0
+    dimensions:
+    - 0.35
+    - 0.25
+    - 0.18
+    support_surface_ref: support_surface_table
+    task_zone_ref: default_drop_zone
+    layout_item_ref: target_bin_default
+  - id: realsense_overhead
+    type: realsense
+    role: camera
+    category: camera
+    frame: world
+    pose_xyz:
+    - 0.35
+    - 0.0
+    - 0.85
+    pose_rpy:
+    - 0.0
+    - 1.5708
+    - 0.0
+    dimensions:
+    - 0.08
+    - 0.08
+    - 0.06
+    layout_item_ref: realsense_overhead
+    perception_mode: replayed_snapshot_or_live_epd_when_configured
+  - id: safety_zone_keepout
+    type: safety_zone
+    role: keepout
+    category: safety_zone
+    frame: world
+    pose_xyz:
+    - 0.35
+    - 0.0
+    - 0.102
+    pose_rpy:
+    - 0.0
+    - 0.0
+    - 0.0
+    dimensions:
+    - 2.0
+    - 1.6
+    - 0.01
+    layout_item_ref: safety_zone_keepout
+    runtime_enforced: false
+  - id: home_pose_safe
+    type: home_pose
+    role: home_pose
+    category: safety_zone
+    frame: world
+    pose_xyz:
+    - 0.25
+    - 0.0
+    - 0.45
+    pose_rpy:
+    - 0.0
+    - 0.0
+    - 0.0
+    dimensions:
+    - 0.08
+    - 0.08
+    - 0.08
+    layout_item_ref: home_pose_safe
+    runtime_commanded: false
+placed_objects: null
 camera:
   enabled: false
-  camera_id: UNKNOWN_CAMERA
-  frame_id: UNKNOWN_FRAME
+  camera_id: realsense_overhead
+  frame_id: realsense_overhead_frame
   pose:
-  - -0.55
-  - 0.55
-  - 0.4
+  - 0.35
   - 0.0
+  - 0.85
   - 0.0
+  - 1.5708
   - 0.0
   rgb_topic: null
   depth_topic: null
@@ -119,6 +219,7 @@ metadata:
 task_zones:
 - id: commissioning_pick_pose
   type: pick_zone
+  role: pick
   frame: world
   shape: box
   pose_xyz:
@@ -134,8 +235,12 @@ task_zones:
   - 0.2
   - 0.1
   object_ref: commissioning_object
+  support_surface_ref: support_surface_table
+  layout_item_ref: pick_zone_commissioning
 - id: default_drop_zone
-  type: place_target
+  type: place_zone
+  role: place
+  legacy_type: place_target
   frame: world
   shape: box
   pose_xyz:
@@ -150,3 +255,104 @@ task_zones:
   - 0.2
   - 0.2
   - 0.1
+  target_ref: target_bin_default
+  support_surface_ref: support_surface_table
+  layout_item_ref: place_zone_default
+  compatible_destination_id: default_drop_zone
+support_surfaces:
+- id: support_surface_table
+  type: table
+  role: support_surface
+  category: work_surface
+  frame: world
+  pose_xyz:
+  - 0.55
+  - 0.0
+  - 0.06
+  pose_rpy:
+  - 0.0
+  - 0.0
+  - 0.0
+  dimensions:
+  - 1.2
+  - 0.8
+  - 0.08
+  layout_item_ref: support_surface_table
+assets:
+- id: target_bin_default
+  type: target_bin
+  role: target_bin
+  category: place_zone
+  frame: world
+  pose_xyz:
+  - 0.55
+  - -0.28
+  - 0.19
+  pose_rpy:
+  - 0.0
+  - 0.0
+  - 0.0
+  dimensions:
+  - 0.35
+  - 0.25
+  - 0.18
+  support_surface_ref: support_surface_table
+  task_zone_ref: default_drop_zone
+  layout_item_ref: target_bin_default
+- id: realsense_overhead
+  type: realsense
+  role: camera
+  category: camera
+  frame: world
+  pose_xyz:
+  - 0.35
+  - 0.0
+  - 0.85
+  pose_rpy:
+  - 0.0
+  - 1.5708
+  - 0.0
+  dimensions:
+  - 0.08
+  - 0.08
+  - 0.06
+  layout_item_ref: realsense_overhead
+  perception_mode: replayed_snapshot_or_live_epd_when_configured
+- id: safety_zone_keepout
+  type: safety_zone
+  role: keepout
+  category: safety_zone
+  frame: world
+  pose_xyz:
+  - 0.35
+  - 0.0
+  - 0.102
+  pose_rpy:
+  - 0.0
+  - 0.0
+  - 0.0
+  dimensions:
+  - 2.0
+  - 1.6
+  - 0.01
+  layout_item_ref: safety_zone_keepout
+  runtime_enforced: false
+- id: home_pose_safe
+  type: home_pose
+  role: home_pose
+  category: safety_zone
+  frame: world
+  pose_xyz:
+  - 0.25
+  - 0.0
+  - 0.45
+  pose_rpy:
+  - 0.0
+  - 0.0
+  - 0.0
+  dimensions:
+  - 0.08
+  - 0.08
+  - 0.08
+  layout_item_ref: home_pose_safe
+  runtime_commanded: false
