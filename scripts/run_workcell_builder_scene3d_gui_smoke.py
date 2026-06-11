@@ -175,9 +175,6 @@ def _physical_rendered_count(payload: dict[str, Any]) -> int:
 
 def _mark_runtime_available(payload: dict[str, Any], runtime_available: bool) -> None:
     payload["runtime_available"] = runtime_available
-    counters = payload.setdefault("render_debug_counters", {})
-    if isinstance(counters, dict):
-        counters["runtime_available"] = runtime_available
 
 
 def _enforce_physical_render_evidence(payload: dict[str, Any]) -> dict[str, Any]:
@@ -193,6 +190,124 @@ def _enforce_physical_render_evidence(payload: dict[str, Any]) -> dict[str, Any]
     payload["status"] = "FAIL"
     payload["physical_rendered_count"] = 0
     return payload
+
+def _first_present_mapping(payload: dict[str, Any], *keys: str) -> dict[str, Any]:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def _first_present_list(payload: dict[str, Any], *keys: str) -> list[Any]:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+    return []
+
+
+def _counter_from_sources(payload: dict[str, Any], keys: tuple[str, ...], *extra_sources: dict[str, Any]) -> int:
+    sources: list[dict[str, Any]] = [payload]
+    for nested_key in ("runtime_render_class_counts", "render_class_counts", "class_render_counts", "counters", "render_debug_counters"):
+        nested = payload.get(nested_key)
+        if isinstance(nested, dict):
+            sources.append(nested)
+    sources.extend(source for source in extra_sources if isinstance(source, dict))
+    for source in sources:
+        for key in keys:
+            if key in source:
+                return _as_int(source.get(key))
+    return 0
+
+
+def _viewport_size_from_payload(payload: dict[str, Any]) -> dict[str, int] | None:
+    for source in (
+        payload,
+        _first_present_mapping(payload, "counters"),
+        _first_present_mapping(payload, "render_debug_counters"),
+    ):
+        value = source.get("viewport_size") if isinstance(source, dict) else None
+        if isinstance(value, dict):
+            width = _as_int(value.get("width") or value.get("w"))
+            height = _as_int(value.get("height") or value.get("h"))
+            if width > 0 or height > 0:
+                return {"width": width, "height": height}
+        if isinstance(value, list) and len(value) >= 2:
+            width = _as_int(value[0])
+            height = _as_int(value[1])
+            if width > 0 or height > 0:
+                return {"width": width, "height": height}
+        width = _counter_from_sources(source if isinstance(source, dict) else {}, ("viewport_width", "width"))
+        height = _counter_from_sources(source if isinstance(source, dict) else {}, ("viewport_height", "height"))
+        if width > 0 or height > 0:
+            return {"width": width, "height": height}
+    return None
+
+
+def _camera_fit_target_from_payload(payload: dict[str, Any]) -> str | None:
+    for source in (
+        payload,
+        _first_present_mapping(payload, "counters"),
+        _first_present_mapping(payload, "filter_diagnostics"),
+        _first_present_mapping(payload, "runtime_scene3d_diagnostics"),
+    ):
+        value = source.get("camera_fit_target") if isinstance(source, dict) else None
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _visible_item_labels_from_payload(payload: dict[str, Any]) -> list[str]:
+    labels: list[str] = []
+
+    def append_label(value: Any) -> None:
+        if isinstance(value, str):
+            label = value.strip()
+        elif isinstance(value, dict):
+            label = str(value.get("label") or value.get("display_name") or value.get("name") or value.get("id") or "").strip()
+        else:
+            label = ""
+        if label and label not in labels:
+            labels.append(label)
+
+    for item in _first_present_list(payload, "visible_item_labels", "visible_labels"):
+        append_label(item)
+    for item in _first_present_list(payload, "visible_items", "rendered_items", "viewport_visible_items"):
+        append_label(item)
+    return labels
+
+
+def _runtime_render_class_counts(payload: dict[str, Any]) -> dict[str, int]:
+    counters = _first_present_mapping(payload, "counters")
+    render_debug = _first_present_mapping(payload, "render_debug_counters")
+    return {
+        "robot_mesh_rendered": _counter_from_sources(payload, ("robot_mesh_rendered", "robot_mesh_rendered_count", "robot_rendered_count"), counters, render_debug),
+        "tool_mesh_rendered": _counter_from_sources(payload, ("tool_mesh_rendered", "tool_mesh_rendered_count", "end_effector_mesh_rendered", "end_effector_mesh_rendered_count"), counters, render_debug),
+        "environment_rendered": _counter_from_sources(payload, ("environment_rendered", "environment_rendered_count", "environment_mesh_rendered", "environment_mesh_rendered_count"), counters, render_debug),
+        "zones_rendered": _counter_from_sources(payload, ("zones_rendered", "zones_rendered_count", "zones_overlays_rendered", "overlay_rendered_count"), counters, render_debug),
+        "camera_rendered": _counter_from_sources(payload, ("camera_rendered", "camera_rendered_count", "camera_mesh_rendered", "camera_mesh_rendered_count"), counters, render_debug),
+        "semantic_fallback_rendered": _counter_from_sources(payload, ("semantic_fallback_rendered", "semantic_fallback_rendered_count", "generated_fallback_count"), counters, render_debug),
+    }
+
+
+def _add_smoke_report_supplemental_evidence(payload: dict[str, Any], *, screenshot_path: str | None, screenshot_available: bool | None) -> dict[str, Any]:
+    runtime_available = bool(payload.get("runtime_available"))
+    if runtime_available:
+        render_class_counts = _runtime_render_class_counts(payload)
+        payload["runtime_render_class_counts"] = render_class_counts
+        for key, value in render_class_counts.items():
+            payload.setdefault(key, value)
+    payload.setdefault("visible_item_labels", _visible_item_labels_from_payload(payload) if runtime_available else [])
+    payload.setdefault("viewport_size", _viewport_size_from_payload(payload))
+    payload.setdefault("camera_fit_target", _camera_fit_target_from_payload(payload))
+    if screenshot_path is not None:
+        payload.setdefault("screenshot_path", screenshot_path)
+    if screenshot_available is not None:
+        payload["screenshot_available"] = bool(screenshot_available or payload.get("screenshot_available") or payload.get("screenshot_saved"))
+    return payload
+
+
 def _subprocess_exception_to_text(exc: FileNotFoundError | PermissionError) -> str:
     return f"{type(exc).__name__}: {exc}"
 
@@ -273,6 +388,11 @@ def _write_blocked_executable_payload(
     }
     if exception:
         payload["subprocess_exception"] = exception
+    _add_smoke_report_supplemental_evidence(
+        payload,
+        screenshot_path=str(args.screenshot) if getattr(args, "screenshot", None) else None,
+        screenshot_available=False,
+    )
     _add_ros_humble_context(payload)
     _write_json(output, payload)
 
@@ -467,6 +587,11 @@ def main() -> int:
                 "static_zones_overlays_renderable": static_evidence.get("zones_overlays_renderable", 0),
             },
         }
+        _add_smoke_report_supplemental_evidence(
+            fail_payload,
+            screenshot_path=str(args.screenshot) if args.screenshot else None,
+            screenshot_available=False,
+        )
         _write_json(args.output, fail_payload)
         print("status=BLOCKED smoke_status=ROS_HUMBLE_UNAVAILABLE")
         return 1
@@ -603,6 +728,11 @@ def main() -> int:
             _add_ros_humble_context(fail_payload)
             if not ros_env["ros_humble_available"]:
                 _record_ros_humble_missing(fail_payload, as_blocker=False)
+            _add_smoke_report_supplemental_evidence(
+                fail_payload,
+                screenshot_path=str(args.screenshot) if args.screenshot else None,
+                screenshot_available=False,
+            )
             _write_json(args.output, fail_payload)
             print("status=FAIL smoke_status=SCENE_PATH_INVALID")
             return 1
@@ -624,6 +754,11 @@ def main() -> int:
         _add_ros_humble_context(fail_payload)
         if not ros_env["ros_humble_available"]:
             _record_ros_humble_missing(fail_payload, as_blocker=True)
+        _add_smoke_report_supplemental_evidence(
+            fail_payload,
+            screenshot_path=str(args.screenshot) if args.screenshot else None,
+            screenshot_available=False,
+        )
         _write_json(args.output, fail_payload)
         print("status=FAIL smoke_status=EXECUTABLE_NOT_RUNNABLE")
         print("executable=" + str(exe))
@@ -727,6 +862,11 @@ def main() -> int:
                 "blockers": blockers,
                 "warnings": warnings,
             }
+            _add_smoke_report_supplemental_evidence(
+                fail_payload,
+                screenshot_path=diag.get("screenshot_path"),
+                screenshot_available=diag.get("screenshot_available"),
+            )
             _write_json(args.output, fail_payload)
             print(f"status=FAIL smoke_status=APP_JSON_UNREADABLE error={exc}")
             print("child_command=" + diag["child_command"])
@@ -754,6 +894,11 @@ def main() -> int:
             "screenshot_available": diag["screenshot_available"],
         }
         payload.update(wrapper_evidence)
+        _add_smoke_report_supplemental_evidence(
+            payload,
+            screenshot_path=diag.get("screenshot_path"),
+            screenshot_available=diag.get("screenshot_available"),
+        )
         if args.scene_path:
             expected_scene_path = str(args.scene_path.resolve())
             counters = payload.get("counters") if isinstance(payload.get("counters"), dict) else {}
@@ -796,6 +941,11 @@ def main() -> int:
     if subprocess_exception:
         fail_payload["subprocess_exception"] = subprocess_exception
         fail_payload["guidance"] = _executable_guidance()
+    _add_smoke_report_supplemental_evidence(
+        fail_payload,
+        screenshot_path=diag.get("screenshot_path"),
+        screenshot_available=diag.get("screenshot_available"),
+    )
     _write_json(args.output, fail_payload)
     print("status=FAIL smoke_status=WRAPPER_FAIL_JSON")
     print("child_command=" + diag["child_command"])
