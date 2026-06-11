@@ -96,8 +96,8 @@ scenes:
     package_name: ur5_2f_test
     scene_path: scenes/ur5_2f_test
     support_level: supported
-    status: supported
-    known_blocker: ""
+    status: blocked
+    known_blocker: "generated/scene3d_gui_smoke.json currently records missing workcell_builder executable/runtime evidence and must be regenerated in a sourced ROS Humble workspace before this scene can be treated as pass-like."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_test --json
