@@ -215,3 +215,86 @@ def test_wrapper_preserves_app_fail_status_when_child_returns_zero(tmp_path):
     assert payload["wrapper_status"] == "PASS"
     assert payload["counters"] == {"rendered_count": 7}
     assert "status=FAIL" in proc.stdout
+
+
+def test_wrapper_adds_supplemental_runtime_visual_evidence(tmp_path):
+    repo = Path(__file__).resolve().parents[1]
+    out = tmp_path / "smoke.json"
+    shot = tmp_path / "shot.png"
+    exe = tmp_path / "fake_workcell_builder_runtime_evidence.py"
+    exe.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, pathlib, sys\n"
+        "out = pathlib.Path(sys.argv[sys.argv.index('--smoke-output') + 1])\n"
+        "shot = pathlib.Path(sys.argv[sys.argv.index('--smoke-screenshot') + 1])\n"
+        "shot.write_bytes(b'fake-png')\n"
+        "payload = {\n"
+        "  'schema': 'workcell_studio_scene3d_gui_smoke/v1',\n"
+        "  'status': 'PASS',\n"
+        "  'counters': {\n"
+        "    'rendered_count': 9,\n"
+        "    'viewport_width': 1280,\n"
+        "    'viewport_height': 720,\n"
+        "    'camera_fit_target': 'robot',\n"
+        "    'robot_mesh_rendered_count': 4,\n"
+        "    'tool_mesh_rendered_count': 1,\n"
+        "    'environment_rendered_count': 2,\n"
+        "    'overlay_rendered_count': 3,\n"
+        "    'camera_rendered_count': 1,\n"
+        "    'generated_fallback_count': 5\n"
+        "  },\n"
+        "  'render_debug_counters': {'physical_mesh_items_rendered': 4},\n"
+        "  'visible_items': [{'label': 'UR5 robot'}, {'display_name': 'Workbench'}, {'id': 'pick_zone_main'}]\n"
+        "}\n"
+        "out.write_text(json.dumps(payload) + '\\n', encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    exe.chmod(0o755)
+    cmd = [
+        "python3", str(repo / "scripts/run_workcell_builder_scene3d_gui_smoke.py"),
+        "--repo-root", str(repo), "--workspace-root", str(tmp_path), "--scene", "ur5_2f_test",
+        "--output", str(out), "--screenshot", str(shot), "--executable", str(exe), "--timeout-sec", "2",
+    ]
+    env = os.environ.copy()
+    env["ROS_DISTRO"] = "humble"
+    proc = subprocess.run(cmd, text=True, capture_output=True, env=env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["screenshot_path"] == str(shot)
+    assert payload["screenshot_available"] is True
+    assert payload["viewport_size"] == {"width": 1280, "height": 720}
+    assert payload["camera_fit_target"] == "robot"
+    assert payload["visible_item_labels"] == ["UR5 robot", "Workbench", "pick_zone_main"]
+    assert payload["runtime_render_class_counts"] == {
+        "robot_mesh_rendered": 4,
+        "tool_mesh_rendered": 1,
+        "environment_rendered": 2,
+        "zones_rendered": 3,
+        "camera_rendered": 1,
+        "semantic_fallback_rendered": 5,
+    }
+    assert payload["robot_mesh_rendered"] == 4
+
+
+def test_static_headless_counts_remain_non_pass_evidence_when_runtime_unavailable(tmp_path):
+    repo = Path(__file__).resolve().parents[1]
+    out = tmp_path / "smoke.json"
+    shot = tmp_path / "shot.png"
+    cmd = [
+        sys.executable, str(repo / "scripts/run_workcell_builder_scene3d_gui_smoke.py"),
+        "--repo-root", str(repo), "--workspace-root", str(tmp_path), "--scene", "ur5_2f_test",
+        "--output", str(out), "--screenshot", str(shot), "--timeout-sec", "2",
+    ]
+    env = os.environ.copy()
+    env["PATH"] = str(tmp_path)
+    env.pop("WORKCELL_BUILDER_EXECUTABLE", None)
+    proc = subprocess.run(cmd, text=True, capture_output=True, env=env)
+    assert proc.returncode != 0
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["status"] == "BLOCKED"
+    assert payload["runtime_available"] is False
+    assert payload["screenshot_path"] == str(shot)
+    assert payload["screenshot_available"] is False
+    assert payload["visible_item_labels"] == []
+    assert "runtime_render_class_counts" not in payload
+    assert payload["non_runtime_static_headless_renderability_counts"]["runtime_available"] is False
