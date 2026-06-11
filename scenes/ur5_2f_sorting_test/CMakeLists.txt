@@ -14,6 +14,14 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
+function(install_scene_directory_if_present directory_name)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${directory_name}")
+    install(DIRECTORY ${directory_name}
+      DESTINATION share/${PROJECT_NAME}
+    )
+  endif()
+endfunction()
+
 install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
 )
@@ -22,7 +30,18 @@ install(DIRECTORY urdf
   DESTINATION share/${PROJECT_NAME}
 )
 
+install_scene_directory_if_present(config)
+
+install(DIRECTORY generated
+  DESTINATION share/${PROJECT_NAME}
+)
+
+install(DIRECTORY layout
+  DESTINATION share/${PROJECT_NAME}
+)
+
 install(FILES
+  cell_definition.yaml
   environment.yaml
   scene_manifest.yaml
   sorting_manifest.yaml
