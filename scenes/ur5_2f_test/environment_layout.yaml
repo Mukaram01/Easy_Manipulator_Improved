@@ -3,31 +3,31 @@ layout_id: ur5_2f_test_layout
 name: UR5 2F Builder Authored Layout
 frame: world
 zones:
-  - id: pick_zone_main
+  - id: commissioning_pick_pose
     type: pick_zone
-    label: Main Pick Zone
+    label: Commissioning Pick Pose
     frame: world
     pose:
-      xyz: [0.45, 0.0, 0.09]
+      xyz: [0.45, 0.25, 0.1]
       rpy: [0.0, 0.0, 0.0]
     dimensions: [0.30, 0.20, 0.08]
 targets:
-  - id: bin_red
+  - id: default_drop_zone
     type: place_target
-    label: Red Bin
+    label: Default Drop Zone
     frame: world
     pose:
-      xyz: [0.35, 0.35, 0.10]
+      xyz: [0.5, -0.3, 0.1]
       rpy: [0.0, 0.0, 0.0]
     dimensions: [0.22, 0.22, 0.14]
 objects:
-  - id: red_box_001
+  - id: commissioning_object
     class: box
-    label: Red Box
+    label: Commissioning Object
     color: red
     frame: world
     pose:
-      xyz: [0.45, 0.0, 0.12]
+      xyz: [0.45, 0.25, 0.1]
       rpy: [0.0, 0.0, 0.0]
     dimensions: [0.05, 0.05, 0.05]
   - id: table_surface
