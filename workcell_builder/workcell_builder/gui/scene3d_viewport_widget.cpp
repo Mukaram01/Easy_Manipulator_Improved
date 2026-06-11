@@ -646,6 +646,21 @@ QString item_locked_reason(const ScenePreviewWidget::PreviewItem & it)
   return reason.isEmpty() ? QStringLiteral("item is locked") : reason;
 }
 
+QString item_visual_ownership_label(const ScenePreviewWidget::PreviewItem & it)
+{
+  if (is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) return QStringLiteral("Generated / locked preview");
+  if (it.linked_to_editable_layout_state || item_is_editable_for_gizmo(it)) return QStringLiteral("Editable layout");
+  return QStringLiteral("Reference preview");
+}
+
+QColor generated_locked_preview_material() { return QColor("#cfd4da"); }
+QColor generated_locked_preview_outline() { return QColor(125, 211, 252, 92); }
+QColor generated_primitive_fallback_fill() { return QColor(96, 165, 250, 52); }
+QColor generated_primitive_fallback_outline() { return QColor(147, 197, 253, 108); }
+QColor editable_layout_accent_outline() { return QColor("#22d3ee"); }
+QColor editable_layout_selected_highlight() { return QColor("#f8fafc"); }
+
+
 NormalizedRole classify_item_role(const ScenePreviewWidget::PreviewItem & it)
 {
   const QString role = normalized_token(it.role);
@@ -768,11 +783,17 @@ bool is_critical_label_role(NormalizedRole role)
 }
 QColor item_color(const ScenePreviewWidget::PreviewItem & it)
 {
+  if (is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) {
+    return generated_locked_preview_material();
+  }
   if (it.has_material_color) {
     QColor c;
     c.setRgbF(qBound(0.0, it.material_r, 1.0), qBound(0.0, it.material_g, 1.0),
               qBound(0.0, it.material_b, 1.0), qBound(0.0, it.material_a, 1.0));
     return c;
+  }
+  if (it.linked_to_editable_layout_state || item_is_editable_for_gizmo(it)) {
+    return QColor("#67e8f9");
   }
   switch (classify_item_role(it)) {
     case NormalizedRole::RobotBase: return QColor("#a78bfa");
@@ -1116,8 +1137,10 @@ void Scene3DViewportWidget::paintGL()
       if (it->id == selected_id) {
         const ItemBounds bounds = item_bounds_for_role(*it);
         const bool editable = item_is_editable_for_gizmo(*it);
-        draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, editable ? QColor("#f8fafc") : QColor("#94a3b8"));
-        // draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, QColor("#f8fafc"));
+        const bool selected_generated = is_generated_urdf_visual_item(*it) || is_locked_urdf_item(*it);
+        const QColor selection_outline = editable ? editable_layout_selected_highlight()
+          : (selected_generated ? generated_locked_preview_outline() : QColor("#94a3b8"));
+        draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, selection_outline, editable ? 3.0f : 1.4f);
       }
     }
   };  // draw_item_batch
@@ -1227,7 +1250,9 @@ void Scene3DViewportWidget::paintGL()
         effective_label_mode != ScenePreviewWidget::LabelMode::All) continue;
 
     const QString compact_text = clean_label_from_item(it);
-    const QString text = selected ? compact_text : (missing_reason.isEmpty() ? compact_text : QString("%1 missing").arg(compact_role(it.role)));
+    const QString ownership_text = item_visual_ownership_label(it);
+    const QString text = selected ? QStringLiteral("%1 • %2").arg(compact_text, ownership_text)
+                                  : (missing_reason.isEmpty() ? compact_text : QString("%1 missing").arg(compact_role(it.role)));
     LabelDrawCandidate candidate;
     candidate.item_index = i;
     candidate.base_point = p;
@@ -1563,11 +1588,19 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   }
   // Always try mesh-backed draw first for physical items.
   QColor visual_color = item_color(it);
-  if ((is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) && !it.has_material_color) {
-    visual_color = QColor("#cfd4da");
-  }
+  const bool generated_or_locked_preview = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
+  const bool editable_layout_preview = it.linked_to_editable_layout_state || item_is_editable_for_gizmo(it);
   if (draw_mesh_preview_if_available(it, visual_color, true)) {
     if (out_mesh_count) ++(*out_mesh_count);
+    ItemBounds mesh_bounds{};
+    if (!mesh_world_bounds_for_item(it, mesh_bounds)) mesh_bounds = item_bounds_for_role(it);
+    if (generated_or_locked_preview) {
+      draw_box_outline(mesh_bounds.x, mesh_bounds.y, mesh_bounds.z, mesh_bounds.sx, mesh_bounds.sy, mesh_bounds.sz,
+                       generated_locked_preview_outline(), 0.85f);
+    } else if (editable_layout_preview) {
+      draw_box_outline(mesh_bounds.x, mesh_bounds.y, mesh_bounds.z, mesh_bounds.sx, mesh_bounds.sy, mesh_bounds.sz,
+                       editable_layout_accent_outline(), 1.6f);
+    }
     return true;
   }
   const NormalizedRole semantic_role = classify_item_role(it);
@@ -1597,13 +1630,21 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   }
   if (item_has_valid_urdf_primitive(it)) {
     if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
-      draw_missing_geometry_marker(it);
+      // Primitive geometry exists but is intentionally hidden by Meshes-only mode; do not show a red missing-geometry marker.
+      if (item_has_explicit_dimensions(it)) {
+        draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, generated_primitive_fallback_outline(), 0.6f);
+      }
       ++last_render_counters.generated_fallback_count;
-      if (out_placeholder_count) ++(*out_placeholder_count);
       warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_PRIMITIVE_SUPPRESSED_BY_MESH_ONLY_MODE: URDF primitive available but disabled"), it.source_path);
       return false;
     }
-    if (draw_urdf_primitive_geometry(it, visual_color)) {
+    const QColor primitive_fill = generated_or_locked_preview ? generated_primitive_fallback_fill() : visual_color;
+    if (draw_urdf_primitive_geometry(it, primitive_fill)) {
+      if (generated_or_locked_preview && item_has_explicit_dimensions(it)) {
+        draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, generated_primitive_fallback_outline(), 0.7f);
+      } else if (editable_layout_preview && item_has_explicit_dimensions(it)) {
+        draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, editable_layout_accent_outline(), 1.4f);
+      }
       if (out_urdf_primitive_count) ++(*out_urdf_primitive_count);
       return true;
     }
@@ -1617,16 +1658,20 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
         warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_RAW_GENERATED_BOUNDS_SUPPRESSED: mesh or URDF primitive source should provide geometry"), it.source_path);
         return false;
       }
-      draw_missing_geometry_marker(it);
+      // Semantic primitive geometry exists but is intentionally hidden by Meshes-only mode; do not show a warning marker.
+      draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, generated_primitive_fallback_outline(), 0.6f);
       ++last_render_counters.generated_fallback_count;
-      if (out_placeholder_count) ++(*out_placeholder_count);
       warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_PRIMITIVE_SUPPRESSED_BY_MESH_ONLY_MODE: semantic primitive dimensions available but disabled"), it.source_path);
       return false;
     }
-    const QColor fallback_fill = it.linked_to_editable_layout_state ? QColor(148, 163, 184, 72) : QColor(148, 163, 184, 28);
-    const QColor fallback_line = it.linked_to_editable_layout_state ? QColor(148, 163, 184, 150) : QColor(148, 163, 184, 76);
+    const QColor fallback_fill = generated_or_locked_preview ? generated_primitive_fallback_fill()
+      : (editable_layout_preview ? QColor(34, 211, 238, 60) : QColor(148, 163, 184, 28));
+    const QColor fallback_line = generated_or_locked_preview ? generated_primitive_fallback_outline()
+      : (editable_layout_preview ? editable_layout_accent_outline() : QColor(148, 163, 184, 76));
+    const float fallback_line_width = generated_or_locked_preview ? 0.7f : (editable_layout_preview ? 1.6f : 0.75f);
     draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, fallback_fill, true);
-    draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, fallback_line, it.linked_to_editable_layout_state ? 1.1f : 0.75f);
+    // Generated primitive fallback styling is deliberately translucent with a thinner outline, not a missing-geometry warning.
+    draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, fallback_line, fallback_line_width);
     if (intentional_primitive_fallback) {
       if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);
       return true;
@@ -2498,8 +2543,8 @@ bool Scene3DViewportWidget::pick_item_at_screen(
   if (out_tooltip != nullptr) {
     const QString role_normalized = normalized_token(out_role);
     const QString metadata_tags = best_item->metadata_tags.trimmed();
-    *out_tooltip = QStringLiteral("Item: %1\nRole: %2\nWarnings: %3")
-      .arg(out_id, role_normalized, warning_debug_text(best_item->warnings));
+    *out_tooltip = QStringLiteral("Item: %1\nRole: %2\nLayer: %3\nWarnings: %4")
+      .arg(out_id, role_normalized, item_visual_ownership_label(*best_item), warning_debug_text(best_item->warnings));
     if (!metadata_tags.isEmpty()) *out_tooltip += QStringLiteral("\nTags: ") + metadata_tags;
     if (!best_item->warnings.isEmpty()) *out_tooltip += QStringLiteral("\n\nDetails:\n- ") + best_item->warnings.join("\n- ");
   }

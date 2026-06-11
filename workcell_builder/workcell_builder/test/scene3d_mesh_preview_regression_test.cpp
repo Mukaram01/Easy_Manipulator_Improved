@@ -32,7 +32,7 @@ TEST(Scene3DMeshPreviewRegression, KeepsTransformStackAndFallback)
   EXPECT_LT(mr, s);
 
   EXPECT_NE(src.find("if (preview_path && it.has_origin_offset)"), std::string::npos);
-  EXPECT_NE(src.find("if (!draw_mesh_preview_if_available(*it, item_color(*it), true))"), std::string::npos);
+  EXPECT_NE(src.find("if (draw_mesh_preview_if_available(it, visual_color, true))"), std::string::npos);
 }
 
 TEST(Scene3DMeshPreviewRegression, KeepsSelectionAndOverlayRendering)
@@ -54,6 +54,20 @@ TEST(Scene3DMeshPreviewRegression, KeepsMeshCacheBoundsAndModeHooks)
   EXPECT_NE(src.find("if (mode == ScenePreviewWidget::MeshPreviewMode::Primitives) return false;"), std::string::npos);
 }
 
+TEST(Scene3DMeshPreviewRegression, KeepsVisualDifferentiationTokens)
+{
+  const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/scene3d_viewport_widget.cpp");
+  ASSERT_FALSE(src.empty());
+  EXPECT_NE(src.find("Generated / locked preview"), std::string::npos);
+  EXPECT_NE(src.find("Editable layout"), std::string::npos);
+  EXPECT_NE(src.find("generated_locked_preview_material"), std::string::npos);
+  EXPECT_NE(src.find("generated_locked_preview_outline"), std::string::npos);
+  EXPECT_NE(src.find("generated_primitive_fallback_fill"), std::string::npos);
+  EXPECT_NE(src.find("editable_layout_accent_outline"), std::string::npos);
+  EXPECT_NE(src.find("do not show a warning marker"), std::string::npos);
+  EXPECT_NE(src.find("Layer: %3"), std::string::npos);
+}
+
 TEST(Scene3DMeshPreviewRegression, KeepsScene3DDiagnosticsSummaryLine)
 {
   const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/mainwindow.cpp");
@@ -70,7 +84,7 @@ TEST(Scene3DMeshPreviewRegression, KeepsMeshLoadFailureReasonDiagnostics)
   EXPECT_NE(src.find("stale_path"), std::string::npos);
   EXPECT_NE(src.find("file_not_found"), std::string::npos);
   EXPECT_NE(src.find("row[\"load_failure_reason\"]"), std::string::npos);
-  EXPECT_NE(src.find("mesh missing on disk (reason: %1)"), std::string::npos);
+  EXPECT_NE(src.find("mesh missing on disk (reason_code: %1)"), std::string::npos);
   EXPECT_NE(src.find("ensure_mesh_cached(it, mesh_source)"), std::string::npos);
   EXPECT_NE(src.find("ensure_mesh_cached(item, mesh_source)"), std::string::npos);
 }
