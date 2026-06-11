@@ -7073,6 +7073,7 @@ void MainWindow::populate_scene_hierarchy()
     if (lower.contains("conveyor")) return QString("conveyor");
     if (lower.contains("pick_source") || lower.contains("pick zone") || lower.contains("pick_zone")) return QString("pick source/zone");
     if (lower.contains("place_target") || lower.contains("place zone") || lower.contains("place_zone") || lower.contains("bin")) return QString("place target/bin");
+    if (lower.contains("home") || lower.contains("safe_joint_state") || lower.contains("safe joint") || lower.contains("safety pose")) return QString("home/safety pose");
     if (lower.contains("safety")) return QString("safety zone");
     if (lower.contains("object") || lower.contains("fixture") || lower.contains("asset")) return QString("object");
     return QString("object");
@@ -7086,7 +7087,8 @@ void MainWindow::populate_scene_hierarchy()
     "pick source/zone",
     "place target/bin",
     "object",
-    "safety zone"
+    "safety zone",
+    "home/safety pose"
   };
   QMap<QString, QString> yaml_status_by_id;
   auto ingest_status_file = [&](const fs::path & path, const QString & source_tag) {
@@ -7144,7 +7146,7 @@ void MainWindow::populate_scene_hierarchy()
     if (lower.contains("editable_layout")) return QString("Editable Layout");
     if (lower.contains("camera") || lower.contains("sensor")) return QString("Cameras");
     if (lower.contains("robot") || lower.contains("tool") || lower.contains("gripper") || lower.contains("end_effector")) return QString("Robot / Tooling");
-    if (lower.contains("helper") || lower.contains("overlay") || lower.contains("safety") || lower.contains("malformed snapshot") || lower.contains("detection snapshot")) return QString("Overlays / Helpers");
+    if (lower.contains("helper") || lower.contains("overlay") || lower.contains("safety") || lower.contains("home/safety pose") || lower.contains("malformed snapshot") || lower.contains("detection snapshot")) return QString("Overlays / Helpers");
     if (lower.contains("generated_urdf_visual")) return QString("Generated URDF Visuals");
     if (lower.contains("primitive_fallback")) return QString("Primitive Fallbacks");
     if (lower.contains("mesh_preview")) return QString("Mesh Preview");
@@ -7350,6 +7352,301 @@ void MainWindow::populate_scene_hierarchy()
     }
   }
 
+
+  auto canonical_semantic_token = [](QString value) {
+    value = value.trimmed().toLower();
+    value.replace(QRegularExpression(QStringLiteral("[^a-z0-9]+")), QStringLiteral("_"));
+    value.replace(QRegularExpression(QStringLiteral("_+")), QStringLiteral("_"));
+    while (value.startsWith(QLatin1Char('_'))) value.remove(0, 1);
+    while (value.endsWith(QLatin1Char('_'))) value.chop(1);
+    return value;
+  };
+
+  auto semantic_concept_for_role = [&](const QString & role, const QString & category, const QString & display_name, const QString & id) {
+    const QString text = (role + " " + category + " " + display_name + " " + id).toLower();
+    if (text.contains(QStringLiteral("camera")) || text.contains(QStringLiteral("sensor"))) return QStringLiteral("camera");
+    if (text.contains(QStringLiteral("conveyor"))) return QStringLiteral("conveyor");
+    if (text.contains(QStringLiteral("table")) || text.contains(QStringLiteral("workbench")) || text.contains(QStringLiteral("support_surface"))) return QStringLiteral("table");
+    if (text.contains(QStringLiteral("pick_source")) || text.contains(QStringLiteral("pick zone")) || text.contains(QStringLiteral("pick_zone"))) return QStringLiteral("pick_zone");
+    if (text.contains(QStringLiteral("place_target")) || text.contains(QStringLiteral("place zone")) || text.contains(QStringLiteral("place_zone")) || text.contains(QStringLiteral("drop_zone"))) return QStringLiteral("place_zone");
+    if (text.contains(QStringLiteral("bin")) || text.contains(QStringLiteral("reject"))) return QStringLiteral("bin");
+    if (text.contains(QStringLiteral("home")) || text.contains(QStringLiteral("safe_joint_state")) || text.contains(QStringLiteral("safe joint")) || text.contains(QStringLiteral("safety pose"))) return QStringLiteral("home_safety_pose");
+    if (text.contains(QStringLiteral("safety")) || text.contains(QStringLiteral("exclusion"))) return QStringLiteral("safety_zone");
+    return QString();
+  };
+
+  auto semantic_key_for = [&](const QString & concept, const QString & id) {
+    const QString normalized_id = canonical_semantic_token(id);
+    if (concept.isEmpty() || normalized_id.isEmpty()) return QString();
+    return concept + QStringLiteral(":") + normalized_id;
+  };
+
+  QSet<QString> editable_semantic_keys;
+  QSet<QString> editable_singleton_concepts;
+  for (const auto & existing : preview_items) {
+    if (!existing.linked_to_editable_layout_state || existing.source_layer != QStringLiteral("editable_layout")) continue;
+    const QString concept = semantic_concept_for_role(existing.role, existing.category, existing.display_name, existing.id);
+    const QString key = semantic_key_for(concept, existing.id);
+    if (!key.isEmpty()) editable_semantic_keys.insert(key);
+    if (concept == QStringLiteral("table") || concept == QStringLiteral("conveyor") || concept == QStringLiteral("camera") ||
+        concept == QStringLiteral("home_safety_pose") || concept == QStringLiteral("safety_zone")) {
+      editable_singleton_concepts.insert(concept);
+    }
+  }
+
+  auto semantic_yaml_scalar = [](const YAML::Node & node) {
+    if (!node) return QString();
+    try {
+      if (node.IsScalar()) return QString::fromStdString(node.as<std::string>()).trimmed();
+    } catch (...) {}
+    return QString();
+  };
+
+  auto semantic_map_string = [&](const YAML::Node & node, std::initializer_list<const char *> keys) {
+    YAML::Node cursor = node;
+    for (const char * key : keys) {
+      if (!cursor || !cursor.IsMap()) return QString();
+      cursor = cursor[key];
+    }
+    return semantic_yaml_scalar(cursor);
+  };
+
+  auto semantic_seq_double = [](const YAML::Node & seq, int index, double fallback) {
+    try {
+      if (seq && seq.IsSequence() && seq.size() > static_cast<std::size_t>(index)) return seq[index].as<double>(fallback);
+    } catch (...) {}
+    return fallback;
+  };
+
+  auto read_semantic_pose = [&](const YAML::Node & node, ScenePreviewWidget::PreviewItem * p) {
+    if (!p || !node || !node.IsMap()) return;
+    YAML::Node xyz;
+    YAML::Node rpy;
+    const YAML::Node pose = node["pose"];
+    if (pose && pose.IsMap()) {
+      xyz = pose["xyz"] ? pose["xyz"] : pose["position"];
+      rpy = pose["rpy"] ? pose["rpy"] : pose["orientation_rpy"];
+    } else if (pose && pose.IsSequence()) {
+      p->x = semantic_seq_double(pose, 0, p->x);
+      p->y = semantic_seq_double(pose, 1, p->y);
+      p->z = semantic_seq_double(pose, 2, p->z);
+      p->roll = semantic_seq_double(pose, 3, p->roll);
+      p->pitch = semantic_seq_double(pose, 4, p->pitch);
+      p->yaw = semantic_seq_double(pose, 5, p->yaw);
+    }
+    if (!xyz) xyz = node["pose_xyz"] ? node["pose_xyz"] : node["xyz"];
+    if (!rpy) rpy = node["pose_rpy"] ? node["pose_rpy"] : node["rpy"];
+    if (xyz && xyz.IsSequence()) {
+      p->x = semantic_seq_double(xyz, 0, p->x);
+      p->y = semantic_seq_double(xyz, 1, p->y);
+      p->z = semantic_seq_double(xyz, 2, p->z);
+    }
+    if (rpy && rpy.IsSequence()) {
+      p->roll = semantic_seq_double(rpy, 0, p->roll);
+      p->pitch = semantic_seq_double(rpy, 1, p->pitch);
+      p->yaw = semantic_seq_double(rpy, 2, p->yaw);
+    }
+    const YAML::Node origin = node["origin"];
+    const YAML::Node scalar_pose_source = origin && origin.IsMap() ? origin : node;
+    try { if (scalar_pose_source["x"]) p->x = scalar_pose_source["x"].as<double>(p->x); } catch (...) {}
+    try { if (scalar_pose_source["y"]) p->y = scalar_pose_source["y"].as<double>(p->y); } catch (...) {}
+    try { if (scalar_pose_source["z"]) p->z = scalar_pose_source["z"].as<double>(p->z); } catch (...) {}
+    try { if (scalar_pose_source["roll"]) p->roll = scalar_pose_source["roll"].as<double>(p->roll); } catch (...) {}
+    try { if (scalar_pose_source["pitch"]) p->pitch = scalar_pose_source["pitch"].as<double>(p->pitch); } catch (...) {}
+    try { if (scalar_pose_source["yaw"]) p->yaw = scalar_pose_source["yaw"].as<double>(p->yaw); } catch (...) {}
+  };
+
+  auto read_semantic_dimensions = [&](const YAML::Node & node, ScenePreviewWidget::PreviewItem * p) {
+    if (!p || !node || !node.IsMap()) return;
+    YAML::Node dims = node["dimensions"] ? node["dimensions"] : node["size"];
+    if (dims && dims.IsSequence()) {
+      p->sx = semantic_seq_double(dims, 0, p->sx);
+      p->sy = semantic_seq_double(dims, 1, p->sy);
+      p->sz = semantic_seq_double(dims, 2, p->sz);
+    } else if (dims && dims.IsMap()) {
+      try { if (dims["x"]) p->sx = dims["x"].as<double>(p->sx); } catch (...) {}
+      try { if (dims["y"]) p->sy = dims["y"].as<double>(p->sy); } catch (...) {}
+      try { if (dims["z"]) p->sz = dims["z"].as<double>(p->sz); } catch (...) {}
+      try { if (dims["width"]) p->sx = dims["width"].as<double>(p->sx); } catch (...) {}
+      try { if (dims["depth"]) p->sy = dims["depth"].as<double>(p->sy); } catch (...) {}
+      try { if (dims["height"]) p->sz = dims["height"].as<double>(p->sz); } catch (...) {}
+    }
+    try { if (node["width"]) p->sx = node["width"].as<double>(p->sx); } catch (...) {}
+    try { if (node["depth"]) p->sy = node["depth"].as<double>(p->sy); } catch (...) {}
+    try { if (node["height"]) p->sz = node["height"].as<double>(p->sz); } catch (...) {}
+    try { if (node["radius"] && (p->sx <= 0.0 || p->sy <= 0.0)) { const double diameter = node["radius"].as<double>(0.1) * 2.0; p->sx = diameter; p->sy = diameter; } } catch (...) {}
+  };
+
+  auto apply_semantic_defaults = [](const QString & concept, ScenePreviewWidget::PreviewItem * p) {
+    if (!p) return;
+    if (concept == QStringLiteral("table")) { p->sx = 1.20; p->sy = 0.80; p->sz = 0.08; p->z = p->z == 0.0 ? 0.74 : p->z; p->category = QStringLiteral("Table"); }
+    else if (concept == QStringLiteral("conveyor")) { p->sx = 1.40; p->sy = 0.35; p->sz = 0.12; p->z = p->z == 0.0 ? 0.75 : p->z; p->category = QStringLiteral("Conveyor"); }
+    else if (concept == QStringLiteral("pick_zone")) { p->sx = 0.25; p->sy = 0.25; p->sz = 0.03; p->category = QStringLiteral("Pick Zone"); }
+    else if (concept == QStringLiteral("place_zone")) { p->sx = 0.25; p->sy = 0.25; p->sz = 0.03; p->category = QStringLiteral("Place Zone"); }
+    else if (concept == QStringLiteral("bin")) { p->sx = 0.28; p->sy = 0.28; p->sz = 0.18; p->category = QStringLiteral("Bin"); }
+    else if (concept == QStringLiteral("camera")) { p->sx = 0.09; p->sy = 0.07; p->sz = 0.07; p->z = p->z == 0.0 ? 0.8 : p->z; p->category = QStringLiteral("Camera"); }
+    else if (concept == QStringLiteral("safety_zone")) { p->sx = 1.80; p->sy = 1.80; p->sz = 0.02; p->category = QStringLiteral("Safety Zone"); }
+    else if (concept == QStringLiteral("home_safety_pose")) { p->sx = 0.16; p->sy = 0.16; p->sz = 0.16; p->category = QStringLiteral("Home / Safety Pose"); }
+  };
+
+  auto add_semantic_preview_item = [&](const QString & raw_id,
+                                       const QString & raw_label,
+                                       const QString & concept,
+                                       const YAML::Node & node,
+                                       const QString & source_file,
+                                       bool linked_to_layout) {
+    const QString normalized_id = canonical_semantic_token(raw_id);
+    if (normalized_id.isEmpty() || concept.isEmpty()) return false;
+    const QString semantic_key = semantic_key_for(concept, normalized_id);
+    if (editable_semantic_keys.contains(semantic_key)) return false;
+    if (editable_singleton_concepts.contains(concept) &&
+        (concept == QStringLiteral("table") || concept == QStringLiteral("conveyor") || concept == QStringLiteral("camera") ||
+         concept == QStringLiteral("home_safety_pose") || concept == QStringLiteral("safety_zone"))) {
+      return false;
+    }
+    for (const auto & existing : preview_items) {
+      if (existing.id == normalized_id) return false;
+      const QString existing_concept = semantic_concept_for_role(existing.role, existing.category, existing.display_name, existing.id);
+      if (semantic_key_for(existing_concept, existing.id) == semantic_key) return false;
+    }
+
+    ScenePreviewWidget::PreviewItem p;
+    p.id = normalized_id;
+    p.display_name = raw_label.trimmed().isEmpty() ? normalized_id : raw_label.trimmed();
+    apply_semantic_defaults(concept, &p);
+    p.role = normalize_role(concept, p.category + " " + p.display_name + " " + p.id);
+    if (concept == QStringLiteral("home_safety_pose")) p.role = QStringLiteral("home/safety pose");
+    p.status = workcell_builder::get_bool_like(node, "enabled").value_or(true) ? QStringLiteral("ready") : QStringLiteral("disabled");
+    p.source_path = source_file;
+    p.source_layer = linked_to_layout ? QStringLiteral("editable_layout") : QStringLiteral("overlay");
+    p.active_visual_source = QStringLiteral("semantic_primitive");
+    p.linked_to_editable_layout_state = linked_to_layout;
+    p.editable = linked_to_layout;
+    p.locked = !linked_to_layout;
+    p.selectable = true;
+    p.metadata_complete = true;
+    p.primitive_geometry_type = QStringLiteral("box");
+    if (p.locked) p.lock_reason = QStringLiteral("semantic primitive from %1").arg(QFileInfo(source_file).fileName());
+    p.metadata_tags = QStringLiteral("semantic_primitive concept=%1 source=%2").arg(concept, QFileInfo(source_file).fileName());
+    read_semantic_pose(node, &p);
+    read_semantic_dimensions(node, &p);
+    preview_items.push_back(p);
+    if (allowed_scene_roles.contains(p.role) && include_preview_item_in_hierarchy(p)) add_tree_node(p);
+    return true;
+  };
+
+  auto add_semantic_from_node = [&](const YAML::Node & node, const QString & fallback_id, const QString & fallback_label, const QString & source_file, bool linked_to_layout) {
+    if (!node || !node.IsMap()) return false;
+    const QString raw_id = semantic_yaml_scalar(node["id"]).isEmpty() ? fallback_id : semantic_yaml_scalar(node["id"]);
+    QString label = semantic_yaml_scalar(node["label"]);
+    if (label.isEmpty()) label = semantic_yaml_scalar(node["name"]);
+    if (label.isEmpty()) label = fallback_label.isEmpty() ? raw_id : fallback_label;
+    const QString type_text = semantic_yaml_scalar(node["type"]) + " " + semantic_yaml_scalar(node["role"]) + " " + semantic_yaml_scalar(node["shape"]) + " " + raw_id + " " + label;
+    const QString lower = type_text.toLower();
+    QString concept;
+    if (lower.contains(QStringLiteral("camera")) || lower.contains(QStringLiteral("sensor"))) concept = QStringLiteral("camera");
+    else if (lower.contains(QStringLiteral("conveyor"))) concept = QStringLiteral("conveyor");
+    else if (lower.contains(QStringLiteral("table")) || lower.contains(QStringLiteral("workbench")) || lower.contains(QStringLiteral("support_surface"))) concept = QStringLiteral("table");
+    else if (lower.contains(QStringLiteral("pick")) && (lower.contains(QStringLiteral("zone")) || lower.contains(QStringLiteral("source")))) concept = QStringLiteral("pick_zone");
+    else if (lower.contains(QStringLiteral("place")) || lower.contains(QStringLiteral("drop_zone"))) concept = QStringLiteral("place_zone");
+    else if (lower.contains(QStringLiteral("bin")) || lower.contains(QStringLiteral("reject"))) concept = QStringLiteral("bin");
+    else if (lower.contains(QStringLiteral("home")) || lower.contains(QStringLiteral("safe_joint_state")) || lower.contains(QStringLiteral("safe joint")) || lower.contains(QStringLiteral("safety pose"))) concept = QStringLiteral("home_safety_pose");
+    else if (lower.contains(QStringLiteral("safety")) || lower.contains(QStringLiteral("exclusion"))) concept = QStringLiteral("safety_zone");
+    if (concept.isEmpty()) return false;
+    return add_semantic_preview_item(raw_id, label, concept, node, source_file, linked_to_layout);
+  };
+
+  auto ingest_semantic_sequence = [&](const YAML::Node & seq, const QString & source_file, bool linked_to_layout) {
+    int added = 0;
+    if (!seq || !seq.IsSequence()) return added;
+    for (const auto & node : seq) {
+      if (add_semantic_from_node(node, QString(), QString(), source_file, linked_to_layout)) ++added;
+    }
+    return added;
+  };
+
+  auto add_scene_authoring_semantic_primitives = [&]() {
+    int added = 0;
+    const QVector<QPair<fs::path, bool>> sources = {
+      {d / "layout" / "workcell_studio_layout.yaml", true},
+      {d / "environment.yaml", false},
+      {d / "cell_definition.yaml", false},
+      {d / "scene_manifest.yaml", false},
+    };
+    for (const auto & source : sources) {
+      YAML::Node root;
+      if (!read_yaml(source.first, &root)) continue;
+      const QString source_file = QString::fromStdString(source.first.string());
+      const bool linked_to_layout = source.second;
+      added += ingest_semantic_sequence(root["items"], source_file, linked_to_layout);
+      added += ingest_semantic_sequence(root["layout"], source_file, linked_to_layout);
+      added += ingest_semantic_sequence(root["assets"], source_file, linked_to_layout);
+      added += ingest_semantic_sequence(root["placed_assets"], source_file, linked_to_layout);
+      added += ingest_semantic_sequence(root["task_zones"], source_file, false);
+      added += ingest_semantic_sequence(root["task"]["destinations"], source_file, false);
+      added += ingest_semantic_sequence(root["task_recipe"]["destinations"], source_file, false);
+
+      const YAML::Node camera = root["camera"];
+      if (camera && camera.IsMap()) {
+        const bool camera_enabled = workcell_builder::get_bool_like(camera, "enabled").value_or(true);
+        const QString camera_id = semantic_yaml_scalar(camera["camera_id"]).isEmpty() ? QStringLiteral("camera_main") : semantic_yaml_scalar(camera["camera_id"]);
+        if (camera_enabled || camera["pose"] || camera["pose_xyz"] || camera["frame_id"]) {
+          if (add_semantic_preview_item(camera_id, QStringLiteral("camera"), QStringLiteral("camera"), camera, source_file, false)) ++added;
+        }
+      }
+
+      const YAML::Node workspace_zones = root["workspace"]["zones"];
+      if (workspace_zones && workspace_zones.IsSequence()) {
+        for (const auto & zone : workspace_zones) {
+          if (!zone || !zone.IsMap()) continue;
+          const QString zone_id = semantic_yaml_scalar(zone["id"]);
+          const QString zone_text = (semantic_yaml_scalar(zone["type"]) + " " + semantic_yaml_scalar(zone["shape"]) + " " + zone_id).toLower();
+          if (zone_text.contains(QStringLiteral("safety")) || zone_text.contains(QStringLiteral("exclusion"))) {
+            if (add_semantic_preview_item(zone_id.isEmpty() ? QStringLiteral("safety_zone") : zone_id,
+                                          zone_id.isEmpty() ? QStringLiteral("safety zone") : zone_id,
+                                          QStringLiteral("safety_zone"), zone, source_file, false)) ++added;
+          }
+        }
+      }
+
+      const YAML::Node objects = root["objects"];
+      if (objects && objects.IsMap()) {
+        for (auto it = objects.begin(); it != objects.end(); ++it) {
+          const QString key = semantic_yaml_scalar(it->first);
+          const YAML::Node object_node = it->second;
+          if (add_semantic_from_node(object_node, key, key, source_file, false)) ++added;
+          else if (key.toLower().contains(QStringLiteral("table")) || key.toLower().contains(QStringLiteral("conveyor")) || key.toLower().contains(QStringLiteral("bin"))) {
+            if (add_semantic_preview_item(key, key, key.toLower().contains(QStringLiteral("conveyor")) ? QStringLiteral("conveyor") : (key.toLower().contains(QStringLiteral("bin")) ? QStringLiteral("bin") : QStringLiteral("table")), object_node, source_file, false)) ++added;
+          }
+        }
+      }
+
+      const QString support_surface = semantic_map_string(root, {"environment", "support_surface_link"});
+      if (!support_surface.isEmpty()) {
+        YAML::Node support_node(YAML::NodeType::Map);
+        support_node["id"] = support_surface.toStdString();
+        if (add_semantic_preview_item(support_surface, QStringLiteral("support surface %1").arg(support_surface), QStringLiteral("table"), support_node, source_file, false)) ++added;
+      }
+
+      const QString home_target = semantic_map_string(root, {"robot", "home_named_target"});
+      if (!home_target.isEmpty()) {
+        YAML::Node home_node(YAML::NodeType::Map);
+        home_node["id"] = (QStringLiteral("home_pose_%1").arg(home_target)).toStdString();
+        if (add_semantic_preview_item(QStringLiteral("home_pose_%1").arg(home_target), QStringLiteral("home pose %1").arg(home_target), QStringLiteral("home_safety_pose"), home_node, source_file, false)) ++added;
+      }
+      const YAML::Node safe_joint_state = root["robot"]["safe_joint_state"];
+      if (safe_joint_state && (safe_joint_state.IsSequence() || safe_joint_state.IsMap())) {
+        YAML::Node safe_node(YAML::NodeType::Map);
+        safe_node["id"] = "safe_joint_state";
+        if (add_semantic_preview_item(QStringLiteral("safe_joint_state"), QStringLiteral("safe joint state"), QStringLiteral("home_safety_pose"), safe_node, source_file, false)) ++added;
+      }
+    }
+    if (added > 0) {
+      append_studio_log(QString("Semantic primitive preview items added from scene authoring sources: %1").arg(added));
+    }
+  };
+
+  add_scene_authoring_semantic_primitives();
 
   QSet<QString> preview_ids;
   for (const auto &existing : preview_items) preview_ids.insert(existing.id);

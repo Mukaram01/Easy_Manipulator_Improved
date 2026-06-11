@@ -74,3 +74,16 @@ TEST(Scene3DMeshPreviewRegression, KeepsMeshLoadFailureReasonDiagnostics)
   EXPECT_NE(src.find("ensure_mesh_cached(it, mesh_source)"), std::string::npos);
   EXPECT_NE(src.find("ensure_mesh_cached(item, mesh_source)"), std::string::npos);
 }
+
+TEST(Scene3DMeshPreviewRegression, KeepsSceneAuthoringSemanticPrimitiveAssembly)
+{
+  const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/mainwindow.cpp");
+  ASSERT_FALSE(src.empty());
+  EXPECT_NE(src.find("add_scene_authoring_semantic_primitives"), std::string::npos);
+  EXPECT_NE(src.find("layout/workcell_studio_layout.yaml"), std::string::npos);
+  EXPECT_NE(src.find("environment.yaml"), std::string::npos);
+  EXPECT_NE(src.find("cell_definition.yaml"), std::string::npos);
+  EXPECT_NE(src.find("scene_manifest.yaml"), std::string::npos);
+  EXPECT_NE(src.find("semantic_primitive"), std::string::npos);
+  EXPECT_NE(src.find("editable_semantic_keys.contains(semantic_key)"), std::string::npos);
+}
