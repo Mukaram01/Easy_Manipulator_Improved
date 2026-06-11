@@ -22,25 +22,40 @@ environment:
   frame: world
   layout: layout/workcell_studio_layout.yaml
 objects:
-  - id: commissioning_object
-    frame: world
-    pose_xyz: [0.45, 0.25, 0.1]
-    pose_rpy: [0.0, 0.0, 0.0]
-    dimensions: [0.05, 0.05, 0.05]
+- id: commissioning_object
+  frame: world
+  pose_xyz:
+  - 0.45
+  - 0.25
+  - 0.1
+  pose_rpy:
+  - 0.0
+  - 0.0
+  - 0.0
+  dimensions:
+  - 0.05
+  - 0.05
+  - 0.05
 task:
   id: default_task
   type: pick_place
   source_object: commissioning_object
   destinations:
-    - id: default_drop_zone
-      frame: world
-      pose_xyz: [0.5, -0.3, 0.1]
-      pose_rpy: [0.0, 0.0, 0.0]
+  - id: default_drop_zone
+    frame: world
+    pose_xyz:
+    - 0.5
+    - -0.3
+    - 0.1
+    pose_rpy:
+    - 0.0
+    - 0.0
+    - 0.0
   rules:
-    - id: default_place
-      when:
-        always: true
-      destination: default_drop_zone
+  - id: default_place
+    when:
+      always: true
+    destination: default_drop_zone
 commissioning:
   self_test_enabled: true
   export_bundle: false
