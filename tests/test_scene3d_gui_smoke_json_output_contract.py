@@ -82,15 +82,35 @@ def test_missing_executable_is_blocked_with_static_non_runtime_evidence(tmp_path
     ]
     env = os.environ.copy()
     env['PATH'] = str(tmp_path)
+    env.pop('WORKCELL_BUILDER_EXECUTABLE', None)
     rc = subprocess.run(cmd, text=True, capture_output=True, env=env)
     assert rc.returncode != 0
     assert 'status=BLOCKED smoke_status=MISSING_EXECUTABLE' in rc.stdout
     payload = json.loads(out.read_text(encoding='utf-8'))
     assert payload['status'] == 'BLOCKED'
     assert payload['smoke_status'] == 'MISSING_EXECUTABLE'
+    assert payload['status'] != 'PASS'
+    assert payload['smoke_status'] != 'PASS'
     assert 'workcell_builder_executable_missing' in payload['blockers']
-    assert payload['searched_paths']
-    assert 'build workcell_builder in a ROS Humble workspace' in payload['message']
+    expected_searched_paths = [
+        str(tmp_path / 'install/workcell_builder/bin/workcell_builder'),
+        str(tmp_path / 'install/workcell_builder/lib/workcell_builder/workcell_builder'),
+        str(tmp_path / 'install/bin/workcell_builder'),
+        '/home/user/workcell_ws/install/workcell_builder/bin/workcell_builder',
+        '/home/user/workcell_ws/install/workcell_builder/lib/workcell_builder/workcell_builder',
+    ]
+    assert payload['searched_paths'] == expected_searched_paths
+    assert payload['message'] == (
+        'workcell_builder executable was not found; build workcell_builder in a ROS Humble '
+        'workspace and source install/setup.bash, or set WORKCELL_BUILDER_EXECUTABLE'
+    )
+    assert payload['guidance'] == [
+        'cd /home/user/workcell_ws',
+        'source /opt/ros/humble/setup.bash',
+        'colcon build --symlink-install --packages-select workcell_builder',
+        'source install/setup.bash',
+        'export WORKCELL_BUILDER_EXECUTABLE=/home/user/workcell_ws/install/workcell_builder/bin/workcell_builder',
+    ]
     assert payload['static_scene3d_visual_evidence']['evidence_kind'] == 'non_runtime_static_headless_renderability'
     assert 'not GUI-render PASS evidence' in payload['static_scene3d_visual_evidence']['notes'][0]
     counts = payload['non_runtime_static_headless_renderability_counts']

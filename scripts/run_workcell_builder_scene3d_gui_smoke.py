@@ -197,11 +197,33 @@ def _subprocess_exception_to_text(exc: FileNotFoundError | PermissionError) -> s
     return f"{type(exc).__name__}: {exc}"
 
 
+WORKCELL_BUILDER_EXECUTABLE_MISSING_MESSAGE = (
+    "workcell_builder executable was not found; build workcell_builder in a ROS Humble "
+    "workspace and source install/setup.bash, or set WORKCELL_BUILDER_EXECUTABLE"
+)
+
+
 def _executable_guidance() -> list[str]:
     return [
-        "Build and source the ROS 2 workspace so workcell_builder is installed and on PATH.",
-        "Or pass --executable with the absolute path to an executable workcell_builder binary.",
+        "cd /home/user/workcell_ws",
+        "source /opt/ros/humble/setup.bash",
+        "colcon build --symlink-install --packages-select workcell_builder",
+        "source install/setup.bash",
+        "export WORKCELL_BUILDER_EXECUTABLE=/home/user/workcell_ws/install/workcell_builder/bin/workcell_builder",
     ]
+
+
+def _non_runtime_static_headless_renderability_counts(static_evidence: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "runtime_available": False,
+        "physical_mesh_items_renderable": static_evidence.get("physical_mesh_items_renderable", 0),
+        "primitive_fallback_items_renderable": static_evidence.get("primitive_fallback_items_renderable", 0),
+        "zones_overlays_renderable": static_evidence.get("zones_overlays_renderable", 0),
+        "missing_mesh_items": static_evidence.get("missing_mesh_items", 0),
+        "unresolved_transform_items": static_evidence.get("unresolved_transform_items", 0),
+        "skipped_helper_static_fallback_items": static_evidence.get("skipped_helper_static_fallback_items", 0),
+        "note": "non-runtime evidence only; static/headless renderability is not GUI runtime PASS evidence",
+    }
 
 
 def _write_blocked_executable_payload(
@@ -213,14 +235,13 @@ def _write_blocked_executable_payload(
     searched: list[str],
     blocker: str,
     exception: str | None = None,
-    status: str = "BLOCKED",
     warnings: list[str] | None = None,
 ) -> None:
     scene_dir = _resolve_single_scene_dir(repo_root, args.scene, args.scene_path)
     static_evidence = _static_scene3d_visual_evidence(scene_dir)
     payload: dict[str, Any] = {
         "schema": EXPECTED_SCHEMA,
-        "status": status,
+        "status": "BLOCKED",
         "smoke_status": "MISSING_EXECUTABLE",
         "runtime_available": False,
         "scene": args.scene or (args.scene_path.name if args.scene_path else None),
@@ -228,13 +249,15 @@ def _write_blocked_executable_payload(
         "workspace_root": _path_str(workspace_root) if workspace_root else None,
         "executable": None,
         "explicit_executable": str(args.executable) if args.executable else None,
-        "searched_paths": searched,
+        "searched_paths": list(searched),
+        "message": WORKCELL_BUILDER_EXECUTABLE_MISSING_MESSAGE,
         "blockers": [blocker],
         "guidance": _executable_guidance(),
         "warnings": _merge_unique(["runtime_gui_unavailable_static_scene3d_visual_evidence_recorded"], warnings or []),
         "screenshot_available": False,
         "scene_dir": str(scene_dir) if scene_dir else None,
         "static_scene3d_visual_evidence": static_evidence,
+        "non_runtime_static_headless_renderability_counts": _non_runtime_static_headless_renderability_counts(static_evidence),
         "render_debug_counters": {
             "runtime_available": False,
             "physical_mesh_items_rendered": 0,
@@ -400,7 +423,7 @@ def main() -> int:
     exe = resolve_workcell_builder_executable(workspace_root, args.executable)
     executable_resolution = describe_resolution()
     if exe is None and not args.all_scenes:
-        searched = list(executable_resolution.get("searched_executable_paths") or [str(p) for p in _resolve_executable_candidates(workspace_root)])
+        searched = list(executable_resolution.get("searched_executable_paths") or [])
         _write_blocked_executable_payload(
             args.output,
             repo_root=repo_root,
@@ -430,6 +453,7 @@ def main() -> int:
             "screenshot_available": False,
             "scene_dir": str(scene_dir) if scene_dir else None,
             "static_scene3d_visual_evidence": static_evidence,
+            "non_runtime_static_headless_renderability_counts": _non_runtime_static_headless_renderability_counts(static_evidence),
             "render_debug_counters": {
                 "runtime_available": False,
                 "physical_mesh_items_rendered": 0,
