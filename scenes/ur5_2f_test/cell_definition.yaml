@@ -5,15 +5,18 @@ cell:
 robot:
   model: ur5
   planning_group: manipulator
-  base_frame: world
+  world_frame: world
+  base_frame: base_link
   tool_link: tool0
   home_named_target: home
   safe_joint_state: []
 end_effector:
-  id: robotiq_2f
+  id: robotiq_85_gripper
   type: finger
-  brand: robotiq
-  grasp_frame: tool0
+  model: robotiq_85_gripper
+  profile: robotiq_85_gripper
+  mount_link: tool0
+  grasp_frame: ee_palm
 camera:
   enabled: false
   camera_id: UNKNOWN_CAMERA
