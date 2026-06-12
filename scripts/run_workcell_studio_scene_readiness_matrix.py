@@ -9,6 +9,7 @@ launches or publish to any robot/control topics.
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import os
 import shlex
@@ -392,7 +393,11 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
     mesh_index = scene_dir / "generated" / "scene_visual_mesh_index.json"
     smoke_json = scene_dir / "generated" / "scene3d_gui_smoke.json"
     smoke_evidence = _extract_scene3d_smoke_evidence(smoke_json)
-    screenshot_path = scene_dir / "generated" / "scene3d_gui_smoke.png" if _smoke_indicates_runtime_screenshot_evidence(smoke_json) else None
+    screenshot_path = (
+        scene_dir / "generated" / "scene3d_gui_smoke.png"
+        if smoke_evidence["smoke_status"] != BLOCKED and _smoke_indicates_runtime_screenshot_evidence(smoke_json)
+        else None
+    )
     visual = evaluate_scene3d_visual_quality(
         scene_name=scene_name,
         scene_dir=scene_dir,
@@ -619,7 +624,19 @@ def _write_markdown(payload: dict[str, Any], path: Path) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def build_matrix(repo_root: Path, workspace_root: Path | None, catalog_path: Path, output_dir: Path) -> dict[str, Any]:
+def build_matrix(
+    repo_root: Path,
+    workspace_root: Path | None = None,
+    catalog_path: Path | None = None,
+    output_dir: Path | None = None,
+) -> dict[str, Any]:
+    if output_dir is None and catalog_path is not None:
+        output_dir = catalog_path
+        catalog_path = workspace_root
+        workspace_root = None
+    if catalog_path is None or output_dir is None:
+        raise TypeError("build_matrix requires catalog_path and output_dir")
+
     catalog, entries, catalog_errors = load_supported_scene_catalog(catalog_path)
     ros_available = _ros_humble_available()
     builder_found, builder_evidence = _resolve_workcell_builder_executable_evidence(workspace_root)
@@ -690,7 +707,10 @@ def main(argv: list[str] | None = None) -> int:
     output_dir = (args.output_dir.resolve() if args.output_dir else (repo_root / "build" / "workcell_studio_scene_readiness").resolve())
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    payload = build_matrix(repo_root, workspace_root, catalog_path, output_dir)
+    if "workspace_root" in inspect.signature(build_matrix).parameters:
+        payload = build_matrix(repo_root, workspace_root, catalog_path, output_dir)
+    else:
+        payload = build_matrix(repo_root, catalog_path, output_dir)
     json_path = output_dir / "scene_readiness_summary.json"
     md_path = output_dir / "scene_readiness_summary.md"
     json_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
