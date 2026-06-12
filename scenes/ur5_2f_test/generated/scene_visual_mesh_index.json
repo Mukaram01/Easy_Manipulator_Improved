@@ -3,12 +3,13 @@
   "visual_count": 19,
   "resolved": 19,
   "unresolved": 0,
-  "generated_at": "2026-06-11T12:49:47.863659+00:00",
-  "extractor_version": "2.7",
+  "generated_at": "2026-06-12T09:24:02.047841+00:00",
+  "extractor_version": "2.8",
+  "path_reference_root": "repository",
   "extraction_mode": "xacro_lite_expanded",
   "xacro_available": false,
-  "source_urdf_xacro_path": "/workspace/Easy_Manipulator_Improved/scenes/ur5_2f_test/urdf/scene.urdf.xacro",
-  "source_mtime": 1781181943.1334205,
+  "source_urdf_xacro_path": "scenes/ur5_2f_test/urdf/scene.urdf.xacro",
+  "source_mtime": 1781251015.580105,
   "source_expanded_urdf_path": "",
   "fallback_reason": "xacro executable unavailable; used safe repo-local xacro-lite expansion; skipped unresolved macros: ur_robot",
   "xacro_real_command_succeeded": false,
@@ -76,7 +77,8 @@
       "geometry_type": "mesh",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
-      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+      "resolved_source_path_is_repo_relative": true,
       "resolved": true,
       "mesh_scale": [
         1.0,
@@ -142,7 +144,8 @@
       "geometry_type": "mesh",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
-      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "resolved_source_path_is_repo_relative": true,
       "resolved": true,
       "mesh_scale": [
         1.0,
@@ -208,7 +211,8 @@
       "geometry_type": "mesh",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
-      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "resolved_source_path_is_repo_relative": true,
       "resolved": true,
       "mesh_scale": [
         1.0,
@@ -275,7 +279,8 @@
       "geometry_type": "mesh",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
-      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "resolved_source_path_is_repo_relative": true,
       "resolved": true,
       "mesh_scale": [
         1.0,
@@ -342,7 +347,8 @@
       "geometry_type": "mesh",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
-      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "resolved_source_path_is_repo_relative": true,
       "resolved": true,
       "mesh_scale": [
         1.0,
@@ -408,7 +414,8 @@
       "geometry_type": "mesh",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
-      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "resolved_source_path_is_repo_relative": true,
       "resolved": true,
       "mesh_scale": [
         1.0,
@@ -474,7 +481,8 @@
       "geometry_type": "mesh",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
-      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "resolved_source_path_is_repo_relative": true,
       "resolved": true,
       "mesh_scale": [
         1.0,
@@ -541,7 +549,8 @@
       "geometry_type": "mesh",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
-      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "resolved_source_path_is_repo_relative": true,
       "resolved": true,
       "mesh_scale": [
         1.0,
@@ -608,7 +617,8 @@
       "geometry_type": "mesh",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
-      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "resolved_source_path_is_repo_relative": true,
       "resolved": true,
       "mesh_scale": [
         1.0,
@@ -678,7 +688,8 @@
       "geometry_type": "mesh",
       "package_uri": "package://workbench_description/meshes/visual/table.stl",
       "source_path": "package://workbench_description/meshes/visual/table.stl",
-      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/meshes/visual/table.stl",
+      "resolved_source_path": "assets/environment/workbench_description/meshes/visual/table.stl",
+      "resolved_source_path_is_repo_relative": true,
       "resolved": true,
       "mesh_scale": [
         0.001,
@@ -732,7 +743,8 @@
       "geometry_type": "mesh",
       "package_uri": "package://realsense2_description/meshes/d435.dae",
       "source_path": "package://realsense2_description/meshes/d435.dae",
-      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/meshes/d435.dae",
+      "resolved_source_path": "assets/environment/realsense2_description/meshes/d435.dae",
+      "resolved_source_path_is_repo_relative": true,
       "resolved": true,
       "mesh_scale": [
         1.0,
@@ -1414,302 +1426,347 @@
   ],
   "xacro_command": [
     "xacro-lite",
-    "/workspace/Easy_Manipulator_Improved/scenes/ur5_2f_test/urdf/scene.urdf.xacro"
+    "scenes/ur5_2f_test/urdf/scene.urdf.xacro"
   ],
   "package_resolution_diagnostics": {
     "resolved_packages": [
       {
-        "package_name": "onrobot_airpick4_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/package.xml"
-      },
-      {
-        "package_name": "onrobot_airpick4_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config/package.xml"
-      },
-      {
-        "package_name": "robotiq_3f_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_moveit_config/package.xml"
-      },
-      {
-        "package_name": "robotiq_3f_gripper_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/package.xml"
-      },
-      {
-        "package_name": "single_suction_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description/package.xml"
-      },
-      {
-        "package_name": "single_suction_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config/package.xml"
-      },
-      {
-        "package_name": "robotiq_85_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/package.xml"
-      },
-      {
-        "package_name": "robotiq_85_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config/package.xml"
-      },
-      {
         "package_name": "fanuc_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description",
+        "root_path": "assets/robots/fanuc/fanuc_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description/package.xml"
+        "package_xml": "assets/robots/fanuc/fanuc_description/package.xml"
       },
       {
         "package_name": "fanuc_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config",
+        "root_path": "assets/robots/fanuc/fanuc_moveit_config",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config/package.xml"
-      },
-      {
-        "package_name": "panda_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_description/package.xml"
-      },
-      {
-        "package_name": "panda_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_moveit_config/package.xml"
-      },
-      {
-        "package_name": "ur3_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur3_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur3_moveit_config/package.xml"
-      },
-      {
-        "package_name": "ur10_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur10_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur10_moveit_config/package.xml"
-      },
-      {
-        "package_name": "ur5_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur5_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur5_moveit_config/package.xml"
-      },
-      {
-        "package_name": "pipe_camera_stand_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/pipe_camera_stand_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/pipe_camera_stand_description/package.xml"
-      },
-      {
-        "package_name": "table_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description/package.xml"
-      },
-      {
-        "package_name": "vslot_camera_frame_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/vslot_camera_frame_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/vslot_camera_frame_description/package.xml"
-      },
-      {
-        "package_name": "overhead_camera_gantry_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/overhead_camera_gantry_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/overhead_camera_gantry_description/package.xml"
-      },
-      {
-        "package_name": "tslot_camera_frame_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description/package.xml"
-      },
-      {
-        "package_name": "realsense2_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/package.xml"
+        "package_xml": "assets/robots/fanuc/fanuc_moveit_config/package.xml"
       },
       {
         "package_name": "flat_plate_camera_bracket_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description",
+        "root_path": "assets/environment/flat_plate_camera_bracket_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description/package.xml"
+        "package_xml": "assets/environment/flat_plate_camera_bracket_description/package.xml"
       },
       {
-        "package_name": "sorting_bin_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/sorting_bin_description",
+        "package_name": "onrobot_airpick4_description",
+        "root_path": "assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/sorting_bin_description/package.xml"
+        "package_xml": "assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/package.xml"
+      },
+      {
+        "package_name": "onrobot_airpick4_moveit_config",
+        "root_path": "assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config/package.xml"
+      },
+      {
+        "package_name": "overhead_camera_gantry_description",
+        "root_path": "assets/environment/overhead_camera_gantry_description",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/environment/overhead_camera_gantry_description/package.xml"
+      },
+      {
+        "package_name": "panda_description",
+        "root_path": "assets/robots/panda_robot/panda_description",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/robots/panda_robot/panda_description/package.xml"
+      },
+      {
+        "package_name": "panda_moveit_config",
+        "root_path": "assets/robots/panda_robot/panda_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/robots/panda_robot/panda_moveit_config/package.xml"
+      },
+      {
+        "package_name": "pipe_camera_stand_description",
+        "root_path": "assets/environment/pipe_camera_stand_description",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/environment/pipe_camera_stand_description/package.xml"
+      },
+      {
+        "package_name": "realsense2_description",
+        "root_path": "assets/environment/realsense2_description",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/environment/realsense2_description/package.xml"
+      },
+      {
+        "package_name": "robotiq_3f_gripper_description",
+        "root_path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/package.xml"
+      },
+      {
+        "package_name": "robotiq_3f_moveit_config",
+        "root_path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_moveit_config/package.xml"
+      },
+      {
+        "package_name": "robotiq_85_description",
+        "root_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/package.xml"
+      },
+      {
+        "package_name": "robotiq_85_moveit_config",
+        "root_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config/package.xml"
       },
       {
         "package_name": "simple_conveyor_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/simple_conveyor_description",
+        "root_path": "assets/environment/simple_conveyor_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/simple_conveyor_description/package.xml"
+        "package_xml": "assets/environment/simple_conveyor_description/package.xml"
+      },
+      {
+        "package_name": "single_suction_description",
+        "root_path": "assets/end_effectors/single_suction_gripper/single_suction_description",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/end_effectors/single_suction_gripper/single_suction_description/package.xml"
+      },
+      {
+        "package_name": "single_suction_moveit_config",
+        "root_path": "assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/end_effectors/single_suction_gripper/single_suction_moveit_config/package.xml"
+      },
+      {
+        "package_name": "sorting_bin_description",
+        "root_path": "assets/environment/sorting_bin_description",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/environment/sorting_bin_description/package.xml"
       },
       {
         "package_name": "table_clamp_camera_mount_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_clamp_camera_mount_description",
+        "root_path": "assets/environment/table_clamp_camera_mount_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/table_clamp_camera_mount_description/package.xml"
+        "package_xml": "assets/environment/table_clamp_camera_mount_description/package.xml"
+      },
+      {
+        "package_name": "table_description",
+        "root_path": "assets/environment/table_description",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/environment/table_description/package.xml"
+      },
+      {
+        "package_name": "tslot_camera_frame_description",
+        "root_path": "assets/environment/tslot_camera_frame_description",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/environment/tslot_camera_frame_description/package.xml"
+      },
+      {
+        "package_name": "ur10_moveit_config",
+        "root_path": "assets/robots/universal_robot/ur10_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/robots/universal_robot/ur10_moveit_config/package.xml"
+      },
+      {
+        "package_name": "ur3_moveit_config",
+        "root_path": "assets/robots/universal_robot/ur3_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/robots/universal_robot/ur3_moveit_config/package.xml"
+      },
+      {
+        "package_name": "ur5_moveit_config",
+        "root_path": "assets/robots/universal_robot/ur5_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/robots/universal_robot/ur5_moveit_config/package.xml"
+      },
+      {
+        "package_name": "vslot_camera_frame_description",
+        "root_path": "assets/environment/vslot_camera_frame_description",
+        "source_tier": "repo_assets",
+        "package_xml": "assets/environment/vslot_camera_frame_description/package.xml"
       },
       {
         "package_name": "workbench_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description",
+        "root_path": "assets/environment/workbench_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/package.xml"
+        "package_xml": "assets/environment/workbench_description/package.xml"
       }
     ],
     "shadowed_packages": [],
     "resolution_paths": [
       {
-        "package_name": "onrobot_airpick4_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "onrobot_airpick4_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "robotiq_3f_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "robotiq_3f_gripper_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "single_suction_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "single_suction_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "robotiq_85_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "robotiq_85_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
         "package_name": "fanuc_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description",
+        "root_path": "assets/robots/fanuc/fanuc_description",
         "source_tier": "repo_assets"
       },
       {
         "package_name": "fanuc_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "panda_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "panda_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "ur3_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur3_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "ur10_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur10_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "ur5_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur5_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "pipe_camera_stand_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/pipe_camera_stand_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "table_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "vslot_camera_frame_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/vslot_camera_frame_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "overhead_camera_gantry_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/overhead_camera_gantry_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "tslot_camera_frame_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "realsense2_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description",
+        "root_path": "assets/robots/fanuc/fanuc_moveit_config",
         "source_tier": "repo_assets"
       },
       {
         "package_name": "flat_plate_camera_bracket_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description",
+        "root_path": "assets/environment/flat_plate_camera_bracket_description",
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "sorting_bin_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/sorting_bin_description",
+        "package_name": "onrobot_airpick4_description",
+        "root_path": "assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "onrobot_airpick4_moveit_config",
+        "root_path": "assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "overhead_camera_gantry_description",
+        "root_path": "assets/environment/overhead_camera_gantry_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "panda_description",
+        "root_path": "assets/robots/panda_robot/panda_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "panda_moveit_config",
+        "root_path": "assets/robots/panda_robot/panda_moveit_config",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "pipe_camera_stand_description",
+        "root_path": "assets/environment/pipe_camera_stand_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "realsense2_description",
+        "root_path": "assets/environment/realsense2_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "robotiq_3f_gripper_description",
+        "root_path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "robotiq_3f_moveit_config",
+        "root_path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_moveit_config",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "robotiq_85_description",
+        "root_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "robotiq_85_moveit_config",
+        "root_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config",
         "source_tier": "repo_assets"
       },
       {
         "package_name": "simple_conveyor_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/simple_conveyor_description",
+        "root_path": "assets/environment/simple_conveyor_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "single_suction_description",
+        "root_path": "assets/end_effectors/single_suction_gripper/single_suction_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "single_suction_moveit_config",
+        "root_path": "assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "sorting_bin_description",
+        "root_path": "assets/environment/sorting_bin_description",
         "source_tier": "repo_assets"
       },
       {
         "package_name": "table_clamp_camera_mount_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_clamp_camera_mount_description",
+        "root_path": "assets/environment/table_clamp_camera_mount_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "table_description",
+        "root_path": "assets/environment/table_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "tslot_camera_frame_description",
+        "root_path": "assets/environment/tslot_camera_frame_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "ur10_moveit_config",
+        "root_path": "assets/robots/universal_robot/ur10_moveit_config",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "ur3_moveit_config",
+        "root_path": "assets/robots/universal_robot/ur3_moveit_config",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "ur5_moveit_config",
+        "root_path": "assets/robots/universal_robot/ur5_moveit_config",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "vslot_camera_frame_description",
+        "root_path": "assets/environment/vslot_camera_frame_description",
         "source_tier": "repo_assets"
       },
       {
         "package_name": "workbench_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description",
+        "root_path": "assets/environment/workbench_description",
         "source_tier": "repo_assets"
       }
     ],
     "ros_resolution_attempts": [
       {
+        "package_name": "fanuc_description",
+        "attempts": [
+          {
+            "source_tier": "ament_index",
+            "status": "unavailable",
+            "error": "ament_index_python.packages import unavailable"
+          },
+          {
+            "source_tier": "ros2_pkg_prefix",
+            "status": "unavailable",
+            "error": "ros2 executable unavailable"
+          }
+        ]
+      },
+      {
+        "package_name": "fanuc_moveit_config",
+        "attempts": [
+          {
+            "source_tier": "ament_index",
+            "status": "unavailable",
+            "error": "ament_index_python.packages import unavailable"
+          },
+          {
+            "source_tier": "ros2_pkg_prefix",
+            "status": "unavailable",
+            "error": "ros2 executable unavailable"
+          }
+        ]
+      },
+      {
+        "package_name": "flat_plate_camera_bracket_description",
+        "attempts": [
+          {
+            "source_tier": "ament_index",
+            "status": "unavailable",
+            "error": "ament_index_python.packages import unavailable"
+          },
+          {
+            "source_tier": "ros2_pkg_prefix",
+            "status": "unavailable",
+            "error": "ros2 executable unavailable"
+          }
+        ]
+      },
+      {
         "package_name": "onrobot_airpick4_description",
         "attempts": [
           {
@@ -1740,97 +1797,7 @@
         ]
       },
       {
-        "package_name": "robotiq_3f_moveit_config",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "robotiq_3f_gripper_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "single_suction_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "single_suction_moveit_config",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "robotiq_85_moveit_config",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "fanuc_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "fanuc_moveit_config",
+        "package_name": "overhead_camera_gantry_description",
         "attempts": [
           {
             "source_tier": "ament_index",
@@ -1875,51 +1842,6 @@
         ]
       },
       {
-        "package_name": "ur3_moveit_config",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "ur10_moveit_config",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "ur5_moveit_config",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
         "package_name": "pipe_camera_stand_description",
         "attempts": [
           {
@@ -1935,7 +1857,7 @@
         ]
       },
       {
-        "package_name": "table_description",
+        "package_name": "robotiq_3f_gripper_description",
         "attempts": [
           {
             "source_tier": "ament_index",
@@ -1950,7 +1872,7 @@
         ]
       },
       {
-        "package_name": "vslot_camera_frame_description",
+        "package_name": "robotiq_3f_moveit_config",
         "attempts": [
           {
             "source_tier": "ament_index",
@@ -1965,52 +1887,7 @@
         ]
       },
       {
-        "package_name": "overhead_camera_gantry_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "tslot_camera_frame_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "flat_plate_camera_bracket_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "sorting_bin_description",
+        "package_name": "robotiq_85_moveit_config",
         "attempts": [
           {
             "source_tier": "ament_index",
@@ -2040,7 +1917,142 @@
         ]
       },
       {
+        "package_name": "single_suction_description",
+        "attempts": [
+          {
+            "source_tier": "ament_index",
+            "status": "unavailable",
+            "error": "ament_index_python.packages import unavailable"
+          },
+          {
+            "source_tier": "ros2_pkg_prefix",
+            "status": "unavailable",
+            "error": "ros2 executable unavailable"
+          }
+        ]
+      },
+      {
+        "package_name": "single_suction_moveit_config",
+        "attempts": [
+          {
+            "source_tier": "ament_index",
+            "status": "unavailable",
+            "error": "ament_index_python.packages import unavailable"
+          },
+          {
+            "source_tier": "ros2_pkg_prefix",
+            "status": "unavailable",
+            "error": "ros2 executable unavailable"
+          }
+        ]
+      },
+      {
+        "package_name": "sorting_bin_description",
+        "attempts": [
+          {
+            "source_tier": "ament_index",
+            "status": "unavailable",
+            "error": "ament_index_python.packages import unavailable"
+          },
+          {
+            "source_tier": "ros2_pkg_prefix",
+            "status": "unavailable",
+            "error": "ros2 executable unavailable"
+          }
+        ]
+      },
+      {
         "package_name": "table_clamp_camera_mount_description",
+        "attempts": [
+          {
+            "source_tier": "ament_index",
+            "status": "unavailable",
+            "error": "ament_index_python.packages import unavailable"
+          },
+          {
+            "source_tier": "ros2_pkg_prefix",
+            "status": "unavailable",
+            "error": "ros2 executable unavailable"
+          }
+        ]
+      },
+      {
+        "package_name": "table_description",
+        "attempts": [
+          {
+            "source_tier": "ament_index",
+            "status": "unavailable",
+            "error": "ament_index_python.packages import unavailable"
+          },
+          {
+            "source_tier": "ros2_pkg_prefix",
+            "status": "unavailable",
+            "error": "ros2 executable unavailable"
+          }
+        ]
+      },
+      {
+        "package_name": "tslot_camera_frame_description",
+        "attempts": [
+          {
+            "source_tier": "ament_index",
+            "status": "unavailable",
+            "error": "ament_index_python.packages import unavailable"
+          },
+          {
+            "source_tier": "ros2_pkg_prefix",
+            "status": "unavailable",
+            "error": "ros2 executable unavailable"
+          }
+        ]
+      },
+      {
+        "package_name": "ur10_moveit_config",
+        "attempts": [
+          {
+            "source_tier": "ament_index",
+            "status": "unavailable",
+            "error": "ament_index_python.packages import unavailable"
+          },
+          {
+            "source_tier": "ros2_pkg_prefix",
+            "status": "unavailable",
+            "error": "ros2 executable unavailable"
+          }
+        ]
+      },
+      {
+        "package_name": "ur3_moveit_config",
+        "attempts": [
+          {
+            "source_tier": "ament_index",
+            "status": "unavailable",
+            "error": "ament_index_python.packages import unavailable"
+          },
+          {
+            "source_tier": "ros2_pkg_prefix",
+            "status": "unavailable",
+            "error": "ros2 executable unavailable"
+          }
+        ]
+      },
+      {
+        "package_name": "ur5_moveit_config",
+        "attempts": [
+          {
+            "source_tier": "ament_index",
+            "status": "unavailable",
+            "error": "ament_index_python.packages import unavailable"
+          },
+          {
+            "source_tier": "ros2_pkg_prefix",
+            "status": "unavailable",
+            "error": "ros2 executable unavailable"
+          }
+        ]
+      },
+      {
+        "package_name": "vslot_camera_frame_description",
         "attempts": [
           {
             "source_tier": "ament_index",

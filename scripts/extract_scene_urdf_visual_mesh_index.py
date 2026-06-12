@@ -8,7 +8,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENES_ROOT = ROOT / "scenes"
-EXTRACTOR_VERSION = "2.7"
+EXTRACTOR_VERSION = "2.8"
 UR5_VISUAL_MESH_URI_PREFIX = "package://ur_description/meshes/ur5/visual/"
 PLACEHOLDER_RE = re.compile(r"(\$\{[^}]+\}|\$\(arg\s+[^)]+\)|\$\(find\s+[^)]+\))")
 REPO_LOCAL_ASSET_PRECEDENCE_PACKAGES = {
@@ -55,6 +55,41 @@ def xyz_rpy_from_tf(tf):
     if abs(cp)>1e-8: roll=math.atan2(tf[2][1],tf[2][2]); yaw=math.atan2(tf[1][0],tf[0][0])
     else: roll=math.atan2(-tf[1][2],tf[1][1]); yaw=0.0
     return {"xyz":[x,y,z],"rpy":[roll,pitch,yaw]}
+
+
+
+def _repo_relative_path(path_value):
+    """Return a repository-relative path for repo-local filesystem paths.
+
+    Generated mesh indexes are committed artifacts, so they must not embed the
+    transient checkout directory (for example /workspace/...).  Keep external
+    absolute paths untouched, but make repo-local paths portable.
+    """
+    if path_value is None:
+        return ''
+    text = str(path_value)
+    if not text:
+        return ''
+    if text.startswith(('package://', 'http://', 'https://', 'model://')):
+        return text
+    path = Path(text)
+    if not path.is_absolute():
+        return text
+    try:
+        return path.resolve().relative_to(ROOT).as_posix()
+    except Exception:
+        return text
+
+
+def _portable_source_metadata(value):
+    """Recursively strip the repo checkout prefix from generated metadata."""
+    if isinstance(value, dict):
+        return {key: _portable_source_metadata(child) for key, child in value.items()}
+    if isinstance(value, list):
+        return [_portable_source_metadata(child) for child in value]
+    if isinstance(value, str):
+        return _repo_relative_path(value)
+    return value
 
 def contains_placeholder(v): return bool(PLACEHOLDER_RE.search(json.dumps(v) if isinstance(v,(list,tuple,dict)) else str(v)))
 def sanitize(s): return re.sub(r'[^A-Za-z0-9_]+','_',str(s or 'unnamed')).strip('_') or 'unnamed'
@@ -162,7 +197,7 @@ def _fallback_package_candidates(scene_dir, workspace_root=None):
                 candidate['name_fallback']='directory_name'
                 candidate['parse_error']=parse_error
             candidates.append(candidate)
-    return candidates
+    return sorted(candidates, key=lambda c: (str(c.get('package_name', '')), str(c.get('root_path', '')), str(c.get('source_tier', ''))))
 
 def _record_package_resolution(out, diagnostics, candidate):
     pkg_name = candidate['package_name']
@@ -541,7 +576,8 @@ def append_static_ur5_mesh_visuals(items, package_map):
             'primitive_fallback': False,
             'fallback_reason': '',
             'source_path': package_uri,
-            'resolved_source_path': resolved_path,
+            'resolved_source_path': _repo_relative_path(resolved_path),
+            'resolved_source_path_is_repo_relative': bool(resolved_path and _repo_relative_path(resolved_path) != str(resolved_path)),
             'package_uri': package_uri,
             'mesh_scale': [1.0, 1.0, 1.0],
             'material': {'name': 'scene3d_static_robot_mesh', 'color': None},
@@ -710,7 +746,7 @@ def extract_from_urdf(xml_text, package_map):
             if mesh is not None:
                 mesh_uri=mesh.attrib.get('filename',''); resolved_path, skip_reason=resolve_mesh_uri(mesh_uri, package_map)
                 scale=parse_vec(mesh.attrib.get('scale','1 1 1'),3,1.0)
-                items.append({**common,'geometry_type':'mesh','package_uri':mesh_uri if mesh_uri.startswith('package://') else '','source_path':mesh_uri,'resolved_source_path':resolved_path,'resolved':bool(resolved_path and not skip_reason),'mesh_scale':scale,'render_expected':not bool(skip_reason),'render_skip_reason':skip_reason,'warning':(skip_reason or warning or '')})
+                items.append({**common,'geometry_type':'mesh','package_uri':mesh_uri if mesh_uri.startswith('package://') else '','source_path':mesh_uri,'resolved_source_path':_repo_relative_path(resolved_path),'resolved_source_path_is_repo_relative': bool(resolved_path and _repo_relative_path(resolved_path) != str(resolved_path)),'resolved':bool(resolved_path and not skip_reason),'mesh_scale':scale,'render_expected':not bool(skip_reason),'render_skip_reason':skip_reason,'warning':(skip_reason or warning or '')})
             elif box is not None:
                 items.append({**common,'geometry_type':'box','size':parse_vec(box.attrib.get('size','0.1 0.1 0.1'),3,0.1),'resolved':True,'warning':warning or ''})
             elif cyl is not None:
@@ -782,7 +818,7 @@ def main():
         renderable_mesh_count=sum(1 for i in items if i.get('geometry_type')=='mesh' and i.get('render_expected', True))
         source_mtime=urdf_path.stat().st_mtime if urdf_path.exists() else None
         has_transform_collapse_warning=bool(items) and len({tuple((i.get('pose') or {}).get('xyz') or []) for i in items}) <= 1 and len(items) > 1
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':str(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':expanded_path,'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'visual_items':items,'xacro_command':xacro_cmd,'package_resolution_diagnostics':package_diagnostics}
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True)
