@@ -2,6 +2,7 @@
 #include <boost/filesystem.hpp>
 #include <algorithm>
 #include <fstream>
+#include <map>
 #include <set>
 
 #include "workcell_studio_canvas_model.hpp"
@@ -872,6 +873,59 @@ TEST(WorkcellStudioCanvasMesh, PreviewStarterLayoutCopiesLockedGeneratedPhysical
   EXPECT_FALSE(found_original_locked_preview) << "the copied layout item must not masquerade as the original generated preview id";
 
   fs::remove_all(root);
+}
+
+
+TEST(WorkcellStudioCanvasMesh, Ur5CanonicalLayoutSuppressesGenericSemanticPlaceholders)
+{
+#ifndef WORKCELL_BUILDER_REPO_ROOT
+  GTEST_SKIP() << "WORKCELL_BUILDER_REPO_ROOT is not configured for ur5_2f_test layout coverage";
+#else
+  const fs::path repo_root = fs::path(WORKCELL_BUILDER_REPO_ROOT);
+  const fs::path source_scene = repo_root / "scenes" / "ur5_2f_test";
+  ASSERT_TRUE(fs::exists(source_scene)) << "expected ur5_2f_test scene fixture";
+
+  const fs::path editable_layout_path = source_scene / "layout" / "workcell_studio_layout.yaml";
+  ASSERT_TRUE(fs::exists(editable_layout_path));
+  const YAML::Node layout = load_yaml_file(editable_layout_path);
+  ASSERT_TRUE(layout && layout.IsMap());
+  ASSERT_EQ(layout["schema_version"].as<std::string>(), "workcell_studio_layout/v1");
+  ASSERT_TRUE(layout["items"] && layout["items"].IsSequence());
+  ASSERT_GT(layout["items"].size(), 0u);
+
+  std::set<std::string> expected_editable_ids;
+  for (const auto & item : layout["items"]) {
+    ASSERT_TRUE(item && item.IsMap());
+    ASSERT_TRUE(item["id"]);
+    expected_editable_ids.insert(item["id"].as<std::string>());
+  }
+  ASSERT_EQ(expected_editable_ids.count("support_surface_table"), 1u);
+  ASSERT_EQ(expected_editable_ids.count("pick_zone_commissioning"), 1u);
+  ASSERT_EQ(expected_editable_ids.count("place_zone_default"), 1u);
+  ASSERT_EQ(expected_editable_ids.count("target_bin_default"), 1u);
+  ASSERT_EQ(expected_editable_ids.count("realsense_overhead"), 1u);
+  ASSERT_EQ(expected_editable_ids.count("home_pose_safe"), 1u);
+
+  const auto model = workcell_builder::build_workcell_studio_canvas_model(source_scene, "ur5_2f_test");
+  std::map<std::string, int> id_counts;
+  for (const auto & item : model.items) {
+    ++id_counts[item.id];
+  }
+
+  for (const auto & id : expected_editable_ids) {
+    EXPECT_EQ(id_counts[id], 1) << "canonical editable layout id should appear exactly once: " << id;
+  }
+
+  const std::set<std::string> suppressed_generic_placeholder_ids = {
+    "table", "pick_zone", "place_zone", "bin_a", "camera", "home_pose"
+  };
+  for (const auto & id : suppressed_generic_placeholder_ids) {
+    EXPECT_EQ(id_counts[id], 0) << "canonical semantic layout should suppress generic placeholder id: " << id;
+  }
+
+  EXPECT_EQ(id_counts["robot_base"], 1) << "locked robot preview should remain separate from editable layout items";
+  EXPECT_EQ(id_counts["robot_reach"], 1) << "locked reach preview should remain separate from editable layout items";
+#endif
 }
 
 TEST(WorkcellStudioCanvasMesh, StarterLayoutAcceptanceCopiesSceneAndFiltersUnsafePreviewItems)

@@ -5,6 +5,7 @@
 #include <array>
 #include <cctype>
 #include <fstream>
+#include <initializer_list>
 #include <set>
 #include <vector>
 #include <yaml-cpp/yaml.h>
@@ -370,12 +371,48 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   m.place_target = task_ok ? read_string_or_warn(yaml_map_key(task, "place_target"), "task_recipe.place_target", "Task intent missing") : "Task intent missing";
   m.release_strategy = task_ok ? read_string_or_warn(yaml_map_key(task, "release_strategy"), "task_recipe.release_strategy", "Generate task recipe to populate this panel") : "Generate task recipe to populate this panel";
 
-  const auto push_default_item = [&m](const std::string & id, const std::string & type, const std::string & role,
+  const std::string canonical_schema_version = canonical_layout_status.loaded ?
+    read_string_or_warn(yaml_map_key(layout, "schema_version"), "schema_version", "") : "";
+  const YAML::Node canonical_layout_items = canonical_layout_status.loaded ? yaml_map_key(layout, "items") : YAML::Node();
+  const bool canonical_schema_current = (canonical_schema_version == "workcell_studio_layout/v1");
+  const bool canonical_schema_legacy = canonical_schema_version.empty() && canonical_layout_items.IsSequence();
+  const bool canonical_layout_usable = canonical_layout_status.loaded && (canonical_schema_current || canonical_schema_legacy);
+  const bool canonical_layout_has_items = canonical_layout_usable && canonical_layout_items.IsSequence() && canonical_layout_items.size() > 0;
+
+  const auto canonical_layout_has_semantic = [&](std::initializer_list<const char *> semantic_tokens) {
+    if (!canonical_layout_has_items) return false;
+    for (const auto & node : canonical_layout_items) {
+      if (!node || !node.IsMap()) continue;
+      for (const char * key : {"id", "type", "role", "category"}) {
+        std::string value = yaml_map_value_or_empty(node, key);
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+        for (const char * raw_token : semantic_tokens) {
+          const std::string token(raw_token == nullptr ? "" : raw_token);
+          if (!token.empty() && (value == token || value.find(token) != std::string::npos)) return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const auto should_add_default_preview_item = [&](const std::string & id) {
+    if (!canonical_layout_has_items) return true;
+    if (id == "table") return !canonical_layout_has_semantic({"table", "support_surface", "work_surface"});
+    if (id == "pick_zone") return !canonical_layout_has_semantic({"pick_zone"});
+    if (id == "place_zone") return !canonical_layout_has_semantic({"place_zone"});
+    if (id == "bin_a") return !canonical_layout_has_semantic({"bin", "target_bin"});
+    if (id == "camera") return !canonical_layout_has_semantic({"camera", "realsense"});
+    if (id == "home_pose") return !canonical_layout_has_semantic({"home_pose", "safety/home"});
+    return true;
+  };
+
+  const auto push_default_item = [&m, &should_add_default_preview_item](const std::string & id, const std::string & type, const std::string & role,
                                        const std::string & label, const std::string & source_file,
                                        double x, double y, double z,
                                        double roll, double pitch, double yaw,
                                        double width, double depth, double height,
                                        double radius, bool locked) {
+    if (!should_add_default_preview_item(id)) return;
     WorkcellStudioCanvasItem item;
     item.id = id;
     item.type = type;
@@ -455,13 +492,6 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     const YAML::Node camera = yaml_map_key(root, "camera");
     if (camera && camera.IsMap()) items->push_back(YAML::Clone(camera));
   };
-
-  const std::string canonical_schema_version = canonical_layout_status.loaded ?
-    read_string_or_warn(yaml_map_key(layout, "schema_version"), "schema_version", "") : "";
-  const YAML::Node canonical_layout_items = canonical_layout_status.loaded ? yaml_map_key(layout, "items") : YAML::Node();
-  const bool canonical_schema_current = (canonical_schema_version == "workcell_studio_layout/v1");
-  const bool canonical_schema_legacy = canonical_schema_version.empty() && canonical_layout_items.IsSequence();
-  const bool canonical_layout_usable = canonical_layout_status.loaded && (canonical_schema_current || canonical_schema_legacy);
 
   YAML::Node effective_layout;
   bool layout_source_is_environment_layout = false;
