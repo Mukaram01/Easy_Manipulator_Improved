@@ -582,6 +582,8 @@ bool is_generated_urdf_visual_item(const ScenePreviewWidget::PreviewItem & it)
   return false;
 }
 
+bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it);
+
 QString clean_label_from_item(const ScenePreviewWidget::PreviewItem & it)
 {
   QString label = it.display_name.trimmed();
@@ -692,7 +694,6 @@ NormalizedRole classify_item_role(const ScenePreviewWidget::PreviewItem & it)
 
 
 bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it);
-bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it);
 
 
 bool include_in_fit_bounds(const ScenePreviewWidget::PreviewItem & it, bool include_overlays)
