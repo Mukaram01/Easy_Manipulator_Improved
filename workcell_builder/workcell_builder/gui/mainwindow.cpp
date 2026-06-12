@@ -5022,7 +5022,7 @@ void MainWindow::rebuild_digital_twin_canvas()
     item->setData(RoleId, QString::fromStdString(entry.id));
     item->setData(RoleDisplayName, QString::fromStdString(entry.label));
     item->setData(RoleType, QString::fromStdString(entry.type));
-    item->setData(RoleCategory, QString::fromStdString(entry.type));
+    item->setData(RoleCategory, QString::fromStdString(entry.category));
     item->setData(RoleRole, QString::fromStdString(entry.role));
     item->setData(RoleLocked, locked_for_canvas);
     item->setData(RolePoseZ, entry.z);
