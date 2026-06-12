@@ -32,8 +32,18 @@ TEST(LayoutSerializationContractTest, SaveLayoutWritesCanonicalFields)
 TEST(LayoutSerializationContractTest, SaveLayoutPreservesUnknownFieldsViaCloneMerge)
 {
   const std::string src = load_file("gui/mainwindow.cpp");
-  EXPECT_NE(src.find("YAML::Clone(existing_by_id[item_id])"), std::string::npos);
+  EXPECT_NE(src.find("YAML::Clone(existing)"), std::string::npos);
   EXPECT_NE(src.find("existing_by_id"), std::string::npos);
+}
+
+TEST(LayoutSerializationContractTest, SaveLayoutKeepsLockedCanonicalItemsOnRoundTrip)
+{
+  const std::string src = load_file("gui/mainwindow.cpp");
+  EXPECT_NE(src.find("YAML::Node existing_items = root[\"items\"]"), std::string::npos);
+  EXPECT_NE(src.find("editable_by_id.contains(id)"), std::string::npos);
+  EXPECT_NE(src.find("serialized_editable_canvas_item(editable_by_id.value(id), existing_item)"), std::string::npos);
+  EXPECT_NE(src.find("updated_placed.push_back(YAML::Clone(existing_item))"), std::string::npos);
+  EXPECT_NE(src.find("if (saved_ids.contains(id)) continue;"), std::string::npos);
 }
 
 TEST(LayoutSerializationContractTest, MalformedLayoutBackupBehaviorStillPresent)
