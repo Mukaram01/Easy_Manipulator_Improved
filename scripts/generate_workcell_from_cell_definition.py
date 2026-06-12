@@ -54,6 +54,34 @@ def _load_module(module_name: str, module_path: Path):
     return module
 
 
+
+
+def _repo_relative_path(path_value: Any) -> str:
+    if path_value is None:
+        return ""
+    text = str(path_value)
+    if not text:
+        return ""
+    if text.startswith(("package://", "http://", "https://", "model://")):
+        return text
+    path = Path(text)
+    if not path.is_absolute():
+        return text
+    try:
+        return path.resolve().relative_to(REPO_ROOT).as_posix()
+    except Exception:
+        return text
+
+
+def _portable_source_metadata(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _portable_source_metadata(child) for key, child in value.items()}
+    if isinstance(value, list):
+        return [_portable_source_metadata(child) for child in value]
+    if isinstance(value, str):
+        return _repo_relative_path(value)
+    return value
+
 def _yaml_text_from(scene_generator: Any, data: Any) -> str:
     return str(scene_generator._to_yaml_text(data))
 
@@ -755,6 +783,7 @@ def _fallback_scene_visual_mesh_index(
         "resolved": 0,
         "unresolved": 0,
         "extractor_version": "fallback",
+        "path_reference_root": "repository",
         "extraction_mode": "fallback_empty_safe_preview",
         "source_urdf_xacro_path": "urdf/scene.urdf.xacro",
         "source_mtime": urdf_path.stat().st_mtime if urdf_path.exists() else None,
@@ -771,7 +800,7 @@ def _fallback_scene_visual_mesh_index(
         "stale_index": False,
         "stale_reasons": [],
         "package_resolution_diagnostics": {"resolved_packages": [], "shadowed_packages": [], "resolution_paths": []},
-        "generated_package_dir": str(package_dir),
+        "generated_package_dir": _repo_relative_path(package_dir),
     }
 
 
@@ -869,6 +898,7 @@ def _write_scene_visual_mesh_index(
             "resolved": sum(1 for item in items if item.get("resolved")),
             "unresolved": sum(1 for item in items if not item.get("resolved")),
             "extractor_version": getattr(extractor, "EXTRACTOR_VERSION", "unknown"),
+            "path_reference_root": "repository",
             "extraction_mode": mode,
             "xacro_available": extractor.discover_xacro_command()[1],
             "source_urdf_xacro_path": "urdf/scene.urdf.xacro",
@@ -881,20 +911,20 @@ def _write_scene_visual_mesh_index(
             "emitted_visual_count": len(items),
             "renderable_mesh_count": renderable_mesh_count,
             "renderable_item_count": renderable_item_count,
-            "visual_items": items,
-            "items": items,
+            "visual_items": _portable_source_metadata(items),
+            "items": _portable_source_metadata(items),
             "blockers": [],
             "warnings": [fallback_reason] if fallback_reason else [],
             "stale_index": False,
             "stale_reasons": [],
-            "xacro_command": xacro_cmd,
-            "workspace_root": str(resolved_workspace_root) if resolved_workspace_root else "",
+            "xacro_command": _portable_source_metadata(xacro_cmd),
+            "workspace_root": _repo_relative_path(resolved_workspace_root) if resolved_workspace_root else "",
             "visual_readiness": {
                 "status": visual_readiness_status,
                 "reasons": visual_readiness_reasons,
             },
             "status": visual_readiness_status,
-            "package_resolution_diagnostics": package_diagnostics,
+            "package_resolution_diagnostics": _portable_source_metadata(package_diagnostics),
         }
         generated_dir.mkdir(parents=True, exist_ok=True)
         index_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
