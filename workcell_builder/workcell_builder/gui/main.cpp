@@ -340,6 +340,42 @@ private:
   QJsonObject scene_load_diagnostics_;
   int render_ready_attempts_{0};
 
+  bool runtime_scene3d_diagnostics_matches_requested_scene(const QString & line) const
+  {
+    const QString requested_scene = opts_.scene_name.trimmed();
+    if (requested_scene.isEmpty()) {
+      return true;
+    }
+
+    const QString escaped_scene = QRegularExpression::escape(requested_scene);
+    const QRegularExpression scene_re(
+      QStringLiteral("\\bscene\\s*[:=]\\s*[\"']?%1[\"']?(?:\\b|\\s|$)").arg(escaped_scene),
+      QRegularExpression::CaseInsensitiveOption);
+    if (scene_re.match(line).hasMatch()) {
+      return true;
+    }
+
+    const QString lower_line = line.toLower();
+    const QString lower_scene = requested_scene.toLower();
+    return lower_line.contains(QStringLiteral("scene")) && lower_line.contains(lower_scene);
+  }
+
+  bool has_valid_runtime_scene3d_diagnostics(const QJsonObject & diagnostics) const
+  {
+    const QString line = diagnostics.value("line").toString().trimmed();
+    if (line.isEmpty()) {
+      return false;
+    }
+    if (!runtime_scene3d_diagnostics_matches_requested_scene(line)) {
+      return false;
+    }
+
+    const QJsonObject counts = diagnostics.value("counts").toObject();
+    return counts.value("received").toInt() > 0 &&
+           counts.value("rendered").toInt() > 0 &&
+           counts.value("visible").toInt() > 0;
+  }
+
   void step_begin()
   {
     start_time_ = QDateTime::currentDateTimeUtc();
@@ -462,7 +498,7 @@ private:
     const bool hierarchy_ready = (tree != nullptr && hierarchy_child_rows > 0);
     const bool selected_scene_ready = !selected_scene_name.trimmed().isEmpty() && selected_scene_name != "(none)" && selected_scene_name != "none";
     const bool inspector_ready = (inspector != nullptr && !inspector_no_scene_selected && selected_scene_ready);
-    const bool log_ready = (log != nullptr && log->toPlainText().contains("Scene3D diagnostics"));
+    const bool log_ready = (log != nullptr && has_valid_runtime_scene3d_diagnostics(parse_latest_scene3d_diagnostics(log->toPlainText())));
     const auto rc = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
     const bool screenshot_saved = latest_counters_.value("screenshot_saved").toBool(false);
     const bool paint_completed = paint_cycle_completed(rc, screenshot_saved);
@@ -566,6 +602,10 @@ private:
     const QJsonObject parsed_runtime_diagnostics = parse_latest_scene3d_diagnostics(log_text);
     const QJsonObject parsed_runtime_diagnostics_counts = parsed_runtime_diagnostics.value("counts").toObject();
     const int parsed_runtime_diagnostics_total = sum_json_object_int_values(parsed_runtime_diagnostics_counts);
+    const QString parsed_runtime_diagnostics_line = parsed_runtime_diagnostics.value("line").toString();
+    const bool valid_requested_scene_canvas_diagnostics =
+      parsed_runtime_diagnostics_line.contains(QStringLiteral("Scene3D canvas:"), Qt::CaseInsensitive) &&
+      has_valid_runtime_scene3d_diagnostics(parsed_runtime_diagnostics);
     QJsonObject counters;
     const QJsonObject filter_diagnostics = window_->scene3d_filter_diagnostics();
     auto copy_filter_counter = [&](const QString & key) {
@@ -585,7 +625,8 @@ private:
     counters["hierarchy_rows_count"] = hierarchy_child_rows;
     counters["hierarchy_has_only_headings"] = hierarchy_has_only_headings;
     counters["log_line_count"] = log_text.split('\n', Qt::SkipEmptyParts).size();
-    counters["log_has_scene3d_diagnostics"] = log_text.contains("Scene3D diagnostics");
+    counters["log_has_scene3d_diagnostics"] =
+      log_text.contains("Scene3D diagnostics") || valid_requested_scene_canvas_diagnostics;
     counters["runtime_scene3d_diagnostics_total"] = parsed_runtime_diagnostics_total;
     counters["runtime_scene3d_diagnostics_counts"] = parsed_runtime_diagnostics_counts;
     counters["runtime_scene3d_skip_reason_counts"] = parsed_runtime_diagnostics.value("skip_reason_counts").toObject();
