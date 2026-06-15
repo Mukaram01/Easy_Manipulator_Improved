@@ -8967,42 +8967,71 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     validation_stale_ ? "Validation results are stale; rerun validation." : "Run offline validation.",
     {"yaml_definition"}, gates,
     validation_gate_ready ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Current));
-  const bool preview_gate_blocked = !launch_artifacts_ready_ || !validation_gate_ready;
   const bool preview_has_runtime_content = preview_runtime_ready;
-  const QString preview_ready_detail = "Ready (Safety: fake hardware only, no robot motion).";
-  QString preview_missing_detail = "Blocked until scene package and validation gates are satisfied. Safety gate remains enforced: fake hardware only.";
-  SceneWorkflowStepStatus preview_status = SceneWorkflowStepStatus::NeedsAction;
-  if (fake_hardware_ready && !editable_layout_yaml_malformed && classified_editable_count > 0 && preview_has_runtime_content) {
-    preview_status = SceneWorkflowStepStatus::Done;
-  } else if (preview_gate_blocked && !preview_has_runtime_content) {
-    preview_status = SceneWorkflowStepStatus::Blocked;
-  } else if ((editable_layout_yaml_malformed || classified_fallback_count > 0) && (preview_visible_count > 0 || preview_rendered_count > 0)) {
-    preview_status = SceneWorkflowStepStatus::Warning;
-    preview_missing_detail = editable_layout_yaml_malformed
-      ? "Preview visuals exist, but editable/layout YAML is malformed. Fix YAML to restore editable preview health."
-      : "Preview is visible via fallback content (scene metadata / URDF mesh index). Repair layout/workcell_studio_layout.yaml and validate YAML syntax to restore editable preview health.";
-  } else if (preview_has_runtime_content && classified_editable_count == 0) {
-    preview_status = SceneWorkflowStepStatus::Warning;
-    preview_missing_detail = "Create editable layout from preview to complete editable classification.";
-  } else if (preview_gate_blocked) {
-    preview_status = SceneWorkflowStepStatus::NeedsAction;
-  }
-  SceneWorkflowStep preview_step;
-  preview_step.label = "RViz Truth Preview";
-  preview_step.status = preview_status;
-  preview_step.detail = (preview_status == SceneWorkflowStepStatus::Done ? preview_ready_detail :
-    QString("%1 Runtime counters: received=%2 visible=%3 rendered=%4; classified layers: editable=%5 generated=%6 fallback=%7 other=%8.")
-      .arg((placeholder_launch_only ?
-        QString("Blocked: Placeholder launch only — not RViz truth preview ready. Generate real scene URDF/RViz launch is not implemented for this scene yet.") :
-        preview_missing_detail))
+  const QString native_preview_counts = QString(
+    "Scene3D counters: received=%1 visible=%2 rendered=%3; classified layers: editable=%4 generated=%5 fallback=%6 other=%7.")
       .arg(preview_received_count)
       .arg(preview_visible_count)
       .arg(preview_rendered_count)
       .arg(classified_editable_count)
       .arg(classified_generated_count)
       .arg(classified_fallback_count)
-      .arg(classified_other_count));
+      .arg(classified_other_count);
+  const QString launch_gate_detail = QString(
+    "RViz/MoveIt fake-hardware launch readiness is evaluated separately by package and validation gates: scene_package=%1 validation=%2 fake_hardware_launch=%3.")
+      .arg(launch_artifacts_ready_ ? "ready" : "blocked")
+      .arg(validation_gate_ready ? "ready" : "blocked")
+      .arg(fake_hardware_ready ? "ready" : "blocked");
+
+  QString preview_detail = QString("Native Scene3D preview is waiting for renderable layout, generated preview, or fallback content. %1 %2")
+    .arg(native_preview_counts, launch_gate_detail);
+  SceneWorkflowStepStatus preview_status = SceneWorkflowStepStatus::NeedsAction;
+  if (preview_has_runtime_content) {
+    preview_status = SceneWorkflowStepStatus::Done;
+    preview_detail = QString("Native Scene3D preview has renderable content. This does not prove RViz/MoveIt launch readiness. %1 %2")
+      .arg(native_preview_counts, launch_gate_detail);
+    if (editable_layout_yaml_malformed || classified_fallback_count > 0 || classified_editable_count == 0 || has_warnings) {
+      preview_status = SceneWorkflowStepStatus::Warning;
+      QStringList preview_warnings;
+      if (editable_layout_yaml_malformed) {
+        preview_warnings << "editable/layout YAML is malformed; fix YAML to restore editable preview health";
+      }
+      if (classified_fallback_count > 0) {
+        preview_warnings << "fallback content is visible from scene metadata or URDF mesh index";
+      }
+      if (classified_editable_count == 0) {
+        preview_warnings << "no editable layout items are classified yet; create editable layout from preview when appropriate";
+      }
+      if (has_warnings) {
+        preview_warnings << "validation/readiness warnings are present";
+      }
+      preview_detail = QString("Native Scene3D preview rendered with warnings: %1. This is a warning/ready preview state, not RViz/MoveIt truth. %2 %3")
+        .arg(preview_warnings.join("; "), native_preview_counts, launch_gate_detail);
+    }
+  }
+  SceneWorkflowStep preview_step;
+  preview_step.label = "3D Scene Preview";
+  preview_step.status = preview_status;
+  preview_step.detail = preview_detail;
   steps.push_back(preview_step);
+
+  QString fake_launch_missing_detail = "Blocked: complete scene package generation and current validation before launching RViz/MoveIt fake hardware.";
+  if (placeholder_launch_only) {
+    fake_launch_missing_detail = "Blocked: placeholder launch only — generate a real scene URDF/Xacro and RViz/MoveIt launch before fake-hardware launch validation.";
+  } else if (!launch_artifacts_ready_) {
+    fake_launch_missing_detail = "Blocked: missing or incomplete launch artifacts. Generate Scene Package first.";
+  } else if (!validation_gate_ready) {
+    fake_launch_missing_detail = validation_stale_
+      ? "Blocked: validation results are stale; rerun validation before RViz/MoveIt fake-hardware launch."
+      : "Blocked: validation/package gate has not passed; run offline validation before RViz/MoveIt fake-hardware launch.";
+  }
+  steps.push_back(compute_scene_workflow_step(
+    "RViz/MoveIt Fake-Hardware Launch",
+    fake_hardware_ready && !placeholder_launch_only,
+    "Ready: package and validation gates allow guarded RViz/MoveIt fake-hardware launch. Safety remains fake hardware only.",
+    fake_launch_missing_detail,
+    {"scene_package", "validation"}, gates,
+    (fake_hardware_ready && !placeholder_launch_only) ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Blocked));
   steps.push_back(compute_scene_workflow_step(
     "Export",
     export_ready, "Export prerequisites are satisfied.",
