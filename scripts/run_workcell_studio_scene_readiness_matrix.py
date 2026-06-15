@@ -12,6 +12,7 @@ import argparse
 import inspect
 import json
 import os
+import re
 import shlex
 import sys
 from collections import Counter
@@ -319,6 +320,28 @@ def _check_cell_definition(scene_dir: Path) -> dict[str, Any]:
     )
 
 
+def _parse_scene3d_diagnostics_line(value: Any) -> dict[str, Any]:
+    """Parse a Scene3D runtime diagnostics line into stable readiness counters."""
+    if isinstance(value, list):
+        value = "\n".join(str(item) for item in value)
+    if not isinstance(value, str) or not value.strip():
+        return {}
+
+    parsed: dict[str, Any] = {}
+    for line in value.splitlines():
+        if "Scene3D canvas:" not in line:
+            continue
+        for key, raw in re.findall(r"([A-Za-z_][A-Za-z0-9_]*)=([^\s]+)", line):
+            if key == "scene":
+                parsed["diagnostic_scene"] = raw
+                continue
+            try:
+                parsed[f"diagnostic_{key}_count"] = int(raw)
+            except ValueError:
+                parsed[f"diagnostic_{key}"] = raw
+    return parsed
+
+
 def _extract_scene3d_smoke_evidence(smoke_json: Path) -> dict[str, Any]:
     payload: dict[str, Any] = {}
     smoke_error: str | None = None
@@ -351,12 +374,18 @@ def _extract_scene3d_smoke_evidence(smoke_json: Path) -> dict[str, Any]:
         return bool(value)
 
     runtime_available = optional_bool(nested_value("runtime_available"))
+    screenshot_saved = optional_bool(nested_value("screenshot_saved"))
     screenshot_available = optional_bool(nested_value("screenshot_available"))
+    if screenshot_available is None:
+        screenshot_available = screenshot_saved
     default_status = "INVALID" if smoke_error else "MISSING" if not smoke_json.is_file() else "UNKNOWN"
-    smoke_status = str(nested_value("status") or default_status).upper()
+    smoke_status = str(nested_value("status", "wrapper_status") or default_status).upper()
+    wrapper_status_raw = nested_value("wrapper_status")
+    wrapper_status = str(wrapper_status_raw).upper() if wrapper_status_raw is not None else None
     resolved_executable = nested_value("resolved_executable", "executable")
     searched_paths_raw = nested_value("searched_paths")
     searched_paths = [str(item) for item in searched_paths_raw] if isinstance(searched_paths_raw, list) else []
+    diagnostics = _parse_scene3d_diagnostics_line(nested_value("runtime_scene3d_diagnostics"))
     if runtime_available is None and smoke_json.is_file():
         blockers = nested_value("blockers")
         blocker_text = " ".join(str(item) for item in blockers) if isinstance(blockers, list) else str(blockers or "")
@@ -366,19 +395,29 @@ def _extract_scene3d_smoke_evidence(smoke_json: Path) -> dict[str, Any]:
             runtime_available = False
     return {
         "smoke_status": smoke_status,
+        "wrapper_status": wrapper_status,
         "runtime_available": runtime_available,
         "screenshot_available": screenshot_available,
+        "screenshot_saved": screenshot_saved,
+        "scene3d_viewport_widget_found": optional_bool(nested_value("scene3d_viewport_widget_found")),
+        "render_ready": optional_bool(nested_value("render_ready")),
+        "log_ready": optional_bool(nested_value("log_ready")),
+        "selected_scene_ready": optional_bool(nested_value("selected_scene_ready")),
+        "ros_humble_available": optional_bool(nested_value("ros_humble_available")),
+        "runtime_scene3d_diagnostics": nested_value("runtime_scene3d_diagnostics"),
+        **diagnostics,
         "resolved_executable": str(resolved_executable) if resolved_executable else None,
         "searched_paths": searched_paths,
         "smoke_load_error": smoke_error,
     }
+
 def _smoke_indicates_runtime_screenshot_evidence(smoke_json: Path) -> bool:
     if not smoke_json.is_file():
         return False
     payload, error = _load_json_file(smoke_json)
     if error or not isinstance(payload, dict):
         return False
-    if bool(payload.get("screenshot_available")):
+    if bool(payload.get("screenshot_available")) or bool(payload.get("screenshot_saved")):
         return True
     if str(payload.get("screenshot_path") or "").strip():
         return True
@@ -411,11 +450,45 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
     warnings = [str(item) for item in visual.get("warnings", [])]
     visual_status = str(visual.get("visual_quality_status") or "").upper()
     runtime_blocked = smoke_evidence["smoke_status"] == BLOCKED or smoke_evidence["runtime_available"] is False
-    runtime_available = bool(visual.get("runtime_available"))
+    runtime_available = bool(visual.get("runtime_available")) or smoke_evidence["runtime_available"] is True
+    screenshot_runtime_available = smoke_evidence.get("screenshot_available") is True or smoke_evidence.get("screenshot_saved") is True
+    diagnostic_scene = smoke_evidence.get("diagnostic_scene")
+    diagnostic_received = int(smoke_evidence.get("diagnostic_received_count") or 0)
+    diagnostic_visible = int(smoke_evidence.get("diagnostic_visible_count") or 0)
+    diagnostic_rendered = int(smoke_evidence.get("diagnostic_rendered_count") or 0)
+    runtime_failure_reasons: list[str] = []
+    if smoke_evidence["smoke_status"] != PASS:
+        runtime_failure_reasons.append("smoke_status_not_pass")
+    if smoke_evidence["runtime_available"] is not True:
+        runtime_failure_reasons.append("runtime_unavailable")
+    if not screenshot_runtime_available:
+        runtime_failure_reasons.append("screenshot_missing")
+    if smoke_evidence.get("selected_scene_ready") is not True:
+        runtime_failure_reasons.append("selected_scene_not_ready")
+    if smoke_evidence.get("scene3d_viewport_widget_found") is not True:
+        runtime_failure_reasons.append("viewport_missing")
+    if smoke_evidence.get("render_ready") is not True:
+        runtime_failure_reasons.append("render_not_ready")
+    if smoke_evidence.get("log_ready") is not True:
+        runtime_failure_reasons.append("log_not_ready")
+    if diagnostic_scene != scene_name:
+        runtime_failure_reasons.append("diagnostics_scene_mismatch_or_missing")
+    if diagnostic_received <= 0:
+        runtime_failure_reasons.append("zero_received_count")
+    if diagnostic_visible <= 0:
+        runtime_failure_reasons.append("zero_visible_count")
+    if diagnostic_rendered <= 0:
+        runtime_failure_reasons.append("zero_rendered_count")
+    runtime_evidence_valid = not runtime_failure_reasons
+
     summary_state = PASS if visual_status == PASS else FAIL
-    if visual_status == BLOCKED or not mesh_index.is_file() or not smoke_json.is_file() or runtime_blocked or not runtime_available:
-        summary_state = BLOCKED
-    if summary_state == PASS:
+    if runtime_evidence_valid:
+        summary_state = PASS
+    elif visual_status == BLOCKED or not mesh_index.is_file() or not smoke_json.is_file() or runtime_blocked or not runtime_available:
+        summary_state = BLOCKED if not mesh_index.is_file() or smoke_evidence["smoke_status"] in {BLOCKED, "MISSING"} or not smoke_json.is_file() else FAIL
+    if runtime_evidence_valid:
+        summary_message = "Scene3D runtime evidence passes with viewport, screenshot, readiness markers, and diagnostics"
+    elif summary_state == PASS:
         summary_message = "Scene3D visual-quality evidence passes"
     elif runtime_blocked:
         summary_message = "Scene3D runtime GUI evidence is blocked or unavailable; visual evidence cannot be evaluated as a failure"
@@ -434,6 +507,8 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
         blocker_reasons=visual_blocker_reasons,
         warnings=warnings,
         runtime_available=runtime_available,
+        runtime_evidence_valid=runtime_evidence_valid,
+        runtime_failure_reasons=runtime_failure_reasons,
         counters={
             "total_payload_count": visual.get("total_payload_count", 0),
             "mesh_source_count": visual.get("mesh_source_count", 0),
@@ -457,6 +532,9 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
     elif not smoke_json.is_file():
         physical_state = BLOCKED
         physical_message = "Scene3D GUI smoke evidence is missing; physical rendered evidence cannot be evaluated"
+    elif runtime_evidence_valid:
+        physical_state = PASS
+        physical_message = "Scene3D runtime evidence confirms visible rendered scene geometry"
     elif runtime_blocked:
         physical_state = BLOCKED
         physical_message = "Scene3D runtime GUI evidence is blocked or unavailable; physical rendered evidence cannot be evaluated as a failure"
@@ -481,6 +559,8 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
         source_geometry_count=source_count,
         physical_rendered_count=physical_rendered,
         runtime_available=runtime_available,
+        runtime_evidence_valid=runtime_evidence_valid,
+        runtime_failure_reasons=runtime_failure_reasons,
         mesh_failure_summary_by_reason_code=visual.get("mesh_failure_summary_by_reason_code", {}),
         **smoke_context,
         blockers=physical_blockers,

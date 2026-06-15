@@ -314,7 +314,7 @@ def test_visual_quality_failure_propagates_current_visual_category_status(
     assert scene["categories"]["scene3d_visual_quality_summary"]["blockers"]
 
 
-def test_scene3d_runtime_unavailable_blocks_runtime_visual_evidence(
+def test_scene3d_runtime_unavailable_fails_runtime_visual_evidence(
     tmp_path: Path,
     minimal_scene_factory: Any,
 ) -> None:
@@ -345,7 +345,7 @@ def test_scene3d_runtime_unavailable_blocks_runtime_visual_evidence(
     scene = _only_scene(report)
     visual_summary = scene["categories"]["scene3d_visual_quality_summary"]
     physical_evidence = scene["categories"]["credible_physical_visual_evidence"]
-    assert visual_summary["status"] == "BLOCKED"
+    assert visual_summary["status"] == "FAIL"
     assert physical_evidence["status"] == "BLOCKED"
     for category in (visual_summary, physical_evidence):
         assert category["smoke_status"] == "FAIL"
@@ -431,3 +431,109 @@ def test_fake_hardware_launch_command_is_derived_with_fake_hardware_true(
     assert "ros2 launch derived_fake_hardware_command demo.launch.py" in command
     assert "use_fake_hardware:=true" in command
     assert "use_fake_hardware:=false" not in command
+
+
+def test_extract_scene3d_smoke_evidence_parses_new_runtime_diagnostics(tmp_path: Path) -> None:
+    smoke = tmp_path / "scene3d_gui_smoke.json"
+    smoke.write_text(
+        json.dumps(
+            {
+                "wrapper_status": "PASS",
+                "scene3d_viewport_widget_found": True,
+                "screenshot_saved": True,
+                "render_ready": True,
+                "log_ready": True,
+                "selected_scene_ready": True,
+                "runtime_available": True,
+                "ros_humble_available": True,
+                "runtime_scene3d_diagnostics": "Scene3D canvas: scene=ur5_2f_test received=33 cached=33 visible=33 rendered=33 selectable=33 mesh=23 fallback=0 locked=23 skipped=0",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evidence = matrix._extract_scene3d_smoke_evidence(smoke)
+
+    assert evidence["smoke_status"] == "PASS"
+    assert evidence["wrapper_status"] == "PASS"
+    assert evidence["scene3d_viewport_widget_found"] is True
+    assert evidence["screenshot_saved"] is True
+    assert evidence["render_ready"] is True
+    assert evidence["log_ready"] is True
+    assert evidence["selected_scene_ready"] is True
+    assert evidence["runtime_available"] is True
+    assert evidence["ros_humble_available"] is True
+    assert evidence["diagnostic_scene"] == "ur5_2f_test"
+    assert evidence["diagnostic_received_count"] == 33
+    assert evidence["diagnostic_visible_count"] == 33
+    assert evidence["diagnostic_rendered_count"] == 33
+    assert evidence["diagnostic_mesh_count"] == 23
+    assert evidence["diagnostic_fallback_count"] == 0
+
+
+def test_check_scene3d_accepts_valid_new_runtime_smoke_evidence(tmp_path: Path) -> None:
+    scene_dir = tmp_path / "scenes" / "ur5_2f_test"
+    generated = scene_dir / "generated"
+    generated.mkdir(parents=True)
+    (generated / "scene_visual_mesh_index.json").write_text(
+        json.dumps({"items": [{"id": "fixture_box", "primitive_type": "box"}]}),
+        encoding="utf-8",
+    )
+    (generated / "scene3d_gui_smoke.json").write_text(
+        json.dumps(
+            {
+                "status": "PASS",
+                "wrapper_status": "PASS",
+                "scene3d_viewport_widget_found": True,
+                "screenshot_saved": True,
+                "render_ready": True,
+                "log_ready": True,
+                "selected_scene_ready": True,
+                "runtime_available": True,
+                "ros_humble_available": True,
+                "runtime_scene3d_diagnostics": "Scene3D canvas: scene=ur5_2f_test received=33 cached=33 visible=33 rendered=33 selectable=33 mesh=23 fallback=0 locked=23 skipped=0",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    visual_result, physical_result = matrix._check_scene3d("ur5_2f_test", scene_dir)
+
+    assert visual_result["status"] == "PASS"
+    assert visual_result["runtime_evidence_valid"] is True
+    assert visual_result["runtime_failure_reasons"] == []
+    assert visual_result["diagnostic_scene"] == "ur5_2f_test"
+    assert visual_result["diagnostic_received_count"] == 33
+    assert physical_result["status"] == "PASS"
+    assert physical_result["runtime_evidence_valid"] is True
+
+
+def test_check_scene3d_rejects_new_runtime_smoke_scene_mismatch(tmp_path: Path) -> None:
+    scene_dir = tmp_path / "scenes" / "ur5_2f_test"
+    generated = scene_dir / "generated"
+    generated.mkdir(parents=True)
+    (generated / "scene_visual_mesh_index.json").write_text(
+        json.dumps({"items": [{"id": "fixture_box", "primitive_type": "box"}]}),
+        encoding="utf-8",
+    )
+    (generated / "scene3d_gui_smoke.json").write_text(
+        json.dumps(
+            {
+                "status": "PASS",
+                "scene3d_viewport_widget_found": True,
+                "screenshot_saved": True,
+                "render_ready": True,
+                "log_ready": True,
+                "selected_scene_ready": True,
+                "runtime_available": True,
+                "runtime_scene3d_diagnostics": "Scene3D canvas: scene=wrong_scene received=33 visible=33 rendered=33 mesh=23 fallback=0",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    visual_result, _physical_result = matrix._check_scene3d("ur5_2f_test", scene_dir)
+
+    assert visual_result["status"] == "FAIL"
+    assert visual_result["runtime_evidence_valid"] is False
+    assert "diagnostics_scene_mismatch_or_missing" in visual_result["runtime_failure_reasons"]
