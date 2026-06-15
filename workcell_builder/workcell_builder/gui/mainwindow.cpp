@@ -5184,18 +5184,27 @@ void MainWindow::refresh_scene_builder_view_chips()
         (urdf_primitive_source_count > 0 && urdf_primitive_rendered_count <= 0);
       const bool high_mesh_source_low_render =
         mesh_source_count >= 4 && mesh_rendered_count > 0 && mesh_rendered_count * 2 < mesh_source_count;
+      const bool has_active_runtime_render_evidence =
+        counters.rendered_count > 0 ||
+        counters.render_cache_count > 0 ||
+        counters.last_paint_completed ||
+        counters.smoke_fallback_render_used;
 
-      if (quality == QStringLiteral("FAIL") || source_render_ratio_failed) {
+      if (!has_active_runtime_render_evidence) {
         preview_chip_status = QStringLiteral("Failed");
-      } else if (quality == QStringLiteral("WARNING") || high_mesh_source_low_render) {
+      } else if (quality == QStringLiteral("FAIL") && !source_render_ratio_failed) {
+        preview_chip_status = QStringLiteral("Failed");
+      } else if (quality == QStringLiteral("WARNING") || source_render_ratio_failed || high_mesh_source_low_render) {
         preview_chip_status = QStringLiteral("Warning");
       } else if (quality == QStringLiteral("PASS")) {
         preview_chip_status = QStringLiteral("Available");
-      } else if (counters.rendered_count > 0 || counters.visible_count > 0 || counters.smoke_fallback_render_used) {
+      } else if (counters.visible_count > 0) {
         preview_chip_status = QStringLiteral("Fallback");
       } else {
         preview_chip_status = QStringLiteral("Unavailable");
       }
+    } else {
+      preview_chip_status = QStringLiteral("Failed");
     }
   }
   if (scene_builder_preview_chip_) scene_builder_preview_chip_->setText(QString("Preview: %1").arg(preview_chip_status));
