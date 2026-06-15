@@ -249,6 +249,7 @@ private:
   void fit_fallback_scene_to_items(bool include_overlays = false);
   void reset_fallback_scene_view();
   void refresh_info_chip();
+  void refresh_toolbar_visibility();
   bool diagnostic_debug_logging_enabled() const;
   bool emit_scene_diagnostic_once(const QString & event, int payload_count, const QString & message);
   void emit_visual_quality_assessment_once();
@@ -258,6 +259,13 @@ private:
   QComboBox * mode_selector_{ nullptr };
   QComboBox * interaction_mode_selector_{ nullptr };
   QComboBox * view_actions_selector_{ nullptr };
+  QLabel * view_mode_label_{ nullptr };
+  QLabel * mesh_preview_mode_label_{ nullptr };
+  QLabel * gizmo_mode_label_{ nullptr };
+  QLabel * snap_mode_label_{ nullptr };
+  QLabel * labels_label_{ nullptr };
+  QLabel * interaction_mode_label_{ nullptr };
+  QLabel * view_actions_label_{ nullptr };
   QLabel * toolbar_status_chip_{ nullptr };
   QComboBox * overlays_selector_{ nullptr };
   QComboBox * labels_selector_{ nullptr };
