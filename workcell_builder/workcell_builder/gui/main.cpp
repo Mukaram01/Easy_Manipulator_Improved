@@ -765,7 +765,6 @@ private:
         root["active_viewport_candidate_source"] = viewport_resolution.source_label;
       }
     }
-    const QJsonObject readiness_markers = collect_readiness_markers();
     if (viewport) {
       viewport->update();
       viewport->repaint();
@@ -904,19 +903,6 @@ private:
       blockers_.append("inspector_scene_state_mismatch");
     }
     if (selected_item_id == "(none)") warnings_.append("no_item_selected_by_default");
-    const bool render_ready = readiness_markers.value("render_ready").toBool(false);
-    if (render_ready) {
-      const int rendered_count = counters.value("rendered_count").toInt();
-      const int unique_visible = counters.value("unique_visible_item_count").toInt();
-      const int classified = counters.value("mesh_rendered_count").toInt() + counters.value("urdf_primitive_rendered_count").toInt() +
-        counters.value("wireframe_fallback_count").toInt() + counters.value("overlay_helper_count").toInt();
-      if ((rendered_count > 0 && classified == 0) || unique_visible <= 1) blockers_.append("visual_quality_failed");
-    }
-    root["readiness_markers"] = readiness_markers;
-    root["counters"] = counters;
-    root["warnings"] = warnings_;
-    root["blockers"] = blockers_;
-
     if ((counters.value("rendered_count").toInt() > 0 || counters.value("viewport_received_count").toInt() > 0) &&
         counters.value("header_preview_status").toString().compare("Unavailable", Qt::CaseInsensitive) == 0) {
       warnings_.append("preview_status_untruthful");
@@ -943,7 +929,6 @@ private:
       if (!screenshot_ok) {
         warnings_.append(QString("Failed to capture screenshot to: %1").arg(opts_.screenshot_path));
       }
-      root["warnings"] = warnings_;
       root["screenshot_path"] = opts_.screenshot_path;
       root["screenshot_saved"] = screenshot_ok;
       counters["paint_cycle_completed"] =
@@ -967,6 +952,20 @@ private:
         (active_rendered_count <= 0 || active_selectable_count <= 0 || active_hierarchy_rows <= 0)) {
       blockers_.append("scene3d_runtime_not_rendered_after_candidate_ingestion");
     }
+
+    const QJsonObject final_readiness_markers = collect_readiness_markers();
+    const bool render_ready = final_readiness_markers.value("render_ready").toBool(false);
+    if (render_ready) {
+      const int rendered_count = counters.value("rendered_count").toInt();
+      const int unique_visible = counters.value("unique_visible_item_count").toInt();
+      const int classified = counters.value("mesh_rendered_count").toInt() + counters.value("urdf_primitive_rendered_count").toInt() +
+        counters.value("wireframe_fallback_count").toInt() + counters.value("overlay_helper_count").toInt();
+      if ((rendered_count > 0 && classified == 0) || unique_visible <= 1) blockers_.append("visual_quality_failed");
+    }
+    root["readiness_markers"] = final_readiness_markers;
+    root["counters"] = counters;
+    root["warnings"] = warnings_;
+    root["blockers"] = blockers_;
 
     const bool pass = blockers_.isEmpty();
     root["status"] = pass ? "PASS" : "FAIL";
