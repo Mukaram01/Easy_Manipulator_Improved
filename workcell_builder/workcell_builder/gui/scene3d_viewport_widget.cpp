@@ -1030,11 +1030,11 @@ void Scene3DViewportWidget::fit_product_view()
   const double radius = qMax(0.25, 0.5 * qSqrt(ext.x() * ext.x() + ext.y() * ext.y() + ext.z() * ext.z()));
   scene_radius_ = radius;
   const double fov = qDegreesToRadians(50.0);
-  const double fit_distance = (radius / qTan(fov * 0.5)) * 1.05;
+  const double fit_distance = (radius / qTan(fov * 0.5)) * 0.78;
   distance_ = qBound(min_distance_, fit_distance, max_distance_);
-  yaw_ = -0.78539816339;
-  pitch_ = 0.61547970867;
-  orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.10, radius * 0.05)));
+  yaw_ = -0.72;
+  pitch_ = 0.54;
+  orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.04, radius * 0.025)));
   last_camera_fit_target_ = QStringLiteral("product_physical_isometric");
   has_robot_aabb_diag_ = false;
   fit_include_overlays = previous_include_overlays;
@@ -1355,21 +1355,39 @@ void Scene3DViewportWidget::paintGL()
   }
   last_render_counters.labels_drawn = labels_drawn;
   last_render_counters.labels_suppressed_overlap = labels_suppressed_overlap;
+  const bool concise_warning = missing_geometry_count > 0 ||
+                               last_render_counters.visual_quality_status == QStringLiteral("FAIL");
+  const QRectF overlay_rect = debug_overlays_mode ? QRectF(12.0, 12.0, 430.0, 88.0)
+                                                  : QRectF(12.0, 12.0, concise_warning ? 300.0 : 270.0, concise_warning ? 62.0 : 46.0);
   painter.setPen(Qt::NoPen);
-  painter.setBrush(QColor(15, 23, 42, 190));
-  painter.drawRoundedRect(QRectF(12.0, 12.0, 360.0, 74.0), 6.0, 6.0);
+  painter.setBrush(QColor(15, 23, 42, debug_overlays_mode ? 205 : 165));
+  painter.drawRoundedRect(overlay_rect, 8.0, 8.0);
   painter.setPen(QColor("#e2e8f0"));
-  painter.drawText(QRectF(20.0, 18.0, 344.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter, "View: 3D");
-  painter.drawText(QRectF(20.0, 34.0, 344.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
-                   QString("Scene: %1").arg(scene_name));
-  painter.drawText(QRectF(20.0, 50.0, 460.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
-                   QString("Generated mesh %1/%2 • URDF primitives %3/%4 • Helpers %5 • Missing geometry %6")
-                     .arg(mesh_rendered_count).arg(mesh_source_count)
-                     .arg(urdf_primitive_rendered_count).arg(urdf_primitive_source_count)
-                     .arg(overlay_count).arg(missing_geometry_count));
-  painter.drawText(QRectF(20.0, 66.0, 344.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
-                   QString("Physical %1 • Locked URDF %2 • Fit: %3")
-                     .arg(physical_item_count).arg(locked_urdf_count).arg(fit_include_overlays ? "all_items" : "generated_visuals"));
+  if (debug_overlays_mode) {
+    painter.drawText(QRectF(20.0, 18.0, 410.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter, "View: 3D diagnostics");
+    painter.drawText(QRectF(20.0, 34.0, 410.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                     QString("Scene: %1").arg(scene_name));
+    painter.drawText(QRectF(20.0, 50.0, 410.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                     QString("Generated mesh %1/%2 • URDF primitives %3/%4 • Helpers %5 • Missing geometry %6")
+                       .arg(mesh_rendered_count).arg(mesh_source_count)
+                       .arg(urdf_primitive_rendered_count).arg(urdf_primitive_source_count)
+                       .arg(overlay_count).arg(missing_geometry_count));
+    painter.drawText(QRectF(20.0, 66.0, 410.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                     QString("Physical %1 • Locked URDF %2 • Fit: %3")
+                       .arg(physical_item_count).arg(locked_urdf_count).arg(fit_include_overlays ? "all_items" : "generated_visuals"));
+  } else {
+    painter.drawText(QRectF(20.0, 18.0, 260.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                     concise_warning ? QStringLiteral("3D Preview Ready · Warnings") : QStringLiteral("3D Preview Ready"));
+    painter.setPen(concise_warning ? QColor("#fde68a") : QColor("#cbd5e1"));
+    painter.drawText(QRectF(20.0, 36.0, 280.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                     QString("%1 items · %2 meshes · %3 missing")
+                       .arg(visible_item_count).arg(mesh_rendered_count).arg(missing_geometry_count));
+    if (concise_warning) {
+      painter.setPen(QColor("#fbbf24"));
+      painter.drawText(QRectF(20.0, 52.0, 280.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                       QStringLiteral("Use Overlays → Diagnostics for details."));
+    }
+  }
   if (drag_asset_preview_visible_) {
     const double x = (drag_asset_screen_pos_.x() - width() * 0.5) / 50.0;
     const double y = (height() * 0.6 - drag_asset_screen_pos_.y()) / 50.0;
@@ -2168,16 +2186,22 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
 void Scene3DViewportWidget::draw_ground_grid_pass()
 {
   glDisable(GL_CULL_FACE);
-  glLineWidth(1.0f);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glLineWidth(debug_overlays_mode ? 1.0f : 0.75f);
   glBegin(GL_LINES);
-  for (int i = -20; i <= 20; ++i) {
+  const int grid_extent = debug_overlays_mode ? 20 : 6;
+  for (int i = -grid_extent; i <= grid_extent; ++i) {
     const bool major = (i % 5 == 0);
-    const QColor c = major ? QColor(100, 116, 139, 140) : QColor(71, 85, 105, 80);
+    const QColor c = debug_overlays_mode
+      ? (major ? QColor(100, 116, 139, 140) : QColor(71, 85, 105, 80))
+      : (major ? QColor(100, 116, 139, 54) : QColor(71, 85, 105, 24));
     glColor4f(c.redF(), c.greenF(), c.blueF(), c.alphaF());
-    glVertex3f(static_cast<float>(i), 0.0f, -20.0f); glVertex3f(static_cast<float>(i), 0.0f, 20.0f);
-    glVertex3f(-20.0f, 0.0f, static_cast<float>(i)); glVertex3f(20.0f, 0.0f, static_cast<float>(i));
+    glVertex3f(static_cast<float>(i), 0.0f, static_cast<float>(-grid_extent)); glVertex3f(static_cast<float>(i), 0.0f, static_cast<float>(grid_extent));
+    glVertex3f(static_cast<float>(-grid_extent), 0.0f, static_cast<float>(i)); glVertex3f(static_cast<float>(grid_extent), 0.0f, static_cast<float>(i));
   }
   glEnd();
+  glDisable(GL_BLEND);
   glEnable(GL_CULL_FACE);
 }
 
@@ -2194,7 +2218,7 @@ void Scene3DViewportWidget::draw_world_axes_pass()
   painter.drawText(project_to_screen(0.50, 0.0, 0.0), "X");
   painter.drawText(project_to_screen(0.0, 0.50, 0.0), "Y");
   painter.drawText(project_to_screen(0.0, 0.0, 0.50), "Z");
-  painter.drawText(QPointF(10.0, height() - 14.0), "Scale: major grid 5 m");
+  if (debug_overlays_mode) painter.drawText(QPointF(10.0, height() - 14.0), "Scale: major grid 5 m");
 }
 
 void Scene3DViewportWidget::draw_unit_cube_triangles(const QColor & color)
