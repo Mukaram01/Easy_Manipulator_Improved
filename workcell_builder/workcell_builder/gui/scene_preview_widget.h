@@ -229,6 +229,7 @@ public:
     bool smoke_fallback_render_used{ false };
   };
   RenderDebugCounters render_debug_counters() const;
+  int total_warning_count() const;
 
 signals:
   void studio_log_requested(const QString & message);
@@ -253,7 +254,6 @@ private:
   bool diagnostic_debug_logging_enabled() const;
   bool emit_scene_diagnostic_once(const QString & event, int payload_count, const QString & message);
   void emit_visual_quality_assessment_once();
-  int total_warning_count() const;
   bool task_is_ready() const;
 
   QComboBox * mode_selector_{ nullptr };
