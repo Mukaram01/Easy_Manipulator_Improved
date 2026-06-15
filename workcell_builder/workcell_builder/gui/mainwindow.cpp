@@ -578,9 +578,38 @@ static LayoutStateModel derive_layout_state_model(const fs::path & scene_dir, co
 }
 
 
+static fs::path workcell_builder_repo_root_from_source()
+{
+  fs::path cursor = fs::path(__FILE__).parent_path();
+  for (int depth = 0; depth < 8 && !cursor.empty(); ++depth) {
+    if (fs::exists(cursor / "assets") && fs::exists(cursor / "workcell_builder")) {
+      return cursor;
+    }
+    if (cursor == cursor.parent_path()) break;
+    cursor = cursor.parent_path();
+  }
+  return fs::path(__FILE__).parent_path().parent_path().parent_path().parent_path();
+}
+
+static bool visual_mesh_package_root_exists(const fs::path & package_root)
+{
+  return fs::exists(package_root / "package.xml") ||
+         fs::exists(package_root / "meshes") ||
+         fs::exists(package_root / "urdf") ||
+         fs::exists(package_root / "dae") ||
+         fs::exists(package_root / "stl");
+}
+
 static QMap<QString, QString> discover_visual_mesh_package_map(const fs::path & scene_dir, const QString & workspace_root)
 {
   QMap<QString, QString> package_map;
+  auto add_package_root = [&](const QString & package_name, const fs::path & package_root) {
+    if (package_name.trimmed().isEmpty()) return;
+    if (!visual_mesh_package_root_exists(package_root)) return;
+    if (!package_map.contains(package_name)) {
+      package_map.insert(package_name, QString::fromStdString(package_root.string()));
+    }
+  };
   auto scan_root = [&](const QString & root) {
     if (root.trimmed().isEmpty()) return;
     const QDir base(root);
@@ -596,7 +625,17 @@ static QMap<QString, QString> discover_visual_mesh_package_map(const fs::path & 
     }
   };
 
-  const fs::path repo_root = fs::path(__FILE__).parent_path().parent_path().parent_path();
+  const fs::path repo_root = workcell_builder_repo_root_from_source();
+  add_package_root(
+    QStringLiteral("robotiq_85_description"),
+    repo_root / "assets/end_effectors/robotiq_85_gripper/robotiq_85_description");
+  add_package_root(
+    QStringLiteral("workbench_description"),
+    repo_root / "assets/environment/workbench_description");
+  add_package_root(
+    QStringLiteral("realsense2_description"),
+    repo_root / "assets/environment/realsense2_description");
+
   const QString ws = workspace_root.trimmed();
   scan_root(QString::fromStdString((scene_dir / "generated").string()));
   scan_root(ws + "/install/share");
@@ -631,6 +670,9 @@ static QString resolve_visual_mesh_source_path(
     const QString canonical = info.canonicalFilePath();
     return canonical.isEmpty() ? info.absoluteFilePath() : canonical;
   };
+  auto as_repo_relative = [&](const QString & rel) {
+    return QString::fromStdString((workcell_builder_repo_root_from_source() / rel.toStdString()).string());
+  };
   auto as_scene_relative = [&](const QString & rel) {
     return QString::fromStdString((scene_dir / rel.toStdString()).string());
   };
@@ -642,8 +684,10 @@ static QString resolve_visual_mesh_source_path(
       const QString resolved = add_candidate(raw_info.absoluteFilePath());
       if (!resolved.isEmpty()) return resolved;
     } else {
-      const QString resolved = add_candidate(as_scene_relative(trimmed_raw));
-      if (!resolved.isEmpty()) return resolved;
+      const QString repo_resolved = add_candidate(as_repo_relative(trimmed_raw));
+      if (!repo_resolved.isEmpty()) return repo_resolved;
+      const QString scene_resolved = add_candidate(as_scene_relative(trimmed_raw));
+      if (!scene_resolved.isEmpty()) return scene_resolved;
     }
   }
 
@@ -8035,11 +8079,40 @@ void MainWindow::populate_scene_hierarchy()
             ++source_path_from_resolved_path;
           }
           const bool has_resolved_source_path = !resolved_source_path.trimmed().isEmpty();
-          const bool resolved_source_path_exists =
-            has_resolved_source_path && fs::exists(fs::path(resolved_source_path.toStdString()));
-          if (resolved_source_path_exists) {
-            p.source_path = resolved_source_path;
-            p.mesh_path = resolved_source_path;
+          QString resolved_source_path_candidate;
+          if (has_resolved_source_path) {
+            const QFileInfo resolved_info(resolved_source_path);
+            if (resolved_info.isAbsolute()) {
+              if (resolved_info.exists() && resolved_info.isFile()) {
+                resolved_source_path_candidate = resolved_info.canonicalFilePath();
+                if (resolved_source_path_candidate.isEmpty()) {
+                  resolved_source_path_candidate = resolved_info.absoluteFilePath();
+                }
+              }
+            } else {
+              const QString repo_relative_candidate = QString::fromStdString(
+                (workcell_builder_repo_root_from_source() / resolved_source_path.toStdString()).string());
+              const QFileInfo repo_relative_info(repo_relative_candidate);
+              if (repo_relative_info.exists() && repo_relative_info.isFile()) {
+                resolved_source_path_candidate = repo_relative_info.canonicalFilePath();
+                if (resolved_source_path_candidate.isEmpty()) {
+                  resolved_source_path_candidate = repo_relative_info.absoluteFilePath();
+                }
+              } else {
+                const QString scene_relative_candidate = QString::fromStdString((d / resolved_source_path.toStdString()).string());
+                const QFileInfo scene_relative_info(scene_relative_candidate);
+                if (scene_relative_info.exists() && scene_relative_info.isFile()) {
+                  resolved_source_path_candidate = scene_relative_info.canonicalFilePath();
+                  if (resolved_source_path_candidate.isEmpty()) {
+                    resolved_source_path_candidate = scene_relative_info.absoluteFilePath();
+                  }
+                }
+              }
+            }
+          }
+          if (!resolved_source_path_candidate.isEmpty()) {
+            p.source_path = resolved_source_path_candidate;
+            p.mesh_path = resolved_source_path_candidate;
             p.mesh_available = true;
             p.has_mesh_metadata = true;
             p.active_visual_source = QStringLiteral("mesh_preview");
@@ -8056,8 +8129,10 @@ void MainWindow::populate_scene_hierarchy()
           if (p.source_path.trimmed().isEmpty() && (package_uri.startsWith("file://") || package_uri.startsWith("/"))) {
             QString candidate = package_uri;
             if (candidate.startsWith("file://")) candidate = candidate.mid(7);
-            if (fs::exists(fs::path(candidate.toStdString()))) {
-              p.source_path = candidate;
+            const QFileInfo candidate_info(candidate);
+            if (candidate_info.exists() && candidate_info.isFile()) {
+              p.source_path = candidate_info.canonicalFilePath();
+              if (p.source_path.isEmpty()) p.source_path = candidate_info.absoluteFilePath();
               p.source_path_resolution_outcome = p.resolved_source_path_stale
                 ? QStringLiteral("resolved_via_package_uri_after_stale_resolved_source_path")
                 : QStringLiteral("resolved_via_package_uri");
