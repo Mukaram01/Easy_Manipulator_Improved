@@ -864,7 +864,13 @@ private:
     const int active_selectable_count = counters.value("selectable_count").toInt();
     const int active_hierarchy_rows = counters.value("hierarchy_rows_count").toInt();
     const int active_rendered_count = counters.value("active_rendered_count").toInt();
-    const bool has_active_items = (active_received_count > 0 || active_rendered_count > 0);
+    const int active_render_cache_count = counters.value("active_render_cache_count").toInt(counters.value("render_cache_count").toInt());
+    const bool has_active_runtime_render_evidence =
+      active_rendered_count > 0 ||
+      active_render_cache_count > 0 ||
+      counters.value("rendered_count").toInt() > 0 ||
+      counters.value("paint_cycle_completed").toBool(false);
+    const bool has_active_items = (active_received_count > 0 || has_active_runtime_render_evidence);
     if (parsed_runtime_diagnostics_total > 0 && !has_active_items) {
       warnings_.append("active_viewport_counter_handoff_failed");
       blockers_.append("active_viewport_counter_handoff_failed");
@@ -879,9 +885,11 @@ private:
       (urdf_primitive_source_count > 0 && urdf_primitive_rendered_count <= 0);
 
     QString derived_preview_status = QStringLiteral("Unavailable");
-    if (visual_quality_status == QStringLiteral("FAIL") || source_render_ratio_failed) {
+    if (!has_active_runtime_render_evidence) {
       derived_preview_status = QStringLiteral("Failed");
-    } else if (visual_quality_status == QStringLiteral("WARNING")) {
+    } else if (visual_quality_status == QStringLiteral("FAIL") && !source_render_ratio_failed) {
+      derived_preview_status = QStringLiteral("Failed");
+    } else if (visual_quality_status == QStringLiteral("WARNING") || source_render_ratio_failed) {
       derived_preview_status = QStringLiteral("Warning");
     } else if (visual_quality_status == QStringLiteral("PASS")) {
       derived_preview_status = QStringLiteral("Available");
