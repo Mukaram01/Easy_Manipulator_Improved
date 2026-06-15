@@ -573,6 +573,43 @@ def test_check_scene3d_accepts_valid_new_runtime_smoke_evidence(tmp_path: Path) 
     assert physical_result["runtime_evidence_valid"] is True
 
 
+def test_check_scene3d_rejects_failed_wrapper_status_even_when_smoke_status_passes(tmp_path: Path) -> None:
+    scene_dir = tmp_path / "scenes" / "ur5_2f_test"
+    generated = scene_dir / "generated"
+    generated.mkdir(parents=True)
+    (generated / "scene_visual_mesh_index.json").write_text(
+        json.dumps({"items": [{"id": "fixture_box", "primitive_type": "box"}]}),
+        encoding="utf-8",
+    )
+    (generated / "scene3d_gui_smoke.json").write_text(
+        json.dumps(
+            {
+                "status": "PASS",
+                "wrapper_status": "FAIL",
+                "scene3d_viewport_widget_found": True,
+                "screenshot_saved": True,
+                "render_ready": True,
+                "log_ready": True,
+                "selected_scene_ready": True,
+                "runtime_available": True,
+                "ros_humble_available": True,
+                "runtime_scene3d_diagnostics": "Scene3D canvas: scene=ur5_2f_test received=33 cached=33 visible=33 rendered=33 selectable=33 mesh=23 fallback=0 locked=23 skipped=0",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    visual_result, physical_result = matrix._check_scene3d("ur5_2f_test", scene_dir)
+
+    assert visual_result["status"] == "FAIL"
+    assert visual_result["smoke_status"] == "PASS"
+    assert visual_result["wrapper_status"] == "FAIL"
+    assert visual_result["runtime_evidence_valid"] is False
+    assert "wrapper_status_not_pass" in visual_result["runtime_failure_reasons"]
+    assert physical_result["status"] == "FAIL"
+    assert physical_result["runtime_evidence_valid"] is False
+
+
 def test_check_scene3d_accepts_structured_gui_smoke_readiness_fixture(tmp_path: Path) -> None:
     scene_dir = tmp_path / "scenes" / "ur5_2f_test"
     generated = scene_dir / "generated"

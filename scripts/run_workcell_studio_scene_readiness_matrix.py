@@ -682,6 +682,9 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
     elif smoke_evidence["smoke_status"] != PASS:
         physical_state = FAIL
         physical_message = "Scene3D GUI smoke status is not PASS; physical rendered evidence cannot be trusted"
+    elif smoke_evidence.get("wrapper_status") not in {PASS, None}:
+        physical_state = FAIL
+        physical_message = "Scene3D GUI wrapper status is not PASS; physical rendered evidence cannot be trusted"
     elif smoke_evidence["runtime_available"] is not True or runtime_blocked or not runtime_available:
         physical_state = FAIL
         physical_message = "Scene3D runtime is unavailable; physical rendered evidence cannot be evaluated"
