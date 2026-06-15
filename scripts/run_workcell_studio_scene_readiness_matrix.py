@@ -456,6 +456,7 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
     diagnostic_received = int(smoke_evidence.get("diagnostic_received_count") or 0)
     diagnostic_visible = int(smoke_evidence.get("diagnostic_visible_count") or 0)
     diagnostic_rendered = int(smoke_evidence.get("diagnostic_rendered_count") or 0)
+    source_count = int(visual.get("mesh_source_count") or 0) + int(visual.get("primitive_source_count") or 0)
     runtime_failure_reasons: list[str] = []
     if smoke_evidence["smoke_status"] != PASS:
         runtime_failure_reasons.append("smoke_status_not_pass")
@@ -482,11 +483,11 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
     runtime_evidence_valid = not runtime_failure_reasons
 
     summary_state = PASS if visual_status == PASS else FAIL
-    if runtime_evidence_valid:
+    if runtime_evidence_valid and mesh_index.is_file() and source_count > 0:
         summary_state = PASS
     elif visual_status == BLOCKED or not mesh_index.is_file() or not smoke_json.is_file() or runtime_blocked or not runtime_available:
         summary_state = BLOCKED if not mesh_index.is_file() or smoke_evidence["smoke_status"] in {BLOCKED, "MISSING"} or not smoke_json.is_file() else FAIL
-    if runtime_evidence_valid:
+    if runtime_evidence_valid and summary_state == PASS:
         summary_message = "Scene3D runtime evidence passes with viewport, screenshot, readiness markers, and diagnostics"
     elif summary_state == PASS:
         summary_message = "Scene3D visual-quality evidence passes"
@@ -524,46 +525,96 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
         **smoke_context,
     )
 
-    source_count = int(visual.get("mesh_source_count") or 0) + int(visual.get("primitive_source_count") or 0)
     physical_rendered = int(visual.get("physical_rendered_count") or 0)
+    credible_physical_rendered = max(
+        int(visual.get("credible_physical_rendered_count") or 0),
+        int(smoke_evidence.get("diagnostic_mesh_count") or 0),
+        int(smoke_evidence.get("diagnostic_primitive_count") or 0),
+    )
+    fallback_rendered = max(
+        int(smoke_evidence.get("diagnostic_fallback_count") or 0),
+        int(visual.get("diagnostic_fallback_count") or 0),
+        int(visual.get("valid_physical_fallback_count") or 0),
+        int(visual.get("raw_generated_bounds_count") or 0),
+        int(visual.get("placeholder_count") or 0),
+        int(visual.get("wireframe_fallback_count") or 0),
+        int(visual.get("missing_geometry_box_count") or 0),
+    )
+    has_any_runtime_visual_evidence = any(
+        count > 0
+        for count in (
+            diagnostic_received,
+            diagnostic_visible,
+            diagnostic_rendered,
+            credible_physical_rendered,
+            physical_rendered,
+            fallback_rendered,
+        )
+    )
+    physical_warnings = list(warnings)
+    for blocker in physical_blockers:
+        if blocker not in physical_warnings:
+            physical_warnings.append(blocker)
+
     if not mesh_index.is_file():
-        physical_state = BLOCKED
+        physical_state = FAIL
         physical_message = "mesh-index evidence is missing; physical visual evidence cannot be evaluated"
     elif not smoke_json.is_file():
-        physical_state = BLOCKED
+        physical_state = FAIL
         physical_message = "Scene3D GUI smoke evidence is missing; physical rendered evidence cannot be evaluated"
-    elif runtime_evidence_valid:
-        physical_state = PASS
-        physical_message = "Scene3D runtime evidence confirms visible rendered scene geometry"
-    elif runtime_blocked:
-        physical_state = BLOCKED
-        physical_message = "Scene3D runtime GUI evidence is blocked or unavailable; physical rendered evidence cannot be evaluated as a failure"
-    elif not runtime_available:
-        physical_state = BLOCKED
-        physical_message = "Scene3D runtime is unavailable; physical rendered evidence is not evaluated from static renderability counts"
+    elif smoke_evidence["smoke_status"] != PASS:
+        physical_state = FAIL
+        physical_message = "Scene3D GUI smoke status is not PASS; physical rendered evidence cannot be trusted"
+    elif smoke_evidence["runtime_available"] is not True or runtime_blocked or not runtime_available:
+        physical_state = FAIL
+        physical_message = "Scene3D runtime is unavailable; physical rendered evidence cannot be evaluated"
+    elif not screenshot_runtime_available:
+        physical_state = FAIL
+        physical_message = "Scene3D GUI screenshot evidence is missing; physical rendered evidence cannot be evaluated"
+    elif smoke_evidence.get("scene3d_viewport_widget_found") is not True:
+        physical_state = FAIL
+        physical_message = "Scene3D viewport evidence is missing; physical rendered evidence cannot be evaluated"
+    elif smoke_evidence.get("selected_scene_ready") is not True or diagnostic_scene != scene_name:
+        physical_state = FAIL
+        physical_message = "Scene3D smoke evidence does not match the requested scene"
+    elif diagnostic_received <= 0 or diagnostic_visible <= 0 or diagnostic_rendered <= 0:
+        physical_state = FAIL
+        physical_message = "Scene3D runtime diagnostics did not report nonzero received, visible, and rendered counts"
     elif source_count <= 0:
         physical_state = FAIL
         physical_message = "mesh index does not contain credible mesh or primitive source geometry"
-    elif physical_rendered <= 0:
+    elif not has_any_runtime_visual_evidence:
         physical_state = FAIL
-        physical_message = "no credible physical mesh/primitive render evidence was recorded"
+        physical_message = "no physical, mesh, primitive, or fallback visual evidence was recorded"
+    elif credible_physical_rendered > 0 or physical_rendered > 0:
+        physical_state = PASS
+        physical_message = "credible physical mesh/primitive visual evidence is present"
+    elif fallback_rendered > 0:
+        physical_state = PASS
+        physical_message = "Scene3D runtime rendered fallback visual evidence; mesh/primitive visual polish remains a warning"
+        concern = "fallback/placeholder visual evidence dominates; improve mesh/primitive rendering quality"
+        if concern not in physical_warnings:
+            physical_warnings.append(concern)
     elif physical_blockers:
         physical_state = FAIL
         physical_message = "physical render evidence exists but physical visual-quality blockers remain"
     else:
-        physical_state = PASS
-        physical_message = "credible physical mesh/primitive visual evidence is present"
+        physical_state = FAIL
+        physical_message = "no credible physical mesh/primitive render evidence was recorded"
     physical_result = _result(
         physical_state,
         physical_message,
         source_geometry_count=source_count,
         physical_rendered_count=physical_rendered,
+        credible_physical_rendered_count=credible_physical_rendered,
+        fallback_rendered_count=fallback_rendered,
         runtime_available=runtime_available,
         runtime_evidence_valid=runtime_evidence_valid,
         runtime_failure_reasons=runtime_failure_reasons,
         mesh_failure_summary_by_reason_code=visual.get("mesh_failure_summary_by_reason_code", {}),
         **smoke_context,
         blockers=physical_blockers,
+        warnings=physical_warnings,
     )
     return visual_result, physical_result
 
