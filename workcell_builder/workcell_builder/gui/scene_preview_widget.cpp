@@ -166,7 +166,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   mouse_help_label->setToolTip(scene_preview_mouse_help_tooltip(QString()));
   mouse_help_label->setStatusTip(QString::fromUtf8(kScenePreviewMouseHelpText));
   controls->addWidget(mouse_help_label);
-  overlays_selector_ = new QComboBox(this); overlays_selector_->addItems({"Overlays", "Reachability Heatmap", "Collision Warnings", "Safety Zones", "Work Envelope", "Warning Labels", "Labels", "Pick/Place Zones", "Task Route", "Approach/Retreat", "Camera FOV", "Pick Coverage", "EPD Detections", "Detection Labels", "Warnings", "Focus Selected", "Fit Scene", "Fit Robot", "Fit overlays", "Clear Selection"}); controls->addWidget(overlays_selector_);
+  overlays_selector_ = new QComboBox(this); overlays_selector_->addItems({"Overlays", "Diagnostics Overlay", "Reachability Heatmap", "Collision Warnings", "Safety Zones", "Work Envelope", "Warning Labels", "Labels", "Pick/Place Zones", "Task Route", "Approach/Retreat", "Camera FOV", "Pick Coverage", "EPD Detections", "Detection Labels", "Warnings", "Focus Selected", "Fit Scene", "Fit Robot", "Fit overlays", "Clear Selection"}); controls->addWidget(overlays_selector_);
   controls->addStretch(1);
   root->addLayout(controls);
   stack_ = new QStackedWidget(this);
@@ -256,7 +256,12 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   connect(overlays_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
     const QString choice = overlays_selector_->currentText();
-    if (choice == "Reachability Heatmap") v->show_reachability_heatmap = !v->show_reachability_heatmap;
+    if (choice == "Diagnostics Overlay") {
+      v->debug_overlays_mode = !v->debug_overlays_mode;
+      emit studio_log_requested(QString("Scene3D diagnostics overlay %1. Detailed render diagnostics remain available in logs.")
+                                  .arg(v->debug_overlays_mode ? "enabled" : "disabled"));
+    }
+    else if (choice == "Reachability Heatmap") v->show_reachability_heatmap = !v->show_reachability_heatmap;
     else if (choice == "Collision Warnings") v->show_collision_warnings = !v->show_collision_warnings;
     else if (choice == "Safety Zones") v->show_safety = !v->show_safety;
     else if (choice == "Work Envelope") v->show_work_envelope = !v->show_work_envelope;
