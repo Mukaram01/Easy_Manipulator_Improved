@@ -156,6 +156,27 @@ namespace {
   "Task intent: task_intent grasp_strategy top_grasp_2f suction_top approach_distance retract_distance | "
   "Generate/Validate/Plan: generated_package_path validation_output plan_simulate_handoff fake_hardware_first";
 
+static QString scene3d_user_preview_status_summary(
+  const ScenePreviewWidget::RenderDebugCounters & counters,
+  int warning_count)
+{
+  const QString quality = counters.visual_quality_status.trimmed().toUpper();
+  const int rendered_count = qMax(counters.rendered_count, counters.visible_count);
+  const int mesh_count = qMax(counters.mesh_rendered_count, counters.mesh_backed_count);
+  const bool unusable =
+    quality == QStringLiteral("FAIL") ||
+    (counters.viewport_received_count <= 0 && counters.visible_count <= 0 && counters.rendered_count <= 0);
+  const bool has_warnings = warning_count > 0 || quality == QStringLiteral("WARNING") || !counters.visual_quality_warnings.isEmpty();
+  const QString title = unusable
+    ? QStringLiteral("3D Preview Unavailable")
+    : (has_warnings ? QStringLiteral("3D Preview Warnings") : QStringLiteral("3D Preview Ready"));
+  const QString details = QString("Rendered %1 items · Mesh %2 · Warnings %3")
+    .arg(rendered_count)
+    .arg(mesh_count)
+    .arg(qMax(0, warning_count));
+  return QString("%1\n%2").arg(title, details);
+}
+
 
 
 struct Scene3DDetectionSnapshotLoadResult {
@@ -6971,6 +6992,10 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     append_studio_log("Scene3D blocker: current layer filters hide all items. Re-enable editable layout, mesh preview, primitive fallback, or locked generated URDF visuals.");
   }
   scene_preview_widget_->set_preview_items(filtered_items);
+  scene_preview_widget_->set_preview_status_summary(
+    scene3d_user_preview_status_summary(
+      scene_preview_widget_->render_debug_counters(),
+      scene_preview_widget_->total_warning_count()));
   if (scene3d_debug_logging_enabled()) {
     append_studio_log(
       QString("Scene3D diagnostics {model_items_count=%1, filtered_visible_count=%2}")
@@ -8489,10 +8514,13 @@ void MainWindow::populate_scene_hierarchy()
   if (scene_preview_widget_) {
     scene_preview_widget_->set_scene_selected(true);
     scene_preview_widget_->set_preview_scene_name(selected_scene_state_.name);
-    scene_preview_widget_->set_preview_status_summary(preview_provenance_summary_);
     apply_scene3d_preview_layer_filters(false);
 
     const auto scene3d_full_payload_counters = scene_preview_widget_->render_debug_counters();
+    scene_preview_widget_->set_preview_status_summary(
+      scene3d_user_preview_status_summary(
+        scene3d_full_payload_counters,
+        scene_preview_widget_->total_warning_count()));
     ++scene_diagnostic_payload_revision_;
     append_scene_diagnostic_log_once(
       QStringLiteral("full_payload_commit"),
