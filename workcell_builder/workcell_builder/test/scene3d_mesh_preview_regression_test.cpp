@@ -89,6 +89,17 @@ TEST(Scene3DMeshPreviewRegression, KeepsMeshLoadFailureReasonDiagnostics)
   EXPECT_NE(src.find("ensure_mesh_cached(item, mesh_source)"), std::string::npos);
 }
 
+TEST(Scene3DMeshPreviewRegression, KeepsStaleResolvedSourcePathPackageUriDiagnostics)
+{
+  const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/mainwindow.cpp");
+  ASSERT_FALSE(src.empty());
+  EXPECT_NE(src.find("should_try_package_uri_after_stale_resolved_source_path"), std::string::npos);
+  EXPECT_NE(src.find("resolved_via_package_uri_after_stale_resolved_source_path"), std::string::npos);
+  EXPECT_NE(src.find("package_uri_resolved_by_loader"), std::string::npos);
+  EXPECT_NE(src.find("package_uri_resolved_after_stale_resolved_source_path"), std::string::npos);
+  EXPECT_NE(src.find("stale_resolved_source_path_unresolved_after_package_uri_attempt"), std::string::npos);
+}
+
 TEST(Scene3DMeshPreviewRegression, KeepsSceneAuthoringSemanticPrimitiveAssembly)
 {
   const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/mainwindow.cpp");

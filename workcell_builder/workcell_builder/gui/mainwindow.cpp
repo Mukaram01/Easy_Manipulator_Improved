@@ -8271,8 +8271,32 @@ void MainWindow::populate_scene_hierarchy()
           if (geometry_type == "mesh") {
             if (p.mesh_path.trimmed().isEmpty()) {
               QStringList tried_candidates;
-              const QString resolved_mesh_path = resolve_visual_mesh_source_path(
-                p.source_path, package_uri, d, detect_workspace_root(), &tried_candidates);
+              const QString workspace_root = detect_workspace_root();
+              QString resolved_mesh_path;
+              const bool should_try_package_uri_after_stale_resolved_source_path =
+                p.resolved_source_path_stale && package_uri.trimmed().startsWith(QStringLiteral("package://"));
+              if (should_try_package_uri_after_stale_resolved_source_path) {
+                resolved_mesh_path = resolve_visual_mesh_source_path(
+                  QString(), package_uri, d, workspace_root, &tried_candidates);
+                if (!resolved_mesh_path.trimmed().isEmpty()) {
+                  const QFileInfo resolved_mesh_info(resolved_mesh_path);
+                  if (resolved_mesh_info.exists() && resolved_mesh_info.isFile()) {
+                    p.source_path_resolution_outcome =
+                      QStringLiteral("resolved_via_package_uri_after_stale_resolved_source_path");
+                    ++package_uri_resolved_by_loader;
+                    ++package_uri_resolved_after_stale_resolved_source_path;
+                    append_studio_log(QString(
+                      "URDF visual resolution outcome for %1: resolved_source_path=%2 package_uri=%3 outcome=%4 source_path=%5")
+                      .arg(p.id, resolved_source_path, package_uri, p.source_path_resolution_outcome, resolved_mesh_path));
+                  } else {
+                    resolved_mesh_path.clear();
+                  }
+                }
+              }
+              if (resolved_mesh_path.trimmed().isEmpty()) {
+                resolved_mesh_path = resolve_visual_mesh_source_path(
+                  p.source_path, package_uri, d, workspace_root, &tried_candidates);
+              }
               if (unsupported_format) {
                 mesh_fallback = true;
               } else if (resolved_mesh_path.trimmed().isEmpty()) {
