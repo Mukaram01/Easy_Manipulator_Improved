@@ -320,6 +320,13 @@ def _check_cell_definition(scene_dir: Path) -> dict[str, Any]:
     )
 
 
+def _normalize_scene3d_diagnostic_count(key: str, value: Any) -> tuple[str, Any]:
+    try:
+        return f"diagnostic_{key}_count", int(value)
+    except (TypeError, ValueError):
+        return f"diagnostic_{key}", value
+
+
 def _parse_scene3d_diagnostics_line(value: Any) -> dict[str, Any]:
     """Parse a Scene3D runtime diagnostics line into stable readiness counters."""
     if isinstance(value, dict):
@@ -340,7 +347,7 @@ def _parse_scene3d_diagnostics_line(value: Any) -> dict[str, Any]:
     if not isinstance(value, str) or not value.strip():
         return {}
 
-    parsed: dict[str, Any] = {}
+    parsed = {}
     for line in value.splitlines():
         if "Scene3D canvas:" not in line:
             continue
@@ -348,10 +355,8 @@ def _parse_scene3d_diagnostics_line(value: Any) -> dict[str, Any]:
             if key == "scene":
                 parsed["diagnostic_scene"] = raw
                 continue
-            try:
-                parsed[f"diagnostic_{key}_count"] = int(raw)
-            except ValueError:
-                parsed[f"diagnostic_{key}"] = raw
+            normalized_key, normalized_value = _normalize_scene3d_diagnostic_count(key, raw)
+            parsed[normalized_key] = normalized_value
     return parsed
 
 
@@ -375,6 +380,22 @@ def _extract_scene3d_smoke_evidence(smoke_json: Path) -> dict[str, Any]:
             nested = payload.get(nested_key)
             if isinstance(nested, dict):
                 sources.append(nested)
+        readiness_markers = payload.get("readiness_markers")
+        if isinstance(readiness_markers, dict):
+            marker_keys = {
+                "selected_scene_ready",
+                "render_ready",
+                "log_ready",
+                "screenshot_ready",
+                "hierarchy_ready",
+                "inspector_ready",
+                "paint_completed",
+            }
+            if any(key in marker_keys for key in keys):
+                sources.append(readiness_markers)
+        counters = payload.get("counters")
+        if isinstance(counters, dict) and "scene3d_viewport_widget_found" in keys:
+            sources.append(counters)
         for source in sources:
             for key in keys:
                 if key in source and source.get(key) is not None:
@@ -395,6 +416,8 @@ def _extract_scene3d_smoke_evidence(smoke_json: Path) -> dict[str, Any]:
     runtime_available = optional_bool(nested_value("runtime_available"))
     screenshot_saved = optional_bool(nested_value("screenshot_saved"))
     screenshot_available = optional_bool(nested_value("screenshot_available"))
+    if screenshot_available is None:
+        screenshot_available = optional_bool(nested_value("screenshot_ready"))
     if screenshot_available is None:
         screenshot_available = screenshot_saved
     default_status = "INVALID" if smoke_error else "MISSING" if not smoke_json.is_file() else "UNKNOWN"
@@ -422,6 +445,10 @@ def _extract_scene3d_smoke_evidence(smoke_json: Path) -> dict[str, Any]:
         "render_ready": optional_bool(nested_value("render_ready")),
         "log_ready": optional_bool(nested_value("log_ready")),
         "selected_scene_ready": optional_bool(nested_value("selected_scene_ready")),
+        "screenshot_ready": optional_bool(nested_value("screenshot_ready")),
+        "hierarchy_ready": optional_bool(nested_value("hierarchy_ready")),
+        "inspector_ready": optional_bool(nested_value("inspector_ready")),
+        "paint_completed": optional_bool(nested_value("paint_completed")),
         "ros_humble_available": optional_bool(nested_value("ros_humble_available")),
         "runtime_scene3d_diagnostics": nested_value("runtime_scene3d_diagnostics"),
         **diagnostics,

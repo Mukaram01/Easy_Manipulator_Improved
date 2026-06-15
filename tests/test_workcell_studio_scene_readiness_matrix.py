@@ -479,6 +479,63 @@ def test_extract_scene3d_smoke_evidence_parses_new_runtime_diagnostics(tmp_path:
     assert evidence["diagnostic_fallback_count"] == 0
 
 
+def test_extract_scene3d_smoke_evidence_reads_markers_counters_and_mapping_diagnostics(tmp_path: Path) -> None:
+    smoke = tmp_path / "scene3d_gui_smoke.json"
+    smoke.write_text(
+        json.dumps(
+            {
+                "wrapper_status": "PASS",
+                "readiness_markers": {
+                    "selected_scene_ready": True,
+                    "render_ready": True,
+                    "log_ready": True,
+                    "screenshot_ready": True,
+                    "hierarchy_ready": True,
+                    "inspector_ready": True,
+                    "paint_completed": True,
+                },
+                "counters": {"scene3d_viewport_widget_found": True},
+                "runtime_available": True,
+                "runtime_scene3d_diagnostics": {
+                    "scene": "ur5_2f_test",
+                    "counts": {
+                        "received": 33,
+                        "visible": "32",
+                        "rendered": 31,
+                        "mesh": 23,
+                        "fallback": 1,
+                        "cached": 30,
+                        "locked": 20,
+                        "skipped": 2,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evidence = matrix._extract_scene3d_smoke_evidence(smoke)
+
+    assert evidence["scene3d_viewport_widget_found"] is True
+    assert evidence["selected_scene_ready"] is True
+    assert evidence["render_ready"] is True
+    assert evidence["log_ready"] is True
+    assert evidence["screenshot_ready"] is True
+    assert evidence["screenshot_available"] is True
+    assert evidence["hierarchy_ready"] is True
+    assert evidence["inspector_ready"] is True
+    assert evidence["paint_completed"] is True
+    assert evidence["diagnostic_scene"] == "ur5_2f_test"
+    assert evidence["diagnostic_received_count"] == 33
+    assert evidence["diagnostic_visible_count"] == 32
+    assert evidence["diagnostic_rendered_count"] == 31
+    assert evidence["diagnostic_mesh_count"] == 23
+    assert evidence["diagnostic_fallback_count"] == 1
+    assert evidence["diagnostic_cached_count"] == 30
+    assert evidence["diagnostic_locked_count"] == 20
+    assert evidence["diagnostic_skipped_count"] == 2
+
+
 def test_check_scene3d_accepts_valid_new_runtime_smoke_evidence(tmp_path: Path) -> None:
     scene_dir = tmp_path / "scenes" / "ur5_2f_test"
     generated = scene_dir / "generated"
