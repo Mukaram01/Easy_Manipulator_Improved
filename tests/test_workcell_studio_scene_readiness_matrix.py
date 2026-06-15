@@ -91,8 +91,16 @@ def _add_scene3d_pass_evidence(scene_dir: Path) -> None:
         json.dumps(
             {
                 "schema": "workcell_studio_scene3d_gui_smoke/v1",
+                "status": "PASS",
+                "scene3d_viewport_widget_found": True,
+                "screenshot_saved": True,
+                "render_ready": True,
+                "log_ready": True,
+                "selected_scene_ready": True,
+                "runtime_available": True,
                 "primitive_rendered_count": 1,
                 "rendered_count": 1,
+                "runtime_scene3d_diagnostics": f"Scene3D canvas: scene={scene_dir.name} received=1 visible=1 rendered=1 mesh=0 primitive=1 fallback=0",
             }
         ),
         encoding="utf-8",
@@ -346,7 +354,7 @@ def test_scene3d_runtime_unavailable_fails_runtime_visual_evidence(
     visual_summary = scene["categories"]["scene3d_visual_quality_summary"]
     physical_evidence = scene["categories"]["credible_physical_visual_evidence"]
     assert visual_summary["status"] == "FAIL"
-    assert physical_evidence["status"] == "BLOCKED"
+    assert physical_evidence["status"] == "FAIL"
     for category in (visual_summary, physical_evidence):
         assert category["smoke_status"] == "FAIL"
         assert category["runtime_available"] is False
@@ -507,6 +515,40 @@ def test_check_scene3d_accepts_valid_new_runtime_smoke_evidence(tmp_path: Path) 
     assert physical_result["status"] == "PASS"
     assert physical_result["runtime_evidence_valid"] is True
 
+
+def test_check_scene3d_downgrades_fallback_dominance_to_warning_with_valid_runtime(tmp_path: Path) -> None:
+    scene_dir = tmp_path / "scenes" / "ur5_2f_test"
+    generated = scene_dir / "generated"
+    generated.mkdir(parents=True)
+    (generated / "scene_visual_mesh_index.json").write_text(
+        json.dumps({"items": [{"id": "fixture_box", "primitive_type": "box"}]}),
+        encoding="utf-8",
+    )
+    (generated / "scene3d_gui_smoke.json").write_text(
+        json.dumps(
+            {
+                "status": "PASS",
+                "scene3d_viewport_widget_found": True,
+                "screenshot_saved": True,
+                "render_ready": True,
+                "log_ready": True,
+                "selected_scene_ready": True,
+                "runtime_available": True,
+                "placeholder_count": 7,
+                "rendered_count": 7,
+                "runtime_scene3d_diagnostics": "Scene3D canvas: scene=ur5_2f_test received=7 visible=7 rendered=7 mesh=0 primitive=0 fallback=7",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _visual_result, physical_result = matrix._check_scene3d("ur5_2f_test", scene_dir)
+
+    assert physical_result["status"] == "PASS"
+    assert physical_result["fallback_rendered_count"] == 7
+    assert physical_result["credible_physical_rendered_count"] == 0
+    assert any("fallback" in warning for warning in physical_result["warnings"])
+    assert any("physical" in warning for warning in physical_result["warnings"])
 
 def test_check_scene3d_rejects_new_runtime_smoke_scene_mismatch(tmp_path: Path) -> None:
     scene_dir = tmp_path / "scenes" / "ur5_2f_test"
