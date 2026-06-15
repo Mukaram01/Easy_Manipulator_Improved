@@ -498,8 +498,17 @@ private:
     const bool hierarchy_ready = (tree != nullptr && hierarchy_child_rows > 0);
     const bool selected_scene_ready = !selected_scene_name.trimmed().isEmpty() && selected_scene_name != "(none)" && selected_scene_name != "none";
     const bool inspector_ready = (inspector != nullptr && !inspector_no_scene_selected && selected_scene_ready);
-    const bool log_ready = (log != nullptr && has_valid_runtime_scene3d_diagnostics(parse_latest_scene3d_diagnostics(log->toPlainText())));
+    const QJsonObject parsed_runtime_diagnostics =
+      log ? parse_latest_scene3d_diagnostics(log->toPlainText()) : QJsonObject{};
+    const bool parsed_log_ready =
+      log != nullptr && has_valid_runtime_scene3d_diagnostics(parsed_runtime_diagnostics);
     const auto rc = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
+    const bool viewport_runtime_render_evidence =
+      viewport != nullptr &&
+      rc.viewport_received_count > 0 &&
+      rc.rendered_count > 0 &&
+      rc.visible_count > 0;
+    const bool log_ready = parsed_log_ready || viewport_runtime_render_evidence;
     const bool screenshot_saved = latest_counters_.value("screenshot_saved").toBool(false);
     const bool paint_completed = paint_cycle_completed(rc, screenshot_saved);
     const bool render_ready =
