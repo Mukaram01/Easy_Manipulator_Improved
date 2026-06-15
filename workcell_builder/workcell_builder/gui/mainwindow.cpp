@@ -5079,7 +5079,7 @@ void MainWindow::refresh_scene_builder_left_explorer()
 void MainWindow::refresh_scene_builder_view_chips()
 {
   bool launch_ready = false;
-  QString preview_chip_status = QStringLiteral("Unavailable");
+  QString preview_chip_status = QStringLiteral("Failed");
   if (has_selected_scene()) {
     const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
     launch_ready = s.has_launch_demo && s.has_package_xml;
@@ -5097,22 +5097,42 @@ void MainWindow::refresh_scene_builder_view_chips()
         mesh_source_count >= 4 && mesh_rendered_count > 0 && mesh_rendered_count * 2 < mesh_source_count;
       const bool has_active_runtime_render_evidence =
         counters.rendered_count > 0 ||
+        counters.visible_count > 0 ||
+        counters.viewport_received_count > 0 ||
         counters.render_cache_count > 0 ||
         counters.last_paint_completed ||
         counters.smoke_fallback_render_used;
+      const int visible_geometry_count = qMax(
+        counters.unique_visible_item_count,
+        qMax(0, counters.visible_count - counters.overlay_count));
+      const int rendered_geometry_count = qMax(0, counters.rendered_count - counters.overlay_rendered_count);
+      const bool has_visible_or_rendered_geometry =
+        visible_geometry_count > 0 ||
+        rendered_geometry_count > 0 ||
+        counters.mesh_rendered_count > 0 ||
+        counters.urdf_primitive_rendered_count > 0 ||
+        counters.primitive_fallback_rendered_count > 0 ||
+        counters.valid_physical_fallback_count > 0;
+      const bool has_missing_or_fallback_geometry =
+        counters.placeholder_count > 0 ||
+        counters.missing_geometry_count > 0 ||
+        counters.wireframe_fallback_count > 0 ||
+        counters.generated_fallback_count > 0 ||
+        counters.primitive_fallback_count > 0 ||
+        counters.primitive_fallback_rendered_count > 0;
+      const bool has_warning_bucket =
+        quality == QStringLiteral("WARNING") ||
+        quality == QStringLiteral("FAIL") ||
+        has_missing_or_fallback_geometry ||
+        source_render_ratio_failed ||
+        high_mesh_source_low_render;
 
-      if (!has_active_runtime_render_evidence) {
+      if (!has_active_runtime_render_evidence || !has_visible_or_rendered_geometry) {
         preview_chip_status = QStringLiteral("Failed");
-      } else if (quality == QStringLiteral("FAIL") && !source_render_ratio_failed) {
-        preview_chip_status = QStringLiteral("Failed");
-      } else if (quality == QStringLiteral("WARNING") || source_render_ratio_failed || high_mesh_source_low_render) {
-        preview_chip_status = QStringLiteral("Warning");
-      } else if (quality == QStringLiteral("PASS")) {
-        preview_chip_status = QStringLiteral("Available");
-      } else if (counters.visible_count > 0) {
-        preview_chip_status = QStringLiteral("Fallback");
+      } else if (quality == QStringLiteral("PASS") && !has_warning_bucket) {
+        preview_chip_status = QStringLiteral("Ready");
       } else {
-        preview_chip_status = QStringLiteral("Unavailable");
+        preview_chip_status = QStringLiteral("Warnings");
       }
     } else {
       preview_chip_status = QStringLiteral("Failed");
