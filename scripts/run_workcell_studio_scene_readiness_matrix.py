@@ -322,6 +322,19 @@ def _check_cell_definition(scene_dir: Path) -> dict[str, Any]:
 
 def _parse_scene3d_diagnostics_line(value: Any) -> dict[str, Any]:
     """Parse a Scene3D runtime diagnostics line into stable readiness counters."""
+    if isinstance(value, dict):
+        parsed: dict[str, Any] = {}
+        scene = value.get("scene")
+        if scene is not None:
+            parsed["diagnostic_scene"] = str(scene)
+        counts = value.get("counts")
+        if isinstance(counts, dict):
+            for key, raw in counts.items():
+                try:
+                    parsed[f"diagnostic_{key}_count"] = int(raw)
+                except (TypeError, ValueError):
+                    parsed[f"diagnostic_{key}"] = raw
+        return parsed
     if isinstance(value, list):
         value = "\n".join(str(item) for item in value)
     if not isinstance(value, str) or not value.strip():
@@ -352,7 +365,13 @@ def _extract_scene3d_smoke_evidence(smoke_json: Path) -> dict[str, Any]:
 
     def nested_value(*keys: str) -> Any:
         sources = [payload]
-        for nested_key in ("result", "render_debug_counters", "static_scene3d_visual_evidence"):
+        for nested_key in (
+            "result",
+            "render_debug_counters",
+            "static_scene3d_visual_evidence",
+            "readiness_markers",
+            "counters",
+        ):
             nested = payload.get(nested_key)
             if isinstance(nested, dict):
                 sources.append(nested)
