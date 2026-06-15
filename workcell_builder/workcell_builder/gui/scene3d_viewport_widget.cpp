@@ -1008,8 +1008,36 @@ void Scene3DViewportWidget::fit_scene() {
   distance_ = qBound(min_distance_, fit_distance, max_distance_);
   pitch_ = qBound(0.28, pitch_, 0.9);
   orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.10, radius * 0.05)));
-  last_camera_fit_target_ = QStringLiteral("scene");
+  last_camera_fit_target_ = fit_include_overlays ? QStringLiteral("scene_with_overlays") : QStringLiteral("scene");
   has_robot_aabb_diag_ = false;
+  update();
+}
+
+void Scene3DViewportWidget::fit_product_view()
+{
+  const bool previous_include_overlays = fit_include_overlays;
+  fit_include_overlays = false;
+
+  QVector3D bmin, bmax;
+  if (!scene_bounds_from_visible_items(bmin, bmax, false)) {
+    fit_include_overlays = previous_include_overlays;
+    set_isometric_view();
+    return;
+  }
+
+  orbit_offset_ = (bmin + bmax) * 0.5f;
+  const QVector3D ext = bmax - bmin;
+  const double radius = qMax(0.25, 0.5 * qSqrt(ext.x() * ext.x() + ext.y() * ext.y() + ext.z() * ext.z()));
+  scene_radius_ = radius;
+  const double fov = qDegreesToRadians(50.0);
+  const double fit_distance = (radius / qTan(fov * 0.5)) * 1.05;
+  distance_ = qBound(min_distance_, fit_distance, max_distance_);
+  yaw_ = -0.78539816339;
+  pitch_ = 0.61547970867;
+  orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.10, radius * 0.05)));
+  last_camera_fit_target_ = QStringLiteral("product_physical_isometric");
+  has_robot_aabb_diag_ = false;
+  fit_include_overlays = previous_include_overlays;
   update();
 }
 void Scene3DViewportWidget::fit_robot()
