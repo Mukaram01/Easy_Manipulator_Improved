@@ -328,7 +328,7 @@ def _normalize_scene3d_diagnostic_count(key: str, value: Any) -> tuple[str, Any]
 
 
 def _parse_scene3d_diagnostics_line(value: Any) -> dict[str, Any]:
-    """Parse Scene3D runtime diagnostics into stable readiness counters."""
+    """Parse a Scene3D runtime diagnostics line into stable readiness counters."""
     if isinstance(value, dict):
         parsed: dict[str, Any] = {}
         scene = value.get("scene")
@@ -337,13 +337,11 @@ def _parse_scene3d_diagnostics_line(value: Any) -> dict[str, Any]:
         counts = value.get("counts")
         if isinstance(counts, dict):
             for key, raw in counts.items():
-                if key == "scene":
-                    parsed["diagnostic_scene"] = str(raw)
-                    continue
-                normalized_key, normalized_value = _normalize_scene3d_diagnostic_count(str(key), raw)
-                parsed[normalized_key] = normalized_value
+                try:
+                    parsed[f"diagnostic_{key}_count"] = int(raw)
+                except (TypeError, ValueError):
+                    parsed[f"diagnostic_{key}"] = raw
         return parsed
-
     if isinstance(value, list):
         value = "\n".join(str(item) for item in value)
     if not isinstance(value, str) or not value.strip():
@@ -371,8 +369,14 @@ def _extract_scene3d_smoke_evidence(smoke_json: Path) -> dict[str, Any]:
             payload = loaded
 
     def nested_value(*keys: str) -> Any:
-        sources: list[dict[str, Any]] = [payload]
-        for nested_key in ("result", "render_debug_counters", "static_scene3d_visual_evidence"):
+        sources = [payload]
+        for nested_key in (
+            "result",
+            "render_debug_counters",
+            "static_scene3d_visual_evidence",
+            "readiness_markers",
+            "counters",
+        ):
             nested = payload.get(nested_key)
             if isinstance(nested, dict):
                 sources.append(nested)

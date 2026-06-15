@@ -573,6 +573,84 @@ def test_check_scene3d_accepts_valid_new_runtime_smoke_evidence(tmp_path: Path) 
     assert physical_result["runtime_evidence_valid"] is True
 
 
+def test_check_scene3d_accepts_structured_gui_smoke_readiness_fixture(tmp_path: Path) -> None:
+    scene_dir = tmp_path / "scenes" / "ur5_2f_test"
+    generated = scene_dir / "generated"
+    generated.mkdir(parents=True)
+    (generated / "scene_visual_mesh_index.json").write_text(
+        json.dumps(
+            {
+                "schema": "workcell_studio_scene_visual_mesh_index/v1",
+                "scene": "ur5_2f_test",
+                "visual_items": [
+                    {
+                        "id": f"ur5_mesh_{index:02d}",
+                        "source": "urdf/scene.urdf.xacro",
+                        "mesh": f"package://ur_description/meshes/ur5/visual/link_{index:02d}.dae",
+                        "resolved": True,
+                    }
+                    for index in range(23)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (generated / "scene3d_gui_smoke.json").write_text(
+        json.dumps(
+            {
+                "status": "PASS",
+                "wrapper_status": "PASS",
+                "runtime_available": True,
+                "ros_humble_available": True,
+                "screenshot_available": True,
+                "screenshot_saved": True,
+                "readiness_markers": {
+                    "selected_scene_ready": True,
+                    "render_ready": True,
+                    "log_ready": True,
+                    "screenshot_ready": True,
+                    "hierarchy_ready": True,
+                    "inspector_ready": True,
+                    "paint_completed": True,
+                },
+                "scene3d_viewport_widget_found": True,
+                "runtime_scene3d_diagnostics": {
+                    "scene": "ur5_2f_test",
+                    "counts": {
+                        "received": 33,
+                        "visible": 33,
+                        "rendered": 33,
+                        "cached": 33,
+                        "mesh": 23,
+                        "fallback": 0,
+                        "locked": 23,
+                        "skipped": 0,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    visual_result, physical_result = matrix._check_scene3d("ur5_2f_test", scene_dir)
+
+    assert visual_result["runtime_evidence_valid"] is True
+    rejected_reasons = {
+        "selected_scene_not_ready",
+        "viewport_missing",
+        "render_not_ready",
+        "log_not_ready",
+        "diagnostics_scene_mismatch_or_missing",
+        "zero_received_count",
+        "zero_visible_count",
+        "zero_rendered_count",
+    }
+    assert rejected_reasons.isdisjoint(visual_result["runtime_failure_reasons"])
+    assert physical_result["status"] in {"PASS", "WARNING"}
+    assert visual_result["status"] in {"PASS", "WARNING"}
+    assert visual_result["status"] not in {"BLOCKED", "FAIL"}
+
+
 def test_check_scene3d_downgrades_fallback_dominance_to_warning_with_valid_runtime(tmp_path: Path) -> None:
     scene_dir = tmp_path / "scenes" / "ur5_2f_test"
     generated = scene_dir / "generated"
