@@ -304,7 +304,7 @@ void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items)
     emit studio_log_requested(has_selected ? QString("Preview selection restored after refresh: %1").arg(selected_preview_item_id_) : QString("Preview selection retained after refresh; id is hidden by filters or absent from the visible preview payload: %1").arg(selected_preview_item_id_));
   }
   viewport->fit_include_overlays = false;
-  viewport->fit_scene();
+  viewport->fit_product_view();
   emit_scene_diagnostic_once(
     QStringLiteral("payload_commit"),
     preview_items_.size(),

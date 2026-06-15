@@ -69,6 +69,7 @@ public:
 
   void reset_view();
   void fit_scene();
+  void fit_product_view();
   void fit_robot();
   void focus_selected();
   void set_top_view();
