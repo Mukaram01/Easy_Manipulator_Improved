@@ -186,7 +186,9 @@ add_executable(workcell_builder
     src_workspace_validation.cpp
     src_workcell_builder_command_builders.cpp
     src_rviz_preview_runner.cpp
-    include/rviz_preview_runner.hpp)
+    src_visual_mesh_source_resolver.cpp
+    include/rviz_preview_runner.hpp
+    include/visual_mesh_source_resolver.hpp)
 target_sources(workcell_builder PRIVATE src_workcell_yaml_utils.cpp)
 
 ament_target_dependencies(workcell_builder
@@ -347,6 +349,9 @@ if(BUILD_TESTING)
     gui/asset_catalog_discovery.cpp
     src_workcell_warning_once.cpp
     src_workcell_yaml_utils.cpp)
+  ament_add_gtest(workcell_visual_mesh_source_resolver_test
+    test/visual_mesh_source_resolver_test.cpp
+    src_visual_mesh_source_resolver.cpp)
   ament_add_gtest(workcell_transform_clipboard_utils_test
     test/transform_clipboard_utils_test.cpp
     gui/transform_clipboard_utils.cpp)
@@ -393,6 +398,13 @@ if(BUILD_TESTING)
     target_link_libraries(workcell_asset_catalog_discovery_test yaml-cpp ${Boost_LIBRARIES})
     target_include_directories(workcell_asset_catalog_discovery_test PRIVATE gui)
   endif()
+  if(TARGET workcell_visual_mesh_source_resolver_test)
+    target_link_libraries(workcell_visual_mesh_source_resolver_test Qt5::Core ${Boost_LIBRARIES})
+    target_include_directories(workcell_visual_mesh_source_resolver_test PRIVATE ${Boost_INCLUDE_DIRS} include)
+    target_compile_definitions(workcell_visual_mesh_source_resolver_test PRIVATE
+      WORKCELL_BUILDER_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
+  endif()
+
   if(TARGET workcell_transform_clipboard_utils_test)
     target_link_libraries(workcell_transform_clipboard_utils_test Qt5::Core)
     target_include_directories(workcell_transform_clipboard_utils_test PRIVATE gui)
@@ -593,6 +605,7 @@ if(BUILD_TESTING)
     layout_serialization_contract_test.cpp
     workcell_studio_layout_editor_test.cpp
     mainwindow_rviz_preview_compile_test.cpp
+    visual_mesh_source_resolver_test.cpp
   )
 
   file(GLOB workcell_builder_discovered_cpp_tests RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/test ${CMAKE_CURRENT_SOURCE_DIR}/test/*.cpp)
