@@ -329,19 +329,6 @@ def _normalize_scene3d_diagnostic_count(key: str, value: Any) -> tuple[str, Any]
 
 def _parse_scene3d_diagnostics_line(value: Any) -> dict[str, Any]:
     """Parse a Scene3D runtime diagnostics line into stable readiness counters."""
-    if isinstance(value, dict):
-        parsed: dict[str, Any] = {}
-        scene = value.get("scene")
-        if scene is not None:
-            parsed["diagnostic_scene"] = str(scene)
-        counts = value.get("counts")
-        if isinstance(counts, dict):
-            for key, raw in counts.items():
-                try:
-                    parsed[f"diagnostic_{key}_count"] = int(raw)
-                except (TypeError, ValueError):
-                    parsed[f"diagnostic_{key}"] = raw
-        return parsed
     if isinstance(value, list):
         value = "\n".join(str(item) for item in value)
     if not isinstance(value, str) or not value.strip():
@@ -356,6 +343,44 @@ def _parse_scene3d_diagnostics_line(value: Any) -> dict[str, Any]:
                 parsed["diagnostic_scene"] = raw
                 continue
             normalized_key, normalized_value = _normalize_scene3d_diagnostic_count(key, raw)
+            parsed[normalized_key] = normalized_value
+    return parsed
+
+
+def _normalize_scene3d_diagnostics(value: Any) -> dict[str, Any]:
+    """Normalize string or structured Scene3D diagnostics into matrix counters."""
+    if isinstance(value, str):
+        return _parse_scene3d_diagnostics_line(value)
+    if isinstance(value, list):
+        return _parse_scene3d_diagnostics_line(value)
+    if not isinstance(value, dict):
+        return {}
+
+    parsed: dict[str, Any] = {}
+    scene = value.get("scene")
+    if scene is not None:
+        parsed["diagnostic_scene"] = str(scene)
+
+    count_key_map = {
+        "received": "diagnostic_received_count",
+        "visible": "diagnostic_visible_count",
+        "rendered": "diagnostic_rendered_count",
+        "mesh": "diagnostic_mesh_count",
+        "fallback": "diagnostic_fallback_count",
+        "primitive": "diagnostic_primitive_count",
+    }
+    counts = value.get("counts")
+    if isinstance(counts, dict):
+        for key, raw in counts.items():
+            normalized_key = count_key_map.get(key)
+            if normalized_key is None:
+                normalized_key, normalized_value = _normalize_scene3d_diagnostic_count(key, raw)
+            else:
+                try:
+                    normalized_value = int(raw)
+                except (TypeError, ValueError):
+                    normalized_key = f"diagnostic_{key}"
+                    normalized_value = raw
             parsed[normalized_key] = normalized_value
     return parsed
 
@@ -427,7 +452,7 @@ def _extract_scene3d_smoke_evidence(smoke_json: Path) -> dict[str, Any]:
     resolved_executable = nested_value("resolved_executable", "executable")
     searched_paths_raw = nested_value("searched_paths")
     searched_paths = [str(item) for item in searched_paths_raw] if isinstance(searched_paths_raw, list) else []
-    diagnostics = _parse_scene3d_diagnostics_line(nested_value("runtime_scene3d_diagnostics"))
+    diagnostics = _normalize_scene3d_diagnostics(nested_value("runtime_scene3d_diagnostics"))
     if runtime_available is None and smoke_json.is_file():
         blockers = nested_value("blockers")
         blocker_text = " ".join(str(item) for item in blockers) if isinstance(blockers, list) else str(blockers or "")
