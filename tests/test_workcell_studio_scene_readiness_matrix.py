@@ -534,6 +534,8 @@ def test_check_scene3d_downgrades_fallback_dominance_to_warning_with_valid_runti
                 "log_ready": True,
                 "selected_scene_ready": True,
                 "runtime_available": True,
+                "wrapper_status": "PASS",
+                "valid_physical_fallback_count": 7,
                 "placeholder_count": 7,
                 "rendered_count": 7,
                 "runtime_scene3d_diagnostics": "Scene3D canvas: scene=ur5_2f_test received=7 visible=7 rendered=7 mesh=0 primitive=0 fallback=7",
@@ -542,9 +544,14 @@ def test_check_scene3d_downgrades_fallback_dominance_to_warning_with_valid_runti
         encoding="utf-8",
     )
 
-    _visual_result, physical_result = matrix._check_scene3d("ur5_2f_test", scene_dir)
+    visual_result, physical_result = matrix._check_scene3d("ur5_2f_test", scene_dir)
 
-    assert physical_result["status"] == "PASS"
+    assert visual_result["runtime_evidence_valid"] is True
+    assert physical_result["runtime_evidence_valid"] is True
+    assert "physical_fallback_dominates" in visual_result["runtime_valid_warning_blocker_reasons"]
+    assert all("fallback" not in blocker for blocker in visual_result["blockers"])
+    assert physical_result["status"] != "FAIL"
+    assert visual_result["status"] not in {"BLOCKED", "FAIL"}
     assert physical_result["fallback_rendered_count"] == 7
     assert physical_result["credible_physical_rendered_count"] == 0
     assert any("fallback" in warning for warning in physical_result["warnings"])

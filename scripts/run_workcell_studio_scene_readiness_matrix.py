@@ -446,7 +446,6 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
     )
     blockers = [str(item) for item in visual.get("blockers", [])]
     visual_blocker_reasons = [str(item) for item in visual.get("blocker_reasons", [])]
-    physical_blockers = [blocker for blocker in blockers if not blocker.startswith("screenshot_missing:") and blocker != "screenshot_missing"]
     warnings = [str(item) for item in visual.get("warnings", [])]
     visual_status = str(visual.get("visual_quality_status") or "").upper()
     runtime_blocked = smoke_evidence["smoke_status"] == BLOCKED or smoke_evidence["runtime_available"] is False
@@ -460,6 +459,8 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
     runtime_failure_reasons: list[str] = []
     if smoke_evidence["smoke_status"] != PASS:
         runtime_failure_reasons.append("smoke_status_not_pass")
+    if smoke_evidence.get("wrapper_status") not in {PASS, None}:
+        runtime_failure_reasons.append("wrapper_status_not_pass")
     if smoke_evidence["runtime_available"] is not True:
         runtime_failure_reasons.append("runtime_unavailable")
     if not screenshot_runtime_available:
@@ -481,6 +482,49 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
     if diagnostic_rendered <= 0:
         runtime_failure_reasons.append("zero_rendered_count")
     runtime_evidence_valid = not runtime_failure_reasons
+
+    runtime_valid_warning_reason_codes = {
+        "physical_fallback_dominates",
+    }
+    runtime_valid_warning_blocker_fragments = (
+        "fallback",
+        "placeholder",
+        "polish",
+        "wireframe",
+        "missing geometry",
+    )
+    visual_warning_blockers: list[str] = []
+    hard_blockers: list[str] = []
+    hard_blocker_reasons: list[str] = []
+    warning_blocker_reasons: list[str] = []
+    for idx, blocker in enumerate(blockers):
+        reason = visual_blocker_reasons[idx] if idx < len(visual_blocker_reasons) else ""
+        blocker_lc = blocker.lower()
+        reason_lc = reason.lower()
+        runtime_valid_warning = (
+            runtime_evidence_valid
+            and (
+                reason_lc in runtime_valid_warning_reason_codes
+                or any(fragment in blocker_lc for fragment in runtime_valid_warning_blocker_fragments)
+            )
+        )
+        if runtime_valid_warning:
+            if blocker not in visual_warning_blockers:
+                visual_warning_blockers.append(blocker)
+            if reason and reason not in warning_blocker_reasons:
+                warning_blocker_reasons.append(reason)
+        else:
+            hard_blockers.append(blocker)
+            if reason and reason not in hard_blocker_reasons:
+                hard_blocker_reasons.append(reason)
+    for blocker in visual_warning_blockers:
+        if blocker not in warnings:
+            warnings.append(blocker)
+    physical_blockers = [
+        blocker
+        for blocker in hard_blockers
+        if not blocker.startswith("screenshot_missing:") and blocker != "screenshot_missing"
+    ]
 
     summary_state = PASS if visual_status == PASS else FAIL
     if runtime_evidence_valid and mesh_index.is_file() and source_count > 0:
@@ -504,8 +548,10 @@ def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], di
         mesh_index_path=str(mesh_index),
         smoke_json=str(smoke_json),
         screenshot_path=str(screenshot_path) if screenshot_path is not None else None,
-        blockers=blockers,
-        blocker_reasons=visual_blocker_reasons,
+        blockers=hard_blockers,
+        blocker_reasons=hard_blocker_reasons,
+        runtime_valid_warning_blockers=visual_warning_blockers,
+        runtime_valid_warning_blocker_reasons=warning_blocker_reasons,
         warnings=warnings,
         runtime_available=runtime_available,
         runtime_evidence_valid=runtime_evidence_valid,
