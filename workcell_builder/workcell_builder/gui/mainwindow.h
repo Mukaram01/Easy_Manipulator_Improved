@@ -703,6 +703,7 @@ private:
   int editable_layout_item_count_{ 0 };
   int preview_fallback_item_count_{ 0 };
   QString preview_provenance_summary_;
+  bool scene3d_clean_product_view_{ false };
   QStringList preview_warning_details_;
   QStringList readiness_warning_details_;
 };

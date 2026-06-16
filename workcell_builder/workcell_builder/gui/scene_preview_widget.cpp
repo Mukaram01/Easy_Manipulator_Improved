@@ -438,6 +438,12 @@ void ScenePreviewWidget::emit_visual_quality_assessment_once()
 }
 
 void ScenePreviewWidget::set_preview_status_summary(const QString & summary){ preview_status_summary_ = summary.trimmed(); refresh_info_chip(); }
+void ScenePreviewWidget::set_clean_product_view_status(bool clean, int visual_count)
+{
+  clean_product_view_ = clean;
+  clean_product_visual_count_ = qMax(0, visual_count);
+  refresh_info_chip();
+}
 void ScenePreviewWidget::set_task_overlay_model(const TaskOverlayModel & model){ overlay_model_ = model; static_cast<Scene3DViewportWidget *>(simple_3d_view_)->task_overlay = model; refresh_info_chip(); simple_3d_view_->update(); }
 void ScenePreviewWidget::set_task_overlay_visibility(bool task_route, bool pick_place_zones, bool approach_retreat, bool labels){
   auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
@@ -704,10 +710,14 @@ void ScenePreviewWidget::refresh_info_chip()
   info_chip_label_->adjustSize();
   if (fallback_info_chip_proxy_) fallback_info_chip_proxy_->setPos(12.0, 12.0);
   if (toolbar_status_chip_) {
-    const QString interaction = interaction_mode_selector_ ? interaction_mode_selector_->currentText() : QStringLiteral("Select");
-    toolbar_status_chip_->setText(QString("%1 • %2 • Warn %3")
-      .arg(preview3d_available_ ? QStringLiteral("3D") : QStringLiteral("2D fallback"))
-      .arg(interaction)
-      .arg(total_warning_count()));
+    if (clean_product_view_ && preview3d_available_) {
+      toolbar_status_chip_->setText(QStringLiteral("Scene3D Product View • %1 visuals").arg(clean_product_visual_count_));
+    } else {
+      const QString interaction = interaction_mode_selector_ ? interaction_mode_selector_->currentText() : QStringLiteral("Select");
+      toolbar_status_chip_->setText(QString("%1 • %2 • Warn %3")
+        .arg(preview3d_available_ ? QStringLiteral("3D") : QStringLiteral("2D fallback"))
+        .arg(interaction)
+        .arg(total_warning_count()));
+    }
   }
 }

@@ -159,8 +159,14 @@ namespace {
 
 static QString scene3d_user_preview_status_summary(
   const ScenePreviewWidget::RenderDebugCounters & counters,
-  int warning_count)
+  int warning_count,
+  bool clean_product_view = false,
+  int clean_product_visual_count = 0)
 {
+  if (clean_product_view) {
+    return QStringLiteral("Scene3D Product View • %1 visuals").arg(qMax(0, clean_product_visual_count));
+  }
+
   const QString quality = counters.visual_quality_status.trimmed().toUpper();
   const int rendered_count = qMax(counters.rendered_count, counters.visible_count);
   const int mesh_count = qMax(counters.mesh_rendered_count, counters.mesh_backed_count);
@@ -8715,7 +8721,9 @@ void MainWindow::populate_scene_hierarchy()
   const int missing_mesh_count = skip_reason_counts.value(QStringLiteral("missing_source_path"), 0) +
                                  skip_reason_counts.value(QStringLiteral("file_not_found"), 0) +
                                  skip_reason_counts.value(QStringLiteral("zero_triangle_mesh"), 0);
-  const QString scene3d_warning_buckets = QString("Scene3D warnings: missing_mesh=%1, unresolved_package_uri=%2, unsupported_extension=%3, stale_or_absolute_only_mesh_index=%4")
+  const QString scene3d_warning_buckets = QString("Scene3D warnings: extraction_mode=%1, safe_for_preview=%2, missing_mesh=%3, unresolved_package_uri=%4, unsupported_extension=%5, stale_or_absolute_only_mesh_index=%6")
+    .arg(visual_index_extraction_mode)
+    .arg(visual_index_safe_for_preview ? QStringLiteral("true") : QStringLiteral("false"))
     .arg(missing_mesh_count)
     .arg(unresolved_package_uri_count)
     .arg(skip_reason_counts.value(QStringLiteral("unsupported_format"), 0))
@@ -8726,6 +8734,26 @@ void MainWindow::populate_scene_hierarchy()
   const int scene_selectable_count = std::count_if(preview_items.cbegin(), preview_items.cend(), [](const ScenePreviewWidget::PreviewItem & p){ return p.selectable; });
   const int scene_mesh_rendered = scene3d_mesh_count;
   const int scene_fallback_rendered = scene3d_fallback_count;
+  const bool scene3d_clean_product_view =
+    visual_index_extraction_mode.trimmed().compare(QStringLiteral("xacro_expanded"), Qt::CaseInsensitive) == 0 &&
+    visual_index_safe_for_preview &&
+    missing_mesh_count == 0 &&
+    unresolved_package_uri_count == 0 &&
+    skip_reason_counts.value(QStringLiteral("unsupported_format"), 0) == 0 &&
+    scene_fallback_rendered == 0;
+  scene3d_clean_product_view_ = scene3d_clean_product_view;
+  if (scene_preview_widget_) {
+    scene_preview_widget_->set_clean_product_view_status(scene3d_clean_product_view_, visual_preview_added_count > 0 ? visual_preview_added_count : scene_rendered_count);
+    if (scene3d_clean_product_view_) {
+      const auto scene3d_full_payload_counters = scene_preview_widget_->render_debug_counters();
+      scene_preview_widget_->set_preview_status_summary(
+        scene3d_user_preview_status_summary(
+          scene3d_full_payload_counters,
+          scene_preview_widget_->total_warning_count(),
+          true,
+          visual_preview_added_count > 0 ? visual_preview_added_count : scene_rendered_count));
+    }
+  }
   const int scene_locked_rendered = scene3d_locked_count;
   const int scene_skipped = visual_index_loaded_count - visual_preview_added_count;
   append_studio_log(QString("Scene3D canvas: scene=%1 received=%2 cached=%3 visible=%4 rendered=%5 selectable=%6 mesh=%7 fallback=%8 locked=%9 skipped=%10")
@@ -8994,7 +9022,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   }
 
   const int preview_received_count = all_scene_preview_items_.size();
-  const int preview_visible_count = std::count_if(all_scene_preview_items_.cbegin(), all_scene_preview_items_.cend(), [this](const ScenePreviewWidget::PreviewItem & p) {
+  const auto preview_item_visible_for_active_layers = [this](const ScenePreviewWidget::PreviewItem & p) {
     const QString source_layer = p.source_layer.trimmed().toLower();
     const QString visual_source = p.active_visual_source.trimmed().toLower();
     const QString category = p.category.trimmed().toLower();
@@ -9008,12 +9036,14 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     if (is_overlay_or_helper) return preview_layer_overlays_helpers_box_ ? preview_layer_overlays_helpers_box_->isChecked() : true;
     if (is_warning_or_missing) return preview_layer_warnings_missing_assets_box_ ? preview_layer_warnings_missing_assets_box_->isChecked() : true;
     return true;
-  });
+  };
+  const int preview_visible_count = std::count_if(all_scene_preview_items_.cbegin(), all_scene_preview_items_.cend(), preview_item_visible_for_active_layers);
   const int preview_rendered_count = preview_visible_count;
   int classified_overlay_count = 0;
   int classified_warning_count = 0;
   int classified_diagnostic_count = 0;
   for (const auto & item : all_scene_preview_items_) {
+    if (!preview_item_visible_for_active_layers(item)) continue;
     const QString source_layer = item.source_layer.trimmed().toLower();
     const QString category = item.category.trimmed().toLower();
     const QString status = item.status.trimmed().toLower();
@@ -9115,9 +9145,9 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     preview_status = SceneWorkflowStepStatus::Done;
     preview_detail = QString("3D Preview Technical Pass: native Scene3D has renderable content, but render/smoke counters alone do not prove demo-ready visual quality or RViz/MoveIt launch readiness. %1 %2")
       .arg(native_preview_counts, launch_gate_detail);
-    const bool visual_quality_needs_review = editable_layout_yaml_malformed || classified_fallback_count > 0 ||
+    const bool visual_quality_needs_review = !scene3d_clean_product_view_ && (editable_layout_yaml_malformed || classified_fallback_count > 0 ||
       classified_overlay_count > 0 || classified_warning_count > 0 || classified_editable_count == 0 ||
-      classified_diagnostic_count > 0 || has_warnings;
+      classified_diagnostic_count > 0 || has_warnings);
     if (visual_quality_needs_review) {
       preview_status = SceneWorkflowStepStatus::Warning;
       QStringList preview_warnings;
