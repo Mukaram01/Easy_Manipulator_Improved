@@ -463,3 +463,67 @@ def test_synthetic_chain_transform_composition_and_primitives():
     assert item['size'] == [1.0, 2.0, 3.0]
     assert item['transform_status'] == 'resolved'
     assert len(item['transform_chain']) == 2
+
+
+def test_regenerate_visual_mesh_indexes_forwards_workspace_root(monkeypatch, tmp_path):
+    import sys
+    import scripts.regenerate_scene_visual_mesh_indexes as regenerate
+
+    repo_root = tmp_path / 'repo'
+    scene = repo_root / 'scenes' / 'demo_scene'
+    (scene / 'generated').mkdir(parents=True)
+    (repo_root / 'scripts').mkdir(parents=True)
+    (scene / 'generated' / 'scene_visual_mesh_index.json').write_text(
+        json.dumps(
+            {
+                'extraction_mode': 'xacro_expanded',
+                'xacro_available': True,
+                'safe_for_preview': True,
+                'visual_items': [
+                    {
+                        'geometry_type': 'mesh',
+                        'pose': {'xyz': [0.1, 0.2, 0.3]},
+                    }
+                ],
+            }
+        ),
+        encoding='utf-8',
+    )
+    workspace_root = tmp_path / 'workcell_ws'
+    calls = []
+
+    def fake_run(cmd, check=False):
+        calls.append((cmd, check))
+
+    monkeypatch.setattr(regenerate.subprocess, 'run', fake_run)
+    original_argv = sys.argv
+    try:
+        sys.argv = [
+            'regenerate_scene_visual_mesh_indexes.py',
+            '--repo-root',
+            str(repo_root),
+            '--workspace-root',
+            str(workspace_root),
+            '--scene',
+            'demo_scene',
+            '--fail-on-unexpanded',
+            '--xacro-arg',
+            'use_fake_hardware:=true',
+        ]
+        rc = regenerate.main()
+    finally:
+        sys.argv = original_argv
+
+    assert rc == 0
+    assert len(calls) == 1
+    cmd, check = calls[0]
+    assert check is False
+    assert cmd[:4] == [
+        'python3',
+        str(repo_root.resolve() / 'scripts' / 'extract_scene_urdf_visual_mesh_index.py'),
+        '--scene',
+        'demo_scene',
+    ]
+    assert cmd[cmd.index('--workspace-root') + 1] == str(workspace_root)
+    assert cmd[cmd.index('--xacro-arg') + 1] == 'use_fake_hardware:=true'
+    assert '--fail-on-unexpanded' in cmd
