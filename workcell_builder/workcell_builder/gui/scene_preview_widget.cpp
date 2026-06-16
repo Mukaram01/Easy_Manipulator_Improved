@@ -484,6 +484,31 @@ void ScenePreviewWidget::apply_product_view_defaults()
   // that keep robot/tool/environment meshes and editable layout items legible
   // without letting diagnostics overlays dominate the initial framing.
   v->fit_include_overlays = false;
+  v->debug_overlays_mode = false;
+  v->show_warnings = false;
+  v->show_warning_labels = false;
+  v->show_safety = false;
+  v->show_pick_place = false;
+  v->show_reachability_heatmap = false;
+  v->show_collision_warnings = false;
+  v->show_work_envelope = false;
+  v->show_task_route = false;
+  v->show_approach_retreat = false;
+  v->show_camera_fov = false;
+  v->show_pick_coverage = false;
+  v->show_epd_detections = false;
+  v->show_detection_labels = false;
+  v->mesh_preview_mode = ScenePreviewWidget::MeshPreviewMode::Auto;
+  mesh_preview_mode_ = ScenePreviewWidget::MeshPreviewMode::Auto;
+  if (mesh_preview_mode_selector_) {
+    const QSignalBlocker blocker(mesh_preview_mode_selector_);
+    mesh_preview_mode_selector_->setCurrentText("Auto");
+  }
+  if (labels_selector_) {
+    const QSignalBlocker blocker(labels_selector_);
+    labels_selector_->setCurrentText("Selected");
+  }
+  v->label_mode = ScenePreviewWidget::LabelMode::Selected;
   v->set_isometric_view();
   v->fit_product_view();
   fit_fallback_scene_to_items(false);
