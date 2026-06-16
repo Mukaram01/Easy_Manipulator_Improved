@@ -100,6 +100,14 @@ TEST(Scene3DRenderRoleClassifier, DefaultProductFitIncludesPhysicalItemsAndExclu
   auto bounds_box = make_item("bounds_box");
   bounds_box.category = "diagnostic_bounds_box";
   EXPECT_FALSE(Scene3DViewportWidget::should_include_in_default_fit_for_test(bounds_box));
+  auto generic_primitive = make_item("generic_box");
+  EXPECT_FALSE(Scene3DViewportWidget::should_include_in_default_fit_for_test(generic_primitive));
+
+  auto mesh_preview = make_item("mesh_preview_asset");
+  mesh_preview.source_layer = "mesh_preview";
+  mesh_preview.mesh_available = true;
+  EXPECT_TRUE(Scene3DViewportWidget::should_include_in_default_fit_for_test(mesh_preview));
+
 }
 
 TEST(Scene3DRenderRoleClassifier, MeshesModeDoesNotDrawFallbackSolid)

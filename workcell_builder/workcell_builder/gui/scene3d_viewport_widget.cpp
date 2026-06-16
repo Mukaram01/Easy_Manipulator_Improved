@@ -785,21 +785,37 @@ bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it);
 
 bool include_in_fit_bounds(const ScenePreviewWidget::PreviewItem & it, bool include_overlays)
 {
+  // FIT_PHYSICAL_ONLY_FILTER: default/product fits exclude overlays and helpers.
   if (include_overlays) return true;
+
   const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
   const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
   const bool helper_overlay = is_overlay_only_item(it) || source_layer == "overlay" || visual_source == "overlay";
+  if (helper_overlay) return false;
+
   const bool generated_urdf_visual = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
   const bool mesh_backed = item_has_credible_mesh_handoff(it);
   const bool explicit_primitive = item_has_explicit_primitive_dimensions(it);
   const bool missing_geometry = !mesh_backed && !explicit_primitive;
-  const bool missing_mesh_fallback = missing_geometry && !it.linked_to_editable_layout_state && !generated_urdf_visual;
-  if (helper_overlay) return false;
-  if (missing_mesh_fallback) return false;
-  if (generated_urdf_visual && mesh_backed) return true;
+  if (missing_geometry && !it.linked_to_editable_layout_state && !generated_urdf_visual) return false;
+
   if (generated_urdf_visual) return true;
   if (it.linked_to_editable_layout_state) return true;
-  return mesh_backed || explicit_primitive;
+  if (source_layer == "mesh_preview" || visual_source == "mesh_preview") return mesh_backed || explicit_primitive;
+
+  const NormalizedRole role = classify_item_role(it);
+  const QString role_text = normalized_token(it.role);
+  const QString category = normalized_token(it.category);
+  const QString id = normalized_token(it.id);
+  const QString display_name = normalized_token(it.display_name);
+  const QString mix = role_text + "|" + category + "|" + id + "|" + display_name;
+  const bool product_physical_role =
+    role == NormalizedRole::RobotBase ||
+    role == NormalizedRole::Table ||
+    role == NormalizedRole::Camera ||
+    mix.contains("gripper") || mix.contains("tool") ||
+    mix.contains("end_effector") || mix.contains("end effector");
+  return product_physical_role && (mesh_backed || explicit_primitive);
 }
 
 bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it)
@@ -1118,19 +1134,21 @@ void Scene3DViewportWidget::fit_scene() {
   distance_ = qBound(min_distance_, fit_distance, max_distance_);
   pitch_ = qBound(0.28, pitch_, 0.9);
   orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.10, radius * 0.05)));
-  last_camera_fit_target_ = fit_include_overlays ? QStringLiteral("scene_with_overlays") : QStringLiteral("scene");
+  if (fit_include_overlays) {
+    last_camera_fit_target_ = QStringLiteral("scene_with_overlays");
+  } else {
+    last_camera_fit_target_ = QStringLiteral("scene");
+  }
   has_robot_aabb_diag_ = false;
   update();
 }
 
 void Scene3DViewportWidget::fit_product_view()
 {
-  const bool previous_include_overlays = fit_include_overlays;
   fit_include_overlays = false;
 
   QVector3D bmin, bmax;
   if (!scene_bounds_from_visible_items(bmin, bmax, false)) {
-    fit_include_overlays = previous_include_overlays;
     set_isometric_view();
     return;
   }
@@ -1147,7 +1165,7 @@ void Scene3DViewportWidget::fit_product_view()
   orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.04, radius * 0.025)));
   last_camera_fit_target_ = QStringLiteral("product_physical_isometric");
   has_robot_aabb_diag_ = false;
-  fit_include_overlays = previous_include_overlays;
+  fit_include_overlays = false;
   update();
 }
 void Scene3DViewportWidget::fit_robot()

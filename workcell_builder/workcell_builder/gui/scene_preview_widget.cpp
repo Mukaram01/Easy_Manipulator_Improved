@@ -308,7 +308,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     else if (choice == "Focus Selected") on_focus_selected_clicked();
     else if (choice == "Fit Scene") on_fit_scene_clicked();
     else if (choice == "Fit Robot") on_fit_robot_clicked();
-    else if (choice == "Fit Overlays") on_fit_overlays_clicked();
+    else if (choice == "Fit overlays") on_fit_overlays_clicked();
     else if (choice == "Clear Selection") on_clear_selection_clicked();
     if (overlays_selector_ && choice != "Overlays") {
       const QSignalBlocker blocker(overlays_selector_);
@@ -558,8 +558,33 @@ QRectF ScenePreviewWidget::rendered_items_bounds_2d(bool include_overlays) const
   auto include_in_fit_bounds = [include_overlays](const PreviewItem & it) {
     if (include_overlays) return true;
     if (preview_item_is_overlay_or_helper(it)) return false;
-    if (preview_item_is_raw_generated_bounds_only(it)) return false;
-    return true;
+
+    const QString source_layer = normalized_preview_token(it.source_layer);
+    const QString visual_source = normalized_preview_token(it.active_visual_source);
+    if (source_layer.contains("overlay") || visual_source.contains("overlay")) return false;
+
+    const bool generated_urdf = preview_item_is_generated_or_locked_urdf(it);
+    const bool mesh_backed = preview_item_has_credible_mesh_handoff(it);
+    const bool explicit_primitive = preview_item_has_valid_urdf_primitive(it) ||
+                                    (it.sx > 0.001 && it.sy > 0.001 && it.sz > 0.001);
+    if (generated_urdf) return true;
+    if (it.linked_to_editable_layout_state) return true;
+    if (source_layer == QStringLiteral("mesh_preview") || visual_source == QStringLiteral("mesh_preview")) {
+      return mesh_backed || explicit_primitive;
+    }
+
+    const QString role = normalized_preview_token(it.role);
+    const QString category = normalized_preview_token(it.category);
+    const QString id = normalized_preview_token(it.id);
+    const QString display_name = normalized_preview_token(it.display_name);
+    const QString mix = role + QStringLiteral("|") + category + QStringLiteral("|") + id + QStringLiteral("|") + display_name;
+    const bool product_physical = mix.contains("robot") || mix.contains("gripper") ||
+                                  mix.contains("tool") || mix.contains("end_effector") ||
+                                  mix.contains("table") || mix.contains("work_surface") ||
+                                  mix.contains("workbench") || mix.contains("camera") ||
+                                  mix.contains("realsense") || mix.contains("depth_camera") ||
+                                  mix.contains("rgbd");
+    return product_physical && (mesh_backed || explicit_primitive);
   };
   for (const auto & it : preview_items_) {
     if (!include_in_fit_bounds(it)) continue;
