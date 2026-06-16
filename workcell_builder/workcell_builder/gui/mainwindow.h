@@ -148,6 +148,7 @@ private:
   };
   void sync_selected_scene_state();
   void sync_selected_item_state();
+  void refresh_selected_scene_metadata_panel();
   void refresh_scene_builder_selection_state_ui();
   void refresh_scene_builder_selected_scene_ui();
   void refresh_scene_browser_ui();
@@ -440,6 +441,12 @@ private:
   QPushButton * scene_builder_generate_launch_button_{ nullptr };
   bool scene_builder_is_3d_view_{ true };
   QLabel * scene_builder_path_label_{ nullptr };
+  QLabel * selection_scene_name_label_{ nullptr };
+  QLabel * selection_scene_status_label_{ nullptr };
+  QLabel * selection_scene_robot_label_{ nullptr };
+  QLabel * selection_scene_end_effector_label_{ nullptr };
+  QLabel * selection_scene_path_label_{ nullptr };
+  QLabel * selection_scene_launch_label_{ nullptr };
   QLabel * inspector_label_{ nullptr };
   QDoubleSpinBox * inspector_x_{ nullptr };
   QDoubleSpinBox * inspector_y_{ nullptr };
