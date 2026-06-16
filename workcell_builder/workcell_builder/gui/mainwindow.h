@@ -357,6 +357,7 @@ private:
   void refresh_scene_builder_left_explorer();
   void refresh_scene_builder_view_chips();
   void populate_scene_hierarchy();
+  void apply_scene3d_product_view_layer_defaults_and_commit();
   void apply_scene3d_preview_layer_filters(bool log_change = false);
   void keyPressEvent(QKeyEvent * event) override;
   void populate_asset_catalog();

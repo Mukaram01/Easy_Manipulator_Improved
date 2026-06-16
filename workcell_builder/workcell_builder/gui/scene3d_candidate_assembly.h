@@ -13,6 +13,8 @@ struct Scene3DLayerVisibilityDefaults
   bool mesh_preview{ true };
   bool primitive_fallback{ true };
   bool locked_generated_urdf_visual{ false };
+  bool overlay{ false };
+  bool warning{ false };
 };
 
 bool include_preview_item_for_scene3d(

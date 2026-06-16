@@ -29,6 +29,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QShortcut>
+#include <QSignalBlocker>
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QTextEdit>
@@ -1202,15 +1203,7 @@ bool MainWindow::load_scene_for_scene3d_smoke(const QString & scene_name, const 
   }
   QApplication::processEvents(QEventLoop::AllEvents, 250);
   populate_scene_hierarchy();
-  const auto defaults = workcell_builder::compute_scene3d_default_layer_visibility(all_scene_preview_items_);
-  if (preview_layer_editable_layout_box_) preview_layer_editable_layout_box_->setChecked(defaults.editable_layout);
-  if (preview_layer_mesh_preview_box_) preview_layer_mesh_preview_box_->setChecked(defaults.mesh_preview);
-  if (preview_layer_primitive_fallback_box_) preview_layer_primitive_fallback_box_->setChecked(defaults.primitive_fallback);
-  if (preview_layer_overlays_helpers_box_) preview_layer_overlays_helpers_box_->setChecked(
-      blockers == nullptr || blockers->isEmpty());
-  if (preview_layer_generated_urdf_visual_box_) {
-    preview_layer_generated_urdf_visual_box_->setChecked(defaults.locked_generated_urdf_visual);
-  }
+  apply_scene3d_product_view_layer_defaults_and_commit();
 
   const auto count_visible_for_layers = [&](const QSet<QString> & enabled_layers) {
       int count = 0;
@@ -6953,6 +6946,26 @@ void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
   apply_scene_selection(selected_id, selected_role, false, true);
 }
 
+
+void MainWindow::apply_scene3d_product_view_layer_defaults_and_commit()
+{
+  const auto defaults = workcell_builder::compute_scene3d_default_layer_visibility(all_scene_preview_items_);
+  const auto set_checked_blocked = [](QCheckBox * box, bool checked) {
+    if (!box) return;
+    const QSignalBlocker blocker(box);
+    box->setChecked(checked);
+  };
+
+  set_checked_blocked(preview_layer_editable_layout_box_, defaults.editable_layout);
+  set_checked_blocked(preview_layer_generated_urdf_visual_box_, defaults.locked_generated_urdf_visual);
+  set_checked_blocked(preview_layer_mesh_preview_box_, defaults.mesh_preview);
+  set_checked_blocked(preview_layer_primitive_fallback_box_, defaults.primitive_fallback);
+  set_checked_blocked(preview_layer_overlays_helpers_box_, defaults.overlay);
+  set_checked_blocked(preview_layer_warnings_missing_assets_box_, defaults.warning);
+
+  apply_scene3d_preview_layer_filters(false);
+}
+
 void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
 {
   if (!scene_preview_widget_) {
@@ -8629,15 +8642,10 @@ void MainWindow::populate_scene_hierarchy()
       : QString("%1 | %2").arg(preview_provenance_summary_, visual_diagnostics_summary);
   }
   all_scene_preview_items_ = preview_items;
-  const auto defaults = workcell_builder::compute_scene3d_default_layer_visibility(all_scene_preview_items_);
-  if (preview_layer_editable_layout_box_) preview_layer_editable_layout_box_->setChecked(defaults.editable_layout);
-  if (preview_layer_mesh_preview_box_) preview_layer_mesh_preview_box_->setChecked(defaults.mesh_preview);
-  if (preview_layer_primitive_fallback_box_) preview_layer_primitive_fallback_box_->setChecked(defaults.primitive_fallback);
-  if (preview_layer_generated_urdf_visual_box_) preview_layer_generated_urdf_visual_box_->setChecked(defaults.locked_generated_urdf_visual);
   if (scene_preview_widget_) {
     scene_preview_widget_->set_scene_selected(true);
     scene_preview_widget_->set_preview_scene_name(selected_scene_state_.name);
-    apply_scene3d_preview_layer_filters(false);
+    apply_scene3d_product_view_layer_defaults_and_commit();
 
     const auto scene3d_full_payload_counters = scene_preview_widget_->render_debug_counters();
     scene_preview_widget_->set_preview_status_summary(
