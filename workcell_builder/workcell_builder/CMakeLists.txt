@@ -219,7 +219,15 @@ target_link_libraries(workcell_builder
 )
 
 if(assimp_FOUND)
-  target_link_libraries(workcell_builder assimp::assimp)
+  target_compile_definitions(workcell_builder PRIVATE WORKCELL_BUILDER_HAS_ASSIMP=1)
+  if(TARGET assimp::assimp)
+    target_link_libraries(workcell_builder assimp::assimp)
+  elseif(TARGET Assimp::assimp)
+    target_link_libraries(workcell_builder Assimp::assimp)
+  else()
+    target_link_libraries(workcell_builder ${ASSIMP_LIBRARIES} ${assimp_LIBRARIES})
+    target_include_directories(workcell_builder PRIVATE ${ASSIMP_INCLUDE_DIRS} ${assimp_INCLUDE_DIRS})
+  endif()
 endif()
 
 target_include_directories(workcell_builder
