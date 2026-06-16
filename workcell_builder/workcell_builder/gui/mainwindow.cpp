@@ -9149,7 +9149,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     if (is_overlay) ++classified_overlay_count;
     if (is_warning) ++classified_warning_count;
     if (is_diagnostic) ++classified_diagnostic_count;
-    if (item_visible_after_product_filters(item)) {
+    if (preview_item_visible_for_active_layers(item)) {
       if (is_fallback) ++visible_fallback_count;
       if (is_overlay) ++visible_overlay_count;
       if (is_warning) ++visible_warning_count;
@@ -9224,6 +9224,8 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     validation_stale_ ? "Validation results are stale; rerun validation." : "Run offline validation.",
     {"yaml_definition"}, gates,
     validation_gate_ready ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Current));
+  const ScenePreviewWidget::RenderDebugCounters scene3d_counters =
+    scene_preview_widget_ ? scene_preview_widget_->render_debug_counters() : ScenePreviewWidget::RenderDebugCounters{};
   const bool preview_has_runtime_content = scene3d_counters.viewport_received_count > 0 || scene3d_counters.visible_count > 0 ||
     scene3d_counters.rendered_count > 0 || preview_runtime_ready;
   const QString native_preview_counts = QString(
