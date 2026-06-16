@@ -1410,8 +1410,14 @@ void Scene3DViewportWidget::paintGL()
     const bool is_urdf_visual = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
     if (suppress_dense_non_critical_labels && !selected && !is_critical_label_role(role)) draw_label = false;
     if (is_urdf_visual && !selected && effective_label_mode != ScenePreviewWidget::LabelMode::All) draw_label = false;
-    if (show_warning_labels && !it.warnings.isEmpty()) {
-      if (debug_overlays_mode && show_warning_labels && !it.warnings.isEmpty()) {
+    const bool render_counters_clean =
+      last_render_counters.missing_geometry_count == 0 &&
+      last_render_counters.generated_fallback_count == 0 &&
+      last_render_counters.wireframe_fallback_count == 0;
+    const bool draw_warning_badges =
+      show_warning_labels && (debug_overlays_mode || !render_counters_clean);
+    if (draw_warning_badges && !it.warnings.isEmpty()) {
+      if (debug_overlays_mode && !it.warnings.isEmpty()) {
         const QString debug_warning_text = warning_debug_text(it.warnings);
         Q_UNUSED(debug_warning_text);
       }
@@ -1484,6 +1490,12 @@ void Scene3DViewportWidget::paintGL()
   }
   last_render_counters.labels_drawn = labels_drawn;
   last_render_counters.labels_suppressed_overlap = labels_suppressed_overlap;
+  const bool render_counters_clean =
+    last_render_counters.missing_geometry_count == 0 &&
+    last_render_counters.generated_fallback_count == 0 &&
+    last_render_counters.wireframe_fallback_count == 0;
+  const bool concise_warning = !render_counters_clean ||
+                               last_render_counters.visual_quality_status == QStringLiteral("FAIL");
   const bool has_missing_or_fallback_content = missing_geometry_count > 0 ||
                                                last_render_counters.mesh_bounds_fallback_rendered_count > 0 ||
                                                last_render_counters.primitive_fallback_rendered_count > 0 ||
@@ -1492,7 +1504,7 @@ void Scene3DViewportWidget::paintGL()
                                                last_render_counters.visual_quality_status == QStringLiteral("FAIL");
   const bool concise_warning = show_warnings && has_missing_or_fallback_content;
   const QRectF overlay_rect = debug_overlays_mode ? QRectF(12.0, 12.0, 520.0, 88.0)
-                                                  : QRectF(12.0, 12.0, concise_warning ? 430.0 : 410.0, concise_warning ? 62.0 : 46.0);
+                                                  : QRectF(12.0, 12.0, concise_warning ? 310.0 : 250.0, concise_warning ? 46.0 : 30.0);
   painter.setPen(Qt::NoPen);
   painter.setBrush(QColor(15, 23, 42, debug_overlays_mode ? 205 : 165));
   painter.drawRoundedRect(overlay_rect, 8.0, 8.0);
@@ -1512,22 +1524,14 @@ void Scene3DViewportWidget::paintGL()
                      QString("Physical %1 • Locked URDF %2 • Fit: %3")
                        .arg(physical_item_count).arg(locked_urdf_count).arg(fit_include_overlays ? "all_items" : "generated_visuals"));
   } else {
-    painter.drawText(QRectF(20.0, 18.0, 390.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
-                     QString("3D Preview Ready%1 · %2 meshes · %3 surface-rendered · %4 fallback")
-                       .arg(concise_warning ? QStringLiteral(" · Warnings") : QString())
-                       .arg(mesh_source_count)
-                       .arg(last_render_counters.mesh_surface_rendered_count)
-                       .arg(last_render_counters.mesh_bounds_fallback_rendered_count));
+    painter.drawText(QRectF(20.0, 18.0, 290.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                     concise_warning
+                       ? QStringLiteral("3D Preview Warnings · see Diagnostics")
+                       : QString("3D Preview Ready · %1 items").arg(visible_item_count));
     painter.setPen(concise_warning ? QColor("#fde68a") : QColor("#cbd5e1"));
-    painter.drawText(QRectF(20.0, 36.0, 390.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
-                     QString("%1 items · %2 meshes · %3 surface-rendered · %4 fallback")
-                       .arg(visible_item_count)
-                       .arg(mesh_source_count)
-                       .arg(last_render_counters.mesh_surface_rendered_count)
-                       .arg(last_render_counters.mesh_bounds_fallback_rendered_count));
     if (concise_warning) {
       painter.setPen(QColor("#fbbf24"));
-      painter.drawText(QRectF(20.0, 52.0, 280.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+      painter.drawText(QRectF(20.0, 36.0, 280.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
                        QStringLiteral("Use Overlays → Diagnostics for details."));
     }
   }
@@ -1823,10 +1827,10 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     if (out_mesh_count) ++(*out_mesh_count);
     ItemBounds mesh_bounds{};
     if (!mesh_world_bounds_for_item(it, mesh_bounds)) mesh_bounds = item_bounds_for_role(it);
-    if (generated_or_locked_preview) {
+    if (debug_overlays_mode && generated_or_locked_preview) {
       draw_box_outline(mesh_bounds.x, mesh_bounds.y, mesh_bounds.z, mesh_bounds.sx, mesh_bounds.sy, mesh_bounds.sz,
                        generated_locked_preview_outline(), 0.85f);
-    } else if (editable_layout_preview) {
+    } else if (debug_overlays_mode && editable_layout_preview) {
       draw_box_outline(mesh_bounds.x, mesh_bounds.y, mesh_bounds.z, mesh_bounds.sx, mesh_bounds.sy, mesh_bounds.sz,
                        editable_layout_accent_outline(), 1.6f);
     }
@@ -1857,7 +1861,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   if (item_has_valid_urdf_primitive(it)) {
     if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
       // Primitive geometry exists but is intentionally hidden by Meshes-only mode; do not show a red missing-geometry marker.
-      if (item_has_explicit_dimensions(it)) {
+      if (debug_overlays_mode && item_has_explicit_dimensions(it)) {
         draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, generated_primitive_fallback_outline(), 0.6f);
       }
       ++last_render_counters.generated_fallback_count;
@@ -1866,9 +1870,9 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     }
     const QColor primitive_fill = generated_or_locked_preview ? generated_primitive_fallback_fill() : visual_color;
     if (draw_urdf_primitive_geometry(it, primitive_fill)) {
-      if (generated_or_locked_preview && item_has_explicit_dimensions(it)) {
+      if (debug_overlays_mode && generated_or_locked_preview && item_has_explicit_dimensions(it)) {
         draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, generated_primitive_fallback_outline(), 0.7f);
-      } else if (editable_layout_preview && item_has_explicit_dimensions(it)) {
+      } else if (debug_overlays_mode && editable_layout_preview && item_has_explicit_dimensions(it)) {
         draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, editable_layout_accent_outline(), 1.4f);
       }
       if (out_urdf_primitive_count) ++(*out_urdf_primitive_count);
@@ -1885,7 +1889,9 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
         return false;
       }
       // Semantic primitive geometry exists but is intentionally hidden by Meshes-only mode; do not show a warning marker.
-      draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, generated_primitive_fallback_outline(), 0.6f);
+      if (debug_overlays_mode) {
+        draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, generated_primitive_fallback_outline(), 0.6f);
+      }
       ++last_render_counters.generated_fallback_count;
       warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_PRIMITIVE_SUPPRESSED_BY_MESH_ONLY_MODE: semantic primitive dimensions available but disabled"), it.source_path);
       return false;
@@ -1896,8 +1902,10 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
       : (editable_layout_preview ? editable_layout_accent_outline() : QColor(148, 163, 184, 76));
     const float fallback_line_width = generated_or_locked_preview ? 0.7f : (editable_layout_preview ? 1.6f : 0.75f);
     draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, fallback_fill, true);
-    // Generated primitive fallback styling is deliberately translucent with a thinner outline, not a missing-geometry warning.
-    draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, fallback_line, fallback_line_width);
+    // Generated primitive fallback outlines are bounds diagnostics; keep them out of normal Product View.
+    if (debug_overlays_mode) {
+      draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, fallback_line, fallback_line_width);
+    }
     if (intentional_primitive_fallback) {
       if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);
       return true;
