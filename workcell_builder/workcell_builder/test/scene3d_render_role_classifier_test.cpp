@@ -63,6 +63,45 @@ TEST(Scene3DRenderRoleClassifier, FitExcludesHelpersIncludesGenerated)
   EXPECT_FALSE(Scene3DViewportWidget::should_include_in_default_fit_for_test(helper));
 }
 
+
+TEST(Scene3DRenderRoleClassifier, DefaultProductFitIncludesPhysicalItemsAndExcludesDiagnostics)
+{
+  auto robot_mesh = make_item("robot_tool_mesh");
+  robot_mesh.locked = true;
+  robot_mesh.editable = false;
+  robot_mesh.lock_reason = "Generated URDF visual";
+  robot_mesh.source_layer = "generated_urdf_visual";
+  robot_mesh.mesh_available = true;
+  EXPECT_TRUE(Scene3DViewportWidget::should_include_in_default_fit_for_test(robot_mesh));
+
+  auto editable_layout = make_item("editable_table");
+  editable_layout.source_layer = "editable_layout";
+  editable_layout.linked_to_editable_layout_state = true;
+  editable_layout.editable = true;
+  EXPECT_TRUE(Scene3DViewportWidget::should_include_in_default_fit_for_test(editable_layout));
+
+  auto camera_fov = make_item("camera_fov");
+  camera_fov.role = "camera_fov_cone";
+  camera_fov.category = "diagnostic_overlay";
+  EXPECT_FALSE(Scene3DViewportWidget::should_include_in_default_fit_for_test(camera_fov));
+
+  auto reachability = make_item("reachability");
+  reachability.role = "reachability_heatmap";
+  EXPECT_FALSE(Scene3DViewportWidget::should_include_in_default_fit_for_test(reachability));
+
+  auto route_helper = make_item("task_route");
+  route_helper.role = "task_route_helper";
+  EXPECT_FALSE(Scene3DViewportWidget::should_include_in_default_fit_for_test(route_helper));
+
+  auto warning_anchor = make_item("warning_anchor");
+  warning_anchor.role = "warning_anchor";
+  EXPECT_FALSE(Scene3DViewportWidget::should_include_in_default_fit_for_test(warning_anchor));
+
+  auto bounds_box = make_item("bounds_box");
+  bounds_box.category = "diagnostic_bounds_box";
+  EXPECT_FALSE(Scene3DViewportWidget::should_include_in_default_fit_for_test(bounds_box));
+}
+
 TEST(Scene3DRenderRoleClassifier, MeshesModeDoesNotDrawFallbackSolid)
 {
   auto missing = make_item("missing2");

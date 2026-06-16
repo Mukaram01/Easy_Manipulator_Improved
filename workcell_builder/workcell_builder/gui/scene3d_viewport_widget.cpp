@@ -810,7 +810,13 @@ bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it)
   const QString category = it.category.trimmed().toLower();
   const QString lock_reason = it.lock_reason.trimmed().toLower();
   return role_text.contains("overlay") || role_text.contains("helper") || role_text.contains("guide") ||
-         category.contains("overlay") || lock_reason.contains("overlay");
+         role_text.contains("fov") || role_text.contains("reachability") || role_text.contains("route") ||
+         role_text.contains("warning_anchor") || role_text.contains("warning_badge") ||
+         role_text.contains("bounds_box") || role_text.contains("bounding_box") ||
+         category.contains("overlay") || category.contains("helper") || category.contains("diagnostic") ||
+         category.contains("fov") || category.contains("reachability") || category.contains("route") ||
+         category.contains("bounds_box") || category.contains("bounding_box") ||
+         lock_reason.contains("overlay") || lock_reason.contains("helper") || lock_reason.contains("diagnostic");
 }
 
 bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it)
@@ -1393,7 +1399,7 @@ void Scene3DViewportWidget::paintGL()
     const QPointF p = project_to_screen(bounds.x + (bounds.sx * 0.5), bounds.y + (bounds.sy * 0.5), bounds.z + (bounds.sz * 0.5));
     const bool selected = (it.id == selected_id);
     const NormalizedRole role = classify_item_role(it);
-    const ScenePreviewWidget::LabelMode effective_label_mode = ScenePreviewWidget::LabelMode::Selected;
+    const ScenePreviewWidget::LabelMode effective_label_mode = label_mode;
     bool draw_label = false;
     switch (effective_label_mode) {
       case ScenePreviewWidget::LabelMode::Off: draw_label = selected; break;
@@ -1490,6 +1496,13 @@ void Scene3DViewportWidget::paintGL()
     last_render_counters.wireframe_fallback_count == 0;
   const bool concise_warning = !render_counters_clean ||
                                last_render_counters.visual_quality_status == QStringLiteral("FAIL");
+  const bool has_missing_or_fallback_content = missing_geometry_count > 0 ||
+                                               last_render_counters.mesh_bounds_fallback_rendered_count > 0 ||
+                                               last_render_counters.primitive_fallback_rendered_count > 0 ||
+                                               wireframe_box_count > 0 ||
+                                               placeholder_count > 0 ||
+                                               last_render_counters.visual_quality_status == QStringLiteral("FAIL");
+  const bool concise_warning = show_warnings && has_missing_or_fallback_content;
   const QRectF overlay_rect = debug_overlays_mode ? QRectF(12.0, 12.0, 520.0, 88.0)
                                                   : QRectF(12.0, 12.0, concise_warning ? 310.0 : 250.0, concise_warning ? 46.0 : 30.0);
   painter.setPen(Qt::NoPen);
