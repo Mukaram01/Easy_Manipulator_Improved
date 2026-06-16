@@ -1953,12 +1953,12 @@ void MainWindow::setup_studio_shell()
   auto * selected_item_card_layout = make_card(selection_tab_layout, "Selected Item");
   auto * readiness_card_layout = make_card(readiness_tab_layout, "Readiness");
   make_card(actions_tab_layout, "Actions");
-  make_row(scene_card_layout, "Name", "No scene selected", false);
-  make_row(scene_card_layout, "Status", "unknown", false);
-  make_row(scene_card_layout, "Robot", "unknown", false);
-  make_row(scene_card_layout, "End Effector", "unknown", false);
-  make_row(scene_card_layout, "Path", "(none)", true);
-  make_row(scene_card_layout, "Launch", "(none)", true);
+  selection_scene_name_label_ = make_row(scene_card_layout, "Name", "No scene selected", false);
+  selection_scene_status_label_ = make_row(scene_card_layout, "Status", "unknown", false);
+  selection_scene_robot_label_ = make_row(scene_card_layout, "Robot", "unknown", false);
+  selection_scene_end_effector_label_ = make_row(scene_card_layout, "End Effector", "unknown", false);
+  selection_scene_path_label_ = make_row(scene_card_layout, "Path", "(none)", true);
+  selection_scene_launch_label_ = make_row(scene_card_layout, "Launch", "(none)", true);
 
   auto * task_intent = new QFrame(right_panel); task_intent->setObjectName("studioCard"); auto * task_intent_layout = new QVBoxLayout(task_intent);
   task_intent_layout->addWidget(new QLabel("<b>Task Intent</b>"));
@@ -3687,6 +3687,7 @@ void MainWindow::select_scene_by_row(int row)
   const QString previous_scene_path = selected_scene_path();
   selected_scene_index_ = row;
   sync_selected_scene_state();
+  refresh_selected_scene_metadata_panel();
   if (previous_scene_path != selected_scene_path()) {
     visual_index_script_missing_reported_scene_key_.clear();
     visual_index_regen_failure_reported_scene_key_.clear();
@@ -4738,10 +4739,69 @@ void MainWindow::sync_selected_item_state()
   }
 }
 
+void MainWindow::refresh_selected_scene_metadata_panel()
+{
+  if (!selected_scene_state_.valid) {
+    if (selection_scene_name_label_) selection_scene_name_label_->setText("No scene selected");
+    if (selection_scene_status_label_) selection_scene_status_label_->setText("unknown");
+    if (selection_scene_robot_label_) selection_scene_robot_label_->setText("unknown");
+    if (selection_scene_end_effector_label_) selection_scene_end_effector_label_->setText("unknown");
+    if (selection_scene_path_label_) {
+      selection_scene_path_label_->setText("(none)");
+      selection_scene_path_label_->setToolTip("(none)");
+    }
+    if (selection_scene_launch_label_) {
+      selection_scene_launch_label_->setText("(none)");
+      selection_scene_launch_label_->setToolTip("(none)");
+    }
+    return;
+  }
+
+  const int index = selected_scene_state_.index;
+  if (index < 0 || index >= static_cast<int>(scene_browser_result_.scenes.size())) return;
+  const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(index)];
+  const auto metadata = selected_scene_metadata_summary(scene);
+  const QString scene_path = selected_scene_path();
+  const fs::path launch_path = scene.scene_dir / "launch" / "demo.launch.py";
+  const bool launch_present = fs::exists(launch_path);
+
+  QStringList warnings;
+  if (metadata.robot_source.startsWith(QStringLiteral("missing"))) warnings << metadata.robot;
+  if (metadata.end_effector_source.startsWith(QStringLiteral("missing"))) warnings << metadata.end_effector;
+  if (!launch_present) warnings << QStringLiteral("launch/demo.launch.py missing");
+  const QString browser_status = QString::fromStdString(scene.status).trimmed();
+  if (browser_status != QStringLiteral("READY") && !browser_status.isEmpty()) {
+    warnings << QStringLiteral("scene browser status is %1").arg(browser_status);
+  }
+  const QString status_text = warnings.isEmpty()
+    ? QStringLiteral("ready — required selected-scene metadata and launch/demo.launch.py are present")
+    : QStringLiteral("warnings — %1").arg(warnings.join(QStringLiteral("; ")));
+  const QString launch_text = launch_present
+    ? QStringLiteral("%1 (present)").arg(QString::fromStdString(launch_path.string()))
+    : QStringLiteral("launch/demo.launch.py missing at %1").arg(QString::fromStdString(launch_path.string()));
+  const QString robot_text = QStringLiteral("%1 — %2").arg(metadata.robot, metadata.robot_source);
+  const QString end_effector_text = QStringLiteral("%1 — %2").arg(metadata.end_effector, metadata.end_effector_source);
+
+  auto set_label = [](QLabel * label, const QString & text) {
+    if (!label) return;
+    label->setText(text);
+    label->setToolTip(text);
+  };
+  set_label(selection_scene_name_label_, metadata.scene_name);
+  set_label(selection_scene_status_label_, status_text);
+  set_label(selection_scene_robot_label_, robot_text);
+  set_label(selection_scene_end_effector_label_, end_effector_text);
+  set_label(selection_scene_path_label_, scene_path);
+  set_label(selection_scene_launch_label_, launch_text);
+
+  refresh_selected_scene_item_labels(selected_item_state_);
+}
+
 void MainWindow::refresh_scene_builder_selection_state_ui()
 {
   sync_selected_scene_state();
   sync_selected_item_state();
+  refresh_selected_scene_metadata_panel();
   refresh_scene_builder_selected_scene_ui();
   refresh_scene_builder_left_explorer();
   refresh_selected_scene_details_card();
@@ -4762,6 +4822,7 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
 {
   sync_selected_scene_state();
   sync_selected_item_state();
+  refresh_selected_scene_metadata_panel();
   if (!selected_scene_state_.valid) {
     if (scene_builder_title_) scene_builder_title_->setText("<h2>Scene Builder</h2>");
     refresh_scene_builder_view_chips();
