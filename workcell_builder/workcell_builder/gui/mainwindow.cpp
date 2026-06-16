@@ -1769,36 +1769,38 @@ void MainWindow::setup_studio_shell()
   snap_step_label_ = new QLabel("Nudge step: 0.05 m", scene_builder);
   fine_move_mode_box_ = new QCheckBox("Fine Move Mode", scene_builder);
   unlock_robot_base_box_ = new QCheckBox("Unlock Robot Base", scene_builder);
-  toggle_labels_box_ = new QCheckBox("Toggle Labels", scene_builder); toggle_labels_box_->setChecked(true);
-  toggle_warnings_box_ = new QCheckBox("Toggle Warnings", scene_builder); toggle_warnings_box_->setChecked(true);
+  toggle_labels_box_ = new QCheckBox("Toggle Labels", scene_builder); toggle_labels_box_->setToolTip("Product View starts with selected-item labels only; enable for explicit label review."); toggle_labels_box_->setChecked(false);
+  toggle_warnings_box_ = new QCheckBox("Toggle Warnings", scene_builder); toggle_warnings_box_->setChecked(false);
   show_minimap_box_ = new QCheckBox("Show Minimap", scene_builder); show_minimap_box_->setChecked(true);
   scene_builder_overlays_button_ = new QToolButton(scene_builder);
   auto * overlays_button = scene_builder_overlays_button_; overlays_button->setText("Overlays"); overlays_button->setPopupMode(QToolButton::InstantPopup);
   auto * overlays_menu = new QMenu(overlays_button);
-  show_reach_overlay_box_ = new QCheckBox("Show Reach", scene_builder); show_reach_overlay_box_->setChecked(true);
-  show_camera_fov_overlay_box_ = new QCheckBox("Camera FOV", scene_builder); show_camera_fov_overlay_box_->setChecked(true);
-  show_pick_place_overlay_box_ = new QCheckBox("Pick Coverage", scene_builder); show_pick_place_overlay_box_->setChecked(true);
-  show_trajectory_overlay_box_ = new QCheckBox("EPD Detections", scene_builder); show_trajectory_overlay_box_->setChecked(true);
-  auto * show_approach_retreat_overlay_box = new QCheckBox("Approach/Retreat", scene_builder); show_approach_retreat_overlay_box->setChecked(true);
-  auto mk=[&](QCheckBox *b){ auto *a=overlays_menu->addAction(b->text()); a->setCheckable(true); a->setChecked(true); connect(a,&QAction::toggled,b,&QCheckBox::setChecked); connect(b,&QCheckBox::toggled,a,&QAction::setChecked); };
+  show_reach_overlay_box_ = new QCheckBox("Show Reach", scene_builder); show_reach_overlay_box_->setChecked(false);
+  show_camera_fov_overlay_box_ = new QCheckBox("Camera FOV", scene_builder); show_camera_fov_overlay_box_->setChecked(false);
+  show_pick_place_overlay_box_ = new QCheckBox("Pick Coverage", scene_builder); show_pick_place_overlay_box_->setChecked(false);
+  show_trajectory_overlay_box_ = new QCheckBox("EPD Detections", scene_builder); show_trajectory_overlay_box_->setChecked(false);
+  auto * show_approach_retreat_overlay_box = new QCheckBox("Approach/Retreat", scene_builder); show_approach_retreat_overlay_box->setChecked(false);
+  auto mk=[&](QCheckBox *b){ auto *a=overlays_menu->addAction(b->text()); a->setCheckable(true); a->setChecked(b ? b->isChecked() : false); connect(a,&QAction::toggled,b,&QCheckBox::setChecked); connect(b,&QCheckBox::toggled,a,&QAction::setChecked); };
   mk(show_reach_overlay_box_); mk(show_camera_fov_overlay_box_); mk(show_pick_place_overlay_box_); mk(show_trajectory_overlay_box_); mk(show_approach_retreat_overlay_box);
-  auto * show_warnings_action = overlays_menu->addAction("Show Warnings"); show_warnings_action->setCheckable(true); show_warnings_action->setChecked(true);
-  auto * show_labels_action = overlays_menu->addAction("Detection Labels"); show_labels_action->setCheckable(true); show_labels_action->setChecked(true);
+  auto * show_warnings_action = overlays_menu->addAction("Show Warnings"); show_warnings_action->setCheckable(true); show_warnings_action->setChecked(false);
+  auto * show_labels_action = overlays_menu->addAction("Detection Labels"); show_labels_action->setCheckable(true); show_labels_action->setChecked(false);
   overlays_button->setMenu(overlays_menu);
   connect(show_warnings_action, &QAction::toggled, toggle_warnings_box_, &QCheckBox::setChecked);
+  connect(toggle_warnings_box_, &QCheckBox::toggled, show_warnings_action, &QAction::setChecked);
   connect(show_labels_action, &QAction::toggled, toggle_labels_box_, &QCheckBox::setChecked);
+  connect(toggle_labels_box_, &QCheckBox::toggled, show_labels_action, &QAction::setChecked);
   connect(show_approach_retreat_overlay_box, &QCheckBox::toggled, this, [this, show_approach_retreat_overlay_box](bool){
     if (!scene_preview_widget_) return;
     scene_preview_widget_->set_task_overlay_visibility(
       show_trajectory_overlay_box_ ? show_trajectory_overlay_box_->isChecked() : true,
       show_pick_place_overlay_box_ ? show_pick_place_overlay_box_->isChecked() : true,
       show_approach_retreat_overlay_box->isChecked(),
-      toggle_labels_box_ ? toggle_labels_box_->isChecked() : true);
+      false);
     scene_preview_widget_->set_perception_overlay_visibility(
       show_camera_fov_overlay_box_ ? show_camera_fov_overlay_box_->isChecked() : true,
       show_pick_place_overlay_box_ ? show_pick_place_overlay_box_->isChecked() : true,
       show_trajectory_overlay_box_ ? show_trajectory_overlay_box_->isChecked() : true,
-      toggle_labels_box_ ? toggle_labels_box_->isChecked() : true);
+      false);
     append_studio_log("overlay toggled");
   });
   scene_builder_canvas_more_button_ = new QToolButton(scene_builder);
@@ -2376,7 +2378,7 @@ void MainWindow::setup_studio_shell()
   connect(fine_move_mode_box_, &QCheckBox::toggled, this, [this](bool){ mark_layout_dirty("Fine Move Mode"); });
   connect(unlock_robot_base_box_, &QCheckBox::toggled, this, [this](bool checked){ if (checked) { QMessageBox::warning(this, "Unlock Robot Base", "Robot base is locked by default. Moving robot base may invalidate reach and safety assumptions."); }});
   connect(toggle_labels_box_, &QCheckBox::toggled, this, [this](bool enabled){
-    if (scene_preview_widget_) scene_preview_widget_->set_label_mode(enabled ? ScenePreviewWidget::LabelMode::All : ScenePreviewWidget::LabelMode::Off);
+    if (scene_preview_widget_) scene_preview_widget_->set_label_mode(enabled ? ScenePreviewWidget::LabelMode::Selected : ScenePreviewWidget::LabelMode::Off);
     rebuild_digital_twin_canvas();
   });
   connect(toggle_warnings_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
@@ -6962,6 +6964,31 @@ void MainWindow::apply_scene3d_product_view_layer_defaults_and_commit()
   set_checked_blocked(preview_layer_primitive_fallback_box_, defaults.primitive_fallback);
   set_checked_blocked(preview_layer_overlays_helpers_box_, defaults.overlay);
   set_checked_blocked(preview_layer_warnings_missing_assets_box_, defaults.warning);
+
+  // Product View intentionally starts clean after both widget construction and
+  // real scene payload commits. Helper/diagnostic overlays remain available in
+  // the Overlays menu, but must be explicit opt-in for each loaded scene.
+  if (toggle_labels_box_) toggle_labels_box_->setChecked(false);
+  if (toggle_warnings_box_) toggle_warnings_box_->setChecked(false);
+  if (show_reach_overlay_box_) show_reach_overlay_box_->setChecked(false);
+  if (show_camera_fov_overlay_box_) show_camera_fov_overlay_box_->setChecked(false);
+  if (show_pick_place_overlay_box_) show_pick_place_overlay_box_->setChecked(false);
+  if (show_trajectory_overlay_box_) show_trajectory_overlay_box_->setChecked(false);
+  if (scene_preview_widget_) {
+    scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Selected);
+    scene_preview_widget_->set_task_overlay_visibility(false, false, false, false);
+    scene_preview_widget_->set_perception_overlay_visibility(false, false, false, false);
+    if (auto * viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>()) {
+      viewport->show_warnings = false;
+      viewport->show_safety = false;
+      viewport->show_reachability_heatmap = false;
+      viewport->show_collision_warnings = false;
+      viewport->show_work_envelope = false;
+      viewport->show_warning_labels = false;
+      viewport->debug_overlays_mode = false;
+      viewport->update();
+    }
+  }
 
   apply_scene3d_preview_layer_filters(false);
 }
