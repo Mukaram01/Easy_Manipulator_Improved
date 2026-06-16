@@ -9,6 +9,8 @@ SUPPORTED_SCENES = ["ur5_2f_test","ur5_3f_test","ur10_2f_test","ur3_suction_test
 
 def parse():
     p=argparse.ArgumentParser()
+    p.add_argument('--repo-root', type=Path, default=ROOT, help='Repository root that contains scripts/ and scenes/.')
+    p.add_argument('--workspace-root', type=Path, help='Optional ROS workspace root forwarded to the extractor.')
     g=p.add_mutually_exclusive_group(required=True); g.add_argument('--all',action='store_true'); g.add_argument('--scene')
     p.add_argument('--portable',action='store_true')
     p.add_argument('--prefer-xacro-expanded',action='store_true',default=True)
@@ -19,11 +21,12 @@ def parse():
     return p.parse_args()
 
 def scene_list(a):
+    scenes_root = a.repo_root / 'scenes'
     if a.scene:
-        return [SCENES/a.scene]
-    return [SCENES/s for s in SUPPORTED_SCENES if (SCENES/s).exists()]
+        return [scenes_root/a.scene]
+    return [scenes_root/s for s in SUPPORTED_SCENES if (scenes_root/s).exists()]
 
-def summarize(scene):
+def summarize(scene, repo_root=ROOT):
     idx=scene/'generated/scene_visual_mesh_index.json'; data=json.loads(idx.read_text()) if idx.exists() else {}
     items=data.get('visual_items',[])
     mesh_backed=sum(1 for i in items if i.get('geometry_type')=='mesh')
@@ -40,19 +43,23 @@ def summarize(scene):
     safe=data.get('safe_for_preview',False)
     status='PASS' if safe else ('FAIL' if not items else 'WARN')
     stale_unsafe = int(bool(data.get('stale_index'))) + (1 if not safe else 0)
-    return {'scene':scene.name,'extraction_mode':data.get('extraction_mode','unknown'),'xacro_available':data.get('xacro_available',False),'expanded_urdf_written':bool(data.get('source_expanded_urdf_path')),'safe_for_preview':safe,'fallback_reason':data.get('fallback_reason',''),'unresolved_placeholder_count':unresolved,'mesh_backed_count':mesh_backed,'skipped_count':sum(1 for i in items if i.get('render_skip_reason')),'primitive_fallback_count':primitive,'stale_index':data.get('stale_index',False),'status':status,'visual_item_count':len(items),'unresolved_count':unresolved,'stale_or_unsafe_count':stale_unsafe,'generated_index_path':str(idx.relative_to(ROOT)),'distinct_pose_count':distinct_pose_count,'bounding_box_min':mins,'bounding_box_max':maxs,'collapsed_pose_warning':collapsed_pose_warning}
+    return {'scene':scene.name,'extraction_mode':data.get('extraction_mode','unknown'),'xacro_available':data.get('xacro_available',False),'expanded_urdf_written':bool(data.get('source_expanded_urdf_path')),'safe_for_preview':safe,'fallback_reason':data.get('fallback_reason',''),'unresolved_placeholder_count':unresolved,'mesh_backed_count':mesh_backed,'skipped_count':sum(1 for i in items if i.get('render_skip_reason')),'primitive_fallback_count':primitive,'stale_index':data.get('stale_index',False),'status':status,'visual_item_count':len(items),'unresolved_count':unresolved,'stale_or_unsafe_count':stale_unsafe,'generated_index_path':str(idx.relative_to(repo_root)),'distinct_pose_count':distinct_pose_count,'bounding_box_min':mins,'bounding_box_max':maxs,'collapsed_pose_warning':collapsed_pose_warning}
 
 def main():
     a=parse(); rows=[]
+    a.repo_root = a.repo_root.resolve()
+    out = a.repo_root / 'build/workcell_studio/visual_mesh_index_regeneration_report.json'
+    extractor = a.repo_root / 'scripts/extract_scene_urdf_visual_mesh_index.py'
     for s in scene_list(a):
-        cmd=['python3',str(ROOT/'scripts/extract_scene_urdf_visual_mesh_index.py'),'--scene',s.name,'--prefer-xacro-expanded']
+        cmd=['python3',str(extractor),'--scene',s.name,'--prefer-xacro-expanded']
+        if a.workspace_root is not None: cmd += ['--workspace-root', str(a.workspace_root)]
         for xa in a.xacro_arg: cmd += ['--xacro-arg', xa]
         if a.fail_on_unexpanded: cmd.append('--fail-on-unexpanded')
         subprocess.run(cmd,check=False)
-        row=summarize(s); rows.append(row)
+        row=summarize(s, a.repo_root); rows.append(row)
         print(f"{row['scene']}: visual_items={row['visual_item_count']} mesh={row['mesh_backed_count']} primitive={row['primitive_fallback_count']} distinct_pose_count={row['distinct_pose_count']} bbox_min={row['bounding_box_min']} bbox_max={row['bounding_box_max']} collapsed_pose_warning={row['collapsed_pose_warning']} skipped={row['skipped_count']} safe={row['safe_for_preview']} fallback_reason={row['fallback_reason']}")
     payload={'schema':'workcell_studio_visual_mesh_index_regeneration/v2','scenes':rows,'summary':{'scene_count':len(rows)}}
-    OUT.parent.mkdir(parents=True,exist_ok=True); OUT.write_text(json.dumps(payload,indent=2)+'\n'); print(OUT)
+    out.parent.mkdir(parents=True,exist_ok=True); out.write_text(json.dumps(payload,indent=2)+'\n'); print(out)
     if a.fail_on_unsafe and any(r['status']!='PASS' for r in rows): return 1
     if a.fail_on_unexpanded and any(r['extraction_mode']!='xacro_expanded' for r in rows): return 3
     return 0
