@@ -516,7 +516,6 @@ void ScenePreviewWidget::refresh_mode_and_state()
   const QString mode = mode_selector_->currentText();
   const bool requested_3d = (mode == "3D Layout Preview");
   const bool use3d = requested_3d && preview3d_available_;
-  auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
   refresh_toolbar_visibility();
 
   if (!preview3d_available_) {
