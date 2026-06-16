@@ -8899,6 +8899,17 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     return true;
   });
   const int preview_rendered_count = preview_visible_count;
+  int classified_overlay_count = 0;
+  int classified_warning_count = 0;
+  int classified_diagnostic_count = 0;
+  for (const auto & item : all_scene_preview_items_) {
+    const QString source_layer = item.source_layer.trimmed().toLower();
+    const QString category = item.category.trimmed().toLower();
+    const QString status = item.status.trimmed().toLower();
+    if (category.contains("overlay") || category.contains("helper") || source_layer.contains("overlay")) ++classified_overlay_count;
+    if (status.contains("warning") || item.mesh_load_warning.contains("missing", Qt::CaseInsensitive)) ++classified_warning_count;
+    if (category.contains("diagnostic") || source_layer.contains("diagnostic") || status.contains("diagnostic")) ++classified_diagnostic_count;
+  }
 
   bool editable_layout_yaml_malformed = false;
   const std::vector<fs::path> editable_yaml_candidates = {
@@ -8969,13 +8980,16 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     validation_gate_ready ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Current));
   const bool preview_has_runtime_content = preview_runtime_ready;
   const QString native_preview_counts = QString(
-    "Scene3D counters: received=%1 visible=%2 rendered=%3; classified layers: editable=%4 generated=%5 fallback=%6 other=%7.")
+    "Scene3D counters: received=%1 visible=%2 rendered=%3; classified layers: editable=%4 generated=%5 fallback=%6 overlays/helpers=%7 warning/missing=%8 diagnostics=%9 other=%10.")
       .arg(preview_received_count)
       .arg(preview_visible_count)
       .arg(preview_rendered_count)
       .arg(classified_editable_count)
       .arg(classified_generated_count)
       .arg(classified_fallback_count)
+      .arg(classified_overlay_count)
+      .arg(classified_warning_count)
+      .arg(classified_diagnostic_count)
       .arg(classified_other_count);
   const QString launch_gate_detail = QString(
     "RViz/MoveIt fake-hardware launch readiness is evaluated separately by package and validation gates: scene_package=%1 validation=%2 fake_hardware_launch=%3.")
@@ -8988,9 +9002,12 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   SceneWorkflowStepStatus preview_status = SceneWorkflowStepStatus::NeedsAction;
   if (preview_has_runtime_content) {
     preview_status = SceneWorkflowStepStatus::Done;
-    preview_detail = QString("Native Scene3D preview has renderable content. This does not prove RViz/MoveIt launch readiness. %1 %2")
+    preview_detail = QString("3D Preview Technical Pass: native Scene3D has renderable content, but render/smoke counters alone do not prove demo-ready visual quality or RViz/MoveIt launch readiness. %1 %2")
       .arg(native_preview_counts, launch_gate_detail);
-    if (editable_layout_yaml_malformed || classified_fallback_count > 0 || classified_editable_count == 0 || has_warnings) {
+    const bool visual_quality_needs_review = editable_layout_yaml_malformed || classified_fallback_count > 0 ||
+      classified_overlay_count > 0 || classified_warning_count > 0 || classified_editable_count == 0 ||
+      classified_diagnostic_count > 0 || has_warnings;
+    if (visual_quality_needs_review) {
       preview_status = SceneWorkflowStepStatus::Warning;
       QStringList preview_warnings;
       if (editable_layout_yaml_malformed) {
@@ -8999,13 +9016,22 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
       if (classified_fallback_count > 0) {
         preview_warnings << "fallback content is visible from scene metadata or URDF mesh index";
       }
+      if (classified_overlay_count > 0) {
+        preview_warnings << "overlays/helpers remain visible and should be checked against the intended demo view";
+      }
+      if (classified_warning_count > 0) {
+        preview_warnings << "warning or missing-asset items remain in the preview";
+      }
       if (classified_editable_count == 0) {
         preview_warnings << "no editable layout items are classified yet; create editable layout from preview when appropriate";
+      }
+      if (classified_diagnostic_count > 0) {
+        preview_warnings << "diagnostic preview items remain visible";
       }
       if (has_warnings) {
         preview_warnings << "validation/readiness warnings are present";
       }
-      preview_detail = QString("Native Scene3D preview rendered with warnings: %1. This is a warning/ready preview state, not RViz/MoveIt truth. %2 %3")
+      preview_detail = QString("Visual Quality Needs Review: %1. 3D Preview Technical Pass only confirms renderable Scene3D content; it is not demo-ready proof and is not RViz/MoveIt truth. %2 %3")
         .arg(preview_warnings.join("; "), native_preview_counts, launch_gate_detail);
     }
   }
