@@ -930,6 +930,14 @@ void Scene3DViewportWidget::invalidate_mesh_cache()
 {
   mesh_cache_.clear();
   warned_mesh_fallbacks_.clear();
+  for (const auto & it : items) {
+    const NormalizedRole role = classify_item_role(it);
+    const bool overlay_helper = is_overlay_only_item(it) || is_overlay_visual_role(role);
+    if (overlay_helper || !item_has_credible_mesh_handoff(it)) continue;
+    const QString mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
+    if (!mesh_source.trimmed().isEmpty()) ensure_mesh_cached(it, mesh_source);
+  }
+  last_render_counters.render_cache_count = mesh_cache_.size();
   update();
 }
 void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidget::PreviewItem> & preview_items)
@@ -950,7 +958,11 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
     unique_visible_ids.insert(it.id);
     const bool generated_urdf = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
     const bool overlay_helper = is_overlay_only_item(it) || is_overlay_visual_role(role);
-    if (!overlay_helper && item_has_credible_mesh_handoff(it)) ++mesh_source_count;
+    if (!overlay_helper && item_has_credible_mesh_handoff(it)) {
+      ++mesh_source_count;
+      const QString mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
+      if (!mesh_source.trimmed().isEmpty()) ensure_mesh_cached(it, mesh_source);
+    }
     if (!overlay_helper && generated_urdf && item_has_valid_urdf_primitive(it)) ++urdf_primitive_source_count;
     if (generated_urdf) ++locked_urdf_count;
     if (it.linked_to_editable_layout_state) ++editable_layout_count;
@@ -2103,7 +2115,19 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
     warn_for_mode(QStringLiteral("REJECT_MESH_SOURCE_MISSING: mesh source missing"), mesh_source);
     return false;
   }
-  const MeshCacheEntry & entry = ensure_mesh_cached(it, mesh_source);
+  QString canonical_mesh_source;
+  if (!try_resolve_canonical_mesh_path(mesh_source, canonical_mesh_source, &it)) {
+    canonical_mesh_source = QFileInfo(mesh_source).absoluteFilePath();
+  }
+  const auto cache_it = mesh_cache_.constFind(canonical_mesh_source);
+  if (cache_it == mesh_cache_.constEnd()) {
+    warn_mesh_fallback_once(
+      it.id,
+      QStringLiteral("REJECT_MESH_CACHE_MISS: mesh cache entry missing; waiting for controlled preview ingest/reload"),
+      mesh_source);
+    return false;
+  }
+  const MeshCacheEntry & entry = cache_it.value();
   auto reject = [&](const QString & code, const QString & detail = QString()) {
     const QString reason = detail.isEmpty() ? code : QStringLiteral("%1: %2").arg(code, detail);
     warn_for_mode(reason, mesh_source);
@@ -2661,7 +2685,13 @@ bool Scene3DViewportWidget::mesh_world_bounds_for_item(const ScenePreviewWidget:
 {
   const QString mesh_source = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path : item.source_path;
   if (mesh_source.trimmed().isEmpty()) return false;
-  const MeshCacheEntry & cache = const_cast<Scene3DViewportWidget *>(this)->ensure_mesh_cached(item, mesh_source);
+  QString canonical_mesh_source;
+  if (!try_resolve_canonical_mesh_path(mesh_source, canonical_mesh_source, &item)) {
+    canonical_mesh_source = QFileInfo(mesh_source).absoluteFilePath();
+  }
+  const auto cache_it = mesh_cache_.constFind(canonical_mesh_source);
+  if (cache_it == mesh_cache_.constEnd()) return false;
+  const MeshCacheEntry & cache = cache_it.value();
   if (!cache.loaded || !cache.valid || !cache.has_bounds) return false;
 
   QMatrix4x4 transform;
