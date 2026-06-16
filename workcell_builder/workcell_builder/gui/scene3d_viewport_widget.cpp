@@ -27,6 +27,12 @@
 #include <limits>
 #include <sstream>
 
+#ifdef WORKCELL_BUILDER_HAS_ASSIMP
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
+#endif
+
 namespace {
 constexpr int kMeshTriangleLimit = 100000;
 constexpr double kWorkspaceLimitMeters = 1000.0;
@@ -541,6 +547,83 @@ bool parse_collada_bytes(const QByteArray & bytes, Scene3DViewportWidget::Intern
   if (out_mesh.triangles.isEmpty()) { out_error = QStringLiteral("collada contains no triangles"); return false; }
   return true;
 }
+#ifdef WORKCELL_BUILDER_HAS_ASSIMP
+QVector3D assimp_vec_to_qvector(const aiVector3D & v)
+{
+  return QVector3D(v.x, v.y, v.z);
+}
+
+bool append_assimp_node_meshes(const aiScene * scene, const aiNode * node, const aiMatrix4x4 & parent_transform,
+                               Scene3DViewportWidget::InternalTriangleMesh & out_mesh,
+                               QString & out_error, int triangle_limit)
+{
+  if (!scene || !node) return true;
+  const aiMatrix4x4 world_transform = parent_transform * node->mTransformation;
+  for (unsigned int mesh_index_i = 0; mesh_index_i < node->mNumMeshes; ++mesh_index_i) {
+    const unsigned int mesh_index = node->mMeshes[mesh_index_i];
+    if (mesh_index >= scene->mNumMeshes || !scene->mMeshes[mesh_index]) continue;
+    const aiMesh * mesh = scene->mMeshes[mesh_index];
+    if (!mesh->HasPositions()) continue;
+    for (unsigned int face_i = 0; face_i < mesh->mNumFaces; ++face_i) {
+      const aiFace & face = mesh->mFaces[face_i];
+      if (face.mNumIndices != 3) continue;
+      Scene3DViewportWidget::InternalTriangleMesh::Triangle tri;
+      for (int vi = 0; vi < 3; ++vi) {
+        const unsigned int vertex_index = face.mIndices[vi];
+        if (vertex_index >= mesh->mNumVertices) {
+          out_error = QStringLiteral("assimp mesh face references invalid vertex");
+          return false;
+        }
+        aiVector3D transformed = mesh->mVertices[vertex_index];
+        transformed *= world_transform;
+        tri.vertices[vi] = assimp_vec_to_qvector(transformed);
+      }
+      tri.normal = QVector3D::crossProduct(tri.vertices[1] - tri.vertices[0], tri.vertices[2] - tri.vertices[0]);
+      if (tri.normal.lengthSquared() > 0.0f) tri.normal.normalize();
+      out_mesh.triangles.push_back(tri);
+      if (out_mesh.triangles.size() > triangle_limit) {
+        out_error = QStringLiteral("mesh triangle count exceeds limit");
+        return false;
+      }
+    }
+  }
+  for (unsigned int child_i = 0; child_i < node->mNumChildren; ++child_i) {
+    if (!append_assimp_node_meshes(scene, node->mChildren[child_i], world_transform, out_mesh, out_error, triangle_limit)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool parse_mesh_with_assimp(const QString & canonical_path, Scene3DViewportWidget::InternalTriangleMesh & out_mesh,
+                            QString & out_error, int triangle_limit)
+{
+  out_mesh.triangles.clear();
+  Assimp::Importer importer;
+  const unsigned int flags = aiProcess_Triangulate |
+                             aiProcess_GenSmoothNormals |
+                             aiProcess_JoinIdenticalVertices |
+                             aiProcess_SortByPType |
+                             aiProcess_ValidateDataStructure;
+  const aiScene * scene = importer.ReadFile(canonical_path.toStdString(), flags);
+  if (!scene) {
+    out_error = QStringLiteral("assimp import failed: %1").arg(QString::fromUtf8(importer.GetErrorString()));
+    return false;
+  }
+  if (!scene->mRootNode) {
+    out_error = QStringLiteral("assimp import produced no root node");
+    return false;
+  }
+  aiMatrix4x4 identity;
+  if (!append_assimp_node_meshes(scene, scene->mRootNode, identity, out_mesh, out_error, triangle_limit)) return false;
+  if (out_mesh.triangles.isEmpty()) {
+    out_error = QStringLiteral("assimp import contains no triangles");
+    return false;
+  }
+  return true;
+}
+#endif
+
 enum class NormalizedRole
 {
   RobotBase,
@@ -1953,14 +2036,53 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
   const QString ext = canonical_info.suffix().toLower();
   QString parse_error;
   if (ext == QStringLiteral("stl")) {
+#ifdef WORKCELL_BUILDER_HAS_ASSIMP
+    entry.parser_type = QStringLiteral("assimp:stl");
+    entry.valid = parse_mesh_with_assimp(canonical, entry.mesh, parse_error, kMeshTriangleLimit);
+    if (!entry.valid) {
+      entry.mesh.triangles.clear();
+      entry.parser_type = QStringLiteral("stl");
+      QString fallback_error;
+      entry.valid = parse_stl_bytes_for_test(bytes, canonical, entry.mesh, fallback_error, kMeshTriangleLimit);
+      if (!entry.valid) parse_error = QStringLiteral("%1; fallback stl parser failed: %2").arg(parse_error, fallback_error);
+      else parse_error.clear();
+    }
+#else
     entry.parser_type = QStringLiteral("stl");
     entry.valid = parse_stl_bytes_for_test(bytes, canonical, entry.mesh, parse_error, kMeshTriangleLimit);
+#endif
   } else if (ext == QStringLiteral("dae")) {
+#ifdef WORKCELL_BUILDER_HAS_ASSIMP
+    entry.parser_type = QStringLiteral("assimp:dae");
+    entry.valid = parse_mesh_with_assimp(canonical, entry.mesh, parse_error, kMeshTriangleLimit);
+    if (!entry.valid) {
+      entry.mesh.triangles.clear();
+      entry.parser_type = QStringLiteral("dae");
+      QString fallback_error;
+      entry.valid = parse_collada_bytes_for_test(bytes, canonical, entry.mesh, fallback_error, &entry.dae_unit_meter, kMeshTriangleLimit);
+      if (!entry.valid) parse_error = QStringLiteral("%1; fallback collada parser failed: %2").arg(parse_error, fallback_error);
+      else parse_error.clear();
+    }
+#else
     entry.parser_type = QStringLiteral("dae");
     entry.valid = parse_collada_bytes_for_test(bytes, canonical, entry.mesh, parse_error, &entry.dae_unit_meter, kMeshTriangleLimit);
+#endif
   } else if (ext == QStringLiteral("obj")) {
+#ifdef WORKCELL_BUILDER_HAS_ASSIMP
+    entry.parser_type = QStringLiteral("assimp:obj");
+    entry.valid = parse_mesh_with_assimp(canonical, entry.mesh, parse_error, kMeshTriangleLimit);
+    if (!entry.valid) {
+      entry.mesh.triangles.clear();
+      entry.parser_type = QStringLiteral("obj");
+      QString fallback_error;
+      entry.valid = parse_obj_bytes_for_test(bytes, canonical, entry.mesh, fallback_error, kMeshTriangleLimit);
+      if (!entry.valid) parse_error = QStringLiteral("%1; fallback obj parser failed: %2").arg(parse_error, fallback_error);
+      else parse_error.clear();
+    }
+#else
     entry.parser_type = QStringLiteral("obj");
     entry.valid = parse_obj_bytes_for_test(bytes, canonical, entry.mesh, parse_error, kMeshTriangleLimit);
+#endif
   } else {
     entry.parser_type = ext;
     entry.valid = false;
@@ -2047,8 +2169,9 @@ QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
     row["resolved_source_path_original"] = e.resolved_source_path_original;
     row["source_path_resolution_outcome"] = e.source_path_resolution_outcome;
     row["oversized"] = e.oversized;
-    const QString parser = (e.parser_type == "stl" || e.parser_type == "dae" || e.parser_type == "obj") ? e.parser_type : QStringLiteral("unsupported");
-    row["parser_type"] = parser;
+    const bool known_parser = e.parser_type == "stl" || e.parser_type == "dae" || e.parser_type == "obj" ||
+                              e.parser_type.startsWith(QStringLiteral("assimp:"));
+    row["parser_type"] = known_parser ? e.parser_type : QStringLiteral("unsupported");
     row["parse_error"] = e.parse_error;
     row["rejected_reason_code"] = e.failure_reason_code.trimmed().isEmpty() ? e.parse_status : e.failure_reason_code;
     row["triangle_count"] = static_cast<int>(e.mesh.triangles.size());
