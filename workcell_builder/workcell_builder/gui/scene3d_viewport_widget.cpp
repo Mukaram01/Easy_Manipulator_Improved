@@ -2057,6 +2057,7 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
   QString load_failure_reason;
   const bool path_resolved = try_resolve_canonical_mesh_path(path, canonical, &item, &load_failure_reason);
   if (!path_resolved) canonical = input_info.absoluteFilePath();
+  const QFileInfo canonical_info(canonical);
   auto it = mesh_cache_.find(canonical);
   if (it != mesh_cache_.end()) return it.value();
   MeshCacheEntry entry;
