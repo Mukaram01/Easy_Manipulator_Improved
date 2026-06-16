@@ -329,14 +329,26 @@ def xacro_env(scene_dir, workspace_root=None):
     return env
 
 def discover_xacro_command():
-    if shutil.which('xacro'): return ['xacro'], True, ''
-    if Path('/opt/ros/humble/bin/xacro').exists(): return ['/opt/ros/humble/bin/xacro'], True, ''
+    diagnostics=[]
+
+    path_xacro = shutil.which('xacro')
+    if path_xacro:
+        return [str(Path(path_xacro).resolve())], True, ''
+    diagnostics.append('PATH xacro not found')
+
+    ros_humble_xacro = Path('/opt/ros/humble/bin/xacro')
+    if ros_humble_xacro.exists():
+        return [str(ros_humble_xacro.resolve())], True, ''
+    diagnostics.append('/opt/ros/humble/bin/xacro missing')
+
     try:
-        mod = subprocess.run(['python3', '-m', 'xacro', '--help'], capture_output=True, text=True)
-        if mod.returncode == 0: return ['python3', '-m', 'xacro'], True, ''
+        if importlib.util.find_spec('xacro') is not None:
+            return ['python3', '-m', 'xacro'], True, ''
+        diagnostics.append('python xacro module import failed: module spec not found')
     except Exception as e:
-        return None, False, f"xacro executable unavailable ({e})"
-    return None, False, "xacro executable unavailable"
+        diagnostics.append(f'python xacro module import failed: {e}')
+
+    return None, False, '; '.join(diagnostics)
 
 def _xacro_tag(e):
     name=tag_name(e)
