@@ -36,9 +36,9 @@ public:
   QString selected_id;
   ScenePreviewWidget::LabelMode label_mode{ ScenePreviewWidget::LabelMode::Selected };
   bool show_warnings{ true }, show_safety{ true }, show_pick_place{ true };
-  bool show_reachability_heatmap{ true }, show_collision_warnings{ true }, show_work_envelope{ true }, show_warning_labels{ true };
-  bool show_task_route{ true }, show_approach_retreat{ true };
-  bool show_camera_fov{ true }, show_pick_coverage{ true }, show_epd_detections{ true }, show_detection_labels{ true };
+  bool show_reachability_heatmap{ false }, show_collision_warnings{ false }, show_work_envelope{ false }, show_warning_labels{ false };
+  bool show_task_route{ false }, show_approach_retreat{ false };
+  bool show_camera_fov{ false }, show_pick_coverage{ false }, show_epd_detections{ false }, show_detection_labels{ false };
   bool debug_overlays_mode{ false };
   ScenePreviewWidget::MeshPreviewMode mesh_preview_mode{ ScenePreviewWidget::MeshPreviewMode::Auto };
   bool fit_include_overlays{ false };
