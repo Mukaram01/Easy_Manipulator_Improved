@@ -1393,7 +1393,7 @@ void Scene3DViewportWidget::paintGL()
     const QPointF p = project_to_screen(bounds.x + (bounds.sx * 0.5), bounds.y + (bounds.sy * 0.5), bounds.z + (bounds.sz * 0.5));
     const bool selected = (it.id == selected_id);
     const NormalizedRole role = classify_item_role(it);
-    const ScenePreviewWidget::LabelMode effective_label_mode = ScenePreviewWidget::LabelMode::Selected;
+    const ScenePreviewWidget::LabelMode effective_label_mode = label_mode;
     bool draw_label = false;
     switch (effective_label_mode) {
       case ScenePreviewWidget::LabelMode::Off: draw_label = selected; break;
@@ -1478,8 +1478,13 @@ void Scene3DViewportWidget::paintGL()
   }
   last_render_counters.labels_drawn = labels_drawn;
   last_render_counters.labels_suppressed_overlap = labels_suppressed_overlap;
-  const bool concise_warning = missing_geometry_count > 0 ||
-                               last_render_counters.visual_quality_status == QStringLiteral("FAIL");
+  const bool has_missing_or_fallback_content = missing_geometry_count > 0 ||
+                                               last_render_counters.mesh_bounds_fallback_rendered_count > 0 ||
+                                               last_render_counters.primitive_fallback_rendered_count > 0 ||
+                                               wireframe_box_count > 0 ||
+                                               placeholder_count > 0 ||
+                                               last_render_counters.visual_quality_status == QStringLiteral("FAIL");
+  const bool concise_warning = show_warnings && has_missing_or_fallback_content;
   const QRectF overlay_rect = debug_overlays_mode ? QRectF(12.0, 12.0, 520.0, 88.0)
                                                   : QRectF(12.0, 12.0, concise_warning ? 430.0 : 410.0, concise_warning ? 62.0 : 46.0);
   painter.setPen(Qt::NoPen);

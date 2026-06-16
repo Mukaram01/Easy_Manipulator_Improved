@@ -166,7 +166,33 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   mouse_help_label->setToolTip(scene_preview_mouse_help_tooltip(QString()));
   mouse_help_label->setStatusTip(QString::fromUtf8(kScenePreviewMouseHelpText));
   controls->addWidget(mouse_help_label);
-  overlays_selector_ = new QComboBox(this); overlays_selector_->addItems({"Overlays", "Diagnostics Overlay", "Reachability Heatmap", "Collision Warnings", "Safety Zones", "Work Envelope", "Warning Labels", "Labels", "Pick/Place Zones", "Task Route", "Approach/Retreat", "Camera FOV", "Pick Coverage", "EPD Detections", "Detection Labels", "Warnings", "Focus Selected", "Fit Scene", "Fit Robot", "Fit overlays", "Clear Selection"}); controls->addWidget(overlays_selector_);
+  overlays_selector_ = new QComboBox(this);
+  overlays_selector_->addItems({
+    "Overlays",
+    "Diagnostics Overlay",
+    "Reachability Heatmap",
+    "Collision Warnings",
+    "Safety Zones",
+    "Work Envelope",
+    "Warning Labels",
+    "Labels",
+    "Pick/Place Zones",
+    "Task Route",
+    "Approach/Retreat",
+    "Camera FOV",
+    "Pick Coverage",
+    "EPD Detections",
+    "Detection Labels",
+    "Warnings",
+    "Focus Selected",
+    "Fit Scene",
+    "Fit Robot",
+    "Fit overlays",
+    "Clear Selection"
+  });
+  overlays_selector_->setCurrentText("Overlays");
+  overlays_selector_->setToolTip("Product View starts clean. Use these diagnostics controls to explicitly enable helper overlays for the current preview session.");
+  controls->addWidget(overlays_selector_);
   controls->addStretch(1);
   root->addLayout(controls);
   stack_ = new QStackedWidget(this);
@@ -266,11 +292,24 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     else if (choice == "Safety Zones") v->show_safety = !v->show_safety;
     else if (choice == "Work Envelope") v->show_work_envelope = !v->show_work_envelope;
     else if (choice == "Warning Labels") v->show_warning_labels = !v->show_warning_labels;
+    else if (choice == "Labels" && labels_selector_) labels_selector_->showPopup();
+    else if (choice == "Pick/Place Zones") v->show_pick_place = !v->show_pick_place;
+    else if (choice == "Task Route") v->show_task_route = !v->show_task_route;
+    else if (choice == "Approach/Retreat") v->show_approach_retreat = !v->show_approach_retreat;
+    else if (choice == "Camera FOV") v->show_camera_fov = !v->show_camera_fov;
+    else if (choice == "Pick Coverage") v->show_pick_coverage = !v->show_pick_coverage;
+    else if (choice == "EPD Detections") v->show_epd_detections = !v->show_epd_detections;
+    else if (choice == "Detection Labels") v->show_detection_labels = !v->show_detection_labels;
+    else if (choice == "Warnings") v->show_warnings = !v->show_warnings;
     else if (choice == "Focus Selected") on_focus_selected_clicked();
     else if (choice == "Fit Scene") on_fit_scene_clicked();
     else if (choice == "Fit Robot") on_fit_robot_clicked();
     else if (choice == "Fit overlays") on_fit_overlays_clicked();
     else if (choice == "Clear Selection") on_clear_selection_clicked();
+    if (overlays_selector_ && choice != "Overlays") {
+      const QSignalBlocker blocker(overlays_selector_);
+      overlays_selector_->setCurrentText("Overlays");
+    }
     v->update();
     refresh_info_chip();
   });
