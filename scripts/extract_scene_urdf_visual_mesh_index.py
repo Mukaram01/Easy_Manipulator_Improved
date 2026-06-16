@@ -564,6 +564,23 @@ def expand_xacro(urdf_path, scene_dir=None, xacro_args=None, workspace_root=None
 
 
 
+
+
+def preview_degraded_fallback_warning(fallback_reason, extraction_mode=''):
+    text = str(fallback_reason or '')
+    if 'skipped unresolved macros' in text.lower() and _contains_unresolved_ur_robot(text):
+        return 'xacro-lite skipped robot macro ur_robot; preview uses degraded fallback geometry'
+    if str(extraction_mode or '') in {'xacro_lite_expanded', 'xacro_lite_fallback'} and _contains_unresolved_ur_robot(text):
+        return 'xacro-lite skipped robot macro ur_robot; preview uses degraded fallback geometry'
+    return ''
+
+def is_preview_fully_healthy(items, unresolved, extraction_mode, fallback_reason, renderable_mesh_count=None):
+    if renderable_mesh_count is None:
+        renderable_mesh_count = sum(1 for item in items or [] if item.get('geometry_type') == 'mesh' and item.get('render_expected', True))
+    if preview_degraded_fallback_warning(fallback_reason, extraction_mode):
+        return False
+    return bool(items) and len(unresolved or []) == 0 and extraction_mode == 'xacro_expanded' and renderable_mesh_count > 0
+
 def _contains_unresolved_ur_robot(text):
     text = text or ''
     lowered = text.lower()
@@ -647,6 +664,8 @@ def append_static_robot_primitive_fallbacks(items, urdf_text, fallback_reason, e
         or _contains_unresolved_ur_robot(source_xacro_text)
         or _contains_unresolved_ur_robot(urdf_text)
     ):
+        return 0
+    if _has_ur5_visual_mesh_uri(items):
         return 0
     existing_ids = {str(i.get('id') or '') for i in items}
     specs = UR5_STATIC_VISUAL_SPECS
@@ -856,15 +875,22 @@ def main():
             static_robot_fallback_count = append_static_robot_primitive_fallbacks(items, xml_text, fallback_reason, mode, source_xacro_text)
         static_parent_resolved_count = resolve_static_tool0_children(items)
         unresolved=[i for i in items if any(contains_placeholder(i.get(k,'')) for k in ('id','link','parent_link'))]
-        fallback_only_ur5_preview=static_robot_fallback_count > 0 and not _has_ur5_visual_mesh_uri(items)
-        safe=bool(items) and (len(unresolved)==0) and (mode in ('xacro_expanded','xacro_lite_expanded','xacro_lite_fallback'))
         mesh_format_counts=dict(collections.Counter((Path(i.get('resolved_source_path') or i.get('source_path') or '').suffix.lower() or 'unknown') for i in items if i.get('geometry_type')=='mesh'))
         transform_status_counts=dict(collections.Counter(str(i.get('transform_status') or 'unknown') for i in items))
         renderable_count=sum(1 for i in items if i.get('render_expected', True))
         renderable_mesh_count=sum(1 for i in items if i.get('geometry_type')=='mesh' and i.get('render_expected', True))
+        preview_warning=preview_degraded_fallback_warning(fallback_reason, mode)
+        preview_blockers=[]
+        preview_warnings=[]
+        if preview_warning:
+            preview_blockers.append(preview_warning)
+            preview_warnings.append(preview_warning)
+        if mode in ('xacro_lite_expanded','xacro_lite_fallback') and not preview_warning:
+            preview_warnings.append('xacro-lite preview is degraded and is not equivalent to real xacro-expanded output')
+        safe=is_preview_fully_healthy(items, unresolved, mode, fallback_reason, renderable_mesh_count)
         source_mtime=urdf_path.stat().st_mtime if urdf_path.exists() else None
         has_transform_collapse_warning=bool(items) and len({tuple((i.get('pose') or {}).get('xyz') or []) for i in items}) <= 1 and len(items) > 1
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True)

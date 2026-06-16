@@ -441,6 +441,9 @@ def test_main_marks_xacro_lite_static_ur5_fallback_preview_unsafe(monkeypatch, t
     assert payload['xacro_real_command_succeeded'] is False
     assert payload['static_robot_primitive_fallback_count'] > 0
     assert payload['safe_for_preview'] is False
+    expected = 'xacro-lite skipped robot macro ur_robot; preview uses degraded fallback geometry'
+    assert expected in payload['blockers']
+    assert expected in payload['warnings']
 
 def test_synthetic_chain_transform_composition_and_primitives():
     import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
