@@ -1490,12 +1490,6 @@ void Scene3DViewportWidget::paintGL()
   }
   last_render_counters.labels_drawn = labels_drawn;
   last_render_counters.labels_suppressed_overlap = labels_suppressed_overlap;
-  const bool render_counters_clean =
-    last_render_counters.missing_geometry_count == 0 &&
-    last_render_counters.generated_fallback_count == 0 &&
-    last_render_counters.wireframe_fallback_count == 0;
-  const bool concise_warning = !render_counters_clean ||
-                               last_render_counters.visual_quality_status == QStringLiteral("FAIL");
   const bool has_missing_or_fallback_content = missing_geometry_count > 0 ||
                                                last_render_counters.mesh_bounds_fallback_rendered_count > 0 ||
                                                last_render_counters.primitive_fallback_rendered_count > 0 ||
