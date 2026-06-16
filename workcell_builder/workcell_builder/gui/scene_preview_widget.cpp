@@ -348,6 +348,11 @@ void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items)
     emit studio_log_requested(has_selected ? QString("Preview selection restored after refresh: %1").arg(selected_preview_item_id_) : QString("Preview selection retained after refresh; id is hidden by filters or absent from the visible preview payload: %1").arg(selected_preview_item_id_));
   }
   viewport->fit_include_overlays = false;
+  // Product previews should open in the same camera path users get from the
+  // normal canvas controls: an isometric view followed by product-fit bounds
+  // that keep robot/tool/environment meshes and editable layout items legible
+  // without letting diagnostics overlays dominate the initial framing.
+  viewport->set_isometric_view();
   viewport->fit_product_view();
   emit_scene_diagnostic_once(
     QStringLiteral("payload_commit"),
