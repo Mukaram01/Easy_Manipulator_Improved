@@ -462,7 +462,7 @@ def _expand_lite_node(node, args, package_map, macros):
     node[:]=children
     return [node]
 
-def expand_xacro_lite(urdf_path, scene_dir=None, xacro_args=None, workspace_root=None):
+def expand_xacro_lite(urdf_path, scene_dir=None, xacro_args=None, workspace_root=None, reason_prefix=None):
     scene_dir = scene_dir or Path(urdf_path).parents[1]; xacro_args = dict(xacro_args or {})
     source_text = Path(urdf_path).read_text(errors='ignore') if Path(urdf_path).exists() else ''
     package_map, diagnostics = discover_package_map(scene_dir, workspace_root=workspace_root, package_names=extract_referenced_package_names(source_text))
@@ -490,32 +490,77 @@ def expand_xacro_lite(urdf_path, scene_dir=None, xacro_args=None, workspace_root
         for out in _expand_lite_node(child,args,package_map,macros):
             expanded_root.append(out)
     xml_text=ET.tostring(expanded_root, encoding='unicode')
-    reason='xacro executable unavailable; used safe repo-local xacro-lite expansion'
+    reason=reason_prefix or 'xacro executable unavailable; used safe repo-local xacro-lite expansion'
     if skipped:
         reason += '; skipped unresolved macros: ' + ', '.join(sorted(set(skipped)))
     return xml_text, True, reason, ['xacro-lite', str(urdf_path)]
 
-def expand_xacro(urdf_path, scene_dir=None, xacro_args=None, workspace_root=None):
+def _explicit_lite_fallback_requested(explicit_lite_fallback=False):
+    env_value = os.environ.get('WORKCELL_ALLOW_XACRO_LITE_FALLBACK', '')
+    return bool(explicit_lite_fallback) or _truthy(env_value)
+
+
+def _xacro_failure_diagnostic(status, command, returncode=None, stdout='', stderr='', reason=''):
+    diagnostic = {
+        'xacro_status': status,
+        'xacro_command': list(command or []),
+        'xacro_returncode': returncode,
+        'xacro_stdout': stdout or '',
+        'xacro_stderr': stderr or '',
+        'xacro_diagnostic': reason or '',
+    }
+    parts = [status.replace('_', ' ')]
+    if returncode is not None:
+        parts.append(f'returncode={returncode}')
+    if stderr:
+        parts.append('stderr: ' + stderr.strip())
+    if stdout:
+        parts.append('stdout: ' + stdout.strip())
+    if reason and not (stderr or stdout):
+        parts.append(reason)
+    diagnostic['fallback_reason'] = '; '.join(p for p in parts if p)
+    return diagnostic
+
+
+def expand_xacro(urdf_path, scene_dir=None, xacro_args=None, workspace_root=None, explicit_lite_fallback=False):
     scene_dir = scene_dir or Path(urdf_path).parents[1]; xacro_args = xacro_args or {}
     xacro_base, xacro_available, reason = discover_xacro_command()
     if not xacro_available:
-        return expand_xacro_lite(urdf_path, scene_dir, xacro_args, workspace_root)
+        lite = expand_xacro_lite(urdf_path, scene_dir, xacro_args, workspace_root)
+        if isinstance(lite, tuple) and len(lite) >= 4:
+            xml_text, ok, lite_reason, lite_cmd = lite[:4]
+            diag = _xacro_failure_diagnostic('real_xacro_unavailable', lite_cmd, reason=lite_reason or reason)
+            diag['xacro_lite_command'] = list(lite_cmd or [])
+            return xml_text, ok, lite_reason, lite_cmd, diag
+        return lite
     cmd=xacro_base+[str(urdf_path),'-o',str(scene_dir/'generated'/'expanded_scene_preview.urdf')]
     for k,v in xacro_args.items(): cmd.append(f'{k}:={v}')
     try:
         (scene_dir/'generated').mkdir(parents=True,exist_ok=True)
         p=subprocess.run(cmd,capture_output=True,text=True,timeout=45,env=xacro_env(scene_dir, workspace_root=workspace_root))
         if p.returncode!=0:
-            lite_xml, _, lite_reason, lite_cmd = expand_xacro_lite(urdf_path, scene_dir, xacro_args, workspace_root)
-            if lite_xml:
-                return lite_xml, True, f"xacro failed ({(p.stderr or p.stdout or 'xacro failed').strip()}); {lite_reason}", lite_cmd
-            return None,True,(p.stderr or p.stdout or 'xacro failed').strip(),cmd
-        out=scene_dir/'generated'/'expanded_scene_preview.urdf'; return out.read_text(errors='ignore'),True,'',cmd
+            diag = _xacro_failure_diagnostic('real_xacro_failed', cmd, returncode=p.returncode, stdout=p.stdout, stderr=p.stderr)
+            if _explicit_lite_fallback_requested(explicit_lite_fallback):
+                lite_xml, _, lite_reason, lite_cmd = expand_xacro_lite(urdf_path, scene_dir, xacro_args, workspace_root, reason_prefix='explicit xacro-lite fallback requested after real xacro failure')
+                diag['xacro_status'] = 'explicit_xacro_lite_fallback' if lite_xml else 'real_xacro_failed_lite_fallback_failed'
+                diag['xacro_lite_command'] = list(lite_cmd or [])
+                diag['xacro_lite_reason'] = lite_reason
+                if lite_xml:
+                    return lite_xml, True, f"{diag['fallback_reason']}; {lite_reason}", cmd, diag
+            return None, True, diag['fallback_reason'], cmd, diag
+        out=scene_dir/'generated'/'expanded_scene_preview.urdf'
+        diag = _xacro_failure_diagnostic('real_xacro_succeeded', cmd, returncode=p.returncode, stdout=p.stdout, stderr=p.stderr)
+        return out.read_text(errors='ignore'),True,'',cmd,diag
     except Exception as e:
-        lite_xml, _, lite_reason, lite_cmd = expand_xacro_lite(urdf_path, scene_dir, xacro_args, workspace_root)
-        if lite_xml:
-            return lite_xml, True, f'xacro expansion failed: {e}; {lite_reason}', lite_cmd
-        return None,True,f'xacro expansion failed: {e}',cmd
+        diag = _xacro_failure_diagnostic('real_xacro_failed', cmd, reason=f'xacro expansion failed: {e}')
+        if _explicit_lite_fallback_requested(explicit_lite_fallback):
+            lite_xml, _, lite_reason, lite_cmd = expand_xacro_lite(urdf_path, scene_dir, xacro_args, workspace_root, reason_prefix='explicit xacro-lite fallback requested after real xacro exception')
+            diag['xacro_status'] = 'explicit_xacro_lite_fallback' if lite_xml else 'real_xacro_failed_lite_fallback_failed'
+            diag['xacro_lite_command'] = list(lite_cmd or [])
+            diag['xacro_lite_reason'] = lite_reason
+            if lite_xml:
+                return lite_xml, True, f"{diag['fallback_reason']}; {lite_reason}", cmd, diag
+        return None, True, diag['fallback_reason'], cmd, diag
 
 
 
@@ -760,7 +805,7 @@ def extract_from_urdf(xml_text, package_map):
 
 
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument('--scene'); ap.add_argument('--all',action='store_true'); ap.add_argument('--prefer-xacro-expanded',action='store_true',default=True); ap.add_argument('--fallback-best-effort',action='store_true',default=True); ap.add_argument('--fail-on-unexpanded',action='store_true'); ap.add_argument('--xacro-arg',action='append',default=[]); ap.add_argument('--use-fake-hardware',default='true'); ap.add_argument('--robot-prefix',default=''); ap.add_argument('--tool-prefix',default=''); ap.add_argument('--no-write',action='store_true'); ap.add_argument('--prefer-xacro',action='store_true'); ap.add_argument('--require-xacro',action='store_true'); ap.add_argument('--workspace-root',default=os.environ.get('WORKSPACE_ROOT',''))
+    ap=argparse.ArgumentParser(); ap.add_argument('--scene'); ap.add_argument('--all',action='store_true'); ap.add_argument('--prefer-xacro-expanded',action='store_true',default=True); ap.add_argument('--fallback-best-effort',action='store_true',default=True); ap.add_argument('--fail-on-unexpanded',action='store_true'); ap.add_argument('--xacro-arg',action='append',default=[]); ap.add_argument('--use-fake-hardware',default='true'); ap.add_argument('--robot-prefix',default=''); ap.add_argument('--tool-prefix',default=''); ap.add_argument('--no-write',action='store_true'); ap.add_argument('--prefer-xacro',action='store_true'); ap.add_argument('--require-xacro',action='store_true'); ap.add_argument('--workspace-root',default=os.environ.get('WORKSPACE_ROOT','')); ap.add_argument('--allow-xacro-lite-fallback',action='store_true',default=False,help='Allow explicit xacro-lite fallback after a real xacro command is available but fails')
     a=ap.parse_args()
     scenes=[SCENES_ROOT/a.scene] if a.scene else sorted([p for p in SCENES_ROOT.iterdir() if p.is_dir()])
     report={'scene_count':0,'visual_count':0,'resolved':0,'unresolved':0,'xacro_expanded_count':0,'best_effort_count':0,'real_xacro_expanded_count':0,'scenes':[]}
@@ -771,14 +816,15 @@ def main():
         for ent in a.xacro_arg:
             if '=' in ent:
                 k,v=ent.split('=',1); xargs[k.strip()]=v.strip()
-        mode='best_effort_recursive'; fallback_reason=''; _,xacro_avail,missing_reason=discover_xacro_command(); expanded_path=''; xacro_cmd=[]; xml_text=''; real_xacro_command_succeeded=False; source_xacro_text=urdf_path.read_text(errors='ignore') if urdf_path.exists() else ''
+        mode='best_effort_recursive'; fallback_reason=''; _,xacro_avail,missing_reason=discover_xacro_command(); expanded_path=''; xacro_cmd=[]; xml_text=''; real_xacro_command_succeeded=False; xacro_diagnostics={}; source_xacro_text=urdf_path.read_text(errors='ignore') if urdf_path.exists() else ''
         if (a.prefer_xacro or a.prefer_xacro_expanded or a.require_xacro):
             try:
-                expanded_result = expand_xacro(urdf_path,scene_dir,xargs,workspace_root=(a.workspace_root or None))
+                expanded_result = expand_xacro(urdf_path,scene_dir,xargs,workspace_root=(a.workspace_root or None),explicit_lite_fallback=a.allow_xacro_lite_fallback)
             except TypeError:
                 expanded_result = expand_xacro(urdf_path)
             if isinstance(expanded_result, tuple) and len(expanded_result) >= 4:
                 xml_text,_,err,xacro_cmd=expanded_result[:4]
+                if len(expanded_result) >= 5 and isinstance(expanded_result[4], dict): xacro_diagnostics=expanded_result[4]
             elif isinstance(expanded_result, tuple) and len(expanded_result) == 3:
                 xml_text,mode_hint,err=expanded_result; xacro_cmd=[]
                 if isinstance(err, list): err='; '.join(str(e) for e in err)
@@ -786,9 +832,9 @@ def main():
             else:
                 xml_text,err,xacro_cmd='', 'xacro expansion failed: unexpected extractor result', []
             if xml_text:
-                mode='xacro_lite_expanded' if xacro_cmd and xacro_cmd[0] == 'xacro-lite' else 'xacro_expanded'
-                expanded_path='' if mode == 'xacro_lite_expanded' else 'generated/expanded_scene_preview.urdf'
-                fallback_reason=err if mode == 'xacro_lite_expanded' else ''
+                mode='xacro_lite_expanded' if xacro_cmd and xacro_cmd[0] == 'xacro-lite' else ('xacro_lite_fallback' if xacro_diagnostics.get('xacro_status') == 'explicit_xacro_lite_fallback' else 'xacro_expanded')
+                expanded_path='' if mode in ('xacro_lite_expanded','xacro_lite_fallback') else 'generated/expanded_scene_preview.urdf'
+                fallback_reason=err if mode in ('xacro_lite_expanded','xacro_lite_fallback') else ''
                 real_xacro_command_succeeded=bool(mode == 'xacro_expanded' and xacro_cmd and xacro_cmd[0] != 'xacro-lite')
             else: fallback_reason=err or missing_reason
         if a.require_xacro and not xacro_avail:
@@ -805,20 +851,20 @@ def main():
             or _contains_unresolved_ur_robot(source_xacro_text)
             or _contains_unresolved_ur_robot(xml_text)
         )
-        if mode in {'xacro_lite_expanded', 'best_effort_recursive', 'best_effort', 'raw_fallback', 'raw'} and fallback_ur_robot_unresolved:
+        if mode in {'xacro_lite_expanded', 'xacro_lite_fallback', 'best_effort_recursive', 'best_effort', 'raw_fallback', 'raw'} and fallback_ur_robot_unresolved:
             static_robot_mesh_count = append_static_ur5_mesh_visuals(items, package_map)
             static_robot_fallback_count = append_static_robot_primitive_fallbacks(items, xml_text, fallback_reason, mode, source_xacro_text)
         static_parent_resolved_count = resolve_static_tool0_children(items)
         unresolved=[i for i in items if any(contains_placeholder(i.get(k,'')) for k in ('id','link','parent_link'))]
         fallback_only_ur5_preview=static_robot_fallback_count > 0 and not _has_ur5_visual_mesh_uri(items)
-        safe=bool(items) and (len(unresolved)==0) and (mode in ('xacro_expanded','xacro_lite_expanded'))
+        safe=bool(items) and (len(unresolved)==0) and (mode in ('xacro_expanded','xacro_lite_expanded','xacro_lite_fallback'))
         mesh_format_counts=dict(collections.Counter((Path(i.get('resolved_source_path') or i.get('source_path') or '').suffix.lower() or 'unknown') for i in items if i.get('geometry_type')=='mesh'))
         transform_status_counts=dict(collections.Counter(str(i.get('transform_status') or 'unknown') for i in items))
         renderable_count=sum(1 for i in items if i.get('render_expected', True))
         renderable_mesh_count=sum(1 for i in items if i.get('geometry_type')=='mesh' and i.get('render_expected', True))
         source_mtime=urdf_path.stat().st_mtime if urdf_path.exists() else None
         has_transform_collapse_warning=bool(items) and len({tuple((i.get('pose') or {}).get('xyz') or []) for i in items}) <= 1 and len(items) > 1
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True)
@@ -827,9 +873,9 @@ def main():
         report['visual_count']+=len(items)
         report['resolved']+=sum(1 for i in items if i.get('resolved'))
         report['unresolved']+=sum(1 for i in items if not i.get('resolved'))
-        report['xacro_expanded_count']+=int(mode in ('xacro_expanded','xacro_lite_expanded'))
+        report['xacro_expanded_count']+=int(mode in ('xacro_expanded','xacro_lite_expanded','xacro_lite_fallback'))
         report['real_xacro_expanded_count']+=int(real_xacro_command_succeeded)
-        report['best_effort_count']+=int(mode not in ('xacro_expanded','xacro_lite_expanded'))
+        report['best_effort_count']+=int(mode not in ('xacro_expanded','xacro_lite_expanded','xacro_lite_fallback'))
         report.setdefault('mesh_format_counts', {})
         for ext,count in mesh_format_counts.items(): report['mesh_format_counts'][ext]=report['mesh_format_counts'].get(ext,0)+count
         report['renderable_mesh_count']=report.get('renderable_mesh_count',0)+renderable_mesh_count
@@ -837,8 +883,8 @@ def main():
         report['candidate_mesh_count']=report.get('candidate_mesh_count',0)+len(items)
         report['emitted_visual_count']=report.get('emitted_visual_count',0)+len(items)
         report['unresolved_placeholder_count']=report.get('unresolved_placeholder_count',0)+len(unresolved)
-        report['scenes'].append({'scene':scene_dir.name,'extraction_mode':mode,'xacro_available':payload['xacro_available'],'xacro_real_command_succeeded':real_xacro_command_succeeded,'expanded_urdf_written':bool(expanded_path),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'mesh_backed_count':sum(1 for i in items if i.get('geometry_type')=='mesh'),'skipped_count':sum(1 for i in items if i.get('render_skip_reason')),'fallback_reason':fallback_reason,'urdf_primitive_count':sum(1 for i in items if i.get('geometry_type') in ('box','cylinder','sphere','capsule')),'primitive_fallback_count':static_robot_fallback_count,'stale_index':False,'status':'PASS' if safe else 'WARN'})
-        if a.require_xacro and mode not in ('xacro_expanded','xacro_lite_expanded'): return 2
+        report['scenes'].append({'scene':scene_dir.name,'extraction_mode':mode,'xacro_available':payload['xacro_available'],'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'expanded_urdf_written':bool(expanded_path),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'mesh_backed_count':sum(1 for i in items if i.get('geometry_type')=='mesh'),'skipped_count':sum(1 for i in items if i.get('render_skip_reason')),'fallback_reason':fallback_reason,'urdf_primitive_count':sum(1 for i in items if i.get('geometry_type') in ('box','cylinder','sphere','capsule')),'primitive_fallback_count':static_robot_fallback_count,'stale_index':False,'status':'PASS' if safe else 'WARN'})
+        if a.require_xacro and mode not in ('xacro_expanded','xacro_lite_expanded','xacro_lite_fallback'): return 2
     (ROOT/'build').mkdir(exist_ok=True)
     (ROOT/'build/workcell_studio_urdf_visual_mesh_index_report.json').write_text(json.dumps(report,indent=2)+'\n')
     if a.fail_on_unexpanded and report['best_effort_count']>0: return 3
