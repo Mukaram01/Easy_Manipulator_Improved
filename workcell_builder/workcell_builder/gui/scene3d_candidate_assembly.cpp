@@ -83,8 +83,10 @@ Scene3DLayerVisibilityDefaults compute_scene3d_default_layer_visibility(
   }
 
   out.primitive_fallback = (primitive_fallback_count + missing_mesh_count) > 0;
-  out.warning = (missing_mesh_count + unresolved_package_uri_count +
-                 unsupported_extension_count + fallback_warning_count) > 0;
+  Q_UNUSED(unresolved_package_uri_count);
+  Q_UNUSED(unsupported_extension_count);
+  Q_UNUSED(fallback_warning_count);
+  out.warning = false;
   return out;
 }
 

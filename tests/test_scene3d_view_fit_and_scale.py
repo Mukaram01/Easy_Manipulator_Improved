@@ -45,8 +45,10 @@ def test_fit_bounds_include_mesh_urdf_primitive_semantic_fallback_and_layout_ite
     assert 'item_has_credible_mesh_handoff(it)' in include_fit
     assert 'item_has_explicit_primitive_dimensions(it)' in include_fit
     assert 'if (helper_overlay) return false;' in include_fit
+    assert 'if (generated_urdf_visual) return true;' in include_fit
     assert 'if (it.linked_to_editable_layout_state) return true;' in include_fit
-    assert 'return mesh_backed || explicit_primitive;' in include_fit
+    assert 'source_layer == "mesh_preview"' in include_fit
+    assert 'product_physical_role && (mesh_backed || explicit_primitive)' in include_fit
 
     assert 'include_in_fit_bounds(it, include_overlays)' in scene_bounds
     assert 'item_bounds_for_role(it)' in scene_bounds

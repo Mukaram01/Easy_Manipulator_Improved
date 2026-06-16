@@ -1775,36 +1775,38 @@ void MainWindow::setup_studio_shell()
   snap_step_label_ = new QLabel("Nudge step: 0.05 m", scene_builder);
   fine_move_mode_box_ = new QCheckBox("Fine Move Mode", scene_builder);
   unlock_robot_base_box_ = new QCheckBox("Unlock Robot Base", scene_builder);
-  toggle_labels_box_ = new QCheckBox("Toggle Labels", scene_builder); toggle_labels_box_->setChecked(true);
-  toggle_warnings_box_ = new QCheckBox("Toggle Warnings", scene_builder); toggle_warnings_box_->setChecked(true);
+  toggle_labels_box_ = new QCheckBox("Toggle Labels", scene_builder); toggle_labels_box_->setToolTip("Product View starts with selected-item labels only; enable for explicit label review."); toggle_labels_box_->setChecked(false);
+  toggle_warnings_box_ = new QCheckBox("Toggle Warnings", scene_builder); toggle_warnings_box_->setChecked(false);
   show_minimap_box_ = new QCheckBox("Show Minimap", scene_builder); show_minimap_box_->setChecked(true);
   scene_builder_overlays_button_ = new QToolButton(scene_builder);
   auto * overlays_button = scene_builder_overlays_button_; overlays_button->setText("Overlays"); overlays_button->setPopupMode(QToolButton::InstantPopup);
   auto * overlays_menu = new QMenu(overlays_button);
-  show_reach_overlay_box_ = new QCheckBox("Show Reach", scene_builder); show_reach_overlay_box_->setChecked(true);
-  show_camera_fov_overlay_box_ = new QCheckBox("Camera FOV", scene_builder); show_camera_fov_overlay_box_->setChecked(true);
-  show_pick_place_overlay_box_ = new QCheckBox("Pick Coverage", scene_builder); show_pick_place_overlay_box_->setChecked(true);
-  show_trajectory_overlay_box_ = new QCheckBox("EPD Detections", scene_builder); show_trajectory_overlay_box_->setChecked(true);
-  auto * show_approach_retreat_overlay_box = new QCheckBox("Approach/Retreat", scene_builder); show_approach_retreat_overlay_box->setChecked(true);
-  auto mk=[&](QCheckBox *b){ auto *a=overlays_menu->addAction(b->text()); a->setCheckable(true); a->setChecked(true); connect(a,&QAction::toggled,b,&QCheckBox::setChecked); connect(b,&QCheckBox::toggled,a,&QAction::setChecked); };
+  show_reach_overlay_box_ = new QCheckBox("Show Reach", scene_builder); show_reach_overlay_box_->setChecked(false);
+  show_camera_fov_overlay_box_ = new QCheckBox("Camera FOV", scene_builder); show_camera_fov_overlay_box_->setChecked(false);
+  show_pick_place_overlay_box_ = new QCheckBox("Pick Coverage", scene_builder); show_pick_place_overlay_box_->setChecked(false);
+  show_trajectory_overlay_box_ = new QCheckBox("EPD Detections", scene_builder); show_trajectory_overlay_box_->setChecked(false);
+  auto * show_approach_retreat_overlay_box = new QCheckBox("Approach/Retreat", scene_builder); show_approach_retreat_overlay_box->setChecked(false);
+  auto mk=[&](QCheckBox *b){ auto *a=overlays_menu->addAction(b->text()); a->setCheckable(true); a->setChecked(b ? b->isChecked() : false); connect(a,&QAction::toggled,b,&QCheckBox::setChecked); connect(b,&QCheckBox::toggled,a,&QAction::setChecked); };
   mk(show_reach_overlay_box_); mk(show_camera_fov_overlay_box_); mk(show_pick_place_overlay_box_); mk(show_trajectory_overlay_box_); mk(show_approach_retreat_overlay_box);
-  auto * show_warnings_action = overlays_menu->addAction("Show Warnings"); show_warnings_action->setCheckable(true); show_warnings_action->setChecked(true);
-  auto * show_labels_action = overlays_menu->addAction("Detection Labels"); show_labels_action->setCheckable(true); show_labels_action->setChecked(true);
+  auto * show_warnings_action = overlays_menu->addAction("Show Warnings"); show_warnings_action->setCheckable(true); show_warnings_action->setChecked(false);
+  auto * show_labels_action = overlays_menu->addAction("Detection Labels"); show_labels_action->setCheckable(true); show_labels_action->setChecked(false);
   overlays_button->setMenu(overlays_menu);
   connect(show_warnings_action, &QAction::toggled, toggle_warnings_box_, &QCheckBox::setChecked);
+  connect(toggle_warnings_box_, &QCheckBox::toggled, show_warnings_action, &QAction::setChecked);
   connect(show_labels_action, &QAction::toggled, toggle_labels_box_, &QCheckBox::setChecked);
+  connect(toggle_labels_box_, &QCheckBox::toggled, show_labels_action, &QAction::setChecked);
   connect(show_approach_retreat_overlay_box, &QCheckBox::toggled, this, [this, show_approach_retreat_overlay_box](bool){
     if (!scene_preview_widget_) return;
     scene_preview_widget_->set_task_overlay_visibility(
       show_trajectory_overlay_box_ ? show_trajectory_overlay_box_->isChecked() : true,
       show_pick_place_overlay_box_ ? show_pick_place_overlay_box_->isChecked() : true,
       show_approach_retreat_overlay_box->isChecked(),
-      toggle_labels_box_ ? toggle_labels_box_->isChecked() : true);
+      false);
     scene_preview_widget_->set_perception_overlay_visibility(
       show_camera_fov_overlay_box_ ? show_camera_fov_overlay_box_->isChecked() : true,
       show_pick_place_overlay_box_ ? show_pick_place_overlay_box_->isChecked() : true,
       show_trajectory_overlay_box_ ? show_trajectory_overlay_box_->isChecked() : true,
-      toggle_labels_box_ ? toggle_labels_box_->isChecked() : true);
+      false);
     append_studio_log("overlay toggled");
   });
   scene_builder_canvas_more_button_ = new QToolButton(scene_builder);
@@ -1959,12 +1961,12 @@ void MainWindow::setup_studio_shell()
   auto * selected_item_card_layout = make_card(selection_tab_layout, "Selected Item");
   auto * readiness_card_layout = make_card(readiness_tab_layout, "Readiness");
   make_card(actions_tab_layout, "Actions");
-  make_row(scene_card_layout, "Name", "No scene selected", false);
-  make_row(scene_card_layout, "Status", "unknown", false);
-  make_row(scene_card_layout, "Robot", "unknown", false);
-  make_row(scene_card_layout, "End Effector", "unknown", false);
-  make_row(scene_card_layout, "Path", "(none)", true);
-  make_row(scene_card_layout, "Launch", "(none)", true);
+  selection_scene_name_label_ = make_row(scene_card_layout, "Name", "No scene selected", false);
+  selection_scene_status_label_ = make_row(scene_card_layout, "Status", "unknown", false);
+  selection_scene_robot_label_ = make_row(scene_card_layout, "Robot", "unknown", false);
+  selection_scene_end_effector_label_ = make_row(scene_card_layout, "End Effector", "unknown", false);
+  selection_scene_path_label_ = make_row(scene_card_layout, "Path", "(none)", true);
+  selection_scene_launch_label_ = make_row(scene_card_layout, "Launch", "(none)", true);
 
   auto * task_intent = new QFrame(right_panel); task_intent->setObjectName("studioCard"); auto * task_intent_layout = new QVBoxLayout(task_intent);
   task_intent_layout->addWidget(new QLabel("<b>Task Intent</b>"));
@@ -2382,7 +2384,7 @@ void MainWindow::setup_studio_shell()
   connect(fine_move_mode_box_, &QCheckBox::toggled, this, [this](bool){ mark_layout_dirty("Fine Move Mode"); });
   connect(unlock_robot_base_box_, &QCheckBox::toggled, this, [this](bool checked){ if (checked) { QMessageBox::warning(this, "Unlock Robot Base", "Robot base is locked by default. Moving robot base may invalidate reach and safety assumptions."); }});
   connect(toggle_labels_box_, &QCheckBox::toggled, this, [this](bool enabled){
-    if (scene_preview_widget_) scene_preview_widget_->set_label_mode(enabled ? ScenePreviewWidget::LabelMode::All : ScenePreviewWidget::LabelMode::Off);
+    if (scene_preview_widget_) scene_preview_widget_->set_label_mode(enabled ? ScenePreviewWidget::LabelMode::Selected : ScenePreviewWidget::LabelMode::Off);
     rebuild_digital_twin_canvas();
   });
   connect(toggle_warnings_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
@@ -3693,6 +3695,7 @@ void MainWindow::select_scene_by_row(int row)
   const QString previous_scene_path = selected_scene_path();
   selected_scene_index_ = row;
   sync_selected_scene_state();
+  refresh_selected_scene_metadata_panel();
   if (previous_scene_path != selected_scene_path()) {
     visual_index_script_missing_reported_scene_key_.clear();
     visual_index_regen_failure_reported_scene_key_.clear();
@@ -4744,10 +4747,69 @@ void MainWindow::sync_selected_item_state()
   }
 }
 
+void MainWindow::refresh_selected_scene_metadata_panel()
+{
+  if (!selected_scene_state_.valid) {
+    if (selection_scene_name_label_) selection_scene_name_label_->setText("No scene selected");
+    if (selection_scene_status_label_) selection_scene_status_label_->setText("unknown");
+    if (selection_scene_robot_label_) selection_scene_robot_label_->setText("unknown");
+    if (selection_scene_end_effector_label_) selection_scene_end_effector_label_->setText("unknown");
+    if (selection_scene_path_label_) {
+      selection_scene_path_label_->setText("(none)");
+      selection_scene_path_label_->setToolTip("(none)");
+    }
+    if (selection_scene_launch_label_) {
+      selection_scene_launch_label_->setText("(none)");
+      selection_scene_launch_label_->setToolTip("(none)");
+    }
+    return;
+  }
+
+  const int index = selected_scene_state_.index;
+  if (index < 0 || index >= static_cast<int>(scene_browser_result_.scenes.size())) return;
+  const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(index)];
+  const auto metadata = selected_scene_metadata_summary(scene);
+  const QString scene_path = selected_scene_path();
+  const fs::path launch_path = scene.scene_dir / "launch" / "demo.launch.py";
+  const bool launch_present = fs::exists(launch_path);
+
+  QStringList warnings;
+  if (metadata.robot_source.startsWith(QStringLiteral("missing"))) warnings << metadata.robot;
+  if (metadata.end_effector_source.startsWith(QStringLiteral("missing"))) warnings << metadata.end_effector;
+  if (!launch_present) warnings << QStringLiteral("launch/demo.launch.py missing");
+  const QString browser_status = QString::fromStdString(scene.status).trimmed();
+  if (browser_status != QStringLiteral("READY") && !browser_status.isEmpty()) {
+    warnings << QStringLiteral("scene browser status is %1").arg(browser_status);
+  }
+  const QString status_text = warnings.isEmpty()
+    ? QStringLiteral("ready — required selected-scene metadata and launch/demo.launch.py are present")
+    : QStringLiteral("warnings — %1").arg(warnings.join(QStringLiteral("; ")));
+  const QString launch_text = launch_present
+    ? QStringLiteral("%1 (present)").arg(QString::fromStdString(launch_path.string()))
+    : QStringLiteral("launch/demo.launch.py missing at %1").arg(QString::fromStdString(launch_path.string()));
+  const QString robot_text = QStringLiteral("%1 — %2").arg(metadata.robot, metadata.robot_source);
+  const QString end_effector_text = QStringLiteral("%1 — %2").arg(metadata.end_effector, metadata.end_effector_source);
+
+  auto set_label = [](QLabel * label, const QString & text) {
+    if (!label) return;
+    label->setText(text);
+    label->setToolTip(text);
+  };
+  set_label(selection_scene_name_label_, metadata.scene_name);
+  set_label(selection_scene_status_label_, status_text);
+  set_label(selection_scene_robot_label_, robot_text);
+  set_label(selection_scene_end_effector_label_, end_effector_text);
+  set_label(selection_scene_path_label_, scene_path);
+  set_label(selection_scene_launch_label_, launch_text);
+
+  refresh_selected_scene_item_labels(selected_item_state_);
+}
+
 void MainWindow::refresh_scene_builder_selection_state_ui()
 {
   sync_selected_scene_state();
   sync_selected_item_state();
+  refresh_selected_scene_metadata_panel();
   refresh_scene_builder_selected_scene_ui();
   refresh_scene_builder_left_explorer();
   refresh_selected_scene_details_card();
@@ -4768,6 +4830,7 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
 {
   sync_selected_scene_state();
   sync_selected_item_state();
+  refresh_selected_scene_metadata_panel();
   if (!selected_scene_state_.valid) {
     if (scene_builder_title_) scene_builder_title_->setText("<h2>Scene Builder</h2>");
     refresh_scene_builder_view_chips();
@@ -6969,6 +7032,31 @@ void MainWindow::apply_scene3d_product_view_layer_defaults_and_commit()
   set_checked_blocked(preview_layer_overlays_helpers_box_, defaults.overlay);
   set_checked_blocked(preview_layer_warnings_missing_assets_box_, defaults.warning);
 
+  // Product View intentionally starts clean after both widget construction and
+  // real scene payload commits. Helper/diagnostic overlays remain available in
+  // the Overlays menu, but must be explicit opt-in for each loaded scene.
+  if (toggle_labels_box_) toggle_labels_box_->setChecked(false);
+  if (toggle_warnings_box_) toggle_warnings_box_->setChecked(false);
+  if (show_reach_overlay_box_) show_reach_overlay_box_->setChecked(false);
+  if (show_camera_fov_overlay_box_) show_camera_fov_overlay_box_->setChecked(false);
+  if (show_pick_place_overlay_box_) show_pick_place_overlay_box_->setChecked(false);
+  if (show_trajectory_overlay_box_) show_trajectory_overlay_box_->setChecked(false);
+  if (scene_preview_widget_) {
+    scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Selected);
+    scene_preview_widget_->set_task_overlay_visibility(false, false, false, false);
+    scene_preview_widget_->set_perception_overlay_visibility(false, false, false, false);
+    if (auto * viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>()) {
+      viewport->show_warnings = false;
+      viewport->show_safety = false;
+      viewport->show_reachability_heatmap = false;
+      viewport->show_collision_warnings = false;
+      viewport->show_work_envelope = false;
+      viewport->show_warning_labels = false;
+      viewport->debug_overlays_mode = false;
+      viewport->update();
+    }
+  }
+
   apply_scene3d_preview_layer_filters(false);
 }
 
@@ -8648,6 +8736,7 @@ void MainWindow::populate_scene_hierarchy()
       : QString("%1 | %2").arg(preview_provenance_summary_, visual_diagnostics_summary);
   }
   all_scene_preview_items_ = preview_items;
+  preview_warning_details_ = preview_warning_details;
   if (scene_preview_widget_) {
     scene_preview_widget_->set_scene_selected(true);
     scene_preview_widget_->set_preview_scene_name(selected_scene_state_.name);
@@ -8669,8 +8758,8 @@ void MainWindow::populate_scene_hierarchy()
         .arg(scene3d_full_payload_counters.visible_count)
         .arg(scene3d_full_payload_counters.mesh_backed_count)
         .arg(scene3d_full_payload_counters.locked_generated_urdf_visual_count));
+    refresh_new_cell_checklist();
   }
-  preview_warning_details_ = preview_warning_details;
 
   const bool snapshot_available = fs::exists(d / "preview" / "epd_detection_snapshot.png");
   const QString perception_mode = snapshot_available ? "snapshot_overlay" : task_summary.perception_mode;
@@ -8998,7 +9087,8 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   const bool has_warnings = !readiness_warning_details_.isEmpty();
   const bool validation_gate_ready = validation_report_ready && !validation_stale_;
   const bool export_ready = yaml_ready && launch_ready;
-  const bool fake_hardware_ready = launch_artifacts_ready_ && validation_gate_ready;
+  const bool scene_package_gate_ready = package_xml_ready && cmake_ready && launch_ready && scene_xacro_ready && !placeholder_launch_only;
+  const bool fake_hardware_ready = scene_package_gate_ready && validation_gate_ready;
 
   int classified_editable_count = 0;
   int classified_generated_count = 0;
@@ -9030,7 +9120,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     const bool is_overlay_or_helper = category.contains("overlay") || category.contains("helper") || source_layer.contains("overlay");
     const bool is_warning_or_missing = status.contains("warning") || p.mesh_load_warning.contains("missing", Qt::CaseInsensitive);
     if (source_layer == "editable_layout") return preview_layer_editable_layout_box_ ? preview_layer_editable_layout_box_->isChecked() : true;
-    if (source_layer == "generated_urdf_visual") return preview_layer_generated_urdf_visual_box_ ? preview_layer_generated_urdf_visual_box_->isChecked() : true;
+    if (source_layer == "generated_urdf_visual" || source_layer == "locked_generated_urdf_visual") return preview_layer_generated_urdf_visual_box_ ? preview_layer_generated_urdf_visual_box_->isChecked() : true;
     if (source_layer == "primitive_fallback") return preview_layer_primitive_fallback_box_ ? preview_layer_primitive_fallback_box_->isChecked() : true;
     if (visual_source == "mesh_preview") return preview_layer_mesh_preview_box_ ? preview_layer_mesh_preview_box_->isChecked() : true;
     if (is_overlay_or_helper) return preview_layer_overlays_helpers_box_ ? preview_layer_overlays_helpers_box_->isChecked() : true;
@@ -9042,14 +9132,29 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   int classified_overlay_count = 0;
   int classified_warning_count = 0;
   int classified_diagnostic_count = 0;
+  int visible_fallback_count = 0;
+  int visible_overlay_count = 0;
+  int visible_warning_count = 0;
+  int visible_diagnostic_count = 0;
   for (const auto & item : all_scene_preview_items_) {
     if (!preview_item_visible_for_active_layers(item)) continue;
     const QString source_layer = item.source_layer.trimmed().toLower();
+    const QString visual_source = item.active_visual_source.trimmed().toLower();
     const QString category = item.category.trimmed().toLower();
     const QString status = item.status.trimmed().toLower();
-    if (category.contains("overlay") || category.contains("helper") || source_layer.contains("overlay")) ++classified_overlay_count;
-    if (status.contains("warning") || item.mesh_load_warning.contains("missing", Qt::CaseInsensitive)) ++classified_warning_count;
-    if (category.contains("diagnostic") || source_layer.contains("diagnostic") || status.contains("diagnostic")) ++classified_diagnostic_count;
+    const bool is_overlay = category.contains("overlay") || category.contains("helper") || source_layer.contains("overlay");
+    const bool is_warning = status.contains("warning") || item.mesh_load_warning.contains("missing", Qt::CaseInsensitive);
+    const bool is_diagnostic = category.contains("diagnostic") || source_layer.contains("diagnostic") || status.contains("diagnostic");
+    const bool is_fallback = source_layer.contains("fallback") || visual_source.contains("fallback");
+    if (is_overlay) ++classified_overlay_count;
+    if (is_warning) ++classified_warning_count;
+    if (is_diagnostic) ++classified_diagnostic_count;
+    if (item_visible_after_product_filters(item)) {
+      if (is_fallback) ++visible_fallback_count;
+      if (is_overlay) ++visible_overlay_count;
+      if (is_warning) ++visible_warning_count;
+      if (is_diagnostic) ++visible_diagnostic_count;
+    }
   }
 
   bool editable_layout_yaml_malformed = false;
@@ -9070,7 +9175,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     {"editable_layout", editable_layout_ready},
     {"layout_saved", layout_saved_},
     {"yaml_definition", yaml_ready && scene_manifest_ready},
-    {"scene_package", launch_artifacts_ready_},
+    {"scene_package", scene_package_gate_ready},
     {"validation", validation_gate_ready},
     {"fake_hardware_preview", fake_hardware_ready},
     {"export", export_ready}
@@ -9108,7 +9213,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     {}, gates));
   steps.push_back(compute_scene_workflow_step(
     "Generate Scene Package",
-    package_xml_ready && cmake_ready && launch_ready, "Ready: package.xml, CMakeLists.txt, and launch/demo.launch.py are present.",
+    scene_package_gate_ready, "Ready: package.xml, CMakeLists.txt, launch/demo.launch.py, and urdf/scene.urdf.xacro are present.",
     placeholder_launch_only ?
       "Partial: Placeholder launch only — not RViz truth preview ready." :
       "Blocked: Generate Scene Package to create package.xml, CMakeLists.txt, launch/demo.launch.py, and real scene URDF/Xacro.",
@@ -9119,7 +9224,8 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     validation_stale_ ? "Validation results are stale; rerun validation." : "Run offline validation.",
     {"yaml_definition"}, gates,
     validation_gate_ready ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Current));
-  const bool preview_has_runtime_content = preview_runtime_ready;
+  const bool preview_has_runtime_content = scene3d_counters.viewport_received_count > 0 || scene3d_counters.visible_count > 0 ||
+    scene3d_counters.rendered_count > 0 || preview_runtime_ready;
   const QString native_preview_counts = QString(
     "Scene3D counters: received=%1 visible=%2 rendered=%3; classified layers: editable=%4 generated=%5 fallback=%6 overlays/helpers=%7 warning/missing=%8 diagnostics=%9 other=%10.")
       .arg(preview_received_count)
@@ -9134,7 +9240,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
       .arg(classified_other_count);
   const QString launch_gate_detail = QString(
     "RViz/MoveIt fake-hardware launch readiness is evaluated separately by package and validation gates: scene_package=%1 validation=%2 fake_hardware_launch=%3.")
-      .arg(launch_artifacts_ready_ ? "ready" : "blocked")
+      .arg(scene_package_gate_ready ? "ready" : "blocked")
       .arg(validation_gate_ready ? "ready" : "blocked")
       .arg(fake_hardware_ready ? "ready" : "blocked");
 
@@ -9154,25 +9260,28 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
       if (editable_layout_yaml_malformed) {
         preview_warnings << "editable/layout YAML is malformed; fix YAML to restore editable preview health";
       }
-      if (classified_fallback_count > 0) {
+      if (visible_fallback_count > 0) {
         preview_warnings << "fallback content is visible from scene metadata or URDF mesh index";
       }
-      if (classified_overlay_count > 0) {
+      if (visible_overlay_count > 0) {
         preview_warnings << "overlays/helpers remain visible and should be checked against the intended demo view";
       }
-      if (classified_warning_count > 0) {
+      if (visible_warning_count > 0) {
         preview_warnings << "warning or missing-asset items remain in the preview";
       }
       if (classified_editable_count == 0) {
         preview_warnings << "no editable layout items are classified yet; create editable layout from preview when appropriate";
       }
-      if (classified_diagnostic_count > 0) {
+      if (visible_diagnostic_count > 0) {
         preview_warnings << "diagnostic preview items remain visible";
       }
       if (has_warnings) {
         preview_warnings << "validation/readiness warnings are present";
       }
-      preview_detail = QString("Visual Quality Needs Review: %1. 3D Preview Technical Pass only confirms renderable Scene3D content; it is not demo-ready proof and is not RViz/MoveIt truth. %2 %3")
+      if (!scene3d_counters.visual_quality_warnings.isEmpty()) {
+        preview_warnings << QString("Scene3D renderer reported: %1").arg(scene3d_counters.visual_quality_warnings.join(", "));
+      }
+      preview_detail = QString("Visual Review Needed: %1. 3D Preview Technical Pass only confirms renderable Scene3D content; it is not demo-ready proof and is not RViz/MoveIt truth. %2 %3")
         .arg(preview_warnings.join("; "), native_preview_counts, launch_gate_detail);
     }
   }
@@ -9185,7 +9294,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   QString fake_launch_missing_detail = "Blocked: complete scene package generation and current validation before launching RViz/MoveIt fake hardware.";
   if (placeholder_launch_only) {
     fake_launch_missing_detail = "Blocked: placeholder launch only — generate a real scene URDF/Xacro and RViz/MoveIt launch before fake-hardware launch validation.";
-  } else if (!launch_artifacts_ready_) {
+  } else if (!scene_package_gate_ready) {
     fake_launch_missing_detail = "Blocked: missing or incomplete launch artifacts. Generate Scene Package first.";
   } else if (!validation_gate_ready) {
     fake_launch_missing_detail = validation_stale_
@@ -9194,11 +9303,11 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   }
   steps.push_back(compute_scene_workflow_step(
     "RViz/MoveIt Fake-Hardware Launch",
-    fake_hardware_ready && !placeholder_launch_only,
+    fake_hardware_ready,
     "Ready: package and validation gates allow guarded RViz/MoveIt fake-hardware launch. Safety remains fake hardware only.",
     fake_launch_missing_detail,
     {"scene_package", "validation"}, gates,
-    (fake_hardware_ready && !placeholder_launch_only) ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Blocked));
+    fake_hardware_ready ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Blocked));
   steps.push_back(compute_scene_workflow_step(
     "Export",
     export_ready, "Export prerequisites are satisfied.",
