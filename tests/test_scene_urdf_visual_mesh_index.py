@@ -460,9 +460,129 @@ def test_main_marks_xacro_lite_static_ur5_fallback_preview_unsafe(monkeypatch, t
     assert payload['xacro_real_command_succeeded'] is False
     assert payload['static_robot_primitive_fallback_count'] > 0
     assert payload['safe_for_preview'] is False
+    assert payload['renderable_mesh_count'] == 0
+    assert payload['visual_count'] == payload['static_robot_primitive_fallback_count']
     expected = 'xacro-lite skipped robot macro ur_robot; preview uses degraded fallback geometry'
     assert expected in payload['blockers']
     assert expected in payload['warnings']
+    combined_diagnostics = '\n'.join(payload['blockers'] + payload['warnings'] + [payload['fallback_reason']])
+    assert 'skipped' in combined_diagnostics
+    assert 'ur_robot' in combined_diagnostics
+
+
+def test_main_records_successful_real_xacro_expansion(monkeypatch, tmp_path):
+    import sys
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    scenes_root = tmp_path / 'scenes'
+    scene = scenes_root / 'real_xacro_scene'
+    (scene / 'urdf').mkdir(parents=True)
+    (scene / 'urdf' / 'scene.urdf.xacro').write_text(
+        '<robot xmlns:xacro="http://ros.org/wiki/xacro" name="real_xacro_scene"/>',
+        encoding='utf-8',
+    )
+    fake_xacro = tmp_path / 'bin' / 'xacro'
+    fake_xacro.parent.mkdir(parents=True)
+    fake_xacro.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
+    fake_xacro.chmod(0o755)
+
+    monkeypatch.setattr(mesh_index, 'SCENES_ROOT', scenes_root)
+    monkeypatch.setattr(mesh_index.shutil, 'which', lambda name: str(fake_xacro) if name == 'xacro' else None)
+
+    class Result:
+        returncode = 0
+        stdout = 'real xacro ok\n'
+        stderr = ''
+
+    def fake_run(cmd, **kwargs):
+        assert cmd[:2] == [str(fake_xacro.resolve()), str(scene / 'urdf' / 'scene.urdf.xacro')]
+        assert '-o' in cmd
+        out_path = Path(cmd[cmd.index('-o') + 1])
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            '<robot name="expanded"><link name="world"><visual name="table"><geometry><box size="1 1 0.1"/></geometry></visual></link></robot>',
+            encoding='utf-8',
+        )
+        return Result()
+
+    monkeypatch.setattr(mesh_index.subprocess, 'run', fake_run)
+
+    original_argv = sys.argv
+    try:
+        sys.argv = ['extract_scene_urdf_visual_mesh_index.py', '--scene', 'real_xacro_scene', '--prefer-xacro']
+        rc = mesh_index.main()
+    finally:
+        sys.argv = original_argv
+
+    assert rc == 0
+    payload = json.loads((scene / 'generated' / 'scene_visual_mesh_index.json').read_text(encoding='utf-8'))
+    assert payload['extraction_mode'] == 'xacro_expanded'
+    assert payload['xacro_available'] is True
+    assert payload['xacro_real_command_succeeded'] is True
+    assert payload['source_expanded_urdf_path'] == 'generated/expanded_scene_preview.urdf'
+    assert payload['xacro_command'][0] == str(fake_xacro.resolve())
+    assert payload['xacro_command'][0] != 'xacro-lite'
+    assert payload['xacro_diagnostics']['xacro_status'] == 'real_xacro_succeeded'
+
+
+def test_main_records_real_xacro_failure_command_and_output(monkeypatch, tmp_path):
+    import sys
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    scenes_root = tmp_path / 'scenes'
+    scene = scenes_root / 'failed_xacro_scene'
+    (scene / 'urdf').mkdir(parents=True)
+    (scene / 'urdf' / 'scene.urdf.xacro').write_text(
+        '<robot xmlns:xacro="http://ros.org/wiki/xacro"><link name="world"/></robot>',
+        encoding='utf-8',
+    )
+    fake_xacro = tmp_path / 'bin' / 'xacro'
+    fake_xacro.parent.mkdir(parents=True)
+    fake_xacro.write_text('#!/bin/sh\nexit 7\n', encoding='utf-8')
+    fake_xacro.chmod(0o755)
+
+    monkeypatch.setattr(mesh_index, 'SCENES_ROOT', scenes_root)
+    monkeypatch.setattr(mesh_index.shutil, 'which', lambda name: str(fake_xacro) if name == 'xacro' else None)
+
+    class Result:
+        returncode = 7
+        stdout = 'partial xacro stdout'
+        stderr = 'synthetic xacro failure'
+
+    def fake_run(cmd, **kwargs):
+        assert cmd[0] == str(fake_xacro.resolve())
+        return Result()
+
+    monkeypatch.setattr(mesh_index.subprocess, 'run', fake_run)
+
+    original_argv = sys.argv
+    try:
+        sys.argv = ['extract_scene_urdf_visual_mesh_index.py', '--scene', 'failed_xacro_scene', '--prefer-xacro']
+        rc = mesh_index.main()
+    finally:
+        sys.argv = original_argv
+
+    assert rc == 0
+    payload = json.loads((scene / 'generated' / 'scene_visual_mesh_index.json').read_text(encoding='utf-8'))
+    expected_command = [
+        str(fake_xacro.resolve()),
+        str(scene / 'urdf' / 'scene.urdf.xacro'),
+        '-o',
+        str(scene / 'generated' / 'expanded_scene_preview.urdf'),
+        'use_fake_hardware:=true',
+        'robot_prefix:=',
+        'tool_prefix:=',
+    ]
+    assert payload['extraction_mode'] == 'best_effort_recursive'
+    assert payload['xacro_available'] is True
+    assert payload['xacro_real_command_succeeded'] is False
+    assert payload['xacro_command'] == expected_command
+    assert payload['xacro_diagnostics']['xacro_command'] == expected_command
+    assert payload['xacro_diagnostics']['xacro_returncode'] == 7
+    assert payload['xacro_diagnostics']['xacro_stdout'] == 'partial xacro stdout'
+    assert payload['xacro_diagnostics']['xacro_stderr'] == 'synthetic xacro failure'
+    assert 'partial xacro stdout' in payload['fallback_reason']
+    assert 'synthetic xacro failure' in payload['fallback_reason']
 
 def test_synthetic_chain_transform_composition_and_primitives():
     import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
