@@ -40,6 +40,25 @@ def test_xacro_env_preserves_and_extends_package_lookup(monkeypatch, tmp_path):
     assert ros_package_entries.count(str(ROOT / 'assets')) == 1
 
 
+def test_discover_xacro_command_prefers_resolved_path_executable(monkeypatch, tmp_path):
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    fake_bin = tmp_path / 'bin'
+    fake_bin.mkdir()
+    fake_xacro = fake_bin / 'xacro'
+    fake_xacro.write_text('#!/bin/sh\necho xacro\n', encoding='utf-8')
+    fake_xacro.chmod(0o755)
+
+    monkeypatch.setenv('PATH', str(fake_bin))
+    monkeypatch.setattr(mesh_index.shutil, 'which', lambda name: str(fake_xacro) if name == 'xacro' else None)
+
+    command, available, reason = mesh_index.discover_xacro_command()
+
+    assert available is True
+    assert command == [str(fake_xacro.resolve())]
+    assert reason == ''
+
+
 def _write_package_xml(pkg_dir: Path, name: str):
     pkg_dir.mkdir(parents=True, exist_ok=True)
     (pkg_dir / 'package.xml').write_text(
