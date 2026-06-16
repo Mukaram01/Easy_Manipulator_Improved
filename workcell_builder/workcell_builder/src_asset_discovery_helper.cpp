@@ -11,7 +11,7 @@ namespace fs = boost::filesystem;
 namespace {
 
 const std::vector<std::string> kEnvironmentPresets = {"table", "bin", "conveyor_placeholder", "fixture", "custom_stl"};
-const char * kExternalAbsoluteStlWarning = "Absolute mesh path is outside workspace";
+[[maybe_unused]] const char * kExternalAbsoluteStlWarning = "Absolute mesh path is outside workspace";
 
 bool should_skip_path(const fs::path & p)
 {

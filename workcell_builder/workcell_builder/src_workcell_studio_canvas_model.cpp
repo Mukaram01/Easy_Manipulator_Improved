@@ -145,7 +145,7 @@ static double yaml_double_or_default(const YAML::Node & node, double fallback)
   return yaml_read_double(node, &out) ? out : fallback;
 }
 
-static fs::path manifest_declared_canvas_layout_path(const fs::path & scene_dir, const YAML::Node & manifest)
+[[maybe_unused]] static fs::path manifest_declared_canvas_layout_path(const fs::path & scene_dir, const YAML::Node & manifest)
 {
   try {
     const YAML::Node files = yaml_map_key(manifest, "files");
@@ -260,7 +260,7 @@ static bool append_environment_layout_canvas_item(const YAML::Node & source, con
   return true;
 }
 
-static YAML::Node normalize_environment_layout_canvas_items(const YAML::Node & environment_layout)
+[[maybe_unused]] static YAML::Node normalize_environment_layout_canvas_items(const YAML::Node & environment_layout)
 {
   YAML::Node normalized(YAML::NodeType::Map);
   normalized["schema_version"] = "workcell_studio_layout/v1";
@@ -1260,7 +1260,7 @@ static std::string sanitize_preview_id_for_editable_layout_id(const std::string 
   return sanitized;
 }
 
-static std::string editable_layout_copy_id_from_preview_id(const std::string & preview_id)
+[[maybe_unused]] static std::string editable_layout_copy_id_from_preview_id(const std::string & preview_id)
 {
   return "editable_" + sanitize_preview_id_for_editable_layout_id(preview_id);
 }
