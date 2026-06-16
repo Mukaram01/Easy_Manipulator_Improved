@@ -768,6 +768,18 @@ def _determine_workspace_root(
     return _workspace_root_from_path(package_dir)
 
 
+
+
+def _fallback_reason_skipped_ur_robot_macro(reason: str, mode: str = '') -> bool:
+    text = str(reason or '').lower()
+    return 'ur_robot' in text and ('skipped unresolved macros' in text or str(mode or '') in {'xacro_lite_expanded', 'xacro_lite_fallback'})
+
+
+def _preview_degraded_fallback_warning(reason: str, mode: str = '') -> str:
+    if _fallback_reason_skipped_ur_robot_macro(reason, mode):
+        return 'xacro-lite skipped robot macro ur_robot; preview uses degraded fallback geometry'
+    return ''
+
 def _fallback_scene_visual_mesh_index(
     package_name: str,
     package_dir: Path,
@@ -787,14 +799,14 @@ def _fallback_scene_visual_mesh_index(
         "extraction_mode": "fallback_empty_safe_preview",
         "source_urdf_xacro_path": "urdf/scene.urdf.xacro",
         "source_mtime": urdf_path.stat().st_mtime if urdf_path.exists() else None,
-        "safe_for_preview": True,
+        "safe_for_preview": False,
         "candidate_mesh_count": 0,
         "emitted_visual_count": 0,
         "renderable_mesh_count": 0,
         "renderable_item_count": 0,
         "visual_items": [],
         "items": [],
-        "blockers": [],
+        "blockers": [warning_text],
         "warnings": [warning_text],
         "fallback_reason": reason,
         "stale_index": False,
@@ -875,13 +887,23 @@ def _write_scene_visual_mesh_index(
             1 for item in mesh_items if item.get("render_expected", True)
         )
         renderable_item_count = sum(1 for item in items if item.get("render_expected", True))
-        safe_for_preview = len(unresolved) == 0 and mode in {"xacro_expanded", "xacro_lite_expanded"}
+        degraded_preview_warning = _preview_degraded_fallback_warning(fallback_reason, mode)
+        safe_for_preview = (
+            len(unresolved) == 0
+            and mode == "xacro_expanded"
+            and renderable_mesh_count > 0
+            and not degraded_preview_warning
+        )
         visual_readiness_reasons: list[str] = []
+        if degraded_preview_warning:
+            visual_readiness_reasons.append(degraded_preview_warning)
         if not safe_for_preview:
             visual_readiness_reasons.append(
                 "visual mesh index was not produced from a fully expanded xacro"
-                if mode not in {"xacro_expanded", "xacro_lite_expanded"}
+                if mode != "xacro_expanded"
                 else "visual mesh index contains unresolved xacro placeholders"
+                if unresolved
+                else "visual mesh index does not have renderable mesh-backed visuals"
             )
         if renderable_mesh_count <= 0:
             visual_readiness_reasons.append(
@@ -913,8 +935,8 @@ def _write_scene_visual_mesh_index(
             "renderable_item_count": renderable_item_count,
             "visual_items": _portable_source_metadata(items),
             "items": _portable_source_metadata(items),
-            "blockers": [],
-            "warnings": [fallback_reason] if fallback_reason else [],
+            "blockers": [degraded_preview_warning] if degraded_preview_warning else [],
+            "warnings": [reason for reason in (degraded_preview_warning, fallback_reason) if reason],
             "stale_index": False,
             "stale_reasons": [],
             "xacro_command": _portable_source_metadata(xacro_cmd),
