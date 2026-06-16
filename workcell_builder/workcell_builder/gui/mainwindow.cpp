@@ -8642,6 +8642,7 @@ void MainWindow::populate_scene_hierarchy()
       : QString("%1 | %2").arg(preview_provenance_summary_, visual_diagnostics_summary);
   }
   all_scene_preview_items_ = preview_items;
+  preview_warning_details_ = preview_warning_details;
   if (scene_preview_widget_) {
     scene_preview_widget_->set_scene_selected(true);
     scene_preview_widget_->set_preview_scene_name(selected_scene_state_.name);
@@ -8663,8 +8664,8 @@ void MainWindow::populate_scene_hierarchy()
         .arg(scene3d_full_payload_counters.visible_count)
         .arg(scene3d_full_payload_counters.mesh_backed_count)
         .arg(scene3d_full_payload_counters.locked_generated_urdf_visual_count));
+    refresh_new_cell_checklist();
   }
-  preview_warning_details_ = preview_warning_details;
 
   const bool snapshot_available = fs::exists(d / "preview" / "epd_detection_snapshot.png");
   const QString perception_mode = snapshot_available ? "snapshot_overlay" : task_summary.perception_mode;
@@ -8970,7 +8971,8 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   const bool has_warnings = !readiness_warning_details_.isEmpty();
   const bool validation_gate_ready = validation_report_ready && !validation_stale_;
   const bool export_ready = yaml_ready && launch_ready;
-  const bool fake_hardware_ready = launch_artifacts_ready_ && validation_gate_ready;
+  const bool scene_package_gate_ready = package_xml_ready && cmake_ready && launch_ready && scene_xacro_ready && !placeholder_launch_only;
+  const bool fake_hardware_ready = scene_package_gate_ready && validation_gate_ready;
 
   int classified_editable_count = 0;
   int classified_generated_count = 0;
@@ -8994,7 +8996,8 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   }
 
   const int preview_received_count = all_scene_preview_items_.size();
-  const int preview_visible_count = std::count_if(all_scene_preview_items_.cbegin(), all_scene_preview_items_.cend(), [this](const ScenePreviewWidget::PreviewItem & p) {
+  const auto scene3d_counters = scene_preview_widget_ ? scene_preview_widget_->render_debug_counters() : ScenePreviewWidget::RenderDebugCounters{};
+  const auto item_visible_after_product_filters = [this](const ScenePreviewWidget::PreviewItem & p) {
     const QString source_layer = p.source_layer.trimmed().toLower();
     const QString visual_source = p.active_visual_source.trimmed().toLower();
     const QString category = p.category.trimmed().toLower();
@@ -9002,24 +9005,41 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     const bool is_overlay_or_helper = category.contains("overlay") || category.contains("helper") || source_layer.contains("overlay");
     const bool is_warning_or_missing = status.contains("warning") || p.mesh_load_warning.contains("missing", Qt::CaseInsensitive);
     if (source_layer == "editable_layout") return preview_layer_editable_layout_box_ ? preview_layer_editable_layout_box_->isChecked() : true;
-    if (source_layer == "generated_urdf_visual") return preview_layer_generated_urdf_visual_box_ ? preview_layer_generated_urdf_visual_box_->isChecked() : true;
+    if (source_layer == "generated_urdf_visual" || source_layer == "locked_generated_urdf_visual") return preview_layer_generated_urdf_visual_box_ ? preview_layer_generated_urdf_visual_box_->isChecked() : true;
     if (source_layer == "primitive_fallback") return preview_layer_primitive_fallback_box_ ? preview_layer_primitive_fallback_box_->isChecked() : true;
     if (visual_source == "mesh_preview") return preview_layer_mesh_preview_box_ ? preview_layer_mesh_preview_box_->isChecked() : true;
     if (is_overlay_or_helper) return preview_layer_overlays_helpers_box_ ? preview_layer_overlays_helpers_box_->isChecked() : true;
     if (is_warning_or_missing) return preview_layer_warnings_missing_assets_box_ ? preview_layer_warnings_missing_assets_box_->isChecked() : true;
     return true;
-  });
-  const int preview_rendered_count = preview_visible_count;
+  };
+  const int preview_visible_count = qMax(scene3d_counters.visible_count, static_cast<int>(std::count_if(
+    all_scene_preview_items_.cbegin(), all_scene_preview_items_.cend(), item_visible_after_product_filters)));
+  const int preview_rendered_count = qMax(scene3d_counters.rendered_count, preview_visible_count);
   int classified_overlay_count = 0;
   int classified_warning_count = 0;
   int classified_diagnostic_count = 0;
+  int visible_fallback_count = 0;
+  int visible_overlay_count = 0;
+  int visible_warning_count = 0;
+  int visible_diagnostic_count = 0;
   for (const auto & item : all_scene_preview_items_) {
     const QString source_layer = item.source_layer.trimmed().toLower();
+    const QString visual_source = item.active_visual_source.trimmed().toLower();
     const QString category = item.category.trimmed().toLower();
     const QString status = item.status.trimmed().toLower();
-    if (category.contains("overlay") || category.contains("helper") || source_layer.contains("overlay")) ++classified_overlay_count;
-    if (status.contains("warning") || item.mesh_load_warning.contains("missing", Qt::CaseInsensitive)) ++classified_warning_count;
-    if (category.contains("diagnostic") || source_layer.contains("diagnostic") || status.contains("diagnostic")) ++classified_diagnostic_count;
+    const bool is_overlay = category.contains("overlay") || category.contains("helper") || source_layer.contains("overlay");
+    const bool is_warning = status.contains("warning") || item.mesh_load_warning.contains("missing", Qt::CaseInsensitive);
+    const bool is_diagnostic = category.contains("diagnostic") || source_layer.contains("diagnostic") || status.contains("diagnostic");
+    const bool is_fallback = source_layer.contains("fallback") || visual_source.contains("fallback");
+    if (is_overlay) ++classified_overlay_count;
+    if (is_warning) ++classified_warning_count;
+    if (is_diagnostic) ++classified_diagnostic_count;
+    if (item_visible_after_product_filters(item)) {
+      if (is_fallback) ++visible_fallback_count;
+      if (is_overlay) ++visible_overlay_count;
+      if (is_warning) ++visible_warning_count;
+      if (is_diagnostic) ++visible_diagnostic_count;
+    }
   }
 
   bool editable_layout_yaml_malformed = false;
@@ -9040,7 +9060,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     {"editable_layout", editable_layout_ready},
     {"layout_saved", layout_saved_},
     {"yaml_definition", yaml_ready && scene_manifest_ready},
-    {"scene_package", launch_artifacts_ready_},
+    {"scene_package", scene_package_gate_ready},
     {"validation", validation_gate_ready},
     {"fake_hardware_preview", fake_hardware_ready},
     {"export", export_ready}
@@ -9078,7 +9098,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     {}, gates));
   steps.push_back(compute_scene_workflow_step(
     "Generate Scene Package",
-    package_xml_ready && cmake_ready && launch_ready, "Ready: package.xml, CMakeLists.txt, and launch/demo.launch.py are present.",
+    scene_package_gate_ready, "Ready: package.xml, CMakeLists.txt, launch/demo.launch.py, and urdf/scene.urdf.xacro are present.",
     placeholder_launch_only ?
       "Partial: Placeholder launch only — not RViz truth preview ready." :
       "Blocked: Generate Scene Package to create package.xml, CMakeLists.txt, launch/demo.launch.py, and real scene URDF/Xacro.",
@@ -9089,7 +9109,8 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     validation_stale_ ? "Validation results are stale; rerun validation." : "Run offline validation.",
     {"yaml_definition"}, gates,
     validation_gate_ready ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Current));
-  const bool preview_has_runtime_content = preview_runtime_ready;
+  const bool preview_has_runtime_content = scene3d_counters.viewport_received_count > 0 || scene3d_counters.visible_count > 0 ||
+    scene3d_counters.rendered_count > 0 || preview_runtime_ready;
   const QString native_preview_counts = QString(
     "Scene3D counters: received=%1 visible=%2 rendered=%3; classified layers: editable=%4 generated=%5 fallback=%6 overlays/helpers=%7 warning/missing=%8 diagnostics=%9 other=%10.")
       .arg(preview_received_count)
@@ -9104,7 +9125,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
       .arg(classified_other_count);
   const QString launch_gate_detail = QString(
     "RViz/MoveIt fake-hardware launch readiness is evaluated separately by package and validation gates: scene_package=%1 validation=%2 fake_hardware_launch=%3.")
-      .arg(launch_artifacts_ready_ ? "ready" : "blocked")
+      .arg(scene_package_gate_ready ? "ready" : "blocked")
       .arg(validation_gate_ready ? "ready" : "blocked")
       .arg(fake_hardware_ready ? "ready" : "blocked");
 
@@ -9115,34 +9136,37 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     preview_status = SceneWorkflowStepStatus::Done;
     preview_detail = QString("3D Preview Technical Pass: native Scene3D has renderable content, but render/smoke counters alone do not prove demo-ready visual quality or RViz/MoveIt launch readiness. %1 %2")
       .arg(native_preview_counts, launch_gate_detail);
-    const bool visual_quality_needs_review = editable_layout_yaml_malformed || classified_fallback_count > 0 ||
-      classified_overlay_count > 0 || classified_warning_count > 0 || classified_editable_count == 0 ||
-      classified_diagnostic_count > 0 || has_warnings;
+    const bool visual_quality_needs_review = editable_layout_yaml_malformed || visible_fallback_count > 0 ||
+      visible_overlay_count > 0 || visible_warning_count > 0 || classified_editable_count == 0 ||
+      visible_diagnostic_count > 0 || has_warnings || !scene3d_counters.visual_quality_warnings.isEmpty();
     if (visual_quality_needs_review) {
       preview_status = SceneWorkflowStepStatus::Warning;
       QStringList preview_warnings;
       if (editable_layout_yaml_malformed) {
         preview_warnings << "editable/layout YAML is malformed; fix YAML to restore editable preview health";
       }
-      if (classified_fallback_count > 0) {
+      if (visible_fallback_count > 0) {
         preview_warnings << "fallback content is visible from scene metadata or URDF mesh index";
       }
-      if (classified_overlay_count > 0) {
+      if (visible_overlay_count > 0) {
         preview_warnings << "overlays/helpers remain visible and should be checked against the intended demo view";
       }
-      if (classified_warning_count > 0) {
+      if (visible_warning_count > 0) {
         preview_warnings << "warning or missing-asset items remain in the preview";
       }
       if (classified_editable_count == 0) {
         preview_warnings << "no editable layout items are classified yet; create editable layout from preview when appropriate";
       }
-      if (classified_diagnostic_count > 0) {
+      if (visible_diagnostic_count > 0) {
         preview_warnings << "diagnostic preview items remain visible";
       }
       if (has_warnings) {
         preview_warnings << "validation/readiness warnings are present";
       }
-      preview_detail = QString("Visual Quality Needs Review: %1. 3D Preview Technical Pass only confirms renderable Scene3D content; it is not demo-ready proof and is not RViz/MoveIt truth. %2 %3")
+      if (!scene3d_counters.visual_quality_warnings.isEmpty()) {
+        preview_warnings << QString("Scene3D renderer reported: %1").arg(scene3d_counters.visual_quality_warnings.join(", "));
+      }
+      preview_detail = QString("Visual Review Needed: %1. 3D Preview Technical Pass only confirms renderable Scene3D content; it is not demo-ready proof and is not RViz/MoveIt truth. %2 %3")
         .arg(preview_warnings.join("; "), native_preview_counts, launch_gate_detail);
     }
   }
@@ -9155,7 +9179,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   QString fake_launch_missing_detail = "Blocked: complete scene package generation and current validation before launching RViz/MoveIt fake hardware.";
   if (placeholder_launch_only) {
     fake_launch_missing_detail = "Blocked: placeholder launch only — generate a real scene URDF/Xacro and RViz/MoveIt launch before fake-hardware launch validation.";
-  } else if (!launch_artifacts_ready_) {
+  } else if (!scene_package_gate_ready) {
     fake_launch_missing_detail = "Blocked: missing or incomplete launch artifacts. Generate Scene Package first.";
   } else if (!validation_gate_ready) {
     fake_launch_missing_detail = validation_stale_
@@ -9164,11 +9188,11 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   }
   steps.push_back(compute_scene_workflow_step(
     "RViz/MoveIt Fake-Hardware Launch",
-    fake_hardware_ready && !placeholder_launch_only,
+    fake_hardware_ready,
     "Ready: package and validation gates allow guarded RViz/MoveIt fake-hardware launch. Safety remains fake hardware only.",
     fake_launch_missing_detail,
     {"scene_package", "validation"}, gates,
-    (fake_hardware_ready && !placeholder_launch_only) ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Blocked));
+    fake_hardware_ready ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Blocked));
   steps.push_back(compute_scene_workflow_step(
     "Export",
     export_ready, "Export prerequisites are satisfied.",
