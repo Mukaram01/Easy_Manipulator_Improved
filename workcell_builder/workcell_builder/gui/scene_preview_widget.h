@@ -180,6 +180,7 @@ public:
   void set_preview_items(const QVector<PreviewItem> & items);
   void set_preview_scene_name(const QString & scene_name);
   void set_preview_status_summary(const QString & summary);
+  void set_clean_product_view_status(bool clean, int visual_count);
   void set_task_overlay_model(const TaskOverlayModel & model);
   void set_reachability_overlay_model(const ReachabilityOverlayModel & model);
   void set_collision_overlay_model(const CollisionOverlayModel & model);
@@ -301,6 +302,8 @@ private:
   QVector<EpdDetectionOverlayModel> epd_detections_;
   QString selected_preview_item_id_;
   QString preview_status_summary_;
+  bool clean_product_view_{ false };
+  int clean_product_visual_count_{ 0 };
   MeshPreviewMode mesh_preview_mode_{ MeshPreviewMode::Auto };
   int preview_payload_revision_{ 0 };
   int last_visual_quality_revision_logged_{ -1 };
