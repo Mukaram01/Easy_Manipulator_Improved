@@ -8,7 +8,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENES_ROOT = ROOT / "scenes"
-EXTRACTOR_VERSION = "2.8"
+EXTRACTOR_VERSION = "2.9"
 UR5_VISUAL_MESH_URI_PREFIX = "package://ur_description/meshes/ur5/visual/"
 PLACEHOLDER_RE = re.compile(r"(\$\{[^}]+\}|\$\(arg\s+[^)]+\)|\$\(find\s+[^)]+\))")
 REPO_LOCAL_ASSET_PRECEDENCE_PACKAGES = {
@@ -756,8 +756,14 @@ def resolve_mesh_uri(uri, package_map):
         p=package_map[pkg]/tail; return str(p), ('file_not_found' if not p.exists() else '')
     p=Path(u); return str(p), ('file_not_found' if not p.exists() else '')
 
-def extract_from_urdf(xml_text, package_map):
+def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
     root=ET.fromstring(xml_text); items=[]; idx=0
+    diagnostics={
+        'root_links': [],
+        'visual_parent_link_counts': {},
+        'missing_parent_links': [],
+        'transform_chain_diagnostics': [],
+    }
     global_materials={}
     for mat in [m for m in list(root) if tag_name(m)=='material']:
         name=mat.attrib.get('name','')
@@ -774,7 +780,11 @@ def extract_from_urdf(xml_text, package_map):
         xyz=parse_vec(origin.attrib.get('xyz') if origin is not None else '',3,0.0); rpy=parse_vec(origin.attrib.get('rpy') if origin is not None else '',3,0.0)
         joints.append({'name':j.attrib.get('name',''),'type':j.attrib.get('type','fixed'),'parent':parent.attrib.get('link',''),'child':child.attrib.get('link',''),'origin_xyz':xyz,'origin_rpy':rpy})
     child_to_joint={j['child']:j for j in joints if j['child']}
-    roots=[n for n in links.keys() if n and n not in child_to_joint]
+    roots=sorted(n for n in links.keys() if n and n not in child_to_joint)
+    diagnostics['root_links'] = roots
+    missing_parent_names=collections.Counter()
+    visual_parent_counts=collections.Counter()
+    chain_diagnostics_by_link={}
     cache={}
     def link_world_tf(link_name):
         if link_name in cache: return cache[link_name]
@@ -789,6 +799,20 @@ def extract_from_urdf(xml_text, package_map):
             if not cur or cur not in links: unresolved=f'missing_parent:{cur}'; break
         if not unresolved and cur not in roots and cur in child_to_joint: unresolved='unresolved_chain'
         status='resolved' if not unresolved else 'unresolved'
+        if unresolved:
+            diagnostic={
+                'link': link_name,
+                'status': status,
+                'terminal_link': cur or '',
+                'unresolved_reason': unresolved,
+                'chain': list(reversed(chain)),
+            }
+            if unresolved.startswith('missing_parent:'):
+                missing_name=unresolved.split(':',1)[1]
+                diagnostic['missing_parent_link'] = missing_name
+                diagnostic['missing_parent_joint'] = j.get('name','') if 'j' in locals() else ''
+                missing_parent_names[missing_name] += 1
+            chain_diagnostics_by_link[link_name]=diagnostic
         result=(tf,status,list(reversed(chain)),cur,unresolved)
         cache[link_name]=result
         return result
@@ -812,6 +836,7 @@ def extract_from_urdf(xml_text, package_map):
                     material['color']=parse_vec(color_node.attrib.get('rgba',''),4,1.0)
                 elif material['name'] in global_materials:
                     material['color']=global_materials[material['name']]
+            visual_parent_counts[root_link or ''] += 1
             common={'id':item_id,'link':lname,'visual':vname,'parent_link':root_link or '','pose':pose,'visual_origin':{'xyz':vxyz,'rpy':vrpy},'material':material,'link_transform_status':link_status,'transform_status':link_status,'transform_chain':chain,'render_expected':True}
             mesh=next((c for c in list(geom) if tag_name(c)=='mesh'),None)
             box=next((c for c in list(geom) if tag_name(c)=='box'),None)
@@ -832,7 +857,38 @@ def extract_from_urdf(xml_text, package_map):
             elif cap is not None:
                 items.append({**common,'geometry_type':'capsule','radius':float(cap.attrib.get('radius','0.05') or 0.05),'length':float(cap.attrib.get('length',cap.attrib.get('height','0.1')) or 0.1),'resolved':True,'warning':warning or ''})
             idx+=1
+    diagnostics['visual_parent_link_counts'] = dict(sorted(visual_parent_counts.items()))
+    diagnostics['missing_parent_links'] = [
+        {'link': name, 'visual_count': count}
+        for name, count in sorted(missing_parent_names.items())
+    ]
+    diagnostics['transform_chain_diagnostics'] = list(chain_diagnostics_by_link.values())
+    if include_diagnostics:
+        return items, diagnostics
     return items
+
+
+def supported_robot_root_diagnostics(scene_name, items, urdf_diagnostics):
+    supported_prefixes=('ur5_', 'ur3_', 'ur10_')
+    supported_names={'suction_test'}
+    if not (scene_name.startswith(supported_prefixes) or scene_name in supported_names):
+        return [], []
+    warnings=[]; blockers=[]
+    counts=collections.Counter(str(i.get('parent_link') or '') for i in items)
+    total=sum(counts.values())
+    tool0_count=counts.get('tool0', 0)
+    expected_roots={'world','base','base_link','base_link_inertia'}
+    root_links=set(urdf_diagnostics.get('root_links') or [])
+    has_expected_root=bool(root_links & expected_roots)
+    if total and tool0_count / total >= 0.5:
+        msg=f"Most supported robot scene visuals terminate at tool0 ({tool0_count}/{total}); expected robot/world roots may be missing or collapsed."
+        blockers.append(msg)
+    if root_links and not has_expected_root:
+        msg=f"Supported robot scene root links do not include an expected world/base root: {sorted(root_links)}"
+        warnings.append(msg)
+    elif not root_links:
+        warnings.append('Supported robot scene URDF diagnostics found no root links.')
+    return warnings, blockers
 
 
 def main():
@@ -873,8 +929,11 @@ def main():
         if not xml_text: xml_text=(source_xacro_text if source_xacro_text else '<robot/>')
         referenced_packages = sorted(set(extract_referenced_package_names(xml_text)) | set(extract_referenced_package_names(source_xacro_text)))
         package_map, package_diagnostics = discover_package_map(scene_dir, workspace_root=(a.workspace_root or None), package_names=referenced_packages)
-        try: items=extract_from_urdf(xml_text, package_map)
-        except Exception: items=[]
+        urdf_diagnostics={'root_links': [], 'visual_parent_link_counts': {}, 'missing_parent_links': [], 'transform_chain_diagnostics': []}
+        try:
+            items, urdf_diagnostics = extract_from_urdf(xml_text, package_map, include_diagnostics=True)
+        except Exception:
+            items=[]
         static_robot_fallback_count = 0
         static_robot_mesh_count = 0
         fallback_ur_robot_unresolved = (
@@ -899,10 +958,13 @@ def main():
             preview_warnings.append(preview_warning)
         if mode in ('xacro_lite_expanded','xacro_lite_fallback') and not preview_warning:
             preview_warnings.append('xacro-lite preview is degraded and is not equivalent to real xacro-expanded output')
+        root_warnings, root_blockers = supported_robot_root_diagnostics(scene_dir.name, items, urdf_diagnostics)
+        preview_warnings.extend(root_warnings)
+        preview_blockers.extend(root_blockers)
         safe=is_preview_fully_healthy(items, unresolved, mode, fallback_reason, renderable_mesh_count)
         source_mtime=urdf_path.stat().st_mtime if urdf_path.exists() else None
         has_transform_collapse_warning=bool(items) and len({tuple((i.get('pose') or {}).get('xyz') or []) for i in items}) <= 1 and len(items) > 1
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True)

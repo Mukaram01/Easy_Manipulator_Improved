@@ -484,6 +484,41 @@ def test_synthetic_chain_transform_composition_and_primitives():
     assert len(item['transform_chain']) == 2
 
 
+def test_extract_from_urdf_reports_root_and_missing_parent_diagnostics():
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    xml = '''<robot name="t">
+    <link name="world"/>
+    <link name="tool0"><visual name="tool_box"><geometry><box size="1 1 1"/></geometry></visual></link>
+    <link name="finger"><visual name="finger_box"><geometry><box size="0.1 0.1 0.2"/></geometry></visual></link>
+    <joint name="tool_mount" type="fixed"><parent link="missing_base"/><child link="tool0"/></joint>
+    <joint name="finger_mount" type="fixed"><parent link="tool0"/><child link="finger"/></joint>
+    </robot>'''
+
+    items, diagnostics = mesh_index.extract_from_urdf(xml, {}, include_diagnostics=True)
+
+    assert len(items) == 2
+    assert diagnostics['root_links'] == ['world']
+    assert diagnostics['visual_parent_link_counts'] == {'missing_base': 2}
+    assert diagnostics['missing_parent_links'] == [{'link': 'missing_base', 'visual_count': 2}]
+    assert diagnostics['transform_chain_diagnostics'][0]['missing_parent_link'] == 'missing_base'
+    assert diagnostics['transform_chain_diagnostics'][0]['missing_parent_joint'] == 'tool_mount'
+
+
+def test_supported_robot_root_diagnostics_warns_for_tool0_collapsed_visuals():
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    items = [{'parent_link': 'tool0'}, {'parent_link': 'tool0'}, {'parent_link': 'world'}]
+    warnings, blockers = mesh_index.supported_robot_root_diagnostics(
+        'ur5_2f_test',
+        items,
+        {'root_links': ['tool0']},
+    )
+
+    assert any('tool0 (2/3)' in blocker for blocker in blockers)
+    assert any('expected world/base root' in warning for warning in warnings)
+
+
 def test_regenerate_visual_mesh_indexes_forwards_workspace_root(monkeypatch, tmp_path):
     import sys
     import scripts.regenerate_scene_visual_mesh_indexes as regenerate
