@@ -810,7 +810,13 @@ bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it)
   const QString category = it.category.trimmed().toLower();
   const QString lock_reason = it.lock_reason.trimmed().toLower();
   return role_text.contains("overlay") || role_text.contains("helper") || role_text.contains("guide") ||
-         category.contains("overlay") || lock_reason.contains("overlay");
+         role_text.contains("fov") || role_text.contains("reachability") || role_text.contains("route") ||
+         role_text.contains("warning_anchor") || role_text.contains("warning_badge") ||
+         role_text.contains("bounds_box") || role_text.contains("bounding_box") ||
+         category.contains("overlay") || category.contains("helper") || category.contains("diagnostic") ||
+         category.contains("fov") || category.contains("reachability") || category.contains("route") ||
+         category.contains("bounds_box") || category.contains("bounding_box") ||
+         lock_reason.contains("overlay") || lock_reason.contains("helper") || lock_reason.contains("diagnostic");
 }
 
 bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it)
