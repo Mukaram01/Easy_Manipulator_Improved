@@ -116,7 +116,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   view_mode_label_ = new QLabel("View mode", this);
   controls->addWidget(view_mode_label_);
   mode_selector_ = new QComboBox(this);
-  mode_selector_->addItems({"3D Layout Preview", "2D Layout", "Debug Overlays"});
+  mode_selector_->addItems({"3D Layout Preview", "2D Layout"});
   controls->addWidget(mode_selector_);
   controls->addSpacing(8);
   mesh_preview_mode_label_ = new QLabel("Mesh Preview:", this);
@@ -166,7 +166,11 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   mouse_help_label->setToolTip(scene_preview_mouse_help_tooltip(QString()));
   mouse_help_label->setStatusTip(QString::fromUtf8(kScenePreviewMouseHelpText));
   controls->addWidget(mouse_help_label);
-  overlays_selector_ = new QComboBox(this); overlays_selector_->addItems({"Overlays", "Diagnostics Overlay", "Reachability Heatmap", "Collision Warnings", "Safety Zones", "Work Envelope", "Warning Labels", "Labels", "Pick/Place Zones", "Task Route", "Approach/Retreat", "Camera FOV", "Pick Coverage", "EPD Detections", "Detection Labels", "Warnings", "Focus Selected", "Fit Scene", "Fit Robot", "Fit overlays", "Clear Selection"}); controls->addWidget(overlays_selector_);
+  overlays_selector_ = new QComboBox(this);
+  overlays_selector_->addItems({"Diagnostics / Overlays", "Diagnostics Overlay", "Reachability Heatmap", "Collision Warnings", "Safety Zones", "Work Envelope", "Warning Labels", "Labels", "Pick/Place Zones", "Task Route", "Approach/Retreat", "Camera FOV", "Pick Coverage", "EPD Detections", "Detection Labels", "Warnings", "Focus Selected", "Fit Scene", "Fit Robot", "Fit Overlays", "Clear Selection"});
+  overlays_selector_->setCurrentText("Diagnostics / Overlays");
+  overlays_selector_->setToolTip("Secondary diagnostics and overlay visibility controls. Product View starts without Scene3D diagnostics enabled.");
+  controls->addWidget(overlays_selector_);
   controls->addStretch(1);
   root->addLayout(controls);
   stack_ = new QStackedWidget(this);
@@ -250,7 +254,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     else if (choice == "Fit View") on_fit_scene_clicked();
     else if (choice == "Labels" && labels_selector_) labels_selector_->showPopup();
     else if (choice == "Mesh Mode" && mesh_preview_mode_selector_) mesh_preview_mode_selector_->showPopup();
-    else if (choice == "Overlays" && overlays_selector_) overlays_selector_->showPopup();
+    else if (choice == "Diagnostics / Overlays" && overlays_selector_) overlays_selector_->showPopup();
     refresh_info_chip();
   });
   connect(overlays_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
@@ -266,11 +270,26 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     else if (choice == "Safety Zones") v->show_safety = !v->show_safety;
     else if (choice == "Work Envelope") v->show_work_envelope = !v->show_work_envelope;
     else if (choice == "Warning Labels") v->show_warning_labels = !v->show_warning_labels;
+    else if (choice == "Labels") {
+      if (labels_selector_) labels_selector_->showPopup();
+    }
+    else if (choice == "Pick/Place Zones") v->show_pick_place = !v->show_pick_place;
+    else if (choice == "Task Route") v->show_task_route = !v->show_task_route;
+    else if (choice == "Approach/Retreat") v->show_approach_retreat = !v->show_approach_retreat;
+    else if (choice == "Camera FOV") v->show_camera_fov = !v->show_camera_fov;
+    else if (choice == "Pick Coverage") v->show_pick_coverage = !v->show_pick_coverage;
+    else if (choice == "EPD Detections") v->show_epd_detections = !v->show_epd_detections;
+    else if (choice == "Detection Labels") v->show_detection_labels = !v->show_detection_labels;
+    else if (choice == "Warnings") v->show_warnings = !v->show_warnings;
     else if (choice == "Focus Selected") on_focus_selected_clicked();
     else if (choice == "Fit Scene") on_fit_scene_clicked();
     else if (choice == "Fit Robot") on_fit_robot_clicked();
-    else if (choice == "Fit overlays") on_fit_overlays_clicked();
+    else if (choice == "Fit Overlays") on_fit_overlays_clicked();
     else if (choice == "Clear Selection") on_clear_selection_clicked();
+    if (choice != "Diagnostics / Overlays") {
+      const QSignalBlocker blocker(overlays_selector_);
+      overlays_selector_->setCurrentText("Diagnostics / Overlays");
+    }
     v->update();
     refresh_info_chip();
   });
@@ -436,15 +455,11 @@ void ScenePreviewWidget::on_focus_selected_clicked(){ static_cast<Scene3DViewpor
 void ScenePreviewWidget::on_clear_selection_clicked(){ selected_preview_item_id_.clear(); static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id.clear(); simple_3d_view_->update(); emit studio_log_requested("Cleared preview selection."); emit preview_item_selected(QString(), QStringLiteral("unknown")); }
 void ScenePreviewWidget::refresh_toolbar_visibility()
 {
-  const QString mode = mode_selector_ ? mode_selector_->currentText() : QStringLiteral("3D Layout Preview");
-  const bool debug_overlays = (mode == "Debug Overlays");
-
   if (view_actions_selector_) {
     const QSignalBlocker blocker(view_actions_selector_);
     const QString previous = view_actions_selector_->currentText();
     view_actions_selector_->clear();
     view_actions_selector_->addItems({"Top", "Front", "Side", "Isometric", "Fit View"});
-    if (debug_overlays) view_actions_selector_->addItems({"Labels", "Mesh Mode", "Overlays"});
     const int previous_index = view_actions_selector_->findText(previous);
     view_actions_selector_->setCurrentIndex(previous_index >= 0 ? previous_index : 0);
   }
@@ -453,32 +468,30 @@ void ScenePreviewWidget::refresh_toolbar_visibility()
     if (widget) widget->setVisible(visible);
   };
 
-  // Normal 3D Layout Preview keeps the product toolbar concise: view selector,
-  // labels selector, and the compact status chip. Developer-only mesh/gizmo/snap
-  // and detailed overlay controls remain available through Debug Overlays.
+  // Product View keeps the default toolbar focused on direct scene authoring
+  // controls. Diagnostics and overlays are grouped in the secondary selector.
   set_visible(view_actions_label_, true);
   set_visible(view_actions_selector_, true);
   set_visible(labels_label_, true);
   set_visible(labels_selector_, true);
   set_visible(toolbar_status_chip_, true);
-  set_visible(mesh_preview_mode_label_, debug_overlays);
-  set_visible(mesh_preview_mode_selector_, debug_overlays);
-  set_visible(gizmo_mode_label_, debug_overlays);
-  set_visible(gizmo_mode_selector_, debug_overlays);
-  set_visible(snap_mode_label_, debug_overlays);
-  set_visible(snap_mode_selector_, debug_overlays);
-  set_visible(interaction_mode_label_, debug_overlays);
-  set_visible(interaction_mode_selector_, debug_overlays);
-  set_visible(overlays_selector_, debug_overlays);
+  set_visible(mesh_preview_mode_label_, true);
+  set_visible(mesh_preview_mode_selector_, true);
+  set_visible(gizmo_mode_label_, true);
+  set_visible(gizmo_mode_selector_, true);
+  set_visible(snap_mode_label_, false);
+  set_visible(snap_mode_selector_, false);
+  set_visible(interaction_mode_label_, true);
+  set_visible(interaction_mode_selector_, true);
+  set_visible(overlays_selector_, true);
 }
 
 void ScenePreviewWidget::refresh_mode_and_state()
 {
   const QString mode = mode_selector_->currentText();
-  const bool requested_3d = (mode == "3D Layout Preview") || (mode == "Debug Overlays");
+  const bool requested_3d = (mode == "3D Layout Preview");
   const bool use3d = requested_3d && preview3d_available_;
   auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
-  viewport->debug_overlays_mode = (mode == "Debug Overlays");
   refresh_toolbar_visibility();
 
   if (!preview3d_available_) {
@@ -597,7 +610,7 @@ void ScenePreviewWidget::refresh_info_chip()
 {
   if (!info_chip_label_) return;
   const QString mode = mode_selector_ ? mode_selector_->currentText() : QStringLiteral("2D Layout");
-  const bool requested_3d = (mode == "3D Layout Preview") || (mode == "Debug Overlays");
+  const bool requested_3d = (mode == "3D Layout Preview");
   const QString render_mode = requested_3d && preview3d_available_ ? mode : QStringLiteral("2D Layout (Fallback)");
   const QString summary = preview_status_summary_.isEmpty() ? QString("Items: %1").arg(preview_items_.size()) : preview_status_summary_;
 
@@ -651,11 +664,10 @@ void ScenePreviewWidget::refresh_info_chip()
   info_chip_label_->adjustSize();
   if (fallback_info_chip_proxy_) fallback_info_chip_proxy_->setPos(12.0, 12.0);
   if (toolbar_status_chip_) {
-    const bool debug_overlays = mode_selector_ && mode_selector_->currentText() == "Debug Overlays";
     const QString interaction = interaction_mode_selector_ ? interaction_mode_selector_->currentText() : QStringLiteral("Select");
-    const QString snap = snap_mode_selector_ ? snap_mode_selector_->currentText() : QStringLiteral("Off");
-    toolbar_status_chip_->setText(debug_overlays
-      ? QString("%1 • Snap %2 • Warn %3").arg(interaction).arg(snap).arg(total_warning_count())
-      : QString("%1 • Warn %2").arg(preview3d_available_ ? QStringLiteral("3D") : QStringLiteral("2D fallback")).arg(total_warning_count()));
+    toolbar_status_chip_->setText(QString("%1 • %2 • Warn %3")
+      .arg(preview3d_available_ ? QStringLiteral("3D") : QStringLiteral("2D fallback"))
+      .arg(interaction)
+      .arg(total_warning_count()));
   }
 }
