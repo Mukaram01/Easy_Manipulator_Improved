@@ -540,6 +540,102 @@ static QString scalar_path(const YAML::Node & root, std::initializer_list<const 
 static QString normalize_bound_id(QString value){ value=value.trimmed(); if(value.isEmpty()||value=="unknown") return "unknown"; return value; }
 
 static bool read_yaml(const fs::path & p, YAML::Node * out){ try{ if(!fs::exists(p)) return false; qInfo("[workcell_builder] context=task_metadata_summary_loader path=%s", p.string().c_str()); *out=YAML::LoadFile(p.string()); return true; }catch(const YAML::Exception&){ return false; } catch(const std::exception&){ return false; } }
+
+struct SelectedSceneMetadataSummary
+{
+  QString scene_name;
+  QString scene_path;
+  QString robot;
+  QString end_effector;
+  QString robot_source;
+  QString end_effector_source;
+  QString launch;
+};
+
+static QString scalar_vector_path(const YAML::Node & root, const std::vector<const char *> & keys)
+{
+  YAML::Node n = root;
+  for (const auto * key : keys) {
+    if (!n || !n.IsMap() || !n[key]) return QString();
+    n = n[key];
+  }
+  const QString value = ystr(n).trimmed();
+  return value == QStringLiteral("unknown") ? QString() : value;
+}
+
+static QString first_present_scalar(const YAML::Node & root, const std::vector<std::vector<const char *>> & paths)
+{
+  for (const auto & path : paths) {
+    const QString value = scalar_vector_path(root, path);
+    if (!value.isEmpty()) {
+      return value;
+    }
+  }
+  return QString();
+}
+
+static SelectedSceneMetadataSummary selected_scene_metadata_summary(
+  const workcell_builder::WorkcellStudioSceneInfo & scene)
+{
+  SelectedSceneMetadataSummary out;
+  out.scene_name = QString::fromStdString(scene.scene_name);
+  out.scene_path = QString::fromStdString(scene.scene_dir.string());
+  out.launch = scene.has_launch_demo ?
+    QStringLiteral("launch/demo.launch.py present (fake-hardware launch metadata available)") :
+    QStringLiteral("launch/demo.launch.py missing; generate scene package to create launch metadata");
+
+  YAML::Node cell;
+  if (read_yaml(scene.scene_dir / "cell_definition.yaml", &cell)) {
+    out.robot = first_present_scalar(cell, {
+      {"robot", "model"}, {"robot", "id"}, {"robot", "name"}, {"cell", "robot"}
+    });
+    out.end_effector = first_present_scalar(cell, {
+      {"end_effector", "id"}, {"end_effector", "model"}, {"end_effector", "profile"},
+      {"tool", "id"}, {"tool", "model"}, {"task", "end_effector"}
+    });
+    if (!out.robot.isEmpty()) out.robot_source = QStringLiteral("cell_definition.yaml");
+    if (!out.end_effector.isEmpty()) out.end_effector_source = QStringLiteral("cell_definition.yaml");
+  }
+
+  YAML::Node manifest;
+  if ((out.robot.isEmpty() || out.end_effector.isEmpty()) && read_yaml(scene.scene_dir / "scene_manifest.yaml", &manifest)) {
+    if (out.robot.isEmpty()) {
+      out.robot = first_present_scalar(manifest, {{"robot", "model"}, {"robot", "id"}, {"robot", "name"}});
+      if (!out.robot.isEmpty()) out.robot_source = QStringLiteral("scene_manifest.yaml (cell_definition.yaml missing robot metadata)");
+    }
+    if (out.end_effector.isEmpty()) {
+      out.end_effector = first_present_scalar(manifest, {
+        {"end_effector", "id"}, {"end_effector", "model"}, {"end_effector", "profile"},
+        {"tool", "id"}, {"tool", "model"}, {"robot", "ee_link"}
+      });
+      if (!out.end_effector.isEmpty()) out.end_effector_source = QStringLiteral("scene_manifest.yaml (cell_definition.yaml missing end effector metadata)");
+    }
+  }
+
+  if (out.robot.isEmpty() && !QString::fromStdString(scene.robot_summary).trimmed().isEmpty()) {
+    out.robot = QString::fromStdString(scene.robot_summary).trimmed();
+    out.robot_source = QStringLiteral("generated preview/browser metadata (canonical YAML missing robot metadata)");
+  }
+  if (out.end_effector.isEmpty() && !QString::fromStdString(scene.gripper_summary).trimmed().isEmpty()) {
+    out.end_effector = QString::fromStdString(scene.gripper_summary).trimmed();
+    out.end_effector_source = QStringLiteral("generated preview/browser metadata (canonical YAML missing end effector metadata)");
+  }
+
+  if (out.robot.isEmpty()) {
+    out.robot = fs::exists(scene.scene_dir / "cell_definition.yaml") ?
+      QStringLiteral("Robot missing from cell_definition.yaml") :
+      QStringLiteral("Robot missing because cell_definition.yaml is absent");
+    out.robot_source = QStringLiteral("missing canonical cell metadata");
+  }
+  if (out.end_effector.isEmpty()) {
+    out.end_effector = fs::exists(scene.scene_dir / "cell_definition.yaml") ?
+      QStringLiteral("End effector missing from cell_definition.yaml") :
+      QStringLiteral("End effector missing because cell_definition.yaml is absent");
+    out.end_effector_source = QStringLiteral("missing canonical cell metadata");
+  }
+  return out;
+}
+
 static YAML::Node ensure_map_path(YAML::Node root, std::initializer_list<const char *> keys)
 {
   YAML::Node cursor = root;
@@ -3634,8 +3730,9 @@ void MainWindow::refresh_selected_scene_details_card()
   const QString status_chip = (s.status == "READY") ? "<span style='background:#DCFCE7;color:#15803D;border:1px solid #86EFAC;padding:2px 8px;border-radius:8px;'>READY</span>"
     : (s.status == "WARNINGS") ? "<span style='background:#FEF3C7;color:#B45309;border:1px solid #FCD34D;padding:2px 8px;border-radius:8px;'>WARNINGS</span>"
     : "<span style='background:#FEE2E2;color:#B91C1C;border:1px solid #FCA5A5;padding:2px 8px;border-radius:8px;'>BLOCKED</span>";
-  dashboard_selected_scene_details_->setText(QString("<b>Scene:</b> %1<br/><b>Status:</b> %2<br/><b>Robot:</b> %3<br/><b>Gripper:</b> %4<br/><b>Task Recipe:</b> %5<br/><b>Launch:</b> %6<br/><b>Source:</b> %7")
-    .arg(QString::fromStdString(s.scene_name)).arg(status_chip).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.has_task_recipe ? "present" : "missing").arg(s.has_launch_demo ? "ready" : "blocked").arg(QString::fromStdString(s.scene_dir.string())));
+  const auto metadata = selected_scene_metadata_summary(s);
+  dashboard_selected_scene_details_->setText(QString("<b>Scene:</b> %1<br/><b>Status:</b> %2<br/><b>Robot:</b> %3<br/><small>%4</small><br/><b>End effector:</b> %5<br/><small>%6</small><br/><b>Task Recipe:</b> %7<br/><b>Launch:</b> %8<br/><b>Source:</b> %9")
+    .arg(metadata.scene_name).arg(status_chip).arg(metadata.robot).arg(metadata.robot_source).arg(metadata.end_effector).arg(metadata.end_effector_source).arg(s.has_task_recipe ? "present" : "missing").arg(metadata.launch).arg(metadata.scene_path));
   if (dashboard_last_updated_card_) dashboard_last_updated_card_->setText(QString("Source Path\n%1").arg(QString::fromStdString(scene_browser_result_.scene_root.string())));
   const ActionGate generate_gate = build_generate_scene_gate(s, validation_stale_);
   const ActionGate plan_gate = build_plan_simulate_gate(s, launch_artifacts_ready_);
@@ -4173,10 +4270,11 @@ void MainWindow::refresh_preview_launch_ui()
     else if (!s.has_task_intent) readiness = "BLOCKED_MISSING_TASK_INTENT";
     else if (!selected_scene_preview_ready(&blockers)) readiness = "WARNINGS_PRESENT";
     else readiness = "READY_FOR_FAKE_HARDWARE_PREVIEW";
-    if (preview_scene_label_) preview_scene_label_->setText(QString("<b>Selected Scene</b><br/>scene name: %1<br/>scene path: %2<br/>robot summary: %3<br/>gripper/tool summary: %4<br/>task file status: %5<br/>launch/demo.launch.py status: %6<br/>package.xml/CMakeLists status: %7<br/>preview snapshot path: %8")
-      .arg(QString::fromStdString(s.scene_name), QString::fromStdString(s.scene_dir.string()), QString::fromStdString(s.robot_summary), QString::fromStdString(s.gripper_summary),
-      s.has_task_recipe ? "present" : "missing", s.has_launch_demo ? "present" : "missing", (s.has_package_xml && s.has_launch_demo) ? "present" : "missing",
-      QString::fromStdString((s.scene_dir / "preview" / "workcell_studio_canvas_snapshot.png").string())));
+    const auto metadata = selected_scene_metadata_summary(s);
+    if (preview_scene_label_) preview_scene_label_->setText(QString("<b>Selected Scene</b><br/>scene name: %1<br/>scene path: %2<br/>robot: %3<br/>robot source: %4<br/>end effector: %5<br/>end effector source: %6<br/>task file status: %7<br/>launch/demo.launch.py status: %8<br/>package.xml/CMakeLists status: %9<br/>preview snapshot path: %10")
+      .arg(metadata.scene_name, metadata.scene_path, metadata.robot, metadata.robot_source, metadata.end_effector, metadata.end_effector_source,
+      s.has_task_recipe ? "present" : "missing", s.has_launch_demo ? "present" : "missing", (s.has_package_xml && s.has_launch_demo) ? "present" : "missing")
+      .arg(QString::fromStdString((s.scene_dir / "preview" / "workcell_studio_canvas_snapshot.png").string())));
     if (validation_summary_label_) validation_summary_label_->setText(QString("<b>Validation Summary</b><br/>Scene: %1<br/>Readiness Gate: %2").arg(QString::fromStdString(s.scene_name), readiness));
   }
   if (preview_status_label_) preview_status_label_->setText(QString("<b>Readiness Gate</b><br/>%1<br/>state: %2").arg(readiness, preview_state_));
@@ -4628,8 +4726,9 @@ void MainWindow::sync_selected_scene_state()
   selected_scene_state_.name = QString::fromStdString(s.scene_name);
   selected_scene_state_.path = QString::fromStdString(s.scene_dir.string());
   selected_scene_state_.status = QString::fromStdString(s.status);
-  selected_scene_state_.robot_summary = QString::fromStdString(s.robot_summary);
-  selected_scene_state_.end_effector_summary = QString::fromStdString(s.gripper_summary);
+  const auto metadata = selected_scene_metadata_summary(s);
+  selected_scene_state_.robot_summary = metadata.robot;
+  selected_scene_state_.end_effector_summary = metadata.end_effector;
   selected_scene_state_.launchable = s.has_launch_demo;
 }
 
@@ -4691,7 +4790,11 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
     scene_builder_path_label_->setToolTip(sp);
   }
   refresh_scene_builder_view_chips();
-  if (scene_preview_label_) scene_preview_label_->setText((s.has_static_preview_svg?"Preview SVG available":"Generate preview/readiness pack to populate this panel") + QString("\nStatus: %1").arg(selected_scene_state_.status));
+  const auto metadata = selected_scene_metadata_summary(s);
+  if (scene_preview_label_) scene_preview_label_->setText(QString("%1\nStatus: %2\nScene: %3\nPath: %4\nRobot: %5 (%6)\nEnd effector: %7 (%8)\nLaunch: %9")
+    .arg(s.has_static_preview_svg ? "Preview SVG available" : "Generate preview/readiness pack to populate this panel",
+      selected_scene_state_.status, metadata.scene_name, metadata.scene_path, metadata.robot, metadata.robot_source,
+      metadata.end_effector, metadata.end_effector_source, metadata.launch));
   if (canvas_header_label_) canvas_header_label_->setText(QString("%1 | status: %2 | source: %3")
     .arg(selected_scene_state_.name, selected_scene_state_.status, selected_scene_state_.path));
   refresh_selected_scene_item_labels(selected_item_state_);
