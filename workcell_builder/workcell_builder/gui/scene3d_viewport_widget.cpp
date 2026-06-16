@@ -1910,6 +1910,7 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
   QString canonical;
   QString load_failure_reason;
   if (!try_resolve_canonical_mesh_path(path, canonical, &item, &load_failure_reason)) canonical = input_info.absoluteFilePath();
+  const QFileInfo canonical_info(canonical);
   auto it = mesh_cache_.find(canonical);
   if (it != mesh_cache_.end()) return it.value();
   MeshCacheEntry entry;
@@ -1921,7 +1922,7 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
   entry.resolved_source_path_stale = item.resolved_source_path_stale;
   entry.load_failure_reason = load_failure_reason;
   entry.failure_reason_code = load_failure_reason;
-  if (!input_info.exists() || !input_info.isFile()) {
+  if (!canonical_info.exists() || !canonical_info.isFile()) {
     entry.valid = false;
     if (entry.load_failure_reason.trimmed().isEmpty()) {
       entry.load_failure_reason = mesh_load_failure_reason_for_item(path, &item);
@@ -1930,14 +1931,14 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
     entry.warning = QStringLiteral("mesh missing on disk (reason_code: %1)").arg(entry.failure_reason_code);
     return mesh_cache_.insert(canonical, entry).value();
   }
-  QFile file(canonical);
+  QFile file(canonical_info.absoluteFilePath());
   if (!file.open(QIODevice::ReadOnly)) {
     entry.failure_reason_code = QStringLiteral("parse_failed");
     entry.warning = QStringLiteral("mesh unreadable");
     return mesh_cache_.insert(canonical, entry).value();
   }
   const QByteArray bytes = file.readAll();
-  const QString ext = input_info.suffix().toLower();
+  const QString ext = canonical_info.suffix().toLower();
   QString parse_error;
   if (ext == QStringLiteral("stl")) {
     entry.parser_type = QStringLiteral("stl");
