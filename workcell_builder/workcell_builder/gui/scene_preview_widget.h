@@ -205,7 +205,12 @@ public:
     int unique_visible_item_count{ 0 };
     int mesh_backed_count{ 0 };
     int mesh_source_count{ 0 };
+    int mesh_path_resolved_count{ 0 };
+    int mesh_file_loaded_count{ 0 };
+    int mesh_triangles_loaded_count{ 0 };
     int mesh_rendered_count{ 0 };
+    int mesh_surface_rendered_count{ 0 };
+    int mesh_bounds_fallback_rendered_count{ 0 };
     int urdf_primitive_source_count{ 0 };
     int urdf_primitive_rendered_count{ 0 };
     int placeholder_count{ 0 };

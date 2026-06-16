@@ -561,7 +561,12 @@ ScenePreviewWidget::RenderDebugCounters ScenePreviewWidget::render_debug_counter
   out.unique_visible_item_count = counters.unique_visible_item_count;
   out.mesh_backed_count = counters.mesh_backed_count;
   out.mesh_source_count = counters.mesh_source_count;
+  out.mesh_path_resolved_count = counters.mesh_path_resolved_count;
+  out.mesh_file_loaded_count = counters.mesh_file_loaded_count;
+  out.mesh_triangles_loaded_count = counters.mesh_triangles_loaded_count;
   out.mesh_rendered_count = counters.mesh_rendered_count;
+  out.mesh_surface_rendered_count = counters.mesh_surface_rendered_count;
+  out.mesh_bounds_fallback_rendered_count = counters.mesh_bounds_fallback_rendered_count;
   out.urdf_primitive_source_count = counters.urdf_primitive_source_count;
   out.urdf_primitive_rendered_count = counters.urdf_primitive_rendered_count;
   out.placeholder_count = counters.placeholder_count;
@@ -626,9 +631,14 @@ void ScenePreviewWidget::refresh_info_chip()
   const auto counters = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
   const QString compact_stats = QString("Items %1 M%2 B%3 Miss%4 Ov%5 L-URDF%6")
                                   .arg(physical_count).arg(mesh_count).arg(box_count).arg(missing_count).arg(overlay_count).arg(locked_urdf_count);
-  const QString smoke_stats = QString("quality=%1 mesh=%2/%3 urdf_prim=%4/%5 missing=%6 placeholder=%7 wireframe=%8 helpers=%9 paint_completed=%10 selected_scene_name=%11 selected_item_id=%12")
+  const QString smoke_stats = QString("quality=%1 mesh=%2/%3 surface=%4 bounds_fallback=%5 resolved=%6 loaded=%7 triangles=%8 urdf_prim=%9/%10 missing=%11 placeholder=%12 wireframe=%13 helpers=%14 paint_completed=%15 selected_scene_name=%16 selected_item_id=%17")
                                   .arg(counters.visual_quality_status)
                                   .arg(counters.mesh_rendered_count).arg(counters.mesh_source_count)
+                                  .arg(counters.mesh_surface_rendered_count)
+                                  .arg(counters.mesh_bounds_fallback_rendered_count)
+                                  .arg(counters.mesh_path_resolved_count)
+                                  .arg(counters.mesh_file_loaded_count)
+                                  .arg(counters.mesh_triangles_loaded_count)
                                   .arg(counters.urdf_primitive_rendered_count).arg(counters.urdf_primitive_source_count)
                                   .arg(counters.missing_geometry_count).arg(counters.placeholder_count)
                                   .arg(counters.wireframe_fallback_count).arg(counters.overlay_helper_count)

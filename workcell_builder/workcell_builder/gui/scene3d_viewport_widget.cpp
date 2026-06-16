@@ -226,6 +226,10 @@ void finalize_visual_quality(Scene3DViewportWidget::RenderDebugCounters & counte
 {
   counters.total_payload_count = counters.preview_items_count;
   counters.mesh_backed_count = counters.mesh_source_count;
+  if (counters.mesh_bounds_fallback_rendered_count <= 0 &&
+      counters.mesh_source_count > counters.mesh_surface_rendered_count) {
+    counters.mesh_bounds_fallback_rendered_count = counters.mesh_source_count - counters.mesh_surface_rendered_count;
+  }
   counters.overlay_count = counters.overlay_helper_count;
   counters.overlay_rendered_count = counters.overlay_helper_count;
   counters.valid_physical_fallback_count = counters.primitive_fallback_rendered_count;
@@ -966,6 +970,11 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
   last_render_counters.mesh_source_count = mesh_source_count;
   last_render_counters.mesh_backed_count = mesh_source_count;
   last_render_counters.mesh_rendered_count = 0;
+  last_render_counters.mesh_surface_rendered_count = 0;
+  last_render_counters.mesh_bounds_fallback_rendered_count = 0;
+  last_render_counters.mesh_path_resolved_count = 0;
+  last_render_counters.mesh_file_loaded_count = 0;
+  last_render_counters.mesh_triangles_loaded_count = 0;
   last_render_counters.urdf_primitive_source_count = urdf_primitive_source_count;
   last_render_counters.urdf_primitive_rendered_count = 0;
   last_render_counters.overlay_helper_count = static_cast<int>(overlay_items.size());
@@ -1106,6 +1115,7 @@ void Scene3DViewportWidget::paintGL()
   int rendered_item_count = 0;
   int mesh_source_count = 0;
   int mesh_rendered_count = 0;
+  int mesh_surface_rendered_count = 0;
   int urdf_primitive_source_count = 0;
   int urdf_primitive_rendered_count = 0;
   int primitive_fallback_count = 0;
@@ -1175,6 +1185,7 @@ void Scene3DViewportWidget::paintGL()
       if (count_in_stats) {
         placeholder_count += item_placeholder_count;
         mesh_rendered_count += item_mesh_backed_count;
+        mesh_surface_rendered_count += item_mesh_backed_count;
         urdf_primitive_rendered_count += item_urdf_primitive_count;
         missing_geometry_count += item_missing_geometry_count;
         wireframe_box_count += item_wireframe_box_count;
@@ -1199,6 +1210,19 @@ void Scene3DViewportWidget::paintGL()
   last_render_counters.mesh_source_count = mesh_source_count;
   last_render_counters.mesh_backed_count = mesh_source_count;
   last_render_counters.mesh_rendered_count = mesh_rendered_count;
+  last_render_counters.mesh_surface_rendered_count = mesh_surface_rendered_count;
+  last_render_counters.mesh_bounds_fallback_rendered_count = qMax(0, mesh_source_count - mesh_surface_rendered_count);
+  last_render_counters.mesh_path_resolved_count = 0;
+  last_render_counters.mesh_file_loaded_count = 0;
+  last_render_counters.mesh_triangles_loaded_count = 0;
+  for (auto cache_it = mesh_cache_.cbegin(); cache_it != mesh_cache_.cend(); ++cache_it) {
+    const MeshCacheEntry & cache_entry = cache_it.value();
+    if (cache_entry.path_resolved) ++last_render_counters.mesh_path_resolved_count;
+    if (cache_entry.loaded && cache_entry.valid && !cache_entry.mesh.triangles.isEmpty()) {
+      ++last_render_counters.mesh_file_loaded_count;
+      last_render_counters.mesh_triangles_loaded_count += static_cast<int>(cache_entry.mesh.triangles.size());
+    }
+  }
   last_render_counters.urdf_primitive_source_count = urdf_primitive_source_count;
   last_render_counters.urdf_primitive_rendered_count = urdf_primitive_rendered_count;
   last_render_counters.placeholder_count = placeholder_count;
@@ -1223,6 +1247,10 @@ void Scene3DViewportWidget::paintGL()
            << "overlay=" << overlay_count
            << "primitive_fallback_rendered_count=" << last_render_counters.primitive_fallback_rendered_count
            << "mesh_rendered_count=" << last_render_counters.mesh_rendered_count
+           << "mesh_surface_rendered_count=" << last_render_counters.mesh_surface_rendered_count
+           << "mesh_bounds_fallback_rendered_count=" << last_render_counters.mesh_bounds_fallback_rendered_count
+           << "mesh_file_loaded_count=" << last_render_counters.mesh_file_loaded_count
+           << "mesh_triangles_loaded_count=" << last_render_counters.mesh_triangles_loaded_count
            << "generated_fallback_count=" << last_render_counters.generated_fallback_count
            << "labels_drawn=" << last_render_counters.labels_drawn
            << "labels_suppressed_overlap=" << last_render_counters.labels_suppressed_overlap
@@ -1357,8 +1385,8 @@ void Scene3DViewportWidget::paintGL()
   last_render_counters.labels_suppressed_overlap = labels_suppressed_overlap;
   const bool concise_warning = missing_geometry_count > 0 ||
                                last_render_counters.visual_quality_status == QStringLiteral("FAIL");
-  const QRectF overlay_rect = debug_overlays_mode ? QRectF(12.0, 12.0, 430.0, 88.0)
-                                                  : QRectF(12.0, 12.0, concise_warning ? 300.0 : 270.0, concise_warning ? 62.0 : 46.0);
+  const QRectF overlay_rect = debug_overlays_mode ? QRectF(12.0, 12.0, 520.0, 88.0)
+                                                  : QRectF(12.0, 12.0, concise_warning ? 430.0 : 410.0, concise_warning ? 62.0 : 46.0);
   painter.setPen(Qt::NoPen);
   painter.setBrush(QColor(15, 23, 42, debug_overlays_mode ? 205 : 165));
   painter.drawRoundedRect(overlay_rect, 8.0, 8.0);
@@ -1368,20 +1396,29 @@ void Scene3DViewportWidget::paintGL()
     painter.drawText(QRectF(20.0, 34.0, 410.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
                      QString("Scene: %1").arg(scene_name));
     painter.drawText(QRectF(20.0, 50.0, 410.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
-                     QString("Generated mesh %1/%2 • URDF primitives %3/%4 • Helpers %5 • Missing geometry %6")
+                     QString("Generated mesh %1/%2 • Surface %3 • Bounds fallback %4 • URDF primitives %5/%6 • Helpers %7 • Missing geometry %8")
                        .arg(mesh_rendered_count).arg(mesh_source_count)
+                       .arg(last_render_counters.mesh_surface_rendered_count)
+                       .arg(last_render_counters.mesh_bounds_fallback_rendered_count)
                        .arg(urdf_primitive_rendered_count).arg(urdf_primitive_source_count)
                        .arg(overlay_count).arg(missing_geometry_count));
     painter.drawText(QRectF(20.0, 66.0, 410.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
                      QString("Physical %1 • Locked URDF %2 • Fit: %3")
                        .arg(physical_item_count).arg(locked_urdf_count).arg(fit_include_overlays ? "all_items" : "generated_visuals"));
   } else {
-    painter.drawText(QRectF(20.0, 18.0, 260.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
-                     concise_warning ? QStringLiteral("3D Preview Ready · Warnings") : QStringLiteral("3D Preview Ready"));
+    painter.drawText(QRectF(20.0, 18.0, 390.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                     QString("3D Preview Ready%1 · %2 meshes · %3 surface-rendered · %4 fallback")
+                       .arg(concise_warning ? QStringLiteral(" · Warnings") : QString())
+                       .arg(mesh_source_count)
+                       .arg(last_render_counters.mesh_surface_rendered_count)
+                       .arg(last_render_counters.mesh_bounds_fallback_rendered_count));
     painter.setPen(concise_warning ? QColor("#fde68a") : QColor("#cbd5e1"));
-    painter.drawText(QRectF(20.0, 36.0, 280.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
-                     QString("%1 items · %2 meshes · %3 missing")
-                       .arg(visible_item_count).arg(mesh_rendered_count).arg(missing_geometry_count));
+    painter.drawText(QRectF(20.0, 36.0, 390.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                     QString("%1 items · %2 meshes · %3 surface-rendered · %4 fallback")
+                       .arg(visible_item_count)
+                       .arg(mesh_source_count)
+                       .arg(last_render_counters.mesh_surface_rendered_count)
+                       .arg(last_render_counters.mesh_bounds_fallback_rendered_count));
     if (concise_warning) {
       painter.setPen(QColor("#fbbf24"));
       painter.drawText(QRectF(20.0, 52.0, 280.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
@@ -1418,6 +1455,7 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
   int rendered_item_count = 0;
   int mesh_source_count = 0;
   int mesh_rendered_count = 0;
+  int mesh_surface_rendered_count = 0;
   int urdf_primitive_source_count = 0;
   int urdf_primitive_rendered_count = 0;
   int primitive_fallback_count = 0;
@@ -1519,6 +1557,19 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
   last_render_counters.mesh_source_count = mesh_source_count;
   last_render_counters.mesh_backed_count = mesh_source_count;
   last_render_counters.mesh_rendered_count = mesh_rendered_count;
+  last_render_counters.mesh_surface_rendered_count = mesh_surface_rendered_count;
+  last_render_counters.mesh_bounds_fallback_rendered_count = qMax(0, mesh_source_count - mesh_surface_rendered_count);
+  last_render_counters.mesh_path_resolved_count = 0;
+  last_render_counters.mesh_file_loaded_count = 0;
+  last_render_counters.mesh_triangles_loaded_count = 0;
+  for (auto cache_it = mesh_cache_.cbegin(); cache_it != mesh_cache_.cend(); ++cache_it) {
+    const MeshCacheEntry & cache_entry = cache_it.value();
+    if (cache_entry.path_resolved) ++last_render_counters.mesh_path_resolved_count;
+    if (cache_entry.loaded && cache_entry.valid && !cache_entry.mesh.triangles.isEmpty()) {
+      ++last_render_counters.mesh_file_loaded_count;
+      last_render_counters.mesh_triangles_loaded_count += static_cast<int>(cache_entry.mesh.triangles.size());
+    }
+  }
   last_render_counters.urdf_primitive_source_count = urdf_primitive_source_count;
   last_render_counters.urdf_primitive_rendered_count = urdf_primitive_rendered_count;
   last_render_counters.placeholder_count = placeholder_count;
@@ -1909,12 +1960,14 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
   const QFileInfo input_info(path);
   QString canonical;
   QString load_failure_reason;
-  if (!try_resolve_canonical_mesh_path(path, canonical, &item, &load_failure_reason)) canonical = input_info.absoluteFilePath();
+  const bool path_resolved = try_resolve_canonical_mesh_path(path, canonical, &item, &load_failure_reason);
+  if (!path_resolved) canonical = input_info.absoluteFilePath();
   auto it = mesh_cache_.find(canonical);
   if (it != mesh_cache_.end()) return it.value();
   MeshCacheEntry entry;
   entry.loaded = true;
   entry.requested_path = path;
+  entry.path_resolved = path_resolved;
   entry.package_uri = item.package_uri;
   entry.resolved_source_path_original = item.resolved_source_path_original;
   entry.source_path_resolution_outcome = item.source_path_resolution_outcome;
@@ -2029,6 +2082,7 @@ QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
     row["load_failure_reason"] = e.load_failure_reason;
     row["failure_reason_code"] = e.failure_reason_code;
     row["requested_path"] = e.requested_path;
+    row["path_resolved"] = e.path_resolved;
     row["package_uri"] = e.package_uri;
     row["resolved_source_path_stale"] = e.resolved_source_path_stale;
     row["resolved_source_path_original"] = e.resolved_source_path_original;
