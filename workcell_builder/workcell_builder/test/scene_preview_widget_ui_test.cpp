@@ -77,3 +77,27 @@ TEST(ScenePreviewWidgetUi, LabelModeDefaultsToSelected)
   ASSERT_NE(label_combo, nullptr);
   EXPECT_EQ(label_combo->currentText(), QString("Selected"));
 }
+
+TEST(ScenePreviewWidgetUi, ProductViewDefaultsToIsometric)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+
+  ScenePreviewWidget widget;
+  const auto combos = widget.findChildren<QComboBox *>();
+  QComboBox * view_combo = nullptr;
+  for (auto * combo : combos) {
+    if (combo && combo->findText("Top") >= 0 && combo->findText("Front") >= 0 &&
+        combo->findText("Side") >= 0 && combo->findText("Isometric") >= 0 &&
+        combo->findText("Fit View") >= 0) {
+      view_combo = combo;
+      break;
+    }
+  }
+
+  ASSERT_NE(view_combo, nullptr);
+  EXPECT_EQ(view_combo->currentText(), QString("Isometric"));
+
+  view_combo->setCurrentText("Top");
+  widget.apply_product_view_defaults();
+  EXPECT_EQ(view_combo->currentText(), QString("Isometric"));
+}

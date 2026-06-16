@@ -156,6 +156,10 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   controls->addWidget(view_actions_label_);
   view_actions_selector_ = new QComboBox(this);
   view_actions_selector_->addItems({"Top", "Front", "Side", "Isometric", "Fit View"});
+  {
+    const QSignalBlocker blocker(view_actions_selector_);
+    view_actions_selector_->setCurrentText("Isometric");
+  }
   controls->addWidget(view_actions_selector_);
   toolbar_status_chip_ = new QLabel(this);
   toolbar_status_chip_->setObjectName("previewToolbarChip");
@@ -348,12 +352,7 @@ void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items)
     emit studio_log_requested(has_selected ? QString("Preview selection restored after refresh: %1").arg(selected_preview_item_id_) : QString("Preview selection retained after refresh; id is hidden by filters or absent from the visible preview payload: %1").arg(selected_preview_item_id_));
   }
   viewport->fit_include_overlays = false;
-  // Product previews should open in the same camera path users get from the
-  // normal canvas controls: an isometric view followed by product-fit bounds
-  // that keep robot/tool/environment meshes and editable layout items legible
-  // without letting diagnostics overlays dominate the initial framing.
-  viewport->set_isometric_view();
-  viewport->fit_product_view();
+  apply_product_view_defaults();
   emit_scene_diagnostic_once(
     QStringLiteral("payload_commit"),
     preview_items_.size(),
@@ -468,9 +467,26 @@ void ScenePreviewWidget::reload_meshes()
 {
   auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
   v->invalidate_mesh_cache();
-  v->update();
+  apply_product_view_defaults();
   update();
   emit studio_log_requested("Reloaded mesh preview cache (visual-only).");
+}
+void ScenePreviewWidget::apply_product_view_defaults()
+{
+  auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  if (!v) return;
+  if (view_actions_selector_) {
+    const QSignalBlocker blocker(view_actions_selector_);
+    view_actions_selector_->setCurrentText("Isometric");
+  }
+  // Product previews should open in the same camera path users get from the
+  // normal canvas controls: an isometric view followed by product-fit bounds
+  // that keep robot/tool/environment meshes and editable layout items legible
+  // without letting diagnostics overlays dominate the initial framing.
+  v->fit_include_overlays = false;
+  v->set_isometric_view();
+  v->fit_product_view();
+  fit_fallback_scene_to_items(false);
 }
 void ScenePreviewWidget::on_reset_view_clicked(){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->reset_view(); reset_fallback_scene_view(); }
 void ScenePreviewWidget::on_fit_scene_clicked(){ auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->fit_include_overlays = false; v->fit_scene(); fit_fallback_scene_to_items(false); } // Fit Scene intentionally excludes overlay-only bounds by default.

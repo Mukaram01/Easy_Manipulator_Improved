@@ -193,6 +193,7 @@ public:
   const PreviewItem * preview_item_by_id(const QString & id) const;
   MeshPreviewMode mesh_preview_mode() const;
   void reload_meshes();
+  void apply_product_view_defaults();
   struct RenderDebugCounters
   {
     int preview_items_count{ 0 };
