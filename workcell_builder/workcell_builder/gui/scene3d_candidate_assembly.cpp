@@ -30,14 +30,61 @@ bool include_preview_item_for_scene3d(
 Scene3DLayerVisibilityDefaults compute_scene3d_default_layer_visibility(
   const QVector<ScenePreviewWidget::PreviewItem> & all_items)
 {
-  Q_UNUSED(all_items);
   Scene3DLayerVisibilityDefaults out;
-  // Generated/locked URDF visuals are part of the full Scene3D payload, not a
-  // mutually exclusive fallback. Keep them visible by default so opening a
-  // scene with editable layout rows plus mesh-index rows commits the combined
-  // payload to the viewport instead of leaving the render loop on the initial
-  // editable-only subset.
+  // Product-view defaults should favor authored layout plus generated mesh
+  // visuals, while leaving diagnostics hidden unless the loaded payload proves
+  // they are needed for understanding missing assets.
+  out.editable_layout = true;
+  out.mesh_preview = true;
   out.locked_generated_urdf_visual = true;
+  out.overlay = false;
+
+  int primitive_fallback_count = 0;
+  int missing_mesh_count = 0;
+  int unresolved_package_uri_count = 0;
+  int unsupported_extension_count = 0;
+  int fallback_warning_count = 0;
+
+  for (const auto & item : all_items) {
+    const QString source_layer = token(item.source_layer);
+    const QString visual_source = token(item.active_visual_source);
+    const QString status = token(item.status);
+    const QString warnings = item.warnings.join(QLatin1Char('|')).toLower();
+    const QString mesh_warning = token(item.mesh_load_warning);
+    const QString resolution_outcome = token(item.source_path_resolution_outcome);
+    const QString combined = source_layer + QLatin1Char('|') + visual_source + QLatin1Char('|') +
+      status + QLatin1Char('|') + warnings + QLatin1Char('|') + mesh_warning + QLatin1Char('|') +
+      resolution_outcome;
+
+    if (source_layer == QStringLiteral("primitive_fallback") ||
+        visual_source == QStringLiteral("primitive_fallback")) {
+      ++primitive_fallback_count;
+    }
+    if (combined.contains(QStringLiteral("missing mesh")) ||
+        combined.contains(QStringLiteral("missing_source_path")) ||
+        combined.contains(QStringLiteral("mesh unavailable")) ||
+        combined.contains(QStringLiteral("mesh unresolved")) ||
+        combined.contains(QStringLiteral("unresolved"))) {
+      ++missing_mesh_count;
+    }
+    if (combined.contains(QStringLiteral("unresolved_package_uri")) ||
+        combined.contains(QStringLiteral("package uri unresolved"))) {
+      ++unresolved_package_uri_count;
+    }
+    if (combined.contains(QStringLiteral("unsupported")) &&
+        (combined.contains(QStringLiteral("extension")) || combined.contains(QStringLiteral("format")))) {
+      ++unsupported_extension_count;
+    }
+    if (combined.contains(QStringLiteral("fallback")) &&
+        (combined.contains(QStringLiteral("missing")) || combined.contains(QStringLiteral("unavailable")) ||
+         combined.contains(QStringLiteral("unresolved")))) {
+      ++fallback_warning_count;
+    }
+  }
+
+  out.primitive_fallback = (primitive_fallback_count + missing_mesh_count) > 0;
+  out.warning = (missing_mesh_count + unresolved_package_uri_count +
+                 unsupported_extension_count + fallback_warning_count) > 0;
   return out;
 }
 

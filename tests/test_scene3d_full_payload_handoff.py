@@ -9,8 +9,8 @@ GUI_MAIN_CPP = (ROOT / 'workcell_builder/workcell_builder/gui/main.cpp').read_te
 
 def test_default_layer_visibility_keeps_generated_mesh_preview_in_full_payload():
     assert 'out.locked_generated_urdf_visual = true;' in CANDIDATE_CPP
-    assert 'Generated/locked URDF visuals are part of the full Scene3D payload' in CANDIDATE_CPP
-    assert 'Scene3D full payload committed: scene=%1 editable=%2 preview=%3 total=%4 visible=%5 mesh=%6 locked=%7' in MAIN_CPP
+    assert 'Product-view defaults should favor authored layout plus generated mesh' in CANDIDATE_CPP
+    assert 'Scene3D full payload committed: scene=%1 total=%2 visible=%3 mesh=%4 locked=%5' in MAIN_CPP
 
 
 def test_viewport_ingest_counters_reflect_combined_editable_and_preview_payload_before_paint():
@@ -19,8 +19,8 @@ def test_viewport_ingest_counters_reflect_combined_editable_and_preview_payload_
     ingest_block = VIEWPORT_CPP[ingest_start:ingest_end]
     for token in [
         'last_render_counters.viewport_received_count = items.size();',
-        'last_render_counters.mesh_backed_count = mesh_backed_count;',
-        'last_render_counters.mesh_rendered_count = mesh_backed_count;',
+        'last_render_counters.mesh_backed_count = mesh_source_count;',
+        'last_render_counters.mesh_rendered_count = 0;',
         'last_render_counters.locked_generated_urdf_visual_count = locked_urdf_count;',
         'last_render_counters.editable_layout_count = editable_layout_count;',
     ]:
@@ -41,8 +41,8 @@ def test_scene3d_smoke_load_keeps_generated_urdf_layer_additive_for_mesh_index_p
     smoke_end = MAIN_CPP.index('void MainWindow::open_new_scene_creation_flow', smoke_start)
     smoke_block = MAIN_CPP[smoke_start:smoke_end]
 
-    assert 'compute_scene3d_default_layer_visibility(all_scene_preview_items_)' in smoke_block
-    assert 'preview_layer_generated_urdf_visual_box_->setChecked(defaults.locked_generated_urdf_visual);' in smoke_block
+    assert 'apply_scene3d_product_view_layer_defaults_and_commit();' in smoke_block
+    assert 'preview_layer_generated_urdf_visual_box_->setChecked(defaults.locked_generated_urdf_visual);' not in smoke_block
     assert 'preview_layer_generated_urdf_visual_box_->setChecked(!has_renderable_editable_mesh_or_primitive);' not in smoke_block
     assert 'has_renderable_editable_mesh_or_primitive' not in smoke_block
 
