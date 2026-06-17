@@ -110,6 +110,30 @@ TEST(Scene3DRenderRoleClassifier, DefaultProductFitIncludesPhysicalItemsAndExclu
 
 }
 
+
+TEST(Scene3DRenderRoleClassifier, GeneratedUrdfMeshPreviewMaterialIsOpaqueInProductView)
+{
+  auto generated = make_item("generated_transparent_robot_mesh");
+  generated.locked = true;
+  generated.editable = false;
+  generated.lock_reason = "Generated URDF visual";
+  generated.source_layer = "generated_urdf_visual";
+  generated.active_visual_source = "generated_urdf_visual";
+  generated.mesh_available = true;
+  generated.has_mesh_metadata = true;
+  generated.has_material_color = true;
+  generated.material_r = 0.4;
+  generated.material_g = 0.5;
+  generated.material_b = 0.6;
+  generated.material_a = 0.18;
+
+  const QColor product_color = Scene3DViewportWidget::material_color_for_test(generated, false);
+  EXPECT_GE(product_color.alphaF(), 0.92);
+
+  const QColor diagnostic_color = Scene3DViewportWidget::material_color_for_test(generated, true);
+  EXPECT_LT(diagnostic_color.alphaF(), 0.25);
+}
+
 TEST(Scene3DRenderRoleClassifier, MeshesModeDoesNotDrawFallbackSolid)
 {
   auto missing = make_item("missing2");

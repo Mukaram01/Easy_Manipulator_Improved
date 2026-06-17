@@ -4,6 +4,7 @@
 
 #include <QOpenGLFunctions>
 #include <QOpenGLWidget>
+#include <QColor>
 #include <QHash>
 #include <QSet>
 #include <QVector3D>
@@ -40,6 +41,7 @@ public:
   bool show_task_route{ false }, show_approach_retreat{ false };
   bool show_camera_fov{ false }, show_pick_coverage{ false }, show_epd_detections{ false }, show_detection_labels{ false };
   bool debug_overlays_mode{ false };
+  bool diagnostic_transparency_mode{ false };
   ScenePreviewWidget::MeshPreviewMode mesh_preview_mode{ ScenePreviewWidget::MeshPreviewMode::Auto };
   bool fit_include_overlays{ false };
   ScenePreviewWidget::TaskOverlayModel task_overlay;
@@ -149,6 +151,7 @@ public:
   static bool should_draw_clean_semantic_primitive_for_test(const ScenePreviewWidget::PreviewItem & item);
   static bool should_suppress_missing_geometry_marker_for_test(const ScenePreviewWidget::PreviewItem & item);
   static bool has_mesh_surface_candidate_for_test(const ScenePreviewWidget::PreviewItem & item);
+  static QColor material_color_for_test(const ScenePreviewWidget::PreviewItem & item, bool diagnostic_transparency_mode = false);
   static bool is_raw_generated_bounds_only_for_test(const ScenePreviewWidget::PreviewItem & item);
 
 protected:
