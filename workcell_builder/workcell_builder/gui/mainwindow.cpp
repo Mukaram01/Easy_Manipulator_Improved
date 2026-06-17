@@ -8215,6 +8215,20 @@ void MainWindow::populate_scene_hierarchy()
             add_skip_reason(QStringLiteral("zero_triangle_mesh"));
             continue;
           }
+          const QString transform_status_for_static_filter = QString::fromStdString(
+            workcell_builder::yaml_map_value_or_empty(v, "transform_status")).trimmed().toLower();
+          const bool static_robot_fallback_visual =
+            id.startsWith(QStringLiteral("urdf_static_fallback_")) ||
+            transform_status_for_static_filter == QStringLiteral("static_fallback") ||
+            transform_status_for_static_filter == QStringLiteral("static_fallback_parent");
+          const bool authoritative_expanded_mesh_payload =
+            visual_index_safe_for_preview &&
+            (visual_index_extraction_mode == QStringLiteral("xacro_expanded") ||
+             visual_index_extraction_mode == QStringLiteral("xacro_lite_expanded"));
+          if (authoritative_expanded_mesh_payload && static_robot_fallback_visual) {
+            add_skip_reason(QStringLiteral("suppressed_static_robot_fallback"));
+            continue;
+          }
           ScenePreviewWidget::PreviewItem p;
           p.id = id;
           p.display_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link"));
