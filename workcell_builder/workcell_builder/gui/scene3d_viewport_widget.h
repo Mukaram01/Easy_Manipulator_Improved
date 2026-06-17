@@ -16,6 +16,7 @@
 #include <functional>
 
 class QImage;
+class QPainter;
 
 class Scene3DViewportWidget : public QOpenGLWidget, protected QOpenGLFunctions
 {
@@ -188,6 +189,8 @@ private:
   void draw_sphere(double cx, double cy, double cz, double radius, const QColor & color,
                    bool translucent = false, int slice_count = 24, int stack_count = 12);
   void draw_frustum(const QColor & color, bool translucent = true);
+  void configure_product_render_state();
+  void draw_viewport_quality_overlay(QPainter & painter, int visible_item_count, int physical_item_count) const;
   void draw_ground_grid_pass();
   void draw_world_axes_pass();
   bool scene_bounds_from_visible_items(QVector3D & out_min, QVector3D & out_max, bool include_overlays) const;
