@@ -823,7 +823,11 @@ NormalizedRole classify_item_role(const ScenePreviewWidget::PreviewItem & it)
 {
   const QString role = normalized_token(it.role);
   const QString category = normalized_token(it.category);
-  const QString mix = role + "|" + category;
+  const QString id = normalized_token(it.id);
+  const QString display_name = normalized_token(it.display_name);
+  const QString metadata = normalized_token(it.metadata_tags + QStringLiteral("|") + it.mesh_type + QStringLiteral("|") +
+                                           it.material_name + QStringLiteral("|") + it.status);
+  const QString mix = role + "|" + category + "|" + id + "|" + display_name + "|" + metadata;
 
   if (mix.contains("robot_reach") || mix.contains("reachability") || mix.contains("reach_envelope") ||
       mix.contains("reach_zone") || mix.contains("workspace_reach")) return NormalizedRole::RobotReach;
@@ -2169,7 +2173,6 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     return true;
   }
   const bool semantic_without_mesh_handoff =
-    !generated_or_locked_preview &&
     is_clean_semantic_primitive_role(semantic_role) &&
     !item_has_credible_mesh_handoff(it);
   if (semantic_without_mesh_handoff && draw_clean_semantic_primitive(it)) {
