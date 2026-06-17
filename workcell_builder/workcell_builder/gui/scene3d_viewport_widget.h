@@ -270,6 +270,12 @@ private:
                                        const ScenePreviewWidget::PreviewItem * item = nullptr,
                                        QString * out_failure_reason = nullptr) const;
   bool warn_mesh_fallback_once(const QString & item_id, const QString & reason, const QString & path);
+  QString mesh_rejection_diagnostic_detail(const ScenePreviewWidget::PreviewItem & item,
+                                          const QString & mesh_source,
+                                          const QString & canonical_mesh_source = QString(),
+                                          const MeshCacheEntry * entry = nullptr,
+                                          const QString & extra_detail = QString()) const;
+  bool item_should_surface_mesh_warning(const ScenePreviewWidget::PreviewItem & item) const;
   void remember_mesh_rejection_reason(const QString & item_id, const QString & reason);
   QString last_mesh_rejection_reason_for_item(const QString & item_id) const;
   const MeshCacheEntry & ensure_mesh_cached(const ScenePreviewWidget::PreviewItem & item, const QString & path);
