@@ -1436,16 +1436,37 @@ void Scene3DViewportWidget::fit_product_view()
     return;
   }
 
-  orbit_offset_ = (bmin + bmax) * 0.5f;
-  const QVector3D ext = bmax - bmin;
-  const double radius = qMax(0.25, 0.5 * qSqrt(ext.x() * ext.x() + ext.y() * ext.y() + ext.z() * ext.z()));
-  scene_radius_ = radius;
   const double fov = qDegreesToRadians(50.0);
-  const double fit_distance = (radius / qTan(fov * 0.5)) * 1.08;
+  // Product framing: start from the physical mesh workcell, then widen just enough
+  // for first-class editor primitives so ur5_2f_test opens as a complete
+  // recognizable workcell instead of a cropped robot close-up.
+  for (const auto & it : items) {
+    const NormalizedRole role = classify_item_role(it);
+    const bool product_editor_anchor = role == NormalizedRole::PickZone ||
+                                       role == NormalizedRole::PlaceZone ||
+                                       role == NormalizedRole::PlaceBin ||
+                                       role == NormalizedRole::SafetyZone ||
+                                       role == NormalizedRole::HomePose ||
+                                       role == NormalizedRole::Table ||
+                                       role == NormalizedRole::Camera;
+    if (!product_editor_anchor || !item_is_enabled_for_fit(it)) continue;
+    const ItemBounds bounds = item_bounds_for_role(it);
+    bmin.setX(std::min(bmin.x(), static_cast<float>(bounds.x)));
+    bmin.setY(std::min(bmin.y(), static_cast<float>(bounds.y)));
+    bmin.setZ(std::min(bmin.z(), static_cast<float>(bounds.z)));
+    bmax.setX(std::max(bmax.x(), static_cast<float>(bounds.x + bounds.sx)));
+    bmax.setY(std::max(bmax.y(), static_cast<float>(bounds.y + bounds.sy)));
+    bmax.setZ(std::max(bmax.z(), static_cast<float>(bounds.z + bounds.sz)));
+  }
+  orbit_offset_ = (bmin + bmax) * 0.5f;
+  const QVector3D product_ext = bmax - bmin;
+  const double product_radius = qMax(0.25, 0.5 * qSqrt(product_ext.x() * product_ext.x() + product_ext.y() * product_ext.y() + product_ext.z() * product_ext.z()));
+  scene_radius_ = product_radius;
+  const double fit_distance = (product_radius / qTan(fov * 0.5)) * 1.22;
   distance_ = qBound(min_distance_, fit_distance, max_distance_);
-  yaw_ = -0.72;
-  pitch_ = 0.54;
-  orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.04, radius * 0.025)));
+  yaw_ = -0.86;
+  pitch_ = 0.60;
+  orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.06, product_radius * 0.035)));
   last_camera_fit_target_ = QStringLiteral("product_full_workcell_isometric");
   has_robot_aabb_diag_ = false;
   fit_include_overlays = false;
@@ -3045,8 +3066,8 @@ void Scene3DViewportWidget::draw_ground_grid_pass()
   glDisable(GL_CULL_FACE);
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  const int grid_extent = debug_overlays_mode ? 20 : 8;
-  const QColor floor = QColor(15, 23, 42, debug_overlays_mode ? 42 : 30);
+  const int grid_extent = debug_overlays_mode ? 20 : 6;
+  const QColor floor = QColor(15, 23, 42, debug_overlays_mode ? 38 : 24);
   glColor4f(floor.redF(), floor.greenF(), floor.blueF(), floor.alphaF());
   glBegin(GL_QUADS);
   glVertex3f(static_cast<float>(-grid_extent), -0.002f, static_cast<float>(-grid_extent));
@@ -3060,7 +3081,7 @@ void Scene3DViewportWidget::draw_ground_grid_pass()
     const bool major = (i % 5 == 0);
     const QColor c = debug_overlays_mode
       ? (major ? QColor(100, 116, 139, 140) : QColor(71, 85, 105, 80))
-      : (major ? QColor(100, 116, 139, 54) : QColor(71, 85, 105, 24));
+      : (major ? QColor(100, 116, 139, 46) : QColor(71, 85, 105, 18));
     glColor4f(c.redF(), c.greenF(), c.blueF(), c.alphaF());
     glVertex3f(static_cast<float>(i), 0.0f, static_cast<float>(-grid_extent)); glVertex3f(static_cast<float>(i), 0.0f, static_cast<float>(grid_extent));
     glVertex3f(static_cast<float>(-grid_extent), 0.0f, static_cast<float>(i)); glVertex3f(static_cast<float>(grid_extent), 0.0f, static_cast<float>(i));
@@ -3131,8 +3152,8 @@ void Scene3DViewportWidget::draw_table_slab(const ScenePreviewWidget::PreviewIte
   const double rail_height = qMax(0.018, leg_width * 0.55);
   const double rail_y = leg_y + leg_height * 0.28;
 
-  const QColor tabletop_fill(107, 114, 128, 226);
-  const QColor frame_fill(30, 41, 59, 230);
+  const QColor tabletop_fill(126, 118, 105, 228);
+  const QColor frame_fill(47, 57, 70, 232);
   const QColor outline(203, 213, 225, 96);
   const QColor frame_outline(148, 163, 184, 86);
 
@@ -3240,8 +3261,8 @@ void Scene3DViewportWidget::draw_camera_body_with_frustum(const ScenePreviewWidg
   const double sx = qMax(0.06, it.sx > 0.001 ? it.sx : 0.10);
   const double sy = qMax(0.04, it.sy > 0.001 ? it.sy : 0.06);
   const double sz = qMax(0.04, it.sz > 0.001 ? it.sz : 0.07);
-  const QColor body(56, 189, 248, 210);
-  const QColor frustum(125, 211, 252, 120);
+  const QColor body(17, 24, 39, 225);
+  const QColor frustum(125, 211, 252, 95);
   draw_box(it.x, it.y, it.z, sx, sy, sz, body, false);
   draw_box_outline(it.x, it.y, it.z, sx, sy, sz, QColor(224, 242, 254, 160), 0.9f);
 
@@ -3270,16 +3291,16 @@ void Scene3DViewportWidget::draw_pick_zone(const ScenePreviewWidget::PreviewItem
 {
   // pick/place zones: translucent floor/table overlays; labels are supplied by the 2D label pass.
   const double h = qMax(0.006, qMin(it.sy > 0.001 ? it.sy : 0.01, 0.025));
-  draw_box(it.x, it.y, it.z, qMax(0.05, it.sx), h, qMax(0.05, it.sz), QColor(34, 197, 94, 38), true);
-  draw_box_outline(it.x, it.y, it.z, qMax(0.05, it.sx), h, qMax(0.05, it.sz), QColor(134, 239, 172, 110), 1.0f);
+  draw_box(it.x, it.y, it.z, qMax(0.05, it.sx), h, qMax(0.05, it.sz), QColor(34, 197, 94, 46), true);
+  draw_box_outline(it.x, it.y, it.z, qMax(0.05, it.sx), h, qMax(0.05, it.sz), QColor(134, 239, 172, 175), 1.6f);
 }
 
 void Scene3DViewportWidget::draw_place_zone(const ScenePreviewWidget::PreviewItem & it)
 {
   // place_zone: purple translucent floor/table overlay with a label through the 2D label pass.
   const double h = qMax(0.006, qMin(it.sy > 0.001 ? it.sy : 0.01, 0.025));
-  draw_box(it.x, it.y, it.z, qMax(0.05, it.sx), h, qMax(0.05, it.sz), QColor(168, 85, 247, 36), true);
-  draw_box_outline(it.x, it.y, it.z, qMax(0.05, it.sx), h, qMax(0.05, it.sz), QColor(216, 180, 254, 110), 1.0f);
+  draw_box(it.x, it.y, it.z, qMax(0.05, it.sx), h, qMax(0.05, it.sz), QColor(168, 85, 247, 44), true);
+  draw_box_outline(it.x, it.y, it.z, qMax(0.05, it.sx), h, qMax(0.05, it.sz), QColor(216, 180, 254, 175), 1.6f);
 }
 
 void Scene3DViewportWidget::draw_place_target_bin(const ScenePreviewWidget::PreviewItem & it)
@@ -3299,8 +3320,9 @@ void Scene3DViewportWidget::draw_place_target_bin(const ScenePreviewWidget::Prev
 void Scene3DViewportWidget::draw_safety_zone(const ScenePreviewWidget::PreviewItem & it)
 {
   // safety zone: amber translucent boundary. This is visual only; it does not certify safety.
-  draw_box(it.x, it.y, it.z, qMax(0.05, it.sx), qMax(0.006, it.sy), qMax(0.05, it.sz), QColor(245, 158, 11, 34), true);
-  draw_box_outline(it.x, it.y, it.z, qMax(0.05, it.sx), qMax(0.006, it.sy), qMax(0.05, it.sz), QColor(251, 191, 36, 118), 1.2f);
+  const double h = qMax(0.006, qMin(it.sy > 0.001 ? it.sy : 0.012, 0.035));
+  draw_box(it.x, it.y, it.z, qMax(0.05, it.sx), h, qMax(0.05, it.sz), QColor(245, 158, 11, 36), true);
+  draw_box_outline(it.x, it.y, it.z, qMax(0.05, it.sx), h, qMax(0.05, it.sz), QColor(251, 191, 36, 170), 1.8f);
 }
 
 void Scene3DViewportWidget::draw_home_pose_marker(const ScenePreviewWidget::PreviewItem & it)
