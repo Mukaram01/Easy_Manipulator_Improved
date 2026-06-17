@@ -740,3 +740,43 @@ def test_regenerate_visual_mesh_indexes_forwards_workspace_root(monkeypatch, tmp
     assert cmd[cmd.index('--workspace-root') + 1] == str(workspace_root)
     assert cmd[cmd.index('--xacro-arg') + 1] == 'use_fake_hardware:=true'
     assert '--fail-on-unexpanded' in cmd
+
+
+def test_validate_ur5_transform_sanity_reports_collapsed_nonfinite_and_double_origin():
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    rows = []
+    for link in ['base_link', 'shoulder_link', 'upper_arm_link', 'forearm_link']:
+        rows.append({
+            'id': f'{link}_visual',
+            'link': link,
+            'pose': {'xyz': [0.1, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
+            'world_pose': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
+            'link_world_pose': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
+            'visual_origin': {'xyz': [0.1, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
+            'expected_visual_pose': {'xyz': [0.1, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
+        })
+    rows[0]['pose']['rpy'] = [float('nan'), 0.0, 0.0]
+    rows[1]['pose']['xyz'] = [0.2, 0.0, 0.0]
+
+    warnings, blockers = mesh_index.validate_ur5_transform_sanity(rows, rows)
+
+    assert any('non-finite pose.rpy' in blocker for blocker in blockers)
+    assert any('identical or nearly identical' in blocker for blocker in blockers)
+    assert any('within epsilon of [0, 0, 0]' in blocker for blocker in blockers)
+    assert any('visual origin may be double-applied' in warning for warning in warnings)
+
+
+def test_validate_ur5_transform_sanity_reports_adjacent_distance():
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    rows = [
+        {'id': 'base', 'link': 'base_link', 'pose': {'xyz': [0, 0, 0], 'rpy': [0, 0, 0]}, 'link_world_pose': {'xyz': [0, 0, 0], 'rpy': [0, 0, 0]}, 'visual_origin': {'xyz': [0, 0, 0], 'rpy': [0, 0, 0]}, 'expected_visual_pose': {'xyz': [0, 0, 0], 'rpy': [0, 0, 0]}},
+        {'id': 'shoulder', 'link': 'shoulder_link', 'pose': {'xyz': [2, 0, 0], 'rpy': [0, 0, 0]}, 'link_world_pose': {'xyz': [2, 0, 0], 'rpy': [0, 0, 0]}, 'visual_origin': {'xyz': [0, 0, 0], 'rpy': [0, 0, 0]}, 'expected_visual_pose': {'xyz': [2, 0, 0], 'rpy': [0, 0, 0]}},
+        {'id': 'upper', 'link': 'upper_arm_link', 'pose': {'xyz': [2.2, 0, 0], 'rpy': [0, 0, 0]}, 'link_world_pose': {'xyz': [2.2, 0, 0], 'rpy': [0, 0, 0]}, 'visual_origin': {'xyz': [0, 0, 0], 'rpy': [0, 0, 0]}, 'expected_visual_pose': {'xyz': [2.2, 0, 0], 'rpy': [0, 0, 0]}},
+        {'id': 'forearm', 'link': 'forearm_link', 'pose': {'xyz': [2.4, 0, 0], 'rpy': [0, 0, 0]}, 'link_world_pose': {'xyz': [2.4, 0, 0], 'rpy': [0, 0, 0]}, 'visual_origin': {'xyz': [0, 0, 0], 'rpy': [0, 0, 0]}, 'expected_visual_pose': {'xyz': [2.4, 0, 0], 'rpy': [0, 0, 0]}},
+    ]
+
+    _warnings, blockers = mesh_index.validate_ur5_transform_sanity(rows, rows)
+
+    assert any('base_link->shoulder_link' in blocker and 'exceeding' in blocker for blocker in blockers)
