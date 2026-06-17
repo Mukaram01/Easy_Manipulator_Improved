@@ -5,6 +5,7 @@
 #include <QKeyEvent>
 #include <QCursor>
 #include <QPainter>
+#include <QSurfaceFormat>
 #include <QVector3D>
 #include <QVector4D>
 #include <QToolTip>
@@ -1203,7 +1204,17 @@ struct LabelDrawCandidate
 }
 
 
-Scene3DViewportWidget::Scene3DViewportWidget(QWidget * parent) : QOpenGLWidget(parent) { setMinimumHeight(420); setAcceptDrops(true); }
+Scene3DViewportWidget::Scene3DViewportWidget(QWidget * parent) : QOpenGLWidget(parent)
+{
+  setMinimumHeight(420);
+  setAcceptDrops(true);
+  QSurfaceFormat fmt = format();
+  fmt.setDepthBufferSize(qMax(fmt.depthBufferSize(), 24));
+  fmt.setStencilBufferSize(qMax(fmt.stencilBufferSize(), 8));
+  fmt.setSamples(qMax(fmt.samples(), 4));
+  fmt.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
+  setFormat(fmt);
+}
 void Scene3DViewportWidget::reset_view() { set_isometric_view(); }
 void Scene3DViewportWidget::set_isometric_view()
 {
@@ -1473,8 +1484,88 @@ void Scene3DViewportWidget::focus_selected() {
   }
   fit_scene();
 }
-void Scene3DViewportWidget::initializeGL() { initializeOpenGLFunctions(); glEnable(GL_DEPTH_TEST); glEnable(GL_CULL_FACE); glClearColor(0.04f, 0.06f, 0.12f, 1.0f); }
+void Scene3DViewportWidget::initializeGL()
+{
+  initializeOpenGLFunctions();
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LEQUAL);
+  glEnable(GL_CULL_FACE);
+  glCullFace(GL_BACK);
+  glShadeModel(GL_SMOOTH);
+  glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);
+  glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+  glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST);
+  glEnable(GL_MULTISAMPLE);
+  glEnable(GL_NORMALIZE);
+  glClearColor(0.015f, 0.023f, 0.045f, 1.0f);
+}
 void Scene3DViewportWidget::resizeGL(int w, int h) { glViewport(0, 0, w, h); }
+
+void Scene3DViewportWidget::configure_product_render_state()
+{
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LEQUAL);
+  glEnable(GL_CULL_FACE);
+  glCullFace(GL_BACK);
+  glEnable(GL_MULTISAMPLE);
+  glEnable(GL_NORMALIZE);
+  glShadeModel(GL_SMOOTH);
+
+  const GLfloat ambient[] = { 0.28f, 0.31f, 0.36f, 1.0f };
+  const GLfloat key_diffuse[] = { 0.82f, 0.90f, 1.0f, 1.0f };
+  const GLfloat fill_diffuse[] = { 0.33f, 0.41f, 0.52f, 1.0f };
+  const GLfloat key_position[] = { 4.0f, 7.0f, 5.0f, 0.0f };
+  const GLfloat fill_position[] = { -6.0f, 3.5f, -4.0f, 0.0f };
+  glEnable(GL_LIGHTING);
+  glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambient);
+  glEnable(GL_LIGHT0);
+  glLightfv(GL_LIGHT0, GL_DIFFUSE, key_diffuse);
+  glLightfv(GL_LIGHT0, GL_SPECULAR, key_diffuse);
+  glLightfv(GL_LIGHT0, GL_POSITION, key_position);
+  glEnable(GL_LIGHT1);
+  glLightfv(GL_LIGHT1, GL_DIFFUSE, fill_diffuse);
+  glLightfv(GL_LIGHT1, GL_SPECULAR, fill_diffuse);
+  glLightfv(GL_LIGHT1, GL_POSITION, fill_position);
+  glEnable(GL_COLOR_MATERIAL);
+  glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+  const GLfloat specular[] = { 0.20f, 0.24f, 0.30f, 1.0f };
+  glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, specular);
+  glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 28.0f);
+}
+
+void Scene3DViewportWidget::draw_viewport_quality_overlay(QPainter & painter, int visible_item_count, int physical_item_count) const
+{
+  const QRectF card(width() - 218.0, 12.0, 206.0, 82.0);
+  if (card.left() < 12.0) return;
+  painter.setPen(Qt::NoPen);
+  painter.setBrush(QColor(2, 6, 23, debug_overlays_mode ? 212 : 172));
+  painter.drawRoundedRect(card, 10.0, 10.0);
+
+  painter.setPen(QColor("#bfdbfe"));
+  painter.drawText(card.adjusted(12.0, 8.0, -12.0, -56.0), Qt::AlignLeft | Qt::AlignVCenter,
+                   QStringLiteral("Digital twin viewport"));
+  painter.setPen(QColor("#cbd5e1"));
+  painter.drawText(card.adjusted(12.0, 28.0, -12.0, -36.0), Qt::AlignLeft | Qt::AlignVCenter,
+                   QStringLiteral("MSAA · lit meshes · depth sorted"));
+  painter.setPen(QColor("#94a3b8"));
+  painter.drawText(card.adjusted(12.0, 48.0, -12.0, -16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                   QStringLiteral("%1 visible · %2 physical").arg(visible_item_count).arg(physical_item_count));
+
+  const QPointF origin(card.right() - 46.0, card.bottom() - 22.0);
+  const QPointF x_axis(origin.x() + 22.0, origin.y());
+  const QPointF y_axis(origin.x() - 10.0, origin.y() - 18.0);
+  const QPointF z_axis(origin.x(), origin.y() - 26.0);
+  painter.setRenderHint(QPainter::Antialiasing, true);
+  painter.setPen(QPen(QColor("#ef4444"), 2.0));
+  painter.drawLine(origin, x_axis);
+  painter.drawText(x_axis + QPointF(2.0, 4.0), QStringLiteral("X"));
+  painter.setPen(QPen(QColor("#22c55e"), 2.0));
+  painter.drawLine(origin, y_axis);
+  painter.drawText(y_axis + QPointF(-10.0, -2.0), QStringLiteral("Y"));
+  painter.setPen(QPen(QColor("#38bdf8"), 2.0));
+  painter.drawLine(origin, z_axis);
+  painter.drawText(z_axis + QPointF(2.0, -2.0), QStringLiteral("Z"));
+}
 
 void Scene3DViewportWidget::paintGL()
 {
@@ -1489,6 +1580,7 @@ void Scene3DViewportWidget::paintGL()
 
   draw_ground_grid_pass();
   draw_world_axes_pass();
+  configure_product_render_state();
   if (debug_overlays_mode || fit_include_overlays) {
     draw_cylinder(-0.2, 0.0, -2.2, reach_overlay.preferred_work_zone_radius_m, 0.01, QColor(34, 197, 94, 26), true);
     draw_cylinder(-0.2, 0.0, -2.2, reach_overlay.preferred_work_zone_radius_m, 0.005, QColor(34, 197, 94, 110), false);
@@ -1646,6 +1738,8 @@ void Scene3DViewportWidget::paintGL()
   last_render_counters.smoke_fallback_render_used = false;
 
   glDisable(GL_BLEND);
+  glDisable(GL_LIGHTING);
+  glDisable(GL_COLOR_MATERIAL);
 
   if (scene3d_debug_logs_enabled()) {
     qDebug() << "Scene3D runtime render: received=" << received_item_count
@@ -1837,6 +1931,7 @@ void Scene3DViewportWidget::paintGL()
                        QStringLiteral("Use Overlays → Diagnostics for details."));
     }
   }
+  draw_viewport_quality_overlay(painter, visible_item_count, physical_item_count);
   if (drag_asset_preview_visible_) {
     const double x = (drag_asset_screen_pos_.x() - width() * 0.5) / 50.0;
     const double y = (height() * 0.6 - drag_asset_screen_pos_.y()) / 50.0;
@@ -2917,12 +3012,6 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   }
 
   const QVector3D default_up_normal(0.0f, 1.0f, 0.0f);
-  QVector3D light_dir(0.35f, 0.8f, 0.45f);
-  if (light_dir.lengthSquared() > 1e-12f) light_dir.normalize();
-  else light_dir = default_up_normal;
-  const float ambient = 0.28f;
-  const float diffuse_scale = 0.9f;
-
   glBegin(GL_TRIANGLES);
   for (const auto & tri : cache.mesh.triangles) {
     QVector3D normal = tri.normal;
@@ -2939,13 +3028,8 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
       normal = default_up_normal;
     }
 
-    const float diffuse = qMax(0.0f, QVector3D::dotProduct(normal, light_dir));
-    const float shade = ambient + diffuse * diffuse_scale;
-    const float edge_boost = 0.08f * (1.0f - diffuse);
-    const float red = qMin(1.0f, static_cast<float>(color.redF()) * shade + edge_boost);
-    const float green = qMin(1.0f, static_cast<float>(color.greenF()) * shade + edge_boost);
-    const float blue = qMin(1.0f, static_cast<float>(color.blueF()) * shade + edge_boost);
-    glColor4f(red, green, blue, color.alphaF());
+    glNormal3f(normal.x(), normal.y(), normal.z());
+    glColor4f(color.redF(), color.greenF(), color.blueF(), color.alphaF());
     glVertex3f(tri.vertices[0].x(), tri.vertices[0].y(), tri.vertices[0].z());
     glVertex3f(tri.vertices[1].x(), tri.vertices[1].y(), tri.vertices[1].z());
     glVertex3f(tri.vertices[2].x(), tri.vertices[2].y(), tri.vertices[2].z());
