@@ -88,6 +88,48 @@ static bool yaml_node_is_defined(const YAML::Node & node)
   try { return node.IsDefined(); } catch (...) { return false; }
 }
 
+static std::string normalized_canvas_match_token(std::string value)
+{
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+  for (char & c : value) {
+    if (!std::isalnum(static_cast<unsigned char>(c))) c = '_';
+  }
+  value.erase(std::unique(value.begin(), value.end(), [](char a, char b){ return a == '_' && b == '_'; }), value.end());
+  while (!value.empty() && value.front() == '_') value.erase(value.begin());
+  while (!value.empty() && value.back() == '_') value.pop_back();
+  return value;
+}
+
+static bool safe_visual_mesh_index_has_matching_visual_items(const fs::path & scene_dir)
+{
+  const fs::path index_path = scene_dir / "generated" / "scene_visual_mesh_index.json";
+  if (!fs::exists(index_path)) return false;
+  try {
+    const YAML::Node index = YAML::LoadFile(index_path.string());
+    if (!yaml_map_key(index, "safe_for_preview").as<bool>(false)) return false;
+    const std::string scene_name = yaml_map_value_or_empty(index, "scene_name");
+    if (!scene_name.empty() && scene_name != scene_dir.filename().string()) return false;
+    const YAML::Node visual_items = yaml_map_key(index, "visual_items");
+    if (!visual_items || !visual_items.IsSequence() || visual_items.size() == 0) return false;
+    for (const auto & visual : visual_items) {
+      if (!visual || !visual.IsMap()) continue;
+      const bool render_expected = yaml_map_key(visual, "render_expected").as<bool>(false);
+      const bool resolved = yaml_map_key(visual, "resolved").as<bool>(false);
+      const std::string geometry_type = normalized_canvas_match_token(yaml_map_value_or_empty(visual, "geometry_type"));
+      const std::string id = normalized_canvas_match_token(yaml_map_value_or_empty(visual, "id"));
+      const std::string link = normalized_canvas_match_token(yaml_map_value_or_empty(visual, "link"));
+      const std::string source = normalized_canvas_match_token(yaml_map_value_or_empty(visual, "source_path"));
+      if ((render_expected || resolved) &&
+          (!geometry_type.empty() || !id.empty() || !link.empty() || !source.empty())) {
+        return true;
+      }
+    }
+  } catch (...) {
+    return false;
+  }
+  return false;
+}
+
 static std::vector<std::string> gather_mesh_candidates(const YAML::Node & env, const YAML::Node & manifest, const YAML::Node & layout_items, const std::string & item_id)
 {
   std::vector<std::string> out;
@@ -703,6 +745,8 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   std::vector<fs::path> probed_visuals;
   std::vector<fs::path> probed_collisions;
   probe_mesh_candidates(scene_dir, &probed_visuals, &probed_collisions);
+  const bool safe_generated_visual_mesh_index_available =
+    safe_visual_mesh_index_has_matching_visual_items(scene_dir);
   const auto choose_probed = [](const WorkcellStudioCanvasItem & item, const std::vector<fs::path> & pool)->fs::path {
     for (const auto & p : pool) {
       const std::string b = p.stem().string();
@@ -740,7 +784,11 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
       m.warnings.push_back(item.mesh_load_warning);
     } else {
       item.mesh_load_warning = "mesh metadata missing or legacy; using primitive preview";
-      m.warnings.push_back(item.mesh_load_warning);
+      if (!(safe_generated_visual_mesh_index_available &&
+            item.provenance == WorkcellStudioItemProvenance::GeneratedOrLegacyPreview &&
+            item.locked)) {
+        m.warnings.push_back(item.mesh_load_warning);
+      }
     }
 
     if (layout_items.IsSequence()) {
