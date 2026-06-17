@@ -311,6 +311,8 @@ QString canonical_skip_reason_key(const QString & reason)
   if (token == QStringLiteral("unsafe_for_preview")) return QStringLiteral("unsafe_for_preview");
   if (token == QStringLiteral("zero_triangle_mesh")) return QStringLiteral("zero_triangle_mesh");
   if (token == QStringLiteral("hidden_by_filter")) return QStringLiteral("hidden_by_filter");
+  if (token == QStringLiteral("suppressed_static_robot_fallback") ||
+      token == QStringLiteral("suppressed_static_fallback")) return QStringLiteral("suppressed_static_robot_fallback");
   if (token == QStringLiteral("invalid_pose")) return QStringLiteral("invalid_pose");
   if (token == QStringLiteral("invalid_scale")) return QStringLiteral("invalid_scale");
   if (token == QStringLiteral("duplicate_id")) return QStringLiteral("duplicate_id");
@@ -8215,12 +8217,8 @@ void MainWindow::populate_scene_hierarchy()
             add_skip_reason(QStringLiteral("zero_triangle_mesh"));
             continue;
           }
-          const QString transform_status_for_static_filter = QString::fromStdString(
-            workcell_builder::yaml_map_value_or_empty(v, "transform_status")).trimmed().toLower();
           const bool static_robot_fallback_visual =
-            id.startsWith(QStringLiteral("urdf_static_fallback_")) ||
-            transform_status_for_static_filter == QStringLiteral("static_fallback") ||
-            transform_status_for_static_filter == QStringLiteral("static_fallback_parent");
+            id.startsWith(QStringLiteral("urdf_static_fallback_"));
           const bool authoritative_expanded_mesh_payload =
             visual_index_safe_for_preview &&
             (visual_index_extraction_mode == QStringLiteral("xacro_expanded") ||
