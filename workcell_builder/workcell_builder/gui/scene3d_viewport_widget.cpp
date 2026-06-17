@@ -756,6 +756,8 @@ QString item_visual_ownership_label(const ScenePreviewWidget::PreviewItem & it)
   return QStringLiteral("Reference preview");
 }
 
+constexpr double kGeneratedLockedProductMinAlpha = 0.92;
+
 QColor generated_locked_preview_material() { return QColor("#cfd4da"); }
 QColor generated_locked_preview_outline() { return QColor(125, 211, 252, 92); }
 QColor generated_primitive_fallback_fill() { return QColor(96, 165, 250, 52); }
@@ -921,16 +923,30 @@ bool is_critical_label_role(NormalizedRole role)
       return false;
   }
 }
-QColor item_color(const ScenePreviewWidget::PreviewItem & it)
+QColor explicit_material_color(const ScenePreviewWidget::PreviewItem & it)
+{
+  QColor c;
+  c.setRgbF(qBound(0.0, it.material_r, 1.0), qBound(0.0, it.material_g, 1.0),
+            qBound(0.0, it.material_b, 1.0), qBound(0.0, it.material_a, 1.0));
+  return c;
+}
+
+QColor product_view_generated_locked_material(const ScenePreviewWidget::PreviewItem & it, bool diagnostic_transparency_mode)
+{
+  QColor c = it.has_material_color ? explicit_material_color(it) : generated_locked_preview_material();
+  if (!diagnostic_transparency_mode) {
+    c.setAlphaF(qMax(c.alphaF(), kGeneratedLockedProductMinAlpha));
+  }
+  return c;
+}
+
+QColor item_color(const ScenePreviewWidget::PreviewItem & it, bool diagnostic_transparency_mode = false)
 {
   if (is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) {
-    return generated_locked_preview_material();
+    return product_view_generated_locked_material(it, diagnostic_transparency_mode);
   }
   if (it.has_material_color) {
-    QColor c;
-    c.setRgbF(qBound(0.0, it.material_r, 1.0), qBound(0.0, it.material_g, 1.0),
-              qBound(0.0, it.material_b, 1.0), qBound(0.0, it.material_a, 1.0));
-    return c;
+    return explicit_material_color(it);
   }
   if (it.linked_to_editable_layout_state || item_is_editable_for_gizmo(it)) {
     return QColor("#67e8f9");
@@ -1861,7 +1877,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     return false;
   }
   // Always try mesh-backed draw first for physical items.
-  QColor visual_color = item_color(it);
+  QColor visual_color = item_color(it, diagnostic_transparency_mode);
   const bool generated_or_locked_preview = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
   const bool editable_layout_preview = it.linked_to_editable_layout_state || item_is_editable_for_gizmo(it);
   if (draw_mesh_preview_if_available(it, visual_color, true)) {
@@ -1911,7 +1927,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
       }
       return false;
     }
-    const QColor primitive_fill = generated_or_locked_preview ? generated_primitive_fallback_fill() : visual_color;
+    const QColor primitive_fill = generated_or_locked_preview ? product_view_generated_locked_material(it, diagnostic_transparency_mode) : visual_color;
     if (draw_urdf_primitive_geometry(it, primitive_fill)) {
       if (debug_overlays_mode && generated_or_locked_preview && item_has_explicit_dimensions(it)) {
         draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, generated_primitive_fallback_outline(), 0.7f);
@@ -2098,6 +2114,11 @@ bool Scene3DViewportWidget::should_suppress_missing_geometry_marker_for_test(con
 bool Scene3DViewportWidget::has_mesh_surface_candidate_for_test(const ScenePreviewWidget::PreviewItem & item)
 {
   return item_has_mesh_surface_candidate(item);
+}
+
+QColor Scene3DViewportWidget::material_color_for_test(const ScenePreviewWidget::PreviewItem & item, bool diagnostic_transparency_mode)
+{
+  return item_color(item, diagnostic_transparency_mode);
 }
 
 bool Scene3DViewportWidget::is_raw_generated_bounds_only_for_test(const ScenePreviewWidget::PreviewItem & item)
@@ -2475,7 +2496,7 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
     const float red = qMin(1.0f, static_cast<float>(color.redF()) * shade + edge_boost);
     const float green = qMin(1.0f, static_cast<float>(color.greenF()) * shade + edge_boost);
     const float blue = qMin(1.0f, static_cast<float>(color.blueF()) * shade + edge_boost);
-    glColor4f(red, green, blue, 1.0f);
+    glColor4f(red, green, blue, color.alphaF());
     glVertex3f(tri.vertices[0].x(), tri.vertices[0].y(), tri.vertices[0].z());
     glVertex3f(tri.vertices[1].x(), tri.vertices[1].y(), tri.vertices[1].z());
     glVertex3f(tri.vertices[2].x(), tri.vertices[2].y(), tri.vertices[2].z());
