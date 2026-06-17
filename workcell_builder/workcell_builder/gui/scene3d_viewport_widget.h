@@ -146,6 +146,8 @@ public:
                                                 ScenePreviewWidget::MeshPreviewMode mode);
   static bool should_draw_clean_semantic_primitive_for_test(const ScenePreviewWidget::PreviewItem & item);
   static bool should_suppress_missing_geometry_marker_for_test(const ScenePreviewWidget::PreviewItem & item);
+  static bool has_mesh_surface_candidate_for_test(const ScenePreviewWidget::PreviewItem & item);
+  static bool is_raw_generated_bounds_only_for_test(const ScenePreviewWidget::PreviewItem & item);
 
 protected:
   void initializeGL() override;
@@ -253,11 +255,14 @@ private:
     QVector3D dae_pre_unit_span;
   };
   QHash<QString, MeshCacheEntry> mesh_cache_;
+  QHash<QString, QString> last_mesh_rejection_reasons_;
   QSet<QString> warned_mesh_fallbacks_;
   bool try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical,
                                        const ScenePreviewWidget::PreviewItem * item = nullptr,
                                        QString * out_failure_reason = nullptr) const;
   bool warn_mesh_fallback_once(const QString & item_id, const QString & reason, const QString & path);
+  void remember_mesh_rejection_reason(const QString & item_id, const QString & reason);
+  QString last_mesh_rejection_reason_for_item(const QString & item_id) const;
   const MeshCacheEntry & ensure_mesh_cached(const ScenePreviewWidget::PreviewItem & item, const QString & path);
   bool validate_mesh_final_span(const ScenePreviewWidget::PreviewItem & it,
                                 const MeshCacheEntry & entry,

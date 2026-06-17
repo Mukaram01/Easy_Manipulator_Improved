@@ -263,3 +263,33 @@ TEST(Scene3DRenderRoleClassifier, EditableLayoutPrimitivesDoNotCountAsGeneratedF
   EXPECT_EQ(counters.valid_physical_fallback_count, 0);
   EXPECT_EQ(counters.editable_primitive_rendered_count, 1);
 }
+
+TEST(Scene3DRenderRoleClassifier, ValidStlAndDaePreviewItemsAreMeshSurfaceCandidates)
+{
+  auto stl = make_item("valid_stl_preview");
+  stl.locked = true;
+  stl.editable = false;
+  stl.lock_reason = "Generated URDF visual";
+  stl.source_layer = "generated_urdf_visual";
+  stl.active_visual_source = "generated_urdf_visual";
+  stl.has_mesh_metadata = true;
+  stl.mesh_available = true;
+  stl.mesh_path = "meshes/valid_part.stl";
+
+  auto dae = make_item("valid_dae_preview");
+  dae.locked = true;
+  dae.editable = false;
+  dae.lock_reason = "Generated URDF visual";
+  dae.source_layer = "generated_urdf_visual";
+  dae.active_visual_source = "generated_urdf_visual";
+  dae.has_mesh_metadata = true;
+  dae.mesh_available = true;
+  dae.mesh_path = "package://demo_cell/meshes/valid_part.dae";
+
+  EXPECT_TRUE(Scene3DViewportWidget::has_mesh_surface_candidate_for_test(stl));
+  EXPECT_TRUE(Scene3DViewportWidget::has_mesh_surface_candidate_for_test(dae));
+  EXPECT_FALSE(Scene3DViewportWidget::should_draw_as_wireframe_for_test(stl, ScenePreviewWidget::MeshPreviewMode::Auto));
+  EXPECT_FALSE(Scene3DViewportWidget::should_draw_as_wireframe_for_test(dae, ScenePreviewWidget::MeshPreviewMode::Auto));
+  EXPECT_EQ(Scene3DViewportWidget::render_role_for_test(stl), "generated_urdf_mesh");
+  EXPECT_EQ(Scene3DViewportWidget::render_role_for_test(dae), "generated_urdf_mesh");
+}
