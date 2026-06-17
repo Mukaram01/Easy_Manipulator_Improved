@@ -174,6 +174,8 @@ TEST(Scene3DMeshPreviewRegression, ProductWarningStateExcludesEditableAndOverlay
   ASSERT_LT(product, debug);
 
   const std::string product_body = src.substr(product, debug - product);
+  EXPECT_NE(src.find("WORKCELL_SCENE3D_DEBUG_FALLBACK_BOXES"), std::string::npos);
+  EXPECT_NE(src.find("scene3d_debug_fallback_boxes_enabled() ? qMax(0, mesh_source_count - mesh_surface_rendered_count) : 0"), std::string::npos);
   EXPECT_NE(product_body.find("generated_mesh_bounds_fallback_rendered_count"), std::string::npos);
   EXPECT_NE(product_body.find("generated_missing_geometry_count"), std::string::npos);
   EXPECT_NE(product_body.find("generated_fallback_count"), std::string::npos);

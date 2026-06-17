@@ -45,7 +45,7 @@ TEST(Scene3DRenderRoleClassifier, ClassifiesGeneratedAndHelperAndFallback)
   missing.mesh_available = false;
   missing.mesh_path.clear();
   missing.has_mesh_metadata = false;
-  EXPECT_EQ(Scene3DViewportWidget::render_role_for_test(missing), "missing_mesh_fallback");
+  EXPECT_EQ(Scene3DViewportWidget::render_role_for_test(missing), "hidden_missing_mesh");
 }
 
 TEST(Scene3DRenderRoleClassifier, FitExcludesHelpersIncludesGenerated)

@@ -100,10 +100,20 @@ bool path_has_mesh_asset_extension(const QString & path)
          suffix == QStringLiteral("gltf");
 }
 
+bool scene3d_env_flag_enabled(const char * name)
+{
+  const QByteArray value = qgetenv(name).trimmed().toLower();
+  return value == "1" || value == "true" || value == "yes" || value == "on";
+}
+
 bool scene3d_debug_logs_enabled()
 {
-  const QByteArray value = qgetenv("WORKCELL_SCENE3D_DEBUG_LOGS").trimmed().toLower();
-  return value == "1" || value == "true" || value == "yes" || value == "on";
+  return scene3d_env_flag_enabled("WORKCELL_SCENE3D_DEBUG_LOGS");
+}
+
+bool scene3d_debug_fallback_boxes_enabled()
+{
+  return scene3d_env_flag_enabled("WORKCELL_SCENE3D_DEBUG_FALLBACK_BOXES");
 }
 
 bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item)
@@ -250,9 +260,9 @@ void finalize_visual_quality(Scene3DViewportWidget::RenderDebugCounters & counte
 {
   counters.total_payload_count = counters.preview_items_count;
   counters.mesh_backed_count = counters.mesh_source_count;
-  if (counters.mesh_bounds_fallback_rendered_count <= 0 &&
-      counters.mesh_source_count > counters.mesh_surface_rendered_count) {
-    counters.mesh_bounds_fallback_rendered_count = counters.mesh_source_count - counters.mesh_surface_rendered_count;
+  if (!scene3d_debug_fallback_boxes_enabled()) {
+    counters.mesh_bounds_fallback_rendered_count = 0;
+    counters.generated_mesh_bounds_fallback_rendered_count = 0;
   }
   counters.overlay_count = counters.overlay_helper_count;
   counters.overlay_rendered_count = counters.overlay_helper_count;
@@ -685,6 +695,7 @@ bool parse_mesh_with_assimp(const QString & canonical_path, Scene3DViewportWidge
 enum class NormalizedRole
 {
   RobotBase,
+  RobotReach,
   Table,
   Conveyor,
   Camera,
@@ -814,7 +825,9 @@ NormalizedRole classify_item_role(const ScenePreviewWidget::PreviewItem & it)
   const QString category = normalized_token(it.category);
   const QString mix = role + "|" + category;
 
-  if (mix.contains("robot_base") || mix.contains("robot")) return NormalizedRole::RobotBase;
+  if (mix.contains("robot_reach") || mix.contains("reachability") || mix.contains("reach_envelope") ||
+      mix.contains("reach_zone") || mix.contains("workspace_reach")) return NormalizedRole::RobotReach;
+  if (mix.contains("robot_base") || mix.contains("robot base")) return NormalizedRole::RobotBase;
   if (mix.contains("home_pose") || mix.contains("home_position") || mix.contains("safe_pose") ||
       mix.contains("safety_pose") || mix.contains("stow_pose") || mix.contains("park_pose")) return NormalizedRole::HomePose;
   if (mix.contains("support_surface") || mix.contains("table") || mix.contains("work_surface") ||
@@ -889,6 +902,7 @@ bool include_in_fit_bounds(const ScenePreviewWidget::PreviewItem & it, bool incl
   const QString mix = role_text + "|" + category + "|" + id + "|" + display_name;
   const bool product_physical_role =
     role == NormalizedRole::RobotBase ||
+    role == NormalizedRole::RobotReach ||
     role == NormalizedRole::Table ||
     role == NormalizedRole::Camera ||
     mix.contains("gripper") || mix.contains("tool") ||
@@ -964,6 +978,8 @@ bool is_raw_generated_bounds_only_item(const ScenePreviewWidget::PreviewItem & i
 bool is_clean_semantic_primitive_role(NormalizedRole role)
 {
   switch (role) {
+    case NormalizedRole::RobotBase:
+    case NormalizedRole::RobotReach:
     case NormalizedRole::Table:
     case NormalizedRole::PlaceBin:
     case NormalizedRole::Conveyor:
@@ -989,6 +1005,7 @@ bool is_overlay_visual_role(NormalizedRole role)
   switch (role) {
     case NormalizedRole::PickZone:
     case NormalizedRole::PlaceZone:
+    case NormalizedRole::RobotReach:
     case NormalizedRole::SafetyZone:
     case NormalizedRole::WarningAnchor:
       return true;
@@ -1571,9 +1588,10 @@ void Scene3DViewportWidget::paintGL()
   last_render_counters.mesh_source_count = mesh_source_count;
   last_render_counters.mesh_backed_count = mesh_source_count;
   last_render_counters.mesh_rendered_count = mesh_rendered_count;
+  if (mesh_surface_rendered_count <= 0 && mesh_rendered_count > 0) mesh_surface_rendered_count = mesh_rendered_count;
   last_render_counters.mesh_surface_rendered_count = mesh_surface_rendered_count;
-  last_render_counters.mesh_bounds_fallback_rendered_count = qMax(0, mesh_source_count - mesh_surface_rendered_count);
-  last_render_counters.generated_mesh_bounds_fallback_rendered_count = generated_mesh_bounds_fallback_count;
+  last_render_counters.mesh_bounds_fallback_rendered_count = scene3d_debug_fallback_boxes_enabled() ? qMax(0, mesh_source_count - mesh_surface_rendered_count) : 0;
+  last_render_counters.generated_mesh_bounds_fallback_rendered_count = scene3d_debug_fallback_boxes_enabled() ? generated_mesh_bounds_fallback_count : 0;
   last_render_counters.mesh_path_resolved_count = 0;
   last_render_counters.mesh_file_loaded_count = 0;
   last_render_counters.mesh_triangles_loaded_count = 0;
@@ -1938,9 +1956,10 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
   last_render_counters.mesh_source_count = mesh_source_count;
   last_render_counters.mesh_backed_count = mesh_source_count;
   last_render_counters.mesh_rendered_count = mesh_rendered_count;
+  if (mesh_surface_rendered_count <= 0 && mesh_rendered_count > 0) mesh_surface_rendered_count = mesh_rendered_count;
   last_render_counters.mesh_surface_rendered_count = mesh_surface_rendered_count;
-  last_render_counters.mesh_bounds_fallback_rendered_count = qMax(0, mesh_source_count - mesh_surface_rendered_count);
-  last_render_counters.generated_mesh_bounds_fallback_rendered_count = generated_mesh_bounds_fallback_count;
+  last_render_counters.mesh_bounds_fallback_rendered_count = scene3d_debug_fallback_boxes_enabled() ? qMax(0, mesh_source_count - mesh_surface_rendered_count) : 0;
+  last_render_counters.generated_mesh_bounds_fallback_rendered_count = scene3d_debug_fallback_boxes_enabled() ? generated_mesh_bounds_fallback_count : 0;
   last_render_counters.mesh_path_resolved_count = 0;
   last_render_counters.mesh_file_loaded_count = 0;
   last_render_counters.mesh_triangles_loaded_count = 0;
@@ -2258,9 +2277,15 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     const QColor fallback_line = generated_or_locked_preview ? generated_primitive_fallback_outline()
       : (editable_layout_preview ? editable_layout_accent_outline() : QColor(148, 163, 184, 76));
     const float fallback_line_width = generated_or_locked_preview ? 0.7f : (editable_layout_preview ? 1.6f : 0.75f);
-    draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, fallback_fill, true);
+    if (!editable_layout_preview && !scene3d_debug_fallback_boxes_enabled()) {
+      if (!intentional_primitive_fallback && out_missing_geometry_count) ++(*out_missing_geometry_count);
+      return false;
+    }
+    if (scene3d_debug_fallback_boxes_enabled() || editable_layout_preview) {
+      draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, fallback_fill, true);
+    }
     // Generated primitive fallback outlines are bounds diagnostics; keep them out of normal Product View.
-    if (debug_overlays_mode) {
+    if (debug_overlays_mode || scene3d_debug_fallback_boxes_enabled()) {
       draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, fallback_line, fallback_line_width);
     }
     if (intentional_primitive_fallback || generated_mesh_to_primitive_fallback) {
@@ -2357,7 +2382,8 @@ QString Scene3DViewportWidget::render_role_for_test(const ScenePreviewWidget::Pr
     return item.mesh_available ? QStringLiteral("generated_urdf_mesh") : QStringLiteral("generated_urdf_primitive");
   }
   if (item.linked_to_editable_layout_state) return QStringLiteral("physical_layout_item");
-  if (!item.mesh_available && item.mesh_path.trimmed().isEmpty() && !item.has_mesh_metadata) return QStringLiteral("missing_mesh_fallback");
+  if (is_clean_semantic_primitive_role(classify_item_role(item))) return QStringLiteral("semantic_editor_primitive");
+  if (!item.mesh_available && item.mesh_path.trimmed().isEmpty() && !item.has_mesh_metadata) return QStringLiteral("hidden_missing_mesh");
   return QStringLiteral("real_urdf_primitive");
 }
 
@@ -3185,6 +3211,7 @@ void Scene3DViewportWidget::draw_object_cube(const ScenePreviewWidget::PreviewIt
 void Scene3DViewportWidget::draw_missing_geometry_marker(const ScenePreviewWidget::PreviewItem & it)
 {
   const double marker = 0.045;
+  if (!scene3d_debug_fallback_boxes_enabled()) return;
   draw_box(it.x, it.y, it.z, marker, marker, marker, QColor(239, 68, 68, 96), true);
   draw_box_outline(it.x, it.y, it.z, marker, marker, marker, QColor(252, 165, 165, 150), 1.0f);
 }
@@ -3209,9 +3236,13 @@ bool Scene3DViewportWidget::draw_clean_semantic_primitive(const ScenePreviewWidg
       case NormalizedRole::Camera:
         draw_item.sx = 0.10; draw_item.sy = 0.06; draw_item.sz = 0.07;
         break;
+      case NormalizedRole::RobotBase:
+        draw_item.sx = 0.16; draw_item.sy = 0.16; draw_item.sz = 0.04;
+        break;
       case NormalizedRole::HomePose:
         draw_item.sx = 0.12; draw_item.sy = 0.12; draw_item.sz = 0.12;
         break;
+      case NormalizedRole::RobotReach:
       case NormalizedRole::SafetyZone:
       case NormalizedRole::PickZone:
       case NormalizedRole::PlaceZone:
@@ -3235,6 +3266,12 @@ bool Scene3DViewportWidget::draw_clean_semantic_primitive(const ScenePreviewWidg
   }
 
   switch (role) {
+    case NormalizedRole::RobotBase:
+      draw_home_pose_marker(draw_item);
+      return true;
+    case NormalizedRole::RobotReach:
+      draw_safety_zone(draw_item);
+      return true;
     case NormalizedRole::Table:
       draw_table_slab(draw_item);
       return true;
