@@ -73,7 +73,26 @@ TEST(Scene3DMeshPreviewRegression, KeepsScene3DDiagnosticsSummaryLine)
   const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/mainwindow.cpp");
   ASSERT_FALSE(src.empty());
   EXPECT_NE(src.find("Scene3D: editable=%1, mesh=%2, generated=%3, fallback=%4, missing=%5, locked=%6"), std::string::npos);
-  EXPECT_NE(src.find("Scene3D warnings: missing_mesh=%1, unresolved_package_uri=%2, unsupported_extension=%3, stale_or_absolute_only_mesh_index=%4"), std::string::npos);
+  EXPECT_NE(src.find("Scene3D warnings: extraction_mode=%1, safe_for_preview=%2, missing_mesh=%3, unresolved_package_uri=%4, unsupported_extension=%5, stale_or_absolute_only_mesh_index=%6"), std::string::npos);
+}
+
+TEST(Scene3DMeshPreviewRegression, HealthyXacroMeshIndexSuppressesLegacyPrimitiveFallbackState)
+{
+  const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/mainwindow.cpp");
+  ASSERT_FALSE(src.empty());
+
+  EXPECT_NE(src.find("authoritative_mesh_index_healthy"), std::string::npos);
+  EXPECT_NE(src.find("visual_index_extraction_mode.trimmed().compare(QStringLiteral(\"xacro_expanded\"), Qt::CaseInsensitive) == 0"), std::string::npos);
+  EXPECT_NE(src.find("visual_index_safe_for_preview &&"), std::string::npos);
+  EXPECT_NE(src.find("mesh_item_count > 0"), std::string::npos);
+  EXPECT_NE(src.find("primitive_item_count == 0"), std::string::npos);
+  EXPECT_NE(src.find("missing_mesh_count == 0"), std::string::npos);
+  EXPECT_NE(src.find("unresolved_package_uri_count == 0"), std::string::npos);
+  EXPECT_NE(src.find("unsupported_extension_count == 0"), std::string::npos);
+  EXPECT_NE(src.find("healthy_xacro_expanded_mesh_index_omits_legacy_placeholder"), std::string::npos);
+  EXPECT_NE(src.find("mesh_metadata_missing_or_legacy"), std::string::npos);
+  EXPECT_NE(src.find("Preview placeholder suppression: omitted %1 legacy placeholders because authoritative xacro-expanded mesh index is healthy"), std::string::npos);
+  EXPECT_NE(src.find("if (is_true_editable_source_of_truth(item))"), std::string::npos);
 }
 
 TEST(Scene3DMeshPreviewRegression, KeepsMeshLoadFailureReasonDiagnostics)
