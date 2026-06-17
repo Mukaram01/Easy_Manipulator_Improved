@@ -8100,6 +8100,9 @@ void MainWindow::populate_scene_hierarchy()
     if (text.contains(QStringLiteral("placeholder")) || text.contains(QStringLiteral("generated_bounds")) ||
         text.contains(QStringLiteral("bounds_only")) || text.contains(QStringLiteral("raw_bounds"))) return true;
     if (layer == QStringLiteral("locked_generated_urdf_visual") && item.category != QStringLiteral("URDF Visual")) return true;
+    if (layer == QStringLiteral("static_fallback") || layer == QStringLiteral("legacy_static_fallback")) return true;
+    if (text.contains(QStringLiteral("legacy")) && text.contains(QStringLiteral("primitive_preview"))) return true;
+    if (text.contains(QStringLiteral("mesh_metadata_missing_or_legacy"))) return true;
     return false;
   };
   int non_mesh_geometry_added = 0;
@@ -8552,6 +8555,19 @@ void MainWindow::populate_scene_hierarchy()
     add_preview_item("warning_marker_a", "warning marker", "Safety", "warning marker", "warning", scene_source, false);
   }
 
+  const int missing_mesh_count = skip_reason_counts.value(QStringLiteral("missing_source_path"), 0) +
+                                 skip_reason_counts.value(QStringLiteral("file_not_found"), 0) +
+                                 skip_reason_counts.value(QStringLiteral("zero_triangle_mesh"), 0);
+  const int unsupported_extension_count = skip_reason_counts.value(QStringLiteral("unsupported_format"), 0);
+  const bool authoritative_mesh_index_healthy =
+    visual_index_extraction_mode.trimmed().compare(QStringLiteral("xacro_expanded"), Qt::CaseInsensitive) == 0 &&
+    visual_index_safe_for_preview &&
+    mesh_item_count > 0 &&
+    primitive_item_count == 0 &&
+    missing_mesh_count == 0 &&
+    unresolved_package_uri_count == 0 &&
+    unsupported_extension_count == 0;
+
   QHash<QString, QStringList> authoritative_visual_equivalence_map;
   for (const auto & item : preview_items) {
     if (!is_authoritative_mesh_index_visual(item)) continue;
@@ -8581,7 +8597,8 @@ void MainWindow::populate_scene_hierarchy()
       continue;
     }
     QString matched_equivalence_key;
-    if (is_lower_fidelity_generated_placeholder(item)) {
+    const bool lower_fidelity_generated_placeholder = is_lower_fidelity_generated_placeholder(item);
+    if (lower_fidelity_generated_placeholder) {
       for (const QString & key : equivalence_keys_for_item(item)) {
         if (authoritative_visual_equivalence_map.contains(key)) {
           matched_equivalence_key = key;
@@ -8589,13 +8606,20 @@ void MainWindow::populate_scene_hierarchy()
         }
       }
     }
-    if (!matched_equivalence_key.isEmpty()) {
+    const bool suppress_because_mesh_index_is_healthy =
+      authoritative_mesh_index_healthy && lower_fidelity_generated_placeholder && matched_equivalence_key.isEmpty();
+    if (!matched_equivalence_key.isEmpty() || suppress_because_mesh_index_is_healthy) {
       ++suppressed_preview_placeholder_count;
-      const QString reason = suppression_reason_for_equivalence_key(matched_equivalence_key);
+      const QString reason = suppress_because_mesh_index_is_healthy
+        ? QStringLiteral("healthy_xacro_expanded_mesh_index_omits_legacy_placeholder")
+        : suppression_reason_for_equivalence_key(matched_equivalence_key);
       placeholder_suppression_reason_counts[reason] += 1;
       if (placeholder_suppression_diagnostics.size() < 12) {
+        const QString matched_ids = suppress_because_mesh_index_is_healthy
+          ? QStringLiteral("authoritative_xacro_expanded_mesh_index")
+          : authoritative_visual_equivalence_map.value(matched_equivalence_key).join(QLatin1Char('|'));
         placeholder_suppression_diagnostics << QStringLiteral("%1=>%2 via %3")
-          .arg(item.id, authoritative_visual_equivalence_map.value(matched_equivalence_key).join(QLatin1Char('|')), reason);
+          .arg(item.id, matched_ids, reason);
       }
       continue;
     }
@@ -8607,11 +8631,16 @@ void MainWindow::populate_scene_hierarchy()
     for (auto it = placeholder_suppression_reason_counts.cbegin(); it != placeholder_suppression_reason_counts.cend(); ++it) {
       suppression_tokens << QString("%1=%2").arg(it.key()).arg(it.value());
     }
-    append_studio_log(QString("Preview placeholder suppression diagnostics: %1 (examples=%2 authoritative_mesh_index_equivalence_keys=%3 preserved_editable_source_of_truth=%4; suppressed items are omitted without viewport warning placeholders)")
+    append_studio_log(QString("Preview placeholder suppression diagnostics: %1 (examples=%2 authoritative_mesh_index_equivalence_keys=%3 preserved_editable_source_of_truth=%4; authoritative_mesh_index_healthy=%5; suppressed items are omitted without viewport warning placeholders)")
       .arg(suppression_tokens.join(' '))
       .arg(placeholder_suppression_diagnostics.join(QStringLiteral("; ")))
       .arg(authoritative_visual_equivalence_map.size())
-      .arg(preserved_editable_source_count));
+      .arg(preserved_editable_source_count)
+      .arg(authoritative_mesh_index_healthy ? QStringLiteral("true") : QStringLiteral("false")));
+    if (authoritative_mesh_index_healthy) {
+      append_studio_log(QString("Preview placeholder suppression: omitted %1 legacy placeholders because authoritative xacro-expanded mesh index is healthy")
+        .arg(suppressed_preview_placeholder_count));
+    }
   } else if (!authoritative_visual_equivalence_map.isEmpty()) {
     append_studio_log(QString("Preview placeholder suppression: none (authoritative_mesh_index_equivalence_keys=%1 preserved_editable_source_of_truth=%2)")
       .arg(authoritative_visual_equivalence_map.size())
@@ -8807,15 +8836,12 @@ void MainWindow::populate_scene_hierarchy()
     .arg(scene3d_fallback_count)
     .arg(scene3d_missing_count)
     .arg(scene3d_locked_count);
-  const int missing_mesh_count = skip_reason_counts.value(QStringLiteral("missing_source_path"), 0) +
-                                 skip_reason_counts.value(QStringLiteral("file_not_found"), 0) +
-                                 skip_reason_counts.value(QStringLiteral("zero_triangle_mesh"), 0);
   const QString scene3d_warning_buckets = QString("Scene3D warnings: extraction_mode=%1, safe_for_preview=%2, missing_mesh=%3, unresolved_package_uri=%4, unsupported_extension=%5, stale_or_absolute_only_mesh_index=%6")
     .arg(visual_index_extraction_mode)
     .arg(visual_index_safe_for_preview ? QStringLiteral("true") : QStringLiteral("false"))
     .arg(missing_mesh_count)
     .arg(unresolved_package_uri_count)
-    .arg(skip_reason_counts.value(QStringLiteral("unsupported_format"), 0))
+    .arg(unsupported_extension_count)
     .arg(stale_or_absolute_only_mesh_index_count);
   const int scene_visible_count = all_scene_preview_items_.size();
   const int scene_received_count = preview_items.size();
@@ -8828,7 +8854,7 @@ void MainWindow::populate_scene_hierarchy()
     visual_index_safe_for_preview &&
     missing_mesh_count == 0 &&
     unresolved_package_uri_count == 0 &&
-    skip_reason_counts.value(QStringLiteral("unsupported_format"), 0) == 0 &&
+    unsupported_extension_count == 0 &&
     scene_fallback_rendered == 0;
   scene3d_clean_product_view_ = scene3d_clean_product_view;
   if (scene_preview_widget_) {
