@@ -265,11 +265,13 @@ void finalize_visual_quality(Scene3DViewportWidget::RenderDebugCounters & counte
     status = QStringLiteral("UNAVAILABLE");
     warnings.append(QStringLiteral("no_preview_payload"));
   }
-  if (counters.mesh_source_count > 0 && counters.mesh_rendered_count <= 0) {
+  const int rendered_mesh_success_count = qMax(counters.mesh_rendered_count, counters.mesh_surface_rendered_count);
+  const int rendered_primitive_success_count = qMax(counters.urdf_primitive_rendered_count, counters.editable_primitive_rendered_count);
+  if (counters.mesh_source_count > 0 && rendered_mesh_success_count <= 0) {
     status = QStringLiteral("FAIL");
     warnings.append(QStringLiteral("mesh_sources_present_but_none_rendered"));
   }
-  if (counters.urdf_primitive_source_count > 0 && counters.urdf_primitive_rendered_count <= 0) {
+  if (counters.urdf_primitive_source_count > 0 && rendered_primitive_success_count <= 0) {
     status = QStringLiteral("FAIL");
     warnings.append(QStringLiteral("urdf_primitive_sources_present_but_none_rendered"));
   }
@@ -2086,10 +2088,23 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     }
     return false;
   }
-  // Always try mesh-backed draw first for physical items.
+  // Semantic/layout primitives are intentional product overlays, not failed mesh
+  // assets.  Only physical mesh candidates proceed through mesh rejection;
+  // semantic items without mesh handoff render through the semantic primitive
+  // path so they do not emit REJECT_MESH_METADATA_MISSING or increment missing
+  // geometry/fallback counters.
   QColor visual_color = item_color(it, diagnostic_transparency_mode);
   const bool generated_or_locked_preview = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
   const bool editable_layout_preview = it.linked_to_editable_layout_state || item_is_editable_for_gizmo(it);
+  const bool semantic_without_mesh_handoff =
+    !generated_or_locked_preview &&
+    is_clean_semantic_primitive_role(semantic_role) &&
+    !item_has_credible_mesh_handoff(it);
+  if (semantic_without_mesh_handoff && draw_clean_semantic_primitive(it)) {
+    if (out_editable_primitive_count) ++(*out_editable_primitive_count);
+    return true;
+  }
+  // Always try mesh-backed draw first for physical items.
   if (draw_mesh_preview_if_available(it, visual_color, true)) {
     if (out_mesh_count) ++(*out_mesh_count);
     ItemBounds mesh_bounds{};
