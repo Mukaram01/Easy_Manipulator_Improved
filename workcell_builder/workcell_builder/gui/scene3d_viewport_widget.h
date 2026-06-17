@@ -97,10 +97,12 @@ public:
     int mesh_rendered_count{ 0 };
     int mesh_surface_rendered_count{ 0 };
     int mesh_bounds_fallback_rendered_count{ 0 };
+    int generated_mesh_bounds_fallback_rendered_count{ 0 };
     int urdf_primitive_source_count{ 0 };
     int urdf_primitive_rendered_count{ 0 };
     int placeholder_count{ 0 };
     int missing_geometry_count{ 0 };
+    int generated_missing_geometry_count{ 0 };
     int wireframe_fallback_count{ 0 };
     int overlay_helper_count{ 0 };
     int generated_fallback_count{ 0 };
