@@ -268,6 +268,9 @@ private:
   QHash<QString, MeshCacheEntry> mesh_cache_;
   QHash<QString, QString> last_mesh_rejection_reasons_;
   QSet<QString> warned_mesh_fallbacks_;
+  int last_scene_load_summary_item_count_{ -1 };
+  QString last_scene_load_summary_scene_name_;
+  QString last_scene_load_summary_warning_signature_;
   bool try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical,
                                        const ScenePreviewWidget::PreviewItem * item = nullptr,
                                        QString * out_failure_reason = nullptr) const;
