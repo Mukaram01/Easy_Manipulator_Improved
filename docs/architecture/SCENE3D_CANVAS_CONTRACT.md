@@ -113,3 +113,16 @@ Additional invariants:
 - Dragging provides preview movement only; authoring YAML is not written on every mouse move.
 - Drag commit writes only authoring layout XYZ transforms and preserves other transform fields.
 - Drag editing must not mutate generated artifacts (`generated/scene.urdf.xacro`, expanded URDF preview data, mesh index files, generated preview artifacts).
+
+## Mesh ingestion and preview expectations
+
+- Scene3D first attempts generated URDF visual mesh rendering from the authoritative visual mesh index, such as `generated/scene_visual_mesh_index.json`, before using lower-fidelity visuals.
+- Assimp is the preferred mesh ingestion path when it is available, and should be used for STL, DAE, and OBJ visual assets.
+- Lightweight fallback parsers are only a backup path for environments where Assimp is unavailable or cannot load an otherwise previewable asset.
+- Heavy but valid workcell assets may use simplified preview meshes or semantic visual surrogates when that keeps the canvas responsive without changing the authoritative scene model.
+- Truly unsafe assets should be rejected only after scale-, origin-, and transform-aware bounds checks show that the effective preview bounds are unsafe.
+- Scene3D is a visual preview renderer. It is not a collision model, safety certificate, validation report, or proof of real-hardware readiness.
+
+### Expected `ur5_2f_test` behavior
+
+For `ur5_2f_test`, Scene3D should render the UR5 and Robotiq visual assets as real meshes when the generated visual mesh index resolves their mesh files. The table should render as either a real or simplified workbench mesh when available, or as a semantic table surrogate when a safe mesh is not available. The D435 camera should render as a real mesh when loadable, or as a labelled RealSense visual surrogate when the mesh cannot be safely loaded.
