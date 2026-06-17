@@ -8588,7 +8588,8 @@ void MainWindow::populate_scene_hierarchy()
                                  skip_reason_counts.value(QStringLiteral("zero_triangle_mesh"), 0);
   const int unsupported_extension_count = skip_reason_counts.value(QStringLiteral("unsupported_format"), 0);
   const bool authoritative_mesh_index_healthy =
-    visual_index_extraction_mode.trimmed().compare(QStringLiteral("xacro_expanded"), Qt::CaseInsensitive) == 0 &&
+    (visual_index_extraction_mode.trimmed().compare(QStringLiteral("xacro_expanded"), Qt::CaseInsensitive) == 0 ||
+     visual_index_extraction_mode.trimmed().compare(QStringLiteral("xacro_lite_expanded"), Qt::CaseInsensitive) == 0) &&
     visual_index_safe_for_preview &&
     mesh_item_count > 0 &&
     primitive_item_count == 0 &&
@@ -8639,12 +8640,12 @@ void MainWindow::populate_scene_hierarchy()
     if (!matched_equivalence_key.isEmpty() || suppress_because_mesh_index_is_healthy) {
       ++suppressed_preview_placeholder_count;
       const QString reason = suppress_because_mesh_index_is_healthy
-        ? QStringLiteral("healthy_xacro_expanded_mesh_index_omits_legacy_placeholder")
+        ? QStringLiteral("healthy_xacro_mesh_index_omits_legacy_placeholder")
         : suppression_reason_for_equivalence_key(matched_equivalence_key);
       placeholder_suppression_reason_counts[reason] += 1;
       if (placeholder_suppression_diagnostics.size() < 12) {
         const QString matched_ids = suppress_because_mesh_index_is_healthy
-          ? QStringLiteral("authoritative_xacro_expanded_mesh_index")
+          ? QStringLiteral("authoritative_xacro_mesh_index")
           : authoritative_visual_equivalence_map.value(matched_equivalence_key).join(QLatin1Char('|'));
         placeholder_suppression_diagnostics << QStringLiteral("%1=>%2 via %3")
           .arg(item.id, matched_ids, reason);
@@ -8666,7 +8667,7 @@ void MainWindow::populate_scene_hierarchy()
       .arg(preserved_editable_source_count)
       .arg(authoritative_mesh_index_healthy ? QStringLiteral("true") : QStringLiteral("false")));
     if (authoritative_mesh_index_healthy) {
-      append_studio_log(QString("Preview placeholder suppression: omitted %1 legacy placeholders because authoritative xacro-expanded mesh index is healthy")
+      append_studio_log(QString("Preview placeholder suppression: omitted %1 legacy placeholders because authoritative xacro/xacro-lite mesh index is healthy")
         .arg(suppressed_preview_placeholder_count));
     }
   } else if (!authoritative_visual_equivalence_map.isEmpty()) {
