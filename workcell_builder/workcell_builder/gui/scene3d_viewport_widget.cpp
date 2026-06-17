@@ -277,11 +277,11 @@ void finalize_visual_quality(Scene3DViewportWidget::RenderDebugCounters & counte
   }
   const int rendered_mesh_success_count = qMax(counters.mesh_rendered_count, counters.mesh_surface_rendered_count);
   const int rendered_primitive_success_count = qMax(counters.urdf_primitive_rendered_count, counters.editable_primitive_rendered_count);
-  if (counters.mesh_source_count > 0 && rendered_mesh_success_count <= 0) {
+  if (counters.last_paint_completed && counters.mesh_source_count > 0 && rendered_mesh_success_count <= 0) {
     status = QStringLiteral("FAIL");
     warnings.append(QStringLiteral("mesh_sources_present_but_none_rendered"));
   }
-  if (counters.urdf_primitive_source_count > 0 && rendered_primitive_success_count <= 0) {
+  if (counters.last_paint_completed && counters.urdf_primitive_source_count > 0 && rendered_primitive_success_count <= 0) {
     status = QStringLiteral("FAIL");
     warnings.append(QStringLiteral("urdf_primitive_sources_present_but_none_rendered"));
   }
@@ -843,7 +843,8 @@ NormalizedRole classify_item_role(const ScenePreviewWidget::PreviewItem & it)
       mix.contains("tote") || mix.contains("tray")) return NormalizedRole::PlaceBin;
   if (mix.contains("safety_zone") || mix.contains("safety_boundary") || mix.contains("keepout") ||
       mix.contains("keep_out") || mix.contains("hazard_zone")) return NormalizedRole::SafetyZone;
-  if (mix.contains("warning_anchor") || mix.contains("warning_badge")) return NormalizedRole::WarningAnchor;
+  if (mix.contains("warning_anchor") || mix.contains("warning_badge") ||
+      role == QStringLiteral("warning") || category == QStringLiteral("warning")) return NormalizedRole::WarningAnchor;
   if (mix.contains("object") || mix.contains("part") || mix.contains("item")) return NormalizedRole::Object;
   return NormalizedRole::Generic;
 }
@@ -922,7 +923,7 @@ bool item_is_enabled_for_fit(const ScenePreviewWidget::PreviewItem & it)
 bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it)
 {
   const NormalizedRole role = classify_item_role(it);
-  if (role == NormalizedRole::SafetyZone || role == NormalizedRole::WarningAnchor) return true;
+  if (role == NormalizedRole::RobotReach || role == NormalizedRole::SafetyZone || role == NormalizedRole::WarningAnchor) return true;
   const QString role_text = it.role.trimmed().toLower();
   const QString category = it.category.trimmed().toLower();
   const QString lock_reason = it.lock_reason.trimmed().toLower();
@@ -997,7 +998,25 @@ bool is_clean_semantic_primitive_role(NormalizedRole role)
 
 bool should_suppress_missing_geometry_marker_for_semantic_role(const ScenePreviewWidget::PreviewItem & it)
 {
-  return is_clean_semantic_primitive_role(classify_item_role(it)) && !item_has_explicit_primitive_dimensions(it);
+  const NormalizedRole role = classify_item_role(it);
+  return (is_clean_semantic_primitive_role(role) || role == NormalizedRole::WarningAnchor) &&
+         !item_has_explicit_primitive_dimensions(it);
+}
+
+bool is_intentional_semantic_editor_primitive(const ScenePreviewWidget::PreviewItem & it)
+{
+  switch (classify_item_role(it)) {
+    case NormalizedRole::RobotBase:
+    case NormalizedRole::RobotReach:
+    case NormalizedRole::PickZone:
+    case NormalizedRole::PlaceZone:
+    case NormalizedRole::SafetyZone:
+    case NormalizedRole::HomePose:
+    case NormalizedRole::WarningAnchor:
+      return true;
+    default:
+      return false;
+  }
 }
 
 bool is_overlay_visual_role(NormalizedRole role)
@@ -1082,6 +1101,7 @@ QColor item_color(const ScenePreviewWidget::PreviewItem & it, bool diagnostic_tr
   }
   switch (classify_item_role(it)) {
     case NormalizedRole::RobotBase: return QColor("#a78bfa");
+    case NormalizedRole::RobotReach: return QColor("#60a5fa");
     case NormalizedRole::Table: return QColor("#64748b");
     case NormalizedRole::Conveyor: return QColor("#06b6d4");
     case NormalizedRole::Camera: return QColor("#38bdf8");
@@ -1200,7 +1220,7 @@ void Scene3DViewportWidget::invalidate_mesh_cache()
   for (const auto & it : items) {
     const NormalizedRole role = classify_item_role(it);
     const bool overlay_helper = is_overlay_only_item(it) || is_overlay_visual_role(role);
-    if (overlay_helper || !item_has_credible_mesh_handoff(it)) continue;
+    if (overlay_helper || is_intentional_semantic_editor_primitive(it) || !item_has_credible_mesh_handoff(it)) continue;
     const QString mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
     if (!mesh_source.trimmed().isEmpty()) ensure_mesh_cached(it, mesh_source);
   }
@@ -1232,7 +1252,8 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
     unique_visible_ids.insert(it.id);
     const bool generated_urdf = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
     const bool overlay_helper = is_overlay_only_item(it) || is_overlay_visual_role(role);
-    if (!overlay_helper && item_has_credible_mesh_handoff(it)) {
+    const bool semantic_editor_primitive = is_intentional_semantic_editor_primitive(it);
+    if (!overlay_helper && !semantic_editor_primitive && item_has_credible_mesh_handoff(it)) {
       ++mesh_source_count;
       const QString mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
       if (!mesh_source.trimmed().isEmpty()) {
@@ -1247,7 +1268,8 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
       }
     }
     if (!overlay_helper && generated_urdf && item_has_valid_urdf_primitive(it)) ++urdf_primitive_source_count;
-    if (!overlay_helper && !item_has_mesh_surface_candidate(it) && !item_has_explicit_primitive_dimensions(it)) {
+    if (!overlay_helper && !semantic_editor_primitive &&
+        !item_has_mesh_surface_candidate(it) && !item_has_explicit_primitive_dimensions(it)) {
       ++missing_geometry_warning_count;
       scene_load_warning_tokens << QStringLiteral("missing_geometry:%1").arg(it.id);
     }
@@ -1510,7 +1532,7 @@ void Scene3DViewportWidget::paintGL()
     else {
       physical_items.push_back(it);
       ++physical_item_count;
-      if (item_has_credible_mesh_handoff(*it)) ++mesh_source_count;
+      if (!is_intentional_semantic_editor_primitive(*it) && item_has_credible_mesh_handoff(*it)) ++mesh_source_count;
       if (generated_urdf && item_has_valid_urdf_primitive(*it)) {
         ++urdf_primitive_source_count;
       }
@@ -1563,7 +1585,8 @@ void Scene3DViewportWidget::paintGL()
         primitive_fallback_count += item_primitive_fallback_count;
         editable_primitive_count += item_editable_primitive_count;
         const bool item_generated_or_locked = is_generated_urdf_visual_item(*it) || is_locked_urdf_item(*it);
-        if (item_generated_or_locked && item_has_credible_mesh_handoff(*it) && item_mesh_backed_count <= 0) {
+        if (item_generated_or_locked && !is_intentional_semantic_editor_primitive(*it) &&
+            item_has_credible_mesh_handoff(*it) && item_mesh_backed_count <= 0) {
           ++generated_mesh_bounds_fallback_count;
         }
         if (item_generated_or_locked) generated_missing_geometry_count += item_missing_geometry_count;
@@ -1899,7 +1922,7 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
     const bool generated_mesh_to_primitive_fallback = generated_urdf && item_has_credible_mesh_handoff(it) && item_has_explicit_dimensions(it);
     const bool editable_or_semantic_primitive = !intentional_primitive_fallback && !generated_mesh_to_primitive_fallback &&
       (it.linked_to_editable_layout_state || item_is_editable_for_gizmo(it) || is_clean_semantic_primitive_role(role));
-    const bool physical_mesh_source = !overlay_helper && item_has_credible_mesh_handoff(it);
+    const bool physical_mesh_source = !overlay_helper && !is_intentional_semantic_editor_primitive(it) && item_has_credible_mesh_handoff(it);
     if (physical_mesh_source) {
       ++mesh_source_count;
       if (generated_urdf && mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) ++generated_mesh_bounds_fallback_count;
@@ -2138,6 +2161,13 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   QColor visual_color = item_color(it, diagnostic_transparency_mode);
   const bool generated_or_locked_preview = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
   const bool editable_layout_preview = it.linked_to_editable_layout_state || item_is_editable_for_gizmo(it);
+  if (semantic_role == NormalizedRole::WarningAnchor) {
+    return false;
+  }
+  if (is_intentional_semantic_editor_primitive(it) && draw_clean_semantic_primitive(it)) {
+    if (out_editable_primitive_count) ++(*out_editable_primitive_count);
+    return true;
+  }
   const bool semantic_without_mesh_handoff =
     !generated_or_locked_preview &&
     is_clean_semantic_primitive_role(semantic_role) &&
