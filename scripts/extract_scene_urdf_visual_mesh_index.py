@@ -10,6 +10,17 @@ ROOT = Path(__file__).resolve().parents[1]
 SCENES_ROOT = ROOT / "scenes"
 EXTRACTOR_VERSION = "2.9"
 UR5_VISUAL_MESH_URI_PREFIX = "package://ur_description/meshes/ur5/visual/"
+UR5_ARM_LINK_ALLOWLIST = {
+    "base_link_inertia",
+    "base",
+    "base_link",
+    "shoulder_link",
+    "upper_arm_link",
+    "forearm_link",
+    "wrist_1_link",
+    "wrist_2_link",
+    "wrist_3_link",
+}
 PLACEHOLDER_RE = re.compile(r"(\$\{[^}]+\}|\$\(arg\s+[^)]+\)|\$\(find\s+[^)]+\))")
 REPO_LOCAL_ASSET_PRECEDENCE_PACKAGES = {
     "robotiq_85_description",
@@ -661,6 +672,51 @@ def _log_ur5_visual_mesh_diagnostics(scene_name, diag):
         if diag.get('alternate_visual_folders'):
             print(f"[scene_visual_mesh_index] {scene_name}: UR5 alternate visual folders detected: {', '.join(diag.get('alternate_visual_folders') or [])}")
 
+def _compact_pose_values(values):
+    return [round(float(v), 6) for v in (values or [0.0, 0.0, 0.0])[:3]]
+
+def build_ur5_transform_table(items):
+    rows = []
+    for item in items or []:
+        if str(item.get('geometry_type') or '') != 'mesh':
+            continue
+        link_name = str(item.get('link') or '')
+        if link_name not in UR5_ARM_LINK_ALLOWLIST:
+            continue
+        mesh_uri = str(item.get('package_uri') or item.get('source_path') or '')
+        if not (
+            mesh_uri.startswith(UR5_VISUAL_MESH_URI_PREFIX)
+            or str(item.get('source_path') or '').startswith(UR5_VISUAL_MESH_URI_PREFIX)
+        ):
+            continue
+        pose = item.get('pose') if isinstance(item.get('pose'), dict) else {}
+        visual_origin = item.get('visual_origin') if isinstance(item.get('visual_origin'), dict) else {}
+        rows.append({
+            'link_name': link_name,
+            'parent_link': str(item.get('joint_parent_link') or item.get('parent_link') or ''),
+            'joint_name': str(item.get('joint_name') or ''),
+            'joint_value': item.get('joint_value', 0.0),
+            'world_xyz': _compact_pose_values(pose.get('xyz')),
+            'world_rpy': _compact_pose_values(pose.get('rpy')),
+            'visual_origin_xyz': _compact_pose_values(visual_origin.get('xyz')),
+            'visual_origin_rpy': _compact_pose_values(visual_origin.get('rpy')),
+            'mesh_uri': _repo_relative_path(mesh_uri),
+        })
+    return rows
+
+def print_ur5_transform_table(scene_name, rows):
+    if not rows:
+        print(f"[scene_visual_mesh_index] {scene_name}: UR5 transform table: no UR5 arm visual mesh rows")
+        return
+    print(f"[scene_visual_mesh_index] {scene_name}: UR5 transform table ({len(rows)} rows)")
+    print("[scene_visual_mesh_index] link_name | parent_link | joint_name | joint_value | world_xyz | world_rpy | visual_origin_xyz | visual_origin_rpy | mesh_uri")
+    for row in rows:
+        print(
+            "[scene_visual_mesh_index] "
+            f"{row['link_name']} | {row['parent_link']} | {row['joint_name']} | {row['joint_value']} | "
+            f"{row['world_xyz']} | {row['world_rpy']} | {row['visual_origin_xyz']} | {row['visual_origin_rpy']} | {row['mesh_uri']}"
+        )
+
 def append_static_ur5_mesh_visuals(items, package_map):
     """Emit Scene3D UR5 mesh visuals when package://ur_description meshes resolve.
 
@@ -690,6 +746,9 @@ def append_static_ur5_mesh_visuals(items, package_map):
             'link': spec['link'],
             'visual': 'static_mesh_visual',
             'parent_link': 'world',
+            'joint_parent_link': 'world',
+            'joint_name': '',
+            'joint_value': 0.0,
             'category': 'robot_static_mesh_visual',
             'geometry_type': 'mesh',
             'pose': {'xyz': xyz, 'rpy': rpy},
@@ -891,7 +950,8 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
                 elif material['name'] in global_materials:
                     material['color']=global_materials[material['name']]
             visual_parent_counts[root_link or ''] += 1
-            common={'id':item_id,'link':lname,'visual':vname,'parent_link':root_link or '','pose':pose,'visual_origin':{'xyz':vxyz,'rpy':vrpy},'material':material,'link_transform_status':link_status,'transform_status':link_status,'transform_chain':chain,'render_expected':True}
+            parent_joint = child_to_joint.get(lname, {})
+            common={'id':item_id,'link':lname,'visual':vname,'parent_link':root_link or '','joint_parent_link':parent_joint.get('parent',''),'joint_name':parent_joint.get('name',''),'joint_value':0.0,'pose':pose,'visual_origin':{'xyz':vxyz,'rpy':vrpy},'material':material,'link_transform_status':link_status,'transform_status':link_status,'transform_chain':chain,'render_expected':True}
             mesh=next((c for c in list(geom) if tag_name(c)=='mesh'),None)
             box=next((c for c in list(geom) if tag_name(c)=='box'),None)
             cyl=next((c for c in list(geom) if tag_name(c)=='cylinder'),None)
@@ -1007,6 +1067,9 @@ def main():
         if scene_dir.name.startswith('ur5_') or _contains_unresolved_ur_robot(source_xacro_text):
             _log_ur5_visual_mesh_diagnostics(scene_dir.name, ur5_visual_diagnostics)
         static_parent_resolved_count = resolve_static_tool0_children(items)
+        ur5_transform_table = build_ur5_transform_table(items)
+        if scene_dir.name.startswith('ur5_'):
+            print_ur5_transform_table(scene_dir.name, ur5_transform_table)
         unresolved=[i for i in items if any(contains_placeholder(i.get(k,'')) for k in ('id','link','parent_link'))]
         mesh_format_counts=dict(collections.Counter((Path(i.get('resolved_source_path') or i.get('source_path') or '').suffix.lower() or 'unknown') for i in items if i.get('geometry_type')=='mesh'))
         transform_status_counts=dict(collections.Counter(str(i.get('transform_status') or 'unknown') for i in items))
@@ -1026,7 +1089,7 @@ def main():
         safe=is_preview_fully_healthy(items, unresolved, mode, fallback_reason, renderable_mesh_count)
         source_mtime=urdf_path.stat().st_mtime if urdf_path.exists() else None
         has_transform_collapse_warning=bool(items) and len({tuple((i.get('pose') or {}).get('xyz') or []) for i in items}) <= 1 and len(items) > 1
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'ur5_visual_mesh_diagnostics':_portable_source_metadata(ur5_visual_diagnostics),'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'diagnostics':{'ur5_transform_table':_portable_source_metadata(ur5_transform_table)},'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'ur5_visual_mesh_diagnostics':_portable_source_metadata(ur5_visual_diagnostics),'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True)
