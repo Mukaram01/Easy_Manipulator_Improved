@@ -1633,7 +1633,7 @@ void MainWindow::setup_studio_shell()
   controls->setObjectName("scene_builder_top_controls_row");
   controls->setContentsMargins(0, 0, 0, 0);
   controls->setSpacing(8);
-  canvas_mode_label_ = new QLabel("Mode: Select · Native Scene3D Preview — experimental, not RViz-equivalent", scene_builder); controls->addWidget(canvas_mode_label_);
+  canvas_mode_label_ = new QLabel("Mode: Select · Scene3D Product Preview", scene_builder); controls->addWidget(canvas_mode_label_);
   // Scene canvas entrypoint: keep this same center-panel surface and swap rendering internals through ScenePreviewWidget.
   // ScenePreviewWidget consumes preview items produced from:
   //   1) editable layout metadata (layout/workcell_studio_layout.yaml)
@@ -5329,7 +5329,7 @@ void MainWindow::refresh_scene_builder_view_chips()
   if (scene_builder_safety_chip_) scene_builder_safety_chip_->setText("Safety: Fake hardware");
   if (scene_builder_generate_launch_button_) scene_builder_generate_launch_button_->setVisible(has_selected_scene() && !launch_ready);
   if (canvas_mode_label_) {
-    const QString view_label = scene_builder_is_3d_view_ ? "Native Scene3D Preview — experimental, not RViz-equivalent" : "2D Layout Draft";
+    const QString view_label = scene_builder_is_3d_view_ ? "Scene3D Product Preview" : "2D Layout Draft";
     const QString base_mode = canvas_mode_label_->text().section("·", 0, 0).trimmed();
     canvas_mode_label_->setText(base_mode + " · " + view_label);
   }
@@ -7139,7 +7139,7 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
   bool robot_bounds_initialized = false;
   QVector3D robot_aabb_min;
   QVector3D robot_aabb_max;
-  for (const auto & p : all_scene_preview_items_) {
+  for (const auto & p : filtered_items) {
     if (!is_robot_item(p)) {
       continue;
     }
@@ -7185,7 +7185,7 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
   diagnostics["robot_mesh_missing_count"] = robot_mesh_missing_count;
   diagnostics["transform_chain_applied_count"] = transform_chain_applied_count;
   diagnostics["visual_origin_applied_count"] = visual_origin_applied_count;
-  diagnostics["camera_fit_target"] = QString("robot_aabb");
+  diagnostics["camera_fit_target"] = QString("product_full_workcell_isometric");
   diagnostics["robot_pose_source"] = robot_pose_source;
   diagnostics["robot_base_frame"] = robot_base_frame;
   diagnostics["robot_world_pose"] = robot_world_pose;
