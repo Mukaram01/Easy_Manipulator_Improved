@@ -702,6 +702,9 @@ private:
       candidate_json["primitive_fallback_rendered_count"] = candidate.counters.primitive_fallback_rendered_count;
       candidate_json["valid_physical_fallback_count"] = candidate.counters.valid_physical_fallback_count;
       candidate_json["overlay_rendered_count"] = candidate.counters.overlay_rendered_count;
+      candidate_json["locked_generated_urdf_visual_count"] = candidate.counters.locked_generated_urdf_visual_count;
+      candidate_json["transform_chain_applied_count"] = candidate.counters.transform_chain_applied_count;
+      candidate_json["visual_origin_applied_count"] = candidate.counters.visual_origin_applied_count;
       candidate_json["placeholder_count"] = candidate.counters.placeholder_count;
       candidate_json["missing_geometry_count"] = candidate.counters.missing_geometry_count;
       candidate_json["wireframe_fallback_count"] = candidate.counters.wireframe_fallback_count;
@@ -803,6 +806,8 @@ private:
       counters["valid_physical_fallback_count"] = rc.valid_physical_fallback_count;
       counters["overlay_rendered_count"] = rc.overlay_rendered_count;
       counters["locked_generated_urdf_visual_count"] = rc.locked_generated_urdf_visual_count;
+      counters["transform_chain_applied_count"] = rc.transform_chain_applied_count;
+      counters["visual_origin_applied_count"] = rc.visual_origin_applied_count;
       counters["overlay_count"] = rc.overlay_count;
       counters["selectable_count"] = qMax(0, rc.visible_count - rc.overlay_count);
       counters["hierarchy_rows_count"] = rc.hierarchy_child_row_count;

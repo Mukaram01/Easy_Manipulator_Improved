@@ -115,6 +115,8 @@ public:
     int valid_physical_fallback_count{ 0 };
     int overlay_rendered_count{ 0 };
     int locked_generated_urdf_visual_count{ 0 };
+    int transform_chain_applied_count{ 0 };
+    int visual_origin_applied_count{ 0 };
     int overlay_count{ 0 };
     QString visual_quality_status{ QStringLiteral("UNAVAILABLE") };
     QStringList visual_quality_warnings;

@@ -291,6 +291,50 @@ def _runtime_render_class_counts(payload: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def _runtime_gui_diagnostics_available(payload: dict[str, Any]) -> bool:
+    if not bool(payload.get("runtime_available")):
+        return False
+    if isinstance(payload.get("counters"), dict) or isinstance(payload.get("render_debug_counters"), dict):
+        return True
+    return _counter(payload, "viewport_received_count", "rendered_count", "visible_count") > 0
+
+
+def _apply_runtime_transform_counter_mapping(payload: dict[str, Any]) -> None:
+    if not _runtime_gui_diagnostics_available(payload):
+        return
+    counters = _first_present_mapping(payload, "counters")
+    render_debug = _first_present_mapping(payload, "render_debug_counters")
+
+    def runtime_counter(*keys: str) -> int:
+        for source in (render_debug, counters):
+            if not isinstance(source, dict):
+                continue
+            for key in keys:
+                if key in source:
+                    return _as_int(source.get(key))
+        return _counter_from_sources(payload, keys)
+
+    transform_chain_applied_count = runtime_counter("transform_chain_applied_count")
+    visual_origin_applied_count = runtime_counter("visual_origin_applied_count")
+    generated_visual_count = runtime_counter(
+        "locked_generated_urdf_visual_count",
+        "generated_visual_count",
+        "generated_urdf_visual_count",
+    )
+    payload["transform_chain_applied_count"] = transform_chain_applied_count
+    payload["visual_origin_applied_count"] = visual_origin_applied_count
+    payload["locked_generated_urdf_visual_count"] = generated_visual_count
+
+    warnings = payload.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+    if generated_visual_count > 0 and transform_chain_applied_count <= 0:
+        _append_unique(warnings, "runtime_transform_chain_applied_count_zero_with_generated_visuals")
+    if generated_visual_count > 0 and visual_origin_applied_count <= 0:
+        _append_unique(warnings, "runtime_visual_origin_applied_count_zero_with_generated_visuals")
+    payload["warnings"] = warnings
+
+
 def _add_smoke_report_supplemental_evidence(payload: dict[str, Any], *, screenshot_path: str | None, screenshot_available: bool | None) -> dict[str, Any]:
     runtime_available = bool(payload.get("runtime_available"))
     if runtime_available:
@@ -298,6 +342,7 @@ def _add_smoke_report_supplemental_evidence(payload: dict[str, Any], *, screensh
         payload["runtime_render_class_counts"] = render_class_counts
         for key, value in render_class_counts.items():
             payload.setdefault(key, value)
+        _apply_runtime_transform_counter_mapping(payload)
     payload.setdefault("visible_item_labels", _visible_item_labels_from_payload(payload) if runtime_available else [])
     payload.setdefault("viewport_size", _viewport_size_from_payload(payload))
     payload.setdefault("camera_fit_target", _camera_fit_target_from_payload(payload))
