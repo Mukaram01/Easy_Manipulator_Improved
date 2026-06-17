@@ -262,6 +262,38 @@ TEST(Scene3DRenderRoleClassifier, SemanticRolesWithoutDimensionsSuppressMissingG
   EXPECT_FALSE(Scene3DViewportWidget::should_draw_as_wireframe_for_test(object, ScenePreviewWidget::MeshPreviewMode::Auto));
 }
 
+
+TEST(Scene3DRenderRoleClassifier, RobotReachIdIsSemanticEvenWhenLockedWithoutMeshMetadata)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+
+  auto robot_reach = make_item("robot_reach");
+  robot_reach.role = "reach";
+  robot_reach.category = "reach";
+  robot_reach.source_layer = "environment_yaml";
+  robot_reach.active_visual_source = "environment_yaml";
+  robot_reach.locked = true;
+  robot_reach.editable = false;
+  robot_reach.lock_reason = "generated environment preview";
+  robot_reach.mesh_available = false;
+  robot_reach.has_mesh_metadata = false;
+  robot_reach.mesh_path.clear();
+
+  EXPECT_TRUE(Scene3DViewportWidget::should_draw_clean_semantic_primitive_for_test(robot_reach));
+  EXPECT_TRUE(Scene3DViewportWidget::should_draw_as_solid_for_test(robot_reach, ScenePreviewWidget::MeshPreviewMode::Meshes));
+  EXPECT_FALSE(Scene3DViewportWidget::should_draw_as_wireframe_for_test(robot_reach, ScenePreviewWidget::MeshPreviewMode::Auto));
+  EXPECT_FALSE(Scene3DViewportWidget::should_suppress_missing_geometry_marker_for_test(robot_reach));
+
+  Scene3DViewportWidget viewport;
+  viewport.ingest_preview_items(QVector<ScenePreviewWidget::PreviewItem>{ robot_reach });
+  ASSERT_TRUE(viewport.render_smoke_fallback_frame(nullptr));
+
+  const auto counters = viewport.render_debug_counters();
+  EXPECT_EQ(counters.missing_geometry_count, 0);
+  EXPECT_EQ(counters.primitive_fallback_count, 0);
+  EXPECT_EQ(counters.editable_primitive_rendered_count, 1);
+}
+
 TEST(Scene3DRenderRoleClassifier, EditableLayoutPrimitivesDoNotCountAsGeneratedFallbacks)
 {
   ASSERT_NE(ensure_app(), nullptr);
