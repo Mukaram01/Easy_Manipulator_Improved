@@ -100,6 +100,11 @@ bool path_has_mesh_asset_extension(const QString & path)
          suffix == QStringLiteral("gltf");
 }
 
+bool scene3d_debug_logs_enabled()
+{
+  return qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS");
+}
+
 bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item)
 {
   const QString mesh_path = item.mesh_path.trimmed();
@@ -1153,6 +1158,13 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
   last_render_counters.last_paint_completed = false;
   last_render_counters.smoke_fallback_render_used = false;
   finalize_visual_quality(last_render_counters);
+  qInfo() << "Scene3D scene load summary:"
+          << "received=" << last_render_counters.viewport_received_count
+          << "visible=" << last_render_counters.visible_count
+          << "mesh_sources=" << last_render_counters.mesh_source_count
+          << "urdf_primitives=" << last_render_counters.urdf_primitive_source_count
+          << "overlays=" << last_render_counters.overlay_count
+          << "mesh_cache=" << last_render_counters.render_cache_count;
   const QString diagnostics_path = QString::fromUtf8(qgetenv("SCENE3D_MESH_DIAGNOSTICS_JSON"));
   if (!diagnostics_path.trimmed().isEmpty()) {
     QFile out_file(diagnostics_path);
@@ -1423,30 +1435,32 @@ void Scene3DViewportWidget::paintGL()
 
   glDisable(GL_BLEND);
 
-  qDebug() << "Scene3D runtime render: received=" << received_item_count
-           << "visible=" << visible_item_count
-           << "rendered=" << rendered_item_count
-           << "skipped=" << skipped_item_count
-           << "mesh_sources=" << mesh_source_count
-           << "placeholder=" << placeholder_count
-           << "overlay=" << overlay_count
-           << "primitive_fallback_rendered_count=" << last_render_counters.primitive_fallback_rendered_count
-           << "editable_primitive_rendered_count=" << last_render_counters.editable_primitive_rendered_count
-           << "mesh_rendered_count=" << last_render_counters.mesh_rendered_count
-           << "mesh_surface_rendered_count=" << last_render_counters.mesh_surface_rendered_count
-           << "mesh_bounds_fallback_rendered_count=" << last_render_counters.mesh_bounds_fallback_rendered_count
-           << "mesh_file_loaded_count=" << last_render_counters.mesh_file_loaded_count
-           << "mesh_triangles_loaded_count=" << last_render_counters.mesh_triangles_loaded_count
-           << "generated_fallback_count=" << last_render_counters.generated_fallback_count
-           << "labels_drawn=" << last_render_counters.labels_drawn
-           << "labels_suppressed_overlap=" << last_render_counters.labels_suppressed_overlap
-           << "hierarchy_child_row_count=" << last_render_counters.hierarchy_child_row_count;
-  qDebug() << kPaintGLCacheOnlyGuard;
-  qDebug() << "Scene3D diagnostics {viewport_received_count=" << received_item_count
-           << ", render_cache_count=" << mesh_cache_.size()
-           << ", rendered_count=" << rendered_item_count
-           << ", skipped_count=" << skipped_item_count
-           << "}";
+  if (scene3d_debug_logs_enabled()) {
+    qDebug() << "Scene3D runtime render: received=" << received_item_count
+             << "visible=" << visible_item_count
+             << "rendered=" << rendered_item_count
+             << "skipped=" << skipped_item_count
+             << "mesh_sources=" << mesh_source_count
+             << "placeholder=" << placeholder_count
+             << "overlay=" << overlay_count
+             << "primitive_fallback_rendered_count=" << last_render_counters.primitive_fallback_rendered_count
+             << "editable_primitive_rendered_count=" << last_render_counters.editable_primitive_rendered_count
+             << "mesh_rendered_count=" << last_render_counters.mesh_rendered_count
+             << "mesh_surface_rendered_count=" << last_render_counters.mesh_surface_rendered_count
+             << "mesh_bounds_fallback_rendered_count=" << last_render_counters.mesh_bounds_fallback_rendered_count
+             << "mesh_file_loaded_count=" << last_render_counters.mesh_file_loaded_count
+             << "mesh_triangles_loaded_count=" << last_render_counters.mesh_triangles_loaded_count
+             << "generated_fallback_count=" << last_render_counters.generated_fallback_count
+             << "labels_drawn=" << last_render_counters.labels_drawn
+             << "labels_suppressed_overlap=" << last_render_counters.labels_suppressed_overlap
+             << "hierarchy_child_row_count=" << last_render_counters.hierarchy_child_row_count;
+    qDebug() << kPaintGLCacheOnlyGuard;
+    qDebug() << "Scene3D diagnostics {viewport_received_count=" << received_item_count
+             << ", render_cache_count=" << mesh_cache_.size()
+             << ", rendered_count=" << rendered_item_count
+             << ", skipped_count=" << skipped_item_count
+             << "}";
+  }
 
   QPainter painter(this);
   painter.setRenderHint(QPainter::Antialiasing, true);
@@ -1958,7 +1972,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
       if (debug_overlays_mode && item_has_explicit_dimensions(it)) {
         draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, generated_primitive_fallback_outline(), 0.6f);
       }
-      if (debug_overlays_mode || qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS")) {
+      if (debug_overlays_mode || scene3d_debug_logs_enabled()) {
         warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_PRIMITIVE_SUPPRESSED_BY_MESH_ONLY_MODE: URDF primitive available but disabled"), it.source_path);
       }
       return false;
@@ -1999,7 +2013,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
       if (debug_overlays_mode) {
         draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, generated_primitive_fallback_outline(), 0.6f);
       }
-      if (debug_overlays_mode || qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS")) {
+      if (debug_overlays_mode || scene3d_debug_logs_enabled()) {
         warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_PRIMITIVE_SUPPRESSED_BY_MESH_ONLY_MODE: semantic primitive dimensions available but disabled"), it.source_path);
       }
       return false;
@@ -2438,7 +2452,7 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   }
   const auto warn_for_mode = [&](const QString & reason, const QString & path) {
     remember_mesh_rejection_reason(it.id, reason);
-    if (meshes_only_mode || qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS")) warn_mesh_fallback_once(it.id, reason, path);
+    if (meshes_only_mode || scene3d_debug_logs_enabled()) warn_mesh_fallback_once(it.id, reason, path);
   };
 
   if (!it.has_mesh_metadata) {
