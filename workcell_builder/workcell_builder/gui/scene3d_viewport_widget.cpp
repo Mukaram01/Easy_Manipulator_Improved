@@ -1023,6 +1023,29 @@ QColor explicit_material_color(const ScenePreviewWidget::PreviewItem & it)
 QColor product_view_generated_locked_material(const ScenePreviewWidget::PreviewItem & it, bool diagnostic_transparency_mode)
 {
   QColor c = it.has_material_color ? explicit_material_color(it) : generated_locked_preview_material();
+  const QString visual_identity = (it.id + " " + it.display_name + " " + it.role + " " + it.category).toLower();
+  if (!it.has_material_color) {
+    if (visual_identity.contains(QStringLiteral("robotiq")) ||
+        visual_identity.contains(QStringLiteral("gripper")) ||
+        visual_identity.contains(QStringLiteral("finger")) ||
+        visual_identity.contains(QStringLiteral("knuckle"))) {
+      c = QColor("#4b5563");
+    } else if (visual_identity.contains(QStringLiteral("camera")) ||
+               visual_identity.contains(QStringLiteral("realsense")) ||
+               visual_identity.contains(QStringLiteral("d435"))) {
+      c = QColor("#111827");
+    } else if (visual_identity.contains(QStringLiteral("table")) ||
+               visual_identity.contains(QStringLiteral("workbench"))) {
+      c = QColor("#8b8175");
+    } else if (visual_identity.contains(QStringLiteral("ur5")) ||
+               visual_identity.contains(QStringLiteral("shoulder")) ||
+               visual_identity.contains(QStringLiteral("upper_arm")) ||
+               visual_identity.contains(QStringLiteral("forearm")) ||
+               visual_identity.contains(QStringLiteral("wrist")) ||
+               visual_identity.contains(QStringLiteral("base_link"))) {
+      c = QColor("#d8dee6");
+    }
+  }
   if (!diagnostic_transparency_mode) {
     c.setAlphaF(qMax(c.alphaF(), kGeneratedLockedProductMinAlpha));
   }
@@ -1364,7 +1387,7 @@ void Scene3DViewportWidget::fit_product_view()
   const double radius = qMax(0.25, 0.5 * qSqrt(ext.x() * ext.x() + ext.y() * ext.y() + ext.z() * ext.z()));
   scene_radius_ = radius;
   const double fov = qDegreesToRadians(50.0);
-  const double fit_distance = (radius / qTan(fov * 0.5)) * 0.78;
+  const double fit_distance = (radius / qTan(fov * 0.5)) * 1.08;
   distance_ = qBound(min_distance_, fit_distance, max_distance_);
   yaw_ = -0.72;
   pitch_ = 0.54;
@@ -2879,9 +2902,17 @@ void Scene3DViewportWidget::draw_ground_grid_pass()
   glDisable(GL_CULL_FACE);
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  glLineWidth(debug_overlays_mode ? 1.0f : 0.75f);
+  const int grid_extent = debug_overlays_mode ? 20 : 8;
+  const QColor floor = QColor(15, 23, 42, debug_overlays_mode ? 42 : 30);
+  glColor4f(floor.redF(), floor.greenF(), floor.blueF(), floor.alphaF());
+  glBegin(GL_QUADS);
+  glVertex3f(static_cast<float>(-grid_extent), -0.002f, static_cast<float>(-grid_extent));
+  glVertex3f(static_cast<float>( grid_extent), -0.002f, static_cast<float>(-grid_extent));
+  glVertex3f(static_cast<float>( grid_extent), -0.002f, static_cast<float>( grid_extent));
+  glVertex3f(static_cast<float>(-grid_extent), -0.002f, static_cast<float>( grid_extent));
+  glEnd();
+  glLineWidth(debug_overlays_mode ? 1.0f : 0.85f);
   glBegin(GL_LINES);
-  const int grid_extent = debug_overlays_mode ? 20 : 6;
   for (int i = -grid_extent; i <= grid_extent; ++i) {
     const bool major = (i % 5 == 0);
     const QColor c = debug_overlays_mode
