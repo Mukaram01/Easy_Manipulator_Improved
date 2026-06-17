@@ -878,6 +878,15 @@ bool include_in_fit_bounds(const ScenePreviewWidget::PreviewItem & it, bool incl
   return product_physical_role && (mesh_backed || explicit_primitive);
 }
 
+bool item_is_enabled_for_fit(const ScenePreviewWidget::PreviewItem & it)
+{
+  const QString status = normalized_token(it.status);
+  return status != QStringLiteral("disabled") &&
+         status != QStringLiteral("off") &&
+         status != QStringLiteral("hidden") &&
+         status != QStringLiteral("suppressed");
+}
+
 bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it)
 {
   const NormalizedRole role = classify_item_role(it);
@@ -1245,7 +1254,7 @@ void Scene3DViewportWidget::fit_product_view()
   yaw_ = -0.72;
   pitch_ = 0.54;
   orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.04, radius * 0.025)));
-  last_camera_fit_target_ = QStringLiteral("product_physical_isometric");
+  last_camera_fit_target_ = QStringLiteral("product_full_workcell_isometric");
   has_robot_aabb_diag_ = false;
   fit_include_overlays = false;
   update();
@@ -1835,8 +1844,24 @@ bool Scene3DViewportWidget::scene_bounds_from_visible_items(QVector3D & out_min,
   bool has_fittable_item = false;
   for (const auto & it : items) {
     if (!include_in_fit_bounds(it, include_overlays)) continue;
+    if (!item_is_enabled_for_fit(it)) continue;
+
+    ItemBounds bounds{};
+    const bool generated_or_locked_visual = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
+    const bool should_prefer_transformed_mesh_bounds = item_has_mesh_surface_candidate(it) || generated_or_locked_visual;
+    if (should_prefer_transformed_mesh_bounds && mesh_world_bounds_for_item(it, bounds)) {
+      // Mesh-backed generated URDF visuals and physical asset previews use their transformed
+      // render bounds so product fitting follows what is actually drawn, not raw layout extents.
+    } else {
+      PrimitiveWorldBounds primitive_bounds{};
+      if (item_has_valid_urdf_primitive(it) && primitive_world_bounds_for_item(it, primitive_bounds)) {
+        bounds = { primitive_bounds.x, primitive_bounds.y, primitive_bounds.z,
+                   primitive_bounds.sx, primitive_bounds.sy, primitive_bounds.sz };
+      } else {
+        bounds = item_bounds_for_role(it);
+      }
+    }
     has_fittable_item = true;
-    const ItemBounds bounds = item_bounds_for_role(it);
     out_min.setX(std::min(out_min.x(), static_cast<float>(bounds.x)));
     out_min.setY(std::min(out_min.y(), static_cast<float>(bounds.y)));
     out_min.setZ(std::min(out_min.z(), static_cast<float>(bounds.z)));
