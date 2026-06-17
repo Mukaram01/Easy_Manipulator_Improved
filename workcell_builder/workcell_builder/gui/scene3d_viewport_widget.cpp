@@ -348,7 +348,7 @@ QString mesh_parse_failure_code(const QString & parse_error)
   if (normalized.contains(QStringLiteral("no triangles")) || normalized.contains(QStringLiteral("contains no triangles"))) {
     return QStringLiteral("zero_triangle_mesh");
   }
-  if (normalized.contains(QStringLiteral("exceeds limit"))) return QStringLiteral("unreasonable_bounds");
+  if (normalized.contains(QStringLiteral("exceeds limit"))) return QStringLiteral("triangle_budget_exceeded_preview_surrogate");
   return QStringLiteral("parse_failed");
 }
 
@@ -405,10 +405,10 @@ bool parse_binary_stl(const QByteArray & bytes, Scene3DViewportWidget::InternalT
   if (bytes.size() < 84) { out_error = "binary STL too small"; return false; }
   const uchar * data = reinterpret_cast<const uchar *>(bytes.constData());
   const quint32 tri_count = qFromLittleEndian<quint32>(data + 80);
-  if (tri_count > static_cast<quint32>(triangle_limit)) { out_error = "mesh triangle count exceeds limit"; return false; }
+  const bool exceeds_triangle_limit = tri_count > static_cast<quint32>(triangle_limit);
   const qint64 expected_size = 84LL + static_cast<qint64>(tri_count) * 50LL;
   if (bytes.size() < expected_size) { out_error = "binary STL truncated"; return false; }
-  out_mesh.triangles.reserve(static_cast<int>(tri_count));
+  out_mesh.triangles.reserve(static_cast<int>(qMin(tri_count, static_cast<quint32>(triangle_limit))));
   const uchar * tri_ptr = data + 84;
   auto read_float = [](const uchar * p) {
     quint32 raw = qFromLittleEndian<quint32>(p);
@@ -416,7 +416,8 @@ bool parse_binary_stl(const QByteArray & bytes, Scene3DViewportWidget::InternalT
     std::memcpy(&value, &raw, sizeof(float));
     return value;
   };
-  for (quint32 i = 0; i < tri_count; ++i, tri_ptr += 50) {
+  const quint32 tri_read_count = exceeds_triangle_limit ? static_cast<quint32>(triangle_limit) : tri_count;
+  for (quint32 i = 0; i < tri_read_count; ++i, tri_ptr += 50) {
     Scene3DViewportWidget::InternalTriangleMesh::Triangle tri;
     tri.normal = QVector3D(read_float(tri_ptr), read_float(tri_ptr + 4), read_float(tri_ptr + 8));
     for (int vi = 0; vi < 3; ++vi) {
@@ -426,6 +427,7 @@ bool parse_binary_stl(const QByteArray & bytes, Scene3DViewportWidget::InternalT
     out_mesh.triangles.push_back(tri);
   }
   if (out_mesh.triangles.isEmpty()) { out_error = "binary STL contains no triangles"; return false; }
+  if (exceeds_triangle_limit) { out_error = "mesh triangle count exceeds limit"; return false; }
   return true;
 }
 
@@ -2324,7 +2326,7 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
   if (!entry.valid) {
     entry.oversized = parse_error.contains("exceeds limit");
     if (entry.failure_reason_code.trimmed().isEmpty()) entry.failure_reason_code = mesh_parse_failure_code(parse_error);
-    entry.warning = QStringLiteral("%1 reason_code=%2 (%3)").arg(entry.oversized ? QStringLiteral("mesh oversized") : QStringLiteral("mesh invalid"), entry.failure_reason_code, parse_error);
+    entry.warning = QStringLiteral("%1 reason_code=%2 (%3)").arg(entry.oversized ? QStringLiteral("mesh preview triangle budget exceeded; metadata retained") : QStringLiteral("mesh invalid"), entry.failure_reason_code, parse_error);
   } else {
     entry.failure_reason_code.clear();
   }
@@ -2356,13 +2358,51 @@ bool Scene3DViewportWidget::validate_mesh_final_span(const ScenePreviewWidget::P
   if (!entry.has_bounds) return true;
   constexpr double kFinalSpanThresholdMeters = 50.0;
   const QVector3D raw_span = entry.local_span;
-  const QVector3D final_span(raw_span.x() * it.mesh_scale_x,
-                             raw_span.y() * it.mesh_scale_y,
-                             raw_span.z() * it.mesh_scale_z);
+
+  QMatrix4x4 final_transform;
+  final_transform.translate(static_cast<float>(it.x), static_cast<float>(it.y), static_cast<float>(it.z));
+  final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.roll)), 1.0f, 0.0f, 0.0f);
+  final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.pitch)), 0.0f, 1.0f, 0.0f);
+  final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.yaw)), 0.0f, 0.0f, 1.0f);
+  if (it.visual_origin_applied) {
+    final_transform.translate(static_cast<float>(it.visual_origin_x), static_cast<float>(it.visual_origin_y), static_cast<float>(it.visual_origin_z));
+    final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.visual_origin_roll)), 1.0f, 0.0f, 0.0f);
+    final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.visual_origin_pitch)), 0.0f, 1.0f, 0.0f);
+    final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.visual_origin_yaw)), 0.0f, 0.0f, 1.0f);
+  }
+  final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.mesh_r)), 1.0f, 0.0f, 0.0f);
+  final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.mesh_p)), 0.0f, 1.0f, 0.0f);
+  final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.mesh_y)), 0.0f, 0.0f, 1.0f);
+  if (it.has_origin_offset) {
+    final_transform.translate(static_cast<float>(it.origin_offset_x), static_cast<float>(it.origin_offset_y), static_cast<float>(it.origin_offset_z));
+  }
+  final_transform.scale(static_cast<float>(it.mesh_scale_x), static_cast<float>(it.mesh_scale_y), static_cast<float>(it.mesh_scale_z));
+
+  QVector3D final_min(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+  QVector3D final_max(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+  for (int xi = 0; xi < 2; ++xi) {
+    for (int yi = 0; yi < 2; ++yi) {
+      for (int zi = 0; zi < 2; ++zi) {
+        const QVector3D corner(xi ? entry.local_max.x() : entry.local_min.x(),
+                               yi ? entry.local_max.y() : entry.local_min.y(),
+                               zi ? entry.local_max.z() : entry.local_min.z());
+        const QVector3D mapped = final_transform.map(corner);
+        final_min.setX(qMin(final_min.x(), mapped.x()));
+        final_min.setY(qMin(final_min.y(), mapped.y()));
+        final_min.setZ(qMin(final_min.z(), mapped.z()));
+        final_max.setX(qMax(final_max.x(), mapped.x()));
+        final_max.setY(qMax(final_max.y(), mapped.y()));
+        final_max.setZ(qMax(final_max.z(), mapped.z()));
+      }
+    }
+  }
+  const QVector3D final_span = final_max - final_min;
   if (out_raw_span) *out_raw_span = raw_span;
   if (out_final_span) *out_final_span = final_span;
   const QVector3D abs_final(qAbs(final_span.x()), qAbs(final_span.y()), qAbs(final_span.z()));
-  const bool finite_final = qIsFinite(abs_final.x()) && qIsFinite(abs_final.y()) && qIsFinite(abs_final.z());
+  const bool finite_final = qIsFinite(abs_final.x()) && qIsFinite(abs_final.y()) && qIsFinite(abs_final.z()) &&
+                            qIsFinite(final_min.x()) && qIsFinite(final_min.y()) && qIsFinite(final_min.z()) &&
+                            qIsFinite(final_max.x()) && qIsFinite(final_max.y()) && qIsFinite(final_max.z());
   const double max_final_span = qMax(abs_final.x(), qMax(abs_final.y(), abs_final.z()));
   if (!finite_final || max_final_span > kFinalSpanThresholdMeters) {
     out_reason = QStringLiteral("unreasonable_bounds_final_span item_id=%1 mesh_path=%2 raw_span=[%3,%4,%5] final_span=[%6,%7,%8] threshold_m=%9")
@@ -2427,7 +2467,7 @@ QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
       gd["item_id"] = item.id;
       gd["accepted"] = accepted;
       gd["reason"] = reason;
-      gd["reason_code"] = accepted ? QStringLiteral("ok") : QStringLiteral("unreasonable_bounds");
+      gd["reason_code"] = accepted ? QStringLiteral("ok") : QStringLiteral("unreasonable_bounds_final_span");
       gd["raw_span"] = QJsonArray{raw_span.x(), raw_span.y(), raw_span.z()};
       gd["final_span"] = QJsonArray{final_span.x(), final_span.y(), final_span.z()};
       guard_details.append(gd);
@@ -2482,15 +2522,20 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
     warn_for_mode(reason, mesh_source);
     return false;
   };
-  if (!entry.loaded || entry.oversized || !entry.valid || entry.mesh.triangles.isEmpty()) {
+  QString final_span_reason;
+  if (entry.has_bounds && !validate_mesh_final_span(it, entry, mesh_source, final_span_reason)) {
+    return reject(QStringLiteral("unreasonable_bounds_final_span"), final_span_reason);
+  }
+
+  if (!entry.loaded || !entry.valid || entry.mesh.triangles.isEmpty()) {
     if (!entry.loaded) return reject(QStringLiteral("parse_failed"));
-    if (entry.oversized) return reject(QStringLiteral("unreasonable_bounds"), entry.warning);
+    if (entry.oversized) {
+      warn_for_mode(QStringLiteral("triangle_budget_exceeded_preview_surrogate: %1").arg(entry.warning), mesh_source);
+      if (classify_item_role(it) == NormalizedRole::Table && draw_clean_semantic_primitive(it)) return true;
+      return false;
+    }
     if (!entry.valid) return reject(entry.failure_reason_code.trimmed().isEmpty() ? QStringLiteral("parse_failed") : entry.failure_reason_code, entry.warning);
     return reject(QStringLiteral("zero_triangle_mesh"), entry.warning);
-  }
-  QString final_span_reason;
-  if (!validate_mesh_final_span(it, entry, mesh_source, final_span_reason)) {
-    return reject(QStringLiteral("unreasonable_bounds"), final_span_reason);
   }
 
   glPushMatrix();
