@@ -82,7 +82,20 @@ Scene3DLayerVisibilityDefaults compute_scene3d_default_layer_visibility(
     }
   }
 
-  out.primitive_fallback = (primitive_fallback_count + missing_mesh_count) > 0;
+  // Normal product view must not show stale/static URDF primitive robot fallbacks
+  // once an authoritative generated URDF mesh payload is present. Keep the
+  // layer available for explicit diagnostics, but leave it off by default so
+  // fallback robot boxes do not duplicate or clutter real robot visuals.
+  int authoritative_generated_mesh_count = 0;
+  for (const auto & item : all_items) {
+    const QString source_layer = token(item.source_layer);
+    if ((source_layer == QStringLiteral("locked_generated_urdf_visual") ||
+         source_layer == QStringLiteral("generated_urdf_visual")) &&
+        (item.mesh_available || item.has_mesh_metadata)) {
+      ++authoritative_generated_mesh_count;
+    }
+  }
+  out.primitive_fallback = authoritative_generated_mesh_count == 0 && (primitive_fallback_count + missing_mesh_count) > 0;
   Q_UNUSED(unresolved_package_uri_count);
   Q_UNUSED(unsupported_extension_count);
   Q_UNUSED(fallback_warning_count);
