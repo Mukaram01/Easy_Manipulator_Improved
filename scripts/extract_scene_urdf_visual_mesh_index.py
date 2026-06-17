@@ -29,6 +29,114 @@ REPO_LOCAL_ASSET_PRECEDENCE_PACKAGES = {
     "ur_description",
 }
 
+
+
+UR5_ARM_LINK_ORDER = [
+    'base_link',
+    'shoulder_link',
+    'upper_arm_link',
+    'forearm_link',
+    'wrist_1_link',
+    'wrist_2_link',
+    'wrist_3_link',
+    'tool0',
+]
+UR5_ARM_LINKS = set(UR5_ARM_LINK_ORDER)
+
+def _finite_number(value):
+    try:
+        return math.isfinite(float(value))
+    except Exception:
+        return False
+
+def _finite_vec(values, expected_len=3):
+    return isinstance(values, list) and len(values) >= expected_len and all(_finite_number(v) for v in values[:expected_len])
+
+def _vec_distance(a, b):
+    if not (_finite_vec(a) and _finite_vec(b)):
+        return float('nan')
+    return math.sqrt(sum((float(a[i]) - float(b[i])) ** 2 for i in range(3)))
+
+def _vec_nearly_equal(a, b, epsilon=1e-6):
+    return _finite_vec(a) and _finite_vec(b) and _vec_distance(a, b) <= epsilon
+
+def _pose_field(item, name):
+    value = item.get(name) if isinstance(item, dict) else None
+    return value if isinstance(value, dict) else {}
+
+def _pose_xyz(item, name):
+    return _pose_field(item, name).get('xyz')
+
+def _pose_rpy(item, name):
+    return _pose_field(item, name).get('rpy')
+
+def validate_ur5_transform_sanity(items, ur5_transform_rows, tiny_epsilon=1e-6, adjacent_threshold_m=1.5):
+    """Return diagnostic warnings/blockers for UR5 visual transform health.
+
+    This is intentionally index/diagnostics-only: it does not rewrite poses, mesh
+    paths, launch files, or resolution counts.
+    """
+    warnings=[]
+    blockers=[]
+    rows=[r for r in (ur5_transform_rows or []) if str(r.get('link') or '') in UR5_ARM_LINKS]
+    relevant_items=[i for i in (items or []) if str(i.get('link') or '') in UR5_ARM_LINKS]
+    if not rows and not relevant_items:
+        return warnings, blockers
+
+    def note_nonfinite(label, owner, vec):
+        if vec is not None and not _finite_vec(vec):
+            blockers.append(f'UR5 transform sanity: {owner} has non-finite {label}: {vec}')
+
+    for row in rows:
+        owner=str(row.get('link') or row.get('id') or 'unknown')
+        note_nonfinite('link_world_pose.xyz', owner, _pose_xyz(row, 'link_world_pose'))
+        note_nonfinite('link_world_pose.rpy', owner, _pose_rpy(row, 'link_world_pose'))
+        note_nonfinite('world_pose.xyz', owner, _pose_xyz(row, 'world_pose'))
+        note_nonfinite('world_pose.rpy', owner, _pose_rpy(row, 'world_pose'))
+        note_nonfinite('pose.xyz', owner, _pose_xyz(row, 'pose'))
+        note_nonfinite('pose.rpy', owner, _pose_rpy(row, 'pose'))
+        note_nonfinite('visual_origin.xyz', owner, _pose_xyz(row, 'visual_origin'))
+        note_nonfinite('visual_origin.rpy', owner, _pose_rpy(row, 'visual_origin'))
+        expected=_pose_field(row, 'expected_visual_pose')
+        if expected:
+            note_nonfinite('expected_visual_pose.xyz', owner, expected.get('xyz'))
+            note_nonfinite('expected_visual_pose.rpy', owner, expected.get('rpy'))
+
+    link_positions={}
+    for row in rows:
+        link=str(row.get('link') or '')
+        xyz=_pose_xyz(row, 'link_world_pose') or _pose_xyz(row, 'world_pose')
+        if link in UR5_ARM_LINKS and _finite_vec(xyz) and link not in link_positions:
+            link_positions[link]=[float(v) for v in xyz[:3]]
+    if len(link_positions) >= 4:
+        positions=list(link_positions.values())
+        if all(_vec_nearly_equal(positions[0], p, tiny_epsilon) for p in positions[1:]):
+            blockers.append('UR5 transform sanity: all relevant UR5 link/world positions are identical or nearly identical; transform chain may be collapsed.')
+        if all(_vec_distance([0.0, 0.0, 0.0], p) <= tiny_epsilon for p in positions):
+            blockers.append('UR5 transform sanity: all relevant UR5 link/world positions are within epsilon of [0, 0, 0]; transform chain may be missing.')
+        for prev, cur in zip(UR5_ARM_LINK_ORDER, UR5_ARM_LINK_ORDER[1:]):
+            if prev in link_positions and cur in link_positions:
+                dist=_vec_distance(link_positions[prev], link_positions[cur])
+                if _finite_number(dist) and dist > adjacent_threshold_m:
+                    blockers.append(f'UR5 transform sanity: adjacent UR5 links {prev}->{cur} are {dist:.3f} m apart, exceeding {adjacent_threshold_m:.3f} m.')
+
+    for row in rows:
+        pose=_pose_field(row, 'pose')
+        expected=_pose_field(row, 'expected_visual_pose')
+        visual_origin=_pose_field(row, 'visual_origin')
+        if not (pose and expected and visual_origin):
+            continue
+        pose_xyz=pose.get('xyz'); expected_xyz=expected.get('xyz'); origin_xyz=visual_origin.get('xyz')
+        if not (_finite_vec(pose_xyz) and _finite_vec(expected_xyz) and _finite_vec(origin_xyz)):
+            continue
+        expected_to_pose=_vec_distance(expected_xyz, pose_xyz)
+        origin_mag=_vec_distance([0.0, 0.0, 0.0], origin_xyz)
+        if origin_mag > tiny_epsilon and expected_to_pose > tiny_epsilon:
+            delta=[float(pose_xyz[i]) - float(expected_xyz[i]) for i in range(3)]
+            if _vec_nearly_equal(delta, origin_xyz, max(tiny_epsilon, origin_mag * 0.05)):
+                warnings.append(f"UR5 transform sanity: visual origin may be double-applied for {row.get('link')} / {row.get('id')}; pose differs from link_world * visual_origin by approximately the visual origin offset.")
+    return warnings, blockers
+
 UR5_STATIC_VISUAL_SPECS = [
     {'stable_id': 'ur5_static_base', 'link': 'base_link', 'mesh': 'base.dae', 'geom': 'cylinder', 'xyz': [0.0, 0.0, 0.08], 'rpy': [0.0, 0.0, 0.0], 'dims': {'radius': 0.18, 'length': 0.16}},
     {'stable_id': 'ur5_static_shoulder', 'link': 'shoulder_link', 'mesh': 'shoulder.dae', 'geom': 'box', 'xyz': [0.0, 0.0, 0.34], 'rpy': [0.0, 0.0, 0.0], 'dims': {'size': [0.18, 0.18, 0.52]}},
@@ -753,7 +861,6 @@ def append_static_ur5_mesh_visuals(items, package_map):
             'geometry_type': 'mesh',
             'pose': {'xyz': xyz, 'rpy': rpy},
             'chain_pose': {'xyz': xyz, 'rpy': rpy},
-            'world_pose': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
             'visual_origin': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
             'link_transform_status': 'static_mesh_resolved',
             'transform_status': 'static_mesh_resolved',
@@ -811,7 +918,6 @@ def append_static_robot_primitive_fallbacks(items, urdf_text, fallback_reason, e
             'geometry_type': geom,
             'pose': {'xyz': xyz, 'rpy': rpy},
             'chain_pose': {'xyz': xyz, 'rpy': rpy},
-            'world_pose': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
             'visual_origin': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
             'link_transform_status': 'static_fallback',
             'transform_status': 'static_fallback',
@@ -939,7 +1045,9 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
             link_tf, link_status, chain, root_link, unresolved = link_world_tf(lname)
             if link_tf is None: link_tf=identity_tf()
             visual_tf=tf_from_xyz_rpy(vxyz, vrpy)
-            pose=xyz_rpy_from_tf(matmul4(link_tf, visual_tf))
+            link_world_pose=xyz_rpy_from_tf(link_tf)
+            expected_visual_pose=xyz_rpy_from_tf(matmul4(link_tf, visual_tf))
+            pose=expected_visual_pose
             material_node=next((c for c in list(visual) if tag_name(c)=='material'),None)
             material={'name':'','color':None}
             if material_node is not None:
@@ -1056,7 +1164,8 @@ def main():
             or _contains_unresolved_ur_robot(xml_text)
         )
         if mode in {'xacro_lite_expanded', 'xacro_lite_fallback', 'best_effort_recursive', 'best_effort', 'raw_fallback', 'raw'} and fallback_ur_robot_unresolved:
-            static_robot_mesh_count = append_static_ur5_mesh_visuals(items, package_map)
+            if 'ur_description' in referenced_packages:
+                static_robot_mesh_count = append_static_ur5_mesh_visuals(items, package_map)
             static_robot_fallback_count = append_static_robot_primitive_fallbacks(items, xml_text, fallback_reason, mode, source_xacro_text)
         ur5_visual_diagnostics = _ur5_visual_mesh_diagnostics(
             package_map,
@@ -1086,6 +1195,14 @@ def main():
         root_warnings, root_blockers = supported_robot_root_diagnostics(scene_dir.name, items, urdf_diagnostics)
         preview_warnings.extend(root_warnings)
         preview_blockers.extend(root_blockers)
+        ur5_transform_rows = [
+            item for item in items
+            if str(item.get('link') or '') in UR5_ARM_LINKS
+            and isinstance(item.get('link_world_pose'), dict)
+        ]
+        ur5_sanity_warnings, ur5_sanity_blockers = validate_ur5_transform_sanity(items, ur5_transform_rows)
+        preview_warnings.extend(ur5_sanity_warnings)
+        preview_blockers.extend(ur5_sanity_blockers)
         safe=is_preview_fully_healthy(items, unresolved, mode, fallback_reason, renderable_mesh_count)
         source_mtime=urdf_path.stat().st_mtime if urdf_path.exists() else None
         has_transform_collapse_warning=bool(items) and len({tuple((i.get('pose') or {}).get('xyz') or []) for i in items}) <= 1 and len(items) > 1
