@@ -34,7 +34,7 @@
 #endif
 
 namespace {
-constexpr int kMeshTriangleLimit = 100000;
+constexpr int kMeshTriangleLimit = 1000000;
 constexpr double kWorkspaceLimitMeters = 1000.0;
 
 [[maybe_unused]] QString snap_mode_label(Scene3DViewportWidget::SnapMode mode)
@@ -535,13 +535,23 @@ bool parse_collada_bytes(const QByteArray & bytes, Scene3DViewportWidget::Intern
         }
       }
     }
-    if (xml.isStartElement() && xml.name() == QStringLiteral("geometry")) in_geometry = true;
+    if (xml.isStartElement() && xml.name() == QStringLiteral("geometry")) {
+      in_geometry = true;
+      positions.clear();
+    }
+    if (xml.isEndElement() && xml.name() == QStringLiteral("geometry")) {
+      in_geometry = false;
+      positions.clear();
+      continue;
+    }
     if (!in_geometry || !xml.isStartElement()) continue;
-    if (xml.name() == QStringLiteral("float_array")) {
-      const QString id = xml.attributes().value(QStringLiteral("id")).toString().toLower();
-      if (id.contains("position")) {
-        const QStringList vals = xml.readElementText().split(QRegExp("\\s+"), Qt::SkipEmptyParts);
-        positions.clear();
+    if (xml.name() == QStringLiteral("float_array") && positions.isEmpty()) {
+      // RViz/Assimp-style tolerance: many ROS Collada exports use opaque IDs
+      // (for example ID5) rather than names containing "position".  The first
+      // mesh float array in these assets is the vertex position stream; later
+      // arrays are normals/UVs/material data and are ignored by this fallback.
+      const QStringList vals = xml.readElementText().split(QRegExp("\\s+"), Qt::SkipEmptyParts);
+      if (vals.size() >= 9 && vals.size() % 3 == 0) {
         positions.reserve(vals.size());
         for (const auto & v : vals) positions.push_back(v.toFloat());
       }
