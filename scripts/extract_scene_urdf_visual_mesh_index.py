@@ -15,6 +15,7 @@ REPO_LOCAL_ASSET_PRECEDENCE_PACKAGES = {
     "robotiq_85_description",
     "workbench_description",
     "realsense2_description",
+    "ur_description",
 }
 
 UR5_STATIC_VISUAL_SPECS = [
@@ -243,13 +244,13 @@ def discover_package_map(scene_dir, workspace_root=None, package_names=None):
                 by_name['ur_description'].append({
                     'package_name':'ur_description',
                     'root_path':str(ur_root),
-                    'source_tier':'repo_universal_robot_assets',
+                    'source_tier':'repo_assets_ur_description',
                     'package_xml':str(ur_root/'package.xml'),
                 })
                 break
 
     for pkg_name, candidates in by_name.items():
-        repo_local_candidates=[c for c in candidates if c['source_tier'] in {'repo_assets','workspace_src_easy_manipulation_deployment_assets','workspace_src_assets'}]
+        repo_local_candidates=[c for c in candidates if c['source_tier'] in {'repo_assets','repo_assets_ur_description','workspace_src_easy_manipulation_deployment_assets','workspace_src_assets'}]
         if pkg_name in REPO_LOCAL_ASSET_PRECEDENCE_PACKAGES and repo_local_candidates:
             _record_package_resolution(out, diagnostics, repo_local_candidates[0])
             for candidate in candidates:
@@ -607,6 +608,59 @@ def _has_ur5_visual_mesh_uri(items):
             return True
     return False
 
+def _ur5_visual_mesh_diagnostics(package_map, package_diagnostics, generated_count, fallback_count):
+    diag = {
+        'package_name': 'ur_description',
+        'source': 'missing',
+        'root_path': '',
+        'visual_folder': '',
+        'visual_folder_exists': False,
+        'mesh_files_found': 0,
+        'mesh_items_generated': generated_count,
+        'static_fallback_items_generated': fallback_count,
+        'status': 'ur_description package missing',
+    }
+    root = package_map.get('ur_description')
+    if not root:
+        return diag
+    diag['root_path'] = _repo_relative_path(root)
+    resolved = [
+        r for r in (package_diagnostics or {}).get('resolution_paths', [])
+        if r.get('package_name') == 'ur_description'
+    ]
+    source_tier = str(resolved[-1].get('source_tier', '')) if resolved else ''
+    diag['source'] = 'repo_assets/ur_description' if source_tier in {'repo_assets', 'repo_assets_ur_description'} else (source_tier or 'package_map')
+    visual_folder = Path(root) / 'meshes/ur5/visual'
+    diag['visual_folder'] = _repo_relative_path(visual_folder)
+    if not visual_folder.exists():
+        alternatives = sorted(str(p.relative_to(root)) for p in (Path(root) / 'meshes').glob('*/visual') if p.is_dir()) if (Path(root) / 'meshes').exists() else []
+        diag['alternate_visual_folders'] = alternatives
+        diag['status'] = 'UR5 visual folder missing'
+        return diag
+    mesh_files = sorted(p for p in visual_folder.iterdir() if p.is_file() and p.suffix.lower() in {'.dae', '.stl', '.obj'})
+    diag['visual_folder_exists'] = True
+    diag['mesh_files_found'] = len(mesh_files)
+    expected = ['base.dae','shoulder.dae','upperarm.dae','forearm.dae','wrist1.dae','wrist2.dae','wrist3.dae']
+    missing = [name for name in expected if not (visual_folder / name).exists()]
+    diag['missing_expected_files'] = missing
+    if missing:
+        diag['status'] = 'UR5 expected visual mesh files missing'
+    elif generated_count <= 0:
+        diag['status'] = 'UR5 mesh files found but visual items were not generated'
+    else:
+        diag['status'] = 'resolved'
+    return diag
+
+def _log_ur5_visual_mesh_diagnostics(scene_name, diag):
+    print(f"[scene_visual_mesh_index] {scene_name}: UR5 visual source: {diag.get('source')}")
+    print(f"[scene_visual_mesh_index] {scene_name}: UR5 visual mesh files found: {diag.get('mesh_files_found', 0)}")
+    print(f"[scene_visual_mesh_index] {scene_name}: UR5 visual mesh items generated: {diag.get('mesh_items_generated', 0)}")
+    print(f"[scene_visual_mesh_index] {scene_name}: UR5 static fallback items generated: {diag.get('static_fallback_items_generated', 0)}")
+    if diag.get('status') != 'resolved':
+        print(f"[scene_visual_mesh_index] {scene_name}: UR5 visual diagnostic: {diag.get('status')}")
+        if diag.get('alternate_visual_folders'):
+            print(f"[scene_visual_mesh_index] {scene_name}: UR5 alternate visual folders detected: {', '.join(diag.get('alternate_visual_folders') or [])}")
+
 def append_static_ur5_mesh_visuals(items, package_map):
     """Emit Scene3D UR5 mesh visuals when package://ur_description meshes resolve.
 
@@ -944,6 +998,14 @@ def main():
         if mode in {'xacro_lite_expanded', 'xacro_lite_fallback', 'best_effort_recursive', 'best_effort', 'raw_fallback', 'raw'} and fallback_ur_robot_unresolved:
             static_robot_mesh_count = append_static_ur5_mesh_visuals(items, package_map)
             static_robot_fallback_count = append_static_robot_primitive_fallbacks(items, xml_text, fallback_reason, mode, source_xacro_text)
+        ur5_visual_diagnostics = _ur5_visual_mesh_diagnostics(
+            package_map,
+            package_diagnostics,
+            sum(1 for i in items if str(i.get('package_uri') or '').startswith(UR5_VISUAL_MESH_URI_PREFIX)),
+            static_robot_fallback_count,
+        )
+        if scene_dir.name.startswith('ur5_') or _contains_unresolved_ur_robot(source_xacro_text):
+            _log_ur5_visual_mesh_diagnostics(scene_dir.name, ur5_visual_diagnostics)
         static_parent_resolved_count = resolve_static_tool0_children(items)
         unresolved=[i for i in items if any(contains_placeholder(i.get(k,'')) for k in ('id','link','parent_link'))]
         mesh_format_counts=dict(collections.Counter((Path(i.get('resolved_source_path') or i.get('source_path') or '').suffix.lower() or 'unknown') for i in items if i.get('geometry_type')=='mesh'))
@@ -964,7 +1026,7 @@ def main():
         safe=is_preview_fully_healthy(items, unresolved, mode, fallback_reason, renderable_mesh_count)
         source_mtime=urdf_path.stat().st_mtime if urdf_path.exists() else None
         has_transform_collapse_warning=bool(items) and len({tuple((i.get('pose') or {}).get('xyz') or []) for i in items}) <= 1 and len(items) > 1
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'ur5_visual_mesh_diagnostics':_portable_source_metadata(ur5_visual_diagnostics),'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True)

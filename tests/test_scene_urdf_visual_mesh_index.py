@@ -112,6 +112,45 @@ def test_discover_package_map_preserves_repo_local_asset_precedence(monkeypatch,
     assert resolved and resolved[0]['source_tier'] == 'repo_assets'
 
 
+def test_discover_package_map_prefers_repo_ur_description_mesh_assets(monkeypatch, tmp_path):
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    repo_root = tmp_path / 'repo'
+    ur_pkg = repo_root / 'assets' / 'robots' / 'universal_robot' / 'ur_description'
+    visual_dir = ur_pkg / 'meshes' / 'ur5' / 'visual'
+    visual_dir.mkdir(parents=True)
+    _write_package_xml(ur_pkg, 'ur_description')
+    for mesh_name in ['base', 'shoulder', 'upperarm', 'forearm', 'wrist1', 'wrist2', 'wrist3']:
+        (visual_dir / f'{mesh_name}.dae').write_text('', encoding='utf-8')
+
+    installed_pkg = tmp_path / 'install' / 'share' / 'ur_description'
+    _write_package_xml(installed_pkg, 'ur_description')
+
+    def fake_resolve(package_name, workspace_root=None):
+        if package_name == 'ur_description':
+            return installed_pkg, 'ament_index', {'package_name': package_name, 'attempts': [{'source_tier': 'ament_index', 'status': 'resolved'}]}
+        return None, '', {'package_name': package_name, 'attempts': []}
+
+    monkeypatch.setattr(mesh_index, 'ROOT', repo_root)
+    monkeypatch.setattr(mesh_index, 'resolve_ros_package_share', fake_resolve)
+
+    package_map, diagnostics = mesh_index.discover_package_map(
+        tmp_path / 'scene',
+        package_names=['ur_description'],
+    )
+    items = []
+    added = mesh_index.append_static_ur5_mesh_visuals(items, package_map)
+    ur5_diag = mesh_index._ur5_visual_mesh_diagnostics(package_map, diagnostics, added, 0)
+
+    assert package_map['ur_description'] == ur_pkg
+    assert added == 7
+    assert ur5_diag['source'] == 'repo_assets/ur_description'
+    assert ur5_diag['mesh_files_found'] == 7
+    assert ur5_diag['static_fallback_items_generated'] == 0
+    assert all(item['transform_status'] == 'static_mesh_resolved' for item in items)
+    assert all(item['package_uri'].startswith('package://ur_description/meshes/ur5/visual/') for item in items)
+
+
 def test_discover_package_map_resolves_referenced_packages_without_scanned_package_xml(monkeypatch, tmp_path):
     import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
 
