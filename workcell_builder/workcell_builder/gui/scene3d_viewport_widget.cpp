@@ -829,15 +829,20 @@ bool item_identifies_realsense_d435(const ScenePreviewWidget::PreviewItem & it, 
                             it.source_path + QStringLiteral("|") + it.package_uri + QStringLiteral("|") +
                             it.resolved_source_path_original).toLower();
   const QString id_mix = normalized_token(it.id + QStringLiteral("|") + it.display_name + QStringLiteral("|") +
-                                          it.camera_id + QStringLiteral("|") + it.role + QStringLiteral("|") + it.category);
+                                          it.detection_label + QStringLiteral("|") + it.camera_id + QStringLiteral("|") +
+                                          it.role + QStringLiteral("|") + it.category + QStringLiteral("|") +
+                                          it.metadata_tags + QStringLiteral("|") + it.mesh_type + QStringLiteral("|") +
+                                          it.material_name);
   return path_mix.contains(QStringLiteral("realsense2_description/meshes/d435.dae")) ||
          path_mix.contains(QStringLiteral("realsense2_description\\meshes\\d435.dae")) ||
+         path_mix.contains(QStringLiteral("realsense2_description/meshes/d435i.dae")) ||
+         path_mix.contains(QStringLiteral("realsense2_description\\meshes\\d435i.dae")) ||
          id_mix.contains(QStringLiteral("d435i")) || id_mix.contains(QStringLiteral("d435"));
 }
 
 bool item_should_use_realsense_visual_surrogate(const ScenePreviewWidget::PreviewItem & it, const QString & mesh_source = QString())
 {
-  return classify_item_role(it) == NormalizedRole::Camera || item_identifies_realsense_d435(it, mesh_source);
+  return item_identifies_realsense_d435(it, mesh_source);
 }
 
 bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it);
@@ -3115,7 +3120,11 @@ bool Scene3DViewportWidget::draw_clean_semantic_primitive(const ScenePreviewWidg
       draw_place_zone(draw_item);
       return true;
     case NormalizedRole::Camera:
-      draw_camera_body_with_frustum(draw_item);
+      if (item_should_use_realsense_visual_surrogate(draw_item)) {
+        draw_realsense_d435_visual_surrogate(draw_item);
+      } else {
+        draw_camera_body_with_frustum(draw_item);
+      }
       return true;
     case NormalizedRole::SafetyZone:
       draw_safety_zone(draw_item);

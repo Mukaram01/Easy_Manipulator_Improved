@@ -68,6 +68,36 @@ TEST(Scene3DMeshPreviewRegression, KeepsVisualDifferentiationTokens)
   EXPECT_NE(src.find("Layer: %3"), std::string::npos);
 }
 
+TEST(Scene3DMeshPreviewRegression, RealSenseCameraPrimitiveUsesMeshAlignedSurrogate)
+{
+  const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/scene3d_viewport_widget.cpp");
+  ASSERT_FALSE(src.empty());
+
+  EXPECT_NE(src.find("bool item_identifies_realsense_d435"), std::string::npos);
+  EXPECT_NE(src.find("it.detection_label + QStringLiteral(\"|\") + it.camera_id"), std::string::npos);
+  EXPECT_NE(src.find("it.metadata_tags + QStringLiteral(\"|\") + it.mesh_type"), std::string::npos);
+  EXPECT_NE(src.find("return item_identifies_realsense_d435(it, mesh_source);"), std::string::npos);
+
+  const auto primitive_branch = src.find("case NormalizedRole::Camera:\n      if (item_should_use_realsense_visual_surrogate(draw_item))");
+  ASSERT_NE(primitive_branch, std::string::npos);
+  const auto surrogate_call = src.find("draw_realsense_d435_visual_surrogate(draw_item);", primitive_branch);
+  const auto generic_call = src.find("draw_camera_body_with_frustum(draw_item);", primitive_branch);
+  ASSERT_NE(surrogate_call, std::string::npos);
+  ASSERT_NE(generic_call, std::string::npos);
+  EXPECT_LT(surrogate_call, generic_call);
+
+  const auto surrogate = src.find("void Scene3DViewportWidget::draw_realsense_d435_visual_surrogate");
+  ASSERT_NE(surrogate, std::string::npos);
+  const auto generic = src.find("void Scene3DViewportWidget::draw_camera_body_with_frustum", surrogate);
+  ASSERT_NE(generic, std::string::npos);
+  const std::string body = src.substr(surrogate, generic - surrogate);
+  EXPECT_NE(body.find("glTranslated(it.x, it.y, it.z)"), std::string::npos);
+  EXPECT_NE(body.find("if (it.visual_origin_applied)"), std::string::npos);
+  EXPECT_NE(body.find("glRotated(qRadiansToDegrees(it.mesh_r)"), std::string::npos);
+  EXPECT_NE(body.find("if (it.has_origin_offset) glTranslated(it.origin_offset_x"), std::string::npos);
+  EXPECT_NE(body.find("glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z)"), std::string::npos);
+}
+
 TEST(Scene3DMeshPreviewRegression, KeepsScene3DDiagnosticsSummaryLine)
 {
   const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/mainwindow.cpp");
