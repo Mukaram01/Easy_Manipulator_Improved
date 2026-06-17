@@ -823,6 +823,23 @@ NormalizedRole classify_item_role(const ScenePreviewWidget::PreviewItem & it)
 }
 
 
+bool item_identifies_realsense_d435(const ScenePreviewWidget::PreviewItem & it, const QString & mesh_source = QString())
+{
+  const QString path_mix = (mesh_source + QStringLiteral("|") + it.mesh_path + QStringLiteral("|") +
+                            it.source_path + QStringLiteral("|") + it.package_uri + QStringLiteral("|") +
+                            it.resolved_source_path_original).toLower();
+  const QString id_mix = normalized_token(it.id + QStringLiteral("|") + it.display_name + QStringLiteral("|") +
+                                          it.camera_id + QStringLiteral("|") + it.role + QStringLiteral("|") + it.category);
+  return path_mix.contains(QStringLiteral("realsense2_description/meshes/d435.dae")) ||
+         path_mix.contains(QStringLiteral("realsense2_description\\meshes\\d435.dae")) ||
+         id_mix.contains(QStringLiteral("d435i")) || id_mix.contains(QStringLiteral("d435"));
+}
+
+bool item_should_use_realsense_visual_surrogate(const ScenePreviewWidget::PreviewItem & it, const QString & mesh_source = QString())
+{
+  return classify_item_role(it) == NormalizedRole::Camera || item_identifies_realsense_d435(it, mesh_source);
+}
+
 bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it);
 
 
@@ -2326,7 +2343,15 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
   if (!entry.valid) {
     entry.oversized = parse_error.contains("exceeds limit");
     if (entry.failure_reason_code.trimmed().isEmpty()) entry.failure_reason_code = mesh_parse_failure_code(parse_error);
-    entry.warning = QStringLiteral("%1 reason_code=%2 (%3)").arg(entry.oversized ? QStringLiteral("mesh preview triangle budget exceeded; metadata retained") : QStringLiteral("mesh invalid"), entry.failure_reason_code, parse_error);
+    entry.warning = QStringLiteral("%1 reason_code=%2 (%3)").arg(entry.oversized ? QStringLiteral("mesh oversized") : QStringLiteral("mesh invalid"), entry.failure_reason_code, parse_error);
+    const bool dae_triangulation_unavailable = ext == QStringLiteral("dae") &&
+      (entry.failure_reason_code == QStringLiteral("zero_triangle_mesh") || parse_error.contains(QStringLiteral("triang"), Qt::CaseInsensitive) ||
+       parse_error.contains(QStringLiteral("contains no triangles"), Qt::CaseInsensitive));
+    if (!entry.oversized && dae_triangulation_unavailable && item_should_use_realsense_visual_surrogate(item, path)) {
+      entry.visual_surrogate_available = true;
+      entry.visual_surrogate_type = QStringLiteral("realsense_d435_visual_surrogate");
+      entry.visual_surrogate_reason = QStringLiteral("visual_surrogate: deterministic RealSense D435/D435i semantic preview; real DAE unavailable or zero-triangle after triangulation");
+    }
   } else {
     entry.failure_reason_code.clear();
   }
@@ -2445,6 +2470,10 @@ QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
     row["local_min"] = QJsonArray{e.local_min.x(), e.local_min.y(), e.local_min.z()};
     row["local_max"] = QJsonArray{e.local_max.x(), e.local_max.y(), e.local_max.z()};
     row["span"] = QJsonArray{e.local_span.x(), e.local_span.y(), e.local_span.z()};
+    row["rendering_classification"] = e.visual_surrogate_available ? QStringLiteral("visual_surrogate") : (e.valid ? QStringLiteral("mesh") : QStringLiteral("missing_geometry"));
+    row["visual_surrogate_available"] = e.visual_surrogate_available;
+    row["visual_surrogate_type"] = e.visual_surrogate_type;
+    row["visual_surrogate_reason"] = e.visual_surrogate_reason;
     row["dae_unit_meter"] = e.dae_unit_meter;
     row["dae_has_pre_unit_bounds"] = e.dae_has_pre_unit_bounds;
     row["dae_pre_unit_min"] = QJsonArray{e.dae_pre_unit_min.x(), e.dae_pre_unit_min.y(), e.dae_pre_unit_min.z()};
@@ -2522,12 +2551,16 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
     warn_for_mode(reason, mesh_source);
     return false;
   };
-  QString final_span_reason;
-  if (entry.has_bounds && !validate_mesh_final_span(it, entry, mesh_source, final_span_reason)) {
-    return reject(QStringLiteral("unreasonable_bounds_final_span"), final_span_reason);
-  }
-
-  if (!entry.loaded || !entry.valid || entry.mesh.triangles.isEmpty()) {
+  if (!entry.loaded || entry.oversized || !entry.valid || entry.mesh.triangles.isEmpty()) {
+    if (entry.visual_surrogate_available && item_should_use_realsense_visual_surrogate(it, mesh_source)) {
+      const QString reason = QStringLiteral("visual_surrogate: %1 source_mesh_status=%2 warning=%3")
+        .arg(entry.visual_surrogate_type,
+             entry.failure_reason_code.trimmed().isEmpty() ? QStringLiteral("zero_triangle_mesh") : entry.failure_reason_code,
+             entry.warning);
+      remember_mesh_rejection_reason(it.id, reason);
+      draw_realsense_d435_visual_surrogate(it);
+      return true;
+    }
     if (!entry.loaded) return reject(QStringLiteral("parse_failed"));
     if (entry.oversized) {
       warn_for_mode(QStringLiteral("triangle_budget_exceeded_preview_surrogate: %1").arg(entry.warning), mesh_source);
@@ -2697,6 +2730,60 @@ void Scene3DViewportWidget::draw_conveyor(const ScenePreviewWidget::PreviewItem 
   glVertex3f(end_x, top_y, mid_z); glVertex3f(end_x - arrow, top_y, mid_z - arrow * 0.65);
   glVertex3f(end_x, top_y, mid_z); glVertex3f(end_x - arrow, top_y, mid_z + arrow * 0.65);
   glEnd();
+}
+
+void Scene3DViewportWidget::draw_realsense_d435_visual_surrogate(const ScenePreviewWidget::PreviewItem & it)
+{
+  // Preview-safe visual_surrogate for RealSense D435/D435i meshes whose DAE cannot be triangulated.
+  // It uses the same pose, visual-origin, mesh RPY, mesh scale, and origin-offset placement path as real meshes.
+  glPushMatrix();
+  glTranslated(it.x, it.y, it.z);
+  glRotated(qRadiansToDegrees(it.roll), 1.0, 0.0, 0.0);
+  glRotated(qRadiansToDegrees(it.pitch), 0.0, 1.0, 0.0);
+  glRotated(qRadiansToDegrees(it.yaw), 0.0, 0.0, 1.0);
+  if (it.visual_origin_applied) {
+    glTranslated(it.visual_origin_x, it.visual_origin_y, it.visual_origin_z);
+    glRotated(qRadiansToDegrees(it.visual_origin_roll), 1.0, 0.0, 0.0);
+    glRotated(qRadiansToDegrees(it.visual_origin_pitch), 0.0, 1.0, 0.0);
+    glRotated(qRadiansToDegrees(it.visual_origin_yaw), 0.0, 0.0, 1.0);
+  }
+  glRotated(qRadiansToDegrees(it.mesh_r), 1.0, 0.0, 0.0);
+  glRotated(qRadiansToDegrees(it.mesh_p), 0.0, 1.0, 0.0);
+  glRotated(qRadiansToDegrees(it.mesh_y), 0.0, 0.0, 1.0);
+  if (it.has_origin_offset) glTranslated(it.origin_offset_x, it.origin_offset_y, it.origin_offset_z);
+  glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
+
+  const QColor body(31, 41, 55, 232);
+  const QColor face(56, 189, 248, 220);
+  const QColor glass(14, 165, 233, 220);
+  const QColor line(224, 242, 254, 185);
+  const double w = 0.090;
+  const double h = 0.025;
+  const double d = 0.025;
+  draw_box(-w * 0.5, -h * 0.5, -d * 0.5, w, h, d, body, false);
+  draw_box_outline(-w * 0.5, -h * 0.5, -d * 0.5, w, h, d, line, 1.0f);
+
+  // Front accent strip and three imager/lens cues on the camera face.
+  draw_box(-w * 0.44, -h * 0.55, d * 0.50, w * 0.88, h * 0.10, 0.004, face, false);
+  const double face_z = d * 0.58;
+  draw_sphere(-0.028, 0.002, face_z, 0.0075, glass, false, 18, 8);
+  draw_sphere(0.000, 0.002, face_z, 0.0060, QColor(15, 23, 42, 240), false, 18, 8);
+  draw_sphere(0.028, 0.002, face_z, 0.0075, glass, false, 18, 8);
+
+  // Small mount cue below the body.
+  draw_box(-0.018, -h * 0.78, -0.006, 0.036, 0.008, 0.012, QColor(71, 85, 105, 220), false);
+  draw_box_outline(-0.018, -h * 0.78, -0.006, 0.036, 0.008, 0.012, QColor(203, 213, 225, 145), 0.8f);
+
+  // Deterministic label tick: labels are also supplied by the viewport 2D label pass when enabled.
+  glColor4f(line.redF(), line.greenF(), line.blueF(), 0.92f);
+  glLineWidth(1.2f);
+  glBegin(GL_LINES);
+  glVertex3f(-0.035f, 0.023f, 0.0f); glVertex3f(0.035f, 0.023f, 0.0f);
+  glVertex3f(-0.035f, 0.023f, 0.0f); glVertex3f(-0.028f, 0.030f, 0.0f);
+  glVertex3f(0.035f, 0.023f, 0.0f); glVertex3f(0.028f, 0.030f, 0.0f);
+  glEnd();
+
+  glPopMatrix();
 }
 
 void Scene3DViewportWidget::draw_camera_body_with_frustum(const ScenePreviewWidget::PreviewItem & it)

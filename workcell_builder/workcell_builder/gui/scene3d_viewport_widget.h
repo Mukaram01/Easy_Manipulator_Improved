@@ -203,6 +203,7 @@ private:
   void draw_table_slab(const ScenePreviewWidget::PreviewItem & it);
   void draw_conveyor(const ScenePreviewWidget::PreviewItem & it);
   void draw_camera_body_with_frustum(const ScenePreviewWidget::PreviewItem & it);
+  void draw_realsense_d435_visual_surrogate(const ScenePreviewWidget::PreviewItem & it);
   void draw_pick_zone(const ScenePreviewWidget::PreviewItem & it);
   void draw_place_zone(const ScenePreviewWidget::PreviewItem & it);
   void draw_place_target_bin(const ScenePreviewWidget::PreviewItem & it);
@@ -255,6 +256,9 @@ private:
     QVector3D local_span;
     double dae_unit_meter{ 1.0 };
     bool dae_has_pre_unit_bounds{ false };
+    bool visual_surrogate_available{ false };
+    QString visual_surrogate_type;
+    QString visual_surrogate_reason;
     QVector3D dae_pre_unit_min;
     QVector3D dae_pre_unit_max;
     QVector3D dae_pre_unit_span;
