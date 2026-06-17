@@ -1258,7 +1258,7 @@ bool MainWindow::load_scene_for_scene3d_smoke(const QString & scene_name, const 
       if (viewport->objectName().trimmed().isEmpty()) viewport->setObjectName("scene3dViewportWidget");
       viewport->show();
       viewport->resize(qMax(viewport->width(), 400), qMax(viewport->height(), 300));
-      viewport->fit_scene();
+      viewport->fit_product_view();
       viewport->update();
       viewport->repaint();
     }
