@@ -8,7 +8,16 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENES_ROOT = ROOT / "scenes"
-EXTRACTOR_VERSION = "2.9"
+EXTRACTOR_VERSION = "2.10"
+UR5_INITIAL_POSITIONS_PATH = ROOT / "assets/robots/universal_robot/ur5_moveit_config/config/initial_positions.yaml"
+UR5_INITIAL_JOINT_DEFAULTS = {
+    "shoulder_pan_joint": 0.0,
+    "shoulder_lift_joint": 0.0,
+    "elbow_joint": 0.0,
+    "wrist_1_joint": 0.0,
+    "wrist_2_joint": 0.0,
+    "wrist_3_joint": 0.0,
+}
 UR5_VISUAL_MESH_URI_PREFIX = "package://ur_description/meshes/ur5/visual/"
 UR5_ARM_LINK_ALLOWLIST = {
     "base_link_inertia",
@@ -162,6 +171,25 @@ def parse_vec(text,n,default=0.0):
 
 def identity_tf(): return [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]]
 def matmul4(a,b): return [[sum(a[r][k]*b[k][c] for k in range(4)) for c in range(4)] for r in range(4)]
+def tf_from_axis_angle(axis, angle):
+    ax = parse_vec(" ".join(str(v) for v in (axis or [])), 3, 0.0) if not isinstance(axis, str) else parse_vec(axis, 3, 0.0)
+    x, y, z = (ax + [0.0, 0.0, 0.0])[:3]
+    norm = math.sqrt(x*x + y*y + z*z)
+    if norm <= 1e-12:
+        x, y, z = 1.0, 0.0, 0.0
+    else:
+        x, y, z = x/norm, y/norm, z/norm
+    c = math.cos(float(angle or 0.0)); s = math.sin(float(angle or 0.0)); t = 1.0 - c
+    out = identity_tf()
+    rot = [
+        [t*x*x + c, t*x*y - s*z, t*x*z + s*y],
+        [t*x*y + s*z, t*y*y + c, t*y*z - s*x],
+        [t*x*z - s*y, t*y*z + s*x, t*z*z + c],
+    ]
+    for r in range(3):
+        for col in range(3): out[r][col] = rot[r][col]
+    return out
+
 def tf_from_xyz_rpy(xyz,rpy):
     x,y,z=(xyz+[0,0,0])[:3]; rr,pp,yy=(rpy+[0,0,0])[:3]
     cr,sr=math.cos(rr),math.sin(rr); cp,sp=math.cos(pp),math.sin(pp); cy,sy=math.cos(yy),math.sin(yy)
@@ -975,13 +1003,33 @@ def resolve_mesh_uri(uri, package_map):
         p=package_map[pkg]/tail; return str(p), ('file_not_found' if not p.exists() else '')
     p=Path(u); return str(p), ('file_not_found' if not p.exists() else '')
 
+
+def read_ur5_initial_joint_positions(path=UR5_INITIAL_POSITIONS_PATH):
+    defaults = dict(UR5_INITIAL_JOINT_DEFAULTS)
+    data = read_yaml(path)
+    positions = data.get('initial_positions') if isinstance(data, dict) else None
+    if not isinstance(positions, dict):
+        print('[scene_visual_mesh_index] UR5 initial joint source: default')
+        return defaults, 'default'
+    resolved = dict(defaults)
+    for name, value in positions.items():
+        try:
+            resolved[str(name)] = float(value)
+        except Exception:
+            pass
+    source = _repo_relative_path(path)
+    print(f'[scene_visual_mesh_index] UR5 initial joint source: {source}')
+    return resolved, source
+
 def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
     root=ET.fromstring(xml_text); items=[]; idx=0
+    initial_joint_positions, initial_joint_source = read_ur5_initial_joint_positions()
     diagnostics={
         'root_links': [],
         'visual_parent_link_counts': {},
         'missing_parent_links': [],
         'transform_chain_diagnostics': [],
+        'initial_joint_source': initial_joint_source,
     }
     global_materials={}
     for mat in [m for m in list(root) if tag_name(m)=='material']:
@@ -995,9 +1043,14 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
         if tag_name(j)!='joint': continue
         parent=next((c for c in list(j) if tag_name(c)=='parent'),None); child=next((c for c in list(j) if tag_name(c)=='child'),None)
         origin=next((c for c in list(j) if tag_name(c)=='origin'),None)
+        axis=next((c for c in list(j) if tag_name(c)=='axis'),None)
         if parent is None or child is None: continue
         xyz=parse_vec(origin.attrib.get('xyz') if origin is not None else '',3,0.0); rpy=parse_vec(origin.attrib.get('rpy') if origin is not None else '',3,0.0)
-        joints.append({'name':j.attrib.get('name',''),'type':j.attrib.get('type','fixed'),'parent':parent.attrib.get('link',''),'child':child.attrib.get('link',''),'origin_xyz':xyz,'origin_rpy':rpy})
+        axis_xyz=parse_vec(axis.attrib.get('xyz') if axis is not None else '1 0 0',3,0.0)
+        joint_name=j.attrib.get('name','')
+        joint_type=j.attrib.get('type','fixed')
+        joint_value=0.0 if joint_type == 'fixed' else float(initial_joint_positions.get(joint_name, 0.0))
+        joints.append({'name':joint_name,'type':joint_type,'parent':parent.attrib.get('link',''),'child':child.attrib.get('link',''),'origin_xyz':xyz,'origin_rpy':rpy,'axis':axis_xyz,'value':joint_value})
     child_to_joint={j['child']:j for j in joints if j['child']}
     roots=sorted(n for n in links.keys() if n and n not in child_to_joint)
     diagnostics['root_links'] = roots
@@ -1007,32 +1060,54 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
     cache={}
     def link_world_tf(link_name):
         if link_name in cache: return cache[link_name]
-        if link_name not in links: return None,'missing_link',[]
-        chain=[]; seen=set(); tf=identity_tf(); cur=link_name; unresolved=''
-        while cur in child_to_joint:
-            if cur in seen: unresolved='cycle'; break
-            seen.add(cur); j=child_to_joint[cur]
-            chain.append(f"{j['parent']}->{cur}({j['type']})")
-            tf=matmul4(tf_from_xyz_rpy(j['origin_xyz'],j['origin_rpy']),tf)
-            cur=j['parent']
-            if not cur or cur not in links: unresolved=f'missing_parent:{cur}'; break
-        if not unresolved and cur not in roots and cur in child_to_joint: unresolved='unresolved_chain'
-        status='resolved' if not unresolved else 'unresolved'
+        if link_name not in links: return None,'missing_link',[],link_name,'missing_link',None
+        if link_name in roots:
+            result=(identity_tf(),'resolved',[],link_name,'',None)
+            cache[link_name]=result
+            return result
+        seen=set()
+        def resolve(cur):
+            if cur in cache: return cache[cur]
+            if cur in seen:
+                return identity_tf(),'unresolved',[],cur,'cycle',None
+            seen.add(cur)
+            j=child_to_joint.get(cur)
+            if not j:
+                unresolved='' if cur in roots else 'unresolved_chain'
+                return identity_tf(),('resolved' if not unresolved else 'unresolved'),[],cur,unresolved,None
+            parent_tf,parent_status,parent_chain,root_link,unresolved,_ = resolve(j['parent'])
+            joint_origin=tf_from_xyz_rpy(j['origin_xyz'],j['origin_rpy'])
+            if j['type'] == 'fixed':
+                joint_tf = joint_origin
+            else:
+                joint_tf = matmul4(joint_origin, tf_from_axis_angle(j['axis'], j['value']))
+            tf=matmul4(parent_tf,joint_tf)
+            chain=[*parent_chain, f"{j['parent']}->{cur}({j['type']})"]
+            status=parent_status
+            if j['parent'] not in links:
+                unresolved=f"missing_parent:{j['parent']}"
+                status='unresolved'
+            elif unresolved:
+                status='unresolved'
+            result=(tf,status,chain,root_link,unresolved,j)
+            cache[cur]=result
+            return result
+        result=resolve(link_name)
+        tf,status,chain,cur,unresolved,joint=result
         if unresolved:
             diagnostic={
                 'link': link_name,
                 'status': status,
                 'terminal_link': cur or '',
                 'unresolved_reason': unresolved,
-                'chain': list(reversed(chain)),
+                'chain': chain,
             }
             if unresolved.startswith('missing_parent:'):
                 missing_name=unresolved.split(':',1)[1]
                 diagnostic['missing_parent_link'] = missing_name
-                diagnostic['missing_parent_joint'] = j.get('name','') if 'j' in locals() else ''
+                diagnostic['missing_parent_joint'] = joint.get('name','') if joint else ''
                 missing_parent_names[missing_name] += 1
             chain_diagnostics_by_link[link_name]=diagnostic
-        result=(tf,status,list(reversed(chain)),cur,unresolved)
         cache[link_name]=result
         return result
     for lname,link in links.items():
@@ -1042,7 +1117,7 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
             vname=visual.attrib.get('name',f'visual_{idx}'); item_id=f'urdf_visual_{idx}_{sanitize(lname)}_{sanitize(vname)}'
             origin=next((c for c in list(visual) if tag_name(c)=='origin'), None)
             vxyz=parse_vec((origin.attrib.get('xyz') if origin is not None else ''),3,0.0); vrpy=parse_vec((origin.attrib.get('rpy') if origin is not None else ''),3,0.0)
-            link_tf, link_status, chain, root_link, unresolved = link_world_tf(lname)
+            link_tf, link_status, chain, root_link, unresolved, joint_meta = link_world_tf(lname)
             if link_tf is None: link_tf=identity_tf()
             visual_tf=tf_from_xyz_rpy(vxyz, vrpy)
             link_world_pose=xyz_rpy_from_tf(link_tf)
@@ -1058,8 +1133,11 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
                 elif material['name'] in global_materials:
                     material['color']=global_materials[material['name']]
             visual_parent_counts[root_link or ''] += 1
-            parent_joint = child_to_joint.get(lname, {})
-            common={'id':item_id,'link':lname,'visual':vname,'parent_link':root_link or '','joint_parent_link':parent_joint.get('parent',''),'joint_name':parent_joint.get('name',''),'joint_value':0.0,'pose':pose,'visual_origin':{'xyz':vxyz,'rpy':vrpy},'material':material,'link_transform_status':link_status,'transform_status':link_status,'transform_chain':chain,'render_expected':True}
+            link_pose=xyz_rpy_from_tf(link_tf)
+            joint_name=(joint_meta or {}).get('name','')
+            joint_value=(joint_meta or {}).get('value',0.0)
+            joint_axis=(joint_meta or {}).get('axis',[1.0,0.0,0.0])
+            common={'id':item_id,'link':lname,'visual':vname,'parent_link':root_link or '','pose':pose,'chain_pose':pose,'world_pose':link_pose,'visual_origin':{'xyz':vxyz,'rpy':vrpy},'joint_name':joint_name,'joint_value':joint_value,'joint_axis':joint_axis,'material':material,'link_transform_status':link_status,'transform_status':link_status,'transform_chain':chain,'render_expected':True}
             mesh=next((c for c in list(geom) if tag_name(c)=='mesh'),None)
             box=next((c for c in list(geom) if tag_name(c)=='box'),None)
             cyl=next((c for c in list(geom) if tag_name(c)=='cylinder'),None)
@@ -1206,7 +1284,7 @@ def main():
         safe=is_preview_fully_healthy(items, unresolved, mode, fallback_reason, renderable_mesh_count)
         source_mtime=urdf_path.stat().st_mtime if urdf_path.exists() else None
         has_transform_collapse_warning=bool(items) and len({tuple((i.get('pose') or {}).get('xyz') or []) for i in items}) <= 1 and len(items) > 1
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'diagnostics':{'ur5_transform_table':_portable_source_metadata(ur5_transform_table)},'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'ur5_visual_mesh_diagnostics':_portable_source_metadata(ur5_visual_diagnostics),'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'initial_joint_source':urdf_diagnostics.get('initial_joint_source', ''),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'ur5_visual_mesh_diagnostics':_portable_source_metadata(ur5_visual_diagnostics),'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True)
