@@ -18,6 +18,15 @@ UR5_INITIAL_JOINT_DEFAULTS = {
     "wrist_2_joint": 0.0,
     "wrist_3_joint": 0.0,
 }
+UR5_PREVIEW_HOME_JOINT_POSE = {
+    "shoulder_pan_joint": 0.0,
+    "shoulder_lift_joint": -1.5708,
+    "elbow_joint": 1.5708,
+    "wrist_1_joint": -1.5708,
+    "wrist_2_joint": -1.5708,
+    "wrist_3_joint": 0.0,
+}
+UR5_PREVIEW_ALL_ZERO_EPSILON = 1e-6
 UR5_VISUAL_MESH_URI_PREFIX = "package://ur_description/meshes/ur5/visual/"
 UR5_ARM_LINK_ALLOWLIST = {
     "base_link_inertia",
@@ -1006,11 +1015,12 @@ def resolve_mesh_uri(uri, package_map):
 
 def read_ur5_initial_joint_positions(path=UR5_INITIAL_POSITIONS_PATH):
     defaults = dict(UR5_INITIAL_JOINT_DEFAULTS)
+    preview_pose_metadata = {}
     data = read_yaml(path)
     positions = data.get('initial_positions') if isinstance(data, dict) else None
     if not isinstance(positions, dict):
         print('[scene_visual_mesh_index] UR5 initial joint source: default')
-        return defaults, 'default'
+        return defaults, 'default', preview_pose_metadata
     resolved = dict(defaults)
     for name, value in positions.items():
         try:
@@ -1018,18 +1028,29 @@ def read_ur5_initial_joint_positions(path=UR5_INITIAL_POSITIONS_PATH):
         except Exception:
             pass
     source = _repo_relative_path(path)
-    print(f'[scene_visual_mesh_index] UR5 initial joint source: {source}')
-    return resolved, source
+    print(f'[scene_visual_mesh_index] UR5 initial joint source: {path.name}')
+    if all(abs(float(resolved.get(name, 0.0))) <= UR5_PREVIEW_ALL_ZERO_EPSILON for name in UR5_INITIAL_JOINT_DEFAULTS):
+        resolved = dict(UR5_PREVIEW_HOME_JOINT_POSE)
+        preview_pose_metadata = {
+            'source': 'workcell_preview_home_pose_all_zero_initial_positions',
+            'joints': dict(resolved),
+        }
+        print('[scene_visual_mesh_index] UR5 initial joint values were all zero; using Workcell Studio preview home pose')
+        print('[scene_visual_mesh_index] UR5 preview joint values:')
+        for name in UR5_INITIAL_JOINT_DEFAULTS:
+            print(f'[scene_visual_mesh_index]   {name}: {resolved[name]}')
+    return resolved, source, preview_pose_metadata
 
 def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
     root=ET.fromstring(xml_text); items=[]; idx=0
-    initial_joint_positions, initial_joint_source = read_ur5_initial_joint_positions()
+    initial_joint_positions, initial_joint_source, ur5_preview_joint_pose = read_ur5_initial_joint_positions()
     diagnostics={
         'root_links': [],
         'visual_parent_link_counts': {},
         'missing_parent_links': [],
         'transform_chain_diagnostics': [],
         'initial_joint_source': initial_joint_source,
+        'ur5_preview_joint_pose': ur5_preview_joint_pose,
     }
     global_materials={}
     for mat in [m for m in list(root) if tag_name(m)=='material']:
@@ -1284,7 +1305,7 @@ def main():
         safe=is_preview_fully_healthy(items, unresolved, mode, fallback_reason, renderable_mesh_count)
         source_mtime=urdf_path.stat().st_mtime if urdf_path.exists() else None
         has_transform_collapse_warning=bool(items) and len({tuple((i.get('pose') or {}).get('xyz') or []) for i in items}) <= 1 and len(items) > 1
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'initial_joint_source':urdf_diagnostics.get('initial_joint_source', ''),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'ur5_visual_mesh_diagnostics':_portable_source_metadata(ur5_visual_diagnostics),'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'initial_joint_source':urdf_diagnostics.get('initial_joint_source', ''),'ur5_preview_joint_pose':urdf_diagnostics.get('ur5_preview_joint_pose', {}),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'ur5_visual_mesh_diagnostics':_portable_source_metadata(ur5_visual_diagnostics),'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True)
