@@ -7341,6 +7341,24 @@ void MainWindow::populate_scene_hierarchy()
   QVector<ScenePreviewWidget::PreviewItem> preview_items;
   int preview_warning_count = 0;
   QStringList preview_warning_details;
+  const fs::path urdf_visual_index = d / "generated" / "scene_visual_mesh_index.json";
+
+  bool accepted_safe_visual_mesh_index_has_items = false;
+  if (fs::exists(urdf_visual_index)) {
+    try {
+      const YAML::Node existing_index = YAML::LoadFile(urdf_visual_index.string());
+      const bool safe_for_preview = workcell_builder::yaml_map_key(existing_index, "safe_for_preview").as<bool>(false);
+      const QString index_scene_name = QString::fromStdString(
+        workcell_builder::yaml_map_value_or_empty(existing_index, "scene_name")).trimmed();
+      const YAML::Node visual_items = workcell_builder::yaml_map_key(existing_index, "visual_items");
+      accepted_safe_visual_mesh_index_has_items =
+        safe_for_preview &&
+        (index_scene_name.isEmpty() || index_scene_name == QString::fromStdString(d.filename().string())) &&
+        visual_items && visual_items.IsSequence() && visual_items.size() > 0;
+    } catch (...) {
+      accepted_safe_visual_mesh_index_has_items = false;
+    }
+  }
 
   auto status_for_item = [&](const workcell_builder::WorkcellStudioCanvasItem & item) {
     const QString id = QString::fromStdString(item.id);
@@ -7517,6 +7535,11 @@ void MainWindow::populate_scene_hierarchy()
     p.origin_offset_z = item.origin_offset_z;
     p.mesh_available = item.mesh_available;
     p.mesh_load_warning = QString::fromStdString(item.mesh_load_warning);
+    if (accepted_safe_visual_mesh_index_has_items &&
+        item.provenance == workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview &&
+        p.mesh_load_warning == QStringLiteral("mesh metadata missing or legacy; using primitive preview")) {
+      p.mesh_load_warning.clear();
+    }
     p.locked = item.locked;
     p.camera_id = QString::fromStdString(item.camera_id);
     p.frame_id = QString::fromStdString(item.frame_id);
@@ -7555,10 +7578,16 @@ void MainWindow::populate_scene_hierarchy()
     }
 
     if (!item.warnings.empty()) {
-      ++preview_warning_count;
       const QString warning_text = QString::fromStdString(item.warnings.front());
-      preview_warning_details << QString("%1 (%2): %3").arg(p.id, p.role, warning_text);
-      append_studio_log(QString("Preview warning: %1").arg(warning_text));
+      const bool suppress_legacy_primitive_warning =
+        accepted_safe_visual_mesh_index_has_items &&
+        item.provenance == workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview &&
+        warning_text == QStringLiteral("mesh metadata missing or legacy; using primitive preview");
+      if (!suppress_legacy_primitive_warning) {
+        ++preview_warning_count;
+        preview_warning_details << QString("%1 (%2): %3").arg(p.id, p.role, warning_text);
+        append_studio_log(QString("Preview warning: %1").arg(warning_text));
+      }
     }
   }
 
@@ -7860,7 +7889,6 @@ void MainWindow::populate_scene_hierarchy()
 
   QSet<QString> preview_ids;
   for (const auto &existing : preview_items) preview_ids.insert(existing.id);
-  const fs::path urdf_visual_index = d / "generated" / "scene_visual_mesh_index.json";
   const QString scene_name = QString::fromStdString(d.filename().string());
   const QString workspace_root = detect_workspace_root();
   QString visual_index_warning_reason;
