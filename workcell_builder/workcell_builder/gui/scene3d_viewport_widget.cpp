@@ -1888,12 +1888,14 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   }
   if (item_has_valid_urdf_primitive(it)) {
     if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
-      // Primitive geometry exists but is intentionally hidden by Meshes-only mode; do not show a red missing-geometry marker.
+      // Primitive geometry exists but is intentionally hidden by Meshes-only mode; do not show a red missing-geometry marker
+      // or count an expected suppression as a generated fallback during normal product rendering.
       if (debug_overlays_mode && item_has_explicit_dimensions(it)) {
         draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, generated_primitive_fallback_outline(), 0.6f);
       }
-      ++last_render_counters.generated_fallback_count;
-      warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_PRIMITIVE_SUPPRESSED_BY_MESH_ONLY_MODE: URDF primitive available but disabled"), it.source_path);
+      if (debug_overlays_mode || qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS")) {
+        warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_PRIMITIVE_SUPPRESSED_BY_MESH_ONLY_MODE: URDF primitive available but disabled"), it.source_path);
+      }
       return false;
     }
     const QColor primitive_fill = generated_or_locked_preview ? generated_primitive_fallback_fill() : visual_color;
@@ -1918,12 +1920,14 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
         warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_RAW_GENERATED_BOUNDS_SUPPRESSED: mesh or URDF primitive source should provide geometry"), it.source_path);
         return false;
       }
-      // Semantic primitive geometry exists but is intentionally hidden by Meshes-only mode; do not show a warning marker.
+      // Semantic primitive geometry exists but is intentionally hidden by Meshes-only mode; do not show a warning marker
+      // or count an expected suppression as a generated fallback during normal product rendering.
       if (debug_overlays_mode) {
         draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, generated_primitive_fallback_outline(), 0.6f);
       }
-      ++last_render_counters.generated_fallback_count;
-      warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_PRIMITIVE_SUPPRESSED_BY_MESH_ONLY_MODE: semantic primitive dimensions available but disabled"), it.source_path);
+      if (debug_overlays_mode || qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS")) {
+        warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_PRIMITIVE_SUPPRESSED_BY_MESH_ONLY_MODE: semantic primitive dimensions available but disabled"), it.source_path);
+      }
       return false;
     }
     const QColor fallback_fill = generated_or_locked_preview ? generated_primitive_fallback_fill()
