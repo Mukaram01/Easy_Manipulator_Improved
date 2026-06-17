@@ -1238,6 +1238,7 @@ void Scene3DViewportWidget::paintGL()
   int urdf_primitive_source_count = 0;
   int urdf_primitive_rendered_count = 0;
   int primitive_fallback_count = 0;
+  int editable_primitive_count = 0;
   int placeholder_count = 0;
   int missing_geometry_count = 0;
   int wireframe_box_count = 0;
@@ -1297,9 +1298,11 @@ void Scene3DViewportWidget::paintGL()
       int item_urdf_primitive_count = 0;
       int item_missing_geometry_count = 0;
       int item_primitive_fallback_count = 0;
+      int item_editable_primitive_count = 0;
       const bool drew_physical_geometry =
         draw_truthful_item_geometry(*it, &item_placeholder_count, &item_mesh_backed_count, &item_wireframe_box_count,
-                                    &item_urdf_primitive_count, &item_missing_geometry_count, &item_primitive_fallback_count);
+                                    &item_urdf_primitive_count, &item_missing_geometry_count, &item_primitive_fallback_count,
+                                    &item_editable_primitive_count);
       if (drew_physical_geometry) ++rendered_item_count;
       if (count_in_stats) {
         placeholder_count += item_placeholder_count;
@@ -1309,9 +1312,11 @@ void Scene3DViewportWidget::paintGL()
         missing_geometry_count += item_missing_geometry_count;
         wireframe_box_count += item_wireframe_box_count;
         primitive_fallback_count += item_primitive_fallback_count;
+        editable_primitive_count += item_editable_primitive_count;
       } else {
         missing_geometry_count += item_missing_geometry_count;
         primitive_fallback_count += item_primitive_fallback_count;
+        editable_primitive_count += item_editable_primitive_count;
       }
       if (it->id == selected_id) {
         const ItemBounds bounds = item_bounds_for_role(*it);
@@ -1349,6 +1354,7 @@ void Scene3DViewportWidget::paintGL()
   last_render_counters.wireframe_fallback_count = wireframe_box_count;
   last_render_counters.primitive_fallback_rendered_count = primitive_fallback_count;
   last_render_counters.primitive_fallback_count = primitive_fallback_count;
+  last_render_counters.editable_primitive_rendered_count = editable_primitive_count;
   last_render_counters.valid_physical_fallback_count = primitive_fallback_count;
   last_render_counters.overlay_rendered_count = overlay_count;
   last_render_counters.last_paint_completed = true;
@@ -1365,6 +1371,7 @@ void Scene3DViewportWidget::paintGL()
            << "placeholder=" << placeholder_count
            << "overlay=" << overlay_count
            << "primitive_fallback_rendered_count=" << last_render_counters.primitive_fallback_rendered_count
+           << "editable_primitive_rendered_count=" << last_render_counters.editable_primitive_rendered_count
            << "mesh_rendered_count=" << last_render_counters.mesh_rendered_count
            << "mesh_surface_rendered_count=" << last_render_counters.mesh_surface_rendered_count
            << "mesh_bounds_fallback_rendered_count=" << last_render_counters.mesh_bounds_fallback_rendered_count
@@ -1581,6 +1588,7 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
   int urdf_primitive_source_count = 0;
   int urdf_primitive_rendered_count = 0;
   int primitive_fallback_count = 0;
+  int editable_primitive_count = 0;
   int placeholder_count = 0;
   int missing_geometry_count = 0;
   int generated_fallback_count = 0;
@@ -1629,21 +1637,27 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
     const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
     const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
     const bool intentional_primitive_fallback = source_layer == QStringLiteral("primitive_fallback") || visual_source == QStringLiteral("primitive_fallback");
+    const bool generated_mesh_to_primitive_fallback = generated_urdf && item_has_credible_mesh_handoff(it) && item_has_explicit_dimensions(it);
+    const bool editable_or_semantic_primitive = !intentional_primitive_fallback && !generated_mesh_to_primitive_fallback &&
+      (it.linked_to_editable_layout_state || item_is_editable_for_gizmo(it) || is_clean_semantic_primitive_role(role));
     const bool physical_mesh_source = !overlay_helper && item_has_credible_mesh_handoff(it);
     if (physical_mesh_source) {
       ++mesh_source_count;
-      if (intentional_primitive_fallback && item_has_explicit_dimensions(it)) ++primitive_fallback_count;
+      if (intentional_primitive_fallback || generated_mesh_to_primitive_fallback) ++primitive_fallback_count;
+      else if (editable_or_semantic_primitive && item_has_explicit_dimensions(it)) ++editable_primitive_count;
     } else if (!overlay_helper && generated_urdf && item_has_explicit_dimensions(it)) {
       ++urdf_primitive_source_count;
       ++urdf_primitive_rendered_count;
-      if (intentional_primitive_fallback) ++primitive_fallback_count;
+      if (intentional_primitive_fallback || generated_mesh_to_primitive_fallback) ++primitive_fallback_count;
+      else if (editable_or_semantic_primitive) ++editable_primitive_count;
       else ++wireframe_fallback_count;
     } else if (!overlay_helper && !item_has_explicit_dimensions(it)) {
       ++placeholder_count;
       ++missing_geometry_count;
       ++generated_fallback_count;
     } else if (!overlay_helper) {
-      ++wireframe_fallback_count;
+      if (editable_or_semantic_primitive) ++editable_primitive_count;
+      else ++wireframe_fallback_count;
     }
 
     const ItemBounds bounds = item_bounds_for_role(it);
@@ -1700,6 +1714,7 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
   last_render_counters.wireframe_fallback_count = wireframe_fallback_count;
   last_render_counters.primitive_fallback_rendered_count = primitive_fallback_count;
   last_render_counters.primitive_fallback_count = primitive_fallback_count;
+  last_render_counters.editable_primitive_rendered_count = editable_primitive_count;
   last_render_counters.valid_physical_fallback_count = primitive_fallback_count;
   last_render_counters.overlay_rendered_count = overlay_count;
   last_render_counters.overlay_helper_count = overlay_count;
@@ -1813,7 +1828,8 @@ bool Scene3DViewportWidget::draw_urdf_primitive_geometry(const ScenePreviewWidge
 bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget::PreviewItem & it, int * out_placeholder_count,
                                                         int * out_mesh_count, int * out_wireframe_count,
                                                         int * out_urdf_primitive_count, int * out_missing_geometry_count,
-                                                        int * out_primitive_fallback_count)
+                                                        int * out_primitive_fallback_count,
+                                                        int * out_editable_primitive_count)
 {
   const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
   const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
@@ -1821,7 +1837,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   const bool helper_overlay = is_overlay_only_item(it) || source_layer == "overlay" || visual_source == "overlay";
   if (helper_overlay) {
     if (is_clean_semantic_primitive_role(semantic_role) && draw_clean_semantic_primitive(it)) {
-      if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);
+      if (out_editable_primitive_count) ++(*out_editable_primitive_count);
       return true;
     }
     if (item_has_explicit_dimensions(it)) {
@@ -1850,7 +1866,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   }
   if (is_clean_semantic_primitive_role(semantic_role)) {
     if (draw_clean_semantic_primitive(it)) {
-      if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);
+      if (out_editable_primitive_count) ++(*out_editable_primitive_count);
       return true;
     }
     // Recognized semantic roles that still cannot be rendered remain diagnostics-only.
@@ -1894,6 +1910,8 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   if (item_has_explicit_dimensions(it)) {
     const bool intentional_primitive_fallback =
       source_layer == QStringLiteral("primitive_fallback") || visual_source == QStringLiteral("primitive_fallback");
+    const bool generated_mesh_to_primitive_fallback =
+      generated_or_locked_preview && item_has_credible_mesh_handoff(it);
     const bool raw_generated_bounds_only = is_raw_generated_bounds_only_item(it);
     if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes || raw_generated_bounds_only) {
       if (raw_generated_bounds_only) {
@@ -1918,8 +1936,12 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     if (debug_overlays_mode) {
       draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, fallback_line, fallback_line_width);
     }
-    if (intentional_primitive_fallback) {
+    if (intentional_primitive_fallback || generated_mesh_to_primitive_fallback) {
       if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);
+      return true;
+    }
+    if (editable_layout_preview) {
+      if (out_editable_primitive_count) ++(*out_editable_primitive_count);
       return true;
     }
     if (out_wireframe_count) ++(*out_wireframe_count);

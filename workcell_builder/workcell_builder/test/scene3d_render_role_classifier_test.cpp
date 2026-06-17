@@ -237,3 +237,29 @@ TEST(Scene3DRenderRoleClassifier, SemanticRolesWithoutDimensionsSuppressMissingG
   EXPECT_TRUE(Scene3DViewportWidget::should_suppress_missing_geometry_marker_for_test(object));
   EXPECT_FALSE(Scene3DViewportWidget::should_draw_as_wireframe_for_test(object, ScenePreviewWidget::MeshPreviewMode::Auto));
 }
+
+TEST(Scene3DRenderRoleClassifier, EditableLayoutPrimitivesDoNotCountAsGeneratedFallbacks)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+
+  auto editable_table = make_item("editable_table_primitive");
+  editable_table.role = "table";
+  editable_table.source_layer = "editable_layout";
+  editable_table.active_visual_source = "";
+  editable_table.linked_to_editable_layout_state = true;
+  editable_table.editable = true;
+  editable_table.locked = false;
+  editable_table.mesh_available = false;
+  editable_table.has_mesh_metadata = false;
+  editable_table.mesh_path.clear();
+
+  Scene3DViewportWidget viewport;
+  viewport.ingest_preview_items(QVector<ScenePreviewWidget::PreviewItem>{ editable_table });
+  ASSERT_TRUE(viewport.render_smoke_fallback_frame(nullptr));
+
+  const auto counters = viewport.render_debug_counters();
+  EXPECT_EQ(counters.primitive_fallback_count, 0);
+  EXPECT_EQ(counters.primitive_fallback_rendered_count, 0);
+  EXPECT_EQ(counters.valid_physical_fallback_count, 0);
+  EXPECT_EQ(counters.editable_primitive_rendered_count, 1);
+}

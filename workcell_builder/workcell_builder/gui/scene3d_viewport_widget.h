@@ -107,6 +107,7 @@ public:
     int editable_layout_count{ 0 };
     int primitive_fallback_count{ 0 };
     int primitive_fallback_rendered_count{ 0 };
+    int editable_primitive_rendered_count{ 0 };
     int valid_physical_fallback_count{ 0 };
     int overlay_rendered_count{ 0 };
     int locked_generated_urdf_visual_count{ 0 };
@@ -188,7 +189,8 @@ private:
   bool draw_truthful_item_geometry(const ScenePreviewWidget::PreviewItem & it, int * out_placeholder_count = nullptr,
                                    int * out_mesh_count = nullptr, int * out_wireframe_count = nullptr,
                                    int * out_urdf_primitive_count = nullptr, int * out_missing_geometry_count = nullptr,
-                                   int * out_primitive_fallback_count = nullptr);
+                                   int * out_primitive_fallback_count = nullptr,
+                                   int * out_editable_primitive_count = nullptr);
   QString gizmo_mode_label() const;
   void draw_robot_base_with_axis(const ScenePreviewWidget::PreviewItem & it);
   void draw_table_slab(const ScenePreviewWidget::PreviewItem & it);

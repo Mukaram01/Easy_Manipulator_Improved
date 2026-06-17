@@ -687,6 +687,7 @@ ScenePreviewWidget::RenderDebugCounters ScenePreviewWidget::render_debug_counter
   out.editable_layout_count = counters.editable_layout_count;
   out.primitive_fallback_count = counters.primitive_fallback_count;
   out.primitive_fallback_rendered_count = counters.primitive_fallback_rendered_count;
+  out.editable_primitive_rendered_count = counters.editable_primitive_rendered_count;
   out.valid_physical_fallback_count = counters.valid_physical_fallback_count;
   out.overlay_rendered_count = counters.overlay_rendered_count;
   out.locked_generated_urdf_visual_count = counters.locked_generated_urdf_visual_count;
