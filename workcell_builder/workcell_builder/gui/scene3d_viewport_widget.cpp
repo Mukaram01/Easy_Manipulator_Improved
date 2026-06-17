@@ -102,7 +102,8 @@ bool path_has_mesh_asset_extension(const QString & path)
 
 bool scene3d_debug_logs_enabled()
 {
-  return qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS");
+  const QByteArray value = qgetenv("WORKCELL_SCENE3D_DEBUG_LOGS").trimmed().toLower();
+  return value == "1" || value == "true" || value == "yes" || value == "on";
 }
 
 bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item)
@@ -1136,13 +1137,20 @@ void Scene3DViewportWidget::invalidate_mesh_cache()
 void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidget::PreviewItem> & preview_items)
 {
   items = preview_items;
+  const bool debug_logs = scene3d_debug_logs_enabled();
+  const QString scene_key = scene_name.trimmed().isEmpty() ? QStringLiteral("No scene") : scene_name.trimmed();
   int visible_item_count = 0;
   int skipped_item_count = 0;
   int mesh_source_count = 0;
   int urdf_primitive_source_count = 0;
   int locked_urdf_count = 0;
   int editable_layout_count = 0;
+  int missing_geometry_warning_count = 0;
+  int rejected_mesh_warning_count = 0;
+  int transform_chain_failure_warning_count = 0;
+  int fallback_item_count = 0;
   QSet<QString> unique_visible_ids;
+  QStringList scene_load_warning_tokens;
   std::vector<const ScenePreviewWidget::PreviewItem *> overlay_items;
   for (const auto & it : items) {
     const NormalizedRole role = classify_item_role(it);
@@ -1154,12 +1162,51 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
     if (!overlay_helper && item_has_credible_mesh_handoff(it)) {
       ++mesh_source_count;
       const QString mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
-      if (!mesh_source.trimmed().isEmpty()) ensure_mesh_cached(it, mesh_source);
+      if (!mesh_source.trimmed().isEmpty()) {
+        const MeshCacheEntry & entry = ensure_mesh_cached(it, mesh_source);
+        if (!entry.valid || !entry.warning.trimmed().isEmpty()) {
+          ++rejected_mesh_warning_count;
+          const QString reason = !entry.failure_reason_code.trimmed().isEmpty()
+            ? entry.failure_reason_code.trimmed()
+            : (!entry.warning.trimmed().isEmpty() ? entry.warning.trimmed() : QStringLiteral("mesh_rejected"));
+          scene_load_warning_tokens << QStringLiteral("rejected_mesh:%1:%2").arg(it.id, reason);
+        }
+      }
     }
     if (!overlay_helper && generated_urdf && item_has_valid_urdf_primitive(it)) ++urdf_primitive_source_count;
+    if (!overlay_helper && !item_has_mesh_surface_candidate(it) && !item_has_explicit_primitive_dimensions(it)) {
+      ++missing_geometry_warning_count;
+      scene_load_warning_tokens << QStringLiteral("missing_geometry:%1").arg(it.id);
+    }
+    const QString layer_token = (it.source_layer + QStringLiteral("|") + it.active_visual_source).toLower();
+    if (!overlay_helper && layer_token.contains(QStringLiteral("fallback"))) ++fallback_item_count;
+    if (!it.transform_chain_applied) {
+      const QString warning_text = (it.status + QStringLiteral("|") + it.warnings.join(QLatin1Char('|'))).toLower();
+      if (warning_text.contains(QStringLiteral("transform")) ||
+          warning_text.contains(QStringLiteral("urdf chain")) ||
+          warning_text.contains(QStringLiteral("broken chain")) ||
+          warning_text.contains(QStringLiteral("missing_chain"))) {
+        ++transform_chain_failure_warning_count;
+        scene_load_warning_tokens << QStringLiteral("transform_chain_failure:%1").arg(it.id);
+      }
+    }
+    for (const QString & warning : it.warnings) {
+      const QString trimmed = warning.trimmed();
+      if (!trimmed.isEmpty()) scene_load_warning_tokens << QStringLiteral("item_warning:%1:%2").arg(it.id, trimmed);
+    }
+    if (!it.mesh_load_warning.trimmed().isEmpty()) {
+      scene_load_warning_tokens << QStringLiteral("mesh_warning:%1:%2").arg(it.id, it.mesh_load_warning.trimmed());
+    }
+    if (!it.alignment_warning.trimmed().isEmpty()) {
+      scene_load_warning_tokens << QStringLiteral("alignment_warning:%1:%2").arg(it.id, it.alignment_warning.trimmed());
+    }
     if (generated_urdf) ++locked_urdf_count;
     if (it.linked_to_editable_layout_state) ++editable_layout_count;
     if (overlay_helper) overlay_items.push_back(&it);
+  }
+  const int physical_visible_count = qMax(0, visible_item_count - static_cast<int>(overlay_items.size()));
+  if (physical_visible_count > 0 && fallback_item_count * 2 >= physical_visible_count) {
+    scene_load_warning_tokens << QStringLiteral("fallback_dominant:%1/%2").arg(fallback_item_count).arg(physical_visible_count);
   }
   last_render_counters.preview_items_count = items.size();
   last_render_counters.total_payload_count = items.size();
@@ -1186,13 +1233,41 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
   last_render_counters.last_paint_completed = false;
   last_render_counters.smoke_fallback_render_used = false;
   finalize_visual_quality(last_render_counters);
-  qInfo() << "Scene3D scene load summary:"
-          << "received=" << last_render_counters.viewport_received_count
-          << "visible=" << last_render_counters.visible_count
-          << "mesh_sources=" << last_render_counters.mesh_source_count
-          << "urdf_primitives=" << last_render_counters.urdf_primitive_source_count
-          << "overlays=" << last_render_counters.overlay_count
-          << "mesh_cache=" << last_render_counters.render_cache_count;
+  scene_load_warning_tokens.append(last_render_counters.visual_quality_warnings);
+  scene_load_warning_tokens.removeDuplicates();
+  scene_load_warning_tokens.sort();
+  const QString warning_signature = scene_load_warning_tokens.join(QLatin1Char('|'));
+  const bool should_emit_scene_load_summary =
+    debug_logs ||
+    last_scene_load_summary_item_count_ != items.size() ||
+    last_scene_load_summary_scene_name_ != scene_key ||
+    last_scene_load_summary_warning_signature_ != warning_signature;
+  if (should_emit_scene_load_summary) {
+    last_scene_load_summary_item_count_ = items.size();
+    last_scene_load_summary_scene_name_ = scene_key;
+    last_scene_load_summary_warning_signature_ = warning_signature;
+    qInfo().noquote() << QStringLiteral(
+      "Scene3D scene load: scene=%1 received=%2 visible=%3 mesh_sources=%4 urdf_primitives=%5 overlays=%6 mesh_cache=%7 warnings=%8")
+      .arg(scene_key)
+      .arg(last_render_counters.viewport_received_count)
+      .arg(last_render_counters.visible_count)
+      .arg(last_render_counters.mesh_source_count)
+      .arg(last_render_counters.urdf_primitive_source_count)
+      .arg(last_render_counters.overlay_count)
+      .arg(last_render_counters.render_cache_count)
+      .arg(scene_load_warning_tokens.isEmpty() ? QStringLiteral("none") : scene_load_warning_tokens.join(QLatin1Char(',')));
+  }
+  if (should_emit_scene_load_summary && !scene_load_warning_tokens.isEmpty()) {
+    qWarning().noquote() << QStringLiteral(
+      "Scene3D scene-load warnings: scene=%1 missing_geometry=%2 rejected_meshes=%3 transform_chain_failures=%4 fallback_items=%5/%6 details=%7")
+      .arg(scene_key)
+      .arg(missing_geometry_warning_count)
+      .arg(rejected_mesh_warning_count)
+      .arg(transform_chain_failure_warning_count)
+      .arg(fallback_item_count)
+      .arg(physical_visible_count)
+      .arg(scene_load_warning_tokens.join(QLatin1Char(',')));
+  }
   const QString diagnostics_path = QString::fromUtf8(qgetenv("SCENE3D_MESH_DIAGNOSTICS_JSON"));
   if (!diagnostics_path.trimmed().isEmpty()) {
     QFile out_file(diagnostics_path);
