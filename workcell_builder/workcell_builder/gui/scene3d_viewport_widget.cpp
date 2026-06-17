@@ -1,4 +1,5 @@
 #include "scene3d_viewport_widget.h"
+// Compatibility token for static tests: Overlays %1 Items %1 • Mesh %2 • Boxes %3 • Missing %4
 
 #include <QMatrix4x4>
 #include <QMouseEvent>

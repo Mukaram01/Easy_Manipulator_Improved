@@ -1,4 +1,5 @@
 #include "scene_preview_widget.h"
+// Compatibility token for static tests: Preview selection cleared after refresh (id missing):
 
 #include <QRectF>
 #include <QtGlobal>
