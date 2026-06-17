@@ -25,6 +25,13 @@ namespace workcell_builder
 
 boost::filesystem::path workcell_builder_repo_root_from_source();
 
+QStringList product_asset_roots(const QString & workspace_root);
+
+QString mesh_asset_category_for_path(const QString & mesh_path);
+
+QMap<QString, int> discover_visual_mesh_asset_category_counts(
+  const QStringList & asset_roots, int * total_mesh_count = nullptr, QStringList * mesh_paths = nullptr);
+
 QMap<QString, QString> discover_visual_mesh_package_map(
   const boost::filesystem::path & scene_dir, const QString & workspace_root,
   QStringList * detected_asset_roots = nullptr);
