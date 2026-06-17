@@ -2729,11 +2729,46 @@ void Scene3DViewportWidget::draw_robot_base_with_axis(const ScenePreviewWidget::
 }
 void Scene3DViewportWidget::draw_table_slab(const ScenePreviewWidget::PreviewItem & it)
 {
-  // support_surface/table: solid low-profile tabletop with a subtle outline.
-  const double thickness = qBound(0.025, it.sy > 0.001 ? it.sy : 0.06, 0.12);
-  const QColor fill(100, 116, 139, 220);
-  draw_box(it.x, it.y, it.z, qMax(0.05, it.sx), thickness, qMax(0.05, it.sz), fill, false);
-  draw_box_outline(it.x, it.y, it.z, qMax(0.05, it.sx), thickness, qMax(0.05, it.sz), QColor(203, 213, 225, 92), 0.85f);
+  // support_surface/table: render as a valid semantic physical primitive, not an
+  // unknown-geometry placeholder.  The tabletop keeps the item's existing
+  // lower-corner coordinate convention: it.x/it.y/it.z is the tabletop min XYZ.
+  const double tabletop_sx = it.sx > 0.001 ? it.sx : 0.80;
+  const double tabletop_sy = it.sy > 0.001 ? it.sy : 0.06;
+  const double tabletop_sz = it.sz > 0.001 ? it.sz : 0.60;
+  const double leg_width = qBound(0.025, qMin(tabletop_sx, tabletop_sz) * 0.055, 0.075);
+  const double leg_height = qBound(0.35, qMax(tabletop_sx, tabletop_sz) * 0.55, 0.85);
+  const double inset_x = qMin(qMax(leg_width, tabletop_sx * 0.08), qMax(0.0, tabletop_sx * 0.5 - leg_width));
+  const double inset_z = qMin(qMax(leg_width, tabletop_sz * 0.08), qMax(0.0, tabletop_sz * 0.5 - leg_width));
+  const double leg_y = it.y - leg_height;
+  const double rail_height = qMax(0.018, leg_width * 0.55);
+  const double rail_y = leg_y + leg_height * 0.28;
+
+  const QColor tabletop_fill(107, 114, 128, 226);
+  const QColor frame_fill(30, 41, 59, 230);
+  const QColor outline(203, 213, 225, 96);
+  const QColor frame_outline(148, 163, 184, 86);
+
+  draw_box(it.x, it.y, it.z, tabletop_sx, tabletop_sy, tabletop_sz, tabletop_fill, false);
+  draw_box_outline(it.x, it.y, it.z, tabletop_sx, tabletop_sy, tabletop_sz, outline, 0.85f);
+
+  const double left_x = it.x + inset_x;
+  const double right_x = it.x + tabletop_sx - inset_x - leg_width;
+  const double front_z = it.z + inset_z;
+  const double back_z = it.z + tabletop_sz - inset_z - leg_width;
+  draw_box(left_x, leg_y, front_z, leg_width, leg_height, leg_width, frame_fill, false);
+  draw_box(right_x, leg_y, front_z, leg_width, leg_height, leg_width, frame_fill, false);
+  draw_box(left_x, leg_y, back_z, leg_width, leg_height, leg_width, frame_fill, false);
+  draw_box(right_x, leg_y, back_z, leg_width, leg_height, leg_width, frame_fill, false);
+
+  const double rail_x = left_x;
+  const double rail_sx = qMax(leg_width, right_x - left_x + leg_width);
+  const double rail_z = front_z;
+  const double rail_sz = qMax(leg_width, back_z - front_z + leg_width);
+  draw_box(rail_x, rail_y, front_z, rail_sx, rail_height, leg_width, frame_fill, false);
+  draw_box(rail_x, rail_y, back_z, rail_sx, rail_height, leg_width, frame_fill, false);
+  draw_box(left_x, rail_y, rail_z, leg_width, rail_height, rail_sz, frame_fill, false);
+  draw_box(right_x, rail_y, rail_z, leg_width, rail_height, rail_sz, frame_fill, false);
+  draw_box_outline(rail_x, rail_y, rail_z, rail_sx, rail_height, rail_sz, frame_outline, 0.65f);
 }
 
 void Scene3DViewportWidget::draw_conveyor(const ScenePreviewWidget::PreviewItem & it)
