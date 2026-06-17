@@ -112,6 +112,18 @@ bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item
          (!source_path.isEmpty() && path_has_mesh_asset_extension(source_path));
 }
 
+bool item_has_mesh_surface_candidate(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QString mesh_path = item.mesh_path.trimmed();
+  const QString package_uri = item.package_uri.trimmed();
+  const QString source_path = item.source_path.trimmed();
+  return item.mesh_available ||
+         item.has_mesh_metadata ||
+         (!mesh_path.isEmpty() && path_has_mesh_asset_extension(mesh_path)) ||
+         (!package_uri.isEmpty() && path_has_mesh_asset_extension(package_uri)) ||
+         (!source_path.isEmpty() && path_has_mesh_asset_extension(source_path));
+}
+
 bool item_has_valid_urdf_primitive(const ScenePreviewWidget::PreviewItem & item)
 {
   const QString type = item.primitive_geometry_type.trimmed().toLower().replace(QLatin1Char('-'), QLatin1Char('_')).replace(QLatin1Char(' '), QLatin1Char('_'));
@@ -853,7 +865,7 @@ bool is_raw_generated_bounds_only_item(const ScenePreviewWidget::PreviewItem & i
   }
   const bool generated_or_locked = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
   if (!generated_or_locked || !item_has_explicit_primitive_dimensions(it)) return false;
-  return item_has_credible_mesh_handoff(it) || item_has_valid_urdf_primitive(it);
+  return item_has_mesh_surface_candidate(it) || item_has_valid_urdf_primitive(it);
 }
 
 
@@ -1038,6 +1050,7 @@ void Scene3DViewportWidget::set_side_view() { yaw_ = -M_PI_2; pitch_ = 0.0; upda
 void Scene3DViewportWidget::invalidate_mesh_cache()
 {
   mesh_cache_.clear();
+  last_mesh_rejection_reasons_.clear();
   warned_mesh_fallbacks_.clear();
   for (const auto & it : items) {
     const NormalizedRole role = classify_item_role(it);
@@ -1917,7 +1930,16 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     const bool raw_generated_bounds_only = is_raw_generated_bounds_only_item(it);
     if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes || raw_generated_bounds_only) {
       if (raw_generated_bounds_only) {
-        warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_RAW_GENERATED_BOUNDS_SUPPRESSED: mesh or URDF primitive source should provide geometry"), it.source_path);
+        const QString mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
+        const bool mesh_candidate = item_has_mesh_surface_candidate(it);
+        const QString stored_reason = last_mesh_rejection_reason_for_item(it.id);
+        if (mesh_candidate && !stored_reason.trimmed().isEmpty()) {
+          warn_mesh_fallback_once(it.id, stored_reason, mesh_source);
+        } else if (mesh_candidate) {
+          warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_MESH_CANDIDATE_SUPPRESSED: mesh surface candidate could not be rendered"), mesh_source);
+        } else {
+          warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_RAW_GENERATED_BOUNDS_SUPPRESSED: raw generated bounds placeholder has no valid mesh source candidate"), it.source_path);
+        }
         return false;
       }
       // Semantic primitive geometry exists but is intentionally hidden by Meshes-only mode; do not show a warning marker
@@ -2073,6 +2095,16 @@ bool Scene3DViewportWidget::should_suppress_missing_geometry_marker_for_test(con
   return should_suppress_missing_geometry_marker_for_semantic_role(item);
 }
 
+bool Scene3DViewportWidget::has_mesh_surface_candidate_for_test(const ScenePreviewWidget::PreviewItem & item)
+{
+  return item_has_mesh_surface_candidate(item);
+}
+
+bool Scene3DViewportWidget::is_raw_generated_bounds_only_for_test(const ScenePreviewWidget::PreviewItem & item)
+{
+  return is_raw_generated_bounds_only_item(item);
+}
+
 bool Scene3DViewportWidget::try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical,
                                                                const ScenePreviewWidget::PreviewItem * item,
                                                                QString * out_failure_reason) const
@@ -2087,6 +2119,18 @@ bool Scene3DViewportWidget::try_resolve_canonical_mesh_path(const QString & path
   if (out_canonical.isEmpty()) out_canonical = info.absoluteFilePath();
   if (out_canonical.isEmpty() && out_failure_reason) *out_failure_reason = mesh_load_failure_reason_for_item(path, item);
   return !out_canonical.isEmpty();
+}
+
+void Scene3DViewportWidget::remember_mesh_rejection_reason(const QString & item_id, const QString & reason)
+{
+  const QString key = item_id.trimmed().isEmpty() ? QStringLiteral("<unknown>") : item_id.trimmed();
+  last_mesh_rejection_reasons_.insert(key, reason.trimmed().isEmpty() ? QStringLiteral("REJECT_UNKNOWN") : reason);
+}
+
+QString Scene3DViewportWidget::last_mesh_rejection_reason_for_item(const QString & item_id) const
+{
+  const QString key = item_id.trimmed().isEmpty() ? QStringLiteral("<unknown>") : item_id.trimmed();
+  return last_mesh_rejection_reasons_.value(key);
 }
 
 bool Scene3DViewportWidget::warn_mesh_fallback_once(const QString & item_id, const QString & reason, const QString & path)
@@ -2336,6 +2380,7 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
     // explicit branch kept for static mesh-preview contract checks
   }
   const auto warn_for_mode = [&](const QString & reason, const QString & path) {
+    remember_mesh_rejection_reason(it.id, reason);
     if (meshes_only_mode || qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS")) warn_mesh_fallback_once(it.id, reason, path);
   };
 
@@ -2355,10 +2400,9 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   }
   const auto cache_it = mesh_cache_.constFind(canonical_mesh_source);
   if (cache_it == mesh_cache_.constEnd()) {
-    warn_mesh_fallback_once(
-      it.id,
-      QStringLiteral("REJECT_MESH_CACHE_MISS: mesh cache entry missing; waiting for controlled preview ingest/reload"),
-      mesh_source);
+    const QString reason = QStringLiteral("REJECT_MESH_CACHE_MISS: mesh cache entry missing; waiting for controlled preview ingest/reload");
+    remember_mesh_rejection_reason(it.id, reason);
+    warn_mesh_fallback_once(it.id, reason, mesh_source);
     return false;
   }
   const MeshCacheEntry & entry = cache_it.value();
@@ -2367,10 +2411,10 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
     warn_for_mode(reason, mesh_source);
     return false;
   };
-  if (!entry.loaded || !entry.valid || entry.oversized || entry.mesh.triangles.isEmpty()) {
+  if (!entry.loaded || entry.oversized || !entry.valid || entry.mesh.triangles.isEmpty()) {
     if (!entry.loaded) return reject(QStringLiteral("parse_failed"));
-    if (!entry.valid) return reject(entry.failure_reason_code.trimmed().isEmpty() ? QStringLiteral("parse_failed") : entry.failure_reason_code, entry.warning);
     if (entry.oversized) return reject(QStringLiteral("unreasonable_bounds"), entry.warning);
+    if (!entry.valid) return reject(entry.failure_reason_code.trimmed().isEmpty() ? QStringLiteral("parse_failed") : entry.failure_reason_code, entry.warning);
     return reject(QStringLiteral("zero_triangle_mesh"), entry.warning);
   }
   QString final_span_reason;
