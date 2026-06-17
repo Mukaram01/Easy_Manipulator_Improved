@@ -913,6 +913,22 @@ bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it)
          lock_reason.contains("robotmodel") || lock_reason.contains("urdf visual");
 }
 
+void populate_runtime_transform_counters(
+  Scene3DViewportWidget::RenderDebugCounters & counters,
+  const QVector<ScenePreviewWidget::PreviewItem> & items)
+{
+  int transform_chain_applied_count = 0;
+  int visual_origin_applied_count = 0;
+  for (const auto & item : items) {
+    const bool generated_or_locked_visual = is_generated_urdf_visual_item(item) || is_locked_urdf_item(item);
+    if (!generated_or_locked_visual) continue;
+    if (item.transform_chain_applied) ++transform_chain_applied_count;
+    if (item.visual_origin_applied) ++visual_origin_applied_count;
+  }
+  counters.transform_chain_applied_count = transform_chain_applied_count;
+  counters.visual_origin_applied_count = visual_origin_applied_count;
+}
+
 bool is_raw_generated_bounds_only_item(const ScenePreviewWidget::PreviewItem & it)
 {
   const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
@@ -1181,6 +1197,7 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
   last_render_counters.overlay_helper_count = static_cast<int>(overlay_items.size());
   last_render_counters.overlay_count = static_cast<int>(overlay_items.size());
   last_render_counters.locked_generated_urdf_visual_count = locked_urdf_count;
+  populate_runtime_transform_counters(last_render_counters, items);
   last_render_counters.editable_layout_count = editable_layout_count;
   last_render_counters.hierarchy_child_row_count = visible_item_count;
   last_render_counters.last_paint_completed = false;
@@ -1204,6 +1221,12 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
         root["robot_aabb_max"] = QJsonArray{last_robot_aabb_max_.x(), last_robot_aabb_max_.y(), last_robot_aabb_max_.z()};
       }
       root["mesh_diagnostics"] = mesh_diagnostics_export();
+      QJsonObject render_debug;
+      const auto counters = render_debug_counters();
+      render_debug["locked_generated_urdf_visual_count"] = counters.locked_generated_urdf_visual_count;
+      render_debug["transform_chain_applied_count"] = counters.transform_chain_applied_count;
+      render_debug["visual_origin_applied_count"] = counters.visual_origin_applied_count;
+      root["render_debug_counters"] = render_debug;
       out_file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
       out_file.close();
     }
@@ -1373,6 +1396,7 @@ void Scene3DViewportWidget::paintGL()
   last_render_counters.overlay_helper_count = overlay_count;
   last_render_counters.overlay_count = overlay_count;
   last_render_counters.locked_generated_urdf_visual_count = locked_urdf_count;
+  populate_runtime_transform_counters(last_render_counters, items);
   last_render_counters.editable_layout_count = editable_layout_count;
   int visible_hierarchy_items = 0;
   for (const auto * it : draw_items) {
@@ -1664,6 +1688,7 @@ void Scene3DViewportWidget::paintGL()
 Scene3DViewportWidget::RenderDebugCounters Scene3DViewportWidget::render_debug_counters() const
 {
   RenderDebugCounters counters = last_render_counters;
+  populate_runtime_transform_counters(counters, items);
   finalize_visual_quality(counters);
   return counters;
 }
@@ -1827,6 +1852,7 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
   last_render_counters.overlay_helper_count = overlay_count;
   last_render_counters.overlay_count = overlay_count;
   last_render_counters.locked_generated_urdf_visual_count = locked_urdf_count;
+  populate_runtime_transform_counters(last_render_counters, items);
   last_render_counters.editable_layout_count = editable_layout_count;
   last_render_counters.hierarchy_child_row_count = visible_item_count;
   last_render_counters.last_paint_completed = rendered_item_count > 0;
