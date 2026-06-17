@@ -8156,7 +8156,18 @@ void MainWindow::populate_scene_hierarchy()
     } else {
       append_studio_log(QStringLiteral("Asset workspace: %1").arg(detected_asset_roots.join(QStringLiteral(", "))));
     }
-    append_studio_log(QStringLiteral("Discovered packages: %1").arg(local_package_map.keys().join(QStringLiteral(", "))));
+    append_studio_log(QStringLiteral("Asset packages discovered: %1").arg(local_package_map.keys().isEmpty() ? QStringLiteral("none") : local_package_map.keys().join(QStringLiteral(", "))));
+    int asset_mesh_count = 0;
+    const QMap<QString, int> asset_mesh_category_counts = workcell_builder::discover_visual_mesh_asset_category_counts(
+      detected_asset_roots, &asset_mesh_count, nullptr);
+    append_studio_log(QStringLiteral("Asset meshes discovered: %1").arg(asset_mesh_count));
+    append_studio_log(QStringLiteral("Asset mesh categories: robot=%1 gripper=%2 table/workbench=%3 camera=%4 environment=%5 other=%6")
+      .arg(asset_mesh_category_counts.value(QStringLiteral("robot")))
+      .arg(asset_mesh_category_counts.value(QStringLiteral("gripper")))
+      .arg(asset_mesh_category_counts.value(QStringLiteral("table/workbench")))
+      .arg(asset_mesh_category_counts.value(QStringLiteral("camera")))
+      .arg(asset_mesh_category_counts.value(QStringLiteral("environment")))
+      .arg(asset_mesh_category_counts.value(QStringLiteral("other"))));
     const QStringList expected_visual_packages = {
       QStringLiteral("ur_description"),
       QStringLiteral("robotiq_85_description"),
@@ -8169,6 +8180,9 @@ void MainWindow::populate_scene_hierarchy()
     }
     append_studio_log(QStringLiteral("Missing asset packages: %1").arg(
       missing_asset_packages.isEmpty() ? QStringLiteral("none") : missing_asset_packages.join(QStringLiteral(", "))));
+    if (!local_package_map.contains(QStringLiteral("ur_description"))) {
+      append_studio_log(QStringLiteral("Missing robot visual asset package: ur_description"));
+    }
   }
   QString robot_base_frame = QStringLiteral("unknown");
   QString robot_world_pose = QStringLiteral("unknown");

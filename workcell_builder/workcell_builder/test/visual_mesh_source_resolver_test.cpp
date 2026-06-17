@@ -124,3 +124,34 @@ TEST(VisualMeshSourceResolver, PrefersWorkspaceSrcAssetsPackagesOverRepoAssets)
 
   fs::remove_all(tmp);
 }
+
+TEST(VisualMeshSourceResolver, DiscoversOnlyProductAssetRootsAndMeshCategories)
+{
+  const fs::path repo_root(WORKCELL_BUILDER_REPO_ROOT);
+  ASSERT_FALSE(repo_root.empty());
+
+  QStringList detected_roots;
+  const QMap<QString, QString> package_map = workcell_builder::discover_visual_mesh_package_map(
+    repo_root / "scenes" / "ur5_2f_test", QString::fromStdString(repo_root.string()), &detected_roots);
+
+  ASSERT_FALSE(detected_roots.isEmpty());
+  for (const QString & root : detected_roots) {
+    EXPECT_TRUE(root.contains(QStringLiteral("/assets"))) << root.toStdString();
+    EXPECT_FALSE(root.contains(QStringLiteral("/opt/ros"))) << root.toStdString();
+    EXPECT_FALSE(root.contains(QStringLiteral("/install/share"))) << root.toStdString();
+  }
+  EXPECT_TRUE(package_map.contains(QStringLiteral("robotiq_85_description")));
+  EXPECT_TRUE(package_map.contains(QStringLiteral("workbench_description")));
+  EXPECT_TRUE(package_map.contains(QStringLiteral("realsense2_description")));
+  EXPECT_FALSE(package_map.contains(QStringLiteral("ament_cmake")));
+  EXPECT_FALSE(package_map.contains(QStringLiteral("rviz2")));
+  EXPECT_FALSE(package_map.contains(QStringLiteral("rosbag2")));
+
+  int mesh_count = 0;
+  const QMap<QString, int> categories = workcell_builder::discover_visual_mesh_asset_category_counts(
+    detected_roots, &mesh_count, nullptr);
+  EXPECT_GT(mesh_count, 0);
+  EXPECT_GT(categories.value(QStringLiteral("gripper")), 0);
+  EXPECT_GT(categories.value(QStringLiteral("table/workbench")), 0);
+  EXPECT_GT(categories.value(QStringLiteral("camera")), 0);
+}
