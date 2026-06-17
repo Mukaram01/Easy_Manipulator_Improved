@@ -48,7 +48,7 @@ static bool visual_mesh_package_root_exists(const fs::path & package_root)
          fs::exists(package_root / "stl");
 }
 
-static QMap<QString, QString> discover_visual_mesh_package_map(const fs::path & scene_dir, const QString & workspace_root)
+QMap<QString, QString> discover_visual_mesh_package_map(const fs::path & scene_dir, const QString & workspace_root, QStringList * detected_asset_roots)
 {
   QMap<QString, QString> package_map;
   auto add_package_root = [&](const QString & package_name, const fs::path & package_root) {
@@ -58,10 +58,14 @@ static QMap<QString, QString> discover_visual_mesh_package_map(const fs::path & 
       package_map.insert(package_name, QString::fromStdString(package_root.string()));
     }
   };
-  auto scan_root = [&](const QString & root) {
+  auto scan_root = [&](const QString & root, bool report_asset_root = false) {
     if (root.trimmed().isEmpty()) return;
     const QDir base(root);
     if (!base.exists()) return;
+    if (report_asset_root && detected_asset_roots) {
+      const QString canonical = QFileInfo(root).canonicalFilePath();
+      detected_asset_roots->push_back(canonical.isEmpty() ? base.absolutePath() : canonical);
+    }
     QDirIterator it(root, QStringList() << "package.xml", QDir::Files, QDirIterator::Subdirectories);
     while (it.hasNext()) {
       const QString package_xml = it.next();
@@ -74,6 +78,18 @@ static QMap<QString, QString> discover_visual_mesh_package_map(const fs::path & 
   };
 
   const fs::path repo_root = workcell_builder_repo_root_from_source();
+  const QString ws = workspace_root.trimmed();
+  // Product preview priority: local ROS-style asset workspace first, repo assets second,
+  // then generated/workspace/ament fallbacks for legacy scenes.
+  scan_root(ws + "/src/assets", true);
+  scan_root(QString::fromStdString((repo_root / "assets").string()), true);
+  scan_root(QString::fromStdString((scene_dir / "generated").string()));
+  scan_root(ws + "/install/share");
+  scan_root(ws + "/src/easy_manipulation_deployment/assets");
+  scan_root(ws + "/src");
+  scan_root(QString::fromStdString((repo_root / "assets/environment").string()));
+  scan_root(QString::fromStdString((repo_root / "assets/robots").string()));
+  scan_root(QString::fromStdString((repo_root / "assets/end_effectors").string()));
   add_package_root(
     QStringLiteral("robotiq_85_description"),
     repo_root / "assets/end_effectors/robotiq_85_gripper/robotiq_85_description");
@@ -83,17 +99,6 @@ static QMap<QString, QString> discover_visual_mesh_package_map(const fs::path & 
   add_package_root(
     QStringLiteral("realsense2_description"),
     repo_root / "assets/environment/realsense2_description");
-
-  const QString ws = workspace_root.trimmed();
-  scan_root(QString::fromStdString((scene_dir / "generated").string()));
-  scan_root(ws + "/install/share");
-  scan_root(ws + "/src");
-  scan_root(ws + "/src/easy_manipulation_deployment/assets");
-  scan_root(ws + "/src/assets");
-  scan_root(QString::fromStdString((repo_root / "assets").string()));
-  scan_root(QString::fromStdString((repo_root / "assets/environment").string()));
-  scan_root(QString::fromStdString((repo_root / "assets/robots").string()));
-  scan_root(QString::fromStdString((repo_root / "assets/end_effectors").string()));
   const fs::path universal_robot_assets = repo_root / "assets/robots/universal_robot";
   const fs::path ur_description_assets = universal_robot_assets / "ur_description";
   if (!package_map.contains(QStringLiteral("ur_description"))) {
@@ -125,6 +130,23 @@ QString resolve_visual_mesh_source_path(
     return QString::fromStdString((scene_dir / rel.toStdString()).string());
   };
 
+  const QString trimmed_uri = package_uri.trimmed();
+  if (trimmed_uri.startsWith("package://")) {
+    const QString package_tail = trimmed_uri.mid(QString("package://").size());
+    const int slash = package_tail.indexOf('/');
+    const QString package_name = (slash >= 0) ? package_tail.left(slash) : package_tail;
+    const QString package_rel = (slash >= 0) ? package_tail.mid(slash + 1) : QString();
+    static QHash<QString, QMap<QString, QString>> workspace_cache;
+    const QString cache_key = QString::fromStdString(scene_dir.string()) + "::" + workspace_root;
+    if (!workspace_cache.contains(cache_key)) workspace_cache.insert(cache_key, discover_visual_mesh_package_map(scene_dir, workspace_root, nullptr));
+    const QMap<QString, QString> package_map = workspace_cache.value(cache_key);
+    const QString package_root = package_map.value(package_name);
+    if (!package_root.trimmed().isEmpty()) {
+      const QString resolved = add_candidate(QDir(package_root).filePath(package_rel));
+      if (!resolved.isEmpty()) return resolved;
+    }
+  }
+
   const QString trimmed_raw = raw_path.trimmed();
   if (!trimmed_raw.isEmpty()) {
     QFileInfo raw_info(trimmed_raw);
@@ -139,22 +161,7 @@ QString resolve_visual_mesh_source_path(
     }
   }
 
-  const QString trimmed_uri = package_uri.trimmed();
-  if (trimmed_uri.startsWith("package://")) {
-    const QString package_tail = trimmed_uri.mid(QString("package://").size());
-    const int slash = package_tail.indexOf('/');
-    const QString package_name = (slash >= 0) ? package_tail.left(slash) : package_tail;
-    const QString package_rel = (slash >= 0) ? package_tail.mid(slash + 1) : QString();
-    static QHash<QString, QMap<QString, QString>> workspace_cache;
-    const QString cache_key = QString::fromStdString(scene_dir.string()) + "::" + workspace_root;
-    if (!workspace_cache.contains(cache_key)) workspace_cache.insert(cache_key, discover_visual_mesh_package_map(scene_dir, workspace_root));
-    const QMap<QString, QString> package_map = workspace_cache.value(cache_key);
-    const QString package_root = package_map.value(package_name);
-    if (!package_root.trimmed().isEmpty()) {
-      const QString resolved = add_candidate(QDir(package_root).filePath(package_rel));
-      if (!resolved.isEmpty()) return resolved;
-    }
-  } else if (trimmed_uri.startsWith("file://")) {
+  if (trimmed_uri.startsWith("file://")) {
     const QString resolved = add_candidate(trimmed_uri.mid(7));
     if (!resolved.isEmpty()) return resolved;
   } else if (trimmed_uri.startsWith("/")) {

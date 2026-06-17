@@ -18,6 +18,8 @@
 #include <QFileInfo>
 #include <QString>
 #include <QStringList>
+#include <QMap>
+#include <fstream>
 
 #include <utility>
 #include <vector>
@@ -80,4 +82,45 @@ TEST(VisualMeshSourceResolver, LeavesNonexistentPackageUriUnresolved)
     &tried_candidates);
 
   EXPECT_TRUE(resolved.isEmpty());
+}
+
+TEST(VisualMeshSourceResolver, PrefersWorkspaceSrcAssetsPackagesOverRepoAssets)
+{
+  const fs::path repo_root(WORKCELL_BUILDER_REPO_ROOT);
+  ASSERT_FALSE(repo_root.empty());
+
+  const fs::path tmp = fs::temp_directory_path() / fs::unique_path("workcell_assets_test_%%%%-%%%%-%%%%");
+  const fs::path ws = tmp / "workcell_ws";
+  const fs::path local_pkg = ws / "src/assets/robots/universal_robot/ur_description";
+  const fs::path local_mesh = local_pkg / "meshes/ur5/visual/base.dae";
+  fs::create_directories(local_mesh.parent_path());
+  {
+    std::ofstream pkg((local_pkg / "package.xml").string());
+    pkg << "<package format=\"3\"><name>ur_description</name><version>0.0.0</version><description>test</description><maintainer email=\"a@b.c\">t</maintainer><license>Apache-2.0</license></package>";
+  }
+  {
+    std::ofstream mesh(local_mesh.string());
+    mesh << "local asset mesh";
+  }
+
+  QStringList detected_roots;
+  const QMap<QString, QString> package_map = workcell_builder::discover_visual_mesh_package_map(
+    repo_root / "scenes" / "ur5_2f_test", QString::fromStdString(ws.string()), &detected_roots);
+  ASSERT_TRUE(package_map.contains(QStringLiteral("ur_description")));
+  EXPECT_EQ(
+    QFileInfo(QString::fromStdString(local_pkg.string())).canonicalFilePath(),
+    QFileInfo(package_map.value(QStringLiteral("ur_description"))).canonicalFilePath());
+
+  QStringList tried_candidates;
+  const QString resolved = workcell_builder::resolve_visual_mesh_source_path(
+    QString(),
+    QStringLiteral("package://ur_description/meshes/ur5/visual/base.dae"),
+    repo_root / "scenes" / "ur5_2f_test",
+    QString::fromStdString(ws.string()),
+    &tried_candidates);
+  EXPECT_EQ(
+    QFileInfo(QString::fromStdString(local_mesh.string())).canonicalFilePath(),
+    QFileInfo(resolved).canonicalFilePath());
+
+  fs::remove_all(tmp);
 }

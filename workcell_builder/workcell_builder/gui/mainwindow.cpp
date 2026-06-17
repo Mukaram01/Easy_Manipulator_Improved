@@ -8146,6 +8146,30 @@ void MainWindow::populate_scene_hierarchy()
   int transform_chain_applied_count = 0;
   int visual_origin_applied_count = 0;
   int missing_chain_warning_count = 0;
+  {
+    QStringList detected_asset_roots;
+    const QMap<QString, QString> local_package_map = workcell_builder::discover_visual_mesh_package_map(
+      d, workspace_root, &detected_asset_roots);
+    detected_asset_roots.removeDuplicates();
+    if (detected_asset_roots.isEmpty()) {
+      append_studio_log(QStringLiteral("Asset workspace: none detected (checked <workspace>/src/assets and <repo>/assets)"));
+    } else {
+      append_studio_log(QStringLiteral("Asset workspace: %1").arg(detected_asset_roots.join(QStringLiteral(", "))));
+    }
+    append_studio_log(QStringLiteral("Discovered packages: %1").arg(local_package_map.keys().join(QStringLiteral(", "))));
+    const QStringList expected_visual_packages = {
+      QStringLiteral("ur_description"),
+      QStringLiteral("robotiq_85_description"),
+      QStringLiteral("workbench_description"),
+      QStringLiteral("realsense2_description")
+    };
+    QStringList missing_asset_packages;
+    for (const QString & pkg : expected_visual_packages) {
+      if (!local_package_map.contains(pkg)) missing_asset_packages << pkg;
+    }
+    append_studio_log(QStringLiteral("Missing asset packages: %1").arg(
+      missing_asset_packages.isEmpty() ? QStringLiteral("none") : missing_asset_packages.join(QStringLiteral(", "))));
+  }
   QString robot_base_frame = QStringLiteral("unknown");
   QString robot_world_pose = QStringLiteral("unknown");
   int mesh_item_count = 0;
@@ -8278,7 +8302,7 @@ void MainWindow::populate_scene_hierarchy()
               }
             }
           }
-          if (!resolved_source_path_candidate.isEmpty()) {
+          if (!resolved_source_path_candidate.isEmpty() && !package_uri.trimmed().startsWith(QStringLiteral("package://"))) {
             p.source_path = resolved_source_path_candidate;
             p.mesh_path = resolved_source_path_candidate;
             p.mesh_available = true;
@@ -8481,6 +8505,14 @@ void MainWindow::populate_scene_hierarchy()
                 p.source_path = resolved_mesh_path;
                 if (p.source_path_resolution_outcome.trimmed().isEmpty()) {
                   p.source_path_resolution_outcome = QStringLiteral("resolved_via_mesh_source_resolution");
+                }
+                if (package_uri.startsWith(QStringLiteral("package://"))) {
+                  const QString src = resolved_mesh_path.contains(QStringLiteral("/src/assets/"))
+                    ? QStringLiteral("local asset workspace")
+                    : (resolved_mesh_path.contains(QStringLiteral("/assets/"))
+                        ? QStringLiteral("repo assets")
+                        : QStringLiteral("ROS/ament or filesystem index"));
+                  append_studio_log(QStringLiteral("Resolved %1 from %2: %3").arg(package_uri, src, resolved_mesh_path));
                 }
               }
               if (mesh_fallback && !tried_candidates.isEmpty()) {

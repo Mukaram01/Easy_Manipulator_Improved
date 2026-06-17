@@ -18,11 +18,16 @@
 #include <boost/filesystem.hpp>
 #include <QString>
 #include <QStringList>
+#include <QMap>
 
 namespace workcell_builder
 {
 
 boost::filesystem::path workcell_builder_repo_root_from_source();
+
+QMap<QString, QString> discover_visual_mesh_package_map(
+  const boost::filesystem::path & scene_dir, const QString & workspace_root,
+  QStringList * detected_asset_roots = nullptr);
 
 QString resolve_visual_mesh_source_path(
   const QString & raw_path, const QString & package_uri,
