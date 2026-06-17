@@ -298,6 +298,28 @@ void finalize_visual_quality(Scene3DViewportWidget::RenderDebugCounters & counte
 }
 
 
+bool product_view_has_generated_mesh_warning_content(const Scene3DViewportWidget::RenderDebugCounters & counters)
+{
+  // Product view warnings are reserved for generated/locked URDF preview quality problems.
+  // Editable layout primitives, helper overlays, FOV/reach aids, debug bounds, and generic
+  // wireframe diagnostics remain visible diagnostics only; they must not look like generated
+  // mesh fallback failures in the normal Workcell Studio product view.
+  return counters.generated_mesh_bounds_fallback_rendered_count > 0 ||
+         counters.generated_missing_geometry_count > 0 ||
+         counters.generated_fallback_count > 0;
+}
+
+bool debug_view_has_full_diagnostic_warning_content(const Scene3DViewportWidget::RenderDebugCounters & counters)
+{
+  return counters.missing_geometry_count > 0 ||
+         counters.mesh_bounds_fallback_rendered_count > 0 ||
+         counters.primitive_fallback_rendered_count > 0 ||
+         counters.wireframe_fallback_count > 0 ||
+         counters.placeholder_count > 0 ||
+         counters.overlay_helper_count > 0 ||
+         counters.visual_quality_status == QStringLiteral("FAIL");
+}
+
 QString mesh_load_failure_reason_for_item(const QString & path, const ScenePreviewWidget::PreviewItem * item)
 {
   const QString trimmed_path = path.trimmed();
@@ -1254,7 +1276,9 @@ void Scene3DViewportWidget::paintGL()
   int editable_primitive_count = 0;
   int placeholder_count = 0;
   int missing_geometry_count = 0;
+  int generated_missing_geometry_count = 0;
   int wireframe_box_count = 0;
+  int generated_mesh_bounds_fallback_count = 0;
   int overlay_count = 0;
   int locked_urdf_count = 0;
   int physical_item_count = 0;
@@ -1326,6 +1350,11 @@ void Scene3DViewportWidget::paintGL()
         wireframe_box_count += item_wireframe_box_count;
         primitive_fallback_count += item_primitive_fallback_count;
         editable_primitive_count += item_editable_primitive_count;
+        const bool item_generated_or_locked = is_generated_urdf_visual_item(*it) || is_locked_urdf_item(*it);
+        if (item_generated_or_locked && item_has_credible_mesh_handoff(*it) && item_mesh_backed_count <= 0) {
+          ++generated_mesh_bounds_fallback_count;
+        }
+        if (item_generated_or_locked) generated_missing_geometry_count += item_missing_geometry_count;
       } else {
         missing_geometry_count += item_missing_geometry_count;
         primitive_fallback_count += item_primitive_fallback_count;
@@ -1349,6 +1378,7 @@ void Scene3DViewportWidget::paintGL()
   last_render_counters.mesh_rendered_count = mesh_rendered_count;
   last_render_counters.mesh_surface_rendered_count = mesh_surface_rendered_count;
   last_render_counters.mesh_bounds_fallback_rendered_count = qMax(0, mesh_source_count - mesh_surface_rendered_count);
+  last_render_counters.generated_mesh_bounds_fallback_rendered_count = generated_mesh_bounds_fallback_count;
   last_render_counters.mesh_path_resolved_count = 0;
   last_render_counters.mesh_file_loaded_count = 0;
   last_render_counters.mesh_triangles_loaded_count = 0;
@@ -1364,6 +1394,7 @@ void Scene3DViewportWidget::paintGL()
   last_render_counters.urdf_primitive_rendered_count = urdf_primitive_rendered_count;
   last_render_counters.placeholder_count = placeholder_count;
   last_render_counters.missing_geometry_count = missing_geometry_count;
+  last_render_counters.generated_missing_geometry_count = generated_missing_geometry_count;
   last_render_counters.wireframe_fallback_count = wireframe_box_count;
   last_render_counters.primitive_fallback_rendered_count = primitive_fallback_count;
   last_render_counters.primitive_fallback_count = primitive_fallback_count;
@@ -1528,12 +1559,9 @@ void Scene3DViewportWidget::paintGL()
   }
   last_render_counters.labels_drawn = labels_drawn;
   last_render_counters.labels_suppressed_overlap = labels_suppressed_overlap;
-  const bool has_missing_or_fallback_content = missing_geometry_count > 0 ||
-                                               last_render_counters.mesh_bounds_fallback_rendered_count > 0 ||
-                                               last_render_counters.primitive_fallback_rendered_count > 0 ||
-                                               wireframe_box_count > 0 ||
-                                               placeholder_count > 0 ||
-                                               last_render_counters.visual_quality_status == QStringLiteral("FAIL");
+  const bool has_missing_or_fallback_content = debug_overlays_mode
+    ? debug_view_has_full_diagnostic_warning_content(last_render_counters)
+    : product_view_has_generated_mesh_warning_content(last_render_counters);
   const bool concise_warning = show_warnings && has_missing_or_fallback_content;
   const QRectF overlay_rect = debug_overlays_mode ? QRectF(12.0, 12.0, 520.0, 88.0)
                                                   : QRectF(12.0, 12.0, concise_warning ? 310.0 : 250.0, concise_warning ? 46.0 : 30.0);
@@ -1604,8 +1632,10 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
   int editable_primitive_count = 0;
   int placeholder_count = 0;
   int missing_geometry_count = 0;
+  int generated_missing_geometry_count = 0;
   int generated_fallback_count = 0;
   int wireframe_fallback_count = 0;
+  int generated_mesh_bounds_fallback_count = 0;
   int overlay_count = 0;
   int locked_urdf_count = 0;
   int editable_layout_count = 0;
@@ -1656,6 +1686,7 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
     const bool physical_mesh_source = !overlay_helper && item_has_credible_mesh_handoff(it);
     if (physical_mesh_source) {
       ++mesh_source_count;
+      if (generated_urdf && mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) ++generated_mesh_bounds_fallback_count;
       if (intentional_primitive_fallback || generated_mesh_to_primitive_fallback) ++primitive_fallback_count;
       else if (editable_or_semantic_primitive && item_has_explicit_dimensions(it)) ++editable_primitive_count;
     } else if (!overlay_helper && generated_urdf && item_has_explicit_dimensions(it)) {
@@ -1667,7 +1698,10 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
     } else if (!overlay_helper && !item_has_explicit_dimensions(it)) {
       ++placeholder_count;
       ++missing_geometry_count;
-      ++generated_fallback_count;
+      if (generated_urdf) {
+        ++generated_missing_geometry_count;
+        ++generated_fallback_count;
+      }
     } else if (!overlay_helper) {
       if (editable_or_semantic_primitive) ++editable_primitive_count;
       else ++wireframe_fallback_count;
@@ -1708,6 +1742,7 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
   last_render_counters.mesh_rendered_count = mesh_rendered_count;
   last_render_counters.mesh_surface_rendered_count = mesh_surface_rendered_count;
   last_render_counters.mesh_bounds_fallback_rendered_count = qMax(0, mesh_source_count - mesh_surface_rendered_count);
+  last_render_counters.generated_mesh_bounds_fallback_rendered_count = generated_mesh_bounds_fallback_count;
   last_render_counters.mesh_path_resolved_count = 0;
   last_render_counters.mesh_file_loaded_count = 0;
   last_render_counters.mesh_triangles_loaded_count = 0;
@@ -1723,6 +1758,7 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
   last_render_counters.urdf_primitive_rendered_count = urdf_primitive_rendered_count;
   last_render_counters.placeholder_count = placeholder_count;
   last_render_counters.missing_geometry_count = missing_geometry_count;
+  last_render_counters.generated_missing_geometry_count = generated_missing_geometry_count;
   last_render_counters.generated_fallback_count = generated_fallback_count;
   last_render_counters.wireframe_fallback_count = wireframe_fallback_count;
   last_render_counters.primitive_fallback_rendered_count = primitive_fallback_count;
@@ -1895,7 +1931,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     draw_missing_geometry_marker(it);
     if (out_placeholder_count) ++(*out_placeholder_count);
     if (out_missing_geometry_count) ++(*out_missing_geometry_count);
-    ++last_render_counters.generated_fallback_count;
+    if (generated_or_locked_preview) ++last_render_counters.generated_fallback_count;
     if (show_warning_labels) warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_MISSING_GEOMETRY: no mesh metadata or explicit primitive dimensions"), it.source_path);
     return false;
   }
@@ -1976,7 +2012,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   draw_missing_geometry_marker(it);
   if (out_placeholder_count) ++(*out_placeholder_count);
   if (out_missing_geometry_count) ++(*out_missing_geometry_count);
-  ++last_render_counters.generated_fallback_count;
+  if (generated_or_locked_preview) ++last_render_counters.generated_fallback_count;
   return false;
 }
 

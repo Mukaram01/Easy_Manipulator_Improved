@@ -131,3 +131,28 @@ TEST(Scene3DMeshPreviewRegression, KeepsSceneAuthoringSemanticPrimitiveAssembly)
   EXPECT_NE(src.find("semantic_primitive"), std::string::npos);
   EXPECT_NE(src.find("editable_semantic_keys.contains(semantic_key)"), std::string::npos);
 }
+
+TEST(Scene3DMeshPreviewRegression, ProductWarningStateExcludesEditableAndOverlayDiagnostics)
+{
+  const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/scene3d_viewport_widget.cpp");
+  ASSERT_FALSE(src.empty());
+
+  const auto product = src.find("bool product_view_has_generated_mesh_warning_content");
+  const auto debug = src.find("bool debug_view_has_full_diagnostic_warning_content");
+  ASSERT_NE(product, std::string::npos);
+  ASSERT_NE(debug, std::string::npos);
+  ASSERT_LT(product, debug);
+
+  const std::string product_body = src.substr(product, debug - product);
+  EXPECT_NE(product_body.find("generated_mesh_bounds_fallback_rendered_count"), std::string::npos);
+  EXPECT_NE(product_body.find("generated_missing_geometry_count"), std::string::npos);
+  EXPECT_NE(product_body.find("generated_fallback_count"), std::string::npos);
+  EXPECT_EQ(product_body.find("wireframe_fallback_count"), std::string::npos);
+  EXPECT_EQ(product_body.find("overlay_helper_count"), std::string::npos);
+  EXPECT_EQ(product_body.find("editable_primitive_rendered_count"), std::string::npos);
+  EXPECT_EQ(product_body.find("primitive_fallback_rendered_count"), std::string::npos);
+  EXPECT_EQ(product_body.find("visual_quality_status"), std::string::npos);
+
+  const auto warning_selector = src.find("debug_overlays_mode\n    ? debug_view_has_full_diagnostic_warning_content(last_render_counters)\n    : product_view_has_generated_mesh_warning_content(last_render_counters)");
+  EXPECT_NE(warning_selector, std::string::npos);
+}
