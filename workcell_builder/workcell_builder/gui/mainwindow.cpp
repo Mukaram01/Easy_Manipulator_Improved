@@ -161,9 +161,19 @@ namespace {
 static QString scene3d_user_preview_status_summary(
   const ScenePreviewWidget::RenderDebugCounters & counters,
   int warning_count,
+  const QString & transform_parity_warning = QString(),
+  bool transform_parity_blocked = false,
   bool clean_product_view = false,
   int clean_product_visual_count = 0)
 {
+  const QString parity_warning = transform_parity_warning.trimmed();
+  if (!parity_warning.isEmpty()) {
+    const QString title = transform_parity_blocked
+      ? QStringLiteral("3D Preview Blocked")
+      : QStringLiteral("3D Preview Warning");
+    return QString("%1\n%2").arg(title, parity_warning);
+  }
+
   if (clean_product_view) {
     return QStringLiteral("Scene3D Product View • %1 visuals").arg(qMax(0, clean_product_visual_count));
   }
@@ -183,6 +193,109 @@ static QString scene3d_user_preview_status_summary(
     .arg(mesh_count)
     .arg(qMax(0, warning_count));
   return QString("%1\n%2").arg(title, details);
+}
+
+struct Scene3DTransformParityReadiness {
+  bool generated_urdf_visuals_present{false};
+  bool checked{false};
+  bool failed{false};
+  bool unknown{false};
+  QString source;
+  QString warning;
+};
+
+static bool scene3d_transform_status_is_pass(const QString & status)
+{
+  const QString s = status.trimmed().toLower();
+  return s == QStringLiteral("ok") ||
+         s == QStringLiteral("pass") ||
+         s == QStringLiteral("passed") ||
+         s == QStringLiteral("ready") ||
+         s == QStringLiteral("resolved") ||
+         s == QStringLiteral("valid") ||
+         s == QStringLiteral("computed") ||
+         s == QStringLiteral("chain_resolved");
+}
+
+static bool scene3d_transform_status_is_failed(const QString & status)
+{
+  const QString s = status.trimmed().toLower();
+  return s.contains(QStringLiteral("fail")) ||
+         s.contains(QStringLiteral("error")) ||
+         s.contains(QStringLiteral("block")) ||
+         s.contains(QStringLiteral("mismatch")) ||
+         s.contains(QStringLiteral("invalid")) ||
+         s.contains(QStringLiteral("collapsed")) ||
+         s.contains(QStringLiteral("disconnected"));
+}
+
+static bool scene3d_transform_status_is_unknown(const QString & status)
+{
+  const QString s = status.trimmed().toLower();
+  return s.isEmpty() ||
+         s == QStringLiteral("unknown") ||
+         s.contains(QStringLiteral("missing")) ||
+         s.contains(QStringLiteral("unresolved")) ||
+         s.contains(QStringLiteral("not_checked")) ||
+         s.contains(QStringLiteral("not checked"));
+}
+
+static void scene3d_ingest_transform_status(
+  const QString & status, int count, bool * saw_status, int * failed_count, int * unknown_count)
+{
+  if (count <= 0) return;
+  if (saw_status) *saw_status = true;
+  if (scene3d_transform_status_is_failed(status)) {
+    if (failed_count) *failed_count += count;
+  } else if (scene3d_transform_status_is_unknown(status) || !scene3d_transform_status_is_pass(status)) {
+    if (unknown_count) *unknown_count += count;
+  }
+}
+
+static Scene3DTransformParityReadiness scene3d_load_transform_parity_readiness(
+  const fs::path & scene_dir, const QString & scene_name)
+{
+  Scene3DTransformParityReadiness out;
+  const fs::path index_path = scene_dir / "generated" / "scene_visual_mesh_index.json";
+  QFile file(QString::fromStdString(index_path.string()));
+  if (!file.open(QIODevice::ReadOnly)) return out;
+  const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+  if (!doc.isObject()) return out;
+  const QJsonObject root = doc.object();
+  out.source = QStringLiteral("generated/scene_visual_mesh_index.json");
+
+  const QJsonArray visual_items = root.value(QStringLiteral("visual_items")).toArray();
+  const int visual_count = root.value(QStringLiteral("visual_count")).toInt(visual_items.size());
+  const int emitted_visual_count = root.value(QStringLiteral("emitted_visual_count")).toInt(visual_count);
+  out.generated_urdf_visuals_present = visual_count > 0 || emitted_visual_count > 0 || !visual_items.isEmpty();
+  if (!out.generated_urdf_visuals_present) return out;
+
+  int failed_count = 0;
+  int unknown_count = 0;
+  bool saw_status = false;
+  const QJsonObject transform_counts = root.value(QStringLiteral("transform_status_counts")).toObject();
+  for (auto it = transform_counts.begin(); it != transform_counts.end(); ++it) {
+    scene3d_ingest_transform_status(it.key(), it.value().toInt(), &saw_status, &failed_count, &unknown_count);
+  }
+  for (const QJsonValue & value : visual_items) {
+    if (!value.isObject()) continue;
+    scene3d_ingest_transform_status(
+      value.toObject().value(QStringLiteral("transform_status")).toString(),
+      1,
+      &saw_status,
+      &failed_count,
+      &unknown_count);
+  }
+  out.checked = saw_status;
+  out.failed = failed_count > 0;
+  out.unknown = !out.checked || unknown_count > 0;
+  if (out.failed || out.unknown) {
+    out.warning = QStringLiteral(
+      "URDF visual transform parity %1 for %2; generated robot visuals may be disconnected. "
+      "Regenerate scene_visual_mesh_index.json and rerun Scene3D parity validation.")
+      .arg(out.failed ? QStringLiteral("failed") : QStringLiteral("unknown"), scene_name);
+  }
+  return out;
 }
 
 
@@ -4239,6 +4352,12 @@ bool MainWindow::selected_scene_preview_ready(QStringList * blockers) const
     return false;
   }
   const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
+  const Scene3DTransformParityReadiness transform_parity =
+    scene3d_load_transform_parity_readiness(scene.scene_dir, QString::fromStdString(scene.scene_name));
+  if (transform_parity.failed) {
+    if (blockers) blockers->append(transform_parity.warning);
+    return false;
+  }
   const auto status = workcell_builder::validate_readiness(scene, detect_workspace_root().toStdString());
   if (!status.ready && blockers) blockers->append(status.blocker_reason);
   return status.ready;
@@ -7298,10 +7417,17 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     append_studio_log("Scene3D blocker: current layer filters hide all items. Re-enable editable layout, mesh preview, primitive fallback, or locked generated URDF visuals.");
   }
   scene_preview_widget_->set_preview_items(filtered_items);
+  const Scene3DTransformParityReadiness transform_parity =
+    has_selected_scene()
+      ? scene3d_load_transform_parity_readiness(
+          fs::path(selected_scene_path().toStdString()), selected_scene_name())
+      : Scene3DTransformParityReadiness{};
   scene_preview_widget_->set_preview_status_summary(
     scene3d_user_preview_status_summary(
       scene_preview_widget_->render_debug_counters(),
-      scene_preview_widget_->total_warning_count()));
+      scene_preview_widget_->total_warning_count(),
+      transform_parity.warning,
+      transform_parity.failed));
   if (scene3d_debug_logging_enabled()) {
     append_studio_log(
       QString("Scene3D diagnostics {model_items_count=%1, filtered_visible_count=%2}")
@@ -7418,6 +7544,13 @@ void MainWindow::populate_scene_hierarchy()
   int preview_warning_count = 0;
   QStringList preview_warning_details;
   const fs::path urdf_visual_index = d / "generated" / "scene_visual_mesh_index.json";
+  const Scene3DTransformParityReadiness transform_parity =
+    scene3d_load_transform_parity_readiness(d, QString::fromStdString(s.scene_name));
+  if (!transform_parity.warning.isEmpty()) {
+    preview_warning_details << transform_parity.warning;
+    append_studio_log(QString("Preview warning: %1 (%2)")
+      .arg(transform_parity.warning, transform_parity.source));
+  }
 
   bool accepted_safe_visual_mesh_index_has_items = false;
   if (fs::exists(urdf_visual_index)) {
@@ -8940,7 +9073,9 @@ void MainWindow::populate_scene_hierarchy()
     scene_preview_widget_->set_preview_status_summary(
       scene3d_user_preview_status_summary(
         scene3d_full_payload_counters,
-        scene_preview_widget_->total_warning_count()));
+        scene_preview_widget_->total_warning_count(),
+        transform_parity.warning,
+        transform_parity.failed));
     ++scene_diagnostic_payload_revision_;
     append_scene_diagnostic_log_once(
       QStringLiteral("full_payload_commit"),
@@ -9030,6 +9165,8 @@ void MainWindow::populate_scene_hierarchy()
         scene3d_user_preview_status_summary(
           scene3d_full_payload_counters,
           scene_preview_widget_->total_warning_count(),
+          transform_parity.warning,
+          transform_parity.failed,
           true,
           visual_preview_added_count > 0 ? visual_preview_added_count : scene_rendered_count));
     }
@@ -9300,6 +9437,8 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   const bool validation_report_ready = has("validation/readiness_report.json") || has("diagnostics/readiness_report.json") || has("run_acceptance.txt");
   const bool scene_selected = has_selected_scene();
   const auto canvas_model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
+  const Scene3DTransformParityReadiness transform_parity =
+    scene3d_load_transform_parity_readiness(s.scene_dir, QString::fromStdString(s.scene_name));
   const bool editable_layout_ready = editable_layout_inspection.valid && editable_layout_inspection.editable_item_count > 0;
   const bool has_warnings = !readiness_warning_details_.isEmpty();
   const bool validation_gate_ready = validation_report_ready && !validation_stale_;
@@ -9470,10 +9609,17 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     preview_status = SceneWorkflowStepStatus::Done;
     preview_detail = QString("3D Preview Technical Pass: native Scene3D has renderable content, but render/smoke counters alone do not prove demo-ready visual quality or RViz/MoveIt launch readiness. %1 %2")
       .arg(native_preview_counts, launch_gate_detail);
+    if (!transform_parity.warning.isEmpty()) {
+      preview_status = transform_parity.failed
+        ? SceneWorkflowStepStatus::Blocked
+        : SceneWorkflowStepStatus::Warning;
+      preview_detail = QString("%1 Source: %2 %3 %4")
+        .arg(transform_parity.warning, transform_parity.source, native_preview_counts, launch_gate_detail);
+    }
     const bool visual_quality_needs_review = !scene3d_clean_product_view_ && (editable_layout_yaml_malformed || classified_fallback_count > 0 ||
       classified_overlay_count > 0 || classified_warning_count > 0 || classified_editable_count == 0 ||
       classified_diagnostic_count > 0 || has_warnings);
-    if (visual_quality_needs_review) {
+    if (visual_quality_needs_review && transform_parity.warning.isEmpty()) {
       preview_status = SceneWorkflowStepStatus::Warning;
       QStringList preview_warnings;
       if (editable_layout_yaml_malformed) {
