@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, json, os, shlex, shutil, subprocess, sys, time
+import argparse, json, math, os, shlex, shutil, subprocess, sys, time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
@@ -390,6 +391,214 @@ def _baked_world_visual_transform_count(index_payload: dict[str, Any]) -> int:
     return count
 
 
+
+UR5_RENDERED_MESH_LINK_ALIASES: dict[str, tuple[str, ...]] = {
+    "base_link": ("base_link", "base_link_inertia", "base"),
+    "shoulder_link": ("shoulder_link",),
+    "upper_arm_link": ("upper_arm_link",),
+    "forearm_link": ("forearm_link",),
+    "wrist_1_link": ("wrist_1_link",),
+    "wrist_2_link": ("wrist_2_link",),
+    "wrist_3_link": ("wrist_3_link",),
+}
+UR5_RENDERED_MESH_ADJACENT_PAIRS: tuple[tuple[str, str], ...] = (
+    ("base_link", "shoulder_link"),
+    ("shoulder_link", "upper_arm_link"),
+    ("upper_arm_link", "forearm_link"),
+    ("forearm_link", "wrist_1_link"),
+    ("wrist_1_link", "wrist_2_link"),
+    ("wrist_2_link", "wrist_3_link"),
+)
+RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M = 0.20
+
+
+def _finite_float_list(value: Any, length: int) -> list[float] | None:
+    if not isinstance(value, (list, tuple)) or len(value) < length:
+        return None
+    out: list[float] = []
+    for raw in value[:length]:
+        try:
+            f = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(f):
+            return None
+        out.append(f)
+    return out
+
+
+def _pose_xyz_rpy(record: dict[str, Any]) -> tuple[list[float], list[float]] | None:
+    for key in ("baked_world_visual_pose", "pose", "world_pose"):
+        pose = record.get(key)
+        if not isinstance(pose, dict):
+            continue
+        xyz = _finite_float_list(pose.get("xyz"), 3)
+        rpy = _finite_float_list(pose.get("rpy"), 3) or [0.0, 0.0, 0.0]
+        if xyz is not None:
+            return xyz, rpy
+    return None
+
+
+def _mesh_scale(record: dict[str, Any]) -> list[float]:
+    return _finite_float_list(record.get("mesh_scale"), 3) or [1.0, 1.0, 1.0]
+
+
+def _matmul(a: list[list[float]], b: list[list[float]]) -> list[list[float]]:
+    return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+
+
+def _rpy_matrix(rpy: list[float]) -> list[list[float]]:
+    r, p, y = rpy
+    cr, sr = math.cos(r), math.sin(r)
+    cp, sp = math.cos(p), math.sin(p)
+    cy, sy = math.cos(y), math.sin(y)
+    rz = [[cy, -sy, 0.0], [sy, cy, 0.0], [0.0, 0.0, 1.0]]
+    ry = [[cp, 0.0, sp], [0.0, 1.0, 0.0], [-sp, 0.0, cp]]
+    rx = [[1.0, 0.0, 0.0], [0.0, cr, -sr], [0.0, sr, cr]]
+    return _matmul(_matmul(rz, ry), rx)
+
+
+def _transform_point(point: list[float], xyz: list[float], rpy: list[float], scale: list[float]) -> list[float]:
+    scaled = [point[i] * scale[i] for i in range(3)]
+    rot = _rpy_matrix(rpy)
+    return [xyz[i] + sum(rot[i][j] * scaled[j] for j in range(3)) for i in range(3)]
+
+
+def _dae_local_bounds(path: Path) -> tuple[list[float], list[float]] | None:
+    try:
+        root = ET.parse(path).getroot()
+    except Exception:
+        return None
+    mins = [math.inf, math.inf, math.inf]
+    maxs = [-math.inf, -math.inf, -math.inf]
+    found = False
+    for elem in root.iter():
+        if not elem.tag.endswith("float_array"):
+            continue
+        elem_id = str(elem.attrib.get("id", "")).lower()
+        if "position" not in elem_id and "positions" not in elem_id:
+            continue
+        values = (elem.text or "").split()
+        for idx in range(0, len(values) - 2, 3):
+            try:
+                point = [float(values[idx]), float(values[idx + 1]), float(values[idx + 2])]
+            except ValueError:
+                continue
+            if not all(math.isfinite(v) for v in point):
+                continue
+            found = True
+            for axis in range(3):
+                mins[axis] = min(mins[axis], point[axis])
+                maxs[axis] = max(maxs[axis], point[axis])
+    return (mins, maxs) if found else None
+
+
+def _world_bounds_for_visual(repo_root: Path, record: dict[str, Any]) -> dict[str, list[float]] | None:
+    existing = record.get("world_bounds") or record.get("rendered_world_bounds") or record.get("bounds")
+    if isinstance(existing, dict):
+        mn = _finite_float_list(existing.get("min"), 3)
+        mx = _finite_float_list(existing.get("max"), 3)
+        if mn is not None and mx is not None:
+            return {"min": mn, "max": mx}
+    resolved = str(record.get("resolved_source_path") or record.get("resolved_path") or "").strip()
+    if not resolved:
+        return None
+    mesh_path = Path(resolved)
+    if not mesh_path.is_absolute():
+        mesh_path = repo_root / mesh_path
+    if mesh_path.suffix.lower() != ".dae" or not mesh_path.is_file():
+        return None
+    local = _dae_local_bounds(mesh_path)
+    pose = _pose_xyz_rpy(record)
+    if local is None or pose is None:
+        return None
+    lmin, lmax = local
+    xyz, rpy = pose
+    scale = _mesh_scale(record)
+    wmins = [math.inf, math.inf, math.inf]
+    wmaxs = [-math.inf, -math.inf, -math.inf]
+    for xi in (lmin[0], lmax[0]):
+        for yi in (lmin[1], lmax[1]):
+            for zi in (lmin[2], lmax[2]):
+                wp = _transform_point([xi, yi, zi], xyz, rpy, scale)
+                for axis in range(3):
+                    wmins[axis] = min(wmins[axis], wp[axis])
+                    wmaxs[axis] = max(wmaxs[axis], wp[axis])
+    return {"min": wmins, "max": wmaxs}
+
+
+def _aabb_separation(a: dict[str, list[float]], b: dict[str, list[float]]) -> float:
+    sq = 0.0
+    for axis in range(3):
+        if a["max"][axis] < b["min"][axis]:
+            gap = b["min"][axis] - a["max"][axis]
+        elif b["max"][axis] < a["min"][axis]:
+            gap = a["min"][axis] - b["max"][axis]
+        else:
+            gap = 0.0
+        sq += gap * gap
+    return math.sqrt(sq)
+
+
+def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Path, scene_name: str | None, index_data: dict[str, Any]) -> None:
+    if scene_name != "ur5_2f_test":
+        payload.setdefault("rendered_mesh_adjacency_status", "SKIPPED")
+        payload.setdefault("rendered_mesh_adjacency_errors", [])
+        payload.setdefault("rendered_mesh_adjacency_checked_pairs", [])
+        return
+    items = index_data.get("visual_items") or index_data.get("items") or []
+    if not isinstance(items, list):
+        items = []
+    by_link: dict[str, dict[str, Any]] = {}
+    for canonical, aliases in UR5_RENDERED_MESH_LINK_ALIASES.items():
+        for raw in items:
+            if not isinstance(raw, dict):
+                continue
+            link = str(raw.get("link") or raw.get("link_name") or raw.get("name") or raw.get("id") or "")
+            if link in aliases and str(raw.get("geometry_type") or "").lower() == "mesh":
+                bounds = _world_bounds_for_visual(repo_root, raw)
+                if bounds is not None:
+                    by_link[canonical] = {"link": link, "bounds": bounds}
+                    break
+    errors: list[str] = []
+    checked: list[dict[str, Any]] = []
+    for parent, child in UR5_RENDERED_MESH_ADJACENT_PAIRS:
+        if parent not in by_link or child not in by_link:
+            errors.append(f"Missing rendered mesh/world bounds diagnostics for UR5 adjacency pair {parent}->{child}")
+            continue
+        sep = _aabb_separation(by_link[parent]["bounds"], by_link[child]["bounds"])
+        ok = sep <= RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M
+        checked.append({
+            "parent": parent,
+            "child": child,
+            "parent_link": by_link[parent]["link"],
+            "child_link": by_link[child]["link"],
+            "separation_m": sep,
+            "limit_m": RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M,
+            "ok": ok,
+        })
+        if not ok:
+            errors.append(
+                f"UR5 rendered mesh/world bounds adjacency {parent}->{child} separated by {sep:.3f} m; expected <= {RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M:.3f} m"
+            )
+    payload["rendered_mesh_adjacency_status"] = "PASS" if not errors else "FAIL"
+    payload["rendered_mesh_adjacency_errors"] = errors
+    payload["rendered_mesh_adjacency_checked_pairs"] = checked
+    if errors:
+        warnings = payload.get("warnings")
+        if not isinstance(warnings, list):
+            warnings = []
+        _append_unique(warnings, "scene3d_rendered_mesh_adjacency_failed")
+        payload["warnings"] = warnings
+        if str(payload.get("status", "")).upper() in {"PASS", "OK"}:
+            payload["status"] = "WARN"
+        messages = payload.get("warning_messages")
+        if not isinstance(messages, dict):
+            messages = {}
+        messages["scene3d_rendered_mesh_adjacency_failed"] = "; ".join(errors)
+        payload["warning_messages"] = messages
+
+
 def _downgrade_preview_ready_language(payload: dict[str, Any], warning_message: str) -> None:
     replacements = {
         "3D Preview Ready": "3D Preview Warning",
@@ -417,6 +626,7 @@ def _apply_ur5_transform_parity(payload: dict[str, Any], *, repo_root: Path, arg
         payload.setdefault("urdf_transform_parity_status", "SKIPPED")
         payload.setdefault("urdf_transform_parity_errors", [])
         payload.setdefault("baked_world_visual_transform_count", 0)
+        _apply_ur5_rendered_mesh_adjacency(payload, repo_root=repo_root, scene_name=scene_name, index_data={})
         return
     index_path = _mesh_index_path_for_scene(repo_root, payload, args)
     payload["urdf_transform_parity_index_path"] = str(index_path) if index_path else None
@@ -436,6 +646,7 @@ def _apply_ur5_transform_parity(payload: dict[str, Any], *, repo_root: Path, arg
     payload["urdf_transform_parity_errors"] = errors
     payload["urdf_transform_parity_report"] = report
     payload["baked_world_visual_transform_count"] = _baked_world_visual_transform_count(index_data)
+    _apply_ur5_rendered_mesh_adjacency(payload, repo_root=repo_root, scene_name=scene_name, index_data=index_data)
     if parity_ok:
         return
     warning = (
