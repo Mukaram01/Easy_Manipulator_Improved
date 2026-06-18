@@ -29,6 +29,7 @@
 #include <QXmlStreamReader>
 #include <QImage>
 #include <QRegularExpression>
+#include <QStringList>
 #include <cstring>
 #include <QtMath>
 
@@ -185,13 +186,81 @@ void apply_authoritative_world_visual_transform_gl(const ScenePreviewWidget::Pre
   glMultMatrixf(transform.constData());
 }
 
+bool is_ur5_baked_mesh_asset_local_correction_filename(const QString & candidate)
+{
+  const QString normalized = candidate.trimmed().toLower();
+  if (normalized.isEmpty()) return false;
+  const QString filename = QFileInfo(normalized).fileName();
+  return filename == QStringLiteral("upperarm.dae") ||
+         filename == QStringLiteral("forearm.dae") ||
+         filename == QStringLiteral("wrist1.dae") ||
+         normalized.endsWith(QStringLiteral("/upperarm.dae")) ||
+         normalized.endsWith(QStringLiteral("/forearm.dae")) ||
+         normalized.endsWith(QStringLiteral("/wrist1.dae"));
+}
+
+bool item_references_ur5_baked_mesh_asset_local_correction(const ScenePreviewWidget::PreviewItem & item)
+{
+  return is_ur5_baked_mesh_asset_local_correction_filename(item.mesh_path) ||
+         is_ur5_baked_mesh_asset_local_correction_filename(item.source_path) ||
+         is_ur5_baked_mesh_asset_local_correction_filename(item.package_uri);
+}
+
+bool item_has_non_identity_mesh_asset_local_correction(const ScenePreviewWidget::PreviewItem & item)
+{
+  constexpr double kEpsilon = 1e-12;
+  const bool has_rpy = std::abs(item.mesh_r) > kEpsilon ||
+                       std::abs(item.mesh_p) > kEpsilon ||
+                       std::abs(item.mesh_y) > kEpsilon;
+  const bool has_offset = item.has_origin_offset &&
+                          (std::abs(item.origin_offset_x) > kEpsilon ||
+                           std::abs(item.origin_offset_y) > kEpsilon ||
+                           std::abs(item.origin_offset_z) > kEpsilon);
+  return has_rpy || has_offset;
+}
+
+bool should_apply_baked_mesh_asset_local_correction(const ScenePreviewWidget::PreviewItem & item)
+{
+  return item.has_baked_world_visual_transform &&
+         item_references_ur5_baked_mesh_asset_local_correction(item) &&
+         item_has_non_identity_mesh_asset_local_correction(item);
+}
+
+void apply_baked_mesh_asset_local_correction_matrix(QMatrix4x4 & transform, const ScenePreviewWidget::PreviewItem & item)
+{
+  // Baked generated URDF visuals already include the URDF visual origin in
+  // authoritative_world_visual_transform(). Only re-apply legacy mesh_r/p/y and
+  // origin_offset when the asset is in the narrow, known UR5 visual-mesh set where
+  // those values describe mesh-asset-local DAE corrections rather than old URDF
+  // visual-origin transforms.
+  if (!should_apply_baked_mesh_asset_local_correction(item)) return;
+
+  apply_urdf_rpy_matrix(transform, item.mesh_r, item.mesh_p, item.mesh_y);
+  if (item.has_origin_offset) {
+    transform.translate(static_cast<float>(item.origin_offset_x),
+                        static_cast<float>(item.origin_offset_y),
+                        static_cast<float>(item.origin_offset_z));
+  }
+}
+
+void apply_baked_mesh_asset_local_correction_gl(const ScenePreviewWidget::PreviewItem & item)
+{
+  if (!should_apply_baked_mesh_asset_local_correction(item)) return;
+
+  apply_urdf_rpy_gl(item.mesh_r, item.mesh_p, item.mesh_y);
+  if (item.has_origin_offset) glTranslated(item.origin_offset_x, item.origin_offset_y, item.origin_offset_z);
+}
+
 void apply_mesh_local_correction_matrix(QMatrix4x4 & transform, const ScenePreviewWidget::PreviewItem & item)
 {
   // Baked generated/locked URDF visuals already include the full URDF visual origin
   // in authoritative_world_visual_transform(). Do not re-apply legacy mesh RPY or
-  // origin-offset fields unless a future field explicitly marks them as mesh-local
-  // corrections independent of the URDF visual origin.
-  if (item.has_baked_world_visual_transform) return;
+  // origin-offset fields globally; only the explicit baked mesh-asset correction
+  // path above may opt in a known asset-local correction.
+  if (item.has_baked_world_visual_transform) {
+    apply_baked_mesh_asset_local_correction_matrix(transform, item);
+    return;
+  }
 
   apply_urdf_rpy_matrix(transform, item.mesh_r, item.mesh_p, item.mesh_y);
   if (item.has_origin_offset) {
@@ -214,8 +283,12 @@ QMatrix4x4 final_mesh_transform_matrix(const ScenePreviewWidget::PreviewItem & i
 void apply_mesh_local_correction_gl(const ScenePreviewWidget::PreviewItem & item)
 {
   // See apply_mesh_local_correction_matrix(): baked URDF visuals use the baked
-  // world visual pose directly and keep only mesh scale as a post correction.
-  if (item.has_baked_world_visual_transform) return;
+  // world visual pose directly unless the explicit baked mesh-asset correction
+  // path opts in a known asset-local correction.
+  if (item.has_baked_world_visual_transform) {
+    apply_baked_mesh_asset_local_correction_gl(item);
+    return;
+  }
 
   apply_urdf_rpy_gl(item.mesh_r, item.mesh_p, item.mesh_y);
   if (item.has_origin_offset) glTranslated(item.origin_offset_x, item.origin_offset_y, item.origin_offset_z);
@@ -3203,6 +3276,23 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["origin_offset"] = QJsonArray{item.origin_offset_x, item.origin_offset_y, item.origin_offset_z};
     row["has_origin_offset"] = item.has_origin_offset;
     row["mesh_scale"] = QJsonArray{item.mesh_scale_x, item.mesh_scale_y, item.mesh_scale_z};
+    const bool baked_mesh_asset_correction_candidate = item.has_baked_world_visual_transform &&
+      item_references_ur5_baked_mesh_asset_local_correction(item);
+    const bool baked_mesh_asset_correction_has_values = item_has_non_identity_mesh_asset_local_correction(item);
+    const bool baked_mesh_asset_correction_applied = should_apply_baked_mesh_asset_local_correction(item);
+    row["baked_mesh_asset_local_correction_candidate"] = baked_mesh_asset_correction_candidate;
+    row["baked_mesh_asset_local_correction_has_values"] = baked_mesh_asset_correction_has_values;
+    row["baked_mesh_asset_local_correction_applied"] = baked_mesh_asset_correction_applied;
+    row["baked_mesh_asset_local_correction_scope"] = baked_mesh_asset_correction_candidate
+      ? QStringLiteral("ur5_visual_mesh_asset_filename")
+      : QStringLiteral("none");
+    row["baked_mesh_asset_local_correction_reason"] = baked_mesh_asset_correction_applied
+      ? QStringLiteral("known_ur5_mesh_asset_local_correction")
+      : (!item.has_baked_world_visual_transform
+          ? QStringLiteral("not_baked_world_visual")
+          : (!baked_mesh_asset_correction_candidate
+              ? QStringLiteral("mesh_not_in_initial_ur5_asset_scope")
+              : QStringLiteral("identity_mesh_asset_correction")));
 
     const auto cache_it = mesh_cache_.constFind(canonical_mesh_source);
     if (cache_it == mesh_cache_.constEnd()) {
