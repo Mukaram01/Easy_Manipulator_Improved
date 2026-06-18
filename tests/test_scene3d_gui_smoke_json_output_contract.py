@@ -298,3 +298,72 @@ def test_static_headless_counts_remain_non_pass_evidence_when_runtime_unavailabl
     assert payload["visible_item_labels"] == []
     assert "runtime_render_class_counts" not in payload
     assert payload["non_runtime_static_headless_renderability_counts"]["runtime_available"] is False
+
+
+def test_ur5_rendered_mesh_adjacency_prefers_final_draw_bboxes():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    def item(link: str, xmin: float, xmax: float) -> dict:
+        return {
+            "id": f"draw_{link}",
+            "link": link,
+            "mesh_path": f"meshes/{link}.dae",
+            "final_draw_bbox": {"min": [xmin, 0.0, 0.0], "max": [xmax, 0.1, 0.1]},
+        }
+
+    payload = {
+        "status": "PASS",
+        "final_draw_visual_items": [
+            item("base_link", 0.0, 0.1),
+            item("shoulder_link", 0.1, 0.2),
+            item("upper_arm_link", 0.2, 0.3),
+            item("forearm_link", 0.3, 0.4),
+            item("wrist_1_link", 0.4, 0.5),
+            item("wrist_2_link", 0.5, 0.6),
+            item("wrist_3_link", 0.6, 0.7),
+            item("robotiq_arg2f_base_link", 0.7, 0.8),
+        ],
+    }
+
+    smoke._apply_ur5_rendered_mesh_adjacency(payload, repo_root=Path(__file__).resolve().parents[1], scene_name="ur5_2f_test", index_data={})
+
+    assert payload["rendered_mesh_adjacency_source"] == "final_draw_visual_items"
+    assert payload["rendered_mesh_adjacency_status"] == "PASS"
+    assert "rendered_mesh_adjacency_used_index_fallback" not in payload.get("warnings", [])
+    checked = payload["rendered_mesh_adjacency_checked_pairs"]
+    assert checked[-1]["parent"] == "wrist_3_link"
+    assert checked[-1]["child"] == "robotiq_base"
+    assert checked[-1]["parent_item_id"] == "draw_wrist_3_link"
+    assert checked[-1]["child_item_id"] == "draw_robotiq_arg2f_base_link"
+    assert checked[-1]["parent_bbox_min"] == [0.6, 0.0, 0.0]
+    assert checked[-1]["ok"] is True
+
+
+def test_ur5_rendered_mesh_adjacency_final_draw_nonfinite_fails_without_index_fallback():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    payload = {
+        "status": "PASS",
+        "final_draw_visual_items": [
+            {"id": "base", "link": "base_link", "final_draw_bbox": {"min": [0, 0, 0], "max": [1, 1, 1]}},
+            {"id": "shoulder", "link_name": "shoulder_link", "final_draw_bbox": {"min": [float("nan"), 0, 0], "max": [1, 1, 1]}},
+        ],
+    }
+
+    smoke._apply_ur5_rendered_mesh_adjacency(payload, repo_root=Path(__file__).resolve().parents[1], scene_name="ur5_2f_test", index_data={"items": []})
+
+    assert payload["rendered_mesh_adjacency_source"] == "final_draw_visual_items"
+    assert payload["rendered_mesh_adjacency_status"] == "FAIL"
+    assert "scene3d_rendered_mesh_adjacency_failed" in payload["warnings"]
+    assert "rendered_mesh_adjacency_used_index_fallback" not in payload["warnings"]
+    assert any(pair["parent"] == "base_link" and pair["child"] == "shoulder_link" and pair["ok"] is False for pair in payload["rendered_mesh_adjacency_checked_pairs"])
+
+
+def test_ur5_rendered_mesh_adjacency_marks_index_fallback_warning_when_final_draw_missing():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    payload = {"status": "PASS"}
+    smoke._apply_ur5_rendered_mesh_adjacency(payload, repo_root=Path(__file__).resolve().parents[1], scene_name="ur5_2f_test", index_data={"items": []})
+
+    assert payload["rendered_mesh_adjacency_source"] == "visual_index_fallback"
+    assert "rendered_mesh_adjacency_used_index_fallback" in payload["warnings"]

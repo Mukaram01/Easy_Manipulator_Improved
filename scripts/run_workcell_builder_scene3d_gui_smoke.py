@@ -540,63 +540,183 @@ def _aabb_separation(a: dict[str, list[float]], b: dict[str, list[float]]) -> fl
     return math.sqrt(sq)
 
 
+def _record_rendered_mesh_adjacency_failure(payload: dict[str, Any], errors: list[str]) -> None:
+    if not errors:
+        return
+    warnings = payload.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+    _append_unique(warnings, "scene3d_rendered_mesh_adjacency_failed")
+    payload["warnings"] = warnings
+    if str(payload.get("status", "")).upper() in {"PASS", "OK"}:
+        payload["status"] = "WARN"
+    messages = payload.get("warning_messages")
+    if not isinstance(messages, dict):
+        messages = {}
+    messages["scene3d_rendered_mesh_adjacency_failed"] = "; ".join(errors)
+    payload["warning_messages"] = messages
+
+
+def _record_rendered_mesh_adjacency_fallback_warning(payload: dict[str, Any]) -> None:
+    warnings = payload.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+    _append_unique(warnings, "rendered_mesh_adjacency_used_index_fallback")
+    payload["warnings"] = warnings
+    messages = payload.get("warning_messages")
+    if not isinstance(messages, dict):
+        messages = {}
+    messages["rendered_mesh_adjacency_used_index_fallback"] = (
+        "Final draw diagnostics were unavailable; UR5 rendered mesh adjacency was checked with visual-index/world-bounds fallback data."
+    )
+    payload["warning_messages"] = messages
+
+
+def _bbox_from_final_draw(record: dict[str, Any]) -> dict[str, list[float]] | None:
+    bbox = record.get("final_draw_bbox")
+    if not isinstance(bbox, dict):
+        return None
+    mn = _finite_float_list(bbox.get("min"), 3)
+    mx = _finite_float_list(bbox.get("max"), 3)
+    if mn is None or mx is None:
+        return None
+    return {"min": mn, "max": mx}
+
+
+def _item_id(record: dict[str, Any]) -> str | None:
+    for key in ("item_id", "id", "name", "label"):
+        value = record.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _mesh_path(record: dict[str, Any]) -> str | None:
+    for key in ("mesh_path", "resolved_source_path", "resolved_path", "source_path", "path"):
+        value = record.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _is_robotiq_base_record(record: dict[str, Any]) -> bool:
+    haystack = " ".join(
+        str(record.get(key) or "")
+        for key in ("link", "link_name", "name", "id", "item_id", "label", "mesh_path", "resolved_source_path", "resolved_path", "source_path")
+    ).lower()
+    return "robotiq" in haystack and ("base" in haystack or "2f" in haystack or "arg2f" in haystack)
+
+
+def _checked_pair_record(parent: str, child: str, parent_item: dict[str, Any] | None, child_item: dict[str, Any] | None, sep: float | None, ok: bool) -> dict[str, Any]:
+    return {
+        "parent": parent,
+        "child": child,
+        "parent_item_id": _item_id(parent_item or {}),
+        "child_item_id": _item_id(child_item or {}),
+        "parent_mesh_path": _mesh_path(parent_item or {}),
+        "child_mesh_path": _mesh_path(child_item or {}),
+        "parent_bbox_min": (parent_item or {}).get("bounds", {}).get("min") if isinstance((parent_item or {}).get("bounds"), dict) else None,
+        "parent_bbox_max": (parent_item or {}).get("bounds", {}).get("max") if isinstance((parent_item or {}).get("bounds"), dict) else None,
+        "child_bbox_min": (child_item or {}).get("bounds", {}).get("min") if isinstance((child_item or {}).get("bounds"), dict) else None,
+        "child_bbox_max": (child_item or {}).get("bounds", {}).get("max") if isinstance((child_item or {}).get("bounds"), dict) else None,
+        "separation_m": sep,
+        "limit_m": RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M,
+        "ok": ok,
+    }
+
+
 def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Path, scene_name: str | None, index_data: dict[str, Any]) -> None:
     if scene_name != "ur5_2f_test":
         payload.setdefault("rendered_mesh_adjacency_status", "SKIPPED")
         payload.setdefault("rendered_mesh_adjacency_errors", [])
         payload.setdefault("rendered_mesh_adjacency_checked_pairs", [])
         return
-    items = index_data.get("visual_items") or index_data.get("items") or []
-    if not isinstance(items, list):
-        items = []
+
+    final_draw_items = payload.get("final_draw_visual_items")
+    use_final_draw = isinstance(final_draw_items, list) and len(final_draw_items) > 0
+    source_items: list[Any]
+    if use_final_draw:
+        source_items = final_draw_items
+        payload["rendered_mesh_adjacency_source"] = "final_draw_visual_items"
+    else:
+        source_items = index_data.get("visual_items") or index_data.get("items") or []
+        if not isinstance(source_items, list):
+            source_items = []
+        payload["rendered_mesh_adjacency_source"] = "visual_index_fallback"
+        _record_rendered_mesh_adjacency_fallback_warning(payload)
+
     by_link: dict[str, dict[str, Any]] = {}
+    alias_to_canonical: dict[str, str] = {}
     for canonical, aliases in UR5_RENDERED_MESH_LINK_ALIASES.items():
-        for raw in items:
-            if not isinstance(raw, dict):
-                continue
-            link = str(raw.get("link") or raw.get("link_name") or raw.get("name") or raw.get("id") or "")
-            if link in aliases and str(raw.get("geometry_type") or "").lower() == "mesh":
-                bounds = _world_bounds_for_visual(repo_root, raw)
-                if bounds is not None:
-                    by_link[canonical] = {"link": link, "bounds": bounds}
-                    break
+        for alias in aliases:
+            alias_to_canonical[alias] = canonical
+    # tool0 is an accepted wrist/tool attachment diagnostic for Robotiq association.
+    alias_to_canonical["tool0"] = "tool0"
+
+    robotiq_base: dict[str, Any] | None = None
     errors: list[str] = []
+    for raw in source_items:
+        if not isinstance(raw, dict):
+            continue
+        link_values = [str(raw.get("link") or "").strip(), str(raw.get("link_name") or "").strip()]
+        if not use_final_draw and str(raw.get("geometry_type") or "").lower() != "mesh":
+            continue
+        bounds = _bbox_from_final_draw(raw) if use_final_draw else _world_bounds_for_visual(repo_root, raw)
+        normalized = dict(raw)
+        if use_final_draw and "final_draw_bbox" in raw and bounds is None:
+            normalized["bbox_error"] = "final_draw_bbox_missing_or_non_finite"
+        if bounds is not None:
+            normalized["bounds"] = bounds
+        if _is_robotiq_base_record(raw) and robotiq_base is None:
+            robotiq_base = normalized
+        for link in link_values:
+            canonical = alias_to_canonical.get(link)
+            if canonical and canonical not in by_link:
+                by_link[canonical] = normalized
+
     checked: list[dict[str, Any]] = []
     for parent, child in UR5_RENDERED_MESH_ADJACENT_PAIRS:
-        if parent not in by_link or child not in by_link:
-            errors.append(f"Missing rendered mesh/world bounds diagnostics for UR5 adjacency pair {parent}->{child}")
+        parent_item = by_link.get(parent)
+        child_item = by_link.get(child)
+        if parent_item is None or child_item is None:
+            errors.append(f"Missing rendered mesh adjacency link for UR5 pair {parent}->{child}")
+            checked.append(_checked_pair_record(parent, child, parent_item, child_item, None, False))
             continue
-        sep = _aabb_separation(by_link[parent]["bounds"], by_link[child]["bounds"])
-        ok = sep <= RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M
-        checked.append({
-            "parent": parent,
-            "child": child,
-            "parent_link": by_link[parent]["link"],
-            "child_link": by_link[child]["link"],
-            "separation_m": sep,
-            "limit_m": RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M,
-            "ok": ok,
-        })
+        if not isinstance(parent_item.get("bounds"), dict) or not isinstance(child_item.get("bounds"), dict):
+            detail = parent_item.get("bbox_error") or child_item.get("bbox_error") or "bbox_missing"
+            errors.append(f"Missing or non-finite bbox diagnostics for UR5 adjacency pair {parent}->{child}: {detail}")
+            checked.append(_checked_pair_record(parent, child, parent_item, child_item, None, False))
+            continue
+        sep = _aabb_separation(parent_item["bounds"], child_item["bounds"])
+        ok = math.isfinite(sep) and sep <= RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M
+        checked.append(_checked_pair_record(parent, child, parent_item, child_item, sep, ok))
         if not ok:
             errors.append(
-                f"UR5 rendered mesh/world bounds adjacency {parent}->{child} separated by {sep:.3f} m; expected <= {RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M:.3f} m"
+                f"UR5 rendered mesh bbox adjacency {parent}->{child} separated by {sep:.3f} m; expected <= {RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M:.3f} m"
             )
+
+    tool_parent = by_link.get("tool0") or by_link.get("wrist_3_link")
+    tool_parent_name = "tool0" if by_link.get("tool0") is not None else "wrist_3_link"
+    if robotiq_base is None or tool_parent is None:
+        errors.append("Robotiq base could not be associated with wrist_3_link or tool0 rendered mesh diagnostics")
+        checked.append(_checked_pair_record(tool_parent_name, "robotiq_base", tool_parent, robotiq_base, None, False))
+    elif not isinstance(tool_parent.get("bounds"), dict) or not isinstance(robotiq_base.get("bounds"), dict):
+        detail = tool_parent.get("bbox_error") or robotiq_base.get("bbox_error") or "bbox_missing"
+        errors.append(f"Missing or non-finite bbox diagnostics for Robotiq base association with wrist_3_link/tool0: {detail}")
+        checked.append(_checked_pair_record(tool_parent_name, "robotiq_base", tool_parent, robotiq_base, None, False))
+    else:
+        sep = _aabb_separation(tool_parent["bounds"], robotiq_base["bounds"])
+        ok = math.isfinite(sep) and sep <= RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M
+        checked.append(_checked_pair_record(tool_parent_name, "robotiq_base", tool_parent, robotiq_base, sep, ok))
+        if not ok:
+            errors.append(
+                f"Robotiq base bbox separated from {tool_parent_name} by {sep:.3f} m; expected <= {RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M:.3f} m"
+            )
+
     payload["rendered_mesh_adjacency_status"] = "PASS" if not errors else "FAIL"
     payload["rendered_mesh_adjacency_errors"] = errors
     payload["rendered_mesh_adjacency_checked_pairs"] = checked
-    if errors:
-        warnings = payload.get("warnings")
-        if not isinstance(warnings, list):
-            warnings = []
-        _append_unique(warnings, "scene3d_rendered_mesh_adjacency_failed")
-        payload["warnings"] = warnings
-        if str(payload.get("status", "")).upper() in {"PASS", "OK"}:
-            payload["status"] = "WARN"
-        messages = payload.get("warning_messages")
-        if not isinstance(messages, dict):
-            messages = {}
-        messages["scene3d_rendered_mesh_adjacency_failed"] = "; ".join(errors)
-        payload["warning_messages"] = messages
+    _record_rendered_mesh_adjacency_failure(payload, errors)
 
 
 def _downgrade_preview_ready_language(payload: dict[str, Any], warning_message: str) -> None:
