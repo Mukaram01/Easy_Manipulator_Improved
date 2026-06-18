@@ -1487,6 +1487,7 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
         root["robot_aabb_max"] = QJsonArray{last_robot_aabb_max_.x(), last_robot_aabb_max_.y(), last_robot_aabb_max_.z()};
       }
       root["mesh_diagnostics"] = mesh_diagnostics_export();
+      root["final_draw_visual_items"] = final_draw_visual_items_export();
       QJsonObject render_debug;
       const auto counters = render_debug_counters();
       render_debug["locked_generated_urdf_visual_count"] = counters.locked_generated_urdf_visual_count;
@@ -3005,6 +3006,88 @@ QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
       guard_details.append(gd);
     }
     row["guard_decision_details"] = guard_details;
+    out.append(row);
+  }
+  return out;
+}
+
+
+QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
+{
+  QJsonArray out;
+  for (const auto & item : items) {
+    if (!is_generated_urdf_visual_item(item) && !is_locked_urdf_item(item)) continue;
+    if (!item.has_mesh_metadata) continue;
+
+    const QString mesh_source = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path : item.source_path;
+    if (mesh_source.trimmed().isEmpty()) continue;
+
+    QString canonical_mesh_source;
+    QString resolve_failure_reason;
+    const bool path_resolved = try_resolve_canonical_mesh_path(mesh_source, canonical_mesh_source, &item, &resolve_failure_reason);
+    if (!path_resolved) canonical_mesh_source = QFileInfo(mesh_source).absoluteFilePath();
+
+    QJsonObject row;
+    row["item_id"] = item.id;
+    row["display_name"] = item.display_name;
+    row["source_layer"] = item.source_layer;
+    row["active_visual_source"] = item.active_visual_source;
+    row["locked"] = item.locked;
+    row["lock_reason"] = item.lock_reason;
+    row["mesh_source"] = mesh_source;
+    row["mesh_source_field"] = !item.mesh_path.trimmed().isEmpty() ? QStringLiteral("mesh_path") : QStringLiteral("source_path");
+    row["canonical_mesh_source"] = canonical_mesh_source;
+    row["path_resolved"] = path_resolved;
+    row["resolve_failure_reason"] = resolve_failure_reason;
+    row["has_mesh_metadata"] = item.has_mesh_metadata;
+
+    const auto cache_it = mesh_cache_.constFind(canonical_mesh_source);
+    if (cache_it == mesh_cache_.constEnd()) {
+      row["final_draw_status"] = QStringLiteral("missing_mesh_cache");
+      out.append(row);
+      continue;
+    }
+
+    const MeshCacheEntry & cache = cache_it.value();
+    row["cache_loaded"] = cache.loaded;
+    row["cache_valid"] = cache.valid;
+    row["cache_has_bounds"] = cache.has_bounds;
+    row["cache_warning"] = cache.warning;
+    row["cache_failure_reason_code"] = cache.failure_reason_code;
+    row["triangle_count"] = static_cast<int>(cache.mesh.triangles.size());
+    row["local_min"] = QJsonArray{cache.local_min.x(), cache.local_min.y(), cache.local_min.z()};
+    row["local_max"] = QJsonArray{cache.local_max.x(), cache.local_max.y(), cache.local_max.z()};
+
+    if (!cache.has_bounds) {
+      row["final_draw_status"] = QStringLiteral("missing_bounds");
+      out.append(row);
+      continue;
+    }
+
+    const QMatrix4x4 final_transform = final_mesh_transform_matrix(item);
+    QVector3D final_min(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+    QVector3D final_max(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+    for (int xi = 0; xi < 2; ++xi) {
+      for (int yi = 0; yi < 2; ++yi) {
+        for (int zi = 0; zi < 2; ++zi) {
+          const QVector3D corner(xi ? cache.local_max.x() : cache.local_min.x(),
+                                 yi ? cache.local_max.y() : cache.local_min.y(),
+                                 zi ? cache.local_max.z() : cache.local_min.z());
+          const QVector3D mapped = final_transform.map(corner);
+          final_min.setX(qMin(final_min.x(), mapped.x()));
+          final_min.setY(qMin(final_min.y(), mapped.y()));
+          final_min.setZ(qMin(final_min.z(), mapped.z()));
+          final_max.setX(qMax(final_max.x(), mapped.x()));
+          final_max.setY(qMax(final_max.y(), mapped.y()));
+          final_max.setZ(qMax(final_max.z(), mapped.z()));
+        }
+      }
+    }
+    const QVector3D final_span = final_max - final_min;
+    row["final_draw_status"] = QStringLiteral("ok");
+    row["final_draw_min"] = QJsonArray{final_min.x(), final_min.y(), final_min.z()};
+    row["final_draw_max"] = QJsonArray{final_max.x(), final_max.y(), final_max.z()};
+    row["final_draw_span"] = QJsonArray{final_span.x(), final_span.y(), final_span.z()};
     out.append(row);
   }
   return out;
