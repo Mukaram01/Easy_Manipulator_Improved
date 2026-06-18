@@ -91,11 +91,34 @@ TEST(Scene3DMeshPreviewRegression, RealSenseCameraPrimitiveUsesMeshAlignedSurrog
   const auto generic = src.find("void Scene3DViewportWidget::draw_camera_body_with_frustum", surrogate);
   ASSERT_NE(generic, std::string::npos);
   const std::string body = src.substr(surrogate, generic - surrogate);
-  EXPECT_NE(body.find("glTranslated(it.x, it.y, it.z)"), std::string::npos);
+  EXPECT_NE(body.find("apply_urdf_pose_gl(it.x, it.y, it.z, it.roll, it.pitch, it.yaw)"), std::string::npos);
   EXPECT_NE(body.find("if (it.visual_origin_applied)"), std::string::npos);
-  EXPECT_NE(body.find("glRotated(qRadiansToDegrees(it.mesh_r)"), std::string::npos);
+  EXPECT_NE(body.find("apply_urdf_rpy_gl(it.mesh_r, it.mesh_p, it.mesh_y)"), std::string::npos);
   EXPECT_NE(body.find("if (it.has_origin_offset) glTranslated(it.origin_offset_x"), std::string::npos);
   EXPECT_NE(body.find("glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z)"), std::string::npos);
+}
+
+TEST(Scene3DMeshPreviewRegression, UsesUrdfRvizRpyOrderForGeneratedVisuals)
+{
+  const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/scene3d_viewport_widget.cpp");
+  ASSERT_FALSE(src.empty());
+
+  const auto helper = src.find("void apply_urdf_rpy_gl(double roll, double pitch, double yaw)");
+  ASSERT_NE(helper, std::string::npos);
+  const auto helper_end = src.find("void apply_urdf_pose_gl", helper);
+  ASSERT_NE(helper_end, std::string::npos);
+  const std::string helper_body = src.substr(helper, helper_end - helper);
+  const auto yaw = helper_body.find("glRotated(qRadiansToDegrees(yaw)");
+  const auto pitch = helper_body.find("glRotated(qRadiansToDegrees(pitch)");
+  const auto roll = helper_body.find("glRotated(qRadiansToDegrees(roll)");
+  ASSERT_NE(yaw, std::string::npos);
+  ASSERT_NE(pitch, std::string::npos);
+  ASSERT_NE(roll, std::string::npos);
+  EXPECT_LT(yaw, pitch);
+  EXPECT_LT(pitch, roll);
+
+  EXPECT_NE(src.find("apply_urdf_pose_matrix(final_transform, it.x, it.y, it.z, it.roll, it.pitch, it.yaw)"), std::string::npos);
+  EXPECT_NE(src.find("apply_urdf_pose_gl(it.x, it.y, it.z, it.roll, it.pitch, it.yaw)"), std::string::npos);
 }
 
 TEST(Scene3DMeshPreviewRegression, KeepsScene3DDiagnosticsSummaryLine)
