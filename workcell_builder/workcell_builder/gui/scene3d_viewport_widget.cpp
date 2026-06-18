@@ -3051,9 +3051,13 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   }
 
   glPushMatrix();
-  apply_authoritative_world_visual_transform_gl(it);
-  apply_urdf_rpy_gl(it.mesh_r, it.mesh_p, it.mesh_y);
-  if (preview_path && it.has_origin_offset) glTranslated(it.origin_offset_x, it.origin_offset_y, it.origin_offset_z);
+  if (it.has_baked_world_visual_transform) {
+    apply_authoritative_world_visual_transform_gl(it);
+  } else {
+    apply_authoritative_world_visual_transform_gl(it);
+    apply_urdf_rpy_gl(it.mesh_r, it.mesh_p, it.mesh_y);
+    if (preview_path && it.has_origin_offset) glTranslated(it.origin_offset_x, it.origin_offset_y, it.origin_offset_z);
+  }
   glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
 
   const MeshCacheEntry & cache = entry;
