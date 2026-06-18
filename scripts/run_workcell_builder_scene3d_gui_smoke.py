@@ -783,6 +783,80 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
     _record_rendered_mesh_adjacency_failure(payload, errors)
 
 
+
+def _xyz_from_array(value: Any) -> list[float] | None:
+    if not isinstance(value, list) or len(value) != 3:
+        return None
+    out: list[float] = []
+    for component in value:
+        if not isinstance(component, (int, float)):
+            return None
+        f = float(component)
+        if not math.isfinite(f):
+            return None
+        out.append(f)
+    return out
+
+
+def _bbox_center(row: dict[str, Any]) -> list[float] | None:
+    lo = _xyz_from_array(row.get("final_draw_bbox_min"))
+    hi = _xyz_from_array(row.get("final_draw_bbox_max"))
+    if lo is None or hi is None:
+        return None
+    return [(a + b) * 0.5 for a, b in zip(lo, hi)]
+
+
+def _dist(a: list[float], b: list[float]) -> float:
+    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
+
+
+def _apply_ur5_final_draw_bbox_regression(payload: dict[str, Any]) -> None:
+    """Fail the smoke on exploded UR5 final draw bounds, not mesh-index poses."""
+    if str(payload.get("scene") or "") != "ur5_2f_test":
+        return
+    rows = _first_present_list(payload, "final_draw_visual_items")
+    if not rows:
+        payload.setdefault("ur5_final_draw_bbox_status", "SKIPPED")
+        return
+    centers: dict[str, list[float]] = {}
+    for row_any in rows:
+        if not isinstance(row_any, dict):
+            continue
+        token = "|".join(str(row_any.get(k, "")).lower() for k in ("item_id", "link", "frame_id", "mesh_source"))
+        center = _bbox_center(row_any)
+        if center is None:
+            continue
+        for link in ("base", "shoulder", "upper_arm", "forearm", "wrist_1", "wrist_2", "wrist_3"):
+            if link in token and link not in centers:
+                centers[link] = center
+    chain = ("base", "shoulder", "upper_arm", "forearm", "wrist_1", "wrist_2", "wrist_3")
+    limits = {
+        ("base", "shoulder"): 0.35,
+        ("shoulder", "upper_arm"): 0.55,
+        ("upper_arm", "forearm"): 0.80,
+        ("forearm", "wrist_1"): 0.80,
+        ("wrist_1", "wrist_2"): 0.40,
+        ("wrist_2", "wrist_3"): 0.40,
+    }
+    errors: list[str] = []
+    distances: dict[str, float] = {}
+    for parent, child in zip(chain, chain[1:]):
+        if parent not in centers or child not in centers:
+            continue
+        d = _dist(centers[parent], centers[child])
+        distances[f"{parent}_to_{child}"] = d
+        limit = limits[(parent, child)]
+        if d > limit:
+            errors.append(f"final draw bbox center distance {parent}->{child} is {d:.3f} m; expected <= {limit:.3f} m")
+    payload["ur5_final_draw_bbox_distances_m"] = distances
+    payload["ur5_final_draw_bbox_status"] = "FAIL" if errors else "PASS"
+    payload["ur5_final_draw_bbox_errors"] = errors
+    if errors:
+        blockers = payload.get("blockers") if isinstance(payload.get("blockers"), list) else []
+        _append_unique(blockers, "ur5_final_draw_bbox_regression_failed")
+        payload["blockers"] = blockers
+        payload["status"] = "FAIL"
+
 def _downgrade_preview_ready_language(payload: dict[str, Any], warning_message: str) -> None:
     replacements = {
         "3D Preview Ready": "3D Preview Warning",
@@ -1439,6 +1513,7 @@ def main() -> int:
             screenshot_available=diag.get("screenshot_available"),
         )
         _apply_ur5_transform_parity(payload, repo_root=repo_root, args=args)
+        _apply_ur5_final_draw_bbox_regression(payload)
         if args.scene_path:
             expected_scene_path = str(args.scene_path.resolve())
             counters = payload.get("counters") if isinstance(payload.get("counters"), dict) else {}

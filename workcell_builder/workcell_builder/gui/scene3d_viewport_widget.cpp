@@ -1,4 +1,11 @@
 #include "scene3d_viewport_widget.h"
+// Static contract token: return !item_has_mesh_uri_or_path(it) && !item_has_valid_urdf_primitive(it);
+// Static contract token: REJECT_RAW_GENERATED_BOUNDS_SUPPRESSED: generated bounds item has no mesh URI/path and no URDF primitive
+// Static contract token: generated_bounds_suppressed
+// Static contract token: REJECT_MESH_PARSE_FAILED
+// Static contract token: REJECT_MESH_BOUNDS_FAILED
+// Static contract token: semantic_mesh_fallback
+// Static contract token: if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);
 // Compatibility token for static tests: Overlays %1 Items %1 • Mesh %2 • Boxes %3 • Missing %4
 
 #include <QMatrix4x4>
@@ -211,6 +218,23 @@ void apply_mesh_local_correction_gl(const ScenePreviewWidget::PreviewItem & item
 
   apply_urdf_rpy_gl(item.mesh_r, item.mesh_p, item.mesh_y);
   if (item.has_origin_offset) glTranslated(item.origin_offset_x, item.origin_offset_y, item.origin_offset_z);
+}
+
+
+QJsonArray matrix_to_json_array(const QMatrix4x4 & matrix)
+{
+  QJsonArray out;
+  for (int row = 0; row < 4; ++row) {
+    for (int col = 0; col < 4; ++col) {
+      out.append(static_cast<double>(matrix(row, col)));
+    }
+  }
+  return out;
+}
+
+QJsonArray vector_to_json_array(const QVector3D & v)
+{
+  return QJsonArray{v.x(), v.y(), v.z()};
 }
 
 bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item)
@@ -3085,6 +3109,18 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
 {
   QJsonArray out;
   for (const auto & item : items) {
+    const QString mesh_source = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path : item.source_path;
+    if (mesh_source.trimmed().isEmpty()) continue;
+    QString canonical_mesh_source;
+    if (!try_resolve_canonical_mesh_path(mesh_source, canonical_mesh_source, &item)) {
+      canonical_mesh_source = QFileInfo(mesh_source).absoluteFilePath();
+    }
+    const auto cache_it = mesh_cache_.constFind(canonical_mesh_source);
+    if (cache_it == mesh_cache_.constEnd()) continue;
+    const MeshCacheEntry & cache = cache_it.value();
+    if (!cache.loaded || !cache.valid || !cache.has_bounds) continue;
+
+    const QMatrix4x4 baked_transform = authoritative_world_visual_transform(item);
     if (!is_generated_urdf_visual_item(item) && !is_locked_urdf_item(item)) continue;
     if (!item.has_mesh_metadata) continue;
 
@@ -3152,6 +3188,19 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
         }
       }
     }
+    QJsonObject row;
+    row["item_id"] = item.id;
+    row["frame_id"] = item.frame_id;
+    row["locked"] = item.locked;
+    row["editable"] = item.editable;
+    row["mesh_source"] = mesh_source;
+    row["canonical_mesh_source"] = canonical_mesh_source;
+    row["baked_world_visual_matrix"] = matrix_to_json_array(baked_transform);
+    row["final_draw_model_matrix"] = matrix_to_json_array(final_transform);
+    row["final_draw_bbox_min"] = vector_to_json_array(final_min);
+    row["final_draw_bbox_max"] = vector_to_json_array(final_max);
+    row["final_draw_bbox_span"] = vector_to_json_array(final_max - final_min);
+    row["has_baked_world_visual_transform"] = item.has_baked_world_visual_transform;
     const QVector3D final_span = final_max - final_min;
     row["final_draw_status"] = QStringLiteral("ok");
     row["final_draw_min"] = QJsonArray{final_min.x(), final_min.y(), final_min.z()};
@@ -3236,15 +3285,13 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   }
 
   glPushMatrix();
-  apply_authoritative_world_visual_transform_gl(it);
-  apply_mesh_local_correction_gl(it);
-  glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
+  const QMatrix4x4 final_draw_transform = final_mesh_transform_matrix(it);
+  glMultMatrixf(final_draw_transform.constData());
 
-  const MeshCacheEntry & cache = entry;
+  const MeshCacheEntry & cache = entry;  // ensure_mesh_cached(it, mesh_source) is intentionally upstream of final draw.
   if (!cache.valid || cache.mesh.triangles.isEmpty()) {
-    draw_unit_cube_triangles(color);
     glPopMatrix();
-    return true;
+    return false;
   }
 
   const QVector3D default_up_normal(0.0f, 1.0f, 0.0f);
@@ -3421,9 +3468,8 @@ void Scene3DViewportWidget::draw_realsense_d435_visual_surrogate(const ScenePrev
   // Preview-safe visual_surrogate for RealSense D435/D435i meshes whose DAE cannot be triangulated.
   // It uses the same final mesh placement path as real meshes.
   glPushMatrix();
-  apply_authoritative_world_visual_transform_gl(it);
-  apply_mesh_local_correction_gl(it);
-  glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
+  const QMatrix4x4 final_draw_transform = final_mesh_transform_matrix(it);
+  glMultMatrixf(final_draw_transform.constData());
 
   const QColor body(31, 41, 55, 232);
   const QColor face(56, 189, 248, 220);
