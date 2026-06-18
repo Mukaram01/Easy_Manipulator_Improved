@@ -177,6 +177,42 @@ void apply_authoritative_world_visual_transform_gl(const ScenePreviewWidget::Pre
   glMultMatrixf(transform.constData());
 }
 
+void apply_mesh_local_correction_matrix(QMatrix4x4 & transform, const ScenePreviewWidget::PreviewItem & item)
+{
+  // Baked generated/locked URDF visuals already include the full URDF visual origin
+  // in authoritative_world_visual_transform(). Do not re-apply legacy mesh RPY or
+  // origin-offset fields unless a future field explicitly marks them as mesh-local
+  // corrections independent of the URDF visual origin.
+  if (item.has_baked_world_visual_transform) return;
+
+  apply_urdf_rpy_matrix(transform, item.mesh_r, item.mesh_p, item.mesh_y);
+  if (item.has_origin_offset) {
+    transform.translate(static_cast<float>(item.origin_offset_x),
+                        static_cast<float>(item.origin_offset_y),
+                        static_cast<float>(item.origin_offset_z));
+  }
+}
+
+QMatrix4x4 final_mesh_transform_matrix(const ScenePreviewWidget::PreviewItem & item)
+{
+  QMatrix4x4 transform = authoritative_world_visual_transform(item);
+  apply_mesh_local_correction_matrix(transform, item);
+  transform.scale(static_cast<float>(item.mesh_scale_x),
+                  static_cast<float>(item.mesh_scale_y),
+                  static_cast<float>(item.mesh_scale_z));
+  return transform;
+}
+
+void apply_mesh_local_correction_gl(const ScenePreviewWidget::PreviewItem & item)
+{
+  // See apply_mesh_local_correction_matrix(): baked URDF visuals use the baked
+  // world visual pose directly and keep only mesh scale as a post correction.
+  if (item.has_baked_world_visual_transform) return;
+
+  apply_urdf_rpy_gl(item.mesh_r, item.mesh_p, item.mesh_y);
+  if (item.has_origin_offset) glTranslated(item.origin_offset_x, item.origin_offset_y, item.origin_offset_z);
+}
+
 bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item)
 {
   const QString mesh_path = item.mesh_path.trimmed();
@@ -2868,12 +2904,7 @@ bool Scene3DViewportWidget::validate_mesh_final_span(const ScenePreviewWidget::P
   constexpr double kFinalSpanThresholdMeters = 50.0;
   const QVector3D raw_span = entry.local_span;
 
-  QMatrix4x4 final_transform = authoritative_world_visual_transform(it);
-  apply_urdf_rpy_matrix(final_transform, it.mesh_r, it.mesh_p, it.mesh_y);
-  if (it.has_origin_offset) {
-    final_transform.translate(static_cast<float>(it.origin_offset_x), static_cast<float>(it.origin_offset_y), static_cast<float>(it.origin_offset_z));
-  }
-  final_transform.scale(static_cast<float>(it.mesh_scale_x), static_cast<float>(it.mesh_scale_y), static_cast<float>(it.mesh_scale_z));
+  QMatrix4x4 final_transform = final_mesh_transform_matrix(it);
 
   QVector3D final_min(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
   QVector3D final_max(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
@@ -2981,6 +3012,8 @@ QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
 
 bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWidget::PreviewItem & it, const QColor & color, bool preview_path)
 {
+  Q_UNUSED(preview_path);
+
   if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Primitives) {
     return false;
   }
@@ -3051,13 +3084,8 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   }
 
   glPushMatrix();
-  if (it.has_baked_world_visual_transform) {
-    apply_authoritative_world_visual_transform_gl(it);
-  } else {
-    apply_authoritative_world_visual_transform_gl(it);
-    apply_urdf_rpy_gl(it.mesh_r, it.mesh_p, it.mesh_y);
-    if (preview_path && it.has_origin_offset) glTranslated(it.origin_offset_x, it.origin_offset_y, it.origin_offset_z);
-  }
+  apply_authoritative_world_visual_transform_gl(it);
+  apply_mesh_local_correction_gl(it);
   glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
 
   const MeshCacheEntry & cache = entry;
@@ -3239,11 +3267,10 @@ void Scene3DViewportWidget::draw_conveyor(const ScenePreviewWidget::PreviewItem 
 void Scene3DViewportWidget::draw_realsense_d435_visual_surrogate(const ScenePreviewWidget::PreviewItem & it)
 {
   // Preview-safe visual_surrogate for RealSense D435/D435i meshes whose DAE cannot be triangulated.
-  // It uses the same pose, visual-origin, mesh RPY, mesh scale, and origin-offset placement path as real meshes.
+  // It uses the same final mesh placement path as real meshes.
   glPushMatrix();
   apply_authoritative_world_visual_transform_gl(it);
-  apply_urdf_rpy_gl(it.mesh_r, it.mesh_p, it.mesh_y);
-  if (it.has_origin_offset) glTranslated(it.origin_offset_x, it.origin_offset_y, it.origin_offset_z);
+  apply_mesh_local_correction_gl(it);
   glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
 
   const QColor body(31, 41, 55, 232);
@@ -3684,10 +3711,7 @@ bool Scene3DViewportWidget::mesh_world_bounds_for_item(const ScenePreviewWidget:
   const MeshCacheEntry & cache = cache_it.value();
   if (!cache.loaded || !cache.valid || !cache.has_bounds) return false;
 
-  QMatrix4x4 transform = authoritative_world_visual_transform(item);
-  apply_urdf_rpy_matrix(transform, item.mesh_r, item.mesh_p, item.mesh_y);
-  if (item.has_origin_offset) transform.translate(item.origin_offset_x, item.origin_offset_y, item.origin_offset_z);
-  transform.scale(item.mesh_scale_x, item.mesh_scale_y, item.mesh_scale_z);
+  QMatrix4x4 transform = final_mesh_transform_matrix(item);
 
   const QVector3D lmin = cache.local_min;
   const QVector3D lmax = cache.local_max;
