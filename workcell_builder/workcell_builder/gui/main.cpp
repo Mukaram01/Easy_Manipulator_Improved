@@ -772,6 +772,12 @@ private:
       viewport->update();
       viewport->repaint();
       QApplication::processEvents(QEventLoop::AllEvents, 250);
+      for (int paint_wait_attempt = 0; paint_wait_attempt < 8; ++paint_wait_attempt) {
+        const auto paint_counters = viewport->render_debug_counters();
+        if (paint_counters.last_paint_completed) break;
+        viewport->update();
+        QApplication::processEvents(QEventLoop::AllEvents, 125);
+      }
       auto before_fallback = viewport->render_debug_counters();
       if (before_fallback.viewport_received_count > 0 &&
           before_fallback.visible_count > 0 &&
@@ -780,6 +786,13 @@ private:
         viewport->render_smoke_fallback_frame();
       }
       const auto rc = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
+      const QJsonArray final_draw_diagnostics = viewport ? viewport->final_draw_diagnostics_export() : QJsonArray{};
+      const bool final_draw_diagnostics_frame_complete = rc.last_paint_completed && !final_draw_diagnostics.isEmpty();
+      root["final_draw_diagnostics"] = final_draw_diagnostics;
+      root["last_paint_completed"] = rc.last_paint_completed;
+      root["final_draw_diagnostics_frame_complete"] = final_draw_diagnostics_frame_complete;
+      counters["final_draw_diagnostics_count"] = final_draw_diagnostics.size();
+      counters["final_draw_diagnostics_frame_complete"] = final_draw_diagnostics_frame_complete;
       counters["preview_items_count"] = rc.preview_items_count;
       counters["total_payload_count"] = rc.total_payload_count;
       counters["viewport_received_count"] = rc.viewport_received_count;
@@ -825,6 +838,14 @@ private:
               << "viewport_items=" << rc.viewport_received_count;
       qInfo() << "Scene3D smoke hierarchy ingest: scene=" << opts_.scene_name
               << "hierarchy_rows=" << rc.hierarchy_child_row_count;
+      const bool generated_urdf_mesh_items_visible =
+        rc.locked_generated_urdf_visual_count > 0 &&
+        (rc.mesh_source_count > 0 || rc.mesh_backed_count > 0);
+      if (generated_urdf_mesh_items_visible && final_draw_diagnostics.isEmpty()) {
+        const QString msg = QStringLiteral("final_draw_diagnostics_missing_for_visible_generated_urdf_mesh_items");
+        warnings_.append(msg);
+        blockers_.append(msg);
+      }
     } else {
       for (const QString & key : {QStringLiteral("preview_items_count"), QStringLiteral("total_payload_count"), QStringLiteral("viewport_received_count"), QStringLiteral("render_cache_count"),
                                   QStringLiteral("visible_count"), QStringLiteral("rendered_count"), QStringLiteral("skipped_count"),
@@ -838,7 +859,12 @@ private:
       }
       counters["visual_quality_status"] = QStringLiteral("UNAVAILABLE");
       counters["visual_quality_warnings"] = QJsonArray{QStringLiteral("scene3d_viewport_widget_missing")};
+      root["last_paint_completed"] = false;
+      root["final_draw_diagnostics_frame_complete"] = false;
+      root["final_draw_diagnostics"] = QJsonArray{};
       counters["last_paint_completed"] = false;
+      counters["final_draw_diagnostics_count"] = 0;
+      counters["final_draw_diagnostics_frame_complete"] = false;
       counters["paint_cycle_completed"] = false;
       counters["active_viewport_received_count"] = 0;
       counters["active_rendered_count"] = 0;

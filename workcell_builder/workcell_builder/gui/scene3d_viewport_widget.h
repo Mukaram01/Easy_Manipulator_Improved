@@ -133,6 +133,7 @@ public:
   RenderDebugCounters render_debug_counters() const;
   bool render_smoke_fallback_frame(QImage * out_image = nullptr);
   QJsonArray mesh_diagnostics_export() const;
+  QJsonArray final_draw_diagnostics_export() const;
 
   static bool parse_stl_bytes_for_test(const QByteArray & bytes, const QString & source_hint,
                                        InternalTriangleMesh & out_mesh, QString & out_error,
@@ -272,6 +273,7 @@ private:
   };
   QHash<QString, MeshCacheEntry> mesh_cache_;
   QHash<QString, QString> last_mesh_rejection_reasons_;
+  QJsonArray last_final_draw_diagnostics_;
   QSet<QString> warned_mesh_fallbacks_;
   int last_scene_load_summary_item_count_{ -1 };
   QString last_scene_load_summary_scene_name_;

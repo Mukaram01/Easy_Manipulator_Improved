@@ -1438,6 +1438,7 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
   last_render_counters.hierarchy_child_row_count = visible_item_count;
   last_render_counters.last_paint_completed = false;
   last_render_counters.smoke_fallback_render_used = false;
+  last_final_draw_diagnostics_ = QJsonArray{};
   finalize_visual_quality(last_render_counters);
   scene_load_warning_tokens.append(last_render_counters.visual_quality_warnings);
   scene_load_warning_tokens.removeDuplicates();
@@ -1756,6 +1757,7 @@ void Scene3DViewportWidget::paintGL()
   }
   overlay_count = static_cast<int>(overlay_items.size());
   last_render_counters = RenderDebugCounters{};
+  last_final_draw_diagnostics_ = QJsonArray{};
   last_render_counters.preview_items_count = items.size();
   last_render_counters.total_payload_count = items.size();
   last_render_counters.viewport_received_count = received_item_count;
@@ -2943,6 +2945,11 @@ bool Scene3DViewportWidget::validate_mesh_final_span(const ScenePreviewWidget::P
   return true;
 }
 
+QJsonArray Scene3DViewportWidget::final_draw_diagnostics_export() const
+{
+  return last_final_draw_diagnostics_;
+}
+
 QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
 {
   QJsonArray out;
@@ -3084,9 +3091,27 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   }
 
   glPushMatrix();
-  apply_authoritative_world_visual_transform_gl(it);
-  apply_mesh_local_correction_gl(it);
-  glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
+  const QMatrix4x4 final_transform = final_mesh_transform_matrix(it);
+  QJsonObject final_diag;
+  final_diag["item_id"] = it.id;
+  final_diag["role"] = it.role;
+  final_diag["source_layer"] = it.source_layer;
+  final_diag["active_visual_source"] = it.active_visual_source;
+  final_diag["mesh_source"] = mesh_source;
+  final_diag["canonical_path"] = canonical_mesh_source;
+  final_diag["generated_urdf_visual"] = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
+  final_diag["baked_world_visual_transform"] = it.has_baked_world_visual_transform;
+  final_diag["visual_origin_applied"] = it.visual_origin_applied;
+  final_diag["mesh_scale"] = QJsonArray{it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z};
+  QJsonArray matrix_json;
+  for (int row = 0; row < 4; ++row) {
+    QJsonArray row_json;
+    for (int col = 0; col < 4; ++col) row_json.append(final_transform(row, col));
+    matrix_json.append(row_json);
+  }
+  final_diag["final_mesh_transform_matrix"] = matrix_json;
+  last_final_draw_diagnostics_.append(final_diag);
+  glMultMatrixf(final_transform.constData());
 
   const MeshCacheEntry & cache = entry;
   if (!cache.valid || cache.mesh.triangles.isEmpty()) {
