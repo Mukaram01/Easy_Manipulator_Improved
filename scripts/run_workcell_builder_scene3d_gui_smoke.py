@@ -12,6 +12,7 @@ ensure_repo_root_on_sys_path(__file__)
 from scripts.workcell_studio_path_resolver import describe_resolution, resolve_repo_root, resolve_workspace_root, resolve_workcell_builder_executable, workcell_builder_executable_candidates
 from scripts.scene_root_resolver import resolve_scene_root
 from scripts.scene3d_scene_discovery import discover_scene3d_scenes
+from scripts.validate_ur5_scene3d_transform_plausibility import validate_index as validate_ur5_transform_plausibility_index
 
 EXPECTED_SCHEMA = "workcell_studio_scene3d_gui_smoke/v1"
 
@@ -181,9 +182,6 @@ def _enforce_physical_render_evidence(payload: dict[str, Any]) -> dict[str, Any]
     _mark_runtime_available(payload, True)
     if _physical_rendered_count(payload) > 0:
         return payload
-    blockers = payload.get("blockers")
-    if not isinstance(blockers, list):
-        blockers = []
     if "scene_rendered_no_physical_items" not in blockers:
         blockers.append("scene_rendered_no_physical_items")
     payload["blockers"] = blockers
@@ -352,6 +350,107 @@ def _add_smoke_report_supplemental_evidence(payload: dict[str, Any], *, screensh
         payload["screenshot_available"] = bool(screenshot_available or payload.get("screenshot_available") or payload.get("screenshot_saved"))
     return payload
 
+
+
+def _scene_name_from_payload_or_args(payload: dict[str, Any], args: argparse.Namespace) -> str | None:
+    scene = payload.get("scene") or getattr(args, "scene", None)
+    if isinstance(scene, str) and scene.strip():
+        return scene.strip()
+    scene_path = payload.get("scene_path") or getattr(args, "scene_path", None)
+    if scene_path:
+        return Path(str(scene_path)).name
+    return None
+
+
+def _mesh_index_path_for_scene(repo_root: Path, payload: dict[str, Any], args: argparse.Namespace) -> Path | None:
+    scene_path = payload.get("scene_path") or getattr(args, "scene_path", None)
+    if scene_path:
+        return (Path(str(scene_path)) / "generated" / "scene_visual_mesh_index.json").resolve()
+    scene = _scene_name_from_payload_or_args(payload, args)
+    if scene:
+        return (repo_root / "scenes" / scene / "generated" / "scene_visual_mesh_index.json").resolve()
+    return None
+
+
+def _baked_world_visual_transform_count(index_payload: dict[str, Any]) -> int:
+    items = index_payload.get("visual_items") or index_payload.get("items") or []
+    if not isinstance(items, list):
+        return 0
+    count = 0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        pose = item.get("pose")
+        world_pose = item.get("world_pose")
+        link_world_pose = item.get("link_world_pose")
+        if isinstance(pose, dict) and (isinstance(world_pose, dict) or isinstance(link_world_pose, dict)):
+            count += 1
+        elif str(item.get("transform_status") or "").strip().lower() in {"ok", "resolved", "static_fallback", "static_fallback_parent"}:
+            count += 1
+    return count
+
+
+def _downgrade_preview_ready_language(payload: dict[str, Any], warning_message: str) -> None:
+    replacements = {
+        "3D Preview Ready": "3D Preview Warning",
+        "fully ready": "warning",
+    }
+    for key in ("message", "readiness_message", "preview_status", "scene3d_status", "status_text"):
+        value = payload.get(key)
+        if not isinstance(value, str):
+            continue
+        updated = value
+        for before, after in replacements.items():
+            updated = updated.replace(before, after)
+        if updated != value:
+            payload[key] = updated
+    messages = payload.get("warning_messages")
+    if not isinstance(messages, dict):
+        messages = {}
+    messages["urdf_transform_parity_failed"] = warning_message
+    payload["warning_messages"] = messages
+
+
+def _apply_ur5_transform_parity(payload: dict[str, Any], *, repo_root: Path, args: argparse.Namespace) -> None:
+    scene_name = _scene_name_from_payload_or_args(payload, args)
+    if scene_name != "ur5_2f_test":
+        payload.setdefault("urdf_transform_parity_status", "SKIPPED")
+        payload.setdefault("urdf_transform_parity_errors", [])
+        payload.setdefault("baked_world_visual_transform_count", 0)
+        return
+    index_path = _mesh_index_path_for_scene(repo_root, payload, args)
+    payload["urdf_transform_parity_index_path"] = str(index_path) if index_path else None
+    payload["urdf_transform_parity_scene"] = scene_name
+    if index_path is None or not index_path.is_file():
+        report = {"ok": False, "errors": [f"Missing mesh index for scene {scene_name}: {index_path}"]}
+        index_data: dict[str, Any] = {}
+    else:
+        try:
+            index_data = json.loads(index_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 - validate_index will provide the detailed read/parse error.
+            index_data = {}
+        report = validate_ur5_transform_plausibility_index(index_path)
+    errors = list(report.get("errors") or []) if isinstance(report, dict) else ["UR5 transform parity validator did not return a report"]
+    parity_ok = bool(isinstance(report, dict) and report.get("ok"))
+    payload["urdf_transform_parity_status"] = "PASS" if parity_ok else "FAIL"
+    payload["urdf_transform_parity_errors"] = errors
+    payload["urdf_transform_parity_report"] = report
+    payload["baked_world_visual_transform_count"] = _baked_world_visual_transform_count(index_data)
+    if parity_ok:
+        return
+    warning = (
+        f"URDF transform parity failed for scene {scene_name}; inspect or regenerate mesh index {index_path}. "
+        + ("; ".join(errors) if errors else "No detailed validator errors were reported.")
+    )
+    warnings = payload.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+    _append_unique(warnings, "urdf_transform_parity_failed")
+    payload["warnings"] = warnings
+    if str(payload.get("status", "")).upper() in {"PASS", "OK"}:
+        payload["status"] = "WARN"
+    payload["smoke_result_warning"] = warning
+    _downgrade_preview_ready_language(payload, warning)
 
 def _subprocess_exception_to_text(exc: FileNotFoundError | PermissionError) -> str:
     return f"{type(exc).__name__}: {exc}"
@@ -944,6 +1043,7 @@ def main() -> int:
             screenshot_path=diag.get("screenshot_path"),
             screenshot_available=diag.get("screenshot_available"),
         )
+        _apply_ur5_transform_parity(payload, repo_root=repo_root, args=args)
         if args.scene_path:
             expected_scene_path = str(args.scene_path.resolve())
             counters = payload.get("counters") if isinstance(payload.get("counters"), dict) else {}
@@ -958,8 +1058,8 @@ def main() -> int:
                 _write_json(args.output, payload)
                 print(f"status=FAIL smoke_status=EXPLICIT_SCENE_PATH_MISMATCH wrapper_status={wrapper_status} expected_scene_path={expected_scene_path} actual_scene_path={actual_scene_path}")
                 return 1
-        wrapper_status = "PASS" if rc == 0 and str(app_status).upper() in {"PASS", "OK"} else "FAIL"
-        if str(app_status).upper() == "BLOCKED" or timed_out:
+        wrapper_status = "PASS" if rc == 0 and str(payload.get("status", app_status)).upper() in {"PASS", "OK"} else "FAIL"
+        if str(payload.get("status", app_status)).upper() == "BLOCKED" or timed_out:
             wrapper_status = "BLOCKED"
         payload["wrapper_status"] = wrapper_status
         _write_json(args.output, payload)
