@@ -134,6 +134,7 @@ public:
   bool render_smoke_fallback_frame(QImage * out_image = nullptr);
   QJsonArray mesh_diagnostics_export() const;
   QJsonArray final_draw_visual_items_export() const;
+  QJsonArray final_draw_diagnostics_export() const;
 
   static bool parse_stl_bytes_for_test(const QByteArray & bytes, const QString & source_hint,
                                        InternalTriangleMesh & out_mesh, QString & out_error,

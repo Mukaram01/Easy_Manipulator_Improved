@@ -642,80 +642,40 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
         return
 
     final_draw_items = payload.get("final_draw_visual_items")
-    use_final_draw = isinstance(final_draw_items, list) and len(final_draw_items) > 0
-    source_items: list[Any]
-    if use_final_draw:
-        source_items = final_draw_items
-        payload["rendered_mesh_adjacency_source"] = "final_draw_visual_items"
-    else:
-        source_items = index_data.get("visual_items") or index_data.get("items") or []
-        if not isinstance(source_items, list):
-            source_items = []
-        payload["rendered_mesh_adjacency_source"] = "visual_index_fallback"
-        _record_rendered_mesh_adjacency_fallback_warning(payload)
+    if not isinstance(final_draw_items, list) or not final_draw_items:
+        final_draw_items = payload.get("final_draw_diagnostics")
+    errors: list[str] = []
+    if not isinstance(final_draw_items, list) or not final_draw_items:
+        errors.append("Final draw diagnostics are missing; rendered mesh adjacency cannot use scene_visual_mesh_index fallback for ur5_2f_test")
+        payload["rendered_mesh_adjacency_source"] = "missing_final_draw_diagnostics"
+        payload["rendered_mesh_adjacency_status"] = "FAIL"
+        payload["rendered_mesh_adjacency_errors"] = errors
+        payload["rendered_mesh_adjacency_checked_pairs"] = []
+        _record_rendered_mesh_adjacency_failure(payload, errors)
+        return
 
-    by_link: dict[str, dict[str, Any]] = {}
+    payload["rendered_mesh_adjacency_source"] = "final_draw_visual_items"
     alias_to_canonical: dict[str, str] = {}
     for canonical, aliases in UR5_RENDERED_MESH_LINK_ALIASES.items():
         for alias in aliases:
             alias_to_canonical[alias] = canonical
-    # tool0 is an accepted wrist/tool attachment diagnostic for Robotiq association.
     alias_to_canonical["tool0"] = "tool0"
 
-    robotiq_base: dict[str, Any] | None = None
-    final_draw_items = payload.get("final_draw_diagnostics")
-    if not isinstance(final_draw_items, list):
-        final_draw_items = []
     by_link: dict[str, dict[str, Any]] = {}
-    missing_final_bbox: list[str] = []
-    for canonical, aliases in UR5_RENDERED_MESH_LINK_ALIASES.items():
-        matched_final_item = False
-        for raw in final_draw_items:
-            if not isinstance(raw, dict):
-                continue
-            link = str(raw.get("link") or raw.get("link_name") or raw.get("name") or raw.get("id") or "")
-            if link in aliases:
-                matched_final_item = True
-                bounds = _final_draw_bbox_from_row(raw)
-                if bounds is not None:
-                    by_link[canonical] = {"link": link, "bounds": bounds, "source": "app_final_draw_diagnostics"}
-                    break
-        if matched_final_item and canonical not in by_link:
-            missing_final_bbox.append(canonical)
-    payload["rendered_mesh_adjacency_source"] = "app_final_draw_diagnostics" if final_draw_items else "scene_visual_mesh_index_fallback"
-
-    # The static scene_visual_mesh_index.json is retained only as fallback context for
-    # older app smoke payloads that do not yet export final draw diagnostics.
-    if not final_draw_items:
-        items = index_data.get("visual_items") or index_data.get("items") or []
-        if not isinstance(items, list):
-            items = []
-        for canonical, aliases in UR5_RENDERED_MESH_LINK_ALIASES.items():
-            for raw in items:
-                if not isinstance(raw, dict):
-                    continue
-                link = str(raw.get("link") or raw.get("link_name") or raw.get("name") or raw.get("id") or "")
-                if link in aliases and str(raw.get("geometry_type") or "").lower() == "mesh":
-                    bounds = _world_bounds_for_visual(repo_root, raw)
-                    if bounds is not None:
-                        by_link[canonical] = {"link": link, "bounds": bounds, "source": "scene_visual_mesh_index_fallback"}
-                        break
-    errors: list[str] = []
-    for raw in source_items:
+    robotiq_base: dict[str, Any] | None = None
+    for raw in final_draw_items:
         if not isinstance(raw, dict):
             continue
-        link_values = [str(raw.get("link") or "").strip(), str(raw.get("link_name") or "").strip()]
-        if not use_final_draw and str(raw.get("geometry_type") or "").lower() != "mesh":
-            continue
-        bounds = _bbox_from_final_draw(raw) if use_final_draw else _world_bounds_for_visual(repo_root, raw)
+        bounds = _bbox_from_final_draw(raw) or _final_draw_bbox_from_row(raw)
         normalized = dict(raw)
-        if use_final_draw and "final_draw_bbox" in raw and bounds is None:
-            normalized["bbox_error"] = "final_draw_bbox_missing_or_non_finite"
         if bounds is not None:
             normalized["bounds"] = bounds
+        elif str(raw.get("final_draw_status") or "") == "ok":
+            normalized["bbox_error"] = "final_draw_bbox_missing_or_non_finite"
         if _is_robotiq_base_record(raw) and robotiq_base is None:
             robotiq_base = normalized
-        for link in link_values:
+        for key in ("link", "link_name", "frame_id", "id", "item_id"):
+            link = str(raw.get(key) or "").strip()
             canonical = alias_to_canonical.get(link)
             if canonical and canonical not in by_link:
                 by_link[canonical] = normalized
@@ -725,48 +685,30 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
         parent_item = by_link.get(parent)
         child_item = by_link.get(child)
         if parent_item is None or child_item is None:
-            errors.append(f"Missing rendered mesh adjacency link for UR5 pair {parent}->{child}")
+            errors.append(f"Missing final draw rendered mesh adjacency link for UR5 pair {parent}->{child}")
             checked.append(_checked_pair_record(parent, child, parent_item, child_item, None, False))
             continue
         if not isinstance(parent_item.get("bounds"), dict) or not isinstance(child_item.get("bounds"), dict):
             detail = parent_item.get("bbox_error") or child_item.get("bbox_error") or "bbox_missing"
-            errors.append(f"Missing or non-finite bbox diagnostics for UR5 adjacency pair {parent}->{child}: {detail}")
+            errors.append(f"Missing or non-finite final_draw_bbox diagnostics for UR5 adjacency pair {parent}->{child}: {detail}")
             checked.append(_checked_pair_record(parent, child, parent_item, child_item, None, False))
             continue
         sep = _aabb_separation(parent_item["bounds"], child_item["bounds"])
         ok = math.isfinite(sep) and sep <= RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M
         checked.append(_checked_pair_record(parent, child, parent_item, child_item, sep, ok))
-        if final_draw_items and (parent in missing_final_bbox or child in missing_final_bbox):
-            errors.append(f"Missing final_draw_bbox diagnostics for UR5 adjacency pair {parent}->{child}")
-            continue
-        if parent not in by_link or child not in by_link:
-            errors.append(f"Missing rendered mesh/world bounds diagnostics for UR5 adjacency pair {parent}->{child}")
-            continue
-        sep = _aabb_separation(by_link[parent]["bounds"], by_link[child]["bounds"])
-        ok = sep <= RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M
-        checked.append({
-            "parent": parent,
-            "child": child,
-            "parent_link": by_link[parent]["link"],
-            "child_link": by_link[child]["link"],
-            "bounds_source": by_link[parent].get("source") if by_link[parent].get("source") == by_link[child].get("source") else f"{by_link[parent].get('source')}->{by_link[child].get('source')}",
-            "separation_m": sep,
-            "limit_m": RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M,
-            "ok": ok,
-        })
         if not ok:
             errors.append(
-                f"UR5 rendered mesh bbox adjacency {parent}->{child} separated by {sep:.3f} m; expected <= {RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M:.3f} m"
+                f"UR5 final draw bbox adjacency {parent}->{child} separated by {sep:.3f} m; expected <= {RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M:.3f} m"
             )
 
     tool_parent = by_link.get("tool0") or by_link.get("wrist_3_link")
     tool_parent_name = "tool0" if by_link.get("tool0") is not None else "wrist_3_link"
     if robotiq_base is None or tool_parent is None:
-        errors.append("Robotiq base could not be associated with wrist_3_link or tool0 rendered mesh diagnostics")
+        errors.append("Robotiq base could not be associated with wrist_3_link or tool0 final draw diagnostics")
         checked.append(_checked_pair_record(tool_parent_name, "robotiq_base", tool_parent, robotiq_base, None, False))
     elif not isinstance(tool_parent.get("bounds"), dict) or not isinstance(robotiq_base.get("bounds"), dict):
         detail = tool_parent.get("bbox_error") or robotiq_base.get("bbox_error") or "bbox_missing"
-        errors.append(f"Missing or non-finite bbox diagnostics for Robotiq base association with wrist_3_link/tool0: {detail}")
+        errors.append(f"Missing or non-finite final_draw_bbox diagnostics for Robotiq base association with wrist_3_link/tool0: {detail}")
         checked.append(_checked_pair_record(tool_parent_name, "robotiq_base", tool_parent, robotiq_base, None, False))
     else:
         sep = _aabb_separation(tool_parent["bounds"], robotiq_base["bounds"])
@@ -774,14 +716,13 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
         checked.append(_checked_pair_record(tool_parent_name, "robotiq_base", tool_parent, robotiq_base, sep, ok))
         if not ok:
             errors.append(
-                f"Robotiq base bbox separated from {tool_parent_name} by {sep:.3f} m; expected <= {RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M:.3f} m"
+                f"Robotiq base final draw bbox separated from {tool_parent_name} by {sep:.3f} m; expected <= {RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M:.3f} m"
             )
 
     payload["rendered_mesh_adjacency_status"] = "PASS" if not errors else "FAIL"
     payload["rendered_mesh_adjacency_errors"] = errors
     payload["rendered_mesh_adjacency_checked_pairs"] = checked
     _record_rendered_mesh_adjacency_failure(payload, errors)
-
 
 
 def _xyz_from_array(value: Any) -> list[float] | None:

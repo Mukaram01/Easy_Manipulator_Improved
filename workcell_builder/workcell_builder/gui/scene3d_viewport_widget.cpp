@@ -3109,18 +3109,6 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
 {
   QJsonArray out;
   for (const auto & item : items) {
-    const QString mesh_source = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path : item.source_path;
-    if (mesh_source.trimmed().isEmpty()) continue;
-    QString canonical_mesh_source;
-    if (!try_resolve_canonical_mesh_path(mesh_source, canonical_mesh_source, &item)) {
-      canonical_mesh_source = QFileInfo(mesh_source).absoluteFilePath();
-    }
-    const auto cache_it = mesh_cache_.constFind(canonical_mesh_source);
-    if (cache_it == mesh_cache_.constEnd()) continue;
-    const MeshCacheEntry & cache = cache_it.value();
-    if (!cache.loaded || !cache.valid || !cache.has_bounds) continue;
-
-    const QMatrix4x4 baked_transform = authoritative_world_visual_transform(item);
     if (!is_generated_urdf_visual_item(item) && !is_locked_urdf_item(item)) continue;
     if (!item.has_mesh_metadata) continue;
 
@@ -3134,17 +3122,34 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
 
     QJsonObject row;
     row["item_id"] = item.id;
+    row["id"] = item.id;
     row["display_name"] = item.display_name;
+    row["link_name"] = scene3d_link_name_for_item(item);
+    row["link"] = scene3d_link_name_for_item(item);
+    row["frame_id"] = item.frame_id;
     row["source_layer"] = item.source_layer;
     row["active_visual_source"] = item.active_visual_source;
     row["locked"] = item.locked;
+    row["editable"] = item.editable;
     row["lock_reason"] = item.lock_reason;
     row["mesh_source"] = mesh_source;
+    row["mesh_path"] = item.mesh_path;
+    row["source_path"] = item.source_path;
     row["mesh_source_field"] = !item.mesh_path.trimmed().isEmpty() ? QStringLiteral("mesh_path") : QStringLiteral("source_path");
     row["canonical_mesh_source"] = canonical_mesh_source;
     row["path_resolved"] = path_resolved;
     row["resolve_failure_reason"] = resolve_failure_reason;
     row["has_mesh_metadata"] = item.has_mesh_metadata;
+    row["has_baked_world_visual_transform"] = item.has_baked_world_visual_transform;
+    row["has_baked_world_visual_matrix"] = item.has_baked_world_visual_matrix;
+    row["baked_world_visual_pose"] = scene3d_pose_to_json(item.x, item.y, item.z, item.roll, item.pitch, item.yaw);
+    row["visual_origin_applied"] = item.visual_origin_applied;
+    row["visual_origin_pose"] = scene3d_pose_to_json(item.visual_origin_x, item.visual_origin_y, item.visual_origin_z,
+                                                      item.visual_origin_roll, item.visual_origin_pitch, item.visual_origin_yaw);
+    row["local_mesh_correction_rpy"] = QJsonArray{item.mesh_r, item.mesh_p, item.mesh_y};
+    row["origin_offset"] = QJsonArray{item.origin_offset_x, item.origin_offset_y, item.origin_offset_z};
+    row["has_origin_offset"] = item.has_origin_offset;
+    row["mesh_scale"] = QJsonArray{item.mesh_scale_x, item.mesh_scale_y, item.mesh_scale_z};
 
     const auto cache_it = mesh_cache_.constFind(canonical_mesh_source);
     if (cache_it == mesh_cache_.constEnd()) {
@@ -3160,55 +3165,54 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["cache_warning"] = cache.warning;
     row["cache_failure_reason_code"] = cache.failure_reason_code;
     row["triangle_count"] = static_cast<int>(cache.mesh.triangles.size());
-    row["local_min"] = QJsonArray{cache.local_min.x(), cache.local_min.y(), cache.local_min.z()};
-    row["local_max"] = QJsonArray{cache.local_max.x(), cache.local_max.y(), cache.local_max.z()};
+    row["local_min"] = scene3d_vec_to_json(cache.local_min);
+    row["local_max"] = scene3d_vec_to_json(cache.local_max);
 
-    if (!cache.has_bounds) {
-      row["final_draw_status"] = QStringLiteral("missing_bounds");
+    const QMatrix4x4 baked_transform = authoritative_world_visual_transform(item);
+    const QMatrix4x4 final_transform = final_mesh_transform_matrix(item);
+    row["baked_world_visual_matrix"] = scene3d_matrix_to_json(baked_transform);
+    row["final_draw_model_matrix"] = scene3d_matrix_to_json(final_transform);
+    row["final_draw_world_pose"] = scene3d_vec_to_json(final_transform.map(QVector3D(0.0f, 0.0f, 0.0f)));
+
+    if (!cache.loaded || !cache.valid || !cache.has_bounds || cache.mesh.triangles.isEmpty()) {
+      row["final_draw_status"] = cache.has_bounds ? QStringLiteral("invalid_mesh") : QStringLiteral("missing_bounds");
       out.append(row);
       continue;
     }
 
-    const QMatrix4x4 final_transform = final_mesh_transform_matrix(item);
-    QVector3D final_min(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
-    QVector3D final_max(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
-    for (int xi = 0; xi < 2; ++xi) {
-      for (int yi = 0; yi < 2; ++yi) {
-        for (int zi = 0; zi < 2; ++zi) {
-          const QVector3D corner(xi ? cache.local_max.x() : cache.local_min.x(),
-                                 yi ? cache.local_max.y() : cache.local_min.y(),
-                                 zi ? cache.local_max.z() : cache.local_min.z());
-          const QVector3D mapped = final_transform.map(corner);
-          final_min.setX(qMin(final_min.x(), mapped.x()));
-          final_min.setY(qMin(final_min.y(), mapped.y()));
-          final_min.setZ(qMin(final_min.z(), mapped.z()));
-          final_max.setX(qMax(final_max.x(), mapped.x()));
-          final_max.setY(qMax(final_max.y(), mapped.y()));
-          final_max.setZ(qMax(final_max.z(), mapped.z()));
-        }
-      }
+    QVector3D final_min;
+    QVector3D final_max;
+    if (!scene3d_final_draw_bbox_for_mesh(cache.mesh, final_transform, final_min, final_max)) {
+      row["final_draw_status"] = QStringLiteral("non_finite_bounds");
+      out.append(row);
+      continue;
     }
-    QJsonObject row;
-    row["item_id"] = item.id;
-    row["frame_id"] = item.frame_id;
-    row["locked"] = item.locked;
-    row["editable"] = item.editable;
-    row["mesh_source"] = mesh_source;
-    row["canonical_mesh_source"] = canonical_mesh_source;
-    row["baked_world_visual_matrix"] = matrix_to_json_array(baked_transform);
-    row["final_draw_model_matrix"] = matrix_to_json_array(final_transform);
-    row["final_draw_bbox_min"] = vector_to_json_array(final_min);
-    row["final_draw_bbox_max"] = vector_to_json_array(final_max);
-    row["final_draw_bbox_span"] = vector_to_json_array(final_max - final_min);
-    row["has_baked_world_visual_transform"] = item.has_baked_world_visual_transform;
     const QVector3D final_span = final_max - final_min;
+    row["final_draw_bbox"] = scene3d_bbox_to_json(final_min, final_max);
+    row["final_draw_bbox_min"] = scene3d_vec_to_json(final_min);
+    row["final_draw_bbox_max"] = scene3d_vec_to_json(final_max);
+    row["final_draw_bbox_span"] = scene3d_vec_to_json(final_span);
     row["final_draw_status"] = QStringLiteral("ok");
-    row["final_draw_min"] = QJsonArray{final_min.x(), final_min.y(), final_min.z()};
-    row["final_draw_max"] = QJsonArray{final_max.x(), final_max.y(), final_max.z()};
-    row["final_draw_span"] = QJsonArray{final_span.x(), final_span.y(), final_span.z()};
     out.append(row);
+
+    if (scene3d_debug_logs_enabled()) {
+      qInfo().noquote() << QStringLiteral(
+        "Scene3D final draw: item_id=%1 link=%2 mesh=%3 baked_pose=[%4,%5,%6,%7,%8,%9] scale=[%10,%11,%12] final_matrix=%13 bbox_min=[%14,%15,%16] bbox_max=[%17,%18,%19]")
+        .arg(item.id, scene3d_link_name_for_item(item), mesh_source)
+        .arg(item.x, 0, 'g', 8).arg(item.y, 0, 'g', 8).arg(item.z, 0, 'g', 8)
+        .arg(item.roll, 0, 'g', 8).arg(item.pitch, 0, 'g', 8).arg(item.yaw, 0, 'g', 8)
+        .arg(item.mesh_scale_x, 0, 'g', 8).arg(item.mesh_scale_y, 0, 'g', 8).arg(item.mesh_scale_z, 0, 'g', 8)
+        .arg(QString::fromUtf8(QJsonDocument(scene3d_matrix_to_json(final_transform)).toJson(QJsonDocument::Compact)))
+        .arg(final_min.x(), 0, 'g', 8).arg(final_min.y(), 0, 'g', 8).arg(final_min.z(), 0, 'g', 8)
+        .arg(final_max.x(), 0, 'g', 8).arg(final_max.y(), 0, 'g', 8).arg(final_max.z(), 0, 'g', 8);
+    }
   }
   return out;
+}
+
+QJsonArray Scene3DViewportWidget::final_draw_diagnostics_export() const
+{
+  return final_draw_visual_items_export();
 }
 
 bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWidget::PreviewItem & it, const QColor & color, bool preview_path)
