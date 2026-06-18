@@ -148,6 +148,35 @@ void apply_urdf_pose_matrix(QMatrix4x4 & transform, double x, double y, double z
   apply_urdf_rpy_matrix(transform, roll, pitch, yaw);
 }
 
+QMatrix4x4 authoritative_world_visual_transform(const ScenePreviewWidget::PreviewItem & item)
+{
+  QMatrix4x4 transform;
+  if (item.has_baked_world_visual_transform) {
+    if (item.has_baked_world_visual_matrix) {
+      for (int row = 0; row < 4; ++row) {
+        for (int col = 0; col < 4; ++col) {
+          transform(row, col) = static_cast<float>(item.baked_world_visual_matrix[row * 4 + col]);
+        }
+      }
+    } else {
+      apply_urdf_pose_matrix(transform, item.x, item.y, item.z, item.roll, item.pitch, item.yaw);
+    }
+    return transform;
+  }
+  apply_urdf_pose_matrix(transform, item.x, item.y, item.z, item.roll, item.pitch, item.yaw);
+  if (item.visual_origin_applied) {
+    apply_urdf_pose_matrix(transform, item.visual_origin_x, item.visual_origin_y, item.visual_origin_z,
+                           item.visual_origin_roll, item.visual_origin_pitch, item.visual_origin_yaw);
+  }
+  return transform;
+}
+
+void apply_authoritative_world_visual_transform_gl(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QMatrix4x4 transform = authoritative_world_visual_transform(item);
+  glMultMatrixf(transform.constData());
+}
+
 bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item)
 {
   const QString mesh_path = item.mesh_path.trimmed();
@@ -249,11 +278,7 @@ bool primitive_world_bounds_for_item(const ScenePreviewWidget::PreviewItem & ite
     return true;
   }
 
-  QMatrix4x4 transform;
-  apply_urdf_pose_matrix(transform, item.x, item.y, item.z, item.roll, item.pitch, item.yaw);
-  if (item.visual_origin_applied) {
-    apply_urdf_pose_matrix(transform, item.visual_origin_x, item.visual_origin_y, item.visual_origin_z, item.visual_origin_roll, item.visual_origin_pitch, item.visual_origin_yaw);
-  }
+  QMatrix4x4 transform = authoritative_world_visual_transform(item);
   transform.scale(item.mesh_scale_x, item.mesh_scale_y, item.mesh_scale_z);
 
   QVector3D wmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
@@ -982,14 +1007,23 @@ void populate_runtime_transform_counters(
 {
   int transform_chain_applied_count = 0;
   int visual_origin_applied_count = 0;
+  int baked_world_visual_transform_count = 0;
+  int legacy_viewport_transform_count = 0;
   for (const auto & item : items) {
     const bool generated_or_locked_visual = is_generated_urdf_visual_item(item) || is_locked_urdf_item(item);
     if (!generated_or_locked_visual) continue;
+    if (item.has_baked_world_visual_transform) {
+      ++baked_world_visual_transform_count;
+      continue;
+    }
+    ++legacy_viewport_transform_count;
     if (item.transform_chain_applied) ++transform_chain_applied_count;
     if (item.visual_origin_applied) ++visual_origin_applied_count;
   }
   counters.transform_chain_applied_count = transform_chain_applied_count;
   counters.visual_origin_applied_count = visual_origin_applied_count;
+  counters.baked_world_visual_transform_count = baked_world_visual_transform_count;
+  counters.legacy_viewport_transform_count = legacy_viewport_transform_count;
 }
 
 bool is_raw_generated_bounds_only_item(const ScenePreviewWidget::PreviewItem & it)
@@ -1383,7 +1417,7 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
     last_scene_load_summary_scene_name_ = scene_key;
     last_scene_load_summary_warning_signature_ = warning_signature;
     qInfo().noquote() << QStringLiteral(
-      "Scene3D scene load: scene=%1 received=%2 visible=%3 mesh_sources=%4 urdf_primitives=%5 overlays=%6 mesh_cache=%7 warnings=%8")
+      "Scene3D scene load: scene=%1 received=%2 visible=%3 mesh_sources=%4 urdf_primitives=%5 overlays=%6 mesh_cache=%7 baked_world_visual_transform_count=%8 legacy_viewport_transform_count=%9 warnings=%10")
       .arg(scene_key)
       .arg(last_render_counters.viewport_received_count)
       .arg(last_render_counters.visible_count)
@@ -1391,6 +1425,8 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
       .arg(last_render_counters.urdf_primitive_source_count)
       .arg(last_render_counters.overlay_count)
       .arg(last_render_counters.render_cache_count)
+      .arg(last_render_counters.baked_world_visual_transform_count)
+      .arg(last_render_counters.legacy_viewport_transform_count)
       .arg(scene_load_warning_tokens.isEmpty() ? QStringLiteral("none") : scene_load_warning_tokens.join(QLatin1Char(',')));
   }
   if (should_emit_scene_load_summary && !scene_load_warning_tokens.isEmpty()) {
@@ -1420,6 +1456,8 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
       render_debug["locked_generated_urdf_visual_count"] = counters.locked_generated_urdf_visual_count;
       render_debug["transform_chain_applied_count"] = counters.transform_chain_applied_count;
       render_debug["visual_origin_applied_count"] = counters.visual_origin_applied_count;
+      render_debug["baked_world_visual_transform_count"] = counters.baked_world_visual_transform_count;
+      render_debug["legacy_viewport_transform_count"] = counters.legacy_viewport_transform_count;
       root["render_debug_counters"] = render_debug;
       out_file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
       out_file.close();
@@ -2242,10 +2280,7 @@ bool Scene3DViewportWidget::draw_urdf_primitive_geometry(const ScenePreviewWidge
   if (!item_has_valid_urdf_primitive(it)) return false;
 
   glPushMatrix();
-  apply_urdf_pose_gl(it.x, it.y, it.z, it.roll, it.pitch, it.yaw);
-  if (it.visual_origin_applied) {
-    apply_urdf_pose_gl(it.visual_origin_x, it.visual_origin_y, it.visual_origin_z, it.visual_origin_roll, it.visual_origin_pitch, it.visual_origin_yaw);
-  }
+  apply_authoritative_world_visual_transform_gl(it);
   glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
 
   if (type == QStringLiteral("box")) {
@@ -2833,11 +2868,7 @@ bool Scene3DViewportWidget::validate_mesh_final_span(const ScenePreviewWidget::P
   constexpr double kFinalSpanThresholdMeters = 50.0;
   const QVector3D raw_span = entry.local_span;
 
-  QMatrix4x4 final_transform;
-  apply_urdf_pose_matrix(final_transform, it.x, it.y, it.z, it.roll, it.pitch, it.yaw);
-  if (it.visual_origin_applied) {
-    apply_urdf_pose_matrix(final_transform, it.visual_origin_x, it.visual_origin_y, it.visual_origin_z, it.visual_origin_roll, it.visual_origin_pitch, it.visual_origin_yaw);
-  }
+  QMatrix4x4 final_transform = authoritative_world_visual_transform(it);
   apply_urdf_rpy_matrix(final_transform, it.mesh_r, it.mesh_p, it.mesh_y);
   if (it.has_origin_offset) {
     final_transform.translate(static_cast<float>(it.origin_offset_x), static_cast<float>(it.origin_offset_y), static_cast<float>(it.origin_offset_z));
@@ -3020,10 +3051,7 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   }
 
   glPushMatrix();
-  apply_urdf_pose_gl(it.x, it.y, it.z, it.roll, it.pitch, it.yaw);
-  if (it.visual_origin_applied) {
-    apply_urdf_pose_gl(it.visual_origin_x, it.visual_origin_y, it.visual_origin_z, it.visual_origin_roll, it.visual_origin_pitch, it.visual_origin_yaw);
-  }
+  apply_authoritative_world_visual_transform_gl(it);
   apply_urdf_rpy_gl(it.mesh_r, it.mesh_p, it.mesh_y);
   if (preview_path && it.has_origin_offset) glTranslated(it.origin_offset_x, it.origin_offset_y, it.origin_offset_z);
   glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
@@ -3209,10 +3237,7 @@ void Scene3DViewportWidget::draw_realsense_d435_visual_surrogate(const ScenePrev
   // Preview-safe visual_surrogate for RealSense D435/D435i meshes whose DAE cannot be triangulated.
   // It uses the same pose, visual-origin, mesh RPY, mesh scale, and origin-offset placement path as real meshes.
   glPushMatrix();
-  apply_urdf_pose_gl(it.x, it.y, it.z, it.roll, it.pitch, it.yaw);
-  if (it.visual_origin_applied) {
-    apply_urdf_pose_gl(it.visual_origin_x, it.visual_origin_y, it.visual_origin_z, it.visual_origin_roll, it.visual_origin_pitch, it.visual_origin_yaw);
-  }
+  apply_authoritative_world_visual_transform_gl(it);
   apply_urdf_rpy_gl(it.mesh_r, it.mesh_p, it.mesh_y);
   if (it.has_origin_offset) glTranslated(it.origin_offset_x, it.origin_offset_y, it.origin_offset_z);
   glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
@@ -3655,11 +3680,7 @@ bool Scene3DViewportWidget::mesh_world_bounds_for_item(const ScenePreviewWidget:
   const MeshCacheEntry & cache = cache_it.value();
   if (!cache.loaded || !cache.valid || !cache.has_bounds) return false;
 
-  QMatrix4x4 transform;
-  apply_urdf_pose_matrix(transform, item.x, item.y, item.z, item.roll, item.pitch, item.yaw);
-  if (item.visual_origin_applied) {
-    apply_urdf_pose_matrix(transform, item.visual_origin_x, item.visual_origin_y, item.visual_origin_z, item.visual_origin_roll, item.visual_origin_pitch, item.visual_origin_yaw);
-  }
+  QMatrix4x4 transform = authoritative_world_visual_transform(item);
   apply_urdf_rpy_matrix(transform, item.mesh_r, item.mesh_p, item.mesh_y);
   if (item.has_origin_offset) transform.translate(item.origin_offset_x, item.origin_offset_y, item.origin_offset_z);
   transform.scale(item.mesh_scale_x, item.mesh_scale_y, item.mesh_scale_z);

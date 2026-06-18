@@ -75,6 +75,15 @@ public:
     double visual_origin_roll{ 0.0 }, visual_origin_pitch{ 0.0 }, visual_origin_yaw{ 0.0 };
     bool transform_chain_applied{ false };
     bool visual_origin_applied{ false };
+    bool has_baked_world_visual_transform{ false };
+    QString baked_world_visual_transform_source;
+    bool has_baked_world_visual_matrix{ false };
+    double baked_world_visual_matrix[16]{
+      1.0, 0.0, 0.0, 0.0,
+      0.0, 1.0, 0.0, 0.0,
+      0.0, 0.0, 1.0, 0.0,
+      0.0, 0.0, 0.0, 1.0
+    };
     bool robot_candidate{ false };
     QString robot_classification_source;
     QString robot_base_frame;
@@ -230,6 +239,8 @@ public:
     int locked_generated_urdf_visual_count{ 0 };
     int transform_chain_applied_count{ 0 };
     int visual_origin_applied_count{ 0 };
+    int baked_world_visual_transform_count{ 0 };
+    int legacy_viewport_transform_count{ 0 };
     QString visual_quality_status{ QStringLiteral("UNAVAILABLE") };
     QStringList visual_quality_warnings;
     int labels_drawn{ 0 };
