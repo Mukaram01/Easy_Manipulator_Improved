@@ -412,6 +412,11 @@ UR5_RENDERED_MESH_ADJACENT_PAIRS: tuple[tuple[str, str], ...] = (
     ("wrist_2_link", "wrist_3_link"),
 )
 RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M = 0.20
+RENDERED_MESH_ADJACENCY_PAIR_LIMITS_M: dict[tuple[str, str], float] = {}
+
+
+def _rendered_mesh_adjacency_limit(parent: str, child: str) -> float:
+    return RENDERED_MESH_ADJACENCY_PAIR_LIMITS_M.get((parent, child), RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M)
 
 
 def _finite_float_list(value: Any, length: int) -> list[float] | None:
@@ -622,10 +627,32 @@ def _bbox_gap(parent_item: dict[str, Any] | None, child_item: dict[str, Any] | N
         return None
     return [max(0.0, max(float(cmin[i]) - float(pmax[i]), float(pmin[i]) - float(cmax[i]))) for i in range(3)]
 
-def _checked_pair_record(parent: str, child: str, parent_item: dict[str, Any] | None, child_item: dict[str, Any] | None, sep: float | None, ok: bool) -> dict[str, Any]:
+def _checked_pair_record(
+    parent: str,
+    child: str,
+    parent_item: dict[str, Any] | None,
+    child_item: dict[str, Any] | None,
+    sep: float | None,
+    limit_m: float,
+    ok: bool,
+) -> dict[str, Any]:
+    parent_link = (
+        (parent_item or {}).get("canonical_link_name")
+        or (parent_item or {}).get("link")
+        or (parent_item or {}).get("link_name")
+        or parent
+    )
+    child_link = (
+        (child_item or {}).get("canonical_link_name")
+        or (child_item or {}).get("link")
+        or (child_item or {}).get("link_name")
+        or child
+    )
     return {
         "parent": parent,
         "child": child,
+        "parent_link": parent_link,
+        "child_link": child_link,
         "parent_item_id": _item_id(parent_item or {}),
         "child_item_id": _item_id(child_item or {}),
         "parent_link_name": (parent_item or {}).get("link_name"),
@@ -640,9 +667,13 @@ def _checked_pair_record(parent: str, child: str, parent_item: dict[str, Any] | 
         "child_bbox_max": (child_item or {}).get("bounds", {}).get("max") if isinstance((child_item or {}).get("bounds"), dict) else None,
         "separation_m": sep,
         "bbox_gap_m": _bbox_gap(parent_item, child_item),
-        "limit_m": RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M,
+        "limit_m": limit_m,
+        "threshold_m": limit_m,
+        "passed": ok,
         "ok": ok,
     }
+
+
 def _final_draw_bbox_from_row(raw: dict[str, Any]) -> dict[str, list[float]] | None:
     bbox = raw.get("final_draw_bbox")
     if not isinstance(bbox, dict):
@@ -711,37 +742,67 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
         child_item = by_link.get(child)
         if parent_item is None or child_item is None:
             errors.append(f"Missing final draw rendered mesh adjacency link for UR5 pair {parent}->{child}")
-            checked.append(_checked_pair_record(parent, child, parent_item, child_item, None, False))
+            checked.append(
+                _checked_pair_record(
+                    parent, child, parent_item, child_item, None, _rendered_mesh_adjacency_limit(parent, child), False
+                )
+            )
             continue
         if not isinstance(parent_item.get("bounds"), dict) or not isinstance(child_item.get("bounds"), dict):
             detail = parent_item.get("bbox_error") or child_item.get("bbox_error") or "bbox_missing"
             errors.append(f"Missing or non-finite final_draw_bbox diagnostics for UR5 adjacency pair {parent}->{child}: {detail}")
-            checked.append(_checked_pair_record(parent, child, parent_item, child_item, None, False))
+            checked.append(
+                _checked_pair_record(
+                    parent, child, parent_item, child_item, None, _rendered_mesh_adjacency_limit(parent, child), False
+                )
+            )
             continue
         sep = _aabb_separation(parent_item["bounds"], child_item["bounds"])
-        ok = math.isfinite(sep) and sep <= RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M
-        checked.append(_checked_pair_record(parent, child, parent_item, child_item, sep, ok))
+        limit_m = _rendered_mesh_adjacency_limit(parent, child)
+        ok = math.isfinite(sep) and sep <= limit_m
+        checked.append(_checked_pair_record(parent, child, parent_item, child_item, sep, limit_m, ok))
         if not ok:
             errors.append(
-                f"UR5 final draw bbox adjacency {parent}->{child} separated by {sep:.3f} m; expected <= {RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M:.3f} m"
+                f"UR5 final draw bbox adjacency {parent}->{child} separated by {sep:.3f} m; expected <= {limit_m:.3f} m"
             )
 
     tool_parent = by_link.get("tool0") or by_link.get("wrist_3_link")
     tool_parent_name = "tool0" if by_link.get("tool0") is not None else "wrist_3_link"
     if robotiq_base is None or tool_parent is None:
         errors.append("Robotiq base could not be associated with wrist_3_link or tool0 final draw diagnostics")
-        checked.append(_checked_pair_record(tool_parent_name, "robotiq_base", tool_parent, robotiq_base, None, False))
+        checked.append(
+            _checked_pair_record(
+                tool_parent_name,
+                "robotiq_base",
+                tool_parent,
+                robotiq_base,
+                None,
+                _rendered_mesh_adjacency_limit(tool_parent_name, "robotiq_base"),
+                False,
+            )
+        )
     elif not isinstance(tool_parent.get("bounds"), dict) or not isinstance(robotiq_base.get("bounds"), dict):
         detail = tool_parent.get("bbox_error") or robotiq_base.get("bbox_error") or "bbox_missing"
         errors.append(f"Missing or non-finite final_draw_bbox diagnostics for Robotiq base association with wrist_3_link/tool0: {detail}")
-        checked.append(_checked_pair_record(tool_parent_name, "robotiq_base", tool_parent, robotiq_base, None, False))
+        checked.append(
+            _checked_pair_record(
+                tool_parent_name,
+                "robotiq_base",
+                tool_parent,
+                robotiq_base,
+                None,
+                _rendered_mesh_adjacency_limit(tool_parent_name, "robotiq_base"),
+                False,
+            )
+        )
     else:
         sep = _aabb_separation(tool_parent["bounds"], robotiq_base["bounds"])
-        ok = math.isfinite(sep) and sep <= RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M
-        checked.append(_checked_pair_record(tool_parent_name, "robotiq_base", tool_parent, robotiq_base, sep, ok))
+        limit_m = _rendered_mesh_adjacency_limit(tool_parent_name, "robotiq_base")
+        ok = math.isfinite(sep) and sep <= limit_m
+        checked.append(_checked_pair_record(tool_parent_name, "robotiq_base", tool_parent, robotiq_base, sep, limit_m, ok))
         if not ok:
             errors.append(
-                f"Robotiq base final draw bbox separated from {tool_parent_name} by {sep:.3f} m; expected <= {RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M:.3f} m"
+                f"Robotiq base final draw bbox separated from {tool_parent_name} by {sep:.3f} m; expected <= {limit_m:.3f} m"
             )
 
     payload["rendered_mesh_adjacency_status"] = "PASS" if not errors else "FAIL"
