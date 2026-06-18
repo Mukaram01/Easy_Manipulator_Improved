@@ -8476,9 +8476,11 @@ void MainWindow::populate_scene_hierarchy()
               .arg(p.base_pose_roll).arg(p.base_pose_pitch).arg(p.base_pose_yaw);
           }
           p.robot_world_pose = robot_world_pose;
+          const bool visual_origin_already_in_pose = workcell_builder::yaml_map_key(v, "visual_origin_applied_to_pose").as<bool>(false);
           if (visual_origin_xyz && visual_origin_rpy &&
               visual_origin_xyz.IsSequence() && visual_origin_rpy.IsSequence() &&
-              visual_origin_xyz.size() >= 3 && visual_origin_rpy.size() >= 3) {
+              visual_origin_xyz.size() >= 3 && visual_origin_rpy.size() >= 3 &&
+              !visual_origin_already_in_pose) {
             p.visual_origin_x = workcell_builder::yaml_seq_index(visual_origin_xyz,0).as<double>(0.0);
             p.visual_origin_y = workcell_builder::yaml_seq_index(visual_origin_xyz,1).as<double>(0.0);
             p.visual_origin_z = workcell_builder::yaml_seq_index(visual_origin_xyz,2).as<double>(0.0);
@@ -8487,6 +8489,8 @@ void MainWindow::populate_scene_hierarchy()
             p.visual_origin_yaw = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(visual_origin_rpy,2).as<double>(0.0), QStringLiteral("visual_origin.rpy[2]"), &p.warnings);
             p.visual_origin_applied = true;
             ++visual_origin_applied_count;
+          } else if (visual_origin_already_in_pose) {
+            p.visual_origin_applied = false;
           }
           const YAML::Node scale = workcell_builder::yaml_map_key(v, "mesh_scale");
           p.mesh_scale_x = workcell_builder::yaml_seq_index(scale,0).as<double>(1.0);

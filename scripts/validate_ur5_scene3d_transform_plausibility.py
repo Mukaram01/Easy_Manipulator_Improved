@@ -63,6 +63,15 @@ def _as_xyz(value: Any) -> list[float] | None:
 
 
 def _pose_xyz(record: dict[str, Any]) -> list[float] | None:
+    # Prefer the explicit link frame when present. Generated Scene3D visual
+    # poses may already include URDF visual_origin for rendering, while physical
+    # chain connectivity should be checked at the child-link frame.
+    for pose_key in ("link_world_pose", "world_pose"):
+        pose = record.get(pose_key)
+        if isinstance(pose, dict):
+            xyz = _as_xyz(pose.get("xyz"))
+            if xyz is not None:
+                return xyz
     pose = record.get("pose")
     if isinstance(pose, dict):
         xyz = _as_xyz(pose.get("xyz"))
