@@ -1487,6 +1487,7 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
         root["robot_aabb_max"] = QJsonArray{last_robot_aabb_max_.x(), last_robot_aabb_max_.y(), last_robot_aabb_max_.z()};
       }
       root["mesh_diagnostics"] = mesh_diagnostics_export();
+      root["final_draw_diagnostics"] = final_draw_diagnostics_export();
       QJsonObject render_debug;
       const auto counters = render_debug_counters();
       render_debug["locked_generated_urdf_visual_count"] = counters.locked_generated_urdf_visual_count;
@@ -2943,6 +2944,75 @@ bool Scene3DViewportWidget::validate_mesh_final_span(const ScenePreviewWidget::P
   return true;
 }
 
+
+namespace {
+QJsonArray scene3d_matrix_to_json(const QMatrix4x4 & matrix)
+{
+  QJsonArray out;
+  for (int row = 0; row < 4; ++row) {
+    for (int col = 0; col < 4; ++col) out.append(matrix(row, col));
+  }
+  return out;
+}
+
+QJsonArray scene3d_vec_to_json(const QVector3D & v)
+{
+  return QJsonArray{v.x(), v.y(), v.z()};
+}
+
+QJsonObject scene3d_bbox_to_json(const QVector3D & min, const QVector3D & max)
+{
+  QJsonObject bbox;
+  bbox["min"] = scene3d_vec_to_json(min);
+  bbox["max"] = scene3d_vec_to_json(max);
+  bbox["span"] = scene3d_vec_to_json(max - min);
+  return bbox;
+}
+
+QJsonArray scene3d_pose_to_json(double x, double y, double z, double roll, double pitch, double yaw)
+{
+  return QJsonArray{x, y, z, roll, pitch, yaw};
+}
+
+QString scene3d_link_name_for_item(const ScenePreviewWidget::PreviewItem & item)
+{
+  if (!item.frame_id.trimmed().isEmpty()) return item.frame_id.trimmed();
+  const QString id = item.id.trimmed();
+  for (const QString & sep : {QStringLiteral("::"), QStringLiteral("/visual"), QStringLiteral("__visual")}) {
+    const int idx = id.indexOf(sep);
+    if (idx > 0) return id.left(idx);
+  }
+  return id;
+}
+
+bool scene3d_final_draw_bbox_for_mesh(const Scene3DViewportWidget::InternalTriangleMesh & mesh,
+                                      const QMatrix4x4 & transform,
+                                      QVector3D & out_min,
+                                      QVector3D & out_max)
+{
+  bool initialized = false;
+  for (const auto & tri : mesh.triangles) {
+    for (const auto & vertex : tri.vertices) {
+      const QVector3D mapped = transform.map(vertex);
+      if (!qIsFinite(mapped.x()) || !qIsFinite(mapped.y()) || !qIsFinite(mapped.z())) continue;
+      if (!initialized) {
+        out_min = mapped;
+        out_max = mapped;
+        initialized = true;
+      } else {
+        out_min.setX(qMin(out_min.x(), mapped.x()));
+        out_min.setY(qMin(out_min.y(), mapped.y()));
+        out_min.setZ(qMin(out_min.z(), mapped.z()));
+        out_max.setX(qMax(out_max.x(), mapped.x()));
+        out_max.setY(qMax(out_max.y(), mapped.y()));
+        out_max.setZ(qMax(out_max.z(), mapped.z()));
+      }
+    }
+  }
+  return initialized;
+}
+}  // namespace
+
 QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
 {
   QJsonArray out;
@@ -3005,6 +3075,58 @@ QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
       guard_details.append(gd);
     }
     row["guard_decision_details"] = guard_details;
+    out.append(row);
+  }
+  return out;
+}
+
+
+QJsonArray Scene3DViewportWidget::final_draw_diagnostics_export() const
+{
+  QJsonArray out;
+  for (const auto & item : items) {
+    const QString source_layer = item.source_layer.trimmed().toLower();
+    const bool generated_locked_visual = item.locked || source_layer == QStringLiteral("locked_generated_urdf_visual") ||
+      source_layer == QStringLiteral("generated_urdf_visual") || item.has_baked_world_visual_transform;
+    if (!generated_locked_visual || !item_has_mesh_surface_candidate(item)) continue;
+
+    const QString mesh_source = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path : item.source_path;
+    QString canonical_mesh_source;
+    if (!try_resolve_canonical_mesh_path(mesh_source, canonical_mesh_source, &item)) {
+      canonical_mesh_source = QFileInfo(mesh_source).absoluteFilePath();
+    }
+    const auto cache_it = mesh_cache_.constFind(canonical_mesh_source);
+    if (cache_it == mesh_cache_.constEnd()) continue;
+    const MeshCacheEntry & entry = cache_it.value();
+    if (!entry.loaded || entry.oversized || !entry.valid || entry.mesh.triangles.isEmpty()) continue;
+
+    const QMatrix4x4 final_transform = final_mesh_transform_matrix(item);
+    QVector3D bbox_min;
+    QVector3D bbox_max;
+    const bool has_final_bbox = scene3d_final_draw_bbox_for_mesh(entry.mesh, final_transform, bbox_min, bbox_max);
+
+    QJsonObject row;
+    const QString link_name = scene3d_link_name_for_item(item);
+    row["item_id"] = item.id;
+    row["link_name"] = link_name;
+    row["link"] = link_name;
+    row["mesh_path"] = item.mesh_path;
+    row["source_path"] = item.source_path;
+    row["canonical_path"] = canonical_mesh_source;
+    row["baked_world_visual_pose"] = scene3d_pose_to_json(item.x, item.y, item.z, item.roll, item.pitch, item.yaw);
+    row["baked_world_visual_matrix"] = scene3d_matrix_to_json(authoritative_world_visual_transform(item));
+    row["visual_origin_applied"] = item.visual_origin_applied;
+    row["visual_origin"] = scene3d_pose_to_json(item.visual_origin_x, item.visual_origin_y, item.visual_origin_z,
+                                                 item.visual_origin_roll, item.visual_origin_pitch, item.visual_origin_yaw);
+    row["mesh_rpy"] = QJsonArray{item.mesh_r, item.mesh_p, item.mesh_y};
+    row["mesh_roll_pitch_yaw"] = QJsonArray{item.mesh_roll, item.mesh_pitch, item.mesh_yaw};
+    row["origin_offset"] = QJsonArray{item.origin_offset_x, item.origin_offset_y, item.origin_offset_z};
+    row["origin_offset_applied"] = item.has_origin_offset && !item.has_baked_world_visual_transform;
+    row["mesh_scale"] = QJsonArray{item.mesh_scale_x, item.mesh_scale_y, item.mesh_scale_z};
+    row["final_draw_model_matrix"] = scene3d_matrix_to_json(final_transform);
+    row["final_draw_world_pose"] = scene3d_pose_to_json(final_transform(0, 3), final_transform(1, 3), final_transform(2, 3), 0.0, 0.0, 0.0);
+    row["final_draw_bbox_available"] = has_final_bbox;
+    row["final_draw_bbox"] = has_final_bbox ? scene3d_bbox_to_json(bbox_min, bbox_max) : QJsonObject{};
     out.append(row);
   }
   return out;
