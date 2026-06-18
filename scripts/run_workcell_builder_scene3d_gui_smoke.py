@@ -400,6 +400,8 @@ UR5_RENDERED_MESH_LINK_ALIASES: dict[str, tuple[str, ...]] = {
     "wrist_1_link": ("wrist_1_link",),
     "wrist_2_link": ("wrist_2_link",),
     "wrist_3_link": ("wrist_3_link",),
+    "tool0": ("tool0",),
+    "robotiq_base": ("robotiq_base", "gripper_base_link", "robotiq_85_base_link", "robotiq base visual item"),
 }
 UR5_RENDERED_MESH_ADJACENT_PAIRS: tuple[tuple[str, str], ...] = (
     ("base_link", "shoulder_link"),
@@ -600,12 +602,25 @@ def _mesh_path(record: dict[str, Any]) -> str | None:
 
 
 def _is_robotiq_base_record(record: dict[str, Any]) -> bool:
+    canonical = str(record.get("canonical_link_name") or record.get("link_name") or record.get("link") or "").strip().lower()
+    if canonical in {"gripper_base_link", "robotiq_85_base_link", "robotiq_base"}:
+        return True
     haystack = " ".join(
         str(record.get(key) or "")
-        for key in ("link", "link_name", "name", "id", "item_id", "label", "mesh_path", "resolved_source_path", "resolved_path", "source_path")
+        for key in ("canonical_link_name", "link", "link_name", "visual_name", "name", "id", "item_id", "label", "mesh_uri", "package_uri", "mesh_path", "resolved_source_path", "resolved_path", "source_path")
     ).lower()
     return "robotiq" in haystack and ("base" in haystack or "2f" in haystack or "arg2f" in haystack)
 
+
+def _bbox_gap(parent_item: dict[str, Any] | None, child_item: dict[str, Any] | None) -> list[float] | None:
+    pb = (parent_item or {}).get("bounds")
+    cb = (child_item or {}).get("bounds")
+    if not isinstance(pb, dict) or not isinstance(cb, dict):
+        return None
+    pmin, pmax, cmin, cmax = pb.get("min"), pb.get("max"), cb.get("min"), cb.get("max")
+    if not all(isinstance(v, list) and len(v) == 3 for v in (pmin, pmax, cmin, cmax)):
+        return None
+    return [max(0.0, max(float(cmin[i]) - float(pmax[i]), float(pmin[i]) - float(cmax[i]))) for i in range(3)]
 
 def _checked_pair_record(parent: str, child: str, parent_item: dict[str, Any] | None, child_item: dict[str, Any] | None, sep: float | None, ok: bool) -> dict[str, Any]:
     return {
@@ -613,6 +628,10 @@ def _checked_pair_record(parent: str, child: str, parent_item: dict[str, Any] | 
         "child": child,
         "parent_item_id": _item_id(parent_item or {}),
         "child_item_id": _item_id(child_item or {}),
+        "parent_link_name": (parent_item or {}).get("link_name"),
+        "child_link_name": (child_item or {}).get("link_name"),
+        "parent_canonical_link_name": (parent_item or {}).get("canonical_link_name") or (parent_item or {}).get("link"),
+        "child_canonical_link_name": (child_item or {}).get("canonical_link_name") or (child_item or {}).get("link"),
         "parent_mesh_path": _mesh_path(parent_item or {}),
         "child_mesh_path": _mesh_path(child_item or {}),
         "parent_bbox_min": (parent_item or {}).get("bounds", {}).get("min") if isinstance((parent_item or {}).get("bounds"), dict) else None,
@@ -620,6 +639,7 @@ def _checked_pair_record(parent: str, child: str, parent_item: dict[str, Any] | 
         "child_bbox_min": (child_item or {}).get("bounds", {}).get("min") if isinstance((child_item or {}).get("bounds"), dict) else None,
         "child_bbox_max": (child_item or {}).get("bounds", {}).get("max") if isinstance((child_item or {}).get("bounds"), dict) else None,
         "separation_m": sep,
+        "bbox_gap_m": _bbox_gap(parent_item, child_item),
         "limit_m": RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M,
         "ok": ok,
     }
@@ -674,11 +694,16 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
             normalized["bbox_error"] = "final_draw_bbox_missing_or_non_finite"
         if _is_robotiq_base_record(raw) and robotiq_base is None:
             robotiq_base = normalized
-        for key in ("link", "link_name", "frame_id", "id", "item_id"):
+        for key in ("canonical_link_name", "link", "link_name", "frame_id", "visual_name", "id", "item_id", "mesh_uri", "package_uri", "mesh_path", "source_path"):
             link = str(raw.get(key) or "").strip()
-            canonical = alias_to_canonical.get(link)
-            if canonical and canonical not in by_link:
-                by_link[canonical] = normalized
+            candidates = {link, link.lower()}
+            for alias, canonical_value in alias_to_canonical.items():
+                if alias and alias in link:
+                    candidates.add(alias)
+            for candidate in candidates:
+                canonical = alias_to_canonical.get(candidate)
+                if canonical and canonical not in by_link:
+                    by_link[canonical] = normalized
 
     checked: list[dict[str, Any]] = []
     for parent, child in UR5_RENDERED_MESH_ADJACENT_PAIRS:

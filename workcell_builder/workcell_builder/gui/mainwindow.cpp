@@ -8501,6 +8501,7 @@ void MainWindow::populate_scene_hierarchy()
           p.id = id;
           p.display_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link"));
           if (p.display_name.trimmed().isEmpty()) p.display_name = id;
+          p.frame_id = p.display_name;
           p.category = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "category"));
           if (p.category.trimmed().isEmpty()) p.category = "URDF Visual";
           p.role = p.category;

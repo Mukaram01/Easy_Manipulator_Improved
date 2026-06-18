@@ -28,6 +28,7 @@
 #include <QJsonArray>
 #include <QXmlStreamReader>
 #include <QImage>
+#include <QRegularExpression>
 #include <cstring>
 #include <QtMath>
 
@@ -3001,12 +3002,55 @@ QJsonArray scene3d_pose_to_json(double x, double y, double z, double roll, doubl
 QString scene3d_link_name_for_item(const ScenePreviewWidget::PreviewItem & item)
 {
   if (!item.frame_id.trimmed().isEmpty()) return item.frame_id.trimmed();
+  const QString display = item.display_name.trimmed();
+  if (!display.isEmpty() && display != item.id.trimmed()) return display;
   const QString id = item.id.trimmed();
   for (const QString & sep : {QStringLiteral("::"), QStringLiteral("/visual"), QStringLiteral("__visual")}) {
     const int idx = id.indexOf(sep);
     if (idx > 0) return id.left(idx);
   }
   return id;
+}
+
+QString scene3d_canonical_link_name(const QString & raw_link)
+{
+  QString link = raw_link.trimmed();
+  if (link.isEmpty()) return link;
+  if (link == QStringLiteral("base_link_inertia")) return QStringLiteral("base_link");
+  const QString lower = link.toLower();
+  if (lower.contains(QStringLiteral("robotiq")) && lower.contains(QStringLiteral("base"))) {
+    return QStringLiteral("robotiq_85_base_link");
+  }
+  if (lower.contains(QStringLiteral("gripper_base_link"))) return QStringLiteral("gripper_base_link");
+  return link;
+}
+
+QString scene3d_canonical_link_name_for_item(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QString direct = scene3d_link_name_for_item(item);
+  QString canonical = scene3d_canonical_link_name(direct);
+  if (!canonical.isEmpty() && canonical != item.id.trimmed()) return canonical;
+  const QString haystack = QStringList{item.id, item.display_name, item.frame_id, item.package_uri, item.mesh_path, item.source_path}.join(QStringLiteral(" ")).toLower();
+  const QStringList ur5_links{
+    QStringLiteral("base_link_inertia"), QStringLiteral("base_link"), QStringLiteral("shoulder_link"),
+    QStringLiteral("upper_arm_link"), QStringLiteral("forearm_link"), QStringLiteral("wrist_1_link"),
+    QStringLiteral("wrist_2_link"), QStringLiteral("wrist_3_link"), QStringLiteral("tool0")
+  };
+  for (const QString & alias : ur5_links) {
+    if (haystack.contains(alias)) return scene3d_canonical_link_name(alias);
+  }
+  if (haystack.contains(QStringLiteral("robotiq")) && haystack.contains(QStringLiteral("base"))) {
+    return QStringLiteral("robotiq_85_base_link");
+  }
+  return canonical;
+}
+
+int scene3d_visual_index_for_item(const ScenePreviewWidget::PreviewItem & item)
+{
+  QRegularExpression re(QStringLiteral("(?:visual[_-]?|/visual)(\\d+)"));
+  const QRegularExpressionMatch match = re.match(item.id);
+  if (match.hasMatch()) return match.captured(1).toInt();
+  return -1;
 }
 
 bool scene3d_final_draw_bbox_for_mesh(const Scene3DViewportWidget::InternalTriangleMesh & mesh,
@@ -3124,8 +3168,14 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["item_id"] = item.id;
     row["id"] = item.id;
     row["display_name"] = item.display_name;
-    row["link_name"] = scene3d_link_name_for_item(item);
-    row["link"] = scene3d_link_name_for_item(item);
+    const QString link_name = scene3d_link_name_for_item(item);
+    const QString canonical_link_name = scene3d_canonical_link_name_for_item(item);
+    row["link_name"] = link_name;
+    row["canonical_link_name"] = canonical_link_name;
+    row["link"] = canonical_link_name.isEmpty() ? link_name : canonical_link_name;
+    const int visual_index = scene3d_visual_index_for_item(item);
+    if (visual_index >= 0) row["visual_index"] = visual_index;
+    row["visual_name"] = visual_index >= 0 ? QStringLiteral("visual_%1").arg(visual_index) : item.display_name;
     row["frame_id"] = item.frame_id;
     row["source_layer"] = item.source_layer;
     row["active_visual_source"] = item.active_visual_source;
@@ -3133,6 +3183,9 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["editable"] = item.editable;
     row["lock_reason"] = item.lock_reason;
     row["mesh_source"] = mesh_source;
+    row["mesh_uri"] = mesh_source;
+    row["package_uri"] = item.package_uri;
+    row["source_type"] = QStringLiteral("generated_urdf_visual_mesh");
     row["mesh_path"] = item.mesh_path;
     row["source_path"] = item.source_path;
     row["mesh_source_field"] = !item.mesh_path.trimmed().isEmpty() ? QStringLiteral("mesh_path") : QStringLiteral("source_path");
