@@ -19,19 +19,37 @@ TEST(Scene3DMeshPreviewRegression, KeepsTransformStackAndFallback)
   const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/scene3d_viewport_widget.cpp");
   ASSERT_FALSE(src.empty());
 
-  const auto t = src.find("glTranslated(it.x, it.y, it.z)");
-  const auto r = src.find("glRotated(qRadiansToDegrees(it.roll)");
-  const auto mr = src.find("glRotated(qRadiansToDegrees(it.mesh_r)");
-  const auto s = src.find("glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z)");
-  ASSERT_NE(t, std::string::npos);
-  ASSERT_NE(r, std::string::npos);
-  ASSERT_NE(mr, std::string::npos);
-  ASSERT_NE(s, std::string::npos);
-  EXPECT_LT(t, r);
-  EXPECT_LT(r, mr);
-  EXPECT_LT(mr, s);
+  const auto draw_fn = src.find("bool Scene3DViewportWidget::draw_mesh_preview_if_available");
+  ASSERT_NE(draw_fn, std::string::npos);
+  const auto draw_fn_end = src.find("bool Scene3DViewportWidget::", draw_fn + 1);
+  ASSERT_NE(draw_fn_end, std::string::npos);
+  const std::string draw_body = src.substr(draw_fn, draw_fn_end - draw_fn);
 
-  EXPECT_NE(src.find("if (preview_path && it.has_origin_offset)"), std::string::npos);
+  const auto baked_branch = draw_body.find("if (it.has_baked_world_visual_transform)");
+  ASSERT_NE(baked_branch, std::string::npos);
+  const auto non_baked_branch = draw_body.find("} else {", baked_branch);
+  ASSERT_NE(non_baked_branch, std::string::npos);
+  const auto scale = draw_body.find("glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z)", non_baked_branch);
+  ASSERT_NE(scale, std::string::npos);
+
+  const std::string baked_body = draw_body.substr(baked_branch, non_baked_branch - baked_branch);
+  EXPECT_NE(baked_body.find("apply_authoritative_world_visual_transform_gl(it)"), std::string::npos);
+  EXPECT_EQ(baked_body.find("apply_urdf_rpy_gl(it.mesh_r, it.mesh_p, it.mesh_y)"), std::string::npos);
+  EXPECT_EQ(baked_body.find("origin_offset_x"), std::string::npos);
+  EXPECT_EQ(baked_body.find("origin_offset_y"), std::string::npos);
+  EXPECT_EQ(baked_body.find("origin_offset_z"), std::string::npos);
+  EXPECT_LT(baked_branch, scale);
+
+  const std::string non_baked_body = draw_body.substr(non_baked_branch, scale - non_baked_branch);
+  const auto authoritative = non_baked_body.find("apply_authoritative_world_visual_transform_gl(it)");
+  const auto mesh_rpy = non_baked_body.find("apply_urdf_rpy_gl(it.mesh_r, it.mesh_p, it.mesh_y)");
+  const auto origin_offset = non_baked_body.find("if (preview_path && it.has_origin_offset) glTranslated(it.origin_offset_x, it.origin_offset_y, it.origin_offset_z)");
+  ASSERT_NE(authoritative, std::string::npos);
+  ASSERT_NE(mesh_rpy, std::string::npos);
+  ASSERT_NE(origin_offset, std::string::npos);
+  EXPECT_LT(authoritative, mesh_rpy);
+  EXPECT_LT(mesh_rpy, origin_offset);
+
   EXPECT_NE(src.find("if (draw_mesh_preview_if_available(it, visual_color, true))"), std::string::npos);
 }
 
