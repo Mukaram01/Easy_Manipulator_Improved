@@ -8362,6 +8362,8 @@ void MainWindow::populate_scene_hierarchy()
   int transform_chain_applied_count = 0;
   int visual_origin_applied_count = 0;
   int baked_world_visual_pose_count = 0;
+  int baked_world_visual_transform_count = 0;
+  int legacy_viewport_transform_count = 0;
   QString baked_world_visual_transform_source = QStringLiteral("urdf_fk_link_world_times_visual_origin");
   int missing_chain_warning_count = 0;
   {
@@ -8459,7 +8461,6 @@ void MainWindow::populate_scene_hierarchy()
           const YAML::Node world_pose = workcell_builder::yaml_map_key(v, "world_pose");
           const YAML::Node world_xyz = workcell_builder::yaml_map_key(world_pose, "xyz");
           const YAML::Node world_rpy = workcell_builder::yaml_map_key(world_pose, "rpy");
-          const YAML::Node baked_world_visual_pose = workcell_builder::yaml_map_key(v, "baked_world_visual_pose");
           const YAML::Node baked_world_visual_pose_xyz = workcell_builder::yaml_map_key(baked_world_visual_pose, "xyz");
           const YAML::Node baked_world_visual_pose_rpy = workcell_builder::yaml_map_key(baked_world_visual_pose, "rpy");
           const YAML::Node baked_world_visual_matrix = workcell_builder::yaml_map_key(v, "baked_world_visual_matrix");
