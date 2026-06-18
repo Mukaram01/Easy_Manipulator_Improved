@@ -694,6 +694,8 @@ ScenePreviewWidget::RenderDebugCounters ScenePreviewWidget::render_debug_counter
   out.locked_generated_urdf_visual_count = counters.locked_generated_urdf_visual_count;
   out.transform_chain_applied_count = counters.transform_chain_applied_count;
   out.visual_origin_applied_count = counters.visual_origin_applied_count;
+  out.baked_world_visual_transform_count = counters.baked_world_visual_transform_count;
+  out.legacy_viewport_transform_count = counters.legacy_viewport_transform_count;
   out.visual_quality_status = counters.visual_quality_status;
   out.visual_quality_warnings = counters.visual_quality_warnings;
   out.labels_drawn = counters.labels_drawn;

@@ -7212,6 +7212,8 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
   int robot_mesh_missing_count = 0;
   int transform_chain_applied_count = 0;
   int visual_origin_applied_count = 0;
+  int baked_world_visual_transform_count = 0;
+  int legacy_viewport_transform_count = 0;
   bool robot_bounds_initialized = false;
   QVector3D robot_aabb_min;
   QVector3D robot_aabb_max;
@@ -7230,6 +7232,11 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     }
     if (p.has_origin_offset || qAbs(p.mesh_r) > 1e-9 || qAbs(p.mesh_p) > 1e-9 || qAbs(p.mesh_y) > 1e-9) {
       ++transform_chain_applied_count;
+    }
+    if (p.has_baked_world_visual_transform) {
+      ++baked_world_visual_transform_count;
+    } else {
+      ++legacy_viewport_transform_count;
     }
     const QVector3D half_span(qMax(0.0, p.sx) * 0.5f, qMax(0.0, p.sy) * 0.5f, qMax(0.0, p.sz) * 0.5f);
     const QVector3D item_min(p.x - half_span.x(), p.y - half_span.y(), p.z - half_span.z());
@@ -7261,6 +7268,8 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
   diagnostics["robot_mesh_missing_count"] = robot_mesh_missing_count;
   diagnostics["transform_chain_applied_count"] = transform_chain_applied_count;
   diagnostics["visual_origin_applied_count"] = visual_origin_applied_count;
+  diagnostics["baked_world_visual_transform_count"] = baked_world_visual_transform_count;
+  diagnostics["legacy_viewport_transform_count"] = legacy_viewport_transform_count;
   diagnostics["camera_fit_target"] = QString("product_full_workcell_isometric");
   diagnostics["robot_pose_source"] = robot_pose_source;
   diagnostics["robot_base_frame"] = robot_base_frame;
@@ -8219,6 +8228,8 @@ void MainWindow::populate_scene_hierarchy()
   int stale_or_absolute_only_mesh_index_count = 0;
   int transform_chain_applied_count = 0;
   int visual_origin_applied_count = 0;
+  int baked_world_visual_transform_count = 0;
+  int legacy_viewport_transform_count = 0;
   int missing_chain_warning_count = 0;
   {
     QStringList detected_asset_roots;
@@ -8306,6 +8317,10 @@ void MainWindow::populate_scene_hierarchy()
           const YAML::Node world_pose = workcell_builder::yaml_map_key(v, "world_pose");
           const YAML::Node world_xyz = workcell_builder::yaml_map_key(world_pose, "xyz");
           const YAML::Node world_rpy = workcell_builder::yaml_map_key(world_pose, "rpy");
+          const YAML::Node baked_world_visual_pose = workcell_builder::yaml_map_key(v, "baked_world_visual_pose");
+          const YAML::Node baked_world_visual_pose_xyz = workcell_builder::yaml_map_key(baked_world_visual_pose, "xyz");
+          const YAML::Node baked_world_visual_pose_rpy = workcell_builder::yaml_map_key(baked_world_visual_pose, "rpy");
+          const YAML::Node baked_world_visual_matrix = workcell_builder::yaml_map_key(v, "baked_world_visual_matrix");
           const YAML::Node visual_origin = workcell_builder::yaml_map_key(v, "visual_origin");
           const YAML::Node visual_origin_xyz = workcell_builder::yaml_map_key(visual_origin, "xyz");
           const YAML::Node visual_origin_rpy = workcell_builder::yaml_map_key(visual_origin, "rpy");
@@ -8449,15 +8464,63 @@ void MainWindow::populate_scene_hierarchy()
           p.yaw = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(rpy,2).as<double>(0.0), QStringLiteral("pose.rpy[2]"), &p.warnings);
           p.chain_pose_x = p.x; p.chain_pose_y = p.y; p.chain_pose_z = p.z;
           p.chain_pose_roll = p.roll; p.chain_pose_pitch = p.pitch; p.chain_pose_yaw = p.yaw;
+          if (baked_world_visual_pose_xyz && baked_world_visual_pose_rpy &&
+              baked_world_visual_pose_xyz.IsSequence() && baked_world_visual_pose_rpy.IsSequence() &&
+              baked_world_visual_pose_xyz.size() >= 3 && baked_world_visual_pose_rpy.size() >= 3) {
+            p.x = workcell_builder::yaml_seq_index(baked_world_visual_pose_xyz,0).as<double>(0.0);
+            p.y = workcell_builder::yaml_seq_index(baked_world_visual_pose_xyz,1).as<double>(0.0);
+            p.z = workcell_builder::yaml_seq_index(baked_world_visual_pose_xyz,2).as<double>(0.0);
+            p.roll = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(baked_world_visual_pose_rpy,0).as<double>(0.0), QStringLiteral("baked_world_visual_pose.rpy[0]"), &p.warnings);
+            p.pitch = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(baked_world_visual_pose_rpy,1).as<double>(0.0), QStringLiteral("baked_world_visual_pose.rpy[1]"), &p.warnings);
+            p.yaw = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(baked_world_visual_pose_rpy,2).as<double>(0.0), QStringLiteral("baked_world_visual_pose.rpy[2]"), &p.warnings);
+            p.has_baked_world_visual_transform = true;
+            p.baked_world_visual_transform_source = QStringLiteral("generated/scene_visual_mesh_index.json:baked_world_visual_pose");
+            p.transform_chain_applied = false;
+            p.visual_origin_applied = false;
+          }
+          if (baked_world_visual_matrix && baked_world_visual_matrix.IsSequence() &&
+              (baked_world_visual_matrix.size() == 16 || baked_world_visual_matrix.size() == 4)) {
+            bool matrix_loaded = false;
+            if (baked_world_visual_matrix.size() == 16) {
+              for (std::size_t i = 0; i < 16; ++i) {
+                p.baked_world_visual_matrix[i] = workcell_builder::yaml_seq_index(baked_world_visual_matrix, i).as<double>(i % 5 == 0 ? 1.0 : 0.0);
+              }
+              matrix_loaded = true;
+            } else {
+              matrix_loaded = true;
+              for (std::size_t row = 0; row < 4; ++row) {
+                const YAML::Node row_node = workcell_builder::yaml_seq_index(baked_world_visual_matrix, row);
+                if (!row_node || !row_node.IsSequence() || row_node.size() < 4) {
+                  matrix_loaded = false;
+                  break;
+                }
+                for (std::size_t col = 0; col < 4; ++col) {
+                  p.baked_world_visual_matrix[row * 4 + col] = workcell_builder::yaml_seq_index(row_node, col).as<double>(row == col ? 1.0 : 0.0);
+                }
+              }
+            }
+            if (matrix_loaded) {
+              p.has_baked_world_visual_transform = true;
+              p.has_baked_world_visual_matrix = true;
+              p.baked_world_visual_transform_source = QStringLiteral("generated/scene_visual_mesh_index.json:baked_world_visual_matrix");
+              p.transform_chain_applied = false;
+              p.visual_origin_applied = false;
+            }
+          }
           const bool transform_status_resolved =
             transform_status == QStringLiteral("resolved") ||
             transform_status == QStringLiteral("ok") ||
             transform_status == QStringLiteral("static_fallback") ||
             transform_status == QStringLiteral("static_fallback_parent") ||
             transform_status == QStringLiteral("static_mesh_resolved");
-          p.transform_chain_applied = transform_status_resolved;
+          p.transform_chain_applied = p.has_baked_world_visual_transform ? false : transform_status_resolved;
           if (p.transform_chain_applied) ++transform_chain_applied_count;
-          if (!p.transform_chain_applied) {
+          if (p.has_baked_world_visual_transform) {
+            ++baked_world_visual_transform_count;
+          } else {
+            ++legacy_viewport_transform_count;
+          }
+          if (!p.has_baked_world_visual_transform && !p.transform_chain_applied) {
             ++missing_chain_warning_count;
             const QString transform_status_for_warning = transform_status.isEmpty() ? QStringLiteral("missing") : transform_status;
             p.warnings << QStringLiteral("Preview warning: missing/broken URDF chain; identity fallback avoided (transform_status=%1)").arg(transform_status_for_warning);
@@ -8480,7 +8543,8 @@ void MainWindow::populate_scene_hierarchy()
           if (visual_origin_xyz && visual_origin_rpy &&
               visual_origin_xyz.IsSequence() && visual_origin_rpy.IsSequence() &&
               visual_origin_xyz.size() >= 3 && visual_origin_rpy.size() >= 3 &&
-              !visual_origin_already_in_pose) {
+              !visual_origin_already_in_pose &&
+              !p.has_baked_world_visual_transform) {
             p.visual_origin_x = workcell_builder::yaml_seq_index(visual_origin_xyz,0).as<double>(0.0);
             p.visual_origin_y = workcell_builder::yaml_seq_index(visual_origin_xyz,1).as<double>(0.0);
             p.visual_origin_z = workcell_builder::yaml_seq_index(visual_origin_xyz,2).as<double>(0.0);
@@ -8680,9 +8744,11 @@ void MainWindow::populate_scene_hierarchy()
       append_studio_log(QString("Resolved source path diagnostics: stale_resolved_source_path=%1 package_uri_resolved_after_stale=%2")
         .arg(stale_resolved_source_path_count)
         .arg(package_uri_resolved_after_stale_resolved_source_path));
-      append_studio_log(QString("Transform diagnostics: transform_chain_applied_count=%1 visual_origin_applied_count=%2 robot_base_frame=%3 robot_world_pose=%4 missing_chain_warnings=%5")
+      append_studio_log(QString("Transform diagnostics: transform_chain_applied_count=%1 visual_origin_applied_count=%2 baked_world_visual_transform_count=%3 legacy_viewport_transform_count=%4 robot_base_frame=%5 robot_world_pose=%6 missing_chain_warnings=%7")
         .arg(transform_chain_applied_count)
         .arg(visual_origin_applied_count)
+        .arg(baked_world_visual_transform_count)
+        .arg(legacy_viewport_transform_count)
         .arg(robot_base_frame)
         .arg(robot_world_pose)
         .arg(missing_chain_warning_count));
