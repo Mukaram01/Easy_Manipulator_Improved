@@ -8,7 +8,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENES_ROOT = ROOT / "scenes"
-EXTRACTOR_VERSION = "2.10"
+EXTRACTOR_VERSION = "2.11"
 UR5_INITIAL_POSITIONS_PATH = ROOT / "assets/robots/universal_robot/ur5_moveit_config/config/initial_positions.yaml"
 UR5_INITIAL_JOINT_DEFAULTS = {
     "shoulder_pan_joint": 0.0,
@@ -1143,6 +1143,9 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
             visual_tf=tf_from_xyz_rpy(vxyz, vrpy)
             link_world_pose=xyz_rpy_from_tf(link_tf)
             expected_visual_pose=xyz_rpy_from_tf(matmul4(link_tf, visual_tf))
+            # The generated pose is already the full visual world pose:
+            # world/base -> joint origin -> joint axis rotation -> child link
+            # -> visual origin. Scene3D must not apply visual_origin again.
             pose=expected_visual_pose
             material_node=next((c for c in list(visual) if tag_name(c)=='material'),None)
             material={'name':'','color':None}
@@ -1158,7 +1161,7 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
             joint_name=(joint_meta or {}).get('name','')
             joint_value=(joint_meta or {}).get('value',0.0)
             joint_axis=(joint_meta or {}).get('axis',[1.0,0.0,0.0])
-            common={'id':item_id,'link':lname,'visual':vname,'parent_link':root_link or '','pose':pose,'chain_pose':pose,'world_pose':link_pose,'visual_origin':{'xyz':vxyz,'rpy':vrpy},'joint_name':joint_name,'joint_value':joint_value,'joint_axis':joint_axis,'material':material,'link_transform_status':link_status,'transform_status':link_status,'transform_chain':chain,'render_expected':True}
+            common={'id':item_id,'link':lname,'visual':vname,'parent_link':root_link or '','joint_parent_link':(joint_meta or {}).get('parent',''),'pose':pose,'chain_pose':pose,'world_pose':link_pose,'link_world_pose':link_world_pose,'expected_visual_pose':expected_visual_pose,'visual_origin_applied_to_pose':True,'visual_origin':{'xyz':vxyz,'rpy':vrpy},'joint_name':joint_name,'joint_value':joint_value,'joint_axis':joint_axis,'material':material,'link_transform_status':link_status,'transform_status':link_status,'transform_chain':chain,'render_expected':True}
             mesh=next((c for c in list(geom) if tag_name(c)=='mesh'),None)
             box=next((c for c in list(geom) if tag_name(c)=='box'),None)
             cyl=next((c for c in list(geom) if tag_name(c)=='cylinder'),None)
