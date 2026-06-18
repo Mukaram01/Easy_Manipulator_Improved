@@ -2944,6 +2944,75 @@ bool Scene3DViewportWidget::validate_mesh_final_span(const ScenePreviewWidget::P
   return true;
 }
 
+
+namespace {
+QJsonArray scene3d_matrix_to_json(const QMatrix4x4 & matrix)
+{
+  QJsonArray out;
+  for (int row = 0; row < 4; ++row) {
+    for (int col = 0; col < 4; ++col) out.append(matrix(row, col));
+  }
+  return out;
+}
+
+QJsonArray scene3d_vec_to_json(const QVector3D & v)
+{
+  return QJsonArray{v.x(), v.y(), v.z()};
+}
+
+QJsonObject scene3d_bbox_to_json(const QVector3D & min, const QVector3D & max)
+{
+  QJsonObject bbox;
+  bbox["min"] = scene3d_vec_to_json(min);
+  bbox["max"] = scene3d_vec_to_json(max);
+  bbox["span"] = scene3d_vec_to_json(max - min);
+  return bbox;
+}
+
+QJsonArray scene3d_pose_to_json(double x, double y, double z, double roll, double pitch, double yaw)
+{
+  return QJsonArray{x, y, z, roll, pitch, yaw};
+}
+
+QString scene3d_link_name_for_item(const ScenePreviewWidget::PreviewItem & item)
+{
+  if (!item.frame_id.trimmed().isEmpty()) return item.frame_id.trimmed();
+  const QString id = item.id.trimmed();
+  for (const QString & sep : {QStringLiteral("::"), QStringLiteral("/visual"), QStringLiteral("__visual")}) {
+    const int idx = id.indexOf(sep);
+    if (idx > 0) return id.left(idx);
+  }
+  return id;
+}
+
+bool scene3d_final_draw_bbox_for_mesh(const Scene3DViewportWidget::InternalTriangleMesh & mesh,
+                                      const QMatrix4x4 & transform,
+                                      QVector3D & out_min,
+                                      QVector3D & out_max)
+{
+  bool initialized = false;
+  for (const auto & tri : mesh.triangles) {
+    for (const auto & vertex : tri.vertices) {
+      const QVector3D mapped = transform.map(vertex);
+      if (!qIsFinite(mapped.x()) || !qIsFinite(mapped.y()) || !qIsFinite(mapped.z())) continue;
+      if (!initialized) {
+        out_min = mapped;
+        out_max = mapped;
+        initialized = true;
+      } else {
+        out_min.setX(qMin(out_min.x(), mapped.x()));
+        out_min.setY(qMin(out_min.y(), mapped.y()));
+        out_min.setZ(qMin(out_min.z(), mapped.z()));
+        out_max.setX(qMax(out_max.x(), mapped.x()));
+        out_max.setY(qMax(out_max.y(), mapped.y()));
+        out_max.setZ(qMax(out_max.z(), mapped.z()));
+      }
+    }
+  }
+  return initialized;
+}
+}  // namespace
+
 QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
 {
   QJsonArray out;

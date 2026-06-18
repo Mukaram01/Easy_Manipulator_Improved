@@ -540,29 +540,66 @@ def _aabb_separation(a: dict[str, list[float]], b: dict[str, list[float]]) -> fl
     return math.sqrt(sq)
 
 
+def _final_draw_bbox_from_row(raw: dict[str, Any]) -> dict[str, list[float]] | None:
+    bbox = raw.get("final_draw_bbox")
+    if not isinstance(bbox, dict):
+        return None
+    bmin = _finite_float_list(bbox.get("min"), 3)
+    bmax = _finite_float_list(bbox.get("max"), 3)
+    if bmin is None or bmax is None:
+        return None
+    return {"min": bmin, "max": bmax}
+
+
 def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Path, scene_name: str | None, index_data: dict[str, Any]) -> None:
     if scene_name != "ur5_2f_test":
         payload.setdefault("rendered_mesh_adjacency_status", "SKIPPED")
         payload.setdefault("rendered_mesh_adjacency_errors", [])
         payload.setdefault("rendered_mesh_adjacency_checked_pairs", [])
         return
-    items = index_data.get("visual_items") or index_data.get("items") or []
-    if not isinstance(items, list):
-        items = []
+    final_draw_items = payload.get("final_draw_diagnostics")
+    if not isinstance(final_draw_items, list):
+        final_draw_items = []
     by_link: dict[str, dict[str, Any]] = {}
+    missing_final_bbox: list[str] = []
     for canonical, aliases in UR5_RENDERED_MESH_LINK_ALIASES.items():
-        for raw in items:
+        matched_final_item = False
+        for raw in final_draw_items:
             if not isinstance(raw, dict):
                 continue
             link = str(raw.get("link") or raw.get("link_name") or raw.get("name") or raw.get("id") or "")
-            if link in aliases and str(raw.get("geometry_type") or "").lower() == "mesh":
-                bounds = _world_bounds_for_visual(repo_root, raw)
+            if link in aliases:
+                matched_final_item = True
+                bounds = _final_draw_bbox_from_row(raw)
                 if bounds is not None:
-                    by_link[canonical] = {"link": link, "bounds": bounds}
+                    by_link[canonical] = {"link": link, "bounds": bounds, "source": "app_final_draw_diagnostics"}
                     break
+        if matched_final_item and canonical not in by_link:
+            missing_final_bbox.append(canonical)
+    payload["rendered_mesh_adjacency_source"] = "app_final_draw_diagnostics" if final_draw_items else "scene_visual_mesh_index_fallback"
+
+    # The static scene_visual_mesh_index.json is retained only as fallback context for
+    # older app smoke payloads that do not yet export final draw diagnostics.
+    if not final_draw_items:
+        items = index_data.get("visual_items") or index_data.get("items") or []
+        if not isinstance(items, list):
+            items = []
+        for canonical, aliases in UR5_RENDERED_MESH_LINK_ALIASES.items():
+            for raw in items:
+                if not isinstance(raw, dict):
+                    continue
+                link = str(raw.get("link") or raw.get("link_name") or raw.get("name") or raw.get("id") or "")
+                if link in aliases and str(raw.get("geometry_type") or "").lower() == "mesh":
+                    bounds = _world_bounds_for_visual(repo_root, raw)
+                    if bounds is not None:
+                        by_link[canonical] = {"link": link, "bounds": bounds, "source": "scene_visual_mesh_index_fallback"}
+                        break
     errors: list[str] = []
     checked: list[dict[str, Any]] = []
     for parent, child in UR5_RENDERED_MESH_ADJACENT_PAIRS:
+        if final_draw_items and (parent in missing_final_bbox or child in missing_final_bbox):
+            errors.append(f"Missing final_draw_bbox diagnostics for UR5 adjacency pair {parent}->{child}")
+            continue
         if parent not in by_link or child not in by_link:
             errors.append(f"Missing rendered mesh/world bounds diagnostics for UR5 adjacency pair {parent}->{child}")
             continue
@@ -573,6 +610,7 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
             "child": child,
             "parent_link": by_link[parent]["link"],
             "child_link": by_link[child]["link"],
+            "bounds_source": by_link[parent].get("source") if by_link[parent].get("source") == by_link[child].get("source") else f"{by_link[parent].get('source')}->{by_link[child].get('source')}",
             "separation_m": sep,
             "limit_m": RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M,
             "ok": ok,

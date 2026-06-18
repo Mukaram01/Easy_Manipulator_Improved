@@ -780,6 +780,9 @@ private:
         viewport->render_smoke_fallback_frame();
       }
       const auto rc = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
+      const QJsonArray final_draw_diagnostics = viewport->final_draw_diagnostics_export();
+      root["final_draw_diagnostics"] = final_draw_diagnostics;
+      counters["final_draw_diagnostics_count"] = final_draw_diagnostics.size();
       counters["preview_items_count"] = rc.preview_items_count;
       counters["total_payload_count"] = rc.total_payload_count;
       counters["viewport_received_count"] = rc.viewport_received_count;
