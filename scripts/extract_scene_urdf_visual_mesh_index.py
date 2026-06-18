@@ -213,6 +213,40 @@ def xyz_rpy_from_tf(tf):
     else: roll=math.atan2(-tf[1][2],tf[1][1]); yaw=0.0
     return {"xyz":[x,y,z],"rpy":[roll,pitch,yaw]}
 
+def quaternion_from_tf(tf):
+    m00, m01, m02 = tf[0][0], tf[0][1], tf[0][2]
+    m10, m11, m12 = tf[1][0], tf[1][1], tf[1][2]
+    m20, m21, m22 = tf[2][0], tf[2][1], tf[2][2]
+    trace = m00 + m11 + m22
+    if trace > 0.0:
+        scale = math.sqrt(trace + 1.0) * 2.0
+        w = 0.25 * scale
+        x = (m21 - m12) / scale
+        y = (m02 - m20) / scale
+        z = (m10 - m01) / scale
+    elif m00 > m11 and m00 > m22:
+        scale = math.sqrt(1.0 + m00 - m11 - m22) * 2.0
+        w = (m21 - m12) / scale
+        x = 0.25 * scale
+        y = (m01 + m10) / scale
+        z = (m02 + m20) / scale
+    elif m11 > m22:
+        scale = math.sqrt(1.0 + m11 - m00 - m22) * 2.0
+        w = (m02 - m20) / scale
+        x = (m01 + m10) / scale
+        y = 0.25 * scale
+        z = (m12 + m21) / scale
+    else:
+        scale = math.sqrt(1.0 + m22 - m00 - m11) * 2.0
+        w = (m10 - m01) / scale
+        x = (m02 + m20) / scale
+        y = (m12 + m21) / scale
+        z = 0.25 * scale
+    norm = math.sqrt(x*x + y*y + z*z + w*w)
+    if norm > 1e-12:
+        x, y, z, w = x / norm, y / norm, z / norm, w / norm
+    return {"x": x, "y": y, "z": z, "w": w}
+
 
 
 def _repo_relative_path(path_value):
@@ -1142,11 +1176,14 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
             if link_tf is None: link_tf=identity_tf()
             visual_tf=tf_from_xyz_rpy(vxyz, vrpy)
             link_world_pose=xyz_rpy_from_tf(link_tf)
-            expected_visual_pose=xyz_rpy_from_tf(matmul4(link_tf, visual_tf))
+            baked_world_visual_matrix=matmul4(link_tf, visual_tf)
+            baked_world_visual_pose=xyz_rpy_from_tf(baked_world_visual_matrix)
+            baked_world_visual_quaternion=quaternion_from_tf(baked_world_visual_matrix)
+            expected_visual_pose=baked_world_visual_pose
             # The generated pose is already the full visual world pose:
             # world/base -> joint origin -> joint axis rotation -> child link
             # -> visual origin. Scene3D must not apply visual_origin again.
-            pose=expected_visual_pose
+            pose=baked_world_visual_pose
             material_node=next((c for c in list(visual) if tag_name(c)=='material'),None)
             material={'name':'','color':None}
             if material_node is not None:
@@ -1161,7 +1198,7 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
             joint_name=(joint_meta or {}).get('name','')
             joint_value=(joint_meta or {}).get('value',0.0)
             joint_axis=(joint_meta or {}).get('axis',[1.0,0.0,0.0])
-            common={'id':item_id,'link':lname,'visual':vname,'parent_link':root_link or '','joint_parent_link':(joint_meta or {}).get('parent',''),'pose':pose,'chain_pose':pose,'world_pose':link_pose,'link_world_pose':link_world_pose,'expected_visual_pose':expected_visual_pose,'visual_origin_applied_to_pose':True,'visual_origin':{'xyz':vxyz,'rpy':vrpy},'joint_name':joint_name,'joint_value':joint_value,'joint_axis':joint_axis,'material':material,'link_transform_status':link_status,'transform_status':link_status,'transform_chain':chain,'render_expected':True}
+            common={'id':item_id,'link':lname,'visual':vname,'parent_link':root_link or '','joint_parent_link':(joint_meta or {}).get('parent',''),'pose':pose,'chain_pose':pose,'world_pose':link_pose,'link_world_pose':link_world_pose,'expected_visual_pose':expected_visual_pose,'baked_world_visual_pose':baked_world_visual_pose,'baked_world_visual_matrix':baked_world_visual_matrix,'baked_world_visual_quaternion':baked_world_visual_quaternion,'baked_world_visual_transform_source':'urdf_fk_link_world_times_visual_origin','visual_origin_applied_to_pose':True,'visual_origin':{'xyz':vxyz,'rpy':vrpy},'joint_name':joint_name,'joint_value':joint_value,'joint_axis':joint_axis,'material':material,'link_transform_status':link_status,'transform_status':link_status,'transform_chain':chain,'render_expected':True}
             mesh=next((c for c in list(geom) if tag_name(c)=='mesh'),None)
             box=next((c for c in list(geom) if tag_name(c)=='box'),None)
             cyl=next((c for c in list(geom) if tag_name(c)=='cylinder'),None)
