@@ -1,4 +1,6 @@
 import json, os, subprocess, sys
+
+import pytest
 from pathlib import Path
 
 
@@ -336,7 +338,54 @@ def test_ur5_rendered_mesh_adjacency_prefers_final_draw_bboxes():
     assert checked[-1]["parent_item_id"] == "draw_wrist_3_link"
     assert checked[-1]["child_item_id"] == "draw_robotiq_arg2f_base_link"
     assert checked[-1]["parent_bbox_min"] == [0.6, 0.0, 0.0]
+    assert checked[-1]["parent_bbox_max"] == [0.7, 0.1, 0.1]
+    assert checked[-1]["child_bbox_min"] == [0.7, 0.0, 0.0]
+    assert checked[-1]["child_bbox_max"] == [0.8, 0.1, 0.1]
+    assert checked[-1]["separation_m"] == 0.0
+    assert checked[-1]["limit_m"] == smoke.RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M
+    assert checked[-1]["threshold_m"] == smoke.RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M
+    assert checked[-1]["parent_link"] == "wrist_3_link"
+    assert checked[-1]["child_link"] == "robotiq_arg2f_base_link"
+    assert checked[-1]["passed"] is True
     assert checked[-1]["ok"] is True
+
+
+def test_ur5_rendered_mesh_adjacency_keeps_upper_arm_forearm_gap_strict():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    def item(link: str, xmin: float, xmax: float) -> dict:
+        return {
+            "id": f"draw_{link}",
+            "link": link,
+            "mesh_path": f"meshes/{link}.dae",
+            "final_draw_bbox": {"min": [xmin, 0.0, 0.0], "max": [xmax, 0.1, 0.1]},
+        }
+
+    payload = {
+        "status": "PASS",
+        "final_draw_visual_items": [
+            item("base_link", 0.0, 0.1),
+            item("shoulder_link", 0.1, 0.2),
+            item("upper_arm_link", 0.2, 0.3),
+            item("forearm_link", 0.602, 0.702),
+            item("wrist_1_link", 0.702, 0.802),
+            item("wrist_2_link", 0.802, 0.902),
+            item("wrist_3_link", 0.902, 1.002),
+            item("robotiq_arg2f_base_link", 1.002, 1.102),
+        ],
+    }
+
+    smoke._apply_ur5_rendered_mesh_adjacency(
+        payload, repo_root=Path(__file__).resolve().parents[1], scene_name="ur5_2f_test", index_data={}
+    )
+
+    checked = payload["rendered_mesh_adjacency_checked_pairs"]
+    upper_forearm = next(pair for pair in checked if pair["parent"] == "upper_arm_link" and pair["child"] == "forearm_link")
+    assert payload["rendered_mesh_adjacency_status"] == "FAIL"
+    assert upper_forearm["separation_m"] == pytest.approx(0.302)
+    assert upper_forearm["limit_m"] == smoke.RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M
+    assert upper_forearm["ok"] is False
+    assert any("upper_arm_link->forearm_link" in error and "0.302 m" in error for error in payload["rendered_mesh_adjacency_errors"])
 
 
 def test_ur5_rendered_mesh_adjacency_final_draw_nonfinite_fails_without_index_fallback():
