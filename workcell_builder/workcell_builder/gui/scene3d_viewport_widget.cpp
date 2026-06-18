@@ -118,6 +118,36 @@ bool scene3d_debug_fallback_boxes_enabled()
   return scene3d_env_flag_enabled("WORKCELL_SCENE3D_DEBUG_FALLBACK_BOXES");
 }
 
+
+void apply_urdf_rpy_gl(double roll, double pitch, double yaw)
+{
+  // URDF RPY is fixed-axis roll/pitch/yaw: R = Rz(yaw) * Ry(pitch) * Rx(roll).
+  // OpenGL post-multiplies the current matrix, so issue rotations in Z/Y/X order.
+  glRotated(qRadiansToDegrees(yaw), 0.0, 0.0, 1.0);
+  glRotated(qRadiansToDegrees(pitch), 0.0, 1.0, 0.0);
+  glRotated(qRadiansToDegrees(roll), 1.0, 0.0, 0.0);
+}
+
+void apply_urdf_pose_gl(double x, double y, double z, double roll, double pitch, double yaw)
+{
+  glTranslated(x, y, z);
+  apply_urdf_rpy_gl(roll, pitch, yaw);
+}
+
+void apply_urdf_rpy_matrix(QMatrix4x4 & transform, double roll, double pitch, double yaw)
+{
+  // Keep Scene3D's CPU bounds path in the same URDF/RViz transform convention as rendering.
+  transform.rotate(static_cast<float>(qRadiansToDegrees(yaw)), 0.0f, 0.0f, 1.0f);
+  transform.rotate(static_cast<float>(qRadiansToDegrees(pitch)), 0.0f, 1.0f, 0.0f);
+  transform.rotate(static_cast<float>(qRadiansToDegrees(roll)), 1.0f, 0.0f, 0.0f);
+}
+
+void apply_urdf_pose_matrix(QMatrix4x4 & transform, double x, double y, double z, double roll, double pitch, double yaw)
+{
+  transform.translate(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+  apply_urdf_rpy_matrix(transform, roll, pitch, yaw);
+}
+
 bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item)
 {
   const QString mesh_path = item.mesh_path.trimmed();
@@ -220,15 +250,9 @@ bool primitive_world_bounds_for_item(const ScenePreviewWidget::PreviewItem & ite
   }
 
   QMatrix4x4 transform;
-  transform.translate(item.x, item.y, item.z);
-  transform.rotate(qRadiansToDegrees(item.roll), 1.0f, 0.0f, 0.0f);
-  transform.rotate(qRadiansToDegrees(item.pitch), 0.0f, 1.0f, 0.0f);
-  transform.rotate(qRadiansToDegrees(item.yaw), 0.0f, 0.0f, 1.0f);
+  apply_urdf_pose_matrix(transform, item.x, item.y, item.z, item.roll, item.pitch, item.yaw);
   if (item.visual_origin_applied) {
-    transform.translate(item.visual_origin_x, item.visual_origin_y, item.visual_origin_z);
-    transform.rotate(qRadiansToDegrees(item.visual_origin_roll), 1.0f, 0.0f, 0.0f);
-    transform.rotate(qRadiansToDegrees(item.visual_origin_pitch), 0.0f, 1.0f, 0.0f);
-    transform.rotate(qRadiansToDegrees(item.visual_origin_yaw), 0.0f, 0.0f, 1.0f);
+    apply_urdf_pose_matrix(transform, item.visual_origin_x, item.visual_origin_y, item.visual_origin_z, item.visual_origin_roll, item.visual_origin_pitch, item.visual_origin_yaw);
   }
   transform.scale(item.mesh_scale_x, item.mesh_scale_y, item.mesh_scale_z);
 
@@ -2218,15 +2242,9 @@ bool Scene3DViewportWidget::draw_urdf_primitive_geometry(const ScenePreviewWidge
   if (!item_has_valid_urdf_primitive(it)) return false;
 
   glPushMatrix();
-  glTranslated(it.x, it.y, it.z);
-  glRotated(qRadiansToDegrees(it.roll), 1.0, 0.0, 0.0);
-  glRotated(qRadiansToDegrees(it.pitch), 0.0, 1.0, 0.0);
-  glRotated(qRadiansToDegrees(it.yaw), 0.0, 0.0, 1.0);
+  apply_urdf_pose_gl(it.x, it.y, it.z, it.roll, it.pitch, it.yaw);
   if (it.visual_origin_applied) {
-    glTranslated(it.visual_origin_x, it.visual_origin_y, it.visual_origin_z);
-    glRotated(qRadiansToDegrees(it.visual_origin_roll), 1.0, 0.0, 0.0);
-    glRotated(qRadiansToDegrees(it.visual_origin_pitch), 0.0, 1.0, 0.0);
-    glRotated(qRadiansToDegrees(it.visual_origin_yaw), 0.0, 0.0, 1.0);
+    apply_urdf_pose_gl(it.visual_origin_x, it.visual_origin_y, it.visual_origin_z, it.visual_origin_roll, it.visual_origin_pitch, it.visual_origin_yaw);
   }
   glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
 
@@ -2816,19 +2834,11 @@ bool Scene3DViewportWidget::validate_mesh_final_span(const ScenePreviewWidget::P
   const QVector3D raw_span = entry.local_span;
 
   QMatrix4x4 final_transform;
-  final_transform.translate(static_cast<float>(it.x), static_cast<float>(it.y), static_cast<float>(it.z));
-  final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.roll)), 1.0f, 0.0f, 0.0f);
-  final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.pitch)), 0.0f, 1.0f, 0.0f);
-  final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.yaw)), 0.0f, 0.0f, 1.0f);
+  apply_urdf_pose_matrix(final_transform, it.x, it.y, it.z, it.roll, it.pitch, it.yaw);
   if (it.visual_origin_applied) {
-    final_transform.translate(static_cast<float>(it.visual_origin_x), static_cast<float>(it.visual_origin_y), static_cast<float>(it.visual_origin_z));
-    final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.visual_origin_roll)), 1.0f, 0.0f, 0.0f);
-    final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.visual_origin_pitch)), 0.0f, 1.0f, 0.0f);
-    final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.visual_origin_yaw)), 0.0f, 0.0f, 1.0f);
+    apply_urdf_pose_matrix(final_transform, it.visual_origin_x, it.visual_origin_y, it.visual_origin_z, it.visual_origin_roll, it.visual_origin_pitch, it.visual_origin_yaw);
   }
-  final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.mesh_r)), 1.0f, 0.0f, 0.0f);
-  final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.mesh_p)), 0.0f, 1.0f, 0.0f);
-  final_transform.rotate(static_cast<float>(qRadiansToDegrees(it.mesh_y)), 0.0f, 0.0f, 1.0f);
+  apply_urdf_rpy_matrix(final_transform, it.mesh_r, it.mesh_p, it.mesh_y);
   if (it.has_origin_offset) {
     final_transform.translate(static_cast<float>(it.origin_offset_x), static_cast<float>(it.origin_offset_y), static_cast<float>(it.origin_offset_z));
   }
@@ -3010,19 +3020,11 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   }
 
   glPushMatrix();
-  glTranslated(it.x, it.y, it.z);
-  glRotated(qRadiansToDegrees(it.roll), 1.0, 0.0, 0.0);
-  glRotated(qRadiansToDegrees(it.pitch), 0.0, 1.0, 0.0);
-  glRotated(qRadiansToDegrees(it.yaw), 0.0, 0.0, 1.0);
+  apply_urdf_pose_gl(it.x, it.y, it.z, it.roll, it.pitch, it.yaw);
   if (it.visual_origin_applied) {
-    glTranslated(it.visual_origin_x, it.visual_origin_y, it.visual_origin_z);
-    glRotated(qRadiansToDegrees(it.visual_origin_roll), 1.0, 0.0, 0.0);
-    glRotated(qRadiansToDegrees(it.visual_origin_pitch), 0.0, 1.0, 0.0);
-    glRotated(qRadiansToDegrees(it.visual_origin_yaw), 0.0, 0.0, 1.0);
+    apply_urdf_pose_gl(it.visual_origin_x, it.visual_origin_y, it.visual_origin_z, it.visual_origin_roll, it.visual_origin_pitch, it.visual_origin_yaw);
   }
-  glRotated(qRadiansToDegrees(it.mesh_r), 1.0, 0.0, 0.0);
-  glRotated(qRadiansToDegrees(it.mesh_p), 0.0, 1.0, 0.0);
-  glRotated(qRadiansToDegrees(it.mesh_y), 0.0, 0.0, 1.0);
+  apply_urdf_rpy_gl(it.mesh_r, it.mesh_p, it.mesh_y);
   if (preview_path && it.has_origin_offset) glTranslated(it.origin_offset_x, it.origin_offset_y, it.origin_offset_z);
   glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
 
@@ -3207,19 +3209,11 @@ void Scene3DViewportWidget::draw_realsense_d435_visual_surrogate(const ScenePrev
   // Preview-safe visual_surrogate for RealSense D435/D435i meshes whose DAE cannot be triangulated.
   // It uses the same pose, visual-origin, mesh RPY, mesh scale, and origin-offset placement path as real meshes.
   glPushMatrix();
-  glTranslated(it.x, it.y, it.z);
-  glRotated(qRadiansToDegrees(it.roll), 1.0, 0.0, 0.0);
-  glRotated(qRadiansToDegrees(it.pitch), 0.0, 1.0, 0.0);
-  glRotated(qRadiansToDegrees(it.yaw), 0.0, 0.0, 1.0);
+  apply_urdf_pose_gl(it.x, it.y, it.z, it.roll, it.pitch, it.yaw);
   if (it.visual_origin_applied) {
-    glTranslated(it.visual_origin_x, it.visual_origin_y, it.visual_origin_z);
-    glRotated(qRadiansToDegrees(it.visual_origin_roll), 1.0, 0.0, 0.0);
-    glRotated(qRadiansToDegrees(it.visual_origin_pitch), 0.0, 1.0, 0.0);
-    glRotated(qRadiansToDegrees(it.visual_origin_yaw), 0.0, 0.0, 1.0);
+    apply_urdf_pose_gl(it.visual_origin_x, it.visual_origin_y, it.visual_origin_z, it.visual_origin_roll, it.visual_origin_pitch, it.visual_origin_yaw);
   }
-  glRotated(qRadiansToDegrees(it.mesh_r), 1.0, 0.0, 0.0);
-  glRotated(qRadiansToDegrees(it.mesh_p), 0.0, 1.0, 0.0);
-  glRotated(qRadiansToDegrees(it.mesh_y), 0.0, 0.0, 1.0);
+  apply_urdf_rpy_gl(it.mesh_r, it.mesh_p, it.mesh_y);
   if (it.has_origin_offset) glTranslated(it.origin_offset_x, it.origin_offset_y, it.origin_offset_z);
   glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
 
@@ -3662,19 +3656,11 @@ bool Scene3DViewportWidget::mesh_world_bounds_for_item(const ScenePreviewWidget:
   if (!cache.loaded || !cache.valid || !cache.has_bounds) return false;
 
   QMatrix4x4 transform;
-  transform.translate(item.x, item.y, item.z);
-  transform.rotate(qRadiansToDegrees(item.roll), 1.0f, 0.0f, 0.0f);
-  transform.rotate(qRadiansToDegrees(item.pitch), 0.0f, 1.0f, 0.0f);
-  transform.rotate(qRadiansToDegrees(item.yaw), 0.0f, 0.0f, 1.0f);
+  apply_urdf_pose_matrix(transform, item.x, item.y, item.z, item.roll, item.pitch, item.yaw);
   if (item.visual_origin_applied) {
-    transform.translate(item.visual_origin_x, item.visual_origin_y, item.visual_origin_z);
-    transform.rotate(qRadiansToDegrees(item.visual_origin_roll), 1.0f, 0.0f, 0.0f);
-    transform.rotate(qRadiansToDegrees(item.visual_origin_pitch), 0.0f, 1.0f, 0.0f);
-    transform.rotate(qRadiansToDegrees(item.visual_origin_yaw), 0.0f, 0.0f, 1.0f);
+    apply_urdf_pose_matrix(transform, item.visual_origin_x, item.visual_origin_y, item.visual_origin_z, item.visual_origin_roll, item.visual_origin_pitch, item.visual_origin_yaw);
   }
-  transform.rotate(qRadiansToDegrees(item.mesh_r), 1.0f, 0.0f, 0.0f);
-  transform.rotate(qRadiansToDegrees(item.mesh_p), 0.0f, 1.0f, 0.0f);
-  transform.rotate(qRadiansToDegrees(item.mesh_y), 0.0f, 0.0f, 1.0f);
+  apply_urdf_rpy_matrix(transform, item.mesh_r, item.mesh_p, item.mesh_y);
   if (item.has_origin_offset) transform.translate(item.origin_offset_x, item.origin_offset_y, item.origin_offset_z);
   transform.scale(item.mesh_scale_x, item.mesh_scale_y, item.mesh_scale_z);
 
