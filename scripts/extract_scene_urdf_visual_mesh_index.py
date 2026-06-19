@@ -1026,9 +1026,24 @@ def append_static_ur5_mesh_visuals(items, package_map):
             'link': spec['link'],
             'visual': 'static_mesh_visual',
             'parent_link': 'world',
+            'immediate_parent_link': 'world',
             'joint_parent_link': 'world',
+            'parent_joint': '',
+            'parent_joint_name': '',
+            'parent_joint_type': 'static_preview',
+            'parent_joint_origin': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
+            'parent_joint_axis': [1.0, 0.0, 0.0],
+            'parent_joint_value': 0.0,
+            'parent_joint_value_source': 'zero_default',
             'joint_name': '',
+            'joint_type': 'static_preview',
+            'joint_origin': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
+            'joint_axis': [1.0, 0.0, 0.0],
             'joint_value': 0.0,
+            'joint_value_source': 'zero_default',
+            'applied_joint_value': 0.0,
+            'applied_joint_value_source': 'zero_default',
+            'link_chain': ['world', spec['link']],
             'category': 'robot_static_mesh_visual',
             'geometry_type': 'mesh',
             'pose': {'xyz': xyz, 'rpy': rpy},
@@ -1086,6 +1101,24 @@ def append_static_robot_primitive_fallbacks(items, urdf_text, fallback_reason, e
             'id': item_id,
             'link': link,
             'parent_link': 'world',
+            'immediate_parent_link': 'world',
+            'joint_parent_link': 'world',
+            'parent_joint': '',
+            'parent_joint_name': '',
+            'parent_joint_type': 'static_preview',
+            'parent_joint_origin': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
+            'parent_joint_axis': [1.0, 0.0, 0.0],
+            'parent_joint_value': 0.0,
+            'parent_joint_value_source': 'zero_default',
+            'joint_name': '',
+            'joint_type': 'static_preview',
+            'joint_origin': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
+            'joint_axis': [1.0, 0.0, 0.0],
+            'joint_value': 0.0,
+            'joint_value_source': 'zero_default',
+            'applied_joint_value': 0.0,
+            'applied_joint_value_source': 'zero_default',
+            'link_chain': ['world', link],
             'category': 'robot_static_primitive_fallback',
             'geometry_type': geom,
             'pose': {'xyz': xyz, 'rpy': rpy},
@@ -1156,7 +1189,7 @@ def read_ur5_initial_joint_positions(path=UR5_INITIAL_POSITIONS_PATH):
     positions = data.get('initial_positions') if isinstance(data, dict) else None
     if not isinstance(positions, dict):
         print('[scene_visual_mesh_index] UR5 initial joint source: default')
-        return defaults, 'default', preview_pose_metadata, sorted(defaults.keys())
+        return defaults, 'fake-hardware default', preview_pose_metadata, sorted(defaults.keys())
     resolved = dict(defaults)
     provided = set()
     for name, value in positions.items():
@@ -1166,7 +1199,7 @@ def read_ur5_initial_joint_positions(path=UR5_INITIAL_POSITIONS_PATH):
         except Exception:
             pass
     joint_defaults_used = sorted(name for name in defaults if name not in provided)
-    source = _repo_relative_path(path)
+    source = 'initial_positions.yaml'
     print(f'[scene_visual_mesh_index] UR5 initial joint source: {path.name}')
     if all(abs(float(resolved.get(name, 0.0))) <= UR5_PREVIEW_ALL_ZERO_EPSILON for name in UR5_INITIAL_JOINT_DEFAULTS):
         resolved = dict(UR5_PREVIEW_HOME_JOINT_POSE)
@@ -1213,13 +1246,13 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
         joint_type=j.attrib.get('type','fixed')
         joint_value=0.0 if joint_type == 'fixed' else float(initial_joint_positions.get(joint_name, 0.0))
         if joint_type == 'fixed':
-            joint_value_source = 'fixed_joint'
+            joint_value_source = 'zero_default'
         elif joint_name in joint_defaults_used:
-            joint_value_source = 'default'
+            joint_value_source = 'fake-hardware default'
         elif joint_name in initial_joint_positions:
-            joint_value_source = initial_joint_source
+            joint_value_source = 'initial_positions.yaml'
         else:
-            joint_value_source = 'implicit_zero'
+            joint_value_source = 'zero_default'
         joints.append({'name':joint_name,'type':joint_type,'parent':parent.attrib.get('link',''),'child':child.attrib.get('link',''),'origin_xyz':xyz,'origin_rpy':rpy,'axis':axis_xyz,'value':joint_value,'value_source':joint_value_source})
     child_to_joint={j['child']:j for j in joints if j['child']}
     roots=sorted(n for n in links.keys() if n and n not in child_to_joint)
@@ -1228,6 +1261,21 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
     visual_parent_counts=collections.Counter()
     chain_diagnostics_by_link={}
     cache={}
+    def link_chain_to_root(link_name):
+        if not link_name:
+            return []
+        chain=[]
+        cur=link_name
+        seen=set()
+        while cur and cur not in seen:
+            chain.append(cur)
+            seen.add(cur)
+            j=child_to_joint.get(cur)
+            if not j:
+                break
+            cur=j.get('parent','')
+        return list(reversed(chain))
+
     def link_world_tf(link_name):
         if link_name in cache: return cache[link_name]
         if link_name not in links: return None,'missing_link',[],link_name,'missing_link',None
@@ -1311,11 +1359,14 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
             visual_parent_counts[root_link or ''] += 1
             link_pose=xyz_rpy_from_tf(link_tf)
             joint_name=(joint_meta or {}).get('name','')
+            joint_type=(joint_meta or {}).get('type','root')
             joint_value=(joint_meta or {}).get('value',0.0)
             joint_axis=(joint_meta or {}).get('axis',[1.0,0.0,0.0])
-            joint_value_source=(joint_meta or {}).get('value_source', 'root_link' if not joint_meta else '')
+            joint_origin={'xyz':(joint_meta or {}).get('origin_xyz',[0.0,0.0,0.0]),'rpy':(joint_meta or {}).get('origin_rpy',[0.0,0.0,0.0])}
+            joint_value_source=(joint_meta or {}).get('value_source', 'zero_default')
             parent_link=(joint_meta or {}).get('parent','')
-            common={'id':item_id,'source':'urdf_flattened','link':lname,'object_name':lname,'visual':vname,'parent_link':parent_link,'root_link':root_link or '','joint_parent_link':parent_link,'parent_joint':joint_name,'joint_type':(joint_meta or {}).get('type','root'),'pose':pose,'chain_pose':pose,'world_pose':pose,'link_world_pose':link_world_pose,'expected_visual_pose':expected_visual_pose,'baked_world_visual_pose':baked_world_visual_pose,'baked_world_visual_matrix':baked_world_visual_matrix,'baked_world_visual_quaternion':baked_world_visual_quaternion,'baked_world_visual_transform_source':'urdf_fk_link_world_times_visual_origin','visual_origin_applied_to_pose':True,'visual_origin':{'xyz':vxyz,'rpy':vrpy},'joint_name':joint_name,'joint_value':joint_value,'joint_axis':joint_axis,'joint_value_source':joint_value_source,'material':material,'color':material.get('color'),'link_transform_status':link_status,'transform_status':link_status,'transform_chain':chain,'render_expected':True}
+            link_chain=link_chain_to_root(lname)
+            common={'id':item_id,'source':'urdf_flattened','link':lname,'object_name':lname,'visual':vname,'parent_link':parent_link,'immediate_parent_link':parent_link,'root_link':root_link or '','link_chain':link_chain,'joint_parent_link':parent_link,'parent_joint':joint_name,'parent_joint_name':joint_name,'parent_joint_type':joint_type,'parent_joint_origin':joint_origin,'parent_joint_axis':joint_axis,'parent_joint_value':joint_value,'parent_joint_value_source':joint_value_source,'joint_type':joint_type,'joint_origin':joint_origin,'pose':pose,'chain_pose':pose,'world_pose':pose,'link_world_pose':link_world_pose,'expected_visual_pose':expected_visual_pose,'baked_world_visual_pose':baked_world_visual_pose,'baked_world_visual_matrix':baked_world_visual_matrix,'baked_world_visual_quaternion':baked_world_visual_quaternion,'baked_world_visual_transform_source':'urdf_fk_link_world_times_visual_origin','visual_origin_applied_to_pose':True,'visual_origin':{'xyz':vxyz,'rpy':vrpy},'joint_name':joint_name,'joint_value':joint_value,'applied_joint_value':joint_value,'joint_axis':joint_axis,'joint_value_source':joint_value_source,'applied_joint_value_source':joint_value_source,'material':material,'color':material.get('color'),'link_transform_status':link_status,'transform_status':link_status,'transform_chain':chain,'render_expected':True}
             mesh=next((c for c in list(geom) if tag_name(c)=='mesh'),None)
             box=next((c for c in list(geom) if tag_name(c)=='box'),None)
             cyl=next((c for c in list(geom) if tag_name(c)=='cylinder'),None)
