@@ -8,7 +8,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENES_ROOT = ROOT / "scenes"
-EXTRACTOR_VERSION = "2.11"
+EXTRACTOR_VERSION = "2.12"
 UR5_INITIAL_POSITIONS_PATH = ROOT / "assets/robots/universal_robot/ur5_moveit_config/config/initial_positions.yaml"
 UR5_INITIAL_JOINT_DEFAULTS = {
     "shoulder_pan_joint": 0.0,
@@ -892,6 +892,42 @@ def _contains_unresolved_ur_robot(text):
         return False
     return bool(re.search(r"<\s*(?:[A-Za-z_][\w.-]*:)?ur_robot\b", text, re.IGNORECASE)) or 'ur_robot' in lowered
 
+
+def _ur5_authoritative_flattened_links(items):
+    """Return UR5 links whose URDF-flattened visuals should not be shadowed.
+
+    A renderable ``source=urdf_flattened`` item means extraction succeeded for
+    that link and its FK-derived pose is authoritative for Scene3D. Legacy
+    static/baked UR5 fallbacks must not duplicate that link or replace its pose.
+    """
+    links=set()
+    for item in items or []:
+        if str(item.get('source') or '') != 'urdf_flattened':
+            continue
+        link=str(item.get('link') or '')
+        if link not in UR5_ARM_LINKS:
+            continue
+        if item.get('render_expected', True) and item.get('resolved', True):
+            links.add(link)
+    return links
+
+def _ur5_fallback_decision_metadata(items, fallback_requested, fallback_counts=None):
+    authoritative_links=sorted(_ur5_authoritative_flattened_links(items))
+    fallback_counts=dict(fallback_counts or {})
+    skipped=bool(fallback_requested and authoritative_links)
+    return {
+        'legacy_static_fallback_requested': bool(fallback_requested),
+        'legacy_static_fallback_skipped': skipped,
+        'legacy_static_fallback_skip_reason': (
+            'flattened URDF extraction emitted authoritative source=urdf_flattened UR5 visuals; legacy static/baked fallback was not emitted for those links'
+            if skipped else ''
+        ),
+        'authoritative_source': 'urdf_flattened',
+        'authoritative_ur5_links': authoritative_links,
+        'legacy_static_fallback_source': 'legacy_static_fallback',
+        'legacy_static_fallback_counts': fallback_counts,
+    }
+
 def _has_ur5_visual_mesh_uri(items):
     for item in items or []:
         uri_candidates = [item.get('package_uri'), item.get('source_path')]
@@ -997,18 +1033,21 @@ def print_ur5_transform_table(scene_name, rows):
             f"{row['world_xyz']} | {row['world_rpy']} | {row['visual_origin_xyz']} | {row['visual_origin_rpy']} | {row['mesh_uri']}"
         )
 
-def append_static_ur5_mesh_visuals(items, package_map):
+def append_static_ur5_mesh_visuals(items, package_map, authoritative_links=None):
     """Emit Scene3D UR5 mesh visuals when package://ur_description meshes resolve.
 
     This is a scene-agnostic recovery path for lightweight xacro expansion: if the
     xacro macro cannot be expanded but repository/ROS package assets can resolve,
     emit mesh visual metadata instead of immediately falling back to primitives.
     """
+    authoritative_links = set(authoritative_links or [])
     if _has_ur5_visual_mesh_uri(items):
         return 0
     existing_ids = {str(i.get('id') or '') for i in items}
     added = 0
     for spec in UR5_STATIC_VISUAL_SPECS:
+        if spec.get('link') in authoritative_links:
+            continue
         mesh_name = spec.get('mesh') or ''
         if not mesh_name:
             continue
@@ -1023,6 +1062,7 @@ def append_static_ur5_mesh_visuals(items, package_map):
         rpy = list(spec['rpy'])
         items.append({
             'id': item_id,
+            'source': 'legacy_static_fallback',
             'link': spec['link'],
             'visual': 'static_mesh_visual',
             'parent_link': 'world',
@@ -1069,13 +1109,14 @@ def append_static_ur5_mesh_visuals(items, package_map):
     return added
 
 
-def append_static_robot_primitive_fallbacks(items, urdf_text, fallback_reason, extraction_mode='best_effort_recursive', source_xacro_text=''):
+def append_static_robot_primitive_fallbacks(items, urdf_text, fallback_reason, extraction_mode='best_effort_recursive', source_xacro_text='', authoritative_links=None):
     """Add bounded robot primitives when real xacro UR mesh expansion is unavailable.
 
     These entries are preview-only visual fallbacks for Scene3D. They do not alter
     launch files, controllers, or runtime robot behaviour.
     """
     fallback_eligible_modes = {'xacro_lite_expanded', 'best_effort_recursive', 'best_effort', 'raw_fallback', 'raw'}
+    authoritative_links = set(authoritative_links or [])
     if extraction_mode not in fallback_eligible_modes:
         return 0
     if not (
@@ -1092,13 +1133,14 @@ def append_static_robot_primitive_fallbacks(items, urdf_text, fallback_reason, e
     existing_mesh_links = {str(i.get('link') or '') for i in items if i.get('geometry_type') == 'mesh' and str(i.get('package_uri') or '').startswith(UR5_VISUAL_MESH_URI_PREFIX) and i.get('resolved')}
     for spec in specs:
         stable_id = spec['stable_id']; link = spec['link']; geom = spec['geom']; xyz = spec['xyz']; rpy = spec['rpy']; dims = spec['dims']
-        if link in existing_mesh_links:
+        if link in authoritative_links or link in existing_mesh_links:
             continue
         item_id = f'urdf_static_fallback_{stable_id}'
         if item_id in existing_ids:
             continue
         common = {
             'id': item_id,
+            'source': 'legacy_static_fallback',
             'link': link,
             'parent_link': 'world',
             'immediate_parent_link': 'world',
@@ -1476,10 +1518,17 @@ def main():
             or _contains_unresolved_ur_robot(source_xacro_text)
             or _contains_unresolved_ur_robot(xml_text)
         )
-        if mode in {'xacro_lite_expanded', 'xacro_lite_fallback', 'best_effort_recursive', 'best_effort', 'raw_fallback', 'raw'} and fallback_ur_robot_unresolved:
+        legacy_static_fallback_requested = bool(mode in {'xacro_lite_expanded', 'xacro_lite_fallback', 'best_effort_recursive', 'best_effort', 'raw_fallback', 'raw'} and fallback_ur_robot_unresolved)
+        authoritative_ur5_links = _ur5_authoritative_flattened_links(items)
+        if legacy_static_fallback_requested:
             if 'ur_description' in referenced_packages:
-                static_robot_mesh_count = append_static_ur5_mesh_visuals(items, package_map)
-            static_robot_fallback_count = append_static_robot_primitive_fallbacks(items, xml_text, fallback_reason, mode, source_xacro_text)
+                static_robot_mesh_count = append_static_ur5_mesh_visuals(items, package_map, authoritative_ur5_links)
+            static_robot_fallback_count = append_static_robot_primitive_fallbacks(items, xml_text, fallback_reason, mode, source_xacro_text, authoritative_ur5_links)
+        legacy_static_fallback_metadata = _ur5_fallback_decision_metadata(
+            items,
+            legacy_static_fallback_requested,
+            {'mesh_visual': static_robot_mesh_count, 'primitive': static_robot_fallback_count},
+        )
         ur5_visual_diagnostics = _ur5_visual_mesh_diagnostics(
             package_map,
             package_diagnostics,
@@ -1519,7 +1568,7 @@ def main():
         safe=is_preview_fully_healthy(items, unresolved, mode, fallback_reason, renderable_mesh_count)
         source_mtime=urdf_path.stat().st_mtime if urdf_path.exists() else None
         has_transform_collapse_warning=bool(items) and len({tuple((i.get('pose') or {}).get('xyz') or []) for i in items}) <= 1 and len(items) > 1
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':'urdf_flattened','urdf_expansion_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_launch_xacro_request':_portable_source_metadata(launch_xacro_request or {}),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'ros_to_viewport_basis_applied':False,'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'initial_joint_source':urdf_diagnostics.get('initial_joint_source', ''),'ur5_preview_joint_pose':urdf_diagnostics.get('ur5_preview_joint_pose', {}),'joint_defaults_used':urdf_diagnostics.get('joint_defaults_used', []),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'ur5_visual_mesh_diagnostics':_portable_source_metadata(ur5_visual_diagnostics),'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':'urdf_flattened','urdf_expansion_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_launch_xacro_request':_portable_source_metadata(launch_xacro_request or {}),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'ros_to_viewport_basis_applied':False,'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'initial_joint_source':urdf_diagnostics.get('initial_joint_source', ''),'ur5_preview_joint_pose':urdf_diagnostics.get('ur5_preview_joint_pose', {}),'joint_defaults_used':urdf_diagnostics.get('joint_defaults_used', []),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'legacy_static_fallback_metadata':legacy_static_fallback_metadata,'ur5_visual_mesh_diagnostics':_portable_source_metadata(ur5_visual_diagnostics),'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True)
