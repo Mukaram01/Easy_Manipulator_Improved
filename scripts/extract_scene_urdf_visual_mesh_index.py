@@ -1151,21 +1151,26 @@ def resolve_mesh_uri(uri, package_map):
 def read_ur5_initial_joint_positions(path=UR5_INITIAL_POSITIONS_PATH):
     defaults = dict(UR5_INITIAL_JOINT_DEFAULTS)
     preview_pose_metadata = {}
+    joint_defaults_used = []
     data = read_yaml(path)
     positions = data.get('initial_positions') if isinstance(data, dict) else None
     if not isinstance(positions, dict):
         print('[scene_visual_mesh_index] UR5 initial joint source: default')
-        return defaults, 'default', preview_pose_metadata
+        return defaults, 'default', preview_pose_metadata, sorted(defaults.keys())
     resolved = dict(defaults)
+    provided = set()
     for name, value in positions.items():
         try:
             resolved[str(name)] = float(value)
+            provided.add(str(name))
         except Exception:
             pass
+    joint_defaults_used = sorted(name for name in defaults if name not in provided)
     source = _repo_relative_path(path)
     print(f'[scene_visual_mesh_index] UR5 initial joint source: {path.name}')
     if all(abs(float(resolved.get(name, 0.0))) <= UR5_PREVIEW_ALL_ZERO_EPSILON for name in UR5_INITIAL_JOINT_DEFAULTS):
         resolved = dict(UR5_PREVIEW_HOME_JOINT_POSE)
+        joint_defaults_used = sorted(UR5_PREVIEW_HOME_JOINT_POSE.keys())
         preview_pose_metadata = {
             'source': 'workcell_preview_home_pose_all_zero_initial_positions',
             'joints': dict(resolved),
@@ -1174,11 +1179,11 @@ def read_ur5_initial_joint_positions(path=UR5_INITIAL_POSITIONS_PATH):
         print('[scene_visual_mesh_index] UR5 preview joint values:')
         for name in UR5_INITIAL_JOINT_DEFAULTS:
             print(f'[scene_visual_mesh_index]   {name}: {resolved[name]}')
-    return resolved, source, preview_pose_metadata
+    return resolved, source, preview_pose_metadata, joint_defaults_used
 
 def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
     root=ET.fromstring(xml_text); items=[]; idx=0
-    initial_joint_positions, initial_joint_source, ur5_preview_joint_pose = read_ur5_initial_joint_positions()
+    initial_joint_positions, initial_joint_source, ur5_preview_joint_pose, joint_defaults_used = read_ur5_initial_joint_positions()
     diagnostics={
         'root_links': [],
         'visual_parent_link_counts': {},
@@ -1186,6 +1191,7 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
         'transform_chain_diagnostics': [],
         'initial_joint_source': initial_joint_source,
         'ur5_preview_joint_pose': ur5_preview_joint_pose,
+        'joint_defaults_used': joint_defaults_used,
     }
     global_materials={}
     for mat in [m for m in list(root) if tag_name(m)=='material']:
@@ -1206,7 +1212,15 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
         joint_name=j.attrib.get('name','')
         joint_type=j.attrib.get('type','fixed')
         joint_value=0.0 if joint_type == 'fixed' else float(initial_joint_positions.get(joint_name, 0.0))
-        joints.append({'name':joint_name,'type':joint_type,'parent':parent.attrib.get('link',''),'child':child.attrib.get('link',''),'origin_xyz':xyz,'origin_rpy':rpy,'axis':axis_xyz,'value':joint_value})
+        if joint_type == 'fixed':
+            joint_value_source = 'fixed_joint'
+        elif joint_name in joint_defaults_used:
+            joint_value_source = 'default'
+        elif joint_name in initial_joint_positions:
+            joint_value_source = initial_joint_source
+        else:
+            joint_value_source = 'implicit_zero'
+        joints.append({'name':joint_name,'type':joint_type,'parent':parent.attrib.get('link',''),'child':child.attrib.get('link',''),'origin_xyz':xyz,'origin_rpy':rpy,'axis':axis_xyz,'value':joint_value,'value_source':joint_value_source})
     child_to_joint={j['child']:j for j in joints if j['child']}
     roots=sorted(n for n in links.keys() if n and n not in child_to_joint)
     diagnostics['root_links'] = roots
@@ -1299,7 +1313,9 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
             joint_name=(joint_meta or {}).get('name','')
             joint_value=(joint_meta or {}).get('value',0.0)
             joint_axis=(joint_meta or {}).get('axis',[1.0,0.0,0.0])
-            common={'id':item_id,'link':lname,'visual':vname,'parent_link':root_link or '','joint_parent_link':(joint_meta or {}).get('parent',''),'pose':pose,'chain_pose':pose,'world_pose':link_pose,'link_world_pose':link_world_pose,'expected_visual_pose':expected_visual_pose,'baked_world_visual_pose':baked_world_visual_pose,'baked_world_visual_matrix':baked_world_visual_matrix,'baked_world_visual_quaternion':baked_world_visual_quaternion,'baked_world_visual_transform_source':'urdf_fk_link_world_times_visual_origin','visual_origin_applied_to_pose':True,'visual_origin':{'xyz':vxyz,'rpy':vrpy},'joint_name':joint_name,'joint_value':joint_value,'joint_axis':joint_axis,'material':material,'link_transform_status':link_status,'transform_status':link_status,'transform_chain':chain,'render_expected':True}
+            joint_value_source=(joint_meta or {}).get('value_source', 'root_link' if not joint_meta else '')
+            parent_link=(joint_meta or {}).get('parent','')
+            common={'id':item_id,'source':'urdf_flattened','link':lname,'object_name':lname,'visual':vname,'parent_link':parent_link,'root_link':root_link or '','joint_parent_link':parent_link,'parent_joint':joint_name,'joint_type':(joint_meta or {}).get('type','root'),'pose':pose,'chain_pose':pose,'world_pose':pose,'link_world_pose':link_world_pose,'expected_visual_pose':expected_visual_pose,'baked_world_visual_pose':baked_world_visual_pose,'baked_world_visual_matrix':baked_world_visual_matrix,'baked_world_visual_quaternion':baked_world_visual_quaternion,'baked_world_visual_transform_source':'urdf_fk_link_world_times_visual_origin','visual_origin_applied_to_pose':True,'visual_origin':{'xyz':vxyz,'rpy':vrpy},'joint_name':joint_name,'joint_value':joint_value,'joint_axis':joint_axis,'joint_value_source':joint_value_source,'material':material,'color':material.get('color'),'link_transform_status':link_status,'transform_status':link_status,'transform_chain':chain,'render_expected':True}
             mesh=next((c for c in list(geom) if tag_name(c)=='mesh'),None)
             box=next((c for c in list(geom) if tag_name(c)=='box'),None)
             cyl=next((c for c in list(geom) if tag_name(c)=='cylinder'),None)
@@ -1309,7 +1325,7 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
             if mesh is not None:
                 mesh_uri=mesh.attrib.get('filename',''); resolved_path, skip_reason=resolve_mesh_uri(mesh_uri, package_map)
                 scale=parse_vec(mesh.attrib.get('scale','1 1 1'),3,1.0)
-                items.append({**common,'geometry_type':'mesh','package_uri':mesh_uri if mesh_uri.startswith('package://') else '','source_path':mesh_uri,'resolved_source_path':_repo_relative_path(resolved_path),'resolved_source_path_is_repo_relative': bool(resolved_path and _repo_relative_path(resolved_path) != str(resolved_path)),'resolved':bool(resolved_path and not skip_reason),'mesh_scale':scale,'render_expected':not bool(skip_reason),'render_skip_reason':skip_reason,'warning':(skip_reason or warning or '')})
+                items.append({**common,'geometry_type':'mesh','package_uri':mesh_uri if mesh_uri.startswith('package://') else '','source_path':mesh_uri,'mesh_path':_repo_relative_path(resolved_path),'scale':scale,'resolved_source_path':_repo_relative_path(resolved_path),'resolved_source_path_is_repo_relative': bool(resolved_path and _repo_relative_path(resolved_path) != str(resolved_path)),'resolved':bool(resolved_path and not skip_reason),'mesh_scale':scale,'render_expected':not bool(skip_reason),'render_skip_reason':skip_reason,'warning':(skip_reason or warning or '')})
             elif box is not None:
                 items.append({**common,'geometry_type':'box','size':parse_vec(box.attrib.get('size','0.1 0.1 0.1'),3,0.1),'resolved':True,'warning':warning or ''})
             elif cyl is not None:
@@ -1336,7 +1352,7 @@ def supported_robot_root_diagnostics(scene_name, items, urdf_diagnostics):
     if not (scene_name.startswith(supported_prefixes) or scene_name in supported_names):
         return [], []
     warnings=[]; blockers=[]
-    counts=collections.Counter(str(i.get('parent_link') or '') for i in items)
+    counts=collections.Counter(str(i.get('root_link') or i.get('parent_link') or '') for i in items)
     total=sum(counts.values())
     tool0_count=counts.get('tool0', 0)
     expected_roots={'world','base','base_link','base_link_inertia'}
@@ -1452,7 +1468,7 @@ def main():
         safe=is_preview_fully_healthy(items, unresolved, mode, fallback_reason, renderable_mesh_count)
         source_mtime=urdf_path.stat().st_mtime if urdf_path.exists() else None
         has_transform_collapse_warning=bool(items) and len({tuple((i.get('pose') or {}).get('xyz') or []) for i in items}) <= 1 and len(items) > 1
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_launch_xacro_request':_portable_source_metadata(launch_xacro_request or {}),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'initial_joint_source':urdf_diagnostics.get('initial_joint_source', ''),'ur5_preview_joint_pose':urdf_diagnostics.get('ur5_preview_joint_pose', {}),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'ur5_visual_mesh_diagnostics':_portable_source_metadata(ur5_visual_diagnostics),'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':'urdf_flattened','urdf_expansion_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_launch_xacro_request':_portable_source_metadata(launch_xacro_request or {}),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'ros_to_viewport_basis_applied':False,'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'initial_joint_source':urdf_diagnostics.get('initial_joint_source', ''),'ur5_preview_joint_pose':urdf_diagnostics.get('ur5_preview_joint_pose', {}),'joint_defaults_used':urdf_diagnostics.get('joint_defaults_used', []),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'ur5_visual_mesh_diagnostics':_portable_source_metadata(ur5_visual_diagnostics),'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True)
@@ -1471,7 +1487,7 @@ def main():
         report['candidate_mesh_count']=report.get('candidate_mesh_count',0)+len(items)
         report['emitted_visual_count']=report.get('emitted_visual_count',0)+len(items)
         report['unresolved_placeholder_count']=report.get('unresolved_placeholder_count',0)+len(unresolved)
-        report['scenes'].append({'scene':scene_dir.name,'extraction_mode':mode,'xacro_available':payload['xacro_available'],'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'expanded_urdf_written':bool(expanded_path),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'mesh_backed_count':sum(1 for i in items if i.get('geometry_type')=='mesh'),'skipped_count':sum(1 for i in items if i.get('render_skip_reason')),'fallback_reason':fallback_reason,'urdf_primitive_count':sum(1 for i in items if i.get('geometry_type') in ('box','cylinder','sphere','capsule')),'primitive_fallback_count':static_robot_fallback_count,'stale_index':False,'status':'PASS' if safe else 'WARN'})
+        report['scenes'].append({'scene':scene_dir.name,'extraction_mode':'urdf_flattened','urdf_expansion_mode':mode,'xacro_available':payload['xacro_available'],'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'expanded_urdf_written':bool(expanded_path),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'mesh_backed_count':sum(1 for i in items if i.get('geometry_type')=='mesh'),'skipped_count':sum(1 for i in items if i.get('render_skip_reason')),'fallback_reason':fallback_reason,'urdf_primitive_count':sum(1 for i in items if i.get('geometry_type') in ('box','cylinder','sphere','capsule')),'primitive_fallback_count':static_robot_fallback_count,'stale_index':False,'status':'PASS' if safe else 'WARN'})
         if a.require_xacro and mode not in ('xacro_expanded','xacro_lite_expanded','xacro_lite_fallback'): return 2
     (ROOT/'build').mkdir(exist_ok=True)
     (ROOT/'build/workcell_studio_urdf_visual_mesh_index_report.json').write_text(json.dumps(report,indent=2)+'\n')
