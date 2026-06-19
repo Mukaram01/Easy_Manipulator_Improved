@@ -276,12 +276,44 @@ TEST(Scene3DMeshPreviewRegression, BakedUrdfVisualsDoNotUseAdHocUr5MeshCorrectio
 {
   const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/scene3d_viewport_widget.cpp");
   ASSERT_FALSE(src.empty());
+  EXPECT_NE(src.find("bool item_is_urdf_flattened_generated_preview"), std::string::npos);
   const auto helper = src.find("bool should_apply_baked_mesh_asset_local_correction");
   ASSERT_NE(helper, std::string::npos);
   const auto helper_end = src.find("QString baked_mesh_asset_local_correction_reason", helper);
   ASSERT_NE(helper_end, std::string::npos);
   const std::string body = src.substr(helper, helper_end - helper);
+  EXPECT_NE(body.find("source=urdf_flattened"), std::string::npos)
+    << "flattened generated entries must be explicitly excluded from legacy UR5 correction";
+  EXPECT_NE(body.find("item_is_urdf_flattened_generated_preview(item)"), std::string::npos);
   EXPECT_NE(body.find("return false;"), std::string::npos);
   EXPECT_NE(body.find("Do not reintroduce the old"), std::string::npos);
   EXPECT_EQ(body.find("item_references_ur5_baked_mesh_asset_local_correction(item)"), std::string::npos);
+}
+
+TEST(Scene3DMeshPreviewRegression, FlattenedUrdfEntriesAreRawRosAndCorrectedOnce)
+{
+  const std::string extractor = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/../../scripts/extract_scene_urdf_visual_mesh_index.py");
+  ASSERT_FALSE(extractor.empty());
+  EXPECT_NE(extractor.find("'source':'urdf_flattened'"), std::string::npos);
+  EXPECT_NE(extractor.find("'ros_to_viewport_basis_applied':False"), std::string::npos)
+    << "scene_visual_mesh_index.json must declare that extractor output is raw ROS/RViz basis";
+  EXPECT_EQ(extractor.find("ros_to_viewport_basis_matrix"), std::string::npos)
+    << "extractor must not bake Scene3D viewport basis into world-space URDF poses";
+
+  const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/scene3d_viewport_widget.cpp");
+  ASSERT_FALSE(src.empty());
+  const auto viewport_root = src.find("QMatrix4x4 viewport_world_visual_transform");
+  ASSERT_NE(viewport_root, std::string::npos);
+  const auto viewport_root_end = src.find("void apply_authoritative_world_visual_transform_gl", viewport_root);
+  ASSERT_NE(viewport_root_end, std::string::npos);
+  const std::string viewport_body = src.substr(viewport_root, viewport_root_end - viewport_root);
+  EXPECT_NE(viewport_body.find("ros_to_viewport_basis_matrix() * authoritative_world_visual_transform(item)"), std::string::npos);
+
+  const auto correction_helper = src.find("bool should_apply_baked_mesh_asset_local_correction");
+  ASSERT_NE(correction_helper, std::string::npos);
+  const auto correction_helper_end = src.find("QString baked_mesh_asset_local_correction_reason", correction_helper);
+  ASSERT_NE(correction_helper_end, std::string::npos);
+  const std::string correction_body = src.substr(correction_helper, correction_helper_end - correction_helper);
+  EXPECT_NE(correction_body.find("if (item_is_urdf_flattened_generated_preview(item)) return false;"), std::string::npos)
+    << "source=urdf_flattened entries must not receive legacy UR5 mesh correction after basis conversion";
 }
