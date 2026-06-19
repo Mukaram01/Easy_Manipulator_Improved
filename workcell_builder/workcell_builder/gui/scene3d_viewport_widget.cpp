@@ -2971,12 +2971,23 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
     }
     entry.failure_reason_code = entry.load_failure_reason.trimmed().isEmpty() ? QStringLiteral("file_not_found") : entry.load_failure_reason;
     entry.warning = QStringLiteral("mesh missing on disk (reason_code: %1)").arg(entry.failure_reason_code);
+    qWarning().noquote() << QStringLiteral("Scene3D mesh load failed: item_id=%1 mesh_path=%2 canonical_path=%3 loader_reason=%4")
+                              .arg(item.id.trimmed().isEmpty() ? QStringLiteral("<unknown>") : item.id.trimmed(),
+                                   path.trimmed().isEmpty() ? QStringLiteral("<none>") : path.trimmed(),
+                                   canonical,
+                                   entry.warning);
     return mesh_cache_.insert(canonical, entry).value();
   }
   QFile file(canonical_info.absoluteFilePath());
   if (!file.open(QIODevice::ReadOnly)) {
-    entry.failure_reason_code = QStringLiteral("parse_failed");
-    entry.warning = QStringLiteral("mesh unreadable");
+    entry.failure_reason_code = QStringLiteral("unreadable");
+    entry.load_failure_reason = file.errorString();
+    entry.warning = QStringLiteral("mesh unreadable (reason: %1)").arg(entry.load_failure_reason);
+    qWarning().noquote() << QStringLiteral("Scene3D mesh load failed: item_id=%1 mesh_path=%2 canonical_path=%3 loader_reason=%4")
+                              .arg(item.id.trimmed().isEmpty() ? QStringLiteral("<unknown>") : item.id.trimmed(),
+                                   path.trimmed().isEmpty() ? QStringLiteral("<none>") : path.trimmed(),
+                                   canonical,
+                                   entry.warning);
     return mesh_cache_.insert(canonical, entry).value();
   }
   const QByteArray bytes = file.readAll();
@@ -3046,7 +3057,13 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
   if (!entry.valid) {
     entry.oversized = parse_error.contains("exceeds limit");
     if (entry.failure_reason_code.trimmed().isEmpty()) entry.failure_reason_code = mesh_parse_failure_code(parse_error);
+    entry.load_failure_reason = parse_error;
     entry.warning = QStringLiteral("%1 reason_code=%2 (%3)").arg(entry.oversized ? QStringLiteral("mesh oversized") : QStringLiteral("mesh invalid"), entry.failure_reason_code, parse_error);
+    qWarning().noquote() << QStringLiteral("Scene3D mesh load failed: item_id=%1 mesh_path=%2 canonical_path=%3 loader_reason=%4")
+                              .arg(item.id.trimmed().isEmpty() ? QStringLiteral("<unknown>") : item.id.trimmed(),
+                                   path.trimmed().isEmpty() ? QStringLiteral("<none>") : path.trimmed(),
+                                   canonical,
+                                   entry.warning);
     const bool dae_triangulation_unavailable = ext == QStringLiteral("dae") &&
       (entry.failure_reason_code == QStringLiteral("zero_triangle_mesh") || parse_error.contains(QStringLiteral("triang"), Qt::CaseInsensitive) ||
        parse_error.contains(QStringLiteral("contains no triangles"), Qt::CaseInsensitive));
