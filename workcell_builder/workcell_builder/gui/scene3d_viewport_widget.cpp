@@ -186,24 +186,63 @@ void apply_authoritative_world_visual_transform_gl(const ScenePreviewWidget::Pre
   glMultMatrixf(transform.constData());
 }
 
-bool is_ur5_baked_mesh_asset_local_correction_filename(const QString & candidate)
+QString normalize_mesh_scope_candidate(QString candidate)
 {
-  const QString normalized = candidate.trimmed().toLower();
+  candidate = path_without_uri_suffixes(candidate).trimmed().toLower();
+  candidate.replace(QLatin1Char('\\'), QLatin1Char('/'));
+  while (candidate.contains(QStringLiteral("//")) && !candidate.startsWith(QStringLiteral("package://"))) {
+    candidate.replace(QStringLiteral("//"), QStringLiteral("/"));
+  }
+  return candidate;
+}
+
+bool is_ur5_baked_mesh_asset_local_correction_path(const QString & candidate, QString * matched_reason = nullptr)
+{
+  const QString normalized = normalize_mesh_scope_candidate(candidate);
   if (normalized.isEmpty()) return false;
-  const QString filename = QFileInfo(normalized).fileName();
-  return filename == QStringLiteral("upperarm.dae") ||
-         filename == QStringLiteral("forearm.dae") ||
-         filename == QStringLiteral("wrist1.dae") ||
-         normalized.endsWith(QStringLiteral("/upperarm.dae")) ||
-         normalized.endsWith(QStringLiteral("/forearm.dae")) ||
-         normalized.endsWith(QStringLiteral("/wrist1.dae"));
+
+  const QStringList arm_meshes = {
+    QStringLiteral("upperarm.dae"),
+    QStringLiteral("forearm.dae"),
+    QStringLiteral("wrist1.dae"),
+  };
+  bool matches_known_mesh = false;
+  QString matched_mesh;
+  for (const QString & mesh : arm_meshes) {
+    if (normalized.endsWith(QStringLiteral("/") + mesh) || normalized == mesh) {
+      matches_known_mesh = true;
+      matched_mesh = mesh;
+      break;
+    }
+  }
+  if (!matches_known_mesh) return false;
+
+  if (normalized.startsWith(QStringLiteral("package://ur_description/meshes/ur5/visual/"))) {
+    if (matched_reason) *matched_reason = QStringLiteral("matched_package_uri_ur_description_ur5_visual_%1").arg(matched_mesh);
+    return true;
+  }
+  if (normalized.contains(QStringLiteral("/ur_description/meshes/ur5/visual/")) &&
+      (normalized.contains(QStringLiteral("/assets/robots/universal_robot/")) ||
+       normalized.contains(QStringLiteral("/src/assets/robots/universal_robot/")))) {
+    if (matched_reason) *matched_reason = QStringLiteral("matched_resolved_universal_robot_ur5_visual_%1").arg(matched_mesh);
+    return true;
+  }
+  return false;
+}
+
+QString ur5_baked_mesh_asset_local_correction_scope_reason(const ScenePreviewWidget::PreviewItem & item)
+{
+  QString reason;
+  if (is_ur5_baked_mesh_asset_local_correction_path(item.package_uri, &reason)) return reason;
+  if (is_ur5_baked_mesh_asset_local_correction_path(item.mesh_path, &reason)) return reason;
+  if (is_ur5_baked_mesh_asset_local_correction_path(item.source_path, &reason)) return reason;
+  if (is_ur5_baked_mesh_asset_local_correction_path(item.resolved_source_path_original, &reason)) return reason;
+  return QString();
 }
 
 bool item_references_ur5_baked_mesh_asset_local_correction(const ScenePreviewWidget::PreviewItem & item)
 {
-  return is_ur5_baked_mesh_asset_local_correction_filename(item.mesh_path) ||
-         is_ur5_baked_mesh_asset_local_correction_filename(item.source_path) ||
-         is_ur5_baked_mesh_asset_local_correction_filename(item.package_uri);
+  return !ur5_baked_mesh_asset_local_correction_scope_reason(item).isEmpty();
 }
 
 bool item_has_non_identity_mesh_asset_local_correction(const ScenePreviewWidget::PreviewItem & item)
@@ -229,7 +268,8 @@ bool should_apply_baked_mesh_asset_local_correction(const ScenePreviewWidget::Pr
 QString baked_mesh_asset_local_correction_reason(const ScenePreviewWidget::PreviewItem & item)
 {
   if (should_apply_baked_mesh_asset_local_correction(item)) {
-    return QStringLiteral("known_ur5_mesh_asset_local_correction");
+    const QString scope_reason = ur5_baked_mesh_asset_local_correction_scope_reason(item);
+    return scope_reason.isEmpty() ? QStringLiteral("known_ur5_mesh_asset_local_correction") : scope_reason;
   }
   if (!item.has_baked_world_visual_transform) {
     return QStringLiteral("not_baked_world_visual");
@@ -3307,8 +3347,9 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["baked_mesh_asset_local_correction_has_values"] = baked_mesh_asset_correction_has_values;
     row["baked_mesh_asset_local_correction_applied"] = baked_mesh_asset_correction_applied;
     row["baked_mesh_asset_local_correction_scope"] = baked_mesh_asset_correction_candidate
-      ? QStringLiteral("ur5_visual_mesh_asset_filename")
+      ? ur5_baked_mesh_asset_local_correction_scope_reason(item)
       : QStringLiteral("none");
+    row["resolved_source_path"] = item.resolved_source_path_original;
     const QString asset_local_correction_reason = baked_mesh_asset_local_correction_reason(item);
     const QMatrix4x4 asset_local_correction_transform = baked_mesh_asset_local_correction_matrix(item);
     row["baked_mesh_asset_local_correction_reason"] = asset_local_correction_reason;
