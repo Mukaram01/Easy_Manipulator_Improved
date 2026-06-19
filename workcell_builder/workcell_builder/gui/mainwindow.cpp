@@ -8426,7 +8426,49 @@ void MainWindow::populate_scene_hierarchy()
       }
       const YAML::Node visual_items = workcell_builder::yaml_map_key(urdf_index, "visual_items");
       if (visual_items && visual_items.IsSequence()) {
-        for (const auto &v : visual_items) {
+        std::vector<YAML::Node> ordered_visual_items;
+        ordered_visual_items.reserve(visual_items.size());
+        QSet<QString> flattened_visual_mesh_keys;
+        auto visual_item_link_object_key = [](const YAML::Node & node) {
+          QString key = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(node, "link")).trimmed();
+          if (key.isEmpty()) key = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(node, "object_id")).trimmed();
+          if (key.isEmpty()) key = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(node, "object")).trimmed();
+          if (key.isEmpty()) key = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(node, "id")).trimmed();
+          return canonical_scene3d_token(key);
+        };
+        auto visual_item_source_token = [](const YAML::Node & node) {
+          return canonical_scene3d_token(QString::fromStdString(workcell_builder::yaml_map_value_or_empty(node, "source")));
+        };
+        auto visual_item_mesh_reference_resolves = [&](const YAML::Node & node) {
+          const QString source_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(node, "source_path"));
+          const QString resolved_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(node, "resolved_path"));
+          const QString resolved_source_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(node, "resolved_source_path"));
+          const QString package_uri = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(node, "package_uri"));
+          QStringList tried_candidates;
+          const QString resolved_mesh_path = resolve_visual_mesh_source_path(
+            !resolved_source_path.trimmed().isEmpty() ? resolved_source_path : (!resolved_path.trimmed().isEmpty() ? resolved_path : source_path),
+            package_uri, d, detect_workspace_root(), &tried_candidates);
+          if (resolved_mesh_path.trimmed().isEmpty()) return false;
+          const QFileInfo info(resolved_mesh_path);
+          return info.exists() && info.isFile();
+        };
+        for (const auto & item_node : visual_items) ordered_visual_items.push_back(YAML::Clone(item_node));
+        std::stable_sort(ordered_visual_items.begin(), ordered_visual_items.end(), [&](const YAML::Node & a, const YAML::Node & b) {
+          return visual_item_source_token(a) == QStringLiteral("urdf_flattened") &&
+                 visual_item_source_token(b) != QStringLiteral("urdf_flattened");
+        });
+        for (const auto & item_node : ordered_visual_items) {
+          if (!item_node.IsMap()) continue;
+          const QString key = visual_item_link_object_key(item_node);
+          const QString geometry = canonical_scene3d_token(QString::fromStdString(workcell_builder::yaml_map_value_or_empty(item_node, "geometry_type")));
+          if (visual_item_source_token(item_node) == QStringLiteral("urdf_flattened") &&
+              geometry == QStringLiteral("mesh") &&
+              !key.isEmpty() &&
+              visual_item_mesh_reference_resolves(item_node)) {
+            flattened_visual_mesh_keys.insert(key);
+          }
+        }
+        for (const auto &v : ordered_visual_items) {
           if (!v.IsMap()) {
             ++skipped_other; add_skip_reason(QStringLiteral("parse_error"));
             continue;
@@ -8442,6 +8484,18 @@ void MainWindow::populate_scene_hierarchy()
             continue;
           }
           const QString geometry_type = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "geometry_type"));
+          const QString visual_item_source = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "source")).trimmed();
+          const QString visual_item_source_token = canonical_scene3d_token(visual_item_source);
+          const QString visual_item_key = visual_item_link_object_key(v);
+          const bool flattened_mesh_loaded_for_same_link = !visual_item_key.isEmpty() && flattened_visual_mesh_keys.contains(visual_item_key);
+          const bool suppress_lower_fidelity_for_flattened_mesh =
+            flattened_mesh_loaded_for_same_link && visual_item_source_token != QStringLiteral("urdf_flattened");
+          if (suppress_lower_fidelity_for_flattened_mesh) {
+            add_skip_reason(QStringLiteral("suppressed_by_urdf_flattened_visual_mesh"));
+            append_studio_log(QString("Suppressed lower-fidelity visual for %1 because source=urdf_flattened mesh is available for the same link/object (source=%2 geometry=%3)")
+                                .arg(id, visual_item_source.isEmpty() ? QStringLiteral("<missing>") : visual_item_source, geometry_type));
+            continue;
+          }
           if (geometry_type == "mesh") ++mesh_item_count;
           else if (geometry_type == "box" || geometry_type == "cylinder" || geometry_type == "sphere" || geometry_type == "capsule") ++primitive_item_count;
           else ++unknown_item_count;
@@ -8588,6 +8642,11 @@ void MainWindow::populate_scene_hierarchy()
           p.lock_reason = "generated URDF visual";
           p.robot_base_frame = parent_link.isEmpty() ? QStringLiteral("unknown") : parent_link;
           p.source_layer = QStringLiteral("locked_generated_urdf_visual");
+          if (visual_item_source_token == QStringLiteral("urdf_flattened")) {
+            p.metadata_tags = p.metadata_tags.trimmed().isEmpty()
+              ? QStringLiteral("source=urdf_flattened;locked_generated_urdf_preview")
+              : p.metadata_tags + QStringLiteral(";source=urdf_flattened;locked_generated_urdf_preview");
+          }
           const bool explicit_primitive_fallback = workcell_builder::yaml_map_key(v, "primitive_fallback").as<bool>(false) ||
             transform_status == QStringLiteral("static_fallback") ||
             transform_status == QStringLiteral("static_fallback_parent");
