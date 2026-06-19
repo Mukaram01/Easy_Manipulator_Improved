@@ -263,6 +263,11 @@ bool item_references_ur5_baked_mesh_asset_local_correction(const ScenePreviewWid
   return !ur5_baked_mesh_asset_local_correction_scope_reason(item).isEmpty();
 }
 
+bool item_is_urdf_flattened_generated_preview(const ScenePreviewWidget::PreviewItem & item)
+{
+  return item.metadata_tags.contains(QStringLiteral("source=urdf_flattened"), Qt::CaseInsensitive);
+}
+
 bool item_has_non_identity_mesh_asset_local_correction(const ScenePreviewWidget::PreviewItem & item)
 {
   constexpr double kEpsilon = 1e-12;
@@ -278,11 +283,16 @@ bool item_has_non_identity_mesh_asset_local_correction(const ScenePreviewWidget:
 
 bool should_apply_baked_mesh_asset_local_correction(const ScenePreviewWidget::PreviewItem & item)
 {
-  Q_UNUSED(item);
   // Generated visual mesh entries are already RViz/URDF-authored as
   // world_T_link_or_object * visual_origin_T.  Do not reintroduce the old
   // ad hoc UR5 DAE correction path; any asset-local correction must be part of
   // the generated mesh-local transform, not a link-name/mesh-name special case.
+  //
+  // In particular, source=urdf_flattened entries from scene_visual_mesh_index.json
+  // are raw ROS/RViz world-space poses. Scene3D applies only the centralized
+  // ROS-to-viewport basis at viewport_world_visual_transform(); applying the
+  // legacy UR5 mesh correction here would double-correct those locked previews.
+  if (item_is_urdf_flattened_generated_preview(item)) return false;
   return false;
 }
 
