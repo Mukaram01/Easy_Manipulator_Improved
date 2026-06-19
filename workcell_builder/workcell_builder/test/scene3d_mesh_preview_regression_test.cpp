@@ -229,3 +229,59 @@ TEST(Scene3DMeshPreviewRegression, ProductWarningStateExcludesEditableAndOverlay
   const auto warning_selector = src.find("debug_overlays_mode\n    ? debug_view_has_full_diagnostic_warning_content(last_render_counters)\n    : product_view_has_generated_mesh_warning_content(last_render_counters)");
   EXPECT_NE(warning_selector, std::string::npos);
 }
+
+TEST(Scene3DMeshPreviewRegression, CentralizesRosToViewportBasisForGeneratedVisuals)
+{
+  const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/scene3d_viewport_widget.cpp");
+  ASSERT_FALSE(src.empty());
+
+  const auto basis = src.find("QMatrix4x4 ros_to_viewport_basis_matrix()");
+  ASSERT_NE(basis, std::string::npos);
+  const auto authoritative = src.find("QMatrix4x4 authoritative_world_visual_transform", basis);
+  ASSERT_NE(authoritative, std::string::npos);
+  const std::string basis_body = src.substr(basis, authoritative - basis);
+  EXPECT_NE(basis_body.find("basis(1, 2) = 1.0f"), std::string::npos);  // ROS Z becomes viewport up/Y.
+  EXPECT_NE(basis_body.find("basis(2, 1) = -1.0f"), std::string::npos); // ROS Y becomes viewport depth.
+
+  const auto viewport_root = src.find("QMatrix4x4 viewport_world_visual_transform", authoritative);
+  ASSERT_NE(viewport_root, std::string::npos);
+  const auto viewport_root_end = src.find("void apply_authoritative_world_visual_transform_gl", viewport_root);
+  ASSERT_NE(viewport_root_end, std::string::npos);
+  const std::string viewport_body = src.substr(viewport_root, viewport_root_end - viewport_root);
+  EXPECT_NE(viewport_body.find("return ros_to_viewport_basis_matrix() * authoritative_world_visual_transform(item);"), std::string::npos);
+
+  const auto final_mesh = src.find("QMatrix4x4 final_mesh_transform_matrix");
+  ASSERT_NE(final_mesh, std::string::npos);
+  const auto final_mesh_end = src.find("void apply_mesh_local_correction_gl", final_mesh);
+  ASSERT_NE(final_mesh_end, std::string::npos);
+  const std::string final_body = src.substr(final_mesh, final_mesh_end - final_mesh);
+  EXPECT_EQ(final_body.find("ros_to_viewport_basis_matrix()"), std::string::npos) << "basis must not be duplicated inside mesh-local composition";
+  EXPECT_NE(final_body.find("QMatrix4x4 transform = viewport_world_visual_transform(item);"), std::string::npos);
+  EXPECT_NE(final_body.find("apply_mesh_local_correction_matrix(transform, item);"), std::string::npos);
+  EXPECT_NE(final_body.find("transform.scale"), std::string::npos);
+}
+
+TEST(Scene3DMeshPreviewRegression, SuppressesFallbackBoxesWhenMeshSurfaceLoads)
+{
+  const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/scene3d_viewport_widget.cpp");
+  ASSERT_FALSE(src.empty());
+  EXPECT_NE(src.find("if (draw_mesh_preview_if_available(it, visual_color, true))"), std::string::npos);
+  EXPECT_NE(src.find("return true;\n  }\n  if (generated_or_locked_preview && item_has_valid_urdf_primitive(it))"), std::string::npos)
+    << "successful mesh draw must return before URDF primitive/fallback boxes are considered";
+  EXPECT_NE(src.find("WORKCELL_SCENE3D_DEBUG_FALLBACK_BOXES"), std::string::npos);
+  EXPECT_NE(src.find("if (!editable_layout_preview && !scene3d_debug_fallback_boxes_enabled())"), std::string::npos);
+}
+
+TEST(Scene3DMeshPreviewRegression, BakedUrdfVisualsDoNotUseAdHocUr5MeshCorrections)
+{
+  const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/scene3d_viewport_widget.cpp");
+  ASSERT_FALSE(src.empty());
+  const auto helper = src.find("bool should_apply_baked_mesh_asset_local_correction");
+  ASSERT_NE(helper, std::string::npos);
+  const auto helper_end = src.find("QString baked_mesh_asset_local_correction_reason", helper);
+  ASSERT_NE(helper_end, std::string::npos);
+  const std::string body = src.substr(helper, helper_end - helper);
+  EXPECT_NE(body.find("return false;"), std::string::npos);
+  EXPECT_NE(body.find("Do not reintroduce the old"), std::string::npos);
+  EXPECT_EQ(body.find("item_references_ur5_baked_mesh_asset_local_correction(item)"), std::string::npos);
+}
