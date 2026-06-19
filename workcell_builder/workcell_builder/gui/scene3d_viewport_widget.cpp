@@ -157,6 +157,19 @@ void apply_urdf_pose_matrix(QMatrix4x4 & transform, double x, double y, double z
   apply_urdf_rpy_matrix(transform, roll, pitch, yaw);
 }
 
+QMatrix4x4 ros_to_viewport_basis_matrix()
+{
+  // Central ROS/RViz (X forward, Y left, Z up) to Scene3D/OpenGL viewport
+  // basis (X right, Y up, Z depth) conversion.  All generated visual preview
+  // model matrices enter this basis exactly once at the transform root.
+  QMatrix4x4 basis;
+  basis.setToIdentity();
+  basis(0, 0) = 1.0f; basis(0, 1) = 0.0f; basis(0, 2) = 0.0f;
+  basis(1, 0) = 0.0f; basis(1, 1) = 0.0f; basis(1, 2) = 1.0f;
+  basis(2, 0) = 0.0f; basis(2, 1) = -1.0f; basis(2, 2) = 0.0f;
+  return basis;
+}
+
 QMatrix4x4 authoritative_world_visual_transform(const ScenePreviewWidget::PreviewItem & item)
 {
   QMatrix4x4 transform;
@@ -180,9 +193,14 @@ QMatrix4x4 authoritative_world_visual_transform(const ScenePreviewWidget::Previe
   return transform;
 }
 
+QMatrix4x4 viewport_world_visual_transform(const ScenePreviewWidget::PreviewItem & item)
+{
+  return ros_to_viewport_basis_matrix() * authoritative_world_visual_transform(item);
+}
+
 void apply_authoritative_world_visual_transform_gl(const ScenePreviewWidget::PreviewItem & item)
 {
-  const QMatrix4x4 transform = authoritative_world_visual_transform(item);
+  const QMatrix4x4 transform = viewport_world_visual_transform(item);
   glMultMatrixf(transform.constData());
 }
 
@@ -260,9 +278,12 @@ bool item_has_non_identity_mesh_asset_local_correction(const ScenePreviewWidget:
 
 bool should_apply_baked_mesh_asset_local_correction(const ScenePreviewWidget::PreviewItem & item)
 {
-  return item.has_baked_world_visual_transform &&
-         item_references_ur5_baked_mesh_asset_local_correction(item) &&
-         item_has_non_identity_mesh_asset_local_correction(item);
+  Q_UNUSED(item);
+  // Generated visual mesh entries are already RViz/URDF-authored as
+  // world_T_link_or_object * visual_origin_T.  Do not reintroduce the old
+  // ad hoc UR5 DAE correction path; any asset-local correction must be part of
+  // the generated mesh-local transform, not a link-name/mesh-name special case.
+  return false;
 }
 
 QString baked_mesh_asset_local_correction_reason(const ScenePreviewWidget::PreviewItem & item)
@@ -335,7 +356,7 @@ void apply_mesh_local_correction_matrix(QMatrix4x4 & transform, const ScenePrevi
 
 QMatrix4x4 final_mesh_transform_matrix(const ScenePreviewWidget::PreviewItem & item)
 {
-  QMatrix4x4 transform = authoritative_world_visual_transform(item);
+  QMatrix4x4 transform = viewport_world_visual_transform(item);
   apply_mesh_local_correction_matrix(transform, item);
   transform.scale(static_cast<float>(item.mesh_scale_x),
                   static_cast<float>(item.mesh_scale_y),
@@ -3379,8 +3400,11 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["local_max"] = scene3d_vec_to_json(cache.local_max);
 
     const QMatrix4x4 baked_transform = authoritative_world_visual_transform(item);
+    const QMatrix4x4 viewport_root_transform = viewport_world_visual_transform(item);
     const QMatrix4x4 final_transform = final_mesh_transform_matrix(item);
     row["baked_world_visual_matrix"] = scene3d_matrix_to_json(baked_transform);
+    row["ros_to_viewport_basis_matrix"] = scene3d_matrix_to_json(ros_to_viewport_basis_matrix());
+    row["viewport_world_visual_matrix"] = scene3d_matrix_to_json(viewport_root_transform);
     row["final_draw_model_matrix"] = scene3d_matrix_to_json(final_transform);
     row["final_draw_world_pose"] = scene3d_vec_to_json(final_transform.map(QVector3D(0.0f, 0.0f, 0.0f)));
 
