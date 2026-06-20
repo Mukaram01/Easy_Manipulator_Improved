@@ -386,7 +386,7 @@ if(BUILD_TESTING)
   endif()
 
   if(TARGET workcell_rviz_preview_metadata_command_test)
-    target_link_libraries(workcell_rviz_preview_metadata_command_test Qt5::Core)
+    target_link_libraries(workcell_rviz_preview_metadata_command_test Qt5::Core yaml-cpp ${Boost_LIBRARIES})
   endif()
 
   if(TARGET workcell_scene3d_stl_parser_test)
@@ -624,6 +624,7 @@ if(BUILD_TESTING)
     layout_serialization_contract_test.cpp
     workcell_studio_layout_editor_test.cpp
     mainwindow_rviz_preview_compile_test.cpp
+    rviz_preview_metadata_command_test.cpp
     visual_mesh_source_resolver_test.cpp
   )
 
