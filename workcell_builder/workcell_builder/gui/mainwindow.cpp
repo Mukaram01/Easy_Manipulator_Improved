@@ -1830,7 +1830,9 @@ void MainWindow::setup_studio_shell()
   auto * preview_layers_group = new QGroupBox("Scene3D Preview Layers", hierarchy_card);
   auto * preview_layers_layout = new QVBoxLayout(preview_layers_group);
   preview_layer_editable_layout_box_ = new QCheckBox("editable layout", preview_layers_group);
-  preview_layer_generated_urdf_visual_box_ = new QCheckBox("generated URDF visuals", preview_layers_group);
+  preview_layer_generated_urdf_visual_box_ = new QCheckBox("Show Robot Links (generated)", preview_layers_group);
+  preview_layer_generated_urdf_visual_box_->setToolTip(
+    "Shows locked generated robot/URDF visuals, including generated robot mesh previews and fallback link items.");
   preview_layer_mesh_preview_box_ = new QCheckBox("mesh previews", preview_layers_group);
   preview_layer_primitive_fallback_box_ = new QCheckBox("primitive fallbacks", preview_layers_group);
   preview_layer_overlays_helpers_box_ = new QCheckBox("overlays/helpers", preview_layers_group);
