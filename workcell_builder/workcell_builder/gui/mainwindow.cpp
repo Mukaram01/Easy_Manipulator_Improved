@@ -8690,16 +8690,20 @@ void MainWindow::populate_scene_hierarchy()
           }
           ++visual_index_loaded_count;
           const QString raw_id = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "id"));
-          const QString id = visual_item_final_identity_key(v, source_row_index);
+          QString id = visual_item_final_identity_key(v, source_row_index);
           if (id.isEmpty()) {
             ++skipped_other; const QString reason = add_skip_reason(QStringLiteral("parse_error"));
             append_visual_ingestion_diagnostic(v, raw_id, id, reason);
             continue;
           }
           if (preview_ids.contains(id)) {
-            const QString reason = add_skip_reason(QStringLiteral("duplicate_id"));
-            append_visual_ingestion_diagnostic(v, raw_id, id, reason);
-            continue;
+            const QString original_id = id;
+            int duplicate_repair_index = 1;
+            do {
+              id = QStringLiteral("%1__duplicate_repair_%2").arg(original_id).arg(duplicate_repair_index++);
+            } while (preview_ids.contains(id));
+            append_studio_log(QStringLiteral("Repaired duplicate generated URDF visual preview ID collision: %1 -> %2")
+              .arg(original_id, id));
           }
           const QString geometry_type = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "geometry_type"));
           const QString visual_item_source = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "source")).trimmed();
