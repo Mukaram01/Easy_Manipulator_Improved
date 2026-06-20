@@ -421,10 +421,157 @@ UR5_RENDERED_MESH_ADJACENT_PAIRS: tuple[tuple[str, str], ...] = (
 )
 RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M = 0.20
 RENDERED_MESH_ADJACENCY_PAIR_LIMITS_M: dict[tuple[str, str], float] = {}
+REQUIRED_UR5_FINAL_VIEWPORT_LINKS: tuple[str, ...] = (
+    "base_link_inertia",
+    "shoulder_link",
+    "upper_arm_link",
+    "forearm_link",
+    "wrist_1_link",
+    "wrist_2_link",
+    "wrist_3_link",
+)
+RETAINED_VISUAL_ROWS_MISSING_WARNING = "retained visual rows missing after loader filtering"
 
 
 def _rendered_mesh_adjacency_limit(parent: str, child: str) -> float:
     return RENDERED_MESH_ADJACENCY_PAIR_LIMITS_M.get((parent, child), RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M)
+
+
+def _payload_scene_name(payload: dict[str, Any]) -> str | None:
+    scene = payload.get("scene")
+    if isinstance(scene, str) and scene.strip():
+        return scene.strip()
+    scene_path = payload.get("scene_path")
+    if isinstance(scene_path, str) and scene_path.strip():
+        return Path(scene_path).name
+    return None
+
+
+def _payload_message_values(payload: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for key in ("warnings", "blockers", "messages", "log_lines", "stdout_tail", "stderr_tail"):
+        raw = payload.get(key)
+        if isinstance(raw, list):
+            values.extend(str(item) for item in raw)
+        elif isinstance(raw, str):
+            values.append(raw)
+    for key in ("warning_messages", "blocker_messages"):
+        raw = payload.get(key)
+        if isinstance(raw, dict):
+            values.extend(str(item) for item in raw.values())
+    return values
+
+
+def _final_visible_viewport_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = _first_present_list(payload, "final_draw_visual_items", "final_draw_diagnostics", "viewport_visible_items", "rendered_items", "visible_items")
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _row_canonical_link_candidates(row: dict[str, Any]) -> set[str]:
+    candidates: set[str] = set()
+    for key in ("link", "link_name", "canonical_link_name", "frame_id", "visual_name", "item_id", "id", "display_name"):
+        canonical = _canonical_ur5_rendered_mesh_link_name(row.get(key))
+        if canonical:
+            candidates.add(canonical)
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            candidates.add(value.strip())
+    for canonical in _normalized_link_chain(row):
+        candidates.add(canonical)
+    return candidates
+
+
+def _row_is_final_visible_renderable(row: dict[str, Any]) -> bool:
+    if row.get("visible") is False or row.get("rendered") is False:
+        return False
+    status = str(row.get("final_draw_status") or row.get("draw_status") or "").strip().lower()
+    if status in {"missing_mesh_cache", "missing_bounds", "invalid_mesh", "non_finite_bounds", "skipped", "filtered"}:
+        return False
+    if status == "ok":
+        return True
+    if row.get("final_draw_bbox") or row.get("final_draw_bbox_min"):
+        return True
+    if row.get("active_visual_source") in {"primitive_fallback", "urdf_primitive"}:
+        return True
+    return bool(row.get("has_mesh_metadata") or row.get("mesh_path") or row.get("mesh_source") or row.get("primitive_geometry_type"))
+
+
+def _table_camera_visible(payload: dict[str, Any], rows: list[dict[str, Any]]) -> tuple[bool, bool]:
+    audit = _first_present_mapping(_first_present_mapping(payload, "filter_diagnostics"), "ur5_2f_test_final_viewport_audit")
+    table_visible = _as_int(audit.get("rendered_table_count")) > 0
+    camera_visible = _as_int(audit.get("rendered_camera_count")) > 0
+    labels = [label.lower() for label in _visible_item_labels_from_payload(payload)]
+    if any("table" in label or "workbench" in label or "support_surface" in label for label in labels):
+        table_visible = True
+    if any("camera" in label or "sensor" in label for label in labels):
+        camera_visible = True
+    for row in rows:
+        text = " ".join(str(row.get(key) or "") for key in ("id", "item_id", "display_name", "link", "link_name", "category", "role")).lower()
+        if "table" in text or "workbench" in text or "support_surface" in text:
+            table_visible = True
+        if "camera" in text or "sensor" in text:
+            camera_visible = True
+    return table_visible, camera_visible
+
+
+def _apply_ur5_final_viewport_payload_contract(payload: dict[str, Any]) -> None:
+    """Validate UR5 evidence from final visible/rendered viewport rows only."""
+    if _payload_scene_name(payload) != "ur5_2f_test":
+        return
+
+    rows = _final_visible_viewport_rows(payload)
+    visible_rows = [row for row in rows if _row_is_final_visible_renderable(row)]
+    visible_links: set[str] = set()
+    for row in visible_rows:
+        visible_links.update(_row_canonical_link_candidates(row))
+
+    missing = [link for link in REQUIRED_UR5_FINAL_VIEWPORT_LINKS if link not in visible_links]
+    rendered_ur5_link_count = len([link for link in REQUIRED_UR5_FINAL_VIEWPORT_LINKS if link in visible_links])
+    payload["rendered_ur5_link_count"] = max(_counter(payload, "rendered_ur5_link_count"), rendered_ur5_link_count)
+    payload["required_ur5_final_viewport_links"] = list(REQUIRED_UR5_FINAL_VIEWPORT_LINKS)
+    payload["missing_required_visible_ur5_links"] = missing
+
+    blockers = payload.get("blockers") if isinstance(payload.get("blockers"), list) else []
+    if missing:
+        _append_unique(blockers, "ur5_final_viewport_links_missing")
+    if payload["rendered_ur5_link_count"] < len(REQUIRED_UR5_FINAL_VIEWPORT_LINKS):
+        _append_unique(blockers, "rendered_ur5_link_count_below_7")
+
+    table_visible, camera_visible = _table_camera_visible(payload, rows)
+    payload["table_visible_in_final_viewport"] = table_visible
+    payload["camera_visible_in_final_viewport"] = camera_visible
+    if not table_visible:
+        _append_unique(blockers, "table_not_visible_in_final_viewport")
+    if not camera_visible:
+        _append_unique(blockers, "camera_not_visible_in_final_viewport")
+
+    retained_warning_present = any(RETAINED_VISUAL_ROWS_MISSING_WARNING in value for value in _payload_message_values(payload))
+    if retained_warning_present and not missing:
+        _append_unique(blockers, "stale_retained_visual_rows_missing_warning")
+
+    generated_mesh_rows = [
+        row for row in rows
+        if str(row.get("source_layer") or "").strip().lower() in {"locked_generated_urdf_visual", "generated_urdf_visual"}
+        and (row.get("has_mesh_metadata") or row.get("mesh_source") or row.get("mesh_path"))
+    ]
+    generated_mesh_missing_renderables = bool(generated_mesh_rows) and not any(
+        _row_is_final_visible_renderable(row) and str(row.get("final_draw_status") or "").strip().lower() == "ok"
+        for row in generated_mesh_rows
+    )
+    fallback_count = _counter(
+        payload,
+        "generated_fallback_count",
+        "primitive_fallback_rendered_count",
+        "urdf_primitive_rendered_count",
+        "valid_physical_fallback_count",
+    )
+    payload["generated_robot_fallback_required"] = generated_mesh_missing_renderables
+    if generated_mesh_missing_renderables and fallback_count <= 0:
+        _append_unique(blockers, "generated_robot_fallback_not_activated")
+
+    if blockers:
+        payload["blockers"] = blockers
+        payload["status"] = "FAIL"
 
 
 def _finite_float_list(value: Any, length: int) -> list[float] | None:
@@ -1699,6 +1846,8 @@ def main() -> int:
             screenshot_path=diag.get("screenshot_path"),
             screenshot_available=diag.get("screenshot_available"),
         )
+        if any(key in payload for key in ("final_draw_visual_items", "final_draw_diagnostics", "viewport_visible_items")):
+            _apply_ur5_final_viewport_payload_contract(payload)
         _apply_ur5_transform_parity(payload, repo_root=repo_root, args=args)
         _apply_ur5_final_draw_bbox_regression(payload)
         if args.scene_path:
