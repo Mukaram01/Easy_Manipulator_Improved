@@ -449,51 +449,6 @@ bool is_rviz_parity_robot_layer_item(const ScenePreviewWidget::PreviewItem & ite
   return item_has_mesh_surface_candidate(item);
 }
 
-std::vector<const ScenePreviewWidget::PreviewItem *> build_final_generated_urdf_robot_renderables(
-  const QVector<ScenePreviewWidget::PreviewItem> & source_items,
-  bool show_safety_layer,
-  std::vector<const ScenePreviewWidget::PreviewItem *> * out_overlay_items = nullptr,
-  std::vector<const ScenePreviewWidget::PreviewItem *> * out_physical_items = nullptr)
-{
-  std::vector<const ScenePreviewWidget::PreviewItem *> ordered_items;
-  std::vector<const ScenePreviewWidget::PreviewItem *> generated_robot_items;
-  std::vector<const ScenePreviewWidget::PreviewItem *> physical_items;
-  std::vector<const ScenePreviewWidget::PreviewItem *> overlay_items;
-  generated_robot_items.reserve(source_items.size());
-  physical_items.reserve(source_items.size());
-  overlay_items.reserve(source_items.size());
-
-  for (const auto & item : source_items) {
-    const NormalizedRole role = classify_item_role(item);
-    if (!show_safety_layer && role == NormalizedRole::SafetyZone) continue;
-    const bool overlay_helper = is_overlay_only_item(item) || is_overlay_visual_role(role);
-    const bool generated_or_locked = is_generated_urdf_visual_item(item) || is_locked_urdf_item(item);
-    if (overlay_helper) {
-      overlay_items.push_back(&item);
-    } else if (generated_or_locked) {
-      generated_robot_items.push_back(&item);
-    } else {
-      physical_items.push_back(&item);
-    }
-  }
-
-  auto z_sort = [](const auto * a, const auto * b) { return a->z > b->z; };
-  std::sort(generated_robot_items.begin(), generated_robot_items.end(), z_sort);
-  std::sort(physical_items.begin(), physical_items.end(), z_sort);
-  std::sort(overlay_items.begin(), overlay_items.end(), z_sort);
-
-  ordered_items.insert(ordered_items.end(), generated_robot_items.begin(), generated_robot_items.end());
-  ordered_items.insert(ordered_items.end(), physical_items.begin(), physical_items.end());
-  ordered_items.insert(ordered_items.end(), overlay_items.begin(), overlay_items.end());
-
-  if (out_overlay_items) *out_overlay_items = overlay_items;
-  if (out_physical_items) {
-    *out_physical_items = generated_robot_items;
-    out_physical_items->insert(out_physical_items->end(), physical_items.begin(), physical_items.end());
-  }
-  return ordered_items;
-}
-
 bool item_has_valid_urdf_primitive(const ScenePreviewWidget::PreviewItem & item)
 {
   const QString type = item.primitive_geometry_type.trimmed().toLower().replace(QLatin1Char('-'), QLatin1Char('_')).replace(QLatin1Char(' '), QLatin1Char('_'));
@@ -1454,6 +1409,52 @@ bool is_overlay_visual_role(NormalizedRole role)
   }
 }
 
+std::vector<const ScenePreviewWidget::PreviewItem *> build_final_generated_urdf_robot_renderables(
+  const QVector<ScenePreviewWidget::PreviewItem> & source_items,
+  bool show_safety_layer,
+  std::vector<const ScenePreviewWidget::PreviewItem *> * out_overlay_items = nullptr,
+  std::vector<const ScenePreviewWidget::PreviewItem *> * out_physical_items = nullptr)
+{
+  std::vector<const ScenePreviewWidget::PreviewItem *> ordered_items;
+  std::vector<const ScenePreviewWidget::PreviewItem *> generated_robot_items;
+  std::vector<const ScenePreviewWidget::PreviewItem *> physical_items;
+  std::vector<const ScenePreviewWidget::PreviewItem *> overlay_items;
+  generated_robot_items.reserve(source_items.size());
+  physical_items.reserve(source_items.size());
+  overlay_items.reserve(source_items.size());
+
+  for (const auto & item : source_items) {
+    const NormalizedRole role = classify_item_role(item);
+    if (!show_safety_layer && role == NormalizedRole::SafetyZone) continue;
+    const bool overlay_helper = is_overlay_only_item(item) || is_overlay_visual_role(role);
+    const bool generated_or_locked = is_generated_urdf_visual_item(item) || is_locked_urdf_item(item);
+    if (overlay_helper) {
+      overlay_items.push_back(&item);
+    } else if (generated_or_locked) {
+      generated_robot_items.push_back(&item);
+    } else {
+      physical_items.push_back(&item);
+    }
+  }
+
+  auto z_sort = [](const auto * a, const auto * b) { return a->z > b->z; };
+  std::sort(generated_robot_items.begin(), generated_robot_items.end(), z_sort);
+  std::sort(physical_items.begin(), physical_items.end(), z_sort);
+  std::sort(overlay_items.begin(), overlay_items.end(), z_sort);
+
+  ordered_items.insert(ordered_items.end(), generated_robot_items.begin(), generated_robot_items.end());
+  ordered_items.insert(ordered_items.end(), physical_items.begin(), physical_items.end());
+  ordered_items.insert(ordered_items.end(), overlay_items.begin(), overlay_items.end());
+
+  if (out_overlay_items) *out_overlay_items = overlay_items;
+  if (out_physical_items) {
+    *out_physical_items = generated_robot_items;
+    out_physical_items->insert(out_physical_items->end(), physical_items.begin(), physical_items.end());
+  }
+  return ordered_items;
+}
+
+
 bool is_critical_label_role(NormalizedRole role)
 {
   switch (role) {
@@ -2086,7 +2087,6 @@ void Scene3DViewportWidget::paintGL()
   int visible_hierarchy_items = 0;
   for (const auto * it : draw_items) {
     if (!it) continue;
-    const NormalizedRole role = classify_item_role(*it);
     ++visible_hierarchy_items;
   }
   last_render_counters.hierarchy_child_row_count = visible_hierarchy_items;
