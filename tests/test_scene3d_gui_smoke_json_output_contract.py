@@ -396,6 +396,60 @@ def test_ur5_rendered_mesh_adjacency_prefers_final_draw_bboxes():
     assert checked[-1]["ok"] is True
 
 
+def test_ur5_rendered_mesh_adjacency_passes_with_generated_urdf_ids_and_stable_metadata():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    chain = [
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+        "gripper_base_link",
+    ]
+
+    def item(link: str, parent: str | None) -> dict:
+        return {
+            "id": f"generated_urdf::{link}::visual_0",
+            "item_id": f"generated_urdf::{link}",
+            "link": link,
+            "link_name": link,
+            "canonical_link_name": link,
+            "parent_link": parent,
+            "immediate_parent_link": parent,
+            "link_chain": chain[: chain.index(link) + 1],
+            "final_draw_status": "ok",
+            "final_draw_bbox": {"min": [float("nan"), 0.0, 0.0], "max": [1.0, 1.0, 1.0]},
+        }
+
+    payload = {
+        "status": "PASS",
+        "final_draw_visual_items": [
+            item("base_link_inertia", None),
+            item("shoulder_link", "base_link_inertia"),
+            item("upper_arm_link", "shoulder_link"),
+            item("forearm_link", "upper_arm_link"),
+            item("wrist_1_link", "forearm_link"),
+            item("wrist_2_link", "wrist_1_link"),
+            item("wrist_3_link", "wrist_2_link"),
+            item("gripper_base_link", "wrist_3_link"),
+        ],
+    }
+
+    smoke._apply_ur5_rendered_mesh_adjacency(payload, repo_root=Path(__file__).resolve().parents[1], scene_name="ur5_2f_test", index_data={})
+
+    assert payload["rendered_mesh_adjacency_status"] == "PASS"
+    assert "scene3d_rendered_mesh_adjacency_failed" not in payload.get("warnings", [])
+    checked = payload["rendered_mesh_adjacency_checked_pairs"]
+    assert len(checked) == 7
+    assert all(pair["ok"] is True for pair in checked)
+    assert all(pair.get("evidence") == "stable_metadata" for pair in checked)
+    assert checked[-1]["child"] == "robotiq_base"
+    assert checked[-1]["child_item_id"] == "generated_urdf::gripper_base_link"
+
+
 def test_ur5_rendered_mesh_adjacency_keeps_upper_arm_forearm_gap_strict():
     import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
 

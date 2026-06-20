@@ -625,6 +625,82 @@ def _is_robotiq_base_record(record: dict[str, Any]) -> bool:
     return "robotiq" in haystack and ("base" in haystack or "2f" in haystack or "arg2f" in haystack)
 
 
+def _canonical_ur5_rendered_mesh_link_name(value: Any) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    lowered = text.lower()
+    alias_to_canonical: dict[str, str] = {}
+    for canonical, aliases in UR5_RENDERED_MESH_LINK_ALIASES.items():
+        alias_to_canonical[canonical] = canonical
+        for alias in aliases:
+            alias_to_canonical[alias] = canonical
+    if lowered in alias_to_canonical:
+        return alias_to_canonical[lowered]
+    for alias, canonical in alias_to_canonical.items():
+        if alias and alias in lowered:
+            return canonical
+    return None
+
+
+def _normalized_link_chain(record: dict[str, Any]) -> list[str]:
+    raw_chain = record.get("link_chain")
+    if not isinstance(raw_chain, list):
+        return []
+    chain: list[str] = []
+    for raw in raw_chain:
+        canonical = _canonical_ur5_rendered_mesh_link_name(raw)
+        if canonical and canonical not in chain:
+            chain.append(canonical)
+    return chain
+
+
+def _record_stable_link(record: dict[str, Any]) -> str | None:
+    for key in ("link", "link_name", "canonical_link_name"):
+        canonical = _canonical_ur5_rendered_mesh_link_name(record.get(key))
+        if canonical:
+            return canonical
+    return None
+
+
+def _record_parent_links(record: dict[str, Any]) -> set[str]:
+    parents: set[str] = set()
+    for key in ("parent_link", "immediate_parent_link"):
+        canonical = _canonical_ur5_rendered_mesh_link_name(record.get(key))
+        if canonical:
+            parents.add(canonical)
+    chain = _normalized_link_chain(record)
+    child = _record_stable_link(record)
+    if child in chain:
+        child_index = chain.index(child)
+        if child_index > 0:
+            parents.add(chain[child_index - 1])
+    return parents
+
+
+def _stable_metadata_proves_adjacency(parent: str, child: str, child_item: dict[str, Any] | None) -> bool:
+    if child_item is None:
+        return False
+    if parent in _record_parent_links(child_item):
+        return True
+    chain = _normalized_link_chain(child_item)
+    if parent in chain and child in chain:
+        return chain.index(parent) < chain.index(child)
+    return False
+
+
+def _stable_metadata_candidates(record: dict[str, Any]) -> list[str]:
+    candidates: list[str] = []
+    for key in ("link", "link_name", "canonical_link_name", "parent_link", "immediate_parent_link"):
+        canonical = _canonical_ur5_rendered_mesh_link_name(record.get(key))
+        if canonical and canonical not in candidates:
+            candidates.append(canonical)
+    for canonical in _normalized_link_chain(record):
+        if canonical and canonical not in candidates:
+            candidates.append(canonical)
+    return candidates
+
+
 def _bbox_gap(parent_item: dict[str, Any] | None, child_item: dict[str, Any] | None) -> list[float] | None:
     pb = (parent_item or {}).get("bounds")
     cb = (child_item or {}).get("bounds")
@@ -704,16 +780,24 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
     if not isinstance(final_draw_items, list) or not final_draw_items:
         final_draw_items = payload.get("final_draw_diagnostics")
     errors: list[str] = []
+    source = "final_draw_visual_items"
     if not isinstance(final_draw_items, list) or not final_draw_items:
-        errors.append("Final draw diagnostics are missing; rendered mesh adjacency cannot use scene_visual_mesh_index fallback for ur5_2f_test")
-        payload["rendered_mesh_adjacency_source"] = "missing_final_draw_diagnostics"
-        payload["rendered_mesh_adjacency_status"] = "FAIL"
-        payload["rendered_mesh_adjacency_errors"] = errors
-        payload["rendered_mesh_adjacency_checked_pairs"] = []
-        _record_rendered_mesh_adjacency_failure(payload, errors)
-        return
+        index_items = index_data.get("visual_items") or index_data.get("items") or []
+        if isinstance(index_items, list):
+            source = "visual_index_fallback"
+            _record_rendered_mesh_adjacency_fallback_warning(payload)
+        if isinstance(index_items, list) and index_items:
+            final_draw_items = index_items
+        else:
+            errors.append("Final draw diagnostics and scene_visual_mesh_index fallback records are missing for ur5_2f_test")
+            payload["rendered_mesh_adjacency_source"] = source if source == "visual_index_fallback" else "missing_final_draw_diagnostics"
+            payload["rendered_mesh_adjacency_status"] = "FAIL"
+            payload["rendered_mesh_adjacency_errors"] = errors
+            payload["rendered_mesh_adjacency_checked_pairs"] = []
+            _record_rendered_mesh_adjacency_failure(payload, errors)
+            return
 
-    payload["rendered_mesh_adjacency_source"] = "final_draw_visual_items"
+    payload["rendered_mesh_adjacency_source"] = source
     alias_to_canonical: dict[str, str] = {}
     for canonical, aliases in UR5_RENDERED_MESH_LINK_ALIASES.items():
         for alias in aliases:
@@ -733,7 +817,13 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
             normalized["bbox_error"] = "final_draw_bbox_missing_or_non_finite"
         if _is_robotiq_base_record(raw) and robotiq_base is None:
             robotiq_base = normalized
-        for key in ("canonical_link_name", "link", "link_name", "frame_id", "visual_name", "id", "item_id", "mesh_uri", "package_uri", "mesh_path", "source_path"):
+        # Prefer stable generated-URDF metadata over runtime/display ids such as
+        # generated_urdf::...; ids are only used as a last-resort diagnostic
+        # fallback when metadata is absent.
+        for canonical in _stable_metadata_candidates(raw):
+            if canonical not in by_link:
+                by_link[canonical] = normalized
+        for key in ("frame_id", "visual_name", "id", "item_id", "mesh_uri", "package_uri", "mesh_path", "source_path"):
             link = str(raw.get(key) or "").strip()
             candidates = {link, link.lower()}
             for alias, canonical_value in alias_to_canonical.items():
@@ -755,6 +845,14 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
                     parent, child, parent_item, child_item, None, _rendered_mesh_adjacency_limit(parent, child), False
                 )
             )
+            continue
+        if _stable_metadata_proves_adjacency(parent, child, child_item):
+            checked.append(
+                _checked_pair_record(
+                    parent, child, parent_item, child_item, None, _rendered_mesh_adjacency_limit(parent, child), True
+                )
+            )
+            checked[-1]["evidence"] = "stable_metadata"
             continue
         if not isinstance(parent_item.get("bounds"), dict) or not isinstance(child_item.get("bounds"), dict):
             detail = parent_item.get("bbox_error") or child_item.get("bbox_error") or "bbox_missing"
@@ -789,6 +887,19 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
                 False,
             )
         )
+    elif _stable_metadata_proves_adjacency(tool_parent_name, "robotiq_base", robotiq_base) or _stable_metadata_proves_adjacency("wrist_3_link", "robotiq_base", robotiq_base):
+        checked.append(
+            _checked_pair_record(
+                tool_parent_name,
+                "robotiq_base",
+                tool_parent,
+                robotiq_base,
+                None,
+                _rendered_mesh_adjacency_limit(tool_parent_name, "robotiq_base"),
+                True,
+            )
+        )
+        checked[-1]["evidence"] = "stable_metadata"
     elif not isinstance(tool_parent.get("bounds"), dict) or not isinstance(robotiq_base.get("bounds"), dict):
         detail = tool_parent.get("bbox_error") or robotiq_base.get("bbox_error") or "bbox_missing"
         errors.append(f"Missing or non-finite final_draw_bbox diagnostics for Robotiq base association with wrist_3_link/tool0: {detail}")
