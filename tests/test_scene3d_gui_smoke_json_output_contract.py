@@ -302,6 +302,52 @@ def test_static_headless_counts_remain_non_pass_evidence_when_runtime_unavailabl
     assert payload["non_runtime_static_headless_renderability_counts"]["runtime_available"] is False
 
 
+def test_baked_world_visual_pose_counter_suppresses_zero_transform_warnings():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    payload = {
+        "runtime_available": True,
+        "counters": {
+            "rendered_count": 1,
+            "locked_generated_urdf_visual_count": 4,
+            "transform_chain_applied_count": 0,
+            "visual_origin_applied_count": 0,
+        },
+        "runtime_scene3d_diagnostics": {
+            "baked_world_visual_pose_count": 4,
+        },
+    }
+
+    smoke._apply_runtime_transform_counter_mapping(payload)
+
+    assert payload["locked_generated_urdf_visual_count"] == 4
+    assert payload["transform_chain_applied_count"] == 0
+    assert payload["visual_origin_applied_count"] == 0
+    assert payload["runtime_baked_world_visual_pose_applied_count"] == 4
+    assert "runtime_transform_chain_applied_count_zero_with_generated_visuals" not in payload.get("warnings", [])
+    assert "runtime_visual_origin_applied_count_zero_with_generated_visuals" not in payload.get("warnings", [])
+
+
+def test_zero_transform_warnings_preserved_when_all_transform_evidence_zero():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    payload = {
+        "runtime_available": True,
+        "counters": {
+            "rendered_count": 1,
+            "locked_generated_urdf_visual_count": 4,
+            "transform_chain_applied_count": 0,
+            "visual_origin_applied_count": 0,
+        },
+    }
+
+    smoke._apply_runtime_transform_counter_mapping(payload)
+
+    assert payload["runtime_baked_world_visual_pose_applied_count"] == 0
+    assert "runtime_transform_chain_applied_count_zero_with_generated_visuals" in payload["warnings"]
+    assert "runtime_visual_origin_applied_count_zero_with_generated_visuals" in payload["warnings"]
+
+
 def test_ur5_rendered_mesh_adjacency_prefers_final_draw_bboxes():
     import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
 

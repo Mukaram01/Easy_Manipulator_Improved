@@ -304,14 +304,16 @@ def _apply_runtime_transform_counter_mapping(payload: dict[str, Any]) -> None:
     counters = _first_present_mapping(payload, "counters")
     render_debug = _first_present_mapping(payload, "render_debug_counters")
 
+    runtime_diagnostics = _first_present_mapping(payload, "runtime_scene3d_diagnostics", "runtime_diagnostics", "diagnostics")
+
     def runtime_counter(*keys: str) -> int:
-        for source in (render_debug, counters):
+        for source in (render_debug, counters, runtime_diagnostics, payload):
             if not isinstance(source, dict):
                 continue
             for key in keys:
                 if key in source:
                     return _as_int(source.get(key))
-        return _counter_from_sources(payload, keys)
+        return _counter_from_sources(payload, keys, runtime_diagnostics)
 
     transform_chain_applied_count = runtime_counter("transform_chain_applied_count")
     visual_origin_applied_count = runtime_counter("visual_origin_applied_count")
@@ -320,16 +322,22 @@ def _apply_runtime_transform_counter_mapping(payload: dict[str, Any]) -> None:
         "generated_visual_count",
         "generated_urdf_visual_count",
     )
+    baked_world_visual_pose_applied_count = runtime_counter(
+        "runtime_baked_world_visual_pose_applied_count",
+        "baked_world_visual_pose_count",
+        "baked_world_visual_transform_count",
+    )
     payload["transform_chain_applied_count"] = transform_chain_applied_count
     payload["visual_origin_applied_count"] = visual_origin_applied_count
     payload["locked_generated_urdf_visual_count"] = generated_visual_count
+    payload["runtime_baked_world_visual_pose_applied_count"] = baked_world_visual_pose_applied_count
 
     warnings = payload.get("warnings")
     if not isinstance(warnings, list):
         warnings = []
-    if generated_visual_count > 0 and transform_chain_applied_count <= 0:
+    if generated_visual_count > 0 and transform_chain_applied_count <= 0 and baked_world_visual_pose_applied_count <= 0:
         _append_unique(warnings, "runtime_transform_chain_applied_count_zero_with_generated_visuals")
-    if generated_visual_count > 0 and visual_origin_applied_count <= 0:
+    if generated_visual_count > 0 and visual_origin_applied_count <= 0 and baked_world_visual_pose_applied_count <= 0:
         _append_unique(warnings, "runtime_visual_origin_applied_count_zero_with_generated_visuals")
     payload["warnings"] = warnings
 
