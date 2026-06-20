@@ -484,9 +484,37 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
     QStringLiteral("wrist_2_link"),
     QStringLiteral("wrist_3_link")
   };
-  const QStringList robotiq_tokens = {
-    QStringLiteral("robotiq"),
+  const QSet<QString> table_link_tokens = {
+    QStringLiteral("table"),
+    QStringLiteral("table_link"),
+    QStringLiteral("workbench"),
+    QStringLiteral("workbench_link"),
+    QStringLiteral("support_surface"),
+    QStringLiteral("support_surface_link")
+  };
+  const QSet<QString> camera_link_tokens = {
+    QStringLiteral("camera"),
+    QStringLiteral("camera_link"),
+    QStringLiteral("sensor"),
+    QStringLiteral("sensor_link")
+  };
+  const QSet<QString> robotiq_link_tokens = {
+    QStringLiteral("robotiq_arg2f_base_link"),
+    QStringLiteral("robotiq_arg2f_85_base_link"),
+    QStringLiteral("robotiq_arg2f_140_base_link"),
+    QStringLiteral("robotiq_85_base_link"),
+    QStringLiteral("robotiq_140_base_link"),
     QStringLiteral("gripper_base_link"),
+    QStringLiteral("left_outer_knuckle"),
+    QStringLiteral("left_outer_finger"),
+    QStringLiteral("left_inner_finger"),
+    QStringLiteral("left_inner_finger_pad"),
+    QStringLiteral("left_inner_knuckle"),
+    QStringLiteral("right_outer_knuckle"),
+    QStringLiteral("right_outer_finger"),
+    QStringLiteral("right_inner_finger"),
+    QStringLiteral("right_inner_finger_pad"),
+    QStringLiteral("right_inner_knuckle"),
     QStringLiteral("finger_link"),
     QStringLiteral("knuckle_link"),
     QStringLiteral("finger_tip_link")
@@ -531,46 +559,39 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
         !field_text(item, QStringLiteral("canonical_link_name")).trimmed().isEmpty() ? field_text(item, QStringLiteral("canonical_link_name")) :
         (!field_text(item, QStringLiteral("link_name")).trimmed().isEmpty() ? field_text(item, QStringLiteral("link_name")) :
          field_text(item, QStringLiteral("link"))));
-      const QString combined = canonical_scene3d_token(
-        field_text(item, QStringLiteral("item_id")) + QStringLiteral(" ") +
-        field_text(item, QStringLiteral("id")) + QStringLiteral(" ") +
-        field_text(item, QStringLiteral("display_name")) + QStringLiteral(" ") +
-        field_text(item, QStringLiteral("object_name")) + QStringLiteral(" ") +
-        field_text(item, QStringLiteral("visual_name")) + QStringLiteral(" ") +
-        field_text(item, QStringLiteral("visual")) + QStringLiteral(" ") +
-        field_text(item, QStringLiteral("parent_link")) + QStringLiteral(" ") +
-        field_text(item, QStringLiteral("mesh_source")) + QStringLiteral(" ") +
-        field_text(item, QStringLiteral("mesh_uri")) + QStringLiteral(" ") +
-        field_text(item, QStringLiteral("source_layer")));
+      const QStringList classification_tokens = {
+        link_token,
+        canonical_scene3d_token(field_text(item, QStringLiteral("canonical_link_name"))),
+        canonical_scene3d_token(field_text(item, QStringLiteral("link_name"))),
+        canonical_scene3d_token(field_text(item, QStringLiteral("link"))),
+        canonical_scene3d_token(field_text(item, QStringLiteral("item_id"))),
+        canonical_scene3d_token(field_text(item, QStringLiteral("id"))),
+        canonical_scene3d_token(field_text(item, QStringLiteral("display_name"))),
+        canonical_scene3d_token(field_text(item, QStringLiteral("object_name"))),
+        canonical_scene3d_token(field_text(item, QStringLiteral("visual_name"))),
+        canonical_scene3d_token(field_text(item, QStringLiteral("parent_link")))
+      };
+      const auto has_exact_classification = [&classification_tokens](const QSet<QString> & tokens) {
+        for (const QString & token : classification_tokens) {
+          if (!token.isEmpty() && tokens.contains(token)) return true;
+        }
+        return false;
+      };
 
-      if (combined.contains(QStringLiteral("table")) ||
-          combined.contains(QStringLiteral("workbench")) ||
-          combined.contains(QStringLiteral("support_surface"))) {
+      if (has_exact_classification(table_link_tokens)) {
         ++rendered_table_count;
       }
-      if (combined.contains(QStringLiteral("camera")) ||
-          combined.contains(QStringLiteral("sensor"))) {
+      if (has_exact_classification(camera_link_tokens)) {
         ++rendered_camera_count;
       }
 
-      bool is_robotiq = false;
-      for (const QString & token : robotiq_tokens) {
-        if (combined.contains(token) || link_token.contains(token)) {
-          is_robotiq = true;
-          break;
-        }
-      }
+      const bool is_robotiq = has_exact_classification(robotiq_link_tokens);
       const bool is_required_ur5 = required_visible_ur5_links.contains(link_token);
-      const bool is_other_ur5 =
-        combined.contains(QStringLiteral("ur5")) ||
-        combined.contains(QStringLiteral("universal_robot")) ||
-        link_token.endsWith(QStringLiteral("_link")) ||
-        link_token == QStringLiteral("base_link");
 
       if (is_robotiq) {
         ++rendered_robotiq_link_count;
       }
-      if (is_required_ur5 || (is_other_ur5 && !is_robotiq)) {
+      if (is_required_ur5) {
         ++rendered_ur5_link_count;
         visible_ur5_link_tokens.insert(link_token);
         QJsonObject record = item;
