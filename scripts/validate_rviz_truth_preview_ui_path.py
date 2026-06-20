@@ -68,7 +68,7 @@ def main() -> int:
     if not setup_bash.is_file():
         blockers.append("install/setup.bash missing under workspace root")
 
-    if launch_command != _build_launch_command(args.scene_pkg):
+    if launch_command != _build_launch_command(scene_pkg):
         blockers.append("launch command build is non-deterministic")
 
     lower = launch_command.lower()
