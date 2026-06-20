@@ -49,6 +49,8 @@ def _run_validator(repo_root: Path, workspace_root: Path, scene: str, skip_build
     return cmd, proc.returncode, payload
 
 MESH_INDEX_REL_PATH = "generated/scene_visual_mesh_index.json"
+RVIZ_TRUTH_REQUIRED_FILES = ("package.xml", "CMakeLists.txt", "launch/demo.launch.py", "urdf/scene.urdf.xacro")
+
 
 
 def _parse_package_xml_name(scene_dir: Path) -> tuple[str | None, str | None]:
@@ -100,6 +102,28 @@ def _extract_ros2_launch_package(command: str) -> str | None:
     if launch_index + 1 < len(tokens):
         return tokens[launch_index + 1]
     return None
+
+
+def _check_rviz_truth_readiness(catalog_entry, scene_dir: Path) -> dict:
+    """Validate RViz/MoveIt truth-preview package files and safe fake-hardware command."""
+    missing = [rel for rel in RVIZ_TRUTH_REQUIRED_FILES if not (scene_dir / rel).exists()]
+    package_contract = _check_package_contract(catalog_entry, scene_dir)
+    command = catalog_entry.fake_hardware_launch_command
+    launch_rviz_supported = "launch_rviz:=true" in command
+    blockers = [f"rviz_truth_missing_file: {rel}" for rel in missing]
+    blockers.extend(package_contract.get("blockers", []))
+    if "use_fake_hardware:=true" not in command:
+        blockers.append("rviz_truth_unsafe_launch_command: use_fake_hardware:=true is required")
+    return {
+        "status": "PASS" if not blockers else "BLOCKED",
+        "required_files": list(RVIZ_TRUTH_REQUIRED_FILES),
+        "missing_files": missing,
+        "safe_fake_hardware_launch_command": command,
+        "use_fake_hardware_required": "use_fake_hardware:=true" in command,
+        "launch_rviz_supported": launch_rviz_supported,
+        "package_contract": package_contract,
+        "blockers": blockers,
+    }
 
 
 def _check_package_contract(catalog_entry, scene_dir: Path) -> dict:
@@ -159,12 +183,12 @@ def _mesh_index_result(status: str, blocker: str | None = None) -> dict:
 
 
 def _check_mesh_index_contract(scene_dir: Path) -> dict:
-    """Validate the generated Scene3D visual mesh index contract for a scene."""
+    """Validate optional native Scene3D editable-preview mesh diagnostics, when present."""
     index_path = scene_dir / MESH_INDEX_REL_PATH
     if not index_path.exists():
         return _mesh_index_result(
-            "MISSING_FILE",
-            f"mesh_index_validation_missing_file: {MESH_INDEX_REL_PATH}",
+            "OPTIONAL_MISSING",
+            f"native_scene3d_optional_mesh_index_missing: {MESH_INDEX_REL_PATH}",
         )
 
     try:
@@ -314,7 +338,8 @@ def main() -> int:
 
         missing_authoring_files = [rel for rel in catalog_entry.authoring_files if not (scene_dir / rel).exists()]
         missing_generated_files = [rel for rel in catalog_entry.generated_files if not (scene_dir / rel).exists()]
-        missing_required_files = [*missing_authoring_files, *missing_generated_files]
+        rviz_truth_missing_generated_files = [rel for rel in missing_generated_files if rel != MESH_INDEX_REL_PATH]
+        missing_required_files = [*missing_authoring_files, *rviz_truth_missing_generated_files]
 
         row = {
             "scene_name": scene_name,
@@ -339,6 +364,8 @@ def main() -> int:
             "build": {"status": "SKIPPED"},
             "launch_smoke": {"status": "SKIPPED"},
             "package_contract": {"status": "SKIPPED"},
+            "rviz_truth_readiness": {"status": "SKIPPED"},
+            "native_scene3d_editable_preview_diagnostics": {"status": "SKIPPED"},
             "mesh_index_validation": {"status": "SKIPPED"},
             "mesh_index": {"status": "SKIPPED"},
             "blockers": [],
@@ -360,13 +387,16 @@ def main() -> int:
                 "missing_files": missing_required_files,
             }
             if scene_dir.exists():
-                package_contract = _check_package_contract(catalog_entry, scene_dir)
+                rviz_truth = _check_rviz_truth_readiness(catalog_entry, scene_dir)
+                row["rviz_truth_readiness"] = rviz_truth
+                package_contract = rviz_truth["package_contract"]
                 row["package_contract"] = package_contract
-                row["blockers"].extend(package_contract.get("blockers", []))
+                row["blockers"].extend(rviz_truth.get("blockers", []))
                 mesh_index = _check_mesh_index_contract(scene_dir)
+                row["native_scene3d_editable_preview_diagnostics"] = mesh_index
                 row["mesh_index_validation"] = mesh_index
                 row["mesh_index"] = mesh_index
-                row["blockers"].extend(mesh_index.get("blockers", []))
+                row["warnings"].extend(mesh_index.get("blockers", []))
             report["per_scene"].append(row)
             continue
 
@@ -397,18 +427,21 @@ def main() -> int:
 
         row["static_validation"] = {"status": "PASS" if not missing_required_files else "FAIL", "missing_files": missing_required_files}
 
-        package_contract = _check_package_contract(catalog_entry, scene_dir)
+        rviz_truth = _check_rviz_truth_readiness(catalog_entry, scene_dir)
+        row["rviz_truth_readiness"] = rviz_truth
+        package_contract = rviz_truth["package_contract"]
         row["package_contract"] = package_contract
-        if package_contract["status"] != "PASS":
-            row["blockers"].extend(package_contract.get("blockers", []))
+        if rviz_truth["status"] != "PASS":
+            row["blockers"].extend(rviz_truth.get("blockers", []))
 
         mesh_index = _check_mesh_index_contract(scene_dir)
+        row["native_scene3d_editable_preview_diagnostics"] = mesh_index
         row["mesh_index_validation"] = mesh_index
         row["mesh_index"] = mesh_index
         if mesh_index["status"] != "PASS":
-            row["blockers"].extend(mesh_index.get("blockers", []))
+            row["warnings"].extend(mesh_index.get("blockers", []))
 
-        if package_contract["status"] != "PASS":
+        if rviz_truth["status"] != "PASS":
             row["status"] = "BLOCKED"
             row["validation_result"] = "BLOCKED"
             if missing_required_files:
@@ -421,13 +454,6 @@ def main() -> int:
             row["status"] = "FAIL"
             row["validation_result"] = "FAIL"
             row["blockers"] = [f"missing_required_file: {m}" for m in missing_required_files] + row["blockers"]
-            row["blocker"] = _join_blockers(row["blockers"])
-            report["per_scene"].append(row)
-            continue
-
-        if mesh_index["status"] != "PASS":
-            row["status"] = "FAIL"
-            row["validation_result"] = "FAIL"
             row["blocker"] = _join_blockers(row["blockers"])
             report["per_scene"].append(row)
             continue

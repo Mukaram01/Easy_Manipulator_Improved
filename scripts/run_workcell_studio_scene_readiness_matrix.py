@@ -52,7 +52,7 @@ REQUIRED_CATEGORY_FILES: tuple[tuple[str, str, bool], ...] = (
     ("layout_workcell_studio_layout_yaml", "layout/workcell_studio_layout.yaml", True),
     ("launch_demo_launch_py", "launch/demo.launch.py", True),
     ("urdf_scene_urdf_xacro", "urdf/scene.urdf.xacro", True),
-    ("generated_scene_visual_mesh_index_json", "generated/scene_visual_mesh_index.json", True),
+    ("native_scene3d_optional_visual_mesh_index_json", "generated/scene_visual_mesh_index.json", False),
     ("generated_scene_package_readiness_json", "generated/scene_package_readiness.json", False),
 )
 LOCAL_REF_KEY_HINTS = ("path", "file", "uri", "xacro", "urdf", "mesh", "launch", "config", "layout", "manifest")
@@ -770,7 +770,13 @@ def _ros_launch_smoke_state(ros_available: bool, launch_check: dict[str, Any]) -
 def _overall_status(categories: dict[str, dict[str, Any]], catalog_status: str, known_blocker: str) -> str:
     if catalog_status == "blocked" and known_blocker:
         return BLOCKED
-    states = [str(item.get("status")) for item in categories.values()]
+    non_authoritative_prefixes = ("native_scene3d_",)
+    non_authoritative_names = {"scene3d_visual_quality_summary", "credible_physical_visual_evidence"}
+    states = [
+        str(item.get("status"))
+        for name, item in categories.items()
+        if name not in non_authoritative_names and not name.startswith(non_authoritative_prefixes)
+    ]
     if FAIL in states:
         return FAIL
     if BLOCKED in states:
@@ -792,13 +798,25 @@ def _evaluate_scene(repo_root: Path, entry: Any, ros_available: bool) -> dict[st
     categories["tool_metadata_consistency"] = _check_tool_metadata_consistency(scene_dir)
     categories["manifest_local_file_references"] = _check_manifest_refs(scene_dir)
 
-    scene3d_summary, physical_visual = _check_scene3d(entry.scene_name, scene_dir)
-    categories["scene3d_visual_quality_summary"] = scene3d_summary
-    categories["credible_physical_visual_evidence"] = physical_visual
-
     launch_check, launch_command, launch_warnings = _check_fake_hardware_launch(entry, (scene_dir / "launch" / "demo.launch.py").is_file())
+    categories["rviz_moveit_truth_readiness"] = _result(
+        PASS if all(categories[key]["status"] == PASS for key in ("package_xml", "cmakelists_txt", "launch_demo_launch_py", "urdf_scene_urdf_xacro")) and launch_check["status"] == PASS else FAIL,
+        "RViz/MoveIt truth package contract is present with a safe fake-hardware launch command" if launch_check["status"] == PASS else "RViz/MoveIt truth package contract is incomplete",
+        required_files=["package.xml", "CMakeLists.txt", "launch/demo.launch.py", "urdf/scene.urdf.xacro"],
+        safe_fake_hardware_launch_command=launch_command,
+        launch_rviz_supported="launch_rviz:=true" in launch_command,
+        file_checks={key: categories[key] for key in ("package_xml", "cmakelists_txt", "launch_demo_launch_py", "urdf_scene_urdf_xacro")},
+        safety="not executed; fake hardware explicitly required",
+    )
     categories["fake_hardware_launch_command_derivation"] = launch_check
     categories["ros_launch_smoke_skip_evaluation_state"] = _ros_launch_smoke_state(ros_available, launch_check)
+
+    scene3d_summary, physical_visual = _check_scene3d(entry.scene_name, scene_dir)
+    categories["native_scene3d_editable_preview_diagnostics"] = scene3d_summary
+    categories["native_scene3d_render_counters"] = physical_visual
+    # Backward-compatible aliases for existing report consumers.
+    categories["scene3d_visual_quality_summary"] = scene3d_summary
+    categories["credible_physical_visual_evidence"] = physical_visual
 
     builder_report: dict[str, Any] | None = None
     readiness_report: dict[str, Any] | None = None
