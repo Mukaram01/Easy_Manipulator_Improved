@@ -1204,6 +1204,60 @@ bool include_in_fit_bounds(const ScenePreviewWidget::PreviewItem & it, bool incl
   return product_physical_role && (mesh_backed || explicit_primitive);
 }
 
+QString scene3d_canonical_link_name_for_item(const ScenePreviewWidget::PreviewItem & item);
+bool item_is_enabled_for_fit(const ScenePreviewWidget::PreviewItem & it);
+bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it);
+
+bool item_is_ur5_generated_link_for_initial_fit(const ScenePreviewWidget::PreviewItem & it)
+{
+  if (!(is_generated_urdf_visual_item(it) || is_locked_urdf_item(it))) return false;
+  const QString canonical = scene3d_canonical_link_name_for_item(it);
+  static const QSet<QString> ur5_links{
+    QStringLiteral("base_link_inertia"), QStringLiteral("base_link"), QStringLiteral("shoulder_link"),
+    QStringLiteral("upper_arm_link"), QStringLiteral("forearm_link"), QStringLiteral("wrist_1_link"),
+    QStringLiteral("wrist_2_link"), QStringLiteral("wrist_3_link"), QStringLiteral("tool0")
+  };
+  if (ur5_links.contains(canonical)) return true;
+  const QString mix = normalized_token(it.id + QStringLiteral("|") + it.display_name + QStringLiteral("|") +
+                                       it.frame_id + QStringLiteral("|") + it.mesh_path + QStringLiteral("|") +
+                                       it.package_uri + QStringLiteral("|") + it.source_path);
+  return mix.contains(QStringLiteral("ur5")) ||
+         mix.contains(QStringLiteral("ur_description/meshes/ur5")) ||
+         mix.contains(QStringLiteral("ur_description\\meshes\\ur5"));
+}
+
+bool item_is_gripper_generated_link_for_initial_fit(const ScenePreviewWidget::PreviewItem & it)
+{
+  if (!(is_generated_urdf_visual_item(it) || is_locked_urdf_item(it))) return false;
+  const QString canonical = scene3d_canonical_link_name_for_item(it);
+  if (canonical == QStringLiteral("robotiq_85_base_link") ||
+      canonical == QStringLiteral("gripper_base_link")) return true;
+  const QString mix = normalized_token(it.id + QStringLiteral("|") + it.display_name + QStringLiteral("|") +
+                                       it.frame_id + QStringLiteral("|") + it.mesh_path + QStringLiteral("|") +
+                                       it.package_uri + QStringLiteral("|") + it.source_path);
+  return mix.contains(QStringLiteral("robotiq")) || mix.contains(QStringLiteral("gripper")) ||
+         mix.contains(QStringLiteral("finger")) || mix.contains(QStringLiteral("knuckle")) ||
+         mix.contains(QStringLiteral("end_effector"));
+}
+
+bool item_is_initial_physical_fit_anchor(const ScenePreviewWidget::PreviewItem & it, bool * out_is_ur5 = nullptr)
+{
+  if (out_is_ur5) *out_is_ur5 = false;
+  if (!item_is_enabled_for_fit(it)) return false;
+  if (is_overlay_only_item(it)) return false;
+  const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
+  const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
+  if (source_layer == QStringLiteral("overlay") || visual_source == QStringLiteral("overlay")) return false;
+
+  const bool is_ur5 = item_is_ur5_generated_link_for_initial_fit(it);
+  if (out_is_ur5) *out_is_ur5 = is_ur5;
+  if (is_ur5) return true;
+  if (item_is_gripper_generated_link_for_initial_fit(it)) return true;
+
+  const NormalizedRole role = classify_item_role(it);
+  return role == NormalizedRole::Table || role == NormalizedRole::Camera;
+}
+
 bool item_is_enabled_for_fit(const ScenePreviewWidget::PreviewItem & it)
 {
   const QString status = normalized_token(it.status);
@@ -1684,6 +1738,10 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
     if (out_file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
       QJsonObject root;
       root["camera_fit_target"] = last_camera_fit_target_;
+      root["initial_fit_included_ur5_bounds"] = last_initial_fit_included_ur5_bounds_;
+      root["initial_fit_audit_token"] = last_initial_fit_included_ur5_bounds_
+        ? QStringLiteral("UR5_BOUNDS_INCLUDED_IN_INITIAL_FIT")
+        : QStringLiteral("UR5_BOUNDS_NOT_INCLUDED_IN_INITIAL_FIT");
       if (has_robot_aabb_diag_) {
         root["robot_aabb_min"] = QJsonArray{last_robot_aabb_min_.x(), last_robot_aabb_min_.y(), last_robot_aabb_min_.z()};
         root["robot_aabb_max"] = QJsonArray{last_robot_aabb_max_.x(), last_robot_aabb_max_.y(), last_robot_aabb_max_.z()};
@@ -1733,33 +1791,19 @@ void Scene3DViewportWidget::fit_product_view()
   fit_include_overlays = false;
 
   QVector3D bmin, bmax;
-  if (!scene_bounds_from_visible_items(bmin, bmax, false)) {
+  bool ur5_included = false;
+  if (!initial_physical_fit_bounds(bmin, bmax, &ur5_included) &&
+      !scene_bounds_from_visible_items(bmin, bmax, false)) {
     set_isometric_view();
+    last_initial_fit_included_ur5_bounds_ = false;
     return;
   }
 
   const double fov = qDegreesToRadians(50.0);
-  // Product framing: start from the physical mesh workcell, then widen just enough
-  // for first-class editor primitives so ur5_2f_test opens as a complete
-  // recognizable workcell instead of a cropped robot close-up.
-  for (const auto & it : items) {
-    const NormalizedRole role = classify_item_role(it);
-    const bool product_editor_anchor = role == NormalizedRole::PickZone ||
-                                       role == NormalizedRole::PlaceZone ||
-                                       role == NormalizedRole::PlaceBin ||
-                                       role == NormalizedRole::SafetyZone ||
-                                       role == NormalizedRole::HomePose ||
-                                       role == NormalizedRole::Table ||
-                                       role == NormalizedRole::Camera;
-    if (!product_editor_anchor || !item_is_enabled_for_fit(it)) continue;
-    const ItemBounds bounds = item_bounds_for_role(it);
-    bmin.setX(std::min(bmin.x(), static_cast<float>(bounds.x)));
-    bmin.setY(std::min(bmin.y(), static_cast<float>(bounds.y)));
-    bmin.setZ(std::min(bmin.z(), static_cast<float>(bounds.z)));
-    bmax.setX(std::max(bmax.x(), static_cast<float>(bounds.x + bounds.sx)));
-    bmax.setY(std::max(bmax.y(), static_cast<float>(bounds.y + bounds.sy)));
-    bmax.setZ(std::max(bmax.z(), static_cast<float>(bounds.z + bounds.sz)));
-  }
+  // Initial product framing is intentionally physical-only: generated UR5 links,
+  // generated Robotiq/gripper links, the table/workbench, and the camera item.
+  // Overlay-only FOV/reachability/collision bounds remain excluded unless the
+  // explicit overlay fit action sets fit_include_overlays for fit_scene().
   orbit_offset_ = (bmin + bmax) * 0.5f;
   const QVector3D product_ext = bmax - bmin;
   const double product_radius = qMax(0.25, 0.5 * qSqrt(product_ext.x() * product_ext.x() + product_ext.y() * product_ext.y() + product_ext.z() * product_ext.z()));
@@ -1769,7 +1813,14 @@ void Scene3DViewportWidget::fit_product_view()
   yaw_ = -0.86;
   pitch_ = 0.60;
   orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.06, product_radius * 0.035)));
-  last_camera_fit_target_ = QStringLiteral("product_full_workcell_isometric");
+  last_initial_fit_included_ur5_bounds_ = ur5_included;
+  last_camera_fit_target_ = ur5_included
+    ? QStringLiteral("product_physical_initial_fit_ur5_included")
+    : QStringLiteral("product_physical_initial_fit_ur5_absent");
+  if (ur5_included) {
+    qInfo().noquote() << QStringLiteral("Scene3D initial fit: UR5_BOUNDS_INCLUDED_IN_INITIAL_FIT target=%1 scene=%2")
+      .arg(last_camera_fit_target_, scene_name.trimmed().isEmpty() ? QStringLiteral("No scene") : scene_name.trimmed());
+  }
   has_robot_aabb_diag_ = false;
   fit_include_overlays = false;
   update();
@@ -2271,6 +2322,11 @@ Scene3DViewportWidget::RenderDebugCounters Scene3DViewportWidget::render_debug_c
   return counters;
 }
 
+bool Scene3DViewportWidget::last_initial_fit_included_ur5_bounds() const
+{
+  return last_initial_fit_included_ur5_bounds_;
+}
+
 bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
 {
   if (items.isEmpty()) return false;
@@ -2475,6 +2531,45 @@ bool Scene3DViewportWidget::scene_bounds_from_visible_items(QVector3D & out_min,
     out_max.setZ(std::max(out_max.z(), static_cast<float>(bounds.z + bounds.sz)));
   }
   return has_fittable_item;
+}
+
+bool Scene3DViewportWidget::initial_physical_fit_bounds(QVector3D & out_min, QVector3D & out_max, bool * out_ur5_included) const
+{
+  if (out_ur5_included) *out_ur5_included = false;
+  out_min = QVector3D(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+  out_max = QVector3D(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+  bool has_anchor = false;
+  bool ur5_included = false;
+  for (const auto & it : items) {
+    bool is_ur5 = false;
+    if (!item_is_initial_physical_fit_anchor(it, &is_ur5)) continue;
+
+    ItemBounds bounds{};
+    const bool generated_or_locked_visual = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
+    const bool should_prefer_transformed_mesh_bounds = item_has_mesh_surface_candidate(it) || generated_or_locked_visual;
+    if (should_prefer_transformed_mesh_bounds && mesh_world_bounds_for_item(it, bounds)) {
+      // Initial product fit uses the same transformed mesh bounds as rendering for generated robot/tool visuals.
+    } else {
+      PrimitiveWorldBounds primitive_bounds{};
+      if (item_has_valid_urdf_primitive(it) && primitive_world_bounds_for_item(it, primitive_bounds)) {
+        bounds = { primitive_bounds.x, primitive_bounds.y, primitive_bounds.z,
+                   primitive_bounds.sx, primitive_bounds.sy, primitive_bounds.sz };
+      } else {
+        bounds = item_bounds_for_role(it);
+      }
+    }
+
+    has_anchor = true;
+    ur5_included = ur5_included || is_ur5;
+    out_min.setX(std::min(out_min.x(), static_cast<float>(bounds.x)));
+    out_min.setY(std::min(out_min.y(), static_cast<float>(bounds.y)));
+    out_min.setZ(std::min(out_min.z(), static_cast<float>(bounds.z)));
+    out_max.setX(std::max(out_max.x(), static_cast<float>(bounds.x + bounds.sx)));
+    out_max.setY(std::max(out_max.y(), static_cast<float>(bounds.y + bounds.sy)));
+    out_max.setZ(std::max(out_max.z(), static_cast<float>(bounds.z + bounds.sz)));
+  }
+  if (out_ur5_included) *out_ur5_included = ur5_included;
+  return has_anchor;
 }
 
 bool Scene3DViewportWidget::robot_bounds_from_rendered_visuals(QVector3D & out_min, QVector3D & out_max) const
