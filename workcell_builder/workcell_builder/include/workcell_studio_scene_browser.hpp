@@ -24,6 +24,11 @@ struct WorkcellStudioSceneInfo
   bool has_static_preview_svg{false};
   bool has_static_preview_html{false};
   bool has_scene_manifest_yaml{false};
+  std::string launch_package;
+  std::string launch_file;
+  bool launch_metadata_present{false};
+  bool launch_metadata_file_exists{false};
+  std::string launch_metadata_warning;
   std::string status{"BLOCKED"};
   std::string robot_summary{"unknown"};
   std::string gripper_summary{"unknown"};

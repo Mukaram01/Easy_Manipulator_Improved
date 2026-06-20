@@ -69,6 +69,47 @@ std::string compute_status(const WorkcellStudioSceneInfo & s)
   return "BLOCKED";
 }
 
+
+std::string scalar_string(const YAML::Node & node)
+{
+  if (!node || !node.IsScalar()) return "";
+  return node.as<std::string>("");
+}
+
+void try_parse_manifest_launch_metadata(WorkcellStudioSceneInfo * s)
+{
+  if (s == nullptr || !s->has_scene_manifest_yaml) return;
+  const fs::path manifest_yaml = s->scene_dir / "scene_manifest.yaml";
+  try {
+    const YAML::Node n = YAML::LoadFile(manifest_yaml.string());
+    const std::string package_name = scalar_string(n["scene"]["package"]);
+    const std::string launch_path = scalar_string(n["files"]["launch"]);
+    if (!package_name.empty()) {
+      s->launch_package = package_name;
+      s->launch_metadata_present = true;
+    }
+    if (!launch_path.empty()) {
+      const fs::path manifest_launch_path(launch_path);
+      s->launch_file = manifest_launch_path.filename().string();
+      s->launch_metadata_present = true;
+      const fs::path resolved = manifest_launch_path.is_absolute() ? manifest_launch_path : (s->scene_dir / manifest_launch_path);
+      s->launch_metadata_file_exists = exists_file(resolved);
+      if (!s->launch_metadata_file_exists) {
+        s->launch_metadata_warning = "scene_manifest.yaml launch file missing: " + resolved.string();
+      }
+    }
+  } catch (const std::exception & e) {
+    const std::string msg = std::string("Could not parse scene_manifest.yaml launch metadata: ") + e.what() +
+      " (file: " + manifest_yaml.string() + ")";
+    if (s->parse_warning.empty()) {
+      s->parse_warning = msg;
+    } else {
+      s->parse_warning += "; " + msg;
+    }
+    log_warning_once_per_context_path_reason("scene_browser_load", manifest_yaml, "scene manifest YAML parse failed");
+  }
+}
+
 void try_parse_env(WorkcellStudioSceneInfo * s)
 {
   if (s == nullptr) return;
@@ -143,6 +184,7 @@ WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const fs::path 
       s.has_static_preview_svg = exists_file(s.scene_dir / "preview" / "static_preview.svg");
       s.has_static_preview_html = exists_file(s.scene_dir / "preview" / "static_preview.html");
       s.has_scene_manifest_yaml = exists_file(s.scene_dir / "scene_manifest.yaml");
+      if (s.has_scene_manifest_yaml) try_parse_manifest_launch_metadata(&s);
       if (!is_valid_scene_package(s)) {
         continue;
       }
