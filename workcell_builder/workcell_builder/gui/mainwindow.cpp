@@ -3925,7 +3925,7 @@ QString MainWindow::selected_scene_launch_command() const
 {
   if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) return "";
   const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
-  return workcell_builder::build_command(QString::fromStdString(scene.scene_name));
+  return workcell_builder::build_command(scene);
 }
 
 
@@ -4391,7 +4391,7 @@ QString MainWindow::detect_workspace_root() const
   return QDir::homePath();
 }
 
-QString MainWindow::selected_scene_build_command() const { if (selected_scene_index_ < 0) return ""; return QString("cd %1 && source /opt/ros/humble/setup.bash && colcon build --symlink-install --packages-select %2").arg(detect_workspace_root(), QString::fromStdString(scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_name)); }
+QString MainWindow::selected_scene_build_command() const { if (selected_scene_index_ < 0) return ""; const auto & scene = scene_browser_result_.scenes[(size_t)selected_scene_index_]; return QString("cd %1 && source /opt/ros/humble/setup.bash && colcon build --symlink-install --packages-select %2").arg(detect_workspace_root(), QString::fromStdString(scene.launch_package.empty() ? scene.scene_name : scene.launch_package)); }
 QString MainWindow::selected_scene_source_command() const { return QString("cd %1 && source install/setup.bash").arg(detect_workspace_root()); }
 QString MainWindow::selected_scene_preview_command_block() const { return selected_scene_build_command()+"\n"+selected_scene_source_command()+"\ncd "+detect_workspace_root()+" && "+selected_scene_launch_command(); }
 
@@ -4444,14 +4444,14 @@ void MainWindow::refresh_preview_launch_ui()
   QStringList blockers;
   if (has_scene) {
     const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
-    if (!s.has_launch_demo) readiness = "BLOCKED_MISSING_LAUNCH";
+    if (!s.has_launch_demo && s.launch_file.empty()) readiness = "BLOCKED_MISSING_LAUNCH";
     else if (!s.has_task_intent) readiness = "BLOCKED_MISSING_TASK_INTENT";
     else if (!selected_scene_preview_ready(&blockers)) readiness = "WARNINGS_PRESENT";
     else readiness = "READY_FOR_FAKE_HARDWARE_PREVIEW";
     const auto metadata = selected_scene_metadata_summary(s);
     if (preview_scene_label_) preview_scene_label_->setText(QString("<b>Selected Scene</b><br/>scene name: %1<br/>scene path: %2<br/>robot: %3<br/>robot source: %4<br/>end effector: %5<br/>end effector source: %6<br/>task file status: %7<br/>launch/demo.launch.py status: %8<br/>package.xml/CMakeLists status: %9<br/>preview snapshot path: %10")
       .arg(metadata.scene_name, metadata.scene_path, metadata.robot, metadata.robot_source, metadata.end_effector, metadata.end_effector_source,
-      s.has_task_recipe ? "present" : "missing", s.has_launch_demo ? "present" : "missing", (s.has_package_xml && s.has_launch_demo) ? "present" : "missing")
+      s.has_task_recipe ? "present" : "missing", s.has_launch_demo ? "present" : "missing", (s.has_package_xml && (s.has_launch_demo || !s.launch_file.empty())) ? "present" : "missing")
       .arg(QString::fromStdString((s.scene_dir / "preview" / "workcell_studio_canvas_snapshot.png").string())));
     if (validation_summary_label_) validation_summary_label_->setText(QString("<b>Validation Summary</b><br/>Scene: %1<br/>Readiness Gate: %2").arg(QString::fromStdString(s.scene_name), readiness));
   }

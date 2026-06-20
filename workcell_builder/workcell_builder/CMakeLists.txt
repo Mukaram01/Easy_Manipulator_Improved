@@ -343,6 +343,13 @@ if(BUILD_TESTING)
     test/command_builders_test.cpp
     src_workcell_builder_command_builders.cpp)
 
+  ament_add_gtest(workcell_rviz_preview_metadata_command_test
+    test/rviz_preview_metadata_command_test.cpp
+    src_rviz_preview_runner.cpp
+    src_workcell_studio_scene_browser.cpp
+    src_workcell_warning_once.cpp
+    src_workcell_yaml_utils.cpp)
+
   ament_add_gtest(workcell_scene_preview_widget_ui_test
     test/scene_preview_widget_ui_test.cpp
     gui/scene_preview_widget.cpp
@@ -376,6 +383,10 @@ if(BUILD_TESTING)
 
   if(TARGET workcell_workspace_validation_test)
     target_link_libraries(workcell_workspace_validation_test Qt5::Widgets)
+  endif()
+
+  if(TARGET workcell_rviz_preview_metadata_command_test)
+    target_link_libraries(workcell_rviz_preview_metadata_command_test Qt5::Core)
   endif()
 
   if(TARGET workcell_scene3d_stl_parser_test)
