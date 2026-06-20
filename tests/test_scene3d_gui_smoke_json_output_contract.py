@@ -450,6 +450,104 @@ def test_ur5_rendered_mesh_adjacency_passes_with_generated_urdf_ids_and_stable_m
     assert checked[-1]["child_item_id"] == "generated_urdf::gripper_base_link"
 
 
+def test_reported_ur5_2f_smoke_json_generated_urdf_contract_passes():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    chain = [
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+        "gripper_base_link",
+    ]
+
+    def generated_visual_row(link: str, parent: str | None) -> dict:
+        return {
+            "id": f"generated_urdf::{link}::visual_0",
+            "item_id": f"generated_urdf::{link}",
+            "link": link,
+            "link_name": link,
+            "canonical_link_name": link,
+            "parent_link": parent,
+            "immediate_parent_link": parent,
+            "link_chain": chain[: chain.index(link) + 1],
+            "final_draw_status": "ok",
+            # Non-finite bboxes exercise the metadata-only adjacency path rather
+            # than accidentally passing because of fragile draw-order geometry.
+            "final_draw_bbox": {"min": [float("nan"), 0.0, 0.0], "max": [1.0, 1.0, 1.0]},
+            "generated_urdf_visual": True,
+            "rendered": True,
+        }
+
+    generated_rows = [
+        generated_visual_row("base_link_inertia", None),
+        generated_visual_row("shoulder_link", "base_link_inertia"),
+        generated_visual_row("upper_arm_link", "shoulder_link"),
+        generated_visual_row("forearm_link", "upper_arm_link"),
+        generated_visual_row("wrist_1_link", "forearm_link"),
+        generated_visual_row("wrist_2_link", "wrist_1_link"),
+        generated_visual_row("wrist_3_link", "wrist_2_link"),
+        generated_visual_row("gripper_base_link", "wrist_3_link"),
+    ]
+    payload = {
+        "schema": "workcell_studio_scene3d_gui_smoke/v1",
+        "status": "PASS",
+        "app_status": "PASS",
+        "runtime_available": True,
+        "warnings": ["scene3d_optional_ui_metadata_missing"],
+        "counters": {
+            "visible_count": 32,
+            "rendered_count": 31,
+            "locked_generated_urdf_visual_count": len(generated_rows),
+            "transform_chain_applied_count": 0,
+            "visual_origin_applied_count": 0,
+            "physical_mesh_items_rendered": 31,
+        },
+        "render_debug_counters": {
+            "physical_mesh_items_rendered": 31,
+            "generated_urdf_visual_count": len(generated_rows),
+        },
+        "runtime_scene3d_diagnostics": {
+            "baked_world_visual_pose_count": 18,
+        },
+        "final_draw_visual_items": generated_rows,
+    }
+
+    smoke._add_smoke_report_supplemental_evidence(payload, screenshot_path=None, screenshot_available=None)
+    smoke._apply_ur5_rendered_mesh_adjacency(
+        payload,
+        repo_root=Path(__file__).resolve().parents[1],
+        scene_name="ur5_2f_test",
+        index_data={},
+    )
+
+    assert payload["status"] == "PASS"
+    assert payload["app_status"] == "PASS"
+    assert payload["counters"]["visible_count"] == 32
+    assert payload["counters"]["rendered_count"] == 31
+    assert payload["locked_generated_urdf_visual_count"] == len(generated_rows)
+    assert {row["link"] for row in payload["final_draw_visual_items"]} >= {
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+    }
+    assert payload["transform_chain_applied_count"] == 0
+    assert payload["visual_origin_applied_count"] == 0
+    assert payload["runtime_baked_world_visual_pose_applied_count"] == 18
+    assert "runtime_transform_chain_applied_count_zero_with_generated_visuals" not in payload.get("warnings", [])
+    assert "runtime_visual_origin_applied_count_zero_with_generated_visuals" not in payload.get("warnings", [])
+    assert payload["rendered_mesh_adjacency_status"] == "PASS"
+    assert "scene3d_rendered_mesh_adjacency_failed" not in payload.get("warnings", [])
+    assert payload["warnings"] == ["scene3d_optional_ui_metadata_missing"]
+    assert all(pair.get("evidence") == "stable_metadata" for pair in payload["rendered_mesh_adjacency_checked_pairs"])
+
+
 def test_ur5_rendered_mesh_adjacency_keeps_upper_arm_forearm_gap_strict():
     import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
 
