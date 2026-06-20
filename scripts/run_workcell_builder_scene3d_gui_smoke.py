@@ -525,6 +525,38 @@ def _apply_ur5_final_viewport_payload_contract(payload: dict[str, Any]) -> None:
     for row in visible_rows:
         visible_links.update(_row_canonical_link_candidates(row))
 
+    robot_mesh_rows = [
+        row for row in visible_rows
+        if str(row.get("source_layer") or "").strip().lower() in {"locked_generated_urdf_visual", "generated_urdf_visual"}
+        and str(row.get("final_draw_status") or "").strip().lower() == "ok"
+        and (row.get("has_mesh_metadata") or row.get("mesh_source") or row.get("mesh_path") or row.get("mesh_uri"))
+        and _bbox_from_final_draw(row) is not None
+    ]
+    ur5_mesh_rows = [row for row in robot_mesh_rows if _row_canonical_link_candidates(row) & set(REQUIRED_UR5_FINAL_VIEWPORT_LINKS)]
+    robotiq_mesh_rows = [row for row in robot_mesh_rows if _is_robotiq_base_record(row) or "robotiq" in " ".join(
+        str(row.get(key) or "")
+        for key in ("canonical_link_name", "link", "link_name", "visual_name", "item_id", "id", "mesh_uri", "package_uri", "mesh_path")
+    ).lower()]
+    payload["rviz_parity_robot_layer"] = bool(robot_mesh_rows)
+    payload["robot_mesh_renderables_count"] = len(robot_mesh_rows)
+    payload["ur5_mesh_renderables_count"] = len(ur5_mesh_rows)
+    payload["robotiq_mesh_renderables_count"] = len(robotiq_mesh_rows)
+
+    robot_aabb_min = [math.inf, math.inf, math.inf]
+    robot_aabb_max = [-math.inf, -math.inf, -math.inf]
+    for row in robot_mesh_rows:
+        bbox = _bbox_from_final_draw(row)
+        if not bbox:
+            continue
+        for axis in range(3):
+            robot_aabb_min[axis] = min(robot_aabb_min[axis], bbox["min"][axis])
+            robot_aabb_max[axis] = max(robot_aabb_max[axis], bbox["max"][axis])
+    robot_aabb_valid = all(math.isfinite(v) for v in robot_aabb_min + robot_aabb_max) and any(
+        robot_aabb_max[i] > robot_aabb_min[i] for i in range(3)
+    )
+    payload["robot_aabb_min"] = robot_aabb_min if robot_aabb_valid else None
+    payload["robot_aabb_max"] = robot_aabb_max if robot_aabb_valid else None
+
     missing = [link for link in REQUIRED_UR5_FINAL_VIEWPORT_LINKS if link not in visible_links]
     rendered_ur5_link_count = len([link for link in REQUIRED_UR5_FINAL_VIEWPORT_LINKS if link in visible_links])
     payload["rendered_ur5_link_count"] = max(_counter(payload, "rendered_ur5_link_count"), rendered_ur5_link_count)
@@ -532,10 +564,28 @@ def _apply_ur5_final_viewport_payload_contract(payload: dict[str, Any]) -> None:
     payload["missing_required_visible_ur5_links"] = missing
 
     blockers = payload.get("blockers") if isinstance(payload.get("blockers"), list) else []
+    if not payload["rviz_parity_robot_layer"]:
+        _append_unique(blockers, "rviz_parity_robot_layer_missing")
+    if payload["robot_mesh_renderables_count"] < 7:
+        _append_unique(blockers, "robot_mesh_renderables_count_below_7")
+    if payload["ur5_mesh_renderables_count"] < len(REQUIRED_UR5_FINAL_VIEWPORT_LINKS):
+        _append_unique(blockers, "ur5_mesh_renderables_count_below_required_links")
+    if payload["robotiq_mesh_renderables_count"] <= 0:
+        _append_unique(blockers, "robotiq_mesh_renderables_missing")
+    if not robot_aabb_valid:
+        _append_unique(blockers, "robot_aabb_empty_or_invalid")
     if missing:
         _append_unique(blockers, "ur5_final_viewport_links_missing")
     if payload["rendered_ur5_link_count"] < len(REQUIRED_UR5_FINAL_VIEWPORT_LINKS):
         _append_unique(blockers, "rendered_ur5_link_count_below_7")
+
+    camera_fit_target = str(payload.get("camera_fit_target") or "").strip().lower()
+    camera_fit_includes_robot = robot_aabb_valid and (
+        "robot" in camera_fit_target or "ur5_included" in camera_fit_target or "physical_initial_fit" in camera_fit_target
+    )
+    payload["camera_fit_includes_robot"] = camera_fit_includes_robot
+    if not camera_fit_includes_robot:
+        _append_unique(blockers, "camera_fit_does_not_include_robot")
 
     table_visible, camera_visible = _table_camera_visible(payload, rows)
     payload["table_visible_in_final_viewport"] = table_visible
