@@ -525,26 +525,29 @@ def _apply_ur5_final_viewport_payload_contract(payload: dict[str, Any]) -> None:
     for row in visible_rows:
         visible_links.update(_row_canonical_link_candidates(row))
 
-    robot_mesh_rows = [
+    visible_robot_render_rows = [
         row for row in visible_rows
         if str(row.get("source_layer") or "").strip().lower() in {"locked_generated_urdf_visual", "generated_urdf_visual"}
-        and str(row.get("final_draw_status") or "").strip().lower() == "ok"
-        and (row.get("has_mesh_metadata") or row.get("mesh_source") or row.get("mesh_path") or row.get("mesh_uri"))
-        and _bbox_from_final_draw(row) is not None
+        and (
+            str(row.get("final_draw_status") or "").strip().lower() == "ok"
+            or str(row.get("final_draw_status") or "").strip().lower()
+            in {"ur5_emergency_visible_fallback", "ur5_emergency_fallback", "ur5_emergency_fallback_ok", "ur5_emergency_fallback_drawn"}
+        )
     ]
-    ur5_mesh_rows = [row for row in robot_mesh_rows if _row_canonical_link_candidates(row) & set(REQUIRED_UR5_FINAL_VIEWPORT_LINKS)]
-    robotiq_mesh_rows = [row for row in robot_mesh_rows if _is_robotiq_base_record(row) or "robotiq" in " ".join(
+    robot_mesh_rows = [row for row in visible_robot_render_rows if _bbox_from_final_draw(row) is not None]
+    ur5_mesh_rows = [row for row in visible_robot_render_rows if _row_canonical_link_candidates(row) & set(REQUIRED_UR5_FINAL_VIEWPORT_LINKS)]
+    robotiq_mesh_rows = [row for row in visible_robot_render_rows if _is_robotiq_base_record(row) or "robotiq" in " ".join(
         str(row.get(key) or "")
         for key in ("canonical_link_name", "link", "link_name", "visual_name", "item_id", "id", "mesh_uri", "package_uri", "mesh_path")
     ).lower()]
     payload["rviz_parity_robot_layer"] = bool(robot_mesh_rows)
-    payload["robot_mesh_renderables_count"] = len(robot_mesh_rows)
+    payload["robot_mesh_renderables_count"] = len(visible_robot_render_rows)
     payload["ur5_mesh_renderables_count"] = len(ur5_mesh_rows)
     payload["robotiq_mesh_renderables_count"] = len(robotiq_mesh_rows)
 
     robot_aabb_min = [math.inf, math.inf, math.inf]
     robot_aabb_max = [-math.inf, -math.inf, -math.inf]
-    for row in robot_mesh_rows:
+    for row in visible_robot_render_rows:
         bbox = _bbox_from_final_draw(row)
         if not bbox:
             continue

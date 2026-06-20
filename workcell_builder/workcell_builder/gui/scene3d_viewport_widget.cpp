@@ -449,6 +449,51 @@ bool is_rviz_parity_robot_layer_item(const ScenePreviewWidget::PreviewItem & ite
   return item_has_mesh_surface_candidate(item);
 }
 
+std::vector<const ScenePreviewWidget::PreviewItem *> build_final_generated_urdf_robot_renderables(
+  const QVector<ScenePreviewWidget::PreviewItem> & source_items,
+  bool show_safety_layer,
+  std::vector<const ScenePreviewWidget::PreviewItem *> * out_overlay_items = nullptr,
+  std::vector<const ScenePreviewWidget::PreviewItem *> * out_physical_items = nullptr)
+{
+  std::vector<const ScenePreviewWidget::PreviewItem *> ordered_items;
+  std::vector<const ScenePreviewWidget::PreviewItem *> generated_robot_items;
+  std::vector<const ScenePreviewWidget::PreviewItem *> physical_items;
+  std::vector<const ScenePreviewWidget::PreviewItem *> overlay_items;
+  generated_robot_items.reserve(source_items.size());
+  physical_items.reserve(source_items.size());
+  overlay_items.reserve(source_items.size());
+
+  for (const auto & item : source_items) {
+    const NormalizedRole role = classify_item_role(item);
+    if (!show_safety_layer && role == NormalizedRole::SafetyZone) continue;
+    const bool overlay_helper = is_overlay_only_item(item) || is_overlay_visual_role(role);
+    const bool generated_or_locked = is_generated_urdf_visual_item(item) || is_locked_urdf_item(item);
+    if (overlay_helper) {
+      overlay_items.push_back(&item);
+    } else if (generated_or_locked) {
+      generated_robot_items.push_back(&item);
+    } else {
+      physical_items.push_back(&item);
+    }
+  }
+
+  auto z_sort = [](const auto * a, const auto * b) { return a->z > b->z; };
+  std::sort(generated_robot_items.begin(), generated_robot_items.end(), z_sort);
+  std::sort(physical_items.begin(), physical_items.end(), z_sort);
+  std::sort(overlay_items.begin(), overlay_items.end(), z_sort);
+
+  ordered_items.insert(ordered_items.end(), generated_robot_items.begin(), generated_robot_items.end());
+  ordered_items.insert(ordered_items.end(), physical_items.begin(), physical_items.end());
+  ordered_items.insert(ordered_items.end(), overlay_items.begin(), overlay_items.end());
+
+  if (out_overlay_items) *out_overlay_items = overlay_items;
+  if (out_physical_items) {
+    *out_physical_items = generated_robot_items;
+    out_physical_items->insert(out_physical_items->end(), physical_items.begin(), physical_items.end());
+  }
+  return ordered_items;
+}
+
 bool item_has_valid_urdf_primitive(const ScenePreviewWidget::PreviewItem & item)
 {
   const QString type = item.primitive_geometry_type.trimmed().toLower().replace(QLatin1Char('-'), QLatin1Char('_')).replace(QLatin1Char(' '), QLatin1Char('_'));
@@ -1982,13 +2027,14 @@ void Scene3DViewportWidget::paintGL()
 
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  std::vector<const ScenePreviewWidget::PreviewItem *> draw_items;
-  for (const auto & it : items) draw_items.push_back(&it);
-  std::sort(draw_items.begin(), draw_items.end(), [&](const auto * a, const auto * b) { return a->z > b->z; });
+  std::vector<const ScenePreviewWidget::PreviewItem *> overlay_items;
+  std::vector<const ScenePreviewWidget::PreviewItem *> physical_items;
+  std::vector<const ScenePreviewWidget::PreviewItem *> draw_items =
+    build_final_generated_urdf_robot_renderables(items, show_safety, &overlay_items, &physical_items);
 
   int received_item_count = static_cast<int>(draw_items.size());
   int visible_item_count = 0;
-  int skipped_item_count = 0;
+  int skipped_item_count = qMax(0, static_cast<int>(items.size()) - received_item_count);
   int rendered_item_count = 0;
   int mesh_source_count = 0;
   int mesh_rendered_count = 0;
@@ -2007,20 +2053,15 @@ void Scene3DViewportWidget::paintGL()
   int physical_item_count = 0;
   QSet<QString> unique_visible_ids;
   int editable_layout_count = 0;
-  std::vector<const ScenePreviewWidget::PreviewItem *> overlay_items;
-  std::vector<const ScenePreviewWidget::PreviewItem *> physical_items;
   for (const auto * it : draw_items) {
     const NormalizedRole role = classify_item_role(*it);
-    if (!show_safety && role == NormalizedRole::SafetyZone) { ++skipped_item_count; continue; }
     ++visible_item_count;
     unique_visible_ids.insert(it->id);
     const bool generated_urdf = is_generated_urdf_visual_item(*it) || is_locked_urdf_item(*it);
     const bool overlay_helper = is_overlay_only_item(*it) || is_overlay_visual_role(role);
     if (generated_urdf) ++locked_urdf_count;
     if (it->linked_to_editable_layout_state) ++editable_layout_count;
-    if (overlay_helper) overlay_items.push_back(it);
-    else {
-      physical_items.push_back(it);
+    if (!overlay_helper) {
       ++physical_item_count;
       if (!is_intentional_semantic_editor_primitive(*it) && item_has_credible_mesh_handoff(*it)) ++mesh_source_count;
       if (generated_urdf && item_has_valid_urdf_primitive(*it)) {
@@ -2046,7 +2087,6 @@ void Scene3DViewportWidget::paintGL()
   for (const auto * it : draw_items) {
     if (!it) continue;
     const NormalizedRole role = classify_item_role(*it);
-    if (!show_safety && role == NormalizedRole::SafetyZone) continue;
     ++visible_hierarchy_items;
   }
   last_render_counters.hierarchy_child_row_count = visible_hierarchy_items;
@@ -2095,7 +2135,7 @@ void Scene3DViewportWidget::paintGL()
       }
     }
   };  // draw_item_batch
-  draw_item_batch(overlay_items, false);  // draw translucent overlays before solids to keep physical meshes legible.
+  draw_item_batch(overlay_items, false);  // draw translucent overlays before solids to keep robot/table meshes legible.
   draw_item_batch(physical_items, true);
   last_render_counters.rendered_count = rendered_item_count;
   last_render_counters.mesh_source_count = mesh_source_count;
@@ -2406,12 +2446,12 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
     painter.drawLine(QPointF(20.0, y), QPointF(target_size.width() - 20.0, y));
   }
 
-  for (const auto & it : items) {
+  const std::vector<const ScenePreviewWidget::PreviewItem *> final_renderables =
+    build_final_generated_urdf_robot_renderables(items, show_safety);
+  skipped_item_count = qMax(0, static_cast<int>(items.size()) - static_cast<int>(final_renderables.size()));
+  for (const auto * item_ptr : final_renderables) {
+    const auto & it = *item_ptr;
     const NormalizedRole role = classify_item_role(it);
-    if (!show_safety && role == NormalizedRole::SafetyZone) {
-      ++skipped_item_count;
-      continue;
-    }
     ++visible_item_count;
     unique_visible_ids.insert(it.id);
     const bool overlay_helper = is_overlay_only_item(it) || is_overlay_visual_role(role);
@@ -2658,7 +2698,7 @@ bool Scene3DViewportWidget::draw_required_ur5_emergency_fallback(const ScenePrev
   if (!have_local_bounds) {
     const QString link = scene3d_canonical_link_name_for_item(it);
     const double length = (link == QStringLiteral("upper_arm_link") || link == QStringLiteral("forearm_link")) ? 0.42 :
-                          (link == QStringLiteral("base_link") || link == QStringLiteral("shoulder_link")) ? 0.16 : 0.12;
+                          (link == QStringLiteral("base_link_inertia") || link == QStringLiteral("shoulder_link")) ? 0.16 : 0.12;
     const double radius = (link == QStringLiteral("upper_arm_link") || link == QStringLiteral("forearm_link")) ? 0.045 : 0.055;
     // Local-Y capsule/box surrogate, matching the primitive draw convention and
     // then using the baked world visual pose + ROS-to-viewport basis exactly once.
@@ -3389,7 +3429,6 @@ QString scene3d_canonical_link_name(const QString & raw_link)
 {
   QString link = raw_link.trimmed();
   if (link.isEmpty()) return link;
-  if (link == QStringLiteral("base_link_inertia")) return QStringLiteral("base_link");
   const QString lower = link.toLower();
   if (lower.contains(QStringLiteral("robotiq")) && lower.contains(QStringLiteral("base"))) {
     return QStringLiteral("robotiq_85_base_link");
@@ -3426,7 +3465,7 @@ bool is_required_ur5_viewport_link(const ScenePreviewWidget::PreviewItem & item)
   // and counters should only treat exact generated link names as UR5.
   const QString link = !item.visual_index_link_name.trimmed().isEmpty() ? item.visual_index_link_name.trimmed() :
     (!item.visual_index_link.trimmed().isEmpty() ? item.visual_index_link.trimmed() : scene3d_link_name_for_item(item));
-  return link == QStringLiteral("base_link") ||
+  return link == QStringLiteral("base_link_inertia") ||
          link == QStringLiteral("shoulder_link") ||
          link == QStringLiteral("upper_arm_link") ||
          link == QStringLiteral("forearm_link") ||
@@ -3599,7 +3638,6 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     if (is_required_ur5_viewport_link(item)) {
       const QString required_link = scene3d_canonical_link_name_for_item(item);
       const QHash<QString, QString> expected_ur5_visual_meshes{
-        {QStringLiteral("base_link"), QStringLiteral("base.dae")},
         {QStringLiteral("base_link_inertia"), QStringLiteral("base.dae")},
         {QStringLiteral("shoulder_link"), QStringLiteral("shoulder.dae")},
         {QStringLiteral("upper_arm_link"), QStringLiteral("upperarm.dae")},
