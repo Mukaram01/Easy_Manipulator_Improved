@@ -8509,6 +8509,30 @@ void MainWindow::populate_scene_hierarchy()
           const QFileInfo info(resolved_mesh_path);
           return info.exists() && info.isFile();
         };
+        auto visual_item_final_identity_key = [](const YAML::Node & node, int source_row_index) {
+          auto value = [&](const char * key) {
+            const YAML::Node field = workcell_builder::yaml_map_key(node, key);
+            if (!field || !field.IsScalar()) return QString();
+            return QString::fromStdString(field.as<std::string>("")).trimmed();
+          };
+          const QString link = value("link");
+          QString visual = value("visual");
+          if (visual.isEmpty()) visual = value("visual_name");
+          const QString visual_index = value("visual_index");
+          QString uri = value("package_uri");
+          if (uri.isEmpty()) uri = value("mesh_uri");
+          if (uri.isEmpty()) uri = value("source_path");
+          QStringList parts;
+          parts << QStringLiteral("urdf_visual_final");
+          parts << (link.isEmpty() ? QStringLiteral("link_missing") : canonical_scene3d_token(link));
+          parts << (visual.isEmpty() ? QStringLiteral("visual_missing") : canonical_scene3d_token(visual));
+          if (!visual_index.isEmpty()) parts << QStringLiteral("visual_index_%1").arg(canonical_scene3d_token(visual_index));
+          if (!uri.isEmpty()) parts << QStringLiteral("uri_%1").arg(canonical_scene3d_token(uri));
+          QString row_index = value("source_row_index");
+          if (row_index.isEmpty()) row_index = QString::number(source_row_index);
+          parts << QStringLiteral("row_%1").arg(canonical_scene3d_token(row_index));
+          return parts.join(QStringLiteral("__"));
+        };
         for (const auto & item_node : visual_items) ordered_visual_items.push_back(YAML::Clone(item_node));
         std::stable_sort(ordered_visual_items.begin(), ordered_visual_items.end(), [&](const YAML::Node & a, const YAML::Node & b) {
           return visual_item_source_token(a) == QStringLiteral("urdf_flattened") &&
@@ -8525,13 +8549,16 @@ void MainWindow::populate_scene_hierarchy()
             flattened_visual_mesh_keys.insert(key);
           }
         }
+        int ordered_visual_source_row_index = 0;
         for (const auto &v : ordered_visual_items) {
+          const int source_row_index = ordered_visual_source_row_index++;
           if (!v.IsMap()) {
             ++skipped_other; add_skip_reason(QStringLiteral("parse_error"));
             continue;
           }
           ++visual_index_loaded_count;
-          const QString id = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "id"));
+          const QString raw_id = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "id"));
+          const QString id = visual_item_final_identity_key(v, source_row_index);
           if (id.isEmpty()) {
             ++skipped_other; add_skip_reason(QStringLiteral("parse_error"));
             continue;
@@ -8550,7 +8577,7 @@ void MainWindow::populate_scene_hierarchy()
           if (suppress_lower_fidelity_for_flattened_mesh) {
             add_skip_reason(QStringLiteral("suppressed_by_urdf_flattened_visual_mesh"));
             append_studio_log(QString("Suppressed lower-fidelity visual for %1 because source=urdf_flattened mesh is available for the same link/object (source=%2 geometry=%3)")
-                                .arg(id, visual_item_source.isEmpty() ? QStringLiteral("<missing>") : visual_item_source, geometry_type));
+                                .arg(raw_id.isEmpty() ? id : raw_id, visual_item_source.isEmpty() ? QStringLiteral("<missing>") : visual_item_source, geometry_type));
             continue;
           }
           if (geometry_type == "mesh") ++mesh_item_count;
