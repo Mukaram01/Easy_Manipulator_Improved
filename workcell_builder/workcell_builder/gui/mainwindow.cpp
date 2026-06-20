@@ -8691,19 +8691,32 @@ void MainWindow::populate_scene_hierarchy()
           ++visual_index_loaded_count;
           const QString raw_id = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "id"));
           QString id = visual_item_final_identity_key(v, source_row_index);
+          const QString original_generated_id = id;
           if (id.isEmpty()) {
             ++skipped_other; const QString reason = add_skip_reason(QStringLiteral("parse_error"));
             append_visual_ingestion_diagnostic(v, raw_id, id, reason);
             continue;
           }
           if (preview_ids.contains(id)) {
-            const QString original_id = id;
+            const QString link_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link")).trimmed();
+            QString visual_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "visual")).trimmed();
+            if (visual_name.isEmpty()) {
+              visual_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "visual_name")).trimmed();
+            }
+            QString repaired_id = QStringLiteral("%1__row_%2").arg(original_generated_id).arg(source_row_index);
             int duplicate_repair_index = 1;
-            do {
-              id = QStringLiteral("%1__duplicate_repair_%2").arg(original_id).arg(duplicate_repair_index++);
-            } while (preview_ids.contains(id));
-            append_studio_log(QStringLiteral("Repaired duplicate generated URDF visual preview ID collision: %1 -> %2")
-              .arg(original_id, id));
+            while (preview_ids.contains(repaired_id)) {
+              repaired_id = QStringLiteral("%1__duplicate_repair_%2").arg(original_generated_id).arg(duplicate_repair_index++);
+            }
+            append_studio_log(QString(
+              "Repaired duplicate generated URDF visual ID: raw_id=%1 original_generated_id=%2 repaired_generated_id=%3 link=%4 visual=%5 source_row_index=%6")
+              .arg(raw_id.isEmpty() ? QStringLiteral("<missing>") : raw_id,
+                   original_generated_id,
+                   repaired_id,
+                   link_name.isEmpty() ? QStringLiteral("<missing>") : link_name,
+                   visual_name.isEmpty() ? QStringLiteral("<missing>") : visual_name)
+              .arg(source_row_index));
+            id = repaired_id;
           }
           const QString geometry_type = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "geometry_type"));
           const QString visual_item_source = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "source")).trimmed();
