@@ -8627,27 +8627,52 @@ void MainWindow::populate_scene_hierarchy()
           return info.exists() && info.isFile();
         };
         auto visual_item_final_identity_key = [](const YAML::Node & node, int source_row_index) {
-          Q_UNUSED(source_row_index);
           auto value = [&](const char * key) {
             const YAML::Node field = workcell_builder::yaml_map_key(node, key);
             if (!field || !field.IsScalar()) return QString();
             return QString::fromStdString(field.as<std::string>("")).trimmed();
           };
-          const QString link = value("link");
+          QString link = value("link");
+          if (link.isEmpty()) link = value("link_name");
+          if (link.isEmpty()) link = value("object_id");
+          if (link.isEmpty()) link = value("object");
           QString visual = value("visual");
           if (visual.isEmpty()) visual = value("visual_name");
-          const QString visual_index = value("visual_index");
-          const QString source = value("source");
-          const QString category = value("category");
-          QStringList parts;
-          parts << QStringLiteral("urdf_visual_final");
-          parts << (link.isEmpty() ? QStringLiteral("link_missing") : canonical_scene3d_token(link));
-          parts << (visual.isEmpty() ? QStringLiteral("visual_missing") : canonical_scene3d_token(visual));
-          if (!visual_index.isEmpty()) parts << QStringLiteral("visual_index_%1").arg(canonical_scene3d_token(visual_index));
-          if (!source.isEmpty()) parts << QStringLiteral("source_%1").arg(canonical_scene3d_token(source));
-          if (!category.isEmpty()) parts << QStringLiteral("category_%1").arg(canonical_scene3d_token(category));
-          return parts.join(QStringLiteral("__"));
+          if (visual.isEmpty()) visual = value("id");
+          return QStringLiteral("generated_urdf::%1::%2::%3")
+            .arg(link.isEmpty() ? QStringLiteral("link_missing") : canonical_scene3d_token(link),
+                 visual.isEmpty() ? QStringLiteral("visual_missing") : canonical_scene3d_token(visual),
+                 QString::number(qMax(0, source_row_index)));
         };
+        auto assert_scene3d_generated_urdf_identity_namespace_regression = [&]() {
+          QSet<QString> regression_preview_ids;
+          regression_preview_ids.insert(QStringLiteral("robot_base"));
+          YAML::Node base_link_row(YAML::NodeType::Map);
+          base_link_row["link"] = "base_link";
+          base_link_row["visual_name"] = "base_visual";
+          YAML::Node shoulder_link_row(YAML::NodeType::Map);
+          shoulder_link_row["link"] = "shoulder_link";
+          shoulder_link_row["visual_name"] = "shoulder_visual";
+          YAML::Node upper_arm_link_row(YAML::NodeType::Map);
+          upper_arm_link_row["link"] = "upper_arm_link";
+          upper_arm_link_row["visual_name"] = "upper_arm_visual";
+          const QString base_id = visual_item_final_identity_key(base_link_row, 0);
+          const QString shoulder_id = visual_item_final_identity_key(shoulder_link_row, 1);
+          const QString upper_arm_id = visual_item_final_identity_key(upper_arm_link_row, 2);
+          Q_ASSERT_X(base_id == QStringLiteral("generated_urdf::base_link::base_visual::0"),
+                     "Scene3D generated URDF identity namespace",
+                     "generated base_link visual must be generated-only and row-indexed");
+          Q_ASSERT_X(shoulder_id == QStringLiteral("generated_urdf::shoulder_link::shoulder_visual::1"),
+                     "Scene3D generated URDF identity namespace",
+                     "generated shoulder_link visual must be generated-only and row-indexed");
+          Q_ASSERT_X(upper_arm_id == QStringLiteral("generated_urdf::upper_arm_link::upper_arm_visual::2"),
+                     "Scene3D generated URDF identity namespace",
+                     "generated upper_arm_link visual must be generated-only and row-indexed");
+          Q_ASSERT_X(!regression_preview_ids.contains(base_id) && !regression_preview_ids.contains(shoulder_id) && !regression_preview_ids.contains(upper_arm_id),
+                     "Scene3D generated URDF identity namespace",
+                     "editable robot_base must not suppress generated URDF visuals");
+        };
+        assert_scene3d_generated_urdf_identity_namespace_regression();
         auto visual_item_is_lower_fidelity_fallback = [&](const YAML::Node & node) {
           const QString source = visual_item_source_token(node);
           const QString geometry = canonical_scene3d_token(QString::fromStdString(workcell_builder::yaml_map_value_or_empty(node, "geometry_type")));
@@ -8688,16 +8713,20 @@ void MainWindow::populate_scene_hierarchy()
           }
           ++visual_index_loaded_count;
           const QString raw_id = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "id"));
-          const QString id = visual_item_final_identity_key(v, source_row_index);
+          QString id = visual_item_final_identity_key(v, source_row_index);
           if (id.isEmpty()) {
             ++skipped_other; const QString reason = add_skip_reason(QStringLiteral("parse_error"));
             append_visual_ingestion_diagnostic(v, raw_id, id, reason);
             continue;
           }
           if (preview_ids.contains(id)) {
-            const QString reason = add_skip_reason(QStringLiteral("duplicate_id"));
-            append_visual_ingestion_diagnostic(v, raw_id, id, reason);
-            continue;
+            const QString original_collision_id = id;
+            int repair_suffix = 1;
+            do {
+              id = QStringLiteral("%1::dedupe_%2").arg(original_collision_id).arg(repair_suffix++);
+            } while (preview_ids.contains(id));
+            append_studio_log(QString("Scene3D generated URDF visual id collision repaired deterministically: %1 -> %2")
+                                .arg(original_collision_id, id));
           }
           const QString geometry_type = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "geometry_type"));
           const QString visual_item_source = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "source")).trimmed();

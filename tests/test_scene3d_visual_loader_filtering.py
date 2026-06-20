@@ -10,7 +10,7 @@ def _token(value: str) -> str:
     return "".join(ch.lower() if ch.isalnum() else "_" for ch in (value or "")).strip("_")
 
 
-def _final_identity(item: dict) -> str:
+def _final_identity(item: dict, source_row_index: int) -> str:
     visual = item.get("visual") or item.get("visual_name") or "visual_missing"
     parts = [
         "urdf_visual_final",
@@ -23,6 +23,10 @@ def _final_identity(item: dict) -> str:
         parts.append("source_" + _token(item["source"]))
     if item.get("category"):
         parts.append("category_" + _token(item["category"]))
+    row_index = item.get("source_row_index")
+    if row_index in (None, ""):
+        row_index = source_row_index
+    parts.append("row_" + _token(str(row_index)))
     return "__".join(parts)
 
 
@@ -41,30 +45,34 @@ def _is_lower_fidelity_fallback(item: dict) -> bool:
     )
 
 
-def _filtered_links(items: list[dict]) -> set[str]:
+def _retained_rows(items: list[dict]) -> list[dict]:
     flattened_links = {
         _token(item.get("link") or item.get("object_id") or item.get("object") or item.get("id"))
         for item in items
         if _token(item.get("source", "")) == "urdf_flattened" and _token(item.get("geometry_type", "")) == "mesh"
     }
     retained_ids = set()
-    retained_links = set()
-    for item in sorted(items, key=lambda i: _token(i.get("source", "")) != "urdf_flattened"):
-        identity = _final_identity(item)
+    retained_rows = []
+    for source_row_index, item in enumerate(sorted(items, key=lambda i: _token(i.get("source", "")) != "urdf_flattened")):
+        identity = _final_identity(item, source_row_index)
         link_key = _token(item.get("link") or item.get("object_id") or item.get("object") or item.get("id"))
         if identity in retained_ids:
             continue
         if link_key in flattened_links and _is_lower_fidelity_fallback(item):
             continue
         retained_ids.add(identity)
-        retained_links.add(_token(item.get("link", "")))
-    return retained_links
+        retained_rows.append({**item, "_final_identity": identity})
+    return retained_rows
+
+
+def _filtered_links(items: list[dict]) -> set[str]:
+    return {_token(item.get("link", "")) for item in _retained_rows(items)}
 
 
 def test_mainwindow_visual_loader_distinguishes_identity_fallback_and_shared_mesh_uri() -> None:
     src = MAINWINDOW.read_text(encoding="utf-8")
     assert "source_%1" in src and "category_%1" in src
-    assert "uri_%1" not in src and "row_%1" not in src
+    assert "row_%1" in src and "source_row_index" in src
     assert "visual_item_is_lower_fidelity_fallback" in src
     assert "suppressed_by_urdf_flattened_visual_mesh" in src
     assert "retention check passed for ur5_2f_test" in src
@@ -72,7 +80,18 @@ def test_mainwindow_visual_loader_distinguishes_identity_fallback_and_shared_mes
 
 def test_ur5_2f_visual_loader_filter_retains_robot_and_robotiq_rows() -> None:
     items = json.loads(UR5_INDEX.read_text(encoding="utf-8"))["visual_items"]
-    retained = _filtered_links(items)
+    retained_rows = _retained_rows(items)
+    retained = {_token(item.get("link", "")) for item in retained_rows}
+    identities = [item["_final_identity"] for item in retained_rows]
+    valid_mesh_rows = [
+        item
+        for item in items
+        if _token(item.get("source", "")) == "urdf_flattened" and _token(item.get("geometry_type", "")) == "mesh"
+    ]
+
+    assert len(items) == 18
+    assert len(retained_rows) in {18, len(valid_mesh_rows)}
+    assert len(identities) == len(set(identities))
     assert {"base_link", "base_link_inertia"} & retained
     assert {
         "shoulder_link",
@@ -87,3 +106,29 @@ def test_ur5_2f_visual_loader_filter_retains_robot_and_robotiq_rows() -> None:
         assert any(token in link for link in retained)
     assert "table" in retained
     assert "camera_link" in retained
+
+
+def test_editable_layout_semantic_ids_do_not_suppress_generated_urdf_rows() -> None:
+    items = [
+        {
+            "id": "robot_base",
+            "link": "robot_base",
+            "visual": "editable_robot_base",
+            "source": "layout",
+            "category": "editable_layout",
+            "geometry_type": "box",
+        },
+        {
+            "link": "base_link",
+            "visual": "base_link_visual",
+            "visual_index": 0,
+            "source": "urdf_flattened",
+            "category": "locked_generated_urdf_visual",
+            "geometry_type": "mesh",
+        },
+    ]
+
+    retained = _filtered_links(items)
+
+    assert "robot_base" in retained
+    assert "base_link" in retained
