@@ -131,6 +131,7 @@ public:
   };
   RenderDebugCounters last_render_counters;
   RenderDebugCounters render_debug_counters() const;
+  bool last_initial_fit_included_ur5_bounds() const;
   bool render_smoke_fallback_frame(QImage * out_image = nullptr);
   QJsonArray mesh_diagnostics_export() const;
   QJsonArray final_draw_visual_items_export() const;
@@ -198,6 +199,7 @@ private:
   void draw_ground_grid_pass();
   void draw_world_axes_pass();
   bool scene_bounds_from_visible_items(QVector3D & out_min, QVector3D & out_max, bool include_overlays) const;
+  bool initial_physical_fit_bounds(QVector3D & out_min, QVector3D & out_max, bool * out_ur5_included = nullptr) const;
   bool robot_bounds_from_rendered_visuals(QVector3D & out_min, QVector3D & out_max) const;
   bool item_has_explicit_dimensions(const ScenePreviewWidget::PreviewItem & item) const;
   QString placeholder_reason_for_item(const ScenePreviewWidget::PreviewItem & item) const;
@@ -310,6 +312,7 @@ private:
   QPoint drag_asset_screen_pos_;
   QJsonObject drag_asset_payload_;
   QString last_camera_fit_target_{ "scene" };
+  bool last_initial_fit_included_ur5_bounds_{ false };
   bool has_robot_aabb_diag_{ false };
   QVector3D last_robot_aabb_min_;
   QVector3D last_robot_aabb_max_;

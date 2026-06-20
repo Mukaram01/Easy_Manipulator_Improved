@@ -760,9 +760,13 @@ void ScenePreviewWidget::refresh_info_chip()
                                   .arg(counters.last_paint_completed ? QStringLiteral("true") : QStringLiteral("false"))
                                   .arg(preview_scene_name_.isEmpty() ? QStringLiteral("(none)") : preview_scene_name_)
                                   .arg(selected_preview_item_id_.isEmpty() ? QStringLiteral("(none)") : selected_preview_item_id_);
+  const QString initial_fit_audit = QStringLiteral("initial_fit_ur5_bounds=%1")
+                                      .arg(viewport && viewport->last_initial_fit_included_ur5_bounds()
+                                             ? QStringLiteral("included")
+                                             : QStringLiteral("not_included"));
   info_chip_label_->setText(QString("Scene: %1\nMode: %2\n%3\n%4  Warn: %5  Task: %6")
                               .arg(preview_scene_name_).arg(render_mode).arg(summary).arg(compact_stats)
-                              .arg(total_warning_count()).arg(task_is_ready() ? "Ready" : "Missing") + QString("\n") + smoke_stats);
+                              .arg(total_warning_count()).arg(task_is_ready() ? "Ready" : "Missing") + QString("\n") + smoke_stats + QStringLiteral(" ") + initial_fit_audit);
   info_chip_label_->adjustSize();
   if (fallback_info_chip_proxy_) fallback_info_chip_proxy_->setPos(12.0, 12.0);
   if (toolbar_status_chip_) {
