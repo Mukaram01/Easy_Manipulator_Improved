@@ -39,17 +39,11 @@ def _visual_item_final_identity_key(node: dict, source_row_index: int) -> str:
     uri = value("package_uri") or value("mesh_uri") or value("source_path")
     row_index = value("source_row_index") or str(source_row_index)
 
-    parts = [
-        "urdf_visual_final",
+    return "generated_urdf::{}::{}::{}".format(
         _canonical_scene3d_token(link) if link else "link_missing",
         _canonical_scene3d_token(visual) if visual else "visual_missing",
-    ]
-    if visual_index:
-        parts.append(f"visual_index_{_canonical_scene3d_token(visual_index)}")
-    if uri:
-        parts.append(f"uri_{_canonical_scene3d_token(uri)}")
-    parts.append(f"row_{_canonical_scene3d_token(row_index)}")
-    return "__".join(parts)
+        _canonical_scene3d_token(row_index),
+    )
 
 
 def _load_visual_items() -> list[dict]:
@@ -152,7 +146,7 @@ def _selected_robot_base_frame(items: list[dict]) -> str:
 def test_final_scene3d_identities_are_unique_with_gui_loader_helper() -> None:
     source = GUI_LOADER_PATH.read_text(encoding="utf-8")
     assert "visual_item_final_identity_key" in source
-    assert "row_%1" in source
+    assert "generated_urdf::%1::%2::%3" in source
     assert "source_row_index" in source
 
     retained = _retained_rows(_load_visual_items())
@@ -160,7 +154,7 @@ def test_final_scene3d_identities_are_unique_with_gui_loader_helper() -> None:
 
     assert len(retained) == 18
     assert len(identities) == len(set(identities))
-    assert all(identity.startswith("urdf_visual_final__") for identity in identities)
+    assert all(identity.startswith("generated_urdf::") for identity in identities)
 
 
 def test_selected_robot_base_frame_is_not_tool_camera_or_table() -> None:

@@ -3352,14 +3352,27 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["item_id"] = item.id;
     row["id"] = item.id;
     row["display_name"] = item.display_name;
-    const QString link_name = scene3d_link_name_for_item(item);
+    const QString link_name = !item.visual_index_link_name.trimmed().isEmpty() ? item.visual_index_link_name.trimmed() :
+      (!item.visual_index_link.trimmed().isEmpty() ? item.visual_index_link.trimmed() : scene3d_link_name_for_item(item));
     const QString canonical_link_name = scene3d_canonical_link_name_for_item(item);
     row["link_name"] = link_name;
     row["canonical_link_name"] = canonical_link_name;
-    row["link"] = canonical_link_name.isEmpty() ? link_name : canonical_link_name;
-    const int visual_index = scene3d_visual_index_for_item(item);
+    row["link"] = !item.visual_index_link.trimmed().isEmpty() ? item.visual_index_link.trimmed() : link_name;
+    if (!item.visual_index_object_name.trimmed().isEmpty()) row["object_name"] = item.visual_index_object_name.trimmed();
+    const int visual_index = item.visual_index_value >= 0 ? item.visual_index_value : scene3d_visual_index_for_item(item);
     if (visual_index >= 0) row["visual_index"] = visual_index;
-    row["visual_name"] = visual_index >= 0 ? QStringLiteral("visual_%1").arg(visual_index) : item.display_name;
+    row["visual_name"] = !item.visual_index_visual_name.trimmed().isEmpty() ? item.visual_index_visual_name.trimmed() :
+      (!item.visual_index_visual.trimmed().isEmpty() ? item.visual_index_visual.trimmed() :
+        (visual_index >= 0 ? QStringLiteral("visual_%1").arg(visual_index) : item.display_name));
+    if (!item.visual_index_visual.trimmed().isEmpty()) row["visual"] = item.visual_index_visual.trimmed();
+    if (item.source_row_index >= 0) row["source_row_index"] = item.source_row_index;
+    if (!item.visual_index_parent_link.trimmed().isEmpty()) row["parent_link"] = item.visual_index_parent_link.trimmed();
+    if (!item.visual_index_link_chain.isEmpty()) {
+      QJsonArray chain;
+      for (const QString & link : item.visual_index_link_chain) chain.append(link);
+      row["link_chain"] = chain;
+    }
+    if (!item.visual_index_source.trimmed().isEmpty()) row["source"] = item.visual_index_source.trimmed();
     row["frame_id"] = item.frame_id;
     row["source_layer"] = item.source_layer;
     row["active_visual_source"] = item.active_visual_source;
@@ -3367,8 +3380,8 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["editable"] = item.editable;
     row["lock_reason"] = item.lock_reason;
     row["mesh_source"] = mesh_source;
-    row["mesh_uri"] = mesh_source;
-    row["package_uri"] = item.package_uri;
+    row["mesh_uri"] = !item.visual_index_mesh_uri.trimmed().isEmpty() ? item.visual_index_mesh_uri.trimmed() : mesh_source;
+    row["package_uri"] = !item.visual_index_package_uri.trimmed().isEmpty() ? item.visual_index_package_uri.trimmed() : item.package_uri;
     row["source_type"] = QStringLiteral("generated_urdf_visual_mesh");
     row["mesh_path"] = item.mesh_path;
     row["source_path"] = item.source_path;

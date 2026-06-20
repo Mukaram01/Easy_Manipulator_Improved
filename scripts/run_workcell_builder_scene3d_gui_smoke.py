@@ -799,6 +799,38 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
 
     payload["rendered_mesh_adjacency_source"] = source
     alias_to_canonical: dict[str, str] = {}
+    if source == "final_draw_visual_items":
+        final_rows = [row for row in final_draw_items if isinstance(row, dict)]
+        by_source_row = {row.get("source_row_index"): row for row in final_rows if row.get("source_row_index") is not None}
+        expected_source_rows = {
+            0: "base_link_inertia",
+            1: "shoulder_link",
+            2: "upper_arm_link",
+            3: "forearm_link",
+            4: "wrist_1_link",
+            5: "wrist_2_link",
+            6: "wrist_3_link",
+        }
+        final_links = {str(row.get("link") or row.get("link_name") or "").strip() for row in final_rows}
+        missing_ur5 = [link for link in expected_source_rows.values() if link not in final_links]
+        if missing_ur5:
+            errors.append("Final Scene3D payload is missing visible/rendered UR5 arm links: " + ",".join(missing_ur5))
+        for row_index, expected_link in expected_source_rows.items():
+            row = by_source_row.get(row_index)
+            actual_link = str((row or {}).get("link") or (row or {}).get("link_name") or "").strip()
+            if actual_link != expected_link:
+                errors.append(
+                    f"Final Scene3D payload source_row_index={row_index} expected {expected_link} but got {actual_link or '<missing>'}"
+                )
+        replacement_links = {"gripper_base_link", "table", "camera", "camera_link"}
+        for row_index in expected_source_rows:
+            row = by_source_row.get(row_index)
+            actual_link = str((row or {}).get("link") or (row or {}).get("link_name") or "").strip()
+            if actual_link in replacement_links:
+                errors.append(
+                    f"Final Scene3D payload source_row_index={row_index} was replaced by non-UR5 logical row {actual_link}"
+                )
+
     for canonical, aliases in UR5_RENDERED_MESH_LINK_ALIASES.items():
         for alias in aliases:
             alias_to_canonical[alias] = canonical
