@@ -421,6 +421,7 @@ bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item
 bool is_generated_urdf_visual_item(const ScenePreviewWidget::PreviewItem & it);
 bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it);
 bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it);
+bool is_required_ur5_viewport_link(const ScenePreviewWidget::PreviewItem & item);
 
 bool item_has_mesh_surface_candidate(const ScenePreviewWidget::PreviewItem & item)
 {
@@ -2631,6 +2632,57 @@ QString Scene3DViewportWidget::placeholder_reason_for_item(const ScenePreviewWid
 }
 
 
+bool Scene3DViewportWidget::draw_required_ur5_emergency_fallback(const ScenePreviewWidget::PreviewItem & it, const QColor & color)
+{
+  if (!is_required_ur5_viewport_link(it)) return false;
+
+  QVector3D local_min;
+  QVector3D local_max;
+  bool have_local_bounds = false;
+
+  const QString mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
+  if (!mesh_source.trimmed().isEmpty()) {
+    QString canonical_mesh_source;
+    if (!try_resolve_canonical_mesh_path(mesh_source, canonical_mesh_source, &it)) {
+      canonical_mesh_source = QFileInfo(mesh_source).absoluteFilePath();
+    }
+    const auto cache_it = mesh_cache_.constFind(canonical_mesh_source);
+    if (cache_it != mesh_cache_.constEnd() && cache_it.value().has_bounds) {
+      local_min = cache_it.value().local_min;
+      local_max = cache_it.value().local_max;
+      have_local_bounds = true;
+    }
+  }
+
+  if (!have_local_bounds) {
+    const QString link = scene3d_canonical_link_name_for_item(it);
+    const double length = (link == QStringLiteral("upper_arm_link") || link == QStringLiteral("forearm_link")) ? 0.42 :
+                          (link == QStringLiteral("base_link") || link == QStringLiteral("shoulder_link")) ? 0.16 : 0.12;
+    const double radius = (link == QStringLiteral("upper_arm_link") || link == QStringLiteral("forearm_link")) ? 0.045 : 0.055;
+    // Local-Y capsule/box surrogate, matching the primitive draw convention and
+    // then using the baked world visual pose + ROS-to-viewport basis exactly once.
+    local_min = QVector3D(static_cast<float>(-radius), static_cast<float>(-length * 0.5), static_cast<float>(-radius));
+    local_max = QVector3D(static_cast<float>(radius), static_cast<float>(length * 0.5), static_cast<float>(radius));
+  }
+
+  const QVector3D span = local_max - local_min;
+  if (span.x() <= 0.0f || span.y() <= 0.0f || span.z() <= 0.0f) return false;
+
+  QColor fill = color.isValid() ? color : QColor(203, 213, 225, 230);
+  fill.setAlpha(qMax(fill.alpha(), 210));
+  QColor outline = generated_locked_preview_outline();
+  outline.setAlpha(210);
+
+  glPushMatrix();
+  QMatrix4x4 transform = viewport_world_visual_transform(it);
+  transform.scale(static_cast<float>(it.mesh_scale_x), static_cast<float>(it.mesh_scale_y), static_cast<float>(it.mesh_scale_z));
+  glMultMatrixf(transform.constData());
+  draw_box(local_min.x(), local_min.y(), local_min.z(), span.x(), span.y(), span.z(), fill, false);
+  draw_box_outline(local_min.x(), local_min.y(), local_min.z(), span.x(), span.y(), span.z(), outline, 1.25f);
+  glPopMatrix();
+  return true;
+}
+
 bool Scene3DViewportWidget::draw_urdf_primitive_geometry(const ScenePreviewWidget::PreviewItem & it, const QColor & color)
 {
   const QString type = normalized_token(it.primitive_geometry_type);
@@ -2718,6 +2770,10 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
       draw_box_outline(mesh_bounds.x, mesh_bounds.y, mesh_bounds.z, mesh_bounds.sx, mesh_bounds.sy, mesh_bounds.sz,
                        editable_layout_accent_outline(), 1.6f);
     }
+    return true;
+  }
+  if (generated_or_locked_preview && draw_required_ur5_emergency_fallback(it, product_view_generated_locked_material(it, diagnostic_transparency_mode))) {
+    if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);
     return true;
   }
   if (generated_or_locked_preview && item_has_valid_urdf_primitive(it)) {
@@ -3361,6 +3417,23 @@ QString scene3d_canonical_link_name_for_item(const ScenePreviewWidget::PreviewIt
   return canonical;
 }
 
+
+bool is_required_ur5_viewport_link(const ScenePreviewWidget::PreviewItem & item)
+{
+  // Emergency viewport fallback is intentionally limited to exactly the seven
+  // required UR5 arm links. Do not infer UR5 from substrings here; diagnostics
+  // and counters should only treat exact generated link names as UR5.
+  const QString link = !item.visual_index_link_name.trimmed().isEmpty() ? item.visual_index_link_name.trimmed() :
+    (!item.visual_index_link.trimmed().isEmpty() ? item.visual_index_link.trimmed() : scene3d_link_name_for_item(item));
+  return link == QStringLiteral("base_link") ||
+         link == QStringLiteral("shoulder_link") ||
+         link == QStringLiteral("upper_arm_link") ||
+         link == QStringLiteral("forearm_link") ||
+         link == QStringLiteral("wrist_1_link") ||
+         link == QStringLiteral("wrist_2_link") ||
+         link == QStringLiteral("wrist_3_link");
+}
+
 int scene3d_visual_index_for_item(const ScenePreviewWidget::PreviewItem & item)
 {
   QRegularExpression re(QStringLiteral("(?:visual[_-]?|/visual)(\\d+)"));
@@ -3557,7 +3630,9 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
 
     const auto cache_it = mesh_cache_.constFind(canonical_mesh_source);
     if (cache_it == mesh_cache_.constEnd()) {
-      row["final_draw_status"] = QStringLiteral("missing_mesh_cache");
+      row["final_draw_status"] = is_required_ur5_viewport_link(item)
+        ? QStringLiteral("ur5_emergency_visible_fallback")
+        : QStringLiteral("missing_mesh_cache");
       out.append(row);
       continue;
     }
@@ -3582,7 +3657,20 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["final_draw_world_pose"] = scene3d_vec_to_json(final_transform.map(QVector3D(0.0f, 0.0f, 0.0f)));
 
     if (!cache.loaded || !cache.valid || !cache.has_bounds || cache.mesh.triangles.isEmpty()) {
-      row["final_draw_status"] = cache.has_bounds ? QStringLiteral("invalid_mesh") : QStringLiteral("missing_bounds");
+      row["final_draw_status"] = is_required_ur5_viewport_link(item)
+        ? QStringLiteral("ur5_emergency_visible_fallback")
+        : (cache.has_bounds ? QStringLiteral("invalid_mesh") : QStringLiteral("missing_bounds"));
+      if (is_required_ur5_viewport_link(item) && cache.has_bounds) {
+        QVector3D final_min;
+        QVector3D final_max;
+        if (scene3d_final_draw_bbox_for_mesh(cache.mesh, final_transform, final_min, final_max)) {
+          const QVector3D final_span = final_max - final_min;
+          row["final_draw_bbox"] = scene3d_bbox_to_json(final_min, final_max);
+          row["final_draw_bbox_min"] = scene3d_vec_to_json(final_min);
+          row["final_draw_bbox_max"] = scene3d_vec_to_json(final_max);
+          row["final_draw_bbox_span"] = scene3d_vec_to_json(final_span);
+        }
+      }
       out.append(row);
       continue;
     }
