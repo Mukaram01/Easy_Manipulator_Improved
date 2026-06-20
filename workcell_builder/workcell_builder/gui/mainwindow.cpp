@@ -4686,6 +4686,11 @@ void MainWindow::run_fake_hardware_preview(){
   append_studio_log("RViz Truth Preview launch started");
   set_preview_state("PREVIEW_RUNNING");
   write_preview_launch_transcript(true, command, "preview_started");
+  append_studio_log(QString("RViz Truth Preview launch command: scene=%1 package=%2 fake_hardware=true launch_path=%3 command=%4")
+    .arg(QString::fromStdString(scene.scene_name),
+      QString::fromStdString(scene.scene_name),
+      QString::fromStdString((scene.scene_dir / "launch" / "demo.launch.py").string()),
+      command));
   preview_process_->start("bash", {"-lc", command});
   refresh_new_cell_checklist();
 }
