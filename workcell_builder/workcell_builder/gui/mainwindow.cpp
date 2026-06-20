@@ -447,6 +447,148 @@ QString canonical_scene3d_token(const QString & value)
   return normalized;
 }
 
+QString scene3d_viewport_link_token(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QString link =
+    !item.visual_index_link_name.trimmed().isEmpty() ? item.visual_index_link_name :
+    (!item.visual_index_link.trimmed().isEmpty() ? item.visual_index_link : item.display_name);
+  return canonical_scene3d_token(link);
+}
+
+QJsonObject scene3d_viewport_pose_json(const ScenePreviewWidget::PreviewItem & item)
+{
+  return QJsonObject{
+    {QStringLiteral("x"), item.x},
+    {QStringLiteral("y"), item.y},
+    {QStringLiteral("z"), item.z},
+    {QStringLiteral("roll"), item.roll},
+    {QStringLiteral("pitch"), item.pitch},
+    {QStringLiteral("yaw"), item.yaw}
+  };
+}
+
+QJsonObject audit_ur5_2f_test_committed_viewport_items(
+  const Scene3DViewportWidget * viewport,
+  QStringList * missing_required_visible_links)
+{
+  if (missing_required_visible_links) {
+    missing_required_visible_links->clear();
+  }
+
+  const QSet<QString> required_visible_ur5_links = {
+    QStringLiteral("base_link_inertia"),
+    QStringLiteral("shoulder_link"),
+    QStringLiteral("upper_arm_link"),
+    QStringLiteral("forearm_link"),
+    QStringLiteral("wrist_1_link"),
+    QStringLiteral("wrist_2_link"),
+    QStringLiteral("wrist_3_link")
+  };
+  const QStringList robotiq_tokens = {
+    QStringLiteral("robotiq"),
+    QStringLiteral("gripper_base_link"),
+    QStringLiteral("finger_link"),
+    QStringLiteral("knuckle_link"),
+    QStringLiteral("finger_tip_link")
+  };
+
+  int rendered_generated_urdf_link_count = 0;
+  int rendered_ur5_link_count = 0;
+  int rendered_robotiq_link_count = 0;
+  int rendered_table_count = 0;
+  int rendered_camera_count = 0;
+  QSet<QString> visible_ur5_link_tokens;
+  QJsonArray rendered_ur5_link_records;
+
+  if (viewport) {
+    for (const auto & item : viewport->items) {
+      const QString source_layer = canonical_scene3d_token(item.source_layer);
+      const QString visual_source = canonical_scene3d_token(item.active_visual_source);
+      const QString link_token = scene3d_viewport_link_token(item);
+      const QString combined = canonical_scene3d_token(
+        item.id + QStringLiteral(" ") + item.display_name + QStringLiteral(" ") +
+        item.role + QStringLiteral(" ") + item.category + QStringLiteral(" ") +
+        item.visual_index_object_name + QStringLiteral(" ") + item.visual_index_parent_link);
+      const bool generated_urdf =
+        source_layer == QStringLiteral("locked_generated_urdf_visual") ||
+        source_layer == QStringLiteral("generated_urdf_visual");
+      const bool renderable =
+        generated_urdf &&
+        (item.has_mesh_metadata || item.mesh_available ||
+         visual_source == QStringLiteral("primitive_fallback") ||
+         visual_source == QStringLiteral("urdf_primitive") ||
+         !item.primitive_geometry_type.trimmed().isEmpty());
+      const bool visible = renderable;  // The viewport item list is the post-filter committed payload.
+
+      if (combined.contains(QStringLiteral("table")) ||
+          combined.contains(QStringLiteral("workbench")) ||
+          combined.contains(QStringLiteral("support_surface"))) {
+        ++rendered_table_count;
+      }
+      if (combined.contains(QStringLiteral("camera")) ||
+          combined.contains(QStringLiteral("sensor"))) {
+        ++rendered_camera_count;
+      }
+      if (!visible) {
+        continue;
+      }
+
+      ++rendered_generated_urdf_link_count;
+      bool is_robotiq = false;
+      for (const QString & token : robotiq_tokens) {
+        if (combined.contains(token) || link_token.contains(token)) {
+          is_robotiq = true;
+          break;
+        }
+      }
+      const bool is_required_ur5 = required_visible_ur5_links.contains(link_token);
+      const bool is_other_ur5 =
+        combined.contains(QStringLiteral("ur5")) ||
+        combined.contains(QStringLiteral("universal_robot")) ||
+        link_token.endsWith(QStringLiteral("_link")) ||
+        link_token == QStringLiteral("base_link");
+
+      if (is_robotiq) {
+        ++rendered_robotiq_link_count;
+      }
+      if (is_required_ur5 || (is_other_ur5 && !is_robotiq)) {
+        ++rendered_ur5_link_count;
+        visible_ur5_link_tokens.insert(link_token);
+        QJsonObject record;
+        record[QStringLiteral("item_id")] = item.id;
+        record[QStringLiteral("link_name")] = link_token;
+        record[QStringLiteral("source_row_index")] = item.source_row_index;
+        record[QStringLiteral("mesh_path")] = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path : item.source_path;
+        record[QStringLiteral("world_pose")] = scene3d_viewport_pose_json(item);
+        record[QStringLiteral("visible")] = visible;
+        record[QStringLiteral("selectable")] = item.selectable;
+        record[QStringLiteral("locked")] = item.locked;
+        rendered_ur5_link_records.append(record);
+      }
+    }
+  }
+
+  QStringList missing;
+  for (const QString & required_link : required_visible_ur5_links) {
+    if (!visible_ur5_link_tokens.contains(required_link)) {
+      missing << required_link;
+    }
+  }
+  if (missing_required_visible_links) {
+    *missing_required_visible_links = missing;
+  }
+
+  return QJsonObject{
+    {QStringLiteral("rendered_generated_urdf_link_count"), rendered_generated_urdf_link_count},
+    {QStringLiteral("rendered_ur5_link_count"), rendered_ur5_link_count},
+    {QStringLiteral("rendered_robotiq_link_count"), rendered_robotiq_link_count},
+    {QStringLiteral("rendered_table_count"), rendered_table_count},
+    {QStringLiteral("rendered_camera_count"), rendered_camera_count},
+    {QStringLiteral("rendered_ur5_link_records"), rendered_ur5_link_records},
+    {QStringLiteral("missing_required_visible_ur5_links"), QJsonArray::fromStringList(missing)}
+  };
+}
+
 double normalize_angle_radians_with_guard(double value, const QString & context, QStringList * warnings)
 {
   constexpr double kPi = 3.14159265358979323846;
@@ -7489,6 +7631,24 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     append_studio_log("Scene3D blocker: current layer filters hide all items. Re-enable editable layout, mesh preview, primitive fallback, or locked generated URDF visuals.");
   }
   scene_preview_widget_->set_preview_items(filtered_items);
+  if (has_selected_scene() && selected_scene_name() == QStringLiteral("ur5_2f_test")) {
+    auto * viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
+    QStringList missing_required_visible_links;
+    const QJsonObject viewport_audit =
+      audit_ur5_2f_test_committed_viewport_items(viewport, &missing_required_visible_links);
+    scene3d_filter_diagnostics_[QStringLiteral("ur5_2f_test_final_viewport_audit")] = viewport_audit;
+    append_studio_log(
+      QStringLiteral("Scene3D final viewport audit for ur5_2f_test: %1")
+        .arg(QString::fromUtf8(QJsonDocument(viewport_audit).toJson(QJsonDocument::Compact))));
+    if (!missing_required_visible_links.isEmpty()) {
+      append_studio_log(
+        QStringLiteral("Preview warning: ur5_2f_test retained visual rows missing after loader filtering: final visible viewport/renderable UR5 links missing=[%1]")
+          .arg(missing_required_visible_links.join(QStringLiteral(","))));
+    } else {
+      append_studio_log(QStringLiteral(
+        "Scene3D final viewport audit passed for ur5_2f_test required visible UR5 viewport/renderable links."));
+    }
+  }
   const Scene3DTransformParityReadiness transform_parity =
     has_selected_scene()
       ? scene3d_load_transform_parity_readiness(
@@ -9209,41 +9369,6 @@ void MainWindow::populate_scene_hierarchy()
           preview_ids.insert(id);
           append_visual_ingestion_diagnostic(v, raw_id, id, QString(), p.source_layer);
           if (include_preview_item_in_hierarchy(p)) add_tree_node(p);
-        }
-        if (scene_name == QStringLiteral("ur5_2f_test")) {
-          const QSet<QString> required_ur5_links = {
-            QStringLiteral("base_link"), QStringLiteral("base_link_inertia"),
-            QStringLiteral("shoulder_link"), QStringLiteral("upper_arm_link"),
-            QStringLiteral("forearm_link"), QStringLiteral("wrist_1_link"),
-            QStringLiteral("wrist_2_link"), QStringLiteral("wrist_3_link")};
-          const QStringList required_robotiq_tokens = {
-            QStringLiteral("gripper_base_link"), QStringLiteral("finger_link"),
-            QStringLiteral("knuckle_link"), QStringLiteral("finger_tip_link")};
-          QSet<QString> retained_links;
-          for (const auto & item : preview_items) {
-            if (item.source_layer != QStringLiteral("locked_generated_urdf_visual")) continue;
-            retained_links.insert(canonical_scene3d_token(item.display_name));
-          }
-          bool has_ur5_base = retained_links.contains(QStringLiteral("base_link")) || retained_links.contains(QStringLiteral("base_link_inertia"));
-          QStringList missing_required_links;
-          for (const QString & link : required_ur5_links) {
-            if ((link == QStringLiteral("base_link") || link == QStringLiteral("base_link_inertia")) && has_ur5_base) continue;
-            if (!retained_links.contains(link)) missing_required_links << link;
-          }
-          QStringList missing_required_robotiq_tokens;
-          for (const QString & token : required_robotiq_tokens) {
-            bool found = false;
-            for (const QString & link : retained_links) {
-              if (link.contains(token)) { found = true; break; }
-            }
-            if (!found) missing_required_robotiq_tokens << token;
-          }
-          if (!missing_required_links.isEmpty() || !missing_required_robotiq_tokens.isEmpty()) {
-            append_studio_log(QString("Preview warning: ur5_2f_test retained visual rows missing after loader filtering: ur5_links=[%1] robotiq_tokens=[%2]")
-              .arg(missing_required_links.join(QStringLiteral(",")), missing_required_robotiq_tokens.join(QStringLiteral(","))));
-          } else {
-            append_studio_log(QStringLiteral("Visual mesh index retention check passed for ur5_2f_test UR5 and Robotiq generated visual rows after loader filtering."));
-          }
         }
       }
       int visual_skipped_total = 0;
