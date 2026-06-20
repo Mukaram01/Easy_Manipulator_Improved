@@ -8462,6 +8462,85 @@ void MainWindow::populate_scene_hierarchy()
     }
   }
   QString robot_base_frame = QStringLiteral("unknown");
+  struct RobotBaseFrameCandidate {
+    QString frame;
+    int score{-100000};
+  };
+  auto robot_base_frame_reject_or_downrank_score = [](const QString & frame) {
+    const QString token = canonical_scene3d_token(frame);
+    if (token.isEmpty()) return -100000;
+    if (token == QStringLiteral("world")) return 10000;
+    if (token == QStringLiteral("base_link")) return 9000;
+    if (token == QStringLiteral("base_link_inertia")) return 8000;
+
+    const QStringList non_robot_root_terms = {
+      QStringLiteral("gripper_base_link"),
+      QStringLiteral("robotiq"),
+      QStringLiteral("finger"),
+      QStringLiteral("knuckle"),
+      QStringLiteral("tool0"),
+      QStringLiteral("tool_"),
+      QStringLiteral("_tool"),
+      QStringLiteral("tool_link"),
+      QStringLiteral("end_effector"),
+      QStringLiteral("endeffector"),
+      QStringLiteral("ee_link"),
+      QStringLiteral("eef"),
+      QStringLiteral("camera"),
+      QStringLiteral("realsense"),
+      QStringLiteral("d435"),
+      QStringLiteral("d455"),
+      QStringLiteral("table"),
+      QStringLiteral("workbench")
+    };
+    for (const QString & term : non_robot_root_terms) {
+      if (token.contains(term)) return -9000;
+    }
+
+    int score = 0;
+    if (token == QStringLiteral("root_link")) score = 7000;
+    else if (token.endsWith(QStringLiteral("_root_link")) || token.contains(QStringLiteral("root_link"))) score = 6500;
+    else if (token.endsWith(QStringLiteral("_base_link")) || token.contains(QStringLiteral("base_link"))) score = 6000;
+    else if (token == QStringLiteral("base") || token.endsWith(QStringLiteral("_base"))) score = 5500;
+    else if ((token.startsWith(QStringLiteral("ur")) || token.contains(QStringLiteral("_ur"))) &&
+             (token.contains(QStringLiteral("root")) || token.contains(QStringLiteral("base")))) score = 5200;
+    else if (token.contains(QStringLiteral("shoulder_link"))) score = 1000;
+    else score = 100;
+    return score;
+  };
+  auto consider_robot_base_frame_candidate = [&](RobotBaseFrameCandidate & best, const QString & frame, int source_bonus = 0) {
+    const QString candidate = frame.trimmed();
+    if (candidate.isEmpty()) return;
+    const int score = robot_base_frame_reject_or_downrank_score(candidate) + source_bonus;
+    if (score > best.score) {
+      best.frame = candidate;
+      best.score = score;
+    }
+  };
+  auto yaml_scalar_string = [](const YAML::Node & node, const char * key) {
+    const YAML::Node value = workcell_builder::yaml_map_key(node, key);
+    if (!value || !value.IsScalar()) return QString();
+    return QString::fromStdString(value.as<std::string>("")).trimmed();
+  };
+  auto consider_robot_base_frame_chain = [&](RobotBaseFrameCandidate & best, const YAML::Node & node, const char * key, int source_bonus = 0) {
+    const YAML::Node chain = workcell_builder::yaml_map_key(node, key);
+    if (!chain) return;
+    if (chain.IsSequence()) {
+      int chain_index = 0;
+      for (const YAML::Node & entry : chain) {
+        if (entry.IsScalar()) {
+          consider_robot_base_frame_candidate(best, QString::fromStdString(entry.as<std::string>("")).trimmed(), source_bonus - chain_index);
+        }
+        ++chain_index;
+      }
+    } else if (chain.IsScalar()) {
+      const QString chain_text = QString::fromStdString(chain.as<std::string>("")).trimmed();
+      for (const QString & part : chain_text.split(QRegularExpression(QStringLiteral("[,>\\s]+")), Qt::SkipEmptyParts)) {
+        consider_robot_base_frame_candidate(best, part, source_bonus);
+      }
+    }
+  };
+  RobotBaseFrameCandidate best_robot_base_frame_candidate;
   QString robot_world_pose = QStringLiteral("unknown");
   int mesh_item_count = 0;
   int primitive_item_count = 0;
@@ -8476,6 +8555,11 @@ void MainWindow::populate_scene_hierarchy()
       visual_index_safe_for_preview = workcell_builder::yaml_map_key(urdf_index, "safe_for_preview").as<bool>(false);
       visual_index_extraction_mode = QString::fromStdString(
         workcell_builder::yaml_map_value_or_empty(urdf_index, "extraction_mode"));
+      consider_robot_base_frame_candidate(best_robot_base_frame_candidate, yaml_scalar_string(urdf_index, "root_link"), 300);
+      consider_robot_base_frame_candidate(best_robot_base_frame_candidate, yaml_scalar_string(urdf_index, "robot_root_link"), 300);
+      consider_robot_base_frame_candidate(best_robot_base_frame_candidate, yaml_scalar_string(urdf_index, "base_link"), 250);
+      consider_robot_base_frame_chain(best_robot_base_frame_candidate, urdf_index, "link_chain", 200);
+      consider_robot_base_frame_chain(best_robot_base_frame_candidate, urdf_index, "urdf_link_chain", 200);
       stale_or_absolute_only_mesh_index_count =
         workcell_builder::yaml_map_key(urdf_index, "stale_or_unsafe_count").as<int>(0);
       if (stale_or_absolute_only_mesh_index_count == 0 && workcell_builder::yaml_map_key(urdf_index, "stale_index").as<bool>(false)) {
@@ -8610,7 +8694,11 @@ void MainWindow::populate_scene_hierarchy()
           if (parent_link.isEmpty()) {
             parent_link = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "base_frame")).trimmed();
           }
-          if (robot_base_frame == QStringLiteral("unknown") && !parent_link.isEmpty()) robot_base_frame = parent_link;
+          consider_robot_base_frame_candidate(best_robot_base_frame_candidate, yaml_scalar_string(v, "root_link"), 300);
+          consider_robot_base_frame_candidate(best_robot_base_frame_candidate, parent_link, 150);
+          consider_robot_base_frame_candidate(best_robot_base_frame_candidate, yaml_scalar_string(v, "link"), 0);
+          consider_robot_base_frame_chain(best_robot_base_frame_candidate, v, "link_chain", 200);
+          if (!best_robot_base_frame_candidate.frame.isEmpty()) robot_base_frame = best_robot_base_frame_candidate.frame;
           const bool has_visual_metadata =
             !id.trimmed().isEmpty() &&
             !QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link")).trimmed().isEmpty() &&
