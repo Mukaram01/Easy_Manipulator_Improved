@@ -631,3 +631,177 @@ def test_ur5_rendered_mesh_adjacency_rejects_index_fallback_when_final_draw_miss
     assert payload["rendered_mesh_adjacency_errors"] == [
         "Final Scene3D viewport/renderable diagnostics are missing; visual-index metadata cannot prove UR5 arm visibility"
     ]
+
+
+def test_ur5_final_viewport_payload_requires_visible_links_table_and_camera():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    required = [
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+    ]
+    payload = {
+        "scene": "ur5_2f_test",
+        "status": "PASS",
+        "counters": {"generated_fallback_count": 0},
+        "final_draw_visual_items": [
+            {
+                "item_id": f"generated_urdf::{link}",
+                "link": link,
+                "link_name": link,
+                "source_layer": "locked_generated_urdf_visual",
+                "final_draw_status": "ok",
+                "final_draw_bbox": {"min": [0, 0, 0], "max": [1, 1, 1]},
+                "visible": True,
+                "rendered": True,
+            }
+            for link in required
+        ]
+        + [
+            {"id": "layout_table", "display_name": "table", "visible": True, "rendered": True, "geometry_type": "box"},
+            {"id": "camera_sensor", "display_name": "camera", "visible": True, "rendered": True, "geometry_type": "box"},
+        ],
+    }
+
+    smoke._apply_ur5_final_viewport_payload_contract(payload)
+
+    assert payload["status"] == "PASS"
+    assert payload["rendered_ur5_link_count"] >= 7
+    assert payload["missing_required_visible_ur5_links"] == []
+    assert payload["table_visible_in_final_viewport"] is True
+    assert payload["camera_visible_in_final_viewport"] is True
+    assert "ur5_final_viewport_links_missing" not in payload.get("blockers", [])
+    assert "stale_retained_visual_rows_missing_warning" not in payload.get("blockers", [])
+
+
+def test_ur5_final_viewport_payload_rejects_metadata_or_index_only_names():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    payload = {
+        "scene": "ur5_2f_test",
+        "status": "PASS",
+        "visual_index": {
+            "items": [
+                {"link": "base_link_inertia"},
+                {"link": "shoulder_link"},
+                {"link": "upper_arm_link"},
+                {"link": "forearm_link"},
+                {"link": "wrist_1_link"},
+                {"link": "wrist_2_link"},
+                {"link": "wrist_3_link"},
+            ]
+        },
+        "metadata": {"robot_links": ["base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link", "wrist_3_link"]},
+        "visible_items": [
+            {"id": "layout_table", "display_name": "table", "visible": True, "rendered": True, "geometry_type": "box"},
+            {"id": "camera_sensor", "display_name": "camera", "visible": True, "rendered": True, "geometry_type": "box"},
+        ],
+    }
+
+    smoke._apply_ur5_final_viewport_payload_contract(payload)
+
+    assert payload["status"] == "FAIL"
+    assert payload["rendered_ur5_link_count"] == 0
+    assert payload["missing_required_visible_ur5_links"] == [
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+    ]
+    assert "ur5_final_viewport_links_missing" in payload["blockers"]
+    assert "rendered_ur5_link_count_below_7" in payload["blockers"]
+
+
+def test_ur5_final_viewport_payload_fails_stale_retained_rows_warning_when_links_visible():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    required = [
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+    ]
+    payload = {
+        "scene": "ur5_2f_test",
+        "status": "PASS",
+        "warnings": ["Preview warning: ur5_2f_test retained visual rows missing after loader filtering"],
+        "final_draw_visual_items": [
+            {"link": link, "final_draw_status": "ok", "final_draw_bbox": {"min": [0, 0, 0], "max": [1, 1, 1]}}
+            for link in required
+        ]
+        + [
+            {"id": "table", "display_name": "table", "geometry_type": "box"},
+            {"id": "camera", "display_name": "camera", "geometry_type": "box"},
+        ],
+    }
+
+    smoke._apply_ur5_final_viewport_payload_contract(payload)
+
+    assert payload["missing_required_visible_ur5_links"] == []
+    assert "stale_retained_visual_rows_missing_warning" in payload["blockers"]
+    assert payload["status"] == "FAIL"
+
+
+def test_generated_robot_fallback_required_when_generated_mesh_rows_are_not_renderable():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    payload = {
+        "scene": "ur5_2f_test",
+        "status": "PASS",
+        "counters": {"generated_fallback_count": 3},
+        "final_draw_visual_items": [
+            {
+                "link": "base_link_inertia",
+                "link_name": "base_link_inertia",
+                "source_layer": "locked_generated_urdf_visual",
+                "has_mesh_metadata": True,
+                "mesh_source": "package://ur_description/meshes/visual/base.dae",
+                "final_draw_status": "missing_mesh_cache",
+            },
+            {"id": "table", "display_name": "table", "geometry_type": "box"},
+            {"id": "camera", "display_name": "camera", "geometry_type": "box"},
+        ],
+    }
+
+    smoke._apply_ur5_final_viewport_payload_contract(payload)
+
+    assert payload["generated_robot_fallback_required"] is True
+    assert "generated_robot_fallback_not_activated" not in payload.get("blockers", [])
+
+
+def test_generated_robot_fallback_blocks_when_generated_mesh_rows_missing_renderables_without_fallback():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    payload = {
+        "scene": "ur5_2f_test",
+        "status": "PASS",
+        "counters": {"generated_fallback_count": 0},
+        "final_draw_visual_items": [
+            {
+                "link": "base_link_inertia",
+                "source_layer": "locked_generated_urdf_visual",
+                "has_mesh_metadata": True,
+                "mesh_source": "package://ur_description/meshes/visual/base.dae",
+                "final_draw_status": "missing_mesh_cache",
+            },
+            {"id": "table", "display_name": "table", "geometry_type": "box"},
+            {"id": "camera", "display_name": "camera", "geometry_type": "box"},
+        ],
+    }
+
+    smoke._apply_ur5_final_viewport_payload_contract(payload)
+
+    assert payload["generated_robot_fallback_required"] is True
+    assert "generated_robot_fallback_not_activated" in payload["blockers"]
+    assert payload["status"] == "FAIL"

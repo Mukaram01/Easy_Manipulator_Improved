@@ -64,3 +64,36 @@ def test_scene3d_smoke_load_keeps_generated_urdf_layer_additive_for_mesh_index_p
     assert '"editable_layout"' in smoke_block
     assert '"mesh_preview"' in smoke_block
     assert '"primitive_fallback"' in smoke_block
+
+
+def test_ur5_2f_final_viewport_audit_requires_renderable_ur5_links_table_and_camera():
+    audit_start = MAIN_CPP.index('QJsonObject audit_ur5_2f_test_committed_viewport_items')
+    audit_end = MAIN_CPP.index('double normalize_angle_radians_with_guard', audit_start)
+    audit_block = MAIN_CPP[audit_start:audit_end]
+
+    for link in [
+        'base_link_inertia',
+        'shoulder_link',
+        'upper_arm_link',
+        'forearm_link',
+        'wrist_1_link',
+        'wrist_2_link',
+        'wrist_3_link',
+    ]:
+        assert f'QStringLiteral("{link}")' in audit_block
+    assert 'rendered_ur5_link_count' in audit_block
+    assert 'rendered_table_count' in audit_block
+    assert 'rendered_camera_count' in audit_block
+    assert 'missing_required_visible_ur5_links' in audit_block
+    assert 'const bool visible = renderable;' in audit_block
+
+
+def test_loader_filter_warning_is_suppressed_when_required_final_viewport_links_are_visible():
+    filter_start = MAIN_CPP.index('if (has_selected_scene() && selected_scene_name() == QStringLiteral("ur5_2f_test"))')
+    filter_end = MAIN_CPP.index('const Scene3DTransformParityReadiness transform_parity', filter_start)
+    filter_block = MAIN_CPP[filter_start:filter_end]
+
+    assert 'audit_ur5_2f_test_committed_viewport_items(viewport, &missing_required_visible_links)' in filter_block
+    assert 'if (!missing_required_visible_links.isEmpty())' in filter_block
+    assert 'retained visual rows missing after loader filtering' in filter_block
+    assert 'final viewport audit passed for ur5_2f_test required visible UR5 viewport/renderable links' in filter_block
