@@ -2345,6 +2345,11 @@ bool Scene3DViewportWidget::last_initial_fit_included_ur5_bounds() const
   return last_initial_fit_included_ur5_bounds_;
 }
 
+QString Scene3DViewportWidget::last_camera_fit_target() const
+{
+  return last_camera_fit_target_;
+}
+
 bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
 {
   if (items.isEmpty()) return false;

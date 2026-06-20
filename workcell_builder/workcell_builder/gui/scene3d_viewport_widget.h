@@ -132,6 +132,7 @@ public:
   RenderDebugCounters last_render_counters;
   RenderDebugCounters render_debug_counters() const;
   bool last_initial_fit_included_ur5_bounds() const;
+  QString last_camera_fit_target() const;
   bool render_smoke_fallback_frame(QImage * out_image = nullptr);
   QJsonArray mesh_diagnostics_export() const;
   QJsonArray final_draw_visual_items_export() const;

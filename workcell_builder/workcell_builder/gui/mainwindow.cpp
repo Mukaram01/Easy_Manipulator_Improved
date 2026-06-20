@@ -7596,7 +7596,6 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
   diagnostics["visual_origin_applied_count"] = visual_origin_applied_count;
   diagnostics["baked_world_visual_transform_count"] = baked_world_visual_transform_count;
   diagnostics["legacy_viewport_transform_count"] = legacy_viewport_transform_count;
-  diagnostics["camera_fit_target"] = QString("product_full_workcell_isometric");
   diagnostics["robot_pose_source"] = robot_pose_source;
   diagnostics["robot_base_frame"] = robot_base_frame;
   diagnostics["robot_world_pose"] = robot_world_pose;
@@ -7633,11 +7632,28 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     append_studio_log("Scene3D blocker: current layer filters hide all items. Re-enable editable layout, mesh preview, primitive fallback, or locked generated URDF visuals.");
   }
   scene_preview_widget_->set_preview_items(filtered_items);
-  if (has_selected_scene() && selected_scene_name() == QStringLiteral("ur5_2f_test")) {
-    auto * viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
-    QStringList missing_required_visible_links;
-    const QJsonObject viewport_audit =
-      audit_ur5_2f_test_committed_viewport_items(viewport, &missing_required_visible_links);
+  auto * viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
+  if (viewport) {
+    // set_preview_items() normally commits the payload into the active viewport.
+    // Re-ingest here as an explicit guard so the camera fit below always uses
+    // the exact post-filter payload, including final UR5 mesh/fallback draw bounds.
+    viewport->ingest_preview_items(filtered_items);
+  }
+  QStringList missing_required_visible_links;
+  const QJsonObject viewport_audit =
+    audit_ur5_2f_test_committed_viewport_items(viewport, &missing_required_visible_links);
+  const bool has_required_ur5_final_draw_links = viewport && missing_required_visible_links.isEmpty() &&
+    viewport_audit.value(QStringLiteral("rendered_ur5_link_count")).toInt() >= 7;
+  const bool selected_ur5_2f_test = has_selected_scene() && selected_scene_name() == QStringLiteral("ur5_2f_test");
+  if (viewport && (selected_ur5_2f_test || has_required_ur5_final_draw_links)) {
+    viewport->fit_product_view();
+    viewport->update();
+  }
+  if (viewport) {
+    scene3d_filter_diagnostics_[QStringLiteral("camera_fit_target")] = viewport->last_camera_fit_target();
+    scene3d_filter_diagnostics_[QStringLiteral("camera_fit_includes_robot")] = viewport->last_initial_fit_included_ur5_bounds();
+  }
+  if (selected_ur5_2f_test) {
     scene3d_filter_diagnostics_[QStringLiteral("ur5_2f_test_final_viewport_audit")] = viewport_audit;
     append_studio_log(
       QStringLiteral("Scene3D final viewport audit for ur5_2f_test: %1")
