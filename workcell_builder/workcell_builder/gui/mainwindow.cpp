@@ -670,8 +670,12 @@ struct SelectedSceneMetadataSummary
   QString scene_path;
   QString robot;
   QString end_effector;
+  QString tool_mount;
+  QString grasp_frame;
   QString robot_source;
   QString end_effector_source;
+  QString tool_mount_source;
+  QString grasp_frame_source;
   QString launch;
 };
 
@@ -707,21 +711,49 @@ static SelectedSceneMetadataSummary selected_scene_metadata_summary(
     QStringLiteral("launch/demo.launch.py present (fake-hardware launch metadata available)") :
     QStringLiteral("launch/demo.launch.py missing; generate scene package to create launch metadata");
 
+  YAML::Node env;
+  if (read_yaml(scene.scene_dir / "environment.yaml", &env)) {
+    out.robot = first_present_scalar(env, {
+      {"robot", "model"}, {"robot", "id"}, {"robot", "name"}, {"compatibility", "robot"}
+    });
+    out.end_effector = first_present_scalar(env, {
+      {"end_effector", "id"}, {"end_effector", "model"}, {"end_effector", "profile"},
+      {"tool", "id"}, {"tool", "model"}, {"tool", "profile"}, {"compatibility", "tool"}
+    });
+    out.tool_mount = first_present_scalar(env, {
+      {"end_effector", "mount_link"}, {"tool", "mount_link"}, {"robot", "tool_mount_link"}
+    });
+    out.grasp_frame = first_present_scalar(env, {
+      {"end_effector", "grasp_frame"}, {"tool", "grasp_frame"}
+    });
+    if (!out.robot.isEmpty()) out.robot_source = QStringLiteral("environment.yaml");
+    if (!out.end_effector.isEmpty()) out.end_effector_source = QStringLiteral("environment.yaml");
+    if (!out.tool_mount.isEmpty()) out.tool_mount_source = QStringLiteral("environment.yaml");
+    if (!out.grasp_frame.isEmpty()) out.grasp_frame_source = QStringLiteral("environment.yaml");
+  }
+
   YAML::Node cell;
-  if (read_yaml(scene.scene_dir / "cell_definition.yaml", &cell)) {
-    out.robot = first_present_scalar(cell, {
+  if ((out.robot.isEmpty() || out.end_effector.isEmpty() || out.tool_mount.isEmpty() || out.grasp_frame.isEmpty()) &&
+      read_yaml(scene.scene_dir / "cell_definition.yaml", &cell)) {
+    if (out.robot.isEmpty()) out.robot = first_present_scalar(cell, {
       {"robot", "model"}, {"robot", "id"}, {"robot", "name"}, {"cell", "robot"}
     });
-    out.end_effector = first_present_scalar(cell, {
+    if (out.end_effector.isEmpty()) out.end_effector = first_present_scalar(cell, {
       {"end_effector", "id"}, {"end_effector", "model"}, {"end_effector", "profile"},
       {"tool", "id"}, {"tool", "model"}, {"task", "end_effector"}
     });
-    if (!out.robot.isEmpty()) out.robot_source = QStringLiteral("cell_definition.yaml");
-    if (!out.end_effector.isEmpty()) out.end_effector_source = QStringLiteral("cell_definition.yaml");
+    if (out.tool_mount.isEmpty()) out.tool_mount = first_present_scalar(cell, {
+      {"end_effector", "mount_link"}, {"tool", "mount_link"}, {"robot", "tool_link"}
+    });
+    if (out.grasp_frame.isEmpty()) out.grasp_frame = first_present_scalar(cell, {{"end_effector", "grasp_frame"}});
+    if (!out.robot.isEmpty() && out.robot_source.isEmpty()) out.robot_source = QStringLiteral("cell_definition.yaml");
+    if (!out.end_effector.isEmpty() && out.end_effector_source.isEmpty()) out.end_effector_source = QStringLiteral("cell_definition.yaml");
+    if (!out.tool_mount.isEmpty() && out.tool_mount_source.isEmpty()) out.tool_mount_source = QStringLiteral("cell_definition.yaml");
+    if (!out.grasp_frame.isEmpty() && out.grasp_frame_source.isEmpty()) out.grasp_frame_source = QStringLiteral("cell_definition.yaml");
   }
 
   YAML::Node manifest;
-  if ((out.robot.isEmpty() || out.end_effector.isEmpty()) && read_yaml(scene.scene_dir / "scene_manifest.yaml", &manifest)) {
+  if ((out.robot.isEmpty() || out.end_effector.isEmpty() || out.tool_mount.isEmpty() || out.grasp_frame.isEmpty()) && read_yaml(scene.scene_dir / "scene_manifest.yaml", &manifest)) {
     if (out.robot.isEmpty()) {
       out.robot = first_present_scalar(manifest, {{"robot", "model"}, {"robot", "id"}, {"robot", "name"}});
       if (!out.robot.isEmpty()) out.robot_source = QStringLiteral("scene_manifest.yaml (cell_definition.yaml missing robot metadata)");
@@ -732,6 +764,14 @@ static SelectedSceneMetadataSummary selected_scene_metadata_summary(
         {"tool", "id"}, {"tool", "model"}, {"robot", "ee_link"}
       });
       if (!out.end_effector.isEmpty()) out.end_effector_source = QStringLiteral("scene_manifest.yaml (cell_definition.yaml missing end effector metadata)");
+    }
+    if (out.tool_mount.isEmpty()) {
+      out.tool_mount = first_present_scalar(manifest, {{"end_effector", "mount_link"}, {"tool", "mount_link"}, {"robot", "tool_mount_link"}});
+      if (!out.tool_mount.isEmpty()) out.tool_mount_source = QStringLiteral("scene_manifest.yaml");
+    }
+    if (out.grasp_frame.isEmpty()) {
+      out.grasp_frame = first_present_scalar(manifest, {{"end_effector", "grasp_frame"}, {"robot", "ee_link"}});
+      if (!out.grasp_frame.isEmpty()) out.grasp_frame_source = QStringLiteral("scene_manifest.yaml");
     }
   }
 
@@ -755,6 +795,14 @@ static SelectedSceneMetadataSummary selected_scene_metadata_summary(
       QStringLiteral("End effector missing from cell_definition.yaml") :
       QStringLiteral("End effector missing because cell_definition.yaml is absent");
     out.end_effector_source = QStringLiteral("missing canonical cell metadata");
+  }
+  if (out.tool_mount.isEmpty()) {
+    out.tool_mount = QStringLiteral("unknown");
+    out.tool_mount_source = QStringLiteral("missing canonical tool mount metadata");
+  }
+  if (out.grasp_frame.isEmpty()) {
+    out.grasp_frame = QStringLiteral("unknown");
+    out.grasp_frame_source = QStringLiteral("missing canonical grasp frame metadata");
   }
   return out;
 }
@@ -3370,6 +3418,8 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   inspector_lines << QString("Scene status: %1").arg(selected_scene_state_.valid ? selected_scene_state_.status : QStringLiteral("(none)"));
   inspector_lines << QString("Robot: %1").arg(selected_scene_state_.valid ? selected_scene_state_.robot_summary : QStringLiteral("unknown"));
   inspector_lines << QString("End effector: %1").arg(selected_scene_state_.valid ? selected_scene_state_.end_effector_summary : QStringLiteral("unknown"));
+  inspector_lines << QString("Tool mount: %1").arg(selected_scene_state_.valid ? selected_scene_state_.tool_mount_summary : QStringLiteral("unknown"));
+  inspector_lines << QString("Grasp frame: %1").arg(selected_scene_state_.valid ? selected_scene_state_.grasp_frame_summary : QStringLiteral("unknown"));
   inspector_lines << QString("Launch status: %1").arg(selected_scene_state_.valid ? (selected_scene_state_.launchable ? "ready" : "blocked") : QStringLiteral("(none)"));
   if (!state.valid) {
     inspector_lines << "Selected item: (none)";
@@ -4857,6 +4907,8 @@ void MainWindow::sync_selected_scene_state()
   const auto metadata = selected_scene_metadata_summary(s);
   selected_scene_state_.robot_summary = metadata.robot;
   selected_scene_state_.end_effector_summary = metadata.end_effector;
+  selected_scene_state_.tool_mount_summary = metadata.tool_mount;
+  selected_scene_state_.grasp_frame_summary = metadata.grasp_frame;
   selected_scene_state_.launchable = s.has_launch_demo;
 }
 

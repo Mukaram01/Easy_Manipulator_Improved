@@ -144,6 +144,8 @@ private:
     QString status;
     QString robot_summary;
     QString end_effector_summary;
+    QString tool_mount_summary;
+    QString grasp_frame_summary;
     bool launchable{ false };
   };
   void sync_selected_scene_state();

@@ -61,6 +61,53 @@ UR5_ARM_LINK_ORDER = [
 ]
 UR5_ARM_LINKS = set(UR5_ARM_LINK_ORDER)
 
+ROBOTIQ_85_VISUAL_MESHES = {
+    "gripper_base_link": "robotiq_85_base_link.dae",
+    "gripper_finger1_knuckle_link": "robotiq_85_knuckle_link.dae",
+    "gripper_finger2_knuckle_link": "robotiq_85_knuckle_link.dae",
+    "gripper_finger1_finger_link": "robotiq_85_finger_link.dae",
+    "gripper_finger2_finger_link": "robotiq_85_finger_link.dae",
+    "gripper_finger1_inner_knuckle_link": "robotiq_85_inner_knuckle_link.dae",
+    "gripper_finger2_inner_knuckle_link": "robotiq_85_inner_knuckle_link.dae",
+    "gripper_finger1_finger_tip_link": "robotiq_85_finger_tip_link.dae",
+    "gripper_finger2_finger_tip_link": "robotiq_85_finger_tip_link.dae",
+}
+
+def inject_missing_robotiq_85_visuals(xml_text):
+    """Add Robotiq 85 visual mesh tags when expanded xacro dropped them.
+
+    Some ROS Humble/xacro combinations expand the Robotiq macro links and joints
+    but leave the gripper links as empty self-closing links.  The canonical scene
+    still declares robotiq_85_gripper mounted at tool0, so the Scene3D mesh index
+    should retain the gripper visual chain rather than showing only arm/table/camera
+    visuals.  This is a preview-index repair only; it does not modify URDF files.
+    """
+    if "robotiq_85_description" not in str(xml_text or "") and "gripper_base_link" not in str(xml_text or ""):
+        return xml_text, False
+    try:
+        root = ET.fromstring(xml_text)
+    except Exception:
+        return xml_text, False
+    changed = False
+    for link_name, mesh_name in ROBOTIQ_85_VISUAL_MESHES.items():
+        link = next((node for node in root.iter() if tag_name(node) == "link" and node.attrib.get("name") == link_name), None)
+        if link is None:
+            continue
+        has_visual = any(tag_name(child) == "visual" for child in list(link))
+        if has_visual:
+            continue
+        visual = ET.SubElement(link, "visual", {"name": f"{link_name}_visual"})
+        geometry = ET.SubElement(visual, "geometry")
+        ET.SubElement(
+            geometry,
+            "mesh",
+            {"filename": f"package://robotiq_85_description/meshes/visual/{mesh_name}"},
+        )
+        changed = True
+    if not changed:
+        return xml_text, False
+    return ET.tostring(root, encoding="unicode"), True
+
 def _finite_number(value):
     try:
         return math.isfinite(float(value))
@@ -1507,6 +1554,8 @@ def main():
         referenced_packages = sorted(set(extract_referenced_package_names(xml_text)) | set(extract_referenced_package_names(source_xacro_text)))
         package_map, package_diagnostics = discover_package_map(scene_dir, workspace_root=(a.workspace_root or None), package_names=referenced_packages)
         urdf_diagnostics={'root_links': [], 'visual_parent_link_counts': {}, 'missing_parent_links': [], 'transform_chain_diagnostics': []}
+        robotiq_visuals_injected = False
+        xml_text, robotiq_visuals_injected = inject_missing_robotiq_85_visuals(xml_text)
         try:
             items, urdf_diagnostics = extract_from_urdf(xml_text, package_map, include_diagnostics=True)
         except Exception:
@@ -1568,7 +1617,7 @@ def main():
         safe=is_preview_fully_healthy(items, unresolved, mode, fallback_reason, renderable_mesh_count)
         source_mtime=urdf_path.stat().st_mtime if urdf_path.exists() else None
         has_transform_collapse_warning=bool(items) and len({tuple((i.get('pose') or {}).get('xyz') or []) for i in items}) <= 1 and len(items) > 1
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':'urdf_flattened','urdf_expansion_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_launch_xacro_request':_portable_source_metadata(launch_xacro_request or {}),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'ros_to_viewport_basis_applied':False,'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'initial_joint_source':urdf_diagnostics.get('initial_joint_source', ''),'ur5_preview_joint_pose':urdf_diagnostics.get('ur5_preview_joint_pose', {}),'joint_defaults_used':urdf_diagnostics.get('joint_defaults_used', []),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'legacy_static_fallback_metadata':legacy_static_fallback_metadata,'ur5_visual_mesh_diagnostics':_portable_source_metadata(ur5_visual_diagnostics),'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':'urdf_flattened','urdf_expansion_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_launch_xacro_request':_portable_source_metadata(launch_xacro_request or {}),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'ros_to_viewport_basis_applied':False,'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'robotiq_85_visual_repair_applied':robotiq_visuals_injected,'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'initial_joint_source':urdf_diagnostics.get('initial_joint_source', ''),'ur5_preview_joint_pose':urdf_diagnostics.get('ur5_preview_joint_pose', {}),'joint_defaults_used':urdf_diagnostics.get('joint_defaults_used', []),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'legacy_static_fallback_metadata':legacy_static_fallback_metadata,'ur5_visual_mesh_diagnostics':_portable_source_metadata(ur5_visual_diagnostics),'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True)

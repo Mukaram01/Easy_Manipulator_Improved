@@ -1,12 +1,13 @@
 {
   "scene_name": "ur5_2f_test",
-  "visual_count": 9,
-  "resolved": 9,
+  "visual_count": 18,
+  "resolved": 18,
   "unresolved": 0,
-  "generated_at": "2026-06-19T10:53:32.178363+00:00",
-  "extractor_version": "2.11",
+  "generated_at": "2026-06-20T11:43:07.089959+00:00",
+  "extractor_version": "2.12",
   "path_reference_root": "repository",
-  "extraction_mode": "xacro_expanded",
+  "extraction_mode": "urdf_flattened",
+  "urdf_expansion_mode": "xacro_expanded",
   "xacro_available": true,
   "source_urdf_xacro_path": "scenes/ur5_2f_test/urdf/scene.urdf.xacro",
   "source_launch_xacro_request": {
@@ -24,8 +25,9 @@
       "use_fake_hardware": "true"
     }
   },
-  "source_mtime": 1781864251.3459716,
+  "source_mtime": 1781955564.8726456,
   "source_expanded_urdf_path": "generated/expanded_scene_preview.urdf",
+  "ros_to_viewport_basis_applied": false,
   "fallback_reason": "",
   "xacro_real_command_succeeded": true,
   "xacro_status": "real_xacro_succeeded",
@@ -54,17 +56,18 @@
   "safe_for_preview": true,
   "unresolved_placeholder_count": 0,
   "has_transform_collapse_warning": false,
-  "candidate_mesh_count": 9,
-  "emitted_visual_count": 9,
+  "candidate_mesh_count": 18,
+  "emitted_visual_count": 18,
+  "robotiq_85_visual_repair_applied": true,
   "root_links": [
     "world"
   ],
   "visual_parent_link_counts": {
-    "world": 9
+    "world": 18
   },
   "missing_parent_links": [],
   "transform_chain_diagnostics": [],
-  "initial_joint_source": "assets/robots/universal_robot/ur5_moveit_config/config/initial_positions.yaml",
+  "initial_joint_source": "initial_positions.yaml",
   "ur5_preview_joint_pose": {
     "source": "workcell_preview_home_pose_all_zero_initial_positions",
     "joints": {
@@ -76,17 +79,44 @@
       "wrist_3_joint": 0.0
     }
   },
+  "joint_defaults_used": [
+    "elbow_joint",
+    "shoulder_lift_joint",
+    "shoulder_pan_joint",
+    "wrist_1_joint",
+    "wrist_2_joint",
+    "wrist_3_joint"
+  ],
   "transform_status_counts": {
-    "resolved": 9
+    "resolved": 18
   },
   "mesh_format_counts": {
-    ".dae": 8,
+    ".dae": 17,
     ".stl": 1
   },
-  "renderable_mesh_count": 9,
-  "renderable_item_count": 9,
+  "renderable_mesh_count": 18,
+  "renderable_item_count": 18,
   "static_robot_primitive_fallback_count": 0,
   "static_robot_mesh_visual_count": 0,
+  "legacy_static_fallback_metadata": {
+    "legacy_static_fallback_requested": false,
+    "legacy_static_fallback_skipped": false,
+    "legacy_static_fallback_skip_reason": "",
+    "authoritative_source": "urdf_flattened",
+    "authoritative_ur5_links": [
+      "forearm_link",
+      "shoulder_link",
+      "upper_arm_link",
+      "wrist_1_link",
+      "wrist_2_link",
+      "wrist_3_link"
+    ],
+    "legacy_static_fallback_source": "legacy_static_fallback",
+    "legacy_static_fallback_counts": {
+      "mesh_visual": 0,
+      "primitive": 0
+    }
+  },
   "ur5_visual_mesh_diagnostics": {
     "package_name": "ur_description",
     "source": "repo_assets/ur_description",
@@ -107,10 +137,54 @@
   "visual_items": [
     {
       "id": "urdf_visual_0_base_link_inertia_visual_0",
+      "source": "urdf_flattened",
       "link": "base_link_inertia",
+      "object_name": "base_link_inertia",
       "visual": "visual_0",
-      "parent_link": "world",
+      "parent_link": "base_link",
+      "immediate_parent_link": "base_link",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "base_link",
+        "base_link_inertia"
+      ],
       "joint_parent_link": "base_link",
+      "parent_joint": "base_link-base_link_inertia",
+      "parent_joint_name": "base_link-base_link_inertia",
+      "parent_joint_type": "fixed",
+      "parent_joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          3.141592653589793
+        ]
+      },
+      "parent_joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "zero_default",
+      "joint_type": "fixed",
+      "joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          3.141592653589793
+        ]
+      },
       "pose": {
         "xyz": [
           0.0,
@@ -144,7 +218,7 @@
         "rpy": [
           0.0,
           -0.0,
-          3.141592653589793
+          -2.4492935982947064e-16
         ]
       },
       "link_world_pose": {
@@ -231,15 +305,19 @@
       },
       "joint_name": "base_link-base_link_inertia",
       "joint_value": 0.0,
+      "applied_joint_value": 0.0,
       "joint_axis": [
         1.0,
         0.0,
         0.0
       ],
+      "joint_value_source": "zero_default",
+      "applied_joint_value_source": "zero_default",
       "material": {
         "name": "",
         "color": null
       },
+      "color": null,
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
@@ -250,6 +328,12 @@
       "geometry_type": "mesh",
       "package_uri": "package://ur_description/meshes/ur5/visual/base.dae",
       "source_path": "package://ur_description/meshes/ur5/visual/base.dae",
+      "mesh_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/base.dae",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
       "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/base.dae",
       "resolved_source_path_is_repo_relative": true,
       "resolved": true,
@@ -263,10 +347,55 @@
     },
     {
       "id": "urdf_visual_1_shoulder_link_visual_1",
+      "source": "urdf_flattened",
       "link": "shoulder_link",
+      "object_name": "shoulder_link",
       "visual": "visual_1",
-      "parent_link": "world",
+      "parent_link": "base_link_inertia",
+      "immediate_parent_link": "base_link_inertia",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link"
+      ],
       "joint_parent_link": "base_link_inertia",
+      "parent_joint": "shoulder_pan_joint",
+      "parent_joint_name": "shoulder_pan_joint",
+      "parent_joint_type": "revolute",
+      "parent_joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.089159
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "parent_joint_axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "fake-hardware default",
+      "joint_type": "revolute",
+      "joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.089159
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
       "pose": {
         "xyz": [
           0.0,
@@ -300,7 +429,7 @@
         "rpy": [
           0.0,
           -0.0,
-          3.141592653589793
+          -2.4492935982947064e-16
         ]
       },
       "link_world_pose": {
@@ -387,15 +516,19 @@
       },
       "joint_name": "shoulder_pan_joint",
       "joint_value": 0.0,
+      "applied_joint_value": 0.0,
       "joint_axis": [
         0.0,
         0.0,
         1.0
       ],
+      "joint_value_source": "fake-hardware default",
+      "applied_joint_value_source": "fake-hardware default",
       "material": {
         "name": "",
         "color": null
       },
+      "color": null,
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
@@ -407,6 +540,12 @@
       "geometry_type": "mesh",
       "package_uri": "package://ur_description/meshes/ur5/visual/shoulder.dae",
       "source_path": "package://ur_description/meshes/ur5/visual/shoulder.dae",
+      "mesh_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/shoulder.dae",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
       "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/shoulder.dae",
       "resolved_source_path_is_repo_relative": true,
       "resolved": true,
@@ -420,10 +559,56 @@
     },
     {
       "id": "urdf_visual_2_upper_arm_link_visual_2",
+      "source": "urdf_flattened",
       "link": "upper_arm_link",
+      "object_name": "upper_arm_link",
       "visual": "visual_2",
-      "parent_link": "world",
+      "parent_link": "shoulder_link",
+      "immediate_parent_link": "shoulder_link",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link"
+      ],
       "joint_parent_link": "shoulder_link",
+      "parent_joint": "shoulder_lift_joint",
+      "parent_joint_name": "shoulder_lift_joint",
+      "parent_joint_type": "revolute",
+      "parent_joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          1.570796327,
+          0.0,
+          0.0
+        ]
+      },
+      "parent_joint_axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "parent_joint_value": -1.5708,
+      "parent_joint_value_source": "fake-hardware default",
+      "joint_type": "revolute",
+      "joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          1.570796327,
+          0.0,
+          0.0
+        ]
+      },
       "pose": {
         "xyz": [
           1.6636826766416793e-17,
@@ -450,14 +635,14 @@
       },
       "world_pose": {
         "xyz": [
-          0.0,
-          0.0,
-          0.089159
+          1.6636826766416793e-17,
+          0.13585,
+          0.08915899997213671
         ],
         "rpy": [
-          -1.5708521645231288,
-          1.5707926535755432,
-          -5.583772823204768e-05
+          -2.051034897490548e-10,
+          -3.6732051032936018e-06,
+          6.309222804141819e-16
         ]
       },
       "link_world_pose": {
@@ -544,15 +729,19 @@
       },
       "joint_name": "shoulder_lift_joint",
       "joint_value": -1.5708,
+      "applied_joint_value": -1.5708,
       "joint_axis": [
         0.0,
         0.0,
         1.0
       ],
+      "joint_value_source": "fake-hardware default",
+      "applied_joint_value_source": "fake-hardware default",
       "material": {
         "name": "",
         "color": null
       },
+      "color": null,
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
@@ -565,6 +754,12 @@
       "geometry_type": "mesh",
       "package_uri": "package://ur_description/meshes/ur5/visual/upperarm.dae",
       "source_path": "package://ur_description/meshes/ur5/visual/upperarm.dae",
+      "mesh_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/upperarm.dae",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
       "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/upperarm.dae",
       "resolved_source_path_is_repo_relative": true,
       "resolved": true,
@@ -578,10 +773,57 @@
     },
     {
       "id": "urdf_visual_3_forearm_link_visual_3",
+      "source": "urdf_flattened",
       "link": "forearm_link",
+      "object_name": "forearm_link",
       "visual": "visual_3",
-      "parent_link": "world",
+      "parent_link": "upper_arm_link",
+      "immediate_parent_link": "upper_arm_link",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link"
+      ],
       "joint_parent_link": "upper_arm_link",
+      "parent_joint": "elbow_joint",
+      "parent_joint_name": "elbow_joint",
+      "parent_joint_type": "revolute",
+      "parent_joint_origin": {
+        "xyz": [
+          -0.425,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "parent_joint_axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "parent_joint_value": 1.5708,
+      "parent_joint_value_source": "fake-hardware default",
+      "joint_type": "revolute",
+      "joint_origin": {
+        "xyz": [
+          -0.425,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
       "pose": {
         "xyz": [
           -1.5611121689202732e-06,
@@ -608,14 +850,14 @@
       },
       "world_pose": {
         "xyz": [
-          -1.5611121689222938e-06,
-          8.716895711861884e-11,
-          0.5141589999971329
+          -1.5611121689202732e-06,
+          0.016500000087168957,
+          0.5141589999937487
         ],
         "rpy": [
-          1.570796327,
-          -0.0,
-          3.141592653589793
+          -1.5707966253386139,
+          1.5707963118937354,
+          -1.5707966253386139
         ]
       },
       "link_world_pose": {
@@ -702,15 +944,19 @@
       },
       "joint_name": "elbow_joint",
       "joint_value": 1.5708,
+      "applied_joint_value": 1.5708,
       "joint_axis": [
         0.0,
         0.0,
         1.0
       ],
+      "joint_value_source": "fake-hardware default",
+      "applied_joint_value_source": "fake-hardware default",
       "material": {
         "name": "",
         "color": null
       },
+      "color": null,
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
@@ -724,6 +970,12 @@
       "geometry_type": "mesh",
       "package_uri": "package://ur_description/meshes/ur5/visual/forearm.dae",
       "source_path": "package://ur_description/meshes/ur5/visual/forearm.dae",
+      "mesh_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/forearm.dae",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
       "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/forearm.dae",
       "resolved_source_path_is_repo_relative": true,
       "resolved": true,
@@ -737,10 +989,58 @@
     },
     {
       "id": "urdf_visual_4_wrist_1_link_visual_4",
+      "source": "urdf_flattened",
       "link": "wrist_1_link",
+      "object_name": "wrist_1_link",
       "visual": "visual_4",
-      "parent_link": "world",
+      "parent_link": "forearm_link",
+      "immediate_parent_link": "forearm_link",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link"
+      ],
       "joint_parent_link": "forearm_link",
+      "parent_joint": "wrist_1_joint",
+      "parent_joint_name": "wrist_1_joint",
+      "parent_joint_type": "revolute",
+      "parent_joint_origin": {
+        "xyz": [
+          -0.39225,
+          0.0,
+          0.10915
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "parent_joint_axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "parent_joint_value": -1.5708,
+      "parent_joint_value_source": "fake-hardware default",
+      "joint_type": "revolute",
+      "joint_origin": {
+        "xyz": [
+          -0.39225,
+          0.0,
+          0.10915
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
       "pose": {
         "xyz": [
           0.392248438887831,
@@ -768,11 +1068,11 @@
       "world_pose": {
         "xyz": [
           0.392248438887831,
-          0.10915000008716891,
-          0.5141589999747458
+          0.01615000008716891,
+          0.5141589999938204
         ],
         "rpy": [
-          -1.5708521645231288,
+          -5.5837728232363146e-05,
           1.5707926535453185,
           -5.583772823204767e-05
         ]
@@ -861,15 +1161,19 @@
       },
       "joint_name": "wrist_1_joint",
       "joint_value": -1.5708,
+      "applied_joint_value": -1.5708,
       "joint_axis": [
         0.0,
         0.0,
         1.0
       ],
+      "joint_value_source": "fake-hardware default",
+      "applied_joint_value_source": "fake-hardware default",
       "material": {
         "name": "",
         "color": null
       },
+      "color": null,
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
@@ -884,6 +1188,12 @@
       "geometry_type": "mesh",
       "package_uri": "package://ur_description/meshes/ur5/visual/wrist1.dae",
       "source_path": "package://ur_description/meshes/ur5/visual/wrist1.dae",
+      "mesh_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist1.dae",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
       "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist1.dae",
       "resolved_source_path_is_repo_relative": true,
       "resolved": true,
@@ -897,10 +1207,59 @@
     },
     {
       "id": "urdf_visual_5_wrist_2_link_visual_5",
+      "source": "urdf_flattened",
       "link": "wrist_2_link",
+      "object_name": "wrist_2_link",
       "visual": "visual_5",
-      "parent_link": "world",
+      "parent_link": "wrist_1_link",
+      "immediate_parent_link": "wrist_1_link",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link"
+      ],
       "joint_parent_link": "wrist_1_link",
+      "parent_joint": "wrist_2_joint",
+      "parent_joint_name": "wrist_2_joint",
+      "parent_joint_type": "revolute",
+      "parent_joint_origin": {
+        "xyz": [
+          0.0,
+          -0.09465,
+          -1.941303950897609e-11
+        ],
+        "rpy": [
+          1.570796327,
+          0.0,
+          0.0
+        ]
+      },
+      "parent_joint_axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "parent_joint_value": -1.5708,
+      "parent_joint_value_source": "fake-hardware default",
+      "joint_type": "revolute",
+      "joint_origin": {
+        "xyz": [
+          0.0,
+          -0.09465,
+          -1.941303950897609e-11
+        ],
+        "rpy": [
+          1.570796327,
+          0.0,
+          0.0
+        ]
+      },
       "pose": {
         "xyz": [
           0.3918984388878334,
@@ -927,9 +1286,9 @@
       },
       "world_pose": {
         "xyz": [
-          0.4868984388871925,
-          0.10915000006775592,
-          0.5141593476436088
+          0.3918984388878334,
+          0.10915000008724068,
+          0.514158998689124
         ],
         "rpy": [
           -1.5707926535897931,
@@ -1021,15 +1380,19 @@
       },
       "joint_name": "wrist_2_joint",
       "joint_value": -1.5708,
+      "applied_joint_value": -1.5708,
       "joint_axis": [
         0.0,
         0.0,
         1.0
       ],
+      "joint_value_source": "fake-hardware default",
+      "applied_joint_value_source": "fake-hardware default",
       "material": {
         "name": "",
         "color": null
       },
+      "color": null,
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
@@ -1045,6 +1408,12 @@
       "geometry_type": "mesh",
       "package_uri": "package://ur_description/meshes/ur5/visual/wrist2.dae",
       "source_path": "package://ur_description/meshes/ur5/visual/wrist2.dae",
+      "mesh_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist2.dae",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
       "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist2.dae",
       "resolved_source_path_is_repo_relative": true,
       "resolved": true,
@@ -1058,10 +1427,60 @@
     },
     {
       "id": "urdf_visual_6_wrist_3_link_visual_6",
+      "source": "urdf_flattened",
       "link": "wrist_3_link",
+      "object_name": "wrist_3_link",
       "visual": "visual_6",
-      "parent_link": "world",
+      "parent_link": "wrist_2_link",
+      "immediate_parent_link": "wrist_2_link",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link"
+      ],
       "joint_parent_link": "wrist_2_link",
+      "parent_joint": "wrist_3_joint",
+      "parent_joint_name": "wrist_3_joint",
+      "parent_joint_type": "revolute",
+      "parent_joint_origin": {
+        "xyz": [
+          0.0,
+          0.0823,
+          -1.688001216681175e-11
+        ],
+        "rpy": [
+          1.570796326589793,
+          3.141592653589793,
+          3.141592653589793
+        ]
+      },
+      "parent_joint_axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "fake-hardware default",
+      "joint_type": "revolute",
+      "joint_origin": {
+        "xyz": [
+          0.0,
+          0.0823,
+          -1.688001216681175e-11
+        ],
+        "rpy": [
+          1.570796326589793,
+          3.141592653589793,
+          3.141592653589793
+        ]
+      },
       "pose": {
         "xyz": [
           0.4868984407236925,
@@ -1088,12 +1507,12 @@
       },
       "world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.4868984407236925,
+          0.10914999823105083,
+          0.5136593476436155
         ],
         "rpy": [
-          -3.1415889805897934,
+          -1.5707926537948969,
           -3.6734102061276456e-06,
           -1.5707963270134928
         ]
@@ -1182,15 +1601,19 @@
       },
       "joint_name": "wrist_3_joint",
       "joint_value": 0.0,
+      "applied_joint_value": 0.0,
       "joint_axis": [
         0.0,
         0.0,
         1.0
       ],
+      "joint_value_source": "fake-hardware default",
+      "applied_joint_value_source": "fake-hardware default",
       "material": {
         "name": "",
         "color": null
       },
+      "color": null,
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
@@ -1207,6 +1630,12 @@
       "geometry_type": "mesh",
       "package_uri": "package://ur_description/meshes/ur5/visual/wrist3.dae",
       "source_path": "package://ur_description/meshes/ur5/visual/wrist3.dae",
+      "mesh_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist3.dae",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
       "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist3.dae",
       "resolved_source_path_is_repo_relative": true,
       "resolved": true,
@@ -1219,11 +1648,2146 @@
       "warning": ""
     },
     {
-      "id": "urdf_visual_7_table_None",
+      "id": "urdf_visual_7_gripper_base_link_gripper_base_link_visual",
+      "source": "urdf_flattened",
+      "link": "gripper_base_link",
+      "object_name": "gripper_base_link",
+      "visual": "gripper_base_link_visual",
+      "parent_link": "tool0",
+      "immediate_parent_link": "tool0",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+        "flange",
+        "tool0",
+        "gripper_base_link"
+      ],
+      "joint_parent_link": "tool0",
+      "parent_joint": "gripper_base_joint",
+      "parent_joint_name": "gripper_base_joint",
+      "parent_joint_type": "fixed",
+      "parent_joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          1.5707,
+          -1.5707,
+          0.0
+        ]
+      },
+      "parent_joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "zero_default",
+      "joint_type": "fixed",
+      "joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          1.5707,
+          -1.5707,
+          0.0
+        ]
+      },
+      "pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "chain_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "expected_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_matrix": [
+        [
+          3.6729999609201477e-06,
+          -9.632622234253363e-05,
+          0.9999999953538838,
+          0.4868987411750924
+        ],
+        [
+          -0.00010000020493681099,
+          0.9999999903605734,
+          9.632658916229741e-05,
+          0.10914969774609591
+        ],
+        [
+          -0.9999999949932338,
+          -0.00010000055827975664,
+          3.663367283539493e-06,
+          0.4318593476447193
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "baked_world_visual_quaternion": {
+        "x": -6.941200150304966e-05,
+        "y": 0.7071054825825721,
+        "z": -1.2989466239325223e-06,
+        "w": 0.7071080763800924
+      },
+      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "visual_origin_applied_to_pose": true,
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "joint_name": "gripper_base_joint",
+      "joint_value": 0.0,
+      "applied_joint_value": 0.0,
+      "joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "joint_value_source": "zero_default",
+      "applied_joint_value_source": "zero_default",
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "color": null,
+      "link_transform_status": "resolved",
+      "transform_status": "resolved",
+      "transform_chain": [
+        "world->base_link(fixed)",
+        "base_link->base_link_inertia(fixed)",
+        "base_link_inertia->shoulder_link(revolute)",
+        "shoulder_link->upper_arm_link(revolute)",
+        "upper_arm_link->forearm_link(revolute)",
+        "forearm_link->wrist_1_link(revolute)",
+        "wrist_1_link->wrist_2_link(revolute)",
+        "wrist_2_link->wrist_3_link(revolute)",
+        "wrist_3_link->flange(fixed)",
+        "flange->tool0(fixed)",
+        "tool0->gripper_base_link(fixed)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+      "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": ""
+    },
+    {
+      "id": "urdf_visual_8_gripper_finger1_knuckle_link_gripper_finger1_knuckle_link_visual",
+      "source": "urdf_flattened",
+      "link": "gripper_finger1_knuckle_link",
+      "object_name": "gripper_finger1_knuckle_link",
+      "visual": "gripper_finger1_knuckle_link_visual",
+      "parent_link": "gripper_base_link",
+      "immediate_parent_link": "gripper_base_link",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+        "flange",
+        "tool0",
+        "gripper_base_link",
+        "gripper_finger1_knuckle_link"
+      ],
+      "joint_parent_link": "gripper_base_link",
+      "parent_joint": "gripper_finger1_knuckle_joint",
+      "parent_joint_name": "gripper_finger1_knuckle_joint",
+      "parent_joint_type": "fixed",
+      "parent_joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "parent_joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "zero_default",
+      "joint_type": "fixed",
+      "joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "chain_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "expected_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_matrix": [
+        [
+          3.6729999609201477e-06,
+          -9.632622234253363e-05,
+          0.9999999953538838,
+          0.4868987411750924
+        ],
+        [
+          -0.00010000020493681099,
+          0.9999999903605734,
+          9.632658916229741e-05,
+          0.10914969774609591
+        ],
+        [
+          -0.9999999949932338,
+          -0.00010000055827975664,
+          3.663367283539493e-06,
+          0.4318593476447193
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "baked_world_visual_quaternion": {
+        "x": -6.941200150304966e-05,
+        "y": 0.7071054825825721,
+        "z": -1.2989466239325223e-06,
+        "w": 0.7071080763800924
+      },
+      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "visual_origin_applied_to_pose": true,
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "joint_name": "gripper_finger1_knuckle_joint",
+      "joint_value": 0.0,
+      "applied_joint_value": 0.0,
+      "joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "joint_value_source": "zero_default",
+      "applied_joint_value_source": "zero_default",
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "color": null,
+      "link_transform_status": "resolved",
+      "transform_status": "resolved",
+      "transform_chain": [
+        "world->base_link(fixed)",
+        "base_link->base_link_inertia(fixed)",
+        "base_link_inertia->shoulder_link(revolute)",
+        "shoulder_link->upper_arm_link(revolute)",
+        "upper_arm_link->forearm_link(revolute)",
+        "forearm_link->wrist_1_link(revolute)",
+        "wrist_1_link->wrist_2_link(revolute)",
+        "wrist_2_link->wrist_3_link(revolute)",
+        "wrist_3_link->flange(fixed)",
+        "flange->tool0(fixed)",
+        "tool0->gripper_base_link(fixed)",
+        "gripper_base_link->gripper_finger1_knuckle_link(fixed)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": ""
+    },
+    {
+      "id": "urdf_visual_9_gripper_finger2_knuckle_link_gripper_finger2_knuckle_link_visual",
+      "source": "urdf_flattened",
+      "link": "gripper_finger2_knuckle_link",
+      "object_name": "gripper_finger2_knuckle_link",
+      "visual": "gripper_finger2_knuckle_link_visual",
+      "parent_link": "gripper_base_link",
+      "immediate_parent_link": "gripper_base_link",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+        "flange",
+        "tool0",
+        "gripper_base_link",
+        "gripper_finger2_knuckle_link"
+      ],
+      "joint_parent_link": "gripper_base_link",
+      "parent_joint": "gripper_finger2_knuckle_joint",
+      "parent_joint_name": "gripper_finger2_knuckle_joint",
+      "parent_joint_type": "fixed",
+      "parent_joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "parent_joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "zero_default",
+      "joint_type": "fixed",
+      "joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "chain_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "expected_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_matrix": [
+        [
+          3.6729999609201477e-06,
+          -9.632622234253363e-05,
+          0.9999999953538838,
+          0.4868987411750924
+        ],
+        [
+          -0.00010000020493681099,
+          0.9999999903605734,
+          9.632658916229741e-05,
+          0.10914969774609591
+        ],
+        [
+          -0.9999999949932338,
+          -0.00010000055827975664,
+          3.663367283539493e-06,
+          0.4318593476447193
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "baked_world_visual_quaternion": {
+        "x": -6.941200150304966e-05,
+        "y": 0.7071054825825721,
+        "z": -1.2989466239325223e-06,
+        "w": 0.7071080763800924
+      },
+      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "visual_origin_applied_to_pose": true,
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "joint_name": "gripper_finger2_knuckle_joint",
+      "joint_value": 0.0,
+      "applied_joint_value": 0.0,
+      "joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "joint_value_source": "zero_default",
+      "applied_joint_value_source": "zero_default",
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "color": null,
+      "link_transform_status": "resolved",
+      "transform_status": "resolved",
+      "transform_chain": [
+        "world->base_link(fixed)",
+        "base_link->base_link_inertia(fixed)",
+        "base_link_inertia->shoulder_link(revolute)",
+        "shoulder_link->upper_arm_link(revolute)",
+        "upper_arm_link->forearm_link(revolute)",
+        "forearm_link->wrist_1_link(revolute)",
+        "wrist_1_link->wrist_2_link(revolute)",
+        "wrist_2_link->wrist_3_link(revolute)",
+        "wrist_3_link->flange(fixed)",
+        "flange->tool0(fixed)",
+        "tool0->gripper_base_link(fixed)",
+        "gripper_base_link->gripper_finger2_knuckle_link(fixed)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": ""
+    },
+    {
+      "id": "urdf_visual_10_gripper_finger1_finger_link_gripper_finger1_finger_link_visual",
+      "source": "urdf_flattened",
+      "link": "gripper_finger1_finger_link",
+      "object_name": "gripper_finger1_finger_link",
+      "visual": "gripper_finger1_finger_link_visual",
+      "parent_link": "gripper_finger1_knuckle_link",
+      "immediate_parent_link": "gripper_finger1_knuckle_link",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+        "flange",
+        "tool0",
+        "gripper_base_link",
+        "gripper_finger1_knuckle_link",
+        "gripper_finger1_finger_link"
+      ],
+      "joint_parent_link": "gripper_finger1_knuckle_link",
+      "parent_joint": "gripper_finger1_finger_joint",
+      "parent_joint_name": "gripper_finger1_finger_joint",
+      "parent_joint_type": "fixed",
+      "parent_joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "parent_joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "zero_default",
+      "joint_type": "fixed",
+      "joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "chain_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "expected_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_matrix": [
+        [
+          3.6729999609201477e-06,
+          -9.632622234253363e-05,
+          0.9999999953538838,
+          0.4868987411750924
+        ],
+        [
+          -0.00010000020493681099,
+          0.9999999903605734,
+          9.632658916229741e-05,
+          0.10914969774609591
+        ],
+        [
+          -0.9999999949932338,
+          -0.00010000055827975664,
+          3.663367283539493e-06,
+          0.4318593476447193
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "baked_world_visual_quaternion": {
+        "x": -6.941200150304966e-05,
+        "y": 0.7071054825825721,
+        "z": -1.2989466239325223e-06,
+        "w": 0.7071080763800924
+      },
+      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "visual_origin_applied_to_pose": true,
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "joint_name": "gripper_finger1_finger_joint",
+      "joint_value": 0.0,
+      "applied_joint_value": 0.0,
+      "joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "joint_value_source": "zero_default",
+      "applied_joint_value_source": "zero_default",
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "color": null,
+      "link_transform_status": "resolved",
+      "transform_status": "resolved",
+      "transform_chain": [
+        "world->base_link(fixed)",
+        "base_link->base_link_inertia(fixed)",
+        "base_link_inertia->shoulder_link(revolute)",
+        "shoulder_link->upper_arm_link(revolute)",
+        "upper_arm_link->forearm_link(revolute)",
+        "forearm_link->wrist_1_link(revolute)",
+        "wrist_1_link->wrist_2_link(revolute)",
+        "wrist_2_link->wrist_3_link(revolute)",
+        "wrist_3_link->flange(fixed)",
+        "flange->tool0(fixed)",
+        "tool0->gripper_base_link(fixed)",
+        "gripper_base_link->gripper_finger1_knuckle_link(fixed)",
+        "gripper_finger1_knuckle_link->gripper_finger1_finger_link(fixed)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": ""
+    },
+    {
+      "id": "urdf_visual_11_gripper_finger2_finger_link_gripper_finger2_finger_link_visual",
+      "source": "urdf_flattened",
+      "link": "gripper_finger2_finger_link",
+      "object_name": "gripper_finger2_finger_link",
+      "visual": "gripper_finger2_finger_link_visual",
+      "parent_link": "gripper_finger2_knuckle_link",
+      "immediate_parent_link": "gripper_finger2_knuckle_link",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+        "flange",
+        "tool0",
+        "gripper_base_link",
+        "gripper_finger2_knuckle_link",
+        "gripper_finger2_finger_link"
+      ],
+      "joint_parent_link": "gripper_finger2_knuckle_link",
+      "parent_joint": "gripper_finger2_finger_joint",
+      "parent_joint_name": "gripper_finger2_finger_joint",
+      "parent_joint_type": "fixed",
+      "parent_joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "parent_joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "zero_default",
+      "joint_type": "fixed",
+      "joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "chain_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "expected_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_matrix": [
+        [
+          3.6729999609201477e-06,
+          -9.632622234253363e-05,
+          0.9999999953538838,
+          0.4868987411750924
+        ],
+        [
+          -0.00010000020493681099,
+          0.9999999903605734,
+          9.632658916229741e-05,
+          0.10914969774609591
+        ],
+        [
+          -0.9999999949932338,
+          -0.00010000055827975664,
+          3.663367283539493e-06,
+          0.4318593476447193
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "baked_world_visual_quaternion": {
+        "x": -6.941200150304966e-05,
+        "y": 0.7071054825825721,
+        "z": -1.2989466239325223e-06,
+        "w": 0.7071080763800924
+      },
+      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "visual_origin_applied_to_pose": true,
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "joint_name": "gripper_finger2_finger_joint",
+      "joint_value": 0.0,
+      "applied_joint_value": 0.0,
+      "joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "joint_value_source": "zero_default",
+      "applied_joint_value_source": "zero_default",
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "color": null,
+      "link_transform_status": "resolved",
+      "transform_status": "resolved",
+      "transform_chain": [
+        "world->base_link(fixed)",
+        "base_link->base_link_inertia(fixed)",
+        "base_link_inertia->shoulder_link(revolute)",
+        "shoulder_link->upper_arm_link(revolute)",
+        "upper_arm_link->forearm_link(revolute)",
+        "forearm_link->wrist_1_link(revolute)",
+        "wrist_1_link->wrist_2_link(revolute)",
+        "wrist_2_link->wrist_3_link(revolute)",
+        "wrist_3_link->flange(fixed)",
+        "flange->tool0(fixed)",
+        "tool0->gripper_base_link(fixed)",
+        "gripper_base_link->gripper_finger2_knuckle_link(fixed)",
+        "gripper_finger2_knuckle_link->gripper_finger2_finger_link(fixed)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": ""
+    },
+    {
+      "id": "urdf_visual_12_gripper_finger1_inner_knuckle_link_gripper_finger1_inner_knuckle_link_visual",
+      "source": "urdf_flattened",
+      "link": "gripper_finger1_inner_knuckle_link",
+      "object_name": "gripper_finger1_inner_knuckle_link",
+      "visual": "gripper_finger1_inner_knuckle_link_visual",
+      "parent_link": "gripper_finger1_finger_link",
+      "immediate_parent_link": "gripper_finger1_finger_link",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+        "flange",
+        "tool0",
+        "gripper_base_link",
+        "gripper_finger1_knuckle_link",
+        "gripper_finger1_finger_link",
+        "gripper_finger1_inner_knuckle_link"
+      ],
+      "joint_parent_link": "gripper_finger1_finger_link",
+      "parent_joint": "gripper_finger1_inner_knuckle_joint",
+      "parent_joint_name": "gripper_finger1_inner_knuckle_joint",
+      "parent_joint_type": "fixed",
+      "parent_joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "parent_joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "zero_default",
+      "joint_type": "fixed",
+      "joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "chain_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "expected_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_matrix": [
+        [
+          3.6729999609201477e-06,
+          -9.632622234253363e-05,
+          0.9999999953538838,
+          0.4868987411750924
+        ],
+        [
+          -0.00010000020493681099,
+          0.9999999903605734,
+          9.632658916229741e-05,
+          0.10914969774609591
+        ],
+        [
+          -0.9999999949932338,
+          -0.00010000055827975664,
+          3.663367283539493e-06,
+          0.4318593476447193
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "baked_world_visual_quaternion": {
+        "x": -6.941200150304966e-05,
+        "y": 0.7071054825825721,
+        "z": -1.2989466239325223e-06,
+        "w": 0.7071080763800924
+      },
+      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "visual_origin_applied_to_pose": true,
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "joint_name": "gripper_finger1_inner_knuckle_joint",
+      "joint_value": 0.0,
+      "applied_joint_value": 0.0,
+      "joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "joint_value_source": "zero_default",
+      "applied_joint_value_source": "zero_default",
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "color": null,
+      "link_transform_status": "resolved",
+      "transform_status": "resolved",
+      "transform_chain": [
+        "world->base_link(fixed)",
+        "base_link->base_link_inertia(fixed)",
+        "base_link_inertia->shoulder_link(revolute)",
+        "shoulder_link->upper_arm_link(revolute)",
+        "upper_arm_link->forearm_link(revolute)",
+        "forearm_link->wrist_1_link(revolute)",
+        "wrist_1_link->wrist_2_link(revolute)",
+        "wrist_2_link->wrist_3_link(revolute)",
+        "wrist_3_link->flange(fixed)",
+        "flange->tool0(fixed)",
+        "tool0->gripper_base_link(fixed)",
+        "gripper_base_link->gripper_finger1_knuckle_link(fixed)",
+        "gripper_finger1_knuckle_link->gripper_finger1_finger_link(fixed)",
+        "gripper_finger1_finger_link->gripper_finger1_inner_knuckle_link(fixed)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": ""
+    },
+    {
+      "id": "urdf_visual_13_gripper_finger2_inner_knuckle_link_gripper_finger2_inner_knuckle_link_visual",
+      "source": "urdf_flattened",
+      "link": "gripper_finger2_inner_knuckle_link",
+      "object_name": "gripper_finger2_inner_knuckle_link",
+      "visual": "gripper_finger2_inner_knuckle_link_visual",
+      "parent_link": "gripper_finger2_finger_link",
+      "immediate_parent_link": "gripper_finger2_finger_link",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+        "flange",
+        "tool0",
+        "gripper_base_link",
+        "gripper_finger2_knuckle_link",
+        "gripper_finger2_finger_link",
+        "gripper_finger2_inner_knuckle_link"
+      ],
+      "joint_parent_link": "gripper_finger2_finger_link",
+      "parent_joint": "gripper_finger2_inner_knuckle_joint",
+      "parent_joint_name": "gripper_finger2_inner_knuckle_joint",
+      "parent_joint_type": "fixed",
+      "parent_joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "parent_joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "zero_default",
+      "joint_type": "fixed",
+      "joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "chain_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "expected_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_matrix": [
+        [
+          3.6729999609201477e-06,
+          -9.632622234253363e-05,
+          0.9999999953538838,
+          0.4868987411750924
+        ],
+        [
+          -0.00010000020493681099,
+          0.9999999903605734,
+          9.632658916229741e-05,
+          0.10914969774609591
+        ],
+        [
+          -0.9999999949932338,
+          -0.00010000055827975664,
+          3.663367283539493e-06,
+          0.4318593476447193
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "baked_world_visual_quaternion": {
+        "x": -6.941200150304966e-05,
+        "y": 0.7071054825825721,
+        "z": -1.2989466239325223e-06,
+        "w": 0.7071080763800924
+      },
+      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "visual_origin_applied_to_pose": true,
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "joint_name": "gripper_finger2_inner_knuckle_joint",
+      "joint_value": 0.0,
+      "applied_joint_value": 0.0,
+      "joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "joint_value_source": "zero_default",
+      "applied_joint_value_source": "zero_default",
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "color": null,
+      "link_transform_status": "resolved",
+      "transform_status": "resolved",
+      "transform_chain": [
+        "world->base_link(fixed)",
+        "base_link->base_link_inertia(fixed)",
+        "base_link_inertia->shoulder_link(revolute)",
+        "shoulder_link->upper_arm_link(revolute)",
+        "upper_arm_link->forearm_link(revolute)",
+        "forearm_link->wrist_1_link(revolute)",
+        "wrist_1_link->wrist_2_link(revolute)",
+        "wrist_2_link->wrist_3_link(revolute)",
+        "wrist_3_link->flange(fixed)",
+        "flange->tool0(fixed)",
+        "tool0->gripper_base_link(fixed)",
+        "gripper_base_link->gripper_finger2_knuckle_link(fixed)",
+        "gripper_finger2_knuckle_link->gripper_finger2_finger_link(fixed)",
+        "gripper_finger2_finger_link->gripper_finger2_inner_knuckle_link(fixed)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": ""
+    },
+    {
+      "id": "urdf_visual_14_gripper_finger1_finger_tip_link_gripper_finger1_finger_tip_link_visual",
+      "source": "urdf_flattened",
+      "link": "gripper_finger1_finger_tip_link",
+      "object_name": "gripper_finger1_finger_tip_link",
+      "visual": "gripper_finger1_finger_tip_link_visual",
+      "parent_link": "gripper_finger1_inner_knuckle_link",
+      "immediate_parent_link": "gripper_finger1_inner_knuckle_link",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+        "flange",
+        "tool0",
+        "gripper_base_link",
+        "gripper_finger1_knuckle_link",
+        "gripper_finger1_finger_link",
+        "gripper_finger1_inner_knuckle_link",
+        "gripper_finger1_finger_tip_link"
+      ],
+      "joint_parent_link": "gripper_finger1_inner_knuckle_link",
+      "parent_joint": "gripper_finger1_finger_tip_joint",
+      "parent_joint_name": "gripper_finger1_finger_tip_joint",
+      "parent_joint_type": "fixed",
+      "parent_joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "parent_joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "zero_default",
+      "joint_type": "fixed",
+      "joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "chain_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "expected_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_matrix": [
+        [
+          3.6729999609201477e-06,
+          -9.632622234253363e-05,
+          0.9999999953538838,
+          0.4868987411750924
+        ],
+        [
+          -0.00010000020493681099,
+          0.9999999903605734,
+          9.632658916229741e-05,
+          0.10914969774609591
+        ],
+        [
+          -0.9999999949932338,
+          -0.00010000055827975664,
+          3.663367283539493e-06,
+          0.4318593476447193
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "baked_world_visual_quaternion": {
+        "x": -6.941200150304966e-05,
+        "y": 0.7071054825825721,
+        "z": -1.2989466239325223e-06,
+        "w": 0.7071080763800924
+      },
+      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "visual_origin_applied_to_pose": true,
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "joint_name": "gripper_finger1_finger_tip_joint",
+      "joint_value": 0.0,
+      "applied_joint_value": 0.0,
+      "joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "joint_value_source": "zero_default",
+      "applied_joint_value_source": "zero_default",
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "color": null,
+      "link_transform_status": "resolved",
+      "transform_status": "resolved",
+      "transform_chain": [
+        "world->base_link(fixed)",
+        "base_link->base_link_inertia(fixed)",
+        "base_link_inertia->shoulder_link(revolute)",
+        "shoulder_link->upper_arm_link(revolute)",
+        "upper_arm_link->forearm_link(revolute)",
+        "forearm_link->wrist_1_link(revolute)",
+        "wrist_1_link->wrist_2_link(revolute)",
+        "wrist_2_link->wrist_3_link(revolute)",
+        "wrist_3_link->flange(fixed)",
+        "flange->tool0(fixed)",
+        "tool0->gripper_base_link(fixed)",
+        "gripper_base_link->gripper_finger1_knuckle_link(fixed)",
+        "gripper_finger1_knuckle_link->gripper_finger1_finger_link(fixed)",
+        "gripper_finger1_finger_link->gripper_finger1_inner_knuckle_link(fixed)",
+        "gripper_finger1_inner_knuckle_link->gripper_finger1_finger_tip_link(fixed)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": ""
+    },
+    {
+      "id": "urdf_visual_15_gripper_finger2_finger_tip_link_gripper_finger2_finger_tip_link_visual",
+      "source": "urdf_flattened",
+      "link": "gripper_finger2_finger_tip_link",
+      "object_name": "gripper_finger2_finger_tip_link",
+      "visual": "gripper_finger2_finger_tip_link_visual",
+      "parent_link": "gripper_finger2_inner_knuckle_link",
+      "immediate_parent_link": "gripper_finger2_inner_knuckle_link",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+        "flange",
+        "tool0",
+        "gripper_base_link",
+        "gripper_finger2_knuckle_link",
+        "gripper_finger2_finger_link",
+        "gripper_finger2_inner_knuckle_link",
+        "gripper_finger2_finger_tip_link"
+      ],
+      "joint_parent_link": "gripper_finger2_inner_knuckle_link",
+      "parent_joint": "gripper_finger2_finger_tip_joint",
+      "parent_joint_name": "gripper_finger2_finger_tip_joint",
+      "parent_joint_type": "fixed",
+      "parent_joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "parent_joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "zero_default",
+      "joint_type": "fixed",
+      "joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "chain_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "expected_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_pose": {
+        "xyz": [
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
+        ],
+        "rpy": [
+          -1.5341792327998767,
+          1.5706962591554918,
+          -1.5340829063937342
+        ]
+      },
+      "baked_world_visual_matrix": [
+        [
+          3.6729999609201477e-06,
+          -9.632622234253363e-05,
+          0.9999999953538838,
+          0.4868987411750924
+        ],
+        [
+          -0.00010000020493681099,
+          0.9999999903605734,
+          9.632658916229741e-05,
+          0.10914969774609591
+        ],
+        [
+          -0.9999999949932338,
+          -0.00010000055827975664,
+          3.663367283539493e-06,
+          0.4318593476447193
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "baked_world_visual_quaternion": {
+        "x": -6.941200150304966e-05,
+        "y": 0.7071054825825721,
+        "z": -1.2989466239325223e-06,
+        "w": 0.7071080763800924
+      },
+      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "visual_origin_applied_to_pose": true,
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "joint_name": "gripper_finger2_finger_tip_joint",
+      "joint_value": 0.0,
+      "applied_joint_value": 0.0,
+      "joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "joint_value_source": "zero_default",
+      "applied_joint_value_source": "zero_default",
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "color": null,
+      "link_transform_status": "resolved",
+      "transform_status": "resolved",
+      "transform_chain": [
+        "world->base_link(fixed)",
+        "base_link->base_link_inertia(fixed)",
+        "base_link_inertia->shoulder_link(revolute)",
+        "shoulder_link->upper_arm_link(revolute)",
+        "upper_arm_link->forearm_link(revolute)",
+        "forearm_link->wrist_1_link(revolute)",
+        "wrist_1_link->wrist_2_link(revolute)",
+        "wrist_2_link->wrist_3_link(revolute)",
+        "wrist_3_link->flange(fixed)",
+        "flange->tool0(fixed)",
+        "tool0->gripper_base_link(fixed)",
+        "gripper_base_link->gripper_finger2_knuckle_link(fixed)",
+        "gripper_finger2_knuckle_link->gripper_finger2_finger_link(fixed)",
+        "gripper_finger2_finger_link->gripper_finger2_inner_knuckle_link(fixed)",
+        "gripper_finger2_inner_knuckle_link->gripper_finger2_finger_tip_link(fixed)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": ""
+    },
+    {
+      "id": "urdf_visual_16_table_None",
+      "source": "urdf_flattened",
       "link": "table_",
+      "object_name": "table_",
       "visual": "None_",
       "parent_link": "world",
+      "immediate_parent_link": "world",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "table_"
+      ],
       "joint_parent_link": "world",
+      "parent_joint": "table_base_joint_",
+      "parent_joint_name": "table_base_joint_",
+      "parent_joint_type": "fixed",
+      "parent_joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "parent_joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "zero_default",
+      "joint_type": "fixed",
+      "joint_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
       "pose": {
         "xyz": [
           0.0,
@@ -1344,11 +3908,14 @@
       },
       "joint_name": "table_base_joint_",
       "joint_value": 0.0,
+      "applied_joint_value": 0.0,
       "joint_axis": [
         1.0,
         0.0,
         0.0
       ],
+      "joint_value_source": "zero_default",
+      "applied_joint_value_source": "zero_default",
       "material": {
         "name": "aluminum",
         "color": [
@@ -1358,6 +3925,12 @@
           1.0
         ]
       },
+      "color": [
+        0.549,
+        0.557,
+        0.529,
+        1.0
+      ],
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
@@ -1367,6 +3940,12 @@
       "geometry_type": "mesh",
       "package_uri": "package://workbench_description/meshes/visual/table.stl",
       "source_path": "package://workbench_description/meshes/visual/table.stl",
+      "mesh_path": "assets/environment/workbench_description/meshes/visual/table.stl",
+      "scale": [
+        0.001,
+        0.001,
+        0.001
+      ],
       "resolved_source_path": "assets/environment/workbench_description/meshes/visual/table.stl",
       "resolved_source_path_is_repo_relative": true,
       "resolved": true,
@@ -1379,11 +3958,56 @@
       "warning": ""
     },
     {
-      "id": "urdf_visual_8_camera_link_visual_8",
+      "id": "urdf_visual_17_camera_link_visual_17",
+      "source": "urdf_flattened",
       "link": "camera_link",
-      "visual": "visual_8",
-      "parent_link": "world",
+      "object_name": "camera_link",
+      "visual": "visual_17",
+      "parent_link": "camera_bottom_screw_frame",
+      "immediate_parent_link": "camera_bottom_screw_frame",
+      "root_link": "world",
+      "link_chain": [
+        "world",
+        "table_",
+        "camera_bottom_screw_frame",
+        "camera_link"
+      ],
       "joint_parent_link": "camera_bottom_screw_frame",
+      "parent_joint": "camera_link_joint",
+      "parent_joint_name": "camera_link_joint",
+      "parent_joint_type": "fixed",
+      "parent_joint_origin": {
+        "xyz": [
+          0.010600000000000002,
+          0.0175,
+          0.0125
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "parent_joint_axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "zero_default",
+      "joint_type": "fixed",
+      "joint_origin": {
+        "xyz": [
+          0.010600000000000002,
+          0.0175,
+          0.0125
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
       "pose": {
         "xyz": [
           -0.5674999811247661,
@@ -1410,14 +4034,14 @@
       },
       "world_pose": {
         "xyz": [
-          -0.5674999865719841,
-          0.1375,
-          0.6444000158349448
+          -0.5674999811247661,
+          0.12000000000000001,
+          0.6401000158349482
         ],
         "rpy": [
-          0.0,
-          1.5707950600208995,
-          0.0
+          3.1415913867948966,
+          6.123233995731853e-17,
+          1.5707963267948966
         ]
       },
       "link_world_pose": {
@@ -1504,15 +4128,19 @@
       },
       "joint_name": "camera_link_joint",
       "joint_value": 0.0,
+      "applied_joint_value": 0.0,
       "joint_axis": [
         1.0,
         0.0,
         0.0
       ],
+      "joint_value_source": "zero_default",
+      "applied_joint_value_source": "zero_default",
       "material": {
         "name": "",
         "color": null
       },
+      "color": null,
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
@@ -1524,6 +4152,12 @@
       "geometry_type": "mesh",
       "package_uri": "package://realsense2_description/meshes/d435.dae",
       "source_path": "package://realsense2_description/meshes/d435.dae",
+      "mesh_path": "assets/environment/realsense2_description/meshes/d435.dae",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
       "resolved_source_path": "assets/environment/realsense2_description/meshes/d435.dae",
       "resolved_source_path_is_repo_relative": true,
       "resolved": true,
