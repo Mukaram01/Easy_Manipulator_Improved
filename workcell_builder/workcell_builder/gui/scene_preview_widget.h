@@ -88,6 +88,18 @@ public:
     QString robot_classification_source;
     QString robot_base_frame;
     QString robot_world_pose;
+    QString visual_index_link;
+    QString visual_index_link_name;
+    QString visual_index_object_name;
+    QString visual_index_visual;
+    QString visual_index_visual_name;
+    int visual_index_value{ -1 };
+    int source_row_index{ -1 };
+    QString visual_index_parent_link;
+    QStringList visual_index_link_chain;
+    QString visual_index_mesh_uri;
+    QString visual_index_package_uri;
+    QString visual_index_source;
   };
   struct CameraOverlayModel
   {

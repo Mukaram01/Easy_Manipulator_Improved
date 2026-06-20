@@ -11,23 +11,15 @@ def _token(value: str) -> str:
 
 
 def _final_identity(item: dict, source_row_index: int) -> str:
-    visual = item.get("visual") or item.get("visual_name") or "visual_missing"
-    parts = [
-        "urdf_visual_final",
-        _token(item.get("link") or "link_missing"),
-        _token(visual),
-    ]
-    if item.get("visual_index") not in (None, ""):
-        parts.append("visual_index_" + _token(str(item["visual_index"])))
-    if item.get("source"):
-        parts.append("source_" + _token(item["source"]))
-    if item.get("category"):
-        parts.append("category_" + _token(item["category"]))
+    visual = item.get("visual") or item.get("visual_name") or item.get("id") or "visual_missing"
     row_index = item.get("source_row_index")
     if row_index in (None, ""):
         row_index = source_row_index
-    parts.append("row_" + _token(str(row_index)))
-    return "__".join(parts)
+    return "generated_urdf::{}::{}::{}".format(
+        _token(item.get("link") or item.get("link_name") or item.get("object_id") or item.get("object") or "link_missing"),
+        _token(visual),
+        _token(str(row_index)),
+    )
 
 
 def _is_lower_fidelity_fallback(item: dict) -> bool:
@@ -71,8 +63,8 @@ def _filtered_links(items: list[dict]) -> set[str]:
 
 def test_mainwindow_visual_loader_distinguishes_identity_fallback_and_shared_mesh_uri() -> None:
     src = MAINWINDOW.read_text(encoding="utf-8")
-    assert "source_%1" in src and "category_%1" in src
-    assert "row_%1" in src and "source_row_index" in src
+    assert "generated_urdf::%1::%2::%3" in src
+    assert "source_row_index" in src
     assert "visual_item_is_lower_fidelity_fallback" in src
     assert "suppressed_by_urdf_flattened_visual_mesh" in src
     assert "retention check passed for ur5_2f_test" in src
@@ -132,3 +124,32 @@ def test_editable_layout_semantic_ids_do_not_suppress_generated_urdf_rows() -> N
 
     assert "robot_base" in retained
     assert "base_link" in retained
+
+
+def test_final_payload_preserves_visual_index_row_identity_metadata() -> None:
+    src = MAINWINDOW.read_text(encoding="utf-8")
+    viewport = (ROOT / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(encoding="utf-8")
+    assert "p.visual_index_link" in src
+    assert "p.source_row_index" in src
+    assert "p.visual_index_link_chain" in src
+    assert 'row["link"] = !item.visual_index_link' in viewport
+    assert 'row["source_row_index"] = item.source_row_index' in viewport
+    assert 'row["source"] = item.visual_index_source' in viewport
+
+    items = json.loads(UR5_INDEX.read_text(encoding="utf-8"))["visual_items"]
+    retained = _retained_rows(items)
+    first_by_row = {row.get("source_row_index", idx): row for idx, row in enumerate(retained)}
+
+    assert first_by_row[0]["link"] == "base_link_inertia"
+    assert first_by_row[1]["link"] == "shoulder_link"
+    assert first_by_row[2]["link"] == "upper_arm_link"
+    assert [row["link"] for row in retained[:7]] == [
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+    ]
+    assert not any(row["link"] in {"table", "camera_link", "gripper_base_link"} for row in retained[:7])

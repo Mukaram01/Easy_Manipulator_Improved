@@ -8639,10 +8639,12 @@ void MainWindow::populate_scene_hierarchy()
           QString visual = value("visual");
           if (visual.isEmpty()) visual = value("visual_name");
           if (visual.isEmpty()) visual = value("id");
+          QString row_index = value("source_row_index");
+          if (row_index.isEmpty()) row_index = QString::number(qMax(0, source_row_index));
           return QStringLiteral("generated_urdf::%1::%2::%3")
             .arg(link.isEmpty() ? QStringLiteral("link_missing") : canonical_scene3d_token(link),
                  visual.isEmpty() ? QStringLiteral("visual_missing") : canonical_scene3d_token(visual),
-                 QString::number(qMax(0, source_row_index)));
+                 canonical_scene3d_token(row_index));
         };
         auto assert_scene3d_generated_urdf_identity_namespace_regression = [&]() {
           QSet<QString> regression_preview_ids;
@@ -9001,6 +9003,23 @@ void MainWindow::populate_scene_hierarchy()
               .arg(p.base_pose_roll).arg(p.base_pose_pitch).arg(p.base_pose_yaw);
           }
           p.robot_world_pose = robot_world_pose;
+          p.visual_index_link = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link")).trimmed();
+          p.visual_index_link_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link_name")).trimmed();
+          p.visual_index_object_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "object_name")).trimmed();
+          p.visual_index_visual = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "visual")).trimmed();
+          p.visual_index_visual_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "visual_name")).trimmed();
+          p.visual_index_value = workcell_builder::yaml_map_key(v, "visual_index").as<int>(-1);
+          p.source_row_index = workcell_builder::yaml_map_key(v, "source_row_index").as<int>(source_row_index);
+          p.visual_index_parent_link = parent_link;
+          p.visual_index_mesh_uri = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "mesh_uri")).trimmed();
+          p.visual_index_package_uri = package_uri;
+          p.visual_index_source = visual_item_source;
+          const YAML::Node link_chain_node = workcell_builder::yaml_map_key(v, "link_chain");
+          if (link_chain_node && link_chain_node.IsSequence()) {
+            for (const YAML::Node & chain_entry : link_chain_node) {
+              if (chain_entry.IsScalar()) p.visual_index_link_chain << QString::fromStdString(chain_entry.as<std::string>("")).trimmed();
+            }
+          }
           const bool visual_origin_already_in_pose = workcell_builder::yaml_map_key(v, "visual_origin_applied_to_pose").as<bool>(false);
           if (use_baked_world_visual_pose) {
             p.visual_origin_applied = false;
