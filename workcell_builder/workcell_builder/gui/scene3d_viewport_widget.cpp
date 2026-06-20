@@ -1013,6 +1013,16 @@ bool is_generated_urdf_visual_item(const ScenePreviewWidget::PreviewItem & it)
   return false;
 }
 
+bool is_generated_urdf_visual_fallback_item(const ScenePreviewWidget::PreviewItem & it)
+{
+  const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
+  const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
+  return it.id.startsWith(QStringLiteral("generated_urdf_fallback::")) &&
+         source_layer == QStringLiteral("locked_generated_urdf_visual") &&
+         (visual_source == QStringLiteral("generated_urdf_visual_fallback") ||
+          it.category.compare(QStringLiteral("URDF Visual Fallback"), Qt::CaseInsensitive) == 0);
+}
+
 bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it);
 
 QString clean_label_from_item(const ScenePreviewWidget::PreviewItem & it)
@@ -2659,12 +2669,14 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     }
   }
   if (item_has_explicit_dimensions(it)) {
+    const bool locked_generated_urdf_visual_fallback = is_generated_urdf_visual_fallback_item(it);
     const bool intentional_primitive_fallback =
-      source_layer == QStringLiteral("primitive_fallback") || visual_source == QStringLiteral("primitive_fallback");
+      source_layer == QStringLiteral("primitive_fallback") || visual_source == QStringLiteral("primitive_fallback") ||
+      locked_generated_urdf_visual_fallback;
     const bool generated_mesh_to_primitive_fallback =
-      generated_or_locked_preview && item_has_credible_mesh_handoff(it);
+      generated_or_locked_preview && item_has_credible_mesh_handoff(it) && !locked_generated_urdf_visual_fallback;
     const bool raw_generated_bounds_only = is_raw_generated_bounds_only_item(it);
-    if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes || raw_generated_bounds_only) {
+    if ((mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes && !locked_generated_urdf_visual_fallback) || raw_generated_bounds_only) {
       if (raw_generated_bounds_only) {
         const QString mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
         const bool mesh_candidate = item_has_mesh_surface_candidate(it);
@@ -2709,11 +2721,13 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     const QColor fallback_line = generated_or_locked_preview ? generated_primitive_fallback_outline()
       : (editable_layout_preview ? editable_layout_accent_outline() : QColor(148, 163, 184, 76));
     const float fallback_line_width = generated_or_locked_preview ? 0.7f : (editable_layout_preview ? 1.6f : 0.75f);
-    if (!editable_layout_preview && !scene3d_debug_fallback_boxes_enabled()) {
+    if (!editable_layout_preview && !scene3d_debug_fallback_boxes_enabled() && !locked_generated_urdf_visual_fallback) {
       if (!intentional_primitive_fallback && out_missing_geometry_count) ++(*out_missing_geometry_count);
       return false;
     }
-    if (scene3d_debug_fallback_boxes_enabled() || editable_layout_preview) {
+    if (locked_generated_urdf_visual_fallback) {
+      draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, product_view_generated_locked_material(it, diagnostic_transparency_mode), false);
+    } else if (scene3d_debug_fallback_boxes_enabled() || editable_layout_preview) {
       draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, fallback_fill, true);
     }
     // Generated primitive fallback outlines are bounds diagnostics; keep them out of normal Product View.
