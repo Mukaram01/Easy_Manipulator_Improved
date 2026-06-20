@@ -492,7 +492,26 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
     QStringLiteral("finger_tip_link")
   };
 
-  int rendered_generated_urdf_link_count = 0;
+  const auto final_draw_proves_visibility = [](const QJsonObject & record) {
+    const QString status = canonical_scene3d_token(record.value(QStringLiteral("final_draw_status")).toString());
+    if (status == QStringLiteral("ok")) return true;
+
+    // Emergency fallback visibility is only accepted when the draw/export path explicitly
+    // reports a UR5 emergency fallback final-draw status.  Metadata-only records,
+    // primitive fallback hints, visual-index rows, or raw committed preview items are not
+    // proof that anything was submitted to OpenGL.
+    return status == QStringLiteral("ur5_emergency_fallback") ||
+           status == QStringLiteral("ur5_emergency_fallback_ok") ||
+           status == QStringLiteral("ur5_emergency_fallback_drawn");
+  };
+
+  const auto field_text = [](const QJsonObject & record, const QString & key) {
+    const QJsonValue value = record.value(key);
+    if (value.isString()) return value.toString();
+    if (value.isDouble()) return QString::number(value.toInt());
+    return QString();
+  };
+
   int rendered_ur5_link_count = 0;
   int rendered_robotiq_link_count = 0;
   int rendered_table_count = 0;
@@ -501,24 +520,28 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
   QJsonArray rendered_ur5_link_records;
 
   if (viewport) {
-    for (const auto & item : viewport->items) {
-      const QString source_layer = canonical_scene3d_token(item.source_layer);
-      const QString visual_source = canonical_scene3d_token(item.active_visual_source);
-      const QString link_token = scene3d_viewport_link_token(item);
+    const QJsonArray final_draw_records = viewport->final_draw_visual_items_export();
+    for (const QJsonValue & value : final_draw_records) {
+      const QJsonObject item = value.toObject();
+      if (!final_draw_proves_visibility(item)) {
+        continue;
+      }
+
+      const QString link_token = canonical_scene3d_token(
+        !field_text(item, QStringLiteral("canonical_link_name")).trimmed().isEmpty() ? field_text(item, QStringLiteral("canonical_link_name")) :
+        (!field_text(item, QStringLiteral("link_name")).trimmed().isEmpty() ? field_text(item, QStringLiteral("link_name")) :
+         field_text(item, QStringLiteral("link"))));
       const QString combined = canonical_scene3d_token(
-        item.id + QStringLiteral(" ") + item.display_name + QStringLiteral(" ") +
-        item.role + QStringLiteral(" ") + item.category + QStringLiteral(" ") +
-        item.visual_index_object_name + QStringLiteral(" ") + item.visual_index_parent_link);
-      const bool generated_urdf =
-        source_layer == QStringLiteral("locked_generated_urdf_visual") ||
-        source_layer == QStringLiteral("generated_urdf_visual");
-      const bool renderable =
-        generated_urdf &&
-        (item.has_mesh_metadata || item.mesh_available ||
-         visual_source == QStringLiteral("primitive_fallback") ||
-         visual_source == QStringLiteral("urdf_primitive") ||
-         !item.primitive_geometry_type.trimmed().isEmpty());
-      const bool visible = renderable;  // The viewport item list is the post-filter committed payload.
+        field_text(item, QStringLiteral("item_id")) + QStringLiteral(" ") +
+        field_text(item, QStringLiteral("id")) + QStringLiteral(" ") +
+        field_text(item, QStringLiteral("display_name")) + QStringLiteral(" ") +
+        field_text(item, QStringLiteral("object_name")) + QStringLiteral(" ") +
+        field_text(item, QStringLiteral("visual_name")) + QStringLiteral(" ") +
+        field_text(item, QStringLiteral("visual")) + QStringLiteral(" ") +
+        field_text(item, QStringLiteral("parent_link")) + QStringLiteral(" ") +
+        field_text(item, QStringLiteral("mesh_source")) + QStringLiteral(" ") +
+        field_text(item, QStringLiteral("mesh_uri")) + QStringLiteral(" ") +
+        field_text(item, QStringLiteral("source_layer")));
 
       if (combined.contains(QStringLiteral("table")) ||
           combined.contains(QStringLiteral("workbench")) ||
@@ -529,11 +552,7 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
           combined.contains(QStringLiteral("sensor"))) {
         ++rendered_camera_count;
       }
-      if (!visible) {
-        continue;
-      }
 
-      ++rendered_generated_urdf_link_count;
       bool is_robotiq = false;
       for (const QString & token : robotiq_tokens) {
         if (combined.contains(token) || link_token.contains(token)) {
@@ -554,15 +573,9 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
       if (is_required_ur5 || (is_other_ur5 && !is_robotiq)) {
         ++rendered_ur5_link_count;
         visible_ur5_link_tokens.insert(link_token);
-        QJsonObject record;
-        record[QStringLiteral("item_id")] = item.id;
+        QJsonObject record = item;
         record[QStringLiteral("link_name")] = link_token;
-        record[QStringLiteral("source_row_index")] = item.source_row_index;
-        record[QStringLiteral("mesh_path")] = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path : item.source_path;
-        record[QStringLiteral("world_pose")] = scene3d_viewport_pose_json(item);
-        record[QStringLiteral("visible")] = visible;
-        record[QStringLiteral("selectable")] = item.selectable;
-        record[QStringLiteral("locked")] = item.locked;
+        record[QStringLiteral("visible")] = true;
         rendered_ur5_link_records.append(record);
       }
     }
@@ -579,13 +592,12 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
   }
 
   return QJsonObject{
-    {QStringLiteral("rendered_generated_urdf_link_count"), rendered_generated_urdf_link_count},
     {QStringLiteral("rendered_ur5_link_count"), rendered_ur5_link_count},
-    {QStringLiteral("rendered_robotiq_link_count"), rendered_robotiq_link_count},
+    {QStringLiteral("rendered_ur5_link_records"), rendered_ur5_link_records},
+    {QStringLiteral("missing_required_visible_ur5_links"), QJsonArray::fromStringList(missing)},
     {QStringLiteral("rendered_table_count"), rendered_table_count},
     {QStringLiteral("rendered_camera_count"), rendered_camera_count},
-    {QStringLiteral("rendered_ur5_link_records"), rendered_ur5_link_records},
-    {QStringLiteral("missing_required_visible_ur5_links"), QJsonArray::fromStringList(missing)}
+    {QStringLiteral("rendered_robotiq_link_count"), rendered_robotiq_link_count}
   };
 }
 
