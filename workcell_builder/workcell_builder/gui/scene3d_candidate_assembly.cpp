@@ -19,6 +19,9 @@ bool include_preview_item_for_scene3d(
   const bool is_overlay_or_helper = combined.contains("overlay") || combined.contains("helper") || combined.contains("safety zone");
 
   if (source_layer == "editable_layout") return enabled_layers.contains("editable_layout");
+  // Generated URDF robot fallbacks are locked generated visuals, not generic
+  // primitive-fallback diagnostics. Keep them controlled by the generated URDF
+  // layer so they remain visible when diagnostic primitive fallbacks are hidden.
   if (source_layer == "locked_generated_urdf_visual" || source_layer == "generated_urdf_visual") return enabled_layers.contains("locked_generated_urdf_visual");
   if (source_layer == "primitive_fallback") return enabled_layers.contains("primitive_fallback");
   if (visual_source == "mesh_preview") return enabled_layers.contains("mesh_preview");
@@ -91,7 +94,8 @@ Scene3DLayerVisibilityDefaults compute_scene3d_default_layer_visibility(
     const QString source_layer = token(item.source_layer);
     if ((source_layer == QStringLiteral("locked_generated_urdf_visual") ||
          source_layer == QStringLiteral("generated_urdf_visual")) &&
-        (item.mesh_available || item.has_mesh_metadata)) {
+        (item.mesh_available || item.has_mesh_metadata ||
+         item.id.startsWith(QStringLiteral("generated_urdf_fallback::")))) {
       ++authoritative_generated_mesh_count;
     }
   }

@@ -9171,20 +9171,76 @@ void MainWindow::populate_scene_hierarchy()
             continue;
           }
           if (mesh_fallback) {
-            p.status = "warning";
-            p.mesh_available = false;
-            p.has_mesh_metadata = true;
-            p.active_visual_source = QStringLiteral("primitive_fallback");
-            p.source_layer = QStringLiteral("locked_generated_urdf_visual");
-            p.editable = false;
-            p.selectable = true;
-            p.lock_reason = QStringLiteral("generated URDF visual");
-            p.warnings << QStringLiteral("Preview warning: URDF visual mesh unavailable; using primitive fallback");
+            const QString fallback_link = p.visual_index_link.trimmed().isEmpty() ? p.display_name.trimmed() : p.visual_index_link.trimmed();
+            const QString robot_identity = canonical_scene3d_token(
+              fallback_link + QStringLiteral(" ") + p.visual_index_parent_link + QStringLiteral(" ") +
+              p.visual_index_link_chain.join(QStringLiteral(" ")) + QStringLiteral(" ") + p.id + QStringLiteral(" ") +
+              p.category + QStringLiteral(" ") + p.role);
+            const bool excluded_non_robot_visual =
+              robot_identity.contains(QStringLiteral("camera")) ||
+              robot_identity.contains(QStringLiteral("realsense")) ||
+              robot_identity.contains(QStringLiteral("d435")) ||
+              robot_identity.contains(QStringLiteral("d455")) ||
+              robot_identity.contains(QStringLiteral("table")) ||
+              robot_identity.contains(QStringLiteral("workbench")) ||
+              robot_identity.contains(QStringLiteral("conveyor"));
+            const bool generated_robot_visual_link = !excluded_non_robot_visual &&
+              (robot_identity.contains(QStringLiteral("robot")) ||
+               robot_identity.contains(QStringLiteral("base_link")) ||
+               robot_identity.contains(QStringLiteral("shoulder")) ||
+               robot_identity.contains(QStringLiteral("upper_arm")) ||
+               robot_identity.contains(QStringLiteral("forearm")) ||
+               robot_identity.contains(QStringLiteral("wrist")) ||
+               robot_identity.contains(QStringLiteral("flange")) ||
+               robot_identity.contains(QStringLiteral("tool0")) ||
+               robot_identity.contains(QStringLiteral("gripper")) ||
+               robot_identity.contains(QStringLiteral("finger")) ||
+               robot_identity.contains(QStringLiteral("knuckle")));
+            if (generated_robot_visual_link) {
+              const QString fallback_id = QStringLiteral("generated_urdf_fallback::%1")
+                .arg(fallback_link.trimmed().isEmpty() ? canonical_scene3d_token(id) : fallback_link);
+              if (preview_ids.contains(fallback_id)) {
+                const QString reason = add_skip_reason(QStringLiteral("duplicate_generated_urdf_fallback_link"));
+                append_visual_ingestion_diagnostic(v, raw_id, fallback_id, reason);
+                continue;
+              }
+              p.id = fallback_id;
+              p.display_name = fallback_link.trimmed().isEmpty() ? p.display_name : fallback_link;
+              p.category = QStringLiteral("URDF Visual Fallback");
+              p.role = QStringLiteral("robot");
+              p.status = "warning";
+              p.mesh_available = false;
+              p.has_mesh_metadata = true;
+              p.active_visual_source = QStringLiteral("generated_urdf_visual_fallback");
+              p.source_layer = QStringLiteral("locked_generated_urdf_visual");
+              p.editable = false;
+              p.selectable = true;
+              p.locked = true;
+              p.lock_reason = QStringLiteral("generated URDF visual fallback");
+              p.has_material_color = true;
+              p.material_r = 1.0;
+              p.material_g = 0.82;
+              p.material_b = 0.05;
+              p.material_a = 1.0;
+              p.material_name = QStringLiteral("generated_urdf_visual_fallback_default_visible");
+              p.warnings << QStringLiteral("Preview warning: generated URDF robot mesh row did not produce a visible mesh renderable; using locked generated URDF visual fallback");
+              if (!render_expected) {
+                p.warnings << QStringLiteral("Preview warning: xacro-expanded visual kept as generated URDF visual fallback");
+              }
+            } else {
+              p.status = "warning";
+              p.mesh_available = false;
+              p.has_mesh_metadata = true;
+              p.active_visual_source = QStringLiteral("primitive_fallback");
+              p.source_layer = QStringLiteral("primitive_fallback");
+              p.editable = false;
+              p.selectable = true;
+              p.locked = true;
+              p.lock_reason = QStringLiteral("generated URDF visual primitive fallback diagnostic");
+              p.warnings << QStringLiteral("Preview warning: URDF visual mesh unavailable; using generic primitive fallback diagnostic");
+            }
             if (p.resolved_source_path_stale) {
               p.warnings << QStringLiteral("Preview warning: resolved_source_path is stale; package_uri fallback was attempted");
-            }
-            if (!render_expected) {
-              p.warnings << QStringLiteral("Preview warning: xacro-expanded visual kept as generated primitive fallback");
             }
           } else if (!resolved || (geometry_type == "mesh" && p.source_path.trimmed().isEmpty())) {
             p.status = "warning";
