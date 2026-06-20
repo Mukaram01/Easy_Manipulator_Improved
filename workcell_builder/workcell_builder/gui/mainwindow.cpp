@@ -8627,7 +8627,6 @@ void MainWindow::populate_scene_hierarchy()
           return info.exists() && info.isFile();
         };
         auto visual_item_final_identity_key = [](const YAML::Node & node, int source_row_index) {
-          Q_UNUSED(source_row_index);
           auto value = [&](const char * key) {
             const YAML::Node field = workcell_builder::yaml_map_key(node, key);
             if (!field || !field.IsScalar()) return QString();
@@ -8639,6 +8638,8 @@ void MainWindow::populate_scene_hierarchy()
           const QString visual_index = value("visual_index");
           const QString source = value("source");
           const QString category = value("category");
+          QString row_index = value("source_row_index");
+          if (row_index.isEmpty()) row_index = QString::number(source_row_index);
           QStringList parts;
           parts << QStringLiteral("urdf_visual_final");
           parts << (link.isEmpty() ? QStringLiteral("link_missing") : canonical_scene3d_token(link));
@@ -8646,6 +8647,7 @@ void MainWindow::populate_scene_hierarchy()
           if (!visual_index.isEmpty()) parts << QStringLiteral("visual_index_%1").arg(canonical_scene3d_token(visual_index));
           if (!source.isEmpty()) parts << QStringLiteral("source_%1").arg(canonical_scene3d_token(source));
           if (!category.isEmpty()) parts << QStringLiteral("category_%1").arg(canonical_scene3d_token(category));
+          parts << QStringLiteral("row_%1").arg(canonical_scene3d_token(row_index));
           return parts.join(QStringLiteral("__"));
         };
         auto visual_item_is_lower_fidelity_fallback = [&](const YAML::Node & node) {
