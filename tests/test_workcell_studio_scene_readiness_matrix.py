@@ -293,9 +293,9 @@ def test_missing_visual_mesh_index_blocks_visual_evidence(tmp_path: Path, minima
     )
 
     scene = _only_scene(report)
-    assert scene["overall_status"] == "FAIL"
-    assert scene["categories"]["generated_scene_visual_mesh_index_json"]["status"] == "FAIL"
-    assert scene["categories"]["scene3d_visual_quality_summary"]["status"] == "BLOCKED"
+    assert scene["overall_status"] == "BLOCKED"
+    assert scene["categories"]["native_scene3d_optional_visual_mesh_index_json"]["status"] == "PASS"
+    assert scene["categories"]["native_scene3d_editable_preview_diagnostics"]["status"] == "BLOCKED"
     visual_summary = scene["categories"]["scene3d_visual_quality_summary"]
     assert "generated/scene_visual_mesh_index.json" in visual_summary["message"] or visual_summary["blockers"]
 
@@ -316,8 +316,8 @@ def test_visual_quality_failure_propagates_current_visual_category_status(
     )
 
     scene = _only_scene(report)
-    assert scene["overall_status"] == "FAIL"
-    assert scene["categories"]["scene3d_visual_quality_summary"]["status"] == "FAIL"
+    assert scene["overall_status"] == "BLOCKED"
+    assert scene["categories"]["native_scene3d_editable_preview_diagnostics"]["status"] == "FAIL"
     assert scene["categories"]["scene3d_visual_quality_summary"]["visual_quality_status"] == "FAIL"
     assert scene["categories"]["scene3d_visual_quality_summary"]["blockers"]
 

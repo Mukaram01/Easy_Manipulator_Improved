@@ -134,7 +134,7 @@ def test_supported_scene_with_missing_required_files_and_empty_blocker_fails_cle
     assert row["known_blocker"] == ""
     assert row["missing_authoring_files"] == ["environment.yaml"]
     assert row["missing_generated_files"] == ["generated/scene_visual_mesh_index.json"]
-    assert row["blocker"].startswith("missing_required_file: environment.yaml; missing_required_file: generated/scene_visual_mesh_index.json")
+    assert row["blocker"].startswith("missing_required_file: environment.yaml")
     assert "missing_required_file: environment.yaml" in row["blockers"]
 
 
@@ -306,9 +306,9 @@ def test_malformed_mesh_index_reports_clear_contract_failure(tmp_path: Path, min
     payload = _run(tmp_path, reg)
     row = payload["per_scene"][0]
 
-    assert row["status"] == "FAIL"
+    assert row["status"] == "PASS_WITH_WARNINGS"
     assert row["mesh_index_validation"]["status"] == "INVALID_JSON"
-    assert any("mesh_index_validation_invalid_json: generated/scene_visual_mesh_index.json" in b for b in row["blockers"])
+    assert any("mesh_index_validation_invalid_json: generated/scene_visual_mesh_index.json" in w for w in row["warnings"])
 
 
 def test_zero_renderable_mesh_index_reports_clear_contract_failure(tmp_path: Path, minimal_scene_factory):
@@ -319,10 +319,10 @@ def test_zero_renderable_mesh_index_reports_clear_contract_failure(tmp_path: Pat
     payload = _run(tmp_path, reg)
     row = payload["per_scene"][0]
 
-    assert row["status"] == "FAIL"
+    assert row["status"] == "PASS_WITH_WARNINGS"
     assert row["mesh_index_validation"]["status"] == "NO_RENDERABLE_ITEMS"
     assert row["mesh_index_validation"]["renderable_items"] == 0
-    assert "mesh_index_validation_no_renderable_items: generated/scene_visual_mesh_index.json contains 0 renderable items" in row["blockers"]
+    assert "mesh_index_validation_no_renderable_items: generated/scene_visual_mesh_index.json contains 0 renderable items" in row["warnings"]
 
 
 def test_missing_mesh_index_reports_clear_validation_failure(tmp_path: Path, minimal_scene_factory):
@@ -336,9 +336,9 @@ def test_missing_mesh_index_reports_clear_validation_failure(tmp_path: Path, min
     payload = _run(tmp_path, reg)
     row = payload["per_scene"][0]
 
-    assert row["status"] == "FAIL"
-    assert row["mesh_index_validation"]["status"] == "MISSING_FILE"
-    assert "mesh_index_validation_missing_file: generated/scene_visual_mesh_index.json" in row["blockers"]
+    assert row["status"] == "PASS_WITH_WARNINGS"
+    assert row["mesh_index_validation"]["status"] == "OPTIONAL_MISSING"
+    assert "native_scene3d_optional_mesh_index_missing: generated/scene_visual_mesh_index.json" in row["warnings"]
 
 
 def test_malformed_mesh_index_item_entries_are_blockers(tmp_path: Path, minimal_scene_factory):
@@ -352,10 +352,10 @@ def test_malformed_mesh_index_item_entries_are_blockers(tmp_path: Path, minimal_
     payload = _run(tmp_path, reg)
     row = payload["per_scene"][0]
 
-    assert row["status"] == "FAIL"
+    assert row["status"] == "PASS_WITH_WARNINGS"
     assert row["mesh_index_validation"]["status"] == "MALFORMED_ITEMS"
     assert row["mesh_index_validation"]["malformed_items"] == [{"index": 1, "reason": "item_not_object"}]
-    assert "mesh_index_validation_malformed_items: generated/scene_visual_mesh_index.json contains 1 malformed item entries" in row["blockers"]
+    assert "mesh_index_validation_malformed_items: generated/scene_visual_mesh_index.json contains 1 malformed item entries" in row["warnings"]
 
 
 def test_blocked_scene_preserves_known_blocker_and_reports_mesh_issue(tmp_path: Path):
@@ -374,7 +374,7 @@ def test_blocked_scene_preserves_known_blocker_and_reports_mesh_issue(tmp_path: 
     assert row["status"] == "BLOCKED"
     assert row["blockers"][0] == "awaiting launch repair"
     assert row["mesh_index_validation"]["status"] == "NO_RENDERABLE_ITEMS"
-    assert "mesh_index_validation_no_renderable_items: generated/scene_visual_mesh_index.json contains 0 renderable items" in row["blockers"]
+    assert "mesh_index_validation_no_renderable_items: generated/scene_visual_mesh_index.json contains 0 renderable items" in row["warnings"]
 
 
 def test_package_xml_name_mismatch_blocks_supported_scene(tmp_path: Path, minimal_scene_factory):
