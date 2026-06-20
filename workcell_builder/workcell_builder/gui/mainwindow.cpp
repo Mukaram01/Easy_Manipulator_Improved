@@ -476,7 +476,6 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
   }
 
   const QSet<QString> required_visible_ur5_links = {
-    QStringLiteral("base_link"),
     QStringLiteral("base_link_inertia"),
     QStringLiteral("shoulder_link"),
     QStringLiteral("upper_arm_link"),
@@ -534,7 +533,6 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
       (!field_text(record, QStringLiteral("link_name")).trimmed().isEmpty() ? field_text(record, QStringLiteral("link_name")) :
        field_text(record, QStringLiteral("link"))));
     const QHash<QString, QString> expected_ur5_visual_meshes{
-      {QStringLiteral("base_link"), QStringLiteral("base.dae")},
       {QStringLiteral("base_link_inertia"), QStringLiteral("base.dae")},
       {QStringLiteral("shoulder_link"), QStringLiteral("shoulder.dae")},
       {QStringLiteral("upper_arm_link"), QStringLiteral("upperarm.dae")},
@@ -641,12 +639,6 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
 
   QStringList missing;
   for (const QString & required_link : required_visible_ur5_links) {
-    if ((required_link == QStringLiteral("base_link") &&
-         visible_ur5_link_tokens.contains(QStringLiteral("base_link_inertia"))) ||
-        (required_link == QStringLiteral("base_link_inertia") &&
-         visible_ur5_link_tokens.contains(QStringLiteral("base_link")))) {
-      continue;
-    }
     if (!visible_ur5_link_tokens.contains(required_link)) {
       missing << required_link;
     }
