@@ -655,6 +655,8 @@ def test_ur5_final_viewport_payload_requires_visible_links_table_and_camera():
                 "link": link,
                 "link_name": link,
                 "source_layer": "locked_generated_urdf_visual",
+                "has_mesh_metadata": True,
+                "mesh_source": f"package://ur_description/meshes/ur5/visual/{link}.dae",
                 "final_draw_status": "ok",
                 "final_draw_bbox": {"min": [0, 0, 0], "max": [1, 1, 1]},
                 "visible": True,
@@ -663,9 +665,22 @@ def test_ur5_final_viewport_payload_requires_visible_links_table_and_camera():
             for link in required
         ]
         + [
+            {
+                "item_id": "generated_urdf::gripper_base_link",
+                "link": "gripper_base_link",
+                "source_layer": "locked_generated_urdf_visual",
+                "has_mesh_metadata": True,
+                "mesh_source": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+                "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+                "final_draw_status": "ok",
+                "final_draw_bbox": {"min": [1, 0, 0], "max": [2, 1, 1]},
+                "visible": True,
+                "rendered": True,
+            },
             {"id": "layout_table", "display_name": "table", "visible": True, "rendered": True, "geometry_type": "box"},
             {"id": "camera_sensor", "display_name": "camera", "visible": True, "rendered": True, "geometry_type": "box"},
         ],
+        "camera_fit_target": "product_physical_initial_fit_ur5_included",
     }
 
     smoke._apply_ur5_final_viewport_payload_contract(payload)
@@ -675,6 +690,10 @@ def test_ur5_final_viewport_payload_requires_visible_links_table_and_camera():
     assert payload["missing_required_visible_ur5_links"] == []
     assert payload["table_visible_in_final_viewport"] is True
     assert payload["camera_visible_in_final_viewport"] is True
+    assert payload["rviz_parity_robot_layer"] is True
+    assert payload["ur5_mesh_renderables_count"] >= 7
+    assert payload["robotiq_mesh_renderables_count"] >= 1
+    assert payload["camera_fit_includes_robot"] is True
     assert "ur5_final_viewport_links_missing" not in payload.get("blockers", [])
     assert "stale_retained_visual_rows_missing_warning" not in payload.get("blockers", [])
 
@@ -737,13 +756,29 @@ def test_ur5_final_viewport_payload_fails_stale_retained_rows_warning_when_links
         "status": "PASS",
         "warnings": ["Preview warning: ur5_2f_test retained visual rows missing after loader filtering"],
         "final_draw_visual_items": [
-            {"link": link, "final_draw_status": "ok", "final_draw_bbox": {"min": [0, 0, 0], "max": [1, 1, 1]}}
+            {
+                "link": link,
+                "source_layer": "locked_generated_urdf_visual",
+                "has_mesh_metadata": True,
+                "mesh_source": f"package://ur_description/meshes/ur5/visual/{link}.dae",
+                "final_draw_status": "ok",
+                "final_draw_bbox": {"min": [0, 0, 0], "max": [1, 1, 1]},
+            }
             for link in required
         ]
         + [
+            {
+                "link": "gripper_base_link",
+                "source_layer": "locked_generated_urdf_visual",
+                "has_mesh_metadata": True,
+                "mesh_source": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+                "final_draw_status": "ok",
+                "final_draw_bbox": {"min": [1, 0, 0], "max": [2, 1, 1]},
+            },
             {"id": "table", "display_name": "table", "geometry_type": "box"},
             {"id": "camera", "display_name": "camera", "geometry_type": "box"},
         ],
+        "camera_fit_target": "product_physical_initial_fit_ur5_included",
     }
 
     smoke._apply_ur5_final_viewport_payload_contract(payload)

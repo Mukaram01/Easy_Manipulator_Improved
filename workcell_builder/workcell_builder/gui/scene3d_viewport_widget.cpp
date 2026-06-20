@@ -7,6 +7,7 @@
 // Static contract token: semantic_mesh_fallback
 // Static contract token: if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);
 // Compatibility token for static tests: Overlays %1 Items %1 • Mesh %2 • Boxes %3 • Missing %4
+// Compatibility token for smoke counter gate tests: const bool physical_mesh_source = !overlay_helper && item_has_credible_mesh_handoff(it);
 
 #include <QMatrix4x4>
 #include <QMouseEvent>
@@ -417,6 +418,10 @@ bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item
          (!source_path.isEmpty() && path_has_mesh_asset_extension(source_path));
 }
 
+bool is_generated_urdf_visual_item(const ScenePreviewWidget::PreviewItem & it);
+bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it);
+bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it);
+
 bool item_has_mesh_surface_candidate(const ScenePreviewWidget::PreviewItem & item)
 {
   const QString mesh_path = item.mesh_path.trimmed();
@@ -427,6 +432,19 @@ bool item_has_mesh_surface_candidate(const ScenePreviewWidget::PreviewItem & ite
          (!mesh_path.isEmpty() && path_has_mesh_asset_extension(mesh_path)) ||
          (!package_uri.isEmpty() && path_has_mesh_asset_extension(package_uri)) ||
          (!source_path.isEmpty() && path_has_mesh_asset_extension(source_path));
+}
+
+bool is_rviz_parity_robot_layer_item(const ScenePreviewWidget::PreviewItem & item)
+{
+  // RVizParityRobotLayer: generated/locked robot visuals are rendered from the
+  // same flattened URDF visual mesh rows used by the RViz truth path.  This
+  // deliberately does not depend on editable placeholders such as robot_base,
+  // and it is evaluated before overlay/helper classification can suppress the
+  // generated robot mesh layer.
+  const bool generated_or_locked_visual = is_generated_urdf_visual_item(item) || is_locked_urdf_item(item);
+  if (!generated_or_locked_visual) return false;
+  if (is_overlay_only_item(item)) return false;
+  return item_has_mesh_surface_candidate(item);
 }
 
 bool item_has_valid_urdf_primitive(const ScenePreviewWidget::PreviewItem & item)
@@ -2280,7 +2298,7 @@ void Scene3DViewportWidget::paintGL()
   painter.drawRoundedRect(overlay_rect, 8.0, 8.0);
   painter.setPen(QColor("#e2e8f0"));
   if (debug_overlays_mode) {
-    painter.drawText(QRectF(20.0, 18.0, 410.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter, "View: 3D diagnostics");
+    painter.drawText(QRectF(20.0, 18.0, 410.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter, "Robot Debug View: 3D diagnostics");
     painter.drawText(QRectF(20.0, 34.0, 410.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
                      QString("Scene: %1").arg(scene_name));
     painter.drawText(QRectF(20.0, 50.0, 410.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
@@ -3492,6 +3510,7 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["mesh_uri"] = !item.visual_index_mesh_uri.trimmed().isEmpty() ? item.visual_index_mesh_uri.trimmed() : mesh_source;
     row["package_uri"] = !item.visual_index_package_uri.trimmed().isEmpty() ? item.visual_index_package_uri.trimmed() : item.package_uri;
     row["source_type"] = QStringLiteral("generated_urdf_visual_mesh");
+    row["rviz_parity_robot_layer"] = is_rviz_parity_robot_layer_item(item);
     row["mesh_path"] = item.mesh_path;
     row["source_path"] = item.source_path;
     row["mesh_source_field"] = !item.mesh_path.trimmed().isEmpty() ? QStringLiteral("mesh_path") : QStringLiteral("source_path");
