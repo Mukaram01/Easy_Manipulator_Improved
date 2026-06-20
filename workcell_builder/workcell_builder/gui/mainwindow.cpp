@@ -476,6 +476,7 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
   }
 
   const QSet<QString> required_visible_ur5_links = {
+    QStringLiteral("base_link"),
     QStringLiteral("base_link_inertia"),
     QStringLiteral("shoulder_link"),
     QStringLiteral("upper_arm_link"),
@@ -522,6 +523,41 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
 
   const auto final_draw_proves_visibility = [](const QJsonObject & record) {
     const QString status = canonical_scene3d_token(record.value(QStringLiteral("final_draw_status")).toString());
+    const auto field_text = [](const QJsonObject & item, const QString & key) {
+      const QJsonValue value = item.value(key);
+      if (value.isString()) return value.toString();
+      if (value.isDouble()) return QString::number(value.toInt());
+      return QString();
+    };
+    const QString link_token = canonical_scene3d_token(
+      !field_text(record, QStringLiteral("canonical_link_name")).trimmed().isEmpty() ? field_text(record, QStringLiteral("canonical_link_name")) :
+      (!field_text(record, QStringLiteral("link_name")).trimmed().isEmpty() ? field_text(record, QStringLiteral("link_name")) :
+       field_text(record, QStringLiteral("link"))));
+    const QHash<QString, QString> expected_ur5_visual_meshes{
+      {QStringLiteral("base_link"), QStringLiteral("base.dae")},
+      {QStringLiteral("base_link_inertia"), QStringLiteral("base.dae")},
+      {QStringLiteral("shoulder_link"), QStringLiteral("shoulder.dae")},
+      {QStringLiteral("upper_arm_link"), QStringLiteral("upperarm.dae")},
+      {QStringLiteral("forearm_link"), QStringLiteral("forearm.dae")},
+      {QStringLiteral("wrist_1_link"), QStringLiteral("wrist1.dae")},
+      {QStringLiteral("wrist_2_link"), QStringLiteral("wrist2.dae")},
+      {QStringLiteral("wrist_3_link"), QStringLiteral("wrist3.dae")}
+    };
+    const QString expected_mesh = expected_ur5_visual_meshes.value(link_token);
+    if (!expected_mesh.isEmpty()) {
+      const QString expected_uri = QStringLiteral("package://ur_description/meshes/ur5/visual/%1").arg(expected_mesh);
+      const QString mesh_source = field_text(record, QStringLiteral("mesh_source")).trimmed();
+      const QString mesh_uri = field_text(record, QStringLiteral("mesh_uri")).trimmed();
+      const QString canonical_source = field_text(record, QStringLiteral("canonical_mesh_source")).trimmed();
+      const bool uri_matches = mesh_source == expected_uri || mesh_uri == expected_uri;
+      const bool path_resolved = record.value(QStringLiteral("path_resolved")).toBool(false);
+      const bool canonical_matches_repo_asset =
+        canonical_source.endsWith(QStringLiteral("/assets/robots/universal_robot/ur_description/meshes/ur5/visual/%1").arg(expected_mesh)) ||
+        canonical_source.endsWith(QStringLiteral("/ur_description/meshes/ur5/visual/%1").arg(expected_mesh));
+      if (!uri_matches || !path_resolved || !canonical_matches_repo_asset) {
+        return false;
+      }
+    }
     if (status == QStringLiteral("ok")) return true;
 
     // Emergency fallback visibility is only accepted when the draw/export path explicitly
@@ -530,7 +566,8 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
     // proof that anything was submitted to OpenGL.
     return status == QStringLiteral("ur5_emergency_fallback") ||
            status == QStringLiteral("ur5_emergency_fallback_ok") ||
-           status == QStringLiteral("ur5_emergency_fallback_drawn");
+           status == QStringLiteral("ur5_emergency_fallback_drawn") ||
+           status == QStringLiteral("ur5_emergency_visible_fallback");
   };
 
   const auto field_text = [](const QJsonObject & record, const QString & key) {
@@ -604,6 +641,12 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
 
   QStringList missing;
   for (const QString & required_link : required_visible_ur5_links) {
+    if ((required_link == QStringLiteral("base_link") &&
+         visible_ur5_link_tokens.contains(QStringLiteral("base_link_inertia"))) ||
+        (required_link == QStringLiteral("base_link_inertia") &&
+         visible_ur5_link_tokens.contains(QStringLiteral("base_link")))) {
+      continue;
+    }
     if (!visible_ur5_link_tokens.contains(required_link)) {
       missing << required_link;
     }

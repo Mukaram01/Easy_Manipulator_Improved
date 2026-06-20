@@ -27,6 +27,7 @@
 #include <QMimeData>
 #include <QJsonDocument>
 #include <QJsonArray>
+#include <QHash>
 #include <QXmlStreamReader>
 #include <QImage>
 #include <QRegularExpression>
@@ -3595,6 +3596,39 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["canonical_mesh_source"] = canonical_mesh_source;
     row["path_resolved"] = path_resolved;
     row["resolve_failure_reason"] = resolve_failure_reason;
+    if (is_required_ur5_viewport_link(item)) {
+      const QString required_link = scene3d_canonical_link_name_for_item(item);
+      const QHash<QString, QString> expected_ur5_visual_meshes{
+        {QStringLiteral("base_link"), QStringLiteral("base.dae")},
+        {QStringLiteral("base_link_inertia"), QStringLiteral("base.dae")},
+        {QStringLiteral("shoulder_link"), QStringLiteral("shoulder.dae")},
+        {QStringLiteral("upper_arm_link"), QStringLiteral("upperarm.dae")},
+        {QStringLiteral("forearm_link"), QStringLiteral("forearm.dae")},
+        {QStringLiteral("wrist_1_link"), QStringLiteral("wrist1.dae")},
+        {QStringLiteral("wrist_2_link"), QStringLiteral("wrist2.dae")},
+        {QStringLiteral("wrist_3_link"), QStringLiteral("wrist3.dae")}
+      };
+      const QString expected_mesh = expected_ur5_visual_meshes.value(required_link);
+      const QString expected_uri = expected_mesh.trimmed().isEmpty()
+        ? QString()
+        : QStringLiteral("package://ur_description/meshes/ur5/visual/%1").arg(expected_mesh);
+      const QString exported_mesh_uri = row.value(QStringLiteral("mesh_uri")).toString().trimmed();
+      const QString exported_mesh_source = row.value(QStringLiteral("mesh_source")).toString().trimmed();
+      const bool expected_uri_matches = !expected_uri.isEmpty() &&
+        (exported_mesh_uri == expected_uri || exported_mesh_source == expected_uri);
+      const bool canonical_matches_expected_asset = !expected_mesh.isEmpty() &&
+        (canonical_mesh_source.endsWith(QStringLiteral("/assets/robots/universal_robot/ur_description/meshes/ur5/visual/%1").arg(expected_mesh)) ||
+         canonical_mesh_source.endsWith(QStringLiteral("/ur_description/meshes/ur5/visual/%1").arg(expected_mesh)));
+      row["expected_ur5_mesh_uri"] = expected_uri;
+      row["ur5_final_viewport_uri_matches_expected"] = expected_uri_matches;
+      row["ur5_final_viewport_canonical_asset_matches_expected"] = canonical_matches_expected_asset;
+      row["ur5_final_viewport_path_resolution_required"] = true;
+      row["ur5_final_viewport_contract_ok"] =
+        expected_uri_matches && path_resolved && canonical_matches_expected_asset;
+      if (!expected_uri_matches || !path_resolved || !canonical_matches_expected_asset) {
+        row["ur5_final_viewport_blocker"] = QStringLiteral("ur5_final_viewport_links_missing");
+      }
+    }
     row["has_mesh_metadata"] = item.has_mesh_metadata;
     row["has_baked_world_visual_transform"] = item.has_baked_world_visual_transform;
     row["has_baked_world_visual_matrix"] = item.has_baked_world_visual_matrix;
