@@ -13,10 +13,29 @@ class Item:
     status: str = ""
     warnings: list[str] = field(default_factory=list)
     mesh_load_warning: str = ""
+    locked: bool = False
+    lock_reason: str = ""
 
 
 def _tok(s: str) -> str:
-    return s.strip().lower()
+    return s.strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def is_generated_robot_visual(item: Item) -> bool:
+    source_layer = _tok(item.source_layer)
+    visual_source = _tok(item.active_visual_source)
+    combined = "|".join([_tok(item.role), _tok(item.category), _tok(item.id), _tok(item.lock_reason)])
+    if source_layer in {"locked_generated_urdf_visual", "generated_urdf_visual"}:
+        return True
+    if visual_source in {
+        "locked_generated_urdf_visual",
+        "generated_urdf_visual",
+        "generated_urdf_visual_fallback",
+    }:
+        return True
+    if _tok(item.id).startswith("generated_urdf_fallback::"):
+        return True
+    return item.locked and any(token in combined for token in ("urdf", "generated", "robot_link", "robot_model"))
 
 
 def include_item(item: Item, enabled_layers: set[str]) -> bool:
@@ -26,10 +45,10 @@ def include_item(item: Item, enabled_layers: set[str]) -> bool:
     is_warning_or_missing = "warning" in combined or "missing" in combined or item.mesh_load_warning.strip() != ""
     is_overlay_or_helper = "overlay" in combined or "helper" in combined or "safety zone" in combined
 
+    if is_generated_robot_visual(item):
+        return "locked_generated_urdf_visual" in enabled_layers
     if source_layer == "editable_layout":
         return "editable_layout" in enabled_layers
-    if source_layer in {"locked_generated_urdf_visual", "generated_urdf_visual"}:
-        return "locked_generated_urdf_visual" in enabled_layers
     if source_layer == "primitive_fallback":
         return "primitive_fallback" in enabled_layers
     if visual_source == "mesh_preview":
@@ -122,3 +141,31 @@ def test_fixture_approx_failing_scene_does_not_end_at_zero_visible_items() -> No
     assert "robot" in ids
     assert ids
     assert "blocker" not in logs
+
+
+def test_generated_robot_layer_overrides_mesh_and_label_style_filters() -> None:
+    ids, _ = apply_filter(
+        [
+            Item(
+                "ur5_link_mesh",
+                source_layer="locked_generated_urdf_visual",
+                active_visual_source="mesh_preview",
+                role="robot link",
+                category="URDF Visual",
+                locked=True,
+            ),
+            Item(
+                "generated_urdf_fallback::forearm_link",
+                source_layer="locked_generated_urdf_visual",
+                active_visual_source="generated_urdf_visual_fallback",
+                role="robot link",
+                category="URDF Visual Fallback",
+                locked=True,
+            ),
+            Item("loose_mesh_preview", active_visual_source="mesh_preview"),
+        ],
+        {"locked_generated_urdf_visual"},
+    )
+    assert "ur5_link_mesh" in ids
+    assert "generated_urdf_fallback::forearm_link" in ids
+    assert "loose_mesh_preview" not in ids

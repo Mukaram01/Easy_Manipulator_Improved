@@ -1,7 +1,30 @@
 #include "scene3d_candidate_assembly.h"
 
 namespace {
-QString token(QString s) { return s.trimmed().toLower(); }
+QString token(QString s) { return s.trimmed().toLower().replace('-', '_').replace(' ', '_'); }
+
+bool is_generated_robot_visual(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QString source_layer = token(item.source_layer);
+  const QString visual_source = token(item.active_visual_source);
+  const QString role = token(item.role);
+  const QString category = token(item.category);
+  const QString id = token(item.id);
+  const QString lock_reason = token(item.lock_reason);
+  const QString combined = role + "|" + category + "|" + id + "|" + lock_reason;
+
+  if (source_layer == "locked_generated_urdf_visual" || source_layer == "generated_urdf_visual") return true;
+  if (visual_source == "locked_generated_urdf_visual" || visual_source == "generated_urdf_visual" ||
+      visual_source == "generated_urdf_visual_fallback")
+  {
+    return true;
+  }
+  if (id.startsWith(QStringLiteral("generated_urdf_fallback::"))) return true;
+  return item.locked && (combined.contains(QStringLiteral("urdf")) ||
+                         combined.contains(QStringLiteral("generated")) ||
+                         combined.contains(QStringLiteral("robot_link")) ||
+                         combined.contains(QStringLiteral("robot_model")));
+}
 }
 
 namespace workcell_builder {
@@ -18,11 +41,13 @@ bool include_preview_item_for_scene3d(
   const bool is_warning_or_missing = combined.contains("warning") || combined.contains("missing") || !item.mesh_load_warning.trimmed().isEmpty();
   const bool is_overlay_or_helper = combined.contains("overlay") || combined.contains("helper") || combined.contains("safety zone");
 
+  // Treat generated robot visuals as a first-class layer, equivalent to the
+  // legacy "Show Robot Links" control.  This check intentionally precedes
+  // mesh-preview, label/selection, warning, and primitive-fallback decisions:
+  // generated robot meshes and locked generated fallback link visuals must
+  // stay visible whenever the generated robot layer is enabled.
+  if (is_generated_robot_visual(item)) return enabled_layers.contains("locked_generated_urdf_visual");
   if (source_layer == "editable_layout") return enabled_layers.contains("editable_layout");
-  // Generated URDF robot fallbacks are locked generated visuals, not generic
-  // primitive-fallback diagnostics. Keep them controlled by the generated URDF
-  // layer so they remain visible when diagnostic primitive fallbacks are hidden.
-  if (source_layer == "locked_generated_urdf_visual" || source_layer == "generated_urdf_visual") return enabled_layers.contains("locked_generated_urdf_visual");
   if (source_layer == "primitive_fallback") return enabled_layers.contains("primitive_fallback");
   if (visual_source == "mesh_preview") return enabled_layers.contains("mesh_preview");
   if (is_overlay_or_helper) return enabled_layers.contains("overlay");
