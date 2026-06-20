@@ -784,18 +784,17 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
     if not isinstance(final_draw_items, list) or not final_draw_items:
         index_items = index_data.get("visual_items") or index_data.get("items") or []
         if isinstance(index_items, list):
-            source = "visual_index_fallback"
-            _record_rendered_mesh_adjacency_fallback_warning(payload)
-        if isinstance(index_items, list) and index_items:
-            final_draw_items = index_items
-        else:
-            errors.append("Final draw diagnostics and scene_visual_mesh_index fallback records are missing for ur5_2f_test")
-            payload["rendered_mesh_adjacency_source"] = source if source == "visual_index_fallback" else "missing_final_draw_diagnostics"
-            payload["rendered_mesh_adjacency_status"] = "FAIL"
-            payload["rendered_mesh_adjacency_errors"] = errors
-            payload["rendered_mesh_adjacency_checked_pairs"] = []
-            _record_rendered_mesh_adjacency_failure(payload, errors)
-            return
+            payload["rendered_mesh_adjacency_visual_index_supplemental_count"] = len(index_items)
+        errors.append(
+            "Final Scene3D viewport/renderable diagnostics are missing; "
+            "visual-index metadata cannot prove UR5 arm visibility"
+        )
+        payload["rendered_mesh_adjacency_source"] = "missing_final_draw_diagnostics"
+        payload["rendered_mesh_adjacency_status"] = "FAIL"
+        payload["rendered_mesh_adjacency_errors"] = errors
+        payload["rendered_mesh_adjacency_checked_pairs"] = []
+        _record_rendered_mesh_adjacency_failure(payload, errors)
+        return
 
     payload["rendered_mesh_adjacency_source"] = source
     alias_to_canonical: dict[str, str] = {}
@@ -812,24 +811,34 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
             6: "wrist_3_link",
         }
         final_links = {str(row.get("link") or row.get("link_name") or "").strip() for row in final_rows}
-        missing_ur5 = [link for link in expected_source_rows.values() if link not in final_links]
+        final_canonical_links = {
+            canonical
+            for row in final_rows
+            for canonical in _stable_metadata_candidates(row)
+        }
+        missing_ur5 = [
+            link
+            for link in expected_source_rows.values()
+            if link not in final_links and _canonical_ur5_rendered_mesh_link_name(link) not in final_canonical_links
+        ]
         if missing_ur5:
             errors.append("Final Scene3D payload is missing visible/rendered UR5 arm links: " + ",".join(missing_ur5))
-        for row_index, expected_link in expected_source_rows.items():
-            row = by_source_row.get(row_index)
-            actual_link = str((row or {}).get("link") or (row or {}).get("link_name") or "").strip()
-            if actual_link != expected_link:
-                errors.append(
-                    f"Final Scene3D payload source_row_index={row_index} expected {expected_link} but got {actual_link or '<missing>'}"
-                )
-        replacement_links = {"gripper_base_link", "table", "camera", "camera_link"}
-        for row_index in expected_source_rows:
-            row = by_source_row.get(row_index)
-            actual_link = str((row or {}).get("link") or (row or {}).get("link_name") or "").strip()
-            if actual_link in replacement_links:
-                errors.append(
-                    f"Final Scene3D payload source_row_index={row_index} was replaced by non-UR5 logical row {actual_link}"
-                )
+        if by_source_row:
+            for row_index, expected_link in expected_source_rows.items():
+                row = by_source_row.get(row_index)
+                actual_link = str((row or {}).get("link") or (row or {}).get("link_name") or "").strip()
+                if actual_link != expected_link:
+                    errors.append(
+                        f"Final Scene3D payload source_row_index={row_index} expected {expected_link} but got {actual_link or '<missing>'}"
+                    )
+            replacement_links = {"gripper_base_link", "table", "camera", "camera_link"}
+            for row_index in expected_source_rows:
+                row = by_source_row.get(row_index)
+                actual_link = str((row or {}).get("link") or (row or {}).get("link_name") or "").strip()
+                if actual_link in replacement_links:
+                    errors.append(
+                        f"Final Scene3D payload source_row_index={row_index} was replaced by non-UR5 logical row {actual_link}"
+                    )
 
     for canonical, aliases in UR5_RENDERED_MESH_LINK_ALIASES.items():
         for alias in aliases:
