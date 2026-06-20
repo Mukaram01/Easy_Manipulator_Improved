@@ -606,11 +606,28 @@ def test_ur5_rendered_mesh_adjacency_final_draw_nonfinite_fails_without_index_fa
     assert any(pair["parent"] == "base_link" and pair["child"] == "shoulder_link" and pair["ok"] is False for pair in payload["rendered_mesh_adjacency_checked_pairs"])
 
 
-def test_ur5_rendered_mesh_adjacency_marks_index_fallback_warning_when_final_draw_missing():
+def test_ur5_rendered_mesh_adjacency_rejects_index_fallback_when_final_draw_missing():
     import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
 
     payload = {"status": "PASS"}
-    smoke._apply_ur5_rendered_mesh_adjacency(payload, repo_root=Path(__file__).resolve().parents[1], scene_name="ur5_2f_test", index_data={"items": []})
+    index_items = [
+        {"link": "base_link"},
+        {"link": "shoulder_link"},
+        {"link": "upper_arm_link"},
+    ]
+    smoke._apply_ur5_rendered_mesh_adjacency(
+        payload,
+        repo_root=Path(__file__).resolve().parents[1],
+        scene_name="ur5_2f_test",
+        index_data={"items": index_items},
+    )
 
-    assert payload["rendered_mesh_adjacency_source"] == "visual_index_fallback"
-    assert "rendered_mesh_adjacency_used_index_fallback" in payload["warnings"]
+    assert payload["rendered_mesh_adjacency_source"] == "missing_final_draw_diagnostics"
+    assert payload["rendered_mesh_adjacency_status"] == "FAIL"
+    assert payload["rendered_mesh_adjacency_checked_pairs"] == []
+    assert payload["rendered_mesh_adjacency_visual_index_supplemental_count"] == len(index_items)
+    assert "rendered_mesh_adjacency_used_index_fallback" not in payload.get("warnings", [])
+    assert "scene3d_rendered_mesh_adjacency_failed" in payload["warnings"]
+    assert payload["rendered_mesh_adjacency_errors"] == [
+        "Final Scene3D viewport/renderable diagnostics are missing; visual-index metadata cannot prove UR5 arm visibility"
+    ]
