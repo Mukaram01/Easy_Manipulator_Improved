@@ -576,6 +576,7 @@ private:
   QCheckBox * preview_layer_warnings_missing_assets_box_{ nullptr };
   QVector<ScenePreviewWidget::PreviewItem> all_scene_preview_items_;
   QJsonObject scene3d_filter_diagnostics_;
+  QJsonObject scene3d_visual_ingestion_diagnostics_;
   QLabel * layout_state_label_{ nullptr };
   QPushButton * undo_layout_button_{ nullptr };
   QPushButton * redo_layout_button_{ nullptr };

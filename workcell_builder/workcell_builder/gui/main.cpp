@@ -639,6 +639,13 @@ private:
     counters["runtime_scene3d_diagnostics_total"] = parsed_runtime_diagnostics_total;
     counters["runtime_scene3d_diagnostics_counts"] = parsed_runtime_diagnostics_counts;
     counters["runtime_scene3d_skip_reason_counts"] = parsed_runtime_diagnostics.value("skip_reason_counts").toObject();
+    copy_filter_counter("total_visual_index_rows");
+    copy_filter_counter("total_added_visual_rows");
+    copy_filter_counter("total_skipped_visual_rows");
+    copy_filter_counter("skipped_count_by_reason");
+    copy_filter_counter("duplicate_id_count");
+    copy_filter_counter("first_20_visual_items");
+    copy_filter_counter("visual_ingestion_diagnostics");
     copy_filter_counter("robot_visual_count");
     copy_filter_counter("robot_mesh_loaded_count");
     copy_filter_counter("robot_mesh_missing_count");
