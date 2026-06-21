@@ -8937,6 +8937,16 @@ void MainWindow::populate_scene_hierarchy()
       if (stale_or_absolute_only_mesh_index_count == 0 && workcell_builder::yaml_map_key(urdf_index, "stale_index").as<bool>(false)) {
         stale_or_absolute_only_mesh_index_count = 1;
       }
+      const QSet<QString> required_ur5_visual_links = {
+        QStringLiteral("base_link_inertia"),
+        QStringLiteral("shoulder_link"),
+        QStringLiteral("upper_arm_link"),
+        QStringLiteral("forearm_link"),
+        QStringLiteral("wrist_1_link"),
+        QStringLiteral("wrist_2_link"),
+        QStringLiteral("wrist_3_link")
+      };
+      QMap<QString, ScenePreviewWidget::PreviewItem> required_ur5_preview_items_by_link;
       const YAML::Node visual_items = workcell_builder::yaml_map_key(urdf_index, "visual_items");
       if (visual_items && visual_items.IsSequence()) {
         std::vector<YAML::Node> ordered_visual_items;
@@ -9045,17 +9055,7 @@ void MainWindow::populate_scene_hierarchy()
           }
         }
         int ordered_visual_source_row_index = 0;
-        const QSet<QString> required_ur5_visual_links = {
-          QStringLiteral("base_link_inertia"),
-          QStringLiteral("shoulder_link"),
-          QStringLiteral("upper_arm_link"),
-          QStringLiteral("forearm_link"),
-          QStringLiteral("wrist_1_link"),
-          QStringLiteral("wrist_2_link"),
-          QStringLiteral("wrist_3_link")
-        };
         QSet<QString> logged_required_ur5_ingestion_links;
-        QMap<QString, ScenePreviewWidget::PreviewItem> required_ur5_preview_items_by_link;
         for (const auto &v : ordered_visual_items) {
           const int ordered_source_row_index = ordered_visual_source_row_index++;
           const int source_row_index = workcell_builder::yaml_map_key(v, "source_row_index").as<int>(ordered_source_row_index);
