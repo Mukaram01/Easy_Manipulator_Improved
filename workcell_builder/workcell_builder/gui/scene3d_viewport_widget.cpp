@@ -423,6 +423,7 @@ bool is_generated_urdf_visual_item(const ScenePreviewWidget::PreviewItem & it);
 bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it);
 bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it);
 bool is_required_ur5_viewport_link(const ScenePreviewWidget::PreviewItem & item);
+QString scene3d_link_name_for_item(const ScenePreviewWidget::PreviewItem & item);
 
 bool item_has_mesh_surface_candidate(const ScenePreviewWidget::PreviewItem & item)
 {
