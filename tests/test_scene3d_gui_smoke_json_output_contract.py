@@ -1038,3 +1038,98 @@ def test_generated_urdf_visual_first_drop_smoke_stage_marks_final_draw_audit_onl
     rows = payload["visual_ingestion_diagnostics"]["generated_urdf_visual_row_diagnostics"]
     assert rows[0]["first_drop_stage"] == "smoke_output_or_audit_only"
     assert rows[1]["first_drop_stage"] == "visual_index_loop_skip"
+
+
+def test_ur5_2f_real_visual_mesh_index_preserves_visual_number_stages_and_final_ur5_identity():
+    import re
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    repo = Path(__file__).resolve().parents[1]
+    fixture_path = repo / "scenes/ur5_2f_test/generated/scene_visual_mesh_index.json"
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    source_rows = fixture["visual_items"]
+    expected_visual_numbers = list(range(18))
+    source_visual_numbers = sorted(
+        int(match.group(1))
+        for row in source_rows
+        for match in [re.search(r"urdf_visual_(\d+)_", str(row.get("id") or ""))]
+        if match
+    )
+    assert source_visual_numbers == expected_visual_numbers
+
+    required_ur5_links = list(smoke.REQUIRED_UR5_FINAL_VIEWPORT_LINKS)
+
+    def final_row(source_row: dict, visual_number: int) -> dict:
+        link = source_row["link"]
+        row = {
+            "id": f"generated_urdf::{link}::visual_{visual_number}",
+            "item_id": f"generated_urdf::{link}::visual_{visual_number}",
+            "source_layer": "locked_generated_urdf_visual",
+            "has_mesh_metadata": True,
+            "mesh_source": source_row.get("package_uri") or source_row.get("mesh_uri") or f"package://fixture/{link}.dae",
+            "final_draw_status": "ok",
+            "final_draw_bbox": {"min": [float(visual_number), 0.0, 0.0], "max": [float(visual_number) + 0.1, 0.1, 0.1]},
+            "visible": True,
+            "rendered": True,
+        }
+        if link in required_ur5_links:
+            # Countable UR5 rows must be actual final draw identity rows.
+            row["canonical_link_name"] = link
+            row["link"] = link
+            row["link_name"] = link
+        else:
+            # Gripper/table/camera rows may carry UR5 chain metadata from the handoff,
+            # but must not count as rendered UR5 links unless a final draw identity
+            # field is itself a required UR5 link.
+            row["canonical_link_name"] = link
+            row["link"] = link
+            row["link_name"] = link
+            row["link_chain"] = required_ur5_links
+            row["metadata"] = {"link_chain": required_ur5_links, "canonical_link_name": required_ur5_links[0]}
+        return row
+
+    final_rows = [final_row(row, number) for number, row in zip(source_visual_numbers, source_rows)]
+    payload = {
+        "scene": "ur5_2f_test",
+        "status": "PASS",
+        "runtime_available": True,
+        "filter_diagnostics": {
+            "generated_urdf_visual_numbers_after_ingest": expected_visual_numbers,
+            "generated_urdf_visual_numbers_after_suppression": expected_visual_numbers,
+            "generated_urdf_visual_numbers_after_filter": expected_visual_numbers,
+        },
+        "final_draw_visual_items": final_rows,
+        "camera_fit_target": "product_physical_initial_fit_ur5_included",
+    }
+
+    smoke._add_smoke_report_supplemental_evidence(payload, screenshot_path=None, screenshot_available=False)
+    smoke._apply_ur5_final_viewport_payload_contract(payload)
+
+    assert payload["generated_urdf_visual_numbers_after_ingest"] == expected_visual_numbers
+    assert payload["generated_urdf_visual_numbers_after_suppression"] == expected_visual_numbers
+    assert payload["generated_urdf_visual_numbers_after_filter"] == expected_visual_numbers
+    assert payload["after_ingest"] == expected_visual_numbers
+    assert payload["after_suppression"] == expected_visual_numbers
+    assert payload["after_filter"] == expected_visual_numbers
+
+    final_ids = {str(row.get("id") or row.get("item_id") or "") for row in final_rows}
+    assert "generated_urdf::base_link_inertia::visual_0" in final_ids
+    for link in required_ur5_links[1:]:
+        assert any(
+            row.get("canonical_link_name") == link
+            and row.get("link") == link
+            and row.get("link_name") == link
+            and row.get("final_draw_status") == "ok"
+            for row in final_rows
+        ), f"missing canonical final draw row for {link}"
+
+    assert payload["rendered_ur5_link_count"] == len(required_ur5_links)
+    gripper_rows = [row for row in final_rows if str(row.get("link") or "").startswith("gripper_")]
+    assert gripper_rows
+    assert all(row.get("link_chain") == required_ur5_links for row in gripper_rows)
+    assert payload["rendered_ur5_link_count"] == len(required_ur5_links)
+    assert not any(
+        f"::visual_{visual_number}" in final_id and "::dedupe_1" in final_id
+        for visual_number in range(9, 18)
+        for final_id in final_ids
+    )
