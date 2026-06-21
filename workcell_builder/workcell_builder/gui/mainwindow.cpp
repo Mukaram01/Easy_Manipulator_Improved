@@ -7749,8 +7749,14 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     for (const QJsonValue & value : rows) {
       QJsonObject row = value.toObject();
       const QString id = row.value(QStringLiteral("id")).toString();
-      row[QStringLiteral("survived_filter")] =
+      const bool survived_filter =
         row.value(QStringLiteral("appended_to_preview_items")).toBool(false) && filtered_ids.contains(id);
+      row[QStringLiteral("survived_filter")] = survived_filter;
+      if (row.value(QStringLiteral("survived_suppression")).toBool(false) && !survived_filter) {
+        if (row.value(QStringLiteral("first_drop_stage")).toString().trimmed().isEmpty()) {
+          row[QStringLiteral("first_drop_stage")] = QStringLiteral("apply_scene3d_preview_layer_filters");
+        }
+      }
       filter_diagnostics.append(row);
     }
     scene3d_visual_ingestion_diagnostics_[QStringLiteral("generated_urdf_visual_row_diagnostics")] = filter_diagnostics;
@@ -8784,10 +8790,31 @@ void MainWindow::populate_scene_hierarchy()
     row[QStringLiteral("survived_filter")] = false;
     return row;
   };
+  auto set_generated_visual_first_drop_stage_once = [](QJsonObject & row, const QString & first_drop_stage) {
+    if (first_drop_stage.trimmed().isEmpty()) return;
+    if (!row.value(QStringLiteral("first_drop_stage")).toString().trimmed().isEmpty()) return;
+    row[QStringLiteral("first_drop_stage")] = first_drop_stage;
+  };
+  auto visual_index_loop_drop_stage_for_branch = [](const QString & skip_branch) {
+    if (skip_branch == QStringLiteral("duplicate_generated_visual_index_row")) {
+      return QStringLiteral("duplicate_generated_visual_index_row");
+    }
+    if (skip_branch == QStringLiteral("suppressed_by_urdf_flattened_visual_mesh")) {
+      return QStringLiteral("suppressed_by_urdf_flattened_visual_mesh");
+    }
+    if (skip_branch == QStringLiteral("duplicate_generated_urdf_fallback_link")) {
+      return QStringLiteral("mesh_resolution_or_fallback_branch");
+    }
+    if (skip_branch == QStringLiteral("appended_to_preview_items") || skip_branch.trimmed().isEmpty()) {
+      return QString();
+    }
+    return QStringLiteral("visual_index_loop_skip");
+  };
   auto append_generated_visual_row_diagnostic = [&](QJsonObject row, const QString & skip_branch, const QString & skip_reason = QString(), bool appended_to_preview_items = false, const QString & final_mesh_path = QString()) {
     row[QStringLiteral("appended_to_preview_items")] = appended_to_preview_items;
     row[QStringLiteral("skip_branch")] = skip_branch;
     row[QStringLiteral("skip_reason")] = skip_reason;
+    set_generated_visual_first_drop_stage_once(row, visual_index_loop_drop_stage_for_branch(skip_branch));
     if (!final_mesh_path.trimmed().isEmpty()) {
       row[QStringLiteral("mesh_path")] = final_mesh_path;
     }
@@ -9850,6 +9877,7 @@ void MainWindow::populate_scene_hierarchy()
             continue;
           }
           if (mesh_fallback) {
+            set_generated_visual_first_drop_stage_once(generated_row_diagnostic, QStringLiteral("mesh_resolution_or_fallback_branch"));
             const QString fallback_link = p.visual_index_link.trimmed().isEmpty() ? p.display_name.trimmed() : p.visual_index_link.trimmed();
             const QString robot_identity = canonical_scene3d_token(
               fallback_link + QStringLiteral(" ") + p.visual_index_parent_link + QStringLiteral(" ") +
@@ -10152,8 +10180,14 @@ void MainWindow::populate_scene_hierarchy()
     for (const QJsonValue & value : rows) {
       QJsonObject row = value.toObject();
       const QString id = row.value(QStringLiteral("id")).toString();
-      row[QStringLiteral("survived_suppression")] =
+      const bool survived_suppression =
         row.value(QStringLiteral("appended_to_preview_items")).toBool(false) && unsuppressed_ids.contains(id);
+      row[QStringLiteral("survived_suppression")] = survived_suppression;
+      if (row.value(QStringLiteral("appended_to_preview_items")).toBool(false) && !survived_suppression) {
+        if (row.value(QStringLiteral("first_drop_stage")).toString().trimmed().isEmpty()) {
+          row[QStringLiteral("first_drop_stage")] = QStringLiteral("suppression_helper");
+        }
+      }
       suppression_diagnostics.append(row);
     }
     scene3d_visual_ingestion_diagnostics_[QStringLiteral("generated_urdf_visual_row_diagnostics")] = suppression_diagnostics;
