@@ -15,6 +15,7 @@
 
 #include "gui/mainwindow.h"
 #include "gui/scene3d_viewport_widget.h"
+#include "gui/preview_item_suppression.h"
 #include "visual_mesh_source_resolver.hpp"
 #include <QFileDialog>
 #include <QAction>
@@ -10045,63 +10046,15 @@ void MainWindow::populate_scene_hierarchy()
     unresolved_package_uri_count == 0 &&
     unsupported_extension_count == 0;
 
-  QHash<QString, QStringList> authoritative_visual_equivalence_map;
-  for (const auto & item : preview_items) {
-    if (!is_authoritative_mesh_index_visual(item)) continue;
-    for (const QString & key : equivalence_keys_for_item(item)) {
-      authoritative_visual_equivalence_map[key].append(item.id);
-    }
-  }
-
-  auto suppression_reason_for_equivalence_key = [](const QString & key) {
-    if (key.startsWith(QStringLiteral("role_link:"))) return QStringLiteral("normalized_role_plus_link_or_display_name");
-    if (key.startsWith(QStringLiteral("role_source_basename:"))) return QStringLiteral("normalized_role_plus_source_basename");
-    if (key.startsWith(QStringLiteral("role_pose:"))) return QStringLiteral("normalized_role_plus_approximate_pose");
-    if (key.startsWith(QStringLiteral("source_pose:"))) return QStringLiteral("normalized_source_basename_plus_approximate_pose");
-    return QStringLiteral("equivalent_authoritative_mesh_index_visual");
-  };
-
-  QMap<QString, int> placeholder_suppression_reason_counts;
-  QStringList placeholder_suppression_diagnostics;
-  int suppressed_preview_placeholder_count = 0;
-  int preserved_editable_source_count = 0;
-  QVector<ScenePreviewWidget::PreviewItem> unsuppressed_preview_items;
-  unsuppressed_preview_items.reserve(preview_items.size());
-  for (const auto & item : preview_items) {
-    if (is_true_editable_source_of_truth(item)) {
-      ++preserved_editable_source_count;
-      unsuppressed_preview_items.push_back(item);
-      continue;
-    }
-    QString matched_equivalence_key;
-    const bool lower_fidelity_generated_placeholder = is_lower_fidelity_generated_placeholder(item);
-    if (lower_fidelity_generated_placeholder) {
-      for (const QString & key : equivalence_keys_for_item(item)) {
-        if (authoritative_visual_equivalence_map.contains(key)) {
-          matched_equivalence_key = key;
-          break;
-        }
-      }
-    }
-    const bool suppress_because_mesh_index_is_healthy =
-      authoritative_mesh_index_healthy && lower_fidelity_generated_placeholder && matched_equivalence_key.isEmpty();
-    if (!matched_equivalence_key.isEmpty() || suppress_because_mesh_index_is_healthy) {
-      ++suppressed_preview_placeholder_count;
-      const QString reason = suppress_because_mesh_index_is_healthy
-        ? QStringLiteral("healthy_xacro_mesh_index_omits_legacy_placeholder")
-        : suppression_reason_for_equivalence_key(matched_equivalence_key);
-      placeholder_suppression_reason_counts[reason] += 1;
-      if (placeholder_suppression_diagnostics.size() < 12) {
-        const QString matched_ids = suppress_because_mesh_index_is_healthy
-          ? QStringLiteral("authoritative_xacro_mesh_index")
-          : authoritative_visual_equivalence_map.value(matched_equivalence_key).join(QLatin1Char('|'));
-        placeholder_suppression_diagnostics << QStringLiteral("%1=>%2 via %3")
-          .arg(item.id, matched_ids, reason);
-      }
-      continue;
-    }
-    unsuppressed_preview_items.push_back(item);
-  }
+  const auto suppression_result = workcell_builder::suppress_lower_fidelity_preview_items(
+    preview_items,
+    authoritative_mesh_index_healthy);
+  const QMap<QString, int> placeholder_suppression_reason_counts = suppression_result.suppression_reason_counts;
+  const QStringList placeholder_suppression_diagnostics = suppression_result.suppression_diagnostics;
+  const int suppressed_preview_placeholder_count = suppression_result.suppressed_preview_placeholder_count;
+  const int preserved_editable_source_count = suppression_result.preserved_editable_source_count;
+  const int authoritative_visual_equivalence_key_count = suppression_result.authoritative_visual_equivalence_key_count;
+  const QVector<ScenePreviewWidget::PreviewItem> unsuppressed_preview_items = suppression_result.items;
   for (const auto & item : unsuppressed_preview_items) {
     if (scene3d_viewport_link_token(item) == QStringLiteral("base_link_inertia")) {
       append_studio_log(QStringLiteral("Scene3D base_link_inertia trace: stage=dedupe result=retained item_id=%1 source_layer=%2 active_visual_source=%3")
@@ -10119,16 +10072,16 @@ void MainWindow::populate_scene_hierarchy()
     append_studio_log(QString("Preview placeholder suppression diagnostics: %1 (examples=%2 authoritative_mesh_index_equivalence_keys=%3 preserved_editable_source_of_truth=%4; authoritative_mesh_index_healthy=%5; suppressed items are omitted without viewport warning placeholders)")
       .arg(suppression_tokens.join(' '))
       .arg(placeholder_suppression_diagnostics.join(QStringLiteral("; ")))
-      .arg(authoritative_visual_equivalence_map.size())
+      .arg(authoritative_visual_equivalence_key_count)
       .arg(preserved_editable_source_count)
       .arg(authoritative_mesh_index_healthy ? QStringLiteral("true") : QStringLiteral("false")));
     if (authoritative_mesh_index_healthy) {
       append_studio_log(QString("Preview placeholder suppression: omitted %1 legacy placeholders because authoritative xacro/xacro-lite mesh index is healthy")
         .arg(suppressed_preview_placeholder_count));
     }
-  } else if (!authoritative_visual_equivalence_map.isEmpty()) {
+  } else if (authoritative_visual_equivalence_key_count > 0) {
     append_studio_log(QString("Preview placeholder suppression: none (authoritative_mesh_index_equivalence_keys=%1 preserved_editable_source_of_truth=%2)")
-      .arg(authoritative_visual_equivalence_map.size())
+      .arg(authoritative_visual_equivalence_key_count)
       .arg(preserved_editable_source_count));
   }
 
