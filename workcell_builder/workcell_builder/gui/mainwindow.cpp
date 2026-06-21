@@ -9052,25 +9052,46 @@ void MainWindow::populate_scene_hierarchy()
           const QFileInfo info(resolved_mesh_path);
           return info.exists() && info.isFile();
         };
-        auto visual_item_final_identity_key = [](const YAML::Node & node, int source_row_index) {
-          auto value = [&](const char * key) {
-            const YAML::Node field = workcell_builder::yaml_map_key(node, key);
-            if (!field || !field.IsScalar()) return QString();
-            return QString::fromStdString(field.as<std::string>("")).trimmed();
-          };
-          QString link = value("link");
-          if (link.isEmpty()) link = value("link_name");
-          if (link.isEmpty()) link = value("object_id");
-          if (link.isEmpty()) link = value("object");
-          QString visual = value("visual");
-          if (visual.isEmpty()) visual = value("visual_name");
-          if (visual.isEmpty()) visual = value("id");
-          QString row_index = value("source_row_index");
+        auto visual_index_row_scalar_value = [](const YAML::Node & node, const char * key) {
+          const YAML::Node field = workcell_builder::yaml_map_key(node, key);
+          if (!field || !field.IsScalar()) return QString();
+          return QString::fromStdString(field.as<std::string>("")).trimmed();
+        };
+        auto visual_item_final_identity_key = [&](const YAML::Node & node, int source_row_index) {
+          QString link = visual_index_row_scalar_value(node, "link");
+          if (link.isEmpty()) link = visual_index_row_scalar_value(node, "link_name");
+          if (link.isEmpty()) link = visual_index_row_scalar_value(node, "object_id");
+          if (link.isEmpty()) link = visual_index_row_scalar_value(node, "object");
+          QString visual = visual_index_row_scalar_value(node, "visual");
+          if (visual.isEmpty()) visual = visual_index_row_scalar_value(node, "visual_name");
+          if (visual.isEmpty()) visual = visual_index_row_scalar_value(node, "id");
+          QString row_index = visual_index_row_scalar_value(node, "source_row_index");
           if (row_index.isEmpty()) row_index = QString::number(qMax(0, source_row_index));
           return QStringLiteral("generated_urdf::%1::%2::%3")
             .arg(link.isEmpty() ? QStringLiteral("link_missing") : canonical_scene3d_token(link),
                  visual.isEmpty() ? QStringLiteral("visual_missing") : canonical_scene3d_token(visual),
                  canonical_scene3d_token(row_index));
+        };
+        auto visual_item_generated_row_key = [&](const YAML::Node & node, int source_row_index) {
+          QString link = visual_index_row_scalar_value(node, "link_name");
+          if (link.isEmpty()) link = visual_index_row_scalar_value(node, "link");
+          if (link.isEmpty()) link = visual_index_row_scalar_value(node, "object_id");
+          if (link.isEmpty()) link = visual_index_row_scalar_value(node, "object");
+          QString visual = visual_index_row_scalar_value(node, "visual_name");
+          if (visual.isEmpty()) visual = visual_index_row_scalar_value(node, "visual");
+          if (visual.isEmpty()) visual = visual_index_row_scalar_value(node, "id");
+          QString row_index = visual_index_row_scalar_value(node, "source_row_index");
+          if (row_index.isEmpty()) row_index = QString::number(qMax(0, source_row_index));
+          QString mesh_identity = visual_index_row_scalar_value(node, "package_uri");
+          if (mesh_identity.isEmpty()) mesh_identity = visual_index_row_scalar_value(node, "mesh_uri");
+          if (mesh_identity.isEmpty()) mesh_identity = visual_index_row_scalar_value(node, "resolved_source_path");
+          if (mesh_identity.isEmpty()) mesh_identity = visual_index_row_scalar_value(node, "resolved_path");
+          if (mesh_identity.isEmpty()) mesh_identity = visual_index_row_scalar_value(node, "source_path");
+          return QStringLiteral("generated_urdf_row::%1::%2::%3::%4")
+            .arg(link.isEmpty() ? QStringLiteral("link_missing") : canonical_scene3d_token(link),
+                 visual.isEmpty() ? QStringLiteral("visual_missing") : canonical_scene3d_token(visual),
+                 canonical_scene3d_token(row_index),
+                 mesh_identity.isEmpty() ? QStringLiteral("mesh_missing") : canonical_scene3d_token(mesh_identity));
         };
         auto assert_scene3d_generated_urdf_identity_namespace_regression = [&]() {
           QSet<QString> regression_preview_ids;
@@ -9132,6 +9153,7 @@ void MainWindow::populate_scene_hierarchy()
           }
         }
         int ordered_visual_source_row_index = 0;
+        QSet<QString> generated_visual_row_keys;
         QSet<QString> logged_required_ur5_ingestion_links;
         for (const auto &v : ordered_visual_items) {
           const int ordered_source_row_index = ordered_visual_source_row_index++;
@@ -9149,13 +9171,20 @@ void MainWindow::populate_scene_hierarchy()
             append_visual_ingestion_diagnostic(v, raw_id, id, reason);
             continue;
           }
+          const QString generated_visual_row_key = visual_item_generated_row_key(v, source_row_index);
+          if (generated_visual_row_keys.contains(generated_visual_row_key)) {
+            const QString reason = add_skip_reason(QStringLiteral("duplicate_generated_visual_index_row"));
+            append_visual_ingestion_diagnostic(v, raw_id, id, reason);
+            continue;
+          }
+          generated_visual_row_keys.insert(generated_visual_row_key);
           if (preview_ids.contains(id)) {
             const QString original_collision_id = id;
             int repair_suffix = 1;
             do {
               id = QStringLiteral("%1::dedupe_%2").arg(original_collision_id).arg(repair_suffix++);
             } while (preview_ids.contains(id));
-            append_studio_log(QString("Scene3D generated URDF visual id collision repaired deterministically: %1 -> %2")
+            append_studio_log(QString("Scene3D generated URDF visual id collision repaired deterministically for distinct generated visual rows: %1 -> %2")
                                 .arg(original_collision_id, id));
           }
           const QString geometry_type = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "geometry_type"));
@@ -9769,8 +9798,8 @@ void MainWindow::populate_scene_hierarchy()
           if (unresolved_package_uri && !is_primitive) add_skip_reason(QStringLiteral("missing_source_path"));
           preview_items.push_back(p);
           ++visual_preview_added_count;
-          preview_ids.insert(id);
-          append_visual_ingestion_diagnostic(v, raw_id, id, QString(), p.source_layer);
+          preview_ids.insert(p.id);
+          append_visual_ingestion_diagnostic(v, raw_id, p.id, QString(), p.source_layer);
           if (include_preview_item_in_hierarchy(p)) add_tree_node(p);
         }
       }
