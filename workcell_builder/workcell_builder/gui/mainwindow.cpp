@@ -8597,16 +8597,22 @@ void MainWindow::populate_scene_hierarchy()
     row[QStringLiteral("raw_id")] = raw_id;
     row[QStringLiteral("final_unique_scene3d_key")] = final_id;
     row[QStringLiteral("final_unique_scene3d_id")] = final_id;
-    row[QStringLiteral("link")] = value("link");
-    row[QStringLiteral("link_name")] = value("link_name");
+    const QString raw_link = value("link");
+    const QString raw_link_name = value("link_name");
+    const QString canonical_link_name = raw_link_name.isEmpty() ? raw_link : raw_link_name;
+    row[QStringLiteral("link")] = raw_link;
+    row[QStringLiteral("link_name")] = raw_link_name;
+    row[QStringLiteral("canonical_link_name")] = canonical_link_name;
     row[QStringLiteral("visual")] = value("visual");
     row[QStringLiteral("visual_name")] = value("visual_name");
     row[QStringLiteral("package_uri")] = value("package_uri");
     row[QStringLiteral("mesh_uri")] = value("mesh_uri");
+    row[QStringLiteral("mesh_source")] = value("mesh_path").isEmpty() ? value("source_path") : value("mesh_path");
     QString source_path = value("source_path");
     if (source_path.isEmpty()) source_path = value("resolved_source_path");
     if (source_path.isEmpty()) source_path = value("resolved_path");
     row[QStringLiteral("source_path")] = source_path;
+    row[QStringLiteral("resolved_source_path")] = value("resolved_source_path");
     row[QStringLiteral("source_layer")] = source_layer.isEmpty() ? value("source_layer") : source_layer;
     if (!skip_reason.isEmpty()) row[QStringLiteral("skip_reason")] = skip_reason;
     visual_ingestion_item_diagnostics.append(row);
@@ -8652,8 +8658,11 @@ void MainWindow::populate_scene_hierarchy()
   auto physical_asset_role = [&](const ScenePreviewWidget::PreviewItem & item) {
     const QString role = normalized_item_role(item);
     return role == QStringLiteral("robot") ||
+           role == QStringLiteral("gripper") ||
            role == QStringLiteral("end_effector_tool") ||
            role == QStringLiteral("camera") ||
+           role == QStringLiteral("table") ||
+           role == QStringLiteral("workbench") ||
            role == QStringLiteral("support_surface_table") ||
            role == QStringLiteral("conveyor") ||
            role == QStringLiteral("object");
@@ -8687,7 +8696,6 @@ void MainWindow::populate_scene_hierarchy()
   auto is_authoritative_mesh_index_visual = [&](const ScenePreviewWidget::PreviewItem & item) {
     if (!physical_asset_role(item)) return false;
     if (!item.locked || item.linked_to_editable_layout_state || item.editable) return false;
-    if (item.category != QStringLiteral("URDF Visual")) return false;
     const QString visual_source = canonical_scene3d_token(item.active_visual_source);
     const QString source_layer = canonical_scene3d_token(item.source_layer);
     if (source_layer != QStringLiteral("locked_generated_urdf_visual") || visual_source != QStringLiteral("mesh_preview")) return false;
@@ -8697,6 +8705,62 @@ void MainWindow::populate_scene_hierarchy()
       path_has_mesh_asset_extension(item.package_uri) ||
       path_has_mesh_asset_extension(item.source_path);
     return item.mesh_available || item.has_mesh_metadata || has_valid_mesh_reference;
+  };
+  auto append_metadata_tag = [](QString & tags, const QString & tag) {
+    const QString normalized_tag = tag.trimmed();
+    if (normalized_tag.isEmpty()) return;
+    const QStringList existing = tags.split(QLatin1Char(';'), Qt::SkipEmptyParts);
+    for (const QString & value : existing) {
+      if (value.trimmed().compare(normalized_tag, Qt::CaseInsensitive) == 0) return;
+    }
+    tags = tags.trimmed().isEmpty() ? normalized_tag : tags + QStringLiteral(";") + normalized_tag;
+  };
+  auto classify_generated_urdf_visual = [&](ScenePreviewWidget::PreviewItem & item, const QString & resolved_source_path) {
+    const QStringList source_fields = {
+      item.package_uri,
+      item.visual_index_package_uri,
+      item.visual_index_mesh_uri,
+      item.mesh_path,
+      item.source_path,
+      resolved_source_path,
+      item.resolved_source_path_original
+    };
+    const QString source_mix = source_fields.join(QStringLiteral("|")).toLower();
+    if (source_mix.contains(QStringLiteral("package://ur_description/meshes/ur5/"))) {
+      item.category = QStringLiteral("robot");
+      item.role = QStringLiteral("robot");
+      append_metadata_tag(item.metadata_tags, QStringLiteral("robot_family=ur5"));
+      append_metadata_tag(item.metadata_tags, QStringLiteral("asset_category=robot"));
+    } else if (source_mix.contains(QStringLiteral("package://robotiq_85_description/"))) {
+      item.category = QStringLiteral("gripper");
+      item.role = QStringLiteral("gripper");
+      append_metadata_tag(item.metadata_tags, QStringLiteral("gripper_family=robotiq_85"));
+      append_metadata_tag(item.metadata_tags, QStringLiteral("asset_category=gripper"));
+    } else if (source_mix.contains(QStringLiteral("package://workbench_description/"))) {
+      item.category = QStringLiteral("table/workbench");
+      item.role = QStringLiteral("workbench");
+      append_metadata_tag(item.metadata_tags, QStringLiteral("asset_category=table/workbench"));
+    } else if (source_mix.contains(QStringLiteral("package://realsense2_description/"))) {
+      item.category = QStringLiteral("camera");
+      item.role = QStringLiteral("camera");
+      append_metadata_tag(item.metadata_tags, QStringLiteral("camera_family=realsense"));
+      append_metadata_tag(item.metadata_tags, QStringLiteral("asset_category=camera"));
+    }
+  };
+  auto normalize_generated_urdf_visual_identity = [&](ScenePreviewWidget::PreviewItem & item) {
+    const QString stable_link_identity = !item.visual_index_link_name.trimmed().isEmpty()
+      ? item.visual_index_link_name.trimmed()
+      : item.visual_index_link.trimmed();
+    if (!stable_link_identity.isEmpty()) {
+      item.visual_index_link = stable_link_identity;
+      item.visual_index_link_name = stable_link_identity;
+      if (item.display_name.trimmed().isEmpty() || item.display_name == item.id) item.display_name = stable_link_identity;
+      if (item.frame_id.trimmed().isEmpty() || item.frame_id == item.id) item.frame_id = stable_link_identity;
+    }
+    item.source_layer = QStringLiteral("locked_generated_urdf_visual");
+    item.locked = true;
+    item.editable = false;
+    item.selectable = true;
   };
   auto is_lower_fidelity_generated_placeholder = [&](const ScenePreviewWidget::PreviewItem & item) {
     if (is_true_editable_source_of_truth(item)) return false;
@@ -9020,7 +9084,9 @@ void MainWindow::populate_scene_hierarchy()
           const QString visual_item_source = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "source")).trimmed();
           const QString visual_item_source_token = canonical_scene3d_token(visual_item_source);
           const QString visual_item_key = visual_item_link_object_key(v);
-          const QString visual_link_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link")).trimmed();
+          const QString visual_link = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link")).trimmed();
+          const QString visual_link_name_field = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link_name")).trimmed();
+          const QString visual_link_name = visual_link_name_field.isEmpty() ? visual_link : visual_link_name_field;
           const QString canonical_visual_link_name = canonical_scene3d_token(visual_link_name);
           if (source_row_index >= 0 && source_row_index <= 6 &&
               required_ur5_visual_links.contains(canonical_visual_link_name) &&
@@ -9108,8 +9174,10 @@ void MainWindow::populate_scene_hierarchy()
           }
           ScenePreviewWidget::PreviewItem p;
           p.id = id;
-          p.display_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link"));
-          if (p.display_name.trimmed().isEmpty()) p.display_name = id;
+          const QString raw_visual_link = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link")).trimmed();
+          const QString raw_visual_link_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link_name")).trimmed();
+          const QString stable_visual_link_identity = raw_visual_link_name.isEmpty() ? raw_visual_link : raw_visual_link_name;
+          p.display_name = stable_visual_link_identity.isEmpty() ? id : stable_visual_link_identity;
           p.frame_id = p.display_name;
           p.category = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "category"));
           if (p.category.trimmed().isEmpty()) p.category = "URDF Visual";
@@ -9119,6 +9187,8 @@ void MainWindow::populate_scene_hierarchy()
           const QString resolved_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "resolved_path"));
           const QString resolved_source_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "resolved_source_path"));
           const QString package_uri = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "package_uri"));
+          p.visual_index_link = raw_visual_link;
+          p.visual_index_link_name = raw_visual_link_name;
           p.resolved_source_path_original = resolved_source_path;
           p.package_uri = package_uri;
           bool unresolved_package_uri = false;
@@ -9197,6 +9267,8 @@ void MainWindow::populate_scene_hierarchy()
           p.lock_reason = "generated URDF visual";
           p.robot_base_frame = parent_link.isEmpty() ? QStringLiteral("unknown") : parent_link;
           p.source_layer = QStringLiteral("locked_generated_urdf_visual");
+          normalize_generated_urdf_visual_identity(p);
+          classify_generated_urdf_visual(p, resolved_source_path);
           if (visual_item_source_token == QStringLiteral("urdf_flattened")) {
             p.metadata_tags = p.metadata_tags.trimmed().isEmpty()
               ? QStringLiteral("source=urdf_flattened;locked_generated_urdf_preview")
@@ -9303,8 +9375,10 @@ void MainWindow::populate_scene_hierarchy()
               .arg(p.base_pose_roll).arg(p.base_pose_pitch).arg(p.base_pose_yaw);
           }
           p.robot_world_pose = robot_world_pose;
-          p.visual_index_link = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link")).trimmed();
-          p.visual_index_link_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link_name")).trimmed();
+          p.visual_index_link = raw_visual_link;
+          p.visual_index_link_name = raw_visual_link_name;
+          normalize_generated_urdf_visual_identity(p);
+          classify_generated_urdf_visual(p, resolved_source_path);
           p.visual_index_object_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "object_name")).trimmed();
           p.visual_index_visual = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "visual")).trimmed();
           p.visual_index_visual_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "visual_name")).trimmed();
