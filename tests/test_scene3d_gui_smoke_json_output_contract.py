@@ -835,6 +835,85 @@ def test_ur5_final_viewport_payload_rejects_metadata_or_index_only_names():
     assert "rendered_ur5_link_count_below_7" in payload["blockers"]
 
 
+def test_ur5_final_viewport_payload_counts_only_final_render_identity_fields():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    required = [
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+    ]
+    payload = {
+        "scene": "ur5_2f_test",
+        "status": "PASS",
+        "rendered_ur5_link_count": 7,
+        "final_draw_visual_items": [
+            {
+                "item_id": f"generated_urdf::{link}",
+                "link_chain": [link],
+                "metadata": {"canonical_link_name": link},
+                "source_layer": "locked_generated_urdf_visual",
+                "has_mesh_metadata": True,
+                "mesh_source": f"package://ur_description/meshes/ur5/visual/{link}.dae",
+                "final_draw_status": "ok",
+                "final_draw_bbox": {"min": [0, 0, 0], "max": [1, 1, 1]},
+                "visible": True,
+                "rendered": True,
+            }
+            for link in required[:3]
+        ]
+        + [
+            {
+                "link": "forearm_link",
+                "source_layer": "layout_preview",
+                "has_mesh_metadata": True,
+                "final_draw_status": "ok",
+                "final_draw_bbox": {"min": [0, 0, 0], "max": [1, 1, 1]},
+                "visible": True,
+                "rendered": True,
+            },
+            {
+                "link": "wrist_1_link",
+                "source_layer": "locked_generated_urdf_visual",
+                "has_mesh_metadata": True,
+                "final_draw_status": "skipped",
+                "final_draw_bbox": {"min": [0, 0, 0], "max": [1, 1, 1]},
+                "visible": True,
+                "rendered": True,
+            },
+            {
+                "canonical_link_name": "wrist_2_link",
+                "source_layer": "generated_urdf_visual",
+                "has_mesh_metadata": True,
+                "final_draw_status": "ok",
+                "final_draw_bbox": {"min": [0, 0, 0], "max": [1, 1, 1]},
+                "visible": True,
+                "rendered": True,
+            },
+            {"link_name": "wrist_3_link", "source_layer": "locked_generated_urdf_visual", "final_draw_status": "ok", "visible": False, "rendered": True},
+            {"id": "layout_table", "display_name": "table", "visible": True, "rendered": True, "geometry_type": "box"},
+            {"id": "camera_sensor", "display_name": "camera", "visible": True, "rendered": True, "geometry_type": "box"},
+        ],
+    }
+
+    smoke._apply_ur5_final_viewport_payload_contract(payload)
+
+    assert payload["rendered_ur5_link_count"] == 1
+    assert payload["missing_required_visible_ur5_links"] == [
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_3_link",
+    ]
+    assert "ur5_final_viewport_links_missing" in payload["blockers"]
+
+
 def test_ur5_final_viewport_payload_fails_stale_retained_rows_warning_when_links_visible():
     import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
 

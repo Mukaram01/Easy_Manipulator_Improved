@@ -493,6 +493,18 @@ REQUIRED_UR5_FINAL_VIEWPORT_LINKS: tuple[str, ...] = (
     "wrist_3_link",
 )
 RETAINED_VISUAL_ROWS_MISSING_WARNING = "retained visual rows missing after loader filtering"
+UR5_ACCEPTED_FINAL_RENDER_STATUSES: frozenset[str] = frozenset(
+    {
+        "ok",
+        "ur5_emergency_visible_fallback",
+        "ur5_emergency_fallback",
+        "ur5_emergency_fallback_ok",
+        "ur5_emergency_fallback_drawn",
+    }
+)
+UR5_FINAL_RENDER_SOURCE_LAYERS: frozenset[str] = frozenset(
+    {"locked_generated_urdf_visual", "generated_urdf_visual"}
+)
 
 
 def _rendered_mesh_adjacency_limit(parent: str, child: str) -> float:
@@ -543,6 +555,30 @@ def _row_canonical_link_candidates(row: dict[str, Any]) -> set[str]:
     return candidates
 
 
+def _accepted_final_render_status(row: dict[str, Any]) -> bool:
+    return str(row.get("final_draw_status") or "").strip().lower() in UR5_ACCEPTED_FINAL_RENDER_STATUSES
+
+
+def _canonical_final_render_identity(value: Any) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    raw = value.strip().lower()
+    canonical = _canonical_ur5_rendered_mesh_link_name(value)
+    if canonical == "base_link" and raw == "base_link_inertia":
+        return "base_link_inertia"
+    return canonical or raw
+
+
+def _row_final_rendered_ur5_link_identities(row: dict[str, Any]) -> set[str]:
+    """Return only actual final draw identity fields, not chain/index metadata."""
+    links: set[str] = set()
+    for key in ("canonical_link_name", "link", "link_name"):
+        canonical = _canonical_final_render_identity(row.get(key))
+        if canonical:
+            links.add(canonical)
+    return links
+
+
 def _row_is_final_visible_renderable(row: dict[str, Any]) -> bool:
     if row.get("visible") is False or row.get("rendered") is False:
         return False
@@ -583,21 +619,19 @@ def _apply_ur5_final_viewport_payload_contract(payload: dict[str, Any]) -> None:
 
     rows = _final_visible_viewport_rows(payload)
     visible_rows = [row for row in rows if _row_is_final_visible_renderable(row)]
-    visible_links: set[str] = set()
-    for row in visible_rows:
-        visible_links.update(_row_canonical_link_candidates(row))
 
     visible_robot_render_rows = [
         row for row in visible_rows
-        if str(row.get("source_layer") or "").strip().lower() in {"locked_generated_urdf_visual", "generated_urdf_visual"}
-        and (
-            str(row.get("final_draw_status") or "").strip().lower() == "ok"
-            or str(row.get("final_draw_status") or "").strip().lower()
-            in {"ur5_emergency_visible_fallback", "ur5_emergency_fallback", "ur5_emergency_fallback_ok", "ur5_emergency_fallback_drawn"}
-        )
+        if str(row.get("source_layer") or "").strip().lower() in UR5_FINAL_RENDER_SOURCE_LAYERS
+        and _accepted_final_render_status(row)
     ]
+    required_ur5_links = set(REQUIRED_UR5_FINAL_VIEWPORT_LINKS)
+    visible_links: set[str] = set()
+    for row in visible_robot_render_rows:
+        visible_links.update(_row_final_rendered_ur5_link_identities(row) & required_ur5_links)
+
     robot_mesh_rows = [row for row in visible_robot_render_rows if _bbox_from_final_draw(row) is not None]
-    ur5_mesh_rows = [row for row in visible_robot_render_rows if _row_canonical_link_candidates(row) & set(REQUIRED_UR5_FINAL_VIEWPORT_LINKS)]
+    ur5_mesh_rows = [row for row in visible_robot_render_rows if _row_final_rendered_ur5_link_identities(row) & required_ur5_links]
     robotiq_mesh_rows = [row for row in visible_robot_render_rows if _is_robotiq_base_record(row) or "robotiq" in " ".join(
         str(row.get(key) or "")
         for key in ("canonical_link_name", "link", "link_name", "visual_name", "item_id", "id", "mesh_uri", "package_uri", "mesh_path")
@@ -624,7 +658,7 @@ def _apply_ur5_final_viewport_payload_contract(payload: dict[str, Any]) -> None:
 
     missing = [link for link in REQUIRED_UR5_FINAL_VIEWPORT_LINKS if link not in visible_links]
     rendered_ur5_link_count = len([link for link in REQUIRED_UR5_FINAL_VIEWPORT_LINKS if link in visible_links])
-    payload["rendered_ur5_link_count"] = max(_counter(payload, "rendered_ur5_link_count"), rendered_ur5_link_count)
+    payload["rendered_ur5_link_count"] = rendered_ur5_link_count
     payload["required_ur5_final_viewport_links"] = list(REQUIRED_UR5_FINAL_VIEWPORT_LINKS)
     payload["missing_required_visible_ur5_links"] = missing
 
