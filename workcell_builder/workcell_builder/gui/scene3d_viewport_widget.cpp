@@ -3414,6 +3414,8 @@ QJsonArray scene3d_pose_to_json(double x, double y, double z, double roll, doubl
 
 QString scene3d_link_name_for_item(const ScenePreviewWidget::PreviewItem & item)
 {
+  if (!item.visual_index_link_name.trimmed().isEmpty()) return item.visual_index_link_name.trimmed();
+  if (!item.visual_index_link.trimmed().isEmpty()) return item.visual_index_link.trimmed();
   if (!item.frame_id.trimmed().isEmpty()) return item.frame_id.trimmed();
   const QString display = item.display_name.trimmed();
   if (!display.isEmpty() && display != item.id.trimmed()) return display;
@@ -3441,7 +3443,13 @@ QString scene3d_canonical_link_name_for_item(const ScenePreviewWidget::PreviewIt
 {
   const QString direct = scene3d_link_name_for_item(item);
   QString canonical = scene3d_canonical_link_name(direct);
-  if (!canonical.isEmpty() && canonical != item.id.trimmed()) return canonical;
+  const QString id = item.id.trimmed();
+  const bool has_normalized_identity =
+    !item.visual_index_link_name.trimmed().isEmpty() ||
+    !item.visual_index_link.trimmed().isEmpty() ||
+    !item.frame_id.trimmed().isEmpty() ||
+    (!item.display_name.trimmed().isEmpty() && item.display_name.trimmed() != id);
+  if (!canonical.isEmpty() && (has_normalized_identity || canonical != id)) return canonical;
   const QString haystack = QStringList{item.id, item.display_name, item.frame_id, item.package_uri, item.mesh_path, item.source_path}.join(QStringLiteral(" ")).toLower();
   const QStringList ur5_links{
     QStringLiteral("base_link_inertia"), QStringLiteral("base_link"), QStringLiteral("shoulder_link"),
@@ -3603,12 +3611,11 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["item_id"] = item.id;
     row["id"] = item.id;
     row["display_name"] = item.display_name;
-    const QString link_name = !item.visual_index_link_name.trimmed().isEmpty() ? item.visual_index_link_name.trimmed() :
-      (!item.visual_index_link.trimmed().isEmpty() ? item.visual_index_link.trimmed() : scene3d_link_name_for_item(item));
+    const QString link_name = scene3d_link_name_for_item(item);
     const QString canonical_link_name = scene3d_canonical_link_name_for_item(item);
+    row["link"] = link_name;
     row["link_name"] = link_name;
     row["canonical_link_name"] = canonical_link_name;
-    row["link"] = !item.visual_index_link.trimmed().isEmpty() ? item.visual_index_link.trimmed() : link_name;
     if (!item.visual_index_object_name.trimmed().isEmpty()) row["object_name"] = item.visual_index_object_name.trimmed();
     const int visual_index = item.visual_index_value >= 0 ? item.visual_index_value : scene3d_visual_index_for_item(item);
     if (visual_index >= 0) row["visual_index"] = visual_index;

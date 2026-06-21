@@ -586,28 +586,37 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
   int rendered_table_count = 0;
   int rendered_camera_count = 0;
   QSet<QString> visible_ur5_link_tokens;
+  QSet<QString> added_required_ur5_link_tokens;
   QJsonArray rendered_ur5_link_records;
 
   if (viewport) {
     const QJsonArray final_draw_records = viewport->final_draw_visual_items_export();
     for (const QJsonValue & value : final_draw_records) {
       const QJsonObject item = value.toObject();
+      const QString canonical_link_field = field_text(item, QStringLiteral("canonical_link_name")).trimmed();
+      const QString link_name_field = field_text(item, QStringLiteral("link_name")).trimmed();
+      const QString link_field = field_text(item, QStringLiteral("link")).trimmed();
+      const QString link_token = canonical_scene3d_token(
+        !canonical_link_field.isEmpty() ? canonical_link_field :
+        (!link_name_field.isEmpty() ? link_name_field : link_field));
+      if (required_visible_ur5_links.contains(link_token)) {
+        added_required_ur5_link_tokens.insert(link_token);
+      }
       if (!final_draw_proves_visibility(item)) {
         continue;
       }
 
-      const QString link_token = canonical_scene3d_token(
-        !field_text(item, QStringLiteral("canonical_link_name")).trimmed().isEmpty() ? field_text(item, QStringLiteral("canonical_link_name")) :
-        (!field_text(item, QStringLiteral("link_name")).trimmed().isEmpty() ? field_text(item, QStringLiteral("link_name")) :
-         field_text(item, QStringLiteral("link"))));
+      const QStringList normalized_link_tokens = {
+        link_token,
+        canonical_scene3d_token(canonical_link_field),
+        canonical_scene3d_token(link_name_field),
+        canonical_scene3d_token(link_field)
+      };
       const QStringList classification_tokens = {
         link_token,
-        canonical_scene3d_token(field_text(item, QStringLiteral("canonical_link_name"))),
-        canonical_scene3d_token(field_text(item, QStringLiteral("link_name"))),
-        canonical_scene3d_token(field_text(item, QStringLiteral("link"))),
-        canonical_scene3d_token(field_text(item, QStringLiteral("item_id"))),
-        canonical_scene3d_token(field_text(item, QStringLiteral("id"))),
-        canonical_scene3d_token(field_text(item, QStringLiteral("display_name"))),
+        canonical_scene3d_token(canonical_link_field),
+        canonical_scene3d_token(link_name_field),
+        canonical_scene3d_token(link_field),
         canonical_scene3d_token(field_text(item, QStringLiteral("object_name"))),
         canonical_scene3d_token(field_text(item, QStringLiteral("visual_name"))),
         canonical_scene3d_token(field_text(item, QStringLiteral("parent_link")))
@@ -626,8 +635,15 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
         ++rendered_camera_count;
       }
 
+      const auto has_exact_normalized_link_classification = [&normalized_link_tokens](const QSet<QString> & tokens) {
+        for (const QString & token : normalized_link_tokens) {
+          if (!token.isEmpty() && tokens.contains(token)) return true;
+        }
+        return false;
+      };
+
       const bool is_robotiq = has_exact_classification(robotiq_link_tokens);
-      const bool is_required_ur5 = required_visible_ur5_links.contains(link_token);
+      const bool is_required_ur5 = has_exact_normalized_link_classification(required_visible_ur5_links);
 
       if (is_robotiq) {
         ++rendered_robotiq_link_count;
@@ -653,8 +669,15 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
     *missing_required_visible_links = missing;
   }
 
+  QString blocker;
+  if (!missing.isEmpty() && added_required_ur5_link_tokens.size() >= required_visible_ur5_links.size()) {
+    blocker = QStringLiteral("generated_urdf_visuals_added_but_required_ur5_links_not_rendered");
+  }
+
   return QJsonObject{
     {QStringLiteral("rendered_ur5_link_count"), rendered_ur5_link_count},
+    {QStringLiteral("added_required_ur5_link_count"), added_required_ur5_link_tokens.size()},
+    {QStringLiteral("required_ur5_visibility_blocker"), blocker},
     {QStringLiteral("rendered_ur5_link_records"), rendered_ur5_link_records},
     {QStringLiteral("missing_required_visible_ur5_links"), QJsonArray::fromStringList(missing)},
     {QStringLiteral("rendered_table_count"), rendered_table_count},
