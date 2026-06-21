@@ -633,6 +633,102 @@ def test_ur5_rendered_mesh_adjacency_rejects_index_fallback_when_final_draw_miss
     ]
 
 
+
+def test_urdf_flattened_ur5_visual_rows_normalize_link_identity_and_audit_counts():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    expected_meshes = {
+        "base_link_inertia": "base.dae",
+        "shoulder_link": "shoulder.dae",
+        "upper_arm_link": "upperarm.dae",
+        "forearm_link": "forearm.dae",
+        "wrist_1_link": "wrist1.dae",
+        "wrist_2_link": "wrist2.dae",
+        "wrist_3_link": "wrist3.dae",
+    }
+
+    def raw_generated_row(link: str, mesh_name: str) -> dict:
+        package_uri = f"package://ur_description/meshes/ur5/visual/{mesh_name}"
+        return {
+            "link": link,
+            "source": "urdf_flattened",
+            "geometry_type": "mesh",
+            "package_uri": package_uri,
+            "mesh_uri": package_uri,
+            "source_path": package_uri,
+            "resolved_source_path": f"/opt/ros/humble/share/ur_description/meshes/ur5/visual/{mesh_name}",
+            "baked_world_visual_pose": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
+            "render_expected": True,
+        }
+
+    raw_ur5_rows = [raw_generated_row(link, mesh_name) for link, mesh_name in expected_meshes.items()]
+    assert all("link_name" not in row for row in raw_ur5_rows)
+
+    def final_ingested_row(row: dict, index: int) -> dict:
+        return {
+            **row,
+            "id": f"generated_urdf::{row['link']}::visual_{index}",
+            "item_id": f"generated_urdf::{row['link']}",
+            "link_name": row["link"],
+            "canonical_link_name": row["link"],
+            "source_layer": "locked_generated_urdf_visual",
+            "category": "robot",
+            "role": "robot",
+            "robot_model": "ur5",
+            "has_mesh_metadata": True,
+            "mesh_source": row["package_uri"],
+            "mesh_path": row["resolved_source_path"],
+            "final_draw_status": "ok",
+            "final_draw_bbox": {"min": [float(index), 0.0, 0.0], "max": [float(index) + 0.1, 0.1, 0.1]},
+            "visible": True,
+            "rendered": True,
+        }
+
+    final_rows = [final_ingested_row(row, index) for index, row in enumerate(raw_ur5_rows)]
+    final_rows.extend([
+        {
+            "id": "generated_urdf::gripper_base_link::visual_0",
+            "link": "gripper_base_link",
+            "link_name": "gripper_base_link",
+            "source_layer": "locked_generated_urdf_visual",
+            "category": "tool",
+            "role": "gripper",
+            "has_mesh_metadata": True,
+            "mesh_source": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+            "final_draw_status": "ok",
+            "final_draw_bbox": {"min": [8.0, 0.0, 0.0], "max": [8.1, 0.1, 0.1]},
+            "visible": True,
+            "rendered": True,
+        },
+        {"id": "layout_table", "display_name": "table", "category": "environment", "geometry_type": "box", "visible": True, "rendered": True},
+        {"id": "camera_sensor", "display_name": "camera", "category": "camera", "geometry_type": "box", "visible": True, "rendered": True},
+    ])
+    payload = {
+        "scene": "ur5_2f_test",
+        "status": "PASS",
+        "visual_index": {"items": raw_ur5_rows},
+        "final_draw_visual_items": final_rows,
+        "camera_fit_target": "product_physical_initial_fit_ur5_included",
+    }
+
+    smoke._apply_ur5_final_viewport_payload_contract(payload)
+
+    for raw_row, final_row in zip(raw_ur5_rows, final_rows):
+        assert final_row["link_name"] == raw_row["link"]
+        assert final_row["link"] == raw_row["link"]
+        assert final_row["source_layer"] == "locked_generated_urdf_visual"
+        assert final_row["category"] == "robot"
+        assert final_row["robot_model"] == "ur5"
+        assert final_row["package_uri"] == final_row["mesh_uri"] == final_row["source_path"]
+        assert final_row["mesh_source"] == final_row["package_uri"]
+
+    assert final_rows[7]["category"] == "tool"
+    assert payload["rendered_ur5_link_count"] >= 7
+    assert payload["missing_required_visible_ur5_links"] == []
+    assert payload["table_visible_in_final_viewport"] is True
+    assert payload["camera_visible_in_final_viewport"] is True
+    assert "ur5_final_viewport_links_missing" not in payload.get("blockers", [])
+
 def test_ur5_final_viewport_payload_requires_visible_links_table_and_camera():
     import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
 
