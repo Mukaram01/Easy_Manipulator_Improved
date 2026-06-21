@@ -467,6 +467,107 @@ QJsonObject scene3d_viewport_pose_json(const ScenePreviewWidget::PreviewItem & i
   };
 }
 
+QJsonObject summarize_generated_urdf_visual_rows(const QVector<ScenePreviewWidget::PreviewItem> & items)
+{
+  QSet<QString> seen_generated_ids;
+  QSet<QString> dedupe_ids;
+  QSet<QString> ur5_links;
+  QMap<int, int> visual_number_counts;
+  int generated_urdf_row_count = 0;
+
+  const QRegularExpression visual_number_pattern(QStringLiteral("(?:^|::|\\b)visual_(\\d+)(?:\\b|::|$)"));
+  const QSet<QString> ur5_link_tokens = {
+    QStringLiteral("base_link_inertia"),
+    QStringLiteral("shoulder_link"),
+    QStringLiteral("upper_arm_link"),
+    QStringLiteral("forearm_link"),
+    QStringLiteral("wrist_1_link"),
+    QStringLiteral("wrist_2_link"),
+    QStringLiteral("wrist_3_link")
+  };
+
+  auto first_visual_number = [&](const QStringList & fields, int explicit_visual_index) {
+    if (explicit_visual_index >= 0) {
+      return explicit_visual_index;
+    }
+    for (const QString & field : fields) {
+      const QRegularExpressionMatch match = visual_number_pattern.match(field);
+      if (match.hasMatch()) {
+        bool ok = false;
+        const int value = match.captured(1).toInt(&ok);
+        if (ok) return value;
+      }
+    }
+    return -1;
+  };
+
+  for (const auto & item : items) {
+    const QString source_layer = canonical_scene3d_token(item.source_layer);
+    const QString visual_source = canonical_scene3d_token(item.active_visual_source);
+    const QString id = item.id.trimmed();
+    const bool generated_urdf =
+      source_layer == QStringLiteral("locked_generated_urdf_visual") ||
+      source_layer == QStringLiteral("generated_urdf_visual") ||
+      visual_source.contains(QStringLiteral("generated_urdf")) ||
+      id.startsWith(QStringLiteral("generated_urdf::")) ||
+      id.startsWith(QStringLiteral("generated_urdf_fallback::"));
+    if (!generated_urdf) {
+      continue;
+    }
+
+    ++generated_urdf_row_count;
+    if (!id.isEmpty()) {
+      if (seen_generated_ids.contains(id) || id.endsWith(QStringLiteral("::dedupe_")) || id.contains(QStringLiteral("::dedupe_"))) {
+        dedupe_ids.insert(id);
+      }
+      seen_generated_ids.insert(id);
+    }
+
+    const int visual_number = first_visual_number(
+      QStringList{id, item.visual_index_visual, item.visual_index_visual_name},
+      item.visual_index_value);
+    if (visual_number >= 0) {
+      visual_number_counts[visual_number] += 1;
+    }
+
+    const QString link = scene3d_viewport_link_token(item);
+    if (ur5_link_tokens.contains(link)) {
+      ur5_links.insert(link);
+    }
+  }
+
+  QJsonArray visual_numbers_json;
+  QJsonObject visual_number_counts_json;
+  for (auto it = visual_number_counts.constBegin(); it != visual_number_counts.constEnd(); ++it) {
+    visual_numbers_json.append(it.key());
+    visual_number_counts_json[QString::number(it.key())] = it.value();
+  }
+
+  QStringList dedupe_id_list;
+  for (const QString & id : dedupe_ids) dedupe_id_list << id;
+  dedupe_id_list.sort();
+  QJsonArray dedupe_ids_json;
+  for (const QString & id : dedupe_id_list) {
+    dedupe_ids_json.append(id);
+  }
+
+  QStringList ur5_link_list;
+  for (const QString & link : ur5_links) ur5_link_list << link;
+  ur5_link_list.sort();
+  QJsonArray ur5_links_json;
+  for (const QString & link : ur5_link_list) {
+    ur5_links_json.append(link);
+  }
+
+  return QJsonObject{
+    {QStringLiteral("total_generated_urdf_row_count"), generated_urdf_row_count},
+    {QStringLiteral("visual_numbers_present"), visual_numbers_json},
+    {QStringLiteral("visual_number_counts"), visual_number_counts_json},
+    {QStringLiteral("dedupe_ids"), dedupe_ids_json},
+    {QStringLiteral("ur5_link_names_present"), ur5_links_json}
+  };
+}
+
 QJsonObject audit_ur5_2f_test_committed_viewport_items(
   const Scene3DViewportWidget * viewport,
   QStringList * missing_required_visible_links)
@@ -7698,6 +7799,8 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
       diagnostics[it.key()] = it.value();
     }
   }
+  diagnostics[QStringLiteral("generated_urdf_visual_numbers_after_filter")] =
+    summarize_generated_urdf_visual_rows(filtered_items);
   diagnostics["filter_input_count"] = all_scene_preview_items_.size();
   diagnostics["filter_visible_count"] = filtered_items.size();
   diagnostics["filter_hidden_count"] = qMax(0, all_scene_preview_items_.size() - filtered_items.size());
@@ -9818,6 +9921,8 @@ void MainWindow::populate_scene_hierarchy()
         {QStringLiteral("robot_base_frame"), robot_base_frame},
         {QStringLiteral("first_20_visual_items"), visual_ingestion_item_diagnostics}
       };
+      scene3d_visual_ingestion_diagnostics_[QStringLiteral("generated_urdf_visual_numbers_after_ingest")] =
+        summarize_generated_urdf_visual_rows(preview_items);
       append_studio_log(QString("Visual mesh index loaded from: %1").arg(QString::fromStdString(urdf_visual_index.string())));
       append_studio_log(QString("Visual mesh index safe_for_preview: %1").arg(visual_index_safe_for_preview ? "true" : "false"));
       append_studio_log(QString("Visual mesh index extraction_mode: %1").arg(visual_index_extraction_mode));
@@ -10004,6 +10109,8 @@ void MainWindow::populate_scene_hierarchy()
     }
   }
   preview_items = unsuppressed_preview_items;
+  scene3d_visual_ingestion_diagnostics_[QStringLiteral("generated_urdf_visual_numbers_after_suppression")] =
+    summarize_generated_urdf_visual_rows(preview_items);
   if (suppressed_preview_placeholder_count > 0) {
     QStringList suppression_tokens;
     for (auto it = placeholder_suppression_reason_counts.cbegin(); it != placeholder_suppression_reason_counts.cend(); ++it) {
