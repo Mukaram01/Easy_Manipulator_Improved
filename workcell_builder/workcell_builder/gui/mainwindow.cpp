@@ -9388,6 +9388,19 @@ void MainWindow::populate_scene_hierarchy()
           p.visual_index_mesh_uri = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "mesh_uri")).trimmed();
           p.visual_index_package_uri = package_uri;
           p.visual_index_source = visual_item_source;
+          // Normalize the generated visual-index row on the PreviewItem that is
+          // submitted to the native Scene3D viewport.  The renderer, final draw
+          // export, and smoke audit all consume this PreviewItem payload.
+          p.source_layer = QStringLiteral("locked_generated_urdf_visual");
+          p.locked = true;
+          p.editable = false;
+          p.selectable = true;
+          if (geometry_type == QStringLiteral("mesh")) {
+            p.active_visual_source = QStringLiteral("mesh_preview");
+          }
+          if (!p.visual_index_mesh_uri.trimmed().isEmpty() && p.package_uri.trimmed().isEmpty()) {
+            p.package_uri = p.visual_index_mesh_uri.trimmed();
+          }
           const YAML::Node link_chain_node = workcell_builder::yaml_map_key(v, "link_chain");
           if (link_chain_node && link_chain_node.IsSequence()) {
             for (const YAML::Node & chain_entry : link_chain_node) {
@@ -9631,6 +9644,30 @@ void MainWindow::populate_scene_hierarchy()
               p.mesh_available = true;
               p.has_mesh_metadata = true;
             }
+          }
+          if (geometry_type == QStringLiteral("mesh") && !p.mesh_path.trimmed().isEmpty()) {
+            p.source_path = p.mesh_path;
+            p.mesh_available = true;
+            p.has_mesh_metadata = true;
+            p.active_visual_source = QStringLiteral("mesh_preview");
+          }
+          normalize_generated_urdf_visual_identity(p);
+          classify_generated_urdf_visual(p, !p.mesh_path.trimmed().isEmpty() ? p.mesh_path : resolved_source_path);
+          const QString viewport_link_token = scene3d_viewport_link_token(p);
+          if (viewport_link_token == QStringLiteral("base_link_inertia") ||
+              viewport_link_token == QStringLiteral("shoulder_link") ||
+              viewport_link_token == QStringLiteral("upper_arm_link") ||
+              viewport_link_token == QStringLiteral("forearm_link") ||
+              viewport_link_token == QStringLiteral("wrist_1_link") ||
+              viewport_link_token == QStringLiteral("wrist_2_link") ||
+              viewport_link_token == QStringLiteral("wrist_3_link")) {
+            append_studio_log(QStringLiteral(
+              "Scene3D UR5 visual submitted to native renderer: link=%1 mesh_path=%2 source_layer=%3 active_visual_source=%4 baked_world_visual_pose=%5")
+              .arg(viewport_link_token,
+                   p.mesh_path.trimmed().isEmpty() ? p.source_path : p.mesh_path,
+                   p.source_layer,
+                   p.active_visual_source,
+                   QString::fromUtf8(QJsonDocument(scene3d_viewport_pose_json(p)).toJson(QJsonDocument::Compact))));
           }
           if (unresolved_package_uri) ++unresolved_package_uri_count;
           if (unresolved_package_uri && !is_primitive) add_skip_reason(QStringLiteral("missing_source_path"));
