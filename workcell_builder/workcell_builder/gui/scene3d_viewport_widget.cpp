@@ -1685,11 +1685,21 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
     const bool generated_urdf = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
     const bool overlay_helper = is_overlay_only_item(it) || is_overlay_visual_role(role);
     const bool semantic_editor_primitive = is_intentional_semantic_editor_primitive(it);
+    const QString generated_mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
+    QString generated_cache_result = QStringLiteral("not_attempted");
     if (!overlay_helper && !semantic_editor_primitive && item_has_credible_mesh_handoff(it)) {
       ++mesh_source_count;
-      const QString mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
+      const QString mesh_source = generated_mesh_source;
       if (!mesh_source.trimmed().isEmpty()) {
         const MeshCacheEntry & entry = ensure_mesh_cached(it, mesh_source);
+        generated_cache_result = QStringLiteral("loaded=%1 valid=%2 triangles=%3 path_resolved=%4 parser=%5 reason=%6")
+          .arg(entry.loaded ? QStringLiteral("true") : QStringLiteral("false"),
+               entry.valid ? QStringLiteral("true") : QStringLiteral("false"))
+          .arg(static_cast<int>(entry.mesh.triangles.size()))
+          .arg(entry.path_resolved ? QStringLiteral("true") : QStringLiteral("false"),
+               entry.parser_type.trimmed().isEmpty() ? QStringLiteral("<none>") : entry.parser_type,
+               !entry.failure_reason_code.trimmed().isEmpty() ? entry.failure_reason_code.trimmed() :
+                 (!entry.warning.trimmed().isEmpty() ? entry.warning.trimmed() : QStringLiteral("ok")));
         if (!entry.valid || !entry.warning.trimmed().isEmpty()) {
           ++rejected_mesh_warning_count;
           const QString reason = !entry.failure_reason_code.trimmed().isEmpty()
@@ -1698,6 +1708,34 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
           scene_load_warning_tokens << QStringLiteral("rejected_mesh:%1:%2").arg(it.id, reason);
         }
       }
+    } else if (generated_mesh_source.trimmed().isEmpty()) {
+      generated_cache_result = QStringLiteral("skipped:no_mesh_path");
+    } else if (overlay_helper) {
+      generated_cache_result = QStringLiteral("skipped:overlay_helper");
+    } else if (semantic_editor_primitive) {
+      generated_cache_result = QStringLiteral("skipped:semantic_editor_primitive");
+    } else {
+      generated_cache_result = QStringLiteral("skipped:no_credible_mesh_handoff");
+    }
+    if (generated_urdf) {
+      const QString skip_reason = !show_safety && role == NormalizedRole::SafetyZone ? QStringLiteral("safety_layer_hidden") :
+        (overlay_helper ? QStringLiteral("overlay_helper") :
+          (semantic_editor_primitive ? QStringLiteral("semantic_editor_primitive") :
+            (!item_has_credible_mesh_handoff(it) && !item_has_valid_urdf_primitive(it) ? QStringLiteral("no_renderable_geometry") : QStringLiteral("none"))));
+      qInfo().noquote() << QStringLiteral(
+        "Scene3D renderer generated_urdf ingest: id=%1 link=%2 canonical_link=%3 source_layer=%4 active_visual_source=%5 type=%6 category=%7 mesh_path=%8 package_uri=%9 cache=%10 submitted_to_draw=%11 skip_reason=%12")
+        .arg(it.id,
+             scene3d_link_name_for_item(it),
+             scene3d_canonical_link_name_for_item(it),
+             it.source_layer,
+             it.active_visual_source,
+             it.primitive_geometry_type.trimmed().isEmpty() ? QStringLiteral("<none>") : it.primitive_geometry_type.trimmed(),
+             it.category.trimmed().isEmpty() ? QStringLiteral("<none>") : it.category.trimmed(),
+             generated_mesh_source.trimmed().isEmpty() ? QStringLiteral("<none>") : generated_mesh_source.trimmed(),
+             it.package_uri.trimmed().isEmpty() ? QStringLiteral("<none>") : it.package_uri.trimmed(),
+             generated_cache_result,
+             skip_reason == QStringLiteral("none") ? QStringLiteral("yes") : QStringLiteral("no"),
+             skip_reason);
     }
     if (!overlay_helper && generated_urdf && item_has_valid_urdf_primitive(it)) ++urdf_primitive_source_count;
     if (!overlay_helper && !semantic_editor_primitive &&
@@ -3468,11 +3506,9 @@ QString scene3d_canonical_link_name_for_item(const ScenePreviewWidget::PreviewIt
 
 bool is_required_ur5_viewport_link(const ScenePreviewWidget::PreviewItem & item)
 {
-  // Emergency viewport fallback is intentionally limited to exactly the seven
-  // required UR5 arm links. Do not infer UR5 from substrings here; diagnostics
-  // and counters should only treat exact generated link names as UR5.
-  const QString link = !item.visual_index_link_name.trimmed().isEmpty() ? item.visual_index_link_name.trimmed() :
-    (!item.visual_index_link.trimmed().isEmpty() ? item.visual_index_link.trimmed() : scene3d_link_name_for_item(item));
+  // Use the renderer/export canonical link token so final viewport audit counts
+  // the same generated URDF draw records that were actually submitted.
+  const QString link = scene3d_canonical_link_name_for_item(item);
   return link == QStringLiteral("base_link_inertia") ||
          link == QStringLiteral("shoulder_link") ||
          link == QStringLiteral("upper_arm_link") ||
@@ -3827,8 +3863,27 @@ QJsonArray Scene3DViewportWidget::final_draw_diagnostics_export() const
 bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWidget::PreviewItem & it, const QColor & color, bool preview_path)
 {
   Q_UNUSED(preview_path);
+  const auto log_generated_draw = [&](const QString & cache_result, const QString & submitted, const QString & skip_reason,
+                                      const QString & mesh_source = QString(), const QString & canonical_source = QString()) {
+    if (!(is_generated_urdf_visual_item(it) || is_locked_urdf_item(it))) return;
+    qInfo().noquote() << QStringLiteral(
+      "Scene3D renderer generated_urdf draw: id=%1 link=%2 canonical_link=%3 source_layer=%4 active_visual_source=%5 type=%6 category=%7 mesh_path=%8 canonical_mesh=%9 cache=%10 submitted_to_draw=%11 skip_reason=%12")
+      .arg(it.id,
+           scene3d_link_name_for_item(it),
+           scene3d_canonical_link_name_for_item(it),
+           it.source_layer,
+           it.active_visual_source,
+           it.primitive_geometry_type.trimmed().isEmpty() ? QStringLiteral("<none>") : it.primitive_geometry_type.trimmed(),
+           it.category.trimmed().isEmpty() ? QStringLiteral("<none>") : it.category.trimmed(),
+           mesh_source.trimmed().isEmpty() ? (!it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path).trimmed() : mesh_source.trimmed(),
+           canonical_source.trimmed().isEmpty() ? QStringLiteral("<none>") : canonical_source.trimmed(),
+           cache_result,
+           submitted,
+           skip_reason);
+  };
 
   if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Primitives) {
+    log_generated_draw(QStringLiteral("not_attempted"), QStringLiteral("no"), QStringLiteral("mesh_preview_mode_primitives"));
     return false;
   }
 
@@ -3847,6 +3902,7 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   if (!it.has_mesh_metadata) {
     const QString detail = mesh_rejection_diagnostic_detail(it, it.source_path);
     warn_for_mode(QStringLiteral("REJECT_MESH_METADATA_MISSING: mesh metadata missing; %1").arg(detail), it.source_path);
+    log_generated_draw(QStringLiteral("missing_metadata"), QStringLiteral("no"), QStringLiteral("REJECT_MESH_METADATA_MISSING"), it.source_path);
     return false;
   }
 
@@ -3854,6 +3910,7 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   if (mesh_source.trimmed().isEmpty()) {
     const QString detail = mesh_rejection_diagnostic_detail(it, mesh_source);
     warn_for_mode(QStringLiteral("REJECT_MESH_SOURCE_MISSING: mesh source missing; %1").arg(detail), mesh_source);
+    log_generated_draw(QStringLiteral("missing_source"), QStringLiteral("no"), QStringLiteral("REJECT_MESH_SOURCE_MISSING"), mesh_source);
     return false;
   }
   QString canonical_mesh_source;
@@ -3868,6 +3925,7 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
     const QString reason = QStringLiteral("REJECT_MESH_CACHE_MISS: mesh cache entry missing; waiting for controlled preview ingest/reload; %1").arg(detail);
     remember_mesh_rejection_reason(it.id, reason);
     warn_mesh_fallback_once(it.id, reason, mesh_source);
+    log_generated_draw(QStringLiteral("cache_miss"), QStringLiteral("no"), QStringLiteral("REJECT_MESH_CACHE_MISS"), mesh_source, canonical_mesh_source);
     return false;
   }
   const MeshCacheEntry & entry = cache_it.value();
@@ -3875,6 +3933,14 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
     const QString diagnostics = mesh_rejection_diagnostic_detail(it, mesh_source, canonical_mesh_source, &entry, detail);
     const QString reason = QStringLiteral("%1: %2").arg(code, diagnostics);
     warn_for_mode(reason, mesh_source);
+    log_generated_draw(
+      QStringLiteral("loaded=%1 valid=%2 triangles=%3 parser=%4 reason=%5")
+        .arg(entry.loaded ? QStringLiteral("true") : QStringLiteral("false"),
+             entry.valid ? QStringLiteral("true") : QStringLiteral("false"))
+        .arg(static_cast<int>(entry.mesh.triangles.size()))
+        .arg(entry.parser_type.trimmed().isEmpty() ? QStringLiteral("<none>") : entry.parser_type,
+             code),
+      QStringLiteral("no"), code, mesh_source, canonical_mesh_source);
     return false;
   };
   if (!entry.loaded || entry.oversized || !entry.valid || entry.mesh.triangles.isEmpty()) {
@@ -3904,8 +3970,16 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   const MeshCacheEntry & cache = entry;  // ensure_mesh_cached(it, mesh_source) is intentionally upstream of final draw.
   if (!cache.valid || cache.mesh.triangles.isEmpty()) {
     glPopMatrix();
+    log_generated_draw(QStringLiteral("valid=false_or_zero_triangles"), QStringLiteral("no"), QStringLiteral("invalid_cache_after_transform"), mesh_source, canonical_mesh_source);
     return false;
   }
+  log_generated_draw(
+    QStringLiteral("loaded=%1 valid=%2 triangles=%3 parser=%4")
+      .arg(cache.loaded ? QStringLiteral("true") : QStringLiteral("false"),
+           cache.valid ? QStringLiteral("true") : QStringLiteral("false"))
+      .arg(static_cast<int>(cache.mesh.triangles.size()))
+      .arg(cache.parser_type.trimmed().isEmpty() ? QStringLiteral("<none>") : cache.parser_type),
+    QStringLiteral("yes"), QStringLiteral("none"), mesh_source, canonical_mesh_source);
 
   const QVector3D default_up_normal(0.0f, 1.0f, 0.0f);
   glBegin(GL_TRIANGLES);
