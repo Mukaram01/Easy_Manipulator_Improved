@@ -46,6 +46,46 @@ def _append_unique(values: list[str], value: str) -> None:
         values.append(value)
 
 
+def _apply_generated_urdf_visual_first_drop_smoke_stage(payload: dict[str, Any]) -> None:
+    diagnostics = payload.get("visual_ingestion_diagnostics")
+    if not isinstance(diagnostics, dict):
+        diagnostics = payload.get("scene3d_visual_ingestion_diagnostics")
+    if not isinstance(diagnostics, dict):
+        return
+    rows = diagnostics.get("generated_urdf_visual_row_diagnostics")
+    if not isinstance(rows, list):
+        return
+    final_draw_rows = payload.get("final_draw_visual_items")
+    if not isinstance(final_draw_rows, list):
+        final_draw_rows = payload.get("final_draw_diagnostics")
+    if not isinstance(final_draw_rows, list):
+        return
+    final_draw_ids = {
+        str(row.get("item_id") or row.get("id") or "").strip()
+        for row in final_draw_rows
+        if isinstance(row, dict)
+    }
+    if not final_draw_ids:
+        return
+    updated_rows: list[Any] = []
+    changed = False
+    for row in rows:
+        if not isinstance(row, dict):
+            updated_rows.append(row)
+            continue
+        updated = dict(row)
+        row_id = str(updated.get("id") or "").strip()
+        if row_id in final_draw_ids and not str(updated.get("first_drop_stage") or "").strip():
+            updated["first_drop_stage"] = "smoke_output_or_audit_only"
+            changed = True
+        updated_rows.append(updated)
+    if changed:
+        diagnostics["generated_urdf_visual_row_diagnostics"] = updated_rows
+        payload["visual_ingestion_diagnostics"] = diagnostics
+        if isinstance(payload.get("scene3d_visual_ingestion_diagnostics"), dict):
+            payload["scene3d_visual_ingestion_diagnostics"] = diagnostics
+
+
 def _record_ros_humble_missing(payload: dict[str, Any], *, as_blocker: bool) -> None:
     _add_ros_humble_context(payload)
     if payload.get("ros_humble_available") is True:
@@ -1923,6 +1963,7 @@ def main() -> int:
         )
         if any(key in payload for key in ("final_draw_visual_items", "final_draw_diagnostics", "viewport_visible_items")):
             _apply_ur5_final_viewport_payload_contract(payload)
+        _apply_generated_urdf_visual_first_drop_smoke_stage(payload)
         _apply_ur5_transform_parity(payload, repo_root=repo_root, args=args)
         _apply_ur5_final_draw_bbox_regression(payload)
         if args.scene_path:

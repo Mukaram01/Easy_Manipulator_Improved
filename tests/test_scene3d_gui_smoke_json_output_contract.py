@@ -936,3 +936,26 @@ def test_generated_robot_fallback_blocks_when_generated_mesh_rows_missing_render
     assert payload["generated_robot_fallback_required"] is True
     assert "generated_robot_fallback_not_activated" in payload["blockers"]
     assert payload["status"] == "FAIL"
+
+
+def test_generated_urdf_visual_first_drop_smoke_stage_marks_final_draw_audit_only():
+    from scripts.run_workcell_builder_scene3d_gui_smoke import _apply_generated_urdf_visual_first_drop_smoke_stage
+
+    payload = {
+        "visual_ingestion_diagnostics": {
+            "generated_urdf_visual_row_diagnostics": [
+                {"id": "generated_urdf::base_link::visual_0::0", "visual_name": "visual_0"},
+                {"id": "generated_urdf::shoulder_link::visual_1::1", "visual_name": "visual_1", "first_drop_stage": "visual_index_loop_skip"},
+            ]
+        },
+        "final_draw_visual_items": [
+            {"item_id": "generated_urdf::base_link::visual_0::0", "final_draw_status": "ok"},
+            {"item_id": "generated_urdf::shoulder_link::visual_1::1", "final_draw_status": "ok"},
+        ],
+    }
+
+    _apply_generated_urdf_visual_first_drop_smoke_stage(payload)
+
+    rows = payload["visual_ingestion_diagnostics"]["generated_urdf_visual_row_diagnostics"]
+    assert rows[0]["first_drop_stage"] == "smoke_output_or_audit_only"
+    assert rows[1]["first_drop_stage"] == "visual_index_loop_skip"
