@@ -602,7 +602,9 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
       if (required_visible_ur5_links.contains(link_token)) {
         added_required_ur5_link_tokens.insert(link_token);
       }
-      if (!final_draw_proves_visibility(item)) {
+      const bool renderable = final_draw_proves_visibility(item);
+      const bool visible = renderable;
+      if (!visible) {
         continue;
       }
 
@@ -649,6 +651,13 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
         ++rendered_robotiq_link_count;
       }
       if (is_required_ur5) {
+        if (link_token == QStringLiteral("base_link_inertia")) {
+          qInfo().noquote() << QStringLiteral("Scene3D base_link_inertia trace: stage=rendered_ur5_link_count_audit result=counted item_id=%1 final_draw_status=%2 mesh_source=%3 canonical_mesh_source=%4")
+            .arg(field_text(item, QStringLiteral("item_id")),
+                 field_text(item, QStringLiteral("final_draw_status")),
+                 field_text(item, QStringLiteral("mesh_source")),
+                 field_text(item, QStringLiteral("canonical_mesh_source")));
+        }
         ++rendered_ur5_link_count;
         visible_ur5_link_tokens.insert(link_token);
         QJsonObject record = item;
@@ -7595,10 +7604,18 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
   };
   for (const auto & p : all_scene_preview_items_) {
     if (workcell_builder::include_preview_item_for_scene3d(p, enabled_layers)) {
+      if (scene3d_viewport_link_token(p) == QStringLiteral("base_link_inertia")) {
+        append_studio_log(QStringLiteral("Scene3D base_link_inertia trace: stage=visible/filter result=visible item_id=%1 source_layer=%2 active_visual_source=%3")
+          .arg(p.id, p.source_layer, p.active_visual_source));
+      }
       filtered_items.push_back(p);
       continue;
     }
     const QString hidden_reason = hidden_reason_for_item(p);
+    if (scene3d_viewport_link_token(p) == QStringLiteral("base_link_inertia")) {
+      append_studio_log(QStringLiteral("Scene3D base_link_inertia trace: stage=visible/filter result=hidden item_id=%1 hidden_reason=%2 source_layer=%3 active_visual_source=%4")
+        .arg(p.id, hidden_reason, p.source_layer, p.active_visual_source));
+    }
     hidden_reason_counts[hidden_reason] += 1;
     if (hidden_item_summaries_json.size() < 20) {
       QJsonObject summary;
@@ -7750,7 +7767,8 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     scene3d_filter_diagnostics_[QStringLiteral("camera_fit_target")] = viewport->last_camera_fit_target();
     scene3d_filter_diagnostics_[QStringLiteral("camera_fit_includes_robot")] = viewport->last_initial_fit_included_ur5_bounds();
   }
-  if (selected_ur5_2f_test) {
+  if (has_selected_scene() && selected_scene_name() == QStringLiteral("ur5_2f_test")) {
+    // audit_ur5_2f_test_committed_viewport_items(viewport, &missing_required_visible_links) is computed above after final ingest.
     scene3d_filter_diagnostics_[QStringLiteral("ur5_2f_test_final_viewport_audit")] = viewport_audit;
     append_studio_log(
       QStringLiteral("Scene3D final viewport audit for ur5_2f_test: %1")
@@ -9089,6 +9107,17 @@ void MainWindow::populate_scene_hierarchy()
           const QString visual_link_name_field = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link_name")).trimmed();
           const QString visual_link_name = visual_link_name_field.isEmpty() ? visual_link : visual_link_name_field;
           const QString canonical_visual_link_name = canonical_scene3d_token(visual_link_name);
+          if (canonical_visual_link_name == QStringLiteral("base_link_inertia")) {
+            append_studio_log(QStringLiteral("Scene3D base_link_inertia trace: stage=scene_visual_mesh_index_visual_0_read source_row_index=%1 link_name=%2 visual=%3 mesh_uri=%4 source=%5 item_id=%6")
+              .arg(source_row_index)
+              .arg(visual_link_name)
+              .arg(QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "visual_name")).trimmed().isEmpty()
+                ? QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "visual")).trimmed()
+                : QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "visual_name")).trimmed())
+              .arg(QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "mesh_uri")).trimmed())
+              .arg(visual_item_source.isEmpty() ? QStringLiteral("<missing>") : visual_item_source)
+              .arg(id));
+          }
           if (source_row_index >= 0 && source_row_index <= 6 &&
               required_ur5_visual_links.contains(canonical_visual_link_name) &&
               !logged_required_ur5_ingestion_links.contains(canonical_visual_link_name)) {
@@ -9655,6 +9684,12 @@ void MainWindow::populate_scene_hierarchy()
           normalize_generated_urdf_visual_identity(p);
           classify_generated_urdf_visual(p, !p.mesh_path.trimmed().isEmpty() ? p.mesh_path : resolved_source_path);
           const QString viewport_link_token = scene3d_viewport_link_token(p);
+          if (viewport_link_token == QStringLiteral("base_link_inertia")) {
+            append_studio_log(QStringLiteral("Scene3D base_link_inertia trace: stage=PreviewItem_creation item_id=%1 link=%2 canonical_link=%3 mesh_path=%4 package_uri=%5 source_layer=%6 active_visual_source=%7 category=%8 role=%9")
+              .arg(p.id, p.visual_index_link, viewport_link_token,
+                   p.mesh_path.trimmed().isEmpty() ? p.source_path : p.mesh_path,
+                   p.package_uri, p.source_layer, p.active_visual_source, p.category, p.role));
+          }
           if (viewport_link_token == QStringLiteral("base_link_inertia") ||
               viewport_link_token == QStringLiteral("shoulder_link") ||
               viewport_link_token == QStringLiteral("upper_arm_link") ||
@@ -9849,6 +9884,12 @@ void MainWindow::populate_scene_hierarchy()
       continue;
     }
     unsuppressed_preview_items.push_back(item);
+  }
+  for (const auto & item : unsuppressed_preview_items) {
+    if (scene3d_viewport_link_token(item) == QStringLiteral("base_link_inertia")) {
+      append_studio_log(QStringLiteral("Scene3D base_link_inertia trace: stage=dedupe result=retained item_id=%1 source_layer=%2 active_visual_source=%3")
+        .arg(item.id, item.source_layer, item.active_visual_source));
+    }
   }
   preview_items = unsuppressed_preview_items;
   if (suppressed_preview_placeholder_count > 0) {

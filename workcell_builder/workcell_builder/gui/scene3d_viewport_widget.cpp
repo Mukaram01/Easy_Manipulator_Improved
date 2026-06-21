@@ -1196,7 +1196,8 @@ bool include_in_fit_bounds(const ScenePreviewWidget::PreviewItem & it, bool incl
 
   const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
   const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
-  const bool helper_overlay = is_overlay_only_item(it) || source_layer == "overlay" || visual_source == "overlay";
+  const bool generated_or_locked_preview = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
+  const bool helper_overlay = !generated_or_locked_preview && (is_overlay_only_item(it) || source_layer == "overlay" || visual_source == "overlay");
   if (helper_overlay) return false;
 
   const bool generated_urdf_visual = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
@@ -1428,12 +1429,17 @@ std::vector<const ScenePreviewWidget::PreviewItem *> build_final_generated_urdf_
   for (const auto & item : source_items) {
     const NormalizedRole role = classify_item_role(item);
     if (!show_safety_layer && role == NormalizedRole::SafetyZone) continue;
-    const bool overlay_helper = is_overlay_only_item(item) || is_overlay_visual_role(role);
     const bool generated_or_locked = is_generated_urdf_visual_item(item) || is_locked_urdf_item(item);
-    if (overlay_helper) {
-      overlay_items.push_back(&item);
-    } else if (generated_or_locked) {
+    const bool overlay_helper = !generated_or_locked && (is_overlay_only_item(item) || is_overlay_visual_role(role));
+    if (scene3d_canonical_link_name_for_item(item) == QStringLiteral("base_link_inertia")) {
+      qInfo().noquote() << QStringLiteral("Scene3D base_link_inertia trace: stage=dedupe/final_renderable_assembly item_id=%1 generated_or_locked=%2 overlay_helper=%3 source_layer=%4 active_visual_source=%5")
+        .arg(item.id, generated_or_locked ? QStringLiteral("true") : QStringLiteral("false"),
+             overlay_helper ? QStringLiteral("true") : QStringLiteral("false"), item.source_layer, item.active_visual_source);
+    }
+    if (generated_or_locked) {
       generated_robot_items.push_back(&item);
+    } else if (overlay_helper) {
+      overlay_items.push_back(&item);
     } else {
       physical_items.push_back(&item);
     }
@@ -1653,8 +1659,10 @@ void Scene3DViewportWidget::invalidate_mesh_cache()
   warned_mesh_fallbacks_.clear();
   for (const auto & it : items) {
     const NormalizedRole role = classify_item_role(it);
-    const bool overlay_helper = is_overlay_only_item(it) || is_overlay_visual_role(role);
-    if (overlay_helper || is_intentional_semantic_editor_primitive(it) || !item_has_credible_mesh_handoff(it)) continue;
+    const bool generated_or_locked = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
+    const bool overlay_helper = !generated_or_locked && (is_overlay_only_item(it) || is_overlay_visual_role(role));
+    const bool semantic_editor_primitive = !generated_or_locked && is_intentional_semantic_editor_primitive(it);
+    if (overlay_helper || semantic_editor_primitive || !item_has_credible_mesh_handoff(it)) continue;
     const QString mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
     if (!mesh_source.trimmed().isEmpty()) ensure_mesh_cached(it, mesh_source);
   }
@@ -1685,8 +1693,15 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
     ++visible_item_count;
     unique_visible_ids.insert(it.id);
     const bool generated_urdf = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
-    const bool overlay_helper = is_overlay_only_item(it) || is_overlay_visual_role(role);
-    const bool semantic_editor_primitive = is_intentional_semantic_editor_primitive(it);
+    const bool overlay_helper = !generated_urdf && (is_overlay_only_item(it) || is_overlay_visual_role(role));
+    const bool semantic_editor_primitive = !generated_urdf && is_intentional_semantic_editor_primitive(it);
+    if (scene3d_canonical_link_name_for_item(it) == QStringLiteral("base_link_inertia")) {
+      qInfo().noquote() << QStringLiteral("Scene3D base_link_inertia trace: stage=Scene3DViewportWidget_ingest item_id=%1 source_layer=%2 active_visual_source=%3 generated_urdf=%4 overlay_helper=%5 semantic_editor_primitive=%6 mesh_path=%7 source_path=%8")
+        .arg(it.id, it.source_layer, it.active_visual_source, generated_urdf ? QStringLiteral("true") : QStringLiteral("false"),
+             overlay_helper ? QStringLiteral("true") : QStringLiteral("false"), semantic_editor_primitive ? QStringLiteral("true") : QStringLiteral("false"),
+             it.mesh_path.trimmed().isEmpty() ? QStringLiteral("<empty>") : it.mesh_path.trimmed(),
+             it.source_path.trimmed().isEmpty() ? QStringLiteral("<empty>") : it.source_path.trimmed());
+    }
     const QString generated_mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
     QString generated_cache_result = QStringLiteral("not_attempted");
     if (!overlay_helper && !semantic_editor_primitive && item_has_credible_mesh_handoff(it)) {
@@ -2804,7 +2819,8 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
   const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
   const NormalizedRole semantic_role = classify_item_role(it);
-  const bool helper_overlay = is_overlay_only_item(it) || source_layer == "overlay" || visual_source == "overlay";
+  const bool generated_or_locked_preview = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
+  const bool helper_overlay = !generated_or_locked_preview && (is_overlay_only_item(it) || source_layer == "overlay" || visual_source == "overlay");
   if (helper_overlay) {
     if (is_clean_semantic_primitive_role(semantic_role) && draw_clean_semantic_primitive(it)) {
       if (out_editable_primitive_count) ++(*out_editable_primitive_count);
@@ -2823,7 +2839,6 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   // path so they do not emit REJECT_MESH_METADATA_MISSING or increment missing
   // geometry/fallback counters.
   QColor visual_color = item_color(it, diagnostic_transparency_mode);
-  const bool generated_or_locked_preview = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
   const bool editable_layout_preview = it.linked_to_editable_layout_state || item_is_editable_for_gizmo(it);
   if (semantic_role == NormalizedRole::WarningAnchor) {
     return false;
@@ -3689,6 +3704,10 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
       }
     }
     row["active_visual_source"] = item.active_visual_source;
+    if (canonical_link_name == QStringLiteral("base_link_inertia")) {
+      qInfo().noquote() << QStringLiteral("Scene3D base_link_inertia trace: stage=final_draw_visual_items item_id=%1 link=%2 canonical_link=%3 mesh_source=%4 source_layer=%5 active_visual_source=%6")
+        .arg(item.id, link_name, canonical_link_name, mesh_source, item.source_layer, item.active_visual_source);
+    }
     row["locked"] = item.locked;
     row["editable"] = item.editable;
     row["lock_reason"] = item.lock_reason;
@@ -3932,6 +3951,14 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
     return false;
   }
   const MeshCacheEntry & entry = cache_it.value();
+  if (scene3d_canonical_link_name_for_item(it) == QStringLiteral("base_link_inertia")) {
+    qInfo().noquote() << QStringLiteral("Scene3D base_link_inertia trace: stage=mesh_cache_load item_id=%1 requested_path=%2 canonical_path=%3 loaded=%4 valid=%5 triangles=%6 path_resolved=%7 reason=%8")
+      .arg(it.id, mesh_source, canonical_mesh_source, entry.loaded ? QStringLiteral("true") : QStringLiteral("false"),
+           entry.valid ? QStringLiteral("true") : QStringLiteral("false"))
+      .arg(static_cast<int>(entry.mesh.triangles.size()))
+      .arg(entry.path_resolved ? QStringLiteral("true") : QStringLiteral("false"),
+           entry.failure_reason_code.trimmed().isEmpty() ? QStringLiteral("ok") : entry.failure_reason_code.trimmed());
+  }
   auto reject = [&](const QString & code, const QString & detail = QString()) {
     const QString diagnostics = mesh_rejection_diagnostic_detail(it, mesh_source, canonical_mesh_source, &entry, detail);
     const QString reason = QStringLiteral("%1: %2").arg(code, diagnostics);
