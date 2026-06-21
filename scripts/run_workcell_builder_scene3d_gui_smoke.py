@@ -342,6 +342,27 @@ def _apply_runtime_transform_counter_mapping(payload: dict[str, Any]) -> None:
     payload["warnings"] = warnings
 
 
+def _apply_generated_urdf_visual_number_stages(payload: dict[str, Any]) -> None:
+    counters = _first_present_mapping(payload, "counters")
+    filter_diagnostics = _first_present_mapping(payload, "filter_diagnostics")
+    counter_ingestion = _first_present_mapping(counters, "visual_ingestion_diagnostics")
+    filter_ingestion = _first_present_mapping(filter_diagnostics, "visual_ingestion_diagnostics")
+    sources = (filter_diagnostics, counters, counter_ingestion, filter_ingestion, payload)
+    stage_keys = {
+        "after_ingest": "generated_urdf_visual_numbers_after_ingest",
+        "after_suppression": "generated_urdf_visual_numbers_after_suppression",
+        "after_filter": "generated_urdf_visual_numbers_after_filter",
+    }
+    for short_key, full_key in stage_keys.items():
+        value = None
+        for source in sources:
+            if isinstance(source, dict) and isinstance(source.get(full_key), list):
+                value = source[full_key]
+                break
+        if value is not None:
+            payload[short_key] = value
+            payload[full_key] = value
+
 def _add_smoke_report_supplemental_evidence(payload: dict[str, Any], *, screenshot_path: str | None, screenshot_available: bool | None) -> dict[str, Any]:
     runtime_available = bool(payload.get("runtime_available"))
     if runtime_available:
@@ -353,6 +374,7 @@ def _add_smoke_report_supplemental_evidence(payload: dict[str, Any], *, screensh
     payload.setdefault("visible_item_labels", _visible_item_labels_from_payload(payload) if runtime_available else [])
     payload.setdefault("viewport_size", _viewport_size_from_payload(payload))
     payload.setdefault("camera_fit_target", _camera_fit_target_from_payload(payload))
+    _apply_generated_urdf_visual_number_stages(payload)
     if screenshot_path is not None:
         payload.setdefault("screenshot_path", screenshot_path)
     if screenshot_available is not None:
