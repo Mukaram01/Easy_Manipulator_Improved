@@ -113,6 +113,7 @@
 #include <cstring>
 #include <fstream>
 #include <functional>
+#include <initializer_list>
 #include <iostream>
 #include <string>
 #include <utility>
@@ -422,6 +423,8 @@ QString canonical_skip_reason_key(const QString & reason)
   if (token == QStringLiteral("file_not_found")) return QStringLiteral("file_not_found");
   if (token == QStringLiteral("unsupported_format") || token == QStringLiteral("unsupported_extension")) return QStringLiteral("unsupported_format");
   if (token == QStringLiteral("parse_error") || token == QStringLiteral("invalid_yaml_item") || token == QStringLiteral("missing_id")) return QStringLiteral("parse_error");
+  if (token.startsWith(QStringLiteral("parse_error_"))) return token;
+  if (token == QStringLiteral("duplicate_generated_visual_index_row")) return QStringLiteral("duplicate_generated_visual_index_row");
   if (token == QStringLiteral("oversized_mesh")) return QStringLiteral("oversized_mesh");
   if (token == QStringLiteral("unsafe_for_preview")) return QStringLiteral("unsafe_for_preview");
   if (token == QStringLiteral("zero_triangle_mesh")) return QStringLiteral("zero_triangle_mesh");
@@ -8780,9 +8783,15 @@ void MainWindow::populate_scene_hierarchy()
     row[QStringLiteral("id")] = final_id;
     row[QStringLiteral("package_uri")] = value("package_uri");
     row[QStringLiteral("mesh_uri")] = value("mesh_uri");
+    row[QStringLiteral("filename")] = value("filename");
+    row[QStringLiteral("source_path")] = value("source_path");
     row[QStringLiteral("resolved_path")] = value("resolved_path");
     row[QStringLiteral("resolved_source_path")] = value("resolved_source_path");
     row[QStringLiteral("mesh_path")] = value("mesh_path").isEmpty() ? value("source_path") : value("mesh_path");
+    row[QStringLiteral("geometry_type")] = value("geometry_type");
+    row[QStringLiteral("type")] = value("type");
+    row[QStringLiteral("category")] = value("category");
+    row[QStringLiteral("source")] = value("source");
     row[QStringLiteral("appended_to_preview_items")] = false;
     row[QStringLiteral("skip_branch")] = QString();
     row[QStringLiteral("skip_reason")] = QString();
@@ -9242,6 +9251,28 @@ void MainWindow::populate_scene_hierarchy()
           if (!field || !field.IsScalar()) return QString();
           return QString::fromStdString(field.as<std::string>("")).trimmed();
         };
+        auto visual_index_first_scalar_value = [&](const YAML::Node & node, std::initializer_list<const char *> keys) {
+          for (const char * key : keys) {
+            const QString value = visual_index_row_scalar_value(node, key);
+            if (!value.isEmpty()) return value;
+          }
+          return QString();
+        };
+        auto visual_index_parse_error_reason = [&](const YAML::Node & node, int row_index, const QString & exception_text = QString()) {
+          if (!node || !node.IsMap()) return QStringLiteral("parse_error_row_not_map");
+          const QString link = visual_index_first_scalar_value(node, {"link", "link_name", "object_id", "object"});
+          const QString visual = visual_index_first_scalar_value(node, {"visual", "visual_name", "id"});
+          const QString mesh = visual_index_first_scalar_value(node, {"package_uri", "mesh_uri", "filename", "source_path", "resolved_source_path", "resolved_path", "mesh_path"});
+          const QString geometry = visual_index_first_scalar_value(node, {"geometry_type", "type", "geometry"});
+          QStringList missing;
+          if (link.isEmpty()) missing << QStringLiteral("link/link_name");
+          if (visual.isEmpty()) missing << QStringLiteral("visual/visual_name/id");
+          if (mesh.isEmpty()) missing << QStringLiteral("package_uri/mesh_uri/filename/source_path/resolved_source_path");
+          if (geometry.isEmpty()) missing << QStringLiteral("geometry_type/type/category");
+          if (!exception_text.trimmed().isEmpty()) return QStringLiteral("parse_error_exception:%1").arg(exception_text.trimmed());
+          if (!missing.isEmpty()) return QStringLiteral("parse_error_missing_%1").arg(missing.join(QStringLiteral("+")));
+          return QStringLiteral("parse_error_unknown_row_%1").arg(row_index);
+        };
         auto visual_item_final_identity_key = [&](const YAML::Node & node, int source_row_index) {
           QString link = visual_index_row_scalar_value(node, "link");
           if (link.isEmpty()) link = visual_index_row_scalar_value(node, "link_name");
@@ -9344,11 +9375,15 @@ void MainWindow::populate_scene_hierarchy()
           const int ordered_source_row_index = ordered_visual_source_row_index++;
           const int source_row_index = workcell_builder::yaml_map_key(v, "source_row_index").as<int>(ordered_source_row_index);
           if (!v.IsMap()) {
-            ++skipped_other; const QString reason = add_skip_reason(QStringLiteral("parse_error"));
+            ++skipped_other;
+            const QString detailed_parse_error = visual_index_parse_error_reason(v, source_row_index);
+            const QString reason = add_skip_reason(detailed_parse_error);
             append_generated_visual_row_diagnostic(
               generated_visual_row_diagnostic(v, source_row_index, QString(), QString()),
-              QStringLiteral("parse_error"), reason);
+              detailed_parse_error, reason);
             append_visual_ingestion_diagnostic(v, QString(), QString(), reason);
+            append_studio_log(QStringLiteral("Scene3D visual index row parse_error: source_row_index=%1 reason=%2 id=<missing> link=<missing> visual=<missing> package_uri=<missing> mesh_uri=<missing> source_path=<missing> resolved_source_path=<missing> geometry=<missing> category=<missing>")
+              .arg(source_row_index).arg(reason));
             continue;
           }
           ++visual_index_loaded_count;
@@ -9357,11 +9392,25 @@ void MainWindow::populate_scene_hierarchy()
           QString generated_visual_row_key;
           QJsonObject generated_row_diagnostic;
           if (id.isEmpty()) {
-            ++skipped_other; const QString reason = add_skip_reason(QStringLiteral("parse_error"));
+            ++skipped_other;
+            const QString detailed_parse_error = visual_index_parse_error_reason(v, source_row_index);
+            const QString reason = add_skip_reason(detailed_parse_error);
             append_generated_visual_row_diagnostic(
               generated_visual_row_diagnostic(v, source_row_index, QString(), id),
-              QStringLiteral("parse_error"), reason);
+              detailed_parse_error, reason);
             append_visual_ingestion_diagnostic(v, raw_id, id, reason);
+            append_studio_log(QStringLiteral("Scene3D visual index row parse_error: source_row_index=%1 reason=%2 id=%3 link=%4 link_name=%5 visual=%6 visual_name=%7 package_uri=%8 mesh_uri=%9 source_path=%10 resolved_source_path=%11 geometry=%12 category=%13")
+              .arg(source_row_index).arg(reason).arg(raw_id)
+              .arg(visual_index_first_scalar_value(v, {"link"}))
+              .arg(visual_index_first_scalar_value(v, {"link_name"}))
+              .arg(visual_index_first_scalar_value(v, {"visual"}))
+              .arg(visual_index_first_scalar_value(v, {"visual_name"}))
+              .arg(visual_index_first_scalar_value(v, {"package_uri"}))
+              .arg(visual_index_first_scalar_value(v, {"mesh_uri"}))
+              .arg(visual_index_first_scalar_value(v, {"source_path", "filename"}))
+              .arg(visual_index_first_scalar_value(v, {"resolved_source_path", "resolved_path"}))
+              .arg(visual_index_first_scalar_value(v, {"geometry_type", "type"}))
+              .arg(visual_index_first_scalar_value(v, {"category"})));
             continue;
           }
           generated_visual_row_key = visual_item_generated_row_key(v, source_row_index);
@@ -9382,7 +9431,9 @@ void MainWindow::populate_scene_hierarchy()
             append_studio_log(QString("Scene3D generated URDF visual id collision repaired deterministically for distinct generated visual rows: %1 -> %2")
                                 .arg(original_collision_id, id));
           }
-          const QString geometry_type = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "geometry_type"));
+          QString geometry_type = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "geometry_type"));
+          if (geometry_type.trimmed().isEmpty()) geometry_type = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "type"));
+          if (geometry_type.trimmed().isEmpty()) geometry_type = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "category"));
           const QString visual_item_source = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "source")).trimmed();
           const QString visual_item_source_token = canonical_scene3d_token(visual_item_source);
           const QString visual_item_key = visual_item_link_object_key(v);
@@ -9461,7 +9512,7 @@ void MainWindow::populate_scene_hierarchy()
           if (!best_robot_base_frame_candidate.frame.isEmpty()) robot_base_frame = best_robot_base_frame_candidate.frame;
           const bool has_visual_metadata =
             !id.trimmed().isEmpty() &&
-            !QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link")).trimmed().isEmpty() &&
+            !visual_index_first_scalar_value(v, {"link", "link_name", "object_id", "object"}).trimmed().isEmpty() &&
             xyz && rpy && xyz.IsSequence() && rpy.IsSequence() && xyz.size() >= 3 && rpy.size() >= 3;
           if (!render_expected && !has_visual_metadata) {
             const QString reason = add_skip_reason(QStringLiteral("unsafe_for_preview"));
@@ -9500,10 +9551,11 @@ void MainWindow::populate_scene_hierarchy()
           if (p.category.trimmed().isEmpty()) p.category = "URDF Visual";
           p.role = p.category;
           p.status = "ready";
-          p.source_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "source_path"));
+          p.source_path = visual_index_first_scalar_value(v, {"source_path", "mesh_uri", "filename"});
           const QString resolved_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "resolved_path"));
           const QString resolved_source_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "resolved_source_path"));
-          const QString package_uri = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "package_uri"));
+          QString package_uri = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "package_uri"));
+          if (package_uri.trimmed().isEmpty()) package_uri = visual_index_first_scalar_value(v, {"mesh_uri", "filename"});
           p.visual_index_link = raw_visual_link;
           p.visual_index_link_name = raw_visual_link_name;
           p.resolved_source_path_original = resolved_source_path;
@@ -10042,6 +10094,7 @@ void MainWindow::populate_scene_hierarchy()
         skip_reason_tokens << QString("%1=%2").arg(it.key()).arg(it.value());
       }
       append_studio_log(QString("Skipped visual items (canonical): %1").arg(skip_reason_tokens.join(' ')));
+      append_studio_log(QString("Visual mesh index parse_error=%1").arg(skip_reason_counts.value(QStringLiteral("parse_error"), 0)));
       append_studio_log(QString("Loader fallbacks: package_uri_resolved_by_loader=%1 source_path_from_resolved_path=%2 non_mesh_geometry_added=%3 non_mesh_geometry_unsupported=%4")
         .arg(package_uri_resolved_by_loader).arg(source_path_from_resolved_path).arg(non_mesh_geometry_added).arg(non_mesh_geometry_unsupported));
       append_studio_log(QString("Resolved source path diagnostics: stale_resolved_source_path=%1 package_uri_resolved_after_stale=%2")
