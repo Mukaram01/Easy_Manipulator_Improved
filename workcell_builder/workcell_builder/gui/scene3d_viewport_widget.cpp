@@ -3626,6 +3626,22 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     if (!item.visual_index_source.trimmed().isEmpty()) row["source"] = item.visual_index_source.trimmed();
     row["frame_id"] = item.frame_id;
     row["source_layer"] = item.source_layer;
+    row["category"] = item.category;
+    row["role"] = item.role;
+    if (!item.metadata_tags.trimmed().isEmpty()) {
+      row["metadata_tags"] = item.metadata_tags;
+      const QStringList tags = item.metadata_tags.split(QLatin1Char(';'), Qt::SkipEmptyParts);
+      for (const QString & raw_tag : tags) {
+        const QString tag = raw_tag.trimmed();
+        const int equals_index = tag.indexOf(QLatin1Char('='));
+        if (equals_index <= 0) continue;
+        const QString key = tag.left(equals_index).trimmed();
+        const QString value = tag.mid(equals_index + 1).trimmed();
+        if ((key == QStringLiteral("robot_family") || key == QStringLiteral("asset_category")) && !value.isEmpty()) {
+          row[key] = value;
+        }
+      }
+    }
     row["active_visual_source"] = item.active_visual_source;
     row["locked"] = item.locked;
     row["editable"] = item.editable;
