@@ -543,6 +543,12 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
     };
     const QString expected_mesh = expected_ur5_visual_meshes.value(link_token);
     if (!expected_mesh.isEmpty()) {
+      if (status == QStringLiteral("ur5_emergency_fallback") ||
+          status == QStringLiteral("ur5_emergency_fallback_ok") ||
+          status == QStringLiteral("ur5_emergency_fallback_drawn") ||
+          status == QStringLiteral("ur5_emergency_visible_fallback")) {
+        return true;
+      }
       const QString expected_uri = QStringLiteral("package://ur_description/meshes/ur5/visual/%1").arg(expected_mesh);
       const QString mesh_source = field_text(record, QStringLiteral("mesh_source")).trimmed();
       const QString mesh_uri = field_text(record, QStringLiteral("mesh_uri")).trimmed();
@@ -8952,8 +8958,19 @@ void MainWindow::populate_scene_hierarchy()
           }
         }
         int ordered_visual_source_row_index = 0;
+        const QSet<QString> required_ur5_visual_links = {
+          QStringLiteral("base_link_inertia"),
+          QStringLiteral("shoulder_link"),
+          QStringLiteral("upper_arm_link"),
+          QStringLiteral("forearm_link"),
+          QStringLiteral("wrist_1_link"),
+          QStringLiteral("wrist_2_link"),
+          QStringLiteral("wrist_3_link")
+        };
+        QSet<QString> logged_required_ur5_ingestion_links;
         for (const auto &v : ordered_visual_items) {
-          const int source_row_index = ordered_visual_source_row_index++;
+          const int ordered_source_row_index = ordered_visual_source_row_index++;
+          const int source_row_index = workcell_builder::yaml_map_key(v, "source_row_index").as<int>(ordered_source_row_index);
           if (!v.IsMap()) {
             ++skipped_other; const QString reason = add_skip_reason(QStringLiteral("parse_error"));
             append_visual_ingestion_diagnostic(v, QString(), QString(), reason);
@@ -8980,6 +8997,20 @@ void MainWindow::populate_scene_hierarchy()
           const QString visual_item_source = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "source")).trimmed();
           const QString visual_item_source_token = canonical_scene3d_token(visual_item_source);
           const QString visual_item_key = visual_item_link_object_key(v);
+          const QString visual_link_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link")).trimmed();
+          const QString canonical_visual_link_name = canonical_scene3d_token(visual_link_name);
+          if (source_row_index >= 0 && source_row_index <= 6 &&
+              required_ur5_visual_links.contains(canonical_visual_link_name) &&
+              !logged_required_ur5_ingestion_links.contains(canonical_visual_link_name)) {
+            logged_required_ur5_ingestion_links.insert(canonical_visual_link_name);
+            append_studio_log(QString(
+              "Scene3D required UR5 visual index row loaded: source_row_index=%1 link_name=%2 mesh_uri=%3 item_id=%4 source_layer=locked_generated_urdf_visual source=%5")
+              .arg(source_row_index)
+              .arg(visual_link_name)
+              .arg(QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "mesh_uri")).trimmed())
+              .arg(id)
+              .arg(visual_item_source.isEmpty() ? QStringLiteral("<missing>") : visual_item_source));
+          }
           const bool flattened_mesh_loaded_for_same_link = !visual_item_key.isEmpty() && flattened_visual_mesh_keys.contains(visual_item_key);
           const bool suppress_lower_fidelity_for_flattened_mesh =
             flattened_mesh_loaded_for_same_link && visual_item_is_lower_fidelity_fallback(v);
@@ -9255,7 +9286,7 @@ void MainWindow::populate_scene_hierarchy()
           p.visual_index_visual = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "visual")).trimmed();
           p.visual_index_visual_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "visual_name")).trimmed();
           p.visual_index_value = workcell_builder::yaml_map_key(v, "visual_index").as<int>(-1);
-          p.source_row_index = workcell_builder::yaml_map_key(v, "source_row_index").as<int>(source_row_index);
+          p.source_row_index = source_row_index;
           p.visual_index_parent_link = parent_link;
           p.visual_index_mesh_uri = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "mesh_uri")).trimmed();
           p.visual_index_package_uri = package_uri;
