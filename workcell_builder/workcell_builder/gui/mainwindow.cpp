@@ -8711,7 +8711,53 @@ void MainWindow::populate_scene_hierarchy()
            item.editable &&
            !item.locked;
   };
+  auto is_syntactically_resolvable_package_mesh_uri = [&](QString uri) {
+    uri = uri.trimmed();
+    if (!uri.startsWith(QStringLiteral("package://"))) return false;
+    if (!path_has_mesh_asset_extension(uri)) return false;
+    const QString remainder = uri.mid(QStringLiteral("package://").size());
+    const int slash_index = remainder.indexOf(QLatin1Char('/'));
+    return slash_index > 0 && slash_index < remainder.size() - 1;
+  };
+  auto is_resolved_mesh_path_or_resolvable_package_uri = [&](const QString & value) {
+    const QString trimmed = value.trimmed();
+    if (trimmed.isEmpty() || !path_has_mesh_asset_extension(trimmed)) return false;
+    if (is_syntactically_resolvable_package_mesh_uri(trimmed)) return true;
+    QString local_path = trimmed;
+    if (local_path.startsWith(QStringLiteral("file://"))) local_path = local_path.mid(QStringLiteral("file://").size());
+    if (local_path.startsWith(QStringLiteral("package://"))) return false;
+    const QFileInfo info(local_path);
+    return info.exists() && info.isFile();
+  };
+  auto is_protected_generated_mesh_index_visual = [&](const ScenePreviewWidget::PreviewItem & item) {
+    if (!item.id.trimmed().startsWith(QStringLiteral("generated_urdf::"))) return false;
+    if (!item.locked || item.linked_to_editable_layout_state || item.editable) return false;
+    const QString source_layer = canonical_scene3d_token(item.source_layer);
+    const QString visual_source = canonical_scene3d_token(item.active_visual_source);
+    if (source_layer != QStringLiteral("locked_generated_urdf_visual") || visual_source != QStringLiteral("mesh_preview")) return false;
+    if (item.visual_index_link_name.trimmed().isEmpty() && item.visual_index_link.trimmed().isEmpty()) return false;
+    const QStringList mesh_identity_fields = {
+      item.package_uri,
+      item.visual_index_package_uri,
+      item.visual_index_mesh_uri,
+      item.mesh_path,
+      item.source_path,
+      item.resolved_source_path_original
+    };
+    bool has_mesh_identity = false;
+    bool has_resolvable_mesh_identity = false;
+    for (const QString & value : mesh_identity_fields) {
+      if (!path_has_mesh_asset_extension(value)) continue;
+      has_mesh_identity = true;
+      if (is_resolved_mesh_path_or_resolvable_package_uri(value)) {
+        has_resolvable_mesh_identity = true;
+        break;
+      }
+    }
+    return has_mesh_identity && (item.mesh_available || has_resolvable_mesh_identity);
+  };
   auto is_authoritative_mesh_index_visual = [&](const ScenePreviewWidget::PreviewItem & item) {
+    if (is_protected_generated_mesh_index_visual(item)) return true;
     if (!physical_asset_role(item)) return false;
     if (!item.locked || item.linked_to_editable_layout_state || item.editable) return false;
     const QString visual_source = canonical_scene3d_token(item.active_visual_source);
@@ -8721,6 +8767,8 @@ void MainWindow::populate_scene_hierarchy()
       path_has_mesh_asset_extension(item.resolved_source_path_original) ||
       path_has_mesh_asset_extension(item.mesh_path) ||
       path_has_mesh_asset_extension(item.package_uri) ||
+      path_has_mesh_asset_extension(item.visual_index_package_uri) ||
+      path_has_mesh_asset_extension(item.visual_index_mesh_uri) ||
       path_has_mesh_asset_extension(item.source_path);
     return item.mesh_available || item.has_mesh_metadata || has_valid_mesh_reference;
   };
@@ -8792,8 +8840,19 @@ void MainWindow::populate_scene_hierarchy()
     if (visual_source == QStringLiteral("primitive_fallback") || layer == QStringLiteral("primitive_fallback")) return true;
     if (text.contains(QStringLiteral("placeholder")) || text.contains(QStringLiteral("generated_bounds")) ||
         text.contains(QStringLiteral("bounds_only")) || text.contains(QStringLiteral("raw_bounds"))) return true;
-    if (layer == QStringLiteral("locked_generated_urdf_visual") && item.category != QStringLiteral("URDF Visual")) return true;
     if (layer == QStringLiteral("static_fallback") || layer == QStringLiteral("legacy_static_fallback")) return true;
+    if (layer == QStringLiteral("locked_generated_urdf_visual")) {
+      const bool lacks_mesh_identity =
+        item.visual_index_link_name.trimmed().isEmpty() &&
+        item.visual_index_link.trimmed().isEmpty() &&
+        !path_has_mesh_asset_extension(item.package_uri) &&
+        !path_has_mesh_asset_extension(item.visual_index_package_uri) &&
+        !path_has_mesh_asset_extension(item.visual_index_mesh_uri) &&
+        !path_has_mesh_asset_extension(item.mesh_path) &&
+        !path_has_mesh_asset_extension(item.source_path) &&
+        !path_has_mesh_asset_extension(item.resolved_source_path_original);
+      if (lacks_mesh_identity) return true;
+    }
     if (text.contains(QStringLiteral("legacy")) && text.contains(QStringLiteral("primitive_preview"))) return true;
     if (text.contains(QStringLiteral("mesh_metadata_missing_or_legacy"))) return true;
     return false;
