@@ -631,6 +631,7 @@ if(BUILD_TESTING)
     workcell_studio_canvas_model_mesh_test.cpp
     asset_catalog_discovery_test.cpp
     transform_clipboard_utils_test.cpp
+    preview_item_suppression_test.cpp
     layout_serialization_contract_test.cpp
     workcell_studio_layout_editor_test.cpp
     mainwindow_rviz_preview_compile_test.cpp
