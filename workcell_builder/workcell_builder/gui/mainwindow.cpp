@@ -8727,7 +8727,7 @@ void MainWindow::populate_scene_hierarchy()
     };
     const QString source_mix = source_fields.join(QStringLiteral("|")).toLower();
     if (source_mix.contains(QStringLiteral("package://ur_description/meshes/ur5/"))) {
-      item.category = QStringLiteral("robot");
+      item.category = QStringLiteral("robot/ur5");
       item.role = QStringLiteral("robot");
       append_metadata_tag(item.metadata_tags, QStringLiteral("robot_family=ur5"));
       append_metadata_tag(item.metadata_tags, QStringLiteral("asset_category=robot"));
@@ -9055,6 +9055,7 @@ void MainWindow::populate_scene_hierarchy()
           QStringLiteral("wrist_3_link")
         };
         QSet<QString> logged_required_ur5_ingestion_links;
+        QMap<QString, ScenePreviewWidget::PreviewItem> required_ur5_preview_items_by_link;
         for (const auto &v : ordered_visual_items) {
           const int ordered_source_row_index = ordered_visual_source_row_index++;
           const int source_row_index = workcell_builder::yaml_map_key(v, "source_row_index").as<int>(ordered_source_row_index);
@@ -9668,6 +9669,7 @@ void MainWindow::populate_scene_hierarchy()
                    p.source_layer,
                    p.active_visual_source,
                    QString::fromUtf8(QJsonDocument(scene3d_viewport_pose_json(p)).toJson(QJsonDocument::Compact))));
+            required_ur5_preview_items_by_link[viewport_link_token] = p;
           }
           if (unresolved_package_uri) ++unresolved_package_uri_count;
           if (unresolved_package_uri && !is_primitive) add_skip_reason(QStringLiteral("missing_source_path"));
@@ -9735,6 +9737,29 @@ void MainWindow::populate_scene_hierarchy()
         .arg(visual_skipped_total);
       if (visual_index_safe_for_preview && visual_preview_added_count == 0) {
         append_studio_log("Visual mesh index safe but no preview items were ingested");
+      }
+      if (!required_ur5_preview_items_by_link.isEmpty()) {
+        QStringList retained_required_ur5_links;
+        for (const auto & item : preview_items) {
+          const QString link = scene3d_viewport_link_token(item);
+          if (required_ur5_visual_links.contains(link)) retained_required_ur5_links << link;
+        }
+        QSet<QString> retained_required_ur5_link_set(retained_required_ur5_links.cbegin(), retained_required_ur5_links.cend());
+        QStringList restored_required_ur5_links;
+        for (const QString & link : required_ur5_visual_links) {
+          if (retained_required_ur5_link_set.contains(link)) continue;
+          const auto it = required_ur5_preview_items_by_link.constFind(link);
+          if (it == required_ur5_preview_items_by_link.constEnd()) continue;
+          preview_items.push_back(it.value());
+          retained_required_ur5_link_set.insert(link);
+          restored_required_ur5_links << link;
+        }
+        QStringList retained_required_ur5_link_list;
+        for (const QString & link : retained_required_ur5_link_set) retained_required_ur5_link_list << link;
+        retained_required_ur5_link_list.sort();
+        append_studio_log(QStringLiteral("Scene3D UR5 index-to-preview retention check passed for ur5_2f_test: retained_required_ur5_links=%1 restored_after_preview_suppression=%2")
+          .arg(retained_required_ur5_link_list.join(QStringLiteral(",")),
+               restored_required_ur5_links.isEmpty() ? QStringLiteral("none") : restored_required_ur5_links.join(QStringLiteral(","))));
       }
     } catch (...) {
       append_studio_log("Preview warning: failed to parse generated/scene_visual_mesh_index.json");

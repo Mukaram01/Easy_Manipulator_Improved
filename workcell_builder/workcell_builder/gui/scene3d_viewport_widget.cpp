@@ -3650,7 +3650,7 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["display_name"] = item.display_name;
     const QString link_name = scene3d_link_name_for_item(item);
     const QString canonical_link_name = scene3d_canonical_link_name_for_item(item);
-    row["link"] = link_name;
+    row["link"] = !item.visual_index_link.trimmed().isEmpty() ? item.visual_index_link.trimmed() : link_name;
     row["link_name"] = link_name;
     row["canonical_link_name"] = canonical_link_name;
     if (!item.visual_index_object_name.trimmed().isEmpty()) row["object_name"] = item.visual_index_object_name.trimmed();
