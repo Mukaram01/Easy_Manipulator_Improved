@@ -62,6 +62,8 @@ add_executable(workcell_builder
     gui/scene3d_viewport_widget.h
     gui/scene3d_candidate_assembly.cpp
     gui/scene3d_candidate_assembly.h
+    gui/preview_item_suppression.cpp
+    gui/preview_item_suppression.h
     src_scene3d_visual_backend.cpp
     include/scene3d_visual_backend.hpp
 
@@ -370,6 +372,9 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_transform_clipboard_utils_test
     test/transform_clipboard_utils_test.cpp
     gui/transform_clipboard_utils.cpp)
+  ament_add_gtest(workcell_preview_item_suppression_test
+    test/preview_item_suppression_test.cpp
+    gui/preview_item_suppression.cpp)
   ament_add_gtest(workcell_layout_serialization_contract_test
     test/layout_serialization_contract_test.cpp)
   ament_add_gtest(workcell_studio_layout_editor_test
@@ -427,6 +432,11 @@ if(BUILD_TESTING)
   if(TARGET workcell_transform_clipboard_utils_test)
     target_link_libraries(workcell_transform_clipboard_utils_test Qt5::Core)
     target_include_directories(workcell_transform_clipboard_utils_test PRIVATE gui)
+  endif()
+
+  if(TARGET workcell_preview_item_suppression_test)
+    target_link_libraries(workcell_preview_item_suppression_test Qt5::Widgets)
+    target_include_directories(workcell_preview_item_suppression_test PRIVATE gui)
   endif()
 
   if(TARGET workcell_studio_canvas_model_mesh_test)
