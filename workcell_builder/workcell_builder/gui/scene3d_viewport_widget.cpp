@@ -3581,17 +3581,23 @@ QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
 QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
 {
   QJsonArray out;
-  for (const auto & item : items) {
+  const std::vector<const ScenePreviewWidget::PreviewItem *> final_renderables =
+    build_final_generated_urdf_robot_renderables(items, show_safety);
+  for (const auto * item_ptr : final_renderables) {
+    if (!item_ptr) continue;
+    const ScenePreviewWidget::PreviewItem & item = *item_ptr;
     if (!is_generated_urdf_visual_item(item) && !is_locked_urdf_item(item)) continue;
     if (!item.has_mesh_metadata) continue;
 
     const QString mesh_source = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path : item.source_path;
-    if (mesh_source.trimmed().isEmpty()) continue;
+    const bool required_ur5_fallback = is_generated_urdf_visual_fallback_item(item) && is_required_ur5_viewport_link(item);
+    if (mesh_source.trimmed().isEmpty() && !required_ur5_fallback) continue;
 
     QString canonical_mesh_source;
     QString resolve_failure_reason;
-    const bool path_resolved = try_resolve_canonical_mesh_path(mesh_source, canonical_mesh_source, &item, &resolve_failure_reason);
-    if (!path_resolved) canonical_mesh_source = QFileInfo(mesh_source).absoluteFilePath();
+    const bool path_resolved = !mesh_source.trimmed().isEmpty() &&
+      try_resolve_canonical_mesh_path(mesh_source, canonical_mesh_source, &item, &resolve_failure_reason);
+    if (!path_resolved && !mesh_source.trimmed().isEmpty()) canonical_mesh_source = QFileInfo(mesh_source).absoluteFilePath();
 
     QJsonObject row;
     row["item_id"] = item.id;
@@ -3635,6 +3641,19 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["canonical_mesh_source"] = canonical_mesh_source;
     row["path_resolved"] = path_resolved;
     row["resolve_failure_reason"] = resolve_failure_reason;
+    if (required_ur5_fallback) {
+      row["source_type"] = QStringLiteral("generated_urdf_visual_fallback");
+      row["final_draw_status"] = QStringLiteral("ur5_emergency_visible_fallback");
+      row["fallback_visible_primitive"] = true;
+      row["path_resolved"] = true;
+      row["resolve_failure_reason"] = QStringLiteral("mesh_submission_failed_visible_fallback_submitted");
+      row["final_draw_bbox_span"] = scene3d_vec_to_json(QVector3D(
+        static_cast<float>(qMax(0.08, item.sx)),
+        static_cast<float>(qMax(0.08, item.sy)),
+        static_cast<float>(qMax(0.08, item.sz))));
+      out.append(row);
+      continue;
+    }
     if (is_required_ur5_viewport_link(item)) {
       const QString required_link = scene3d_canonical_link_name_for_item(item);
       const QHash<QString, QString> expected_ur5_visual_meshes{
