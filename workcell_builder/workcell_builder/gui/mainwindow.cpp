@@ -9801,6 +9801,30 @@ void MainWindow::populate_scene_hierarchy()
     }
   }
 
+  // The generated URDF visual mesh index is the authoritative renderer handoff
+  // source for locked robot/tool/environment mesh previews.  Keep those rows
+  // ahead of semantic/editor overlays in the assembled PreviewItem payload so
+  // visual_items[0] (for UR5, base_link_inertia/visual_0/base.dae) cannot be
+  // displaced by environment.yaml's semantic robot_base or other helper rows
+  // before Scene3DViewportWidget ingest.
+  std::stable_sort(preview_items.begin(), preview_items.end(), [](const auto & a, const auto & b) {
+    const auto generated_rank = [](const ScenePreviewWidget::PreviewItem & item) {
+      const QString source_layer = canonical_scene3d_token(item.source_layer);
+      const QString visual_source = canonical_scene3d_token(item.active_visual_source);
+      const bool locked_generated_visual =
+        source_layer == QStringLiteral("locked_generated_urdf_visual") ||
+        source_layer == QStringLiteral("generated_urdf_visual");
+      const bool mesh_preview = visual_source == QStringLiteral("mesh_preview");
+      return (locked_generated_visual && mesh_preview) ? 0 : 1;
+    };
+    return generated_rank(a) < generated_rank(b);
+  });
+  if (!preview_items.isEmpty() &&
+      canonical_scene3d_token(preview_items.front().source_layer) == QStringLiteral("locked_generated_urdf_visual")) {
+    append_studio_log(QStringLiteral("Scene3D generated URDF visuals ordered before semantic overlays for renderer handoff: first_item=%1 source_layer=%2 active_visual_source=%3")
+      .arg(preview_items.front().id, preview_items.front().source_layer, preview_items.front().active_visual_source));
+  }
+
   if (preview_items.empty()) {
     const QString scene_source = QString::fromStdString(s.scene_dir.string());
     add_preview_item("robot_base", "robot base", "Robot", "robot", "ready", scene_source, true);
