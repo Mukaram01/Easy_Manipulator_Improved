@@ -646,6 +646,9 @@ private:
     copy_filter_counter("duplicate_id_count");
     copy_filter_counter("first_20_visual_items");
     copy_filter_counter("visual_ingestion_diagnostics");
+    copy_filter_counter("generated_urdf_visual_numbers_after_ingest");
+    copy_filter_counter("generated_urdf_visual_numbers_after_suppression");
+    copy_filter_counter("generated_urdf_visual_numbers_after_filter");
     copy_filter_counter("robot_visual_count");
     copy_filter_counter("robot_mesh_loaded_count");
     copy_filter_counter("robot_mesh_missing_count");
