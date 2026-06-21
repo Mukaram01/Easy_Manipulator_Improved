@@ -1290,6 +1290,7 @@ bool item_is_enabled_for_fit(const ScenePreviewWidget::PreviewItem & it)
 
 bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it)
 {
+  if (is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) return false;
   const NormalizedRole role = classify_item_role(it);
   if (role == NormalizedRole::RobotReach || role == NormalizedRole::SafetyZone || role == NormalizedRole::WarningAnchor) return true;
   const QString role_text = it.role.trimmed().toLower();
@@ -2827,12 +2828,13 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   if (semantic_role == NormalizedRole::WarningAnchor) {
     return false;
   }
-  if (is_intentional_semantic_editor_primitive(it) && draw_clean_semantic_primitive(it)) {
+  if (!generated_or_locked_preview && is_intentional_semantic_editor_primitive(it) && draw_clean_semantic_primitive(it)) {
     if (out_editable_primitive_count) ++(*out_editable_primitive_count);
     return true;
   }
   const bool semantic_without_mesh_handoff =
     is_clean_semantic_primitive_role(semantic_role) &&
+    !generated_or_locked_preview &&
     !item_has_credible_mesh_handoff(it);
   if (semantic_without_mesh_handoff && draw_clean_semantic_primitive(it)) {
     if (out_editable_primitive_count) ++(*out_editable_primitive_count);

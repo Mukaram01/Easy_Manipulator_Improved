@@ -294,6 +294,45 @@ TEST(Scene3DRenderRoleClassifier, RobotReachIdIsSemanticEvenWhenLockedWithoutMes
   EXPECT_EQ(counters.editable_primitive_rendered_count, 1);
 }
 
+TEST(Scene3DRenderRoleClassifier, GeneratedUrdfBaseLinkInertiaIsMeshNotSemanticHelper)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+
+  auto base_link_inertia = make_item("generated_urdf::base_link_inertia::visual_0::0");
+  base_link_inertia.display_name = "base_link_inertia";
+  base_link_inertia.role = "robot";
+  base_link_inertia.category = "robot/ur5";
+  base_link_inertia.source_layer = "locked_generated_urdf_visual";
+  base_link_inertia.active_visual_source = "mesh_preview";
+  base_link_inertia.locked = true;
+  base_link_inertia.editable = false;
+  base_link_inertia.lock_reason = "generated URDF visual";
+  base_link_inertia.visual_index_link = "base_link_inertia";
+  base_link_inertia.visual_index_link_name = "base_link_inertia";
+  base_link_inertia.visual_index_visual = "visual_0";
+  base_link_inertia.visual_index_visual_name = "visual_0";
+  base_link_inertia.package_uri = "package://ur_description/meshes/ur5/visual/base.dae";
+  base_link_inertia.mesh_path = "assets/robots/universal_robot/ur_description/meshes/ur5/visual/base.dae";
+  base_link_inertia.source_path = base_link_inertia.mesh_path;
+  base_link_inertia.mesh_available = true;
+  base_link_inertia.has_mesh_metadata = true;
+
+  EXPECT_EQ(Scene3DViewportWidget::render_role_for_test(base_link_inertia), "generated_urdf_mesh");
+  EXPECT_TRUE(Scene3DViewportWidget::should_include_in_default_fit_for_test(base_link_inertia));
+  EXPECT_FALSE(Scene3DViewportWidget::should_draw_clean_semantic_primitive_for_test(base_link_inertia));
+  EXPECT_FALSE(Scene3DViewportWidget::should_suppress_missing_geometry_marker_for_test(base_link_inertia));
+
+  Scene3DViewportWidget viewport;
+  viewport.ingest_preview_items(QVector<ScenePreviewWidget::PreviewItem>{ base_link_inertia });
+  const QJsonArray final_draw = viewport.final_draw_visual_items_export();
+  ASSERT_EQ(final_draw.size(), 1);
+  const QJsonObject row = final_draw.at(0).toObject();
+  EXPECT_EQ(row.value("source_layer").toString(), "locked_generated_urdf_visual");
+  EXPECT_EQ(row.value("active_visual_source").toString(), "mesh_preview");
+  EXPECT_EQ(row.value("canonical_link_name").toString(), "base_link_inertia");
+  EXPECT_TRUE(row.value("package_uri").toString().contains("ur_description/meshes/ur5/visual/base.dae"));
+}
+
 TEST(Scene3DRenderRoleClassifier, EditableLayoutPrimitivesDoNotCountAsGeneratedFallbacks)
 {
   ASSERT_NE(ensure_app(), nullptr);
