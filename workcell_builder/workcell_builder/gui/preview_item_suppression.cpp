@@ -123,8 +123,52 @@ bool is_resolved_mesh_path_or_resolvable_package_uri(const QString & value)
 }
 }  // namespace
 
+
+bool is_required_ur5_generated_visual_mesh_index_row(const ScenePreviewWidget::PreviewItem & item)
+{
+  static const QSet<QString> required_links{
+    QStringLiteral("base_link_inertia"),
+    QStringLiteral("shoulder_link"),
+    QStringLiteral("upper_arm_link"),
+    QStringLiteral("forearm_link"),
+    QStringLiteral("wrist_1_link"),
+    QStringLiteral("wrist_2_link"),
+    QStringLiteral("wrist_3_link")
+  };
+  const QString link = normalized_equivalence_token(
+    !item.visual_index_link_name.trimmed().isEmpty() ? item.visual_index_link_name : item.visual_index_link);
+  if (!required_links.contains(link)) return false;
+
+  const QStringList mesh_identity_fields = {
+    item.package_uri,
+    item.visual_index_package_uri,
+    item.visual_index_mesh_uri,
+    item.mesh_path,
+    item.source_path,
+    item.resolved_source_path_original
+  };
+  bool references_ur5_visual_mesh = false;
+  for (QString value : mesh_identity_fields) {
+    value = value.trimmed().toLower();
+    if (value.startsWith(QStringLiteral("package://ur_description/meshes/ur5/visual/"))) {
+      references_ur5_visual_mesh = true;
+      break;
+    }
+    if (value.contains(QStringLiteral("/ur_description/meshes/ur5/visual/"))) {
+      references_ur5_visual_mesh = true;
+      break;
+    }
+  }
+  if (!references_ur5_visual_mesh) return false;
+
+  return item.locked && !item.editable && !item.linked_to_editable_layout_state &&
+         canonical_scene3d_token(item.source_layer) == QStringLiteral("locked_generated_urdf_visual") &&
+         canonical_scene3d_token(item.active_visual_source) == QStringLiteral("mesh_preview");
+}
+
 bool is_authoritative_generated_urdf_mesh_preview_item(const ScenePreviewWidget::PreviewItem & item)
 {
+  if (is_required_ur5_generated_visual_mesh_index_row(item)) return true;
   const auto is_protected_generated_mesh_index_visual = [](const ScenePreviewWidget::PreviewItem & candidate) {
     if (!candidate.id.trimmed().startsWith(QStringLiteral("generated_urdf::"))) return false;
     if (!candidate.locked || candidate.linked_to_editable_layout_state || candidate.editable) return false;
