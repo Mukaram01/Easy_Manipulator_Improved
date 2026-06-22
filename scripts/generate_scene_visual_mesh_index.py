@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""Regenerate one Workcell Studio Scene3D visual mesh index.
-
-This is the narrow CLI path for refreshing
-``scenes/<scene>/generated/scene_visual_mesh_index.json`` without launching the
-Workcell Builder GUI.
-"""
+"""Regenerate one Workcell Studio Scene3D visual mesh index."""
 from __future__ import annotations
 
 import argparse
 import subprocess
 import sys
 from pathlib import Path
+
+
+if str(Path(__file__).resolve().parents[1]) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+try:
+    from scripts.repair_ur5_scene3d_visual_index import repair_index
+except Exception:  # pragma: no cover - optional post-processing safety net
+    repair_index = None
 
 
 def main() -> int:
@@ -38,7 +42,16 @@ def main() -> int:
         args.use_fake_hardware,
     ]
     print("[generate_scene_visual_mesh_index] running: " + " ".join(cmd), flush=True)
-    return subprocess.run(cmd, cwd=repo_root).returncode
+    result = subprocess.run(cmd, cwd=repo_root).returncode
+    if result != 0:
+        return result
+
+    index_path = repo_root / "scenes" / args.scene / "generated" / "scene_visual_mesh_index.json"
+    if repair_index is not None and index_path.exists():
+        changed, links = repair_index(index_path)
+        if changed:
+            print("[generate_scene_visual_mesh_index] UR5 repair added: " + ", ".join(links), flush=True)
+    return 0
 
 
 if __name__ == "__main__":
