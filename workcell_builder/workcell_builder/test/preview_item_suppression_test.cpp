@@ -160,3 +160,46 @@ TEST(PreviewItemSuppression, ExplicitlyPreservesUr5VisualMeshIndexRowsAgainstSem
   EXPECT_EQ(retained_ur5_links.size(), 7);
   EXPECT_FALSE(retained_robot_base_placeholder);
 }
+
+TEST(PreviewItemSuppression, PreservesRawUrdfVisual0BaseRowFromMeshIndex)
+{
+  ScenePreviewWidget::PreviewItem raw_base = make_generated_visual(
+    0,
+    QStringLiteral("base_link_inertia"),
+    QStringLiteral("robot/ur5"),
+    QStringLiteral("robot"),
+    QStringLiteral("package://ur_description/meshes/ur5/visual/base.dae"));
+  raw_base.id = QStringLiteral("urdf_visual_0_base_link_inertia_visual_0_package_ur_description_meshes_ur5_visual_base_dae");
+  raw_base.visual_index_link_name.clear();
+  raw_base.visual_index_link.clear();
+  raw_base.visual_index_source = QStringLiteral("urdf_flattened");
+  raw_base.active_visual_source.clear();
+
+  ScenePreviewWidget::PreviewItem robot_base;
+  robot_base.id = QStringLiteral("robot_base");
+  robot_base.display_name = QStringLiteral("Robot Base");
+  robot_base.category = QStringLiteral("robot");
+  robot_base.role = QStringLiteral("robot_base");
+  robot_base.source_layer = QStringLiteral("primitive_fallback");
+  robot_base.active_visual_source = QStringLiteral("primitive_fallback");
+  robot_base.locked = true;
+  robot_base.editable = false;
+  robot_base.mesh_available = false;
+  robot_base.has_mesh_metadata = false;
+  robot_base.warnings = QStringList{QStringLiteral("semantic placeholder")};
+
+  ASSERT_TRUE(workcell_builder::is_authoritative_generated_urdf_mesh_preview_item(raw_base));
+
+  const auto result = workcell_builder::suppress_lower_fidelity_preview_items(
+    QVector<ScenePreviewWidget::PreviewItem>{raw_base, robot_base}, true);
+
+  bool retained_raw_base = false;
+  bool retained_robot_base_placeholder = false;
+  for (const auto & item : result.items) {
+    if (item.id == raw_base.id) retained_raw_base = true;
+    if (item.id == robot_base.id) retained_robot_base_placeholder = true;
+  }
+
+  EXPECT_TRUE(retained_raw_base);
+  EXPECT_FALSE(retained_robot_base_placeholder);
+}
