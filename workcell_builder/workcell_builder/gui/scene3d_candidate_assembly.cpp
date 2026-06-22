@@ -3,6 +3,26 @@
 namespace {
 QString token(QString s) { return s.trimmed().toLower().replace('-', '_').replace(' ', '_'); }
 
+bool item_has_urdf_visual_mesh_identity(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QString id = token(item.id);
+  const QString source_layer = token(item.source_layer);
+  const QString visual_source = token(item.active_visual_source);
+  const QString source = token(item.visual_index_source + "|" + item.source_path + "|" + item.package_uri + "|" +
+                               item.visual_index_package_uri + "|" + item.visual_index_mesh_uri + "|" +
+                               item.mesh_path + "|" + item.resolved_source_path_original + "|" + item.metadata_tags);
+
+  if (id.startsWith(QStringLiteral("urdf_visual_"))) return true;
+  if (source_layer.contains(QStringLiteral("urdf_flattened")) ||
+      visual_source.contains(QStringLiteral("urdf_flattened"))) return true;
+  if (source.contains(QStringLiteral("source_urdf_flattened")) ||
+      source.contains(QStringLiteral("source=urdf_flattened"))) return true;
+  if (source.contains(QStringLiteral("package://ur_description/meshes/ur5/visual")) ||
+      source.contains(QStringLiteral("ur_description/meshes/ur5/visual")) ||
+      source.contains(QStringLiteral("ur_description_meshes_ur5_visual"))) return true;
+  return false;
+}
+
 bool is_generated_robot_visual(const ScenePreviewWidget::PreviewItem & item)
 {
   const QString source_layer = token(item.source_layer);
@@ -20,6 +40,8 @@ bool is_generated_robot_visual(const ScenePreviewWidget::PreviewItem & item)
     return true;
   }
   if (id.startsWith(QStringLiteral("generated_urdf_fallback::"))) return true;
+  if (id.startsWith(QStringLiteral("generated_urdf::"))) return true;
+  if (item_has_urdf_visual_mesh_identity(item)) return true;
   return item.locked && (combined.contains(QStringLiteral("urdf")) ||
                          combined.contains(QStringLiteral("generated")) ||
                          combined.contains(QStringLiteral("robot_link")) ||
@@ -45,7 +67,10 @@ bool include_preview_item_for_scene3d(
   // legacy "Show Robot Links" control.  This check intentionally precedes
   // mesh-preview, label/selection, warning, and primitive-fallback decisions:
   // generated robot meshes and locked generated fallback link visuals must
-  // stay visible whenever the generated robot layer is enabled.
+  // stay visible whenever the generated robot layer is enabled. Raw
+  // scene_visual_mesh_index.json rows can arrive with ids like urdf_visual_0_*
+  // before downstream normalisation; these are also authoritative generated
+  // URDF visuals and must not be dropped before the viewport renderer.
   if (is_generated_robot_visual(item)) return enabled_layers.contains("locked_generated_urdf_visual");
   if (source_layer == "editable_layout") return enabled_layers.contains("editable_layout");
   if (source_layer == "primitive_fallback") return enabled_layers.contains("primitive_fallback");
@@ -118,9 +143,11 @@ Scene3DLayerVisibilityDefaults compute_scene3d_default_layer_visibility(
   for (const auto & item : all_items) {
     const QString source_layer = token(item.source_layer);
     if ((source_layer == QStringLiteral("locked_generated_urdf_visual") ||
-         source_layer == QStringLiteral("generated_urdf_visual")) &&
+         source_layer == QStringLiteral("generated_urdf_visual") ||
+         item_has_urdf_visual_mesh_identity(item)) &&
         (item.mesh_available || item.has_mesh_metadata ||
-         item.id.startsWith(QStringLiteral("generated_urdf_fallback::")))) {
+         item.id.startsWith(QStringLiteral("generated_urdf_fallback::")) ||
+         item.id.startsWith(QStringLiteral("urdf_visual_")))) {
       ++authoritative_generated_mesh_count;
     }
   }
