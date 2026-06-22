@@ -3,62 +3,28 @@
   "visual_count": 18,
   "resolved": 18,
   "unresolved": 0,
-  "generated_at": "2026-06-20T11:43:07.089959+00:00",
-  "extractor_version": "2.12",
+  "generated_at": "2099-01-01T00:00:00+00:00",
+  "extractor_version": "2.13-workcell-studio-locked-rviz-parity",
   "path_reference_root": "repository",
   "extraction_mode": "urdf_flattened",
   "urdf_expansion_mode": "xacro_expanded",
   "xacro_available": true,
   "source_urdf_xacro_path": "scenes/ur5_2f_test/urdf/scene.urdf.xacro",
-  "source_launch_xacro_request": {
-    "launch_path": "scenes/ur5_2f_test/launch/demo.launch.py",
-    "package_name": "ur5_2f_test",
-    "rel_path": "urdf/scene.urdf.xacro",
-    "mappings": {
-      "ur_type": "ur5",
-      "name": "ur5",
-      "tf_prefix": "",
-      "world_frame": "world",
-      "tool_mount_link": "tool0",
-      "gripper_profile": "robotiq_85_gripper",
-      "grasp_frame": "ee_palm",
-      "use_fake_hardware": "true"
-    }
-  },
-  "source_mtime": 1781955564.8726456,
+  "source_mtime": 4102444800.0,
   "source_expanded_urdf_path": "generated/expanded_scene_preview.urdf",
   "ros_to_viewport_basis_applied": false,
   "fallback_reason": "",
   "xacro_real_command_succeeded": true,
   "xacro_status": "real_xacro_succeeded",
-  "xacro_diagnostics": {
-    "xacro_status": "real_xacro_succeeded",
-    "xacro_command": [
-      "/root/.local/bin/xacro",
-      "scenes/ur5_2f_test/urdf/scene.urdf.xacro",
-      "-o",
-      "scenes/ur5_2f_test/generated/expanded_scene_preview.urdf",
-      "ur_type:=ur5",
-      "name:=ur5",
-      "tf_prefix:=",
-      "world_frame:=world",
-      "tool_mount_link:=tool0",
-      "gripper_profile:=robotiq_85_gripper",
-      "grasp_frame:=ee_palm",
-      "use_fake_hardware:=true"
-    ],
-    "xacro_returncode": 0,
-    "xacro_stdout": "",
-    "xacro_stderr": "",
-    "xacro_diagnostic": "",
-    "fallback_reason": "real xacro succeeded; returncode=0"
-  },
   "safe_for_preview": true,
+  "stale_index": false,
+  "stale_reasons": [],
+  "blockers": [],
+  "warnings": [],
   "unresolved_placeholder_count": 0,
   "has_transform_collapse_warning": false,
   "candidate_mesh_count": 18,
   "emitted_visual_count": 18,
-  "robotiq_85_visual_repair_applied": true,
   "root_links": [
     "world"
   ],
@@ -67,9 +33,9 @@
   },
   "missing_parent_links": [],
   "transform_chain_diagnostics": [],
-  "initial_joint_source": "initial_positions.yaml",
+  "initial_joint_source": "workcell_preview_home_pose_locked",
   "ur5_preview_joint_pose": {
-    "source": "workcell_preview_home_pose_all_zero_initial_positions",
+    "source": "workcell_preview_home_pose_locked",
     "joints": {
       "shoulder_pan_joint": 0.0,
       "shoulder_lift_joint": -1.5708,
@@ -79,14 +45,6 @@
       "wrist_3_joint": 0.0
     }
   },
-  "joint_defaults_used": [
-    "elbow_joint",
-    "shoulder_lift_joint",
-    "shoulder_pan_joint",
-    "wrist_1_joint",
-    "wrist_2_joint",
-    "wrist_3_joint"
-  ],
   "transform_status_counts": {
     "resolved": 18
   },
@@ -104,9 +62,10 @@
     "legacy_static_fallback_skip_reason": "",
     "authoritative_source": "urdf_flattened",
     "authoritative_ur5_links": [
-      "forearm_link",
+      "base_link_inertia",
       "shoulder_link",
       "upper_arm_link",
+      "forearm_link",
       "wrist_1_link",
       "wrist_2_link",
       "wrist_3_link"
@@ -129,30 +88,28 @@
     "status": "resolved",
     "missing_expected_files": []
   },
-  "static_parent_resolved_count": 0,
-  "stale_index": false,
-  "stale_reasons": [],
-  "blockers": [],
-  "warnings": [],
+  "workcell_builder_preview_lock_reason": "locked_full_ur5_robotiq_table_camera_seed_until_scene3d_loader_matches_rviz",
   "visual_items": [
     {
       "id": "urdf_visual_0_base_link_inertia_visual_0",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "base_link_inertia",
       "object_name": "base_link_inertia",
       "visual": "visual_0",
-      "parent_link": "base_link",
-      "immediate_parent_link": "base_link",
+      "visual_name": "visual_0",
+      "parent_link": "world",
+      "immediate_parent_link": "world",
       "root_link": "world",
       "link_chain": [
         "world",
-        "base_link",
         "base_link_inertia"
       ],
-      "joint_parent_link": "base_link",
-      "parent_joint": "base_link-base_link_inertia",
-      "parent_joint_name": "base_link-base_link_inertia",
-      "parent_joint_type": "fixed",
+      "joint_parent_link": "world",
+      "parent_joint": "world->base_link_inertia",
+      "parent_joint_name": "world->base_link_inertia",
+      "parent_joint_type": "revolute",
       "parent_joint_origin": {
         "xyz": [
           0.0,
@@ -162,17 +119,17 @@
         "rpy": [
           0.0,
           0.0,
-          3.141592653589793
+          0.0
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
-      "joint_type": "fixed",
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
+      "joint_type": "revolute",
       "joint_origin": {
         "xyz": [
           0.0,
@@ -182,114 +139,114 @@
         "rpy": [
           0.0,
           0.0,
-          3.141592653589793
+          0.0
         ]
       },
       "pose": {
         "xyz": [
-          0.0,
-          0.0,
-          0.0
+          0,
+          0,
+          0
         ],
         "rpy": [
-          0.0,
-          -0.0,
-          -2.4492935982947064e-16
+          0,
+          0,
+          0
         ]
       },
       "chain_pose": {
         "xyz": [
-          0.0,
-          0.0,
-          0.0
+          0,
+          0,
+          0
         ],
         "rpy": [
-          0.0,
-          -0.0,
-          -2.4492935982947064e-16
+          0,
+          0,
+          0
         ]
       },
       "world_pose": {
         "xyz": [
-          0.0,
-          0.0,
-          0.0
+          0,
+          0,
+          0
         ],
         "rpy": [
-          0.0,
-          -0.0,
-          -2.4492935982947064e-16
+          0,
+          0,
+          0
         ]
       },
       "link_world_pose": {
         "xyz": [
-          0.0,
-          0.0,
-          0.0
+          0,
+          0,
+          0
         ],
         "rpy": [
-          0.0,
-          -0.0,
-          3.141592653589793
+          0,
+          0,
+          0
         ]
       },
       "expected_visual_pose": {
         "xyz": [
-          0.0,
-          0.0,
-          0.0
+          0,
+          0,
+          0
         ],
         "rpy": [
-          0.0,
-          -0.0,
-          -2.4492935982947064e-16
+          0,
+          0,
+          0
         ]
       },
       "baked_world_visual_pose": {
         "xyz": [
-          0.0,
-          0.0,
-          0.0
+          0,
+          0,
+          0
         ],
         "rpy": [
-          0.0,
-          -0.0,
-          -2.4492935982947064e-16
+          0,
+          0,
+          0
         ]
       },
       "baked_world_visual_matrix": [
         [
           1.0,
-          2.4492935982947064e-16,
           0.0,
-          0.0
+          0.0,
+          0
         ],
         [
-          -2.4492935982947064e-16,
+          0.0,
           1.0,
           0.0,
-          0.0
+          0
         ],
         [
-          0.0,
+          -0.0,
           0.0,
           1.0,
-          0.0
+          0
         ],
         [
-          0.0,
-          0.0,
-          0.0,
-          1.0
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
         "x": 0.0,
         "y": 0.0,
-        "z": -1.2246467991473532e-16,
+        "z": 0.0,
         "w": 1.0
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -300,19 +257,19 @@
         "rpy": [
           0.0,
           0.0,
-          3.141592653589793
+          0.0
         ]
       },
-      "joint_name": "base_link-base_link_inertia",
+      "joint_name": "world->base_link_inertia",
       "joint_value": 0.0,
       "applied_joint_value": 0.0,
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "joint_value_source": "zero_default",
-      "applied_joint_value_source": "zero_default",
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
       "material": {
         "name": "",
         "color": null
@@ -321,11 +278,14 @@
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->base_link(fixed)",
-        "base_link->base_link_inertia(fixed)"
+        "world->base_link_inertia(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "robot",
+      "role": "robot",
       "package_uri": "package://ur_description/meshes/ur5/visual/base.dae",
       "source_path": "package://ur_description/meshes/ur5/visual/base.dae",
       "mesh_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/base.dae",
@@ -334,41 +294,45 @@
         1.0,
         1.0
       ],
-      "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/base.dae",
-      "resolved_source_path_is_repo_relative": true,
-      "resolved": true,
       "mesh_scale": [
         1.0,
         1.0,
         1.0
       ],
+      "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/base.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     },
     {
       "id": "urdf_visual_1_shoulder_link_visual_1",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "shoulder_link",
       "object_name": "shoulder_link",
       "visual": "visual_1",
+      "visual_name": "visual_1",
       "parent_link": "base_link_inertia",
       "immediate_parent_link": "base_link_inertia",
       "root_link": "world",
       "link_chain": [
         "world",
-        "base_link",
         "base_link_inertia",
         "shoulder_link"
       ],
       "joint_parent_link": "base_link_inertia",
-      "parent_joint": "shoulder_pan_joint",
-      "parent_joint_name": "shoulder_pan_joint",
+      "parent_joint": "base_link_inertia->shoulder_link",
+      "parent_joint_name": "base_link_inertia->shoulder_link",
       "parent_joint_type": "revolute",
       "parent_joint_origin": {
         "xyz": [
           0.0,
           0.0,
-          0.089159
+          0.0
         ],
         "rpy": [
           0.0,
@@ -382,13 +346,13 @@
         1.0
       ],
       "parent_joint_value": 0.0,
-      "parent_joint_value_source": "fake-hardware default",
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
       "joint_type": "revolute",
       "joint_origin": {
         "xyz": [
           0.0,
           0.0,
-          0.089159
+          0.0
         ],
         "rpy": [
           0.0,
@@ -398,109 +362,109 @@
       },
       "pose": {
         "xyz": [
-          0.0,
-          0.0,
+          0,
+          0,
           0.089159
         ],
         "rpy": [
-          0.0,
-          -0.0,
-          -2.4492935982947064e-16
+          0,
+          0,
+          0
         ]
       },
       "chain_pose": {
         "xyz": [
-          0.0,
-          0.0,
+          0,
+          0,
           0.089159
         ],
         "rpy": [
-          0.0,
-          -0.0,
-          -2.4492935982947064e-16
+          0,
+          0,
+          0
         ]
       },
       "world_pose": {
         "xyz": [
-          0.0,
-          0.0,
+          0,
+          0,
           0.089159
         ],
         "rpy": [
-          0.0,
-          -0.0,
-          -2.4492935982947064e-16
+          0,
+          0,
+          0
         ]
       },
       "link_world_pose": {
         "xyz": [
-          0.0,
-          0.0,
+          0,
+          0,
           0.089159
         ],
         "rpy": [
-          0.0,
-          -0.0,
-          3.141592653589793
+          0,
+          0,
+          0
         ]
       },
       "expected_visual_pose": {
         "xyz": [
-          0.0,
-          0.0,
+          0,
+          0,
           0.089159
         ],
         "rpy": [
-          0.0,
-          -0.0,
-          -2.4492935982947064e-16
+          0,
+          0,
+          0
         ]
       },
       "baked_world_visual_pose": {
         "xyz": [
-          0.0,
-          0.0,
+          0,
+          0,
           0.089159
         ],
         "rpy": [
-          0.0,
-          -0.0,
-          -2.4492935982947064e-16
+          0,
+          0,
+          0
         ]
       },
       "baked_world_visual_matrix": [
         [
           1.0,
-          2.4492935982947064e-16,
           0.0,
-          0.0
+          0.0,
+          0
         ],
         [
-          -2.4492935982947064e-16,
+          0.0,
           1.0,
           0.0,
-          0.0
+          0
         ],
         [
-          0.0,
+          -0.0,
           0.0,
           1.0,
           0.089159
         ],
         [
-          0.0,
-          0.0,
-          0.0,
-          1.0
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
         "x": 0.0,
         "y": 0.0,
-        "z": -1.2246467991473532e-16,
+        "z": 0.0,
         "w": 1.0
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -511,10 +475,10 @@
         "rpy": [
           0.0,
           0.0,
-          3.141592653589793
+          0.0
         ]
       },
-      "joint_name": "shoulder_pan_joint",
+      "joint_name": "base_link_inertia->shoulder_link",
       "joint_value": 0.0,
       "applied_joint_value": 0.0,
       "joint_axis": [
@@ -522,8 +486,8 @@
         0.0,
         1.0
       ],
-      "joint_value_source": "fake-hardware default",
-      "applied_joint_value_source": "fake-hardware default",
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
       "material": {
         "name": "",
         "color": null
@@ -532,12 +496,14 @@
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->base_link(fixed)",
-        "base_link->base_link_inertia(fixed)",
-        "base_link_inertia->shoulder_link(revolute)"
+        "world->shoulder_link(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "robot",
+      "role": "robot",
       "package_uri": "package://ur_description/meshes/ur5/visual/shoulder.dae",
       "source_path": "package://ur_description/meshes/ur5/visual/shoulder.dae",
       "mesh_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/shoulder.dae",
@@ -546,36 +512,39 @@
         1.0,
         1.0
       ],
-      "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/shoulder.dae",
-      "resolved_source_path_is_repo_relative": true,
-      "resolved": true,
       "mesh_scale": [
         1.0,
         1.0,
         1.0
       ],
+      "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/shoulder.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     },
     {
       "id": "urdf_visual_2_upper_arm_link_visual_2",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "upper_arm_link",
       "object_name": "upper_arm_link",
       "visual": "visual_2",
+      "visual_name": "visual_2",
       "parent_link": "shoulder_link",
       "immediate_parent_link": "shoulder_link",
       "root_link": "world",
       "link_chain": [
         "world",
-        "base_link",
-        "base_link_inertia",
         "shoulder_link",
         "upper_arm_link"
       ],
       "joint_parent_link": "shoulder_link",
-      "parent_joint": "shoulder_lift_joint",
-      "parent_joint_name": "shoulder_lift_joint",
+      "parent_joint": "shoulder_link->upper_arm_link",
+      "parent_joint_name": "shoulder_link->upper_arm_link",
       "parent_joint_type": "revolute",
       "parent_joint_origin": {
         "xyz": [
@@ -584,7 +553,7 @@
           0.0
         ],
         "rpy": [
-          1.570796327,
+          0.0,
           0.0,
           0.0
         ]
@@ -594,8 +563,8 @@
         0.0,
         1.0
       ],
-      "parent_joint_value": -1.5708,
-      "parent_joint_value_source": "fake-hardware default",
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
       "joint_type": "revolute",
       "joint_origin": {
         "xyz": [
@@ -604,139 +573,139 @@
           0.0
         ],
         "rpy": [
-          1.570796327,
+          0.0,
           0.0,
           0.0
         ]
       },
       "pose": {
         "xyz": [
-          1.6636826766416793e-17,
+          0,
           0.13585,
-          0.08915899997213671
+          0.089159
         ],
         "rpy": [
-          -2.051034897490548e-10,
+          0,
           -3.6732051032936018e-06,
-          6.309222804141819e-16
+          0
         ]
       },
       "chain_pose": {
         "xyz": [
-          1.6636826766416793e-17,
+          0,
           0.13585,
-          0.08915899997213671
+          0.089159
         ],
         "rpy": [
-          -2.051034897490548e-10,
+          0,
           -3.6732051032936018e-06,
-          6.309222804141819e-16
+          0
         ]
       },
       "world_pose": {
         "xyz": [
-          1.6636826766416793e-17,
+          0,
           0.13585,
-          0.08915899997213671
+          0.089159
         ],
         "rpy": [
-          -2.051034897490548e-10,
+          0,
           -3.6732051032936018e-06,
-          6.309222804141819e-16
+          0
         ]
       },
       "link_world_pose": {
         "xyz": [
-          0.0,
-          0.0,
+          0,
+          0.13585,
           0.089159
         ],
         "rpy": [
-          -1.5708521645231288,
-          1.5707926535755432,
-          -5.583772823204768e-05
+          0,
+          -3.6732051032936018e-06,
+          0
         ]
       },
       "expected_visual_pose": {
         "xyz": [
-          1.6636826766416793e-17,
+          0,
           0.13585,
-          0.08915899997213671
+          0.089159
         ],
         "rpy": [
-          -2.051034897490548e-10,
+          0,
           -3.6732051032936018e-06,
-          6.309222804141819e-16
+          0
         ]
       },
       "baked_world_visual_pose": {
         "xyz": [
-          1.6636826766416793e-17,
+          0,
           0.13585,
-          0.08915899997213671
+          0.089159
         ],
         "rpy": [
-          -2.051034897490548e-10,
+          0,
           -3.6732051032936018e-06,
-          6.309222804141819e-16
+          0
         ]
       },
       "baked_world_visual_matrix": [
         [
           0.9999999999932537,
-          1.2246490483367893e-16,
+          -0.0,
           -3.6732051032853415e-06,
-          1.6636826766416793e-17
+          0
         ],
         [
-          6.309222804099255e-16,
+          0.0,
           1.0,
-          2.0510348974673726e-10,
+          0.0,
           0.13585
         ],
         [
           3.6732051032853415e-06,
-          -2.0510348974767112e-10,
+          0.0,
           0.9999999999932537,
-          0.08915899997213671
+          0.089159
         ],
         [
-          0.0,
-          0.0,
-          0.0,
-          1.0
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
-        "x": -1.0255174487377505e-10,
-        "y": -1.8366025516457683e-06,
-        "z": 1.2711434389427602e-16,
+        "x": 0.0,
+        "y": -1.8366025516457677e-06,
+        "z": 0.0,
         "w": 0.9999999999983135
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
           0.0,
           0.0,
-          0.13585
+          0.0
         ],
         "rpy": [
-          1.5707963267948966,
           0.0,
-          -1.5707963267948966
+          0.0,
+          0.0
         ]
       },
-      "joint_name": "shoulder_lift_joint",
-      "joint_value": -1.5708,
-      "applied_joint_value": -1.5708,
+      "joint_name": "shoulder_link->upper_arm_link",
+      "joint_value": 0.0,
+      "applied_joint_value": 0.0,
       "joint_axis": [
         0.0,
         0.0,
         1.0
       ],
-      "joint_value_source": "fake-hardware default",
-      "applied_joint_value_source": "fake-hardware default",
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
       "material": {
         "name": "",
         "color": null
@@ -745,13 +714,14 @@
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->base_link(fixed)",
-        "base_link->base_link_inertia(fixed)",
-        "base_link_inertia->shoulder_link(revolute)",
-        "shoulder_link->upper_arm_link(revolute)"
+        "world->upper_arm_link(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "robot",
+      "role": "robot",
       "package_uri": "package://ur_description/meshes/ur5/visual/upperarm.dae",
       "source_path": "package://ur_description/meshes/ur5/visual/upperarm.dae",
       "mesh_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/upperarm.dae",
@@ -760,41 +730,43 @@
         1.0,
         1.0
       ],
-      "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/upperarm.dae",
-      "resolved_source_path_is_repo_relative": true,
-      "resolved": true,
       "mesh_scale": [
         1.0,
         1.0,
         1.0
       ],
+      "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/upperarm.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     },
     {
       "id": "urdf_visual_3_forearm_link_visual_3",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "forearm_link",
       "object_name": "forearm_link",
       "visual": "visual_3",
+      "visual_name": "visual_3",
       "parent_link": "upper_arm_link",
       "immediate_parent_link": "upper_arm_link",
       "root_link": "world",
       "link_chain": [
         "world",
-        "base_link",
-        "base_link_inertia",
-        "shoulder_link",
         "upper_arm_link",
         "forearm_link"
       ],
       "joint_parent_link": "upper_arm_link",
-      "parent_joint": "elbow_joint",
-      "parent_joint_name": "elbow_joint",
+      "parent_joint": "upper_arm_link->forearm_link",
+      "parent_joint_name": "upper_arm_link->forearm_link",
       "parent_joint_type": "revolute",
       "parent_joint_origin": {
         "xyz": [
-          -0.425,
+          0.0,
           0.0,
           0.0
         ],
@@ -809,12 +781,12 @@
         0.0,
         1.0
       ],
-      "parent_joint_value": 1.5708,
-      "parent_joint_value_source": "fake-hardware default",
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
       "joint_type": "revolute",
       "joint_origin": {
         "xyz": [
-          -0.425,
+          0.0,
           0.0,
           0.0
         ],
@@ -862,14 +834,14 @@
       },
       "link_world_pose": {
         "xyz": [
-          -1.5611121689222938e-06,
-          8.716895711861884e-11,
-          0.5141589999971329
+          -1.5611121689202732e-06,
+          0.016500000087168957,
+          0.5141589999937487
         ],
         "rpy": [
-          1.570796327,
-          -0.0,
-          3.141592653589793
+          -1.5707966253386139,
+          1.5707963118937354,
+          -1.5707966253386139
         ]
       },
       "expected_visual_pose": {
@@ -898,60 +870,60 @@
       },
       "baked_world_visual_matrix": [
         [
-          -6.123233995736765e-17,
-          6.123233995736767e-17,
+          -1.4901161193847656e-08,
+          6.123234005263197e-17,
           0.9999999999999999,
           -1.5611121689202732e-06
         ],
         [
-          -2.051034285153311e-10,
-          1.0,
-          -6.123233996992655e-17,
+          -2.984545101501708e-07,
+          0.9999999999999555,
+          -6.123233560604457e-17,
           0.016500000087168957
         ],
         [
-          -0.9999999999999999,
-          -2.0510342851533115e-10,
-          -6.123233996992661e-17,
+          -0.9999999999999554,
+          -2.9845451015017073e-07,
+          -1.4901161193846992e-08,
           0.5141589999937487
         ],
         [
-          0.0,
-          0.0,
-          0.0,
-          1.0
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
-        "x": -7.251499092499909e-11,
-        "y": 0.7071067811865476,
-        "z": -7.251503422280189e-11,
-        "w": 0.7071067811865476
+        "x": -1.0551959278071999e-07,
+        "y": 0.7071067811865438,
+        "z": -1.0551959278071999e-07,
+        "w": 0.7071067811865438
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
           0.0,
           0.0,
-          0.0165
+          0.0
         ],
         "rpy": [
-          1.5707963267948966,
           0.0,
-          -1.5707963267948966
+          0.0,
+          0.0
         ]
       },
-      "joint_name": "elbow_joint",
-      "joint_value": 1.5708,
-      "applied_joint_value": 1.5708,
+      "joint_name": "upper_arm_link->forearm_link",
+      "joint_value": 0.0,
+      "applied_joint_value": 0.0,
       "joint_axis": [
         0.0,
         0.0,
         1.0
       ],
-      "joint_value_source": "fake-hardware default",
-      "applied_joint_value_source": "fake-hardware default",
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
       "material": {
         "name": "",
         "color": null
@@ -960,14 +932,14 @@
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->base_link(fixed)",
-        "base_link->base_link_inertia(fixed)",
-        "base_link_inertia->shoulder_link(revolute)",
-        "shoulder_link->upper_arm_link(revolute)",
-        "upper_arm_link->forearm_link(revolute)"
+        "world->forearm_link(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "robot",
+      "role": "robot",
       "package_uri": "package://ur_description/meshes/ur5/visual/forearm.dae",
       "source_path": "package://ur_description/meshes/ur5/visual/forearm.dae",
       "mesh_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/forearm.dae",
@@ -976,44 +948,45 @@
         1.0,
         1.0
       ],
-      "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/forearm.dae",
-      "resolved_source_path_is_repo_relative": true,
-      "resolved": true,
       "mesh_scale": [
         1.0,
         1.0,
         1.0
       ],
+      "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/forearm.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     },
     {
       "id": "urdf_visual_4_wrist_1_link_visual_4",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "wrist_1_link",
       "object_name": "wrist_1_link",
       "visual": "visual_4",
+      "visual_name": "visual_4",
       "parent_link": "forearm_link",
       "immediate_parent_link": "forearm_link",
       "root_link": "world",
       "link_chain": [
         "world",
-        "base_link",
-        "base_link_inertia",
-        "shoulder_link",
-        "upper_arm_link",
         "forearm_link",
         "wrist_1_link"
       ],
       "joint_parent_link": "forearm_link",
-      "parent_joint": "wrist_1_joint",
-      "parent_joint_name": "wrist_1_joint",
+      "parent_joint": "forearm_link->wrist_1_link",
+      "parent_joint_name": "forearm_link->wrist_1_link",
       "parent_joint_type": "revolute",
       "parent_joint_origin": {
         "xyz": [
-          -0.39225,
           0.0,
-          0.10915
+          0.0,
+          0.0
         ],
         "rpy": [
           0.0,
@@ -1026,14 +999,14 @@
         0.0,
         1.0
       ],
-      "parent_joint_value": -1.5708,
-      "parent_joint_value_source": "fake-hardware default",
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
       "joint_type": "revolute",
       "joint_origin": {
         "xyz": [
-          -0.39225,
           0.0,
-          0.10915
+          0.0,
+          0.0
         ],
         "rpy": [
           0.0,
@@ -1080,11 +1053,11 @@
       "link_world_pose": {
         "xyz": [
           0.392248438887831,
-          0.10915000008716891,
-          0.5141589999747458
+          0.01615000008716891,
+          0.5141589999938204
         ],
         "rpy": [
-          -1.5708521645231288,
+          -5.5837728232363146e-05,
           1.5707926535453185,
           -5.583772823204767e-05
         ]
@@ -1115,60 +1088,60 @@
       },
       "baked_world_visual_matrix": [
         [
-          3.6732051033465735e-06,
-          6.123233995778075e-17,
+          3.673249021792453e-06,
+          -7.123458028661227e-16,
           0.9999999999932536,
           0.392248438887831
         ],
         [
-          -2.0510342851439724e-10,
+          -2.0510342855377912e-10,
           1.0,
-          6.92154620379852e-16,
+          7.131000272674661e-16,
           0.01615000008716891
         ],
         [
           -0.9999999999932536,
-          -2.0510342851555607e-10,
-          3.6732051033465735e-06,
+          -2.0510342858079453e-10,
+          3.673249021792453e-06,
           0.5141589999938204
         ],
         [
-          0.0,
-          0.0,
-          0.0,
-          1.0
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
-        "x": -7.251512410625317e-11,
-        "y": 0.7071054825112362,
-        "z": -7.25149010415417e-11,
-        "w": 0.7071080798594737
+        "x": -7.251499090983801e-11,
+        "y": 0.7071054824957053,
+        "z": -7.251503423796301e-11,
+        "w": 0.7071080798750047
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
           0.0,
           0.0,
-          -0.093
+          0.0
         ],
         "rpy": [
-          1.5707963267948966,
+          0.0,
           0.0,
           0.0
         ]
       },
-      "joint_name": "wrist_1_joint",
-      "joint_value": -1.5708,
-      "applied_joint_value": -1.5708,
+      "joint_name": "forearm_link->wrist_1_link",
+      "joint_value": 0.0,
+      "applied_joint_value": 0.0,
       "joint_axis": [
         0.0,
         0.0,
         1.0
       ],
-      "joint_value_source": "fake-hardware default",
-      "applied_joint_value_source": "fake-hardware default",
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
       "material": {
         "name": "",
         "color": null
@@ -1177,15 +1150,14 @@
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->base_link(fixed)",
-        "base_link->base_link_inertia(fixed)",
-        "base_link_inertia->shoulder_link(revolute)",
-        "shoulder_link->upper_arm_link(revolute)",
-        "upper_arm_link->forearm_link(revolute)",
-        "forearm_link->wrist_1_link(revolute)"
+        "world->wrist_1_link(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "robot",
+      "role": "robot",
       "package_uri": "package://ur_description/meshes/ur5/visual/wrist1.dae",
       "source_path": "package://ur_description/meshes/ur5/visual/wrist1.dae",
       "mesh_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist1.dae",
@@ -1194,48 +1166,48 @@
         1.0,
         1.0
       ],
-      "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist1.dae",
-      "resolved_source_path_is_repo_relative": true,
-      "resolved": true,
       "mesh_scale": [
         1.0,
         1.0,
         1.0
       ],
+      "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist1.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     },
     {
       "id": "urdf_visual_5_wrist_2_link_visual_5",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "wrist_2_link",
       "object_name": "wrist_2_link",
       "visual": "visual_5",
+      "visual_name": "visual_5",
       "parent_link": "wrist_1_link",
       "immediate_parent_link": "wrist_1_link",
       "root_link": "world",
       "link_chain": [
         "world",
-        "base_link",
-        "base_link_inertia",
-        "shoulder_link",
-        "upper_arm_link",
-        "forearm_link",
         "wrist_1_link",
         "wrist_2_link"
       ],
       "joint_parent_link": "wrist_1_link",
-      "parent_joint": "wrist_2_joint",
-      "parent_joint_name": "wrist_2_joint",
+      "parent_joint": "wrist_1_link->wrist_2_link",
+      "parent_joint_name": "wrist_1_link->wrist_2_link",
       "parent_joint_type": "revolute",
       "parent_joint_origin": {
         "xyz": [
           0.0,
-          -0.09465,
-          -1.941303950897609e-11
+          0.0,
+          0.0
         ],
         "rpy": [
-          1.570796327,
+          0.0,
           0.0,
           0.0
         ]
@@ -1245,17 +1217,17 @@
         0.0,
         1.0
       ],
-      "parent_joint_value": -1.5708,
-      "parent_joint_value_source": "fake-hardware default",
+      "parent_joint_value": 0.0,
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
       "joint_type": "revolute",
       "joint_origin": {
         "xyz": [
           0.0,
-          -0.09465,
-          -1.941303950897609e-11
+          0.0,
+          0.0
         ],
         "rpy": [
-          1.570796327,
+          0.0,
           0.0,
           0.0
         ]
@@ -1298,9 +1270,9 @@
       },
       "link_world_pose": {
         "xyz": [
-          0.4868984388871925,
-          0.10915000006775592,
-          0.5141593476436088
+          0.3918984388878334,
+          0.10915000008724068,
+          0.514158998689124
         ],
         "rpy": [
           -1.5707926535897931,
@@ -1335,27 +1307,27 @@
       "baked_world_visual_matrix": [
         [
           -2.1859598670849498e-10,
-          3.6732051025684056e-06,
+          3.673205102568394e-06,
           0.9999999999932536,
           0.3918984388878334
         ],
         [
           -0.999999999993253,
-          -3.673410206775087e-06,
-          -2.0510279759305073e-10,
+          -3.6734102067750753e-06,
+          -2.0510279759305712e-10,
           0.10915000008724068
         ],
         [
-          3.67341020599692e-06,
-          -0.9999999999865066,
-          3.6732051033466154e-06,
+          3.673410205996908e-06,
+          -0.9999999999865067,
+          3.6732051033465735e-06,
           0.514158998689124
         ],
         [
-          0.0,
-          0.0,
-          0.0,
-          1.0
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
@@ -1364,13 +1336,13 @@
         "z": 0.5000018367051031,
         "w": -0.4999999998940752
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
           0.0,
           0.0,
-          -0.095
+          0.0
         ],
         "rpy": [
           0.0,
@@ -1378,16 +1350,16 @@
           0.0
         ]
       },
-      "joint_name": "wrist_2_joint",
-      "joint_value": -1.5708,
-      "applied_joint_value": -1.5708,
+      "joint_name": "wrist_1_link->wrist_2_link",
+      "joint_value": 0.0,
+      "applied_joint_value": 0.0,
       "joint_axis": [
         0.0,
         0.0,
         1.0
       ],
-      "joint_value_source": "fake-hardware default",
-      "applied_joint_value_source": "fake-hardware default",
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
       "material": {
         "name": "",
         "color": null
@@ -1396,16 +1368,14 @@
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->base_link(fixed)",
-        "base_link->base_link_inertia(fixed)",
-        "base_link_inertia->shoulder_link(revolute)",
-        "shoulder_link->upper_arm_link(revolute)",
-        "upper_arm_link->forearm_link(revolute)",
-        "forearm_link->wrist_1_link(revolute)",
-        "wrist_1_link->wrist_2_link(revolute)"
+        "world->wrist_2_link(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "robot",
+      "role": "robot",
       "package_uri": "package://ur_description/meshes/ur5/visual/wrist2.dae",
       "source_path": "package://ur_description/meshes/ur5/visual/wrist2.dae",
       "mesh_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist2.dae",
@@ -1414,51 +1384,50 @@
         1.0,
         1.0
       ],
-      "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist2.dae",
-      "resolved_source_path_is_repo_relative": true,
-      "resolved": true,
       "mesh_scale": [
         1.0,
         1.0,
         1.0
       ],
+      "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist2.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     },
     {
       "id": "urdf_visual_6_wrist_3_link_visual_6",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "wrist_3_link",
       "object_name": "wrist_3_link",
       "visual": "visual_6",
+      "visual_name": "visual_6",
       "parent_link": "wrist_2_link",
       "immediate_parent_link": "wrist_2_link",
       "root_link": "world",
       "link_chain": [
         "world",
-        "base_link",
-        "base_link_inertia",
-        "shoulder_link",
-        "upper_arm_link",
-        "forearm_link",
-        "wrist_1_link",
         "wrist_2_link",
         "wrist_3_link"
       ],
       "joint_parent_link": "wrist_2_link",
-      "parent_joint": "wrist_3_joint",
-      "parent_joint_name": "wrist_3_joint",
+      "parent_joint": "wrist_2_link->wrist_3_link",
+      "parent_joint_name": "wrist_2_link->wrist_3_link",
       "parent_joint_type": "revolute",
       "parent_joint_origin": {
         "xyz": [
           0.0,
-          0.0823,
-          -1.688001216681175e-11
+          0.0,
+          0.0
         ],
         "rpy": [
-          1.570796326589793,
-          3.141592653589793,
-          3.141592653589793
+          0.0,
+          0.0,
+          0.0
         ]
       },
       "parent_joint_axis": [
@@ -1467,18 +1436,18 @@
         1.0
       ],
       "parent_joint_value": 0.0,
-      "parent_joint_value_source": "fake-hardware default",
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
       "joint_type": "revolute",
       "joint_origin": {
         "xyz": [
           0.0,
-          0.0823,
-          -1.688001216681175e-11
+          0.0,
+          0.0
         ],
         "rpy": [
-          1.570796326589793,
-          3.141592653589793,
-          3.141592653589793
+          0.0,
+          0.0,
+          0.0
         ]
       },
       "pose": {
@@ -1519,12 +1488,12 @@
       },
       "link_world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.4868984407236925,
+          0.10914999823105083,
+          0.5136593476436155
         ],
         "rpy": [
-          -3.1415889805897934,
+          -1.5707926537948969,
           -3.6734102061276456e-06,
           -1.5707963270134928
         ]
@@ -1556,27 +1525,27 @@
       "baked_world_visual_matrix": [
         [
           -2.1859610917362474e-10,
-          3.6729999989561943e-06,
+          3.6729999989561824e-06,
           0.9999999999932544,
           0.4868984407236925
         ],
         [
           -0.999999999993253,
-          -3.6734102068975096e-06,
-          -2.0510367348743323e-10,
+          -3.6734102068974973e-06,
+          -2.0510367348743973e-10,
           0.10914999823105083
         ],
         [
-          3.673410206119384e-06,
+          3.6734102061193723e-06,
           -0.9999999999865073,
-          3.6729999997344063e-06,
+          3.6729999997343644e-06,
           0.5136593476436155
         ],
         [
-          0.0,
-          0.0,
-          0.0,
-          1.0
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
@@ -1585,21 +1554,21 @@
         "z": 0.5000018366538275,
         "w": -0.49999999984279925
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
           0.0,
           0.0,
-          -0.0818
+          0.0
         ],
         "rpy": [
-          1.5707963267948966,
+          0.0,
           0.0,
           0.0
         ]
       },
-      "joint_name": "wrist_3_joint",
+      "joint_name": "wrist_2_link->wrist_3_link",
       "joint_value": 0.0,
       "applied_joint_value": 0.0,
       "joint_axis": [
@@ -1607,8 +1576,8 @@
         0.0,
         1.0
       ],
-      "joint_value_source": "fake-hardware default",
-      "applied_joint_value_source": "fake-hardware default",
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
       "material": {
         "name": "",
         "color": null
@@ -1617,17 +1586,14 @@
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->base_link(fixed)",
-        "base_link->base_link_inertia(fixed)",
-        "base_link_inertia->shoulder_link(revolute)",
-        "shoulder_link->upper_arm_link(revolute)",
-        "upper_arm_link->forearm_link(revolute)",
-        "forearm_link->wrist_1_link(revolute)",
-        "wrist_1_link->wrist_2_link(revolute)",
-        "wrist_2_link->wrist_3_link(revolute)"
+        "world->wrist_3_link(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "robot",
+      "role": "robot",
       "package_uri": "package://ur_description/meshes/ur5/visual/wrist3.dae",
       "source_path": "package://ur_description/meshes/ur5/visual/wrist3.dae",
       "mesh_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist3.dae",
@@ -1636,43 +1602,39 @@
         1.0,
         1.0
       ],
-      "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist3.dae",
-      "resolved_source_path_is_repo_relative": true,
-      "resolved": true,
       "mesh_scale": [
         1.0,
         1.0,
         1.0
       ],
+      "resolved_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist3.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     },
     {
-      "id": "urdf_visual_7_gripper_base_link_gripper_base_link_visual",
+      "id": "urdf_visual_7_gripper_base_link_visual_7",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "gripper_base_link",
       "object_name": "gripper_base_link",
-      "visual": "gripper_base_link_visual",
+      "visual": "visual_7",
+      "visual_name": "visual_7",
       "parent_link": "tool0",
       "immediate_parent_link": "tool0",
       "root_link": "world",
       "link_chain": [
         "world",
-        "base_link",
-        "base_link_inertia",
-        "shoulder_link",
-        "upper_arm_link",
-        "forearm_link",
-        "wrist_1_link",
-        "wrist_2_link",
-        "wrist_3_link",
-        "flange",
         "tool0",
         "gripper_base_link"
       ],
       "joint_parent_link": "tool0",
-      "parent_joint": "gripper_base_joint",
-      "parent_joint_name": "gripper_base_joint",
+      "parent_joint": "tool0->gripper_base_link",
+      "parent_joint_name": "tool0->gripper_base_link",
       "parent_joint_type": "fixed",
       "parent_joint_origin": {
         "xyz": [
@@ -1681,18 +1643,18 @@
           0.0
         ],
         "rpy": [
-          1.5707,
-          -1.5707,
+          0.0,
+          0.0,
           0.0
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
       "joint_type": "fixed",
       "joint_origin": {
         "xyz": [
@@ -1701,8 +1663,8 @@
           0.0
         ],
         "rpy": [
-          1.5707,
-          -1.5707,
+          0.0,
+          0.0,
           0.0
         ]
       },
@@ -1798,10 +1760,10 @@
           0.4318593476447193
         ],
         [
-          0.0,
-          0.0,
-          0.0,
-          1.0
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
@@ -1810,7 +1772,7 @@
         "z": -1.2989466239325223e-06,
         "w": 0.7071080763800924
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -1824,16 +1786,16 @@
           0.0
         ]
       },
-      "joint_name": "gripper_base_joint",
+      "joint_name": "tool0->gripper_base_link",
       "joint_value": 0.0,
       "applied_joint_value": 0.0,
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "joint_value_source": "zero_default",
-      "applied_joint_value_source": "zero_default",
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
       "material": {
         "name": "",
         "color": null
@@ -1842,20 +1804,14 @@
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->base_link(fixed)",
-        "base_link->base_link_inertia(fixed)",
-        "base_link_inertia->shoulder_link(revolute)",
-        "shoulder_link->upper_arm_link(revolute)",
-        "upper_arm_link->forearm_link(revolute)",
-        "forearm_link->wrist_1_link(revolute)",
-        "wrist_1_link->wrist_2_link(revolute)",
-        "wrist_2_link->wrist_3_link(revolute)",
-        "wrist_3_link->flange(fixed)",
-        "flange->tool0(fixed)",
-        "tool0->gripper_base_link(fixed)"
+        "world->gripper_base_link(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "gripper",
+      "role": "gripper",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
       "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
@@ -1864,44 +1820,39 @@
         1.0,
         1.0
       ],
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
       "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
       "resolved_source_path_is_repo_relative": true,
       "resolved": true,
-      "mesh_scale": [
-        1.0,
-        1.0,
-        1.0
-      ],
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     },
     {
-      "id": "urdf_visual_8_gripper_finger1_knuckle_link_gripper_finger1_knuckle_link_visual",
+      "id": "urdf_visual_8_gripper_finger1_knuckle_link_visual_8",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "gripper_finger1_knuckle_link",
       "object_name": "gripper_finger1_knuckle_link",
-      "visual": "gripper_finger1_knuckle_link_visual",
-      "parent_link": "gripper_base_link",
-      "immediate_parent_link": "gripper_base_link",
+      "visual": "visual_8",
+      "visual_name": "visual_8",
+      "parent_link": "tool0",
+      "immediate_parent_link": "tool0",
       "root_link": "world",
       "link_chain": [
         "world",
-        "base_link",
-        "base_link_inertia",
-        "shoulder_link",
-        "upper_arm_link",
-        "forearm_link",
-        "wrist_1_link",
-        "wrist_2_link",
-        "wrist_3_link",
-        "flange",
         "tool0",
-        "gripper_base_link",
         "gripper_finger1_knuckle_link"
       ],
-      "joint_parent_link": "gripper_base_link",
-      "parent_joint": "gripper_finger1_knuckle_joint",
-      "parent_joint_name": "gripper_finger1_knuckle_joint",
+      "joint_parent_link": "tool0",
+      "parent_joint": "tool0->gripper_finger1_knuckle_link",
+      "parent_joint_name": "tool0->gripper_finger1_knuckle_link",
       "parent_joint_type": "fixed",
       "parent_joint_origin": {
         "xyz": [
@@ -1916,12 +1867,12 @@
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
       "joint_type": "fixed",
       "joint_origin": {
         "xyz": [
@@ -1937,9 +1888,9 @@
       },
       "pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.51,
+          0.135,
+          0.43
         ],
         "rpy": [
           -1.5341792327998767,
@@ -1949,9 +1900,9 @@
       },
       "chain_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.51,
+          0.135,
+          0.43
         ],
         "rpy": [
           -1.5341792327998767,
@@ -1961,9 +1912,9 @@
       },
       "world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.51,
+          0.135,
+          0.43
         ],
         "rpy": [
           -1.5341792327998767,
@@ -1973,9 +1924,9 @@
       },
       "link_world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.51,
+          0.135,
+          0.43
         ],
         "rpy": [
           -1.5341792327998767,
@@ -1985,9 +1936,9 @@
       },
       "expected_visual_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.51,
+          0.135,
+          0.43
         ],
         "rpy": [
           -1.5341792327998767,
@@ -1997,9 +1948,9 @@
       },
       "baked_world_visual_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.51,
+          0.135,
+          0.43
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2012,25 +1963,25 @@
           3.6729999609201477e-06,
           -9.632622234253363e-05,
           0.9999999953538838,
-          0.4868987411750924
+          0.51
         ],
         [
           -0.00010000020493681099,
           0.9999999903605734,
           9.632658916229741e-05,
-          0.10914969774609591
+          0.135
         ],
         [
           -0.9999999949932338,
           -0.00010000055827975664,
           3.663367283539493e-06,
-          0.4318593476447193
+          0.43
         ],
         [
-          0.0,
-          0.0,
-          0.0,
-          1.0
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
@@ -2039,7 +1990,7 @@
         "z": -1.2989466239325223e-06,
         "w": 0.7071080763800924
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -2053,16 +2004,16 @@
           0.0
         ]
       },
-      "joint_name": "gripper_finger1_knuckle_joint",
+      "joint_name": "tool0->gripper_finger1_knuckle_link",
       "joint_value": 0.0,
       "applied_joint_value": 0.0,
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "joint_value_source": "zero_default",
-      "applied_joint_value_source": "zero_default",
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
       "material": {
         "name": "",
         "color": null
@@ -2071,21 +2022,14 @@
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->base_link(fixed)",
-        "base_link->base_link_inertia(fixed)",
-        "base_link_inertia->shoulder_link(revolute)",
-        "shoulder_link->upper_arm_link(revolute)",
-        "upper_arm_link->forearm_link(revolute)",
-        "forearm_link->wrist_1_link(revolute)",
-        "wrist_1_link->wrist_2_link(revolute)",
-        "wrist_2_link->wrist_3_link(revolute)",
-        "wrist_3_link->flange(fixed)",
-        "flange->tool0(fixed)",
-        "tool0->gripper_base_link(fixed)",
-        "gripper_base_link->gripper_finger1_knuckle_link(fixed)"
+        "world->gripper_finger1_knuckle_link(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "gripper",
+      "role": "gripper",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
       "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
@@ -2094,44 +2038,39 @@
         1.0,
         1.0
       ],
-      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
-      "resolved_source_path_is_repo_relative": true,
-      "resolved": true,
       "mesh_scale": [
         1.0,
         1.0,
         1.0
       ],
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     },
     {
-      "id": "urdf_visual_9_gripper_finger2_knuckle_link_gripper_finger2_knuckle_link_visual",
+      "id": "urdf_visual_9_gripper_finger2_knuckle_link_visual_9",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "gripper_finger2_knuckle_link",
       "object_name": "gripper_finger2_knuckle_link",
-      "visual": "gripper_finger2_knuckle_link_visual",
-      "parent_link": "gripper_base_link",
-      "immediate_parent_link": "gripper_base_link",
+      "visual": "visual_9",
+      "visual_name": "visual_9",
+      "parent_link": "tool0",
+      "immediate_parent_link": "tool0",
       "root_link": "world",
       "link_chain": [
         "world",
-        "base_link",
-        "base_link_inertia",
-        "shoulder_link",
-        "upper_arm_link",
-        "forearm_link",
-        "wrist_1_link",
-        "wrist_2_link",
-        "wrist_3_link",
-        "flange",
         "tool0",
-        "gripper_base_link",
         "gripper_finger2_knuckle_link"
       ],
-      "joint_parent_link": "gripper_base_link",
-      "parent_joint": "gripper_finger2_knuckle_joint",
-      "parent_joint_name": "gripper_finger2_knuckle_joint",
+      "joint_parent_link": "tool0",
+      "parent_joint": "tool0->gripper_finger2_knuckle_link",
+      "parent_joint_name": "tool0->gripper_finger2_knuckle_link",
       "parent_joint_type": "fixed",
       "parent_joint_origin": {
         "xyz": [
@@ -2146,12 +2085,12 @@
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
       "joint_type": "fixed",
       "joint_origin": {
         "xyz": [
@@ -2167,9 +2106,9 @@
       },
       "pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.51,
+          0.085,
+          0.43
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2179,9 +2118,9 @@
       },
       "chain_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.51,
+          0.085,
+          0.43
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2191,9 +2130,9 @@
       },
       "world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.51,
+          0.085,
+          0.43
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2203,9 +2142,9 @@
       },
       "link_world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.51,
+          0.085,
+          0.43
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2215,9 +2154,9 @@
       },
       "expected_visual_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.51,
+          0.085,
+          0.43
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2227,9 +2166,9 @@
       },
       "baked_world_visual_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.51,
+          0.085,
+          0.43
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2242,25 +2181,25 @@
           3.6729999609201477e-06,
           -9.632622234253363e-05,
           0.9999999953538838,
-          0.4868987411750924
+          0.51
         ],
         [
           -0.00010000020493681099,
           0.9999999903605734,
           9.632658916229741e-05,
-          0.10914969774609591
+          0.085
         ],
         [
           -0.9999999949932338,
           -0.00010000055827975664,
           3.663367283539493e-06,
-          0.4318593476447193
+          0.43
         ],
         [
-          0.0,
-          0.0,
-          0.0,
-          1.0
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
@@ -2269,7 +2208,7 @@
         "z": -1.2989466239325223e-06,
         "w": 0.7071080763800924
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -2283,16 +2222,16 @@
           0.0
         ]
       },
-      "joint_name": "gripper_finger2_knuckle_joint",
+      "joint_name": "tool0->gripper_finger2_knuckle_link",
       "joint_value": 0.0,
       "applied_joint_value": 0.0,
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "joint_value_source": "zero_default",
-      "applied_joint_value_source": "zero_default",
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
       "material": {
         "name": "",
         "color": null
@@ -2301,21 +2240,14 @@
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->base_link(fixed)",
-        "base_link->base_link_inertia(fixed)",
-        "base_link_inertia->shoulder_link(revolute)",
-        "shoulder_link->upper_arm_link(revolute)",
-        "upper_arm_link->forearm_link(revolute)",
-        "forearm_link->wrist_1_link(revolute)",
-        "wrist_1_link->wrist_2_link(revolute)",
-        "wrist_2_link->wrist_3_link(revolute)",
-        "wrist_3_link->flange(fixed)",
-        "flange->tool0(fixed)",
-        "tool0->gripper_base_link(fixed)",
-        "gripper_base_link->gripper_finger2_knuckle_link(fixed)"
+        "world->gripper_finger2_knuckle_link(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "gripper",
+      "role": "gripper",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
       "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
@@ -2324,45 +2256,39 @@
         1.0,
         1.0
       ],
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
       "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
       "resolved_source_path_is_repo_relative": true,
       "resolved": true,
-      "mesh_scale": [
-        1.0,
-        1.0,
-        1.0
-      ],
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     },
     {
-      "id": "urdf_visual_10_gripper_finger1_finger_link_gripper_finger1_finger_link_visual",
+      "id": "urdf_visual_10_gripper_finger1_finger_link_visual_10",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "gripper_finger1_finger_link",
       "object_name": "gripper_finger1_finger_link",
-      "visual": "gripper_finger1_finger_link_visual",
-      "parent_link": "gripper_finger1_knuckle_link",
-      "immediate_parent_link": "gripper_finger1_knuckle_link",
+      "visual": "visual_10",
+      "visual_name": "visual_10",
+      "parent_link": "tool0",
+      "immediate_parent_link": "tool0",
       "root_link": "world",
       "link_chain": [
         "world",
-        "base_link",
-        "base_link_inertia",
-        "shoulder_link",
-        "upper_arm_link",
-        "forearm_link",
-        "wrist_1_link",
-        "wrist_2_link",
-        "wrist_3_link",
-        "flange",
         "tool0",
-        "gripper_base_link",
-        "gripper_finger1_knuckle_link",
         "gripper_finger1_finger_link"
       ],
-      "joint_parent_link": "gripper_finger1_knuckle_link",
-      "parent_joint": "gripper_finger1_finger_joint",
-      "parent_joint_name": "gripper_finger1_finger_joint",
+      "joint_parent_link": "tool0",
+      "parent_joint": "tool0->gripper_finger1_finger_link",
+      "parent_joint_name": "tool0->gripper_finger1_finger_link",
       "parent_joint_type": "fixed",
       "parent_joint_origin": {
         "xyz": [
@@ -2377,12 +2303,12 @@
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
       "joint_type": "fixed",
       "joint_origin": {
         "xyz": [
@@ -2398,9 +2324,9 @@
       },
       "pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.55,
+          0.145,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2410,9 +2336,9 @@
       },
       "chain_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.55,
+          0.145,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2422,9 +2348,9 @@
       },
       "world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.55,
+          0.145,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2434,9 +2360,9 @@
       },
       "link_world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.55,
+          0.145,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2446,9 +2372,9 @@
       },
       "expected_visual_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.55,
+          0.145,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2458,9 +2384,9 @@
       },
       "baked_world_visual_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.55,
+          0.145,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2473,25 +2399,25 @@
           3.6729999609201477e-06,
           -9.632622234253363e-05,
           0.9999999953538838,
-          0.4868987411750924
+          0.55
         ],
         [
           -0.00010000020493681099,
           0.9999999903605734,
           9.632658916229741e-05,
-          0.10914969774609591
+          0.145
         ],
         [
           -0.9999999949932338,
           -0.00010000055827975664,
           3.663367283539493e-06,
-          0.4318593476447193
+          0.42
         ],
         [
-          0.0,
-          0.0,
-          0.0,
-          1.0
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
@@ -2500,7 +2426,7 @@
         "z": -1.2989466239325223e-06,
         "w": 0.7071080763800924
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -2514,16 +2440,16 @@
           0.0
         ]
       },
-      "joint_name": "gripper_finger1_finger_joint",
+      "joint_name": "tool0->gripper_finger1_finger_link",
       "joint_value": 0.0,
       "applied_joint_value": 0.0,
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "joint_value_source": "zero_default",
-      "applied_joint_value_source": "zero_default",
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
       "material": {
         "name": "",
         "color": null
@@ -2532,22 +2458,14 @@
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->base_link(fixed)",
-        "base_link->base_link_inertia(fixed)",
-        "base_link_inertia->shoulder_link(revolute)",
-        "shoulder_link->upper_arm_link(revolute)",
-        "upper_arm_link->forearm_link(revolute)",
-        "forearm_link->wrist_1_link(revolute)",
-        "wrist_1_link->wrist_2_link(revolute)",
-        "wrist_2_link->wrist_3_link(revolute)",
-        "wrist_3_link->flange(fixed)",
-        "flange->tool0(fixed)",
-        "tool0->gripper_base_link(fixed)",
-        "gripper_base_link->gripper_finger1_knuckle_link(fixed)",
-        "gripper_finger1_knuckle_link->gripper_finger1_finger_link(fixed)"
+        "world->gripper_finger1_finger_link(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "gripper",
+      "role": "gripper",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
       "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
@@ -2556,45 +2474,39 @@
         1.0,
         1.0
       ],
-      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
-      "resolved_source_path_is_repo_relative": true,
-      "resolved": true,
       "mesh_scale": [
         1.0,
         1.0,
         1.0
       ],
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     },
     {
-      "id": "urdf_visual_11_gripper_finger2_finger_link_gripper_finger2_finger_link_visual",
+      "id": "urdf_visual_11_gripper_finger2_finger_link_visual_11",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "gripper_finger2_finger_link",
       "object_name": "gripper_finger2_finger_link",
-      "visual": "gripper_finger2_finger_link_visual",
-      "parent_link": "gripper_finger2_knuckle_link",
-      "immediate_parent_link": "gripper_finger2_knuckle_link",
+      "visual": "visual_11",
+      "visual_name": "visual_11",
+      "parent_link": "tool0",
+      "immediate_parent_link": "tool0",
       "root_link": "world",
       "link_chain": [
         "world",
-        "base_link",
-        "base_link_inertia",
-        "shoulder_link",
-        "upper_arm_link",
-        "forearm_link",
-        "wrist_1_link",
-        "wrist_2_link",
-        "wrist_3_link",
-        "flange",
         "tool0",
-        "gripper_base_link",
-        "gripper_finger2_knuckle_link",
         "gripper_finger2_finger_link"
       ],
-      "joint_parent_link": "gripper_finger2_knuckle_link",
-      "parent_joint": "gripper_finger2_finger_joint",
-      "parent_joint_name": "gripper_finger2_finger_joint",
+      "joint_parent_link": "tool0",
+      "parent_joint": "tool0->gripper_finger2_finger_link",
+      "parent_joint_name": "tool0->gripper_finger2_finger_link",
       "parent_joint_type": "fixed",
       "parent_joint_origin": {
         "xyz": [
@@ -2609,12 +2521,12 @@
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
       "joint_type": "fixed",
       "joint_origin": {
         "xyz": [
@@ -2630,9 +2542,9 @@
       },
       "pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.55,
+          0.075,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2642,9 +2554,9 @@
       },
       "chain_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.55,
+          0.075,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2654,9 +2566,9 @@
       },
       "world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.55,
+          0.075,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2666,9 +2578,9 @@
       },
       "link_world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.55,
+          0.075,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2678,9 +2590,9 @@
       },
       "expected_visual_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.55,
+          0.075,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2690,9 +2602,9 @@
       },
       "baked_world_visual_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.55,
+          0.075,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2705,25 +2617,25 @@
           3.6729999609201477e-06,
           -9.632622234253363e-05,
           0.9999999953538838,
-          0.4868987411750924
+          0.55
         ],
         [
           -0.00010000020493681099,
           0.9999999903605734,
           9.632658916229741e-05,
-          0.10914969774609591
+          0.075
         ],
         [
           -0.9999999949932338,
           -0.00010000055827975664,
           3.663367283539493e-06,
-          0.4318593476447193
+          0.42
         ],
         [
-          0.0,
-          0.0,
-          0.0,
-          1.0
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
@@ -2732,7 +2644,7 @@
         "z": -1.2989466239325223e-06,
         "w": 0.7071080763800924
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -2746,16 +2658,16 @@
           0.0
         ]
       },
-      "joint_name": "gripper_finger2_finger_joint",
+      "joint_name": "tool0->gripper_finger2_finger_link",
       "joint_value": 0.0,
       "applied_joint_value": 0.0,
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "joint_value_source": "zero_default",
-      "applied_joint_value_source": "zero_default",
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
       "material": {
         "name": "",
         "color": null
@@ -2764,22 +2676,14 @@
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->base_link(fixed)",
-        "base_link->base_link_inertia(fixed)",
-        "base_link_inertia->shoulder_link(revolute)",
-        "shoulder_link->upper_arm_link(revolute)",
-        "upper_arm_link->forearm_link(revolute)",
-        "forearm_link->wrist_1_link(revolute)",
-        "wrist_1_link->wrist_2_link(revolute)",
-        "wrist_2_link->wrist_3_link(revolute)",
-        "wrist_3_link->flange(fixed)",
-        "flange->tool0(fixed)",
-        "tool0->gripper_base_link(fixed)",
-        "gripper_base_link->gripper_finger2_knuckle_link(fixed)",
-        "gripper_finger2_knuckle_link->gripper_finger2_finger_link(fixed)"
+        "world->gripper_finger2_finger_link(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "gripper",
+      "role": "gripper",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
       "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
@@ -2788,46 +2692,39 @@
         1.0,
         1.0
       ],
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
       "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
       "resolved_source_path_is_repo_relative": true,
       "resolved": true,
-      "mesh_scale": [
-        1.0,
-        1.0,
-        1.0
-      ],
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     },
     {
-      "id": "urdf_visual_12_gripper_finger1_inner_knuckle_link_gripper_finger1_inner_knuckle_link_visual",
+      "id": "urdf_visual_12_gripper_finger1_inner_knuckle_link_visual_12",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "gripper_finger1_inner_knuckle_link",
       "object_name": "gripper_finger1_inner_knuckle_link",
-      "visual": "gripper_finger1_inner_knuckle_link_visual",
-      "parent_link": "gripper_finger1_finger_link",
-      "immediate_parent_link": "gripper_finger1_finger_link",
+      "visual": "visual_12",
+      "visual_name": "visual_12",
+      "parent_link": "tool0",
+      "immediate_parent_link": "tool0",
       "root_link": "world",
       "link_chain": [
         "world",
-        "base_link",
-        "base_link_inertia",
-        "shoulder_link",
-        "upper_arm_link",
-        "forearm_link",
-        "wrist_1_link",
-        "wrist_2_link",
-        "wrist_3_link",
-        "flange",
         "tool0",
-        "gripper_base_link",
-        "gripper_finger1_knuckle_link",
-        "gripper_finger1_finger_link",
         "gripper_finger1_inner_knuckle_link"
       ],
-      "joint_parent_link": "gripper_finger1_finger_link",
-      "parent_joint": "gripper_finger1_inner_knuckle_joint",
-      "parent_joint_name": "gripper_finger1_inner_knuckle_joint",
+      "joint_parent_link": "tool0",
+      "parent_joint": "tool0->gripper_finger1_inner_knuckle_link",
+      "parent_joint_name": "tool0->gripper_finger1_inner_knuckle_link",
       "parent_joint_type": "fixed",
       "parent_joint_origin": {
         "xyz": [
@@ -2842,12 +2739,12 @@
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
       "joint_type": "fixed",
       "joint_origin": {
         "xyz": [
@@ -2863,9 +2760,9 @@
       },
       "pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.53,
+          0.125,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2875,9 +2772,9 @@
       },
       "chain_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.53,
+          0.125,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2887,9 +2784,9 @@
       },
       "world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.53,
+          0.125,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2899,9 +2796,9 @@
       },
       "link_world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.53,
+          0.125,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2911,9 +2808,9 @@
       },
       "expected_visual_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.53,
+          0.125,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2923,9 +2820,9 @@
       },
       "baked_world_visual_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.53,
+          0.125,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -2938,25 +2835,25 @@
           3.6729999609201477e-06,
           -9.632622234253363e-05,
           0.9999999953538838,
-          0.4868987411750924
+          0.53
         ],
         [
           -0.00010000020493681099,
           0.9999999903605734,
           9.632658916229741e-05,
-          0.10914969774609591
+          0.125
         ],
         [
           -0.9999999949932338,
           -0.00010000055827975664,
           3.663367283539493e-06,
-          0.4318593476447193
+          0.42
         ],
         [
-          0.0,
-          0.0,
-          0.0,
-          1.0
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
@@ -2965,7 +2862,7 @@
         "z": -1.2989466239325223e-06,
         "w": 0.7071080763800924
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -2979,16 +2876,16 @@
           0.0
         ]
       },
-      "joint_name": "gripper_finger1_inner_knuckle_joint",
+      "joint_name": "tool0->gripper_finger1_inner_knuckle_link",
       "joint_value": 0.0,
       "applied_joint_value": 0.0,
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "joint_value_source": "zero_default",
-      "applied_joint_value_source": "zero_default",
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
       "material": {
         "name": "",
         "color": null
@@ -2997,23 +2894,14 @@
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->base_link(fixed)",
-        "base_link->base_link_inertia(fixed)",
-        "base_link_inertia->shoulder_link(revolute)",
-        "shoulder_link->upper_arm_link(revolute)",
-        "upper_arm_link->forearm_link(revolute)",
-        "forearm_link->wrist_1_link(revolute)",
-        "wrist_1_link->wrist_2_link(revolute)",
-        "wrist_2_link->wrist_3_link(revolute)",
-        "wrist_3_link->flange(fixed)",
-        "flange->tool0(fixed)",
-        "tool0->gripper_base_link(fixed)",
-        "gripper_base_link->gripper_finger1_knuckle_link(fixed)",
-        "gripper_finger1_knuckle_link->gripper_finger1_finger_link(fixed)",
-        "gripper_finger1_finger_link->gripper_finger1_inner_knuckle_link(fixed)"
+        "world->gripper_finger1_inner_knuckle_link(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "gripper",
+      "role": "gripper",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
       "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
@@ -3022,46 +2910,39 @@
         1.0,
         1.0
       ],
-      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
-      "resolved_source_path_is_repo_relative": true,
-      "resolved": true,
       "mesh_scale": [
         1.0,
         1.0,
         1.0
       ],
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     },
     {
-      "id": "urdf_visual_13_gripper_finger2_inner_knuckle_link_gripper_finger2_inner_knuckle_link_visual",
+      "id": "urdf_visual_13_gripper_finger2_inner_knuckle_link_visual_13",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "gripper_finger2_inner_knuckle_link",
       "object_name": "gripper_finger2_inner_knuckle_link",
-      "visual": "gripper_finger2_inner_knuckle_link_visual",
-      "parent_link": "gripper_finger2_finger_link",
-      "immediate_parent_link": "gripper_finger2_finger_link",
+      "visual": "visual_13",
+      "visual_name": "visual_13",
+      "parent_link": "tool0",
+      "immediate_parent_link": "tool0",
       "root_link": "world",
       "link_chain": [
         "world",
-        "base_link",
-        "base_link_inertia",
-        "shoulder_link",
-        "upper_arm_link",
-        "forearm_link",
-        "wrist_1_link",
-        "wrist_2_link",
-        "wrist_3_link",
-        "flange",
         "tool0",
-        "gripper_base_link",
-        "gripper_finger2_knuckle_link",
-        "gripper_finger2_finger_link",
         "gripper_finger2_inner_knuckle_link"
       ],
-      "joint_parent_link": "gripper_finger2_finger_link",
-      "parent_joint": "gripper_finger2_inner_knuckle_joint",
-      "parent_joint_name": "gripper_finger2_inner_knuckle_joint",
+      "joint_parent_link": "tool0",
+      "parent_joint": "tool0->gripper_finger2_inner_knuckle_link",
+      "parent_joint_name": "tool0->gripper_finger2_inner_knuckle_link",
       "parent_joint_type": "fixed",
       "parent_joint_origin": {
         "xyz": [
@@ -3076,12 +2957,12 @@
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
       "joint_type": "fixed",
       "joint_origin": {
         "xyz": [
@@ -3097,9 +2978,9 @@
       },
       "pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.53,
+          0.095,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3109,9 +2990,9 @@
       },
       "chain_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.53,
+          0.095,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3121,9 +3002,9 @@
       },
       "world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.53,
+          0.095,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3133,9 +3014,9 @@
       },
       "link_world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.53,
+          0.095,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3145,9 +3026,9 @@
       },
       "expected_visual_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.53,
+          0.095,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3157,9 +3038,9 @@
       },
       "baked_world_visual_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.53,
+          0.095,
+          0.42
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3172,25 +3053,25 @@
           3.6729999609201477e-06,
           -9.632622234253363e-05,
           0.9999999953538838,
-          0.4868987411750924
+          0.53
         ],
         [
           -0.00010000020493681099,
           0.9999999903605734,
           9.632658916229741e-05,
-          0.10914969774609591
+          0.095
         ],
         [
           -0.9999999949932338,
           -0.00010000055827975664,
           3.663367283539493e-06,
-          0.4318593476447193
+          0.42
         ],
         [
-          0.0,
-          0.0,
-          0.0,
-          1.0
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
@@ -3199,7 +3080,7 @@
         "z": -1.2989466239325223e-06,
         "w": 0.7071080763800924
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -3213,16 +3094,16 @@
           0.0
         ]
       },
-      "joint_name": "gripper_finger2_inner_knuckle_joint",
+      "joint_name": "tool0->gripper_finger2_inner_knuckle_link",
       "joint_value": 0.0,
       "applied_joint_value": 0.0,
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "joint_value_source": "zero_default",
-      "applied_joint_value_source": "zero_default",
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
       "material": {
         "name": "",
         "color": null
@@ -3231,23 +3112,14 @@
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->base_link(fixed)",
-        "base_link->base_link_inertia(fixed)",
-        "base_link_inertia->shoulder_link(revolute)",
-        "shoulder_link->upper_arm_link(revolute)",
-        "upper_arm_link->forearm_link(revolute)",
-        "forearm_link->wrist_1_link(revolute)",
-        "wrist_1_link->wrist_2_link(revolute)",
-        "wrist_2_link->wrist_3_link(revolute)",
-        "wrist_3_link->flange(fixed)",
-        "flange->tool0(fixed)",
-        "tool0->gripper_base_link(fixed)",
-        "gripper_base_link->gripper_finger2_knuckle_link(fixed)",
-        "gripper_finger2_knuckle_link->gripper_finger2_finger_link(fixed)",
-        "gripper_finger2_finger_link->gripper_finger2_inner_knuckle_link(fixed)"
+        "world->gripper_finger2_inner_knuckle_link(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "gripper",
+      "role": "gripper",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
       "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
@@ -3256,47 +3128,39 @@
         1.0,
         1.0
       ],
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
       "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
       "resolved_source_path_is_repo_relative": true,
       "resolved": true,
-      "mesh_scale": [
-        1.0,
-        1.0,
-        1.0
-      ],
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     },
     {
-      "id": "urdf_visual_14_gripper_finger1_finger_tip_link_gripper_finger1_finger_tip_link_visual",
+      "id": "urdf_visual_14_gripper_finger1_finger_tip_link_visual_14",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "gripper_finger1_finger_tip_link",
       "object_name": "gripper_finger1_finger_tip_link",
-      "visual": "gripper_finger1_finger_tip_link_visual",
-      "parent_link": "gripper_finger1_inner_knuckle_link",
-      "immediate_parent_link": "gripper_finger1_inner_knuckle_link",
+      "visual": "visual_14",
+      "visual_name": "visual_14",
+      "parent_link": "tool0",
+      "immediate_parent_link": "tool0",
       "root_link": "world",
       "link_chain": [
         "world",
-        "base_link",
-        "base_link_inertia",
-        "shoulder_link",
-        "upper_arm_link",
-        "forearm_link",
-        "wrist_1_link",
-        "wrist_2_link",
-        "wrist_3_link",
-        "flange",
         "tool0",
-        "gripper_base_link",
-        "gripper_finger1_knuckle_link",
-        "gripper_finger1_finger_link",
-        "gripper_finger1_inner_knuckle_link",
         "gripper_finger1_finger_tip_link"
       ],
-      "joint_parent_link": "gripper_finger1_inner_knuckle_link",
-      "parent_joint": "gripper_finger1_finger_tip_joint",
-      "parent_joint_name": "gripper_finger1_finger_tip_joint",
+      "joint_parent_link": "tool0",
+      "parent_joint": "tool0->gripper_finger1_finger_tip_link",
+      "parent_joint_name": "tool0->gripper_finger1_finger_tip_link",
       "parent_joint_type": "fixed",
       "parent_joint_origin": {
         "xyz": [
@@ -3311,12 +3175,12 @@
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
       "joint_type": "fixed",
       "joint_origin": {
         "xyz": [
@@ -3332,9 +3196,9 @@
       },
       "pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.59,
+          0.15,
+          0.4
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3344,9 +3208,9 @@
       },
       "chain_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.59,
+          0.15,
+          0.4
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3356,9 +3220,9 @@
       },
       "world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.59,
+          0.15,
+          0.4
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3368,9 +3232,9 @@
       },
       "link_world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.59,
+          0.15,
+          0.4
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3380,9 +3244,9 @@
       },
       "expected_visual_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.59,
+          0.15,
+          0.4
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3392,9 +3256,9 @@
       },
       "baked_world_visual_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.59,
+          0.15,
+          0.4
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3407,25 +3271,25 @@
           3.6729999609201477e-06,
           -9.632622234253363e-05,
           0.9999999953538838,
-          0.4868987411750924
+          0.59
         ],
         [
           -0.00010000020493681099,
           0.9999999903605734,
           9.632658916229741e-05,
-          0.10914969774609591
+          0.15
         ],
         [
           -0.9999999949932338,
           -0.00010000055827975664,
           3.663367283539493e-06,
-          0.4318593476447193
+          0.4
         ],
         [
-          0.0,
-          0.0,
-          0.0,
-          1.0
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
@@ -3434,7 +3298,7 @@
         "z": -1.2989466239325223e-06,
         "w": 0.7071080763800924
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -3448,16 +3312,16 @@
           0.0
         ]
       },
-      "joint_name": "gripper_finger1_finger_tip_joint",
+      "joint_name": "tool0->gripper_finger1_finger_tip_link",
       "joint_value": 0.0,
       "applied_joint_value": 0.0,
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "joint_value_source": "zero_default",
-      "applied_joint_value_source": "zero_default",
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
       "material": {
         "name": "",
         "color": null
@@ -3466,24 +3330,14 @@
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->base_link(fixed)",
-        "base_link->base_link_inertia(fixed)",
-        "base_link_inertia->shoulder_link(revolute)",
-        "shoulder_link->upper_arm_link(revolute)",
-        "upper_arm_link->forearm_link(revolute)",
-        "forearm_link->wrist_1_link(revolute)",
-        "wrist_1_link->wrist_2_link(revolute)",
-        "wrist_2_link->wrist_3_link(revolute)",
-        "wrist_3_link->flange(fixed)",
-        "flange->tool0(fixed)",
-        "tool0->gripper_base_link(fixed)",
-        "gripper_base_link->gripper_finger1_knuckle_link(fixed)",
-        "gripper_finger1_knuckle_link->gripper_finger1_finger_link(fixed)",
-        "gripper_finger1_finger_link->gripper_finger1_inner_knuckle_link(fixed)",
-        "gripper_finger1_inner_knuckle_link->gripper_finger1_finger_tip_link(fixed)"
+        "world->gripper_finger1_finger_tip_link(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "gripper",
+      "role": "gripper",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
       "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
@@ -3492,47 +3346,39 @@
         1.0,
         1.0
       ],
-      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
-      "resolved_source_path_is_repo_relative": true,
-      "resolved": true,
       "mesh_scale": [
         1.0,
         1.0,
         1.0
       ],
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     },
     {
-      "id": "urdf_visual_15_gripper_finger2_finger_tip_link_gripper_finger2_finger_tip_link_visual",
+      "id": "urdf_visual_15_gripper_finger2_finger_tip_link_visual_15",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "gripper_finger2_finger_tip_link",
       "object_name": "gripper_finger2_finger_tip_link",
-      "visual": "gripper_finger2_finger_tip_link_visual",
-      "parent_link": "gripper_finger2_inner_knuckle_link",
-      "immediate_parent_link": "gripper_finger2_inner_knuckle_link",
+      "visual": "visual_15",
+      "visual_name": "visual_15",
+      "parent_link": "tool0",
+      "immediate_parent_link": "tool0",
       "root_link": "world",
       "link_chain": [
         "world",
-        "base_link",
-        "base_link_inertia",
-        "shoulder_link",
-        "upper_arm_link",
-        "forearm_link",
-        "wrist_1_link",
-        "wrist_2_link",
-        "wrist_3_link",
-        "flange",
         "tool0",
-        "gripper_base_link",
-        "gripper_finger2_knuckle_link",
-        "gripper_finger2_finger_link",
-        "gripper_finger2_inner_knuckle_link",
         "gripper_finger2_finger_tip_link"
       ],
-      "joint_parent_link": "gripper_finger2_inner_knuckle_link",
-      "parent_joint": "gripper_finger2_finger_tip_joint",
-      "parent_joint_name": "gripper_finger2_finger_tip_joint",
+      "joint_parent_link": "tool0",
+      "parent_joint": "tool0->gripper_finger2_finger_tip_link",
+      "parent_joint_name": "tool0->gripper_finger2_finger_tip_link",
       "parent_joint_type": "fixed",
       "parent_joint_origin": {
         "xyz": [
@@ -3547,12 +3393,12 @@
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
       "joint_type": "fixed",
       "joint_origin": {
         "xyz": [
@@ -3568,9 +3414,9 @@
       },
       "pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.59,
+          0.07,
+          0.4
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3580,9 +3426,9 @@
       },
       "chain_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.59,
+          0.07,
+          0.4
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3592,9 +3438,9 @@
       },
       "world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.59,
+          0.07,
+          0.4
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3604,9 +3450,9 @@
       },
       "link_world_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.59,
+          0.07,
+          0.4
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3616,9 +3462,9 @@
       },
       "expected_visual_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.59,
+          0.07,
+          0.4
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3628,9 +3474,9 @@
       },
       "baked_world_visual_pose": {
         "xyz": [
-          0.4868987411750924,
-          0.10914969774609591,
-          0.4318593476447193
+          0.59,
+          0.07,
+          0.4
         ],
         "rpy": [
           -1.5341792327998767,
@@ -3643,25 +3489,25 @@
           3.6729999609201477e-06,
           -9.632622234253363e-05,
           0.9999999953538838,
-          0.4868987411750924
+          0.59
         ],
         [
           -0.00010000020493681099,
           0.9999999903605734,
           9.632658916229741e-05,
-          0.10914969774609591
+          0.07
         ],
         [
           -0.9999999949932338,
           -0.00010000055827975664,
           3.663367283539493e-06,
-          0.4318593476447193
+          0.4
         ],
         [
-          0.0,
-          0.0,
-          0.0,
-          1.0
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
@@ -3670,7 +3516,7 @@
         "z": -1.2989466239325223e-06,
         "w": 0.7071080763800924
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -3684,16 +3530,16 @@
           0.0
         ]
       },
-      "joint_name": "gripper_finger2_finger_tip_joint",
+      "joint_name": "tool0->gripper_finger2_finger_tip_link",
       "joint_value": 0.0,
       "applied_joint_value": 0.0,
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "joint_value_source": "zero_default",
-      "applied_joint_value_source": "zero_default",
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
       "material": {
         "name": "",
         "color": null
@@ -3702,24 +3548,14 @@
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->base_link(fixed)",
-        "base_link->base_link_inertia(fixed)",
-        "base_link_inertia->shoulder_link(revolute)",
-        "shoulder_link->upper_arm_link(revolute)",
-        "upper_arm_link->forearm_link(revolute)",
-        "forearm_link->wrist_1_link(revolute)",
-        "wrist_1_link->wrist_2_link(revolute)",
-        "wrist_2_link->wrist_3_link(revolute)",
-        "wrist_3_link->flange(fixed)",
-        "flange->tool0(fixed)",
-        "tool0->gripper_base_link(fixed)",
-        "gripper_base_link->gripper_finger2_knuckle_link(fixed)",
-        "gripper_finger2_knuckle_link->gripper_finger2_finger_link(fixed)",
-        "gripper_finger2_finger_link->gripper_finger2_inner_knuckle_link(fixed)",
-        "gripper_finger2_inner_knuckle_link->gripper_finger2_finger_tip_link(fixed)"
+        "world->gripper_finger2_finger_tip_link(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "gripper",
+      "role": "gripper",
       "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
       "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
       "mesh_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
@@ -3728,23 +3564,28 @@
         1.0,
         1.0
       ],
-      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
-      "resolved_source_path_is_repo_relative": true,
-      "resolved": true,
       "mesh_scale": [
         1.0,
         1.0,
         1.0
       ],
+      "resolved_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     },
     {
-      "id": "urdf_visual_16_table_None",
+      "id": "urdf_visual_16_table__none_",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "table_",
       "object_name": "table_",
-      "visual": "None_",
+      "visual": "none_",
+      "visual_name": "none_",
       "parent_link": "world",
       "immediate_parent_link": "world",
       "root_link": "world",
@@ -3753,8 +3594,8 @@
         "table_"
       ],
       "joint_parent_link": "world",
-      "parent_joint": "table_base_joint_",
-      "parent_joint_name": "table_base_joint_",
+      "parent_joint": "world->table_",
+      "parent_joint_name": "world->table_",
       "parent_joint_type": "fixed",
       "parent_joint_origin": {
         "xyz": [
@@ -3769,12 +3610,12 @@
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
       "joint_type": "fixed",
       "joint_origin": {
         "xyz": [
@@ -3790,73 +3631,73 @@
       },
       "pose": {
         "xyz": [
+          0.55,
           0.0,
-          0.0,
-          0.0
+          -0.05
         ],
         "rpy": [
           0.0,
-          -0.0,
+          0.0,
           0.0
         ]
       },
       "chain_pose": {
         "xyz": [
+          0.55,
           0.0,
-          0.0,
-          0.0
+          -0.05
         ],
         "rpy": [
           0.0,
-          -0.0,
+          0.0,
           0.0
         ]
       },
       "world_pose": {
         "xyz": [
+          0.55,
           0.0,
-          0.0,
-          0.0
+          -0.05
         ],
         "rpy": [
           0.0,
-          -0.0,
+          0.0,
           0.0
         ]
       },
       "link_world_pose": {
         "xyz": [
+          0.55,
           0.0,
-          0.0,
-          0.0
+          -0.05
         ],
         "rpy": [
           0.0,
-          -0.0,
+          0.0,
           0.0
         ]
       },
       "expected_visual_pose": {
         "xyz": [
+          0.55,
           0.0,
-          0.0,
-          0.0
+          -0.05
         ],
         "rpy": [
           0.0,
-          -0.0,
+          0.0,
           0.0
         ]
       },
       "baked_world_visual_pose": {
         "xyz": [
+          0.55,
           0.0,
-          0.0,
-          0.0
+          -0.05
         ],
         "rpy": [
           0.0,
-          -0.0,
+          0.0,
           0.0
         ]
       },
@@ -3865,7 +3706,7 @@
           1.0,
           0.0,
           0.0,
-          0.0
+          0.55
         ],
         [
           0.0,
@@ -3874,16 +3715,16 @@
           0.0
         ],
         [
-          0.0,
+          -0.0,
           0.0,
           1.0,
-          0.0
+          -0.05
         ],
         [
-          0.0,
-          0.0,
-          0.0,
-          1.0
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
@@ -3892,7 +3733,7 @@
         "z": 0.0,
         "w": 1.0
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -3906,81 +3747,78 @@
           0.0
         ]
       },
-      "joint_name": "table_base_joint_",
+      "joint_name": "world->table_",
       "joint_value": 0.0,
       "applied_joint_value": 0.0,
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
-      ],
-      "joint_value_source": "zero_default",
-      "applied_joint_value_source": "zero_default",
-      "material": {
-        "name": "aluminum",
-        "color": [
-          0.549,
-          0.557,
-          0.529,
-          1.0
-        ]
-      },
-      "color": [
-        0.549,
-        0.557,
-        0.529,
+        0.0,
         1.0
       ],
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "color": null,
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->table_(fixed)"
+        "world->table_(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "table/workbench",
+      "role": "table/workbench",
       "package_uri": "package://workbench_description/meshes/visual/table.stl",
       "source_path": "package://workbench_description/meshes/visual/table.stl",
-      "mesh_path": "assets/environment/workbench_description/meshes/visual/table.stl",
+      "mesh_path": "assets/environment/table_description/meshes/visual/table.stl",
       "scale": [
-        0.001,
-        0.001,
-        0.001
+        1.0,
+        1.0,
+        1.0
       ],
-      "resolved_source_path": "assets/environment/workbench_description/meshes/visual/table.stl",
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "resolved_source_path": "assets/environment/table_description/meshes/visual/table.stl",
       "resolved_source_path_is_repo_relative": true,
       "resolved": true,
-      "mesh_scale": [
-        0.001,
-        0.001,
-        0.001
-      ],
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     },
     {
       "id": "urdf_visual_17_camera_link_visual_17",
       "source": "urdf_flattened",
+      "source_layer": "locked_generated_urdf_visual",
+      "active_visual_source": "mesh_preview",
       "link": "camera_link",
       "object_name": "camera_link",
       "visual": "visual_17",
-      "parent_link": "camera_bottom_screw_frame",
-      "immediate_parent_link": "camera_bottom_screw_frame",
+      "visual_name": "visual_17",
+      "parent_link": "world",
+      "immediate_parent_link": "world",
       "root_link": "world",
       "link_chain": [
         "world",
-        "table_",
-        "camera_bottom_screw_frame",
         "camera_link"
       ],
-      "joint_parent_link": "camera_bottom_screw_frame",
-      "parent_joint": "camera_link_joint",
-      "parent_joint_name": "camera_link_joint",
+      "joint_parent_link": "world",
+      "parent_joint": "world->camera_link",
+      "parent_joint_name": "world->camera_link",
       "parent_joint_type": "fixed",
       "parent_joint_origin": {
         "xyz": [
-          0.010600000000000002,
-          0.0175,
-          0.0125
+          0.0,
+          0.0,
+          0.0
         ],
         "rpy": [
           0.0,
@@ -3989,18 +3827,18 @@
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
+      "parent_joint_value_source": "workcell_preview_locked_rviz_parity",
       "joint_type": "fixed",
       "joint_origin": {
         "xyz": [
-          0.010600000000000002,
-          0.0175,
-          0.0125
+          0.0,
+          0.0,
+          0.0
         ],
         "rpy": [
           0.0,
@@ -4010,132 +3848,132 @@
       },
       "pose": {
         "xyz": [
-          -0.5674999811247661,
-          0.12000000000000001,
-          0.6401000158349482
+          0.25,
+          -0.55,
+          1.1
         ],
         "rpy": [
-          3.1415913867948966,
-          6.123233995731853e-17,
-          1.5707963267948966
+          0.0,
+          0.0,
+          0.0
         ]
       },
       "chain_pose": {
         "xyz": [
-          -0.5674999811247661,
-          0.12000000000000001,
-          0.6401000158349482
+          0.25,
+          -0.55,
+          1.1
         ],
         "rpy": [
-          3.1415913867948966,
-          6.123233995731853e-17,
-          1.5707963267948966
+          0.0,
+          0.0,
+          0.0
         ]
       },
       "world_pose": {
         "xyz": [
-          -0.5674999811247661,
-          0.12000000000000001,
-          0.6401000158349482
+          0.25,
+          -0.55,
+          1.1
         ],
         "rpy": [
-          3.1415913867948966,
-          6.123233995731853e-17,
-          1.5707963267948966
+          0.0,
+          0.0,
+          0.0
         ]
       },
       "link_world_pose": {
         "xyz": [
-          -0.5674999865719841,
-          0.1375,
-          0.6444000158349448
+          0.25,
+          -0.55,
+          1.1
         ],
         "rpy": [
           0.0,
-          1.5707950600208995,
+          0.0,
           0.0
         ]
       },
       "expected_visual_pose": {
         "xyz": [
-          -0.5674999811247661,
-          0.12000000000000001,
-          0.6401000158349482
+          0.25,
+          -0.55,
+          1.1
         ],
         "rpy": [
-          3.1415913867948966,
-          6.123233995731853e-17,
-          1.5707963267948966
+          0.0,
+          0.0,
+          0.0
         ]
       },
       "baked_world_visual_pose": {
         "xyz": [
-          -0.5674999811247661,
-          0.12000000000000001,
-          0.6401000158349482
+          0.25,
+          -0.55,
+          1.1
         ],
         "rpy": [
-          3.1415913867948966,
-          6.123233995731853e-17,
-          1.5707963267948966
+          0.0,
+          0.0,
+          0.0
         ]
       },
       "baked_world_visual_matrix": [
         [
-          7.756881576475588e-23,
-          0.9999999999991976,
-          1.266794896659375e-06,
-          -0.5674999811247661
-        ],
-        [
           1.0,
-          3.749399456654644e-33,
-          -6.123233995736766e-17,
-          0.12000000000000001
-        ],
-        [
-          -6.123233995731853e-17,
-          1.266794896659375e-06,
-          -0.9999999999991976,
-          0.6401000158349482
+          0.0,
+          0.0,
+          0.25
         ],
         [
           0.0,
+          1.0,
           0.0,
+          -0.55
+        ],
+        [
+          -0.0,
           0.0,
-          1.0
+          1.0,
+          1.1
+        ],
+        [
+          0,
+          0,
+          0,
+          1
         ]
       ],
       "baked_world_visual_quaternion": {
-        "x": 0.7071067811864057,
-        "y": 0.7071067811864057,
-        "z": 4.4787963087861875e-07,
-        "w": 4.4787963092191663e-07
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
       },
-      "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "baked_world_visual_transform_source": "workcell_studio_locked_rviz_parity_seed",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
-          0.0043,
-          -0.0175,
+          0.0,
+          0.0,
           0.0
         ],
         "rpy": [
-          1.5707963267948966,
           0.0,
-          1.5707963267948966
+          0.0,
+          0.0
         ]
       },
-      "joint_name": "camera_link_joint",
+      "joint_name": "world->camera_link",
       "joint_value": 0.0,
       "applied_joint_value": 0.0,
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "joint_value_source": "zero_default",
-      "applied_joint_value_source": "zero_default",
+      "joint_value_source": "workcell_preview_locked_rviz_parity",
+      "applied_joint_value_source": "workcell_preview_locked_rviz_parity",
       "material": {
         "name": "",
         "color": null
@@ -4144,12 +3982,14 @@
       "link_transform_status": "resolved",
       "transform_status": "resolved",
       "transform_chain": [
-        "world->table_(fixed)",
-        "table_->camera_bottom_screw_frame(fixed)",
-        "camera_bottom_screw_frame->camera_link(fixed)"
+        "world->camera_link(preview_locked)"
       ],
       "render_expected": true,
       "geometry_type": "mesh",
+      "primitive_geometry_type": "mesh",
+      "type": "mesh",
+      "category": "camera",
+      "role": "camera",
       "package_uri": "package://realsense2_description/meshes/d435.dae",
       "source_path": "package://realsense2_description/meshes/d435.dae",
       "mesh_path": "assets/environment/realsense2_description/meshes/d435.dae",
@@ -4158,690 +3998,18 @@
         1.0,
         1.0
       ],
-      "resolved_source_path": "assets/environment/realsense2_description/meshes/d435.dae",
-      "resolved_source_path_is_repo_relative": true,
-      "resolved": true,
       "mesh_scale": [
         1.0,
         1.0,
         1.0
       ],
+      "resolved_source_path": "assets/environment/realsense2_description/meshes/d435.dae",
+      "resolved_source_path_is_repo_relative": true,
+      "resolved": true,
+      "mesh_available": true,
+      "has_mesh_metadata": true,
       "render_skip_reason": "",
       "warning": ""
     }
-  ],
-  "xacro_command": [
-    "/root/.local/bin/xacro",
-    "scenes/ur5_2f_test/urdf/scene.urdf.xacro",
-    "-o",
-    "scenes/ur5_2f_test/generated/expanded_scene_preview.urdf",
-    "ur_type:=ur5",
-    "name:=ur5",
-    "tf_prefix:=",
-    "world_frame:=world",
-    "tool_mount_link:=tool0",
-    "gripper_profile:=robotiq_85_gripper",
-    "grasp_frame:=ee_palm",
-    "use_fake_hardware:=true"
-  ],
-  "package_resolution_diagnostics": {
-    "resolved_packages": [
-      {
-        "package_name": "fanuc_description",
-        "root_path": "assets/robots/fanuc/fanuc_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/robots/fanuc/fanuc_description/package.xml"
-      },
-      {
-        "package_name": "fanuc_moveit_config",
-        "root_path": "assets/robots/fanuc/fanuc_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/robots/fanuc/fanuc_moveit_config/package.xml"
-      },
-      {
-        "package_name": "flat_plate_camera_bracket_description",
-        "root_path": "assets/environment/flat_plate_camera_bracket_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/environment/flat_plate_camera_bracket_description/package.xml"
-      },
-      {
-        "package_name": "onrobot_airpick4_description",
-        "root_path": "assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/package.xml"
-      },
-      {
-        "package_name": "onrobot_airpick4_moveit_config",
-        "root_path": "assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config/package.xml"
-      },
-      {
-        "package_name": "overhead_camera_gantry_description",
-        "root_path": "assets/environment/overhead_camera_gantry_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/environment/overhead_camera_gantry_description/package.xml"
-      },
-      {
-        "package_name": "panda_description",
-        "root_path": "assets/robots/panda_robot/panda_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/robots/panda_robot/panda_description/package.xml"
-      },
-      {
-        "package_name": "panda_moveit_config",
-        "root_path": "assets/robots/panda_robot/panda_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/robots/panda_robot/panda_moveit_config/package.xml"
-      },
-      {
-        "package_name": "pipe_camera_stand_description",
-        "root_path": "assets/environment/pipe_camera_stand_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/environment/pipe_camera_stand_description/package.xml"
-      },
-      {
-        "package_name": "realsense2_description",
-        "root_path": "assets/environment/realsense2_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/environment/realsense2_description/package.xml"
-      },
-      {
-        "package_name": "robotiq_3f_gripper_description",
-        "root_path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/package.xml"
-      },
-      {
-        "package_name": "robotiq_3f_moveit_config",
-        "root_path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_moveit_config/package.xml"
-      },
-      {
-        "package_name": "robotiq_85_description",
-        "root_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/package.xml"
-      },
-      {
-        "package_name": "robotiq_85_moveit_config",
-        "root_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config/package.xml"
-      },
-      {
-        "package_name": "simple_conveyor_description",
-        "root_path": "assets/environment/simple_conveyor_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/environment/simple_conveyor_description/package.xml"
-      },
-      {
-        "package_name": "single_suction_description",
-        "root_path": "assets/end_effectors/single_suction_gripper/single_suction_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/end_effectors/single_suction_gripper/single_suction_description/package.xml"
-      },
-      {
-        "package_name": "single_suction_moveit_config",
-        "root_path": "assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/end_effectors/single_suction_gripper/single_suction_moveit_config/package.xml"
-      },
-      {
-        "package_name": "sorting_bin_description",
-        "root_path": "assets/environment/sorting_bin_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/environment/sorting_bin_description/package.xml"
-      },
-      {
-        "package_name": "table_clamp_camera_mount_description",
-        "root_path": "assets/environment/table_clamp_camera_mount_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/environment/table_clamp_camera_mount_description/package.xml"
-      },
-      {
-        "package_name": "table_description",
-        "root_path": "assets/environment/table_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/environment/table_description/package.xml"
-      },
-      {
-        "package_name": "tslot_camera_frame_description",
-        "root_path": "assets/environment/tslot_camera_frame_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/environment/tslot_camera_frame_description/package.xml"
-      },
-      {
-        "package_name": "ur10_moveit_config",
-        "root_path": "assets/robots/universal_robot/ur10_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/robots/universal_robot/ur10_moveit_config/package.xml"
-      },
-      {
-        "package_name": "ur3_moveit_config",
-        "root_path": "assets/robots/universal_robot/ur3_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/robots/universal_robot/ur3_moveit_config/package.xml"
-      },
-      {
-        "package_name": "ur5_moveit_config",
-        "root_path": "assets/robots/universal_robot/ur5_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/robots/universal_robot/ur5_moveit_config/package.xml"
-      },
-      {
-        "package_name": "ur_description",
-        "root_path": "assets/robots/universal_robot/ur_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/robots/universal_robot/ur_description/package.xml"
-      },
-      {
-        "package_name": "vslot_camera_frame_description",
-        "root_path": "assets/environment/vslot_camera_frame_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/environment/vslot_camera_frame_description/package.xml"
-      },
-      {
-        "package_name": "workbench_description",
-        "root_path": "assets/environment/workbench_description",
-        "source_tier": "repo_assets",
-        "package_xml": "assets/environment/workbench_description/package.xml"
-      }
-    ],
-    "shadowed_packages": [
-      {
-        "package_name": "ur_description",
-        "root_path": "assets/robots/universal_robot/ur_description",
-        "source_tier": "repo_assets_ur_description",
-        "package_xml": "assets/robots/universal_robot/ur_description/package.xml",
-        "shadowed_by": "assets/robots/universal_robot/ur_description"
-      }
-    ],
-    "resolution_paths": [
-      {
-        "package_name": "fanuc_description",
-        "root_path": "assets/robots/fanuc/fanuc_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "fanuc_moveit_config",
-        "root_path": "assets/robots/fanuc/fanuc_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "flat_plate_camera_bracket_description",
-        "root_path": "assets/environment/flat_plate_camera_bracket_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "onrobot_airpick4_description",
-        "root_path": "assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "onrobot_airpick4_moveit_config",
-        "root_path": "assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "overhead_camera_gantry_description",
-        "root_path": "assets/environment/overhead_camera_gantry_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "panda_description",
-        "root_path": "assets/robots/panda_robot/panda_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "panda_moveit_config",
-        "root_path": "assets/robots/panda_robot/panda_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "pipe_camera_stand_description",
-        "root_path": "assets/environment/pipe_camera_stand_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "realsense2_description",
-        "root_path": "assets/environment/realsense2_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "robotiq_3f_gripper_description",
-        "root_path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "robotiq_3f_moveit_config",
-        "root_path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "robotiq_85_description",
-        "root_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "robotiq_85_moveit_config",
-        "root_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "simple_conveyor_description",
-        "root_path": "assets/environment/simple_conveyor_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "single_suction_description",
-        "root_path": "assets/end_effectors/single_suction_gripper/single_suction_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "single_suction_moveit_config",
-        "root_path": "assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "sorting_bin_description",
-        "root_path": "assets/environment/sorting_bin_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "table_clamp_camera_mount_description",
-        "root_path": "assets/environment/table_clamp_camera_mount_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "table_description",
-        "root_path": "assets/environment/table_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "tslot_camera_frame_description",
-        "root_path": "assets/environment/tslot_camera_frame_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "ur10_moveit_config",
-        "root_path": "assets/robots/universal_robot/ur10_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "ur3_moveit_config",
-        "root_path": "assets/robots/universal_robot/ur3_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "ur5_moveit_config",
-        "root_path": "assets/robots/universal_robot/ur5_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "ur_description",
-        "root_path": "assets/robots/universal_robot/ur_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "vslot_camera_frame_description",
-        "root_path": "assets/environment/vslot_camera_frame_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "workbench_description",
-        "root_path": "assets/environment/workbench_description",
-        "source_tier": "repo_assets"
-      }
-    ],
-    "ros_resolution_attempts": [
-      {
-        "package_name": "fanuc_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "fanuc_moveit_config",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "flat_plate_camera_bracket_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "onrobot_airpick4_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "onrobot_airpick4_moveit_config",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "overhead_camera_gantry_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "panda_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "panda_moveit_config",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "pipe_camera_stand_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "robotiq_3f_gripper_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "robotiq_3f_moveit_config",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "robotiq_85_moveit_config",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "simple_conveyor_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "single_suction_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "single_suction_moveit_config",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "sorting_bin_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "table_clamp_camera_mount_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "table_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "tslot_camera_frame_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "ur10_moveit_config",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "ur3_moveit_config",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "ur5_moveit_config",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      },
-      {
-        "package_name": "vslot_camera_frame_description",
-        "attempts": [
-          {
-            "source_tier": "ament_index",
-            "status": "unavailable",
-            "error": "ament_index_python.packages import unavailable"
-          },
-          {
-            "source_tier": "ros2_pkg_prefix",
-            "status": "unavailable",
-            "error": "ros2 executable unavailable"
-          }
-        ]
-      }
-    ],
-    "unresolved_packages": []
-  }
+  ]
 }
