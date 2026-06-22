@@ -3,6 +3,7 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QRegularExpression>
+#include <QStringList>
 
 #include <cmath>
 
@@ -75,7 +76,7 @@ QString normalized_equivalence_basename(const QString & value)
   return normalized_equivalence_token(basename.isEmpty() ? trimmed : basename);
 }
 
-QString approximate_pose_token(double value)
+double approximate_pose_token(double value)
 {
   return QString::number(static_cast<int>(std::llround(value * 20.0)));
 }
@@ -121,12 +122,10 @@ bool is_resolved_mesh_path_or_resolvable_package_uri(const QString & value)
   const QFileInfo info(local_path);
   return info.exists() && info.isFile();
 }
-}  // namespace
 
-
-bool is_required_ur5_generated_visual_mesh_index_row(const ScenePreviewWidget::PreviewItem & item)
+const QSet<QString> & required_ur5_scene3d_links()
 {
-  static const QSet<QString> required_links{
+  static const QSet<QString> links{
     QStringLiteral("base_link_inertia"),
     QStringLiteral("shoulder_link"),
     QStringLiteral("upper_arm_link"),
@@ -135,11 +134,20 @@ bool is_required_ur5_generated_visual_mesh_index_row(const ScenePreviewWidget::P
     QStringLiteral("wrist_2_link"),
     QStringLiteral("wrist_3_link")
   };
-  const QString link = normalized_equivalence_token(
-    !item.visual_index_link_name.trimmed().isEmpty() ? item.visual_index_link_name : item.visual_index_link);
-  if (!required_links.contains(link)) return false;
+  return links;
+}
 
-  const QStringList mesh_identity_fields = {
+QString required_ur5_link_name_from_preview_item(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QStringList candidates{
+    item.visual_index_link_name,
+    item.visual_index_link,
+    item.visual_index_object_name,
+    item.display_name,
+    item.id,
+    item.frame_id,
+    item.visual_index_visual,
+    item.visual_index_visual_name,
     item.package_uri,
     item.visual_index_package_uri,
     item.visual_index_mesh_uri,
@@ -147,34 +155,110 @@ bool is_required_ur5_generated_visual_mesh_index_row(const ScenePreviewWidget::P
     item.source_path,
     item.resolved_source_path_original
   };
-  bool references_ur5_visual_mesh = false;
-  for (QString value : mesh_identity_fields) {
-    value = value.trimmed().toLower();
-    if (value.startsWith(QStringLiteral("package://ur_description/meshes/ur5/visual/"))) {
-      references_ur5_visual_mesh = true;
-      break;
-    }
-    if (value.contains(QStringLiteral("/ur_description/meshes/ur5/visual/"))) {
-      references_ur5_visual_mesh = true;
-      break;
+
+  for (const QString & value : candidates) {
+    const QString token = normalized_equivalence_token(value);
+    for (const QString & required : required_ur5_scene3d_links()) {
+      if (token == required || token.contains(required)) return required;
     }
   }
-  if (!references_ur5_visual_mesh) return false;
 
-  return item.locked && !item.editable && !item.linked_to_editable_layout_state &&
-         canonical_scene3d_token(item.source_layer) == QStringLiteral("locked_generated_urdf_visual") &&
-         canonical_scene3d_token(item.active_visual_source) == QStringLiteral("mesh_preview");
+  const QString mesh_hint = normalized_equivalence_token(candidates.join(QStringLiteral(" ")));
+  if (mesh_hint.contains(QStringLiteral("base_dae"))) return QStringLiteral("base_link_inertia");
+  if (mesh_hint.contains(QStringLiteral("shoulder_dae"))) return QStringLiteral("shoulder_link");
+  if (mesh_hint.contains(QStringLiteral("upperarm_dae")) || mesh_hint.contains(QStringLiteral("upper_arm_dae"))) return QStringLiteral("upper_arm_link");
+  if (mesh_hint.contains(QStringLiteral("forearm_dae"))) return QStringLiteral("forearm_link");
+  if (mesh_hint.contains(QStringLiteral("wrist1_dae")) || mesh_hint.contains(QStringLiteral("wrist_1_dae"))) return QStringLiteral("wrist_1_link");
+  if (mesh_hint.contains(QStringLiteral("wrist2_dae")) || mesh_hint.contains(QStringLiteral("wrist_2_dae"))) return QStringLiteral("wrist_2_link");
+  if (mesh_hint.contains(QStringLiteral("wrist3_dae")) || mesh_hint.contains(QStringLiteral("wrist_3_dae"))) return QStringLiteral("wrist_3_link");
+  return {};
+}
+
+bool preview_item_references_ur5_visual_mesh(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QString mesh_hint = normalized_equivalence_token(QStringList{
+    item.package_uri,
+    item.visual_index_package_uri,
+    item.visual_index_mesh_uri,
+    item.mesh_path,
+    item.source_path,
+    item.resolved_source_path_original,
+    item.id
+  }.join(QStringLiteral(" ")));
+
+  if (mesh_hint.contains(QStringLiteral("ur_description")) &&
+      mesh_hint.contains(QStringLiteral("meshes_ur5_visual"))) {
+    return true;
+  }
+
+  return mesh_hint.contains(QStringLiteral("base_dae")) ||
+         mesh_hint.contains(QStringLiteral("shoulder_dae")) ||
+         mesh_hint.contains(QStringLiteral("upperarm_dae")) ||
+         mesh_hint.contains(QStringLiteral("upper_arm_dae")) ||
+         mesh_hint.contains(QStringLiteral("forearm_dae")) ||
+         mesh_hint.contains(QStringLiteral("wrist1_dae")) ||
+         mesh_hint.contains(QStringLiteral("wrist_1_dae")) ||
+         mesh_hint.contains(QStringLiteral("wrist2_dae")) ||
+         mesh_hint.contains(QStringLiteral("wrist_2_dae")) ||
+         mesh_hint.contains(QStringLiteral("wrist3_dae")) ||
+         mesh_hint.contains(QStringLiteral("wrist_3_dae"));
+}
+
+QString item_equivalence_link_name(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QString required_ur5_link = required_ur5_link_name_from_preview_item(item);
+  if (!required_ur5_link.isEmpty()) return required_ur5_link;
+  if (!item.visual_index_link_name.trimmed().isEmpty()) return item.visual_index_link_name;
+  if (!item.visual_index_link.trimmed().isEmpty()) return item.visual_index_link;
+  if (!item.display_name.trimmed().isEmpty()) return item.display_name;
+  return item.id;
+}
+
+}  // namespace
+
+bool is_required_ur5_generated_visual_mesh_index_row(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QString required_link = required_ur5_link_name_from_preview_item(item);
+  if (required_link.isEmpty()) return false;
+  if (!preview_item_references_ur5_visual_mesh(item)) return false;
+  if (is_true_editable_source_of_truth(item) || item.linked_to_editable_layout_state) return false;
+
+  const QString source_layer = canonical_scene3d_token(item.source_layer);
+  const QString visual_source = canonical_scene3d_token(item.active_visual_source);
+  const QString id_token = normalized_equivalence_token(item.id);
+  const QString visual_index_source = normalized_equivalence_token(item.visual_index_source);
+
+  const bool generated_visual_row =
+    item.id.startsWith(QStringLiteral("generated_urdf::"), Qt::CaseInsensitive) ||
+    item.id.startsWith(QStringLiteral("urdf_visual_"), Qt::CaseInsensitive) ||
+    id_token.contains(QStringLiteral("urdf_visual")) ||
+    source_layer == QStringLiteral("locked_generated_urdf_visual") ||
+    source_layer.contains(QStringLiteral("generated_urdf")) ||
+    source_layer.contains(QStringLiteral("urdf_visual")) ||
+    visual_index_source.contains(QStringLiteral("urdf_flattened")) ||
+    visual_index_source.contains(QStringLiteral("xacro"));
+
+  const bool mesh_preview_source = visual_source.isEmpty() ||
+    visual_source == QStringLiteral("mesh_preview") ||
+    visual_source.contains(QStringLiteral("mesh"));
+
+  return generated_visual_row && mesh_preview_source;
 }
 
 bool is_authoritative_generated_urdf_mesh_preview_item(const ScenePreviewWidget::PreviewItem & item)
 {
   if (is_required_ur5_generated_visual_mesh_index_row(item)) return true;
   const auto is_protected_generated_mesh_index_visual = [](const ScenePreviewWidget::PreviewItem & candidate) {
-    if (!candidate.id.trimmed().startsWith(QStringLiteral("generated_urdf::"))) return false;
-    if (!candidate.locked || candidate.linked_to_editable_layout_state || candidate.editable) return false;
+    const bool generated_identity = candidate.id.trimmed().startsWith(QStringLiteral("generated_urdf::")) ||
+      candidate.id.trimmed().startsWith(QStringLiteral("urdf_visual_"));
+    if (!generated_identity) return false;
+    if (candidate.linked_to_editable_layout_state || candidate.editable) return false;
     const QString source_layer = canonical_scene3d_token(candidate.source_layer);
     const QString visual_source = canonical_scene3d_token(candidate.active_visual_source);
-    if (source_layer != QStringLiteral("locked_generated_urdf_visual") || visual_source != QStringLiteral("mesh_preview")) return false;
+    if (source_layer != QStringLiteral("locked_generated_urdf_visual") ||
+        !(visual_source == QStringLiteral("mesh_preview") || visual_source.contains(QStringLiteral("mesh")))) {
+      return false;
+    }
     if (candidate.visual_index_link_name.trimmed().isEmpty() && candidate.visual_index_link.trimmed().isEmpty()) return false;
     const QStringList mesh_identity_fields = {candidate.package_uri, candidate.visual_index_package_uri, candidate.visual_index_mesh_uri,
       candidate.mesh_path, candidate.source_path, candidate.resolved_source_path_original};
@@ -233,14 +317,15 @@ QSet<QString> generated_urdf_preview_equivalence_keys_for_item(const ScenePrevie
   QSet<QString> keys;
   const QString role = normalized_item_role(item);
   if (role.isEmpty()) return keys;
-  const QString link = normalized_equivalence_token(item.display_name.isEmpty() ? item.id : item.display_name);
+  const QString link = normalized_equivalence_token(item_equivalence_link_name(item));
   const QString id_token = normalized_equivalence_token(item.id);
   const QString pose = QStringLiteral("%1_%2_%3_%4_%5_%6")
     .arg(approximate_pose_token(item.x), approximate_pose_token(item.y), approximate_pose_token(item.z),
          approximate_pose_token(item.roll), approximate_pose_token(item.pitch), approximate_pose_token(item.yaw));
   if (!link.isEmpty()) keys.insert(QStringLiteral("role_link:%1:%2").arg(role, link));
   if (!id_token.isEmpty()) keys.insert(QStringLiteral("role_link:%1:%2").arg(role, id_token));
-  for (const QString & path_value : {item.package_uri, item.mesh_path, item.source_path, item.resolved_source_path_original}) {
+  for (const QString & path_value : {item.package_uri, item.visual_index_package_uri, item.visual_index_mesh_uri,
+                                    item.mesh_path, item.source_path, item.resolved_source_path_original}) {
     const QString source_basename = normalized_equivalence_basename(path_value);
     if (source_basename.isEmpty()) continue;
     keys.insert(QStringLiteral("role_source_basename:%1:%2").arg(role, source_basename));
