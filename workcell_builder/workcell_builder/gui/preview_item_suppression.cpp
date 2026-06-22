@@ -76,7 +76,7 @@ QString normalized_equivalence_basename(const QString & value)
   return normalized_equivalence_token(basename.isEmpty() ? trimmed : basename);
 }
 
-double approximate_pose_token(double value)
+QString approximate_pose_token(double value)
 {
   return QString::number(static_cast<int>(std::llround(value * 20.0)));
 }
