@@ -121,3 +121,42 @@ TEST(PreviewItemSuppression, PreservesAuthoritativeGeneratedUrdfMeshesAndSuppres
   }
   EXPECT_GT(result.suppressed_preview_placeholder_count, 0);
 }
+
+TEST(PreviewItemSuppression, ExplicitlyPreservesUr5VisualMeshIndexRowsAgainstSemanticPlaceholders)
+{
+  QVector<ScenePreviewWidget::PreviewItem> items = make_visual_index_rows();
+
+  ScenePreviewWidget::PreviewItem robot_base;
+  robot_base.id = QStringLiteral("robot_base");
+  robot_base.display_name = QStringLiteral("Robot Base");
+  robot_base.category = QStringLiteral("robot");
+  robot_base.role = QStringLiteral("robot_base");
+  robot_base.source_layer = QStringLiteral("primitive_fallback");
+  robot_base.active_visual_source = QStringLiteral("primitive_fallback");
+  robot_base.locked = true;
+  robot_base.editable = false;
+  robot_base.selectable = true;
+  robot_base.mesh_available = false;
+  robot_base.has_mesh_metadata = false;
+  robot_base.warnings = QStringList{QStringLiteral("semantic placeholder")};
+  items << robot_base;
+
+  const auto result = workcell_builder::suppress_lower_fidelity_preview_items(items, true);
+
+  QSet<QString> retained_ur5_links;
+  bool retained_robot_base_placeholder = false;
+  for (const auto & item : result.items) {
+    if (item.package_uri.startsWith(QStringLiteral("package://ur_description/meshes/ur5/visual/")) &&
+        item.source_layer == QStringLiteral("locked_generated_urdf_visual") &&
+        item.active_visual_source == QStringLiteral("mesh_preview")) {
+      retained_ur5_links.insert(item.visual_index_link_name);
+      EXPECT_TRUE(item.mesh_available);
+      EXPECT_TRUE(item.has_mesh_metadata);
+      EXPECT_TRUE(item.selectable);
+    }
+    if (item.id == QStringLiteral("robot_base")) retained_robot_base_placeholder = true;
+  }
+
+  EXPECT_EQ(retained_ur5_links.size(), 7);
+  EXPECT_FALSE(retained_robot_base_placeholder);
+}
