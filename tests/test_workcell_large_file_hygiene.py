@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+CMAKE_PATH = REPO_ROOT / "workcell_builder" / "workcell_builder" / "CMakeLists.txt"
 
 
 def _load_module(name: str, path: Path):
@@ -34,10 +35,34 @@ def _cmake_executable_sources(text: str, target: str) -> list[str]:
 
 
 def test_workcell_builder_cmake_has_no_duplicate_target_sources():
-    cmake = (REPO_ROOT / "workcell_builder" / "workcell_builder" / "CMakeLists.txt").read_text(encoding="utf-8")
+    cmake = CMAKE_PATH.read_text(encoding="utf-8")
     sources = _cmake_executable_sources(cmake, "workcell_builder")
     duplicates = sorted({source for source in sources if sources.count(source) > 1})
     assert duplicates == []
+
+
+def test_workcell_builder_cmake_keeps_full_build_and_install_contract():
+    cmake = CMAKE_PATH.read_text(encoding="utf-8")
+
+    required_fragments = [
+        "ament_lint_auto_find_test_dependencies()",
+        "add_custom_target(generate_workcell_builder_secondary_assets ALL",
+        "add_dependencies(workcell_builder generate_workcell_builder_secondary_assets)",
+        "find_package(launch_testing_ament_cmake REQUIRED)",
+        "add_launch_test(test/test_ur5_2f_demo_launch.test.py TIMEOUT 180)",
+        "install(DIRECTORY templates",
+        "install(DIRECTORY gui/resources",
+        "install(DIRECTORY assets",
+        "install(DIRECTORY ${WORKCELL_BUILDER_SECONDARY_ASSETS_DIR}/",
+        "../../scripts/run_workcell_studio_golden_flow.py",
+        "ament_package()",
+    ]
+    for fragment in required_fragments:
+        assert fragment in cmake, f"missing CMake contract fragment: {fragment}"
+
+    assert cmake.index("if(BUILD_TESTING)") < cmake.rindex("ament_package()")
+    assert cmake.count("ament_package()") == 1
+    assert len(cmake.splitlines()) > 600
 
 
 def test_large_file_audit_reports_known_wrapper_targets_without_failing_ci():
