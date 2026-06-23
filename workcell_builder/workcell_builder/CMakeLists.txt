@@ -218,38 +218,475 @@ target_link_libraries(workcell_builder
 
 if(assimp_FOUND)
   target_compile_definitions(workcell_builder PRIVATE WORKCELL_BUILDER_HAS_ASSIMP=1)
-  target_link_libraries(workcell_builder ${ASSIMP_LIBRARIES})
-  target_include_directories(workcell_builder PRIVATE ${ASSIMP_INCLUDE_DIRS})
+  if(TARGET assimp::assimp)
+    target_link_libraries(workcell_builder assimp::assimp)
+  elseif(TARGET Assimp::assimp)
+    target_link_libraries(workcell_builder Assimp::assimp)
+  else()
+    target_link_libraries(workcell_builder ${ASSIMP_LIBRARIES} ${assimp_LIBRARIES})
+    target_include_directories(workcell_builder PRIVATE ${ASSIMP_INCLUDE_DIRS} ${assimp_INCLUDE_DIRS})
+  endif()
 endif()
 
-install(TARGETS workcell_builder
-  DESTINATION bin)
-install(TARGETS workcell_builder
-  DESTINATION lib/${PROJECT_NAME})
+target_include_directories(workcell_builder
+  PRIVATE
+    ${Boost_INCLUDE_DIRS}
+)
 
-ament_package()
+set(WORKCELL_BUILDER_CANONICAL_ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets")
+set(WORKCELL_BUILDER_SECONDARY_ASSETS_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated_assets")
+
+add_custom_target(generate_workcell_builder_secondary_assets ALL
+  COMMAND ${CMAKE_COMMAND} -E rm -rf ${WORKCELL_BUILDER_SECONDARY_ASSETS_DIR}
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${WORKCELL_BUILDER_SECONDARY_ASSETS_DIR}
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${WORKCELL_BUILDER_CANONICAL_ASSETS_DIR}
+    ${WORKCELL_BUILDER_SECONDARY_ASSETS_DIR}
+  COMMENT "Generating secondary default-asset tree from canonical package assets")
+
+add_dependencies(workcell_builder generate_workcell_builder_secondary_assets)
 
 if(BUILD_TESTING)
+  find_package(ament_lint_auto REQUIRED)
+  ament_lint_auto_find_test_dependencies()
+
   find_package(ament_cmake_gtest REQUIRED)
-  find_package(ament_cmake_pytest REQUIRED)
-  ament_add_pytest_test(workcell_builder_python_tests ${CMAKE_CURRENT_SOURCE_DIR}/test)
-  ament_add_gtest(scene3d_candidate_assembly_test test/scene3d_candidate_assembly_test.cpp gui/scene3d_candidate_assembly.cpp gui/preview_item_suppression.cpp)
-  target_include_directories(scene3d_candidate_assembly_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  target_link_libraries(scene3d_candidate_assembly_test Qt5::Widgets Qt5::OpenGL OpenGL::GL yaml-cpp)
-  ament_add_gtest(preview_item_suppression_test test/preview_item_suppression_test.cpp gui/preview_item_suppression.cpp)
-  target_include_directories(preview_item_suppression_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  target_link_libraries(preview_item_suppression_test Qt5::Widgets Qt5::OpenGL OpenGL::GL yaml-cpp)
-  ament_add_gtest(scene3d_mesh_preview_regression_test test/scene3d_mesh_preview_regression_test.cpp gui/scene3d_viewport_widget.cpp gui/scene_preview_widget.cpp gui/scene3d_candidate_assembly.cpp gui/preview_item_suppression.cpp src_visual_mesh_source_resolver.cpp)
-  target_include_directories(scene3d_mesh_preview_regression_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  target_link_libraries(scene3d_mesh_preview_regression_test Qt5::Widgets Qt5::OpenGL Qt5::Svg OpenGL::GL yaml-cpp ${Boost_LIBRARIES})
-  if(assimp_FOUND)
-    target_compile_definitions(scene3d_mesh_preview_regression_test PRIVATE WORKCELL_BUILDER_HAS_ASSIMP=1)
-    target_link_libraries(scene3d_mesh_preview_regression_test ${ASSIMP_LIBRARIES})
-    target_include_directories(scene3d_mesh_preview_regression_test PRIVATE ${ASSIMP_INCLUDE_DIRS})
+  ament_add_gtest(workcell_link_deletion_test test/link_deletion_test.cpp)
+  ament_add_gtest(workcell_directory_inspection_test test/workcell_directory_inspection_test.cpp)
+  ament_add_gtest(workcell_scene_select_paths_test test/scene_select_paths_test.cpp src_scene_select_paths.cpp)
+  ament_add_gtest(workcell_generated_environment_asset_writer_test
+    test/generated_environment_asset_writer_test.cpp
+    src_generated_stl_writer.cpp
+    src_generated_environment_asset_writer.cpp
+    src_placed_object_urdf_render.cpp
+    src_object_placement_model.cpp
+    gui/workcell_builder_ui_utils.cpp
+    gui/loadobjects.cpp)
+  ament_add_gtest(workcell_generate_yaml_end_effector_metadata_test
+    test/generate_yaml_end_effector_metadata_test.cpp)
+  ament_add_gtest(workcell_scene_xacro_tool_attachment_test
+    test/scene_xacro_tool_attachment_test.cpp)
+  ament_add_gtest(workcell_scene_status_test
+    test/workcell_scene_status_test.cpp
+    src_workcell_scene_status.cpp
+    src_supported_scene_readiness_loader.cpp
+    src_workcell_studio_scene_browser.cpp
+    src_workcell_warning_once.cpp
+    src_conveyor_pick_preview.cpp
+    src_workcell_perception_snapshot.cpp
+    src_task_intent_readiness.cpp
+    src_class_routing_model.cpp
+    src_planning_readiness.cpp
+    src_workcell_zone_model.cpp
+    src_workcell_perception_snapshot.cpp
+    src_workcell_yaml_utils.cpp)
+  ament_add_gtest(workcell_yaml_utils_test
+    test/workcell_yaml_utils_test.cpp
+    src_workcell_yaml_utils.cpp)
+  ament_add_gtest(workcell_conveyor_pick_preview_test
+    test/conveyor_pick_preview_test.cpp
+    src_conveyor_pick_preview.cpp)
+  # Source-text-only regression test: intentionally does not compile
+  # Scene3DViewportWidget. Real widget compilation coverage remains in
+  # workcell_scene3d_stl_parser_test and the main workcell_builder target.
+  ament_add_gtest(workcell_scene3d_mesh_preview_regression_test
+    test/scene3d_mesh_preview_regression_test.cpp)
+  if(TARGET workcell_scene3d_mesh_preview_regression_test)
+    target_compile_definitions(workcell_scene3d_mesh_preview_regression_test PRIVATE
+      WORKCELL_BUILDER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   endif()
-  ament_add_gtest(transform_clipboard_utils_test test/transform_clipboard_utils_test.cpp gui/transform_clipboard_utils.cpp)
-  target_include_directories(transform_clipboard_utils_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  target_link_libraries(transform_clipboard_utils_test Qt5::Widgets yaml-cpp)
-  ament_add_gtest(layout_serialization_contract_test test/layout_serialization_contract_test.cpp)
-  target_link_libraries(layout_serialization_contract_test yaml-cpp)
+  ament_add_gtest(workcell_task_intent_readiness_test
+    test/task_intent_readiness_test.cpp
+    src_task_intent_readiness.cpp)
+  ament_add_gtest(workcell_planning_readiness_test
+    test/planning_readiness_test.cpp
+    src_planning_readiness.cpp)
+  ament_add_gtest(workcell_perception_snapshot_test
+    test/workcell_perception_snapshot_test.cpp
+    src_workcell_perception_snapshot.cpp
+    src_workcell_warning_once.cpp
+    src_task_intent_readiness.cpp
+    src_class_routing_model.cpp
+    src_planning_readiness.cpp
+    src_conveyor_pick_preview.cpp
+    src_workcell_camera_model.cpp
+    src_workcell_zone_model.cpp
+    src_workcell_yaml_utils.cpp)
+  ament_add_gtest(workcell_robot_tool_compatibility_inference_test
+    test/robot_tool_compatibility_inference_test.cpp
+    src_robot_tool_compatibility.cpp)
+
+  ament_add_gtest(workcell_new_cell_wizard_test
+    test/new_cell_wizard_test.cpp
+    gui/new_cell_wizard.cpp)
+
+  ament_add_gtest(workcell_workspace_validation_test
+    test/workspace_validation_test.cpp
+    src_workspace_validation.cpp)
+
+  ament_add_gtest(workcell_placed_object_preview_writer_test
+    test/placed_object_preview_writer_test.cpp
+    gui/placed_object_preview_writer.cpp
+    src_placed_object_urdf_render.cpp
+    src_object_placement_model.cpp)
+
+  ament_add_gtest(workcell_scene3d_stl_parser_test
+    test/scene3d_stl_parser_test.cpp
+    gui/scene3d_viewport_widget.cpp)
+  ament_add_gtest(workcell_scene3d_render_role_classifier_test
+    test/scene3d_render_role_classifier_test.cpp
+    gui/scene3d_viewport_widget.cpp)
+
+  ament_add_gtest(workcell_command_builders_test
+    test/command_builders_test.cpp
+    src_workcell_builder_command_builders.cpp)
+
+  ament_add_gtest(workcell_rviz_preview_metadata_command_test
+    test/rviz_preview_metadata_command_test.cpp
+    src_rviz_preview_runner.cpp
+    src_workcell_studio_scene_browser.cpp
+    src_workcell_warning_once.cpp
+    src_workcell_yaml_utils.cpp)
+
+  ament_add_gtest(workcell_scene_preview_widget_ui_test
+    test/scene_preview_widget_ui_test.cpp
+    gui/scene_preview_widget.cpp
+    gui/scene3d_viewport_widget.cpp)
+  ament_add_gtest(workcell_studio_canvas_model_mesh_test
+    test/workcell_studio_canvas_model_mesh_test.cpp
+    src_workcell_studio_canvas_model.cpp
+    src_workcell_warning_once.cpp
+    src_workcell_yaml_utils.cpp)
+  ament_add_gtest(workcell_asset_catalog_discovery_test
+    test/asset_catalog_discovery_test.cpp
+    gui/asset_catalog_discovery.cpp
+    src_workcell_warning_once.cpp
+    src_workcell_yaml_utils.cpp)
+  ament_add_gtest(workcell_visual_mesh_source_resolver_test
+    test/visual_mesh_source_resolver_test.cpp
+    src_visual_mesh_source_resolver.cpp)
+  ament_add_gtest(workcell_transform_clipboard_utils_test
+    test/transform_clipboard_utils_test.cpp
+    gui/transform_clipboard_utils.cpp)
+  ament_add_gtest(workcell_preview_item_suppression_test
+    test/preview_item_suppression_test.cpp
+    gui/preview_item_suppression.cpp)
+  ament_add_gtest(workcell_layout_serialization_contract_test
+    test/layout_serialization_contract_test.cpp)
+  ament_add_gtest(workcell_studio_layout_editor_test
+    test/workcell_studio_layout_editor_test.cpp
+    src_workcell_studio_layout_editor.cpp)
+  ament_add_gtest(workcell_mainwindow_rviz_preview_compile_test
+    test/mainwindow_rviz_preview_compile_test.cpp)
+  if(TARGET workcell_scene_preview_widget_ui_test)
+    target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Widgets Qt5::OpenGL OpenGL::GL)
+  endif()
+
+  if(TARGET workcell_workspace_validation_test)
+    target_link_libraries(workcell_workspace_validation_test Qt5::Widgets)
+  endif()
+
+  if(TARGET workcell_rviz_preview_metadata_command_test)
+    target_link_libraries(workcell_rviz_preview_metadata_command_test Qt5::Core yaml-cpp ${Boost_LIBRARIES})
+  endif()
+
+  if(TARGET workcell_scene3d_stl_parser_test)
+    target_link_libraries(workcell_scene3d_stl_parser_test
+      Qt5::Widgets
+      Qt5::OpenGL
+      OpenGL::GL
+    )
+    target_include_directories(workcell_scene3d_stl_parser_test PRIVATE gui)
+  endif()
+
+  if(TARGET workcell_scene3d_render_role_classifier_test)
+    target_link_libraries(workcell_scene3d_render_role_classifier_test
+      Qt5::Widgets
+      Qt5::OpenGL
+      OpenGL::GL
+    )
+    target_include_directories(workcell_scene3d_render_role_classifier_test PRIVATE gui)
+  endif()
+
+  if(TARGET workcell_command_builders_test)
+    target_link_libraries(workcell_command_builders_test
+      Qt5::Core
+      yaml-cpp
+    )
+  endif()
+  if(TARGET workcell_asset_catalog_discovery_test)
+    target_link_libraries(workcell_asset_catalog_discovery_test yaml-cpp ${Boost_LIBRARIES})
+    target_include_directories(workcell_asset_catalog_discovery_test PRIVATE gui)
+  endif()
+  if(TARGET workcell_visual_mesh_source_resolver_test)
+    target_link_libraries(workcell_visual_mesh_source_resolver_test Qt5::Core ${Boost_LIBRARIES})
+    target_include_directories(workcell_visual_mesh_source_resolver_test PRIVATE ${Boost_INCLUDE_DIRS} include)
+    target_compile_definitions(workcell_visual_mesh_source_resolver_test PRIVATE
+      WORKCELL_BUILDER_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
+  endif()
+
+  if(TARGET workcell_transform_clipboard_utils_test)
+    target_link_libraries(workcell_transform_clipboard_utils_test Qt5::Core)
+    target_include_directories(workcell_transform_clipboard_utils_test PRIVATE gui)
+  endif()
+
+  if(TARGET workcell_preview_item_suppression_test)
+    target_link_libraries(workcell_preview_item_suppression_test Qt5::Widgets)
+    target_include_directories(workcell_preview_item_suppression_test PRIVATE gui)
+  endif()
+
+  if(TARGET workcell_studio_canvas_model_mesh_test)
+    target_link_libraries(workcell_studio_canvas_model_mesh_test yaml-cpp ${Boost_LIBRARIES})
+    target_include_directories(workcell_studio_canvas_model_mesh_test PRIVATE ${Boost_INCLUDE_DIRS} include)
+    target_compile_definitions(workcell_studio_canvas_model_mesh_test PRIVATE
+      WORKCELL_BUILDER_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
+  endif()
+
+  if(TARGET workcell_new_cell_wizard_test)
+    target_link_libraries(workcell_new_cell_wizard_test Qt5::Widgets ${Boost_LIBRARIES})
+    target_include_directories(workcell_new_cell_wizard_test PRIVATE ${Boost_INCLUDE_DIRS})
+  endif()
+
+  foreach(workcell_builder_yaml_boost_test
+      workcell_task_intent_readiness_test
+      workcell_planning_readiness_test
+      workcell_perception_snapshot_test)
+    if(TARGET ${workcell_builder_yaml_boost_test})
+      target_link_libraries(${workcell_builder_yaml_boost_test}
+        yaml-cpp
+        ${Boost_LIBRARIES}
+      )
+      target_include_directories(${workcell_builder_yaml_boost_test}
+        PRIVATE
+          ${Boost_INCLUDE_DIRS}
+          include
+      )
+    endif()
+  endforeach()
+
+  if(TARGET workcell_directory_inspection_test)
+    target_link_libraries(workcell_directory_inspection_test
+      ${Boost_LIBRARIES}
+    )
+    target_include_directories(workcell_directory_inspection_test
+      PRIVATE
+        ${Boost_INCLUDE_DIRS}
+    )
+  endif()
+
+  if(TARGET workcell_generate_yaml_end_effector_metadata_test)
+    ament_target_dependencies(workcell_generate_yaml_end_effector_metadata_test
+      rclcpp
+    )
+    target_link_libraries(workcell_generate_yaml_end_effector_metadata_test
+      yaml-cpp
+      ${Boost_LIBRARIES}
+    )
+    target_include_directories(workcell_generate_yaml_end_effector_metadata_test
+      PRIVATE
+        ${Boost_INCLUDE_DIRS}
+        include
+        include/attributes
+        include/yaml_parser
+    )
+  endif()
+
+  if(TARGET workcell_conveyor_pick_preview_test)
+    target_link_libraries(workcell_conveyor_pick_preview_test yaml-cpp ${Boost_LIBRARIES})
+    target_include_directories(workcell_conveyor_pick_preview_test PRIVATE ${Boost_INCLUDE_DIRS} include)
+  endif()
+
+  if(TARGET workcell_yaml_utils_test)
+    target_link_libraries(workcell_yaml_utils_test
+      yaml-cpp
+      ${Boost_LIBRARIES}
+    )
+    target_include_directories(workcell_yaml_utils_test
+      PRIVATE
+        ${Boost_INCLUDE_DIRS}
+        include
+        include/attributes
+        include/yaml_parser
+    )
+  endif()
+
+  if(TARGET workcell_scene_status_test)
+    target_link_libraries(workcell_scene_status_test
+      yaml-cpp
+      ${Boost_LIBRARIES}
+    )
+    target_include_directories(workcell_scene_status_test
+      PRIVATE
+        ${Boost_INCLUDE_DIRS}
+        include
+    )
+  endif()
+
+  if(TARGET workcell_robot_tool_compatibility_inference_test)
+    ament_target_dependencies(workcell_robot_tool_compatibility_inference_test
+      rclcpp
+    )
+    target_link_libraries(workcell_robot_tool_compatibility_inference_test
+      Qt5::Widgets
+      yaml-cpp
+      ${Boost_LIBRARIES}
+    )
+    target_include_directories(workcell_robot_tool_compatibility_inference_test
+      PRIVATE
+        ${Boost_INCLUDE_DIRS}
+        include
+        include/attributes
+    )
+  endif()
+
+  if(TARGET workcell_generated_environment_asset_writer_test)
+    target_link_libraries(workcell_generated_environment_asset_writer_test
+      Qt5::Widgets
+      yaml-cpp
+      ${Boost_LIBRARIES}
+    )
+    target_include_directories(workcell_generated_environment_asset_writer_test
+      PRIVATE
+        ${Boost_INCLUDE_DIRS}
+        include
+        include/attributes
+        include/yaml_parser
+        gui
+    )
+  endif()
+
+  if(TARGET workcell_scene_xacro_tool_attachment_test)
+    ament_target_dependencies(workcell_scene_xacro_tool_attachment_test
+      ament_index_cpp
+    )
+    target_link_libraries(workcell_scene_xacro_tool_attachment_test
+      ${Boost_LIBRARIES}
+    )
+    target_include_directories(workcell_scene_xacro_tool_attachment_test
+      PRIVATE
+        ${Boost_INCLUDE_DIRS}
+        include
+    )
+  endif()
+
+  if(TARGET workcell_scene_select_paths_test)
+    ament_target_dependencies(workcell_scene_select_paths_test
+      ament_index_cpp
+      rclcpp
+    )
+    target_link_libraries(workcell_scene_select_paths_test
+      ${Boost_LIBRARIES}
+      yaml-cpp
+    )
+    target_include_directories(workcell_scene_select_paths_test
+      PRIVATE
+        ${Boost_INCLUDE_DIRS}
+        include
+        include/attributes
+    )
+  endif()
+
+
+  if(TARGET workcell_studio_layout_editor_test)
+    target_link_libraries(workcell_studio_layout_editor_test yaml-cpp ${Boost_LIBRARIES})
+    target_include_directories(workcell_studio_layout_editor_test PRIVATE ${Boost_INCLUDE_DIRS} include)
+  endif()
+
+  if(TARGET workcell_mainwindow_rviz_preview_compile_test)
+    target_link_libraries(workcell_mainwindow_rviz_preview_compile_test Qt5::Widgets)
+    target_include_directories(workcell_mainwindow_rviz_preview_compile_test
+      PRIVATE
+        ${Boost_INCLUDE_DIRS}
+        include
+        gui
+    )
+  endif()
+
+  set(workcell_builder_registered_cpp_tests
+    link_deletion_test.cpp
+    workcell_directory_inspection_test.cpp
+    scene_select_paths_test.cpp
+    generated_environment_asset_writer_test.cpp
+    generate_yaml_end_effector_metadata_test.cpp
+    scene_xacro_tool_attachment_test.cpp
+    workcell_scene_status_test.cpp
+    workcell_yaml_utils_test.cpp
+    conveyor_pick_preview_test.cpp
+    scene3d_mesh_preview_regression_test.cpp
+    task_intent_readiness_test.cpp
+    planning_readiness_test.cpp
+    workcell_perception_snapshot_test.cpp
+    robot_tool_compatibility_inference_test.cpp
+    new_cell_wizard_test.cpp
+    workspace_validation_test.cpp
+    placed_object_preview_writer_test.cpp
+    scene3d_stl_parser_test.cpp
+    scene3d_render_role_classifier_test.cpp
+    command_builders_test.cpp
+    scene_preview_widget_ui_test.cpp
+    workcell_studio_canvas_model_mesh_test.cpp
+    asset_catalog_discovery_test.cpp
+    transform_clipboard_utils_test.cpp
+    preview_item_suppression_test.cpp
+    layout_serialization_contract_test.cpp
+    workcell_studio_layout_editor_test.cpp
+    mainwindow_rviz_preview_compile_test.cpp
+    rviz_preview_metadata_command_test.cpp
+    visual_mesh_source_resolver_test.cpp
+  )
+
+  file(GLOB workcell_builder_discovered_cpp_tests RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/test ${CMAKE_CURRENT_SOURCE_DIR}/test/*.cpp)
+  list(SORT workcell_builder_registered_cpp_tests)
+  list(SORT workcell_builder_discovered_cpp_tests)
+
+  if(NOT workcell_builder_registered_cpp_tests STREQUAL workcell_builder_discovered_cpp_tests)
+    message(FATAL_ERROR
+      "Orphan or unregistered test sources detected. Registered: ${workcell_builder_registered_cpp_tests}; Discovered: ${workcell_builder_discovered_cpp_tests}")
+  endif()
+
+  find_package(launch_testing_ament_cmake REQUIRED)
+  add_launch_test(test/test_ur5_2f_demo_launch.test.py TIMEOUT 180)
+
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(
+    NAME workcell_builder_asset_tree_consistency
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/check_asset_tree_sync.py
+      --repo-root ${CMAKE_CURRENT_SOURCE_DIR}/../..
+      --canonical workcell_builder/workcell_builder/assets
+      --compare src/assets)
 endif()
+
+install(TARGETS workcell_builder
+  EXPORT export_${PROJECT_NAME}
+  DESTINATION lib/${PROJECT_NAME}
+  RUNTIME DESTINATION bin
+)
+
+install(DIRECTORY templates
+  DESTINATION share/${PROJECT_NAME})
+
+install(DIRECTORY gui/resources
+  DESTINATION share/${PROJECT_NAME}/gui)
+
+install(DIRECTORY assets
+  DESTINATION share/${PROJECT_NAME})
+
+install(PROGRAMS
+  scripts/conveyor_sorting_live_preview_node.py
+  scripts/publish_sample_epd_snapshot.py
+  scripts/epd_to_workcell_snapshot_node.py
+  ../../scripts/workcell_builder_task_zone_preview_node.py
+  DESTINATION lib/${PROJECT_NAME})
+
+install(PROGRAMS
+  ../../scripts/workcell_studio_layout_merge.py
+  ../../scripts/validate_workcell_studio_generated_scene.py
+  ../../scripts/workcell_studio_demo_mode.py
+  ../../scripts/workcell_studio_preview_launch.py
+  ../../scripts/run_workcell_studio_golden_flow.py
+  DESTINATION share/${PROJECT_NAME}/scripts)
+
+install(DIRECTORY ${WORKCELL_BUILDER_SECONDARY_ASSETS_DIR}/
+  DESTINATION share/${PROJECT_NAME}/legacy_assets)
+
+ament_package()
