@@ -187,8 +187,19 @@ def _iter_manifest_refs(value: Any, *, key_path: str = "") -> list[tuple[str, st
     return refs
 
 
+def _is_relative_to(candidate: Path, scene_root: Path) -> bool:
+    if hasattr(candidate, "is_relative_to"):
+        return candidate.is_relative_to(scene_root)
+    try:
+        candidate.relative_to(scene_root)
+    except ValueError:
+        return False
+    return True
+
+
 def _check_manifest_refs(scene_dir: Path) -> dict[str, Any]:
-    manifest = scene_dir / "scene_manifest.yaml"
+    scene_root = scene_dir.resolve()
+    manifest = scene_root / "scene_manifest.yaml"
     if not manifest.is_file():
         return _result(BLOCKED, "scene_manifest.yaml is missing; local-file references cannot be checked")
     payload, error = _load_yaml_file(manifest)
@@ -205,8 +216,11 @@ def _check_manifest_refs(scene_dir: Path) -> dict[str, Any]:
         if ref_path.is_absolute():
             missing.append({"field": key_path, "reference": ref, "reason": "absolute path is not a local scene-relative file"})
             continue
-        candidate = (scene_dir / ref_path).resolve()
+        candidate = (scene_root / ref_path).resolve()
         checked.append({"field": key_path, "reference": ref, "path": str(candidate)})
+        if candidate != scene_root and not _is_relative_to(candidate, scene_root):
+            missing.append({"field": key_path, "reference": ref, "reason": "referenced file resolves outside scene directory"})
+            continue
         if not candidate.exists():
             missing.append({"field": key_path, "reference": ref, "reason": "referenced file does not exist"})
     if missing:

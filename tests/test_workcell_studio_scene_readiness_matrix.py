@@ -265,12 +265,17 @@ def test_bad_scene_manifest_local_reference_records_manifest_reference_failure(
         yaml.safe_dump(
             {
                 "scene": {"name": "bad_manifest_reference"},
-                "files": {"environment": "environment.yaml", "missing_urdf": "urdf/does_not_exist.xacro"},
+                "files": {
+                    "environment": "environment.yaml",
+                    "missing_urdf": "urdf/does_not_exist.xacro",
+                    "unsafe_outside": "../outside.txt",
+                },
             },
             sort_keys=False,
         ),
         encoding="utf-8",
     )
+    (scene_dir.parent / "outside.txt").write_text("exists but outside scene root\n", encoding="utf-8")
     catalog = _write_catalog(tmp_path, [entry])
 
     _write_valid_cell_definition(scene_dir, "bad_manifest_reference")
@@ -282,7 +287,42 @@ def test_bad_scene_manifest_local_reference_records_manifest_reference_failure(
     assert scene["categories"]["manifest_local_file_references"]["status"] == "FAIL"
     missing_refs = scene["categories"]["manifest_local_file_references"]["missing"]
     assert any(item["reference"] == "urdf/does_not_exist.xacro" for item in missing_refs)
+    unsafe_ref = next(item for item in missing_refs if item["reference"] == "../outside.txt")
+    assert unsafe_ref["reason"] == "referenced file resolves outside scene directory"
 
+
+
+def test_manifest_local_file_references_accepts_generated_scene3d_smoke_under_scene_root(tmp_path: Path) -> None:
+    scene_dir = tmp_path / "scenes" / "ur5_2f_test"
+    manifest_refs = {
+        "environment": "environment.yaml",
+        "cell_definition": "cell_definition.yaml",
+        "layout": "layout/workcell_studio_layout.yaml",
+        "demo_launch": "launch/demo.launch.py",
+        "scene_urdf": "urdf/scene.urdf.xacro",
+        "visual_mesh_index": "generated/scene_visual_mesh_index.json",
+        "scene3d_gui_smoke": "generated/scene3d_gui_smoke.json",
+    }
+    for rel_path in manifest_refs.values():
+        path = scene_dir / rel_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}\n", encoding="utf-8")
+    (scene_dir / "scene_manifest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "scene": {"name": "ur5_2f_test"},
+                "files": manifest_refs,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = matrix._check_manifest_refs(scene_dir)
+
+    assert result["status"] == "PASS"
+    assert len(result["checked"]) == len(manifest_refs)
+    assert any(item["reference"] == "generated/scene3d_gui_smoke.json" for item in result["checked"])
 
 def test_missing_visual_mesh_index_blocks_visual_evidence(tmp_path: Path, minimal_scene_factory: Any) -> None:
     report = _single_scene_report(
