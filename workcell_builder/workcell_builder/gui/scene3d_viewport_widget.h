@@ -314,6 +314,11 @@ private:
   QPoint drag_asset_screen_pos_;
   QJsonObject drag_asset_payload_;
   QString last_camera_fit_target_{ "scene" };
+  QVector3D last_camera_fit_bounds_min_{ 0.0f, 0.0f, 0.0f };
+  QVector3D last_camera_fit_bounds_max_{ 0.0f, 0.0f, 0.0f };
+  QVector3D last_camera_fit_bounds_span_{ 0.0f, 0.0f, 0.0f };
+  QString last_camera_fit_margin_{ "unset" };
+  double last_camera_fit_margin_value_{ 0.0 };
   bool last_initial_fit_included_ur5_bounds_{ false };
   bool has_robot_aabb_diag_{ false };
   QVector3D last_robot_aabb_min_;

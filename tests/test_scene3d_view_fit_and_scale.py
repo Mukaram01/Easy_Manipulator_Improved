@@ -58,3 +58,27 @@ def test_fit_bounds_include_mesh_urdf_primitive_semantic_fallback_and_layout_ite
     assert 'primitive_radius' in primitive_local
     assert 'primitive_length' in primitive_local
     assert 'Semantic fallback/editable boxes are rendered as axis-aligned min-corner boxes.' in primitive_local
+
+
+def test_product_fit_uses_generous_distance_guards_and_exports_camera_diagnostics():
+    fit_product = _function_body(VIEW_CPP, 'void Scene3DViewportWidget::fit_product_view()')
+    diagnostics_block = VIEW_CPP.split('SCENE3D_MESH_DIAGNOSTICS_JSON', 1)[1].split('void Scene3DViewportWidget::fit_scene()', 1)[0]
+
+    assert 'fit_include_overlays = false;' in fit_product
+    assert 'initial_physical_fit_bounds(bmin, bmax, &ur5_included)' in fit_product
+    assert '* 1.22' not in fit_product
+    assert 'const double base_fit_distance = product_radius / qTan(fov * 0.5);' in fit_product
+    assert 'qMax(qMax(base_fit_distance * 2.4, product_radius * 5.0), 4.0)' in fit_product
+    assert 'distance_ = qBound(min_distance_, fit_distance, max_distance_);' in fit_product
+    assert 'orbit_offset_ = (bmin + bmax) * 0.5f;' in fit_product
+    assert 'qMax(0.06, product_radius * 0.035)' in fit_product
+
+    for token in (
+        'root["scene_radius"] = scene_radius_;',
+        'root["camera_distance"] = distance_;',
+        'root["camera_fit_margin"] = last_camera_fit_margin_;',
+        'root["camera_fit_bounds_min"]',
+        'root["camera_fit_bounds_max"]',
+        'root["camera_fit_bounds_span"]',
+    ):
+        assert token in diagnostics_block

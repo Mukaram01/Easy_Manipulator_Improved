@@ -1859,6 +1859,13 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
     if (out_file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
       QJsonObject root;
       root["camera_fit_target"] = last_camera_fit_target_;
+      root["scene_radius"] = scene_radius_;
+      root["camera_distance"] = distance_;
+      root["camera_fit_margin"] = last_camera_fit_margin_;
+      root["camera_fit_margin_value"] = last_camera_fit_margin_value_;
+      root["camera_fit_bounds_min"] = QJsonArray{last_camera_fit_bounds_min_.x(), last_camera_fit_bounds_min_.y(), last_camera_fit_bounds_min_.z()};
+      root["camera_fit_bounds_max"] = QJsonArray{last_camera_fit_bounds_max_.x(), last_camera_fit_bounds_max_.y(), last_camera_fit_bounds_max_.z()};
+      root["camera_fit_bounds_span"] = QJsonArray{last_camera_fit_bounds_span_.x(), last_camera_fit_bounds_span_.y(), last_camera_fit_bounds_span_.z()};
       root["initial_fit_included_ur5_bounds"] = last_initial_fit_included_ur5_bounds_;
       root["initial_fit_audit_token"] = last_initial_fit_included_ur5_bounds_
         ? QStringLiteral("UR5_BOUNDS_INCLUDED_IN_INITIAL_FIT")
@@ -1896,6 +1903,11 @@ void Scene3DViewportWidget::fit_scene() {
   const double fov = qDegreesToRadians(50.0);
   const double fit_distance = (radius / qTan(fov * 0.5)) * 0.95;
   distance_ = qBound(min_distance_, fit_distance, max_distance_);
+  last_camera_fit_bounds_min_ = bmin;
+  last_camera_fit_bounds_max_ = bmax;
+  last_camera_fit_bounds_span_ = ext;
+  last_camera_fit_margin_ = QStringLiteral("scene: geometric_fov_distance * 0.95");
+  last_camera_fit_margin_value_ = 0.95;
   pitch_ = qBound(0.28, pitch_, 0.9);
   orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.10, radius * 0.05)));
   if (fit_include_overlays) {
@@ -1929,8 +1941,14 @@ void Scene3DViewportWidget::fit_product_view()
   const QVector3D product_ext = bmax - bmin;
   const double product_radius = qMax(0.25, 0.5 * qSqrt(product_ext.x() * product_ext.x() + product_ext.y() * product_ext.y() + product_ext.z() * product_ext.z()));
   scene_radius_ = product_radius;
-  const double fit_distance = (product_radius / qTan(fov * 0.5)) * 1.22;
+  const double base_fit_distance = product_radius / qTan(fov * 0.5);
+  const double fit_distance = qMax(qMax(base_fit_distance * 2.4, product_radius * 5.0), 4.0);
   distance_ = qBound(min_distance_, fit_distance, max_distance_);
+  last_camera_fit_bounds_min_ = bmin;
+  last_camera_fit_bounds_max_ = bmax;
+  last_camera_fit_bounds_span_ = product_ext;
+  last_camera_fit_margin_ = QStringLiteral("product: max(base_fit_distance * 2.4, product_radius * 5.0, 4.0)");
+  last_camera_fit_margin_value_ = fit_distance;
   yaw_ = -0.86;
   pitch_ = 0.60;
   orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.06, product_radius * 0.035)));
