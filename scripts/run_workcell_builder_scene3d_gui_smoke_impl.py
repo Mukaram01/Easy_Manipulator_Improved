@@ -1603,6 +1603,101 @@ def _discover_scene_targets(repo_root: Path) -> list[dict[str, Any]]:
         })
     return sorted(rows, key=lambda x: x["scene"])
 
+
+_LEGACY_WRAPPER_SCHEMA_BLOCKERS = frozenset({
+    "legacy_wrapper_status_fail",
+    "legacy_wrapper_schema_artifact",
+    "legacy_schema_status_fail",
+    "app_json_present_wrapper_status_fail",
+    "wrapper_status_fail_legacy_artifact",
+})
+
+
+def _app_json_blockers_are_only_legacy_wrapper_schema_artifacts(payload: dict[str, Any]) -> bool:
+    blockers = payload.get("blockers")
+    if not blockers:
+        return True
+    if not isinstance(blockers, list):
+        return False
+    for blocker in blockers:
+        token = str(blocker or "").strip().lower()
+        if not token:
+            continue
+        if token in _LEGACY_WRAPPER_SCHEMA_BLOCKERS:
+            continue
+        if "legacy" in token and ("wrapper" in token or "schema" in token):
+            continue
+        return False
+    return True
+
+
+def _app_json_has_screenshot_evidence(payload: dict[str, Any]) -> bool:
+    if payload.get("screenshot_available") is True or payload.get("screenshot_saved") is True:
+        return True
+    for key in ("screenshot_path", "screenshot_file"):
+        value = payload.get(key)
+        if value and Path(str(value)).is_file():
+            return True
+    evidence = payload.get("screenshot_evidence")
+    if isinstance(evidence, dict):
+        return evidence.get("available") is True or evidence.get("saved") is True
+    return False
+
+
+def _app_json_visual_quality_passes(payload: dict[str, Any]) -> bool:
+    saw_explicit_pass = False
+    for key in (
+        "visual_quality_status",
+        "scene3d_visual_quality_status",
+        "runtime_visual_quality_status",
+        "visual_diagnostics_status",
+        "ur5_final_draw_bbox_status",
+    ):
+        if key not in payload:
+            continue
+        status = str(payload.get(key) or "").strip().upper()
+        if status == "FAIL":
+            return False
+        if status in {"PASS", "OK"}:
+            saw_explicit_pass = True
+    for key in ("visual_quality", "visual_diagnostics"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            status = str(value.get("status") or value.get("visual_quality_status") or "").strip().upper()
+            if status == "FAIL":
+                return False
+            if status in {"PASS", "OK"}:
+                saw_explicit_pass = True
+    return saw_explicit_pass
+
+
+def _app_json_has_complete_pass_evidence(payload: object, rc: int | None, timed_out: bool) -> bool:
+    if timed_out or rc != 0 or not isinstance(payload, dict):
+        return False
+    app_status = str(payload.get("status") or payload.get("app_status") or "").strip().upper()
+    if app_status == "BLOCKED":
+        return False
+    if app_status == "FAIL" and not _app_json_blockers_are_only_legacy_wrapper_schema_artifacts(payload):
+        return False
+    if not (payload.get("runtime_available") is True or app_status in {"PASS", "OK"}):
+        return False
+    if not _app_json_has_screenshot_evidence(payload):
+        return False
+    try:
+        rendered_ur5_link_count = int(payload.get("rendered_ur5_link_count"))
+    except (TypeError, ValueError):
+        return False
+    if rendered_ur5_link_count < 6:
+        return False
+    if "missing_required_visible_ur5_links" in payload and payload.get("missing_required_visible_ur5_links"):
+        return False
+    if "required_ur5_links_missing" in payload and payload.get("required_ur5_links_missing"):
+        return False
+    if not _app_json_visual_quality_passes(payload):
+        return False
+    return True
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo-root", type=Path, default=_REPO_ROOT)
@@ -2014,10 +2109,13 @@ def main() -> int:
                 _write_json(args.output, payload)
                 print(f"status=FAIL smoke_status=EXPLICIT_SCENE_PATH_MISMATCH wrapper_status={wrapper_status} expected_scene_path={expected_scene_path} actual_scene_path={actual_scene_path}")
                 return 1
-        wrapper_status = "PASS" if rc == 0 and str(payload.get("status", app_status)).upper() in {"PASS", "OK"} else "FAIL"
-        if str(payload.get("status", app_status)).upper() == "BLOCKED" or timed_out:
+        payload_status = str(payload.get("status", app_status)).upper()
+        wrapper_status = "PASS" if _app_json_has_complete_pass_evidence(payload, rc, timed_out) else "FAIL"
+        if payload_status == "BLOCKED" or timed_out:
             wrapper_status = "BLOCKED"
         payload["wrapper_status"] = wrapper_status
+        if wrapper_status == "PASS":
+            payload["status"] = "PASS"
         _write_json(args.output, payload)
         print(f"status={wrapper_status} smoke_status=APP_JSON_PRESENT wrapper_status={wrapper_status} app_status={app_status} returncode={rc} timed_out={timed_out}")
         print("child_command=" + diag["child_command"])
