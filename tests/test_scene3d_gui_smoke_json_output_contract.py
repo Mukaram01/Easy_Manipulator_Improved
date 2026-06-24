@@ -246,6 +246,9 @@ def test_wrapper_adds_supplemental_runtime_visual_evidence(tmp_path):
         "    'generated_fallback_count': 5\n"
         "  },\n"
         "  'render_debug_counters': {'physical_mesh_items_rendered': 4},\n"
+        "  'rendered_ur5_link_count': 6,\n"
+        "  'missing_required_visible_ur5_links': [],\n"
+        "  'visual_quality_status': 'PASS',\n"
         "  'visible_items': [{'label': 'UR5 robot'}, {'display_name': 'Workbench'}, {'id': 'pick_zone_main'}]\n"
         "}\n"
         "out.write_text(json.dumps(payload) + '\\n', encoding='utf-8')\n",
@@ -1133,3 +1136,50 @@ def test_ur5_2f_real_visual_mesh_index_preserves_visual_number_stages_and_final_
         for visual_number in range(9, 18)
         for final_id in final_ids
     )
+
+
+def test_wrapper_promotes_app_json_present_when_complete_pass_evidence(tmp_path):
+    repo = Path(__file__).resolve().parents[1]
+    out = tmp_path / "smoke.json"
+    shot = tmp_path / "shot.png"
+    exe = tmp_path / "fake_workcell_builder_complete_evidence.py"
+    exe.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, pathlib, sys\n"
+        "out = pathlib.Path(sys.argv[sys.argv.index('--smoke-output') + 1])\n"
+        "shot = pathlib.Path(sys.argv[sys.argv.index('--smoke-screenshot') + 1])\n"
+        "shot.write_bytes(b'fake-png')\n"
+        "payload = {\n"
+        "  'schema': 'workcell_studio_scene3d_gui_smoke/v1',\n"
+        "  'status': 'PASS',\n"
+        "  'app_status': 'PASS',\n"
+        "  'runtime_available': True,\n"
+        "  'screenshot_available': True,\n"
+        "  'screenshot_path': str(shot),\n"
+        "  'visual_quality_status': 'PASS',\n"
+        "  'visual_diagnostics': {'status': 'PASS'},\n"
+        "  'render_debug_counters': {'physical_mesh_items_rendered': 6},\n"
+        "  'rendered_ur5_link_count': 6,\n"
+        "  'missing_required_visible_ur5_links': [],\n"
+        "  'counters': {'rendered_count': 12}\n"
+        "}\n"
+        "out.write_text(json.dumps(payload) + '\\n', encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    exe.chmod(0o755)
+    cmd = [
+        sys.executable, str(repo / "scripts/run_workcell_builder_scene3d_gui_smoke.py"),
+        "--repo-root", str(repo), "--workspace-root", str(tmp_path), "--scene", "ur5_2f_test",
+        "--output", str(out), "--screenshot", str(shot), "--executable", str(exe), "--timeout-sec", "2",
+    ]
+    proc = subprocess.run(cmd, text=True, capture_output=True, env={**os.environ, "ROS_DISTRO": "humble"})
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "status=PASS smoke_status=APP_JSON_PRESENT wrapper_status=PASS app_status=PASS returncode=0 timed_out=False" in proc.stdout
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["status"] == "PASS"
+    assert payload["wrapper_status"] == "PASS"
+    assert payload["runtime_available"] is True
+    assert payload["screenshot_available"] is True
+    assert payload["rendered_ur5_link_count"] >= 6
+    assert payload["missing_required_visible_ur5_links"] == []
+    assert payload["visual_quality_status"] == "PASS"
