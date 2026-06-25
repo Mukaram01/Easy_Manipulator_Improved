@@ -47,6 +47,29 @@ bool is_generated_robot_visual(const ScenePreviewWidget::PreviewItem & item)
                          combined.contains(QStringLiteral("robot_link")) ||
                          combined.contains(QStringLiteral("robot_model")));
 }
+
+bool is_product_helper_overlay_role(const QString & role, const QString & category, const QString & combined)
+{
+  // token() normalises spaces and hyphens to underscores, so product-layer filtering
+  // must treat safety_zone/pick_zone/place_zone/etc. as helper overlays.  The old
+  // "safety zone" substring did not match canonical safety_zone rows, which let
+  // large zone boxes leak into the normal Product View even when the overlay layer
+  // was disabled.
+  return combined.contains(QStringLiteral("overlay")) ||
+         combined.contains(QStringLiteral("helper")) ||
+         role == QStringLiteral("safety_zone") ||
+         role == QStringLiteral("pick_zone") ||
+         role == QStringLiteral("place_zone") ||
+         role == QStringLiteral("robot_reach") ||
+         role == QStringLiteral("warning_anchor") ||
+         role == QStringLiteral("warning_badge") ||
+         category == QStringLiteral("safety_zone") ||
+         category == QStringLiteral("pick_zone") ||
+         category == QStringLiteral("place_zone") ||
+         category == QStringLiteral("overlay") ||
+         category == QStringLiteral("helper") ||
+         category == QStringLiteral("diagnostic");
+}
 }
 
 namespace workcell_builder {
@@ -61,7 +84,7 @@ bool include_preview_item_for_scene3d(
   const QString category = token(item.category);
   const QString combined = role + "|" + category + "|" + token(item.status) + "|" + item.warnings.join("|").toLower();
   const bool is_warning_or_missing = combined.contains("warning") || combined.contains("missing") || !item.mesh_load_warning.trimmed().isEmpty();
-  const bool is_overlay_or_helper = combined.contains("overlay") || combined.contains("helper") || combined.contains("safety zone");
+  const bool is_overlay_or_helper = is_product_helper_overlay_role(role, category, combined);
 
   // Treat generated robot visuals as a first-class layer, equivalent to the
   // legacy "Show Robot Links" control.  This check intentionally precedes
