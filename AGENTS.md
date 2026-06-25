@@ -1,4 +1,4 @@
-# AGENTS.md
+# AGENTS.md — Workcell Studio / Easy Manipulation Deployment
 
 ## Project identity
 
@@ -8,9 +8,15 @@ Workcell Studio is an internal configurable robotic-cell platform for authoring,
 
 This is not only a sorting demo. Sorting, inspection, machine tending, conveyor picking, binning, palletising, and similar workflows are scenario templates inside Workcell Studio.
 
+The primary product UI is `workcell_builder`. Improve `workcell_builder` directly.
+
+Do not replace the product with Streamlit, dashboards, notebooks, or separate demo UIs. Those are allowed only as optional reporting, export, validation summary, or demo artifacts when explicitly useful.
+
+Keep EMD / Workcell Builder separate from EPD. Do not merge the EPD GUI into Workcell Builder.
+
 ## Product goal
 
-The goal is to make Workcell Studio capable of:
+Workcell Studio should support:
 
 - configurable robots
 - configurable tools and grippers
@@ -24,19 +30,56 @@ The goal is to make Workcell Studio capable of:
 - guarded real-hardware readiness later
 - clear logs, reports, dashboards, and demo/investor-friendly outputs
 
+The target workflow is:
+
+```text
+Workspace -> New Cell -> Layout -> Task Intent -> Generate Scene Package -> Validate -> Plan & Simulate
+```
+
+## Current tactical focus
+
+Current priority is not broad cleanup. Current priority is making the real supported Scene3D/Product View path reliable.
+
+Canonical M1 scene:
+
+```text
+scenes/ur5_2f_test
+```
+
+M1-clean means:
+
+- robot is visible
+- robot is connected, not exploded
+- gripper/tool is visible where assets exist
+- table/workbench is visible
+- camera is visible
+- Product View opens from a useful angle
+- Product View frames physical product geometry, not overlay helper bounds
+- helper boxes are hidden by default
+- stale primitive robot boxes are hidden when generated robot meshes exist
+- smoke/diagnostic evidence is honest
+- fake-hardware RViz/MoveIt remains the validation foundation
+
+After M1 is clean, generalise to other supported scenes.
+
 ## Priority order
 
-When choosing between possible fixes or features, prefer this order:
+When choosing between fixes, prefer this order:
 
-1. Stop Workcell Builder breakage.
-2. Make scene generation repeatable.
-3. Make all supported scenes reproducible.
-4. Improve RViz/MoveIt fake-hardware simulation.
-5. Improve true 3D scene editing and digital-twin-style preview.
-6. Improve grasp planner and grasp execution wiring.
-7. Improve EPD/RealSense bridge integration.
-8. Improve investor/demo visuals.
-9. Prepare real-hardware readiness only after simulation and safety gates are stable.
+1. Fix known breakage from the latest merged PR.
+2. Fix failing tests caused by real product drift.
+3. Stop Workcell Builder breakage.
+4. Make `ur5_2f_test` Scene3D/Product View clean.
+5. Make scene generation repeatable.
+6. Make supported scenes reproducible.
+7. Improve RViz/MoveIt fake-hardware simulation.
+8. Improve true 3D scene editing and digital-twin-style preview.
+9. Improve grasp planner and grasp execution wiring.
+10. Improve EPD/RealSense bridge integration.
+11. Improve investor/demo visuals.
+12. Prepare guarded real-hardware readiness only after simulation and gates are stable.
+
+Do not start broad optimisation while an obvious product mismatch or failing regression exists.
 
 ## Repository ownership rules
 
@@ -53,7 +96,7 @@ Easy_Manipulator_Improved owns:
 - runtime readiness checks
 - EPD bridge consumption
 
-epd_Improved owns:
+`epd_Improved` owns:
 
 - RealSense input
 - detection
@@ -63,13 +106,7 @@ epd_Improved owns:
 - perception algorithms
 - EPD GUI and perception-specific configuration
 
-Do not merge EPD into Workcell Builder.
-
-Do not make EPD the owner of cell definition, scene generation, task planning, or Workcell Studio UI state.
-
-Do not combine the EPD GUI into the EMD/workcell_builder UI.
-
-The correct boundary is:
+Boundary:
 
 ```text
 EPD produces perception results.
@@ -77,31 +114,27 @@ Workcell Studio consumes perception results.
 Workcell Studio owns cell authoring, generation, validation, planning, and simulation orchestration.
 ```
 
+Do not make EPD own cell definition, scene generation, task planning, or Workcell Studio UI state.
+
 ## Safety rules
 
 Never weaken safety gates.
 
-Default behavior must remain safe:
+Defaults must remain safe:
 
 - fake hardware by default
 - no real robot motion by default
 - no automatic runtime send by default
 - no uncontrolled service/topic publishing
-- real-hardware mode must require explicit guarded flags
+- real-hardware mode requires explicit guarded flags
 - generated validation reports are not safety certificates
-- any real-hardware readiness work must include blockers, preflight checks, and clear warnings
+- any real-hardware readiness work includes blockers, preflight checks, and clear warnings
 
-Generated packages should support `use_fake_hardware:=true/false` where supported, but real hardware must never become the default path.
+Generated packages may support `use_fake_hardware:=true/false`, but real hardware must never become the default path.
 
 If a change touches launch files, execution nodes, controllers, runtime services, or hardware parameters, verify that fake hardware remains the default and real robot motion remains explicitly guarded.
 
 ## Workcell Builder rules
-
-The main UI direction is `workcell_builder`.
-
-Do not replace `workcell_builder` with Streamlit.
-
-Streamlit, dashboards, or static HTML reports may be used only for optional reporting, export, validation summaries, or demo artifacts. They must not become a parallel replacement for the main Workcell Builder product UI.
 
 Improve the existing Workcell Builder instead of creating a separate product UI.
 
@@ -110,16 +143,10 @@ Keep the UI clean:
 - do not add more main-page buttons unless essential
 - move secondary actions into menus, dropdowns, side panels, or advanced panels
 - no silent no-op buttons
-- every visible primary action must either work or clearly explain why it is unavailable
+- every visible primary action must either work or clearly explain why unavailable
 - user-facing errors should explain what failed, which file or command was involved, and what to do next
 - prefer a clear selected-scene action path: Validate, Generate, Plan/Simulate, Open Logs, Export
-- keep demo/test tools away from the primary user flow unless they are clearly marked as advanced or developer tools
-
-The Workcell Builder should help the user understand:
-
-```text
-Workspace -> New Cell -> Layout -> Task Intent -> Generate Scene Package -> Validate -> Plan & Simulate
-```
+- keep demo/test tools away from the primary user flow unless clearly marked advanced/developer
 
 ## Scene generation rules
 
@@ -135,12 +162,6 @@ Supported scene packages should consistently handle:
 - `launch/demo.launch.py`
 - generated readiness or validation reports where applicable
 
-Avoid scene-specific hacks.
-
-Do not make only one scene work while breaking the broader supported scene catalog.
-
-Do not treat `suction_test` or `ur5_2f_test` passing as proof that the whole platform works.
-
 Prefer source-of-truth clarity:
 
 - `environment.yaml` is authoring/layout-adjacent scene data
@@ -150,21 +171,11 @@ Prefer source-of-truth clarity:
 - task recipes define task semantics
 - EPD bridge payloads are perception/runtime contracts, not authoring state
 
-Generated files should include enough provenance to identify:
-
-- source inputs
-- generator version or script
-- timestamp where appropriate
-- validation status
-- known blockers
-
-When touching generation logic, prefer validating multiple supported scenes, not only one hand-picked scene.
+Avoid scene-specific hacks. Do not make one scene work by breaking the broader supported scene catalog.
 
 ## Supported scene expectations
 
-The platform should eventually make the supported scene catalog machine-readable.
-
-At minimum, changes should preserve and improve these common scene types when present:
+Important supported scenes include:
 
 - `ur5_2f_test`
 - `ur5_3f_test`
@@ -175,7 +186,7 @@ At minimum, changes should preserve and improve these common scene types when pr
 - generated builder pick/place demo scenes where applicable
 - sorting or conveyor scenes where applicable
 
-Each supported scene should be able to answer:
+Each supported scene should eventually answer:
 
 - Does it have required authoring files?
 - Does it have required generated files?
@@ -185,11 +196,150 @@ Each supported scene should be able to answer:
 - Can it launch in RViz/MoveIt fake hardware?
 - What is the current blocker if it cannot?
 
+## 3D canvas and Product View rules
+
+The 3D canvas should become a trustworthy scene editor.
+
+True 3D means:
+
+- mesh-backed visuals when meshes exist
+- primitive fallback only when meshes are missing
+- reliable camera controls
+- stable selection/picking
+- inspector-based XYZ/RPY editing
+- deterministic transform save/load
+- clear distinction between editable layout items and locked generated URDF preview items
+- scene hierarchy synchronized with 3D selection
+- right-side inspector synchronized with selection
+
+Near-term canvas model:
+
+```text
+Editable layout items = user can select, move, rotate, edit, save.
+Generated URDF preview items = locked visual preview, not directly edited.
+Inspector = authoritative manual XYZ/RPY editing surface.
+Layout YAML = editor state.
+Generated scene files = regenerated from source-of-truth data.
+```
+
+Product View should show physical/product content first:
+
+- generated robot visuals
+- mesh previews
+- editable physical layout items
+- table/workbench
+- camera body
+- gripper/tool meshes
+- real authored environment items
+
+Product View must hide by default:
+
+- helper overlays
+- warning labels
+- diagnostic labels
+- safety/pick/place zones
+- reachability heatmaps
+- collision warnings
+- work envelope
+- task route
+- approach/retreat arrows
+- camera FOV
+- pick coverage
+- EPD detections
+- detection labels
+- primitive fallback robot boxes when generated robot meshes exist
+
+Overlay/helper content should remain available through explicit overlay/diagnostic controls, but must not dominate the initial Product View.
+
+When deciding whether a preview item is physical or helper/overlay, inspect all relevant identity fields:
+
+- `source_layer`
+- `active_visual_source`
+- `role`
+- `category`
+- `id`
+- `display_name`
+- `status`
+- `warnings`
+- `mesh_load_warning`
+- source path / mesh metadata where relevant
+
+Do not rely only on `role` and `category`.
+
+Canonical helper tokens include:
+
+```text
+overlay
+helper
+diagnostic
+safety_zone
+pick_zone
+place_zone
+robot_reach
+warning_anchor
+warning_badge
+camera_fov
+fov
+pick_coverage
+reachability
+collision
+work_envelope
+task_route
+approach_retreat
+epd_detection
+detection_label
+bounds_box
+bounding_box
+```
+
+These should require explicit overlay/diagnostic visibility unless the item is clearly physical product geometry.
+
+No canvas action should silently fail. If save, load, transform, mesh preview, or selection cannot work, show a clear warning with the responsible file or missing metadata.
+
+## Robot, tool, and asset rules
+
+Robot/tool/environment support should be capability-based, not hardcoded per scene.
+
+Initial practical combinations:
+
+- UR5 + Robotiq 2F
+- UR5 + suction
+- UR3 + suction
+- UR10 + 2F
+- UR5 + AirPick-style suction where supported
+- simple delta/cartesian placeholder + suction later
+
+Future support may include Fanuc, ABB, SCARA, gantry/cartesian, delta robots, custom arms, tool changers, and custom end effectors.
+
+Do not add hardcoded logic that prevents future robot/tool swaps.
+
+Tool behavior should be described through capability/config metadata where practical.
+
+Gripper orientation defaults and offsets must be handled consistently through scene generation and validation. Avoid one-off manual xacro fixes where a generator-level default or capability metadata fix is appropriate.
+
+## Grasp planner and execution rules
+
+The grasp planner and execution path should support simulation before real hardware.
+
+A generated scene is not manipulation-ready unless it can prove:
+
+- planning group is valid
+- robot base link is valid
+- end-effector link is valid
+- tool metadata is valid
+- object/task input is available or replayable
+- fake-hardware launch path works
+- RViz/MoveIt planning scene loads
+- simulated plan can be produced where practical
+- real execution remains guarded
+
+Prefer generated or scene-local grasp planner config that can be inspected and edited.
+
 ## EPD/RealSense bridge rules
 
 Keep the bridge explicit and clean.
 
-Workcell Studio should consume normalized perception outputs from EPD, not absorb EPD responsibilities.
+Workcell Studio consumes normalized perception outputs from EPD; it does not absorb EPD responsibilities.
 
 Bridge/config work should support:
 
@@ -205,11 +355,7 @@ Bridge/config work should support:
 - replayed snapshot mode
 - live EPD mode
 
-A missing perception runtime should block perception-backed execution clearly.
-
-It must not crash the builder or corrupt scene metadata.
-
-The bridge should support three practical modes:
+The bridge should support:
 
 ```text
 perception: off
@@ -217,96 +363,7 @@ perception: replayed_snapshot
 perception: live_epd
 ```
 
-EPD/RealSense work should preserve this separation:
-
-```text
-RealSense + EPD -> detection/localization/tracking/classification
-Workcell Studio -> task binding, grasp planning input, simulation/execution readiness
-```
-
-## 3D canvas rules
-
-The 3D canvas should become a trustworthy scene editor.
-
-True 3D means:
-
-- mesh-backed visuals when meshes exist
-- primitive fallback when meshes are missing
-- reliable camera controls
-- stable selection/picking
-- inspector-based XYZ/RPY editing
-- deterministic transform save/load
-- clear distinction between editable layout items and locked generated URDF preview items
-- scene hierarchy synchronized with 3D selection
-- right-side inspector synchronized with selection
-- camera FOV, pick/place zones, safety overlays, reachability, and collision overlays later
-
-Do not detour into a full game-engine or physics rewrite.
-
-Do not make Gazebo or Isaac mandatory yet.
-
-The correct near-term canvas model is:
-
-```text
-Editable layout items = user can select, move, rotate, edit, save.
-Generated URDF preview items = locked visual preview, not directly edited.
-Inspector = authoritative manual XYZ/RPY editing surface.
-Layout YAML = editor state.
-Generated scene files = regenerated from source-of-truth data.
-```
-
-No canvas action should silently fail. If save, load, transform, mesh preview, or selection cannot work, show a clear warning with the file or missing metadata responsible.
-
-## Robot, tool, and asset rules
-
-Robot/tool/environment support should be capability-based, not hardcoded per scene.
-
-Initial practical combinations:
-
-- UR5 + Robotiq 2F
-- UR5 + suction
-- UR3 + suction
-- UR10 + 2F
-- UR5 + AirPick-style suction where supported
-- simple delta/cartesian placeholder + suction later
-
-Future support may include:
-
-- Fanuc
-- ABB
-- SCARA
-- gantry/cartesian
-- delta robots
-- custom 3D printed robots
-- other ROS 2 compatible arms
-- tool changers
-- custom end effectors
-
-Do not add hardcoded logic that prevents future robot/tool swaps.
-
-Tool behavior should be described through capability/config metadata where practical.
-
-Gripper orientation defaults and offsets must be handled consistently through scene generation and validation. Avoid one-off manual xacro fixes where a generator-level default or capability metadata fix is appropriate.
-
-## Grasp planner and execution rules
-
-The grasp planner and grasp execution path should support simulation before real hardware.
-
-A generated scene should not be considered manipulation-ready unless it can prove:
-
-- planning group is valid
-- robot base link is valid
-- end-effector link is valid
-- tool metadata is valid
-- object/task input is available or replayable
-- fake-hardware launch path works
-- RViz/MoveIt planning scene loads
-- simulated plan can be produced where practical
-- real execution remains guarded
-
-For grasp planner configuration, prefer generated or scene-local config that can be inspected and edited.
-
-Do not force users to manually hunt through unrelated config files when Workcell Studio already knows the robot, tool, camera, zones, and task intent.
+A missing perception runtime should block perception-backed execution clearly. It must not crash the builder or corrupt scene metadata.
 
 ## ROS and platform rules
 
@@ -316,21 +373,26 @@ Current supported baseline:
 - ROS 2 Humble
 - MoveIt 2 / RViz as the primary planning and visualization foundation
 
-Do not migrate to a newer ROS 2 distribution unless explicitly requested.
+Do not migrate ROS distributions unless explicitly requested.
 
 Do not make Gazebo, Ignition/Gazebo Sim, or Isaac Sim mandatory for the core workflow yet.
 
-Gazebo can be added later for ROS-native simulation, conveyors, simple physics, and sensor simulation.
-
-Isaac Sim can be added later for investor-grade visuals, synthetic data, and photorealistic digital twin demos.
-
-The core 3-month path should remain RViz/MoveIt-first.
+The core path remains RViz/MoveIt-first. Gazebo and Isaac can be added later as optional advanced backends.
 
 ## Testing and validation commands
 
-The example commands below use `/home/user/workcell_ws` as the expected ROS workspace layout. Before running them, Codex should confirm the actual checkout and workspace path for the current container or machine, then map the example path accordingly. In this container, the repository checkout is `/workspace/Easy_Manipulator_Improved`; use that path directly for static repo inspection, and use a sourced ROS workspace only for commands that build, source `install/setup.bash`, run `ros2`, or launch RViz/MoveIt.
+Expected user VM layout is usually `/home/user/workcell_ws` or `/home/ubuntu/workcell_ws`. Codex containers may instead use `/workspace/Easy_Manipulator_Improved` for static repo inspection.
 
-For builder changes, run at minimum:
+Before running commands, confirm the actual checkout/workspace path. Use a sourced ROS workspace only for commands that need `colcon`, `ros2`, or launch files.
+
+For quick Python/static tests:
+
+```bash
+python3 -m pytest tests/test_scene3d_product_overlay_filtering.py
+python3 -m pytest tests/test_workcell_builder_product_view_defaults.py
+```
+
+For builder changes in a ROS workspace:
 
 ```bash
 cd /home/user/workcell_ws
@@ -339,14 +401,14 @@ colcon build --symlink-install --packages-select workcell_builder
 source install/setup.bash
 ```
 
-For generated scene validation, run:
+For generated scene validation:
 
 ```bash
 cd /home/user/workcell_ws/src/easy_manipulation_deployment
 python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_test --json
 ```
 
-For fake-hardware launch validation, prefer:
+For fake-hardware launch validation:
 
 ```bash
 cd /home/user/workcell_ws
@@ -355,54 +417,36 @@ source install/setup.bash
 ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
 ```
 
-When validating a generated scene package, use the scene name explicitly:
-
-```bash
-cd /home/user/workcell_ws
-source /opt/ros/humble/setup.bash
-colcon build --symlink-install --packages-select <scene_package>
-source install/setup.bash
-ros2 launch <scene_package> demo.launch.py use_fake_hardware:=true launch_rviz:=true
-```
-
-When validating builder-generated scene artifacts, prefer:
+For Scene3D GUI smoke when workspace/display are available:
 
 ```bash
 cd /home/user/workcell_ws/src/easy_manipulation_deployment
-python3 scripts/validate_builder_generated_scene.py scenes/<scene_name> --json
+python3 scripts/run_workcell_builder_scene3d_gui_smoke.py \
+  --repo-root "$PWD" \
+  --workspace-root /home/user/workcell_ws \
+  --scene ur5_2f_test \
+  --output "$PWD/scenes/ur5_2f_test/generated/scene3d_gui_smoke.json" \
+  --screenshot "$PWD/scenes/ur5_2f_test/generated/scene3d_gui_smoke.png" \
+  --timeout-sec 45
 ```
 
-When touching broader generation logic, validate more than one scene.
-
-Useful validation targets include:
-
-```bash
-python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_test --json
-python3 scripts/validate_builder_generated_scene.py scenes/suction_test --json
-python3 scripts/validate_builder_generated_scene.py scenes/ur3_suction_test --json
-python3 scripts/validate_builder_generated_scene.py scenes/ur10_2f_test --json
-python3 scripts/validate_builder_generated_scene.py scenes/ur5_airpick4_test --json
-```
-
-If a script does not exist or a scene is missing, do not invent success. Report the blocker clearly and propose the smallest fix.
+When validating broader generation logic, validate more than one supported scene. If a script or scene is missing, do not invent success; report the blocker and propose the smallest fix.
 
 ## PR rules
 
 Use small incremental PRs.
 
-For normal development PR tasks, create or use a branch named like `codex/<short-task-name>` unless the user explicitly requests no branch or no PR for that task.
+For normal Codex development tasks, create or use a branch named like `codex/<short-task-name>` unless the user requests otherwise.
 
 Each PR should:
 
 - target one repo only unless explicitly required
-- use a branch name like `codex/<short-task-name>`
 - avoid broad refactors
 - preserve ROS 2 Humble compatibility
 - preserve current working demos
 - preserve safety gates
 - include tests or validation commands
-- update docs if user-facing behavior changes
-- include a clear PR summary
+- update docs only if user-facing behavior changes
 - include risks and rollback notes
 
 PR summaries should include:
@@ -432,30 +476,41 @@ Risks / rollback:
 When working as Codex in this repo:
 
 1. Read the relevant files before editing.
-2. Keep the task scoped.
-3. Do not perform broad cleanup unless requested.
-4. Prefer adding tests/validators for regressions.
-5. Prefer clear error messages over silent fallback.
-6. Preserve existing working scenes.
-7. Do not hide failures by marking broken scenes as unsupported unless explicitly requested.
-8. Do not claim success without validation evidence.
-9. If blocked, explain the exact blocker and smallest next step.
-10. Keep changes practical for fast PR iteration.
+2. Inspect recent PRs before choosing the next task.
+3. Keep the task scoped.
+4. Do not perform broad cleanup unless requested.
+5. Prefer tests/validators that protect real product fixes.
+6. Prefer clear error messages over silent fallback.
+7. Preserve existing working scenes.
+8. Do not hide failures by marking broken scenes unsupported unless explicitly requested.
+9. Do not claim success without validation evidence.
+10. If blocked, explain the exact blocker and smallest next step.
+11. Keep changes practical for fast PR iteration.
 
-## Current development strategy
+If asked “what next?”, answer:
 
-Prefer this sequence:
+1. Current state.
+2. What the latest PR changed.
+3. What is still broken.
+4. The next exact PR.
+5. Exact files to change.
+6. Validation command.
 
-1. Stabilize current build and validators.
-2. Add or improve all-scenes reproducibility reporting.
-3. Clean Workcell Builder UX and remove no-op primary actions.
-4. Fix scene save/load persistence.
-5. Improve 3D canvas selection, inspector editing, and transform round-tripping.
-6. Validate fake-hardware RViz/MoveIt launch for supported scenes.
-7. Add or improve grasp planner/execution smoke paths.
-8. Harden EPD/RealSense bridge with replay/live modes.
-9. Add advanced simulation backends later.
-10. Add guarded real-hardware commissioning only after simulation is reliable.
+Do not give a Codex prompt unless the user explicitly asks for one.
+
+## Current next-fix selection logic
+
+Choose the next PR using this order:
+
+1. Fix known failing tests caused by recent product changes.
+2. Fix actual Product View behavior mismatch.
+3. Fix `ur5_2f_test` visibility/framing/robot/table/camera/gripper issues.
+4. Fix generated robot/gripper mesh identity.
+5. Fix scene package generation only when needed for M1.
+6. Fix all supported scenes only after the canonical scene is clean.
+7. Optimise large files only when it does not delay M1.
+
+A current example is Product View defaults drift: if a test expects helpers off but code still enables a helper overlay by default, fix the product code first, then update stale assertions to match intended behavior.
 
 ## Anti-goals
 
@@ -471,7 +526,7 @@ Do not:
 - add UI clutter
 - create scene-specific hacks
 - weaken fake-hardware-first safety
-- claim simulation or execution works unless it is validated
+- claim simulation or execution works unless validated
 - treat one passing demo scene as proof that the platform is stable
 - add placeholder buttons to the main UI
 - hide missing files or broken metadata behind vague success messages
@@ -483,7 +538,7 @@ Do not:
 A change is only done when:
 
 - the requested scope is complete
-- the relevant files are updated
+- relevant files are updated
 - the change is validated with the smallest meaningful command set
 - safety defaults are preserved
 - user-facing behavior is documented when needed
@@ -495,7 +550,7 @@ For Workcell Studio, “done” means the change moves the platform toward:
 ```text
 reliable Workcell Builder
 + repeatable scene generation
-+ true 3D scene editing
++ clean true 3D scene editing
 + RViz/MoveIt fake-hardware simulation
 + grasp planner/execution readiness
 + clean EPD/RealSense bridge
