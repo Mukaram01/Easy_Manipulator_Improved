@@ -1644,7 +1644,7 @@ void Scene3DViewportWidget::reset_view() { set_isometric_view(); }
 void Scene3DViewportWidget::set_isometric_view()
 {
   yaw_ = -0.78539816339;
-  pitch_ = 0.61547970867;
+  pitch_ = -0.61547970867;
   orbit_offset_ = QVector3D(0.0f, 0.0f, 0.0f);
   distance_ = 6.0;
   update();
@@ -1908,7 +1908,7 @@ void Scene3DViewportWidget::fit_scene() {
   last_camera_fit_bounds_span_ = ext;
   last_camera_fit_margin_ = QStringLiteral("scene: geometric_fov_distance * 0.95");
   last_camera_fit_margin_value_ = 0.95;
-  pitch_ = qBound(0.28, pitch_, 0.9);
+  pitch_ = qBound(-0.9, pitch_, -0.28);
   orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.10, radius * 0.05)));
   if (fit_include_overlays) {
     last_camera_fit_target_ = QStringLiteral("scene_with_overlays");
@@ -1950,7 +1950,7 @@ void Scene3DViewportWidget::fit_product_view()
   last_camera_fit_margin_ = QStringLiteral("product: max(base_fit_distance * 2.4, product_radius * 5.0, 4.0)");
   last_camera_fit_margin_value_ = fit_distance;
   yaw_ = -0.86;
-  pitch_ = 0.60;
+  pitch_ = -0.60;
   orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.06, product_radius * 0.035)));
   last_initial_fit_included_ur5_bounds_ = ur5_included;
   last_camera_fit_target_ = ur5_included
@@ -1978,7 +1978,7 @@ void Scene3DViewportWidget::fit_robot()
   const double fov = qDegreesToRadians(50.0);
   const double fit_distance = (radius / qTan(fov * 0.5)) * 1.05;
   distance_ = qBound(min_distance_, fit_distance, max_distance_);
-  pitch_ = qBound(0.28, pitch_, 0.9);
+  pitch_ = qBound(-0.9, pitch_, -0.28);
   last_camera_fit_target_ = QStringLiteral("robot");
   has_robot_aabb_diag_ = true;
   last_robot_aabb_min_ = bmin;

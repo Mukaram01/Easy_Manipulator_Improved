@@ -303,7 +303,7 @@ private:
                                 QVector3D * out_final_span = nullptr) const;
   QVector3D orbit_offset_{ 0.0f, 0.0f, 0.0f };
   double yaw_{ -0.9 };
-  double pitch_{ 0.7 };
+  double pitch_{ -0.7 };
   double distance_{ 6.0 };
   double scene_radius_{ 2.0 };
   const double min_distance_{ 0.35 };
