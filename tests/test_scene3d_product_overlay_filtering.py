@@ -4,20 +4,31 @@ ROOT = Path(__file__).resolve().parents[1]
 ASSEMBLY_CPP = ROOT / "workcell_builder/workcell_builder/gui/scene3d_candidate_assembly.cpp"
 
 
-def test_product_view_treats_zone_rows_as_helper_overlays() -> None:
+def test_product_view_treats_helper_rows_as_overlay_only() -> None:
     source = ASSEMBLY_CPP.read_text(encoding="utf-8")
 
+    assert "bool contains_product_helper_overlay_token" in source
     assert "bool is_product_helper_overlay_role" in source
     assert "const bool is_overlay_or_helper = is_product_helper_overlay_role(role, category, combined);" in source
 
     for token in (
-        'role == QStringLiteral("pick_zone")',
-        'role == QStringLiteral("place_zone")',
-        'role == QStringLiteral("robot_reach")',
-        'role == QStringLiteral("warning_anchor")',
-        'role == QStringLiteral("warning_badge")',
-        'category == QStringLiteral("pick_zone")',
-        'category == QStringLiteral("place_zone")',
+        'QStringLiteral("safety_zone")',
+        'QStringLiteral("pick_zone")',
+        'QStringLiteral("place_zone")',
+        'QStringLiteral("robot_reach")',
+        'QStringLiteral("warning_anchor")',
+        'QStringLiteral("warning_badge")',
+        'QStringLiteral("camera_fov")',
+        'QStringLiteral("pick_coverage")',
+        'QStringLiteral("reachability")',
+        'QStringLiteral("collision")',
+        'QStringLiteral("work_envelope")',
+        'QStringLiteral("task_route")',
+        'QStringLiteral("approach_retreat")',
+        'QStringLiteral("epd_detection")',
+        'QStringLiteral("detection_label")',
+        'QStringLiteral("bounds_box")',
+        'QStringLiteral("bounding_box")',
     ):
         assert token in source
 
