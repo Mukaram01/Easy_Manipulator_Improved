@@ -187,6 +187,23 @@ def _iter_manifest_refs(value: Any, *, key_path: str = "") -> list[tuple[str, st
     return refs
 
 
+
+def _iter_manifest_files_refs(value: Any, *, key_path: str = "files") -> list[tuple[str, str]]:
+    refs: list[tuple[str, str]] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_key = str(key)
+            child_path = f"{key_path}.{child_key}" if key_path else child_key
+            refs.extend(_iter_manifest_files_refs(child, key_path=child_path))
+    elif isinstance(value, list):
+        for idx, child in enumerate(value):
+            refs.extend(_iter_manifest_files_refs(child, key_path=f"{key_path}[{idx}]"))
+    elif isinstance(value, str):
+        stripped = value.strip()
+        if stripped and not any(ch in stripped for ch in "\n\r"):
+            refs.append((key_path, stripped))
+    return refs
+
 def _is_relative_to(candidate: Path, scene_root: Path) -> bool:
     if hasattr(candidate, "is_relative_to"):
         return candidate.is_relative_to(scene_root)
@@ -205,7 +222,10 @@ def _check_manifest_refs(scene_dir: Path) -> dict[str, Any]:
     payload, error = _load_yaml_file(manifest)
     if error:
         return _result(FAIL, f"scene_manifest.yaml is not parseable: {error}")
-    refs = _iter_manifest_refs(payload)
+    if isinstance(payload, dict) and "files" in payload:
+        refs = _iter_manifest_files_refs(payload.get("files"))
+    else:
+        refs = _iter_manifest_refs(payload)
     missing: list[dict[str, str]] = []
     checked: list[dict[str, str]] = []
     for key_path, ref in refs:
