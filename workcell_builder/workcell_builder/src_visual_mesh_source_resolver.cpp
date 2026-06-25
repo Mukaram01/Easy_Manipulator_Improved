@@ -197,7 +197,40 @@ QString resolve_visual_mesh_source_path(
     package_rel = (slash >= 0) ? package_tail.mid(slash + 1) : QString();
   }
 
-  // A. explicit local asset_path / mesh_path
+  // Package URIs are authoritative for generated visual rows.  A cached
+  // resolved_source_path can be stale or can point at a different package with
+  // the same mesh filename, for example table_description/.../table.stl for a
+  // package://workbench_description/.../table.stl row.  Resolve the declared
+  // package first so Scene3D uses the intended mesh and URDF mesh scale.
+  if (trimmed_uri.startsWith("package://") && !package_name.isEmpty() && !package_rel.isEmpty()) {
+    static QHash<QString, QMap<QString, QString>> workspace_cache;
+    const QString cache_key = QString::fromStdString(scene_dir.string()) + "::" + workspace_root;
+    if (!workspace_cache.contains(cache_key)) workspace_cache.insert(cache_key, discover_visual_mesh_package_map(scene_dir, workspace_root, nullptr));
+    const QMap<QString, QString> package_map = workspace_cache.value(cache_key);
+    const QString package_root = package_map.value(package_name);
+    if (!package_root.trimmed().isEmpty()) {
+      const QString resolved = add_candidate(QDir(package_root).filePath(package_rel));
+      if (!resolved.isEmpty()) return resolved;
+    }
+
+    // Fallback asset scan must still respect the requested package name.  Do
+    // not accept any mesh that merely ends in /meshes/visual/table.stl because
+    // several packages can legitimately contain identically named STL files.
+    QStringList meshes; int total = 0;
+    discover_visual_mesh_asset_category_counts(product_asset_roots(workspace_root), &total, &meshes);
+    Q_UNUSED(total);
+    const QString package_suffix = QStringLiteral("/") + package_name + QStringLiteral("/") + package_rel;
+    for (const QString & mesh : meshes) {
+      if (mesh.endsWith(package_suffix)) {
+        const QString resolved = add_candidate(mesh);
+        if (!resolved.isEmpty()) return resolved;
+      }
+    }
+  }
+
+  // Explicit local asset_path / mesh_path is only used after package:// has had
+  // a chance to resolve the owning package. This keeps hand-authored local files
+  // working while preventing stale generated paths from overriding package_uri.
   const QString trimmed_raw = raw_path.trimmed();
   if (!trimmed_raw.isEmpty()) {
     QFileInfo raw_info(trimmed_raw);
@@ -211,34 +244,6 @@ QString resolve_visual_mesh_source_path(
       if (!scene_resolved.isEmpty()) return scene_resolved;
     }
   }
-
-  // B. raw asset scan match under product asset roots.
-  if (!package_rel.isEmpty()) {
-    const QString suffix = QStringLiteral("/") + package_rel;
-    QStringList meshes; int total = 0;
-    discover_visual_mesh_asset_category_counts(product_asset_roots(workspace_root), &total, &meshes);
-    Q_UNUSED(total);
-    for (const QString & mesh : meshes) {
-      if (mesh.endsWith(suffix) || mesh.endsWith(QStringLiteral("/") + package_name + suffix)) {
-        const QString resolved = add_candidate(mesh);
-        if (!resolved.isEmpty()) return resolved;
-      }
-    }
-  }
-
-  // C. repo/product asset package map.
-  if (trimmed_uri.startsWith("package://")) {
-    static QHash<QString, QMap<QString, QString>> workspace_cache;
-    const QString cache_key = QString::fromStdString(scene_dir.string()) + "::" + workspace_root;
-    if (!workspace_cache.contains(cache_key)) workspace_cache.insert(cache_key, discover_visual_mesh_package_map(scene_dir, workspace_root, nullptr));
-    const QMap<QString, QString> package_map = workspace_cache.value(cache_key);
-    const QString package_root = package_map.value(package_name);
-    if (!package_root.trimmed().isEmpty()) {
-      const QString resolved = add_candidate(QDir(package_root).filePath(package_rel));
-      if (!resolved.isEmpty()) return resolved;
-    }
-  }
-
 
   if (trimmed_uri.startsWith("file://")) {
     const QString resolved = add_candidate(trimmed_uri.mid(7));
