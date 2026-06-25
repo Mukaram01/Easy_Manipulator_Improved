@@ -82,7 +82,7 @@ bool include_preview_item_for_scene3d(
   const QString visual_source = token(item.active_visual_source);
   const QString role = token(item.role);
   const QString category = token(item.category);
-  const QString combined = role + "|" + category + "|" + token(item.status) + "|" + item.warnings.join("|").toLower();
+  const QString combined = source_layer + "|" + visual_source + "|" + role + "|" + category + "|" + token(item.status) + "|" + item.warnings.join("|").toLower();
   const bool is_warning_or_missing = combined.contains("warning") || combined.contains("missing") || !item.mesh_load_warning.trimmed().isEmpty();
   const bool is_overlay_or_helper = is_product_helper_overlay_role(role, category, combined);
 
