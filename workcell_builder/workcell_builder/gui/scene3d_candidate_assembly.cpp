@@ -48,27 +48,50 @@ bool is_generated_robot_visual(const ScenePreviewWidget::PreviewItem & item)
                          combined.contains(QStringLiteral("robot_model")));
 }
 
+bool contains_product_helper_overlay_token(const QString & text)
+{
+  const QStringList helper_tokens = {
+    QStringLiteral("overlay"),
+    QStringLiteral("helper"),
+    QStringLiteral("guide"),
+    QStringLiteral("diagnostic"),
+    QStringLiteral("safety_zone"),
+    QStringLiteral("pick_zone"),
+    QStringLiteral("place_zone"),
+    QStringLiteral("robot_reach"),
+    QStringLiteral("warning_anchor"),
+    QStringLiteral("warning_badge"),
+    QStringLiteral("camera_fov"),
+    QStringLiteral("fov"),
+    QStringLiteral("pick_coverage"),
+    QStringLiteral("reachability"),
+    QStringLiteral("collision"),
+    QStringLiteral("work_envelope"),
+    QStringLiteral("task_route"),
+    QStringLiteral("approach_retreat"),
+    QStringLiteral("approach"),
+    QStringLiteral("retreat"),
+    QStringLiteral("epd_detection"),
+    QStringLiteral("detection_label"),
+    QStringLiteral("bounds_box"),
+    QStringLiteral("bounding_box")
+  };
+  for (const QString & helper_token : helper_tokens) {
+    if (text == helper_token || text.contains(helper_token)) return true;
+  }
+  return false;
+}
+
 bool is_product_helper_overlay_role(const QString & role, const QString & category, const QString & combined)
 {
   // token() normalises spaces and hyphens to underscores, so product-layer filtering
-  // must treat safety_zone/pick_zone/place_zone/etc. as helper overlays.  The old
-  // "safety zone" substring did not match canonical safety_zone rows, which let
-  // large zone boxes leak into the normal Product View even when the overlay layer
-  // was disabled.
-  return combined.contains(QStringLiteral("overlay")) ||
-         combined.contains(QStringLiteral("helper")) ||
-         role == QStringLiteral("safety_zone") ||
-         role == QStringLiteral("pick_zone") ||
-         role == QStringLiteral("place_zone") ||
-         role == QStringLiteral("robot_reach") ||
-         role == QStringLiteral("warning_anchor") ||
-         role == QStringLiteral("warning_badge") ||
-         category == QStringLiteral("safety_zone") ||
-         category == QStringLiteral("pick_zone") ||
-         category == QStringLiteral("place_zone") ||
-         category == QStringLiteral("overlay") ||
-         category == QStringLiteral("helper") ||
-         category == QStringLiteral("diagnostic");
+  // keeps canonical helper rows behind the overlay controls. Product View should
+  // load robot/tool/environment meshes first; FOV, reachability, zone, route,
+  // warning, coverage, detection, and bounds helper rows must not leak into the
+  // normal first view as large boxes.
+  return contains_product_helper_overlay_token(role) ||
+         contains_product_helper_overlay_token(category) ||
+         contains_product_helper_overlay_token(combined);
 }
 }
 
