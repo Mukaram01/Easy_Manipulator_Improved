@@ -33,16 +33,61 @@ def _mesh_identity(item: dict) -> str:
     )
 
 
+_PROTECTED_UR5_LINKS = {
+    "base_link_inertia",
+    "shoulder_link",
+    "upper_arm_link",
+    "forearm_link",
+    "wrist_1_link",
+    "wrist_2_link",
+    "wrist_3_link",
+}
+
+
+def _normalized_ur5_link(item: dict) -> str:
+    for key in ("link", "link_name", "canonical_link_name"):
+        link = _token(item.get(key, ""))
+        if link in _PROTECTED_UR5_LINKS:
+            return link
+    id_token = _token(item.get("id", ""))
+    for link in _PROTECTED_UR5_LINKS:
+        if id_token == link or f"_{link}_" in id_token or id_token.startswith(f"{link}_") or id_token.endswith(f"_{link}"):
+            return link
+    return ""
+
+
+def _normalized_mesh_identity(item: dict) -> str:
+    parts = [
+        _token(str(item.get(key, "")))
+        for key in ("package_uri", "mesh_uri", "source_path", "mesh_path", "resolved_source_path", "resolved_path")
+        if str(item.get(key, "")).strip()
+    ]
+    return "__".join(parts) or "mesh_missing"
+
+
+def _is_protected_ur5_generated_visual_row(item: dict) -> bool:
+    link = _normalized_ur5_link(item)
+    mesh_mix = "|".join(str(item.get(key, "")).lower() for key in (
+        "package_uri", "mesh_uri", "source_path", "mesh_path", "resolved_source_path", "resolved_path"
+    ))
+    return (
+        bool(link)
+        and _token(item.get("geometry_type") or item.get("type") or "") == "mesh"
+        and "ur_description/meshes/ur5/visual" in mesh_mix
+    )
+
+
 def _generated_row_key(item: dict, source_row_index: int) -> str:
     visual = item.get("visual_name") or item.get("visual") or item.get("id") or "visual_missing"
     row_index = item.get("source_row_index")
     if row_index in (None, ""):
         row_index = source_row_index
+    link = _normalized_ur5_link(item) if _is_protected_ur5_generated_visual_row(item) else ""
     return "generated_urdf_row::{}::{}::{}::{}".format(
-        _token(item.get("link_name") or item.get("link") or item.get("object_id") or item.get("object") or "link_missing"),
+        link or _token(item.get("link") or item.get("link_name") or item.get("canonical_link_name") or item.get("object_id") or item.get("object") or "link_missing"),
         _token(visual),
         _token(str(row_index)),
-        _token(_mesh_identity(item)),
+        _normalized_mesh_identity(item) if link else _token(_mesh_identity(item)),
     )
 
 
@@ -87,7 +132,7 @@ def _retained_rows(items: list[dict]) -> list[dict]:
 
 
 def _filtered_links(items: list[dict]) -> set[str]:
-    return {_token(item.get("link", "")) for item in _retained_rows(items)}
+    return {_normalized_ur5_link(item) or _token(item.get("link") or item.get("link_name") or item.get("canonical_link_name") or "") for item in _retained_rows(items)}
 
 
 def test_mainwindow_visual_loader_distinguishes_identity_fallback_and_shared_mesh_uri() -> None:
@@ -342,6 +387,84 @@ def test_fresh_real_xacro_style_urdf_visual_ids_retain_ur5_and_robotiq_rows() ->
     } <= retained
     assert "gripper_base_link" in retained
     assert any("finger" in link for link in retained)
+
+
+def test_raw_ur5_mesh_rows_without_visual_source_metadata_are_protected() -> None:
+    items = [
+        {
+            "id": f"urdf_visual_{index}_{link}",
+            "source_row_index": index,
+            "link_name": link,
+            "visual_name": f"visual_{index}",
+            "type": "mesh",
+            "mesh_uri": f"package://ur_description/meshes/ur5/visual/{link}.dae",
+        }
+        for index, link in enumerate(
+            ["base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link", "wrist_3_link"]
+        )
+    ]
+
+    retained = _filtered_links(items)
+
+    assert _PROTECTED_UR5_LINKS <= retained
+    assert all(_is_protected_ur5_generated_visual_row(item) for item in items)
+
+
+def test_ur5_link_can_be_recovered_from_raw_urdf_visual_id() -> None:
+    items = [
+        {
+            "id": "urdf_visual_12_shoulder_link_visual",
+            "source_row_index": 12,
+            "visual_name": "shoulder_visual",
+            "geometry_type": "mesh",
+            "resolved_path": "/tmp/ws/install/ur_description/share/ur_description/meshes/ur5/visual/shoulder.dae",
+        }
+    ]
+
+    retained_rows = _retained_rows(items)
+
+    assert len(retained_rows) == 1
+    assert _normalized_ur5_link(retained_rows[0]) == "shoulder_link"
+    assert _filtered_links(items) == {"shoulder_link"}
+
+
+def test_exact_duplicate_protected_ur5_rows_are_skipped_without_suppressing_other_visuals() -> None:
+    duplicate = {
+        "id": "urdf_visual_2_shoulder_link_visual",
+        "source_row_index": 2,
+        "link": "shoulder_link",
+        "visual_name": "shoulder_visual",
+        "geometry_type": "mesh",
+        "package_uri": "package://ur_description/meshes/ur5/visual/shoulder.dae",
+    }
+    distinct_same_link = {
+        **duplicate,
+        "id": "urdf_visual_3_shoulder_link_collision_visual",
+        "source_row_index": 3,
+        "visual_name": "shoulder_collision_visual",
+    }
+    robotiq = {
+        "id": "urdf_visual_30_left_inner_finger",
+        "source_row_index": 30,
+        "link": "left_inner_finger",
+        "visual_name": "left_inner_finger_visual",
+        "geometry_type": "mesh",
+        "package_uri": "package://robotiq_85_description/meshes/visual/inner_finger.dae",
+    }
+
+    retained_rows = _retained_rows([duplicate, dict(duplicate), distinct_same_link, robotiq])
+
+    assert len([row for row in retained_rows if _normalized_ur5_link(row) == "shoulder_link"]) == 2
+    assert len([row for row in retained_rows if row.get("link") == "left_inner_finger"]) == 1
+
+
+def test_mainwindow_logs_protected_ur5_ingestion_and_renderer_handoff_lines() -> None:
+    src = MAINWINDOW.read_text(encoding="utf-8")
+    assert "Scene3D preserved generated URDF robot mesh row before preview handoff" in src
+    assert "link=%2" in src
+    assert "Scene3D generated URDF robot mesh renderer handoff" in src
+    assert 'p.active_visual_source = QStringLiteral("mesh_preview");' in src
+    assert 'p.category = QStringLiteral("robot_arm");' in src
 
 
 def test_old_stale_generated_urdf_style_rows_still_retain_ur5_rows() -> None:
