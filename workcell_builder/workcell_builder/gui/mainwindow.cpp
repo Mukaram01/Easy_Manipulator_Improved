@@ -9557,8 +9557,8 @@ void MainWindow::populate_scene_hierarchy()
           const QString resolved_source_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "resolved_source_path"));
           QString package_uri = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "package_uri"));
           if (package_uri.trimmed().isEmpty()) package_uri = visual_index_first_scalar_value(v, {"mesh_uri", "filename"});
-          p.visual_index_link = raw_visual_link;
-          p.visual_index_link_name = raw_visual_link_name;
+          p.visual_index_link = raw_visual_link.isEmpty() ? stable_visual_link_identity : raw_visual_link;
+          p.visual_index_link_name = raw_visual_link_name.isEmpty() ? stable_visual_link_identity : raw_visual_link_name;
           p.resolved_source_path_original = resolved_source_path;
           p.package_uri = package_uri;
           bool unresolved_package_uri = false;
@@ -9746,8 +9746,8 @@ void MainWindow::populate_scene_hierarchy()
               .arg(p.base_pose_roll).arg(p.base_pose_pitch).arg(p.base_pose_yaw);
           }
           p.robot_world_pose = robot_world_pose;
-          p.visual_index_link = raw_visual_link;
-          p.visual_index_link_name = raw_visual_link_name;
+          p.visual_index_link = raw_visual_link.isEmpty() ? stable_visual_link_identity : raw_visual_link;
+          p.visual_index_link_name = raw_visual_link_name.isEmpty() ? stable_visual_link_identity : raw_visual_link_name;
           normalize_generated_urdf_visual_identity(p);
           classify_generated_urdf_visual(p, resolved_source_path);
           p.visual_index_object_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "object_name")).trimmed();
@@ -9767,7 +9767,7 @@ void MainWindow::populate_scene_hierarchy()
           p.editable = false;
           p.selectable = true;
           if (geometry_type == QStringLiteral("mesh")) {
-            p.active_visual_source = QStringLiteral("mesh_preview");
+            p.active_visual_source = QStringLiteral("generated_urdf_visual");
           }
           if (!p.visual_index_mesh_uri.trimmed().isEmpty() && p.package_uri.trimmed().isEmpty()) {
             p.package_uri = p.visual_index_mesh_uri.trimmed();
