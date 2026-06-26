@@ -581,7 +581,8 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
   }
 
   const QSet<QString> required_visible_ur5_links = {
-    QStringLiteral("base_link_inertia"),
+    // base_link_inertia is inertial-only in some URDF/index variants; do not
+    // require it as a visible mesh unless a real final draw row exists.
     QStringLiteral("shoulder_link"),
     QStringLiteral("upper_arm_link"),
     QStringLiteral("forearm_link"),
@@ -638,7 +639,6 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
       (!field_text(record, QStringLiteral("link_name")).trimmed().isEmpty() ? field_text(record, QStringLiteral("link_name")) :
        field_text(record, QStringLiteral("link"))));
     const QHash<QString, QString> expected_ur5_visual_meshes{
-      {QStringLiteral("base_link_inertia"), QStringLiteral("base.dae")},
       {QStringLiteral("shoulder_link"), QStringLiteral("shoulder.dae")},
       {QStringLiteral("upper_arm_link"), QStringLiteral("upperarm.dae")},
       {QStringLiteral("forearm_link"), QStringLiteral("forearm.dae")},
@@ -794,6 +794,7 @@ QJsonObject audit_ur5_2f_test_committed_viewport_items(
     {QStringLiteral("required_ur5_visibility_blocker"), blocker},
     {QStringLiteral("rendered_ur5_link_records"), rendered_ur5_link_records},
     {QStringLiteral("missing_required_visible_ur5_links"), QJsonArray::fromStringList(missing)},
+    {QStringLiteral("excluded_non_visual_ur5_links"), QJsonArray{QStringLiteral("base_link_inertia: inertial-only/non-visual unless present as real final draw row")}},
     {QStringLiteral("rendered_table_count"), rendered_table_count},
     {QStringLiteral("rendered_camera_count"), rendered_camera_count},
     {QStringLiteral("rendered_robotiq_link_count"), rendered_robotiq_link_count}

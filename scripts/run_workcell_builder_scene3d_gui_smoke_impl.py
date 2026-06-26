@@ -659,6 +659,7 @@ def _apply_ur5_final_viewport_payload_contract(payload: dict[str, Any]) -> None:
     payload["rendered_ur5_link_count"] = rendered_ur5_link_count
     payload["required_ur5_final_viewport_links"] = list(REQUIRED_UR5_FINAL_VIEWPORT_LINKS)
     payload["missing_required_visible_ur5_links"] = missing
+    payload["excluded_non_visual_ur5_links"] = ["base_link_inertia: inertial-only/non-visual unless present as an actual final draw row"]
 
     blockers = payload.get("blockers") if isinstance(payload.get("blockers"), list) else []
     if not payload["rviz_parity_robot_layer"]:
