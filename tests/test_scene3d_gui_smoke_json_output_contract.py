@@ -1181,3 +1181,99 @@ def test_wrapper_promotes_app_json_present_when_complete_pass_evidence(tmp_path)
     assert payload["rendered_ur5_link_count"] >= 6
     assert payload["missing_required_visible_ur5_links"] == []
     assert payload["visual_quality_status"] == "PASS"
+
+
+def test_fresh_real_xacro_urdf_visual_rows_are_counted_from_visual_index_identity():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    required_links = [
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+    ]
+    visual_items = [
+        {"id": "urdf_visual_0", "source_row_index": 0, "link": "base_link_inertia", "visual_name": "visual_0"},
+        *[
+            {"id": f"urdf_visual_{index}", "source_row_index": index, "link": link, "visual_name": f"visual_{index}"}
+            for index, link in enumerate(required_links, start=1)
+        ],
+        {"id": "urdf_visual_7", "source_row_index": 7, "link": "gripper_base_link", "visual_name": "visual_7"},
+        {"id": "urdf_visual_8", "source_row_index": 8, "link": "left_inner_finger", "visual_name": "visual_8"},
+    ]
+    final_rows = [
+        {
+            "id": row["id"],
+            "item_id": row["id"],
+            "source_row_index": row["source_row_index"],
+            "source_layer": "locked_generated_urdf_visual",
+            "final_draw_status": "ok",
+            "has_mesh_metadata": True,
+            "mesh_source": "package://ur_description/meshes/ur5/visual/placeholder.dae",
+            "final_draw_bbox": {"min": [float(index), 0.0, 0.0], "max": [float(index) + 0.1, 0.1, 0.1]},
+            "visible": True,
+            "rendered": True,
+        }
+        for index, row in enumerate(visual_items)
+    ]
+    payload = {
+        "scene": "ur5_2f_test",
+        "status": "PASS",
+        "visual_index": {"visual_items": visual_items},
+        "final_draw_visual_items": final_rows,
+        "camera_fit_target": "product_physical_initial_fit_ur5_included",
+    }
+
+    smoke._apply_ur5_final_viewport_payload_contract(payload)
+
+    assert payload["rendered_ur5_link_count"] == 6
+    assert payload["missing_required_visible_ur5_links"] == []
+    assert payload["ur5_mesh_renderables_count"] >= 6
+    assert payload["robotiq_mesh_renderables_count"] > 0
+    assert "ur5_mesh_renderables_count_below_required_links" not in payload.get("blockers", [])
+    assert "ur5_final_viewport_links_missing" not in payload.get("blockers", [])
+    assert "rendered_ur5_link_count_below_6" not in payload.get("blockers", [])
+
+
+def test_old_generated_urdf_row_identities_still_count_without_visual_index():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    required_links = [
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+    ]
+    payload = {
+        "scene": "ur5_2f_test",
+        "status": "PASS",
+        "final_draw_visual_items": [
+            {
+                "id": f"generated_urdf::{link}::visual_{index}::{index}",
+                "item_id": f"generated_urdf::{link}::visual_{index}::{index}",
+                "source_row_index": index,
+                "link": link,
+                "link_name": link,
+                "canonical_link_name": link,
+                "source_layer": "locked_generated_urdf_visual",
+                "final_draw_status": "ok",
+                "has_mesh_metadata": True,
+                "mesh_source": "package://ur_description/meshes/ur5/visual/placeholder.dae",
+                "final_draw_bbox": {"min": [float(index), 0.0, 0.0], "max": [float(index) + 0.1, 0.1, 0.1]},
+                "visible": True,
+                "rendered": True,
+            }
+            for index, link in enumerate(required_links, start=1)
+        ],
+        "camera_fit_target": "product_physical_initial_fit_ur5_included",
+    }
+
+    smoke._apply_ur5_final_viewport_payload_contract(payload)
+
+    assert payload["rendered_ur5_link_count"] == 6
+    assert payload["missing_required_visible_ur5_links"] == []
+    assert payload["ur5_mesh_renderables_count"] >= 6

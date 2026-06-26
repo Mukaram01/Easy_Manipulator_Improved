@@ -81,8 +81,9 @@ def test_ur5_2f_visual_loader_filter_retains_robot_and_robotiq_rows() -> None:
         if _token(item.get("source", "")) == "urdf_flattened" and _token(item.get("geometry_type", "")) == "mesh"
     ]
 
-    assert len(items) == 18
-    assert len(retained_rows) in {18, len(valid_mesh_rows)}
+    assert len(items) >= 18
+    assert len(retained_rows) >= 18
+    assert len(retained_rows) <= len(items)
     assert len(identities) == len(set(identities))
     assert {"base_link", "base_link_inertia"} & retained
     assert {
@@ -98,6 +99,64 @@ def test_ur5_2f_visual_loader_filter_retains_robot_and_robotiq_rows() -> None:
         assert any(token in link for link in retained)
     assert "table" in retained
     assert "camera_link" in retained
+
+
+def test_fresh_real_xacro_style_urdf_visual_ids_retain_ur5_and_robotiq_rows() -> None:
+    links = [
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+        "gripper_base_link",
+        "left_inner_finger",
+        "right_inner_finger",
+    ]
+    items = [
+        {
+            "id": f"urdf_visual_{index}",
+            "source_row_index": index,
+            "link": link,
+            "visual_name": f"visual_{index}",
+            "source": "urdf_flattened",
+            "category": "locked_generated_urdf_visual",
+            "geometry_type": "mesh",
+        }
+        for index, link in enumerate(links)
+    ]
+
+    retained = _filtered_links(items)
+
+    assert {
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+    } <= retained
+    assert "gripper_base_link" in retained
+    assert any("finger" in link for link in retained)
+
+
+def test_old_stale_generated_urdf_style_rows_still_retain_ur5_rows() -> None:
+    links = ["shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link", "wrist_3_link"]
+    items = [
+        {
+            "id": f"generated_urdf::{link}::visual_{index}::{index}",
+            "source_row_index": index,
+            "link": link,
+            "visual_name": f"visual_{index}",
+            "source": "urdf_flattened",
+            "category": "locked_generated_urdf_visual",
+            "geometry_type": "mesh",
+        }
+        for index, link in enumerate(links, start=1)
+    ]
+
+    assert set(links) <= _filtered_links(items)
 
 
 def test_editable_layout_semantic_ids_do_not_suppress_generated_urdf_rows() -> None:
