@@ -16,6 +16,7 @@ from scripts.scene3d_scene_discovery import discover_scene3d_scenes
 from scripts.validate_ur5_scene3d_transform_plausibility import validate_index as validate_ur5_transform_plausibility_index
 
 EXPECTED_SCHEMA = "workcell_studio_scene3d_gui_smoke/v1"
+UR5_REAL_XACRO_MIN_VISUAL_COUNT = 18
 
 ROS_HUMBLE_SETUP_PATH = Path("/opt/ros/humble/setup.bash")
 ROS_HUMBLE_MISSING_MESSAGE = (
@@ -171,6 +172,213 @@ def _merge_unique(base: list[str], extra: list[str]) -> list[str]:
     for item in extra:
         _append_unique(merged, item)
     return merged
+
+
+def _scene_source_xacro_path(scene_dir: Path | None) -> Path | None:
+    if scene_dir is None:
+        return None
+    path = scene_dir / "urdf" / "scene.urdf.xacro"
+    return path if path.is_file() else None
+
+
+def _xacro_available_in_workspace(workspace_root: Path | None) -> bool:
+    if shutil.which("xacro"):
+        return True
+    if workspace_root is None:
+        return False
+    setup_candidates = [
+        workspace_root / "install" / "setup.bash",
+        ROS_HUMBLE_SETUP_PATH,
+    ]
+    source_expr = " && ".join(
+        f"source {shlex.quote(str(path))}" for path in setup_candidates if path.is_file()
+    )
+    if not source_expr:
+        return False
+    proc = subprocess.run(
+        ["bash", "-lc", f"{source_expr} && command -v xacro >/dev/null 2>&1"],
+        cwd=_REPO_ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return proc.returncode == 0
+
+
+def _visual_index_items(index_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    items = index_payload.get("visual_items") or index_payload.get("items") or []
+    return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+
+def _robotiq_index_rows(index_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in _visual_index_items(index_payload):
+        text = " ".join(
+            str(item.get(key) or "")
+            for key in (
+                "id",
+                "item_id",
+                "link",
+                "link_name",
+                "canonical_link_name",
+                "visual_name",
+                "package_uri",
+                "mesh_uri",
+                "source_path",
+                "mesh_path",
+                "resolved_source_path",
+            )
+        ).lower()
+        if "gripper_base_link" in text or "package://robotiq_85_description" in text or "robotiq" in text:
+            rows.append(item)
+    return rows
+
+
+def _visual_index_source_is_stale(index_payload: dict[str, Any], scene_source: Path | None) -> bool:
+    if scene_source is None or not scene_source.is_file():
+        return False
+    try:
+        source_mtime = float(index_payload.get("source_mtime"))
+    except (TypeError, ValueError):
+        return True
+    try:
+        return source_mtime + 1e-6 < scene_source.stat().st_mtime
+    except OSError:
+        return False
+
+
+def _load_visual_index(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _check_and_refresh_visual_index(
+    *,
+    repo_root: Path,
+    workspace_root: Path | None,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    scene_dir = _resolve_single_scene_dir(repo_root, args.scene, args.scene_path)
+    scene_name = args.scene or (scene_dir.name if scene_dir else None)
+    index_path = scene_dir / "generated" / "scene_visual_mesh_index.json" if scene_dir else None
+    source_xacro = _scene_source_xacro_path(scene_dir)
+    xacro_available = _xacro_available_in_workspace(workspace_root)
+    before_payload: dict[str, Any] = {}
+    stale_reasons: list[str] = []
+    before_count = 0
+
+    if index_path is None or not index_path.is_file():
+        stale_reasons.append("visual_index_missing")
+    else:
+        try:
+            before_payload = _load_visual_index(index_path)
+            before_count = _as_int(before_payload.get("visual_count")) or len(_visual_index_items(before_payload))
+        except Exception as exc:  # noqa: BLE001
+            before_payload = {}
+            stale_reasons.append(f"visual_index_unreadable:{exc}")
+
+    if scene_name == "ur5_2f_test" and before_payload:
+        item_count = len(_visual_index_items(before_payload))
+        visual_count = _as_int(before_payload.get("visual_count")) or item_count
+        if source_xacro is not None and xacro_available and (visual_count < UR5_REAL_XACRO_MIN_VISUAL_COUNT or item_count < UR5_REAL_XACRO_MIN_VISUAL_COUNT):
+            stale_reasons.append("ur5_2f_test_visual_count_below_18_with_real_xacro")
+        if not _robotiq_index_rows(before_payload):
+            stale_reasons.append("ur5_2f_test_robotiq_evidence_missing")
+        if workspace_root is not None and xacro_available and before_payload.get("xacro_status") != "real_xacro_succeeded":
+            stale_reasons.append("ur5_2f_test_xacro_status_not_real_xacro_succeeded")
+        if before_payload.get("safe_for_preview") is False:
+            stale_reasons.append("visual_index_not_safe_for_preview")
+        if _visual_index_source_is_stale(before_payload, source_xacro):
+            stale_reasons.append("visual_index_source_mtime_older_than_scene_xacro")
+
+    regenerated = False
+    command: list[str] = []
+    if stale_reasons and scene_name:
+        command = [
+            "python3",
+            "scripts/extract_scene_urdf_visual_mesh_index.py",
+            "--scene",
+            scene_name,
+            "--prefer-xacro",
+        ]
+        if workspace_root is not None:
+            command += ["--workspace-root", str(workspace_root)]
+        if getattr(args, "require_xacro", False) or (workspace_root is not None and xacro_available):
+            command.append("--require-xacro")
+        subprocess.run(command, cwd=repo_root, check=False)
+        regenerated = True
+
+    after_payload: dict[str, Any] = {}
+    after_count = 0
+    after_robotiq_count = 0
+    if index_path is not None and index_path.is_file():
+        try:
+            after_payload = _load_visual_index(index_path)
+            after_count = _as_int(after_payload.get("visual_count")) or len(_visual_index_items(after_payload))
+            after_robotiq_count = len(_robotiq_index_rows(after_payload))
+        except Exception:
+            after_payload = {}
+
+    if not stale_reasons:
+        status = "fresh"
+    elif regenerated:
+        status = "regenerated"
+    else:
+        status = "stale"
+    return {
+        "index_freshness_status": status,
+        "visual_index_regenerated_before_smoke": regenerated,
+        "visual_index_regeneration_command": " ".join(shlex.quote(part) for part in command) if command else "",
+        "visual_index_before_visual_count": before_count,
+        "visual_index_after_visual_count": after_count,
+        "visual_index_after_robotiq_row_count": after_robotiq_count,
+        "visual_index_freshness_reasons": stale_reasons,
+        "visual_index_path": str(index_path) if index_path else None,
+        "visual_index_xacro_available": xacro_available,
+    }
+
+
+def _apply_visual_index_freshness_fields(payload: dict[str, Any], freshness: dict[str, Any] | None) -> None:
+    if freshness:
+        payload.update(freshness)
+
+
+def _apply_robotiq_loader_drop_diagnostics(payload: dict[str, Any], *, repo_root: Path, args: argparse.Namespace) -> None:
+    if _scene_name_from_payload_or_args(payload, args) != "ur5_2f_test":
+        return
+    index_path = _mesh_index_path_for_scene(repo_root, payload, args)
+    if index_path is None or not index_path.is_file():
+        return
+    try:
+        index_payload = _load_visual_index(index_path)
+    except Exception:
+        return
+    indexed_rows = _robotiq_index_rows(index_payload)
+    if not indexed_rows:
+        return
+    final_rows = _final_visible_viewport_rows(payload)
+    final_robotiq_rows = [row for row in final_rows if _is_robotiq_base_record(row) or "robotiq" in " ".join(str(row.get(k) or "") for k in row).lower()]
+    payload["visual_index_after_robotiq_row_count"] = len(indexed_rows)
+    payload["final_draw_robotiq_row_count"] = len(final_robotiq_rows)
+    if final_robotiq_rows:
+        return
+    payload["indexed_robotiq_rows_dropped_by_loader"] = True
+    payload["indexed_robotiq_row_ids"] = [
+        str(row.get("id") or row.get("item_id") or row.get("link") or row.get("link_name") or "")
+        for row in indexed_rows[:20]
+    ]
+    warnings = payload.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+    _append_unique(warnings, "indexed_robotiq_rows_missing_from_final_draw")
+    payload["warnings"] = warnings
+    messages = payload.get("warning_messages")
+    if not isinstance(messages, dict):
+        messages = {}
+    messages["indexed_robotiq_rows_missing_from_final_draw"] = (
+        "The visual mesh index contains Robotiq/tool rows, but final_draw_visual_items contains no Robotiq rows; "
+        "the Scene3D loader/render filter likely dropped indexed gripper visuals."
+    )
+    payload["warning_messages"] = messages
 
 
 def _ros_humble_available() -> bool:
@@ -1444,6 +1652,7 @@ def _write_blocked_executable_payload(
     blocker: str,
     exception: str | None = None,
     warnings: list[str] | None = None,
+    visual_index_freshness: dict[str, Any] | None = None,
 ) -> None:
     scene_dir = _resolve_single_scene_dir(repo_root, args.scene, args.scene_path)
     static_evidence = _static_scene3d_visual_evidence(scene_dir)
@@ -1481,6 +1690,7 @@ def _write_blocked_executable_payload(
     }
     if exception:
         payload["subprocess_exception"] = exception
+    _apply_visual_index_freshness_fields(payload, visual_index_freshness)
     _add_smoke_report_supplemental_evidence(
         payload,
         screenshot_path=str(args.screenshot) if getattr(args, "screenshot", None) else None,
@@ -1709,6 +1919,7 @@ def main() -> int:
     ap.add_argument("--screenshot", type=Path, default=None)
     ap.add_argument("--timeout-sec", type=float, default=30.0)
     ap.add_argument("--xvfb", action="store_true")
+    ap.add_argument("--require-xacro", action="store_true")
     args = ap.parse_args()
 
     if args.all_scenes and args.scene:
@@ -1730,6 +1941,11 @@ def main() -> int:
     ros_env = _ros_humble_environment()
     exe = resolve_workcell_builder_executable(workspace_root, args.executable)
     executable_resolution = describe_resolution()
+    visual_index_freshness = (
+        _check_and_refresh_visual_index(repo_root=repo_root, workspace_root=workspace_root, args=args)
+        if not args.all_scenes
+        else {}
+    )
     if exe is None and not args.all_scenes:
         searched = list(executable_resolution.get("searched_executable_paths") or [])
         _write_blocked_executable_payload(
@@ -1740,6 +1956,7 @@ def main() -> int:
             searched=searched,
             blocker="explicit_workcell_builder_executable_missing_or_not_executable" if args.executable else "workcell_builder_executable_missing",
             warnings=workspace_warnings,
+            visual_index_freshness=visual_index_freshness,
         )
         print("status=BLOCKED smoke_status=MISSING_EXECUTABLE")
         print("searched_paths=" + " | ".join(searched))
@@ -1775,6 +1992,7 @@ def main() -> int:
                 "static_zones_overlays_renderable": static_evidence.get("zones_overlays_renderable", 0),
             },
         }
+        _apply_visual_index_freshness_fields(fail_payload, visual_index_freshness)
         _add_smoke_report_supplemental_evidence(
             fail_payload,
             screenshot_path=str(args.screenshot) if args.screenshot else None,
@@ -1813,6 +2031,8 @@ def main() -> int:
             cmd += ["--timeout-sec", str(args.timeout_sec)]
             if args.xvfb:
                 cmd.append("--xvfb")
+            if args.require_xacro:
+                cmd.append("--require-xacro")
             proc = None
             run_exception: str | None = None
             try:
@@ -1913,6 +2133,7 @@ def main() -> int:
                 "blockers": [f"scene_path_missing_required_files:{','.join(missing)}"],
                 "warnings": list(workspace_warnings),
             }
+            _apply_visual_index_freshness_fields(fail_payload, visual_index_freshness)
             _add_ros_humble_context(fail_payload)
             if not ros_env["ros_humble_available"]:
                 _record_ros_humble_missing(fail_payload, as_blocker=False)
@@ -1939,6 +2160,7 @@ def main() -> int:
             "warnings": list(workspace_warnings),
             "screenshot_available": False,
         }
+        _apply_visual_index_freshness_fields(fail_payload, visual_index_freshness)
         _add_ros_humble_context(fail_payload)
         if not ros_env["ros_humble_available"]:
             _record_ros_humble_missing(fail_payload, as_blocker=True)
@@ -1988,6 +2210,7 @@ def main() -> int:
         "screenshot_path": str(args.screenshot) if args.screenshot else None,
         "resolution_warnings": resolution_warnings,
     }
+    _apply_visual_index_freshness_fields(diag, visual_index_freshness)
 
     timed_out = False
     rc = None
@@ -2082,6 +2305,7 @@ def main() -> int:
             "screenshot_available": diag["screenshot_available"],
         }
         payload.update(wrapper_evidence)
+        _apply_visual_index_freshness_fields(payload, visual_index_freshness)
         _add_smoke_report_supplemental_evidence(
             payload,
             screenshot_path=diag.get("screenshot_path"),
@@ -2091,6 +2315,7 @@ def main() -> int:
             _apply_ur5_final_viewport_payload_contract(payload)
         _apply_generated_urdf_visual_first_drop_smoke_stage(payload)
         _apply_ur5_transform_parity(payload, repo_root=repo_root, args=args)
+        _apply_robotiq_loader_drop_diagnostics(payload, repo_root=repo_root, args=args)
         _apply_ur5_final_draw_bbox_regression(payload)
         if args.scene_path:
             expected_scene_path = str(args.scene_path.resolve())
