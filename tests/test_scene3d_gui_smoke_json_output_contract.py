@@ -732,6 +732,70 @@ def test_urdf_flattened_ur5_visual_rows_normalize_link_identity_and_audit_counts
     assert payload["camera_visible_in_final_viewport"] is True
     assert "ur5_final_viewport_links_missing" not in payload.get("blockers", [])
 
+
+def test_ur5_candidate_drop_diagnostics_populates_exact_first_rejection_stage():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    payload = {
+        "scene": "ur5_2f_test",
+        "ur5_final_draw_candidate_diagnostics": [
+            {
+                "id": "urdf_visual_missing_metadata",
+                "source_row_index": 4,
+                "link": "shoulder_link",
+                "link_name": "shoulder_link",
+                "canonical_link_name": "shoulder_link",
+                "source_layer": "locked_generated_urdf_visual",
+                "active_visual_source": "generated_urdf_visual",
+                "role": "robot",
+                "category": "robot",
+                "mesh_path": "",
+                "source_path": "",
+                "package_uri": "package://ur_description/meshes/ur5/visual/shoulder.dae",
+                "first_rejection_stage": "missing_mesh_metadata",
+            },
+            {
+                "id": "urdf_visual_missing_cache",
+                "source_row_index": 5,
+                "link": "upper_arm_link",
+                "link_name": "upper_arm_link",
+                "canonical_link_name": "upper_arm_link",
+                "source_layer": "locked_generated_urdf_visual",
+                "active_visual_source": "generated_urdf_visual",
+                "role": "robot",
+                "category": "robot",
+                "mesh_path": "package://ur_description/meshes/ur5/visual/upperarm.dae",
+                "source_path": "",
+                "package_uri": "package://ur_description/meshes/ur5/visual/upperarm.dae",
+                "first_rejection_stage": "missing_mesh_cache",
+            },
+            {
+                "id": "urdf_visual_ok",
+                "source_row_index": 6,
+                "link": "forearm_link",
+                "link_name": "forearm_link",
+                "canonical_link_name": "forearm_link",
+                "source_layer": "locked_generated_urdf_visual",
+                "active_visual_source": "generated_urdf_visual",
+                "role": "robot",
+                "category": "robot",
+                "mesh_path": "package://ur_description/meshes/ur5/visual/forearm.dae",
+                "source_path": "",
+                "package_uri": "package://ur_description/meshes/ur5/visual/forearm.dae",
+                "first_rejection_stage": "accepted",
+            },
+        ],
+    }
+
+    smoke._apply_ur5_candidate_drop_diagnostics(payload)
+
+    assert payload["dropped_ur5_row_ids"] == ["urdf_visual_missing_metadata", "urdf_visual_missing_cache"]
+    assert payload["dropped_ur5_first_stage"] == {
+        "urdf_visual_missing_metadata": "missing_mesh_metadata",
+        "urdf_visual_missing_cache": "missing_mesh_cache",
+    }
+
+
 def test_ur5_final_viewport_payload_requires_visible_links_table_and_camera():
     import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
 

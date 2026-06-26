@@ -135,6 +135,7 @@ public:
   QString last_camera_fit_target() const;
   bool render_smoke_fallback_frame(QImage * out_image = nullptr);
   QJsonArray mesh_diagnostics_export() const;
+  QJsonArray ur5_final_draw_candidate_diagnostics_export() const;
   QJsonArray final_draw_visual_items_export() const;
   QJsonArray final_draw_diagnostics_export() const;
 
