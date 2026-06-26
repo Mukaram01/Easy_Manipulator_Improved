@@ -837,6 +837,63 @@ def test_ur5_final_viewport_payload_rejects_metadata_or_index_only_names():
     assert "rendered_ur5_link_count_below_7" in payload["blockers"]
 
 
+def test_ur5_final_viewport_payload_reports_index_to_final_draw_drop():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    required = [
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+    ]
+    payload = {
+        "scene": "ur5_2f_test",
+        "status": "PASS",
+        "visual_index": {
+            "items": [
+                {
+                    "id": f"urdf_visual_{index}",
+                    "source_row_index": index,
+                    "link": link,
+                    "link_name": link,
+                    "canonical_link_name": link,
+                    "mesh_uri": f"package://ur_description/meshes/ur5/visual/{link}.dae",
+                }
+                for index, link in enumerate(required)
+            ]
+        },
+        "visual_ingestion_diagnostics": {
+            "generated_urdf_visual_row_diagnostics": [
+                {
+                    "id": f"urdf_visual_{index}",
+                    "source_row_index": index,
+                    "link": link,
+                    "mesh_uri": f"package://ur_description/meshes/ur5/visual/{link}.dae",
+                }
+                for index, link in enumerate(required)
+            ]
+        },
+        "final_draw_visual_items": [
+            {"id": "layout_table", "display_name": "table", "visible": True, "rendered": True, "geometry_type": "box"},
+            {"id": "camera_sensor", "display_name": "camera", "visible": True, "rendered": True, "geometry_type": "box"},
+        ],
+    }
+
+    smoke._apply_ur5_final_viewport_payload_contract(payload)
+
+    assert payload["indexed_ur5_row_count"] == 6
+    assert payload["ingested_ur5_row_count"] == 6
+    assert payload["ingested_ur5_row_count_source"] == "visual_ingestion_diagnostics.generated_urdf_visual_row_diagnostics"
+    assert payload["final_draw_ur5_row_count_before_filtering"] == 0
+    assert payload["final_draw_ur5_row_count"] == 0
+    assert payload["final_draw_ur5_row_count_after_filtering"] == 0
+    assert payload["dropped_ur5_row_ids"] == [str(index) for index in range(6)]
+    assert payload["dropped_ur5_first_stage"] == "final_draw_export"
+    assert payload["status"] == "FAIL"
+
+
 def test_ur5_final_viewport_payload_counts_only_final_render_identity_fields():
     import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
 
