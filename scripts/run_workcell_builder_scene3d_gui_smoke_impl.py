@@ -785,6 +785,58 @@ def _row_final_rendered_ur5_link_identities(row: dict[str, Any]) -> set[str]:
     return links
 
 
+def _row_ur5_link_identities(row: dict[str, Any]) -> set[str]:
+    """Return UR5 identities from any row stage, including index metadata."""
+    identities: set[str] = set()
+    for key in ("link", "link_name", "canonical_link_name", "visual_index_link"):
+        canonical = _canonical_final_render_identity(row.get(key))
+        if canonical:
+            identities.add(canonical)
+    identities.update(_row_canonical_link_candidates(row))
+    return identities
+
+
+def _row_ur5_mesh_hint(row: dict[str, Any]) -> bool:
+    haystack = " ".join(
+        str(row.get(key) or "")
+        for key in (
+            "mesh_uri",
+            "package_uri",
+            "mesh_path",
+            "mesh_source",
+            "source_path",
+            "resolved_source_path",
+            "resolved_path",
+        )
+    ).replace("\\", "/").lower()
+    return "ur_description/meshes/ur5" in haystack
+
+
+def _row_is_ur5_visual_candidate(row: dict[str, Any]) -> bool:
+    required = set(REQUIRED_UR5_FINAL_VIEWPORT_LINKS)
+    return bool(_row_ur5_link_identities(row) & required or _row_ur5_mesh_hint(row))
+
+
+def _row_stable_visual_identity(row: dict[str, Any], ordinal: int) -> str:
+    for key in ("source_row_index", "visual_index_source_row_index", "item_id", "id"):
+        value = row.get(key)
+        if value not in (None, ""):
+            return str(value)
+    for key in ("link", "link_name", "canonical_link_name", "visual_index_link"):
+        value = row.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return f"ordinal:{ordinal}"
+
+
+def _ur5_visual_row_id_set(rows: list[dict[str, Any]]) -> set[str]:
+    return {
+        _row_stable_visual_identity(row, ordinal)
+        for ordinal, row in enumerate(rows)
+        if _row_is_ur5_visual_candidate(row)
+    }
+
+
 def _visual_index_items_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
     visual_index = _first_present_mapping(payload, "visual_index", "scene_visual_mesh_index")
     raw_items = visual_index.get("visual_items") or visual_index.get("items") or payload.get("visual_index_items")
@@ -846,6 +898,83 @@ def _enrich_final_row_from_visual_index(row: dict[str, Any], payload: dict[str, 
     return enriched
 
 
+def _visual_ingestion_rows_from_payload(payload: dict[str, Any]) -> tuple[list[dict[str, Any]], str | None]:
+    sources: list[tuple[dict[str, Any], str]] = []
+    for key in ("visual_ingestion_diagnostics", "scene3d_visual_ingestion_diagnostics"):
+        source = payload.get(key)
+        if isinstance(source, dict):
+            sources.append((source, key))
+    counters = payload.get("counters")
+    if isinstance(counters, dict):
+        source = counters.get("visual_ingestion_diagnostics")
+        if isinstance(source, dict):
+            sources.append((source, "counters.visual_ingestion_diagnostics"))
+    filter_diagnostics = payload.get("filter_diagnostics")
+    if isinstance(filter_diagnostics, dict):
+        source = filter_diagnostics.get("visual_ingestion_diagnostics")
+        if isinstance(source, dict):
+            sources.append((source, "filter_diagnostics.visual_ingestion_diagnostics"))
+    row_keys = (
+        "generated_urdf_visual_row_diagnostics",
+        "generated_urdf_visual_rows",
+        "ingested_visual_items",
+        "visual_items_after_ingest",
+        "items_after_ingest",
+    )
+    for source, source_name in sources:
+        for key in row_keys:
+            rows = source.get(key)
+            if isinstance(rows, list):
+                return [row for row in rows if isinstance(row, dict)], f"{source_name}.{key}"
+    return [], None
+
+
+def _apply_ur5_row_drop_diagnostics(
+    payload: dict[str, Any],
+    *,
+    index_rows: list[dict[str, Any]],
+    ingestion_rows: list[dict[str, Any]],
+    ingestion_source: str | None,
+    final_draw_rows: list[dict[str, Any]],
+    final_visible_rows: list[dict[str, Any]],
+    final_robot_render_rows: list[dict[str, Any]],
+) -> None:
+    indexed_ur5_ids = _ur5_visual_row_id_set(index_rows)
+    final_ur5_ids = _ur5_visual_row_id_set(final_robot_render_rows)
+    ingestion_ur5_ids = _ur5_visual_row_id_set(ingestion_rows)
+    final_draw_raw_ur5_rows = [row for row in final_draw_rows if _row_is_ur5_visual_candidate(row)]
+    final_visible_ur5_rows = [row for row in final_visible_rows if _row_is_ur5_visual_candidate(row)]
+
+    payload["indexed_ur5_row_count"] = len(indexed_ur5_ids)
+    payload["indexed_ur5_row_ids"] = sorted(indexed_ur5_ids)
+    payload["final_draw_ur5_row_count"] = len(final_ur5_ids)
+    payload["final_draw_ur5_row_count_before_filtering"] = len(final_draw_raw_ur5_rows)
+    payload["final_draw_ur5_row_count_after_filtering"] = len(final_ur5_ids)
+    if ingestion_source:
+        payload["ingested_ur5_row_count"] = len(ingestion_ur5_ids)
+        payload["ingested_ur5_row_count_source"] = ingestion_source
+    else:
+        payload["ingested_ur5_row_count"] = len(final_draw_raw_ur5_rows)
+        payload["ingested_ur5_row_count_source"] = "final_draw_visual_items_observable_only"
+
+    payload["dropped_ur5_row_ids"] = sorted(indexed_ur5_ids - final_ur5_ids)
+
+    first_stage = "none"
+    if indexed_ur5_ids and not index_rows:
+        first_stage = "visual_index_load"
+    elif ingestion_source and len(ingestion_ur5_ids) < len(indexed_ur5_ids):
+        first_stage = "generated_urdf_visual_ingestion"
+    elif len(final_draw_raw_ur5_rows) < (len(ingestion_ur5_ids) if ingestion_source else len(indexed_ur5_ids)):
+        first_stage = "final_draw_export"
+    elif len(final_visible_ur5_rows) < len(final_draw_raw_ur5_rows):
+        first_stage = "helper_product_filtering"
+    elif len(final_ur5_ids) < len(final_visible_ur5_rows):
+        first_stage = "duplicate_suppression"
+    elif indexed_ur5_ids != final_ur5_ids:
+        first_stage = "payload_normalization"
+    payload["dropped_ur5_first_stage"] = first_stage
+
+
 def _row_is_final_visible_renderable(row: dict[str, Any]) -> bool:
     if row.get("visible") is False or row.get("rendered") is False:
         return False
@@ -884,7 +1013,10 @@ def _apply_ur5_final_viewport_payload_contract(payload: dict[str, Any]) -> None:
     if _payload_scene_name(payload) != "ur5_2f_test":
         return
 
-    rows = [_enrich_final_row_from_visual_index(row, payload) for row in _final_visible_viewport_rows(payload)]
+    index_rows = _visual_index_items_from_payload(payload)
+    raw_final_rows = [_enrich_final_row_from_visual_index(row, payload) for row in _final_visible_viewport_rows(payload)]
+    ingestion_rows, ingestion_source = _visual_ingestion_rows_from_payload(payload)
+    rows = raw_final_rows
     visible_rows = [row for row in rows if _row_is_final_visible_renderable(row)]
 
     visible_robot_render_rows = [
@@ -892,6 +1024,15 @@ def _apply_ur5_final_viewport_payload_contract(payload: dict[str, Any]) -> None:
         if str(row.get("source_layer") or "").strip().lower() in UR5_FINAL_RENDER_SOURCE_LAYERS
         and _accepted_final_render_status(row)
     ]
+    _apply_ur5_row_drop_diagnostics(
+        payload,
+        index_rows=index_rows,
+        ingestion_rows=ingestion_rows,
+        ingestion_source=ingestion_source,
+        final_draw_rows=raw_final_rows,
+        final_visible_rows=visible_rows,
+        final_robot_render_rows=visible_robot_render_rows,
+    )
     required_ur5_links = set(REQUIRED_UR5_FINAL_VIEWPORT_LINKS)
     visible_links: set[str] = set()
     for row in visible_robot_render_rows:
