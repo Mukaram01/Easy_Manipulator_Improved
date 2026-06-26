@@ -1398,3 +1398,121 @@ def test_old_generated_urdf_row_identities_still_count_without_visual_index():
     assert payload["rendered_ur5_link_count"] == 6
     assert payload["missing_required_visible_ur5_links"] == []
     assert payload["ur5_mesh_renderables_count"] >= 6
+
+
+def test_fresh_visual_index_ur5_and_robotiq_rows_survive_final_renderable_contract():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    ur5_rows = [
+        ("base_link_inertia", "base.dae"),
+        ("shoulder_link", "shoulder.dae"),
+        ("upper_arm_link", "upperarm.dae"),
+        ("forearm_link", "forearm.dae"),
+        ("wrist_1_link", "wrist1.dae"),
+        ("wrist_2_link", "wrist2.dae"),
+        ("wrist_3_link", "wrist3.dae"),
+    ]
+    robotiq_rows = [
+        ("robotiq_85_base_link", "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae"),
+        ("left_inner_finger", "package://robotiq_85_description/meshes/visual/inner_finger.dae"),
+    ]
+    visual_items = [
+        {
+            "id": f"urdf_visual_{index}",
+            "item_id": f"urdf_visual_{index}",
+            "source_row_index": index,
+            "link": link,
+            "link_name": link,
+            "visual_name": f"visual_{index}",
+            "package_uri": f"package://ur_description/meshes/ur5/visual/{mesh}",
+            "source_layer": "locked_generated_urdf_visual",
+            "active_visual_source": "generated_urdf_visual",
+        }
+        for index, (link, mesh) in enumerate(ur5_rows)
+    ] + [
+        {
+            "id": f"urdf_visual_{index}",
+            "item_id": f"urdf_visual_{index}",
+            "source_row_index": index,
+            "link": link,
+            "link_name": link,
+            "visual_name": f"visual_{index}",
+            "package_uri": package_uri,
+            "source_layer": "locked_generated_urdf_visual",
+            "active_visual_source": "generated_urdf_visual",
+        }
+        for index, (link, package_uri) in enumerate(robotiq_rows, start=len(ur5_rows))
+    ]
+    final_rows = [
+        {
+            "id": row["id"],
+            "item_id": row["item_id"],
+            "source_row_index": row["source_row_index"],
+            "source_layer": row["source_layer"],
+            "active_visual_source": row["active_visual_source"],
+            "role": "generated_robot_visual",
+            "category": "URDF Visual",
+            "final_draw_status": "ok",
+            "has_mesh_metadata": True,
+            "mesh_source": row["package_uri"],
+            "final_draw_bbox": {
+                "min": [float(row["source_row_index"]), 0.0, 0.0],
+                "max": [float(row["source_row_index"]) + 0.1, 0.1, 0.1],
+            },
+            "visible": True,
+            "rendered": True,
+        }
+        for row in visual_items
+    ]
+    payload = {
+        "scene": "ur5_2f_test",
+        "status": "PASS",
+        "visual_index": {"visual_items": visual_items},
+        "final_draw_visual_items": final_rows,
+        "camera_fit_target": "product_physical_initial_fit_ur5_included",
+    }
+
+    enriched_rows = [smoke._enrich_final_row_from_visual_index(row, payload) for row in final_rows]
+    assert {row["canonical_link_name"] for row in enriched_rows if row["mesh_source"].startswith("package://ur_description/")} >= {
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+    }
+    assert any("robotiq_85_description" in row["mesh_source"] for row in enriched_rows)
+    assert all(row["source_layer"] in smoke.UR5_FINAL_RENDER_SOURCE_LAYERS for row in enriched_rows)
+    assert not any(
+        str(row.get("role", "")).lower() in {"overlay", "helper"}
+        or str(row.get("category", "")).lower() in {"overlay", "helper", "semantic-only primitive"}
+        for row in enriched_rows
+        if row["mesh_source"].startswith("package://ur_description/")
+    )
+
+    smoke._apply_ur5_final_viewport_payload_contract(payload)
+
+    assert payload["rendered_ur5_link_count"] == len(smoke.REQUIRED_UR5_FINAL_VIEWPORT_LINKS)
+    assert payload["missing_required_visible_ur5_links"] == []
+    assert payload["ur5_mesh_renderables_count"] >= len(smoke.REQUIRED_UR5_FINAL_VIEWPORT_LINKS)
+    assert payload["robotiq_mesh_renderables_count"] >= 1
+    assert "ur5_mesh_renderables_count_below_required_links" not in payload.get("blockers", [])
+    assert "ur5_final_viewport_links_missing" not in payload.get("blockers", [])
+
+
+def test_scene3d_final_draw_export_uses_generated_urdf_renderable_assembly():
+    source = (Path(__file__).resolve().parents[1] / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(
+        encoding="utf-8"
+    )
+    assembly_body = source.split("std::vector<const ScenePreviewWidget::PreviewItem *> build_final_generated_urdf_robot_renderables", 1)[1]
+    assembly_body = assembly_body.split("bool is_critical_label_role", 1)[0]
+    export_body = source.split("QJsonArray Scene3DViewportWidget::final_draw_visual_items_export", 1)[1]
+    export_body = export_body.split("void Scene3DViewportWidget::emit_render_debug_counters", 1)[0]
+
+    assert "const bool generated_or_locked = is_generated_urdf_visual_item(item) || is_locked_urdf_item(item);" in assembly_body
+    assert "const bool overlay_helper = !generated_or_locked && (is_overlay_only_item(item) || is_overlay_visual_role(role));" in assembly_body
+    assert "if (generated_or_locked && generated_urdf_item_has_renderable_geometry(item))" in assembly_body
+    assert "generated_robot_items.push_back(&item);" in assembly_body
+    assert "ordered_items.insert(ordered_items.end(), generated_robot_items.begin(), generated_robot_items.end());" in assembly_body
+    assert "build_final_generated_urdf_robot_renderables(items, show_safety);" in export_body
