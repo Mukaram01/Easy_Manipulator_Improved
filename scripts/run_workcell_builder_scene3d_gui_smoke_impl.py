@@ -990,6 +990,25 @@ def _apply_ur5_final_viewport_payload_contract(payload: dict[str, Any]) -> None:
         payload["status"] = "FAIL"
 
 
+def _apply_ur5_candidate_drop_diagnostics(payload: dict[str, Any]) -> None:
+    rows = payload.get("ur5_final_draw_candidate_diagnostics")
+    if not isinstance(rows, list):
+        return
+    dropped_ids: list[str] = []
+    first_stage: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_id = str(row.get("id") or row.get("item_id") or "").strip()
+        stage = str(row.get("first_rejection_stage") or row.get("first_drop_stage") or "").strip()
+        if not row_id or not stage or stage == "accepted":
+            continue
+        dropped_ids.append(row_id)
+        first_stage[row_id] = stage
+    payload["dropped_ur5_row_ids"] = dropped_ids
+    payload["dropped_ur5_first_stage"] = first_stage
+
+
 def _finite_float_list(value: Any, length: int) -> list[float] | None:
     if not isinstance(value, (list, tuple)) or len(value) < length:
         return None
@@ -2353,6 +2372,7 @@ def main() -> int:
             screenshot_path=diag.get("screenshot_path"),
             screenshot_available=diag.get("screenshot_available"),
         )
+        _apply_ur5_candidate_drop_diagnostics(payload)
         if any(key in payload for key in ("final_draw_visual_items", "final_draw_diagnostics", "viewport_visible_items")):
             _apply_ur5_final_viewport_payload_contract(payload)
         _apply_generated_urdf_visual_first_drop_smoke_stage(payload)

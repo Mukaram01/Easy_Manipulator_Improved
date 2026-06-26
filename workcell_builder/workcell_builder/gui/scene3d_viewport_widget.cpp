@@ -1915,6 +1915,7 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
         root["robot_aabb_max"] = QJsonArray{last_robot_aabb_max_.x(), last_robot_aabb_max_.y(), last_robot_aabb_max_.z()};
       }
       root["mesh_diagnostics"] = mesh_diagnostics_export();
+      root["ur5_final_draw_candidate_diagnostics"] = ur5_final_draw_candidate_diagnostics_export();
       root["final_draw_visual_items"] = final_draw_visual_items_export();
       QJsonObject render_debug;
       const auto counters = render_debug_counters();
@@ -3692,6 +3693,85 @@ QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
       guard_details.append(gd);
     }
     row["guard_decision_details"] = guard_details;
+    out.append(row);
+  }
+  return out;
+}
+
+QJsonArray Scene3DViewportWidget::ur5_final_draw_candidate_diagnostics_export() const
+{
+  QJsonArray out;
+  QSet<QString> seen_candidate_keys;
+  for (const auto & item : items) {
+    const QString joined_identity = QStringList{
+      item.id, item.display_name, item.category, item.role, item.source_layer, item.active_visual_source,
+      item.mesh_path, item.source_path, item.package_uri, item.visual_index_mesh_uri,
+      scene3d_link_name_for_item(item), scene3d_canonical_link_name_for_item(item), item.metadata_tags
+    }.join(QStringLiteral("|")).toLower();
+    if (!is_required_ur5_viewport_link(item) &&
+        !joined_identity.contains(QStringLiteral("ur5")) &&
+        !joined_identity.contains(QStringLiteral("universal_robot")) &&
+        !joined_identity.contains(QStringLiteral("ur_description"))) {
+      continue;
+    }
+
+    const NormalizedRole role = classify_item_role(item);
+    const bool generated_or_locked = is_generated_urdf_visual_item(item) || is_locked_urdf_item(item);
+    const bool overlay_helper = !generated_or_locked && (is_overlay_only_item(item) || is_overlay_visual_role(role));
+    const QString mesh_source = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path.trimmed() : item.source_path.trimmed();
+
+    QString first_stage;
+    if (!generated_or_locked) {
+      first_stage = QStringLiteral("not_generated_locked_urdf_visual");
+    } else if (overlay_helper) {
+      first_stage = QStringLiteral("classified_helper_overlay");
+    } else if (!generated_urdf_item_has_renderable_geometry(item)) {
+      first_stage = QStringLiteral("missing_renderable_geometry");
+    } else if (!item.has_mesh_metadata && !is_generated_urdf_visual_fallback_item(item) && !item_has_valid_urdf_primitive(item)) {
+      first_stage = QStringLiteral("missing_mesh_metadata");
+    } else if (mesh_source.isEmpty() && !(is_generated_urdf_visual_fallback_item(item) && is_required_ur5_viewport_link(item))) {
+      first_stage = QStringLiteral("missing_mesh_source");
+    } else {
+      const QString duplicate_key = QStringList{
+        scene3d_canonical_link_name_for_item(item), mesh_source, item.source_path.trimmed(), item.package_uri.trimmed(),
+        QString::number(item.x, 'g', 12), QString::number(item.y, 'g', 12), QString::number(item.z, 'g', 12)
+      }.join(QStringLiteral("|"));
+      if (seen_candidate_keys.contains(duplicate_key)) {
+        first_stage = QStringLiteral("duplicate_suppression");
+      } else {
+        seen_candidate_keys.insert(duplicate_key);
+        QString canonical_mesh_source;
+        if (!mesh_source.isEmpty() && !try_resolve_canonical_mesh_path(mesh_source, canonical_mesh_source, &item)) {
+          canonical_mesh_source = QFileInfo(mesh_source).absoluteFilePath();
+        }
+        const auto cache_it = mesh_cache_.constFind(canonical_mesh_source);
+        if (!mesh_source.isEmpty() && cache_it == mesh_cache_.constEnd()) {
+          first_stage = QStringLiteral("missing_mesh_cache");
+        } else if (!mesh_source.isEmpty()) {
+          const MeshCacheEntry & cache = cache_it.value();
+          if (!cache.loaded || !cache.valid || !cache.has_bounds || cache.mesh.triangles.isEmpty()) {
+            first_stage = QStringLiteral("invalid_mesh_bounds");
+          }
+        }
+      }
+    }
+    if (first_stage.isEmpty()) first_stage = QStringLiteral("accepted");
+
+    QJsonObject row;
+    row["id"] = item.id;
+    if (item.source_row_index >= 0) row["source_row_index"] = item.source_row_index;
+    row["link"] = !item.visual_index_link.trimmed().isEmpty() ? item.visual_index_link.trimmed() : scene3d_link_name_for_item(item);
+    row["link_name"] = scene3d_link_name_for_item(item);
+    row["canonical_link_name"] = scene3d_canonical_link_name_for_item(item);
+    row["source_layer"] = item.source_layer;
+    row["active_visual_source"] = item.active_visual_source;
+    row["role"] = item.role;
+    row["category"] = item.category;
+    row["mesh_path"] = item.mesh_path;
+    row["source_path"] = item.source_path;
+    row["package_uri"] = !item.visual_index_package_uri.trimmed().isEmpty() ? item.visual_index_package_uri.trimmed() : item.package_uri;
+    row["first_rejection_stage"] = first_stage;
+    row["first_drop_stage"] = first_stage;
     out.append(row);
   }
   return out;
