@@ -412,9 +412,14 @@ bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item
   const QString mesh_path = item.mesh_path.trimmed();
   const QString package_uri = item.package_uri.trimmed();
   const QString source_path = item.source_path.trimmed();
+  // Authoring files such as environment.yaml identify semantic/layout rows, not
+  // renderable meshes.  Treat a row as mesh-backed only when the handoff has
+  // real mesh metadata/availability or a source field that looks like a mesh
+  // asset. This keeps semantic robot_base/robot_reach/conveyor/object/warning
+  // rows out of the generated-URDF mesh renderer and its rejection logs.
   return item.mesh_available ||
          item.has_mesh_metadata ||
-         !mesh_path.isEmpty() ||
+         (!mesh_path.isEmpty() && path_has_mesh_asset_extension(mesh_path)) ||
          (!package_uri.isEmpty() && path_has_mesh_asset_extension(package_uri)) ||
          (!source_path.isEmpty() && path_has_mesh_asset_extension(source_path));
 }
@@ -1341,6 +1346,28 @@ void populate_runtime_transform_counters(
   counters.legacy_viewport_transform_count = legacy_viewport_transform_count;
 }
 
+
+bool generated_urdf_item_has_renderable_geometry(const ScenePreviewWidget::PreviewItem & item)
+{
+  if (!(is_generated_urdf_visual_item(item) || is_locked_urdf_item(item))) return false;
+  if (is_generated_urdf_visual_fallback_item(item) && is_required_ur5_viewport_link(item)) return true;
+  const bool has_real_mesh = item.has_mesh_metadata && item_has_mesh_surface_candidate(item);
+  return has_real_mesh || item_has_valid_urdf_primitive(item);
+}
+
+QString scene3d_camera_dedupe_key(const ScenePreviewWidget::PreviewItem & item)
+{
+  return QStringList{
+    scene3d_canonical_link_name_for_item(item),
+    item.mesh_path.trimmed(),
+    item.source_path.trimmed(),
+    item.package_uri.trimmed(),
+    QString::number(item.x, 'g', 12), QString::number(item.y, 'g', 12), QString::number(item.z, 'g', 12),
+    QString::number(item.roll, 'g', 12), QString::number(item.pitch, 'g', 12), QString::number(item.yaw, 'g', 12),
+    normalized_scene3d_layer_token(item.source_layer)
+  }.join(QStringLiteral("|"));
+}
+
 bool is_raw_generated_bounds_only_item(const ScenePreviewWidget::PreviewItem & it)
 {
   const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
@@ -1436,7 +1463,7 @@ std::vector<const ScenePreviewWidget::PreviewItem *> build_final_generated_urdf_
         .arg(item.id, generated_or_locked ? QStringLiteral("true") : QStringLiteral("false"),
              overlay_helper ? QStringLiteral("true") : QStringLiteral("false"), item.source_layer, item.active_visual_source);
     }
-    if (generated_or_locked) {
+    if (generated_or_locked && generated_urdf_item_has_renderable_geometry(item)) {
       generated_robot_items.push_back(&item);
     } else if (overlay_helper) {
       overlay_items.push_back(&item);
@@ -1444,6 +1471,19 @@ std::vector<const ScenePreviewWidget::PreviewItem *> build_final_generated_urdf_
       physical_items.push_back(&item);
     }
   }
+
+  QSet<QString> seen_camera_visuals;
+  std::vector<const ScenePreviewWidget::PreviewItem *> deduped_generated_robot_items;
+  deduped_generated_robot_items.reserve(generated_robot_items.size());
+  for (const auto * item : generated_robot_items) {
+    if (item && classify_item_role(*item) == NormalizedRole::Camera) {
+      const QString key = scene3d_camera_dedupe_key(*item);
+      if (seen_camera_visuals.contains(key)) continue;
+      seen_camera_visuals.insert(key);
+    }
+    deduped_generated_robot_items.push_back(item);
+  }
+  generated_robot_items.swap(deduped_generated_robot_items);
 
   auto z_sort = [](const auto * a, const auto * b) { return a->z > b->z; };
   std::sort(generated_robot_items.begin(), generated_robot_items.end(), z_sort);
@@ -3667,7 +3707,8 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     if (!item_ptr) continue;
     const ScenePreviewWidget::PreviewItem & item = *item_ptr;
     if (!is_generated_urdf_visual_item(item) && !is_locked_urdf_item(item)) continue;
-    if (!item.has_mesh_metadata) continue;
+    if (!generated_urdf_item_has_renderable_geometry(item)) continue;
+    if (!item.has_mesh_metadata && !is_generated_urdf_visual_fallback_item(item) && !item_has_valid_urdf_primitive(item)) continue;
 
     const QString mesh_source = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path : item.source_path;
     const bool required_ur5_fallback = is_generated_urdf_visual_fallback_item(item) && is_required_ur5_viewport_link(item);
@@ -3907,7 +3948,7 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
                                       const QString & mesh_source = QString(), const QString & canonical_source = QString()) {
     if (!(is_generated_urdf_visual_item(it) || is_locked_urdf_item(it))) return;
     qInfo().noquote() << QStringLiteral(
-      "Scene3D renderer generated_urdf draw: id=%1 link=%2 canonical_link=%3 source_layer=%4 active_visual_source=%5 type=%6 category=%7 mesh_path=%8 canonical_mesh=%9 cache=%10 submitted_to_draw=%11 skip_reason=%12")
+      "Scene3D renderer generated_urdf draw: id=%1 link=%2 canonical_link=%3 source_layer=%4 active_visual_source=%5 type=%6 category=%7 mesh_path=%8 canonical_mesh=%9 cache=%10 submitted_to_draw=%11 skip_reason=%12 applied_scale=[%13,%14,%15]")
       .arg(it.id,
            scene3d_link_name_for_item(it),
            scene3d_canonical_link_name_for_item(it),
@@ -3919,7 +3960,8 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
            canonical_source.trimmed().isEmpty() ? QStringLiteral("<none>") : canonical_source.trimmed(),
            cache_result,
            submitted,
-           skip_reason);
+           skip_reason)
+      .arg(it.mesh_scale_x, 0, 'g', 8).arg(it.mesh_scale_y, 0, 'g', 8).arg(it.mesh_scale_z, 0, 'g', 8);
   };
 
   if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Primitives) {
@@ -3938,6 +3980,11 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
     remember_mesh_rejection_reason(it.id, reason);
     if (meshes_only_mode || always_surface_mesh_warning || scene3d_debug_logs_enabled()) warn_mesh_fallback_once(it.id, reason, path);
   };
+
+  if ((is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) && !generated_urdf_item_has_renderable_geometry(it)) {
+    log_generated_draw(QStringLiteral("not_attempted"), QStringLiteral("no"), QStringLiteral("not_generated_urdf_renderable_geometry"));
+    return false;
+  }
 
   if (!it.has_mesh_metadata) {
     const QString detail = mesh_rejection_diagnostic_detail(it, it.source_path);

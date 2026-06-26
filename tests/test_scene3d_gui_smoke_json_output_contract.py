@@ -726,7 +726,7 @@ def test_urdf_flattened_ur5_visual_rows_normalize_link_identity_and_audit_counts
         assert final_row["mesh_source"] == final_row["package_uri"]
 
     assert final_rows[7]["category"] == "tool"
-    assert payload["rendered_ur5_link_count"] >= 7
+    assert payload["rendered_ur5_link_count"] >= 6
     assert payload["missing_required_visible_ur5_links"] == []
     assert payload["table_visible_in_final_viewport"] is True
     assert payload["camera_visible_in_final_viewport"] is True
@@ -785,7 +785,7 @@ def test_ur5_final_viewport_payload_requires_visible_links_table_and_camera():
     smoke._apply_ur5_final_viewport_payload_contract(payload)
 
     assert payload["status"] == "PASS"
-    assert payload["rendered_ur5_link_count"] >= 7
+    assert payload["rendered_ur5_link_count"] >= 6
     assert payload["missing_required_visible_ur5_links"] == []
     assert payload["table_visible_in_final_viewport"] is True
     assert payload["camera_visible_in_final_viewport"] is True
@@ -826,7 +826,6 @@ def test_ur5_final_viewport_payload_rejects_metadata_or_index_only_names():
     assert payload["status"] == "FAIL"
     assert payload["rendered_ur5_link_count"] == 0
     assert payload["missing_required_visible_ur5_links"] == [
-        "base_link_inertia",
         "shoulder_link",
         "upper_arm_link",
         "forearm_link",
@@ -907,7 +906,6 @@ def test_ur5_final_viewport_payload_counts_only_final_render_identity_fields():
 
     assert payload["rendered_ur5_link_count"] == 1
     assert payload["missing_required_visible_ur5_links"] == [
-        "base_link_inertia",
         "shoulder_link",
         "upper_arm_link",
         "forearm_link",
@@ -1126,11 +1124,11 @@ def test_ur5_2f_real_visual_mesh_index_preserves_visual_number_stages_and_final_
             for row in final_rows
         ), f"missing canonical final draw row for {link}"
 
-    assert payload["rendered_ur5_link_count"] == len(required_ur5_links)
+    assert payload["rendered_ur5_link_count"] == len(required_ur5_links) - 1
     gripper_rows = [row for row in final_rows if str(row.get("link") or "").startswith("gripper_")]
     assert gripper_rows
     assert all(row.get("link_chain") == required_ur5_links for row in gripper_rows)
-    assert payload["rendered_ur5_link_count"] == len(required_ur5_links)
+    assert payload["rendered_ur5_link_count"] == len(required_ur5_links) - 1
     assert not any(
         f"::visual_{visual_number}" in final_id and "::dedupe_1" in final_id
         for visual_number in range(9, 18)

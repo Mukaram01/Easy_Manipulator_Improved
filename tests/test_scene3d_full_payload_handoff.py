@@ -97,3 +97,44 @@ def test_loader_filter_warning_is_suppressed_when_required_final_viewport_links_
     assert 'if (!missing_required_visible_links.isEmpty())' in filter_block
     assert 'retained visual rows missing after loader filtering' in filter_block
     assert 'final viewport audit passed for ur5_2f_test required visible UR5 viewport/renderable links' in filter_block
+
+
+def test_viewport_generated_urdf_renderer_rejects_environment_yaml_semantic_rows_before_mesh_path():
+    assert 'not_generated_urdf_renderable_geometry' in VIEWPORT_CPP
+    credible_start = VIEWPORT_CPP.index('bool item_has_credible_mesh_handoff')
+    credible_end = VIEWPORT_CPP.index('bool is_generated_urdf_visual_item', credible_start)
+    credible_block = VIEWPORT_CPP[credible_start:credible_end]
+    assert 'path_has_mesh_asset_extension(mesh_path)' in credible_block
+    assert '!mesh_path.isEmpty() ||' not in credible_block
+    assert 'environment.yaml' in credible_block or 'Authoring files such as environment.yaml' in credible_block
+
+
+def test_viewport_baked_urdf_transform_branch_applies_baked_pose_and_scale_once():
+    transform_start = VIEWPORT_CPP.index('QMatrix4x4 authoritative_world_visual_transform')
+    transform_end = VIEWPORT_CPP.index('QMatrix4x4 viewport_world_visual_transform', transform_start)
+    transform_block = VIEWPORT_CPP[transform_start:transform_end]
+    assert 'if (item.has_baked_world_visual_transform)' in transform_block
+    assert 'return transform;' in transform_block.split('if (item.has_baked_world_visual_transform)', 1)[1]
+    assert 'visual_origin_applied' not in transform_block.split('if (item.has_baked_world_visual_transform)', 1)[1].split('return transform;', 1)[0]
+    final_start = VIEWPORT_CPP.index('QMatrix4x4 final_mesh_transform_matrix')
+    final_end = VIEWPORT_CPP.index('void apply_mesh_local_correction_gl', final_start)
+    final_block = VIEWPORT_CPP[final_start:final_end]
+    assert 'viewport_world_visual_transform(item)' in final_block
+    assert 'transform.scale(static_cast<float>(item.mesh_scale_x)' in final_block
+    assert 'applied_scale=[' in VIEWPORT_CPP
+
+
+def test_viewport_deduplicates_identical_generated_camera_visuals():
+    assert 'scene3d_camera_dedupe_key' in VIEWPORT_CPP
+    assert 'seen_camera_visuals.contains(key)' in VIEWPORT_CPP
+    assert 'classify_item_role(*item) == NormalizedRole::Camera' in VIEWPORT_CPP
+
+
+def test_ur5_audit_excludes_base_link_inertia_as_hard_visible_mesh_requirement():
+    audit_start = MAIN_CPP.index('QJsonObject audit_ur5_2f_test_committed_viewport_items')
+    audit_end = MAIN_CPP.index('double normalize_angle_radians_with_guard', audit_start)
+    audit_block = MAIN_CPP[audit_start:audit_end]
+    required_block = audit_block[audit_block.index('const QSet<QString> required_visible_ur5_links'):audit_block.index('const QSet<QString> table_link_tokens')]
+    assert 'QStringLiteral("base_link_inertia")' not in required_block
+    assert 'excluded_non_visual_ur5_links' in audit_block
+    assert 'base_link_inertia: inertial-only/non-visual' in audit_block
