@@ -785,6 +785,67 @@ def _row_final_rendered_ur5_link_identities(row: dict[str, Any]) -> set[str]:
     return links
 
 
+def _visual_index_items_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    visual_index = _first_present_mapping(payload, "visual_index", "scene_visual_mesh_index")
+    raw_items = visual_index.get("visual_items") or visual_index.get("items") or payload.get("visual_index_items")
+    if not isinstance(raw_items, list):
+        return []
+    return [item for item in raw_items if isinstance(item, dict)]
+
+
+def _visual_index_lookup_for_final_rows(payload: dict[str, Any]) -> tuple[dict[Any, dict[str, Any]], dict[str, dict[str, Any]]]:
+    by_source_row: dict[Any, dict[str, Any]] = {}
+    by_id: dict[str, dict[str, Any]] = {}
+    for ordinal, row in enumerate(_visual_index_items_from_payload(payload)):
+        source_row_index = row.get("source_row_index")
+        if source_row_index in (None, ""):
+            source_row_index = ordinal
+        by_source_row.setdefault(source_row_index, row)
+        by_source_row.setdefault(str(source_row_index), row)
+        for key in ("id", "item_id"):
+            value = str(row.get(key) or "").strip()
+            if value:
+                by_id.setdefault(value, row)
+    return by_source_row, by_id
+
+
+def _enrich_final_row_from_visual_index(row: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    """Fill missing final-draw identity fields from the fresh visual index row.
+
+    Fresh real-xacro indexes use opaque row ids such as ``urdf_visual_1`` and may
+    include ``base_link_inertia`` before the six required UR5 arm rows.  The
+    final viewport contract should follow explicit row identity metadata, not
+    the old generated_urdf::* row-order convention.
+    """
+    by_source_row, by_id = _visual_index_lookup_for_final_rows(payload)
+    index_row: dict[str, Any] | None = None
+    source_row_index = row.get("source_row_index")
+    if source_row_index not in (None, ""):
+        index_row = by_source_row.get(source_row_index) or by_source_row.get(str(source_row_index))
+    if index_row is None:
+        for key in ("item_id", "id"):
+            value = str(row.get(key) or "").strip()
+            if value and value in by_id:
+                index_row = by_id[value]
+                break
+    if index_row is None:
+        return row
+
+    enriched = dict(row)
+    link = str(index_row.get("link") or index_row.get("link_name") or "").strip()
+    canonical = _canonical_final_render_identity(link)
+    if link:
+        enriched.setdefault("link", link)
+        enriched.setdefault("link_name", link)
+    if canonical:
+        enriched.setdefault("canonical_link_name", canonical)
+    for key in ("visual", "visual_name", "source", "mesh_uri", "package_uri", "source_path", "resolved_source_path"):
+        value = index_row.get(key)
+        if value not in (None, ""):
+            enriched.setdefault(key, value)
+    return enriched
+
+
 def _row_is_final_visible_renderable(row: dict[str, Any]) -> bool:
     if row.get("visible") is False or row.get("rendered") is False:
         return False
@@ -823,7 +884,7 @@ def _apply_ur5_final_viewport_payload_contract(payload: dict[str, Any]) -> None:
     if _payload_scene_name(payload) != "ur5_2f_test":
         return
 
-    rows = _final_visible_viewport_rows(payload)
+    rows = [_enrich_final_row_from_visual_index(row, payload) for row in _final_visible_viewport_rows(payload)]
     visible_rows = [row for row in rows if _row_is_final_visible_renderable(row)]
 
     visible_robot_render_rows = [
@@ -1301,16 +1362,12 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
     payload["rendered_mesh_adjacency_source"] = source
     alias_to_canonical: dict[str, str] = {}
     if source == "final_draw_visual_items":
-        final_rows = [row for row in final_draw_items if isinstance(row, dict)]
-        by_source_row = {row.get("source_row_index"): row for row in final_rows if row.get("source_row_index") is not None}
-        expected_source_rows = {
-            1: "shoulder_link",
-            2: "upper_arm_link",
-            3: "forearm_link",
-            4: "wrist_1_link",
-            5: "wrist_2_link",
-            6: "wrist_3_link",
-        }
+        final_rows = [
+            _enrich_final_row_from_visual_index(row, payload)
+            for row in final_draw_items
+            if isinstance(row, dict)
+        ]
+        expected_links = set(REQUIRED_UR5_FINAL_VIEWPORT_LINKS)
         final_links = {str(row.get("link") or row.get("link_name") or "").strip() for row in final_rows}
         final_canonical_links = {
             canonical
@@ -1319,27 +1376,11 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
         }
         missing_ur5 = [
             link
-            for link in expected_source_rows.values()
+            for link in expected_links
             if link not in final_links and _canonical_ur5_rendered_mesh_link_name(link) not in final_canonical_links
         ]
         if missing_ur5:
             errors.append("Final Scene3D payload is missing visible/rendered UR5 arm links: " + ",".join(missing_ur5))
-        if by_source_row:
-            for row_index, expected_link in expected_source_rows.items():
-                row = by_source_row.get(row_index)
-                actual_link = str((row or {}).get("link") or (row or {}).get("link_name") or "").strip()
-                if actual_link != expected_link:
-                    errors.append(
-                        f"Final Scene3D payload source_row_index={row_index} expected {expected_link} but got {actual_link or '<missing>'}"
-                    )
-            replacement_links = {"gripper_base_link", "table", "camera", "camera_link"}
-            for row_index in expected_source_rows:
-                row = by_source_row.get(row_index)
-                actual_link = str((row or {}).get("link") or (row or {}).get("link_name") or "").strip()
-                if actual_link in replacement_links:
-                    errors.append(
-                        f"Final Scene3D payload source_row_index={row_index} was replaced by non-UR5 logical row {actual_link}"
-                    )
 
     for canonical, aliases in UR5_RENDERED_MESH_LINK_ALIASES.items():
         for alias in aliases:
@@ -1351,6 +1392,7 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
     for raw in final_draw_items:
         if not isinstance(raw, dict):
             continue
+        raw = _enrich_final_row_from_visual_index(raw, payload)
         bounds = _bbox_from_final_draw(raw) or _final_draw_bbox_from_row(raw)
         normalized = dict(raw)
         if bounds is not None:
