@@ -21,7 +21,7 @@ def _final_draw_rows_from_fresh_visual_index_rows(visual_rows):
                 "link_name": link,
                 "canonical_link_name": link,
                 "source_layer": "locked_generated_urdf_visual",
-                "active_visual_source": "generated_urdf_visual",
+                "active_visual_source": "mesh_preview",
                 "visible": True,
                 "rendered": True,
             }
@@ -34,7 +34,7 @@ def test_fresh_urdf_visual_preview_items_preserve_visual_index_identity_fields()
     assert "p.visual_index_link_name = raw_visual_link_name.isEmpty() ? stable_visual_link_identity : raw_visual_link_name;" in MAIN
     assert "p.source_row_index = source_row_index;" in MAIN
     assert 'p.source_layer = QStringLiteral("locked_generated_urdf_visual");' in MAIN
-    assert 'p.active_visual_source = QStringLiteral("generated_urdf_visual");' in MAIN
+    assert 'p.active_visual_source = QStringLiteral("mesh_preview");' in MAIN
 
 
 def test_viewport_link_resolution_prefers_visual_index_fields_before_legacy_ids():
@@ -66,4 +66,4 @@ def test_fresh_ur5_urdf_visual_rows_survive_to_final_draw_visual_items():
     assert set(required_links) <= retained_links
     assert all(row["id"].startswith("urdf_visual_") for row in final_draw_visual_items)
     assert all(row["source_layer"] == "locked_generated_urdf_visual" for row in final_draw_visual_items)
-    assert all(row["active_visual_source"] == "generated_urdf_visual" for row in final_draw_visual_items)
+    assert all(row["active_visual_source"] == "mesh_preview" for row in final_draw_visual_items)
