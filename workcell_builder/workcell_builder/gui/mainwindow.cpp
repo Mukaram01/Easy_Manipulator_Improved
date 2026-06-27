@@ -9162,6 +9162,7 @@ void MainWindow::populate_scene_hierarchy()
         };
         static const QSet<QString> protected_ur5_links = {
           QStringLiteral("base_link_inertia"),
+          QStringLiteral("base_link"),
           QStringLiteral("shoulder_link"),
           QStringLiteral("upper_arm_link"),
           QStringLiteral("forearm_link"),
@@ -9422,14 +9423,23 @@ void MainWindow::populate_scene_hierarchy()
           generated_row_diagnostic = generated_visual_row_diagnostic(v, source_row_index, generated_visual_row_key, id);
           const bool protected_ur5_generated_mesh_row = is_protected_ur5_generated_visual_row(v);
           const QString protected_ur5_link = protected_ur5_generated_mesh_row ? normalized_protected_ur5_link(v) : QString();
+          auto log_ur5_runtime_decision = [&](const QString & decision, const QString & reason, const QString & mesh = QString()) {
+            if (!protected_ur5_generated_mesh_row) return;
+            append_studio_log(QStringLiteral("UR5_VISUAL_RUNTIME_DECISION row=%1 link=%2 mesh=%3 decision=%4 reason=%5")
+              .arg(source_row_index)
+              .arg(protected_ur5_link)
+              .arg(mesh.trimmed().isEmpty() ? visual_item_mesh_identity(v) : mesh)
+              .arg(decision)
+              .arg(reason));
+          };
           if (protected_ur5_generated_mesh_row) {
-            const QString visual = visual_item_canonical_visual(v);
-            const QString row_index = visual_item_source_row_token(v, source_row_index);
             const QString mesh_identity = visual_item_normalized_mesh_identity(v);
-            generated_visual_row_key = QStringLiteral("generated_urdf_row::%1::%2::%3::%4")
+            // UR5 generated mesh rows are authoritative physical visuals.  Do
+            // not compare them against semantic placeholders or collapse them
+            // through generic generated-row keys; only an exact same link +
+            // same mesh identity is a duplicate.
+            generated_visual_row_key = QStringLiteral("protected_ur5_visual::%1::%2")
               .arg(protected_ur5_link,
-                   visual.isEmpty() ? QStringLiteral("visual_missing") : visual,
-                   row_index.isEmpty() ? QStringLiteral("row_missing") : row_index,
                    mesh_identity.isEmpty() ? QStringLiteral("mesh_missing") : mesh_identity);
             generated_row_diagnostic = generated_visual_row_diagnostic(v, source_row_index, generated_visual_row_key, id);
             if (protected_ur5_generated_visual_row_keys.contains(generated_visual_row_key)) {
@@ -9442,6 +9452,8 @@ void MainWindow::populate_scene_hierarchy()
               append_visual_ingestion_diagnostic(v, raw_id, id, reason);
               append_studio_log(duplicate_generated_visual_log_message(
                 v, source_row_index, id, generated_visual_row_key, retained, true));
+              append_studio_log(QStringLiteral("UR5_VISUAL_RUNTIME_DECISION row=%1 link=%2 mesh=%3 decision=skipped reason=duplicate_same_link_same_mesh")
+                .arg(source_row_index).arg(protected_ur5_link).arg(visual_item_mesh_identity(v)));
               continue;
             }
             protected_ur5_generated_visual_row_keys.insert(generated_visual_row_key);
@@ -9519,6 +9531,7 @@ void MainWindow::populate_scene_hierarchy()
             append_visual_ingestion_diagnostic(v, raw_id, id, reason);
             append_studio_log(QString("Suppressed lower-fidelity visual for %1 because source=urdf_flattened mesh is available for the same link/object (source=%2 geometry=%3)")
                                 .arg(raw_id.isEmpty() ? id : raw_id, visual_item_source.isEmpty() ? QStringLiteral("<missing>") : visual_item_source, geometry_type));
+            log_ur5_runtime_decision(QStringLiteral("skipped"), QStringLiteral("suppressed_by_urdf_flattened_visual_mesh"));
             continue;
           }
           if (geometry_type == "mesh") ++mesh_item_count;
@@ -9565,6 +9578,7 @@ void MainWindow::populate_scene_hierarchy()
             const QString reason = add_skip_reason(QStringLiteral("unsafe_for_preview"));
             append_generated_visual_row_diagnostic(generated_row_diagnostic, QStringLiteral("unsafe_for_preview"), reason);
             append_visual_ingestion_diagnostic(v, raw_id, id, reason);
+            log_ur5_runtime_decision(QStringLiteral("skipped"), QStringLiteral("unsafe_for_preview"));
             continue;
           }
           const bool unsupported_format = workcell_builder::yaml_map_key(v, "unsupported_format").as<bool>(false);
@@ -9573,6 +9587,7 @@ void MainWindow::populate_scene_hierarchy()
             const QString reason = add_skip_reason(QStringLiteral("zero_triangle_mesh"));
             append_generated_visual_row_diagnostic(generated_row_diagnostic, QStringLiteral("zero_triangle_mesh"), reason);
             append_visual_ingestion_diagnostic(v, raw_id, id, reason);
+            log_ur5_runtime_decision(QStringLiteral("skipped"), QStringLiteral("zero_triangle_mesh"));
             continue;
           }
           const bool static_robot_fallback_visual =
@@ -9586,6 +9601,7 @@ void MainWindow::populate_scene_hierarchy()
             const QString reason = add_skip_reason(QStringLiteral("suppressed_static_robot_fallback"));
             append_generated_visual_row_diagnostic(generated_row_diagnostic, QStringLiteral("suppressed_static_robot_fallback"), reason);
             append_visual_ingestion_diagnostic(v, raw_id, id, reason);
+            log_ur5_runtime_decision(QStringLiteral("skipped"), QStringLiteral("suppressed_static_robot_fallback"));
             continue;
           }
           ScenePreviewWidget::PreviewItem p;
@@ -9707,6 +9723,7 @@ void MainWindow::populate_scene_hierarchy()
             const QString reason = add_skip_reason(QStringLiteral("invalid_pose"));
             append_generated_visual_row_diagnostic(generated_row_diagnostic, QStringLiteral("invalid_pose"), reason);
             append_visual_ingestion_diagnostic(v, raw_id, id, reason);
+            log_ur5_runtime_decision(QStringLiteral("skipped"), QStringLiteral("invalid_pose"));
             continue;
           }
           p.x = workcell_builder::yaml_seq_index(xyz,0).as<double>(0.0);
@@ -10090,6 +10107,22 @@ void MainWindow::populate_scene_hierarchy()
             p.has_mesh_metadata = true;
             p.active_visual_source = QStringLiteral("mesh_preview");
           }
+          if (protected_ur5_generated_mesh_row) {
+            const QString absolute_ur5_mesh_path = p.mesh_path.trimmed().isEmpty() ? p.source_path.trimmed() : p.mesh_path.trimmed();
+            p.source_layer = QStringLiteral("locked_generated_urdf_visual");
+            p.active_visual_source = QStringLiteral("mesh_preview");
+            p.category = QStringLiteral("robot_arm");
+            p.role = p.category;
+            p.primitive_geometry_type = QStringLiteral("mesh");
+            p.visual_index_link = protected_ur5_link;
+            p.visual_index_link_name = protected_ur5_link;
+            p.display_name = protected_ur5_link;
+            p.frame_id = protected_ur5_link;
+            if (!absolute_ur5_mesh_path.isEmpty()) {
+              p.mesh_path = absolute_ur5_mesh_path;
+              p.source_path = absolute_ur5_mesh_path;
+            }
+          }
           normalize_generated_urdf_visual_identity(p);
           classify_generated_urdf_visual(p, !p.mesh_path.trimmed().isEmpty() ? p.mesh_path : resolved_source_path);
           const QString viewport_link_token = scene3d_viewport_link_token(p);
@@ -10117,6 +10150,7 @@ void MainWindow::populate_scene_hierarchy()
           }
           if (unresolved_package_uri) ++unresolved_package_uri_count;
           if (unresolved_package_uri && !is_primitive) add_skip_reason(QStringLiteral("missing_source_path"));
+          log_ur5_runtime_decision(QStringLiteral("appended"), QStringLiteral("retained_generated_urdf_visual"), p.mesh_path.trimmed().isEmpty() ? p.source_path : p.mesh_path);
           preview_items.push_back(p);
           ++visual_preview_added_count;
           preview_ids.insert(p.id);
