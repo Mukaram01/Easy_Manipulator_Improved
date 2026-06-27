@@ -3808,7 +3808,9 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     const QString canonical_link_name = scene3d_canonical_link_name_for_item(item);
     row["link"] = !item.visual_index_link.trimmed().isEmpty() ? item.visual_index_link.trimmed() : link_name;
     row["link_name"] = link_name;
+    row["canonical_link"] = canonical_link_name;
     row["canonical_link_name"] = canonical_link_name;
+    row["visual_index_link"] = !item.visual_index_link.trimmed().isEmpty() ? item.visual_index_link.trimmed() : link_name;
     if (!item.visual_index_object_name.trimmed().isEmpty()) row["object_name"] = item.visual_index_object_name.trimmed();
     const int visual_index = item.visual_index_value >= 0 ? item.visual_index_value : scene3d_visual_index_for_item(item);
     if (visual_index >= 0) row["visual_index"] = visual_index;
@@ -3824,7 +3826,7 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
       row["link_chain"] = chain;
     }
     if (!item.visual_index_source.trimmed().isEmpty()) row["source"] = item.visual_index_source.trimmed();
-    row["frame_id"] = item.frame_id;
+    row["frame_id"] = !item.frame_id.trimmed().isEmpty() ? item.frame_id.trimmed() : canonical_link_name;
     row["source_layer"] = item.source_layer;
     row["category"] = item.category;
     row["role"] = item.role;
@@ -3861,6 +3863,15 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["canonical_mesh_source"] = canonical_mesh_source;
     row["path_resolved"] = path_resolved;
     row["resolve_failure_reason"] = resolve_failure_reason;
+
+    const QMatrix4x4 baked_transform = authoritative_world_visual_transform(item);
+    const QMatrix4x4 viewport_root_transform = viewport_world_visual_transform(item);
+    const QMatrix4x4 final_transform = final_mesh_transform_matrix(item);
+    row["baked_world_visual_matrix"] = scene3d_matrix_to_json(baked_transform);
+    row["ros_to_viewport_basis_matrix"] = scene3d_matrix_to_json(ros_to_viewport_basis_matrix());
+    row["viewport_world_visual_matrix"] = scene3d_matrix_to_json(viewport_root_transform);
+    row["final_draw_model_matrix"] = scene3d_matrix_to_json(final_transform);
+    row["final_draw_world_pose"] = scene3d_vec_to_json(final_transform.map(QVector3D(0.0f, 0.0f, 0.0f)));
     if (required_ur5_fallback) {
       row["source_type"] = QStringLiteral("generated_urdf_visual_fallback");
       row["final_draw_status"] = QStringLiteral("ur5_emergency_visible_fallback");
@@ -3928,6 +3939,7 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
       ? ur5_baked_mesh_asset_local_correction_scope_reason(item)
       : QStringLiteral("none");
     row["resolved_source_path"] = item.resolved_source_path_original;
+
     const QString asset_local_correction_reason = baked_mesh_asset_local_correction_reason(item);
     const QMatrix4x4 asset_local_correction_transform = baked_mesh_asset_local_correction_matrix(item);
     row["baked_mesh_asset_local_correction_reason"] = asset_local_correction_reason;
@@ -3957,15 +3969,6 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["triangle_count"] = static_cast<int>(cache.mesh.triangles.size());
     row["local_min"] = scene3d_vec_to_json(cache.local_min);
     row["local_max"] = scene3d_vec_to_json(cache.local_max);
-
-    const QMatrix4x4 baked_transform = authoritative_world_visual_transform(item);
-    const QMatrix4x4 viewport_root_transform = viewport_world_visual_transform(item);
-    const QMatrix4x4 final_transform = final_mesh_transform_matrix(item);
-    row["baked_world_visual_matrix"] = scene3d_matrix_to_json(baked_transform);
-    row["ros_to_viewport_basis_matrix"] = scene3d_matrix_to_json(ros_to_viewport_basis_matrix());
-    row["viewport_world_visual_matrix"] = scene3d_matrix_to_json(viewport_root_transform);
-    row["final_draw_model_matrix"] = scene3d_matrix_to_json(final_transform);
-    row["final_draw_world_pose"] = scene3d_vec_to_json(final_transform.map(QVector3D(0.0f, 0.0f, 0.0f)));
 
     if (!cache.loaded || !cache.valid || !cache.has_bounds || cache.mesh.triangles.isEmpty()) {
       row["final_draw_status"] = is_required_ur5_viewport_link(item)

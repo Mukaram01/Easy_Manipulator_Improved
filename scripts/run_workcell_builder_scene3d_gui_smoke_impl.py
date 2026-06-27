@@ -687,6 +687,7 @@ UR5_RENDERED_MESH_LINK_ALIASES: dict[str, tuple[str, ...]] = {
     "robotiq_base": ("robotiq_base", "gripper_base_link", "robotiq_85_base_link", "robotiq base visual item"),
 }
 UR5_RENDERED_MESH_ADJACENT_PAIRS: tuple[tuple[str, str], ...] = (
+    ("base_link", "shoulder_link"),
     ("shoulder_link", "upper_arm_link"),
     ("upper_arm_link", "forearm_link"),
     ("forearm_link", "wrist_1_link"),
@@ -1505,8 +1506,6 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
         return
 
     final_draw_items = payload.get("final_draw_visual_items")
-    if not isinstance(final_draw_items, list) or not final_draw_items:
-        final_draw_items = payload.get("final_draw_diagnostics")
     errors: list[str] = []
     source = "final_draw_visual_items"
     if not isinstance(final_draw_items, list) or not final_draw_items:
@@ -1514,7 +1513,7 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
         if isinstance(index_items, list):
             payload["rendered_mesh_adjacency_visual_index_supplemental_count"] = len(index_items)
         errors.append(
-            "Final Scene3D viewport/renderable diagnostics are missing; "
+            "Final Scene3D final_draw_visual_items diagnostics are missing; "
             "visual-index metadata cannot prove UR5 arm visibility"
         )
         payload["rendered_mesh_adjacency_source"] = "missing_final_draw_diagnostics"
