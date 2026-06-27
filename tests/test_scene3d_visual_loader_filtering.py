@@ -26,9 +26,10 @@ def _mesh_identity(item: dict) -> str:
     return (
         item.get("package_uri")
         or item.get("mesh_uri")
-        or item.get("resolved_source_path")
-        or item.get("resolved_path")
         or item.get("source_path")
+        or item.get("mesh_path")
+        or item.get("resolved_path")
+        or item.get("resolved_source_path")
         or "mesh_missing"
     )
 
@@ -59,7 +60,7 @@ def _normalized_ur5_link(item: dict) -> str:
 def _normalized_mesh_identity(item: dict) -> str:
     parts = [
         _token(str(item.get(key, "")))
-        for key in ("package_uri", "mesh_uri", "source_path", "mesh_path", "resolved_source_path", "resolved_path", "filename")
+        for key in ("package_uri", "mesh_uri", "source_path", "mesh_path", "resolved_path", "resolved_source_path", "filename")
         if str(item.get(key, "")).strip()
     ]
     return "__".join(parts) or "mesh_missing"
@@ -534,6 +535,60 @@ def test_exact_duplicate_protected_ur5_rows_are_skipped_without_suppressing_othe
 
     assert len([row for row in retained_rows if _normalized_ur5_link(row) == "shoulder_link"]) == 2
     assert len([row for row in retained_rows if row.get("link") == "left_inner_finger"]) == 1
+
+
+def test_protected_ur5_mesh_rows_generate_distinct_duplicate_keys_by_link_visual_row_and_mesh() -> None:
+    ur5_rows = [
+        {
+            "id": f"urdf_visual_{index}_{link}",
+            "source_row_index": index,
+            "link": link,
+            "visual_name": f"{link}_visual",
+            "geometry_type": "mesh",
+            "package_uri": f"package://ur_description/meshes/ur5/visual/{filename}",
+            "resolved_path": f"/opt/ros/humble/share/ur_description/meshes/ur5/visual/{filename}",
+        }
+        for index, (link, filename) in enumerate(
+            {
+                "shoulder_link": "shoulder.dae",
+                "upper_arm_link": "upperarm.dae",
+                "forearm_link": "forearm.dae",
+                "wrist_1_link": "wrist1.dae",
+                "wrist_2_link": "wrist2.dae",
+                "wrist_3_link": "wrist3.dae",
+            }.items(),
+            start=10,
+        )
+    ]
+
+    duplicate_keys = [_generated_row_key(row, index) for index, row in enumerate(ur5_rows)]
+
+    assert len(duplicate_keys) == len(set(duplicate_keys))
+    for row, key in zip(ur5_rows, duplicate_keys):
+        assert _normalized_ur5_link(row) in key
+        assert _token(row["visual_name"]) in key
+        assert _token(str(row["source_row_index"])) in key
+        assert _token(row["package_uri"]) in key
+        assert _token(row["resolved_path"]) in key
+
+
+def test_exact_duplicate_ur5_mesh_row_duplicate_key_is_skipped() -> None:
+    shoulder_row = {
+        "id": "urdf_visual_10_shoulder_link",
+        "source_row_index": 10,
+        "link": "shoulder_link",
+        "visual_name": "shoulder_link_visual",
+        "geometry_type": "mesh",
+        "package_uri": "package://ur_description/meshes/ur5/visual/shoulder.dae",
+        "resolved_path": "/opt/ros/humble/share/ur_description/meshes/ur5/visual/shoulder.dae",
+    }
+    exact_duplicate = dict(shoulder_row)
+
+    assert _generated_row_key(shoulder_row, 0) == _generated_row_key(exact_duplicate, 1)
+    retained_rows = _retained_rows([shoulder_row, exact_duplicate])
+
+    assert len(retained_rows) == 1
+    assert _normalized_ur5_link(retained_rows[0]) == "shoulder_link"
 
 
 def test_mainwindow_logs_protected_ur5_ingestion_and_renderer_handoff_lines() -> None:

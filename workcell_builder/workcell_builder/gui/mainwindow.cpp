@@ -9305,11 +9305,11 @@ void MainWindow::populate_scene_hierarchy()
         };
         auto visual_item_mesh_identity = [&](const YAML::Node & node) {
           return visual_index_first_scalar_value(node, {
-            "package_uri", "mesh_uri", "source_path", "mesh_path", "resolved_source_path", "resolved_path"});
+            "package_uri", "mesh_uri", "source_path", "mesh_path", "resolved_path", "resolved_source_path"});
         };
         auto visual_item_normalized_mesh_identity = [&](const YAML::Node & node) {
           QStringList parts;
-          for (const char * field : {"package_uri", "mesh_uri", "source_path", "mesh_path", "resolved_source_path", "resolved_path"}) {
+          for (const char * field : {"package_uri", "mesh_uri", "source_path", "mesh_path", "resolved_path", "resolved_source_path"}) {
             const QString value = visual_index_row_scalar_value(node, field).trimmed();
             if (!value.isEmpty()) parts << canonical_scene3d_token(value);
           }
