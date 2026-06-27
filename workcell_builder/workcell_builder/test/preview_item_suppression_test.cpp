@@ -203,3 +203,52 @@ TEST(PreviewItemSuppression, PreservesRawUrdfVisual0BaseRowFromMeshIndex)
   EXPECT_TRUE(retained_raw_base);
   EXPECT_FALSE(retained_robot_base_placeholder);
 }
+
+TEST(PreviewItemSuppression, RequestedSemanticPlaceholdersRemainNonRenderableByDefault)
+{
+  QVector<ScenePreviewWidget::PreviewItem> items = make_visual_index_rows();
+
+  const QStringList semantic_ids{
+    QStringLiteral("robot_base"),
+    QStringLiteral("robot_reach"),
+    QStringLiteral("conveyor"),
+    QStringLiteral("object_a"),
+    QStringLiteral("warning")
+  };
+  for (const QString & id : semantic_ids) {
+    ScenePreviewWidget::PreviewItem placeholder;
+    placeholder.id = id;
+    placeholder.display_name = id;
+    placeholder.category = id == QStringLiteral("warning") ? QStringLiteral("warning_anchor") : QStringLiteral("helper");
+    placeholder.role = id == QStringLiteral("conveyor") ? QStringLiteral("conveyor") :
+      (id == QStringLiteral("object_a") ? QStringLiteral("object") : QStringLiteral("robot"));
+    if (id == QStringLiteral("warning")) placeholder.role = QStringLiteral("robot");
+    placeholder.source_layer = QStringLiteral("primitive_fallback");
+    placeholder.active_visual_source = QStringLiteral("primitive_fallback");
+    placeholder.locked = true;
+    placeholder.editable = false;
+    placeholder.selectable = true;
+    placeholder.mesh_available = false;
+    placeholder.has_mesh_metadata = false;
+    placeholder.lock_reason = QStringLiteral("semantic helper placeholder");
+    placeholder.warnings = QStringList{QStringLiteral("mesh_metadata_missing_or_legacy primitive_preview")};
+    items << placeholder;
+  }
+
+  const auto result = workcell_builder::suppress_lower_fidelity_preview_items(items, true);
+
+  QSet<QString> retained_ids;
+  QSet<int> retained_visuals;
+  for (const auto & item : result.items) {
+    retained_ids.insert(item.id);
+    if (item.visual_index_value >= 0) retained_visuals.insert(item.visual_index_value);
+  }
+
+  for (int visual = 0; visual <= 17; ++visual) {
+    EXPECT_TRUE(retained_visuals.contains(visual)) << "visual_" << visual << " should remain renderable";
+  }
+  for (const QString & id : semantic_ids) {
+    EXPECT_FALSE(retained_ids.contains(id)) << id.toStdString();
+  }
+  EXPECT_EQ(result.suppressed_preview_placeholder_count, semantic_ids.size());
+}
