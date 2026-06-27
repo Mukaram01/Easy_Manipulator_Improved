@@ -64,10 +64,14 @@ def test_repair_replaces_stale_unrenderable_ur5_rows_and_preserves_non_ur5_rows(
     assert {row["link"] for row in ur5_rows} == set(REQUIRED_UR5_LINKS)
     assert all(row["category"] == "robot" for row in ur5_rows)
     assert all(row["role"] == "robot" for row in ur5_rows)
-    assert all(row["has_mesh_metadata"] is True for row in ur5_rows)
+    assert all(row["has_mesh_metadata"] is False for row in ur5_rows)
+    assert all(row["geometry_type"] == "box" for row in ur5_rows)
+    assert all(row["primitive_geometry_type"] == "box" for row in ur5_rows)
+    assert all(row["active_visual_source"] == "primitive_fallback" for row in ur5_rows)
     assert all(row["source_layer"] == "locked_generated_urdf_visual" for row in ur5_rows)
     assert all(row["final_render_identity"] == row["link"] for row in ur5_rows)
     assert all(row["render_expected"] is True for row in ur5_rows)
+    assert payload["ur5_runtime_repair_mode"] == "stable_primitive_builder_preview"
     assert "ur5_final_viewport_links_missing" not in payload["blockers"]
     assert "rendered_ur5_link_count_below_7" not in payload["blockers"]
     assert "keep_non_ur5_blocker" in payload["blockers"]
