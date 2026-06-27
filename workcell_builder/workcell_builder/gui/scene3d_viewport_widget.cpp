@@ -4140,6 +4140,15 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
 
   glPushMatrix();
   const QMatrix4x4 final_draw_transform = final_mesh_transform_matrix(it);
+  const QString canonical_link = scene3d_canonical_link_name_for_item(it);
+  if ((is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) &&
+      it.has_baked_world_visual_transform &&
+      is_required_ur5_viewport_link(it)) {
+    qInfo().noquote() << QStringLiteral("UR5_BAKED_POSE_APPLIED link=%1 xyz=[%2,%3,%4] rpy=[%5,%6,%7]")
+      .arg(canonical_link)
+      .arg(it.x, 0, 'g', 8).arg(it.y, 0, 'g', 8).arg(it.z, 0, 'g', 8)
+      .arg(it.roll, 0, 'g', 8).arg(it.pitch, 0, 'g', 8).arg(it.yaw, 0, 'g', 8);
+  }
   glMultMatrixf(final_draw_transform.constData());
 
   const MeshCacheEntry & cache = entry;  // ensure_mesh_cached(it, mesh_source) is intentionally upstream of final draw.
