@@ -4144,9 +4144,10 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   glPushMatrix();
   const QMatrix4x4 final_draw_transform = final_mesh_transform_matrix(it);
   const QString canonical_link = scene3d_canonical_link_name_for_item(it);
-  if ((is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) &&
+  const bool log_ur5_final_transform = (is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) &&
       it.has_baked_world_visual_transform &&
-      is_required_ur5_viewport_link(it)) {
+      is_required_ur5_viewport_link(it);
+  if (log_ur5_final_transform) {
     qInfo().noquote() << QStringLiteral("UR5_BAKED_POSE_APPLIED link=%1 xyz=[%2,%3,%4] rpy=[%5,%6,%7]")
       .arg(canonical_link)
       .arg(it.x, 0, 'g', 8).arg(it.y, 0, 'g', 8).arg(it.z, 0, 'g', 8)
@@ -4155,6 +4156,34 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   glMultMatrixf(final_draw_transform.constData());
 
   const MeshCacheEntry & cache = entry;  // ensure_mesh_cached(it, mesh_source) is intentionally upstream of final draw.
+  if (log_ur5_final_transform && cache.has_bounds) {
+    QVector3D final_min(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+    QVector3D final_max(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+    for (int xi = 0; xi < 2; ++xi) {
+      for (int yi = 0; yi < 2; ++yi) {
+        for (int zi = 0; zi < 2; ++zi) {
+          const QVector3D local_corner(xi == 0 ? cache.local_min.x() : cache.local_max.x(),
+                                       yi == 0 ? cache.local_min.y() : cache.local_max.y(),
+                                       zi == 0 ? cache.local_min.z() : cache.local_max.z());
+          const QVector3D final_corner = final_draw_transform * local_corner;
+          final_min.setX(qMin(final_min.x(), final_corner.x()));
+          final_min.setY(qMin(final_min.y(), final_corner.y()));
+          final_min.setZ(qMin(final_min.z(), final_corner.z()));
+          final_max.setX(qMax(final_max.x(), final_corner.x()));
+          final_max.setY(qMax(final_max.y(), final_corner.y()));
+          final_max.setZ(qMax(final_max.z(), final_corner.z()));
+        }
+      }
+    }
+    const QVector3D final_center = (final_min + final_max) * 0.5f;
+    qInfo().noquote() << QStringLiteral("UR5_FINAL_TRANSFORM link=%1 baked_xyz=[%2,%3,%4] baked_rpy=[%5,%6,%7] final_center=[%8,%9,%10] bbox_min=[%11,%12,%13] bbox_max=[%14,%15,%16]")
+      .arg(canonical_link)
+      .arg(it.x, 0, 'g', 8).arg(it.y, 0, 'g', 8).arg(it.z, 0, 'g', 8)
+      .arg(it.roll, 0, 'g', 8).arg(it.pitch, 0, 'g', 8).arg(it.yaw, 0, 'g', 8)
+      .arg(final_center.x(), 0, 'g', 8).arg(final_center.y(), 0, 'g', 8).arg(final_center.z(), 0, 'g', 8)
+      .arg(final_min.x(), 0, 'g', 8).arg(final_min.y(), 0, 'g', 8).arg(final_min.z(), 0, 'g', 8)
+      .arg(final_max.x(), 0, 'g', 8).arg(final_max.y(), 0, 'g', 8).arg(final_max.z(), 0, 'g', 8);
+  }
   if (!cache.valid || cache.mesh.triangles.isEmpty()) {
     glPopMatrix();
     log_generated_draw(QStringLiteral("valid=false_or_zero_triangles"), QStringLiteral("no"), QStringLiteral("invalid_cache_after_transform"), mesh_source, canonical_mesh_source);
