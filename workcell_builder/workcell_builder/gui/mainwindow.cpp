@@ -76,6 +76,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QMap>
+#include <QMatrix4x4>
 #include <QHash>
 #include <QSplitter>
 #include <QScrollArea>
@@ -9749,7 +9750,20 @@ void MainWindow::populate_scene_hierarchy()
             p.pitch = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(baked_world_visual_pose_rpy,1).as<double>(0.0), QStringLiteral("baked_world_visual_pose.rpy[1]"), &p.warnings);
             p.yaw = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(baked_world_visual_pose_rpy,2).as<double>(0.0), QStringLiteral("baked_world_visual_pose.rpy[2]"), &p.warnings);
             p.has_baked_world_visual_transform = true;
-            p.baked_world_visual_transform_source = QStringLiteral("generated/scene_visual_mesh_index.json:baked_world_visual_pose");
+            {
+              QMatrix4x4 baked_pose_matrix;
+              baked_pose_matrix.translate(static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z));
+              baked_pose_matrix.rotate(static_cast<float>(qRadiansToDegrees(p.yaw)), 0.0f, 0.0f, 1.0f);
+              baked_pose_matrix.rotate(static_cast<float>(qRadiansToDegrees(p.pitch)), 0.0f, 1.0f, 0.0f);
+              baked_pose_matrix.rotate(static_cast<float>(qRadiansToDegrees(p.roll)), 1.0f, 0.0f, 0.0f);
+              for (int matrix_row = 0; matrix_row < 4; ++matrix_row) {
+                for (int matrix_col = 0; matrix_col < 4; ++matrix_col) {
+                  p.baked_world_visual_matrix[matrix_row * 4 + matrix_col] = baked_pose_matrix(matrix_row, matrix_col);
+                }
+              }
+            }
+            p.has_baked_world_visual_matrix = true;
+            p.baked_world_visual_transform_source = QStringLiteral("generated/scene_visual_mesh_index.json:baked_world_visual_pose_matrix");
             p.transform_chain_applied = false;
             p.visual_origin_applied = false;
           }
@@ -10610,7 +10624,22 @@ void MainWindow::populate_scene_hierarchy()
                 p.pitch = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(baked_rpy, 1).as<double>(0.0), QStringLiteral("UR5_FINAL_APPEND.baked_world_visual_pose.rpy[1]"), &p.warnings);
                 p.yaw = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(baked_rpy, 2).as<double>(0.0), QStringLiteral("UR5_FINAL_APPEND.baked_world_visual_pose.rpy[2]"), &p.warnings);
                 p.has_baked_world_visual_transform = true;
-                p.baked_world_visual_transform_source = QStringLiteral("generated/scene_visual_mesh_index.json:baked_world_visual_pose:final_append");
+                {
+                  QMatrix4x4 baked_pose_matrix;
+                  baked_pose_matrix.translate(static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z));
+                  baked_pose_matrix.rotate(static_cast<float>(qRadiansToDegrees(p.yaw)), 0.0f, 0.0f, 1.0f);
+                  baked_pose_matrix.rotate(static_cast<float>(qRadiansToDegrees(p.pitch)), 0.0f, 1.0f, 0.0f);
+                  baked_pose_matrix.rotate(static_cast<float>(qRadiansToDegrees(p.roll)), 1.0f, 0.0f, 0.0f);
+                  for (int matrix_row = 0; matrix_row < 4; ++matrix_row) {
+                    for (int matrix_col = 0; matrix_col < 4; ++matrix_col) {
+                      p.baked_world_visual_matrix[matrix_row * 4 + matrix_col] = baked_pose_matrix(matrix_row, matrix_col);
+                    }
+                  }
+                }
+                p.has_baked_world_visual_matrix = true;
+                p.baked_world_visual_transform_source = QStringLiteral("generated/scene_visual_mesh_index.json:baked_world_visual_pose_matrix:final_append");
+                append_studio_log(QStringLiteral("UR5_BAKED_MATRIX_APPLIED link=%1 source=%2")
+                  .arg(link, p.baked_world_visual_transform_source));
                 append_studio_log(QStringLiteral("UR5_BAKED_POSE_APPLIED link=%1 xyz=[%2,%3,%4] rpy=[%5,%6,%7]")
                   .arg(link)
                   .arg(p.x, 0, 'g', 8)
@@ -10621,13 +10650,33 @@ void MainWindow::populate_scene_hierarchy()
                   .arg(p.yaw, 0, 'g', 8));
               }
               const YAML::Node matrix = workcell_builder::yaml_map_key(row, "baked_world_visual_matrix");
-              if (matrix && matrix.IsSequence() && matrix.size() == 16) {
-                for (std::size_t i = 0; i < 16; ++i) {
-                  p.baked_world_visual_matrix[i] = workcell_builder::yaml_seq_index(matrix, i).as<double>(i % 5 == 0 ? 1.0 : 0.0);
+              if (matrix && matrix.IsSequence() && (matrix.size() == 16 || matrix.size() == 4)) {
+                bool matrix_loaded = false;
+                if (matrix.size() == 16) {
+                  for (std::size_t i = 0; i < 16; ++i) {
+                    p.baked_world_visual_matrix[i] = workcell_builder::yaml_seq_index(matrix, i).as<double>(i % 5 == 0 ? 1.0 : 0.0);
+                  }
+                  matrix_loaded = true;
+                } else {
+                  matrix_loaded = true;
+                  for (std::size_t matrix_row = 0; matrix_row < 4; ++matrix_row) {
+                    const YAML::Node matrix_row_node = workcell_builder::yaml_seq_index(matrix, matrix_row);
+                    if (!matrix_row_node || !matrix_row_node.IsSequence() || matrix_row_node.size() < 4) {
+                      matrix_loaded = false;
+                      break;
+                    }
+                    for (std::size_t matrix_col = 0; matrix_col < 4; ++matrix_col) {
+                      p.baked_world_visual_matrix[matrix_row * 4 + matrix_col] = workcell_builder::yaml_seq_index(matrix_row_node, matrix_col).as<double>(matrix_row == matrix_col ? 1.0 : 0.0);
+                    }
+                  }
                 }
-                p.has_baked_world_visual_transform = true;
-                p.has_baked_world_visual_matrix = true;
-                p.baked_world_visual_transform_source = QStringLiteral("generated/scene_visual_mesh_index.json:baked_world_visual_matrix:final_append");
+                if (matrix_loaded) {
+                  p.has_baked_world_visual_transform = true;
+                  p.has_baked_world_visual_matrix = true;
+                  p.baked_world_visual_transform_source = QStringLiteral("generated/scene_visual_mesh_index.json:baked_world_visual_matrix:final_append");
+                  append_studio_log(QStringLiteral("UR5_BAKED_MATRIX_APPLIED link=%1 source=%2")
+                    .arg(link, p.baked_world_visual_transform_source));
+                }
               }
               const YAML::Node mesh_scale = workcell_builder::yaml_map_key(row, "mesh_scale");
               const YAML::Node fallback_scale = workcell_builder::yaml_map_key(row, "scale");
