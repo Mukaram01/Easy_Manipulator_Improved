@@ -10598,28 +10598,27 @@ void MainWindow::populate_scene_hierarchy()
               p.visual_index_parent_link = final_append_first_scalar(row, {"parent_link", "base_frame"});
               p.visual_index_source = final_append_first_scalar(row, {"source"});
               p.robot_base_frame = p.visual_index_parent_link.isEmpty() ? QStringLiteral("unknown") : p.visual_index_parent_link;
-              const YAML::Node pose = workcell_builder::yaml_map_key(row, "pose");
               const YAML::Node baked_pose = workcell_builder::yaml_map_key(row, "baked_world_visual_pose");
-              const YAML::Node xyz = workcell_builder::yaml_map_key(baked_pose, "xyz").IsSequence()
-                ? workcell_builder::yaml_map_key(baked_pose, "xyz")
-                : workcell_builder::yaml_map_key(pose, "xyz");
-              const YAML::Node rpy = workcell_builder::yaml_map_key(baked_pose, "rpy").IsSequence()
-                ? workcell_builder::yaml_map_key(baked_pose, "rpy")
-                : workcell_builder::yaml_map_key(pose, "rpy");
-              if (xyz && xyz.IsSequence() && xyz.size() >= 3) {
-                p.x = workcell_builder::yaml_seq_index(xyz, 0).as<double>(0.0);
-                p.y = workcell_builder::yaml_seq_index(xyz, 1).as<double>(0.0);
-                p.z = workcell_builder::yaml_seq_index(xyz, 2).as<double>(0.0);
-              }
-              if (rpy && rpy.IsSequence() && rpy.size() >= 3) {
-                p.roll = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(rpy, 0).as<double>(0.0), QStringLiteral("UR5_FINAL_APPEND.rpy[0]"), &p.warnings);
-                p.pitch = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(rpy, 1).as<double>(0.0), QStringLiteral("UR5_FINAL_APPEND.rpy[1]"), &p.warnings);
-                p.yaw = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(rpy, 2).as<double>(0.0), QStringLiteral("UR5_FINAL_APPEND.rpy[2]"), &p.warnings);
-              }
-              if (workcell_builder::yaml_map_key(baked_pose, "xyz").IsSequence() &&
-                  workcell_builder::yaml_map_key(baked_pose, "rpy").IsSequence()) {
+              const YAML::Node baked_xyz = workcell_builder::yaml_map_key(baked_pose, "xyz");
+              const YAML::Node baked_rpy = workcell_builder::yaml_map_key(baked_pose, "rpy");
+              if (baked_xyz && baked_xyz.IsSequence() && baked_xyz.size() >= 3 &&
+                  baked_rpy && baked_rpy.IsSequence() && baked_rpy.size() >= 3) {
+                p.x = workcell_builder::yaml_seq_index(baked_xyz, 0).as<double>(0.0);
+                p.y = workcell_builder::yaml_seq_index(baked_xyz, 1).as<double>(0.0);
+                p.z = workcell_builder::yaml_seq_index(baked_xyz, 2).as<double>(0.0);
+                p.roll = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(baked_rpy, 0).as<double>(0.0), QStringLiteral("UR5_FINAL_APPEND.baked_world_visual_pose.rpy[0]"), &p.warnings);
+                p.pitch = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(baked_rpy, 1).as<double>(0.0), QStringLiteral("UR5_FINAL_APPEND.baked_world_visual_pose.rpy[1]"), &p.warnings);
+                p.yaw = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(baked_rpy, 2).as<double>(0.0), QStringLiteral("UR5_FINAL_APPEND.baked_world_visual_pose.rpy[2]"), &p.warnings);
                 p.has_baked_world_visual_transform = true;
                 p.baked_world_visual_transform_source = QStringLiteral("generated/scene_visual_mesh_index.json:baked_world_visual_pose:final_append");
+                append_studio_log(QStringLiteral("UR5_BAKED_POSE_APPLIED link=%1 xyz=[%2,%3,%4] rpy=[%5,%6,%7]")
+                  .arg(link)
+                  .arg(p.x, 0, 'g', 8)
+                  .arg(p.y, 0, 'g', 8)
+                  .arg(p.z, 0, 'g', 8)
+                  .arg(p.roll, 0, 'g', 8)
+                  .arg(p.pitch, 0, 'g', 8)
+                  .arg(p.yaw, 0, 'g', 8));
               }
               const YAML::Node matrix = workcell_builder::yaml_map_key(row, "baked_world_visual_matrix");
               if (matrix && matrix.IsSequence() && matrix.size() == 16) {
@@ -10630,7 +10629,9 @@ void MainWindow::populate_scene_hierarchy()
                 p.has_baked_world_visual_matrix = true;
                 p.baked_world_visual_transform_source = QStringLiteral("generated/scene_visual_mesh_index.json:baked_world_visual_matrix:final_append");
               }
-              const YAML::Node scale = workcell_builder::yaml_map_key(row, "mesh_scale");
+              const YAML::Node mesh_scale = workcell_builder::yaml_map_key(row, "mesh_scale");
+              const YAML::Node fallback_scale = workcell_builder::yaml_map_key(row, "scale");
+              const YAML::Node scale = (mesh_scale && mesh_scale.IsSequence()) ? mesh_scale : fallback_scale;
               if (scale && scale.IsSequence() && scale.size() >= 3) {
                 p.mesh_scale_x = workcell_builder::yaml_seq_index(scale, 0).as<double>(1.0);
                 p.mesh_scale_y = workcell_builder::yaml_seq_index(scale, 1).as<double>(1.0);
