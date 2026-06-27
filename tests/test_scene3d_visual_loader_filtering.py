@@ -291,6 +291,163 @@ def _credible_physical_mesh_rows(items: list[dict]) -> list[dict]:
     return physical
 
 
+
+def _requested_18_visual_index_rows_with_semantic_placeholders() -> tuple[list[dict], list[dict]]:
+    ur5_meshes = [
+        ("base_link_inertia", "base.dae"),
+        ("shoulder_link", "shoulder.dae"),
+        ("upper_arm_link", "upperarm.dae"),
+        ("forearm_link", "forearm.dae"),
+        ("wrist_1_link", "wrist1.dae"),
+        ("wrist_2_link", "wrist2.dae"),
+        ("wrist_3_link", "wrist3.dae"),
+    ]
+    robotiq_links = [
+        "robotiq_arg2f_base_link",
+        "left_outer_knuckle",
+        "left_outer_finger",
+        "left_inner_finger",
+        "left_inner_finger_pad",
+        "right_outer_knuckle",
+        "right_outer_finger",
+        "right_inner_finger",
+        "right_inner_finger_pad",
+    ]
+    visual_rows: list[dict] = []
+    for index, (link, filename) in enumerate(ur5_meshes):
+        visual_rows.append(
+            {
+                "id": f"urdf_visual_{index}_{link}",
+                "source_row_index": index,
+                "link": link,
+                "visual_name": f"{link}_visual",
+                "source": "urdf_flattened",
+                "source_layer": "locked_generated_urdf_visual",
+                "active_visual_source": "mesh_preview",
+                "role": "robot",
+                "category": "locked_generated_urdf_visual",
+                "geometry_type": "mesh",
+                "package_uri": f"package://ur_description/meshes/ur5/visual/{filename}",
+                "resolved_path": f"/opt/ros/humble/share/ur_description/meshes/ur5/visual/{filename}",
+            }
+        )
+    for offset, link in enumerate(robotiq_links, start=7):
+        visual_rows.append(
+            {
+                "id": f"urdf_visual_{offset}_{link}",
+                "source_row_index": offset,
+                "link": link,
+                "visual_name": f"{link}_visual",
+                "source": "urdf_flattened",
+                "source_layer": "locked_generated_urdf_visual",
+                "active_visual_source": "mesh_preview",
+                "role": "gripper",
+                "category": "locked_generated_urdf_visual",
+                "geometry_type": "mesh",
+                "package_uri": f"package://robotiq_85_description/meshes/visual/{link}.dae",
+            }
+        )
+    visual_rows.extend(
+        [
+            {
+                "id": "urdf_visual_16_table",
+                "source_row_index": 16,
+                "link": "table",
+                "visual_name": "table_visual",
+                "source": "urdf_flattened",
+                "source_layer": "locked_generated_urdf_visual",
+                "active_visual_source": "mesh_preview",
+                "role": "environment",
+                "category": "workbench",
+                "geometry_type": "mesh",
+                "package_uri": "package://workbench_description/meshes/visual/table.dae",
+            },
+            {
+                "id": "urdf_visual_17_camera",
+                "source_row_index": 17,
+                "link": "camera_link",
+                "visual_name": "camera_visual",
+                "source": "urdf_flattened",
+                "source_layer": "locked_generated_urdf_visual",
+                "active_visual_source": "mesh_preview",
+                "role": "sensor",
+                "category": "camera",
+                "geometry_type": "mesh",
+                "package_uri": "package://realsense2_description/meshes/d435.dae",
+            },
+        ]
+    )
+    semantic_placeholders = [
+        {"id": "robot_base", "link": "robot_base", "visual_name": "robot_base_helper", "role": "robot", "category": "helper", "geometry_type": "box"},
+        {"id": "robot_reach", "link": "robot_reach", "visual_name": "robot_reach_helper", "role": "robot", "category": "robot_reach", "geometry_type": "sphere"},
+        {"id": "conveyor", "link": "conveyor", "visual_name": "conveyor", "role": "environment", "category": "conveyor", "geometry_type": "box"},
+        {"id": "object_a", "link": "object_a", "visual_name": "object_a", "role": "object", "category": "pick_object", "geometry_type": "box"},
+        {"id": "warning", "link": "warning", "visual_name": "warning_badge", "role": "warning", "category": "warning_anchor", "geometry_type": "box"},
+    ]
+    assert len(visual_rows) == 18
+    return visual_rows, semantic_placeholders
+
+
+def _retained_rows_with_duplicate_count(items: list[dict]) -> tuple[list[dict], int, list[dict]]:
+    retained_keys = set()
+    retained = []
+    skipped_duplicates = []
+    for source_row_index, item in enumerate(items):
+        key = _generated_row_key(item, source_row_index)
+        if key in retained_keys:
+            skipped_duplicates.append(item)
+            continue
+        retained_keys.add(key)
+        retained.append(item)
+    return retained, len(skipped_duplicates), skipped_duplicates
+
+
+def _is_semantic_helper_non_renderable_by_default(item: dict) -> bool:
+    tokens = {
+        _token(str(item.get(key, "")))
+        for key in ("source_layer", "active_visual_source", "role", "category", "id", "display_name", "status", "warnings", "mesh_load_warning")
+    }
+    helper_tokens = {"helper", "robot_reach", "warning_anchor", "warning_badge", "bounds_box", "bounding_box", "overlay", "diagnostic"}
+    if tokens & helper_tokens:
+        return True
+    return _token(item.get("geometry_type", "")) != "mesh" and _mesh_identity(item) == "mesh_missing"
+
+
+def test_requested_18_visual_rows_retain_ur5_robotiq_table_camera_and_skip_only_exact_duplicate() -> None:
+    visual_rows, semantic_placeholders = _requested_18_visual_index_rows_with_semantic_placeholders()
+    items_with_duplicate = visual_rows + [dict(visual_rows[3])] + semantic_placeholders
+
+    retained_rows, duplicate_skip_count, skipped_duplicates = _retained_rows_with_duplicate_count(items_with_duplicate)
+    retained_links = {_token(row.get("link", "")) for row in retained_rows}
+    ur5_rows = [row for row in retained_rows if _normalized_ur5_link(row)]
+    ur5_keys = [_generated_row_key(row, index) for index, row in enumerate(visual_rows[:7])]
+
+    assert len(ur5_rows) == 7
+    assert _PROTECTED_UR5_LINKS <= retained_links
+    assert duplicate_skip_count == 1
+    assert skipped_duplicates == [visual_rows[3]]
+    retained_ur5_source_rows = {row.get("source_row_index") for row in retained_rows if _normalized_ur5_link(row)}
+    assert set(range(7)) <= retained_ur5_source_rows
+    assert len(ur5_keys) == len(set(ur5_keys))
+    assert _generated_row_key(visual_rows[3], 3) == _generated_row_key(dict(visual_rows[3]), 18)
+
+    for link in [
+        "robotiq_arg2f_base_link",
+        "left_outer_knuckle",
+        "left_outer_finger",
+        "left_inner_finger",
+        "left_inner_finger_pad",
+        "right_outer_knuckle",
+        "right_outer_finger",
+        "right_inner_finger",
+        "right_inner_finger_pad",
+        "table",
+        "camera_link",
+    ]:
+        assert link in retained_links
+
+    assert all(_is_semantic_helper_non_renderable_by_default(item) for item in semantic_placeholders)
+
 def _ur5_18_row_fixture_with_path_field(path_field: str, path_prefix: str) -> list[dict]:
     ur5_meshes = {
         "base_link_inertia": "base.dae",
