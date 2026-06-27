@@ -658,6 +658,7 @@ private:
     copy_filter_counter("robot_base_frame");
     copy_filter_counter("transform_chain_applied_count");
     copy_filter_counter("visual_origin_applied_count");
+    copy_filter_counter("baked_world_visual_transform_count");
     copy_filter_counter("camera_fit_target");
     copy_filter_counter("robot_pose_source");
     auto * inspector = window_->findChild<QLabel *>("sceneBuilderInspectorLabel");
@@ -715,6 +716,7 @@ private:
       candidate_json["locked_generated_urdf_visual_count"] = candidate.counters.locked_generated_urdf_visual_count;
       candidate_json["transform_chain_applied_count"] = candidate.counters.transform_chain_applied_count;
       candidate_json["visual_origin_applied_count"] = candidate.counters.visual_origin_applied_count;
+      candidate_json["baked_world_visual_transform_count"] = candidate.counters.baked_world_visual_transform_count;
       candidate_json["placeholder_count"] = candidate.counters.placeholder_count;
       candidate_json["missing_geometry_count"] = candidate.counters.missing_geometry_count;
       candidate_json["wireframe_fallback_count"] = candidate.counters.wireframe_fallback_count;
@@ -823,6 +825,7 @@ private:
       counters["locked_generated_urdf_visual_count"] = rc.locked_generated_urdf_visual_count;
       counters["transform_chain_applied_count"] = rc.transform_chain_applied_count;
       counters["visual_origin_applied_count"] = rc.visual_origin_applied_count;
+      counters["baked_world_visual_transform_count"] = rc.baked_world_visual_transform_count;
       counters["overlay_count"] = rc.overlay_count;
       counters["selectable_count"] = qMax(0, rc.visible_count - rc.overlay_count);
       counters["hierarchy_rows_count"] = rc.hierarchy_child_row_count;
