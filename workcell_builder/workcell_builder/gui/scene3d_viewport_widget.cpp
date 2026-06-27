@@ -369,6 +369,16 @@ void apply_mesh_local_correction_matrix(QMatrix4x4 & transform, const ScenePrevi
 QMatrix4x4 final_mesh_transform_matrix(const ScenePreviewWidget::PreviewItem & item)
 {
   QMatrix4x4 transform = viewport_world_visual_transform(item);
+  if (item.has_baked_world_visual_transform) {
+    // Baked generated URDF rows already carry the authoritative world visual
+    // pose. Keep the final mesh path explicit: pose, scale, return. Do not let
+    // legacy mesh-local correction hooks re-enter for flattened/baked rows.
+    transform.scale(static_cast<float>(item.mesh_scale_x),
+                    static_cast<float>(item.mesh_scale_y),
+                    static_cast<float>(item.mesh_scale_z));
+    return transform;
+  }
+
   apply_mesh_local_correction_matrix(transform, item);
   transform.scale(static_cast<float>(item.mesh_scale_x),
                   static_cast<float>(item.mesh_scale_y),
@@ -378,13 +388,10 @@ QMatrix4x4 final_mesh_transform_matrix(const ScenePreviewWidget::PreviewItem & i
 
 void apply_mesh_local_correction_gl(const ScenePreviewWidget::PreviewItem & item)
 {
-  // See apply_mesh_local_correction_matrix(): baked URDF visuals use the baked
-  // world visual pose directly unless the explicit baked mesh-asset correction
-  // path opts in a known asset-local correction.
-  if (item.has_baked_world_visual_transform) {
-    apply_baked_mesh_asset_local_correction_gl(item);
-    return;
-  }
+  // Mirror final_mesh_transform_matrix(): baked generated URDF visuals use the
+  // baked world visual pose directly and skip all legacy mesh-local correction
+  // hooks. Non-baked rows keep the existing mesh RPY/origin-offset path.
+  if (item.has_baked_world_visual_transform) return;
 
   apply_urdf_rpy_gl(item.mesh_r, item.mesh_p, item.mesh_y);
   if (item.has_origin_offset) glTranslated(item.origin_offset_x, item.origin_offset_y, item.origin_offset_z);
