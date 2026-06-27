@@ -10371,6 +10371,300 @@ void MainWindow::populate_scene_hierarchy()
       .arg(preserved_editable_source_count));
   }
 
+  // Final runtime safety net: inspect the exact PreviewItem payload that will
+  // be committed to Scene3D after normal ingestion and suppression.  This is
+  // intentionally after suppress_lower_fidelity_preview_items(); rows appended
+  // here are authoritative mesh-backed URDF visuals and must not be routed
+  // through the older duplicate-suppression path again.
+  {
+    const QString scene_name_for_final_append = QString::fromStdString(s.scene_name).trimmed();
+    const QString workspace_root_for_final_append = detect_workspace_root();
+    const QStringList required_ur5_final_links = {
+      QStringLiteral("shoulder_link"),
+      QStringLiteral("upper_arm_link"),
+      QStringLiteral("forearm_link"),
+      QStringLiteral("wrist_1_link"),
+      QStringLiteral("wrist_2_link"),
+      QStringLiteral("wrist_3_link")
+    };
+    const QSet<QString> accepted_ur5_base_links = {
+      QStringLiteral("base_link_inertia"),
+      QStringLiteral("base_link")
+    };
+    auto final_append_row_scalar = [](const YAML::Node & node, const char * key) {
+      const YAML::Node value = workcell_builder::yaml_map_key(node, key);
+      if (!value || !value.IsScalar()) return QString();
+      return QString::fromStdString(value.as<std::string>("")).trimmed();
+    };
+    auto final_append_first_scalar = [&](const YAML::Node & node, std::initializer_list<const char *> keys) {
+      for (const char * key : keys) {
+        const QString value = final_append_row_scalar(node, key);
+        if (!value.isEmpty()) return value;
+      }
+      return QString();
+    };
+    auto normalize_ur5_final_link = [&](const QString & raw) {
+      const QString token = canonical_scene3d_token(raw);
+      if (accepted_ur5_base_links.contains(token)) return token;
+      for (const QString & link : required_ur5_final_links) {
+        if (token == link || token.contains(link)) return link;
+      }
+      return QString();
+    };
+    auto final_append_row_link = [&](const YAML::Node & node) {
+      const QString direct = normalize_ur5_final_link(final_append_first_scalar(
+        node, {"link", "link_name", "canonical_link_name", "object_id", "object"}));
+      if (!direct.isEmpty()) return direct;
+      return normalize_ur5_final_link(final_append_first_scalar(node, {"id", "visual", "visual_name"}));
+    };
+    auto final_append_mesh_reference = [&](const YAML::Node & node) {
+      return QStringList{
+        final_append_first_scalar(node, {"package_uri"}),
+        final_append_first_scalar(node, {"mesh_uri", "filename"}),
+        final_append_first_scalar(node, {"source_path"}),
+        final_append_first_scalar(node, {"mesh_path"}),
+        final_append_first_scalar(node, {"resolved_source_path", "resolved_path"})
+      }.join(QStringLiteral("|"));
+    };
+    auto final_append_is_ur5_mesh_row = [&](const YAML::Node & node) {
+      if (!node || !node.IsMap()) return false;
+      const QString link = final_append_row_link(node);
+      if (link.isEmpty()) return false;
+      const QString geometry = canonical_scene3d_token(final_append_first_scalar(node, {"geometry_type", "type"}));
+      if (geometry != QStringLiteral("mesh")) return false;
+      const QString source_token = canonical_scene3d_token(final_append_mesh_reference(node));
+      return source_token.contains(QStringLiteral("ur_description")) &&
+             source_token.contains(QStringLiteral("meshes")) &&
+             source_token.contains(QStringLiteral("ur5")) &&
+             source_token.contains(QStringLiteral("visual"));
+    };
+    auto preview_item_has_ur5_link = [&](const QString & link) {
+      for (const auto & item : preview_items) {
+        const QString existing_link = scene3d_viewport_link_token(item);
+        if (link == QStringLiteral("base_link_inertia") || link == QStringLiteral("base_link")) {
+          if (accepted_ur5_base_links.contains(existing_link)) return true;
+        } else if (existing_link == link) {
+          return true;
+        }
+      }
+      return false;
+    };
+    auto preview_item_mesh_for_ur5_link = [&](const QString & link) {
+      for (const auto & item : preview_items) {
+        const QString existing_link = scene3d_viewport_link_token(item);
+        const bool link_matches =
+          (link == QStringLiteral("base_link_inertia") || link == QStringLiteral("base_link"))
+            ? accepted_ur5_base_links.contains(existing_link)
+            : existing_link == link;
+        if (!link_matches) continue;
+        const QString mesh = item.mesh_path.trimmed().isEmpty() ? item.source_path.trimmed() : item.mesh_path.trimmed();
+        const QFileInfo mesh_info(mesh);
+        if (mesh_info.exists() && mesh_info.isFile()) {
+          const QString canonical = mesh_info.canonicalFilePath();
+          return canonical.isEmpty() ? mesh_info.absoluteFilePath() : canonical;
+        }
+        return mesh;
+      }
+      return QString();
+    };
+    bool visual_index_contains_ur5_mesh_rows = false;
+    if (fs::exists(urdf_visual_index)) {
+      try {
+        const YAML::Node final_index_probe = YAML::LoadFile(urdf_visual_index.string());
+        const YAML::Node visual_items = workcell_builder::yaml_map_key(final_index_probe, "visual_items");
+        if (visual_items && visual_items.IsSequence()) {
+          for (const auto & row : visual_items) {
+            if (final_append_is_ur5_mesh_row(row)) {
+              visual_index_contains_ur5_mesh_rows = true;
+              break;
+            }
+          }
+        }
+      } catch (...) {
+        visual_index_contains_ur5_mesh_rows = false;
+      }
+    }
+    if (scene_name_for_final_append == QStringLiteral("ur5_2f_test") || visual_index_contains_ur5_mesh_rows) {
+      QStringList missing_ur5_links;
+      bool base_present = false;
+      for (const QString & base_link : accepted_ur5_base_links) {
+        if (preview_item_has_ur5_link(base_link)) {
+          base_present = true;
+          break;
+        }
+      }
+      if (!base_present) missing_ur5_links << QStringLiteral("base_link_inertia");
+      for (const QString & link : required_ur5_final_links) {
+        if (!preview_item_has_ur5_link(link)) missing_ur5_links << link;
+      }
+      append_studio_log(QStringLiteral("UR5_FINAL_APPEND_CHECK missing=[%1]")
+        .arg(missing_ur5_links.join(QStringLiteral(","))));
+      for (const QString & link : required_ur5_final_links) {
+        if (!missing_ur5_links.contains(link)) {
+          append_studio_log(QStringLiteral("UR5_FINAL_APPEND already_present link=%1 mesh=%2")
+            .arg(link, preview_item_mesh_for_ur5_link(link)));
+        }
+      }
+
+      if (!missing_ur5_links.isEmpty() && fs::exists(urdf_visual_index)) {
+        try {
+          const YAML::Node final_index = YAML::LoadFile(urdf_visual_index.string());
+          const YAML::Node visual_items = workcell_builder::yaml_map_key(final_index, "visual_items");
+          int row_number = 0;
+          if (visual_items && visual_items.IsSequence()) {
+            for (const auto & row : visual_items) {
+              const int source_row_index = workcell_builder::yaml_map_key(row, "source_row_index").as<int>(row_number);
+              ++row_number;
+              if (!final_append_is_ur5_mesh_row(row)) continue;
+              const QString link = final_append_row_link(row);
+              const bool row_satisfies_missing_base =
+                accepted_ur5_base_links.contains(link) &&
+                missing_ur5_links.contains(QStringLiteral("base_link_inertia"));
+              if (!missing_ur5_links.contains(link) && !row_satisfies_missing_base) continue;
+              const QString package_uri = final_append_first_scalar(row, {"package_uri"});
+              const QString mesh_uri = final_append_first_scalar(row, {"mesh_uri", "filename"});
+              const QString source_path = final_append_first_scalar(row, {"source_path"});
+              const QString mesh_path = final_append_first_scalar(row, {"mesh_path"});
+              const QString resolved_source_path = final_append_first_scalar(row, {"resolved_source_path", "resolved_path"});
+              QStringList tried_candidates;
+              QString resolved_mesh_path = resolve_visual_mesh_source_path(
+                !resolved_source_path.isEmpty() ? resolved_source_path : (!mesh_path.isEmpty() ? mesh_path : source_path),
+                package_uri.isEmpty() ? mesh_uri : package_uri,
+                d,
+                workspace_root_for_final_append,
+                &tried_candidates);
+              if (resolved_mesh_path.isEmpty()) {
+                resolved_mesh_path = resolve_visual_mesh_source_path(
+                  QString(),
+                  package_uri.isEmpty() ? mesh_uri : package_uri,
+                  d,
+                  workspace_root_for_final_append,
+                  &tried_candidates);
+              }
+              if (resolved_mesh_path.isEmpty()) continue;
+              const QFileInfo mesh_info(resolved_mesh_path);
+              const QString canonical_mesh_path = mesh_info.exists() && mesh_info.isFile()
+                ? (mesh_info.canonicalFilePath().isEmpty() ? mesh_info.absoluteFilePath() : mesh_info.canonicalFilePath())
+                : resolved_mesh_path;
+              bool exact_already_present = false;
+              for (const auto & item : preview_items) {
+                const QString existing_link = scene3d_viewport_link_token(item);
+                const QString existing_mesh = QFileInfo(item.mesh_path.trimmed().isEmpty() ? item.source_path : item.mesh_path).canonicalFilePath();
+                const QString normalized_existing_mesh = existing_mesh.isEmpty()
+                  ? (item.mesh_path.trimmed().isEmpty() ? item.source_path.trimmed() : item.mesh_path.trimmed())
+                  : existing_mesh;
+                if (existing_link == link && normalized_existing_mesh == canonical_mesh_path) {
+                  exact_already_present = true;
+                  break;
+                }
+              }
+              if (exact_already_present) {
+                append_studio_log(QStringLiteral("UR5_FINAL_APPEND already_present link=%1 mesh=%2")
+                  .arg(link, canonical_mesh_path));
+                missing_ur5_links.removeAll(link);
+                continue;
+              }
+
+              ScenePreviewWidget::PreviewItem p;
+              const QString visual_name = final_append_first_scalar(row, {"visual_name", "visual", "id"});
+              p.id = QStringLiteral("generated_urdf::%1::%2::%3")
+                .arg(link, visual_name.isEmpty() ? QStringLiteral("visual") : visual_name)
+                .arg(source_row_index);
+              p.display_name = link;
+              p.category = QStringLiteral("robot_arm");
+              p.role = p.category;
+              p.status = QStringLiteral("ready");
+              p.locked = true;
+              p.editable = false;
+              p.selectable = true;
+              p.lock_reason = QStringLiteral("generated URDF visual final append");
+              p.source_layer = QStringLiteral("locked_generated_urdf_visual");
+              p.active_visual_source = QStringLiteral("mesh_preview");
+              p.mesh_path = canonical_mesh_path;
+              p.source_path = canonical_mesh_path;
+              p.mesh_available = true;
+              p.has_mesh_metadata = true;
+              p.primitive_geometry_type = QStringLiteral("mesh");
+              p.package_uri = package_uri.isEmpty() ? mesh_uri : package_uri;
+              p.visual_index_package_uri = p.package_uri;
+              p.visual_index_mesh_uri = mesh_uri;
+              p.visual_index_link = link;
+              p.visual_index_link_name = link;
+              p.frame_id = link;
+              p.visual_index_visual = final_append_first_scalar(row, {"visual"});
+              p.visual_index_visual_name = final_append_first_scalar(row, {"visual_name"});
+              p.visual_index_value = workcell_builder::yaml_map_key(row, "visual_index").as<int>(-1);
+              p.source_row_index = source_row_index;
+              p.visual_index_parent_link = final_append_first_scalar(row, {"parent_link", "base_frame"});
+              p.visual_index_source = final_append_first_scalar(row, {"source"});
+              p.robot_base_frame = p.visual_index_parent_link.isEmpty() ? QStringLiteral("unknown") : p.visual_index_parent_link;
+              const YAML::Node pose = workcell_builder::yaml_map_key(row, "pose");
+              const YAML::Node baked_pose = workcell_builder::yaml_map_key(row, "baked_world_visual_pose");
+              const YAML::Node xyz = workcell_builder::yaml_map_key(baked_pose, "xyz").IsSequence()
+                ? workcell_builder::yaml_map_key(baked_pose, "xyz")
+                : workcell_builder::yaml_map_key(pose, "xyz");
+              const YAML::Node rpy = workcell_builder::yaml_map_key(baked_pose, "rpy").IsSequence()
+                ? workcell_builder::yaml_map_key(baked_pose, "rpy")
+                : workcell_builder::yaml_map_key(pose, "rpy");
+              if (xyz && xyz.IsSequence() && xyz.size() >= 3) {
+                p.x = workcell_builder::yaml_seq_index(xyz, 0).as<double>(0.0);
+                p.y = workcell_builder::yaml_seq_index(xyz, 1).as<double>(0.0);
+                p.z = workcell_builder::yaml_seq_index(xyz, 2).as<double>(0.0);
+              }
+              if (rpy && rpy.IsSequence() && rpy.size() >= 3) {
+                p.roll = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(rpy, 0).as<double>(0.0), QStringLiteral("UR5_FINAL_APPEND.rpy[0]"), &p.warnings);
+                p.pitch = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(rpy, 1).as<double>(0.0), QStringLiteral("UR5_FINAL_APPEND.rpy[1]"), &p.warnings);
+                p.yaw = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(rpy, 2).as<double>(0.0), QStringLiteral("UR5_FINAL_APPEND.rpy[2]"), &p.warnings);
+              }
+              if (workcell_builder::yaml_map_key(baked_pose, "xyz").IsSequence() &&
+                  workcell_builder::yaml_map_key(baked_pose, "rpy").IsSequence()) {
+                p.has_baked_world_visual_transform = true;
+                p.baked_world_visual_transform_source = QStringLiteral("generated/scene_visual_mesh_index.json:baked_world_visual_pose:final_append");
+              }
+              const YAML::Node matrix = workcell_builder::yaml_map_key(row, "baked_world_visual_matrix");
+              if (matrix && matrix.IsSequence() && matrix.size() == 16) {
+                for (std::size_t i = 0; i < 16; ++i) {
+                  p.baked_world_visual_matrix[i] = workcell_builder::yaml_seq_index(matrix, i).as<double>(i % 5 == 0 ? 1.0 : 0.0);
+                }
+                p.has_baked_world_visual_transform = true;
+                p.has_baked_world_visual_matrix = true;
+                p.baked_world_visual_transform_source = QStringLiteral("generated/scene_visual_mesh_index.json:baked_world_visual_matrix:final_append");
+              }
+              const YAML::Node scale = workcell_builder::yaml_map_key(row, "mesh_scale");
+              if (scale && scale.IsSequence() && scale.size() >= 3) {
+                p.mesh_scale_x = workcell_builder::yaml_seq_index(scale, 0).as<double>(1.0);
+                p.mesh_scale_y = workcell_builder::yaml_seq_index(scale, 1).as<double>(1.0);
+                p.mesh_scale_z = workcell_builder::yaml_seq_index(scale, 2).as<double>(1.0);
+              }
+              normalize_generated_urdf_visual_identity(p);
+              classify_generated_urdf_visual(p, canonical_mesh_path);
+              p.category = QStringLiteral("robot_arm");
+              p.role = p.category;
+              p.visual_index_link = link;
+              p.visual_index_link_name = link;
+              p.active_visual_source = QStringLiteral("mesh_preview");
+              p.source_layer = QStringLiteral("locked_generated_urdf_visual");
+              preview_items.push_back(p);
+              missing_ur5_links.removeAll(link);
+              if (row_satisfies_missing_base) {
+                missing_ur5_links.removeAll(QStringLiteral("base_link_inertia"));
+              }
+              append_studio_log(QStringLiteral("UR5_FINAL_APPEND appended link=%1 mesh=%2")
+                .arg(link, canonical_mesh_path));
+            }
+          }
+        } catch (...) {
+          append_studio_log(QStringLiteral("UR5_FINAL_APPEND failed_to_parse index=generated/scene_visual_mesh_index.json"));
+        }
+      }
+      int final_required_count = 0;
+      for (const QString & link : required_ur5_final_links) {
+        if (preview_item_has_ur5_link(link)) ++final_required_count;
+      }
+      append_studio_log(QStringLiteral("UR5_FINAL_APPEND final_required_count=%1").arg(final_required_count));
+    }
+  }
+
   scene_hierarchy_tree_->clear();
   hierarchy_groups.clear();
   for (const QString &gn : {QString("Editable Layout"), QString("Mesh Preview"), QString("Generated URDF Visuals"), QString("Primitive Fallbacks"), QString("Cameras"), QString("Robot / Tooling"), QString("Overlays / Helpers"), QString("Warnings / Missing Assets")}) ensure_group(gn);
