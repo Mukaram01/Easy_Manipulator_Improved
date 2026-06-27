@@ -1,97 +1,41 @@
 #!/usr/bin/env python3
 """Repair canonical UR5 Scene3D visual-index rows after extraction.
 
-The extractor is the source of truth for real xacro/URDF expansion, but some
-runtime paths have repeatedly emitted Robotiq/table/camera rows while dropping
-or retaining non-renderable UR5 arm rows.  This post-process is deliberately
-narrow: it only applies to UR5 scenes or UR5-looking visual indexes, only adds
-missing/non-renderable required UR5 mesh rows, and leaves existing Robotiq/table/
-camera rows untouched.
+The extractor remains the source of truth for generated ROS/RViz packages.  The
+builder viewport also needs a safe preview layer: when required UR5 rows are
+missing, stale, seeded, collapsed, or geometrically implausible, this script
+replaces only the UR5 arm preview rows with a stable locked primitive preview.
+Non-UR5 rows such as table, camera, and end-effector rows are preserved.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 REQUIRED_UR5_VISUALS: tuple[dict[str, Any], ...] = (
-    {
-        "link": "base_link_inertia",
-        "mesh": "base.dae",
-        "xyz": [0.0, 0.0, 0.0],
-        "rpy": [0.0, 0.0, 3.141593],
-        "parent": "world",
-        "chain": ["world", "base_link_inertia"],
-    },
-    {
-        "link": "shoulder_link",
-        "mesh": "shoulder.dae",
-        "xyz": [0.0, 0.0, 0.089159],
-        "rpy": [0.0, 0.0, 0.0],
-        "parent": "base_link_inertia",
-        "chain": ["world", "base_link_inertia", "shoulder_link"],
-    },
-    {
-        "link": "upper_arm_link",
-        "mesh": "upperarm.dae",
-        "xyz": [0.0, 0.13585, 0.089159],
-        "rpy": [0.0, -0.0000036732051032936018, 0.0],
-        "parent": "shoulder_link",
-        "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link"],
-    },
-    {
-        "link": "forearm_link",
-        "mesh": "forearm.dae",
-        "xyz": [-0.0000015611121689202732, 0.016500000087168957, 0.5141589999937487],
-        "rpy": [-1.5707966253386139, 1.5707963118937354, -1.5707966253386139],
-        "parent": "upper_arm_link",
-        "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link"],
-    },
-    {
-        "link": "wrist_1_link",
-        "mesh": "wrist1.dae",
-        "xyz": [0.392248438887831, 0.01615000008716891, 0.5141589999938204],
-        "rpy": [-0.000055837728232363146, 1.5707926535453185, -0.00005583772823204767],
-        "parent": "forearm_link",
-        "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link"],
-    },
-    {
-        "link": "wrist_2_link",
-        "mesh": "wrist2.dae",
-        "xyz": [0.3918984388878334, 0.10915000008724068, 0.514158998689124],
-        "rpy": [-1.5707926535897931, -0.0000036734102060051815, -1.5707963270134926],
-        "parent": "wrist_1_link",
-        "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link"],
-    },
-    {
-        "link": "wrist_3_link",
-        "mesh": "wrist3.dae",
-        "xyz": [0.4868987411750924, 0.10914969774609591, 0.513659],
-        "rpy": [-1.5341792327998767, 1.5706962591554918, -1.5340829063937342],
-        "parent": "wrist_2_link",
-        "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link", "wrist_3_link"],
-    },
+    {"link": "base_link_inertia", "mesh": "base.dae", "xyz": [0.0, 0.0, 0.08], "rpy": [0.0, 0.0, 0.0], "parent": "world", "chain": ["world", "base_link_inertia"], "size": [0.26, 0.26, 0.16]},
+    {"link": "shoulder_link", "mesh": "shoulder.dae", "xyz": [0.0, 0.0, 0.22], "rpy": [0.0, 0.0, 0.0], "parent": "base_link_inertia", "chain": ["world", "base_link_inertia", "shoulder_link"], "size": [0.18, 0.18, 0.26]},
+    {"link": "upper_arm_link", "mesh": "upperarm.dae", "xyz": [0.27, 0.0, 0.58], "rpy": [0.0, 0.35, 0.0], "parent": "shoulder_link", "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link"], "size": [0.54, 0.11, 0.13]},
+    {"link": "forearm_link", "mesh": "forearm.dae", "xyz": [0.58, 0.0, 0.43], "rpy": [0.0, -0.45, 0.0], "parent": "upper_arm_link", "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link"], "size": [0.48, 0.10, 0.12]},
+    {"link": "wrist_1_link", "mesh": "wrist1.dae", "xyz": [0.82, 0.0, 0.31], "rpy": [0.0, 0.0, 0.0], "parent": "forearm_link", "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link"], "size": [0.12, 0.10, 0.16]},
+    {"link": "wrist_2_link", "mesh": "wrist2.dae", "xyz": [0.92, 0.0, 0.28], "rpy": [0.0, 0.0, 0.0], "parent": "wrist_1_link", "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link"], "size": [0.12, 0.10, 0.12]},
+    {"link": "wrist_3_link", "mesh": "wrist3.dae", "xyz": [1.00, 0.0, 0.28], "rpy": [0.0, 0.0, 0.0], "parent": "wrist_2_link", "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link", "wrist_3_link"], "size": [0.10, 0.10, 0.10]},
 )
 
 REQUIRED_UR5_LINKS = tuple(str(spec["link"]) for spec in REQUIRED_UR5_VISUALS)
-RENDER_REJECT_STATUSES = {
-    "skip",
-    "skipped",
-    "hidden",
-    "reject",
-    "rejected",
-    "failed",
-    "error",
-    "missing",
-    "suppressed",
-}
+RENDER_REJECT_STATUSES = {"skip", "skipped", "hidden", "reject", "rejected", "failed", "error", "missing", "suppressed"}
 UR5_VISUAL_TOKEN_HINTS = (
     "ur_description/meshes/ur5/visual/",
     "package://ur_description/meshes/ur5/visual/",
     "assets/robots/universal_robot/ur_description/meshes/ur5/visual/",
 )
+STALE_SEED_TOKENS = ("generated_urdf_identity_rviz_parity_seed", "identity_rviz_parity_seed", "rviz_parity_seed")
+MAX_ADJACENT_LINK_DISTANCE_M = 1.25
+COLLAPSED_LINK_EPSILON_M = 1e-6
 
 
 def _as_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -104,22 +48,11 @@ def _as_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _token_values(item: dict[str, Any]) -> str:
     keys = (
-        "link",
-        "link_name",
-        "canonical_link_name",
-        "object_name",
-        "visual_index_link",
-        "visual_index_link_name",
-        "id",
-        "item_id",
-        "display_name",
-        "metadata_tags",
-        "package_uri",
-        "mesh_uri",
-        "mesh_source",
-        "mesh_path",
-        "source_path",
-        "resolved_source_path",
+        "link", "link_name", "canonical_link_name", "object_name", "visual_index_link",
+        "visual_index_link_name", "id", "item_id", "display_name", "metadata_tags",
+        "package_uri", "mesh_uri", "mesh_source", "mesh_path", "source_path",
+        "resolved_source_path", "baked_world_visual_transform_source", "transform_status",
+        "link_transform_status",
     )
     values = [str(item.get(key) or "") for key in keys]
     metadata = item.get("metadata")
@@ -162,7 +95,9 @@ def _item_is_renderable_required_link(item: dict[str, Any], link: str) -> bool:
     if _item_has_ur5_mesh_evidence(item):
         return True
     geometry_type = str(item.get("geometry_type") or item.get("primitive_geometry_type") or "").strip().lower()
-    return geometry_type == "mesh" and bool(str(item.get("mesh_uri") or item.get("mesh_path") or item.get("package_uri") or "").strip())
+    return geometry_type in {"box", "mesh"} and bool(
+        str(item.get("mesh_uri") or item.get("mesh_path") or item.get("package_uri") or item.get("size") or "").strip()
+    )
 
 
 def _present_required_links(items: list[dict[str, Any]]) -> set[str]:
@@ -184,30 +119,77 @@ def _payload_is_ur5_candidate(payload: dict[str, Any], items: list[dict[str, Any
     return sum(1 for link in REQUIRED_UR5_LINKS if link.lower() in blob) >= 2
 
 
-def _repo_relative_mesh_path(mesh_name: str) -> str:
-    return f"assets/robots/universal_robot/ur_description/meshes/ur5/visual/{mesh_name}"
-
-
 def _pose(xyz: list[float], rpy: list[float]) -> dict[str, list[float]]:
     return {"xyz": [float(v) for v in xyz], "rpy": [float(v) for v in rpy]}
+
+
+def _finite_vec(value: Any, expected_len: int = 3) -> bool:
+    if not isinstance(value, list) or len(value) < expected_len:
+        return False
+    try:
+        return all(math.isfinite(float(value[i])) for i in range(expected_len))
+    except Exception:
+        return False
+
+
+def _pose_xyz(item: dict[str, Any], field: str) -> list[float] | None:
+    pose = item.get(field)
+    if isinstance(pose, dict) and _finite_vec(pose.get("xyz")):
+        return [float(v) for v in pose["xyz"][:3]]
+    return None
+
+
+def _distance(a: list[float], b: list[float]) -> float:
+    return math.sqrt(sum((float(a[i]) - float(b[i])) ** 2 for i in range(3)))
+
+
+def _ur5_link_positions(items: list[dict[str, Any]]) -> dict[str, list[float]]:
+    positions: dict[str, list[float]] = {}
+    for item in items:
+        for link in REQUIRED_UR5_LINKS:
+            if link in positions or not _item_mentions_link(item, link):
+                continue
+            for field in ("baked_world_visual_pose", "expected_visual_pose", "link_world_pose", "world_pose", "pose"):
+                xyz = _pose_xyz(item, field)
+                if xyz is not None:
+                    positions[link] = xyz
+                    break
+    return positions
+
+
+def _existing_ur5_rows_need_repair(items: list[dict[str, Any]], present: set[str]) -> tuple[bool, list[str]]:
+    reasons: list[str] = []
+    if any(any(token in _token_values(item) for token in STALE_SEED_TOKENS) for item in items):
+        reasons.append("stale_rviz_parity_seed_rows")
+    positions = _ur5_link_positions(items)
+    if present and len(positions) < min(4, len(present)):
+        reasons.append("insufficient_ur5_pose_data")
+    if len(positions) >= 4:
+        ordered_positions = [positions[link] for link in REQUIRED_UR5_LINKS if link in positions]
+        if ordered_positions and all(_distance(ordered_positions[0], p) <= COLLAPSED_LINK_EPSILON_M for p in ordered_positions[1:]):
+            reasons.append("collapsed_ur5_link_positions")
+        for prev, cur in zip(REQUIRED_UR5_LINKS, REQUIRED_UR5_LINKS[1:]):
+            if prev in positions and cur in positions:
+                adjacent = _distance(positions[prev], positions[cur])
+                if adjacent > MAX_ADJACENT_LINK_DISTANCE_M:
+                    reasons.append(f"implausible_adjacent_distance:{prev}->{cur}:{adjacent:.3f}m")
+    return bool(reasons), reasons
 
 
 def _ur5_item(spec: dict[str, Any], index: int) -> dict[str, Any]:
     link = str(spec["link"])
     mesh_name = str(spec["mesh"])
-    package_uri = f"package://ur_description/meshes/ur5/visual/{mesh_name}"
-    mesh_path = _repo_relative_mesh_path(mesh_name)
+    reference_uri = f"package://ur_description/meshes/ur5/visual/{mesh_name}"
     xyz = list(spec["xyz"])
     rpy = list(spec["rpy"])
     pose = _pose(xyz, rpy)
-    item_id = f"generated_urdf::{link}::visual_{index}::{index}"
-    stable_item_id = f"generated_urdf::{link}"
+    item_id = f"generated_urdf::{link}::stable_preview::{index}"
     return {
         "id": item_id,
-        "item_id": stable_item_id,
+        "item_id": f"generated_urdf::{link}",
         "source": "urdf_flattened",
         "source_layer": "locked_generated_urdf_visual",
-        "active_visual_source": "mesh_preview",
+        "active_visual_source": "primitive_fallback",
         "category": "robot",
         "role": "robot",
         "robot_model": "ur5",
@@ -223,8 +205,8 @@ def _ur5_item(spec: dict[str, Any], index: int) -> dict[str, Any]:
         "final_render_identity": link,
         "final_render_link": link,
         "final_draw_link": link,
-        "visual": f"visual_{index}",
-        "visual_name": f"visual_{index}",
+        "visual": f"stable_preview_{index}",
+        "visual_name": f"stable_preview_{index}",
         "visual_index": index,
         "source_row_index": index,
         "parent_link": str(spec.get("parent") or ""),
@@ -238,46 +220,44 @@ def _ur5_item(spec: dict[str, Any], index: int) -> dict[str, Any]:
         "link_world_pose": pose,
         "expected_visual_pose": pose,
         "baked_world_visual_pose": pose,
-        "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+        "baked_world_visual_transform_source": "stable_scene3d_ur5_builder_preview",
         "visual_origin_applied_to_pose": True,
         "visual_origin": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
-        "geometry_type": "mesh",
-        "primitive_geometry_type": "mesh",
-        "has_mesh_metadata": True,
-        "mesh_source": package_uri,
-        "mesh_uri": package_uri,
-        "package_uri": package_uri,
-        "source_path": package_uri,
-        "mesh_path": mesh_path,
-        "mesh_package": "ur_description",
+        "geometry_type": "box",
+        "primitive_geometry_type": "box",
+        "size": [float(v) for v in spec["size"]],
+        "has_mesh_metadata": False,
+        "mesh_available": False,
+        "reference_mesh_uri": reference_uri,
+        "mesh_source": "",
+        "mesh_uri": "",
+        "package_uri": "",
+        "source_path": "",
+        "mesh_path": "",
         "mesh_file_name": mesh_name,
-        "source_package": "ur_description",
-        "source_model": "ur5",
-        "resolved_source_path": mesh_path,
-        "resolved_source_path_is_repo_relative": True,
         "resolved": True,
         "mesh_scale": [1.0, 1.0, 1.0],
         "scale": [1.0, 1.0, 1.0],
         "render_expected": True,
         "render_skip_reason": "",
         "warning": "",
-        "material": {"name": "ur5_preview", "color": [0.85, 0.88, 0.92, 1.0]},
+        "material": {"name": "ur5_stable_builder_preview", "color": [0.85, 0.88, 0.92, 1.0]},
         "color": [0.85, 0.88, 0.92, 1.0],
-        "link_transform_status": "runtime_ur5_repair",
-        "transform_status": "runtime_ur5_repair",
+        "link_transform_status": "stable_scene3d_ur5_builder_preview",
+        "transform_status": "stable_scene3d_ur5_builder_preview",
         "transform_chain": list(spec.get("chain") or ["world", link]),
         "visual_index_link": link,
         "visual_index_link_name": link,
         "visual_index_object_name": link,
-        "visual_index_visual": f"visual_{index}",
-        "visual_index_visual_name": f"visual_{index}",
+        "visual_index_visual": f"stable_preview_{index}",
+        "visual_index_visual_name": f"stable_preview_{index}",
         "visual_index_value": index,
         "visual_index_parent_link": str(spec.get("parent") or ""),
         "visual_index_link_chain": list(spec.get("chain") or ["world", link]),
-        "visual_index_mesh_uri": package_uri,
-        "visual_index_package_uri": package_uri,
-        "visual_index_source": "runtime_ur5_visual_index_repair",
-        "metadata_tags": "source=urdf_flattened;runtime_ur5_visual_index_repair;rviz_parity;category=robot;robot_model=ur5",
+        "visual_index_mesh_uri": reference_uri,
+        "visual_index_package_uri": reference_uri,
+        "visual_index_source": "stable_scene3d_ur5_builder_preview",
+        "metadata_tags": "source=urdf_flattened;stable_scene3d_ur5_builder_preview;rviz_launch_authoritative;category=robot;robot_model=ur5",
     }
 
 
@@ -289,12 +269,11 @@ def repair_index(path: Path) -> tuple[bool, list[str]]:
 
     present = _present_required_links(items)
     missing = [spec for spec in REQUIRED_UR5_VISUALS if spec["link"] not in present]
-    if not missing:
+    stale_or_implausible, repair_reasons = _existing_ur5_rows_need_repair(items, present)
+    if not missing and not stale_or_implausible:
         return False, []
 
     repaired = [_ur5_item(spec, index) for index, spec in enumerate(REQUIRED_UR5_VISUALS)]
-    # Keep non-UR5 rows from extraction, but remove partial/stale UR5 rows so the
-    # viewport receives exactly one authoritative row per required UR5 link.
     kept = [
         item for item in items
         if isinstance(item, dict)
@@ -315,7 +294,9 @@ def repair_index(path: Path) -> tuple[bool, list[str]]:
     payload["stale_index"] = False
     payload["stale_reasons"] = []
     payload["ur5_runtime_repair_applied"] = True
+    payload["ur5_runtime_repair_mode"] = "stable_primitive_builder_preview"
     payload["ur5_runtime_repair_added_links"] = [spec["link"] for spec in missing]
+    payload["ur5_runtime_repair_reasons"] = repair_reasons or ["missing_required_ur5_rows"]
     payload["ur5_required_links"] = list(REQUIRED_UR5_LINKS)
     payload["repair_generated_at"] = datetime.now(timezone.utc).isoformat()
     blockers = payload.get("blockers") if isinstance(payload.get("blockers"), list) else []
@@ -324,10 +305,12 @@ def repair_index(path: Path) -> tuple[bool, list[str]]:
         "ur5_final_viewport_links_missing",
         "rendered_ur5_link_count_below_7",
         "stale_retained_visual_rows_missing_warning",
+        "implausible_adjacent_distance",
+        "collapsed_ur5_link_positions",
     )
     payload["blockers"] = [b for b in blockers if not any(token in str(b) for token in stale_tokens)]
     warnings = payload.get("warnings") if isinstance(payload.get("warnings"), list) else []
-    note = "ur5_runtime_visual_index_repair_applied"
+    note = "ur5_runtime_visual_index_repair_applied: stable primitive builder preview; RViz launch remains authoritative"
     if note not in warnings:
         warnings.append(note)
     payload["warnings"] = warnings
@@ -341,7 +324,8 @@ def main() -> int:
     args = parser.parse_args()
     changed, missing = repair_index(args.index_path.resolve())
     if changed:
-        print(f"[repair_ur5_scene3d_visual_index] repaired {args.index_path}: added {', '.join(missing)}")
+        detail = ", ".join(missing) if missing else "stale or implausible UR5 rows replaced"
+        print(f"[repair_ur5_scene3d_visual_index] repaired {args.index_path}: {detail}")
     else:
         print(f"[repair_ur5_scene3d_visual_index] no repair needed for {args.index_path}")
     return 0
