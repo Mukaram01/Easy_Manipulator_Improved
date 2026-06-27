@@ -1316,15 +1316,28 @@ def _record_rendered_mesh_adjacency_fallback_warning(payload: dict[str, Any]) ->
     payload["warning_messages"] = messages
 
 
+def _bbox_mapping_from_record(record: dict[str, Any], *keys: str) -> dict[str, list[float]] | None:
+    for key in keys:
+        bbox = record.get(key)
+        if not isinstance(bbox, dict):
+            continue
+        mn = _finite_float_list(bbox.get("min"), 3)
+        mx = _finite_float_list(bbox.get("max"), 3)
+        if mn is not None and mx is not None:
+            return {"min": mn, "max": mx}
+    return None
+
+
 def _bbox_from_final_draw(record: dict[str, Any]) -> dict[str, list[float]] | None:
-    bbox = record.get("final_draw_bbox")
-    if not isinstance(bbox, dict):
-        return None
-    mn = _finite_float_list(bbox.get("min"), 3)
-    mx = _finite_float_list(bbox.get("max"), 3)
-    if mn is None or mx is None:
-        return None
-    return {"min": mn, "max": mx}
+    # Prefer bounds explicitly captured after final_mesh_transform_matrix(),
+    # because these are in the same coordinate basis used by the renderer.
+    return _bbox_mapping_from_record(
+        record,
+        "final_rendered_mesh_bbox",
+        "final_rendered_bbox",
+        "rendered_mesh_bbox",
+        "final_draw_bbox",
+    )
 
 
 def _item_id(record: dict[str, Any]) -> str | None:
@@ -1488,11 +1501,23 @@ def _checked_pair_record(
 
 
 def _final_draw_bbox_from_row(raw: dict[str, Any]) -> dict[str, list[float]] | None:
-    bbox = raw.get("final_draw_bbox")
-    if not isinstance(bbox, dict):
-        return None
-    bmin = _finite_float_list(bbox.get("min"), 3)
-    bmax = _finite_float_list(bbox.get("max"), 3)
+    bbox = _bbox_from_final_draw(raw)
+    if bbox is not None:
+        return bbox
+    bmin = _finite_float_list(
+        raw.get("final_rendered_mesh_bbox_min")
+        or raw.get("final_rendered_bbox_min")
+        or raw.get("rendered_mesh_bbox_min")
+        or raw.get("final_draw_bbox_min"),
+        3,
+    )
+    bmax = _finite_float_list(
+        raw.get("final_rendered_mesh_bbox_max")
+        or raw.get("final_rendered_bbox_max")
+        or raw.get("rendered_mesh_bbox_max")
+        or raw.get("final_draw_bbox_max"),
+        3,
+    )
     if bmin is None or bmax is None:
         return None
     return {"min": bmin, "max": bmax}
@@ -1593,14 +1618,6 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
                     parent, child, parent_item, child_item, None, _rendered_mesh_adjacency_limit(parent, child), False
                 )
             )
-            continue
-        if _stable_metadata_proves_adjacency(parent, child, child_item):
-            checked.append(
-                _checked_pair_record(
-                    parent, child, parent_item, child_item, None, _rendered_mesh_adjacency_limit(parent, child), True
-                )
-            )
-            checked[-1]["evidence"] = "stable_metadata"
             continue
         if not isinstance(parent_item.get("bounds"), dict) or not isinstance(child_item.get("bounds"), dict):
             detail = parent_item.get("bbox_error") or child_item.get("bbox_error") or "bbox_missing"

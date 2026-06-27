@@ -3990,6 +3990,11 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
           row["final_draw_bbox_min"] = scene3d_vec_to_json(final_min);
           row["final_draw_bbox_max"] = scene3d_vec_to_json(final_max);
           row["final_draw_bbox_span"] = scene3d_vec_to_json(final_span);
+          row["final_draw_bbox_center"] = scene3d_vec_to_json((final_min + final_max) * 0.5f);
+          row["final_rendered_mesh_bbox"] = scene3d_bbox_to_json(final_min, final_max);
+          row["final_rendered_mesh_bbox_min"] = scene3d_vec_to_json(final_min);
+          row["final_rendered_mesh_bbox_max"] = scene3d_vec_to_json(final_max);
+          row["final_rendered_mesh_bbox_center"] = scene3d_vec_to_json((final_min + final_max) * 0.5f);
         }
       }
       out.append(row);
@@ -4008,6 +4013,11 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["final_draw_bbox_min"] = scene3d_vec_to_json(final_min);
     row["final_draw_bbox_max"] = scene3d_vec_to_json(final_max);
     row["final_draw_bbox_span"] = scene3d_vec_to_json(final_span);
+    row["final_draw_bbox_center"] = scene3d_vec_to_json((final_min + final_max) * 0.5f);
+    row["final_rendered_mesh_bbox"] = scene3d_bbox_to_json(final_min, final_max);
+    row["final_rendered_mesh_bbox_min"] = scene3d_vec_to_json(final_min);
+    row["final_rendered_mesh_bbox_max"] = scene3d_vec_to_json(final_max);
+    row["final_rendered_mesh_bbox_center"] = scene3d_vec_to_json((final_min + final_max) * 0.5f);
     row["final_draw_status"] = QStringLiteral("ok");
     out.append(row);
 

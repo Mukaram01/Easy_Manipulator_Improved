@@ -402,7 +402,42 @@ def test_ur5_rendered_mesh_adjacency_prefers_final_draw_bboxes():
     assert checked[-1]["ok"] is True
 
 
-def test_ur5_rendered_mesh_adjacency_passes_with_generated_urdf_ids_and_stable_metadata():
+def test_ur5_rendered_mesh_adjacency_prefers_final_rendered_mesh_bboxes_over_baked_pose_bounds():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    def item(link: str, xmin: float, xmax: float) -> dict:
+        return {
+            "id": f"draw_{link}",
+            "link": link,
+            "mesh_path": f"meshes/{link}.dae",
+            "final_draw_world_pose": [100.0 + xmin, 0.0, 0.0],
+            "bounds": {"min": [100.0 + xmin, 0.0, 0.0], "max": [100.0 + xmax, 0.1, 0.1]},
+            "final_rendered_mesh_bbox": {"min": [xmin, 0.0, 0.0], "max": [xmax, 0.1, 0.1]},
+        }
+
+    payload = {
+        "status": "PASS",
+        "final_draw_visual_items": [
+            item("base_link_inertia", 0.0, 0.1),
+            item("shoulder_link", 0.1, 0.2),
+            item("upper_arm_link", 0.2, 0.3),
+            item("forearm_link", 0.3, 0.4),
+            item("wrist_1_link", 0.4, 0.5),
+            item("wrist_2_link", 0.5, 0.6),
+            item("wrist_3_link", 0.6, 0.7),
+            item("robotiq_arg2f_base_link", 0.7, 0.8),
+        ],
+    }
+
+    smoke._apply_ur5_rendered_mesh_adjacency(payload, repo_root=Path(__file__).resolve().parents[1], scene_name="ur5_2f_test", index_data={})
+
+    assert payload["rendered_mesh_adjacency_status"] == "PASS"
+    checked = payload["rendered_mesh_adjacency_checked_pairs"]
+    assert checked[0]["parent_bbox_min"] == [0.0, 0.0, 0.0]
+    assert all(pair["ok"] is True for pair in checked)
+
+
+def test_ur5_rendered_mesh_adjacency_rejects_metadata_only_nonfinite_bboxes():
     import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
 
     chain = [
@@ -446,12 +481,13 @@ def test_ur5_rendered_mesh_adjacency_passes_with_generated_urdf_ids_and_stable_m
 
     smoke._apply_ur5_rendered_mesh_adjacency(payload, repo_root=Path(__file__).resolve().parents[1], scene_name="ur5_2f_test", index_data={})
 
-    assert payload["rendered_mesh_adjacency_status"] == "PASS"
-    assert "scene3d_rendered_mesh_adjacency_failed" not in payload.get("warnings", [])
+    assert payload["rendered_mesh_adjacency_status"] == "FAIL"
+    assert "scene3d_rendered_mesh_adjacency_failed" in payload.get("warnings", [])
     checked = payload["rendered_mesh_adjacency_checked_pairs"]
     assert len(checked) == 7
-    assert all(pair["ok"] is True for pair in checked)
-    assert all(pair.get("evidence") == "stable_metadata" for pair in checked)
+    arm_pairs = [pair for pair in checked if pair["child"] != "robotiq_base"]
+    assert all(pair["ok"] is False for pair in arm_pairs)
+    assert all(pair.get("evidence") != "stable_metadata" for pair in arm_pairs)
     assert checked[-1]["child"] == "robotiq_base"
     assert checked[-1]["child_item_id"] == "generated_urdf::gripper_base_link"
 
