@@ -139,12 +139,6 @@ void apply_urdf_rpy_gl(double roll, double pitch, double yaw)
   glRotated(qRadiansToDegrees(roll), 1.0, 0.0, 0.0);
 }
 
-void apply_urdf_pose_gl(double x, double y, double z, double roll, double pitch, double yaw)
-{
-  glTranslated(x, y, z);
-  apply_urdf_rpy_gl(roll, pitch, yaw);
-}
-
 void apply_urdf_rpy_matrix(QMatrix4x4 & transform, double roll, double pitch, double yaw)
 {
   // Keep Scene3D's CPU bounds path in the same URDF/RViz transform convention as rendering.
@@ -339,14 +333,6 @@ void apply_baked_mesh_asset_local_correction_matrix(QMatrix4x4 & transform, cons
   transform *= baked_mesh_asset_local_correction_matrix(item);
 }
 
-void apply_baked_mesh_asset_local_correction_gl(const ScenePreviewWidget::PreviewItem & item)
-{
-  if (!should_apply_baked_mesh_asset_local_correction(item)) return;
-
-  apply_urdf_rpy_gl(item.mesh_r, item.mesh_p, item.mesh_y);
-  if (item.has_origin_offset) glTranslated(item.origin_offset_x, item.origin_offset_y, item.origin_offset_z);
-}
-
 void apply_mesh_local_correction_matrix(QMatrix4x4 & transform, const ScenePreviewWidget::PreviewItem & item)
 {
   // Baked generated/locked URDF visuals already include the full URDF visual origin
@@ -384,34 +370,6 @@ QMatrix4x4 final_mesh_transform_matrix(const ScenePreviewWidget::PreviewItem & i
                   static_cast<float>(item.mesh_scale_y),
                   static_cast<float>(item.mesh_scale_z));
   return transform;
-}
-
-void apply_mesh_local_correction_gl(const ScenePreviewWidget::PreviewItem & item)
-{
-  // Mirror final_mesh_transform_matrix(): baked generated URDF visuals use the
-  // baked world visual pose directly and skip all legacy mesh-local correction
-  // hooks. Non-baked rows keep the existing mesh RPY/origin-offset path.
-  if (item.has_baked_world_visual_transform) return;
-
-  apply_urdf_rpy_gl(item.mesh_r, item.mesh_p, item.mesh_y);
-  if (item.has_origin_offset) glTranslated(item.origin_offset_x, item.origin_offset_y, item.origin_offset_z);
-}
-
-
-QJsonArray matrix_to_json_array(const QMatrix4x4 & matrix)
-{
-  QJsonArray out;
-  for (int row = 0; row < 4; ++row) {
-    for (int col = 0; col < 4; ++col) {
-      out.append(static_cast<double>(matrix(row, col)));
-    }
-  }
-  return out;
-}
-
-QJsonArray vector_to_json_array(const QVector3D & v)
-{
-  return QJsonArray{v.x(), v.y(), v.z()};
 }
 
 bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item)
