@@ -50,7 +50,8 @@ def main() -> int:
     if repair_index is not None and index_path.exists():
         changed, links = repair_index(index_path)
         if changed:
-            print("[generate_scene_visual_mesh_index] UR5 repair added: " + ", ".join(links), flush=True)
+            detail = ", ".join(links) if links else "stale or implausible UR5 rows replaced"
+            print("[generate_scene_visual_mesh_index] UR5 repair applied: " + detail, flush=True)
     return 0
 
 
