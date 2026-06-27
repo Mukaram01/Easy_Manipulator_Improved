@@ -9367,10 +9367,32 @@ void MainWindow::populate_scene_hierarchy()
             visual_index_row_scalar_value(node, "source_path"),
             visual_index_row_scalar_value(node, "mesh_path"),
             visual_index_row_scalar_value(node, "resolved_path"),
-            visual_index_row_scalar_value(node, "resolved_source_path")
+            visual_index_row_scalar_value(node, "resolved_source_path"),
+            visual_index_row_scalar_value(node, "filename")
           }.join(QStringLiteral("|")).toLower();
-          return source_mix.contains(QStringLiteral("ur_description/meshes/ur5/visual")) ||
-                 source_mix.contains(QStringLiteral("package://ur_description/meshes/ur5/visual"));
+          const QString source_token = canonical_scene3d_token(source_mix);
+          static const QSet<QString> protected_ur5_mesh_files = {
+            QStringLiteral("base_dae"),
+            QStringLiteral("shoulder_dae"),
+            QStringLiteral("upperarm_dae"),
+            QStringLiteral("forearm_dae"),
+            QStringLiteral("wrist1_dae"),
+            QStringLiteral("wrist2_dae"),
+            QStringLiteral("wrist3_dae")
+          };
+          const bool has_ur_description_ur5_visual_path =
+            source_token.contains(QStringLiteral("ur_description")) &&
+            source_token.contains(QStringLiteral("meshes")) &&
+            source_token.contains(QStringLiteral("ur5")) &&
+            source_token.contains(QStringLiteral("visual"));
+          bool has_known_ur5_mesh_file = false;
+          for (const QString & mesh_file : protected_ur5_mesh_files) {
+            if (source_token.contains(mesh_file)) {
+              has_known_ur5_mesh_file = true;
+              break;
+            }
+          }
+          return has_ur_description_ur5_visual_path && has_known_ur5_mesh_file;
         };
         auto assert_scene3d_generated_urdf_identity_namespace_regression = [&]() {
           QSet<QString> regression_preview_ids;
