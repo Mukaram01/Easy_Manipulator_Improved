@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate one Workcell Studio Scene3D visual mesh index."""
+"""Regenerate or repair one Workcell Studio Scene3D visual mesh index."""
 from __future__ import annotations
 
 import argparse
@@ -17,15 +17,41 @@ except Exception:  # pragma: no cover - optional post-processing safety net
     repair_index = None
 
 
+def _repair_existing_index(index_path: Path) -> int:
+    if repair_index is None:
+        print("visual mesh index repair helper unavailable", file=sys.stderr)
+        return 2
+    if not index_path.exists():
+        print(f"visual mesh index missing: {index_path}", file=sys.stderr)
+        return 2
+    changed, links = repair_index(index_path)
+    if changed:
+        detail = ", ".join(links) if links else "stale or implausible UR5 rows replaced"
+        print("[generate_scene_visual_mesh_index] UR5 repair applied: " + detail, flush=True)
+    else:
+        print("[generate_scene_visual_mesh_index] existing index already safe for preview", flush=True)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", default=str(Path(__file__).resolve().parents[1]))
     parser.add_argument("--workspace-root", default="")
     parser.add_argument("--scene", required=True)
     parser.add_argument("--use-fake-hardware", default="true")
+    parser.add_argument(
+        "--repair-existing-only",
+        action="store_true",
+        help="Repair the existing generated/scene_visual_mesh_index.json without rerunning xacro extraction.",
+    )
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
+    index_path = repo_root / "scenes" / args.scene / "generated" / "scene_visual_mesh_index.json"
+
+    if args.repair_existing_only:
+        return _repair_existing_index(index_path)
+
     extractor = repo_root / "scripts" / "extract_scene_urdf_visual_mesh_index.py"
     if not extractor.exists():
         print(f"visual mesh index extractor missing: {extractor}", file=sys.stderr)
@@ -46,13 +72,7 @@ def main() -> int:
     if result != 0:
         return result
 
-    index_path = repo_root / "scenes" / args.scene / "generated" / "scene_visual_mesh_index.json"
-    if repair_index is not None and index_path.exists():
-        changed, links = repair_index(index_path)
-        if changed:
-            detail = ", ".join(links) if links else "stale or implausible UR5 rows replaced"
-            print("[generate_scene_visual_mesh_index] UR5 repair applied: " + detail, flush=True)
-    return 0
+    return _repair_existing_index(index_path)
 
 
 if __name__ == "__main__":
