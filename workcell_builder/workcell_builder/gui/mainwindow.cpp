@@ -9454,9 +9454,94 @@ void MainWindow::populate_scene_hierarchy()
           }
         }
         int ordered_visual_source_row_index = 0;
-        QSet<QString> generated_visual_row_keys;
+        struct GeneratedVisualRowMetadata {
+          int source_row_index = -1;
+          QString final_id;
+          QString link;
+          QString link_name;
+          QString canonical_link_name;
+          QString package_uri;
+          QString mesh_uri;
+          QString source_path;
+          QString mesh_path;
+          QString resolved_source_path;
+          QString generated_duplicate_key;
+        };
+        QHash<QString, GeneratedVisualRowMetadata> generated_visual_row_metadata_by_key;
         QSet<QString> protected_ur5_generated_visual_row_keys;
         QSet<QString> logged_required_ur5_ingestion_links;
+        auto generated_visual_row_metadata = [&](const YAML::Node & node,
+                                                int row_index,
+                                                const QString & final_id,
+                                                const QString & duplicate_key) {
+          GeneratedVisualRowMetadata metadata;
+          metadata.source_row_index = row_index;
+          metadata.final_id = final_id;
+          metadata.link = visual_index_first_scalar_value(node, {"link"});
+          metadata.link_name = visual_index_first_scalar_value(node, {"link_name"});
+          metadata.canonical_link_name = visual_item_canonical_link(node);
+          metadata.package_uri = visual_index_first_scalar_value(node, {"package_uri"});
+          metadata.mesh_uri = visual_index_first_scalar_value(node, {"mesh_uri"});
+          metadata.source_path = visual_index_first_scalar_value(node, {"source_path", "filename"});
+          metadata.mesh_path = visual_index_first_scalar_value(node, {"mesh_path"});
+          metadata.resolved_source_path = visual_index_first_scalar_value(node, {"resolved_source_path", "resolved_path"});
+          metadata.generated_duplicate_key = duplicate_key;
+          return metadata;
+        };
+        auto add_duplicate_generated_visual_diagnostic_fields = [&](QJsonObject & row,
+                                                                    const YAML::Node & skipped_node,
+                                                                    int skipped_row_index,
+                                                                    const QString & skipped_id,
+                                                                    const QString & duplicate_key,
+                                                                    const GeneratedVisualRowMetadata & retained,
+                                                                    bool protected_ur5_generated_visual_row) {
+          row[QStringLiteral("skipped_row_index")] = skipped_row_index;
+          row[QStringLiteral("skipped_id")] = skipped_id;
+          row[QStringLiteral("skipped_link")] = visual_index_first_scalar_value(skipped_node, {"link"});
+          row[QStringLiteral("skipped_link_name")] = visual_index_first_scalar_value(skipped_node, {"link_name"});
+          row[QStringLiteral("skipped_canonical_link_name")] = visual_item_canonical_link(skipped_node);
+          row[QStringLiteral("skipped_package_uri")] = visual_index_first_scalar_value(skipped_node, {"package_uri"});
+          row[QStringLiteral("skipped_mesh_uri")] = visual_index_first_scalar_value(skipped_node, {"mesh_uri"});
+          row[QStringLiteral("skipped_source_path")] = visual_index_first_scalar_value(skipped_node, {"source_path", "filename"});
+          row[QStringLiteral("skipped_mesh_path")] = visual_index_first_scalar_value(skipped_node, {"mesh_path"});
+          row[QStringLiteral("skipped_resolved_source_path")] = visual_index_first_scalar_value(skipped_node, {"resolved_source_path", "resolved_path"});
+          row[QStringLiteral("generated_duplicate_key")] = duplicate_key;
+          row[QStringLiteral("existing_retained_row_index")] = retained.source_row_index;
+          row[QStringLiteral("existing_retained_id")] = retained.final_id;
+          row[QStringLiteral("existing_retained_key")] = retained.generated_duplicate_key;
+          row[QStringLiteral("existing_retained_link")] = retained.link;
+          row[QStringLiteral("existing_retained_link_name")] = retained.link_name;
+          row[QStringLiteral("existing_retained_canonical_link_name")] = retained.canonical_link_name;
+          row[QStringLiteral("existing_retained_package_uri")] = retained.package_uri;
+          row[QStringLiteral("existing_retained_mesh_uri")] = retained.mesh_uri;
+          row[QStringLiteral("existing_retained_source_path")] = retained.source_path;
+          row[QStringLiteral("existing_retained_mesh_path")] = retained.mesh_path;
+          row[QStringLiteral("existing_retained_resolved_source_path")] = retained.resolved_source_path;
+          row[QStringLiteral("protected_ur5_generated_visual_row")] = protected_ur5_generated_visual_row;
+        };
+        auto duplicate_generated_visual_log_message = [&](const YAML::Node & skipped_node,
+                                                         int skipped_row_index,
+                                                         const QString & skipped_id,
+                                                         const QString & duplicate_key,
+                                                         const GeneratedVisualRowMetadata & retained,
+                                                         bool protected_ur5_generated_visual_row) {
+          return QStringLiteral("Scene3D skipped duplicate generated visual index row: skipped_row_index=%1 skipped_id=%2 skipped_link=%3 skipped_link_name=%4 skipped_canonical_link_name=%5 skipped_package_uri=%6 skipped_mesh_uri=%7 skipped_source_path=%8 skipped_mesh_path=%9 skipped_resolved_source_path=%10 generated_duplicate_key=%11 existing_retained_row_index=%12 existing_retained_id=%13 existing_retained_key=%14 protected_ur5_generated_visual_row=%15")
+            .arg(skipped_row_index)
+            .arg(skipped_id)
+            .arg(visual_index_first_scalar_value(skipped_node, {"link"}))
+            .arg(visual_index_first_scalar_value(skipped_node, {"link_name"}))
+            .arg(visual_item_canonical_link(skipped_node))
+            .arg(visual_index_first_scalar_value(skipped_node, {"package_uri"}))
+            .arg(visual_index_first_scalar_value(skipped_node, {"mesh_uri"}))
+            .arg(visual_index_first_scalar_value(skipped_node, {"source_path", "filename"}))
+            .arg(visual_index_first_scalar_value(skipped_node, {"mesh_path"}))
+            .arg(visual_index_first_scalar_value(skipped_node, {"resolved_source_path", "resolved_path"}))
+            .arg(duplicate_key)
+            .arg(retained.source_row_index)
+            .arg(retained.final_id)
+            .arg(retained.generated_duplicate_key)
+            .arg(protected_ur5_generated_visual_row ? QStringLiteral("true") : QStringLiteral("false"));
+        };
         for (const auto &v : ordered_visual_items) {
           const int ordered_source_row_index = ordered_visual_source_row_index++;
           const int source_row_index = workcell_builder::yaml_map_key(v, "source_row_index").as<int>(ordered_source_row_index);
@@ -9516,25 +9601,37 @@ void MainWindow::populate_scene_hierarchy()
             if (protected_ur5_generated_visual_row_keys.contains(generated_visual_row_key)) {
               ++skipped_true_duplicate_mesh_rows;
               const QString reason = add_skip_reason(QStringLiteral("duplicate_generated_visual_index_row"));
+              const GeneratedVisualRowMetadata retained = generated_visual_row_metadata_by_key.value(generated_visual_row_key);
+              add_duplicate_generated_visual_diagnostic_fields(
+                generated_row_diagnostic, v, source_row_index, id, generated_visual_row_key, retained, true);
               append_generated_visual_row_diagnostic(generated_row_diagnostic, QStringLiteral("duplicate_generated_visual_index_row"), reason);
               append_visual_ingestion_diagnostic(v, raw_id, id, reason);
-              append_studio_log(QStringLiteral("Scene3D skipped true duplicate generated URDF robot mesh row: key=%1 link=%2 visual=%3 mesh=%4")
-                .arg(generated_visual_row_key, protected_ur5_link, visual_item_canonical_visual(v), visual_item_mesh_identity(v)));
+              append_studio_log(duplicate_generated_visual_log_message(
+                v, source_row_index, id, generated_visual_row_key, retained, true));
               continue;
             }
             protected_ur5_generated_visual_row_keys.insert(generated_visual_row_key);
-            generated_visual_row_keys.insert(generated_visual_row_key);
+            generated_visual_row_metadata_by_key.insert(
+              generated_visual_row_key,
+              generated_visual_row_metadata(v, source_row_index, id, generated_visual_row_key));
             ++preserved_generated_urdf_robot_mesh_rows;
             append_studio_log(QStringLiteral("Scene3D preserved generated URDF robot mesh row before preview handoff: key=%1 link=%2 visual=%3 mesh=%4")
               .arg(generated_visual_row_key, protected_ur5_link, visual_item_canonical_visual(v), visual_item_mesh_identity(v)));
-          } else if (generated_visual_row_keys.contains(generated_visual_row_key)) {
+          } else if (generated_visual_row_metadata_by_key.contains(generated_visual_row_key)) {
             ++skipped_true_duplicate_mesh_rows;
             const QString reason = add_skip_reason(QStringLiteral("duplicate_generated_visual_index_row"));
+            const GeneratedVisualRowMetadata retained = generated_visual_row_metadata_by_key.value(generated_visual_row_key);
+            add_duplicate_generated_visual_diagnostic_fields(
+              generated_row_diagnostic, v, source_row_index, id, generated_visual_row_key, retained, false);
             append_generated_visual_row_diagnostic(generated_row_diagnostic, QStringLiteral("duplicate_generated_visual_index_row"), reason);
             append_visual_ingestion_diagnostic(v, raw_id, id, reason);
+            append_studio_log(duplicate_generated_visual_log_message(
+              v, source_row_index, id, generated_visual_row_key, retained, false));
             continue;
           } else {
-            generated_visual_row_keys.insert(generated_visual_row_key);
+            generated_visual_row_metadata_by_key.insert(
+              generated_visual_row_key,
+              generated_visual_row_metadata(v, source_row_index, id, generated_visual_row_key));
           }
           if (preview_ids.contains(id)) {
             const QString original_collision_id = id;
