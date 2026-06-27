@@ -4,6 +4,7 @@
 #include <QVector>
 #include <QStringList>
 #include <QSet>
+#include <QMatrix4x4>
 
 class QComboBox;
 class QLabel;
@@ -78,12 +79,7 @@ public:
     bool has_baked_world_visual_transform{ false };
     QString baked_world_visual_transform_source;
     bool has_baked_world_visual_matrix{ false };
-    double baked_world_visual_matrix[16]{
-      1.0, 0.0, 0.0, 0.0,
-      0.0, 1.0, 0.0, 0.0,
-      0.0, 0.0, 1.0, 0.0,
-      0.0, 0.0, 0.0, 1.0
-    };
+    QMatrix4x4 baked_world_visual_matrix;
     bool robot_candidate{ false };
     QString robot_classification_source;
     QString robot_base_frame;

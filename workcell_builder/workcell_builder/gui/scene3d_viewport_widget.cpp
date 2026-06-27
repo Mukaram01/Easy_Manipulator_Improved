@@ -130,7 +130,7 @@ bool scene3d_debug_fallback_boxes_enabled()
 }
 
 
-void apply_urdf_rpy_gl(double roll, double pitch, double yaw)
+[[maybe_unused]] void apply_urdf_rpy_gl(double roll, double pitch, double yaw)
 {
   // URDF RPY is fixed-axis roll/pitch/yaw: R = Rz(yaw) * Ry(pitch) * Rx(roll).
   // OpenGL post-multiplies the current matrix, so issue rotations in Z/Y/X order.
@@ -173,7 +173,7 @@ QMatrix4x4 authoritative_world_visual_transform(const ScenePreviewWidget::Previe
     if (item.has_baked_world_visual_matrix) {
       for (int row = 0; row < 4; ++row) {
         for (int col = 0; col < 4; ++col) {
-          transform(row, col) = static_cast<float>(item.baked_world_visual_matrix[row * 4 + col]);
+          transform(row, col) = static_cast<float>(item.baked_world_visual_matrix(row, col));
         }
       }
     } else {
@@ -352,24 +352,63 @@ void apply_mesh_local_correction_matrix(QMatrix4x4 & transform, const ScenePrevi
   }
 }
 
+bool is_generated_urdf_visual_item(const ScenePreviewWidget::PreviewItem & it);
+bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it);
+bool is_required_ur5_viewport_link(const ScenePreviewWidget::PreviewItem & item);
+QString scene3d_canonical_link_name_for_item(const ScenePreviewWidget::PreviewItem & item);
+
 QMatrix4x4 final_mesh_transform_matrix(const ScenePreviewWidget::PreviewItem & item)
 {
-  QMatrix4x4 transform = viewport_world_visual_transform(item);
+  const bool generated_ur5_visual =
+    (is_generated_urdf_visual_item(item) || is_locked_urdf_item(item)) &&
+    is_required_ur5_viewport_link(item);
+
+  if (item.has_baked_world_visual_transform && item.has_baked_world_visual_matrix) {
+    // Matrix-baked generated URDF rows already carry world_T_visual from the
+    // visual mesh index (or the one-time pose-to-matrix handoff). Apply only
+    // the Scene3D ROS-to-viewport basis and mesh scale here; do not rebuild
+    // from xyz/rpy, reapply visual origin, or enter legacy local corrections.
+    QMatrix4x4 transform = ros_to_viewport_basis_matrix() * item.baked_world_visual_matrix;
+    transform.scale(static_cast<float>(item.mesh_scale_x),
+                    static_cast<float>(item.mesh_scale_y),
+                    static_cast<float>(item.mesh_scale_z));
+    if (generated_ur5_visual) {
+      qInfo().noquote() << QStringLiteral("UR5_BAKED_MATRIX_APPLIED link=%1 source=%2")
+        .arg(scene3d_canonical_link_name_for_item(item), item.baked_world_visual_transform_source);
+    }
+    return transform;
+  }
+
   if (item.has_baked_world_visual_transform) {
-    // Baked generated URDF rows already carry the authoritative world visual
-    // pose. Keep the final mesh path explicit: pose, scale, return. Do not let
-    // legacy mesh-local correction hooks re-enter for flattened/baked rows.
+    if (generated_ur5_visual) {
+      qWarning().noquote() << QStringLiteral("ur5_baked_matrix_available_but_not_used link=%1 source=%2")
+        .arg(scene3d_canonical_link_name_for_item(item), item.baked_world_visual_transform_source);
+    }
+    QMatrix4x4 transform = viewport_world_visual_transform(item);
     transform.scale(static_cast<float>(item.mesh_scale_x),
                     static_cast<float>(item.mesh_scale_y),
                     static_cast<float>(item.mesh_scale_z));
     return transform;
   }
 
+  QMatrix4x4 transform = viewport_world_visual_transform(item);
   apply_mesh_local_correction_matrix(transform, item);
   transform.scale(static_cast<float>(item.mesh_scale_x),
                   static_cast<float>(item.mesh_scale_y),
                   static_cast<float>(item.mesh_scale_z));
   return transform;
+}
+
+[[maybe_unused]] void apply_mesh_local_correction_gl(const ScenePreviewWidget::PreviewItem & item)
+{
+  // Legacy GL-path helper retained for regression coverage only. The active
+  // renderer uses final_mesh_transform_matrix() so CPU bounds and GL draw paths
+  // share the same baked-matrix transform.
+  if (item.has_baked_world_visual_transform) return;
+  apply_urdf_rpy_gl(item.mesh_r, item.mesh_p, item.mesh_y);
+  if (item.has_origin_offset) {
+    glTranslated(item.origin_offset_x, item.origin_offset_y, item.origin_offset_z);
+  }
 }
 
 bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item)
@@ -4122,12 +4161,6 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   const bool log_ur5_final_transform = (is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) &&
       it.has_baked_world_visual_transform &&
       is_required_ur5_viewport_link(it);
-  if (log_ur5_final_transform) {
-    qInfo().noquote() << QStringLiteral("UR5_BAKED_POSE_APPLIED link=%1 xyz=[%2,%3,%4] rpy=[%5,%6,%7]")
-      .arg(canonical_link)
-      .arg(it.x, 0, 'g', 8).arg(it.y, 0, 'g', 8).arg(it.z, 0, 'g', 8)
-      .arg(it.roll, 0, 'g', 8).arg(it.pitch, 0, 'g', 8).arg(it.yaw, 0, 'g', 8);
-  }
   glMultMatrixf(final_draw_transform.constData());
 
   const MeshCacheEntry & cache = entry;  // ensure_mesh_cached(it, mesh_source) is intentionally upstream of final draw.
