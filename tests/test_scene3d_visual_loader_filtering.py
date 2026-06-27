@@ -59,7 +59,7 @@ def _normalized_ur5_link(item: dict) -> str:
 def _normalized_mesh_identity(item: dict) -> str:
     parts = [
         _token(str(item.get(key, "")))
-        for key in ("package_uri", "mesh_uri", "source_path", "mesh_path", "resolved_source_path", "resolved_path")
+        for key in ("package_uri", "mesh_uri", "source_path", "mesh_path", "resolved_source_path", "resolved_path", "filename")
         if str(item.get(key, "")).strip()
     ]
     return "__".join(parts) or "mesh_missing"
@@ -68,12 +68,15 @@ def _normalized_mesh_identity(item: dict) -> str:
 def _is_protected_ur5_generated_visual_row(item: dict) -> bool:
     link = _normalized_ur5_link(item)
     mesh_mix = "|".join(str(item.get(key, "")).lower() for key in (
-        "package_uri", "mesh_uri", "source_path", "mesh_path", "resolved_source_path", "resolved_path"
+        "package_uri", "mesh_uri", "source_path", "mesh_path", "resolved_path", "resolved_source_path", "filename"
     ))
+    mesh_token = _token(mesh_mix)
+    known_ur5_mesh_files = {"base_dae", "shoulder_dae", "upperarm_dae", "forearm_dae", "wrist1_dae", "wrist2_dae", "wrist3_dae"}
     return (
         bool(link)
         and _token(item.get("geometry_type") or item.get("type") or "") == "mesh"
-        and "ur_description/meshes/ur5/visual" in mesh_mix
+        and all(part in mesh_token for part in ("ur_description", "meshes", "ur5", "visual"))
+        and any(mesh_file in mesh_token for mesh_file in known_ur5_mesh_files)
     )
 
 
@@ -287,6 +290,73 @@ def _credible_physical_mesh_rows(items: list[dict]) -> list[dict]:
     return physical
 
 
+def _ur5_18_row_fixture_with_path_field(path_field: str, path_prefix: str) -> list[dict]:
+    ur5_meshes = {
+        "base_link_inertia": "base.dae",
+        "shoulder_link": "shoulder.dae",
+        "upper_arm_link": "upperarm.dae",
+        "forearm_link": "forearm.dae",
+        "wrist_1_link": "wrist1.dae",
+        "wrist_2_link": "wrist2.dae",
+        "wrist_3_link": "wrist3.dae",
+    }
+    rows = []
+    for index, (link, filename) in enumerate(ur5_meshes.items()):
+        rows.append(
+            {
+                "id": f"urdf_visual_{index}_{link}",
+                "source_row_index": index,
+                "link": link,
+                "visual_name": f"{link}_visual",
+                "source": "urdf_flattened",
+                "source_layer": "locked_generated_urdf_visual",
+                "active_visual_source": "mesh_preview",
+                "role": "robot",
+                "category": "locked_generated_urdf_visual",
+                "geometry_type": "mesh",
+                path_field: f"{path_prefix}/{filename}",
+                "filename": filename,
+            }
+        )
+    rows.extend(
+        [
+            {"id": "robot_base", "link": "robot_base", "visual_name": "robot_base_helper", "role": "robot", "category": "helper", "geometry_type": "box"},
+            {"id": "robot_reach", "link": "robot_reach", "visual_name": "robot_reach_helper", "role": "robot", "category": "robot_reach", "geometry_type": "sphere"},
+            {"id": "object_a", "link": "object_a", "visual_name": "object_a", "role": "object", "category": "pick_object", "geometry_type": "box"},
+            {"id": "conveyor", "link": "conveyor", "visual_name": "conveyor", "role": "environment", "category": "conveyor", "geometry_type": "box"},
+            {"id": "warning_anchor_1", "link": "warning", "visual_name": "warning_badge", "role": "warning", "category": "warning_anchor", "geometry_type": "box"},
+            {"id": "left_inner_finger", "link": "left_inner_finger", "visual_name": "left_inner_finger", "geometry_type": "mesh", "package_uri": "package://robotiq_85_description/meshes/visual/inner_finger.dae"},
+            {"id": "right_inner_finger", "link": "right_inner_finger", "visual_name": "right_inner_finger", "geometry_type": "mesh", "package_uri": "package://robotiq_85_description/meshes/visual/inner_finger.dae"},
+            {"id": "table", "link": "table", "visual_name": "table", "geometry_type": "mesh", "package_uri": "package://workbench_description/meshes/visual/table.stl"},
+            {"id": "camera_link", "link": "camera_link", "visual_name": "camera", "geometry_type": "mesh", "package_uri": "package://realsense2_description/meshes/d435.dae"},
+            {"id": "object_a_bounds_box", "link": "object_a", "visual_name": "object_a_bounds_box", "role": "helper", "category": "bounds_box", "geometry_type": "box"},
+            {"id": "conveyor_warning", "link": "conveyor", "visual_name": "warning", "role": "warning", "category": "warning", "geometry_type": "box"},
+        ]
+    )
+    assert len(rows) == 18
+    return rows
+
+
+def test_18_row_fixture_retains_all_ur5_rows_with_package_uri_paths() -> None:
+    items = _ur5_18_row_fixture_with_path_field("package_uri", "package://ur_description/meshes/ur5/visual")
+    retained = _filtered_links(items)
+
+    assert _PROTECTED_UR5_LINKS <= retained
+    assert all(_is_protected_ur5_generated_visual_row(item) for item in items[:7])
+    assert not any(_is_protected_ur5_generated_visual_row(item) for item in items[7:])
+
+
+def test_18_row_fixture_retains_all_ur5_rows_with_resolved_local_paths() -> None:
+    items = _ur5_18_row_fixture_with_path_field(
+        "resolved_path",
+        "/home/user/workcell_ws/install/ur_description/share/ur_description/meshes/ur5/visual",
+    )
+    retained = _filtered_links(items)
+
+    assert _PROTECTED_UR5_LINKS <= retained
+    assert all(_is_protected_ur5_generated_visual_row(item) for item in items[:7])
+    assert not any(_is_protected_ur5_generated_visual_row(item) for item in items[7:])
+
 def test_focused_m1_fixture_retains_physical_ur5_robotiq_table_and_camera_rows() -> None:
     items = _focused_m1_visual_items()
     retained_rows = _retained_rows(items)
@@ -397,10 +467,18 @@ def test_raw_ur5_mesh_rows_without_visual_source_metadata_are_protected() -> Non
             "link_name": link,
             "visual_name": f"visual_{index}",
             "type": "mesh",
-            "mesh_uri": f"package://ur_description/meshes/ur5/visual/{link}.dae",
+            "mesh_uri": f"package://ur_description/meshes/ur5/visual/{filename}",
         }
-        for index, link in enumerate(
-            ["base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link", "wrist_3_link"]
+        for index, (link, filename) in enumerate(
+            {
+                "base_link_inertia": "base.dae",
+                "shoulder_link": "shoulder.dae",
+                "upper_arm_link": "upperarm.dae",
+                "forearm_link": "forearm.dae",
+                "wrist_1_link": "wrist1.dae",
+                "wrist_2_link": "wrist2.dae",
+                "wrist_3_link": "wrist3.dae",
+            }.items()
         )
     ]
 
