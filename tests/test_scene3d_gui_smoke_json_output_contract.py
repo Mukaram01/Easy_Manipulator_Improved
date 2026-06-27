@@ -637,7 +637,7 @@ def test_ur5_rendered_mesh_adjacency_rejects_index_fallback_when_final_draw_miss
     assert "rendered_mesh_adjacency_used_index_fallback" not in payload.get("warnings", [])
     assert "scene3d_rendered_mesh_adjacency_failed" in payload["warnings"]
     assert payload["rendered_mesh_adjacency_errors"] == [
-        "Final Scene3D viewport/renderable diagnostics are missing; visual-index metadata cannot prove UR5 arm visibility"
+        "Final Scene3D final_draw_visual_items diagnostics are missing; visual-index metadata cannot prove UR5 arm visibility"
     ]
 
 
@@ -1521,3 +1521,16 @@ def test_scene3d_final_draw_export_uses_generated_urdf_renderable_assembly():
     assert "generated_robot_items.push_back(&item);" in assembly_body
     assert "ordered_items.insert(ordered_items.end(), generated_robot_items.begin(), generated_robot_items.end());" in assembly_body
     assert "build_final_generated_urdf_robot_renderables(items, show_safety);" in export_body
+    assert 'row["canonical_link"] = canonical_link_name;' in export_body
+    assert 'row["canonical_link_name"] = canonical_link_name;' in export_body
+    assert 'row["frame_id"] = !item.frame_id.trimmed().isEmpty() ? item.frame_id.trimmed() : canonical_link_name;' in export_body
+    assert 'row["visual_index_link"] = !item.visual_index_link.trimmed().isEmpty() ? item.visual_index_link.trimmed() : link_name;' in export_body
+    assert 'row["mesh_uri"] = !item.visual_index_mesh_uri.trimmed().isEmpty() ? item.visual_index_mesh_uri.trimmed() : mesh_source;' in export_body
+    assert 'row["package_uri"] = !item.visual_index_package_uri.trimmed().isEmpty() ? item.visual_index_package_uri.trimmed() : item.package_uri;' in export_body
+    assert 'const QMatrix4x4 baked_transform = authoritative_world_visual_transform(item);' in export_body
+    assert 'const QMatrix4x4 viewport_root_transform = viewport_world_visual_transform(item);' in export_body
+    assert 'const QMatrix4x4 final_transform = final_mesh_transform_matrix(item);' in export_body
+    assert 'row["baked_world_visual_matrix"] = scene3d_matrix_to_json(baked_transform);' in export_body
+    assert 'row["viewport_world_visual_matrix"] = scene3d_matrix_to_json(viewport_root_transform);' in export_body
+    assert 'row["final_draw_model_matrix"] = scene3d_matrix_to_json(final_transform);' in export_body
+    assert 'scene3d_final_draw_bbox_for_mesh(cache.mesh, final_transform, final_min, final_max)' in export_body
