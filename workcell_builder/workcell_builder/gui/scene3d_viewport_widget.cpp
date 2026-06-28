@@ -1230,7 +1230,7 @@ bool item_identity_contains_any(const ScenePreviewWidget::PreviewItem & it, std:
 {
   const QString mix = normalized_token(it.id + QStringLiteral("|") + it.display_name + QStringLiteral("|") +
                                        it.role + QStringLiteral("|") + it.category + QStringLiteral("|") +
-                                       it.metadata_tags.join(QStringLiteral("|")) + QStringLiteral("|") +
+                                       it.metadata_tags + QStringLiteral("|") +
                                        it.mesh_type + QStringLiteral("|") + it.material_name + QStringLiteral("|") +
                                        it.mesh_path + QStringLiteral("|") + it.package_uri + QStringLiteral("|") +
                                        it.source_path + QStringLiteral("|") + it.resolved_source_path_original);
@@ -1342,7 +1342,7 @@ bool item_is_robot_generated_link_for_initial_fit(const ScenePreviewWidget::Prev
                                        it.frame_id + QStringLiteral("|") + it.mesh_path + QStringLiteral("|") +
                                        it.package_uri + QStringLiteral("|") + it.source_path + QStringLiteral("|") +
                                        it.role + QStringLiteral("|") + it.category + QStringLiteral("|") +
-                                       it.metadata_tags.join(QStringLiteral("|")));
+                                       it.metadata_tags);
   if (mix.contains(QStringLiteral("gripper")) || mix.contains(QStringLiteral("robotiq")) ||
       mix.contains(QStringLiteral("end_effector")) || mix.contains(QStringLiteral("camera"))) return false;
   return mix.contains(QStringLiteral("robot")) || mix.contains(QStringLiteral("robot_arm")) ||
