@@ -402,7 +402,7 @@ def test_ur5_rendered_mesh_adjacency_prefers_final_draw_bboxes():
     assert checked[-1]["ok"] is True
 
 
-def test_ur5_rendered_mesh_adjacency_prefers_final_rendered_mesh_bboxes_over_baked_pose_bounds():
+def test_ur5_rendered_mesh_adjacency_ignores_legacy_rendered_mesh_bbox_aliases():
     import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
 
     def item(link: str, xmin: float, xmax: float) -> dict:
@@ -431,11 +431,72 @@ def test_ur5_rendered_mesh_adjacency_prefers_final_rendered_mesh_bboxes_over_bak
 
     smoke._apply_ur5_rendered_mesh_adjacency(payload, repo_root=Path(__file__).resolve().parents[1], scene_name="ur5_2f_test", index_data={})
 
-    assert payload["rendered_mesh_adjacency_status"] == "PASS"
+    assert payload["rendered_mesh_adjacency_status"] == "FAIL"
     checked = payload["rendered_mesh_adjacency_checked_pairs"]
-    assert checked[0]["parent_bbox_min"] == [0.0, 0.0, 0.0]
-    assert all(pair["ok"] is True for pair in checked)
+    assert checked[0]["parent_bbox_min"] is None
+    assert all(pair["ok"] is False for pair in checked)
+    assert any("final_draw_bbox" in error for error in payload["rendered_mesh_adjacency_errors"])
 
+
+
+def test_ur5_rendered_mesh_adjacency_fails_when_final_draw_bboxes_far_despite_plausible_visual_index():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    chain = [
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+        "gripper_base_link",
+    ]
+
+    def index_row(link: str, i: int) -> dict:
+        return {
+            "source_row_index": i,
+            "link": link,
+            "link_name": link,
+            "baked_world_visual_pose": {"xyz": [i * 0.05, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
+            "visual_origin": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
+            "link_world_pose": {"xyz": [i * 0.05, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
+        }
+
+    def final_row(link: str, i: int) -> dict:
+        x = i * 2.0
+        return {
+            "id": f"draw_{link}",
+            "source_row_index": i,
+            "link": link,
+            "link_name": link,
+            "canonical_link_name": link,
+            "final_draw_status": "ok",
+            "final_draw_bbox": {"min": [x, 0.0, 0.0], "max": [x + 0.1, 0.1, 0.1]},
+            "final_draw_bbox_center": [x + 0.05, 0.05, 0.05],
+        }
+
+    payload = {
+        "status": "PASS",
+        "visual_index": {"items": [index_row(link, i) for i, link in enumerate(chain)]},
+        "scene_visual_mesh_index": {"items": [index_row(link, i) for i, link in enumerate(chain)]},
+        "final_draw_visual_items": [final_row(link, i) for i, link in enumerate(chain)],
+    }
+
+    smoke._apply_ur5_rendered_mesh_adjacency(
+        payload, repo_root=Path(__file__).resolve().parents[1], scene_name="ur5_2f_test", index_data=payload["visual_index"]
+    )
+
+    assert payload["rendered_mesh_adjacency_source"] == "final_draw_visual_items"
+    assert payload["rendered_mesh_adjacency_status"] == "FAIL"
+    assert payload["generated_robot_topology_diagnostics"]["source"] == "final_draw_visual_items"
+    first_pair = payload["rendered_mesh_adjacency_checked_pairs"][0]
+    assert first_pair["parent"] == "base_link"
+    assert first_pair["child"] == "shoulder_link"
+    assert first_pair["separation_m"] == pytest.approx(1.9)
+    assert first_pair["ok"] is False
+    assert any("final draw bbox adjacency" in error for error in payload["rendered_mesh_adjacency_errors"])
+    assert "rendered_mesh_adjacency_used_index_fallback" not in payload.get("warnings", [])
 
 def test_ur5_rendered_mesh_adjacency_rejects_metadata_only_nonfinite_bboxes():
     import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
