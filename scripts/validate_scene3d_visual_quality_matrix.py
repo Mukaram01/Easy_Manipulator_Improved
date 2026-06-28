@@ -59,6 +59,32 @@ MESH_FAILURE_REASON_KEYS = (
 PRIMITIVE_TYPES = {"box", "cube", "cylinder", "sphere", "capsule", "cone", "primitive"}
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _load_scene3d_helper_tokens() -> tuple[str, ...]:
+    token_file = _repo_root() / "workcell_builder" / "workcell_builder" / "config" / "scene3d_helper_tokens.yaml"
+    fallback = (
+        "overlay", "helper", "diagnostic", "safety_zone", "pick_zone", "place_zone",
+        "robot_reach", "warning_anchor", "warning_badge", "camera_fov", "fov",
+        "pick_coverage", "reachability", "collision", "work_envelope", "task_route",
+        "approach_retreat", "epd_detection", "detection_label", "bounds_box", "bounding_box",
+    )
+    try:
+        loaded = yaml.safe_load(token_file.read_text(encoding="utf-8"))
+    except Exception:
+        return fallback
+    tokens = loaded.get("helper_tokens") if isinstance(loaded, dict) else None
+    if not isinstance(tokens, list):
+        return fallback
+    normalized = tuple(str(token).strip() for token in tokens if str(token).strip())
+    return normalized or fallback
+
+
+SCENE3D_HELPER_OVERLAY_TOKENS = _load_scene3d_helper_tokens()
+
+
 def _load_json(path: Path) -> dict[str, Any]:
     try:
         loaded = json.loads(path.read_text(encoding="utf-8"))

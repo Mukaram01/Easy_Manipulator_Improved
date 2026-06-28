@@ -1,0 +1,26 @@
+# Canonical Scene3D helper/overlay identity tokens shared with Workcell Builder
+# and visual-quality tooling. These tokens identify non-product overlays that
+# should stay behind explicit overlay/diagnostic controls unless the row is
+# clearly generated URDF or mesh-backed physical geometry.
+helper_tokens:
+  - overlay
+  - helper
+  - diagnostic
+  - safety_zone
+  - pick_zone
+  - place_zone
+  - robot_reach
+  - warning_anchor
+  - warning_badge
+  - camera_fov
+  - fov
+  - pick_coverage
+  - reachability
+  - collision
+  - work_envelope
+  - task_route
+  - approach_retreat
+  - epd_detection
+  - detection_label
+  - bounds_box
+  - bounding_box

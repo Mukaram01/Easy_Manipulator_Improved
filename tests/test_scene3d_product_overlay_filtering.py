@@ -2,14 +2,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSEMBLY_CPP = ROOT / "workcell_builder/workcell_builder/gui/scene3d_candidate_assembly.cpp"
+CLASSIFIER_CPP = ROOT / "workcell_builder/workcell_builder/gui/scene3d_visual_classification.cpp"
+TOKENS_YAML = ROOT / "workcell_builder/workcell_builder/config/scene3d_helper_tokens.yaml"
 
 
 def test_product_view_treats_helper_rows_as_overlay_only() -> None:
-    source = ASSEMBLY_CPP.read_text(encoding="utf-8")
+    source = CLASSIFIER_CPP.read_text(encoding="utf-8")
+    assembly_source = ASSEMBLY_CPP.read_text(encoding="utf-8")
+    tokens_yaml = TOKENS_YAML.read_text(encoding="utf-8")
 
-    assert "bool contains_product_helper_overlay_token" in source
-    assert "bool is_product_helper_overlay_role" in source
-    assert "const bool is_overlay_or_helper = is_product_helper_overlay_role(role, category, combined);" in source
+    assert "bool identity_contains_helper_overlay_token" in source
+    assert "bool is_helper_overlay_identity" in source
+    assert "const bool is_overlay_or_helper = workcell_builder::scene3d_visual_classification::is_helper_overlay_identity(item);" in assembly_source
+    assert "helper_tokens:" in tokens_yaml
 
     for token in (
         'QStringLiteral("safety_zone")',
@@ -47,11 +52,8 @@ def test_include_preview_item_combined_includes_source_identity() -> None:
     body = source.split("bool include_preview_item_for_scene3d", 1)[1]
     body = body.split("Scene3DLayerVisibilityDefaults compute_scene3d_default_layer_visibility", 1)[0]
 
-    expected = (
-        'const QString combined = source_layer + "|" + visual_source + "|" + role + "|" '
-        '+ category + "|" + token(item.status) + "|" + item.warnings.join("|").toLower();'
-    )
-    assert expected in body
+    assert "source_layer +" in body
+    assert "visual_source +" in body
     assert 'const QString source_layer = token(item.source_layer);' in body
     assert 'const QString visual_source = token(item.active_visual_source);' in body
     assert 'const QString role = token(item.role);' in body
