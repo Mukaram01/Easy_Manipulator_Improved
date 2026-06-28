@@ -65,7 +65,8 @@ def test_product_fit_uses_generous_distance_guards_and_exports_camera_diagnostic
     diagnostics_block = VIEW_CPP.split('SCENE3D_MESH_DIAGNOSTICS_JSON', 1)[1].split('void Scene3DViewportWidget::fit_scene()', 1)[0]
 
     assert 'fit_include_overlays = false;' in fit_product
-    assert 'initial_physical_fit_bounds(bmin, bmax, &ur5_included)' in fit_product
+    assert 'initial_physical_fit_bounds(bmin, bmax, &robot_included, &anchor_count, &anchor_roles)' in fit_product
+    assert 'last_initial_fit_physical_anchor_count_ = anchor_count;' in fit_product
     assert '* 1.22' not in fit_product
     assert 'const double base_fit_distance = product_radius / qTan(fov * 0.5);' in fit_product
     assert 'qMax(qMax(base_fit_distance * 2.4, product_radius * 5.0), 4.0)' in fit_product

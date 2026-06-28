@@ -7899,7 +7899,7 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
   }
   if (viewport) {
     scene3d_filter_diagnostics_[QStringLiteral("camera_fit_target")] = viewport->last_camera_fit_target();
-    scene3d_filter_diagnostics_[QStringLiteral("camera_fit_includes_robot")] = viewport->last_initial_fit_included_ur5_bounds();
+    scene3d_filter_diagnostics_[QStringLiteral("camera_fit_includes_robot")] = viewport->last_initial_fit_included_robot_bounds();
   }
   if (has_selected_scene() && selected_scene_name() == QStringLiteral("ur5_2f_test")) {
     // audit_ur5_2f_test_committed_viewport_items(viewport, &missing_required_visible_links) is computed above after final ingest.
