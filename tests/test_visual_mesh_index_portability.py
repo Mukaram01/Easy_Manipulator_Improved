@@ -17,7 +17,22 @@ def test_regeneration_report_and_catalog():
     subprocess.run(['python3', str(ROOT/'scripts/regenerate_scene_visual_mesh_indexes.py'), '--scene', 'ur5_2f_test', '--portable'], check=True)
     rpt = json.loads((ROOT/'build/workcell_studio/visual_mesh_index_regeneration_report.json').read_text())
     row = rpt['scenes'][0]
-    for k in ['scene','status','visual_item_count','mesh_backed_count','primitive_fallback_count','unresolved_count','stale_or_unsafe_count','generated_index_path']:
+    for k in [
+        'scene',
+        'status',
+        'visual_item_count',
+        'mesh_backed_count',
+        'primitive_fallback_count',
+        'unresolved_count',
+        'stale_or_unsafe_count',
+        'generated_index_path',
+        'postprocess_helper_available',
+        'postprocess_changed',
+        'postprocess_detail',
+        'ur5_runtime_repair_applied',
+        'ur5_runtime_repair_added_links',
+        'ur5_runtime_repair_added_end_effector_links',
+    ]:
         assert k in row
     cat = yaml.safe_load((ROOT/'config/workcell_studio_visual_asset_catalog.yaml').read_text())
     for k in ['robot_ur','gripper_robotiq_2f','gripper_suction','gripper_airpick','table','workbench','conveyor_placeholder','camera_realsense','bin_box_fixture']:
