@@ -116,6 +116,11 @@ public:
     int valid_physical_fallback_count{ 0 };
     int overlay_rendered_count{ 0 };
     int locked_generated_urdf_visual_count{ 0 };
+    int physical_anchor_count{ 0 };
+    int generated_robot_mesh_count{ 0 };
+    int tool_gripper_visual_count{ 0 };
+    int table_workbench_visual_count{ 0 };
+    int camera_body_visual_count{ 0 };
     int transform_chain_applied_count{ 0 };
     int visual_origin_applied_count{ 0 };
     int baked_world_visual_transform_count{ 0 };

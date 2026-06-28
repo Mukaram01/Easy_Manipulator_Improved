@@ -57,6 +57,11 @@ def _passing_smoke() -> dict:
             "primitive_rendered_count": 1,
             "placeholder_count": 0,
             "wireframe_fallback_count": 0,
+            "physical_anchor_count": 4,
+            "generated_robot_mesh_count": 1,
+            "tool_gripper_visual_count": 1,
+            "table_workbench_visual_count": 1,
+            "camera_body_visual_count": 1,
         },
     }
 
@@ -99,6 +104,11 @@ def test_visual_quality_matrix_emits_required_fields_and_synthetic_fixture_passe
             "helper_overlay_counts",
             "physical_fit_bounds_count",
             "helper_overlay_fit_bounds_count",
+            "physical_anchor_count",
+            "generated_robot_mesh_count",
+            "tool_gripper_visual_count",
+            "table_workbench_visual_count",
+            "camera_body_visual_count",
             "valid_physical_fallback_count",
             "placeholder_count",
             "raw_generated_bounds_count",
@@ -806,3 +816,40 @@ def test_readiness_matrix_scopes_missing_screenshot_to_scene3d_visual_category(t
     assert "screenshot_missing" in visual_result["blocker_reasons"]
     assert physical_result["status"] == "PASS"
     assert physical_result["blockers"] == []
+
+
+def test_visual_quality_matrix_rejects_supported_scene_without_product_composition_counters(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _write_scene(repo, "missing_composition_scene", _mesh_and_primitive_index(), {
+        "schema": "workcell_studio_scene3d_gui_smoke/v1",
+        "status": "PASS",
+        "render_debug_counters": {
+            "rendered_count": 2,
+            "mesh_rendered_count": 1,
+            "primitive_rendered_count": 1,
+            "placeholder_count": 0,
+            "wireframe_fallback_count": 0,
+        },
+    })
+    catalog = _write_catalog(
+        repo,
+        {
+            "scene_name": "missing_composition_scene",
+            "package_name": "missing_composition_scene",
+            "scene_path": "scenes/missing_composition_scene",
+            "support_level": "supported",
+            "status": "supported",
+            "enabled": True,
+        },
+    )
+    fixture = _write_scene(repo, "synthetic_visual_quality_fixture", _mesh_and_primitive_index(), _passing_smoke())
+
+    payload = matrix.build_matrix(repo_root=repo, supported_scenes=catalog, synthetic_fixture=fixture)
+    scene = next(scene for scene in payload["scenes"] if scene["scene_name"] == "missing_composition_scene")
+
+    assert payload["pass"] is False
+    assert scene["visual_quality_status"] == "FAIL"
+    assert "robot_composition_missing" in scene["blocker_reasons"]
+    assert "table_composition_missing" in scene["blocker_reasons"]
+    assert "camera_composition_missing" in scene["blocker_reasons"]
+    assert "tool_composition_missing" in scene["blocker_reasons"]

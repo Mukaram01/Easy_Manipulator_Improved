@@ -329,6 +329,7 @@ def evaluate_scene(
     smoke_json_path: Path | None,
     screenshot_path: Path | None = None,
     synthetic_fixture: bool = False,
+    require_composition_evidence: bool = False,
 ) -> dict[str, Any]:
     warnings: list[str] = []
     blockers: list[str] = []
@@ -395,6 +396,11 @@ def evaluate_scene(
     physical_fit_bounds_count = _max_counter(smoke_payload, PHYSICAL_FIT_BOUNDS_COUNTERS)
     helper_overlay_fit_bounds_count = _max_counter(smoke_payload, HELPER_OVERLAY_FIT_BOUNDS_COUNTERS)
     valid_physical_fallback_count = _max_counter(smoke_payload, VALID_PHYSICAL_FALLBACK_COUNTERS)
+    physical_anchor_count = _counter(smoke_payload, "physical_anchor_count", "initial_fit_physical_anchor_count")
+    generated_robot_mesh_count = _counter(smoke_payload, "generated_robot_mesh_count", "robot_mesh_count")
+    tool_gripper_visual_count = _counter(smoke_payload, "tool_gripper_visual_count", "gripper_tool_visual_count", "tool_visual_count", "gripper_visual_count")
+    table_workbench_visual_count = _counter(smoke_payload, "table_workbench_visual_count", "table_visual_count", "workbench_visual_count")
+    camera_body_visual_count = _counter(smoke_payload, "camera_body_visual_count", "camera_visual_count")
 
     credible_source_count = mesh_source_count + primitive_source_count
     credible_physical_rendered_count = mesh_rendered_count + primitive_rendered_count
@@ -479,6 +485,20 @@ def evaluate_scene(
         if diagnostic_fallback_count > int(physical_rendered_count * DIAGNOSTIC_FALLBACK_DOMINANCE_RATIO):
             blockers.append("diagnostic fallback evidence dominates physical render evidence despite mesh or URDF primitive sources")
 
+    if runtime_available:
+        composition_expected = generated_robot_mesh_count > 0 or tool_gripper_visual_count > 0 or table_workbench_visual_count > 0 or camera_body_visual_count > 0
+        if require_composition_evidence and physical_anchor_count <= 0 and physical_rendered_count > 0:
+            add_blocker("physical_composition_missing: physical_anchor_count is zero despite rendered physical evidence", "physical_composition_missing")
+        if require_composition_evidence or composition_expected:
+            if generated_robot_mesh_count <= 0:
+                add_blocker("robot_composition_missing: generated_robot_mesh_count is zero; supported scenes need credible robot composition evidence", "robot_composition_missing")
+            if table_workbench_visual_count <= 0:
+                add_blocker("table_composition_missing: table_workbench_visual_count is zero; supported scenes need table/workbench composition evidence", "table_composition_missing")
+            if camera_body_visual_count <= 0:
+                add_blocker("camera_composition_missing: camera_body_visual_count is zero; supported scenes need camera body composition evidence", "camera_composition_missing")
+            if tool_gripper_visual_count <= 0:
+                add_blocker("tool_composition_missing: tool_gripper_visual_count is zero; supported scenes need tool/gripper composition evidence", "tool_composition_missing")
+
     visible_physical_count = physical_rendered_count
     if runtime_available and wireframe_fallback_count > 0 and visible_physical_count > 0:
         if wireframe_fallback_count > int(visible_physical_count * PHYSICAL_ITEM_DOMINANCE_RATIO):
@@ -497,7 +517,7 @@ def evaluate_scene(
         if diagnostic_fallback_count != 0:
             blockers.append("synthetic fixture must render mesh and primitive without diagnostic fallback bounds or boxes")
 
-    visual_quality_status = "BLOCKED" if not runtime_available else ("PASS" if not blockers else "FAIL")
+    visual_quality_status = "PASS" if runtime_available and not blockers else "FAIL"
     return {
         "scene_name": scene_name,
         "scene_path": str(scene_dir),
@@ -513,6 +533,11 @@ def evaluate_scene(
         "physical_rendered_count": physical_rendered_count,
         "credible_physical_rendered_count": credible_physical_rendered_count,
         "valid_physical_fallback_count": valid_physical_fallback_count,
+        "physical_anchor_count": physical_anchor_count,
+        "generated_robot_mesh_count": generated_robot_mesh_count,
+        "tool_gripper_visual_count": tool_gripper_visual_count,
+        "table_workbench_visual_count": table_workbench_visual_count,
+        "camera_body_visual_count": camera_body_visual_count,
         "helper_overlay_count": helper_overlay_count,
         "helper_overlay_counts": helper_overlay_counts,
         "physical_fit_bounds_count": physical_fit_bounds_count,
@@ -554,6 +579,7 @@ def build_matrix(
                 mesh_index_path=mesh_index_path,
                 smoke_json_path=_resolve_smoke_json(smoke_dir, scene_name, scene_dir),
                 screenshot_path=_resolve_screenshot(screenshot_dir, scene_name),
+                require_composition_evidence=True,
             )
         )
 

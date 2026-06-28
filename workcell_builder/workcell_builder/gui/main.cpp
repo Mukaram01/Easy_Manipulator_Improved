@@ -823,6 +823,11 @@ private:
       counters["valid_physical_fallback_count"] = rc.valid_physical_fallback_count;
       counters["overlay_rendered_count"] = rc.overlay_rendered_count;
       counters["locked_generated_urdf_visual_count"] = rc.locked_generated_urdf_visual_count;
+      counters["physical_anchor_count"] = rc.physical_anchor_count;
+      counters["generated_robot_mesh_count"] = rc.generated_robot_mesh_count;
+      counters["tool_gripper_visual_count"] = rc.tool_gripper_visual_count;
+      counters["table_workbench_visual_count"] = rc.table_workbench_visual_count;
+      counters["camera_body_visual_count"] = rc.camera_body_visual_count;
       counters["transform_chain_applied_count"] = rc.transform_chain_applied_count;
       counters["visual_origin_applied_count"] = rc.visual_origin_applied_count;
       counters["baked_world_visual_transform_count"] = rc.baked_world_visual_transform_count;
@@ -851,6 +856,8 @@ private:
                                   QStringLiteral("placeholder_count"), QStringLiteral("missing_geometry_count"), QStringLiteral("wireframe_fallback_count"),
                                   QStringLiteral("overlay_helper_count"), QStringLiteral("generated_fallback_count"), QStringLiteral("editable_layout_count"),
                                   QStringLiteral("primitive_fallback_count"), QStringLiteral("locked_generated_urdf_visual_count"),
+                                  QStringLiteral("physical_anchor_count"), QStringLiteral("generated_robot_mesh_count"), QStringLiteral("tool_gripper_visual_count"),
+                                  QStringLiteral("table_workbench_visual_count"), QStringLiteral("camera_body_visual_count"),
                                   QStringLiteral("overlay_count"), QStringLiteral("labels_drawn"), QStringLiteral("labels_suppressed_overlap")}) {
         counters[key] = 0;
       }
