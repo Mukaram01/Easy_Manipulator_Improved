@@ -35,6 +35,18 @@ UR5_VISUAL_TOKEN_HINTS = (
 )
 MAX_ADJACENT_LINK_DISTANCE_M = 1.25
 COLLAPSED_LINK_EPSILON_M = 1e-6
+ROBOTIQ_85_RENDER_LINKS = {
+    "tool0",
+    "gripper_base_link",
+    "gripper_finger1_knuckle_link",
+    "gripper_finger2_knuckle_link",
+    "gripper_finger1_inner_knuckle_link",
+    "gripper_finger2_inner_knuckle_link",
+    "gripper_finger1_finger_link",
+    "gripper_finger2_finger_link",
+    "gripper_finger1_finger_tip_link",
+    "gripper_finger2_finger_tip_link",
+}
 
 
 def _as_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -257,16 +269,28 @@ def repair_index(path: Path) -> tuple[bool, list[str]]:
     stale_or_implausible, repair_reasons = _existing_ur5_rows_need_repair(items, present)
     repair_arm_rows = bool(missing) or stale_or_implausible
     present_2f_links = _present_links(items, STABLE_UR5_2F_LINKS)
+    uses_2f_gripper = _payload_uses_2f_gripper(payload, items, path)
     missing_2f_specs = [spec for spec in STABLE_UR5_2F_PREVIEW_VISUALS if spec["link"] not in present_2f_links]
-    should_include_2f_proxy = _payload_uses_2f_gripper(payload, items, path) and bool(missing_2f_specs)
-    extra_specs = missing_2f_specs if should_include_2f_proxy else []
+
+    # If the core tool anchors are missing, keeping existing finger/knuckle rows creates
+    # exactly the exploded gripper seen in Scene3D. Replace the whole Robotiq draw chain
+    # with one compact connected proxy instead of preserving loose finger meshes.
+    missing_2f_anchors = [link for link in ("tool0", "gripper_base_link") if link not in present_2f_links]
+    replace_partial_2f_chain = uses_2f_gripper and bool(missing_2f_anchors)
+    should_include_2f_proxy = uses_2f_gripper and (replace_partial_2f_chain or bool(missing_2f_specs))
+    extra_specs = list(STABLE_UR5_2F_PREVIEW_VISUALS) if replace_partial_2f_chain else (
+        missing_2f_specs if should_include_2f_proxy else []
+    )
     if not repair_arm_rows and not extra_specs:
         return False, []
 
     repaired_specs = (list(REQUIRED_UR5_VISUALS) if repair_arm_rows else []) + list(extra_specs)
     replaced_links: set[str] = set(REQUIRED_UR5_LINKS) if repair_arm_rows else set()
     if extra_specs:
-        replaced_links.update(spec["link"] for spec in extra_specs)
+        if replace_partial_2f_chain:
+            replaced_links.update(ROBOTIQ_85_RENDER_LINKS)
+        else:
+            replaced_links.update(spec["link"] for spec in extra_specs)
     _apply_repaired_rows(payload, items, repaired_specs, replaced_links)
     _refresh_payload_counters(payload)
     payload["safe_for_preview"] = True

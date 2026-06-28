@@ -649,6 +649,8 @@ if(BUILD_TESTING)
     placed_object_preview_writer_test.cpp
     scene3d_stl_parser_test.cpp
     scene3d_render_role_classifier_test.cpp
+    scene3d_ur5_baked_transform_test.cpp
+    scene3d_product_view_layer_defaults_test.cpp
     command_builders_test.cpp
     scene_preview_widget_ui_test.cpp
     workcell_studio_canvas_model_mesh_test.cpp

@@ -792,7 +792,7 @@ private:
         viewport->render_smoke_fallback_frame();
       }
       const auto rc = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
-      root["ur5_final_draw_candidate_diagnostics"] = viewport->ur5_final_draw_candidate_diagnostics_export();
+      root["ur5_final_draw_candidate_diagnostics"] = viewport->generated_robot_final_draw_candidate_diagnostics_export();
       const QJsonArray final_draw_diagnostics = viewport->final_draw_diagnostics_export();
       root["final_draw_diagnostics"] = final_draw_diagnostics;
       root["final_draw_visual_items"] = final_draw_diagnostics;
