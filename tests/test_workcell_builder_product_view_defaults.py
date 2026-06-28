@@ -19,6 +19,9 @@ class PreviewItem:
     warnings: list[str] = field(default_factory=list)
     mesh_load_warning: str = ""
     source_path_resolution_outcome: str = ""
+    id: str = ""
+    mesh_available: bool = False
+    has_mesh_metadata: bool = False
 
 
 def _token(value: str) -> str:
@@ -31,6 +34,7 @@ def product_layer_defaults(items: list[PreviewItem]) -> dict[str, bool]:
     unresolved_package_uri_count = 0
     unsupported_extension_count = 0
     fallback_warning_count = 0
+    authoritative_generated_mesh_count = 0
 
     for item in items:
         source_layer = _token(item.source_layer)
@@ -64,14 +68,24 @@ def product_layer_defaults(items: list[PreviewItem]) -> dict[str, bool]:
             unsupported_extension_count += 1
         if "fallback" in combined and any(marker in combined for marker in ("missing", "unavailable", "unresolved")):
             fallback_warning_count += 1
+        if (
+            source_layer in ("locked_generated_urdf_visual", "generated_urdf_visual")
+            and (
+                item.mesh_available
+                or item.has_mesh_metadata
+                or item.id.startswith("generated_urdf_fallback::")
+                or item.id.startswith("urdf_visual_")
+            )
+        ):
+            authoritative_generated_mesh_count += 1
 
     return {
         "editable_layout": True,
         "mesh_preview": True,
         "locked_generated_urdf_visual": True,
         "overlay": False,
-        "primitive_fallback": (primitive_fallback_count + missing_mesh_count) > 0,
-        "warning": (missing_mesh_count + unresolved_package_uri_count + unsupported_extension_count + fallback_warning_count) > 0,
+        "primitive_fallback": authoritative_generated_mesh_count == 0 and (primitive_fallback_count + missing_mesh_count) > 0,
+        "warning": False,
     }
 
 
@@ -101,7 +115,7 @@ def compact_warning_chip_state(mesh_index: dict[str, object], counters: dict[str
 def test_loaded_scene_payload_product_defaults_suppress_empty_diagnostics_layers() -> None:
     defaults = product_layer_defaults(
         [
-            PreviewItem(source_layer="locked_generated_urdf_visual"),
+            PreviewItem(source_layer="locked_generated_urdf_visual", mesh_available=True),
             PreviewItem(active_visual_source="mesh_preview"),
             PreviewItem(source_layer="editable_layout"),
         ]
@@ -120,9 +134,9 @@ def test_loaded_scene_payload_product_defaults_suppress_empty_diagnostics_layers
     assert "out.locked_generated_urdf_visual = true;" in assembly_cpp
     assert "out.mesh_preview = true;" in assembly_cpp
     assert "out.editable_layout = true;" in assembly_cpp
-    assert "out.primitive_fallback = (primitive_fallback_count + missing_mesh_count) > 0;" in assembly_cpp
+    assert "out.primitive_fallback = authoritative_generated_mesh_count == 0" in assembly_cpp
     assert "out.overlay = false;" in assembly_cpp
-    assert "out.warning = (missing_mesh_count + unresolved_package_uri_count +" in assembly_cpp
+    assert "out.warning = false;" in assembly_cpp
 
 
 def test_scene_preview_widget_product_defaults_turn_off_viewport_helpers_and_warnings() -> None:
