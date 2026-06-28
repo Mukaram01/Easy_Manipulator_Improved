@@ -19,25 +19,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-REQUIRED_UR5_VISUALS: tuple[dict[str, Any], ...] = (
-    {"link": "base_link_inertia", "mesh": "base.dae", "xyz": [0.0, 0.0, 0.08], "rpy": [0.0, 0.0, 0.0], "parent": "world", "chain": ["world", "base_link_inertia"], "size": [0.26, 0.26, 0.16]},
-    {"link": "shoulder_link", "mesh": "shoulder.dae", "xyz": [0.0, 0.0, 0.22], "rpy": [0.0, 0.0, 0.0], "parent": "base_link_inertia", "chain": ["world", "base_link_inertia", "shoulder_link"], "size": [0.18, 0.18, 0.26]},
-    {"link": "upper_arm_link", "mesh": "upperarm.dae", "xyz": [0.27, 0.0, 0.58], "rpy": [0.0, 0.35, 0.0], "parent": "shoulder_link", "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link"], "size": [0.54, 0.11, 0.13]},
-    {"link": "forearm_link", "mesh": "forearm.dae", "xyz": [0.58, 0.0, 0.43], "rpy": [0.0, -0.45, 0.0], "parent": "upper_arm_link", "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link"], "size": [0.48, 0.10, 0.12]},
-    {"link": "wrist_1_link", "mesh": "wrist1.dae", "xyz": [0.82, 0.0, 0.31], "rpy": [0.0, 0.0, 0.0], "parent": "forearm_link", "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link"], "size": [0.12, 0.10, 0.16]},
-    {"link": "wrist_2_link", "mesh": "wrist2.dae", "xyz": [0.92, 0.0, 0.28], "rpy": [0.0, 0.0, 0.0], "parent": "wrist_1_link", "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link"], "size": [0.12, 0.10, 0.12]},
-    {"link": "wrist_3_link", "mesh": "wrist3.dae", "xyz": [1.00, 0.0, 0.28], "rpy": [0.0, 0.0, 0.0], "parent": "wrist_2_link", "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link", "wrist_3_link"], "size": [0.10, 0.10, 0.10]},
+from scripts.scene3d_ur5_preview_rows import (
+    REQUIRED_UR5_LINKS,
+    REQUIRED_UR5_VISUALS,
+    STABLE_UR5_2F_LINKS,
+    STABLE_UR5_2F_PREVIEW_VISUALS,
+    make_ur5_preview_item,
 )
 
-STABLE_UR5_2F_PREVIEW_VISUALS: tuple[dict[str, Any], ...] = (
-    {"link": "tool0", "mesh": "", "xyz": [1.08, 0.0, 0.28], "rpy": [0.0, 0.0, 0.0], "parent": "wrist_3_link", "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link", "wrist_3_link", "tool0"], "size": [0.10, 0.10, 0.08], "category": "end_effector", "role": "end_effector", "preview_model": "robotiq_85"},
-    {"link": "robotiq_85_base_link", "mesh": "robotiq_85_base_link.dae", "mesh_prefix": "package://robotiq_85_description/meshes/visual/", "xyz": [1.17, 0.0, 0.28], "rpy": [0.0, 0.0, 0.0], "parent": "tool0", "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link", "wrist_3_link", "tool0", "robotiq_85_base_link"], "size": [0.12, 0.08, 0.10], "category": "end_effector", "role": "end_effector", "preview_model": "robotiq_85"},
-    {"link": "robotiq_85_left_finger_tip", "mesh": "robotiq_85_finger_tip_link.dae", "mesh_prefix": "package://robotiq_85_description/meshes/visual/", "xyz": [1.26, 0.045, 0.28], "rpy": [0.0, 0.0, 0.0], "parent": "robotiq_85_base_link", "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link", "wrist_3_link", "tool0", "robotiq_85_base_link", "robotiq_85_left_finger_tip"], "size": [0.12, 0.025, 0.08], "category": "end_effector", "role": "end_effector", "preview_model": "robotiq_85"},
-    {"link": "robotiq_85_right_finger_tip", "mesh": "robotiq_85_finger_tip_link.dae", "mesh_prefix": "package://robotiq_85_description/meshes/visual/", "xyz": [1.26, -0.045, 0.28], "rpy": [0.0, 0.0, 0.0], "parent": "robotiq_85_base_link", "chain": ["world", "base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link", "wrist_3_link", "tool0", "robotiq_85_base_link", "robotiq_85_right_finger_tip"], "size": [0.12, 0.025, 0.08], "category": "end_effector", "role": "end_effector", "preview_model": "robotiq_85"},
-)
-
-REQUIRED_UR5_LINKS = tuple(str(spec["link"]) for spec in REQUIRED_UR5_VISUALS)
-STABLE_UR5_2F_LINKS = tuple(str(spec["link"]) for spec in STABLE_UR5_2F_PREVIEW_VISUALS)
 RENDER_REJECT_STATUSES = {"skip", "skipped", "hidden", "reject", "rejected", "failed", "error", "missing", "suppressed"}
 UR5_VISUAL_TOKEN_HINTS = (
     "ur_description/meshes/ur5/visual/",
@@ -147,10 +136,6 @@ def _payload_uses_2f_gripper(payload: dict[str, Any], items: list[dict[str, Any]
     return any(token in blob for token in ("robotiq_85", "robotiq85", "2f", "two_finger"))
 
 
-def _pose(xyz: list[float], rpy: list[float]) -> dict[str, list[float]]:
-    return {"xyz": [float(v) for v in xyz], "rpy": [float(v) for v in rpy]}
-
-
 def _finite_vec(value: Any, expected_len: int = 3) -> bool:
     if not isinstance(value, list) or len(value) < expected_len:
         return False
@@ -204,98 +189,59 @@ def _existing_ur5_rows_need_repair(items: list[dict[str, Any]], present: set[str
     return bool(reasons), reasons
 
 
-def _ur5_item(spec: dict[str, Any], index: int) -> dict[str, Any]:
-    link = str(spec["link"])
-    mesh_name = str(spec.get("mesh") or "")
-    mesh_prefix = str(spec.get("mesh_prefix") or "package://ur_description/meshes/ur5/visual/")
-    reference_uri = str(spec.get("reference_mesh_uri") or (f"{mesh_prefix}{mesh_name}" if mesh_name else ""))
-    xyz = list(spec["xyz"])
-    rpy = list(spec["rpy"])
-    pose = _pose(xyz, rpy)
-    item_id = f"generated_urdf::{link}::stable_preview::{index}"
-    category = str(spec.get("category") or "robot")
-    role = str(spec.get("role") or "robot")
-    preview_model = str(spec.get("preview_model") or "ur5")
-    metadata_tags = (
-        f"source=urdf_flattened;stable_scene3d_ur5_builder_preview;"
-        f"rviz_launch_authoritative;category={category};robot_model=ur5;preview_model={preview_model}"
+def _apply_repaired_rows(
+    payload: dict[str, Any],
+    items: list[dict[str, Any]],
+    repaired_specs: list[dict[str, Any]],
+    replaced_links: set[str],
+) -> list[dict[str, Any]]:
+    repaired = [make_ur5_preview_item(spec, index) for index, spec in enumerate(repaired_specs)]
+    kept = [
+        item for item in items
+        if isinstance(item, dict)
+        and not any(link.lower() in _token_values(item) for link in replaced_links)
+    ]
+    repaired_items = repaired + kept
+    payload["visual_items"] = repaired_items
+    if isinstance(payload.get("items"), list):
+        payload["items"] = repaired_items
+    return repaired_items
+
+
+def _refresh_payload_counters(payload: dict[str, Any]) -> None:
+    visual_items = payload["visual_items"]
+    payload["visual_count"] = len(visual_items)
+    payload["candidate_mesh_count"] = len(visual_items)
+    payload["emitted_visual_count"] = len(visual_items)
+    payload["renderable_item_count"] = len([i for i in visual_items if i.get("render_expected", True)])
+    payload["renderable_mesh_count"] = len([i for i in visual_items if i.get("geometry_type") == "mesh" and i.get("render_expected", True)])
+    payload["resolved"] = len([i for i in visual_items if i.get("resolved")])
+    payload["unresolved"] = len([i for i in visual_items if not i.get("resolved")])
+
+
+def _drop_repair_blockers(payload: dict[str, Any]) -> None:
+    blockers = payload.get("blockers") if isinstance(payload.get("blockers"), list) else []
+    stale_tokens = (
+        "missing_required_visible_ur5_links",
+        "ur5_final_viewport_links_missing",
+        "rendered_ur5_link_count_below_7",
+        "stale_retained_visual_rows_missing_warning",
+        "implausible_adjacent_distance",
+        "collapsed_ur5_link_positions",
     )
-    return {
-        "id": item_id,
-        "item_id": f"generated_urdf::{link}",
-        "source": "urdf_flattened",
-        "source_layer": "locked_generated_urdf_visual",
-        "active_visual_source": "primitive_fallback",
-        "category": category,
-        "role": role,
-        "robot_model": "ur5",
-        "preview_model": preview_model,
-        "preview_locked": True,
-        "editable": False,
-        "generated_urdf_visual": True,
-        "locked_generated_urdf_visual": True,
-        "link": link,
-        "link_name": link,
-        "object_name": link,
-        "canonical_link_name": link,
-        "render_identity": link,
-        "final_render_identity": link,
-        "final_render_link": link,
-        "final_draw_link": link,
-        "visual": f"stable_preview_{index}",
-        "visual_name": f"stable_preview_{index}",
-        "visual_index": index,
-        "source_row_index": index,
-        "parent_link": str(spec.get("parent") or ""),
-        "immediate_parent_link": str(spec.get("parent") or ""),
-        "root_link": "world",
-        "link_chain": list(spec.get("chain") or ["world", link]),
-        "joint_parent_link": str(spec.get("parent") or ""),
-        "pose": pose,
-        "chain_pose": pose,
-        "world_pose": pose,
-        "link_world_pose": pose,
-        "expected_visual_pose": pose,
-        "baked_world_visual_pose": pose,
-        "baked_world_visual_transform_source": "stable_scene3d_ur5_builder_preview",
-        "visual_origin_applied_to_pose": True,
-        "visual_origin": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
-        "geometry_type": "box",
-        "primitive_geometry_type": "box",
-        "size": [float(v) for v in spec["size"]],
-        "has_mesh_metadata": False,
-        "mesh_available": False,
-        "reference_mesh_uri": reference_uri,
-        "mesh_source": "",
-        "mesh_uri": "",
-        "package_uri": "",
-        "source_path": "",
-        "mesh_path": "",
-        "mesh_file_name": mesh_name,
-        "resolved": True,
-        "mesh_scale": [1.0, 1.0, 1.0],
-        "scale": [1.0, 1.0, 1.0],
-        "render_expected": True,
-        "render_skip_reason": "",
-        "warning": "",
-        "material": {"name": "ur5_stable_builder_preview", "color": [0.85, 0.88, 0.92, 1.0]},
-        "color": [0.85, 0.88, 0.92, 1.0],
-        "link_transform_status": "stable_scene3d_ur5_builder_preview",
-        "transform_status": "stable_scene3d_ur5_builder_preview",
-        "transform_chain": list(spec.get("chain") or ["world", link]),
-        "visual_index_link": link,
-        "visual_index_link_name": link,
-        "visual_index_object_name": link,
-        "visual_index_visual": f"stable_preview_{index}",
-        "visual_index_visual_name": f"stable_preview_{index}",
-        "visual_index_value": index,
-        "visual_index_parent_link": str(spec.get("parent") or ""),
-        "visual_index_link_chain": list(spec.get("chain") or ["world", link]),
-        "visual_index_mesh_uri": reference_uri,
-        "visual_index_package_uri": reference_uri,
-        "visual_index_source": "stable_scene3d_ur5_builder_preview",
-        "metadata_tags": metadata_tags,
-    }
+    payload["blockers"] = [b for b in blockers if not any(token in str(b) for token in stale_tokens)]
+
+
+def _append_repair_warnings(payload: dict[str, Any], extra_specs: list[dict[str, Any]]) -> None:
+    warnings = payload.get("warnings") if isinstance(payload.get("warnings"), list) else []
+    note = "ur5_runtime_visual_index_repair_applied: stable primitive builder preview; RViz launch remains authoritative"
+    if note not in warnings:
+        warnings.append(note)
+    if extra_specs:
+        gripper_note = "ur5_2f_stable_end_effector_preview_added: locked Robotiq 2F proxy for builder canvas"
+        if gripper_note not in warnings:
+            warnings.append(gripper_note)
+    payload["warnings"] = warnings
 
 
 def repair_index(path: Path) -> tuple[bool, list[str]]:
@@ -316,26 +262,11 @@ def repair_index(path: Path) -> tuple[bool, list[str]]:
         return False, []
 
     repaired_specs = (list(REQUIRED_UR5_VISUALS) if repair_arm_rows else []) + list(extra_specs)
-    repaired = [_ur5_item(spec, index) for index, spec in enumerate(repaired_specs)]
     replaced_links: set[str] = set(REQUIRED_UR5_LINKS) if repair_arm_rows else set()
     if extra_specs:
         replaced_links.update(spec["link"] for spec in extra_specs)
-    kept = [
-        item for item in items
-        if isinstance(item, dict)
-        and not any(link.lower() in _token_values(item) for link in replaced_links)
-    ]
-    repaired_items = repaired + kept
-    payload["visual_items"] = repaired_items
-    if isinstance(payload.get("items"), list):
-        payload["items"] = repaired_items
-    payload["visual_count"] = len(payload["visual_items"])
-    payload["candidate_mesh_count"] = len(payload["visual_items"])
-    payload["emitted_visual_count"] = len(payload["visual_items"])
-    payload["renderable_item_count"] = len([i for i in payload["visual_items"] if i.get("render_expected", True)])
-    payload["renderable_mesh_count"] = len([i for i in payload["visual_items"] if i.get("geometry_type") == "mesh" and i.get("render_expected", True)])
-    payload["resolved"] = len([i for i in payload["visual_items"] if i.get("resolved")])
-    payload["unresolved"] = len([i for i in payload["visual_items"] if not i.get("resolved")])
+    _apply_repaired_rows(payload, items, repaired_specs, replaced_links)
+    _refresh_payload_counters(payload)
     payload["safe_for_preview"] = True
     payload["stale_index"] = False
     payload["stale_reasons"] = []
@@ -353,25 +284,8 @@ def repair_index(path: Path) -> tuple[bool, list[str]]:
     if extra_specs:
         payload["ur5_2f_stable_preview_links"] = list(STABLE_UR5_2F_LINKS)
     payload["repair_generated_at"] = datetime.now(timezone.utc).isoformat()
-    blockers = payload.get("blockers") if isinstance(payload.get("blockers"), list) else []
-    stale_tokens = (
-        "missing_required_visible_ur5_links",
-        "ur5_final_viewport_links_missing",
-        "rendered_ur5_link_count_below_7",
-        "stale_retained_visual_rows_missing_warning",
-        "implausible_adjacent_distance",
-        "collapsed_ur5_link_positions",
-    )
-    payload["blockers"] = [b for b in blockers if not any(token in str(b) for token in stale_tokens)]
-    warnings = payload.get("warnings") if isinstance(payload.get("warnings"), list) else []
-    note = "ur5_runtime_visual_index_repair_applied: stable primitive builder preview; RViz launch remains authoritative"
-    if note not in warnings:
-        warnings.append(note)
-    if extra_specs:
-        gripper_note = "ur5_2f_stable_end_effector_preview_added: locked Robotiq 2F proxy for builder canvas"
-        if gripper_note not in warnings:
-            warnings.append(gripper_note)
-    payload["warnings"] = warnings
+    _drop_repair_blockers(payload)
+    _append_repair_warnings(payload, list(extra_specs))
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return True, [spec["link"] for spec in missing]
 
