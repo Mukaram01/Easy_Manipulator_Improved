@@ -752,7 +752,7 @@ def test_urdf_flattened_ur5_visual_rows_normalize_link_identity_and_audit_counts
         "status": "PASS",
         "visual_index": {"items": raw_ur5_rows},
         "final_draw_visual_items": final_rows,
-        "camera_fit_target": "product_physical_initial_fit_ur5_included",
+        "camera_fit_target": "product_physical_initial_fit_robot_included",
     }
 
     smoke._apply_ur5_final_viewport_payload_contract(payload)
@@ -884,7 +884,7 @@ def test_ur5_final_viewport_payload_requires_visible_links_table_and_camera():
             {"id": "layout_table", "display_name": "table", "visible": True, "rendered": True, "geometry_type": "box"},
             {"id": "camera_sensor", "display_name": "camera", "visible": True, "rendered": True, "geometry_type": "box"},
         ],
-        "camera_fit_target": "product_physical_initial_fit_ur5_included",
+        "camera_fit_target": "product_physical_initial_fit_robot_included",
     }
 
     smoke._apply_ur5_final_viewport_payload_contract(payload)
@@ -1116,7 +1116,7 @@ def test_ur5_final_viewport_payload_fails_stale_retained_rows_warning_when_links
             {"id": "table", "display_name": "table", "geometry_type": "box"},
             {"id": "camera", "display_name": "camera", "geometry_type": "box"},
         ],
-        "camera_fit_target": "product_physical_initial_fit_ur5_included",
+        "camera_fit_target": "product_physical_initial_fit_robot_included",
     }
 
     smoke._apply_ur5_final_viewport_payload_contract(payload)
@@ -1262,7 +1262,7 @@ def test_ur5_2f_real_visual_mesh_index_preserves_visual_number_stages_and_final_
             "generated_urdf_visual_numbers_after_filter": expected_visual_numbers,
         },
         "final_draw_visual_items": final_rows,
-        "camera_fit_target": "product_physical_initial_fit_ur5_included",
+        "camera_fit_target": "product_physical_initial_fit_robot_included",
     }
 
     smoke._add_smoke_report_supplemental_evidence(payload, screenshot_path=None, screenshot_available=False)
@@ -1385,7 +1385,7 @@ def test_fresh_real_xacro_urdf_visual_rows_are_counted_from_visual_index_identit
         "status": "PASS",
         "visual_index": {"visual_items": visual_items},
         "final_draw_visual_items": final_rows,
-        "camera_fit_target": "product_physical_initial_fit_ur5_included",
+        "camera_fit_target": "product_physical_initial_fit_robot_included",
     }
 
     smoke._apply_ur5_final_viewport_payload_contract(payload)
@@ -1431,7 +1431,7 @@ def test_old_generated_urdf_row_identities_still_count_without_visual_index():
             }
             for index, link in enumerate(required_links, start=1)
         ],
-        "camera_fit_target": "product_physical_initial_fit_ur5_included",
+        "camera_fit_target": "product_physical_initial_fit_robot_included",
     }
 
     smoke._apply_ur5_final_viewport_payload_contract(payload)
@@ -1510,7 +1510,7 @@ def test_fresh_visual_index_ur5_and_robotiq_rows_survive_final_renderable_contra
         "status": "PASS",
         "visual_index": {"visual_items": visual_items},
         "final_draw_visual_items": final_rows,
-        "camera_fit_target": "product_physical_initial_fit_ur5_included",
+        "camera_fit_target": "product_physical_initial_fit_robot_included",
     }
 
     enriched_rows = [smoke._enrich_final_row_from_visual_index(row, payload) for row in final_rows]

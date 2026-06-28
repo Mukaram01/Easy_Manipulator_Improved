@@ -1298,22 +1298,31 @@ QString scene3d_canonical_link_name_for_item(const ScenePreviewWidget::PreviewIt
 bool item_is_enabled_for_fit(const ScenePreviewWidget::PreviewItem & it);
 bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it);
 
-bool item_is_ur5_generated_link_for_initial_fit(const ScenePreviewWidget::PreviewItem & it)
+bool item_is_robot_generated_link_for_initial_fit(const ScenePreviewWidget::PreviewItem & it)
 {
   if (!(is_generated_urdf_visual_item(it) || is_locked_urdf_item(it))) return false;
   const QString canonical = scene3d_canonical_link_name_for_item(it);
-  static const QSet<QString> ur5_links{
+  static const QSet<QString> common_robot_links{
     QStringLiteral("base_link_inertia"), QStringLiteral("base_link"), QStringLiteral("shoulder_link"),
     QStringLiteral("upper_arm_link"), QStringLiteral("forearm_link"), QStringLiteral("wrist_1_link"),
-    QStringLiteral("wrist_2_link"), QStringLiteral("wrist_3_link"), QStringLiteral("tool0")
+    QStringLiteral("wrist_2_link"), QStringLiteral("wrist_3_link"), QStringLiteral("tool0"),
+    QStringLiteral("base"), QStringLiteral("shoulder"), QStringLiteral("elbow"), QStringLiteral("wrist"),
+    QStringLiteral("flange"), QStringLiteral("tcp")
   };
-  if (ur5_links.contains(canonical)) return true;
+  if (common_robot_links.contains(canonical)) return true;
   const QString mix = normalized_token(it.id + QStringLiteral("|") + it.display_name + QStringLiteral("|") +
                                        it.frame_id + QStringLiteral("|") + it.mesh_path + QStringLiteral("|") +
-                                       it.package_uri + QStringLiteral("|") + it.source_path);
-  return mix.contains(QStringLiteral("ur5")) ||
-         mix.contains(QStringLiteral("ur_description/meshes/ur5")) ||
-         mix.contains(QStringLiteral("ur_description\\meshes\\ur5"));
+                                       it.package_uri + QStringLiteral("|") + it.source_path + QStringLiteral("|") +
+                                       it.role + QStringLiteral("|") + it.category + QStringLiteral("|") +
+                                       it.metadata_tags.join(QStringLiteral("|")));
+  if (mix.contains(QStringLiteral("gripper")) || mix.contains(QStringLiteral("robotiq")) ||
+      mix.contains(QStringLiteral("end_effector")) || mix.contains(QStringLiteral("camera"))) return false;
+  return mix.contains(QStringLiteral("robot")) || mix.contains(QStringLiteral("robot_arm")) ||
+         mix.contains(QStringLiteral("ur_description/meshes/")) ||
+         mix.contains(QStringLiteral("ur_description\\meshes\\")) ||
+         mix.contains(QStringLiteral("fanuc")) || mix.contains(QStringLiteral("abb")) ||
+         mix.contains(QStringLiteral("panda")) || mix.contains(QStringLiteral("ur3")) ||
+         mix.contains(QStringLiteral("ur5")) || mix.contains(QStringLiteral("ur10"));
 }
 
 bool item_is_gripper_generated_link_for_initial_fit(const ScenePreviewWidget::PreviewItem & it)
@@ -1330,22 +1339,26 @@ bool item_is_gripper_generated_link_for_initial_fit(const ScenePreviewWidget::Pr
          mix.contains(QStringLiteral("end_effector"));
 }
 
-bool item_is_initial_physical_fit_anchor(const ScenePreviewWidget::PreviewItem & it, bool * out_is_ur5 = nullptr)
+QString initial_physical_fit_anchor_role(const ScenePreviewWidget::PreviewItem & it)
 {
-  if (out_is_ur5) *out_is_ur5 = false;
-  if (!item_is_enabled_for_fit(it)) return false;
-  if (is_overlay_only_item(it)) return false;
+  if (!item_is_enabled_for_fit(it)) return QString();
+  if (is_overlay_only_item(it)) return QString();
   const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
   const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
-  if (source_layer == QStringLiteral("overlay") || visual_source == QStringLiteral("overlay")) return false;
+  if (source_layer == QStringLiteral("overlay") || visual_source == QStringLiteral("overlay")) return QString();
 
-  const bool is_ur5 = item_is_ur5_generated_link_for_initial_fit(it);
-  if (out_is_ur5) *out_is_ur5 = is_ur5;
-  if (is_ur5) return true;
-  if (item_is_gripper_generated_link_for_initial_fit(it)) return true;
+  if (item_is_robot_generated_link_for_initial_fit(it)) return QStringLiteral("generated_robot_visual");
+  if (item_is_gripper_generated_link_for_initial_fit(it)) return QStringLiteral("tool_gripper_visual");
 
   const NormalizedRole role = classify_item_role(it);
-  return role == NormalizedRole::Table || role == NormalizedRole::Camera;
+  if (role == NormalizedRole::Table) return QStringLiteral("workbench_table");
+  if (role == NormalizedRole::Camera) return QStringLiteral("camera_body");
+  if (it.linked_to_editable_layout_state && include_in_fit_bounds(it, false)) return QStringLiteral("authored_physical_environment");
+  const QString layer = source_layer + QStringLiteral("|") + visual_source;
+  if ((layer.contains(QStringLiteral("layout")) || layer.contains(QStringLiteral("environment"))) && include_in_fit_bounds(it, false)) {
+    return QStringLiteral("authored_physical_environment");
+  }
+  return QString();
 }
 
 bool item_is_enabled_for_fit(const ScenePreviewWidget::PreviewItem & it)
@@ -1969,10 +1982,14 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
       root["camera_fit_bounds_min"] = QJsonArray{last_camera_fit_bounds_min_.x(), last_camera_fit_bounds_min_.y(), last_camera_fit_bounds_min_.z()};
       root["camera_fit_bounds_max"] = QJsonArray{last_camera_fit_bounds_max_.x(), last_camera_fit_bounds_max_.y(), last_camera_fit_bounds_max_.z()};
       root["camera_fit_bounds_span"] = QJsonArray{last_camera_fit_bounds_span_.x(), last_camera_fit_bounds_span_.y(), last_camera_fit_bounds_span_.z()};
-      root["initial_fit_included_ur5_bounds"] = last_initial_fit_included_ur5_bounds_;
-      root["initial_fit_audit_token"] = last_initial_fit_included_ur5_bounds_
-        ? QStringLiteral("UR5_BOUNDS_INCLUDED_IN_INITIAL_FIT")
-        : QStringLiteral("UR5_BOUNDS_NOT_INCLUDED_IN_INITIAL_FIT");
+      root["initial_fit_included_robot_bounds"] = last_initial_fit_included_robot_bounds_;
+      root["initial_fit_physical_anchor_count"] = last_initial_fit_physical_anchor_count_;
+      root["initial_fit_anchor_roles"] = QJsonArray::fromStringList(last_initial_fit_anchor_roles_);
+      root["initial_fit_audit_token"] = last_initial_fit_included_robot_bounds_
+        ? QStringLiteral("ROBOT_BOUNDS_INCLUDED_IN_INITIAL_FIT")
+        : QStringLiteral("ROBOT_BOUNDS_NOT_INCLUDED_IN_INITIAL_FIT");
+      root["initial_fit_included_ur5_bounds"] = last_initial_fit_included_robot_bounds_;
+      root["initial_fit_ur5_bounds_transitional"] = QStringLiteral("transitional compatibility key; use initial_fit_included_robot_bounds");
       if (has_robot_aabb_diag_) {
         root["robot_aabb_min"] = QJsonArray{last_robot_aabb_min_.x(), last_robot_aabb_min_.y(), last_robot_aabb_min_.z()};
         root["robot_aabb_max"] = QJsonArray{last_robot_aabb_max_.x(), last_robot_aabb_max_.y(), last_robot_aabb_max_.z()};
@@ -2029,17 +2046,21 @@ void Scene3DViewportWidget::fit_product_view()
   fit_include_overlays = false;
 
   QVector3D bmin, bmax;
-  bool ur5_included = false;
-  if (!initial_physical_fit_bounds(bmin, bmax, &ur5_included) &&
+  bool robot_included = false;
+  int anchor_count = 0;
+  QStringList anchor_roles;
+  if (!initial_physical_fit_bounds(bmin, bmax, &robot_included, &anchor_count, &anchor_roles) &&
       !scene_bounds_from_visible_items(bmin, bmax, false)) {
     set_isometric_view();
-    last_initial_fit_included_ur5_bounds_ = false;
+    last_initial_fit_included_robot_bounds_ = false;
+    last_initial_fit_physical_anchor_count_ = 0;
+    last_initial_fit_anchor_roles_.clear();
     return;
   }
 
   const double fov = qDegreesToRadians(50.0);
-  // Initial product framing is intentionally physical-only: generated UR5 links,
-  // generated Robotiq/gripper links, the table/workbench, and the camera item.
+  // Initial product framing is intentionally physical-only: generated robot links,
+  // generated tool/gripper links, table/workbench, camera body, and authored physical environment items.
   // Overlay-only FOV/reachability/collision bounds remain excluded unless the
   // explicit overlay fit action sets fit_include_overlays for fit_scene().
   orbit_offset_ = (bmin + bmax) * 0.5f;
@@ -2057,13 +2078,18 @@ void Scene3DViewportWidget::fit_product_view()
   yaw_ = -0.86;
   pitch_ = -0.60;
   orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.06, product_radius * 0.035)));
-  last_initial_fit_included_ur5_bounds_ = ur5_included;
-  last_camera_fit_target_ = ur5_included
-    ? QStringLiteral("product_physical_initial_fit_ur5_included")
-    : QStringLiteral("product_physical_initial_fit_ur5_absent");
-  if (ur5_included) {
-    qInfo().noquote() << QStringLiteral("Scene3D initial fit: UR5_BOUNDS_INCLUDED_IN_INITIAL_FIT target=%1 scene=%2")
-      .arg(last_camera_fit_target_, scene_name.trimmed().isEmpty() ? QStringLiteral("No scene") : scene_name.trimmed());
+  last_initial_fit_included_robot_bounds_ = robot_included;
+  last_initial_fit_physical_anchor_count_ = anchor_count;
+  last_initial_fit_anchor_roles_ = anchor_roles;
+  last_camera_fit_target_ = robot_included
+    ? QStringLiteral("product_physical_initial_fit_robot_included")
+    : QStringLiteral("product_physical_initial_fit_robot_absent");
+  if (robot_included) {
+    qInfo().noquote() << QStringLiteral("Scene3D initial fit: ROBOT_BOUNDS_INCLUDED_IN_INITIAL_FIT target=%1 scene=%2 anchors=%3 roles=%4")
+      .arg(last_camera_fit_target_,
+           scene_name.trimmed().isEmpty() ? QStringLiteral("No scene") : scene_name.trimmed())
+      .arg(anchor_count)
+      .arg(anchor_roles.isEmpty() ? QStringLiteral("none") : anchor_roles.join(QStringLiteral(",")));
   }
   has_robot_aabb_diag_ = false;
   fit_include_overlays = false;
@@ -2560,9 +2586,19 @@ Scene3DViewportWidget::RenderDebugCounters Scene3DViewportWidget::render_debug_c
   return counters;
 }
 
-bool Scene3DViewportWidget::last_initial_fit_included_ur5_bounds() const
+bool Scene3DViewportWidget::last_initial_fit_included_robot_bounds() const
 {
-  return last_initial_fit_included_ur5_bounds_;
+  return last_initial_fit_included_robot_bounds_;
+}
+
+int Scene3DViewportWidget::last_initial_fit_physical_anchor_count() const
+{
+  return last_initial_fit_physical_anchor_count_;
+}
+
+QStringList Scene3DViewportWidget::last_initial_fit_anchor_roles() const
+{
+  return last_initial_fit_anchor_roles_;
 }
 
 QString Scene3DViewportWidget::last_camera_fit_target() const
@@ -2776,16 +2812,23 @@ bool Scene3DViewportWidget::scene_bounds_from_visible_items(QVector3D & out_min,
   return has_fittable_item;
 }
 
-bool Scene3DViewportWidget::initial_physical_fit_bounds(QVector3D & out_min, QVector3D & out_max, bool * out_ur5_included) const
+bool Scene3DViewportWidget::initial_physical_fit_bounds(QVector3D & out_min, QVector3D & out_max,
+                                                        bool * out_robot_included,
+                                                        int * out_anchor_count,
+                                                        QStringList * out_anchor_roles) const
 {
-  if (out_ur5_included) *out_ur5_included = false;
+  if (out_robot_included) *out_robot_included = false;
+  if (out_anchor_count) *out_anchor_count = 0;
+  if (out_anchor_roles) out_anchor_roles->clear();
   out_min = QVector3D(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
   out_max = QVector3D(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
   bool has_anchor = false;
-  bool ur5_included = false;
+  bool robot_included = false;
+  QStringList roles;
+  int anchor_count = 0;
   for (const auto & it : items) {
-    bool is_ur5 = false;
-    if (!item_is_initial_physical_fit_anchor(it, &is_ur5)) continue;
+    const QString anchor_role = initial_physical_fit_anchor_role(it);
+    if (anchor_role.isEmpty()) continue;
 
     ItemBounds bounds{};
     const bool generated_or_locked_visual = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
@@ -2803,7 +2846,9 @@ bool Scene3DViewportWidget::initial_physical_fit_bounds(QVector3D & out_min, QVe
     }
 
     has_anchor = true;
-    ur5_included = ur5_included || is_ur5;
+    ++anchor_count;
+    if (!roles.contains(anchor_role)) roles << anchor_role;
+    robot_included = robot_included || anchor_role == QStringLiteral("generated_robot_visual");
     out_min.setX(std::min(out_min.x(), static_cast<float>(bounds.x)));
     out_min.setY(std::min(out_min.y(), static_cast<float>(bounds.y)));
     out_min.setZ(std::min(out_min.z(), static_cast<float>(bounds.z)));
@@ -2811,7 +2856,10 @@ bool Scene3DViewportWidget::initial_physical_fit_bounds(QVector3D & out_min, QVe
     out_max.setY(std::max(out_max.y(), static_cast<float>(bounds.y + bounds.sy)));
     out_max.setZ(std::max(out_max.z(), static_cast<float>(bounds.z + bounds.sz)));
   }
-  if (out_ur5_included) *out_ur5_included = ur5_included;
+  roles.sort();
+  if (out_robot_included) *out_robot_included = robot_included;
+  if (out_anchor_count) *out_anchor_count = anchor_count;
+  if (out_anchor_roles) *out_anchor_roles = roles;
   return has_anchor;
 }
 
