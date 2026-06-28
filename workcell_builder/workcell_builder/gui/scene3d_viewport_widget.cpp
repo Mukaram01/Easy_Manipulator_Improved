@@ -1,4 +1,5 @@
 #include "scene3d_viewport_widget.h"
+#include "scene3d_visual_classification.h"
 // Static contract token: return !item_has_mesh_uri_or_path(it) && !item_has_valid_urdf_primitive(it);
 // Static contract token: REJECT_RAW_GENERATED_BOUNDS_SUPPRESSED: generated bounds item has no mesh URI/path and no URDF primitive
 // Static contract token: generated_bounds_suppressed
@@ -1081,27 +1082,17 @@ enum class NormalizedRole
 
 QString normalized_token(const QString & value)
 {
-  return value.trimmed().toLower().replace('-', '_').replace(' ', '_');
+  return workcell_builder::scene3d_visual_classification::normalized_token(value);
 }
 
 QString normalized_scene3d_layer_token(const QString & value)
 {
-  const QString normalized = normalized_token(value);
-  if (normalized == QStringLiteral("generated_preview")) return QStringLiteral("generated_urdf_visual");
-  if (normalized == QStringLiteral("locked_generated_urdf")) return QStringLiteral("locked_generated_urdf_visual");
-  if (normalized == QStringLiteral("legacy_static_fallback")) return QStringLiteral("primitive_fallback");
-  if (normalized == QStringLiteral("overlays") || normalized == QStringLiteral("helper_overlay")) return QStringLiteral("overlay");
-  return normalized;
+  return workcell_builder::scene3d_visual_classification::normalized_layer_token(value);
 }
 
 bool is_generated_urdf_visual_item(const ScenePreviewWidget::PreviewItem & it)
 {
-  const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
-  const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
-  if (source_layer == "generated_urdf_visual" || source_layer == "locked_generated_urdf_visual") return true;
-  if (visual_source == "generated_urdf_visual" || visual_source == "locked_generated_urdf_visual") return true;
-  if (it.locked && it.lock_reason.contains("URDF visual", Qt::CaseInsensitive)) return true;
-  return false;
+  return workcell_builder::scene3d_visual_classification::is_generated_urdf_visual_identity(it);
 }
 
 bool is_generated_urdf_visual_fallback_item(const ScenePreviewWidget::PreviewItem & it)
@@ -1409,20 +1400,7 @@ bool item_is_enabled_for_fit(const ScenePreviewWidget::PreviewItem & it)
 
 bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it)
 {
-  if (is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) return false;
-  const NormalizedRole role = classify_item_role(it);
-  if (role == NormalizedRole::RobotReach || role == NormalizedRole::SafetyZone || role == NormalizedRole::WarningAnchor) return true;
-  const QString role_text = it.role.trimmed().toLower();
-  const QString category = it.category.trimmed().toLower();
-  const QString lock_reason = it.lock_reason.trimmed().toLower();
-  return role_text.contains("overlay") || role_text.contains("helper") || role_text.contains("guide") ||
-         role_text.contains("fov") || role_text.contains("reachability") || role_text.contains("route") ||
-         role_text.contains("warning_anchor") || role_text.contains("warning_badge") ||
-         role_text.contains("bounds_box") || role_text.contains("bounding_box") ||
-         category.contains("overlay") || category.contains("helper") || category.contains("diagnostic") ||
-         category.contains("fov") || category.contains("reachability") || category.contains("route") ||
-         category.contains("bounds_box") || category.contains("bounding_box") ||
-         lock_reason.contains("overlay") || lock_reason.contains("helper") || lock_reason.contains("diagnostic");
+  return workcell_builder::scene3d_visual_classification::is_helper_overlay_identity(it);
 }
 
 bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it)

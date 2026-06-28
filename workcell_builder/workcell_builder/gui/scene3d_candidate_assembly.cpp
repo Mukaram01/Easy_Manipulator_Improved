@@ -1,97 +1,17 @@
 #include "scene3d_candidate_assembly.h"
+#include "scene3d_visual_classification.h"
 
 namespace {
-QString token(QString s) { return s.trimmed().toLower().replace('-', '_').replace(' ', '_'); }
+QString token(QString s) { return workcell_builder::scene3d_visual_classification::normalized_token(s); }
 
 bool item_has_urdf_visual_mesh_identity(const ScenePreviewWidget::PreviewItem & item)
 {
-  const QString id = token(item.id);
-  const QString source_layer = token(item.source_layer);
-  const QString visual_source = token(item.active_visual_source);
-  const QString source = token(item.visual_index_source + "|" + item.source_path + "|" + item.package_uri + "|" +
-                               item.visual_index_package_uri + "|" + item.visual_index_mesh_uri + "|" +
-                               item.mesh_path + "|" + item.resolved_source_path_original + "|" + item.metadata_tags);
-
-  if (id.startsWith(QStringLiteral("urdf_visual_"))) return true;
-  if (source_layer.contains(QStringLiteral("urdf_flattened")) ||
-      visual_source.contains(QStringLiteral("urdf_flattened"))) return true;
-  if (source.contains(QStringLiteral("source_urdf_flattened")) ||
-      source.contains(QStringLiteral("source=urdf_flattened"))) return true;
-  if (source.contains(QStringLiteral("package://ur_description/meshes/ur5/visual")) ||
-      source.contains(QStringLiteral("ur_description/meshes/ur5/visual")) ||
-      source.contains(QStringLiteral("ur_description_meshes_ur5_visual"))) return true;
-  return false;
+  return workcell_builder::scene3d_visual_classification::is_generated_urdf_visual_identity(item);
 }
 
 bool is_generated_robot_visual(const ScenePreviewWidget::PreviewItem & item)
 {
-  const QString source_layer = token(item.source_layer);
-  const QString visual_source = token(item.active_visual_source);
-  const QString role = token(item.role);
-  const QString category = token(item.category);
-  const QString id = token(item.id);
-  const QString lock_reason = token(item.lock_reason);
-  const QString combined = role + "|" + category + "|" + id + "|" + lock_reason;
-
-  if (source_layer == "locked_generated_urdf_visual" || source_layer == "generated_urdf_visual") return true;
-  if (visual_source == "locked_generated_urdf_visual" || visual_source == "generated_urdf_visual" ||
-      visual_source == "generated_urdf_visual_fallback")
-  {
-    return true;
-  }
-  if (id.startsWith(QStringLiteral("generated_urdf_fallback::"))) return true;
-  if (id.startsWith(QStringLiteral("generated_urdf::"))) return true;
-  if (item_has_urdf_visual_mesh_identity(item)) return true;
-  return item.locked && (combined.contains(QStringLiteral("urdf")) ||
-                         combined.contains(QStringLiteral("generated")) ||
-                         combined.contains(QStringLiteral("robot_link")) ||
-                         combined.contains(QStringLiteral("robot_model")));
-}
-
-bool contains_product_helper_overlay_token(const QString & text)
-{
-  const QStringList helper_tokens = {
-    QStringLiteral("overlay"),
-    QStringLiteral("helper"),
-    QStringLiteral("guide"),
-    QStringLiteral("diagnostic"),
-    QStringLiteral("safety_zone"),
-    QStringLiteral("pick_zone"),
-    QStringLiteral("place_zone"),
-    QStringLiteral("robot_reach"),
-    QStringLiteral("warning_anchor"),
-    QStringLiteral("warning_badge"),
-    QStringLiteral("camera_fov"),
-    QStringLiteral("fov"),
-    QStringLiteral("pick_coverage"),
-    QStringLiteral("reachability"),
-    QStringLiteral("collision"),
-    QStringLiteral("work_envelope"),
-    QStringLiteral("task_route"),
-    QStringLiteral("approach_retreat"),
-    QStringLiteral("approach"),
-    QStringLiteral("retreat"),
-    QStringLiteral("epd_detection"),
-    QStringLiteral("detection_label"),
-    QStringLiteral("bounds_box"),
-    QStringLiteral("bounding_box")
-  };
-  for (const QString & helper_token : helper_tokens) {
-    if (text == helper_token || text.contains(helper_token)) return true;
-  }
-  return false;
-}
-
-bool is_product_helper_overlay_role(const QString & role, const QString & category, const QString & combined)
-{
-  // token() normalises spaces and hyphens to underscores, so product-layer filtering
-  // keeps canonical helper rows behind the overlay controls. Product View should
-  // load robot/tool/environment meshes first; FOV, reachability, zone, route,
-  // warning, coverage, detection, and bounds helper rows must not leak into the
-  // normal first view as large boxes.
-  return contains_product_helper_overlay_token(role) ||
-         contains_product_helper_overlay_token(category) ||
-         contains_product_helper_overlay_token(combined);
+  return workcell_builder::scene3d_visual_classification::is_generated_urdf_visual_identity(item);
 }
 }
 
@@ -107,7 +27,7 @@ bool include_preview_item_for_scene3d(
   const QString category = token(item.category);
   const QString combined = source_layer + "|" + visual_source + "|" + role + "|" + category + "|" + token(item.status) + "|" + item.warnings.join("|").toLower();
   const bool is_warning_or_missing = combined.contains("warning") || combined.contains("missing") || !item.mesh_load_warning.trimmed().isEmpty();
-  const bool is_overlay_or_helper = is_product_helper_overlay_role(role, category, combined);
+  const bool is_overlay_or_helper = workcell_builder::scene3d_visual_classification::is_helper_overlay_identity(item);
 
   // Treat generated robot visuals as a first-class layer, equivalent to the
   // legacy "Show Robot Links" control.  This check intentionally precedes

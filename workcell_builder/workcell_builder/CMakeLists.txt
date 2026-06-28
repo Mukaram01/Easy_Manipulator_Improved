@@ -62,6 +62,8 @@ add_executable(workcell_builder
     gui/scene3d_viewport_widget.h
     gui/scene3d_candidate_assembly.cpp
     gui/scene3d_candidate_assembly.h
+    gui/scene3d_visual_classification.cpp
+    gui/scene3d_visual_classification.h
     gui/preview_item_suppression.cpp
     gui/preview_item_suppression.h
     src_scene3d_visual_backend.cpp
@@ -332,13 +334,16 @@ if(BUILD_TESTING)
 
   ament_add_gtest(workcell_scene3d_stl_parser_test
     test/scene3d_stl_parser_test.cpp
-    gui/scene3d_viewport_widget.cpp)
+    gui/scene3d_viewport_widget.cpp
+    gui/scene3d_visual_classification.cpp)
   ament_add_gtest(workcell_scene3d_render_role_classifier_test
     test/scene3d_render_role_classifier_test.cpp
-    gui/scene3d_viewport_widget.cpp)
+    gui/scene3d_viewport_widget.cpp
+    gui/scene3d_visual_classification.cpp)
   ament_add_gtest(workcell_scene3d_ur5_baked_transform_test
     test/scene3d_ur5_baked_transform_test.cpp
-    gui/scene3d_viewport_widget.cpp)
+    gui/scene3d_viewport_widget.cpp
+    gui/scene3d_visual_classification.cpp)
 
   ament_add_gtest(workcell_command_builders_test
     test/command_builders_test.cpp
@@ -354,7 +359,8 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_scene_preview_widget_ui_test
     test/scene_preview_widget_ui_test.cpp
     gui/scene_preview_widget.cpp
-    gui/scene3d_viewport_widget.cpp)
+    gui/scene3d_viewport_widget.cpp
+    gui/scene3d_visual_classification.cpp)
   ament_add_gtest(workcell_studio_canvas_model_mesh_test
     test/workcell_studio_canvas_model_mesh_test.cpp
     src_workcell_studio_canvas_model.cpp
@@ -376,7 +382,8 @@ if(BUILD_TESTING)
     gui/preview_item_suppression.cpp)
   ament_add_gtest(workcell_scene3d_product_view_layer_defaults_test
     test/scene3d_product_view_layer_defaults_test.cpp
-    gui/scene3d_candidate_assembly.cpp)
+    gui/scene3d_candidate_assembly.cpp
+    gui/scene3d_visual_classification.cpp)
   ament_add_gtest(workcell_layout_serialization_contract_test
     test/layout_serialization_contract_test.cpp)
   ament_add_gtest(workcell_studio_layout_editor_test
