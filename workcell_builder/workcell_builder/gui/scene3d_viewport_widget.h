@@ -131,7 +131,9 @@ public:
   };
   RenderDebugCounters last_render_counters;
   RenderDebugCounters render_debug_counters() const;
-  bool last_initial_fit_included_ur5_bounds() const;
+  bool last_initial_fit_included_robot_bounds() const;
+  int last_initial_fit_physical_anchor_count() const;
+  QStringList last_initial_fit_anchor_roles() const;
   QString last_camera_fit_target() const;
   bool render_smoke_fallback_frame(QImage * out_image = nullptr);
   QJsonArray mesh_diagnostics_export() const;
@@ -203,7 +205,10 @@ private:
   void draw_ground_grid_pass();
   void draw_world_axes_pass();
   bool scene_bounds_from_visible_items(QVector3D & out_min, QVector3D & out_max, bool include_overlays) const;
-  bool initial_physical_fit_bounds(QVector3D & out_min, QVector3D & out_max, bool * out_ur5_included = nullptr) const;
+  bool initial_physical_fit_bounds(QVector3D & out_min, QVector3D & out_max,
+                                   bool * out_robot_included = nullptr,
+                                   int * out_anchor_count = nullptr,
+                                   QStringList * out_anchor_roles = nullptr) const;
   bool robot_bounds_from_rendered_visuals(QVector3D & out_min, QVector3D & out_max) const;
   bool item_has_explicit_dimensions(const ScenePreviewWidget::PreviewItem & item) const;
   QString placeholder_reason_for_item(const ScenePreviewWidget::PreviewItem & item) const;
@@ -322,7 +327,9 @@ private:
   QVector3D last_camera_fit_bounds_span_{ 0.0f, 0.0f, 0.0f };
   QString last_camera_fit_margin_{ "unset" };
   double last_camera_fit_margin_value_{ 0.0 };
-  bool last_initial_fit_included_ur5_bounds_{ false };
+  bool last_initial_fit_included_robot_bounds_{ false };
+  int last_initial_fit_physical_anchor_count_{ 0 };
+  QStringList last_initial_fit_anchor_roles_;
   bool has_robot_aabb_diag_{ false };
   QVector3D last_robot_aabb_min_;
   QVector3D last_robot_aabb_max_;
