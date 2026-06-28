@@ -684,7 +684,7 @@ UR5_RENDERED_MESH_LINK_ALIASES: dict[str, tuple[str, ...]] = {
     "wrist_2_link": ("wrist_2_link",),
     "wrist_3_link": ("wrist_3_link",),
     "tool0": ("tool0",),
-    "robotiq_base": ("robotiq_base", "gripper_base_link", "robotiq_85_base_link", "robotiq base visual item"),
+    "robotiq_base": ("robotiq_base", "gripper_base_link", "robotiq_85_base_link", "robotiq_arg2f_base_link", "robotiq base visual item"),
 }
 UR5_RENDERED_MESH_ADJACENT_PAIRS: tuple[tuple[str, str], ...] = (
     ("base_link", "shoulder_link"),
@@ -695,7 +695,13 @@ UR5_RENDERED_MESH_ADJACENT_PAIRS: tuple[tuple[str, str], ...] = (
     ("wrist_2_link", "wrist_3_link"),
 )
 RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M = 0.20
-RENDERED_MESH_ADJACENCY_PAIR_LIMITS_M: dict[tuple[str, str], float] = {}
+RENDERED_MESH_ADJACENCY_PAIR_LIMITS_M: dict[tuple[str, str], float] = {
+    ("wrist_3_link", "tool0"): 0.20,
+    ("tool0", "robotiq_base"): 0.20,
+    ("wrist_3_link", "robotiq_base"): 0.20,
+    ("robotiq_base", "robotiq_knuckle_or_finger"): 0.25,
+    ("robotiq_knuckle_or_finger", "robotiq_finger_tip"): 0.25,
+}
 REQUIRED_UR5_FINAL_VIEWPORT_LINKS: tuple[str, ...] = (
     "shoulder_link",
     "upper_arm_link",
@@ -1358,7 +1364,7 @@ def _mesh_path(record: dict[str, Any]) -> str | None:
 
 def _is_robotiq_base_record(record: dict[str, Any]) -> bool:
     canonical = str(record.get("canonical_link_name") or record.get("link_name") or record.get("link") or "").strip().lower()
-    if canonical in {"gripper_base_link", "robotiq_85_base_link", "robotiq_base"}:
+    if canonical in {"gripper_base_link", "robotiq_85_base_link", "robotiq_arg2f_base_link", "robotiq_base"}:
         return True
     haystack = " ".join(
         str(record.get(key) or "")
@@ -1441,6 +1447,50 @@ def _stable_metadata_candidates(record: dict[str, Any]) -> list[str]:
         if canonical and canonical not in candidates:
             candidates.append(canonical)
     return candidates
+
+
+def _raw_link_name(record: dict[str, Any]) -> str | None:
+    for key in ("canonical_link_name", "link_name", "link", "frame_id"):
+        value = record.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _robotiq_tip_key(link_name: str) -> str:
+    text = link_name.lower()
+    for suffix in (
+        "_inner_knuckle_link",
+        "_outer_knuckle_link",
+        "_knuckle_link",
+        "_finger_link",
+        "_inner_finger_link",
+        "_finger_tip_link",
+        "_tip_link",
+    ):
+        if text.endswith(suffix):
+            return text[: -len(suffix)]
+    return text
+
+
+def _is_robotiq_knuckle_or_finger_link(link_name: str) -> bool:
+    text = link_name.lower()
+    return (
+        "gripper_finger" in text
+        and not ("tip_link" in text or "finger_tip" in text)
+        and (
+            text.endswith("_knuckle_link")
+            or text.endswith("_inner_knuckle_link")
+            or text.endswith("_outer_knuckle_link")
+            or text.endswith("_finger_link")
+            or text.endswith("_inner_finger_link")
+        )
+    )
+
+
+def _is_robotiq_tip_link(link_name: str) -> bool:
+    text = link_name.lower()
+    return "gripper_finger" in text and (text.endswith("_tip_link") or text.endswith("_finger_tip_link"))
 
 
 def _bbox_gap(parent_item: dict[str, Any] | None, child_item: dict[str, Any] | None) -> list[float] | None:
@@ -1591,6 +1641,7 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
     alias_to_canonical["tool0"] = "tool0"
 
     by_link: dict[str, dict[str, Any]] = {}
+    by_raw_link: dict[str, dict[str, Any]] = {}
     robotiq_base: dict[str, Any] | None = None
     for raw in final_draw_items:
         if not isinstance(raw, dict):
@@ -1604,6 +1655,10 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
             normalized["bbox_error"] = "final_draw_bbox_missing_or_non_finite"
         if _is_robotiq_base_record(raw) and robotiq_base is None:
             robotiq_base = normalized
+        raw_link = _raw_link_name(raw)
+        if raw_link:
+            by_raw_link.setdefault(raw_link, normalized)
+            by_raw_link.setdefault(raw_link.lower(), normalized)
         # Prefer stable generated-URDF metadata over runtime/display ids such as
         # generated_urdf::...; ids are only used as a last-resort diagnostic
         # fallback when metadata is absent.
@@ -1622,6 +1677,27 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
                     by_link[canonical] = normalized
 
     checked: list[dict[str, Any]] = []
+    tool0_item = by_link.get("tool0")
+    wrist3_item = by_link.get("wrist_3_link")
+    if tool0_item is not None:
+        parent, child = "wrist_3_link", "tool0"
+        parent_item = wrist3_item
+        child_item = tool0_item
+        if parent_item is None or child_item is None:
+            errors.append(f"Missing final draw rendered mesh topology link for required pair {parent}->{child}")
+            checked.append(_checked_pair_record(parent, child, parent_item, child_item, None, _rendered_mesh_adjacency_limit(parent, child), False))
+        elif not isinstance(parent_item.get("bounds"), dict) or not isinstance(child_item.get("bounds"), dict):
+            detail = parent_item.get("bbox_error") or child_item.get("bbox_error") or "bbox_missing"
+            errors.append(f"Missing or non-finite final_draw_bbox diagnostics for generated topology pair {parent}->{child}: {detail}")
+            checked.append(_checked_pair_record(parent, child, parent_item, child_item, None, _rendered_mesh_adjacency_limit(parent, child), False))
+        else:
+            sep = _aabb_separation(parent_item["bounds"], child_item["bounds"])
+            limit_m = _rendered_mesh_adjacency_limit(parent, child)
+            ok = math.isfinite(sep) and sep <= limit_m
+            checked.append(_checked_pair_record(parent, child, parent_item, child_item, sep, limit_m, ok))
+            if not ok:
+                errors.append(f"UR wrist/tool mount final draw bbox adjacency {parent}->{child} separated by {sep:.3f} m; expected <= {limit_m:.3f} m")
+
     for parent, child in UR5_RENDERED_MESH_ADJACENT_PAIRS:
         parent_item = by_link.get(parent)
         child_item = by_link.get(child)
@@ -1694,6 +1770,42 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
             errors.append(
                 f"Robotiq base final draw bbox separated from {tool_parent_name} by {sep:.3f} m; expected <= {limit_m:.3f} m"
             )
+
+    robotiq_link_rows: list[tuple[str, dict[str, Any]]] = []
+    for link_name, row in by_raw_link.items():
+        if link_name != link_name.lower():
+            continue
+        if "gripper_finger" in link_name:
+            robotiq_link_rows.append((link_name, row))
+    knuckle_rows = [(link, row) for link, row in robotiq_link_rows if _is_robotiq_knuckle_or_finger_link(link)]
+    tip_by_key: dict[str, tuple[str, dict[str, Any]]] = {}
+    for link, row in robotiq_link_rows:
+        if _is_robotiq_tip_link(link):
+            tip_by_key.setdefault(_robotiq_tip_key(link), (link, row))
+
+    def check_topology_pair(parent: str, child: str, parent_item: dict[str, Any] | None, child_item: dict[str, Any] | None, limit_key: tuple[str, str]) -> None:
+        limit_m = _rendered_mesh_adjacency_limit(*limit_key)
+        if parent_item is None or child_item is None:
+            errors.append(f"Missing final draw rendered mesh topology link for required pair {parent}->{child}")
+            checked.append(_checked_pair_record(parent, child, parent_item, child_item, None, limit_m, False))
+            return
+        if not isinstance(parent_item.get("bounds"), dict) or not isinstance(child_item.get("bounds"), dict):
+            detail = parent_item.get("bbox_error") or child_item.get("bbox_error") or "bbox_missing"
+            errors.append(f"Missing or non-finite final_draw_bbox diagnostics for generated topology pair {parent}->{child}: {detail}")
+            checked.append(_checked_pair_record(parent, child, parent_item, child_item, None, limit_m, False))
+            return
+        sep = _aabb_separation(parent_item["bounds"], child_item["bounds"])
+        ok = math.isfinite(sep) and sep <= limit_m
+        checked.append(_checked_pair_record(parent, child, parent_item, child_item, sep, limit_m, ok))
+        if not ok:
+            errors.append(f"Generated Robotiq topology final draw bbox adjacency {parent}->{child} separated by {sep:.3f} m; expected <= {limit_m:.3f} m")
+
+    for link, row in sorted(knuckle_rows):
+        check_topology_pair("robotiq_base", link, robotiq_base, row, ("robotiq_base", "robotiq_knuckle_or_finger"))
+        tip = tip_by_key.get(_robotiq_tip_key(link))
+        if tip is not None:
+            tip_link, tip_row = tip
+            check_topology_pair(link, tip_link, row, tip_row, ("robotiq_knuckle_or_finger", "robotiq_finger_tip"))
 
     # Stable parent/chain metadata is useful diagnostic evidence for topology,
     # but the UR5 + Robotiq gate must be based on finite final draw bounds and a
