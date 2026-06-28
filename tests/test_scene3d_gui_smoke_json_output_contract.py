@@ -807,6 +807,55 @@ def test_ur5_rendered_mesh_adjacency_exploded_robotiq_finger_fails():
     assert any("robotiq_base->gripper_finger1_knuckle_link" in error for error in topology["errors"])
 
 
+def test_ur5_rendered_mesh_adjacency_checks_robotiq_named_fingers_when_present():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    def item(link: str, xmin: float, xmax: float) -> dict:
+        return {
+            "id": f"draw_{link}",
+            "link": link,
+            "link_name": link,
+            "canonical_link_name": link,
+            "final_draw_status": "ok",
+            "final_draw_bbox": {"min": [xmin, 0.0, 0.0], "max": [xmax, 0.1, 0.1]},
+        }
+
+    payload = {
+        "status": "PASS",
+        "final_draw_visual_items": [
+            item("base_link_inertia", 0.0, 0.1),
+            item("shoulder_link", 0.1, 0.2),
+            item("upper_arm_link", 0.2, 0.3),
+            item("forearm_link", 0.3, 0.4),
+            item("wrist_1_link", 0.4, 0.5),
+            item("wrist_2_link", 0.5, 0.6),
+            item("wrist_3_link", 0.6, 0.7),
+            item("tool0", 0.7, 0.75),
+            item("gripper_base_link", 0.75, 0.85),
+            item("robotiq_85_left_finger_link", 1.20, 1.30),
+            item("robotiq_85_left_finger_tip_link", 1.30, 1.40),
+        ],
+    }
+
+    smoke._apply_ur5_rendered_mesh_adjacency(
+        payload, repo_root=Path(__file__).resolve().parents[1], scene_name="ur5_2f_test", index_data={}
+    )
+
+    checked = payload["generated_robot_topology_diagnostics"]["checked_pairs"]
+    finger = next(pair for pair in checked if pair["child"] == "robotiq_85_left_finger_link")
+    tip = next(pair for pair in checked if pair["child"] == "robotiq_85_left_finger_tip_link")
+    assert payload["rendered_mesh_adjacency_status"] == "FAIL"
+    assert payload["status"] == "FAIL"
+    assert "scene3d_rendered_mesh_adjacency_failed" in payload["blockers"]
+    assert finger["parent"] == "robotiq_base"
+    assert finger["limit_m"] == pytest.approx(0.25)
+    assert finger["separation_m"] == pytest.approx(0.35)
+    assert finger["ok"] is False
+    assert tip["parent"] == "robotiq_85_left_finger_link"
+    assert tip["separation_m"] == pytest.approx(0.0)
+    assert tip["ok"] is True
+
+
 def test_ur5_rendered_mesh_adjacency_keeps_upper_arm_forearm_gap_strict():
     import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
 
