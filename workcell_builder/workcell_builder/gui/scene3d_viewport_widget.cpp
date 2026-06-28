@@ -280,16 +280,19 @@ bool item_has_non_identity_mesh_asset_local_correction(const ScenePreviewWidget:
 bool should_apply_baked_mesh_asset_local_correction(const ScenePreviewWidget::PreviewItem & item)
 {
   // Generated visual mesh entries are already RViz/URDF-authored as
-  // world_T_link_or_object * visual_origin_T.  Do not reintroduce the old
-  // ad hoc UR5 DAE correction path; any asset-local correction must be part of
-  // the generated mesh-local transform, not a link-name/mesh-name special case.
+  // world_T_link_or_object * visual_origin_T. Most baked rows therefore must not
+  // re-apply legacy mesh RPY/origin fields.  The exception is the narrow UR5 DAE
+  // visual asset set where mesh_r/p/y and origin_offset describe asset-local
+  // corrections needed by Scene3D after the authoritative world_T_visual matrix.
   //
   // In particular, source=urdf_flattened entries from scene_visual_mesh_index.json
   // are raw ROS/RViz world-space poses. Scene3D applies only the centralized
   // ROS-to-viewport basis at viewport_world_visual_transform(); applying the
   // legacy UR5 mesh correction here would double-correct those locked previews.
   if (item_is_urdf_flattened_generated_preview(item)) return false;
-  return false;
+  if (!item.has_baked_world_visual_transform) return false;
+  if (!item_references_ur5_baked_mesh_asset_local_correction(item)) return false;
+  return item_has_non_identity_mesh_asset_local_correction(item);
 }
 
 QString baked_mesh_asset_local_correction_reason(const ScenePreviewWidget::PreviewItem & item)
@@ -365,10 +368,12 @@ QMatrix4x4 final_mesh_transform_matrix(const ScenePreviewWidget::PreviewItem & i
 
   if (item.has_baked_world_visual_transform && item.has_baked_world_visual_matrix) {
     // Matrix-baked generated URDF rows already carry world_T_visual from the
-    // visual mesh index (or the one-time pose-to-matrix handoff). Apply only
-    // the Scene3D ROS-to-viewport basis and mesh scale here; do not rebuild
-    // from xyz/rpy, reapply visual origin, or enter legacy local corrections.
+    // visual mesh index (or the one-time pose-to-matrix handoff). Apply the
+    // Scene3D ROS-to-viewport basis, then only the narrow asset-local correction
+    // path for known UR5 DAE visual meshes before mesh scale. Do not rebuild
+    // from xyz/rpy or reapply the URDF visual origin.
     QMatrix4x4 transform = ros_to_viewport_basis_matrix() * item.baked_world_visual_matrix;
+    apply_baked_mesh_asset_local_correction_matrix(transform, item);
     transform.scale(static_cast<float>(item.mesh_scale_x),
                     static_cast<float>(item.mesh_scale_y),
                     static_cast<float>(item.mesh_scale_z));
@@ -3215,6 +3220,16 @@ QColor Scene3DViewportWidget::material_color_for_test(const ScenePreviewWidget::
 bool Scene3DViewportWidget::is_raw_generated_bounds_only_for_test(const ScenePreviewWidget::PreviewItem & item)
 {
   return is_raw_generated_bounds_only_item(item);
+}
+
+QMatrix4x4 Scene3DViewportWidget::final_mesh_transform_matrix_for_test(const ScenePreviewWidget::PreviewItem & item)
+{
+  return final_mesh_transform_matrix(item);
+}
+
+QMatrix4x4 Scene3DViewportWidget::baked_mesh_asset_local_correction_matrix_for_test(const ScenePreviewWidget::PreviewItem & item)
+{
+  return baked_mesh_asset_local_correction_matrix(item);
 }
 
 bool Scene3DViewportWidget::try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical,
