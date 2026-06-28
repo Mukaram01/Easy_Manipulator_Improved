@@ -692,6 +692,11 @@ ScenePreviewWidget::RenderDebugCounters ScenePreviewWidget::render_debug_counter
   out.valid_physical_fallback_count = counters.valid_physical_fallback_count;
   out.overlay_rendered_count = counters.overlay_rendered_count;
   out.locked_generated_urdf_visual_count = counters.locked_generated_urdf_visual_count;
+  out.physical_anchor_count = counters.physical_anchor_count;
+  out.generated_robot_mesh_count = counters.generated_robot_mesh_count;
+  out.tool_gripper_visual_count = counters.tool_gripper_visual_count;
+  out.table_workbench_visual_count = counters.table_workbench_visual_count;
+  out.camera_body_visual_count = counters.camera_body_visual_count;
   out.transform_chain_applied_count = counters.transform_chain_applied_count;
   out.visual_origin_applied_count = counters.visual_origin_applied_count;
   out.baked_world_visual_transform_count = counters.baked_world_visual_transform_count;

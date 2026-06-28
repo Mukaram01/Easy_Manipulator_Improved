@@ -40,6 +40,7 @@
 #include <cmath>
 #include <limits>
 #include <sstream>
+#include <initializer_list>
 
 #ifdef WORKCELL_BUILDER_HAS_ASSIMP
 #include <assimp/Importer.hpp>
@@ -1190,8 +1191,8 @@ QString item_visual_ownership_label(const ScenePreviewWidget::PreviewItem & it)
 
 constexpr double kGeneratedLockedProductMinAlpha = 0.92;
 
-QColor generated_locked_preview_material() { return QColor("#cfd4da"); }
-QColor generated_locked_preview_outline() { return QColor(125, 211, 252, 92); }
+QColor generated_locked_preview_material() { return QColor("#d6dde6"); }
+QColor generated_locked_preview_outline() { return QColor(226, 232, 240, 150); }
 QColor generated_primitive_fallback_fill() { return QColor(96, 165, 250, 52); }
 QColor generated_primitive_fallback_outline() { return QColor(147, 197, 253, 108); }
 QColor editable_layout_accent_outline() { return QColor("#22d3ee"); }
@@ -1230,6 +1231,41 @@ NormalizedRole classify_item_role(const ScenePreviewWidget::PreviewItem & it)
       role == QStringLiteral("warning") || category == QStringLiteral("warning")) return NormalizedRole::WarningAnchor;
   if (mix.contains("object") || mix.contains("part") || mix.contains("item")) return NormalizedRole::Object;
   return NormalizedRole::Generic;
+}
+
+QString scene3d_canonical_link_name_for_item(const ScenePreviewWidget::PreviewItem & item);
+
+bool item_identity_contains_any(const ScenePreviewWidget::PreviewItem & it, std::initializer_list<QString> tokens)
+{
+  const QString mix = normalized_token(it.id + QStringLiteral("|") + it.display_name + QStringLiteral("|") +
+                                       it.role + QStringLiteral("|") + it.category + QStringLiteral("|") +
+                                       it.metadata_tags.join(QStringLiteral("|")) + QStringLiteral("|") +
+                                       it.mesh_type + QStringLiteral("|") + it.material_name + QStringLiteral("|") +
+                                       it.mesh_path + QStringLiteral("|") + it.package_uri + QStringLiteral("|") +
+                                       it.source_path + QStringLiteral("|") + it.resolved_source_path_original);
+  for (const QString & token : tokens) {
+    if (mix.contains(normalized_token(token))) return true;
+  }
+  return false;
+}
+
+bool item_is_tool_or_gripper_visual(const ScenePreviewWidget::PreviewItem & it)
+{
+  return item_identity_contains_any(it, {
+    QStringLiteral("gripper"), QStringLiteral("tool"), QStringLiteral("end_effector"),
+    QStringLiteral("end effector"), QStringLiteral("robotiq"), QStringLiteral("finger"),
+    QStringLiteral("knuckle"), QStringLiteral("suction"), QStringLiteral("airpick"), QStringLiteral("vacuum")
+  });
+}
+
+bool item_is_generated_robot_arm_visual(const ScenePreviewWidget::PreviewItem & it)
+{
+  if (!(is_generated_urdf_visual_item(it) || is_locked_urdf_item(it))) return false;
+  if (item_is_tool_or_gripper_visual(it)) return false;
+  if (classify_item_role(it) == NormalizedRole::Camera) return false;
+  const QString canonical = scene3d_canonical_link_name_for_item(it);
+  if (canonical.contains(QStringLiteral("camera")) || canonical.contains(QStringLiteral("sensor"))) return false;
+  return true;
 }
 
 
@@ -1606,26 +1642,15 @@ QColor explicit_material_color(const ScenePreviewWidget::PreviewItem & it)
 QColor product_view_generated_locked_material(const ScenePreviewWidget::PreviewItem & it, bool diagnostic_transparency_mode)
 {
   QColor c = it.has_material_color ? explicit_material_color(it) : generated_locked_preview_material();
-  const QString visual_identity = (it.id + " " + it.display_name + " " + it.role + " " + it.category).toLower();
+  const NormalizedRole semantic_role = classify_item_role(it);
   if (!it.has_material_color) {
-    if (visual_identity.contains(QStringLiteral("robotiq")) ||
-        visual_identity.contains(QStringLiteral("gripper")) ||
-        visual_identity.contains(QStringLiteral("finger")) ||
-        visual_identity.contains(QStringLiteral("knuckle"))) {
-      c = QColor("#4b5563");
-    } else if (visual_identity.contains(QStringLiteral("camera")) ||
-               visual_identity.contains(QStringLiteral("realsense")) ||
-               visual_identity.contains(QStringLiteral("d435"))) {
+    if (item_is_tool_or_gripper_visual(it)) {
+      c = QColor("#475569");
+    } else if (semantic_role == NormalizedRole::Camera || item_identity_contains_any(it, {QStringLiteral("camera"), QStringLiteral("realsense"), QStringLiteral("d435")})) {
       c = QColor("#111827");
-    } else if (visual_identity.contains(QStringLiteral("table")) ||
-               visual_identity.contains(QStringLiteral("workbench"))) {
+    } else if (semantic_role == NormalizedRole::Table) {
       c = QColor("#8b8175");
-    } else if (visual_identity.contains(QStringLiteral("ur5")) ||
-               visual_identity.contains(QStringLiteral("shoulder")) ||
-               visual_identity.contains(QStringLiteral("upper_arm")) ||
-               visual_identity.contains(QStringLiteral("forearm")) ||
-               visual_identity.contains(QStringLiteral("wrist")) ||
-               visual_identity.contains(QStringLiteral("base_link"))) {
+    } else if (item_is_generated_robot_arm_visual(it)) {
       c = QColor("#d8dee6");
     }
   }
@@ -1644,18 +1669,22 @@ QColor item_color(const ScenePreviewWidget::PreviewItem & it, bool diagnostic_tr
     return explicit_material_color(it);
   }
   if (it.linked_to_editable_layout_state || item_is_editable_for_gizmo(it)) {
+    const NormalizedRole editable_role = classify_item_role(it);
+    if (editable_role == NormalizedRole::Table) return QColor("#8b8175");
+    if (editable_role == NormalizedRole::Camera) return QColor("#1f2937");
+    if (item_is_tool_or_gripper_visual(it)) return QColor("#475569");
     return QColor("#67e8f9");
   }
   switch (classify_item_role(it)) {
     case NormalizedRole::RobotBase: return QColor("#a78bfa");
     case NormalizedRole::RobotReach: return QColor("#60a5fa");
-    case NormalizedRole::Table: return QColor("#64748b");
+    case NormalizedRole::Table: return QColor("#8b8175");
     case NormalizedRole::Conveyor: return QColor("#06b6d4");
-    case NormalizedRole::Camera: return QColor("#38bdf8");
+    case NormalizedRole::Camera: return QColor("#1f2937");
     case NormalizedRole::PickZone: return QColor("#22c55e");
     case NormalizedRole::PlaceZone: return QColor("#a855f7");
     case NormalizedRole::PlaceBin: return QColor("#fb7185");
-    case NormalizedRole::Object: return QColor("#94a3b8");
+    case NormalizedRole::Object: return QColor("#67e8f9");
     case NormalizedRole::SafetyZone: return QColor("#f59e0b");
     case NormalizedRole::HomePose: return QColor("#e2e8f0");
     case NormalizedRole::WarningAnchor: return QColor("#fbbf24");
@@ -2259,6 +2288,7 @@ void Scene3DViewportWidget::paintGL()
   int physical_item_count = 0;
   QSet<QString> unique_visible_ids;
   int editable_layout_count = 0;
+  last_render_counters = RenderDebugCounters{};
   for (const auto * it : draw_items) {
     const NormalizedRole role = classify_item_role(*it);
     ++visible_item_count;
@@ -2269,6 +2299,11 @@ void Scene3DViewportWidget::paintGL()
     if (it->linked_to_editable_layout_state) ++editable_layout_count;
     if (!overlay_helper) {
       ++physical_item_count;
+      ++last_render_counters.physical_anchor_count;
+      if (item_is_generated_robot_arm_visual(*it) && item_has_credible_mesh_handoff(*it)) ++last_render_counters.generated_robot_mesh_count;
+      if (item_is_tool_or_gripper_visual(*it)) ++last_render_counters.tool_gripper_visual_count;
+      if (role == NormalizedRole::Table) ++last_render_counters.table_workbench_visual_count;
+      if (role == NormalizedRole::Camera) ++last_render_counters.camera_body_visual_count;
       if (!is_intentional_semantic_editor_primitive(*it) && item_has_credible_mesh_handoff(*it)) ++mesh_source_count;
       if (generated_urdf && item_has_valid_urdf_primitive(*it)) {
         ++urdf_primitive_source_count;
@@ -2276,7 +2311,6 @@ void Scene3DViewportWidget::paintGL()
     }
   }
   overlay_count = static_cast<int>(overlay_items.size());
-  last_render_counters = RenderDebugCounters{};
   last_render_counters.preview_items_count = items.size();
   last_render_counters.total_payload_count = items.size();
   last_render_counters.viewport_received_count = received_item_count;
@@ -2661,6 +2695,7 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
     painter.drawLine(QPointF(20.0, y), QPointF(target_size.width() - 20.0, y));
   }
 
+  last_render_counters = RenderDebugCounters{};
   const std::vector<const ScenePreviewWidget::PreviewItem *> final_renderables =
     build_final_generated_urdf_robot_renderables(items, show_safety);
   skipped_item_count = qMax(0, static_cast<int>(items.size()) - static_cast<int>(final_renderables.size()));
@@ -2674,6 +2709,13 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
     if (overlay_helper) ++overlay_count;
     if (generated_urdf) ++locked_urdf_count;
     if (it.linked_to_editable_layout_state) ++editable_layout_count;
+    if (!overlay_helper) {
+      ++last_render_counters.physical_anchor_count;
+      if (item_is_generated_robot_arm_visual(it) && item_has_credible_mesh_handoff(it)) ++last_render_counters.generated_robot_mesh_count;
+      if (item_is_tool_or_gripper_visual(it)) ++last_render_counters.tool_gripper_visual_count;
+      if (role == NormalizedRole::Table) ++last_render_counters.table_workbench_visual_count;
+      if (role == NormalizedRole::Camera) ++last_render_counters.camera_body_visual_count;
+    }
     const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
     const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
     const bool intentional_primitive_fallback = source_layer == QStringLiteral("primitive_fallback") || visual_source == QStringLiteral("primitive_fallback");
