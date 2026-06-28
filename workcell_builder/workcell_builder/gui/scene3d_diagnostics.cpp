@@ -364,17 +364,34 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["ros_to_viewport_basis_matrix"] = scene3d_matrix_to_json(ros_to_viewport_basis_matrix());
     row["viewport_world_visual_matrix"] = scene3d_matrix_to_json(viewport_root_transform);
     row["final_draw_model_matrix"] = scene3d_matrix_to_json(final_transform);
-    row["final_draw_world_pose"] = scene3d_vec_to_json(final_transform.map(QVector3D(0.0f, 0.0f, 0.0f)));
+    const QVector3D final_draw_origin = final_transform.map(QVector3D(0.0f, 0.0f, 0.0f));
+    row["final_draw_world_pose"] = scene3d_vec_to_json(final_draw_origin);
+    const QVector3D diagnostic_fallback_span(
+      static_cast<float>(qMax(0.08, item.sx)),
+      static_cast<float>(qMax(0.08, item.sy)),
+      static_cast<float>(qMax(0.08, item.sz)));
+    const QVector3D diagnostic_fallback_half = diagnostic_fallback_span * 0.5f;
+    const QVector3D diagnostic_fallback_min = final_draw_origin - diagnostic_fallback_half;
+    const QVector3D diagnostic_fallback_max = final_draw_origin + diagnostic_fallback_half;
+    row["final_draw_bbox"] = scene3d_bbox_to_json(diagnostic_fallback_min, diagnostic_fallback_max);
+    row["final_draw_bbox_min"] = scene3d_vec_to_json(diagnostic_fallback_min);
+    row["final_draw_bbox_max"] = scene3d_vec_to_json(diagnostic_fallback_max);
+    row["final_draw_bbox_span"] = scene3d_vec_to_json(diagnostic_fallback_span);
+    row["final_draw_bbox_center"] = scene3d_vec_to_json(final_draw_origin);
+    row["final_draw_bbox_source"] = QStringLiteral("diagnostic_primitive_fallback");
+    row["has_baked_world_visual_transform"] = item.has_baked_world_visual_transform;
+    row["has_baked_world_visual_matrix"] = item.has_baked_world_visual_matrix;
+    row["visual_origin_applied"] = item.visual_origin_applied;
+    row["baked_world_visual_pose"] = scene3d_pose_to_json(item.x, item.y, item.z, item.roll, item.pitch, item.yaw);
+    const bool early_baked_mesh_asset_correction_applied = should_apply_baked_mesh_asset_local_correction(item);
+    row["final_draw_asset_local_correction_applied"] = early_baked_mesh_asset_correction_applied;
     if (required_ur5_fallback) {
       row["source_type"] = QStringLiteral("generated_urdf_visual_fallback");
       row["final_draw_status"] = QStringLiteral("ur5_emergency_visible_fallback");
       row["fallback_visible_primitive"] = true;
       row["path_resolved"] = true;
       row["resolve_failure_reason"] = QStringLiteral("mesh_submission_failed_visible_fallback_submitted");
-      row["final_draw_bbox_span"] = scene3d_vec_to_json(QVector3D(
-        static_cast<float>(qMax(0.08, item.sx)),
-        static_cast<float>(qMax(0.08, item.sy)),
-        static_cast<float>(qMax(0.08, item.sz))));
+      row["final_draw_bbox_source"] = QStringLiteral("ur5_emergency_visible_fallback_primitive");
       out.append(row);
       continue;
     }
@@ -469,6 +486,7 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
           row["final_draw_bbox_max"] = scene3d_vec_to_json(final_max);
           row["final_draw_bbox_span"] = scene3d_vec_to_json(final_span);
           row["final_draw_bbox_center"] = scene3d_vec_to_json((final_min + final_max) * 0.5f);
+          row["final_draw_bbox_source"] = QStringLiteral("mesh_final_draw");
           row["final_rendered_mesh_bbox"] = scene3d_bbox_to_json(final_min, final_max);
           row["final_rendered_mesh_bbox_min"] = scene3d_vec_to_json(final_min);
           row["final_rendered_mesh_bbox_max"] = scene3d_vec_to_json(final_max);
@@ -492,6 +510,7 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["final_draw_bbox_max"] = scene3d_vec_to_json(final_max);
     row["final_draw_bbox_span"] = scene3d_vec_to_json(final_span);
     row["final_draw_bbox_center"] = scene3d_vec_to_json((final_min + final_max) * 0.5f);
+    row["final_draw_bbox_source"] = QStringLiteral("mesh_final_draw");
     row["final_rendered_mesh_bbox"] = scene3d_bbox_to_json(final_min, final_max);
     row["final_rendered_mesh_bbox_min"] = scene3d_vec_to_json(final_min);
     row["final_rendered_mesh_bbox_max"] = scene3d_vec_to_json(final_max);

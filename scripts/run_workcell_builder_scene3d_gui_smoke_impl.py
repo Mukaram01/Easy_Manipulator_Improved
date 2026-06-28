@@ -1335,15 +1335,11 @@ def _bbox_mapping_from_record(record: dict[str, Any], *keys: str) -> dict[str, l
 
 
 def _bbox_from_final_draw(record: dict[str, Any]) -> dict[str, list[float]] | None:
-    # Prefer bounds explicitly captured after final_mesh_transform_matrix(),
-    # because these are in the same coordinate basis used by the renderer.
-    return _bbox_mapping_from_record(
-        record,
-        "final_rendered_mesh_bbox",
-        "final_rendered_bbox",
-        "rendered_mesh_bbox",
-        "final_draw_bbox",
-    )
+    # Smoke topology PASS decisions must use only bounds exported from the
+    # renderer's final draw rows.  Earlier visual-index/world-pose fields are
+    # useful diagnostics, but they can be plausible while the rendered mesh is
+    # detached or exploded.
+    return _bbox_mapping_from_record(record, "final_draw_bbox")
 
 
 def _item_id(record: dict[str, Any]) -> str | None:
@@ -1555,23 +1551,14 @@ def _final_draw_bbox_from_row(raw: dict[str, Any]) -> dict[str, list[float]] | N
     bbox = _bbox_from_final_draw(raw)
     if bbox is not None:
         return bbox
-    bmin = _finite_float_list(
-        raw.get("final_rendered_mesh_bbox_min")
-        or raw.get("final_rendered_bbox_min")
-        or raw.get("rendered_mesh_bbox_min")
-        or raw.get("final_draw_bbox_min"),
-        3,
-    )
-    bmax = _finite_float_list(
-        raw.get("final_rendered_mesh_bbox_max")
-        or raw.get("final_rendered_bbox_max")
-        or raw.get("rendered_mesh_bbox_max")
-        or raw.get("final_draw_bbox_max"),
-        3,
-    )
-    if bmin is None or bmax is None:
+    bmin = _finite_float_list(raw.get("final_draw_bbox_min"), 3)
+    bmax = _finite_float_list(raw.get("final_draw_bbox_max"), 3)
+    if bmin is not None and bmax is not None:
+        return {"min": bmin, "max": bmax}
+    center = _finite_float_list(raw.get("final_draw_bbox_center"), 3)
+    if center is None:
         return None
-    return {"min": bmin, "max": bmax}
+    return {"min": center, "max": center}
 
 
 def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Path, scene_name: str | None, index_data: dict[str, Any]) -> None:
@@ -1615,11 +1602,7 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
     payload["rendered_mesh_adjacency_source"] = source
     alias_to_canonical: dict[str, str] = {}
     if source == "final_draw_visual_items":
-        final_rows = [
-            _enrich_final_row_from_visual_index(row, payload)
-            for row in final_draw_items
-            if isinstance(row, dict)
-        ]
+        final_rows = [row for row in final_draw_items if isinstance(row, dict)]
         expected_links = set(REQUIRED_UR5_FINAL_VIEWPORT_LINKS)
         final_links = {str(row.get("link") or row.get("link_name") or "").strip() for row in final_rows}
         final_canonical_links = {
@@ -1646,9 +1629,9 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
     for raw in final_draw_items:
         if not isinstance(raw, dict):
             continue
-        raw = _enrich_final_row_from_visual_index(raw, payload)
-        bounds = _bbox_from_final_draw(raw) or _final_draw_bbox_from_row(raw)
+        bounds = _final_draw_bbox_from_row(raw)
         normalized = dict(raw)
+        normalized.pop("bounds", None)
         if bounds is not None:
             normalized["bounds"] = bounds
         elif str(raw.get("final_draw_status") or "") == "ok":
