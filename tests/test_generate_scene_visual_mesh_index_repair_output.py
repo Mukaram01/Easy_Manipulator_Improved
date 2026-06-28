@@ -26,7 +26,7 @@ def test_single_scene_repair_reports_missing_end_effector_links(tmp_path, capsys
 
     out = capsys.readouterr().out
     assert "UR5 repair applied" in out
-    assert "end_effector_links=tool0,robotiq_85_base_link" in out
+    assert "end_effector_links=tool0,gripper_base_link" in out
 
 
 def test_single_scene_repair_reports_already_safe(tmp_path, capsys):
