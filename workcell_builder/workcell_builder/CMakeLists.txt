@@ -374,6 +374,9 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_preview_item_suppression_test
     test/preview_item_suppression_test.cpp
     gui/preview_item_suppression.cpp)
+  ament_add_gtest(workcell_scene3d_product_view_layer_defaults_test
+    test/scene3d_product_view_layer_defaults_test.cpp
+    gui/scene3d_candidate_assembly.cpp)
   ament_add_gtest(workcell_layout_serialization_contract_test
     test/layout_serialization_contract_test.cpp)
   ament_add_gtest(workcell_studio_layout_editor_test
@@ -445,6 +448,11 @@ if(BUILD_TESTING)
   if(TARGET workcell_preview_item_suppression_test)
     target_link_libraries(workcell_preview_item_suppression_test Qt5::Widgets)
     target_include_directories(workcell_preview_item_suppression_test PRIVATE gui)
+  endif()
+
+  if(TARGET workcell_scene3d_product_view_layer_defaults_test)
+    target_link_libraries(workcell_scene3d_product_view_layer_defaults_test Qt5::Widgets)
+    target_include_directories(workcell_scene3d_product_view_layer_defaults_test PRIVATE gui)
   endif()
 
   if(TARGET workcell_studio_canvas_model_mesh_test)

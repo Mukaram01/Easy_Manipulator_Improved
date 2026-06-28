@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -9,84 +8,6 @@ SCENE3D_VIEWPORT_CPP = REPO / "workcell_builder/workcell_builder/gui/scene3d_vie
 SCENE3D_ASSEMBLY_CPP = REPO / "workcell_builder/workcell_builder/gui/scene3d_candidate_assembly.cpp"
 MAINWINDOW_CPP = REPO / "workcell_builder/workcell_builder/gui/mainwindow.cpp"
 UR5_SCENE = REPO / "scenes/ur5_2f_test"
-
-
-@dataclass
-class PreviewItem:
-    source_layer: str = ""
-    active_visual_source: str = ""
-    status: str = "ok"
-    warnings: list[str] = field(default_factory=list)
-    mesh_load_warning: str = ""
-    source_path_resolution_outcome: str = ""
-    id: str = ""
-    mesh_available: bool = False
-    has_mesh_metadata: bool = False
-
-
-def _token(value: str) -> str:
-    return value.strip().lower()
-
-
-def product_layer_defaults(items: list[PreviewItem]) -> dict[str, bool]:
-    primitive_fallback_count = 0
-    missing_mesh_count = 0
-    unresolved_package_uri_count = 0
-    unsupported_extension_count = 0
-    fallback_warning_count = 0
-    authoritative_generated_mesh_count = 0
-
-    for item in items:
-        source_layer = _token(item.source_layer)
-        visual_source = _token(item.active_visual_source)
-        combined = "|".join(
-            [
-                source_layer,
-                visual_source,
-                _token(item.status),
-                "|".join(w.lower() for w in item.warnings),
-                _token(item.mesh_load_warning),
-                _token(item.source_path_resolution_outcome),
-            ]
-        )
-        if source_layer == "primitive_fallback" or visual_source == "primitive_fallback":
-            primitive_fallback_count += 1
-        if any(
-            marker in combined
-            for marker in (
-                "missing mesh",
-                "missing_source_path",
-                "mesh unavailable",
-                "mesh unresolved",
-                "unresolved",
-            )
-        ):
-            missing_mesh_count += 1
-        if "unresolved_package_uri" in combined or "package uri unresolved" in combined:
-            unresolved_package_uri_count += 1
-        if "unsupported" in combined and ("extension" in combined or "format" in combined):
-            unsupported_extension_count += 1
-        if "fallback" in combined and any(marker in combined for marker in ("missing", "unavailable", "unresolved")):
-            fallback_warning_count += 1
-        if (
-            source_layer in ("locked_generated_urdf_visual", "generated_urdf_visual")
-            and (
-                item.mesh_available
-                or item.has_mesh_metadata
-                or item.id.startswith("generated_urdf_fallback::")
-                or item.id.startswith("urdf_visual_")
-            )
-        ):
-            authoritative_generated_mesh_count += 1
-
-    return {
-        "editable_layout": True,
-        "mesh_preview": True,
-        "locked_generated_urdf_visual": True,
-        "overlay": False,
-        "primitive_fallback": authoritative_generated_mesh_count == 0 and (primitive_fallback_count + missing_mesh_count) > 0,
-        "warning": False,
-    }
 
 
 def compact_warning_chip_state(mesh_index: dict[str, object], counters: dict[str, int]) -> tuple[bool, str]:
@@ -112,31 +33,18 @@ def compact_warning_chip_state(mesh_index: dict[str, object], counters: dict[str
     return True, "3D Preview Warnings · see Diagnostics"
 
 
-def test_loaded_scene_payload_product_defaults_suppress_empty_diagnostics_layers() -> None:
-    defaults = product_layer_defaults(
-        [
-            PreviewItem(source_layer="locked_generated_urdf_visual", mesh_available=True),
-            PreviewItem(active_visual_source="mesh_preview"),
-            PreviewItem(source_layer="editable_layout"),
-        ]
-    )
-
-    assert defaults == {
-        "locked_generated_urdf_visual": True,
-        "mesh_preview": True,
-        "editable_layout": True,
-        "primitive_fallback": False,
-        "overlay": False,
-        "warning": False,
-    }
-
+def test_product_view_defaults_are_wired_to_shared_scene3d_layer_helper() -> None:
     assembly_cpp = SCENE3D_ASSEMBLY_CPP.read_text()
-    assert "out.locked_generated_urdf_visual = true;" in assembly_cpp
-    assert "out.mesh_preview = true;" in assembly_cpp
-    assert "out.editable_layout = true;" in assembly_cpp
-    assert "out.primitive_fallback = authoritative_generated_mesh_count == 0" in assembly_cpp
-    assert "out.overlay = false;" in assembly_cpp
-    assert "out.warning = false;" in assembly_cpp
+    mainwindow_cpp = MAINWINDOW_CPP.read_text()
+    apply_defaults = mainwindow_cpp.split("void MainWindow::apply_scene3d_product_view_layer_defaults_and_commit()", 1)[1]
+    apply_defaults = apply_defaults.split("void MainWindow::apply_scene_preview_filter()", 1)[0]
+
+    assert "Scene3DLayerVisibilityDefaults compute_scene3d_default_layer_visibility" in assembly_cpp
+    assert "const auto defaults = workcell_builder::compute_scene3d_default_layer_visibility(all_scene_preview_items_);" in apply_defaults
+    assert "set_checked_blocked(preview_layer_generated_urdf_visual_box_, defaults.locked_generated_urdf_visual);" in apply_defaults
+    assert "set_checked_blocked(preview_layer_primitive_fallback_box_, defaults.primitive_fallback);" in apply_defaults
+    assert "set_checked_blocked(preview_layer_overlays_helpers_box_, defaults.overlay);" in apply_defaults
+    assert "set_checked_blocked(preview_layer_warnings_missing_assets_box_, defaults.warning);" in apply_defaults
 
 
 def test_scene_preview_widget_product_defaults_turn_off_viewport_helpers_and_warnings() -> None:

@@ -494,7 +494,7 @@ void ScenePreviewWidget::apply_product_view_defaults()
   v->debug_overlays_mode = false;
   v->show_warnings = false;
   v->show_warning_labels = false;
-  v->show_safety = true;
+  v->show_safety = false;
   v->show_pick_place = false;
   v->show_reachability_heatmap = false;
   v->show_collision_warnings = false;
