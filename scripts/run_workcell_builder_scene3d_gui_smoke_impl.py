@@ -1298,8 +1298,19 @@ def _record_rendered_mesh_adjacency_failure(payload: dict[str, Any], errors: lis
         warnings = []
     _append_unique(warnings, "scene3d_rendered_mesh_adjacency_failed")
     payload["warnings"] = warnings
-    if str(payload.get("status", "")).upper() in {"PASS", "OK"}:
-        payload["status"] = "WARN"
+
+    # The canonical M1 scene treats generated robot topology as a hard gate:
+    # detached/exploded final-draw geometry must block the smoke instead of
+    # being downgraded to a warning.  Unit callers often omit ``scene`` and
+    # reach this helper only through the ur5_2f_test adjacency gate, so fail
+    # hard for every recorded adjacency error.
+    blockers = payload.get("blockers")
+    if not isinstance(blockers, list):
+        blockers = []
+    _append_unique(blockers, "scene3d_rendered_mesh_adjacency_failed")
+    payload["blockers"] = blockers
+    payload["status"] = "FAIL"
+
     messages = payload.get("warning_messages")
     if not isinstance(messages, dict):
         messages = {}
@@ -1471,8 +1482,9 @@ def _robotiq_tip_key(link_name: str) -> str:
 
 def _is_robotiq_knuckle_or_finger_link(link_name: str) -> bool:
     text = link_name.lower()
+    is_robotiq_finger = "gripper_finger" in text or ("robotiq" in text and "finger" in text)
     return (
-        "gripper_finger" in text
+        is_robotiq_finger
         and not ("tip_link" in text or "finger_tip" in text)
         and (
             text.endswith("_knuckle_link")
@@ -1486,7 +1498,8 @@ def _is_robotiq_knuckle_or_finger_link(link_name: str) -> bool:
 
 def _is_robotiq_tip_link(link_name: str) -> bool:
     text = link_name.lower()
-    return "gripper_finger" in text and (text.endswith("_tip_link") or text.endswith("_finger_tip_link"))
+    is_robotiq_finger = "gripper_finger" in text or ("robotiq" in text and "finger" in text)
+    return is_robotiq_finger and (text.endswith("_tip_link") or text.endswith("_finger_tip_link"))
 
 
 def _bbox_gap(parent_item: dict[str, Any] | None, child_item: dict[str, Any] | None) -> list[float] | None:
@@ -1758,7 +1771,7 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
     for link_name, row in by_raw_link.items():
         if link_name != link_name.lower():
             continue
-        if "gripper_finger" in link_name:
+        if _is_robotiq_knuckle_or_finger_link(link_name) or _is_robotiq_tip_link(link_name):
             robotiq_link_rows.append((link_name, row))
     knuckle_rows = [(link, row) for link, row in robotiq_link_rows if _is_robotiq_knuckle_or_finger_link(link)]
     tip_by_key: dict[str, tuple[str, dict[str, Any]]] = {}
@@ -1841,43 +1854,72 @@ def _dist(a: list[float], b: list[float]) -> float:
 
 
 def _apply_ur5_final_draw_bbox_regression(payload: dict[str, Any]) -> None:
-    """Fail the smoke on exploded UR5 final draw bounds, not mesh-index poses."""
+    """Mirror the generated robot topology gate for legacy smoke consumers."""
     if str(payload.get("scene") or "") != "ur5_2f_test":
         return
+
+    topology = payload.get("generated_robot_topology_diagnostics")
+    if isinstance(topology, dict):
+        checked = topology.get("checked_pairs")
+        errors = [str(error) for error in topology.get("errors") or []]
+        distances: dict[str, float] = {}
+        if isinstance(checked, list):
+            for pair in checked:
+                if not isinstance(pair, dict):
+                    continue
+                parent = str(pair.get("parent") or "").strip()
+                child = str(pair.get("child") or "").strip()
+                distance = pair.get("distance_m", pair.get("separation_m"))
+                if parent and child and isinstance(distance, (int, float)) and math.isfinite(float(distance)):
+                    distances[f"{parent}_to_{child}"] = float(distance)
+        status = "FAIL" if str(topology.get("status") or "").upper() == "FAIL" or errors else "PASS"
+        payload["ur5_final_draw_bbox_distances_m"] = distances
+        payload["ur5_final_draw_bbox_status"] = status
+        payload["ur5_final_draw_bbox_errors"] = errors
+        if status == "FAIL":
+            blockers = payload.get("blockers") if isinstance(payload.get("blockers"), list) else []
+            _append_unique(blockers, "ur5_final_draw_bbox_regression_failed")
+            _append_unique(blockers, "scene3d_rendered_mesh_adjacency_failed")
+            payload["blockers"] = blockers
+            payload["status"] = "FAIL"
+        return
+
     rows = _first_present_list(payload, "final_draw_visual_items")
     if not rows:
         payload.setdefault("ur5_final_draw_bbox_status", "SKIPPED")
         return
-    centers: dict[str, list[float]] = {}
+
+    # Fallback for older call sites that did not run generated topology first:
+    # use the same final-draw bbox separation helper and strict thresholds as
+    # _apply_ur5_rendered_mesh_adjacency(), not the former loose center-distance
+    # limits.  This path is intentionally limited to arm links; normal smoke
+    # execution populates the full topology gate including tool0, gripper base,
+    # and Robotiq fingers before this compatibility shim runs.
+    by_link: dict[str, dict[str, Any]] = {}
     for row_any in rows:
         if not isinstance(row_any, dict):
             continue
-        token = "|".join(str(row_any.get(k, "")).lower() for k in ("item_id", "link", "frame_id", "mesh_source"))
-        center = _bbox_center(row_any)
-        if center is None:
+        bounds = _final_draw_bbox_from_row(row_any)
+        if bounds is None:
             continue
-        for link in ("base", "shoulder", "upper_arm", "forearm", "wrist_1", "wrist_2", "wrist_3"):
-            if link in token and link not in centers:
-                centers[link] = center
-    chain = ("base", "shoulder", "upper_arm", "forearm", "wrist_1", "wrist_2", "wrist_3")
-    limits = {
-        ("base", "shoulder"): 0.35,
-        ("shoulder", "upper_arm"): 0.55,
-        ("upper_arm", "forearm"): 0.80,
-        ("forearm", "wrist_1"): 0.80,
-        ("wrist_1", "wrist_2"): 0.40,
-        ("wrist_2", "wrist_3"): 0.40,
-    }
+        normalized = dict(row_any)
+        normalized["bounds"] = bounds
+        for candidate in _stable_metadata_candidates(row_any):
+            by_link.setdefault(candidate, normalized)
+
     errors: list[str] = []
     distances: dict[str, float] = {}
-    for parent, child in zip(chain, chain[1:]):
-        if parent not in centers or child not in centers:
+    for parent, child in UR5_RENDERED_MESH_ADJACENT_PAIRS:
+        parent_item = by_link.get(parent)
+        child_item = by_link.get(child)
+        if parent_item is None or child_item is None:
             continue
-        d = _dist(centers[parent], centers[child])
-        distances[f"{parent}_to_{child}"] = d
-        limit = limits[(parent, child)]
-        if d > limit:
-            errors.append(f"final draw bbox center distance {parent}->{child} is {d:.3f} m; expected <= {limit:.3f} m")
+        distance = _aabb_separation(parent_item["bounds"], child_item["bounds"])
+        distances[f"{parent}_to_{child}"] = distance
+        limit = _rendered_mesh_adjacency_limit(parent, child)
+        if not math.isfinite(distance) or distance > limit:
+            errors.append(f"final draw bbox adjacency {parent}->{child} is {distance:.3f} m; expected <= {limit:.3f} m")
+
     payload["ur5_final_draw_bbox_distances_m"] = distances
     payload["ur5_final_draw_bbox_status"] = "FAIL" if errors else "PASS"
     payload["ur5_final_draw_bbox_errors"] = errors
