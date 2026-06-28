@@ -9,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.repair_ur5_scene3d_visual_index import REQUIRED_UR5_LINKS, repair_index
+from scripts.repair_ur5_scene3d_visual_index import REQUIRED_UR5_LINKS, STABLE_UR5_2F_LINKS, repair_index
 
 
 def _write_index(tmp_path: Path, payload: dict) -> Path:
@@ -75,6 +75,51 @@ def test_repair_replaces_stale_unrenderable_ur5_rows_and_preserves_non_ur5_rows(
     assert "ur5_final_viewport_links_missing" not in payload["blockers"]
     assert "rendered_ur5_link_count_below_7" not in payload["blockers"]
     assert "keep_non_ur5_blocker" in payload["blockers"]
+
+
+def test_repair_adds_locked_2f_gripper_proxy_for_ur5_2f_scene(tmp_path):
+    path = _write_index(
+        tmp_path,
+        {
+            "scene_name": "ur5_2f_test",
+            "visual_items": [
+                {
+                    "id": "seeded_wrist",
+                    "link": "wrist_3_link",
+                    "mesh_uri": "package://ur_description/meshes/ur5/visual/wrist3.dae",
+                    "baked_world_visual_transform_source": "generated_urdf_identity_rviz_parity_seed",
+                    "resolved": True,
+                    "render_expected": True,
+                },
+                {
+                    "id": "camera",
+                    "display_name": "camera",
+                    "geometry_type": "box",
+                    "category": "camera",
+                    "render_expected": True,
+                    "resolved": True,
+                },
+            ],
+            "items": [],
+            "blockers": [],
+        },
+    )
+
+    changed, _added = repair_index(path)
+
+    assert changed is True
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    rows = payload["visual_items"]
+    links = {row.get("link") for row in rows}
+    assert set(STABLE_UR5_2F_LINKS).issubset(links)
+    assert payload["ur5_runtime_repair_added_end_effector_links"] == list(STABLE_UR5_2F_LINKS)
+    gripper_rows = [row for row in rows if row.get("link") in STABLE_UR5_2F_LINKS]
+    assert len(gripper_rows) == len(STABLE_UR5_2F_LINKS)
+    assert all(row["category"] == "end_effector" for row in gripper_rows)
+    assert all(row["role"] == "end_effector" for row in gripper_rows)
+    assert all(row["preview_locked"] is True for row in gripper_rows)
+    assert all(row["active_visual_source"] == "primitive_fallback" for row in gripper_rows)
+    assert any(row.get("id") == "camera" for row in rows)
 
 
 def test_repair_skips_non_ur5_payload(tmp_path):
