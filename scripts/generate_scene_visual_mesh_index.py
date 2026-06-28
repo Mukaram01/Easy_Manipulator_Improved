@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +18,28 @@ except Exception:  # pragma: no cover - optional post-processing safety net
     repair_index = None
 
 
+def _list_value(payload: dict, key: str) -> list:
+    value = payload.get(key)
+    return value if isinstance(value, list) else []
+
+
+def _repair_detail(index_path: Path, links: list[str]) -> str:
+    try:
+        payload = json.loads(index_path.read_text(encoding="utf-8"))
+    except Exception:
+        return ", ".join(links) if links else "visual rows normalized"
+    added_arm = links or _list_value(payload, "ur5_runtime_repair_added_links")
+    added_eef = _list_value(payload, "ur5_runtime_repair_added_end_effector_links")
+    reasons = _list_value(payload, "ur5_runtime_repair_reasons")
+    if added_arm:
+        return "ur5_links=" + ",".join(str(v) for v in added_arm)
+    if added_eef:
+        return "end_effector_links=" + ",".join(str(v) for v in added_eef)
+    if reasons:
+        return "reasons=" + ",".join(str(v) for v in reasons)
+    return "visual rows normalized"
+
+
 def _repair_existing_index(index_path: Path) -> int:
     if repair_index is None:
         print("visual mesh index repair helper unavailable", file=sys.stderr)
@@ -26,8 +49,7 @@ def _repair_existing_index(index_path: Path) -> int:
         return 2
     changed, links = repair_index(index_path)
     if changed:
-        detail = ", ".join(links) if links else "stale or implausible UR5 rows replaced"
-        print("[generate_scene_visual_mesh_index] UR5 repair applied: " + detail, flush=True)
+        print("[generate_scene_visual_mesh_index] UR5 repair applied: " + _repair_detail(index_path, links), flush=True)
     else:
         print("[generate_scene_visual_mesh_index] existing index already safe for preview", flush=True)
     return 0
