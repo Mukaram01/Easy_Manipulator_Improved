@@ -828,3 +828,24 @@ def test_final_payload_preserves_visual_index_row_identity_metadata() -> None:
         "wrist_3_link",
     ]
     assert not any(row["link"] in {"table", "camera_link", "gripper_base_link"} for row in retained[:7])
+
+
+def test_viewport_required_robot_link_detection_uses_generic_profile_table() -> None:
+    viewport = (ROOT / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(encoding="utf-8")
+
+    assert "struct GeneratedRobotViewportProfile" in viewport
+    assert "is_required_generated_robot_viewport_link" in viewport
+    assert "draw_required_generated_robot_emergency_fallback" in viewport
+    assert "generated_robot_final_draw_candidate_diagnostics_export" in viewport
+    assert "generated_robot_profile_for_required_link_item(item)" in viewport
+    assert "expected_ur5_visual_meshes" not in viewport
+
+
+def test_viewport_required_robot_profiles_include_non_ur5_supported_scenes() -> None:
+    viewport = (ROOT / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(encoding="utf-8")
+
+    assert 'QStringLiteral("ur5")' in viewport
+    assert 'QStringLiteral("ur10")' in viewport
+    assert 'QStringLiteral("ur3")' in viewport
+    assert 'QStringLiteral("ur_description/meshes/ur10")' in viewport
+    assert 'QStringLiteral("ur_description/meshes/ur3")' in viewport

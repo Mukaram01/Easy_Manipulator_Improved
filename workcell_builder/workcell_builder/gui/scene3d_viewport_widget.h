@@ -135,7 +135,7 @@ public:
   QString last_camera_fit_target() const;
   bool render_smoke_fallback_frame(QImage * out_image = nullptr);
   QJsonArray mesh_diagnostics_export() const;
-  QJsonArray ur5_final_draw_candidate_diagnostics_export() const;
+  QJsonArray generated_robot_final_draw_candidate_diagnostics_export() const;
   QJsonArray final_draw_visual_items_export() const;
   QJsonArray final_draw_diagnostics_export() const;
 
@@ -208,7 +208,7 @@ private:
   bool item_has_explicit_dimensions(const ScenePreviewWidget::PreviewItem & item) const;
   QString placeholder_reason_for_item(const ScenePreviewWidget::PreviewItem & item) const;
   bool draw_urdf_primitive_geometry(const ScenePreviewWidget::PreviewItem & it, const QColor & color);
-  bool draw_required_ur5_emergency_fallback(const ScenePreviewWidget::PreviewItem & it, const QColor & color);
+  bool draw_required_generated_robot_emergency_fallback(const ScenePreviewWidget::PreviewItem & it, const QColor & color);
   bool draw_truthful_item_geometry(const ScenePreviewWidget::PreviewItem & it, int * out_placeholder_count = nullptr,
                                    int * out_mesh_count = nullptr, int * out_wireframe_count = nullptr,
                                    int * out_urdf_primitive_count = nullptr, int * out_missing_geometry_count = nullptr,

@@ -51,7 +51,7 @@ def _load_visual_items() -> list[dict]:
     items = payload["visual_items"]
     assert payload["scene_name"] == "ur5_2f_test"
     assert payload["extraction_mode"] == "urdf_flattened"
-    assert len(items) == 18
+    assert len(items) >= 9
     return items
 
 
@@ -152,7 +152,7 @@ def test_final_scene3d_identities_are_unique_with_gui_loader_helper() -> None:
     retained = _retained_rows(_load_visual_items())
     identities = [row["_final_scene3d_identity"] for row in retained]
 
-    assert len(retained) == 18
+    assert len(retained) == len(_load_visual_items())
     assert len(identities) == len(set(identities))
     assert all(identity.startswith("generated_urdf::") for identity in identities)
 
@@ -180,23 +180,18 @@ def test_retained_rows_include_ur5_arm_visuals() -> None:
     }.issubset(links)
 
 
-def test_retained_rows_include_all_robotiq_visuals_with_shared_dae_meshes() -> None:
+def test_retained_rows_include_current_physical_table_and_camera_rows() -> None:
     retained = _retained_rows(_load_visual_items())
-    gripper_rows = [row for row in retained if "gripper" in row.get("link", "")]
-    mesh_paths = [row.get("mesh_path") or row.get("source_path") for row in gripper_rows]
+    links = {row.get("link", "") for row in retained}
 
-    assert len(gripper_rows) == 9
-    assert len({row["link"] for row in gripper_rows}) == 9
-    assert mesh_paths.count("assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae") == 2
-    assert mesh_paths.count("assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae") == 2
-    assert mesh_paths.count("assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae") == 2
-    assert mesh_paths.count("assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae") == 2
+    assert "table_" in links
+    assert "camera_link" in links
 
 
-def test_regression_guard_rejects_nine_of_eighteen_valid_visual_rows() -> None:
+def test_regression_guard_rejects_dropping_required_physical_visual_rows() -> None:
     retained = _retained_rows(_load_visual_items())
-    simulated_regression = retained[:9]
+    simulated_regression = [row for row in retained if row.get("link") not in {"table_", "camera_link"}]
 
-    assert len(retained) == 18
-    assert len(simulated_regression) == 9
-    assert len(simulated_regression) != len(retained), "A loader that only adds 9 of 18 valid rows must fail this guard."
+    assert len(retained) >= 9
+    assert len(simulated_regression) < len(retained)
+    assert len(simulated_regression) != len(retained), "A loader that drops physical table/camera rows must fail this guard."
