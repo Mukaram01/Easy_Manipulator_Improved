@@ -369,6 +369,7 @@ QMatrix4x4 final_mesh_transform_matrix(const ScenePreviewWidget::PreviewItem & i
     // the Scene3D ROS-to-viewport basis and mesh scale here; do not rebuild
     // from xyz/rpy, reapply visual origin, or enter legacy local corrections.
     QMatrix4x4 transform = ros_to_viewport_basis_matrix() * item.baked_world_visual_matrix;
+    apply_baked_mesh_asset_local_correction_matrix(transform, item);
     transform.scale(static_cast<float>(item.mesh_scale_x),
                     static_cast<float>(item.mesh_scale_y),
                     static_cast<float>(item.mesh_scale_z));
