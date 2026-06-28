@@ -122,7 +122,7 @@ def test_repair_adds_locked_2f_gripper_proxy_for_ur5_2f_scene(tmp_path):
     assert any(row.get("id") == "camera" for row in rows)
 
 
-def test_repair_adds_missing_2f_proxy_without_replacing_valid_ur5_rows(tmp_path):
+def test_repair_adds_missing_2f_proxy_without_replacing_valid_rviz_mesh_rows(tmp_path):
     valid_ur5_rows = [
         {
             "id": f"mesh_{link}",
@@ -131,6 +131,7 @@ def test_repair_adds_missing_2f_proxy_without_replacing_valid_ur5_rows(tmp_path)
             "geometry_type": "mesh",
             "resolved": True,
             "render_expected": True,
+            "baked_world_visual_transform_source": "generated_urdf_identity_rviz_parity_seed",
             "pose": {"xyz": [float(i) * 0.1, 0.0, 0.2], "rpy": [0.0, 0.0, 0.0]},
         }
         for i, link in enumerate(REQUIRED_UR5_LINKS)
@@ -163,7 +164,7 @@ def test_repair_adds_missing_2f_proxy_without_replacing_valid_ur5_rows(tmp_path)
     links = {row.get("link") for row in rows}
     assert set(REQUIRED_UR5_LINKS).issubset(links)
     assert set(STABLE_UR5_2F_LINKS).issubset(links)
-    assert all(any(row.get("id") == f"mesh_{link}" for row in rows) for link in REQUIRED_UR5_LINKS)
+    assert all(any(row.get("id") == f"mesh_{link}" and row.get("geometry_type") == "mesh" for row in rows) for link in REQUIRED_UR5_LINKS)
     assert payload["ur5_runtime_repair_reasons"] == ["missing_ur5_2f_end_effector_preview_rows"]
     assert any(row.get("id") == "table" for row in rows)
 
