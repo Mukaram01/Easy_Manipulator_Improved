@@ -1492,6 +1492,7 @@ def _checked_pair_record(
         "child_bbox_min": (child_item or {}).get("bounds", {}).get("min") if isinstance((child_item or {}).get("bounds"), dict) else None,
         "child_bbox_max": (child_item or {}).get("bounds", {}).get("max") if isinstance((child_item or {}).get("bounds"), dict) else None,
         "separation_m": sep,
+        "distance_m": sep,
         "bbox_gap_m": _bbox_gap(parent_item, child_item),
         "limit_m": limit_m,
         "threshold_m": limit_m,
@@ -1525,9 +1526,16 @@ def _final_draw_bbox_from_row(raw: dict[str, Any]) -> dict[str, list[float]] | N
 
 def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Path, scene_name: str | None, index_data: dict[str, Any]) -> None:
     if scene_name != "ur5_2f_test":
-        payload.setdefault("rendered_mesh_adjacency_status", "SKIPPED")
-        payload.setdefault("rendered_mesh_adjacency_errors", [])
-        payload.setdefault("rendered_mesh_adjacency_checked_pairs", [])
+        status = "SKIPPED"
+        errors: list[str] = []
+        checked: list[dict[str, Any]] = []
+        payload.setdefault("rendered_mesh_adjacency_status", status)
+        payload.setdefault("rendered_mesh_adjacency_errors", errors)
+        payload.setdefault("rendered_mesh_adjacency_checked_pairs", checked)
+        payload.setdefault(
+            "generated_robot_topology_diagnostics",
+            {"status": status, "source": "scene_not_ur5_2f_test", "checked_pairs": checked, "errors": errors},
+        )
         return
 
     final_draw_items = payload.get("final_draw_visual_items")
@@ -1545,6 +1553,12 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
         payload["rendered_mesh_adjacency_status"] = "FAIL"
         payload["rendered_mesh_adjacency_errors"] = errors
         payload["rendered_mesh_adjacency_checked_pairs"] = []
+        payload["generated_robot_topology_diagnostics"] = {
+            "status": "FAIL",
+            "source": "missing_final_draw_diagnostics",
+            "checked_pairs": [],
+            "errors": errors,
+        }
         _record_rendered_mesh_adjacency_failure(payload, errors)
         return
 
@@ -1640,6 +1654,12 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
     tool_parent = by_link.get("tool0") or by_link.get("wrist_3_link")
     tool_parent_name = "tool0" if by_link.get("tool0") is not None else "wrist_3_link"
     if robotiq_base is None or tool_parent is None:
+        missing_bits: list[str] = []
+        if tool_parent is None:
+            missing_bits.append("tool parent tool0/wrist_3_link")
+        if robotiq_base is None:
+            missing_bits.append("Robotiq base")
+        errors.append("Missing final draw rendered mesh topology row for " + " and ".join(missing_bits))
         checked.append(
             _checked_pair_record(
                 tool_parent_name,
@@ -1648,23 +1668,9 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
                 robotiq_base,
                 None,
                 _rendered_mesh_adjacency_limit(tool_parent_name, "robotiq_base"),
-                True,
+                False,
             )
         )
-        checked[-1]["evidence"] = "m1_gripper_readiness_deferred"
-    elif _stable_metadata_proves_adjacency(tool_parent_name, "robotiq_base", robotiq_base) or _stable_metadata_proves_adjacency("wrist_3_link", "robotiq_base", robotiq_base):
-        checked.append(
-            _checked_pair_record(
-                tool_parent_name,
-                "robotiq_base",
-                tool_parent,
-                robotiq_base,
-                None,
-                _rendered_mesh_adjacency_limit(tool_parent_name, "robotiq_base"),
-                True,
-            )
-        )
-        checked[-1]["evidence"] = "stable_metadata"
     elif not isinstance(tool_parent.get("bounds"), dict) or not isinstance(robotiq_base.get("bounds"), dict):
         detail = tool_parent.get("bbox_error") or robotiq_base.get("bbox_error") or "bbox_missing"
         errors.append(f"Missing or non-finite final_draw_bbox diagnostics for Robotiq base association with wrist_3_link/tool0: {detail}")
@@ -1689,9 +1695,27 @@ def _apply_ur5_rendered_mesh_adjacency(payload: dict[str, Any], *, repo_root: Pa
                 f"Robotiq base final draw bbox separated from {tool_parent_name} by {sep:.3f} m; expected <= {limit_m:.3f} m"
             )
 
-    payload["rendered_mesh_adjacency_status"] = "PASS" if not errors else "FAIL"
+    # Stable parent/chain metadata is useful diagnostic evidence for topology,
+    # but the UR5 + Robotiq gate must be based on finite final draw bounds and a
+    # measured AABB separation so metadata-only rows cannot mask a detached or
+    # missing rendered gripper.
+    for pair in checked:
+        if pair.get("child") == "robotiq_base" and robotiq_base is not None:
+            pair["stable_metadata_adjacency"] = bool(
+                _stable_metadata_proves_adjacency(str(pair.get("parent") or tool_parent_name), "robotiq_base", robotiq_base)
+                or _stable_metadata_proves_adjacency("wrist_3_link", "robotiq_base", robotiq_base)
+            )
+
+    status = "PASS" if not errors else "FAIL"
+    payload["rendered_mesh_adjacency_status"] = status
     payload["rendered_mesh_adjacency_errors"] = errors
     payload["rendered_mesh_adjacency_checked_pairs"] = checked
+    payload["generated_robot_topology_diagnostics"] = {
+        "status": status,
+        "source": source,
+        "checked_pairs": checked,
+        "errors": errors,
+    }
     _record_rendered_mesh_adjacency_failure(payload, errors)
 
 

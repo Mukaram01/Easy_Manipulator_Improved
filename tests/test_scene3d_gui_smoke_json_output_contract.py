@@ -517,9 +517,7 @@ def test_reported_ur5_2f_smoke_json_generated_urdf_contract_passes():
             "immediate_parent_link": parent,
             "link_chain": chain[: chain.index(link) + 1],
             "final_draw_status": "ok",
-            # Non-finite bboxes exercise the metadata-only adjacency path rather
-            # than accidentally passing because of fragile draw-order geometry.
-            "final_draw_bbox": {"min": [float("nan"), 0.0, 0.0], "max": [1.0, 1.0, 1.0]},
+            "final_draw_bbox": {"min": [float(chain.index(link)) * 0.1, 0.0, 0.0], "max": [float(chain.index(link)) * 0.1 + 0.1, 0.1, 0.1]},
             "generated_urdf_visual": True,
             "rendered": True,
         }
@@ -587,10 +585,111 @@ def test_reported_ur5_2f_smoke_json_generated_urdf_contract_passes():
     assert "runtime_transform_chain_applied_count_zero_with_generated_visuals" not in payload.get("warnings", [])
     assert "runtime_visual_origin_applied_count_zero_with_generated_visuals" not in payload.get("warnings", [])
     assert payload["rendered_mesh_adjacency_status"] == "PASS"
+    assert payload["generated_robot_topology_diagnostics"]["status"] == "PASS"
+    assert payload["generated_robot_topology_diagnostics"]["source"] == "final_draw_visual_items"
     assert "scene3d_rendered_mesh_adjacency_failed" not in payload.get("warnings", [])
     assert payload["warnings"] == ["scene3d_optional_ui_metadata_missing"]
-    assert all(pair.get("evidence") == "stable_metadata" for pair in payload["rendered_mesh_adjacency_checked_pairs"])
+    assert all(pair["separation_m"] == pytest.approx(0.0) for pair in payload["rendered_mesh_adjacency_checked_pairs"])
 
+
+
+def test_ur5_rendered_mesh_adjacency_missing_robotiq_base_fails_payload_status():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    def item(link: str, xmin: float, xmax: float) -> dict:
+        return {
+            "id": f"draw_{link}",
+            "link": link,
+            "link_name": link,
+            "canonical_link_name": link,
+            "final_draw_bbox": {"min": [xmin, 0.0, 0.0], "max": [xmax, 0.1, 0.1]},
+        }
+
+    payload = {
+        "status": "PASS",
+        "final_draw_visual_items": [
+            item("base_link", 0.0, 0.1),
+            item("shoulder_link", 0.1, 0.2),
+            item("upper_arm_link", 0.2, 0.3),
+            item("forearm_link", 0.3, 0.4),
+            item("wrist_1_link", 0.4, 0.5),
+            item("wrist_2_link", 0.5, 0.6),
+            item("wrist_3_link", 0.6, 0.7),
+        ],
+    }
+
+    smoke._apply_ur5_rendered_mesh_adjacency(
+        payload, repo_root=Path(__file__).resolve().parents[1], scene_name="ur5_2f_test", index_data={}
+    )
+
+    assert payload["rendered_mesh_adjacency_status"] == "FAIL"
+    assert payload["status"] != "PASS"
+    topology = payload["generated_robot_topology_diagnostics"]
+    assert topology["status"] == "FAIL"
+    assert topology["source"] == "final_draw_visual_items"
+    robotiq_pair = topology["checked_pairs"][-1]
+    assert robotiq_pair["child"] == "robotiq_base"
+    assert robotiq_pair["ok"] is False
+    assert robotiq_pair["separation_m"] is None
+    assert robotiq_pair["distance_m"] is None
+    assert any("Robotiq base" in error for error in topology["errors"])
+
+
+def test_ur5_rendered_mesh_adjacency_far_robotiq_base_fails_despite_stable_metadata():
+    import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
+
+    chain = [
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+        "gripper_base_link",
+    ]
+
+    def item(link: str, xmin: float, xmax: float, parent: str | None = None) -> dict:
+        return {
+            "id": f"draw_{link}",
+            "link": link,
+            "link_name": link,
+            "canonical_link_name": link,
+            "parent_link": parent,
+            "immediate_parent_link": parent,
+            "link_chain": chain[: chain.index(link) + 1] if link in chain else [],
+            "final_draw_bbox": {"min": [xmin, 0.0, 0.0], "max": [xmax, 0.1, 0.1]},
+        }
+
+    payload = {
+        "status": "PASS",
+        "final_draw_visual_items": [
+            item("base_link_inertia", 0.0, 0.1),
+            item("shoulder_link", 0.1, 0.2, "base_link_inertia"),
+            item("upper_arm_link", 0.2, 0.3, "shoulder_link"),
+            item("forearm_link", 0.3, 0.4, "upper_arm_link"),
+            item("wrist_1_link", 0.4, 0.5, "forearm_link"),
+            item("wrist_2_link", 0.5, 0.6, "wrist_1_link"),
+            item("wrist_3_link", 0.6, 0.7, "wrist_2_link"),
+            item("gripper_base_link", 1.5, 1.6, "wrist_3_link"),
+        ],
+    }
+
+    smoke._apply_ur5_rendered_mesh_adjacency(
+        payload, repo_root=Path(__file__).resolve().parents[1], scene_name="ur5_2f_test", index_data={}
+    )
+
+    assert payload["rendered_mesh_adjacency_status"] == "FAIL"
+    assert payload["status"] != "PASS"
+    topology = payload["generated_robot_topology_diagnostics"]
+    robotiq_pair = topology["checked_pairs"][-1]
+    assert robotiq_pair["child"] == "robotiq_base"
+    assert robotiq_pair["stable_metadata_adjacency"] is True
+    assert robotiq_pair["separation_m"] == pytest.approx(0.8)
+    assert robotiq_pair["distance_m"] == pytest.approx(0.8)
+    assert robotiq_pair["limit_m"] <= smoke.RENDERED_MESH_ADJACENCY_MAX_SEPARATION_M
+    assert robotiq_pair["ok"] is False
+    assert any("Robotiq base final draw bbox separated" in error for error in topology["errors"])
 
 def test_ur5_rendered_mesh_adjacency_keeps_upper_arm_forearm_gap_strict():
     import scripts.run_workcell_builder_scene3d_gui_smoke as smoke
