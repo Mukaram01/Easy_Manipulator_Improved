@@ -255,10 +255,42 @@ TEST(Scene3DMeshPreviewRegression, CentralizesRosToViewportBasisForGeneratedVisu
   const auto final_mesh_end = src.find("void apply_mesh_local_correction_gl", final_mesh);
   ASSERT_NE(final_mesh_end, std::string::npos);
   const std::string final_body = src.substr(final_mesh, final_mesh_end - final_mesh);
-  EXPECT_EQ(final_body.find("ros_to_viewport_basis_matrix()"), std::string::npos) << "basis must not be duplicated inside mesh-local composition";
+  EXPECT_NE(final_body.find("QMatrix4x4 transform = ros_to_viewport_basis_matrix() * item.baked_world_visual_matrix;"), std::string::npos)
+    << "matrix-baked rows must use the raw ROS matrix plus the Scene3D viewport basis";
   EXPECT_NE(final_body.find("QMatrix4x4 transform = viewport_world_visual_transform(item);"), std::string::npos);
   EXPECT_NE(final_body.find("apply_mesh_local_correction_matrix(transform, item);"), std::string::npos);
   EXPECT_NE(final_body.find("transform.scale"), std::string::npos);
+}
+
+TEST(Scene3DMeshPreviewRegression, MatrixBakedUr5VisualsApplyScopedAssetCorrectionBeforeScale)
+{
+  const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/scene3d_viewport_widget.cpp");
+  ASSERT_FALSE(src.empty());
+
+  const auto final_mesh = src.find("QMatrix4x4 final_mesh_transform_matrix");
+  ASSERT_NE(final_mesh, std::string::npos);
+  const auto final_mesh_end = src.find("void apply_mesh_local_correction_gl", final_mesh);
+  ASSERT_NE(final_mesh_end, std::string::npos);
+  const std::string final_body = src.substr(final_mesh, final_mesh_end - final_mesh);
+
+  const auto baked_matrix_branch = final_body.find("if (item.has_baked_world_visual_transform && item.has_baked_world_visual_matrix)");
+  ASSERT_NE(baked_matrix_branch, std::string::npos);
+  const auto fallback_branch = final_body.find("if (item.has_baked_world_visual_transform)", baked_matrix_branch + 1);
+  ASSERT_NE(fallback_branch, std::string::npos);
+  const std::string baked_matrix_body = final_body.substr(baked_matrix_branch, fallback_branch - baked_matrix_branch);
+
+  const auto matrix = baked_matrix_body.find("QMatrix4x4 transform = ros_to_viewport_basis_matrix() * item.baked_world_visual_matrix;");
+  const auto scoped_correction = baked_matrix_body.find("apply_baked_mesh_asset_local_correction_matrix(transform, item);");
+  const auto legacy_correction = baked_matrix_body.find("apply_mesh_local_correction_matrix(transform, item);");
+  const auto scale = baked_matrix_body.find("transform.scale");
+  ASSERT_NE(matrix, std::string::npos);
+  ASSERT_NE(scoped_correction, std::string::npos);
+  ASSERT_NE(scale, std::string::npos);
+  EXPECT_LT(matrix, scoped_correction);
+  EXPECT_LT(scoped_correction, scale)
+    << "matrix-baked UR5 generated visual rows need asset-local correction before final draw bounds are exported";
+  EXPECT_EQ(legacy_correction, std::string::npos)
+    << "matrix-baked generated URDF visuals must not re-enter broad legacy mesh-local corrections";
 }
 
 TEST(Scene3DMeshPreviewRegression, SuppressesFallbackBoxesWhenMeshSurfaceLoads)
