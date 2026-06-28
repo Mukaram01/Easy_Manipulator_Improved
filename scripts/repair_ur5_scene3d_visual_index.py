@@ -3,7 +3,7 @@
 
 The extractor remains the source of truth for generated ROS/RViz packages.  The
 builder viewport also needs a safe preview layer: when required UR5 rows are
-missing, stale, seeded, collapsed, or geometrically implausible, this script
+missing, collapsed, unrenderable, or geometrically implausible, this script
 replaces the UR5 arm preview rows with a stable locked primitive preview.  For
 UR5 + Robotiq 2F scenes, it also adds a small locked gripper proxy so the builder
 canvas still shows an end-effector instead of a bare wrist when xacro expansion
@@ -33,7 +33,6 @@ UR5_VISUAL_TOKEN_HINTS = (
     "package://ur_description/meshes/ur5/visual/",
     "assets/robots/universal_robot/ur_description/meshes/ur5/visual/",
 )
-STALE_SEED_TOKENS = ("generated_urdf_identity_rviz_parity_seed", "identity_rviz_parity_seed", "rviz_parity_seed")
 MAX_ADJACENT_LINK_DISTANCE_M = 1.25
 COLLAPSED_LINK_EPSILON_M = 1e-6
 
@@ -172,8 +171,11 @@ def _ur5_link_positions(items: list[dict[str, Any]]) -> dict[str, list[float]]:
 
 def _existing_ur5_rows_need_repair(items: list[dict[str, Any]], present: set[str]) -> tuple[bool, list[str]]:
     reasons: list[str] = []
-    if any(any(token in _token_values(item) for token in STALE_SEED_TOKENS) for item in items):
-        reasons.append("stale_rviz_parity_seed_rows")
+    # RViz-level Scene3D must keep resolved, renderable mesh rows.  Older checked-in
+    # indexes can carry rviz-parity seed tokens even when their mesh paths and poses
+    # are valid; those tokens alone are not a reason to down-convert the robot to
+    # primitive boxes.  Repair only when the rows are missing, collapsed, or
+    # geometrically implausible.
     positions = _ur5_link_positions(items)
     if present and len(positions) < min(4, len(present)):
         reasons.append("insufficient_ur5_pose_data")
