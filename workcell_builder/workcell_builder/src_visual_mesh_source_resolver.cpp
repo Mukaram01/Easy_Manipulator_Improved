@@ -131,11 +131,12 @@ QMap<QString, QString> discover_visual_mesh_package_map(const fs::path & scene_d
 {
   Q_UNUSED(scene_dir);
   QMap<QString, QString> package_map;
-  auto add_package_root = [&](const QString & package_name, const fs::path & package_root) {
+  auto add_package_root = [&](const QString & package_name, const fs::path & package_root, bool authoritative = false) {
     if (package_name.trimmed().isEmpty()) return;
     if (!visual_mesh_package_root_exists(package_root)) return;
-    if (!package_map.contains(package_name)) {
-      package_map.insert(package_name, QString::fromStdString(package_root.string()));
+    const QString root = canonical_or_absolute(QString::fromStdString(package_root.string()));
+    if (authoritative || !package_map.contains(package_name)) {
+      package_map.insert(package_name, root);
     }
   };
   const QStringList asset_roots = product_asset_roots(workspace_root);
@@ -153,18 +154,22 @@ QMap<QString, QString> discover_visual_mesh_package_map(const fs::path & scene_d
   }
 
   const fs::path repo_root = workcell_builder_repo_root_from_source();
+  // These shipped product assets are the RViz/source-of-truth packages used by
+  // generated Scene3D rows.  Prefer them over stale workspace copies so package
+  // URIs such as package://workbench_description/... cannot resolve to an older
+  // or same-named mesh from another workspace and explode the table/camera view.
   add_package_root(
     QStringLiteral("robotiq_85_description"),
-    repo_root / "assets/end_effectors/robotiq_85_gripper/robotiq_85_description");
+    repo_root / "assets/end_effectors/robotiq_85_gripper/robotiq_85_description", true);
   add_package_root(
     QStringLiteral("workbench_description"),
-    repo_root / "assets/environment/workbench_description");
+    repo_root / "assets/environment/workbench_description", true);
   add_package_root(
     QStringLiteral("realsense2_description"),
-    repo_root / "assets/environment/realsense2_description");
+    repo_root / "assets/environment/realsense2_description", true);
   const fs::path ur_description_assets = repo_root / "assets/robots/universal_robot/ur_description";
-  if (!package_map.contains(QStringLiteral("ur_description")) && fs::exists(ur_description_assets / "meshes/ur5/visual")) {
-    package_map.insert(QStringLiteral("ur_description"), QString::fromStdString(ur_description_assets.string()));
+  if (fs::exists(ur_description_assets / "meshes/ur5/visual")) {
+    package_map.insert(QStringLiteral("ur_description"), canonical_or_absolute(QString::fromStdString(ur_description_assets.string())));
   }
   return package_map;
 }
