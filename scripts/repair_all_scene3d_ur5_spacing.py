@@ -2,14 +2,19 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.repair_scene3d_ur5_spacing import repair_index
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--repo-root", default=str(Path(__file__).resolve().parents[1]))
+    parser.add_argument("--repo-root", default=str(REPO_ROOT))
     parser.add_argument("--scene", action="append", default=[])
     args = parser.parse_args()
 
