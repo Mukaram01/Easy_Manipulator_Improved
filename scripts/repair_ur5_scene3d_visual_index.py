@@ -307,18 +307,19 @@ def repair_index(path: Path) -> tuple[bool, list[str]]:
     present = _present_required_links(items)
     missing = [spec for spec in REQUIRED_UR5_VISUALS if spec["link"] not in present]
     stale_or_implausible, repair_reasons = _existing_ur5_rows_need_repair(items, present)
-    should_include_2f_proxy = _payload_uses_2f_gripper(payload, items, path) and (bool(missing) or stale_or_implausible)
+    repair_arm_rows = bool(missing) or stale_or_implausible
     present_2f_links = _present_links(items, STABLE_UR5_2F_LINKS)
     missing_2f_specs = [spec for spec in STABLE_UR5_2F_PREVIEW_VISUALS if spec["link"] not in present_2f_links]
+    should_include_2f_proxy = _payload_uses_2f_gripper(payload, items, path) and bool(missing_2f_specs)
     extra_specs = missing_2f_specs if should_include_2f_proxy else []
-    if not missing and not stale_or_implausible and not extra_specs:
+    if not repair_arm_rows and not extra_specs:
         return False, []
 
-    repaired_specs = list(REQUIRED_UR5_VISUALS) + list(extra_specs)
+    repaired_specs = (list(REQUIRED_UR5_VISUALS) if repair_arm_rows else []) + list(extra_specs)
     repaired = [_ur5_item(spec, index) for index, spec in enumerate(repaired_specs)]
-    replaced_links = set(REQUIRED_UR5_LINKS)
+    replaced_links: set[str] = set(REQUIRED_UR5_LINKS) if repair_arm_rows else set()
     if extra_specs:
-        replaced_links.update(STABLE_UR5_2F_LINKS)
+        replaced_links.update(spec["link"] for spec in extra_specs)
     kept = [
         item for item in items
         if isinstance(item, dict)
@@ -342,7 +343,12 @@ def repair_index(path: Path) -> tuple[bool, list[str]]:
     payload["ur5_runtime_repair_mode"] = "stable_primitive_builder_preview"
     payload["ur5_runtime_repair_added_links"] = [spec["link"] for spec in missing]
     payload["ur5_runtime_repair_added_end_effector_links"] = [spec["link"] for spec in extra_specs]
-    payload["ur5_runtime_repair_reasons"] = repair_reasons or ["missing_required_ur5_rows"]
+    if repair_reasons:
+        payload["ur5_runtime_repair_reasons"] = repair_reasons
+    elif repair_arm_rows:
+        payload["ur5_runtime_repair_reasons"] = ["missing_required_ur5_rows"]
+    else:
+        payload["ur5_runtime_repair_reasons"] = ["missing_ur5_2f_end_effector_preview_rows"]
     payload["ur5_required_links"] = list(REQUIRED_UR5_LINKS)
     if extra_specs:
         payload["ur5_2f_stable_preview_links"] = list(STABLE_UR5_2F_LINKS)

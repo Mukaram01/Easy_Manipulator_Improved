@@ -122,6 +122,52 @@ def test_repair_adds_locked_2f_gripper_proxy_for_ur5_2f_scene(tmp_path):
     assert any(row.get("id") == "camera" for row in rows)
 
 
+def test_repair_adds_missing_2f_proxy_without_replacing_valid_ur5_rows(tmp_path):
+    valid_ur5_rows = [
+        {
+            "id": f"mesh_{link}",
+            "link": link,
+            "mesh_uri": f"package://ur_description/meshes/ur5/visual/{link}.dae",
+            "geometry_type": "mesh",
+            "resolved": True,
+            "render_expected": True,
+            "pose": {"xyz": [float(i) * 0.1, 0.0, 0.2], "rpy": [0.0, 0.0, 0.0]},
+        }
+        for i, link in enumerate(REQUIRED_UR5_LINKS)
+    ]
+    path = _write_index(
+        tmp_path,
+        {
+            "scene_name": "ur5_2f_test",
+            "visual_items": valid_ur5_rows + [
+                {
+                    "id": "table",
+                    "display_name": "table",
+                    "geometry_type": "box",
+                    "category": "table",
+                    "render_expected": True,
+                    "resolved": True,
+                }
+            ],
+            "items": [],
+            "blockers": [],
+        },
+    )
+
+    changed, added = repair_index(path)
+
+    assert changed is True
+    assert added == []
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    rows = payload["visual_items"]
+    links = {row.get("link") for row in rows}
+    assert set(REQUIRED_UR5_LINKS).issubset(links)
+    assert set(STABLE_UR5_2F_LINKS).issubset(links)
+    assert all(any(row.get("id") == f"mesh_{link}" for row in rows) for link in REQUIRED_UR5_LINKS)
+    assert payload["ur5_runtime_repair_reasons"] == ["missing_ur5_2f_end_effector_preview_rows"]
+    assert any(row.get("id") == "table" for row in rows)
+
+
 def test_repair_skips_non_ur5_payload(tmp_path):
     path = _write_index(
         tmp_path,
