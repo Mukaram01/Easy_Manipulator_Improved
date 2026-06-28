@@ -5077,53 +5077,57 @@ bool Scene3DViewportWidget::pick_gizmo_rotation_ring_at_screen(const QPoint & po
 void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) {
   last_ = e->pos();
   if (e->button() != Qt::LeftButton) return;
-  QString best_id, best_role;
-  if (pick_item_at_screen(e->pos(), best_id, best_role) && !best_id.isEmpty() && select_cb) select_cb(best_id, best_role);
+
   drag_start_screen_ = e->pos();
   dragging_gizmo_ = false;
   drag_active_handle_ = GizmoHandle::None;
   drag_in_progress_ = false;
   drag_cancelled_ = false;
+  active_axis_.clear();
+
   if ((gizmo_mode == GizmoMode::Move || gizmo_mode == GizmoMode::Rotate) && !selected_id.isEmpty()) {
+    const ScenePreviewWidget::PreviewItem * selected_item = nullptr;
     for (const auto & it : items) {
-      if (it.id != selected_id) continue;
-      if (!item_is_editable_for_gizmo(it)) {
-        if (status_message_cb) status_message_cb(QStringLiteral("Locked: %1").arg(item_locked_reason(it)));
-        return;
+      if (it.id == selected_id) {
+        selected_item = &it;
+        break;
       }
-      dragging_gizmo_ = true;
-      break;
+    }
+
+    if (selected_item != nullptr) {
+      if (!item_is_editable_for_gizmo(*selected_item)) {
+        if (status_message_cb) status_message_cb(QStringLiteral("Locked: %1").arg(item_locked_reason(*selected_item)));
+      } else {
+        double score = std::numeric_limits<double>::max();
+        QString axis;
+        bool picked = false;
+        if (gizmo_mode == GizmoMode::Move) {
+          picked = pick_gizmo_axis_at_screen(e->pos(), axis, &score);
+          if (picked) drag_active_handle_ = (axis == "x") ? GizmoHandle::MoveX : (axis == "y" ? GizmoHandle::MoveY : GizmoHandle::MoveZ);
+        } else if (gizmo_mode == GizmoMode::Rotate) {
+          picked = pick_gizmo_rotation_ring_at_screen(e->pos(), axis, &score);
+          if (picked) drag_active_handle_ = (axis == "x") ? GizmoHandle::Roll : (axis == "y" ? GizmoHandle::Pitch : GizmoHandle::Yaw);
+        }
+
+        if (picked && !axis.isEmpty()) {
+          active_axis_ = axis;
+          dragging_gizmo_ = true;
+          drag_in_progress_ = true;
+          drag_start_pose_.item_id = selected_item->id;
+          drag_start_pose_.x = selected_item->x;
+          drag_start_pose_.y = selected_item->y;
+          drag_start_pose_.z = selected_item->z;
+          drag_start_pose_.roll = selected_item->roll;
+          drag_start_pose_.pitch = selected_item->pitch;
+          drag_start_pose_.yaw = selected_item->yaw;
+          return;
+        }
+      }
     }
   }
-  if (dragging_gizmo_) {
-    const int dx = qAbs(e->x() - width() / 2);
-    const int dy = qAbs(e->y() - height() / 2);
-    active_axis_ = (dx > dy) ? QStringLiteral("x") : QStringLiteral("y");
-    for (const auto & it : items) {
-      if (it.id != selected_id) continue;
-      drag_start_pose_.item_id = it.id;
-      drag_start_pose_.x = it.x;
-      drag_start_pose_.y = it.y;
-      drag_start_pose_.z = it.z;
-      drag_start_pose_.roll = it.roll;
-      drag_start_pose_.pitch = it.pitch;
-      drag_start_pose_.yaw = it.yaw;
-      break;
-    }
-    double score = std::numeric_limits<double>::max();
-    QString axis;
-    bool picked = false;
-    if (gizmo_mode == GizmoMode::Move) {
-      picked = pick_gizmo_axis_at_screen(e->pos(), axis, &score);
-      if (picked) drag_active_handle_ = (axis == "x") ? GizmoHandle::MoveX : (axis == "y" ? GizmoHandle::MoveY : GizmoHandle::MoveZ);
-    } else if (gizmo_mode == GizmoMode::Rotate) {
-      picked = pick_gizmo_rotation_ring_at_screen(e->pos(), axis, &score);
-      if (picked) drag_active_handle_ = (axis == "x") ? GizmoHandle::Roll : (axis == "y" ? GizmoHandle::Pitch : GizmoHandle::Yaw);
-    }
-    active_axis_ = axis;
-    dragging_gizmo_ = picked && !axis.isEmpty();
-    drag_in_progress_ = dragging_gizmo_;
-  }
+
+  QString best_id, best_role;
+  if (pick_item_at_screen(e->pos(), best_id, best_role) && !best_id.isEmpty() && select_cb) select_cb(best_id, best_role);
 }
 void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e)
 {

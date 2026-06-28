@@ -59,3 +59,21 @@ def test_scene3d_drag_uses_drag_start_screen_and_drag_start_pose_without_undefin
     assert "drag_start_pose_.roll + snapped" in viewport_cpp
     assert "drag_start_ =" not in viewport_cpp
     assert "drag_start_)" not in viewport_cpp
+
+def _mouse_press_event_body():
+    viewport_cpp = Path("workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(encoding="utf-8")
+    start = viewport_cpp.index("void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) {")
+    end = viewport_cpp.index("void Scene3DViewportWidget::mouseMoveEvent", start)
+    return viewport_cpp[start:end]
+
+
+def test_mouse_press_prioritizes_editable_gizmo_handle_before_item_picking():
+    body = _mouse_press_event_body()
+    assert "if (e->button() != Qt::LeftButton) return;" in body
+    assert body.index("if (e->button() != Qt::LeftButton) return;") < body.index("pick_gizmo_axis_at_screen")
+    assert body.index("item_is_editable_for_gizmo(*selected_item)") < body.index("pick_gizmo_axis_at_screen")
+    assert body.index("item_is_editable_for_gizmo(*selected_item)") < body.index("pick_gizmo_rotation_ring_at_screen")
+    assert body.index("pick_gizmo_axis_at_screen") < body.index("pick_item_at_screen")
+    assert body.index("pick_gizmo_rotation_ring_at_screen") < body.index("pick_item_at_screen")
+    assert "if (picked && !axis.isEmpty())" in body
+    assert "return;" in body.split("if (picked && !axis.isEmpty())", 1)[1].split("QString best_id, best_role;", 1)[0]
