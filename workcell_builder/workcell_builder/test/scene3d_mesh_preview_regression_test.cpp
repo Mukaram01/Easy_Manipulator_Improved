@@ -304,7 +304,7 @@ TEST(Scene3DMeshPreviewRegression, SuppressesFallbackBoxesWhenMeshSurfaceLoads)
   EXPECT_NE(src.find("if (!editable_layout_preview && !scene3d_debug_fallback_boxes_enabled())"), std::string::npos);
 }
 
-TEST(Scene3DMeshPreviewRegression, BakedUrdfVisualsDoNotUseAdHocUr5MeshCorrections)
+TEST(Scene3DMeshPreviewRegression, BakedUrdfVisualsUseOnlyScopedUr5AssetCorrections)
 {
   const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/scene3d_viewport_widget.cpp");
   ASSERT_FALSE(src.empty());
@@ -318,8 +318,9 @@ TEST(Scene3DMeshPreviewRegression, BakedUrdfVisualsDoNotUseAdHocUr5MeshCorrectio
     << "flattened generated entries must be explicitly excluded from legacy UR5 correction";
   EXPECT_NE(body.find("item_is_urdf_flattened_generated_preview(item)"), std::string::npos);
   EXPECT_NE(body.find("return false;"), std::string::npos);
-  EXPECT_NE(body.find("Do not reintroduce the old"), std::string::npos);
-  EXPECT_EQ(body.find("item_references_ur5_baked_mesh_asset_local_correction(item)"), std::string::npos);
+  EXPECT_NE(body.find("narrow UR5 DAE"), std::string::npos);
+  EXPECT_NE(body.find("item_references_ur5_baked_mesh_asset_local_correction(item)"), std::string::npos);
+  EXPECT_NE(body.find("item_has_non_identity_mesh_asset_local_correction(item)"), std::string::npos);
 }
 
 TEST(Scene3DMeshPreviewRegression, FlattenedUrdfEntriesAreRawRosAndCorrectedOnce)
@@ -347,5 +348,7 @@ TEST(Scene3DMeshPreviewRegression, FlattenedUrdfEntriesAreRawRosAndCorrectedOnce
   ASSERT_NE(correction_helper_end, std::string::npos);
   const std::string correction_body = src.substr(correction_helper, correction_helper_end - correction_helper);
   EXPECT_NE(correction_body.find("if (item_is_urdf_flattened_generated_preview(item)) return false;"), std::string::npos)
-    << "source=urdf_flattened entries must not receive legacy UR5 mesh correction after basis conversion";
+    << "flattened locked previews must remain excluded from asset-local correction";
+  EXPECT_NE(correction_body.find("item_references_ur5_baked_mesh_asset_local_correction(item)"), std::string::npos)
+    << "non-flattened known UR5 DAE rows should retain the asset-local correction path";
 }

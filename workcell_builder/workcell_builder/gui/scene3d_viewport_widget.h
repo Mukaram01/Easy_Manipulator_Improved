@@ -163,6 +163,8 @@ public:
   static bool has_mesh_surface_candidate_for_test(const ScenePreviewWidget::PreviewItem & item);
   static QColor material_color_for_test(const ScenePreviewWidget::PreviewItem & item, bool diagnostic_transparency_mode = false);
   static bool is_raw_generated_bounds_only_for_test(const ScenePreviewWidget::PreviewItem & item);
+  static QMatrix4x4 final_mesh_transform_matrix_for_test(const ScenePreviewWidget::PreviewItem & item);
+  static QMatrix4x4 baked_mesh_asset_local_correction_matrix_for_test(const ScenePreviewWidget::PreviewItem & item);
 
 protected:
   void initializeGL() override;

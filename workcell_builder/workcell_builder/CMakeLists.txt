@@ -336,6 +336,9 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_scene3d_render_role_classifier_test
     test/scene3d_render_role_classifier_test.cpp
     gui/scene3d_viewport_widget.cpp)
+  ament_add_gtest(workcell_scene3d_ur5_baked_transform_test
+    test/scene3d_ur5_baked_transform_test.cpp
+    gui/scene3d_viewport_widget.cpp)
 
   ament_add_gtest(workcell_command_builders_test
     test/command_builders_test.cpp
@@ -406,6 +409,15 @@ if(BUILD_TESTING)
       OpenGL::GL
     )
     target_include_directories(workcell_scene3d_render_role_classifier_test PRIVATE gui)
+  endif()
+
+  if(TARGET workcell_scene3d_ur5_baked_transform_test)
+    target_link_libraries(workcell_scene3d_ur5_baked_transform_test
+      Qt5::Widgets
+      Qt5::OpenGL
+      OpenGL::GL
+    )
+    target_include_directories(workcell_scene3d_ur5_baked_transform_test PRIVATE gui)
   endif()
 
   if(TARGET workcell_command_builders_test)
