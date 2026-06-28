@@ -357,14 +357,68 @@ void apply_mesh_local_correction_matrix(QMatrix4x4 & transform, const ScenePrevi
 
 bool is_generated_urdf_visual_item(const ScenePreviewWidget::PreviewItem & it);
 bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it);
-bool is_required_ur5_viewport_link(const ScenePreviewWidget::PreviewItem & item);
+bool is_required_generated_robot_viewport_link(const ScenePreviewWidget::PreviewItem & item);
+QString scene3d_canonical_link_name_for_item(const ScenePreviewWidget::PreviewItem & item);
+struct GeneratedRobotViewportProfile
+{
+  QString key;
+  QStringList identity_tokens;
+  QStringList required_links;
+  QHash<QString, QString> expected_visual_meshes;
+};
+
+const QVector<GeneratedRobotViewportProfile> & generated_robot_viewport_profiles()
+{
+  static const QVector<GeneratedRobotViewportProfile> profiles{
+    {QStringLiteral("ur5"),
+     {QStringLiteral("ur5"), QStringLiteral("ur_description/meshes/ur5"), QStringLiteral("universal_robot")},
+     {QStringLiteral("base_link_inertia"), QStringLiteral("shoulder_link"), QStringLiteral("upper_arm_link"), QStringLiteral("forearm_link"), QStringLiteral("wrist_1_link"), QStringLiteral("wrist_2_link"), QStringLiteral("wrist_3_link")},
+     {{QStringLiteral("base_link_inertia"), QStringLiteral("base.dae")}, {QStringLiteral("shoulder_link"), QStringLiteral("shoulder.dae")}, {QStringLiteral("upper_arm_link"), QStringLiteral("upperarm.dae")}, {QStringLiteral("forearm_link"), QStringLiteral("forearm.dae")}, {QStringLiteral("wrist_1_link"), QStringLiteral("wrist1.dae")}, {QStringLiteral("wrist_2_link"), QStringLiteral("wrist2.dae")}, {QStringLiteral("wrist_3_link"), QStringLiteral("wrist3.dae")}}},
+    {QStringLiteral("ur10"),
+     {QStringLiteral("ur10"), QStringLiteral("ur_description/meshes/ur10")},
+     {QStringLiteral("base_link_inertia"), QStringLiteral("shoulder_link"), QStringLiteral("upper_arm_link"), QStringLiteral("forearm_link"), QStringLiteral("wrist_1_link"), QStringLiteral("wrist_2_link"), QStringLiteral("wrist_3_link")},
+     {{QStringLiteral("base_link_inertia"), QStringLiteral("base.dae")}, {QStringLiteral("shoulder_link"), QStringLiteral("shoulder.dae")}, {QStringLiteral("upper_arm_link"), QStringLiteral("upperarm.dae")}, {QStringLiteral("forearm_link"), QStringLiteral("forearm.dae")}, {QStringLiteral("wrist_1_link"), QStringLiteral("wrist1.dae")}, {QStringLiteral("wrist_2_link"), QStringLiteral("wrist2.dae")}, {QStringLiteral("wrist_3_link"), QStringLiteral("wrist3.dae")}}},
+    {QStringLiteral("ur3"),
+     {QStringLiteral("ur3"), QStringLiteral("ur_description/meshes/ur3")},
+     {QStringLiteral("base_link_inertia"), QStringLiteral("shoulder_link"), QStringLiteral("upper_arm_link"), QStringLiteral("forearm_link"), QStringLiteral("wrist_1_link"), QStringLiteral("wrist_2_link"), QStringLiteral("wrist_3_link")},
+     {{QStringLiteral("base_link_inertia"), QStringLiteral("base.dae")}, {QStringLiteral("shoulder_link"), QStringLiteral("shoulder.dae")}, {QStringLiteral("upper_arm_link"), QStringLiteral("upperarm.dae")}, {QStringLiteral("forearm_link"), QStringLiteral("forearm.dae")}, {QStringLiteral("wrist_1_link"), QStringLiteral("wrist1.dae")}, {QStringLiteral("wrist_2_link"), QStringLiteral("wrist2.dae")}, {QStringLiteral("wrist_3_link"), QStringLiteral("wrist3.dae")}}}
+  };
+  return profiles;
+}
+
+QString scene3d_robot_identity_haystack_for_item(const ScenePreviewWidget::PreviewItem & item)
+{
+  return QStringList{item.id, item.display_name, item.category, item.role, item.source_layer, item.active_visual_source,
+                     item.visual_index_link, item.visual_index_link_name, item.visual_index_mesh_uri, item.visual_index_package_uri,
+                     item.package_uri, item.mesh_path, item.source_path, item.resolved_source_path_original, item.metadata_tags}
+    .join(QStringLiteral("|")).toLower();
+}
+
+const GeneratedRobotViewportProfile * generated_robot_profile_for_item(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QString haystack = scene3d_robot_identity_haystack_for_item(item);
+  for (const auto & profile : generated_robot_viewport_profiles()) {
+    for (const QString & token : profile.identity_tokens) {
+      if (!token.trimmed().isEmpty() && haystack.contains(token.toLower())) return &profile;
+    }
+  }
+  return nullptr;
+}
+
+const GeneratedRobotViewportProfile * generated_robot_profile_for_required_link_item(const ScenePreviewWidget::PreviewItem & item)
+{
+  const auto * profile = generated_robot_profile_for_item(item);
+  if (!profile) return nullptr;
+  return profile->required_links.contains(scene3d_canonical_link_name_for_item(item)) ? profile : nullptr;
+}
+
 QString scene3d_canonical_link_name_for_item(const ScenePreviewWidget::PreviewItem & item);
 
 QMatrix4x4 final_mesh_transform_matrix(const ScenePreviewWidget::PreviewItem & item)
 {
-  const bool generated_ur5_visual =
+  const bool required_generated_robot_visual =
     (is_generated_urdf_visual_item(item) || is_locked_urdf_item(item)) &&
-    is_required_ur5_viewport_link(item);
+    is_required_generated_robot_viewport_link(item);
 
   if (item.has_baked_world_visual_transform && item.has_baked_world_visual_matrix) {
     // Matrix-baked generated URDF rows already carry world_T_visual from the
@@ -377,7 +431,7 @@ QMatrix4x4 final_mesh_transform_matrix(const ScenePreviewWidget::PreviewItem & i
     transform.scale(static_cast<float>(item.mesh_scale_x),
                     static_cast<float>(item.mesh_scale_y),
                     static_cast<float>(item.mesh_scale_z));
-    if (generated_ur5_visual) {
+    if (required_generated_robot_visual) {
       qInfo().noquote() << QStringLiteral("UR5_BAKED_MATRIX_APPLIED link=%1 source=%2")
         .arg(scene3d_canonical_link_name_for_item(item), item.baked_world_visual_transform_source);
     }
@@ -385,7 +439,7 @@ QMatrix4x4 final_mesh_transform_matrix(const ScenePreviewWidget::PreviewItem & i
   }
 
   if (item.has_baked_world_visual_transform) {
-    if (generated_ur5_visual) {
+    if (required_generated_robot_visual) {
       qWarning().noquote() << QStringLiteral("ur5_baked_matrix_available_but_not_used link=%1 source=%2")
         .arg(scene3d_canonical_link_name_for_item(item), item.baked_world_visual_transform_source);
     }
@@ -436,7 +490,7 @@ bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item
 bool is_generated_urdf_visual_item(const ScenePreviewWidget::PreviewItem & it);
 bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it);
 bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it);
-bool is_required_ur5_viewport_link(const ScenePreviewWidget::PreviewItem & item);
+bool is_required_generated_robot_viewport_link(const ScenePreviewWidget::PreviewItem & item);
 QString scene3d_link_name_for_item(const ScenePreviewWidget::PreviewItem & item);
 
 bool item_has_mesh_surface_candidate(const ScenePreviewWidget::PreviewItem & item)
@@ -1359,7 +1413,7 @@ void populate_runtime_transform_counters(
 bool generated_urdf_item_has_renderable_geometry(const ScenePreviewWidget::PreviewItem & item)
 {
   if (!(is_generated_urdf_visual_item(item) || is_locked_urdf_item(item))) return false;
-  if (is_generated_urdf_visual_fallback_item(item) && is_required_ur5_viewport_link(item)) return true;
+  if (is_generated_urdf_visual_fallback_item(item) && is_required_generated_robot_viewport_link(item)) return true;
   const bool has_real_mesh = item.has_mesh_metadata && item_has_mesh_surface_candidate(item);
   return has_real_mesh || item_has_valid_urdf_primitive(item);
 }
@@ -1924,7 +1978,8 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
         root["robot_aabb_max"] = QJsonArray{last_robot_aabb_max_.x(), last_robot_aabb_max_.y(), last_robot_aabb_max_.z()};
       }
       root["mesh_diagnostics"] = mesh_diagnostics_export();
-      root["ur5_final_draw_candidate_diagnostics"] = ur5_final_draw_candidate_diagnostics_export();
+      root["generated_robot_final_draw_candidate_diagnostics"] = generated_robot_final_draw_candidate_diagnostics_export();
+      root["ur5_final_draw_candidate_diagnostics"] = root["generated_robot_final_draw_candidate_diagnostics"];
       root["final_draw_visual_items"] = final_draw_visual_items_export();
       QJsonObject render_debug;
       const auto counters = render_debug_counters();
@@ -2796,9 +2851,9 @@ QString Scene3DViewportWidget::placeholder_reason_for_item(const ScenePreviewWid
 }
 
 
-bool Scene3DViewportWidget::draw_required_ur5_emergency_fallback(const ScenePreviewWidget::PreviewItem & it, const QColor & color)
+bool Scene3DViewportWidget::draw_required_generated_robot_emergency_fallback(const ScenePreviewWidget::PreviewItem & it, const QColor & color)
 {
-  if (!is_required_ur5_viewport_link(it)) return false;
+  if (!is_required_generated_robot_viewport_link(it)) return false;
 
   QVector3D local_min;
   QVector3D local_max;
@@ -2937,7 +2992,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     }
     return true;
   }
-  if (generated_or_locked_preview && draw_required_ur5_emergency_fallback(it, product_view_generated_locked_material(it, diagnostic_transparency_mode))) {
+  if (generated_or_locked_preview && draw_required_generated_robot_emergency_fallback(it, product_view_generated_locked_material(it, diagnostic_transparency_mode))) {
     if (out_primitive_fallback_count) ++(*out_primitive_fallback_count);
     return true;
   }
@@ -3584,14 +3639,11 @@ QString scene3d_canonical_link_name_for_item(const ScenePreviewWidget::PreviewIt
     !item.frame_id.trimmed().isEmpty() ||
     (!item.display_name.trimmed().isEmpty() && item.display_name.trimmed() != id);
   if (!canonical.isEmpty() && (has_normalized_identity || canonical != id)) return canonical;
-  const QString haystack = QStringList{item.id, item.display_name, item.frame_id, item.package_uri, item.mesh_path, item.source_path}.join(QStringLiteral(" ")).toLower();
-  const QStringList ur5_links{
-    QStringLiteral("base_link_inertia"), QStringLiteral("base_link"), QStringLiteral("shoulder_link"),
-    QStringLiteral("upper_arm_link"), QStringLiteral("forearm_link"), QStringLiteral("wrist_1_link"),
-    QStringLiteral("wrist_2_link"), QStringLiteral("wrist_3_link"), QStringLiteral("tool0")
-  };
-  for (const QString & alias : ur5_links) {
-    if (haystack.contains(alias)) return scene3d_canonical_link_name(alias);
+  const QString haystack = scene3d_robot_identity_haystack_for_item(item);
+  for (const auto & profile : generated_robot_viewport_profiles()) {
+    for (const QString & alias : profile.required_links) {
+      if (haystack.contains(alias)) return scene3d_canonical_link_name(alias);
+    }
   }
   if (haystack.contains(QStringLiteral("robotiq")) && haystack.contains(QStringLiteral("base"))) {
     return QStringLiteral("robotiq_85_base_link");
@@ -3600,18 +3652,12 @@ QString scene3d_canonical_link_name_for_item(const ScenePreviewWidget::PreviewIt
 }
 
 
-bool is_required_ur5_viewport_link(const ScenePreviewWidget::PreviewItem & item)
+bool is_required_generated_robot_viewport_link(const ScenePreviewWidget::PreviewItem & item)
 {
-  // Use the renderer/export canonical link token so final viewport audit counts
-  // the same generated URDF draw records that were actually submitted.
-  const QString link = scene3d_canonical_link_name_for_item(item);
-  return link == QStringLiteral("base_link_inertia") ||
-         link == QStringLiteral("shoulder_link") ||
-         link == QStringLiteral("upper_arm_link") ||
-         link == QStringLiteral("forearm_link") ||
-         link == QStringLiteral("wrist_1_link") ||
-         link == QStringLiteral("wrist_2_link") ||
-         link == QStringLiteral("wrist_3_link");
+  // Resolve required generated robot links through capability profiles derived
+  // from PreviewItem identity metadata instead of hardcoding UR5 in the generic
+  // render flow.
+  return generated_robot_profile_for_required_link_item(item) != nullptr;
 }
 
 int scene3d_visual_index_for_item(const ScenePreviewWidget::PreviewItem & item)
@@ -3717,7 +3763,7 @@ QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
   return out;
 }
 
-QJsonArray Scene3DViewportWidget::ur5_final_draw_candidate_diagnostics_export() const
+QJsonArray Scene3DViewportWidget::generated_robot_final_draw_candidate_diagnostics_export() const
 {
   QJsonArray out;
   QSet<QString> seen_candidate_keys;
@@ -3727,7 +3773,7 @@ QJsonArray Scene3DViewportWidget::ur5_final_draw_candidate_diagnostics_export() 
       item.mesh_path, item.source_path, item.package_uri, item.visual_index_mesh_uri,
       scene3d_link_name_for_item(item), scene3d_canonical_link_name_for_item(item), item.metadata_tags
     }.join(QStringLiteral("|")).toLower();
-    if (!is_required_ur5_viewport_link(item) &&
+    if (!is_required_generated_robot_viewport_link(item) &&
         !joined_identity.contains(QStringLiteral("ur5")) &&
         !joined_identity.contains(QStringLiteral("universal_robot")) &&
         !joined_identity.contains(QStringLiteral("ur_description"))) {
@@ -3748,7 +3794,7 @@ QJsonArray Scene3DViewportWidget::ur5_final_draw_candidate_diagnostics_export() 
       first_stage = QStringLiteral("missing_renderable_geometry");
     } else if (!item.has_mesh_metadata && !is_generated_urdf_visual_fallback_item(item) && !item_has_valid_urdf_primitive(item)) {
       first_stage = QStringLiteral("missing_mesh_metadata");
-    } else if (mesh_source.isEmpty() && !(is_generated_urdf_visual_fallback_item(item) && is_required_ur5_viewport_link(item))) {
+    } else if (mesh_source.isEmpty() && !(is_generated_urdf_visual_fallback_item(item) && is_required_generated_robot_viewport_link(item))) {
       first_stage = QStringLiteral("missing_mesh_source");
     } else {
       const QString duplicate_key = QStringList{
@@ -3810,7 +3856,7 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     if (!item.has_mesh_metadata && !is_generated_urdf_visual_fallback_item(item) && !item_has_valid_urdf_primitive(item)) continue;
 
     const QString mesh_source = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path : item.source_path;
-    const bool required_ur5_fallback = is_generated_urdf_visual_fallback_item(item) && is_required_ur5_viewport_link(item);
+    const bool required_ur5_fallback = is_generated_urdf_visual_fallback_item(item) && is_required_generated_robot_viewport_link(item);
     if (mesh_source.trimmed().isEmpty() && !required_ur5_fallback) continue;
 
     QString canonical_mesh_source;
@@ -3904,28 +3950,20 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
       out.append(row);
       continue;
     }
-    if (is_required_ur5_viewport_link(item)) {
+    if (is_required_generated_robot_viewport_link(item)) {
       const QString required_link = scene3d_canonical_link_name_for_item(item);
-      const QHash<QString, QString> expected_ur5_visual_meshes{
-        {QStringLiteral("base_link_inertia"), QStringLiteral("base.dae")},
-        {QStringLiteral("shoulder_link"), QStringLiteral("shoulder.dae")},
-        {QStringLiteral("upper_arm_link"), QStringLiteral("upperarm.dae")},
-        {QStringLiteral("forearm_link"), QStringLiteral("forearm.dae")},
-        {QStringLiteral("wrist_1_link"), QStringLiteral("wrist1.dae")},
-        {QStringLiteral("wrist_2_link"), QStringLiteral("wrist2.dae")},
-        {QStringLiteral("wrist_3_link"), QStringLiteral("wrist3.dae")}
-      };
-      const QString expected_mesh = expected_ur5_visual_meshes.value(required_link);
-      const QString expected_uri = expected_mesh.trimmed().isEmpty()
-        ? QString()
-        : QStringLiteral("package://ur_description/meshes/ur5/visual/%1").arg(expected_mesh);
+      const GeneratedRobotViewportProfile * profile = generated_robot_profile_for_required_link_item(item);
+      const QString expected_mesh = profile ? profile->expected_visual_meshes.value(required_link) : QString();
+      const QString expected_uri = (profile && !expected_mesh.trimmed().isEmpty())
+        ? QStringLiteral("package://ur_description/meshes/%1/visual/%2").arg(profile->key, expected_mesh)
+        : QString();
       const QString exported_mesh_uri = row.value(QStringLiteral("mesh_uri")).toString().trimmed();
       const QString exported_mesh_source = row.value(QStringLiteral("mesh_source")).toString().trimmed();
       const bool expected_uri_matches = !expected_uri.isEmpty() &&
         (exported_mesh_uri == expected_uri || exported_mesh_source == expected_uri);
       const bool canonical_matches_expected_asset = !expected_mesh.isEmpty() &&
-        (canonical_mesh_source.endsWith(QStringLiteral("/assets/robots/universal_robot/ur_description/meshes/ur5/visual/%1").arg(expected_mesh)) ||
-         canonical_mesh_source.endsWith(QStringLiteral("/ur_description/meshes/ur5/visual/%1").arg(expected_mesh)));
+        (canonical_mesh_source.endsWith(QStringLiteral("/assets/robots/universal_robot/ur_description/meshes/%1/visual/%2").arg(profile ? profile->key : QString(), expected_mesh)) ||
+         canonical_mesh_source.endsWith(QStringLiteral("/ur_description/meshes/%1/visual/%2").arg(profile ? profile->key : QString(), expected_mesh)));
       row["expected_ur5_mesh_uri"] = expected_uri;
       row["ur5_final_viewport_uri_matches_expected"] = expected_uri_matches;
       row["ur5_final_viewport_canonical_asset_matches_expected"] = canonical_matches_expected_asset;
@@ -3972,7 +4010,7 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
 
     const auto cache_it = mesh_cache_.constFind(canonical_mesh_source);
     if (cache_it == mesh_cache_.constEnd()) {
-      row["final_draw_status"] = is_required_ur5_viewport_link(item)
+      row["final_draw_status"] = is_required_generated_robot_viewport_link(item)
         ? QStringLiteral("ur5_emergency_visible_fallback")
         : QStringLiteral("missing_mesh_cache");
       out.append(row);
@@ -3990,10 +4028,10 @@ QJsonArray Scene3DViewportWidget::final_draw_visual_items_export() const
     row["local_max"] = scene3d_vec_to_json(cache.local_max);
 
     if (!cache.loaded || !cache.valid || !cache.has_bounds || cache.mesh.triangles.isEmpty()) {
-      row["final_draw_status"] = is_required_ur5_viewport_link(item)
+      row["final_draw_status"] = is_required_generated_robot_viewport_link(item)
         ? QStringLiteral("ur5_emergency_visible_fallback")
         : (cache.has_bounds ? QStringLiteral("invalid_mesh") : QStringLiteral("missing_bounds"));
-      if (is_required_ur5_viewport_link(item) && cache.has_bounds) {
+      if (is_required_generated_robot_viewport_link(item) && cache.has_bounds) {
         QVector3D final_min;
         QVector3D final_max;
         if (scene3d_final_draw_bbox_for_mesh(cache.mesh, final_transform, final_min, final_max)) {
@@ -4175,7 +4213,7 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   const QString canonical_link = scene3d_canonical_link_name_for_item(it);
   const bool log_ur5_final_transform = (is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) &&
       it.has_baked_world_visual_transform &&
-      is_required_ur5_viewport_link(it);
+      is_required_generated_robot_viewport_link(it);
   glMultMatrixf(final_draw_transform.constData());
 
   const MeshCacheEntry & cache = entry;  // ensure_mesh_cached(it, mesh_source) is intentionally upstream of final draw.
