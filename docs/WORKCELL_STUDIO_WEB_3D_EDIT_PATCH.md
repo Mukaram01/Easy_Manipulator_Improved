@@ -142,6 +142,29 @@ The applicator reuses the validator and then applies only safe editable updates:
 
 Dry-run output lists the scene id, item id, label, source, target file, old transform, new transform, and whether a write would occur. Write mode reports updated file paths, updated item counts, skipped/rejected edits, and the suggested re-export command.
 
+## Generate and validate after Web 3D edits
+
+After a Web 3D edit patch is applied, scene generation and validation remain an explicit operator step. Generation/validation is not automatic after patch apply, and the browser never writes YAML directly. Edit patches are validated and dry-run before apply; apply mode re-exports the web scene and verifies that the persisted editable source YAML is reflected in the after export.
+
+Recommended Workcell Builder flow:
+
+1. Open Web 3D Viewer from Workcell Builder.
+2. Edit the scene in the browser.
+3. Export `edit_patch.json`.
+4. Return to Workcell Builder.
+5. Validate, dry-run, and then explicitly apply the patch only if the dry-run output is clean.
+6. Confirm that apply re-exports the after web scene and verifies persistence.
+7. Click **Generate & Validate Scene** in Workcell Builder.
+8. Read the PASS/FAIL output from the generation/validation action.
+9. Do not launch robot hardware from this step.
+10. Treat fake-hardware RViz/MoveIt launch verification as the next phase.
+
+Safety boundaries:
+
+- This step does not launch ROS, RViz, MoveIt, Gazebo, fake hardware, or real hardware.
+- It does not replace RViz/MoveIt; RViz/MoveIt remains the future planning truth and the fake-hardware validation foundation.
+- Generated scene validation reports are review evidence only, not safety certificates or permission to run real hardware.
+
 ## Relationship to RViz/MoveIt
 
 Web 3D editing is an authoring surface, not a planning or execution backend. No ROS launch is required for patch validation or application. RViz/MoveIt remains the planning and simulation truth, and fake hardware remains the default validation foundation. This workflow does not enable real robot motion, does not replace backend generation/validation/safety gates, and does not modify Qt Scene3D visuals.

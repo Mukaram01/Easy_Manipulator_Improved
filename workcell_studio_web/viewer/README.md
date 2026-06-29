@@ -66,6 +66,25 @@ Phase 3 focuses on making exported scenes easier to inspect in a browser without
 - Inspector fields for ID, label, type, source, pose XYZ/RPY, scale, editable, locked, mesh URI, `render_status`, and primitive details.
 - JSON warnings and runtime mesh warnings rendered in a dedicated warnings panel.
 
+## Generate and validate after Web 3D edits
+
+After applying a browser-exported edit patch, generation and validation are still a separate Workcell Builder action. Generation/validation is not automatic after patch apply. The browser never writes YAML directly: it only exports `edit_patch.json`, and that patch is validated and dry-run before apply. Apply mode re-exports the after `web_scene.json` and verifies persistence before you move on.
+
+Recommended workflow:
+
+1. Open Web 3D Viewer from Workcell Builder.
+2. Edit the scene in the browser.
+3. Export `edit_patch.json`.
+4. Return to Workcell Builder.
+5. Validate, dry-run, and then explicitly apply the patch only if the dry-run output is clean.
+6. Confirm that apply re-exports and verifies persistence.
+7. Click **Generate & Validate Scene**.
+8. Read the PASS/FAIL output.
+9. Do not launch robot hardware from this step.
+10. Use fake-hardware RViz/MoveIt launch verification as the next phase.
+
+This generation/validation step does not launch ROS, RViz, MoveIt, Gazebo, fake hardware, or real hardware. RViz/MoveIt remains the future planning truth after Web 3D authoring and backend scene generation.
+
 ## Intentional exclusions and limitations
 
 This is not the final Web Studio editor. It intentionally excludes:
