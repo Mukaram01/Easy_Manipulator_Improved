@@ -213,7 +213,7 @@ def _authored_item(raw: Mapping[str, Any], source: str, index: int, scene_dir: P
     fields = (
         "id", "type", "role", "category", "display_name", "frame", "pose", "pose_xyz", "pose_rpy", "dimensions",
         "geometry_type", "primitive_geometry_type", "mesh_uri", "package_uri", "source_path", "mesh_path", "material",
-        "layout_item_ref", "support_surface_ref", "task_zone_ref", "perception_mode", "runtime_enforced", "runtime_commanded",
+        "layout_item_ref", "support_surface_ref", "task_zone_ref", "scale", "mesh_scale", "perception_mode", "runtime_enforced", "runtime_commanded",
     )
     item = _copy_fields(raw, fields, source, scene_dir)
     item.setdefault("id", _stable_id("authored", index))

@@ -72,6 +72,36 @@ This is not the final Web Studio editor. It intentionally excludes:
 
 This static viewer is only a lightweight browser proof-of-life for reviewing exported scene contract data. It improves readability of exported scenes, but the source-of-truth editing, scene generation, validation, and fake-hardware simulation flows remain in Workcell Studio, generated packages, and RViz/MoveIt.
 
+## Persistence verification loop
+
+The viewer edits are persisted only through the backend applicator; the viewer never writes source YAML, generated files, `cell_definition.yaml`, or `scene_manifest.yaml` directly. For manual verification, use a copied/temp scene rather than a checked-in real scene:
+
+1. Export before `web_scene.json`:
+
+   ```bash
+   python3 scripts/export_workcell_studio_web_scene.py \
+     --scene scenes/ur5_2f_test \
+     --output build/workcell_studio_web_scene/ur5_2f_test.before.web_scene.json
+   ```
+
+2. Open the viewer and edit one `editable=true`, `locked=false` layout/environment item.
+3. Export `edit_patch.json`.
+4. Validate the patch.
+5. Run the applicator dry-run and confirm it writes nothing.
+6. Run the applicator with `--write` on the temp scene only.
+7. Re-export after `web_scene.json`.
+8. Run the persistence verifier:
+
+   ```bash
+   python3 scripts/verify_workcell_studio_web_scene_edit_persistence.py \
+     --scene scenes/ur5_2f_test \
+     --web-scene-before build/workcell_studio_web_scene/ur5_2f_test.before.web_scene.json \
+     --patch build/workcell_studio_web_scene/ur5_2f_test.edit_patch.json \
+     --web-scene-after build/workcell_studio_web_scene/ur5_2f_test.after.web_scene.json
+   ```
+
+9. Only then regenerate and validate the scene package through Workcell Studio backend tooling. RViz/MoveIt remains the fake-hardware planning/simulation truth; this static viewer does not replace it and does not enable real-hardware execution.
+
 ## Preview-only transform editing and edit patches
 
 The static viewer includes a first-pass safe editing surface for Web 3D. When a selected item is both `editable=true` and `locked=false`, the inspector shows XYZ, RPY, and scale inputs. Changing those inputs updates only the in-browser Three.js preview.
