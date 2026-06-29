@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Workcell Studio Web Scene Viewer</title>
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Workcell Studio Web Scene Viewer</h1>
+      <p>Static Phase 3 proof-of-life viewer for <code>web_scene.json</code>.</p>
+    </div>
+    <label class="file-picker">
+      Load web_scene.json
+      <input id="scene-file" type="file" accept="application/json,.json" />
+    </label>
+  </header>
+
+  <main class="app-shell">
+    <aside class="object-panel" aria-label="Object list panel">
+      <h2>Objects</h2>
+      <div id="empty-state" class="state empty">Choose an exported <code>web_scene.json</code> file to begin.</div>
+      <ul id="object-list" class="object-list"></ul>
+    </aside>
+
+    <section class="viewport-panel" aria-label="3D canvas area">
+      <div id="error-state" class="state error" hidden></div>
+      <canvas id="scene-canvas"></canvas>
+    </section>
+
+    <aside class="details-panel" aria-label="Inspector and warnings panel">
+      <section>
+        <h2>Inspector</h2>
+        <div id="inspector" class="state empty">Select an object from the list or canvas.</div>
+      </section>
+      <section>
+        <h2>Warnings</h2>
+        <div id="warnings" class="warnings state empty">No scene loaded.</div>
+      </section>
+    </aside>
+  </main>
+
+  <script type="module" src="viewer.js"></script>
+</body>
+</html>
