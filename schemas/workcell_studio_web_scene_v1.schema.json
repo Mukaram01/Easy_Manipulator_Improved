@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workcell-studio.local/schemas/workcell_studio_web_scene_v1.schema.json",
+  "title": "Workcell Studio Web Scene v1",
+  "description": "JSON Schema for the workcell_studio_web_scene/v1 payload used by Workcell Studio web/Scene3D clients.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scene_id",
+    "source_files",
+    "provenance",
+    "units",
+    "coordinate_system",
+    "robot",
+    "tool",
+    "assets",
+    "sensors",
+    "zones",
+    "warnings",
+    "backend_actions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "workcell_studio_web_scene/v1",
+      "description": "Schema contract identifier for this payload."
+    },
+    "scene_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable scene identifier, normally matching the scene directory/package name."
+    },
+    "source_files": {
+      "type": "object",
+      "description": "Source files used to assemble this web scene payload.",
+      "additionalProperties": { "$ref": "#/$defs/sourceFile" },
+      "properties": {
+        "environment": { "$ref": "#/$defs/sourceFile" },
+        "layout": { "$ref": "#/$defs/sourceFile" },
+        "cell_definition": { "$ref": "#/$defs/sourceFile" },
+        "scene_manifest": { "$ref": "#/$defs/sourceFile" },
+        "visual_mesh_index": { "$ref": "#/$defs/sourceFile" }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "description": "Generation metadata for traceability and reproducibility.",
+      "additionalProperties": false,
+      "properties": {
+        "generated_at": { "type": "string", "format": "date-time" },
+        "generated_by": { "type": "string" },
+        "generator_version": { "type": "string" },
+        "repository": { "type": "string" },
+        "commit": { "type": "string" }
+      }
+    },
+    "units": {
+      "type": "object",
+      "description": "Numeric units used by this scene payload. Distances are metres and angles are radians.",
+      "additionalProperties": false,
+      "required": ["distance", "angle"],
+      "properties": {
+        "distance": { "const": "metre", "description": "All XYZ positions and linear dimensions are expressed in metres." },
+        "angle": { "const": "radian", "description": "All RPY rotations are expressed in radians." }
+      }
+    },
+    "coordinate_system": {
+      "type": "object",
+      "description": "ROS world frame with a Z-up convention. Asset poses are expressed relative to the named world frame unless an item explicitly documents another frame.",
+      "additionalProperties": false,
+      "required": ["frame", "up_axis", "convention"],
+      "properties": {
+        "frame": { "const": "world", "description": "ROS world frame." },
+        "up_axis": { "const": "z", "description": "Z-up scene convention." },
+        "convention": { "const": "ros_world_z_up", "description": "ROS world frame / Z-up coordinate-system contract." },
+        "pose_reference": {
+          "type": "string",
+          "default": "asset poses are relative to world unless otherwise specified"
+        }
+      }
+    },
+    "robot": { "$ref": "#/$defs/component" },
+    "tool": { "$ref": "#/$defs/component" },
+    "assets": {
+      "type": "array",
+      "description": "Physical and generated visual assets available to web Scene3D/Product View clients.",
+      "items": { "$ref": "#/$defs/asset" }
+    },
+    "sensors": {
+      "type": "array",
+      "description": "Scene sensors such as cameras. Sensor bodies may also appear in assets with type camera.",
+      "items": { "$ref": "#/$defs/sensor" }
+    },
+    "zones": {
+      "type": "array",
+      "description": "Authored zones such as safety, pick, place, reach, or diagnostic areas. Product View clients should keep helper/diagnostic zones hidden unless explicitly enabled.",
+      "items": { "$ref": "#/$defs/zone" }
+    },
+    "warnings": {
+      "type": "array",
+      "description": "Non-fatal scene conversion warnings, including missing mesh, missing pose, unknown type, and unsupported field cases.",
+      "items": { "$ref": "#/$defs/warning" }
+    },
+    "backend_actions": {
+      "type": "array",
+      "description": "Backend actions exposed for this scene, such as validate, generate, plan/simulate, open logs, or export.",
+      "items": { "$ref": "#/$defs/backendAction" }
+    }
+  },
+  "$defs": {
+    "sourceFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "exists": { "type": "boolean" },
+        "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "mtime": { "type": "string", "format": "date-time" }
+      }
+    },
+    "component": {
+      "type": "object",
+      "description": "Robot or tool metadata for the web scene.",
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "model": { "type": "string" },
+        "pose": { "$ref": "#/$defs/pose" },
+        "source": { "$ref": "#/$defs/assetSource" },
+        "visual_assets": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "type", "pose", "scale", "editable", "locked", "source"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["table", "bin", "conveyor", "camera", "zone", "object", "robot_visual", "tool_visual", "unknown"]
+        },
+        "pose": { "$ref": "#/$defs/pose" },
+        "scale": { "$ref": "#/$defs/scale" },
+        "mesh_uri": {
+          "type": ["string", "null"],
+          "description": "URI/path to a mesh visual when available. Null means no mesh is available for this asset."
+        },
+        "primitive": { "$ref": "#/$defs/primitive" },
+        "editable": { "type": "boolean" },
+        "locked": { "type": "boolean" },
+        "source": { "$ref": "#/$defs/assetSource" }
+      }
+    },
+    "pose": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["xyz", "rpy"],
+      "properties": {
+        "xyz": { "$ref": "#/$defs/vector3" },
+        "rpy": { "$ref": "#/$defs/vector3" }
+      }
+    },
+    "scale": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["xyz"],
+      "properties": {
+        "xyz": { "$ref": "#/$defs/vector3" }
+      }
+    },
+    "vector3": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "number" },
+        { "type": "number" },
+        { "type": "number" }
+      ],
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "primitive": {
+      "type": ["object", "null"],
+      "description": "Primitive fallback visual when no mesh is available or a simple shape is authoritative.",
+      "additionalProperties": false,
+      "properties": {
+        "shape": { "type": "string", "enum": ["box", "cylinder", "sphere", "plane", "unknown"] },
+        "dimensions": { "$ref": "#/$defs/vector3" },
+        "radius": { "type": "number", "minimum": 0 },
+        "height": { "type": "number", "minimum": 0 }
+      }
+    },
+    "assetSource": {
+      "type": "string",
+      "enum": ["environment", "layout", "visual_mesh_index", "generated"]
+    },
+    "sensor": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "type", "pose"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string" },
+        "type": { "type": "string" },
+        "pose": { "$ref": "#/$defs/pose" },
+        "frame_id": { "type": "string" },
+        "asset_id": { "type": "string" },
+        "source": { "$ref": "#/$defs/assetSource" }
+      }
+    },
+    "zone": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "type", "pose"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string" },
+        "type": { "type": "string" },
+        "pose": { "$ref": "#/$defs/pose" },
+        "source": { "$ref": "#/$defs/assetSource" },
+        "visible_by_default": { "type": "boolean", "default": false }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": ["missing_mesh", "missing_pose", "unknown_type", "unsupported_field"]
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "severity": { "type": "string", "enum": ["info", "warning", "error"], "default": "warning" },
+        "asset_id": { "type": "string" },
+        "field": { "type": "string" },
+        "source_file": { "type": "string" }
+      }
+    },
+    "backendAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "enabled"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "enabled": { "type": "boolean" },
+        "description": { "type": "string" },
+        "command": { "type": "string" },
+        "requires_ros_workspace": { "type": "boolean", "default": false },
+        "unavailable_reason": { "type": "string" }
+      }
+    }
+  }
+}
