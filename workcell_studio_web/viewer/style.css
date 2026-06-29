@@ -116,7 +116,33 @@ h2 { margin: 0 0 0.75rem; font-size: 0.95rem; color: var(--accent); }
   cursor: pointer;
 }
 .object-list li:hover, .object-list li.selected { border-color: var(--accent); background: #14364a; }
+.object-list .object-group-heading {
+  margin: 0.75rem 0 0.35rem;
+  padding: 0.2rem 0.1rem;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: default;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.object-list .object-group-heading:hover { border-color: transparent; background: transparent; }
+.object-list .object-name { display: block; padding-right: 4.5rem; }
 .object-list .meta { display: block; color: var(--muted); font-size: 0.78rem; margin-top: 0.2rem; }
+.object-list .type-tag {
+  float: right;
+  max-width: 4.25rem;
+  overflow: hidden;
+  padding: 0.12rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: #c9f2ff;
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .inspector-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
 .inspector-table th, .inspector-table td { padding: 0.35rem 0.2rem; border-bottom: 1px solid var(--border); vertical-align: top; }
 .inspector-table th { width: 38%; text-align: left; color: var(--muted); font-weight: 600; }

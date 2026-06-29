@@ -98,8 +98,26 @@ function safeMeshUri(item) {
 }
 function itemType(item) { return item.type || item.category || item.role || item.source_kind || 'asset'; }
 function itemLabel(item) { return item.label || item.display_name || item.name || item.id || 'unnamed'; }
-function isZone(item) { return /zone|pick|place|spawn|safety/i.test(`${itemType(item)} ${item.id || ''} ${itemLabel(item)}`); }
-function isSensor(item) { return /camera|sensor|realsense/i.test(`${itemType(item)} ${item.id || ''} ${itemLabel(item)}`); }
+function viewerGroupIdentity(item) {
+  return [
+    item?.source_kind,
+    item?.type,
+    item?.category,
+    item?.role,
+    item?.id,
+    itemLabel(item || {}),
+  ].map(value => String(value || '').toLowerCase().replace(/[_-]+/g, ' ')).join(' ');
+}
+function viewerGroupFor(item) {
+  const identity = viewerGroupIdentity(item);
+  if (/\b(zone|pick zone|place zone|spawn zone|safety zone|work envelope|reachability|collision)\b/.test(identity)) return 'zones';
+  if (/\b(camera|sensor|realsense|depth camera|rgbd|lidar|vision)\b/.test(identity)) return 'sensors';
+  if (/\b(robot|arm|manipulator|ur3|ur5|ur10|tool|gripper|end effector|eef|suction|vacuum|robotiq|airpick|generated|generated preview|urdf|moveit)\b/.test(identity)) return 'robot/tool/generated';
+  if (/\b(environment|layout|asset|object|item|table|workbench|fixture|bin|tray|conveyor|shelf|rack|pallet|floor|wall|part|product)\b/.test(identity)) return 'environment/layout';
+  return 'unknown';
+}
+function isZone(item) { return viewerGroupFor(item) === 'zones'; }
+function isSensor(item) { return viewerGroupFor(item) === 'sensors'; }
 function materialFor(item) {
   if (isZone(item)) return new THREE.MeshBasicMaterial({ color: 0xffc857, transparent: true, opacity: 0.22, side: THREE.DoubleSide });
   if (isSensor(item)) return new THREE.MeshStandardMaterial({ color: 0x62d2ff, roughness: 0.65 });
@@ -323,16 +341,46 @@ function populateObjectList() {
     el.list.appendChild(li);
     return;
   }
+  const groupLabels = {
+    'robot/tool/generated': 'Robot, tool & generated',
+    'environment/layout': 'Environment & layout',
+    sensors: 'Sensors',
+    zones: 'Zones',
+    unknown: 'Unknown',
+  };
+  const grouped = new Map(Object.keys(groupLabels).map(group => [group, []]));
   for (const rendered of state.objects) {
-    const li = document.createElement('li');
-    li.dataset.id = rendered.item.id;
-    li.textContent = `${rendered.item.id} — ${itemLabel(rendered.item)}`;
-    const meta = document.createElement('span');
-    meta.className = 'meta';
-    meta.textContent = `${itemType(rendered.item)} · ${rendered.item.locked ? 'locked/generated' : 'editable/environment'}`;
-    li.appendChild(meta);
-    li.addEventListener('click', () => selectObject(rendered.item.id));
-    el.list.appendChild(li);
+    const group = viewerGroupFor(rendered.item);
+    if (!grouped.has(group)) grouped.set(group, []);
+    grouped.get(group).push(rendered);
+  }
+  for (const [group, renderedItems] of grouped.entries()) {
+    if (!renderedItems.length) continue;
+    const heading = document.createElement('li');
+    heading.className = 'object-group-heading';
+    heading.textContent = groupLabels[group] || group;
+    el.list.appendChild(heading);
+    for (const rendered of renderedItems) {
+      const li = document.createElement('li');
+      li.dataset.id = rendered.item.id;
+
+      const name = document.createElement('span');
+      name.className = 'object-name';
+      name.textContent = `${rendered.item.id} — ${itemLabel(rendered.item)}`;
+      li.appendChild(name);
+
+      const tag = document.createElement('span');
+      tag.className = 'type-tag';
+      tag.textContent = itemType(rendered.item);
+      li.appendChild(tag);
+
+      const meta = document.createElement('span');
+      meta.className = 'meta';
+      meta.textContent = `${group} · ${rendered.item.locked ? 'locked/generated' : 'editable/environment'}`;
+      li.appendChild(meta);
+      li.addEventListener('click', () => selectObject(rendered.item.id));
+      el.list.appendChild(li);
+    }
   }
 }
 function selectObject(id) {
