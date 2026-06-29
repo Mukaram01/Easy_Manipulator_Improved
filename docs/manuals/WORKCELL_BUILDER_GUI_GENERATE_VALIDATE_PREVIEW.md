@@ -1,6 +1,6 @@
 # Workcell Builder GUI: Validate, Generate, Preview
 
-This workflow keeps manual authoring in `workcell_builder` as the primary flow.
+This workflow keeps scene open/save/generate/validate actions documented while treating Qt Scene3D as a Debug 3D Preview / experimental legacy preview, not the source of truth. Generated scene files and ROS package outputs remain the backend contract, and RViz/MoveIt remains the planning and visualization truth for simulation validation.
 
 ## Validate Cell
 Use **Validate Cell** to check required ingredients: robot, tool, support surface, pick area, place target, grasp strategy, ROI validity, compatibility, preview-only flags, and fake-hardware default.
