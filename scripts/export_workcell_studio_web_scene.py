@@ -166,9 +166,15 @@ def _is_helper(item: Mapping[str, Any]) -> bool:
 
 def _section_from_item(item: Mapping[str, Any]) -> str:
     text = _identity_text(item)
-    if "robot" in text or item.get("category") == "robot":
+    category = str(item.get("category", "")).lower()
+    role = str(item.get("role", "")).lower()
+    if category == "robot" or role == "robot":
         return "robots"
-    if any(token in text for token in ("tool", "gripper", "end_effector", "robotiq", "suction")):
+    if (
+        category in {"tool", "gripper", "end_effector"}
+        or role in {"tool", "gripper", "end_effector"}
+        or any(token in text for token in ("tool", "gripper", "end_effector", "robotiq", "suction"))
+    ):
         return "tools"
     if "camera" in text or "realsense" in text:
         return "sensors"
