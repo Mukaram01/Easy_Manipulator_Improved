@@ -196,3 +196,17 @@ Safety notes:
 - Generated files are not edited directly.
 - Browser edits remain patch requests; YAML persistence is owned by the backend validator/applicator.
 - RViz/MoveIt remains the planning and simulation truth after scene generation and validation.
+
+## Applying Web 3D edit patches from Workcell Builder
+
+Phase 5C adds a guided Workcell Builder UI path around the existing backend workflow script. It does not duplicate validator, applicator, re-export, or persistence verification logic in Qt.
+
+1. Select the intended scene in Workcell Builder and choose **Export & Open Web 3D Viewer**. The builder exports `build/workcell_studio_web_scene/<scene_id>.web_scene.json` and opens the static browser viewer.
+2. In the browser, edit only an editable, unlocked physical layout/environment item. Browser edits are preview-only.
+3. Use **Export Edit Patch** in the browser to save an `edit_patch.json` file, normally under `build/workcell_studio_web_scene`.
+4. Return to Workcell Builder and choose **Validate Web Edit Patch…** or **Dry Run Web Edit Patch…**. The patch picker defaults to `build/workcell_studio_web_scene`, requires an existing JSON file, and runs `scripts/run_workcell_studio_web_edit_workflow.py` for the selected scene.
+5. To persist a patch, choose **Apply Web Edit Patch…**. Workcell Builder first runs the same workflow without `--write`. If that dry-run fails, write mode is not offered.
+6. If dry-run passes, Workcell Builder shows an explicit confirmation dialog with the scene path, patch path, workflow output/change summary, and a warning that editable source YAML may be updated.
+7. Only after confirmation does Workcell Builder rerun `scripts/run_workcell_studio_web_edit_workflow.py` with `--write`. The backend workflow validates, applies through the safe applicator, re-exports an after web scene, and verifies persistence.
+
+Safety boundaries remain unchanged: generated files are not edited directly, the browser never writes YAML, Workcell Builder uses backend validation/dry-run before applying, and RViz/MoveIt remains the planning and simulation truth. This workflow does not start ROS launch files and does not enable real robot motion.

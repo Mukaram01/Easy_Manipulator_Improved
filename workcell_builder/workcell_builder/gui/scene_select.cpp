@@ -46,6 +46,7 @@
 #include <QLineEdit>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFile>
 #include <QListWidgetItem>
 #include <QInputDialog>
 #include <QDir>
@@ -848,6 +849,21 @@ SceneSelect::SceneSelect(QWidget * parent)
   web_viewer_action->setToolTip("Exports the selected scene to build/workcell_studio_web_scene and opens the static browser viewer. Does not mutate scenes or generated files.");
   ui->generateLayout->insertWidget(8, web_viewer_action);
   connect(web_viewer_action, &QPushButton::clicked, this, &SceneSelect::on_export_open_web_3d_viewer_clicked);
+  auto * validate_web_patch_action = new QPushButton("Validate Web Edit Patch…", ui->validate_generate_tab);
+  validate_web_patch_action->setObjectName("validate_web_edit_patch_action");
+  validate_web_patch_action->setToolTip("Validate a browser-exported edit_patch.json through scripts/run_workcell_studio_web_edit_workflow.py without writing scene YAML.");
+  ui->generateLayout->insertWidget(9, validate_web_patch_action);
+  connect(validate_web_patch_action, &QPushButton::clicked, this, &SceneSelect::on_validate_web_edit_patch_clicked);
+  auto * dry_run_web_patch_action = new QPushButton("Dry Run Web Edit Patch…", ui->validate_generate_tab);
+  dry_run_web_patch_action->setObjectName("dry_run_web_edit_patch_action");
+  dry_run_web_patch_action->setToolTip("Run the guided Web 3D edit patch workflow in dry-run mode; --write is deliberately omitted.");
+  ui->generateLayout->insertWidget(10, dry_run_web_patch_action);
+  connect(dry_run_web_patch_action, &QPushButton::clicked, this, &SceneSelect::on_dry_run_web_edit_patch_clicked);
+  auto * apply_web_patch_action = new QPushButton("Apply Web Edit Patch…", ui->validate_generate_tab);
+  apply_web_patch_action->setObjectName("apply_web_edit_patch_action");
+  apply_web_patch_action->setToolTip("Dry-run, require explicit confirmation, then apply a Web 3D edit patch through the backend workflow with --write.");
+  ui->generateLayout->insertWidget(11, apply_web_patch_action);
+  connect(apply_web_patch_action, &QPushButton::clicked, this, &SceneSelect::on_apply_web_edit_patch_clicked);
   connect(ui->fit_cell_action, &QPushButton::clicked, this, &SceneSelect::refresh_preview_status);
   connect(ui->reset_view_action, &QPushButton::clicked, this, [this]() {
     if (ui->visual_layout_canvas) {
@@ -3387,6 +3403,166 @@ void SceneSelect::on_open_scene_folder_clicked()
     QUrl::fromLocalFile(QString::fromStdString(scene_dir.string())));
 }
 
+
+void SceneSelect::on_validate_web_edit_patch_clicked()
+{
+  run_web_edit_patch_workflow(true, false);
+}
+
+void SceneSelect::on_dry_run_web_edit_patch_clicked()
+{
+  run_web_edit_patch_workflow(false, false);
+}
+
+void SceneSelect::on_apply_web_edit_patch_clicked()
+{
+  run_web_edit_patch_workflow(false, true);
+}
+
+bool SceneSelect::execute_web_edit_patch_workflow(
+  const fs::path & repo_root,
+  const fs::path & scene_dir,
+  const fs::path & patch_path,
+  bool validate_only,
+  bool write,
+  QString * output)
+{
+  const fs::path workflow_script = repo_root / "scripts" / "run_workcell_studio_web_edit_workflow.py";
+  QStringList args{
+    QString::fromStdString(workflow_script.string()),
+    "--scene", QString::fromStdString(scene_dir.string()),
+    "--patch", QString::fromStdString(patch_path.string())};
+  if (validate_only) {
+    args << "--validate-only";
+  } else if (!write) {
+    args << "--dry-run-apply";
+  }
+  if (write) {
+    args << "--write";
+  }
+
+  append_info("Web edit patch workflow safety: browser edits are preview-only until edit_patch.json is exported; Workcell Builder validates and dry-runs patches before applying; applying requires explicit confirmation; RViz/MoveIt remains planning truth; no real robot motion is started.");
+  append_info("Run Web Edit Patch Workflow: python3 " + args.join(' ').toStdString());
+
+  QProcess process;
+  process.setWorkingDirectory(QString::fromStdString(repo_root.string()));
+  process.start("python3", args);
+  if (!process.waitForStarted()) {
+    const QString message = "Python executable 'python3' could not be started. Install Python 3 or ensure it is on PATH.";
+    append_error(message.toStdString());
+    if (output) {
+      *output = message;
+    }
+    return false;
+  }
+  process.waitForFinished(-1);
+  const QString stdout_text = QString::fromLocal8Bit(process.readAllStandardOutput());
+  const QString stderr_text = QString::fromLocal8Bit(process.readAllStandardError());
+  const QString combined = QString("Command: python3 %1\n\nSTDOUT:\n%2\n\nSTDERR:\n%3")
+    .arg(args.join(' '), stdout_text, stderr_text);
+  if (output) {
+    *output = combined;
+  }
+  if (!stdout_text.trimmed().isEmpty()) {
+    append_info(stdout_text.toStdString());
+  }
+  if (!stderr_text.trimmed().isEmpty()) {
+    append_warning(stderr_text.toStdString());
+  }
+  const bool ok = process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+  if (!ok) {
+    append_error(QString("Web edit patch workflow failed with exit code %1. Common causes include scene ID mismatch, locked/generated edit rejection, invalid patch JSON, or persistence verification failure.\n%2")
+      .arg(process.exitCode())
+      .arg(combined).toStdString());
+  } else {
+    append_success("Web edit patch workflow completed successfully.");
+  }
+  return ok;
+}
+
+bool SceneSelect::run_web_edit_patch_workflow(bool validate_only, bool write)
+{
+  configure_startup_fallback_paths();
+  const int current_index = current_scene_index();
+  if (current_index < 0 || current_index >= static_cast<int>(workcell.scene_vector.size())) {
+    const QString message = "No scene selected. Select a scene before running a Web 3D edit patch workflow.";
+    append_warning(message.toStdString());
+    QMessageBox::warning(this, "Web Edit Patch Workflow", message);
+    return false;
+  }
+
+  const fs::path scene_dir = scene_dir_for_current_selection();
+  boost::system::error_code ec;
+  if (scene_dir.empty() || !fs::exists(scene_dir, ec) || !fs::is_directory(scene_dir, ec)) {
+    const QString message = QString("Scene path missing for selected scene '%1': %2")
+      .arg(QString::fromStdString(workcell.scene_vector[current_index].name), QString::fromStdString(scene_dir.string()));
+    append_error(message.toStdString());
+    QMessageBox::critical(this, "Web Edit Patch Workflow", message);
+    return false;
+  }
+  const fs::path repo_root = resolve_tool_root(workcell_path, scene_dir);
+  const fs::path workflow_script = repo_root / "scripts" / "run_workcell_studio_web_edit_workflow.py";
+  if (repo_root.empty() || !fs::exists(workflow_script, ec)) {
+    const QString message = QString("Workflow script missing. Expected scripts/run_workcell_studio_web_edit_workflow.py under the Workcell Studio repo root. Scene path: %1")
+      .arg(QString::fromStdString(scene_dir.string()));
+    append_error(message.toStdString());
+    QMessageBox::critical(this, "Web Edit Patch Workflow", message);
+    return false;
+  }
+
+  const QString patch_file = QFileDialog::getOpenFileName(
+    this,
+    "Select Web 3D edit_patch.json",
+    QString::fromStdString((repo_root / "build" / "workcell_studio_web_scene").string()),
+    "JSON patch files (*.json);;All files (*)");
+  if (patch_file.isEmpty()) {
+    append_warning("Web edit patch workflow cancelled before patch selection.");
+    return false;
+  }
+  const QFileInfo patch_info(patch_file);
+  if (!patch_info.exists() || !patch_info.isFile() || patch_info.suffix().compare("json", Qt::CaseInsensitive) != 0) {
+    const QString message = QString("Invalid patch path/JSON. Select an existing .json edit patch file. Path: %1").arg(patch_file);
+    append_error(message.toStdString());
+    QMessageBox::critical(this, "Web Edit Patch Workflow", message);
+    return false;
+  }
+  QFile patch_reader(patch_file);
+  if (!patch_reader.open(QIODevice::ReadOnly)) {
+    const QString message = QString("Invalid patch path/JSON. Could not read patch file: %1").arg(patch_file);
+    append_error(message.toStdString());
+    QMessageBox::critical(this, "Web Edit Patch Workflow", message);
+    return false;
+  }
+  QJsonParseError parse_error;
+  QJsonDocument::fromJson(patch_reader.readAll(), &parse_error);
+  if (parse_error.error != QJsonParseError::NoError) {
+    const QString message = QString("Invalid patch path/JSON. JSON parse failed for %1: %2").arg(patch_file, parse_error.errorString());
+    append_error(message.toStdString());
+    QMessageBox::critical(this, "Web Edit Patch Workflow", message);
+    return false;
+  }
+
+  const fs::path patch_path(patch_file.toStdString());
+  QString dry_run_output;
+  const bool dry_ok = execute_web_edit_patch_workflow(repo_root, scene_dir, patch_path, validate_only, false, &dry_run_output);
+  if (!dry_ok || !write) {
+    QMessageBox::information(this, "Web Edit Patch Workflow", dry_run_output);
+    return dry_ok;
+  }
+
+  const QString confirm = QString(
+    "Dry-run passed. Apply this Web 3D edit patch now?\n\nScene path: %1\nPatch path: %2\n\nWorkflow output/change summary:\n%3\n\nWarning: applying may update editable source YAML. Generated files are not edited directly. Browser edits are preview-only until this backend apply step. RViz/MoveIt remains planning truth and no real robot motion is started.")
+    .arg(QString::fromStdString(scene_dir.string()), patch_file, dry_run_output.left(6000));
+  if (QMessageBox::question(this, "Confirm Apply Web Edit Patch", confirm, QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
+    append_warning("Apply Web Edit Patch cancelled after successful dry-run; --write was not run.");
+    return false;
+  }
+
+  QString apply_output;
+  const bool apply_ok = execute_web_edit_patch_workflow(repo_root, scene_dir, patch_path, false, true, &apply_output);
+  QMessageBox::information(this, apply_ok ? "Web Edit Patch Applied" : "Web Edit Patch Failed", apply_output);
+  return apply_ok;
+}
 
 // Object Placement Manager markers for generated scene artifacts
 [[maybe_unused]] static const char * kObjectPlacementManagerLabel = "Object Placement Manager";
