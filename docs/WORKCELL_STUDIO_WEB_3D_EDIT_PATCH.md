@@ -14,6 +14,8 @@ python3 scripts/export_workcell_studio_web_scene.py \
 
 Open `workcell_studio_web/viewer/index.html`, load the exported `web_scene.json`, select one `editable=true` and `locked=false` item, and use edit mode to preview the transform. Editable/unlocked selections show enabled XYZ/RPY/scale fields and a Three.js translation gizmo; locked/generated robot/tool previews remain read-only and explain that source layout/environment should be edited instead. Use **Export Edit Patch** to download an edit patch when the preview state is correct.
 
+From Workcell Builder, the **Export & Open Web 3D Viewer** selected-scene action performs only the export-and-open part of this workflow. It writes the export to `build/workcell_studio_web_scene/<scene_id>.web_scene.json` and opens the static viewer. It intentionally does not apply edit patches, write under `scenes/`, mutate source YAML, mutate generated scene files, modify Qt Scene3D visuals, or replace RViz/MoveIt as planning truth. If browser `file://` loading is unreliable, use `python3 -m http.server 8765` from the repository root and browse to `http://localhost:8765/workcell_studio_web/viewer/index.html`.
+
 Validate the patch before applying it:
 
 ```bash

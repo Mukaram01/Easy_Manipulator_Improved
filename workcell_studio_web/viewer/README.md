@@ -14,6 +14,18 @@ python3 scripts/export_workcell_studio_web_scene.py --scene scenes/ur5_2f_test -
 
 `build/` outputs are local artifacts and should not be committed.
 
+### Workcell Builder action
+
+Workcell Builder also exposes a selected-scene action named **Export & Open Web 3D Viewer** in the Safety / Review flow. The action resolves the selected scene, runs `scripts/export_workcell_studio_web_scene.py`, writes only to `build/workcell_studio_web_scene/<scene_id>.web_scene.json`, and opens `workcell_studio_web/viewer/index.html` with Qt/QDesktopServices. It does not write under `scenes/`, mutate source YAML, mutate generated scene files, apply edit patches, or change RViz/MoveIt planning truth.
+
+If direct `file://` loading is blocked or unreliable in your browser, run this from the repository root and open the URL manually:
+
+```bash
+python3 -m http.server 8765
+```
+
+URL: `http://localhost:8765/workcell_studio_web/viewer/index.html`
+
 ## Open the viewer
 
 1. Open `workcell_studio_web/viewer/index.html` directly in a browser.
