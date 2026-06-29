@@ -43,6 +43,21 @@ function scaleOf(item) {
 function primitiveOf(item) {
   return item.primitive || item.primitive_details || item.dimensions || item.geometry || item.primitive_geometry || null;
 }
+function displayMeshUri(item) {
+  return item.mesh_uri || item.package_uri || item.mesh_path || item.source_path || '';
+}
+function setRenderInfo(rendered, renderStatus, meshUri, fallbackReason) {
+  if (!rendered) return null;
+  const info = {
+    render_status: renderStatus,
+    mesh_uri: meshUri || '',
+    fallback_reason: fallbackReason || '',
+  };
+  rendered.renderInfo = info;
+  if (rendered.item) rendered.item.renderInfo = info;
+  rendered.object3d?.traverse?.(child => { child.userData.renderInfo = info; });
+  return info;
+}
 
 function safeMeshUri(item) {
   const raw = item?.mesh_uri;
@@ -137,8 +152,12 @@ function materializeLoadedMesh(item, uri, loaded) {
 }
 async function tryLoadMesh(item, rendered, fallback) {
   const uri = safeMeshUri(item);
+  const requestedUri = displayMeshUri(item);
   item.mesh_status = uri ? 'mesh_loading' : 'mesh_unavailable';
-  if (!uri) return;
+  if (!uri) {
+    setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', requestedUri, requestedUri ? `unsupported or unsafe mesh_uri: ${requestedUri}` : (rendered.renderInfo?.fallback_reason || 'no mesh_uri provided'));
+    return;
+  }
   try {
     const ext = uri.split(/[?#]/, 1)[0].slice(uri.split(/[?#]/, 1)[0].lastIndexOf('.') + 1).toLowerCase();
     let loaded;
@@ -151,14 +170,16 @@ async function tryLoadMesh(item, rendered, fallback) {
     rendered.meshObject = meshObject;
     item.mesh_status = 'mesh_loaded';
     item.mesh_load_error = '';
+    setRenderInfo(rendered, 'mesh_loaded', uri, '');
     const bounds = computeRenderedBounds();
     if (bounds) frameScene(bounds);
-    if (state.selected === item.id) populateInspector(item);
+    if (state.selected === item.id) populateInspector(rendered);
   } catch (err) {
     fallback.visible = true;
     item.mesh_status = 'mesh_failed';
     item.mesh_load_error = err?.message || String(err);
-    if (state.selected === item.id) populateInspector(item);
+    setRenderInfo(rendered, 'mesh_failed', uri, item.mesh_load_error);
+    if (state.selected === item.id) populateInspector(rendered);
   }
 }
 function collectItems(sceneJson) {
@@ -261,6 +282,7 @@ function renderScene(items) {
   const scene = state.three.scene;
   for (const item of items) {
     const object3d = new THREE.Group();
+    const primitive = primitiveOf(item);
     const fallback = isSensor(item) ? makeSensorMarker(item) : makePrimitiveMesh(item);
     fallback.name = `${item.id || itemLabel(item)}_fallback`;
     assignItemUserData(fallback, item);
@@ -269,6 +291,9 @@ function renderScene(items) {
     assignItemUserData(object3d, item);
     scene.add(object3d);
     const rendered = { item, object3d, fallback };
+    const fallbackStatus = primitive || isSensor(item) ? 'primitive_fallback' : 'box_fallback';
+    const fallbackReason = primitive || isSensor(item) ? 'primitive geometry rendered while mesh loads or is unavailable' : 'no primitive geometry or mesh was provided; using box fallback';
+    setRenderInfo(rendered, fallbackStatus, displayMeshUri(item), fallbackReason);
     state.objects.push(rendered);
     tryLoadMesh(item, rendered, fallback);
   }
@@ -300,7 +325,7 @@ function selectObject(id) {
     });
   }
   const rendered = state.objects.find(obj => obj.item.id === id);
-  if (rendered) populateInspector(rendered.item);
+  if (rendered) populateInspector(rendered);
 }
 function pickObject(event) {
   const rect = el.canvas.getBoundingClientRect();
@@ -312,15 +337,18 @@ function pickObject(event) {
   const item = hit?.object?.userData?.item || hit?.object?.parent?.userData?.item;
   if (item?.id) selectObject(item.id);
 }
-function populateInspector(item) {
+function populateInspector(renderedOrItem) {
+  const rendered = renderedOrItem?.item ? renderedOrItem : state.objects.find(obj => obj.item.id === renderedOrItem?.id);
+  const item = rendered?.item || renderedOrItem;
+  const renderInfo = rendered?.renderInfo || item.renderInfo || {};
   const pose = poseOf(item);
   const rows = {
     id: item.id, label: itemLabel(item), type: itemType(item), source: item.source_kind || item.source || valueOrDash(item.provenance && Object.values(item.provenance)[0]),
     'pose xyz': [pose.xyz.x, pose.xyz.y, pose.xyz.z].map(n => n.toFixed(3)).join(', '),
     'pose rpy': [pose.rpy.x, pose.rpy.y, pose.rpy.z].map(n => n.toFixed(3)).join(', '),
     scale: JSON.stringify(item.scale || item.mesh_scale || [1, 1, 1]), editable: String(Boolean(item.editable)), locked: String(Boolean(item.locked)),
-    mesh_uri: item.mesh_uri || item.package_uri || item.mesh_path || item.source_path, mesh_status: item.mesh_status, mesh_load_error: item.mesh_load_error,
-    primitive: JSON.stringify(primitiveOf(item) || 'box fallback'),
+    render_status: renderInfo.render_status, mesh_uri: renderInfo.mesh_uri || displayMeshUri(item), fallback_reason: renderInfo.fallback_reason,
+    mesh_status: item.mesh_status, mesh_load_error: item.mesh_load_error, primitive: JSON.stringify(primitiveOf(item) || 'box fallback'),
   };
   el.inspector.className = '';
   el.inspector.innerHTML = `<table class="inspector-table"><tbody>${Object.entries(rows).map(([k,v]) => `<tr><th>${k}</th><td><code>${String(valueOrDash(v)).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</code></td></tr>`).join('')}</tbody></table>`;
