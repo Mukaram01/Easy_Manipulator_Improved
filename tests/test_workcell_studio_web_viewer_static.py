@@ -30,3 +30,19 @@ def test_viewer_js_schema_and_inspector_hooks():
     assert "primitive" in js
     assert "editable" in js
     assert "locked" in js
+
+
+def test_viewer_records_render_status_for_inspector():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    assert "setRenderInfo" in js
+    for token in [
+        "render_status",
+        "fallback_reason",
+        "mesh_loaded",
+        "primitive_fallback",
+        "box_fallback",
+        "mesh_failed",
+    ]:
+        assert token in js
+    assert "child.userData.renderInfo" in js
+    assert "rendered.renderInfo" in js
