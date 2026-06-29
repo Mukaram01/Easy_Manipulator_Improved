@@ -50,6 +50,8 @@
 #include <QInputDialog>
 #include <QDir>
 #include <QMessageBox>
+#include <QProcess>
+#include <QPushButton>
 #include <QTreeWidgetItem>
 #include <QHeaderView>
 #include <QSplitter>
@@ -841,6 +843,11 @@ SceneSelect::SceneSelect(QWidget * parent)
   append_info("Task & Grasp Strategy panel initialized for offline recipe preview.");
   append_info("Robot / Tool Compatibility | Check Compatibility | Apply Profile Defaults | Manual Override");
   connect(ui->export_layout_preview_action, &QPushButton::clicked, this, &SceneSelect::export_preview_layout);
+  auto * web_viewer_action = new QPushButton("Export & Open Web 3D Viewer", ui->validate_generate_tab);
+  web_viewer_action->setObjectName("export_open_web_3d_viewer_action");
+  web_viewer_action->setToolTip("Exports the selected scene to build/workcell_studio_web_scene and opens the static browser viewer. Does not mutate scenes or generated files.");
+  ui->generateLayout->insertWidget(8, web_viewer_action);
+  connect(web_viewer_action, &QPushButton::clicked, this, &SceneSelect::on_export_open_web_3d_viewer_clicked);
   connect(ui->fit_cell_action, &QPushButton::clicked, this, &SceneSelect::refresh_preview_status);
   connect(ui->reset_view_action, &QPushButton::clicked, this, [this]() {
     if (ui->visual_layout_canvas) {
@@ -3408,6 +3415,95 @@ void SceneSelect::on_open_scene_folder_clicked()
 // Imported Scene Ready
 // Exported Scene Archive
 
+
+void SceneSelect::on_export_open_web_3d_viewer_clicked()
+{
+  configure_startup_fallback_paths();
+  const int current_index = current_scene_index();
+  if (current_index < 0 || current_index >= static_cast<int>(workcell.scene_vector.size())) {
+    const QString message = "No scene selected. Select or create a scene before opening the Web 3D Viewer.";
+    append_warning(message.toStdString());
+    QMessageBox::warning(this, "Open Web 3D Viewer", message);
+    return;
+  }
+
+  const std::string scene_id = sanitize_scene_name(workcell.scene_vector[current_index].name);
+  const fs::path scene_dir = scenes_path / workcell.scene_vector[current_index].name;
+  if (scene_id.empty()) {
+    const QString message = "No scene selected. The selected scene has an empty or invalid scene ID.";
+    append_error(message.toStdString());
+    QMessageBox::critical(this, "Open Web 3D Viewer", message);
+    return;
+  }
+  boost::system::error_code ec;
+  if (scene_dir.empty() || !fs::exists(scene_dir, ec) || !fs::is_directory(scene_dir, ec)) {
+    const QString message = QString("Scene path missing for selected scene '%1': %2")
+      .arg(QString::fromStdString(scene_id), QString::fromStdString(scene_dir.string()));
+    append_error(message.toStdString());
+    QMessageBox::critical(this, "Open Web 3D Viewer", message);
+    return;
+  }
+
+  fs::path repo_root = resolve_tool_root(workcell_path, scene_dir);
+  fs::path exporter_script;
+  if (!repo_root.empty()) {
+    exporter_script = repo_root / "scripts" / "export_workcell_studio_web_scene.py";
+  }
+  if (repo_root.empty() || !fs::exists(exporter_script, ec)) {
+    const QString message = QString(
+      "Exporter script missing. Expected scripts/export_workcell_studio_web_scene.py under the Workcell Studio repo root. "
+      "Set WORKCELL_STUDIO_REPO_ROOT=/path/to/easy_manipulation_deployment. Scene path: %1")
+      .arg(QString::fromStdString(scene_dir.string()));
+    append_error(message.toStdString());
+    QMessageBox::critical(this, "Open Web 3D Viewer", message);
+    return;
+  }
+
+  const fs::path output_path = repo_root / "build" / "workcell_studio_web_scene" / (scene_id + ".web_scene.json");
+  const fs::path viewer_path = repo_root / "workcell_studio_web" / "viewer" / "index.html";
+  fs::create_directories(output_path.parent_path(), ec);
+  const QStringList args{
+    QString::fromStdString(exporter_script.string()),
+    "--scene", QString::fromStdString(scene_dir.string()),
+    "--output", QString::fromStdString(output_path.string())};
+  append_info("Export Web 3D Viewer scene: python3 " + args.join(' ').toStdString());
+  const int rc = QProcess::execute("python3", args);
+  if (rc != 0 || !fs::exists(output_path, ec)) {
+    const QString message = QString("Web 3D scene export failed with exit code %1. Exporter: %2\nScene: %3\nOutput: %4")
+      .arg(rc)
+      .arg(QString::fromStdString(exporter_script.string()), QString::fromStdString(scene_dir.string()), QString::fromStdString(output_path.string()));
+    append_error(message.toStdString());
+    QMessageBox::critical(this, "Open Web 3D Viewer", message);
+    return;
+  }
+  append_success("Exported Web 3D scene JSON: " + output_path.string());
+
+  if (!fs::exists(viewer_path, ec)) {
+    const QString message = QString("Viewer file missing: %1\nExported JSON: %2")
+      .arg(QString::fromStdString(viewer_path.string()), QString::fromStdString(output_path.string()));
+    append_error(message.toStdString());
+    QMessageBox::critical(this, "Open Web 3D Viewer", message);
+    return;
+  }
+
+  const bool opened = QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(viewer_path.string())));
+  const QString fallback = QString(
+    "Viewer path: %1\n"
+    "Exported JSON path: %2\n\n"
+    "If direct file loading is blocked by your browser, run this from the repository root:\n"
+    "python3 -m http.server 8765\n\n"
+    "Then open:\n"
+    "http://localhost:8765/workcell_studio_web/viewer/index.html")
+    .arg(QString::fromStdString(viewer_path.string()), QString::fromStdString(output_path.string()));
+  if (!opened) {
+    const QString message = "Browser open failed. Use the local-server fallback below.\n\n" + fallback;
+    append_error(message.toStdString());
+    QMessageBox::critical(this, "Open Web 3D Viewer", message);
+    return;
+  }
+  append_success("Opened Web 3D Viewer: " + viewer_path.string());
+  QMessageBox::information(this, "Open Web 3D Viewer", fallback);
+}
 
 void SceneSelect::on_export_scene_bundle_clicked()
 {
