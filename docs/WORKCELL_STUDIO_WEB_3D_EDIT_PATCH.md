@@ -149,3 +149,50 @@ Web 3D editing is an authoring surface, not a planning or execution backend. No 
 ## Next phase
 
 Next phase is connecting edit/export/apply/re-export/generate/validate into a guided workflow while preserving preview-only browser edits, backend validation/application, and RViz/MoveIt as planning truth.
+
+## Guided backend edit workflow
+
+Use `scripts/run_workcell_studio_web_edit_workflow.py` to run the supported backend path for a browser-exported Web 3D edit patch without hand-copying every command.
+
+Recommended operator flow:
+
+1. In Workcell Builder, select a scene and use **Export & Open Web 3D Viewer**.
+2. Edit an editable, unlocked physical scene item in the browser.
+3. Export `edit_patch.json` from the browser. The browser exports a preview patch only; it never writes YAML directly.
+4. Run the guided workflow in safe dry-run mode:
+
+   ```bash
+   python3 scripts/run_workcell_studio_web_edit_workflow.py \
+     --scene scenes/ur5_2f_test \
+     --patch build/workcell_studio_web_scene/ur5_2f_test.edit_patch.json
+   ```
+
+   The default command exports `build/workcell_studio_web_scene/<scene_id>.before.web_scene.json`, validates the patch, and runs the existing safe applicator in dry-run mode. It does not mutate source files.
+
+5. When the dry-run output is clean, apply explicitly with `--write`:
+
+   ```bash
+   python3 scripts/run_workcell_studio_web_edit_workflow.py \
+     --scene scenes/ur5_2f_test \
+     --patch build/workcell_studio_web_scene/ur5_2f_test.edit_patch.json \
+     --write
+   ```
+
+   With `--write`, the workflow still validates and dry-runs first, then applies through the safe backend applicator, re-exports `build/workcell_studio_web_scene/<scene_id>.after.web_scene.json`, and runs persistence verification.
+
+Optional modes:
+
+- `--export-only` exports the before web scene and does not require a patch.
+- `--validate-only` validates a patch against the exported before web scene and does not apply it.
+- `--dry-run-apply` is available for explicit dry-run wording; dry-run is already the default when `--write` is omitted.
+- `--verify-persistence` requests persistence verification for write workflows; `--write` already performs it.
+- `--run-readiness` optionally runs the scene readiness matrix after the edit workflow.
+- `--output-dir` changes where before/after web scene JSON files are written.
+
+Safety notes:
+
+- Source scene files are not mutated unless `--write` is present.
+- Locked/generated robot and tool preview edits are rejected by the validator/applicator path.
+- Generated files are not edited directly.
+- Browser edits remain patch requests; YAML persistence is owned by the backend validator/applicator.
+- RViz/MoveIt remains the planning and simulation truth after scene generation and validation.

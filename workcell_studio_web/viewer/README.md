@@ -154,3 +154,28 @@ python3 scripts/apply_workcell_studio_web_scene_edit_patch.py \
 ```
 
 Re-export `web_scene.json` after `--write` to confirm the edited pose persists. The applicator does not launch ROS, does not mutate `generated/`, `cell_definition.yaml`, or `scene_manifest.yaml`, and does not replace RViz/MoveIt as the planning and fake-hardware simulation truth.
+
+## Guided backend edit workflow
+
+The static viewer exports preview-only `edit_patch.json` files. It does **not** write scene YAML directly. After editing an unlocked editable object in the browser, use the repository backend workflow to validate, dry-run, apply, re-export, and verify persistence.
+
+Safe dry-run command:
+
+```bash
+python3 scripts/run_workcell_studio_web_edit_workflow.py \
+  --scene scenes/ur5_2f_test \
+  --patch build/workcell_studio_web_scene/ur5_2f_test.edit_patch.json
+```
+
+Apply only after reviewing the dry-run output:
+
+```bash
+python3 scripts/run_workcell_studio_web_edit_workflow.py \
+  --scene scenes/ur5_2f_test \
+  --patch build/workcell_studio_web_scene/ur5_2f_test.edit_patch.json \
+  --write
+```
+
+The guided workflow exports a before `web_scene`, validates the patch, runs the safe applicator in dry-run mode, and only mutates editable source YAML when `--write` is explicit. In write mode it re-exports an after `web_scene` and verifies persistence. Pass `--run-readiness` only when you also want the optional readiness matrix.
+
+This viewer workflow is still upstream of the normal Workcell Studio generate/validate/simulate path. RViz/MoveIt remains the planning truth, and fake-hardware-first safety defaults are unchanged.
