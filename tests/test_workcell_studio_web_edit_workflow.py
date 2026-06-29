@@ -162,3 +162,50 @@ def test_run_readiness_is_optional_for_core_flow(tmp_path):
     result = _run(scene, patch, tmp_path / "out")
     assert result.returncode == 0, result.stderr
     assert "readiness matrix" not in result.stdout
+
+
+def test_generate_without_patch_uses_selected_scene_flow(tmp_path):
+    scene = _scene(tmp_path)
+    result = _run(scene, None, tmp_path / "out", "--generate")
+    assert result.returncode == 0, result.stderr
+    assert "patch applied/skipped: SKIPPED (no --patch provided)" in result.stdout
+    assert "scene generation" in result.stdout
+    assert "generation command/result:" in result.stdout
+    assert "validation command/result: SKIPPED" in result.stdout
+    assert (scene / "package.xml").exists()
+    assert (scene / "CMakeLists.txt").exists()
+
+
+def test_validate_without_patch_runs_selected_scene_validator(tmp_path):
+    scene = _scene(tmp_path)
+    # The selected-scene validator expects package files; generate them through the
+    # same helper that --generate uses so this test focuses on the no-patch mode.
+    gen = _run(scene, None, tmp_path / "gen", "--generate")
+    assert gen.returncode == 0, gen.stderr
+    result = _run(scene, None, tmp_path / "out", "--validate")
+    assert result.returncode == 0, result.stderr
+    assert "patch applied/skipped: SKIPPED (no --patch provided)" in result.stdout
+    assert "selected-scene validation" in result.stdout
+    assert "validation command/result:" in result.stdout
+    assert "Workflow summary: PASS" in result.stdout
+
+
+def test_generate_and_validate_after_write_preserves_safe_order(tmp_path):
+    scene = _scene(tmp_path)
+    patch = _write_patch(tmp_path, _patch(new_x=0.9))
+    result = _run(scene, patch, tmp_path / "out", "--write", "--generate-and-validate")
+    assert result.returncode == 0, result.stderr
+    ordered_markers = [
+        "patch validation result: PASS",
+        "== dry-run apply ==",
+        "== write apply ==",
+        "re-export after result: PASS",
+        "== persistence verification ==",
+        "== scene generation ==",
+        "== selected-scene validation ==",
+    ]
+    positions = [result.stdout.index(marker) for marker in ordered_markers]
+    assert positions == sorted(positions)
+    assert "patch applied/skipped: APPLIED" in result.stdout
+    assert "generation command/result:" in result.stdout
+    assert "validation command/result:" in result.stdout
