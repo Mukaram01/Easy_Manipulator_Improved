@@ -51,6 +51,52 @@ python3 scripts/export_workcell_studio_web_scene.py \
   --output build/workcell_studio_web_scene/ur5_2f_test.web_scene.json
 ```
 
+## Persistence verification loop
+
+Use a copied/temp scene for write testing when you are proving the loop manually; do not mutate checked-in scenes or commit generated `web_scene.json` / `edit_patch.json` outputs. The full loop is:
+
+1. Export a before snapshot:
+
+   ```bash
+   python3 scripts/export_workcell_studio_web_scene.py \
+     --scene scenes/ur5_2f_test \
+     --output build/workcell_studio_web_scene/ur5_2f_test.before.web_scene.json
+   ```
+
+2. Edit only an `editable=true`, `locked=false` source layout/environment item in the viewer.
+3. Export `edit_patch.json` from the viewer.
+4. Validate the patch:
+
+   ```bash
+   python3 scripts/validate_workcell_studio_web_scene_edit_patch.py \
+     --web-scene build/workcell_studio_web_scene/ur5_2f_test.before.web_scene.json \
+     --patch build/workcell_studio_web_scene/ur5_2f_test.edit_patch.json
+   ```
+
+5. Dry-run the backend applicator; this must write nothing.
+6. Apply with `--write` only on the copied/temp scene. The applicator persists source layout/environment YAML only through safe provenance mapping.
+7. Re-export an after snapshot:
+
+   ```bash
+   python3 scripts/export_workcell_studio_web_scene.py \
+     --scene scenes/ur5_2f_test \
+     --output build/workcell_studio_web_scene/ur5_2f_test.after.web_scene.json
+   ```
+
+8. Verify persistence:
+
+   ```bash
+   python3 scripts/verify_workcell_studio_web_scene_edit_persistence.py \
+     --scene scenes/ur5_2f_test \
+     --web-scene-before build/workcell_studio_web_scene/ur5_2f_test.before.web_scene.json \
+     --patch build/workcell_studio_web_scene/ur5_2f_test.edit_patch.json \
+     --web-scene-after build/workcell_studio_web_scene/ur5_2f_test.after.web_scene.json
+   ```
+
+9. Only after the verifier passes should you regenerate and validate the ROS scene package. Generated files are not edited directly by the web viewer or applicator. RViz/MoveIt remains the planning truth, and real hardware remains disabled/default-safe.
+
+The verifier checks that `scene_id` matches, each edited item existed before and after, `old_transform` matched the before export, `new_transform` persisted in the after export, locked/generated robot/tool visuals stayed unchanged, and unrelated items stayed unchanged except allowed provenance/timestamp/export metadata.
+
 ## Contract
 
 Patch files use `schemas/workcell_studio_web_scene_edit_patch_v1.schema.json` and `schema_version: workcell_studio_web_scene_edit_patch/v1`.
