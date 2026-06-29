@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 
@@ -66,3 +67,83 @@ def test_viewer_keeps_invalid_json_and_schema_errors_clear():
     assert "Invalid JSON in ${file.name}: ${err.message}" in js
     assert "Unsupported schema_version" in js
     assert "Expected ${SUPPORTED_SCHEMA_VERSION}" in js
+
+
+def test_viewer_includes_auto_frame_and_reset_view_helpers():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    for token in [
+        "MIN_FRAME_RADIUS",
+        "FRAME_DISTANCE_MULTIPLIER",
+        "lastFrameBounds",
+        "computeRenderedBounds",
+        "frameScene",
+        "resetView",
+        "bounds.getBoundingSphere",
+        "controls.target.copy(center)",
+        "el.resetView.addEventListener('click', resetView)",
+    ]:
+        assert token in js
+
+
+def test_viewer_includes_render_status_strings_and_fallback_reasons():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    for token in [
+        "render_status",
+        "fallback_reason",
+        "mesh_loaded",
+        "primitive_fallback",
+        "box_fallback",
+        "mesh_failed",
+        "mesh_loading",
+        "mesh_unavailable",
+        "primitive geometry rendered while mesh loads or is unavailable",
+        "no primitive geometry or mesh was provided; using box fallback",
+        "unsupported or unsafe mesh_uri",
+        "no mesh_uri provided",
+        "mesh loader failed",
+    ]:
+        assert token in js
+
+
+def test_viewer_includes_mesh_loader_references_and_safe_mesh_uri_logic():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    for token in [
+        "STLLoader",
+        "ColladaLoader",
+        "OBJLoader",
+        "three/addons/loaders/STLLoader.js",
+        "three/addons/loaders/ColladaLoader.js",
+        "three/addons/loaders/OBJLoader.js",
+        "safeMeshUri",
+        "displayMeshUri",
+        "loadAsync(uri)",
+        "materializeLoadedMesh",
+        "appendRuntimeWarning",
+        "['stl', 'dae', 'obj'].includes(ext)",
+    ]:
+        assert token in js
+    for unsafe_token in [
+        "lower.startsWith('package://')",
+        "lower.startsWith('http://')",
+        "lower.startsWith('https://')",
+        "lower.startsWith('file://')",
+        "lower.startsWith('data:')",
+        "lower.startsWith('//')",
+        "uri.startsWith('/')",
+        r"uri.startsWith('\\')",
+        "part === '..'",
+    ]:
+        assert unsafe_token in js
+
+
+def test_repository_does_not_track_generated_web_scene_outputs_under_source_paths():
+    result = subprocess.run(
+        ["git", "ls-files", "*.web_scene.json"],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    tracked = [line for line in result.stdout.splitlines() if line.strip()]
+    assert tracked == []
