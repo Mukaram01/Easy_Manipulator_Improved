@@ -7,7 +7,7 @@ let OBJLoader;
 const SUPPORTED_SCHEMA_VERSION = 'workcell_studio_web_scene/v1';
 const MIN_FRAME_RADIUS = 1.2;
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
-const state = { sceneJson: null, objects: [], selected: null, three: {}, animationId: null, lastFrameBounds: null };
+const state = { sceneJson: null, objects: [], selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [] };
 const el = {
   file: document.getElementById('scene-file'),
   resetView: document.getElementById('reset-view'),
@@ -26,6 +26,7 @@ function showError(message) {
 function clearError() { el.error.hidden = true; el.error.textContent = ''; }
 function valueOrDash(value) { return value === undefined || value === null || value === '' ? '—' : value; }
 function asArray(value) { return Array.isArray(value) ? value : []; }
+function escapeHtml(value) { return String(valueOrDash(value)).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function vector3(value, fallback = [0, 0, 0]) {
   const arr = Array.isArray(value) ? value : fallback;
   return new THREE.Vector3(Number(arr[0] || 0), Number(arr[1] || 0), Number(arr[2] || 0));
@@ -57,6 +58,15 @@ function setRenderInfo(rendered, renderStatus, meshUri, fallbackReason) {
   if (rendered.item) rendered.item.renderInfo = info;
   rendered.object3d?.traverse?.(child => { child.userData.renderInfo = info; });
   return info;
+}
+function appendRuntimeWarning(item, meshUri, reason) {
+  state.runtimeWarnings.push({
+    source: 'runtime_mesh',
+    object_id: item?.id || itemLabel(item || {}),
+    mesh_uri: meshUri || '',
+    reason: reason || 'mesh loading skipped',
+  });
+  refreshWarnings();
 }
 
 function safeMeshUri(item) {
@@ -155,7 +165,9 @@ async function tryLoadMesh(item, rendered, fallback) {
   const requestedUri = displayMeshUri(item);
   item.mesh_status = uri ? 'mesh_loading' : 'mesh_unavailable';
   if (!uri) {
-    setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', requestedUri, requestedUri ? `unsupported or unsafe mesh_uri: ${requestedUri}` : (rendered.renderInfo?.fallback_reason || 'no mesh_uri provided'));
+    const reason = requestedUri ? `unsupported or unsafe mesh_uri: ${requestedUri}` : (rendered.renderInfo?.fallback_reason || 'no mesh_uri provided');
+    setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', requestedUri, reason);
+    if (requestedUri) appendRuntimeWarning(item, requestedUri, reason);
     return;
   }
   try {
@@ -179,6 +191,7 @@ async function tryLoadMesh(item, rendered, fallback) {
     item.mesh_status = 'mesh_failed';
     item.mesh_load_error = err?.message || String(err);
     setRenderInfo(rendered, 'mesh_failed', uri, item.mesh_load_error);
+    appendRuntimeWarning(item, uri, `mesh loader failed: ${item.mesh_load_error}`);
     if (state.selected === item.id) populateInspector(rendered);
   }
 }
@@ -353,12 +366,18 @@ function populateInspector(renderedOrItem) {
   el.inspector.className = '';
   el.inspector.innerHTML = `<table class="inspector-table"><tbody>${Object.entries(rows).map(([k,v]) => `<tr><th>${k}</th><td><code>${String(valueOrDash(v)).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</code></td></tr>`).join('')}</tbody></table>`;
 }
-function populateWarnings(sceneJson) {
-  const warnings = asArray(sceneJson.warnings).concat(asArray(sceneJson.notes_warnings));
-  if (!warnings.length) { el.warnings.className = 'warnings state empty'; el.warnings.textContent = 'No warnings in JSON.'; return; }
+function refreshWarnings(sceneJson = state.sceneJson) {
+  const warnings = asArray(sceneJson?.warnings).concat(asArray(sceneJson?.notes_warnings), asArray(state.runtimeWarnings));
+  if (!warnings.length) { el.warnings.className = 'warnings state empty'; el.warnings.textContent = 'No JSON or runtime mesh warnings.'; return; }
   el.warnings.className = 'warnings';
-  el.warnings.innerHTML = warnings.map(w => `<div class="warning-item"><strong>${valueOrDash(w.code || w.source || 'warning')}</strong><br>${valueOrDash(w.message || JSON.stringify(w))}</div>`).join('');
+  el.warnings.innerHTML = warnings.map(w => {
+    const label = w.code || w.source || 'warning';
+    const details = w.message || w.reason || JSON.stringify(w);
+    const objectDetails = w.object_id || w.mesh_uri ? `<br><code>object=${escapeHtml(w.object_id)} mesh=${escapeHtml(w.mesh_uri)}</code>` : '';
+    return `<div class="warning-item"><strong>${escapeHtml(label)}</strong><br>${escapeHtml(details)}${objectDetails}</div>`;
+  }).join('');
 }
+function populateWarnings(sceneJson) { refreshWarnings(sceneJson); }
 async function loadFile(file) {
   clearError();
   try {
@@ -367,9 +386,10 @@ async function loadFile(file) {
     try { json = JSON.parse(text); } catch (err) { throw new Error(`Invalid JSON in ${file.name}: ${err.message}`); }
     const items = validateSceneJson(json);
     state.sceneJson = json;
+    state.runtimeWarnings = [];
     el.empty.hidden = true;
     renderScene(items);
-    populateWarnings(json);
+    refreshWarnings(json);
     el.inspector.className = 'state empty';
     el.inspector.textContent = 'Select an object from the list or canvas.';
   } catch (err) {
