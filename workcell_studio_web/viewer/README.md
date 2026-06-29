@@ -71,3 +71,19 @@ This is not the final Web Studio editor. It intentionally excludes:
 - Authentication, deployment packaging, and frontend framework scaffolding.
 
 This static viewer is only a lightweight browser proof-of-life for reviewing exported scene contract data. It improves readability of exported scenes, but the source-of-truth editing, scene generation, validation, and fake-hardware simulation flows remain in Workcell Studio, generated packages, and RViz/MoveIt.
+
+## Preview-only transform editing and edit patches
+
+The static viewer includes a first-pass safe editing surface for Web 3D. When a selected item is both `editable=true` and `locked=false`, the inspector shows XYZ, RPY, and scale inputs. Changing those inputs updates only the in-browser Three.js preview.
+
+Locked or generated preview items, including generated robot/tool visuals, keep the transform fields disabled with the reason: “Locked/generated preview item; edit source layout/environment instead.”
+
+Use **Export Edit Patch** to download a `workcell_studio_web_scene_edit_patch/v1` JSON file. The patch contains only changed items and does not modify `environment.yaml`, layout YAML, `cell_definition.yaml`, `scene_manifest.yaml`, or generated scene files. **Clear Preview Edits** resets all browser-only changes; **Reset Selected** restores the selected editable item to its original loaded transform.
+
+Validate exported patches separately before any future application step:
+
+```bash
+python3 scripts/validate_workcell_studio_web_scene_edit_patch.py \
+  --web-scene build/workcell_studio_web_scene/ur5_2f_test.web_scene.json \
+  --patch build/workcell_studio_web_scene/ur5_2f_test.edit_patch.json
+```

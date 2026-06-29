@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workcell-studio.local/schemas/workcell_studio_web_scene_edit_patch_v1.schema.json",
+  "title": "Workcell Studio Web Scene Edit Patch v1",
+  "description": "Preview-only transform edit patch exported by the static Workcell Studio web scene viewer. Patches are validated separately and do not mutate source scene files.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "scene_id", "source_scene_schema_version", "created_at", "created_by", "provenance", "edits"],
+  "properties": {
+    "schema_version": {"const": "workcell_studio_web_scene_edit_patch/v1"},
+    "scene_id": {"type": "string", "minLength": 1},
+    "source_scene_schema_version": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "minLength": 1},
+    "created_by": {"const": "static_web_viewer"},
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source_web_scene_file": {"type": "string", "minLength": 1},
+        "viewer_version": {"type": "string", "minLength": 1}
+      }
+    },
+    "edits": {"type": "array", "items": {"$ref": "#/$defs/edit"}}
+  },
+  "$defs": {
+    "edit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["item_id", "label", "source", "type", "editable_required", "locked_required", "operation", "old_transform", "new_transform"],
+      "properties": {
+        "item_id": {"type": "string", "minLength": 1},
+        "label": {"type": "string"},
+        "source": {"type": "string"},
+        "type": {"type": "string"},
+        "editable_required": {"const": true},
+        "locked_required": {"const": false},
+        "operation": {"const": "update_transform"},
+        "old_transform": {"$ref": "#/$defs/transform"},
+        "new_transform": {"$ref": "#/$defs/transform"},
+        "notes": {"type": "array", "items": {"type": "string"}},
+        "warnings": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "transform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pose", "scale"],
+      "properties": {
+        "pose": {"$ref": "#/$defs/pose"},
+        "scale": {"$ref": "#/$defs/xyz"}
+      }
+    },
+    "pose": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["xyz", "rpy"],
+      "properties": {"xyz": {"$ref": "#/$defs/xyz"}, "rpy": {"$ref": "#/$defs/xyz"}}
+    },
+    "xyz": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}}
+    }
+  }
+}
