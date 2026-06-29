@@ -20,10 +20,13 @@
       <h1>Workcell Studio Web Scene Viewer</h1>
       <p>Static Phase 3 proof-of-life viewer for <code>web_scene.json</code>.</p>
     </div>
-    <label class="file-picker">
-      Load web_scene.json
-      <input id="scene-file" type="file" accept="application/json,.json" />
-    </label>
+    <div class="toolbar">
+      <label class="file-picker">
+        Load web_scene.json
+        <input id="scene-file" type="file" accept="application/json,.json" />
+      </label>
+      <button id="reset-view" class="toolbar-button" type="button" disabled>Reset View</button>
+    </div>
   </header>
 
   <main class="app-shell">

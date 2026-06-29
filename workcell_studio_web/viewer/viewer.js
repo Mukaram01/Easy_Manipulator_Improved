@@ -2,9 +2,12 @@ let THREE;
 let OrbitControls;
 
 const SUPPORTED_SCHEMA_VERSION = 'workcell_studio_web_scene/v1';
-const state = { sceneJson: null, objects: [], selected: null, three: {}, animationId: null };
+const MIN_FRAME_RADIUS = 1.2;
+const FRAME_DISTANCE_MULTIPLIER = 2.7;
+const state = { sceneJson: null, objects: [], selected: null, three: {}, animationId: null, lastFrameBounds: null };
 const el = {
   file: document.getElementById('scene-file'),
+  resetView: document.getElementById('reset-view'),
   canvas: document.getElementById('scene-canvas'),
   empty: document.getElementById('empty-state'),
   error: document.getElementById('error-state'),
@@ -139,11 +142,48 @@ function animate() {
   controls.update();
   renderer.render(scene, camera);
 }
+
+function computeRenderedBounds() {
+  const bounds = new THREE.Box3();
+  for (const rendered of state.objects) {
+    if (!rendered.object3d) continue;
+    rendered.object3d.updateWorldMatrix(true, true);
+    bounds.expandByObject(rendered.object3d);
+  }
+  return bounds.isEmpty() ? null : bounds;
+}
+function frameScene(bounds) {
+  const { camera, controls } = state.three;
+  if (!camera || !controls || !bounds || bounds.isEmpty()) return false;
+  const center = new THREE.Vector3();
+  const sphere = new THREE.Sphere();
+  bounds.getCenter(center);
+  bounds.getBoundingSphere(sphere);
+  const radius = Math.max(sphere.radius, MIN_FRAME_RADIUS);
+  const direction = new THREE.Vector3(1.35, -1.65, 1.05).normalize();
+  const distance = Math.max(radius * FRAME_DISTANCE_MULTIPLIER, MIN_FRAME_RADIUS * FRAME_DISTANCE_MULTIPLIER);
+  camera.position.copy(center).addScaledVector(direction, distance);
+  camera.near = Math.max(0.01, radius / 100);
+  camera.far = Math.max(100, distance + radius * 6);
+  camera.updateProjectionMatrix();
+  controls.target.copy(center);
+  controls.update();
+  state.lastFrameBounds = bounds.clone();
+  if (el.resetView) el.resetView.disabled = false;
+  return true;
+}
+function resetView() {
+  const bounds = state.lastFrameBounds || computeRenderedBounds();
+  if (bounds) frameScene(bounds);
+}
+
 function clearSceneObjects() {
   const scene = state.three.scene;
   if (!scene) return;
   for (const rendered of state.objects) scene.remove(rendered.object3d);
   state.objects = [];
+  state.lastFrameBounds = null;
+  if (el.resetView) el.resetView.disabled = true;
 }
 function renderScene(items) {
   clearSceneObjects();
@@ -157,6 +197,8 @@ function renderScene(items) {
     state.objects.push({ item, object3d });
   }
   populateObjectList();
+  const bounds = computeRenderedBounds();
+  if (bounds) frameScene(bounds);
 }
 function populateObjectList() {
   el.list.innerHTML = '';
@@ -229,6 +271,8 @@ async function loadFile(file) {
     showError(err.message || String(err));
   }
 }
+
+if (el.resetView) el.resetView.addEventListener('click', resetView);
 
 el.file.addEventListener('change', event => {
   const file = event.target.files?.[0];
