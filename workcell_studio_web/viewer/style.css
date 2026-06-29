@@ -31,6 +31,13 @@ body {
 }
 .topbar h1 { margin: 0; font-size: 1.1rem; }
 .topbar p { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.85rem; }
+.toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 .file-picker {
   display: inline-flex;
   align-items: center;
@@ -44,6 +51,17 @@ body {
   white-space: nowrap;
 }
 .file-picker input { max-width: 15rem; }
+.toolbar-button {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  padding: 0.55rem 0.8rem;
+  white-space: nowrap;
+}
+.toolbar-button:not(:disabled):hover { border-color: var(--accent); background: #14364a; }
+.toolbar-button:disabled { cursor: not-allowed; opacity: 0.45; }
 
 .app-shell {
   display: grid;
