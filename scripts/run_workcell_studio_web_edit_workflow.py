@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+"""Guided backend workflow for Workcell Studio Web 3D edit patches.
+
+The workflow is safe by default: it exports a before web_scene, validates the
+browser-produced edit_patch, and runs the existing applicator in dry-run mode.
+Source YAML is mutated only when --write is explicitly provided. Browser output
+is never trusted to write scene YAML directly.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from export_workcell_studio_web_scene import build_web_scene  # noqa: E402
+from validate_workcell_studio_web_scene_edit_patch import _load_json, _scene_id, validate  # noqa: E402
+
+
+def _scene_id_from_dir(scene: Path) -> str:
+    return scene.resolve().name
+
+
+def _write_web_scene(scene: Path, output: Path) -> dict[str, Any]:
+    payload = build_web_scene(scene)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return payload
+
+
+def _run_step(label: str, cmd: list[str]) -> int:
+    print(f"\n== {label} ==")
+    print("command: " + " ".join(cmd))
+    result = subprocess.run(cmd, cwd=REPO_ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+    print(f"{label} result: {'PASS' if result.returncode == 0 else 'FAIL'}")
+    return result.returncode
+
+
+def _validate_patch(before: dict[str, Any], patch_path: Path) -> tuple[bool, dict[str, Any] | None, list[str]]:
+    try:
+        patch = _load_json(patch_path)
+    except ValueError as exc:
+        return False, None, [str(exc)]
+    errors = validate(before, patch)
+    return not errors, patch, errors
+
+
+def _print_next_write_command(args: argparse.Namespace) -> None:
+    print("\nNext recommended action:")
+    print(
+        "  python3 scripts/run_workcell_studio_web_edit_workflow.py "
+        f"--scene {args.scene} --patch {args.patch} --output-dir {args.output_dir} --write"
+    )
+
+
+def _print_next_generate_validate(scene: Path) -> None:
+    print("\nNext recommended action:")
+    print(f"  python3 scripts/validate_builder_generated_scene.py {scene} --json")
+    print("  Then use the existing fake-hardware RViz/MoveIt workflow when validation is clean.")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run the safe guided backend workflow for Workcell Studio Web 3D edit patches.")
+    parser.add_argument("--scene", required=True, type=Path, help="Scene directory, for example scenes/ur5_2f_test")
+    parser.add_argument("--patch", type=Path, help="Browser-exported workcell_studio_web_scene_edit_patch/v1 JSON")
+    parser.add_argument("--output-dir", default=Path("build/workcell_studio_web_scene"), type=Path)
+    parser.add_argument("--export-only", action="store_true", help="Only export the before web_scene; does not require --patch.")
+    parser.add_argument("--validate-only", action="store_true", help="Export before web_scene and validate the patch; do not apply.")
+    parser.add_argument("--dry-run-apply", action="store_true", help="Run the existing applicator in dry-run mode. This is also the default when --write is omitted.")
+    parser.add_argument("--write", action="store_true", help="Explicitly mutate editable source YAML through the safe applicator after validation and dry-run pass.")
+    parser.add_argument("--verify-persistence", action="store_true", help="After --write, re-export and run persistence verification. --write already enables this.")
+    parser.add_argument("--run-readiness", action="store_true", help="Optionally run the scene readiness matrix after the edit workflow.")
+    args = parser.parse_args(argv)
+
+    scene = args.scene
+    output_dir = args.output_dir
+    scene_id = _scene_id_from_dir(scene)
+    before_path = output_dir / f"{scene_id}.before.web_scene.json"
+    after_path = output_dir / f"{scene_id}.after.web_scene.json"
+
+    print("Workcell Studio Web 3D guided edit workflow")
+    print(f"selected scene: {scene}")
+    print(f"patch path: {args.patch if args.patch else '(not required for --export-only)'}")
+    print(f"before web_scene path: {before_path}")
+    print(f"write enabled: {bool(args.write)}")
+
+    if not scene.exists() or not scene.is_dir():
+        print(f"FAIL: scene missing or not a directory: {scene}", file=sys.stderr)
+        return 2
+    if not args.export_only and args.patch is None:
+        print("FAIL: --patch is required unless --export-only is used", file=sys.stderr)
+        return 2
+    if args.patch is not None and not args.patch.exists():
+        print(f"FAIL: patch missing: {args.patch}", file=sys.stderr)
+        return 2
+
+    try:
+        before = _write_web_scene(scene, before_path)
+    except Exception as exc:  # noqa: BLE001 - CLI needs clear operator failure.
+        print(f"FAIL: before web_scene export failed for {scene}: {exc}", file=sys.stderr)
+        return 1
+    print(f"export before result: PASS ({before_path})")
+
+    if args.export_only:
+        print("export-only result: PASS; no patch was required and no source files were modified.")
+        print("Next recommended action: open the web viewer, edit an editable object, and export edit_patch.json.")
+        return 0
+
+    assert args.patch is not None
+    ok, patch, errors = _validate_patch(before, args.patch)
+    if not ok:
+        print("patch validation result: FAIL", file=sys.stderr)
+        for error in errors:
+            print(f"FAIL: {error}", file=sys.stderr)
+        print("write/apply result: SKIPPED because validation failed")
+        return 1
+    print(f"patch validation result: PASS (scene_id={patch.get('scene_id') if patch else _scene_id(before)})")
+
+    if args.validate_only:
+        print("validate-only result: PASS; no apply was attempted and no source files were modified.")
+        _print_next_write_command(args)
+        return 0
+
+    dry_cmd = [sys.executable, str(SCRIPT_DIR / "apply_workcell_studio_web_scene_edit_patch.py"), "--scene", str(scene), "--web-scene", str(before_path), "--patch", str(args.patch)]
+    dry_rc = _run_step("dry-run apply", dry_cmd)
+    if dry_rc != 0:
+        print("dry-run result: FAIL; write/apply is blocked", file=sys.stderr)
+        return dry_rc
+    print("dry-run result: PASS; no source files were modified by the dry run")
+
+    if not args.write:
+        print("write/apply result: SKIPPED; pass --write to mutate editable source YAML through the safe applicator")
+        _print_next_write_command(args)
+        return 0
+
+    write_cmd = [*dry_cmd, "--write"]
+    write_rc = _run_step("write apply", write_cmd)
+    if write_rc != 0:
+        print("write/apply result: FAIL", file=sys.stderr)
+        return write_rc
+    print("write/apply result: PASS")
+
+    try:
+        _write_web_scene(scene, after_path)
+    except Exception as exc:  # noqa: BLE001
+        print(f"FAIL: after web_scene export failed for {scene}: {exc}", file=sys.stderr)
+        return 1
+    print(f"after web_scene path: {after_path}")
+    print("re-export after result: PASS")
+
+    verify_rc = 0
+    if args.write or args.verify_persistence:
+        verify_cmd = [sys.executable, str(SCRIPT_DIR / "verify_workcell_studio_web_scene_edit_persistence.py"), "--scene", str(scene), "--web-scene-before", str(before_path), "--patch", str(args.patch), "--web-scene-after", str(after_path)]
+        verify_rc = _run_step("persistence verification", verify_cmd)
+        print(f"persistence verification result: {'PASS' if verify_rc == 0 else 'FAIL'}")
+        if verify_rc != 0:
+            return verify_rc
+
+    if args.run_readiness:
+        readiness_cmd = [sys.executable, str(SCRIPT_DIR / "run_workcell_studio_scene_readiness_matrix.py"), "--supported-scenes", "scenes/supported_scenes.yaml", "--output-dir", "build/workcell_studio_scene_readiness"]
+        readiness_rc = _run_step("readiness matrix", readiness_cmd)
+        print(f"readiness result: {'PASS' if readiness_rc == 0 else 'FAIL'}")
+        if readiness_rc != 0:
+            return readiness_rc
+    else:
+        print("readiness result: SKIPPED (pass --run-readiness to run it)")
+
+    print("\nWorkflow summary: PASS")
+    _print_next_generate_validate(scene)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
