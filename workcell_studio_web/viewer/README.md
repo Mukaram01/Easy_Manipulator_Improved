@@ -179,3 +179,16 @@ python3 scripts/run_workcell_studio_web_edit_workflow.py \
 The guided workflow exports a before `web_scene`, validates the patch, runs the safe applicator in dry-run mode, and only mutates editable source YAML when `--write` is explicit. In write mode it re-exports an after `web_scene` and verifies persistence. Pass `--run-readiness` only when you also want the optional readiness matrix.
 
 This viewer workflow is still upstream of the normal Workcell Studio generate/validate/simulate path. RViz/MoveIt remains the planning truth, and fake-hardware-first safety defaults are unchanged.
+
+## Applying Web 3D edit patches from Workcell Builder
+
+The recommended UI workflow is:
+
+1. In Workcell Builder, select a scene and run **Export & Open Web 3D Viewer**.
+2. Load the exported `build/workcell_studio_web_scene/<scene_id>.web_scene.json` in this static viewer if it was not loaded automatically by your browser workflow.
+3. Edit an editable, unlocked item. These edits remain browser preview state only.
+4. Export an `edit_patch.json` from the browser. The browser never writes YAML and never mutates generated files.
+5. In Workcell Builder, use **Validate Web Edit Patch…** or **Dry Run Web Edit Patch…** and select the exported JSON patch. The file picker defaults to `build/workcell_studio_web_scene`.
+6. Use **Apply Web Edit Patch…** only when the dry-run output is clean. Workcell Builder requires explicit confirmation before it runs the backend workflow with `--write`.
+
+Workcell Builder orchestrates `scripts/run_workcell_studio_web_edit_workflow.py`; the Qt UI does not reimplement the patch validator/applicator. In apply mode the backend re-exports the web scene and verifies persistence. Generated-file safety remains in force, browser-side YAML writes are forbidden, RViz/MoveIt remains planning truth, and no real robot motion is started by this patch workflow.

@@ -125,6 +125,9 @@ private slots:
   void on_refresh_scenes_button_clicked();
   void on_export_scene_bundle_clicked();
   void on_export_open_web_3d_viewer_clicked();
+  void on_validate_web_edit_patch_clicked();
+  void on_dry_run_web_edit_patch_clicked();
+  void on_apply_web_edit_patch_clicked();
   void on_import_scene_bundle_clicked();
   void on_refresh_status_button_clicked();
   void on_validate_scene_button_clicked();
@@ -197,6 +200,8 @@ private:
   QString ensure_selected_template();
   boost::filesystem::path scene_dir_for_current_selection() const;
   bool validate_description_xacros(const Scene & scene, const std::string & context_label);
+  bool run_web_edit_patch_workflow(bool validate_only, bool write);
+  bool execute_web_edit_patch_workflow(const boost::filesystem::path & repo_root, const boost::filesystem::path & scene_dir, const boost::filesystem::path & patch_path, bool validate_only, bool write, QString * output);
   void configure_startup_fallback_paths();
   void show_invalid_workcell_error(const std::string & error_message);
   void discover_scene_packages_on_startup();
