@@ -104,11 +104,15 @@ The viewer edits are persisted only through the backend applicator; the viewer n
 
 ## Preview-only transform editing and edit patches
 
-The static viewer includes a first-pass safe editing surface for Web 3D. When a selected item is both `editable=true` and `locked=false`, the inspector shows XYZ, RPY, and scale inputs. Changing those inputs updates only the in-browser Three.js preview.
+The static viewer includes a safe editing surface for Web 3D. When a selected item is both `editable=true` and `locked=false`, it enters **edit mode**: the inspector shows XYZ, RPY, and scale inputs, and the Three.js translation gizmo attaches to the selected object. Dragging the gizmo updates the numeric inspector fields; editing numeric fields updates the object and attached gizmo. These changes update only the in-browser Three.js preview.
 
-Locked or generated preview items, including generated robot/tool visuals, keep the transform fields disabled with the reason: “Locked/generated preview item; edit source layout/environment instead.”
+Locked or generated preview items, including generated robot/tool visuals, never enter edit mode. Their transform fields stay disabled with the reason: “Locked/generated preview item; edit source layout/environment instead.”
 
-Use **Export Edit Patch** to download a `workcell_studio_web_scene_edit_patch/v1` JSON file. The patch contains only changed items and does not modify `environment.yaml`, layout YAML, `cell_definition.yaml`, `scene_manifest.yaml`, or generated scene files. **Clear Preview Edits** resets all browser-only changes; **Reset Selected** restores the selected editable item to its original loaded transform.
+The toolbar includes explicit snap controls. **Snap** enables/disables snapping, **Move snap (m)** defaults to `0.01`, and **Rot snap (deg)** defaults to `5`. Translation snap is applied to gizmo movement and numeric preview edits; rotation snap is available for numeric RPY edits and for future gizmo rotation modes. No implicit ground/table snap is performed.
+
+Preview edit history is browser-local. **Undo** reverts the last preview transform change, **Redo** reapplies an undone preview transform change, **Clear Preview Edits** restores every edited object to its loaded transform, and **Reset Selected** restores only the selected editable item. The dirty banner shows “Unsaved preview edits” plus the changed item count.
+
+Use **Export Edit Patch** to download a `workcell_studio_web_scene_edit_patch/v1` JSON file. The patch contains only the final changed preview state and does not modify `environment.yaml`, layout YAML, `cell_definition.yaml`, `scene_manifest.yaml`, or generated scene files. The browser never writes source YAML directly and never bypasses the validator/applicator loop.
 
 Validate exported patches before application:
 

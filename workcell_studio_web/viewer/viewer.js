@@ -3,6 +3,7 @@ let OrbitControls;
 let STLLoader;
 let ColladaLoader;
 let OBJLoader;
+let TransformControls;
 
 const SUPPORTED_SCHEMA_VERSION = 'workcell_studio_web_scene/v1';
 const EDIT_PATCH_SCHEMA_VERSION = 'workcell_studio_web_scene_edit_patch/v1';
@@ -11,13 +12,18 @@ const LOCKED_EDIT_REASON = 'Locked/generated preview item; edit source layout/en
 const MIN_FRAME_RADIUS = 1.2;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
-const state = { sceneJson: null, sourceWebSceneFile: '', objects: [], selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, dirtyTransforms: new Map() };
+const state = { sceneJson: null, sourceWebSceneFile: '', objects: [], selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null };
 const el = {
   file: document.getElementById('scene-file'),
   resetView: document.getElementById('reset-view'),
+  undoEdit: document.getElementById('undo-edit'),
+  redoEdit: document.getElementById('redo-edit'),
   clearEdits: document.getElementById('clear-edits'),
   exportEditPatch: document.getElementById('export-edit-patch'),
   dirty: document.getElementById('dirty-state'),
+  snapToggle: document.getElementById('snap-toggle'),
+  translationSnap: document.getElementById('translation-snap'),
+  rotationSnap: document.getElementById('rotation-snap'),
   labelsToggle: document.getElementById('labels-toggle'),
   canvas: document.getElementById('scene-canvas'),
   labelLayer: document.getElementById('label-layer'),
@@ -60,10 +66,40 @@ function transformOf(item) {
 }
 function cloneTransform(transform) { return JSON.parse(JSON.stringify(transform)); }
 function sameTransform(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+function renderedById(id) { return state.objects.find(obj => obj.item.id === id); }
+function transformFromObject(object) {
+  return { pose: { xyz: { x: object.position.x, y: object.position.y, z: object.position.z }, rpy: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z } }, scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z } };
+}
+function translationSnapValue() { const v = Number(el.translationSnap?.value || 0); return Number.isFinite(v) && v > 0 ? v : null; }
+function rotationSnapRadians() { const v = Number(el.rotationSnap?.value || 0); return Number.isFinite(v) && v > 0 ? THREE.MathUtils.degToRad(v) : null; }
+function snapTransform(transform) {
+  if (!el.snapToggle?.checked) return transform;
+  const out = cloneTransform(transform);
+  const t = translationSnapValue();
+  if (t) for (const axis of ['x', 'y', 'z']) out.pose.xyz[axis] = Math.round(out.pose.xyz[axis] / t) * t;
+  const r = rotationSnapRadians();
+  if (r) for (const axis of ['x', 'y', 'z']) out.pose.rpy[axis] = Math.round(out.pose.rpy[axis] / r) * r;
+  return out;
+}
 function applyTransformToObject(object, transform) {
   object.position.set(transform.pose.xyz.x, transform.pose.xyz.y, transform.pose.xyz.z);
   object.rotation.set(transform.pose.rpy.x, transform.pose.rpy.y, transform.pose.rpy.z, 'XYZ');
   object.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
+}
+function markDirtyTransform(rendered, next, { pushHistory = true, oldTransform = null } = {}) {
+  if (!rendered || !canEditItem(rendered.item)) return;
+  const previous = oldTransform || state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d);
+  const snapped = snapTransform(next);
+  if (pushHistory && !sameTransform(previous, snapped)) {
+    state.undoStack.push({ itemId: rendered.item.id, before: cloneTransform(previous), after: cloneTransform(snapped) });
+    state.redoStack = [];
+  }
+  applyTransformToObject(rendered.object3d, snapped);
+  if (sameTransform(rendered.originalTransform, snapped)) state.dirtyTransforms.delete(rendered.item.id);
+  else state.dirtyTransforms.set(rendered.item.id, { oldTransform: cloneTransform(rendered.originalTransform), newTransform: cloneTransform(snapped) });
+  syncInspectorTransformFields(rendered);
+  updateDirtyState();
+  updateLabels();
 }
 function primitiveOf(item) {
   return item.primitive || item.primitive_details || item.dimensions || item.geometry || item.primitive_geometry || null;
@@ -252,7 +288,7 @@ function validateSceneJson(json) {
 }
 function initThree() {
   try {
-    if (!THREE?.Scene || !OrbitControls || !STLLoader || !ColladaLoader || !OBJLoader) throw new Error('Three.js modules were not available.');
+    if (!THREE?.Scene || !OrbitControls || !STLLoader || !ColladaLoader || !OBJLoader || !TransformControls) throw new Error('Three.js modules were not available.');
     const renderer = new THREE.WebGLRenderer({ canvas: el.canvas, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     const scene = new THREE.Scene();
@@ -265,7 +301,25 @@ function initThree() {
     scene.add(new THREE.AxesHelper(0.75));
     scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 1.2));
     const light = new THREE.DirectionalLight(0xffffff, 1.5); light.position.set(2, -3, 4); scene.add(light);
-    state.three = { renderer, scene, camera, controls, raycaster: new THREE.Raycaster(), pointer: new THREE.Vector2() };
+    const transformControls = new TransformControls(camera, renderer.domElement);
+    transformControls.setMode('translate');
+    transformControls.addEventListener('dragging-changed', event => {
+      controls.enabled = !event.value;
+      const rendered = renderedById(state.selected);
+      if (!rendered || !canEditItem(rendered.item)) return;
+      if (event.value) state.gizmoDragStart = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d));
+      else { markDirtyTransform(rendered, transformFromObject(rendered.object3d), { pushHistory: true, oldTransform: state.gizmoDragStart }); state.gizmoDragStart = null; }
+    });
+    transformControls.addEventListener('objectChange', () => {
+      const rendered = renderedById(state.selected);
+      if (!rendered || !canEditItem(rendered.item)) return;
+      const snapped = snapTransform(transformFromObject(rendered.object3d));
+      applyTransformToObject(rendered.object3d, snapped);
+      syncInspectorTransformFields(rendered);
+      updateLabels();
+    });
+    scene.add(transformControls);
+    state.three = { renderer, scene, camera, controls, transformControls, raycaster: new THREE.Raycaster(), pointer: new THREE.Vector2() };
     resize();
     window.addEventListener('resize', resize);
     el.canvas.addEventListener('pointerdown', pickObject);
@@ -340,6 +394,9 @@ function clearSceneObjects() {
 function renderScene(items) {
   clearSceneObjects();
   state.dirtyTransforms.clear();
+  state.undoStack = [];
+  state.redoStack = [];
+  detachTransformGizmo();
   updateDirtyState();
   const scene = state.three.scene;
   for (const item of items) {
@@ -471,7 +528,7 @@ function selectObject(id) {
   }
   updateLabels();
   const rendered = state.objects.find(obj => obj.item.id === id);
-  if (rendered) populateInspector(rendered);
+  if (rendered) { populateInspector(rendered); attachTransformGizmo(rendered); }
 }
 function pickObject(event) {
   const rect = el.canvas.getBoundingClientRect();
@@ -484,8 +541,35 @@ function pickObject(event) {
   if (item?.id) selectObject(item.id);
 }
 
+function attachTransformGizmo(rendered) {
+  const gizmo = state.three.transformControls;
+  if (!gizmo) return;
+  if (rendered && canEditItem(rendered.item)) {
+    gizmo.attach(rendered.object3d);
+    gizmo.visible = true;
+    gizmo.enabled = true;
+    gizmo.setTranslationSnap(el.snapToggle?.checked ? translationSnapValue() : null);
+    gizmo.setRotationSnap(el.snapToggle?.checked ? rotationSnapRadians() : null);
+  } else detachTransformGizmo();
+}
+function detachTransformGizmo() {
+  const gizmo = state.three.transformControls;
+  if (!gizmo) return;
+  gizmo.detach();
+  gizmo.visible = false;
+  gizmo.enabled = false;
+}
+function refreshGizmoSnap() {
+  const gizmo = state.three.transformControls;
+  if (!gizmo) return;
+  gizmo.setTranslationSnap(el.snapToggle?.checked ? translationSnapValue() : null);
+  gizmo.setRotationSnap(el.snapToggle?.checked ? rotationSnapRadians() : null);
+}
 function canEditItem(item) {
-  const source = String(item?.source_kind || item?.source_layer || item?.active_visual_source || '').toLowerCase();
+  const sourceIdentity = [item?.source_kind, item?.source_layer, item?.active_visual_source, item?.role, item?.category]
+    .map(value => String(value || '').toLowerCase())
+    .join(' ');
+  const source = sourceIdentity;
   if (item?.locked || item?.editable !== true || source.includes('generated')) return false;
   return true;
 }
@@ -503,7 +587,15 @@ function renderTransformInputs(rendered) {
     ['scale_x', 'Scale X', transform.scale.x], ['scale_y', 'Scale Y', transform.scale.y], ['scale_z', 'Scale Z', transform.scale.z],
   ];
   const disabled = editable ? '' : 'disabled';
-  return `<section class="transform-editor"><h3>Preview transform editing</h3>${editable ? '<p class="edit-note">Browser preview only. Export Edit Patch to save a JSON patch; source YAML is not modified.</p>' : `<p class="edit-lock-reason">${LOCKED_EDIT_REASON}</p>`}<div class="transform-grid">${fields.map(([name, label, value]) => `<label>${label}<input type="number" step="0.001" data-transform-field="${name}" value="${Number(value).toFixed(6)}" ${disabled}></label>`).join('')}</div><div class="editor-actions"><button id="reset-selected" type="button" ${editable ? '' : 'disabled'}>Reset Selected</button></div></section>`;
+  return `<section class="transform-editor"><h3>Preview transform editing</h3>${editable ? '<p class="edit-note edit-mode-active">Edit mode active for editable/unlocked item. Drag the translation gizmo or use numeric XYZ/RPY/scale fields; browser preview only. Export Edit Patch to save a JSON patch; source YAML is not modified.</p>' : `<p class="edit-lock-reason">${LOCKED_EDIT_REASON}</p>`}<div class="transform-grid">${fields.map(([name, label, value]) => `<label>${label}<input type="number" step="0.001" data-transform-field="${name}" value="${Number(value).toFixed(6)}" ${disabled}></label>`).join('')}</div><div class="editor-actions"><button id="reset-selected" type="button" ${editable ? '' : 'disabled'}>Reset Selected</button></div></section>`;
+}
+function syncInspectorTransformFields(rendered) {
+  if (state.selected !== rendered?.item?.id) return;
+  const editor = el.inspector.querySelector('.transform-editor');
+  if (!editor) return;
+  const transform = state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d);
+  const values = { x: transform.pose.xyz.x, y: transform.pose.xyz.y, z: transform.pose.xyz.z, roll: transform.pose.rpy.x, pitch: transform.pose.rpy.y, yaw: transform.pose.rpy.z, scale_x: transform.scale.x, scale_y: transform.scale.y, scale_z: transform.scale.z };
+  for (const [name, value] of Object.entries(values)) { const input = editor.querySelector(`[data-transform-field="${name}"]`); if (input) input.value = Number(value).toFixed(6); }
 }
 function wireTransformInputs(rendered) {
   const editor = el.inspector.querySelector('.transform-editor');
@@ -512,11 +604,7 @@ function wireTransformInputs(rendered) {
     if (!canEditItem(rendered.item)) return;
     const next = currentTransformFromInputs(editor);
     if (Object.values(next.pose.xyz).concat(Object.values(next.pose.rpy), Object.values(next.scale)).some(v => !Number.isFinite(v))) return;
-    applyTransformToObject(rendered.object3d, next);
-    if (sameTransform(rendered.originalTransform, next)) state.dirtyTransforms.delete(rendered.item.id);
-    else state.dirtyTransforms.set(rendered.item.id, { oldTransform: cloneTransform(rendered.originalTransform), newTransform: cloneTransform(next) });
-    updateDirtyState();
-    updateLabels();
+    markDirtyTransform(rendered, next);
   }));
   const reset = el.inspector.querySelector('#reset-selected');
   if (reset) reset.addEventListener('click', () => resetSelectedTransform(rendered.item.id));
@@ -524,15 +612,15 @@ function wireTransformInputs(rendered) {
 function resetSelectedTransform(id = state.selected) {
   const rendered = state.objects.find(obj => obj.item.id === id);
   if (!rendered || !canEditItem(rendered.item)) return;
-  state.dirtyTransforms.delete(rendered.item.id);
-  applyTransformToObject(rendered.object3d, rendered.originalTransform);
-  updateDirtyState();
+  markDirtyTransform(rendered, rendered.originalTransform);
   populateInspector(rendered);
   updateLabels();
 }
 function updateDirtyState() {
   const dirty = state.dirtyTransforms.size > 0;
   if (el.dirty) { el.dirty.hidden = !dirty; el.dirty.textContent = dirty ? `Unsaved preview edits (${state.dirtyTransforms.size})` : 'No preview edits'; }
+  if (el.undoEdit) el.undoEdit.disabled = state.undoStack.length === 0;
+  if (el.redoEdit) el.redoEdit.disabled = state.redoStack.length === 0;
   if (el.clearEdits) el.clearEdits.disabled = !dirty;
   if (el.exportEditPatch) el.exportEditPatch.disabled = !state.sceneJson;
   populateObjectList();
@@ -540,9 +628,32 @@ function updateDirtyState() {
 function clearPreviewEdits() {
   for (const rendered of state.objects) applyTransformToObject(rendered.object3d, rendered.originalTransform);
   state.dirtyTransforms.clear();
+  state.undoStack = [];
+  state.redoStack = [];
   updateDirtyState();
   if (state.selected) { const rendered = state.objects.find(obj => obj.item.id === state.selected); if (rendered) populateInspector(rendered); }
   updateLabels();
+}
+function applyHistoryEntry(entry, direction) {
+  const rendered = renderedById(entry.itemId);
+  if (!rendered || !canEditItem(rendered.item)) return;
+  const target = direction === 'undo' ? entry.before : entry.after;
+  markDirtyTransform(rendered, target, { pushHistory: false });
+  if (state.selected === rendered.item.id) populateInspector(rendered);
+}
+function undoPreviewEdit() {
+  const entry = state.undoStack.pop();
+  if (!entry) return;
+  applyHistoryEntry(entry, 'undo');
+  state.redoStack.push(entry);
+  updateDirtyState();
+}
+function redoPreviewEdit() {
+  const entry = state.redoStack.pop();
+  if (!entry) return;
+  applyHistoryEntry(entry, 'redo');
+  state.undoStack.push(entry);
+  updateDirtyState();
 }
 function sceneId() { return state.sceneJson?.scene?.id || state.sceneJson?.scene_id || ''; }
 function buildEditPatch() {
@@ -634,6 +745,10 @@ async function loadFile(file) {
     state.sourceWebSceneFile = file.name || '';
     state.runtimeWarnings = [];
     state.dirtyTransforms.clear();
+    state.undoStack = [];
+    state.redoStack = [];
+    state.selected = null;
+    detachTransformGizmo();
     el.empty.hidden = true;
     if (items.length) renderScene(items);
     else renderScene([]);
@@ -647,7 +762,12 @@ async function loadFile(file) {
 
 if (el.resetView) el.resetView.addEventListener('click', resetView);
 if (el.labelsToggle) el.labelsToggle.addEventListener('change', event => setLabelsVisible(event.target.checked));
+if (el.undoEdit) el.undoEdit.addEventListener('click', undoPreviewEdit);
+if (el.redoEdit) el.redoEdit.addEventListener('click', redoPreviewEdit);
 if (el.clearEdits) el.clearEdits.addEventListener('click', clearPreviewEdits);
+if (el.snapToggle) el.snapToggle.addEventListener('change', refreshGizmoSnap);
+if (el.translationSnap) el.translationSnap.addEventListener('input', refreshGizmoSnap);
+if (el.rotationSnap) el.rotationSnap.addEventListener('input', refreshGizmoSnap);
 if (el.exportEditPatch) el.exportEditPatch.addEventListener('click', exportEditPatch);
 
 el.file.addEventListener('change', event => {
@@ -659,11 +779,13 @@ async function boot() {
   try {
     const threeModule = await import('three');
     const controlsModule = await import('three/addons/controls/OrbitControls.js');
+    const transformControlsModule = await import('three/addons/controls/TransformControls.js');
     const stlModule = await import('three/addons/loaders/STLLoader.js');
     const colladaModule = await import('three/addons/loaders/ColladaLoader.js');
     const objModule = await import('three/addons/loaders/OBJLoader.js');
     THREE = threeModule;
     OrbitControls = controlsModule.OrbitControls;
+    TransformControls = transformControlsModule.TransformControls;
     STLLoader = stlModule.STLLoader;
     ColladaLoader = colladaModule.ColladaLoader;
     OBJLoader = objModule.OBJLoader;

@@ -63,6 +63,26 @@ body {
 .toolbar-button:not(:disabled):hover { border-color: var(--accent); background: #14364a; }
 .toolbar-button:disabled { cursor: not-allowed; opacity: 0.45; }
 
+.toolbar-number {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.38rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: rgba(32, 43, 57, 0.72);
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.toolbar-number input {
+  width: 4.5rem;
+  padding: 0.25rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: #0b1018;
+  color: var(--text);
+}
 .toolbar-toggle {
   display: inline-flex;
   align-items: center;
@@ -221,6 +241,7 @@ code { color: #c9f2ff; }
   background: rgba(32, 43, 57, 0.72);
 }
 .transform-editor h3 { margin: 0 0 0.45rem; font-size: 0.9rem; color: var(--accent); }
+.edit-mode-active { border-left: 3px solid var(--accent); padding-left: 0.5rem; }
 .edit-note, .edit-lock-reason { margin: 0 0 0.65rem; color: var(--muted); font-size: 0.8rem; }
 .edit-lock-reason { color: #ffe7a3; }
 .transform-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.45rem; }
