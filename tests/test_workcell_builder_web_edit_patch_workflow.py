@@ -16,10 +16,32 @@ def test_visible_workcell_builder_patch_actions_are_registered():
     assert "Validate Web Edit Patch…" in source
     assert "Dry Run Web Edit Patch…" in source
     assert "Apply Web Edit Patch…" in source
+    assert "Generate & Validate Scene" in source
     assert "validate_web_edit_patch_action" in source
     assert "dry_run_web_edit_patch_action" in source
     assert "apply_web_edit_patch_action" in source
-    assert "on_validate_web_edit_patch_clicked" in HEADER.read_text(encoding="utf-8")
+    assert "generate_validate_after_web_edit_action" in source
+    header = HEADER.read_text(encoding="utf-8")
+    assert "on_validate_web_edit_patch_clicked" in header
+    assert "on_generate_validate_after_web_edit_clicked" in header
+
+
+def test_generate_validate_scene_action_uses_backend_without_patch_and_requires_confirmation():
+    source = _cpp()
+    section = source[source.index("bool SceneSelect::run_generate_validate_after_web_edit") : source.index("bool SceneSelect::execute_web_edit_patch_workflow")]
+    assert "Confirm Generate & Validate Scene" in section
+    assert "QMessageBox::question" in section
+    assert "QFileDialog::getOpenFileName" not in section
+    assert "--patch" not in section
+    assert "--generate-and-validate" in source
+    assert "python3 scripts/run_workcell_studio_web_edit_workflow.py" in source
+    assert "Generate & Validate Scene PASS" in source
+    assert "Generate & Validate Scene FAIL" in source
+    assert "Patch applied and verified. You can now Generate & Validate Scene." in source
+    assert "generation/validation is explicit" in source
+    assert "browser never writes YAML directly" in source
+    assert "this does not launch fake hardware" in source
+    assert "this does not move real hardware" in source
 
 
 def test_workflow_script_is_reused_instead_of_duplicate_backend_logic():

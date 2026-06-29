@@ -864,6 +864,11 @@ SceneSelect::SceneSelect(QWidget * parent)
   apply_web_patch_action->setToolTip("Dry-run, require explicit confirmation, then apply a Web 3D edit patch through the backend workflow with --write.");
   ui->generateLayout->insertWidget(11, apply_web_patch_action);
   connect(apply_web_patch_action, &QPushButton::clicked, this, &SceneSelect::on_apply_web_edit_patch_clicked);
+  auto * generate_validate_scene_action = new QPushButton("Generate & Validate Scene", ui->validate_generate_tab);
+  generate_validate_scene_action->setObjectName("generate_validate_after_web_edit_action");
+  generate_validate_scene_action->setToolTip("Explicitly regenerate and validate the selected scene through scripts/run_workcell_studio_web_edit_workflow.py. No patch is required, no hardware is launched, and RViz/MoveIt remains the later planning truth.");
+  ui->generateLayout->insertWidget(12, generate_validate_scene_action);
+  connect(generate_validate_scene_action, &QPushButton::clicked, this, &SceneSelect::on_generate_validate_after_web_edit_clicked);
   connect(ui->fit_cell_action, &QPushButton::clicked, this, &SceneSelect::refresh_preview_status);
   connect(ui->reset_view_action, &QPushButton::clicked, this, [this]() {
     if (ui->visual_layout_canvas) {
@@ -3419,6 +3424,109 @@ void SceneSelect::on_apply_web_edit_patch_clicked()
   run_web_edit_patch_workflow(false, true);
 }
 
+void SceneSelect::on_generate_validate_after_web_edit_clicked()
+{
+  run_generate_validate_after_web_edit();
+}
+
+bool SceneSelect::execute_generate_validate_after_web_edit(
+  const fs::path & repo_root,
+  const fs::path & scene_dir,
+  QString * output)
+{
+  const QString workflow_script = "scripts/run_workcell_studio_web_edit_workflow.py";
+  QStringList args{
+    workflow_script,
+    "--scene", QString::fromStdString(scene_dir.string()),
+    "--generate-and-validate"};
+
+  append_info("Generate & Validate Scene safety: generation/validation is explicit; browser never writes YAML directly; edit patches are validated/dry-run before apply; this does not launch fake hardware; this does not move real hardware; RViz/MoveIt remains the later planning truth.");
+  append_info("Generate & Validate Scene command template: python3 scripts/run_workcell_studio_web_edit_workflow.py --scene <selected-scene> --generate-and-validate");
+  append_info("Run Generate & Validate Scene: python3 " + args.join(' ').toStdString());
+
+  QProcess process;
+  process.setWorkingDirectory(QString::fromStdString(repo_root.string()));
+  process.start("python3", args);
+  if (!process.waitForStarted()) {
+    const QString message = "Python executable 'python3' could not be started. Install Python 3 or ensure it is on PATH.";
+    append_error(message.toStdString());
+    if (output) {
+      *output = message;
+    }
+    return false;
+  }
+  process.waitForFinished(-1);
+  const QString stdout_text = QString::fromLocal8Bit(process.readAllStandardOutput());
+  const QString stderr_text = QString::fromLocal8Bit(process.readAllStandardError());
+  const bool ok = process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+  const QString summary = QString("Generate & Validate Scene %1 for selected scene: %2\nExit code: %3\n\nCommand: python3 %4\n\nSTDOUT:\n%5\n\nSTDERR:\n%6")
+    .arg(QString(ok ? "PASS" : "FAIL"))
+    .arg(QString::fromStdString(scene_dir.string()))
+    .arg(process.exitCode())
+    .arg(args.join(' '))
+    .arg(stdout_text)
+    .arg(stderr_text);
+  if (output) {
+    *output = summary;
+  }
+  if (!stdout_text.trimmed().isEmpty()) {
+    append_info(stdout_text.toStdString());
+  }
+  if (!stderr_text.trimmed().isEmpty()) {
+    append_warning(stderr_text.toStdString());
+  }
+  if (ok) {
+    append_success(summary.toStdString());
+  } else {
+    append_error(summary.toStdString());
+  }
+  return ok;
+}
+
+bool SceneSelect::run_generate_validate_after_web_edit()
+{
+  configure_startup_fallback_paths();
+  const int current_index = current_scene_index();
+  if (current_index < 0 || current_index >= static_cast<int>(workcell.scene_vector.size())) {
+    const QString message = "No scene selected. Select a scene before running Generate & Validate Scene.";
+    append_warning(message.toStdString());
+    QMessageBox::warning(this, "Generate & Validate Scene", message);
+    return false;
+  }
+
+  const fs::path scene_dir = scene_dir_for_current_selection();
+  boost::system::error_code ec;
+  if (scene_dir.empty() || !fs::exists(scene_dir, ec) || !fs::is_directory(scene_dir, ec)) {
+    const QString message = QString("Scene path missing for selected scene '%1': %2")
+      .arg(QString::fromStdString(workcell.scene_vector[current_index].name), QString::fromStdString(scene_dir.string()));
+    append_error(message.toStdString());
+    QMessageBox::critical(this, "Generate & Validate Scene", message);
+    return false;
+  }
+  const fs::path repo_root = resolve_tool_root(workcell_path, scene_dir);
+  const fs::path workflow_script = repo_root / "scripts" / "run_workcell_studio_web_edit_workflow.py";
+  if (repo_root.empty() || !fs::exists(workflow_script, ec)) {
+    const QString message = QString("Workflow script missing. Expected scripts/run_workcell_studio_web_edit_workflow.py under the Workcell Studio repo root. Scene path: %1")
+      .arg(QString::fromStdString(scene_dir.string()));
+    append_error(message.toStdString());
+    QMessageBox::critical(this, "Generate & Validate Scene", message);
+    return false;
+  }
+
+  const QString confirm = QString(
+    "Generate and validate the selected scene now?\n\nScene path: %1\n\nThis may mutate generated scene/package outputs. Generation/validation is explicit. Browser never writes YAML directly. Edit patches are validated/dry-run before apply. This does not launch fake hardware. This does not move real hardware. RViz/MoveIt remains the later planning truth.")
+    .arg(QString::fromStdString(scene_dir.string()));
+  if (QMessageBox::question(this, "Confirm Generate & Validate Scene", confirm, QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
+    append_warning("Generate & Validate Scene cancelled before mutating generated outputs.");
+    return false;
+  }
+
+  QString output;
+  const bool ok = execute_generate_validate_after_web_edit(repo_root, scene_dir, &output);
+  QMessageBox::information(this, ok ? "Generate & Validate Scene PASS" : "Generate & Validate Scene FAIL", output);
+  return ok;
+}
+
 bool SceneSelect::execute_web_edit_patch_workflow(
   const fs::path & repo_root,
   const fs::path & scene_dir,
@@ -3560,6 +3668,11 @@ bool SceneSelect::run_web_edit_patch_workflow(bool validate_only, bool write)
 
   QString apply_output;
   const bool apply_ok = execute_web_edit_patch_workflow(repo_root, scene_dir, patch_path, false, true, &apply_output);
+  if (apply_ok) {
+    const QString next_step = "Patch applied and verified. You can now Generate & Validate Scene.";
+    append_success(next_step.toStdString());
+    apply_output += "\n\n" + next_step;
+  }
   QMessageBox::information(this, apply_ok ? "Web Edit Patch Applied" : "Web Edit Patch Failed", apply_output);
   return apply_ok;
 }
