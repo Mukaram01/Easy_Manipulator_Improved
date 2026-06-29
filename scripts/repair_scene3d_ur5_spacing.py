@@ -62,7 +62,7 @@ def spacing_reasons(items: list[dict[str, Any]]) -> list[str]:
     return reasons
 
 
-def repair_index(path: Path) -> tuple[bool, list[str]]:
+def repair_index(path: Path, *, write_debug_repair: bool = False) -> tuple[bool, list[str]]:
     data = json.loads(path.read_text(encoding="utf-8"))
     items = data.get("visual_items") if isinstance(data.get("visual_items"), list) else []
     items = [item for item in items if isinstance(item, dict)]
@@ -89,6 +89,11 @@ def repair_index(path: Path) -> tuple[bool, list[str]]:
     data["ur5_runtime_repair_added_links"] = list(REQUIRED_UR5_LINKS)
     data["ur5_runtime_repair_reasons"] = ["implausible_adjacent_distance:" + reason for reason in reasons]
     data["repair_generated_at"] = datetime.now(timezone.utc).isoformat()
+    if not write_debug_repair:
+        return True, reasons
+    # Debug 3D Preview exception: this rewrites only the generated Scene3D
+    # preview index for local diagnostics. It does not modify source-of-truth
+    # layout, cell-definition, URDF/xacro, launch, or planning artifacts.
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return True, reasons
 
@@ -96,10 +101,19 @@ def repair_index(path: Path) -> tuple[bool, list[str]]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("index_path", type=Path)
+    parser.add_argument(
+        "--write-debug-repair",
+        action="store_true",
+        help=(
+            "Rewrite generated/scene_visual_mesh_index.json for Debug 3D Preview only. "
+            "Default is read-only diagnostics."
+        ),
+    )
     args = parser.parse_args()
-    changed, reasons = repair_index(args.index_path.resolve())
+    changed, reasons = repair_index(args.index_path.resolve(), write_debug_repair=args.write_debug_repair)
     if changed:
-        print("[repair_scene3d_ur5_spacing] repaired UR5 spacing: " + ";".join(reasons))
+        action = "wrote Debug 3D Preview repair" if args.write_debug_repair else "diagnostic only; rerun with --write-debug-repair to mutate generated preview index"
+        print("[repair_scene3d_ur5_spacing] UR5 spacing issue: " + ";".join(reasons) + f" ({action}; source-of-truth layout/planning artifacts unchanged)")
     else:
         print("[repair_scene3d_ur5_spacing] no UR5 spacing repair needed")
     return 0

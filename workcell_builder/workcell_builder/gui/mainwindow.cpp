@@ -8647,6 +8647,14 @@ void MainWindow::populate_scene_hierarchy()
   };
 
   auto run_visual_index_refresh = [&]() -> bool {
+    const bool debug_repair_enabled =
+      qEnvironmentVariableIntValue("WORKCELL_STUDIO_DEBUG_REPAIR_PREVIEW_INDEX") == 1;
+    if (!debug_repair_enabled) {
+      visual_index_refresh_blocker = QStringLiteral(
+        "read-only diagnostics by default; set WORKCELL_STUDIO_DEBUG_REPAIR_PREVIEW_INDEX=1 "
+        "to rewrite generated/scene_visual_mesh_index.json for Debug 3D Preview only");
+      return false;
+    }
     QString script;
     if (!helper_script_exists("extract_scene_urdf_visual_mesh_index.py", &script)) {
       visual_index_refresh_blocker = QStringLiteral("extractor script not found in helper script search paths");
@@ -8682,7 +8690,10 @@ void MainWindow::populate_scene_hierarchy()
     env.insert(QStringLiteral("VISUAL_INDEX_WORKSPACE_ROOT"), workspace_root);
     process.setProcessEnvironment(env);
     const QString command = command_parts.join(QStringLiteral(" && "));
-    append_studio_log(QString("Visual mesh index refresh: preview-only metadata command for scene '%1' at %2 (no RViz/MoveIt/controllers/real hardware launched).")
+    // Debug 3D Preview exception: this helper rewrites only the generated
+    // Scene3D preview index. It never edits source-of-truth layout,
+    // cell-definition, URDF/xacro, launch, controller, or planning artifacts.
+    append_studio_log(QString("Visual mesh index refresh: Debug 3D Preview repair command for scene '%1' at %2 (no source-of-truth layout/planning artifacts, RViz/MoveIt/controllers, or real hardware touched).")
       .arg(scene_name, QString::fromStdString(urdf_visual_index.string())));
     process.start(QStringLiteral("/bin/bash"), QStringList() << QStringLiteral("-lc") << command);
     if (!process.waitForFinished(120000)) {
@@ -8724,7 +8735,7 @@ void MainWindow::populate_scene_hierarchy()
       }
     } else {
       append_studio_log(
-        QString("Visual mesh index %1 for scene '%2' at %3 (workspace root: %4). Automatic preview-only refresh could not run: %5. Run python3 scripts/extract_scene_urdf_visual_mesh_index.py --scene %2 --workspace-root %4 from a ROS/workspace environment to refresh this generated artifact.")
+        QString("Visual mesh index %1 for scene '%2' at %3 (workspace root: %4). Workcell Builder kept this path read-only during scene open/save/generate/validate: %5. For Debug 3D Preview only, run python3 scripts/extract_scene_urdf_visual_mesh_index.py --scene %2 --workspace-root %4 from a ROS/workspace environment, or set WORKCELL_STUDIO_DEBUG_REPAIR_PREVIEW_INDEX=1 before opening the scene. Source-of-truth layout and planning artifacts are not modified by the debug preview repair.")
         .arg(original_reason, scene_name, QString::fromStdString(urdf_visual_index.string()), workspace_root, visual_index_refresh_blocker));
       append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
     }
