@@ -128,6 +128,7 @@ private slots:
   void on_validate_web_edit_patch_clicked();
   void on_dry_run_web_edit_patch_clicked();
   void on_apply_web_edit_patch_clicked();
+  void on_generate_validate_after_web_edit_clicked();
   void on_import_scene_bundle_clicked();
   void on_refresh_status_button_clicked();
   void on_validate_scene_button_clicked();
@@ -201,6 +202,8 @@ private:
   boost::filesystem::path scene_dir_for_current_selection() const;
   bool validate_description_xacros(const Scene & scene, const std::string & context_label);
   bool run_web_edit_patch_workflow(bool validate_only, bool write);
+  bool run_generate_validate_after_web_edit();
+  bool execute_generate_validate_after_web_edit(const boost::filesystem::path & repo_root, const boost::filesystem::path & scene_dir, QString * output);
   bool execute_web_edit_patch_workflow(const boost::filesystem::path & repo_root, const boost::filesystem::path & scene_dir, const boost::filesystem::path & patch_path, bool validate_only, bool write, QString * output);
   void configure_startup_fallback_paths();
   void show_invalid_workcell_error(const std::string & error_message);
