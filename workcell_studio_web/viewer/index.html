@@ -26,8 +26,22 @@
         <input id="scene-file" type="file" accept="application/json,.json" />
       </label>
       <button id="reset-view" class="toolbar-button" type="button" disabled>Reset View</button>
+      <button id="undo-edit" class="toolbar-button" type="button" disabled>Undo</button>
+      <button id="redo-edit" class="toolbar-button" type="button" disabled>Redo</button>
       <button id="clear-edits" class="toolbar-button" type="button" disabled>Clear Preview Edits</button>
       <button id="export-edit-patch" class="toolbar-button" type="button" disabled>Export Edit Patch</button>
+      <label class="toolbar-toggle" title="Snap editable preview transforms to grid increments">
+        <input id="snap-toggle" type="checkbox" checked />
+        Snap
+      </label>
+      <label class="toolbar-number" title="Translation snap increment in meters">
+        Move snap (m)
+        <input id="translation-snap" type="number" min="0" step="0.005" value="0.01" />
+      </label>
+      <label class="toolbar-number" title="Rotation snap increment in degrees">
+        Rot snap (deg)
+        <input id="rotation-snap" type="number" min="0" step="1" value="5" />
+      </label>
       <label class="toolbar-toggle" title="Show read-only object labels in the viewer">
         <input id="labels-toggle" type="checkbox" />
         Labels

@@ -12,7 +12,7 @@ python3 scripts/export_workcell_studio_web_scene.py \
   --output build/workcell_studio_web_scene/ur5_2f_test.web_scene.json
 ```
 
-Open `workcell_studio_web/viewer/index.html`, load the exported `web_scene.json`, edit one `editable=true` and `locked=false` item, then use **Export Edit Patch** to download an edit patch.
+Open `workcell_studio_web/viewer/index.html`, load the exported `web_scene.json`, select one `editable=true` and `locked=false` item, and use edit mode to preview the transform. Editable/unlocked selections show enabled XYZ/RPY/scale fields and a Three.js translation gizmo; locked/generated robot/tool previews remain read-only and explain that source layout/environment should be edited instead. Use **Export Edit Patch** to download an edit patch when the preview state is correct.
 
 Validate the patch before applying it:
 
@@ -50,6 +50,22 @@ python3 scripts/export_workcell_studio_web_scene.py \
   --scene scenes/ur5_2f_test \
   --output build/workcell_studio_web_scene/ur5_2f_test.web_scene.json
 ```
+
+
+## Browser edit mode ergonomics
+
+Edit mode is available only for items that are both `editable=true` and `locked=false` and are not generated preview visuals. In edit mode:
+
+- the inspector numeric XYZ/RPY/scale fields remain the authoritative manual transform controls;
+- the Three.js translation gizmo attaches to the selected editable object;
+- gizmo movement updates the inspector fields;
+- inspector numeric changes update the object and attached gizmo;
+- snap can be toggled from the toolbar;
+- translation snap defaults to `0.01` meters;
+- rotation snap defaults to `5` degrees for numeric RPY edits and future rotation-gizmo use;
+- **Undo**, **Redo**, **Clear Preview Edits**, and **Reset Selected** affect browser preview state only.
+
+The dirty state displays “Unsaved preview edits” with the changed item count. Exported `edit_patch.json` records only the final preview transform per changed item, preserving the existing patch schema and backend validator/applicator architecture. The browser does not write source YAML directly, does not mutate `generated/`, and does not apply patches by itself.
 
 ## Persistence verification loop
 
@@ -130,4 +146,4 @@ Web 3D editing is an authoring surface, not a planning or execution backend. No 
 
 ## Next phase
 
-After persistence is proven, the next phase is improving browser transform UX/gizmos while preserving the same dry-run-first backend safety model.
+Next phase is connecting edit/export/apply/re-export/generate/validate into a guided workflow while preserving preview-only browser edits, backend validation/application, and RViz/MoveIt as planning truth.
