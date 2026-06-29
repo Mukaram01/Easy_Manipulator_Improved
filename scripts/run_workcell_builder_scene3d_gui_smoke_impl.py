@@ -292,7 +292,7 @@ def _check_and_refresh_visual_index(
 
     regenerated = False
     command: list[str] = []
-    if stale_reasons and scene_name:
+    if stale_reasons and scene_name and getattr(args, "repair_preview_index", False):
         command = [
             "python3",
             "scripts/extract_scene_urdf_visual_mesh_index.py",
@@ -300,6 +300,10 @@ def _check_and_refresh_visual_index(
             scene_name,
             "--prefer-xacro",
         ]
+        # Debug 3D Preview exception: this command rewrites only generated/
+        # scene_visual_mesh_index.json so the GUI smoke can compare against a
+        # refreshed preview index. It does not modify source-of-truth layout,
+        # URDF/xacro, launch, or planning artifacts.
         if workspace_root is not None:
             command += ["--workspace-root", str(workspace_root)]
         if getattr(args, "require_xacro", False) or (workspace_root is not None and xacro_available):
@@ -323,10 +327,18 @@ def _check_and_refresh_visual_index(
     elif regenerated:
         status = "regenerated"
     else:
-        status = "stale"
+        status = "stale_diagnostic_read_only"
     return {
         "index_freshness_status": status,
         "visual_index_regenerated_before_smoke": regenerated,
+        "visual_index_repair_preview_index_requested": bool(getattr(args, "repair_preview_index", False)),
+        "visual_index_read_only_diagnostic": bool(stale_reasons and not regenerated),
+        "visual_index_debug_repair_note": (
+            "Debug 3D Preview repair only; generated preview index was refreshed without modifying source-of-truth layout/planning artifacts"
+            if regenerated else
+            "Read-only diagnostics; pass --repair-preview-index to refresh generated Debug 3D Preview index"
+            if stale_reasons else ""
+        ),
         "visual_index_regeneration_command": " ".join(shlex.quote(part) for part in command) if command else "",
         "visual_index_before_visual_count": before_count,
         "visual_index_after_visual_count": after_count,
@@ -2304,6 +2316,14 @@ def main() -> int:
     ap.add_argument("--timeout-sec", type=float, default=30.0)
     ap.add_argument("--xvfb", action="store_true")
     ap.add_argument("--require-xacro", action="store_true")
+    ap.add_argument(
+        "--repair-preview-index",
+        action="store_true",
+        help=(
+            "Refresh generated/scene_visual_mesh_index.json before GUI smoke for Debug 3D Preview only. "
+            "Default is read-only diagnostics."
+        ),
+    )
     args = ap.parse_args()
 
     if args.all_scenes and args.scene:

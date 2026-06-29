@@ -11,6 +11,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", default=str(Path(__file__).resolve().parents[1]))
     parser.add_argument("--scene", action="append", default=[])
+    parser.add_argument(
+        "--write-debug-repair",
+        action="store_true",
+        help="Rewrite generated Scene3D preview indexes. Default is read-only diagnostics.",
+    )
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
@@ -26,15 +31,17 @@ def main() -> int:
             missing += 1
             print(f"{scene_name}: missing scene_visual_mesh_index.json")
             continue
-        changed, reasons = repair_index(index_path)
+        changed, reasons = repair_index(index_path, write_debug_repair=args.write_debug_repair)
         if changed:
             repaired += 1
-            print(f"{scene_name}: repaired {';'.join(reasons)}")
+            action = "wrote Debug 3D Preview repair" if args.write_debug_repair else "diagnostic only"
+            print(f"{scene_name}: {action} {';'.join(reasons)} (source-of-truth layout/planning artifacts unchanged)")
         else:
             unchanged += 1
             print(f"{scene_name}: already safe")
 
-    print(f"summary: repaired={repaired} unchanged={unchanged} missing={missing}")
+    label = "repaired" if args.write_debug_repair else "would_repair"
+    print(f"summary: {label}={repaired} unchanged={unchanged} missing={missing}")
     return 0
 
 
