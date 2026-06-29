@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import yaml
+from jsonschema import Draft202012Validator
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -103,6 +104,7 @@ def test_web_scene_schema_file_exists_and_is_valid_json():
         schema = json.load(fh)
     assert schema["$id"].endswith("/workcell_studio_web_scene_v1.schema.json")
     assert schema["properties"]["schema_version"]["const"] == "workcell_studio_web_scene/v1"
+    Draft202012Validator.check_schema(schema)
 
 
 def test_tiny_scene_exports_generated_and_authored_asset_contract(tmp_path):
@@ -115,7 +117,11 @@ def test_tiny_scene_exports_generated_and_authored_asset_contract(tmp_path):
 
     assert out1.read_bytes() == out2.read_bytes()
     assert payload1 == payload2
+    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+    Draft202012Validator(schema).validate(payload1)
     assert payload1["schema_version"] == "workcell_studio_web_scene/v1"
+    assert payload1["scene"]["units"] == {"distance": "metre", "angle": "radian"}
+    assert payload1["scene"]["coordinate_system"]["convention"] == "ros_world_z_up"
     assert payload1["inputs"]["environment"]["present"] is True
     assert payload1["inputs"]["layout"]["present"] is True
     assert payload1["inputs"]["visual_mesh_index"]["present"] is True
@@ -136,6 +142,12 @@ def test_tiny_scene_exports_generated_and_authored_asset_contract(tmp_path):
         assert authored["editable"] is True
         assert authored["locked"] is False
 
+    actions = {action["id"]: action for action in payload1["backend_actions"]}
+    assert actions["validate"]["request_kind"] == "backend_request"
+    assert actions["generate_scene_package"]["enabled"] is True
+    assert actions["plan_simulate"]["enabled"] is False
+    assert "real hardware execution is not exposed" in actions["plan_simulate"]["safety_note"]
+
 
 def test_missing_optional_inputs_warn_in_output_json_without_crashing(tmp_path):
     scene = tmp_path / "missing_optional_inputs_scene"
@@ -143,6 +155,8 @@ def test_missing_optional_inputs_warn_in_output_json_without_crashing(tmp_path):
 
     payload = _export(scene, tmp_path / "out" / "scene.web_scene.json")
 
+    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+    Draft202012Validator(schema).validate(payload)
     assert payload["schema_version"] == "workcell_studio_web_scene/v1"
     missing = [warning for warning in payload["warnings"] if warning["code"] == "optional_file_missing"]
     assert {warning["source"] for warning in missing} == {

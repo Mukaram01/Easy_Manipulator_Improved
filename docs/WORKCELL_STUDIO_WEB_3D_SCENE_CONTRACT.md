@@ -100,3 +100,17 @@ This contract PR does not:
 Fake-hardware-first behavior is unchanged. This contract is a data interchange format for scene review/editing and backend requests; it does not enable real robot motion, automatic runtime send, uncontrolled topic/service publishing, or real-hardware execution.
 
 Real-hardware operation remains explicitly guarded by existing backend safety gates and future guarded workflows. RViz/MoveIt fake-hardware validation remains the foundation for simulation and planning truth.
+
+## CLI exporter
+
+Use the dependency-light exporter to materialize the v1 contract for a scene directory:
+
+```bash
+python3 scripts/export_workcell_studio_web_scene.py \
+  --scene scenes/ur5_2f_test \
+  --output build/workcell_studio/ur5_2f_test.web_scene.json
+```
+
+The exporter reads only optional scene inputs (`scene_manifest.yaml`, `cell_definition.yaml`, `environment.yaml`, `layout/workcell_studio_layout.yaml`, and `generated/scene_visual_mesh_index.json`) and writes one deterministic JSON file. The payload includes `inputs` presence metadata, per-item provenance, editability/lock state, ROS world Z-up units, and backend action descriptors that are requests for backend workflows rather than frontend-side execution hooks.
+
+The `plan_simulate` action is intentionally exported as disabled in this first contract. It documents the intended guarded backend request path while avoiding any accidental real-hardware or runtime execution enablement from a static JSON export.
