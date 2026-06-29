@@ -5,13 +5,19 @@ let ColladaLoader;
 let OBJLoader;
 
 const SUPPORTED_SCHEMA_VERSION = 'workcell_studio_web_scene/v1';
+const EDIT_PATCH_SCHEMA_VERSION = 'workcell_studio_web_scene_edit_patch/v1';
+const VIEWER_VERSION = 'static_web_viewer_edit_patch_v1';
+const LOCKED_EDIT_REASON = 'Locked/generated preview item; edit source layout/environment instead.';
 const MIN_FRAME_RADIUS = 1.2;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
-const state = { sceneJson: null, objects: [], selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false };
+const state = { sceneJson: null, sourceWebSceneFile: '', objects: [], selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, dirtyTransforms: new Map() };
 const el = {
   file: document.getElementById('scene-file'),
   resetView: document.getElementById('reset-view'),
+  clearEdits: document.getElementById('clear-edits'),
+  exportEditPatch: document.getElementById('export-edit-patch'),
+  dirty: document.getElementById('dirty-state'),
   labelsToggle: document.getElementById('labels-toggle'),
   canvas: document.getElementById('scene-canvas'),
   labelLayer: document.getElementById('label-layer'),
@@ -43,6 +49,21 @@ function poseOf(item) {
 function scaleOf(item) {
   const scale = item.scale || item.mesh_scale || [1, 1, 1];
   return vector3(scale, [1, 1, 1]);
+}
+function transformOf(item) {
+  const pose = poseOf(item);
+  const scale = scaleOf(item);
+  return {
+    pose: { xyz: { x: pose.xyz.x, y: pose.xyz.y, z: pose.xyz.z }, rpy: { x: pose.rpy.x, y: pose.rpy.y, z: pose.rpy.z } },
+    scale: { x: scale.x, y: scale.y, z: scale.z },
+  };
+}
+function cloneTransform(transform) { return JSON.parse(JSON.stringify(transform)); }
+function sameTransform(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+function applyTransformToObject(object, transform) {
+  object.position.set(transform.pose.xyz.x, transform.pose.xyz.y, transform.pose.xyz.z);
+  object.rotation.set(transform.pose.rpy.x, transform.pose.rpy.y, transform.pose.rpy.z, 'XYZ');
+  object.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
 }
 function primitiveOf(item) {
   return item.primitive || item.primitive_details || item.dimensions || item.geometry || item.primitive_geometry || null;
@@ -165,7 +186,7 @@ function applyPose(object, item) {
   object.position.copy(pose.xyz);
   object.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, 'XYZ');
   const s = scaleOf(item);
-  object.scale.multiply(s);
+  object.scale.set(s.x, s.y, s.z);
 }
 
 function assignItemUserData(object, item) {
@@ -318,6 +339,8 @@ function clearSceneObjects() {
 }
 function renderScene(items) {
   clearSceneObjects();
+  state.dirtyTransforms.clear();
+  updateDirtyState();
   const scene = state.three.scene;
   for (const item of items) {
     const object3d = new THREE.Group();
@@ -329,7 +352,7 @@ function renderScene(items) {
     applyPose(object3d, item);
     assignItemUserData(object3d, item);
     scene.add(object3d);
-    const rendered = { item, object3d, fallback, labelEl: createLabelElement(item) };
+    const rendered = { item, object3d, fallback, labelEl: createLabelElement(item), originalTransform: transformOf(item) };
     const fallbackStatus = primitive || isSensor(item) ? 'primitive_fallback' : 'box_fallback';
     const fallbackReason = primitive || isSensor(item) ? 'primitive geometry rendered while mesh loads or is unavailable' : 'no primitive geometry or mesh was provided; using box fallback';
     setRenderInfo(rendered, fallbackStatus, displayMeshUri(item), fallbackReason);
@@ -415,6 +438,7 @@ function populateObjectList() {
     for (const rendered of renderedItems) {
       const li = document.createElement('li');
       li.dataset.id = rendered.item.id;
+      if (state.selected === rendered.item.id) li.classList.add('selected');
 
       const name = document.createElement('span');
       name.className = 'object-name';
@@ -428,7 +452,7 @@ function populateObjectList() {
 
       const meta = document.createElement('span');
       meta.className = 'meta';
-      meta.textContent = `${group} · ${rendered.item.locked ? 'locked/generated' : 'editable/environment'}`;
+      meta.textContent = `${group} · ${rendered.item.locked ? 'locked/generated' : 'editable/environment'}${state.dirtyTransforms.has(rendered.item.id) ? ' · edited' : ''}`;
       li.appendChild(meta);
       li.addEventListener('click', () => selectObject(rendered.item.id));
       el.list.appendChild(li);
@@ -459,6 +483,98 @@ function pickObject(event) {
   const item = hit?.object?.userData?.item || hit?.object?.parent?.userData?.item;
   if (item?.id) selectObject(item.id);
 }
+
+function canEditItem(item) {
+  const source = String(item?.source_kind || item?.source_layer || item?.active_visual_source || '').toLowerCase();
+  if (item?.locked || item?.editable !== true || source.includes('generated')) return false;
+  return true;
+}
+function currentTransformFromInputs(container) {
+  const get = name => Number(container.querySelector(`[data-transform-field="${name}"]`)?.value);
+  return { pose: { xyz: { x: get('x'), y: get('y'), z: get('z') }, rpy: { x: get('roll'), y: get('pitch'), z: get('yaw') } }, scale: { x: get('scale_x'), y: get('scale_y'), z: get('scale_z') } };
+}
+function renderTransformInputs(rendered) {
+  const item = rendered.item;
+  const editable = canEditItem(item);
+  const transform = state.dirtyTransforms.get(item.id)?.newTransform || transformOf(item);
+  const fields = [
+    ['x', 'X', transform.pose.xyz.x], ['y', 'Y', transform.pose.xyz.y], ['z', 'Z', transform.pose.xyz.z],
+    ['roll', 'Roll', transform.pose.rpy.x], ['pitch', 'Pitch', transform.pose.rpy.y], ['yaw', 'Yaw', transform.pose.rpy.z],
+    ['scale_x', 'Scale X', transform.scale.x], ['scale_y', 'Scale Y', transform.scale.y], ['scale_z', 'Scale Z', transform.scale.z],
+  ];
+  const disabled = editable ? '' : 'disabled';
+  return `<section class="transform-editor"><h3>Preview transform editing</h3>${editable ? '<p class="edit-note">Browser preview only. Export Edit Patch to save a JSON patch; source YAML is not modified.</p>' : `<p class="edit-lock-reason">${LOCKED_EDIT_REASON}</p>`}<div class="transform-grid">${fields.map(([name, label, value]) => `<label>${label}<input type="number" step="0.001" data-transform-field="${name}" value="${Number(value).toFixed(6)}" ${disabled}></label>`).join('')}</div><div class="editor-actions"><button id="reset-selected" type="button" ${editable ? '' : 'disabled'}>Reset Selected</button></div></section>`;
+}
+function wireTransformInputs(rendered) {
+  const editor = el.inspector.querySelector('.transform-editor');
+  if (!editor) return;
+  editor.querySelectorAll('[data-transform-field]').forEach(input => input.addEventListener('input', () => {
+    if (!canEditItem(rendered.item)) return;
+    const next = currentTransformFromInputs(editor);
+    if (Object.values(next.pose.xyz).concat(Object.values(next.pose.rpy), Object.values(next.scale)).some(v => !Number.isFinite(v))) return;
+    applyTransformToObject(rendered.object3d, next);
+    if (sameTransform(rendered.originalTransform, next)) state.dirtyTransforms.delete(rendered.item.id);
+    else state.dirtyTransforms.set(rendered.item.id, { oldTransform: cloneTransform(rendered.originalTransform), newTransform: cloneTransform(next) });
+    updateDirtyState();
+    updateLabels();
+  }));
+  const reset = el.inspector.querySelector('#reset-selected');
+  if (reset) reset.addEventListener('click', () => resetSelectedTransform(rendered.item.id));
+}
+function resetSelectedTransform(id = state.selected) {
+  const rendered = state.objects.find(obj => obj.item.id === id);
+  if (!rendered || !canEditItem(rendered.item)) return;
+  state.dirtyTransforms.delete(rendered.item.id);
+  applyTransformToObject(rendered.object3d, rendered.originalTransform);
+  updateDirtyState();
+  populateInspector(rendered);
+  updateLabels();
+}
+function updateDirtyState() {
+  const dirty = state.dirtyTransforms.size > 0;
+  if (el.dirty) { el.dirty.hidden = !dirty; el.dirty.textContent = dirty ? `Unsaved preview edits (${state.dirtyTransforms.size})` : 'No preview edits'; }
+  if (el.clearEdits) el.clearEdits.disabled = !dirty;
+  if (el.exportEditPatch) el.exportEditPatch.disabled = !state.sceneJson;
+  populateObjectList();
+}
+function clearPreviewEdits() {
+  for (const rendered of state.objects) applyTransformToObject(rendered.object3d, rendered.originalTransform);
+  state.dirtyTransforms.clear();
+  updateDirtyState();
+  if (state.selected) { const rendered = state.objects.find(obj => obj.item.id === state.selected); if (rendered) populateInspector(rendered); }
+  updateLabels();
+}
+function sceneId() { return state.sceneJson?.scene?.id || state.sceneJson?.scene_id || ''; }
+function buildEditPatch() {
+  const edits = [];
+  for (const rendered of state.objects) {
+    const dirty = state.dirtyTransforms.get(rendered.item.id);
+    if (!dirty) continue;
+    edits.push({
+      item_id: rendered.item.id,
+      label: itemLabel(rendered.item),
+      source: rendered.item.source_kind || rendered.item.source || rendered.item.source_layer || '',
+      type: itemType(rendered.item),
+      editable_required: true,
+      locked_required: false,
+      operation: 'update_transform',
+      old_transform: dirty.oldTransform,
+      new_transform: dirty.newTransform,
+      notes: ['Preview-only browser transform edit. Source scene files were not modified.'],
+    });
+  }
+  return { schema_version: EDIT_PATCH_SCHEMA_VERSION, scene_id: sceneId(), source_scene_schema_version: state.sceneJson?.schema_version || '', created_at: new Date().toISOString(), created_by: 'static_web_viewer', provenance: { source_web_scene_file: state.sourceWebSceneFile || undefined, viewer_version: VIEWER_VERSION }, edits };
+}
+function exportEditPatch() {
+  if (!state.sceneJson) { showError('Load a web_scene.json before exporting an edit patch.'); return; }
+  if (state.dirtyTransforms.size === 0) showError('No changed items; exporting an empty edit patch.'); else clearError();
+  const blob = new Blob([JSON.stringify(buildEditPatch(), null, 2) + '\n'], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${sceneId() || 'workcell_studio'}.edit_patch.json`;
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+}
+
 function firstPresent(item, keys) {
   for (const key of keys) {
     if (item?.[key] !== undefined && item?.[key] !== null && item?.[key] !== '') return item[key];
@@ -492,7 +608,8 @@ function populateInspector(renderedOrItem) {
     });
   }
   el.inspector.className = '';
-  el.inspector.innerHTML = `<table class="inspector-table"><tbody>${Object.entries(rows).map(([k,v]) => `<tr><th>${k}</th><td><code>${String(valueOrDash(v)).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</code></td></tr>`).join('')}</tbody></table>`;
+  el.inspector.innerHTML = `<table class="inspector-table"><tbody>${Object.entries(rows).map(([k,v]) => `<tr><th>${k}</th><td><code>${String(valueOrDash(v)).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</code></td></tr>`).join('')}</tbody></table>${rendered ? renderTransformInputs(rendered) : ''}`;
+  if (rendered) wireTransformInputs(rendered);
 }
 function refreshWarnings(sceneJson = state.sceneJson) {
   const warnings = asArray(sceneJson?.warnings).concat(asArray(sceneJson?.notes_warnings), asArray(state.runtimeWarnings));
@@ -514,7 +631,9 @@ async function loadFile(file) {
     try { json = JSON.parse(text); } catch (err) { throw new Error(`Invalid JSON in ${file.name}: ${err.message}`); }
     const items = validateSceneJson(json);
     state.sceneJson = json;
+    state.sourceWebSceneFile = file.name || '';
     state.runtimeWarnings = [];
+    state.dirtyTransforms.clear();
     el.empty.hidden = true;
     if (items.length) renderScene(items);
     else renderScene([]);
@@ -528,6 +647,8 @@ async function loadFile(file) {
 
 if (el.resetView) el.resetView.addEventListener('click', resetView);
 if (el.labelsToggle) el.labelsToggle.addEventListener('change', event => setLabelsVisible(event.target.checked));
+if (el.clearEdits) el.clearEdits.addEventListener('click', clearPreviewEdits);
+if (el.exportEditPatch) el.exportEditPatch.addEventListener('click', exportEditPatch);
 
 el.file.addEventListener('change', event => {
   const file = event.target.files?.[0];

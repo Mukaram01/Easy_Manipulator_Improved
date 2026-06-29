@@ -203,3 +203,46 @@ code { color: #c9f2ff; }
   .viewport-panel { height: 55vh; }
   .topbar { align-items: flex-start; flex-direction: column; }
 }
+
+.dirty {
+  position: absolute;
+  z-index: 2;
+  right: 1rem;
+  top: 1rem;
+  border-color: var(--warn);
+  background: rgba(49, 41, 20, 0.94);
+  color: #ffe7a3;
+}
+.transform-editor {
+  margin-top: 0.85rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: rgba(32, 43, 57, 0.72);
+}
+.transform-editor h3 { margin: 0 0 0.45rem; font-size: 0.9rem; color: var(--accent); }
+.edit-note, .edit-lock-reason { margin: 0 0 0.65rem; color: var(--muted); font-size: 0.8rem; }
+.edit-lock-reason { color: #ffe7a3; }
+.transform-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.45rem; }
+.transform-grid label { color: var(--muted); font-size: 0.75rem; }
+.transform-grid input {
+  display: block;
+  width: 100%;
+  margin-top: 0.18rem;
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  background: #0b1018;
+  color: var(--text);
+}
+.transform-grid input:disabled { cursor: not-allowed; opacity: 0.55; }
+.editor-actions { margin-top: 0.65rem; }
+.editor-actions button {
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  padding: 0.45rem 0.65rem;
+}
+.editor-actions button:disabled { cursor: not-allowed; opacity: 0.45; }
