@@ -80,10 +80,31 @@ Locked or generated preview items, including generated robot/tool visuals, keep 
 
 Use **Export Edit Patch** to download a `workcell_studio_web_scene_edit_patch/v1` JSON file. The patch contains only changed items and does not modify `environment.yaml`, layout YAML, `cell_definition.yaml`, `scene_manifest.yaml`, or generated scene files. **Clear Preview Edits** resets all browser-only changes; **Reset Selected** restores the selected editable item to its original loaded transform.
 
-Validate exported patches separately before any future application step:
+Validate exported patches before application:
 
 ```bash
 python3 scripts/validate_workcell_studio_web_scene_edit_patch.py \
   --web-scene build/workcell_studio_web_scene/ur5_2f_test.web_scene.json \
   --patch build/workcell_studio_web_scene/ur5_2f_test.edit_patch.json
 ```
+
+Dry-run backend application. This is the default and writes nothing:
+
+```bash
+python3 scripts/apply_workcell_studio_web_scene_edit_patch.py \
+  --scene scenes/ur5_2f_test \
+  --web-scene build/workcell_studio_web_scene/ur5_2f_test.web_scene.json \
+  --patch build/workcell_studio_web_scene/ur5_2f_test.edit_patch.json
+```
+
+Apply only when you intentionally want to persist an editable layout/environment transform:
+
+```bash
+python3 scripts/apply_workcell_studio_web_scene_edit_patch.py \
+  --scene scenes/ur5_2f_test \
+  --web-scene build/workcell_studio_web_scene/ur5_2f_test.web_scene.json \
+  --patch build/workcell_studio_web_scene/ur5_2f_test.edit_patch.json \
+  --write
+```
+
+Re-export `web_scene.json` after `--write` to confirm the edited pose persists. The applicator does not launch ROS, does not mutate `generated/`, `cell_definition.yaml`, or `scene_manifest.yaml`, and does not replace RViz/MoveIt as the planning and fake-hardware simulation truth.
