@@ -111,6 +111,15 @@ def _readiness_cmd(output_dir: Path) -> list[str]:
     ]
 
 
+def _generated_summary_paths(scene: Path) -> list[Path]:
+    return [
+        scene / "package.xml",
+        scene / "CMakeLists.txt",
+        scene / "generated" / "cell_definition.yaml",
+        scene / "generated" / "environment_layout.yaml",
+    ]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the safe guided backend workflow for Workcell Studio Web 3D edit patches.")
     parser.add_argument("--scene", required=True, type=Path, help="Scene directory, for example scenes/ur5_2f_test")
@@ -243,6 +252,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print("validation command/result: SKIPPED (pass --validate or --generate-and-validate)")
 
+    readiness_output_dir: Path | None = None
     if args.run_readiness:
         readiness_output_dir = Path("build/workcell_studio_scene_readiness")
         readiness_cmd = _readiness_cmd(readiness_output_dir)
@@ -253,6 +263,14 @@ def main(argv: list[str] | None = None) -> int:
             return readiness_rc
     else:
         print("readiness result: SKIPPED (pass --run-readiness to run it)")
+
+    if generation_rc == 0:
+        print("generated output paths:")
+        for generated_path in _generated_summary_paths(scene):
+            print(f"  - {generated_path}")
+    if readiness_output_dir is not None:
+        print("readiness output paths:")
+        print(f"  - {readiness_output_dir / 'scene_readiness_summary.json'}")
 
     print(f"\nWorkflow summary: PASS (selected scene: {scene}; patch_applied={patch_applied}; generation={'PASS' if generation_rc == 0 else 'SKIPPED'}; validation={'PASS' if validation_rc == 0 else 'SKIPPED'})")
     _print_next_generate_validate(scene, generated=bool(generation_rc == 0), validated=bool(validation_rc == 0))
