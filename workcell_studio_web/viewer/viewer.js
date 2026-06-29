@@ -459,6 +459,12 @@ function pickObject(event) {
   const item = hit?.object?.userData?.item || hit?.object?.parent?.userData?.item;
   if (item?.id) selectObject(item.id);
 }
+function firstPresent(item, keys) {
+  for (const key of keys) {
+    if (item?.[key] !== undefined && item?.[key] !== null && item?.[key] !== '') return item[key];
+  }
+  return undefined;
+}
 function populateInspector(renderedOrItem) {
   const rendered = renderedOrItem?.item ? renderedOrItem : state.objects.find(obj => obj.item.id === renderedOrItem?.id);
   const item = rendered?.item || renderedOrItem;
@@ -472,6 +478,19 @@ function populateInspector(renderedOrItem) {
     render_status: renderInfo.render_status, mesh_uri: renderInfo.mesh_uri || displayMeshUri(item), fallback_reason: renderInfo.fallback_reason,
     mesh_status: item.mesh_status, mesh_load_error: item.mesh_load_error, primitive: JSON.stringify(primitiveOf(item) || 'box fallback'),
   };
+  if (isSensor(item)) {
+    Object.assign(rows, {
+      camera_id: firstPresent(item, ['camera_id', 'camera', 'sensor_id']),
+      frame_id: firstPresent(item, ['frame_id', 'camera_frame', 'frame']),
+      model: firstPresent(item, ['model', 'profile', 'camera_model', 'sensor_model']),
+      optical_frame_id: firstPresent(item, ['optical_frame_id', 'optical_frame', 'color_optical_frame', 'rgb_optical_frame']),
+      depth_frame_id: firstPresent(item, ['depth_frame_id', 'depth_frame']),
+      rgb_topic: firstPresent(item, ['rgb_topic', 'color_topic', 'image_topic']),
+      depth_topic: firstPresent(item, ['depth_topic']),
+      camera_info_topic: firstPresent(item, ['camera_info_topic', 'info_topic']),
+      pointcloud_topic: firstPresent(item, ['pointcloud_topic', 'points_topic']),
+    });
+  }
   el.inspector.className = '';
   el.inspector.innerHTML = `<table class="inspector-table"><tbody>${Object.entries(rows).map(([k,v]) => `<tr><th>${k}</th><td><code>${String(valueOrDash(v)).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</code></td></tr>`).join('')}</tbody></table>`;
 }
