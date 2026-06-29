@@ -1,5 +1,8 @@
 let THREE;
 let OrbitControls;
+let STLLoader;
+let ColladaLoader;
+let OBJLoader;
 
 const SUPPORTED_SCHEMA_VERSION = 'workcell_studio_web_scene/v1';
 const MIN_FRAME_RADIUS = 1.2;
@@ -39,6 +42,33 @@ function scaleOf(item) {
 }
 function primitiveOf(item) {
   return item.primitive || item.primitive_details || item.dimensions || item.geometry || item.primitive_geometry || null;
+}
+
+function safeMeshUri(item) {
+  const raw = item?.mesh_uri;
+  if (typeof raw !== 'string') return null;
+  const uri = raw.trim();
+  if (!uri) return null;
+  const lower = uri.toLowerCase();
+  if (
+    lower.startsWith('package://') ||
+    lower.startsWith('http://') ||
+    lower.startsWith('https://') ||
+    lower.startsWith('file://') ||
+    lower.startsWith('data:') ||
+    lower.startsWith('//') ||
+    uri.startsWith('/') ||
+    uri.startsWith('\\') ||
+    /^[a-zA-Z]:[\\/]/.test(uri) ||
+    /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(uri) ||
+    uri.includes('\\')
+  ) return null;
+  const pathOnly = uri.split(/[?#]/, 1)[0];
+  const parts = pathOnly.split('/');
+  if (parts.some(part => part === '..')) return null;
+  const ext = pathOnly.slice(pathOnly.lastIndexOf('.') + 1).toLowerCase();
+  if (!['stl', 'dae', 'obj'].includes(ext)) return null;
+  return uri;
 }
 function itemType(item) { return item.type || item.category || item.role || item.source_kind || 'asset'; }
 function itemLabel(item) { return item.label || item.display_name || item.name || item.id || 'unnamed'; }
@@ -90,6 +120,47 @@ function applyPose(object, item) {
   const s = scaleOf(item);
   object.scale.multiply(s);
 }
+
+function assignItemUserData(object, item) {
+  object.userData.item = item;
+  object.traverse?.(child => { child.userData.item = item; });
+}
+function materializeLoadedMesh(item, uri, loaded) {
+  const ext = uri.split(/[?#]/, 1)[0].slice(uri.split(/[?#]/, 1)[0].lastIndexOf('.') + 1).toLowerCase();
+  let object;
+  if (ext === 'stl') object = new THREE.Mesh(loaded, materialFor(item));
+  else if (ext === 'dae') object = loaded.scene;
+  else object = loaded;
+  object.name = `${item.id || itemLabel(item)}_mesh`;
+  assignItemUserData(object, item);
+  return object;
+}
+async function tryLoadMesh(item, rendered, fallback) {
+  const uri = safeMeshUri(item);
+  item.mesh_status = uri ? 'mesh_loading' : 'mesh_unavailable';
+  if (!uri) return;
+  try {
+    const ext = uri.split(/[?#]/, 1)[0].slice(uri.split(/[?#]/, 1)[0].lastIndexOf('.') + 1).toLowerCase();
+    let loaded;
+    if (ext === 'stl') loaded = await new STLLoader().loadAsync(uri);
+    else if (ext === 'dae') loaded = await new ColladaLoader().loadAsync(uri);
+    else loaded = await new OBJLoader().loadAsync(uri);
+    const meshObject = materializeLoadedMesh(item, uri, loaded);
+    fallback.visible = false;
+    rendered.object3d.add(meshObject);
+    rendered.meshObject = meshObject;
+    item.mesh_status = 'mesh_loaded';
+    item.mesh_load_error = '';
+    const bounds = computeRenderedBounds();
+    if (bounds) frameScene(bounds);
+    if (state.selected === item.id) populateInspector(item);
+  } catch (err) {
+    fallback.visible = true;
+    item.mesh_status = 'mesh_failed';
+    item.mesh_load_error = err?.message || String(err);
+    if (state.selected === item.id) populateInspector(item);
+  }
+}
 function collectItems(sceneJson) {
   const buckets = ['robots', 'tools', 'assets', 'sensors', 'zones', 'items', 'objects'];
   const byId = new Map();
@@ -105,7 +176,7 @@ function validateSceneJson(json) {
 }
 function initThree() {
   try {
-    if (!THREE?.Scene || !OrbitControls) throw new Error('Three.js modules were not available.');
+    if (!THREE?.Scene || !OrbitControls || !STLLoader || !ColladaLoader || !OBJLoader) throw new Error('Three.js modules were not available.');
     const renderer = new THREE.WebGLRenderer({ canvas: el.canvas, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     const scene = new THREE.Scene();
@@ -189,12 +260,17 @@ function renderScene(items) {
   clearSceneObjects();
   const scene = state.three.scene;
   for (const item of items) {
-    let object3d = isSensor(item) ? makeSensorMarker(item) : makePrimitiveMesh(item);
-    if (!primitiveOf(item) && item.mesh_uri) object3d.userData.viewerWarning = 'Mesh loading is intentionally excluded; showing box fallback.';
+    const object3d = new THREE.Group();
+    const fallback = isSensor(item) ? makeSensorMarker(item) : makePrimitiveMesh(item);
+    fallback.name = `${item.id || itemLabel(item)}_fallback`;
+    assignItemUserData(fallback, item);
+    object3d.add(fallback);
     applyPose(object3d, item);
-    object3d.userData.item = item;
+    assignItemUserData(object3d, item);
     scene.add(object3d);
-    state.objects.push({ item, object3d });
+    const rendered = { item, object3d, fallback };
+    state.objects.push(rendered);
+    tryLoadMesh(item, rendered, fallback);
   }
   populateObjectList();
   const bounds = computeRenderedBounds();
@@ -243,7 +319,8 @@ function populateInspector(item) {
     'pose xyz': [pose.xyz.x, pose.xyz.y, pose.xyz.z].map(n => n.toFixed(3)).join(', '),
     'pose rpy': [pose.rpy.x, pose.rpy.y, pose.rpy.z].map(n => n.toFixed(3)).join(', '),
     scale: JSON.stringify(item.scale || item.mesh_scale || [1, 1, 1]), editable: String(Boolean(item.editable)), locked: String(Boolean(item.locked)),
-    mesh_uri: item.mesh_uri || item.package_uri || item.mesh_path || item.source_path, primitive: JSON.stringify(primitiveOf(item) || 'box fallback'),
+    mesh_uri: item.mesh_uri || item.package_uri || item.mesh_path || item.source_path, mesh_status: item.mesh_status, mesh_load_error: item.mesh_load_error,
+    primitive: JSON.stringify(primitiveOf(item) || 'box fallback'),
   };
   el.inspector.className = '';
   el.inspector.innerHTML = `<table class="inspector-table"><tbody>${Object.entries(rows).map(([k,v]) => `<tr><th>${k}</th><td><code>${String(valueOrDash(v)).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</code></td></tr>`).join('')}</tbody></table>`;
@@ -283,8 +360,14 @@ async function boot() {
   try {
     const threeModule = await import('three');
     const controlsModule = await import('three/addons/controls/OrbitControls.js');
+    const stlModule = await import('three/addons/loaders/STLLoader.js');
+    const colladaModule = await import('three/addons/loaders/ColladaLoader.js');
+    const objModule = await import('three/addons/loaders/OBJLoader.js');
     THREE = threeModule;
     OrbitControls = controlsModule.OrbitControls;
+    STLLoader = stlModule.STLLoader;
+    ColladaLoader = colladaModule.ColladaLoader;
+    OBJLoader = objModule.OBJLoader;
     initThree();
   } catch (err) {
     showError(`Three.js/CDN load failure: ${err.message || err}`);
