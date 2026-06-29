@@ -1,6 +1,6 @@
 # Workcell Builder Generation Pipeline
 
-`workcell_builder` is the primary visual authoring path for EMD/Workcell Studio package generation.
+Qt Scene3D in `workcell_builder` is a Debug 3D Preview for inspecting generated packages, not the source of truth for EMD/Workcell Studio package generation. Generated scene files and ROS package outputs remain the backend contract, and RViz/MoveIt remains the planning and visualization truth for simulation validation.
 
 ## Pipeline
 1. Builder scene + metadata are exported to canonical artifacts:
