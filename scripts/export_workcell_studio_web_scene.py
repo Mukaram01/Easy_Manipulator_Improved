@@ -249,8 +249,10 @@ def _authored_sections(data: Dict[str, Any], scene_dir: Path, warnings: List[Jso
     return sections
 
 
-def _entity(src: Mapping[str, Any], fields: Iterable[str], source: str) -> Json:
+def _entity(src: Mapping[str, Any], fields: Iterable[str], source: str, fallback_id: str) -> Json:
     item = {field: src[field] for field in fields if field in src}
+    if not item.get("id"):
+        item["id"] = str(_first_present(item.get("model"), item.get("profile"), item.get("type"), fallback_id))
     item["provenance"] = _provenance(item.keys(), source)
     return item
 
@@ -263,16 +265,16 @@ def _top_level_entities(data: Dict[str, Any], warnings: List[Json]) -> Tuple[Lis
         root = _as_map(data.get(key))
         robot = _as_map(root.get("robot"))
         if robot:
-            robots.append(_entity(robot, ("id", "model", "profile", "planning_group", "world_frame", "base_frame", "tool_link", "tool_mount_link", "home_named_target"), source))
+            robots.append(_entity(robot, ("id", "model", "profile", "planning_group", "world_frame", "base_frame", "tool_link", "tool_mount_link", "home_named_target"), source, "robot"))
         else:
             if data.get(key) is not None:
                 _warn(warnings, "robot_field_missing", f"{source} has no robot object.", source)
         tool = _as_map(root.get("tool") or root.get("end_effector"))
         if tool:
-            tools.append(_entity(tool, ("id", "type", "model", "profile", "mount_link", "grasp_frame", "allowed_touch_links"), source))
+            tools.append(_entity(tool, ("id", "type", "model", "profile", "mount_link", "grasp_frame", "allowed_touch_links"), source, "tool"))
         camera = _as_map(root.get("camera"))
         if camera:
-            sensors.append(_entity(camera, ("enabled", "camera_id", "frame_id", "pose", "rgb_topic", "depth_topic", "pointcloud_topic"), source))
+            sensors.append(_entity(camera, ("id", "enabled", "camera_id", "frame_id", "pose", "rgb_topic", "depth_topic", "pointcloud_topic"), source, "camera"))
     return robots, tools, sensors
 
 
@@ -311,6 +313,15 @@ def build_web_scene(scene_dir: Path) -> Json:
                 "id": "scene_manifest.yaml|cell_definition.yaml|environment.yaml|directory_name",
                 "name": "scene_manifest.yaml|cell_definition.yaml|environment.yaml|directory_name",
                 "source_dir": "cli:--scene",
+                "units": "contract",
+                "coordinate_system": "contract",
+            },
+            "units": {"distance": "metre", "angle": "radian"},
+            "coordinate_system": {
+                "frame": "world",
+                "up_axis": "z",
+                "convention": "ros_world_z_up",
+                "pose_reference": "item poses are relative to world unless their own frame field says otherwise",
             },
         },
         "inputs": {key: {"path": rel, "present": (scene_dir / rel).exists()} for key, rel in sorted(INPUTS.items())},
@@ -320,6 +331,32 @@ def build_web_scene(scene_dir: Path) -> Json:
         "sensors": _sort_items(sensors),
         "zones": _sort_items(zones),
         "warnings": sorted(warnings, key=lambda w: (str(w.get("source", "")), str(w.get("code", "")), str(w.get("message", "")))),
+        "backend_actions": [
+            {
+                "id": "validate",
+                "label": "Validate",
+                "enabled": True,
+                "request_kind": "backend_request",
+                "description": "Ask the Workcell Studio backend to validate the selected scene inputs.",
+                "safety_note": "Validation is offline metadata checking and does not command robot motion.",
+            },
+            {
+                "id": "generate_scene_package",
+                "label": "Generate Scene Package",
+                "enabled": True,
+                "request_kind": "backend_request",
+                "description": "Ask the backend to regenerate ROS 2 scene package artifacts from source-of-truth inputs.",
+                "safety_note": "Generation must preserve fake-hardware-first launch defaults.",
+            },
+            {
+                "id": "plan_simulate",
+                "label": "Plan / Simulate",
+                "enabled": False,
+                "request_kind": "backend_request",
+                "description": "Request RViz/MoveIt fake-hardware simulation through a guarded backend workflow.",
+                "safety_note": "Disabled in this exporter; real hardware execution is not exposed by the web scene contract.",
+            },
+        ],
     }
     return output
 
