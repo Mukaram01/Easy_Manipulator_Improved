@@ -63,6 +63,22 @@ body {
 .toolbar-button:not(:disabled):hover { border-color: var(--accent); background: #14364a; }
 .toolbar-button:disabled { cursor: not-allowed; opacity: 0.45; }
 
+.toolbar-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: rgba(32, 43, 57, 0.72);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.86rem;
+  white-space: nowrap;
+}
+.toolbar-toggle:hover { border-color: var(--accent); color: var(--text); }
+.toolbar-toggle input { accent-color: var(--accent); }
+
 .app-shell {
   display: grid;
   grid-template-columns: minmax(13rem, 18rem) 1fr minmax(16rem, 22rem);
@@ -81,6 +97,39 @@ h2 { margin: 0 0 0.75rem; font-size: 0.95rem; color: var(--accent); }
 
 .viewport-panel { position: relative; min-width: 0; background: #0b1018; }
 #scene-canvas { width: 100%; height: 100%; display: block; }
+
+.label-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.label-layer.labels-hidden { display: none; }
+.object-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: 10rem;
+  padding: 0.16rem 0.42rem;
+  border: 1px solid rgba(98, 210, 255, 0.45);
+  border-radius: 999px;
+  background: rgba(11, 16, 24, 0.68);
+  box-shadow: 0 0.2rem 0.8rem rgba(0, 0, 0, 0.22);
+  color: #d9f7ff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+.object-label.selected {
+  border-color: var(--accent);
+  background: rgba(20, 54, 74, 0.82);
+  color: #ffffff;
+}
 .state {
   padding: 0.75rem;
   border-radius: 0.5rem;
