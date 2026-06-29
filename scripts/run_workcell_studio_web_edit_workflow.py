@@ -17,10 +17,12 @@ from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
+for import_path in (SCRIPT_DIR, REPO_ROOT):
+    if str(import_path) not in sys.path:
+        sys.path.insert(0, str(import_path))
 
 from export_workcell_studio_web_scene import build_web_scene  # noqa: E402
+from workcell_builder_studio_panel import build_export_sources_command  # noqa: E402
 from validate_workcell_studio_web_scene_edit_patch import _load_json, _scene_id, validate  # noqa: E402
 
 
@@ -35,9 +37,13 @@ def _write_web_scene(scene: Path, output: Path) -> dict[str, Any]:
     return payload
 
 
+def _format_cmd(cmd: list[str]) -> str:
+    return " ".join(str(part) for part in cmd)
+
+
 def _run_step(label: str, cmd: list[str]) -> int:
     print(f"\n== {label} ==")
-    print("command: " + " ".join(cmd))
+    print("command: " + _format_cmd(cmd))
     result = subprocess.run(cmd, cwd=REPO_ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if result.stdout:
         print(result.stdout, end="")
@@ -64,10 +70,45 @@ def _print_next_write_command(args: argparse.Namespace) -> None:
     )
 
 
-def _print_next_generate_validate(scene: Path) -> None:
+def _print_next_generate_validate(scene: Path, *, generated: bool = False, validated: bool = False, failed: bool = False) -> None:
     print("\nNext recommended action:")
-    print(f"  python3 scripts/validate_builder_generated_scene.py {scene} --json")
-    print("  Then use the existing fake-hardware RViz/MoveIt workflow when validation is clean.")
+    if failed:
+        print("  Review the failed command output above, fix the selected scene inputs, then rerun this workflow.")
+    elif not generated:
+        print(f"  python3 scripts/run_workcell_studio_web_edit_workflow.py --scene {scene} --generate")
+    elif not validated:
+        print(f"  python3 scripts/run_workcell_studio_web_edit_workflow.py --scene {scene} --validate")
+    else:
+        print("  Review generated validation output and keep using fake-hardware-first validation outside this web edit workflow.")
+
+
+def _generation_cmd(scene: Path) -> list[str]:
+    export_cmd = build_export_sources_command(scene)
+    if (scene / "generated" / "export_workcell_studio_sources.sh").is_file():
+        return export_cmd
+    helper = (
+        "import json; "
+        "from pathlib import Path; "
+        "from scripts.workcell_builder_gui_workflow import generate_files_from_yaml; "
+        f"scene=Path({str(scene)!r}); "
+        "print(json.dumps(generate_files_from_yaml(scene), indent=2, sort_keys=True))"
+    )
+    return [sys.executable, "-c", helper]
+
+
+def _validation_cmd(scene: Path) -> list[str]:
+    return [sys.executable, str(SCRIPT_DIR / "validate_builder_generated_scene.py"), str(scene), "--json"]
+
+
+def _readiness_cmd(output_dir: Path) -> list[str]:
+    return [
+        sys.executable,
+        str(SCRIPT_DIR / "run_workcell_studio_scene_readiness_matrix.py"),
+        "--supported-scenes",
+        "scenes/supported_scenes.yaml",
+        "--output-dir",
+        str(output_dir),
+    ]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -81,6 +122,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--write", action="store_true", help="Explicitly mutate editable source YAML through the safe applicator after validation and dry-run pass.")
     parser.add_argument("--verify-persistence", action="store_true", help="After --write, re-export and run persistence verification. --write already enables this.")
     parser.add_argument("--run-readiness", action="store_true", help="Optionally run the scene readiness matrix after the edit workflow.")
+    parser.add_argument("--generate", action="store_true", help="Regenerate selected-scene package artifacts using the existing Workcell Builder generation flow.")
+    parser.add_argument("--validate", action="store_true", help="Run scripts/validate_builder_generated_scene.py for the selected scene.")
+    parser.add_argument("--generate-and-validate", action="store_true", help="Run generation first, then selected-scene validation.")
     args = parser.parse_args(argv)
 
     scene = args.scene
@@ -93,13 +137,17 @@ def main(argv: list[str] | None = None) -> int:
     print(f"selected scene: {scene}")
     print(f"patch path: {args.patch if args.patch else '(not required for --export-only)'}")
     print(f"before web_scene path: {before_path}")
+    generate_requested = bool(args.generate or args.generate_and_validate)
+    validate_requested = bool(args.validate or args.generate_and_validate)
     print(f"write enabled: {bool(args.write)}")
+    print(f"generation requested: {generate_requested}")
+    print(f"validation requested: {validate_requested}")
 
     if not scene.exists() or not scene.is_dir():
         print(f"FAIL: scene missing or not a directory: {scene}", file=sys.stderr)
         return 2
-    if not args.export_only and args.patch is None:
-        print("FAIL: --patch is required unless --export-only is used", file=sys.stderr)
+    if not args.export_only and args.patch is None and not (generate_requested or validate_requested or args.run_readiness):
+        print("FAIL: --patch is required unless --export-only, --generate, --validate, --generate-and-validate, or --run-readiness is used", file=sys.stderr)
         return 2
     if args.patch is not None and not args.patch.exists():
         print(f"FAIL: patch missing: {args.patch}", file=sys.stderr)
@@ -113,62 +161,92 @@ def main(argv: list[str] | None = None) -> int:
     print(f"export before result: PASS ({before_path})")
 
     if args.export_only:
+        print("patch result: SKIPPED (--export-only)")
         print("export-only result: PASS; no patch was required and no source files were modified.")
         print("Next recommended action: open the web viewer, edit an editable object, and export edit_patch.json.")
         return 0
 
-    assert args.patch is not None
-    ok, patch, errors = _validate_patch(before, args.patch)
-    if not ok:
-        print("patch validation result: FAIL", file=sys.stderr)
-        for error in errors:
-            print(f"FAIL: {error}", file=sys.stderr)
-        print("write/apply result: SKIPPED because validation failed")
-        return 1
-    print(f"patch validation result: PASS (scene_id={patch.get('scene_id') if patch else _scene_id(before)})")
+    patch_applied = False
+    if args.patch is None:
+        print("patch applied/skipped: SKIPPED (no --patch provided)")
+    else:
+        ok, patch, errors = _validate_patch(before, args.patch)
+        if not ok:
+            print("patch validation result: FAIL", file=sys.stderr)
+            for error in errors:
+                print(f"FAIL: {error}", file=sys.stderr)
+            print("write/apply result: SKIPPED because validation failed")
+            return 1
+        print(f"patch validation result: PASS (scene_id={patch.get('scene_id') if patch else _scene_id(before)})")
 
-    if args.validate_only:
-        print("validate-only result: PASS; no apply was attempted and no source files were modified.")
-        _print_next_write_command(args)
-        return 0
+        if args.validate_only:
+            print("validate-only result: PASS; no apply was attempted and no source files were modified.")
+            _print_next_write_command(args)
+            return 0
 
-    dry_cmd = [sys.executable, str(SCRIPT_DIR / "apply_workcell_studio_web_scene_edit_patch.py"), "--scene", str(scene), "--web-scene", str(before_path), "--patch", str(args.patch)]
-    dry_rc = _run_step("dry-run apply", dry_cmd)
-    if dry_rc != 0:
-        print("dry-run result: FAIL; write/apply is blocked", file=sys.stderr)
-        return dry_rc
-    print("dry-run result: PASS; no source files were modified by the dry run")
+        dry_cmd = [sys.executable, str(SCRIPT_DIR / "apply_workcell_studio_web_scene_edit_patch.py"), "--scene", str(scene), "--web-scene", str(before_path), "--patch", str(args.patch)]
+        dry_rc = _run_step("dry-run apply", dry_cmd)
+        if dry_rc != 0:
+            print("dry-run result: FAIL; write/apply is blocked", file=sys.stderr)
+            return dry_rc
+        print("dry-run result: PASS; no source files were modified by the dry run")
 
-    if not args.write:
-        print("write/apply result: SKIPPED; pass --write to mutate editable source YAML through the safe applicator")
-        _print_next_write_command(args)
-        return 0
+        if not args.write:
+            print("write/apply result: SKIPPED; pass --write to mutate editable source YAML through the safe applicator")
+            if generate_requested or validate_requested or args.run_readiness:
+                print("generation/validation result: SKIPPED because --patch was supplied without --write")
+            _print_next_write_command(args)
+            return 0
 
-    write_cmd = [*dry_cmd, "--write"]
-    write_rc = _run_step("write apply", write_cmd)
-    if write_rc != 0:
-        print("write/apply result: FAIL", file=sys.stderr)
-        return write_rc
-    print("write/apply result: PASS")
+        write_cmd = [*dry_cmd, "--write"]
+        write_rc = _run_step("write apply", write_cmd)
+        if write_rc != 0:
+            print("write/apply result: FAIL", file=sys.stderr)
+            return write_rc
+        patch_applied = True
+        print("write/apply result: PASS")
 
-    try:
-        _write_web_scene(scene, after_path)
-    except Exception as exc:  # noqa: BLE001
-        print(f"FAIL: after web_scene export failed for {scene}: {exc}", file=sys.stderr)
-        return 1
-    print(f"after web_scene path: {after_path}")
-    print("re-export after result: PASS")
+        try:
+            _write_web_scene(scene, after_path)
+        except Exception as exc:  # noqa: BLE001
+            print(f"FAIL: after web_scene export failed for {scene}: {exc}", file=sys.stderr)
+            return 1
+        print(f"after web_scene path: {after_path}")
+        print("re-export after result: PASS")
 
-    verify_rc = 0
-    if args.write or args.verify_persistence:
         verify_cmd = [sys.executable, str(SCRIPT_DIR / "verify_workcell_studio_web_scene_edit_persistence.py"), "--scene", str(scene), "--web-scene-before", str(before_path), "--patch", str(args.patch), "--web-scene-after", str(after_path)]
         verify_rc = _run_step("persistence verification", verify_cmd)
         print(f"persistence verification result: {'PASS' if verify_rc == 0 else 'FAIL'}")
         if verify_rc != 0:
             return verify_rc
+        print("patch applied/skipped: APPLIED")
+
+    generation_rc: int | None = None
+    validation_rc: int | None = None
+    if generate_requested:
+        generation_cmd = _generation_cmd(scene)
+        generation_rc = _run_step("scene generation", generation_cmd)
+        print(f"generation command/result: {_format_cmd(generation_cmd)} -> {'PASS' if generation_rc == 0 else 'FAIL'}")
+        if generation_rc != 0:
+            _print_next_generate_validate(scene, generated=False, validated=False, failed=True)
+            return generation_rc
+    else:
+        print("generation command/result: SKIPPED (pass --generate or --generate-and-validate)")
+
+    if validate_requested:
+        validation_cmd = _validation_cmd(scene)
+        validation_rc = _run_step("selected-scene validation", validation_cmd)
+        print(f"validation command/result: {_format_cmd(validation_cmd)} -> {'PASS' if validation_rc == 0 else 'FAIL'}")
+        if validation_rc != 0:
+            _print_next_generate_validate(scene, generated=generate_requested, validated=False, failed=True)
+            return validation_rc
+    else:
+        print("validation command/result: SKIPPED (pass --validate or --generate-and-validate)")
 
     if args.run_readiness:
-        readiness_cmd = [sys.executable, str(SCRIPT_DIR / "run_workcell_studio_scene_readiness_matrix.py"), "--supported-scenes", "scenes/supported_scenes.yaml", "--output-dir", "build/workcell_studio_scene_readiness"]
+        readiness_output_dir = Path("build/workcell_studio_scene_readiness")
+        readiness_cmd = _readiness_cmd(readiness_output_dir)
+        print(f"readiness output path: {readiness_output_dir / 'scene_readiness_summary.json'}")
         readiness_rc = _run_step("readiness matrix", readiness_cmd)
         print(f"readiness result: {'PASS' if readiness_rc == 0 else 'FAIL'}")
         if readiness_rc != 0:
@@ -176,8 +254,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print("readiness result: SKIPPED (pass --run-readiness to run it)")
 
-    print("\nWorkflow summary: PASS")
-    _print_next_generate_validate(scene)
+    print(f"\nWorkflow summary: PASS (selected scene: {scene}; patch_applied={patch_applied}; generation={'PASS' if generation_rc == 0 else 'SKIPPED'}; validation={'PASS' if validation_rc == 0 else 'SKIPPED'})")
+    _print_next_generate_validate(scene, generated=bool(generation_rc == 0), validated=bool(validation_rc == 0))
     return 0
 
 
