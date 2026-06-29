@@ -8,11 +8,13 @@ const SUPPORTED_SCHEMA_VERSION = 'workcell_studio_web_scene/v1';
 const MIN_FRAME_RADIUS = 1.2;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
-const state = { sceneJson: null, objects: [], selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [] };
+const state = { sceneJson: null, objects: [], selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false };
 const el = {
   file: document.getElementById('scene-file'),
   resetView: document.getElementById('reset-view'),
+  labelsToggle: document.getElementById('labels-toggle'),
   canvas: document.getElementById('scene-canvas'),
+  labelLayer: document.getElementById('label-layer'),
   empty: document.getElementById('empty-state'),
   error: document.getElementById('error-state'),
   list: document.getElementById('object-list'),
@@ -118,6 +120,7 @@ function viewerGroupFor(item) {
 }
 function isZone(item) { return viewerGroupFor(item) === 'zones'; }
 function isSensor(item) { return viewerGroupFor(item) === 'sensors'; }
+function shouldLabelItem(item) { return viewerGroupFor(item) !== 'zones'; }
 function materialFor(item) {
   if (isZone(item)) return new THREE.MeshBasicMaterial({ color: 0xffc857, transparent: true, opacity: 0.22, side: THREE.DoubleSide });
   if (isSensor(item)) return new THREE.MeshStandardMaterial({ color: 0x62d2ff, roughness: 0.65 });
@@ -264,6 +267,7 @@ function animate() {
   state.animationId = requestAnimationFrame(animate);
   controls.update();
   renderer.render(scene, camera);
+  updateLabels();
 }
 
 function computeRenderedBounds() {
@@ -300,10 +304,14 @@ function resetView() {
   if (bounds) frameScene(bounds);
 }
 
+function clearLabels() {
+  if (el.labelLayer) el.labelLayer.innerHTML = '';
+}
 function clearSceneObjects() {
   const scene = state.three.scene;
   if (!scene) return;
   for (const rendered of state.objects) scene.remove(rendered.object3d);
+  clearLabels();
   state.objects = [];
   state.lastFrameBounds = null;
   if (el.resetView) el.resetView.disabled = true;
@@ -321,7 +329,7 @@ function renderScene(items) {
     applyPose(object3d, item);
     assignItemUserData(object3d, item);
     scene.add(object3d);
-    const rendered = { item, object3d, fallback };
+    const rendered = { item, object3d, fallback, labelEl: createLabelElement(item) };
     const fallbackStatus = primitive || isSensor(item) ? 'primitive_fallback' : 'box_fallback';
     const fallbackReason = primitive || isSensor(item) ? 'primitive geometry rendered while mesh loads or is unavailable' : 'no primitive geometry or mesh was provided; using box fallback';
     setRenderInfo(rendered, fallbackStatus, displayMeshUri(item), fallbackReason);
@@ -329,9 +337,53 @@ function renderScene(items) {
     tryLoadMesh(item, rendered, fallback);
   }
   populateObjectList();
+  updateLabels();
   const bounds = computeRenderedBounds();
   if (bounds) frameScene(bounds);
 }
+
+function createLabelElement(item) {
+  if (!el.labelLayer || !shouldLabelItem(item)) return null;
+  const label = document.createElement('div');
+  label.className = 'object-label';
+  label.textContent = itemLabel(item);
+  label.title = `${item.id || itemLabel(item)} — ${itemType(item)}`;
+  label.setAttribute('data-object-id', item.id || itemLabel(item));
+  el.labelLayer.appendChild(label);
+  return label;
+}
+function setLabelsVisible(visible) {
+  state.labelsVisible = Boolean(visible);
+  if (el.labelsToggle) el.labelsToggle.checked = state.labelsVisible;
+  if (el.labelLayer) el.labelLayer.classList.toggle('labels-hidden', !state.labelsVisible);
+  updateLabels();
+}
+function updateLabels() {
+  const { camera } = state.three;
+  if (!camera || !el.labelLayer) return;
+  const rect = el.canvas.getBoundingClientRect();
+  const center = new THREE.Vector3();
+  for (const rendered of state.objects) {
+    const label = rendered.labelEl;
+    if (!label) continue;
+    if (!state.labelsVisible || !rendered.object3d.visible) {
+      label.hidden = true;
+      continue;
+    }
+    rendered.object3d.updateWorldMatrix(true, true);
+    const bounds = new THREE.Box3().setFromObject(rendered.object3d);
+    if (bounds.isEmpty()) rendered.object3d.getWorldPosition(center);
+    else bounds.getCenter(center);
+    const screen = center.clone().project(camera);
+    const inFront = screen.z >= -1 && screen.z <= 1;
+    label.hidden = !inFront;
+    if (!inFront) continue;
+    const x = (screen.x * 0.5 + 0.5) * rect.width;
+    const y = (-screen.y * 0.5 + 0.5) * rect.height;
+    label.style.transform = `translate(-50%, -115%) translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+  }
+}
+
 function populateObjectList() {
   el.list.innerHTML = '';
   if (!state.objects.length) {
@@ -391,7 +443,9 @@ function selectObject(id) {
     rendered.object3d.traverse(child => {
       if (child.material?.emissive) child.material.emissive.setHex(selected ? 0x1b6f8f : 0x000000);
     });
+    if (rendered.labelEl) rendered.labelEl.classList.toggle('selected', selected);
   }
+  updateLabels();
   const rendered = state.objects.find(obj => obj.item.id === id);
   if (rendered) populateInspector(rendered);
 }
@@ -454,6 +508,7 @@ async function loadFile(file) {
 }
 
 if (el.resetView) el.resetView.addEventListener('click', resetView);
+if (el.labelsToggle) el.labelsToggle.addEventListener('change', event => setLabelsVisible(event.target.checked));
 
 el.file.addEventListener('change', event => {
   const file = event.target.files?.[0];
@@ -473,6 +528,7 @@ async function boot() {
     ColladaLoader = colladaModule.ColladaLoader;
     OBJLoader = objModule.OBJLoader;
     initThree();
+    setLabelsVisible(el.labelsToggle?.checked || false);
   } catch (err) {
     showError(`Three.js/CDN load failure: ${err.message || err}`);
   }

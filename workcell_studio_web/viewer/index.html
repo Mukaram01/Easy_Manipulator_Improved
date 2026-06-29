@@ -26,6 +26,10 @@
         <input id="scene-file" type="file" accept="application/json,.json" />
       </label>
       <button id="reset-view" class="toolbar-button" type="button" disabled>Reset View</button>
+      <label class="toolbar-toggle" title="Show read-only object labels in the viewer">
+        <input id="labels-toggle" type="checkbox" />
+        Labels
+      </label>
     </div>
   </header>
 
@@ -39,6 +43,7 @@
     <section class="viewport-panel" aria-label="3D canvas area">
       <div id="error-state" class="state error" hidden></div>
       <canvas id="scene-canvas"></canvas>
+      <div id="label-layer" class="label-layer" aria-hidden="true"></div>
     </section>
 
     <aside class="details-panel" aria-label="Inspector and warnings panel">
