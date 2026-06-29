@@ -6,6 +6,7 @@ let OBJLoader;
 
 const SUPPORTED_SCHEMA_VERSION = 'workcell_studio_web_scene/v1';
 const MIN_FRAME_RADIUS = 1.2;
+const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
 const state = { sceneJson: null, objects: [], selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [] };
 const el = {
@@ -205,7 +206,6 @@ function validateSceneJson(json) {
   if (!json || typeof json !== 'object' || Array.isArray(json)) throw new Error('Invalid web_scene.json: expected a JSON object.');
   if (json.schema_version !== SUPPORTED_SCHEMA_VERSION) throw new Error(`Unsupported schema_version "${valueOrDash(json.schema_version)}". Expected ${SUPPORTED_SCHEMA_VERSION}.`);
   const items = collectItems(json);
-  if (!items.length) throw new Error('Missing/empty assets: web_scene.json contains no robots, tools, assets, sensors, zones, items, or objects to render.');
   return items;
 }
 function initThree() {
@@ -316,6 +316,13 @@ function renderScene(items) {
 }
 function populateObjectList() {
   el.list.innerHTML = '';
+  if (!state.objects.length) {
+    const li = document.createElement('li');
+    li.className = 'state empty';
+    li.textContent = EMPTY_SCENE_MESSAGE;
+    el.list.appendChild(li);
+    return;
+  }
   for (const rendered of state.objects) {
     const li = document.createElement('li');
     li.dataset.id = rendered.item.id;
@@ -388,10 +395,11 @@ async function loadFile(file) {
     state.sceneJson = json;
     state.runtimeWarnings = [];
     el.empty.hidden = true;
-    renderScene(items);
+    if (items.length) renderScene(items);
+    else renderScene([]);
     refreshWarnings(json);
     el.inspector.className = 'state empty';
-    el.inspector.textContent = 'Select an object from the list or canvas.';
+    el.inspector.textContent = items.length ? 'Select an object from the list or canvas.' : EMPTY_SCENE_MESSAGE;
   } catch (err) {
     showError(err.message || String(err));
   }
