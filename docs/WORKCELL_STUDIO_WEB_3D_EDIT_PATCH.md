@@ -1,6 +1,55 @@
 # Workcell Studio Web 3D edit patch contract
 
-This phase adds preview-only transform editing to the static Web 3D viewer. Web Studio can move editable layout/environment objects in the browser and export a JSON edit patch, but it does **not** apply patches to source files yet.
+This phase connects preview editing to a guarded backend persistence step. Web Studio can move editable layout/environment objects in the browser, export a `workcell_studio_web_scene_edit_patch/v1` JSON patch, validate it, and dry-run or apply it to the correct editable source YAML.
+
+## Workflow
+
+Export the current scene for the static viewer:
+
+```bash
+python3 scripts/export_workcell_studio_web_scene.py \
+  --scene scenes/ur5_2f_test \
+  --output build/workcell_studio_web_scene/ur5_2f_test.web_scene.json
+```
+
+Open `workcell_studio_web/viewer/index.html`, load the exported `web_scene.json`, edit one `editable=true` and `locked=false` item, then use **Export Edit Patch** to download an edit patch.
+
+Validate the patch before applying it:
+
+```bash
+python3 scripts/validate_workcell_studio_web_scene_edit_patch.py \
+  --web-scene build/workcell_studio_web_scene/ur5_2f_test.web_scene.json \
+  --patch build/workcell_studio_web_scene/ur5_2f_test.edit_patch.json
+```
+
+Dry-run the backend applicator. This is the default and writes nothing:
+
+```bash
+python3 scripts/apply_workcell_studio_web_scene_edit_patch.py \
+  --scene scenes/ur5_2f_test \
+  --web-scene build/workcell_studio_web_scene/ur5_2f_test.web_scene.json \
+  --patch build/workcell_studio_web_scene/ur5_2f_test.edit_patch.json
+```
+
+Apply only when you intentionally want to mutate editable source YAML:
+
+```bash
+python3 scripts/apply_workcell_studio_web_scene_edit_patch.py \
+  --scene scenes/ur5_2f_test \
+  --web-scene build/workcell_studio_web_scene/ur5_2f_test.web_scene.json \
+  --patch build/workcell_studio_web_scene/ur5_2f_test.edit_patch.json \
+  --write
+```
+
+Use `--backup` with `--write` to create timestamped `.bak` files next to edited YAML. Backups are optional and are never created for generated outputs.
+
+Re-export the web scene after applying a patch to confirm the persisted pose is reflected:
+
+```bash
+python3 scripts/export_workcell_studio_web_scene.py \
+  --scene scenes/ur5_2f_test \
+  --output build/workcell_studio_web_scene/ur5_2f_test.web_scene.json
+```
 
 ## Contract
 
@@ -15,34 +64,24 @@ Each patch records:
 
 Patch exports include only changed items. Exporting with no changed items is allowed and produces an empty `edits` array with a browser warning.
 
-## Safety and source of truth
+## Applicator safety rules
 
-The viewer is not the source of truth in this phase. It does not mutate:
+The applicator reuses the validator and then applies only safe editable updates:
 
-- `environment.yaml`
-- `layout/workcell_studio_layout.yaml`
-- `cell_definition.yaml`
-- `scene_manifest.yaml`
-- generated scene files
+- dry-run is default; `--write` is required for mutation;
+- only `update_transform` is supported;
+- item provenance must clearly map to `layout/workcell_studio_layout.yaml` or authored `environment.yaml` records;
+- ambiguous source mapping fails with a clear error;
+- locked items, `editable=false` items, and generated robot/tool visuals are rejected;
+- `generated/`, `cell_definition.yaml`, and `scene_manifest.yaml` are never mutated in this phase;
+- pose XYZ/RPY are updated; scale is updated only when the source record already has an obvious `scale` or `mesh_scale` field.
 
-Locked/generated robot and tool preview items are inspectable only. The viewer disables their transform inputs and tells the user to edit source layout/environment instead.
-
-## Validation
-
-Use the standalone validator before trusting an exported patch:
-
-```bash
-python3 scripts/validate_workcell_studio_web_scene_edit_patch.py \
-  --web-scene build/workcell_studio_web_scene/ur5_2f_test.web_scene.json \
-  --patch build/workcell_studio_web_scene/ur5_2f_test.edit_patch.json
-```
-
-The validator checks scene identity, item existence, editability, lock state, generated robot/tool guards, and finite transform numbers. It only reads JSON inputs and never writes source scene files.
+Dry-run output lists the scene id, item id, label, source, target file, old transform, new transform, and whether a write would occur. Write mode reports updated file paths, updated item counts, skipped/rejected edits, and the suggested re-export command.
 
 ## Relationship to RViz/MoveIt
 
-Web 3D editing is an authoring preview. RViz/MoveIt remains the planning and simulation truth, and fake hardware remains the default validation foundation. This change does not enable real robot motion and does not replace backend generation, validation, or safety gates.
+Web 3D editing is an authoring surface, not a planning or execution backend. No ROS launch is required for patch validation or application. RViz/MoveIt remains the planning and simulation truth, and fake hardware remains the default validation foundation. This workflow does not enable real robot motion, does not replace backend generation/validation/safety gates, and does not modify Qt Scene3D visuals.
 
 ## Next phase
 
-The next phase is a guarded backend application step that takes a validated patch and writes the appropriate layout/environment source files deterministically, with clear conflict handling and validation evidence.
+After persistence is proven, the next phase is improving browser transform UX/gizmos while preserving the same dry-run-first backend safety model.
