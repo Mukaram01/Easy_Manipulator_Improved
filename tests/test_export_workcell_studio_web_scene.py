@@ -85,3 +85,65 @@ def test_export_web_scene_warns_for_missing_optional_inputs(tmp_path):
         "layout/workcell_studio_layout.yaml",
         "generated/scene_visual_mesh_index.json",
     }
+
+
+def test_export_web_scene_stages_safe_mesh_assets(tmp_path):
+    scene = tmp_path / "scene"
+    mesh_dir = scene / "meshes"
+    (scene / "layout").mkdir(parents=True)
+    (scene / "generated").mkdir()
+    mesh_dir.mkdir()
+    (mesh_dir / "table.stl").write_text("solid table\nendsolid table\n", encoding="utf-8")
+    (scene / "scene_manifest.yaml").write_text(yaml.safe_dump({"scene": {"name": "staging_test"}}), encoding="utf-8")
+    (scene / "cell_definition.yaml").write_text("{}", encoding="utf-8")
+    (scene / "environment.yaml").write_text("{}", encoding="utf-8")
+    (scene / "layout/workcell_studio_layout.yaml").write_text(
+        yaml.safe_dump({"items": [{"id": "table", "mesh_uri": "meshes/table.stl"}]}),
+        encoding="utf-8",
+    )
+    (scene / "generated/scene_visual_mesh_index.json").write_text(json.dumps({"visual_items": []}), encoding="utf-8")
+
+    out = tmp_path / "build/scene.web_scene.json"
+    subprocess.run([sys.executable, str(SCRIPT), "--scene", str(scene), "--output", str(out)], check=True)
+
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    table = next(item for item in payload["assets"] if item["id"] == "table")
+    assert table["original_mesh_uri"] == "meshes/table.stl"
+    assert table["mesh_staging_status"] == "staged"
+    assert table["mesh_resolve_warning"] is None
+    assert table["mesh_uri"] == "build/workcell_studio_web_scene/assets/staging_test/external_" + table["mesh_uri"].split("/external_", 1)[1]
+    assert Path(table["mesh_staged_path"]).is_file()
+
+
+def test_export_web_scene_rejects_unsafe_or_unsupported_mesh_assets(tmp_path):
+    scene = tmp_path / "scene"
+    (scene / "layout").mkdir(parents=True)
+    (scene / "generated").mkdir()
+    (scene / "scene_manifest.yaml").write_text(yaml.safe_dump({"scene": {"name": "unsafe_test"}}), encoding="utf-8")
+    (scene / "cell_definition.yaml").write_text("{}", encoding="utf-8")
+    (scene / "environment.yaml").write_text("{}", encoding="utf-8")
+    (scene / "layout/workcell_studio_layout.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "items": [
+                    {"id": "traversal", "mesh_uri": "../secret.stl"},
+                    {"id": "remote", "mesh_uri": "https://example.invalid/mesh.stl"},
+                    {"id": "texture", "mesh_uri": "meshes/texture.png"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (scene / "generated/scene_visual_mesh_index.json").write_text(json.dumps({"visual_items": []}), encoding="utf-8")
+
+    out = tmp_path / "build/scene.web_scene.json"
+    subprocess.run([sys.executable, str(SCRIPT), "--scene", str(scene), "--output", str(out)], check=True)
+
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    by_id = {item["id"]: item for item in payload["assets"]}
+    assert by_id["traversal"]["mesh_staging_status"] == "unsafe_path"
+    assert "Unsafe relative mesh path" in by_id["traversal"]["mesh_resolve_warning"]
+    assert by_id["remote"]["mesh_staging_status"] == "unsupported_scheme"
+    assert "Unsupported mesh URI scheme" in by_id["remote"]["mesh_resolve_warning"]
+    assert by_id["texture"]["mesh_staging_status"] == "unsupported_format"
+    assert "Unsupported mesh format" in by_id["texture"]["mesh_resolve_warning"]

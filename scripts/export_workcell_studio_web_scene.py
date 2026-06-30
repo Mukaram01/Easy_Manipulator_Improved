@@ -9,11 +9,14 @@ browser preview, and writes one deterministic JSON document to --output.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+from urllib.parse import unquote, urlparse
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 try:
     import yaml  # type: ignore
@@ -28,6 +31,9 @@ INPUTS = {
     "layout": "layout/workcell_studio_layout.yaml",
     "visual_mesh_index": "generated/scene_visual_mesh_index.json",
 }
+SUPPORTED_MESH_SUFFIXES = {".stl", ".dae", ".obj"}
+MESH_URI_FIELDS = ("mesh_uri", "package_uri", "mesh_path", "source_path", "resolved_source_path")
+
 HELPER_TOKENS = (
     "overlay",
     "helper",
@@ -131,6 +137,186 @@ def _relative_uri(uri: Any, scene_dir: Path) -> Any:
     return uri
 
 
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _safe_relative_parts(rel: Path) -> Optional[Tuple[str, ...]]:
+    if rel.is_absolute():
+        return None
+    parts = rel.parts
+    if not parts or any(part in ("", ".", "..") for part in parts):
+        return None
+    return parts
+
+
+def _package_share_roots(repo_root: Path) -> List[Path]:
+    roots = [
+        repo_root / "assets",
+        repo_root / "assets" / "robots",
+        repo_root / "assets" / "environment",
+        repo_root / "assets" / "sensors",
+    ]
+    for prefix in os.environ.get("AMENT_PREFIX_PATH", "").split(os.pathsep):
+        if prefix:
+            roots.append(Path(prefix) / "share")
+    roots.append(Path("/opt/ros/humble/share"))
+    out: List[Path] = []
+    seen = set()
+    for root in roots:
+        resolved = root.resolve()
+        if str(resolved) not in seen:
+            seen.add(str(resolved))
+            out.append(resolved)
+    return out
+
+
+def _resolve_package_uri(uri: str, repo_root: Path) -> Tuple[Optional[Path], str, Optional[Path], Optional[str]]:
+    parsed = urlparse(uri)
+    package = parsed.netloc
+    rel = Path(unquote(parsed.path).lstrip("/"))
+    rel_parts = _safe_relative_parts(rel)
+    if parsed.scheme != "package" or not package or rel_parts is None:
+        return None, package or "package", None, f"Invalid or unsafe package URI: {uri}"
+    if rel.suffix.lower() not in SUPPORTED_MESH_SUFFIXES:
+        return None, package, None, f"Unsupported mesh format for {uri}; supported formats are .stl, .dae, and .obj."
+    stage_rel = Path(package, *rel_parts)
+    for root in _package_share_roots(repo_root):
+        direct = (root / package / rel).resolve()
+        if _is_relative_to(direct, root) and direct.is_file():
+            return direct, package, stage_rel, None
+        if root.exists():
+            for pkg_dir in root.rglob(package):
+                if not pkg_dir.is_dir():
+                    continue
+                candidate = (pkg_dir / rel).resolve()
+                if _is_relative_to(candidate, root) and candidate.is_file():
+                    return candidate, package, stage_rel, None
+    return None, package, None, f"Could not resolve package mesh URI: {uri}"
+
+
+def _resolve_local_mesh_uri(uri: str, scene_dir: Path, repo_root: Path) -> Tuple[Optional[Path], str, Optional[Path], Optional[str]]:
+    source_root = "local"
+    raw_path: Optional[Path] = None
+    if uri.startswith("file://"):
+        parsed = urlparse(uri)
+        if parsed.netloc:
+            return None, source_root, None, f"Unsupported file URI host in {uri}"
+        raw_path = Path(unquote(parsed.path))
+    elif "://" in uri:
+        return None, source_root, None, f"Unsupported mesh URI scheme in {uri}"
+    else:
+        raw_path = Path(uri)
+
+    if raw_path is None:
+        return None, source_root, None, f"Invalid mesh path: {uri}"
+    if raw_path.suffix.lower() not in SUPPORTED_MESH_SUFFIXES:
+        return None, source_root, None, f"Unsupported mesh format for {uri}; supported formats are .stl, .dae, and .obj."
+    if raw_path.is_absolute():
+        resolved = raw_path.resolve()
+    else:
+        rel_parts = _safe_relative_parts(raw_path)
+        if rel_parts is None:
+            return None, source_root, None, f"Unsafe relative mesh path rejected: {uri}"
+        repo_candidate = (repo_root / raw_path).resolve()
+        scene_candidate = (scene_dir / raw_path).resolve()
+        resolved = repo_candidate if repo_candidate.is_file() else scene_candidate
+    if not resolved.is_file():
+        return None, source_root, None, f"Mesh file does not exist: {uri}"
+    if _is_relative_to(resolved, repo_root):
+        first = resolved.relative_to(repo_root).parts[0]
+        source_root = first if first else "repo"
+        stage_rel = resolved.relative_to(repo_root)
+    else:
+        source_root = "external_" + hashlib.sha1(str(resolved.parent).encode("utf-8")).hexdigest()[:12]
+        stage_rel = Path(source_root, resolved.name)
+    return resolved, source_root, stage_rel, None
+
+
+def _mesh_candidates(item: Mapping[str, Any]) -> List[Tuple[str, str]]:
+    candidates: List[Tuple[str, str]] = []
+    seen = set()
+    for field in MESH_URI_FIELDS:
+        value = item.get(field)
+        if isinstance(value, str) and value and value not in seen:
+            candidates.append((field, value))
+            seen.add(value)
+    return candidates
+
+
+def _staging_failure_status(warnings: Sequence[str]) -> str:
+    text = " ".join(warnings).lower()
+    if "unsupported mesh format" in text:
+        return "unsupported_format"
+    if "unsafe" in text or "escaped" in text:
+        return "unsafe_path"
+    if "unsupported" in text and ("scheme" in text or "file uri host" in text):
+        return "unsupported_scheme"
+    return "resolve_failed"
+
+
+def _stage_visual_meshes(payload: Json, scene_dir: Path, output_path: Path) -> None:
+    repo_root = Path.cwd().resolve()
+    scene_id = str(payload.get("scene", {}).get("id") or scene_dir.name)
+    asset_root = (repo_root / "build" / "workcell_studio_web_scene" / "assets" / scene_id).resolve()
+    asset_root.mkdir(parents=True, exist_ok=True)
+    sections: Sequence[str] = ("robots", "tools", "assets", "sensors", "zones")
+    for section in sections:
+        for item in payload.get(section, []):
+            if not isinstance(item, dict):
+                continue
+            candidates = _mesh_candidates(item)
+            original = candidates[0][1] if candidates else None
+            item["original_mesh_uri"] = original
+            item["mesh_staging_status"] = "no_mesh_uri"
+            item["mesh_staged_path"] = None
+            item["mesh_resolve_warning"] = None
+            if not candidates:
+                continue
+            warnings: List[str] = []
+            resolved: Optional[Path] = None
+            source_root = "local"
+            dest_rel: Optional[Path] = None
+            for _field, uri in candidates:
+                if uri.startswith("package://"):
+                    resolved, source_root, dest_rel, warning = _resolve_package_uri(uri, repo_root)
+                else:
+                    resolved, source_root, dest_rel, warning = _resolve_local_mesh_uri(uri, scene_dir, repo_root)
+                if resolved is not None:
+                    break
+                if warning:
+                    warnings.append(warning)
+            if resolved is None:
+                item["mesh_staging_status"] = _staging_failure_status(warnings)
+                item["mesh_resolve_warning"] = "; ".join(warnings) if warnings else "No mesh URI candidate could be resolved."
+                continue
+            if dest_rel is None and _is_relative_to(resolved, repo_root):
+                rel_parts = resolved.relative_to(repo_root).parts
+                dest_rel = Path(source_root, *rel_parts[1:]) if rel_parts and rel_parts[0] == source_root else Path(source_root, *rel_parts)
+            elif dest_rel is None:
+                dest_rel = Path(source_root, resolved.name)
+            safe_parts = _safe_relative_parts(dest_rel)
+            if safe_parts is None:
+                item["mesh_staging_status"] = "unsafe_destination"
+                item["mesh_resolve_warning"] = f"Unsafe staged mesh destination rejected for {resolved}"
+                continue
+            dest = (asset_root / Path(*safe_parts)).resolve()
+            if not _is_relative_to(dest, asset_root):
+                item["mesh_staging_status"] = "unsafe_destination"
+                item["mesh_resolve_warning"] = f"Staged mesh destination escaped asset root: {dest}"
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(resolved, dest)
+            rewritten = os.path.relpath(dest, repo_root).replace(os.sep, "/")
+            item["mesh_uri"] = rewritten
+            item["mesh_staging_status"] = "staged"
+            item["mesh_staged_path"] = rewritten
+
+
 def _copy_fields(src: Mapping[str, Any], fields: Iterable[str], source: str, scene_dir: Path) -> Json:
     out: Json = {}
     prov_fields: List[str] = []
@@ -192,7 +378,7 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
     fields = (
         "id", "type", "category", "role", "display_name", "link", "object_name", "visual", "pose", "world_pose",
         "baked_world_visual_pose", "visual_origin", "geometry_type", "primitive_geometry_type", "package_uri",
-        "source_path", "mesh_path", "resolved_source_path", "scale", "mesh_scale", "source_layer", "active_visual_source",
+        "mesh_uri", "source_path", "mesh_path", "resolved_source_path", "scale", "mesh_scale", "source_layer", "active_visual_source",
         "render_expected", "mesh_available", "resolved", "warning",
     )
     for i, raw in enumerate(items):
@@ -282,7 +468,7 @@ def _sort_items(items: List[Json]) -> List[Json]:
     return sorted(items, key=lambda x: (str(x.get("source_kind", "")), str(x.get("category", "")), str(x.get("role", "")), str(x.get("id", ""))))
 
 
-def build_web_scene(scene_dir: Path) -> Json:
+def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path: Optional[Path] = None) -> Json:
     scene_dir = scene_dir.resolve()
     warnings: List[Json] = []
     data = _load_inputs(scene_dir, warnings)
@@ -358,6 +544,8 @@ def build_web_scene(scene_dir: Path) -> Json:
             },
         ],
     }
+    if stage_assets:
+        _stage_visual_meshes(output, scene_dir, output_path or Path("build/workcell_studio_web_scene/scene.web_scene.json"))
     return output
 
 
@@ -365,6 +553,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Export a deterministic Workcell Studio web scene JSON file.")
     parser.add_argument("--scene", required=True, help="Scene directory, for example scenes/ur5_2f_test")
     parser.add_argument("--output", required=True, help="Output JSON path, typically under build/")
+    parser.add_argument("--stage-assets", dest="stage_assets", action="store_true", default=True, help="Copy resolvable mesh assets into build/workcell_studio_web_scene/assets/<scene_id> and rewrite mesh_uri for browser loading. Enabled by default.")
+    parser.add_argument("--no-stage-assets", dest="stage_assets", action="store_false", help="Disable mesh asset staging and leave mesh URI fields unchanged.")
     args = parser.parse_args(argv)
 
     scene_dir = Path(args.scene)
@@ -373,7 +563,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"error: --scene must be an existing directory: {scene_dir}", file=sys.stderr)
         return 2
 
-    payload = build_web_scene(scene_dir)
+    payload = build_web_scene(scene_dir, stage_assets=args.stage_assets, output_path=output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return 0
