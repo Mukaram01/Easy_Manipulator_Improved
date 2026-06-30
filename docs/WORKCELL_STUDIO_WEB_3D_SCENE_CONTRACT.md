@@ -108,9 +108,14 @@ Use the dependency-light exporter to materialize the v1 contract for a scene dir
 ```bash
 python3 scripts/export_workcell_studio_web_scene.py \
   --scene scenes/ur5_2f_test \
-  --output build/workcell_studio/ur5_2f_test.web_scene.json
+  --output build/workcell_studio_web_scene/ur5_2f_test.web_scene.json \
+  --stage-assets
 ```
 
 The exporter reads only optional scene inputs (`scene_manifest.yaml`, `cell_definition.yaml`, `environment.yaml`, `layout/workcell_studio_layout.yaml`, and `generated/scene_visual_mesh_index.json`) and writes one deterministic JSON file. The payload includes `inputs` presence metadata, per-item provenance, editability/lock state, ROS world Z-up units, and backend action descriptors that are requests for backend workflows rather than frontend-side execution hooks.
+
+Browsers cannot load ROS `package://` URIs directly. When `--stage-assets` is used, the exporter resolves and copies supported meshes into `build/workcell_studio_web_scene/assets/<scene_id>/...`, rewrites each staged item's `mesh_uri` to a browser-safe relative URL, and preserves the ROS/source URI in `original_mesh_uri`. Serve the repository root with `python3 -m http.server 8765` and load `http://localhost:8765/workcell_studio_web/viewer/index.html`; then choose the exported `build/workcell_studio_web_scene/<scene_id>.web_scene.json`. For `ur5_2f_test`, the expected browser result is that robot, table/workbench, camera, and gripper/tool meshes are recognizable when the source meshes exist and use supported formats.
+
+Items that still render as `primitive_fallback` should carry diagnostic fields rather than failing silently. Use `mesh_staging_status`, `mesh_resolve_warning`, `mesh_status`, and `fallback_reason` to distinguish missing source meshes, unresolved ROS packages, unsupported mesh formats, failed staging, and browser load failures.
 
 The `plan_simulate` action is intentionally exported as disabled in this first contract. It documents the intended guarded backend request path while avoiding any accidental real-hardware or runtime execution enablement from a static JSON export.
