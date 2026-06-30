@@ -129,14 +129,19 @@ function appendRuntimeWarning(item, meshUri, reason) {
   refreshWarnings();
 }
 
-function safeMeshUri(item) {
+function meshUriDiagnostic(item) {
   const raw = item?.mesh_uri;
-  if (typeof raw !== 'string') return null;
+  const requested = displayMeshUri(item);
+  if (typeof raw !== 'string' || !raw.trim()) {
+    if (requested && String(requested).startsWith('package://')) {
+      return { uri: null, status: 'unresolved_package_uri', reason: `package URI was not staged for browser loading: ${requested}` };
+    }
+    return { uri: null, status: 'missing_file', reason: requested ? `mesh_uri was not staged for browser loading: ${requested}` : 'no mesh_uri provided' };
+  }
   const uri = raw.trim();
-  if (!uri) return null;
   const lower = uri.toLowerCase();
+  if (lower.startsWith('package://')) return { uri: null, status: 'unresolved_package_uri', reason: `package URI must be resolved and staged before browser loading: ${uri}` };
   if (
-    lower.startsWith('package://') ||
     lower.startsWith('http://') ||
     lower.startsWith('https://') ||
     lower.startsWith('file://') ||
@@ -147,13 +152,34 @@ function safeMeshUri(item) {
     /^[a-zA-Z]:[\\/]/.test(uri) ||
     /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(uri) ||
     uri.includes('\\')
-  ) return null;
+  ) return { uri: null, status: 'unsafe_path', reason: `unsafe mesh_uri rejected by viewer policy: ${uri}` };
   const pathOnly = uri.split(/[?#]/, 1)[0];
   const parts = pathOnly.split('/');
-  if (parts.some(part => part === '..')) return null;
-  const ext = pathOnly.slice(pathOnly.lastIndexOf('.') + 1).toLowerCase();
-  if (!['stl', 'dae', 'obj'].includes(ext)) return null;
-  return uri;
+  if (parts.some(part => part === '..')) return { uri: null, status: 'unsafe_path', reason: `mesh_uri path traversal rejected: ${uri}` };
+  const allowedRoots = [
+    'build/workcell_studio_web_scene/assets/',
+    'workcell_studio_web/',
+    'assets/',
+  ];
+  if (!allowedRoots.some(root => pathOnly.startsWith(root))) {
+    return { uri: null, status: 'unsafe_path', reason: `mesh_uri must be staged under build/workcell_studio_web_scene/assets/, workcell_studio_web/, or assets/: ${uri}` };
+  }
+  const ext = pathOnly.includes('.') ? pathOnly.slice(pathOnly.lastIndexOf('.') + 1).toLowerCase() : '';
+  if (!['stl', 'dae', 'obj'].includes(ext)) return { uri: null, status: 'unsupported_format', reason: `unsupported mesh format .${ext || 'unknown'} for ${uri}` };
+  const stagingStatus = String(item?.mesh_staging_status || '').toLowerCase();
+  if (stagingStatus && !['staged', 'copied', 'available', 'loaded'].includes(stagingStatus)) {
+    const status = stagingStatus === 'unsupported_format' ? 'unsupported_format'
+      : stagingStatus === 'unsafe_path' || stagingStatus === 'unsafe_destination' || stagingStatus === 'unsupported_scheme' ? 'unsafe_path'
+      : stagingStatus === 'no_mesh_uri' ? 'missing_file'
+      : stagingStatus === 'resolve_failed' ? 'missing_file'
+      : stagingStatus === 'unresolved_package_uri' ? 'unresolved_package_uri'
+      : 'missing_file';
+    return { uri: null, status, reason: item?.mesh_resolve_warning || `mesh staging did not produce a loadable file (mesh_staging_status=${stagingStatus})` };
+  }
+  return { uri, status: 'loaded', reason: '' };
+}
+function safeMeshUri(item) {
+  return meshUriDiagnostic(item).uri;
 }
 function itemType(item) { return item.type || item.category || item.role || item.source_kind || 'asset'; }
 function itemLabel(item) { return item.label || item.display_name || item.name || item.id || 'unnamed'; }
@@ -240,13 +266,14 @@ function materializeLoadedMesh(item, uri, loaded) {
   return object;
 }
 async function tryLoadMesh(item, rendered, fallback) {
-  const uri = safeMeshUri(item);
+  const diagnostic = meshUriDiagnostic(item);
+  const uri = diagnostic.uri;
   const requestedUri = displayMeshUri(item);
-  item.mesh_status = uri ? 'mesh_loading' : 'mesh_unavailable';
+  item.mesh_status = uri ? 'loading' : diagnostic.status;
   if (!uri) {
-    const reason = requestedUri ? `unsupported or unsafe mesh_uri: ${requestedUri}` : (rendered.renderInfo?.fallback_reason || 'no mesh_uri provided');
-    setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', requestedUri, reason);
-    if (requestedUri) appendRuntimeWarning(item, requestedUri, reason);
+    setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', requestedUri, diagnostic.reason);
+    if (requestedUri) appendRuntimeWarning(item, requestedUri, diagnostic.reason);
+    if (state.selected === item.id) populateInspector(rendered);
     return;
   }
   try {
@@ -259,7 +286,7 @@ async function tryLoadMesh(item, rendered, fallback) {
     fallback.visible = false;
     rendered.object3d.add(meshObject);
     rendered.meshObject = meshObject;
-    item.mesh_status = 'mesh_loaded';
+    item.mesh_status = 'loaded';
     item.mesh_load_error = '';
     setRenderInfo(rendered, 'mesh_loaded', uri, '');
     const bounds = computeRenderedBounds();
@@ -267,10 +294,11 @@ async function tryLoadMesh(item, rendered, fallback) {
     if (state.selected === item.id) populateInspector(rendered);
   } catch (err) {
     fallback.visible = true;
-    item.mesh_status = 'mesh_failed';
+    item.mesh_status = 'load_error';
     item.mesh_load_error = err?.message || String(err);
-    setRenderInfo(rendered, 'mesh_failed', uri, item.mesh_load_error);
-    appendRuntimeWarning(item, uri, `mesh loader failed: ${item.mesh_load_error}`);
+    const reason = `mesh loader failed: ${item.mesh_load_error}`;
+    setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', uri, reason);
+    appendRuntimeWarning(item, uri, reason);
     if (state.selected === item.id) populateInspector(rendered);
   }
 }
@@ -703,7 +731,10 @@ function populateInspector(renderedOrItem) {
     'pose rpy': [pose.rpy.x, pose.rpy.y, pose.rpy.z].map(n => n.toFixed(3)).join(', '),
     scale: JSON.stringify(item.scale || item.mesh_scale || [1, 1, 1]), editable: String(Boolean(item.editable)), locked: String(Boolean(item.locked)),
     render_status: renderInfo.render_status, mesh_uri: renderInfo.mesh_uri || displayMeshUri(item), fallback_reason: renderInfo.fallback_reason,
-    mesh_status: item.mesh_status, mesh_load_error: item.mesh_load_error, primitive: JSON.stringify(primitiveOf(item) || 'box fallback'),
+    mesh_status: item.mesh_status, mesh_load_error: item.mesh_load_error,
+    original_mesh_uri: item.original_mesh_uri, mesh_staging_status: item.mesh_staging_status,
+    mesh_staged_path: item.mesh_staged_path, mesh_resolve_warning: item.mesh_resolve_warning,
+    primitive: JSON.stringify(primitiveOf(item) || 'box fallback'),
   };
   if (isSensor(item)) {
     Object.assign(rows, {

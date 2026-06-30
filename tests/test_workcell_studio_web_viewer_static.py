@@ -31,6 +31,10 @@ def test_viewer_js_schema_and_inspector_hooks():
     assert "primitive" in js
     assert "editable" in js
     assert "locked" in js
+    assert "original_mesh_uri" in js
+    assert "mesh_staging_status" in js
+    assert "mesh_staged_path" in js
+    assert "mesh_resolve_warning" in js
 
 
 def test_viewer_records_render_status_for_inspector():
@@ -42,7 +46,7 @@ def test_viewer_records_render_status_for_inspector():
         "mesh_loaded",
         "primitive_fallback",
         "box_fallback",
-        "mesh_failed",
+        "load_error",
     ]:
         assert token in js
     assert "child.userData.renderInfo" in js
@@ -93,12 +97,15 @@ def test_viewer_includes_render_status_strings_and_fallback_reasons():
         "mesh_loaded",
         "primitive_fallback",
         "box_fallback",
-        "mesh_failed",
-        "mesh_loading",
-        "mesh_unavailable",
+        "load_error",
+        "loading",
+        "missing_file",
+        "unsafe_path",
+        "unsupported_format",
+        "unresolved_package_uri",
         "primitive geometry rendered while mesh loads or is unavailable",
         "no primitive geometry or mesh was provided; using box fallback",
-        "unsupported or unsafe mesh_uri",
+        "unsafe mesh_uri rejected by viewer policy",
         "no mesh_uri provided",
         "mesh loader failed",
     ]:
@@ -119,6 +126,9 @@ def test_viewer_includes_mesh_loader_references_and_safe_mesh_uri_logic():
         "loadAsync(uri)",
         "materializeLoadedMesh",
         "appendRuntimeWarning",
+        "build/workcell_studio_web_scene/assets/",
+        "workcell_studio_web/",
+        "assets/",
         "['stl', 'dae', 'obj'].includes(ext)",
     ]:
         assert token in js
