@@ -130,10 +130,13 @@ def _relative_uri(uri: Any, scene_dir: Path) -> Any:
         return uri
     p = Path(uri)
     if p.is_absolute():
-        try:
-            return os.path.relpath(p, scene_dir)
-        except ValueError:
-            return uri
+        resolved = p.resolve()
+        if _is_relative_to(resolved, scene_dir):
+            try:
+                return os.path.relpath(resolved, scene_dir)
+            except ValueError:
+                return uri
+        return uri
     return uri
 
 
@@ -218,6 +221,8 @@ def _resolve_local_mesh_uri(uri: str, scene_dir: Path, repo_root: Path) -> Tuple
         return None, source_root, None, f"Unsupported mesh format for {uri}; supported formats are .stl, .dae, and .obj."
     if raw_path.is_absolute():
         resolved = raw_path.resolve()
+        if not (_is_relative_to(resolved, repo_root) or _is_relative_to(resolved, scene_dir)):
+            return None, source_root, None, f"Absolute mesh path outside allowed roots rejected: {uri}"
     else:
         rel_parts = _safe_relative_parts(raw_path)
         if rel_parts is None:
