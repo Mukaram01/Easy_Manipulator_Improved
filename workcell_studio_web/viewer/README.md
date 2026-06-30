@@ -9,16 +9,16 @@ The viewer uses an isolated browser import map that loads Three.js and OrbitCont
 From the repository root, export a browser-readable scene file into `build/`:
 
 ```bash
-python3 scripts/export_workcell_studio_web_scene.py --scene scenes/ur5_2f_test --output build/workcell_studio_web_scene/ur5_2f_test.web_scene.json
+python3 scripts/export_workcell_studio_web_scene.py --scene scenes/ur5_2f_test --output build/workcell_studio_web_scene/ur5_2f_test.web_scene.json --stage-assets
 ```
 
-`build/` outputs are local artifacts and should not be committed.
+Browsers cannot load ROS `package://` URIs directly and cannot read arbitrary package files from your local ROS workspace. Use `--stage-assets` when you want recognizable mesh-backed browser previews: the exporter resolves supported mesh references, copies them under `build/workcell_studio_web_scene/assets/<scene_id>/...`, rewrites exported `mesh_uri` values to browser-safe relative URLs, and preserves the original ROS/source reference in `original_mesh_uri`. `build/` outputs are local artifacts and should not be committed.
 
 ### Workcell Builder action
 
 Workcell Builder also exposes a selected-scene action named **Export & Open Web 3D Viewer** in the Safety / Review flow. The action resolves the selected scene, runs `scripts/export_workcell_studio_web_scene.py`, writes only to `build/workcell_studio_web_scene/<scene_id>.web_scene.json`, and opens `workcell_studio_web/viewer/index.html` with Qt/QDesktopServices. It does not write under `scenes/`, mutate source YAML, mutate generated scene files, apply edit patches, or change RViz/MoveIt planning truth.
 
-If direct `file://` loading is blocked or unreliable in your browser, run this from the repository root and open the URL manually:
+If direct `file://` loading is blocked or unreliable in your browser, or if you staged mesh assets and want relative mesh URLs to resolve consistently, run this from the repository root and open the URL manually:
 
 ```bash
 python3 -m http.server 8765
@@ -28,10 +28,18 @@ URL: `http://localhost:8765/workcell_studio_web/viewer/index.html`
 
 ## Open the viewer
 
-1. Open `workcell_studio_web/viewer/index.html` directly in a browser.
-2. Use the **Load web_scene.json** file picker.
-3. Select the exported JSON, for example:
+1. Serve the repository root when using staged assets:
+
+   ```bash
+   python3 -m http.server 8765
+   ```
+
+2. Open `http://localhost:8765/workcell_studio_web/viewer/index.html` in a browser. Directly opening `workcell_studio_web/viewer/index.html` can still work for JSON-only review, but served HTTP is the expected path for relative staged mesh assets.
+3. Use the **Load web_scene.json** file picker.
+4. Select the exported JSON, for example:
    `build/workcell_studio_web_scene/ur5_2f_test.web_scene.json`.
+
+Expected result: when source meshes exist and are supported by the exporter/viewer, the robot, table/workbench, camera, and gripper/tool should be recognizable mesh-backed visuals rather than only generic boxes.
 
 Because Three.js is loaded by CDN import map, the browser needs network access for the viewer to render. If the CDN modules cannot load, the page shows a clear Three.js/CDN load failure rather than silently pretending the scene rendered.
 
@@ -41,7 +49,7 @@ Phase 3 focuses on making exported scenes easier to inspect in a browser without
 
 - Scene auto-framing computes bounds from visible scene content and starts the camera at a useful overview angle instead of leaving the user to hunt for the cell manually.
 - **Reset View** restores the camera to the computed scene overview after orbiting, panning, or zooming.
-- Browser-safe mesh loading attempts are made for relative/local `.stl`, `.dae`, and `.obj` mesh references where the browser and Three.js loaders can support them from the selected/exported scene context.
+- Browser-safe mesh loading attempts are made for relative staged `.stl`, `.dae`, and `.obj` mesh references where the browser and Three.js loaders can support them from the selected/exported scene context. ROS `package://` URIs must be resolved by the exporter first; browsers cannot fetch them directly.
 - Mesh loading remains best-effort. If a mesh URI cannot be fetched, parsed, or rendered safely in the browser, the viewer keeps the scene readable with a primitive or box fallback instead of hiding the object.
 - The inspector exposes `render_status` so users can distinguish loaded meshes, primitive fallbacks, and failed mesh attempts for the selected object.
 - Runtime mesh warnings are surfaced in the warnings panel and inspector context so missing, blocked, or unsupported assets are visible during review.
@@ -55,7 +63,7 @@ Phase 3 focuses on making exported scenes easier to inspect in a browser without
 - Orbit, pan, and zoom camera controls.
 - Scene auto-framing with **Reset View**.
 - Primitive objects from exported primitive/fallback data.
-- Browser-safe relative/local `.stl`, `.dae`, and `.obj` mesh attempts where supported.
+- Browser-safe relative staged `.stl`, `.dae`, and `.obj` mesh attempts where supported.
 - Box fallback for unknown assets, unsupported mesh URIs, blocked mesh access, and mesh-only assets that cannot be rendered by the browser.
 - Camera/sensor markers with simple frustum lines.
 - Pick, place, spawn, and safety zones as simple transparent geometry when present in the JSON.
@@ -63,8 +71,27 @@ Phase 3 focuses on making exported scenes easier to inspect in a browser without
 - Grouped object list with IDs and labels.
 - Simple in-scene labels for readable object identification.
 - Object selection from the list and basic canvas picking.
-- Inspector fields for ID, label, type, source, pose XYZ/RPY, scale, editable, locked, mesh URI, `render_status`, and primitive details.
+- Inspector fields for ID, label, type, source, pose XYZ/RPY, scale, editable, locked, mesh URI, original mesh URI where exported, `render_status`, and primitive details.
 - JSON warnings and runtime mesh warnings rendered in a dedicated warnings panel.
+
+## Mesh asset staging and primitive fallback troubleshooting
+
+For the canonical manual export, run this from the repository root:
+
+```bash
+python3 scripts/export_workcell_studio_web_scene.py --scene scenes/ur5_2f_test --output build/workcell_studio_web_scene/ur5_2f_test.web_scene.json --stage-assets
+```
+
+With `--stage-assets`, supported meshes are resolved and copied under `build/workcell_studio_web_scene/assets/ur5_2f_test/...`. The exported `web_scene.json` uses browser-safe relative `mesh_uri` values that point at those staged files, while `original_mesh_uri` preserves the ROS `package://`, source-relative, or other original URI for diagnostics and backend traceability.
+
+If an item still appears as `primitive_fallback`, inspect the selected item in the JSON or viewer inspector and warnings panel:
+
+- `mesh_staging_status`: whether the exporter staged the mesh, skipped it, or failed to stage it.
+- `mesh_resolve_warning`: why the source URI could not be resolved or copied, such as an unknown package, missing file, or unsupported URI form.
+- `mesh_status`: whether the item has a mesh candidate, staged mesh, unsupported mesh, or fallback-only visual.
+- `fallback_reason`: the viewer/exporter reason a primitive was used, such as unsupported mesh type, failed browser load, missing mesh metadata, or no source mesh.
+
+Remaining primitive fallbacks are expected for assets without source meshes or unsupported mesh formats. They should not be treated as proof that scene generation, RViz/MoveIt, or fake-hardware validation is complete.
 
 ## Generate and validate after Web 3D edits
 
@@ -97,8 +124,8 @@ This is not the final Web Studio editor. It intentionally excludes:
 - MoveIt planning or execution.
 - EPD live input or perception runtime streaming.
 - Mesh-perfect rendering.
-- `package://` URI resolution in the browser.
-- Arbitrary local filesystem mesh access from the browser. Browser security rules only allow safe access to files made available through the selected file context, a local server, or other browser-permitted URLs.
+- `package://` URI resolution in the browser. Browsers cannot load ROS package URIs directly; run `scripts/export_workcell_studio_web_scene.py --stage-assets` so supported meshes are copied to `build/workcell_studio_web_scene/assets/<scene_id>/...` and `mesh_uri` is rewritten to a browser-safe relative URL while `original_mesh_uri` keeps the ROS/source URI for traceability.
+- Arbitrary local filesystem mesh access from the browser. Browser security rules only allow safe access to files made available through staged assets, the selected file context, a local server, or other browser-permitted URLs.
 - Authentication, deployment packaging, and frontend framework scaffolding.
 
 This static viewer is only a lightweight browser proof-of-life for reviewing exported scene contract data. It improves readability of exported scenes, but the source-of-truth editing, scene generation, validation, and fake-hardware simulation flows remain in Workcell Studio, generated packages, and RViz/MoveIt.

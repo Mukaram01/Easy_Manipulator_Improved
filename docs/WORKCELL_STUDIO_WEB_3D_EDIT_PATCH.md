@@ -9,12 +9,15 @@ Export the current scene for the static viewer:
 ```bash
 python3 scripts/export_workcell_studio_web_scene.py \
   --scene scenes/ur5_2f_test \
-  --output build/workcell_studio_web_scene/ur5_2f_test.web_scene.json
+  --output build/workcell_studio_web_scene/ur5_2f_test.web_scene.json \
+  --stage-assets
 ```
+
+Use `--stage-assets` for mesh-backed browser review. Browsers cannot load ROS `package://` URIs directly, so the exporter copies supported meshes under `build/workcell_studio_web_scene/assets/<scene_id>/...`, rewrites exported `mesh_uri` values to browser-safe relative URLs, and preserves the ROS/source URI in `original_mesh_uri`. Edit patches operate on item identity and transforms; they do not rewrite `mesh_uri`, `original_mesh_uri`, `mesh_staging_status`, `mesh_resolve_warning`, `mesh_status`, or `fallback_reason`. Those mesh fields are preserved/exported for review and troubleshooting remaining `primitive_fallback` visuals.
 
 Open `workcell_studio_web/viewer/index.html`, load the exported `web_scene.json`, select one `editable=true` and `locked=false` item, and use edit mode to preview the transform. Editable/unlocked selections show enabled XYZ/RPY/scale fields and a Three.js translation gizmo; locked/generated robot/tool previews remain read-only and explain that source layout/environment should be edited instead. Use **Export Edit Patch** to download an edit patch when the preview state is correct.
 
-From Workcell Builder, the **Export & Open Web 3D Viewer** selected-scene action performs only the export-and-open part of this workflow. It writes the export to `build/workcell_studio_web_scene/<scene_id>.web_scene.json` and opens the static viewer. It intentionally does not apply edit patches, write under `scenes/`, mutate source YAML, mutate generated scene files, modify Qt Scene3D visuals, or replace RViz/MoveIt as planning truth. If browser `file://` loading is unreliable, use `python3 -m http.server 8765` from the repository root and browse to `http://localhost:8765/workcell_studio_web/viewer/index.html`.
+From Workcell Builder, the **Export & Open Web 3D Viewer** selected-scene action performs only the export-and-open part of this workflow. It writes the export to `build/workcell_studio_web_scene/<scene_id>.web_scene.json` and opens the static viewer. It intentionally does not apply edit patches, write under `scenes/`, mutate source YAML, mutate generated scene files, modify Qt Scene3D visuals, or replace RViz/MoveIt as planning truth. If browser `file://` loading is unreliable, or if staged mesh asset URLs need to resolve consistently, use `python3 -m http.server 8765` from the repository root and browse to `http://localhost:8765/workcell_studio_web/viewer/index.html`.
 
 Validate the patch before applying it:
 
