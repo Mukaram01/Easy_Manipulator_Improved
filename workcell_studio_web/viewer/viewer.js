@@ -108,6 +108,95 @@ function markDirtyTransform(rendered, next, { pushHistory = true, oldTransform =
   updateDirtyState();
   updateLabels();
 }
+
+function finiteNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+function finiteVector(value) {
+  return value && finiteNumber(value.x) && finiteNumber(value.y) && finiteNumber(value.z);
+}
+function positiveFiniteVector(value) {
+  return finiteVector(value) && value.x > 0 && value.y > 0 && value.z > 0;
+}
+function rawPoseDiagnostics(item) {
+  return {
+    pose: item?.pose,
+    world_pose: item?.world_pose,
+    baked_world_visual_pose: item?.baked_world_visual_pose,
+    visual_origin: item?.visual_origin,
+  };
+}
+function viewerFinalPoseDiagnostics(pose, scale) {
+  return {
+    xyz: { x: pose?.xyz?.x, y: pose?.xyz?.y, z: pose?.xyz?.z },
+    rpy: { x: pose?.rpy?.x, y: pose?.rpy?.y, z: pose?.rpy?.z },
+    scale: { x: scale?.x, y: scale?.y, z: scale?.z },
+  };
+}
+function appendViewerDiagnosticWarning(item, code, reason, extra = {}) {
+  const warning = {
+    source: 'runtime_viewer',
+    code,
+    object_id: item?.id || itemLabel(item || {}),
+    id: item?.id || '',
+    link: item?.link || item?.object_name || item?.visual || '',
+    object_name: item?.object_name || item?.link || itemLabel(item || {}),
+    parent_link: item?.parent_link || '',
+    immediate_parent_link: item?.immediate_parent_link || '',
+    pose: item?.pose,
+    world_pose: item?.world_pose,
+    baked_world_visual_pose: item?.baked_world_visual_pose,
+    visual_origin: item?.visual_origin,
+    scale: item?.scale,
+    mesh_scale: item?.mesh_scale,
+    reason: reason || 'viewer diagnostic warning',
+    message: `${code}: ${item?.id || itemLabel(item || {})} (${item?.link || item?.object_name || itemLabel(item || {})}): ${reason || 'viewer diagnostic warning'}`,
+    ...extra,
+  };
+  state.runtimeWarnings.push(warning);
+  refreshWarnings();
+  return warning;
+}
+function validateRenderableTransform(item) {
+  const pose = poseOf(item);
+  const scale = scaleOf(item);
+  const finalPose = viewerFinalPoseDiagnostics(pose, scale);
+  const reasons = [];
+  if (!finiteVector(pose.xyz)) reasons.push('final xyz contains non-finite values');
+  if (!finiteVector(pose.rpy)) reasons.push('final rpy contains non-finite values');
+  if (!finiteVector(scale)) reasons.push('scale contains non-finite values');
+  else if (!positiveFiniteVector(scale)) reasons.push('scale must be positive on every axis');
+  if (reasons.length) {
+    appendViewerDiagnosticWarning(item, 'invalid_renderable_transform', reasons.join('; '), {
+      final_pose: finalPose,
+      final_scale: finalPose.scale,
+      raw_pose_fields: rawPoseDiagnostics(item),
+      fallback_or_skip_reason: 'renderable skipped before applyPose because transform validation failed',
+    });
+    return { valid: false, pose, scale, reason: reasons.join('; ') };
+  }
+  return { valid: true, pose, scale, reason: '' };
+}
+function itemRequiresMeshBackedVisual(item) {
+  const explicit = item?.requires_mesh || item?.mesh_required || item?.required_mesh || item?.mesh_backed_required || item?.requires_mesh_backed_visual;
+  if (explicit === true || String(explicit).toLowerCase() === 'true') return true;
+  const source = String(item?.source_kind || item?.source_layer || item?.active_visual_source || '').toLowerCase();
+  const role = String(item?.role || item?.category || item?.type || '').toLowerCase();
+  const hasMeshContract = Boolean(displayMeshUri(item) || item?.original_mesh_uri || item?.mesh_path || item?.source_path || item?.package_uri);
+  return hasMeshContract && (source.includes('generated') || role.includes('robot') || role.includes('tool') || role.includes('gripper'));
+}
+function warnRequiredMeshFallback(item, meshUri, reason) {
+  const transform = transformOf(item);
+  appendViewerDiagnosticWarning(item, 'required_mesh_primitive_fallback', reason || 'required mesh-backed item is using primitive fallback', {
+    mesh_uri: meshUri || displayMeshUri(item),
+    original_mesh_uri: item?.original_mesh_uri || item?.package_uri || item?.source_path || item?.mesh_path || '',
+    final_pose: transform.pose,
+    final_scale: transform.scale,
+    raw_pose_fields: rawPoseDiagnostics(item),
+    fallback_or_skip_reason: reason || 'primitive fallback used for a required mesh-backed item',
+  });
+}
+
 function primitiveOf(item) {
   return item.primitive || item.primitive_details || item.dimensions || item.geometry || item.primitive_geometry || null;
 }
@@ -135,6 +224,17 @@ function appendRuntimeWarning(item, meshUri, reason) {
     object_name: item?.object_name || item?.link || itemLabel(item || {}),
     original_mesh_uri: item?.original_mesh_uri || item?.package_uri || item?.source_path || item?.mesh_path || meshUri || '',
     mesh_uri: meshUri || '',
+    parent_link: item?.parent_link || '',
+    immediate_parent_link: item?.immediate_parent_link || '',
+    pose: item?.pose,
+    world_pose: item?.world_pose,
+    baked_world_visual_pose: item?.baked_world_visual_pose,
+    visual_origin: item?.visual_origin,
+    final_pose: transformOf(item).pose,
+    final_scale: transformOf(item).scale,
+    scale: item?.scale,
+    mesh_scale: item?.mesh_scale,
+    fallback_or_skip_reason: reason || 'mesh loading skipped',
     reason: reason || 'mesh loading skipped',
     message: `Primitive fallback for ${item?.id || itemLabel(item || {})} (${item?.link || item?.object_name || itemLabel(item || {})}): ${reason || 'mesh loading skipped'}`,
   });
@@ -256,11 +356,14 @@ function makeSensorMarker(item) {
   return group;
 }
 function applyPose(object, item) {
-  const pose = poseOf(item);
+  const validation = validateRenderableTransform(item);
+  if (!validation.valid) return false;
+  const pose = validation.pose;
   object.position.copy(pose.xyz);
   object.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, 'XYZ');
-  const s = scaleOf(item);
+  const s = validation.scale;
   object.scale.set(s.x, s.y, s.z);
+  return true;
 }
 
 function assignItemUserData(object, item) {
@@ -285,6 +388,7 @@ async function tryLoadMesh(item, rendered, fallback) {
   if (!uri) {
     setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', requestedUri, diagnostic.reason);
     if (requestedUri) appendRuntimeWarning(item, requestedUri, diagnostic.reason);
+    if (itemRequiresMeshBackedVisual(item)) warnRequiredMeshFallback(item, requestedUri, diagnostic.reason);
     if (state.selected === item.id) populateInspector(rendered);
     return;
   }
@@ -311,6 +415,7 @@ async function tryLoadMesh(item, rendered, fallback) {
     const reason = `mesh loader failed: ${item.mesh_load_error}`;
     setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', uri, reason);
     appendRuntimeWarning(item, uri, reason);
+    if (itemRequiresMeshBackedVisual(item)) warnRequiredMeshFallback(item, uri, reason);
     if (state.selected === item.id) populateInspector(rendered);
   }
 }
@@ -446,7 +551,7 @@ function renderScene(items) {
     fallback.name = `${item.id || itemLabel(item)}_fallback`;
     assignItemUserData(fallback, item);
     object3d.add(fallback);
-    applyPose(object3d, item);
+    if (!applyPose(object3d, item)) continue;
     assignItemUserData(object3d, item);
     scene.add(object3d);
     const rendered = { item, object3d, fallback, labelEl: createLabelElement(item), originalTransform: transformOf(item) };
