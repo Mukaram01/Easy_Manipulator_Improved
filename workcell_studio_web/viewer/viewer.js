@@ -13,6 +13,8 @@ const MIN_FRAME_RADIUS = 1.2;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
 const state = { sceneJson: null, sourceWebSceneFile: '', objects: [], selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null };
+const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
+
 const el = {
   file: document.getElementById('scene-file'),
   resetView: document.getElementById('reset-view'),
@@ -522,6 +524,10 @@ function frameScene(bounds) {
 function resetView() {
   const bounds = state.lastFrameBounds || computeRenderedBounds();
   if (bounds) frameScene(bounds);
+}
+if (el.resetView) {
+  el.resetView.title = RESET_VIEW_TITLE;
+  el.resetView.setAttribute('aria-label', 'Fit Scene / Reset View');
 }
 
 function clearLabels() {
