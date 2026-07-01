@@ -52,6 +52,18 @@
   <main class="app-shell">
     <aside class="object-panel" aria-label="Object list panel">
       <h2>Objects</h2>
+      <section id="scene-summary" class="scene-summary state empty" aria-live="polite">
+        <h3>Scene summary</h3>
+        <div class="summary-grid">
+          <span>Scene</span><strong data-summary-field="scene-name">No scene loaded</strong>
+          <span>Renderable</span><strong data-summary-field="renderable-count">0</strong>
+          <span>Meshes loaded</span><strong data-summary-field="mesh-loaded-count">0</strong>
+          <span>Fallbacks</span><strong data-summary-field="fallback-count">0</strong>
+          <span>Missing/failed meshes</span><strong data-summary-field="mesh-failed-count">0</strong>
+          <span>Generated/locked</span><strong data-summary-field="generated-locked-count">0</strong>
+          <span>Editable layout/env</span><strong data-summary-field="editable-count">0</strong>
+        </div>
+      </section>
       <div id="empty-state" class="state empty">Choose an exported <code>web_scene.json</code> file to begin.</div>
       <ul id="object-list" class="object-list"></ul>
     </aside>
