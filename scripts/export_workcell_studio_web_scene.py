@@ -33,6 +33,17 @@ INPUTS = {
 }
 SUPPORTED_MESH_SUFFIXES = {".stl", ".dae", ".obj"}
 MESH_URI_FIELDS = ("mesh_uri", "package_uri", "mesh_path", "source_path", "resolved_source_path")
+ROBOTIQ_85_VISUAL_MESHES = {
+    "gripper_base_link": "robotiq_85_base_link.dae",
+    "gripper_finger1_knuckle_link": "robotiq_85_knuckle_link.dae",
+    "gripper_finger2_knuckle_link": "robotiq_85_knuckle_link.dae",
+    "gripper_finger1_finger_link": "robotiq_85_finger_link.dae",
+    "gripper_finger2_finger_link": "robotiq_85_finger_link.dae",
+    "gripper_finger1_inner_knuckle_link": "robotiq_85_inner_knuckle_link.dae",
+    "gripper_finger2_inner_knuckle_link": "robotiq_85_inner_knuckle_link.dae",
+    "gripper_finger1_finger_tip_link": "robotiq_85_finger_tip_link.dae",
+    "gripper_finger2_finger_tip_link": "robotiq_85_finger_tip_link.dae",
+}
 
 HELPER_TOKENS = (
     "overlay",
@@ -400,6 +411,77 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
     return sections
 
 
+def _supplement_missing_tool_meshes(data: Dict[str, Any], generated: Dict[str, List[Json]]) -> None:
+    """Add capability-described tool visuals when the flattened index omitted them.
+
+    This is intentionally metadata-driven: the scene manifest/cell/environment says
+    which tool profile and links are expected, and normal staging still resolves the
+    package URIs.  It does not special-case a scene id or bake browser-only files.
+    """
+    existing_text = " ".join(
+        str(item.get("id", "")) + " " + str(item.get("link", "")) + " " + str(item.get("mesh_uri", ""))
+        for item in generated.get("tools", [])
+    ).lower()
+    if "robotiq_85" in existing_text or "gripper_base_link" in existing_text:
+        return
+    manifest = _as_map(data.get("scene_manifest"))
+    env = _as_map(data.get("environment"))
+    cell = _as_map(data.get("cell_definition"))
+    tool_meta = _as_map(manifest.get("end_effector") or manifest.get("tool"))
+    if not tool_meta:
+        tool_meta = _as_map(env.get("tool") or env.get("end_effector"))
+    if not tool_meta:
+        tool_meta = _as_map(cell.get("end_effector") or cell.get("tool"))
+    profile = " ".join(str(tool_meta.get(k, "")) for k in ("id", "model", "profile", "type")).lower()
+    if "robotiq_85" not in profile:
+        return
+    expected_links = [str(v) for v in _as_list(tool_meta.get("visual_links"))]
+    if not expected_links:
+        expected_links = list(ROBOTIQ_85_VISUAL_MESHES)
+    robot_items = generated.get("robots", [])
+    wrist_pose = None
+    for item in robot_items:
+        if "wrist_3" in str(item.get("link", "")):
+            wrist_pose = item.get("pose") or item.get("world_pose") or item.get("baked_world_visual_pose")
+            break
+    for link in expected_links:
+        mesh_name = ROBOTIQ_85_VISUAL_MESHES.get(link)
+        if not mesh_name:
+            continue
+        item: Json = {
+            "id": f"generated_tool::{link}::visual_0",
+            "type": "mesh",
+            "category": "tool",
+            "role": "gripper",
+            "display_name": link,
+            "link": link,
+            "object_name": link,
+            "visual": "visual_0",
+            "pose": wrist_pose or {"xyz": [0, 0, 0], "rpy": [0, 0, 0]},
+            "geometry_type": "mesh",
+            "primitive_geometry_type": "mesh",
+            "package_uri": f"package://robotiq_85_description/meshes/visual/{mesh_name}",
+            "mesh_uri": f"package://robotiq_85_description/meshes/visual/{mesh_name}",
+            "source_path": f"package://robotiq_85_description/meshes/visual/{mesh_name}",
+            "mesh_path": f"assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/{mesh_name}",
+            "scale": [1, 1, 1],
+            "mesh_scale": [1, 1, 1],
+            "source_layer": "locked_generated_urdf_visual",
+            "active_visual_source": "mesh_preview",
+            "render_expected": True,
+            "mesh_available": True,
+            "resolved": True,
+            "locked": True,
+            "editable": False,
+            "source_kind": "generated_preview",
+            "provenance": _provenance(
+                ("id", "link", "mesh_uri", "package_uri", "pose", "locked", "editable", "source_kind"),
+                "scene_manifest.yaml|generated/scene_visual_mesh_index.json",
+            ),
+        }
+        generated["tools"].append(item)
+
+
 def _authored_item(raw: Mapping[str, Any], source: str, index: int, scene_dir: Path) -> Json:
     fields = (
         "id", "type", "role", "category", "display_name", "frame", "pose", "pose_xyz", "pose_rpy", "dimensions",
@@ -473,6 +555,25 @@ def _sort_items(items: List[Json]) -> List[Json]:
     return sorted(items, key=lambda x: (str(x.get("source_kind", "")), str(x.get("category", "")), str(x.get("role", "")), str(x.get("id", ""))))
 
 
+def _has_mesh_reference(item: Mapping[str, Any]) -> bool:
+    return any(isinstance(item.get(field), str) and bool(str(item.get(field)).strip()) for field in MESH_URI_FIELDS)
+
+
+def _drop_shadowed_metadata_primitives(items: List[Json], generated_items: List[Json], tokens: Sequence[str]) -> List[Json]:
+    if not any(_has_mesh_reference(item) for item in generated_items):
+        return items
+    kept: List[Json] = []
+    for item in items:
+        if item.get("source_kind") == "generated_preview" or _has_mesh_reference(item):
+            kept.append(item)
+            continue
+        text = _identity_text(item)
+        if any(token in text for token in tokens):
+            continue
+        kept.append(item)
+    return kept
+
+
 def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path: Optional[Path] = None) -> Json:
     scene_dir = scene_dir.resolve()
     warnings: List[Json] = []
@@ -485,13 +586,14 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
     scene_name = _first_present(scene_meta.get("name"), cell_scene.get("name"), cell_scene.get("id"), env_scene.get("name"), env_scene.get("id"), scene_dir.name)
 
     generated = _generated_preview_items(_as_map(data.get("visual_mesh_index")), scene_dir, warnings) if data.get("visual_mesh_index") is not None else {"robots": [], "tools": [], "assets": [], "sensors": [], "zones": []}
+    _supplement_missing_tool_meshes(data, generated)
     authored = _authored_sections(data, scene_dir, warnings)
     top_robots, top_tools, top_sensors = _top_level_entities(data, warnings)
 
-    robots = top_robots + generated["robots"]
-    tools = top_tools + generated["tools"]
-    sensors = top_sensors + authored["sensors"] + generated["sensors"]
-    assets = authored["assets"] + generated["assets"]
+    robots = _drop_shadowed_metadata_primitives(top_robots + generated["robots"], generated["robots"], ("robot", "ur5", "ur3", "ur10"))
+    tools = _drop_shadowed_metadata_primitives(top_tools + generated["tools"], generated["tools"], ("tool", "gripper", "robotiq", "end_effector"))
+    sensors = _drop_shadowed_metadata_primitives(top_sensors + authored["sensors"] + generated["sensors"], generated["sensors"], ("camera", "realsense", "sensor"))
+    assets = _drop_shadowed_metadata_primitives(authored["assets"] + generated["assets"], generated["assets"], ("table", "workbench", "support_surface"))
     zones = authored["zones"] + generated["zones"]
 
     output: Json = {

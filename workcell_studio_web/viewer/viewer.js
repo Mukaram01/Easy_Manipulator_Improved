@@ -122,9 +122,14 @@ function setRenderInfo(rendered, renderStatus, meshUri, fallbackReason) {
 function appendRuntimeWarning(item, meshUri, reason) {
   state.runtimeWarnings.push({
     source: 'runtime_mesh',
+    code: 'mesh_primitive_fallback',
     object_id: item?.id || itemLabel(item || {}),
+    link: item?.link || item?.object_name || item?.visual || '',
+    object_name: item?.object_name || item?.link || itemLabel(item || {}),
+    original_mesh_uri: item?.original_mesh_uri || item?.package_uri || item?.source_path || item?.mesh_path || meshUri || '',
     mesh_uri: meshUri || '',
     reason: reason || 'mesh loading skipped',
+    message: `Primitive fallback for ${item?.id || itemLabel(item || {})} (${item?.link || item?.object_name || itemLabel(item || {})}): ${reason || 'mesh loading skipped'}`,
   });
   refreshWarnings();
 }
@@ -760,7 +765,7 @@ function refreshWarnings(sceneJson = state.sceneJson) {
   el.warnings.innerHTML = warnings.map(w => {
     const label = w.code || w.source || 'warning';
     const details = w.message || w.reason || JSON.stringify(w);
-    const objectDetails = w.object_id || w.mesh_uri ? `<br><code>object=${escapeHtml(w.object_id)} mesh=${escapeHtml(w.mesh_uri)}</code>` : '';
+    const objectDetails = w.object_id || w.mesh_uri ? `<br><code>object=${escapeHtml(w.object_id)} link=${escapeHtml(w.link || w.object_name || '')} original=${escapeHtml(w.original_mesh_uri || '')} mesh=${escapeHtml(w.mesh_uri)}</code>` : '';
     return `<div class="warning-item"><strong>${escapeHtml(label)}</strong><br>${escapeHtml(details)}${objectDetails}</div>`;
   }).join('');
 }
