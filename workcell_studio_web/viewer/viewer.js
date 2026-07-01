@@ -259,7 +259,10 @@ function setRenderInfo(rendered, renderStatus, meshUri, fallbackReason) {
   };
   rendered.renderInfo = info;
   if (rendered.item) rendered.item.renderInfo = info;
-  rendered.object3d?.traverse?.(child => { child.userData.renderInfo = info; });
+  rendered.object3d?.traverse?.(child => {
+    child.userData.renderInfo = info;
+    child.userData.render_status = renderStatus;
+  });
   return info;
 }
 function appendRuntimeWarning(item, meshUri, reason) {
@@ -369,6 +372,39 @@ function materialFor(item) {
   if (item.locked || item.source_kind === 'generated_preview') return new THREE.MeshStandardMaterial({ color: 0x8794aa, roughness: 0.78, metalness: 0.05 });
   return new THREE.MeshStandardMaterial({ color: 0x7bd88f, roughness: 0.72 });
 }
+function fallbackMaterialFor(item) {
+  const isZoneFallback = isZone(item);
+  return new THREE.MeshStandardMaterial({
+    color: isZoneFallback ? 0xffc857 : 0xff9f1c,
+    emissive: isZoneFallback ? 0x3a2600 : 0x4a2600,
+    emissiveIntensity: 0.12,
+    roughness: 0.82,
+    metalness: 0.02,
+    transparent: true,
+    opacity: isZoneFallback ? 0.24 : 0.46,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+}
+function fallbackEdgeMaterialFor(item) {
+  return new THREE.LineBasicMaterial({
+    color: isZone(item) ? 0xffd36a : 0xffb347,
+    transparent: true,
+    opacity: 0.9,
+  });
+}
+function applyFallbackRenderMetadata(object, item, status = 'fallback_geometry') {
+  object.userData.render_status = status;
+  object.userData.renderInfo = {
+    render_status: status,
+    mesh_uri: displayMeshUri(item),
+    fallback_reason: 'fallback geometry rendered while a real mesh is unavailable',
+  };
+  object.traverse?.(child => {
+    child.userData.render_status = status;
+    child.userData.renderInfo = object.userData.renderInfo;
+  });
+}
 function dimensionsFromPrimitive(primitive) {
   if (!primitive) return [0.25, 0.25, 0.25];
   if (Array.isArray(primitive)) return primitive.slice(0, 3);
@@ -377,7 +413,6 @@ function dimensionsFromPrimitive(primitive) {
 function makePrimitiveMesh(item) {
   const primitive = primitiveOf(item);
   const kind = String(item.geometry_type || item.primitive_geometry_type || primitive?.type || primitive?.shape || '').toLowerCase();
-  const material = materialFor(item);
   let geometry;
   if (kind.includes('sphere')) geometry = new THREE.SphereGeometry(Number(primitive?.radius || 0.12), 24, 16);
   else if (kind.includes('cylinder')) geometry = new THREE.CylinderGeometry(Number(primitive?.radius || 0.08), Number(primitive?.radius || 0.08), Number(primitive?.height || 0.25), 24);
@@ -385,11 +420,23 @@ function makePrimitiveMesh(item) {
     const dims = dimensionsFromPrimitive(primitive);
     geometry = new THREE.BoxGeometry(Number(dims[0] || 0.25), Number(dims[1] || 0.25), Number(dims[2] || 0.25));
   }
-  return new THREE.Mesh(geometry, material);
+  const group = new THREE.Group();
+  group.name = `${item.id || itemLabel(item)}_fallback_primitive`;
+  const mesh = new THREE.Mesh(geometry, fallbackMaterialFor(item));
+  mesh.name = `${item.id || itemLabel(item)}_fallback_solid`;
+  group.add(mesh);
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), fallbackEdgeMaterialFor(item));
+  edges.name = `${item.id || itemLabel(item)}_fallback_edges`;
+  group.add(edges);
+  applyFallbackRenderMetadata(group, item, 'primitive_fallback');
+  return group;
 }
 function makeSensorMarker(item) {
   const group = new THREE.Group();
-  group.add(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.08), materialFor(item)));
+  group.name = `${item.id || itemLabel(item)}_fallback_sensor`;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.08), fallbackMaterialFor(item));
+  body.name = `${item.id || itemLabel(item)}_fallback_sensor_body`;
+  group.add(body);
   const frustum = new THREE.LineSegments(
     new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(0,0,0), new THREE.Vector3(0.35,0.22,-0.18), new THREE.Vector3(0,0,0), new THREE.Vector3(0.35,-0.22,-0.18),
@@ -397,9 +444,11 @@ function makeSensorMarker(item) {
       new THREE.Vector3(0.35,0.22,-0.18), new THREE.Vector3(0.35,-0.22,-0.18), new THREE.Vector3(0.35,-0.22,-0.18), new THREE.Vector3(0.35,-0.22,0.18),
       new THREE.Vector3(0.35,-0.22,0.18), new THREE.Vector3(0.35,0.22,0.18), new THREE.Vector3(0.35,0.22,0.18), new THREE.Vector3(0.35,0.22,-0.18),
     ]),
-    new THREE.LineBasicMaterial({ color: 0x62d2ff })
+    fallbackEdgeMaterialFor(item)
   );
+  frustum.name = `${item.id || itemLabel(item)}_fallback_sensor_frustum`;
   group.add(frustum);
+  applyFallbackRenderMetadata(group, item, 'sensor_fallback');
   return group;
 }
 function applyPose(object, item) {
