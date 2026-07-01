@@ -127,6 +127,18 @@ def test_tiny_scene_exports_generated_and_authored_asset_contract(tmp_path):
     assert payload1["inputs"]["layout"]["present"] is True
     assert payload1["inputs"]["visual_mesh_index"]["present"] is True
 
+    summary = payload1["viewer_summary"]
+    assert summary["renderable_count"] == sum(len(payload1[bucket]) for bucket in ("robots", "tools", "assets", "sensors", "zones"))
+    assert summary["mesh_backed_count"] >= 0
+    assert summary["fallback_count"] >= 1
+    assert summary["missing_or_failed_mesh_count"] >= 1
+    assert summary["scene_bounds"]["min"][0] <= 0.0
+    assert summary["scene_bounds"]["max"][2] >= 1.1
+    assert summary["required_item_status"]["robot"]["present"] is True
+    assert summary["required_item_status"]["tool"]["present"] is True
+    assert summary["required_item_status"]["table"]["present"] is True
+    assert summary["required_item_status"]["camera"]["present"] is True
+
     robot = next(item for item in payload1["robots"] if item["id"] == "ur5_visual")
     tool = next(item for item in payload1["tools"] if item["id"] == "robotiq_2f_visual")
     for generated in (robot, tool):
@@ -159,6 +171,8 @@ def test_missing_optional_inputs_warn_in_output_json_without_crashing(tmp_path):
     schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
     Draft202012Validator(schema).validate(payload)
     assert payload["schema_version"] == "workcell_studio_web_scene/v1"
+    assert payload["viewer_summary"]["renderable_count"] == 0
+    assert payload["viewer_summary"]["scene_bounds"] == {"min": [0.0, 0.0, 0.0], "max": [0.0, 0.0, 0.0], "source_count": 0, "sources": []}
     missing = [warning for warning in payload["warnings"] if warning["code"] == "optional_file_missing"]
     assert {warning["source"] for warning in missing} == {
         "scene_manifest.yaml",
@@ -182,6 +196,18 @@ def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallba
     assert required["robotiq"]
     assert required["table"]
     assert required["camera"]
+
+    summary = payload["viewer_summary"]
+    assert summary["renderable_count"] >= 20
+    assert summary["mesh_backed_count"] >= len(required["ur5"]) + len(required["robotiq"]) + len(required["table"]) + len(required["camera"])
+    assert summary["missing_or_failed_mesh_count"] >= 1
+    assert summary["scene_bounds"]["source_count"] == summary["renderable_count"]
+    for axis in range(3):
+        assert summary["scene_bounds"]["min"][axis] <= summary["scene_bounds"]["max"][axis]
+    for category in ("robot", "tool", "table", "camera"):
+        assert summary["required_item_status"][category]["present"] is True
+        assert summary["required_item_status"][category]["status"] in {"mesh_backed", "missing_or_failed_mesh"}
+        assert summary["required_item_status"][category]["item_ids"]
 
     for group in required.values():
         for item in group:
