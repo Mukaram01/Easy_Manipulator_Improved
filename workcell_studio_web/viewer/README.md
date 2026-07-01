@@ -1,8 +1,8 @@
-# Workcell Studio static web scene viewer
+# Workcell Studio Web 3D Viewer
 
-This directory contains a **Phase 3 proof-of-life** browser viewer for the Workcell Studio `workcell_studio_web_scene/v1` JSON contract. It is intentionally tiny: static HTML, CSS, and JavaScript only, with no npm package, no bundler, no generated scene outputs committed to the repository, and no replacement of the existing Workcell Builder or RViz/MoveIt validation flow.
+This directory contains the **Workcell Studio Web 3D Viewer** for the Workcell Studio `workcell_studio_web_scene/v1` JSON contract. Web 3D is now the preferred fast Workcell Studio visual path for browser-based scene review and layout inspection. It remains intentionally lightweight: static HTML, CSS, and JavaScript only, with no npm package, no bundler, no generated scene outputs committed to the repository, and no replacement of the existing Workcell Builder or RViz/MoveIt validation flow.
 
-The viewer uses an isolated browser import map that loads Three.js and OrbitControls from a CDN at runtime. That keeps this proof-of-life self-contained while avoiding a committed frontend build system.
+The viewer uses an isolated browser import map that loads Three.js and OrbitControls from a CDN at runtime. That keeps the viewer self-contained while avoiding a committed frontend build system.
 
 ## Export a scene JSON
 
@@ -43,9 +43,9 @@ Expected result: when source meshes exist and are supported by the exporter/view
 
 Because Three.js is loaded by CDN import map, the browser needs network access for the viewer to render. If the CDN modules cannot load, the page shows a clear Three.js/CDN load failure rather than silently pretending the scene rendered.
 
-## Phase 3 readability improvements
+## Web 3D readability improvements
 
-Phase 3 focuses on making exported scenes easier to inspect in a browser without claiming that the static viewer is a full editor or simulator:
+Web 3D focuses on making exported scenes easier to inspect in a browser without claiming that the static viewer is a full editor or simulator:
 
 - Scene auto-framing computes bounds from visible scene content and starts the camera at a useful overview angle instead of leaving the user to hunt for the cell manually.
 - **Reset View** restores the camera to the computed scene overview after orbiting, panning, or zooming.
@@ -73,6 +73,21 @@ Phase 3 focuses on making exported scenes easier to inspect in a browser without
 - Object selection from the list and basic canvas picking.
 - Inspector fields for ID, label, type, source, pose XYZ/RPY, scale, editable, locked, mesh URI, original mesh URI where exported, `render_status`, and primitive details.
 - JSON warnings and runtime mesh warnings rendered in a dedicated warnings panel.
+
+## Manual `ur5_2f_test` visual checks
+
+Use the Web 3D Viewer as the preferred fast Workcell Studio visual path for quick scene review. For the canonical `ur5_2f_test` scene, manually confirm:
+
+- UR5 is assembled and not exploded into disconnected fallback pieces.
+- Robotiq 2F gripper is attached to the robot wrist.
+- Table/workbench is upright and positioned as a physical work surface.
+- Camera/RealSense is visible; if the exact mesh is unavailable, it is clearly marked as a camera/sensor fallback.
+- Grid and axes are visible for spatial orientation.
+- No required item is fallback-only; any fallback required for review has a clear warning or diagnostic reason.
+- Default camera view opens from a useful angle that frames the workcell.
+- **Fit/Reset** recenters the scene correctly after orbiting, panning, or zooming.
+
+RViz/MoveIt remains the planning and fake-hardware validation truth. Passing Web 3D visual checks does not prove MoveIt planning, controller wiring, fake-hardware launch readiness, or real-hardware safety.
 
 ## Mesh asset staging and primitive fallback troubleshooting
 
@@ -110,7 +125,7 @@ Recommended workflow:
 9. Do not launch robot hardware from this step.
 10. Use fake-hardware RViz/MoveIt launch verification as the next phase.
 
-This generation/validation step does not launch ROS, RViz, MoveIt, Gazebo, fake hardware, or real hardware. RViz/MoveIt remains the future planning truth after Web 3D authoring and backend scene generation.
+This generation/validation step does not launch ROS, RViz, MoveIt, Gazebo, fake hardware, or real hardware. RViz/MoveIt remains the planning and fake-hardware validation truth after Web 3D authoring and backend scene generation.
 
 ## Intentional exclusions and limitations
 
@@ -128,7 +143,7 @@ This is not the final Web Studio editor. It intentionally excludes:
 - Arbitrary local filesystem mesh access from the browser. Browser security rules only allow safe access to files made available through staged assets, the selected file context, a local server, or other browser-permitted URLs.
 - Authentication, deployment packaging, and frontend framework scaffolding.
 
-This static viewer is only a lightweight browser proof-of-life for reviewing exported scene contract data. It improves readability of exported scenes, but the source-of-truth editing, scene generation, validation, and fake-hardware simulation flows remain in Workcell Studio, generated packages, and RViz/MoveIt.
+This static viewer is the preferred fast visual review path for exported scene contract data. It improves readability of exported scenes, but the source-of-truth editing, scene generation, validation, planning, and fake-hardware simulation flows remain in Workcell Studio, generated packages, and RViz/MoveIt.
 
 ## Persistence verification loop
 
