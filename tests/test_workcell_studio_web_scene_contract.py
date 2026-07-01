@@ -1,4 +1,5 @@
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -191,6 +192,134 @@ def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallba
             assert item.get("mesh_resolve_warning") in (None, "")
 
     required_ids = {item["id"] for group in required.values() for item in group}
+    fallback_warnings = [
+        warning for warning in payload["warnings"]
+        if warning.get("code") in {"mesh_primitive_fallback", "mesh_stage_failed"}
+    ]
+    assert not [warning for warning in fallback_warnings if warning.get("source") in required_ids]
+
+
+def _items_with_original_mesh(payload: dict, bucket: str, token: str) -> list[dict]:
+    return [
+        item for item in payload[bucket]
+        if token in str(item.get("original_mesh_uri") or item.get("mesh_uri") or "")
+    ]
+
+
+def _final_pose(item: dict) -> dict:
+    pose = item.get("final_transform") or item.get("world_from_visual") or item.get("pose") or item.get("world_pose")
+    assert isinstance(pose, dict), f"{item.get('id')} missing final/world pose"
+    return pose
+
+
+def _finite_vector(values: object, *, length: int, label: str) -> list[float]:
+    assert isinstance(values, list), f"{label} must be a list"
+    assert len(values) == length, f"{label} must have {length} values"
+    out = [float(v) for v in values]
+    assert all(math.isfinite(v) for v in out), f"{label} must contain finite values"
+    return out
+
+
+def _xyz(item: dict) -> list[float]:
+    return _finite_vector(_final_pose(item).get("xyz"), length=3, label=f"{item.get('id')}.xyz")
+
+
+def _assert_pose_is_finite(item: dict) -> None:
+    pose = _final_pose(item)
+    _finite_vector(pose.get("xyz"), length=3, label=f"{item.get('id')}.xyz")
+    if "rpy" in pose:
+        _finite_vector(pose.get("rpy"), length=3, label=f"{item.get('id')}.rpy")
+    if "quaternion" in pose:
+        _finite_vector(pose.get("quaternion"), length=4, label=f"{item.get('id')}.quaternion")
+    quat = item.get("baked_world_visual_quaternion")
+    if isinstance(quat, dict):
+        assert all(math.isfinite(float(quat[k])) for k in ("w", "x", "y", "z"))
+
+
+def _distance(a: dict, b: dict) -> float:
+    ax, ay, az = _xyz(a)
+    bx, by, bz = _xyz(b)
+    return math.dist((ax, ay, az), (bx, by, bz))
+
+
+def _assert_browser_safe_staged_mesh(item: dict) -> None:
+    uri = item.get("mesh_uri")
+    assert isinstance(uri, str) and uri
+    assert uri.startswith("build/workcell_studio_web_scene/assets/ur5_2f_test/")
+    assert not uri.startswith(("/", "file://", "package://"))
+    assert "://" not in uri
+    assert ".." not in Path(uri).parts
+    assert item.get("mesh_staging_status") == "staged"
+    assert item.get("mesh_resolve_warning") in (None, "")
+
+
+def test_ur5_2f_web_scene_export_transform_parity_for_product_meshes(tmp_path):
+    payload = _export(REPO_ROOT / "scenes" / "ur5_2f_test", tmp_path / "out" / "ur5_2f_test.parity.web_scene.json")
+
+    ur5_by_link = {
+        item.get("link"): item
+        for item in _items_with_original_mesh(payload, "robots", "ur_description/meshes/ur5/visual")
+    }
+    required_ur5_links = (
+        "base_link",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+    )
+    for link in required_ur5_links:
+        assert link in ur5_by_link
+        _assert_pose_is_finite(ur5_by_link[link])
+        _assert_browser_safe_staged_mesh(ur5_by_link[link])
+        assert ur5_by_link[link].get("primitive_geometry_type") in (None, "mesh")
+
+    adjacent_pairs = (
+        ("base_link", "shoulder_link"),
+        ("shoulder_link", "upper_arm_link"),
+        ("upper_arm_link", "forearm_link"),
+        ("forearm_link", "wrist_1_link"),
+        ("wrist_1_link", "wrist_2_link"),
+        ("wrist_2_link", "wrist_3_link"),
+    )
+    for parent, child in adjacent_pairs:
+        dist = _distance(ur5_by_link[parent], ur5_by_link[child])
+        assert 0.03 <= dist <= 0.75, f"{parent}->{child} implausible distance {dist}"
+
+    assert any(any(abs(v) > 0.05 for v in _xyz(item)) for item in ur5_by_link.values())
+
+    gripper_items = _items_with_original_mesh(payload, "tools", "robotiq_85_description/meshes/visual")
+    assert gripper_items
+    wrist = ur5_by_link["wrist_3_link"]
+    for item in gripper_items:
+        _assert_pose_is_finite(item)
+        _assert_browser_safe_staged_mesh(item)
+        assert item.get("primitive_geometry_type") in (None, "mesh")
+        assert _distance(wrist, item) <= 0.35
+
+    tables = _items_with_original_mesh(payload, "assets", "workbench_description/meshes/visual/table.stl")
+    assert tables
+    for table in tables:
+        _assert_pose_is_finite(table)
+        _assert_browser_safe_staged_mesh(table)
+        scale = _finite_vector(table.get("scale") or table.get("mesh_scale"), length=3, label=f"{table.get('id')}.scale")
+        assert scale == [0.001, 0.001, 0.001]
+        assert all(0.0001 <= value <= 10.0 for value in scale)
+        assert table.get("primitive_geometry_type") in (None, "mesh")
+
+    cameras = _items_with_original_mesh(payload, "sensors", "realsense2_description/meshes/d435.dae")
+    assert cameras
+    for camera in cameras:
+        _assert_pose_is_finite(camera)
+        _assert_browser_safe_staged_mesh(camera)
+        x, y, z = _xyz(camera)
+        assert -1.5 <= x <= 1.5
+        assert -1.5 <= y <= 1.5
+        assert 0.2 <= z <= 2.0
+        assert camera.get("primitive_geometry_type") in (None, "mesh")
+
+    required_ids = {item["id"] for item in [*ur5_by_link.values(), *gripper_items, *tables, *cameras]}
     fallback_warnings = [
         warning for warning in payload["warnings"]
         if warning.get("code") in {"mesh_primitive_fallback", "mesh_stage_failed"}

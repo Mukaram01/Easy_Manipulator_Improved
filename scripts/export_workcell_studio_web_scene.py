@@ -557,6 +557,74 @@ def _supplement_missing_tool_meshes(data: Dict[str, Any], generated: Dict[str, L
         generated["tools"].append(item)
 
 
+def _pose_xyz(pose: Any) -> Optional[List[float]]:
+    if not isinstance(pose, Mapping):
+        return None
+    xyz = pose.get("xyz")
+    if not isinstance(xyz, list) or len(xyz) < 3:
+        return None
+    try:
+        return [float(xyz[0]), float(xyz[1]), float(xyz[2])]
+    except (TypeError, ValueError):
+        return None
+
+
+def _set_item_pose(item: Json, pose: Json, source: str) -> None:
+    for field in ("pose", "world_pose", "final_transform", "world_from_visual", "link_world_pose", "baked_world_visual_pose"):
+        if field in item or field in {"pose", "world_pose", "final_transform", "world_from_visual"}:
+            item[field] = dict(pose)
+            item.setdefault("provenance", {})[field] = source
+    item["transform_source"] = source
+    item.setdefault("provenance", {})["transform_source"] = source
+
+
+def _apply_web_scene_transform_parity_fallbacks(data: Dict[str, Any], generated: Dict[str, List[Json]]) -> None:
+    """Keep browser export transforms plausible when flattened URDF metadata is stale.
+
+    Some generated static visual indexes include correct mesh identity but leave
+    non-arm fixed descendants (tool/camera) at their local origin.  Product View
+    should still consume canonical world-space final transforms, so this exporter
+    applies conservative scene-metadata fallbacks only when the generated mesh
+    pose is effectively collapsed at the world origin.
+    """
+    wrist_pose = None
+    for item in generated.get("robots", []):
+        if "wrist_3" in str(item.get("link", "")):
+            wrist_pose = item.get("final_transform") or item.get("world_from_visual") or item.get("pose")
+            break
+    wrist_xyz = _pose_xyz(wrist_pose)
+    if wrist_xyz is not None:
+        for item in generated.get("tools", []):
+            pose = item.get("final_transform") or item.get("world_from_visual") or item.get("pose")
+            xyz = _pose_xyz(pose)
+            chain = " ".join(str(v) for v in _as_list(item.get("transform_chain")))
+            if xyz is not None and sum(v * v for v in xyz) < 0.05 and ("wrist_3" in chain or "tool0" in chain):
+                adjusted = dict(pose) if isinstance(pose, Mapping) else {"rpy": [0.0, 0.0, 0.0]}
+                adjusted["xyz"] = [wrist_xyz[i] + xyz[i] for i in range(3)]
+                _set_item_pose(item, adjusted, "web_export_wrist_transform_parity_fallback")
+
+    env = _as_map(data.get("environment"))
+    authored_camera_pose = None
+    for raw in _as_list(_as_map(env.get("environment")).get("assets")) + _as_list(_as_map(env.get("environment")).get("sensors")):
+        if not isinstance(raw, Mapping):
+            continue
+        text = _identity_text(raw)
+        if "camera" in text or "realsense" in text:
+            xyz = raw.get("pose_xyz")
+            if isinstance(xyz, list) and len(xyz) >= 3:
+                rpy = (raw.get("pose_rpy") or [0.0, 0.0, 0.0])[:3]
+                authored_camera_pose = {
+                    "xyz": [float(xyz[0]), float(xyz[1]), float(xyz[2])],
+                    "rpy": [float(v) for v in rpy],
+                }
+                break
+    if authored_camera_pose is not None:
+        for item in generated.get("sensors", []):
+            pose = item.get("final_transform") or item.get("world_from_visual") or item.get("pose")
+            xyz = _pose_xyz(pose)
+            if xyz is not None and sum(v * v for v in xyz) < 0.05 and ("camera" in _identity_text(item) or "realsense" in _identity_text(item)):
+                _set_item_pose(item, authored_camera_pose, "web_export_authored_camera_transform_fallback")
+
 def _authored_item(raw: Mapping[str, Any], source: str, index: int, scene_dir: Path) -> Json:
     fields = (
         "id", "type", "role", "category", "display_name", "frame", "pose", "pose_xyz", "pose_rpy", "dimensions",
@@ -662,6 +730,7 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
 
     generated = _generated_preview_items(_as_map(data.get("visual_mesh_index")), scene_dir, warnings) if data.get("visual_mesh_index") is not None else {"robots": [], "tools": [], "assets": [], "sensors": [], "zones": []}
     _supplement_missing_tool_meshes(data, generated)
+    _apply_web_scene_transform_parity_fallbacks(data, generated)
     authored = _authored_sections(data, scene_dir, warnings)
     top_robots, top_tools, top_sensors = _top_level_entities(data, warnings)
 
