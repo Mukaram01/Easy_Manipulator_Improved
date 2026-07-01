@@ -157,3 +157,30 @@ def test_repository_does_not_track_generated_web_scene_outputs_under_source_path
     )
     tracked = [line for line in result.stdout.splitlines() if line.strip()]
     assert tracked == []
+
+
+def test_viewer_validates_renderable_transforms_and_required_mesh_fallbacks():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    for token in [
+        "validateRenderableTransform",
+        "invalid_renderable_transform",
+        "final xyz contains non-finite values",
+        "final rpy contains non-finite values",
+        "scale contains non-finite values",
+        "scale must be positive on every axis",
+        "renderable skipped before applyPose because transform validation failed",
+        "itemRequiresMeshBackedVisual",
+        "required_mesh_primitive_fallback",
+        "requires_mesh_backed_visual",
+        "parent_link",
+        "immediate_parent_link",
+        "baked_world_visual_pose",
+        "visual_origin",
+        "final_pose",
+        "final_scale",
+        "mesh_scale",
+        "fallback_or_skip_reason",
+    ]:
+        assert token in js
+    assert "if (!applyPose(object3d, item)) continue;" in js
+    assert "if (itemRequiresMeshBackedVisual(item)) warnRequiredMeshFallback" in js
