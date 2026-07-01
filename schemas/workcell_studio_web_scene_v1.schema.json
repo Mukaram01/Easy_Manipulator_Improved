@@ -5,7 +5,7 @@
   "description": "Browser-facing, dependency-light scene JSON exported from Workcell Studio authored and generated scene inputs.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "scene", "inputs", "robots", "tools", "assets", "sensors", "zones", "warnings", "backend_actions"],
+  "required": ["schema_version", "scene", "inputs", "robots", "tools", "assets", "sensors", "zones", "viewer_summary", "warnings", "backend_actions"],
   "properties": {
     "schema_version": {"const": "workcell_studio_web_scene/v1"},
     "scene": {"$ref": "#/$defs/scene"},
@@ -26,6 +26,7 @@
     "assets": {"type": "array", "items": {"$ref": "#/$defs/item"}},
     "sensors": {"type": "array", "items": {"$ref": "#/$defs/item"}},
     "zones": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+    "viewer_summary": {"$ref": "#/$defs/viewerSummary"},
     "warnings": {"type": "array", "items": {"$ref": "#/$defs/warning"}},
     "backend_actions": {"type": "array", "items": {"$ref": "#/$defs/backendAction"}}
   },
@@ -99,6 +100,50 @@
         "description": {"type": "string"},
         "safety_note": {"type": "string"}
       }
-    }
+    },
+    "viewerSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scene_bounds", "renderable_count", "mesh_backed_count", "fallback_count", "missing_or_failed_mesh_count", "required_item_status"],
+      "properties": {
+        "scene_bounds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["min", "max", "source_count", "sources"],
+          "properties": {
+            "min": {"$ref": "#/$defs/number3"},
+            "max": {"$ref": "#/$defs/number3"},
+            "source_count": {"type": "integer", "minimum": 0},
+            "sources": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "renderable_count": {"type": "integer", "minimum": 0},
+        "mesh_backed_count": {"type": "integer", "minimum": 0},
+        "fallback_count": {"type": "integer", "minimum": 0},
+        "missing_or_failed_mesh_count": {"type": "integer", "minimum": 0},
+        "required_item_status": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["robot", "tool", "table", "camera"],
+          "properties": {
+            "robot": {"$ref": "#/$defs/requiredItemStatus"},
+            "tool": {"$ref": "#/$defs/requiredItemStatus"},
+            "table": {"$ref": "#/$defs/requiredItemStatus"},
+            "camera": {"$ref": "#/$defs/requiredItemStatus"}
+          }
+        }
+      }
+    },
+    "requiredItemStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["present", "status", "item_ids"],
+      "properties": {
+        "present": {"type": "boolean"},
+        "status": {"enum": ["missing", "mesh_backed", "primitive_fallback", "missing_or_failed_mesh"]},
+        "item_ids": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "number3": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number"}}
   }
 }

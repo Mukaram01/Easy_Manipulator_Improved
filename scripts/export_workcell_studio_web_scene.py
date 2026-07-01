@@ -717,6 +717,139 @@ def _drop_shadowed_metadata_primitives(items: List[Json], generated_items: List[
     return kept
 
 
+
+def _finite_num3(value: Any) -> Optional[List[float]]:
+    if not isinstance(value, list) or len(value) < 3:
+        return None
+    try:
+        out = [float(value[0]), float(value[1]), float(value[2])]
+    except (TypeError, ValueError):
+        return None
+    if any(not (v == v and abs(v) != float("inf")) for v in out):
+        return None
+    return out
+
+
+def _item_pose_xyz(item: Mapping[str, Any]) -> Optional[List[float]]:
+    for field in ("final_transform", "world_from_visual", "pose", "world_pose", "baked_world_visual_pose"):
+        xyz = _pose_xyz(item.get(field))
+        if xyz is not None:
+            return xyz
+    return _finite_num3(item.get("pose_xyz"))
+
+
+def _item_local_bounds(item: Mapping[str, Any]) -> Optional[Tuple[List[float], List[float], str]]:
+    for field in ("mesh_bounds", "local_bounds", "bounds"):
+        bounds = item.get(field)
+        if isinstance(bounds, Mapping):
+            mn = _finite_num3(bounds.get("min") or bounds.get("min_xyz") or bounds.get("local_min"))
+            mx = _finite_num3(bounds.get("max") or bounds.get("max_xyz") or bounds.get("local_max"))
+            if mn is not None and mx is not None:
+                return mn, mx, field
+    mn = _finite_num3(item.get("local_bounds_min") or item.get("mesh_bounds_min"))
+    mx = _finite_num3(item.get("local_bounds_max") or item.get("mesh_bounds_max"))
+    if mn is not None and mx is not None:
+        return mn, mx, "local_bounds_min/max"
+    dims = _finite_num3(item.get("dimensions") or item.get("size") or item.get("primitive_dimensions"))
+    if dims is not None:
+        half = [abs(v) / 2.0 for v in dims]
+        return [-half[0], -half[1], -half[2]], [half[0], half[1], half[2]], "dimensions"
+    return None
+
+
+def _scaled_bounds(bounds: Tuple[List[float], List[float], str], item: Mapping[str, Any]) -> Tuple[List[float], List[float], str]:
+    mn, mx, source = bounds
+    scale = _finite_num3(item.get("scale") or item.get("mesh_scale")) or [1.0, 1.0, 1.0]
+    scaled_min: List[float] = []
+    scaled_max: List[float] = []
+    for i in range(3):
+        a = mn[i] * scale[i]
+        b = mx[i] * scale[i]
+        scaled_min.append(min(a, b))
+        scaled_max.append(max(a, b))
+    return scaled_min, scaled_max, source
+
+
+def _viewer_item_status(item: Mapping[str, Any]) -> str:
+    status = str(item.get("mesh_staging_status") or "")
+    if status == "staged":
+        return "mesh_backed"
+    if status in {"resolve_failed", "unsupported_format", "unsafe_path", "unsupported_scheme", "unsafe_destination"}:
+        return "missing_or_failed_mesh"
+    if _has_mesh_reference(item):
+        return "missing_or_failed_mesh"
+    return "primitive_fallback"
+
+
+def _viewer_summary(payload: Json) -> Json:
+    sections: Sequence[str] = ("robots", "tools", "assets", "sensors", "zones")
+    renderable: List[Tuple[str, Json]] = []
+    for section in sections:
+        for item in payload.get(section, []):
+            if isinstance(item, dict):
+                renderable.append((section, item))
+
+    scene_min: Optional[List[float]] = None
+    scene_max: Optional[List[float]] = None
+    bounds_sources: List[str] = []
+    mesh_backed = 0
+    fallback = 0
+    missing = 0
+    required: Dict[str, Json] = {key: {"present": False, "status": "missing", "item_ids": []} for key in ("robot", "tool", "table", "camera")}
+
+    for _section, item in renderable:
+        status = _viewer_item_status(item)
+        if status == "mesh_backed":
+            mesh_backed += 1
+        elif status == "missing_or_failed_mesh":
+            missing += 1
+        else:
+            fallback += 1
+
+        xyz = _item_pose_xyz(item)
+        if xyz is not None:
+            local = _item_local_bounds(item)
+            if local is not None:
+                mn, mx, source = _scaled_bounds(local, item)
+                item_min = [xyz[i] + mn[i] for i in range(3)]
+                item_max = [xyz[i] + mx[i] for i in range(3)]
+                bounds_sources.append(f"{item.get('id')}:{source}")
+            else:
+                item_min = list(xyz)
+                item_max = list(xyz)
+                bounds_sources.append(f"{item.get('id')}:pose")
+            scene_min = item_min if scene_min is None else [min(scene_min[i], item_min[i]) for i in range(3)]
+            scene_max = item_max if scene_max is None else [max(scene_max[i], item_max[i]) for i in range(3)]
+
+        text = _identity_text(item)
+        categories: List[str] = []
+        if "robot" in text or str(item.get("category", "")).lower() == "robot":
+            categories.append("robot")
+        if any(token in text for token in ("tool", "gripper", "robotiq", "end_effector", "suction")):
+            categories.append("tool")
+        if any(token in text for token in ("table", "workbench", "support_surface")):
+            categories.append("table")
+        if any(token in text for token in ("camera", "realsense")):
+            categories.append("camera")
+        for category in categories:
+            entry = required[category]
+            entry["present"] = True
+            entry["item_ids"].append(str(item.get("id")))
+            if entry["status"] in {"missing", "primitive_fallback"} or status == "missing_or_failed_mesh":
+                entry["status"] = status
+
+    for entry in required.values():
+        entry["item_ids"] = sorted(set(entry["item_ids"]))
+    bounds = {"min": scene_min or [0.0, 0.0, 0.0], "max": scene_max or [0.0, 0.0, 0.0], "source_count": len(bounds_sources), "sources": sorted(bounds_sources)}
+    return {
+        "scene_bounds": bounds,
+        "renderable_count": len(renderable),
+        "mesh_backed_count": mesh_backed,
+        "fallback_count": fallback,
+        "missing_or_failed_mesh_count": missing,
+        "required_item_status": required,
+    }
+
 def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path: Optional[Path] = None) -> Json:
     scene_dir = scene_dir.resolve()
     warnings: List[Json] = []
@@ -797,6 +930,7 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
     }
     if stage_assets:
         _stage_visual_meshes(output, scene_dir, output_path or Path("build/workcell_studio_web_scene/scene.web_scene.json"))
+    output["viewer_summary"] = _viewer_summary(output)
     return output
 
 
