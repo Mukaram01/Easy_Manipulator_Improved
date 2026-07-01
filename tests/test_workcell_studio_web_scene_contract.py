@@ -167,3 +167,32 @@ def test_missing_optional_inputs_warn_in_output_json_without_crashing(tmp_path):
         "generated/scene_visual_mesh_index.json",
     }
     assert all(payload["inputs"][name]["present"] is False for name in payload["inputs"])
+
+
+def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallbacks(tmp_path):
+    payload = _export(REPO_ROOT / "scenes" / "ur5_2f_test", tmp_path / "out" / "ur5_2f_test.web_scene.json")
+    required = {
+        "ur5": [item for item in payload["robots"] if "ur_description/meshes/ur5/visual" in str(item.get("original_mesh_uri") or "")],
+        "robotiq": [item for item in payload["tools"] if "robotiq_85_description/meshes/visual" in str(item.get("original_mesh_uri") or "")],
+        "table": [item for item in payload["assets"] if "workbench_description/meshes/visual/table.stl" in str(item.get("original_mesh_uri") or "")],
+        "camera": [item for item in payload["sensors"] if "realsense2_description/meshes/d435.dae" in str(item.get("original_mesh_uri") or "")],
+    }
+    assert len(required["ur5"]) >= 7
+    assert required["robotiq"]
+    assert required["table"]
+    assert required["camera"]
+
+    for group in required.values():
+        for item in group:
+            assert item["mesh_staging_status"] == "staged"
+            assert item["mesh_uri"].startswith("build/workcell_studio_web_scene/assets/ur5_2f_test/")
+            assert not item["mesh_uri"].startswith(("package://", "file://", "/"))
+            assert "://" not in item["mesh_uri"]
+            assert item.get("mesh_resolve_warning") in (None, "")
+
+    required_ids = {item["id"] for group in required.values() for item in group}
+    fallback_warnings = [
+        warning for warning in payload["warnings"]
+        if warning.get("code") in {"mesh_primitive_fallback", "mesh_stage_failed"}
+    ]
+    assert not [warning for warning in fallback_warnings if warning.get("source") in required_ids]
