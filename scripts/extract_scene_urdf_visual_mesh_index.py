@@ -1132,9 +1132,20 @@ def append_static_ur5_mesh_visuals(items, package_map, authoritative_links=None)
             'applied_joint_value_source': 'zero_default',
             'link_chain': ['world', spec['link']],
             'category': 'robot_static_mesh_visual',
+            'role': 'robot',
+            'source_layer': 'locked_generated_urdf_visual',
+            'active_visual_source': 'mesh_preview',
             'geometry_type': 'mesh',
             'pose': {'xyz': xyz, 'rpy': rpy},
             'chain_pose': {'xyz': xyz, 'rpy': rpy},
+            'world_pose': {'xyz': xyz, 'rpy': rpy},
+            'link_world_pose': {'xyz': xyz, 'rpy': rpy},
+            'expected_visual_pose': {'xyz': xyz, 'rpy': rpy},
+            'baked_world_visual_pose': {'xyz': xyz, 'rpy': rpy},
+            'baked_world_visual_matrix': tf_from_xyz_rpy(xyz, rpy),
+            'baked_world_visual_quaternion': quaternion_from_tf(tf_from_xyz_rpy(xyz, rpy)),
+            'baked_world_visual_transform_source': 'legacy_static_fallback_resolved_ur5_mesh_pose',
+            'visual_origin_applied_to_pose': True,
             'visual_origin': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
             'link_transform_status': 'static_mesh_resolved',
             'transform_status': 'static_mesh_resolved',
@@ -1143,12 +1154,18 @@ def append_static_ur5_mesh_visuals(items, package_map, authoritative_links=None)
             'resolved': True,
             'primitive_fallback': False,
             'fallback_reason': '',
+            'mesh_uri': package_uri,
             'source_path': package_uri,
+            'mesh_path': _repo_relative_path(resolved_path),
             'resolved_source_path': _repo_relative_path(resolved_path),
             'resolved_source_path_is_repo_relative': bool(resolved_path and _repo_relative_path(resolved_path) != str(resolved_path)),
             'package_uri': package_uri,
+            'scale': [1.0, 1.0, 1.0],
             'mesh_scale': [1.0, 1.0, 1.0],
+            'mesh_available': True,
+            'has_mesh_metadata': True,
             'material': {'name': 'scene3d_static_robot_mesh', 'color': None},
+            'render_skip_reason': '',
             'warning': 'ur_robot xacro macro unavailable; used resolved UR mesh asset with static preview pose',
         })
         existing_ids.add(item_id)
@@ -1259,6 +1276,35 @@ def resolve_static_tool0_children(items):
         item['static_parent_resolved'] = True
         fixed += 1
     return fixed
+
+def add_portable_mesh_path_metadata(items, scene_dir):
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        source = str(item.get('resolved_source_path') or item.get('mesh_path') or '')
+        repo_rel = _repo_relative_path(source) if source else ''
+        item.setdefault('repo_relative_source_path', repo_rel if repo_rel and not Path(repo_rel).is_absolute() else '')
+        scene_rel = ''
+        if source:
+            try:
+                source_path = Path(source)
+                if not source_path.is_absolute():
+                    source_path = ROOT / source_path
+                scene_rel = source_path.resolve().relative_to(Path(scene_dir).resolve()).as_posix()
+            except Exception:
+                scene_rel = ''
+        item.setdefault('scene_relative_source_path', scene_rel)
+        asset_rel = ''
+        if source:
+            try:
+                source_path = Path(source)
+                if not source_path.is_absolute():
+                    source_path = ROOT / source_path
+                asset_rel = source_path.resolve().relative_to((ROOT / 'assets').resolve()).as_posix()
+            except Exception:
+                asset_rel = ''
+        item.setdefault('asset_relative_source_path', asset_rel)
+
 
 def resolve_mesh_uri(uri, package_map):
     u=(uri or '').strip()
@@ -1588,6 +1634,7 @@ def main():
         if scene_dir.name.startswith('ur5_') or _contains_unresolved_ur_robot(source_xacro_text):
             _log_ur5_visual_mesh_diagnostics(scene_dir.name, ur5_visual_diagnostics)
         static_parent_resolved_count = resolve_static_tool0_children(items)
+        add_portable_mesh_path_metadata(items, scene_dir)
         ur5_transform_table = build_ur5_transform_table(items)
         if scene_dir.name.startswith('ur5_'):
             print_ur5_transform_table(scene_dir.name, ur5_transform_table)
