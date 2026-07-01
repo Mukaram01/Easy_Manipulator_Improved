@@ -265,6 +265,21 @@ function setRenderInfo(rendered, renderStatus, meshUri, fallbackReason) {
   });
   return info;
 }
+
+function refreshMeshLoadUi(rendered) {
+  // Mesh loads complete asynchronously after the hierarchy is first drawn. Refresh
+  // derived UI only; do not touch selection, transform gizmos, or dirty edit state.
+  populateObjectList();
+  renderSceneSummary();
+  if (state.selected === rendered?.item?.id) populateInspector(rendered);
+}
+function meshStatusLabel(rendered) {
+  const status = rendered?.renderInfo?.render_status || rendered?.item?.renderInfo?.render_status || rendered?.item?.mesh_status || 'unknown';
+  if (status === 'mesh_loaded') return 'mesh loaded';
+  if (isRuntimeFallbackStatus(status)) return 'fallback';
+  if (isMissingOrFailedMeshStatus(rendered?.item?.mesh_status)) return 'mesh error';
+  return String(status || 'unknown').replace(/_/g, ' ');
+}
 function appendRuntimeWarning(item, meshUri, reason) {
   state.runtimeWarnings.push({
     source: 'runtime_mesh',
@@ -485,8 +500,7 @@ async function tryLoadMesh(item, rendered, fallback) {
     setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', requestedUri, diagnostic.reason);
     if (requestedUri) appendRuntimeWarning(item, requestedUri, diagnostic.reason);
     if (itemRequiresMeshBackedVisual(item)) warnRequiredMeshFallback(item, requestedUri, diagnostic.reason);
-    if (state.selected === item.id) populateInspector(rendered);
-    renderSceneSummary();
+    refreshMeshLoadUi(rendered);
     return;
   }
   try {
@@ -504,8 +518,7 @@ async function tryLoadMesh(item, rendered, fallback) {
     setRenderInfo(rendered, 'mesh_loaded', uri, '');
     const bounds = computeRenderedBounds();
     if (bounds) frameScene(bounds);
-    if (state.selected === item.id) populateInspector(rendered);
-    renderSceneSummary();
+    refreshMeshLoadUi(rendered);
   } catch (err) {
     fallback.visible = true;
     item.mesh_status = 'load_error';
@@ -514,8 +527,7 @@ async function tryLoadMesh(item, rendered, fallback) {
     setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', uri, reason);
     appendRuntimeWarning(item, uri, reason);
     if (itemRequiresMeshBackedVisual(item)) warnRequiredMeshFallback(item, uri, reason);
-    if (state.selected === item.id) populateInspector(rendered);
-    renderSceneSummary();
+    refreshMeshLoadUi(rendered);
   }
 }
 function collectItems(sceneJson) {
@@ -757,9 +769,14 @@ function populateObjectList() {
       tag.textContent = itemType(rendered.item);
       li.appendChild(tag);
 
+      const status = document.createElement('span');
+      status.className = `status-chip status-${String(rendered.item.mesh_status || rendered.renderInfo?.render_status || 'unknown').replace(/[^a-z0-9_-]/gi, '-').toLowerCase()}`;
+      status.textContent = meshStatusLabel(rendered);
+      li.appendChild(status);
+
       const meta = document.createElement('span');
       meta.className = 'meta';
-      meta.textContent = `${group} · ${rendered.item.locked ? 'locked/generated' : 'editable/environment'}${state.dirtyTransforms.has(rendered.item.id) ? ' · edited' : ''}`;
+      meta.textContent = `${group} · ${rendered.item.locked ? 'locked/generated' : 'editable/environment'} · ${meshStatusLabel(rendered)}${state.dirtyTransforms.has(rendered.item.id) ? ' · edited' : ''}`;
       li.appendChild(meta);
       li.addEventListener('click', () => selectObject(rendered.item.id));
       el.list.appendChild(li);
