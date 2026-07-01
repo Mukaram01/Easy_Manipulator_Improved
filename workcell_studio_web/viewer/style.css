@@ -175,6 +175,36 @@ h2 { margin: 0 0 0.75rem; font-size: 0.95rem; color: var(--accent); }
   background: #312914;
   color: #ffe7a3;
 }
+
+.scene-summary {
+  margin-bottom: 0.75rem;
+  padding: 0.65rem;
+}
+.scene-summary h3 {
+  margin: 0 0 0.5rem;
+  color: var(--accent);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.32rem 0.65rem;
+  align-items: baseline;
+  font-size: 0.78rem;
+}
+.summary-grid span { color: var(--muted); }
+.summary-grid strong {
+  max-width: 8rem;
+  color: #c9f2ff;
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .object-list { list-style: none; margin: 0; padding: 0; }
 .object-list li {
   margin-bottom: 0.4rem;

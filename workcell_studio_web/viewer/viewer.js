@@ -34,7 +34,52 @@ const el = {
   list: document.getElementById('object-list'),
   inspector: document.getElementById('inspector'),
   warnings: document.getElementById('warnings'),
+  summary: document.getElementById('scene-summary'),
 };
+
+
+function sceneDisplayName() { return state.sceneJson?.scene?.id || state.sceneJson?.scene_id || state.sourceWebSceneFile || 'No scene loaded'; }
+function isGeneratedOrLockedItem(item) {
+  const sourceIdentity = [item?.source_kind, item?.source_layer, item?.active_visual_source, item?.role, item?.category, item?.id, itemLabel(item || {})]
+    .map(value => String(value || '').toLowerCase())
+    .join(' ');
+  return Boolean(item?.locked || sourceIdentity.includes('generated') || sourceIdentity.includes('urdf') || sourceIdentity.includes('moveit'));
+}
+function isRuntimeFallbackStatus(status) { return /fallback/.test(String(status || '').toLowerCase()); }
+function isMissingOrFailedMeshStatus(status) {
+  return ['missing_file', 'unresolved_package_uri', 'unsafe_path', 'unsupported_format', 'load_error']
+    .includes(String(status || '').toLowerCase());
+}
+function computeSceneSummary() {
+  const rendered = state.objects || [];
+  return {
+    sceneName: sceneDisplayName(),
+    renderableCount: rendered.length,
+    meshLoadedCount: rendered.filter(obj => obj.renderInfo?.render_status === 'mesh_loaded').length,
+    fallbackCount: rendered.filter(obj => isRuntimeFallbackStatus(obj.renderInfo?.render_status || obj.item?.renderInfo?.render_status)).length,
+    meshFailedCount: rendered.filter(obj => isMissingOrFailedMeshStatus(obj.item?.mesh_status)).length,
+    generatedLockedCount: rendered.filter(obj => isGeneratedOrLockedItem(obj.item)).length,
+    editableCount: rendered.filter(obj => canEditItem(obj.item)).length,
+  };
+}
+function renderSceneSummary() {
+  if (!el.summary) return;
+  const summary = computeSceneSummary();
+  el.summary.classList.toggle('empty', !state.sceneJson);
+  const fields = {
+    'scene-name': summary.sceneName,
+    'renderable-count': summary.renderableCount,
+    'mesh-loaded-count': summary.meshLoadedCount,
+    'fallback-count': summary.fallbackCount,
+    'mesh-failed-count': summary.meshFailedCount,
+    'generated-locked-count': summary.generatedLockedCount,
+    'editable-count': summary.editableCount,
+  };
+  for (const [name, value] of Object.entries(fields)) {
+    const node = el.summary.querySelector(`[data-summary-field="${name}"]`);
+    if (node) node.textContent = String(value);
+  }
+}
 
 function showError(message) {
   el.error.textContent = message;
@@ -392,6 +437,7 @@ async function tryLoadMesh(item, rendered, fallback) {
     if (requestedUri) appendRuntimeWarning(item, requestedUri, diagnostic.reason);
     if (itemRequiresMeshBackedVisual(item)) warnRequiredMeshFallback(item, requestedUri, diagnostic.reason);
     if (state.selected === item.id) populateInspector(rendered);
+    renderSceneSummary();
     return;
   }
   try {
@@ -410,6 +456,7 @@ async function tryLoadMesh(item, rendered, fallback) {
     const bounds = computeRenderedBounds();
     if (bounds) frameScene(bounds);
     if (state.selected === item.id) populateInspector(rendered);
+    renderSceneSummary();
   } catch (err) {
     fallback.visible = true;
     item.mesh_status = 'load_error';
@@ -419,6 +466,7 @@ async function tryLoadMesh(item, rendered, fallback) {
     appendRuntimeWarning(item, uri, reason);
     if (itemRequiresMeshBackedVisual(item)) warnRequiredMeshFallback(item, uri, reason);
     if (state.selected === item.id) populateInspector(rendered);
+    renderSceneSummary();
   }
 }
 function collectItems(sceneJson) {
@@ -541,6 +589,7 @@ function clearSceneObjects() {
   state.objects = [];
   state.lastFrameBounds = null;
   if (el.resetView) el.resetView.disabled = true;
+  renderSceneSummary();
 }
 function renderScene(items) {
   clearSceneObjects();
@@ -571,6 +620,7 @@ function renderScene(items) {
   updateLabels();
   const bounds = computeRenderedBounds();
   if (bounds) frameScene(bounds);
+  renderSceneSummary();
 }
 
 function createLabelElement(item) {
@@ -806,7 +856,7 @@ function redoPreviewEdit() {
   state.undoStack.push(entry);
   updateDirtyState();
 }
-function sceneId() { return state.sceneJson?.scene?.id || state.sceneJson?.scene_id || ''; }
+function sceneId() { return state.sceneJson?.scene?.id || state.sceneJson?.scene_id || state.sourceWebSceneFile || ''; }
 function buildEditPatch() {
   const edits = [];
   for (const rendered of state.objects) {
@@ -907,6 +957,7 @@ async function loadFile(file) {
     if (items.length) renderScene(items);
     else renderScene([]);
     refreshWarnings(json);
+    renderSceneSummary();
     el.inspector.className = 'state empty';
     el.inspector.textContent = items.length ? 'Select an object from the list or canvas.' : EMPTY_SCENE_MESSAGE;
   } catch (err) {
