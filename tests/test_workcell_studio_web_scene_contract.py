@@ -209,9 +209,30 @@ def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallba
         assert summary["required_item_status"][category]["status"] in {"mesh_backed", "missing_or_failed_mesh"}
         assert summary["required_item_status"][category]["item_ids"]
 
+    required_identity_expectations = {
+        "ur5": ("robots", "robot", "ur5", ("category", "role", "id", "source_kind", "source_layer", "active_visual_source", "link", "original_mesh_uri", "mesh_uri")),
+        "robotiq": ("tools", "tool", "robotiq", ("id", "source_kind", "link", "original_mesh_uri", "mesh_uri")),
+        "table": ("assets", "table", "workbench", ("id", "source_kind", "link", "original_mesh_uri", "mesh_uri")),
+        "camera": ("sensors", "camera", "realsense", ("id", "source_kind", "link", "original_mesh_uri", "mesh_uri")),
+    }
+    for family, (_bucket, required_category, identity_token, identity_fields) in required_identity_expectations.items():
+        assert summary["required_item_status"][required_category]["status"] == "mesh_backed", family
+        for item in required[family]:
+            identity_text = " ".join(str(item.get(field, "")).lower() for field in identity_fields)
+            assert identity_token in identity_text, item["id"]
+            assert item["id"] in summary["required_item_status"][required_category]["item_ids"]
+            for field in identity_fields:
+                assert field in item, f"{item['id']} should export identity field {field}"
+
     for group in required.values():
         for item in group:
             assert item["mesh_staging_status"] == "staged"
+            assert summary["required_item_status"][
+                "robot" if item in required["ur5"] else
+                "tool" if item in required["robotiq"] else
+                "table" if item in required["table"] else
+                "camera"
+            ]["status"] != "primitive_fallback"
             assert item["mesh_uri"].startswith("build/workcell_studio_web_scene/assets/ur5_2f_test/")
             assert not item["mesh_uri"].startswith(("package://", "file://", "/"))
             assert "://" not in item["mesh_uri"]
@@ -223,6 +244,40 @@ def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallba
         if warning.get("code") in {"mesh_primitive_fallback", "mesh_stage_failed"}
     ]
     assert not [warning for warning in fallback_warnings if warning.get("source") in required_ids]
+
+
+def test_web_scene_export_status_summary_counts_mesh_fallback_and_missing_items(tmp_path):
+    scene = _tiny_scene_fixture(tmp_path)
+    (scene / "meshes").mkdir()
+    (scene / "meshes" / "ur5.dae").write_text("<COLLADA></COLLADA>\n", encoding="utf-8")
+    # Leave robotiq_2f.dae and layout_bin mesh absent so the summary must report
+    # missing/failed meshes while authored table/camera remain primitive fallbacks.
+
+    payload = _export(scene, tmp_path / "out" / "summary.web_scene.json")
+    summary = payload["viewer_summary"]
+    renderable = [
+        item
+        for bucket in ("robots", "tools", "assets", "sensors", "zones")
+        for item in payload[bucket]
+    ]
+
+    assert summary["renderable_count"] == len(renderable)
+    assert summary["mesh_backed_count"] == 1
+    assert summary["fallback_count"] == 2
+    assert summary["missing_or_failed_mesh_count"] == 2
+    assert (
+        summary["mesh_backed_count"]
+        + summary["fallback_count"]
+        + summary["missing_or_failed_mesh_count"]
+    ) == summary["renderable_count"]
+    robot = next(item for item in payload["robots"] if item["id"] == "ur5_visual")
+    tool = next(item for item in payload["tools"] if item["id"] == "robotiq_2f_visual")
+    assert robot["mesh_staging_status"] == "staged"
+    assert tool["mesh_staging_status"] == "resolve_failed"
+    assert summary["required_item_status"]["robot"]["present"] is True
+    assert summary["required_item_status"]["tool"]["status"] == "missing_or_failed_mesh"
+    assert summary["required_item_status"]["table"]["status"] == "primitive_fallback"
+    assert summary["required_item_status"]["camera"]["status"] == "primitive_fallback"
 
 
 def _items_with_original_mesh(payload: dict, bucket: str, token: str) -> list[dict]:

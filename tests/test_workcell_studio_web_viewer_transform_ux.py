@@ -1,4 +1,5 @@
 import subprocess
+import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -68,6 +69,9 @@ def test_patch_export_still_exists_and_remains_preview_only():
     assert "buildEditPatch" in viewer
     assert "schema_version: EDIT_PATCH_SCHEMA_VERSION" in viewer
     assert "Preview-only browser transform edit. Source scene files were not modified." in viewer
+    assert "canEditItem" in viewer
+    assert "item?.editable !== true" in viewer
+    assert "item?.locked" in viewer
 
 
 def test_no_direct_yaml_write_or_browser_apply_logic_added():
@@ -86,3 +90,41 @@ def test_no_generated_scene_json_committed():
         check=True,
     ).stdout.splitlines()
     assert not tracked
+
+
+def test_status_summary_reports_loaded_fallback_and_failed_meshes():
+    index = _index_text()
+    viewer = _viewer_text()
+    assert "meshLoadedCount" in viewer
+    assert "fallbackCount" in viewer
+    assert "meshFailedCount" in viewer
+    assert "render_status === 'mesh_loaded'" in viewer
+    assert "isRuntimeFallbackStatus" in viewer
+    assert "isMissingOrFailedMeshStatus" in viewer
+    assert 'data-summary-field="mesh-loaded-count"' in index
+    assert 'data-summary-field="fallback-count"' in index
+    assert 'data-summary-field="mesh-failed-count"' in index
+
+
+def test_camera_fit_constants_cover_ur5_2f_sized_workcell_without_clipping():
+    viewer = _viewer_text()
+    min_radius = float(re.search(r"const MIN_FRAME_RADIUS = ([0-9.]+);", viewer).group(1))
+    distance_multiplier = float(re.search(r"const FRAME_DISTANCE_MULTIPLIER = ([0-9.]+);", viewer).group(1))
+    near_formula = re.search(r"camera\.near = Math\.max\(0\.01, radius / ([0-9.]+)\);", viewer)
+    far_formula = re.search(r"camera\.far = Math\.max\(100, distance \+ radius \* ([0-9.]+)\);", viewer)
+    assert near_formula
+    assert far_formula
+
+    # Roughly ur5_2f_test-sized bounds: workbench, robot, camera, and bins fit in
+    # about a 2.0 m x 1.6 m x 0.85 m envelope. The fitted near/far values should
+    # have a wide margin around the workcell rather than clipping table/camera.
+    span = (2.0, 1.6, 0.85)
+    scene_radius = max((sum((axis / 2.0) ** 2 for axis in span)) ** 0.5, min_radius)
+    distance = max(scene_radius * distance_multiplier, min_radius * distance_multiplier)
+    near = max(0.01, scene_radius / float(near_formula.group(1)))
+    far = max(100.0, distance + scene_radius * float(far_formula.group(1)))
+
+    assert near <= 0.02
+    assert far >= 100.0
+    assert far > distance + scene_radius
+    assert far / near >= 5000
