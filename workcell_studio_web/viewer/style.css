@@ -242,6 +242,18 @@ h2 { margin: 0 0 0.75rem; font-size: 0.95rem; color: var(--accent); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.object-list .status-chip {
+  display: inline-block;
+  margin-top: 0.35rem;
+  padding: 0.12rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: #d8f7df;
+  font-size: 0.68rem;
+  line-height: 1.1;
+}
+.object-list .status-loaded, .object-list .status-mesh_loaded { color: #8df5a8; }
+.object-list .status-load_error, .object-list .status-missing_file, .object-list .status-unsafe_path, .object-list .status-unsupported_format, .object-list .status-unresolved_package_uri { color: #ffb4a8; }
 .inspector-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
 .inspector-table th, .inspector-table td { padding: 0.35rem 0.2rem; border-bottom: 1px solid var(--border); vertical-align: top; }
 .inspector-table th { width: 38%; text-align: left; color: var(--muted); font-weight: 600; }
