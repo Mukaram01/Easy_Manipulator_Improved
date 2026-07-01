@@ -44,6 +44,17 @@ ROBOTIQ_85_VISUAL_MESHES = {
     "gripper_finger1_finger_tip_link": "robotiq_85_finger_tip_link.dae",
     "gripper_finger2_finger_tip_link": "robotiq_85_finger_tip_link.dae",
 }
+ROBOTIQ_85_FALLBACK_LINK_TRANSFORMS = {
+    "gripper_base_link": {"parent_link": "tool0", "joint_origin": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]}},
+    "gripper_finger1_knuckle_link": {"parent_link": "gripper_base_link", "joint_origin": {"xyz": [0.05490451627, 0.03060114443, 0.0], "rpy": [3.141592653589793, 0.0, 0.0]}},
+    "gripper_finger2_knuckle_link": {"parent_link": "gripper_base_link", "joint_origin": {"xyz": [0.05490451627, -0.03060114443, 0.0], "rpy": [0.0, 0.0, 0.0]}},
+    "gripper_finger1_finger_link": {"parent_link": "gripper_finger1_knuckle_link", "joint_origin": {"xyz": [-0.00408552455, -0.03148604435, 0.0], "rpy": [0.0, 0.0, 0.0]}},
+    "gripper_finger2_finger_link": {"parent_link": "gripper_finger2_knuckle_link", "joint_origin": {"xyz": [-0.00408552455, -0.03148604435, 0.0], "rpy": [0.0, 0.0, 0.0]}},
+    "gripper_finger1_inner_knuckle_link": {"parent_link": "gripper_base_link", "joint_origin": {"xyz": [0.06142, 0.0127, 0.0], "rpy": [3.141592653589793, 0.0, 0.0]}},
+    "gripper_finger2_inner_knuckle_link": {"parent_link": "gripper_base_link", "joint_origin": {"xyz": [0.06142, -0.0127, 0.0], "rpy": [0.0, 0.0, 0.0]}},
+    "gripper_finger1_finger_tip_link": {"parent_link": "gripper_finger1_inner_knuckle_link", "joint_origin": {"xyz": [0.04303959807, -0.03759940821, 0.0], "rpy": [0.0, 0.0, 0.0]}},
+    "gripper_finger2_finger_tip_link": {"parent_link": "gripper_finger2_inner_knuckle_link", "joint_origin": {"xyz": [0.04303959807, -0.03759940821, 0.0], "rpy": [0.0, 0.0, 0.0]}},
+}
 
 HELPER_TOKENS = (
     "overlay",
@@ -392,11 +403,21 @@ def _canonical_generated_transform(raw: Mapping[str, Any]) -> Tuple[Optional[Any
     world visual transforms.  The web viewer consumes the baked transform as a
     final render pose; it must not multiply the visual origin a second time.
     """
-    for field in ("baked_world_visual_pose", "pose", "world_pose"):
+    baked_source = raw.get("baked_world_visual_transform_source")
+    for field in ("world_from_visual", "final_transform", "baked_world_visual_pose", "pose", "world_pose"):
         value = raw.get(field)
         if value not in (None, "", [], {}):
-            return value, field
+            return value, str(baked_source or field)
     return None, None
+
+
+def _pose_with_xyz_offset(base_pose: Any, offset: Sequence[float]) -> Json:
+    pose = dict(base_pose) if isinstance(base_pose, Mapping) else {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]}
+    xyz = pose.get("xyz") if isinstance(pose.get("xyz"), list) else [0.0, 0.0, 0.0]
+    rpy = pose.get("rpy") if isinstance(pose.get("rpy"), list) else [0.0, 0.0, 0.0]
+    pose["xyz"] = [float(xyz[i] if i < len(xyz) else 0.0) + float(offset[i] if i < len(offset) else 0.0) for i in range(3)]
+    pose["rpy"] = [float(rpy[i] if i < len(rpy) else 0.0) for i in range(3)]
+    return pose
 
 
 def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings: List[Json]) -> Dict[str, List[Json]]:
@@ -407,8 +428,14 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
         return sections
     fields = (
         "id", "type", "category", "role", "display_name", "link", "object_name", "visual", "pose", "world_pose",
+        "final_transform", "world_from_visual", "transform_source",
         "baked_world_visual_pose", "link_world_pose", "visual_origin", "baked_world_visual_matrix",
         "baked_world_visual_quaternion", "baked_world_visual_transform_source", "geometry_type",
+        "parent_link", "immediate_parent_link", "root_link", "link_chain", "joint_parent_link",
+        "parent_joint", "parent_joint_name", "parent_joint_type", "parent_joint_origin",
+        "parent_joint_axis", "parent_joint_value", "parent_joint_value_source", "joint_type",
+        "joint_origin", "joint_name", "joint_value", "applied_joint_value", "joint_axis",
+        "joint_value_source", "applied_joint_value_source", "transform_chain",
         "primitive_geometry_type", "package_uri", "mesh_uri", "source_path", "mesh_path",
         "resolved_source_path", "scale", "mesh_scale", "source_layer", "active_visual_source",
         "render_expected", "mesh_available", "resolved", "warning",
@@ -473,10 +500,17 @@ def _supplement_missing_tool_meshes(data: Dict[str, Any], generated: Dict[str, L
         if "wrist_3" in str(item.get("link", "")):
             wrist_pose = item.get("pose") or item.get("world_pose") or item.get("baked_world_visual_pose")
             break
+    link_poses: Dict[str, Json] = {"tool0": dict(wrist_pose) if isinstance(wrist_pose, Mapping) else {"xyz": [0, 0, 0], "rpy": [0, 0, 0]}}
     for link in expected_links:
         mesh_name = ROBOTIQ_85_VISUAL_MESHES.get(link)
         if not mesh_name:
             continue
+        transform_meta = ROBOTIQ_85_FALLBACK_LINK_TRANSFORMS.get(link, {})
+        joint_origin = _as_map(transform_meta.get("joint_origin"))
+        parent_link = str(transform_meta.get("parent_link") or "tool0")
+        parent_pose = link_poses.get(parent_link) or link_poses["tool0"]
+        final_transform = _pose_with_xyz_offset(parent_pose, _as_list(joint_origin.get("xyz") or [0.0, 0.0, 0.0]))
+        link_poses[link] = final_transform
         item: Json = {
             "id": f"generated_tool::{link}::visual_0",
             "type": "mesh",
@@ -486,7 +520,17 @@ def _supplement_missing_tool_meshes(data: Dict[str, Any], generated: Dict[str, L
             "link": link,
             "object_name": link,
             "visual": "visual_0",
-            "pose": wrist_pose or {"xyz": [0, 0, 0], "rpy": [0, 0, 0]},
+            "pose": final_transform,
+            "world_pose": final_transform,
+            "final_transform": final_transform,
+            "world_from_visual": final_transform,
+            "link_world_pose": final_transform,
+            "parent_link": parent_link,
+            "joint_parent_link": parent_link,
+            "joint_origin": joint_origin,
+            "parent_joint_origin": joint_origin,
+            "visual_origin": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
+            "transform_source": "robotiq_85_fallback_link_metadata",
             "geometry_type": "mesh",
             "primitive_geometry_type": "mesh",
             "package_uri": f"package://robotiq_85_description/meshes/visual/{mesh_name}",
@@ -504,7 +548,9 @@ def _supplement_missing_tool_meshes(data: Dict[str, Any], generated: Dict[str, L
             "editable": False,
             "source_kind": "generated_preview",
             "provenance": _provenance(
-                ("id", "link", "mesh_uri", "package_uri", "pose", "locked", "editable", "source_kind"),
+                ("id", "link", "mesh_uri", "package_uri", "pose", "world_pose", "final_transform",
+                 "world_from_visual", "parent_link", "joint_origin", "visual_origin", "transform_source",
+                 "locked", "editable", "source_kind"),
                 "scene_manifest.yaml|generated/scene_visual_mesh_index.json",
             ),
         }
