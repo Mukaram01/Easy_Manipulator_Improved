@@ -385,6 +385,20 @@ def _section_from_item(item: Mapping[str, Any]) -> str:
     return "assets"
 
 
+def _canonical_generated_transform(raw: Mapping[str, Any]) -> Tuple[Optional[Any], Optional[str]]:
+    """Return the browser-ready world-from-visual pose and its source field.
+
+    Generated mesh rows may carry link-frame, visual-origin, and already-baked
+    world visual transforms.  The web viewer consumes the baked transform as a
+    final render pose; it must not multiply the visual origin a second time.
+    """
+    for field in ("baked_world_visual_pose", "pose", "world_pose"):
+        value = raw.get(field)
+        if value not in (None, "", [], {}):
+            return value, field
+    return None, None
+
+
 def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings: List[Json]) -> Dict[str, List[Json]]:
     sections = {"robots": [], "tools": [], "assets": [], "sensors": [], "zones": []}
     items = _as_list(index.get("visual_items") or index.get("items"))
@@ -393,8 +407,10 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
         return sections
     fields = (
         "id", "type", "category", "role", "display_name", "link", "object_name", "visual", "pose", "world_pose",
-        "baked_world_visual_pose", "visual_origin", "geometry_type", "primitive_geometry_type", "package_uri",
-        "mesh_uri", "source_path", "mesh_path", "resolved_source_path", "scale", "mesh_scale", "source_layer", "active_visual_source",
+        "baked_world_visual_pose", "link_world_pose", "visual_origin", "baked_world_visual_matrix",
+        "baked_world_visual_quaternion", "baked_world_visual_transform_source", "geometry_type",
+        "primitive_geometry_type", "package_uri", "mesh_uri", "source_path", "mesh_path",
+        "resolved_source_path", "scale", "mesh_scale", "source_layer", "active_visual_source",
         "render_expected", "mesh_available", "resolved", "warning",
     )
     for i, raw in enumerate(items):
@@ -403,10 +419,23 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
             continue
         item = _copy_fields(raw, fields, INPUTS["visual_mesh_index"], scene_dir)
         item.setdefault("id", _stable_id("generated_preview", i))
+        final_transform, transform_source = _canonical_generated_transform(raw)
+        if final_transform is not None:
+            item["final_transform"] = final_transform
+            item["world_from_visual"] = final_transform
+            item["transform_source"] = transform_source
+        elif raw.get("baked_world_visual_transform_source"):
+            item["transform_source"] = raw.get("baked_world_visual_transform_source")
         item["locked"] = True
         item["editable"] = False
         item["source_kind"] = "generated_preview"
         item["provenance"].update({"locked": INPUTS["visual_mesh_index"], "editable": INPUTS["visual_mesh_index"], "source_kind": INPUTS["visual_mesh_index"]})
+        if final_transform is not None:
+            item["provenance"].update({
+                "final_transform": INPUTS["visual_mesh_index"],
+                "world_from_visual": INPUTS["visual_mesh_index"],
+                "transform_source": INPUTS["visual_mesh_index"],
+            })
         sections[_section_from_item(raw)].append(item)
     return sections
 

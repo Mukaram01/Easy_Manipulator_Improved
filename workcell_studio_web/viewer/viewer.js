@@ -46,10 +46,17 @@ function vector3(value, fallback = [0, 0, 0]) {
   const arr = Array.isArray(value) ? value : fallback;
   return new THREE.Vector3(Number(arr[0] || 0), Number(arr[1] || 0), Number(arr[2] || 0));
 }
+function canonicalFinalPose(item) {
+  return item.final_transform || item.world_from_visual || item.baked_world_visual_pose || item.pose || item.world_pose || {};
+}
 function poseOf(item) {
-  const pose = item.pose || item.world_pose || item.baked_world_visual_pose || {};
-  const xyz = item.pose_xyz || pose.xyz || pose.position || pose.translation || (Array.isArray(pose) ? pose.slice(0, 3) : [0, 0, 0]);
-  const rpy = item.pose_rpy || pose.rpy || pose.rotation_rpy || (Array.isArray(pose) ? pose.slice(3, 6) : [0, 0, 0]);
+  const pose = canonicalFinalPose(item);
+  const xyz = item.final_transform || item.world_from_visual || item.baked_world_visual_pose
+    ? (pose.xyz || pose.position || pose.translation || (Array.isArray(pose) ? pose.slice(0, 3) : [0, 0, 0]))
+    : (item.pose_xyz || pose.xyz || pose.position || pose.translation || (Array.isArray(pose) ? pose.slice(0, 3) : [0, 0, 0]));
+  const rpy = item.final_transform || item.world_from_visual || item.baked_world_visual_pose
+    ? (pose.rpy || pose.rotation_rpy || (Array.isArray(pose) ? pose.slice(3, 6) : [0, 0, 0]))
+    : (item.pose_rpy || pose.rpy || pose.rotation_rpy || (Array.isArray(pose) ? pose.slice(3, 6) : [0, 0, 0]));
   return { xyz: vector3(xyz), rpy: vector3(rpy) };
 }
 function scaleOf(item) {
