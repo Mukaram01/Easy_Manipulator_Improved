@@ -39,7 +39,20 @@ def test_export_web_scene_contract_and_determinism(tmp_path):
         json.dumps(
             {
                 "visual_items": [
-                    {"id": "robot_mesh", "category": "robot", "role": "robot", "mesh_path": str(scene / "meshes/robot.dae")},
+                    {
+                        "id": "robot_mesh",
+                        "category": "robot",
+                        "role": "robot",
+                        "mesh_path": str(scene / "meshes/robot.dae"),
+                        "pose": {"xyz": [9, 9, 9], "rpy": [0, 0, 0]},
+                        "world_pose": {"xyz": [8, 8, 8], "rpy": [0, 0, 0]},
+                        "link_world_pose": {"xyz": [1, 2, 3], "rpy": [0.1, 0.2, 0.3]},
+                        "visual_origin": {"xyz": [0.1, 0.2, 0.3], "rpy": [0, 0, 1.57]},
+                        "baked_world_visual_pose": {"xyz": [1.1, 2.2, 3.3], "rpy": [0.1, 0.2, 1.87]},
+                        "baked_world_visual_matrix": [[1, 0, 0, 1.1], [0, 1, 0, 2.2], [0, 0, 1, 3.3], [0, 0, 0, 1]],
+                        "baked_world_visual_quaternion": [0, 0, 0, 1],
+                        "mesh_scale": [1, 1, 1],
+                    },
                     {"id": "camera_mesh", "category": "camera", "role": "camera", "package_uri": "package://camera/mesh.dae"},
                 ]
             }
@@ -65,8 +78,17 @@ def test_export_web_scene_contract_and_determinism(tmp_path):
     assert table["editable"] is True
     assert table["mesh_path"] == "meshes/table.stl"
     assert payload["robots"][-1]["mesh_path"] == "meshes/robot.dae"
+    assert payload["robots"][-1]["final_transform"] == {"xyz": [1.1, 2.2, 3.3], "rpy": [0.1, 0.2, 1.87]}
+    assert payload["robots"][-1]["world_from_visual"] == payload["robots"][-1]["final_transform"]
+    assert payload["robots"][-1]["transform_source"] == "baked_world_visual_pose"
+    assert payload["robots"][-1]["link_world_pose"] == {"xyz": [1, 2, 3], "rpy": [0.1, 0.2, 0.3]}
+    assert payload["robots"][-1]["visual_origin"] == {"xyz": [0.1, 0.2, 0.3], "rpy": [0, 0, 1.57]}
+    assert payload["robots"][-1]["mesh_scale"] == [1, 1, 1]
+    assert payload["robots"][-1]["baked_world_visual_matrix"] == [[1, 0, 0, 1.1], [0, 1, 0, 2.2], [0, 0, 1, 3.3], [0, 0, 0, 1]]
+    assert payload["robots"][-1]["baked_world_visual_quaternion"] == [0, 0, 0, 1]
     assert payload["sensors"][-1]["package_uri"] == "package://camera/mesh.dae"
     assert payload["robots"][-1]["provenance"]["mesh_path"] == "generated/scene_visual_mesh_index.json"
+    assert payload["robots"][-1]["provenance"]["final_transform"] == "generated/scene_visual_mesh_index.json"
 
 
 def test_export_web_scene_warns_for_missing_optional_inputs(tmp_path):
@@ -147,3 +169,10 @@ def test_export_web_scene_rejects_unsafe_or_unsupported_mesh_assets(tmp_path):
     assert "Unsupported mesh URI scheme" in by_id["remote"]["mesh_resolve_warning"]
     assert by_id["texture"]["mesh_staging_status"] == "unsupported_format"
     assert "Unsupported mesh format" in by_id["texture"]["mesh_resolve_warning"]
+
+
+def test_web_viewer_prefers_canonical_final_transform_without_visual_origin_recomposition():
+    viewer = Path("workcell_studio_web/viewer/viewer.js").read_text(encoding="utf-8")
+    pose_block = viewer.split("function poseOf(item)", 1)[1].split("function scaleOf", 1)[0]
+    assert "item.final_transform || item.world_from_visual || item.baked_world_visual_pose" in pose_block
+    assert "visual_origin" not in pose_block
