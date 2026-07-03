@@ -14,6 +14,11 @@ const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets,
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
 const state = { sceneJson: null, sourceWebSceneFile: '', objects: [], selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null };
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
+const STAGED_MESH_ROOTS = [
+  'build/workcell_studio_web_scene/assets/',
+  'workcell_studio_web/',
+  'assets/',
+];
 
 const el = {
   file: document.getElementById('scene-file'),
@@ -47,7 +52,7 @@ function isGeneratedOrLockedItem(item) {
 }
 function isRuntimeFallbackStatus(status) { return /fallback/.test(String(status || '').toLowerCase()); }
 function isMissingOrFailedMeshStatus(status) {
-  return ['missing_file', 'unresolved_package_uri', 'unsafe_path', 'unsupported_format', 'load_error']
+  return ['missing_file', 'unresolved_package_uri', 'unsafe_path', 'unsupported_format', 'load_error', 'url_not_served', 'file_access_blocked', 'loader_failure']
     .includes(String(status || '').toLowerCase());
 }
 function computeSceneSummary() {
@@ -280,10 +285,10 @@ function meshStatusLabel(rendered) {
   if (isMissingOrFailedMeshStatus(rendered?.item?.mesh_status)) return 'mesh error';
   return String(status || 'unknown').replace(/_/g, ' ');
 }
-function appendRuntimeWarning(item, meshUri, reason) {
+function appendRuntimeWarning(item, meshUri, reason, code = 'mesh_primitive_fallback', extra = {}) {
   state.runtimeWarnings.push({
     source: 'runtime_mesh',
-    code: 'mesh_primitive_fallback',
+    code,
     object_id: item?.id || itemLabel(item || {}),
     link: item?.link || item?.object_name || item?.visual || '',
     object_name: item?.object_name || item?.link || itemLabel(item || {}),
@@ -301,7 +306,8 @@ function appendRuntimeWarning(item, meshUri, reason) {
     mesh_scale: item?.mesh_scale,
     fallback_or_skip_reason: reason || 'mesh loading skipped',
     reason: reason || 'mesh loading skipped',
-    message: `Primitive fallback for ${item?.id || itemLabel(item || {})} (${item?.link || item?.object_name || itemLabel(item || {})}): ${reason || 'mesh loading skipped'}`,
+    message: `${code}: Primitive fallback for ${item?.id || itemLabel(item || {})} (${item?.link || item?.object_name || itemLabel(item || {})}): ${reason || 'mesh loading skipped'}`,
+    ...extra,
   });
   refreshWarnings();
 }
@@ -318,6 +324,17 @@ function meshUriDiagnostic(item) {
   const uri = raw.trim();
   const lower = uri.toLowerCase();
   if (lower.startsWith('package://')) return { uri: null, status: 'unresolved_package_uri', reason: `package URI must be resolved and staged before browser loading: ${uri}` };
+  const stagedHttpUrl = (() => {
+    if (!lower.startsWith('http://') && !lower.startsWith('https://')) return null;
+    try {
+      const parsed = new URL(uri);
+      const currentOrigin = window.location?.origin || '';
+      const stagedPath = parsed.pathname.replace(/^\/+/, '');
+      if (currentOrigin && currentOrigin !== 'null' && parsed.origin === currentOrigin && STAGED_MESH_ROOTS.some(root => stagedPath.startsWith(root))) return stagedPath + parsed.search + parsed.hash;
+    } catch (_) { /* fall through to unsafe_path below */ }
+    return null;
+  })();
+  if (stagedHttpUrl) return meshUriDiagnostic({ ...item, mesh_uri: stagedHttpUrl });
   if (
     lower.startsWith('http://') ||
     lower.startsWith('https://') ||
@@ -333,12 +350,7 @@ function meshUriDiagnostic(item) {
   const pathOnly = uri.split(/[?#]/, 1)[0];
   const parts = pathOnly.split('/');
   if (parts.some(part => part === '..')) return { uri: null, status: 'unsafe_path', reason: `mesh_uri path traversal rejected: ${uri}` };
-  const allowedRoots = [
-    'build/workcell_studio_web_scene/assets/',
-    'workcell_studio_web/',
-    'assets/',
-  ];
-  if (!allowedRoots.some(root => pathOnly.startsWith(root))) {
+  if (!STAGED_MESH_ROOTS.some(root => pathOnly.startsWith(root))) {
     return { uri: null, status: 'unsafe_path', reason: `mesh_uri must be staged under build/workcell_studio_web_scene/assets/, workcell_studio_web/, or assets/: ${uri}` };
   }
   const ext = pathOnly.includes('.') ? pathOnly.slice(pathOnly.lastIndexOf('.') + 1).toLowerCase() : '';
@@ -359,7 +371,51 @@ function safeMeshUri(item) {
   return meshUriDiagnostic(item).uri;
 }
 function repoRootRelativeUrl(uri) {
-  return new URL(uri, `${window.location.origin}/`).href;
+  const origin = window.location?.origin;
+  const base = origin && origin !== 'null' ? `${origin}/` : (document.baseURI || window.location?.href || '');
+  return new URL(uri, base).href;
+}
+
+function meshLoaderNameForExtension(ext) {
+  if (ext === 'stl') return 'STLLoader';
+  if (ext === 'dae') return 'ColladaLoader';
+  if (ext === 'obj') return 'OBJLoader';
+  return 'unknown_loader';
+}
+function meshExtensionFromUri(uri) {
+  const pathOnly = String(uri || '').split(/[?#]/, 1)[0];
+  return pathOnly.includes('.') ? pathOnly.slice(pathOnly.lastIndexOf('.') + 1).toLowerCase() : '';
+}
+async function preflightMeshUrl(uri, loadUrl) {
+  if (typeof fetch !== 'function') {
+    return { ok: true, status: 'preflight_unavailable', reason: 'fetch is unavailable; loader will report any mesh access failure' };
+  }
+  const url = loadUrl || repoRootRelativeUrl(uri);
+  const fileLike = String(window.location?.protocol || '').toLowerCase() === 'file:' || String(url).toLowerCase().startsWith('file:');
+  const describeFailure = err => {
+    const status = fileLike ? 'file_access_blocked' : 'url_not_served';
+    const code = fileLike ? 'mesh_file_access_blocked' : 'mesh_url_not_served';
+    return { ok: false, status, code, reason: `${status}: browser could not preflight mesh URL ${url} (${err?.message || err || 'fetch failed'})`, url };
+  };
+  try {
+    let response = await fetch(url, { method: 'HEAD' });
+    if (response.status === 405 || response.status === 501) {
+      response = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-0' } });
+    }
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: 'url_not_served',
+        code: 'mesh_url_not_served',
+        reason: `url_not_served: mesh URL returned HTTP ${response.status} ${response.statusText || ''} for ${url}`.trim(),
+        http_status: response.status,
+        url,
+      };
+    }
+    return { ok: true, status: 'url_served', reason: `mesh URL preflight succeeded for ${url}`, http_status: response.status, url };
+  } catch (err) {
+    return describeFailure(err);
+  }
 }
 function itemType(item) { return item.type || item.category || item.role || item.source_kind || 'asset'; }
 function itemLabel(item) { return item.label || item.display_name || item.name || item.id || 'unnamed'; }
@@ -506,10 +562,22 @@ async function tryLoadMesh(item, rendered, fallback) {
     refreshMeshLoadUi(rendered);
     return;
   }
+  const ext = meshExtensionFromUri(uri);
+  const loaderName = meshLoaderNameForExtension(ext);
+  const loadUrl = repoRootRelativeUrl(uri);
+  const preflight = await preflightMeshUrl(uri, loadUrl);
+  if (!preflight.ok) {
+    fallback.visible = true;
+    item.mesh_status = preflight.status || 'url_not_served';
+    item.mesh_load_error = `${preflight.reason}; url=${preflight.url || loadUrl}`;
+    setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', uri, item.mesh_load_error);
+    appendRuntimeWarning(item, uri, item.mesh_load_error, preflight.code || 'mesh_url_not_served', { mesh_url: preflight.url || loadUrl, http_status: preflight.http_status || null });
+    if (itemRequiresMeshBackedVisual(item)) warnRequiredMeshFallback(item, uri, item.mesh_load_error);
+    refreshMeshLoadUi(rendered);
+    return;
+  }
   try {
-    const ext = uri.split(/[?#]/, 1)[0].slice(uri.split(/[?#]/, 1)[0].lastIndexOf('.') + 1).toLowerCase();
     let loaded;
-    const loadUrl = repoRootRelativeUrl(uri);
     if (ext === 'stl') loaded = await new STLLoader().loadAsync(loadUrl);
     else if (ext === 'dae') loaded = await new ColladaLoader().loadAsync(loadUrl);
     else loaded = await new OBJLoader().loadAsync(loadUrl);
@@ -525,11 +593,11 @@ async function tryLoadMesh(item, rendered, fallback) {
     refreshMeshLoadUi(rendered);
   } catch (err) {
     fallback.visible = true;
-    item.mesh_status = 'load_error';
+    item.mesh_status = 'loader_failure';
     item.mesh_load_error = err?.message || String(err);
-    const reason = `mesh loader failed: ${item.mesh_load_error}`;
+    const reason = `loader_failure: ${loaderName} failed for .${ext || 'unknown'} after fetchable URL ${loadUrl}: ${item.mesh_load_error}`;
     setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', uri, reason);
-    appendRuntimeWarning(item, uri, reason);
+    appendRuntimeWarning(item, uri, reason, 'mesh_loader_failure', { extension: ext, loader: loaderName, mesh_url: loadUrl });
     if (itemRequiresMeshBackedVisual(item)) warnRequiredMeshFallback(item, uri, reason);
     refreshMeshLoadUi(rendered);
   }
@@ -1039,6 +1107,17 @@ function safeRelativeSceneUrl(raw) {
   if (typeof raw !== 'string' || !raw.trim()) throw new Error('Empty scene URL parameter.');
   const uri = raw.trim();
   const lower = uri.toLowerCase();
+  const stagedHttpUrl = (() => {
+    if (!lower.startsWith('http://') && !lower.startsWith('https://')) return null;
+    try {
+      const parsed = new URL(uri);
+      const currentOrigin = window.location?.origin || '';
+      const stagedPath = parsed.pathname.replace(/^\/+/, '');
+      if (currentOrigin && currentOrigin !== 'null' && parsed.origin === currentOrigin && STAGED_MESH_ROOTS.some(root => stagedPath.startsWith(root))) return stagedPath + parsed.search + parsed.hash;
+    } catch (_) { /* fall through to unsafe_path below */ }
+    return null;
+  })();
+  if (stagedHttpUrl) return meshUriDiagnostic({ ...item, mesh_uri: stagedHttpUrl });
   if (
     lower.startsWith('http://') ||
     lower.startsWith('https://') ||
