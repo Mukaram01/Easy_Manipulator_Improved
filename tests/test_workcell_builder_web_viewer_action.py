@@ -25,7 +25,11 @@ def test_web_viewer_action_exports_to_build_not_scenes_or_generated():
     assert 'QProcess::execute("python3", args)' in cpp
     assert '"--scene", QString::fromStdString(scene_dir.string())' in cpp
     assert '"--output", QString::fromStdString(output_path.string())' in cpp
+    assert '"--stage-assets"' in cpp
     assert 'repo_root / "workcell_studio_web" / "viewer" / "index.html"' in cpp
+    assert "QProcess::startDetached" in cpp
+    assert "python3 -m http.server 8765 --bind 127.0.0.1" in cpp
+    assert "http://127.0.0.1:8765/workcell_studio_web/viewer/index.html?scene=" in cpp
 
 
 def test_user_facing_failures_and_local_server_fallback_are_present():
@@ -37,8 +41,8 @@ def test_user_facing_failures_and_local_server_fallback_are_present():
         "Web 3D scene export failed",
         "Viewer file missing",
         "Browser open failed",
-        "python3 -m http.server 8765",
-        "http://localhost:8765/workcell_studio_web/viewer/index.html",
+        "python3 -m http.server 8765 --bind 127.0.0.1",
+        "http://127.0.0.1:8765/workcell_studio_web/viewer/index.html?scene=",
     ]:
         assert text in cpp
 

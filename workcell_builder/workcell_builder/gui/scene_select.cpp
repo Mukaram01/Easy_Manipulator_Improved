@@ -3750,11 +3750,16 @@ void SceneSelect::on_export_open_web_3d_viewer_clicked()
 
   const fs::path output_path = repo_root / "build" / "workcell_studio_web_scene" / (scene_id + ".web_scene.json");
   const fs::path viewer_path = repo_root / "workcell_studio_web" / "viewer" / "index.html";
+  const QString web_scene_url_path = QString("build/workcell_studio_web_scene/%1.web_scene.json")
+    .arg(QString::fromStdString(scene_id));
+  const QString viewer_url = QString("http://127.0.0.1:8765/workcell_studio_web/viewer/index.html?scene=%1")
+    .arg(QString::fromUtf8(QUrl::toPercentEncoding(web_scene_url_path)));
   fs::create_directories(output_path.parent_path(), ec);
   const QStringList args{
     QString::fromStdString(exporter_script.string()),
     "--scene", QString::fromStdString(scene_dir.string()),
-    "--output", QString::fromStdString(output_path.string())};
+    "--output", QString::fromStdString(output_path.string()),
+    "--stage-assets"};
   append_info("Export Web 3D Viewer scene: python3 " + args.join(' ').toStdString());
   const int rc = QProcess::execute("python3", args);
   if (rc != 0 || !fs::exists(output_path, ec)) {
@@ -3775,22 +3780,37 @@ void SceneSelect::on_export_open_web_3d_viewer_clicked()
     return;
   }
 
-  const bool opened = QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(viewer_path.string())));
+  qint64 server_pid = 0;
+  const bool server_started = QProcess::startDetached(
+    "python3",
+    QStringList{"-m", "http.server", "8765", "--bind", "127.0.0.1"},
+    QString::fromStdString(repo_root.string()),
+    &server_pid);
+  if (server_started) {
+    append_info("Started local Web 3D Viewer server from repo root: python3 -m http.server 8765 --bind 127.0.0.1");
+  } else {
+    append_warning("Could not start local Web 3D Viewer server on 127.0.0.1:8765; opening the repo-root HTTP URL anyway in case a server is already running.");
+  }
+
+  const bool opened = QDesktopServices::openUrl(QUrl(viewer_url));
   const QString fallback = QString(
-    "Viewer path: %1\n"
-    "Exported JSON path: %2\n\n"
-    "If direct file loading is blocked by your browser, run this from the repository root:\n"
-    "python3 -m http.server 8765\n\n"
+    "Viewer URL: %1\n"
+    "Viewer path: %2\n"
+    "Exported JSON path: %3\n\n"
+    "The viewer is opened through a repository-root HTTP server so staged meshes resolve under:\n"
+    "build/workcell_studio_web_scene/assets/%4/...\n\n"
+    "If the browser cannot connect, run this from the repository root:\n"
+    "python3 -m http.server 8765 --bind 127.0.0.1\n\n"
     "Then open:\n"
-    "http://localhost:8765/workcell_studio_web/viewer/index.html")
-    .arg(QString::fromStdString(viewer_path.string()), QString::fromStdString(output_path.string()));
+    "%1")
+    .arg(viewer_url, QString::fromStdString(viewer_path.string()), QString::fromStdString(output_path.string()), QString::fromStdString(scene_id));
   if (!opened) {
-    const QString message = "Browser open failed. Use the local-server fallback below.\n\n" + fallback;
+    const QString message = "Browser open failed. Use the local-server URL below.\n\n" + fallback;
     append_error(message.toStdString());
     QMessageBox::critical(this, "Open Web 3D Viewer", message);
     return;
   }
-  append_success("Opened Web 3D Viewer: " + viewer_path.string());
+  append_success("Opened Web 3D Viewer: " + viewer_url.toStdString());
   QMessageBox::information(this, "Open Web 3D Viewer", fallback);
 }
 

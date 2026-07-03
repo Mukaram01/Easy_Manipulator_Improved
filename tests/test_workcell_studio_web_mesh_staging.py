@@ -3,6 +3,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urljoin, urlparse
 
 import yaml
 
@@ -150,8 +151,39 @@ def test_viewer_uri_policy_allows_staged_assets_and_rejects_traversal():
 
     assert "build/workcell_studio_web_scene/assets/" in js
     assert "allowedRoots.some(root => pathOnly.startsWith(root))" in js
+    assert "repoRootRelativeUrl(uri)" in js
+    assert "fetch(repoRootRelativeUrl(sceneUrl)" in js
     assert "part === '..'" in js
     assert "mesh_uri path traversal rejected" in js
+
+
+def test_staged_ur5_mesh_uri_resolves_from_builder_http_launch_context(tmp_path):
+    scene = REPO_ROOT / "scenes" / "ur5_2f_test"
+    output = REPO_ROOT / "build" / "workcell_studio_web_scene" / "ur5_2f_test.web_scene.json"
+
+    subprocess.run(
+        [sys.executable, str(EXPORTER), "--scene", str(scene), "--output", str(output), "--stage-assets"],
+        cwd=REPO_ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    staged_items = [
+        item for item in _all_renderable_items(payload)
+        if str(item.get("mesh_uri") or "").startswith("build/workcell_studio_web_scene/assets/ur5_2f_test/")
+    ]
+
+    assert staged_items, "Expected ur5_2f_test export to include staged mesh URIs."
+    viewer_url = "http://127.0.0.1:8765/workcell_studio_web/viewer/index.html?scene=build%2Fworkcell_studio_web_scene%2Fur5_2f_test.web_scene.json"
+    for item in staged_items[:10]:
+        mesh_uri = item["mesh_uri"]
+        browser_request = urljoin("http://127.0.0.1:8765/", mesh_uri)
+        parsed = urlparse(browser_request)
+        assert parsed.netloc == "127.0.0.1:8765"
+        assert parsed.path.startswith("/build/workcell_studio_web_scene/assets/ur5_2f_test/")
+        assert (REPO_ROOT / parsed.path.lstrip("/")).is_file(), f"{mesh_uri} from {viewer_url} should target an existing staged file"
 
 
 def _fallback_causes(payload: dict) -> list[str]:
