@@ -16,7 +16,7 @@ Browsers cannot load ROS `package://` URIs directly and cannot read arbitrary pa
 
 ### Workcell Builder action
 
-Workcell Builder also exposes a selected-scene action named **Export & Open Web 3D Viewer** in the Safety / Review flow. The action resolves the selected scene, runs `scripts/export_workcell_studio_web_scene.py --stage-assets`, writes only to `build/workcell_studio_web_scene/<scene_id>.web_scene.json`, starts a repository-root local HTTP server on `127.0.0.1:8765`, and opens `http://127.0.0.1:8765/workcell_studio_web/viewer/index.html?scene=build%2Fworkcell_studio_web_scene%2F<scene_id>.web_scene.json` with Qt/QDesktopServices. Opening through the repository root is important because staged mesh requests resolve as `build/workcell_studio_web_scene/assets/<scene_id>/...`. It does not write under `scenes/`, mutate source YAML, mutate generated scene files, apply edit patches, or change RViz/MoveIt planning truth.
+Workcell Builder also exposes a selected-scene action named **Export & Open Web 3D Viewer** in the Safety / Review flow. The action resolves the selected scene, runs `scripts/export_workcell_studio_web_scene.py --stage-assets`, writes only to `build/workcell_studio_web_scene/<scene_id>.web_scene.json`, starts or reuses a repository-root local HTTP server on `127.0.0.1:8765`, and opens `http://localhost:8765/workcell_studio_web/viewer/index.html?scene=build%2Fworkcell_studio_web_scene%2F<scene_id>.web_scene.json` with Qt/QDesktopServices. The completion/failure dialog reports the exported web scene JSON path, the viewer URL, whether the local static asset server started or an existing server was reused, and the exact `cd <repo> && python3 -m http.server 8765 --bind 127.0.0.1` command to run manually if serving cannot be started automatically. Opening through the repository root is important because staged mesh requests resolve as `build/workcell_studio_web_scene/assets/<scene_id>/...`. It does not write under `scenes/`, mutate source YAML, mutate generated scene files, apply edit patches, or change RViz/MoveIt planning truth.
 
 If direct `file://` loading is blocked or unreliable in your browser, or if you staged mesh assets and want relative mesh URLs to resolve consistently, run this from the repository root and open the URL manually:
 
@@ -24,7 +24,7 @@ If direct `file://` loading is blocked or unreliable in your browser, or if you 
 python3 -m http.server 8765 --bind 127.0.0.1
 ```
 
-URL: `http://127.0.0.1:8765/workcell_studio_web/viewer/index.html?scene=build%2Fworkcell_studio_web_scene%2Fur5_2f_test.web_scene.json`
+URL: `http://localhost:8765/workcell_studio_web/viewer/index.html?scene=build%2Fworkcell_studio_web_scene%2Fur5_2f_test.web_scene.json`
 
 ## Open the viewer
 
@@ -34,7 +34,7 @@ URL: `http://127.0.0.1:8765/workcell_studio_web/viewer/index.html?scene=build%2F
    python3 -m http.server 8765 --bind 127.0.0.1
    ```
 
-2. Open `http://127.0.0.1:8765/workcell_studio_web/viewer/index.html?scene=build%2Fworkcell_studio_web_scene%2Fur5_2f_test.web_scene.json` in a browser. Directly opening `workcell_studio_web/viewer/index.html` can still work for JSON-only review, but served HTTP is the expected path for relative staged mesh assets.
+2. Open `http://localhost:8765/workcell_studio_web/viewer/index.html?scene=build%2Fworkcell_studio_web_scene%2Fur5_2f_test.web_scene.json` in a browser. Directly opening `workcell_studio_web/viewer/index.html` can still work for JSON-only review, but served HTTP is the expected path for relative staged mesh assets.
 3. Use the **Load web_scene.json** file picker.
 4. Select the exported JSON, for example:
    `build/workcell_studio_web_scene/ur5_2f_test.web_scene.json`.
