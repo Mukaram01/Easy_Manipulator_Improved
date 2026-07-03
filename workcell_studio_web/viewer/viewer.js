@@ -358,6 +358,9 @@ function meshUriDiagnostic(item) {
 function safeMeshUri(item) {
   return meshUriDiagnostic(item).uri;
 }
+function repoRootRelativeUrl(uri) {
+  return new URL(uri, `${window.location.origin}/`).href;
+}
 function itemType(item) { return item.type || item.category || item.role || item.source_kind || 'asset'; }
 function itemLabel(item) { return item.label || item.display_name || item.name || item.id || 'unnamed'; }
 function viewerGroupIdentity(item) {
@@ -506,9 +509,10 @@ async function tryLoadMesh(item, rendered, fallback) {
   try {
     const ext = uri.split(/[?#]/, 1)[0].slice(uri.split(/[?#]/, 1)[0].lastIndexOf('.') + 1).toLowerCase();
     let loaded;
-    if (ext === 'stl') loaded = await new STLLoader().loadAsync(uri);
-    else if (ext === 'dae') loaded = await new ColladaLoader().loadAsync(uri);
-    else loaded = await new OBJLoader().loadAsync(uri);
+    const loadUrl = repoRootRelativeUrl(uri);
+    if (ext === 'stl') loaded = await new STLLoader().loadAsync(loadUrl);
+    else if (ext === 'dae') loaded = await new ColladaLoader().loadAsync(loadUrl);
+    else loaded = await new OBJLoader().loadAsync(loadUrl);
     const meshObject = materializeLoadedMesh(item, uri, loaded);
     fallback.visible = false;
     rendered.object3d.add(meshObject);
@@ -1031,6 +1035,58 @@ async function loadFile(file) {
   }
 }
 
+function safeRelativeSceneUrl(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) throw new Error('Empty scene URL parameter.');
+  const uri = raw.trim();
+  const lower = uri.toLowerCase();
+  if (
+    lower.startsWith('http://') ||
+    lower.startsWith('https://') ||
+    lower.startsWith('file://') ||
+    lower.startsWith('data:') ||
+    lower.startsWith('//') ||
+    uri.startsWith('/') ||
+    uri.startsWith('\\') ||
+    /^[a-zA-Z]:[\\/]/.test(uri) ||
+    /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(uri) ||
+    uri.includes('\\')
+  ) throw new Error(`unsafe scene URL rejected by viewer policy: ${uri}`);
+  const pathOnly = uri.split(/[?#]/, 1)[0];
+  if (pathOnly.split('/').some(part => part === '..')) {
+    throw new Error(`scene URL path traversal rejected: ${uri}`);
+  }
+  if (!pathOnly.startsWith('build/workcell_studio_web_scene/') || !pathOnly.endsWith('.web_scene.json')) {
+    throw new Error(`scene URL must point under build/workcell_studio_web_scene/*.web_scene.json: ${uri}`);
+  }
+  return uri;
+}
+
+async function loadSceneUrl(rawUrl) {
+  const sceneUrl = safeRelativeSceneUrl(rawUrl);
+  try {
+    const response = await fetch(repoRootRelativeUrl(sceneUrl), { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+    const json = await response.json();
+    const items = validateSceneJson(json);
+    state.sceneJson = json;
+    state.sourceWebSceneFile = sceneUrl;
+    state.runtimeWarnings = [];
+    state.dirtyTransforms.clear();
+    state.undoStack = [];
+    state.redoStack = [];
+    state.selected = null;
+    detachTransformGizmo();
+    el.empty.hidden = true;
+    renderScene(items);
+    refreshWarnings(json);
+    renderSceneSummary();
+    el.inspector.className = 'state empty';
+    el.inspector.textContent = items.length ? 'Select an object from the list or canvas.' : EMPTY_SCENE_MESSAGE;
+  } catch (err) {
+    showError(`Failed to load scene from ${sceneUrl}: ${err.message || err}`);
+  }
+}
+
 if (el.resetView) el.resetView.addEventListener('click', resetView);
 if (el.labelsToggle) el.labelsToggle.addEventListener('change', event => setLabelsVisible(event.target.checked));
 if (el.undoEdit) el.undoEdit.addEventListener('click', undoPreviewEdit);
@@ -1062,6 +1118,8 @@ async function boot() {
     OBJLoader = objModule.OBJLoader;
     initThree();
     setLabelsVisible(el.labelsToggle?.checked || false);
+    const sceneParam = new URLSearchParams(window.location.search).get('scene');
+    if (sceneParam) await loadSceneUrl(sceneParam);
   } catch (err) {
     showError(`Three.js/CDN load failure: ${err.message || err}`);
   }
