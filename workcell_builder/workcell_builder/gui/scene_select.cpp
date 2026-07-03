@@ -3752,7 +3752,7 @@ void SceneSelect::on_export_open_web_3d_viewer_clicked()
   const fs::path viewer_path = repo_root / "workcell_studio_web" / "viewer" / "index.html";
   const QString web_scene_url_path = QString("build/workcell_studio_web_scene/%1.web_scene.json")
     .arg(QString::fromStdString(scene_id));
-  const QString viewer_url = QString("http://127.0.0.1:8765/workcell_studio_web/viewer/index.html?scene=%1")
+  const QString viewer_url = QString("http://localhost:8765/workcell_studio_web/viewer/index.html?scene=%1")
     .arg(QString::fromUtf8(QUrl::toPercentEncoding(web_scene_url_path)));
   fs::create_directories(output_path.parent_path(), ec);
   const QStringList args{
@@ -3780,30 +3780,56 @@ void SceneSelect::on_export_open_web_3d_viewer_clicked()
     return;
   }
 
+  const QString manual_server_command = QString("cd %1 && python3 -m http.server 8765 --bind 127.0.0.1")
+    .arg(QString::fromStdString(repo_root.string()));
+  const auto is_local_server_reachable = []() {
+    const QString probe =
+      "import socket,sys\n"
+      "s=socket.socket()\n"
+      "s.settimeout(0.25)\n"
+      "try:\n"
+      "    s.connect(('127.0.0.1', 8765))\n"
+      "except OSError:\n"
+      "    sys.exit(1)\n"
+      "finally:\n"
+      "    s.close()\n";
+    return QProcess::execute("python3", QStringList{"-c", probe}) == 0;
+  };
+
+  bool server_started = false;
+  bool server_reused = is_local_server_reachable();
   qint64 server_pid = 0;
-  const bool server_started = QProcess::startDetached(
-    "python3",
-    QStringList{"-m", "http.server", "8765", "--bind", "127.0.0.1"},
-    QString::fromStdString(repo_root.string()),
-    &server_pid);
-  if (server_started) {
-    append_info("Started local Web 3D Viewer server from repo root: python3 -m http.server 8765 --bind 127.0.0.1");
+  if (server_reused) {
+    append_info("Reusing existing local Web 3D Viewer static asset server on http://localhost:8765/.");
   } else {
-    append_warning("Could not start local Web 3D Viewer server on 127.0.0.1:8765; opening the repo-root HTTP URL anyway in case a server is already running.");
+    server_started = QProcess::startDetached(
+      "python3",
+      QStringList{"-m", "http.server", "8765", "--bind", "127.0.0.1"},
+      QString::fromStdString(repo_root.string()),
+      &server_pid);
+    if (server_started) {
+      append_info("Started local Web 3D Viewer server from repo root: python3 -m http.server 8765 --bind 127.0.0.1");
+    } else {
+      append_warning("Could not start local Web 3D Viewer server on 127.0.0.1:8765; opening the repo-root HTTP URL anyway in case a server is already running.");
+    }
   }
 
+  const QString server_status = server_started
+    ? QString("started (PID %1)").arg(server_pid)
+    : (server_reused ? QString("reused existing server") : QString("not started"));
   const bool opened = QDesktopServices::openUrl(QUrl(viewer_url));
   const QString fallback = QString(
-    "Viewer URL: %1\n"
-    "Viewer path: %2\n"
-    "Exported JSON path: %3\n\n"
+    "Exported web scene JSON: %3\n"
+    "Viewer URL opened: %1\n"
+    "Local static asset server: %5\n\n"
+    "Viewer path: %2\n\n"
     "The viewer is opened through a repository-root HTTP server so staged meshes resolve under:\n"
     "build/workcell_studio_web_scene/assets/%4/...\n\n"
-    "If the browser cannot connect, run this from the repository root:\n"
-    "python3 -m http.server 8765 --bind 127.0.0.1\n\n"
+    "If the browser cannot connect or the server did not start, run this manually:\n"
+    "%6\n\n"
     "Then open:\n"
     "%1")
-    .arg(viewer_url, QString::fromStdString(viewer_path.string()), QString::fromStdString(output_path.string()), QString::fromStdString(scene_id));
+    .arg(viewer_url, QString::fromStdString(viewer_path.string()), QString::fromStdString(output_path.string()), QString::fromStdString(scene_id), server_status, manual_server_command);
   if (!opened) {
     const QString message = "Browser open failed. Use the local-server URL below.\n\n" + fallback;
     append_error(message.toStdString());
