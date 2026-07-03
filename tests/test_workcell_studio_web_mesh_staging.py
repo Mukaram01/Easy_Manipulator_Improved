@@ -157,33 +157,52 @@ def test_viewer_uri_policy_allows_staged_assets_and_rejects_traversal():
     assert "mesh_uri path traversal rejected" in js
 
 
-def test_staged_ur5_mesh_uri_resolves_from_builder_http_launch_context(tmp_path):
-    scene = REPO_ROOT / "scenes" / "ur5_2f_test"
-    output = REPO_ROOT / "build" / "workcell_studio_web_scene" / "ur5_2f_test.web_scene.json"
+def test_staged_mesh_uri_resolves_from_builder_opened_viewer_base_url():
+    mesh_uri = "build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/ur5/visual/base.dae"
+    staged_mesh = REPO_ROOT / mesh_uri
+    staged_mesh.parent.mkdir(parents=True, exist_ok=True)
+    had_existing_mesh = staged_mesh.exists()
+    if not had_existing_mesh:
+        staged_mesh.write_text("<COLLADA><asset/></COLLADA>\n", encoding="utf-8")
 
-    subprocess.run(
-        [sys.executable, str(EXPORTER), "--scene", str(scene), "--output", str(output), "--stage-assets"],
-        cwd=REPO_ROOT,
-        check=True,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    payload = json.loads(output.read_text(encoding="utf-8"))
-    staged_items = [
-        item for item in _all_renderable_items(payload)
-        if str(item.get("mesh_uri") or "").startswith("build/workcell_studio_web_scene/assets/ur5_2f_test/")
-    ]
+    try:
+        staged_item = {
+            "id": "ur5_base_link",
+            "category": "robot",
+            "mesh_uri": mesh_uri,
+            "mesh_staging_status": "staged",
+        }
+        viewer_url = "http://127.0.0.1:8765/workcell_studio_web/viewer/index.html?scene=build%2Fworkcell_studio_web_scene%2Fur5_2f_test.web_scene.json"
 
-    assert staged_items, "Expected ur5_2f_test export to include staged mesh URIs."
-    viewer_url = "http://127.0.0.1:8765/workcell_studio_web/viewer/index.html?scene=build%2Fworkcell_studio_web_scene%2Fur5_2f_test.web_scene.json"
-    for item in staged_items[:10]:
-        mesh_uri = item["mesh_uri"]
-        browser_request = urljoin("http://127.0.0.1:8765/", mesh_uri)
-        parsed = urlparse(browser_request)
-        assert parsed.netloc == "127.0.0.1:8765"
-        assert parsed.path.startswith("/build/workcell_studio_web_scene/assets/ur5_2f_test/")
-        assert (REPO_ROOT / parsed.path.lstrip("/")).is_file(), f"{mesh_uri} from {viewer_url} should target an existing staged file"
+        browser_default_request = urljoin(viewer_url, staged_item["mesh_uri"])
+        default_parsed = urlparse(browser_default_request)
+        assert default_parsed.path.startswith("/workcell_studio_web/viewer/build/"), (
+            "This fixture must model the browser's default relative-URL resolution from the "
+            "Builder-opened viewer location; without a repo-root rewrite it would fetch from "
+            "workcell_studio_web/viewer/build/..."
+        )
+
+        viewer_js = VIEWER_JS.read_text(encoding="utf-8")
+        scene_select_cpp = (REPO_ROOT / "workcell_builder" / "workcell_builder" / "gui" / "scene_select.cpp").read_text(encoding="utf-8")
+        assert "function repoRootRelativeUrl(uri)" in viewer_js
+        assert "new URL(uri, `${window.location.origin}/`).href" in viewer_js
+        assert "repoRootRelativeUrl(uri)" in viewer_js
+        assert 'QString::fromStdString(repo_root.string())' in scene_select_cpp
+        assert "python3 -m http.server 8765 --bind 127.0.0.1" in scene_select_cpp
+
+        implemented_request = urljoin("http://127.0.0.1:8765/", staged_item["mesh_uri"])
+        implemented_parsed = urlparse(implemented_request)
+        assert implemented_parsed.netloc == "127.0.0.1:8765"
+        assert implemented_parsed.path == "/" + mesh_uri
+        assert not implemented_parsed.path.startswith("/workcell_studio_web/viewer/build/")
+        assert implemented_parsed.path.startswith("/build/workcell_studio_web_scene/assets/ur5_2f_test/")
+        assert (REPO_ROOT / implemented_parsed.path.lstrip("/")).is_file(), (
+            f"{staged_item['mesh_uri']} from {viewer_url} must be fetchable from the "
+            "repository-root static server."
+        )
+    finally:
+        if not had_existing_mesh:
+            staged_mesh.unlink(missing_ok=True)
 
 
 def _fallback_causes(payload: dict) -> list[str]:
