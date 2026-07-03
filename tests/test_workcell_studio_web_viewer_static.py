@@ -107,7 +107,7 @@ def test_viewer_includes_render_status_strings_and_fallback_reasons():
         "no primitive geometry or mesh was provided; using box fallback",
         "unsafe mesh_uri rejected by viewer policy",
         "no mesh_uri provided",
-        "mesh loader failed",
+        "loader_failure",
     ]:
         assert token in js
 
@@ -123,7 +123,7 @@ def test_viewer_includes_mesh_loader_references_and_safe_mesh_uri_logic():
         "three/addons/loaders/OBJLoader.js",
         "safeMeshUri",
         "displayMeshUri",
-        "loadAsync(uri)",
+        "loadAsync(loadUrl)",
         "materializeLoadedMesh",
         "appendRuntimeWarning",
         "build/workcell_studio_web_scene/assets/",
@@ -184,3 +184,34 @@ def test_viewer_validates_renderable_transforms_and_required_mesh_fallbacks():
         assert token in js
     assert "if (!applyPose(object3d, item)) continue;" in js
     assert "if (itemRequiresMeshBackedVisual(item)) warnRequiredMeshFallback" in js
+
+
+def test_viewer_mesh_preflight_surfaces_distinct_failure_reasons():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    for token in [
+        "unsupported_format",
+        "unsupported mesh format",
+        "preflightMeshUrl",
+        "fetch(url, { method: 'HEAD' })",
+        "method: 'GET'",
+        "url_not_served",
+        "mesh_url_not_served",
+        "file_access_blocked",
+        "mesh_file_access_blocked",
+        "loader_failure",
+        "mesh_loader_failure",
+        "meshLoaderNameForExtension",
+        "extension: ext",
+        "loader: loaderName",
+        "invalid_renderable_transform",
+        "scale must be positive on every axis",
+        "scale contains non-finite values",
+    ]:
+        assert token in js
+    preflight_body = js.split("async function preflightMeshUrl", 1)[1].split("function itemType", 1)[0]
+    assert "response.status" in preflight_body
+    assert "!response.ok" in preflight_body
+    try_load_body = js.split("async function tryLoadMesh", 1)[1].split("function collectItems", 1)[0]
+    assert try_load_body.index("await preflightMeshUrl") < try_load_body.index("new STLLoader().loadAsync")
+    assert "item.mesh_status = preflight.status || 'url_not_served'" in try_load_body
+    assert "item.mesh_status = 'loader_failure'" in try_load_body
