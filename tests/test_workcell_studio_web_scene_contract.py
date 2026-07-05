@@ -197,10 +197,27 @@ def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallba
     assert required["table"]
     assert required["camera"]
 
+    renderable_items = [
+        item
+        for bucket in ("robots", "tools", "assets", "sensors", "zones")
+        for item in payload[bucket]
+        if item.get("render_expected", True) is not False
+    ]
+    for item in renderable_items:
+        for field in ("mesh_uri", "mesh_path", "source_path", "package_uri", "resolved_source_path"):
+            value = item.get(field)
+            assert value != "${mesh}", (item.get("id"), field)
+            assert not (isinstance(value, str) and "${" in value and "}" in value), (item.get("id"), field, value)
+    assert any(
+        warning.get("code") == "unresolved_placeholder_visual_suppressed"
+        and warning.get("source") == "generated/scene_visual_mesh_index.json"
+        for warning in payload["warnings"]
+    )
+
     summary = payload["viewer_summary"]
     assert summary["renderable_count"] >= 20
     assert summary["mesh_backed_count"] >= len(required["ur5"]) + len(required["robotiq"]) + len(required["table"]) + len(required["camera"])
-    assert summary["missing_or_failed_mesh_count"] >= 1
+    assert summary["missing_or_failed_mesh_count"] == 0
     assert summary["scene_bounds"]["source_count"] == summary["renderable_count"]
     for axis in range(3):
         assert summary["scene_bounds"]["min"][axis] <= summary["scene_bounds"]["max"][axis]
