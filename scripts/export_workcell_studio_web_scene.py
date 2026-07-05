@@ -910,16 +910,18 @@ def _viewer_summary(payload: Json) -> Json:
             scene_min = item_min if scene_min is None else [min(scene_min[i], item_min[i]) for i in range(3)]
             scene_max = item_max if scene_max is None else [max(scene_max[i], item_max[i]) for i in range(3)]
 
-        text = _identity_text(item)
         categories: List[str] = []
-        if "robot" in text or str(item.get("category", "")).lower() == "robot":
-            categories.append("robot")
-        if any(token in text for token in ("tool", "gripper", "robotiq", "end_effector", "suction")):
-            categories.append("tool")
-        if any(token in text for token in ("table", "workbench", "support_surface")):
-            categories.append("table")
-        if any(token in text for token in ("camera", "realsense")):
-            categories.append("camera")
+        is_helper_or_zone = _section == "zones" or _is_helper(item)
+        if not is_helper_or_zone:
+            text = _identity_text(item)
+            if "robot" in text or str(item.get("category", "")).lower() == "robot":
+                categories.append("robot")
+            if any(token in text for token in ("tool", "gripper", "robotiq", "end_effector", "suction")):
+                categories.append("tool")
+            if any(token in text for token in ("table", "workbench", "support_surface")):
+                categories.append("table")
+            if any(token in text for token in ("camera", "realsense")):
+                categories.append("camera")
         for category in categories:
             entry = required[category]
             entry["present"] = True
