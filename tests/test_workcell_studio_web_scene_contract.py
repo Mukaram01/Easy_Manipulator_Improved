@@ -225,6 +225,8 @@ def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallba
         assert summary["required_item_status"][category]["present"] is True
         assert summary["required_item_status"][category]["status"] in {"mesh_backed", "missing_or_failed_mesh"}
         assert summary["required_item_status"][category]["item_ids"]
+    assert any(item["id"] == "safety_zone_keepout" for item in payload["zones"])
+    assert "safety_zone_keepout" not in summary["required_item_status"]["robot"]["item_ids"]
 
     required_identity_expectations = {
         "ur5": ("robots", "robot", "ur5", ("category", "role", "id", "source_kind", "source_layer", "active_visual_source", "link", "original_mesh_uri", "mesh_uri")),
