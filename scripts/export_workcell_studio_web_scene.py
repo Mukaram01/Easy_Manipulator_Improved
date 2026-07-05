@@ -694,6 +694,95 @@ def _top_level_entities(data: Dict[str, Any], warnings: List[Json]) -> Tuple[Lis
     return robots, tools, sensors
 
 
+
+def _contains_unresolved_substitution(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    return text == "${mesh}" or ("${" in text and "}" in text)
+
+
+def _has_unresolved_placeholder_mesh_reference(item: Mapping[str, Any]) -> bool:
+    return any(_contains_unresolved_substitution(item.get(field)) for field in MESH_URI_FIELDS)
+
+
+def _supported_mesh_uri(value: Any) -> bool:
+    if not isinstance(value, str) or _contains_unresolved_substitution(value):
+        return False
+    parsed = urlparse(value)
+    path = unquote(parsed.path if parsed.scheme else value)
+    return Path(path).suffix.lower() in SUPPORTED_MESH_SUFFIXES
+
+
+def _robot_family_from_item(item: Mapping[str, Any]) -> Optional[str]:
+    text = " ".join(str(item.get(field, "")) for field in MESH_URI_FIELDS + ("id", "role", "category", "display_name", "link")).lower()
+    for family in ("ur3", "ur5", "ur10"):
+        if f"/meshes/{family}/" in text or family in text:
+            return family
+    return None
+
+
+def _normalized_robot_link(item: Mapping[str, Any]) -> str:
+    link = str(item.get("link") or item.get("object_name") or "").lower()
+    return link.removesuffix("_inertia")
+
+
+def _is_robot_like_generated_item(item: Mapping[str, Any]) -> bool:
+    text = _identity_text(item)
+    role = str(item.get("role", "")).lower()
+    category = str(item.get("category", "")).lower()
+    return (
+        item.get("source_kind") == "generated_preview"
+        and (role == "robot" or category == "robot" or "robot" in text or _robot_family_from_item(item) is not None)
+    )
+
+
+def _has_generated_robot_mesh_replacements(generated: Mapping[str, List[Json]]) -> Tuple[set[Tuple[str, str]], set[str]]:
+    replacement_keys: set[Tuple[str, str]] = set()
+    replacement_families: set[str] = set()
+    for section in ("robots", "assets"):
+        for item in generated.get(section, []):
+            if not isinstance(item, Mapping) or not _is_robot_like_generated_item(item):
+                continue
+            uri = _first_present(*(item.get(field) for field in MESH_URI_FIELDS))
+            if not _supported_mesh_uri(uri):
+                continue
+            family = _robot_family_from_item(item)
+            link = _normalized_robot_link(item)
+            if family:
+                replacement_families.add(family)
+                if link:
+                    replacement_keys.add((family, link))
+    return replacement_keys, replacement_families
+
+
+def _suppress_unresolved_placeholder_robot_visuals(generated: Dict[str, List[Json]], warnings: List[Json]) -> None:
+    replacement_keys, replacement_families = _has_generated_robot_mesh_replacements(generated)
+    if not replacement_keys and not replacement_families:
+        return
+    for section in ("robots", "assets"):
+        kept: List[Json] = []
+        for item in generated.get(section, []):
+            if not _has_unresolved_placeholder_mesh_reference(item):
+                kept.append(item)
+                continue
+            family = _robot_family_from_item(item)
+            link = _normalized_robot_link(item)
+            should_suppress = (family and ((family, link) in replacement_keys or family in replacement_families))
+            if not should_suppress and link and any((replacement_family, link) in replacement_keys for replacement_family in replacement_families):
+                should_suppress = True
+            if not should_suppress:
+                kept.append(item)
+                continue
+            item_id = str(item.get("id") or "<unknown>")
+            _warn(
+                warnings,
+                "unresolved_placeholder_visual_suppressed",
+                f"Suppressed generated visual-index item {item_id} because its mesh reference contains an unresolved xacro substitution and a generated robot mesh replacement exists.",
+                INPUTS["visual_mesh_index"],
+            )
+        generated[section] = kept
+
 def _sort_items(items: List[Json]) -> List[Json]:
     return sorted(items, key=lambda x: (str(x.get("source_kind", "")), str(x.get("category", "")), str(x.get("role", "")), str(x.get("id", ""))))
 
@@ -864,6 +953,7 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
     generated = _generated_preview_items(_as_map(data.get("visual_mesh_index")), scene_dir, warnings) if data.get("visual_mesh_index") is not None else {"robots": [], "tools": [], "assets": [], "sensors": [], "zones": []}
     _supplement_missing_tool_meshes(data, generated)
     _apply_web_scene_transform_parity_fallbacks(data, generated)
+    _suppress_unresolved_placeholder_robot_visuals(generated, warnings)
     authored = _authored_sections(data, scene_dir, warnings)
     top_robots, top_tools, top_sensors = _top_level_entities(data, warnings)
 
