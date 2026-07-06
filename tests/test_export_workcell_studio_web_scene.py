@@ -70,6 +70,8 @@ def test_export_web_scene_contract_and_determinism(tmp_path):
     assert out1.read_text(encoding="utf-8") == out2.read_text(encoding="utf-8")
     payload = json.loads(out1.read_text(encoding="utf-8"))
     assert payload["schema_version"] == "workcell_studio_web_scene/v1"
+    assert payload["metadata"]["visual_bounds_contract"]["status"] == "failed"
+    assert payload["metadata"]["visual_bounds_contract"]["camera_framing_blockers"]
     assert payload["robots"][-1]["id"] == "robot_mesh"
     assert payload["robots"][-1]["locked"] is True
     assert payload["robots"][-1]["editable"] is False

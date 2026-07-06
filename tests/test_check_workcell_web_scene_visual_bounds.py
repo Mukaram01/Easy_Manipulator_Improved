@@ -62,6 +62,22 @@ def test_checker_accepts_visual_bounds_contract_payload():
     assert summary["core_mesh_item_count"] == 3
 
 
+
+def test_checker_rejects_visual_bounds_contract_failed_status_with_blockers():
+    payload = _valid_payload()
+    payload["metadata"]["visual_bounds_contract"] = {
+        "status": "failed",
+        "camera_framing_blockers": [
+            {"id": "workbench", "category": "table", "reason": "oversized_item_can_break_camera_framing"}
+        ],
+    }
+
+    summary, errors = checker.check(payload)
+
+    assert summary["contract_status"] == "failed"
+    assert any("metadata.visual_bounds_contract.status must be pass or passed" in error for error in errors)
+
+
 def test_checker_rejects_missing_dimensions_mesh_contract_and_robot_autoscale():
     payload = _valid_payload()
     del payload["assets"][0]["expected_dimensions_m"]

@@ -1008,13 +1008,17 @@ def _visual_bounds_contract(payload: Json, data: Mapping[str, Any]) -> Json:
             invalid_orientation.append(entry)
             blockers.append({**entry, "reason": "invalid_orientation_can_break_camera_framing"})
 
+    camera_framing_blockers = sorted(blockers, key=lambda x: (str(x.get("id")), str(x.get("reason"))))
+    status = "passed" if not camera_framing_blockers else "failed"
+
     return {
+        "status": status,
         "expected_workspace_bounds_m": {"min": workspace_min, "max": workspace_max, "source": expected["source"]},
         "scene_bounds_m": {"min": scene_min or [0.0, 0.0, 0.0], "max": scene_max or [0.0, 0.0, 0.0], "source_count": len(sources), "sources": sorted(sources)},
         "oversized_items": sorted(oversized, key=lambda x: str(x.get("id"))),
         "collapsed_items": sorted(collapsed, key=lambda x: str(x.get("id"))),
         "invalid_orientation_items": sorted(invalid_orientation, key=lambda x: str(x.get("id"))),
-        "camera_framing_blockers": sorted(blockers, key=lambda x: (str(x.get("id")), str(x.get("reason")))),
+        "camera_framing_blockers": camera_framing_blockers,
     }
 
 def _populate_mesh_contract_fields(payload: Json, *, staged: bool) -> Json:
