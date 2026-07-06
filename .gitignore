@@ -50,6 +50,10 @@ tesseract_external/
 src/boost_plugin_loader/
 src/ros_industrial_cmake_boilerplate/
 
-# Workcell Studio generated scene outputs
-scenes/*/generated/*
+# Workcell Studio generated scene cache/artifacts
+scenes/*/generated/
 !scenes/*/generated/.gitkeep
+
+# Workcell Studio Web 3D exports
+*.web_scene.json
+workcell_studio_web_scene/
