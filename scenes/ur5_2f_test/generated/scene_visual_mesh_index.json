@@ -3,10 +3,10 @@
   "visual_count": 25,
   "resolved": 18,
   "unresolved": 7,
-  "generated_at": "2026-07-01T14:13:08.402980+00:00",
-  "extractor_version": "2.12",
+  "generated_at": "2026-07-06T12:50:36.198164+00:00",
+  "extractor_version": "2.13",
   "path_reference_root": "repository",
-  "extraction_mode": "urdf_flattened",
+  "extraction_mode": "xacro_lite_expanded",
   "urdf_expansion_mode": "xacro_lite_expanded",
   "xacro_available": false,
   "source_urdf_xacro_path": "scenes/ur5_2f_test/urdf/scene.urdf.xacro",
@@ -25,7 +25,7 @@
       "use_fake_hardware": "true"
     }
   },
-  "source_mtime": 1782912584.4753911,
+  "source_mtime": 1783335959.6023357,
   "source_expanded_urdf_path": "",
   "ros_to_viewport_basis_applied": false,
   "fallback_reason": "xacro executable unavailable; used safe repo-local xacro-lite expansion",
@@ -83,7 +83,7 @@
   ],
   "transform_status_counts": {
     "resolved": 18,
-    "static_mesh_resolved": 7
+    "ur5_fk_fallback_resolved": 7
   },
   "mesh_format_counts": {
     "unknown": 7,
@@ -121,7 +121,10 @@
   "static_parent_resolved_count": 0,
   "stale_index": false,
   "stale_reasons": [],
-  "blockers": [],
+  "blockers": [
+    "UR5 transform sanity: all relevant UR5 link/world positions are identical or nearly identical; transform chain may be collapsed.",
+    "UR5 transform sanity: all relevant UR5 link/world positions are within epsilon of [0, 0, 0]; transform chain may be missing."
+  ],
   "warnings": [
     "xacro-lite preview is degraded and is not equivalent to real xacro-expanded output"
   ],
@@ -215,6 +218,30 @@
           -2.4492935982947064e-16
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          -2.4492935982947064e-16
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          -2.4492935982947064e-16
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.0,
@@ -284,6 +311,7 @@
         "w": 1.0
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -433,6 +461,30 @@
           -2.4492935982947064e-16
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          -2.4492935982947064e-16
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          -2.4492935982947064e-16
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.0,
@@ -502,6 +554,7 @@
         "w": 1.0
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -653,6 +706,30 @@
           -3.6732051034160666e-06
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          1.5707963267948966,
+          -0.0,
+          -3.6732051034160666e-06
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          1.5707963267948966,
+          -0.0,
+          -3.6732051034160666e-06
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.0,
@@ -722,6 +799,7 @@
         "w": 0.707106781185355
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -875,6 +953,30 @@
           1.5707963267948966
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          1.5707963267948966,
+          -0.0,
+          1.5707963267948966
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          1.5707963267948966,
+          -0.0,
+          1.5707963267948966
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.0,
@@ -944,6 +1046,7 @@
         "w": 0.5
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -1099,6 +1202,30 @@
           1.5707926535897931
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          1.5707963267948966,
+          -0.0,
+          1.5707926535897931
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          1.5707963267948966,
+          -0.0,
+          1.5707926535897931
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.0,
@@ -1168,6 +1295,7 @@
         "w": 0.5000009183004327
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -1325,6 +1453,30 @@
           -7.346410206832133e-06
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          -7.346410206832133e-06
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          -7.346410206832133e-06
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.0,
@@ -1394,6 +1546,7 @@
         "w": 0.9999999999932538
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -1553,6 +1706,30 @@
           -7.346410206832133e-06
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          1.5707963267948966,
+          -0.0,
+          -7.346410206832133e-06
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          1.5707963267948966,
+          -0.0,
+          -7.346410206832133e-06
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.0,
@@ -1622,6 +1799,7 @@
         "w": 0.7071067811817774
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -1785,6 +1963,30 @@
           -7.346410206770901e-06
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.0,
@@ -1854,6 +2056,7 @@
         "w": 0.9999999999932538
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -2021,6 +2224,30 @@
           -7.346410206770901e-06
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.05490474107707818,
+          0.03060074107807551,
+          3.361932005439464e-18
+        ],
+        "rpy": [
+          3.141592653589793,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.05490474107707818,
+          0.03060074107807551,
+          3.361932005439464e-18
+        ],
+        "rpy": [
+          3.141592653589793,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.05490474107707818,
@@ -2090,6 +2317,7 @@
         "w": 6.12324524164264e-17
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -2258,6 +2486,30 @@
           -7.346410206770901e-06
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.05490429145995863,
+          -0.030601547780272947,
+          3.361932005439464e-18
+        ],
+        "rpy": [
+          0.0,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.05490429145995863,
+          -0.030601547780272947,
+          3.361932005439464e-18
+        ],
+        "rpy": [
+          0.0,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.05490429145995863,
@@ -2327,6 +2579,7 @@
         "w": 0.9999999999932538
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -2496,6 +2749,30 @@
           -7.346410206770901e-06
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.050819447836586006,
+          0.06208681544116511,
+          -7.441625658142177e-19
+        ],
+        "rpy": [
+          3.141592653589793,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.050819447836586006,
+          0.06208681544116511,
+          -7.441625658142177e-19
+        ],
+        "rpy": [
+          3.141592653589793,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.050819447836586006,
@@ -2565,6 +2842,7 @@
         "w": 6.12324524164264e-17
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -2735,6 +3013,30 @@
           -7.346410206770901e-06
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.050818535600671295,
+          -0.06208756211548404,
+          3.1117657772896924e-18
+        ],
+        "rpy": [
+          0.0,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.050818535600671295,
+          -0.06208756211548404,
+          3.1117657772896924e-18
+        ],
+        "rpy": [
+          0.0,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.050818535600671295,
@@ -2804,6 +3106,7 @@
         "w": 0.9999999999932538
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -2973,6 +3276,30 @@
           -7.346410206770901e-06
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.0614200932977522,
+          0.012699548783142393,
+          3.7608903201815215e-18
+        ],
+        "rpy": [
+          3.141592653589793,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.0614200932977522,
+          0.012699548783142393,
+          3.7608903201815215e-18
+        ],
+        "rpy": [
+          3.141592653589793,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.0614200932977522,
@@ -3042,6 +3369,7 @@
         "w": 6.12324524164264e-17
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -3210,6 +3538,30 @@
           -7.346410206770901e-06
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.061419906698932956,
+          -0.012700451216172186,
+          3.7608903201815215e-18
+        ],
+        "rpy": [
+          0.0,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.061419906698932956,
+          -0.012700451216172186,
+          3.7608903201815215e-18
+        ],
+        "rpy": [
+          0.0,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.061419906698932956,
@@ -3279,6 +3631,7 @@
         "w": 0.9999999999932538
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -3448,6 +3801,30 @@
           -7.346410206770901e-06
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.10445996758726701,
+          0.05029864080558521,
+          1.7917061294111054e-18
+        ],
+        "rpy": [
+          3.141592653589793,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.10445996758726701,
+          0.05029864080558521,
+          1.7917061294111054e-18
+        ],
+        "rpy": [
+          3.141592653589793,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.10445996758726701,
@@ -3517,6 +3894,7 @@
         "w": 6.12324524164264e-17
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -3687,6 +4065,30 @@
           -7.346410206770901e-06
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.10445922854709529,
+          -0.05030017561170011,
+          6.396305620832227e-18
+        ],
+        "rpy": [
+          0.0,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.10445922854709529,
+          -0.05030017561170011,
+          6.396305620832227e-18
+        ],
+        "rpy": [
+          0.0,
+          -6.123233995736766e-17,
+          -7.346410206770901e-06
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.10445922854709529,
@@ -3756,6 +4158,7 @@
         "w": 0.9999999999932538
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -3914,6 +4317,30 @@
           0.0
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.0,
@@ -3983,6 +4410,7 @@
         "w": 1.0
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -4141,6 +4569,30 @@
           0.0
         ]
       },
+      "final_transform": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "world_from_visual": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
       "link_world_pose": {
         "xyz": [
           0.0,
@@ -4210,6 +4662,7 @@
         "w": 1.0
       },
       "baked_world_visual_transform_source": "urdf_fk_link_world_times_visual_origin",
+      "transform_source": "urdf_fk_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -4273,14 +4726,14 @@
     {
       "id": "urdf_static_mesh_ur5_static_base",
       "source": "legacy_static_fallback",
-      "link": "base_link",
+      "link": "base_link_inertia",
       "visual": "static_mesh_visual",
-      "parent_link": "world",
-      "immediate_parent_link": "world",
-      "joint_parent_link": "world",
-      "parent_joint": "",
-      "parent_joint_name": "",
-      "parent_joint_type": "static_preview",
+      "parent_link": "base_link",
+      "immediate_parent_link": "base_link",
+      "joint_parent_link": "base_link",
+      "parent_joint": "base_link-base_link_inertia",
+      "parent_joint_name": "base_link-base_link_inertia",
+      "parent_joint_type": "fixed",
       "parent_joint_origin": {
         "xyz": [
           0.0,
@@ -4290,18 +4743,18 @@
         "rpy": [
           0.0,
           0.0,
-          0.0
+          3.141592653589793
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "parent_joint_value": 0.0,
       "parent_joint_value_source": "zero_default",
-      "joint_name": "",
-      "joint_type": "static_preview",
+      "joint_name": "base_link-base_link_inertia",
+      "joint_type": "fixed",
       "joint_origin": {
         "xyz": [
           0.0,
@@ -4311,21 +4764,21 @@
         "rpy": [
           0.0,
           0.0,
-          0.0
+          3.141592653589793
         ]
       },
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "joint_value": 0.0,
       "joint_value_source": "zero_default",
       "applied_joint_value": 0.0,
       "applied_joint_value_source": "zero_default",
       "link_chain": [
-        "world",
-        "base_link"
+        "base_link",
+        "base_link_inertia"
       ],
       "category": "robot_static_mesh_visual",
       "role": "robot",
@@ -4336,107 +4789,107 @@
         "xyz": [
           0.0,
           0.0,
-          0.08
+          0.0
         ],
         "rpy": [
           0.0,
-          0.0,
-          0.0
+          -0.0,
+          -2.4492935982947064e-16
         ]
       },
       "chain_pose": {
         "xyz": [
           0.0,
           0.0,
-          0.08
+          0.0
         ],
         "rpy": [
           0.0,
-          0.0,
-          0.0
+          -0.0,
+          3.141592653589793
         ]
       },
       "world_pose": {
         "xyz": [
           0.0,
           0.0,
-          0.08
+          0.0
         ],
         "rpy": [
           0.0,
-          0.0,
-          0.0
+          -0.0,
+          -2.4492935982947064e-16
         ]
       },
       "link_world_pose": {
         "xyz": [
           0.0,
           0.0,
-          0.08
+          0.0
         ],
         "rpy": [
           0.0,
-          0.0,
-          0.0
+          -0.0,
+          3.141592653589793
         ]
       },
       "expected_visual_pose": {
         "xyz": [
           0.0,
           0.0,
-          0.08
+          0.0
         ],
         "rpy": [
           0.0,
-          0.0,
-          0.0
+          -0.0,
+          -2.4492935982947064e-16
         ]
       },
       "baked_world_visual_pose": {
         "xyz": [
           0.0,
           0.0,
-          0.08
+          0.0
         ],
         "rpy": [
           0.0,
-          0.0,
-          0.0
+          -0.0,
+          -2.4492935982947064e-16
         ]
       },
       "baked_world_visual_matrix": [
         [
           1.0,
-          0.0,
+          2.4492935982947064e-16,
           0.0,
           0.0
         ],
         [
-          0.0,
+          -2.4492935982947064e-16,
           1.0,
           0.0,
           0.0
         ],
         [
-          -0.0,
+          0.0,
           0.0,
           1.0,
-          0.08
+          0.0
         ],
         [
-          0,
-          0,
-          0,
-          1
+          0.0,
+          0.0,
+          0.0,
+          1.0
         ]
       ],
       "baked_world_visual_quaternion": {
         "x": 0.0,
         "y": 0.0,
-        "z": 0.0,
+        "z": -1.2246467991473532e-16,
         "w": 1.0
       },
-      "baked_world_visual_transform_source": "legacy_static_fallback_resolved_ur5_mesh_pose",
+      "baked_world_visual_transform_source": "ur5_fk_fallback_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -4447,12 +4900,37 @@
         "rpy": [
           0.0,
           0.0,
-          0.0
+          3.141592653589793
         ]
       },
-      "link_transform_status": "static_mesh_resolved",
-      "transform_status": "static_mesh_resolved",
-      "transform_chain": [],
+      "link_transform_status": "ur5_fk_fallback_resolved",
+      "transform_status": "ur5_fk_fallback_resolved",
+      "transform_chain": [
+        {
+          "joint_name": "base_link-base_link_inertia",
+          "joint_type": "fixed",
+          "parent_link": "base_link",
+          "child_link": "base_link_inertia",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              3.141592653589793
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 0.0
+        }
+      ],
       "render_expected": true,
       "resolved": true,
       "primitive_fallback": false,
@@ -4475,12 +4953,17 @@
       ],
       "mesh_available": true,
       "has_mesh_metadata": true,
+      "ur5_fk_config_sources": {
+        "kinematics": "assets/robots/universal_robot/ur_description/config/ur5/default_kinematics.yaml",
+        "visual_parameters": "assets/robots/universal_robot/ur_description/config/ur5/visual_parameters.yaml",
+        "physical_parameters": "assets/robots/universal_robot/ur_description/config/ur5/physical_parameters.yaml"
+      },
       "material": {
         "name": "scene3d_static_robot_mesh",
         "color": null
       },
       "render_skip_reason": "",
-      "warning": "ur_robot xacro macro unavailable; used resolved UR mesh asset with static preview pose",
+      "warning": "ur_robot xacro macro unavailable; used resolved UR mesh asset with UR5 FK preview pose",
       "repo_relative_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/base.dae",
       "scene_relative_source_path": "",
       "asset_relative_source_path": "robots/universal_robot/ur_description/meshes/ur5/visual/base.dae"
@@ -4490,17 +4973,17 @@
       "source": "legacy_static_fallback",
       "link": "shoulder_link",
       "visual": "static_mesh_visual",
-      "parent_link": "world",
-      "immediate_parent_link": "world",
-      "joint_parent_link": "world",
-      "parent_joint": "",
-      "parent_joint_name": "",
-      "parent_joint_type": "static_preview",
+      "parent_link": "base_link_inertia",
+      "immediate_parent_link": "base_link_inertia",
+      "joint_parent_link": "base_link_inertia",
+      "parent_joint": "shoulder_pan_joint",
+      "parent_joint_name": "shoulder_pan_joint",
+      "parent_joint_type": "revolute",
       "parent_joint_origin": {
         "xyz": [
           0.0,
           0.0,
-          0.0
+          0.089159
         ],
         "rpy": [
           0.0,
@@ -4509,19 +4992,19 @@
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
-      "joint_name": "",
-      "joint_type": "static_preview",
+      "parent_joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
+      "joint_name": "shoulder_pan_joint",
+      "joint_type": "revolute",
       "joint_origin": {
         "xyz": [
           0.0,
           0.0,
-          0.0
+          0.089159
         ],
         "rpy": [
           0.0,
@@ -4530,16 +5013,17 @@
         ]
       },
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "joint_value": 0.0,
-      "joint_value_source": "zero_default",
+      "joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
       "applied_joint_value": 0.0,
-      "applied_joint_value_source": "zero_default",
+      "applied_joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
       "link_chain": [
-        "world",
+        "base_link",
+        "base_link_inertia",
         "shoulder_link"
       ],
       "category": "robot_static_mesh_visual",
@@ -4551,107 +5035,107 @@
         "xyz": [
           0.0,
           0.0,
-          0.34
+          0.089159
         ],
         "rpy": [
           0.0,
-          0.0,
-          0.0
+          -0.0,
+          -2.4492935982947064e-16
         ]
       },
       "chain_pose": {
         "xyz": [
           0.0,
           0.0,
-          0.34
+          0.089159
         ],
         "rpy": [
           0.0,
-          0.0,
-          0.0
+          -0.0,
+          3.141592653589793
         ]
       },
       "world_pose": {
         "xyz": [
           0.0,
           0.0,
-          0.34
+          0.089159
         ],
         "rpy": [
           0.0,
-          0.0,
-          0.0
+          -0.0,
+          -2.4492935982947064e-16
         ]
       },
       "link_world_pose": {
         "xyz": [
           0.0,
           0.0,
-          0.34
+          0.089159
         ],
         "rpy": [
           0.0,
-          0.0,
-          0.0
+          -0.0,
+          3.141592653589793
         ]
       },
       "expected_visual_pose": {
         "xyz": [
           0.0,
           0.0,
-          0.34
+          0.089159
         ],
         "rpy": [
           0.0,
-          0.0,
-          0.0
+          -0.0,
+          -2.4492935982947064e-16
         ]
       },
       "baked_world_visual_pose": {
         "xyz": [
           0.0,
           0.0,
-          0.34
+          0.089159
         ],
         "rpy": [
           0.0,
-          0.0,
-          0.0
+          -0.0,
+          -2.4492935982947064e-16
         ]
       },
       "baked_world_visual_matrix": [
         [
           1.0,
-          0.0,
+          2.4492935982947064e-16,
           0.0,
           0.0
         ],
         [
-          0.0,
+          -2.4492935982947064e-16,
           1.0,
           0.0,
           0.0
         ],
         [
-          -0.0,
+          0.0,
           0.0,
           1.0,
-          0.34
+          0.089159
         ],
         [
-          0,
-          0,
-          0,
-          1
+          0.0,
+          0.0,
+          0.0,
+          1.0
         ]
       ],
       "baked_world_visual_quaternion": {
         "x": 0.0,
         "y": 0.0,
-        "z": 0.0,
+        "z": -1.2246467991473532e-16,
         "w": 1.0
       },
-      "baked_world_visual_transform_source": "legacy_static_fallback_resolved_ur5_mesh_pose",
+      "baked_world_visual_transform_source": "ur5_fk_fallback_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
@@ -4662,12 +5146,61 @@
         "rpy": [
           0.0,
           0.0,
-          0.0
+          3.141592653589793
         ]
       },
-      "link_transform_status": "static_mesh_resolved",
-      "transform_status": "static_mesh_resolved",
-      "transform_chain": [],
+      "link_transform_status": "ur5_fk_fallback_resolved",
+      "transform_status": "ur5_fk_fallback_resolved",
+      "transform_chain": [
+        {
+          "joint_name": "base_link-base_link_inertia",
+          "joint_type": "fixed",
+          "parent_link": "base_link",
+          "child_link": "base_link_inertia",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              3.141592653589793
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 0.0
+        },
+        {
+          "joint_name": "shoulder_pan_joint",
+          "joint_type": "revolute",
+          "parent_link": "base_link_inertia",
+          "child_link": "shoulder_link",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.089159
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 0.0
+        }
+      ],
       "render_expected": true,
       "resolved": true,
       "primitive_fallback": false,
@@ -4690,12 +5223,17 @@
       ],
       "mesh_available": true,
       "has_mesh_metadata": true,
+      "ur5_fk_config_sources": {
+        "kinematics": "assets/robots/universal_robot/ur_description/config/ur5/default_kinematics.yaml",
+        "visual_parameters": "assets/robots/universal_robot/ur_description/config/ur5/visual_parameters.yaml",
+        "physical_parameters": "assets/robots/universal_robot/ur_description/config/ur5/physical_parameters.yaml"
+      },
       "material": {
         "name": "scene3d_static_robot_mesh",
         "color": null
       },
       "render_skip_reason": "",
-      "warning": "ur_robot xacro macro unavailable; used resolved UR mesh asset with static preview pose",
+      "warning": "ur_robot xacro macro unavailable; used resolved UR mesh asset with UR5 FK preview pose",
       "repo_relative_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/shoulder.dae",
       "scene_relative_source_path": "",
       "asset_relative_source_path": "robots/universal_robot/ur_description/meshes/ur5/visual/shoulder.dae"
@@ -4705,12 +5243,12 @@
       "source": "legacy_static_fallback",
       "link": "upper_arm_link",
       "visual": "static_mesh_visual",
-      "parent_link": "world",
-      "immediate_parent_link": "world",
-      "joint_parent_link": "world",
-      "parent_joint": "",
-      "parent_joint_name": "",
-      "parent_joint_type": "static_preview",
+      "parent_link": "shoulder_link",
+      "immediate_parent_link": "shoulder_link",
+      "joint_parent_link": "shoulder_link",
+      "parent_joint": "shoulder_lift_joint",
+      "parent_joint_name": "shoulder_lift_joint",
+      "parent_joint_type": "revolute",
       "parent_joint_origin": {
         "xyz": [
           0.0,
@@ -4718,20 +5256,20 @@
           0.0
         ],
         "rpy": [
-          0.0,
+          1.570796327,
           0.0,
           0.0
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
-      "joint_name": "",
-      "joint_type": "static_preview",
+      "parent_joint_value": -1.5708,
+      "parent_joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
+      "joint_name": "shoulder_lift_joint",
+      "joint_type": "revolute",
       "joint_origin": {
         "xyz": [
           0.0,
@@ -4739,22 +5277,24 @@
           0.0
         ],
         "rpy": [
-          0.0,
+          1.570796327,
           0.0,
           0.0
         ]
       },
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "joint_value": 0.0,
-      "joint_value_source": "zero_default",
-      "applied_joint_value": 0.0,
-      "applied_joint_value_source": "zero_default",
+      "joint_value": -1.5708,
+      "joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
+      "applied_joint_value": -1.5708,
+      "applied_joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
       "link_chain": [
-        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
         "upper_arm_link"
       ],
       "category": "robot_static_mesh_visual",
@@ -4764,125 +5304,198 @@
       "geometry_type": "mesh",
       "pose": {
         "xyz": [
-          0.27,
-          0.0,
-          0.58
+          1.6636826766416793e-17,
+          0.13585,
+          0.08915899997213671
         ],
         "rpy": [
-          0.0,
-          0.35,
-          0.0
+          -2.051034897490548e-10,
+          -3.6732051032936018e-06,
+          6.309222804141819e-16
         ]
       },
       "chain_pose": {
         "xyz": [
-          0.27,
           0.0,
-          0.58
+          0.0,
+          0.089159
         ],
         "rpy": [
-          0.0,
-          0.35,
-          0.0
+          -1.5708521645231288,
+          1.5707926535755432,
+          -5.583772823204768e-05
         ]
       },
       "world_pose": {
         "xyz": [
-          0.27,
-          0.0,
-          0.58
+          1.6636826766416793e-17,
+          0.13585,
+          0.08915899997213671
         ],
         "rpy": [
-          0.0,
-          0.35,
-          0.0
+          -2.051034897490548e-10,
+          -3.6732051032936018e-06,
+          6.309222804141819e-16
         ]
       },
       "link_world_pose": {
         "xyz": [
-          0.27,
           0.0,
-          0.58
+          0.0,
+          0.089159
         ],
         "rpy": [
-          0.0,
-          0.35,
-          0.0
+          -1.5708521645231288,
+          1.5707926535755432,
+          -5.583772823204768e-05
         ]
       },
       "expected_visual_pose": {
         "xyz": [
-          0.27,
-          0.0,
-          0.58
+          1.6636826766416793e-17,
+          0.13585,
+          0.08915899997213671
         ],
         "rpy": [
-          0.0,
-          0.35,
-          0.0
+          -2.051034897490548e-10,
+          -3.6732051032936018e-06,
+          6.309222804141819e-16
         ]
       },
       "baked_world_visual_pose": {
         "xyz": [
-          0.27,
-          0.0,
-          0.58
+          1.6636826766416793e-17,
+          0.13585,
+          0.08915899997213671
         ],
         "rpy": [
-          0.0,
-          0.35,
-          0.0
+          -2.051034897490548e-10,
+          -3.6732051032936018e-06,
+          6.309222804141819e-16
         ]
       },
       "baked_world_visual_matrix": [
         [
-          0.9393727128473789,
-          0.0,
-          0.34289780745545134,
-          0.27
+          0.9999999999932537,
+          1.2246490483367893e-16,
+          -3.6732051032853415e-06,
+          1.6636826766416793e-17
         ],
         [
-          0.0,
+          6.309222804099255e-16,
           1.0,
-          0.0,
-          0.0
+          2.0510348974673726e-10,
+          0.13585
         ],
         [
-          -0.34289780745545134,
-          0.0,
-          0.9393727128473789,
-          0.58
+          3.6732051032853415e-06,
+          -2.0510348974767112e-10,
+          0.9999999999932537,
+          0.08915899997213671
         ],
         [
-          0,
-          0,
-          0,
-          1
+          0.0,
+          0.0,
+          0.0,
+          1.0
         ]
       ],
       "baked_world_visual_quaternion": {
-        "x": 0.0,
-        "y": 0.17410813759359597,
-        "z": 0.0,
-        "w": 0.9847265389049336
+        "x": -1.0255174487377505e-10,
+        "y": -1.8366025516457683e-06,
+        "z": 1.2711434389427602e-16,
+        "w": 0.9999999999983135
       },
-      "baked_world_visual_transform_source": "legacy_static_fallback_resolved_ur5_mesh_pose",
+      "baked_world_visual_transform_source": "ur5_fk_fallback_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
           0.0,
           0.0,
-          0.0
+          0.13585
         ],
         "rpy": [
+          1.5707963267948966,
           0.0,
-          0.0,
-          0.0
+          -1.5707963267948966
         ]
       },
-      "link_transform_status": "static_mesh_resolved",
-      "transform_status": "static_mesh_resolved",
-      "transform_chain": [],
+      "link_transform_status": "ur5_fk_fallback_resolved",
+      "transform_status": "ur5_fk_fallback_resolved",
+      "transform_chain": [
+        {
+          "joint_name": "base_link-base_link_inertia",
+          "joint_type": "fixed",
+          "parent_link": "base_link",
+          "child_link": "base_link_inertia",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              3.141592653589793
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 0.0
+        },
+        {
+          "joint_name": "shoulder_pan_joint",
+          "joint_type": "revolute",
+          "parent_link": "base_link_inertia",
+          "child_link": "shoulder_link",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.089159
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 0.0
+        },
+        {
+          "joint_name": "shoulder_lift_joint",
+          "joint_type": "revolute",
+          "parent_link": "shoulder_link",
+          "child_link": "upper_arm_link",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              1.570796327,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": -1.5708
+        }
+      ],
       "render_expected": true,
       "resolved": true,
       "primitive_fallback": false,
@@ -4905,12 +5518,17 @@
       ],
       "mesh_available": true,
       "has_mesh_metadata": true,
+      "ur5_fk_config_sources": {
+        "kinematics": "assets/robots/universal_robot/ur_description/config/ur5/default_kinematics.yaml",
+        "visual_parameters": "assets/robots/universal_robot/ur_description/config/ur5/visual_parameters.yaml",
+        "physical_parameters": "assets/robots/universal_robot/ur_description/config/ur5/physical_parameters.yaml"
+      },
       "material": {
         "name": "scene3d_static_robot_mesh",
         "color": null
       },
       "render_skip_reason": "",
-      "warning": "ur_robot xacro macro unavailable; used resolved UR mesh asset with static preview pose",
+      "warning": "ur_robot xacro macro unavailable; used resolved UR mesh asset with UR5 FK preview pose",
       "repo_relative_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/upperarm.dae",
       "scene_relative_source_path": "",
       "asset_relative_source_path": "robots/universal_robot/ur_description/meshes/ur5/visual/upperarm.dae"
@@ -4920,15 +5538,15 @@
       "source": "legacy_static_fallback",
       "link": "forearm_link",
       "visual": "static_mesh_visual",
-      "parent_link": "world",
-      "immediate_parent_link": "world",
-      "joint_parent_link": "world",
-      "parent_joint": "",
-      "parent_joint_name": "",
-      "parent_joint_type": "static_preview",
+      "parent_link": "upper_arm_link",
+      "immediate_parent_link": "upper_arm_link",
+      "joint_parent_link": "upper_arm_link",
+      "parent_joint": "elbow_joint",
+      "parent_joint_name": "elbow_joint",
+      "parent_joint_type": "revolute",
       "parent_joint_origin": {
         "xyz": [
-          0.0,
+          -0.425,
           0.0,
           0.0
         ],
@@ -4939,17 +5557,17 @@
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
-      "joint_name": "",
-      "joint_type": "static_preview",
+      "parent_joint_value": 1.5708,
+      "parent_joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
+      "joint_name": "elbow_joint",
+      "joint_type": "revolute",
       "joint_origin": {
         "xyz": [
-          0.0,
+          -0.425,
           0.0,
           0.0
         ],
@@ -4960,16 +5578,19 @@
         ]
       },
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "joint_value": 0.0,
-      "joint_value_source": "zero_default",
-      "applied_joint_value": 0.0,
-      "applied_joint_value_source": "zero_default",
+      "joint_value": 1.5708,
+      "joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
+      "applied_joint_value": 1.5708,
+      "applied_joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
       "link_chain": [
-        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
         "forearm_link"
       ],
       "category": "robot_static_mesh_visual",
@@ -4979,125 +5600,222 @@
       "geometry_type": "mesh",
       "pose": {
         "xyz": [
-          0.58,
-          0.0,
-          0.43
+          -1.5611121689202732e-06,
+          0.016500000087168957,
+          0.5141589999937487
         ],
         "rpy": [
-          0.0,
-          -0.45,
-          0.0
+          -1.5707966253386139,
+          1.5707963118937354,
+          -1.5707966253386139
         ]
       },
       "chain_pose": {
         "xyz": [
-          0.58,
-          0.0,
-          0.43
+          -1.5611121689222938e-06,
+          8.716895711861884e-11,
+          0.5141589999971329
         ],
         "rpy": [
-          0.0,
-          -0.45,
-          0.0
+          1.570796327,
+          -0.0,
+          3.141592653589793
         ]
       },
       "world_pose": {
         "xyz": [
-          0.58,
-          0.0,
-          0.43
+          -1.5611121689202732e-06,
+          0.016500000087168957,
+          0.5141589999937487
         ],
         "rpy": [
-          0.0,
-          -0.45,
-          0.0
+          -1.5707966253386139,
+          1.5707963118937354,
+          -1.5707966253386139
         ]
       },
       "link_world_pose": {
         "xyz": [
-          0.58,
-          0.0,
-          0.43
+          -1.5611121689222938e-06,
+          8.716895711861884e-11,
+          0.5141589999971329
         ],
         "rpy": [
-          0.0,
-          -0.45,
-          0.0
+          1.570796327,
+          -0.0,
+          3.141592653589793
         ]
       },
       "expected_visual_pose": {
         "xyz": [
-          0.58,
-          0.0,
-          0.43
+          -1.5611121689202732e-06,
+          0.016500000087168957,
+          0.5141589999937487
         ],
         "rpy": [
-          0.0,
-          -0.45,
-          0.0
+          -1.5707966253386139,
+          1.5707963118937354,
+          -1.5707966253386139
         ]
       },
       "baked_world_visual_pose": {
         "xyz": [
-          0.58,
-          0.0,
-          0.43
+          -1.5611121689202732e-06,
+          0.016500000087168957,
+          0.5141589999937487
         ],
         "rpy": [
-          0.0,
-          -0.45,
-          0.0
+          -1.5707966253386139,
+          1.5707963118937354,
+          -1.5707966253386139
         ]
       },
       "baked_world_visual_matrix": [
         [
-          0.9004471023526769,
-          -0.0,
-          -0.43496553411123023,
-          0.58
+          -6.123233995736765e-17,
+          6.123233995736767e-17,
+          0.9999999999999999,
+          -1.5611121689202732e-06
         ],
         [
-          0.0,
+          -2.051034285153311e-10,
           1.0,
-          -0.0,
-          0.0
+          -6.123233996992655e-17,
+          0.016500000087168957
         ],
         [
-          0.43496553411123023,
+          -0.9999999999999999,
+          -2.0510342851533115e-10,
+          -6.123233996992661e-17,
+          0.5141589999937487
+        ],
+        [
           0.0,
-          0.9004471023526769,
-          0.43
-        ],
-        [
-          0,
-          0,
-          0,
-          1
+          0.0,
+          0.0,
+          1.0
         ]
       ],
       "baked_world_visual_quaternion": {
-        "x": 0.0,
-        "y": -0.2231063621317455,
-        "z": 0.0,
-        "w": 0.9747941070689433
+        "x": -7.251499092499909e-11,
+        "y": 0.7071067811865476,
+        "z": -7.251503422280189e-11,
+        "w": 0.7071067811865476
       },
-      "baked_world_visual_transform_source": "legacy_static_fallback_resolved_ur5_mesh_pose",
+      "baked_world_visual_transform_source": "ur5_fk_fallback_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
           0.0,
           0.0,
-          0.0
+          0.0165
         ],
         "rpy": [
+          1.5707963267948966,
           0.0,
-          0.0,
-          0.0
+          -1.5707963267948966
         ]
       },
-      "link_transform_status": "static_mesh_resolved",
-      "transform_status": "static_mesh_resolved",
-      "transform_chain": [],
+      "link_transform_status": "ur5_fk_fallback_resolved",
+      "transform_status": "ur5_fk_fallback_resolved",
+      "transform_chain": [
+        {
+          "joint_name": "base_link-base_link_inertia",
+          "joint_type": "fixed",
+          "parent_link": "base_link",
+          "child_link": "base_link_inertia",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              3.141592653589793
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 0.0
+        },
+        {
+          "joint_name": "shoulder_pan_joint",
+          "joint_type": "revolute",
+          "parent_link": "base_link_inertia",
+          "child_link": "shoulder_link",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.089159
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 0.0
+        },
+        {
+          "joint_name": "shoulder_lift_joint",
+          "joint_type": "revolute",
+          "parent_link": "shoulder_link",
+          "child_link": "upper_arm_link",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              1.570796327,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": -1.5708
+        },
+        {
+          "joint_name": "elbow_joint",
+          "joint_type": "revolute",
+          "parent_link": "upper_arm_link",
+          "child_link": "forearm_link",
+          "origin": {
+            "xyz": [
+              -0.425,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 1.5708
+        }
+      ],
       "render_expected": true,
       "resolved": true,
       "primitive_fallback": false,
@@ -5120,12 +5838,17 @@
       ],
       "mesh_available": true,
       "has_mesh_metadata": true,
+      "ur5_fk_config_sources": {
+        "kinematics": "assets/robots/universal_robot/ur_description/config/ur5/default_kinematics.yaml",
+        "visual_parameters": "assets/robots/universal_robot/ur_description/config/ur5/visual_parameters.yaml",
+        "physical_parameters": "assets/robots/universal_robot/ur_description/config/ur5/physical_parameters.yaml"
+      },
       "material": {
         "name": "scene3d_static_robot_mesh",
         "color": null
       },
       "render_skip_reason": "",
-      "warning": "ur_robot xacro macro unavailable; used resolved UR mesh asset with static preview pose",
+      "warning": "ur_robot xacro macro unavailable; used resolved UR mesh asset with UR5 FK preview pose",
       "repo_relative_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/forearm.dae",
       "scene_relative_source_path": "",
       "asset_relative_source_path": "robots/universal_robot/ur_description/meshes/ur5/visual/forearm.dae"
@@ -5135,17 +5858,17 @@
       "source": "legacy_static_fallback",
       "link": "wrist_1_link",
       "visual": "static_mesh_visual",
-      "parent_link": "world",
-      "immediate_parent_link": "world",
-      "joint_parent_link": "world",
-      "parent_joint": "",
-      "parent_joint_name": "",
-      "parent_joint_type": "static_preview",
+      "parent_link": "forearm_link",
+      "immediate_parent_link": "forearm_link",
+      "joint_parent_link": "forearm_link",
+      "parent_joint": "wrist_1_joint",
+      "parent_joint_name": "wrist_1_joint",
+      "parent_joint_type": "revolute",
       "parent_joint_origin": {
         "xyz": [
+          -0.39225,
           0.0,
-          0.0,
-          0.0
+          0.10915
         ],
         "rpy": [
           0.0,
@@ -5154,19 +5877,19 @@
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
-      "joint_name": "",
-      "joint_type": "static_preview",
+      "parent_joint_value": -1.5708,
+      "parent_joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
+      "joint_name": "wrist_1_joint",
+      "joint_type": "revolute",
       "joint_origin": {
         "xyz": [
+          -0.39225,
           0.0,
-          0.0,
-          0.0
+          0.10915
         ],
         "rpy": [
           0.0,
@@ -5175,16 +5898,20 @@
         ]
       },
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "joint_value": 0.0,
-      "joint_value_source": "zero_default",
-      "applied_joint_value": 0.0,
-      "applied_joint_value_source": "zero_default",
+      "joint_value": -1.5708,
+      "joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
+      "applied_joint_value": -1.5708,
+      "applied_joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
       "link_chain": [
-        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
         "wrist_1_link"
       ],
       "category": "robot_static_mesh_visual",
@@ -5194,125 +5921,246 @@
       "geometry_type": "mesh",
       "pose": {
         "xyz": [
-          0.82,
-          0.0,
-          0.31
+          0.392248438887831,
+          0.01615000008716891,
+          0.5141589999938204
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -5.5837728232363146e-05,
+          1.5707926535453185,
+          -5.583772823204767e-05
         ]
       },
       "chain_pose": {
         "xyz": [
-          0.82,
-          0.0,
-          0.31
+          0.392248438887831,
+          0.10915000008716891,
+          0.5141589999747458
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -1.5708521645231288,
+          1.5707926535453185,
+          -5.583772823204767e-05
         ]
       },
       "world_pose": {
         "xyz": [
-          0.82,
-          0.0,
-          0.31
+          0.392248438887831,
+          0.01615000008716891,
+          0.5141589999938204
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -5.5837728232363146e-05,
+          1.5707926535453185,
+          -5.583772823204767e-05
         ]
       },
       "link_world_pose": {
         "xyz": [
-          0.82,
-          0.0,
-          0.31
+          0.392248438887831,
+          0.10915000008716891,
+          0.5141589999747458
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -1.5708521645231288,
+          1.5707926535453185,
+          -5.583772823204767e-05
         ]
       },
       "expected_visual_pose": {
         "xyz": [
-          0.82,
-          0.0,
-          0.31
+          0.392248438887831,
+          0.01615000008716891,
+          0.5141589999938204
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -5.5837728232363146e-05,
+          1.5707926535453185,
+          -5.583772823204767e-05
         ]
       },
       "baked_world_visual_pose": {
         "xyz": [
-          0.82,
-          0.0,
-          0.31
+          0.392248438887831,
+          0.01615000008716891,
+          0.5141589999938204
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -5.5837728232363146e-05,
+          1.5707926535453185,
+          -5.583772823204767e-05
         ]
       },
       "baked_world_visual_matrix": [
         [
+          3.6732051033465735e-06,
+          6.123233995778075e-17,
+          0.9999999999932536,
+          0.392248438887831
+        ],
+        [
+          -2.0510342851439724e-10,
           1.0,
-          0.0,
-          0.0,
-          0.82
+          6.92154620379852e-16,
+          0.01615000008716891
+        ],
+        [
+          -0.9999999999932536,
+          -2.0510342851555607e-10,
+          3.6732051033465735e-06,
+          0.5141589999938204
         ],
         [
           0.0,
-          1.0,
           0.0,
-          0.0
-        ],
-        [
-          -0.0,
           0.0,
-          1.0,
-          0.31
-        ],
-        [
-          0,
-          0,
-          0,
-          1
+          1.0
         ]
       ],
       "baked_world_visual_quaternion": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0,
-        "w": 1.0
+        "x": -7.251512410625317e-11,
+        "y": 0.7071054825112362,
+        "z": -7.25149010415417e-11,
+        "w": 0.7071080798594737
       },
-      "baked_world_visual_transform_source": "legacy_static_fallback_resolved_ur5_mesh_pose",
+      "baked_world_visual_transform_source": "ur5_fk_fallback_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
           0.0,
           0.0,
-          0.0
+          -0.093
         ],
         "rpy": [
-          0.0,
+          1.5707963267948966,
           0.0,
           0.0
         ]
       },
-      "link_transform_status": "static_mesh_resolved",
-      "transform_status": "static_mesh_resolved",
-      "transform_chain": [],
+      "link_transform_status": "ur5_fk_fallback_resolved",
+      "transform_status": "ur5_fk_fallback_resolved",
+      "transform_chain": [
+        {
+          "joint_name": "base_link-base_link_inertia",
+          "joint_type": "fixed",
+          "parent_link": "base_link",
+          "child_link": "base_link_inertia",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              3.141592653589793
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 0.0
+        },
+        {
+          "joint_name": "shoulder_pan_joint",
+          "joint_type": "revolute",
+          "parent_link": "base_link_inertia",
+          "child_link": "shoulder_link",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.089159
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 0.0
+        },
+        {
+          "joint_name": "shoulder_lift_joint",
+          "joint_type": "revolute",
+          "parent_link": "shoulder_link",
+          "child_link": "upper_arm_link",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              1.570796327,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": -1.5708
+        },
+        {
+          "joint_name": "elbow_joint",
+          "joint_type": "revolute",
+          "parent_link": "upper_arm_link",
+          "child_link": "forearm_link",
+          "origin": {
+            "xyz": [
+              -0.425,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 1.5708
+        },
+        {
+          "joint_name": "wrist_1_joint",
+          "joint_type": "revolute",
+          "parent_link": "forearm_link",
+          "child_link": "wrist_1_link",
+          "origin": {
+            "xyz": [
+              -0.39225,
+              0.0,
+              0.10915
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": -1.5708
+        }
+      ],
       "render_expected": true,
       "resolved": true,
       "primitive_fallback": false,
@@ -5335,12 +6183,17 @@
       ],
       "mesh_available": true,
       "has_mesh_metadata": true,
+      "ur5_fk_config_sources": {
+        "kinematics": "assets/robots/universal_robot/ur_description/config/ur5/default_kinematics.yaml",
+        "visual_parameters": "assets/robots/universal_robot/ur_description/config/ur5/visual_parameters.yaml",
+        "physical_parameters": "assets/robots/universal_robot/ur_description/config/ur5/physical_parameters.yaml"
+      },
       "material": {
         "name": "scene3d_static_robot_mesh",
         "color": null
       },
       "render_skip_reason": "",
-      "warning": "ur_robot xacro macro unavailable; used resolved UR mesh asset with static preview pose",
+      "warning": "ur_robot xacro macro unavailable; used resolved UR mesh asset with UR5 FK preview pose",
       "repo_relative_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist1.dae",
       "scene_relative_source_path": "",
       "asset_relative_source_path": "robots/universal_robot/ur_description/meshes/ur5/visual/wrist1.dae"
@@ -5350,56 +6203,61 @@
       "source": "legacy_static_fallback",
       "link": "wrist_2_link",
       "visual": "static_mesh_visual",
-      "parent_link": "world",
-      "immediate_parent_link": "world",
-      "joint_parent_link": "world",
-      "parent_joint": "",
-      "parent_joint_name": "",
-      "parent_joint_type": "static_preview",
+      "parent_link": "wrist_1_link",
+      "immediate_parent_link": "wrist_1_link",
+      "joint_parent_link": "wrist_1_link",
+      "parent_joint": "wrist_2_joint",
+      "parent_joint_name": "wrist_2_joint",
+      "parent_joint_type": "revolute",
       "parent_joint_origin": {
         "xyz": [
           0.0,
-          0.0,
-          0.0
+          -0.09465,
+          -1.941303950897609e-11
         ],
         "rpy": [
-          0.0,
+          1.570796327,
           0.0,
           0.0
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
-      "joint_name": "",
-      "joint_type": "static_preview",
+      "parent_joint_value": -1.5708,
+      "parent_joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
+      "joint_name": "wrist_2_joint",
+      "joint_type": "revolute",
       "joint_origin": {
         "xyz": [
           0.0,
-          0.0,
-          0.0
+          -0.09465,
+          -1.941303950897609e-11
         ],
         "rpy": [
-          0.0,
+          1.570796327,
           0.0,
           0.0
         ]
       },
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
-      "joint_value": 0.0,
-      "joint_value_source": "zero_default",
-      "applied_joint_value": 0.0,
-      "applied_joint_value_source": "zero_default",
+      "joint_value": -1.5708,
+      "joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
+      "applied_joint_value": -1.5708,
+      "applied_joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
       "link_chain": [
-        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
         "wrist_2_link"
       ],
       "category": "robot_static_mesh_visual",
@@ -5409,115 +6267,115 @@
       "geometry_type": "mesh",
       "pose": {
         "xyz": [
-          0.92,
-          0.0,
-          0.28
+          0.3918984388878334,
+          0.10915000008724068,
+          0.514158998689124
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -1.5707926535897931,
+          -3.6734102060051815e-06,
+          -1.5707963270134926
         ]
       },
       "chain_pose": {
         "xyz": [
-          0.92,
-          0.0,
-          0.28
+          0.4868984388871925,
+          0.10915000006775592,
+          0.5141593476436088
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -1.5707926535897931,
+          -3.6734102060051815e-06,
+          -1.5707963270134926
         ]
       },
       "world_pose": {
         "xyz": [
-          0.92,
-          0.0,
-          0.28
+          0.3918984388878334,
+          0.10915000008724068,
+          0.514158998689124
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -1.5707926535897931,
+          -3.6734102060051815e-06,
+          -1.5707963270134926
         ]
       },
       "link_world_pose": {
         "xyz": [
-          0.92,
-          0.0,
-          0.28
+          0.4868984388871925,
+          0.10915000006775592,
+          0.5141593476436088
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -1.5707926535897931,
+          -3.6734102060051815e-06,
+          -1.5707963270134926
         ]
       },
       "expected_visual_pose": {
         "xyz": [
-          0.92,
-          0.0,
-          0.28
+          0.3918984388878334,
+          0.10915000008724068,
+          0.514158998689124
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -1.5707926535897931,
+          -3.6734102060051815e-06,
+          -1.5707963270134926
         ]
       },
       "baked_world_visual_pose": {
         "xyz": [
-          0.92,
-          0.0,
-          0.28
+          0.3918984388878334,
+          0.10915000008724068,
+          0.514158998689124
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -1.5707926535897931,
+          -3.6734102060051815e-06,
+          -1.5707963270134926
         ]
       },
       "baked_world_visual_matrix": [
         [
-          1.0,
-          0.0,
-          0.0,
-          0.92
+          -2.1859598670849498e-10,
+          3.6732051025684056e-06,
+          0.9999999999932536,
+          0.3918984388878334
+        ],
+        [
+          -0.999999999993253,
+          -3.673410206775087e-06,
+          -2.0510279759305073e-10,
+          0.10915000008724068
+        ],
+        [
+          3.67341020599692e-06,
+          -0.9999999999865066,
+          3.6732051033466154e-06,
+          0.514158998689124
         ],
         [
           0.0,
-          1.0,
           0.0,
-          0.0
-        ],
-        [
-          -0.0,
           0.0,
-          1.0,
-          0.28
-        ],
-        [
-          0,
-          0,
-          0,
-          1
+          1.0
         ]
       ],
       "baked_world_visual_quaternion": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0,
-        "w": 1.0
+        "x": 0.49999999999662686,
+        "y": -0.49999816339744835,
+        "z": 0.5000018367051031,
+        "w": -0.4999999998940752
       },
-      "baked_world_visual_transform_source": "legacy_static_fallback_resolved_ur5_mesh_pose",
+      "baked_world_visual_transform_source": "ur5_fk_fallback_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
           0.0,
           0.0,
-          0.0
+          -0.095
         ],
         "rpy": [
           0.0,
@@ -5525,9 +6383,154 @@
           0.0
         ]
       },
-      "link_transform_status": "static_mesh_resolved",
-      "transform_status": "static_mesh_resolved",
-      "transform_chain": [],
+      "link_transform_status": "ur5_fk_fallback_resolved",
+      "transform_status": "ur5_fk_fallback_resolved",
+      "transform_chain": [
+        {
+          "joint_name": "base_link-base_link_inertia",
+          "joint_type": "fixed",
+          "parent_link": "base_link",
+          "child_link": "base_link_inertia",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              3.141592653589793
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 0.0
+        },
+        {
+          "joint_name": "shoulder_pan_joint",
+          "joint_type": "revolute",
+          "parent_link": "base_link_inertia",
+          "child_link": "shoulder_link",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.089159
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 0.0
+        },
+        {
+          "joint_name": "shoulder_lift_joint",
+          "joint_type": "revolute",
+          "parent_link": "shoulder_link",
+          "child_link": "upper_arm_link",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              1.570796327,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": -1.5708
+        },
+        {
+          "joint_name": "elbow_joint",
+          "joint_type": "revolute",
+          "parent_link": "upper_arm_link",
+          "child_link": "forearm_link",
+          "origin": {
+            "xyz": [
+              -0.425,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 1.5708
+        },
+        {
+          "joint_name": "wrist_1_joint",
+          "joint_type": "revolute",
+          "parent_link": "forearm_link",
+          "child_link": "wrist_1_link",
+          "origin": {
+            "xyz": [
+              -0.39225,
+              0.0,
+              0.10915
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": -1.5708
+        },
+        {
+          "joint_name": "wrist_2_joint",
+          "joint_type": "revolute",
+          "parent_link": "wrist_1_link",
+          "child_link": "wrist_2_link",
+          "origin": {
+            "xyz": [
+              0.0,
+              -0.09465,
+              -1.941303950897609e-11
+            ],
+            "rpy": [
+              1.570796327,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": -1.5708
+        }
+      ],
       "render_expected": true,
       "resolved": true,
       "primitive_fallback": false,
@@ -5550,12 +6553,17 @@
       ],
       "mesh_available": true,
       "has_mesh_metadata": true,
+      "ur5_fk_config_sources": {
+        "kinematics": "assets/robots/universal_robot/ur_description/config/ur5/default_kinematics.yaml",
+        "visual_parameters": "assets/robots/universal_robot/ur_description/config/ur5/visual_parameters.yaml",
+        "physical_parameters": "assets/robots/universal_robot/ur_description/config/ur5/physical_parameters.yaml"
+      },
       "material": {
         "name": "scene3d_static_robot_mesh",
         "color": null
       },
       "render_skip_reason": "",
-      "warning": "ur_robot xacro macro unavailable; used resolved UR mesh asset with static preview pose",
+      "warning": "ur_robot xacro macro unavailable; used resolved UR mesh asset with UR5 FK preview pose",
       "repo_relative_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist2.dae",
       "scene_relative_source_path": "",
       "asset_relative_source_path": "robots/universal_robot/ur_description/meshes/ur5/visual/wrist2.dae"
@@ -5565,56 +6573,62 @@
       "source": "legacy_static_fallback",
       "link": "wrist_3_link",
       "visual": "static_mesh_visual",
-      "parent_link": "world",
-      "immediate_parent_link": "world",
-      "joint_parent_link": "world",
-      "parent_joint": "",
-      "parent_joint_name": "",
-      "parent_joint_type": "static_preview",
+      "parent_link": "wrist_2_link",
+      "immediate_parent_link": "wrist_2_link",
+      "joint_parent_link": "wrist_2_link",
+      "parent_joint": "wrist_3_joint",
+      "parent_joint_name": "wrist_3_joint",
+      "parent_joint_type": "revolute",
       "parent_joint_origin": {
         "xyz": [
           0.0,
-          0.0,
-          0.0
+          0.0823,
+          -1.688001216681175e-11
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          1.570796326589793,
+          3.141592653589793,
+          3.141592653589793
         ]
       },
       "parent_joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "parent_joint_value": 0.0,
-      "parent_joint_value_source": "zero_default",
-      "joint_name": "",
-      "joint_type": "static_preview",
+      "parent_joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
+      "joint_name": "wrist_3_joint",
+      "joint_type": "revolute",
       "joint_origin": {
         "xyz": [
           0.0,
-          0.0,
-          0.0
+          0.0823,
+          -1.688001216681175e-11
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          1.570796326589793,
+          3.141592653589793,
+          3.141592653589793
         ]
       },
       "joint_axis": [
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "joint_value": 0.0,
-      "joint_value_source": "zero_default",
+      "joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
       "applied_joint_value": 0.0,
-      "applied_joint_value_source": "zero_default",
+      "applied_joint_value_source": "workcell_preview_home_pose_all_zero_initial_positions",
       "link_chain": [
-        "world",
+        "base_link",
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
         "wrist_3_link"
       ],
       "category": "robot_static_mesh_visual",
@@ -5624,125 +6638,294 @@
       "geometry_type": "mesh",
       "pose": {
         "xyz": [
-          0.98,
-          0.0,
-          0.28
+          0.4868984407236925,
+          0.10914999823105083,
+          0.5136593476436155
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -1.5707926537948969,
+          -3.6734102061276456e-06,
+          -1.5707963270134928
         ]
       },
       "chain_pose": {
         "xyz": [
-          0.98,
-          0.0,
-          0.28
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -3.1415889805897934,
+          -3.6734102061276456e-06,
+          -1.5707963270134928
         ]
       },
       "world_pose": {
         "xyz": [
-          0.98,
-          0.0,
-          0.28
+          0.4868984407236925,
+          0.10914999823105083,
+          0.5136593476436155
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -1.5707926537948969,
+          -3.6734102061276456e-06,
+          -1.5707963270134928
         ]
       },
       "link_world_pose": {
         "xyz": [
-          0.98,
-          0.0,
-          0.28
+          0.4868987411750924,
+          0.10914969774609591,
+          0.4318593476447193
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -3.1415889805897934,
+          -3.6734102061276456e-06,
+          -1.5707963270134928
         ]
       },
       "expected_visual_pose": {
         "xyz": [
-          0.98,
-          0.0,
-          0.28
+          0.4868984407236925,
+          0.10914999823105083,
+          0.5136593476436155
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -1.5707926537948969,
+          -3.6734102061276456e-06,
+          -1.5707963270134928
         ]
       },
       "baked_world_visual_pose": {
         "xyz": [
-          0.98,
-          0.0,
-          0.28
+          0.4868984407236925,
+          0.10914999823105083,
+          0.5136593476436155
         ],
         "rpy": [
-          0.0,
-          0.0,
-          0.0
+          -1.5707926537948969,
+          -3.6734102061276456e-06,
+          -1.5707963270134928
         ]
       },
       "baked_world_visual_matrix": [
         [
-          1.0,
-          0.0,
-          0.0,
-          0.98
+          -2.1859610917362474e-10,
+          3.6729999989561943e-06,
+          0.9999999999932544,
+          0.4868984407236925
+        ],
+        [
+          -0.999999999993253,
+          -3.6734102068975096e-06,
+          -2.0510367348743323e-10,
+          0.10914999823105083
+        ],
+        [
+          3.673410206119384e-06,
+          -0.9999999999865073,
+          3.6729999997344063e-06,
+          0.5136593476436155
         ],
         [
           0.0,
-          1.0,
           0.0,
-          0.0
-        ],
-        [
-          -0.0,
           0.0,
-          1.0,
-          0.28
-        ],
-        [
-          0,
-          0,
-          0,
-          1
+          1.0
         ]
       ],
       "baked_world_visual_quaternion": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0,
-        "w": 1.0
+        "x": 0.5000000000479028,
+        "y": -0.4999981634487244,
+        "z": 0.5000018366538275,
+        "w": -0.49999999984279925
       },
-      "baked_world_visual_transform_source": "legacy_static_fallback_resolved_ur5_mesh_pose",
+      "baked_world_visual_transform_source": "ur5_fk_fallback_link_world_times_visual_origin",
       "visual_origin_applied_to_pose": true,
       "visual_origin": {
         "xyz": [
           0.0,
           0.0,
-          0.0
+          -0.0818
         ],
         "rpy": [
-          0.0,
+          1.5707963267948966,
           0.0,
           0.0
         ]
       },
-      "link_transform_status": "static_mesh_resolved",
-      "transform_status": "static_mesh_resolved",
-      "transform_chain": [],
+      "link_transform_status": "ur5_fk_fallback_resolved",
+      "transform_status": "ur5_fk_fallback_resolved",
+      "transform_chain": [
+        {
+          "joint_name": "base_link-base_link_inertia",
+          "joint_type": "fixed",
+          "parent_link": "base_link",
+          "child_link": "base_link_inertia",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              3.141592653589793
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 0.0
+        },
+        {
+          "joint_name": "shoulder_pan_joint",
+          "joint_type": "revolute",
+          "parent_link": "base_link_inertia",
+          "child_link": "shoulder_link",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.089159
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 0.0
+        },
+        {
+          "joint_name": "shoulder_lift_joint",
+          "joint_type": "revolute",
+          "parent_link": "shoulder_link",
+          "child_link": "upper_arm_link",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              1.570796327,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": -1.5708
+        },
+        {
+          "joint_name": "elbow_joint",
+          "joint_type": "revolute",
+          "parent_link": "upper_arm_link",
+          "child_link": "forearm_link",
+          "origin": {
+            "xyz": [
+              -0.425,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 1.5708
+        },
+        {
+          "joint_name": "wrist_1_joint",
+          "joint_type": "revolute",
+          "parent_link": "forearm_link",
+          "child_link": "wrist_1_link",
+          "origin": {
+            "xyz": [
+              -0.39225,
+              0.0,
+              0.10915
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": -1.5708
+        },
+        {
+          "joint_name": "wrist_2_joint",
+          "joint_type": "revolute",
+          "parent_link": "wrist_1_link",
+          "child_link": "wrist_2_link",
+          "origin": {
+            "xyz": [
+              0.0,
+              -0.09465,
+              -1.941303950897609e-11
+            ],
+            "rpy": [
+              1.570796327,
+              0.0,
+              0.0
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": -1.5708
+        },
+        {
+          "joint_name": "wrist_3_joint",
+          "joint_type": "revolute",
+          "parent_link": "wrist_2_link",
+          "child_link": "wrist_3_link",
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0823,
+              -1.688001216681175e-11
+            ],
+            "rpy": [
+              1.570796326589793,
+              3.141592653589793,
+              3.141592653589793
+            ]
+          },
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "joint_value": 0.0
+        }
+      ],
       "render_expected": true,
       "resolved": true,
       "primitive_fallback": false,
@@ -5765,12 +6948,17 @@
       ],
       "mesh_available": true,
       "has_mesh_metadata": true,
+      "ur5_fk_config_sources": {
+        "kinematics": "assets/robots/universal_robot/ur_description/config/ur5/default_kinematics.yaml",
+        "visual_parameters": "assets/robots/universal_robot/ur_description/config/ur5/visual_parameters.yaml",
+        "physical_parameters": "assets/robots/universal_robot/ur_description/config/ur5/physical_parameters.yaml"
+      },
       "material": {
         "name": "scene3d_static_robot_mesh",
         "color": null
       },
       "render_skip_reason": "",
-      "warning": "ur_robot xacro macro unavailable; used resolved UR mesh asset with static preview pose",
+      "warning": "ur_robot xacro macro unavailable; used resolved UR mesh asset with UR5 FK preview pose",
       "repo_relative_source_path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist3.dae",
       "scene_relative_source_path": "",
       "asset_relative_source_path": "robots/universal_robot/ur_description/meshes/ur5/visual/wrist3.dae"

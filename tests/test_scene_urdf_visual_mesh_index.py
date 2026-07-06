@@ -461,6 +461,51 @@ def test_ur5_2f_index_requires_non_empty_mesh_visuals():
     assert any(Path(i.get('resolved_source_path')).exists() for i in mesh_items if i.get('resolved_source_path'))
 
 
+def test_committed_ur5_2f_mesh_index_uses_fk_fallback_artifact():
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    idx = ROOT / 'scenes' / 'ur5_2f_test' / 'generated' / 'scene_visual_mesh_index.json'
+    data = json.loads(idx.read_text(encoding='utf-8'))
+    items = data.get('visual_items') or data.get('items') or []
+    required_links = {
+        'base_link_inertia',
+        'shoulder_link',
+        'upper_arm_link',
+        'forearm_link',
+        'wrist_1_link',
+        'wrist_2_link',
+        'wrist_3_link',
+    }
+    ur5_rows = [
+        item for item in items
+        if item.get('link') in required_links
+        and 'ur_description/meshes/ur5/visual' in str(
+            item.get('mesh_uri') or item.get('package_uri') or item.get('source_path')
+        )
+    ]
+
+    assert data.get('extractor_version') == mesh_index.EXTRACTOR_VERSION
+    assert len(ur5_rows) >= len(required_links)
+    assert {row.get('link') for row in ur5_rows} >= required_links
+    assert all(
+        row.get('baked_world_visual_transform_source') != 'legacy_static_fallback_resolved_ur5_mesh_pose'
+        for row in ur5_rows
+    )
+    assert all(
+        row.get('baked_world_visual_transform_source') == 'ur5_fk_fallback_link_world_times_visual_origin'
+        for row in ur5_rows
+    )
+    assert {row.get('parent_link') for row in ur5_rows} != {'world'}
+    rows_by_link = {row.get('link'): row for row in ur5_rows}
+    assert rows_by_link['upper_arm_link'].get('parent_link') == 'shoulder_link'
+    assert rows_by_link['forearm_link'].get('parent_link') == 'upper_arm_link'
+    assert rows_by_link['wrist_1_link'].get('parent_link') == 'forearm_link'
+    assert rows_by_link['wrist_2_link'].get('parent_link') == 'wrist_1_link'
+    assert rows_by_link['wrist_3_link'].get('parent_link') == 'wrist_2_link'
+    assert 'static_mesh_resolved' not in (data.get('transform_status_counts') or {})
+    assert any(row.get('transform_status') == 'ur5_fk_fallback_resolved' for row in ur5_rows)
+
+
 def test_require_xacro_strict_rejects_best_effort_modes():
     import sys
     import scripts.extract_scene_urdf_visual_mesh_index as mesh_index

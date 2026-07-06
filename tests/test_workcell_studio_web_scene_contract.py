@@ -214,7 +214,7 @@ def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallba
     }
     assert len(required["ur5"]) >= 7
     required_major_ur5_links = {
-        "base_link",
+        "base_link_inertia",
         "shoulder_link",
         "upper_arm_link",
         "forearm_link",
@@ -404,7 +404,7 @@ def test_ur5_2f_web_scene_export_transform_parity_for_product_meshes(tmp_path):
         for item in _items_with_original_mesh(payload, "robots", "ur_description/meshes/ur5/visual")
     }
     required_ur5_links = (
-        "base_link",
+        "base_link_inertia",
         "shoulder_link",
         "upper_arm_link",
         "forearm_link",
@@ -419,7 +419,7 @@ def test_ur5_2f_web_scene_export_transform_parity_for_product_meshes(tmp_path):
         assert ur5_by_link[link].get("primitive_geometry_type") in (None, "mesh")
 
     adjacent_pairs = (
-        ("base_link", "shoulder_link"),
+        ("base_link_inertia", "shoulder_link"),
         ("shoulder_link", "upper_arm_link"),
         ("upper_arm_link", "forearm_link"),
         ("forearm_link", "wrist_1_link"),
