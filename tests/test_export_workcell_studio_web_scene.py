@@ -133,6 +133,85 @@ def test_export_web_scene_warns_for_missing_optional_inputs(tmp_path):
     }
 
 
+def test_export_visual_bounds_contract_ignores_helper_zones_outside_workspace(tmp_path):
+    scene = tmp_path / "scene"
+    (scene / "layout").mkdir(parents=True)
+    (scene / "generated").mkdir()
+    (scene / "scene_manifest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "scene": {
+                    "name": "helper_zone_bounds_test",
+                    "expected_workspace_bounds_m": {"min": [-1.0, -1.0, 0.0], "max": [1.0, 1.0, 1.8]},
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (scene / "cell_definition.yaml").write_text("{}", encoding="utf-8")
+    (scene / "environment.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "environment": {
+                    "zones": [
+                        {
+                            "id": "far_pick_zone",
+                            "role": "pick_zone",
+                            "category": "safety_zone",
+                            "dimensions": [0.2, 0.2, 0.01],
+                            "pose_xyz": [50.0, 50.0, 0.1],
+                        }
+                    ]
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (scene / "layout/workcell_studio_layout.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "items": [
+                    {
+                        "id": "workbench",
+                        "role": "support_surface",
+                        "dimensions": [1.0, 0.6, 0.08],
+                        "pose_xyz": [0.0, 0.0, 0.04],
+                    },
+                    {
+                        "id": "camera_fov_overlay",
+                        "role": "camera_fov",
+                        "category": "overlay",
+                        "dimensions": [0.3, 0.3, 0.3],
+                        "pose_xyz": [-50.0, -50.0, 0.2],
+                    },
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (scene / "generated/scene_visual_mesh_index.json").write_text(json.dumps({"visual_items": []}), encoding="utf-8")
+
+    out = tmp_path / "build/scene.web_scene.json"
+    subprocess.run([sys.executable, str(SCRIPT), "--scene", str(scene), "--output", str(out)], check=True)
+
+    payload = json.loads(out.read_text(encoding="utf-8"))
+
+    exported_ids = {
+        item["id"]
+        for section in ("robots", "tools", "assets", "sensors", "zones")
+        for item in payload[section]
+    }
+    assert {"camera_fov_overlay", "far_pick_zone"}.issubset(exported_ids)
+    assert any(item["id"] == "far_pick_zone" for item in payload["zones"])
+    assert payload["metadata"]["visual_bounds_contract"]["status"] == "passed"
+    assert payload["metadata"]["visual_bounds_contract"]["camera_framing_blockers"] == []
+    assert all("far_pick_zone" not in source for source in payload["metadata"]["visual_bounds_contract"]["scene_bounds_m"]["sources"])
+    assert all("camera_fov_overlay" not in source for source in payload["metadata"]["visual_bounds_contract"]["scene_bounds_m"]["sources"])
+
+
 def test_export_web_scene_stages_safe_mesh_assets(tmp_path):
     scene = tmp_path / "scene"
     mesh_dir = scene / "meshes"

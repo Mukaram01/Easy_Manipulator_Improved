@@ -975,6 +975,8 @@ def _visual_bounds_contract(payload: Json, data: Mapping[str, Any]) -> Json:
     blockers: List[Json] = []
 
     for section, item in _all_scene_items(payload):
+        if section == "zones" or _is_helper(item):
+            continue
         item_id = str(item.get("id"))
         category = str(item.get("mesh_contract_category") or _visual_contract_category(item, section))
         bounds = _item_visual_bounds(item)
