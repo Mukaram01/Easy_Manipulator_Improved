@@ -49,3 +49,7 @@ tesseract_external/
 # Never commit vendored deps (use tesseract.repos + vcs import)
 src/boost_plugin_loader/
 src/ros_industrial_cmake_boilerplate/
+
+# Workcell Studio generated scene outputs
+scenes/*/generated/*
+!scenes/*/generated/.gitkeep
