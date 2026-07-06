@@ -123,6 +123,38 @@ function transformOf(item) {
     scale: { x: scale.x, y: scale.y, z: scale.z },
   };
 }
+function meshLocalVector(value, fallback, fieldName, reasons) {
+  const arr = Array.isArray(value) ? value : fallback;
+  if (value !== undefined && !Array.isArray(value)) reasons.push(`${fieldName} must be an array`);
+  const out = fallback.map((fallbackValue, index) => {
+    const raw = arr[index];
+    const number = raw === undefined || raw === null || raw === '' ? fallbackValue : Number(raw);
+    if (!Number.isFinite(number)) {
+      reasons.push(`${fieldName}[${index}] must be finite`);
+      return fallbackValue;
+    }
+    return number;
+  });
+  return new THREE.Vector3(out[0], out[1], out[2]);
+}
+function meshLocalTransformOf(item) {
+  const source = item?.mesh_local_transform || item?.visual_local_transform;
+  const reasons = [];
+  if (source !== undefined && (!source || typeof source !== 'object' || Array.isArray(source))) {
+    reasons.push('mesh_local_transform/visual_local_transform must be an object');
+  }
+  const transform = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
+  return {
+    pose: {
+      xyz: meshLocalVector(transform.xyz, [0, 0, 0], 'xyz', reasons),
+      rpy: meshLocalVector(transform.rpy, [0, 0, 0], 'rpy', reasons),
+    },
+    scale: meshLocalVector(transform.scale, [1, 1, 1], 'scale', reasons),
+    valid: reasons.length === 0,
+    reason: reasons.join('; '),
+    raw: source,
+  };
+}
 function cloneTransform(transform) { return JSON.parse(JSON.stringify(transform)); }
 function sameTransform(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 function renderedById(id) { return state.objects.find(obj => obj.item.id === id); }
@@ -596,6 +628,25 @@ function materializeLoadedMesh(item, uri, loaded) {
   assignItemUserData(object, item);
   return object;
 }
+function applyMeshLocalTransform(meshObject, item) {
+  const transform = meshLocalTransformOf(item);
+  meshObject.position.copy(transform.pose.xyz);
+  meshObject.rotation.set(transform.pose.rpy.x, transform.pose.rpy.y, transform.pose.rpy.z, 'XYZ');
+  meshObject.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
+  if (!transform.valid) {
+    appendViewerDiagnosticWarning(item, 'invalid_mesh_local_transform', transform.reason, {
+      mesh_local_transform: item?.mesh_local_transform,
+      visual_local_transform: item?.visual_local_transform,
+      applied_mesh_local_transform: {
+        xyz: { x: transform.pose.xyz.x, y: transform.pose.xyz.y, z: transform.pose.xyz.z },
+        rpy: { x: transform.pose.rpy.x, y: transform.pose.rpy.y, z: transform.pose.rpy.z },
+        scale: { x: transform.scale.x, y: transform.scale.y, z: transform.scale.z },
+      },
+      fallback_or_skip_reason: 'malformed mesh-local transform fields were defaulted before adding the mesh under the posed item object',
+    });
+  }
+  return transform.valid;
+}
 async function tryLoadMesh(item, rendered, fallback) {
   const diagnostic = meshUriDiagnostic(item);
   const uri = diagnostic.uri;
@@ -644,6 +695,7 @@ async function tryLoadMesh(item, rendered, fallback) {
     else if (ext === 'dae') loaded = await new ColladaLoader().loadAsync(loadUrl);
     else loaded = await new OBJLoader().loadAsync(loadUrl);
     const meshObject = materializeLoadedMesh(item, uri, loaded);
+    applyMeshLocalTransform(meshObject, item);
     fallback.visible = false;
     rendered.object3d.add(meshObject);
     rendered.meshObject = meshObject;

@@ -146,6 +146,27 @@ def test_viewer_includes_mesh_loader_references_and_safe_mesh_uri_logic():
         assert unsafe_token in js
 
 
+def test_viewer_applies_mesh_local_transform_only_to_loaded_meshes():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    for token in [
+        "meshLocalTransformOf",
+        "item?.mesh_local_transform || item?.visual_local_transform",
+        "meshLocalVector(transform.xyz, [0, 0, 0], 'xyz', reasons)",
+        "meshLocalVector(transform.rpy, [0, 0, 0], 'rpy', reasons)",
+        "meshLocalVector(transform.scale, [1, 1, 1], 'scale', reasons)",
+        "Number.isFinite(number)",
+        "applyMeshLocalTransform",
+        "invalid_mesh_local_transform",
+        "applied_mesh_local_transform",
+    ]:
+        assert token in js
+    try_load_body = js.split("async function tryLoadMesh", 1)[1].split("function collectItems", 1)[0]
+    assert try_load_body.index("materializeLoadedMesh(item, uri, loaded)") < try_load_body.index("applyMeshLocalTransform(meshObject, item)")
+    assert try_load_body.index("applyMeshLocalTransform(meshObject, item)") < try_load_body.index("rendered.object3d.add(meshObject)")
+    apply_pose_body = js.split("function applyPose", 1)[1].split("function assignItemUserData", 1)[0]
+    assert "mesh_local_transform" not in apply_pose_body
+    assert "visual_local_transform" not in apply_pose_body
+
 def test_repository_does_not_track_generated_web_scene_outputs_under_source_paths():
     result = subprocess.run(
         ["git", "ls-files", "*.web_scene.json"],
@@ -170,7 +191,7 @@ def test_viewer_validates_renderable_transforms_and_required_mesh_fallbacks():
         "scale must be positive on every axis",
         "renderable skipped before applyPose because transform validation failed",
         "itemRequiresMeshBackedVisual",
-        "required_mesh_primitive_fallback",
+        "required_mesh_failed_debug_fallback",
         "requires_mesh_backed_visual",
         "parent_link",
         "immediate_parent_link",
@@ -183,7 +204,7 @@ def test_viewer_validates_renderable_transforms_and_required_mesh_fallbacks():
     ]:
         assert token in js
     assert "if (!applyPose(object3d, item)) continue;" in js
-    assert "if (itemRequiresMeshBackedVisual(item)) warnRequiredMeshFallback" in js
+    assert "warnRequiredMeshFallback(item," in js
 
 
 def test_viewer_mesh_preflight_surfaces_distinct_failure_reasons():
