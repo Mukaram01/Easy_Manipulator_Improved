@@ -62,7 +62,6 @@ def test_checker_accepts_visual_bounds_contract_payload():
     assert summary["core_mesh_item_count"] == 3
 
 
-
 def test_checker_rejects_visual_bounds_contract_failed_status_with_blockers():
     payload = _valid_payload()
     payload["metadata"]["visual_bounds_contract"] = {
@@ -77,6 +76,38 @@ def test_checker_rejects_visual_bounds_contract_failed_status_with_blockers():
     assert summary["contract_status"] == "failed"
     assert any("metadata.visual_bounds_contract.status must be pass or passed" in error for error in errors)
 
+
+def test_checker_cli_reports_camera_framing_blocker_as_violation(tmp_path):
+    web_scene = tmp_path / "scene.web_scene.json"
+    payload = _valid_payload()
+    payload["metadata"]["visual_bounds_contract"] = {
+        "status": "passed",
+        "camera_framing_blockers": [
+            {
+                "id": "helper_bounds_box",
+                "category": "bounds_box",
+                "reason": "helper_overlay_would_dominate_product_view",
+            }
+        ],
+    }
+    web_scene.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), str(web_scene), "--json"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert result.returncode == 1
+    summary = json.loads(result.stdout)
+    assert summary["contract_status"] == "failed"
+    assert any(
+        "helper_bounds_box" in error
+        and "bounds_box" in error
+        and "helper_overlay_would_dominate_product_view" in error
+        for error in summary["violations"]
+    )
 
 def test_checker_rejects_missing_dimensions_mesh_contract_and_robot_autoscale():
     payload = _valid_payload()
