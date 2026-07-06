@@ -99,6 +99,25 @@ def _export(scene: Path, output: Path) -> dict:
     return json.loads(output.read_text(encoding="utf-8"))
 
 
+def _export_persisted_ur5_2f_web_scene() -> tuple[Path, dict]:
+    output = REPO_ROOT / "build" / "workcell_studio_web_scene" / "ur5_2f_test.web_scene.json"
+    output.unlink(missing_ok=True)
+    subprocess.run(
+        [
+            sys.executable,
+            str(EXPORTER),
+            "--scene",
+            str(REPO_ROOT / "scenes" / "ur5_2f_test"),
+            "--output",
+            str(output),
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+    )
+    assert output.exists()
+    return output, json.loads(output.read_text(encoding="utf-8"))
+
+
 def test_web_scene_schema_file_exists_and_is_valid_json():
     assert SCHEMA.exists()
     with SCHEMA.open(encoding="utf-8") as fh:
@@ -184,8 +203,9 @@ def test_missing_optional_inputs_warn_in_output_json_without_crashing(tmp_path):
     assert all(payload["inputs"][name]["present"] is False for name in payload["inputs"])
 
 
-def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallbacks(tmp_path):
-    payload = _export(REPO_ROOT / "scenes" / "ur5_2f_test", tmp_path / "out" / "ur5_2f_test.web_scene.json")
+def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallbacks():
+    artifact, payload = _export_persisted_ur5_2f_web_scene()
+    assert artifact == REPO_ROOT / "build" / "workcell_studio_web_scene" / "ur5_2f_test.web_scene.json"
     required = {
         "ur5": [item for item in payload["robots"] if "ur_description/meshes/ur5/visual" in str(item.get("original_mesh_uri") or "")],
         "robotiq": [item for item in payload["tools"] if "robotiq_85_description/meshes/visual" in str(item.get("original_mesh_uri") or "")],
@@ -194,6 +214,7 @@ def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallba
     }
     assert len(required["ur5"]) >= 7
     required_major_ur5_links = {
+        "base_link",
         "shoulder_link",
         "upper_arm_link",
         "forearm_link",
@@ -209,6 +230,7 @@ def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallba
         assert item.get("role") == "robot", link
         assert "package://ur_description/meshes/ur5/visual/" in str(item.get("original_mesh_uri") or ""), link
         assert item.get("mesh_staging_status") == "staged", link
+        assert item.get("primitive_geometry_type") in (None, "mesh"), link
         assert "${mesh}" not in json.dumps(item, sort_keys=True), link
     assert required["robotiq"]
     assert required["table"]
@@ -269,9 +291,13 @@ def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallba
                 "table" if item in required["table"] else
                 "camera"
             ]["status"] != "primitive_fallback"
+            assert item.get("primitive_geometry_type") in (None, "mesh")
+            if "active_visual_source" in item:
+                assert item["active_visual_source"] == "mesh_preview"
             assert item["mesh_uri"].startswith("build/workcell_studio_web_scene/assets/ur5_2f_test/")
             assert not item["mesh_uri"].startswith(("package://", "file://", "/"))
             assert "://" not in item["mesh_uri"]
+            assert ".." not in Path(item["mesh_uri"]).parts
             assert item.get("mesh_resolve_warning") in (None, "")
 
     required_ids = {item["id"] for group in required.values() for item in group}
