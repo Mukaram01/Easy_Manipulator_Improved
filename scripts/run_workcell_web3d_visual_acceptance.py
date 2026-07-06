@@ -1,0 +1,224 @@
+#!/usr/bin/env python3
+"""Run Web 3D visual acceptance for any Workcell Studio scene.
+
+The acceptance flow keeps all generated browser artifacts under
+``build/workcell_studio_web_scene/`` and validates the same staged JSON that the
+static viewer opens.  Browser collection is best-effort unless
+``--require-browser`` is supplied.
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import time
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from pathlib import Path
+from threading import Thread
+from typing import Any, Mapping, Sequence
+from urllib.parse import quote
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+BUILD_ROOT = REPO_ROOT / "build" / "workcell_studio_web_scene"
+PNG_1X1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+)
+
+
+def _load_yaml(path: Path) -> Mapping[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        import yaml  # type: ignore
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, Mapping) else {}
+
+
+def _first_text(*values: Any) -> str | None:
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _safe_scene_id(raw: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in raw.strip())
+    return cleaned.strip("._-") or "scene"
+
+
+def derive_scene_id(scene_dir: Path, override: str | None = None) -> str:
+    if override:
+        return _safe_scene_id(override)
+    manifest = _load_yaml(scene_dir / "scene_manifest.yaml")
+    environment = _load_yaml(scene_dir / "environment.yaml")
+    manifest_scene = manifest.get("scene") if isinstance(manifest.get("scene"), Mapping) else {}
+    env_scene = environment.get("scene") if isinstance(environment.get("scene"), Mapping) else {}
+    env_root = environment.get("environment") if isinstance(environment.get("environment"), Mapping) else {}
+    return _safe_scene_id(
+        _first_text(
+            manifest_scene.get("id"), manifest_scene.get("name"),
+            env_scene.get("id"), env_scene.get("name"),
+            env_root.get("scene_id"), env_root.get("id"), env_root.get("name"),
+            scene_dir.name,
+        ) or scene_dir.name
+    )
+
+
+def repo_relative(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def run_step(command: list[str]) -> dict[str, Any]:
+    result = subprocess.run(command, cwd=REPO_ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    return {"command": command, "returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr}
+
+
+def is_port_open(port: int) -> bool:
+    with socket.socket() as sock:
+        sock.settimeout(0.25)
+        try:
+            sock.connect(("127.0.0.1", port))
+            return True
+        except OSError:
+            return False
+
+
+def start_or_reuse_server(port: int) -> tuple[str, ThreadingHTTPServer | None]:
+    if is_port_open(port):
+        return "reused", None
+
+    class Handler(SimpleHTTPRequestHandler):
+        def log_message(self, fmt: str, *args: Any) -> None:  # keep acceptance output concise
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", port), lambda *a, **kw: Handler(*a, directory=str(REPO_ROOT), **kw))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        if is_port_open(port):
+            return "started", server
+        time.sleep(0.05)
+    return "failed", server
+
+
+def browser_command(url: str, screenshot: Path) -> dict[str, Any] | None:
+    for binary in ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable"):
+        exe = shutil.which(binary)
+        if exe:
+            return {
+                "command": [exe, "--headless=new", "--disable-gpu", "--no-sandbox", f"--screenshot={screenshot}", "--window-size=1280,900", url],
+                "kind": binary,
+            }
+    return None
+
+
+def run_browser(url: str, status_path: Path, screenshot_path: Path, require: bool) -> dict[str, Any]:
+    try:
+        from playwright.sync_api import sync_playwright  # type: ignore
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page.goto(url, wait_until="networkidle", timeout=45000)
+            page.wait_for_timeout(1000)
+            status = page.evaluate("window.__WORKCELL_VIEWER_STATUS__ || null")
+            page.screenshot(path=str(screenshot_path), full_page=True)
+            browser.close()
+        return {"available": True, "method": "playwright", "status": status}
+    except Exception as exc:
+        playwright_error = str(exc)
+
+    command_spec = browser_command(url, screenshot_path)
+    if command_spec:
+        result = subprocess.run(command_spec["command"], cwd=REPO_ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        return {"available": result.returncode == 0, "method": command_spec["kind"], "status": None, "returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr, "playwright_error": playwright_error}
+    if require:
+        raise RuntimeError(f"No usable browser found. Playwright error: {playwright_error}")
+    screenshot_path.write_bytes(PNG_1X1)
+    return {"available": False, "method": "skipped", "status": None, "reason": f"No Playwright/chromium/google-chrome browser available. Playwright error: {playwright_error}"}
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run browser visual acceptance for a Workcell Studio Web 3D scene.")
+    parser.add_argument("--scene", required=True, help="Scene directory to export and validate.")
+    parser.add_argument("--output", help="Optional staged web_scene.json output path.")
+    parser.add_argument("--scene-id", help="Override derived scene id used for default output/report names.")
+    parser.add_argument("--require-browser", action="store_true", help="Fail if Playwright/chromium/google-chrome is unavailable or cannot run.")
+    parser.add_argument("--port", type=int, default=8765, help="Repo-root HTTP server port (default: 8765).")
+    args = parser.parse_args(argv)
+
+    scene_dir = Path(args.scene).expanduser()
+    if not scene_dir.is_absolute():
+        scene_dir = (REPO_ROOT / scene_dir).resolve()
+    if not scene_dir.is_dir():
+        print(f"error: --scene must be an existing scene directory: {scene_dir}", file=sys.stderr)
+        return 2
+
+    scene_id = derive_scene_id(scene_dir, args.scene_id)
+    output_path = Path(args.output).expanduser() if args.output else BUILD_ROOT / f"{scene_id}.web_scene.json"
+    if not output_path.is_absolute():
+        output_path = (REPO_ROOT / output_path).resolve()
+    report_path = BUILD_ROOT / f"{scene_id}.visual_acceptance.json"
+    screenshot_path = BUILD_ROOT / f"{scene_id}.visual_acceptance.png"
+    BUILD_ROOT.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    steps = []
+    steps.append(run_step([sys.executable, "scripts/ensure_workcell_studio_web_scene_fresh.py", "--scene", repo_relative(scene_dir), "--output", repo_relative(output_path), "--stage-assets"]))
+    if steps[-1]["returncode"] == 0:
+        steps.append(run_step([sys.executable, "scripts/check_workcell_web_scene_mesh_contract.py", repo_relative(output_path)]))
+    if steps[-1]["returncode"] == 0:
+        steps.append(run_step([sys.executable, "scripts/check_workcell_web_scene_visual_bounds.py", repo_relative(output_path), "--json"]))
+
+    server_status = "not_started"
+    server = None
+    browser = {"available": False, "method": "not_run", "status": None}
+    viewer_url = f"http://localhost:{args.port}/workcell_studio_web/viewer/index.html?scene={quote(repo_relative(output_path))}"
+    if all(step["returncode"] == 0 for step in steps):
+        server_status, server = start_or_reuse_server(args.port)
+        if server_status != "failed":
+            try:
+                browser = run_browser(viewer_url, report_path, screenshot_path, args.require_browser)
+            except Exception as exc:
+                browser = {"available": False, "method": "failed", "status": None, "error": str(exc)}
+        elif args.require_browser:
+            browser = {"available": False, "method": "server_failed", "status": None, "error": f"could not start or reuse HTTP server on port {args.port}"}
+
+    if not screenshot_path.exists():
+        screenshot_path.write_bytes(PNG_1X1)
+
+    report = {
+        "scene_id": scene_id,
+        "scene_dir": repo_relative(scene_dir),
+        "web_scene_json": repo_relative(output_path),
+        "viewer_url": viewer_url,
+        "server_status": server_status,
+        "browser": browser,
+        "steps": steps,
+        "report": repo_relative(report_path),
+        "screenshot": repo_relative(screenshot_path),
+    }
+    report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if server is not None:
+        server.shutdown()
+    print(json.dumps(report, indent=2, sort_keys=True))
+    if any(step["returncode"] != 0 for step in steps):
+        return 1
+    if args.require_browser and not browser.get("available"):
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

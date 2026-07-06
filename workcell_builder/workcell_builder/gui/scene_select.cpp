@@ -3717,7 +3717,7 @@ void SceneSelect::on_export_open_web_3d_viewer_clicked()
   }
 
   const std::string scene_id = sanitize_scene_name(workcell.scene_vector[current_index].name);
-  const fs::path scene_dir = scenes_path / workcell.scene_vector[current_index].name;
+  const fs::path scene_dir = scene_dir_for_current_selection();
   if (scene_id.empty()) {
     const QString message = "No scene selected. The selected scene has an empty or invalid scene ID.";
     append_error(message.toStdString());
@@ -3736,11 +3736,11 @@ void SceneSelect::on_export_open_web_3d_viewer_clicked()
   fs::path repo_root = resolve_tool_root(workcell_path, scene_dir);
   fs::path exporter_script;
   if (!repo_root.empty()) {
-    exporter_script = repo_root / "scripts" / "ensure_workcell_studio_web_scene_fresh.py";
+    exporter_script = repo_root / "scripts" / "run_workcell_web3d_visual_acceptance.py";
   }
   if (repo_root.empty() || !fs::exists(exporter_script, ec)) {
     const QString message = QString(
-      "Exporter script missing. Expected scripts/ensure_workcell_studio_web_scene_fresh.py under the Workcell Studio repo root. "
+      "Exporter script missing. Expected visual acceptance script scripts/run_workcell_web3d_visual_acceptance.py under the Workcell Studio repo root. "
       "Set WORKCELL_STUDIO_REPO_ROOT=/path/to/easy_manipulation_deployment. Scene path: %1")
       .arg(QString::fromStdString(scene_dir.string()));
     append_error(message.toStdString());
@@ -3759,9 +3759,9 @@ void SceneSelect::on_export_open_web_3d_viewer_clicked()
     QString::fromStdString(exporter_script.string()),
     "--scene", QString::fromStdString(scene_dir.string()),
     "--output", QString::fromStdString(output_path.string()),
-    "--stage-assets"};
+    "--port", "8765"};
   const QString command_text = "python3 " + args.join(' ');
-  append_info("Export Web 3D Viewer scene: " + command_text.toStdString());
+  append_info("Run Web 3D visual acceptance for selected scene: " + command_text.toStdString());
   QProcess exporter_process;
   exporter_process.setProgram("python3");
   exporter_process.setArguments(args);
@@ -3788,7 +3788,7 @@ void SceneSelect::on_export_open_web_3d_viewer_clicked()
   if (!process_ok || rc != 0 || !output_exists) {
     const QString failure_reason = !process_ok
       ? exporter_process.errorString()
-      : (output_exists ? QString("freshness script exited nonzero") : QString("freshness script did not create the expected output file"));
+      : (output_exists ? QString("visual acceptance script exited nonzero") : QString("visual acceptance script did not create the expected output file"));
     const QString message = QString(
       "Web 3D scene export failed; viewer not opened with stale generated artifacts.\n\n"
       "Reason: %1\n"
