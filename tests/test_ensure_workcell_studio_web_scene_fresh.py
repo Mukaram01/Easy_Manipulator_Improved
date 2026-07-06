@@ -50,6 +50,7 @@ def _minimal_repo(tmp_path, monkeypatch):
             "scripts/export_workcell_studio_web_scene.py",
         ),
     )
+    monkeypatch.setattr(ensure, "real_xacro_is_discoverable", lambda: False)
     return repo, scene, source, extractor, exporter, build
 
 
@@ -170,6 +171,37 @@ def test_mismatched_extractor_version_marks_mesh_index_stale(tmp_path, monkeypat
 
     assert ensure.main(["--scene", "demo_scene", "--output", str(output)]) == 0
     assert calls == [
+        "extract_scene_urdf_visual_mesh_index.py",
+        "export_workcell_studio_web_scene.py",
+    ]
+
+
+def test_sourced_real_xacro_requires_real_expansion_status(tmp_path, monkeypatch):
+    _repo, scene, _source, _extractor, _exporter, build = _minimal_repo(tmp_path, monkeypatch)
+    monkeypatch.setattr(ensure, "real_xacro_is_discoverable", lambda: True)
+    output = build / "demo_scene.web_scene.json"
+    calls = []
+
+    def fake_run(command):
+        calls.append(command)
+        if command[1].endswith("extract_scene_urdf_visual_mesh_index.py"):
+            assert "--require-xacro" in command
+            _write(
+                scene / "generated" / "scene_visual_mesh_index.json",
+                json.dumps({
+                    "extractor_version": "expected-v1",
+                    "extraction_mode": "real_xacro_expanded",
+                    "xacro_real_command_succeeded": True,
+                    "visual_items": [],
+                }),
+            )
+        elif command[1].endswith("export_workcell_studio_web_scene.py"):
+            _write(output, "{}")
+
+    monkeypatch.setattr(ensure, "run_checked", fake_run)
+
+    assert ensure.main(["--scene", str(scene), "--output", str(output), "--force"]) == 0
+    assert [Path(call[1]).name for call in calls] == [
         "extract_scene_urdf_visual_mesh_index.py",
         "export_workcell_studio_web_scene.py",
     ]
