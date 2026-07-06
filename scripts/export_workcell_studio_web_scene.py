@@ -714,6 +714,28 @@ def _supported_mesh_uri(value: Any) -> bool:
     return Path(path).suffix.lower() in SUPPORTED_MESH_SUFFIXES
 
 
+def _has_supported_mesh_reference(item: Mapping[str, Any]) -> bool:
+    return any(_supported_mesh_uri(item.get(field)) for field in MESH_URI_FIELDS)
+
+
+def _valid_generated_robot_mesh_reference(item: Mapping[str, Any]) -> bool:
+    """Return true for generated robot mesh-preview rows that can replace stale xacro placeholders."""
+    if str(item.get("active_visual_source", "")).lower() != "mesh_preview":
+        return False
+    if str(item.get("category", "")).lower() != "robot_static_mesh_visual":
+        return False
+    if str(item.get("role", "")).lower() != "robot":
+        return False
+    return any(
+        isinstance(item.get(field), str)
+        and not _contains_unresolved_substitution(item.get(field))
+        and "package://ur_description/meshes/" in str(item.get(field))
+        and "/visual/" in str(item.get(field))
+        and Path(unquote(urlparse(str(item.get(field))).path)).suffix.lower() in SUPPORTED_MESH_SUFFIXES
+        for field in MESH_URI_FIELDS
+    )
+
+
 def _robot_family_from_item(item: Mapping[str, Any]) -> Optional[str]:
     text = " ".join(str(item.get(field, "")) for field in MESH_URI_FIELDS + ("id", "role", "category", "display_name", "link")).lower()
     for family in ("ur3", "ur5", "ur10"):
@@ -744,8 +766,7 @@ def _has_generated_robot_mesh_replacements(generated: Mapping[str, List[Json]]) 
         for item in generated.get(section, []):
             if not isinstance(item, Mapping) or not _is_robot_like_generated_item(item):
                 continue
-            uri = _first_present(*(item.get(field) for field in MESH_URI_FIELDS))
-            if not _supported_mesh_uri(uri):
+            if not _valid_generated_robot_mesh_reference(item):
                 continue
             family = _robot_family_from_item(item)
             link = _normalized_robot_link(item)
@@ -792,7 +813,7 @@ def _has_mesh_reference(item: Mapping[str, Any]) -> bool:
 
 
 def _drop_shadowed_metadata_primitives(items: List[Json], generated_items: List[Json], tokens: Sequence[str]) -> List[Json]:
-    if not any(_has_mesh_reference(item) for item in generated_items):
+    if not any(_has_supported_mesh_reference(item) for item in generated_items):
         return items
     kept: List[Json] = []
     for item in items:

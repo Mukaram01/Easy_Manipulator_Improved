@@ -193,6 +193,23 @@ def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallba
         "camera": [item for item in payload["sensors"] if "realsense2_description/meshes/d435.dae" in str(item.get("original_mesh_uri") or "")],
     }
     assert len(required["ur5"]) >= 7
+    required_major_ur5_links = {
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+    }
+    ur5_by_required_link = {item.get("link"): item for item in required["ur5"] if item.get("link") in required_major_ur5_links}
+    assert set(ur5_by_required_link) == required_major_ur5_links
+    for link, item in ur5_by_required_link.items():
+        assert item.get("active_visual_source") == "mesh_preview", link
+        assert item.get("category") == "robot_static_mesh_visual", link
+        assert item.get("role") == "robot", link
+        assert "package://ur_description/meshes/ur5/visual/" in str(item.get("original_mesh_uri") or ""), link
+        assert item.get("mesh_staging_status") == "staged", link
+        assert "${mesh}" not in json.dumps(item, sort_keys=True), link
     assert required["robotiq"]
     assert required["table"]
     assert required["camera"]
