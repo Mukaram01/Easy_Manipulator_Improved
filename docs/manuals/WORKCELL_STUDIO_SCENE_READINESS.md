@@ -27,6 +27,11 @@ The command reads `scenes/supported_scenes.yaml` as the supported-scene catalog
 and writes the readiness report artifacts under
 `build/workcell_studio_scene_readiness`.
 
+## Generated visual cache and Web 3D export policy
+
+`generated/scene_visual_mesh_index.json` is generated cache/build output for Scene3D/Web preview paths. It should not be committed under `scenes/*/generated/`; the GUI/Web viewer refresh path regenerates it automatically when needed. Keep canonical scene state in tracked source-of-truth inputs such as YAML, xacro, URDF, layout, manifest, and task/config files.
+
+Web scene JSON exports are also build/viewer outputs. Write them under `build/workcell_studio_web_scene/` or another ignored output location instead of `scenes/*/generated/`. Readiness evidence may cite regenerated outputs from a real workspace, but those generated cache/export files should not become canonical scene files.
 
 ## `ur5_2f_test` fake-hardware-only canary readiness
 
@@ -135,7 +140,6 @@ fake-hardware RViz/MoveIt readiness by itself. Treat it as debug/legacy evidence
 that may complement, but never replace, generated scene validation, package build
 checks, the broader scene readiness matrix, or fake-hardware RViz/MoveIt launch
 validation. RViz/MoveIt remains the planning and visual truth.
-
 
 ## Local `ur5_2f_test` real-workspace evidence runner
 
