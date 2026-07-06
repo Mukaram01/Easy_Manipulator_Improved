@@ -872,6 +872,145 @@ def _all_scene_items(payload: Mapping[str, Any]) -> Iterable[Tuple[str, Json]]:
                 yield section, item
 
 
+
+def _item_pose_rpy(item: Mapping[str, Any]) -> Optional[List[float]]:
+    for field in ("final_transform", "world_from_visual", "pose", "world_pose", "baked_world_visual_pose"):
+        pose = item.get(field)
+        if isinstance(pose, Mapping):
+            rpy = _finite_num3(pose.get("rpy"))
+            if rpy is not None:
+                return rpy
+    return _finite_num3(item.get("pose_rpy"))
+
+
+def _bounds_dimensions(bounds: Tuple[List[float], List[float], str]) -> List[float]:
+    mn, mx, _source = bounds
+    return [abs(mx[i] - mn[i]) for i in range(3)]
+
+
+def _visual_contract_category(item: Mapping[str, Any], section: str) -> str:
+    text = _identity_text(item)
+    role = str(item.get("role", "")).lower()
+    category = str(item.get("category", "")).lower()
+    if section == "zones" or _is_helper(item):
+        return "zone"
+    if section == "robots" or role == "robot" or category in {"robot", "robot_static_mesh_visual"} or _robot_family_from_item(item):
+        return "robot_link"
+    if section == "tools" or category in {"tool", "gripper", "end_effector"} or role in {"tool", "gripper", "end_effector"} or any(token in text for token in ("gripper", "robotiq", "suction", "end_effector")):
+        return "gripper"
+    if section == "sensors" or any(token in text for token in ("camera", "realsense")):
+        return "camera"
+    if any(token in text for token in ("table", "workbench", "support_surface")):
+        return "table"
+    return "object"
+
+
+def _scene_expected_workspace_bounds_m(data: Mapping[str, Any]) -> Json:
+    for root_key in ("scene_manifest", "cell_definition", "environment", "layout"):
+        root = _as_map(data.get(root_key))
+        candidates = (
+            root.get("expected_workspace_bounds_m"),
+            _as_map(root.get("visual_bounds_contract")).get("expected_workspace_bounds_m"),
+            _as_map(root.get("scene")).get("expected_workspace_bounds_m"),
+            _as_map(root.get("metadata")).get("expected_workspace_bounds_m"),
+        )
+        for candidate in candidates:
+            if isinstance(candidate, Mapping):
+                mn = _finite_num3(candidate.get("min") or candidate.get("min_xyz"))
+                mx = _finite_num3(candidate.get("max") or candidate.get("max_xyz"))
+                if mn is not None and mx is not None:
+                    return {"min": mn, "max": mx, "source": root_key}
+    return {"min": [-1.0, -1.0, 0.0], "max": [1.0, 1.0, 1.8], "source": "default_m1_workcell_envelope"}
+
+
+def _item_visual_bounds(item: Mapping[str, Any]) -> Optional[Tuple[List[float], List[float], str]]:
+    xyz = _item_pose_xyz(item)
+    if xyz is None:
+        return None
+    local = _item_local_bounds(item)
+    if local is not None:
+        mn, mx, source = _scaled_bounds(local, item)
+        return [xyz[i] + mn[i] for i in range(3)], [xyz[i] + mx[i] for i in range(3)], source
+    return list(xyz), list(xyz), "pose"
+
+
+def _populate_visual_bounds_item_fields(payload: Json) -> None:
+    for section, item in _all_scene_items(payload):
+        if not _is_mesh_item(item):
+            continue
+        local = _item_local_bounds(item)
+        if local is not None:
+            item["expected_dimensions_m"] = _bounds_dimensions(_scaled_bounds(local, item))
+        xyz = _item_pose_xyz(item)
+        if xyz is not None:
+            item["expected_pose_m"] = xyz
+        rpy = _item_pose_rpy(item)
+        if rpy is not None:
+            item["expected_pose_rpy"] = rpy
+        category = _visual_contract_category(item, section)
+        item["mesh_contract_category"] = category
+        item.setdefault("mesh_load_required", category in {"robot_link", "gripper", "table", "camera", "object"})
+        # Unit autoscale is a browser-side asset convenience only.  Generated URDF
+        # previews and robot links must keep authored units exactly as exported.
+        item["allow_mesh_unit_autoscale"] = bool(item.get("source_kind") != "generated_preview" and category not in {"robot_link", "zone"})
+
+
+def _visual_bounds_contract(payload: Json, data: Mapping[str, Any]) -> Json:
+    expected = _scene_expected_workspace_bounds_m(data)
+    workspace_min = expected["min"]
+    workspace_max = expected["max"]
+    workspace_span = [workspace_max[i] - workspace_min[i] for i in range(3)]
+    scene_min: Optional[List[float]] = None
+    scene_max: Optional[List[float]] = None
+    sources: List[str] = []
+    oversized: List[Json] = []
+    collapsed: List[Json] = []
+    invalid_orientation: List[Json] = []
+    blockers: List[Json] = []
+
+    for section, item in _all_scene_items(payload):
+        item_id = str(item.get("id"))
+        category = str(item.get("mesh_contract_category") or _visual_contract_category(item, section))
+        bounds = _item_visual_bounds(item)
+        dims = _finite_num3(item.get("expected_dimensions_m"))
+        if dims is None:
+            local = _item_local_bounds(item)
+            dims = _bounds_dimensions(_scaled_bounds(local, item)) if local is not None else None
+        if bounds is not None:
+            mn, mx, source = bounds
+            scene_min = mn if scene_min is None else [min(scene_min[i], mn[i]) for i in range(3)]
+            scene_max = mx if scene_max is None else [max(scene_max[i], mx[i]) for i in range(3)]
+            sources.append(f"{item_id}:{source}")
+            outside = any(mx[i] < workspace_min[i] or mn[i] > workspace_max[i] for i in range(3))
+        else:
+            outside = False
+        if dims is not None:
+            if any(v <= 1e-6 for v in dims):
+                entry = {"id": item_id, "category": category, "expected_dimensions_m": dims, "reason": "zero_or_near_zero_dimension"}
+                collapsed.append(entry)
+                if category in {"robot_link", "gripper", "table", "camera", "object"}:
+                    blockers.append({**entry, "reason": "collapsed_item_can_break_camera_framing"})
+            if any(workspace_span[i] > 0 and dims[i] > workspace_span[i] * 1.5 for i in range(3)):
+                entry = {"id": item_id, "category": category, "expected_dimensions_m": dims, "reason": "dimension_exceeds_expected_workspace_span"}
+                oversized.append(entry)
+                blockers.append({**entry, "reason": "oversized_item_can_break_camera_framing"})
+        if outside:
+            blockers.append({"id": item_id, "category": category, "reason": "item_bounds_outside_expected_workspace"})
+        rpy = _item_pose_rpy(item)
+        if rpy is not None and (any(abs(v) > 6.5 for v in rpy) or _finite_num3(rpy) is None):
+            entry = {"id": item_id, "category": category, "expected_pose_rpy": rpy, "reason": "orientation_rpy_outside_radian_range"}
+            invalid_orientation.append(entry)
+            blockers.append({**entry, "reason": "invalid_orientation_can_break_camera_framing"})
+
+    return {
+        "expected_workspace_bounds_m": {"min": workspace_min, "max": workspace_max, "source": expected["source"]},
+        "scene_bounds_m": {"min": scene_min or [0.0, 0.0, 0.0], "max": scene_max or [0.0, 0.0, 0.0], "source_count": len(sources), "sources": sorted(sources)},
+        "oversized_items": sorted(oversized, key=lambda x: str(x.get("id"))),
+        "collapsed_items": sorted(collapsed, key=lambda x: str(x.get("id"))),
+        "invalid_orientation_items": sorted(invalid_orientation, key=lambda x: str(x.get("id"))),
+        "camera_framing_blockers": sorted(blockers, key=lambda x: (str(x.get("id")), str(x.get("reason")))),
+    }
+
 def _populate_mesh_contract_fields(payload: Json, *, staged: bool) -> Json:
     required = 0
     staged_count = 0
@@ -1146,7 +1285,11 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
     }
     if stage_assets:
         _stage_visual_meshes(output, scene_dir, output_path or Path("build/workcell_studio_web_scene/scene.web_scene.json"))
-    output["metadata"] = {"mesh_contract": _populate_mesh_contract_fields(output, staged=stage_assets)}
+    _populate_visual_bounds_item_fields(output)
+    output["metadata"] = {
+        "mesh_contract": _populate_mesh_contract_fields(output, staged=stage_assets),
+        "visual_bounds_contract": _visual_bounds_contract(output, data),
+    }
     output["viewer_summary"] = _viewer_summary(output)
     return output
 
