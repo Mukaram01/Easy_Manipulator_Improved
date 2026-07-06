@@ -212,6 +212,78 @@ def test_export_visual_bounds_contract_ignores_helper_zones_outside_workspace(tm
     assert all("camera_fov_overlay" not in source for source in payload["metadata"]["visual_bounds_contract"]["scene_bounds_m"]["sources"])
 
 
+def test_export_carries_authored_fixture_dimensions_to_generated_table_camera_meshes(tmp_path):
+    scene = tmp_path / "scene"
+    (scene / "layout").mkdir(parents=True)
+    (scene / "generated").mkdir()
+    (scene / "scene_manifest.yaml").write_text(yaml.safe_dump({"scene": {"name": "generated_fixture_dims"}}), encoding="utf-8")
+    (scene / "cell_definition.yaml").write_text("{}", encoding="utf-8")
+    (scene / "layout/workcell_studio_layout.yaml").write_text(yaml.safe_dump({"items": []}), encoding="utf-8")
+    (scene / "environment.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "environment": {
+                    "support_surfaces": [
+                        {
+                            "id": "support_surface_table",
+                            "type": "table",
+                            "role": "support_surface",
+                            "category": "work_surface",
+                            "dimensions": [1.2, 0.8, 0.08],
+                        }
+                    ],
+                    "assets": [
+                        {
+                            "id": "realsense_overhead",
+                            "type": "realsense",
+                            "role": "camera",
+                            "category": "camera",
+                            "dimensions": [0.08, 0.08, 0.06],
+                        }
+                    ],
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (scene / "generated/scene_visual_mesh_index.json").write_text(
+        json.dumps(
+            {
+                "visual_items": [
+                    {
+                        "id": "urdf_visual_table",
+                        "link": "table_",
+                        "object_name": "table_",
+                        "mesh_uri": "package://workbench_description/meshes/visual/table.stl",
+                        "mesh_scale": [0.001, 0.001, 0.001],
+                        "pose": {"xyz": [0, 0, 0], "rpy": [0, 0, 0]},
+                    },
+                    {
+                        "id": "urdf_visual_camera",
+                        "link": "camera_link",
+                        "object_name": "camera_link",
+                        "mesh_uri": "package://realsense2_description/meshes/d435.dae",
+                        "pose": {"xyz": [0.35, 0, 0.85], "rpy": [0, 1.5708, 0]},
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    out = tmp_path / "build/scene.web_scene.json"
+    subprocess.run([sys.executable, str(SCRIPT), "--scene", str(scene), "--output", str(out)], check=True)
+
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    table = next(item for item in payload["assets"] if item["id"] == "urdf_visual_table")
+    camera = next(item for item in payload["sensors"] if item["id"] == "urdf_visual_camera")
+    assert table["mesh_contract_category"] == "table"
+    assert table["expected_dimensions_m"] == [1.2, 0.8, 0.08]
+    assert camera["mesh_contract_category"] == "camera"
+    assert camera["expected_dimensions_m"] == [0.08, 0.08, 0.06]
+
+
 def test_export_web_scene_stages_safe_mesh_assets(tmp_path):
     scene = tmp_path / "scene"
     mesh_dir = scene / "meshes"
