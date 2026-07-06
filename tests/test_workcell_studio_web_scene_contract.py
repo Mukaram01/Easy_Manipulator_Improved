@@ -10,6 +10,7 @@ from jsonschema import Draft202012Validator
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER = REPO_ROOT / "scripts" / "export_workcell_studio_web_scene.py"
+FRESHENER = REPO_ROOT / "scripts" / "ensure_workcell_studio_web_scene_fresh.py"
 SCHEMA = REPO_ROOT / "schemas" / "workcell_studio_web_scene_v1.schema.json"
 
 
@@ -99,23 +100,28 @@ def _export(scene: Path, output: Path) -> dict:
     return json.loads(output.read_text(encoding="utf-8"))
 
 
+def _ensure_ur5_2f_web_scene_fresh(output: Path, *, force: bool = True, stage_assets: bool = True) -> dict:
+    command = [
+        sys.executable,
+        str(FRESHENER),
+        "--scene",
+        str(REPO_ROOT / "scenes" / "ur5_2f_test"),
+        "--output",
+        str(output),
+    ]
+    if stage_assets:
+        command.append("--stage-assets")
+    if force:
+        command.append("--force")
+    subprocess.run(command, cwd=REPO_ROOT, check=True)
+    assert output.exists()
+    return json.loads(output.read_text(encoding="utf-8"))
+
+
 def _export_persisted_ur5_2f_web_scene() -> tuple[Path, dict]:
     output = REPO_ROOT / "build" / "workcell_studio_web_scene" / "ur5_2f_test.web_scene.json"
     output.unlink(missing_ok=True)
-    subprocess.run(
-        [
-            sys.executable,
-            str(EXPORTER),
-            "--scene",
-            str(REPO_ROOT / "scenes" / "ur5_2f_test"),
-            "--output",
-            str(output),
-        ],
-        cwd=REPO_ROOT,
-        check=True,
-    )
-    assert output.exists()
-    return output, json.loads(output.read_text(encoding="utf-8"))
+    return output, _ensure_ur5_2f_web_scene_fresh(output)
 
 
 def test_web_scene_schema_file_exists_and_is_valid_json():
@@ -397,7 +403,7 @@ def _assert_browser_safe_staged_mesh(item: dict) -> None:
 
 
 def test_ur5_2f_web_scene_export_transform_parity_for_product_meshes(tmp_path):
-    payload = _export(REPO_ROOT / "scenes" / "ur5_2f_test", tmp_path / "out" / "ur5_2f_test.parity.web_scene.json")
+    payload = _ensure_ur5_2f_web_scene_fresh(tmp_path / "out" / "ur5_2f_test.parity.web_scene.json")
 
     ur5_by_link = {
         item.get("link"): item

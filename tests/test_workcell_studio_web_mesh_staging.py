@@ -9,6 +9,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORTER = REPO_ROOT / "scripts" / "export_workcell_studio_web_scene.py"
+FRESHENER = REPO_ROOT / "scripts" / "ensure_workcell_studio_web_scene_fresh.py"
 VIEWER_JS = REPO_ROOT / "workcell_studio_web" / "viewer" / "viewer.js"
 
 spec = importlib.util.spec_from_file_location("export_workcell_studio_web_scene", EXPORTER)
@@ -218,6 +219,11 @@ def _fallback_causes(payload: dict) -> list[str]:
 
 def test_ur5_2f_export_with_asset_staging_reduces_unresolved_package_fallback_causes(tmp_path):
     scene = REPO_ROOT / "scenes" / "ur5_2f_test"
+    subprocess.run(
+        [sys.executable, str(FRESHENER), "--scene", str(scene), "--output", str(tmp_path / "fresh.web_scene.json"), "--stage-assets", "--force"],
+        cwd=REPO_ROOT,
+        check=True,
+    )
     unstaged = subprocess.run(
         [sys.executable, str(EXPORTER), "--scene", str(scene), "--output", str(tmp_path / "unstaged.json"), "--no-stage-assets"],
         cwd=REPO_ROOT,
