@@ -715,7 +715,7 @@ async function tryLoadMesh(item, rendered, fallback) {
     trackMeshLoadAttempt(item, 'loaded', loadUrl, '');
     setRenderInfo(rendered, 'mesh_loaded', uri, '');
     diagnoseLoadedMeshBounds(item, meshObject, rendered, validationBounds);
-    const bounds = computeRenderedBounds();
+    const bounds = computeFitBounds();
     if (bounds) frameScene(bounds);
     refreshMeshLoadUi(rendered);
   } catch (err) {
@@ -808,16 +808,120 @@ function animate() {
   updateLabels();
 }
 
-function computeRenderedBounds() {
+function visibleRenderableBounds(object) {
+  if (!object || object.visible === false) return null;
+  object.updateWorldMatrix(true, true);
   const bounds = new THREE.Box3();
+  let hasVisible = false;
+  const visit = node => {
+    if (!node || node.visible === false) return;
+    if (node.isMesh || node.isLine || node.isLineSegments || node.isPoints || node.isSprite) {
+      const nodeBounds = finiteBox3(new THREE.Box3().setFromObject(node));
+      if (nodeBounds) {
+        bounds.union(nodeBounds);
+        hasVisible = true;
+      }
+    }
+    for (const child of node.children || []) visit(child);
+  };
+  visit(object);
+  return hasVisible ? finiteBox3(bounds) : null;
+}
+function objectHasVisibleRenderable(object) {
+  return Boolean(visibleRenderableBounds(object));
+}
+function itemHiddenForFit(item) {
+  return item?.visible === false || item?.hidden === true || item?.rendered === false || item?.enabled === false;
+}
+function renderedStatusForFit(rendered) {
+  return String(rendered?.renderInfo?.render_status || rendered?.item?.renderInfo?.render_status || rendered?.item?.mesh_status || '').toLowerCase();
+}
+function isRequiredMeshDebugFallback(rendered) {
+  const status = renderedStatusForFit(rendered);
+  if (status === 'required_mesh_failed_debug_fallback') return true;
+  let debug = false;
+  rendered?.object3d?.traverse?.(child => {
+    if (debug) return;
+    const childStatus = String(child?.userData?.render_status || child?.userData?.renderInfo?.render_status || '').toLowerCase();
+    if (childStatus === 'required_mesh_failed_debug_fallback') debug = true;
+  });
+  return debug;
+}
+function isLoadingPlaceholderHidden(rendered) {
+  return renderedStatusForFit(rendered) === 'mesh_loading_required' && rendered?.fallback?.visible === false && !rendered?.meshObject;
+}
+function warnFitBlockerExcluded(rendered, reason, bounds = null, extra = {}) {
+  const item = rendered?.item || {};
+  const key = `${item.id || itemLabel(item)}:${reason}`;
+  state._fitBlockerWarnings = state._fitBlockerWarnings || new Set();
+  if (state._fitBlockerWarnings.has(key)) return;
+  state._fitBlockerWarnings.add(key);
+  appendViewerDiagnosticWarning(item, 'camera_framing_blocker_excluded', reason, {
+    render_status: renderedStatusForFit(rendered),
+    visual_bounds_status: item?.visual_bounds_status || '',
+    excluded_fit_bounds: box3ToJson(bounds),
+    ...extra,
+  });
+}
+function computeFitBounds({ includeDebugFallbacks = false } = {}) {
+  const normalBounds = new THREE.Box3();
+  const fallbackBounds = new THREE.Box3();
+  let hasNormal = false;
+  let hasFallback = false;
+  const deferredWarnings = [];
   for (const rendered of state.objects) {
-    if (!rendered.object3d) continue;
-    rendered.object3d.updateWorldMatrix(true, true);
-    bounds.expandByObject(rendered.object3d);
+    if (!rendered?.object3d) continue;
+    if (itemHiddenForFit(rendered.item) || rendered.object3d.visible === false) {
+      deferredWarnings.push([rendered, 'hidden renderable excluded from camera fit bounds', null]);
+      continue;
+    }
+    if (isLoadingPlaceholderHidden(rendered) || !objectHasVisibleRenderable(rendered.object3d)) {
+      deferredWarnings.push([rendered, 'hidden loading placeholder excluded from camera fit bounds', null]);
+      continue;
+    }
+    const itemBounds = visibleRenderableBounds(rendered.object3d);
+    if (!itemBounds) continue;
+    const isDebugFallback = isRequiredMeshDebugFallback(rendered);
+    const isOversized = rendered.item?.visual_bounds_status === 'oversized';
+    if (isDebugFallback || isOversized) {
+      fallbackBounds.union(itemBounds);
+      hasFallback = true;
+      deferredWarnings.push([
+        rendered,
+        isDebugFallback
+          ? 'required_mesh_failed_debug_fallback excluded from normal camera fit bounds'
+          : 'oversized visual bounds excluded from normal camera fit bounds',
+        itemBounds,
+      ]);
+      continue;
+    }
+    normalBounds.union(itemBounds);
+    hasNormal = true;
   }
-  const finiteBounds = finiteBox3(bounds);
-  if (finiteBounds) maybeWarnSceneBoundsExceedWorkspace(finiteBounds);
-  return finiteBounds;
+  const finiteNormal = hasNormal ? finiteBox3(normalBounds) : null;
+  if (finiteNormal) {
+    for (const warning of deferredWarnings) warnFitBlockerExcluded(...warning);
+    maybeWarnSceneBoundsExceedWorkspace(finiteNormal);
+    return finiteNormal;
+  }
+  const finiteFallback = (includeDebugFallbacks || hasFallback) ? finiteBox3(fallbackBounds) : null;
+  if (finiteFallback) {
+    for (const warning of deferredWarnings) warnFitBlockerExcluded(...warning);
+    const fallbackKey = `${sceneId() || sceneDisplayName()}:fallback_fit_bounds`;
+    state._fitBlockerWarnings = state._fitBlockerWarnings || new Set();
+    if (!state._fitBlockerWarnings.has(fallbackKey)) {
+      state._fitBlockerWarnings.add(fallbackKey);
+      appendViewerDiagnosticWarning({ id: sceneId(), label: sceneDisplayName() }, 'camera_framing_blocker_excluded', 'camera fit fell back to debug or oversized geometry because no normal physical bounds were available', {
+        fallback_fit_bounds: box3ToJson(finiteFallback),
+      });
+    }
+    maybeWarnSceneBoundsExceedWorkspace(finiteFallback);
+    return finiteFallback;
+  }
+  return null;
+}
+function computeRenderedBounds() {
+  return computeFitBounds({ includeDebugFallbacks: true });
 }
 function box3ToJson(box) {
   if (!box || box.isEmpty() || !finiteBox3(box)) return null;
@@ -1023,7 +1127,7 @@ function frameScene(bounds) {
   return true;
 }
 function resetView() {
-  const bounds = state.lastFrameBounds || computeRenderedBounds();
+  const bounds = computeFitBounds() || state.lastFrameBounds || computeFitBounds({ includeDebugFallbacks: true });
   if (bounds) frameScene(bounds);
 }
 if (el.resetView) {
@@ -1042,6 +1146,7 @@ function clearSceneObjects() {
   state.objects = [];
   state.lastFrameBounds = null;
   state._sceneBoundsExceededWarned = false;
+  state._fitBlockerWarnings = new Set();
   if (el.resetView) el.resetView.disabled = true;
   renderSceneSummary();
 }
@@ -1074,7 +1179,7 @@ function renderScene(items) {
   }
   populateObjectList();
   updateLabels();
-  const bounds = computeRenderedBounds();
+  const bounds = computeFitBounds();
   if (bounds) frameScene(bounds);
   renderSceneSummary();
 }
