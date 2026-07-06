@@ -8,8 +8,11 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENES_ROOT = ROOT / "scenes"
-EXTRACTOR_VERSION = "2.12"
+EXTRACTOR_VERSION = "2.13"
 UR5_INITIAL_POSITIONS_PATH = ROOT / "assets/robots/universal_robot/ur5_moveit_config/config/initial_positions.yaml"
+UR5_KINEMATICS_PATH = ROOT / "assets/robots/universal_robot/ur_description/config/ur5/default_kinematics.yaml"
+UR5_VISUAL_PARAMETERS_PATH = ROOT / "assets/robots/universal_robot/ur_description/config/ur5/visual_parameters.yaml"
+UR5_PHYSICAL_PARAMETERS_PATH = ROOT / "assets/robots/universal_robot/ur_description/config/ur5/physical_parameters.yaml"
 UR5_INITIAL_JOINT_DEFAULTS = {
     "shoulder_pan_joint": 0.0,
     "shoulder_lift_joint": 0.0,
@@ -1038,6 +1041,112 @@ def _log_ur5_visual_mesh_diagnostics(scene_name, diag):
 def _compact_pose_values(values):
     return [round(float(v), 6) for v in (values or [0.0, 0.0, 0.0])[:3]]
 
+def _ur5_section_pose(section):
+    section = section if isinstance(section, dict) else {}
+    return {
+        'xyz': [float(section.get(k, 0.0) or 0.0) for k in ('x', 'y', 'z')],
+        'rpy': [float(section.get(k, 0.0) or 0.0) for k in ('roll', 'pitch', 'yaw')],
+    }
+
+def load_ur5_asset_configuration(
+    kinematics_path=UR5_KINEMATICS_PATH,
+    visual_parameters_path=UR5_VISUAL_PARAMETERS_PATH,
+    physical_parameters_path=UR5_PHYSICAL_PARAMETERS_PATH,
+):
+    """Load the UR5 xacro configuration used to derive fallback FK visuals."""
+    return {
+        'kinematics': (read_yaml(kinematics_path) or {}).get('kinematics', {}),
+        'visual_parameters': (read_yaml(visual_parameters_path) or {}).get('mesh_files', {}),
+        'physical_parameters': read_yaml(physical_parameters_path) or {},
+        'source_paths': {
+            'kinematics': _repo_relative_path(kinematics_path),
+            'visual_parameters': _repo_relative_path(visual_parameters_path),
+            'physical_parameters': _repo_relative_path(physical_parameters_path),
+        },
+    }
+
+def _ur5_visual_origin_for_link(link_name, ur5_config):
+    visual = ur5_config.get('visual_parameters') or {}
+    physical = ur5_config.get('physical_parameters') or {}
+    offsets = physical.get('offsets') if isinstance(physical.get('offsets'), dict) else {}
+    pi = math.pi
+    wrist3 = visual.get('wrist_3') if isinstance(visual.get('wrist_3'), dict) else {}
+    wrist3_xyz = wrist3.get('visual_offset_xyz')
+    if isinstance(wrist3_xyz, str) and wrist3_xyz.strip():
+        wrist3_offset = parse_vec(wrist3_xyz, 3, 0.0)
+    elif isinstance(wrist3_xyz, (list, tuple)) and len(wrist3_xyz) >= 3:
+        wrist3_offset = [float(v or 0.0) for v in wrist3_xyz[:3]]
+    else:
+        wrist3_offset = [0.0, 0.0, float(wrist3.get('visual_offset', 0.0) or 0.0)]
+    return {
+        'base_link': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
+        'base_link_inertia': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, pi]},
+        'shoulder_link': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, pi]},
+        'upper_arm_link': {'xyz': [0.0, 0.0, float(offsets.get('shoulder_offset', 0.0) or 0.0)], 'rpy': [pi / 2.0, 0.0, -pi / 2.0]},
+        'forearm_link': {'xyz': [0.0, 0.0, float(offsets.get('elbow_offset', 0.0) or 0.0)], 'rpy': [pi / 2.0, 0.0, -pi / 2.0]},
+        'wrist_1_link': {'xyz': [0.0, 0.0, float((visual.get('wrist_1') or {}).get('visual_offset', 0.0) or 0.0)], 'rpy': [pi / 2.0, 0.0, 0.0]},
+        'wrist_2_link': {'xyz': [0.0, 0.0, float((visual.get('wrist_2') or {}).get('visual_offset', 0.0) or 0.0)], 'rpy': [0.0, 0.0, 0.0]},
+        'wrist_3_link': {'xyz': wrist3_offset, 'rpy': [pi / 2.0, 0.0, 0.0]},
+        'flange': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
+        'tool0': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
+    }.get(link_name, {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]})
+
+def build_ur5_fk_preview_model(joint_positions=None, ur5_config=None):
+    """Build UR5 link-world transforms from the upstream UR xacro YAML model."""
+    ur5_config = ur5_config or load_ur5_asset_configuration()
+    kin = ur5_config.get('kinematics') or {}
+    joints = dict(UR5_INITIAL_JOINT_DEFAULTS)
+    joints.update({str(k): float(v) for k, v in (joint_positions or {}).items()})
+    if all(abs(float(joints.get(name, 0.0))) <= UR5_PREVIEW_ALL_ZERO_EPSILON for name in UR5_INITIAL_JOINT_DEFAULTS):
+        joints.update(UR5_PREVIEW_HOME_JOINT_POSE)
+    specs = [
+        ('base_link', '', '', 'fixed', {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]}, 0.0),
+        ('base_link_inertia', 'base_link', 'base_link-base_link_inertia', 'fixed', {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, math.pi]}, 0.0),
+        ('shoulder_link', 'base_link_inertia', 'shoulder_pan_joint', 'revolute', _ur5_section_pose(kin.get('shoulder')), joints.get('shoulder_pan_joint', 0.0)),
+        ('upper_arm_link', 'shoulder_link', 'shoulder_lift_joint', 'revolute', _ur5_section_pose(kin.get('upper_arm')), joints.get('shoulder_lift_joint', 0.0)),
+        ('forearm_link', 'upper_arm_link', 'elbow_joint', 'revolute', _ur5_section_pose(kin.get('forearm')), joints.get('elbow_joint', 0.0)),
+        ('wrist_1_link', 'forearm_link', 'wrist_1_joint', 'revolute', _ur5_section_pose(kin.get('wrist_1')), joints.get('wrist_1_joint', 0.0)),
+        ('wrist_2_link', 'wrist_1_link', 'wrist_2_joint', 'revolute', _ur5_section_pose(kin.get('wrist_2')), joints.get('wrist_2_joint', 0.0)),
+        ('wrist_3_link', 'wrist_2_link', 'wrist_3_joint', 'revolute', _ur5_section_pose(kin.get('wrist_3')), joints.get('wrist_3_joint', 0.0)),
+        ('flange', 'wrist_3_link', 'wrist_3-flange', 'fixed', {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, -math.pi / 2.0, -math.pi / 2.0]}, 0.0),
+        ('tool0', 'flange', 'flange-tool0', 'fixed', {'xyz': [0.0, 0.0, 0.0], 'rpy': [math.pi / 2.0, 0.0, math.pi / 2.0]}, 0.0),
+    ]
+    out = {}
+    chain = []
+    transform_chain = []
+    for link, parent, joint_name, joint_type, origin, joint_value in specs:
+        if not parent:
+            world_tf = identity_tf()
+            chain = [link]
+            transform_chain = []
+        else:
+            joint_tf = tf_from_xyz_rpy(origin['xyz'], origin['rpy'])
+            if joint_type != 'fixed':
+                joint_tf = matmul4(joint_tf, tf_from_axis_angle([0.0, 0.0, 1.0], joint_value))
+            world_tf = matmul4(out[parent]['world_matrix'], joint_tf)
+            chain = out[parent]['link_chain'] + [link]
+            transform_chain = out[parent]['transform_chain'] + [{
+                'joint_name': joint_name,
+                'joint_type': joint_type,
+                'parent_link': parent,
+                'child_link': link,
+                'origin': origin,
+                'axis': [0.0, 0.0, 1.0],
+                'joint_value': joint_value,
+            }]
+        out[link] = {
+            'parent_link': parent,
+            'joint_name': joint_name,
+            'joint_type': joint_type,
+            'joint_value': joint_value,
+            'joint_origin': origin,
+            'world_matrix': world_tf,
+            'world_pose': xyz_rpy_from_tf(world_tf),
+            'link_chain': list(chain),
+            'transform_chain': copy.deepcopy(transform_chain),
+        }
+    return out
+
 def build_ur5_transform_table(items):
     rows = []
     for item in items or []:
@@ -1091,12 +1200,20 @@ def append_static_ur5_mesh_visuals(items, package_map, authoritative_links=None)
     if _has_ur5_visual_mesh_uri(items):
         return 0
     existing_ids = {str(i.get('id') or '') for i in items}
+    joint_positions, joint_source, preview_joint_pose, joint_defaults_used = read_ur5_initial_joint_positions()
+    ur5_config = load_ur5_asset_configuration()
+    fk_model = build_ur5_fk_preview_model(joint_positions, ur5_config)
+    mesh_link_overrides = {'base_link': 'base_link_inertia'}
     added = 0
     for spec in UR5_STATIC_VISUAL_SPECS:
-        if spec.get('link') in authoritative_links:
+        link = mesh_link_overrides.get(spec.get('link'), spec.get('link'))
+        if link in authoritative_links or spec.get('link') in authoritative_links:
             continue
         mesh_name = spec.get('mesh') or ''
         if not mesh_name:
+            continue
+        fk = fk_model.get(link)
+        if not fk:
             continue
         item_id = f"urdf_static_mesh_{spec['stable_id']}"
         if item_id in existing_ids:
@@ -1105,51 +1222,60 @@ def append_static_ur5_mesh_visuals(items, package_map, authoritative_links=None)
         resolved_path, error = resolve_mesh_uri(package_uri, package_map)
         if error or not resolved_path:
             continue
-        xyz = list(spec['xyz'])
-        rpy = list(spec['rpy'])
+        visual_origin = _ur5_visual_origin_for_link(link, ur5_config)
+        visual_tf = tf_from_xyz_rpy(visual_origin['xyz'], visual_origin['rpy'])
+        world_visual_tf = matmul4(fk['world_matrix'], visual_tf)
+        world_visual_pose = xyz_rpy_from_tf(world_visual_tf)
+        link_world_pose = fk['world_pose']
+        parent_link = fk.get('parent_link') or 'world'
+        joint_value_source = 'zero_default' if fk.get('joint_type') == 'fixed' else (
+            'workcell_preview_home_pose_all_zero_initial_positions'
+            if preview_joint_pose else
+            ('fake-hardware default' if fk.get('joint_name') in joint_defaults_used else joint_source)
+        )
         items.append({
             'id': item_id,
             'source': 'legacy_static_fallback',
-            'link': spec['link'],
+            'link': link,
             'visual': 'static_mesh_visual',
-            'parent_link': 'world',
-            'immediate_parent_link': 'world',
-            'joint_parent_link': 'world',
-            'parent_joint': '',
-            'parent_joint_name': '',
-            'parent_joint_type': 'static_preview',
-            'parent_joint_origin': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
-            'parent_joint_axis': [1.0, 0.0, 0.0],
-            'parent_joint_value': 0.0,
-            'parent_joint_value_source': 'zero_default',
-            'joint_name': '',
-            'joint_type': 'static_preview',
-            'joint_origin': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
-            'joint_axis': [1.0, 0.0, 0.0],
-            'joint_value': 0.0,
-            'joint_value_source': 'zero_default',
-            'applied_joint_value': 0.0,
-            'applied_joint_value_source': 'zero_default',
-            'link_chain': ['world', spec['link']],
+            'parent_link': parent_link,
+            'immediate_parent_link': parent_link,
+            'joint_parent_link': parent_link,
+            'parent_joint': fk.get('joint_name', ''),
+            'parent_joint_name': fk.get('joint_name', ''),
+            'parent_joint_type': fk.get('joint_type', 'fixed'),
+            'parent_joint_origin': copy.deepcopy(fk.get('joint_origin', {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]})),
+            'parent_joint_axis': [0.0, 0.0, 1.0],
+            'parent_joint_value': fk.get('joint_value', 0.0),
+            'parent_joint_value_source': joint_value_source,
+            'joint_name': fk.get('joint_name', ''),
+            'joint_type': fk.get('joint_type', 'fixed'),
+            'joint_origin': copy.deepcopy(fk.get('joint_origin', {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]})),
+            'joint_axis': [0.0, 0.0, 1.0],
+            'joint_value': fk.get('joint_value', 0.0),
+            'joint_value_source': joint_value_source,
+            'applied_joint_value': fk.get('joint_value', 0.0),
+            'applied_joint_value_source': joint_value_source,
+            'link_chain': copy.deepcopy(fk.get('link_chain', [link])),
             'category': 'robot_static_mesh_visual',
             'role': 'robot',
             'source_layer': 'locked_generated_urdf_visual',
             'active_visual_source': 'mesh_preview',
             'geometry_type': 'mesh',
-            'pose': {'xyz': xyz, 'rpy': rpy},
-            'chain_pose': {'xyz': xyz, 'rpy': rpy},
-            'world_pose': {'xyz': xyz, 'rpy': rpy},
-            'link_world_pose': {'xyz': xyz, 'rpy': rpy},
-            'expected_visual_pose': {'xyz': xyz, 'rpy': rpy},
-            'baked_world_visual_pose': {'xyz': xyz, 'rpy': rpy},
-            'baked_world_visual_matrix': tf_from_xyz_rpy(xyz, rpy),
-            'baked_world_visual_quaternion': quaternion_from_tf(tf_from_xyz_rpy(xyz, rpy)),
-            'baked_world_visual_transform_source': 'legacy_static_fallback_resolved_ur5_mesh_pose',
+            'pose': copy.deepcopy(world_visual_pose),
+            'chain_pose': copy.deepcopy(link_world_pose),
+            'world_pose': copy.deepcopy(world_visual_pose),
+            'link_world_pose': copy.deepcopy(link_world_pose),
+            'expected_visual_pose': copy.deepcopy(world_visual_pose),
+            'baked_world_visual_pose': copy.deepcopy(world_visual_pose),
+            'baked_world_visual_matrix': world_visual_tf,
+            'baked_world_visual_quaternion': quaternion_from_tf(world_visual_tf),
+            'baked_world_visual_transform_source': 'ur5_fk_fallback_link_world_times_visual_origin',
             'visual_origin_applied_to_pose': True,
-            'visual_origin': {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]},
-            'link_transform_status': 'static_mesh_resolved',
-            'transform_status': 'static_mesh_resolved',
-            'transform_chain': [],
+            'visual_origin': copy.deepcopy(visual_origin),
+            'link_transform_status': 'ur5_fk_fallback_resolved',
+            'transform_status': 'ur5_fk_fallback_resolved',
+            'transform_chain': copy.deepcopy(fk.get('transform_chain', [])),
             'render_expected': True,
             'resolved': True,
             'primitive_fallback': False,
@@ -1164,9 +1290,10 @@ def append_static_ur5_mesh_visuals(items, package_map, authoritative_links=None)
             'mesh_scale': [1.0, 1.0, 1.0],
             'mesh_available': True,
             'has_mesh_metadata': True,
+            'ur5_fk_config_sources': copy.deepcopy(ur5_config.get('source_paths', {})),
             'material': {'name': 'scene3d_static_robot_mesh', 'color': None},
             'render_skip_reason': '',
-            'warning': 'ur_robot xacro macro unavailable; used resolved UR mesh asset with static preview pose',
+            'warning': 'ur_robot xacro macro unavailable; used resolved UR mesh asset with UR5 FK preview pose',
         })
         existing_ids.add(item_id)
         added += 1
