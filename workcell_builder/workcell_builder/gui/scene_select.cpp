@@ -3736,11 +3736,11 @@ void SceneSelect::on_export_open_web_3d_viewer_clicked()
   fs::path repo_root = resolve_tool_root(workcell_path, scene_dir);
   fs::path exporter_script;
   if (!repo_root.empty()) {
-    exporter_script = repo_root / "scripts" / "export_workcell_studio_web_scene.py";
+    exporter_script = repo_root / "scripts" / "ensure_workcell_studio_web_scene_fresh.py";
   }
   if (repo_root.empty() || !fs::exists(exporter_script, ec)) {
     const QString message = QString(
-      "Exporter script missing. Expected scripts/export_workcell_studio_web_scene.py under the Workcell Studio repo root. "
+      "Exporter script missing. Expected scripts/ensure_workcell_studio_web_scene_fresh.py under the Workcell Studio repo root. "
       "Set WORKCELL_STUDIO_REPO_ROOT=/path/to/easy_manipulation_deployment. Scene path: %1")
       .arg(QString::fromStdString(scene_dir.string()));
     append_error(message.toStdString());
@@ -3760,12 +3760,49 @@ void SceneSelect::on_export_open_web_3d_viewer_clicked()
     "--scene", QString::fromStdString(scene_dir.string()),
     "--output", QString::fromStdString(output_path.string()),
     "--stage-assets"};
-  append_info("Export Web 3D Viewer scene: python3 " + args.join(' ').toStdString());
-  const int rc = QProcess::execute("python3", args);
-  if (rc != 0 || !fs::exists(output_path, ec)) {
-    const QString message = QString("Web 3D scene export failed with exit code %1. Exporter: %2\nScene: %3\nOutput: %4")
+  const QString command_text = "python3 " + args.join(' ');
+  append_info("Export Web 3D Viewer scene: " + command_text.toStdString());
+  QProcess exporter_process;
+  exporter_process.setProgram("python3");
+  exporter_process.setArguments(args);
+  exporter_process.setWorkingDirectory(QString::fromStdString(repo_root.string()));
+  exporter_process.setProcessChannelMode(QProcess::SeparateChannels);
+  exporter_process.start();
+
+  bool process_ok = exporter_process.waitForStarted();
+  if (process_ok) {
+    process_ok = exporter_process.waitForFinished(-1);
+  }
+  const QString stdout_text = QString::fromLocal8Bit(exporter_process.readAllStandardOutput());
+  const QString stderr_text = QString::fromLocal8Bit(exporter_process.readAllStandardError());
+  if (!stdout_text.trimmed().isEmpty()) {
+    append_info(stdout_text.toStdString());
+  }
+  if (!stderr_text.trimmed().isEmpty()) {
+    append_warning(stderr_text.toStdString());
+  }
+  const int rc = process_ok && exporter_process.exitStatus() == QProcess::NormalExit
+    ? exporter_process.exitCode()
+    : -1;
+  const bool output_exists = fs::exists(output_path, ec);
+  if (!process_ok || rc != 0 || !output_exists) {
+    const QString failure_reason = !process_ok
+      ? exporter_process.errorString()
+      : (output_exists ? QString("freshness script exited nonzero") : QString("freshness script did not create the expected output file"));
+    const QString message = QString(
+      "Web 3D scene export failed; viewer not opened with stale generated artifacts.\n\n"
+      "Reason: %1\n"
+      "Exit code: %2\n"
+      "Command: %3\n"
+      "Scene: %4\n"
+      "Output: %5\n\n"
+      "stdout:\n%6\n\n"
+      "stderr:\n%7")
+      .arg(failure_reason)
       .arg(rc)
-      .arg(QString::fromStdString(exporter_script.string()), QString::fromStdString(scene_dir.string()), QString::fromStdString(output_path.string()));
+      .arg(command_text, QString::fromStdString(scene_dir.string()), QString::fromStdString(output_path.string()),
+        stdout_text.trimmed().isEmpty() ? QString("<empty>") : stdout_text,
+        stderr_text.trimmed().isEmpty() ? QString("<empty>") : stderr_text);
     append_error(message.toStdString());
     QMessageBox::critical(this, "Open Web 3D Viewer", message);
     return;
