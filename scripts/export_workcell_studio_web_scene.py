@@ -938,6 +938,7 @@ def _populate_visual_bounds_item_fields(payload: Json) -> None:
     for section, item in _all_scene_items(payload):
         if not _is_mesh_item(item):
             continue
+        had_explicit_expected_dimensions = _finite_num3(item.get("expected_dimensions_m")) is not None
         local = _item_local_bounds(item)
         if local is not None:
             item["expected_dimensions_m"] = _bounds_dimensions(_scaled_bounds(local, item))
@@ -952,7 +953,12 @@ def _populate_visual_bounds_item_fields(payload: Json) -> None:
         item.setdefault("mesh_load_required", category in {"robot_link", "gripper", "table", "camera", "object"})
         # Unit autoscale is a browser-side asset convenience only.  Generated URDF
         # previews and robot links must keep authored units exactly as exported.
-        item["allow_mesh_unit_autoscale"] = bool(item.get("source_kind") != "generated_preview" and category not in {"robot_link", "zone"})
+        item["allow_mesh_unit_autoscale"] = bool(
+            had_explicit_expected_dimensions
+            and item.get("source_kind") != "generated_preview"
+            and section in {"assets", "sensors"}
+            and category in {"table", "camera", "object"}
+        )
 
 
 def _visual_bounds_contract(payload: Json, data: Mapping[str, Any]) -> Json:
