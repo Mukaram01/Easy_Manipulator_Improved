@@ -229,23 +229,69 @@ function validateRenderableTransform(item) {
   }
   return { valid: true, pose, scale, reason: '' };
 }
+function truthyFlag(value) { return value === true || String(value).toLowerCase() === 'true'; }
 function itemRequiresMeshBackedVisual(item) {
-  const explicit = item?.requires_mesh || item?.mesh_required || item?.required_mesh || item?.mesh_backed_required || item?.requires_mesh_backed_visual;
-  if (explicit === true || String(explicit).toLowerCase() === 'true') return true;
+  const explicit = item?.mesh_load_required || item?.requires_mesh || item?.mesh_required || item?.required_mesh || item?.mesh_backed_required || item?.requires_mesh_backed_visual;
+  if (truthyFlag(explicit)) return true;
   const source = String(item?.source_kind || item?.source_layer || item?.active_visual_source || '').toLowerCase();
   const role = String(item?.role || item?.category || item?.type || '').toLowerCase();
   const hasMeshContract = Boolean(displayMeshUri(item) || item?.original_mesh_uri || item?.mesh_path || item?.source_path || item?.package_uri);
   return hasMeshContract && (source.includes('generated') || role.includes('robot') || role.includes('tool') || role.includes('gripper'));
 }
-function warnRequiredMeshFallback(item, meshUri, reason) {
+function warnRequiredMeshFallback(item, meshUri, reason, extra = {}) {
   const transform = transformOf(item);
-  appendViewerDiagnosticWarning(item, 'required_mesh_primitive_fallback', reason || 'required mesh-backed item is using primitive fallback', {
-    mesh_uri: meshUri || displayMeshUri(item),
+  const itemId = item?.id || itemLabel(item || {});
+  const url = meshUri || displayMeshUri(item);
+  appendViewerDiagnosticWarning(item, 'required_mesh_failed', `Required mesh failed: ${itemId} ${url}`, {
+    mesh_uri: url,
     original_mesh_uri: item?.original_mesh_uri || item?.package_uri || item?.source_path || item?.mesh_path || '',
     final_pose: transform.pose,
     final_scale: transform.scale,
     raw_pose_fields: rawPoseDiagnostics(item),
-    fallback_or_skip_reason: reason || 'primitive fallback used for a required mesh-backed item',
+    fallback_or_skip_reason: reason || 'required mesh failed; normal primitive fallback suppressed',
+    mesh_load_error: reason || '',
+    message: `Required mesh failed: ${itemId} ${url}`,
+    ...extra,
+  });
+}
+
+
+function trackMeshLoadAttempt(item, status, meshUrl, error = '') {
+  item.mesh_load_required = truthyFlag(item?.mesh_load_required) || itemRequiresMeshBackedVisual(item);
+  item.mesh_load_url = meshUrl || displayMeshUri(item);
+  item.mesh_load_status = status;
+  if (error) item.mesh_load_error = error;
+}
+function logRequiredMeshFailure(item, meshUrl, error) {
+  if (!itemRequiresMeshBackedVisual(item)) return;
+  // Required mesh failures must be visible in browser diagnostics with the exact URL attempted.
+  console.error('Required mesh failed:', item?.id || itemLabel(item || {}), meshUrl || displayMeshUri(item), error || 'mesh load failed');
+}
+function failedMeshDebugMaterial() {
+  return new THREE.MeshBasicMaterial({
+    color: 0xff2bd6,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.82,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+}
+function failedMeshDebugEdgeMaterial() {
+  return new THREE.LineBasicMaterial({ color: 0xff2bd6, transparent: true, opacity: 1 });
+}
+function styleFailedMeshDebugFallback(fallback, item, reason) {
+  fallback.visible = true;
+  fallback.name = `${item.id || itemLabel(item)}_FAILED_REQUIRED_MESH_DEBUG_FALLBACK`;
+  fallback.traverse?.(child => {
+    if (child.isMesh) child.material = failedMeshDebugMaterial();
+    else if (child.isLine || child.isLineSegments) child.material = failedMeshDebugEdgeMaterial();
+    child.userData.render_status = 'required_mesh_failed_debug_fallback';
+    child.userData.renderInfo = {
+      render_status: 'required_mesh_failed_debug_fallback',
+      mesh_uri: displayMeshUri(item),
+      fallback_reason: reason || 'required mesh failed; debug fallback is not product geometry',
+    };
   });
 }
 
@@ -556,9 +602,17 @@ async function tryLoadMesh(item, rendered, fallback) {
   const requestedUri = displayMeshUri(item);
   item.mesh_status = uri ? 'loading' : diagnostic.status;
   if (!uri) {
-    setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', requestedUri, diagnostic.reason);
-    if (requestedUri) appendRuntimeWarning(item, requestedUri, diagnostic.reason);
-    if (itemRequiresMeshBackedVisual(item)) warnRequiredMeshFallback(item, requestedUri, diagnostic.reason);
+    const required = itemRequiresMeshBackedVisual(item);
+    trackMeshLoadAttempt(item, diagnostic.status, requestedUri, diagnostic.reason);
+    if (required) {
+      logRequiredMeshFailure(item, requestedUri, diagnostic.reason);
+      styleFailedMeshDebugFallback(fallback, item, diagnostic.reason);
+      setRenderInfo(rendered, 'required_mesh_failed_debug_fallback', requestedUri, diagnostic.reason);
+      warnRequiredMeshFallback(item, requestedUri, diagnostic.reason, { mesh_url: requestedUri, mesh_status: diagnostic.status });
+    } else {
+      setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', requestedUri, diagnostic.reason);
+      if (requestedUri) appendRuntimeWarning(item, requestedUri, diagnostic.reason);
+    }
     refreshMeshLoadUi(rendered);
     return;
   }
@@ -567,12 +621,20 @@ async function tryLoadMesh(item, rendered, fallback) {
   const loadUrl = repoRootRelativeUrl(uri);
   const preflight = await preflightMeshUrl(uri, loadUrl);
   if (!preflight.ok) {
-    fallback.visible = true;
+    const required = itemRequiresMeshBackedVisual(item);
     item.mesh_status = preflight.status || 'url_not_served';
     item.mesh_load_error = `${preflight.reason}; url=${preflight.url || loadUrl}`;
-    setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', uri, item.mesh_load_error);
-    appendRuntimeWarning(item, uri, item.mesh_load_error, preflight.code || 'mesh_url_not_served', { mesh_url: preflight.url || loadUrl, http_status: preflight.http_status || null });
-    if (itemRequiresMeshBackedVisual(item)) warnRequiredMeshFallback(item, uri, item.mesh_load_error);
+    trackMeshLoadAttempt(item, item.mesh_status, preflight.url || loadUrl, item.mesh_load_error);
+    if (required) {
+      logRequiredMeshFailure(item, preflight.url || loadUrl, item.mesh_load_error);
+      styleFailedMeshDebugFallback(fallback, item, item.mesh_load_error);
+      setRenderInfo(rendered, 'required_mesh_failed_debug_fallback', uri, item.mesh_load_error);
+      warnRequiredMeshFallback(item, preflight.url || loadUrl, item.mesh_load_error, { mesh_url: preflight.url || loadUrl, http_status: preflight.http_status || null });
+    } else {
+      fallback.visible = true;
+      setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', uri, item.mesh_load_error);
+      appendRuntimeWarning(item, uri, item.mesh_load_error, preflight.code || 'mesh_url_not_served', { mesh_url: preflight.url || loadUrl, http_status: preflight.http_status || null });
+    }
     refreshMeshLoadUi(rendered);
     return;
   }
@@ -587,18 +649,27 @@ async function tryLoadMesh(item, rendered, fallback) {
     rendered.meshObject = meshObject;
     item.mesh_status = 'loaded';
     item.mesh_load_error = '';
+    trackMeshLoadAttempt(item, 'loaded', loadUrl, '');
     setRenderInfo(rendered, 'mesh_loaded', uri, '');
     const bounds = computeRenderedBounds();
     if (bounds) frameScene(bounds);
     refreshMeshLoadUi(rendered);
   } catch (err) {
-    fallback.visible = true;
+    const required = itemRequiresMeshBackedVisual(item);
     item.mesh_status = 'loader_failure';
     item.mesh_load_error = err?.message || String(err);
     const reason = `loader_failure: ${loaderName} failed for .${ext || 'unknown'} after fetchable URL ${loadUrl}: ${item.mesh_load_error}`;
-    setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', uri, reason);
-    appendRuntimeWarning(item, uri, reason, 'mesh_loader_failure', { extension: ext, loader: loaderName, mesh_url: loadUrl });
-    if (itemRequiresMeshBackedVisual(item)) warnRequiredMeshFallback(item, uri, reason);
+    trackMeshLoadAttempt(item, 'loader_failure', loadUrl, reason);
+    if (required) {
+      logRequiredMeshFailure(item, loadUrl, reason);
+      styleFailedMeshDebugFallback(fallback, item, reason);
+      setRenderInfo(rendered, 'required_mesh_failed_debug_fallback', uri, reason);
+      warnRequiredMeshFallback(item, loadUrl, reason, { extension: ext, loader: loaderName, mesh_url: loadUrl });
+    } else {
+      fallback.visible = true;
+      setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', uri, reason);
+      appendRuntimeWarning(item, uri, reason, 'mesh_loader_failure', { extension: ext, loader: loaderName, mesh_url: loadUrl });
+    }
     refreshMeshLoadUi(rendered);
   }
 }
@@ -743,8 +814,10 @@ function renderScene(items) {
     assignItemUserData(object3d, item);
     scene.add(object3d);
     const rendered = { item, object3d, fallback, labelEl: createLabelElement(item), originalTransform: transformOf(item) };
-    const fallbackStatus = primitive || isSensor(item) ? 'primitive_fallback' : 'box_fallback';
-    const fallbackReason = primitive || isSensor(item) ? 'primitive geometry rendered while mesh loads or is unavailable' : 'no primitive geometry or mesh was provided; using box fallback';
+    const requiredMesh = itemRequiresMeshBackedVisual(item);
+    const fallbackStatus = requiredMesh ? 'mesh_loading_required' : (primitive || isSensor(item) ? 'primitive_fallback' : 'box_fallback');
+    const fallbackReason = requiredMesh ? 'required mesh is loading; primitive fallback hidden unless mesh load fails as debug geometry' : (primitive || isSensor(item) ? 'primitive geometry rendered while mesh loads or is unavailable' : 'no primitive geometry or mesh was provided; using box fallback');
+    fallback.visible = !requiredMesh;
     setRenderInfo(rendered, fallbackStatus, displayMeshUri(item), fallbackReason);
     state.objects.push(rendered);
     tryLoadMesh(item, rendered, fallback);
@@ -1042,7 +1115,7 @@ function populateInspector(renderedOrItem) {
     'pose rpy': [pose.rpy.x, pose.rpy.y, pose.rpy.z].map(n => n.toFixed(3)).join(', '),
     scale: JSON.stringify(item.scale || item.mesh_scale || [1, 1, 1]), editable: String(Boolean(item.editable)), locked: String(Boolean(item.locked)),
     render_status: renderInfo.render_status, mesh_uri: renderInfo.mesh_uri || displayMeshUri(item), fallback_reason: renderInfo.fallback_reason,
-    mesh_status: item.mesh_status, mesh_load_error: item.mesh_load_error,
+    mesh_status: item.mesh_status, mesh_load_required: item.mesh_load_required, mesh_load_status: item.mesh_load_status, mesh_load_url: item.mesh_load_url, mesh_load_error: item.mesh_load_error,
     original_mesh_uri: item.original_mesh_uri, mesh_staging_status: item.mesh_staging_status,
     mesh_staged_path: item.mesh_staged_path, mesh_resolve_warning: item.mesh_resolve_warning,
     primitive: JSON.stringify(primitiveOf(item) || 'box fallback'),
