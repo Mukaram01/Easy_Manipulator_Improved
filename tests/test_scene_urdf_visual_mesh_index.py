@@ -147,8 +147,93 @@ def test_discover_package_map_prefers_repo_ur_description_mesh_assets(monkeypatc
     assert ur5_diag['source'] == 'repo_assets/ur_description'
     assert ur5_diag['mesh_files_found'] == 7
     assert ur5_diag['static_fallback_items_generated'] == 0
-    assert all(item['transform_status'] == 'static_mesh_resolved' for item in items)
+    assert all(item['transform_status'] == 'ur5_fk_fallback_resolved' for item in items)
     assert all(item['package_uri'].startswith('package://ur_description/meshes/ur5/visual/') for item in items)
+
+
+def _write_minimal_ur_description_visual_assets(tmp_path: Path) -> Path:
+    ur_pkg = tmp_path / 'repo_assets' / 'ur_description'
+    visual_dir = ur_pkg / 'meshes' / 'ur5' / 'visual'
+    visual_dir.mkdir(parents=True)
+    _write_package_xml(ur_pkg, 'ur_description')
+    for mesh_name in ['base', 'shoulder', 'upperarm', 'forearm', 'wrist1', 'wrist2', 'wrist3']:
+        (visual_dir / f'{mesh_name}.dae').write_text('<COLLADA/>\n', encoding='utf-8')
+    return ur_pkg
+
+
+def test_append_static_ur5_mesh_visuals_emits_fk_baked_mesh_rows_from_temp_ur_description_assets(tmp_path):
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    ur_pkg = _write_minimal_ur_description_visual_assets(tmp_path)
+    package_map = {'ur_description': ur_pkg}
+    items = []
+
+    added = mesh_index.append_static_ur5_mesh_visuals(items, package_map)
+
+    assert added == 7
+    assert len(items) == 7
+    assert all(item['baked_world_visual_transform_source'] == 'ur5_fk_fallback_link_world_times_visual_origin' for item in items)
+    assert all(item.get('transform_status') != 'legacy_static_fallback_resolved_ur5_mesh_pose' for item in items)
+    assert all(item.get('link_transform_status') != 'legacy_static_fallback_resolved_ur5_mesh_pose' for item in items)
+    assert all(item['mesh_uri'].startswith(mesh_index.UR5_VISUAL_MESH_URI_PREFIX) for item in items)
+    assert all(item['package_uri'].startswith(mesh_index.UR5_VISUAL_MESH_URI_PREFIX) for item in items)
+    assert any(item.get('parent_link') != 'world' for item in items)
+    assert {item.get('parent_link') for item in items} != {'world'}
+
+    rows_by_link = {item['link']: item for item in items}
+    for link in ['upper_arm_link', 'forearm_link', 'wrist_1_link', 'wrist_2_link', 'wrist_3_link']:
+        chain = rows_by_link[link].get('link_chain')
+        assert isinstance(chain, list), link
+        assert chain[-1] == link
+        assert 'base_link' in chain
+        assert link in chain
+
+    for item in items:
+        assert isinstance(item.get('baked_world_visual_matrix'), list)
+        assert len(item['baked_world_visual_matrix']) == 4
+        assert isinstance(item.get('baked_world_visual_quaternion'), dict)
+        assert set(item['baked_world_visual_quaternion']) == {'x', 'y', 'z', 'w'}
+        assert item['geometry_type'] == 'mesh'
+        assert item['mesh_available'] is True
+        assert item['primitive_fallback'] is False
+
+
+def test_append_static_ur5_mesh_visuals_all_zero_initial_joints_use_preview_home_pose(monkeypatch, tmp_path):
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    ur_pkg = _write_minimal_ur_description_visual_assets(tmp_path)
+    zero_initial_positions = tmp_path / 'initial_positions.yaml'
+    zero_initial_positions.write_text(
+        "initial_positions:\n"
+        "  shoulder_pan_joint: 0.0\n"
+        "  shoulder_lift_joint: 0.0\n"
+        "  elbow_joint: 0.0\n"
+        "  wrist_1_joint: 0.0\n"
+        "  wrist_2_joint: 0.0\n"
+        "  wrist_3_joint: 0.0\n",
+        encoding='utf-8',
+    )
+
+    original_read_ur5_initial_joint_positions = mesh_index.read_ur5_initial_joint_positions
+
+    def read_zero_initial_joint_positions():
+        return original_read_ur5_initial_joint_positions(zero_initial_positions)
+
+    monkeypatch.setattr(mesh_index, 'read_ur5_initial_joint_positions', read_zero_initial_joint_positions)
+
+    items = []
+    added = mesh_index.append_static_ur5_mesh_visuals(items, {'ur_description': ur_pkg})
+
+    assert added == 7
+    joint_values = {item['joint_name']: item['joint_value'] for item in items if item.get('joint_name')}
+    for joint_name, expected_value in mesh_index.UR5_PREVIEW_HOME_JOINT_POSE.items():
+        assert joint_values[joint_name] == expected_value
+    movable_items = [item for item in items if item.get('joint_type') != 'fixed']
+    assert movable_items
+    assert all(
+        item['joint_value_source'] == 'workcell_preview_home_pose_all_zero_initial_positions'
+        for item in movable_items
+    )
 
 
 def test_discover_package_map_resolves_referenced_packages_without_scanned_package_xml(monkeypatch, tmp_path):
