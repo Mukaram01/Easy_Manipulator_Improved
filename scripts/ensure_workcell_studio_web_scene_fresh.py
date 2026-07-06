@@ -5,6 +5,12 @@ The web scene consumed by browser/Product View flows depends on both scene-local
 source files and generator/configuration files.  This helper checks the expected
 outputs and refreshes them when missing, stale, or when the mesh-index extractor
 version changed.
+
+``generated/scene_visual_mesh_index.json`` is generated cache/build output for
+preview refresh, not canonical scene state, and should not be committed under
+``scenes/*/generated/``.  Web scene JSON exports should be written under
+``build/workcell_studio_web_scene/`` (or another ignored output location), while
+tracked YAML/xacro/URDF/layout inputs remain the source of truth.
 """
 
 from __future__ import annotations

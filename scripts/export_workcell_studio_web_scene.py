@@ -2,8 +2,16 @@
 """Export a dependency-light Workcell Studio scene description for web viewers.
 
 This exporter is intentionally read-only with respect to scene inputs. It only
-loads authoring/generated metadata files, normalizes the small subset needed by a
-browser preview, and writes one deterministic JSON document to --output.
+loads authoring metadata plus generated preview cache files, normalizes the small
+subset needed by a browser preview, and writes one deterministic JSON document to
+--output.
+
+``generated/scene_visual_mesh_index.json`` is treated as generated cache/build
+output that the GUI/Web refresh path can regenerate automatically; it is not a
+tracked source-of-truth scene file and should not be committed under
+``scenes/*/generated/``.  Write web scene JSON exports under
+``build/workcell_studio_web_scene/`` or another ignored output location, not as
+committed scene artifacts.
 """
 
 from __future__ import annotations

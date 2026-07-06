@@ -10,7 +10,7 @@ This document defines the non-optional stability contract for Workcell Builder S
    - Editability: editable (`editable=true`).
 
 2. `mesh_preview`
-   - Owns: mesh-backed visual preview loaded from `generated/scene_visual_mesh_index.json` when safe.
+   - Owns: mesh-backed visual preview loaded from `generated/scene_visual_mesh_index.json` when safe. This JSON file is generated cache/build output, not tracked source-of-truth, and must not be committed under `scenes/*/generated/`.
    - Must never own: authoring state unless explicitly mapped by user workflow.
    - Editability: selectable/inspectable, not authoring source.
 
@@ -34,6 +34,13 @@ This document defines the non-optional stability contract for Workcell Builder S
 - Authoring source-of-truth is `editable_layout` only.
 - `mesh_preview` and `locked_generated_urdf_visual` are preview layers and must not mutate layout YAML/environment YAML implicitly.
 - `overlay` is visual-only and cannot become data ownership.
+
+## Generated cache and web export placement
+
+- `generated/scene_visual_mesh_index.json` is generated cache/build output used by Scene3D/Web preview refresh, not canonical scene state.
+- Do not commit `generated/scene_visual_mesh_index.json` under `scenes/*/generated/`; the GUI/Web viewer refresh path regenerates it automatically when the file is missing, stale, or produced by an older extractor.
+- Source-of-truth scene state remains in tracked YAML, xacro, URDF, layout, task/config, and manifest inputs.
+- Web scene JSON exports should be written under `build/workcell_studio_web_scene/` or another ignored output location, never as committed scene artifacts under `scenes/*/generated/`.
 
 ## Fallback Rules
 
@@ -79,7 +86,6 @@ Additional invariants:
 - Editable layout items remain `editable=true`.
 - Primitive fallback cannot be deleted solely because mesh index exists.
 - If a higher-fidelity visual supersedes fallback rendering, diagnostics must retain fallback relationship metadata.
-
 
 ## Camera, FOV, and perception overlay contract
 

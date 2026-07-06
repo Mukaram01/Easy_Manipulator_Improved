@@ -30,7 +30,9 @@ Workcell Studio source-of-truth scene data remains in the existing authored and 
 - `layout/workcell_studio_layout.yaml` for Workcell Builder editor state where applicable;
 - `cell_definition.yaml` for the generated exchange model and canonical generated cell definition;
 - `scene_manifest.yaml` for scene package indexing and contract summaries; and
-- generated backend metadata such as visual mesh indexes, validation outputs, readiness metadata, and generated package metadata.
+- generated package artifacts such as validation outputs, readiness metadata, and package indexes.
+
+Generated cache/build artifacts are not source-of-truth. In particular, `generated/scene_visual_mesh_index.json` is a regenerated visual cache produced by the mesh-index extractor for Scene3D/Web preview flows. It should not be committed under `scenes/*/generated/`; the GUI/Web viewer refresh path regenerates it automatically when it is missing, stale, or produced by an older extractor. Source-of-truth scene files remain the tracked YAML, xacro, URDF, and layout inputs (`environment.yaml`, `layout/workcell_studio_layout.yaml`, `cell_definition.yaml`, `scene_manifest.yaml`, task/config YAML, and scene URDF/xacro files).
 
 The browser UI reads and writes scene state through the web scene contract. The contract is the browser-facing interchange layer, not the canonical owner of the full workcell model.
 
@@ -68,7 +70,7 @@ Generated scene files = regenerated from source-of-truth data.
 
 ## Exporter behavior
 
-The exporter should produce deterministic, browser-readable JSON from existing Workcell Studio scene inputs. Exported web scene output belongs under `build/` by default or under an explicit user-specified output path.
+The exporter should produce deterministic, browser-readable JSON from existing Workcell Studio scene inputs. Exported web scene output belongs under `build/workcell_studio_web_scene/` by default, or under another explicitly ignored output location. Do not write or commit web scene JSON exports under `scenes/*/generated/`; those exports are viewer/build products, not canonical scene state.
 
 Exporter behavior must remain side-effect-light:
 
@@ -112,7 +114,7 @@ python3 scripts/export_workcell_studio_web_scene.py \
   --stage-assets
 ```
 
-The exporter reads only optional scene inputs (`scene_manifest.yaml`, `cell_definition.yaml`, `environment.yaml`, `layout/workcell_studio_layout.yaml`, and `generated/scene_visual_mesh_index.json`) and writes one deterministic JSON file. The payload includes `inputs` presence metadata, per-item provenance, editability/lock state, ROS world Z-up units, and backend action descriptors that are requests for backend workflows rather than frontend-side execution hooks.
+The exporter reads only optional scene inputs (`scene_manifest.yaml`, `cell_definition.yaml`, `environment.yaml`, `layout/workcell_studio_layout.yaml`, and the regenerated cache `generated/scene_visual_mesh_index.json`) and writes one deterministic JSON file under the requested ignored output path. The payload includes `inputs` presence metadata, per-item provenance, editability/lock state, ROS world Z-up units, and backend action descriptors that are requests for backend workflows rather than frontend-side execution hooks.
 
 Browsers cannot load ROS `package://` URIs directly. When `--stage-assets` is used, the exporter resolves and copies supported meshes into `build/workcell_studio_web_scene/assets/<scene_id>/...`, rewrites each staged item's `mesh_uri` to a browser-safe relative URL, and preserves the ROS/source URI in `original_mesh_uri`. Serve the repository root with `python3 -m http.server 8765` and load `http://localhost:8765/workcell_studio_web/viewer/index.html`; then choose the exported `build/workcell_studio_web_scene/<scene_id>.web_scene.json`. For `ur5_2f_test`, the expected browser result is that robot, table/workbench, camera, and gripper/tool meshes are recognizable when the source meshes exist and use supported formats.
 
