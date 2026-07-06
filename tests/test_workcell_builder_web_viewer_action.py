@@ -17,19 +17,28 @@ def test_web_viewer_action_registered_and_wired_to_export_slot():
     assert "QDesktopServices::openUrl" in cpp
 
 
-def test_web_viewer_action_exports_to_build_not_scenes_or_generated():
+def test_web_viewer_action_exports_fresh_scene_to_build_before_opening_viewer():
     cpp = CPP.read_text(encoding="utf-8")
-    assert '"scripts" / "export_workcell_studio_web_scene.py"' in cpp
+    assert '"scripts" / "ensure_workcell_studio_web_scene_fresh.py"' in cpp
     assert 'repo_root / "build" / "workcell_studio_web_scene"' in cpp
     assert 'scene_id + ".web_scene.json"' in cpp
-    assert 'QProcess::execute("python3", args)' in cpp
     assert '"--scene", QString::fromStdString(scene_dir.string())' in cpp
     assert '"--output", QString::fromStdString(output_path.string())' in cpp
     assert '"--stage-assets"' in cpp
     assert 'repo_root / "workcell_studio_web" / "viewer" / "index.html"' in cpp
+    assert (
+        "Web 3D scene export failed; viewer not opened with stale generated artifacts."
+        in cpp
+    )
     assert "QProcess::startDetached" in cpp
     assert "python3 -m http.server 8765 --bind 127.0.0.1" in cpp
     assert "http://localhost:8765/workcell_studio_web/viewer/index.html?scene=" in cpp
+
+    export_success_index = cpp.index('append_success("Exported Web 3D scene JSON: "')
+    server_start_index = cpp.index("QProcess::startDetached", export_success_index)
+    browser_open_index = cpp.index("QDesktopServices::openUrl(QUrl(viewer_url))", export_success_index)
+    assert export_success_index < server_start_index
+    assert export_success_index < browser_open_index
 
 
 def test_user_facing_failures_and_local_server_fallback_are_present():
