@@ -61,6 +61,8 @@ function computeSceneSummary() {
     sceneName: sceneDisplayName(),
     renderableCount: rendered.length,
     meshLoadedCount: rendered.filter(obj => obj.renderInfo?.render_status === 'mesh_loaded').length,
+    meshVisuallyInvalidCount: rendered.filter(obj => obj.item?.visual_bounds_status && !['valid', 'corrected_by_local_unit_scale'].includes(obj.item.visual_bounds_status)).length,
+    meshUnitScaleCorrectedCount: rendered.filter(obj => obj.item?.visual_bounds_status === 'corrected_by_local_unit_scale').length,
     fallbackCount: rendered.filter(obj => isRuntimeFallbackStatus(obj.renderInfo?.render_status || obj.item?.renderInfo?.render_status)).length,
     meshFailedCount: rendered.filter(obj => isMissingOrFailedMeshStatus(obj.item?.mesh_status)).length,
     generatedLockedCount: rendered.filter(obj => isGeneratedOrLockedItem(obj.item)).length,
@@ -74,7 +76,7 @@ function renderSceneSummary() {
   const fields = {
     'scene-name': summary.sceneName,
     'renderable-count': summary.renderableCount,
-    'mesh-loaded-count': summary.meshLoadedCount,
+    'mesh-loaded-count': `${summary.meshLoadedCount}${summary.meshVisuallyInvalidCount ? ` (${summary.meshVisuallyInvalidCount} visually invalid)` : ''}${summary.meshUnitScaleCorrectedCount ? `, ${summary.meshUnitScaleCorrectedCount} unit-corrected` : ''}`,
     'fallback-count': summary.fallbackCount,
     'mesh-failed-count': summary.meshFailedCount,
     'generated-locked-count': summary.generatedLockedCount,
@@ -358,7 +360,12 @@ function refreshMeshLoadUi(rendered) {
 }
 function meshStatusLabel(rendered) {
   const status = rendered?.renderInfo?.render_status || rendered?.item?.renderInfo?.render_status || rendered?.item?.mesh_status || 'unknown';
-  if (status === 'mesh_loaded') return 'mesh loaded';
+  if (status === 'mesh_loaded') {
+    const boundsStatus = rendered?.item?.visual_bounds_status || '';
+    if (boundsStatus === 'corrected_by_local_unit_scale') return 'mesh loaded (unit scale corrected)';
+    if (boundsStatus && boundsStatus !== 'valid') return 'mesh loaded (visually invalid)';
+    return 'mesh loaded';
+  }
   if (isRuntimeFallbackStatus(status)) return 'fallback';
   if (isMissingOrFailedMeshStatus(rendered?.item?.mesh_status)) return 'mesh error';
   return String(status || 'unknown').replace(/_/g, ' ');
@@ -696,6 +703,8 @@ async function tryLoadMesh(item, rendered, fallback) {
     else loaded = await new OBJLoader().loadAsync(loadUrl);
     const meshObject = materializeLoadedMesh(item, uri, loaded);
     applyMeshLocalTransform(meshObject, item);
+    meshObject.updateMatrixWorld(true);
+    const nativeBounds = new THREE.Box3().setFromObject(meshObject);
     fallback.visible = false;
     rendered.object3d.add(meshObject);
     rendered.meshObject = meshObject;
@@ -703,6 +712,7 @@ async function tryLoadMesh(item, rendered, fallback) {
     item.mesh_load_error = '';
     trackMeshLoadAttempt(item, 'loaded', loadUrl, '');
     setRenderInfo(rendered, 'mesh_loaded', uri, '');
+    diagnoseLoadedMeshBounds(item, meshObject, rendered, nativeBounds);
     const bounds = computeRenderedBounds();
     if (bounds) frameScene(bounds);
     refreshMeshLoadUi(rendered);
@@ -803,7 +813,128 @@ function computeRenderedBounds() {
     rendered.object3d.updateWorldMatrix(true, true);
     bounds.expandByObject(rendered.object3d);
   }
-  return bounds.isEmpty() ? null : bounds;
+  const finiteBounds = finiteBox3(bounds);
+  if (finiteBounds) maybeWarnSceneBoundsExceedWorkspace(finiteBounds);
+  return finiteBounds;
+}
+function box3ToJson(box) {
+  if (!box || box.isEmpty() || !finiteBox3(box)) return null;
+  const size = box3Dimensions(box);
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  return {
+    min: { x: box.min.x, y: box.min.y, z: box.min.z },
+    max: { x: box.max.x, y: box.max.y, z: box.max.z },
+    center: { x: center.x, y: center.y, z: center.z },
+    dimensions: { x: size.x, y: size.y, z: size.z },
+  };
+}
+function box3Dimensions(box) {
+  const size = new THREE.Vector3();
+  if (box && !box.isEmpty()) box.getSize(size);
+  return size;
+}
+function finiteBox3(box) {
+  if (!box || box.isEmpty()) return null;
+  const values = [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z];
+  if (!values.every(Number.isFinite)) return null;
+  return box;
+}
+function dimensionsVectorFrom(value) {
+  if (!value) return null;
+  let raw = value;
+  if (!Array.isArray(raw) && typeof raw === 'object') raw = raw.dimensions || raw.size || raw.extents || [raw.x || raw.width, raw.y || raw.depth, raw.z || raw.height];
+  if (!Array.isArray(raw)) return null;
+  const dims = raw.slice(0, 3).map(Number);
+  return dims.every(n => Number.isFinite(n) && n > 0) ? new THREE.Vector3(dims[0], dims[1], dims[2]) : null;
+}
+function expectedDimensionsOf(item) {
+  return dimensionsVectorFrom(item?.expected_dimensions_m || item?.expected_dimensions || item?.dimensions_m || primitiveOf(item));
+}
+function meshContractCategoryOf(item) {
+  const identity = [
+    item?.source_layer,
+    item?.active_visual_source,
+    item?.role,
+    item?.category,
+    item?.type,
+    item?.id,
+    itemLabel(item || {}),
+  ].map(value => String(value || '').toLowerCase()).join(' ');
+  if (/\b(table|workbench|bench)\b/.test(identity)) return 'table';
+  if (/\b(camera|sensor|realsense|rgbd|vision)\b/.test(identity)) return 'camera';
+  if (/\b(object|part|product|item)\b/.test(identity)) return 'object';
+  if (/\b(robot|arm|manipulator|ur3|ur5|ur10)\b/.test(identity)) return 'robot';
+  if (/\b(tool|gripper|eef|suction|robotiq|airpick)\b/.test(identity)) return 'tool';
+  if (/\b(zone|overlay|helper|diagnostic|fov|bounds|reachability|collision)\b/.test(identity)) return 'helper';
+  return 'core';
+}
+function isCoreMeshContractItem(item) {
+  return !['helper'].includes(meshContractCategoryOf(item)) && !isZone(item);
+}
+function warnLoadedMeshBounds(item, code, reason, extra = {}) {
+  item.visual_bounds_status = code === 'loaded_mesh_oversized' ? 'oversized' : code === 'loaded_mesh_collapsed' ? 'collapsed' : 'invalid';
+  appendViewerDiagnosticWarning(item, code, reason, {
+    mesh_uri: displayMeshUri(item),
+    loaded_mesh_bounds: item.loaded_mesh_bounds,
+    loaded_mesh_world_bounds: item.loaded_mesh_world_bounds,
+    expected_dimensions_m: item.expected_dimensions_m,
+    mesh_contract_category: meshContractCategoryOf(item),
+    ...extra,
+  });
+}
+function diagnoseLoadedMeshBounds(item, meshObject, rendered, nativeBounds = null) {
+  const localBounds = finiteBox3(nativeBounds || new THREE.Box3().setFromObject(meshObject));
+  rendered.object3d.updateWorldMatrix(true, true);
+  const worldBounds = finiteBox3(new THREE.Box3().setFromObject(meshObject));
+  item.loaded_mesh_bounds = box3ToJson(localBounds);
+  item.loaded_mesh_world_bounds = box3ToJson(worldBounds);
+  item.visual_bounds_status = 'valid';
+  const expected = expectedDimensionsOf(item);
+  const dims = localBounds ? box3Dimensions(localBounds) : null;
+  const worldDims = worldBounds ? box3Dimensions(worldBounds) : null;
+  const tiny = 1e-9;
+  if (!localBounds || !worldBounds || !dims || !worldDims) {
+    if (isCoreMeshContractItem(item)) warnLoadedMeshBounds(item, 'loaded_mesh_bounds_invalid', 'loaded mesh produced empty or non-finite bounds');
+    return;
+  }
+  const collapsedAxes = ['x', 'y', 'z'].filter(axis => dims[axis] <= tiny || worldDims[axis] <= tiny);
+  if (collapsedAxes.length) {
+    if (isCoreMeshContractItem(item)) warnLoadedMeshBounds(item, 'loaded_mesh_collapsed', `loaded mesh bounds are zero-volume or collapsed on ${collapsedAxes.join(', ')}`, { collapsed_axes: collapsedAxes });
+    return;
+  }
+  if (!expected) return;
+  const axes = ['x', 'y', 'z'];
+  const axisRatios = Object.fromEntries(axes.map(axis => [axis, dims[axis] / expected[axis]]));
+  const maxRatio = Math.max(...Object.values(axisRatios));
+  const minRatio = Math.min(...Object.values(axisRatios));
+  const uniformRatio = minRatio > 0 ? maxRatio / minRatio : Infinity;
+  const category = meshContractCategoryOf(item);
+  if (maxRatio > 3 || uniformRatio > 3) {
+    if (['table', 'camera', 'object'].includes(category)) warnLoadedMeshBounds(item, 'loaded_mesh_oversized', `loaded mesh dimensions exceed expected_dimensions_m by more than 3x (max_axis_ratio=${maxRatio.toFixed(3)}, uniform_ratio=${uniformRatio.toFixed(3)})`, {
+      expected_dimensions: { x: expected.x, y: expected.y, z: expected.z },
+      loaded_dimensions: { x: dims.x, y: dims.y, z: dims.z },
+      axis_ratios: axisRatios,
+      max_axis_ratio: maxRatio,
+      uniform_ratio: uniformRatio,
+    });
+    else if (Math.abs(maxRatio - 1000) < 100 || Math.abs(maxRatio - 0.001) < 0.001) item.visual_bounds_status = 'corrected_by_local_unit_scale';
+  }
+}
+function workspaceDimensionsOf(sceneJson) {
+  return dimensionsVectorFrom(sceneJson?.workspace?.dimensions_m || sceneJson?.workspace?.size_m || sceneJson?.workspace_dimensions_m || sceneJson?.scene?.workspace_dimensions_m);
+}
+function maybeWarnSceneBoundsExceedWorkspace(bounds) {
+  const workspace = workspaceDimensionsOf(state.sceneJson);
+  if (!workspace || state._sceneBoundsExceededWarned) return;
+  const dims = box3Dimensions(bounds);
+  if (dims.x > workspace.x || dims.y > workspace.y || dims.z > workspace.z) {
+    state._sceneBoundsExceededWarned = true;
+    appendViewerDiagnosticWarning({ id: sceneId(), label: sceneDisplayName() }, 'scene_bounds_exceed_workspace', 'rendered scene bounds exceed configured workspace dimensions', {
+      scene_bounds: box3ToJson(bounds),
+      workspace_dimensions_m: { x: workspace.x, y: workspace.y, z: workspace.z },
+    });
+  }
 }
 function frameScene(bounds) {
   const { camera, controls } = state.three;
@@ -844,6 +975,7 @@ function clearSceneObjects() {
   clearLabels();
   state.objects = [];
   state.lastFrameBounds = null;
+  state._sceneBoundsExceededWarned = false;
   if (el.resetView) el.resetView.disabled = true;
   renderSceneSummary();
 }
