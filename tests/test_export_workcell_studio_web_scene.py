@@ -23,14 +23,14 @@ def test_export_web_scene_contract_and_determinism(tmp_path):
     )
     (scene / "environment.yaml").write_text(
         yaml.safe_dump(
-            {"environment": {"assets": [{"id": "bin", "type": "target_bin", "pose_xyz": [1, 2, 3]}]}},
+            {"environment": {"assets": [{"id": "bin", "type": "target_bin", "pose_xyz": [1, 2, 3]}], "sensors": [{"id": "realsense_camera", "role": "camera", "category": "camera", "dimensions": [0.08, 0.08, 0.06], "pose_xyz": [0.4, 0.0, 0.8], "mesh_uri": "meshes/realsense.stl"}]}},
             sort_keys=False,
         ),
         encoding="utf-8",
     )
     (scene / "layout/workcell_studio_layout.yaml").write_text(
         yaml.safe_dump(
-            {"schema_version": "workcell_studio_layout/v1", "items": [{"id": "table", "role": "support_surface", "mesh_path": str(scene / "meshes/table.stl")}]},
+            {"schema_version": "workcell_studio_layout/v1", "items": [{"id": "table", "role": "support_surface", "dimensions": [1.2, 0.8, 0.08], "mesh_path": str(scene / "meshes/table.stl")}]},
             sort_keys=False,
         ),
         encoding="utf-8",
@@ -77,6 +77,27 @@ def test_export_web_scene_contract_and_determinism(tmp_path):
     assert table["locked"] is False
     assert table["editable"] is True
     assert table["mesh_path"] == "meshes/table.stl"
+    assert table["expected_dimensions_m"] == [1.2, 0.8, 0.08]
+    assert table["mesh_contract_category"] == "table"
+    camera = next(item for item in payload["sensors"] if item["id"] == "realsense_camera")
+    assert camera["expected_dimensions_m"] == [0.08, 0.08, 0.06]
+    assert camera["mesh_contract_category"] == "camera"
+    mesh_backed_items = [
+        item
+        for section in ("robots", "tools", "assets", "sensors", "zones")
+        for item in payload[section]
+        if item.get("mesh_uri") or item.get("mesh_path") or item.get("package_uri") or item.get("mesh_url")
+    ]
+    assert mesh_backed_items
+    assert all(item.get("mesh_contract_category") for item in mesh_backed_items)
+    robot_or_generated_link_items = [
+        item
+        for section in ("robots", "tools")
+        for item in payload[section]
+        if item.get("source_kind") == "generated_preview" or item.get("link") or item.get("category") == "robot"
+    ]
+    assert robot_or_generated_link_items
+    assert all(item.get("allow_mesh_unit_autoscale") is not True for item in robot_or_generated_link_items)
     assert payload["robots"][-1]["mesh_path"] == "meshes/robot.dae"
     assert payload["robots"][-1]["final_transform"] == {"xyz": [1.1, 2.2, 3.3], "rpy": [0.1, 0.2, 1.87]}
     assert payload["robots"][-1]["world_from_visual"] == payload["robots"][-1]["final_transform"]
@@ -86,7 +107,8 @@ def test_export_web_scene_contract_and_determinism(tmp_path):
     assert payload["robots"][-1]["mesh_scale"] == [1, 1, 1]
     assert payload["robots"][-1]["baked_world_visual_matrix"] == [[1, 0, 0, 1.1], [0, 1, 0, 2.2], [0, 0, 1, 3.3], [0, 0, 0, 1]]
     assert payload["robots"][-1]["baked_world_visual_quaternion"] == [0, 0, 0, 1]
-    assert payload["sensors"][-1]["package_uri"] == "package://camera/mesh.dae"
+    camera_mesh = next(item for item in payload["sensors"] if item["id"] == "camera_mesh")
+    assert camera_mesh["package_uri"] == "package://camera/mesh.dae"
     assert payload["robots"][-1]["provenance"]["mesh_path"] == "generated/scene_visual_mesh_index.json"
     assert payload["robots"][-1]["provenance"]["final_transform"] == "generated/scene_visual_mesh_index.json"
 

@@ -236,3 +236,49 @@ def test_viewer_mesh_preflight_surfaces_distinct_failure_reasons():
     assert try_load_body.index("await preflightMeshUrl") < try_load_body.index("new STLLoader().loadAsync")
     assert "item.mesh_status = preflight.status || 'url_not_served'" in try_load_body
     assert "item.mesh_status = 'loader_failure'" in try_load_body
+
+
+def test_viewer_local_mesh_transform_is_applied_to_mesh_object_not_parent_pose():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    for token in [
+        "mesh_local_transform",
+        "visual_local_transform",
+        "function applyMeshLocalTransform",
+        "applyMeshLocalTransform(meshObject, item)",
+    ]:
+        assert token in js
+
+    local_transform_body = js.split("function applyMeshLocalTransform", 1)[1].split("async function tryLoadMesh", 1)[0]
+    assert "meshObject" in local_transform_body
+    assert ".position" in local_transform_body
+    assert ".rotation" in local_transform_body
+    assert ".scale" in local_transform_body
+
+    apply_pose_body = js.split("function applyPose", 1)[1].split("function assignItemUserData", 1)[0]
+    assert "mesh_local_transform" not in apply_pose_body
+    assert "visual_local_transform" not in apply_pose_body
+    assert "applyMeshLocalTransform" not in apply_pose_body
+
+
+def test_viewer_visual_bounds_diagnostics_and_fit_bounds_contract_are_source_guarded():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    for token in [
+        "loaded_mesh_oversized",
+        "loaded_mesh_bounds_invalid",
+        "required_mesh_failed_debug_fallback",
+        "mesh_unit_correction",
+        "auto_detected_mm_to_m",
+        "auto_detected_cm_to_m",
+    ]:
+        assert token in js
+
+    fit_bounds_body = js.split("function computeFitBounds", 1)[1].split("function computeRenderedBounds", 1)[0]
+    assert "required_mesh_failed_debug_fallback" in fit_bounds_body
+    assert "includeDebugFallbacks" in fit_bounds_body
+    assert "continue" in fit_bounds_body
+    assert "excluded from normal camera fit bounds" in fit_bounds_body
+
+    unit_autoscale_body = js.split("function maybeApplyMeshUnitAutoscale", 1)[1].split("function isCoreMeshContractItem", 1)[0]
+    assert "mesh_unit_correction" in unit_autoscale_body
+    assert "auto_detected_mm_to_m" in unit_autoscale_body
+    assert "auto_detected_cm_to_m" in unit_autoscale_body

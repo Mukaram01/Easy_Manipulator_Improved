@@ -1033,7 +1033,8 @@ function maybeApplyMeshUnitAutoscale(item, meshObject, nativeBounds, meshUri) {
   meshObject.scale.multiplyScalar(scale);
   meshObject.updateMatrixWorld(true);
   const correctedBounds = finiteBox3(new THREE.Box3().setFromObject(meshObject));
-  item.mesh_unit_correction = meshUnitCorrectionPayload('viewer_expected_dimensions_m', 'clear_uniform_ratio', finiteNative, correctedBounds, scale, axisRatios, targetRatio);
+  const confidence = targetRatio === 1000 ? 'auto_detected_mm_to_m' : 'auto_detected_cm_to_m';
+  item.mesh_unit_correction = meshUnitCorrectionPayload('viewer_expected_dimensions_m', confidence, finiteNative, correctedBounds, scale, axisRatios, targetRatio);
   item.visual_bounds_status = 'corrected_by_local_unit_scale';
   appendRuntimeWarning(item, meshUri, `mesh unit autoscale applied: native bounds matched a clear ${targetRatio}x ratio to expected_dimensions_m`, 'mesh_unit_autoscale_applied', item.mesh_unit_correction);
   return true;
