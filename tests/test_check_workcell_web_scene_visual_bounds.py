@@ -125,6 +125,26 @@ def test_checker_rejects_missing_dimensions_mesh_contract_and_robot_autoscale():
     assert any("contains mesh_unit_correction" in error for error in errors)
 
 
+def test_checker_does_not_treat_helper_zone_label_as_physical_table():
+    payload = _valid_payload()
+    payload["zones"].append(
+        {
+            "id": "safety_zone_keepout",
+            "display_name": "Robot/Table Keepout Boundary",
+            "role": "keepout",
+            "category": "safety_zone",
+            "dimensions": [1.6, 1.2, 0.02],
+        }
+    )
+
+    summary, errors = checker.check(payload)
+
+    assert errors == []
+    assert summary["contract_status"] == "passed"
+    assert summary["table_item_count"] == 1
+    assert summary["core_mesh_item_count"] == 3
+
+
 def test_checker_cli_returns_json_summary_and_nonzero_for_violations(tmp_path):
     web_scene = tmp_path / "scene.web_scene.json"
     payload = _valid_payload()

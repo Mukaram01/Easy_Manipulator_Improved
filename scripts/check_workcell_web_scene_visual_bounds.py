@@ -32,6 +32,15 @@ DIMENSION_KEYS = (
     "scale_m",
 )
 PASS_STATUSES = {"pass", "passed"}
+HELPER_ZONE_CATEGORIES = {
+    "overlay",
+    "helper",
+    "diagnostic",
+    "safety_zone",
+    "pick_zone",
+    "place_zone",
+    "work_surface",
+}
 
 
 def _load_json(path: Path) -> Json:
@@ -75,6 +84,9 @@ def _category(section: str, item: Mapping[str, Any]) -> str:
     raw = item.get("mesh_contract_category") or item.get("core_mesh_category")
     if isinstance(raw, str) and raw.strip():
         return raw.strip().lower()
+    explicit_category = str(item.get("category") or "").strip().lower()
+    if section == "zones" or explicit_category in HELPER_ZONE_CATEGORIES:
+        return explicit_category or str(item.get("role") or "zone").lower()
     text = _text_for(item, "id", "name", "display_name", "role", "category", "source_layer", "active_visual_source")
     if section == "robots" or "robot" in text or "ur5" in text or "ur10" in text or "ur3" in text:
         return "robot_link"
@@ -84,14 +96,18 @@ def _category(section: str, item: Mapping[str, Any]) -> str:
         return "camera"
     if "table" in text or "workbench" in text or "support_surface" in text:
         return "table"
-    return str(item.get("category") or item.get("role") or "object").lower()
+    return explicit_category or str(item.get("role") or "object").lower()
 
 
 def _is_table(item: Mapping[str, Any], section: str) -> bool:
+    if section == "zones" or str(item.get("category", "")).strip().lower() in HELPER_ZONE_CATEGORIES:
+        return False
     return _category(section, item) == "table" or "table" in _text_for(item, "id", "name", "display_name", "role", "category") or "workbench" in _text_for(item, "id", "name", "display_name", "role", "category")
 
 
 def _is_camera(item: Mapping[str, Any], section: str) -> bool:
+    if section == "zones" or str(item.get("category", "")).strip().lower() in HELPER_ZONE_CATEGORIES:
+        return False
     text = _text_for(item, "id", "name", "display_name", "role", "category", "model")
     return _category(section, item) == "camera" or "camera" in text or "realsense" in text or "real sense" in text
 
@@ -176,7 +192,8 @@ def check(payload: Mapping[str, Any]) -> tuple[Json, list[str]]:
             if "expected_dimensions_m" not in item:
                 errors.append(f"{label} is a camera/Realsense item but lacks expected_dimensions_m")
 
-        is_core_mesh = item.get("mesh_load_required") is True or category in CORE_MESH_CATEGORIES or bool(item.get("mesh_url") or item.get("mesh_uri") or item.get("mesh_staged_path"))
+        has_mesh_reference = bool(item.get("mesh_url") or item.get("mesh_uri") or item.get("mesh_staged_path"))
+        is_core_mesh = item.get("mesh_load_required") is True or category in CORE_MESH_CATEGORIES or has_mesh_reference
         if is_core_mesh:
             core_mesh_items += 1
             if not isinstance(item.get("mesh_contract_category"), str) or not item.get("mesh_contract_category", "").strip():

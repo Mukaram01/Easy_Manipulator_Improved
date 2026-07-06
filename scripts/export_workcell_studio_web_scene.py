@@ -852,14 +852,17 @@ def _core_mesh_category(item: Mapping[str, Any], section: str) -> Optional[str]:
     text = _identity_text(item)
     role = str(item.get("role", "")).lower()
     category = str(item.get("category", "")).lower()
-    if section == "robots" or role == "robot" or category in {"robot", "robot_static_mesh_visual"} or _robot_family_from_item(item):
-        return "robot_arm_link"
-    if section == "tools" or category in {"tool", "gripper", "end_effector"} or role in {"tool", "gripper", "end_effector"} or any(token in text for token in ("gripper", "robotiq", "suction", "end_effector")):
-        return "gripper_link"
+    # Generated URDF preview items can include table/camera links in the same
+    # visual index as robot links.  Classify explicit physical fixtures before
+    # robot-family heuristics so support assets do not inherit robot metadata.
     if section == "sensors" or any(token in text for token in ("camera", "realsense")):
         return "camera_realsense"
     if any(token in text for token in ("table", "workbench", "support_surface")):
         return "table_workbench"
+    if section == "robots" or role == "robot" or category in {"robot", "robot_static_mesh_visual"} or _robot_family_from_item(item):
+        return "robot_arm_link"
+    if section == "tools" or category in {"tool", "gripper", "end_effector"} or role in {"tool", "gripper", "end_effector"} or any(token in text for token in ("gripper", "robotiq", "suction", "end_effector")):
+        return "gripper_link"
     if section == "assets" and _has_supported_mesh_reference(item):
         return "authored_asset_object"
     return None
@@ -894,14 +897,14 @@ def _visual_contract_category(item: Mapping[str, Any], section: str) -> str:
     category = str(item.get("category", "")).lower()
     if section == "zones" or _is_helper(item):
         return "zone"
-    if section == "robots" or role == "robot" or category in {"robot", "robot_static_mesh_visual"} or _robot_family_from_item(item):
-        return "robot_link"
-    if section == "tools" or category in {"tool", "gripper", "end_effector"} or role in {"tool", "gripper", "end_effector"} or any(token in text for token in ("gripper", "robotiq", "suction", "end_effector")):
-        return "gripper"
     if section == "sensors" or any(token in text for token in ("camera", "realsense")):
         return "camera"
     if any(token in text for token in ("table", "workbench", "support_surface")):
         return "table"
+    if section == "robots" or role == "robot" or category in {"robot", "robot_static_mesh_visual"} or _robot_family_from_item(item):
+        return "robot_link"
+    if section == "tools" or category in {"tool", "gripper", "end_effector"} or role in {"tool", "gripper", "end_effector"} or any(token in text for token in ("gripper", "robotiq", "suction", "end_effector")):
+        return "gripper"
     return "object"
 
 
@@ -934,7 +937,37 @@ def _item_visual_bounds(item: Mapping[str, Any]) -> Optional[Tuple[List[float], 
     return list(xyz), list(xyz), "pose"
 
 
-def _populate_visual_bounds_item_fields(payload: Json) -> None:
+def _authored_physical_dimension_defaults(data: Mapping[str, Any]) -> Dict[str, List[float]]:
+    """Return scene-authored dimensions for generated physical fixture meshes.
+
+    The visual mesh index can contain URDF-flattened table/camera mesh rows without
+    repeating the authoring dimensions.  Preserve the mesh-backed generated preview
+    while carrying over source-of-truth fixture dimensions from environment data so
+    the browser preflight can distinguish normal fixtures from bad camera-framing
+    bounds.
+    """
+    defaults: Dict[str, List[float]] = {}
+    env = _as_map(data.get("environment"))
+    env_root = _as_map(env.get("environment"))
+    for raw in _as_list(env_root.get("support_surfaces")) + _as_list(env.get("support_surfaces")):
+        if not isinstance(raw, Mapping):
+            continue
+        dims = _finite_num3(raw.get("dimensions") or raw.get("size"))
+        text = _identity_text(raw)
+        if dims is not None and any(token in text for token in ("table", "workbench", "support_surface")):
+            defaults.setdefault("table", dims)
+    for raw in _as_list(env_root.get("assets")) + _as_list(env_root.get("sensors")) + _as_list(env.get("assets")) + _as_list(env.get("sensors")):
+        if not isinstance(raw, Mapping):
+            continue
+        dims = _finite_num3(raw.get("dimensions") or raw.get("size"))
+        text = _identity_text(raw)
+        if dims is not None and any(token in text for token in ("camera", "realsense")):
+            defaults.setdefault("camera", dims)
+    return defaults
+
+
+def _populate_visual_bounds_item_fields(payload: Json, data: Mapping[str, Any]) -> None:
+    dimension_defaults = _authored_physical_dimension_defaults(data)
     for section, item in _all_scene_items(payload):
         if not _is_mesh_item(item):
             continue
@@ -950,6 +983,8 @@ def _populate_visual_bounds_item_fields(payload: Json) -> None:
             item["expected_pose_rpy"] = rpy
         category = _visual_contract_category(item, section)
         item["mesh_contract_category"] = category
+        if "expected_dimensions_m" not in item and category in dimension_defaults:
+            item["expected_dimensions_m"] = dimension_defaults[category]
         item.setdefault("mesh_load_required", category in {"robot_link", "gripper", "table", "camera", "object"})
         # Unit autoscale is a browser-side asset convenience only.  Generated URDF
         # previews and robot links must keep authored units exactly as exported.
@@ -1297,7 +1332,7 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
     }
     if stage_assets:
         _stage_visual_meshes(output, scene_dir, output_path or Path("build/workcell_studio_web_scene/scene.web_scene.json"))
-    _populate_visual_bounds_item_fields(output)
+    _populate_visual_bounds_item_fields(output, data)
     output["metadata"] = {
         "mesh_contract": _populate_mesh_contract_fields(output, staged=stage_assets),
         "visual_bounds_contract": _visual_bounds_contract(output, data),
