@@ -207,10 +207,27 @@ def test_sourced_real_xacro_requires_real_expansion_status(tmp_path, monkeypatch
     ]
 
 
-def test_ur5_mesh_index_fixture_has_no_legacy_static_fallback_transform_statuses(tmp_path):
-    fixture = Path("scenes/ur5_2f_test/generated/scene_visual_mesh_index.json")
+def test_ur5_mesh_index_regeneration_has_no_legacy_static_fallback_transform_statuses(tmp_path):
+    scene = Path("scenes/ur5_2f_test")
+    mesh_index = scene / "generated" / "scene_visual_mesh_index.json"
+    output = tmp_path / "ur5_2f_test.web_scene.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_PATH),
+            "--scene",
+            str(scene),
+            "--output",
+            str(output),
+            "--stage-assets",
+            "--force",
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
     copied = tmp_path / "scene_visual_mesh_index.json"
-    shutil.copy2(fixture, copied)
+    shutil.copy2(mesh_index, copied)
     payload = json.loads(copied.read_text(encoding="utf-8"))
 
     forbidden = "legacy_static_fallback_resolved_ur5_mesh_pose"
@@ -244,3 +261,42 @@ def test_real_script_reports_fresh_for_temporary_minimal_scene(tmp_path):
     assert result.returncode == 0, result.stderr
     assert "is fresh" in result.stdout
     assert "Refreshing" not in result.stdout
+
+
+def test_real_ur5_2f_freshness_helper_recreates_missing_mesh_index(tmp_path):
+    scene = Path("scenes/ur5_2f_test")
+    mesh_index = scene / "generated" / "scene_visual_mesh_index.json"
+    backup = tmp_path / "scene_visual_mesh_index.backup.json"
+    had_existing = mesh_index.exists()
+    if had_existing:
+        backup.write_bytes(mesh_index.read_bytes())
+    mesh_index.unlink(missing_ok=True)
+
+    try:
+        output = tmp_path / "ur5_2f_test.web_scene.json"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--scene",
+                str(scene),
+                "--output",
+                str(output),
+                "--stage-assets",
+                "--force",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert mesh_index.exists(), "freshness helper should recreate the local scene visual mesh index"
+        assert output.exists(), "freshness helper should also export the requested web scene"
+        payload = json.loads(mesh_index.read_text(encoding="utf-8"))
+        assert payload.get("extractor_version")
+    finally:
+        if had_existing:
+            mesh_index.write_bytes(backup.read_bytes())
+        else:
+            mesh_index.unlink(missing_ok=True)

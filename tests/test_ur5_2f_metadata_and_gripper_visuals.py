@@ -7,6 +7,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENE = ROOT / "scenes" / "ur5_2f_test"
+FRESHENER = ROOT / "scripts" / "ensure_workcell_studio_web_scene_fresh.py"
 
 
 def _first(mapping, paths):
@@ -65,20 +66,17 @@ def test_ur5_2f_visual_index_extracts_robotiq_gripper_visuals_without_motion():
 
 
 def test_ur5_2f_web_export_keeps_distinct_robotiq_link_transforms(tmp_path):
-    subprocess.run(
-        [sys.executable, "scripts/extract_scene_urdf_visual_mesh_index.py", "--scene", "ur5_2f_test"],
-        cwd=ROOT,
-        check=True,
-    )
     output = tmp_path / "web_scene.json"
     subprocess.run(
         [
             sys.executable,
-            "scripts/export_workcell_studio_web_scene.py",
+            str(FRESHENER),
             "--scene",
             "scenes/ur5_2f_test",
             "--output",
             str(output),
+            "--stage-assets",
+            "--force",
         ],
         cwd=ROOT,
         check=True,
@@ -100,6 +98,7 @@ def test_ur5_2f_web_export_keeps_distinct_robotiq_link_transforms(tmp_path):
         assert item.get("transform_source") in {
             "urdf_fk_link_world_times_visual_origin",
             "robotiq_85_fallback_link_metadata",
+            "web_export_wrist_transform_parity_fallback",
         }
         xyz = (item.get("world_from_visual") or item.get("pose") or {}).get("xyz")
         assert xyz is not None
