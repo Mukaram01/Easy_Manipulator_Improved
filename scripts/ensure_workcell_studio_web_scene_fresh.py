@@ -12,6 +12,8 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -142,6 +144,29 @@ def read_mesh_index_version(mesh_index: Path) -> Optional[str]:
     return str(version) if version is not None else None
 
 
+def real_xacro_is_discoverable() -> bool:
+    if shutil.which("xacro"):
+        return True
+    if Path("/opt/ros/humble/bin/xacro").exists():
+        return True
+    return any((Path(prefix) / "bin" / "xacro").exists() for prefix in os.environ.get("AMENT_PREFIX_PATH", "").split(os.pathsep) if prefix)
+
+
+def require_real_xacro_mesh_index(mesh_index: Path) -> None:
+    if not real_xacro_is_discoverable():
+        return
+    try:
+        payload = json.loads(mesh_index.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise SystemExit(f"error: failed to inspect regenerated mesh index for real xacro status: {mesh_index}: {exc}") from exc
+    if payload.get("xacro_real_command_succeeded") is True and payload.get("extraction_mode") in {"real_xacro_expanded", "xacro_expanded"}:
+        return
+    raise SystemExit(
+        "error: real xacro is discoverable, but the regenerated mesh index did not use successful real xacro expansion "
+        f"({mesh_index}; extraction_mode={payload.get('extraction_mode')!r}, xacro_status={payload.get('xacro_status')!r})"
+    )
+
+
 def run_checked(command: Sequence[str]) -> None:
     result = subprocess.run(command, cwd=REPO_ROOT, text=True, capture_output=True, check=False)
     if result.returncode != 0:
@@ -203,7 +228,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.force or mesh_stale:
         reason = "forced" if args.force else mesh_reason
         print(f"Refreshing mesh index for {scene_id}: {reason}")
-        run_checked([sys.executable, repo_relative(extractor_script), "--scene", repo_relative(scene_dir), "--prefer-xacro"])
+        command = [sys.executable, repo_relative(extractor_script), "--scene", repo_relative(scene_dir), "--prefer-xacro"]
+        if real_xacro_is_discoverable():
+            command.append("--require-xacro")
+        run_checked(command)
+        require_real_xacro_mesh_index(mesh_index)
         web_stale = True
         web_reason = "mesh index was refreshed"
 

@@ -526,7 +526,7 @@ def test_require_xacro_strict_rejects_best_effort_modes():
     data = json.loads(report.read_text())
     assert data.get('best_effort_count', 0) == 0
     assert data.get('xacro_expanded_count', 0) == data.get('scene_count', 0)
-    assert all(scene.get('extraction_mode') == 'xacro_expanded' for scene in data.get('scenes', []))
+    assert all(scene.get('extraction_mode') in {'real_xacro_expanded', 'xacro_expanded'} for scene in data.get('scenes', []))
 
 
 def test_require_xacro_strict_nonzero_on_simulated_xacro_failure(monkeypatch):
@@ -685,13 +685,75 @@ def test_main_records_successful_real_xacro_expansion(monkeypatch, tmp_path):
 
     assert rc == 0
     payload = json.loads((scene / 'generated' / 'scene_visual_mesh_index.json').read_text(encoding='utf-8'))
-    assert payload['extraction_mode'] == 'xacro_expanded'
+    assert payload['extraction_mode'] == 'real_xacro_expanded'
     assert payload['xacro_available'] is True
     assert payload['xacro_real_command_succeeded'] is True
     assert payload['source_expanded_urdf_path'] == 'generated/expanded_scene_preview.urdf'
     assert payload['xacro_command'][0] == str(fake_xacro.resolve())
     assert payload['xacro_command'][0] != 'xacro-lite'
     assert payload['xacro_diagnostics']['xacro_status'] == 'real_xacro_succeeded'
+
+
+def test_real_xacro_expansion_filters_mesh_placeholders_and_does_not_add_ur5_fk_fallback(monkeypatch, tmp_path):
+    import sys
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    scenes_root = tmp_path / 'scenes'
+    scene = scenes_root / 'real_ur5_scene'
+    (scene / 'urdf').mkdir(parents=True)
+    (scene / 'urdf' / 'scene.urdf.xacro').write_text('<robot name="real_ur5_scene"/>', encoding='utf-8')
+    fake_xacro = tmp_path / 'bin' / 'xacro'
+    fake_xacro.parent.mkdir(parents=True)
+    fake_xacro.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
+    fake_xacro.chmod(0o755)
+    ur_pkg = tmp_path / 'ur_description'
+    mesh_dir = ur_pkg / 'meshes' / 'ur5' / 'visual'
+    mesh_dir.mkdir(parents=True)
+    for name in ('base.dae', 'shoulder.dae'):
+        (mesh_dir / name).write_text('mesh', encoding='utf-8')
+
+    monkeypatch.setattr(mesh_index, 'SCENES_ROOT', scenes_root)
+    monkeypatch.setattr(mesh_index.shutil, 'which', lambda name: str(fake_xacro) if name == 'xacro' else None)
+    monkeypatch.setattr(mesh_index, 'discover_package_map', lambda *a, **k: ({'ur_description': ur_pkg}, {'resolved_packages': []}))
+
+    class Result:
+        returncode = 0
+        stdout = ''
+        stderr = ''
+
+    def fake_run(cmd, **kwargs):
+        out_path = Path(cmd[cmd.index('-o') + 1])
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            '''<robot name="expanded">
+              <link name="base_link_inertia">
+                <visual name="base"><geometry><mesh filename="package://ur_description/meshes/ur5/visual/base.dae"/></geometry></visual>
+                <visual name="placeholder"><geometry><mesh filename="${mesh}"/></geometry></visual>
+              </link>
+              <joint name="shoulder_pan_joint" type="revolute"><parent link="base_link_inertia"/><child link="shoulder_link"/><origin xyz="0 0 0.2"/><axis xyz="0 0 1"/></joint>
+              <link name="shoulder_link"><visual name="shoulder"><geometry><mesh filename="package://ur_description/meshes/ur5/visual/shoulder.dae"/></geometry></visual></link>
+            </robot>''',
+            encoding='utf-8',
+        )
+        return Result()
+
+    monkeypatch.setattr(mesh_index.subprocess, 'run', fake_run)
+
+    original_argv = sys.argv
+    try:
+        sys.argv = ['extract_scene_urdf_visual_mesh_index.py', '--scene', 'real_ur5_scene', '--prefer-xacro']
+        rc = mesh_index.main()
+    finally:
+        sys.argv = original_argv
+
+    assert rc == 0
+    payload = json.loads((scene / 'generated' / 'scene_visual_mesh_index.json').read_text(encoding='utf-8'))
+    items = payload['visual_items']
+    assert payload['extraction_mode'] == 'real_xacro_expanded'
+    assert payload['xacro_real_command_succeeded'] is True
+    assert not any('${mesh}' in json.dumps(item) for item in items)
+    assert not any(str(item.get('source')) == 'ur5_fk_fallback' for item in items)
+    assert payload['static_robot_mesh_visual_count'] == 0
 
 
 def test_main_records_real_xacro_failure_command_and_output(monkeypatch, tmp_path):
@@ -752,6 +814,49 @@ def test_main_records_real_xacro_failure_command_and_output(monkeypatch, tmp_pat
     assert payload['xacro_diagnostics']['xacro_stderr'] == 'synthetic xacro failure'
     assert 'partial xacro stdout' in payload['fallback_reason']
     assert 'synthetic xacro failure' in payload['fallback_reason']
+
+
+def test_fallback_placeholder_rows_are_not_ur5_sanity_blockers():
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    placeholder = {
+        'id': 'placeholder_${mesh}',
+        'link': 'base_link',
+        'geometry_type': 'mesh',
+        'mesh_uri': '${mesh}',
+        'source_path': '${mesh}',
+        'render_expected': False,
+        'resolved': False,
+        'link_world_pose': {'xyz': [0, 0, 0], 'rpy': [0, 0, 0]},
+        'pose': {'xyz': [0, 0, 0], 'rpy': [0, 0, 0]},
+    }
+    fk_rows = []
+    for index, link in enumerate(('base_link', 'shoulder_link', 'upper_arm_link', 'forearm_link')):
+        fk_rows.append({
+            'id': f'fk_{link}',
+            'link': link,
+            'render_expected': True,
+            'resolved': True,
+            'geometry_type': 'mesh',
+            'link_world_pose': {'xyz': [index * 0.1, 0, 0.2], 'rpy': [0, 0, 0]},
+            'pose': {'xyz': [index * 0.1, 0, 0.2], 'rpy': [0, 0, 0]},
+            'visual_origin': {'xyz': [0, 0, 0], 'rpy': [0, 0, 0]},
+            'expected_visual_pose': {'xyz': [index * 0.1, 0, 0.2], 'rpy': [0, 0, 0]},
+        })
+
+    unresolved = [
+        item for item in [placeholder, *fk_rows]
+        if mesh_index._is_renderable_visual_item(item)
+        and any(mesh_index.contains_placeholder(item.get(k, '')) for k in ('id', 'link', 'parent_link', 'mesh_uri', 'source_path'))
+    ]
+    warnings, blockers = mesh_index.validate_ur5_transform_sanity(
+        [placeholder, *fk_rows],
+        [row for row in [placeholder, *fk_rows] if mesh_index._is_renderable_visual_item(row)],
+    )
+
+    assert unresolved == []
+    assert warnings == []
+    assert not any('collapsed' in blocker.lower() or '[0, 0, 0]' in blocker for blocker in blockers)
 
 def test_synthetic_chain_transform_composition_and_primitives():
     import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
