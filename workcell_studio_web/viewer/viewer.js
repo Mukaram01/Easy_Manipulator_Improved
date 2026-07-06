@@ -69,9 +69,28 @@ function computeSceneSummary() {
     editableCount: rendered.filter(obj => canEditItem(obj.item)).length,
   };
 }
-function renderSceneSummary() {
-  if (!el.summary) return;
+function updateViewerStatus() {
   const summary = computeSceneSummary();
+  const warnings = asArray(state.sceneJson?.warnings).concat(asArray(state.sceneJson?.notes_warnings), asArray(state.runtimeWarnings));
+  window.__WORKCELL_VIEWER_STATUS__ = {
+    scene_name: summary.sceneName,
+    sceneName: summary.sceneName,
+    renderable_count: summary.renderableCount,
+    renderableCount: summary.renderableCount,
+    mesh_loaded_count: summary.meshLoadedCount,
+    meshLoadedCount: summary.meshLoadedCount,
+    required_mesh_failed_count: (state.objects || []).filter(obj => obj.renderInfo?.render_status === 'required_mesh_failed_debug_fallback' || obj.item?.renderInfo?.render_status === 'required_mesh_failed_debug_fallback').length,
+    requiredMeshFailedCount: (state.objects || []).filter(obj => obj.renderInfo?.render_status === 'required_mesh_failed_debug_fallback' || obj.item?.renderInfo?.render_status === 'required_mesh_failed_debug_fallback').length,
+    fallback_count: summary.fallbackCount,
+    fallbackCount: summary.fallbackCount,
+    runtime_warnings: warnings,
+    runtimeWarnings: warnings,
+  };
+  return window.__WORKCELL_VIEWER_STATUS__;
+}
+function renderSceneSummary() {
+  const summary = updateViewerStatus();
+  if (!el.summary) return;
   el.summary.classList.toggle('empty', !state.sceneJson);
   const fields = {
     'scene-name': summary.sceneName,
@@ -1495,6 +1514,7 @@ function populateInspector(renderedOrItem) {
 }
 function refreshWarnings(sceneJson = state.sceneJson) {
   const warnings = asArray(sceneJson?.warnings).concat(asArray(sceneJson?.notes_warnings), asArray(state.runtimeWarnings));
+  updateViewerStatus();
   if (!warnings.length) { el.warnings.className = 'warnings state empty'; el.warnings.textContent = 'No JSON or runtime mesh warnings.'; return; }
   el.warnings.className = 'warnings';
   el.warnings.innerHTML = warnings.map(w => {

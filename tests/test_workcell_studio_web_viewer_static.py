@@ -53,6 +53,21 @@ def test_viewer_records_render_status_for_inspector():
     assert "rendered.renderInfo" in js
 
 
+def test_viewer_exposes_browser_acceptance_status_hook():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    for token in [
+        "window.__WORKCELL_VIEWER_STATUS__",
+        "scene_name",
+        "renderable_count",
+        "mesh_loaded_count",
+        "required_mesh_failed_count",
+        "fallback_count",
+        "runtime_warnings",
+        "updateViewerStatus",
+    ]:
+        assert token in js
+
+
 def test_viewer_allows_valid_empty_scene_with_empty_message():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     assert "EMPTY_SCENE_MESSAGE" in js
