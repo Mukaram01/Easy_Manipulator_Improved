@@ -144,6 +144,22 @@ def check(payload: Mapping[str, Any]) -> tuple[Json, list[str]]:
             errors.append("metadata.visual_bounds_contract.status is absent even though visual_bounds_contract is present")
         elif str(status).strip().lower() not in PASS_STATUSES:
             errors.append(f"metadata.visual_bounds_contract.status must be pass or passed, got {status!r}")
+
+        camera_framing_blockers = visual_contract.get("camera_framing_blockers")
+        if isinstance(camera_framing_blockers, list) and camera_framing_blockers:
+            for index, blocker in enumerate(camera_framing_blockers):
+                if isinstance(blocker, Mapping):
+                    blocker_id = blocker.get("id", "<unknown>")
+                    category = blocker.get("category", "<unknown>")
+                    reason = blocker.get("reason", "<unknown>")
+                else:
+                    blocker_id = f"<invalid blocker #{index}>"
+                    category = "<unknown>"
+                    reason = "blocker entry is not an object"
+                errors.append(
+                    "metadata.visual_bounds_contract.camera_framing_blockers "
+                    f"contains blocker id={blocker_id!r}, category={category!r}, reason={reason!r}"
+                )
     # If the entire visual_bounds_contract object is absent, treat the file as a
     # pre-viewer/runtime-validation export and do not fail solely for that reason.
 
