@@ -705,6 +705,8 @@ async function tryLoadMesh(item, rendered, fallback) {
     applyMeshLocalTransform(meshObject, item);
     meshObject.updateMatrixWorld(true);
     const nativeBounds = new THREE.Box3().setFromObject(meshObject);
+    const autoscaled = maybeApplyMeshUnitAutoscale(item, meshObject, nativeBounds, uri);
+    const validationBounds = autoscaled ? new THREE.Box3().setFromObject(meshObject) : nativeBounds;
     fallback.visible = false;
     rendered.object3d.add(meshObject);
     rendered.meshObject = meshObject;
@@ -712,7 +714,7 @@ async function tryLoadMesh(item, rendered, fallback) {
     item.mesh_load_error = '';
     trackMeshLoadAttempt(item, 'loaded', loadUrl, '');
     setRenderInfo(rendered, 'mesh_loaded', uri, '');
-    diagnoseLoadedMeshBounds(item, meshObject, rendered, nativeBounds);
+    diagnoseLoadedMeshBounds(item, meshObject, rendered, validationBounds);
     const bounds = computeRenderedBounds();
     if (bounds) frameScene(bounds);
     refreshMeshLoadUi(rendered);
@@ -864,11 +866,75 @@ function meshContractCategoryOf(item) {
   if (/\b(table|workbench|bench)\b/.test(identity)) return 'table';
   if (/\b(camera|sensor|realsense|rgbd|vision)\b/.test(identity)) return 'camera';
   if (/\b(object|part|product|item)\b/.test(identity)) return 'object';
-  if (/\b(robot|arm|manipulator|ur3|ur5|ur10)\b/.test(identity)) return 'robot';
+  if (/\b(environment|asset|fixture)\b/.test(identity)) return 'environment';
+  if (/\b(robot|arm|manipulator|ur3|ur5|ur10|ur_|universal_robot)\b/.test(identity)) return 'robot';
   if (/\b(tool|gripper|eef|suction|robotiq|airpick)\b/.test(identity)) return 'tool';
   if (/\b(zone|overlay|helper|diagnostic|fov|bounds|reachability|collision)\b/.test(identity)) return 'helper';
   return 'core';
 }
+
+function meshUnitAutoscaleAllowed(item) {
+  if (!item || item.allow_mesh_unit_autoscale !== true || !item.expected_dimensions_m) return false;
+  if (item.source_kind === 'generated_preview' || item.active_visual_source === 'generated_preview') return false;
+  const category = meshContractCategoryOf(item);
+  if (!['table', 'camera', 'object', 'environment'].includes(category)) return false;
+  const identity = [
+    item.source_layer,
+    item.active_visual_source,
+    item.role,
+    item.category,
+    item.type,
+    item.id,
+    item.link,
+    item.object_name,
+    item.display_name,
+    item.source_path,
+    item.mesh_path,
+    item.package_uri,
+    item.original_mesh_uri,
+    itemLabel(item || {}),
+  ].map(value => String(value || '').toLowerCase()).join(' ');
+  return !/\b(robot|arm|manipulator|ur3|ur5|ur10|ur_|universal_robot|robotiq|gripper|suction|airpick|tool|eef|end_effector)\b/.test(identity);
+}
+function meshUnitCorrectionPayload(source, confidence, nativeBounds, correctedBounds, scale, axisRatios, targetRatio) {
+  return {
+    source,
+    confidence,
+    native_bounds: box3ToJson(nativeBounds),
+    corrected_bounds: box3ToJson(correctedBounds),
+    scale,
+    axis_ratios: axisRatios,
+    target_ratio: targetRatio,
+  };
+}
+function maybeApplyMeshUnitAutoscale(item, meshObject, nativeBounds, meshUri) {
+  if (!meshUnitAutoscaleAllowed(item)) return false;
+  const expected = expectedDimensionsOf(item);
+  const finiteNative = finiteBox3(nativeBounds);
+  const dims = finiteNative ? box3Dimensions(finiteNative) : null;
+  const axes = ['x', 'y', 'z'];
+  if (!expected || !dims || axes.some(axis => dims[axis] <= 1e-9 || expected[axis] <= 1e-9)) return false;
+  const axisRatios = Object.fromEntries(axes.map(axis => [axis, dims[axis] / expected[axis]]));
+  const ratioValues = Object.values(axisRatios);
+  const maxRatio = Math.max(...ratioValues);
+  const minRatio = Math.min(...ratioValues);
+  const uniformRatio = minRatio > 0 ? maxRatio / minRatio : Infinity;
+  const targetRatio = [1000, 100].find(target => Math.abs(maxRatio - target) / target <= 0.2 && Math.abs(minRatio - target) / target <= 0.2 && uniformRatio <= 1.25);
+  if (!targetRatio) {
+    item.mesh_unit_correction = meshUnitCorrectionPayload('viewer_expected_dimensions_m', 'rejected_non_uniform_or_unclear_ratio', finiteNative, finiteNative, 1.0, axisRatios, null);
+    appendRuntimeWarning(item, meshUri, `mesh unit autoscale rejected: native bounds do not have a clear uniform 100x or 1000x ratio to expected_dimensions_m (uniform_ratio=${uniformRatio.toFixed(3)})`, 'mesh_unit_autoscale_rejected', item.mesh_unit_correction);
+    return false;
+  }
+  const scale = targetRatio === 1000 ? 0.001 : 0.01;
+  meshObject.scale.multiplyScalar(scale);
+  meshObject.updateMatrixWorld(true);
+  const correctedBounds = finiteBox3(new THREE.Box3().setFromObject(meshObject));
+  item.mesh_unit_correction = meshUnitCorrectionPayload('viewer_expected_dimensions_m', 'clear_uniform_ratio', finiteNative, correctedBounds, scale, axisRatios, targetRatio);
+  item.visual_bounds_status = 'corrected_by_local_unit_scale';
+  appendRuntimeWarning(item, meshUri, `mesh unit autoscale applied: native bounds matched a clear ${targetRatio}x ratio to expected_dimensions_m`, 'mesh_unit_autoscale_applied', item.mesh_unit_correction);
+  return true;
+}
+
 function isCoreMeshContractItem(item) {
   return !['helper'].includes(meshContractCategoryOf(item)) && !isZone(item);
 }
@@ -889,7 +955,7 @@ function diagnoseLoadedMeshBounds(item, meshObject, rendered, nativeBounds = nul
   const worldBounds = finiteBox3(new THREE.Box3().setFromObject(meshObject));
   item.loaded_mesh_bounds = box3ToJson(localBounds);
   item.loaded_mesh_world_bounds = box3ToJson(worldBounds);
-  item.visual_bounds_status = 'valid';
+  item.visual_bounds_status = item.mesh_unit_correction?.scale && item.mesh_unit_correction.scale !== 1.0 ? 'corrected_by_local_unit_scale' : 'valid';
   const expected = expectedDimensionsOf(item);
   const dims = localBounds ? box3Dimensions(localBounds) : null;
   const worldDims = worldBounds ? box3Dimensions(worldBounds) : null;
