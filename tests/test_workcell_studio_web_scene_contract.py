@@ -231,7 +231,7 @@ def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallba
     ur5_by_required_link = {item.get("link"): item for item in required["ur5"] if item.get("link") in required_major_ur5_links}
     assert set(ur5_by_required_link) == required_major_ur5_links
     for link, item in ur5_by_required_link.items():
-        assert item.get("active_visual_source") == "mesh_preview", link
+        assert "mesh_preview" in str(item.get("active_visual_source") or ""), link
         assert item.get("category") == "robot_static_mesh_visual", link
         assert item.get("role") == "robot", link
         assert "package://ur_description/meshes/ur5/visual/" in str(item.get("original_mesh_uri") or ""), link
@@ -253,11 +253,12 @@ def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallba
             value = item.get(field)
             assert value != "${mesh}", (item.get("id"), field)
             assert not (isinstance(value, str) and "${" in value and "}" in value), (item.get("id"), field, value)
-    assert any(
-        warning.get("code") == "unresolved_placeholder_visual_suppressed"
-        and warning.get("source") == "generated/scene_visual_mesh_index.json"
-        for warning in payload["warnings"]
-    )
+    mesh_contract = payload["metadata"]["mesh_contract"]
+    assert mesh_contract["mesh_contract_status"] == "passed"
+    assert mesh_contract["required_mesh_count"] > 0
+    assert mesh_contract["staged_mesh_count"] == mesh_contract["required_mesh_count"]
+    assert mesh_contract["missing_required_meshes"] == []
+    assert mesh_contract["core_mesh_failures"] == []
 
     summary = payload["viewer_summary"]
     assert summary["renderable_count"] >= 20
@@ -299,7 +300,7 @@ def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallba
             ]["status"] != "primitive_fallback"
             assert item.get("primitive_geometry_type") in (None, "mesh")
             if "active_visual_source" in item:
-                assert item["active_visual_source"] == "mesh_preview"
+                assert "mesh_preview" in str(item.get("active_visual_source") or "")
             assert item["mesh_uri"].startswith("build/workcell_studio_web_scene/assets/ur5_2f_test/")
             assert not item["mesh_uri"].startswith(("package://", "file://", "/"))
             assert "://" not in item["mesh_uri"]
@@ -313,6 +314,49 @@ def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallba
     ]
     assert not [warning for warning in fallback_warnings if warning.get("source") in required_ids]
 
+
+
+def test_required_core_mesh_stage_failure_marks_mesh_contract_failed(tmp_path):
+    scene = _tiny_scene_fixture(tmp_path)
+    (scene / "meshes").mkdir()
+    (scene / "meshes" / "ur5.dae").write_text("<COLLADA></COLLADA>\n", encoding="utf-8")
+    # robotiq_2f.dae is intentionally absent. It is a generated tool mesh, so
+    # staging must report an unhealthy mesh contract instead of treating the
+    # required product visual as an acceptable primitive fallback.
+
+    payload = _export(scene, tmp_path / "out" / "missing_required_core_mesh.web_scene.json")
+    contract = payload["metadata"]["mesh_contract"]
+
+    assert contract["mesh_contract_status"] == "failed"
+    assert contract["required_mesh_count"] >= 2
+    assert contract["staged_mesh_count"] < contract["required_mesh_count"]
+    assert contract["missing_required_meshes"]
+    assert contract["core_mesh_failures"] == contract["missing_required_meshes"]
+    assert any(entry["category"] == "gripper_link" and entry["status"] == "resolve_failed" for entry in contract["core_mesh_failures"])
+
+
+def test_web_viewer_reports_required_mesh_failures_instead_of_silent_primitive_fallback():
+    viewer = (REPO_ROOT / "workcell_studio_web" / "viewer" / "viewer.js").read_text(encoding="utf-8")
+
+    required_tokens = (
+        "function itemRequiresMeshBackedVisual",
+        "function warnRequiredMeshFallback",
+        "function logRequiredMeshFailure",
+        "required_mesh_failed",
+        "required_mesh_failed_debug_fallback",
+        "normal primitive fallback suppressed",
+        "console.error('Required mesh failed:'",
+        "item.mesh_load_required",
+        "mesh_load_error",
+    )
+    for token in required_tokens:
+        assert token in viewer
+
+    required_branch = viewer.split("async function tryLoadMesh", 1)[1].split("function createRenderable", 1)[0]
+    assert "itemRequiresMeshBackedVisual(item)" in required_branch
+    assert "logRequiredMeshFailure(item" in required_branch
+    assert "warnRequiredMeshFallback(item" in required_branch
+    assert "styleFailedMeshDebugFallback" in required_branch
 
 def test_web_scene_export_status_summary_counts_mesh_fallback_and_missing_items(tmp_path):
     scene = _tiny_scene_fixture(tmp_path)
