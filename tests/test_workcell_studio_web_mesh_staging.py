@@ -206,6 +206,79 @@ def test_staged_mesh_uri_resolves_from_builder_opened_viewer_base_url():
             staged_mesh.unlink(missing_ok=True)
 
 
+
+def test_required_core_mesh_contract_records_full_staging_fields(monkeypatch, tmp_path):
+    prefix = tmp_path / "ament"
+    _package(prefix, "demo_robot", "meshes/visual/base.dae", "<COLLADA></COLLADA>\n")
+    mesh_uri = "package://demo_robot/meshes/visual/base.dae"
+    scene = _scene(
+        tmp_path,
+        "contract_scene",
+        [{
+            "id": "robot_base",
+            "category": "robot_static_mesh_visual",
+            "role": "robot",
+            "link": "base_link",
+            "geometry_type": "mesh",
+            "mesh_uri": mesh_uri,
+            "source_path": mesh_uri,
+            "render_expected": True,
+            "active_visual_source": "mesh_preview",
+        }],
+    )
+
+    payload = _export_with_prefix(monkeypatch, scene, tmp_path / "out" / "scene.web_scene.json", prefix)
+    item = _item(payload, "robot_base")
+
+    assert item["original_mesh_uri"] == mesh_uri
+    assert item["original_package_uri"] == mesh_uri
+    assert item["original_source_path"] == mesh_uri
+    assert item["resolved_source_path"].endswith("share/demo_robot/meshes/visual/base.dae") or item["resolved_source_path"].endswith("demo_robot/meshes/visual/base.dae")
+    assert item["mesh_staged_path"] == item["mesh_uri"]
+    assert item["mesh_url"] == item["mesh_uri"]
+    assert item["mesh_format"] == "dae"
+    assert item["mesh_load_required"] is True
+    assert item["core_mesh_category"] == "robot_arm_link"
+    contract = payload["metadata"]["mesh_contract"]
+    assert contract == {
+        "required_mesh_count": 1,
+        "staged_mesh_count": 1,
+        "missing_required_meshes": [],
+        "fallback_primitive_count": 0,
+        "core_mesh_failures": [],
+        "mesh_contract_status": "passed",
+    }
+
+
+def test_stage_assets_reports_required_core_mesh_failures(monkeypatch, tmp_path):
+    mesh_uri = "package://missing_robot/meshes/visual/base.dae"
+    scene = _scene(
+        tmp_path,
+        "contract_failure_scene",
+        [{
+            "id": "missing_robot_base",
+            "category": "robot_static_mesh_visual",
+            "role": "robot",
+            "geometry_type": "mesh",
+            "mesh_uri": mesh_uri,
+            "render_expected": True,
+        }],
+    )
+
+    payload = _export_with_prefix(monkeypatch, scene, tmp_path / "out" / "scene.web_scene.json", tmp_path / "ament")
+    item = _item(payload, "missing_robot_base")
+
+    assert item["mesh_load_required"] is True
+    assert item["mesh_staging_status"] == "resolve_failed"
+    assert item["mesh_url"] is None
+    contract = payload["metadata"]["mesh_contract"]
+    assert contract["required_mesh_count"] == 1
+    assert contract["staged_mesh_count"] == 0
+    assert contract["mesh_contract_status"] == "failed"
+    assert contract["missing_required_meshes"] == contract["core_mesh_failures"]
+    assert contract["core_mesh_failures"][0]["id"] == "missing_robot_base"
+    assert contract["core_mesh_failures"][0]["category"] == "robot_arm_link"
+
 def _fallback_causes(payload: dict) -> list[str]:
     causes: list[str] = []
     for item in _all_renderable_items(payload):

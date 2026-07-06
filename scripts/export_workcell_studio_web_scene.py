@@ -307,8 +307,12 @@ def _stage_visual_meshes(payload: Json, scene_dir: Path, output_path: Path) -> N
             candidates = _mesh_candidates(item)
             original = candidates[0][1] if candidates else None
             item["original_mesh_uri"] = original
+            item["original_package_uri"] = next((uri for _field, uri in candidates if uri.startswith("package://")), original if isinstance(original, str) and original.startswith("package://") else None)
+            item["original_source_path"] = item.get("source_path") or item.get("mesh_path") or original
+            item["mesh_format"] = _mesh_format_from_uri(original or item.get("mesh_uri") or item.get("mesh_path") or item.get("source_path"))
             item["mesh_staging_status"] = "no_mesh_uri"
             item["mesh_staged_path"] = None
+            item["mesh_url"] = None
             item["mesh_resolve_warning"] = None
             if not candidates:
                 continue
@@ -329,6 +333,7 @@ def _stage_visual_meshes(payload: Json, scene_dir: Path, output_path: Path) -> N
                 item["mesh_staging_status"] = _staging_failure_status(warnings)
                 item["mesh_resolve_warning"] = "; ".join(warnings) if warnings else "No mesh URI candidate could be resolved."
                 continue
+            item["resolved_source_path"] = os.path.relpath(resolved, repo_root).replace(os.sep, "/") if _is_relative_to(resolved, repo_root) else str(resolved)
             if dest_rel is None and _is_relative_to(resolved, repo_root):
                 rel_parts = resolved.relative_to(repo_root).parts
                 dest_rel = Path(source_root, *rel_parts[1:]) if rel_parts and rel_parts[0] == source_root else Path(source_root, *rel_parts)
@@ -350,6 +355,7 @@ def _stage_visual_meshes(payload: Json, scene_dir: Path, output_path: Path) -> N
             item["mesh_uri"] = rewritten
             item["mesh_staging_status"] = "staged"
             item["mesh_staged_path"] = rewritten
+            item["mesh_url"] = rewritten
 
 
 def _copy_fields(src: Mapping[str, Any], fields: Iterable[str], source: str, scene_dir: Path) -> Json:
@@ -820,6 +826,95 @@ def _has_mesh_reference(item: Mapping[str, Any]) -> bool:
     return any(isinstance(item.get(field), str) and bool(str(item.get(field)).strip()) for field in MESH_URI_FIELDS)
 
 
+
+
+def _is_render_expected(item: Mapping[str, Any]) -> bool:
+    return item.get("render_expected", True) is not False
+
+
+def _mesh_format_from_uri(uri: Any) -> Optional[str]:
+    if not isinstance(uri, str) or not uri:
+        return None
+    parsed = urlparse(uri)
+    path = unquote(parsed.path if parsed.scheme else uri)
+    suffix = Path(path).suffix.lower().lstrip(".")
+    return suffix or None
+
+
+def _is_mesh_item(item: Mapping[str, Any]) -> bool:
+    geometry = str(item.get("geometry_type") or item.get("primitive_geometry_type") or item.get("type") or "").lower()
+    return geometry == "mesh" or _has_mesh_reference(item)
+
+
+def _core_mesh_category(item: Mapping[str, Any], section: str) -> Optional[str]:
+    if _is_helper(item) or section == "zones":
+        return None
+    text = _identity_text(item)
+    role = str(item.get("role", "")).lower()
+    category = str(item.get("category", "")).lower()
+    if section == "robots" or role == "robot" or category in {"robot", "robot_static_mesh_visual"} or _robot_family_from_item(item):
+        return "robot_arm_link"
+    if section == "tools" or category in {"tool", "gripper", "end_effector"} or role in {"tool", "gripper", "end_effector"} or any(token in text for token in ("gripper", "robotiq", "suction", "end_effector")):
+        return "gripper_link"
+    if section == "sensors" or any(token in text for token in ("camera", "realsense")):
+        return "camera_realsense"
+    if any(token in text for token in ("table", "workbench", "support_surface")):
+        return "table_workbench"
+    if section == "assets" and _has_supported_mesh_reference(item):
+        return "authored_asset_object"
+    return None
+
+
+def _all_scene_items(payload: Mapping[str, Any]) -> Iterable[Tuple[str, Json]]:
+    for section in ("robots", "tools", "assets", "sensors", "zones"):
+        for item in payload.get(section, []):
+            if isinstance(item, dict):
+                yield section, item
+
+
+def _populate_mesh_contract_fields(payload: Json, *, staged: bool) -> Json:
+    required = 0
+    staged_count = 0
+    missing: List[Json] = []
+    failures: List[Json] = []
+    fallback_primitive_count = 0
+    for section, item in _all_scene_items(payload):
+        core_category = _core_mesh_category(item, section)
+        if not _is_render_expected(item) or not _is_mesh_item(item):
+            if core_category and _is_render_expected(item) and not _has_mesh_reference(item):
+                fallback_primitive_count += 1
+            continue
+        candidates = _mesh_candidates(item)
+        original = item.get("original_mesh_uri") or (candidates[0][1] if candidates else None)
+        item["original_mesh_uri"] = original
+        item["original_package_uri"] = next((uri for _field, uri in candidates if uri.startswith("package://")), original if isinstance(original, str) and original.startswith("package://") else None)
+        item["original_source_path"] = item.get("source_path") or item.get("mesh_path") or original
+        item.setdefault("mesh_format", _mesh_format_from_uri(original or item.get("mesh_uri") or item.get("mesh_path") or item.get("source_path")))
+        if "mesh_load_required" not in item:
+            item["mesh_load_required"] = core_category is not None
+        if core_category:
+            item["core_mesh_category"] = core_category
+        item["mesh_url"] = item.get("mesh_uri") if item.get("mesh_staging_status") == "staged" else None
+        item.setdefault("mesh_staged_path", item.get("mesh_staged_path"))
+        if item.get("mesh_load_required"):
+            required += 1
+            status = str(item.get("mesh_staging_status") or "")
+            if status == "staged":
+                staged_count += 1
+            elif staged:
+                entry = {"id": str(item.get("id")), "category": core_category, "status": status or "not_staged", "source": original, "warning": item.get("mesh_resolve_warning")}
+                missing.append(entry)
+                failures.append(entry)
+    status = "passed" if not failures else "failed"
+    return {
+        "required_mesh_count": required,
+        "staged_mesh_count": staged_count,
+        "missing_required_meshes": missing,
+        "fallback_primitive_count": fallback_primitive_count,
+        "core_mesh_failures": failures,
+        "mesh_contract_status": status,
+    }
+
 def _drop_shadowed_metadata_primitives(items: List[Json], generated_items: List[Json], tokens: Sequence[str]) -> List[Json]:
     if not any(_has_supported_mesh_reference(item) for item in generated_items):
         return items
@@ -1051,6 +1146,7 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
     }
     if stage_assets:
         _stage_visual_meshes(output, scene_dir, output_path or Path("build/workcell_studio_web_scene/scene.web_scene.json"))
+    output["metadata"] = {"mesh_contract": _populate_mesh_contract_fields(output, staged=stage_assets)}
     output["viewer_summary"] = _viewer_summary(output)
     return output
 

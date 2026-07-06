@@ -5,7 +5,7 @@
   "description": "Browser-facing, dependency-light scene JSON exported from Workcell Studio authored and generated scene inputs.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "scene", "inputs", "robots", "tools", "assets", "sensors", "zones", "viewer_summary", "warnings", "backend_actions"],
+  "required": ["schema_version", "scene", "inputs", "robots", "tools", "assets", "sensors", "zones", "metadata", "viewer_summary", "warnings", "backend_actions"],
   "properties": {
     "schema_version": {"const": "workcell_studio_web_scene/v1"},
     "scene": {"$ref": "#/$defs/scene"},
@@ -26,6 +26,26 @@
     "assets": {"type": "array", "items": {"$ref": "#/$defs/item"}},
     "sensors": {"type": "array", "items": {"$ref": "#/$defs/item"}},
     "zones": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mesh_contract"],
+      "properties": {
+        "mesh_contract": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["required_mesh_count", "staged_mesh_count", "missing_required_meshes", "fallback_primitive_count", "core_mesh_failures", "mesh_contract_status"],
+          "properties": {
+            "required_mesh_count": {"type": "integer", "minimum": 0},
+            "staged_mesh_count": {"type": "integer", "minimum": 0},
+            "missing_required_meshes": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+            "fallback_primitive_count": {"type": "integer", "minimum": 0},
+            "core_mesh_failures": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+            "mesh_contract_status": {"enum": ["passed", "failed"]}
+          }
+        }
+      }
+    },
     "viewer_summary": {"$ref": "#/$defs/viewerSummary"},
     "warnings": {"type": "array", "items": {"$ref": "#/$defs/warning"}},
     "backend_actions": {"type": "array", "items": {"$ref": "#/$defs/backendAction"}}
