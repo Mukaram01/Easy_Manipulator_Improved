@@ -151,10 +151,40 @@ function vector3(value, fallback = [0, 0, 0]) {
   const arr = Array.isArray(value) ? value : fallback;
   return new THREE.Vector3(Number(arr[0] || 0), Number(arr[1] || 0), Number(arr[2] || 0));
 }
+function isGeneratedUrdfItem(item) {
+  const identity = viewerGroupIdentity(item);
+  const source = String(item?.source || item?.source_kind || item?.source_layer || item?.active_visual_source || '').toLowerCase();
+  return Boolean(
+    item?.source === 'urdf_flattened' ||
+    source.includes('urdf') ||
+    (isGeneratedPreviewIdentity(item) && /\b(link|visual|robot|tool|gripper|urdf|moveit)\b/.test(identity)) ||
+    String(item?.baked_world_visual_transform_source || item?.transform_source || '').toLowerCase().includes('urdf')
+  );
+}
+function poseBlockOf(source, fallback = {}) {
+  const pose = source && typeof source === 'object' ? source : fallback;
+  const xyz = pose.xyz || pose.position || pose.translation || (Array.isArray(pose) ? pose.slice(0, 3) : fallback.xyz || [0, 0, 0]);
+  const rpy = pose.rpy || pose.rotation_rpy || (Array.isArray(pose) ? pose.slice(3, 6) : fallback.rpy || [0, 0, 0]);
+  return { xyz: vector3(xyz), rpy: vector3(rpy) };
+}
+function generatedUrdfFramePoseSource(item) {
+  if (item?.frame_world_pose) return item.frame_world_pose;
+  if (item?.link_world_pose) return item.link_world_pose;
+  warnMissingGeneratedUrdfFramePose(item);
+  return item?.final_transform || item?.world_from_visual || item?.baked_world_visual_pose || item?.pose || item?.world_pose || {};
+}
+function framePoseOf(item) {
+  return poseBlockOf(generatedUrdfFramePoseSource(item));
+}
+function visualOriginOf(item) {
+  return poseBlockOf(item?.visual_origin || item?.visual_local_transform || {});
+}
 function canonicalFinalPose(item) {
+  if (isGeneratedUrdfItem(item)) return generatedUrdfFramePoseSource(item);
   return item.final_transform || item.world_from_visual || item.baked_world_visual_pose || item.pose || item.world_pose || {};
 }
 function poseOf(item) {
+  if (isGeneratedUrdfItem(item)) return framePoseOf(item);
   const pose = canonicalFinalPose(item);
   const xyz = item.final_transform || item.world_from_visual || item.baked_world_visual_pose
     ? (pose.xyz || pose.position || pose.translation || (Array.isArray(pose) ? pose.slice(0, 3) : [0, 0, 0]))
@@ -165,7 +195,7 @@ function poseOf(item) {
   return { xyz: vector3(xyz), rpy: vector3(rpy) };
 }
 function scaleOf(item) {
-  const scale = item.scale || item.mesh_scale || [1, 1, 1];
+  const scale = isGeneratedUrdfItem(item) ? (item.scale || [1, 1, 1]) : (item.scale || item.mesh_scale || [1, 1, 1]);
   return vector3(scale, [1, 1, 1]);
 }
 function transformOf(item) {
@@ -191,18 +221,19 @@ function meshLocalVector(value, fallback, fieldName, reasons) {
   return new THREE.Vector3(out[0], out[1], out[2]);
 }
 function meshLocalTransformOf(item) {
-  const source = item?.mesh_local_transform || item?.visual_local_transform;
+  const source = item?.mesh_local_transform;
   const reasons = [];
   if (source !== undefined && (!source || typeof source !== 'object' || Array.isArray(source))) {
-    reasons.push('mesh_local_transform/visual_local_transform must be an object');
+    reasons.push('mesh_local_transform must be an object');
   }
   const transform = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
+  const scaleSource = transform.scale || item?.mesh_scale || [1, 1, 1];
   return {
     pose: {
-      xyz: meshLocalVector(transform.xyz, [0, 0, 0], 'xyz', reasons),
-      rpy: meshLocalVector(transform.rpy, [0, 0, 0], 'rpy', reasons),
+      xyz: meshLocalVector(transform.xyz || transform.origin || transform.position, [0, 0, 0], 'mesh_local_transform.xyz', reasons),
+      rpy: meshLocalVector(transform.rpy || transform.rotation_rpy, [0, 0, 0], 'mesh_local_transform.rpy', reasons),
     },
-    scale: meshLocalVector(transform.scale, [1, 1, 1], 'scale', reasons),
+    scale: meshLocalVector(scaleSource, [1, 1, 1], 'mesh_local_transform.scale/mesh_scale', reasons),
     valid: reasons.length === 0,
     reason: reasons.join('; '),
     raw: source,
@@ -269,6 +300,17 @@ function viewerFinalPoseDiagnostics(pose, scale) {
     rpy: { x: pose?.rpy?.x, y: pose?.rpy?.y, z: pose?.rpy?.z },
     scale: { x: scale?.x, y: scale?.y, z: scale?.z },
   };
+}
+function warnMissingGeneratedUrdfFramePose(item) {
+  const key = `${item?.id || itemLabel(item || {})}:missing_generated_urdf_frame_pose`;
+  state._generatedUrdfFramePoseWarnings = state._generatedUrdfFramePoseWarnings || new Set();
+  if (state._generatedUrdfFramePoseWarnings.has(key)) return;
+  state._generatedUrdfFramePoseWarnings.add(key);
+  const meshUri = displayMeshUri(item);
+  appendViewerDiagnosticWarning(item, 'missing_generated_urdf_frame_pose', `generated URDF item lacks both frame_world_pose and link_world_pose; using legacy visual-world fallback only for diagnostics/compatibility (mesh_uri=${meshUri || 'none'})`, {
+    mesh_uri: meshUri,
+    legacy_fallback_pose: item?.final_transform || item?.world_from_visual || item?.baked_world_visual_pose || item?.pose || item?.world_pose || null,
+  });
 }
 function appendViewerDiagnosticWarning(item, code, reason, extra = {}) {
   const warning = {
@@ -743,19 +785,21 @@ function materializeLoadedMesh(item, uri, loaded) {
 }
 function applyMeshLocalTransform(meshObject, item) {
   const transform = meshLocalTransformOf(item);
-  meshObject.position.copy(transform.pose.xyz);
-  meshObject.rotation.set(transform.pose.rpy.x, transform.pose.rpy.y, transform.pose.rpy.z, 'XYZ');
+  const visualOrigin = isGeneratedUrdfItem(item) ? visualOriginOf(item) : transform.pose;
+  meshObject.position.copy(visualOrigin.xyz);
+  meshObject.rotation.set(visualOrigin.rpy.x, visualOrigin.rpy.y, visualOrigin.rpy.z, 'XYZ');
   meshObject.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
   if (!transform.valid) {
     appendViewerDiagnosticWarning(item, 'invalid_mesh_local_transform', transform.reason, {
       mesh_local_transform: item?.mesh_local_transform,
       visual_local_transform: item?.visual_local_transform,
+      visual_origin: item?.visual_origin,
       applied_mesh_local_transform: {
-        xyz: { x: transform.pose.xyz.x, y: transform.pose.xyz.y, z: transform.pose.xyz.z },
-        rpy: { x: transform.pose.rpy.x, y: transform.pose.rpy.y, z: transform.pose.rpy.z },
+        xyz: { x: visualOrigin.xyz.x, y: visualOrigin.xyz.y, z: visualOrigin.xyz.z },
+        rpy: { x: visualOrigin.rpy.x, y: visualOrigin.rpy.y, z: visualOrigin.rpy.z },
         scale: { x: transform.scale.x, y: transform.scale.y, z: transform.scale.z },
       },
-      fallback_or_skip_reason: 'malformed mesh-local transform fields were defaulted before adding the mesh under the posed item object',
+      fallback_or_skip_reason: 'malformed mesh-local scale/origin metadata was defaulted before adding the mesh under the posed item object',
     });
   }
   return transform.valid;
@@ -1254,6 +1298,7 @@ function clearSceneObjects() {
   state.lastFrameBounds = null;
   state._sceneBoundsExceededWarned = false;
   state._fitBlockerWarnings = new Set();
+  state._generatedUrdfFramePoseWarnings = new Set();
   if (el.resetView) el.resetView.disabled = true;
   renderSceneSummary();
 }
