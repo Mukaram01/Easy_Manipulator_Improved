@@ -161,7 +161,7 @@ def test_viewer_includes_mesh_loader_references_and_safe_mesh_uri_logic():
         assert unsafe_token in js
 
 
-def test_viewer_applies_mesh_local_transform_only_to_loaded_meshes():
+def test_viewer_applies_mesh_local_transform_only_below_object_roots():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     for token in [
         "meshLocalTransformOf",
@@ -172,13 +172,17 @@ def test_viewer_applies_mesh_local_transform_only_to_loaded_meshes():
         "meshLocalVector(scaleSource",
         "Number.isFinite(number)",
         "applyMeshLocalTransform",
+        "applyLoadedMeshScaleHandling",
         "invalid_mesh_local_transform",
         "applied_mesh_local_transform",
     ]:
         assert token in js
+    make_visual_body = js.split("function makeMeshVisualRoot", 1)[1].split("function applyMeshLocalTransform", 1)[0]
+    assert make_visual_body.index("applyMeshLocalTransform(visualRoot, item)") < make_visual_body.index("applyLoadedMeshScaleHandling(meshObject, item)")
+    assert make_visual_body.index("applyLoadedMeshScaleHandling(meshObject, item)") < make_visual_body.index("visualRoot.add(meshObject)")
     try_load_body = js.split("async function tryLoadMesh", 1)[1].split("function collectItems", 1)[0]
-    assert try_load_body.index("materializeLoadedMesh(item, uri, loaded)") < try_load_body.index("applyMeshLocalTransform(meshObject, item)")
-    assert try_load_body.index("applyMeshLocalTransform(meshObject, item)") < try_load_body.index("rendered.object3d.add(meshObject)")
+    assert try_load_body.index("materializeLoadedMesh(item, uri, loaded)") < try_load_body.index("makeMeshVisualRoot(item, meshObject)")
+    assert try_load_body.index("makeMeshVisualRoot(item, meshObject)") < try_load_body.index("rendered.object3d.add(visualRoot)")
     apply_pose_body = js.split("function applyPose", 1)[1].split("function assignItemUserData", 1)[0]
     assert "mesh_local_transform" not in apply_pose_body
     assert "visual_local_transform" not in apply_pose_body
@@ -201,8 +205,11 @@ def test_viewer_places_generated_urdf_roots_at_frame_pose_and_visuals_at_origin(
     pose_body = js.split("function poseOf(item)", 1)[1].split("function scaleOf", 1)[0]
     assert "if (isGeneratedUrdfItem(item)) return framePoseOf(item)" in pose_body
     mesh_transform_body = js.split("function applyMeshLocalTransform", 1)[1].split("async function tryLoadMesh", 1)[0]
-    assert "isGeneratedUrdfItem(item) ? visualOriginOf(item) : transform.pose" in mesh_transform_body
+    assert "const generatedUrdf = isGeneratedUrdfItem(item);" in mesh_transform_body
+    assert "const visualOrigin = generatedUrdf ? visualOriginOf(item) : transform.pose" in mesh_transform_body
     assert "meshObject.position.copy(visualOrigin.xyz)" in mesh_transform_body
+    assert "if (generatedUrdf) meshObject.scale.set(1, 1, 1);" in mesh_transform_body
+    assert "function applyLoadedMeshScaleHandling" in mesh_transform_body
 
 
 def test_generated_urdf_link_placement_does_not_primarily_use_legacy_visual_world_pose():
