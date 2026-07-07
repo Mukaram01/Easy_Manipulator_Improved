@@ -902,15 +902,24 @@ function validateSceneJson(json) {
 function initThree() {
   try {
     if (!THREE?.Scene || !OrbitControls || !STLLoader || !ColladaLoader || !OBJLoader || !TransformControls) throw new Error('Three.js modules were not available.');
+    const ROS_Z_UP = new THREE.Vector3(0, 0, 1);
+    THREE.Object3D.DEFAULT_UP.copy(ROS_Z_UP);
     const renderer = new THREE.WebGLRenderer({ canvas: el.canvas, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     const scene = new THREE.Scene();
+    scene.up.copy(ROS_Z_UP);
     scene.background = new THREE.Color(0x0b1018);
     const camera = new THREE.PerspectiveCamera(55, 1, 0.01, 100);
+    camera.up.copy(ROS_Z_UP);
     camera.position.set(2.4, -2.8, 1.8);
     const controls = new OrbitControls(camera, renderer.domElement);
+    controls.object.up.copy(ROS_Z_UP);
     controls.enableDamping = true;
-    scene.add(new THREE.GridHelper(5, 20, 0x3a4a5e, 0x263445));
+    const grid = new THREE.GridHelper(5, 20, 0x3a4a5e, 0x263445);
+    grid.name = 'ros_xy_ground_grid';
+    grid.up.copy(ROS_Z_UP);
+    grid.rotation.x = Math.PI / 2;
+    scene.add(grid);
     scene.add(new THREE.AxesHelper(0.75));
     scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 1.2));
     const light = new THREE.DirectionalLight(0xffffff, 1.5); light.position.set(2, -3, 4); scene.add(light);
@@ -1312,6 +1321,7 @@ function renderScene(items) {
   const scene = state.three.scene;
   for (const item of items) {
     const object3d = new THREE.Group();
+    object3d.up.copy(THREE.Object3D.DEFAULT_UP);
     const primitive = primitiveOf(item);
     const fallback = isSensor(item) ? makeSensorMarker(item) : makePrimitiveMesh(item);
     fallback.name = `${item.id || itemLabel(item)}_fallback`;
