@@ -341,6 +341,7 @@ def test_viewer_load_contract_keeps_selection_empty_until_manual_pick():
     load_url_body = _viewer_function_body(js, "async function loadSceneUrl(rawUrl)", "if (el.resetView)")
     render_scene_body = _viewer_function_body(js, "function renderScene(items)", "function createLabelElement")
     object_list_body = _viewer_function_body(js, "function populateObjectList()", "function selectObject(id)")
+    append_object_list_body = _viewer_function_body(js, "function appendObjectListRow(rendered, group)", "function populateObjectList()")
     select_body = _viewer_function_body(js, "function selectObject(id)", "function pickObject(event)")
     pick_body = _viewer_function_body(js, "function pickObject(event)", "function attachTransformGizmo")
 
@@ -357,8 +358,95 @@ def test_viewer_load_contract_keeps_selection_empty_until_manual_pick():
     assert "populateObjectList();" in render_scene_body
     assert "frameScene(bounds);" in render_scene_body
 
-    assert "li.addEventListener('click', () => selectObject(rendered.item.id));" in object_list_body
+    assert "li.addEventListener('click', () => selectObject(rendered.item.id));" in append_object_list_body
     assert "const selected = rendered.item.id === id;" in select_body
     assert "rendered.item.locked" not in select_body
     assert "canEditItem(rendered.item)" not in select_body
     assert "if (item?.id) selectObject(item.id);" in pick_body
+
+
+def test_viewer_status_reporting_ignores_hidden_helper_overlay_counters(tmp_path):
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({
+  hidden: false,
+  checked: false,
+  disabled: false,
+  textContent: '',
+  className: '',
+  innerHTML: '',
+  classList: { toggle() {} },
+  setAttribute() {},
+  querySelector() { return { textContent: '' }; },
+  appendChild() {},
+  addEventListener() {},
+  getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; },
+});
+const context = {
+  console,
+  assert,
+  window: { location: { search: '' } },
+  document: { getElementById() { return element(); }, createElement() { return element(); } },
+  URLSearchParams,
+  requestAnimationFrame() { return 0; },
+};
+vm.createContext(context);
+vm.runInContext(source + `
+populateObjectList = () => {};
+updateLabels = () => {};
+resetView = () => {};
+renderSceneSummary = () => updateViewerStatus();
+state.sceneJson = { scene: { id: 'status_test' } };
+state.runtimeWarnings = [{ code: 'camera_framing_blocker_excluded', reason: 'hidden helper excluded' }];
+state.objects = [
+  { item: { id: 'robot_link', role: 'robot' }, renderInfo: { render_status: 'mesh_loaded' }, object3d: { visible: true } },
+  { item: { id: 'workbench', category: 'environment' }, renderInfo: { render_status: 'mesh_loaded' }, object3d: { visible: true } },
+  { item: { id: 'camera_fov_helper', role: 'camera_fov', category: 'overlay' }, renderInfo: { render_status: 'mesh_loaded' }, object3d: { visible: false } },
+  { item: { id: 'pick_zone_bounds', role: 'pick_zone', category: 'safety_zone', renderInfo: { render_status: 'required_mesh_failed_debug_fallback' } }, renderInfo: { render_status: 'required_mesh_failed_debug_fallback' }, object3d: { visible: false } },
+];
+let status = updateViewerStatus();
+assert.strictEqual(status.meshLoadedCount, 2);
+assert.strictEqual(status.mesh_loaded_count, 2);
+assert.strictEqual(status.requiredMeshFailedCount, 0);
+assert.strictEqual(status.required_mesh_failed_count, 0);
+assert.strictEqual(status.runtimeWarnings.length, 1);
+assert.strictEqual(status.runtimeWarnings[0].code, 'camera_framing_blocker_excluded');
+assert.strictEqual(isUserFacingWarning(status.runtimeWarnings[0]), false);
+setDebugOverlaysVisible(true);
+assert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.meshLoadedCount, 2);
+assert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.requiredMeshFailedCount, 0);
+setDebugOverlaysVisible(false);
+assert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.meshLoadedCount, 2);
+assert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.requiredMeshFailedCount, 0);
+`, context);
+"""
+    result = subprocess.run(
+        ["node", "-e", harness, str(js_path)],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert result.stderr == ""
+
+
+def test_viewer_status_static_contract_counts_physical_not_debug_overlay_visibility():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    summary_body = js.split("function computeSceneSummary", 1)[1].split("function isUserFacingWarning", 1)[0]
+    status_body = js.split("function updateViewerStatus", 1)[1].split("function renderSceneSummary", 1)[0]
+    debug_toggle_body = js.split("function setDebugOverlaysVisible", 1)[1].split("function updateLabels", 1)[0]
+
+    assert "function statusCountedRenderables()" in js
+    assert "!isDebugOverlayItem(obj.item)" in js
+    assert "const statusRendered = statusCountedRenderables();" in summary_body
+    assert "meshLoadedCount: statusRendered.filter" in summary_body
+    assert "fallbackCount: statusRendered.filter" in summary_body
+    assert "meshFailedCount: statusRendered.filter" in summary_body
+    assert "requiredMeshFailedCount: statusCountedRenderables().filter(isRequiredMeshFailureStatus).length" in status_body
+    assert "renderSceneSummary();" in debug_toggle_body
+    assert "rendered.object3d.visible = state.debugOverlaysVisible" in debug_toggle_body

@@ -56,16 +56,23 @@ function isMissingOrFailedMeshStatus(status) {
   return ['missing_file', 'unresolved_package_uri', 'unsafe_path', 'unsupported_format', 'load_error', 'url_not_served', 'file_access_blocked', 'loader_failure']
     .includes(String(status || '').toLowerCase());
 }
+function statusCountedRenderables() {
+  return (state.objects || []).filter(obj => !isDebugOverlayItem(obj.item));
+}
+function isRequiredMeshFailureStatus(obj) {
+  return obj?.renderInfo?.render_status === 'required_mesh_failed_debug_fallback' || obj?.item?.renderInfo?.render_status === 'required_mesh_failed_debug_fallback';
+}
 function computeSceneSummary() {
   const rendered = state.objects || [];
+  const statusRendered = statusCountedRenderables();
   return {
     sceneName: sceneDisplayName(),
     renderableCount: rendered.length,
-    meshLoadedCount: rendered.filter(obj => obj.renderInfo?.render_status === 'mesh_loaded').length,
-    meshVisuallyInvalidCount: rendered.filter(obj => obj.item?.visual_bounds_status && !['valid', 'corrected_by_local_unit_scale'].includes(obj.item.visual_bounds_status)).length,
-    meshUnitScaleCorrectedCount: rendered.filter(obj => obj.item?.visual_bounds_status === 'corrected_by_local_unit_scale').length,
-    fallbackCount: rendered.filter(obj => isRuntimeFallbackStatus(obj.renderInfo?.render_status || obj.item?.renderInfo?.render_status)).length,
-    meshFailedCount: rendered.filter(obj => isMissingOrFailedMeshStatus(obj.item?.mesh_status)).length,
+    meshLoadedCount: statusRendered.filter(obj => obj.renderInfo?.render_status === 'mesh_loaded').length,
+    meshVisuallyInvalidCount: statusRendered.filter(obj => obj.item?.visual_bounds_status && !['valid', 'corrected_by_local_unit_scale'].includes(obj.item.visual_bounds_status)).length,
+    meshUnitScaleCorrectedCount: statusRendered.filter(obj => obj.item?.visual_bounds_status === 'corrected_by_local_unit_scale').length,
+    fallbackCount: statusRendered.filter(obj => isRuntimeFallbackStatus(obj.renderInfo?.render_status || obj.item?.renderInfo?.render_status)).length,
+    meshFailedCount: statusRendered.filter(obj => isMissingOrFailedMeshStatus(obj.item?.mesh_status)).length,
     generatedLockedCount: rendered.filter(obj => isGeneratedOrLockedItem(obj.item)).length,
     editableCount: rendered.filter(obj => canEditItem(obj.item)).length,
   };
@@ -104,8 +111,8 @@ function updateViewerStatus() {
     renderableCount: summary.renderableCount,
     mesh_loaded_count: summary.meshLoadedCount,
     meshLoadedCount: summary.meshLoadedCount,
-    required_mesh_failed_count: (state.objects || []).filter(obj => obj.renderInfo?.render_status === 'required_mesh_failed_debug_fallback' || obj.item?.renderInfo?.render_status === 'required_mesh_failed_debug_fallback').length,
-    requiredMeshFailedCount: (state.objects || []).filter(obj => obj.renderInfo?.render_status === 'required_mesh_failed_debug_fallback' || obj.item?.renderInfo?.render_status === 'required_mesh_failed_debug_fallback').length,
+    required_mesh_failed_count: statusCountedRenderables().filter(isRequiredMeshFailureStatus).length,
+    requiredMeshFailedCount: statusCountedRenderables().filter(isRequiredMeshFailureStatus).length,
     fallback_count: summary.fallbackCount,
     fallbackCount: summary.fallbackCount,
     runtime_warnings: warnings,
@@ -1319,6 +1326,7 @@ function setDebugOverlaysVisible(visible) {
   }
   populateObjectList();
   updateLabels();
+  renderSceneSummary();
   resetView();
 }
 
