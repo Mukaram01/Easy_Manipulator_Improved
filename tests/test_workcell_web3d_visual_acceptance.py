@@ -139,11 +139,13 @@ def test_browser_status_validator_accepts_expected_meshes_and_tool_chain_distanc
         "meshLoadedCount": 18,
         "requiredMeshFailedCount": 0,
         "viewer_resolved_distances_m": distance_pairs,
+        "renderedMeshDiagnostics": _valid_rendered_mesh_diagnostics(),
     }
     snake_status = {
         "mesh_loaded_count": 18,
         "required_mesh_failed_count": 0,
         "viewer_resolved_distances_m": distance_pairs,
+        "rendered_mesh_diagnostics": _valid_rendered_mesh_diagnostics(),
     }
 
     assert camel_status["meshLoadedCount"] == module.EXPECTED_MESH_LOADED_COUNT == 18
@@ -167,6 +169,7 @@ def test_browser_status_validator_rejects_missing_viewer_side_tool_chain_distanc
         "mesh_loaded_count": 18,
         "required_mesh_failed_count": 0,
         "viewer_resolved_distances_m": reported_distances,
+        "rendered_mesh_diagnostics": _valid_rendered_mesh_diagnostics(),
     }
 
     errors = module.validate_browser_status(status)
@@ -177,8 +180,97 @@ def test_browser_status_validator_rejects_missing_viewer_side_distance_map():
     status = {
         "mesh_loaded_count": 18,
         "required_mesh_failed_count": 0,
+        "rendered_mesh_diagnostics": _valid_rendered_mesh_diagnostics(),
     }
 
     errors = module.validate_browser_status(status)
     for pair in module.REQUIRED_VIEWER_RESOLVED_DISTANCE_PAIRS:
         assert any(pair in error for error in errors)
+
+
+def _valid_rendered_mesh_diagnostics(spacing=0.05):
+    diagnostics = []
+    for index, link in enumerate([
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+        "tool0",
+        "gripper_base_link",
+    ]):
+        diagnostics.append(
+            {
+                "link_name": link,
+                "loaded_mesh_bounding_box_center": {"x": index * spacing, "y": 0.0, "z": 0.0},
+                "visual_wrapper_world_position": {"x": index * spacing, "y": 0.0, "z": 0.0},
+            }
+        )
+    return diagnostics
+
+
+def _valid_viewer_distances():
+    return {
+        "wrist_3_link -> tool0": 0.001,
+        "tool0 -> gripper_base_link": 0.10,
+        "wrist_3_link -> gripper_base_link": 0.10,
+    }
+
+
+def _valid_browser_status_with_rendered_diagnostics():
+    return {
+        "meshLoadedCount": 18,
+        "requiredMeshFailedCount": 0,
+        "viewer_resolved_distances_m": _valid_viewer_distances(),
+        "renderedMeshDiagnostics": _valid_rendered_mesh_diagnostics(),
+    }
+
+
+def test_browser_status_validator_rejects_missing_rendered_mesh_diagnostics():
+    status = {
+        "mesh_loaded_count": 18,
+        "required_mesh_failed_count": 0,
+        "viewer_resolved_distances_m": _valid_viewer_distances(),
+    }
+
+    errors = module.validate_browser_status(status)
+
+    assert any("renderedMeshDiagnostics/rendered_mesh_diagnostics is required" in error for error in errors)
+
+
+def test_browser_status_validator_rejects_missing_required_rendered_links():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    status["renderedMeshDiagnostics"] = [
+        diagnostic for diagnostic in status["renderedMeshDiagnostics"] if diagnostic["link_name"] != "forearm_link"
+    ]
+
+    errors = module.validate_browser_status(status)
+
+    assert any("upper_arm_link -> forearm_link" in error and "forearm_link" in error for error in errors)
+    assert any("forearm_link -> wrist_1_link" in error and "forearm_link" in error for error in errors)
+
+
+def test_browser_status_validator_rejects_excessive_adjacent_rendered_mesh_separation():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    for diagnostic in status["renderedMeshDiagnostics"]:
+        if diagnostic["link_name"] == "upper_arm_link":
+            diagnostic["loaded_mesh_bounding_box_center"] = {"x": 10.0, "y": 0.0, "z": 0.0}
+            diagnostic["visual_wrapper_world_position"] = {"x": 10.0, "y": 0.0, "z": 0.0}
+
+    errors = module.validate_browser_status(status)
+
+    assert any("shoulder_link -> upper_arm_link" in error and "expected <=" in error for error in errors)
+    assert any("upper_arm_link -> forearm_link" in error and "expected <=" in error for error in errors)
+
+
+def test_browser_status_validator_accepts_valid_rendered_mesh_diagnostics_snake_case():
+    status = {
+        "mesh_loaded_count": 18,
+        "required_mesh_failed_count": 0,
+        "viewer_resolved_distances_m": _valid_viewer_distances(),
+        "rendered_mesh_diagnostics": _valid_rendered_mesh_diagnostics(),
+    }
+
+    assert module.validate_browser_status(status) == []
