@@ -19,6 +19,17 @@ const STAGED_MESH_ROOTS = [
   'workcell_studio_web/',
   'assets/',
 ];
+const EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS = [
+  'base_link_inertia',
+  'shoulder_link',
+  'upper_arm_link',
+  'forearm_link',
+  'wrist_1_link',
+  'wrist_2_link',
+  'wrist_3_link',
+  'tool0',
+  'gripper_base_link',
+];
 
 const el = {
   file: document.getElementById('scene-file'),
@@ -101,10 +112,83 @@ function isUserFacingWarning(w) {
   ];
   return realFailureTokens.some(token => text.includes(token));
 }
+
+function vector3ToDiagnostics(value) {
+  const xyz = finiteXyzArrayFromVector(value);
+  return xyz ? { x: xyz[0], y: xyz[1], z: xyz[2] } : null;
+}
+function box3DiagnosticsForObject(object) {
+  if (!object || !THREE?.Box3) return { center: null, size: null };
+  object.updateMatrixWorld(true);
+  const box = finiteBox3(new THREE.Box3().setFromObject(object));
+  if (!box) return { center: null, size: null };
+  const center = new THREE.Vector3();
+  const size = new THREE.Vector3();
+  box.getCenter(center);
+  box.getSize(size);
+  return {
+    center: vector3ToDiagnostics(center),
+    size: vector3ToDiagnostics(size),
+  };
+}
+function collectRenderedMeshDiagnostics() {
+  if (!THREE?.Vector3) return [];
+  state.three?.scene?.updateMatrixWorld?.(true);
+  const diagnostics = [];
+  for (const rendered of state.objects || []) {
+    const item = rendered?.item || {};
+    if (!rendered?.object3d || !isGeneratedUrdfItem(item)) continue;
+    rendered.object3d.updateMatrixWorld(true);
+    rendered.meshObject?.updateMatrixWorld?.(true);
+    rendered.loadedMeshObject?.updateMatrixWorld?.(true);
+
+    const linkFrameWorldPosition = new THREE.Vector3();
+    rendered.object3d.getWorldPosition(linkFrameWorldPosition);
+
+    let visualWrapperWorldPosition = null;
+    if (rendered.meshObject?.getWorldPosition) {
+      const visualWrapperWorld = new THREE.Vector3();
+      rendered.meshObject.getWorldPosition(visualWrapperWorld);
+      visualWrapperWorldPosition = vector3ToDiagnostics(visualWrapperWorld);
+    }
+
+    const boundsSource = rendered.loadedMeshObject || rendered.meshObject;
+    const bounds = box3DiagnosticsForObject(boundsSource);
+    diagnostics.push({
+      id: item.id || '',
+      link: item.link || item.object_name || item.visual || '',
+      link_name: item.link_name || item.link || item.object_name || '',
+      frame: item.frame || item.frame_id || item.link || item.link_name || '',
+      display_name: item.display_name || item.label || item.name || item.object_name || item.link || item.id || '',
+      render_status: rendered.renderInfo?.render_status || item.renderInfo?.render_status || item.mesh_status || '',
+      mesh_uri: rendered.renderInfo?.mesh_uri || displayMeshUri(item),
+      linkFrameWorldPosition: vector3ToDiagnostics(linkFrameWorldPosition),
+      link_frame_world_position: vector3ToDiagnostics(linkFrameWorldPosition),
+      visualWrapperWorldPosition,
+      visual_wrapper_world_position: visualWrapperWorldPosition,
+      loadedMeshBoundingBoxCenter: bounds.center,
+      loaded_mesh_bounding_box_center: bounds.center,
+      loadedMeshBoundingBoxSize: bounds.size,
+      loaded_mesh_bounding_box_size: bounds.size,
+    });
+  }
+  const expectedOrder = new Map(EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS.map((name, index) => [name, index]));
+  diagnostics.sort((a, b) => {
+    const aKey = a.link_name || a.link || a.frame || a.id;
+    const bKey = b.link_name || b.link || b.frame || b.id;
+    const aIndex = expectedOrder.has(aKey) ? expectedOrder.get(aKey) : Number.MAX_SAFE_INTEGER;
+    const bIndex = expectedOrder.has(bKey) ? expectedOrder.get(bKey) : Number.MAX_SAFE_INTEGER;
+    if (aIndex !== bIndex) return aIndex - bIndex;
+    return String(aKey).localeCompare(String(bKey));
+  });
+  return diagnostics;
+}
+
 function updateViewerStatus() {
   const summary = computeSceneSummary();
   const warnings = asArray(state.sceneJson?.warnings).concat(asArray(state.sceneJson?.notes_warnings), asArray(state.runtimeWarnings));
   const resolvedFrameStatus = buildResolvedFrameStatus();
+  const renderedMeshDiagnostics = collectRenderedMeshDiagnostics();
   window.__WORKCELL_VIEWER_STATUS__ = {
     scene_name: summary.sceneName,
     sceneName: summary.sceneName,
@@ -122,6 +206,8 @@ function updateViewerStatus() {
     resolved_frame_positions: resolvedFrameStatus.resolved_frame_positions,
     viewer_resolved_distances_m: resolvedFrameStatus.viewer_resolved_distances_m,
     resolvedFrameDistancesM: resolvedFrameStatus.resolvedFrameDistancesM,
+    renderedMeshDiagnostics,
+    rendered_mesh_diagnostics: renderedMeshDiagnostics,
   };
   return window.__WORKCELL_VIEWER_STATUS__;
 }

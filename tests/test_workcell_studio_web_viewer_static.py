@@ -534,3 +534,42 @@ def test_viewer_status_static_contract_counts_physical_not_debug_overlay_visibil
     assert "requiredMeshFailedCount: statusCountedRenderables().filter(isRequiredMeshFailureStatus).length" in status_body
     assert "renderSceneSummary();" in debug_toggle_body
     assert "rendered.object3d.visible = state.debugOverlaysVisible" in debug_toggle_body
+
+
+def test_viewer_status_exports_generated_urdf_mesh_diagnostics():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    diagnostics_body = _viewer_function_body(js, "function collectRenderedMeshDiagnostics()", "function updateViewerStatus")
+    status_body = _viewer_function_body(js, "function updateViewerStatus()", "function renderSceneSummary")
+
+    assert "state.three?.scene?.updateMatrixWorld?.(true);" in diagnostics_body
+    assert "rendered.object3d.updateMatrixWorld(true);" in diagnostics_body
+    assert "rendered.object3d.getWorldPosition(linkFrameWorldPosition);" in diagnostics_body
+    assert "rendered.meshObject.getWorldPosition(visualWrapperWorld);" in diagnostics_body
+    assert "new THREE.Box3().setFromObject(object)" in js
+    for token in [
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+        "tool0",
+        "gripper_base_link",
+    ]:
+        assert token in js
+    for token in [
+        "id:",
+        "link:",
+        "link_name:",
+        "frame:",
+        "display_name:",
+        "linkFrameWorldPosition",
+        "visualWrapperWorldPosition",
+        "loadedMeshBoundingBoxCenter",
+        "loadedMeshBoundingBoxSize",
+    ]:
+        assert token in diagnostics_body
+    assert "const renderedMeshDiagnostics = collectRenderedMeshDiagnostics();" in status_body
+    assert "renderedMeshDiagnostics" in status_body
+    assert "rendered_mesh_diagnostics: renderedMeshDiagnostics" in status_body
