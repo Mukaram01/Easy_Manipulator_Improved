@@ -14,6 +14,10 @@ class QGraphicsView;
 class QGraphicsScene;
 class QGraphicsItem;
 class QGraphicsProxyWidget;
+class QProcess;
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+class QWebEngineView;
+#endif
 
 class ScenePreviewWidget : public QWidget
 {
@@ -285,6 +289,9 @@ private:
   void reset_fallback_scene_view();
   void refresh_info_chip();
   void refresh_toolbar_visibility();
+  void refresh_embedded_web_product_view();
+  void ensure_embedded_web_server_started(const QString & repo_root);
+  QString resolve_embedded_web_repo_root() const;
   bool diagnostic_debug_logging_enabled() const;
   bool emit_scene_diagnostic_once(const QString & event, int payload_count, const QString & message);
   void emit_visual_quality_assessment_once();
@@ -313,6 +320,12 @@ private:
   QLabel * error_state_label_{ nullptr };
   QLabel * fallback_banner_label_{ nullptr };
   QWidget * simple_3d_view_{ nullptr };
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+  QWebEngineView * embedded_web_view_{ nullptr };
+#endif
+  QProcess * embedded_web_server_process_{ nullptr };
+  QString embedded_web_repo_root_;
+  int embedded_web_server_port_{ 8765 };
   QGraphicsView * fallback_2d_view_{ nullptr };
   QLabel * info_chip_label_{ nullptr };
   QGraphicsProxyWidget * fallback_info_chip_proxy_{ nullptr };

@@ -3752,7 +3752,7 @@ void SceneSelect::on_export_open_web_3d_viewer_clicked()
   const fs::path viewer_path = repo_root / "workcell_studio_web" / "viewer" / "index.html";
   const QString web_scene_url_path = QString("build/workcell_studio_web_scene/%1.web_scene.json")
     .arg(QString::fromStdString(scene_id));
-  const QString viewer_url = QString("http://localhost:8765/workcell_studio_web/viewer/index.html?scene=%1")
+  const QString viewer_url = QString("http://127.0.0.1:8765/workcell_studio_web/viewer/index.html?scene=%1")
     .arg(QString::fromUtf8(QUrl::toPercentEncoding(web_scene_url_path)));
   fs::create_directories(output_path.parent_path(), ec);
   const QStringList args{

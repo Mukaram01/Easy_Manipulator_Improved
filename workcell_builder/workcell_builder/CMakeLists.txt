@@ -42,6 +42,7 @@ find_package(ament_index_cpp REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system filesystem)
 find_package(Qt5 COMPONENTS Widgets Concurrent Svg OpenGL REQUIRED)
+find_package(Qt5 COMPONENTS WebEngineWidgets QUIET)
 find_package(OpenGL REQUIRED)
 find_package(assimp QUIET)
 
@@ -217,6 +218,11 @@ target_link_libraries(workcell_builder
   yaml-cpp
   ${Boost_LIBRARIES}
 )
+
+if(Qt5WebEngineWidgets_FOUND)
+  target_compile_definitions(workcell_builder PRIVATE WORKCELL_BUILDER_HAS_WEBENGINE=1)
+  target_link_libraries(workcell_builder Qt5::WebEngineWidgets)
+endif()
 
 if(assimp_FOUND)
   target_compile_definitions(workcell_builder PRIVATE WORKCELL_BUILDER_HAS_ASSIMP=1)

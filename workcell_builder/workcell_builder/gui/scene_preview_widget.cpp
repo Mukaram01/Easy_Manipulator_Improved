@@ -84,6 +84,14 @@ void maybe_warn_overlay_fit_dominance(ScenePreviewWidget * self, const QRectF & 
 #include <functional>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
+#include <QProcess>
+#include <QUrl>
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+#include <QWebEngineView>
+#endif
 #include "scene3d_viewport_widget.h"
 #include <QPainter>
 #include <QStackedWidget>
@@ -202,8 +210,14 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   root->addLayout(controls);
   stack_ = new QStackedWidget(this);
   view3d_container_ = new QWidget(this); auto * v3 = new QVBoxLayout(view3d_container_);
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+  embedded_web_view_ = new QWebEngineView(view3d_container_);
+  embedded_web_view_->setObjectName("embeddedWeb3dProductView");
+  simple_3d_view_ = embedded_web_view_;
+#else
   simple_3d_view_ = new Scene3DViewportWidget(view3d_container_);
   simple_3d_view_->setObjectName("scene3dViewportWidget");
+#endif
   v3->addWidget(simple_3d_view_);
   empty_state_label_ = new QLabel("No scene selected\nOpen a scene or create a new cell to preview it.", view3d_container_);
   empty_state_label_->setAlignment(Qt::AlignCenter); v3->addWidget(empty_state_label_);
@@ -222,7 +236,8 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   stack_->addWidget(view3d_container_); stack_->addWidget(view2d_container_); root->addWidget(stack_, 1);
   connect(mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, &ScenePreviewWidget::on_mode_changed);
   connect(labels_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
-    auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    auto *v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    if (!v) { refresh_embedded_web_product_view(); refresh_info_chip(); return; }
     const QString choice = labels_selector_->currentText();
     if (choice == "Off") v->label_mode = LabelMode::Off;
     else if (choice == "Important") v->label_mode = LabelMode::Important;
@@ -232,7 +247,8 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     refresh_info_chip();
   });
   connect(snap_mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
-    auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    if (!v) return;
     const QString choice = snap_mode_selector_->currentText();
     if (choice == "1 cm") v->snap_mode = Scene3DViewportWidget::SnapMode::Cm1;
     else if (choice == "5 cm") v->snap_mode = Scene3DViewportWidget::SnapMode::Cm5;
@@ -244,7 +260,8 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     refresh_info_chip();
   });
   connect(gizmo_mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
-    auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    if (!v) return;
     const QString choice = gizmo_mode_selector_->currentText();
     if (choice == "Move") v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Move;
     else if (choice == "Rotate") v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Rotate;
@@ -254,17 +271,17 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     refresh_info_chip();
   });
   connect(mesh_preview_mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
-    auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
     const QString choice = mesh_preview_mode_selector_->currentText();
     if (choice == "Meshes") mesh_preview_mode_ = MeshPreviewMode::Meshes;
     else if (choice == "Primitives") mesh_preview_mode_ = MeshPreviewMode::Primitives;
     else mesh_preview_mode_ = MeshPreviewMode::Auto;
-    v->mesh_preview_mode = mesh_preview_mode_;
-    v->update();
+    if (v) { v->mesh_preview_mode = mesh_preview_mode_; v->update(); }
   });
   connect(interaction_mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     const QString choice = interaction_mode_selector_->currentText();
-    auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    if (!v) return;
     if (choice == "Move") { v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Move; if (gizmo_mode_selector_) gizmo_mode_selector_->setCurrentText("Move"); }
     else if (choice == "Rotate") { v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Rotate; if (gizmo_mode_selector_) gizmo_mode_selector_->setCurrentText("Rotate"); }
     else { v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Select; if (gizmo_mode_selector_) gizmo_mode_selector_->setCurrentText("Select"); }
@@ -273,7 +290,8 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   });
   connect(view_actions_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     const QString choice = view_actions_selector_->currentText();
-    auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    if (!v) { if (choice == "Fit View") refresh_embedded_web_product_view(); refresh_info_chip(); return; }
     if (choice == "Top") v->set_top_view();
     else if (choice == "Front") v->set_front_view();
     else if (choice == "Side") v->set_side_view();
@@ -285,8 +303,9 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     refresh_info_chip();
   });
   connect(overlays_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
-    auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    auto *v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
     const QString choice = overlays_selector_->currentText();
+    if (!v) { if (choice != "Overlays") emit studio_log_requested(QString("Embedded Web 3D Product View handles Product View controls in the browser; use the web viewer UI for overlays and camera actions.")); if (overlays_selector_ && choice != "Overlays") { const QSignalBlocker blocker(overlays_selector_); overlays_selector_->setCurrentText("Overlays"); } refresh_info_chip(); return; }
     if (choice == "Diagnostics Overlay") {
       v->debug_overlays_mode = !v->debug_overlays_mode;
       emit studio_log_requested(QString("Scene3D diagnostics overlay %1. Detailed render diagnostics remain available in logs.")
@@ -318,12 +337,69 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     v->update();
     refresh_info_chip();
   });
-  static_cast<Scene3DViewportWidget *>(simple_3d_view_)->select_cb = [this](const QString & id, const QString & role){ select_preview_item(id); emit preview_item_selected(id, role); if (diagnostic_debug_logging_enabled()) emit studio_log_requested(QString("Selected preview item: %1 (%2)").arg(id, role)); };
-  static_cast<Scene3DViewportWidget *>(simple_3d_view_)->status_message_cb = [this](const QString & message) {
+  if (auto * legacy_viewport = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_)) {
+  legacy_viewport->select_cb = [this](const QString & id, const QString & role){ select_preview_item(id); emit preview_item_selected(id, role); if (diagnostic_debug_logging_enabled()) emit studio_log_requested(QString("Selected preview item: %1 (%2)").arg(id, role)); };
+  legacy_viewport->status_message_cb = [this](const QString & message) {
     emit studio_log_requested(message);
   };
+  }
   refresh_info_chip();
   refresh_mode_and_state();
+}
+
+QString ScenePreviewWidget::resolve_embedded_web_repo_root() const
+{
+  if (!embedded_web_repo_root_.trimmed().isEmpty()) return embedded_web_repo_root_;
+  QStringList starts{QDir::currentPath(), QCoreApplication::applicationDirPath()};
+  for (const QString & start : starts) {
+    QDir dir(start);
+    for (int i = 0; i < 8; ++i) {
+      const QString viewer = dir.filePath("workcell_studio_web/viewer/index.html");
+      if (QFileInfo::exists(viewer)) return dir.absolutePath();
+      if (!dir.cdUp()) break;
+    }
+  }
+  return QString();
+}
+
+void ScenePreviewWidget::ensure_embedded_web_server_started(const QString & repo_root)
+{
+  if (repo_root.trimmed().isEmpty()) return;
+  if (embedded_web_server_process_ && embedded_web_server_process_->state() != QProcess::NotRunning) return;
+  embedded_web_server_process_ = new QProcess(this);
+  embedded_web_server_process_->setProgram(QStringLiteral("python3"));
+  embedded_web_server_process_->setArguments(QStringList{"-m", "http.server", QString::number(embedded_web_server_port_), "--bind", "127.0.0.1"});
+  embedded_web_server_process_->setWorkingDirectory(repo_root);
+  embedded_web_server_process_->setProcessChannelMode(QProcess::MergedChannels);
+  embedded_web_server_process_->start();
+  if (embedded_web_server_process_->waitForStarted(750)) {
+    emit studio_log_requested(QStringLiteral("Started embedded Web 3D Product View server from repo root: python3 -m http.server 8765 --bind 127.0.0.1"));
+  } else {
+    emit studio_log_requested(QStringLiteral("Embedded Web 3D Product View could not start python3 -m http.server 8765 --bind 127.0.0.1; loading the localhost URL in case a repo-root server is already running."));
+  }
+}
+
+void ScenePreviewWidget::refresh_embedded_web_product_view()
+{
+#ifndef WORKCELL_BUILDER_HAS_WEBENGINE
+  return;
+#else
+  if (!embedded_web_view_) return;
+  const QString scene = preview_scene_name_.trimmed();
+  if (scene.isEmpty() || scene == QStringLiteral("No scene")) return;
+  const QString repo_root = resolve_embedded_web_repo_root();
+  if (repo_root.isEmpty()) {
+    emit studio_log_requested(QStringLiteral("Embedded Web 3D Product View unavailable: could not find workcell_studio_web/viewer/index.html from the current application paths."));
+    return;
+  }
+  embedded_web_repo_root_ = repo_root;
+  ensure_embedded_web_server_started(repo_root);
+  const QString web_scene_url_path = QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(scene);
+  const QString viewer_url = QStringLiteral("http://127.0.0.1:%1/workcell_studio_web/viewer/index.html?scene=%2")
+    .arg(embedded_web_server_port_)
+    .arg(QString::fromUtf8(QUrl::toPercentEncoding(web_scene_url_path)));
+  embedded_web_view_->load(QUrl(viewer_url));
+#endif
 }
 void ScenePreviewWidget::set_fallback_2d_view(QGraphicsView * view){ fallback_2d_view_ = view; if (!view2d_container_->layout()) view2d_container_->setLayout(new QVBoxLayout()); view2d_container_->layout()->addWidget(view); if (fallback_2d_view_ && fallback_2d_view_->scene() && info_chip_label_ && !fallback_info_chip_proxy_) { fallback_info_chip_proxy_ = fallback_2d_view_->scene()->addWidget(info_chip_label_); fallback_info_chip_proxy_->setZValue(10000.0); fallback_info_chip_proxy_->setPos(12.0, 12.0); } refresh_info_chip(); }
 void ScenePreviewWidget::set_scene_selected(bool selected){ scene_selected_ = selected; refresh_mode_and_state(); }
@@ -345,15 +421,16 @@ void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items)
 {
   preview_items_ = items;
   ++preview_payload_revision_;
-  auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
-  viewport->ingest_preview_items(preview_items_);
+  auto * viewport = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  if (viewport) viewport->ingest_preview_items(preview_items_);
   const bool has_selected = std::any_of(preview_items_.cbegin(), preview_items_.cend(), [this](const PreviewItem & it){ return it.id == selected_preview_item_id_; });
-  viewport->selected_id = selected_preview_item_id_;
+  if (viewport) viewport->selected_id = selected_preview_item_id_;
   if (diagnostic_debug_logging_enabled() && !selected_preview_item_id_.isEmpty()) {
     emit studio_log_requested(has_selected ? QString("Preview selection restored after refresh: %1").arg(selected_preview_item_id_) : QString("Preview selection retained after refresh; id is hidden by filters or absent from the visible preview payload: %1").arg(selected_preview_item_id_));
   }
-  viewport->fit_include_overlays = false;
+  if (viewport) viewport->fit_include_overlays = false;
   apply_product_view_defaults();
+  refresh_embedded_web_product_view();
   emit_scene_diagnostic_once(
     QStringLiteral("payload_commit"),
     preview_items_.size(),
@@ -361,9 +438,9 @@ void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items)
       .arg(preview_scene_name_)
       .arg(preview_payload_revision_)
       .arg(preview_items_.size())
-      .arg(viewport->render_debug_counters().visible_count)
-      .arg(viewport->render_debug_counters().mesh_backed_count)
-      .arg(viewport->render_debug_counters().primitive_fallback_count));
+      .arg(viewport ? viewport->render_debug_counters().visible_count : 0)
+      .arg(viewport ? viewport->render_debug_counters().mesh_backed_count : 0)
+      .arg(viewport ? viewport->render_debug_counters().primitive_fallback_count : 0));
   fit_fallback_scene_to_items(false);
   refresh_info_chip();
   emit_visual_quality_assessment_once();
@@ -384,15 +461,15 @@ void ScenePreviewWidget::set_preview_scene_name(const QString & scene_name)
   } else {
     preview_scene_name_ = normalized_scene_name;
   }
-  auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
-  v->scene_name = preview_scene_name_;
+  auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  if (v) { v->scene_name = preview_scene_name_; v->update(); }
+  refresh_embedded_web_product_view();
   refresh_info_chip();
-  v->update();
 }
 
 bool ScenePreviewWidget::diagnostic_debug_logging_enabled() const
 {
-  const auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  const auto * viewport = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
   return (viewport && viewport->debug_overlays_mode) || qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS");
 }
 
@@ -445,9 +522,10 @@ void ScenePreviewWidget::set_clean_product_view_status(bool clean, int visual_co
   clean_product_visual_count_ = qMax(0, visual_count);
   refresh_info_chip();
 }
-void ScenePreviewWidget::set_task_overlay_model(const TaskOverlayModel & model){ overlay_model_ = model; static_cast<Scene3DViewportWidget *>(simple_3d_view_)->task_overlay = model; refresh_info_chip(); simple_3d_view_->update(); }
+void ScenePreviewWidget::set_task_overlay_model(const TaskOverlayModel & model){ overlay_model_ = model; if (auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_)) v->task_overlay = model; refresh_info_chip(); simple_3d_view_->update(); }
 void ScenePreviewWidget::set_task_overlay_visibility(bool task_route, bool pick_place_zones, bool approach_retreat, bool labels){
-  auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  if (!v) return;
   v->show_task_route = task_route;
   v->show_pick_place = pick_place_zones;
   v->show_approach_retreat = approach_retreat;
@@ -456,7 +534,7 @@ void ScenePreviewWidget::set_task_overlay_visibility(bool task_route, bool pick_
   // else if (v->label_mode == LabelMode::All) v->label_mode = LabelMode::SelectedOnly;
   v->update();
 }
-void ScenePreviewWidget::select_preview_item(const QString & id){ selected_preview_item_id_ = id; static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id = id; simple_3d_view_->update(); }
+void ScenePreviewWidget::select_preview_item(const QString & id){ selected_preview_item_id_ = id; if (auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_)) v->selected_id = id; simple_3d_view_->update(); }
 QString ScenePreviewWidget::selected_preview_item_id() const { return selected_preview_item_id_; }
 const ScenePreviewWidget::PreviewItem * ScenePreviewWidget::preview_item_by_id(const QString & id) const
 {
@@ -472,7 +550,8 @@ ScenePreviewWidget::MeshPreviewMode ScenePreviewWidget::mesh_preview_mode() cons
 
 void ScenePreviewWidget::reload_meshes()
 {
-  auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  if (!v) { refresh_embedded_web_product_view(); emit studio_log_requested("Reloaded embedded Web 3D Product View."); return; }
   v->invalidate_mesh_cache();
   apply_product_view_defaults();
   update();
@@ -480,7 +559,7 @@ void ScenePreviewWidget::reload_meshes()
 }
 void ScenePreviewWidget::apply_product_view_defaults()
 {
-  auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
   if (!v) return;
   if (view_actions_selector_) {
     const QSignalBlocker blocker(view_actions_selector_);
@@ -520,12 +599,12 @@ void ScenePreviewWidget::apply_product_view_defaults()
   v->fit_product_view();
   fit_fallback_scene_to_items(false);
 }
-void ScenePreviewWidget::on_reset_view_clicked(){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->reset_view(); reset_fallback_scene_view(); }
-void ScenePreviewWidget::on_fit_scene_clicked(){ auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->fit_include_overlays = false; v->fit_scene(); fit_fallback_scene_to_items(false); } // Fit Scene intentionally excludes overlay-only bounds by default.
-void ScenePreviewWidget::on_fit_robot_clicked(){ auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->fit_robot(); fit_fallback_scene_to_items(false); }
-void ScenePreviewWidget::on_fit_overlays_clicked(){ auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_); const QRectF physical_bounds = rendered_items_bounds_2d(false); const QRectF overlay_bounds = rendered_items_bounds_2d(true); maybe_warn_overlay_fit_dominance(this, physical_bounds, overlay_bounds); v->fit_include_overlays = true; v->fit_scene(); fit_fallback_scene_to_items(true); v->fit_include_overlays = false; } // Fit overlays includes overlay bounds for explicit overlay-focused framing.
-void ScenePreviewWidget::on_focus_selected_clicked(){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->focus_selected(); }
-void ScenePreviewWidget::on_clear_selection_clicked(){ selected_preview_item_id_.clear(); static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id.clear(); simple_3d_view_->update(); emit studio_log_requested("Cleared preview selection."); emit preview_item_selected(QString(), QStringLiteral("unknown")); }
+void ScenePreviewWidget::on_reset_view_clicked(){ if (auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_)) v->reset_view(); else refresh_embedded_web_product_view(); reset_fallback_scene_view(); }
+void ScenePreviewWidget::on_fit_scene_clicked(){ auto *v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_); if (v) { v->fit_include_overlays = false; v->fit_scene(); } fit_fallback_scene_to_items(false); } // Fit Scene intentionally excludes overlay-only bounds by default.
+void ScenePreviewWidget::on_fit_robot_clicked(){ auto *v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_); if (v) v->fit_robot(); fit_fallback_scene_to_items(false); }
+void ScenePreviewWidget::on_fit_overlays_clicked(){ auto *v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_); const QRectF physical_bounds = rendered_items_bounds_2d(false); const QRectF overlay_bounds = rendered_items_bounds_2d(true); maybe_warn_overlay_fit_dominance(this, physical_bounds, overlay_bounds); if (v) { v->fit_include_overlays = true; v->fit_scene(); } fit_fallback_scene_to_items(true); if (v) v->fit_include_overlays = false; } // Fit overlays includes overlay bounds for explicit overlay-focused framing.
+void ScenePreviewWidget::on_focus_selected_clicked(){ if (auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_)) v->focus_selected(); }
+void ScenePreviewWidget::on_clear_selection_clicked(){ selected_preview_item_id_.clear(); if (auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_)) v->selected_id.clear(); simple_3d_view_->update(); emit studio_log_requested("Cleared preview selection."); emit preview_item_selected(QString(), QStringLiteral("unknown")); }
 void ScenePreviewWidget::refresh_toolbar_visibility()
 {
   if (view_actions_selector_) {
@@ -646,19 +725,19 @@ void ScenePreviewWidget::reset_fallback_scene_view()
   fit_fallback_scene_to_items(false);
 }
 
-void ScenePreviewWidget::set_camera_overlay_model(const CameraOverlayModel & model){ camera_overlay_model_ = model; auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->camera_overlay = model; refresh_info_chip(); simple_3d_view_->update(); }
-void ScenePreviewWidget::set_epd_detection_overlays(const QVector<EpdDetectionOverlayModel> & detections){ epd_detections_ = detections; auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->epd_detections = detections; refresh_info_chip(); simple_3d_view_->update(); }
-void ScenePreviewWidget::set_perception_overlay_visibility(bool camera_fov, bool pick_coverage, bool epd_detections, bool detection_labels){ auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->show_camera_fov=camera_fov; v->show_pick_coverage=pick_coverage; v->show_epd_detections=epd_detections; v->show_detection_labels=detection_labels; v->update(); }
+void ScenePreviewWidget::set_camera_overlay_model(const CameraOverlayModel & model){ camera_overlay_model_ = model; if (auto *v=qobject_cast<Scene3DViewportWidget *>(simple_3d_view_)) v->camera_overlay = model; refresh_info_chip(); simple_3d_view_->update(); }
+void ScenePreviewWidget::set_epd_detection_overlays(const QVector<EpdDetectionOverlayModel> & detections){ epd_detections_ = detections; if (auto *v=qobject_cast<Scene3DViewportWidget *>(simple_3d_view_)) v->epd_detections = detections; refresh_info_chip(); simple_3d_view_->update(); }
+void ScenePreviewWidget::set_perception_overlay_visibility(bool camera_fov, bool pick_coverage, bool epd_detections, bool detection_labels){ auto *v=qobject_cast<Scene3DViewportWidget *>(simple_3d_view_); if (!v) return; v->show_camera_fov=camera_fov; v->show_pick_coverage=pick_coverage; v->show_epd_detections=epd_detections; v->show_detection_labels=detection_labels; v->update(); }
 
 
-void ScenePreviewWidget::set_reachability_overlay_model(const ReachabilityOverlayModel & model){ reachability_overlay_model_ = model; auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->reach_overlay = model; if (diagnostic_debug_logging_enabled()) emit studio_log_requested(QString("reachability overlay loaded: warning count=%1").arg(model.warnings.size())); refresh_info_chip(); simple_3d_view_->update(); }
-void ScenePreviewWidget::set_collision_overlay_model(const CollisionOverlayModel & model){ collision_overlay_model_ = model; auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->collision_overlay = model; if (diagnostic_debug_logging_enabled()) emit studio_log_requested(QString("collision preview checks complete: warning count=%1").arg(model.warnings.size())); refresh_info_chip(); simple_3d_view_->update(); }
+void ScenePreviewWidget::set_reachability_overlay_model(const ReachabilityOverlayModel & model){ reachability_overlay_model_ = model; if (auto *v=qobject_cast<Scene3DViewportWidget *>(simple_3d_view_)) v->reach_overlay = model; if (diagnostic_debug_logging_enabled()) emit studio_log_requested(QString("reachability overlay loaded: warning count=%1").arg(model.warnings.size())); refresh_info_chip(); simple_3d_view_->update(); }
+void ScenePreviewWidget::set_collision_overlay_model(const CollisionOverlayModel & model){ collision_overlay_model_ = model; if (auto *v=qobject_cast<Scene3DViewportWidget *>(simple_3d_view_)) v->collision_overlay = model; if (diagnostic_debug_logging_enabled()) emit studio_log_requested(QString("collision preview checks complete: warning count=%1").arg(model.warnings.size())); refresh_info_chip(); simple_3d_view_->update(); }
 
-void ScenePreviewWidget::set_label_mode(LabelMode mode){ Q_UNUSED(mode); auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->label_mode = LabelMode::Selected; if (labels_selector_) labels_selector_->setCurrentText("Selected"); v->update(); }
+void ScenePreviewWidget::set_label_mode(LabelMode mode){ Q_UNUSED(mode); auto *v=qobject_cast<Scene3DViewportWidget *>(simple_3d_view_); if (labels_selector_) labels_selector_->setCurrentText("Selected"); if (v) { v->label_mode = LabelMode::Selected; v->update(); } }
 
 ScenePreviewWidget::RenderDebugCounters ScenePreviewWidget::render_debug_counters() const
 {
-  const auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  const auto * viewport = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
   const auto counters = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
   RenderDebugCounters out;
   out.preview_items_count = preview_items_.size();
@@ -747,7 +826,7 @@ void ScenePreviewWidget::refresh_info_chip()
          lock_reason.contains("robotmodel") || lock_reason.contains("urdf visual"))) ++locked_urdf_count;
   }
 
-  const auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  const auto * viewport = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
   const auto counters = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
   const QString compact_stats = QString("Items %1 M%2 B%3 Miss%4 Ov%5 L-URDF%6")
                                   .arg(physical_count).arg(mesh_count).arg(box_count).arg(missing_count).arg(overlay_count).arg(locked_urdf_count);
