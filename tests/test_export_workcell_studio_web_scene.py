@@ -351,3 +351,61 @@ def test_web_viewer_prefers_canonical_final_transform_without_visual_origin_reco
     pose_block = viewer.split("function poseOf(item)", 1)[1].split("function scaleOf", 1)[0]
     assert "item.final_transform || item.world_from_visual || item.baked_world_visual_pose" in pose_block
     assert "visual_origin" not in pose_block
+
+
+def test_robotiq_fallback_uses_tool0_frame_not_wrist_visual_pose(tmp_path):
+    scene = tmp_path / "scene"
+    (scene / "layout").mkdir(parents=True)
+    (scene / "generated").mkdir()
+    (scene / "scene_manifest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "scene": {"name": "tool0_frame_regression"},
+                "end_effector": {"id": "robotiq_85", "model": "robotiq_85"},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (scene / "cell_definition.yaml").write_text("{}", encoding="utf-8")
+    (scene / "environment.yaml").write_text("{}", encoding="utf-8")
+    (scene / "layout/workcell_studio_layout.yaml").write_text(yaml.safe_dump({"items": []}), encoding="utf-8")
+    (scene / "generated/scene_visual_mesh_index.json").write_text(
+        json.dumps(
+            {
+                "visual_items": [
+                    {
+                        "id": "generated_urdf::wrist_3_link::visual_0",
+                        "category": "robot",
+                        "role": "robot",
+                        "link": "wrist_3_link",
+                        "mesh_uri": "package://ur_description/meshes/ur5/visual/wrist3.dae",
+                        "link_world_pose": {"xyz": [0.4, 0.2, 0.6], "rpy": [0.0, 0.0, 0.0]},
+                        "visual_origin": {"xyz": [0.3, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
+                        "baked_world_visual_pose": {"xyz": [0.7, 0.2, 0.6], "rpy": [0.0, 0.0, 0.0]},
+                    },
+                    {
+                        "id": "generated_urdf::tool0::frame",
+                        "category": "tool",
+                        "role": "frame_anchor",
+                        "link": "tool0",
+                        "render_expected": False,
+                        "geometry_type": "frame",
+                        "link_world_pose": {"xyz": [0.4, 0.2, 0.6], "rpy": [0.0, 0.0, 0.0]},
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    out = tmp_path / "build/scene.web_scene.json"
+    subprocess.run([sys.executable, str(SCRIPT), "--scene", str(scene), "--output", str(out)], check=True)
+
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    gripper_base = next(item for item in payload["tools"] if item["link"] == "gripper_base_link")
+    assert gripper_base["parent_link"] == "tool0"
+    assert gripper_base["joint_parent_link"] == "tool0"
+    assert gripper_base["link_world_pose"]["xyz"] == [0.4, 0.2, 0.6]
+    assert gripper_base["final_transform"]["xyz"] == [0.4, 0.2, 0.6]
+    assert gripper_base["final_transform"]["xyz"] != [0.7, 0.2, 0.6]

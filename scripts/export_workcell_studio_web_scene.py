@@ -443,7 +443,7 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
     fields = (
         "id", "type", "category", "role", "display_name", "link", "object_name", "visual", "pose", "world_pose",
         "final_transform", "world_from_visual", "transform_source",
-        "baked_world_visual_pose", "link_world_pose", "visual_origin", "baked_world_visual_matrix",
+        "baked_world_visual_pose", "link_world_pose", "frame_world_pose", "visual_origin", "baked_world_visual_matrix",
         "baked_world_visual_quaternion", "baked_world_visual_transform_source", "geometry_type",
         "parent_link", "immediate_parent_link", "root_link", "link_chain", "joint_parent_link",
         "parent_joint", "parent_joint_name", "parent_joint_type", "parent_joint_origin",
@@ -508,13 +508,53 @@ def _supplement_missing_tool_meshes(data: Dict[str, Any], generated: Dict[str, L
     expected_links = [str(v) for v in _as_list(tool_meta.get("visual_links"))]
     if not expected_links:
         expected_links = list(ROBOTIQ_85_VISUAL_MESHES)
-    robot_items = generated.get("robots", [])
-    wrist_pose = None
-    for item in robot_items:
-        if "wrist_3" in str(item.get("link", "")):
-            wrist_pose = item.get("pose") or item.get("world_pose") or item.get("baked_world_visual_pose")
-            break
-    link_poses: Dict[str, Json] = {"tool0": dict(wrist_pose) if isinstance(wrist_pose, Mapping) else {"xyz": [0, 0, 0], "rpy": [0, 0, 0]}}
+    def _frame_pose(item: Mapping[str, Any]) -> Optional[Json]:
+        """Return explicit link/frame world pose metadata, never render poses."""
+        for field in ("link_world_pose", "frame_world_pose"):
+            value = item.get(field)
+            if isinstance(value, Mapping):
+                return dict(value)
+        return None
+
+    def _link_name(item: Mapping[str, Any]) -> str:
+        return str(item.get("link") or item.get("link_name") or item.get("frame") or item.get("object_name") or "")
+
+    def _is_non_rendered_anchor(item: Mapping[str, Any]) -> bool:
+        if item.get("render_expected") is False:
+            return True
+        if item.get("mesh_available") is False or item.get("resolved") is False:
+            return True
+        if not any(item.get(field) for field in MESH_URI_FIELDS):
+            geometry = str(item.get("geometry_type") or item.get("primitive_geometry_type") or "").lower()
+            return geometry in {"", "frame", "anchor", "none"}
+        return False
+
+    preview_items = [
+        item
+        for section in ("robots", "tools", "assets", "sensors", "zones")
+        for item in generated.get(section, [])
+        if isinstance(item, Mapping)
+    ]
+    link_poses: Dict[str, Json] = {}
+    for item in preview_items:
+        link = _link_name(item)
+        pose = _frame_pose(item)
+        if link and pose is not None and (link not in link_poses or _is_non_rendered_anchor(item)):
+            link_poses[link] = pose
+    tool0_anchor_pose = next(
+        (
+            pose
+            for item in preview_items
+            if _link_name(item) == "tool0" and _is_non_rendered_anchor(item)
+            for pose in [_frame_pose(item)]
+            if pose is not None
+        ),
+        None,
+    )
+    if tool0_anchor_pose is not None:
+        link_poses["tool0"] = tool0_anchor_pose
+    elif "tool0" not in link_poses:
+        link_poses["tool0"] = {"xyz": [0, 0, 0], "rpy": [0, 0, 0]}
     for link in expected_links:
         mesh_name = ROBOTIQ_85_VISUAL_MESHES.get(link)
         if not mesh_name:
@@ -523,8 +563,9 @@ def _supplement_missing_tool_meshes(data: Dict[str, Any], generated: Dict[str, L
         joint_origin = _as_map(transform_meta.get("joint_origin"))
         parent_link = str(transform_meta.get("parent_link") or "tool0")
         parent_pose = link_poses.get(parent_link) or link_poses["tool0"]
-        final_transform = _pose_with_xyz_offset(parent_pose, _as_list(joint_origin.get("xyz") or [0.0, 0.0, 0.0]))
-        link_poses[link] = final_transform
+        link_world_pose = _pose_with_xyz_offset(parent_pose, _as_list(joint_origin.get("xyz") or [0.0, 0.0, 0.0]))
+        final_transform = dict(link_world_pose)
+        link_poses[link] = link_world_pose
         item: Json = {
             "id": f"generated_tool::{link}::visual_0",
             "type": "mesh",
@@ -538,7 +579,8 @@ def _supplement_missing_tool_meshes(data: Dict[str, Any], generated: Dict[str, L
             "world_pose": final_transform,
             "final_transform": final_transform,
             "world_from_visual": final_transform,
-            "link_world_pose": final_transform,
+            "link_world_pose": link_world_pose,
+            "frame_world_pose": link_world_pose,
             "parent_link": parent_link,
             "joint_parent_link": parent_link,
             "joint_origin": joint_origin,
@@ -563,8 +605,8 @@ def _supplement_missing_tool_meshes(data: Dict[str, Any], generated: Dict[str, L
             "source_kind": "generated_preview",
             "provenance": _provenance(
                 ("id", "link", "mesh_uri", "package_uri", "pose", "world_pose", "final_transform",
-                 "world_from_visual", "parent_link", "joint_origin", "visual_origin", "transform_source",
-                 "locked", "editable", "source_kind"),
+                 "world_from_visual", "link_world_pose", "frame_world_pose", "parent_link", "joint_origin",
+                 "visual_origin", "transform_source", "locked", "editable", "source_kind"),
                 "scene_manifest.yaml|generated/scene_visual_mesh_index.json",
             ),
         }
