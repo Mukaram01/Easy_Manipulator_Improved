@@ -325,3 +325,40 @@ def test_viewer_hides_camera_framing_exclusions_from_user_warning_panel_but_keep
     assert "runtime_warnings: warnings" in status_body
     assert "runtimeWarnings: warnings" in status_body
     assert "filter(isUserFacingWarning)" not in status_body
+
+
+def _viewer_function_body(js: str, signature: str, next_signature: str) -> str:
+    assert signature in js
+    assert next_signature in js
+    return js.split(signature, 1)[1].split(next_signature, 1)[0]
+
+
+def test_viewer_load_contract_keeps_selection_empty_until_manual_pick():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    prompt = "Select an object from the list or canvas."
+
+    load_file_body = _viewer_function_body(js, "async function loadFile(file)", "function safeRelativeSceneUrl")
+    load_url_body = _viewer_function_body(js, "async function loadSceneUrl(rawUrl)", "if (el.resetView)")
+    render_scene_body = _viewer_function_body(js, "function renderScene(items)", "function createLabelElement")
+    object_list_body = _viewer_function_body(js, "function populateObjectList()", "function selectObject(id)")
+    select_body = _viewer_function_body(js, "function selectObject(id)", "function pickObject(event)")
+    pick_body = _viewer_function_body(js, "function pickObject(event)", "function attachTransformGizmo")
+
+    for body in [load_file_body, load_url_body]:
+        assert "state.selected = null;" in body
+        assert "detachTransformGizmo();" in body
+        assert "renderScene(" in body
+        assert "el.inspector.className = 'state empty';" in body
+        assert f"items.length ? '{prompt}' : EMPTY_SCENE_MESSAGE" in body
+        assert "selectObject(" not in body
+
+    assert "selectObject(" not in render_scene_body
+    assert "state.selected =" not in render_scene_body
+    assert "populateObjectList();" in render_scene_body
+    assert "frameScene(bounds);" in render_scene_body
+
+    assert "li.addEventListener('click', () => selectObject(rendered.item.id));" in object_list_body
+    assert "const selected = rendered.item.id === id;" in select_body
+    assert "rendered.item.locked" not in select_body
+    assert "canEditItem(rendered.item)" not in select_body
+    assert "if (item?.id) selectObject(item.id);" in pick_body
