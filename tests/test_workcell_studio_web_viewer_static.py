@@ -297,3 +297,31 @@ def test_viewer_visual_bounds_diagnostics_and_fit_bounds_contract_are_source_gua
     assert "mesh_unit_correction" in unit_autoscale_body
     assert "auto_detected_mm_to_m" in unit_autoscale_body
     assert "auto_detected_cm_to_m" in unit_autoscale_body
+
+
+def test_viewer_hides_camera_framing_exclusions_from_user_warning_panel_but_keeps_status_raw():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    for token in [
+        "function isUserFacingWarning(w)",
+        "w.code === 'camera_framing_blocker_excluded'",
+        "return false",
+        "required_mesh_failed",
+        "invalid_dimension",
+        "visual_contract",
+        "unsafe_path",
+        "unsupported_format",
+        "missing_file",
+        "loader_failure",
+        "load_error",
+    ]:
+        assert token in js
+
+    refresh_body = js.split("function refreshWarnings", 1)[1].split("function populateWarnings", 1)[0]
+    assert "const userFacingWarnings = warnings.filter(isUserFacingWarning);" in refresh_body
+    assert "userFacingWarnings.map" in refresh_body
+    assert "warnings.map" not in refresh_body
+
+    status_body = js.split("function updateViewerStatus", 1)[1].split("function renderSceneSummary", 1)[0]
+    assert "runtime_warnings: warnings" in status_body
+    assert "runtimeWarnings: warnings" in status_body
+    assert "filter(isUserFacingWarning)" not in status_body
