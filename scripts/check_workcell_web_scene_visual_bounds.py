@@ -193,7 +193,11 @@ def check(payload: Mapping[str, Any]) -> tuple[Json, list[str]]:
                 errors.append(f"{label} is a camera/Realsense item but lacks expected_dimensions_m")
 
         has_mesh_reference = bool(item.get("mesh_url") or item.get("mesh_uri") or item.get("mesh_staged_path"))
-        is_core_mesh = item.get("mesh_load_required") is True or category in CORE_MESH_CATEGORIES or has_mesh_reference
+        # Only actual mesh-load records should be forced to carry mesh_contract_category.
+        # Aggregate records such as robots:ur5 may live in a robot section and infer a
+        # robot category, but they are not browser mesh loads and should not block
+        # visual acceptance.
+        is_core_mesh = item.get("mesh_load_required") is True or has_mesh_reference
         if is_core_mesh:
             core_mesh_items += 1
             if not isinstance(item.get("mesh_contract_category"), str) or not item.get("mesh_contract_category", "").strip():
