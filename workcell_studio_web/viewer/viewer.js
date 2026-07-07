@@ -171,7 +171,7 @@ function generatedUrdfFramePoseSource(item) {
   if (item?.frame_world_pose) return item.frame_world_pose;
   if (item?.link_world_pose) return item.link_world_pose;
   warnMissingGeneratedUrdfFramePose(item);
-  return item?.final_transform || item?.world_from_visual || item?.baked_world_visual_pose || item?.pose || item?.world_pose || {};
+  return {};
 }
 function framePoseOf(item) {
   return poseBlockOf(generatedUrdfFramePoseSource(item));
@@ -783,6 +783,18 @@ function materializeLoadedMesh(item, uri, loaded) {
   assignItemUserData(object, item);
   return object;
 }
+function makeMeshVisualRoot(item, meshObject) {
+  const visualRoot = new THREE.Group();
+  visualRoot.name = `${item.id || itemLabel(item)}_visual_origin`;
+  visualRoot.up.copy(THREE.Object3D.DEFAULT_UP);
+  applyMeshLocalTransform(visualRoot, item);
+  // Keep loader-provided scene hierarchies, especially Collada .dae internal
+  // transforms, intact below the visual-origin root.  Generated URDF visual
+  // world/baked transforms belong to the posed link root, never the mesh child.
+  visualRoot.add(meshObject);
+  assignItemUserData(visualRoot, item);
+  return visualRoot;
+}
 function applyMeshLocalTransform(meshObject, item) {
   const transform = meshLocalTransformOf(item);
   const visualOrigin = isGeneratedUrdfItem(item) ? visualOriginOf(item) : transform.pose;
@@ -852,19 +864,24 @@ async function tryLoadMesh(item, rendered, fallback) {
     else if (ext === 'dae') loaded = await new ColladaLoader().loadAsync(loadUrl);
     else loaded = await new OBJLoader().loadAsync(loadUrl);
     const meshObject = materializeLoadedMesh(item, uri, loaded);
-    applyMeshLocalTransform(meshObject, item);
-    meshObject.updateMatrixWorld(true);
-    const nativeBounds = new THREE.Box3().setFromObject(meshObject);
-    const autoscaled = maybeApplyMeshUnitAutoscale(item, meshObject, nativeBounds, uri);
-    const validationBounds = autoscaled ? new THREE.Box3().setFromObject(meshObject) : nativeBounds;
+    // Legacy flow was applyMeshLocalTransform(meshObject, item) followed by
+    // rendered.object3d.add(meshObject); generated URDF now applies that
+    // local transform to the visual-origin wrapper so the loaded hierarchy is
+    // preserved under the posed link root.
+    const visualRoot = makeMeshVisualRoot(item, meshObject);
+    visualRoot.updateMatrixWorld(true);
+    const nativeBounds = new THREE.Box3().setFromObject(visualRoot);
+    const autoscaled = maybeApplyMeshUnitAutoscale(item, visualRoot, nativeBounds, uri);
+    const validationBounds = autoscaled ? new THREE.Box3().setFromObject(visualRoot) : nativeBounds;
     fallback.visible = false;
-    rendered.object3d.add(meshObject);
-    rendered.meshObject = meshObject;
+    rendered.object3d.add(visualRoot);
+    rendered.meshObject = visualRoot;
+    rendered.loadedMeshObject = meshObject;
     item.mesh_status = 'loaded';
     item.mesh_load_error = '';
     trackMeshLoadAttempt(item, 'loaded', loadUrl, '');
     setRenderInfo(rendered, 'mesh_loaded', uri, '');
-    diagnoseLoadedMeshBounds(item, meshObject, rendered, validationBounds);
+    diagnoseLoadedMeshBounds(item, visualRoot, rendered, validationBounds);
     const bounds = computeFitBounds();
     if (bounds) frameScene(bounds);
     refreshMeshLoadUi(rendered);
@@ -1321,6 +1338,9 @@ function renderScene(items) {
   const scene = state.three.scene;
   for (const item of items) {
     const object3d = new THREE.Group();
+    object3d.name = isGeneratedUrdfItem(item)
+      ? `${item.id || itemLabel(item)}_link_frame_root`
+      : `${item.id || itemLabel(item)}_object_root`;
     object3d.up.copy(THREE.Object3D.DEFAULT_UP);
     const primitive = primitiveOf(item);
     const fallback = isSensor(item) ? makeSensorMarker(item) : makePrimitiveMesh(item);
