@@ -8,7 +8,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENES_ROOT = ROOT / "scenes"
-EXTRACTOR_VERSION = "2.14"
+EXTRACTOR_VERSION = "2.15"
 UR5_INITIAL_POSITIONS_PATH = ROOT / "assets/robots/universal_robot/ur5_moveit_config/config/initial_positions.yaml"
 UR5_KINEMATICS_PATH = ROOT / "assets/robots/universal_robot/ur_description/config/ur5/default_kinematics.yaml"
 UR5_VISUAL_PARAMETERS_PATH = ROOT / "assets/robots/universal_robot/ur_description/config/ur5/visual_parameters.yaml"
@@ -63,6 +63,95 @@ UR5_ARM_LINK_ORDER = [
     'tool0',
 ]
 UR5_ARM_LINKS = set(UR5_ARM_LINK_ORDER)
+
+
+
+IMPORTANT_VISUAL_LESS_FRAME_LINKS = {"tool0"}
+
+def append_visual_less_frame_anchors(items, links, child_to_joint, link_world_tf, link_chain_to_root):
+    """Append non-rendered anchors for important URDF frames with no visuals.
+
+    The Scene3D/web exporter consumes ``visual_items`` as its generated-URDF
+    contract, so these anchors intentionally live beside visual rows while
+    marking ``render_expected=False`` and omitting mesh URI/path fields.
+    """
+    existing_anchor_links = {
+        str(item.get("link") or "")
+        for item in items
+        if item.get("type") == "transform_anchor" or item.get("role") == "transform_anchor"
+    }
+    existing_visual_links = {
+        str(item.get("link") or "")
+        for item in items
+        if item.get("render_expected", True)
+    }
+    added = 0
+    for link_name in sorted(IMPORTANT_VISUAL_LESS_FRAME_LINKS):
+        if link_name not in links or link_name in existing_anchor_links or link_name in existing_visual_links:
+            continue
+        link_tf, link_status, chain, root_link, unresolved, joint_meta = link_world_tf(link_name)
+        if link_tf is None:
+            link_tf = identity_tf()
+        frame_pose = xyz_rpy_from_tf(link_tf)
+        joint_meta = joint_meta or {}
+        parent_link = joint_meta.get("parent", "")
+        joint_name = joint_meta.get("name", "")
+        joint_type = joint_meta.get("type", "root")
+        joint_value = joint_meta.get("value", 0.0)
+        joint_axis = joint_meta.get("axis", [1.0, 0.0, 0.0])
+        joint_origin = {
+            "xyz": joint_meta.get("origin_xyz", [0.0, 0.0, 0.0]),
+            "rpy": joint_meta.get("origin_rpy", [0.0, 0.0, 0.0]),
+        }
+        joint_value_source = joint_meta.get("value_source", "zero_default")
+        resolved = bool(link_status == "resolved" and not unresolved)
+        items.append({
+            "id": f"urdf_frame_anchor_{sanitize(link_name)}",
+            "source": "urdf_flattened",
+            "source_layer": "locked_generated_urdf_frame",
+            "type": "transform_anchor",
+            "category": "frame",
+            "role": "transform_anchor",
+            "link": link_name,
+            "object_name": link_name,
+            "display_name": f"{link_name} frame",
+            "parent_link": parent_link,
+            "immediate_parent_link": parent_link,
+            "joint_parent_link": parent_link,
+            "root_link": root_link or "",
+            "link_chain": link_chain_to_root(link_name),
+            "parent_joint": joint_name,
+            "parent_joint_name": joint_name,
+            "parent_joint_type": joint_type,
+            "parent_joint_origin": joint_origin,
+            "parent_joint_axis": joint_axis,
+            "parent_joint_value": joint_value,
+            "parent_joint_value_source": joint_value_source,
+            "joint_name": joint_name,
+            "joint_type": joint_type,
+            "joint_origin": joint_origin,
+            "joint_axis": joint_axis,
+            "joint_value": joint_value,
+            "applied_joint_value": joint_value,
+            "joint_value_source": joint_value_source,
+            "applied_joint_value_source": joint_value_source,
+            "pose": copy.deepcopy(frame_pose),
+            "world_pose": copy.deepcopy(frame_pose),
+            "frame_world_pose": copy.deepcopy(frame_pose),
+            "link_world_pose": copy.deepcopy(frame_pose),
+            "chain_pose": copy.deepcopy(frame_pose),
+            "final_transform": copy.deepcopy(frame_pose),
+            "transform_source": "urdf_fk_link_world_frame_anchor",
+            "link_transform_status": link_status,
+            "transform_status": link_status,
+            "transform_chain": chain,
+            "render_expected": False,
+            "mesh_available": False,
+            "resolved": resolved,
+            "warning": unresolved or "",
+        })
+        added += 1
+    return added
 
 ROBOTIQ_85_VISUAL_MESHES = {
     "gripper_base_link": "robotiq_85_base_link.dae",
@@ -1683,6 +1772,7 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
             elif cap is not None:
                 items.append({**common,'geometry_type':'capsule','radius':float(cap.attrib.get('radius','0.05') or 0.05),'length':float(cap.attrib.get('length',cap.attrib.get('height','0.1')) or 0.1),'resolved':True,'warning':warning or ''})
             idx+=1
+    diagnostics['frame_anchor_count'] = append_visual_less_frame_anchors(items, links, child_to_joint, link_world_tf, link_chain_to_root)
     diagnostics['visual_parent_link_counts'] = dict(sorted(visual_parent_counts.items()))
     diagnostics['missing_parent_links'] = [
         {'link': name, 'visual_count': count}
@@ -1832,7 +1922,7 @@ def main():
         source_mtime=urdf_path.stat().st_mtime if urdf_path.exists() else None
         renderable_items=[i for i in items if _is_renderable_visual_item(i)]
         has_transform_collapse_warning=bool(renderable_items) and len({tuple((i.get('pose') or {}).get('xyz') or []) for i in renderable_items}) <= 1 and len(renderable_items) > 1
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'urdf_expansion_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_launch_xacro_request':_portable_source_metadata(launch_xacro_request or {}),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'ros_to_viewport_basis_applied':False,'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'robotiq_85_visual_repair_applied':robotiq_visuals_injected,'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'initial_joint_source':urdf_diagnostics.get('initial_joint_source', ''),'ur5_preview_joint_pose':urdf_diagnostics.get('ur5_preview_joint_pose', {}),'joint_defaults_used':urdf_diagnostics.get('joint_defaults_used', []),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'legacy_static_fallback_metadata':legacy_static_fallback_metadata,'ur5_visual_mesh_diagnostics':_portable_source_metadata(ur5_visual_diagnostics),'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'urdf_expansion_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_launch_xacro_request':_portable_source_metadata(launch_xacro_request or {}),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'ros_to_viewport_basis_applied':False,'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'robotiq_85_visual_repair_applied':robotiq_visuals_injected,'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'frame_anchor_count':urdf_diagnostics.get('frame_anchor_count', 0),'initial_joint_source':urdf_diagnostics.get('initial_joint_source', ''),'ur5_preview_joint_pose':urdf_diagnostics.get('ur5_preview_joint_pose', {}),'joint_defaults_used':urdf_diagnostics.get('joint_defaults_used', []),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'legacy_static_fallback_metadata':legacy_static_fallback_metadata,'ur5_visual_mesh_diagnostics':_portable_source_metadata(ur5_visual_diagnostics),'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True)
