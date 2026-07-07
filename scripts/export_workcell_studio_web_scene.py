@@ -653,7 +653,7 @@ def _set_item_pose(item: Json, pose: Json, source: str) -> None:
     item.setdefault("provenance", {})["transform_source"] = source
 
 
-def _apply_web_scene_transform_parity_fallbacks(data: Dict[str, Any], generated: Dict[str, List[Json]]) -> None:
+def _apply_web_scene_transform_parity_fallbacks(data: Dict[str, Any], generated: Dict[str, List[Json]], warnings: List[Json]) -> None:
     """Keep browser export transforms plausible when flattened URDF metadata is stale.
 
     Some generated static visual indexes include correct mesh identity but leave
@@ -662,21 +662,62 @@ def _apply_web_scene_transform_parity_fallbacks(data: Dict[str, Any], generated:
     applies conservative scene-metadata fallbacks only when the generated mesh
     pose is effectively collapsed at the world origin.
     """
-    wrist_pose = None
-    for item in generated.get("robots", []):
-        if "wrist_3" in str(item.get("link", "")):
-            wrist_pose = item.get("final_transform") or item.get("world_from_visual") or item.get("pose")
-            break
-    wrist_xyz = _pose_xyz(wrist_pose)
-    if wrist_xyz is not None:
+    generated_items = [
+        item
+        for section in GENERATED_OUTPUT_SECTIONS
+        for item in generated.get(section, [])
+        if isinstance(item, Mapping)
+    ]
+
+    def _link_key(item: Mapping[str, Any]) -> str:
+        return str(item.get("link") or item.get("link_name") or item.get("frame") or item.get("object_name") or "")
+
+    def _frame_pose(item: Mapping[str, Any], *, prefer_frame: bool = False) -> Optional[Json]:
+        # Parent-frame composition must use explicit frame/link world metadata only.
+        # Render-only visual poses such as final_transform/world_from_visual/pose/
+        # baked_world_visual_pose may include visual_origin and must not affect
+        # gripper attachment.
+        fields = ("frame_world_pose", "link_world_pose") if prefer_frame else ("link_world_pose", "frame_world_pose")
+        for field in fields:
+            value = item.get(field)
+            if isinstance(value, Mapping):
+                return dict(value)
+        return None
+
+    frame_pose_by_link: Dict[str, Json] = {}
+    for item in generated_items:
+        link = _link_key(item)
+        if not link:
+            continue
+        pose = _frame_pose(item, prefer_frame=(link == "tool0"))
+        if pose is not None:
+            frame_pose_by_link[link] = pose
+
+    tool_parent_pose = frame_pose_by_link.get("tool0")
+    transform_source = "web_export_tool0_frame_transform_parity_fallback"
+    if tool_parent_pose is None and "wrist_3_link" in frame_pose_by_link:
+        tool_parent_pose = frame_pose_by_link["wrist_3_link"]
+        transform_source = "web_export_wrist_3_link_link_pose_transform_parity_fallback"
+        _warn(
+            warnings,
+            "tool0_frame_missing_using_wrist_3_link_fallback",
+            "tool0 frame/link world pose metadata is missing from generated/scene_visual_mesh_index.json; "
+            "using wrist_3_link.link_world_pose only as a temporary gripper parent fallback. "
+            "Regenerate the scene visual mesh index so tool0.frame_world_pose or tool0.link_world_pose is available.",
+            INPUTS["visual_mesh_index"],
+        )
+
+    parent_xyz = _pose_xyz(tool_parent_pose)
+    if parent_xyz is not None:
         for item in generated.get("tools", []):
             pose = item.get("final_transform") or item.get("world_from_visual") or item.get("pose")
             xyz = _pose_xyz(pose)
             chain = " ".join(str(v) for v in _as_list(item.get("transform_chain")))
-            if xyz is not None and sum(v * v for v in xyz) < 0.05 and ("wrist_3" in chain or "tool0" in chain):
+            parent_link = str(item.get("joint_parent_link") or item.get("parent_link") or "")
+            if xyz is not None and sum(v * v for v in xyz) < 0.05 and ("wrist_3" in chain or "tool0" in chain or parent_link in {"tool0", "wrist_3_link"}):
                 adjusted = dict(pose) if isinstance(pose, Mapping) else {"rpy": [0.0, 0.0, 0.0]}
-                adjusted["xyz"] = [wrist_xyz[i] + xyz[i] for i in range(3)]
-                _set_item_pose(item, adjusted, "web_export_wrist_transform_parity_fallback")
+                adjusted["xyz"] = [parent_xyz[i] + xyz[i] for i in range(3)]
+                _set_item_pose(item, adjusted, transform_source)
 
     env = _as_map(data.get("environment"))
     authored_camera_pose = None
@@ -1327,7 +1368,7 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
 
     generated = _generated_preview_items(_as_map(data.get("visual_mesh_index")), scene_dir, warnings) if data.get("visual_mesh_index") is not None else {section: [] for section in GENERATED_OUTPUT_SECTIONS}
     _supplement_missing_tool_meshes(data, generated)
-    _apply_web_scene_transform_parity_fallbacks(data, generated)
+    _apply_web_scene_transform_parity_fallbacks(data, generated, warnings)
     _suppress_unresolved_placeholder_robot_visuals(generated, warnings)
     authored = _authored_sections(data, scene_dir, warnings)
     top_robots, top_tools, top_sensors = _top_level_entities(data, warnings)

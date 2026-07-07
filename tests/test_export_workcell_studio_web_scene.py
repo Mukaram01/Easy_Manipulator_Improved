@@ -413,6 +413,68 @@ def test_robotiq_fallback_uses_tool0_frame_not_wrist_visual_pose(tmp_path):
     assert gripper_base["final_transform"]["xyz"] != [0.7, 0.2, 0.6]
 
 
+def test_gripper_parent_fallback_ignores_wrist_visual_origin_when_tool0_missing(tmp_path):
+    scene = tmp_path / "scene"
+    (scene / "layout").mkdir(parents=True)
+    (scene / "generated").mkdir()
+    (scene / "scene_manifest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "scene": {"name": "missing_tool0_frame_regression"},
+                "end_effector": {"id": "robotiq_85", "model": "robotiq_85"},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (scene / "cell_definition.yaml").write_text("{}", encoding="utf-8")
+    (scene / "environment.yaml").write_text("{}", encoding="utf-8")
+    (scene / "layout/workcell_studio_layout.yaml").write_text(yaml.safe_dump({"items": []}), encoding="utf-8")
+    (scene / "generated/scene_visual_mesh_index.json").write_text(
+        json.dumps(
+            {
+                "visual_items": [
+                    {
+                        "id": "generated_urdf::wrist_3_link::visual_0",
+                        "category": "robot",
+                        "role": "robot",
+                        "link": "wrist_3_link",
+                        "mesh_uri": "package://ur_description/meshes/ur5/visual/wrist3.dae",
+                        "link_world_pose": {"xyz": [0.4, 0.2, 0.6], "rpy": [0.0, 0.0, 0.0]},
+                        "visual_origin": {"xyz": [0.3, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
+                        "baked_world_visual_pose": {"xyz": [0.7, 0.2, 0.6], "rpy": [0.0, 0.0, 0.0]},
+                    },
+                    {
+                        "id": "generated_urdf::gripper_base_link::visual_0",
+                        "category": "tool",
+                        "role": "gripper",
+                        "link": "gripper_base_link",
+                        "parent_link": "tool0",
+                        "joint_parent_link": "tool0",
+                        "mesh_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+                        "final_transform": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
+                        "transform_chain": ["wrist_3_link", "tool0", "gripper_base_link"],
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    out = tmp_path / "build/scene.web_scene.json"
+    subprocess.run([sys.executable, str(SCRIPT), "--scene", str(scene), "--output", str(out)], check=True)
+
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    wrist = next(item for item in payload["robots"] if item["link"] == "wrist_3_link")
+    gripper_base = next(item for item in payload["tools"] if item["link"] == "gripper_base_link")
+    warning_codes = {warning["code"] for warning in payload["warnings"]}
+
+    assert wrist["visual_origin"] == {"xyz": [0.3, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]}
+    assert gripper_base["final_transform"]["xyz"] == [0.4, 0.2, 0.6]
+    assert gripper_base["final_transform"]["xyz"] != wrist["baked_world_visual_pose"]["xyz"]
+    assert "tool0_frame_missing_using_wrist_3_link_fallback" in warning_codes
+
+
 def test_ur5_2f_web_scene_preserves_tool0_transform_anchor_metadata(tmp_path):
     extract = subprocess.run(
         [
