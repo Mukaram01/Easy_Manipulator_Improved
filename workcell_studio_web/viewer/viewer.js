@@ -12,7 +12,7 @@ const LOCKED_EDIT_REASON = 'Locked/generated preview item; edit source layout/en
 const MIN_FRAME_RADIUS = 1.2;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
-const state = { sceneJson: null, sourceWebSceneFile: '', objects: [], selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null };
+const state = { sceneJson: null, sourceWebSceneFile: '', objects: [], selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null };
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
 const STAGED_MESH_ROOTS = [
   'build/workcell_studio_web_scene/assets/',
@@ -32,6 +32,7 @@ const el = {
   translationSnap: document.getElementById('translation-snap'),
   rotationSnap: document.getElementById('rotation-snap'),
   labelsToggle: document.getElementById('labels-toggle'),
+  debugOverlaysToggle: document.getElementById('debug-overlays-toggle'),
   canvas: document.getElementById('scene-canvas'),
   labelLayer: document.getElementById('label-layer'),
   empty: document.getElementById('empty-state'),
@@ -541,11 +542,32 @@ function viewerGroupFor(item) {
   if (/\b(environment|layout|asset|object|item|table|workbench|fixture|bin|tray|conveyor|shelf|rack|pallet|floor|wall|part|product)\b/.test(identity)) return 'environment/layout';
   return 'unknown';
 }
+const DEBUG_OVERLAY_TOKEN_RE = /\b(overlay|helper|debug|diagnostic|safety zone|pick zone|place zone|robot reach|warning anchor|warning badge|camera fov|fov|pick coverage|reachability|collision|work envelope|task route|approach retreat|epd detection|detection label|bounds box|bounding box)\b/;
 function isZone(item) { return viewerGroupFor(item) === 'zones'; }
+function isDebugOverlayItem(item) {
+  if (viewerGroupFor(item) === 'zones') return true;
+  const identity = [
+    item?.source_layer,
+    item?.active_visual_source,
+    item?.role,
+    item?.category,
+    item?.type,
+    item?.status,
+    item?.id,
+    item?.display_name,
+    item?.source_path,
+    item?.mesh_path,
+    item?.mesh_uri,
+    item?.mesh_load_warning,
+    ...(Array.isArray(item?.warnings) ? item.warnings : []),
+    itemLabel(item || {}),
+  ].map(value => String(value || '').toLowerCase().replace(/[_-]+/g, ' ')).join(' ');
+  return DEBUG_OVERLAY_TOKEN_RE.test(identity);
+}
 function isSensor(item) { return viewerGroupFor(item) === 'sensors'; }
-function shouldLabelItem(item) { return viewerGroupFor(item) !== 'zones'; }
+function shouldLabelItem(item) { return !isDebugOverlayItem(item); }
 function materialFor(item) {
-  if (isZone(item)) return new THREE.MeshBasicMaterial({ color: 0xffc857, transparent: true, opacity: 0.22, side: THREE.DoubleSide });
+  if (isZone(item)) return new THREE.MeshBasicMaterial({ color: 0xffc857, transparent: true, opacity: 0.08, side: THREE.DoubleSide, wireframe: true, depthWrite: false });
   if (isSensor(item)) return new THREE.MeshStandardMaterial({ color: 0x62d2ff, roughness: 0.65 });
   if (item.locked || item.source_kind === 'generated_preview') return new THREE.MeshStandardMaterial({ color: 0x8794aa, roughness: 0.78, metalness: 0.05 });
   return new THREE.MeshStandardMaterial({ color: 0x7bd88f, roughness: 0.72 });
@@ -559,8 +581,9 @@ function fallbackMaterialFor(item) {
     roughness: 0.82,
     metalness: 0.02,
     transparent: true,
-    opacity: isZoneFallback ? 0.24 : 0.46,
+    opacity: isZoneFallback ? 0.08 : 0.46,
     side: THREE.DoubleSide,
+    wireframe: isZoneFallback,
     depthWrite: false,
   });
 }
@@ -644,6 +667,12 @@ function assignItemUserData(object, item) {
   object.userData.item = item;
   object.traverse?.(child => { child.userData.item = item; });
 }
+function applyLoadedMeshOverlayMaterial(object, item) {
+  if (!isZone(item) || !object?.traverse) return;
+  object.traverse(child => {
+    if (child?.isMesh) child.material = materialFor(item);
+  });
+}
 function materializeLoadedMesh(item, uri, loaded) {
   const ext = uri.split(/[?#]/, 1)[0].slice(uri.split(/[?#]/, 1)[0].lastIndexOf('.') + 1).toLowerCase();
   let object;
@@ -651,6 +680,7 @@ function materializeLoadedMesh(item, uri, loaded) {
   else if (ext === 'dae') object = loaded.scene;
   else object = loaded;
   object.name = `${item.id || itemLabel(item)}_mesh`;
+  applyLoadedMeshOverlayMaterial(object, item);
   assignItemUserData(object, item);
   return object;
 }
@@ -890,7 +920,7 @@ function computeFitBounds({ includeDebugFallbacks = false } = {}) {
   const deferredWarnings = [];
   for (const rendered of state.objects) {
     if (!rendered?.object3d) continue;
-    if (itemHiddenForFit(rendered.item) || rendered.object3d.visible === false) {
+    if ((!state.debugOverlaysVisible && isDebugOverlayItem(rendered.item)) || itemHiddenForFit(rendered.item) || rendered.object3d.visible === false) {
       deferredWarnings.push([rendered, 'hidden renderable excluded from camera fit bounds', null]);
       continue;
     }
@@ -1187,6 +1217,7 @@ function renderScene(items) {
     object3d.add(fallback);
     if (!applyPose(object3d, item)) continue;
     assignItemUserData(object3d, item);
+    object3d.visible = state.debugOverlaysVisible || !isDebugOverlayItem(item);
     scene.add(object3d);
     const rendered = { item, object3d, fallback, labelEl: createLabelElement(item), originalTransform: transformOf(item) };
     const requiredMesh = itemRequiresMeshBackedVisual(item);
@@ -1220,6 +1251,27 @@ function setLabelsVisible(visible) {
   if (el.labelLayer) el.labelLayer.classList.toggle('labels-hidden', !state.labelsVisible);
   updateLabels();
 }
+
+function setDebugOverlaysVisible(visible) {
+  state.debugOverlaysVisible = Boolean(visible);
+  if (el.debugOverlaysToggle) el.debugOverlaysToggle.checked = state.debugOverlaysVisible;
+  for (const rendered of state.objects) {
+    if (isDebugOverlayItem(rendered.item)) rendered.object3d.visible = state.debugOverlaysVisible;
+  }
+  if (state.selected && !state.debugOverlaysVisible) {
+    const selected = state.objects.find(obj => obj.item.id === state.selected);
+    if (selected && isDebugOverlayItem(selected.item)) {
+      state.selected = null;
+      detachTransformGizmo();
+      el.inspector.className = 'state empty';
+      el.inspector.textContent = state.objects.length ? 'Select an object from the list or canvas.' : EMPTY_SCENE_MESSAGE;
+    }
+  }
+  populateObjectList();
+  updateLabels();
+  resetView();
+}
+
 function updateLabels() {
   const { camera } = state.three;
   if (!camera || !el.labelLayer) return;
@@ -1264,9 +1316,18 @@ function populateObjectList() {
   };
   const grouped = new Map(Object.keys(groupLabels).map(group => [group, []]));
   for (const rendered of state.objects) {
+    if (!state.debugOverlaysVisible && isDebugOverlayItem(rendered.item)) continue;
     const group = viewerGroupFor(rendered.item);
     if (!grouped.has(group)) grouped.set(group, []);
     grouped.get(group).push(rendered);
+  }
+  const visibleListCount = Array.from(grouped.values()).reduce((total, renderedItems) => total + renderedItems.length, 0);
+  if (!visibleListCount) {
+    const li = document.createElement('li');
+    li.className = 'state empty';
+    li.textContent = 'Only zones/debug overlays are present. Enable Show zones/debug overlays to inspect them.';
+    el.list.appendChild(li);
+    return;
   }
   for (const [group, renderedItems] of grouped.entries()) {
     if (!renderedItems.length) continue;
@@ -1617,6 +1678,7 @@ async function loadSceneUrl(rawUrl) {
 
 if (el.resetView) el.resetView.addEventListener('click', resetView);
 if (el.labelsToggle) el.labelsToggle.addEventListener('change', event => setLabelsVisible(event.target.checked));
+if (el.debugOverlaysToggle) el.debugOverlaysToggle.addEventListener('change', event => setDebugOverlaysVisible(event.target.checked));
 if (el.undoEdit) el.undoEdit.addEventListener('click', undoPreviewEdit);
 if (el.redoEdit) el.redoEdit.addEventListener('click', redoPreviewEdit);
 if (el.clearEdits) el.clearEdits.addEventListener('click', clearPreviewEdits);
@@ -1646,6 +1708,7 @@ async function boot() {
     OBJLoader = objModule.OBJLoader;
     initThree();
     setLabelsVisible(el.labelsToggle?.checked || false);
+    setDebugOverlaysVisible(el.debugOverlaysToggle?.checked || false);
     const sceneParam = new URLSearchParams(window.location.search).get('scene');
     if (sceneParam) await loadSceneUrl(sceneParam);
   } catch (err) {
