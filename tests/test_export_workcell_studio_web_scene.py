@@ -7,6 +7,8 @@ import yaml
 
 
 SCRIPT = Path("scripts/export_workcell_studio_web_scene.py")
+ROOT = Path(__file__).resolve().parents[1]
+EXTRACT_INDEX_SCRIPT = ROOT / "scripts" / "extract_scene_urdf_visual_mesh_index.py"
 
 
 def test_export_web_scene_contract_and_determinism(tmp_path):
@@ -409,3 +411,60 @@ def test_robotiq_fallback_uses_tool0_frame_not_wrist_visual_pose(tmp_path):
     assert gripper_base["link_world_pose"]["xyz"] == [0.4, 0.2, 0.6]
     assert gripper_base["final_transform"]["xyz"] == [0.4, 0.2, 0.6]
     assert gripper_base["final_transform"]["xyz"] != [0.7, 0.2, 0.6]
+
+
+def test_ur5_2f_web_scene_preserves_tool0_transform_anchor_metadata(tmp_path):
+    extract = subprocess.run(
+        [
+            sys.executable,
+            str(EXTRACT_INDEX_SCRIPT),
+            "--scene",
+            "ur5_2f_test",
+            "--allow-xacro-lite-fallback",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert extract.returncode == 0, extract.stdout + extract.stderr
+
+    out = tmp_path / "ur5_2f_test.web_scene.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / SCRIPT),
+            "--scene",
+            str(ROOT / "scenes" / "ur5_2f_test"),
+            "--output",
+            str(out),
+            "--no-stage-assets",
+        ],
+        cwd=ROOT,
+        check=True,
+    )
+
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    anchors = [
+        item
+        for item in payload.get("frames", [])
+        if item.get("link") == "tool0" and item.get("role") == "transform_anchor"
+    ]
+    assert anchors, "expected exported Web3D scene to preserve the non-rendered tool0 frame anchor"
+
+    anchor = anchors[0]
+    assert anchor["id"] == "urdf_frame_anchor_tool0"
+    assert anchor["type"] == "transform_anchor"
+    assert anchor["render_expected"] is False
+    assert anchor["mesh_available"] is False
+    assert anchor["mesh_load_required"] is False
+    assert "mesh_uri" not in anchor
+    assert anchor["parent_link"]
+    assert anchor["joint_parent_link"] == anchor["parent_link"]
+    assert isinstance(anchor["joint_origin"], dict)
+    assert isinstance(anchor["link_world_pose"], dict)
+    assert anchor["frame_world_pose"] == anchor["link_world_pose"]
+    assert anchor["world_pose"] == anchor["link_world_pose"]
+    assert anchor["pose"] == anchor["link_world_pose"]
+    assert anchor["source_layer"]
+    assert anchor["active_visual_source"]
