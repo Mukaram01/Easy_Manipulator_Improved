@@ -12,7 +12,7 @@ const LOCKED_EDIT_REASON = 'Locked/generated preview item; edit source layout/en
 const MIN_FRAME_RADIUS = 1.2;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
-const state = { sceneJson: null, sourceWebSceneFile: '', objects: [], selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null };
+const state = { sceneJson: null, sourceWebSceneFile: '', frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null };
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
 const STAGED_MESH_ROOTS = [
   'build/workcell_studio_web_scene/assets/',
@@ -644,6 +644,7 @@ function viewerGroupFor(item) {
 const DEBUG_OVERLAY_TOKEN_RE = /\b(overlay|helper|debug|diagnostic|safety zone|pick zone|place zone|robot reach|warning anchor|warning badge|camera fov|fov|pick coverage|reachability|collision|work envelope|task route|approach retreat|epd detection|detection label|bounds box|bounding box)\b/;
 function isZone(item) { return viewerGroupFor(item) === 'zones'; }
 function isDebugOverlayItem(item) {
+  if (item?.debug_overlay === true || item?.exclude_from_fit_bounds === true || item?.source_layer === 'debug_overlay') return true;
   if (viewerGroupFor(item) === 'zones') return true;
   const identity = [
     item?.source_layer,
@@ -910,6 +911,116 @@ function collectItems(sceneJson) {
   for (const bucket of buckets) for (const item of asArray(sceneJson[bucket])) if (item && typeof item === 'object') byId.set(item.id || `${bucket}_${byId.size}`, { ...item, id: item.id || `${bucket}_${byId.size}` });
   return Array.from(byId.values());
 }
+function frameNameOf(frame, fallback = '') {
+  return String(frame?.name || frame?.frame || frame?.frame_id || frame?.link || frame?.link_name || frame?.id || fallback || '');
+}
+function frameParentNameOf(frame) {
+  return String(frame?.parent || frame?.parent_frame || frame?.parent_frame_id || frame?.parent_link || frame?.parent_link_name || '');
+}
+function parseSceneFrames(sceneJson) {
+  const lookup = new Map();
+  const source = sceneJson?.frames || sceneJson?.scene?.frames;
+  if (Array.isArray(source)) {
+    source.forEach((frame, index) => {
+      if (!frame || typeof frame !== 'object') return;
+      const name = frameNameOf(frame, `frame_${index}`);
+      if (name) lookup.set(name, { ...frame, name });
+    });
+  } else if (source && typeof source === 'object') {
+    for (const [key, value] of Object.entries(source)) {
+      if (!value || typeof value !== 'object') continue;
+      const name = frameNameOf(value, key);
+      if (name) lookup.set(name, { ...value, name });
+    }
+  }
+  return lookup;
+}
+function matrixFromPoseBlock(source) {
+  const pose = poseBlockOf(source || {});
+  return new THREE.Matrix4().compose(
+    pose.xyz,
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(pose.rpy.x, pose.rpy.y, pose.rpy.z, 'XYZ')),
+    new THREE.Vector3(1, 1, 1),
+  );
+}
+function poseBlockFromMatrix(matrix) {
+  const xyz = new THREE.Vector3();
+  const quaternion = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  matrix.decompose(xyz, quaternion, scale);
+  const euler = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
+  return { xyz, rpy: new THREE.Vector3(euler.x, euler.y, euler.z), matrix: matrix.clone() };
+}
+function localFramePoseSource(frame) {
+  return frame?.world_pose || frame?.world_transform || frame?.pose || frame?.transform || frame?.origin || frame;
+}
+function resolveFrameWorldPose(name, lookup = state.frameLookup, stack = new Set()) {
+  if (!name || !lookup?.has(name)) return null;
+  const cached = state.resolvedFramePoses.get(name);
+  if (cached) return cached;
+  if (stack.has(name)) return null;
+  stack.add(name);
+  const frame = lookup.get(name);
+  const localMatrix = matrixFromPoseBlock(localFramePoseSource(frame));
+  const parentName = frameParentNameOf(frame);
+  let worldMatrix = localMatrix;
+  if (parentName && lookup.has(parentName) && !frame?.world_pose && !frame?.world_transform) {
+    const parentPose = resolveFrameWorldPose(parentName, lookup, stack);
+    if (parentPose?.matrix) worldMatrix = parentPose.matrix.clone().multiply(localMatrix);
+  }
+  const pose = poseBlockFromMatrix(worldMatrix);
+  state.resolvedFramePoses.set(name, pose);
+  stack.delete(name);
+  return pose;
+}
+function diagnosticDebugItem(id, label) {
+  return {
+    id,
+    label,
+    display_name: label,
+    type: 'debug_overlay',
+    category: 'diagnostic',
+    role: 'frame_diagnostic',
+    source_layer: 'debug_overlay',
+    active_visual_source: 'debug_overlay',
+    debug_overlay: true,
+    exclude_from_fit_bounds: true,
+    locked: true,
+  };
+}
+function addDebugRenderedObject(object3d, item) {
+  object3d.visible = state.debugOverlaysVisible;
+  object3d.userData.exclude_from_fit_bounds = true;
+  assignItemUserData(object3d, item);
+  state.three.scene.add(object3d);
+  state.objects.push({ item, object3d, fallback: null, labelEl: null, renderInfo: { render_status: 'debug_overlay' }, originalTransform: transformOf(item) });
+}
+function renderFrameDebugOverlays() {
+  const targets = ['wrist_3_link', 'tool0', 'gripper_base_link'];
+  const resolved = new Map();
+  state.resolvedFramePoses.clear();
+  for (const name of targets) {
+    const pose = resolveFrameWorldPose(name);
+    if (!pose) continue;
+    resolved.set(name, pose);
+    const axes = new THREE.AxesHelper(0.12);
+    axes.name = `${name}_debug_frame_axes`;
+    axes.position.copy(pose.xyz);
+    axes.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, 'XYZ');
+    addDebugRenderedObject(axes, diagnosticDebugItem(`debug_frame_axes_${name}`, `${name} frame axes`));
+  }
+  for (const [parent, child] of [['wrist_3_link', 'tool0'], ['tool0', 'gripper_base_link']]) {
+    const parentPose = resolved.get(parent);
+    const childPose = resolved.get(child);
+    if (!parentPose || !childPose) continue;
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([parentPose.xyz, childPose.xyz]),
+      new THREE.LineBasicMaterial({ color: 0x8b5cf6, transparent: true, opacity: 0.85 }),
+    );
+    line.name = `${parent}_to_${child}_debug_connector`;
+    addDebugRenderedObject(line, diagnosticDebugItem(`debug_frame_connector_${parent}_to_${child}`, `${parent} → ${child} connector`));
+  }
+}
 function validateSceneJson(json) {
   if (!json || typeof json !== 'object' || Array.isArray(json)) throw new Error('Invalid web_scene.json: expected a JSON object.');
   if (json.schema_version !== SUPPORTED_SCHEMA_VERSION) throw new Error(`Unsupported schema_version "${valueOrDash(json.schema_version)}". Expected ${SUPPORTED_SCHEMA_VERSION}.`);
@@ -1047,6 +1158,10 @@ function computeFitBounds({ includeDebugFallbacks = false } = {}) {
   const deferredWarnings = [];
   for (const rendered of state.objects) {
     if (!rendered?.object3d) continue;
+    if (rendered.item?.exclude_from_fit_bounds === true || rendered.object3d.userData?.exclude_from_fit_bounds === true) {
+      deferredWarnings.push([rendered, 'debug diagnostic excluded from camera fit bounds', null]);
+      continue;
+    }
     if ((!state.debugOverlaysVisible && isDebugOverlayItem(rendered.item)) || itemHiddenForFit(rendered.item) || rendered.object3d.visible === false) {
       deferredWarnings.push([rendered, 'hidden renderable excluded from camera fit bounds', null]);
       continue;
@@ -1321,6 +1436,7 @@ function clearSceneObjects() {
   for (const rendered of state.objects) scene.remove(rendered.object3d);
   clearLabels();
   state.objects = [];
+  state.resolvedFramePoses.clear();
   state.lastFrameBounds = null;
   state._sceneBoundsExceededWarned = false;
   state._fitBlockerWarnings = new Set();
@@ -1360,6 +1476,7 @@ function renderScene(items) {
     state.objects.push(rendered);
     tryLoadMesh(item, rendered, fallback);
   }
+  renderFrameDebugOverlays();
   populateObjectList();
   updateLabels();
   const bounds = computeFitBounds();
@@ -1836,6 +1953,8 @@ async function loadSceneUrl(rawUrl) {
     const json = await response.json();
     const items = validateSceneJson(json);
     state.sceneJson = json;
+    state.frameLookup = parseSceneFrames(json);
+    state.resolvedFramePoses.clear();
     state.sourceWebSceneFile = sceneUrl;
     state.runtimeWarnings = [];
     state.dirtyTransforms.clear();
