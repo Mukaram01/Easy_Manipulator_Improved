@@ -37,3 +37,66 @@ def test_acceptance_script_has_no_ur5_scene_logic_and_outputs_under_build():
     assert "build" in text and "workcell_studio_web_scene" in text
     assert "visual_acceptance.json" in text
     assert "visual_acceptance.png" in text
+
+WORKFLOW = ROOT / ".github/workflows/web3d-visual-acceptance.yml"
+
+
+def test_web3d_visual_acceptance_workflow_exists():
+    assert WORKFLOW.is_file()
+
+
+def test_web3d_visual_acceptance_workflow_requires_browser_runtime():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "scripts/run_workcell_web3d_visual_acceptance.py" in text
+    assert "--require-browser" in text
+    assert "python3 -m playwright install --with-deps chromium" in text
+
+
+def test_web3d_visual_acceptance_workflow_uploads_screenshot_report_and_scene_artifacts():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "actions/upload-artifact@v4" in text
+    assert "build/workcell_studio_web_scene/ur5_2f_test.visual_acceptance.json" in text
+    assert "build/workcell_studio_web_scene/ur5_2f_test.visual_acceptance.png" in text
+    assert "build/workcell_studio_web_scene/ur5_2f_test.web_scene.json" in text
+    assert "GITHUB_STEP_SUMMARY" in text
+    for token in [
+        "scene id",
+        "browser_runtime_status",
+        "mesh_loaded_count",
+        "required_mesh_failed_count",
+        "fallback_count",
+        "screenshot artifact name",
+        "report artifact name",
+    ]:
+        assert token in text
+
+
+def test_web3d_visual_acceptance_workflow_does_not_commit_generated_outputs():
+    result = __import__("subprocess").run(
+        [
+            "git",
+            "ls-files",
+            "scenes/*/generated/*.json",
+            "build/workcell_studio_web_scene/*.json",
+            "build/workcell_studio_web_scene/*.png",
+        ],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdout=__import__("subprocess").PIPE,
+        stderr=__import__("subprocess").PIPE,
+    )
+    assert result.stdout.splitlines() == []
+
+
+def test_acceptance_script_supports_playwright_browser_status_path():
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert "from playwright.sync_api import sync_playwright" in text
+    assert "p.chromium.launch" in text
+    assert "window.__WORKCELL_VIEWER_STATUS__" in text
+    assert "page.wait_for_function" in text
+    assert "mesh_loaded_count == 0" in text
+    assert "required_mesh_failed_count > 0" in text
+    assert "viewer_url:" in text
+    assert "screenshot_path:" in text
+    assert "report_path:" in text
