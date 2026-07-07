@@ -398,7 +398,7 @@ function warnMissingGeneratedUrdfFramePose(item) {
   if (state._generatedUrdfFramePoseWarnings.has(key)) return;
   state._generatedUrdfFramePoseWarnings.add(key);
   const meshUri = displayMeshUri(item);
-  appendViewerDiagnosticWarning(item, 'missing_generated_urdf_frame_pose', `generated URDF item lacks both frame_world_pose and link_world_pose; using legacy visual-world fallback only for diagnostics/compatibility (mesh_uri=${meshUri || 'none'})`, {
+  appendViewerDiagnosticWarning(item, 'missing_generated_urdf_frame_pose', `generated URDF item lacks both frame_world_pose and link_world_pose; placing generated URDF link at identity and reporting legacy visual-world fields only for diagnostics (mesh_uri=${meshUri || 'none'})`, {
     mesh_uri: meshUri,
     legacy_fallback_pose: item?.final_transform || item?.world_from_visual || item?.baked_world_visual_pose || item?.pose || item?.world_pose || null,
   });
@@ -881,18 +881,22 @@ function makeMeshVisualRoot(item, meshObject) {
   visualRoot.up.copy(THREE.Object3D.DEFAULT_UP);
   applyMeshLocalTransform(visualRoot, item);
   // Keep loader-provided scene hierarchies, especially Collada .dae internal
-  // transforms, intact below the visual-origin root.  Generated URDF visual
-  // world/baked transforms belong to the posed link root, never the mesh child.
+  // transforms, intact below the visual-origin root. Generated URDF visual
+  // world/baked transforms belong to the posed link root, and mesh scale/unit
+  // corrections stay on the raw loader output instead of the visual wrapper.
+  applyLoadedMeshScaleHandling(meshObject, item);
   visualRoot.add(meshObject);
   assignItemUserData(visualRoot, item);
   return visualRoot;
 }
 function applyMeshLocalTransform(meshObject, item) {
   const transform = meshLocalTransformOf(item);
-  const visualOrigin = isGeneratedUrdfItem(item) ? visualOriginOf(item) : transform.pose;
+  const generatedUrdf = isGeneratedUrdfItem(item);
+  const visualOrigin = generatedUrdf ? visualOriginOf(item) : transform.pose;
   meshObject.position.copy(visualOrigin.xyz);
   meshObject.rotation.set(visualOrigin.rpy.x, visualOrigin.rpy.y, visualOrigin.rpy.z, 'XYZ');
-  meshObject.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
+  if (generatedUrdf) meshObject.scale.set(1, 1, 1);
+  else meshObject.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
   if (!transform.valid) {
     appendViewerDiagnosticWarning(item, 'invalid_mesh_local_transform', transform.reason, {
       mesh_local_transform: item?.mesh_local_transform,
@@ -907,6 +911,11 @@ function applyMeshLocalTransform(meshObject, item) {
     });
   }
   return transform.valid;
+}
+function applyLoadedMeshScaleHandling(meshObject, item) {
+  if (!isGeneratedUrdfItem(item)) return;
+  const transform = meshLocalTransformOf(item);
+  meshObject.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
 }
 async function tryLoadMesh(item, rendered, fallback) {
   const diagnostic = meshUriDiagnostic(item);
@@ -963,7 +972,7 @@ async function tryLoadMesh(item, rendered, fallback) {
     const visualRoot = makeMeshVisualRoot(item, meshObject);
     visualRoot.updateMatrixWorld(true);
     const nativeBounds = new THREE.Box3().setFromObject(visualRoot);
-    const autoscaled = maybeApplyMeshUnitAutoscale(item, visualRoot, nativeBounds, uri);
+    const autoscaled = maybeApplyMeshUnitAutoscale(item, meshObject, nativeBounds, uri);
     const validationBounds = autoscaled ? new THREE.Box3().setFromObject(visualRoot) : nativeBounds;
     fallback.visible = false;
     rendered.object3d.add(visualRoot);
