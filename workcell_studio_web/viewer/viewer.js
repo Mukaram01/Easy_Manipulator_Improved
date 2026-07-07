@@ -104,6 +104,7 @@ function isUserFacingWarning(w) {
 function updateViewerStatus() {
   const summary = computeSceneSummary();
   const warnings = asArray(state.sceneJson?.warnings).concat(asArray(state.sceneJson?.notes_warnings), asArray(state.runtimeWarnings));
+  const resolvedFrameStatus = buildResolvedFrameStatus();
   window.__WORKCELL_VIEWER_STATUS__ = {
     scene_name: summary.sceneName,
     sceneName: summary.sceneName,
@@ -117,6 +118,10 @@ function updateViewerStatus() {
     fallbackCount: summary.fallbackCount,
     runtime_warnings: warnings,
     runtimeWarnings: warnings,
+    resolvedFramePositions: resolvedFrameStatus.resolvedFramePositions,
+    resolved_frame_positions: resolvedFrameStatus.resolved_frame_positions,
+    viewer_resolved_distances_m: resolvedFrameStatus.viewer_resolved_distances_m,
+    resolvedFrameDistancesM: resolvedFrameStatus.resolvedFrameDistancesM,
   };
   return window.__WORKCELL_VIEWER_STATUS__;
 }
@@ -973,6 +978,88 @@ function resolveFrameWorldPose(name, lookup = state.frameLookup, stack = new Set
   stack.delete(name);
   return pose;
 }
+
+function finiteXyzArrayFromVector(value) {
+  const xyz = value && typeof value === 'object'
+    ? [Number(value.x), Number(value.y), Number(value.z)]
+    : [];
+  return xyz.length === 3 && xyz.every(Number.isFinite) ? xyz : null;
+}
+function finiteXyzArrayFromPoseSource(source) {
+  if (!source || typeof source !== 'object' || !THREE?.Vector3) return null;
+  return finiteXyzArrayFromVector(poseBlockOf(source).xyz);
+}
+function renderedObjectFrameNames(item, object3d) {
+  const names = [
+    item?.frame, item?.frame_id, item?.link, item?.link_name, item?.name, item?.id, item?.label, item?.display_name,
+    object3d?.name,
+  ];
+  return new Set(names.filter(value => value !== undefined && value !== null && value !== '').map(value => String(value)));
+}
+function renderedObjectWorldXyzForFrame(name) {
+  if (!name || !THREE?.Vector3) return null;
+  for (const rendered of state.objects || []) {
+    if (!rendered?.object3d || !isGeneratedUrdfItem(rendered.item)) continue;
+    if (!renderedObjectFrameNames(rendered.item, rendered.object3d).has(String(name))) continue;
+    rendered.object3d.updateWorldMatrix(true, true);
+    const world = new THREE.Vector3();
+    rendered.object3d.getWorldPosition(world);
+    const xyz = finiteXyzArrayFromVector(world);
+    if (xyz) return xyz;
+  }
+  return null;
+}
+function resolvedFrameAnchorXyz(name) {
+  if (!name || !THREE?.Vector3) return null;
+  let pose = state.resolvedFramePoses.get(name);
+  if (!pose) pose = resolveFrameWorldPose(name);
+  return finiteXyzArrayFromVector(pose?.xyz);
+}
+function metadataWorldXyzForFrame(name) {
+  if (!name) return null;
+  for (const rendered of state.objects || []) {
+    const item = rendered?.item;
+    if (!item || !renderedObjectFrameNames(item, rendered?.object3d).has(String(name))) continue;
+    const xyz = finiteXyzArrayFromPoseSource(item.frame_world_pose) || finiteXyzArrayFromPoseSource(item.link_world_pose);
+    if (xyz) return xyz;
+  }
+  return null;
+}
+function resolveWorldXyzForFrame(name) {
+  return renderedObjectWorldXyzForFrame(name)
+    || resolvedFrameAnchorXyz(name)
+    || metadataWorldXyzForFrame(name);
+}
+function distanceMetersBetweenXyz(a, b) {
+  if (!a || !b) return null;
+  const distance = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  return Number.isFinite(distance) ? distance : null;
+}
+function buildResolvedFrameStatus() {
+  const frameNames = ['wrist_3_link', 'tool0', 'gripper_base_link'];
+  const pairs = [
+    ['wrist_3_link', 'tool0'],
+    ['tool0', 'gripper_base_link'],
+    ['wrist_3_link', 'gripper_base_link'],
+  ];
+  const positions = {};
+  for (const name of frameNames) {
+    const xyz = resolveWorldXyzForFrame(name);
+    if (xyz) positions[name] = xyz;
+  }
+  const distances = {};
+  for (const [a, b] of pairs) {
+    const distance = distanceMetersBetweenXyz(positions[a], positions[b]);
+    if (distance !== null) distances[`${a} -> ${b}`] = distance;
+  }
+  return {
+    resolvedFramePositions: positions,
+    resolved_frame_positions: positions,
+    viewer_resolved_distances_m: distances,
+    resolvedFrameDistancesM: distances,
+  };
+}
+
 function diagnosticDebugItem(id, label) {
   return {
     id,
