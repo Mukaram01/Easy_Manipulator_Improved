@@ -131,7 +131,8 @@ def run_browser(url: str, status_path: Path, screenshot_path: Path, require: boo
             browser = p.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 1280, "height": 900})
             page.goto(url, wait_until="networkidle", timeout=45000)
-            page.wait_for_timeout(1000)
+            page.wait_for_function("window.__WORKCELL_VIEWER_STATUS__ && typeof window.__WORKCELL_VIEWER_STATUS__ === 'object'", timeout=45000)
+            page.wait_for_function("() => { const s = window.__WORKCELL_VIEWER_STATUS__ || {}; return (s.renderable_count || s.renderableCount || 0) === 0 || (s.mesh_loaded_count || s.meshLoadedCount || 0) > 0 || (s.required_mesh_failed_count || s.requiredMeshFailedCount || 0) > 0 || (s.fallback_count || s.fallbackCount || 0) > 0; }", timeout=45000)
             status = page.evaluate("window.__WORKCELL_VIEWER_STATUS__ || null")
             page.screenshot(path=str(screenshot_path), full_page=True)
             browser.close()
@@ -213,9 +214,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     if server is not None:
         server.shutdown()
     print(json.dumps(report, indent=2, sort_keys=True))
+    print(f"viewer_url: {viewer_url}")
+    print(f"screenshot_path: {repo_relative(screenshot_path)}")
+    print(f"report_path: {repo_relative(report_path)}")
     if any(step["returncode"] != 0 for step in steps):
         return 1
     if args.require_browser and not browser.get("available"):
+        return 1
+    status = browser.get("status") if isinstance(browser, Mapping) else None
+    if isinstance(status, Mapping):
+        mesh_loaded_count = int(status.get("mesh_loaded_count") or status.get("meshLoadedCount") or 0)
+        required_mesh_failed_count = int(status.get("required_mesh_failed_count") or status.get("requiredMeshFailedCount") or 0)
+        if mesh_loaded_count == 0:
+            print("error: browser viewer loaded zero mesh-backed visuals (mesh_loaded_count == 0)", file=sys.stderr)
+            return 1
+        if required_mesh_failed_count > 0:
+            print(f"error: browser viewer reported required mesh failures (required_mesh_failed_count == {required_mesh_failed_count})", file=sys.stderr)
+            return 1
+    elif args.require_browser:
+        print("error: browser viewer did not expose window.__WORKCELL_VIEWER_STATUS__", file=sys.stderr)
         return 1
     return 0
 

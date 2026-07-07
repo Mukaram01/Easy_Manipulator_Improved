@@ -1,0 +1,93 @@
+name: Web 3D Visual Acceptance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/run_workcell_web3d_visual_acceptance.py
+      - scripts/export_workcell_studio_web_scene.py
+      - scripts/check_workcell_web_scene_mesh_contract.py
+      - scripts/check_workcell_web_scene_visual_bounds.py
+      - workcell_studio_web/**
+      - tests/test_workcell_web3d_visual_acceptance.py
+      - tests/test_workcell_studio_web_viewer_static.py
+      - scenes/ur5_2f_test/**
+
+jobs:
+  browser-proof:
+    name: Browser render ur5_2f_test
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python test and browser tooling
+        run: python3 -m pip install --upgrade pip pytest playwright pyyaml
+
+      - name: Install Playwright Chromium
+        run: python3 -m playwright install --with-deps chromium
+
+      - name: Run Web 3D browser visual acceptance
+        run: |
+          python3 scripts/run_workcell_web3d_visual_acceptance.py \
+            --scene scenes/ur5_2f_test \
+            --port 8765 \
+            --require-browser
+
+      - name: Add Web 3D artifact summary
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report_path = Path('build/workcell_studio_web_scene/ur5_2f_test.visual_acceptance.json')
+          screenshot_name = 'ur5_2f_test.visual_acceptance.png'
+          report_name = 'ur5_2f_test.visual_acceptance.json'
+          if report_path.is_file():
+              report = json.loads(report_path.read_text(encoding='utf-8'))
+              status = (report.get('browser') or {}).get('status') or {}
+              browser_status = (report.get('browser') or {}).get('method', 'unknown')
+              rows = [
+                  ('scene id', report.get('scene_id', 'ur5_2f_test')),
+                  ('browser_runtime_status', browser_status),
+                  ('mesh_loaded_count', status.get('mesh_loaded_count', 0)),
+                  ('required_mesh_failed_count', status.get('required_mesh_failed_count', 0)),
+                  ('fallback_count', status.get('fallback_count', 0)),
+                  ('screenshot artifact name', screenshot_name),
+                  ('report artifact name', report_name),
+              ]
+          else:
+              rows = [
+                  ('scene id', 'ur5_2f_test'),
+                  ('browser_runtime_status', 'report missing'),
+                  ('mesh_loaded_count', 'n/a'),
+                  ('required_mesh_failed_count', 'n/a'),
+                  ('fallback_count', 'n/a'),
+                  ('screenshot artifact name', screenshot_name),
+                  ('report artifact name', report_name),
+              ]
+          summary = Path(__import__('os').environ['GITHUB_STEP_SUMMARY'])
+          with summary.open('a', encoding='utf-8') as fh:
+              fh.write('## Web 3D visual acceptance\n\n')
+              fh.write('| Field | Value |\n| --- | --- |\n')
+              for key, value in rows:
+                  fh.write(f'| {key} | {value} |\n')
+          PY
+
+      - name: Upload Web 3D visual acceptance artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ur5_2f_test-web3d-visual-acceptance
+          if-no-files-found: error
+          path: |
+            build/workcell_studio_web_scene/ur5_2f_test.visual_acceptance.json
+            build/workcell_studio_web_scene/ur5_2f_test.visual_acceptance.png
+            build/workcell_studio_web_scene/ur5_2f_test.web_scene.json
