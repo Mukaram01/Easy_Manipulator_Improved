@@ -70,6 +70,30 @@ function computeSceneSummary() {
     editableCount: rendered.filter(obj => canEditItem(obj.item)).length,
   };
 }
+function isUserFacingWarning(w) {
+  if (!w) return false;
+  if (w.code === 'camera_framing_blocker_excluded') return false;
+  if (w.mesh_load_error || w.mesh_load_warning) return true;
+  if (Array.isArray(w.missing_files) && w.missing_files.length) return true;
+  if (w.missing_file) return true;
+  const fields = [
+    w.code, w.status, w.source, w.reason, w.message, w.mesh_status, w.mesh_load_status, w.render_status,
+    w.visual_bounds_status, w.fallback_or_skip_reason,
+  ];
+  const text = fields.map(value => Array.isArray(value) ? value.join(' ') : String(value || '')).join(' ').toLowerCase();
+  const realFailureTokens = [
+    'mesh_load_error', 'mesh load error', 'mesh_load_warning', 'mesh load warning',
+    'required_mesh_failed', 'required mesh failed', 'required_mesh_failed_debug_fallback',
+    'invalid_dimension', 'invalid_dimensions', 'invalid dimensions', 'invalid_renderable_transform', 'invalid_mesh_local_transform',
+    'loaded_mesh_bounds_invalid', 'loaded_mesh_collapsed', 'loaded_mesh_oversized',
+    'visual_contract', 'visual bounds', 'visual_bounds_status',
+    'unsafe_path', 'unsafe path', 'unsupported_format', 'unsupported format',
+    'missing_file', 'missing file', 'missing files', 'not found',
+    'loader_failure', 'loader failure', 'mesh_loader_failure', 'load_error', 'load error',
+    'url_not_served', 'file_access_blocked', 'unresolved_package_uri',
+  ];
+  return realFailureTokens.some(token => text.includes(token));
+}
 function updateViewerStatus() {
   const summary = computeSceneSummary();
   const warnings = asArray(state.sceneJson?.warnings).concat(asArray(state.sceneJson?.notes_warnings), asArray(state.runtimeWarnings));
@@ -1575,10 +1599,11 @@ function populateInspector(renderedOrItem) {
 }
 function refreshWarnings(sceneJson = state.sceneJson) {
   const warnings = asArray(sceneJson?.warnings).concat(asArray(sceneJson?.notes_warnings), asArray(state.runtimeWarnings));
+  const userFacingWarnings = warnings.filter(isUserFacingWarning);
   updateViewerStatus();
-  if (!warnings.length) { el.warnings.className = 'warnings state empty'; el.warnings.textContent = 'No JSON or runtime mesh warnings.'; return; }
+  if (!userFacingWarnings.length) { el.warnings.className = 'warnings state empty'; el.warnings.textContent = 'No user-facing JSON or runtime mesh warnings.'; return; }
   el.warnings.className = 'warnings';
-  el.warnings.innerHTML = warnings.map(w => {
+  el.warnings.innerHTML = userFacingWarnings.map(w => {
     const label = w.code || w.source || 'warning';
     const details = w.message || w.reason || JSON.stringify(w);
     const objectDetails = w.object_id || w.mesh_uri ? `<br><code>object=${escapeHtml(w.object_id)} link=${escapeHtml(w.link || w.object_name || '')} original=${escapeHtml(w.original_mesh_uri || '')} mesh=${escapeHtml(w.mesh_uri)}</code>` : '';
