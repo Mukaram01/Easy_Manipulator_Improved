@@ -465,6 +465,17 @@ resetView = () => {};
 renderSceneSummary = () => updateViewerStatus();
 state.sceneJson = { scene: { id: 'status_test' } };
 state.runtimeWarnings = [{ code: 'camera_framing_blocker_excluded', reason: 'hidden helper excluded' }];
+class MockVector3 {
+  constructor(x = 0, y = 0, z = 0) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+  }
+}
+THREE = { Vector3: MockVector3 };
+state.resolvedFramePoses.set('wrist_3_link', { xyz: new MockVector3(0, 0, 0), rpy: new MockVector3(0, 0, 0) });
+state.resolvedFramePoses.set('tool0', { xyz: new MockVector3(0.10, 0, 0), rpy: new MockVector3(0, 0, 0) });
+state.resolvedFramePoses.set('gripper_base_link', { xyz: new MockVector3(0.10, 0.20, 0), rpy: new MockVector3(0, 0, 0) });
 state.objects = [
   { item: { id: 'robot_link', role: 'robot' }, renderInfo: { render_status: 'mesh_loaded' }, object3d: { visible: true } },
   { item: { id: 'workbench', category: 'environment' }, renderInfo: { render_status: 'mesh_loaded' }, object3d: { visible: true } },
@@ -476,6 +487,16 @@ assert.strictEqual(status.meshLoadedCount, 2);
 assert.strictEqual(status.mesh_loaded_count, 2);
 assert.strictEqual(status.requiredMeshFailedCount, 0);
 assert.strictEqual(status.required_mesh_failed_count, 0);
+assert.deepStrictEqual(status.resolvedFramePositions.wrist_3_link, [0, 0, 0]);
+assert.deepStrictEqual(status.resolvedFramePositions.tool0, [0.10, 0, 0]);
+assert.deepStrictEqual(status.resolvedFramePositions.gripper_base_link, [0.10, 0.20, 0]);
+assert.deepStrictEqual(status.resolved_frame_positions, status.resolvedFramePositions);
+assert.strictEqual(typeof status.viewer_resolved_distances_m['wrist_3_link -> tool0'], 'number');
+assert.strictEqual(typeof status.viewer_resolved_distances_m['tool0 -> gripper_base_link'], 'number');
+assert.strictEqual(typeof status.viewer_resolved_distances_m['wrist_3_link -> gripper_base_link'], 'number');
+assert.strictEqual(status.viewer_resolved_distances_m['wrist_3_link -> tool0'], 0.10);
+assert.strictEqual(status.viewer_resolved_distances_m['tool0 -> gripper_base_link'], 0.20);
+assert.strictEqual(status.viewer_resolved_distances_m['wrist_3_link -> gripper_base_link'], Math.hypot(0.10, 0.20, 0));
 assert.strictEqual(status.runtimeWarnings.length, 1);
 assert.strictEqual(status.runtimeWarnings[0].code, 'camera_framing_blocker_excluded');
 assert.strictEqual(isUserFacingWarning(status.runtimeWarnings[0]), false);
