@@ -126,28 +126,59 @@ def test_acceptance_script_requires_viewer_side_resolved_tool_chain_distances():
 
 
 def test_browser_status_validator_accepts_expected_meshes_and_tool_chain_distances():
-    status = {
+    distance_pairs = {
+        "wrist_3_link -> tool0": 0.001,
+        "tool0 -> gripper_base_link": 0.10,
+        "wrist_3_link -> gripper_base_link": 0.10,
+    }
+    assert set(distance_pairs) == set(module.REQUIRED_VIEWER_RESOLVED_DISTANCE_PAIRS)
+    for pair, distance in distance_pairs.items():
+        assert distance <= module.REQUIRED_VIEWER_RESOLVED_DISTANCE_PAIRS[pair]
+
+    camel_status = {
         "meshLoadedCount": 18,
         "requiredMeshFailedCount": 0,
-        "viewer_resolved_distances_m": {
-            "wrist_3_link -> tool0": 0.001,
-            "tool0 -> gripper_base_link": 0.10,
-            "wrist_3_link -> gripper_base_link": 0.10,
-        },
+        "viewer_resolved_distances_m": distance_pairs,
+    }
+    snake_status = {
+        "mesh_loaded_count": 18,
+        "required_mesh_failed_count": 0,
+        "viewer_resolved_distances_m": distance_pairs,
     }
 
-    assert module.validate_browser_status(status) == []
+    assert camel_status["meshLoadedCount"] == module.EXPECTED_MESH_LOADED_COUNT == 18
+    assert camel_status["requiredMeshFailedCount"] == module.EXPECTED_REQUIRED_MESH_FAILED_COUNT == 0
+    assert snake_status["mesh_loaded_count"] == module.EXPECTED_MESH_LOADED_COUNT == 18
+    assert snake_status["required_mesh_failed_count"] == module.EXPECTED_REQUIRED_MESH_FAILED_COUNT == 0
+    assert module.validate_browser_status(camel_status) == []
+    assert module.validate_browser_status(snake_status) == []
 
 
 def test_browser_status_validator_rejects_missing_viewer_side_tool_chain_distance():
+    missing_pair = "wrist_3_link -> gripper_base_link"
+    reported_distances = {
+        "wrist_3_link -> tool0": 0.001,
+        "tool0 -> gripper_base_link": 0.10,
+    }
+    assert missing_pair in module.REQUIRED_VIEWER_RESOLVED_DISTANCE_PAIRS
+    assert missing_pair not in reported_distances
+
     status = {
         "mesh_loaded_count": 18,
         "required_mesh_failed_count": 0,
-        "viewer_resolved_distances_m": {
-            "wrist_3_link -> tool0": 0.001,
-            "tool0 -> gripper_base_link": 0.10,
-        },
+        "viewer_resolved_distances_m": reported_distances,
     }
 
     errors = module.validate_browser_status(status)
-    assert any("wrist_3_link -> gripper_base_link" in error for error in errors)
+    assert any(missing_pair in error for error in errors)
+
+
+def test_browser_status_validator_rejects_missing_viewer_side_distance_map():
+    status = {
+        "mesh_loaded_count": 18,
+        "required_mesh_failed_count": 0,
+    }
+
+    errors = module.validate_browser_status(status)
+    for pair in module.REQUIRED_VIEWER_RESOLVED_DISTANCE_PAIRS:
+        assert any(pair in error for error in errors)
