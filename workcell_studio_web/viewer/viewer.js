@@ -546,24 +546,50 @@ async function preflightMeshUrl(uri, loadUrl) {
     return describeFailure(err);
   }
 }
-function itemType(item) { return item.type || item.category || item.role || item.source_kind || 'asset'; }
-function itemLabel(item) { return item.label || item.display_name || item.name || item.id || 'unnamed'; }
+function itemType(item) {
+  if (isGeneratedToolOrGripperItem(item)) return item.type || item.category || item.role || 'tool/gripper';
+  if (isGeneratedRobotItem(item)) return item.type || item.category || item.role || 'robot';
+  return item.type || item.category || item.role || item.source_kind || 'asset';
+}
+function itemLabel(item) { return item.label || item.display_name || item.object_name || item.name || item.link || item.id || 'unnamed'; }
 function viewerGroupIdentity(item) {
   return [
     item?.source_kind,
+    item?.source_layer,
+    item?.active_visual_source,
     item?.type,
     item?.category,
     item?.role,
     item?.id,
+    item?.label,
+    item?.display_name,
+    item?.object_name,
+    item?.link,
     itemLabel(item || {}),
   ].map(value => String(value || '').toLowerCase().replace(/[_-]+/g, ' ')).join(' ');
+}
+function isGeneratedPreviewIdentity(item) {
+  const identity = viewerGroupIdentity(item);
+  return Boolean(item?.locked || /\b(generated|generated preview|urdf|moveit)\b/.test(identity));
+}
+function isGeneratedToolOrGripperItem(item) {
+  const identity = viewerGroupIdentity(item);
+  if (!isGeneratedPreviewIdentity(item)) return false;
+  return /\b(tool|gripper|end effector|eef|suction|vacuum|robotiq|airpick|finger|coupler|flange|tcp|tool0)\b/.test(identity);
+}
+function isGeneratedRobotItem(item) {
+  const identity = viewerGroupIdentity(item);
+  if (!isGeneratedPreviewIdentity(item) || isGeneratedToolOrGripperItem(item)) return false;
+  return /\b(robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|upper arm|forearm|wrist|elbow|base)\b/.test(identity);
 }
 function viewerGroupFor(item) {
   const identity = viewerGroupIdentity(item);
   if (/\b(zone|pick zone|place zone|spawn zone|safety zone|work envelope|reachability|collision)\b/.test(identity)) return 'zones';
   if (/\b(camera|sensor|realsense|depth camera|rgbd|lidar|vision)\b/.test(identity)) return 'sensors';
-  if (/\b(robot|arm|manipulator|ur3|ur5|ur10|tool|gripper|end effector|eef|suction|vacuum|robotiq|airpick|generated|generated preview|urdf|moveit)\b/.test(identity)) return 'robot/tool/generated';
+  if (isGeneratedToolOrGripperItem(item)) return 'tool/gripper';
+  if (isGeneratedRobotItem(item)) return 'robot';
   if (/\b(environment|layout|asset|object|item|table|workbench|fixture|bin|tray|conveyor|shelf|rack|pallet|floor|wall|part|product)\b/.test(identity)) return 'environment/layout';
+  if (/\b(robot|arm|manipulator|ur3|ur5|ur10|tool|gripper|end effector|eef|suction|vacuum|robotiq|airpick|generated|generated preview|urdf|moveit)\b/.test(identity)) return 'robot/tool/generated';
   return 'unknown';
 }
 const DEBUG_OVERLAY_TOKEN_RE = /\b(overlay|helper|debug|diagnostic|safety zone|pick zone|place zone|robot reach|warning anchor|warning badge|camera fov|fov|pick coverage|reachability|collision|work envelope|task route|approach retreat|epd detection|detection label|bounds box|bounding box)\b/;
@@ -1322,6 +1348,67 @@ function updateLabels() {
   }
 }
 
+function objectListMeshSummary(renderedItems) {
+  const counts = new Map();
+  for (const rendered of renderedItems) {
+    const label = meshStatusLabel(rendered);
+    counts.set(label, (counts.get(label) || 0) + 1);
+  }
+  return Array.from(counts.entries()).map(([label, count]) => `${count} ${label}`).join(', ') || 'no mesh status';
+}
+function appendObjectListRow(rendered, group) {
+  const li = document.createElement('li');
+  li.dataset.id = rendered.item.id;
+  if (state.selected === rendered.item.id) li.classList.add('selected');
+
+  const name = document.createElement('span');
+  name.className = 'object-name';
+  name.textContent = `${rendered.item.id} — ${itemLabel(rendered.item)}`;
+  li.appendChild(name);
+
+  const tag = document.createElement('span');
+  tag.className = 'type-tag';
+  tag.textContent = itemType(rendered.item);
+  li.appendChild(tag);
+
+  const status = document.createElement('span');
+  status.className = `status-chip status-${String(rendered.item.mesh_status || rendered.renderInfo?.render_status || 'unknown').replace(/[^a-z0-9_-]/gi, '-').toLowerCase()}`;
+  status.textContent = meshStatusLabel(rendered);
+  li.appendChild(status);
+
+  const meta = document.createElement('span');
+  meta.className = 'meta';
+  meta.textContent = `${group} · ${rendered.item.locked ? 'locked/generated' : 'editable/environment'} · ${meshStatusLabel(rendered)}${state.dirtyTransforms.has(rendered.item.id) ? ' · edited' : ''}`;
+  li.appendChild(meta);
+  li.addEventListener('click', () => selectObject(rendered.item.id));
+  el.list.appendChild(li);
+}
+function appendObjectListGroupSummary(group, renderedItems, groupLabels) {
+  const li = document.createElement('li');
+  li.className = 'object-group-summary';
+
+  const name = document.createElement('span');
+  name.className = 'object-name';
+  name.textContent = groupLabels[group] || group;
+  li.appendChild(name);
+
+  const tag = document.createElement('span');
+  tag.className = 'type-tag';
+  tag.textContent = `${renderedItems.length} links`;
+  li.appendChild(tag);
+
+  const status = document.createElement('span');
+  status.className = 'status-chip';
+  status.textContent = objectListMeshSummary(renderedItems);
+  li.appendChild(status);
+
+  const meta = document.createElement('span');
+  meta.className = 'meta';
+  const editableCount = renderedItems.filter(rendered => canEditItem(rendered.item)).length;
+  meta.textContent = `${renderedItems.length} generated locked URDF link${renderedItems.length === 1 ? '' : 's'} · ${objectListMeshSummary(renderedItems)}${editableCount ? ` · ${editableCount} editable` : ''} · enable debug/details to inspect individual links`;
+  li.appendChild(meta);
+  el.list.appendChild(li);
+}
 function populateObjectList() {
   el.list.innerHTML = '';
   if (!state.objects.length) {
@@ -1332,6 +1419,8 @@ function populateObjectList() {
     return;
   }
   const groupLabels = {
+    robot: 'Robot',
+    'tool/gripper': 'Tool / Gripper',
     'robot/tool/generated': 'Robot, tool & generated',
     'environment/layout': 'Environment & layout',
     sensors: 'Sensors',
@@ -1359,35 +1448,16 @@ function populateObjectList() {
     heading.className = 'object-group-heading';
     heading.textContent = groupLabels[group] || group;
     el.list.appendChild(heading);
-    for (const rendered of renderedItems) {
-      const li = document.createElement('li');
-      li.dataset.id = rendered.item.id;
-      if (state.selected === rendered.item.id) li.classList.add('selected');
 
-      const name = document.createElement('span');
-      name.className = 'object-name';
-      name.textContent = `${rendered.item.id} — ${itemLabel(rendered.item)}`;
-      li.appendChild(name);
-
-      const tag = document.createElement('span');
-      tag.className = 'type-tag';
-      tag.textContent = itemType(rendered.item);
-      li.appendChild(tag);
-
-      const status = document.createElement('span');
-      status.className = `status-chip status-${String(rendered.item.mesh_status || rendered.renderInfo?.render_status || 'unknown').replace(/[^a-z0-9_-]/gi, '-').toLowerCase()}`;
-      status.textContent = meshStatusLabel(rendered);
-      li.appendChild(status);
-
-      const meta = document.createElement('span');
-      meta.className = 'meta';
-      meta.textContent = `${group} · ${rendered.item.locked ? 'locked/generated' : 'editable/environment'} · ${meshStatusLabel(rendered)}${state.dirtyTransforms.has(rendered.item.id) ? ' · edited' : ''}`;
-      li.appendChild(meta);
-      li.addEventListener('click', () => selectObject(rendered.item.id));
-      el.list.appendChild(li);
+    const generatedGroup = group === 'robot' || group === 'tool/gripper' || group === 'robot/tool/generated';
+    if (!state.debugOverlaysVisible && generatedGroup) {
+      appendObjectListGroupSummary(group, renderedItems, groupLabels);
+      continue;
     }
+    for (const rendered of renderedItems) appendObjectListRow(rendered, group);
   }
 }
+
 function selectObject(id) {
   state.selected = id;
   document.querySelectorAll('.object-list li').forEach(li => li.classList.toggle('selected', li.dataset.id === id));
