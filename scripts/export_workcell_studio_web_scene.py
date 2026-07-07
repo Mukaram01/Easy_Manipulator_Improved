@@ -87,6 +87,8 @@ HELPER_TOKENS = (
     "bounds_box",
     "bounding_box",
 )
+GENERATED_OUTPUT_SECTIONS = ("robots", "tools", "assets", "sensors", "zones", "frames")
+RENDERABLE_OUTPUT_SECTIONS = ("robots", "tools", "assets", "sensors", "zones")
 
 Json = Dict[str, Any]
 
@@ -299,7 +301,7 @@ def _stage_visual_meshes(payload: Json, scene_dir: Path, output_path: Path) -> N
     scene_id = str(payload.get("scene", {}).get("id") or scene_dir.name)
     asset_root = (repo_root / "build" / "workcell_studio_web_scene" / "assets" / scene_id).resolve()
     asset_root.mkdir(parents=True, exist_ok=True)
-    sections: Sequence[str] = ("robots", "tools", "assets", "sensors", "zones")
+    sections: Sequence[str] = RENDERABLE_OUTPUT_SECTIONS
     for section in sections:
         for item in payload.get(section, []):
             if not isinstance(item, dict):
@@ -391,7 +393,13 @@ def _is_helper(item: Mapping[str, Any]) -> bool:
     return any(token in text for token in HELPER_TOKENS)
 
 
+def _is_transform_anchor(item: Mapping[str, Any]) -> bool:
+    return str(item.get("type", "")).lower() == "transform_anchor" or str(item.get("role", "")).lower() == "transform_anchor"
+
+
 def _section_from_item(item: Mapping[str, Any]) -> str:
+    if _is_transform_anchor(item):
+        return "frames"
     text = _identity_text(item)
     category = str(item.get("category", "")).lower()
     role = str(item.get("role", "")).lower()
@@ -435,7 +443,7 @@ def _pose_with_xyz_offset(base_pose: Any, offset: Sequence[float]) -> Json:
 
 
 def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings: List[Json]) -> Dict[str, List[Json]]:
-    sections = {"robots": [], "tools": [], "assets": [], "sensors": [], "zones": []}
+    sections = {section: [] for section in GENERATED_OUTPUT_SECTIONS}
     items = _as_list(index.get("visual_items") or index.get("items"))
     if not items:
         _warn(warnings, "visual_mesh_index_items_missing", "Visual mesh index has no visual_items/items list.", INPUTS["visual_mesh_index"])
@@ -471,6 +479,17 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
         item["editable"] = False
         item["source_kind"] = "generated_preview"
         item["provenance"].update({"locked": INPUTS["visual_mesh_index"], "editable": INPUTS["visual_mesh_index"], "source_kind": INPUTS["visual_mesh_index"]})
+        if _is_transform_anchor(raw):
+            item["render_expected"] = False
+            item["mesh_available"] = False
+            item["mesh_load_required"] = False
+            item.setdefault("active_visual_source", "frame_anchor")
+            item["provenance"].update({
+                "render_expected": INPUTS["visual_mesh_index"],
+                "mesh_available": INPUTS["visual_mesh_index"],
+                "mesh_load_required": INPUTS["visual_mesh_index"],
+                "active_visual_source": INPUTS["visual_mesh_index"],
+            })
         if final_transform is not None:
             item["provenance"].update({
                 "final_transform": INPUTS["visual_mesh_index"],
@@ -531,7 +550,7 @@ def _supplement_missing_tool_meshes(data: Dict[str, Any], generated: Dict[str, L
 
     preview_items = [
         item
-        for section in ("robots", "tools", "assets", "sensors", "zones")
+        for section in GENERATED_OUTPUT_SECTIONS
         for item in generated.get(section, [])
         if isinstance(item, Mapping)
     ]
@@ -911,7 +930,7 @@ def _core_mesh_category(item: Mapping[str, Any], section: str) -> Optional[str]:
 
 
 def _all_scene_items(payload: Mapping[str, Any]) -> Iterable[Tuple[str, Json]]:
-    for section in ("robots", "tools", "assets", "sensors", "zones"):
+    for section in GENERATED_OUTPUT_SECTIONS:
         for item in payload.get(section, []):
             if isinstance(item, dict):
                 yield section, item
@@ -1052,7 +1071,7 @@ def _visual_bounds_contract(payload: Json, data: Mapping[str, Any]) -> Json:
     blockers: List[Json] = []
 
     for section, item in _all_scene_items(payload):
-        if section == "zones" or _is_helper(item):
+        if section == "zones" or _is_helper(item) or not _is_render_expected(item):
             continue
         item_id = str(item.get("id"))
         category = str(item.get("mesh_contract_category") or _visual_contract_category(item, section))
@@ -1225,7 +1244,7 @@ def _viewer_item_status(item: Mapping[str, Any]) -> str:
 
 
 def _viewer_summary(payload: Json) -> Json:
-    sections: Sequence[str] = ("robots", "tools", "assets", "sensors", "zones")
+    sections: Sequence[str] = RENDERABLE_OUTPUT_SECTIONS
     renderable: List[Tuple[str, Json]] = []
     for section in sections:
         for item in payload.get(section, []):
@@ -1306,7 +1325,7 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
     env_scene = _as_map(_as_map(data.get("environment")).get("scene"))
     scene_name = _first_present(scene_meta.get("name"), cell_scene.get("name"), cell_scene.get("id"), env_scene.get("name"), env_scene.get("id"), scene_dir.name)
 
-    generated = _generated_preview_items(_as_map(data.get("visual_mesh_index")), scene_dir, warnings) if data.get("visual_mesh_index") is not None else {"robots": [], "tools": [], "assets": [], "sensors": [], "zones": []}
+    generated = _generated_preview_items(_as_map(data.get("visual_mesh_index")), scene_dir, warnings) if data.get("visual_mesh_index") is not None else {section: [] for section in GENERATED_OUTPUT_SECTIONS}
     _supplement_missing_tool_meshes(data, generated)
     _apply_web_scene_transform_parity_fallbacks(data, generated)
     _suppress_unresolved_placeholder_robot_visuals(generated, warnings)
@@ -1346,6 +1365,7 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
         "assets": _sort_items(assets),
         "sensors": _sort_items(sensors),
         "zones": _sort_items(zones),
+        "frames": _sort_items(generated["frames"]),
         "warnings": sorted(warnings, key=lambda w: (str(w.get("source", "")), str(w.get("code", "")), str(w.get("message", "")))),
         "backend_actions": [
             {
