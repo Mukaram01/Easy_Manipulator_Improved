@@ -37,6 +37,16 @@ REQUIRED_VIEWER_RESOLVED_DISTANCE_PAIRS = {
     "tool0 -> gripper_base_link": 0.35,
     "wrist_3_link -> gripper_base_link": 0.45,
 }
+REQUIRED_RENDERED_MESH_ADJACENT_PAIRS = {
+    "base_link_inertia -> shoulder_link": 0.75,
+    "shoulder_link -> upper_arm_link": 0.75,
+    "upper_arm_link -> forearm_link": 0.75,
+    "forearm_link -> wrist_1_link": 0.75,
+    "wrist_1_link -> wrist_2_link": 0.75,
+    "wrist_2_link -> wrist_3_link": 0.75,
+    "wrist_3_link -> tool0": 0.75,
+    "tool0 -> gripper_base_link": 0.75,
+}
 
 
 def _status_int(status: Mapping[str, Any], snake: str, camel: str) -> int:
@@ -49,6 +59,89 @@ def _distance_map_from_status(status: Mapping[str, Any]) -> Mapping[str, Any]:
         if isinstance(value, Mapping):
             return value
     return {}
+
+
+def _rendered_mesh_diagnostics_from_status(status: Mapping[str, Any]) -> Sequence[Any]:
+    for key in ("rendered_mesh_diagnostics", "renderedMeshDiagnostics"):
+        value = status.get(key)
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            return value
+    return []
+
+
+def _diagnostic_link_name(diagnostic: Mapping[str, Any]) -> str:
+    for key in ("link_name", "linkName", "link", "frame", "id", "display_name", "displayName"):
+        value = diagnostic.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _diagnostic_vector(value: Any) -> tuple[float, float, float] | None:
+    if isinstance(value, Mapping):
+        raw = (value.get("x"), value.get("y"), value.get("z"))
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)) and len(value) >= 3:
+        raw = (value[0], value[1], value[2])
+    else:
+        return None
+    try:
+        vector = (float(raw[0]), float(raw[1]), float(raw[2]))
+    except (TypeError, ValueError):
+        return None
+    if not all(component == component for component in vector):
+        return None
+    return vector
+
+
+def _diagnostic_positions(diagnostic: Mapping[str, Any]) -> list[tuple[float, float, float]]:
+    positions: list[tuple[float, float, float]] = []
+    for key in (
+        "loaded_mesh_bounding_box_center",
+        "loadedMeshBoundingBoxCenter",
+        "visual_wrapper_world_position",
+        "visualWrapperWorldPosition",
+    ):
+        vector = _diagnostic_vector(diagnostic.get(key))
+        if vector is not None:
+            positions.append(vector)
+    return positions
+
+
+def _euclidean_distance(a: tuple[float, float, float], b: tuple[float, float, float]) -> float:
+    return sum((left - right) ** 2 for left, right in zip(a, b)) ** 0.5
+
+
+def _rendered_mesh_adjacency_errors(status: Mapping[str, Any]) -> list[str]:
+    diagnostics = _rendered_mesh_diagnostics_from_status(status)
+    if not diagnostics:
+        return ["browser viewer renderedMeshDiagnostics/rendered_mesh_diagnostics is required for rendered UR5 mesh adjacency checks"]
+
+    by_link: dict[str, Mapping[str, Any]] = {}
+    for raw in diagnostics:
+        if not isinstance(raw, Mapping):
+            continue
+        link_name = _diagnostic_link_name(raw)
+        if link_name and link_name not in by_link:
+            by_link[link_name] = raw
+
+    errors: list[str] = []
+    for pair, max_distance_m in REQUIRED_RENDERED_MESH_ADJACENT_PAIRS.items():
+        left, right = [part.strip() for part in pair.split("->", 1)]
+        left_diag = by_link.get(left)
+        right_diag = by_link.get(right)
+        if left_diag is None or right_diag is None:
+            missing = [link for link, diag in ((left, left_diag), (right, right_diag)) if diag is None]
+            errors.append(f"browser viewer rendered mesh adjacency {pair} missing required link diagnostics: {', '.join(missing)}")
+            continue
+        left_positions = _diagnostic_positions(left_diag)
+        right_positions = _diagnostic_positions(right_diag)
+        if not left_positions or not right_positions:
+            errors.append(f"browser viewer rendered mesh adjacency {pair} missing rendered bounding-box center or wrapper position diagnostics")
+            continue
+        distance = min(_euclidean_distance(a, b) for a in left_positions for b in right_positions)
+        if distance > max_distance_m:
+            errors.append(f"browser viewer rendered mesh adjacency {pair} expected <= {max_distance_m:.3f} m, got {distance:.3f} m")
+    return errors
 
 
 def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
@@ -69,6 +162,7 @@ def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
             distance = float("nan")
         if not (0.0 <= distance <= max_distance_m):
             errors.append(f"browser viewer resolved distance {pair} expected <= {max_distance_m:.3f} m, got {raw!r}")
+    errors.extend(_rendered_mesh_adjacency_errors(status))
     return errors
 
 
