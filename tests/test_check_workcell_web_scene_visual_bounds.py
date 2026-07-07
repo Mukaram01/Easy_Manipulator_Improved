@@ -162,3 +162,22 @@ def test_checker_cli_returns_json_summary_and_nonzero_for_violations(tmp_path):
     summary = json.loads(result.stdout)
     assert summary["contract_status"] == "failed"
     assert any("obviously impossible expected_dimensions_m.x" in error for error in summary["violations"])
+
+
+def test_checker_does_not_require_mesh_contract_category_for_aggregate_robot_record():
+    payload = _valid_payload()
+    payload["robots"].append(
+        {
+            "id": "ur5",
+            "name": "UR5 aggregate robot record",
+            "category": "robot",
+            "role": "robot",
+            "render_expected": True,
+        }
+    )
+
+    summary, errors = checker.check(payload)
+
+    assert errors == []
+    assert summary["contract_status"] == "passed"
+    assert summary["core_mesh_item_count"] == 3

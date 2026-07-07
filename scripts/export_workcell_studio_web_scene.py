@@ -1067,8 +1067,10 @@ def _populate_mesh_contract_fields(payload: Json, *, staged: bool) -> Json:
     for section, item in _all_scene_items(payload):
         core_category = _core_mesh_category(item, section)
         if not _is_render_expected(item) or not _is_mesh_item(item):
-            if core_category and _is_render_expected(item) and not _has_mesh_reference(item):
-                fallback_primitive_count += 1
+            # Non-mesh primitives, helpers, zones, and authored overlays are not
+            # required browser mesh loads. Do not count them as primitive fallback
+            # core mesh failures; actual required mesh failures are reported below
+            # through missing_required_meshes/core_mesh_failures.
             continue
         candidates = _mesh_candidates(item)
         original = item.get("original_mesh_uri") or (candidates[0][1] if candidates else None)
