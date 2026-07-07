@@ -165,10 +165,11 @@ def test_viewer_applies_mesh_local_transform_only_to_loaded_meshes():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     for token in [
         "meshLocalTransformOf",
-        "item?.mesh_local_transform || item?.visual_local_transform",
-        "meshLocalVector(transform.xyz, [0, 0, 0], 'xyz', reasons)",
-        "meshLocalVector(transform.rpy, [0, 0, 0], 'rpy', reasons)",
-        "meshLocalVector(transform.scale, [1, 1, 1], 'scale', reasons)",
+        "const source = item?.mesh_local_transform",
+        "visualOriginOf",
+        "meshLocalVector(transform.xyz || transform.origin || transform.position",
+        "meshLocalVector(transform.rpy || transform.rotation_rpy",
+        "meshLocalVector(scaleSource",
         "Number.isFinite(number)",
         "applyMeshLocalTransform",
         "invalid_mesh_local_transform",
@@ -181,6 +182,27 @@ def test_viewer_applies_mesh_local_transform_only_to_loaded_meshes():
     apply_pose_body = js.split("function applyPose", 1)[1].split("function assignItemUserData", 1)[0]
     assert "mesh_local_transform" not in apply_pose_body
     assert "visual_local_transform" not in apply_pose_body
+    assert "visual_origin" not in apply_pose_body
+
+
+def test_viewer_places_generated_urdf_roots_at_frame_pose_and_visuals_at_origin():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    for token in [
+        "function isGeneratedUrdfItem(item)",
+        "function framePoseOf(item)",
+        "item?.frame_world_pose",
+        "item?.link_world_pose",
+        "function visualOriginOf(item)",
+        "item?.visual_origin || item?.visual_local_transform",
+        "missing_generated_urdf_frame_pose",
+        "mesh_uri",
+    ]:
+        assert token in js
+    pose_body = js.split("function poseOf(item)", 1)[1].split("function scaleOf", 1)[0]
+    assert "if (isGeneratedUrdfItem(item)) return framePoseOf(item)" in pose_body
+    mesh_transform_body = js.split("function applyMeshLocalTransform", 1)[1].split("async function tryLoadMesh", 1)[0]
+    assert "isGeneratedUrdfItem(item) ? visualOriginOf(item) : transform.pose" in mesh_transform_body
+    assert "meshObject.position.copy(visualOrigin.xyz)" in mesh_transform_body
 
 def test_repository_does_not_track_generated_web_scene_outputs_under_source_paths():
     result = subprocess.run(
@@ -272,7 +294,7 @@ def test_viewer_local_mesh_transform_is_applied_to_mesh_object_not_parent_pose()
     apply_pose_body = js.split("function applyPose", 1)[1].split("function assignItemUserData", 1)[0]
     assert "mesh_local_transform" not in apply_pose_body
     assert "visual_local_transform" not in apply_pose_body
-    assert "applyMeshLocalTransform" not in apply_pose_body
+    assert "visual_origin" not in apply_pose_body
 
 
 def test_viewer_visual_bounds_diagnostics_and_fit_bounds_contract_are_source_guarded():
