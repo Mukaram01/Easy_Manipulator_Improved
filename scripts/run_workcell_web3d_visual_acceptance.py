@@ -30,6 +30,47 @@ PNG_1X1 = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
 )
 
+EXPECTED_MESH_LOADED_COUNT = 18
+EXPECTED_REQUIRED_MESH_FAILED_COUNT = 0
+REQUIRED_VIEWER_RESOLVED_DISTANCE_PAIRS = {
+    "wrist_3_link -> tool0": 0.20,
+    "tool0 -> gripper_base_link": 0.35,
+    "wrist_3_link -> gripper_base_link": 0.45,
+}
+
+
+def _status_int(status: Mapping[str, Any], snake: str, camel: str) -> int:
+    return int(status.get(snake) if status.get(snake) is not None else status.get(camel) or 0)
+
+
+def _distance_map_from_status(status: Mapping[str, Any]) -> Mapping[str, Any]:
+    for key in ("viewer_resolved_distances_m", "resolved_distances_m", "resolvedFrameDistancesM", "resolved_frame_distances_m"):
+        value = status.get(key)
+        if isinstance(value, Mapping):
+            return value
+    return {}
+
+
+def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    mesh_loaded_count = _status_int(status, "mesh_loaded_count", "meshLoadedCount")
+    required_mesh_failed_count = _status_int(status, "required_mesh_failed_count", "requiredMeshFailedCount")
+    if mesh_loaded_count != EXPECTED_MESH_LOADED_COUNT:
+        errors.append(f"browser viewer meshLoadedCount expected {EXPECTED_MESH_LOADED_COUNT}, got {mesh_loaded_count}")
+    if required_mesh_failed_count != EXPECTED_REQUIRED_MESH_FAILED_COUNT:
+        errors.append(f"browser viewer requiredMeshFailedCount expected {EXPECTED_REQUIRED_MESH_FAILED_COUNT}, got {required_mesh_failed_count}")
+
+    distances = _distance_map_from_status(status)
+    for pair, max_distance_m in REQUIRED_VIEWER_RESOLVED_DISTANCE_PAIRS.items():
+        raw = distances.get(pair)
+        try:
+            distance = float(raw) if raw is not None else float("nan")
+        except (TypeError, ValueError):
+            distance = float("nan")
+        if not (0.0 <= distance <= max_distance_m):
+            errors.append(f"browser viewer resolved distance {pair} expected <= {max_distance_m:.3f} m, got {raw!r}")
+    return errors
+
 
 def _load_yaml(path: Path) -> Mapping[str, Any]:
     if not path.is_file():
@@ -223,13 +264,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     status = browser.get("status") if isinstance(browser, Mapping) else None
     if isinstance(status, Mapping):
-        mesh_loaded_count = int(status.get("mesh_loaded_count") or status.get("meshLoadedCount") or 0)
-        required_mesh_failed_count = int(status.get("required_mesh_failed_count") or status.get("requiredMeshFailedCount") or 0)
-        if mesh_loaded_count == 0:
-            print("error: browser viewer loaded zero mesh-backed visuals (mesh_loaded_count == 0)", file=sys.stderr)
-            return 1
-        if required_mesh_failed_count > 0:
-            print(f"error: browser viewer reported required mesh failures (required_mesh_failed_count == {required_mesh_failed_count})", file=sys.stderr)
+        status_errors = validate_browser_status(status)
+        if status_errors:
+            for error in status_errors:
+                print(f"error: {error}", file=sys.stderr)
             return 1
     elif args.require_browser:
         print("error: browser viewer did not expose window.__WORKCELL_VIEWER_STATUS__", file=sys.stderr)

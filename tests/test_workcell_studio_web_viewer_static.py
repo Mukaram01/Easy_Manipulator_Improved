@@ -204,6 +204,47 @@ def test_viewer_places_generated_urdf_roots_at_frame_pose_and_visuals_at_origin(
     assert "isGeneratedUrdfItem(item) ? visualOriginOf(item) : transform.pose" in mesh_transform_body
     assert "meshObject.position.copy(visualOrigin.xyz)" in mesh_transform_body
 
+
+def test_generated_urdf_link_placement_does_not_primarily_use_legacy_visual_world_pose():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    pose_body = js.split("function poseOf(item)", 1)[1].split("function scaleOf", 1)[0]
+    generated_branch = pose_body.split("const pose = canonicalFinalPose(item);", 1)[0]
+
+    assert "if (isGeneratedUrdfItem(item)) return framePoseOf(item)" in generated_branch
+    for legacy_pose in ["baked_world_visual_pose", "world_from_visual", "final_transform"]:
+        assert legacy_pose not in generated_branch
+
+
+def test_generated_urdf_link_placement_consumes_link_or_frame_world_pose():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    frame_source_body = js.split("function generatedUrdfFramePoseSource(item)", 1)[1].split("function framePoseOf(item)", 1)[0]
+    pose_body = js.split("function poseOf(item)", 1)[1].split("function scaleOf", 1)[0]
+
+    assert "if (item?.frame_world_pose) return item.frame_world_pose;" in frame_source_body
+    assert "if (item?.link_world_pose) return item.link_world_pose;" in frame_source_body
+    assert "if (isGeneratedUrdfItem(item)) return framePoseOf(item)" in pose_body
+
+
+def test_viewer_declares_explicit_ros_z_up_convention():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    init_body = js.split("function initThree()", 1)[1].split("function animate()", 1)[0]
+
+    assert "const ROS_Z_UP = new THREE.Vector3(0, 0, 1);" in init_body
+    assert "THREE.Object3D.DEFAULT_UP.copy(ROS_Z_UP);" in init_body
+    assert "scene.up.copy(ROS_Z_UP);" in init_body
+    assert "camera.up.copy(ROS_Z_UP);" in init_body
+
+
+def test_viewer_ground_grid_is_ros_xy_not_threejs_default_xz_y_up():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    init_body = js.split("function initThree()", 1)[1].split("function animate()", 1)[0]
+
+    assert "new THREE.GridHelper" in init_body
+    assert "grid.name = 'ros_xy_ground_grid';" in init_body
+    assert "grid.up.copy(ROS_Z_UP);" in init_body
+    assert "grid.rotation.x = Math.PI / 2;" in init_body
+
+
 def test_repository_does_not_track_generated_web_scene_outputs_under_source_paths():
     result = subprocess.run(
         ["git", "ls-files", "*.web_scene.json"],

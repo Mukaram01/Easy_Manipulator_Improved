@@ -95,8 +95,59 @@ def test_acceptance_script_supports_playwright_browser_status_path():
     assert "p.chromium.launch" in text
     assert "window.__WORKCELL_VIEWER_STATUS__" in text
     assert "page.wait_for_function" in text
-    assert "mesh_loaded_count == 0" in text
-    assert "required_mesh_failed_count > 0" in text
+    assert "validate_browser_status(status)" in text
+    assert "EXPECTED_MESH_LOADED_COUNT = 18" in text
+    assert "EXPECTED_REQUIRED_MESH_FAILED_COUNT = 0" in text
     assert "viewer_url:" in text
     assert "screenshot_path:" in text
     assert "report_path:" in text
+
+
+def test_acceptance_script_preserves_canonical_mesh_count_expectations():
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert "EXPECTED_MESH_LOADED_COUNT = 18" in text
+    assert "EXPECTED_REQUIRED_MESH_FAILED_COUNT = 0" in text
+    assert "meshLoadedCount expected {EXPECTED_MESH_LOADED_COUNT}" in text
+    assert "requiredMeshFailedCount expected {EXPECTED_REQUIRED_MESH_FAILED_COUNT}" in text
+
+
+def test_acceptance_script_requires_viewer_side_resolved_tool_chain_distances():
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert "REQUIRED_VIEWER_RESOLVED_DISTANCE_PAIRS" in text
+    for pair in [
+        "wrist_3_link -> tool0",
+        "tool0 -> gripper_base_link",
+        "wrist_3_link -> gripper_base_link",
+    ]:
+        assert pair in text
+    assert "viewer_resolved_distances_m" in text
+    assert "resolved_distances_m" in text
+    assert "browser viewer resolved distance {pair} expected <=" in text
+
+
+def test_browser_status_validator_accepts_expected_meshes_and_tool_chain_distances():
+    status = {
+        "meshLoadedCount": 18,
+        "requiredMeshFailedCount": 0,
+        "viewer_resolved_distances_m": {
+            "wrist_3_link -> tool0": 0.001,
+            "tool0 -> gripper_base_link": 0.10,
+            "wrist_3_link -> gripper_base_link": 0.10,
+        },
+    }
+
+    assert module.validate_browser_status(status) == []
+
+
+def test_browser_status_validator_rejects_missing_viewer_side_tool_chain_distance():
+    status = {
+        "mesh_loaded_count": 18,
+        "required_mesh_failed_count": 0,
+        "viewer_resolved_distances_m": {
+            "wrist_3_link -> tool0": 0.001,
+            "tool0 -> gripper_base_link": 0.10,
+        },
+    }
+
+    errors = module.validate_browser_status(status)
+    assert any("wrist_3_link -> gripper_base_link" in error for error in errors)
