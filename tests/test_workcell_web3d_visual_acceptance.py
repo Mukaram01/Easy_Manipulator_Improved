@@ -208,7 +208,28 @@ def _valid_rendered_mesh_diagnostics(spacing=0.05):
                 "visual_wrapper_world_position": {"x": index * spacing, "y": 0.0, "z": 0.0},
             }
         )
+    diagnostics.append(_valid_table_diagnostic())
     return diagnostics
+
+
+def _valid_table_diagnostic():
+    return {
+        "id": "workbench",
+        "object_id": "workbench",
+        "object_name": "M1 workbench",
+        "category": "table",
+        "link_name": "workbench",
+        "bounding_box_size": {"x": 1.20, "y": 0.80, "z": 0.05},
+        "bounding_box_center": {"x": 0.40, "y": 0.0, "z": 0.75},
+        "inferred_up_axis": {"x": 0.0, "y": 0.0, "z": 1.0},
+    }
+
+
+def _rotated_table_diagnostic():
+    diagnostic = _valid_table_diagnostic()
+    diagnostic["bounding_box_size"] = {"x": 1.20, "y": 0.05, "z": 0.80}
+    diagnostic["inferred_up_axis"] = {"x": 0.0, "y": 1.0, "z": 0.0}
+    return diagnostic
 
 
 def _valid_viewer_distances():
@@ -274,3 +295,22 @@ def test_browser_status_validator_accepts_valid_rendered_mesh_diagnostics_snake_
     }
 
     assert module.validate_browser_status(status) == []
+
+
+def test_browser_status_validator_accepts_horizontal_table_diagnostic():
+    status = _valid_browser_status_with_rendered_diagnostics()
+
+    assert module.validate_browser_status(status) == []
+
+
+def test_browser_status_validator_rejects_90_degree_rotated_table_diagnostic():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    status["renderedMeshDiagnostics"] = [
+        _rotated_table_diagnostic() if diagnostic.get("category") == "table" else diagnostic
+        for diagnostic in status["renderedMeshDiagnostics"]
+    ]
+
+    errors = module.validate_browser_status(status)
+
+    assert any("thickness/smallest dimension along Z" in error for error in errors)
+    assert any("normal/up close to world +Z" in error for error in errors)

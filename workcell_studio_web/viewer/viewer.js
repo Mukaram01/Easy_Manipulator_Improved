@@ -117,6 +117,14 @@ function vector3ToDiagnostics(value) {
   const xyz = finiteXyzArrayFromVector(value);
   return xyz ? { x: xyz[0], y: xyz[1], z: xyz[2] } : null;
 }
+function quaternionToDiagnostics(q) { return q ? { x: q.x, y: q.y, z: q.z, w: q.w } : null; }
+function eulerToDiagnostics(e) { return e ? { x: e.x, y: e.y, z: e.z, order: e.order || 'XYZ' } : null; }
+function worldUpDiagnosticsForObject(object) {
+  if (!object || !THREE?.Vector3) return null;
+  object.updateMatrixWorld(true);
+  const up = new THREE.Vector3(0, 0, 1).transformDirection(object.matrixWorld).normalize();
+  return vector3ToDiagnostics(up);
+}
 function box3DiagnosticsForObject(object) {
   if (!object || !THREE?.Box3) return { center: null, size: null };
   object.updateMatrixWorld(true);
@@ -137,7 +145,8 @@ function collectRenderedMeshDiagnostics() {
   const diagnostics = [];
   for (const rendered of state.objects || []) {
     const item = rendered?.item || {};
-    if (!rendered?.object3d || !isGeneratedUrdfItem(item)) continue;
+    const category = meshContractCategoryOf(item);
+    if (!rendered?.object3d || (!isGeneratedUrdfItem(item) && !['table', 'environment'].includes(category))) continue;
     rendered.object3d.updateMatrixWorld(true);
     rendered.meshObject?.updateMatrixWorld?.(true);
     rendered.loadedMeshObject?.updateMatrixWorld?.(true);
@@ -152,10 +161,17 @@ function collectRenderedMeshDiagnostics() {
       visualWrapperWorldPosition = vector3ToDiagnostics(visualWrapperWorld);
     }
 
-    const boundsSource = rendered.loadedMeshObject || rendered.meshObject;
+    const boundsSource = rendered.loadedMeshObject || rendered.meshObject || rendered.object3d;
     const bounds = box3DiagnosticsForObject(boundsSource);
+    const worldQuaternion = new THREE.Quaternion();
+    rendered.object3d.getWorldQuaternion(worldQuaternion);
+    const worldEuler = new THREE.Euler().setFromQuaternion(worldQuaternion, 'XYZ');
+    const inferredUpAxis = worldUpDiagnosticsForObject(rendered.object3d);
     diagnostics.push({
       id: item.id || '',
+      object_id: item.id || item.object_name || item.name || '',
+      object_name: item.object_name || item.name || item.display_name || item.label || item.id || '',
+      category,
       link: item.link || item.object_name || item.visual || '',
       link_name: item.link_name || item.link || item.object_name || '',
       frame: item.frame || item.frame_id || item.link || item.link_name || '',
@@ -170,6 +186,18 @@ function collectRenderedMeshDiagnostics() {
       loaded_mesh_bounding_box_center: bounds.center,
       loadedMeshBoundingBoxSize: bounds.size,
       loaded_mesh_bounding_box_size: bounds.size,
+      boundingBoxCenter: bounds.center,
+      bounding_box_center: bounds.center,
+      boundingBoxSize: bounds.size,
+      bounding_box_size: bounds.size,
+      worldQuaternion: quaternionToDiagnostics(worldQuaternion),
+      world_quaternion: quaternionToDiagnostics(worldQuaternion),
+      worldEuler: eulerToDiagnostics(worldEuler),
+      world_euler: eulerToDiagnostics(worldEuler),
+      inferredUpAxis: inferredUpAxis,
+      inferred_up_axis: inferredUpAxis,
+      inferredNormal: inferredUpAxis,
+      inferred_normal: inferredUpAxis,
     });
   }
   const expectedOrder = new Map(EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS.map((name, index) => [name, index]));

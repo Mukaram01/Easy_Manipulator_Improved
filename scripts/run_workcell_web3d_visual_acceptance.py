@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import math
 import os
 import shutil
 import socket
@@ -68,6 +69,66 @@ def _rendered_mesh_diagnostics_from_status(status: Mapping[str, Any]) -> Sequenc
             return value
     return []
 
+
+
+def _diagnostic_text(diagnostic: Mapping[str, Any]) -> str:
+    values = []
+    for key in ("id", "object_id", "objectId", "object_name", "objectName", "display_name", "displayName", "name", "label", "category", "role", "type"):
+        value = diagnostic.get(key)
+        if isinstance(value, str):
+            values.append(value)
+    return " ".join(values).lower().replace("_", "-")
+
+
+def _diagnostic_bbox_size(diagnostic: Mapping[str, Any]) -> tuple[float, float, float] | None:
+    for key in ("bounding_box_size", "boundingBoxSize", "loaded_mesh_bounding_box_size", "loadedMeshBoundingBoxSize"):
+        vector = _diagnostic_vector(diagnostic.get(key))
+        if vector is not None:
+            return tuple(abs(component) for component in vector)
+    return None
+
+
+def _diagnostic_up_axis(diagnostic: Mapping[str, Any]) -> tuple[float, float, float] | None:
+    for key in ("inferred_up_axis", "inferredUpAxis", "inferred_normal", "inferredNormal", "normal", "up_axis", "upAxis"):
+        vector = _diagnostic_vector(diagnostic.get(key))
+        if vector is not None:
+            length = _euclidean_distance(vector, (0.0, 0.0, 0.0))
+            if length > 0.0:
+                return tuple(component / length for component in vector)
+    return None
+
+
+def _table_horizontal_errors(status: Mapping[str, Any]) -> list[str]:
+    diagnostics = _rendered_mesh_diagnostics_from_status(status)
+    table_diagnostics = [
+        raw for raw in diagnostics
+        if isinstance(raw, Mapping) and any(token in _diagnostic_text(raw) for token in ("table", "workbench", "work-bench", "bench"))
+    ]
+    if not table_diagnostics:
+        return ["browser viewer canonical table/workbench rendered bounding-box diagnostic is required"]
+
+    errors: list[str] = []
+    for diagnostic in table_diagnostics:
+        name = _diagnostic_link_name(diagnostic) or str(diagnostic.get("object_id") or diagnostic.get("id") or "table/workbench")
+        size = _diagnostic_bbox_size(diagnostic)
+        if size is None:
+            errors.append(f"browser viewer table/workbench {name} missing rendered bounding-box size")
+            continue
+        x, y, z = size
+        smallest_axis = min(((x, "X"), (y, "Y"), (z, "Z")), key=lambda item: item[0])[1]
+        if smallest_axis != "Z":
+            errors.append(f"browser viewer table/workbench {name} expected thickness/smallest dimension along Z, got size x={x:.3f}, y={y:.3f}, z={z:.3f}")
+        if z >= min(x, y):
+            errors.append(f"browser viewer table/workbench {name} expected largest tabletop dimensions in XY with Z thickness, got size x={x:.3f}, y={y:.3f}, z={z:.3f}")
+        up = _diagnostic_up_axis(diagnostic)
+        if up is None:
+            errors.append(f"browser viewer table/workbench {name} missing inferred up axis/normal")
+            continue
+        dot_world_z = up[2]
+        max_tilt_rad = math.radians(15.0)
+        if dot_world_z < math.cos(max_tilt_rad):
+            errors.append(f"browser viewer table/workbench {name} expected normal/up close to world +Z, got ({up[0]:.3f}, {up[1]:.3f}, {up[2]:.3f})")
+    return errors
 
 def _diagnostic_link_name(diagnostic: Mapping[str, Any]) -> str:
     for key in ("link_name", "linkName", "link", "frame", "id", "display_name", "displayName"):
@@ -163,6 +224,7 @@ def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
         if not (0.0 <= distance <= max_distance_m):
             errors.append(f"browser viewer resolved distance {pair} expected <= {max_distance_m:.3f} m, got {raw!r}")
     errors.extend(_rendered_mesh_adjacency_errors(status))
+    errors.extend(_table_horizontal_errors(status))
     return errors
 
 
