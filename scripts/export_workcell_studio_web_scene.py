@@ -645,8 +645,8 @@ def _pose_xyz(pose: Any) -> Optional[List[float]]:
 
 
 def _set_item_pose(item: Json, pose: Json, source: str) -> None:
-    for field in ("pose", "world_pose", "final_transform", "world_from_visual", "link_world_pose", "baked_world_visual_pose"):
-        if field in item or field in {"pose", "world_pose", "final_transform", "world_from_visual"}:
+    for field in ("pose", "world_pose", "final_transform", "world_from_visual", "link_world_pose", "frame_world_pose", "baked_world_visual_pose"):
+        if field in item or field in {"pose", "world_pose", "final_transform", "world_from_visual", "frame_world_pose"}:
             item[field] = dict(pose)
             item.setdefault("provenance", {})[field] = source
     item["transform_source"] = source
@@ -695,20 +695,29 @@ def _apply_web_scene_transform_parity_fallbacks(data: Dict[str, Any], generated:
 
     tool_parent_pose = frame_pose_by_link.get("tool0")
     transform_source = "web_export_tool0_frame_transform_parity_fallback"
-    if tool_parent_pose is None and "wrist_3_link" in frame_pose_by_link:
+    tool_parent_xyz = _pose_xyz(tool_parent_pose)
+    tool0_collapsed_at_origin = tool_parent_xyz is not None and sum(v * v for v in tool_parent_xyz) < 0.05
+    if (tool_parent_pose is None or tool0_collapsed_at_origin) and "wrist_3_link" in frame_pose_by_link:
         tool_parent_pose = frame_pose_by_link["wrist_3_link"]
         transform_source = "web_export_wrist_3_link_link_pose_transform_parity_fallback"
         _warn(
             warnings,
-            "tool0_frame_missing_using_wrist_3_link_fallback",
-            "tool0 frame/link world pose metadata is missing from generated/scene_visual_mesh_index.json; "
+            "tool0_frame_missing_or_collapsed_using_wrist_3_link_fallback",
+            "tool0 frame/link world pose metadata is missing or collapsed near the world origin in generated/scene_visual_mesh_index.json; "
             "using wrist_3_link.link_world_pose only as a temporary gripper parent fallback. "
-            "Regenerate the scene visual mesh index so tool0.frame_world_pose or tool0.link_world_pose is available.",
+            "Regenerate the scene visual mesh index so tool0.frame_world_pose or tool0.link_world_pose is available and non-collapsed.",
             INPUTS["visual_mesh_index"],
         )
 
     parent_xyz = _pose_xyz(tool_parent_pose)
     if parent_xyz is not None:
+        for item in generated.get("frames", []):
+            if _link_key(item) == "tool0":
+                pose = item.get("final_transform") or item.get("world_from_visual") or item.get("pose") or item.get("frame_world_pose")
+                xyz = _pose_xyz(pose)
+                if xyz is None or sum(v * v for v in xyz) < 0.05:
+                    adjusted = dict(tool_parent_pose) if isinstance(tool_parent_pose, Mapping) else {"xyz": parent_xyz, "rpy": [0.0, 0.0, 0.0]}
+                    _set_item_pose(item, adjusted, transform_source)
         for item in generated.get("tools", []):
             pose = item.get("final_transform") or item.get("world_from_visual") or item.get("pose")
             xyz = _pose_xyz(pose)
