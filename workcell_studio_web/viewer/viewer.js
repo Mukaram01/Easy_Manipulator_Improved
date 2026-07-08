@@ -147,6 +147,7 @@ function collectRenderedMeshDiagnostics() {
     const item = rendered?.item || {};
     const category = meshContractCategoryOf(item);
     if (!rendered?.object3d || (!isGeneratedUrdfItem(item) && !['table', 'environment'].includes(category))) continue;
+    if (!rendered.object3d?.updateMatrixWorld || !rendered.object3d?.getWorldPosition) continue;
     rendered.object3d.updateMatrixWorld(true);
     rendered.meshObject?.updateMatrixWorld?.(true);
     rendered.loadedMeshObject?.updateMatrixWorld?.(true);
@@ -198,6 +199,46 @@ function collectRenderedMeshDiagnostics() {
       inferred_up_axis: inferredUpAxis,
       inferredNormal: inferredUpAxis,
       inferred_normal: inferredUpAxis,
+    });
+  }
+
+  const seenLinks = new Set(diagnostics.map(d => d.link_name || d.link || d.frame).filter(Boolean));
+  for (const linkName of EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS) {
+    if (seenLinks.has(linkName)) continue;
+    const xyz = resolveWorldXyzForFrame(linkName);
+    if (!xyz) continue;
+    const position = { x: xyz[0], y: xyz[1], z: xyz[2] };
+    diagnostics.push({
+      id: `frame_anchor_${linkName}`,
+      object_id: `frame_anchor_${linkName}`,
+      object_name: linkName,
+      category: 'robot',
+      link: linkName,
+      link_name: linkName,
+      frame: linkName,
+      display_name: `${linkName} frame`,
+      render_status: 'frame_anchor',
+      mesh_uri: '',
+      linkFrameWorldPosition: position,
+      link_frame_world_position: position,
+      visualWrapperWorldPosition: position,
+      visual_wrapper_world_position: position,
+      loadedMeshBoundingBoxCenter: position,
+      loaded_mesh_bounding_box_center: position,
+      loadedMeshBoundingBoxSize: { x: 0, y: 0, z: 0 },
+      loaded_mesh_bounding_box_size: { x: 0, y: 0, z: 0 },
+      boundingBoxCenter: position,
+      bounding_box_center: position,
+      boundingBoxSize: { x: 0, y: 0, z: 0 },
+      bounding_box_size: { x: 0, y: 0, z: 0 },
+      worldQuaternion: null,
+      world_quaternion: null,
+      worldEuler: null,
+      world_euler: null,
+      inferredUpAxis: { x: 0, y: 0, z: 1 },
+      inferred_up_axis: { x: 0, y: 0, z: 1 },
+      inferredNormal: { x: 0, y: 0, z: 1 },
+      inferred_normal: { x: 0, y: 0, z: 1 },
     });
   }
   const expectedOrder = new Map(EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS.map((name, index) => [name, index]));
@@ -314,7 +355,7 @@ function poseOf(item) {
   return { xyz: vector3(xyz), rpy: vector3(rpy) };
 }
 function scaleOf(item) {
-  const scale = isGeneratedUrdfItem(item) ? (item.scale || [1, 1, 1]) : (item.scale || item.mesh_scale || [1, 1, 1]);
+  const scale = isGeneratedUrdfItem(item) ? [1, 1, 1] : (item.scale || item.mesh_scale || [1, 1, 1]);
   return vector3(scale, [1, 1, 1]);
 }
 function transformOf(item) {
@@ -1000,7 +1041,7 @@ async function tryLoadMesh(item, rendered, fallback) {
     const visualRoot = makeMeshVisualRoot(item, meshObject);
     visualRoot.updateMatrixWorld(true);
     const nativeBounds = new THREE.Box3().setFromObject(visualRoot);
-    const autoscaled = maybeApplyMeshUnitAutoscale(item, meshObject, nativeBounds, uri);
+    const autoscaled = maybeApplyMeshUnitAutoscale(item, meshObject, nativeBounds, uri) || maybeApplyExpectedDimensionScale(item, meshObject, visualRoot, nativeBounds, uri);
     const validationBounds = autoscaled ? new THREE.Box3().setFromObject(visualRoot) : nativeBounds;
     fallback.visible = false;
     rendered.object3d.add(visualRoot);
@@ -1052,13 +1093,15 @@ function parseSceneFrames(sceneJson) {
     source.forEach((frame, index) => {
       if (!frame || typeof frame !== 'object') return;
       const name = frameNameOf(frame, `frame_${index}`);
-      if (name) lookup.set(name, { ...frame, name });
+      const aliases = new Set([name, frame?.link, frame?.link_name, frame?.frame, frame?.frame_id].filter(value => value !== undefined && value !== null && value !== '').map(value => String(value)));
+      for (const alias of aliases) lookup.set(alias, { ...frame, name: alias });
     });
   } else if (source && typeof source === 'object') {
     for (const [key, value] of Object.entries(source)) {
       if (!value || typeof value !== 'object') continue;
       const name = frameNameOf(value, key);
-      if (name) lookup.set(name, { ...value, name });
+      const aliases = new Set([name, value?.link, value?.link_name, value?.frame, value?.frame_id, key].filter(alias => alias !== undefined && alias !== null && alias !== '').map(alias => String(alias)));
+      for (const alias of aliases) lookup.set(alias, { ...value, name: alias });
     }
   }
   return lookup;
@@ -1466,8 +1509,12 @@ function meshContractCategoryOf(item) {
     item?.category,
     item?.type,
     item?.id,
+    item?.object_name,
+    item?.source_path,
+    item?.mesh_path,
+    item?.mesh_uri,
     itemLabel(item || {}),
-  ].map(value => String(value || '').toLowerCase()).join(' ');
+  ].map(value => String(value || '').toLowerCase().replace(/[_-]+/g, ' ')).join(' ');
   if (/\b(table|workbench|bench)\b/.test(identity)) return 'table';
   if (/\b(camera|sensor|realsense|rgbd|vision)\b/.test(identity)) return 'camera';
   if (/\b(object|part|product|item)\b/.test(identity)) return 'object';
@@ -1538,6 +1585,29 @@ function maybeApplyMeshUnitAutoscale(item, meshObject, nativeBounds, meshUri) {
   item.mesh_unit_correction = meshUnitCorrectionPayload('viewer_expected_dimensions_m', confidence, finiteNative, correctedBounds, scale, axisRatios, targetRatio);
   item.visual_bounds_status = 'corrected_by_local_unit_scale';
   appendRuntimeWarning(item, meshUri, `mesh unit autoscale applied: native bounds matched a clear ${targetRatio}x ratio to expected_dimensions_m`, 'mesh_unit_autoscale_applied', item.mesh_unit_correction);
+  return true;
+}
+
+function maybeApplyExpectedDimensionScale(item, meshObject, visualRoot, nativeBounds, meshUri) {
+  if (meshContractCategoryOf(item) !== 'table') return false;
+  const expected = expectedDimensionsOf(item);
+  const finiteNative = finiteBox3(nativeBounds);
+  const dims = finiteNative ? box3Dimensions(finiteNative) : null;
+  if (!expected || !dims || dims.x <= 1e-9 || dims.y <= 1e-9 || dims.z <= 1e-9) return false;
+  const scale = new THREE.Vector3(expected.x / dims.x, expected.y / dims.y, expected.z / dims.z);
+  if (![scale.x, scale.y, scale.z].every(Number.isFinite)) return false;
+  meshObject.scale.multiply(scale);
+  meshObject.updateMatrixWorld(true);
+  visualRoot.updateMatrixWorld(true);
+  item.mesh_unit_correction = {
+    source: 'viewer_expected_dimensions_m_table_scale',
+    confidence: 'table_expected_dimensions_contract',
+    native_bounds: box3ToJson(finiteNative),
+    corrected_bounds: box3ToJson(new THREE.Box3().setFromObject(visualRoot)),
+    scale: { x: scale.x, y: scale.y, z: scale.z },
+  };
+  item.visual_bounds_status = 'corrected_by_local_unit_scale';
+  appendRuntimeWarning(item, meshUri, 'table mesh scaled to expected_dimensions_m for ROS Z-up browser visual parity', 'table_expected_dimensions_scale_applied', item.mesh_unit_correction);
   return true;
 }
 

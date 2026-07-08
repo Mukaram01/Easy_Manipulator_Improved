@@ -315,7 +315,7 @@ def browser_command(url: str, screenshot: Path) -> dict[str, Any] | None:
         exe = shutil.which(binary)
         if exe:
             return {
-                "command": [exe, "--headless=new", "--disable-gpu", "--no-sandbox", f"--screenshot={screenshot}", "--window-size=1280,900", url],
+                "command": [exe, "--headless=new", "--disable-gpu", "--no-sandbox", "--ignore-certificate-errors", f"--screenshot={screenshot}", "--window-size=1280,900", url],
                 "kind": binary,
             }
     return None
@@ -325,8 +325,8 @@ def run_browser(url: str, status_path: Path, screenshot_path: Path, require: boo
     try:
         from playwright.sync_api import sync_playwright  # type: ignore
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            browser = p.chromium.launch(headless=True, args=["--ignore-certificate-errors"])
+            page = browser.new_page(viewport={"width": 1280, "height": 900}, ignore_https_errors=True)
             page.goto(url, wait_until="networkidle", timeout=45000)
             page.wait_for_function("window.__WORKCELL_VIEWER_STATUS__ && typeof window.__WORKCELL_VIEWER_STATUS__ === 'object'", timeout=45000)
             page.wait_for_function("() => { const s = window.__WORKCELL_VIEWER_STATUS__ || {}; return (s.renderable_count || s.renderableCount || 0) === 0 || (s.mesh_loaded_count || s.meshLoadedCount || 0) > 0 || (s.required_mesh_failed_count || s.requiredMeshFailedCount || 0) > 0 || (s.fallback_count || s.fallbackCount || 0) > 0; }", timeout=45000)
