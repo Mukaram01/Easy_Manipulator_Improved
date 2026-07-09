@@ -125,6 +125,15 @@ def test_acceptance_script_requires_viewer_side_resolved_tool_chain_distances():
     assert "browser viewer resolved distance {pair} expected <=" in text
 
 
+def test_viewer_status_reports_loaded_mesh_vs_fallback_geometry():
+    text = (ROOT / "workcell_studio_web/viewer/viewer.js").read_text(encoding="utf-8")
+    assert "renderedObjectStatuses" in text
+    assert "rendered_object_statuses" in text
+    assert "mesh_loaded: renderStatus === 'mesh_loaded'" in text
+    assert "fallback_visible" in text
+    assert "required_mesh_failed_debug_fallback" in text
+
+
 def test_browser_status_validator_accepts_expected_meshes_and_tool_chain_distances():
     distance_pairs = {
         "wrist_3_link -> tool0": 0.001,
@@ -204,6 +213,10 @@ def _valid_rendered_mesh_diagnostics(spacing=0.05):
         diagnostics.append(
             {
                 "link_name": link,
+                "category": "tool" if link in {"tool0", "gripper_base_link"} else "robot",
+                "render_status": "mesh_loaded",
+                "mesh_loaded": True,
+                "fallback_visible": False,
                 "loaded_mesh_bounding_box_center": {"x": index * spacing, "y": 0.0, "z": 0.0},
                 "visual_wrapper_world_position": {"x": index * spacing, "y": 0.0, "z": 0.0},
             }
@@ -219,6 +232,12 @@ def _valid_table_diagnostic():
         "object_name": "M1 workbench",
         "category": "table",
         "link_name": "workbench",
+        "render_status": "mesh_loaded",
+        "mesh_loaded": True,
+        "fallback_visible": False,
+        "mesh_uri": "assets/workbench.stl",
+        "expected_dimensions_m": {"x": 1.20, "y": 0.80, "z": 0.05},
+        "mesh_local_scale": {"x": 1.0, "y": 1.0, "z": 1.0},
         "bounding_box_size": {"x": 1.20, "y": 0.80, "z": 0.05},
         "bounding_box_center": {"x": 0.40, "y": 0.0, "z": 0.75},
         "inferred_up_axis": {"x": 0.0, "y": 0.0, "z": 1.0},
@@ -314,3 +333,60 @@ def test_browser_status_validator_rejects_90_degree_rotated_table_diagnostic():
 
     assert any("thickness/smallest dimension along Z" in error for error in errors)
     assert any("normal/up close to world +Z" in error for error in errors)
+
+
+def test_browser_status_validator_rejects_required_product_visible_fallbacks():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    for diagnostic in status["renderedMeshDiagnostics"]:
+        if diagnostic["link_name"] == "gripper_base_link":
+            diagnostic["render_status"] = "required_mesh_failed_debug_fallback"
+            diagnostic["fallback_visible"] = True
+
+    errors = module.validate_browser_status(status)
+
+    assert any("required product gripper_base_link" in error and "visible fallback/debug geometry" in error for error in errors)
+
+
+def test_browser_status_validator_rejects_table_expected_mesh_rendered_as_primitive_fallback():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    for diagnostic in status["renderedMeshDiagnostics"]:
+        if diagnostic.get("category") == "table":
+            diagnostic["render_status"] = "primitive_fallback"
+            diagnostic["fallback_visible"] = True
+
+    errors = module.validate_browser_status(status)
+
+    assert any("table/workbench workbench expected a loaded mesh" in error for error in errors)
+
+
+def test_browser_status_validator_rejects_table_non_uniform_scale_from_expected_dimensions():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    for diagnostic in status["renderedMeshDiagnostics"]:
+        if diagnostic.get("category") == "table":
+            diagnostic["mesh_local_scale"] = {"x": 1.0, "y": 0.5, "z": 2.0}
+
+    errors = module.validate_browser_status(status)
+
+    assert any("non-uniform mesh scale derived from expected_dimensions_m" in error for error in errors)
+
+
+def test_browser_status_validator_rejects_oversized_camera_mesh_in_fit_bounds():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    status["renderedMeshDiagnostics"].append(
+        {
+            "id": "camera_realsense",
+            "object_id": "camera_realsense",
+            "display_name": "Intel RealSense camera",
+            "category": "camera",
+            "link_name": "camera_link",
+            "render_status": "mesh_loaded",
+            "mesh_loaded": True,
+            "exclude_from_fit_bounds": False,
+            "expected_dimensions_m": {"x": 0.08, "y": 0.08, "z": 0.06},
+            "loaded_mesh_bounding_box_size": {"x": 4.0, "y": 4.0, "z": 3.0},
+        }
+    )
+
+    errors = module.validate_browser_status(status)
+
+    assert any("camera/Realsense camera_link loaded mesh bounds are oversized" in error for error in errors)

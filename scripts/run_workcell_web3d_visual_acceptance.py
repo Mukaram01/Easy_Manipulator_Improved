@@ -48,6 +48,13 @@ REQUIRED_RENDERED_MESH_ADJACENT_PAIRS = {
     "wrist_3_link -> tool0": 0.75,
     "tool0 -> gripper_base_link": 0.75,
 }
+REQUIRED_PRODUCT_FALLBACK_TOKENS = (
+    "required_mesh_failed_debug_fallback",
+    "primitive_fallback",
+    "box_fallback",
+    "debug_fallback",
+    "fallback_geometry",
+)
 
 
 def _status_int(status: Mapping[str, Any], snake: str, camel: str) -> int:
@@ -86,6 +93,112 @@ def _diagnostic_bbox_size(diagnostic: Mapping[str, Any]) -> tuple[float, float, 
         if vector is not None:
             return tuple(abs(component) for component in vector)
     return None
+
+
+def _diagnostic_status(diagnostic: Mapping[str, Any]) -> str:
+    return str(diagnostic.get("render_status") or diagnostic.get("renderStatus") or diagnostic.get("mesh_status") or "").lower()
+
+
+def _diagnostic_bool(diagnostic: Mapping[str, Any], *keys: str) -> bool:
+    for key in keys:
+        value = diagnostic.get(key)
+        if isinstance(value, bool):
+            return value
+    return False
+
+
+def _diagnostic_expected_dimensions(diagnostic: Mapping[str, Any]) -> tuple[float, float, float] | None:
+    for key in ("expected_dimensions_m", "expectedDimensionsM", "expected_dimensions", "expectedDimensions"):
+        vector = _diagnostic_vector(diagnostic.get(key))
+        if vector is not None:
+            return tuple(abs(component) for component in vector)
+    return None
+
+
+def _diagnostic_scale(diagnostic: Mapping[str, Any]) -> tuple[float, float, float] | None:
+    for key in ("mesh_local_scale", "meshLocalScale", "scale", "mesh_scale", "meshScale"):
+        vector = _diagnostic_vector(diagnostic.get(key))
+        if vector is not None:
+            return tuple(abs(component) for component in vector)
+    correction = diagnostic.get("mesh_unit_correction") or diagnostic.get("meshUnitCorrection")
+    if isinstance(correction, Mapping):
+        raw = correction.get("scale")
+        try:
+            scale = abs(float(raw))
+        except (TypeError, ValueError):
+            return None
+        return (scale, scale, scale)
+    return None
+
+
+def _is_non_uniform(vector: tuple[float, float, float], tolerance: float = 0.05) -> bool:
+    finite = [component for component in vector if component > 0 and math.isfinite(component)]
+    if len(finite) != 3:
+        return False
+    return max(finite) / min(finite) > (1.0 + tolerance)
+
+
+def _is_required_product_diagnostic(diagnostic: Mapping[str, Any]) -> bool:
+    text = _diagnostic_text(diagnostic)
+    category = str(diagnostic.get("category") or "").lower()
+    return (
+        category in {"robot", "tool", "table", "environment"}
+        or any(token in text for token in ("ur5", "robot", "base-link", "shoulder-link", "upper-arm", "forearm", "wrist", "tool0", "gripper", "robotiq", "table", "workbench", "bench"))
+    )
+
+
+def _required_product_fallback_errors(status: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    for diagnostic in _rendered_mesh_diagnostics_from_status(status):
+        if not isinstance(diagnostic, Mapping) or not _is_required_product_diagnostic(diagnostic):
+            continue
+        render_status = _diagnostic_status(diagnostic)
+        fallback_visible = _diagnostic_bool(diagnostic, "fallback_visible", "fallbackVisible")
+        if fallback_visible and any(token in render_status for token in REQUIRED_PRODUCT_FALLBACK_TOKENS):
+            name = _diagnostic_link_name(diagnostic) or str(diagnostic.get("id") or diagnostic.get("object_id") or "required product")
+            errors.append(f"browser viewer required product {name} has visible fallback/debug geometry render_status={render_status!r}")
+    return errors
+
+
+def _table_mesh_contract_errors(status: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    for diagnostic in _rendered_mesh_diagnostics_from_status(status):
+        if not isinstance(diagnostic, Mapping):
+            continue
+        if not any(token in _diagnostic_text(diagnostic) for token in ("table", "workbench", "work-bench", "bench")):
+            continue
+        name = _diagnostic_link_name(diagnostic) or str(diagnostic.get("object_id") or diagnostic.get("id") or "table/workbench")
+        render_status = _diagnostic_status(diagnostic)
+        expected = _diagnostic_expected_dimensions(diagnostic)
+        mesh_uri = str(diagnostic.get("mesh_uri") or diagnostic.get("meshUri") or "")
+        if expected and mesh_uri and render_status != "mesh_loaded":
+            errors.append(f"browser viewer table/workbench {name} expected a loaded mesh but got render_status={render_status!r}")
+        if expected:
+            scale = _diagnostic_scale(diagnostic)
+            if scale and _is_non_uniform(scale):
+                errors.append(f"browser viewer table/workbench {name} has non-uniform mesh scale derived from expected_dimensions_m: x={scale[0]:.3f}, y={scale[1]:.3f}, z={scale[2]:.3f}")
+    return errors
+
+
+def _camera_bounds_errors(status: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    for diagnostic in _rendered_mesh_diagnostics_from_status(status):
+        if not isinstance(diagnostic, Mapping):
+            continue
+        if not any(token in _diagnostic_text(diagnostic) for token in ("camera", "realsense", "sensor")):
+            continue
+        if _diagnostic_status(diagnostic) != "mesh_loaded":
+            continue
+        size = _diagnostic_bbox_size(diagnostic)
+        expected = _diagnostic_expected_dimensions(diagnostic)
+        excluded = _diagnostic_bool(diagnostic, "exclude_from_fit_bounds", "excludeFromFitBounds", "debug_overlay", "debugOverlay")
+        if not size or not expected:
+            continue
+        ratios = [size[index] / expected[index] for index in range(3) if expected[index] > 0]
+        if ratios and max(ratios) > 3.0 and not excluded:
+            name = _diagnostic_link_name(diagnostic) or str(diagnostic.get("object_id") or diagnostic.get("id") or "camera")
+            errors.append(f"browser viewer camera/Realsense {name} loaded mesh bounds are oversized and still included in normal product/fit bounds")
+    return errors
 
 
 def _diagnostic_up_axis(diagnostic: Mapping[str, Any]) -> tuple[float, float, float] | None:
@@ -225,6 +338,9 @@ def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
             errors.append(f"browser viewer resolved distance {pair} expected <= {max_distance_m:.3f} m, got {raw!r}")
     errors.extend(_rendered_mesh_adjacency_errors(status))
     errors.extend(_table_horizontal_errors(status))
+    errors.extend(_required_product_fallback_errors(status))
+    errors.extend(_table_mesh_contract_errors(status))
+    errors.extend(_camera_bounds_errors(status))
     return errors
 
 
