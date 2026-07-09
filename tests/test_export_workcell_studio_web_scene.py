@@ -665,3 +665,119 @@ def test_ur5_2f_web_scene_preserves_tool0_transform_anchor_metadata(tmp_path):
             assert item["assembly_group"] == wrist["assembly_group"]
             assert item["robot_instance_id"] == wrist["robot_instance_id"]
             assert item.get("parent_to_child_pose"), f"{link} must carry explicit parent-to-child local pose"
+
+
+def test_direct_web_export_normalizes_ur5_tool0_and_robotiq_generated_rows(tmp_path):
+    scene = tmp_path / "scene"
+    (scene / "layout").mkdir(parents=True)
+    (scene / "generated").mkdir()
+    (scene / "scene_manifest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "scene": {"name": "ur5_2f_direct_contract"},
+                "robot": {"model": "ur5"},
+                "end_effector": {"id": "robotiq_85", "model": "robotiq_85"},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (scene / "cell_definition.yaml").write_text(
+        yaml.safe_dump({"cell": {"id": "ur5_2f_direct_contract"}, "robot": {"model": "ur5"}}, sort_keys=False),
+        encoding="utf-8",
+    )
+    (scene / "environment.yaml").write_text(yaml.safe_dump({"scene": {"name": "ur5_2f_direct_contract"}}, sort_keys=False), encoding="utf-8")
+    (scene / "layout/workcell_studio_layout.yaml").write_text(yaml.safe_dump({"items": []}), encoding="utf-8")
+    wrist_pose = {"xyz": [0.4, 0.1, 0.5], "rpy": [0.0, 0.0, 0.0]}
+    (scene / "generated/scene_visual_mesh_index.json").write_text(
+        json.dumps(
+            {
+                "visual_items": [
+                    {
+                        "id": "urdf_static_mesh_ur5_static_wrist_3",
+                        "link": "wrist_3_link",
+                        "object_name": "wrist_3_link",
+                        "parent_link": "wrist_2_link",
+                        "joint_parent_link": "wrist_2_link",
+                        "joint_name": "wrist_3_joint",
+                        "link_world_pose": wrist_pose,
+                        "frame_world_pose": wrist_pose,
+                        "mesh_uri": "package://ur_description/meshes/ur5/visual/wrist3.dae",
+                        "package_uri": "package://ur_description/meshes/ur5/visual/wrist3.dae",
+                        "source_path": "package://ur_description/meshes/ur5/visual/wrist3.dae",
+                    },
+                    {
+                        "id": "urdf_frame_anchor_tool0",
+                        "type": "transform_anchor",
+                        "role": "transform_anchor",
+                        "category": "frame",
+                        "link": "tool0",
+                        "object_name": "tool0",
+                        "parent_link": "flange",
+                        "joint_parent_link": "flange",
+                        "joint_name": "flange-tool0",
+                        "render_expected": False,
+                        "mesh_available": False,
+                        "link_world_pose": wrist_pose,
+                        "frame_world_pose": wrist_pose,
+                    },
+                    {
+                        "id": "urdf_visual_7_gripper_base_link",
+                        "link": "gripper_base_link",
+                        "object_name": "gripper_base_link",
+                        "parent_link": "tool0",
+                        "joint_parent_link": "tool0",
+                        "joint_name": "gripper_base_joint",
+                        "link_world_pose": wrist_pose,
+                        "frame_world_pose": wrist_pose,
+                        "mesh_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+                        "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+                        "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    out = tmp_path / "direct.web_scene.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / SCRIPT),
+            "--scene",
+            str(scene),
+            "--output",
+            str(out),
+            "--no-stage-assets",
+        ],
+        cwd=ROOT,
+        check=True,
+    )
+
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    items_by_link = {
+        item.get("link") or item.get("link_name") or item.get("frame"): item
+        for section in ("robots", "tools", "frames")
+        for item in payload.get(section, [])
+    }
+    wrist = items_by_link["wrist_3_link"]
+    tool0 = items_by_link["tool0"]
+    gripper = items_by_link["gripper_base_link"]
+
+    assert wrist["role"] == "robot"
+    assert wrist["category"] == "robot_static_mesh_visual"
+    assert wrist["active_visual_source"] == "mesh_preview"
+    assert tool0["id"] == "urdf_frame_anchor_tool0"
+    assert tool0["role"] == "transform_anchor"
+    assert tool0["parent_link"] == "wrist_3_link"
+    assert tool0["joint_parent_link"] == "wrist_3_link"
+    assert tool0["render_expected"] is False
+    assert tool0["mesh_available"] is False
+    assert tool0["mesh_load_required"] is False
+    assert "mesh_uri" not in tool0
+    assert gripper["parent_link"] == "tool0"
+    assert wrist["assembly_group"] == tool0["assembly_group"] == gripper["assembly_group"]
+    assert wrist["robot_instance_id"] == tool0["robot_instance_id"] == gripper["robot_instance_id"]
+    assert tool0["parent_to_child_pose"]
+    assert gripper["parent_to_child_pose"]
