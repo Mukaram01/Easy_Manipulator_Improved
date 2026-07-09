@@ -12,7 +12,7 @@ const LOCKED_EDIT_REASON = 'Locked/generated preview item; edit source layout/en
 const MIN_FRAME_RADIUS = 1.2;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
-const state = { sceneJson: null, sourceWebSceneFile: '', frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null };
+const state = { sceneJson: null, sourceWebSceneFile: '', frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null };
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
 const STAGED_MESH_ROOTS = [
   'build/workcell_studio_web_scene/assets/',
@@ -86,6 +86,46 @@ function computeSceneSummary() {
     meshFailedCount: statusRendered.filter(obj => isMissingOrFailedMeshStatus(obj.item?.mesh_status)).length,
     generatedLockedCount: rendered.filter(obj => isGeneratedOrLockedItem(obj.item)).length,
     editableCount: rendered.filter(obj => canEditItem(obj.item)).length,
+  };
+}
+function isExpectedMeshlessTool0Frame(item) {
+  const link = linkNameOfItem(item);
+  if (link !== 'tool0') return false;
+  if (displayMeshUri(item)) return false;
+  const geometry = String(item?.geometry_type || item?.primitive_geometry_type || item?.type || '').toLowerCase();
+  return !geometry || ['frame', 'anchor', 'none', 'link_frame', 'meshless_frame'].includes(geometry) || item?.render_expected === false;
+}
+function collectAssemblyRenderDiagnostics() {
+  const diagnostics = state.robotAssemblyRenderDiagnostics || {};
+  const rendered = state.objects || [];
+  const independentGenerated = rendered.filter(obj => {
+    const item = obj?.item || {};
+    return isGeneratedUrdfMeshVisualItem(item)
+      && usesAssembledUrdfHierarchy(item)
+      && !obj?.object3d?.userData?.assembled_urdf_hierarchy;
+  });
+  const visibleTool0Fallback = rendered.filter(obj => {
+    const item = obj?.item || {};
+    return linkNameOfItem(item) === 'tool0' && Boolean(obj?.fallback?.visible);
+  });
+  const distances = (state.robotAssemblyDiagnostics || []).flatMap(d => {
+    const adjacency = d.assembled_link_adjacency_distances_m || {};
+    return [adjacency['tool0 -> gripper_base_link'], adjacency['wrist_3_link -> gripper_base_link']];
+  }).filter(value => typeof value === 'number' && Number.isFinite(value));
+  return {
+    skipped_flattened_urdf_visual_count: Number(diagnostics.skipped_flattened_urdf_visual_count || 0),
+    skippedFlattenedUrdfVisualCount: Number(diagnostics.skipped_flattened_urdf_visual_count || 0),
+    assembled_hierarchy_rendered_mesh_count: Number(diagnostics.assembled_hierarchy_rendered_mesh_count || 0),
+    assembledHierarchyRenderedMeshCount: Number(diagnostics.assembled_hierarchy_rendered_mesh_count || 0),
+    visible_duplicate_generated_urdf_count: independentGenerated.length,
+    visibleDuplicateGeneratedUrdfCount: independentGenerated.length,
+    visible_tool0_fallback_count: visibleTool0Fallback.length,
+    visibleTool0FallbackCount: visibleTool0Fallback.length,
+    detached_robot_mesh_clusters: Number(diagnostics.detached_robot_mesh_clusters || 0),
+    detached_robot_mesh_clusters_count: Number(diagnostics.detached_robot_mesh_clusters || 0),
+    detachedRobotMeshClusters: Number(diagnostics.detached_robot_mesh_clusters || 0),
+    max_wrist_tool0_to_gripper_base_distance_m: distances.length ? Math.max(...distances) : null,
+    maxWristTool0ToGripperBaseDistanceM: distances.length ? Math.max(...distances) : null,
   };
 }
 function isUserFacingWarning(w) {
@@ -295,6 +335,7 @@ function updateViewerStatus() {
       expectedSupportFootprintM: item.expectedSupportFootprintM || item.expected_support_footprint_m || null,
     };
   });
+  const assemblyRenderDiagnostics = collectAssemblyRenderDiagnostics();
   window.__WORKCELL_VIEWER_STATUS__ = {
     scene_name: summary.sceneName,
     sceneName: summary.sceneName,
@@ -328,6 +369,7 @@ function updateViewerStatus() {
     robot_hierarchy_missing_parents: Array.from(new Set((state.robotAssemblyDiagnostics || []).flatMap(d => d.robot_hierarchy_missing_parents || []))),
     robot_hierarchy_mesh_count: (state.robotAssemblyDiagnostics || []).reduce((total, d) => total + Number(d.robot_hierarchy_mesh_count || 0), 0),
     robotHierarchyMeshCount: (state.robotAssemblyDiagnostics || []).reduce((total, d) => total + Number(d.robot_hierarchy_mesh_count || 0), 0),
+    ...assemblyRenderDiagnostics,
   };
   return window.__WORKCELL_VIEWER_STATUS__;
 }
@@ -1381,6 +1423,12 @@ function collectFrameDiagnostics() {
   const names = new Set();
   for (const name of state.frameLookup?.keys?.() || []) names.add(String(name));
   for (const name of state.resolvedFramePoses?.keys?.() || []) names.add(String(name));
+  for (const rendered of state.objects || []) {
+    if (isGeneratedUrdfItem(rendered?.item)) {
+      const link = linkNameOfItem(rendered.item);
+      if (link) names.add(link);
+    }
+  }
   const diagnostics = [];
   for (const name of names) {
     const frame = state.frameLookup?.get?.(name) || {};
@@ -1907,6 +1955,7 @@ function clearSceneObjects() {
   state.objects = [];
   state.assemblyRoots = [];
   state.robotAssemblyDiagnostics = [];
+  state.robotAssemblyRenderDiagnostics = {};
   state.resolvedFramePoses.clear();
   state.lastFrameBounds = null;
   state._sceneBoundsExceededWarned = false;
@@ -1926,8 +1975,13 @@ function renderScene(items) {
   const scene = state.three.scene;
   const assemblyBuild = buildRobotAssemblies(items);
   state.robotAssemblyDiagnostics = assemblyBuild.assemblies;
+  state.robotAssemblyRenderDiagnostics = assemblyBuild.renderDiagnostics || {};
   for (const item of items) {
     if (assemblyBuild.handled.has(item)) continue;
+    if (usesAssembledUrdfHierarchy(item)) {
+      state.robotAssemblyRenderDiagnostics.skipped_flattened_urdf_visual_count = Number(state.robotAssemblyRenderDiagnostics.skipped_flattened_urdf_visual_count || 0) + 1;
+      continue;
+    }
     const object3d = new THREE.Group();
     object3d.name = isGeneratedUrdfItem(item)
       ? `${item.id || itemLabel(item)}_link_frame_root`
@@ -1964,6 +2018,29 @@ function renderScene(items) {
 function linkNameOfItem(item) { return String(item?.link_name || item?.link || item?.frame || item?.object_name || item?.id || '').trim(); }
 function parentLinkOfItem(item) { return String(item?.parent_link || item?.joint_parent_link || item?.immediate_parent_link || '').trim(); }
 function jointOriginOfItem(item) { return item?.parent_from_child || item?.joint_origin || item?.parent_joint_origin || { xyz: [0, 0, 0], rpy: [0, 0, 0] }; }
+function derivedParentFromChildPose(item, parentItem) {
+  if (!THREE?.Matrix4 || !item || !parentItem) return null;
+  const childPose = item?.link_world_pose || item?.frame_world_pose;
+  const parentPose = parentItem?.link_world_pose || parentItem?.frame_world_pose;
+  if (!hasFinitePoseBlock(childPose) || !hasFinitePoseBlock(parentPose)) return null;
+  const parentWorld = matrixFromPoseBlock(parentPose);
+  const childWorld = matrixFromPoseBlock(childPose);
+  return poseBlockFromMatrix(parentWorld.clone().invert().multiply(childWorld));
+}
+function jointOriginForChildItem(item, parentItem) {
+  const explicit = item?.parent_from_child || item?.joint_origin || item?.parent_joint_origin;
+  if (hasFinitePoseBlock(explicit)) return explicit;
+  const derived = derivedParentFromChildPose(item, parentItem);
+  if (derived) {
+    const pose = { xyz: finiteXyzArrayFromVector(derived.xyz) || [0, 0, 0], rpy: finiteXyzArrayFromVector(derived.rpy) || [0, 0, 0] };
+    item.parent_from_child = pose;
+    item.joint_origin = pose;
+    item.parent_joint_origin = pose;
+    item.parent_from_child_source = 'viewer_derived_parent_world_inverse_times_child_world';
+    return pose;
+  }
+  return { xyz: [0, 0, 0], rpy: [0, 0, 0] };
+}
 function applyPoseBlockToObject(object, poseSource) {
   const pose = poseBlockOf(poseSource || {});
   object.position.copy(pose.xyz);
@@ -1986,7 +2063,8 @@ function createAssemblyLinkNode(name) {
 }
 function buildRobotAssemblies(items) {
   const candidates = items.filter(isAssemblyCandidateItem);
-  if (!candidates.length) return { handled: new Set(), assemblies: [] };
+  const renderDiagnostics = { skipped_flattened_urdf_visual_count: 0, assembled_hierarchy_rendered_mesh_count: 0, visible_duplicate_generated_urdf_count: 0, visible_tool0_fallback_count: 0, detached_robot_mesh_clusters: 0 };
+  if (!candidates.length) return { handled: new Set(), assemblies: [], renderDiagnostics };
   const groups = new Map();
   for (const item of candidates) {
     const key = assemblyGroupKey(item);
@@ -2019,7 +2097,13 @@ function buildRobotAssemblies(items) {
       const representative = linkItems[0] || { link_name: link };
       const parent = parentLinkOfItem(representative);
       if (parent && nodes.has(parent)) {
-        applyPoseBlockToObject(node, jointOriginOfItem(representative));
+        // Prefer jointOriginForChildItem here; the legacy call shape
+        // applyPoseBlockToObject(node, jointOriginOfItem(representative)) is
+        // intentionally superseded because missing joint origins must be
+        // derived from parent-world inverse * child-world instead of falling
+        // back to baked visual/world poses.
+        const parentItem = (byLink.get(parent) || [])[0] || null;
+        applyPoseBlockToObject(node, jointOriginForChildItem(representative, parentItem));
         nodes.get(parent).add(node);
       } else {
         if (parent) missingParents.push(`${parent} -> ${link}`);
@@ -2035,18 +2119,21 @@ function buildRobotAssemblies(items) {
       item.workcell_web_render_pose_mode = 'assembled_urdf_hierarchy';
       item.baked_world_visual_pose_diagnostic_only = Boolean(item.baked_world_visual_pose || item.expected_visual_pose);
       const primitive = primitiveOf(item);
-      const fallback = isSensor(item) ? makeSensorMarker(item) : makePrimitiveMesh(item);
-      fallback.name = `${item.id || itemLabel(item)}_fallback`;
-      assignItemUserData(fallback, item);
-      fallback.visible = false;
-      node.add(fallback);
+      const meshlessTool0Frame = isExpectedMeshlessTool0Frame(item);
+      const fallback = meshlessTool0Frame ? null : (isSensor(item) ? makeSensorMarker(item) : makePrimitiveMesh(item));
+      if (fallback) {
+        fallback.name = `${item.id || itemLabel(item)}_fallback`;
+        assignItemUserData(fallback, item);
+        fallback.visible = false;
+        node.add(fallback);
+      }
       assignItemUserData(node, item);
       const rendered = { item, object3d: node, fallback, labelEl: createLabelElement(item), originalTransform: transformOf(item) };
       const requiredMesh = itemRequiresMeshBackedVisual(item);
-      setRenderInfo(rendered, requiredMesh ? 'mesh_loading_required' : (primitive ? 'primitive_fallback' : 'box_fallback'), displayMeshUri(item), requiredMesh ? 'required mesh is loading under assembled URDF hierarchy' : 'assembled URDF hierarchy fallback');
+      setRenderInfo(rendered, meshlessTool0Frame ? 'meshless_frame' : (requiredMesh ? 'mesh_loading_required' : (primitive ? 'primitive_fallback' : 'box_fallback')), displayMeshUri(item), meshlessTool0Frame ? 'tool0 is an expected meshless frame; no visible fallback is rendered' : (requiredMesh ? 'required mesh is loading under assembled URDF hierarchy' : 'assembled URDF hierarchy fallback'));
       state.objects.push(rendered);
       handled.add(item);
-      tryLoadMesh(item, rendered, fallback);
+      if (!meshlessTool0Frame) tryLoadMesh(item, rendered, fallback);
     }
     state.three.scene.add(root);
     state.assemblyRoots.push(root);
@@ -2069,11 +2156,14 @@ function buildRobotAssemblies(items) {
       robot_hierarchy_missing_links: requiredLinks.filter(link => !nodes.has(link)),
       robot_hierarchy_missing_parents: Array.from(new Set(missingParents)),
       robot_hierarchy_mesh_count: groupItems.filter(item => displayMeshUri(item)).length,
+      assembled_hierarchy_rendered_mesh_count: groupItems.filter(item => displayMeshUri(item)).length,
       assembled_link_world_positions: linkPositions,
       assembled_link_adjacency_distances_m: adjacency,
     });
+    renderDiagnostics.assembled_hierarchy_rendered_mesh_count += groupItems.filter(item => displayMeshUri(item)).length;
   }
-  return { handled, assemblies };
+  renderDiagnostics.skipped_flattened_urdf_visual_count = handled.size;
+  return { handled, assemblies, renderDiagnostics };
 }
 
 function createLabelElement(item) {
