@@ -187,6 +187,9 @@ function collectRenderedMeshDiagnostics() {
       active_visual_source: item.active_visual_source || '',
       role: item.role || '',
       status: item.status || '',
+      support_surface_display_type: supportSurfaceDisplayType(item),
+      supportSurfaceDisplayType: supportSurfaceDisplayType(item),
+      ...supportSurfaceMetadata(item),
       render_status: renderStatus,
       renderStatus,
       mesh_loaded: renderStatus === 'mesh_loaded',
@@ -278,6 +281,16 @@ function updateViewerStatus() {
       fallback_reason: obj?.renderInfo?.fallback_reason || '',
       visual_bounds_status: item.visual_bounds_status || '',
       visualBoundsStatus: item.visual_bounds_status || '',
+      support_surface_kind: item.support_surface_kind || '',
+      supportSurfaceKind: item.supportSurfaceKind || item.support_surface_kind || '',
+      support_surface_display_type: supportSurfaceDisplayType(item),
+      supportSurfaceDisplayType: supportSurfaceDisplayType(item),
+      top_surface_z_m: item.top_surface_z_m ?? null,
+      topSurfaceZM: item.topSurfaceZM ?? item.top_surface_z_m ?? null,
+      support_surface_height_m: item.support_surface_height_m ?? null,
+      supportSurfaceHeightM: item.supportSurfaceHeightM ?? item.support_surface_height_m ?? null,
+      expected_support_footprint_m: item.expected_support_footprint_m || null,
+      expectedSupportFootprintM: item.expectedSupportFootprintM || item.expected_support_footprint_m || null,
     };
   });
   window.__WORKCELL_VIEWER_STATUS__ = {
@@ -805,12 +818,74 @@ async function preflightMeshUrl(uri, loadUrl) {
     return describeFailure(err);
   }
 }
+function supportSurfaceKindOf(item) {
+  return String(item?.support_surface_kind || item?.supportSurfaceKind || '').trim().toLowerCase();
+}
+function supportSurfaceDisplayType(item) {
+  const kind = supportSurfaceKindOf(item);
+  if (kind === 'workbench_body') return 'Workbench / support surface';
+  if (kind === 'table_surface' || kind === 'tabletop') return 'Tabletop / support surface';
+  return '';
+}
+
+function supportSurfaceMetadata(item) {
+  return {
+    support_surface_kind: item?.support_surface_kind || '',
+    supportSurfaceKind: item?.supportSurfaceKind || item?.support_surface_kind || '',
+    top_surface_z_m: item?.top_surface_z_m ?? null,
+    topSurfaceZM: item?.topSurfaceZM ?? item?.top_surface_z_m ?? null,
+    support_surface_height_m: item?.support_surface_height_m ?? null,
+    supportSurfaceHeightM: item?.supportSurfaceHeightM ?? item?.support_surface_height_m ?? null,
+    expected_support_footprint_m: item?.expected_support_footprint_m || null,
+    expectedSupportFootprintM: item?.expectedSupportFootprintM || item?.expected_support_footprint_m || null,
+  };
+}
+function supportSurfaceWarningKey(item, code) {
+  return `${item?.id || itemLabel(item || {})}:${code}`;
+}
+function warnInconsistentSupportSurfaceSemantics(item, code, reason, extra = {}) {
+  state._supportSurfaceSemanticWarnings = state._supportSurfaceSemanticWarnings || new Set();
+  const key = supportSurfaceWarningKey(item, code);
+  if (state._supportSurfaceSemanticWarnings.has(key)) return;
+  state._supportSurfaceSemanticWarnings.add(key);
+  appendViewerDiagnosticWarning(item, code, reason, {
+    support_surface_display_type: supportSurfaceDisplayType(item),
+    ...supportSurfaceMetadata(item),
+    ...extra,
+  });
+}
+function maybeWarnSupportSurfaceSemantics(item, dims = null) {
+  const kind = supportSurfaceKindOf(item);
+  if (!kind) return;
+  const topSurface = item?.top_surface_z_m ?? item?.topSurfaceZM;
+  const supportHeight = item?.support_surface_height_m ?? item?.supportSurfaceHeightM;
+  if (kind === 'workbench_body' && (!Number.isFinite(Number(topSurface)) || !Number.isFinite(Number(supportHeight)))) {
+    warnInconsistentSupportSurfaceSemantics(item, 'support_surface_semantics_missing_height', 'workbench_body support surface is missing top/support height metadata');
+  }
+  if ((kind === 'tabletop' || kind === 'table_surface') && dims) {
+    const thickness = Number(dims.z);
+    const footprint = Math.max(Number(dims.x) || 0, Number(dims.y) || 0);
+    if (Number.isFinite(thickness) && Number.isFinite(footprint) && footprint > 0 && thickness > Math.max(0.12, footprint * 0.12)) {
+      warnInconsistentSupportSurfaceSemantics(item, 'support_surface_semantics_non_thin_tabletop', 'tabletop/table_surface support surface has non-thin loaded bounds', {
+        loaded_dimensions: { x: dims.x, y: dims.y, z: dims.z },
+        thickness_to_footprint_ratio: thickness / footprint,
+      });
+    }
+  }
+}
+
 function itemType(item) {
+  const supportSurfaceType = supportSurfaceDisplayType(item);
+  if (supportSurfaceType) return supportSurfaceType;
   if (isGeneratedToolOrGripperItem(item)) return item.type || item.category || item.role || 'tool/gripper';
   if (isGeneratedRobotItem(item)) return item.type || item.category || item.role || 'robot';
   return item.type || item.category || item.role || item.source_kind || 'asset';
 }
-function itemLabel(item) { return item.label || item.display_name || item.object_name || item.name || item.link || item.id || 'unnamed'; }
+function itemLabel(item) {
+  const supportSurfaceType = supportSurfaceDisplayType(item);
+  if (supportSurfaceType) return `${item.label || item.display_name || item.object_name || item.name || item.link || item.id || 'unnamed'} (${supportSurfaceType})`;
+  return item.label || item.display_name || item.object_name || item.name || item.link || item.id || 'unnamed';
+}
 function viewerGroupIdentity(item) {
   return [
     item?.source_kind,
@@ -1711,6 +1786,7 @@ function diagnoseLoadedMeshBounds(item, meshObject, rendered, nativeBounds = nul
     if (isCoreMeshContractItem(item)) warnLoadedMeshBounds(item, 'loaded_mesh_bounds_invalid', 'loaded mesh produced empty or non-finite bounds');
     return;
   }
+  maybeWarnSupportSurfaceSemantics(item, dims);
   const collapsedAxes = ['x', 'y', 'z'].filter(axis => dims[axis] <= tiny || worldDims[axis] <= tiny);
   if (collapsedAxes.length) {
     if (isCoreMeshContractItem(item)) warnLoadedMeshBounds(item, 'loaded_mesh_collapsed', `loaded mesh bounds are zero-volume or collapsed on ${collapsedAxes.join(', ')}`, { collapsed_axes: collapsedAxes });
@@ -1792,6 +1868,7 @@ function clearSceneObjects() {
   state._sceneBoundsExceededWarned = false;
   state._fitBlockerWarnings = new Set();
   state._generatedUrdfFramePoseWarnings = new Set();
+  state._supportSurfaceSemanticWarnings = new Set();
   if (el.resetView) el.resetView.disabled = true;
   renderSceneSummary();
 }
@@ -1825,6 +1902,7 @@ function renderScene(items) {
     fallback.visible = !requiredMesh;
     setRenderInfo(rendered, fallbackStatus, displayMeshUri(item), fallbackReason);
     state.objects.push(rendered);
+    maybeWarnSupportSurfaceSemantics(item);
     tryLoadMesh(item, rendered, fallback);
   }
   renderFrameDebugOverlays();
@@ -1929,7 +2007,7 @@ function appendObjectListRow(rendered, group) {
 
   const meta = document.createElement('span');
   meta.className = 'meta';
-  meta.textContent = `${group} · ${rendered.item.locked ? 'locked/generated' : 'editable/environment'} · ${meshStatusLabel(rendered)}${state.dirtyTransforms.has(rendered.item.id) ? ' · edited' : ''}`;
+  meta.textContent = `${group} · ${rendered.item.locked ? 'locked/generated' : 'editable/environment'} · ${supportSurfaceDisplayType(rendered.item) || meshStatusLabel(rendered)}${state.dirtyTransforms.has(rendered.item.id) ? ' · edited' : ''}`;
   li.appendChild(meta);
   li.addEventListener('click', () => selectObject(rendered.item.id));
   el.list.appendChild(li);
@@ -2191,7 +2269,7 @@ function populateInspector(renderedOrItem) {
   const renderInfo = rendered?.renderInfo || item.renderInfo || {};
   const pose = poseOf(item);
   const rows = {
-    id: item.id, label: itemLabel(item), type: itemType(item), source: item.source_kind || item.source || valueOrDash(item.provenance && Object.values(item.provenance)[0]),
+    id: item.id, label: itemLabel(item), type: itemType(item), details: supportSurfaceDisplayType(item), source: item.source_kind || item.source || valueOrDash(item.provenance && Object.values(item.provenance)[0]),
     'pose xyz': [pose.xyz.x, pose.xyz.y, pose.xyz.z].map(n => n.toFixed(3)).join(', '),
     'pose rpy': [pose.rpy.x, pose.rpy.y, pose.rpy.z].map(n => n.toFixed(3)).join(', '),
     scale: JSON.stringify(item.scale || item.mesh_scale || [1, 1, 1]), editable: String(Boolean(item.editable)), locked: String(Boolean(item.locked)),
@@ -2199,6 +2277,10 @@ function populateInspector(renderedOrItem) {
     mesh_status: item.mesh_status, mesh_load_required: item.mesh_load_required, mesh_load_status: item.mesh_load_status, mesh_load_url: item.mesh_load_url, mesh_load_error: item.mesh_load_error,
     original_mesh_uri: item.original_mesh_uri, mesh_staging_status: item.mesh_staging_status,
     mesh_staged_path: item.mesh_staged_path, mesh_resolve_warning: item.mesh_resolve_warning,
+    support_surface_kind: item.support_surface_kind, supportSurfaceKind: item.supportSurfaceKind,
+    top_surface_z_m: item.top_surface_z_m, topSurfaceZM: item.topSurfaceZM,
+    support_surface_height_m: item.support_surface_height_m, supportSurfaceHeightM: item.supportSurfaceHeightM,
+    expected_support_footprint_m: JSON.stringify(item.expected_support_footprint_m || ''), expectedSupportFootprintM: JSON.stringify(item.expectedSupportFootprintM || ''),
     primitive: JSON.stringify(primitiveOf(item) || 'box fallback'),
   };
   if (isSensor(item)) {

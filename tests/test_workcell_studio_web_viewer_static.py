@@ -778,3 +778,64 @@ def test_viewer_status_exports_generated_urdf_mesh_diagnostics():
     assert "const frameDiagnostics = collectFrameDiagnostics();" in status_body
     assert "frameDiagnostics" in status_body
     assert "frame_diagnostics: frameDiagnostics" in status_body
+
+
+def test_viewer_support_surface_display_types_and_metadata_diagnostics():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    for token in [
+        "function supportSurfaceDisplayType(item)",
+        "support_surface_kind",
+        "supportSurfaceKind",
+        "workbench_body",
+        "Workbench / support surface",
+        "table_surface",
+        "tabletop",
+        "Tabletop / support surface",
+        "top_surface_z_m",
+        "topSurfaceZM",
+        "support_surface_height_m",
+        "supportSurfaceHeightM",
+        "expected_support_footprint_m",
+        "expectedSupportFootprintM",
+        "support_surface_display_type",
+        "supportSurfaceDisplayType",
+    ]:
+        assert token in js
+
+    collect_body = js.split("function collectRenderedMeshDiagnostics", 1)[1].split("function updateViewerStatus", 1)[0]
+    assert "...supportSurfaceMetadata(item)" in collect_body
+    status_body = js.split("const renderedObjectStatuses = statusCountedRenderables().map", 1)[1].split("window.__WORKCELL_VIEWER_STATUS__", 1)[0]
+    assert "support_surface_kind" in status_body
+    assert "supportSurfaceKind" in status_body
+    assert "support_surface_display_type" in status_body
+    assert "supportSurfaceDisplayType" in status_body
+
+
+def test_viewer_support_surface_ui_logic_and_semantic_warnings():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    item_type_body = js.split("function itemType(item)", 1)[1].split("function itemLabel(item)", 1)[0]
+    assert "const supportSurfaceType = supportSurfaceDisplayType(item);" in item_type_body
+    assert "if (supportSurfaceType) return supportSurfaceType;" in item_type_body
+
+    item_label_body = js.split("function itemLabel(item)", 1)[1].split("function viewerGroupIdentity", 1)[0]
+    assert "supportSurfaceType" in item_label_body
+    assert "(${supportSurfaceType})" in item_label_body
+
+    inspector_body = js.split("function populateInspector", 1)[1].split("function refreshWarnings", 1)[0]
+    assert "type: itemType(item)" in inspector_body
+    assert "details: supportSurfaceDisplayType(item)" in inspector_body
+    assert "support_surface_height_m" in inspector_body
+    assert "expected_support_footprint_m" in inspector_body
+
+    list_body = js.split("function appendObjectListRow", 1)[1].split("function populateObjectList", 1)[0]
+    assert "supportSurfaceDisplayType(rendered.item) || meshStatusLabel(rendered)" in list_body
+
+    for token in [
+        "function maybeWarnSupportSurfaceSemantics",
+        "support_surface_semantics_missing_height",
+        "workbench_body support surface is missing top/support height metadata",
+        "support_surface_semantics_non_thin_tabletop",
+        "tabletop/table_surface support surface has non-thin loaded bounds",
+        "maybeWarnSupportSurfaceSemantics(item, dims)",
+    ]:
+        assert token in js
