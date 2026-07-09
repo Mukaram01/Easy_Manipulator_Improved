@@ -147,6 +147,9 @@ function collectRenderedMeshDiagnostics() {
     const item = rendered?.item || {};
     const category = meshContractCategoryOf(item);
     if (!rendered?.object3d || (!isGeneratedUrdfItem(item) && !['table', 'environment'].includes(category))) continue;
+    if (typeof rendered.object3d.updateMatrixWorld !== 'function') continue;
+    if (typeof rendered.object3d.getWorldPosition !== 'function') continue;
+    if (typeof rendered.object3d.getWorldQuaternion !== 'function') continue;
     rendered.object3d.updateMatrixWorld(true);
     rendered.meshObject?.updateMatrixWorld?.(true);
     rendered.loadedMeshObject?.updateMatrixWorld?.(true);
