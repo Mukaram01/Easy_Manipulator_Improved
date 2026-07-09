@@ -373,6 +373,176 @@ def test_viewer_visual_bounds_diagnostics_and_fit_bounds_contract_are_source_gua
     assert "auto_detected_cm_to_m" in unit_autoscale_body
 
 
+
+def test_viewer_does_not_apply_expected_dimensions_as_per_axis_render_scale():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+
+    assert "maybeApplyExpectedDimensionScale" not in js
+
+    render_scale_bodies = [
+        js.split("function scaleOf(item)", 1)[1].split("function transformOf", 1)[0],
+        js.split("function meshLocalTransformOf(item)", 1)[1].split("function cloneTransform", 1)[0],
+        js.split("function applyMeshLocalTransform", 1)[1].split("async function tryLoadMesh", 1)[0],
+        js.split("function applyLoadedMeshScaleHandling", 1)[1].split("async function tryLoadMesh", 1)[0],
+    ]
+    for body in render_scale_bodies:
+        assert "expected_dimensions_m" not in body
+        assert "expected_dimensions" not in body
+        assert "dimensions_m" not in body
+
+    for forbidden in [
+        ".scale.set(expected",
+        ".scale.set(dimensions",
+        ".scale.set(dims",
+        "scale.x = expected",
+        "scale.y = expected",
+        "scale.z = expected",
+        "meshObject.scale.set(axisRatios",
+        "meshObject.scale.set(scale.x, scale.y, scale.z)",
+    ]:
+        assert forbidden not in js
+
+
+def test_viewer_expected_dimensions_are_limited_to_diagnostics_and_uniform_unit_correction():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+
+    assert "function expectedDimensionsOf(item)" in js
+    assert "function maybeApplyMeshUnitAutoscale" in js
+    unit_autoscale_body = js.split("function maybeApplyMeshUnitAutoscale", 1)[1].split("function isCoreMeshContractItem", 1)[0]
+    assert "expected_dimensions_m" in unit_autoscale_body
+    assert "axisRatios" in unit_autoscale_body
+    assert "uniformRatio" in unit_autoscale_body
+    assert "[1000, 100].find" in unit_autoscale_body
+    assert "uniformRatio <= 1.25" in unit_autoscale_body
+    assert "meshObject.scale.multiplyScalar(scale);" in unit_autoscale_body
+    assert "meshObject.scale.set" not in unit_autoscale_body
+    assert "targetRatio === 1000 ? 0.001 : 0.01" in unit_autoscale_body
+    assert "rejected_non_uniform_or_unclear_ratio" in unit_autoscale_body
+
+    expected_dimension_references = [line for line in js.splitlines() if "expected_dimensions_m" in line]
+    assert expected_dimension_references
+    allowed_context_tokens = (
+        "expectedDimensionsOf",
+        "item?.expected_dimensions_m",
+        "meshUnitAutoscaleAllowed",
+        "maybeApplyMeshUnitAutoscale",
+        "viewer_expected_dimensions_m",
+        "appendRuntimeWarning",
+        "warnLoadedMeshBounds",
+        "loaded_mesh_oversized",
+        "mesh_unit_autoscale",
+        "expected_dimensions_m:",
+        "to expected_dimensions_m",
+    )
+    for line in expected_dimension_references:
+        assert any(token in line for token in allowed_context_tokens), line
+
+
+def test_viewer_unit_autoscale_is_uniform_only_for_clear_100_or_1000_ratios():
+    js_path = VIEWER / "viewer.js"
+    harness = r'''
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+class MockVector3 {
+  constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+}
+class MockBox3 {
+  constructor(size) {
+    this.min = { x: 0, y: 0, z: 0 };
+    this.max = { x: size?.x || 0, y: size?.y || 0, z: size?.z || 0 };
+  }
+  isEmpty() { return false; }
+  getSize(target) {
+    target.x = this.max.x - this.min.x;
+    target.y = this.max.y - this.min.y;
+    target.z = this.max.z - this.min.z;
+    return target;
+  }
+  getCenter(target) {
+    target.x = (this.min.x + this.max.x) / 2;
+    target.y = (this.min.y + this.max.y) / 2;
+    target.z = (this.min.z + this.max.z) / 2;
+    return target;
+  }
+  setFromObject(object) { return new MockBox3(object.mockCorrectedSize || object.mockSize || { x: 1, y: 1, z: 1 }); }
+}
+const element = () => ({
+  hidden: false,
+  checked: false,
+  disabled: false,
+  textContent: '',
+  className: '',
+  innerHTML: '',
+  classList: { toggle() {} },
+  setAttribute() {},
+  querySelector() { return { textContent: '' }; },
+  appendChild() {},
+  addEventListener() {},
+  getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; },
+});
+const sandbox = {
+  console,
+  assert,
+  MockVector3,
+  MockBox3,
+  window: { location: { search: '' } },
+  document: { getElementById() { return element(); }, createElement() { return element(); } },
+  URLSearchParams,
+  requestAnimationFrame() { return 0; },
+};
+vm.createContext(sandbox);
+vm.runInContext(source + `
+THREE = { Vector3: MockVector3, Box3: MockBox3 };
+state.runtimeWarnings = [];
+function meshObject(size) {
+  return {
+    mockSize: size,
+    mockCorrectedSize: size,
+    updateMatrixWorld() {},
+    scale: {
+      scalar: 1,
+      setCalled: false,
+      multiplyScalar(value) { this.scalar *= value; },
+      set() { this.setCalled = true; throw new Error('per-axis scale must not be used for unit correction'); },
+    },
+  };
+}
+let mmItem = { id: 'metric_table', category: 'table', allow_mesh_unit_autoscale: true, expected_dimensions_m: [1, 0.5, 0.25] };
+let mmMesh = meshObject({ x: 1000, y: 500, z: 250 });
+assert.strictEqual(maybeApplyMeshUnitAutoscale(mmItem, mmMesh, new MockBox3(mmMesh.mockSize), 'table.stl'), true);
+assert.strictEqual(mmMesh.scale.scalar, 0.001);
+assert.strictEqual(mmMesh.scale.setCalled, false);
+assert.strictEqual(mmItem.mesh_unit_correction.target_ratio, 1000);
+
+let cmItem = { id: 'cm_table', category: 'table', allow_mesh_unit_autoscale: true, expected_dimensions_m: [1, 0.5, 0.25] };
+let cmMesh = meshObject({ x: 100, y: 50, z: 25 });
+assert.strictEqual(maybeApplyMeshUnitAutoscale(cmItem, cmMesh, new MockBox3(cmMesh.mockSize), 'table.stl'), true);
+assert.strictEqual(cmMesh.scale.scalar, 0.01);
+assert.strictEqual(cmMesh.scale.setCalled, false);
+assert.strictEqual(cmItem.mesh_unit_correction.target_ratio, 100);
+
+let fittedItem = { id: 'bad_fit_table', category: 'table', allow_mesh_unit_autoscale: true, expected_dimensions_m: [1, 0.5, 0.25] };
+let fittedMesh = meshObject({ x: 4, y: 7, z: 11 });
+assert.strictEqual(maybeApplyMeshUnitAutoscale(fittedItem, fittedMesh, new MockBox3(fittedMesh.mockSize), 'table.stl'), false);
+assert.strictEqual(fittedMesh.scale.scalar, 1);
+assert.strictEqual(fittedMesh.scale.setCalled, false);
+assert.strictEqual(fittedItem.mesh_unit_correction.confidence, 'rejected_non_uniform_or_unclear_ratio');
+assert.strictEqual(fittedItem.mesh_unit_correction.scale, 1.0);
+assert.strictEqual(fittedItem.mesh_unit_correction.target_ratio, null);
+`, sandbox);
+'''
+    result = subprocess.run(
+        ["node", "-e", harness, str(js_path)],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert result.stderr == ""
+
 def test_viewer_hides_camera_framing_exclusions_from_user_warning_panel_but_keeps_status_raw():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     for token in [
