@@ -507,6 +507,8 @@ assert.strictEqual(status.viewer_resolved_distances_m['wrist_3_link -> gripper_b
 assert.strictEqual(status.runtimeWarnings.length, 1);
 assert.strictEqual(status.runtimeWarnings[0].code, 'camera_framing_blocker_excluded');
 assert.strictEqual(isUserFacingWarning(status.runtimeWarnings[0]), false);
+assert.deepStrictEqual(status.renderedMeshDiagnostics, []);
+assert.deepStrictEqual(status.rendered_mesh_diagnostics, []);
 setDebugOverlaysVisible(true);
 assert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.meshLoadedCount, 2);
 assert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.requiredMeshFailedCount, 0);
