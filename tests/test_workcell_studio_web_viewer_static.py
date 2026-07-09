@@ -189,51 +189,60 @@ def test_viewer_applies_mesh_local_transform_only_below_object_roots():
     assert "visual_origin" not in apply_pose_body
 
 
-def test_viewer_places_generated_urdf_roots_at_frame_pose_and_visuals_at_origin():
+def test_viewer_generated_urdf_baked_pose_mode_prefers_baked_visual_pose_chain():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
-    for token in [
-        "function isGeneratedUrdfItem(item)",
-        "function framePoseOf(item)",
-        "item?.frame_world_pose",
-        "item?.link_world_pose",
-        "function visualOriginOf(item)",
-        "item?.visual_origin || item?.visual_local_transform",
-        "missing_generated_urdf_frame_pose",
-        "mesh_uri",
-    ]:
-        assert token in js
-    pose_body = js.split("function poseOf(item)", 1)[1].split("function scaleOf", 1)[0]
-    assert "if (isGeneratedUrdfItem(item)) return framePoseOf(item)" in pose_body
-    mesh_transform_body = js.split("function applyMeshLocalTransform", 1)[1].split("async function tryLoadMesh", 1)[0]
-    assert "const generatedUrdf = isGeneratedUrdfItem(item);" in mesh_transform_body
-    assert "const visualOrigin = generatedUrdf ? visualOriginOf(item) : transform.pose" in mesh_transform_body
-    assert "meshObject.position.copy(visualOrigin.xyz)" in mesh_transform_body
-    assert "if (generatedUrdf) meshObject.scale.set(1, 1, 1);" in mesh_transform_body
-    assert "function applyLoadedMeshScaleHandling" in mesh_transform_body
-    scale_body = js.split("function scaleOf(item)", 1)[1].split("function transformOf", 1)[0]
-    assert "isGeneratedUrdfItem(item) ? [1, 1, 1]" in scale_body
-    mesh_local_body = js.split("function meshLocalTransformOf(item)", 1)[1].split("function cloneTransform", 1)[0]
-    assert "transform.scale || item?.mesh_scale || item?.scale || [1, 1, 1]" in mesh_local_body
+
+    assert "workcell_web_render_pose_mode === 'baked_visible_world_pose'" in js
+    assert "function bakedVisibleWorldPoseSource(item)" in js
+    assert "function usesBakedVisibleWorldPose(item)" in js
+
+    baked_source_body = js.split("function bakedVisibleWorldPoseSource(item)", 1)[1].split("function usesBakedVisibleWorldPose(item)", 1)[0]
+    assert "item?.baked_world_visual_pose || item?.expected_visual_pose || item?.final_transform || null" in baked_source_body
+
+    mode_check_body = js.split("function usesBakedVisibleWorldPose(item)", 1)[1].split("function generatedUrdfFramePoseSource(item)", 1)[0]
+    assert "item?.workcell_web_render_pose_mode === 'baked_visible_world_pose'" in mode_check_body
+    assert "hasFinitePoseBlock(bakedVisibleWorldPoseSource(item))" in mode_check_body
+
+    final_pose_body = js.split("function canonicalFinalPose(item)", 1)[1].split("function poseOf(item)", 1)[0]
+    assert "if (isGeneratedUrdfItem(item))" in final_pose_body
+    assert "if (usesBakedVisibleWorldPose(item))" in final_pose_body
+    assert "return item.baked_world_visual_pose || item.expected_visual_pose || item.final_transform" in final_pose_body
 
 
-def test_generated_urdf_link_placement_does_not_primarily_use_legacy_visual_world_pose():
+def test_viewer_generated_urdf_unflagged_roots_still_use_frame_or_link_world_pose():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
-    pose_body = js.split("function poseOf(item)", 1)[1].split("function scaleOf", 1)[0]
-    generated_branch = pose_body.split("const pose = canonicalFinalPose(item);", 1)[0]
 
-    assert "if (isGeneratedUrdfItem(item)) return framePoseOf(item)" in generated_branch
-    for legacy_pose in ["baked_world_visual_pose", "world_from_visual", "final_transform"]:
-        assert legacy_pose not in generated_branch
-
-
-def test_generated_urdf_link_placement_consumes_link_or_frame_world_pose():
-    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     frame_source_body = js.split("function generatedUrdfFramePoseSource(item)", 1)[1].split("function framePoseOf(item)", 1)[0]
-    pose_body = js.split("function poseOf(item)", 1)[1].split("function scaleOf", 1)[0]
-
     assert "if (item?.frame_world_pose) return item.frame_world_pose;" in frame_source_body
     assert "if (item?.link_world_pose) return item.link_world_pose;" in frame_source_body
-    assert "if (isGeneratedUrdfItem(item)) return framePoseOf(item)" in pose_body
+
+    final_pose_body = js.split("function canonicalFinalPose(item)", 1)[1].split("function poseOf(item)", 1)[0]
+    assert final_pose_body.index("if (usesBakedVisibleWorldPose(item))") < final_pose_body.index("return generatedUrdfFramePoseSource(item);")
+
+
+def test_viewer_generated_urdf_baked_pose_mode_uses_identity_mesh_local_transform():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+
+    mesh_transform_body = js.split("function applyMeshLocalTransform", 1)[1].split("async function tryLoadMesh", 1)[0]
+    assert "const generatedUrdf = isGeneratedUrdfItem(item);" in mesh_transform_body
+    assert "usesBakedVisibleWorldPose(item)" in mesh_transform_body
+    assert "poseBlockOf({ xyz: [0, 0, 0], rpy: [0, 0, 0] })" in mesh_transform_body
+    assert "visualOriginOf(item)" in mesh_transform_body
+    assert mesh_transform_body.index("usesBakedVisibleWorldPose(item)") < mesh_transform_body.index("visualOriginOf(item)")
+    assert "meshObject.position.copy(visualOrigin.xyz)" in mesh_transform_body
+    assert "meshObject.rotation.set(visualOrigin.rpy.x, visualOrigin.rpy.y, visualOrigin.rpy.z, 'XYZ')" in mesh_transform_body
+
+
+def test_viewer_generated_urdf_unflagged_mesh_wrapper_still_applies_visual_origin():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+
+    assert "function visualOriginOf(item)" in js
+    visual_origin_body = js.split("function visualOriginOf(item)", 1)[1].split("function canonicalFinalPose(item)", 1)[0]
+    assert "item?.visual_origin || item?.visual_local_transform" in visual_origin_body
+
+    mesh_transform_body = js.split("function applyMeshLocalTransform", 1)[1].split("async function tryLoadMesh", 1)[0]
+    assert "? (usesBakedVisibleWorldPose(item) ? poseBlockOf({ xyz: [0, 0, 0], rpy: [0, 0, 0] }) : visualOriginOf(item))" in mesh_transform_body
+    assert "if (generatedUrdf) meshObject.scale.set(1, 1, 1);" in mesh_transform_body
 
 
 def test_viewer_declares_explicit_ros_z_up_convention():
