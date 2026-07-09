@@ -644,3 +644,24 @@ def test_ur5_2f_web_scene_preserves_tool0_transform_anchor_metadata(tmp_path):
     assert anchor["pose"] == anchor["link_world_pose"]
     assert anchor["source_layer"]
     assert anchor["active_visual_source"]
+
+    items_by_link = {
+        item.get("link") or item.get("link_name") or item.get("frame"): item
+        for section in ("robots", "tools", "frames")
+        for item in payload.get(section, [])
+    }
+    wrist = items_by_link["wrist_3_link"]
+    gripper = items_by_link["gripper_base_link"]
+    assert anchor["parent_link"] == "wrist_3_link"
+    assert anchor["meshless_frame"] is True
+    assert anchor["assembly_group"] == wrist["assembly_group"] == gripper["assembly_group"]
+    assert anchor["robot_instance_id"] == wrist["robot_instance_id"] == gripper["robot_instance_id"]
+    assert gripper["parent_link"] == "tool0"
+    assert gripper["mesh_uri"]
+    assert gripper["parent_to_child_pose"]["xyz"] == [0.0, 0.0, 0.0]
+    assert gripper["parent_to_child_pose_source"] == "web_export_parent_world_inverse_times_child_world"
+    for link, item in items_by_link.items():
+        if str(link).startswith("gripper_"):
+            assert item["assembly_group"] == wrist["assembly_group"]
+            assert item["robot_instance_id"] == wrist["robot_instance_id"]
+            assert item.get("parent_to_child_pose"), f"{link} must carry explicit parent-to-child local pose"

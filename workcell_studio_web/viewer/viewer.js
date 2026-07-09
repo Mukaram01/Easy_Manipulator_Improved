@@ -2017,8 +2017,8 @@ function renderScene(items) {
 
 function linkNameOfItem(item) { return String(item?.link_name || item?.link || item?.frame || item?.object_name || item?.id || '').trim(); }
 function parentLinkOfItem(item) { return String(item?.parent_link || item?.joint_parent_link || item?.immediate_parent_link || '').trim(); }
-function jointOriginOfItem(item) { return item?.parent_from_child || item?.joint_origin || item?.parent_joint_origin || { xyz: [0, 0, 0], rpy: [0, 0, 0] }; }
-function derivedParentFromChildPose(item, parentItem) {
+function jointOriginOfItem(item) { return item?.parent_to_child_pose || item?.parent_from_child || item?.joint_origin || item?.parent_joint_origin || { xyz: [0, 0, 0], rpy: [0, 0, 0] }; }
+function derivedParentToChildPose(item, parentItem) {
   if (!THREE?.Matrix4 || !item || !parentItem) return null;
   const childPose = item?.link_world_pose || item?.frame_world_pose;
   const parentPose = parentItem?.link_world_pose || parentItem?.frame_world_pose;
@@ -2028,14 +2028,16 @@ function derivedParentFromChildPose(item, parentItem) {
   return poseBlockFromMatrix(parentWorld.clone().invert().multiply(childWorld));
 }
 function jointOriginForChildItem(item, parentItem) {
-  const explicit = item?.parent_from_child || item?.joint_origin || item?.parent_joint_origin;
+  const explicit = item?.parent_to_child_pose || item?.parent_from_child || item?.joint_origin || item?.parent_joint_origin;
   if (hasFinitePoseBlock(explicit)) return explicit;
-  const derived = derivedParentFromChildPose(item, parentItem);
+  const derived = derivedParentToChildPose(item, parentItem);
   if (derived) {
     const pose = { xyz: finiteXyzArrayFromVector(derived.xyz) || [0, 0, 0], rpy: finiteXyzArrayFromVector(derived.rpy) || [0, 0, 0] };
+    item.parent_to_child_pose = pose;
     item.parent_from_child = pose;
     item.joint_origin = pose;
     item.parent_joint_origin = pose;
+    item.parent_to_child_pose_source = 'viewer_derived_parent_world_inverse_times_child_world';
     item.parent_from_child_source = 'viewer_derived_parent_world_inverse_times_child_world';
     return pose;
   }
