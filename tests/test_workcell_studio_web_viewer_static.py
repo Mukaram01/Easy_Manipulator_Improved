@@ -210,6 +210,10 @@ def test_viewer_places_generated_urdf_roots_at_frame_pose_and_visuals_at_origin(
     assert "meshObject.position.copy(visualOrigin.xyz)" in mesh_transform_body
     assert "if (generatedUrdf) meshObject.scale.set(1, 1, 1);" in mesh_transform_body
     assert "function applyLoadedMeshScaleHandling" in mesh_transform_body
+    scale_body = js.split("function scaleOf(item)", 1)[1].split("function transformOf", 1)[0]
+    assert "isGeneratedUrdfItem(item) ? [1, 1, 1]" in scale_body
+    mesh_local_body = js.split("function meshLocalTransformOf(item)", 1)[1].split("function cloneTransform", 1)[0]
+    assert "transform.scale || item?.mesh_scale || item?.scale || [1, 1, 1]" in mesh_local_body
 
 
 def test_generated_urdf_link_placement_does_not_primarily_use_legacy_visual_world_pose():
