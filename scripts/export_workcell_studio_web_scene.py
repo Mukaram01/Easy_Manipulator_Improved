@@ -482,7 +482,7 @@ def _annotate_mesh_unit_evidence(item: Json, scene_dir: Path) -> None:
             return
 
 
-def _canonical_generated_transform(raw: Mapping[str, Any]) -> Tuple[Optional[Any], Optional[str]]:
+def _canonical_generated_transform(raw: Mapping[str, Any]) -> Tuple[Optional[Any], Optional[str], Optional[str]]:
     """Return the browser-ready world-from-visual pose and its source field.
 
     Generated mesh rows may carry link-frame, visual-origin, and already-baked
@@ -490,11 +490,11 @@ def _canonical_generated_transform(raw: Mapping[str, Any]) -> Tuple[Optional[Any
     final render pose; it must not multiply the visual origin a second time.
     """
     baked_source = raw.get("baked_world_visual_transform_source")
-    for field in ("world_from_visual", "final_transform", "baked_world_visual_pose", "pose", "world_pose"):
+    for field in ("world_from_visual", "final_transform", "baked_world_visual_pose", "expected_visual_pose", "pose", "world_pose"):
         value = raw.get(field)
         if value not in (None, "", [], {}):
-            return value, str(baked_source or field)
-    return None, None
+            return value, str(baked_source or field), field
+    return None, None, None
 
 
 def _pose_with_xyz_offset(base_pose: Any, offset: Sequence[float]) -> Json:
@@ -515,7 +515,7 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
     fields = (
         "id", "type", "category", "role", "display_name", "link", "object_name", "visual", "pose", "world_pose",
         "final_transform", "world_from_visual", "transform_source",
-        "baked_world_visual_pose", "link_world_pose", "frame_world_pose", "visual_origin", "baked_world_visual_matrix",
+        "baked_world_visual_pose", "expected_visual_pose", "link_world_pose", "frame_world_pose", "visual_origin", "baked_world_visual_matrix",
         "baked_world_visual_quaternion", "baked_world_visual_transform_source", "geometry_type",
         "parent_link", "immediate_parent_link", "root_link", "link_chain", "joint_parent_link",
         "parent_joint", "parent_joint_name", "parent_joint_type", "parent_joint_origin",
@@ -533,11 +533,18 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
             continue
         item = _copy_fields(raw, fields, INPUTS["visual_mesh_index"], scene_dir)
         item.setdefault("id", _stable_id("generated_preview", i))
-        final_transform, transform_source = _canonical_generated_transform(raw)
+        final_transform, transform_source, transform_field = _canonical_generated_transform(raw)
         if final_transform is not None:
             item["final_transform"] = final_transform
             item["world_from_visual"] = final_transform
             item["transform_source"] = transform_source
+            if transform_field in {"baked_world_visual_pose", "expected_visual_pose"}:
+                item["workcell_web_render_pose_mode"] = "baked_visible_world_pose"
+                item["visual_origin_application"] = "baked_into_web_preview_pose"
+                if "link_world_pose" in raw:
+                    item["original_link_world_pose"] = raw.get("link_world_pose")
+                if "frame_world_pose" in raw:
+                    item["original_frame_world_pose"] = raw.get("frame_world_pose")
         elif raw.get("baked_world_visual_transform_source"):
             item["transform_source"] = raw.get("baked_world_visual_transform_source")
         item["locked"] = True
@@ -561,6 +568,15 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
                 "world_from_visual": INPUTS["visual_mesh_index"],
                 "transform_source": INPUTS["visual_mesh_index"],
             })
+            if transform_field in {"baked_world_visual_pose", "expected_visual_pose"}:
+                item["provenance"].update({
+                    "workcell_web_render_pose_mode": INPUTS["visual_mesh_index"],
+                    "visual_origin_application": INPUTS["visual_mesh_index"],
+                })
+                if "original_link_world_pose" in item:
+                    item["provenance"]["original_link_world_pose"] = INPUTS["visual_mesh_index"]
+                if "original_frame_world_pose" in item:
+                    item["provenance"]["original_frame_world_pose"] = INPUTS["visual_mesh_index"]
         if any(token in _identity_text(raw) for token in ("camera", "realsense", "d435")):
             _annotate_mesh_unit_evidence(item, scene_dir)
         sections[_section_from_item(raw)].append(item)
