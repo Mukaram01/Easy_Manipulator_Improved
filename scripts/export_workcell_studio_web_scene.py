@@ -589,7 +589,7 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
     fields = (
         "id", "type", "category", "role", "display_name", "link", "object_name", "visual", "pose", "world_pose",
         "final_transform", "world_from_visual", "transform_source",
-        "urdf_fk_source", "urdf_fk_world_pose", "urdf_fk_link_world_pose", "urdf_fk_visual_world_pose",
+        "urdf_fk_source", "urdf_fk_world_pose", "urdf_fk_link_world_pose", "urdf_fk_visual_world_pose", "urdf_fk_verified_against_ros_tf",
         "urdf_joint_parent", "urdf_joint_child", "urdf_joint_origin", "urdf_visual_origin",
         "baked_world_visual_pose", "expected_visual_pose", "link_world_pose", "frame_world_pose", "visual_origin", "baked_world_visual_matrix",
         "baked_world_visual_quaternion", "baked_world_visual_transform_source", "geometry_type",
