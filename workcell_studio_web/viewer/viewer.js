@@ -260,6 +260,7 @@ function updateViewerStatus() {
   const warnings = asArray(state.sceneJson?.warnings).concat(asArray(state.sceneJson?.notes_warnings), asArray(state.runtimeWarnings));
   const resolvedFrameStatus = buildResolvedFrameStatus();
   const renderedMeshDiagnostics = collectRenderedMeshDiagnostics();
+  const frameDiagnostics = collectFrameDiagnostics();
   const renderedObjectStatuses = statusCountedRenderables().map(obj => {
     const item = obj?.item || {};
     const renderStatus = obj?.renderInfo?.render_status || item?.renderInfo?.render_status || item?.mesh_status || '';
@@ -298,6 +299,8 @@ function updateViewerStatus() {
     resolvedFrameDistancesM: resolvedFrameStatus.resolvedFrameDistancesM,
     renderedMeshDiagnostics,
     rendered_mesh_diagnostics: renderedMeshDiagnostics,
+    frameDiagnostics,
+    frame_diagnostics: frameDiagnostics,
     renderedObjectStatuses,
     rendered_object_statuses: renderedObjectStatuses,
   };
@@ -1248,6 +1251,54 @@ function distanceMetersBetweenXyz(a, b) {
   const distance = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
   return Number.isFinite(distance) ? distance : null;
 }
+
+function renderedObjectForFrame(name) {
+  if (!name) return null;
+  for (const rendered of state.objects || []) {
+    const item = rendered?.item;
+    if (!item || !renderedObjectFrameNames(item, rendered?.object3d).has(String(name))) continue;
+    return rendered;
+  }
+  return null;
+}
+function collectFrameDiagnostics() {
+  const names = new Set();
+  for (const name of state.frameLookup?.keys?.() || []) names.add(String(name));
+  for (const name of state.resolvedFramePoses?.keys?.() || []) names.add(String(name));
+  const diagnostics = [];
+  for (const name of names) {
+    const frame = state.frameLookup?.get?.(name) || {};
+    const pose = state.resolvedFramePoses.get(name) || resolveFrameWorldPose(name);
+    const rendered = renderedObjectForFrame(name);
+    const item = rendered?.item || {};
+    const renderStatus = rendered?.renderInfo?.render_status || item?.renderInfo?.render_status || item?.mesh_status || '';
+    const sourceLayer = frame.source_layer || item.source_layer || '';
+    const provenance = frame.provenance || item.provenance || null;
+    const worldPose = frame.world_pose || frame.world_transform || null;
+    const xyz = finiteXyzArrayFromVector(pose?.xyz);
+    diagnostics.push({
+      id: frame.id || item.id || name,
+      name: frame.name || name,
+      frame: frame.frame || frame.frame_id || item.frame || item.frame_id || name,
+      link: frame.link || frame.link_name || item.link || item.link_name || name,
+      parent: frame.parent || frame.parent_frame || frame.parent_frame_id || item.parent || item.parent_frame || '',
+      parent_link: frame.parent_link || frame.parent_link_name || item.parent_link || item.parent_link_name || frameParentNameOf(frame) || '',
+      role: frame.role || item.role || '',
+      type: frame.type || item.type || '',
+      render_expected: Boolean((frame.render_expected ?? item.render_expected) || displayMeshUri(frame) || displayMeshUri(item) || rendered),
+      mesh_available: Boolean(renderStatus === 'mesh_loaded' || displayMeshUri(frame) || displayMeshUri(item)),
+      source_layer: sourceLayer,
+      provenance,
+      world_pose: worldPose,
+      xyz: xyz,
+      rpy: pose?.rpy ? finiteXyzArrayFromVector(pose.rpy) : null,
+      resolved_world_position: xyz,
+    });
+  }
+  diagnostics.sort((a, b) => String(a.name || a.frame || a.id).localeCompare(String(b.name || b.frame || b.id)));
+  return diagnostics;
+}
+
 function buildResolvedFrameStatus() {
   const frameNames = ['wrist_3_link', 'tool0', 'gripper_base_link'];
   const pairs = [

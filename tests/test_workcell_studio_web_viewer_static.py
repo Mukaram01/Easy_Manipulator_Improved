@@ -653,7 +653,8 @@ populateObjectList = () => {};
 updateLabels = () => {};
 resetView = () => {};
 renderSceneSummary = () => updateViewerStatus();
-state.sceneJson = { scene: { id: 'status_test' } };
+state.sceneJson = { scene: { id: 'status_test' }, frames: [{ name: 'tool0', link: 'tool0', parent_link: 'wrist_3_link', role: 'transform_anchor', type: 'frame', source_layer: 'generated_urdf', provenance: { source: 'payload.frames' }, world_pose: { xyz: [0.10, 0, 0], rpy: [0, 0, 0] } }] };
+state.frameLookup = parseSceneFrames(state.sceneJson);
 state.runtimeWarnings = [{ code: 'camera_framing_blocker_excluded', reason: 'hidden helper excluded' }];
 class MockVector3 {
   constructor(x = 0, y = 0, z = 0) {
@@ -692,6 +693,15 @@ assert.strictEqual(status.runtimeWarnings[0].code, 'camera_framing_blocker_exclu
 assert.strictEqual(isUserFacingWarning(status.runtimeWarnings[0]), false);
 assert.deepStrictEqual(status.renderedMeshDiagnostics, []);
 assert.deepStrictEqual(status.rendered_mesh_diagnostics, []);
+assert.strictEqual(status.frameDiagnostics, status.frame_diagnostics);
+const toolFrameDiagnostic = status.frameDiagnostics.find(entry => entry.name === 'tool0');
+assert.ok(toolFrameDiagnostic, 'expected tool0 frame diagnostic even without rendered object');
+assert.strictEqual(toolFrameDiagnostic.link, 'tool0');
+assert.strictEqual(toolFrameDiagnostic.parent_link, 'wrist_3_link');
+assert.strictEqual(toolFrameDiagnostic.role, 'transform_anchor');
+assert.strictEqual(toolFrameDiagnostic.render_expected, false);
+assert.strictEqual(toolFrameDiagnostic.mesh_available, false);
+assert.deepStrictEqual(toolFrameDiagnostic.resolved_world_position, [0.10, 0, 0]);
 setDebugOverlaysVisible(true);
 assert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.meshLoadedCount, 2);
 assert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.requiredMeshFailedCount, 0);
@@ -765,3 +775,6 @@ def test_viewer_status_exports_generated_urdf_mesh_diagnostics():
     assert "const renderedMeshDiagnostics = collectRenderedMeshDiagnostics();" in status_body
     assert "renderedMeshDiagnostics" in status_body
     assert "rendered_mesh_diagnostics: renderedMeshDiagnostics" in status_body
+    assert "const frameDiagnostics = collectFrameDiagnostics();" in status_body
+    assert "frameDiagnostics" in status_body
+    assert "frame_diagnostics: frameDiagnostics" in status_body
