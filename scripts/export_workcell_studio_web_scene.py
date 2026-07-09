@@ -525,6 +525,8 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
         "primitive_geometry_type", "package_uri", "mesh_uri", "source_path", "mesh_path",
         "resolved_source_path", "scale", "mesh_scale", "source_layer", "active_visual_source",
         "mesh_bounds", "local_bounds", "bounds", "dimensions", "size",
+        "support_surface_kind", "support_kind", "semantic_type", "top_surface_z_m", "topSurfaceZM", "support_surface_height_m", "supportSurfaceHeightM",
+        "expected_support_footprint_m", "support_footprint_m", "footprint_m", "footprint",
         "render_expected", "mesh_available", "resolved", "warning",
     )
     for i, raw in enumerate(items):
@@ -838,6 +840,8 @@ def _authored_item(raw: Mapping[str, Any], source: str, index: int, scene_dir: P
         "id", "type", "role", "category", "display_name", "frame", "pose", "pose_xyz", "pose_rpy", "dimensions",
         "geometry_type", "primitive_geometry_type", "mesh_uri", "package_uri", "source_path", "mesh_path", "material",
         "layout_item_ref", "support_surface_ref", "task_zone_ref", "scale", "mesh_scale", "perception_mode", "runtime_enforced", "runtime_commanded",
+        "support_surface_kind", "support_kind", "semantic_type", "top_surface_z_m", "topSurfaceZM", "support_surface_height_m", "supportSurfaceHeightM",
+        "expected_support_footprint_m", "support_footprint_m", "footprint_m", "footprint", "table_height", "table_top_z", "surface_height_m",
     )
     item = _copy_fields(raw, fields, source, scene_dir)
     item.setdefault("id", _stable_id("authored", index))
@@ -1160,8 +1164,128 @@ def _authored_physical_dimension_defaults(data: Mapping[str, Any]) -> Dict[str, 
     return defaults
 
 
+def _authored_support_surface_defaults(data: Mapping[str, Any]) -> Dict[str, Any]:
+    defaults: Dict[str, Any] = {}
+    env = _as_map(data.get("environment"))
+    env_root = _as_map(env.get("environment"))
+    cell = _as_map(data.get("cell_definition"))
+    cell_env = _as_map(cell.get("environment"))
+    candidates = (
+        _as_list(env_root.get("support_surfaces"))
+        + _as_list(env.get("support_surfaces"))
+        + _as_list(cell_env.get("support_surfaces"))
+    )
+    for raw in candidates:
+        if not isinstance(raw, Mapping):
+            continue
+        text = _identity_text(raw)
+        if not any(token in text for token in ("table", "workbench", "support_surface")):
+            continue
+        dims = _finite_num3(raw.get("dimensions") or raw.get("size"))
+        pose = _finite_num3(raw.get("pose_xyz"))
+        if pose is None:
+            pose = _pose_xyz(raw.get("pose"))
+        if dims is not None:
+            defaults.setdefault("expected_support_footprint_m", [abs(dims[0]), abs(dims[1])])
+            defaults.setdefault("expected_dimensions_m", dims)
+        for source_key, target_key in (
+            ("support_surface_kind", "support_surface_kind"),
+            ("support_kind", "support_surface_kind"),
+            ("semantic_type", "support_surface_kind"),
+            ("top_surface_z_m", "top_surface_z_m"),
+            ("topSurfaceZM", "top_surface_z_m"),
+            ("support_surface_height_m", "support_surface_height_m"),
+            ("supportSurfaceHeightM", "support_surface_height_m"),
+            ("table_top_z", "top_surface_z_m"),
+            ("table_height", "support_surface_height_m"),
+            ("surface_height_m", "support_surface_height_m"),
+        ):
+            if raw.get(source_key) not in (None, ""):
+                defaults.setdefault(target_key, raw.get(source_key))
+        if pose is not None and dims is not None:
+            top_z = pose[2] + abs(dims[2]) / 2.0
+            defaults.setdefault("top_surface_z_m", top_z)
+            defaults.setdefault("support_surface_height_m", top_z)
+    return defaults
+
+
+def _stl_mesh_dimensions_m(item: Mapping[str, Any]) -> Optional[List[float]]:
+    uri = str(item.get("original_mesh_uri") or item.get("original_source_path") or item.get("mesh_uri") or "")
+    if "workbench_description/meshes/visual/table.stl" not in uri:
+        return None
+    resolved = item.get("resolved_source_path")
+    if not isinstance(resolved, str) or not resolved:
+        return None
+    path = Path(resolved)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    if not path.is_file():
+        return None
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return None
+    vertices: List[List[float]] = []
+    try:
+        text = raw.decode("utf-8", errors="ignore")
+        for line in text.splitlines():
+            parts = line.strip().split()
+            if len(parts) == 4 and parts[0].lower() == "vertex":
+                vertices.append([float(parts[1]), float(parts[2]), float(parts[3])])
+    except ValueError:
+        vertices = []
+    if not vertices and len(raw) >= 84:
+        import struct
+
+        try:
+            tri_count = struct.unpack_from("<I", raw, 80)[0]
+            expected = 84 + tri_count * 50
+            if expected <= len(raw):
+                for offset in range(84, expected, 50):
+                    for vertex_index in range(3):
+                        vertex_offset = offset + 12 + vertex_index * 12
+                        vertices.append(list(struct.unpack_from("<fff", raw, vertex_offset)))
+        except (struct.error, ValueError):
+            return None
+    if not vertices:
+        return None
+    scale = _finite_num3(item.get("scale") or item.get("mesh_scale")) or [1.0, 1.0, 1.0]
+    dims = []
+    for axis in range(3):
+        values = [vertex[axis] * scale[axis] for vertex in vertices]
+        dims.append(abs(max(values) - min(values)))
+    if all(v > 0.0 for v in dims):
+        return dims
+    return None
+
+
+def _populate_support_surface_fields(item: Json, category: str, support_defaults: Mapping[str, Any]) -> None:
+    if category != "table":
+        return
+    mesh_dims = _stl_mesh_dimensions_m(item)
+    dims = mesh_dims or _finite_num3(item.get("expected_dimensions_m")) or _finite_num3(support_defaults.get("expected_dimensions_m"))
+    if mesh_dims is not None and 0.9 <= mesh_dims[0] <= 1.5 and 0.5 <= mesh_dims[1] <= 1.1 and 0.6 <= mesh_dims[2] <= 1.2:
+        item.setdefault("support_surface_kind", "workbench_body")
+        item["expected_dimensions_m"] = mesh_dims
+    else:
+        item.setdefault("support_surface_kind", support_defaults.get("support_surface_kind") or "support_surface")
+    if dims is not None:
+        item.setdefault("expected_support_footprint_m", [abs(dims[0]), abs(dims[1])])
+    xyz = _item_pose_xyz(item)
+    if xyz is None and dims is not None:
+        xyz = [0.0, 0.0, 0.0]
+    if xyz is not None and dims is not None:
+        top_z = xyz[2] + abs(dims[2]) / 2.0
+        item.setdefault("top_surface_z_m", top_z)
+        item.setdefault("support_surface_height_m", top_z)
+    for key in ("top_surface_z_m", "support_surface_height_m", "expected_support_footprint_m"):
+        if key not in item and key in support_defaults:
+            item[key] = support_defaults[key]
+
+
 def _populate_visual_bounds_item_fields(payload: Json, data: Mapping[str, Any]) -> None:
     dimension_defaults = _authored_physical_dimension_defaults(data)
+    support_defaults = _authored_support_surface_defaults(data)
     for section, item in _all_scene_items(payload):
         if not _is_mesh_item(item):
             continue
@@ -1179,6 +1303,7 @@ def _populate_visual_bounds_item_fields(payload: Json, data: Mapping[str, Any]) 
         item["mesh_contract_category"] = category
         if "expected_dimensions_m" not in item and category in dimension_defaults:
             item["expected_dimensions_m"] = dimension_defaults[category]
+        _populate_support_surface_fields(item, category, support_defaults)
         item.setdefault("mesh_load_required", category in {"robot_link", "gripper", "table", "camera", "object"})
         # Unit autoscale is a browser-side asset convenience only.  Generated URDF
         # previews and robot links must keep authored units exactly as exported.

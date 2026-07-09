@@ -92,6 +92,10 @@ def test_export_web_scene_contract_and_determinism(tmp_path):
     assert table["mesh_path"] == "meshes/table.stl"
     assert table["expected_dimensions_m"] == [1.2, 0.8, 0.08]
     assert table["mesh_contract_category"] == "table"
+    assert table["support_surface_kind"] == "support_surface"
+    assert table["top_surface_z_m"] == 0.04
+    assert table["support_surface_height_m"] == 0.04
+    assert table["expected_support_footprint_m"] == [1.2, 0.8]
     camera = next(item for item in payload["sensors"] if item["id"] == "realsense_camera")
     assert camera["expected_dimensions_m"] == [0.08, 0.08, 0.06]
     assert camera["mesh_contract_category"] == "camera"
@@ -381,7 +385,17 @@ def test_export_carries_authored_fixture_dimensions_to_generated_table_camera_me
     table = next(item for item in payload["assets"] if item["id"] == "urdf_visual_table")
     camera = next(item for item in payload["sensors"] if item["id"] == "urdf_visual_camera")
     assert table["mesh_contract_category"] == "table"
-    assert table["expected_dimensions_m"] == [1.2, 0.8, 0.08]
+    assert table["support_surface_kind"] == "workbench_body"
+    assert 1.1 < table["expected_dimensions_m"][0] < 1.3
+    assert 0.7 < table["expected_dimensions_m"][1] < 0.9
+    assert 0.8 < table["expected_dimensions_m"][2] < 1.0
+    assert 1.1 < table["expected_support_footprint_m"][0] < 1.3
+    assert 0.7 < table["expected_support_footprint_m"][1] < 0.9
+    assert isinstance(table["top_surface_z_m"], float)
+    assert isinstance(table["support_surface_height_m"], float)
+    assert table["original_mesh_uri"] == "package://workbench_description/meshes/visual/table.stl"
+    assert table["mesh_staging_status"] == "staged"
+    assert table["mesh_staged_path"] == table["mesh_uri"]
     assert camera["mesh_contract_category"] == "camera"
     assert camera["expected_dimensions_m"] == [0.08, 0.08, 0.06]
 
