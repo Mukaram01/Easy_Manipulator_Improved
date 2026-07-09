@@ -157,6 +157,7 @@ def test_browser_status_validator_accepts_expected_meshes_and_tool_chain_distanc
         "resolvedFramePositions": _valid_resolved_frame_positions(),
         "frameDiagnostics": _valid_frame_diagnostics(),
         "renderedMeshDiagnostics": _valid_rendered_mesh_diagnostics(),
+        **_valid_robot_hierarchy_fields(),
     }
     snake_status = {
         "mesh_loaded_count": 18,
@@ -165,6 +166,7 @@ def test_browser_status_validator_accepts_expected_meshes_and_tool_chain_distanc
         "resolved_frame_positions": _valid_resolved_frame_positions(),
         "frame_diagnostics": _valid_frame_diagnostics(),
         "rendered_mesh_diagnostics": _valid_rendered_mesh_diagnostics(),
+        **_valid_robot_hierarchy_fields(),
     }
 
     assert camel_status["meshLoadedCount"] == module.EXPECTED_MESH_LOADED_COUNT == 18
@@ -233,7 +235,7 @@ def _valid_rendered_mesh_diagnostics(spacing=0.05):
                 "fallback_visible": False,
                 "loaded_mesh_bounding_box_center": {"x": index * spacing, "y": 0.0, "z": 0.0},
                 "visual_wrapper_world_position": {"x": index * spacing, "y": 0.0, "z": 0.0},
-                "workcell_web_render_pose_mode": "baked_visible_world_pose",
+                "workcell_web_render_pose_mode": "assembled_urdf_hierarchy",
                 "baked_world_visual_pose": {"xyz": [index * spacing, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
             }
         )
@@ -333,6 +335,27 @@ def _valid_frame_diagnostics():
     ]
 
 
+
+def _valid_robot_hierarchy_fields():
+    links = [
+        "base_link_inertia",
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link",
+        "tool0",
+        "gripper_base_link",
+    ]
+    return {
+        "robot_render_mode": "assembled_urdf_hierarchy",
+        "robot_hierarchy_links": links,
+        "robot_hierarchy_missing_links": [],
+        "robot_hierarchy_missing_parents": [],
+        "robot_hierarchy_mesh_count": 18,
+    }
+
 def _valid_browser_status_with_rendered_diagnostics():
     return {
         "meshLoadedCount": 18,
@@ -341,6 +364,7 @@ def _valid_browser_status_with_rendered_diagnostics():
         "resolvedFramePositions": _valid_resolved_frame_positions(),
         "frameDiagnostics": _valid_frame_diagnostics(),
         "renderedMeshDiagnostics": _valid_rendered_mesh_diagnostics(),
+        **_valid_robot_hierarchy_fields(),
     }
 
 
@@ -391,6 +415,7 @@ def test_browser_status_validator_accepts_valid_rendered_mesh_diagnostics_snake_
         "resolved_frame_positions": _valid_resolved_frame_positions(),
         "frame_diagnostics": _valid_frame_diagnostics(),
         "rendered_mesh_diagnostics": _valid_rendered_mesh_diagnostics(),
+        **_valid_robot_hierarchy_fields(),
     }
 
     assert module.validate_browser_status(status) == []
@@ -501,16 +526,15 @@ def test_browser_status_validator_rejects_table_non_uniform_scale_from_expected_
 
 
 
-def test_browser_status_validator_rejects_baked_visible_world_pose_double_application():
+def test_browser_status_validator_rejects_assembled_hierarchy_visual_wrapper_explosion():
     status = _valid_browser_status_with_rendered_diagnostics()
     for diagnostic in status["renderedMeshDiagnostics"]:
         if diagnostic.get("link_name") == "wrist_3_link":
-            diagnostic["visual_wrapper_world_position"] = {"x": 0.65, "y": 0.0, "z": 0.0}
+            diagnostic["visual_wrapper_world_position"] = {"x": 2.0, "y": 0.0, "z": 0.0}
 
     errors = module.validate_browser_status(status)
 
-    assert any("wrist_3_link baked_visible_world_pose wrapper center expected" in error for error in errors)
-    assert any("visual origin may have been applied twice" in error for error in errors)
+    assert any("wrist_2_link -> wrist_3_link" in error and "visual wrapper" in error for error in errors)
 
 
 def test_browser_status_validator_rejects_exploded_loaded_mesh_bounds_even_when_wrappers_are_connected():

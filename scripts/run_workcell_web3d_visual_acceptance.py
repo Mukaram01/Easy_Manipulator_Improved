@@ -428,7 +428,14 @@ def baked_pose_render_mode_summary(status: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _assembled_hierarchy_mode_active(status: Mapping[str, Any]) -> bool:
+    mode = str(status.get("robot_render_mode") or status.get("robotRenderMode") or "").strip()
+    return mode == "assembled_urdf_hierarchy"
+
+
 def _baked_pose_render_mode_errors(status: Mapping[str, Any]) -> list[str]:
+    if _assembled_hierarchy_mode_active(status):
+        return []
     summary = baked_pose_render_mode_summary(status)
     expected = int(summary["generated_urdf_mesh_rows_with_baked_pose"])
     actual = int(summary["rows_rendered_in_baked_visible_pose_mode"])
@@ -436,6 +443,27 @@ def _baked_pose_render_mode_errors(status: Mapping[str, Any]) -> list[str]:
         missing = ", ".join(row["name"] for row in summary["rows_with_baked_pose_but_empty_or_legacy_render_mode"][:20])
         return [f"browser viewer baked pose render mode mismatch: generated URDF mesh rows with baked pose={expected}, rendered in baked_visible_world_pose={actual}; missing/legacy rows: {missing or 'unknown'}"]
     return []
+
+
+def _assembled_hierarchy_errors(status: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if not _assembled_hierarchy_mode_active(status):
+        errors.append("browser viewer robot_render_mode must be assembled_urdf_hierarchy for ur5_2f_test")
+    links = status.get("robot_hierarchy_links") or status.get("robotHierarchyLinks") or []
+    missing_links = status.get("robot_hierarchy_missing_links") or []
+    missing_parents = status.get("robot_hierarchy_missing_parents") or []
+    mesh_count = _status_int(status, "robot_hierarchy_mesh_count", "robotHierarchyMeshCount")
+    required = ["base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link", "wrist_3_link", "tool0", "gripper_base_link"]
+    absent = [link for link in required if link not in links]
+    if absent:
+        errors.append(f"browser viewer assembled hierarchy missing required links: {', '.join(absent)}")
+    if missing_links:
+        errors.append(f"browser viewer robot_hierarchy_missing_links must be empty, got {missing_links!r}")
+    if missing_parents:
+        errors.append(f"browser viewer robot_hierarchy_missing_parents must be empty, got {missing_parents!r}")
+    if mesh_count < 16:
+        errors.append(f"browser viewer robot_hierarchy_mesh_count expected >= 16, got {mesh_count}")
+    return errors
 
 def _euclidean_distance(a: tuple[float, float, float], b: tuple[float, float, float]) -> float:
     return sum((left - right) ** 2 for left, right in zip(a, b)) ** 0.5
@@ -558,6 +586,7 @@ def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
             distance = float("nan")
         if not (0.0 <= distance <= max_distance_m):
             errors.append(f"browser viewer resolved distance {pair} expected <= {max_distance_m:.3f} m, got {raw!r}")
+    errors.extend(_assembled_hierarchy_errors(status))
     errors.extend(_tool0_frame_contract_errors(status))
     errors.extend(_rendered_mesh_adjacency_errors(status))
     errors.extend(_mesh_backing_errors(status))

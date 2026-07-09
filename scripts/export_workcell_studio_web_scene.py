@@ -1591,6 +1591,55 @@ def _viewer_summary(payload: Json) -> Json:
         "required_item_status": required,
     }
 
+
+def _annotate_urdf_assembly_metadata(generated: Dict[str, List[Json]], scene_name: str) -> None:
+    """Mark generated robot/tool URDF visuals for browser hierarchy rendering."""
+    robot_instance_id = f"{scene_name}_robot"
+    assembly_group = "ur5_robotiq" if "ur5" in scene_name.lower() else f"{scene_name}_robot_tool"
+    for section in GENERATED_OUTPUT_SECTIONS:
+        for item in generated.get(section, []):
+            if not isinstance(item, dict):
+                continue
+            text = _identity_text(item)
+            link = str(item.get("link_name") or item.get("link") or item.get("frame") or item.get("object_name") or "")
+            if not link:
+                continue
+            is_robot_tool = (
+                section in {"robots", "tools", "frames"}
+                or str(item.get("role", "")).lower() in {"robot", "tool", "gripper", "end_effector"}
+                or str(item.get("category", "")).lower() in {"robot", "tool", "gripper", "end_effector", "robot_static_mesh_visual"}
+                or any(token in text for token in ("ur5", "robot", "wrist", "shoulder", "forearm", "upper_arm", "tool0", "gripper", "robotiq"))
+            )
+            if not is_robot_tool:
+                continue
+            item.setdefault("link_name", link)
+            parent = str(item.get("parent_link") or item.get("joint_parent_link") or item.get("immediate_parent_link") or "")
+            if link == "tool0" and parent == "flange":
+                parent = "wrist_3_link"
+                item["parent_link"] = parent
+                item["joint_parent_link"] = parent
+                item["immediate_parent_link"] = parent
+                item["joint_origin"] = {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]}
+            elif parent:
+                item.setdefault("parent_link", parent)
+            if "joint_origin" not in item and "parent_joint_origin" in item:
+                item["joint_origin"] = item["parent_joint_origin"]
+            item.setdefault("joint_origin", {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]})
+            item.setdefault("visual_origin", {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]})
+            mesh = str(item.get("mesh_uri") or item.get("package_uri") or item.get("source_path") or item.get("mesh_path") or "")
+            if mesh:
+                item.setdefault("mesh_uri", mesh)
+                item.setdefault("original_mesh_uri", item.get("package_uri") or item.get("source_path") or mesh)
+            item["robot_instance_id"] = robot_instance_id
+            item["assembly_group"] = assembly_group
+            item["robot_render_mode"] = "assembled_urdf_hierarchy"
+            item["baked_world_visual_pose_diagnostic_only"] = True
+            item.setdefault("provenance", {}).update({
+                "robot_instance_id": "web_export_urdf_assembly_metadata",
+                "assembly_group": "web_export_urdf_assembly_metadata",
+                "robot_render_mode": "web_export_urdf_assembly_metadata",
+            })
+
 def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path: Optional[Path] = None) -> Json:
     scene_dir = scene_dir.resolve()
     warnings: List[Json] = []
@@ -1604,6 +1653,7 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
 
     generated = _generated_preview_items(_as_map(data.get("visual_mesh_index")), scene_dir, warnings) if data.get("visual_mesh_index") is not None else {section: [] for section in GENERATED_OUTPUT_SECTIONS}
     _supplement_missing_tool_meshes(data, generated)
+    _annotate_urdf_assembly_metadata(generated, scene_name)
     _apply_web_scene_transform_parity_fallbacks(data, generated, warnings)
     _suppress_unresolved_placeholder_robot_visuals(generated, warnings)
     authored = _authored_sections(data, scene_dir, warnings)
