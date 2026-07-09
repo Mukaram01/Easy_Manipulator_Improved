@@ -22,6 +22,7 @@ import json
 import os
 import shutil
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -403,6 +404,8 @@ def _section_from_item(item: Mapping[str, Any]) -> str:
     text = _identity_text(item)
     category = str(item.get("category", "")).lower()
     role = str(item.get("role", "")).lower()
+    if _is_helper(item):
+        return "zones"
     if category == "robot" or role == "robot":
         return "robots"
     if (
@@ -413,9 +416,70 @@ def _section_from_item(item: Mapping[str, Any]) -> str:
         return "tools"
     if "camera" in text or "realsense" in text:
         return "sensors"
-    if _is_helper(item):
-        return "zones"
     return "assets"
+
+
+def _mesh_unit_evidence_from_path(path: Path) -> Optional[Json]:
+    """Return non-rendering mesh unit evidence for exporter diagnostics.
+
+    COLLADA files can declare their authored linear unit in ``asset/unit``.
+    The D435 asset used by the canonical scene declares ``meter=1`` and has
+    vertex coordinates in the expected physical camera range, so the exporter
+    records that evidence rather than applying an implicit scale.
+    """
+    if path.suffix.lower() != ".dae" or not path.is_file():
+        return None
+    try:
+        root = ET.parse(path).getroot()
+    except Exception:  # noqa: BLE001 - unit evidence is diagnostic only
+        return None
+    unit = None
+    for elem in root.iter():
+        if elem.tag.rsplit("}", 1)[-1] == "unit":
+            unit = elem
+            break
+    if unit is None:
+        return {"source": "collada_asset_unit", "declared_unit": "unspecified", "unit_scale_to_m": None}
+    meter_raw = unit.attrib.get("meter")
+    try:
+        meter = float(meter_raw) if meter_raw is not None else None
+    except ValueError:
+        meter = None
+    name = unit.attrib.get("name") or "unspecified"
+    if meter == 1.0:
+        interpretation = "mesh_vertices_already_meters_no_exporter_unit_conversion_applied"
+    elif meter == 0.01:
+        interpretation = "mesh_vertices_declared_centimeters"
+    elif meter == 0.001:
+        interpretation = "mesh_vertices_declared_millimeters"
+    else:
+        interpretation = "mesh_vertices_declared_custom_or_unknown_unit"
+    return {
+        "source": "collada_asset_unit",
+        "declared_unit": name,
+        "unit_scale_to_m": meter,
+        "interpretation": interpretation,
+    }
+
+
+def _annotate_mesh_unit_evidence(item: Json, scene_dir: Path) -> None:
+    if item.get("mesh_unit_evidence"):
+        return
+    repo_root = Path.cwd().resolve()
+    for _field, uri in _mesh_candidates(item):
+        resolved: Optional[Path]
+        if uri.startswith("package://"):
+            resolved, _source_root, _dest_rel, _warning = _resolve_package_uri(uri, repo_root)
+        else:
+            resolved, _source_root, _dest_rel, _warning = _resolve_local_mesh_uri(uri, scene_dir, repo_root)
+        if resolved is None:
+            continue
+        evidence = _mesh_unit_evidence_from_path(resolved)
+        if evidence:
+            evidence["source_path"] = os.path.relpath(resolved, repo_root).replace(os.sep, "/") if _is_relative_to(resolved, repo_root) else str(resolved)
+            item["mesh_unit_evidence"] = evidence
+            item.setdefault("mesh_unit_conversion", {"applied": False, "scale": [1.0, 1.0, 1.0], "reason": evidence.get("interpretation")})
+            return
 
 
 def _canonical_generated_transform(raw: Mapping[str, Any]) -> Tuple[Optional[Any], Optional[str]]:
@@ -460,6 +524,7 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
         "joint_value_source", "applied_joint_value_source", "transform_chain",
         "primitive_geometry_type", "package_uri", "mesh_uri", "source_path", "mesh_path",
         "resolved_source_path", "scale", "mesh_scale", "source_layer", "active_visual_source",
+        "mesh_bounds", "local_bounds", "bounds", "dimensions", "size",
         "render_expected", "mesh_available", "resolved", "warning",
     )
     for i, raw in enumerate(items):
@@ -496,6 +561,8 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
                 "world_from_visual": INPUTS["visual_mesh_index"],
                 "transform_source": INPUTS["visual_mesh_index"],
             })
+        if any(token in _identity_text(raw) for token in ("camera", "realsense", "d435")):
+            _annotate_mesh_unit_evidence(item, scene_dir)
         sections[_section_from_item(raw)].append(item)
     return sections
 

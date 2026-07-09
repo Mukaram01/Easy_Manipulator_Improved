@@ -214,6 +214,85 @@ def test_export_visual_bounds_contract_ignores_helper_zones_outside_workspace(tm
     assert all("camera_fov_overlay" not in source for source in payload["metadata"]["visual_bounds_contract"]["scene_bounds_m"]["sources"])
 
 
+def test_export_fails_oversized_physical_camera_bounds_but_excludes_camera_helpers(tmp_path):
+    scene = tmp_path / "scene"
+    (scene / "layout").mkdir(parents=True)
+    (scene / "generated").mkdir()
+    (scene / "scene_manifest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "scene": {
+                    "name": "camera_bounds_regression",
+                    "expected_workspace_bounds_m": {"min": [-1.0, -1.0, 0.0], "max": [1.0, 1.0, 1.8]},
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (scene / "cell_definition.yaml").write_text("{}", encoding="utf-8")
+    (scene / "environment.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "environment": {
+                    "sensors": [
+                        {
+                            "id": "realsense_d435",
+                            "role": "camera",
+                            "category": "camera",
+                            "dimensions": [0.08, 0.08, 0.06],
+                        }
+                    ]
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (scene / "layout/workcell_studio_layout.yaml").write_text(yaml.safe_dump({"items": []}), encoding="utf-8")
+    (scene / "generated/scene_visual_mesh_index.json").write_text(
+        json.dumps(
+            {
+                "visual_items": [
+                    {
+                        "id": "generated_urdf::camera_link::visual_0",
+                        "category": "camera",
+                        "role": "camera",
+                        "link": "camera_link",
+                        "mesh_uri": "package://realsense2_description/meshes/d435.dae",
+                        "pose": {"xyz": [0.0, 0.0, 0.6], "rpy": [0.0, 0.0, 0.0]},
+                        "mesh_bounds": {"min": [-50.0, -50.0, -50.0], "max": [50.0, 50.0, 50.0]},
+                    },
+                    {
+                        "id": "camera_fov_overlay",
+                        "category": "camera",
+                        "role": "camera_fov",
+                        "source_layer": "overlay",
+                        "active_visual_source": "camera_fov",
+                        "pose": {"xyz": [0.0, 0.0, 0.6], "rpy": [0.0, 0.0, 0.0]},
+                        "dimensions": [100.0, 100.0, 100.0],
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    out = tmp_path / "build/scene.web_scene.json"
+    subprocess.run([sys.executable, str(SCRIPT), "--scene", str(scene), "--output", str(out)], check=True)
+
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    contract = payload["metadata"]["visual_bounds_contract"]
+    assert contract["status"] == "failed"
+    assert any(
+        blocker["id"] == "generated_urdf::camera_link::visual_0"
+        and blocker["reason"] == "oversized_item_can_break_camera_framing"
+        for blocker in contract["camera_framing_blockers"]
+    )
+    assert all("camera_fov_overlay" not in source for source in contract["scene_bounds_m"]["sources"])
+    assert any(item["id"] == "camera_fov_overlay" for item in payload["zones"])
+
+
 def test_export_carries_authored_fixture_dimensions_to_generated_table_camera_meshes(tmp_path):
     scene = tmp_path / "scene"
     (scene / "layout").mkdir(parents=True)
@@ -472,7 +551,7 @@ def test_gripper_parent_fallback_ignores_wrist_visual_origin_when_tool0_missing(
     assert wrist["visual_origin"] == {"xyz": [0.3, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]}
     assert gripper_base["final_transform"]["xyz"] == [0.4, 0.2, 0.6]
     assert gripper_base["final_transform"]["xyz"] != wrist["baked_world_visual_pose"]["xyz"]
-    assert "tool0_frame_missing_using_wrist_3_link_fallback" in warning_codes
+    assert "tool0_frame_missing_or_collapsed_using_wrist_3_link_fallback" in warning_codes
 
 
 def test_ur5_2f_web_scene_preserves_tool0_transform_anchor_metadata(tmp_path):
