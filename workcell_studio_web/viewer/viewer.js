@@ -202,8 +202,10 @@ function collectRenderedMeshDiagnostics() {
       debugOverlay: Boolean(isDebugOverlayItem(item)),
       visual_bounds_status: item.visual_bounds_status || '',
       visualBoundsStatus: item.visual_bounds_status || '',
-      workcell_web_render_pose_mode: item.workcell_web_render_pose_mode || '',
-      workcellWebRenderPoseMode: item.workcell_web_render_pose_mode || '',
+      workcell_web_render_pose_mode: effectiveWorkcellWebRenderPoseMode(item),
+      workcellWebRenderPoseMode: effectiveWorkcellWebRenderPoseMode(item),
+      exported_workcell_web_render_pose_mode: item.workcell_web_render_pose_mode || '',
+      exportedWorkcellWebRenderPoseMode: item.workcell_web_render_pose_mode || '',
       baked_world_visual_pose: item.baked_world_visual_pose || null,
       bakedWorldVisualPose: item.baked_world_visual_pose || null,
       expected_visual_pose: item.expected_visual_pose || null,
@@ -372,11 +374,30 @@ function hasFinitePoseBlock(source) {
   return finiteVector(pose.xyz) && finiteVector(pose.rpy);
 }
 function bakedVisibleWorldPoseSource(item) {
-  return item?.baked_world_visual_pose || item?.expected_visual_pose || item?.final_transform || null;
+  return item?.baked_world_visual_pose || item?.expected_visual_pose || item?.final_transform || item?.world_from_visual || null;
+}
+function hasMeshBackedVisualContract(item) {
+  return Boolean(displayMeshUri(item) || item?.mesh_loaded || item?.meshLoaded || item?.mesh_status === 'loaded' || item?.renderInfo?.render_status === 'mesh_loaded');
+}
+function isGeneratedUrdfMeshVisualItem(item) {
+  if (!isGeneratedUrdfItem(item)) return false;
+  if (!hasMeshBackedVisualContract(item)) return false;
+  const identity = viewerGroupIdentity(item);
+  return Boolean(
+    item?.visual !== undefined ||
+    item?.visual_name !== undefined ||
+    item?.visual_index !== undefined ||
+    item?.mesh_uri || item?.package_uri || item?.mesh_path || item?.source_path ||
+    /\b(mesh|visual|link|robot|tool|gripper|camera|table|workbench)\b/.test(identity)
+  );
 }
 function usesBakedVisibleWorldPose(item) {
-  return item?.workcell_web_render_pose_mode === 'baked_visible_world_pose'
-    && hasFinitePoseBlock(bakedVisibleWorldPoseSource(item));
+  if (!hasFinitePoseBlock(bakedVisibleWorldPoseSource(item))) return false;
+  if (item?.workcell_web_render_pose_mode === 'baked_visible_world_pose') return true;
+  return isGeneratedUrdfMeshVisualItem(item);
+}
+function effectiveWorkcellWebRenderPoseMode(item) {
+  return usesBakedVisibleWorldPose(item) ? 'baked_visible_world_pose' : (item?.workcell_web_render_pose_mode || '');
 }
 function generatedUrdfFramePoseSource(item) {
   if (item?.frame_world_pose) return item.frame_world_pose;

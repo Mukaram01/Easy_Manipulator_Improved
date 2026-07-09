@@ -197,11 +197,12 @@ def test_viewer_generated_urdf_baked_pose_mode_prefers_baked_visual_pose_chain()
     assert "function usesBakedVisibleWorldPose(item)" in js
 
     baked_source_body = js.split("function bakedVisibleWorldPoseSource(item)", 1)[1].split("function usesBakedVisibleWorldPose(item)", 1)[0]
-    assert "item?.baked_world_visual_pose || item?.expected_visual_pose || item?.final_transform || null" in baked_source_body
+    assert "item?.baked_world_visual_pose || item?.expected_visual_pose || item?.final_transform || item?.world_from_visual || null" in baked_source_body
 
-    mode_check_body = js.split("function usesBakedVisibleWorldPose(item)", 1)[1].split("function generatedUrdfFramePoseSource(item)", 1)[0]
+    mode_check_body = js.split("function usesBakedVisibleWorldPose(item)", 1)[1].split("function effectiveWorkcellWebRenderPoseMode(item)", 1)[0]
     assert "item?.workcell_web_render_pose_mode === 'baked_visible_world_pose'" in mode_check_body
     assert "hasFinitePoseBlock(bakedVisibleWorldPoseSource(item))" in mode_check_body
+    assert "return isGeneratedUrdfMeshVisualItem(item);" in mode_check_body
 
     final_pose_body = js.split("function canonicalFinalPose(item)", 1)[1].split("function poseOf(item)", 1)[0]
     assert "if (isGeneratedUrdfItem(item))" in final_pose_body

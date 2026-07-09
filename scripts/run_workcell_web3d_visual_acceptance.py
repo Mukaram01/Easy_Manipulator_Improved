@@ -391,6 +391,52 @@ def _expected_rendered_wrapper_center(diagnostic: Mapping[str, Any]) -> tuple[fl
     return None
 
 
+
+def _has_baked_pose(diagnostic: Mapping[str, Any]) -> bool:
+    for key in ("baked_world_visual_pose", "bakedWorldVisualPose", "expected_visual_pose", "expectedVisualPose", "final_transform", "finalTransform", "world_from_visual", "worldFromVisual"):
+        if _pose_xyz(diagnostic.get(key)) is not None:
+            return True
+    return False
+
+
+def _is_generated_urdf_mesh_diagnostic(diagnostic: Mapping[str, Any]) -> bool:
+    text = _diagnostic_text(diagnostic)
+    mesh_uri = str(diagnostic.get("mesh_uri") or diagnostic.get("meshUri") or "").strip()
+    render_status = _diagnostic_status(diagnostic)
+    has_mesh = bool(mesh_uri) or render_status == "mesh_loaded" or _diagnostic_bool(diagnostic, "mesh_loaded", "meshLoaded")
+    generated = "urdf" in text or "generated" in text or any(token in text for token in ("robot", "gripper", "robotiq", "realsense", "workbench"))
+    visual = any(token in text for token in ("visual", "mesh", "link", "robot", "tool", "gripper", "camera", "table", "workbench"))
+    return has_mesh and generated and visual
+
+
+def baked_pose_render_mode_summary(status: Mapping[str, Any]) -> dict[str, Any]:
+    rows = [d for d in _rendered_mesh_diagnostics_from_status(status) if isinstance(d, Mapping) and _is_generated_urdf_mesh_diagnostic(d) and _has_baked_pose(d)]
+    rendered = []
+    mismatches = []
+    for diagnostic in rows:
+        mode = str(diagnostic.get("workcell_web_render_pose_mode") or diagnostic.get("workcellWebRenderPoseMode") or "").strip()
+        exported_mode = str(diagnostic.get("exported_workcell_web_render_pose_mode") or diagnostic.get("exportedWorkcellWebRenderPoseMode") or "").strip()
+        name = str(diagnostic.get("link") or diagnostic.get("object_name") or diagnostic.get("id") or diagnostic.get("display_name") or "unnamed")
+        if mode == "baked_visible_world_pose":
+            rendered.append(name)
+        else:
+            mismatches.append({"name": name, "mode": mode, "exported_mode": exported_mode})
+    return {
+        "generated_urdf_mesh_rows_with_baked_pose": len(rows),
+        "rows_rendered_in_baked_visible_pose_mode": len(rendered),
+        "rows_with_baked_pose_but_empty_or_legacy_render_mode": mismatches,
+    }
+
+
+def _baked_pose_render_mode_errors(status: Mapping[str, Any]) -> list[str]:
+    summary = baked_pose_render_mode_summary(status)
+    expected = int(summary["generated_urdf_mesh_rows_with_baked_pose"])
+    actual = int(summary["rows_rendered_in_baked_visible_pose_mode"])
+    if expected != actual:
+        missing = ", ".join(row["name"] for row in summary["rows_with_baked_pose_but_empty_or_legacy_render_mode"][:20])
+        return [f"browser viewer baked pose render mode mismatch: generated URDF mesh rows with baked pose={expected}, rendered in baked_visible_world_pose={actual}; missing/legacy rows: {missing or 'unknown'}"]
+    return []
+
 def _euclidean_distance(a: tuple[float, float, float], b: tuple[float, float, float]) -> float:
     return sum((left - right) ** 2 for left, right in zip(a, b)) ** 0.5
 
@@ -519,6 +565,7 @@ def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
     errors.extend(_required_product_fallback_errors(status))
     errors.extend(_table_mesh_contract_errors(status))
     errors.extend(_camera_bounds_errors(status))
+    errors.extend(_baked_pose_render_mode_errors(status))
     return errors
 
 
@@ -714,6 +761,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     status = browser.get("status") if isinstance(browser, Mapping) else None
     if isinstance(status, Mapping):
+        debug_summary = baked_pose_render_mode_summary(status)
+        print("visual_debug_baked_pose_summary: " + json.dumps(debug_summary, sort_keys=True))
         status_errors = validate_browser_status(status)
         if status_errors:
             for error in status_errors:

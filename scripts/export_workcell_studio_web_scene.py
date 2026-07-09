@@ -490,7 +490,11 @@ def _canonical_generated_transform(raw: Mapping[str, Any]) -> Tuple[Optional[Any
     final render pose; it must not multiply the visual origin a second time.
     """
     baked_source = raw.get("baked_world_visual_transform_source")
-    for field in ("world_from_visual", "final_transform", "baked_world_visual_pose", "expected_visual_pose", "pose", "world_pose"):
+    # Prefer the already-baked visible mesh world pose when present.  Older
+    # generated indexes may also carry link-frame final_transform/world_from_visual
+    # values, and using those first makes the browser re-apply visual_origin and
+    # explode generated URDF meshes.
+    for field in ("baked_world_visual_pose", "expected_visual_pose", "final_transform", "world_from_visual", "pose", "world_pose"):
         value = raw.get(field)
         if value not in (None, "", [], {}):
             return value, str(baked_source or field), field
@@ -1209,7 +1213,7 @@ def _authored_support_surface_defaults(data: Mapping[str, Any]) -> Dict[str, Any
     return defaults
 
 
-def _stl_mesh_dimensions_m(item: Mapping[str, Any]) -> Optional[List[float]]:
+def _stl_mesh_bounds_m(item: Mapping[str, Any]) -> Optional[Dict[str, List[float]]]:
     uri = str(item.get("original_mesh_uri") or item.get("original_source_path") or item.get("mesh_uri") or "")
     if "workbench_description/meshes/visual/table.stl" not in uri:
         return None
@@ -1250,19 +1254,31 @@ def _stl_mesh_dimensions_m(item: Mapping[str, Any]) -> Optional[List[float]]:
     if not vertices:
         return None
     scale = _finite_num3(item.get("scale") or item.get("mesh_scale")) or [1.0, 1.0, 1.0]
-    dims = []
+    minimum: List[float] = []
+    maximum: List[float] = []
+    size: List[float] = []
     for axis in range(3):
         values = [vertex[axis] * scale[axis] for vertex in vertices]
-        dims.append(abs(max(values) - min(values)))
-    if all(v > 0.0 for v in dims):
-        return dims
+        axis_min = min(values)
+        axis_max = max(values)
+        minimum.append(axis_min)
+        maximum.append(axis_max)
+        size.append(abs(axis_max - axis_min))
+    if all(v > 0.0 for v in size):
+        return {"min": minimum, "max": maximum, "size": size}
     return None
+
+
+def _stl_mesh_dimensions_m(item: Mapping[str, Any]) -> Optional[List[float]]:
+    bounds = _stl_mesh_bounds_m(item)
+    return bounds.get("size") if bounds else None
 
 
 def _populate_support_surface_fields(item: Json, category: str, support_defaults: Mapping[str, Any]) -> None:
     if category != "table":
         return
-    mesh_dims = _stl_mesh_dimensions_m(item)
+    mesh_bounds = _stl_mesh_bounds_m(item)
+    mesh_dims = mesh_bounds.get("size") if mesh_bounds else None
     dims = mesh_dims or _finite_num3(item.get("expected_dimensions_m")) or _finite_num3(support_defaults.get("expected_dimensions_m"))
     if mesh_dims is not None and 0.9 <= mesh_dims[0] <= 1.5 and 0.5 <= mesh_dims[1] <= 1.1 and 0.6 <= mesh_dims[2] <= 1.2:
         item.setdefault("support_surface_kind", "workbench_body")
@@ -1275,7 +1291,10 @@ def _populate_support_surface_fields(item: Json, category: str, support_defaults
     if xyz is None and dims is not None:
         xyz = [0.0, 0.0, 0.0]
     if xyz is not None and dims is not None:
-        top_z = xyz[2] + abs(dims[2]) / 2.0
+        # STL workbench meshes may use a floor/local-corner origin rather than
+        # a centered origin.  Use the actual mesh max-Z when available so
+        # support-surface diagnostics match the rendered browser mesh top.
+        top_z = xyz[2] + (float(mesh_bounds["max"][2]) if mesh_bounds else abs(dims[2]) / 2.0)
         item.setdefault("top_surface_z_m", top_z)
         item.setdefault("support_surface_height_m", top_z)
     for key in ("top_surface_z_m", "support_surface_height_m", "expected_support_footprint_m"):
