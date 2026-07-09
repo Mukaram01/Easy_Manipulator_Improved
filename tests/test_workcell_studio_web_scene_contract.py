@@ -446,6 +446,32 @@ def _assert_browser_safe_staged_mesh(item: dict) -> None:
     assert item.get("mesh_resolve_warning") in (None, "")
 
 
+
+def test_ur5_2f_table_mesh_contract_keeps_mesh_backing_and_uniform_scale(tmp_path):
+    payload = _ensure_ur5_2f_web_scene_fresh(tmp_path / "out" / "ur5_2f_test.table_mesh.web_scene.json")
+
+    tables = _items_with_original_mesh(payload, "assets", "workbench_description/meshes/visual/table.stl")
+    assert tables
+    for table in tables:
+        _assert_pose_is_finite(table)
+        _assert_browser_safe_staged_mesh(table)
+        scale = _finite_vector(table.get("scale") or table.get("mesh_scale"), length=3, label=f"{table.get('id')}.scale")
+        assert table.get("primitive_geometry_type") in (None, "mesh")
+        assert table.get("mesh_uri"), f"{table.get('id')} must remain mesh-backed"
+        assert table.get("mesh_staging_status") == "staged"
+        assert table.get("mesh_load_required") is True
+        assert "workbench_description/meshes/visual/table.stl" in str(table.get("original_mesh_uri"))
+        assert table.get("fallback_reason") in (None, "")
+        assert scale[0] == scale[1] == scale[2], "table/workbench mesh scale must remain uniform"
+        assert scale == [0.001, 0.001, 0.001]
+        assert all(0.0001 <= value <= 10.0 for value in scale)
+        assert table.get("expected_dimensions_m") != scale
+        if "expected_dimensions_m" in table:
+            expected = _finite_vector(table["expected_dimensions_m"], length=3, label=f"{table.get('id')}.expected_dimensions_m")
+            assert len(set(round(v, 9) for v in expected)) > 1, "fixture should catch per-axis fitting attempts"
+            assert scale != expected, "expected_dimensions_m must not be copied into render scale"
+
+
 def test_ur5_2f_web_scene_export_transform_parity_for_product_meshes(tmp_path):
     payload = _ensure_ur5_2f_web_scene_fresh(tmp_path / "out" / "ur5_2f_test.parity.web_scene.json")
 
