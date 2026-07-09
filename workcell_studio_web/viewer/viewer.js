@@ -340,6 +340,18 @@ function poseBlockOf(source, fallback = {}) {
   const rpy = pose.rpy || pose.rotation_rpy || (Array.isArray(pose) ? pose.slice(3, 6) : fallback.rpy || [0, 0, 0]);
   return { xyz: vector3(xyz), rpy: vector3(rpy) };
 }
+function hasFinitePoseBlock(source) {
+  if (!source || typeof source !== 'object') return false;
+  const pose = poseBlockOf(source);
+  return finiteVector(pose.xyz) && finiteVector(pose.rpy);
+}
+function bakedVisibleWorldPoseSource(item) {
+  return item?.baked_world_visual_pose || item?.expected_visual_pose || item?.final_transform || null;
+}
+function usesBakedVisibleWorldPose(item) {
+  return item?.workcell_web_render_pose_mode === 'baked_visible_world_pose'
+    && hasFinitePoseBlock(bakedVisibleWorldPoseSource(item));
+}
 function generatedUrdfFramePoseSource(item) {
   if (item?.frame_world_pose) return item.frame_world_pose;
   if (item?.link_world_pose) return item.link_world_pose;
@@ -353,12 +365,17 @@ function visualOriginOf(item) {
   return poseBlockOf(item?.visual_origin || item?.visual_local_transform || {});
 }
 function canonicalFinalPose(item) {
-  if (isGeneratedUrdfItem(item)) return generatedUrdfFramePoseSource(item);
+  if (isGeneratedUrdfItem(item)) {
+    if (usesBakedVisibleWorldPose(item)) {
+      return item.baked_world_visual_pose || item.expected_visual_pose || item.final_transform || item.world_from_visual || {};
+    }
+    return generatedUrdfFramePoseSource(item);
+  }
   return item.final_transform || item.world_from_visual || item.baked_world_visual_pose || item.pose || item.world_pose || {};
 }
 function poseOf(item) {
-  if (isGeneratedUrdfItem(item)) return framePoseOf(item);
   const pose = canonicalFinalPose(item);
+  if (isGeneratedUrdfItem(item)) return poseBlockOf(pose);
   const xyz = item.final_transform || item.world_from_visual || item.baked_world_visual_pose
     ? (pose.xyz || pose.position || pose.translation || (Array.isArray(pose) ? pose.slice(0, 3) : [0, 0, 0]))
     : (item.pose_xyz || pose.xyz || pose.position || pose.translation || (Array.isArray(pose) ? pose.slice(0, 3) : [0, 0, 0]));
@@ -466,6 +483,11 @@ function rawPoseDiagnostics(item) {
     pose: item?.pose,
     world_pose: item?.world_pose,
     baked_world_visual_pose: item?.baked_world_visual_pose,
+    expected_visual_pose: item?.expected_visual_pose,
+    final_transform: item?.final_transform,
+    world_from_visual: item?.world_from_visual,
+    frame_world_pose: item?.frame_world_pose,
+    link_world_pose: item?.link_world_pose,
     visual_origin: item?.visual_origin,
   };
 }
@@ -976,7 +998,9 @@ function makeMeshVisualRoot(item, meshObject) {
 function applyMeshLocalTransform(meshObject, item) {
   const transform = meshLocalTransformOf(item);
   const generatedUrdf = isGeneratedUrdfItem(item);
-  const visualOrigin = generatedUrdf ? visualOriginOf(item) : transform.pose;
+  const visualOrigin = generatedUrdf
+    ? (usesBakedVisibleWorldPose(item) ? poseBlockOf({ xyz: [0, 0, 0], rpy: [0, 0, 0] }) : visualOriginOf(item))
+    : transform.pose;
   meshObject.position.copy(visualOrigin.xyz);
   meshObject.rotation.set(visualOrigin.rpy.x, visualOrigin.rpy.y, visualOrigin.rpy.z, 'XYZ');
   if (generatedUrdf) meshObject.scale.set(1, 1, 1);
