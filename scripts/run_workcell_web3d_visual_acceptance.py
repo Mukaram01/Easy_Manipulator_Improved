@@ -267,22 +267,63 @@ def _diagnostic_vector(value: Any) -> tuple[float, float, float] | None:
     return vector
 
 
-def _diagnostic_positions(diagnostic: Mapping[str, Any]) -> list[tuple[float, float, float]]:
-    positions: list[tuple[float, float, float]] = []
-    for key in (
-        "loaded_mesh_bounding_box_center",
-        "loadedMeshBoundingBoxCenter",
-        "visual_wrapper_world_position",
-        "visualWrapperWorldPosition",
-    ):
+def _diagnostic_position(diagnostic: Mapping[str, Any], *keys: str) -> tuple[float, float, float] | None:
+    for key in keys:
         vector = _diagnostic_vector(diagnostic.get(key))
         if vector is not None:
-            positions.append(vector)
-    return positions
+            return vector
+    return None
+
+
+def _pose_xyz(value: Any) -> tuple[float, float, float] | None:
+    if isinstance(value, Mapping):
+        for key in ("xyz", "position", "translation"):
+            vector = _diagnostic_vector(value.get(key))
+            if vector is not None:
+                return vector
+    return _diagnostic_vector(value)
+
+
+def _expected_rendered_wrapper_center(diagnostic: Mapping[str, Any]) -> tuple[float, float, float] | None:
+    mode = str(diagnostic.get("workcell_web_render_pose_mode") or diagnostic.get("workcellWebRenderPoseMode") or "").strip()
+    if mode != "baked_visible_world_pose":
+        return None
+    for key in ("baked_world_visual_pose", "bakedWorldVisualPose", "expected_visual_pose", "expectedVisualPose", "final_transform", "finalTransform", "world_from_visual", "worldFromVisual"):
+        vector = _pose_xyz(diagnostic.get(key))
+        if vector is not None:
+            return vector
+    return None
 
 
 def _euclidean_distance(a: tuple[float, float, float], b: tuple[float, float, float]) -> float:
     return sum((left - right) ** 2 for left, right in zip(a, b)) ** 0.5
+
+
+def _mesh_backing_errors(status: Mapping[str, Any]) -> list[str]:
+    diagnostics = _rendered_mesh_diagnostics_from_status(status)
+    table_seen = False
+    camera_seen = False
+    errors: list[str] = []
+    for diagnostic in diagnostics:
+        if not isinstance(diagnostic, Mapping):
+            continue
+        text = _diagnostic_text(diagnostic)
+        category = str(diagnostic.get("category") or "").lower()
+        if category == "table" or any(token in text for token in ("table", "workbench", "work-bench", "bench")):
+            table_seen = True
+            if _diagnostic_status(diagnostic) != "mesh_loaded" or not _diagnostic_bool(diagnostic, "mesh_loaded", "meshLoaded"):
+                name = _diagnostic_link_name(diagnostic) or str(diagnostic.get("object_id") or diagnostic.get("id") or "table/workbench")
+                errors.append(f"browser viewer table/workbench {name} must remain mesh-backed; got render_status={_diagnostic_status(diagnostic)!r}")
+        if category == "camera" or any(token in text for token in ("camera", "realsense", "sensor")):
+            camera_seen = True
+            if _diagnostic_status(diagnostic) != "mesh_loaded" or not _diagnostic_bool(diagnostic, "mesh_loaded", "meshLoaded"):
+                name = _diagnostic_link_name(diagnostic) or str(diagnostic.get("object_id") or diagnostic.get("id") or "camera")
+                errors.append(f"browser viewer camera/Realsense {name} must remain mesh-backed; got render_status={_diagnostic_status(diagnostic)!r}")
+    if not table_seen:
+        errors.append("browser viewer table/workbench mesh-backed diagnostic is required")
+    if not camera_seen:
+        errors.append("browser viewer camera/Realsense mesh-backed diagnostic is required")
+    return errors
 
 
 def _rendered_mesh_adjacency_errors(status: Mapping[str, Any]) -> list[str]:
@@ -307,14 +348,31 @@ def _rendered_mesh_adjacency_errors(status: Mapping[str, Any]) -> list[str]:
             missing = [link for link, diag in ((left, left_diag), (right, right_diag)) if diag is None]
             errors.append(f"browser viewer rendered mesh adjacency {pair} missing required link diagnostics: {', '.join(missing)}")
             continue
-        left_positions = _diagnostic_positions(left_diag)
-        right_positions = _diagnostic_positions(right_diag)
-        if not left_positions or not right_positions:
-            errors.append(f"browser viewer rendered mesh adjacency {pair} missing rendered bounding-box center or wrapper position diagnostics")
-            continue
-        distance = min(_euclidean_distance(a, b) for a in left_positions for b in right_positions)
-        if distance > max_distance_m:
-            errors.append(f"browser viewer rendered mesh adjacency {pair} expected <= {max_distance_m:.3f} m, got {distance:.3f} m")
+        for label, keys in (
+            ("visual wrapper", ("visual_wrapper_world_position", "visualWrapperWorldPosition")),
+            ("loaded mesh bounds center", ("loaded_mesh_bounding_box_center", "loadedMeshBoundingBoxCenter", "bounding_box_center", "boundingBoxCenter")),
+        ):
+            left_position = _diagnostic_position(left_diag, *keys)
+            right_position = _diagnostic_position(right_diag, *keys)
+            if left_position is None or right_position is None:
+                errors.append(f"browser viewer rendered mesh adjacency {pair} missing {label} diagnostics")
+                continue
+            distance = _euclidean_distance(left_position, right_position)
+            if distance > max_distance_m:
+                errors.append(f"browser viewer rendered mesh adjacency {pair} {label} expected <= {max_distance_m:.3f} m, got {distance:.3f} m")
+
+        for link_name, diagnostic in ((left, left_diag), (right, right_diag)):
+            expected = _expected_rendered_wrapper_center(diagnostic)
+            actual = _diagnostic_position(diagnostic, "visual_wrapper_world_position", "visualWrapperWorldPosition")
+            if expected is None or actual is None:
+                continue
+            error = _euclidean_distance(expected, actual)
+            if error > 0.005:
+                errors.append(
+                    f"browser viewer rendered mesh {link_name} baked_visible_world_pose wrapper center expected "
+                    f"({expected[0]:.3f}, {expected[1]:.3f}, {expected[2]:.3f}), got "
+                    f"({actual[0]:.3f}, {actual[1]:.3f}, {actual[2]:.3f}); visual origin may have been applied twice"
+                )
     return errors
 
 
@@ -337,6 +395,7 @@ def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
         if not (0.0 <= distance <= max_distance_m):
             errors.append(f"browser viewer resolved distance {pair} expected <= {max_distance_m:.3f} m, got {raw!r}")
     errors.extend(_rendered_mesh_adjacency_errors(status))
+    errors.extend(_mesh_backing_errors(status))
     errors.extend(_table_horizontal_errors(status))
     errors.extend(_required_product_fallback_errors(status))
     errors.extend(_table_mesh_contract_errors(status))
