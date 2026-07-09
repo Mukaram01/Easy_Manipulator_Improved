@@ -317,7 +317,9 @@ function poseOf(item) {
   return { xyz: vector3(xyz), rpy: vector3(rpy) };
 }
 function scaleOf(item) {
-  const scale = isGeneratedUrdfItem(item) ? (item.scale || [1, 1, 1]) : (item.scale || item.mesh_scale || [1, 1, 1]);
+  // Generated URDF item roots are link/frame nodes. URDF mesh scale is
+  // applied only to the loaded mesh/local wrapper, never to the link root.
+  const scale = isGeneratedUrdfItem(item) ? [1, 1, 1] : (item.scale || item.mesh_scale || [1, 1, 1]);
   return vector3(scale, [1, 1, 1]);
 }
 function transformOf(item) {
@@ -349,7 +351,7 @@ function meshLocalTransformOf(item) {
     reasons.push('mesh_local_transform must be an object');
   }
   const transform = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
-  const scaleSource = transform.scale || item?.mesh_scale || [1, 1, 1];
+  const scaleSource = transform.scale || item?.mesh_scale || item?.scale || [1, 1, 1];
   return {
     pose: {
       xyz: meshLocalVector(transform.xyz || transform.origin || transform.position, [0, 0, 0], 'mesh_local_transform.xyz', reasons),

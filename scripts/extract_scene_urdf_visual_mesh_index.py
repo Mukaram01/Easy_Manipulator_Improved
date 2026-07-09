@@ -1378,16 +1378,23 @@ def append_static_ur5_mesh_visuals(items, package_map, authoritative_links=None)
             'source_layer': 'locked_generated_urdf_visual',
             'active_visual_source': 'ur5_fk_mesh_preview',
             'geometry_type': 'mesh',
-            'pose': copy.deepcopy(world_visual_pose),
+            'pose': copy.deepcopy(link_world_pose),
             'chain_pose': copy.deepcopy(link_world_pose),
-            'world_pose': copy.deepcopy(world_visual_pose),
+            'world_pose': copy.deepcopy(link_world_pose),
+            'frame_world_pose': copy.deepcopy(link_world_pose),
+            'final_transform': copy.deepcopy(link_world_pose),
+            'world_from_visual': copy.deepcopy(link_world_pose),
             'link_world_pose': copy.deepcopy(link_world_pose),
+            'primary_pose_frame': 'link_world_pose',
+            'primary_pose_source': 'ur5_fk_fallback_link_world',
             'expected_visual_pose': copy.deepcopy(world_visual_pose),
             'baked_world_visual_pose': copy.deepcopy(world_visual_pose),
             'baked_world_visual_matrix': world_visual_tf,
             'baked_world_visual_quaternion': quaternion_from_tf(world_visual_tf),
             'baked_world_visual_transform_source': 'ur5_fk_fallback_link_world_times_visual_origin',
-            'visual_origin_applied_to_pose': True,
+            'baked_world_visual_fields_are_diagnostics': True,
+            'visual_origin_applied_to_pose': False,
+            'visual_origin_application': 'viewer_applies_visual_origin_to_mesh_wrapper',
             'visual_origin': copy.deepcopy(visual_origin),
             'link_transform_status': 'ur5_fk_fallback_resolved',
             'transform_status': 'ur5_fk_fallback_resolved',
@@ -1721,10 +1728,11 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
             baked_world_visual_pose=xyz_rpy_from_tf(baked_world_visual_matrix)
             baked_world_visual_quaternion=quaternion_from_tf(baked_world_visual_matrix)
             expected_visual_pose=baked_world_visual_pose
-            # The generated pose is already the full visual world pose:
-            # world/base -> joint origin -> joint axis rotation -> child link
-            # -> visual origin. Scene3D must not apply visual_origin again.
-            pose=baked_world_visual_pose
+            # Primary viewer placement is the link/frame world pose.  The
+            # visual origin remains a local URDF <visual><origin> transform
+            # applied by the viewer's mesh wrapper; baked link*visual fields
+            # below are diagnostics only.
+            pose=link_world_pose
             material_node=next((c for c in list(visual) if tag_name(c)=='material'),None)
             material={'name':'','color':None}
             if material_node is not None:
@@ -1744,7 +1752,7 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
             joint_value_source=(joint_meta or {}).get('value_source', 'zero_default')
             parent_link=(joint_meta or {}).get('parent','')
             link_chain=link_chain_to_root(lname)
-            common={'id':item_id,'source':'urdf_flattened','link':lname,'object_name':lname,'visual':vname,'visual_name':vname,'visual_index':idx,'source_row_index':idx,'parent_link':parent_link,'immediate_parent_link':parent_link,'root_link':root_link or '','link_chain':link_chain,'joint_parent_link':parent_link,'parent_joint':joint_name,'parent_joint_name':joint_name,'parent_joint_type':joint_type,'parent_joint_origin':joint_origin,'parent_joint_axis':joint_axis,'parent_joint_value':joint_value,'parent_joint_value_source':joint_value_source,'joint_type':joint_type,'joint_origin':joint_origin,'pose':pose,'chain_pose':pose,'world_pose':pose,'final_transform':pose,'world_from_visual':pose,'link_world_pose':link_world_pose,'expected_visual_pose':expected_visual_pose,'baked_world_visual_pose':baked_world_visual_pose,'baked_world_visual_matrix':baked_world_visual_matrix,'baked_world_visual_quaternion':baked_world_visual_quaternion,'baked_world_visual_transform_source':'urdf_fk_link_world_times_visual_origin','transform_source':'urdf_fk_link_world_times_visual_origin','visual_origin_applied_to_pose':True,'visual_origin':{'xyz':vxyz,'rpy':vrpy},'joint_name':joint_name,'joint_value':joint_value,'applied_joint_value':joint_value,'joint_axis':joint_axis,'joint_value_source':joint_value_source,'applied_joint_value_source':joint_value_source,'material':material,'color':material.get('color'),'link_transform_status':link_status,'transform_status':link_status,'transform_chain':chain,'render_expected':True}
+            common={'id':item_id,'source':'urdf_flattened','link':lname,'object_name':lname,'visual':vname,'visual_name':vname,'visual_index':idx,'source_row_index':idx,'parent_link':parent_link,'immediate_parent_link':parent_link,'root_link':root_link or '','link_chain':link_chain,'joint_parent_link':parent_link,'parent_joint':joint_name,'parent_joint_name':joint_name,'parent_joint_type':joint_type,'parent_joint_origin':joint_origin,'parent_joint_axis':joint_axis,'parent_joint_value':joint_value,'parent_joint_value_source':joint_value_source,'joint_type':joint_type,'joint_origin':joint_origin,'pose':pose,'chain_pose':pose,'world_pose':pose,'frame_world_pose':copy.deepcopy(link_world_pose),'final_transform':pose,'world_from_visual':pose,'link_world_pose':link_world_pose,'primary_pose_frame':'link_world_pose','primary_pose_source':'urdf_fk_link_world','expected_visual_pose':expected_visual_pose,'baked_world_visual_pose':baked_world_visual_pose,'baked_world_visual_matrix':baked_world_visual_matrix,'baked_world_visual_quaternion':baked_world_visual_quaternion,'baked_world_visual_transform_source':'urdf_fk_link_world_times_visual_origin','baked_world_visual_fields_are_diagnostics':True,'transform_source':'urdf_fk_link_world','visual_origin_applied_to_pose':False,'visual_origin_application':'viewer_applies_visual_origin_to_mesh_wrapper','visual_origin':{'xyz':vxyz,'rpy':vrpy},'joint_name':joint_name,'joint_value':joint_value,'applied_joint_value':joint_value,'joint_axis':joint_axis,'joint_value_source':joint_value_source,'applied_joint_value_source':joint_value_source,'material':material,'color':material.get('color'),'link_transform_status':link_status,'transform_status':link_status,'transform_chain':chain,'render_expected':True}
             mesh=next((c for c in list(geom) if tag_name(c)=='mesh'),None)
             box=next((c for c in list(geom) if tag_name(c)=='box'),None)
             cyl=next((c for c in list(geom) if tag_name(c)=='cylinder'),None)

@@ -518,3 +518,42 @@ def test_ur5_2f_web_scene_export_transform_parity_for_product_meshes(tmp_path):
         if warning.get("code") in {"mesh_primitive_fallback", "mesh_stage_failed"}
     ]
     assert not [warning for warning in fallback_warnings if warning.get("source") in required_ids]
+
+
+def test_flattened_urdf_mesh_item_uses_link_pose_as_primary_viewer_pose(tmp_path):
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import extract_scene_urdf_visual_mesh_index as extractor
+
+    mesh_path = tmp_path / "visual.stl"
+    mesh_path.write_text("solid visual\nendsolid visual\n", encoding="utf-8")
+    xml = f"""
+    <robot name="pose_contract">
+      <link name="base" />
+      <joint name="base_to_child" type="fixed">
+        <parent link="base" />
+        <child link="child" />
+        <origin xyz="1 2 3" rpy="0.1 0.2 0.3" />
+      </joint>
+      <link name="child">
+        <visual name="offset_visual">
+          <origin xyz="0.4 0.5 0.6" rpy="0.01 0.02 0.03" />
+          <geometry><mesh filename="{mesh_path}" scale="2 3 4" /></geometry>
+        </visual>
+      </link>
+    </robot>
+    """
+
+    items = extractor.extract_from_urdf(xml, package_map={})
+    item = next(row for row in items if row.get("geometry_type") == "mesh")
+
+    assert item["link_world_pose"]["xyz"] == [1.0, 2.0, 3.0]
+    assert item["pose"] == item["link_world_pose"]
+    assert item["world_pose"] == item["link_world_pose"]
+    assert item["final_transform"] == item["link_world_pose"]
+    assert item["world_from_visual"] == item["link_world_pose"]
+    assert item["visual_origin"] == {"xyz": [0.4, 0.5, 0.6], "rpy": [0.01, 0.02, 0.03]}
+    assert item["visual_origin_applied_to_pose"] is False
+    assert item["primary_pose_frame"] == "link_world_pose"
+    assert item["baked_world_visual_fields_are_diagnostics"] is True
+    assert item["baked_world_visual_pose"] != item["link_world_pose"]
+    assert item["expected_visual_pose"] == item["baked_world_visual_pose"]
