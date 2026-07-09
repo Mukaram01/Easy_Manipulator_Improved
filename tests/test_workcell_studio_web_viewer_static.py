@@ -840,3 +840,57 @@ def test_viewer_support_surface_ui_logic_and_semantic_warnings():
         "maybeWarnSupportSurfaceSemantics(item, dims)",
     ]:
         assert token in js
+
+
+def test_viewer_builds_assembled_urdf_hierarchy_instead_of_flattened_baked_roots():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    for token in [
+        "function buildRobotAssemblies(items)",
+        "assembly_group",
+        "robot_instance_id",
+        "robot_render_mode: 'assembled_urdf_hierarchy'",
+        "nodes.get(parent).add(node)",
+        "applyPoseBlockToObject(node, jointOriginOfItem(representative))",
+        "state.three.scene.add(root)",
+        "state.assemblyRoots.push(root)",
+    ]:
+        assert token in js
+    body = js.split("function buildRobotAssemblies(items)", 1)[1].split("function createLabelElement", 1)[0]
+    assert body.index("nodes.get(parent).add(node)") < body.index("tryLoadMesh(item, rendered, fallback)")
+    assert "generatedUrdfFramePoseSource(representative)" in body
+
+
+def test_viewer_visual_origin_is_local_child_in_assembled_hierarchy_not_baked_twice():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    assert "function usesAssembledUrdfHierarchy(item)" in js
+    uses_baked = js.split("function usesBakedVisibleWorldPose(item)", 1)[1].split("function effectiveWorkcellWebRenderPoseMode", 1)[0]
+    assert "if (usesAssembledUrdfHierarchy(item)) return false;" in uses_baked
+    mesh_local = js.split("function applyMeshLocalTransform(meshObject, item)", 1)[1].split("function applyLoadedMeshScaleHandling", 1)[0]
+    assert "? (usesBakedVisibleWorldPose(item) ? poseBlockOf({ xyz: [0, 0, 0], rpy: [0, 0, 0] }) : visualOriginOf(item))" in mesh_local
+    assert "meshObject.position.copy(visualOrigin.xyz)" in mesh_local
+
+
+def test_viewer_includes_tool0_meshless_frame_in_assembly_items():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    assert "'frames'" in js
+    body = js.split("function collectItems(sceneJson)", 1)[1].split("function frameNameOf", 1)[0]
+    assert "'frames'" in body
+    assembly = js.split("function buildRobotAssemblies(items)", 1)[1].split("function createLabelElement", 1)[0]
+    assert "'wrist_3_link','tool0'" in assembly
+    assert "'tool0','gripper_base_link'" in assembly
+    assert "robot_hierarchy_missing_links" in assembly
+
+
+def test_viewer_reports_hierarchy_acceptance_diagnostics():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    for token in [
+        "robot_hierarchy_links",
+        "robot_hierarchy_missing_links",
+        "robot_hierarchy_missing_parents",
+        "robot_hierarchy_mesh_count",
+        "assembled_link_world_positions",
+        "assembled_link_adjacency_distances_m",
+        "base_link_inertia','shoulder_link",
+        "tool0','gripper_base_link",
+    ]:
+        assert token in js

@@ -12,7 +12,7 @@ const LOCKED_EDIT_REASON = 'Locked/generated preview item; edit source layout/en
 const MIN_FRAME_RADIUS = 1.2;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
-const state = { sceneJson: null, sourceWebSceneFile: '', frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null };
+const state = { sceneJson: null, sourceWebSceneFile: '', frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null };
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
 const STAGED_MESH_ROOTS = [
   'build/workcell_studio_web_scene/assets/',
@@ -318,6 +318,16 @@ function updateViewerStatus() {
     frame_diagnostics: frameDiagnostics,
     renderedObjectStatuses,
     rendered_object_statuses: renderedObjectStatuses,
+    robot_render_mode: state.robotAssemblyDiagnostics?.length ? 'assembled_urdf_hierarchy' : '',
+    robotRenderMode: state.robotAssemblyDiagnostics?.length ? 'assembled_urdf_hierarchy' : '',
+    robot_hierarchy_diagnostics: state.robotAssemblyDiagnostics || [],
+    robotHierarchyDiagnostics: state.robotAssemblyDiagnostics || [],
+    robot_hierarchy_links: Array.from(new Set((state.robotAssemblyDiagnostics || []).flatMap(d => d.robot_hierarchy_links || []))),
+    robotHierarchyLinks: Array.from(new Set((state.robotAssemblyDiagnostics || []).flatMap(d => d.robot_hierarchy_links || []))),
+    robot_hierarchy_missing_links: Array.from(new Set((state.robotAssemblyDiagnostics || []).flatMap(d => d.robot_hierarchy_missing_links || []))),
+    robot_hierarchy_missing_parents: Array.from(new Set((state.robotAssemblyDiagnostics || []).flatMap(d => d.robot_hierarchy_missing_parents || []))),
+    robot_hierarchy_mesh_count: (state.robotAssemblyDiagnostics || []).reduce((total, d) => total + Number(d.robot_hierarchy_mesh_count || 0), 0),
+    robotHierarchyMeshCount: (state.robotAssemblyDiagnostics || []).reduce((total, d) => total + Number(d.robot_hierarchy_mesh_count || 0), 0),
   };
   return window.__WORKCELL_VIEWER_STATUS__;
 }
@@ -391,13 +401,23 @@ function isGeneratedUrdfMeshVisualItem(item) {
     /\b(mesh|visual|link|robot|tool|gripper|camera|table|workbench)\b/.test(identity)
   );
 }
+function itemAssemblyGroup(item) { return String(item?.assembly_group || item?.robot_instance_id || '').trim(); }
+function isAssemblyCandidateItem(item) {
+  if (!isGeneratedUrdfItem(item)) return false;
+  if (itemAssemblyGroup(item)) return true;
+  const link = String(item?.link_name || item?.link || item?.frame || item?.object_name || '');
+  const parent = String(item?.parent_link || item?.joint_parent_link || item?.immediate_parent_link || '');
+  return Boolean(link && (parent || link === 'base_link' || link === 'base_link_inertia') && (isGeneratedRobotItem(item) || isGeneratedToolOrGripperItem(item)));
+}
+function usesAssembledUrdfHierarchy(item) { return Boolean(item?.robot_render_mode === 'assembled_urdf_hierarchy' || item?.workcell_web_render_pose_mode === 'assembled_urdf_hierarchy' || itemAssemblyGroup(item)); }
 function usesBakedVisibleWorldPose(item) {
+  if (usesAssembledUrdfHierarchy(item)) return false;
   if (!hasFinitePoseBlock(bakedVisibleWorldPoseSource(item))) return false;
   if (item?.workcell_web_render_pose_mode === 'baked_visible_world_pose') return true;
   return isGeneratedUrdfMeshVisualItem(item);
 }
 function effectiveWorkcellWebRenderPoseMode(item) {
-  return usesBakedVisibleWorldPose(item) ? 'baked_visible_world_pose' : (item?.workcell_web_render_pose_mode || '');
+  return usesAssembledUrdfHierarchy(item) ? 'assembled_urdf_hierarchy' : (usesBakedVisibleWorldPose(item) ? 'baked_visible_world_pose' : (item?.workcell_web_render_pose_mode || ''));
 }
 function generatedUrdfFramePoseSource(item) {
   if (item?.frame_world_pose) return item.frame_world_pose;
@@ -1223,7 +1243,7 @@ async function tryLoadMesh(item, rendered, fallback) {
   }
 }
 function collectItems(sceneJson) {
-  const buckets = ['robots', 'tools', 'assets', 'sensors', 'zones', 'items', 'objects'];
+  const buckets = ['robots', 'tools', 'assets', 'sensors', 'zones', 'items', 'objects', 'frames'];
   const byId = new Map();
   for (const bucket of buckets) for (const item of asArray(sceneJson[bucket])) if (item && typeof item === 'object') byId.set(item.id || `${bucket}_${byId.size}`, { ...item, id: item.id || `${bucket}_${byId.size}` });
   return Array.from(byId.values());
@@ -1881,9 +1901,12 @@ function clearLabels() {
 function clearSceneObjects() {
   const scene = state.three.scene;
   if (!scene) return;
+  for (const root of state.assemblyRoots || []) scene.remove(root);
   for (const rendered of state.objects) scene.remove(rendered.object3d);
   clearLabels();
   state.objects = [];
+  state.assemblyRoots = [];
+  state.robotAssemblyDiagnostics = [];
   state.resolvedFramePoses.clear();
   state.lastFrameBounds = null;
   state._sceneBoundsExceededWarned = false;
@@ -1901,7 +1924,10 @@ function renderScene(items) {
   detachTransformGizmo();
   updateDirtyState();
   const scene = state.three.scene;
+  const assemblyBuild = buildRobotAssemblies(items);
+  state.robotAssemblyDiagnostics = assemblyBuild.assemblies;
   for (const item of items) {
+    if (assemblyBuild.handled.has(item)) continue;
     const object3d = new THREE.Group();
     object3d.name = isGeneratedUrdfItem(item)
       ? `${item.id || itemLabel(item)}_link_frame_root`
@@ -1932,6 +1958,122 @@ function renderScene(items) {
   const bounds = computeFitBounds();
   if (bounds) frameScene(bounds);
   renderSceneSummary();
+}
+
+
+function linkNameOfItem(item) { return String(item?.link_name || item?.link || item?.frame || item?.object_name || item?.id || '').trim(); }
+function parentLinkOfItem(item) { return String(item?.parent_link || item?.joint_parent_link || item?.immediate_parent_link || '').trim(); }
+function jointOriginOfItem(item) { return item?.parent_from_child || item?.joint_origin || item?.parent_joint_origin || { xyz: [0, 0, 0], rpy: [0, 0, 0] }; }
+function applyPoseBlockToObject(object, poseSource) {
+  const pose = poseBlockOf(poseSource || {});
+  object.position.copy(pose.xyz);
+  object.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, 'XYZ');
+  object.scale.set(1, 1, 1);
+}
+function assemblyGroupKey(item) {
+  if (itemAssemblyGroup(item)) return itemAssemblyGroup(item);
+  const scene = sceneId() || sceneDisplayName() || 'scene';
+  const tool = isGeneratedToolOrGripperItem(item) ? 'tool' : 'robot';
+  return `${scene}_${tool}_generated_urdf`;
+}
+function createAssemblyLinkNode(name) {
+  const node = new THREE.Group();
+  node.name = `${name}_assembled_link_node`;
+  node.up.copy(THREE.Object3D.DEFAULT_UP);
+  node.userData.assembled_urdf_hierarchy = true;
+  node.userData.link_name = name;
+  return node;
+}
+function buildRobotAssemblies(items) {
+  const candidates = items.filter(isAssemblyCandidateItem);
+  if (!candidates.length) return { handled: new Set(), assemblies: [] };
+  const groups = new Map();
+  for (const item of candidates) {
+    const key = assemblyGroupKey(item);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+  const handled = new Set();
+  const assemblies = [];
+  for (const [groupKey, groupItems] of groups.entries()) {
+    const root = new THREE.Group();
+    root.name = `${groupKey}_RobotRoot`;
+    root.up.copy(THREE.Object3D.DEFAULT_UP);
+    root.userData.robot_render_mode = 'assembled_urdf_hierarchy';
+    root.userData.assembly_group = groupKey;
+    const byLink = new Map();
+    for (const item of groupItems) {
+      const link = linkNameOfItem(item);
+      if (!link) continue;
+      if (!byLink.has(link)) byLink.set(link, []);
+      byLink.get(link).push(item);
+    }
+    for (const name of Array.from(byLink.keys())) {
+      const parent = parentLinkOfItem(byLink.get(name)[0]);
+      if (parent && !byLink.has(parent)) byLink.set(parent, []);
+    }
+    const nodes = new Map(Array.from(byLink.keys()).map(name => [name, createAssemblyLinkNode(name)]));
+    const missingParents = [];
+    for (const [link, linkItems] of byLink.entries()) {
+      const node = nodes.get(link);
+      const representative = linkItems[0] || { link_name: link };
+      const parent = parentLinkOfItem(representative);
+      if (parent && nodes.has(parent)) {
+        applyPoseBlockToObject(node, jointOriginOfItem(representative));
+        nodes.get(parent).add(node);
+      } else {
+        if (parent) missingParents.push(`${parent} -> ${link}`);
+        applyPoseBlockToObject(node, generatedUrdfFramePoseSource(representative));
+        root.add(node);
+      }
+    }
+    for (const item of groupItems) {
+      const link = linkNameOfItem(item);
+      const node = nodes.get(link);
+      if (!node) continue;
+      item.robot_render_mode = 'assembled_urdf_hierarchy';
+      item.workcell_web_render_pose_mode = 'assembled_urdf_hierarchy';
+      item.baked_world_visual_pose_diagnostic_only = Boolean(item.baked_world_visual_pose || item.expected_visual_pose);
+      const primitive = primitiveOf(item);
+      const fallback = isSensor(item) ? makeSensorMarker(item) : makePrimitiveMesh(item);
+      fallback.name = `${item.id || itemLabel(item)}_fallback`;
+      assignItemUserData(fallback, item);
+      fallback.visible = false;
+      node.add(fallback);
+      assignItemUserData(node, item);
+      const rendered = { item, object3d: node, fallback, labelEl: createLabelElement(item), originalTransform: transformOf(item) };
+      const requiredMesh = itemRequiresMeshBackedVisual(item);
+      setRenderInfo(rendered, requiredMesh ? 'mesh_loading_required' : (primitive ? 'primitive_fallback' : 'box_fallback'), displayMeshUri(item), requiredMesh ? 'required mesh is loading under assembled URDF hierarchy' : 'assembled URDF hierarchy fallback');
+      state.objects.push(rendered);
+      handled.add(item);
+      tryLoadMesh(item, rendered, fallback);
+    }
+    state.three.scene.add(root);
+    state.assemblyRoots.push(root);
+    const requiredLinks = ['base_link_inertia','shoulder_link','upper_arm_link','forearm_link','wrist_1_link','wrist_2_link','wrist_3_link','tool0','gripper_base_link'];
+    root.updateMatrixWorld(true);
+    const linkPositions = {};
+    for (const [name, node] of nodes.entries()) {
+      const pos = new THREE.Vector3();
+      node.getWorldPosition(pos);
+      linkPositions[name] = finiteXyzArrayFromVector(pos);
+    }
+    const adjacencyPairs = [['base_link_inertia','shoulder_link'],['shoulder_link','upper_arm_link'],['upper_arm_link','forearm_link'],['forearm_link','wrist_1_link'],['wrist_1_link','wrist_2_link'],['wrist_2_link','wrist_3_link'],['wrist_3_link','tool0'],['tool0','gripper_base_link']];
+    const adjacency = {};
+    for (const [a, b] of adjacencyPairs) adjacency[`${a} -> ${b}`] = distanceMetersBetweenXyz(linkPositions[a], linkPositions[b]);
+    assemblies.push({
+      assembly_group: groupKey,
+      robot_instance_id: groupItems.find(i => i.robot_instance_id)?.robot_instance_id || groupKey,
+      robot_render_mode: 'assembled_urdf_hierarchy',
+      robot_hierarchy_links: Array.from(nodes.keys()),
+      robot_hierarchy_missing_links: requiredLinks.filter(link => !nodes.has(link)),
+      robot_hierarchy_missing_parents: Array.from(new Set(missingParents)),
+      robot_hierarchy_mesh_count: groupItems.filter(item => displayMeshUri(item)).length,
+      assembled_link_world_positions: linkPositions,
+      assembled_link_adjacency_distances_m: adjacency,
+    });
+  }
+  return { handled, assemblies };
 }
 
 function createLabelElement(item) {
