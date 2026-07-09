@@ -839,6 +839,110 @@ def _apply_web_scene_transform_parity_fallbacks(data: Dict[str, Any], generated:
             if xyz is not None and sum(v * v for v in xyz) < 0.05 and ("camera" in _identity_text(item) or "realsense" in _identity_text(item)):
                 _set_item_pose(item, authored_camera_pose, "web_export_authored_camera_transform_fallback")
 
+
+def _rpy_xyz_matrix(rpy: Sequence[float]) -> List[List[float]]:
+    import math
+    r = float(rpy[0] if len(rpy) > 0 else 0.0)
+    p = float(rpy[1] if len(rpy) > 1 else 0.0)
+    y = float(rpy[2] if len(rpy) > 2 else 0.0)
+    cr, sr = math.cos(r), math.sin(r)
+    cp, sp = math.cos(p), math.sin(p)
+    cy, sy = math.cos(y), math.sin(y)
+    # Match THREE.Euler(..., 'XYZ') composition used by the browser: Rz * Ry * Rx.
+    return [
+        [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+        [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+        [-sp, cp * sr, cp * cr],
+    ]
+
+
+def _matrix_transpose(m: Sequence[Sequence[float]]) -> List[List[float]]:
+    return [[float(m[j][i]) for j in range(3)] for i in range(3)]
+
+
+def _matrix_multiply(a: Sequence[Sequence[float]], b: Sequence[Sequence[float]]) -> List[List[float]]:
+    return [[sum(float(a[i][k]) * float(b[k][j]) for k in range(3)) for j in range(3)] for i in range(3)]
+
+
+def _matrix_vec_multiply(m: Sequence[Sequence[float]], v: Sequence[float]) -> List[float]:
+    return [sum(float(m[i][k]) * float(v[k]) for k in range(3)) for i in range(3)]
+
+
+def _rpy_from_xyz_matrix(m: Sequence[Sequence[float]]) -> List[float]:
+    import math
+    # Inverse of the Rz * Ry * Rx matrix above for THREE Euler order XYZ.
+    sy = -float(m[2][0])
+    if abs(sy) < 0.999999:
+        pitch = math.asin(sy)
+        roll = math.atan2(float(m[2][1]), float(m[2][2]))
+        yaw = math.atan2(float(m[1][0]), float(m[0][0]))
+    else:
+        pitch = math.copysign(math.pi / 2.0, sy)
+        roll = math.atan2(-float(m[1][2]), float(m[1][1]))
+        yaw = 0.0
+    return [roll, pitch, yaw]
+
+
+def _parent_to_child_pose(parent_world_pose: Any, child_world_pose: Any) -> Optional[Json]:
+    parent_xyz = _pose_xyz(parent_world_pose)
+    child_xyz = _pose_xyz(child_world_pose)
+    if parent_xyz is None or child_xyz is None:
+        return None
+    parent_rpy = _as_list(_as_map(parent_world_pose).get("rpy") or [0.0, 0.0, 0.0])
+    child_rpy = _as_list(_as_map(child_world_pose).get("rpy") or [0.0, 0.0, 0.0])
+    try:
+        parent_rot = _rpy_xyz_matrix([float(v) for v in parent_rpy[:3]])
+        child_rot = _rpy_xyz_matrix([float(v) for v in child_rpy[:3]])
+        parent_inv = _matrix_transpose(parent_rot)
+        delta = [child_xyz[i] - parent_xyz[i] for i in range(3)]
+        local_xyz = _matrix_vec_multiply(parent_inv, delta)
+        local_rot = _matrix_multiply(parent_inv, child_rot)
+        local_rpy = _rpy_from_xyz_matrix(local_rot)
+    except Exception:  # noqa: BLE001 - diagnostics should not break export
+        return None
+    return {"xyz": [float(v) for v in local_xyz], "rpy": [float(v) for v in local_rpy]}
+
+
+def _annotate_parent_to_child_poses(generated: Dict[str, List[Json]]) -> None:
+    """Store explicit parent-to-child local poses for browser hierarchy rendering.
+
+    The browser attaches each child link under its parent Object3D, so the local
+    transform must be parent_world^-1 * child_world (parent-to-child), not the
+    ambiguous legacy parent_from_child naming and not a stale raw joint origin.
+    """
+    items = [
+        item
+        for section in GENERATED_OUTPUT_SECTIONS
+        for item in generated.get(section, [])
+        if isinstance(item, dict)
+    ]
+    by_link: Dict[str, Json] = {}
+    for item in items:
+        link = str(item.get("link_name") or item.get("link") or item.get("frame") or item.get("object_name") or "")
+        if link and (link not in by_link or item.get("meshless_frame") or item.get("role") == "transform_anchor"):
+            by_link[link] = item
+    for item in items:
+        link = str(item.get("link_name") or item.get("link") or item.get("frame") or item.get("object_name") or "")
+        parent = str(item.get("parent_link") or item.get("joint_parent_link") or item.get("immediate_parent_link") or "")
+        if not link or not parent or parent not in by_link:
+            continue
+        parent_pose = by_link[parent].get("frame_world_pose") or by_link[parent].get("link_world_pose")
+        child_pose = item.get("frame_world_pose") or item.get("link_world_pose")
+        pose = _parent_to_child_pose(parent_pose, child_pose)
+        if pose is None:
+            continue
+        item["parent_to_child_pose"] = pose
+        item["parent_from_child"] = pose
+        item["joint_origin"] = pose
+        item["parent_joint_origin"] = pose
+        item["parent_to_child_pose_source"] = "web_export_parent_world_inverse_times_child_world"
+        item.setdefault("provenance", {}).update({
+            "parent_to_child_pose": "web_export_parent_world_inverse_times_child_world",
+            "parent_from_child": "web_export_parent_world_inverse_times_child_world",
+            "joint_origin": "web_export_parent_world_inverse_times_child_world",
+            "parent_joint_origin": "web_export_parent_world_inverse_times_child_world",
+        })
+
 def _authored_item(raw: Mapping[str, Any], source: str, index: int, scene_dir: Path) -> Json:
     fields = (
         "id", "type", "role", "category", "display_name", "frame", "pose", "pose_xyz", "pose_rpy", "dimensions",
@@ -1661,6 +1765,7 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
     _supplement_missing_tool_meshes(data, generated)
     _annotate_urdf_assembly_metadata(generated, scene_name)
     _apply_web_scene_transform_parity_fallbacks(data, generated, warnings)
+    _annotate_parent_to_child_poses(generated)
     _suppress_unresolved_placeholder_robot_visuals(generated, warnings)
     authored = _authored_sections(data, scene_dir, warnings)
     top_robots, top_tools, top_sensors = _top_level_entities(data, warnings)
