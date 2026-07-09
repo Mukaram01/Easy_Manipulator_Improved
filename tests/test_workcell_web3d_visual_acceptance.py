@@ -349,7 +349,8 @@ def _valid_robot_hierarchy_fields():
         "gripper_base_link",
     ]
     return {
-        "robot_render_mode": "assembled_urdf_hierarchy",
+        "robot_transform_source": "expanded_urdf_joint_tree",
+        "robot_render_mode": "urdf_fk_visual_world_pose",
         "robot_hierarchy_links": links,
         "robot_hierarchy_missing_links": [],
         "robot_hierarchy_missing_parents": [],
