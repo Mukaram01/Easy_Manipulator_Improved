@@ -51,6 +51,17 @@ GENERATOR_INPUT_RELS = (
     "assets/robots/universal_robot/ur5_moveit_config/config/initial_positions.yaml",
 )
 
+UR5_VISUAL_MESH_URI_TOKEN = "ur_description/meshes/ur5/visual/"
+UR5_REQUIRED_LINKS = {
+    "base_link_inertia",
+    "shoulder_link",
+    "upper_arm_link",
+    "forearm_link",
+    "wrist_1_link",
+    "wrist_2_link",
+    "wrist_3_link",
+}
+
 
 def _is_relative_to(path: Path, root: Path) -> bool:
     try:
@@ -173,6 +184,79 @@ def require_real_xacro_mesh_index(mesh_index: Path) -> None:
     )
 
 
+def _mesh_uri_values(item: dict) -> List[str]:
+    values: List[str] = []
+    for field in ("mesh_uri", "package_uri", "mesh_path", "source_path", "resolved_source_path", "repo_relative_source_path", "asset_relative_source_path"):
+        value = item.get(field)
+        if isinstance(value, str) and value:
+            values.append(value)
+    return values
+
+
+def normalize_ur5_mesh_preview_rows(mesh_index: Path) -> bool:
+    """Mark real-xacro UR5 mesh rows as browser robot preview rows.
+
+    The real URDF extractor can emit correct UR5 mesh rows without the static
+    fallback classification fields.  The web exporter buckets generated rows by
+    role/category before staging assets, so unclassified real-xacro UR5 rows land
+    in generic assets and the browser scene loses the required robot mesh contract.
+    Normalize only resolved UR5 visual mesh rows; do not fabricate geometry.
+    """
+    if not mesh_index.exists():
+        return False
+    try:
+        payload = json.loads(mesh_index.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    raw_items = payload.get("visual_items") or payload.get("items")
+    if not isinstance(raw_items, list):
+        return False
+
+    changed = False
+    normalized_links: set[str] = set()
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        link = str(item.get("link") or item.get("link_name") or item.get("object_name") or "")
+        if link not in UR5_REQUIRED_LINKS:
+            continue
+        if str(item.get("geometry_type") or "").lower() != "mesh":
+            continue
+        if not any(UR5_VISUAL_MESH_URI_TOKEN in value for value in _mesh_uri_values(item)):
+            continue
+
+        desired = {
+            "category": "robot_static_mesh_visual",
+            "role": "robot",
+            "source_layer": "locked_generated_urdf_visual",
+            "active_visual_source": "mesh_preview",
+            "primitive_geometry_type": "mesh",
+            "mesh_available": True,
+            "render_expected": True,
+            "primitive_fallback": False,
+            "fallback_reason": "",
+        }
+        for key, value in desired.items():
+            if item.get(key) != value:
+                item[key] = value
+                changed = True
+        normalized_links.add(link)
+
+    if normalized_links:
+        payload["workcell_web_ur5_mesh_preview_normalized"] = True
+        payload["workcell_web_ur5_mesh_preview_links"] = sorted(normalized_links)
+        changed = True
+    if changed:
+        mesh_index.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        print(
+            "[workcell_web_scene_fresh] normalized UR5 mesh preview rows: "
+            + ",".join(sorted(normalized_links))
+        )
+    return changed
+
+
 def run_checked(command: Sequence[str]) -> None:
     result = subprocess.run(command, cwd=REPO_ROOT, text=True, capture_output=True, check=False)
     if result.returncode != 0:
@@ -241,6 +325,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         require_real_xacro_mesh_index(mesh_index)
         web_stale = True
         web_reason = "mesh index was refreshed"
+
+    if normalize_ur5_mesh_preview_rows(mesh_index):
+        web_stale = True
+        web_reason = "mesh index UR5 preview rows were normalized for web export"
+        if args.stage_assets:
+            assets_stale = True
+            assets_reason = "mesh index UR5 preview rows were normalized for web export"
 
     if args.force or web_stale or assets_stale:
         reasons = []
