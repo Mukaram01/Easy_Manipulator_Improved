@@ -146,7 +146,7 @@ function collectRenderedMeshDiagnostics() {
   for (const rendered of state.objects || []) {
     const item = rendered?.item || {};
     const category = meshContractCategoryOf(item);
-    if (!rendered?.object3d || (!isGeneratedUrdfItem(item) && !['table', 'environment'].includes(category))) continue;
+    if (!rendered?.object3d || (!isGeneratedUrdfItem(item) && !['table', 'environment', 'camera', 'tool', 'robot'].includes(category))) continue;
     if (typeof rendered.object3d.updateMatrixWorld !== 'function') continue;
     if (typeof rendered.object3d.getWorldPosition !== 'function') continue;
     if (typeof rendered.object3d.getWorldQuaternion !== 'function') continue;
@@ -166,10 +166,14 @@ function collectRenderedMeshDiagnostics() {
 
     const boundsSource = rendered.loadedMeshObject || rendered.meshObject || rendered.object3d;
     const bounds = box3DiagnosticsForObject(boundsSource);
+    const itemBounds = box3DiagnosticsForObject(rendered.object3d);
     const worldQuaternion = new THREE.Quaternion();
     rendered.object3d.getWorldQuaternion(worldQuaternion);
     const worldEuler = new THREE.Euler().setFromQuaternion(worldQuaternion, 'XYZ');
     const inferredUpAxis = worldUpDiagnosticsForObject(rendered.object3d);
+    const expectedDimensions = expectedDimensionsOf(item);
+    const meshLocal = meshLocalTransformOf(item);
+    const renderStatus = rendered.renderInfo?.render_status || item.renderInfo?.render_status || item.mesh_status || '';
     diagnostics.push({
       id: item.id || '',
       object_id: item.id || item.object_name || item.name || '',
@@ -179,8 +183,30 @@ function collectRenderedMeshDiagnostics() {
       link_name: item.link_name || item.link || item.object_name || '',
       frame: item.frame || item.frame_id || item.link || item.link_name || '',
       display_name: item.display_name || item.label || item.name || item.object_name || item.link || item.id || '',
-      render_status: rendered.renderInfo?.render_status || item.renderInfo?.render_status || item.mesh_status || '',
+      source_layer: item.source_layer || '',
+      active_visual_source: item.active_visual_source || '',
+      role: item.role || '',
+      status: item.status || '',
+      render_status: renderStatus,
+      renderStatus,
+      mesh_loaded: renderStatus === 'mesh_loaded',
+      meshLoaded: renderStatus === 'mesh_loaded',
+      fallback_visible: Boolean(rendered.fallback?.visible),
+      fallbackVisible: Boolean(rendered.fallback?.visible),
+      exclude_from_fit_bounds: Boolean(item.exclude_from_fit_bounds || rendered.object3d.userData?.exclude_from_fit_bounds),
+      excludeFromFitBounds: Boolean(item.exclude_from_fit_bounds || rendered.object3d.userData?.exclude_from_fit_bounds),
+      debug_overlay: Boolean(isDebugOverlayItem(item)),
+      debugOverlay: Boolean(isDebugOverlayItem(item)),
+      visual_bounds_status: item.visual_bounds_status || '',
+      visualBoundsStatus: item.visual_bounds_status || '',
+      mesh_unit_correction: item.mesh_unit_correction || null,
+      meshUnitCorrection: item.mesh_unit_correction || null,
+      expected_dimensions_m: expectedDimensions ? vector3ToDiagnostics(expectedDimensions) : null,
+      expectedDimensionsM: expectedDimensions ? vector3ToDiagnostics(expectedDimensions) : null,
+      mesh_local_scale: vector3ToDiagnostics(meshLocal.scale),
+      meshLocalScale: vector3ToDiagnostics(meshLocal.scale),
       mesh_uri: rendered.renderInfo?.mesh_uri || displayMeshUri(item),
+      fallback_reason: rendered.renderInfo?.fallback_reason || '',
       linkFrameWorldPosition: vector3ToDiagnostics(linkFrameWorldPosition),
       link_frame_world_position: vector3ToDiagnostics(linkFrameWorldPosition),
       visualWrapperWorldPosition,
@@ -193,6 +219,10 @@ function collectRenderedMeshDiagnostics() {
       bounding_box_center: bounds.center,
       boundingBoxSize: bounds.size,
       bounding_box_size: bounds.size,
+      itemBoundingBoxCenter: itemBounds.center,
+      item_bounding_box_center: itemBounds.center,
+      itemBoundingBoxSize: itemBounds.size,
+      item_bounding_box_size: itemBounds.size,
       worldQuaternion: quaternionToDiagnostics(worldQuaternion),
       world_quaternion: quaternionToDiagnostics(worldQuaternion),
       worldEuler: eulerToDiagnostics(worldEuler),
@@ -220,6 +250,25 @@ function updateViewerStatus() {
   const warnings = asArray(state.sceneJson?.warnings).concat(asArray(state.sceneJson?.notes_warnings), asArray(state.runtimeWarnings));
   const resolvedFrameStatus = buildResolvedFrameStatus();
   const renderedMeshDiagnostics = collectRenderedMeshDiagnostics();
+  const renderedObjectStatuses = statusCountedRenderables().map(obj => {
+    const item = obj?.item || {};
+    const renderStatus = obj?.renderInfo?.render_status || item?.renderInfo?.render_status || item?.mesh_status || '';
+    return {
+      id: item.id || '',
+      display_name: item.display_name || item.label || item.name || item.object_name || item.link || item.id || '',
+      category: meshContractCategoryOf(item),
+      render_status: renderStatus,
+      renderStatus,
+      mesh_loaded: renderStatus === 'mesh_loaded',
+      meshLoaded: renderStatus === 'mesh_loaded',
+      fallback_visible: Boolean(obj?.fallback?.visible),
+      fallbackVisible: Boolean(obj?.fallback?.visible),
+      mesh_uri: obj?.renderInfo?.mesh_uri || displayMeshUri(item),
+      fallback_reason: obj?.renderInfo?.fallback_reason || '',
+      visual_bounds_status: item.visual_bounds_status || '',
+      visualBoundsStatus: item.visual_bounds_status || '',
+    };
+  });
   window.__WORKCELL_VIEWER_STATUS__ = {
     scene_name: summary.sceneName,
     sceneName: summary.sceneName,
@@ -239,6 +288,8 @@ function updateViewerStatus() {
     resolvedFrameDistancesM: resolvedFrameStatus.resolvedFrameDistancesM,
     renderedMeshDiagnostics,
     rendered_mesh_diagnostics: renderedMeshDiagnostics,
+    renderedObjectStatuses,
+    rendered_object_statuses: renderedObjectStatuses,
   };
   return window.__WORKCELL_VIEWER_STATUS__;
 }
