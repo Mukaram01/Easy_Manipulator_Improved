@@ -114,14 +114,20 @@ def test_acceptance_script_preserves_canonical_mesh_count_expectations():
 def test_acceptance_script_requires_viewer_side_resolved_tool_chain_distances():
     text = SCRIPT.read_text(encoding="utf-8")
     assert "REQUIRED_VIEWER_RESOLVED_DISTANCE_PAIRS" in text
+    assert "REQUIRED_RENDERED_MESH_ADJACENT_PAIRS" in text
     for pair in [
         "wrist_3_link -> tool0",
         "tool0 -> gripper_base_link",
         "wrist_3_link -> gripper_base_link",
     ]:
         assert pair in text
+        assert pair not in module.REQUIRED_RENDERED_MESH_ADJACENT_PAIRS
     assert "viewer_resolved_distances_m" in text
     assert "resolved_distances_m" in text
+    assert "resolved_frame_positions" in text
+    assert "resolvedFramePositions" in text
+    assert "frame_diagnostics" in text
+    assert "frameDiagnostics" in text
     assert "browser viewer resolved distance {pair} expected <=" in text
 
 
@@ -148,12 +154,16 @@ def test_browser_status_validator_accepts_expected_meshes_and_tool_chain_distanc
         "meshLoadedCount": 18,
         "requiredMeshFailedCount": 0,
         "viewer_resolved_distances_m": distance_pairs,
+        "resolvedFramePositions": _valid_resolved_frame_positions(),
+        "frameDiagnostics": _valid_frame_diagnostics(),
         "renderedMeshDiagnostics": _valid_rendered_mesh_diagnostics(),
     }
     snake_status = {
         "mesh_loaded_count": 18,
         "required_mesh_failed_count": 0,
         "viewer_resolved_distances_m": distance_pairs,
+        "resolved_frame_positions": _valid_resolved_frame_positions(),
+        "frame_diagnostics": _valid_frame_diagnostics(),
         "rendered_mesh_diagnostics": _valid_rendered_mesh_diagnostics(),
     }
 
@@ -178,6 +188,8 @@ def test_browser_status_validator_rejects_missing_viewer_side_tool_chain_distanc
         "mesh_loaded_count": 18,
         "required_mesh_failed_count": 0,
         "viewer_resolved_distances_m": reported_distances,
+        "resolved_frame_positions": _valid_resolved_frame_positions(),
+        "frame_diagnostics": _valid_frame_diagnostics(),
         "rendered_mesh_diagnostics": _valid_rendered_mesh_diagnostics(),
     }
 
@@ -189,6 +201,8 @@ def test_browser_status_validator_rejects_missing_viewer_side_distance_map():
     status = {
         "mesh_loaded_count": 18,
         "required_mesh_failed_count": 0,
+        "resolved_frame_positions": _valid_resolved_frame_positions(),
+        "frame_diagnostics": _valid_frame_diagnostics(),
         "rendered_mesh_diagnostics": _valid_rendered_mesh_diagnostics(),
     }
 
@@ -280,11 +294,29 @@ def _valid_viewer_distances():
     }
 
 
+def _valid_resolved_frame_positions():
+    return {
+        "wrist_3_link": {"x": 0.30, "y": 0.0, "z": 0.0},
+        "tool0": {"x": 0.301, "y": 0.0, "z": 0.0},
+        "gripper_base_link": {"x": 0.40, "y": 0.0, "z": 0.0},
+    }
+
+
+def _valid_frame_diagnostics():
+    return [
+        {"frame_name": "wrist_3_link", "resolved": True},
+        {"frame_name": "tool0", "resolved": True},
+        {"frame_name": "gripper_base_link", "resolved": True},
+    ]
+
+
 def _valid_browser_status_with_rendered_diagnostics():
     return {
         "meshLoadedCount": 18,
         "requiredMeshFailedCount": 0,
         "viewer_resolved_distances_m": _valid_viewer_distances(),
+        "resolvedFramePositions": _valid_resolved_frame_positions(),
+        "frameDiagnostics": _valid_frame_diagnostics(),
         "renderedMeshDiagnostics": _valid_rendered_mesh_diagnostics(),
     }
 
@@ -294,6 +326,8 @@ def test_browser_status_validator_rejects_missing_rendered_mesh_diagnostics():
         "mesh_loaded_count": 18,
         "required_mesh_failed_count": 0,
         "viewer_resolved_distances_m": _valid_viewer_distances(),
+        "resolved_frame_positions": _valid_resolved_frame_positions(),
+        "frame_diagnostics": _valid_frame_diagnostics(),
     }
 
     errors = module.validate_browser_status(status)
@@ -331,10 +365,61 @@ def test_browser_status_validator_accepts_valid_rendered_mesh_diagnostics_snake_
         "mesh_loaded_count": 18,
         "required_mesh_failed_count": 0,
         "viewer_resolved_distances_m": _valid_viewer_distances(),
+        "resolved_frame_positions": _valid_resolved_frame_positions(),
+        "frame_diagnostics": _valid_frame_diagnostics(),
         "rendered_mesh_diagnostics": _valid_rendered_mesh_diagnostics(),
     }
 
     assert module.validate_browser_status(status) == []
+
+
+def test_browser_status_validator_accepts_tool0_in_frame_diagnostics_but_not_rendered_mesh_diagnostics():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    status["renderedMeshDiagnostics"] = [
+        diagnostic for diagnostic in status["renderedMeshDiagnostics"] if diagnostic.get("link_name") != "tool0"
+    ]
+
+    assert module.validate_browser_status(status) == []
+
+
+def test_browser_status_validator_rejects_missing_tool0_frame_diagnostics():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    status["frameDiagnostics"] = [
+        diagnostic for diagnostic in status["frameDiagnostics"] if diagnostic.get("frame_name") != "tool0"
+    ]
+
+    errors = module.validate_browser_status(status)
+
+    assert any("frameDiagnostics/frame_diagnostics must include tool0" in error for error in errors)
+
+
+def test_browser_status_validator_rejects_missing_tool0_resolved_frame_position():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    status["resolvedFramePositions"] = {
+        key: value for key, value in status["resolvedFramePositions"].items() if key != "tool0"
+    }
+
+    errors = module.validate_browser_status(status)
+
+    assert any("resolvedFramePositions/resolved_frame_positions must include tool0" in error for error in errors)
+
+
+def test_browser_status_validator_rejects_implausible_wrist_to_tool0_distance():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    status["viewer_resolved_distances_m"]["wrist_3_link -> tool0"] = 99.0
+
+    errors = module.validate_browser_status(status)
+
+    assert any("wrist_3_link -> tool0" in error and "expected <=" in error for error in errors)
+
+
+def test_browser_status_validator_rejects_implausible_tool0_to_gripper_distance():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    status["viewer_resolved_distances_m"]["tool0 -> gripper_base_link"] = 99.0
+
+    errors = module.validate_browser_status(status)
+
+    assert any("tool0 -> gripper_base_link" in error and "expected <=" in error for error in errors)
 
 
 def test_browser_status_validator_accepts_horizontal_table_diagnostic():

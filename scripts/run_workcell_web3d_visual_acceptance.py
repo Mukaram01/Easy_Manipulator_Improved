@@ -45,8 +45,6 @@ REQUIRED_RENDERED_MESH_ADJACENT_PAIRS = {
     "forearm_link -> wrist_1_link": 0.75,
     "wrist_1_link -> wrist_2_link": 0.75,
     "wrist_2_link -> wrist_3_link": 0.75,
-    "wrist_3_link -> tool0": 0.75,
-    "tool0 -> gripper_base_link": 0.75,
 }
 REQUIRED_PRODUCT_FALLBACK_TOKENS = (
     "required_mesh_failed_debug_fallback",
@@ -67,6 +65,24 @@ def _distance_map_from_status(status: Mapping[str, Any]) -> Mapping[str, Any]:
         if isinstance(value, Mapping):
             return value
     return {}
+
+
+def _resolved_frame_positions_from_status(status: Mapping[str, Any]) -> Mapping[str, Any]:
+    for key in ("resolved_frame_positions", "resolvedFramePositions"):
+        value = status.get(key)
+        if isinstance(value, Mapping):
+            return value
+    return {}
+
+
+def _frame_diagnostics_from_status(status: Mapping[str, Any]) -> Sequence[Any] | Mapping[str, Any]:
+    for key in ("frame_diagnostics", "frameDiagnostics"):
+        value = status.get(key)
+        if isinstance(value, Mapping):
+            return value
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            return value
+    return []
 
 
 def _rendered_mesh_diagnostics_from_status(status: Mapping[str, Any]) -> Sequence[Any]:
@@ -251,6 +267,14 @@ def _diagnostic_link_name(diagnostic: Mapping[str, Any]) -> str:
     return ""
 
 
+def _frame_diagnostic_name(diagnostic: Mapping[str, Any]) -> str:
+    for key in ("frame_name", "frameName", "frame", "link_name", "linkName", "link", "id", "name"):
+        value = diagnostic.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
 def _diagnostic_vector(value: Any) -> tuple[float, float, float] | None:
     if isinstance(value, Mapping):
         raw = (value.get("x"), value.get("y"), value.get("z"))
@@ -376,6 +400,28 @@ def _rendered_mesh_adjacency_errors(status: Mapping[str, Any]) -> list[str]:
     return errors
 
 
+def _tool0_frame_contract_errors(status: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+
+    resolved_positions = _resolved_frame_positions_from_status(status)
+    if "tool0" not in resolved_positions:
+        errors.append("browser viewer resolvedFramePositions/resolved_frame_positions must include tool0")
+
+    frame_diagnostics = _frame_diagnostics_from_status(status)
+    tool0_diagnostic_seen = False
+    if isinstance(frame_diagnostics, Mapping):
+        tool0_diagnostic_seen = "tool0" in frame_diagnostics
+    else:
+        for raw in frame_diagnostics:
+            if isinstance(raw, Mapping) and _frame_diagnostic_name(raw) == "tool0":
+                tool0_diagnostic_seen = True
+                break
+    if not tool0_diagnostic_seen:
+        errors.append("browser viewer frameDiagnostics/frame_diagnostics must include tool0")
+
+    return errors
+
+
 def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
     mesh_loaded_count = _status_int(status, "mesh_loaded_count", "meshLoadedCount")
@@ -394,6 +440,7 @@ def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
             distance = float("nan")
         if not (0.0 <= distance <= max_distance_m):
             errors.append(f"browser viewer resolved distance {pair} expected <= {max_distance_m:.3f} m, got {raw!r}")
+    errors.extend(_tool0_frame_contract_errors(status))
     errors.extend(_rendered_mesh_adjacency_errors(status))
     errors.extend(_mesh_backing_errors(status))
     errors.extend(_table_horizontal_errors(status))
