@@ -55,6 +55,15 @@ def test_export_web_scene_contract_and_determinism(tmp_path):
                         "baked_world_visual_quaternion": [0, 0, 0, 1],
                         "mesh_scale": [1, 1, 1],
                     },
+                    {
+                        "id": "robotiq_finger",
+                        "category": "gripper",
+                        "role": "tool",
+                        "link": "robotiq_85_left_finger_link",
+                        "mesh_path": str(scene / "meshes/robotiq_finger.dae"),
+                        "expected_visual_pose": {"xyz": [0.4, 0.5, 0.6], "rpy": [0.7, 0.8, 0.9]},
+                        "link_world_pose": {"xyz": [0.1, 0.2, 0.3], "rpy": [0.0, 0.0, 0.0]},
+                    },
                     {"id": "camera_mesh", "category": "camera", "role": "camera", "package_uri": "package://camera/mesh.dae"},
                 ]
             }
@@ -106,11 +115,23 @@ def test_export_web_scene_contract_and_determinism(tmp_path):
     assert payload["robots"][-1]["final_transform"] == {"xyz": [1.1, 2.2, 3.3], "rpy": [0.1, 0.2, 1.87]}
     assert payload["robots"][-1]["world_from_visual"] == payload["robots"][-1]["final_transform"]
     assert payload["robots"][-1]["transform_source"] == "baked_world_visual_pose"
+    assert payload["robots"][-1]["workcell_web_render_pose_mode"] == "baked_visible_world_pose"
+    assert payload["robots"][-1]["visual_origin_application"] == "baked_into_web_preview_pose"
     assert payload["robots"][-1]["link_world_pose"] == {"xyz": [1, 2, 3], "rpy": [0.1, 0.2, 0.3]}
+    assert payload["robots"][-1]["original_link_world_pose"] == payload["robots"][-1]["link_world_pose"]
     assert payload["robots"][-1]["visual_origin"] == {"xyz": [0.1, 0.2, 0.3], "rpy": [0, 0, 1.57]}
     assert payload["robots"][-1]["mesh_scale"] == [1, 1, 1]
     assert payload["robots"][-1]["baked_world_visual_matrix"] == [[1, 0, 0, 1.1], [0, 1, 0, 2.2], [0, 0, 1, 3.3], [0, 0, 0, 1]]
     assert payload["robots"][-1]["baked_world_visual_quaternion"] == [0, 0, 0, 1]
+    tool_mesh = next(item for item in payload["tools"] if item["id"] == "robotiq_finger")
+    assert tool_mesh["final_transform"] == {"xyz": [0.4, 0.5, 0.6], "rpy": [0.7, 0.8, 0.9]}
+    assert tool_mesh["workcell_web_render_pose_mode"] == "baked_visible_world_pose"
+    assert tool_mesh["visual_origin_application"] == "baked_into_web_preview_pose"
+    assert tool_mesh["original_link_world_pose"] == {"xyz": [0.1, 0.2, 0.3], "rpy": [0.0, 0.0, 0.0]}
+    assert tool_mesh["link_world_pose"] == {"xyz": [0.1, 0.2, 0.3], "rpy": [0.0, 0.0, 0.0]}
+    assert tool_mesh["provenance"]["workcell_web_render_pose_mode"] == "generated/scene_visual_mesh_index.json"
+    assert tool_mesh["provenance"]["visual_origin_application"] == "generated/scene_visual_mesh_index.json"
+    assert tool_mesh["provenance"]["original_link_world_pose"] == "generated/scene_visual_mesh_index.json"
     camera_mesh = next(item for item in payload["sensors"] if item["id"] == "camera_mesh")
     assert camera_mesh["package_uri"] == "package://camera/mesh.dae"
     assert payload["robots"][-1]["provenance"]["mesh_path"] == "generated/scene_visual_mesh_index.json"
