@@ -207,6 +207,58 @@ def test_sourced_real_xacro_requires_real_expansion_status(tmp_path, monkeypatch
     ]
 
 
+def test_normalize_ur5_mesh_preview_rows_flags_all_generated_urdf_baked_mesh_rows(tmp_path):
+    mesh_index = tmp_path / "scene_visual_mesh_index.json"
+    link_pose = {"xyz": [1, 2, 3], "rpy": [0.1, 0.2, 0.3]}
+    frame_pose = {"xyz": [4, 5, 6], "rpy": [0.4, 0.5, 0.6]}
+    baked_pose = {"xyz": [7, 8, 9], "rpy": [0.7, 0.8, 0.9]}
+    tool_baked_pose = {"xyz": [0.1, 0.2, 0.3], "rpy": [1.0, 1.1, 1.2]}
+    payload = {
+        "visual_items": [
+            {
+                "id": "ur5_shoulder",
+                "source": "urdf_flattened",
+                "link": "shoulder_link",
+                "geometry_type": "mesh",
+                "mesh_uri": "package://ur_description/meshes/ur5/visual/shoulder.dae",
+                "link_world_pose": link_pose,
+                "frame_world_pose": frame_pose,
+                "baked_world_visual_pose": baked_pose,
+                "visual_origin_application": "viewer_applies_visual_origin_to_mesh_wrapper",
+            },
+            {
+                "id": "robotiq_finger",
+                "source": "urdf_flattened",
+                "link": "robotiq_85_left_finger_link",
+                "geometry_type": "mesh",
+                "mesh_uri": "package://robotiq_85_description/meshes/visual/finger.dae",
+                "link_world_pose": {"xyz": [0, 0, 0], "rpy": [0, 0, 0]},
+                "expected_visual_pose": tool_baked_pose,
+                "visual_origin_application": "viewer_applies_visual_origin_to_mesh_wrapper",
+            },
+        ]
+    }
+    mesh_index.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert ensure.normalize_ur5_mesh_preview_rows(mesh_index) is True
+
+    normalized = json.loads(mesh_index.read_text(encoding="utf-8"))
+    ur5_item, tool_item = normalized["visual_items"]
+    assert ur5_item["workcell_web_render_pose_mode"] == "baked_visible_world_pose"
+    assert ur5_item["original_link_world_pose"] == link_pose
+    assert ur5_item["original_frame_world_pose"] == frame_pose
+    assert ur5_item["visual_origin_application"] == "baked_into_web_preview_pose"
+    assert ur5_item["final_transform"] == baked_pose
+    assert ur5_item["world_from_visual"] == baked_pose
+    assert ur5_item["category"] == "robot_static_mesh_visual"
+    assert tool_item["workcell_web_render_pose_mode"] == "baked_visible_world_pose"
+    assert tool_item["original_link_world_pose"] == {"xyz": [0, 0, 0], "rpy": [0, 0, 0]}
+    assert "original_frame_world_pose" not in tool_item
+    assert tool_item["visual_origin_application"] == "baked_into_web_preview_pose"
+    assert tool_item["final_transform"] == tool_baked_pose
+    assert tool_item["world_from_visual"] == tool_baked_pose
+    assert tool_item.get("category") is None
+
 def test_ur5_mesh_index_regeneration_has_no_legacy_static_fallback_transform_statuses(tmp_path):
     scene = Path("scenes/ur5_2f_test")
     mesh_index = scene / "generated" / "scene_visual_mesh_index.json"

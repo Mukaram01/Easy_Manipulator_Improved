@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import copy
 import json
 import os
 import shutil
@@ -214,18 +215,52 @@ def _pose_has_finite_xyz(pose: object) -> bool:
 
 
 def _visual_world_pose(item: dict) -> Optional[dict]:
-    """Return the visible mesh-world pose while keeping link/frame pose untouched.
+    """Return the finite visible mesh-world pose baked by the URDF extractor.
 
-    Generated URDF browser placement uses ``frame_world_pose``/``link_world_pose``
-    for the link root, then applies ``visual_origin`` locally to the mesh wrapper.
-    The parity contract also needs a stable diagnostic pose for visible mesh
-    separation; ``baked_world_visual_pose`` is exactly that link*visual-origin pose.
+    Generated URDF browser placement can use ``frame_world_pose``/``link_world_pose``
+    as the link root plus a local ``visual_origin`` wrapper. Rows flagged with
+    ``workcell_web_render_pose_mode=baked_visible_world_pose`` instead render from
+    this baked link*visual-origin pose so Product View matches the visible mesh
+    placement directly.
     """
     for field in ("baked_world_visual_pose", "expected_visual_pose"):
         pose = item.get(field)
         if _pose_has_finite_xyz(pose):
-            return dict(pose)
+            return copy.deepcopy(pose)
     return None
+
+
+def _is_generated_urdf_mesh_row(item: dict) -> bool:
+    if str(item.get("geometry_type") or "").lower() != "mesh":
+        return False
+    source_text = " ".join(
+        str(item.get(field) or "")
+        for field in (
+            "source",
+            "source_kind",
+            "source_layer",
+            "active_visual_source",
+            "transform_source",
+            "baked_world_visual_transform_source",
+            "primary_pose_source",
+        )
+    ).lower()
+    return "urdf" in source_text
+
+
+def _baked_visible_pose_fields(item: dict, visible_pose: dict) -> dict:
+    fields = {
+        "final_transform": copy.deepcopy(visible_pose),
+        "world_from_visual": copy.deepcopy(visible_pose),
+        "workcell_web_visible_mesh_pose_source": "baked_world_visual_pose",
+        "workcell_web_render_pose_mode": "baked_visible_world_pose",
+        "visual_origin_application": "baked_into_web_preview_pose",
+    }
+    if "link_world_pose" in item:
+        fields["original_link_world_pose"] = copy.deepcopy(item.get("link_world_pose"))
+    if "frame_world_pose" in item:
+        fields["original_frame_world_pose"] = copy.deepcopy(item.get("frame_world_pose"))
+    return fields
 
 
 def normalize_ur5_mesh_preview_rows(mesh_index: Path) -> bool:
@@ -255,54 +290,56 @@ def normalize_ur5_mesh_preview_rows(mesh_index: Path) -> bool:
     for item in raw_items:
         if not isinstance(item, dict):
             continue
-        link = str(item.get("link") or item.get("link_name") or item.get("object_name") or "")
-        if link not in UR5_REQUIRED_LINKS:
-            continue
-        if str(item.get("geometry_type") or "").lower() != "mesh":
-            continue
-        if not any(UR5_VISUAL_MESH_URI_TOKEN in value for value in _mesh_uri_values(item)):
+        link = str(
+            item.get("link") or item.get("link_name") or item.get("object_name") or ""
+        )
+        if not _is_generated_urdf_mesh_row(item):
             continue
 
-        desired = {
-            "category": "robot_static_mesh_visual",
-            "role": "robot",
-            "source_layer": "locked_generated_urdf_visual",
-            "active_visual_source": "mesh_preview",
-            "primitive_geometry_type": "mesh",
-            "mesh_available": True,
-            "render_expected": True,
-            "primitive_fallback": False,
-            "fallback_reason": "",
-        }
-        visible_pose = _visual_world_pose(item)
-        if visible_pose is not None:
-            # Keep link_world_pose/frame_world_pose as the viewer's primary root pose.
-            # These legacy final/visual fields are diagnostics used by exporter
-            # contracts to detect visibly collapsed meshes.
+        desired = {}
+        if link in UR5_REQUIRED_LINKS and any(
+            UR5_VISUAL_MESH_URI_TOKEN in value for value in _mesh_uri_values(item)
+        ):
             desired.update(
                 {
-                    "final_transform": visible_pose,
-                    "world_from_visual": visible_pose,
-                    "workcell_web_visible_mesh_pose_source": "baked_world_visual_pose",
+                    "category": "robot_static_mesh_visual",
+                    "role": "robot",
+                    "source_layer": "locked_generated_urdf_visual",
+                    "active_visual_source": "mesh_preview",
+                    "primitive_geometry_type": "mesh",
+                    "mesh_available": True,
+                    "render_expected": True,
+                    "primitive_fallback": False,
+                    "fallback_reason": "",
                 }
             )
+            normalized_links.add(link)
+
+        visible_pose = _visual_world_pose(item)
+        if visible_pose is not None:
+            # Flag generated URDF mesh rows to render from the baked visible
+            # world pose instead of using link_world_pose/frame_world_pose as
+            # the viewer's primary root pose plus a local visual-origin wrapper.
+            desired.update(_baked_visible_pose_fields(item, visible_pose))
             visible_pose_links.add(link)
+
         for key, value in desired.items():
             if item.get(key) != value:
                 item[key] = value
                 changed = True
-        normalized_links.add(link)
 
     if normalized_links:
         payload["workcell_web_ur5_mesh_preview_normalized"] = True
         payload["workcell_web_ur5_mesh_preview_links"] = sorted(normalized_links)
+        changed = True
+    if visible_pose_links:
         payload["workcell_web_ur5_visible_mesh_pose_links"] = sorted(visible_pose_links)
         changed = True
     if changed:
         mesh_index.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         print(
-            "[workcell_web_scene_fresh] normalized UR5 mesh preview rows: "
-            + ",".join(sorted(normalized_links))
+            "[workcell_web_scene_fresh] normalized mesh preview rows: "
+            + ",".join(sorted(normalized_links | visible_pose_links))
         )
     return changed
 
