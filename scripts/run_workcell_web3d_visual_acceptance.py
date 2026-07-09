@@ -59,6 +59,13 @@ def _status_int(status: Mapping[str, Any], snake: str, camel: str) -> int:
     return int(status.get(snake) if status.get(snake) is not None else status.get(camel) or 0)
 
 
+def _status_int_any(status: Mapping[str, Any], *keys: str) -> int:
+    for key in keys:
+        if status.get(key) is not None:
+            return int(status.get(key) or 0)
+    return 0
+
+
 def _distance_map_from_status(status: Mapping[str, Any]) -> Mapping[str, Any]:
     for key in ("viewer_resolved_distances_m", "resolved_distances_m", "resolvedFrameDistancesM", "resolved_frame_distances_m"):
         value = status.get(key)
@@ -463,7 +470,45 @@ def _assembled_hierarchy_errors(status: Mapping[str, Any]) -> list[str]:
         errors.append(f"browser viewer robot_hierarchy_missing_parents must be empty, got {missing_parents!r}")
     if mesh_count < 16:
         errors.append(f"browser viewer robot_hierarchy_mesh_count expected >= 16, got {mesh_count}")
+    duplicate_count = _status_int(status, "visible_duplicate_generated_urdf_count", "visibleDuplicateGeneratedUrdfCount")
+    if duplicate_count > 0:
+        errors.append(f"browser viewer visible_duplicate_generated_urdf_count must be 0, got {duplicate_count}")
+    rendered_count = _status_int(status, "assembled_hierarchy_rendered_mesh_count", "assembledHierarchyRenderedMeshCount")
+    if ("assembled_hierarchy_rendered_mesh_count" in status or "assembledHierarchyRenderedMeshCount" in status) and rendered_count < 16:
+        errors.append(f"browser viewer assembled_hierarchy_rendered_mesh_count expected >= 16, got {rendered_count}")
+    tool0_fallback_count = _status_int(status, "visible_tool0_fallback_count", "visibleTool0FallbackCount")
+    if tool0_fallback_count > 0:
+        errors.append(f"browser viewer visible_tool0_fallback_count must be 0, got {tool0_fallback_count}")
+    detached_clusters = _status_int_any(status, "detached_robot_mesh_clusters_count", "detachedRobotMeshClusters", "detached_robot_mesh_clusters")
+    if detached_clusters > 0:
+        errors.append(f"browser viewer detached_robot_mesh_clusters count must be 0, got {detached_clusters}")
     return errors
+
+
+def _visual_acceptance_debug_dump(status: Mapping[str, Any]) -> dict[str, Any]:
+    distances = status.get("viewer_resolved_distances_m") or status.get("resolvedFrameDistancesM") or {}
+    max_distance = status.get("max_wrist_tool0_to_gripper_base_distance_m") or status.get("maxWristTool0ToGripperBaseDistanceM")
+    if max_distance is None and isinstance(distances, Mapping):
+        candidates = [
+            distances.get("tool0 -> gripper_base_link"),
+            distances.get("wrist_3_link -> gripper_base_link"),
+        ]
+        finite = []
+        for value in candidates:
+            try:
+                finite.append(float(value))
+            except (TypeError, ValueError):
+                pass
+        max_distance = max(finite) if finite else None
+    return {
+        "robot_render_mode": status.get("robot_render_mode") or status.get("robotRenderMode") or "",
+        "assembled_hierarchy_rendered_mesh_count": _status_int(status, "assembled_hierarchy_rendered_mesh_count", "assembledHierarchyRenderedMeshCount"),
+        "skipped_flattened_urdf_visual_count": _status_int(status, "skipped_flattened_urdf_visual_count", "skippedFlattenedUrdfVisualCount"),
+        "visible_duplicate_generated_urdf_count": _status_int(status, "visible_duplicate_generated_urdf_count", "visibleDuplicateGeneratedUrdfCount"),
+        "visible_tool0_fallback_count": _status_int(status, "visible_tool0_fallback_count", "visibleTool0FallbackCount"),
+        "detached_robot_mesh_clusters": _status_int_any(status, "detached_robot_mesh_clusters_count", "detachedRobotMeshClusters", "detached_robot_mesh_clusters"),
+        "max_distance_from_wrist_3_link_or_tool0_to_gripper_base_link_m": max_distance,
+    }
 
 def _euclidean_distance(a: tuple[float, float, float], b: tuple[float, float, float]) -> float:
     return sum((left - right) ** 2 for left, right in zip(a, b)) ** 0.5
@@ -792,6 +837,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if isinstance(status, Mapping):
         debug_summary = baked_pose_render_mode_summary(status)
         print("visual_debug_baked_pose_summary: " + json.dumps(debug_summary, sort_keys=True))
+        print("visual_acceptance_debug_dump: " + json.dumps(_visual_acceptance_debug_dump(status), sort_keys=True))
         status_errors = validate_browser_status(status)
         if status_errors:
             for error in status_errors:

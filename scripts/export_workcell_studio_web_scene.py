@@ -1625,11 +1625,17 @@ def _annotate_urdf_assembly_metadata(generated: Dict[str, List[Json]], scene_nam
             if "joint_origin" not in item and "parent_joint_origin" in item:
                 item["joint_origin"] = item["parent_joint_origin"]
             item.setdefault("joint_origin", {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]})
+            item.setdefault("parent_from_child", item["joint_origin"])
             item.setdefault("visual_origin", {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]})
             mesh = str(item.get("mesh_uri") or item.get("package_uri") or item.get("source_path") or item.get("mesh_path") or "")
             if mesh:
                 item.setdefault("mesh_uri", mesh)
                 item.setdefault("original_mesh_uri", item.get("package_uri") or item.get("source_path") or mesh)
+            elif link == "tool0":
+                item["render_expected"] = False
+                item["geometry_type"] = "frame"
+                item["primitive_geometry_type"] = "frame"
+                item["meshless_frame"] = True
             item["robot_instance_id"] = robot_instance_id
             item["assembly_group"] = assembly_group
             item["robot_render_mode"] = "assembled_urdf_hierarchy"
