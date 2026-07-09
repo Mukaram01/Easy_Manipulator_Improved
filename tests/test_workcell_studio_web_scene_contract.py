@@ -461,6 +461,12 @@ def test_ur5_2f_table_mesh_contract_keeps_mesh_backing_and_uniform_scale(tmp_pat
         assert table.get("mesh_staging_status") == "staged"
         assert table.get("mesh_load_required") is True
         assert "workbench_description/meshes/visual/table.stl" in str(table.get("original_mesh_uri"))
+        assert table.get("mesh_staged_path") == table.get("mesh_uri")
+        assert table.get("support_surface_kind") == "workbench_body"
+        footprint = _finite_vector(table.get("expected_support_footprint_m"), length=2, label=f"{table.get('id')}.expected_support_footprint_m")
+        assert footprint[0] > 0.5 and footprint[1] > 0.3
+        assert math.isfinite(float(table.get("top_surface_z_m")))
+        assert math.isfinite(float(table.get("support_surface_height_m")))
         assert table.get("fallback_reason") in (None, "")
         assert scale[0] == scale[1] == scale[2], "table/workbench mesh scale must remain uniform"
         assert scale == [0.001, 0.001, 0.001]

@@ -276,6 +276,23 @@
                         "generated_preview"
                     ]
                 },
+                "support_surface_kind": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "top_surface_z_m": {
+                    "type": "number"
+                },
+                "support_surface_height_m": {
+                    "type": "number"
+                },
+                "expected_support_footprint_m": {
+                    "type": "array",
+                    "minItems": 2,
+                    "items": {
+                        "type": "number"
+                    }
+                },
                 "provenance": {
                     "$ref": "#/$defs/provenance"
                 }
