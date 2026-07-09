@@ -217,6 +217,38 @@ def _camera_bounds_errors(status: Mapping[str, Any]) -> list[str]:
     return errors
 
 
+
+
+def _diagnostic_support_surface_kind(diagnostic: Mapping[str, Any]) -> str:
+    for key in (
+        "support_surface_kind",
+        "supportSurfaceKind",
+        "semantic_type",
+        "semanticType",
+        "support_kind",
+        "supportKind",
+        "surface_kind",
+        "surfaceKind",
+        "support_surface_type",
+        "supportSurfaceType",
+    ):
+        value = diagnostic.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower().replace("-", "_").replace(" ", "_")
+    return ""
+
+
+def _diagnostic_float(diagnostic: Mapping[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        value = diagnostic.get(key)
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(number):
+            return number
+    return None
+
 def _diagnostic_up_axis(diagnostic: Mapping[str, Any]) -> tuple[float, float, float] | None:
     for key in ("inferred_up_axis", "inferredUpAxis", "inferred_normal", "inferredNormal", "normal", "up_axis", "upAxis"):
         vector = _diagnostic_vector(diagnostic.get(key))
@@ -237,26 +269,66 @@ def _table_horizontal_errors(status: Mapping[str, Any]) -> list[str]:
         return ["browser viewer canonical table/workbench rendered bounding-box diagnostic is required"]
 
     errors: list[str] = []
+    tabletop_kinds = {"table_surface", "tabletop"}
+    body_kinds = {"workbench_body", "cabinet", "support_surface"}
     for diagnostic in table_diagnostics:
         name = _diagnostic_link_name(diagnostic) or str(diagnostic.get("object_id") or diagnostic.get("id") or "table/workbench")
+        kind = _diagnostic_support_surface_kind(diagnostic)
+        if not kind:
+            errors.append(
+                f"browser viewer table/workbench {name} missing explicit support-surface kind metadata; "
+                "exporter must provide support_surface_kind/supportSurfaceKind or semantic_type/support_kind"
+            )
+            continue
+        if kind not in tabletop_kinds | body_kinds:
+            errors.append(f"browser viewer table/workbench {name} has unsupported support-surface kind {kind!r}")
+            continue
+
         size = _diagnostic_bbox_size(diagnostic)
         if size is None:
             errors.append(f"browser viewer table/workbench {name} missing rendered bounding-box size")
             continue
         x, y, z = size
-        smallest_axis = min(((x, "X"), (y, "Y"), (z, "Z")), key=lambda item: item[0])[1]
-        if smallest_axis != "Z":
-            errors.append(f"browser viewer table/workbench {name} expected thickness/smallest dimension along Z, got size x={x:.3f}, y={y:.3f}, z={z:.3f}")
-        if z >= min(x, y):
-            errors.append(f"browser viewer table/workbench {name} expected largest tabletop dimensions in XY with Z thickness, got size x={x:.3f}, y={y:.3f}, z={z:.3f}")
-        up = _diagnostic_up_axis(diagnostic)
-        if up is None:
-            errors.append(f"browser viewer table/workbench {name} missing inferred up axis/normal")
+
+        if kind in tabletop_kinds:
+            smallest_axis = min(((x, "X"), (y, "Y"), (z, "Z")), key=lambda item: item[0])[1]
+            if smallest_axis != "Z":
+                errors.append(f"browser viewer table/workbench {name} expected thickness/smallest dimension along Z, got size x={x:.3f}, y={y:.3f}, z={z:.3f}")
+            if z >= min(x, y) or z > 0.20:
+                errors.append(f"browser viewer table/workbench {name} expected thin tabletop Z and largest dimensions in XY, got size x={x:.3f}, y={y:.3f}, z={z:.3f}")
+            if min(x, y) < 0.30 or max(x, y) < 0.50:
+                errors.append(f"browser viewer table/workbench {name} expected wide tabletop XY footprint, got size x={x:.3f}, y={y:.3f}, z={z:.3f}")
+            up = _diagnostic_up_axis(diagnostic)
+            if up is None:
+                errors.append(f"browser viewer table/workbench {name} missing inferred up axis/normal")
+                continue
+            dot_world_z = up[2]
+            max_tilt_rad = math.radians(15.0)
+            if dot_world_z < math.cos(max_tilt_rad):
+                errors.append(f"browser viewer table/workbench {name} expected normal/up close to world +Z, got ({up[0]:.3f}, {up[1]:.3f}, {up[2]:.3f})")
             continue
-        dot_world_z = up[2]
-        max_tilt_rad = math.radians(15.0)
-        if dot_world_z < math.cos(max_tilt_rad):
-            errors.append(f"browser viewer table/workbench {name} expected normal/up close to world +Z, got ({up[0]:.3f}, {up[1]:.3f}, {up[2]:.3f})")
+
+        if min(x, y) < 0.30 or max(x, y) < 0.50:
+            errors.append(f"browser viewer table/workbench {name} expected sensible support body XY footprint, got size x={x:.3f}, y={y:.3f}, z={z:.3f}")
+        if not (0.20 <= z <= 1.50):
+            errors.append(f"browser viewer table/workbench {name} expected plausible support body height Z, got size x={x:.3f}, y={y:.3f}, z={z:.3f}")
+        support_height = _diagnostic_float(diagnostic, "top_surface_z_m", "topSurfaceZM", "support_surface_height_m", "supportSurfaceHeightM")
+        if support_height is None:
+            errors.append(
+                f"browser viewer table/workbench {name} kind {kind!r} missing finite top/support height metadata; "
+                "exporter must provide top_surface_z_m or support_surface_height_m"
+            )
+            continue
+        center = _diagnostic_position(diagnostic, "loaded_mesh_bounding_box_center", "loadedMeshBoundingBoxCenter", "bounding_box_center", "boundingBoxCenter")
+        if center is None:
+            errors.append(f"browser viewer table/workbench {name} kind {kind!r} missing loaded bounding-box center needed to validate top/support height")
+            continue
+        loaded_top_z = center[2] + (z / 2.0)
+        if abs(support_height - loaded_top_z) > 0.15:
+            errors.append(
+                f"browser viewer table/workbench {name} kind {kind!r} top/support height {support_height:.3f} m "
+                f"is not plausibly near loaded bbox top {loaded_top_z:.3f} m"
+            )
     return errors
 
 def _diagnostic_link_name(diagnostic: Mapping[str, Any]) -> str:

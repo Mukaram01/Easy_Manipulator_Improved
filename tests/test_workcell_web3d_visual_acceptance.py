@@ -253,6 +253,7 @@ def _valid_table_diagnostic():
         "mesh_loaded": True,
         "fallback_visible": False,
         "mesh_uri": "assets/workbench.stl",
+        "support_surface_kind": "table_surface",
         "expected_dimensions_m": {"x": 1.20, "y": 0.80, "z": 0.05},
         "mesh_local_scale": {"x": 1.0, "y": 1.0, "z": 1.0},
         "bounding_box_size": {"x": 1.20, "y": 0.80, "z": 0.05},
@@ -261,6 +262,28 @@ def _valid_table_diagnostic():
     }
 
 
+
+
+def _workbench_body_diagnostic(with_height=True):
+    diagnostic = _valid_table_diagnostic()
+    diagnostic.update(
+        {
+            "id": "workbench_body",
+            "object_id": "workbench_body",
+            "object_name": "M1 workbench body",
+            "link_name": "workbench_body",
+            "support_surface_kind": "workbench_body",
+            "expected_dimensions_m": {"x": 1.20, "y": 0.80, "z": 0.90},
+            "bounding_box_size": {"x": 1.20, "y": 0.80, "z": 0.90},
+            "loaded_mesh_bounding_box_size": {"x": 1.20, "y": 0.80, "z": 0.90},
+            "bounding_box_center": {"x": 0.40, "y": 0.0, "z": 0.45},
+            "loaded_mesh_bounding_box_center": {"x": 0.40, "y": 0.0, "z": 0.45},
+        }
+    )
+    diagnostic.pop("inferred_up_axis", None)
+    if with_height:
+        diagnostic["top_surface_z_m"] = 0.90
+    return diagnostic
 
 
 def _valid_camera_diagnostic():
@@ -533,3 +556,35 @@ def test_browser_status_validator_rejects_oversized_camera_mesh_in_fit_bounds():
     errors = module.validate_browser_status(status)
 
     assert any("camera/Realsense camera_link loaded mesh bounds are oversized" in error for error in errors)
+
+
+def test_table_horizontal_accepts_tabletop_with_thin_z():
+    assert module._table_horizontal_errors({"renderedMeshDiagnostics": [_valid_table_diagnostic()]}) == []
+
+
+def test_table_horizontal_rejects_tabletop_with_large_z():
+    diagnostic = _valid_table_diagnostic()
+    diagnostic["bounding_box_size"] = {"x": 1.20, "y": 0.80, "z": 0.60}
+
+    errors = module._table_horizontal_errors({"renderedMeshDiagnostics": [diagnostic]})
+
+    assert any("thin tabletop Z" in error for error in errors)
+
+
+def test_table_horizontal_accepts_workbench_body_only_with_support_height_metadata():
+    assert module._table_horizontal_errors({"renderedMeshDiagnostics": [_workbench_body_diagnostic(with_height=True)]}) == []
+
+
+def test_table_horizontal_rejects_workbench_body_without_support_height_metadata():
+    errors = module._table_horizontal_errors({"renderedMeshDiagnostics": [_workbench_body_diagnostic(with_height=False)]})
+
+    assert any("missing finite top/support height metadata" in error for error in errors)
+
+
+def test_table_horizontal_rejects_missing_support_surface_kind_metadata():
+    diagnostic = _valid_table_diagnostic()
+    diagnostic.pop("support_surface_kind", None)
+
+    errors = module._table_horizontal_errors({"renderedMeshDiagnostics": [diagnostic]})
+
+    assert any("missing explicit support-surface kind metadata" in error for error in errors)
