@@ -2,13 +2,13 @@
 """Ensure generated Workcell Studio web-scene artifacts are fresh.
 
 The web scene consumed by browser/Product View flows depends on both scene-local
-source files and generator/configuration files.  This helper checks the expected
+source files and generator/configuration files. This helper checks the expected
 outputs and refreshes them when missing, stale, or when the mesh-index extractor
 version changed.
 
 ``generated/scene_visual_mesh_index.json`` is generated cache/build output for
 preview refresh, not canonical scene state, and should not be committed under
-``scenes/*/generated/``.  Web scene JSON exports should be written under
+``scenes/*/generated/``. Web scene JSON exports should be written under
 ``build/workcell_studio_web_scene/`` (or another ignored output location), while
 tracked YAML/xacro/URDF/layout inputs remain the source of truth.
 """
@@ -186,18 +186,53 @@ def require_real_xacro_mesh_index(mesh_index: Path) -> None:
 
 def _mesh_uri_values(item: dict) -> List[str]:
     values: List[str] = []
-    for field in ("mesh_uri", "package_uri", "mesh_path", "source_path", "resolved_source_path", "repo_relative_source_path", "asset_relative_source_path"):
+    for field in (
+        "mesh_uri",
+        "package_uri",
+        "mesh_path",
+        "source_path",
+        "resolved_source_path",
+        "repo_relative_source_path",
+        "asset_relative_source_path",
+    ):
         value = item.get(field)
         if isinstance(value, str) and value:
             values.append(value)
     return values
 
 
+def _pose_has_finite_xyz(pose: object) -> bool:
+    if not isinstance(pose, dict):
+        return False
+    xyz = pose.get("xyz")
+    if not isinstance(xyz, list) or len(xyz) < 3:
+        return False
+    try:
+        return all(float(v) == float(v) for v in xyz[:3])
+    except Exception:
+        return False
+
+
+def _visual_world_pose(item: dict) -> Optional[dict]:
+    """Return the visible mesh-world pose while keeping link/frame pose untouched.
+
+    Generated URDF browser placement uses ``frame_world_pose``/``link_world_pose``
+    for the link root, then applies ``visual_origin`` locally to the mesh wrapper.
+    The parity contract also needs a stable diagnostic pose for visible mesh
+    separation; ``baked_world_visual_pose`` is exactly that link*visual-origin pose.
+    """
+    for field in ("baked_world_visual_pose", "expected_visual_pose"):
+        pose = item.get(field)
+        if _pose_has_finite_xyz(pose):
+            return dict(pose)
+    return None
+
+
 def normalize_ur5_mesh_preview_rows(mesh_index: Path) -> bool:
     """Mark real-xacro UR5 mesh rows as browser robot preview rows.
 
     The real URDF extractor can emit correct UR5 mesh rows without the static
-    fallback classification fields.  The web exporter buckets generated rows by
+    fallback classification fields. The web exporter buckets generated rows by
     role/category before staging assets, so unclassified real-xacro UR5 rows land
     in generic assets and the browser scene loses the required robot mesh contract.
     Normalize only resolved UR5 visual mesh rows; do not fabricate geometry.
@@ -216,6 +251,7 @@ def normalize_ur5_mesh_preview_rows(mesh_index: Path) -> bool:
 
     changed = False
     normalized_links: set[str] = set()
+    visible_pose_links: set[str] = set()
     for item in raw_items:
         if not isinstance(item, dict):
             continue
@@ -238,6 +274,19 @@ def normalize_ur5_mesh_preview_rows(mesh_index: Path) -> bool:
             "primitive_fallback": False,
             "fallback_reason": "",
         }
+        visible_pose = _visual_world_pose(item)
+        if visible_pose is not None:
+            # Keep link_world_pose/frame_world_pose as the viewer's primary root pose.
+            # These legacy final/visual fields are diagnostics used by exporter
+            # contracts to detect visibly collapsed meshes.
+            desired.update(
+                {
+                    "final_transform": visible_pose,
+                    "world_from_visual": visible_pose,
+                    "workcell_web_visible_mesh_pose_source": "baked_world_visual_pose",
+                }
+            )
+            visible_pose_links.add(link)
         for key, value in desired.items():
             if item.get(key) != value:
                 item[key] = value
@@ -247,6 +296,7 @@ def normalize_ur5_mesh_preview_rows(mesh_index: Path) -> bool:
     if normalized_links:
         payload["workcell_web_ur5_mesh_preview_normalized"] = True
         payload["workcell_web_ur5_mesh_preview_links"] = sorted(normalized_links)
+        payload["workcell_web_ur5_visible_mesh_pose_links"] = sorted(visible_pose_links)
         changed = True
     if changed:
         mesh_index.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
