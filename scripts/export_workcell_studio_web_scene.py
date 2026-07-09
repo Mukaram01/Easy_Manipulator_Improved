@@ -64,6 +64,8 @@ ROBOTIQ_85_FALLBACK_LINK_TRANSFORMS = {
     "gripper_finger1_finger_tip_link": {"parent_link": "gripper_finger1_inner_knuckle_link", "joint_origin": {"xyz": [0.04303959807, -0.03759940821, 0.0], "rpy": [0.0, 0.0, 0.0]}},
     "gripper_finger2_finger_tip_link": {"parent_link": "gripper_finger2_inner_knuckle_link", "joint_origin": {"xyz": [0.04303959807, -0.03759940821, 0.0], "rpy": [0.0, 0.0, 0.0]}},
 }
+UR_VISUAL_MESH_TOKEN = "package://ur_description/meshes/"
+ROBOTIQ_VISUAL_MESH_TOKEN = "package://robotiq_85_description/meshes/visual/"
 
 HELPER_TOKENS = (
     "overlay",
@@ -398,6 +400,74 @@ def _is_transform_anchor(item: Mapping[str, Any]) -> bool:
     return str(item.get("type", "")).lower() == "transform_anchor" or str(item.get("role", "")).lower() == "transform_anchor"
 
 
+def _mesh_uri_values(item: Mapping[str, Any]) -> List[str]:
+    return [str(item.get(field)) for field in MESH_URI_FIELDS if isinstance(item.get(field), str) and str(item.get(field))]
+
+
+def _has_ur_visual_mesh_reference(item: Mapping[str, Any]) -> bool:
+    return any(UR_VISUAL_MESH_TOKEN in value and "/visual/" in value for value in _mesh_uri_values(item))
+
+
+def _has_robotiq_visual_mesh_reference(item: Mapping[str, Any]) -> bool:
+    return any(ROBOTIQ_VISUAL_MESH_TOKEN in value for value in _mesh_uri_values(item))
+
+
+def _normalize_generated_urdf_mesh_preview_item(item: Json) -> None:
+    """Classify generated URDF mesh rows before direct web export bucketing.
+
+    ``ensure_workcell_studio_web_scene_fresh.py`` also normalizes the generated
+    visual mesh index on disk, but callers of this exporter must not depend on
+    that refresh wrapper.  Normalize the copied row in memory so direct
+    ``export_workcell_studio_web_scene.py --no-stage-assets`` exports preserve
+    UR robot links, Robotiq tool links, and the meshless ``tool0`` anchor
+    contract even when the extractor emitted plain mesh rows with no role or
+    category.
+    """
+    link = str(item.get("link") or item.get("link_name") or item.get("object_name") or item.get("frame") or "")
+    if link:
+        item.setdefault("link", link)
+        item.setdefault("link_name", link)
+
+    if _is_transform_anchor(item) and link == "tool0":
+        item["id"] = "urdf_frame_anchor_tool0"
+        item["type"] = "transform_anchor"
+        item["role"] = "transform_anchor"
+        item["category"] = "frame"
+        item["render_expected"] = False
+        item["mesh_available"] = False
+        item["mesh_load_required"] = False
+        item["meshless_frame"] = True
+        item["active_visual_source"] = "frame_anchor"
+        for field in MESH_URI_FIELDS:
+            item.pop(field, None)
+        return
+
+    if _has_ur_visual_mesh_reference(item):
+        item["role"] = "robot"
+        item["category"] = "robot_static_mesh_visual"
+        item["source_layer"] = "locked_generated_urdf_visual"
+        item["active_visual_source"] = "mesh_preview"
+        item["primitive_geometry_type"] = "mesh"
+        item["geometry_type"] = "mesh"
+        item["mesh_available"] = True
+        item["render_expected"] = True
+        item["primitive_fallback"] = False
+        item["fallback_reason"] = ""
+        return
+
+    if _has_robotiq_visual_mesh_reference(item):
+        item["role"] = "gripper"
+        item["category"] = "tool"
+        item["source_layer"] = "locked_generated_urdf_visual"
+        item["active_visual_source"] = "mesh_preview"
+        item["primitive_geometry_type"] = "mesh"
+        item["geometry_type"] = "mesh"
+        item["mesh_available"] = True
+        item["render_expected"] = True
+        item["primitive_fallback"] = False
+        item["fallback_reason"] = ""
+
+
 def _section_from_item(item: Mapping[str, Any]) -> str:
     if _is_transform_anchor(item):
         return "frames"
@@ -557,6 +627,7 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
         item["editable"] = False
         item["source_kind"] = "generated_preview"
         item["provenance"].update({"locked": INPUTS["visual_mesh_index"], "editable": INPUTS["visual_mesh_index"], "source_kind": INPUTS["visual_mesh_index"]})
+        _normalize_generated_urdf_mesh_preview_item(item)
         if _is_transform_anchor(raw):
             item["render_expected"] = False
             item["mesh_available"] = False
@@ -585,7 +656,7 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
                     item["provenance"]["original_frame_world_pose"] = INPUTS["visual_mesh_index"]
         if any(token in _identity_text(raw) for token in ("camera", "realsense", "d435")):
             _annotate_mesh_unit_evidence(item, scene_dir)
-        sections[_section_from_item(raw)].append(item)
+        sections[_section_from_item(item)].append(item)
     return sections
 
 
