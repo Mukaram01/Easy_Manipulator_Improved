@@ -219,9 +219,12 @@ def _valid_rendered_mesh_diagnostics(spacing=0.05):
                 "fallback_visible": False,
                 "loaded_mesh_bounding_box_center": {"x": index * spacing, "y": 0.0, "z": 0.0},
                 "visual_wrapper_world_position": {"x": index * spacing, "y": 0.0, "z": 0.0},
+                "workcell_web_render_pose_mode": "baked_visible_world_pose",
+                "baked_world_visual_pose": {"xyz": [index * spacing, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
             }
         )
     diagnostics.append(_valid_table_diagnostic())
+    diagnostics.append(_valid_camera_diagnostic())
     return diagnostics
 
 
@@ -243,6 +246,24 @@ def _valid_table_diagnostic():
         "inferred_up_axis": {"x": 0.0, "y": 0.0, "z": 1.0},
     }
 
+
+
+
+def _valid_camera_diagnostic():
+    return {
+        "id": "camera_realsense",
+        "object_id": "camera_realsense",
+        "display_name": "Intel RealSense camera",
+        "category": "camera",
+        "link_name": "camera_link",
+        "render_status": "mesh_loaded",
+        "mesh_loaded": True,
+        "fallback_visible": False,
+        "mesh_uri": "assets/realsense.dae",
+        "expected_dimensions_m": {"x": 0.08, "y": 0.08, "z": 0.06},
+        "loaded_mesh_bounding_box_size": {"x": 0.08, "y": 0.08, "z": 0.06},
+        "bounding_box_size": {"x": 0.08, "y": 0.08, "z": 0.06},
+    }
 
 def _rotated_table_diagnostic():
     diagnostic = _valid_table_diagnostic()
@@ -369,6 +390,43 @@ def test_browser_status_validator_rejects_table_non_uniform_scale_from_expected_
 
     assert any("non-uniform mesh scale derived from expected_dimensions_m" in error for error in errors)
 
+
+
+
+def test_browser_status_validator_rejects_baked_visible_world_pose_double_application():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    for diagnostic in status["renderedMeshDiagnostics"]:
+        if diagnostic.get("link_name") == "wrist_3_link":
+            diagnostic["visual_wrapper_world_position"] = {"x": 0.65, "y": 0.0, "z": 0.0}
+
+    errors = module.validate_browser_status(status)
+
+    assert any("wrist_3_link baked_visible_world_pose wrapper center expected" in error for error in errors)
+    assert any("visual origin may have been applied twice" in error for error in errors)
+
+
+def test_browser_status_validator_rejects_exploded_loaded_mesh_bounds_even_when_wrappers_are_connected():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    for diagnostic in status["renderedMeshDiagnostics"]:
+        if diagnostic.get("link_name") == "forearm_link":
+            diagnostic["loaded_mesh_bounding_box_center"] = {"x": 3.0, "y": 0.0, "z": 0.0}
+
+    errors = module.validate_browser_status(status)
+
+    assert any("upper_arm_link -> forearm_link loaded mesh bounds center expected <=" in error for error in errors)
+
+
+def test_browser_status_validator_rejects_camera_expected_mesh_rendered_as_primitive_fallback():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    for diagnostic in status["renderedMeshDiagnostics"]:
+        if diagnostic.get("category") == "camera":
+            diagnostic["render_status"] = "primitive_fallback"
+            diagnostic["mesh_loaded"] = False
+            diagnostic["fallback_visible"] = True
+
+    errors = module.validate_browser_status(status)
+
+    assert any("camera/Realsense camera_link must remain mesh-backed" in error for error in errors)
 
 def test_browser_status_validator_rejects_oversized_camera_mesh_in_fit_bounds():
     status = _valid_browser_status_with_rendered_diagnostics()
