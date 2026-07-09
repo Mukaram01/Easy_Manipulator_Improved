@@ -564,7 +564,7 @@ def _canonical_generated_transform(raw: Mapping[str, Any]) -> Tuple[Optional[Any
     # generated indexes may also carry link-frame final_transform/world_from_visual
     # values, and using those first makes the browser re-apply visual_origin and
     # explode generated URDF meshes.
-    for field in ("baked_world_visual_pose", "expected_visual_pose", "final_transform", "world_from_visual", "pose", "world_pose"):
+    for field in ("urdf_fk_visual_world_pose", "baked_world_visual_pose", "expected_visual_pose", "final_transform", "world_from_visual", "pose", "world_pose"):
         value = raw.get(field)
         if value not in (None, "", [], {}):
             return value, str(baked_source or field), field
@@ -589,6 +589,8 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
     fields = (
         "id", "type", "category", "role", "display_name", "link", "object_name", "visual", "pose", "world_pose",
         "final_transform", "world_from_visual", "transform_source",
+        "urdf_fk_source", "urdf_fk_world_pose", "urdf_fk_link_world_pose", "urdf_fk_visual_world_pose",
+        "urdf_joint_parent", "urdf_joint_child", "urdf_joint_origin", "urdf_visual_origin",
         "baked_world_visual_pose", "expected_visual_pose", "link_world_pose", "frame_world_pose", "visual_origin", "baked_world_visual_matrix",
         "baked_world_visual_quaternion", "baked_world_visual_transform_source", "geometry_type",
         "parent_link", "immediate_parent_link", "root_link", "link_chain", "joint_parent_link",
@@ -614,7 +616,7 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
             item["final_transform"] = final_transform
             item["world_from_visual"] = final_transform
             item["transform_source"] = transform_source
-            if transform_field in {"baked_world_visual_pose", "expected_visual_pose"}:
+            if transform_field in {"urdf_fk_visual_world_pose", "baked_world_visual_pose", "expected_visual_pose"}:
                 item["workcell_web_render_pose_mode"] = "baked_visible_world_pose"
                 item["visual_origin_application"] = "baked_into_web_preview_pose"
                 if "link_world_pose" in raw:
@@ -645,7 +647,7 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
                 "world_from_visual": INPUTS["visual_mesh_index"],
                 "transform_source": INPUTS["visual_mesh_index"],
             })
-            if transform_field in {"baked_world_visual_pose", "expected_visual_pose"}:
+            if transform_field in {"urdf_fk_visual_world_pose", "baked_world_visual_pose", "expected_visual_pose"}:
                 item["provenance"].update({
                     "workcell_web_render_pose_mode": INPUTS["visual_mesh_index"],
                     "visual_origin_application": INPUTS["visual_mesh_index"],
@@ -1813,7 +1815,7 @@ def _annotate_urdf_assembly_metadata(generated: Dict[str, List[Json]], scene_nam
                 item["meshless_frame"] = True
             item["robot_instance_id"] = robot_instance_id
             item["assembly_group"] = assembly_group
-            item["robot_render_mode"] = "assembled_urdf_hierarchy"
+            item["robot_render_mode"] = "urdf_fk_visual_world_pose" if item.get("urdf_fk_source") == "expanded_urdf_joint_tree" else "assembled_urdf_hierarchy"
             item["baked_world_visual_pose_diagnostic_only"] = True
             item.setdefault("provenance", {}).update({
                 "robot_instance_id": "web_export_urdf_assembly_metadata",

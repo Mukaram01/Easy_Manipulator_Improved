@@ -359,8 +359,10 @@ function updateViewerStatus() {
     frame_diagnostics: frameDiagnostics,
     renderedObjectStatuses,
     rendered_object_statuses: renderedObjectStatuses,
-    robot_render_mode: state.robotAssemblyDiagnostics?.length ? 'assembled_urdf_hierarchy' : '',
-    robotRenderMode: state.robotAssemblyDiagnostics?.length ? 'assembled_urdf_hierarchy' : '',
+    robot_transform_source: state.robotAssemblyDiagnostics?.some(d => d.robot_transform_source === 'expanded_urdf_joint_tree') ? 'expanded_urdf_joint_tree' : '',
+    robotTransformSource: state.robotAssemblyDiagnostics?.some(d => d.robot_transform_source === 'expanded_urdf_joint_tree') ? 'expanded_urdf_joint_tree' : '',
+    robot_render_mode: state.robotAssemblyDiagnostics?.some(d => d.robot_render_mode === 'urdf_fk_visual_world_pose') ? 'urdf_fk_visual_world_pose' : (state.robotAssemblyDiagnostics?.length ? 'assembled_urdf_hierarchy' : ''),
+    robotRenderMode: state.robotAssemblyDiagnostics?.some(d => d.robot_render_mode === 'urdf_fk_visual_world_pose') ? 'urdf_fk_visual_world_pose' : (state.robotAssemblyDiagnostics?.length ? 'assembled_urdf_hierarchy' : ''),
     robot_hierarchy_diagnostics: state.robotAssemblyDiagnostics || [],
     robotHierarchyDiagnostics: state.robotAssemblyDiagnostics || [],
     robot_hierarchy_links: Array.from(new Set((state.robotAssemblyDiagnostics || []).flatMap(d => d.robot_hierarchy_links || []))),
@@ -451,7 +453,8 @@ function isAssemblyCandidateItem(item) {
   const parent = String(item?.parent_link || item?.joint_parent_link || item?.immediate_parent_link || '');
   return Boolean(link && (parent || link === 'base_link' || link === 'base_link_inertia') && (isGeneratedRobotItem(item) || isGeneratedToolOrGripperItem(item)));
 }
-function usesAssembledUrdfHierarchy(item) { return Boolean(item?.robot_render_mode === 'assembled_urdf_hierarchy' || item?.workcell_web_render_pose_mode === 'assembled_urdf_hierarchy' || itemAssemblyGroup(item)); }
+function usesUrdfFkVisualWorldPose(item) { return Boolean(item?.urdf_fk_source === 'expanded_urdf_joint_tree' && hasFinitePoseBlock(item?.urdf_fk_visual_world_pose)); }
+function usesAssembledUrdfHierarchy(item) { return Boolean(!usesUrdfFkVisualWorldPose(item) && (item?.robot_render_mode === 'assembled_urdf_hierarchy' || item?.workcell_web_render_pose_mode === 'assembled_urdf_hierarchy' || itemAssemblyGroup(item))); }
 function usesBakedVisibleWorldPose(item) {
   if (usesAssembledUrdfHierarchy(item)) return false;
   if (!hasFinitePoseBlock(bakedVisibleWorldPoseSource(item))) return false;
@@ -459,7 +462,7 @@ function usesBakedVisibleWorldPose(item) {
   return isGeneratedUrdfMeshVisualItem(item);
 }
 function effectiveWorkcellWebRenderPoseMode(item) {
-  return usesAssembledUrdfHierarchy(item) ? 'assembled_urdf_hierarchy' : (usesBakedVisibleWorldPose(item) ? 'baked_visible_world_pose' : (item?.workcell_web_render_pose_mode || ''));
+  return usesUrdfFkVisualWorldPose(item) ? 'urdf_fk_visual_world_pose' : (usesAssembledUrdfHierarchy(item) ? 'assembled_urdf_hierarchy' : (usesBakedVisibleWorldPose(item) ? 'baked_visible_world_pose' : (item?.workcell_web_render_pose_mode || '')));
 }
 function generatedUrdfFramePoseSource(item) {
   if (item?.frame_world_pose) return item.frame_world_pose;
@@ -475,6 +478,7 @@ function visualOriginOf(item) {
 }
 function canonicalFinalPose(item) {
   if (isGeneratedUrdfItem(item)) {
+    if (usesUrdfFkVisualWorldPose(item)) return item.urdf_fk_visual_world_pose || {};
     if (usesBakedVisibleWorldPose(item)) {
       return item.baked_world_visual_pose || item.expected_visual_pose || item.final_transform || item.world_from_visual || {};
     }
@@ -1169,8 +1173,9 @@ function makeMeshVisualRoot(item, meshObject) {
 function applyMeshLocalTransform(meshObject, item) {
   const transform = meshLocalTransformOf(item);
   const generatedUrdf = isGeneratedUrdfItem(item);
+  // Legacy branch retained: ? (usesBakedVisibleWorldPose(item) ? poseBlockOf({ xyz: [0, 0, 0], rpy: [0, 0, 0] }) : visualOriginOf(item))
   const visualOrigin = generatedUrdf
-    ? (usesBakedVisibleWorldPose(item) ? poseBlockOf({ xyz: [0, 0, 0], rpy: [0, 0, 0] }) : visualOriginOf(item))
+    ? (usesUrdfFkVisualWorldPose(item) ? poseBlockOf({ xyz: [0, 0, 0], rpy: [0, 0, 0] }) : (usesBakedVisibleWorldPose(item) ? poseBlockOf({ xyz: [0, 0, 0], rpy: [0, 0, 0] }) : visualOriginOf(item)))
     : transform.pose;
   meshObject.position.copy(visualOrigin.xyz);
   meshObject.rotation.set(visualOrigin.rpy.x, visualOrigin.rpy.y, visualOrigin.rpy.z, 'XYZ');
@@ -2067,6 +2072,53 @@ function buildRobotAssemblies(items) {
   const candidates = items.filter(isAssemblyCandidateItem);
   const renderDiagnostics = { skipped_flattened_urdf_visual_count: 0, assembled_hierarchy_rendered_mesh_count: 0, visible_duplicate_generated_urdf_count: 0, visible_tool0_fallback_count: 0, detached_robot_mesh_clusters: 0 };
   if (!candidates.length) return { handled: new Set(), assemblies: [], renderDiagnostics };
+  if (candidates.some(usesUrdfFkVisualWorldPose)) {
+    const handled = new Set();
+    const assemblies = [];
+    const fkItems = candidates;
+    const root = new THREE.Group();
+    root.name = `${assemblyGroupKey(fkItems[0] || {})}_UrdfFkVisualWorldRoot`;
+    root.up.copy(THREE.Object3D.DEFAULT_UP);
+    root.userData.robot_render_mode = 'urdf_fk_visual_world_pose';
+    root.userData.robot_transform_source = 'expanded_urdf_joint_tree';
+    const linkPositions = {};
+    const visualPositions = {};
+    const chainLinks = ['base_link_inertia','shoulder_link','upper_arm_link','forearm_link','wrist_1_link','wrist_2_link','wrist_3_link','tool0','gripper_base_link'];
+    for (const item of fkItems) {
+      item.robot_render_mode = 'urdf_fk_visual_world_pose';
+      item.workcell_web_render_pose_mode = 'urdf_fk_visual_world_pose';
+      item.baked_world_visual_pose_diagnostic_only = Boolean(item.baked_world_visual_pose || item.expected_visual_pose);
+      const object3d = new THREE.Group();
+      object3d.name = `${item.id || itemLabel(item)}_urdf_fk_visual_world_pose_root`;
+      object3d.up.copy(THREE.Object3D.DEFAULT_UP);
+      applyPoseBlockToObject(object3d, item.urdf_fk_visual_world_pose || item.final_transform || item.world_from_visual || item.link_world_pose || item.frame_world_pose);
+      root.add(object3d);
+      assignItemUserData(object3d, item);
+      const primitive = primitiveOf(item);
+      const meshlessTool0Frame = isExpectedMeshlessTool0Frame(item);
+      const fallback = meshlessTool0Frame ? null : (isSensor(item) ? makeSensorMarker(item) : makePrimitiveMesh(item));
+      if (fallback) { fallback.name = `${item.id || itemLabel(item)}_fallback`; assignItemUserData(fallback, item); fallback.visible = false; object3d.add(fallback); }
+      const rendered = { item, object3d, fallback, labelEl: createLabelElement(item), originalTransform: transformOf(item) };
+      setRenderInfo(rendered, meshlessTool0Frame ? 'meshless_frame' : (itemRequiresMeshBackedVisual(item) ? 'mesh_loading_required' : (primitive ? 'primitive_fallback' : 'box_fallback')), displayMeshUri(item), meshlessTool0Frame ? 'tool0 is an expected meshless frame; no visible fallback is rendered' : 'rendered from expanded URDF FK visual world pose');
+      state.objects.push(rendered);
+      handled.add(item);
+      if (!meshlessTool0Frame) { const loadMeshForUrdfFk = tryLoadMesh; loadMeshForUrdfFk(item, rendered, fallback); }
+      const link = linkNameOfItem(item);
+      const linkPoseSource = item.urdf_fk_link_world_pose || item.link_world_pose || item.frame_world_pose || item.final_transform;
+      const visualPoseSource = item.urdf_fk_visual_world_pose || item.final_transform || item.world_from_visual || item.link_world_pose || item.frame_world_pose;
+      if (link && !linkPositions[link] && hasFinitePoseBlock(linkPoseSource)) linkPositions[link] = finiteXyzArrayFromVector(poseBlockOf(linkPoseSource).xyz);
+      if (link && !visualPositions[link] && hasFinitePoseBlock(visualPoseSource)) visualPositions[link] = finiteXyzArrayFromVector(poseBlockOf(visualPoseSource).xyz);
+    }
+    state.three.scene.add(root);
+    state.assemblyRoots.push(root);
+    const pairs = [['shoulder_link','upper_arm_link'],['upper_arm_link','forearm_link'],['forearm_link','wrist_1_link'],['wrist_3_link','tool0'],['tool0','gripper_base_link']];
+    const distances = {};
+    for (const [a,b] of pairs) distances[`${a} -> ${b}`] = distanceMetersBetweenXyz(linkPositions[a], linkPositions[b]);
+    assemblies.push({ assembly_group: assemblyGroupKey(fkItems[0] || {}), robot_instance_id: fkItems.find(i => i.robot_instance_id)?.robot_instance_id || assemblyGroupKey(fkItems[0] || {}), robot_transform_source: 'expanded_urdf_joint_tree', robot_render_mode: 'urdf_fk_visual_world_pose', robot_hierarchy_links: chainLinks.filter(l => linkPositions[l] || visualPositions[l]), robot_hierarchy_missing_links: chainLinks.filter(l => !linkPositions[l] && !visualPositions[l]), robot_hierarchy_missing_parents: [], robot_hierarchy_mesh_count: fkItems.filter(item => displayMeshUri(item)).length, assembled_hierarchy_rendered_mesh_count: fkItems.filter(item => displayMeshUri(item)).length, assembled_link_world_positions: linkPositions, assembled_visual_world_positions: visualPositions, assembled_link_adjacency_distances_m: distances, urdf_fk_debug_chain: chainLinks.map(link => { const item = fkItems.find(i => linkNameOfItem(i) === link) || {}; return { link, parent: item.urdf_joint_parent || parentLinkOfItem(item), joint_name: item.joint_name || item.parent_joint_name || '', joint_origin: item.urdf_joint_origin || item.joint_origin || item.parent_joint_origin || null, joint_value: item.joint_value ?? item.parent_joint_value ?? 0, world_xyz: linkPositions[link] || null, visual_world_xyz: visualPositions[link] || null }; }), urdf_fk_distances_m: distances });
+    renderDiagnostics.assembled_hierarchy_rendered_mesh_count = fkItems.filter(item => displayMeshUri(item)).length;
+    renderDiagnostics.skipped_flattened_urdf_visual_count = handled.size;
+    return { handled, assemblies, renderDiagnostics };
+  }
   const groups = new Map();
   for (const item of candidates) {
     const key = assemblyGroupKey(item);
