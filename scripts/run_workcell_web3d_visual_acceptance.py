@@ -437,12 +437,12 @@ def baked_pose_render_mode_summary(status: Mapping[str, Any]) -> dict[str, Any]:
 
 def _assembled_hierarchy_mode_active(status: Mapping[str, Any]) -> bool:
     mode = str(status.get("robot_render_mode") or status.get("robotRenderMode") or "").strip()
-    return mode in {"assembled_urdf_hierarchy", "urdf_fk_visual_world_pose"}
+    return mode in {"assembled_urdf_hierarchy", "verified_urdf_fk_visual_world_pose"}
 
 def _expanded_urdf_fk_mode_active(status: Mapping[str, Any]) -> bool:
     mode = str(status.get("robot_render_mode") or status.get("robotRenderMode") or "").strip()
     source = str(status.get("robot_transform_source") or status.get("robotTransformSource") or "").strip()
-    return mode == "urdf_fk_visual_world_pose" and source == "expanded_urdf_joint_tree"
+    return mode == "verified_urdf_fk_visual_world_pose" and source == "ros_tf_verified_urdf_fk"
 
 
 def _baked_pose_render_mode_errors(status: Mapping[str, Any]) -> list[str]:
@@ -460,7 +460,7 @@ def _baked_pose_render_mode_errors(status: Mapping[str, Any]) -> list[str]:
 def _assembled_hierarchy_errors(status: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
     if not _expanded_urdf_fk_mode_active(status):
-        errors.append("browser viewer ur5_2f_test must use robot_transform_source=expanded_urdf_joint_tree and robot_render_mode=urdf_fk_visual_world_pose")
+        errors.append("browser viewer ur5_2f_test must use robot_transform_source=ros_tf_verified_urdf_fk and robot_render_mode=verified_urdf_fk_visual_world_pose")
     links = status.get("robot_hierarchy_links") or status.get("robotHierarchyLinks") or []
     missing_links = status.get("robot_hierarchy_missing_links") or []
     missing_parents = status.get("robot_hierarchy_missing_parents") or []
