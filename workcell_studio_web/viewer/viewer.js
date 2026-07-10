@@ -4,6 +4,7 @@ let STLLoader;
 let ColladaLoader;
 let OBJLoader;
 let TransformControls;
+let loadRobotPreview;
 
 const SUPPORTED_SCHEMA_VERSION = 'workcell_studio_web_scene/v1';
 const EDIT_PATCH_SCHEMA_VERSION = 'workcell_studio_web_scene_edit_patch/v1';
@@ -2031,110 +2032,51 @@ function renderScene(items) {
 
 
 
-function parseNumberList(value, fallback = [0, 0, 0]) {
-  const parts = String(value || '').trim().split(/\s+/).filter(Boolean).map(Number);
-  return parts.length >= 3 && parts.slice(0, 3).every(Number.isFinite) ? parts.slice(0, 3) : fallback;
-}
-function applyUrdfOrigin(object, originEl) {
-  const xyz = parseNumberList(originEl?.getAttribute('xyz'), [0, 0, 0]);
-  const rpy = parseNumberList(originEl?.getAttribute('rpy'), [0, 0, 0]);
-  object.position.set(xyz[0], xyz[1], xyz[2]);
-  object.rotation.set(rpy[0], rpy[1], rpy[2], 'XYZ');
-}
-function rewriteUrdfMeshUrl(filename) {
-  const raw = String(filename || '').trim();
-  if (!raw || raw.startsWith('package://')) return '';
-  return meshUriDiagnostic({ mesh_uri: raw, mesh_staging_status: 'staged' }).uri || '';
-}
-function loadUrdfVisualMesh(meshUrl, linkName, visualIndex, parent, diagnostics) {
-  const uri = rewriteUrdfMeshUrl(meshUrl);
-  if (!uri) { diagnostics.robot_missing_meshes.push(meshUrl); return; }
-  const item = { id: `${linkName}_urdf_visual_${visualIndex}`, link_name: linkName, mesh_uri: uri, mesh_staging_status: 'staged', source_layer: 'expanded_urdf_loader', role: 'robot', category: 'robot' };
-  const loadUrl = repoRootRelativeUrl(uri);
-  const ext = meshExtensionFromUri(uri);
-  const onLoaded = loaded => {
-    const meshObject = materializeLoadedMesh(item, uri, loaded);
-    parent.add(meshObject);
-    diagnostics.robot_loaded_visual_count += 1;
-    renderSceneSummary();
-    const bounds = computeFitBounds();
-    if (bounds) frameScene(bounds);
-  };
-  const onError = err => {
-    diagnostics.robot_missing_meshes.push(`${uri}: ${err?.message || err || 'load failed'}`);
-    renderSceneSummary();
-  };
-  if (ext === 'stl') new STLLoader().load(loadUrl, geom => onLoaded(geom), undefined, onError);
-  else if (ext === 'dae') new ColladaLoader().load(loadUrl, dae => onLoaded(dae), undefined, onError);
-  else if (ext === 'obj') new OBJLoader().load(loadUrl, obj => onLoaded(obj), undefined, onError);
-  else diagnostics.robot_missing_meshes.push(`${uri}: unsupported mesh format`);
-}
-async function loadExpandedUrdfRobotPreview(preview) {
+function loadExpandedUrdfRobotPreview(preview) {
   const diagnostics = state.robotUrdfPreviewDiagnostics = {
     robot_render_mode: 'expanded_urdf_loader',
     robot_preview_loaded: false,
     robot_urdf_url: preview?.urdf_url || '',
     robot_loaded_link_count: 0,
+    robot_loaded_joint_count: 0,
     robot_loaded_visual_count: 0,
     robot_missing_meshes: [],
     robot_joint_values_applied: preview?.joint_values || {},
     skipped_legacy_generated_urdf_visual_count: state.robotAssemblyRenderDiagnostics?.skipped_legacy_generated_urdf_visual_count || state.robotAssemblyRenderDiagnostics?.skipped_legacy_generated_urdf_count || 0,
   };
-  try {
-    const url = repoRootRelativeUrl(preview.urdf_url);
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status} while loading ${url}`);
-    const xml = new DOMParser().parseFromString(await response.text(), 'application/xml');
-    if (xml.querySelector('parsererror')) throw new Error('expanded URDF XML parse failed');
-    const root = new THREE.Group();
-    root.name = `${sceneDisplayName()}_expanded_urdf_loader_robot`;
-    root.userData.robot_render_mode = 'expanded_urdf_loader';
-    const links = new Map();
-    xml.querySelectorAll('link').forEach(linkEl => {
-      const name = linkEl.getAttribute('name') || '';
-      const node = new THREE.Group();
-      node.name = `${name}_urdf_loader_link`;
-      node.userData.link_name = name;
-      links.set(name, node);
-      let visualIndex = 0;
-      linkEl.querySelectorAll(':scope > visual').forEach(visualEl => {
-        const visual = new THREE.Group();
-        visual.name = `${name}_urdf_loader_visual_${visualIndex}`;
-        applyUrdfOrigin(visual, visualEl.querySelector(':scope > origin'));
-        node.add(visual);
-        const mesh = visualEl.querySelector(':scope > geometry > mesh');
-        if (mesh) loadUrdfVisualMesh(mesh.getAttribute('filename'), name, visualIndex, visual, diagnostics);
-        visualIndex += 1;
-      });
-    });
-    xml.querySelectorAll('joint').forEach(jointEl => {
-      const parentName = jointEl.querySelector(':scope > parent')?.getAttribute('link') || '';
-      const childName = jointEl.querySelector(':scope > child')?.getAttribute('link') || '';
-      const child = links.get(childName);
-      if (!child) return;
-      applyUrdfOrigin(child, jointEl.querySelector(':scope > origin'));
-      const type = jointEl.getAttribute('type') || 'fixed';
-      const value = Number(preview?.joint_values?.[jointEl.getAttribute('name') || ''] || 0);
-      if (Number.isFinite(value) && type !== 'fixed') {
-        const axis = parseNumberList(jointEl.querySelector(':scope > axis')?.getAttribute('xyz'), [1, 0, 0]);
-        child.rotateOnAxis(new THREE.Vector3(axis[0], axis[1], axis[2]).normalize(), value);
-      }
-      if (links.has(parentName)) links.get(parentName).add(child);
-    });
-    for (const [name, node] of links.entries()) if (!node.parent) root.add(node);
-    state.three.scene.add(root);
-    state.assemblyRoots.push(root);
-    diagnostics.robot_loaded_link_count = links.size;
-    diagnostics.robot_preview_loaded = true;
-    diagnostics.robot_hierarchy_links = Array.from(links.keys());
-    diagnostics.robot_hierarchy_missing_links = asArray(preview?.expected_links).filter(link => !links.has(link));
-    renderSceneSummary();
-  } catch (err) {
-    diagnostics.robot_preview_loaded = false;
-    diagnostics.robot_missing_meshes.push(err?.message || String(err));
-    appendRuntimeWarning({}, preview?.urdf_url || '', `expanded_urdf_loader failed: ${err?.message || err}`, 'expanded_urdf_loader_failed');
+  if (typeof loadRobotPreview !== 'function') {
+    diagnostics.robot_missing_meshes.push('urdf_robot_renderer module was not loaded');
+    appendRuntimeWarning({}, preview?.urdf_url || '', 'expanded_urdf_loader failed: urdf_robot_renderer module was not loaded', 'expanded_urdf_loader_failed');
     refreshWarnings();
+    return { root: null, links: new Map(), joints: new Map(), diagnostics, ready: Promise.resolve(null) };
   }
+  const previewResult = loadRobotPreview(preview, {
+    scene: state.three.scene,
+    assemblyRoots: state.assemblyRoots,
+    repoRootRelativeUrl,
+    meshUriDiagnostic,
+    rootName: `${sceneDisplayName()}_expanded_urdf_loader_robot`,
+    skippedLegacyGeneratedUrdfVisualCount: diagnostics.skipped_legacy_generated_urdf_visual_count,
+    onRobotLoaded: result => {
+      state.robotUrdfPreviewDiagnostics = result.diagnostics;
+      renderSceneSummary();
+      const bounds = computeFitBounds();
+      if (bounds) frameScene(bounds);
+    },
+    onRobotMeshLoaded: () => {
+      renderSceneSummary();
+      const bounds = computeFitBounds();
+      if (bounds) frameScene(bounds);
+    },
+    onRobotMeshLoadError: () => renderSceneSummary(),
+    onRobotError: err => {
+      appendRuntimeWarning({}, preview?.urdf_url || '', `expanded_urdf_loader failed: ${err?.message || err}`, 'expanded_urdf_loader_failed');
+      refreshWarnings();
+      renderSceneSummary();
+    },
+  });
+  state.robotUrdfPreviewDiagnostics = previewResult.diagnostics;
+  return previewResult;
 }
 
 function linkNameOfItem(item) { return String(item?.link_name || item?.link || item?.frame || item?.object_name || item?.id || '').trim(); }
@@ -2856,12 +2798,14 @@ async function boot() {
     const stlModule = await import('three/addons/loaders/STLLoader.js');
     const colladaModule = await import('three/addons/loaders/ColladaLoader.js');
     const objModule = await import('three/addons/loaders/OBJLoader.js');
+    const urdfRobotRendererModule = await import('./urdf_robot_renderer.js');
     THREE = threeModule;
     OrbitControls = controlsModule.OrbitControls;
     TransformControls = transformControlsModule.TransformControls;
     STLLoader = stlModule.STLLoader;
     ColladaLoader = colladaModule.ColladaLoader;
     OBJLoader = objModule.OBJLoader;
+    loadRobotPreview = urdfRobotRendererModule.loadRobotPreview;
     initThree();
     setLabelsVisible(el.labelsToggle?.checked || false);
     setDebugOverlaysVisible(el.debugOverlaysToggle?.checked || false);
