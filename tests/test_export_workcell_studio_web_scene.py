@@ -4,11 +4,55 @@ import sys
 from pathlib import Path
 
 import yaml
+import importlib.util
 
 
 SCRIPT = Path("scripts/export_workcell_studio_web_scene.py")
 ROOT = Path(__file__).resolve().parents[1]
 EXTRACT_INDEX_SCRIPT = ROOT / "scripts" / "extract_scene_urdf_visual_mesh_index.py"
+spec = importlib.util.spec_from_file_location("export_workcell_studio_web_scene", ROOT / SCRIPT)
+exporter = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(exporter)
+
+
+def test_robot_preview_extraction_keeps_robot_subtree_and_excludes_scene_siblings(tmp_path):
+    source = tmp_path / "expanded_scene_preview.urdf"
+    text = """<?xml version="1.0"?>
+<robot name="demo_scene">
+  <material name="robot_blue"><color rgba="0.1 0.2 0.3 1"/></material>
+  <material name="table_gray"><color rgba="0.5 0.5 0.5 1"/></material>
+  <link name="world"/>
+  <link name="base_link"><visual><geometry><mesh filename="package://ur_description/meshes/ur5/visual/base.dae" scale="1 1 1"/></geometry><material name="robot_blue"/></visual></link>
+  <link name="shoulder_link"/>
+  <link name="tool0"/>
+  <link name="gripper_base_link"/>
+  <link name="left_finger_link"/>
+  <link name="workbench"><visual><material name="table_gray"/></visual></link>
+  <link name="camera_link"/>
+  <joint name="world_to_robot" type="fixed"><parent link="world"/><child link="base_link"/><origin xyz="0.4 0.1 0.2" rpy="0 0 1.57"/></joint>
+  <joint name="shoulder_pan_joint" type="revolute"><parent link="base_link"/><child link="shoulder_link"/><origin xyz="0 0 0.089" rpy="0 0 0"/><axis xyz="0 0 1"/><limit lower="-6.28" upper="6.28" effort="150" velocity="3.15"/></joint>
+  <joint name="wrist_3_joint" type="revolute"><parent link="shoulder_link"/><child link="tool0"/><origin xyz="0 0 0.1" rpy="0 0 0"/><axis xyz="0 0 1"/><mimic joint="shoulder_pan_joint" multiplier="0" offset="0"/></joint>
+  <joint name="tool0_to_gripper" type="fixed"><parent link="tool0"/><child link="gripper_base_link"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
+  <joint name="finger_joint" type="revolute"><parent link="gripper_base_link"/><child link="left_finger_link"/><axis xyz="1 0 0"/><limit lower="0" upper="0.8" effort="20" velocity="1"/></joint>
+  <joint name="world_to_table" type="fixed"><parent link="world"/><child link="workbench"/><origin xyz="1 0 0" rpy="0 0 0"/></joint>
+  <joint name="world_to_camera" type="fixed"><parent link="world"/><child link="camera_link"/><origin xyz="0 1 1" rpy="0 0 0"/></joint>
+</robot>
+"""
+    extracted = exporter._extract_robot_preview_urdf(text, source)
+
+    assert 'link name="world"' in extracted
+    assert 'joint name="world_to_robot" type="fixed"' in extracted
+    assert 'link name="base_link"' in extracted
+    assert 'link name="tool0"' in extracted
+    assert 'link name="gripper_base_link"' in extracted
+    assert 'link name="left_finger_link"' in extracted
+    assert 'mesh filename="package://ur_description/meshes/ur5/visual/base.dae" scale="1 1 1"' in extracted
+    assert 'material name="robot_blue"' in extracted
+    assert 'limit lower="-6.28" upper="6.28" effort="150" velocity="3.15"' in extracted
+    assert 'mimic joint="shoulder_pan_joint" multiplier="0" offset="0"' in extracted
+    assert "workbench" not in extracted
+    assert "camera_link" not in extracted
+    assert "table_gray" not in extracted
 
 
 def test_export_web_scene_contract_and_determinism(tmp_path):

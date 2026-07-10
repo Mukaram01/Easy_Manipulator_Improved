@@ -23,6 +23,7 @@ import os
 import shutil
 import sys
 import re
+import copy
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -116,6 +117,10 @@ GENERATED_OUTPUT_SECTIONS = ("robots", "tools", "assets", "sensors", "zones", "f
 RENDERABLE_OUTPUT_SECTIONS = ("robots", "tools", "assets", "sensors", "zones")
 
 Json = Dict[str, Any]
+
+
+class BlockingExportError(RuntimeError):
+    """Raised when a canonical scene cannot be exported honestly."""
 
 
 def _warn(warnings: List[Json], code: str, message: str, source: Optional[str] = None) -> None:
@@ -387,24 +392,137 @@ def _synthesize_robot_preview_urdf_from_rows(payload: Json) -> Optional[str]:
     return "\n".join(out) + "\n"
 
 
+def _child_text(element: ET.Element, tag: str, attr: str) -> str:
+    child = element.find(tag)
+    return child.get(attr, "") if child is not None else ""
+
+
+def _extract_robot_preview_urdf(expanded_urdf_text: str, source: Path) -> str:
+    """Extract the robot/tool branch from a full xacro-expanded scene URDF."""
+    try:
+        full_robot = ET.fromstring(expanded_urdf_text)
+    except ET.ParseError as exc:
+        raise BlockingExportError(f"failed to parse expanded scene URDF {source}: {exc}") from exc
+    if full_robot.tag != "robot":
+        raise BlockingExportError(f"expanded scene URDF {source} does not contain a <robot> root")
+
+    links = {link.get("name", ""): link for link in full_robot.findall("link") if link.get("name")}
+    joints = [joint for joint in full_robot.findall("joint") if joint.get("name")]
+    if "base_link" not in links:
+        raise BlockingExportError(f"expanded scene URDF {source} does not contain required robot base link 'base_link'")
+
+    child_to_joint: Dict[str, ET.Element] = {}
+    children_by_parent: Dict[str, List[ET.Element]] = {}
+    for joint in joints:
+        parent = _child_text(joint, "parent", "link")
+        child = _child_text(joint, "child", "link")
+        if not parent or not child:
+            continue
+        child_to_joint[child] = joint
+        children_by_parent.setdefault(parent, []).append(joint)
+
+    # Retain the exact fixed world/root-to-base chain, if the expanded scene has
+    # one, then recurse downward from base_link only. This naturally excludes
+    # table/camera/bin/zone sibling branches mounted under world.
+    selected_links = {"base_link"}
+    selected_joints: List[ET.Element] = []
+    cursor = "base_link"
+    seen = set()
+    while cursor in child_to_joint and cursor not in seen:
+        seen.add(cursor)
+        joint = child_to_joint[cursor]
+        parent = _child_text(joint, "parent", "link")
+        if not parent:
+            break
+        if joint.get("type", "fixed") != "fixed":
+            raise BlockingExportError(
+                f"expanded scene URDF {source} has non-fixed root-to-base joint "
+                f"{joint.get('name')} ({parent} -> {cursor}); robot preview requires an exact fixed world/root-to-base transform"
+            )
+        selected_links.add(parent)
+        selected_joints.insert(0, joint)
+        cursor = parent
+
+    stack = ["base_link"]
+    while stack:
+        parent = stack.pop()
+        for joint in sorted(children_by_parent.get(parent, []), key=lambda j: j.get("name", "")):
+            child = _child_text(joint, "child", "link")
+            if not child or child in selected_links:
+                continue
+            selected_joints.append(joint)
+            selected_links.add(child)
+            stack.append(child)
+
+    required = {"base_link", "tool0", "gripper_base_link"}
+    missing = sorted(link for link in required if link not in selected_links)
+    if missing:
+        raise BlockingExportError(
+            f"expanded scene URDF {source} robot-preview extraction is missing required robot/tool links: {', '.join(missing)}"
+        )
+
+    material_names = {
+        material.get("name", "")
+        for link_name in selected_links
+        for material in links[link_name].findall(".//material")
+        if material.get("name")
+    }
+    out = ET.Element("robot", {"name": f"{full_robot.get('name', 'workcell')}_robot_preview"})
+    for material in full_robot.findall("material"):
+        if material.get("name") in material_names:
+            out.append(copy.deepcopy(material))
+    for link_name in sorted(selected_links):
+        out.append(copy.deepcopy(links[link_name]))
+    for joint in selected_joints:
+        out.append(copy.deepcopy(joint))
+    ET.indent(out, space="  ")
+    return ET.tostring(out, encoding="unicode", xml_declaration=True) + "\n"
+
+
 def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path, warnings: List[Json]) -> None:
-    """Copy the xacro-expanded scene URDF beside the web scene and rewrite mesh URIs for browser loading."""
+    """Stage a browser robot-preview URDF extracted from the xacro-expanded scene URDF."""
     data = _as_map(payload.get("_visual_mesh_index_source"))
     rel = str(data.get("source_expanded_urdf_path") or "generated/expanded_scene_preview.urdf")
     source = (Path.cwd() / rel).resolve() if rel and not Path(rel).is_absolute() else Path(rel).resolve()
     if not source.is_file():
         source = scene_dir / "generated" / "expanded_scene_preview.urdf"
     synthesized_text = None
+    scene_id = str(payload.get("scene", {}).get("id") or scene_dir.name)
+    canonical_scene_requires_real_expanded_urdf = scene_id == "ur5_2f_test"
     if not source.is_file():
+        if canonical_scene_requires_real_expanded_urdf:
+            raise BlockingExportError(
+                f"blocking export error: {scene_id} requires real xacro-expanded scene URDF at "
+                f"{scene_dir / 'generated' / 'expanded_scene_preview.urdf'}; run the visual mesh index extractor with real xacro expansion first. "
+                "Refusing to synthesize robot preview from flattened mesh rows."
+            )
         synthesized_text = _synthesize_robot_preview_urdf_from_rows(payload)
         if not synthesized_text:
             _warn(warnings, "expanded_robot_urdf_missing", "Expanded robot URDF was not available for browser robot preview; legacy rows remain as fallback metadata only.", rel)
             return
-    scene_id = str(payload.get("scene", {}).get("id") or scene_dir.name)
     repo_root = Path.cwd().resolve()
-    dest = (repo_root / "build" / "workcell_studio_web_scene" / f"{scene_id}.expanded.urdf").resolve()
+    dest = (repo_root / "build" / "workcell_studio_web_scene" / f"{scene_id}.robot_preview.urdf").resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
-    text = synthesized_text if synthesized_text is not None else source.read_text(encoding="utf-8")
+    if synthesized_text is not None:
+        text = synthesized_text
+        preview_mode = "legacy_flattened_rows_robot_preview"
+        rviz_parity = False
+    else:
+        try:
+            text = _extract_robot_preview_urdf(source.read_text(encoding="utf-8"), source)
+        except BlockingExportError:
+            if canonical_scene_requires_real_expanded_urdf:
+                raise
+            _warn(warnings, "robot_preview_extraction_failed", "Could not extract robot subtree from expanded URDF; using temporary legacy flattened-row fallback without RViz parity.", str(source))
+            synthesized_text = _synthesize_robot_preview_urdf_from_rows(payload)
+            if not synthesized_text:
+                return
+            text = synthesized_text
+            preview_mode = "legacy_flattened_rows_robot_preview"
+            rviz_parity = False
+        else:
+            preview_mode = "expanded_urdf_robot_subtree"
+            rviz_parity = True
     asset_root = (repo_root / "build" / "workcell_studio_web_scene" / "assets" / scene_id).resolve()
     asset_root.mkdir(parents=True, exist_ok=True)
 
@@ -425,9 +543,10 @@ def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path
     text = re.sub(r"package://[^\s'\"<>]+", rewrite, text)
     dest.write_text(text, encoding="utf-8")
     payload["robot_preview"] = {
-        "mode": "expanded_urdf_loader",
+        "mode": preview_mode,
         "urdf_url": os.path.relpath(dest, repo_root).replace(os.sep, "/"),
         "robot_root_link": "base_link",
+        "rviz_parity": rviz_parity,
         "joint_values": dict(DEFAULT_ROBOT_PREVIEW_JOINT_VALUES),
         "expected_links": list(EXPECTED_ROBOT_PREVIEW_LINKS),
     }
@@ -2066,7 +2185,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"error: --scene must be an existing directory: {scene_dir}", file=sys.stderr)
         return 2
 
-    payload = build_web_scene(scene_dir, stage_assets=args.stage_assets, output_path=output_path)
+    try:
+        payload = build_web_scene(scene_dir, stage_assets=args.stage_assets, output_path=output_path)
+    except BlockingExportError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return 0
