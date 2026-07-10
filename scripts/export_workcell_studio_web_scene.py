@@ -22,6 +22,7 @@ import json
 import os
 import shutil
 import sys
+import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -66,6 +67,27 @@ ROBOTIQ_85_FALLBACK_LINK_TRANSFORMS = {
 }
 UR_VISUAL_MESH_TOKEN = "package://ur_description/meshes/"
 ROBOTIQ_VISUAL_MESH_TOKEN = "package://robotiq_85_description/meshes/visual/"
+
+DEFAULT_ROBOT_PREVIEW_JOINT_VALUES = {
+    "shoulder_pan_joint": 0.0,
+    "shoulder_lift_joint": -1.5708,
+    "elbow_joint": 1.5708,
+    "wrist_1_joint": -1.5708,
+    "wrist_2_joint": -1.5708,
+    "wrist_3_joint": 0.0,
+}
+EXPECTED_ROBOT_PREVIEW_LINKS = [
+    "base_link",
+    "base_link_inertia",
+    "shoulder_link",
+    "upper_arm_link",
+    "forearm_link",
+    "wrist_1_link",
+    "wrist_2_link",
+    "wrist_3_link",
+    "tool0",
+    "gripper_base_link",
+]
 
 HELPER_TOKENS = (
     "overlay",
@@ -298,6 +320,117 @@ def _staging_failure_status(warnings: Sequence[str]) -> str:
         return "unsupported_scheme"
     return "resolve_failed"
 
+
+
+
+def _xml_attr(value: Any) -> str:
+    return str(value if value is not None else "").replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _pose_xyz_rpy_text(pose: Mapping[str, Any]) -> Tuple[str, str]:
+    xyz = pose.get("xyz") if isinstance(pose, Mapping) else None
+    rpy = pose.get("rpy") if isinstance(pose, Mapping) else None
+    xyz_vals = xyz if isinstance(xyz, list) and len(xyz) >= 3 else [0, 0, 0]
+    rpy_vals = rpy if isinstance(rpy, list) and len(rpy) >= 3 else [0, 0, 0]
+    return " ".join(str(float(v)) for v in xyz_vals[:3]), " ".join(str(float(v)) for v in rpy_vals[:3])
+
+
+def _synthesize_robot_preview_urdf_from_rows(payload: Json) -> Optional[str]:
+    rows: List[Json] = []
+    for section in ("robots", "tools"):
+        rows.extend([item for item in payload.get(section, []) if isinstance(item, dict) and item.get("mesh_uri")])
+    if not rows:
+        return None
+    links = {"base_link"}
+    joints: Dict[str, Tuple[str, Json]] = {}
+    visuals: Dict[str, List[Json]] = {}
+    for item in rows:
+        link = str(item.get("link_name") or item.get("link") or item.get("object_name") or "").strip()
+        if not link:
+            continue
+        parent = str(item.get("parent_link") or item.get("joint_parent_link") or item.get("immediate_parent_link") or "").strip()
+        links.add(link)
+        if parent:
+            links.add(parent)
+            joints.setdefault(link, (parent, item))
+        visuals.setdefault(link, []).append(item)
+    out = ['<?xml version="1.0" ?>', '<robot name="workcell_studio_preview_robot">']
+    for link in sorted(links):
+        out.append(f'  <link name="{_xml_attr(link)}">')
+        for idx, item in enumerate(visuals.get(link, [])):
+            xyz, rpy = _pose_xyz_rpy_text(_as_map(item.get("visual_origin")))
+            mesh = _xml_attr(item.get("mesh_uri"))
+            out.extend([
+                f'    <visual name="visual_{idx}">',
+                f'      <origin xyz="{xyz}" rpy="{rpy}"/>',
+                '      <geometry>',
+                f'        <mesh filename="{mesh}"/>',
+                '      </geometry>',
+                '    </visual>',
+            ])
+        out.append('  </link>')
+    for child, (parent, item) in sorted(joints.items()):
+        joint = str(item.get("joint_name") or item.get("parent_joint_name") or f"{parent}_to_{child}")
+        jtype = str(item.get("joint_type") or item.get("parent_joint_type") or "fixed")
+        xyz, rpy = _pose_xyz_rpy_text(_as_map(item.get("joint_origin") or item.get("parent_joint_origin") or item.get("parent_to_child_pose")))
+        axis = item.get("joint_axis") if isinstance(item.get("joint_axis"), list) else [1, 0, 0]
+        axis_text = " ".join(str(float(v)) for v in axis[:3])
+        out.extend([
+            f'  <joint name="{_xml_attr(joint)}" type="{_xml_attr(jtype)}">',
+            f'    <parent link="{_xml_attr(parent)}"/>',
+            f'    <child link="{_xml_attr(child)}"/>',
+            f'    <origin xyz="{xyz}" rpy="{rpy}"/>',
+            f'    <axis xyz="{axis_text}"/>',
+            '  </joint>',
+        ])
+    out.append('</robot>')
+    return "\n".join(out) + "\n"
+
+
+def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path, warnings: List[Json]) -> None:
+    """Copy the xacro-expanded scene URDF beside the web scene and rewrite mesh URIs for browser loading."""
+    data = _as_map(payload.get("_visual_mesh_index_source"))
+    rel = str(data.get("source_expanded_urdf_path") or "generated/expanded_scene_preview.urdf")
+    source = (Path.cwd() / rel).resolve() if rel and not Path(rel).is_absolute() else Path(rel).resolve()
+    if not source.is_file():
+        source = scene_dir / "generated" / "expanded_scene_preview.urdf"
+    synthesized_text = None
+    if not source.is_file():
+        synthesized_text = _synthesize_robot_preview_urdf_from_rows(payload)
+        if not synthesized_text:
+            _warn(warnings, "expanded_robot_urdf_missing", "Expanded robot URDF was not available for browser robot preview; legacy rows remain as fallback metadata only.", rel)
+            return
+    scene_id = str(payload.get("scene", {}).get("id") or scene_dir.name)
+    repo_root = Path.cwd().resolve()
+    dest = (repo_root / "build" / "workcell_studio_web_scene" / f"{scene_id}.expanded.urdf").resolve()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    text = synthesized_text if synthesized_text is not None else source.read_text(encoding="utf-8")
+    asset_root = (repo_root / "build" / "workcell_studio_web_scene" / "assets" / scene_id).resolve()
+    asset_root.mkdir(parents=True, exist_ok=True)
+
+    def rewrite(match: re.Match[str]) -> str:
+        uri = match.group(0)
+        resolved, package, dest_rel, warning = _resolve_package_uri(uri, repo_root)
+        if resolved is None or dest_rel is None:
+            _warn(warnings, "expanded_robot_urdf_mesh_unresolved", warning or f"Could not resolve package mesh URI: {uri}", uri)
+            return uri
+        target = (asset_root / dest_rel).resolve()
+        if not _is_relative_to(target, asset_root):
+            _warn(warnings, "expanded_robot_urdf_mesh_unsafe", f"Staged URDF mesh destination escaped asset root: {target}", uri)
+            return uri
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(resolved, target)
+        return os.path.relpath(target, repo_root).replace(os.sep, "/")
+
+    text = re.sub(r"package://[^\s'\"<>]+", rewrite, text)
+    dest.write_text(text, encoding="utf-8")
+    payload["robot_preview"] = {
+        "mode": "expanded_urdf_loader",
+        "urdf_url": os.path.relpath(dest, repo_root).replace(os.sep, "/"),
+        "robot_root_link": "base_link",
+        "joint_values": dict(DEFAULT_ROBOT_PREVIEW_JOINT_VALUES),
+        "expected_links": list(EXPECTED_ROBOT_PREVIEW_LINKS),
+    }
 
 def _stage_visual_meshes(payload: Json, scene_dir: Path, output_path: Path) -> None:
     repo_root = Path.cwd().resolve()
@@ -1905,8 +2038,11 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
             },
         ],
     }
+    output["_visual_mesh_index_source"] = _as_map(data.get("visual_mesh_index"))
     if stage_assets:
         _stage_visual_meshes(output, scene_dir, output_path or Path("build/workcell_studio_web_scene/scene.web_scene.json"))
+        _stage_expanded_robot_urdf(output, scene_dir, output_path or Path("build/workcell_studio_web_scene/scene.web_scene.json"), warnings)
+    output.pop("_visual_mesh_index_source", None)
     _populate_visual_bounds_item_fields(output, data)
     output["metadata"] = {
         "mesh_contract": _populate_mesh_contract_fields(output, staged=stage_assets),

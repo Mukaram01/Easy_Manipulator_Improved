@@ -241,6 +241,16 @@ def test_ur5_2f_web_scene_stages_required_product_meshes_without_required_fallba
     assert required["robotiq"]
     assert required["table"]
     assert required["camera"]
+    preview = payload["robot_preview"]
+    assert preview["mode"] == "expanded_urdf_loader"
+    assert preview["urdf_url"] == "build/workcell_studio_web_scene/ur5_2f_test.expanded.urdf"
+    assert (REPO_ROOT / preview["urdf_url"]).is_file()
+    assert preview["robot_root_link"] == "base_link"
+    assert "gripper_base_link" in preview["expected_links"]
+    assert preview["joint_values"]["shoulder_lift_joint"] == -1.5708
+    expanded_text = (REPO_ROOT / preview["urdf_url"]).read_text(encoding="utf-8")
+    assert "package://" not in expanded_text
+    assert "build/workcell_studio_web_scene/assets/ur5_2f_test/" in expanded_text
 
     renderable_items = [
         item

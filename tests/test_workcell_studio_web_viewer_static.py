@@ -894,3 +894,19 @@ def test_viewer_reports_hierarchy_acceptance_diagnostics():
         "tool0','gripper_base_link",
     ]:
         assert token in js
+
+
+def test_viewer_has_expanded_urdf_loader_robot_preview_path():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    index = (VIEWER / "index.html").read_text(encoding="utf-8")
+    assert "expanded_urdf_loader" in js
+    assert "function loadExpandedUrdfRobotPreview" in js
+    assert "const urdfPreviewActive = state.sceneJson?.robot_preview?.mode === 'expanded_urdf_loader';" in js
+    assert "new Set(items.filter(isGeneratedUrdfMeshVisualItem))" in js
+    assert "robot_preview_loaded" in js
+    assert "robot_loaded_link_count" in js
+    assert "robot_loaded_visual_count" in js
+    assert "robot_missing_meshes" in js
+    assert "skipped_legacy_generated_urdf_visual_count" in js
+    assert "Robot preview: expanded URDF loader" in js
+    assert 'data-summary-field="robot-preview-mode"' in index

@@ -437,12 +437,11 @@ def baked_pose_render_mode_summary(status: Mapping[str, Any]) -> dict[str, Any]:
 
 def _assembled_hierarchy_mode_active(status: Mapping[str, Any]) -> bool:
     mode = str(status.get("robot_render_mode") or status.get("robotRenderMode") or "").strip()
-    return mode in {"assembled_urdf_hierarchy", "verified_urdf_fk_visual_world_pose"}
+    return mode in {"assembled_urdf_hierarchy", "verified_urdf_fk_visual_world_pose", "expanded_urdf_loader"}
 
 def _expanded_urdf_fk_mode_active(status: Mapping[str, Any]) -> bool:
     mode = str(status.get("robot_render_mode") or status.get("robotRenderMode") or "").strip()
-    source = str(status.get("robot_transform_source") or status.get("robotTransformSource") or "").strip()
-    return mode == "verified_urdf_fk_visual_world_pose" and source == "ros_tf_verified_urdf_fk"
+    return mode == "expanded_urdf_loader"
 
 
 def _baked_pose_render_mode_errors(status: Mapping[str, Any]) -> list[str]:
@@ -460,11 +459,11 @@ def _baked_pose_render_mode_errors(status: Mapping[str, Any]) -> list[str]:
 def _assembled_hierarchy_errors(status: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
     if not _expanded_urdf_fk_mode_active(status):
-        errors.append("browser viewer ur5_2f_test must use robot_transform_source=ros_tf_verified_urdf_fk and robot_render_mode=verified_urdf_fk_visual_world_pose")
+        errors.append("browser viewer ur5_2f_test must use robot_render_mode=expanded_urdf_loader")
     links = status.get("robot_hierarchy_links") or status.get("robotHierarchyLinks") or []
     missing_links = status.get("robot_hierarchy_missing_links") or []
     missing_parents = status.get("robot_hierarchy_missing_parents") or []
-    mesh_count = _status_int(status, "robot_hierarchy_mesh_count", "robotHierarchyMeshCount")
+    mesh_count = _status_int_any(status, "robot_loaded_visual_count", "robotLoadedVisualCount", "robot_hierarchy_mesh_count", "robotHierarchyMeshCount")
     required = ["base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link", "wrist_3_link", "tool0", "gripper_base_link"]
     absent = [link for link in required if link not in links]
     if absent:
@@ -474,13 +473,14 @@ def _assembled_hierarchy_errors(status: Mapping[str, Any]) -> list[str]:
     if missing_parents:
         errors.append(f"browser viewer robot_hierarchy_missing_parents must be empty, got {missing_parents!r}")
     if mesh_count < 16:
-        errors.append(f"browser viewer robot_hierarchy_mesh_count expected >= 16, got {mesh_count}")
+        errors.append(f"browser viewer robot_loaded_visual_count expected >= 16, got {mesh_count}")
     duplicate_count = _status_int(status, "visible_duplicate_generated_urdf_count", "visibleDuplicateGeneratedUrdfCount")
     if duplicate_count > 0:
         errors.append(f"browser viewer visible_duplicate_generated_urdf_count must be 0, got {duplicate_count}")
-    rendered_count = _status_int(status, "assembled_hierarchy_rendered_mesh_count", "assembledHierarchyRenderedMeshCount")
-    if ("assembled_hierarchy_rendered_mesh_count" in status or "assembledHierarchyRenderedMeshCount" in status) and rendered_count < 16:
-        errors.append(f"browser viewer assembled_hierarchy_rendered_mesh_count expected >= 16, got {rendered_count}")
+    if status.get("robot_preview_loaded") is not True:
+        errors.append("browser viewer robot_preview_loaded must be true")
+    if status.get("robot_missing_meshes"):
+        errors.append(f"browser viewer robot_missing_meshes must be empty, got {status.get('robot_missing_meshes')!r}")
     tool0_fallback_count = _status_int(status, "visible_tool0_fallback_count", "visibleTool0FallbackCount")
     if tool0_fallback_count > 0:
         errors.append(f"browser viewer visible_tool0_fallback_count must be 0, got {tool0_fallback_count}")
