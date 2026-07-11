@@ -71,6 +71,83 @@ function loadMesh(path, manager, material, done, context, diagnostics) {
   else onError(new Error(`unsupported mesh format .${ext || 'unknown'}`));
 }
 
+
+function matrix4ToDiagnostics(object) {
+  if (!object?.matrixWorld) return null;
+  object.updateMatrixWorld?.(true);
+  return Array.from(object.matrixWorld.elements).map(value => Number(value));
+}
+
+function vector3ToDiagnostics(value) {
+  return value ? { x: Number(value.x), y: Number(value.y), z: Number(value.z) } : null;
+}
+
+function collectLinkMatrixDiagnostics(robot, links) {
+  robot?.updateMatrixWorld?.(true);
+  const out = {};
+  for (const [name, link] of Object.entries(links || {})) {
+    if (!link?.matrixWorld) continue;
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    link.updateMatrixWorld?.(true);
+    link.matrixWorld.decompose(position, quaternion, scale);
+    out[name] = {
+      link_name: name,
+      name: link.name || name,
+      parent_name: link.parent?.name || '',
+      parent_link_name: Object.entries(links || {}).find(([, candidate]) => candidate === link.parent)?.[0] || '',
+      matrix_world: matrix4ToDiagnostics(link),
+      world_position: vector3ToDiagnostics(position),
+      world_quaternion: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w },
+      world_scale: vector3ToDiagnostics(scale),
+    };
+  }
+  return out;
+}
+
+function isVisualWrapperCandidate(child, links) {
+  if (!child || Object.values(links || {}).includes(child)) return false;
+  const type = String(child.type || '').toLowerCase();
+  const name = String(child.name || '').toLowerCase();
+  return child.isMesh || type.includes('mesh') || type.includes('group') || name.includes('visual') || child.children?.some?.(desc => desc?.isMesh);
+}
+
+function collectVisualWrapperMatrixDiagnostics(links) {
+  const out = [];
+  for (const [linkName, link] of Object.entries(links || {})) {
+    let visualIndex = 0;
+    for (const child of link.children || []) {
+      if (!isVisualWrapperCandidate(child, links)) continue;
+      child.updateMatrixWorld?.(true);
+      const position = new THREE.Vector3();
+      const quaternion = new THREE.Quaternion();
+      const scale = new THREE.Vector3();
+      child.matrixWorld.decompose(position, quaternion, scale);
+      out.push({
+        link_name: linkName,
+        linkName,
+        visual_index: visualIndex,
+        visualIndex,
+        object_name: child.name || `visual_${visualIndex}`,
+        objectName: child.name || `visual_${visualIndex}`,
+        parent_name: child.parent?.name || '',
+        parentName: child.parent?.name || '',
+        matrix_world: matrix4ToDiagnostics(child),
+        matrixWorld: matrix4ToDiagnostics(child),
+        world_position: vector3ToDiagnostics(position),
+        worldPosition: vector3ToDiagnostics(position),
+        world_quaternion: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w },
+        worldQuaternion: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w },
+        world_scale: vector3ToDiagnostics(scale),
+        worldScale: vector3ToDiagnostics(scale),
+      });
+      visualIndex += 1;
+    }
+  }
+  return out;
+}
+
 function buildLookupMap(source) {
   return new Map(Object.entries(source || {}));
 }
@@ -172,6 +249,10 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     diagnostics.robot_loaded_joint_count = result.joints.size;
     diagnostics.robot_joint_type_counts = jointTypeCounts(robot.joints);
     diagnostics.robot_hierarchy_links = Array.from(result.links.keys());
+    diagnostics.robot_link_world_matrices = collectLinkMatrixDiagnostics(robot, robot.links);
+    diagnostics.robotLinkWorldMatrices = diagnostics.robot_link_world_matrices;
+    diagnostics.robot_visual_wrapper_world_matrices = collectVisualWrapperMatrixDiagnostics(robot.links);
+    diagnostics.robotVisualWrapperWorldMatrices = diagnostics.robot_visual_wrapper_world_matrices;
     const rootDiagnostics = linkRootDiagnostics(robot, robot.links);
     diagnostics.robot_root_links = rootDiagnostics.roots;
     diagnostics.robotRootLinks = rootDiagnostics.roots;
@@ -184,6 +265,10 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     diagnostics.robot_hierarchy_missing_links = Array.isArray(previewConfig?.expected_links)
       ? previewConfig.expected_links.filter(link => !result.links.has(link))
       : [];
+    diagnostics.robot_link_world_matrices = collectLinkMatrixDiagnostics(robot, robot.links);
+    diagnostics.robotLinkWorldMatrices = diagnostics.robot_link_world_matrices;
+    diagnostics.robot_visual_wrapper_world_matrices = collectVisualWrapperMatrixDiagnostics(robot.links);
+    diagnostics.robotVisualWrapperWorldMatrices = diagnostics.robot_visual_wrapper_world_matrices;
     diagnostics.robot_preview_loaded = diagnostics.robot_failed_visual_count === 0 && diagnostics.robot_hierarchy_missing_links.length === 0;
     setLifecycleState(diagnostics, diagnostics.robot_preview_loaded ? 'ready' : 'failed');
     rendererContext?.scene?.add?.(robot);

@@ -46,6 +46,15 @@ REQUIRED_RENDERED_MESH_ADJACENT_PAIRS = {
     "wrist_1_link -> wrist_2_link": 0.75,
     "wrist_2_link -> wrist_3_link": 0.75,
 }
+REQUIRED_BROWSER_MATRIX_LINKS = (
+    "base_link", "base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link",
+    "wrist_1_link", "wrist_2_link", "wrist_3_link", "tool0", "gripper_base_link",
+    "gripper_finger1_knuckle_link", "gripper_finger2_knuckle_link",
+    "gripper_finger1_finger_link", "gripper_finger2_finger_link",
+    "gripper_finger1_inner_knuckle_link", "gripper_finger2_inner_knuckle_link",
+    "gripper_finger1_finger_tip_link", "gripper_finger2_finger_tip_link",
+)
+
 REQUIRED_PRODUCT_FALLBACK_TOKENS = (
     "required_mesh_failed_debug_fallback",
     "primitive_fallback",
@@ -697,6 +706,34 @@ def _tool0_frame_contract_errors(status: Mapping[str, Any]) -> list[str]:
     return errors
 
 
+
+def _browser_matrix_contract_errors(status: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    matrices = status.get("robot_link_world_matrices") or status.get("robotLinkWorldMatrices") or {}
+    if not isinstance(matrices, Mapping):
+        return ["browser viewer must expose robot_link_world_matrices from actual Object3D matrixWorld values"]
+    absent = [link for link in REQUIRED_BROWSER_MATRIX_LINKS if link not in matrices]
+    # flange is optional, but if loaded it must have a matrix.
+    hierarchy = status.get("robot_hierarchy_links") or status.get("robotHierarchyLinks") or []
+    if isinstance(hierarchy, list) and "flange" in hierarchy and "flange" not in matrices:
+        absent.append("flange")
+    if absent:
+        errors.append(f"browser viewer actual Object3D matrix diagnostics missing required links: {', '.join(absent)}")
+    for link, diagnostic in matrices.items():
+        matrix = diagnostic.get("matrix_world") if isinstance(diagnostic, Mapping) else None
+        if not (isinstance(matrix, list) and len(matrix) == 16 and all(isinstance(v, (int, float)) and math.isfinite(float(v)) for v in matrix)):
+            errors.append(f"browser viewer Object3D matrixWorld for {link} must be a finite 16-number matrix")
+    visual_matrices = status.get("robot_visual_wrapper_world_matrices") or status.get("robotVisualWrapperWorldMatrices") or []
+    if not isinstance(visual_matrices, list) or not visual_matrices:
+        errors.append("browser viewer must expose robot_visual_wrapper_world_matrices for T_world_link × T_link_visual wrappers")
+    else:
+        visual_links = {str(row.get("link_name") or row.get("linkName") or "") for row in visual_matrices if isinstance(row, Mapping)}
+        mesh_links = [link for link in REQUIRED_BROWSER_MATRIX_LINKS if link != "tool0"]
+        missing_visuals = [link for link in mesh_links if link not in visual_links]
+        if missing_visuals:
+            errors.append(f"browser viewer visual-wrapper matrix diagnostics missing required mesh links: {', '.join(missing_visuals)}")
+    return errors
+
 def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
     mesh_loaded_count = _status_int(status, "mesh_loaded_count", "meshLoadedCount")
@@ -716,6 +753,7 @@ def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
         if not (0.0 <= distance <= max_distance_m):
             errors.append(f"browser viewer resolved distance {pair} expected <= {max_distance_m:.3f} m, got {raw!r}")
     errors.extend(_robot_lifecycle_errors(status))
+    errors.extend(_browser_matrix_contract_errors(status))
     errors.extend(_assembled_hierarchy_errors(status))
     errors.extend(_tool0_frame_contract_errors(status))
     errors.extend(_rendered_mesh_adjacency_errors(status))
@@ -900,6 +938,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not screenshot_path.exists():
         screenshot_path.write_bytes(PNG_1X1)
 
+    browser_status_path = BUILD_ROOT / f"{scene_id}.browser_status.json"
+    if isinstance(browser.get("status"), Mapping):
+        browser_status_path.write_text(json.dumps({"status": browser.get("status")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        compare_report_path = BUILD_ROOT / f"{scene_id}.browser_fk_vs_ros_tf.json"
+        steps.append(run_step([sys.executable, "scripts/compare_web_scene_fk_to_ros_tf.py", "--scene", repo_relative(scene_dir), "--web-scene", repo_relative(output_path), "--output", repo_relative(compare_report_path), "--browser-status", repo_relative(browser_status_path), "--tolerance", "0.0001"]))
+
     report = {
         "scene_id": scene_id,
         "scene_dir": repo_relative(scene_dir),
@@ -909,6 +953,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "browser": browser,
         "robot_preview_lifecycle_diagnostics": robot_preview_lifecycle_diagnostics(browser.get("status")) if isinstance(browser.get("status"), Mapping) else {},
         "steps": steps,
+        "browser_status_json": repo_relative(browser_status_path) if browser_status_path.exists() else "",
         "report": repo_relative(report_path),
         "screenshot": repo_relative(screenshot_path),
     }

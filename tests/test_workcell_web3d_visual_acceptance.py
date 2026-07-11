@@ -361,16 +361,13 @@ def _valid_frame_diagnostics():
 
 
 def _valid_robot_hierarchy_fields():
-    links = [
-        "base_link_inertia",
-        "shoulder_link",
-        "upper_arm_link",
-        "forearm_link",
-        "wrist_1_link",
-        "wrist_2_link",
-        "wrist_3_link",
-        "tool0",
-        "gripper_base_link",
+    links = list(module.REQUIRED_BROWSER_MATRIX_LINKS)
+    identity = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    link_matrices = {link: {"matrix_world": identity, "parent_link_name": links[index - 1] if index else ""} for index, link in enumerate(links)}
+    visual_matrices = [
+        {"link_name": link, "visual_index": 0, "matrix_world": identity}
+        for link in links
+        if link != "tool0"
     ]
     return {
         "robot_render_mode": "expanded_urdf_loader",
@@ -391,6 +388,8 @@ def _valid_robot_hierarchy_fields():
         "robot_hierarchy_missing_links": [],
         "robot_hierarchy_missing_parents": [],
         "robot_hierarchy_mesh_count": 18,
+        "robot_link_world_matrices": link_matrices,
+        "robot_visual_wrapper_world_matrices": visual_matrices,
     }
 
 def _valid_browser_status_with_rendered_diagnostics():
