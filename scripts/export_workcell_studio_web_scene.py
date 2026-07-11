@@ -506,6 +506,7 @@ def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path
     if synthesized_text is not None:
         text = synthesized_text
         preview_mode = "legacy_flattened_rows_robot_preview"
+        source_mode = "legacy_flattened_rows_robot_preview"
         rviz_parity = False
     else:
         try:
@@ -519,9 +520,11 @@ def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path
                 return
             text = synthesized_text
             preview_mode = "legacy_flattened_rows_robot_preview"
+            source_mode = "legacy_flattened_rows_robot_preview"
             rviz_parity = False
         else:
-            preview_mode = "expanded_urdf_robot_subtree"
+            preview_mode = "expanded_urdf_loader"
+            source_mode = "expanded_urdf_robot_subtree"
             rviz_parity = True
     asset_root = (repo_root / "build" / "workcell_studio_web_scene" / "assets" / scene_id).resolve()
     asset_root.mkdir(parents=True, exist_ok=True)
@@ -544,6 +547,7 @@ def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path
     dest.write_text(text, encoding="utf-8")
     payload["robot_preview"] = {
         "mode": preview_mode,
+        "source_mode": source_mode,
         "urdf_url": os.path.relpath(dest, repo_root).replace(os.sep, "/"),
         "robot_root_link": "base_link",
         "rviz_parity": rviz_parity,

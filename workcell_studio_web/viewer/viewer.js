@@ -87,7 +87,7 @@ function computeSceneSummary() {
     meshFailedCount: statusRendered.filter(obj => isMissingOrFailedMeshStatus(obj.item?.mesh_status)).length,
     generatedLockedCount: rendered.filter(obj => isGeneratedOrLockedItem(obj.item)).length,
     editableCount: rendered.filter(obj => canEditItem(obj.item)).length,
-    robotPreviewMode: state.sceneJson?.robot_preview?.mode || '',
+    robotPreviewMode: robotPreviewSummaryMode(state.sceneJson?.robot_preview),
   };
 }
 function isExpectedMeshlessTool0Frame(item) {
@@ -394,7 +394,7 @@ function renderSceneSummary() {
     'mesh-failed-count': summary.meshFailedCount,
     'generated-locked-count': summary.generatedLockedCount,
     'editable-count': summary.editableCount,
-    'robot-preview-mode': summary.robotPreviewMode === 'expanded_urdf_loader' ? 'Robot preview: expanded URDF loader' : (summary.robotPreviewMode || 'mesh rows'),
+    'robot-preview-mode': summary.robotPreviewMode,
   };
   for (const [name, value] of Object.entries(fields)) {
     const node = el.summary.querySelector(`[data-summary-field="${name}"]`);
@@ -441,6 +441,13 @@ function bakedVisibleWorldPoseSource(item) {
 function hasMeshBackedVisualContract(item) {
   return Boolean(displayMeshUri(item) || item?.mesh_loaded || item?.meshLoaded || item?.mesh_status === 'loaded' || item?.renderInfo?.render_status === 'mesh_loaded');
 }
+function isExpandedUrdfRobotPreview(preview) {
+  const mode = String(preview?.mode || '').trim();
+  return mode === 'expanded_urdf_loader' || mode === 'expanded_urdf_robot_subtree';
+}
+function robotPreviewSummaryMode(preview) {
+  return isExpandedUrdfRobotPreview(preview) ? 'Robot preview: expanded URDF loader' : (preview?.mode || 'mesh rows');
+}
 function isGeneratedUrdfMeshVisualItem(item) {
   if (!isGeneratedUrdfItem(item)) return false;
   if (!hasMeshBackedVisualContract(item)) return false;
@@ -452,6 +459,9 @@ function isGeneratedUrdfMeshVisualItem(item) {
     item?.mesh_uri || item?.package_uri || item?.mesh_path || item?.source_path ||
     /\b(mesh|visual|link|robot|tool|gripper|camera|table|workbench)\b/.test(identity)
   );
+}
+function isRobotToolGeneratedUrdfMeshVisualItem(item) {
+  return Boolean(isGeneratedUrdfMeshVisualItem(item) && (isGeneratedRobotItem(item) || isGeneratedToolOrGripperItem(item)));
 }
 function itemAssemblyGroup(item) { return String(item?.assembly_group || item?.robot_instance_id || '').trim(); }
 function isAssemblyCandidateItem(item) {
@@ -1987,8 +1997,9 @@ function renderScene(items) {
   updateDirtyState();
   const scene = state.three.scene;
   state.robotUrdfPreviewDiagnostics = {};
-  const urdfPreviewActive = state.sceneJson?.robot_preview?.mode === 'expanded_urdf_loader';
-  const assemblyBuild = urdfPreviewActive ? { handled: new Set(items.filter(isGeneratedUrdfMeshVisualItem)), assemblies: [], renderDiagnostics: { skipped_flattened_urdf_visual_count: 0, assembled_hierarchy_rendered_mesh_count: 0, rendered_fk_visual_count: 0, skipped_legacy_generated_urdf_count: items.filter(isGeneratedUrdfMeshVisualItem).length, skipped_legacy_generated_urdf_visual_count: items.filter(isGeneratedUrdfMeshVisualItem).length, visible_duplicate_generated_urdf_count: 0, visible_tool0_fallback_count: 0, detached_robot_mesh_clusters: 0 } } : buildRobotAssemblies(items);
+  const urdfPreviewActive = isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview);
+  const robotToolGeneratedUrdfItems = items.filter(isRobotToolGeneratedUrdfMeshVisualItem);
+  const assemblyBuild = urdfPreviewActive ? { handled: new Set(robotToolGeneratedUrdfItems), assemblies: [], renderDiagnostics: { skipped_flattened_urdf_visual_count: 0, assembled_hierarchy_rendered_mesh_count: 0, rendered_fk_visual_count: 0, skipped_legacy_generated_urdf_count: robotToolGeneratedUrdfItems.length, skipped_legacy_generated_urdf_visual_count: robotToolGeneratedUrdfItems.length, visible_duplicate_generated_urdf_count: 0, visible_tool0_fallback_count: 0, detached_robot_mesh_clusters: 0 } } : buildRobotAssemblies(items);
   state.robotAssemblyDiagnostics = assemblyBuild.assemblies;
   state.robotAssemblyRenderDiagnostics = assemblyBuild.renderDiagnostics || {};
   if (urdfPreviewActive) loadExpandedUrdfRobotPreview(state.sceneJson.robot_preview);
