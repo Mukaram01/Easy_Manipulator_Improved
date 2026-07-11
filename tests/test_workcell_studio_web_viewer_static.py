@@ -901,8 +901,8 @@ def test_viewer_has_expanded_urdf_loader_robot_preview_path():
     index = (VIEWER / "index.html").read_text(encoding="utf-8")
     assert "expanded_urdf_loader" in js
     assert "function loadExpandedUrdfRobotPreview" in js
-    assert "const urdfPreviewActive = state.sceneJson?.robot_preview?.mode === 'expanded_urdf_loader';" in js
-    assert "new Set(items.filter(isGeneratedUrdfMeshVisualItem))" in js
+    assert "const urdfPreviewActive = isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview);" in js
+    assert "new Set(robotToolGeneratedUrdfItems)" in js
     assert "robot_preview_loaded" in js
     assert "robot_loaded_link_count" in js
     assert "robot_loaded_visual_count" in js
@@ -910,3 +910,34 @@ def test_viewer_has_expanded_urdf_loader_robot_preview_path():
     assert "skipped_legacy_generated_urdf_visual_count" in js
     assert "Robot preview: expanded URDF loader" in js
     assert 'data-summary-field="robot-preview-mode"' in index
+
+
+def test_viewer_expanded_urdf_preview_helper_accepts_canonical_and_legacy_modes():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    helper = js.split("function isExpandedUrdfRobotPreview(preview)", 1)[1].split("function robotPreviewSummaryMode", 1)[0]
+    assert "expanded_urdf_loader" in helper
+    assert "expanded_urdf_robot_subtree" in helper
+    render_body = js.split("function renderScene(items)", 1)[1].split("function loadExpandedUrdfRobotPreview", 1)[0]
+    assert "isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview)" in render_body
+    assert "state.sceneJson?.robot_preview?.mode === 'expanded_urdf_loader'" not in render_body
+
+
+def test_viewer_urdf_preview_suppression_is_limited_to_robot_tool_generated_rows():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    helper = js.split("function isRobotToolGeneratedUrdfMeshVisualItem(item)", 1)[1].split("function itemAssemblyGroup", 1)[0]
+    assert "isGeneratedUrdfMeshVisualItem(item)" in helper
+    assert "isGeneratedRobotItem(item) || isGeneratedToolOrGripperItem(item)" in helper
+    render_body = js.split("function renderScene(items)", 1)[1].split("function loadExpandedUrdfRobotPreview", 1)[0]
+    assert "items.filter(isRobotToolGeneratedUrdfMeshVisualItem)" in render_body
+    assert "items.filter(isGeneratedUrdfMeshVisualItem)" not in render_body
+    assert "new Set(robotToolGeneratedUrdfItems)" in render_body
+
+
+def test_viewer_summary_reports_expanded_urdf_loader_for_aliases():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    summary = js.split("function robotPreviewSummaryMode(preview)", 1)[1].split("function isGeneratedUrdfMeshVisualItem", 1)[0]
+    assert "Robot preview: expanded URDF loader" in summary
+    assert "isExpandedUrdfRobotPreview(preview)" in summary
+    summary_fields = js.split("const fields = {", 1)[1].split("};", 1)[0]
+    assert "'robot-preview-mode': summary.robotPreviewMode" in summary_fields
+    assert "summary.robotPreviewMode === 'expanded_urdf_loader'" not in summary_fields

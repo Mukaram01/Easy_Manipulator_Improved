@@ -825,3 +825,46 @@ def test_direct_web_export_normalizes_ur5_tool0_and_robotiq_generated_rows(tmp_p
     assert wrist["robot_instance_id"] == tool0["robot_instance_id"] == gripper["robot_instance_id"]
     assert tool0["parent_to_child_pose"]
     assert gripper["parent_to_child_pose"]
+
+
+def test_stage_expanded_robot_preview_uses_loader_mode_and_source_mode(tmp_path):
+    scene = tmp_path / "scene"
+    scene.mkdir()
+    source = tmp_path / "expanded.urdf"
+    source.write_text(
+        """<?xml version="1.0"?>
+<robot name="demo_scene">
+  <link name="world"/>
+  <link name="base_link"/>
+  <link name="tool0"/>
+  <link name="gripper_base_link"/>
+  <joint name="world_to_robot" type="fixed"><parent link="world"/><child link="base_link"/></joint>
+  <joint name="base_to_tool0" type="fixed"><parent link="base_link"/><child link="tool0"/></joint>
+  <joint name="tool0_to_gripper" type="fixed"><parent link="tool0"/><child link="gripper_base_link"/></joint>
+</robot>
+""",
+        encoding="utf-8",
+    )
+    payload = {"scene": {"id": "preview_contract"}, "_visual_mesh_index_source": {"source_expanded_urdf_path": str(source)}}
+
+    exporter._stage_expanded_robot_urdf(payload, scene, tmp_path / "out.json", [])
+
+    assert payload["robot_preview"]["mode"] == "expanded_urdf_loader"
+    assert payload["robot_preview"]["source_mode"] == "expanded_urdf_robot_subtree"
+    assert payload["robot_preview"]["rviz_parity"] is True
+
+
+def test_stage_legacy_synthesized_robot_preview_keeps_provenance_and_no_rviz_parity(tmp_path):
+    scene = tmp_path / "scene"
+    scene.mkdir()
+    payload = {
+        "scene": {"id": "legacy_preview_contract"},
+        "robots": [{"id": "ur5", "link": "base_link", "mesh_uri": "meshes/base.dae"}],
+        "tools": [{"id": "gripper", "link": "gripper_base_link", "parent_link": "base_link", "mesh_uri": "meshes/gripper.dae"}],
+    }
+
+    exporter._stage_expanded_robot_urdf(payload, scene, tmp_path / "out.json", [])
+
+    assert payload["robot_preview"]["mode"] == "legacy_flattened_rows_robot_preview"
+    assert payload["robot_preview"]["source_mode"] == "legacy_flattened_rows_robot_preview"
+    assert payload["robot_preview"]["rviz_parity"] is False
