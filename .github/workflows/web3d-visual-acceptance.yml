@@ -48,7 +48,7 @@ jobs:
           import json
           from pathlib import Path
           report_path = Path('build/workcell_studio_web_scene/ur5_2f_test.visual_acceptance.json')
-          screenshot_name = 'ur5_2f_test.visual_acceptance.png'
+          screenshot_name = 'ur5_2f_test.rviz_parity.png'
           report_name = 'ur5_2f_test.visual_acceptance.json'
           if report_path.is_file():
               report = json.loads(report_path.read_text(encoding='utf-8'))
@@ -89,5 +89,5 @@ jobs:
           if-no-files-found: error
           path: |
             build/workcell_studio_web_scene/ur5_2f_test.visual_acceptance.json
-            build/workcell_studio_web_scene/ur5_2f_test.visual_acceptance.png
+            build/workcell_studio_web_scene/ur5_2f_test.rviz_parity.png
             build/workcell_studio_web_scene/ur5_2f_test.web_scene.json

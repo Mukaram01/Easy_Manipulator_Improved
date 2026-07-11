@@ -2042,9 +2042,31 @@ function loadExpandedUrdfRobotPreview(preview) {
     robot_loaded_visual_count: 0,
     robot_missing_meshes: [],
     robot_joint_values_applied: preview?.joint_values || {},
+    robot_expected_visual_count: 0,
+    robotExpectedVisualCount: 0,
+    robot_completed_visual_count: 0,
+    robotCompletedVisualCount: 0,
+    robot_failed_visual_count: 0,
+    robotFailedVisualCount: 0,
+    robot_root_link_count: 0,
+    robotRootLinkCount: 0,
+    robot_root_links: [],
+    robotRootLinks: [],
+    robot_disconnected_links: [],
+    robotDisconnectedLinks: [],
+    robot_duplicate_links: [],
+    robotDuplicateLinks: [],
+    robot_preview_lifecycle_state: 'idle',
+    robotPreviewLifecycleState: 'idle',
+    robot_preview_canonical_fallback_used: false,
+    robotPreviewCanonicalFallbackUsed: false,
     skipped_legacy_generated_urdf_visual_count: state.robotAssemblyRenderDiagnostics?.skipped_legacy_generated_urdf_visual_count || state.robotAssemblyRenderDiagnostics?.skipped_legacy_generated_urdf_count || 0,
   };
   if (typeof loadRobotPreview !== 'function') {
+    diagnostics.robot_preview_lifecycle_state = 'failed';
+    diagnostics.robotPreviewLifecycleState = 'failed';
+    diagnostics.robot_failed_visual_count = 1;
+    diagnostics.robotFailedVisualCount = 1;
     diagnostics.robot_missing_meshes.push('urdf_robot_renderer module was not loaded');
     appendRuntimeWarning({}, preview?.urdf_url || '', 'expanded_urdf_loader failed: urdf_robot_renderer module was not loaded', 'expanded_urdf_loader_failed');
     refreshWarnings();

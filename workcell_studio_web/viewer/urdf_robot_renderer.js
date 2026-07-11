@@ -34,17 +34,33 @@ function applyFallbackMaterial(object, material) {
   return object;
 }
 
+function setLifecycleState(diagnostics, state) {
+  diagnostics.robot_preview_lifecycle_state = state;
+  diagnostics.robotPreviewLifecycleState = state;
+}
+
 function loadMesh(path, manager, material, done, context, diagnostics) {
   const uri = normalizeMeshUri(path, context, diagnostics);
-  if (!uri) { done(null, new Error(`unloadable URDF mesh URI: ${path}`)); return; }
+  diagnostics.robot_expected_visual_count += 1;
+  diagnostics.robotExpectedVisualCount = diagnostics.robot_expected_visual_count;
+  if (!uri) {
+    diagnostics.robot_failed_visual_count += 1;
+    diagnostics.robotFailedVisualCount = diagnostics.robot_failed_visual_count;
+    done(null, new Error(`unloadable URDF mesh URI: ${path}`));
+    return;
+  }
   const url = repoUrl(context, uri);
   const ext = meshExtension(uri);
   const onDone = object => {
     diagnostics.robot_loaded_visual_count += 1;
+    diagnostics.robot_completed_visual_count = diagnostics.robot_loaded_visual_count;
+    diagnostics.robotCompletedVisualCount = diagnostics.robot_completed_visual_count;
     done(applyFallbackMaterial(object, material));
     context?.onRobotMeshLoaded?.();
   };
   const onError = err => {
+    diagnostics.robot_failed_visual_count += 1;
+    diagnostics.robotFailedVisualCount = diagnostics.robot_failed_visual_count;
     diagnostics.robot_missing_meshes.push(`${uri}: ${err?.message || err || 'load failed'}`);
     done(null, err);
     context?.onRobotMeshLoadError?.(err, uri);
@@ -57,6 +73,29 @@ function loadMesh(path, manager, material, done, context, diagnostics) {
 
 function buildLookupMap(source) {
   return new Map(Object.entries(source || {}));
+}
+
+function linkRootDiagnostics(robot, links) {
+  const entries = Object.entries(links || {});
+  const roots = entries.filter(([, link]) => link?.parent === robot || !link?.parent).map(([name]) => name);
+  const disconnected = entries.filter(([, link]) => {
+    let node = link;
+    const seen = new Set();
+    while (node) {
+      if (node === robot) return false;
+      if (seen.has(node)) return true;
+      seen.add(node);
+      node = node.parent;
+    }
+    return true;
+  }).map(([name]) => name);
+  const seenNames = new Set();
+  const duplicateLinks = [];
+  for (const [name] of entries) {
+    if (seenNames.has(name)) duplicateLinks.push(name);
+    seenNames.add(name);
+  }
+  return { roots, disconnected, duplicateLinks };
 }
 
 function jointTypeCounts(joints) {
@@ -81,11 +120,30 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     robot_missing_meshes: [],
     robot_joint_values_applied: previewConfig?.joint_values || {},
     robot_joint_type_counts: {},
+    robot_expected_visual_count: 0,
+    robotExpectedVisualCount: 0,
+    robot_completed_visual_count: 0,
+    robotCompletedVisualCount: 0,
+    robot_failed_visual_count: 0,
+    robotFailedVisualCount: 0,
+    robot_root_link_count: 0,
+    robotRootLinkCount: 0,
+    robot_root_links: [],
+    robotRootLinks: [],
+    robot_disconnected_links: [],
+    robotDisconnectedLinks: [],
+    robot_duplicate_links: [],
+    robotDuplicateLinks: [],
+    robot_preview_lifecycle_state: 'idle',
+    robotPreviewLifecycleState: 'idle',
+    robot_preview_canonical_fallback_used: false,
+    robotPreviewCanonicalFallbackUsed: false,
     skipped_legacy_generated_urdf_visual_count: rendererContext?.skippedLegacyGeneratedUrdfVisualCount || 0,
   };
   const result = { root: null, links: new Map(), joints: new Map(), diagnostics, ready: null };
 
   result.ready = (async () => {
+    setLifecycleState(diagnostics, 'loading_urdf');
     const manager = new THREE.LoadingManager();
     const loader = new URDFLoader(manager);
     loader.parseVisual = true;
@@ -96,6 +154,7 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
 
     const urdfUrl = repoUrl(rendererContext, previewConfig?.urdf_url || '');
     const robot = await loader.loadAsync(urdfUrl);
+    setLifecycleState(diagnostics, 'loading_meshes');
     robot.name = rendererContext?.rootName || 'workcell_studio_urdf_loader_robot';
     robot.userData.robot_render_mode = ROBOT_RENDER_MODE;
     robot.userData.robot_preview_source = 'gkjohnson/urdf-loaders urdf-loader@0.13.0';
@@ -113,16 +172,27 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     diagnostics.robot_loaded_joint_count = result.joints.size;
     diagnostics.robot_joint_type_counts = jointTypeCounts(robot.joints);
     diagnostics.robot_hierarchy_links = Array.from(result.links.keys());
+    const rootDiagnostics = linkRootDiagnostics(robot, robot.links);
+    diagnostics.robot_root_links = rootDiagnostics.roots;
+    diagnostics.robotRootLinks = rootDiagnostics.roots;
+    diagnostics.robot_root_link_count = rootDiagnostics.roots.length;
+    diagnostics.robotRootLinkCount = rootDiagnostics.roots.length;
+    diagnostics.robot_disconnected_links = rootDiagnostics.disconnected;
+    diagnostics.robotDisconnectedLinks = rootDiagnostics.disconnected;
+    diagnostics.robot_duplicate_links = rootDiagnostics.duplicateLinks;
+    diagnostics.robotDuplicateLinks = rootDiagnostics.duplicateLinks;
     diagnostics.robot_hierarchy_missing_links = Array.isArray(previewConfig?.expected_links)
       ? previewConfig.expected_links.filter(link => !result.links.has(link))
       : [];
-    diagnostics.robot_preview_loaded = true;
+    diagnostics.robot_preview_loaded = diagnostics.robot_failed_visual_count === 0 && diagnostics.robot_hierarchy_missing_links.length === 0;
+    setLifecycleState(diagnostics, diagnostics.robot_preview_loaded ? 'ready' : 'failed');
     rendererContext?.scene?.add?.(robot);
     rendererContext?.assemblyRoots?.push?.(robot);
     rendererContext?.onRobotLoaded?.(result);
     return result;
   })().catch(err => {
     diagnostics.robot_preview_loaded = false;
+    setLifecycleState(diagnostics, 'failed');
     diagnostics.robot_missing_meshes.push(err?.message || String(err));
     rendererContext?.onRobotError?.(err, diagnostics);
     return result;

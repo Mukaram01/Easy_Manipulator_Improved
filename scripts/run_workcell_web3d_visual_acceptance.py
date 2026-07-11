@@ -54,6 +54,84 @@ REQUIRED_PRODUCT_FALLBACK_TOKENS = (
     "fallback_geometry",
 )
 
+LIFECYCLE_STATES = {"idle", "loading_urdf", "loading_meshes", "ready", "failed"}
+REQUIRED_UR5_ROBOTIQ_MESH_TOKENS = (
+    "ur5", "base", "shoulder", "upper_arm", "forearm", "wrist", "robotiq", "gripper",
+)
+
+
+
+def _status_value(status: Mapping[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in status and status.get(key) is not None:
+            return status.get(key)
+    return None
+
+
+def _status_list(status: Mapping[str, Any], *keys: str) -> list[Any]:
+    value = _status_value(status, *keys)
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
+
+
+def _final_lifecycle_state(status: Mapping[str, Any]) -> str:
+    return str(_status_value(status, "robot_preview_lifecycle_state", "robotPreviewLifecycleState", "final_state", "finalState") or "").strip()
+
+
+def robot_preview_lifecycle_diagnostics(status: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "expected_visual_count": _status_int_any(status, "robot_expected_visual_count", "robotExpectedVisualCount"),
+        "completed_visual_count": _status_int_any(status, "robot_completed_visual_count", "robotCompletedVisualCount", "robot_loaded_visual_count", "robotLoadedVisualCount"),
+        "failed_visual_count": _status_int_any(status, "robot_failed_visual_count", "robotFailedVisualCount"),
+        "loaded_link_count": _status_int_any(status, "robot_loaded_link_count", "robotLoadedLinkCount"),
+        "root_link_count": _status_int_any(status, "robot_root_link_count", "robotRootLinkCount"),
+        "missing_links": _status_list(status, "robot_hierarchy_missing_links", "robotHierarchyMissingLinks"),
+        "disconnected_links": _status_list(status, "robot_disconnected_links", "robotDisconnectedLinks"),
+        "duplicate_links": _status_list(status, "robot_duplicate_links", "robotDuplicateLinks"),
+        "missing_meshes": _status_list(status, "robot_missing_meshes", "robotMissingMeshes"),
+        "final_state": _final_lifecycle_state(status),
+    }
+
+
+def _required_robot_mesh_failure_errors(status: Mapping[str, Any]) -> list[str]:
+    missing_meshes = [str(item) for item in _status_list(status, "robot_missing_meshes", "robotMissingMeshes")]
+    failures = []
+    for item in missing_meshes:
+        text = item.lower().replace("_", "-")
+        if any(token.replace("_", "-") in text for token in REQUIRED_UR5_ROBOTIQ_MESH_TOKENS):
+            failures.append(item)
+    if failures:
+        return ["browser viewer required UR5/Robotiq meshes failed or are missing: " + "; ".join(failures[:20])]
+    return []
+
+
+def _robot_lifecycle_errors(status: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    final_state = _final_lifecycle_state(status)
+    if final_state not in LIFECYCLE_STATES:
+        errors.append(f"browser viewer robot-preview lifecycle final state must be one of {sorted(LIFECYCLE_STATES)}, got {final_state!r}")
+    if final_state != "ready":
+        errors.append(f"browser viewer robot-preview lifecycle final state must be ready, got {final_state!r}")
+    root_count = _status_int_any(status, "robot_root_link_count", "robotRootLinkCount")
+    if root_count > 1:
+        roots = _status_list(status, "robot_root_links", "robotRootLinks")
+        errors.append(f"browser viewer robot/tool must have at most one root link, got {root_count}: {roots!r}")
+    disconnected = _status_list(status, "robot_disconnected_links", "robotDisconnectedLinks")
+    if disconnected:
+        errors.append(f"browser viewer robot disconnected links must be empty, got {disconnected!r}")
+    duplicates = _status_list(status, "robot_duplicate_links", "robotDuplicateLinks")
+    if duplicates:
+        errors.append(f"browser viewer duplicate links must be empty, got {duplicates!r}")
+    failed_count = _status_int_any(status, "robot_failed_visual_count", "robotFailedVisualCount")
+    if failed_count > 0:
+        errors.append(f"browser viewer robot failed visual count must be 0, got {failed_count}")
+    if _status_value(status, "robot_preview_canonical_fallback_used", "robotPreviewCanonicalFallbackUsed") is True:
+        errors.append("browser viewer canonical robot fallback path must not be used")
+    errors.extend(_required_robot_mesh_failure_errors(status))
+    return errors
 
 def _status_int(status: Mapping[str, Any], snake: str, camel: str) -> int:
     return int(status.get(snake) if status.get(snake) is not None else status.get(camel) or 0)
@@ -637,6 +715,7 @@ def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
             distance = float("nan")
         if not (0.0 <= distance <= max_distance_m):
             errors.append(f"browser viewer resolved distance {pair} expected <= {max_distance_m:.3f} m, got {raw!r}")
+    errors.extend(_robot_lifecycle_errors(status))
     errors.extend(_assembled_hierarchy_errors(status))
     errors.extend(_tool0_frame_contract_errors(status))
     errors.extend(_rendered_mesh_adjacency_errors(status))
@@ -750,11 +829,15 @@ def run_browser(url: str, status_path: Path, screenshot_path: Path, require: boo
             page = browser.new_page(viewport={"width": 1280, "height": 900}, ignore_https_errors=True)
             page.goto(url, wait_until="networkidle", timeout=45000)
             page.wait_for_function("window.__WORKCELL_VIEWER_STATUS__ && typeof window.__WORKCELL_VIEWER_STATUS__ === 'object'", timeout=45000)
-            page.wait_for_function("() => { const s = window.__WORKCELL_VIEWER_STATUS__ || {}; return (s.renderable_count || s.renderableCount || 0) === 0 || (s.mesh_loaded_count || s.meshLoadedCount || 0) > 0 || (s.required_mesh_failed_count || s.requiredMeshFailedCount || 0) > 0 || (s.fallback_count || s.fallbackCount || 0) > 0; }", timeout=45000)
+            page.wait_for_function("window.__WORKCELL_ROBOT_PREVIEW_READY__ && typeof window.__WORKCELL_ROBOT_PREVIEW_READY__.then === 'function'", timeout=45000)
+            page.evaluate("() => window.__WORKCELL_ROBOT_PREVIEW_READY__.then(() => true)")
+            page.wait_for_function("() => { const s = window.__WORKCELL_VIEWER_STATUS__ || {}; const state = s.robot_preview_lifecycle_state || s.robotPreviewLifecycleState || ''; return state === 'ready' || state === 'failed'; }", timeout=45000)
             status = page.evaluate("window.__WORKCELL_VIEWER_STATUS__ || null")
+            final_state = page.evaluate("() => (window.__WORKCELL_VIEWER_STATUS__ || {}).robot_preview_lifecycle_state || (window.__WORKCELL_VIEWER_STATUS__ || {}).robotPreviewLifecycleState || ''")
+            screenshot_before_ready = final_state != 'ready'
             page.screenshot(path=str(screenshot_path), full_page=True)
             browser.close()
-        return {"available": True, "method": "playwright", "status": status}
+        return {"available": True, "method": "playwright", "status": status, "screenshot_before_ready": screenshot_before_ready}
     except Exception as exc:
         playwright_error = str(exc)
 
@@ -789,7 +872,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not output_path.is_absolute():
         output_path = (REPO_ROOT / output_path).resolve()
     report_path = BUILD_ROOT / f"{scene_id}.visual_acceptance.json"
-    screenshot_path = BUILD_ROOT / f"{scene_id}.visual_acceptance.png"
+    screenshot_path = BUILD_ROOT / (f"{scene_id}.rviz_parity.png" if scene_id == "ur5_2f_test" else f"{scene_id}.visual_acceptance.png")
     BUILD_ROOT.mkdir(parents=True, exist_ok=True)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -824,6 +907,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "viewer_url": viewer_url,
         "server_status": server_status,
         "browser": browser,
+        "robot_preview_lifecycle_diagnostics": robot_preview_lifecycle_diagnostics(browser.get("status")) if isinstance(browser.get("status"), Mapping) else {},
         "steps": steps,
         "report": repo_relative(report_path),
         "screenshot": repo_relative(screenshot_path),
@@ -841,9 +925,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     status = browser.get("status") if isinstance(browser, Mapping) else None
     if isinstance(status, Mapping):
+        lifecycle_diagnostics = robot_preview_lifecycle_diagnostics(status)
         debug_summary = baked_pose_render_mode_summary(status)
+        print("robot_preview_lifecycle_diagnostics: " + json.dumps(lifecycle_diagnostics, sort_keys=True))
         print("visual_debug_baked_pose_summary: " + json.dumps(debug_summary, sort_keys=True))
         print("visual_acceptance_debug_dump: " + json.dumps(_visual_acceptance_debug_dump(status), sort_keys=True))
+        if browser.get("screenshot_before_ready"):
+            print("error: browser screenshot was captured before robot-preview readiness completed", file=sys.stderr)
+            return 1
         status_errors = validate_browser_status(status)
         if status_errors:
             for error in status_errors:

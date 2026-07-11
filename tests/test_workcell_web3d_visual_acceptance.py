@@ -36,7 +36,7 @@ def test_acceptance_script_has_no_ur5_scene_logic_and_outputs_under_build():
     assert "check_workcell_web_scene_visual_bounds.py" in text
     assert "build" in text and "workcell_studio_web_scene" in text
     assert "visual_acceptance.json" in text
-    assert "visual_acceptance.png" in text
+    assert "rviz_parity.png" in text
 
 WORKFLOW = ROOT / ".github/workflows/web3d-visual-acceptance.yml"
 
@@ -56,7 +56,7 @@ def test_web3d_visual_acceptance_workflow_uploads_screenshot_report_and_scene_ar
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "actions/upload-artifact@v4" in text
     assert "build/workcell_studio_web_scene/ur5_2f_test.visual_acceptance.json" in text
-    assert "build/workcell_studio_web_scene/ur5_2f_test.visual_acceptance.png" in text
+    assert "build/workcell_studio_web_scene/ur5_2f_test.rviz_parity.png" in text
     assert "build/workcell_studio_web_scene/ur5_2f_test.web_scene.json" in text
     assert "GITHUB_STEP_SUMMARY" in text
     for token in [
@@ -95,6 +95,8 @@ def test_acceptance_script_supports_playwright_browser_status_path():
     assert "p.chromium.launch" in text
     assert "window.__WORKCELL_VIEWER_STATUS__" in text
     assert "page.wait_for_function" in text
+    assert "window.__WORKCELL_ROBOT_PREVIEW_READY__" in text
+    assert "robot_preview_lifecycle_state" in text
     assert "validate_browser_status(status)" in text
     assert "EXPECTED_MESH_LOADED_COUNT = 18" in text
     assert "EXPECTED_REQUIRED_MESH_FAILED_COUNT = 0" in text
@@ -102,6 +104,28 @@ def test_acceptance_script_supports_playwright_browser_status_path():
     assert "screenshot_path:" in text
     assert "report_path:" in text
 
+
+
+def test_acceptance_script_waits_for_robot_preview_lifecycle_and_reports_diagnostics():
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert "window.__WORKCELL_ROBOT_PREVIEW_READY__" in text
+    for state in ["idle", "loading_urdf", "loading_meshes", "ready", "failed"]:
+        assert state in text
+    for key in [
+        "expected_visual_count",
+        "completed_visual_count",
+        "failed_visual_count",
+        "loaded_link_count",
+        "root_link_count",
+        "missing_links",
+        "disconnected_links",
+        "duplicate_links",
+        "missing_meshes",
+        "final_state",
+    ]:
+        assert key in text
+    assert "screenshot_before_ready" in text
+    assert "rviz_parity.png" in text
 
 def test_acceptance_script_preserves_canonical_mesh_count_expectations():
     text = SCRIPT.read_text(encoding="utf-8")
@@ -353,6 +377,16 @@ def _valid_robot_hierarchy_fields():
         "robot_preview_loaded": True,
         "robot_missing_meshes": [],
         "robot_loaded_visual_count": 18,
+        "robot_expected_visual_count": 18,
+        "robot_completed_visual_count": 18,
+        "robot_failed_visual_count": 0,
+        "robot_loaded_link_count": len(links),
+        "robot_root_link_count": 1,
+        "robot_root_links": ["base_link_inertia"],
+        "robot_disconnected_links": [],
+        "robot_duplicate_links": [],
+        "robot_preview_lifecycle_state": "ready",
+        "robot_preview_canonical_fallback_used": False,
         "robot_hierarchy_links": links,
         "robot_hierarchy_missing_links": [],
         "robot_hierarchy_missing_parents": [],
