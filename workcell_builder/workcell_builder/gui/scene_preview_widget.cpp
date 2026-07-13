@@ -9,6 +9,7 @@
 #include <QJsonParseError>
 #include <QFile>
 #include <QIODevice>
+#include <QStringList>
 
 namespace {
 constexpr double kOverlayFitDominanceRatio = 4.0;
@@ -369,15 +370,75 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   QTimer::singleShot(0, this, [this]() { emit_backend_startup_diagnostic_once(); });
 }
 
-QString ScenePreviewWidget::resolve_embedded_web_repo_root() const
+QString ScenePreviewWidget::resolve_embedded_web_repo_root(const QString & selected_scene_dir) const
 {
-  if (!embedded_web_repo_root_.trimmed().isEmpty()) return embedded_web_repo_root_;
-  QStringList starts{QDir::currentPath(), QCoreApplication::applicationDirPath()};
-  for (const QString & start : starts) {
-    QDir dir(start);
-    for (int i = 0; i < 8; ++i) {
-      const QString viewer = dir.filePath("workcell_studio_web/viewer/index.html");
-      if (QFileInfo::exists(viewer)) return dir.absolutePath();
+  auto canonical_path = [](const QString & path) -> QString {
+    const QFileInfo info(path);
+    const QString canonical = info.canonicalFilePath();
+    return canonical.isEmpty() ? info.absoluteFilePath() : canonical;
+  };
+  auto missing_markers = [](const QString & root) -> QStringList {
+    QDir dir(root);
+    QStringList missing;
+    if (!QFileInfo::exists(dir.filePath(QStringLiteral("workcell_studio_web/viewer/index.html")))) {
+      missing << QStringLiteral("workcell_studio_web/viewer/index.html");
+    }
+    if (!QFileInfo::exists(dir.filePath(QStringLiteral("scripts/ensure_workcell_studio_web_scene_fresh.py")))) {
+      missing << QStringLiteral("scripts/ensure_workcell_studio_web_scene_fresh.py");
+    }
+    if (!QFileInfo(dir.filePath(QStringLiteral("scenes"))).isDir()) {
+      missing << QStringLiteral("scenes");
+    }
+    return missing;
+  };
+  auto log_diagnostic = [this](const QString & message) {
+    emit const_cast<ScenePreviewWidget *>(this)->studio_log_requested(message);
+  };
+  auto accept_candidate = [&](const QString & raw_root, const QString & label, QString * accepted) -> bool {
+    const QString root = canonical_path(raw_root);
+    const QStringList missing = missing_markers(root);
+    if (missing.isEmpty()) {
+      *accepted = root;
+      log_diagnostic(QStringLiteral("Embedded Product View repo root selected from %1: %2").arg(label, root));
+      return true;
+    }
+    log_diagnostic(QStringLiteral("Embedded Product View repo root candidate rejected from %1: %2 (missing %3)")
+                     .arg(label, root, missing.join(QStringLiteral(", "))));
+    return false;
+  };
+
+  const QString scene_input = selected_scene_dir.trimmed();
+  if (!scene_input.isEmpty()) {
+    QFileInfo scene_info(scene_input);
+    if (scene_info.exists() && scene_info.isDir()) {
+      QDir dir(canonical_path(scene_input));
+      for (int i = 0; i < 16; ++i) {
+        QString accepted;
+        if (accept_candidate(dir.absolutePath(), QStringLiteral("selected scene directory upward walk"), &accepted)) return accepted;
+        if (!dir.cdUp()) break;
+      }
+    } else {
+      log_diagnostic(QStringLiteral("Embedded Product View selected scene directory candidate rejected: %1 (missing directory)").arg(scene_input));
+    }
+  }
+
+  if (!embedded_web_repo_root_.trimmed().isEmpty()) {
+    QString accepted;
+    if (accept_candidate(embedded_web_repo_root_, QStringLiteral("cached root after selected scene"), &accepted)) return accepted;
+  }
+
+  const QString env_root = QProcessEnvironment::systemEnvironment().value(QStringLiteral("WORKCELL_STUDIO_REPO_ROOT")).trimmed();
+  if (!env_root.isEmpty()) {
+    QString accepted;
+    if (accept_candidate(env_root, QStringLiteral("WORKCELL_STUDIO_REPO_ROOT secondary override"), &accepted)) return accepted;
+  }
+
+  const QStringList fallback_roots{QDir::currentPath(), QCoreApplication::applicationDirPath()};
+  for (const QString & fallback : fallback_roots) {
+    QDir dir(fallback);
+    for (int i = 0; i < 16; ++i) {
+      QString accepted;
+      if (accept_candidate(dir.absolutePath(), QStringLiteral("fallback application path upward walk"), &accepted)) return accepted;
       if (!dir.cdUp()) break;
     }
   }
@@ -505,10 +566,13 @@ void ScenePreviewWidget::start_embedded_web_prepare(const QString & scene, quint
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
   Q_UNUSED(scene); Q_UNUSED(revision); Q_UNUSED(force);
 #else
-  const QString repo_root = resolve_embedded_web_repo_root();
+  const QString selected_scene_dir = QFileInfo(scene).isAbsolute()
+    ? QFileInfo(scene).absoluteFilePath()
+    : QDir(QDir::currentPath()).absoluteFilePath(QStringLiteral("scenes/%1").arg(scene));
+  const QString repo_root = resolve_embedded_web_repo_root(selected_scene_dir);
   if (repo_root.isEmpty()) {
-    set_embedded_product_view_state(EmbeddedProductViewState::Failed, QStringLiteral("could not find workcell_studio_web/viewer/index.html from application paths"));
-    emit studio_log_requested(QStringLiteral("Embedded Web 3D Product View unavailable: could not find workcell_studio_web/viewer/index.html from the current application paths."));
+    set_embedded_product_view_state(EmbeddedProductViewState::Failed, QStringLiteral("could not find a Workcell Studio repo root with viewer, scene-prep script, and scenes markers"));
+    emit studio_log_requested(QStringLiteral("Embedded Web 3D Product View unavailable: could not find a Workcell Studio repo root with required markers from selected scene, environment override, or fallback application paths."));
     return;
   }
   embedded_web_repo_root_ = repo_root;
