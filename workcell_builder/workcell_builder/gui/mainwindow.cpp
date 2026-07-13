@@ -7888,8 +7888,10 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     append_studio_log("Scene3D blocker: current layer filters hide all items. Re-enable editable layout, mesh preview, primitive fallback, or locked generated URDF visuals.");
   }
   scene_preview_widget_->set_preview_items(filtered_items);
-  auto * viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
-  if (viewport) {
+  auto * viewport = scene_preview_widget_->is_native_product_view_backend()
+    ? scene_preview_widget_->findChild<Scene3DViewportWidget *>()
+    : nullptr;
+  if (scene_preview_widget_->is_native_product_view_backend() && viewport) {
     // set_preview_items() normally commits the payload into the active viewport.
     // Re-ingest here as an explicit guard so the camera fit below always uses
     // the exact post-filter payload, including final UR5 mesh/fallback draw bounds.
@@ -7909,7 +7911,8 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     scene3d_filter_diagnostics_[QStringLiteral("camera_fit_target")] = viewport->last_camera_fit_target();
     scene3d_filter_diagnostics_[QStringLiteral("camera_fit_includes_robot")] = viewport->last_initial_fit_included_robot_bounds();
   }
-  if (has_selected_scene() && selected_scene_name() == QStringLiteral("ur5_2f_test")) {
+  if (scene_preview_widget_->is_native_product_view_backend() &&
+      has_selected_scene() && selected_scene_name() == QStringLiteral("ur5_2f_test")) {
     // audit_ur5_2f_test_committed_viewport_items(viewport, &missing_required_visible_links) is computed above after final ingest.
     scene3d_filter_diagnostics_[QStringLiteral("ur5_2f_test_final_viewport_audit")] = viewport_audit;
     append_studio_log(
@@ -9470,8 +9473,10 @@ void MainWindow::populate_scene_hierarchy()
                 generated_row_diagnostic, v, source_row_index, id, generated_visual_row_key, retained, true);
               append_generated_visual_row_diagnostic(generated_row_diagnostic, QStringLiteral("duplicate_generated_visual_index_row"), reason);
               append_visual_ingestion_diagnostic(v, raw_id, id, reason);
-              append_studio_log(duplicate_generated_visual_log_message(
-                v, source_row_index, id, generated_visual_row_key, retained, true));
+              if (scene_preview_widget_ && scene_preview_widget_->is_native_product_view_backend()) {
+                append_studio_log(duplicate_generated_visual_log_message(
+                  v, source_row_index, id, generated_visual_row_key, retained, true));
+              }
               append_studio_log(QStringLiteral("UR5_VISUAL_RUNTIME_DECISION row=%1 link=%2 mesh=%3 decision=skipped reason=duplicate_same_link_same_mesh")
                 .arg(source_row_index).arg(protected_ur5_link).arg(visual_item_mesh_identity(v)));
               continue;
@@ -9491,8 +9496,10 @@ void MainWindow::populate_scene_hierarchy()
               generated_row_diagnostic, v, source_row_index, id, generated_visual_row_key, retained, false);
             append_generated_visual_row_diagnostic(generated_row_diagnostic, QStringLiteral("duplicate_generated_visual_index_row"), reason);
             append_visual_ingestion_diagnostic(v, raw_id, id, reason);
-            append_studio_log(duplicate_generated_visual_log_message(
-              v, source_row_index, id, generated_visual_row_key, retained, false));
+            if (scene_preview_widget_ && scene_preview_widget_->is_native_product_view_backend()) {
+              append_studio_log(duplicate_generated_visual_log_message(
+                v, source_row_index, id, generated_visual_row_key, retained, false));
+            }
             continue;
           } else {
             generated_visual_row_metadata_by_key.insert(
@@ -10517,7 +10524,8 @@ void MainWindow::populate_scene_hierarchy()
         visual_index_contains_ur5_mesh_rows = false;
       }
     }
-    if (scene_name_for_final_append == QStringLiteral("ur5_2f_test") || visual_index_contains_ur5_mesh_rows) {
+    if (scene_preview_widget_ && scene_preview_widget_->is_native_product_view_backend() &&
+        (scene_name_for_final_append == QStringLiteral("ur5_2f_test") || visual_index_contains_ur5_mesh_rows)) {
       QStringList missing_ur5_links;
       bool base_present = false;
       for (const QString & base_link : accepted_ur5_base_links) {
@@ -10852,16 +10860,18 @@ void MainWindow::populate_scene_hierarchy()
         transform_parity.warning,
         transform_parity.failed));
     ++scene_diagnostic_payload_revision_;
-    append_scene_diagnostic_log_once(
-      QStringLiteral("full_payload_commit"),
-      scene_diagnostic_payload_revision_,
-      scene3d_full_payload_counters.viewport_received_count,
-      QString("Scene3D full payload committed: scene=%1 total=%2 visible=%3 mesh=%4 locked=%5")
-        .arg(selected_scene_state_.name)
-        .arg(scene3d_full_payload_counters.viewport_received_count)
-        .arg(scene3d_full_payload_counters.visible_count)
-        .arg(scene3d_full_payload_counters.mesh_backed_count)
-        .arg(scene3d_full_payload_counters.locked_generated_urdf_visual_count));
+    if (scene_preview_widget_->is_native_product_view_backend()) {
+      append_scene_diagnostic_log_once(
+        QStringLiteral("full_payload_commit"),
+        scene_diagnostic_payload_revision_,
+        scene3d_full_payload_counters.viewport_received_count,
+        QString("Scene3D full payload committed: scene=%1 total=%2 visible=%3 mesh=%4 locked=%5")
+          .arg(selected_scene_state_.name)
+          .arg(scene3d_full_payload_counters.viewport_received_count)
+          .arg(scene3d_full_payload_counters.visible_count)
+          .arg(scene3d_full_payload_counters.mesh_backed_count)
+          .arg(scene3d_full_payload_counters.locked_generated_urdf_visual_count));
+    }
     refresh_new_cell_checklist();
   }
 

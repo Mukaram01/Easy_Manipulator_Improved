@@ -133,6 +133,7 @@ public:
   enum class ReachStatus { Reachable, NearLimit, OutOfReach, Unknown };
   enum class LabelMode { Off, Important, Selected, All };
   enum class MeshPreviewMode { Auto, Meshes, Primitives };
+  enum class ProductViewBackend { EmbeddedWeb3D, NativeScene3D };
   struct ReachabilityOverlayModel
   {
     QString robot_base_id{"unknown"};
@@ -215,6 +216,8 @@ public:
   QString selected_preview_item_id() const;
   const PreviewItem * preview_item_by_id(const QString & id) const;
   MeshPreviewMode mesh_preview_mode() const;
+  ProductViewBackend active_product_view_backend() const;
+  bool is_native_product_view_backend() const;
   void reload_meshes();
   void apply_product_view_defaults();
   struct RenderDebugCounters
@@ -333,6 +336,7 @@ private:
   QLabel * error_state_label_{ nullptr };
   QLabel * fallback_banner_label_{ nullptr };
   QWidget * simple_3d_view_{ nullptr };
+  ProductViewBackend product_view_backend_{ ProductViewBackend::NativeScene3D };
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
   QWebEngineView * embedded_web_view_{ nullptr };
 #endif
