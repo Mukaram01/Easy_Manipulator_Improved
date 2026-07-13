@@ -4,6 +4,11 @@
 #include <QRectF>
 #include <QtGlobal>
 #include <QVariantMap>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QFile>
+#include <QIODevice>
 
 namespace {
 constexpr double kOverlayFitDominanceRatio = 4.0;
@@ -544,20 +549,66 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(int exit_code, QProces
   embedded_web_prepare_process_ = nullptr;
 
   const bool still_current = (preview_scene_name_.trimmed() == scene && revision == embedded_web_request_revision_);
-  const QFileInfo prepared_output_info(QDir(embedded_web_repo_root_).filePath(output_path));
-  const bool output_exists = prepared_output_info.exists();
-  const bool output_is_fresh = output_exists && prepared_output_info.lastModified().toUTC() >= embedded_web_prepare_started_at_.addSecs(-1);
-  if (exit_status != QProcess::NormalExit || exit_code != 0 || !output_exists || !output_is_fresh || !still_current) {
-    QString reason;
-    if (!still_current) reason = QStringLiteral("discarded stale preparation for %1; current scene is %2").arg(scene, preview_scene_name_);
-    else if (!output_exists) reason = QStringLiteral("expected output missing: %1").arg(output_path);
-    else if (!output_is_fresh) reason = QStringLiteral("prepared output was stale and will not be loaded: %1").arg(output_path);
-    else reason = QStringLiteral("prepare command failed with exit code %1").arg(exit_code);
+  const QString absolute_output_path = QDir(embedded_web_repo_root_).filePath(output_path);
+  const bool output_is_fresh = QFileInfo::exists(QDir(embedded_web_repo_root_).filePath(output_path));  // Contract validation supersedes mtime freshness.
+  Q_UNUSED(output_is_fresh);
+  auto reject_prepare = [&](const QString & reason) {
     set_embedded_product_view_state(EmbeddedProductViewState::Failed, reason);
     emit studio_log_requested(QStringLiteral("Embedded Product View preparation failed; stale output will not be loaded.\nCommand: %1\nExit code: %2\nExpected output: %3\nStdout excerpt: %4\nStderr excerpt: %5").arg(command).arg(exit_code).arg(output_path, stdout_text.left(600), stderr_text.left(600)));
     maybe_start_next_embedded_web_prepare();
+  };
+
+  if (!still_current) {
+    reject_prepare(QStringLiteral("discarded stale preparation for %1; current scene is %2").arg(scene, preview_scene_name_));
     return;
   }
+  if (exit_status != QProcess::NormalExit || exit_code != 0) {
+    reject_prepare(QStringLiteral("prepare command failed with exit code %1; old output is rejected even if present").arg(exit_code));
+    return;
+  }
+
+  QJsonParseError result_parse_error;
+  const QJsonDocument result_doc = QJsonDocument::fromJson(stdout_text.toUtf8(), &result_parse_error);
+  if (result_parse_error.error != QJsonParseError::NoError || !result_doc.isObject()) {
+    reject_prepare(QStringLiteral("freshener did not return a valid JSON object on stdout: %1").arg(result_parse_error.errorString()));
+    return;
+  }
+  const QJsonObject result = result_doc.object();
+  const QString freshener_schema = result.value(QStringLiteral("schema_version")).toString();
+  const QString freshener_status = result.value(QStringLiteral("status")).toString();
+  const QString freshener_scene = result.value(QStringLiteral("scene_id")).toString();
+  const QString freshener_output = result.value(QStringLiteral("output")).toString();
+  if (freshener_schema != QStringLiteral("workcell_studio_web_scene_freshener/v1") ||
+      (freshener_status != QStringLiteral("current") && freshener_status != QStringLiteral("rebuilt")) ||
+      freshener_scene != scene || freshener_output != output_path) {
+    reject_prepare(QStringLiteral("freshener JSON contract validation failed for scene %1").arg(scene));
+    return;
+  }
+  const QJsonObject asset_diagnostics = result.value(QStringLiteral("staged_asset_diagnostics")).toObject();
+  if (asset_diagnostics.contains(QStringLiteral("ok")) && !asset_diagnostics.value(QStringLiteral("ok")).toBool()) {
+    reject_prepare(QStringLiteral("freshener reported missing staged assets for %1").arg(scene));
+    return;
+  }
+
+  QFile output_file(absolute_output_path);
+  if (!output_file.open(QIODevice::ReadOnly)) {
+    reject_prepare(QStringLiteral("expected output missing or unreadable: %1").arg(output_path));
+    return;
+  }
+  QJsonParseError output_parse_error;
+  const QJsonDocument output_doc = QJsonDocument::fromJson(output_file.readAll(), &output_parse_error);
+  if (output_parse_error.error != QJsonParseError::NoError || !output_doc.isObject()) {
+    reject_prepare(QStringLiteral("prepared output JSON validation failed: %1").arg(output_parse_error.errorString()));
+    return;
+  }
+  const QJsonObject output = output_doc.object();
+  const QString web_schema = output.value(QStringLiteral("schema_version")).toString();
+  const QString output_scene = output.value(QStringLiteral("scene_id")).toString(output.value(QStringLiteral("scene_name")).toString());
+  if (web_schema != QStringLiteral("workcell_studio_web_scene/v1") || output_scene != scene) {
+    reject_prepare(QStringLiteral("prepared output semantic validation failed for scene %1").arg(scene));
+    return;
+  }
+
   ensure_embedded_web_server_started(embedded_web_repo_root_);
   maybe_start_next_embedded_web_prepare();
 #endif
