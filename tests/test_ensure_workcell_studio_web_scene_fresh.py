@@ -54,6 +54,13 @@ def _minimal_repo(tmp_path, monkeypatch):
     return repo, scene, source, extractor, exporter, build
 
 
+def _write_export_for_command(command, scene_id="demo_scene"):
+    out = Path(command[command.index("--output") + 1])
+    if not out.is_absolute():
+        out = ensure.REPO_ROOT / out
+    _write(out, json.dumps({"schema_version": "workcell_studio_web_scene/v1", "scene_id": scene_id}))
+
+
 def test_missing_mesh_index_runs_extractor_then_exporter(tmp_path, monkeypatch):
     _repo, scene, _source, _extractor, _exporter, build = _minimal_repo(tmp_path, monkeypatch)
     output = build / "demo_scene.web_scene.json"
@@ -68,7 +75,7 @@ def test_missing_mesh_index_runs_extractor_then_exporter(tmp_path, monkeypatch):
                 json.dumps({"extractor_version": "expected-v1", "visual_items": []}),
             )
         elif script.endswith("export_workcell_studio_web_scene.py"):
-            _write(output, json.dumps({"schema_version": "workcell_studio_web_scene/v1"}))
+            _write_export_for_command(command)
 
     monkeypatch.setattr(ensure, "run_checked", fake_run)
 
@@ -85,7 +92,7 @@ def test_older_mesh_index_than_source_or_generator_input_triggers_regeneration(t
         scene / "generated" / "scene_visual_mesh_index.json",
         json.dumps({"extractor_version": "expected-v1", "visual_items": []}),
     )
-    output = _write(build / "demo_scene.web_scene.json", "{}")
+    output = _write(build / "demo_scene.web_scene.json", json.dumps({"schema_version": "workcell_studio_web_scene/v1", "scene_id": "demo_scene"}))
     _touch(mesh_index, 100)
     _touch(source, 200)
     _touch(output, 300)
@@ -95,6 +102,8 @@ def test_older_mesh_index_than_source_or_generator_input_triggers_regeneration(t
         calls.append(Path(command[1]).name)
         if command[1].endswith("extract_scene_urdf_visual_mesh_index.py"):
             _write(mesh_index, json.dumps({"extractor_version": "expected-v1", "visual_items": []}))
+        elif command[1].endswith("export_workcell_studio_web_scene.py"):
+            _write_export_for_command(command)
 
     monkeypatch.setattr(ensure, "run_checked", fake_run)
 
@@ -111,7 +120,7 @@ def test_older_web_scene_than_mesh_index_or_source_input_triggers_export_only(tm
         scene / "generated" / "scene_visual_mesh_index.json",
         json.dumps({"extractor_version": "expected-v1", "visual_items": []}),
     )
-    output = _write(build / "demo_scene.web_scene.json", "{}")
+    output = _write(build / "demo_scene.web_scene.json", json.dumps({"schema_version": "workcell_studio_web_scene/v1", "scene_id": "demo_scene"}))
     _touch(output, 100)
     _touch(mesh_index, 300)
     _touch(source, 250)
@@ -121,11 +130,12 @@ def test_older_web_scene_than_mesh_index_or_source_input_triggers_export_only(tm
     ):
         _touch(generator_input, 200)
     calls = []
-    monkeypatch.setattr(
-        ensure,
-        "run_checked",
-        lambda command: calls.append(Path(command[1]).name),
-    )
+    def fake_run(command):
+        calls.append(Path(command[1]).name)
+        if command[1].endswith("export_workcell_studio_web_scene.py"):
+            _write_export_for_command(command)
+
+    monkeypatch.setattr(ensure, "run_checked", fake_run)
 
     assert ensure.main(["--scene", "demo_scene", "--output", str(output)]) == 0
     assert calls == ["export_workcell_studio_web_scene.py"]
@@ -137,7 +147,7 @@ def test_fresh_mesh_web_scene_and_staged_assets_do_not_rerun(tmp_path, monkeypat
         scene / "generated" / "scene_visual_mesh_index.json",
         json.dumps({"extractor_version": "expected-v1", "visual_items": []}),
     )
-    output = _write(build / "demo_scene.web_scene.json", "{}")
+    output = _write(build / "demo_scene.web_scene.json", json.dumps({"schema_version": "workcell_studio_web_scene/v1", "scene_id": "demo_scene"}))
     asset_dir = build / "assets" / "demo_scene"
     asset_file = _write(asset_dir / "mesh.stl", "solid mesh\nendsolid mesh\n")
     for path in (source, extractor, exporter):
@@ -145,7 +155,10 @@ def test_fresh_mesh_web_scene_and_staged_assets_do_not_rerun(tmp_path, monkeypat
     for path in (mesh_index, output, asset_dir, asset_file):
         _touch(path, 300)
     calls = []
-    monkeypatch.setattr(ensure, "run_checked", lambda command: calls.append(command))
+    def fake_run_noop(command):
+        calls.append(command)
+
+    monkeypatch.setattr(ensure, "run_checked", fake_run_noop)
 
     assert ensure.main(["--scene", "demo_scene", "--output", str(output), "--stage-assets"]) == 0
     assert calls == []
@@ -157,7 +170,7 @@ def test_mismatched_extractor_version_marks_mesh_index_stale(tmp_path, monkeypat
         scene / "generated" / "scene_visual_mesh_index.json",
         json.dumps({"extractor_version": "old-v0", "visual_items": []}),
     )
-    output = _write(build / "demo_scene.web_scene.json", "{}")
+    output = _write(build / "demo_scene.web_scene.json", json.dumps({"schema_version": "workcell_studio_web_scene/v1", "scene_id": "demo_scene"}))
     for path in (mesh_index, output):
         _touch(path, 300)
     calls = []
@@ -166,6 +179,8 @@ def test_mismatched_extractor_version_marks_mesh_index_stale(tmp_path, monkeypat
         calls.append(Path(command[1]).name)
         if command[1].endswith("extract_scene_urdf_visual_mesh_index.py"):
             _write(mesh_index, json.dumps({"extractor_version": "expected-v1", "visual_items": []}))
+        elif command[1].endswith("export_workcell_studio_web_scene.py"):
+            _write_export_for_command(command)
 
     monkeypatch.setattr(ensure, "run_checked", fake_run)
 
@@ -196,7 +211,7 @@ def test_sourced_real_xacro_requires_real_expansion_status(tmp_path, monkeypatch
                 }),
             )
         elif command[1].endswith("export_workcell_studio_web_scene.py"):
-            _write(output, "{}")
+            _write_export_for_command(command)
 
     monkeypatch.setattr(ensure, "run_checked", fake_run)
 
@@ -298,7 +313,7 @@ def test_real_script_reports_fresh_for_temporary_minimal_scene(tmp_path):
         scene / "generated" / "scene_visual_mesh_index.json",
         json.dumps({"extractor_version": extractor_version, "visual_items": []}),
     )
-    output = _write(tmp_path / "build" / "minimal_scene.web_scene.json", "{}")
+    output = _write(tmp_path / "build" / "minimal_scene.web_scene.json", json.dumps({"schema_version": "workcell_studio_web_scene/v1", "scene_id": "minimal_scene"}))
     future = int(time.time()) + 60
     _touch(mesh_index, future)
     _touch(output, future)
@@ -311,8 +326,11 @@ def test_real_script_reports_fresh_for_temporary_minimal_scene(tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    assert "is fresh" in result.stdout
-    assert "Refreshing" not in result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "current"
+    assert payload["scene_id"] == "minimal_scene"
+    assert "is fresh" in result.stderr
+    assert "Refreshing" not in result.stderr
 
 
 def test_real_ur5_2f_freshness_helper_recreates_missing_mesh_index(tmp_path):
@@ -352,3 +370,88 @@ def test_real_ur5_2f_freshness_helper_recreates_missing_mesh_index(tmp_path):
             mesh_index.write_bytes(backup.read_bytes())
         else:
             mesh_index.unlink(missing_ok=True)
+
+
+
+def test_freshener_json_contract_reports_rebuilt(tmp_path, monkeypatch, capsys):
+    _repo, scene, _source, _extractor, _exporter, build = _minimal_repo(tmp_path, monkeypatch)
+    output = build / "demo_scene.web_scene.json"
+
+    def fake_run(command):
+        if command[1].endswith("extract_scene_urdf_visual_mesh_index.py"):
+            _write(scene / "generated" / "scene_visual_mesh_index.json", json.dumps({"extractor_version": "expected-v1", "visual_items": []}))
+        elif command[1].endswith("export_workcell_studio_web_scene.py"):
+            _write_export_for_command(command)
+
+    monkeypatch.setattr(ensure, "run_checked", fake_run)
+
+    assert ensure.main(["--scene", "demo_scene", "--output", str(output)]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["schema_version"] == "workcell_studio_web_scene_freshener/v1"
+    assert result["status"] == "rebuilt"
+    assert result["scene_id"] == "demo_scene"
+    assert result["output"].endswith("demo_scene.web_scene.json")
+    assert result["fingerprint"].startswith("sha256:")
+    assert result["staged_asset_diagnostics"]["missing_referenced_assets"] == []
+
+
+def test_freshener_json_contract_reports_current_noop(tmp_path, monkeypatch, capsys):
+    _repo, scene, source, extractor, exporter, build = _minimal_repo(tmp_path, monkeypatch)
+    mesh_index = _write(scene / "generated" / "scene_visual_mesh_index.json", json.dumps({"extractor_version": "expected-v1", "visual_items": []}))
+    output = _write(build / "demo_scene.web_scene.json", json.dumps({"schema_version": "workcell_studio_web_scene/v1", "scene_id": "demo_scene"}))
+    for path in (source, extractor, exporter):
+        _touch(path, 100)
+    for path in (mesh_index, output):
+        _touch(path, 300)
+    monkeypatch.setattr(ensure, "run_checked", lambda command: (_ for _ in ()).throw(AssertionError(command)))
+
+    assert ensure.main(["--scene", "demo_scene", "--output", str(output)]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "current"
+
+
+def test_semantic_validation_rejects_missing_output(tmp_path, monkeypatch):
+    _repo, _scene, _source, _extractor, _exporter, build = _minimal_repo(tmp_path, monkeypatch)
+    missing = build / "missing.web_scene.json"
+    try:
+        ensure.validate_web_scene_output(missing, "demo_scene", build / "assets" / "demo_scene", False, "current")
+    except RuntimeError as exc:
+        assert "does not exist" in str(exc)
+    else:
+        raise AssertionError("missing output should be rejected")
+
+
+def test_semantic_validation_rejects_malformed_output(tmp_path, monkeypatch):
+    _repo, scene, source, extractor, exporter, build = _minimal_repo(tmp_path, monkeypatch)
+    mesh_index = _write(scene / "generated" / "scene_visual_mesh_index.json", json.dumps({"extractor_version": "expected-v1", "visual_items": []}))
+    output = _write(build / "demo_scene.web_scene.json", "not json")
+    for path in (source, extractor, exporter): _touch(path, 100)
+    for path in (mesh_index, output): _touch(path, 300)
+    assert ensure.main(["--scene", "demo_scene", "--output", str(output)]) == 3
+
+
+def test_semantic_validation_rejects_wrong_scene_id(tmp_path, monkeypatch):
+    _repo, scene, source, extractor, exporter, build = _minimal_repo(tmp_path, monkeypatch)
+    mesh_index = _write(scene / "generated" / "scene_visual_mesh_index.json", json.dumps({"extractor_version": "expected-v1", "visual_items": []}))
+    output = _write(build / "demo_scene.web_scene.json", json.dumps({"schema_version": "workcell_studio_web_scene/v1", "scene_id": "other_scene"}))
+    for path in (source, extractor, exporter): _touch(path, 100)
+    for path in (mesh_index, output): _touch(path, 300)
+    assert ensure.main(["--scene", "demo_scene", "--output", str(output)]) == 3
+
+
+def test_failed_command_with_old_output_present_does_not_replace_or_validate_as_current(tmp_path, monkeypatch):
+    _repo, scene, _source, _extractor, _exporter, build = _minimal_repo(tmp_path, monkeypatch)
+    output = _write(build / "demo_scene.web_scene.json", json.dumps({"schema_version": "workcell_studio_web_scene/v1", "scene_id": "demo_scene", "old": True}))
+    before = output.read_text(encoding="utf-8")
+
+    def fake_run(command):
+        if command[1].endswith("extract_scene_urdf_visual_mesh_index.py"):
+            _write(scene / "generated" / "scene_visual_mesh_index.json", json.dumps({"extractor_version": "expected-v1", "visual_items": []}))
+        elif command[1].endswith("export_workcell_studio_web_scene.py"):
+            raise SystemExit(7)
+
+    monkeypatch.setattr(ensure, "run_checked", fake_run)
+    try:
+        ensure.main(["--scene", "demo_scene", "--output", str(output), "--force"])
+    except SystemExit as exc:
+        assert exc.code == 7
+    assert output.read_text(encoding="utf-8") == before

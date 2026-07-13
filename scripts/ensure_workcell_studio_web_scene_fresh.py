@@ -22,9 +22,11 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
+import hashlib
 import sys
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Iterable, List, Optional, Sequence, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCENES_ROOT = REPO_ROOT / "scenes"
@@ -339,7 +341,8 @@ def normalize_ur5_mesh_preview_rows(mesh_index: Path) -> bool:
         mesh_index.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         print(
             "[workcell_web_scene_fresh] normalized mesh preview rows: "
-            + ",".join(sorted(normalized_links | visible_pose_links))
+            + ",".join(sorted(normalized_links | visible_pose_links)),
+            file=sys.stderr,
         )
     return changed
 
@@ -355,7 +358,7 @@ def run_checked(command: Sequence[str]) -> None:
         print(result.stderr or "", file=sys.stderr, end="" if result.stderr.endswith("\n") else "\n")
         raise SystemExit(result.returncode)
     if result.stdout:
-        print(result.stdout, end="")
+        print(result.stdout, end="", file=sys.stderr)
     if result.stderr:
         print(result.stderr, end="", file=sys.stderr)
 
@@ -366,6 +369,89 @@ def repo_relative(path: Path) -> str:
         return str(resolved.relative_to(REPO_ROOT))
     return str(resolved)
 
+
+
+FRESHENER_RESULT_SCHEMA_VERSION = "workcell_studio_web_scene_freshener/v1"
+SUPPORTED_WEB_SCENE_SCHEMA_VERSIONS = {"workcell_studio_web_scene/v1"}
+
+
+def file_fingerprint(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return "sha256:" + digest.hexdigest()
+
+
+def _collect_strings(value: Any) -> Iterable[str]:
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for child in value.values():
+            yield from _collect_strings(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _collect_strings(child)
+
+
+def staged_asset_diagnostics(payload: dict[str, Any], asset_dir: Path, stage_assets: bool) -> dict[str, Any]:
+    refs = sorted({s for s in _collect_strings(payload) if isinstance(s, str) and (s.startswith("assets/") or "/assets/" in s)})
+    missing: list[str] = []
+    for ref in refs:
+        candidate_text = ref.split("?", 1)[0].split("#", 1)[0]
+        if candidate_text.startswith("assets/"):
+            candidate = WEB_BUILD_ROOT / candidate_text
+        else:
+            candidate = WEB_BUILD_ROOT / candidate_text[candidate_text.find("assets/"):]
+        if not candidate.exists():
+            missing.append(ref)
+    files = [p for p in asset_dir.rglob("*") if p.is_file()] if asset_dir.exists() else []
+    return {
+        "stage_assets_requested": bool(stage_assets),
+        "asset_dir": repo_relative(asset_dir),
+        "asset_dir_exists": asset_dir.is_dir(),
+        "staged_file_count": len(files),
+        "referenced_asset_count": len(refs),
+        "missing_referenced_assets": missing,
+        "ok": (not stage_assets or asset_dir.is_dir()) and not missing,
+    }
+
+
+def validate_web_scene_output(output: Path, scene_id: str, asset_dir: Path, stage_assets: bool, status: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    if status not in {"current", "rebuilt"}:
+        raise RuntimeError(f"freshener status must be current or rebuilt, got {status!r}")
+    if not output.exists():
+        raise RuntimeError(f"web scene output does not exist: {output}")
+    try:
+        payload = json.loads(output.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"web scene output is not valid JSON: {output}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"web scene output must be a JSON object: {output}")
+    schema_version = str(payload.get("schema_version") or "")
+    if schema_version not in SUPPORTED_WEB_SCENE_SCHEMA_VERSIONS:
+        raise RuntimeError(f"unsupported web scene schema_version {schema_version!r} in {output}")
+    actual_scene = str(payload.get("scene_id") or payload.get("scene_name") or "")
+    if actual_scene != scene_id:
+        raise RuntimeError(f"web scene scene_id mismatch: expected {scene_id!r}, got {actual_scene!r} in {output}")
+    diagnostics = staged_asset_diagnostics(payload, asset_dir, stage_assets)
+    if diagnostics["missing_referenced_assets"]:
+        raise RuntimeError(f"web scene references missing staged assets: {diagnostics['missing_referenced_assets']}")
+    return payload, diagnostics
+
+
+def atomic_export_web_scene(command: Sequence[str], output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(prefix=output_path.name + ".", suffix=".tmp", dir=output_path.parent, delete=False) as handle:
+        tmp_path = Path(handle.name)
+    try:
+        tmp_command = list(command)
+        out_index = tmp_command.index("--output") + 1
+        tmp_command[out_index] = repo_relative(tmp_path)
+        run_checked(tmp_command)
+        os.replace(tmp_path, output_path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Refresh stale Workcell Studio web-scene outputs.")
@@ -404,7 +490,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if args.force or mesh_stale:
         reason = "forced" if args.force else mesh_reason
-        print(f"Refreshing mesh index for {scene_id}: {reason}")
+        print(f"Refreshing mesh index for {scene_id}: {reason}", file=sys.stderr)
         command = [sys.executable, repo_relative(extractor_script), "--scene", repo_relative(scene_dir), "--prefer-xacro"]
         if real_xacro_is_discoverable():
             command.append("--require-xacro")
@@ -428,13 +514,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             reasons.append(web_reason)
         if assets_stale:
             reasons.append(assets_reason)
-        print(f"Refreshing web scene for {scene_id}: {'; '.join(reasons)}")
+        print(f"Refreshing web scene for {scene_id}: {'; '.join(reasons)}", file=sys.stderr)
         command = [sys.executable, repo_relative(exporter_script), "--scene", repo_relative(scene_dir), "--output", repo_relative(output_path)]
         if args.stage_assets:
             command.append("--stage-assets")
-        run_checked(command)
+        atomic_export_web_scene(command, output_path)
+        status = "rebuilt"
     else:
-        print(f"Workcell Studio web scene is fresh for {scene_id}: {repo_relative(output_path)}")
+        print(f"Workcell Studio web scene is fresh for {scene_id}: {repo_relative(output_path)}", file=sys.stderr)
+        status = "current"
+    try:
+        payload, asset_diagnostics = validate_web_scene_output(output_path, scene_id, asset_dir, args.stage_assets, status)
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
+    result = {
+        "schema_version": FRESHENER_RESULT_SCHEMA_VERSION,
+        "status": status,
+        "scene_id": scene_id,
+        "output": repo_relative(output_path),
+        "fingerprint": file_fingerprint(output_path),
+        "web_scene_schema_version": payload.get("schema_version"),
+        "staged_asset_diagnostics": asset_diagnostics,
+    }
+    print(json.dumps(result, sort_keys=True))
     return 0
 
 
