@@ -15,6 +15,7 @@
 #include <QNetworkRequest>
 #include <QEventLoop>
 #include <QTimer>
+#include <QProcessEnvironment>
 #include <QJsonArray>
 #include <QSet>
 #include <functional>
@@ -228,21 +229,35 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   stack_ = new QStackedWidget(this);
   view3d_container_ = new QWidget(this); auto * v3 = new QVBoxLayout(view3d_container_);
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
-  embedded_web_view_ = new QWebEngineView(view3d_container_);
-  embedded_web_view_->setObjectName("embeddedWeb3dProductView");
-  connect(embedded_web_view_, &QWebEngineView::loadFinished, this, [this](bool ok) {
-    if (!ok) {
-      const QString detail = QStringLiteral("browser failed to load Product View page for scene %1; viewer URL: %2; expected JSON: %3")
-        .arg(embedded_web_prepare_scene_, embedded_web_last_viewer_url_, embedded_web_prepare_output_path_);
-      set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail);
-      emit studio_log_requested(QStringLiteral("Embedded Product View load failed. %1").arg(detail));
-      return;
-    }
-    set_embedded_product_view_state(EmbeddedProductViewState::Loading, QStringLiteral("browser loaded; waiting for viewer readiness"));
-    start_embedded_web_readiness_polling(embedded_web_prepare_scene_, embedded_web_active_revision_, embedded_web_prepare_output_path_, embedded_web_last_viewer_url_);
-  });
-  simple_3d_view_ = embedded_web_view_;
+  const QString requested_product_view_backend =
+    QProcessEnvironment::systemEnvironment().value(QStringLiteral("WORKCELL_BUILDER_PRODUCT_VIEW_BACKEND")).trimmed().toLower();
+  const bool native_scene3d_explicitly_requested =
+    requested_product_view_backend == QStringLiteral("native_scene3d") ||
+    requested_product_view_backend == QStringLiteral("native") ||
+    requested_product_view_backend == QStringLiteral("scene3d");
+  if (!native_scene3d_explicitly_requested) {
+    product_view_backend_ = ProductViewBackend::EmbeddedWeb3D;
+    embedded_web_view_ = new QWebEngineView(view3d_container_);
+    embedded_web_view_->setObjectName("embeddedWeb3dProductView");
+    connect(embedded_web_view_, &QWebEngineView::loadFinished, this, [this](bool ok) {
+      if (!ok) {
+        const QString detail = QStringLiteral("browser failed to load Product View page for scene %1; viewer URL: %2; expected JSON: %3")
+          .arg(embedded_web_prepare_scene_, embedded_web_last_viewer_url_, embedded_web_prepare_output_path_);
+        set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail);
+        emit studio_log_requested(QStringLiteral("Embedded Product View load failed. %1").arg(detail));
+        return;
+      }
+      set_embedded_product_view_state(EmbeddedProductViewState::Loading, QStringLiteral("browser loaded; waiting for viewer readiness"));
+      start_embedded_web_readiness_polling(embedded_web_prepare_scene_, embedded_web_active_revision_, embedded_web_prepare_output_path_, embedded_web_last_viewer_url_);
+    });
+    simple_3d_view_ = embedded_web_view_;
+  } else {
+    product_view_backend_ = ProductViewBackend::NativeScene3D;
+    simple_3d_view_ = new Scene3DViewportWidget(view3d_container_);
+    simple_3d_view_->setObjectName("scene3dViewportWidget");
+  }
 #else
+  product_view_backend_ = ProductViewBackend::NativeScene3D;
   simple_3d_view_ = new Scene3DViewportWidget(view3d_container_);
   simple_3d_view_->setObjectName("scene3dViewportWidget");
 #endif
@@ -706,9 +721,13 @@ void ScenePreviewWidget::emit_backend_startup_diagnostic_once()
   if (backend_startup_diagnostic_emitted_) return;
   backend_startup_diagnostic_emitted_ = true;
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
-  emit studio_log_requested(QStringLiteral("Workcell Product View backend=embedded_web3d webengine_compiled=true"));
+  if (product_view_backend_ == ProductViewBackend::EmbeddedWeb3D) {
+    emit studio_log_requested(QStringLiteral("Workcell Product View backend=embedded_web3d webengine_compiled=true"));
+  } else {
+    emit studio_log_requested(QStringLiteral("Workcell Product View backend=native_compatibility reason=explicit_opt_in"));
+  }
 #else
-  emit studio_log_requested(QStringLiteral("Workcell Product View backend=native_compatibility reason=explicit_build_option"));
+  emit studio_log_requested(QStringLiteral("Workcell Product View backend=native_compatibility reason=webengine_unavailable_fallback"));
 #endif
 }
 
@@ -942,6 +961,17 @@ void ScenePreviewWidget::load_prepared_embedded_web_scene(const QString & scene,
   embedded_web_view_->load(QUrl(viewer_url));
 #endif
 }
+
+ScenePreviewWidget::ProductViewBackend ScenePreviewWidget::active_product_view_backend() const
+{
+  return product_view_backend_;
+}
+
+bool ScenePreviewWidget::is_native_product_view_backend() const
+{
+  return product_view_backend_ == ProductViewBackend::NativeScene3D;
+}
+
 void ScenePreviewWidget::set_fallback_2d_view(QGraphicsView * view){ fallback_2d_view_ = view; if (!view2d_container_->layout()) view2d_container_->setLayout(new QVBoxLayout()); view2d_container_->layout()->addWidget(view); if (fallback_2d_view_ && fallback_2d_view_->scene() && info_chip_label_ && !fallback_info_chip_proxy_) { fallback_info_chip_proxy_ = fallback_2d_view_->scene()->addWidget(info_chip_label_); fallback_info_chip_proxy_->setZValue(10000.0); fallback_info_chip_proxy_->setPos(12.0, 12.0); } refresh_info_chip(); }
 void ScenePreviewWidget::set_scene_selected(bool selected){ scene_selected_ = selected; refresh_mode_and_state(); }
 void ScenePreviewWidget::set_3d_available(bool available, const QString & reason){
@@ -962,7 +992,7 @@ void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items)
 {
   preview_items_ = items;
   ++preview_payload_revision_;
-  auto * viewport = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  auto * viewport = is_native_product_view_backend() ? qobject_cast<Scene3DViewportWidget *>(simple_3d_view_) : nullptr;
   if (viewport) viewport->ingest_preview_items(preview_items_);
   const bool has_selected = std::any_of(preview_items_.cbegin(), preview_items_.cend(), [this](const PreviewItem & it){ return it.id == selected_preview_item_id_; });
   if (viewport) viewport->selected_id = selected_preview_item_id_;
@@ -972,16 +1002,18 @@ void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items)
   if (viewport) viewport->fit_include_overlays = false;
   apply_product_view_defaults();
   refresh_embedded_web_product_view();
-  emit_scene_diagnostic_once(
-    QStringLiteral("payload_commit"),
-    preview_items_.size(),
-    QStringLiteral("Scene3D payload committed: scene=%1 rev=%2 items=%3 visible=%4 mesh=%5 fallback=%6")
-      .arg(preview_scene_name_)
-      .arg(preview_payload_revision_)
-      .arg(preview_items_.size())
-      .arg(viewport ? viewport->render_debug_counters().visible_count : 0)
-      .arg(viewport ? viewport->render_debug_counters().mesh_backed_count : 0)
-      .arg(viewport ? viewport->render_debug_counters().primitive_fallback_count : 0));
+  if (is_native_product_view_backend()) {
+    emit_scene_diagnostic_once(
+      QStringLiteral("payload_commit"),
+      preview_items_.size(),
+      QStringLiteral("Scene3D payload committed: scene=%1 rev=%2 items=%3 visible=%4 mesh=%5 fallback=%6")
+        .arg(preview_scene_name_)
+        .arg(preview_payload_revision_)
+        .arg(preview_items_.size())
+        .arg(viewport ? viewport->render_debug_counters().visible_count : 0)
+        .arg(viewport ? viewport->render_debug_counters().mesh_backed_count : 0)
+        .arg(viewport ? viewport->render_debug_counters().primitive_fallback_count : 0));
+  }
   fit_fallback_scene_to_items(false);
   refresh_info_chip();
   emit_visual_quality_assessment_once();

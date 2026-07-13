@@ -4,6 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CMAKE = (ROOT / "workcell_builder/workcell_builder/CMakeLists.txt").read_text()
 PKG = (ROOT / "workcell_builder/workcell_builder/package.xml").read_text()
 CPP = (ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp").read_text()
+MAINWINDOW_CPP = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text()
 HDR = (ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.h").read_text()
 INSTALL = (ROOT / "scripts/install_system_deps.sh").read_text()
 
@@ -48,14 +49,37 @@ def test_web3d_is_default_widget_and_native_ingest_is_skipped_when_active():
     assert 'embedded_web_view_->setObjectName("embeddedWeb3dProductView")' in CPP
     assert 'simple_3d_view_ = embedded_web_view_' in CPP
     assert 'simple_3d_view_ = new Scene3DViewportWidget(view3d_container_)' in CPP
-    assert 'auto * viewport = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);\n  if (viewport) viewport->ingest_preview_items(preview_items_);' in CPP
+    assert 'ProductViewBackend product_view_backend_{ ProductViewBackend::NativeScene3D };' in HDR
+    assert 'ProductViewBackend { EmbeddedWeb3D, NativeScene3D }' in HDR
+    assert 'WORKCELL_BUILDER_PRODUCT_VIEW_BACKEND' in CPP
+    assert 'product_view_backend_ = ProductViewBackend::EmbeddedWeb3D' in CPP
+    assert 'product_view_backend_ = ProductViewBackend::NativeScene3D' in CPP
+    assert 'auto * viewport = is_native_product_view_backend() ? qobject_cast<Scene3DViewportWidget *>(simple_3d_view_) : nullptr;' in CPP
+    assert 'if (viewport) viewport->ingest_preview_items(preview_items_);' in CPP
 
 
 def test_backend_diagnostics_are_deterministic_and_concise():
     assert 'emit_backend_startup_diagnostic_once' in HDR
     assert 'backend_startup_diagnostic_emitted_' in HDR
     assert 'Workcell Product View backend=embedded_web3d webengine_compiled=true' in CPP
-    assert 'Workcell Product View backend=native_compatibility reason=explicit_build_option' in CPP
+    assert 'Workcell Product View backend=native_compatibility reason=explicit_opt_in' in CPP
+    assert 'Workcell Product View backend=native_compatibility reason=webengine_unavailable_fallback' in CPP
+
+
+def test_embedded_backend_skips_native_scene3d_final_append_and_audit_paths():
+    assert 'scene_preview_widget_->is_native_product_view_backend()' in MAINWINDOW_CPP
+    assert 'scene_preview_widget_->is_native_product_view_backend() && viewport' in MAINWINDOW_CPP
+    assert 'scene_preview_widget_->is_native_product_view_backend() &&\n      has_selected_scene() && selected_scene_name() == QStringLiteral("ur5_2f_test")' in MAINWINDOW_CPP
+    assert 'scene_preview_widget_ && scene_preview_widget_->is_native_product_view_backend() &&\n        (scene_name_for_final_append == QStringLiteral("ur5_2f_test") || visual_index_contains_ur5_mesh_rows)' in MAINWINDOW_CPP
+    assert 'if (scene_preview_widget_->is_native_product_view_backend()) {\n      append_scene_diagnostic_log_once' in MAINWINDOW_CPP
+    for token in [
+        'Scene3D skipped duplicate generated visual index row',
+        'UR5_FINAL_APPEND',
+        'UR5_BAKED_MATRIX_HANDOFF',
+        'Scene3D final viewport audit',
+        'Scene3D full payload committed',
+    ]:
+        assert token in MAINWINDOW_CPP
 
 
 def test_product_view_lifecycle_prepares_before_loading_and_rejects_stale_output():
@@ -71,7 +95,7 @@ def test_product_view_lifecycle_prepares_before_loading_and_rejects_stale_output
 
 
 def test_server_is_loopback_only():
-    assert 'socket.connectToHost(QStringLiteral("127.0.0.1"), embedded_web_server_port_)' in CPP
+    assert 'http://127.0.0.1:%1/%2' in CPP
     assert '"--bind", "127.0.0.1"' in CPP
     assert 'http://127.0.0.1:%1/workcell_studio_web/viewer/index.html?scene=%2&builderRevision=%3' in CPP
 
