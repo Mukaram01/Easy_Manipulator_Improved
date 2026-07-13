@@ -548,6 +548,7 @@ build_phase() {
   run_cmd "eval \"\$(./src/easy_manipulation_deployment/scripts/ensure_taskflow_cmake_package.sh --export)\""
 
   prepare_osqp_stack
+  run_cmd "./src/easy_manipulation_deployment/scripts/preflight_trajopt_osqp_compatibility.sh \"$WORKSPACE\""
   capture_epd_state
 
   run_cmd "./src/easy_manipulation_deployment/scripts/verify_workspace_discovery.sh"

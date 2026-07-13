@@ -194,6 +194,10 @@ install_rosdeps() {
     local skip_keys=(
         tesseract_visualization
         qt_advanced_docking
+        osqp
+        osqp_vendor
+        osqp-eigen
+        osqp_eigen
     )
 
     local preflight_helper="$REPO_ROOT/scripts/preflight_tesseract_apt.sh"
