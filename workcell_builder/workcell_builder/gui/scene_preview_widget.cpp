@@ -142,7 +142,11 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   view_mode_label_ = new QLabel("View mode", this);
   controls->addWidget(view_mode_label_);
   mode_selector_ = new QComboBox(this);
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+  mode_selector_->addItems({"Web3D Product View", "2D Layout"});
+#else
   mode_selector_->addItems({"3D Layout Preview", "2D Layout"});
+#endif
   controls->addWidget(mode_selector_);
   controls->addSpacing(8);
   mesh_preview_mode_label_ = new QLabel("Mesh Preview:", this);
@@ -1175,15 +1179,15 @@ void ScenePreviewWidget::refresh_toolbar_visibility()
   set_visible(gizmo_mode_selector_, !embedded_web_active);
   set_visible(snap_mode_label_, false);
   set_visible(snap_mode_selector_, false);
-  set_visible(interaction_mode_label_, true);
-  set_visible(interaction_mode_selector_, true);
+  set_visible(interaction_mode_label_, !embedded_web_active);
+  set_visible(interaction_mode_selector_, !embedded_web_active);
   set_visible(overlays_selector_, true);
 }
 
 void ScenePreviewWidget::refresh_mode_and_state()
 {
   const QString mode = mode_selector_->currentText();
-  const bool requested_3d = (mode == "3D Layout Preview");
+  const bool requested_3d = (mode == "3D Layout Preview" || mode == "Web3D Product View");
   const bool use3d = requested_3d && preview3d_available_;
   refresh_toolbar_visibility();
 
@@ -1338,7 +1342,7 @@ void ScenePreviewWidget::refresh_info_chip()
 {
   if (!info_chip_label_) return;
   const QString mode = mode_selector_ ? mode_selector_->currentText() : QStringLiteral("2D Layout");
-  const bool requested_3d = (mode == "3D Layout Preview");
+  const bool requested_3d = (mode == "3D Layout Preview" || mode == "Web3D Product View");
   const QString render_mode = requested_3d && preview3d_available_ ? mode : QStringLiteral("2D Layout (Fallback)");
   const QString summary = preview_status_summary_.isEmpty() ? QString("Items: %1").arg(preview_items_.size()) : preview_status_summary_;
 

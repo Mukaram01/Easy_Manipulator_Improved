@@ -43,7 +43,7 @@ def test_primary_actions_and_advanced_labels_present():
 
 
 def test_native_scene3d_and_2d_labels_demoted():
-    assert 'Native Scene3D Preview — experimental, not RViz-equivalent' in CPP
+    assert 'Native Scene3D compatibility preview: lightweight editable layout preview; not guaranteed RViz-equivalent.' in CPP
     assert '2D Layout Draft' in CPP
 
 
