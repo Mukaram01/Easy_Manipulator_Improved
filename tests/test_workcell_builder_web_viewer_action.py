@@ -33,7 +33,7 @@ def test_web_viewer_action_exports_fresh_scene_to_build_before_opening_viewer():
     )
     assert "QProcess::startDetached" in cpp
     assert "python3 -m http.server 8765 --bind 127.0.0.1" in cpp
-    assert "http://localhost:8765/workcell_studio_web/viewer/index.html?scene=" in cpp
+    assert "http://127.0.0.1:8765/workcell_studio_web/viewer/index.html?scene=" in cpp
 
     export_success_index = cpp.index('append_success("Exported Web 3D scene JSON: "')
     server_start_index = cpp.index("QProcess::startDetached", export_success_index)
@@ -56,7 +56,7 @@ def test_user_facing_failures_and_local_server_fallback_are_present():
         "Viewer URL opened",
         "Exported web scene JSON",
         "python3 -m http.server 8765 --bind 127.0.0.1",
-        "http://localhost:8765/workcell_studio_web/viewer/index.html?scene=",
+        "http://127.0.0.1:8765/workcell_studio_web/viewer/index.html?scene=",
     ]:
         assert text in cpp
 
@@ -69,3 +69,49 @@ def test_docs_describe_builder_action_and_safety_boundaries():
     assert "does not apply edit patches" in docs
     assert "RViz/MoveIt" in docs
     assert "python3 -m http.server 8765" in docs
+
+
+SCENE_PREVIEW_CPP = ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp"
+SCENE_PREVIEW_HDR = ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.h"
+SCENE_PREVIEW_CMAKE = ROOT / "workcell_builder/workcell_builder/CMakeLists.txt"
+
+
+def test_embedded_web3d_product_view_prepares_scene_before_loading():
+    cpp = SCENE_PREVIEW_CPP.read_text(encoding="utf-8")
+    hdr = SCENE_PREVIEW_HDR.read_text(encoding="utf-8")
+    assert "QWebEngineView" in cpp
+    assert "embeddedWeb3dProductView" in cpp
+    assert "EmbeddedProductViewState { Idle, Preparing, StartingServer, Loading, Ready, Failed }" in hdr
+    assert "scripts/ensure_workcell_studio_web_scene_fresh.py" in cpp
+    assert '"--scene", QStringLiteral("scenes/%1").arg(scene)' in cpp
+    assert '"--output", embedded_web_prepare_output_path_' in cpp
+    assert '"--stage-assets"' in cpp
+    assert "setWorkingDirectory(repo_root)" in cpp
+    assert "setProcessEnvironment(QProcessEnvironment::systemEnvironment())" in cpp
+    assert "embedded_web_view_->load(QUrl(viewer_url))" in cpp
+    assert "QFileInfo::exists(QDir(embedded_web_repo_root_).filePath(output_path))" in cpp
+    assert "stale output will not be loaded" in cpp
+
+
+def test_embedded_web3d_coalesces_refreshes_and_rejects_stale_completions():
+    cpp = SCENE_PREVIEW_CPP.read_text(encoding="utf-8")
+    hdr = SCENE_PREVIEW_HDR.read_text(encoding="utf-8")
+    assert "pending_embedded_web_scene_" in hdr
+    assert "embedded_web_request_revision_" in hdr
+    assert "if (embedded_web_prepare_process_ && embedded_web_prepare_process_->state() != QProcess::NotRunning) return;" in cpp
+    assert "preview_scene_name_.trimmed() == scene && revision == embedded_web_request_revision_" in cpp
+    assert "ignored stale prepared scene" in cpp
+
+
+def test_embedded_web3d_server_is_local_reused_and_controls_are_not_native_noops():
+    cpp = SCENE_PREVIEW_CPP.read_text(encoding="utf-8")
+    cmake = SCENE_PREVIEW_CMAKE.read_text(encoding="utf-8")
+    assert '"--bind", "127.0.0.1"' in cpp
+    assert "embedded_web_server_is_usable" in cpp
+    assert "reused existing verified server" in cpp
+    assert "load_prepared_embedded_web_scene" in cpp
+    assert "builderRevision=" in cpp
+    assert "build/workcell_studio_web_scene/%1.web_scene.json" in cpp
+    assert "hide native Scene3DViewportWidget-only controls" in cpp
+    assert "set_visible(view_actions_label_, !embedded_web_active)" in cpp
+    assert "Qt5::Network" in cmake

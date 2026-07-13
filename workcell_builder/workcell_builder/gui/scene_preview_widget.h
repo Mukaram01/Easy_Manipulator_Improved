@@ -5,6 +5,7 @@
 #include <QStringList>
 #include <QSet>
 #include <QMatrix4x4>
+#include <QProcess>
 
 class QComboBox;
 class QLabel;
@@ -14,7 +15,7 @@ class QGraphicsView;
 class QGraphicsScene;
 class QGraphicsItem;
 class QGraphicsProxyWidget;
-class QProcess;
+class QTcpSocket;
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 class QWebEngineView;
 #endif
@@ -289,8 +290,17 @@ private:
   void reset_fallback_scene_view();
   void refresh_info_chip();
   void refresh_toolbar_visibility();
+  enum class EmbeddedProductViewState { Idle, Preparing, StartingServer, Loading, Ready, Failed };
   void refresh_embedded_web_product_view();
+  void request_embedded_web_product_view_refresh(bool force = false);
+  void maybe_start_next_embedded_web_prepare();
+  void start_embedded_web_prepare(const QString & scene, quint64 revision, bool force);
+  void on_embedded_web_prepare_finished(int exit_code, QProcess::ExitStatus exit_status);
   void ensure_embedded_web_server_started(const QString & repo_root);
+  bool embedded_web_server_is_usable() const;
+  void load_prepared_embedded_web_scene(const QString & scene, quint64 revision);
+  void set_embedded_product_view_state(EmbeddedProductViewState state, const QString & detail = QString());
+  QString embedded_web_prepare_command_for_log(const QString & scene, const QString & output_path, bool force = false) const;
   QString resolve_embedded_web_repo_root() const;
   bool diagnostic_debug_logging_enabled() const;
   bool emit_scene_diagnostic_once(const QString & event, int payload_count, const QString & message);
@@ -324,7 +334,16 @@ private:
   QWebEngineView * embedded_web_view_{ nullptr };
 #endif
   QProcess * embedded_web_server_process_{ nullptr };
+  QProcess * embedded_web_prepare_process_{ nullptr };
+  EmbeddedProductViewState embedded_product_view_state_{ EmbeddedProductViewState::Idle };
   QString embedded_web_repo_root_;
+  QString embedded_web_prepare_scene_;
+  QString embedded_web_prepare_output_path_;
+  QString pending_embedded_web_scene_;
+  quint64 embedded_web_request_revision_{ 0 };
+  quint64 embedded_web_active_revision_{ 0 };
+  quint64 pending_embedded_web_revision_{ 0 };
+  bool pending_embedded_web_force_{ false };
   int embedded_web_server_port_{ 8765 };
   QGraphicsView * fallback_2d_view_{ nullptr };
   QLabel * info_chip_label_{ nullptr };
