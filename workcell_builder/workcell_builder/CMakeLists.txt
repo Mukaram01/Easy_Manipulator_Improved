@@ -399,7 +399,7 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_mainwindow_rviz_preview_compile_test
     test/mainwindow_rviz_preview_compile_test.cpp)
   if(TARGET workcell_scene_preview_widget_ui_test)
-    target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Widgets Qt5::OpenGL OpenGL::GL)
+    target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Widgets Qt5::OpenGL Qt5::Network OpenGL::GL)
   endif()
 
   if(TARGET workcell_workspace_validation_test)
