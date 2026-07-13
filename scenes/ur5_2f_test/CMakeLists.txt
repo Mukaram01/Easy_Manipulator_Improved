@@ -13,6 +13,14 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 
+function(install_scene_directory_if_present directory_name)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${directory_name}")
+    install(DIRECTORY ${directory_name}
+      DESTINATION share/${PROJECT_NAME}
+    )
+  endif()
+endfunction()
+
 install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
 )
@@ -21,9 +29,9 @@ install(DIRECTORY urdf
   DESTINATION share/${PROJECT_NAME}
 )
 
-install(DIRECTORY config generated layout
-  DESTINATION share/${PROJECT_NAME}
-)
+install_scene_directory_if_present(config)
+install_scene_directory_if_present(generated)
+install_scene_directory_if_present(layout)
 
 install(FILES
   cell_definition.yaml
