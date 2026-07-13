@@ -38250,6 +38250,18 @@ function updateViewerStatus() {
   });
   const assemblyRenderDiagnostics = collectAssemblyRenderDiagnostics();
   window.__WORKCELL_VIEWER_STATUS__ = {
+    viewer_boot_state: 'ready',
+    viewerBootState: 'ready',
+    failed_stage: '',
+    failedStage: '',
+    fatal_error: '',
+    fatalError: '',
+    fatal_stack: '',
+    fatalStack: '',
+    source_web_scene_file: state.sourceWebSceneFile || '',
+    sourceWebSceneFile: state.sourceWebSceneFile || '',
+    scene_json_loaded: Boolean(state.sceneJson),
+    sceneJsonLoaded: Boolean(state.sceneJson),
     scene_name: summary.sceneName,
     sceneName: summary.sceneName,
     renderable_count: summary.renderableCount,
@@ -38311,8 +38323,20 @@ function renderSceneSummary() {
   }
 }
 function showError(message) {
-  el.error.textContent = message;
+  const text = message || 'Unknown viewer error';
+  el.error.textContent = text;
   el.error.hidden = false;
+  window.__WORKCELL_VIEWER_STATUS__ = {
+    ...(window.__WORKCELL_VIEWER_STATUS__ || {}),
+    viewer_boot_state: 'failed',
+    viewerBootState: 'failed',
+    failed_stage: 'viewer_runtime',
+    failedStage: 'viewer_runtime',
+    fatal_error: text,
+    fatalError: text,
+    fatal_stack: (new Error(text).stack || '').split('\n').slice(0, 6).join('\n'),
+    fatalStack: (new Error(text).stack || '').split('\n').slice(0, 6).join('\n'),
+  };
 }
 function clearError() {
   el.error.hidden = true;

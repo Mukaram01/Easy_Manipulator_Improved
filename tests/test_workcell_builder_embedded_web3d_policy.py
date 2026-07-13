@@ -76,9 +76,26 @@ def test_server_is_loopback_only():
     assert 'http://127.0.0.1:%1/workcell_studio_web/viewer/index.html?scene=%2&builderRevision=%3' in CPP
 
 
-def test_ready_state_only_from_successful_browser_load():
+def test_load_finished_true_only_starts_bounded_readiness_polling():
     load_finished = CPP.index('&QWebEngineView::loadFinished')
-    ready = CPP.index('if (ok) set_embedded_product_view_state(EmbeddedProductViewState::Ready', load_finished)
-    failed = CPP.index('else set_embedded_product_view_state(EmbeddedProductViewState::Failed', load_finished)
-    assert load_finished < ready < failed
-    assert 'set_embedded_product_view_state(EmbeddedProductViewState::Ready' not in CPP[:load_finished]
+    handler = CPP[load_finished:CPP.index('simple_3d_view_ = embedded_web_view_', load_finished)]
+    assert 'if (!ok)' in handler
+    assert 'set_embedded_product_view_state(EmbeddedProductViewState::Failed' in handler
+    assert 'set_embedded_product_view_state(EmbeddedProductViewState::Loading' in handler
+    assert 'start_embedded_web_readiness_polling' in handler
+    assert 'set_embedded_product_view_state(EmbeddedProductViewState::Ready' not in handler
+
+
+def test_product_view_ready_requires_viewer_status_not_load_finished_true():
+    assert 'window.__WORKCELL_VIEWER_STATUS__' in CPP
+    assert 'runJavaScript' in CPP
+    assert 'viewer_boot_state' in CPP
+    assert 'scene_json_loaded' in CPP
+    assert 'source_web_scene_file' in CPP
+    assert 'robot_preview_lifecycle_state' in CPP
+    assert 'scene == QStringLiteral("ur5_2f_test")' in CPP
+    assert 'boot_state == QStringLiteral("ready") && expected_json_loaded && robot_ready' in CPP
+    assert 'startup timed out after 45s' in CPP
+    assert 'failed_stage' in CPP
+    assert 'fatal_error' in CPP
+    assert 'fatal_stack' in CPP

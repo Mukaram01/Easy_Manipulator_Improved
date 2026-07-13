@@ -300,6 +300,8 @@ private:
   void ensure_embedded_web_server_started(const QString & repo_root);
   bool embedded_web_server_is_usable() const;
   void load_prepared_embedded_web_scene(const QString & scene, quint64 revision);
+  void start_embedded_web_readiness_polling(const QString & scene, quint64 revision, const QString & expected_json_path, const QString & viewer_url);
+  void poll_embedded_web_readiness(const QString & scene, quint64 revision, const QString & expected_json_path, const QString & viewer_url);
   void set_embedded_product_view_state(EmbeddedProductViewState state, const QString & detail = QString());
   QString embedded_web_prepare_command_for_log(const QString & scene, const QString & output_path, bool force = false) const;
   QString resolve_embedded_web_repo_root() const;
@@ -341,6 +343,9 @@ private:
   QString embedded_web_repo_root_;
   QString embedded_web_prepare_scene_;
   QString embedded_web_prepare_output_path_;
+  QString embedded_web_last_viewer_url_;
+  QString embedded_web_last_boot_status_;
+  QDateTime embedded_web_readiness_deadline_;
   QString pending_embedded_web_scene_;
   quint64 embedded_web_request_revision_{ 0 };
   quint64 embedded_web_active_revision_{ 0 };
