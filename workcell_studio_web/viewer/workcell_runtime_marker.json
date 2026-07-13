@@ -1,0 +1,6 @@
+{
+  "schema_version": "workcell_studio_web_runtime_marker/v1",
+  "project": "Workcell Studio / Easy Manipulation Deployment",
+  "served_root_contract": "repository_root",
+  "viewer_entrypoint": "workcell_studio_web/viewer/index.html"
+}

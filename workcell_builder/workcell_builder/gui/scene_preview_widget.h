@@ -16,7 +16,6 @@ class QGraphicsView;
 class QGraphicsScene;
 class QGraphicsItem;
 class QGraphicsProxyWidget;
-class QTcpSocket;
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 class QWebEngineView;
 #endif
@@ -298,7 +297,7 @@ private:
   void start_embedded_web_prepare(const QString & scene, quint64 revision, bool force);
   void on_embedded_web_prepare_finished(int exit_code, QProcess::ExitStatus exit_status);
   void ensure_embedded_web_server_started(const QString & repo_root);
-  bool embedded_web_server_is_usable() const;
+  bool embedded_web_server_is_usable(const QString & repo_root = QString(), const QString & scene = QString()) const;
   void load_prepared_embedded_web_scene(const QString & scene, quint64 revision);
   void start_embedded_web_readiness_polling(const QString & scene, quint64 revision, const QString & expected_json_path, const QString & viewer_url);
   void poll_embedded_web_readiness(const QString & scene, quint64 revision, const QString & expected_json_path, const QString & viewer_url);
