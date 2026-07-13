@@ -3132,12 +3132,20 @@ void MainWindow::build_studio_header_actions()
   run_next_menu->addAction(action_export_open_page_);
   run_next_button->setMenu(run_next_menu);
   top_bar->addWidget(run_next_button);
-  auto * native_scene3d_help_label = new QLabel(
-    "Native Scene3D: lightweight editable layout preview; not guaranteed RViz-equivalent.",
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+  auto * product_view_help_label = new QLabel(
+    "Web3D Product View",
     this);
-  native_scene3d_help_label->setWordWrap(true);
-  native_scene3d_help_label->setObjectName("studioNativeScene3DHelpLabel");
-  top_bar->addWidget(native_scene3d_help_label);
+  product_view_help_label->setToolTip("Embedded Web3D Product View is active; use the viewer surface for product framing and overlay controls.");
+#else
+  auto * product_view_help_label = new QLabel(
+    "Native Scene3D compatibility preview: lightweight editable layout preview; not guaranteed RViz-equivalent.",
+    this);
+  product_view_help_label->setToolTip("Native compatibility wording is shown only when WebEngine is unavailable and the native fallback is active.");
+#endif
+  product_view_help_label->setWordWrap(true);
+  product_view_help_label->setObjectName("studioProductViewHelpLabel");
+  top_bar->addWidget(product_view_help_label);
   auto * more_button = new QToolButton(this);
   more_button->setText("More");
   more_button->setPopupMode(QToolButton::InstantPopup);
