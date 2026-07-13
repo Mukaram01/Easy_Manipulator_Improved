@@ -779,6 +779,9 @@ Repository scripts now resolve manifests in this order: canonical first, then le
 ### OSQP / TrajOpt consistency (read this first)
 
 - Do **not** manually build `src/osqp` or `src/osqp-eigen` as normal colcon packages in the standard install flow. The helper script owns OSQP compatibility handling for this repository.
+- `trajopt_sco` 0.33.0 requires the OSQP v1 API (`OSQPSolver`, `OSQPInt`, `OSQPCscMatrix`, `osqp_update_data_vec`, `osqp_update_data_mat`, `OSQPSettings::warm_starting`, `OSQP_NO_ERROR`, `OSQP_ALGEBRA_LOAD_ERROR`). The upstream `trajopt_sco` package declares `depend>osqp</depend>` and `find_package(osqp QUIET)`; this repository pins `osqp` to `v1.0.0` and `osqp-eigen` to `v0.11.0` in both dependency manifests.
+- Do not allow Jammy `libosqp-dev` to satisfy `osqp` or `osqp_vendor`; it exposes the older `OSQPWorkspace`/`warm_start` API. `scripts/rosdep_overrides.yaml` intentionally maps those keys to no apt package, and the build helpers skip the OSQP rosdep keys so the pinned source provider is used.
+- Run `scripts/preflight_trajopt_osqp_compatibility.sh <workspace>` after installing the pinned OSQP provider if `trajopt_sco` fails to configure or compile. It reports wrong TrajOpt commits, stale/flattened `trajopt_sco` checkouts, duplicate packages, incompatible OSQP headers, and `/usr` OSQP provider leakage.
 - `trajopt_sco` can fail when OSQP v0.6 and OSQP v1 headers/libraries are mixed.
 - Typical symptoms include compile errors mentioning missing `OSQPSolver`, `OSQPInt`, `OSQPFloat`, or `OSQPCscMatrix`.
 - Fix strategy: keep one consistent OSQP strategy through the helper script and dependency overlay. Do **not** randomly skip TrajOpt packages (`trajopt_sco`, `trajopt_sqp`, `trajopt_ifopt`) in full-profile EPD builds.

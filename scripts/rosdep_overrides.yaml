@@ -59,7 +59,9 @@ openmp:
   ubuntu: [libomp-dev]
 
 osqp:
-  ubuntu: [libosqp-dev]
+  # Do not resolve to Jammy libosqp-dev: trajopt 0.33.0 requires OSQP v1 API.
+  # Import/build the pinned source provider from dependencies/emd_epd_ws.repos instead.
+  ubuntu: []
 
 osqp-eigen:
   ubuntu:
@@ -67,7 +69,9 @@ osqp-eigen:
     noble: [libosqp-eigen-dev]
 
 osqp_vendor:
-  ubuntu: [libosqp-dev]
+  # Do not resolve to Jammy libosqp-dev: it exposes the older OSQPWorkspace API.
+  # Use the pinned source OSQP provider from dependencies/emd_epd_ws.repos.
+  ubuntu: []
 
 ignition-math6:
   ubuntu:
