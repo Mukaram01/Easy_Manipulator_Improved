@@ -30,14 +30,8 @@ install(DIRECTORY urdf
 )
 
 install_scene_directory_if_present(config)
-
-install(DIRECTORY generated
-  DESTINATION share/${PROJECT_NAME}
-)
-
-install(DIRECTORY layout
-  DESTINATION share/${PROJECT_NAME}
-)
+install_scene_directory_if_present(generated)
+install_scene_directory_if_present(layout)
 
 install(FILES
   cell_definition.yaml

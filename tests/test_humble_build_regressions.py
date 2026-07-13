@@ -225,3 +225,28 @@ def test_discovered_package_names_are_unique():
         packages_by_name.setdefault(name, []).append(str(package_xml.parent))
     duplicates = {name: paths for name, paths in packages_by_name.items() if len(paths) > 1}
     assert duplicates == {}
+
+
+def test_scene_generated_directories_are_installed_conditionally():
+    """Scene generated/ output is optional in a clean checkout."""
+    import re
+
+    def exists_guarded_generated_installs(cmake_text: str) -> bool:
+        lines = cmake_text.splitlines()
+        for index, line in enumerate(lines):
+            if not re.search(r"if\s*\([^)]*EXISTS[^)]*generated[^)]*\)", line):
+                continue
+            guarded_block = "\n".join(lines[index : index + 8])
+            if re.search(r"install\s*\(\s*DIRECTORY\s+generated\b", guarded_block):
+                return True
+        return False
+
+    offenders = []
+    for cmake_path in sorted(Path("scenes").glob("*/CMakeLists.txt")):
+        text = cmake_path.read_text()
+        has_helper = re.search(r"install_scene_directory_if_present\s*\(\s*generated\s*\)", text)
+        has_exists_guard = exists_guarded_generated_installs(text)
+        if not (has_helper or has_exists_guard):
+            offenders.append(str(cmake_path))
+
+    assert offenders == []
