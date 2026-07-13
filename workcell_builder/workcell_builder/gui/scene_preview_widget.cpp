@@ -91,6 +91,7 @@ void maybe_warn_overlay_fit_dominance(ScenePreviewWidget * self, const QRectF & 
 #include <QProcessEnvironment>
 #include <QTcpSocket>
 #include <QUrl>
+#include <QTimer>
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 #include <QWebEngineView>
 #endif
@@ -351,6 +352,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   }
   refresh_info_chip();
   refresh_mode_and_state();
+  QTimer::singleShot(0, this, [this]() { emit_backend_startup_diagnostic_once(); });
 }
 
 QString ScenePreviewWidget::resolve_embedded_web_repo_root() const
@@ -473,6 +475,17 @@ void ScenePreviewWidget::maybe_start_next_embedded_web_prepare()
 #endif
 }
 
+void ScenePreviewWidget::emit_backend_startup_diagnostic_once()
+{
+  if (backend_startup_diagnostic_emitted_) return;
+  backend_startup_diagnostic_emitted_ = true;
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+  emit studio_log_requested(QStringLiteral("Workcell Product View backend=embedded_web3d webengine_compiled=true"));
+#else
+  emit studio_log_requested(QStringLiteral("Workcell Product View backend=native_compatibility reason=explicit_build_option"));
+#endif
+}
+
 void ScenePreviewWidget::start_embedded_web_prepare(const QString & scene, quint64 revision, bool force)
 {
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
@@ -497,6 +510,7 @@ void ScenePreviewWidget::start_embedded_web_prepare(const QString & scene, quint
   embedded_web_prepare_process_->setWorkingDirectory(repo_root);
   embedded_web_prepare_process_->setProcessEnvironment(QProcessEnvironment::systemEnvironment());
   embedded_web_prepare_process_->setProcessChannelMode(QProcess::SeparateChannels);
+  embedded_web_prepare_started_at_ = QDateTime::currentDateTimeUtc();
   connect(embedded_web_prepare_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, &ScenePreviewWidget::on_embedded_web_prepare_finished);
   set_embedded_product_view_state(EmbeddedProductViewState::Preparing, scene);
   emit studio_log_requested(QStringLiteral("Preparing embedded Product View from repo root %1: %2").arg(repo_root, embedded_web_prepare_command_for_log(scene, embedded_web_prepare_output_path_, force)));
@@ -521,11 +535,14 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(int exit_code, QProces
   embedded_web_prepare_process_ = nullptr;
 
   const bool still_current = (preview_scene_name_.trimmed() == scene && revision == embedded_web_request_revision_);
-  const bool output_exists = QFileInfo::exists(QDir(embedded_web_repo_root_).filePath(output_path));
-  if (exit_status != QProcess::NormalExit || exit_code != 0 || !output_exists || !still_current) {
+  const QFileInfo prepared_output_info(QDir(embedded_web_repo_root_).filePath(output_path));
+  const bool output_exists = prepared_output_info.exists();
+  const bool output_is_fresh = output_exists && prepared_output_info.lastModified().toUTC() >= embedded_web_prepare_started_at_.addSecs(-1);
+  if (exit_status != QProcess::NormalExit || exit_code != 0 || !output_exists || !output_is_fresh || !still_current) {
     QString reason;
     if (!still_current) reason = QStringLiteral("discarded stale preparation for %1; current scene is %2").arg(scene, preview_scene_name_);
     else if (!output_exists) reason = QStringLiteral("expected output missing: %1").arg(output_path);
+    else if (!output_is_fresh) reason = QStringLiteral("prepared output was stale and will not be loaded: %1").arg(output_path);
     else reason = QStringLiteral("prepare command failed with exit code %1").arg(exit_code);
     set_embedded_product_view_state(EmbeddedProductViewState::Failed, reason);
     emit studio_log_requested(QStringLiteral("Embedded Product View preparation failed; stale output will not be loaded.\nCommand: %1\nExit code: %2\nExpected output: %3\nStdout excerpt: %4\nStderr excerpt: %5").arg(command).arg(exit_code).arg(output_path, stdout_text.left(600), stderr_text.left(600)));

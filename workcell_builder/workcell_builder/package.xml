@@ -31,10 +31,12 @@
   <build_depend>libqt5svg5-dev</build_depend>
   <build_depend>libqt5opengl5-dev</build_depend>
   <build_depend>qt5-qmake</build_depend>
+  <build_depend>qtwebengine5-dev</build_depend>
   <exec_depend>qtbase5-dev</exec_depend>
   <exec_depend>libqt5svg5-dev</exec_depend>
   <exec_depend>libqt5opengl5-dev</exec_depend>
   <exec_depend>qt5-qmake</exec_depend>
+  <exec_depend>qtwebengine5-dev</exec_depend>
   <!--test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend-->
   <test_depend>controller_manager_msgs</test_depend>

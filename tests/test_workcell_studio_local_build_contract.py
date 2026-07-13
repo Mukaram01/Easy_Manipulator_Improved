@@ -14,6 +14,6 @@ def test_workcell_studio_sources_in_cmake_once():
 
 
 def test_qt_svg_wiring_present_for_svg_usage():
-    assert 'find_package(Qt5 COMPONENTS Widgets Concurrent Svg REQUIRED)' in CMAKE
+    assert 'find_package(Qt5 COMPONENTS Widgets Concurrent Svg OpenGL Network REQUIRED)' in CMAKE
     assert 'Qt5::Svg' in CMAKE
     assert 'libqt5svg5-dev' in PKG
