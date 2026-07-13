@@ -868,3 +868,56 @@ def test_stage_legacy_synthesized_robot_preview_keeps_provenance_and_no_rviz_par
     assert payload["robot_preview"]["mode"] == "legacy_flattened_rows_robot_preview"
     assert payload["robot_preview"]["source_mode"] == "legacy_flattened_rows_robot_preview"
     assert payload["robot_preview"]["rviz_parity"] is False
+
+
+def test_stage_expanded_robot_preview_rebases_package_meshes_relative_to_preview_urdf(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    for package, rel in [
+        ("ur_description", "meshes/ur5/visual/base.dae"),
+        ("robotiq_85_description", "meshes/visual/robotiq_85_base_link.dae"),
+    ]:
+        mesh = tmp_path / "assets" / package / rel
+        mesh.parent.mkdir(parents=True, exist_ok=True)
+        mesh.write_text(f"dummy {package}", encoding="utf-8")
+
+    scene = tmp_path / "scenes" / "ur5_2f_test"
+    scene.mkdir(parents=True)
+    source = tmp_path / "expanded.urdf"
+    source.write_text(
+        """<?xml version="1.0"?>
+<robot name="demo_scene">
+  <link name="world"/>
+  <link name="base_link"><visual><geometry><mesh filename="package://ur_description/meshes/ur5/visual/base.dae"/></geometry></visual></link>
+  <link name="tool0"/>
+  <link name="gripper_base_link"><visual><geometry><mesh filename="package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae"/></geometry></visual></link>
+  <joint name="world_to_robot" type="fixed"><parent link="world"/><child link="base_link"/></joint>
+  <joint name="base_to_tool0" type="fixed"><parent link="base_link"/><child link="tool0"/></joint>
+  <joint name="tool0_to_gripper" type="fixed"><parent link="tool0"/><child link="gripper_base_link"/></joint>
+</robot>
+""",
+        encoding="utf-8",
+    )
+    payload = {"scene": {"id": "ur5_2f_test"}, "_visual_mesh_index_source": {"source_expanded_urdf_path": str(source)}}
+
+    exporter._stage_expanded_robot_urdf(payload, scene, tmp_path / "build" / "workcell_studio_web_scene" / "ur5_2f_test.web_scene.json", [])
+
+    staged_urdf = tmp_path / payload["robot_preview"]["urdf_url"]
+    text = staged_urdf.read_text(encoding="utf-8")
+    assert 'filename="build/workcell_studio_web_scene/assets/' not in text
+    assert 'filename="assets/ur5_2f_test/ur_description/meshes/ur5/visual/base.dae"' in text
+    assert 'filename="assets/ur5_2f_test/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae"' in text
+    assert (tmp_path / "build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/ur5/visual/base.dae").is_file()
+    assert (tmp_path / "build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae").is_file()
+
+
+def test_robot_preview_relative_mesh_urls_resolve_without_duplicate_build_directory():
+    from urllib.parse import urljoin, urlparse
+
+    preview_url = "/build/workcell_studio_web_scene/ur5_2f_test.robot_preview.urdf"
+    for mesh in [
+        "assets/ur5_2f_test/ur_description/meshes/ur5/visual/base.dae",
+        "assets/ur5_2f_test/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+    ]:
+        resolved = urlparse(urljoin(preview_url, mesh)).path
+        assert resolved == f"/build/workcell_studio_web_scene/{mesh}"
+        assert "build/workcell_studio_web_scene/build/workcell_studio_web_scene" not in resolved

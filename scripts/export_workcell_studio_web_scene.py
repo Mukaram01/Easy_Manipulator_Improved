@@ -541,7 +541,11 @@ def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path
             return uri
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(resolved, target)
-        return os.path.relpath(target, repo_root).replace(os.sep, "/")
+        # Mesh filenames in the staged robot-preview URDF are resolved by
+        # urdf-loader relative to the URDF URL.  The preview URDF is written
+        # inside build/workcell_studio_web_scene/, so storing repo-root-relative
+        # filenames here would duplicate that directory in browser requests.
+        return os.path.relpath(target, dest.parent).replace(os.sep, "/")
 
     text = re.sub(r"package://[^\s'\"<>]+", rewrite, text)
     dest.write_text(text, encoding="utf-8")
