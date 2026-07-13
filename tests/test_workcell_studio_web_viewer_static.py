@@ -912,6 +912,28 @@ def test_viewer_has_expanded_urdf_loader_robot_preview_path():
     assert 'data-summary-field="robot-preview-mode"' in index
 
 
+def test_urdf_renderer_waits_for_mesh_completion_before_ready():
+    js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
+    assert "function meshCompletionPromise" in js
+    assert "await meshCompletion.wait();" in js
+    assert "robot_mesh_callbacks_complete" in js
+    assert "robot_expected_visual_count === (diagnostics.robot_loaded_visual_count + diagnostics.robot_failed_visual_count)" in js
+    ready_section = js.split("await meshCompletion.wait();", 1)[1].split("setLifecycleState(diagnostics, diagnostics.robot_preview_loaded ? 'ready' : 'failed')", 1)[0]
+    assert "robot.setJointValues(jointValues)" in ready_section
+    assert "robot.updateMatrixWorld(true)" in ready_section
+    assert "collectDescendantRenderMeshDiagnostics(robot.links)" in ready_section
+
+
+def test_urdf_renderer_normalizes_collada_loader_root_transform_generically():
+    js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
+    assert "function normalizeRosColladaScene" in js
+    assert "ColladaLoader(manager).load(url, dae => onDone(normalizeRosColladaScene(dae, uri, diagnostics))" in js
+    assert "upAxis === 'Z_UP' || upAxis === 'Y_UP'" in js
+    assert "robot_collada_root_normalization_count" in js
+    assert "robot_descendant_render_mesh_diagnostics" in js
+    assert "shoulder_link" not in js.split("function normalizeRosColladaScene", 1)[1].split("function loadMesh", 1)[0]
+
+
 def test_viewer_expanded_urdf_preview_helper_accepts_canonical_and_legacy_modes():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     helper = js.split("function isExpandedUrdfRobotPreview(preview)", 1)[1].split("function robotPreviewSummaryMode", 1)[0]

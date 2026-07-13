@@ -39,6 +39,92 @@ function setLifecycleState(diagnostics, state) {
   diagnostics.robotPreviewLifecycleState = state;
 }
 
+function isIdentityTransform(object, eps = 1e-9) {
+  if (!object) return true;
+  return Math.abs(object.position?.x || 0) <= eps
+    && Math.abs(object.position?.y || 0) <= eps
+    && Math.abs(object.position?.z || 0) <= eps
+    && Math.abs((object.quaternion?.x || 0)) <= eps
+    && Math.abs((object.quaternion?.y || 0)) <= eps
+    && Math.abs((object.quaternion?.z || 0)) <= eps
+    && Math.abs((object.quaternion?.w ?? 1) - 1) <= eps
+    && Math.abs((object.scale?.x ?? 1) - 1) <= eps
+    && Math.abs((object.scale?.y ?? 1) - 1) <= eps
+    && Math.abs((object.scale?.z ?? 1) - 1) <= eps;
+}
+
+function objectLocalTransformDiagnostics(object) {
+  if (!object) return null;
+  object.updateMatrix?.();
+  return {
+    position: vector3ToDiagnostics(object.position),
+    quaternion: object.quaternion ? { x: object.quaternion.x, y: object.quaternion.y, z: object.quaternion.z, w: object.quaternion.w } : null,
+    scale: vector3ToDiagnostics(object.scale),
+    matrix: Array.from(object.matrix?.elements || []).map(value => Number(value)),
+  };
+}
+
+function countDescendantMeshes(object) {
+  let count = 0;
+  object?.traverse?.(child => {
+    if (child?.isMesh) count += 1;
+  });
+  return count;
+}
+
+function normalizeRosColladaScene(dae, uri, diagnostics) {
+  const scene = dae?.scene;
+  if (!scene) return scene;
+  const asset = dae?.asset || {};
+  const upAxis = String(asset.upAxis || asset.up_axis || '').toUpperCase();
+  const unitMeter = Number(asset.unit || asset.unitMeter || asset.meter || 1);
+  const before = objectLocalTransformDiagnostics(scene);
+  const meshCount = countDescendantMeshes(scene);
+  const rootHasMesh = Boolean(scene.isMesh);
+
+  // ROS/RViz import Collada through Assimp into the URDF visual frame.  Three's
+  // ColladaLoader can expose file-level up-axis or unit conversion as a transform
+  // on the returned dae.scene root.  urdf-loader has already applied the URDF
+  // visual origin and mesh scale to the visual wrapper, so leaving this loader
+  // root conversion in place rotates/scales the visible descendant meshes while
+  // wrapper/link FK diagnostics still look correct.  Neutralize only a loader
+  // root conversion that is derived from the Collada asset metadata; STL/OBJ and
+  // authored child-node transforms remain untouched.
+  const hasLoaderRootConversion = !rootHasMesh
+    && !isIdentityTransform(scene)
+    && (upAxis === 'Z_UP' || upAxis === 'Y_UP' || (Number.isFinite(unitMeter) && Math.abs(unitMeter - 1) > 1e-9));
+  if (!hasLoaderRootConversion) {
+    diagnostics.robot_collada_mesh_diagnostics.push({
+      uri,
+      up_axis: upAxis || null,
+      unit_meter: Number.isFinite(unitMeter) ? unitMeter : null,
+      descendant_mesh_count: meshCount,
+      root_transform_normalized: false,
+      root_transform_before: before,
+    });
+    return scene;
+  }
+
+  scene.position.set(0, 0, 0);
+  scene.quaternion.identity();
+  scene.rotation.set(0, 0, 0);
+  scene.scale.set(1, 1, 1);
+  scene.updateMatrix();
+  scene.updateMatrixWorld(true);
+  diagnostics.robot_collada_root_normalization_count += 1;
+  diagnostics.robotColladaRootNormalizationCount = diagnostics.robot_collada_root_normalization_count;
+  diagnostics.robot_collada_mesh_diagnostics.push({
+    uri,
+    up_axis: upAxis || null,
+    unit_meter: Number.isFinite(unitMeter) ? unitMeter : null,
+    descendant_mesh_count: meshCount,
+    root_transform_normalized: true,
+    root_transform_before: before,
+    root_transform_after: objectLocalTransformDiagnostics(scene),
+  });
+  return scene;
+}
+
 function loadMesh(path, manager, material, done, context, diagnostics) {
   const uri = normalizeMeshUri(path, context, diagnostics);
   diagnostics.robot_expected_visual_count += 1;
@@ -66,11 +152,37 @@ function loadMesh(path, manager, material, done, context, diagnostics) {
     context?.onRobotMeshLoadError?.(err, uri);
   };
   if (ext === 'stl') new STLLoader(manager).load(url, geom => onDone(new THREE.Mesh(geom, material || new THREE.MeshPhongMaterial())), undefined, onError);
-  else if (ext === 'dae') new ColladaLoader(manager).load(url, dae => onDone(dae.scene), undefined, onError);
+  else if (ext === 'dae') new ColladaLoader(manager).load(url, dae => onDone(normalizeRosColladaScene(dae, uri, diagnostics)), undefined, onError);
   else if (ext === 'obj') new OBJLoader(manager).load(url, obj => onDone(obj), undefined, onError);
   else onError(new Error(`unsupported mesh format .${ext || 'unknown'}`));
 }
 
+function meshCompletionPromise(diagnostics, manager) {
+  let managerComplete = false;
+  const waitTick = callback => (typeof window !== 'undefined' && window.setTimeout ? window.setTimeout(callback, 0) : setTimeout(callback, 0));
+  const managerDone = new Promise(resolve => {
+    const previousOnLoad = manager.onLoad;
+    manager.onLoad = () => {
+      managerComplete = true;
+      previousOnLoad?.();
+      resolve();
+    };
+  });
+  const countsSettled = () => diagnostics.robot_expected_visual_count === (diagnostics.robot_loaded_visual_count + diagnostics.robot_failed_visual_count);
+  return {
+    async wait() {
+      if (diagnostics.robot_expected_visual_count === 0) return;
+      if (!managerComplete) await managerDone;
+      await new Promise(resolve => {
+        const check = () => {
+          if (countsSettled()) resolve();
+          else waitTick(check);
+        };
+        check();
+      });
+    },
+  };
+}
 
 function matrix4ToDiagnostics(object) {
   if (!object?.matrixWorld) return null;
@@ -148,6 +260,63 @@ function collectVisualWrapperMatrixDiagnostics(links) {
   return out;
 }
 
+function collectDescendantRenderMeshDiagnostics(links) {
+  const out = [];
+  for (const [linkName, link] of Object.entries(links || {})) {
+    let visualIndex = 0;
+    for (const visual of link.children || []) {
+      if (!isVisualWrapperCandidate(visual, links)) continue;
+      let meshIndex = 0;
+      visual.updateMatrixWorld?.(true);
+      visual.traverse?.(mesh => {
+        if (!mesh?.isMesh) return;
+        mesh.updateMatrixWorld?.(true);
+        const position = new THREE.Vector3();
+        const quaternion = new THREE.Quaternion();
+        const scale = new THREE.Vector3();
+        mesh.matrixWorld.decompose(position, quaternion, scale);
+        const box = new THREE.Box3().setFromObject(mesh);
+        const size = new THREE.Vector3();
+        const center = new THREE.Vector3();
+        const validBox = Number.isFinite(box.min.x) && Number.isFinite(box.max.x) && !box.isEmpty();
+        if (validBox) {
+          box.getSize(size);
+          box.getCenter(center);
+        }
+        out.push({
+          link_name: linkName,
+          linkName,
+          visual_index: visualIndex,
+          visualIndex,
+          mesh_index: meshIndex,
+          meshIndex,
+          object_name: mesh.name || `mesh_${meshIndex}`,
+          objectName: mesh.name || `mesh_${meshIndex}`,
+          parent_name: mesh.parent?.name || '',
+          parentName: mesh.parent?.name || '',
+          matrix_world: matrix4ToDiagnostics(mesh),
+          matrixWorld: matrix4ToDiagnostics(mesh),
+          world_position: vector3ToDiagnostics(position),
+          worldPosition: vector3ToDiagnostics(position),
+          world_quaternion: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w },
+          worldQuaternion: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w },
+          world_scale: vector3ToDiagnostics(scale),
+          worldScale: vector3ToDiagnostics(scale),
+          bounds_center: validBox ? vector3ToDiagnostics(center) : null,
+          boundsCenter: validBox ? vector3ToDiagnostics(center) : null,
+          bounds_size: validBox ? vector3ToDiagnostics(size) : null,
+          boundsSize: validBox ? vector3ToDiagnostics(size) : null,
+          bounds_valid: validBox,
+          boundsValid: validBox,
+        });
+        meshIndex += 1;
+      });
+      visualIndex += 1;
+    }
+  }
+  return out;
+}
+
 function buildLookupMap(source) {
   return new Map(Object.entries(source || {}));
 }
@@ -215,6 +384,12 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     robotPreviewLifecycleState: 'idle',
     robot_preview_canonical_fallback_used: false,
     robotPreviewCanonicalFallbackUsed: false,
+    robot_collada_root_normalization_count: 0,
+    robotColladaRootNormalizationCount: 0,
+    robot_collada_mesh_diagnostics: [],
+    robotColladaMeshDiagnostics: [],
+    robot_descendant_render_mesh_diagnostics: [],
+    robotDescendantRenderMeshDiagnostics: [],
     skipped_legacy_generated_urdf_visual_count: rendererContext?.skippedLegacyGeneratedUrdfVisualCount || 0,
   };
   const result = { root: null, links: new Map(), joints: new Map(), diagnostics, ready: null };
@@ -222,6 +397,7 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
   result.ready = (async () => {
     setLifecycleState(diagnostics, 'loading_urdf');
     const manager = new THREE.LoadingManager();
+    const meshCompletion = meshCompletionPromise(diagnostics, manager);
     const loader = new URDFLoader(manager);
     loader.parseVisual = true;
     loader.parseCollision = false;
@@ -235,6 +411,8 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     robot.name = rendererContext?.rootName || 'workcell_studio_urdf_loader_robot';
     robot.userData.robot_render_mode = ROBOT_RENDER_MODE;
     robot.userData.robot_preview_source = 'gkjohnson/urdf-loaders urdf-loader@0.13.0';
+
+    await meshCompletion.wait();
 
     const jointValues = previewConfig?.joint_values || {};
     // Delegate all supported fixed/revolute/continuous/prismatic and mimic propagation
@@ -253,6 +431,10 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     diagnostics.robotLinkWorldMatrices = diagnostics.robot_link_world_matrices;
     diagnostics.robot_visual_wrapper_world_matrices = collectVisualWrapperMatrixDiagnostics(robot.links);
     diagnostics.robotVisualWrapperWorldMatrices = diagnostics.robot_visual_wrapper_world_matrices;
+    diagnostics.robot_descendant_render_mesh_diagnostics = collectDescendantRenderMeshDiagnostics(robot.links);
+    diagnostics.robotDescendantRenderMeshDiagnostics = diagnostics.robot_descendant_render_mesh_diagnostics;
+    diagnostics.robot_collada_mesh_diagnostics = diagnostics.robot_collada_mesh_diagnostics || [];
+    diagnostics.robotColladaMeshDiagnostics = diagnostics.robot_collada_mesh_diagnostics;
     const rootDiagnostics = linkRootDiagnostics(robot, robot.links);
     diagnostics.robot_root_links = rootDiagnostics.roots;
     diagnostics.robotRootLinks = rootDiagnostics.roots;
@@ -269,7 +451,11 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     diagnostics.robotLinkWorldMatrices = diagnostics.robot_link_world_matrices;
     diagnostics.robot_visual_wrapper_world_matrices = collectVisualWrapperMatrixDiagnostics(robot.links);
     diagnostics.robotVisualWrapperWorldMatrices = diagnostics.robot_visual_wrapper_world_matrices;
-    diagnostics.robot_preview_loaded = diagnostics.robot_failed_visual_count === 0 && diagnostics.robot_hierarchy_missing_links.length === 0;
+    diagnostics.robot_descendant_render_mesh_diagnostics = collectDescendantRenderMeshDiagnostics(robot.links);
+    diagnostics.robotDescendantRenderMeshDiagnostics = diagnostics.robot_descendant_render_mesh_diagnostics;
+    diagnostics.robot_mesh_callbacks_complete = diagnostics.robot_expected_visual_count === (diagnostics.robot_loaded_visual_count + diagnostics.robot_failed_visual_count);
+    diagnostics.robotMeshCallbacksComplete = diagnostics.robot_mesh_callbacks_complete;
+    diagnostics.robot_preview_loaded = diagnostics.robot_failed_visual_count === 0 && diagnostics.robot_hierarchy_missing_links.length === 0 && diagnostics.robot_mesh_callbacks_complete;
     setLifecycleState(diagnostics, diagnostics.robot_preview_loaded ? 'ready' : 'failed');
     rendererContext?.scene?.add?.(robot);
     rendererContext?.assemblyRoots?.push?.(robot);
