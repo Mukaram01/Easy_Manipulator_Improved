@@ -41,7 +41,7 @@ find_package(pluginlib REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system filesystem)
-find_package(Qt5 COMPONENTS Widgets Concurrent Svg OpenGL REQUIRED)
+find_package(Qt5 COMPONENTS Widgets Concurrent Svg OpenGL Network REQUIRED)
 find_package(Qt5 COMPONENTS WebEngineWidgets QUIET)
 find_package(OpenGL REQUIRED)
 find_package(assimp QUIET)
@@ -214,6 +214,7 @@ target_link_libraries(workcell_builder
   Qt5::Concurrent
   Qt5::Svg
   Qt5::OpenGL
+  Qt5::Network
   OpenGL::GL
   yaml-cpp
   ${Boost_LIBRARIES}
