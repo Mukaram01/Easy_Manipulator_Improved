@@ -18,6 +18,7 @@ REQUIRED_PACKAGES=(
   libboost-program-options-dev
   libboost-serialization-dev
   libcereal-dev
+  qtwebengine5-dev
 )
 
 OSQP_NATIVE_PACKAGE=libosqp-dev

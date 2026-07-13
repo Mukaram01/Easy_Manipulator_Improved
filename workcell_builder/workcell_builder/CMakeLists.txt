@@ -41,8 +41,17 @@ find_package(pluginlib REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system filesystem)
+option(WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK "Allow the legacy native Scene3DViewportWidget Product View when Qt WebEngine is unavailable" OFF)
+
 find_package(Qt5 COMPONENTS Widgets Concurrent Svg OpenGL Network REQUIRED)
 find_package(Qt5 COMPONENTS WebEngineWidgets QUIET)
+if(NOT Qt5WebEngineWidgets_FOUND AND NOT WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK)
+  message(FATAL_ERROR
+    "embedded Web3D Product View is required by default for workcell_builder.\n"
+    "Missing Qt component: Qt5 WebEngineWidgets.\n"
+    "Ubuntu 22.04 / ROS 2 Humble install guidance: sudo apt install qtwebengine5-dev\n"
+    "If you intentionally need the legacy compatibility path, configure with -DWORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK=ON.")
+endif()
 find_package(OpenGL REQUIRED)
 find_package(assimp QUIET)
 
@@ -223,6 +232,8 @@ target_link_libraries(workcell_builder
 if(Qt5WebEngineWidgets_FOUND)
   target_compile_definitions(workcell_builder PRIVATE WORKCELL_BUILDER_HAS_WEBENGINE=1)
   target_link_libraries(workcell_builder Qt5::WebEngineWidgets)
+elseif(WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK)
+  target_compile_definitions(workcell_builder PRIVATE WORKCELL_BUILDER_NATIVE_3D_FALLBACK=1)
 endif()
 
 if(assimp_FOUND)
@@ -695,7 +706,6 @@ endif()
 install(TARGETS workcell_builder
   EXPORT export_${PROJECT_NAME}
   DESTINATION lib/${PROJECT_NAME}
-  RUNTIME DESTINATION bin
 )
 
 install(DIRECTORY templates

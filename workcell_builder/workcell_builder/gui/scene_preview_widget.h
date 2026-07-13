@@ -6,6 +6,7 @@
 #include <QSet>
 #include <QMatrix4x4>
 #include <QProcess>
+#include <QDateTime>
 
 class QComboBox;
 class QLabel;
@@ -302,6 +303,7 @@ private:
   void set_embedded_product_view_state(EmbeddedProductViewState state, const QString & detail = QString());
   QString embedded_web_prepare_command_for_log(const QString & scene, const QString & output_path, bool force = false) const;
   QString resolve_embedded_web_repo_root() const;
+  void emit_backend_startup_diagnostic_once();
   bool diagnostic_debug_logging_enabled() const;
   bool emit_scene_diagnostic_once(const QString & event, int payload_count, const QString & message);
   void emit_visual_quality_assessment_once();
@@ -344,6 +346,8 @@ private:
   quint64 embedded_web_active_revision_{ 0 };
   quint64 pending_embedded_web_revision_{ 0 };
   bool pending_embedded_web_force_{ false };
+  bool backend_startup_diagnostic_emitted_{ false };
+  QDateTime embedded_web_prepare_started_at_;
   int embedded_web_server_port_{ 8765 };
   QGraphicsView * fallback_2d_view_{ nullptr };
   QLabel * info_chip_label_{ nullptr };

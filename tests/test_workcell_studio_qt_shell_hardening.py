@@ -18,7 +18,7 @@ REQUIRED_LABELS = [
 
 
 def test_cmake_keeps_qt5_widgets_wiring():
-    assert 'find_package(Qt5 COMPONENTS Widgets Concurrent Svg REQUIRED)' in CMAKE
+    assert 'find_package(Qt5 COMPONENTS Widgets Concurrent Svg OpenGL Network REQUIRED)' in CMAKE
     assert 'Qt5::Widgets' in CMAKE
     assert 'Qt5::Concurrent' in CMAKE
 
