@@ -304,7 +304,7 @@ private:
   void poll_embedded_web_readiness(const QString & scene, quint64 revision, const QString & expected_json_path, const QString & viewer_url);
   void set_embedded_product_view_state(EmbeddedProductViewState state, const QString & detail = QString());
   QString embedded_web_prepare_command_for_log(const QString & scene, const QString & output_path, bool force = false) const;
-  QString resolve_embedded_web_repo_root() const;
+  QString resolve_embedded_web_repo_root(const QString & selected_scene_dir) const;
   void emit_backend_startup_diagnostic_once();
   bool diagnostic_debug_logging_enabled() const;
   bool emit_scene_diagnostic_once(const QString & event, int payload_count, const QString & message);

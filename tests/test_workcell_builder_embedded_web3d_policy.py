@@ -99,3 +99,40 @@ def test_product_view_ready_requires_viewer_status_not_load_finished_true():
     assert 'failed_stage' in CPP
     assert 'fatal_error' in CPP
     assert 'fatal_stack' in CPP
+
+
+
+def test_embedded_web_repo_root_resolution_uses_selected_scene_before_fallbacks():
+    cpp = CPP
+    hdr = HDR
+    assert "QString resolve_embedded_web_repo_root(const QString & selected_scene_dir) const;" in hdr
+    assert "resolve_embedded_web_repo_root(const QString & selected_scene_dir) const" in cpp
+    assert "selected scene directory upward walk" in cpp
+    assert "WORKCELL_STUDIO_REPO_ROOT secondary override" in cpp
+    assert "fallback application path upward walk" in cpp
+    assert cpp.index("selected scene directory upward walk") < cpp.index("WORKCELL_STUDIO_REPO_ROOT secondary override")
+    assert cpp.index("WORKCELL_STUDIO_REPO_ROOT secondary override") < cpp.index("fallback application path upward walk")
+
+
+def test_embedded_web_repo_root_requires_all_markers_and_rejects_partial_roots():
+    cpp = CPP
+    for marker in [
+        "workcell_studio_web/viewer/index.html",
+        "scripts/ensure_workcell_studio_web_scene_fresh.py",
+        "scenes",
+    ]:
+        assert marker in cpp
+    assert "missing_markers" in cpp
+    assert "candidate rejected" in cpp
+    assert "missing %3" in cpp
+    assert "repo root selected" in cpp
+
+
+def test_embedded_web_repo_root_resolution_covers_launch_and_symlink_scenarios():
+    cpp = CPP
+    assert "canonicalFilePath" in cpp  # symlinked scene path resolves to the real repository tree
+    assert "QDir::currentPath()" in cpp  # home/workspace/repository launch cwd is fallback only
+    assert "QCoreApplication::applicationDirPath()" in cpp
+    assert "QFileInfo(scene).isAbsolute()" in cpp
+    assert "QDir(QDir::currentPath()).absoluteFilePath(QStringLiteral(\"scenes/%1\").arg(scene))" in cpp
+    assert "could not find a Workcell Studio repo root with required markers" in cpp
