@@ -1,8 +1,8 @@
 # Workcell Studio Web 3D Viewer
 
-This directory contains the **Workcell Studio Web 3D Viewer** for the Workcell Studio `workcell_studio_web_scene/v1` JSON contract. Web 3D is now the preferred fast Workcell Studio visual path for browser-based scene review and layout inspection. It remains intentionally lightweight: static HTML, CSS, and JavaScript only, with no npm package, no bundler, no generated scene outputs committed to the repository, and no replacement of the existing Workcell Builder or RViz/MoveIt validation flow.
+This directory contains the **Workcell Studio Web 3D Viewer** for the Workcell Studio `workcell_studio_web_scene/v1` JSON contract. Web 3D is now the preferred fast Workcell Studio visual path for browser-based scene review and layout inspection. It remains intentionally lightweight: static HTML, CSS, and bundled JavaScript with exact npm dependencies, a committed generated viewer bundle, and no replacement of the existing Workcell Builder or RViz/MoveIt validation flow.
 
-The viewer uses an isolated browser import map that loads Three.js and OrbitControls from a CDN at runtime. That keeps the viewer self-contained while avoiding a committed frontend build system.
+The viewer uses a pinned npm/esbuild pipeline instead of a browser import map or CDN imports. The authored source stays readable in `viewer.js`, `urdf_robot_renderer.js`, and `src/viewer_entry.js`; `dist/viewer.bundle.js` is generated only by the build script.
 
 ## Export a scene JSON
 
@@ -41,7 +41,20 @@ URL: `http://localhost:8765/workcell_studio_web/viewer/index.html?scene=build%2F
 
 Expected result: when source meshes exist and are supported by the exporter/viewer, the robot, table/workbench, camera, and gripper/tool should be recognizable mesh-backed visuals rather than only generic boxes.
 
-Because Three.js is loaded by CDN import map, the browser needs network access for the viewer to render. If the CDN modules cannot load, the page shows a clear Three.js/CDN load failure rather than silently pretending the scene rendered.
+The checked-in bundle contains the pinned Three.js and URDF loader modules, so the served viewer does not depend on CDN import maps at runtime. Regenerate it after source or dependency changes with:
+
+```bash
+cd workcell_studio_web/viewer
+npm ci && npm run build:web3d
+```
+
+Check that the committed bundle is not stale with:
+
+```bash
+cd workcell_studio_web/viewer
+npm ci && npm run check:stale-bundle
+```
+
 
 ## Web 3D readability improvements
 

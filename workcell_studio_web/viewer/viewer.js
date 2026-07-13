@@ -1613,7 +1613,7 @@ function initThree() {
     el.canvas.addEventListener('pointerdown', pickObject);
     animate();
   } catch (err) {
-    showError(`Three.js/CDN load failure: ${err.message || err}`);
+    showError(`Bundled Three.js module load failure: ${err.message || err}`);
   }
 }
 function resize() {
@@ -2845,7 +2845,7 @@ async function boot() {
     const sceneParam = new URLSearchParams(window.location.search).get('scene');
     if (sceneParam) await loadSceneUrl(sceneParam);
   } catch (err) {
-    showError(`Three.js/CDN load failure: ${err.message || err}`);
+    showError(`Bundled Three.js module load failure: ${err.message || err}`);
   }
 }
 

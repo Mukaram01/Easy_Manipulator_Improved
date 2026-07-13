@@ -1,0 +1,17 @@
+{
+  "name": "workcell-studio-web-viewer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pinned Web 3D viewer bundle for Workcell Studio scene review.",
+  "type": "module",
+  "scripts": {
+    "build:web3d": "esbuild src/viewer_entry.js --bundle --format=esm --target=es2020 --sourcemap --outfile=dist/viewer.bundle.js",
+    "check:stale-bundle": "node scripts/check_stale_bundle.mjs"
+  },
+  "dependencies": {
+    "@esbuild/linux-x64": "0.20.2",
+    "esbuild": "0.20.2",
+    "three": "0.160.0",
+    "urdf-loader": "0.13.0"
+  }
+}
