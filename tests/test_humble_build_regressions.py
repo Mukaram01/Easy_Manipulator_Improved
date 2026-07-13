@@ -136,3 +136,92 @@ def test_humble_prereqs_check_moveit_ros_perception_for_octomap():
     assert "ros2 pkg prefix moveit_ros_perception" in text
     assert "Missing MoveIt perception package required for octomap pointcloud updates: ros-humble-moveit-ros-perception" in text
     assert "missing_tools+=(ros-humble-moveit-ros-perception)" in text
+
+
+def _ament_build_type(package_xml: Path) -> str:
+    import xml.etree.ElementTree as ET
+
+    root = ET.parse(package_xml).getroot()
+    export = root.find("export")
+    if export is not None:
+        build_type = export.find("build_type")
+        if build_type is not None and build_type.text:
+            return build_type.text.strip()
+    return "ament_cmake"
+
+
+def _is_colcon_ignored(path: Path) -> bool:
+    return any((parent / "COLCON_IGNORE").exists() for parent in [path, *path.parents])
+
+
+def test_every_discovered_ament_cmake_package_has_cmakelists():
+    missing = []
+    for package_xml in Path(".").rglob("package.xml"):
+        if any(part.startswith(".") for part in package_xml.parts):
+            continue
+        if _is_colcon_ignored(package_xml.parent):
+            continue
+        if _ament_build_type(package_xml) == "ament_cmake" and not (package_xml.parent / "CMakeLists.txt").is_file():
+            missing.append(str(package_xml.parent))
+    assert missing == []
+
+
+def test_ur_description_is_installable_ament_cmake_description_package():
+    package_dir = Path("assets/robots/universal_robot/ur_description")
+    cmake = (package_dir / "CMakeLists.txt").read_text()
+    package_xml = (package_dir / "package.xml").read_text()
+
+    assert "<name>ur_description</name>" in package_xml
+    assert "project(ur_description)" in cmake
+    assert "find_package(ament_cmake REQUIRED)" in cmake
+    assert "ament_package()" in cmake
+    assert "install(FILES package.xml" in cmake
+
+    for resource_dir in ["meshes", "urdf", "config", "launch", "rviz"]:
+        assert (package_dir / resource_dir).is_dir(), resource_dir
+        assert resource_dir in cmake
+    assert (package_dir / "urdf" / "ur.urdf.xacro").is_file()
+    assert any((package_dir / "meshes" / "ur5").rglob("*"))
+
+
+def test_ur_description_is_not_hidden_from_colcon():
+    package_dir = Path("assets/robots/universal_robot/ur_description")
+    assert not (package_dir / "COLCON_IGNORE").exists()
+    assert not (package_dir / "AMENT_IGNORE").exists()
+
+
+def test_scene_preview_widget_targets_link_qt_network():
+    cmake = Path("workcell_builder/workcell_builder/CMakeLists.txt").read_text()
+    assert "gui/scene_preview_widget.cpp" in cmake
+    assert "find_package(Qt5 COMPONENTS Widgets Concurrent Svg OpenGL Network REQUIRED)" in cmake
+    assert "target_link_libraries(workcell_builder" in cmake and "Qt5::Network" in cmake
+    assert "ament_add_gtest(workcell_scene_preview_widget_ui_test" in cmake
+    assert "target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Widgets Qt5::OpenGL Qt5::Network OpenGL::GL)" in cmake
+
+
+def test_scene_preview_widget_still_uses_qtcp_socket_for_server_probe():
+    source = Path("workcell_builder/workcell_builder/gui/scene_preview_widget.cpp").read_text()
+    assert "#include <QTcpSocket>" in source
+    assert "QTcpSocket socket" in source
+
+
+def test_embedded_workcell_builder_asset_copies_are_not_colcon_packages():
+    # These files are installed as workcell_builder runtime assets. The canonical
+    # buildable description packages live under the repository-level assets/ tree.
+    assert Path("workcell_builder/workcell_builder/assets/COLCON_IGNORE").is_file()
+    assert not Path("assets/COLCON_IGNORE").exists()
+
+
+def test_discovered_package_names_are_unique():
+    import xml.etree.ElementTree as ET
+
+    packages_by_name = {}
+    for package_xml in Path(".").rglob("package.xml"):
+        if any(part.startswith(".") for part in package_xml.parts):
+            continue
+        if _is_colcon_ignored(package_xml.parent):
+            continue
+        name = ET.parse(package_xml).getroot().findtext("name")
+        packages_by_name.setdefault(name, []).append(str(package_xml.parent))
+    duplicates = {name: paths for name, paths in packages_by_name.items() if len(paths) > 1}
+    assert duplicates == {}
