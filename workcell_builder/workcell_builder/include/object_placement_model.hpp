@@ -47,11 +47,16 @@ struct TaskZone
 {
   std::string id;
   std::string type;
+  std::string role;
+  std::string shape{"box"};
   std::string parent_frame{"world"};
   double x{0.0}, y{0.0}, z{0.0};
   double roll{0.0}, pitch{0.0}, yaw{0.0};
   double dim_x{0.0}, dim_y{0.0}, dim_z{0.0};
   std::string frame_id;
+  std::string support_surface_ref;
+  std::string object_ref;
+  std::string target_ref;
   std::vector<std::string> allowed_object_types;
   bool enabled{true};
   std::string status;
