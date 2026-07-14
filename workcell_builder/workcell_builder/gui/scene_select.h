@@ -71,6 +71,7 @@ struct TaskGraspEditorState
 #include "workcell_scene_status.hpp"
 #include "offline_smoke_check_model.hpp"
 #include "supported_scene_readiness_loader.hpp"
+#include "object_placement_model.hpp"
 
 namespace Ui
 {
@@ -219,6 +220,17 @@ private:
   bool has_selected_cell() const;
   bool has_unsaved_edits() const;
   void initialize_robot_home_editor();
+  void initialize_task_area_editor();
+  void load_task_areas_for_selected_scene();
+  void refresh_task_area_canvas_items();
+  void sync_task_area_inspector();
+  void mark_task_areas_dirty(const QString & reason);
+  bool save_task_areas_to_scene(const boost::filesystem::path & scene_dir, std::string * reason);
+  bool validate_task_areas_for_save(std::vector<std::string> * errors, std::vector<std::string> * warnings) const;
+  bool ensure_suggested_task_areas();
+  void add_task_area(const std::string & role);
+  void delete_selected_task_area();
+  static double snap_task_area_value(double value);
   void load_robot_home_for_selected_scene();
   void sync_robot_home_editor_from_model();
   void mark_robot_home_edited();
@@ -233,6 +245,9 @@ private:
   boost::filesystem::path latest_demo_scene_dir_;
   TaskGraspEditorState task_editor_state_;
   std::unique_ptr<RobotHomeJointState> robot_home_state_;
+  std::vector<workcell_builder::TaskZone> task_area_zones_;
+  std::string selected_task_area_id_;
+  bool task_area_dirty_{false};
   QLabel * robot_home_source_label_ = nullptr;
   QLabel * robot_home_validation_label_ = nullptr;
   std::string selected_canvas_item_id_;

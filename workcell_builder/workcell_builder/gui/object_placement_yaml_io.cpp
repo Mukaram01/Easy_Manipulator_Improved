@@ -78,6 +78,14 @@ std::vector<PlacedObject> load_placed_objects_from_environment_yaml(const std::s
         o.scale_y = scale[1].as<double>(1.0);
         o.scale_z = scale[2].as<double>(1.0);
       }
+      auto pose_xyz_alias = n["pose_xyz"];
+      if (pose_xyz_alias && pose_xyz_alias.IsSequence() && pose_xyz_alias.size() == 3) {
+        z.x = pose_xyz_alias[0].as<double>(0.0); z.y = pose_xyz_alias[1].as<double>(0.0); z.z = pose_xyz_alias[2].as<double>(0.0);
+      }
+      auto pose_rpy_alias = n["pose_rpy"];
+      if (pose_rpy_alias && pose_rpy_alias.IsSequence() && pose_rpy_alias.size() == 3) {
+        z.roll = pose_rpy_alias[0].as<double>(0.0); z.pitch = pose_rpy_alias[1].as<double>(0.0); z.yaw = pose_rpy_alias[2].as<double>(0.0);
+      }
       auto pose = n["pose"];
       if (pose && pose.IsMap()) {
         auto xyz = pose["xyz"]; auto rpy = pose["rpy"];
@@ -213,11 +221,24 @@ std::vector<TaskZone> load_task_zones_from_environment_yaml(const std::string & 
       seen_ids.insert(z.id);
 
       z.type = n["type"].as<std::string>("");
-      z.parent_frame = n["parent_frame"].as<std::string>("world");
+      z.role = n["role"].as<std::string>(z.type);
+      z.shape = n["shape"].as<std::string>("box");
+      z.parent_frame = n["frame"].as<std::string>(n["parent_frame"].as<std::string>("world"));
       z.frame_id = n["frame_id"].as<std::string>("");
+      z.support_surface_ref = n["support_surface_ref"].as<std::string>("");
+      z.object_ref = n["object_ref"].as<std::string>("");
+      z.target_ref = n["target_ref"].as<std::string>("");
       z.enabled = n["enabled"].as<bool>(true);
       z.status = n["status"].as<std::string>("");
 
+      auto pose_xyz_alias = n["pose_xyz"];
+      if (pose_xyz_alias && pose_xyz_alias.IsSequence() && pose_xyz_alias.size() == 3) {
+        z.x = pose_xyz_alias[0].as<double>(0.0); z.y = pose_xyz_alias[1].as<double>(0.0); z.z = pose_xyz_alias[2].as<double>(0.0);
+      }
+      auto pose_rpy_alias = n["pose_rpy"];
+      if (pose_rpy_alias && pose_rpy_alias.IsSequence() && pose_rpy_alias.size() == 3) {
+        z.roll = pose_rpy_alias[0].as<double>(0.0); z.pitch = pose_rpy_alias[1].as<double>(0.0); z.yaw = pose_rpy_alias[2].as<double>(0.0);
+      }
       auto pose = n["pose"];
       if (pose && pose.IsMap()) {
         auto xyz = pose["xyz"]; auto rpy = pose["rpy"];
@@ -234,6 +255,10 @@ std::vector<TaskZone> load_task_zones_from_environment_yaml(const std::string & 
         z.dim_x = dims["x"].as<double>(z.dim_x);
         z.dim_y = dims["y"].as<double>(z.dim_y);
         z.dim_z = dims["z"].as<double>(z.dim_z);
+      } else if (dims && dims.IsSequence() && dims.size() == 3) {
+        z.dim_x = dims[0].as<double>(z.dim_x);
+        z.dim_y = dims[1].as<double>(z.dim_y);
+        z.dim_z = dims[2].as<double>(z.dim_z);
       }
 
       auto allowed = n["allowed_object_types"];
@@ -280,13 +305,18 @@ PlacedObjectYamlWriteResult save_task_zones_to_environment_yaml(const std::strin
       YAML::Node n;
       n["id"] = z.id;
       n["type"] = z.type;
-      n["parent_frame"] = z.parent_frame.empty() ? "world" : z.parent_frame;
-      n["pose"]["xyz"].push_back(z.x); n["pose"]["xyz"].push_back(z.y); n["pose"]["xyz"].push_back(z.z);
-      n["pose"]["rpy"].push_back(z.roll); n["pose"]["rpy"].push_back(z.pitch); n["pose"]["rpy"].push_back(z.yaw);
-      n["dimensions"]["x"] = z.dim_x;
-      n["dimensions"]["y"] = z.dim_y;
-      n["dimensions"]["z"] = z.dim_z;
+      n["role"] = z.role.empty() ? z.type : z.role;
+      n["frame"] = z.parent_frame.empty() ? "world" : z.parent_frame;
+      n["shape"] = z.shape.empty() ? "box" : z.shape;
+      n["pose_xyz"].push_back(z.x); n["pose_xyz"].push_back(z.y); n["pose_xyz"].push_back(z.z);
+      n["pose_rpy"].push_back(z.roll); n["pose_rpy"].push_back(z.pitch); n["pose_rpy"].push_back(z.yaw);
+      n["dimensions"].push_back(z.dim_x);
+      n["dimensions"].push_back(z.dim_y);
+      n["dimensions"].push_back(z.dim_z);
       if (!z.frame_id.empty()) n["frame_id"] = z.frame_id;
+      if (!z.support_surface_ref.empty()) n["support_surface_ref"] = z.support_surface_ref;
+      if (!z.object_ref.empty()) n["object_ref"] = z.object_ref;
+      if (!z.target_ref.empty()) n["target_ref"] = z.target_ref;
       if (!z.allowed_object_types.empty()) {
         for (const auto & t : z.allowed_object_types) n["allowed_object_types"].push_back(t);
       }
@@ -296,6 +326,18 @@ PlacedObjectYamlWriteResult save_task_zones_to_environment_yaml(const std::strin
     }
 
     root["task_zones"] = arr;
+    for (const auto & z : zones) {
+      const bool is_pick = z.role == "pick" || z.type == "pick_zone";
+      const bool is_place = z.role == "place" || z.type == "place_zone";
+      if (is_pick) {
+        root["task"]["pick"]["source_ref"] = z.id;
+        if (!z.object_ref.empty()) root["task"]["pick"]["object_ref"] = z.object_ref;
+      }
+      if (is_place) {
+        root["task"]["place"]["target_ref"] = z.id;
+        root["task"]["place"]["intent_target_ref"] = z.id;
+      }
+    }
     std::ofstream out(path);
     out << root;
     r.ok = out.good();

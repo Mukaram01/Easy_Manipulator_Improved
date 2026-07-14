@@ -57,6 +57,7 @@
 #include <QDoubleSpinBox>
 #include <QSlider>
 #include <QSignalBlocker>
+#include <QRegularExpression>
 #include <QMenu>
 #include <QAction>
 #include <QTreeWidgetItem>
@@ -94,6 +95,7 @@
 #include <set>
 #include <cmath>
 #include <fstream>
+#include <functional>
 
 #include "gui/ui_scene_select.h"
 #include "gui/scene_select.h"
@@ -266,6 +268,26 @@ protected:
 };
 
 
+class TaskAreaGraphicsItem : public QGraphicsRectItem
+{
+public:
+  TaskAreaGraphicsItem(const QString & id, const QRectF & rect, std::function<void(const QString &, const QRectF &)> on_commit)
+  : QGraphicsRectItem(rect), id_(id), on_commit_(std::move(on_commit))
+  {
+    setFlag(QGraphicsItem::ItemIsSelectable, true);
+    setFlag(QGraphicsItem::ItemIsMovable, true);
+    setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
+  }
+protected:
+  void mouseReleaseEvent(QGraphicsSceneMouseEvent * event) override
+  {
+    QGraphicsRectItem::mouseReleaseEvent(event);
+    if (on_commit_) on_commit_(id_, sceneBoundingRect());
+  }
+private:
+  QString id_;
+  std::function<void(const QString &, const QRectF &)> on_commit_;
+};
 
 std::string scene_support_level_for(const std::vector<workcell_builder::SupportedSceneRegistryEntry> & entries, const std::string & name){
   for (const auto & e : entries) if (e.name == name) return e.support_level;
@@ -306,7 +328,7 @@ std::string scene_readiness_for(const workcell_builder::AllScenesReadinessData &
 
 
 
-[[maybe_unused]] static const char * kTaskZoneUiMarkers = "Add Pick Zone | Add Place Zone | Edit Zone Pose | Edit Zone Size | Save Task Zones to Scene YAML | Open Task Zone Preview | task_zones";
+[[maybe_unused]] static const char * kTaskZoneUiMarkers = "Task Areas | Suggested Areas | Add Pick Area | Add Place Area | Delete Selected | Snap to 1 cm | Pick Area | Place Area | Pick Object | Destination Bin | Offline layout check only; motion planning is checked later. | task_zones";
 
 [[maybe_unused]] static const char * kAssetDiscoveryLabel = "Asset discovery paths";
 [[maybe_unused]] static const char * kSelectRobotAssetLabel = "Select Robot Asset";
@@ -904,6 +926,7 @@ SceneSelect::SceneSelect(QWidget * parent)
 
   initialize_task_grasp_editor();
   initialize_robot_home_editor();
+  initialize_task_area_editor();
   ui->generate_files->hide();
   ui->validate_cell->show();
   ui->validate_cell->setText("Run Offline Validation");
@@ -1080,7 +1103,7 @@ bool SceneSelect::has_selected_cell() const
 
 bool SceneSelect::has_unsaved_edits() const
 {
-  return task_editor_state_.unsaved_task_edits || (robot_home_state_ && robot_home_state_->dirty);
+  return task_editor_state_.unsaved_task_edits || task_area_dirty_ || (robot_home_state_ && robot_home_state_->dirty);
 }
 
 void SceneSelect::refresh_primary_workflow_state(const std::string & outcome, const std::string & action, const std::string & next)
@@ -2143,6 +2166,7 @@ void SceneSelect::on_edit_scene_clicked()
         append_success("Scene edits were applied and persisted to environment.yaml.");
         refresh_scenes(current_index, false);
         refresh_canvas_from_scene(scene_window.scene);
+      load_task_areas_for_selected_scene();
       }
     } else {
       refresh_scenes(current_index, false);
@@ -2236,6 +2260,15 @@ void SceneSelect::on_generate_yaml_clicked()
     const fs::path scene_yaml_path =
       scenes_path / workcell.scene_vector[current_index].name;
     Scene target_scene = workcell.scene_vector[current_index];
+    std::vector<std::string> task_area_errors;
+    std::vector<std::string> task_area_warnings;
+    if (!validate_task_areas_for_save(&task_area_errors, &task_area_warnings)) {
+      for (const auto & e : task_area_errors) append_error("Task Area save blocked: " + e);
+      refresh_primary_workflow_state("Blocked", "Save", "Correct invalid Pick Area / Place Area values before saving.");
+      return;
+    }
+    for (const auto & w : task_area_warnings) append_warning("Task Area warning: " + w);
+    append_info("Offline layout check only; motion planning is checked later.");
     if (!validate_robot_home_for_save()) {
       refresh_primary_workflow_state("Blocked", "Save", "Correct invalid Robot Home joint values before saving.");
       return;
@@ -2287,6 +2320,13 @@ void SceneSelect::on_generate_yaml_clicked()
     append_error("No scene selected to generate environment.yaml.");
   }
   if (current_index >= 0 && current_index < static_cast<int>(workcell.scene_vector.size())) {
+    std::string task_area_path;
+    if (!save_task_areas_to_scene(scenes_path / workcell.scene_vector[current_index].name, &task_area_path)) {
+      append_error("Task Area save failed: " + task_area_path);
+      refresh_primary_workflow_state("Blocked", "Save", "Correct Task Area save error before validation or generation.");
+      return;
+    }
+    if (!task_area_path.empty()) append_success("Task Areas saved to " + task_area_path);
     std::string robot_home_path;
     if (save_robot_home_to_scene(scenes_path / workcell.scene_vector[current_index].name, &robot_home_path)) {
       append_success("Robot Home saved to " + robot_home_path);
@@ -2299,6 +2339,7 @@ void SceneSelect::on_generate_yaml_clicked()
   scaffold_scene_index_ = -1;
   refresh_scene_status(true, "Generate YAML");
   task_editor_state_.unsaved_task_edits = false;
+  task_area_dirty_ = false;
   if (robot_home_state_) robot_home_state_->dirty = false;
   refresh_primary_workflow_state("Success", "Save", "Validate the cell.");
 }
@@ -2466,6 +2507,7 @@ void SceneSelect::on_scene_list_currentIndexChanged(int index)
     }
   }
   load_robot_home_for_selected_scene();
+  load_task_areas_for_selected_scene();
   refresh_scene_status(index != scaffold_scene_index_, "Scene Selection Changed");
   refresh_primary_workflow_state("Warning", "Select Cell", "Open the selected cell or validate its current files.");
   on_refresh_status_button_clicked();
@@ -3441,6 +3483,35 @@ void SceneSelect::refresh_preview_status()
       scene->addText("reach_warning")->setPos(px(it.x)-18, px(it.y)+8);
     }
   }
+  for (const auto & area : task_area_zones_) {
+    const bool pick = area.role == "pick" || area.type == "pick_zone";
+    const QColor outline = pick ? QColor("#166534") : QColor("#9f1239");
+    const Qt::PenStyle style = pick ? Qt::DashLine : Qt::DashDotLine;
+    QRectF rect(px(area.x - area.dim_x / 2.0), px(area.y - area.dim_y / 2.0), px(area.dim_x), px(area.dim_y));
+    auto * item = new TaskAreaGraphicsItem(QString::fromStdString(area.id), rect, [this](const QString & id, const QRectF & r) {
+      for (auto & z : task_area_zones_) if (z.id == id.toStdString()) {
+        z.x = snap_task_area_value(r.center().x() / 220.0);
+        z.y = snap_task_area_value(r.center().y() / 220.0);
+        z.dim_x = std::max(0.01, snap_task_area_value(r.width() / 220.0));
+        z.dim_y = std::max(0.01, snap_task_area_value(r.height() / 220.0));
+        selected_task_area_id_ = z.id;
+        mark_task_areas_dirty("Drag/resize Task Area");
+        sync_task_area_inspector();
+        break;
+      }
+    });
+    item->setPen(QPen(outline, 3, style));
+    item->setBrush(QBrush(QColor(outline.red(), outline.green(), outline.blue(), 45)));
+    item->setData(0, pick ? "Pick Area" : "Place Area");
+    item->setData(1, pick ? "pick_area" : "place_area");
+    item->setData(2, QString("x=%1 y=%2 width=%3 depth=%4 status=%5").arg(area.x,0,'f',2).arg(area.y,0,'f',2).arg(area.dim_x,0,'f',2).arg(area.dim_y,0,'f',2).arg(QString::fromStdString(area.status)));
+    item->setData(3, QString::fromStdString(area.id));
+    scene->addItem(item);
+    auto * label = scene->addText(pick ? "Pick Area" : "Place Area");
+    label->setDefaultTextColor(outline);
+    label->setPos(rect.topLeft() + QPointF(4, 4));
+    scene->addRect(rect.adjusted(-5, -5, 5, 5), QPen(outline, 1, Qt::DotLine));
+  }
   QObject::connect(scene, &QGraphicsScene::selectionChanged, ui->visual_layout_canvas, [this, scene]() {
     const auto sel = scene->selectedItems(); if (sel.empty()) return; auto * i=sel.front();
     selected_item_id = i->data(3).toString().toStdString();
@@ -3448,6 +3519,7 @@ void SceneSelect::refresh_preview_status()
     selected_canvas_item_type_ = i->data(1).toString().toStdString();
     ui->inspector_help->setText(QString("zone_inspector_token id=%1 name=%2 type=%3 | %4 | layout_unsaved=true | rerun zone validation")
       .arg(i->data(3).toString(), i->data(0).toString(), i->data(1).toString(), i->data(2).toString()));
+    if (selected_canvas_item_type_ == "pick_area" || selected_canvas_item_type_ == "place_area") { selected_task_area_id_ = selected_canvas_item_id_; sync_task_area_inspector(); }
   });
   ui->visual_layout_canvas->setScene(scene);
   ui->visual_layout_canvas->setRenderHint(QPainter::Antialiasing, true);
@@ -3475,6 +3547,153 @@ void SceneSelect::export_preview_layout()
 }
 
 
+
+void SceneSelect::initialize_task_area_editor()
+{
+  auto * group = new QGroupBox("Task Areas", ui->layout_tab);
+  group->setObjectName("task_areas_group");
+  auto * layout = new QVBoxLayout(group);
+  auto * help = new QLabel("Author Pick Area and Place Area boxes on the top-down canvas. Offline layout check only; motion planning is checked later.", group);
+  help->setWordWrap(true);
+  layout->addWidget(help);
+  auto * buttons = new QHBoxLayout();
+  auto add_button = [group, buttons](const QString & text, const char * name) {
+    auto * b = new QPushButton(text, group); b->setObjectName(name); buttons->addWidget(b); return b;
+  };
+  auto * suggested = add_button("Suggested Areas", "suggested_task_areas_button");
+  auto * add_pick = add_button("Add Pick Area", "add_pick_area_button");
+  auto * add_place = add_button("Add Place Area", "add_place_area_button");
+  auto * del = add_button("Delete Selected", "delete_selected_task_area_button");
+  auto * snap = add_button("Snap to 1 cm", "snap_task_area_button");
+  snap->setCheckable(true); snap->setChecked(true);
+  layout->addLayout(buttons);
+  auto * form = new QFormLayout();
+  auto make_spin = [group](const char * name, double minv, double maxv, double val) {
+    auto * s = new QDoubleSpinBox(group); s->setObjectName(name); s->setDecimals(3); s->setSingleStep(0.01); s->setRange(minv, maxv); s->setValue(val); return s;
+  };
+  auto * name = new QLineEdit(group); name->setObjectName("task_area_name_edit"); form->addRow("Name", name);
+  auto * x = make_spin("task_area_x_spin", -10, 10, 0); form->addRow("X", x);
+  auto * y = make_spin("task_area_y_spin", -10, 10, 0); form->addRow("Y", y);
+  auto * z = make_spin("task_area_z_spin", -10, 10, 0); form->addRow("Z", z);
+  auto * rot = make_spin("task_area_rotation_spin", -6.283, 6.283, 0); form->addRow("Rotation", rot);
+  auto * w = make_spin("task_area_width_spin", 0.001, 10, 0.30); form->addRow("Width", w);
+  auto * d = make_spin("task_area_depth_spin", 0.001, 10, 0.30); form->addRow("Depth", d);
+  auto * h = make_spin("task_area_height_spin", 0.001, 10, 0.10); form->addRow("Height", h);
+  auto * assoc = new QLineEdit(group); assoc->setObjectName("task_area_association_edit"); form->addRow("Pick Object / Destination Bin", assoc);
+  auto * status = new QLabel("status/warning", group); status->setObjectName("task_area_status_label"); status->setWordWrap(true); form->addRow("status/warning", status);
+  layout->addLayout(form);
+  ui->layoutLayout->insertWidget(1, group);
+  if (ui->use_selected_zone_as_pick_zone_button) ui->use_selected_zone_as_pick_zone_button->hide();
+  if (ui->use_selected_zone_as_place_zone_button) ui->use_selected_zone_as_place_zone_button->hide();
+  connect(suggested, &QPushButton::clicked, this, [this]() { if (ensure_suggested_task_areas()) mark_task_areas_dirty("Suggested Areas"); refresh_preview_status(); });
+  connect(add_pick, &QPushButton::clicked, this, [this]() { add_task_area("pick"); });
+  connect(add_place, &QPushButton::clicked, this, [this]() { add_task_area("place"); });
+  connect(del, &QPushButton::clicked, this, [this]() { delete_selected_task_area(); });
+  auto update = [this, name, x, y, z, rot, w, d, h, assoc]() {
+    for (auto & a : task_area_zones_) if (a.id == selected_task_area_id_) {
+      a.id = name->text().trimmed().toStdString(); selected_task_area_id_ = a.id;
+      a.x = snap_task_area_value(x->value()); a.y = snap_task_area_value(y->value()); a.z = snap_task_area_value(z->value());
+      a.yaw = snap_task_area_value(rot->value()); a.dim_x = snap_task_area_value(w->value()); a.dim_y = snap_task_area_value(d->value()); a.dim_z = snap_task_area_value(h->value());
+      if (a.role == "pick") a.object_ref = assoc->text().trimmed().toStdString(); else a.target_ref = assoc->text().trimmed().toStdString();
+      mark_task_areas_dirty("Task Area inspector"); refresh_preview_status(); break;
+    }
+  };
+  connect(name, &QLineEdit::editingFinished, this, update); connect(assoc, &QLineEdit::editingFinished, this, update);
+  for (auto * spin : {x,y,z,rot,w,d,h}) connect(spin, &QAbstractSpinBox::editingFinished, this, update);
+}
+
+double SceneSelect::snap_task_area_value(double value)
+{
+  return std::round(value * 100.0) / 100.0;
+}
+
+void SceneSelect::load_task_areas_for_selected_scene()
+{
+  task_area_zones_.clear(); selected_task_area_id_.clear(); task_area_dirty_ = false;
+  const fs::path env = scene_dir_for_current_selection() / "environment.yaml";
+  std::vector<std::string> warnings;
+  if (fs::exists(env)) task_area_zones_ = workcell_builder::load_task_zones_from_environment_yaml(env.string(), &warnings);
+  for (auto & z : task_area_zones_) {
+    if (z.role.empty()) z.role = (z.type.find("place") != std::string::npos || z.id.find("drop") != std::string::npos) ? "place" : "pick";
+    if (z.shape.empty()) z.shape = "box";
+  }
+  for (const auto & w : warnings) append_warning("Task Area warning: " + w);
+}
+
+bool SceneSelect::ensure_suggested_task_areas()
+{
+  bool changed = false;
+  auto has_role = [this](const std::string & role) { for (const auto & z : task_area_zones_) if (z.role == role || z.type == role + "_zone") return true; return false; };
+  if (!has_role("pick")) { workcell_builder::TaskZone z; z.id="commissioning_pick_pose"; z.type="pick_zone"; z.role="pick"; z.shape="box"; z.dim_x=.30; z.dim_y=.30; z.dim_z=.10; z.x=-.20; z.support_surface_ref="default_support_surface"; z.object_ref="Pick Object"; task_area_zones_.push_back(z); changed = true; }
+  if (!has_role("place")) { workcell_builder::TaskZone z; z.id="default_drop_zone"; z.type="place_zone"; z.role="place"; z.shape="box"; z.dim_x=.30; z.dim_y=.30; z.dim_z=.10; z.x=.25; z.support_surface_ref="default_support_surface"; z.target_ref="Destination Bin"; task_area_zones_.push_back(z); changed = true; }
+  return changed;
+}
+
+void SceneSelect::add_task_area(const std::string & role)
+{
+  workcell_builder::TaskZone z; z.id = role == "pick" ? "pick_area" : "place_area"; z.type = role + "_zone"; z.role = role; z.shape="box"; z.parent_frame="world"; z.dim_x=.30; z.dim_y=.30; z.dim_z=.10; z.x = role == "pick" ? -.20 : .25; z.support_surface_ref="default_support_surface"; if (role=="pick") z.object_ref="Pick Object"; else z.target_ref="Destination Bin";
+  int suffix = 1; auto exists=[&](const std::string & id){ for (const auto & a: task_area_zones_) if (a.id==id) return true; return false;}; const std::string base=z.id; while (exists(z.id)) z.id=base+"_"+std::to_string(++suffix);
+  task_area_zones_.push_back(z); selected_task_area_id_ = z.id; mark_task_areas_dirty(role == "pick" ? "Add Pick Area" : "Add Place Area"); refresh_preview_status();
+}
+
+void SceneSelect::delete_selected_task_area()
+{
+  if (selected_task_area_id_.empty()) return;
+  task_area_zones_.erase(std::remove_if(task_area_zones_.begin(), task_area_zones_.end(), [this](const auto & z){ return z.id == selected_task_area_id_; }), task_area_zones_.end());
+  selected_task_area_id_.clear(); mark_task_areas_dirty("Delete Selected"); refresh_preview_status();
+}
+
+void SceneSelect::mark_task_areas_dirty(const QString & reason)
+{
+  task_area_dirty_ = true; task_editor_state_.unsaved_task_edits = true;
+  refresh_primary_workflow_state("Warning", reason.toStdString(), "Save the cell before validation or generation.");
+}
+
+void SceneSelect::sync_task_area_inspector()
+{
+  const auto widgets = ui->layout_tab->findChildren<QWidget *>(QRegularExpression("^task_area_"));
+  for (auto * widget : widgets) widget->setEnabled(!selected_task_area_id_.empty());
+  for (const auto & a : task_area_zones_) if (a.id == selected_task_area_id_) {
+    auto set_text=[this](const char * n, const QString & v){ if (auto * w=ui->layout_tab->findChild<QLineEdit *>(n)) { QSignalBlocker b(w); w->setText(v);} };
+    auto set_spin=[this](const char * n, double v){ if (auto * w=ui->layout_tab->findChild<QDoubleSpinBox *>(n)) { QSignalBlocker b(w); w->setValue(v);} };
+    set_text("task_area_name_edit", QString::fromStdString(a.id)); set_spin("task_area_x_spin", a.x); set_spin("task_area_y_spin", a.y); set_spin("task_area_z_spin", a.z); set_spin("task_area_rotation_spin", a.yaw); set_spin("task_area_width_spin", a.dim_x); set_spin("task_area_depth_spin", a.dim_y); set_spin("task_area_height_spin", a.dim_z); set_text("task_area_association_edit", QString::fromStdString(a.role == "pick" ? a.object_ref : a.target_ref));
+    if (auto * l=ui->layout_tab->findChild<QLabel *>("task_area_status_label")) l->setText(QString::fromStdString((a.role=="pick" ? "Pick Area" : "Place Area") + std::string(" selected. Offline layout check only; motion planning is checked later.")));
+  }
+}
+
+bool SceneSelect::validate_task_areas_for_save(std::vector<std::string> * errors, std::vector<std::string> * warnings) const
+{
+  std::set<std::string> pick_ids, place_ids;
+  for (const auto & z : task_area_zones_) {
+    const bool is_pick = z.role == "pick" || z.type == "pick_zone";
+    const bool is_place = z.role == "place" || z.type == "place_zone";
+    if (z.id.empty() || z.type.empty()) errors->push_back("missing ID/type");
+    for (double v : {z.x,z.y,z.z,z.roll,z.pitch,z.yaw,z.dim_x,z.dim_y,z.dim_z}) if (!std::isfinite(v)) errors->push_back("non-finite value in " + z.id);
+    if (z.dim_x <= 0 || z.dim_y <= 0 || z.dim_z <= 0) errors->push_back("width/depth/height must be positive for " + z.id);
+    if (is_pick && !pick_ids.insert(z.id).second) errors->push_back("duplicate Pick Area ID: " + z.id);
+    if (is_place && !place_ids.insert(z.id).second) errors->push_back("duplicate Place Area ID: " + z.id);
+    if (is_pick && z.object_ref.empty()) errors->push_back("unresolved Pick Object association for " + z.id);
+    if (is_place && z.target_ref.empty()) errors->push_back("unresolved Destination Bin association for " + z.id);
+    if (std::fabs(z.x) > 1.0 || std::fabs(z.y) > 1.0) warnings->push_back(z.id + " may be outside support surface / approximate reach concern");
+  }
+  for (const auto & a : task_area_zones_) for (const auto & b : task_area_zones_) if (a.id < b.id && std::fabs(a.x-b.x) < (a.dim_x+b.dim_x)/2.0 && std::fabs(a.y-b.y) < (a.dim_y+b.dim_y)/2.0) warnings->push_back("Pick and Place Areas may be overlapping: " + a.id + " / " + b.id);
+  return errors->empty();
+}
+
+bool SceneSelect::save_task_areas_to_scene(const fs::path & scene_dir, std::string * reason)
+{
+  if (!task_area_dirty_) { if (reason) reason->clear(); return true; }
+  const fs::path env = scene_dir / "environment.yaml";
+  if (!fs::exists(env)) { if (reason) *reason = "missing " + env.string(); return false; }
+  const fs::path backup = env.string() + ".task_areas." + QDateTime::currentDateTimeUtc().toString("yyyyMMddHHmmss").toStdString() + ".bak";
+  boost::filesystem::copy_file(env, backup, boost::filesystem::copy_option::overwrite_if_exists);
+  auto r = workcell_builder::save_task_zones_to_environment_yaml(env.string(), task_area_zones_);
+  if (!r.ok) { if (reason) *reason = r.warnings.empty() ? env.string() : r.warnings.front(); return false; }
+  task_editor_state_.pick_source_type = "pick_zone"; task_editor_state_.place_target_type = "place_zone";
+  for (const auto & z : task_area_zones_) { if (z.role == "pick") task_editor_state_.selected_pick_zone_id = z.id; if (z.role == "place") task_editor_state_.selected_place_zone_id = z.id; }
+  if (reason) *reason = env.string() + " (backup: " + backup.string() + ")";
+  return true;
+}
 
 void SceneSelect::initialize_robot_home_editor()
 {
@@ -3542,6 +3761,8 @@ void SceneSelect::initialize_robot_home_editor()
   robot_home_validation_label_->setWordWrap(true);
   layout->addWidget(robot_home_validation_label_);
   ui->layoutLayout->insertWidget(1, group);
+  if (ui->use_selected_zone_as_pick_zone_button) ui->use_selected_zone_as_pick_zone_button->hide();
+  if (ui->use_selected_zone_as_place_zone_button) ui->use_selected_zone_as_place_zone_button->hide();
   connect(suggested, &QPushButton::clicked, this, [this]() {
     for (auto & joint : robot_home_state_->joints) joint.radians = joint.suggested_radians;
     robot_home_state_->source = "suggested";
