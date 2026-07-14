@@ -16,7 +16,7 @@ def test_static_viewer_files_exist():
 def test_index_references_static_assets():
     index = (VIEWER / "index.html").read_text(encoding="utf-8")
     assert 'href="style.css"' in index
-    assert 'src="viewer.js"' in index
+    assert 'src="./dist/viewer.bundle.js"' in index or 'src="dist/viewer.bundle.js"' in index
     assert 'id="scene-file"' in index
     assert 'web_scene.json' in index
 
@@ -963,3 +963,55 @@ def test_viewer_summary_reports_expanded_urdf_loader_for_aliases():
     summary_fields = js.split("const fields = {", 1)[1].split("};", 1)[0]
     assert "'robot-preview-mode': summary.robotPreviewMode" in summary_fields
     assert "summary.robotPreviewMode === 'expanded_urdf_loader'" not in summary_fields
+
+
+def test_expanded_urdf_assembly_roots_are_first_class_physical_fit_bounds():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    fit_bounds_body = js.split("function computeFitBounds", 1)[1].split("function computeRenderedBounds", 1)[0]
+    collect_body = js.split("function collectPhysicalAssemblyBounds", 1)[1].split("function itemHiddenForFit", 1)[0]
+    status_body = js.split("function collectAssemblyRenderDiagnostics", 1)[1].split("function isUserFacingWarning", 1)[0]
+
+    assert "function collectPhysicalAssemblyBounds" in js
+    assert "for (const root of state.assemblyRoots || [])" in collect_body
+    assert "visibleRenderableBounds(root)" in collect_body
+    assert "if (!rootBounds) continue" in collect_body
+    assert "assemblyRootHiddenForFit(root)" in collect_body
+    assert "normalBounds.union(assemblyBounds.bounds)" in fit_bounds_body
+    assert "state.physicalAssemblyBounds = assemblyBounds.bounds.clone()" in fit_bounds_body
+    assert "state.finalPhysicalFitBounds = finiteNormal.clone()" in fit_bounds_body
+    for token in [
+        "physical_assembly_root_count",
+        "physical_assembly_bounds",
+        "physical_fit_included_robot_preview",
+        "final_physical_fit_bounds",
+        "physical_renderable_count",
+    ]:
+        assert token in status_body
+
+
+def test_expanded_urdf_robot_preview_fits_once_after_ready_not_per_mesh_callback():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    preview_body = js.split("function loadExpandedUrdfRobotPreview", 1)[1].split("function linkNameOfItem", 1)[0]
+    loaded_body = preview_body.split("onRobotLoaded: result =>", 1)[1].split("onRobotMeshLoaded", 1)[0]
+    mesh_loaded_body = preview_body.split("onRobotMeshLoaded: () =>", 1)[1].split("onRobotMeshLoadError", 1)[0]
+
+    assert "const bounds = computeFitBounds()" in loaded_body
+    assert "if (bounds) frameScene(bounds)" in loaded_body
+    assert "renderSceneSummary()" in mesh_loaded_body
+    assert "frameScene" not in mesh_loaded_body
+    assert "computeFitBounds" not in mesh_loaded_body
+
+
+def test_expanded_urdf_robot_assembly_stays_locked_single_root_and_legacy_rows_suppressed():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    render_body = js.split("function renderScene(items)", 1)[1].split("function loadExpandedUrdfRobotPreview", 1)[0]
+    assert "const urdfPreviewActive = isExpandedUrdfRobotPreview" in render_body
+    assert "handled: new Set(robotToolGeneratedUrdfItems)" in render_body
+    assert "skipped_legacy_generated_urdf_visual_count: robotToolGeneratedUrdfItems.length" in render_body
+    assert "if (assemblyBuild.handled.has(item)) continue" in render_body
+    assert "source.includes('generated')" in js
+    renderer = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
+    ready_body = renderer.split("await meshCompletion.wait();", 1)[1].split("return result;", 1)[0]
+    assert ready_body.count("rendererContext?.scene?.add?.(robot)") == 1
+    assert ready_body.count("rendererContext?.assemblyRoots?.push?.(robot)") == 1
+    assert "world/root fixed chain -> URDF joint origin -> joint value -> link frame" in renderer
