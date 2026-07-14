@@ -383,19 +383,23 @@ def file_fingerprint(path: Path) -> str:
     return "sha256:" + digest.hexdigest()
 
 
-def _collect_strings(value: Any) -> Iterable[str]:
+BROWSER_ASSET_REFERENCE_KEYS = {"mesh_uri", "mesh_url", "meshStagedPath", "mesh_staged_path", "urdf_url", "texture_uri", "texture_url"}
+
+
+def _collect_browser_asset_refs(value: Any, key: str = "") -> Iterable[str]:
     if isinstance(value, str):
-        yield value
+        if key in BROWSER_ASSET_REFERENCE_KEYS:
+            yield value
     elif isinstance(value, dict):
-        for child in value.values():
-            yield from _collect_strings(child)
+        for child_key, child in value.items():
+            yield from _collect_browser_asset_refs(child, str(child_key))
     elif isinstance(value, list):
         for child in value:
-            yield from _collect_strings(child)
+            yield from _collect_browser_asset_refs(child, key)
 
 
 def staged_asset_diagnostics(payload: dict[str, Any], asset_dir: Path, stage_assets: bool) -> dict[str, Any]:
-    refs = sorted({s for s in _collect_strings(payload) if isinstance(s, str) and (s.startswith("assets/") or "/assets/" in s)})
+    refs = sorted({s for s in _collect_browser_asset_refs(payload) if isinstance(s, str) and (s.startswith("assets/") or "/assets/" in s)})
     missing: list[str] = []
     for ref in refs:
         candidate_text = ref.split("?", 1)[0].split("#", 1)[0]

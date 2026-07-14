@@ -52,6 +52,22 @@ def test_web3d_visual_acceptance_workflow_requires_browser_runtime():
     assert "python3 -m playwright install --with-deps chromium" in text
 
 
+def test_web3d_visual_acceptance_workflow_installs_pinned_real_xacro_and_preflights():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "xacro==2.1.1" in text
+    assert "importlib.metadata.version('xacro')" in text or 'importlib.metadata.version("xacro")' in text
+    assert "discover_xacro_command()" in text
+    assert "xacro-lite cannot satisfy ur5_2f_test acceptance" in text
+
+
+def test_web3d_visual_acceptance_workflow_proves_real_expansion_before_browser():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "scripts/extract_scene_urdf_visual_mesh_index.py --scene ur5_2f_test --require-xacro --fail-on-unexpanded" in text
+    assert "expanded_scene_preview.urdf" in text
+    assert "real_xacro_succeeded" in text
+    assert "xacro:include" in text
+
+
 def test_web3d_visual_acceptance_workflow_uploads_screenshot_report_and_scene_artifacts():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "actions/upload-artifact@v4" in text
@@ -61,8 +77,8 @@ def test_web3d_visual_acceptance_workflow_uploads_screenshot_report_and_scene_ar
     assert "GITHUB_STEP_SUMMARY" in text
     for token in [
         "scene id",
-        "browser_runtime_status",
-        "mesh_loaded_count",
+        "browser runtime method",
+        "xacro status",
         "required_mesh_failed_count",
         "fallback_count",
         "screenshot artifact name",
@@ -131,7 +147,7 @@ def test_acceptance_script_preserves_canonical_mesh_count_expectations():
     text = SCRIPT.read_text(encoding="utf-8")
     assert "EXPECTED_MESH_LOADED_COUNT = 18" in text
     assert "EXPECTED_REQUIRED_MESH_FAILED_COUNT = 0" in text
-    assert "meshLoadedCount expected {EXPECTED_MESH_LOADED_COUNT}" in text
+    assert "meshLoadedCount plus robot_loaded_visual_count expected {EXPECTED_MESH_LOADED_COUNT}" in text
     assert "requiredMeshFailedCount expected {EXPECTED_REQUIRED_MESH_FAILED_COUNT}" in text
 
 
@@ -384,6 +400,10 @@ def _valid_robot_hierarchy_fields():
         "robot_duplicate_links": [],
         "robot_preview_lifecycle_state": "ready",
         "robot_preview_canonical_fallback_used": False,
+        "physical_assembly_root_count": 1,
+        "physical_fit_included_robot_preview": True,
+        "physical_assembly_bounds": {"min": {"x": -0.5, "y": -0.4, "z": 0.0}, "max": {"x": 0.8, "y": 0.4, "z": 1.2}},
+        "final_physical_fit_bounds": {"min": {"x": -0.6, "y": -0.5, "z": -0.1}, "max": {"x": 0.9, "y": 0.5, "z": 1.3}},
         "robot_hierarchy_links": links,
         "robot_hierarchy_missing_links": [],
         "robot_hierarchy_missing_parents": [],
@@ -648,3 +668,64 @@ def test_table_horizontal_rejects_missing_support_surface_kind_metadata():
     errors = module._table_horizontal_errors({"renderedMeshDiagnostics": [diagnostic]})
 
     assert any("missing explicit support-surface kind metadata" in error for error in errors)
+
+
+def test_browser_status_validator_rejects_xacro_lite_render_mode_for_canonical_scene():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    status["robot_render_mode"] = "xacro_lite_expanded"
+    errors = module.validate_browser_status(status)
+    assert any("robot_render_mode=expanded_urdf_loader" in error and "xacro_lite_expanded" not in error for error in errors)
+
+
+def test_browser_status_validator_requires_single_physical_assembly_root():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    status["physical_assembly_root_count"] = 2
+    errors = module.validate_browser_status(status)
+    assert any("physical_assembly_root_count" in error and "got 2" in error for error in errors)
+
+
+def test_browser_status_validator_requires_physical_fit_to_include_robot_preview():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    status["physical_fit_included_robot_preview"] = False
+    errors = module.validate_browser_status(status)
+    assert any("physical_fit_included_robot_preview" in error and "got False" in error for error in errors)
+
+
+def test_browser_status_validator_rejects_malformed_nan_infinite_and_zero_volume_bounds():
+    bad_values = [None, {}, {"min": [0, 0, 0], "max": [0, 1, 1]}, {"min": [0, 0, 0], "max": [float("nan"), 1, 1]}, {"min": [0, 0, 0], "max": [float("inf"), 1, 1]}]
+    for bad in bad_values:
+        status = _valid_browser_status_with_rendered_diagnostics()
+        status["physical_assembly_bounds"] = bad
+        errors = module.validate_browser_status(status)
+        assert any("physical_assembly_bounds" in error and "got" in error for error in errors)
+
+
+def test_browser_status_validator_requires_final_fit_contains_assembly_bounds():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    status["final_physical_fit_bounds"] = {"min": {"x": -0.1, "y": -0.1, "z": 0.1}, "max": {"x": 0.1, "y": 0.1, "z": 0.2}}
+    errors = module.validate_browser_status(status)
+    assert any("final_physical_fit_bounds must contain physical_assembly_bounds" in error for error in errors)
+
+
+def test_require_browser_rejects_1x1_placeholder_screenshot(tmp_path):
+    shot = tmp_path / "placeholder.png"
+    shot.write_bytes(module.PNG_1X1)
+    status_json = tmp_path / "status.json"
+    status_json.write_text("{}", encoding="utf-8")
+    errors = module.require_browser_artifact_errors({"available": True, "method": "playwright"}, "started", shot, status_json)
+    assert any("screenshot dimensions" in error and "(1, 1)" in error for error in errors)
+
+
+def test_physical_fit_accepts_camel_case_diagnostics():
+    status = _valid_browser_status_with_rendered_diagnostics()
+    status.pop("physical_assembly_root_count")
+    status.pop("physical_fit_included_robot_preview")
+    status.pop("physical_assembly_bounds")
+    status.pop("final_physical_fit_bounds")
+    status.update({
+        "physicalAssemblyRootCount": 1,
+        "physicalFitIncludedRobotPreview": True,
+        "physicalAssemblyBounds": {"min": [-0.5, -0.4, 0.0], "max": [0.8, 0.4, 1.2]},
+        "finalPhysicalFitBounds": {"min": [-0.6, -0.5, -0.1], "max": [0.9, 0.5, 1.3]},
+    })
+    assert module.validate_browser_status(status) == []

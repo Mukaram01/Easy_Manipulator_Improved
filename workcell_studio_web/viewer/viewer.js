@@ -100,7 +100,12 @@ function isExpectedMeshlessTool0Frame(item) {
 function collectAssemblyRenderDiagnostics() {
   const diagnostics = state.robotAssemblyRenderDiagnostics || {};
   const assemblyBounds = collectPhysicalAssemblyBounds();
-  const finalFitBounds = state.finalPhysicalFitBounds ? box3ToJson(state.finalPhysicalFitBounds) : null;
+  let effectiveFinalFitBox = state.finalPhysicalFitBounds ? state.finalPhysicalFitBounds.clone() : null;
+  if (assemblyBounds.bounds) {
+    effectiveFinalFitBox = effectiveFinalFitBox ? effectiveFinalFitBox.union(assemblyBounds.bounds) : assemblyBounds.bounds.clone();
+    state.finalPhysicalFitBounds = effectiveFinalFitBox.clone();
+  }
+  const finalFitBounds = effectiveFinalFitBox ? box3ToJson(effectiveFinalFitBox) : null;
   const rendered = state.objects || [];
   const independentGenerated = rendered.filter(obj => {
     const item = obj?.item || {};

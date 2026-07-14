@@ -6,7 +6,7 @@ def test_expanded_pipeline_or_fallback():
     proc = subprocess.run(['python3', str(ROOT/'scripts/extract_scene_urdf_visual_mesh_index.py'), '--scene', 'ur5_2f_test', '--prefer-xacro-expanded'], capture_output=True, text=True)
     assert proc.returncode in (0,3)
     data = json.loads((ROOT/'scenes/ur5_2f_test/generated/scene_visual_mesh_index.json').read_text())
-    assert data['extraction_mode'] in ('xacro_expanded','xacro_lite_expanded','best_effort_recursive')
+    assert data['extraction_mode'] in ('real_xacro_expanded','xacro_expanded','xacro_lite_expanded','best_effort_recursive')
     if data['extraction_mode']=='xacro_expanded':
         assert data['source_expanded_urdf_path'] == 'generated/expanded_scene_preview.urdf'
     if data['extraction_mode']=='xacro_expanded':

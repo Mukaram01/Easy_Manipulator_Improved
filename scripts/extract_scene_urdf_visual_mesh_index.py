@@ -962,6 +962,16 @@ def _explicit_lite_fallback_requested(explicit_lite_fallback=False):
     return bool(explicit_lite_fallback) or _truthy(env_value)
 
 
+
+def _strip_unresolved_xacro_comments(xml_text):
+    """Remove comments in real xacro output that still mention source xacro syntax."""
+    def repl(match):
+        body = match.group(0)
+        if any(token in body for token in ('${', '$(arg', '$(find', 'xacro:include', '<xacro:')):
+            return ''
+        return body
+    return re.sub(r'<!--.*?-->', repl, xml_text or '', flags=re.DOTALL)
+
 def _xacro_failure_diagnostic(status, command, returncode=None, stdout='', stderr='', reason=''):
     diagnostic = {
         'xacro_status': status,
@@ -1011,8 +1021,10 @@ def expand_xacro(urdf_path, scene_dir=None, xacro_args=None, workspace_root=None
                     return lite_xml, True, f"{diag['fallback_reason']}; {lite_reason}", cmd, diag
             return None, True, diag['fallback_reason'], cmd, diag
         out=scene_dir/'generated'/'expanded_scene_preview.urdf'
+        xml_text = _strip_unresolved_xacro_comments(out.read_text(errors='ignore'))
+        out.write_text(xml_text, encoding='utf-8')
         diag = _xacro_failure_diagnostic('real_xacro_succeeded', cmd, returncode=p.returncode, stdout=p.stdout, stderr=p.stderr)
-        return out.read_text(errors='ignore'),True,'',cmd,diag
+        return xml_text,True,'',cmd,diag
     except Exception as e:
         diag = _xacro_failure_diagnostic('real_xacro_failed', cmd, reason=f'xacro expansion failed: {e}')
         if _explicit_lite_fallback_requested(explicit_lite_fallback):

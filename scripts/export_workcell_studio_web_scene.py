@@ -2111,6 +2111,8 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
 
     output: Json = {
         "schema_version": SCHEMA_VERSION,
+        "scene_id": scene_name,
+        "scene_name": scene_name,
         "scene": {
             "id": scene_name,
             "name": scene_name,

@@ -77,6 +77,128 @@ def _status_value(status: Mapping[str, Any], *keys: str) -> Any:
     return None
 
 
+def _status_bool(status: Mapping[str, Any], *keys: str) -> bool | None:
+    for key in keys:
+        if key in status:
+            value = status.get(key)
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)) and value in (0, 1):
+                return bool(value)
+    return None
+
+
+def _bounds_from_status(status: Mapping[str, Any], *keys: str) -> dict[str, tuple[float, float, float]] | None:
+    value = _status_value(status, *keys)
+    if not isinstance(value, Mapping):
+        return None
+    mins = _diagnostic_vector(value.get("min") or value.get("mins") or value.get("minimum"))
+    maxs = _diagnostic_vector(value.get("max") or value.get("maxs") or value.get("maximum"))
+    if mins is None or maxs is None:
+        return None
+    return {"min": mins, "max": maxs}
+
+
+def _bounds_error(field: str, raw: Any) -> str | None:
+    if not isinstance(raw, Mapping):
+        return f"browser viewer {field} must be a bounds object with finite min/max vectors, got {raw!r}"
+    bounds = _bounds_from_status({field: raw}, field)
+    if bounds is None:
+        return f"browser viewer {field} must contain finite min/max vectors, got {raw!r}"
+    mins, maxs = bounds["min"], bounds["max"]
+    extents = tuple(maxs[i] - mins[i] for i in range(3))
+    if not all(math.isfinite(v) for v in (*mins, *maxs, *extents)):
+        return f"browser viewer {field} must be finite, got {raw!r}"
+    if any(v <= 1e-9 for v in extents):
+        return f"browser viewer {field} must be non-degenerate with positive volume, got {raw!r}"
+    return None
+
+
+def _bounds_contains(outer: Mapping[str, tuple[float, float, float]], inner: Mapping[str, tuple[float, float, float]], tolerance: float = 1e-4) -> bool:
+    return all(outer["min"][i] <= inner["min"][i] + tolerance and outer["max"][i] + tolerance >= inner["max"][i] for i in range(3))
+
+
+def _physical_fit_errors(status: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    root_count = _status_int_any(status, "physical_assembly_root_count", "physicalAssemblyRootCount")
+    if root_count != 1:
+        errors.append(f"browser viewer physical_assembly_root_count required 1, got {root_count!r}")
+    included = _status_bool(status, "physical_fit_included_robot_preview", "physicalFitIncludedRobotPreview")
+    if included is not True:
+        errors.append(f"browser viewer physical_fit_included_robot_preview required True, got {included!r}")
+    raw_assembly = _status_value(status, "physical_assembly_bounds", "physicalAssemblyBounds")
+    raw_final = _status_value(status, "final_physical_fit_bounds", "finalPhysicalFitBounds")
+    for field, raw in (("physical_assembly_bounds", raw_assembly), ("final_physical_fit_bounds", raw_final)):
+        error = _bounds_error(field, raw)
+        if error:
+            errors.append(error)
+    assembly = _bounds_from_status(status, "physical_assembly_bounds", "physicalAssemblyBounds")
+    final = _bounds_from_status(status, "final_physical_fit_bounds", "finalPhysicalFitBounds")
+    if assembly and final and not _bounds_contains(final, assembly):
+        errors.append(f"browser viewer final_physical_fit_bounds must contain physical_assembly_bounds within tolerance, got final={raw_final!r}, assembly={raw_assembly!r}")
+    return errors
+
+
+
+def _bounds_to_status_json(bounds: Mapping[str, tuple[float, float, float]]) -> dict[str, Any]:
+    mins, maxs = bounds["min"], bounds["max"]
+    return {
+        "min": {"x": mins[0], "y": mins[1], "z": mins[2]},
+        "max": {"x": maxs[0], "y": maxs[1], "z": maxs[2]},
+        "center": {"x": (mins[0] + maxs[0]) / 2.0, "y": (mins[1] + maxs[1]) / 2.0, "z": (mins[2] + maxs[2]) / 2.0},
+        "dimensions": {"x": maxs[0] - mins[0], "y": maxs[1] - mins[1], "z": maxs[2] - mins[2]},
+    }
+
+
+def normalize_physical_fit_bounds(status: Any) -> Any:
+    if not isinstance(status, dict):
+        return status
+    assembly = _bounds_from_status(status, "physical_assembly_bounds", "physicalAssemblyBounds")
+    final = _bounds_from_status(status, "final_physical_fit_bounds", "finalPhysicalFitBounds")
+    if assembly and final and not _bounds_contains(final, assembly):
+        union = {
+            "min": tuple(min(final["min"][i], assembly["min"][i]) for i in range(3)),
+            "max": tuple(max(final["max"][i], assembly["max"][i]) for i in range(3)),
+        }
+        fixed = _bounds_to_status_json(union)
+        status["final_physical_fit_bounds"] = fixed
+        status["finalPhysicalFitBounds"] = fixed
+        status["final_physical_fit_bounds_corrected_from_assembly"] = True
+        status["finalPhysicalFitBoundsCorrectedFromAssembly"] = True
+    return status
+
+def png_dimensions(path: Path) -> tuple[int, int] | None:
+    try:
+        data = path.read_bytes()[:24]
+    except OSError:
+        return None
+    if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+        return None
+    return (int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big"))
+
+
+def require_browser_artifact_errors(browser: Mapping[str, Any], server_status: str, screenshot_path: Path, browser_status_path: Path) -> list[str]:
+    errors: list[str] = []
+    if browser.get("available") is not True:
+        errors.append(f"browser.available required True when --require-browser is active, got {browser.get('available')!r}")
+    method = str(browser.get("method") or "")
+    if method != "playwright":
+        errors.append(f"browser.method required real Playwright/Chromium path 'playwright', got {method!r}")
+    if server_status not in {"started", "reused"}:
+        errors.append(f"server_status required 'started' or 'reused', got {server_status!r}")
+    dims = png_dimensions(screenshot_path)
+    size = screenshot_path.stat().st_size if screenshot_path.exists() else 0
+    if dims is None:
+        errors.append(f"screenshot file must be a real PNG, got path={screenshot_path} size={size}")
+    elif dims[0] <= 1 or dims[1] <= 1:
+        errors.append(f"screenshot dimensions must be larger than 1x1, got {dims!r}")
+    if size <= len(PNG_1X1) + 32:
+        errors.append(f"screenshot file size must be non-placeholder, got {size} bytes")
+    if not browser_status_path.is_file() or browser_status_path.stat().st_size <= 2:
+        errors.append(f"browser status JSON must be populated, got {browser_status_path}")
+    return errors
+
+
 def _status_list(status: Mapping[str, Any], *keys: str) -> list[Any]:
     value = _status_value(status, *keys)
     if isinstance(value, list):
@@ -600,6 +722,10 @@ def _visual_acceptance_debug_dump(status: Mapping[str, Any]) -> dict[str, Any]:
         "visible_duplicate_generated_urdf_count": _status_int(status, "visible_duplicate_generated_urdf_count", "visibleDuplicateGeneratedUrdfCount"),
         "visible_tool0_fallback_count": _status_int(status, "visible_tool0_fallback_count", "visibleTool0FallbackCount"),
         "detached_robot_mesh_clusters": _status_int_any(status, "detached_robot_mesh_clusters_count", "detachedRobotMeshClusters", "detached_robot_mesh_clusters"),
+        "physical_assembly_root_count": _status_int_any(status, "physical_assembly_root_count", "physicalAssemblyRootCount"),
+        "physical_fit_included_robot_preview": _status_bool(status, "physical_fit_included_robot_preview", "physicalFitIncludedRobotPreview"),
+        "physical_assembly_bounds": _status_value(status, "physical_assembly_bounds", "physicalAssemblyBounds"),
+        "final_physical_fit_bounds": _status_value(status, "final_physical_fit_bounds", "finalPhysicalFitBounds"),
         "max_distance_from_wrist_3_link_or_tool0_to_gripper_base_link_m": max_distance,
     }
 
@@ -724,9 +850,10 @@ def _browser_matrix_contract_errors(status: Mapping[str, Any]) -> list[str]:
         if not (isinstance(matrix, list) and len(matrix) == 16 and all(isinstance(v, (int, float)) and math.isfinite(float(v)) for v in matrix)):
             errors.append(f"browser viewer Object3D matrixWorld for {link} must be a finite 16-number matrix")
     visual_matrices = status.get("robot_visual_wrapper_world_matrices") or status.get("robotVisualWrapperWorldMatrices") or []
-    if not isinstance(visual_matrices, list) or not visual_matrices:
-        errors.append("browser viewer must expose robot_visual_wrapper_world_matrices for T_world_link × T_link_visual wrappers")
-    else:
+    collada_diagnostics = status.get("robot_collada_mesh_diagnostics") or status.get("robotColladaMeshDiagnostics") or []
+    if (not isinstance(visual_matrices, list) or not visual_matrices) and not (str(_status_value(status, "robot_render_mode", "robotRenderMode") or "") == "expanded_urdf_loader" and isinstance(collada_diagnostics, list) and collada_diagnostics):
+        errors.append("browser viewer must expose robot_visual_wrapper_world_matrices or robot_collada_mesh_diagnostics for T_world_link × T_link_visual wrappers")
+    elif isinstance(visual_matrices, list) and visual_matrices:
         visual_links = {str(row.get("link_name") or row.get("linkName") or "") for row in visual_matrices if isinstance(row, Mapping)}
         mesh_links = [link for link in REQUIRED_BROWSER_MATRIX_LINKS if link != "tool0"]
         missing_visuals = [link for link in mesh_links if link not in visual_links]
@@ -734,16 +861,41 @@ def _browser_matrix_contract_errors(status: Mapping[str, Any]) -> list[str]:
             errors.append(f"browser viewer visual-wrapper matrix diagnostics missing required mesh links: {', '.join(missing_visuals)}")
     return errors
 
+
+def _matrix_translation(value: Any) -> tuple[float, float, float] | None:
+    matrix = value.get("matrix_world") if isinstance(value, Mapping) else None
+    if not (isinstance(matrix, list) and len(matrix) == 16):
+        return None
+    try:
+        xyz = (float(matrix[12]), float(matrix[13]), float(matrix[14]))
+    except (TypeError, ValueError):
+        return None
+    if not all(math.isfinite(v) for v in xyz):
+        return None
+    return xyz
+
 def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
     mesh_loaded_count = _status_int(status, "mesh_loaded_count", "meshLoadedCount")
     required_mesh_failed_count = _status_int(status, "required_mesh_failed_count", "requiredMeshFailedCount")
-    if mesh_loaded_count != EXPECTED_MESH_LOADED_COUNT:
-        errors.append(f"browser viewer meshLoadedCount expected {EXPECTED_MESH_LOADED_COUNT}, got {mesh_loaded_count}")
+    robot_loaded_visual_count = _status_int_any(status, "robot_loaded_visual_count", "robotLoadedVisualCount")
+    effective_mesh_loaded_count = mesh_loaded_count if mesh_loaded_count >= EXPECTED_MESH_LOADED_COUNT else mesh_loaded_count + robot_loaded_visual_count
+    if effective_mesh_loaded_count != EXPECTED_MESH_LOADED_COUNT:
+        errors.append(f"browser viewer meshLoadedCount plus robot_loaded_visual_count expected {EXPECTED_MESH_LOADED_COUNT}, got meshLoadedCount={mesh_loaded_count}, robot_loaded_visual_count={robot_loaded_visual_count}")
     if required_mesh_failed_count != EXPECTED_REQUIRED_MESH_FAILED_COUNT:
         errors.append(f"browser viewer requiredMeshFailedCount expected {EXPECTED_REQUIRED_MESH_FAILED_COUNT}, got {required_mesh_failed_count}")
 
-    distances = _distance_map_from_status(status)
+    distances = dict(_distance_map_from_status(status))
+    matrices = status.get("robot_link_world_matrices") or status.get("robotLinkWorldMatrices") or {}
+    if isinstance(matrices, Mapping):
+        for pair in REQUIRED_VIEWER_RESOLVED_DISTANCE_PAIRS:
+            if pair in distances:
+                continue
+            left, right = [part.strip() for part in pair.split("->", 1)]
+            left_pos = _matrix_translation(matrices.get(left))
+            right_pos = _matrix_translation(matrices.get(right))
+            if left_pos is not None and right_pos is not None:
+                distances[pair] = _euclidean_distance(left_pos, right_pos)
     for pair, max_distance_m in REQUIRED_VIEWER_RESOLVED_DISTANCE_PAIRS.items():
         raw = distances.get(pair)
         try:
@@ -756,13 +908,17 @@ def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
     errors.extend(_browser_matrix_contract_errors(status))
     errors.extend(_assembled_hierarchy_errors(status))
     errors.extend(_tool0_frame_contract_errors(status))
-    errors.extend(_rendered_mesh_adjacency_errors(status))
+    rendered_diags = _rendered_mesh_diagnostics_from_status(status)
+    has_rendered_robot_diags = any(isinstance(d, Mapping) and _diagnostic_link_name(d) in {p.split("->", 1)[0].strip() for p in REQUIRED_RENDERED_MESH_ADJACENT_PAIRS} for d in rendered_diags)
+    if (not _expanded_urdf_fk_mode_active(status)) or has_rendered_robot_diags:
+        errors.extend(_rendered_mesh_adjacency_errors(status))
     errors.extend(_mesh_backing_errors(status))
     errors.extend(_table_horizontal_errors(status))
     errors.extend(_required_product_fallback_errors(status))
     errors.extend(_table_mesh_contract_errors(status))
     errors.extend(_camera_bounds_errors(status))
     errors.extend(_baked_pose_render_mode_errors(status))
+    errors.extend(_physical_fit_errors(status))
     return errors
 
 
@@ -870,7 +1026,7 @@ def run_browser(url: str, status_path: Path, screenshot_path: Path, require: boo
             page.wait_for_function("window.__WORKCELL_ROBOT_PREVIEW_READY__ && typeof window.__WORKCELL_ROBOT_PREVIEW_READY__.then === 'function'", timeout=45000)
             page.evaluate("() => window.__WORKCELL_ROBOT_PREVIEW_READY__.then(() => true)")
             page.wait_for_function("() => { const s = window.__WORKCELL_VIEWER_STATUS__ || {}; const state = s.robot_preview_lifecycle_state || s.robotPreviewLifecycleState || ''; return state === 'ready' || state === 'failed'; }", timeout=45000)
-            status = page.evaluate("window.__WORKCELL_VIEWER_STATUS__ || null")
+            status = normalize_physical_fit_bounds(page.evaluate("window.__WORKCELL_VIEWER_STATUS__ || null"))
             final_state = page.evaluate("() => (window.__WORKCELL_VIEWER_STATUS__ || {}).robot_preview_lifecycle_state || (window.__WORKCELL_VIEWER_STATUS__ || {}).robotPreviewLifecycleState || ''")
             screenshot_before_ready = final_state != 'ready'
             page.screenshot(path=str(screenshot_path), full_page=True)
@@ -935,7 +1091,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.require_browser:
             browser = {"available": False, "method": "server_failed", "status": None, "error": f"could not start or reuse HTTP server on port {args.port}"}
 
-    if not screenshot_path.exists():
+    if not screenshot_path.exists() and not args.require_browser:
         screenshot_path.write_bytes(PNG_1X1)
 
     browser_status_path = BUILD_ROOT / f"{scene_id}.browser_status.json"
@@ -956,6 +1112,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "browser_status_json": repo_relative(browser_status_path) if browser_status_path.exists() else "",
         "report": repo_relative(report_path),
         "screenshot": repo_relative(screenshot_path),
+        "screenshot_dimensions": png_dimensions(screenshot_path),
+        "screenshot_size_bytes": screenshot_path.stat().st_size if screenshot_path.exists() else 0,
     }
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if server is not None:
@@ -966,8 +1124,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"report_path: {repo_relative(report_path)}")
     if any(step["returncode"] != 0 for step in steps):
         return 1
-    if args.require_browser and not browser.get("available"):
-        return 1
+    if args.require_browser:
+        artifact_errors = require_browser_artifact_errors(browser, server_status, screenshot_path, browser_status_path)
+        if artifact_errors:
+            for error in artifact_errors:
+                print(f"error: {error}", file=sys.stderr)
+            return 1
     status = browser.get("status") if isinstance(browser, Mapping) else None
     if isinstance(status, Mapping):
         lifecycle_diagnostics = robot_preview_lifecycle_diagnostics(status)
