@@ -4,10 +4,12 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - .github/workflows/web3d-visual-acceptance.yml
       - scripts/run_workcell_web3d_visual_acceptance.py
       - scripts/export_workcell_studio_web_scene.py
       - scripts/check_workcell_web_scene_mesh_contract.py
       - scripts/check_workcell_web_scene_visual_bounds.py
+      - scripts/extract_scene_urdf_visual_mesh_index.py
       - workcell_studio_web/**
       - tests/test_workcell_web3d_visual_acceptance.py
       - tests/test_workcell_studio_web_viewer_static.py
@@ -28,11 +30,65 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Python test and browser tooling
-        run: python3 -m pip install --upgrade pip pytest playwright pyyaml
+      - name: Install Python test, xacro and browser tooling
+        run: python3 -m pip install --upgrade pip pytest playwright pyyaml xacro==2.1.1
+
+      - name: Preflight real xacro discovery
+        run: |
+          python3 - <<'PY'
+          import importlib.metadata
+          import importlib.util
+          import sys
+          from pathlib import Path
+
+          repo = Path.cwd()
+          sys.path.insert(0, str(repo / 'scripts'))
+          import extract_scene_urdf_visual_mesh_index as extractor
+
+          spec = importlib.util.find_spec('xacro')
+          if spec is None:
+              raise SystemExit('real Python xacro module is unavailable')
+          print('xacro module:', spec.origin)
+          print('xacro version:', importlib.metadata.version('xacro'))
+          command, available, reason = extractor.discover_xacro_command()
+          print('discover_xacro_command:', command, available, reason)
+          if not available or not command:
+              raise SystemExit(f'real xacro command was not discoverable: {reason}')
+          if command[0] == 'xacro-lite' or any('xacro-lite' in str(part) for part in command):
+              raise SystemExit(f'xacro-lite cannot satisfy ur5_2f_test acceptance: {command}')
+          PY
 
       - name: Install Playwright Chromium
         run: python3 -m playwright install --with-deps chromium
+
+      - name: Prove real ur5_2f_test xacro expansion
+        run: |
+          rm -rf scenes/ur5_2f_test/generated
+          python3 scripts/extract_scene_urdf_visual_mesh_index.py --scene ur5_2f_test --require-xacro --fail-on-unexpanded
+          test -s scenes/ur5_2f_test/generated/expanded_scene_preview.urdf
+          python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+          idx = json.loads(Path('scenes/ur5_2f_test/generated/scene_visual_mesh_index.json').read_text(encoding='utf-8'))
+          mode = idx.get('extraction_mode') or idx.get('urdf_expansion_mode')
+          status = idx.get('xacro_status')
+          if status != 'real_xacro_succeeded':
+              raise SystemExit(f'xacro_status expected real_xacro_succeeded, got {status!r}')
+          if mode not in {'real_xacro_expanded', 'xacro_expanded'}:
+              raise SystemExit(f'extraction mode expected real xacro expansion, got {mode!r}')
+          text = Path('scenes/ur5_2f_test/generated/expanded_scene_preview.urdf').read_text(encoding='utf-8')
+          required = ['base_link', 'shoulder_link', 'upper_arm_link', 'forearm_link', 'wrist_3_link', 'tool0', 'gripper_base_link', 'gripper_finger1_knuckle_link', 'workbench', 'camera']
+          missing = [token for token in required if token not in text]
+          if missing:
+              raise SystemExit(f'expanded URDF missing required physical chain tokens: {missing}')
+          unresolved = [r'\$\{', r'\$\(arg\s+', r'\$\(find\s+', r'xacro:include', r'<xacro:']
+          found = [pattern for pattern in unresolved if re.search(pattern, text)]
+          if found:
+              raise SystemExit(f'expanded URDF contains unresolved xacro syntax: {found}')
+          print('xacro_status:', status)
+          print('extraction_mode:', mode)
+          PY
 
       - name: Run Web 3D browser visual acceptance
         run: |
@@ -45,35 +101,33 @@ jobs:
         if: always()
         run: |
           python3 - <<'PY'
-          import json
+          import json, os
           from pathlib import Path
           report_path = Path('build/workcell_studio_web_scene/ur5_2f_test.visual_acceptance.json')
+          index_path = Path('scenes/ur5_2f_test/generated/scene_visual_mesh_index.json')
           screenshot_name = 'ur5_2f_test.rviz_parity.png'
           report_name = 'ur5_2f_test.visual_acceptance.json'
-          if report_path.is_file():
-              report = json.loads(report_path.read_text(encoding='utf-8'))
-              status = (report.get('browser') or {}).get('status') or {}
-              browser_status = (report.get('browser') or {}).get('method', 'unknown')
-              rows = [
-                  ('scene id', report.get('scene_id', 'ur5_2f_test')),
-                  ('browser_runtime_status', browser_status),
-                  ('mesh_loaded_count', status.get('mesh_loaded_count', 0)),
-                  ('required_mesh_failed_count', status.get('required_mesh_failed_count', 0)),
-                  ('fallback_count', status.get('fallback_count', 0)),
-                  ('screenshot artifact name', screenshot_name),
-                  ('report artifact name', report_name),
-              ]
-          else:
-              rows = [
-                  ('scene id', 'ur5_2f_test'),
-                  ('browser_runtime_status', 'report missing'),
-                  ('mesh_loaded_count', 'n/a'),
-                  ('required_mesh_failed_count', 'n/a'),
-                  ('fallback_count', 'n/a'),
-                  ('screenshot artifact name', screenshot_name),
-                  ('report artifact name', report_name),
-              ]
-          summary = Path(__import__('os').environ['GITHUB_STEP_SUMMARY'])
+          report = json.loads(report_path.read_text(encoding='utf-8')) if report_path.is_file() else {}
+          idx = json.loads(index_path.read_text(encoding='utf-8')) if index_path.is_file() else {}
+          status = ((report.get('browser') or {}).get('status') or {}) if isinstance(report.get('browser'), dict) else {}
+          rows = [
+              ('scene id', report.get('scene_id', 'ur5_2f_test')),
+              ('xacro status', idx.get('xacro_status', 'missing')),
+              ('extraction mode', idx.get('extraction_mode', 'missing')),
+              ('browser runtime method', (report.get('browser') or {}).get('method', 'unknown')),
+              ('robot preview lifecycle', status.get('robot_preview_lifecycle_state') or status.get('robotPreviewLifecycleState', 'missing')),
+              ('physical assembly root count', status.get('physical_assembly_root_count') or status.get('physicalAssemblyRootCount', 'missing')),
+              ('physical fit included robot preview', status.get('physical_fit_included_robot_preview') if 'physical_fit_included_robot_preview' in status else status.get('physicalFitIncludedRobotPreview', 'missing')),
+              ('physical assembly bounds', status.get('physical_assembly_bounds') or status.get('physicalAssemblyBounds', 'missing')),
+              ('final physical fit bounds', status.get('final_physical_fit_bounds') or status.get('finalPhysicalFitBounds', 'missing')),
+              ('robot failed visual count', status.get('robot_failed_visual_count') or status.get('robotFailedVisualCount', 0)),
+              ('required mesh failed count', status.get('required_mesh_failed_count') or status.get('requiredMeshFailedCount', 0)),
+              ('fallback count', status.get('fallback_count') or status.get('fallbackCount', 0)),
+              ('screenshot dimensions', report.get('screenshot_dimensions', 'missing')),
+              ('screenshot artifact name', screenshot_name),
+              ('report artifact name', report_name),
+          ]
+          summary = Path(os.environ['GITHUB_STEP_SUMMARY'])
           with summary.open('a', encoding='utf-8') as fh:
               fh.write('## Web 3D visual acceptance\n\n')
               fh.write('| Field | Value |\n| --- | --- |\n')
@@ -91,3 +145,5 @@ jobs:
             build/workcell_studio_web_scene/ur5_2f_test.visual_acceptance.json
             build/workcell_studio_web_scene/ur5_2f_test.rviz_parity.png
             build/workcell_studio_web_scene/ur5_2f_test.web_scene.json
+            scenes/ur5_2f_test/generated/scene_visual_mesh_index.json
+            scenes/ur5_2f_test/generated/expanded_scene_preview.urdf
