@@ -53,6 +53,9 @@
 #include <QMessageBox>
 #include <QProcess>
 #include <QPushButton>
+#include <QToolButton>
+#include <QMenu>
+#include <QAction>
 #include <QTreeWidgetItem>
 #include <QHeaderView>
 #include <QSplitter>
@@ -812,7 +815,10 @@ SceneSelect::SceneSelect(QWidget * parent)
   ui->validate_cell->hide();
   ui->workflow_tabs->setTabText(ui->workflow_tabs->indexOf(ui->validate_generate_tab), "Validate & Generate");
   ui->browse_scenes_folder->setText("Open Folder");
-  ui->workflow_tabs->setTabText(ui->workflow_tabs->indexOf(ui->ingredients_tab), "Task");
+  ui->workflow_tabs->setTabText(ui->workflow_tabs->indexOf(ui->ingredients_tab), "Task & Grasp");
+  ui->workflow_tabs->setTabText(ui->workflow_tabs->indexOf(ui->start_tab), "Home");
+  ui->workflow_tabs->setTabText(ui->workflow_tabs->indexOf(ui->assets_tab), "Assets");
+  ui->workflow_tabs->setTabEnabled(ui->workflow_tabs->indexOf(ui->demo_mode_tab), false);
 
   ui->templatesPageLayout->addWidget(ui->scenario_templates_group);
   ui->assetsPageLayout->addWidget(ui->asset_browser_group);
@@ -902,7 +908,8 @@ SceneSelect::SceneSelect(QWidget * parent)
     button->setToolTip("Disabled: this control requires feature-complete editor integration and is intentionally blocked.");
     button->setDisabled(true);
   }
-  append_info("Next recommended action: Create or open a scene, then apply a recommended layout.");
+  configure_guided_workflow();
+  append_info("Next recommended action: Create or open a cell, inspect layout, save, validate, then generate package.");
   setMinimumSize(1100, 720);
   resize(1450, 900);
   ui->scene_catalog_table->setColumnCount(6);
@@ -919,7 +926,125 @@ SceneSelect::SceneSelect(QWidget * parent)
   initialize_demo_mode_catalog();
   initialize_asset_library();
   refresh_preview_status();
+  refresh_primary_workflow_state("Warning", "startup", "Create or open a cell.");
 
+}
+
+void SceneSelect::configure_guided_workflow()
+{
+  ui->recommended_workflow_label->setText("Home guides the primary flow: create or open a cell → inspect selected cell → edit layout → save → validate → generate package → refresh preview.");
+  ui->add_scene->setText("Create Cell");
+  ui->browse_output_folder->setText("Browse output location");
+  ui->refresh_scenes_button->setText("Refresh");
+  ui->browse_scenes_folder->setText("Browse scenes folder");
+  ui->edit_scene->setText("Open Cell");
+  ui->scenario_templates_group->setTitle("Starter template");
+  ui->existing_scenes_group->setTitle("Open an existing cell");
+  ui->existing_scenes_help->setText("Select a cell from the list, review its readiness/status, then click Open Cell.");
+  ui->workcell_studio_scene_status_group->setTitle("Detailed status and logs");
+
+  const std::vector<QWidget *> secondary = {
+    ui->create_scenario_template, ui->create_conveyor_sorting_live_epd_preview,
+    ui->use_recommended_layout, ui->generate_scenario, ui->copy_sample_epd_command,
+    ui->golden_demo_cell, ui->generate_yaml, ui->generate_full_scene_package_start,
+    ui->workcell_studio_scene_status_group, ui->open_scene_folder, ui->export_scene_bundle,
+    ui->import_scene_bundle, ui->run_all_scenes_readiness, ui->copy_build_command_button,
+    ui->copy_launch_command_button, ui->open_conveyor_sorting_run_console_button,
+    ui->enable_live_epd_button, ui->disable_live_epd_button, ui->refresh_live_epd_status_button,
+    ui->open_live_epd_preview_folder_button, ui->check_planning_readiness_button,
+    ui->generate_dry_run_planning_request_button, ui->open_planning_readiness_report_button
+  };
+  for (auto * widget : secondary) widget->hide();
+
+  connect(ui->primary_edit_layout_button, &QPushButton::clicked, this, [this]() { ui->workflow_tabs->setCurrentWidget(ui->layout_tab); refresh_primary_workflow_state("Success", "Edit Layout", "Adjust layout, then Save."); });
+  connect(ui->primary_save_button, &QPushButton::clicked, this, &SceneSelect::on_generate_yaml_clicked);
+  connect(ui->primary_validate_button, &QPushButton::clicked, this, &SceneSelect::on_validate_cell_clicked);
+  connect(ui->primary_generate_package_button, &QPushButton::clicked, this, &SceneSelect::on_generate_workcell_package_clicked);
+  connect(ui->primary_refresh_preview_button, &QPushButton::clicked, this, &SceneSelect::refresh_preview_status);
+  configure_more_actions_menu();
+}
+
+void SceneSelect::configure_more_actions_menu()
+{
+  auto * menu = new QMenu(ui->more_actions_button);
+  auto add = [menu](const QString & text, QObject * receiver, const char * slot) {
+    QAction * action = menu->addAction(text);
+    QObject::connect(action, SIGNAL(triggered()), receiver, slot);
+    return action;
+  };
+  menu->addSection("Files and reports");
+  add("Open Scene Folder", this, SLOT(on_open_scene_folder_clicked()));
+  add("Open Output Folder", this, SLOT(on_open_output_folder_clicked()));
+  add("Open Readiness Report", this, SLOT(on_show_readiness_report_clicked()));
+  add("Open Smoke Report", this, SLOT(on_open_smoke_report_clicked()));
+  add("Export Preview", this, SLOT(export_preview_layout()));
+  add("Import Scenario Bundle", this, SLOT(on_import_scene_bundle_clicked()));
+  add("Export Scenario Bundle", this, SLOT(on_export_scene_bundle_clicked()));
+  menu->addSection("Commands");
+  add("Copy Build Command", this, SLOT(on_copy_build_command_button_clicked()));
+  add("Copy Fake-Hardware Launch Command", this, SLOT(on_copy_fake_hardware_launch_command_clicked()));
+  add("Copy Launch Command", this, SLOT(on_copy_launch_command_button_clicked()));
+  menu->addSection("Advanced preview/edit tools");
+  add("Export & Open Web 3D Viewer", this, SLOT(on_export_open_web_3d_viewer_clicked()));
+  add("Validate Web Edit Patch", this, SLOT(on_validate_web_edit_patch_clicked()));
+  add("Dry Run Web Edit Patch", this, SLOT(on_dry_run_web_edit_patch_clicked()));
+  add("Apply Web Edit Patch", this, SLOT(on_apply_web_edit_patch_clicked()));
+  add("Generate & Validate after Web Edit", this, SLOT(on_generate_validate_after_web_edit_clicked()));
+  menu->addSection("Planning/perception");
+  add("Planning Readiness", this, SLOT(on_validate_cell_clicked()));
+  QObject::connect(menu->addAction("Dry-Run Planning Request"), &QAction::triggered, this, [this]() { append_warning("Dry-run planning request is available from advanced planning controls; no motion is commanded."); });
+  QObject::connect(menu->addAction("Live EPD preview controls"), &QAction::triggered, this, [this]() { append_warning("Live EPD preview controls are advanced metadata-only tools; no motion is commanded."); });
+  add("Conveyor Sorting Run Console", this, SLOT(on_open_conveyor_sorting_run_console_button_clicked()));
+  menu->addSection("Developer tools");
+  add("Run All-Scenes Readiness", this, SLOT(on_run_all_scenes_readiness_clicked()));
+  add("Golden UR5 + Robotiq cell", this, SLOT(on_demo_create_scene_button_clicked()));
+  add("Catalog reports", this, SLOT(on_refresh_status_button_clicked()));
+  add("Demo-development helpers", this, SLOT(on_demo_one_click_button_clicked()));
+  ui->more_actions_button->setMenu(menu);
+}
+
+bool SceneSelect::has_selected_cell() const
+{
+  return ui->scene_list->currentIndex() >= 0 && !scene_dir_for_current_selection().empty();
+}
+
+bool SceneSelect::has_unsaved_edits() const
+{
+  return task_editor_state_.unsaved_task_edits;
+}
+
+void SceneSelect::refresh_primary_workflow_state(const std::string & outcome, const std::string & action, const std::string & next)
+{
+  const bool selected = has_selected_cell();
+  const bool unsaved = has_unsaved_edits();
+  const auto scene_dir = selected ? scene_dir_for_current_selection() : boost::filesystem::path();
+  const QString scene_name = selected ? ui->scene_list->currentText() : QString("none selected");
+  ui->selected_cell_name_label->setText("Cell: " + scene_name);
+  ui->selected_cell_path_label->setText(QString("Path: %1").arg(selected ? QString::fromStdString(scene_dir.string()) : "none"));
+  ui->selected_cell_unsaved_label->setText(QString("Unsaved edits: %1").arg(unsaved ? "YES — save before validate/generate" : "no"));
+  QString readiness = selected ? "Status: selected — validate to refresh health" : "Status: BLOCKED — open or create a cell";
+  if (!selected) {
+    const QString tip = "Open or create a cell before using this primary action.";
+    for (auto * button : {ui->primary_edit_layout_button, ui->primary_save_button, ui->primary_validate_button, ui->primary_generate_package_button, ui->primary_refresh_preview_button}) { button->setEnabled(false); button->setToolTip(tip); }
+  } else {
+    ui->primary_edit_layout_button->setEnabled(true);
+    ui->primary_save_button->setEnabled(unsaved);
+    ui->primary_validate_button->setEnabled(!unsaved);
+    ui->primary_generate_package_button->setEnabled(!unsaved && ui->generate_workcell_package->isEnabled());
+    ui->primary_refresh_preview_button->setEnabled(true);
+    ui->primary_edit_layout_button->setToolTip("Open the Layout step for the selected cell.");
+    ui->primary_save_button->setToolTip(unsaved ? "Save editable layout changes before validation/generation." : "No unsaved editable-layout changes.");
+    ui->primary_validate_button->setToolTip(unsaved ? "Save first so validation does not use stale layout state." : "Validate the selected cell.");
+    ui->primary_generate_package_button->setToolTip(unsaved ? "Save first so generation does not use stale layout state." : "Generate the selected cell package when product policy permits.");
+    ui->primary_refresh_preview_button->setToolTip("Refresh the selected cell preview.");
+  }
+  ui->selected_cell_readiness_label->setText(readiness);
+  ui->selected_cell_validation_label->setText(QString("Last validation: %1").arg(latest_dashboard_result_.blocker_count > 0 ? "BLOCKED" : "not blocked / not run"));
+  QString recommended = QString::fromStdString(next.empty() ? (selected ? (unsaved ? "Save the cell before validation or generation." : "Inspect layout, validate the cell, then generate package.") : "Create or open a cell.") : next);
+  ui->selected_cell_next_action_label->setText("Next: " + recommended);
+  if (!outcome.empty()) {
+    ui->workflow_feedback_label->setText(QString("Outcome: %1. Action: %2. Scene: %3. Next: %4").arg(QString::fromStdString(outcome), QString::fromStdString(action), scene_name, recommended));
+  }
 }
 
 void SceneSelect::initialize_template_catalog()
@@ -1433,7 +1558,8 @@ void SceneSelect::on_add_scene_clicked()
   append_success("Created new scene: " + scene_dir.string());
   update_scene_browser_status("Created new scene at: " + scene_dir.string());
   update_new_scene_lifecycle_and_canvas(scene_dir);
-  append_info("Next recommended action: Apply Recommended Layout or Validate Scene.");
+  refresh_primary_workflow_state("Success", "Create Cell", "Inspect the layout, then save and validate the cell.");
+  append_info("Next recommended action: Inspect the layout, then save and validate the cell.");
 }
 
 void SceneSelect::on_browse_scenes_folder_clicked()
@@ -1454,6 +1580,7 @@ void SceneSelect::on_refresh_scenes_button_clicked()
   workcell.scene_vector.clear();
   discover_scene_packages_on_startup();
   refresh_scenes(0, false);
+  refresh_primary_workflow_state("Success", "Refresh", "Select a cell and click Open Cell.");
 }
 
 
@@ -1947,7 +2074,9 @@ void SceneSelect::on_edit_scene_clicked()
     }
   } else {
     append_error("No scene selected to edit.");
+    refresh_primary_workflow_state("Blocked", "Open Cell", "Select a cell before opening it.");
   }
+  refresh_primary_workflow_state("Success", "Open Cell", "Inspect the layout, then validate the cell.");
 }
 
 bool SceneSelect::open_existing_scene(const fs::path & scene_dir, Scene * output_scene, std::string * status)
@@ -2081,6 +2210,8 @@ void SceneSelect::on_generate_yaml_clicked()
   }
   scaffold_scene_index_ = -1;
   refresh_scene_status(true, "Generate YAML");
+  task_editor_state_.unsaved_task_edits = false;
+  refresh_primary_workflow_state("Success", "Save", "Validate the cell.");
 }
 bool SceneSelect::check_yaml()  // Check if scene package has a yaml file to use.
 {
@@ -2246,6 +2377,7 @@ void SceneSelect::on_scene_list_currentIndexChanged(int index)
     }
   }
   refresh_scene_status(index != scaffold_scene_index_, "Scene Selection Changed");
+  refresh_primary_workflow_state("Warning", "Select Cell", "Open the selected cell or validate its current files.");
   on_refresh_status_button_clicked();
   const int current_index = ui->scene_list->currentIndex();
   if (current_index >= 0 && current_index < static_cast<int>(workcell.scene_vector.size())) {
@@ -2347,6 +2479,7 @@ void SceneSelect::on_generate_files_clicked()
   }
   scaffold_scene_index_ = -1;
   refresh_scene_status(true, "Generate Files");
+  refresh_primary_workflow_state("Success", "Generate Package", "Refresh the preview or copy the fake-hardware launch command.");
 }
 bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
 {
@@ -2944,6 +3077,7 @@ bool SceneSelect::export_workcell_layout_preview(const Scene & scene, const fs::
   std::ofstream html_out(html.string());
   html_out << "<html><body><h1>Workcell Studio Preview</h1><p>Offline/fake-hardware layout preview only</p><p>Task: " << task_cfg.task_type << " | Grasp: " << task_cfg.grasp_strategy << " | Pick source: " << task_cfg.pick_source << " | Place target: " << task_cfg.place_target << "</p><p>custom_stl: bin_01 | generated mesh: meshes/generated_objects/bin_01.stl</p><p>readiness_overlay_status: WARN (reach/workspace/overlap/camera/task/safety)</p><p>reach_warnings workspace_warnings overlap_warnings camera_warnings task_target_warnings safety_zone_warnings</p><p>Offline approximate readiness only; no MoveIt planning and no robot motion commanded. No real hardware enabled.</p><p>Object table_01 @ x=0.0, y=0.0 (visual layout)</p><img src='workcell_preview.svg'/></body></html>";
   append_success("Exported preview/workcell_preview.svg and preview/workcell_preview.html");
+  refresh_primary_workflow_state("Success", "Refresh Preview", "Continue editing or copy the fake-hardware launch command.");
   if (open_after_export) { QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(html.string()))); }
   (void)scene;
   return true;
@@ -3138,6 +3272,7 @@ void SceneSelect::on_validate_cell_clicked()
   bool blocked = false;
   latest_dashboard_result_ = workcell_builder::collect_validation_dashboard_results(curr_scene, scene_dir);
   refresh_validation_dashboard_table(latest_dashboard_result_);
+  refresh_primary_workflow_state(latest_dashboard_result_.blocker_count > 0 ? "Blocked" : "Success", "Validate", latest_dashboard_result_.blocker_count > 0 ? "Fix the first blocker shown in the validation dashboard." : "Generate the package.");
   append_info("Validation Dashboard: Scene Schema | Asset Catalog | Robot/Tool Compatibility | Object Placement | Camera Metadata | Task Recipe | Readiness Overlay | Fake-Hardware Smoke Static | Generation Safety");
   append_info("Run Offline Validation only: no ROS launch, no MoveIt planning/execution, no robot motion.");
   append_info("Offline validation status=" + workcell_builder::validation_status_label(latest_dashboard_result_.status) +
@@ -3300,6 +3435,7 @@ void SceneSelect::sync_task_model_from_editor()
   task_editor_state_.selected_object_id = ui->task_selected_object_id_edit->text().toStdString();
   task_editor_state_.place_target_id = ui->task_selected_target_id_edit->text().toStdString();
   task_editor_state_.unsaved_task_edits = true;
+  refresh_primary_workflow_state("Warning", "Edit task/grasp", "Save the cell before validation or generation.");
   rerun_task_validation();
 }
 
@@ -3311,6 +3447,7 @@ void SceneSelect::apply_tool_defaults(bool force)
   task_editor_state_.approach_axis = "z_down"; task_editor_state_.retreat_axis = "z_up"; task_editor_state_.orientation_mode = "vertical";
   task_editor_state_.unsaved_task_edits = true;
   sync_task_editor_from_model();
+  refresh_primary_workflow_state("Warning", "Apply tool defaults", "Save the cell before validation or generation.");
   rerun_task_validation();
 }
 
@@ -3337,6 +3474,7 @@ bool SceneSelect::assign_selected_canvas_item(const std::string & role)
   else if (role == "place_zone") { task_editor_state_.selected_place_zone_id = selected_canvas_item_id_; task_editor_state_.place_target_type = "place_zone"; }
   task_editor_state_.unsaved_task_edits = true;
   sync_task_editor_from_model();
+  refresh_primary_workflow_state("Warning", "Assign canvas item", "Save the cell before validation or generation.");
   rerun_task_validation();
   return true;
 }

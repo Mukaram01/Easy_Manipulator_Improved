@@ -209,6 +209,11 @@ private:
   void show_invalid_workcell_error(const std::string & error_message);
   void discover_scene_packages_on_startup();
   void update_scene_browser_status(const std::string & note = "");
+  void configure_guided_workflow();
+  void configure_more_actions_menu();
+  void refresh_primary_workflow_state(const std::string & outcome = "", const std::string & action = "", const std::string & next = "");
+  bool has_selected_cell() const;
+  bool has_unsaved_edits() const;
 
   int scaffold_scene_index_ = -1;
   workcell_builder::ValidationDashboardResult latest_dashboard_result_;
