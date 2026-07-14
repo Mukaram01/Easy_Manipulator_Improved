@@ -309,3 +309,31 @@ code { color: #c9f2ff; }
   padding: 0.45rem 0.65rem;
 }
 .editor-actions button:disabled { cursor: not-allowed; opacity: 0.45; }
+
+body.embedded-mode {
+  overflow: hidden;
+}
+body.embedded-mode .topbar,
+body.embedded-mode .object-panel,
+body.embedded-mode .details-panel,
+body.embedded-mode #scene-summary,
+body.embedded-mode #warnings,
+body.embedded-mode .toolbar {
+  display: none !important;
+}
+body.embedded-mode .app-shell {
+  grid-template-columns: 1fr;
+  height: 100vh;
+  padding: 0;
+}
+body.embedded-mode .viewport-panel {
+  min-height: 100vh;
+  border-radius: 0;
+}
+body.embedded-mode #scene-canvas {
+  width: 100%;
+  height: 100%;
+}
+body.embedded-mode #dirty-state::after {
+  content: " Preview edits are not saved yet.";
+}

@@ -18,6 +18,7 @@
 #include <QProcessEnvironment>
 #include <QJsonArray>
 #include <QSet>
+#include <QPushButton>
 #include <functional>
 
 namespace {
@@ -169,6 +170,14 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   snap_mode_selector_->addItems({"Off", "1 cm", "5 cm", "10 cm", "5 deg", "15 deg"});
   snap_mode_selector_->setCurrentText("5 cm");
   controls->addWidget(snap_mode_selector_);
+  embedded_undo_button_ = new QPushButton(QStringLiteral("Undo"), this);
+  embedded_undo_button_->setEnabled(false);
+  controls->addWidget(embedded_undo_button_);
+  embedded_redo_button_ = new QPushButton(QStringLiteral("Redo"), this);
+  embedded_redo_button_->setEnabled(false);
+  controls->addWidget(embedded_redo_button_);
+  embedded_fit_button_ = new QPushButton(QStringLiteral("Fit"), this);
+  controls->addWidget(embedded_fit_button_);
   controls->addSpacing(8);
   labels_label_ = new QLabel("Labels:", this);
   controls->addWidget(labels_label_);
@@ -295,7 +304,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   });
   connect(snap_mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
-    if (!v) return;
+    if (!v) { run_embedded_editor_command(embedded_snap_command(snap_mode_selector_->currentText())); refresh_info_chip(); return; }
     const QString choice = snap_mode_selector_->currentText();
     if (choice == "1 cm") v->snap_mode = Scene3DViewportWidget::SnapMode::Cm1;
     else if (choice == "5 cm") v->snap_mode = Scene3DViewportWidget::SnapMode::Cm5;
@@ -308,7 +317,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   });
   connect(gizmo_mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
-    if (!v) return;
+    if (!v) { const QString choice = gizmo_mode_selector_->currentText(); run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.setMode(%1)").arg(QString(QJsonDocument(QJsonArray{choice == "Move" ? "move" : (choice == "Rotate" ? "rotate" : "select")}).toJson(QJsonDocument::Compact)).mid(1).chopped(1))); refresh_info_chip(); return; }
     const QString choice = gizmo_mode_selector_->currentText();
     if (choice == "Move") v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Move;
     else if (choice == "Rotate") v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Rotate;
@@ -338,7 +347,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   connect(view_actions_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     const QString choice = view_actions_selector_->currentText();
     auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
-    if (!v) { if (choice == "Fit View") refresh_embedded_web_product_view(); refresh_info_chip(); return; }
+    if (!v) { if (choice == "Fit View") run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.fitScene()")); refresh_info_chip(); return; }
     if (choice == "Top") v->set_top_view();
     else if (choice == "Front") v->set_front_view();
     else if (choice == "Side") v->set_side_view();
@@ -349,6 +358,9 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     else if (choice == "Diagnostics / Overlays" && overlays_selector_) overlays_selector_->showPopup();
     refresh_info_chip();
   });
+  connect(embedded_undo_button_, &QPushButton::clicked, this, [this](){ run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.undo()")); });
+  connect(embedded_redo_button_, &QPushButton::clicked, this, [this](){ run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.redo()")); });
+  connect(embedded_fit_button_, &QPushButton::clicked, this, [this](){ run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.fitScene()")); });
   connect(overlays_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     auto *v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
     const QString choice = overlays_selector_->currentText();
@@ -481,6 +493,7 @@ QString ScenePreviewWidget::embedded_web_prepare_command_for_log(const QString &
 void ScenePreviewWidget::set_embedded_product_view_state(EmbeddedProductViewState state, const QString & detail)
 {
   embedded_product_view_state_ = state;
+  embedded_editor_polling_ = (state == EmbeddedProductViewState::Ready);
   QString text;
   switch (state) {
     case EmbeddedProductViewState::Idle: text = QStringLiteral("Product View: idle"); break;
@@ -930,6 +943,7 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const QString & scene, quin
     const bool robot_ready = !robot_ready_required || robot_state == QStringLiteral("ready");
     if (boot_state == QStringLiteral("ready") && expected_json_loaded && robot_ready) {
       set_embedded_product_view_state(EmbeddedProductViewState::Ready, QStringLiteral("viewer ready"));
+      poll_embedded_editor_events();
       emit studio_log_requested(QStringLiteral("Embedded Product View ready: scene=%1 json=%2 robot_preview_lifecycle_state=%3")
         .arg(scene, expected_json_path, robot_state.isEmpty() ? QStringLiteral("not_required") : robot_state));
       return;
@@ -957,7 +971,7 @@ void ScenePreviewWidget::load_prepared_embedded_web_scene(const QString & scene,
   const QString viewer_url = QStringLiteral("http://127.0.0.1:%1/workcell_studio_web/viewer/index.html?scene=%2&builderRevision=%3")
     .arg(embedded_web_server_port_)
     .arg(QString::fromUtf8(QUrl::toPercentEncoding(web_scene_url_path)))
-    .arg(revision);
+    .arg(revision) + QStringLiteral("&embedded=1");
   embedded_web_last_viewer_url_ = viewer_url;
   embedded_web_readiness_deadline_ = QDateTime();
   embedded_web_last_boot_status_.clear();
@@ -965,6 +979,63 @@ void ScenePreviewWidget::load_prepared_embedded_web_scene(const QString & scene,
   embedded_web_view_->load(QUrl(viewer_url));
 #endif
 }
+
+
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+void ScenePreviewWidget::run_embedded_editor_command(const QString & script)
+{
+  if (!embedded_web_view_ || embedded_product_view_state_ != EmbeddedProductViewState::Ready) return;
+  embedded_web_view_->page()->runJavaScript(script, [this](const QVariant & value){ apply_embedded_editor_state(value.toMap()); });
+}
+
+QString ScenePreviewWidget::embedded_snap_command(const QString & choice) const
+{
+  double t = 0.0; double r = 0.0; bool enabled = choice != QStringLiteral("Off");
+  if (choice == QStringLiteral("1 cm")) t = 0.01; else if (choice == QStringLiteral("5 cm")) t = 0.05; else if (choice == QStringLiteral("10 cm")) t = 0.10;
+  else if (choice == QStringLiteral("5 deg")) r = 5.0; else if (choice == QStringLiteral("15 deg")) r = 15.0;
+  return QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.setSnap(%1,%2,%3)")
+    .arg(enabled ? QStringLiteral("true") : QStringLiteral("false")).arg(t, 0, 'f', 3).arg(r, 0, 'f', 1);
+}
+
+void ScenePreviewWidget::apply_embedded_editor_state(const QVariantMap & state)
+{
+  if (state.isEmpty()) return;
+  if (embedded_undo_button_) embedded_undo_button_->setEnabled(state.value(QStringLiteral("canUndo")).toBool());
+  if (embedded_redo_button_) embedded_redo_button_->setEnabled(state.value(QStringLiteral("canRedo")).toBool());
+  const QString selected = state.value(QStringLiteral("selectedItemId")).toString();
+  const bool editable = state.value(QStringLiteral("selectedEditable")).toBool();
+  const int dirty_count = state.value(QStringLiteral("dirtyCount")).toInt();
+  if (toolbar_status_chip_) {
+    if (dirty_count > 0) toolbar_status_chip_->setText(QStringLiteral("Unsaved preview edits: %1").arg(dirty_count));
+    else if (!selected.isEmpty() && !editable) toolbar_status_chip_->setText(QStringLiteral("Locked item — select an editable object or area"));
+    else if (!selected.isEmpty()) toolbar_status_chip_->setText(QStringLiteral("%1 selected").arg(selected));
+    else toolbar_status_chip_->setText(QStringLiteral("Product View ready"));
+  }
+}
+
+void ScenePreviewWidget::poll_embedded_editor_events()
+{
+  if (!embedded_editor_polling_ || !embedded_web_view_ || embedded_product_view_state_ != EmbeddedProductViewState::Ready) return;
+  static const char kPoll[] = "(() => { const api = window.__WORKCELL_EDITOR_API_V1__; if (!api) return {state:{},events:[]}; return {state:api.getState(),events:api.drainEvents()}; })()";
+  embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kPoll), [this](const QVariant & value){
+    const QVariantMap payload = value.toMap();
+    apply_embedded_editor_state(payload.value(QStringLiteral("state")).toMap());
+    for (const QVariant & event_value : payload.value(QStringLiteral("events")).toList()) {
+      const QVariantMap event = event_value.toMap();
+      if (event.value(QStringLiteral("type")).toString() == QStringLiteral("selection_changed")) {
+        const QString id = event.value(QStringLiteral("itemId")).toString();
+        if (id != selected_preview_item_id_) { selected_preview_item_id_ = id; emit preview_item_selected(id, event.value(QStringLiteral("itemType")).toString()); }
+      }
+    }
+    if (embedded_editor_polling_) QTimer::singleShot(200, this, &ScenePreviewWidget::poll_embedded_editor_events);
+  });
+}
+#else
+void ScenePreviewWidget::run_embedded_editor_command(const QString & script) { Q_UNUSED(script); }
+QString ScenePreviewWidget::embedded_snap_command(const QString & choice) const { Q_UNUSED(choice); return QString(); }
+void ScenePreviewWidget::apply_embedded_editor_state(const QVariantMap & state) { Q_UNUSED(state); }
+void ScenePreviewWidget::poll_embedded_editor_events() {}
+#endif
 
 ScenePreviewWidget::ProductViewBackend ScenePreviewWidget::active_product_view_backend() const
 {
@@ -1111,7 +1182,7 @@ void ScenePreviewWidget::set_task_overlay_visibility(bool task_route, bool pick_
   // else if (v->label_mode == LabelMode::All) v->label_mode = LabelMode::SelectedOnly;
   v->update();
 }
-void ScenePreviewWidget::select_preview_item(const QString & id){ selected_preview_item_id_ = id; if (auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_)) v->selected_id = id; simple_3d_view_->update(); }
+void ScenePreviewWidget::select_preview_item(const QString & id){ selected_preview_item_id_ = id; if (auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_)) v->selected_id = id; else run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.selectItem(%1)").arg(QString::fromUtf8(QJsonDocument(QJsonArray{id}).toJson(QJsonDocument::Compact)).mid(1).chopped(1))); simple_3d_view_->update(); }
 QString ScenePreviewWidget::selected_preview_item_id() const { return selected_preview_item_id_; }
 const ScenePreviewWidget::PreviewItem * ScenePreviewWidget::preview_item_by_id(const QString & id) const
 {
@@ -1205,15 +1276,18 @@ void ScenePreviewWidget::refresh_toolbar_visibility()
   set_visible(labels_label_, !embedded_web_active);
   set_visible(labels_selector_, !embedded_web_active);
   set_visible(toolbar_status_chip_, true);
+  set_visible(embedded_undo_button_, embedded_web_active);
+  set_visible(embedded_redo_button_, embedded_web_active);
+  set_visible(embedded_fit_button_, embedded_web_active);
   set_visible(mesh_preview_mode_label_, !embedded_web_active);
   set_visible(mesh_preview_mode_selector_, !embedded_web_active);
-  set_visible(gizmo_mode_label_, !embedded_web_active);
-  set_visible(gizmo_mode_selector_, !embedded_web_active);
-  set_visible(snap_mode_label_, false);
-  set_visible(snap_mode_selector_, false);
+  set_visible(gizmo_mode_label_, embedded_web_active);
+  set_visible(gizmo_mode_selector_, embedded_web_active);
+  set_visible(snap_mode_label_, embedded_web_active);
+  set_visible(snap_mode_selector_, embedded_web_active);
   set_visible(interaction_mode_label_, !embedded_web_active);
   set_visible(interaction_mode_selector_, !embedded_web_active);
-  set_visible(overlays_selector_, true);
+  set_visible(overlays_selector_, !embedded_web_active);
 }
 
 void ScenePreviewWidget::refresh_mode_and_state()

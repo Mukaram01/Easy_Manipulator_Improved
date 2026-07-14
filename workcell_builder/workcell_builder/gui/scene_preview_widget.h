@@ -10,6 +10,7 @@
 
 class QComboBox;
 class QLabel;
+class QPushButton;
 class QStackedWidget;
 class QComboBox;
 class QGraphicsView;
@@ -305,6 +306,10 @@ private:
   void start_embedded_web_readiness_polling(const QString & scene, quint64 revision, const QString & expected_json_path, const QString & viewer_url);
   void poll_embedded_web_readiness(const QString & scene, quint64 revision, const QString & expected_json_path, const QString & viewer_url);
   void set_embedded_product_view_state(EmbeddedProductViewState state, const QString & detail = QString());
+  void run_embedded_editor_command(const QString & script);
+  void poll_embedded_editor_events();
+  void apply_embedded_editor_state(const QVariantMap & state);
+  QString embedded_snap_command(const QString & choice) const;
   QString embedded_web_prepare_command_for_log(const QString & scene, const QString & output_path, bool force = false) const;
   QString resolve_embedded_web_repo_root(const QString & selected_scene_dir) const;
   void emit_backend_startup_diagnostic_once();
@@ -324,6 +329,9 @@ private:
   QLabel * interaction_mode_label_{ nullptr };
   QLabel * view_actions_label_{ nullptr };
   QLabel * toolbar_status_chip_{ nullptr };
+  QPushButton * embedded_undo_button_{ nullptr };
+  QPushButton * embedded_redo_button_{ nullptr };
+  QPushButton * embedded_fit_button_{ nullptr };
   QComboBox * overlays_selector_{ nullptr };
   QComboBox * labels_selector_{ nullptr };
   QComboBox * mesh_preview_mode_selector_{ nullptr };
@@ -349,6 +357,7 @@ private:
   QString embedded_web_last_viewer_url_;
   QString embedded_web_last_boot_status_;
   QDateTime embedded_web_readiness_deadline_;
+  bool embedded_editor_polling_{ false };
   QString pending_embedded_web_scene_;
   quint64 embedded_web_request_revision_{ 0 };
   quint64 embedded_web_active_revision_{ 0 };
