@@ -103,14 +103,32 @@ jobs:
           restore-keys: |
             colcon-humble-
 
+      - name: Import source dependencies
+        working-directory: ws
+        run: |
+          if ! command -v vcs >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y python3-vcstool
+          fi
+          vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
+
       - name: Install dependencies
         working-directory: ws
         run: |
+          set -o pipefail
           ./src/easy_manipulation_deployment/scripts/ensure_rosdep_overrides.sh
           ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
           rosdep update
-          rosdep install --from-paths src --ignore-src -yr --rosdistro humble \
-            --skip-keys "qt_advanced_docking tesseract_visualization"
+          if ! rosdep install --from-paths src --ignore-src -yr --rosdistro humble \
+            --skip-keys "qt_advanced_docking tesseract_visualization"; then
+            ./src/easy_manipulation_deployment/scripts/diagnose_rosdep_workspace.py \
+              --src src \
+              --rosdistro humble \
+              --os-name ubuntu \
+              --os-codename jammy \
+              --skip-keys "qt_advanced_docking tesseract_visualization"
+            exit 1
+          fi
 
       - name: Reproducibility guard (workspace discovery)
         working-directory: ws

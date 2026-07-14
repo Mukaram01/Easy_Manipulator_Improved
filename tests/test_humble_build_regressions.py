@@ -250,3 +250,76 @@ def test_scene_generated_directories_are_installed_conditionally():
             offenders.append(str(cmake_path))
 
     assert offenders == []
+
+
+def test_humble_ci_imports_source_dependencies_before_layout_fix():
+    text = Path(".github/workflows/humble-ci.yml").read_text()
+    import_idx = text.index("vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos")
+    layout_idx = text.index("./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh")
+    rosdep_idx = text.index("rosdep install --from-paths src --ignore-src -yr --rosdistro humble")
+    assert import_idx < layout_idx < rosdep_idx
+
+
+def test_humble_ci_rosdep_failure_runs_workspace_diagnostics():
+    text = Path(".github/workflows/humble-ci.yml").read_text()
+    assert "diagnose_rosdep_workspace.py" in text
+    assert "--os-codename jammy" in text
+    assert "--rosdistro humble" in text
+    assert "--skip-keys \"qt_advanced_docking tesseract_visualization\"" in text
+
+
+def test_rosdep_diagnostics_reports_source_providers_and_declaring_packages(tmp_path, monkeypatch, capsys):
+    import importlib.util
+
+    script = Path("scripts/diagnose_rosdep_workspace.py")
+    spec = importlib.util.spec_from_file_location("diagnose_rosdep_workspace", script)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    src = tmp_path / "src"
+    provider = src / "provider"
+    consumer = src / "consumer"
+    provider.mkdir(parents=True)
+    consumer.mkdir(parents=True)
+    (provider / "package.xml").write_text("""
+<package format='3'>
+  <name>source_only_dep</name>
+  <version>0.0.0</version>
+  <description>provider</description>
+  <maintainer email='dev@example.com'>Dev</maintainer>
+  <license>Apache-2.0</license>
+</package>
+""")
+    (consumer / "package.xml").write_text("""
+<package format='3'>
+  <name>consumer</name>
+  <version>0.0.0</version>
+  <description>consumer</description>
+  <maintainer email='dev@example.com'>Dev</maintainer>
+  <license>Apache-2.0</license>
+  <depend>source_only_dep</depend>
+  <exec_depend>skipped_dep</exec_depend>
+</package>
+""")
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            str(script),
+            "--src",
+            str(src),
+            "--rosdistro",
+            "humble",
+            "--os-codename",
+            "jammy",
+            "--skip-keys",
+            "skipped_dep",
+        ],
+    )
+
+    assert module.main() == 0
+    output = capsys.readouterr().out
+    assert "SOURCE source_only_dep: provided by" in output
+    assert "declared by" in output and "consumer/package.xml" in output
+    assert "SKIP skipped_dep" in output
