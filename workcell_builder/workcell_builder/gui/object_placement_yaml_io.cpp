@@ -80,11 +80,11 @@ std::vector<PlacedObject> load_placed_objects_from_environment_yaml(const std::s
       }
       auto pose_xyz_alias = n["pose_xyz"];
       if (pose_xyz_alias && pose_xyz_alias.IsSequence() && pose_xyz_alias.size() == 3) {
-        z.x = pose_xyz_alias[0].as<double>(0.0); z.y = pose_xyz_alias[1].as<double>(0.0); z.z = pose_xyz_alias[2].as<double>(0.0);
+        o.x = pose_xyz_alias[0].as<double>(0.0); o.y = pose_xyz_alias[1].as<double>(0.0); o.z = pose_xyz_alias[2].as<double>(0.0);
       }
       auto pose_rpy_alias = n["pose_rpy"];
       if (pose_rpy_alias && pose_rpy_alias.IsSequence() && pose_rpy_alias.size() == 3) {
-        z.roll = pose_rpy_alias[0].as<double>(0.0); z.pitch = pose_rpy_alias[1].as<double>(0.0); z.yaw = pose_rpy_alias[2].as<double>(0.0);
+        o.roll = pose_rpy_alias[0].as<double>(0.0); o.pitch = pose_rpy_alias[1].as<double>(0.0); o.yaw = pose_rpy_alias[2].as<double>(0.0);
       }
       auto pose = n["pose"];
       if (pose && pose.IsMap()) {
