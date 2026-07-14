@@ -23,8 +23,12 @@
 #include <boost/filesystem.hpp>
 #include <string>
 #include <vector>
+#include <memory>
 
 #include <map>
+
+class QLabel;
+struct RobotHomeJointState;
 
 struct TaskGraspEditorState
 {
@@ -214,6 +218,12 @@ private:
   void refresh_primary_workflow_state(const std::string & outcome = "", const std::string & action = "", const std::string & next = "");
   bool has_selected_cell() const;
   bool has_unsaved_edits() const;
+  void initialize_robot_home_editor();
+  void load_robot_home_for_selected_scene();
+  void sync_robot_home_editor_from_model();
+  void mark_robot_home_edited();
+  bool save_robot_home_to_scene(const boost::filesystem::path & scene_dir, std::string * reason);
+  bool validate_robot_home_for_save();
 
   int scaffold_scene_index_ = -1;
   workcell_builder::ValidationDashboardResult latest_dashboard_result_;
@@ -222,6 +232,9 @@ private:
   std::string latest_demo_scene_name_;
   boost::filesystem::path latest_demo_scene_dir_;
   TaskGraspEditorState task_editor_state_;
+  std::unique_ptr<RobotHomeJointState> robot_home_state_;
+  QLabel * robot_home_source_label_ = nullptr;
+  QLabel * robot_home_validation_label_ = nullptr;
   std::string selected_canvas_item_id_;
   std::string selected_canvas_item_type_;
   workcell_builder::OfflineSmokeCheckResult latest_offline_smoke_result_;
