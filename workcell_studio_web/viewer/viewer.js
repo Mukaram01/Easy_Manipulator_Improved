@@ -13,7 +13,7 @@ const LOCKED_EDIT_REASON = 'Locked/generated preview item; edit source layout/en
 const MIN_FRAME_RADIUS = 1.2;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
-const state = { sceneJson: null, sourceWebSceneFile: '', frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null };
+const state = { sceneJson: null, sourceWebSceneFile: '', frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, editorMode: 'select', editorEvents: [], editorError: '' };
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
 const STAGED_MESH_ROOTS = [
   'build/workcell_studio_web_scene/assets/',
@@ -431,8 +431,19 @@ function renderSceneSummary() {
   }
 }
 
+function pushEditorEvent(type, payload = {}) {
+  state.editorEvents.push({ type, timestamp: new Date().toISOString(), ...payload });
+  if (state.editorEvents.length > 100) state.editorEvents.splice(0, state.editorEvents.length - 100);
+}
+function editorState() {
+  const rendered = renderedById(state.selected);
+  return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || '', selectedItemType: rendered ? itemType(rendered.item) : '', selectedEditable: Boolean(rendered && rendered.item && canEditItem(rendered['item'])), dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, error: state.editorError || '' };
+}
+function emitDirtyChanged() { pushEditorEvent('dirty_changed', { dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0 }); }
 function showError(message) {
   const text = message || 'Unknown viewer error';
+  state.editorError = text;
+  pushEditorEvent('editor_error', { message: text });
   el.error.textContent = text;
   el.error.hidden = false;
   window.__WORKCELL_VIEWER_STATUS__ = {
@@ -447,7 +458,7 @@ function showError(message) {
     fatalStack: (new Error(text).stack || '').split('\n').slice(0, 6).join('\n'),
   };
 }
-function clearError() { el.error.hidden = true; el.error.textContent = ''; }
+function clearError() { state.editorError = ''; el.error.hidden = true; el.error.textContent = ''; }
 function valueOrDash(value) { return value === undefined || value === null || value === '' ? '—' : value; }
 function asArray(value) { return Array.isArray(value) ? value : []; }
 function escapeHtml(value) { return String(valueOrDash(value)).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -626,7 +637,7 @@ function applyTransformToObject(object, transform) {
   object.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
 }
 function markDirtyTransform(rendered, next, { pushHistory = true, oldTransform = null } = {}) {
-  if (!rendered || !canEditItem(rendered.item)) return;
+  if (!rendered || !canEditItem(rendered.item)) return false;
   const previous = oldTransform || state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d);
   const snapped = snapTransform(next);
   if (pushHistory && !sameTransform(previous, snapped)) {
@@ -639,6 +650,16 @@ function markDirtyTransform(rendered, next, { pushHistory = true, oldTransform =
   syncInspectorTransformFields(rendered);
   updateDirtyState();
   updateLabels();
+  emitDirtyChanged();
+  return true;
+}
+function editPatchEntryFor(rendered) {
+  return buildEditPatch().edits.find(edit => edit.item_id === rendered?.item?.id) || null;
+}
+function emitTransformCommitted(rendered) {
+  if (!rendered) return;
+  const transform = state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d);
+  pushEditorEvent('transform_committed', { itemId: rendered.item.id, itemType: itemType(rendered.item), editable: canEditItem(rendered.item), pose: cloneTransform(transform).pose, scale: cloneTransform(transform).scale, patchEntry: editPatchEntryFor(rendered) });
 }
 
 function finiteNumber(value) {
@@ -1637,7 +1658,7 @@ function initThree() {
       const rendered = renderedById(state.selected);
       if (!rendered || !canEditItem(rendered.item)) return;
       if (event.value) state.gizmoDragStart = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d));
-      else { markDirtyTransform(rendered, transformFromObject(rendered.object3d), { pushHistory: true, oldTransform: state.gizmoDragStart }); state.gizmoDragStart = null; }
+      else { const committed = markDirtyTransform(rendered, transformFromObject(rendered.object3d), { pushHistory: true, oldTransform: state.gizmoDragStart }); if (committed) emitTransformCommitted(rendered); state.gizmoDragStart = null; }
     });
     transformControls.addEventListener('objectChange', () => {
       const rendered = renderedById(state.selected);
@@ -2565,6 +2586,7 @@ function populateObjectList() {
 }
 
 function selectObject(id) {
+  const previous = state.selected || '';
   state.selected = id;
   document.querySelectorAll('.object-list li').forEach(li => li.classList.toggle('selected', li.dataset.id === id));
   for (const rendered of state.objects) {
@@ -2576,8 +2598,10 @@ function selectObject(id) {
   }
   updateLabels();
   const rendered = state.objects.find(obj => obj.item.id === id);
-  if (rendered) { populateInspector(rendered); attachTransformGizmo(rendered); }
+  if (rendered) { populateInspector(rendered); attachTransformGizmo(rendered); } else detachTransformGizmo();
+  if (previous !== (id || '')) pushEditorEvent('selection_changed', { itemId: id || '', itemType: rendered ? itemType(rendered.item) : '', editable: Boolean(rendered && rendered.item && canEditItem(rendered['item'])) });
 }
+function clearSelection() { selectObject(''); el.inspector.className = 'state empty'; el.inspector.textContent = state.objects.length ? 'Select an object from the list or canvas.' : EMPTY_SCENE_MESSAGE; }
 function pickObject(event) {
   const rect = el.canvas.getBoundingClientRect();
   state.three.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -2596,6 +2620,9 @@ function attachTransformGizmo(rendered) {
     gizmo.attach(rendered.object3d);
     gizmo.visible = true;
     gizmo.enabled = true;
+    if (state.editorMode === 'rotate') gizmo.setMode('rotate');
+    else gizmo.setMode('translate');
+    gizmo.enabled = state.editorMode !== 'select';
     gizmo.setTranslationSnap(el.snapToggle?.checked ? translationSnapValue() : null);
     gizmo.setRotationSnap(el.snapToggle?.checked ? rotationSnapRadians() : null);
   } else detachTransformGizmo();
@@ -2695,6 +2722,7 @@ function undoPreviewEdit() {
   applyHistoryEntry(entry, 'undo');
   state.redoStack.push(entry);
   updateDirtyState();
+  emitDirtyChanged();
 }
 function redoPreviewEdit() {
   const entry = state.redoStack.pop();
@@ -2702,6 +2730,7 @@ function redoPreviewEdit() {
   applyHistoryEntry(entry, 'redo');
   state.undoStack.push(entry);
   updateDirtyState();
+  emitDirtyChanged();
 }
 function sceneId() { return state.sceneJson?.scene?.id || state.sceneJson?.scene_id || state.sourceWebSceneFile || ''; }
 function buildEditPatch() {
@@ -2894,6 +2923,35 @@ if (el.translationSnap) el.translationSnap.addEventListener('input', refreshGizm
 if (el.rotationSnap) el.rotationSnap.addEventListener('input', refreshGizmoSnap);
 if (el.exportEditPatch) el.exportEditPatch.addEventListener('click', exportEditPatch);
 
+function setEditorMode(mode) {
+  const normalized = mode === 'move' ? 'move' : (mode === 'rotate' ? 'rotate' : 'select');
+  state.editorMode = normalized;
+  const gizmo = state.three.transformControls;
+  if (gizmo) {
+    if (normalized === 'move') { gizmo.setMode('translate'); gizmo.enabled = true; }
+    else if (normalized === 'rotate') { gizmo.setMode('rotate'); gizmo.enabled = true; }
+    else { gizmo.enabled = false; }
+  }
+}
+function setEditorSnap(enabled, translationMeters, rotationDegrees) {
+  if (el.snapToggle) el.snapToggle.checked = Boolean(enabled);
+  if (el.translationSnap && Number.isFinite(Number(translationMeters))) el.translationSnap.value = String(Number(translationMeters));
+  if (el.rotationSnap && Number.isFinite(Number(rotationDegrees))) el.rotationSnap.value = String(Number(rotationDegrees));
+  refreshGizmoSnap();
+}
+window.__WORKCELL_EDITOR_API_V1__ = {
+  getState: () => editorState(),
+  selectItem: id => { selectObject(String(id || '')); return editorState(); },
+  clearSelection: () => { clearSelection(); return editorState(); },
+  setMode: mode => { setEditorMode(mode); return editorState(); },
+  setSnap: (enabled, translationMeters, rotationDegrees) => { setEditorSnap(enabled, translationMeters, rotationDegrees); return editorState(); },
+  undo: () => { undoPreviewEdit(); return editorState(); },
+  redo: () => { redoPreviewEdit(); return editorState(); },
+  fitScene: () => { resetView(); return editorState(); },
+  getEditPatch: () => buildEditPatch(),
+  drainEvents: () => { const events = state.editorEvents.slice(); state.editorEvents.length = 0; return events; },
+};
+
 el.file.addEventListener('change', event => {
   const file = event.target.files?.[0];
   if (file) loadFile(file);
@@ -2918,7 +2976,9 @@ async function boot() {
     initThree();
     setLabelsVisible(el.labelsToggle?.checked || false);
     setDebugOverlaysVisible(el.debugOverlaysToggle?.checked || false);
-    const sceneParam = new URLSearchParams(window.location.search).get('scene');
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('embedded') === '1') document.body.classList.add('embedded-mode');
+    const sceneParam = params.get('scene');
     if (sceneParam) await loadSceneUrl(sceneParam);
   } catch (err) {
     showError(`Bundled Three.js module load failure: ${err.message || err}`);
