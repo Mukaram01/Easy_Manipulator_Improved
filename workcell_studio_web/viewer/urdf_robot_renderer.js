@@ -415,8 +415,11 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     await meshCompletion.wait();
 
     const jointValues = previewConfig?.joint_values || {};
-    // Delegate all supported fixed/revolute/continuous/prismatic and mimic propagation
-    // to urdf-loader's joint API; do not manually transform child link groups here.
+    // Transform chain for expanded previews is intentionally single-application:
+    // world/root fixed chain -> URDF joint origin -> joint value -> link frame
+    // -> URDF visual origin -> URDF mesh scale -> loader asset-coordinate conversion.
+    // Delegate fixed/revolute/continuous/prismatic and mimic propagation to
+    // urdf-loader's joint API; do not manually transform child link groups here.
     robot.setJointValues(jointValues);
     robot.updateMatrixWorld(true);
 

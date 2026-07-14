@@ -37876,7 +37876,7 @@ var LOCKED_EDIT_REASON = "Locked/generated preview item; edit source layout/envi
 var MIN_FRAME_RADIUS = 1.2;
 var EMPTY_SCENE_MESSAGE = "Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.";
 var FRAME_DISTANCE_MULTIPLIER = 2.7;
-var state = { sceneJson: null, sourceWebSceneFile: "", frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null };
+var state = { sceneJson: null, sourceWebSceneFile: "", frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null };
 var RESET_VIEW_TITLE = "Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.";
 var STAGED_MESH_ROOTS = [
   "build/workcell_studio_web_scene/assets/",
@@ -37962,6 +37962,8 @@ function isExpectedMeshlessTool0Frame(item2) {
 }
 function collectAssemblyRenderDiagnostics() {
   const diagnostics = state.robotAssemblyRenderDiagnostics || {};
+  const assemblyBounds = collectPhysicalAssemblyBounds();
+  const finalFitBounds = state.finalPhysicalFitBounds ? box3ToJson(state.finalPhysicalFitBounds) : null;
   const rendered = state.objects || [];
   const independentGenerated = rendered.filter((obj) => {
     const item2 = obj?.item || {};
@@ -37984,6 +37986,16 @@ function collectAssemblyRenderDiagnostics() {
     renderedFkVisualCount: Number(diagnostics.rendered_fk_visual_count || 0),
     skipped_legacy_generated_urdf_count: Number(diagnostics.skipped_legacy_generated_urdf_count || 0),
     skippedLegacyGeneratedUrdfCount: Number(diagnostics.skipped_legacy_generated_urdf_count || 0),
+    physical_assembly_root_count: assemblyBounds.count,
+    physicalAssemblyRootCount: assemblyBounds.count,
+    physical_assembly_bounds: assemblyBounds.bounds_json,
+    physicalAssemblyBounds: assemblyBounds.bounds_json,
+    physical_fit_included_robot_preview: Boolean(assemblyBounds.count && assemblyBounds.bounds_json),
+    physicalFitIncludedRobotPreview: Boolean(assemblyBounds.count && assemblyBounds.bounds_json),
+    final_physical_fit_bounds: finalFitBounds,
+    finalPhysicalFitBounds: finalFitBounds,
+    physical_renderable_count: rendered.length + assemblyBounds.count,
+    physicalRenderableCount: rendered.length + assemblyBounds.count,
     visible_duplicate_generated_urdf_count: independentGenerated.length,
     visibleDuplicateGeneratedUrdfCount: independentGenerated.length,
     visible_tool0_fallback_count: visibleTool0Fallback.length,
@@ -38250,16 +38262,16 @@ function updateViewerStatus() {
   });
   const assemblyRenderDiagnostics = collectAssemblyRenderDiagnostics();
   window.__WORKCELL_VIEWER_STATUS__ = {
-    viewer_boot_state: 'ready',
-    viewerBootState: 'ready',
-    failed_stage: '',
-    failedStage: '',
-    fatal_error: '',
-    fatalError: '',
-    fatal_stack: '',
-    fatalStack: '',
-    source_web_scene_file: state.sourceWebSceneFile || '',
-    sourceWebSceneFile: state.sourceWebSceneFile || '',
+    viewer_boot_state: "ready",
+    viewerBootState: "ready",
+    failed_stage: "",
+    failedStage: "",
+    fatal_error: "",
+    fatalError: "",
+    fatal_stack: "",
+    fatalStack: "",
+    source_web_scene_file: state.sourceWebSceneFile || "",
+    sourceWebSceneFile: state.sourceWebSceneFile || "",
     scene_json_loaded: Boolean(state.sceneJson),
     sceneJsonLoaded: Boolean(state.sceneJson),
     scene_name: summary.sceneName,
@@ -38323,19 +38335,19 @@ function renderSceneSummary() {
   }
 }
 function showError(message) {
-  const text = message || 'Unknown viewer error';
+  const text = message || "Unknown viewer error";
   el.error.textContent = text;
   el.error.hidden = false;
   window.__WORKCELL_VIEWER_STATUS__ = {
-    ...(window.__WORKCELL_VIEWER_STATUS__ || {}),
-    viewer_boot_state: 'failed',
-    viewerBootState: 'failed',
-    failed_stage: 'viewer_runtime',
-    failedStage: 'viewer_runtime',
+    ...window.__WORKCELL_VIEWER_STATUS__ || {},
+    viewer_boot_state: "failed",
+    viewerBootState: "failed",
+    failed_stage: "viewer_runtime",
+    failedStage: "viewer_runtime",
     fatal_error: text,
     fatalError: text,
-    fatal_stack: (new Error(text).stack || '').split('\n').slice(0, 6).join('\n'),
-    fatalStack: (new Error(text).stack || '').split('\n').slice(0, 6).join('\n'),
+    fatal_stack: (new Error(text).stack || "").split("\n").slice(0, 6).join("\n"),
+    fatalStack: (new Error(text).stack || "").split("\n").slice(0, 6).join("\n")
   };
 }
 function clearError() {
@@ -39710,6 +39722,29 @@ function visibleRenderableBounds(object) {
 function objectHasVisibleRenderable(object) {
   return Boolean(visibleRenderableBounds(object));
 }
+function assemblyRootHiddenForFit(root) {
+  const data = root?.userData || {};
+  return root?.visible === false || data.exclude_from_fit_bounds === true || data.debug_only === true || data.diagnostic_only === true || data.helper_overlay === true;
+}
+function collectPhysicalAssemblyBounds() {
+  if (!(state.assemblyRoots || []).length || !THREE?.Box3)
+    return { count: 0, bounds: null, bounds_json: null, roots: [] };
+  const bounds = new THREE.Box3();
+  let count = 0;
+  const roots = [];
+  for (const root of state.assemblyRoots || []) {
+    if (!root || assemblyRootHiddenForFit(root))
+      continue;
+    const rootBounds = visibleRenderableBounds(root);
+    if (!rootBounds)
+      continue;
+    bounds.union(rootBounds);
+    count += 1;
+    roots.push({ name: root.name || "", robot_render_mode: root.userData?.robot_render_mode || "", bounds: box3ToJson(rootBounds) });
+  }
+  const finite = count ? finiteBox3(bounds) : null;
+  return { count: finite ? count : 0, bounds: finite, bounds_json: box3ToJson(finite), roots };
+}
 function itemHiddenForFit(item2) {
   return item2?.visible === false || item2?.hidden === true || item2?.rendered === false || item2?.enabled === false;
 }
@@ -39753,6 +39788,14 @@ function computeFitBounds({ includeDebugFallbacks = false } = {}) {
   let hasNormal = false;
   let hasFallback = false;
   const deferredWarnings = [];
+  const assemblyBounds = collectPhysicalAssemblyBounds();
+  if (assemblyBounds.bounds) {
+    normalBounds.union(assemblyBounds.bounds);
+    hasNormal = true;
+    state.physicalAssemblyBounds = assemblyBounds.bounds.clone();
+  } else {
+    state.physicalAssemblyBounds = null;
+  }
   for (const rendered of state.objects) {
     if (!rendered?.object3d)
       continue;
@@ -39791,6 +39834,7 @@ function computeFitBounds({ includeDebugFallbacks = false } = {}) {
     for (const warning of deferredWarnings)
       warnFitBlockerExcluded(...warning);
     maybeWarnSceneBoundsExceedWorkspace(finiteNormal);
+    state.finalPhysicalFitBounds = finiteNormal.clone();
     return finiteNormal;
   }
   const finiteFallback = includeDebugFallbacks || hasFallback ? finiteBox3(fallbackBounds) : null;
@@ -39806,8 +39850,10 @@ function computeFitBounds({ includeDebugFallbacks = false } = {}) {
       });
     }
     maybeWarnSceneBoundsExceedWorkspace(finiteFallback);
+    state.finalPhysicalFitBounds = finiteFallback.clone();
     return finiteFallback;
   }
+  state.finalPhysicalFitBounds = null;
   return null;
 }
 function box3ToJson(box) {
@@ -40066,6 +40112,8 @@ function clearSceneObjects() {
   state.assemblyRoots = [];
   state.robotAssemblyDiagnostics = [];
   state.robotAssemblyRenderDiagnostics = {};
+  state.physicalAssemblyBounds = null;
+  state.finalPhysicalFitBounds = null;
   state.resolvedFramePoses.clear();
   state.lastFrameBounds = null;
   state._sceneBoundsExceededWarned = false;
@@ -40186,9 +40234,6 @@ function loadExpandedUrdfRobotPreview(preview) {
     },
     onRobotMeshLoaded: () => {
       renderSceneSummary();
-      const bounds = computeFitBounds();
-      if (bounds)
-        frameScene(bounds);
     },
     onRobotMeshLoadError: () => renderSceneSummary(),
     onRobotError: (err) => {
