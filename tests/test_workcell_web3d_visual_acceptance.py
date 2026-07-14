@@ -700,11 +700,12 @@ def test_browser_status_validator_rejects_malformed_nan_infinite_and_zero_volume
         assert any("physical_assembly_bounds" in error and "got" in error for error in errors)
 
 
-def test_browser_status_validator_requires_final_fit_contains_assembly_bounds():
+def test_browser_status_validator_does_not_rewrite_or_union_fit_bounds():
     status = _valid_browser_status_with_rendered_diagnostics()
     status["final_physical_fit_bounds"] = {"min": {"x": -0.1, "y": -0.1, "z": 0.1}, "max": {"x": 0.1, "y": 0.1, "z": 0.2}}
-    errors = module.validate_browser_status(status)
-    assert any("final_physical_fit_bounds must contain physical_assembly_bounds" in error for error in errors)
+    before = dict(status["final_physical_fit_bounds"])
+    module.validate_browser_status(status)
+    assert status["final_physical_fit_bounds"] == before
 
 
 def test_require_browser_rejects_1x1_placeholder_screenshot(tmp_path):
@@ -729,3 +730,42 @@ def test_physical_fit_accepts_camel_case_diagnostics():
         "finalPhysicalFitBounds": {"min": [-0.6, -0.5, -0.1], "max": [0.9, 0.5, 1.3]},
     })
     assert module.validate_browser_status(status) == []
+
+
+def _expanded_urdf_status(robot_count=16, mesh_count=2, bounds_marker=-1):
+    return {
+        **_valid_robot_hierarchy_fields(),
+        "robot_render_mode": "expanded_urdf_loader",
+        "mesh_loaded_count": mesh_count,
+        "required_mesh_failed_count": 0,
+        "robot_expected_visual_count": robot_count,
+        "robot_completed_visual_count": robot_count,
+        "robot_loaded_visual_count": robot_count,
+        "robot_failed_visual_count": 0,
+        "robot_mesh_callbacks_complete": True,
+        "robot_collada_mesh_diagnostics": [{"uri": f"package://robotiq_85_description/meshes/visual/{name}"} for name in module.REQUIRED_ROBOTIQ_MESH_BASENAMES],
+        "viewer_resolved_distances_m": {"wrist_3_link -> tool0": 0.01, "tool0 -> gripper_base_link": 0.1, "wrist_3_link -> gripper_base_link": 0.11},
+        "resolved_frame_positions": _valid_resolved_frame_positions(),
+        "frame_diagnostics": _valid_frame_diagnostics(),
+        "rendered_mesh_diagnostics": _valid_rendered_mesh_diagnostics(),
+        "physical_assembly_bounds": {"min": {"x": 0, "y": 0, "z": 0}, "max": {"x": 1, "y": 1, "z": 1}},
+        "final_physical_fit_bounds": {"min": {"x": bounds_marker, "y": bounds_marker, "z": bounds_marker}, "max": {"x": bounds_marker+2, "y": bounds_marker+2, "z": bounds_marker+2}},
+    }
+
+
+def test_acceptance_rejects_seven_robot_visuals_and_accepts_sixteen_plus_two():
+    bad = _expanded_urdf_status(robot_count=7, mesh_count=2)
+    good = _expanded_urdf_status(robot_count=16, mesh_count=2)
+    assert any('robot_loaded_visual_count expected 16' in e for e in module.validate_browser_status(bad))
+    assert not any('robot_loaded_visual_count expected 16' in e for e in module.validate_browser_status(good))
+
+
+def test_acceptance_requires_all_robotiq_collada_diagnostics():
+    status = _expanded_urdf_status(robot_count=16, mesh_count=2)
+    status['robot_collada_mesh_diagnostics'] = [{"uri": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae"}]
+    errors = module.validate_browser_status(status)
+    assert any('robot_collada_mesh_diagnostics missing Robotiq mesh basenames' in e for e in errors)
+
+
+def test_acceptance_no_longer_rewrites_physical_fit_bounds():
+    assert not hasattr(module, 'normalize_physical_fit_bounds')
