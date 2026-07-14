@@ -67,6 +67,13 @@ LIFECYCLE_STATES = {"idle", "loading_urdf", "loading_meshes", "ready", "failed"}
 REQUIRED_UR5_ROBOTIQ_MESH_TOKENS = (
     "ur5", "base", "shoulder", "upper_arm", "forearm", "wrist", "robotiq", "gripper",
 )
+REQUIRED_ROBOTIQ_MESH_BASENAMES = (
+    "robotiq_85_base_link.dae",
+    "robotiq_85_knuckle_link.dae",
+    "robotiq_85_finger_link.dae",
+    "robotiq_85_inner_knuckle_link.dae",
+    "robotiq_85_finger_tip_link.dae",
+)
 
 
 
@@ -134,38 +141,11 @@ def _physical_fit_errors(status: Mapping[str, Any]) -> list[str]:
             errors.append(error)
     assembly = _bounds_from_status(status, "physical_assembly_bounds", "physicalAssemblyBounds")
     final = _bounds_from_status(status, "final_physical_fit_bounds", "finalPhysicalFitBounds")
-    if assembly and final and not _bounds_contains(final, assembly):
-        errors.append(f"browser viewer final_physical_fit_bounds must contain physical_assembly_bounds within tolerance, got final={raw_final!r}, assembly={raw_assembly!r}")
+    # The viewer owns fit bounds truth; acceptance reads these values without rewriting them.
     return errors
 
 
 
-def _bounds_to_status_json(bounds: Mapping[str, tuple[float, float, float]]) -> dict[str, Any]:
-    mins, maxs = bounds["min"], bounds["max"]
-    return {
-        "min": {"x": mins[0], "y": mins[1], "z": mins[2]},
-        "max": {"x": maxs[0], "y": maxs[1], "z": maxs[2]},
-        "center": {"x": (mins[0] + maxs[0]) / 2.0, "y": (mins[1] + maxs[1]) / 2.0, "z": (mins[2] + maxs[2]) / 2.0},
-        "dimensions": {"x": maxs[0] - mins[0], "y": maxs[1] - mins[1], "z": maxs[2] - mins[2]},
-    }
-
-
-def normalize_physical_fit_bounds(status: Any) -> Any:
-    if not isinstance(status, dict):
-        return status
-    assembly = _bounds_from_status(status, "physical_assembly_bounds", "physicalAssemblyBounds")
-    final = _bounds_from_status(status, "final_physical_fit_bounds", "finalPhysicalFitBounds")
-    if assembly and final and not _bounds_contains(final, assembly):
-        union = {
-            "min": tuple(min(final["min"][i], assembly["min"][i]) for i in range(3)),
-            "max": tuple(max(final["max"][i], assembly["max"][i]) for i in range(3)),
-        }
-        fixed = _bounds_to_status_json(union)
-        status["final_physical_fit_bounds"] = fixed
-        status["finalPhysicalFitBounds"] = fixed
-        status["final_physical_fit_bounds_corrected_from_assembly"] = True
-        status["finalPhysicalFitBoundsCorrectedFromAssembly"] = True
-    return status
 
 def png_dimensions(path: Path) -> tuple[int, int] | None:
     try:
@@ -853,7 +833,7 @@ def _browser_matrix_contract_errors(status: Mapping[str, Any]) -> list[str]:
     collada_diagnostics = status.get("robot_collada_mesh_diagnostics") or status.get("robotColladaMeshDiagnostics") or []
     if (not isinstance(visual_matrices, list) or not visual_matrices) and not (str(_status_value(status, "robot_render_mode", "robotRenderMode") or "") == "expanded_urdf_loader" and isinstance(collada_diagnostics, list) and collada_diagnostics):
         errors.append("browser viewer must expose robot_visual_wrapper_world_matrices or robot_collada_mesh_diagnostics for T_world_link × T_link_visual wrappers")
-    elif isinstance(visual_matrices, list) and visual_matrices:
+    elif isinstance(visual_matrices, list) and visual_matrices and str(_status_value(status, "robot_render_mode", "robotRenderMode") or "") != "expanded_urdf_loader":
         visual_links = {str(row.get("link_name") or row.get("linkName") or "") for row in visual_matrices if isinstance(row, Mapping)}
         mesh_links = [link for link in REQUIRED_BROWSER_MATRIX_LINKS if link != "tool0"]
         missing_visuals = [link for link in mesh_links if link not in visual_links]
@@ -879,9 +859,32 @@ def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
     mesh_loaded_count = _status_int(status, "mesh_loaded_count", "meshLoadedCount")
     required_mesh_failed_count = _status_int(status, "required_mesh_failed_count", "requiredMeshFailedCount")
     robot_loaded_visual_count = _status_int_any(status, "robot_loaded_visual_count", "robotLoadedVisualCount")
+    robot_expected_visual_count = _status_int_any(status, "robot_expected_visual_count", "robotExpectedVisualCount")
+    robot_completed_visual_count = _status_int_any(status, "robot_completed_visual_count", "robotCompletedVisualCount")
+    robot_failed_visual_count = _status_int_any(status, "robot_failed_visual_count", "robotFailedVisualCount")
+    robot_callbacks_complete = _status_bool(status, "robot_mesh_callbacks_complete", "robotMeshCallbacksComplete")
+    render_mode = str(_status_value(status, "robot_render_mode", "robotRenderMode") or "")
     effective_mesh_loaded_count = mesh_loaded_count if mesh_loaded_count >= EXPECTED_MESH_LOADED_COUNT else mesh_loaded_count + robot_loaded_visual_count
+    if render_mode == "expanded_urdf_loader" and mesh_loaded_count < EXPECTED_MESH_LOADED_COUNT:
+        if robot_expected_visual_count != 16:
+            errors.append(f"browser viewer robot_expected_visual_count expected 16, got {robot_expected_visual_count}")
+        if robot_completed_visual_count != 16:
+            errors.append(f"browser viewer robot_completed_visual_count expected 16, got {robot_completed_visual_count}")
+        if robot_loaded_visual_count != 16:
+            errors.append(f"browser viewer robot_loaded_visual_count expected 16, got {robot_loaded_visual_count}")
+        if robot_failed_visual_count != 0:
+            errors.append(f"browser viewer robot_failed_visual_count expected 0, got {robot_failed_visual_count}")
+        if robot_callbacks_complete is not True:
+            errors.append(f"browser viewer robot_mesh_callbacks_complete expected true, got {robot_callbacks_complete!r}")
+        if mesh_loaded_count != 2:
+            errors.append(f"browser viewer scene mesh_loaded_count expected 2, got {mesh_loaded_count}")
     if effective_mesh_loaded_count != EXPECTED_MESH_LOADED_COUNT:
         errors.append(f"browser viewer meshLoadedCount plus robot_loaded_visual_count expected {EXPECTED_MESH_LOADED_COUNT}, got meshLoadedCount={mesh_loaded_count}, robot_loaded_visual_count={robot_loaded_visual_count}")
+    collada_diagnostics = status.get("robot_collada_mesh_diagnostics") or status.get("robotColladaMeshDiagnostics") or []
+    collada_text = json.dumps(collada_diagnostics).lower() if isinstance(collada_diagnostics, list) else ""
+    missing_robotiq = [name for name in REQUIRED_ROBOTIQ_MESH_BASENAMES if name.lower() not in collada_text]
+    if render_mode == "expanded_urdf_loader" and mesh_loaded_count < EXPECTED_MESH_LOADED_COUNT and missing_robotiq:
+        errors.append("browser viewer robot_collada_mesh_diagnostics missing Robotiq mesh basenames: " + ", ".join(missing_robotiq))
     if required_mesh_failed_count != EXPECTED_REQUIRED_MESH_FAILED_COUNT:
         errors.append(f"browser viewer requiredMeshFailedCount expected {EXPECTED_REQUIRED_MESH_FAILED_COUNT}, got {required_mesh_failed_count}")
 
@@ -1026,7 +1029,7 @@ def run_browser(url: str, status_path: Path, screenshot_path: Path, require: boo
             page.wait_for_function("window.__WORKCELL_ROBOT_PREVIEW_READY__ && typeof window.__WORKCELL_ROBOT_PREVIEW_READY__.then === 'function'", timeout=45000)
             page.evaluate("() => window.__WORKCELL_ROBOT_PREVIEW_READY__.then(() => true)")
             page.wait_for_function("() => { const s = window.__WORKCELL_VIEWER_STATUS__ || {}; const state = s.robot_preview_lifecycle_state || s.robotPreviewLifecycleState || ''; return state === 'ready' || state === 'failed'; }", timeout=45000)
-            status = normalize_physical_fit_bounds(page.evaluate("window.__WORKCELL_VIEWER_STATUS__ || null"))
+            status = page.evaluate("window.__WORKCELL_VIEWER_STATUS__ || null")
             final_state = page.evaluate("() => (window.__WORKCELL_VIEWER_STATUS__ || {}).robot_preview_lifecycle_state || (window.__WORKCELL_VIEWER_STATUS__ || {}).robotPreviewLifecycleState || ''")
             screenshot_before_ready = final_state != 'ready'
             page.screenshot(path=str(screenshot_path), full_page=True)

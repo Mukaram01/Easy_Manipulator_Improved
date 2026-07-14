@@ -78,7 +78,23 @@ def _resolve_urdf(scene_dir: Path, workspace_root: str = "") -> tuple[str, dict[
     xml_text, _out, err, cmd = result[:4]
     if not xml_text:
         raise RuntimeError(f"xacro expansion failed for {urdf_path}: {err}")
-    xml_text, _ = fk.inject_missing_robotiq_85_visuals(xml_text)
+    packages = sorted(set(fk.extract_referenced_package_names(xml_text)) | {"robotiq_85_description"})
+    package_map, _diag = fk.discover_package_map(scene_dir, workspace_root=(workspace_root or None), package_names=packages)
+    contract = fk._scene_contract_identifies_robotiq_85(
+        manifest,
+        fk.read_yaml(scene_dir / "environment.yaml") or {},
+        fk.read_yaml(scene_dir / "cell_definition.yaml") or {},
+    )
+    real_xacro_succeeded = not (cmd and cmd[0] == "xacro-lite")
+    xml_text, repaired = fk.inject_missing_robotiq_85_visuals(
+        xml_text,
+        package_map,
+        contract_identifies_robotiq_85=contract,
+        real_xacro_succeeded=real_xacro_succeeded,
+        strict_assets=contract,
+    )
+    if repaired and real_xacro_succeeded:
+        fk._atomic_write_text(scene_dir / "generated" / "expanded_scene_preview.urdf", xml_text)
     return xml_text, {"urdf_path": fk._repo_relative_path(urdf_path), "xacro_command": fk._portable_source_metadata(cmd)}
 
 

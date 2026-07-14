@@ -1017,3 +1017,53 @@ def test_validate_ur5_transform_sanity_reports_adjacent_distance():
     _warnings, blockers = mesh_index.validate_ur5_transform_sanity(rows, rows)
 
     assert any('base_link->shoulder_link' in blocker and 'exceeding' in blocker for blocker in blockers)
+
+
+def _robotiq_empty_xml():
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+    links = ''.join(f'<link name="{name}" />' for name in mesh_index.ROBOTIQ_85_VISUAL_MESHES)
+    joints = '<joint name="tool0_to_gripper" type="fixed"><parent link="tool0"/><child link="gripper_base_link"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>'
+    return f'<robot name="demo"><link name="tool0" />{links}{joints}</robot>'
+
+
+def test_robotiq_preview_repair_is_strict_idempotent_and_preserves_joints(tmp_path):
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+    pkg = tmp_path / 'robotiq_85_description'
+    mesh_dir = pkg / 'meshes' / 'visual'
+    mesh_dir.mkdir(parents=True)
+    for mesh in set(mesh_index.ROBOTIQ_85_VISUAL_MESHES.values()):
+        (mesh_dir / mesh).write_text('dae', encoding='utf-8')
+    package_map = {'robotiq_85_description': pkg}
+    source = _robotiq_empty_xml()
+    repaired, applied = mesh_index.inject_missing_robotiq_85_visuals(
+        source, package_map, contract_identifies_robotiq_85=True, real_xacro_succeeded=True, strict_assets=True
+    )
+    repaired_twice, applied_twice = mesh_index.inject_missing_robotiq_85_visuals(
+        repaired, package_map, contract_identifies_robotiq_85=True, real_xacro_succeeded=True, strict_assets=True
+    )
+    diag = mesh_index.validate_expanded_preview_visual_contract(repaired_twice, package_map)
+    assert applied is True
+    assert applied_twice is False
+    assert diag['robotiq_85_final_visual_count'] == 9
+    assert 'tool0_to_gripper' in repaired_twice
+    assert '<origin xyz="0 0 0" rpy="0 0 0"' in repaired_twice
+
+
+def test_robotiq_preview_repair_requires_contract_real_xacro_and_assets(tmp_path):
+    import pytest
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+    xml = _robotiq_empty_xml()
+    assert mesh_index.inject_missing_robotiq_85_visuals(xml, {}, contract_identifies_robotiq_85=False, real_xacro_succeeded=True)[1] is False
+    assert mesh_index.inject_missing_robotiq_85_visuals(xml, {}, contract_identifies_robotiq_85=True, real_xacro_succeeded=False)[1] is False
+    with pytest.raises(RuntimeError, match='missing mesh assets'):
+        mesh_index.inject_missing_robotiq_85_visuals(xml, {}, contract_identifies_robotiq_85=True, real_xacro_succeeded=True, strict_assets=True)
+
+
+def test_non_robotiq_tools_are_not_modified():
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+    xml = '<robot name="demo"><link name="tool0"/><link name="suction_cup_link"/></robot>'
+    repaired, applied = mesh_index.inject_missing_robotiq_85_visuals(
+        xml, {}, contract_identifies_robotiq_85=False, real_xacro_succeeded=True
+    )
+    assert repaired == xml
+    assert applied is False
