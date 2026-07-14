@@ -54,6 +54,9 @@
 #include <QProcess>
 #include <QPushButton>
 #include <QToolButton>
+#include <QDoubleSpinBox>
+#include <QSlider>
+#include <QSignalBlocker>
 #include <QMenu>
 #include <QAction>
 #include <QTreeWidgetItem>
@@ -89,6 +92,8 @@
 #include <unordered_set>
 #include <vector>
 #include <set>
+#include <cmath>
+#include <fstream>
 
 #include "gui/ui_scene_select.h"
 #include "gui/scene_select.h"
@@ -156,6 +161,70 @@ fs::path derive_ros_workspace_root(const fs::path & selected_workcell_path)
 
   // Preserve the legacy parent-path behavior for non-standard layouts.
   return normalized.parent_path();
+}
+
+
+struct RobotHomeJoint
+{
+  std::string name;
+  QString label;
+  double radians;
+  double saved_radians;
+  double suggested_radians;
+  double min_radians;
+  double max_radians;
+  QSlider * slider = nullptr;
+  QDoubleSpinBox * spin = nullptr;
+};
+
+struct RobotHomeJointState
+{
+  std::vector<RobotHomeJoint> joints;
+  std::string source{"suggested"};
+  std::string saved_source{"suggested"};
+  bool dirty{false};
+  std::vector<std::string> validation_errors;
+  std::string status_note{"Suggested home"};
+};
+
+constexpr double kRobotHomePi = 3.14159265358979323846;
+
+double robot_home_deg_to_rad(double deg) { return deg * kRobotHomePi / 180.0; }
+double robot_home_rad_to_deg(double rad) { return rad * 180.0 / kRobotHomePi; }
+
+std::vector<RobotHomeJoint> default_ur5_robot_home_joints()
+{
+  const double limit = robot_home_deg_to_rad(360.0);
+  return {
+    {"shoulder_pan_joint", "Base", 0.0, 0.0, 0.0, -limit, limit},
+    {"shoulder_lift_joint", "Shoulder", -kRobotHomePi / 2.0, -kRobotHomePi / 2.0, -kRobotHomePi / 2.0, -limit, limit},
+    {"elbow_joint", "Elbow", kRobotHomePi / 2.0, kRobotHomePi / 2.0, kRobotHomePi / 2.0, -limit, limit},
+    {"wrist_1_joint", "Wrist 1", -kRobotHomePi / 2.0, -kRobotHomePi / 2.0, -kRobotHomePi / 2.0, -limit, limit},
+    {"wrist_2_joint", "Wrist 2", -kRobotHomePi / 2.0, -kRobotHomePi / 2.0, -kRobotHomePi / 2.0, -limit, limit},
+    {"wrist_3_joint", "Wrist 3", 0.0, 0.0, 0.0, -limit, limit},
+  };
+}
+
+bool validate_robot_home_state(RobotHomeJointState * state)
+{
+  state->validation_errors.clear();
+  std::set<std::string> names;
+  for (const auto & joint : state->joints) {
+    if (joint.name.empty()) state->validation_errors.push_back("missing joint name");
+    if (!names.insert(joint.name).second) state->validation_errors.push_back("duplicate joint name: " + joint.name);
+    if (!std::isfinite(joint.radians)) state->validation_errors.push_back("invalid joint value: " + joint.name);
+    if (joint.radians < joint.min_radians || joint.radians > joint.max_radians) {
+      std::ostringstream err;
+      err << joint.label.toStdString() << " must be between " << robot_home_rad_to_deg(joint.min_radians)
+          << " and " << robot_home_rad_to_deg(joint.max_radians) << " degrees";
+      state->validation_errors.push_back(err.str());
+    }
+    const double round_trip = robot_home_deg_to_rad(robot_home_rad_to_deg(joint.radians));
+    if (!std::isfinite(round_trip) || std::abs(round_trip - joint.radians) > 1e-9) {
+      state->validation_errors.push_back("radians/degrees conversion failed: " + joint.name);
+    }
+  }
+  return state->validation_errors.empty();
 }
 
 class InteractiveCanvasView : public QGraphicsView
@@ -834,6 +903,7 @@ SceneSelect::SceneSelect(QWidget * parent)
     "Fake hardware is the safe default. Real hardware launch is intentionally not default.");
 
   initialize_task_grasp_editor();
+  initialize_robot_home_editor();
   ui->generate_files->hide();
   ui->validate_cell->show();
   ui->validate_cell->setText("Run Offline Validation");
@@ -1010,7 +1080,7 @@ bool SceneSelect::has_selected_cell() const
 
 bool SceneSelect::has_unsaved_edits() const
 {
-  return task_editor_state_.unsaved_task_edits;
+  return task_editor_state_.unsaved_task_edits || (robot_home_state_ && robot_home_state_->dirty);
 }
 
 void SceneSelect::refresh_primary_workflow_state(const std::string & outcome, const std::string & action, const std::string & next)
@@ -1021,7 +1091,12 @@ void SceneSelect::refresh_primary_workflow_state(const std::string & outcome, co
   const QString scene_name = selected ? ui->scene_list->currentText() : QString("none selected");
   ui->selected_cell_name_label->setText("Cell: " + scene_name);
   ui->selected_cell_path_label->setText(QString("Path: %1").arg(selected ? QString::fromStdString(scene_dir.string()) : "none"));
-  ui->selected_cell_unsaved_label->setText(QString("Unsaved edits: %1").arg(unsaved ? "YES — save before validate/generate" : "no"));
+  if (robot_home_state_) {
+    const QString home = robot_home_state_->source == "user" ? "User-defined" : "Suggested";
+    ui->selected_cell_unsaved_label->setText(QString("Unsaved edits: %1 | Robot Home: %2").arg(unsaved ? "YES — save before validate/generate" : "no", home));
+  } else {
+    ui->selected_cell_unsaved_label->setText(QString("Unsaved edits: %1").arg(unsaved ? "YES — save before validate/generate" : "no"));
+  }
   QString readiness = selected ? "Status: selected — validate to refresh health" : "Status: BLOCKED — open or create a cell";
   if (!selected) {
     const QString tip = "Open or create a cell before using this primary action.";
@@ -1033,7 +1108,7 @@ void SceneSelect::refresh_primary_workflow_state(const std::string & outcome, co
     ui->primary_generate_package_button->setEnabled(!unsaved && ui->generate_workcell_package->isEnabled());
     ui->primary_refresh_preview_button->setEnabled(true);
     ui->primary_edit_layout_button->setToolTip("Open the Layout step for the selected cell.");
-    ui->primary_save_button->setToolTip(unsaved ? "Save editable layout changes before validation/generation." : "No unsaved editable-layout changes.");
+    ui->primary_save_button->setToolTip(unsaved ? "Save editable layout or Robot Home changes before validation/generation." : "No unsaved editable-layout changes.");
     ui->primary_validate_button->setToolTip(unsaved ? "Save first so validation does not use stale layout state." : "Validate the selected cell.");
     ui->primary_generate_package_button->setToolTip(unsaved ? "Save first so generation does not use stale layout state." : "Generate the selected cell package when product policy permits.");
     ui->primary_refresh_preview_button->setToolTip("Refresh the selected cell preview.");
@@ -2161,11 +2236,14 @@ void SceneSelect::on_generate_yaml_clicked()
     const fs::path scene_yaml_path =
       scenes_path / workcell.scene_vector[current_index].name;
     Scene target_scene = workcell.scene_vector[current_index];
+    if (!validate_robot_home_for_save()) {
+      refresh_primary_workflow_state("Blocked", "Save", "Correct invalid Robot Home joint values before saving.");
+      return;
+    }
     if (!target_scene.loaded) {  // No scene currently loaded
       if (check_yaml()) {    // If yaml file is in folder,
                              // it might get replaced by new scene configuration
-        append_info("No unsaved scene edits detected; existing environment.yaml kept.");
-        return;
+        append_info("No unsaved scene geometry edits detected; updating scene-local Robot Home in existing environment.yaml.");
       } else {   // No yaml in scene folder, no loaded scene from created
         append_error(
           "No existing environment.yaml found and no unsaved scene edits are available to export.");
@@ -2208,9 +2286,20 @@ void SceneSelect::on_generate_yaml_clicked()
   } else {
     append_error("No scene selected to generate environment.yaml.");
   }
+  if (current_index >= 0 && current_index < static_cast<int>(workcell.scene_vector.size())) {
+    std::string robot_home_path;
+    if (save_robot_home_to_scene(scenes_path / workcell.scene_vector[current_index].name, &robot_home_path)) {
+      append_success("Robot Home saved to " + robot_home_path);
+    } else {
+      append_error("Robot Home save failed: " + robot_home_path);
+      refresh_primary_workflow_state("Blocked", "Save", "Correct Robot Home save error before validation or generation.");
+      return;
+    }
+  }
   scaffold_scene_index_ = -1;
   refresh_scene_status(true, "Generate YAML");
   task_editor_state_.unsaved_task_edits = false;
+  if (robot_home_state_) robot_home_state_->dirty = false;
   refresh_primary_workflow_state("Success", "Save", "Validate the cell.");
 }
 bool SceneSelect::check_yaml()  // Check if scene package has a yaml file to use.
@@ -2376,6 +2465,7 @@ void SceneSelect::on_scene_list_currentIndexChanged(int index)
       append_warning("Generate Files blocked: scene status is " + scene_status_label(status) + ".");
     }
   }
+  load_robot_home_for_selected_scene();
   refresh_scene_status(index != scaffold_scene_index_, "Scene Selection Changed");
   refresh_primary_workflow_state("Warning", "Select Cell", "Open the selected cell or validate its current files.");
   on_refresh_status_button_clicked();
@@ -3384,6 +3474,190 @@ void SceneSelect::export_preview_layout()
   append_success("Export Preview created: preview/layout_preview.svg | .html | .json");
 }
 
+
+
+void SceneSelect::initialize_robot_home_editor()
+{
+  robot_home_state_ = std::make_unique<RobotHomeJointState>();
+  robot_home_state_->joints = default_ur5_robot_home_joints();
+
+  auto * group = new QGroupBox("Robot Home", ui->layout_tab);
+  group->setObjectName("robot_home_group");
+  auto * layout = new QVBoxLayout(group);
+  auto * help = new QLabel("Choose the robot posture used when the generated cell starts in fake-hardware mode.", group);
+  help->setWordWrap(true);
+  layout->addWidget(help);
+  robot_home_source_label_ = new QLabel("Suggested home", group);
+  robot_home_source_label_->setObjectName("robot_home_source_status");
+  layout->addWidget(robot_home_source_label_);
+  auto * grid = new QGridLayout();
+  grid->addWidget(new QLabel("Joint", group), 0, 0);
+  grid->addWidget(new QLabel("Slider", group), 0, 1);
+  grid->addWidget(new QLabel("Degrees", group), 0, 2);
+  int row = 1;
+  for (size_t i = 0; i < robot_home_state_->joints.size(); ++i) {
+    auto & joint = robot_home_state_->joints[i];
+    auto * label = new QLabel(joint.label, group);
+    label->setToolTip(QString::fromStdString(joint.name));
+    joint.slider = new QSlider(Qt::Horizontal, group);
+    joint.slider->setObjectName(QString("robot_home_%1_slider").arg(QString::fromStdString(joint.name)));
+    joint.slider->setRange(static_cast<int>(std::round(robot_home_rad_to_deg(joint.min_radians) * 10.0)), static_cast<int>(std::round(robot_home_rad_to_deg(joint.max_radians) * 10.0)));
+    joint.spin = new QDoubleSpinBox(group);
+    joint.spin->setObjectName(QString("robot_home_%1_degrees").arg(QString::fromStdString(joint.name)));
+    joint.spin->setDecimals(1);
+    joint.spin->setSuffix("°");
+    joint.spin->setRange(robot_home_rad_to_deg(joint.min_radians), robot_home_rad_to_deg(joint.max_radians));
+    joint.spin->setSingleStep(0.1);
+    grid->addWidget(label, row, 0);
+    grid->addWidget(joint.slider, row, 1);
+    grid->addWidget(joint.spin, row, 2);
+    connect(joint.slider, &QSlider::valueChanged, this, [this, i](int value) {
+      auto & joint = robot_home_state_->joints[i];
+      const double deg = static_cast<double>(value) / 10.0;
+      { QSignalBlocker b(joint.spin); joint.spin->setValue(deg); }
+      joint.radians = robot_home_deg_to_rad(deg);
+      robot_home_state_->source = "user";
+      mark_robot_home_edited();
+    });
+    connect(joint.spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, i](double deg) {
+      auto & joint = robot_home_state_->joints[i];
+      { QSignalBlocker b(joint.slider); joint.slider->setValue(static_cast<int>(std::round(deg * 10.0))); }
+      joint.radians = robot_home_deg_to_rad(deg);
+      robot_home_state_->source = "user";
+      mark_robot_home_edited();
+    });
+    ++row;
+  }
+  layout->addLayout(grid);
+  auto * buttons = new QHBoxLayout();
+  auto * suggested = new QPushButton("Use Suggested Home", group);
+  suggested->setObjectName("robot_home_use_suggested_button");
+  auto * reset = new QPushButton("Reset Changes", group);
+  reset->setObjectName("robot_home_reset_changes_button");
+  buttons->addWidget(suggested);
+  buttons->addWidget(reset);
+  layout->addLayout(buttons);
+  robot_home_validation_label_ = new QLabel("Joint limits passed. Collision and motion planning are checked later.", group);
+  robot_home_validation_label_->setObjectName("robot_home_validation_status");
+  robot_home_validation_label_->setWordWrap(true);
+  layout->addWidget(robot_home_validation_label_);
+  ui->layoutLayout->insertWidget(1, group);
+  connect(suggested, &QPushButton::clicked, this, [this]() {
+    for (auto & joint : robot_home_state_->joints) joint.radians = joint.suggested_radians;
+    robot_home_state_->source = "suggested";
+    sync_robot_home_editor_from_model();
+    mark_robot_home_edited();
+  });
+  connect(reset, &QPushButton::clicked, this, [this]() {
+    for (auto & joint : robot_home_state_->joints) joint.radians = joint.saved_radians;
+    robot_home_state_->source = robot_home_state_->saved_source;
+    robot_home_state_->dirty = false;
+    sync_robot_home_editor_from_model();
+    refresh_primary_workflow_state("Info", "Reset Robot Home", "Last saved Robot Home restored.");
+  });
+  sync_robot_home_editor_from_model();
+}
+
+void SceneSelect::load_robot_home_for_selected_scene()
+{
+  if (!robot_home_state_) return;
+  const auto defaults = default_ur5_robot_home_joints();
+  for (size_t i = 0; i < robot_home_state_->joints.size() && i < defaults.size(); ++i) {
+    robot_home_state_->joints[i].radians = defaults[i].radians;
+    robot_home_state_->joints[i].saved_radians = defaults[i].saved_radians;
+    robot_home_state_->joints[i].suggested_radians = defaults[i].suggested_radians;
+    robot_home_state_->joints[i].min_radians = defaults[i].min_radians;
+    robot_home_state_->joints[i].max_radians = defaults[i].max_radians;
+  }
+  robot_home_state_->source = "suggested";
+  const fs::path env = scene_dir_for_current_selection() / "environment.yaml";
+  try {
+    if (fs::exists(env)) {
+      YAML::Node yaml = YAML::LoadFile(env.string());
+      YAML::Node home = yaml["robot"] && yaml["robot"]["home_joint_state"] ? yaml["robot"]["home_joint_state"] : YAML::Node();
+      if (home && home["joints"] && home["joints"].IsMap()) {
+        robot_home_state_->source = home["source"] ? home["source"].as<std::string>() : "user";
+        for (auto & joint : robot_home_state_->joints) {
+          if (home["joints"][joint.name]) joint.radians = home["joints"][joint.name].as<double>();
+          joint.saved_radians = joint.radians;
+        }
+      }
+    }
+  } catch (const std::exception & error) {
+    append_warning("Robot Home warning: failed to read " + env.string() + ": " + error.what());
+  }
+  robot_home_state_->saved_source = robot_home_state_->source;
+  robot_home_state_->dirty = false;
+  sync_robot_home_editor_from_model();
+}
+
+void SceneSelect::sync_robot_home_editor_from_model()
+{
+  if (!robot_home_state_) return;
+  validate_robot_home_state(robot_home_state_.get());
+  for (auto & joint : robot_home_state_->joints) {
+    const double deg = robot_home_rad_to_deg(joint.radians);
+    if (joint.slider) { QSignalBlocker b(joint.slider); joint.slider->setValue(static_cast<int>(std::round(deg * 10.0))); }
+    if (joint.spin) { QSignalBlocker b(joint.spin); joint.spin->setValue(deg); }
+  }
+  const QString source = robot_home_state_->source == "user" ? "User-defined home" : "Suggested home";
+  if (robot_home_source_label_) robot_home_source_label_->setText(robot_home_state_->dirty ? "Unsaved Robot Home changes" : source);
+  if (robot_home_validation_label_) {
+    robot_home_validation_label_->setText(robot_home_state_->validation_errors.empty()
+      ? "Joint limits passed. Collision and motion planning are checked later. Conservative UR5 limits are used when scene limits are unavailable."
+      : QString("Invalid joint value: %1").arg(QString::fromStdString(robot_home_state_->validation_errors.front())));
+  }
+}
+
+void SceneSelect::mark_robot_home_edited()
+{
+  if (!robot_home_state_) return;
+  robot_home_state_->dirty = robot_home_state_->source != robot_home_state_->saved_source;
+  for (const auto & joint : robot_home_state_->joints) {
+    if (std::abs(joint.radians - joint.saved_radians) > 1e-9) robot_home_state_->dirty = true;
+  }
+  if (robot_home_state_->dirty && robot_home_state_->source != "suggested") robot_home_state_->source = "user";
+  sync_robot_home_editor_from_model();
+  refresh_primary_workflow_state("Warning", "Edit Robot Home", "Save the cell before validation or generation.");
+}
+
+bool SceneSelect::validate_robot_home_for_save()
+{
+  if (!robot_home_state_) return true;
+  sync_robot_home_editor_from_model();
+  if (!robot_home_state_->validation_errors.empty()) {
+    append_error("Robot Home save blocked: " + robot_home_state_->validation_errors.front());
+    return false;
+  }
+  return true;
+}
+
+bool SceneSelect::save_robot_home_to_scene(const fs::path & scene_dir, std::string * reason)
+{
+  if (!robot_home_state_) return true;
+  const fs::path env = scene_dir / "environment.yaml";
+  try {
+    YAML::Node yaml = fs::exists(env) ? YAML::LoadFile(env.string()) : YAML::Node(YAML::NodeType::Map);
+    YAML::Node joints(YAML::NodeType::Map);
+    for (auto & joint : robot_home_state_->joints) {
+      joints[joint.name] = joint.radians;
+      joint.saved_radians = joint.radians;
+    }
+    yaml["robot"]["home_joint_state"]["source"] = robot_home_state_->source;
+    yaml["robot"]["home_joint_state"]["joints"] = joints;
+    std::ofstream out(env.string());
+    out << yaml;
+    out << '\n';
+    robot_home_state_->saved_source = robot_home_state_->source;
+    robot_home_state_->dirty = false;
+    if (reason) *reason = env.string();
+    sync_robot_home_editor_from_model();
+    return true;
+  } catch (const std::exception & error) {
+    if (reason) *reason = error.what();
+    return false;
+  }
+}
 
 void SceneSelect::initialize_task_grasp_editor()
 {
