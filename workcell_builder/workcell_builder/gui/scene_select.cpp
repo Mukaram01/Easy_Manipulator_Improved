@@ -166,6 +166,8 @@ fs::path derive_ros_workspace_root(const fs::path & selected_workcell_path)
 }
 
 
+}  // namespace
+
 struct RobotHomeJoint
 {
   std::string name;
@@ -188,6 +190,8 @@ struct RobotHomeJointState
   std::vector<std::string> validation_errors;
   std::string status_note{"Suggested home"};
 };
+
+namespace {
 
 constexpr double kRobotHomePi = 3.14159265358979323846;
 

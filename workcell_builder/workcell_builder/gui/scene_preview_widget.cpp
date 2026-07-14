@@ -510,7 +510,7 @@ void ScenePreviewWidget::set_embedded_product_view_state(EmbeddedProductViewStat
   }
 }
 
-bool ScenePreviewWidget::embedded_web_server_is_usable(const QString & repo_root, const QString & scene) const
+bool ScenePreviewWidget::embedded_web_server_is_usable(const QString & repo_root, const QString & scene)
 {
   const QString trimmed_repo_root = repo_root.trimmed().isEmpty() ? embedded_web_repo_root_ : repo_root.trimmed();
   const QString trimmed_scene = scene.trimmed().isEmpty() ? embedded_web_prepare_scene_ : scene.trimmed();
