@@ -20,12 +20,69 @@
 #include <QProcessEnvironment>
 #include <QRegularExpression>
 #include <QJsonArray>
+#include <QCryptographicHash>
+#include <QDataStream>
 #include <QSet>
 #include <QPushButton>
 #include <functional>
 
 namespace {
 constexpr double kOverlayFitDominanceRatio = 4.0;
+
+QByteArray serialized_preview_item(const ScenePreviewWidget::PreviewItem & item)
+{
+  QByteArray bytes;
+  QDataStream stream(&bytes, QIODevice::WriteOnly);
+  stream.setVersion(QDataStream::Qt_5_12);
+  stream.setByteOrder(QDataStream::LittleEndian);
+  const auto write_bool = [&stream](bool value) { stream << static_cast<quint8>(value ? 1 : 0); };
+  const auto write_string_list = [&stream](const QStringList & values) {
+    stream << static_cast<quint32>(values.size());
+    for (const QString & value : values) stream << value;
+  };
+  const auto write_matrix = [&stream](const QMatrix4x4 & matrix) {
+    for (int row = 0; row < 4; ++row) for (int column = 0; column < 4; ++column) stream << matrix(row, column);
+  };
+
+  // Keep this order aligned with PreviewItem.  These values are consumed by
+  // the native Scene3D and embedded Web3D handoff, including diagnostic labels.
+  stream << item.id << item.display_name << item.category;
+  stream << item.x << item.y << item.z << item.roll << item.pitch << item.yaw;
+  stream << item.sx << item.sy << item.sz << item.status << item.source_path << item.role;
+  stream << item.mesh_path << item.mesh_type << item.primitive_geometry_type << item.primitive_radius << item.primitive_length;
+  write_bool(item.has_material_color);
+  stream << item.material_r << item.material_g << item.material_b << item.material_a << item.material_name;
+  stream << item.mesh_scale_x << item.mesh_scale_y << item.mesh_scale_z << item.mesh_roll << item.mesh_pitch << item.mesh_yaw;
+  write_bool(item.mesh_available);
+  stream << item.mesh_load_warning;
+  write_bool(item.selectable); write_bool(item.editable); write_bool(item.locked);
+  stream << item.lock_reason << item.metadata_tags << item.source_layer << item.active_visual_source;
+  write_bool(item.linked_to_editable_layout_state); write_bool(item.metadata_complete);
+  write_string_list(item.warnings);
+  write_bool(item.has_mesh_metadata);
+  stream << item.mesh_r << item.mesh_p << item.mesh_y;
+  write_bool(item.has_origin_offset);
+  stream << item.origin_offset_x << item.origin_offset_y << item.origin_offset_z;
+  stream << item.camera_id << item.frame_id << item.detection_label << item.confidence << item.tracking_id;
+  stream << item.snapshot_source_file << item.alignment_warning;
+  write_bool(item.resolved_source_path_stale);
+  stream << item.resolved_source_path_original << item.package_uri << item.source_path_resolution_outcome;
+  stream << item.base_pose_x << item.base_pose_y << item.base_pose_z << item.base_pose_roll << item.base_pose_pitch << item.base_pose_yaw;
+  stream << item.chain_pose_x << item.chain_pose_y << item.chain_pose_z << item.chain_pose_roll << item.chain_pose_pitch << item.chain_pose_yaw;
+  stream << item.visual_origin_x << item.visual_origin_y << item.visual_origin_z << item.visual_origin_roll << item.visual_origin_pitch << item.visual_origin_yaw;
+  write_bool(item.transform_chain_applied); write_bool(item.visual_origin_applied); write_bool(item.has_baked_world_visual_transform);
+  stream << item.baked_world_visual_transform_source;
+  write_bool(item.has_baked_world_visual_matrix);
+  write_matrix(item.baked_world_visual_matrix);
+  write_bool(item.robot_candidate);
+  stream << item.robot_classification_source << item.robot_base_frame << item.robot_world_pose;
+  stream << item.visual_index_link << item.visual_index_link_name << item.visual_index_object_name << item.visual_index_visual << item.visual_index_visual_name;
+  stream << static_cast<qint32>(item.visual_index_value) << static_cast<qint32>(item.source_row_index);
+  stream << item.visual_index_parent_link;
+  write_string_list(item.visual_index_link_chain);
+  stream << item.visual_index_mesh_uri << item.visual_index_package_uri << item.visual_index_source;
+  return bytes;
+}
 
 QString normalized_preview_token(const QString & value)
 {
@@ -894,6 +951,7 @@ bool ScenePreviewWidget::embedded_web_identity_is_current(const EmbeddedWebReque
 
 void ScenePreviewWidget::refresh_embedded_web_product_view()
 {
+  ++embedded_web_preparation_request_count_;
   request_embedded_web_product_view_refresh(false);
 }
 
@@ -1411,10 +1469,43 @@ void ScenePreviewWidget::set_3d_available(bool available, const QString & reason
   refresh_mode_and_state();
 }
 void ScenePreviewWidget::on_mode_changed(int){ refresh_mode_and_state(); }
+QByteArray ScenePreviewWidget::preview_payload_fingerprint(const QVector<PreviewItem> & items)
+{
+  QVector<QByteArray> serialized_items;
+  serialized_items.reserve(items.size());
+  for (const PreviewItem & item : items) serialized_items.append(serialized_preview_item(item));
+  // Payload producers do not promise a stable item order.  Sort complete item
+  // records (rather than only IDs) so duplicate or empty IDs remain deterministic.
+  std::sort(serialized_items.begin(), serialized_items.end());
+
+  QCryptographicHash hash(QCryptographicHash::Sha256);
+  constexpr char kFingerprintSchema[] = "ScenePreviewWidget/PreviewItem/v1";
+  hash.addData(kFingerprintSchema, sizeof(kFingerprintSchema) - 1);
+  for (const QByteArray & serialized_item : serialized_items) {
+    const quint32 length = static_cast<quint32>(serialized_item.size());
+    const char length_bytes[] = {
+      static_cast<char>(length & 0xffU), static_cast<char>((length >> 8U) & 0xffU),
+      static_cast<char>((length >> 16U) & 0xffU), static_cast<char>((length >> 24U) & 0xffU)
+    };
+    hash.addData(length_bytes, sizeof(length_bytes));
+    hash.addData(serialized_item);
+  }
+  return hash.result();
+}
+
 void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items)
 {
+  const QByteArray effective_fingerprint = preview_payload_fingerprint(items);
+  const bool payload_changed = effective_fingerprint != preview_payload_fingerprint_;
+  // Always ingest the caller's objects so selection, native rendering, and
+  // editor state observe the current payload even when its rendering contract
+  // is equivalent to the prior one.
   preview_items_ = items;
-  ++preview_payload_revision_;
+  preview_payload_fingerprint_ = effective_fingerprint;
+  if (payload_changed) {
+    ++preview_payload_revision_;
+    ++preview_payload_generation_;
+  }
   auto * viewport = active_native_viewport();
   if (viewport) viewport->ingest_preview_items(preview_items_);
   const bool has_selected = std::any_of(preview_items_.cbegin(), preview_items_.cend(), [this](const PreviewItem & it){ return it.id == selected_preview_item_id_; });
@@ -1424,7 +1515,7 @@ void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items)
   }
   if (viewport) viewport->fit_include_overlays = false;
   apply_product_view_defaults();
-  refresh_embedded_web_product_view();
+  if (payload_changed) refresh_embedded_web_product_view();
   if (is_native_product_view_backend()) {
     emit_scene_diagnostic_once(
       QStringLiteral("payload_commit"),
@@ -1442,6 +1533,9 @@ void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items)
   emit_visual_quality_assessment_once();
   update();
 }
+int ScenePreviewWidget::preview_payload_revision() const { return preview_payload_revision_; }
+quint64 ScenePreviewWidget::preview_payload_generation() const { return preview_payload_generation_; }
+quint64 ScenePreviewWidget::embedded_web_preparation_request_count() const { return embedded_web_preparation_request_count_; }
 void ScenePreviewWidget::set_preview_scene_name(const QString & scene_name)
 {
   const QString normalized_scene_name = scene_name.trimmed().isEmpty() ? QStringLiteral("No scene") : scene_name.trimmed();

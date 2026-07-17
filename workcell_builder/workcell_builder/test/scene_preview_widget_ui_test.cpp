@@ -101,3 +101,52 @@ TEST(ScenePreviewWidgetUi, ProductViewDefaultsToIsometric)
   widget.apply_product_view_defaults();
   EXPECT_EQ(view_combo->currentText(), QString("Isometric"));
 }
+
+TEST(ScenePreviewWidgetUi, EquivalentPreviewPayloadsDoNotPrepareProductViewAgain)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+
+  ScenePreviewWidget::PreviewItem robot;
+  robot.id = "robot/base";
+  robot.display_name = "UR5 base";
+  robot.role = "robot";
+  robot.mesh_path = "package://ur_description/meshes/ur5/visual/base.dae";
+  robot.mesh_available = true;
+  robot.has_material_color = true;
+  robot.locked = true;
+  robot.editable = false;
+  robot.source_layer = "generated_urdf";
+  robot.x = 0.25;
+  robot.warnings = {"mesh staged"};
+
+  ScenePreviewWidget::PreviewItem table;
+  table.id = "layout/table";
+  table.display_name = "Workbench";
+  table.role = "environment";
+  table.linked_to_editable_layout_state = true;
+  table.sx = 1.2;
+
+  ScenePreviewWidget widget;
+  widget.set_preview_items({robot, table});
+  widget.select_preview_item(robot.id);
+  const int revision = widget.preview_payload_revision();
+  const quint64 generation = widget.preview_payload_generation();
+  const quint64 preparations = widget.embedded_web_preparation_request_count();
+
+  // Reordered values are the same effective render/edit payload and a fresh
+  // QVector must still be ingested without restarting Web3D preparation.
+  widget.set_preview_items({table, robot});
+  EXPECT_EQ(widget.preview_payload_revision(), revision);
+  EXPECT_EQ(widget.preview_payload_generation(), generation);
+  EXPECT_EQ(widget.embedded_web_preparation_request_count(), preparations);
+  EXPECT_EQ(widget.selected_preview_item_id(), robot.id);
+  ASSERT_NE(widget.preview_item_by_id(robot.id), nullptr);
+  EXPECT_EQ(widget.preview_item_by_id(robot.id)->mesh_path, robot.mesh_path);
+
+  robot.material_r = 0.45;  // Material color affects the Scene3D/Web3D render.
+  widget.set_preview_items({table, robot});
+  EXPECT_EQ(widget.preview_payload_revision(), revision + 1);
+  EXPECT_EQ(widget.preview_payload_generation(), generation + 1);
+  EXPECT_EQ(widget.embedded_web_preparation_request_count(), preparations + 1);
+  EXPECT_EQ(widget.selected_preview_item_id(), robot.id);
+}
