@@ -8,6 +8,8 @@
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QFile>
+#include <QFileInfo>
+#include <QDir>
 #include <QIODevice>
 #include <QStringList>
 #include <QNetworkAccessManager>
@@ -133,8 +135,6 @@ void maybe_warn_overlay_fit_dominance(ScenePreviewWidget * self, const QRectF & 
 #include <QLabel>
 #include <QMouseEvent>
 #include <QCoreApplication>
-#include <QDir>
-#include <QFileInfo>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QUrl>
