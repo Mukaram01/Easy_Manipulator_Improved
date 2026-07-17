@@ -1,6 +1,5 @@
 #include "scene_preview_widget.h"
 // Compatibility token for static tests: legacy cwd fallback text QDir(QDir::currentPath()).absoluteFilePath(QStringLiteral("scenes/%1").arg(scene))
-// Compatibility token for static tests: set_visible(gizmo_mode_selector_, embedded_web_active)
 // Compatibility token for static tests: Preview selection cleared after refresh (id missing):
 
 #include <QRectF>
@@ -1378,8 +1377,8 @@ void ScenePreviewWidget::refresh_toolbar_visibility()
   set_visible(embedded_fit_button_, embedded_web_active);
   set_visible(mesh_preview_mode_label_, !embedded_web_active);
   set_visible(mesh_preview_mode_selector_, !embedded_web_active);
-  set_visible(gizmo_mode_label_, !embedded_web_active);
-  set_visible(gizmo_mode_selector_, !embedded_web_active);
+  set_visible(gizmo_mode_label_, embedded_web_active);
+  set_visible(gizmo_mode_selector_, embedded_web_active);
   set_visible(snap_mode_label_, embedded_web_active);
   set_visible(snap_mode_selector_, embedded_web_active);
   set_visible(interaction_mode_label_, !embedded_web_active);

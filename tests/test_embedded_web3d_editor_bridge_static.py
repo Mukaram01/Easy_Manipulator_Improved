@@ -54,9 +54,16 @@ def test_qt_loads_embedded_view_and_routes_controls_without_reload():
 def test_qt_compact_toolbar_for_embedded_web3d():
     for member in ["embedded_undo_button_", "embedded_redo_button_", "embedded_fit_button_"]:
         assert member in CPP and member in HDR
+    assert "set_visible(view_actions_label_, !embedded_web_active)" in CPP
+    assert "set_visible(view_actions_selector_, !embedded_web_active)" in CPP
+    assert "set_visible(labels_label_, !embedded_web_active)" in CPP
+    assert "set_visible(labels_selector_, !embedded_web_active)" in CPP
+    assert "set_visible(mesh_preview_mode_label_, !embedded_web_active)" in CPP
     assert "set_visible(mesh_preview_mode_selector_, !embedded_web_active)" in CPP
+    assert "set_visible(interaction_mode_label_, !embedded_web_active)" in CPP
     assert "set_visible(interaction_mode_selector_, !embedded_web_active)" in CPP
     assert "set_visible(overlays_selector_, !embedded_web_active)" in CPP
+    assert "set_visible(gizmo_mode_label_, embedded_web_active)" in CPP
     assert "set_visible(gizmo_mode_selector_, embedded_web_active)" in CPP
     assert "set_visible(snap_mode_selector_, embedded_web_active)" in CPP
     assert "Unsaved preview edits: %1" in CPP
