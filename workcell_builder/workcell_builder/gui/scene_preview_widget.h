@@ -7,6 +7,7 @@
 #include <QSet>
 #include <QMatrix4x4>
 #include <QProcess>
+#include <QHash>
 #include <QDateTime>
 #include <QUrl>
 
@@ -335,6 +336,17 @@ private:
       return matches_context(other) && generation == other.generation;
     }
   };
+  struct EmbeddedWebPreparationDiagnostic
+  {
+    EmbeddedWebRequestIdentity identity;
+    QString expected_output_path;
+    QString expected_output_absolute_path;
+    QByteArray stdout_tail;
+    QByteArray stderr_tail;
+    bool started{ false };
+    bool terminal_recorded{ false };
+    QString terminal_outcome;
+  };
   void refresh_embedded_web_product_view();
   void request_embedded_web_product_view_refresh(bool force = false);
   void cancel_embedded_web_lifecycle(bool stop_owned_server);
@@ -343,6 +355,10 @@ private:
   bool embedded_web_identity_is_current(const EmbeddedWebRequestIdentity & identity) const;
   void start_embedded_web_prepare(const EmbeddedWebRequestIdentity & identity, bool force);
   void on_embedded_web_prepare_finished(const EmbeddedWebRequestIdentity & identity, QProcess * process, int exit_code, QProcess::ExitStatus exit_status);
+  void append_embedded_web_prepare_output(QProcess * process, bool standard_error);
+  void record_embedded_web_prepare_terminal(const EmbeddedWebRequestIdentity & identity, QProcess * process,
+    const QString & outcome, QProcess::ExitStatus exit_status, int exit_code, const QString & detail = QString());
+  QString embedded_web_preparation_diagnostic_key(const EmbeddedWebRequestIdentity & identity) const;
   void ensure_embedded_web_server_started(const QString & repo_root, const EmbeddedWebRequestIdentity & identity);
   bool embedded_web_server_is_usable(const QString & repo_root = QString(), const QString & scene = QString());
   void load_prepared_embedded_web_scene(const EmbeddedWebRequestIdentity & identity);
@@ -401,6 +417,8 @@ private:
 #endif
   QProcess * embedded_web_server_process_{ nullptr };
   QProcess * embedded_web_prepare_process_{ nullptr };
+  QHash<QString, EmbeddedWebPreparationDiagnostic> embedded_web_preparation_diagnostics_;
+  QHash<QProcess *, QString> embedded_web_preparation_process_keys_;
   EmbeddedProductViewState embedded_product_view_state_{ EmbeddedProductViewState::Idle };
   QString embedded_web_repo_root_;
   QString embedded_web_prepare_scene_;
