@@ -322,6 +322,8 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     embedded_web_view_ = new QWebEngineView(view3d_container_);
     embedded_web_view_->setObjectName("embeddedWeb3dProductView");
     connect(embedded_web_view_, &QWebEngineView::loadFinished, this, [this](bool ok) {
+      const EmbeddedWebRequestIdentity identity = embedded_web_loading_identity_;
+      if (!embedded_web_identity_is_current(identity)) return;
       if (!ok) {
         const QString detail = QStringLiteral("browser failed to load Product View page for scene %1; viewer URL: %2; expected JSON: %3")
           .arg(embedded_web_prepare_scene_, embedded_web_last_viewer_url_, embedded_web_prepare_output_path_);
@@ -331,7 +333,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
         return;
       }
       set_embedded_product_view_state(EmbeddedProductViewState::Loading, QStringLiteral("browser loaded; waiting for viewer readiness"));
-      start_embedded_web_readiness_polling(embedded_web_prepare_scene_, embedded_web_active_revision_, embedded_web_prepare_output_path_, embedded_web_last_viewer_url_);
+      start_embedded_web_readiness_polling(embedded_web_loading_identity_, embedded_web_prepare_output_path_, embedded_web_last_viewer_url_);
     });
     simple_3d_view_ = embedded_web_view_;
   } else {
@@ -363,7 +365,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   connect(mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, &ScenePreviewWidget::on_mode_changed);
   connect(labels_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     auto *v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
-    if (!v) { refresh_embedded_web_product_view(); refresh_info_chip(); return; }
+    if (!v) { refresh_info_chip(); return; }
     const QString choice = labels_selector_->currentText();
     if (choice == "Off") v->label_mode = LabelMode::Off;
     else if (choice == "Important") v->label_mode = LabelMode::Important;
@@ -735,16 +737,16 @@ bool ScenePreviewWidget::embedded_web_server_is_usable(const QString & repo_root
   return all_ok;
 }
 
-void ScenePreviewWidget::ensure_embedded_web_server_started(const QString & repo_root)
+void ScenePreviewWidget::ensure_embedded_web_server_started(const QString & repo_root, const EmbeddedWebRequestIdentity & identity)
 {
-  if (repo_root.trimmed().isEmpty()) return;
+  if (repo_root.trimmed().isEmpty() || !embedded_web_identity_is_current(identity)) return;
   if (embedded_web_server_process_ && embedded_web_server_process_->state() != QProcess::NotRunning) {
-    load_prepared_embedded_web_scene(embedded_web_prepare_scene_, embedded_web_active_revision_);
+    load_prepared_embedded_web_scene(identity);
     return;
   }
-  if (embedded_web_server_is_usable(repo_root, embedded_web_prepare_scene_)) {
+  if (embedded_web_server_is_usable(repo_root, identity.scene_id)) {
     emit studio_log_requested(QStringLiteral("Embedded Web 3D Product View reused existing verified server at http://127.0.0.1:8765/."));
-    load_prepared_embedded_web_scene(embedded_web_prepare_scene_, embedded_web_active_revision_);
+    load_prepared_embedded_web_scene(identity);
     return;
   }
   set_embedded_product_view_state(EmbeddedProductViewState::StartingServer);
@@ -755,13 +757,15 @@ void ScenePreviewWidget::ensure_embedded_web_server_started(const QString & repo
   embedded_web_server_process_->setWorkingDirectory(repo_root);
   embedded_web_server_process_->setProcessEnvironment(QProcessEnvironment::systemEnvironment());
   embedded_web_server_process_->setProcessChannelMode(QProcess::MergedChannels);
-  connect(embedded_web_server_process_, &QProcess::started, this, [this]() {
+  connect(embedded_web_server_process_, &QProcess::started, this, [this, identity]() {
+    if (!embedded_web_identity_is_current(identity)) return;
     emit studio_log_requested(QStringLiteral("Started embedded Web 3D Product View server from repo root: python3 -m http.server 8765 --bind 127.0.0.1"));
-    load_prepared_embedded_web_scene(embedded_web_prepare_scene_, embedded_web_active_revision_);
+    load_prepared_embedded_web_scene(identity);
   });
-  connect(embedded_web_server_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this](int exit_code, QProcess::ExitStatus) {
+  connect(embedded_web_server_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this, identity](int exit_code, QProcess::ExitStatus) {
+    if (!embedded_web_identity_is_current(identity)) return;
     const QString output = QString::fromUtf8(embedded_web_server_process_->readAll()).trimmed();
-    if (embedded_product_view_state_ == EmbeddedProductViewState::StartingServer && !embedded_web_server_is_usable(embedded_web_repo_root_, embedded_web_prepare_scene_)) {
+    if (embedded_product_view_state_ == EmbeddedProductViewState::StartingServer && !embedded_web_server_is_usable(embedded_web_repo_root_, identity.scene_id)) {
       set_embedded_product_view_state(EmbeddedProductViewState::Failed, QStringLiteral("local server failed; exit %1; %2").arg(exit_code).arg(output.left(240)));
       emit studio_log_requested(QStringLiteral("Embedded Product View local server failed: python3 -m http.server 8765 --bind 127.0.0.1\nExit code: %1\nOutput:\n%2").arg(exit_code).arg(output));
     }
@@ -776,13 +780,52 @@ void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force)
   return;
 #else
   if (!embedded_web_view_) return;
-  const QString scene = preview_scene_name_.trimmed();
-  if (scene.isEmpty() || scene == QStringLiteral("No scene")) { set_embedded_product_view_state(EmbeddedProductViewState::Idle); return; }
-  pending_embedded_web_scene_ = scene;
-  pending_embedded_web_revision_ = ++embedded_web_request_revision_;
-  pending_embedded_web_force_ = pending_embedded_web_force_ || force;
+  const quint64 generation = ++embedded_web_request_generation_;
+  const EmbeddedWebRequestIdentity identity = embedded_web_request_identity(generation);
+  if (identity.scene_id.isEmpty() || identity.scene_id == QStringLiteral("No scene")) {
+    set_embedded_product_view_state(EmbeddedProductViewState::Idle);
+    return;
+  }
+
+  // Automatic payload/context notifications are coalesced.  In particular, UI-only
+  // controls (such as Labels) must not start a fresh scene-preparation process.
+  if (!force && ((embedded_web_has_active_identity_ && embedded_web_active_identity_.matches_context(identity)) ||
+                 (pending_embedded_web_request_ && pending_embedded_web_identity_.matches_context(identity)))) {
+    return;
+  }
+
+  embedded_web_active_identity_ = identity;
+  embedded_web_has_active_identity_ = true;
+  pending_embedded_web_identity_ = identity;
+  pending_embedded_web_request_ = true;
+  pending_embedded_web_force_ = force;
+  if (force && embedded_web_prepare_process_ && embedded_web_prepare_process_->state() != QProcess::NotRunning) {
+    // A manual Refresh Preview is a new generation.  The finished callback retains
+    // its old identity and is therefore unable to load stale output.
+    embedded_web_prepare_process_->terminate();
+  }
   maybe_start_next_embedded_web_prepare();
 #endif
+}
+
+ScenePreviewWidget::EmbeddedWebRequestIdentity ScenePreviewWidget::embedded_web_request_identity(quint64 generation) const
+{
+  EmbeddedWebRequestIdentity identity;
+  identity.scene_id = preview_context_.scene_id.trimmed().isEmpty() ? preview_scene_name_.trimmed() : preview_context_.scene_id.trimmed();
+  const QString scene_dir = preview_context_.absolute_scene_dir.trimmed();
+  if (!scene_dir.isEmpty()) {
+    const QFileInfo info(scene_dir);
+    identity.absolute_scene_dir = QDir::cleanPath(info.exists() ?
+      (info.canonicalFilePath().isEmpty() ? info.absoluteFilePath() : info.canonicalFilePath()) : info.absoluteFilePath());
+  }
+  identity.payload_revision = static_cast<quint64>(preview_payload_revision_);
+  identity.generation = generation;
+  return identity;
+}
+
+bool ScenePreviewWidget::embedded_web_identity_is_current(const EmbeddedWebRequestIdentity & identity) const
+{
+  return embedded_web_has_active_identity_ && embedded_web_active_identity_ == identity;
 }
 
 void ScenePreviewWidget::refresh_embedded_web_product_view()
@@ -796,13 +839,12 @@ void ScenePreviewWidget::maybe_start_next_embedded_web_prepare()
   return;
 #else
   if (embedded_web_prepare_process_ && embedded_web_prepare_process_->state() != QProcess::NotRunning) return;
-  if (pending_embedded_web_scene_.isEmpty()) return;
-  const QString scene = pending_embedded_web_scene_;
-  const quint64 revision = pending_embedded_web_revision_;
+  if (!pending_embedded_web_request_) return;
+  const EmbeddedWebRequestIdentity identity = pending_embedded_web_identity_;
   const bool force = pending_embedded_web_force_;
-  pending_embedded_web_scene_.clear();
+  pending_embedded_web_request_ = false;
   pending_embedded_web_force_ = false;
-  start_embedded_web_prepare(scene, revision, force);
+  start_embedded_web_prepare(identity, force);
 #endif
 }
 
@@ -821,23 +863,22 @@ void ScenePreviewWidget::emit_backend_startup_diagnostic_once()
 #endif
 }
 
-void ScenePreviewWidget::start_embedded_web_prepare(const QString & scene, quint64 revision, bool force)
+void ScenePreviewWidget::start_embedded_web_prepare(const EmbeddedWebRequestIdentity & identity, bool force)
 {
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
-  Q_UNUSED(scene); Q_UNUSED(revision); Q_UNUSED(force);
+  Q_UNUSED(identity); Q_UNUSED(force);
 #else
-  Q_UNUSED(scene);
-  const QString scene_id = preview_context_.scene_id.trimmed();
-  const QFileInfo selected_scene_info(preview_context_.absolute_scene_dir.trimmed());
+  const QString scene_id = identity.scene_id;
+  const QFileInfo selected_scene_info(identity.absolute_scene_dir);
   if (!is_safe_embedded_web_scene_id(scene_id)) {
     activate_native_compatibility_preview(QStringLiteral("selected scene ID is missing or unsafe for Product View output and URL: %1")
       .arg(scene_id.isEmpty() ? QStringLiteral("<unset>") : scene_id));
     return;
   }
-  if (preview_context_.absolute_scene_dir.trimmed().isEmpty() || !selected_scene_info.isAbsolute() ||
+  if (identity.absolute_scene_dir.isEmpty() || !selected_scene_info.isAbsolute() ||
       !selected_scene_info.exists() || !selected_scene_info.isDir()) {
     activate_native_compatibility_preview(QStringLiteral("selected scene directory is required and must exist: %1")
-      .arg(preview_context_.absolute_scene_dir.trimmed().isEmpty() ? QStringLiteral("<unset>") : preview_context_.absolute_scene_dir.trimmed()));
+      .arg(identity.absolute_scene_dir.isEmpty() ? QStringLiteral("<unset>") : identity.absolute_scene_dir));
     return;
   }
   const QString canonical_scene_dir = selected_scene_info.canonicalFilePath();
@@ -866,7 +907,8 @@ void ScenePreviewWidget::start_embedded_web_prepare(const QString & scene, quint
   embedded_web_repo_root_ = repo_root;
   embedded_web_prepare_scene_ = scene_id;
   embedded_web_prepare_scene_dir_ = selected_scene_dir;
-  embedded_web_active_revision_ = revision;
+  embedded_web_active_identity_ = identity;
+  embedded_web_has_active_identity_ = true;
   embedded_web_prepare_output_path_ = QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(scene_id);
   if (embedded_web_prepare_process_) embedded_web_prepare_process_->deleteLater();
   embedded_web_prepare_process_ = new QProcess(this);
@@ -878,22 +920,22 @@ void ScenePreviewWidget::start_embedded_web_prepare(const QString & scene, quint
   embedded_web_prepare_process_->setProcessEnvironment(QProcessEnvironment::systemEnvironment());
   embedded_web_prepare_process_->setProcessChannelMode(QProcess::SeparateChannels);
   embedded_web_prepare_started_at_ = QDateTime::currentDateTimeUtc();
-  connect(embedded_web_prepare_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, &ScenePreviewWidget::on_embedded_web_prepare_finished);
+  connect(embedded_web_prepare_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this, identity](int exit_code, QProcess::ExitStatus exit_status) {
+    on_embedded_web_prepare_finished(identity, qobject_cast<QProcess *>(sender()), exit_code, exit_status);
+  });
   set_embedded_product_view_state(EmbeddedProductViewState::Preparing, scene_id);
   emit studio_log_requested(QStringLiteral("Preparing embedded Product View from repo root %1: %2").arg(repo_root, embedded_web_prepare_command_for_log(selected_scene_dir, embedded_web_prepare_output_path_, force)));
   embedded_web_prepare_process_->start();
 #endif
 }
 
-void ScenePreviewWidget::on_embedded_web_prepare_finished(int exit_code, QProcess::ExitStatus exit_status)
+void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebRequestIdentity & identity, QProcess * process, int exit_code, QProcess::ExitStatus exit_status)
 {
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
-  Q_UNUSED(exit_code); Q_UNUSED(exit_status);
+  Q_UNUSED(identity); Q_UNUSED(process); Q_UNUSED(exit_code); Q_UNUSED(exit_status);
 #else
-  QProcess * process = qobject_cast<QProcess *>(sender());
   if (!process || process != embedded_web_prepare_process_) return;
-  const QString scene = embedded_web_prepare_scene_;
-  const quint64 revision = embedded_web_active_revision_;
+  const QString scene = identity.scene_id;
   const QString output_path = embedded_web_prepare_output_path_;
   const QString stdout_text = QString::fromUtf8(process->readAllStandardOutput()).trimmed();
   const QString stderr_text = QString::fromUtf8(process->readAllStandardError()).trimmed();
@@ -901,13 +943,13 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(int exit_code, QProces
   process->deleteLater();
   embedded_web_prepare_process_ = nullptr;
 
-  const bool still_current = (preview_scene_name_.trimmed() == scene && revision == embedded_web_request_revision_);
+  const bool still_current = embedded_web_identity_is_current(identity);
   if (!still_current) {
     emit studio_log_requested(QStringLiteral("Discarded embedded Product View preparation result for completed scene %1 revision %2; current scene is %3 revision %4.")
       .arg(scene)
-      .arg(revision)
+      .arg(identity.generation)
       .arg(preview_scene_name_.trimmed())
-      .arg(embedded_web_request_revision_));
+      .arg(embedded_web_request_generation_));
     maybe_start_next_embedded_web_prepare();
     return;
   }
@@ -968,34 +1010,35 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(int exit_code, QProces
     return;
   }
 
-  ensure_embedded_web_server_started(embedded_web_repo_root_);
+  ensure_embedded_web_server_started(embedded_web_repo_root_, identity);
   maybe_start_next_embedded_web_prepare();
 #endif
 }
 
-void ScenePreviewWidget::start_embedded_web_readiness_polling(const QString & scene, quint64 revision, const QString & expected_json_path, const QString & viewer_url)
+void ScenePreviewWidget::start_embedded_web_readiness_polling(const EmbeddedWebRequestIdentity & identity, const QString & expected_json_path, const QString & viewer_url)
 {
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
-  Q_UNUSED(scene); Q_UNUSED(revision); Q_UNUSED(expected_json_path); Q_UNUSED(viewer_url);
+  Q_UNUSED(identity); Q_UNUSED(expected_json_path); Q_UNUSED(viewer_url);
 #else
   embedded_web_readiness_deadline_ = QDateTime::currentDateTimeUtc().addSecs(45);
   embedded_web_last_boot_status_ = QStringLiteral("browser_loaded");
-  poll_embedded_web_readiness(scene, revision, expected_json_path, viewer_url);
+  poll_embedded_web_readiness(identity, expected_json_path, viewer_url);
 #endif
 }
 
-void ScenePreviewWidget::poll_embedded_web_readiness(const QString & scene, quint64 revision, const QString & expected_json_path, const QString & viewer_url)
+void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIdentity & identity, const QString & expected_json_path, const QString & viewer_url)
 {
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
-  Q_UNUSED(scene); Q_UNUSED(revision); Q_UNUSED(expected_json_path); Q_UNUSED(viewer_url);
+  Q_UNUSED(identity); Q_UNUSED(expected_json_path); Q_UNUSED(viewer_url);
 #else
   if (!embedded_web_view_) return;
-  if (preview_scene_name_.trimmed() != scene || revision != embedded_web_request_revision_) return;
+  if (!embedded_web_identity_is_current(identity)) return;
 
   if (QDateTime::currentDateTimeUtc() > embedded_web_readiness_deadline_) {
     const QString detail = QStringLiteral(
       "startup timed out after 45s for scene %1; viewer URL: %2; expected JSON: %3; last observed boot status: %4")
-      .arg(scene, viewer_url, expected_json_path, embedded_web_last_boot_status_.isEmpty() ? QStringLiteral("unavailable") : embedded_web_last_boot_status_);
+      .arg(identity.scene_id, viewer_url, expected_json_path, embedded_web_last_boot_status_.isEmpty() ? QStringLiteral("unavailable") : embedded_web_last_boot_status_);
+    set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail);
     activate_native_compatibility_preview(detail);
     emit studio_log_requested(QStringLiteral("Embedded Product View readiness timeout. %1").arg(detail));
     return;
@@ -1016,8 +1059,8 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const QString & scene, quin
   };
 })()
 )JS";
-  embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kStatusScript), [this, scene, revision, expected_json_path, viewer_url](const QVariant & value) {
-    if (preview_scene_name_.trimmed() != scene || revision != embedded_web_request_revision_) return;
+  embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kStatusScript), [this, identity, expected_json_path, viewer_url](const QVariant & value) {
+    if (!embedded_web_identity_is_current(identity)) return;
     const QVariantMap status = value.toMap();
     const QString boot_state = status.value(QStringLiteral("viewer_boot_state")).toString();
     const QString source_json = status.value(QStringLiteral("source_web_scene_file")).toString();
@@ -1037,9 +1080,10 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const QString & scene, quin
         .arg(failed_stage.isEmpty() ? QStringLiteral("unknown_stage") : failed_stage,
              fatal_error.isEmpty() ? QStringLiteral("unknown error") : fatal_error,
              fatal_stack.isEmpty() ? QString() : QStringLiteral("; stack: %1").arg(fatal_stack.left(500)));
+      set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail);
       activate_native_compatibility_preview(detail);
       emit studio_log_requested(QStringLiteral("Embedded Product View JavaScript failure for scene %1.\nStage: %2\nFatal error: %3\nStack excerpt:\n%4")
-        .arg(scene,
+        .arg(identity.scene_id,
              failed_stage.isEmpty() ? QStringLiteral("unknown_stage") : failed_stage,
              fatal_error.isEmpty() ? QStringLiteral("unknown error") : fatal_error,
              fatal_stack.left(500)));
@@ -1047,40 +1091,41 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const QString & scene, quin
     }
 
     const bool expected_json_loaded = scene_json_loaded && source_json == expected_json_path;
-    const bool robot_ready_required = scene == QStringLiteral("ur5_2f_test");
+    const bool robot_ready_required = identity.scene_id == QStringLiteral("ur5_2f_test");
     const bool robot_ready = !robot_ready_required || robot_state == QStringLiteral("ready");
     if (boot_state == QStringLiteral("ready") && expected_json_loaded && robot_ready) {
       native_compatibility_fallback_active_ = false;
       set_embedded_product_view_state(EmbeddedProductViewState::Ready, QStringLiteral("viewer ready"));
       poll_embedded_editor_events();
       emit studio_log_requested(QStringLiteral("Embedded Product View ready: scene=%1 json=%2 robot_preview_lifecycle_state=%3")
-        .arg(scene, expected_json_path, robot_state.isEmpty() ? QStringLiteral("not_required") : robot_state));
+        .arg(identity.scene_id, expected_json_path, robot_state.isEmpty() ? QStringLiteral("not_required") : robot_state));
       return;
     }
 
     set_embedded_product_view_state(EmbeddedProductViewState::Loading, QStringLiteral("waiting for viewer readiness (%1)").arg(embedded_web_last_boot_status_));
-    QTimer::singleShot(750, this, [this, scene, revision, expected_json_path, viewer_url]() {
-      poll_embedded_web_readiness(scene, revision, expected_json_path, viewer_url);
+    QTimer::singleShot(750, this, [this, identity, expected_json_path, viewer_url]() {
+      poll_embedded_web_readiness(identity, expected_json_path, viewer_url);
     });
   });
 #endif
 }
 
-void ScenePreviewWidget::load_prepared_embedded_web_scene(const QString & scene, quint64 revision)
+void ScenePreviewWidget::load_prepared_embedded_web_scene(const EmbeddedWebRequestIdentity & identity)
 {
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
-  Q_UNUSED(scene); Q_UNUSED(revision);
+  Q_UNUSED(identity);
 #else
   if (!embedded_web_view_) return;
-  if (preview_scene_name_.trimmed() != scene || revision != embedded_web_request_revision_) {
-    emit studio_log_requested(QStringLiteral("Embedded Product View ignored stale prepared scene %1 rev %2; current scene is %3 rev %4.").arg(scene).arg(revision).arg(preview_scene_name_).arg(embedded_web_request_revision_));
+  if (!embedded_web_identity_is_current(identity)) {
+    emit studio_log_requested(QStringLiteral("Embedded Product View ignored stale prepared scene %1 rev %2; current scene is %3 rev %4.").arg(identity.scene_id).arg(identity.generation).arg(preview_scene_name_).arg(embedded_web_request_generation_));
     return;
   }
-  const QString web_scene_url_path = QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(scene);
+  const QString web_scene_url_path = QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(identity.scene_id);
   const QString viewer_url = QStringLiteral("http://127.0.0.1:%1/workcell_studio_web/viewer/index.html?scene=%2&builderRevision=%3")
     .arg(embedded_web_server_port_)
     .arg(QString::fromUtf8(QUrl::toPercentEncoding(web_scene_url_path)))
-    .arg(revision) + QStringLiteral("&embedded=1");
+    .arg(identity.generation) + QStringLiteral("&embedded=1");
+  embedded_web_loading_identity_ = identity;
   embedded_web_last_viewer_url_ = viewer_url;
   embedded_web_readiness_deadline_ = QDateTime();
   embedded_web_last_boot_status_.clear();
@@ -1402,7 +1447,7 @@ ScenePreviewWidget::MeshPreviewMode ScenePreviewWidget::mesh_preview_mode() cons
 void ScenePreviewWidget::reload_meshes()
 {
   auto * v = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_);
-  if (!v) { refresh_embedded_web_product_view(); emit studio_log_requested("Reloaded embedded Web 3D Product View."); return; }
+  if (!v) { request_embedded_web_product_view_refresh(true); emit studio_log_requested("Reloaded embedded Web 3D Product View."); return; }
   v->invalidate_mesh_cache();
   apply_product_view_defaults();
   update();

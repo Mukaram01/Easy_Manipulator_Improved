@@ -306,16 +306,35 @@ private:
   void refresh_toolbar_status_chip();
   void refresh_toolbar_feedback_row();
   enum class EmbeddedProductViewState { Idle, Preparing, StartingServer, Loading, Ready, Failed };
+  struct EmbeddedWebRequestIdentity
+  {
+    QString scene_id;
+    QString absolute_scene_dir;
+    quint64 payload_revision{ 0 };
+    quint64 generation{ 0 };
+
+    bool matches_context(const EmbeddedWebRequestIdentity & other) const
+    {
+      return scene_id == other.scene_id && absolute_scene_dir == other.absolute_scene_dir &&
+        payload_revision == other.payload_revision;
+    }
+    bool operator==(const EmbeddedWebRequestIdentity & other) const
+    {
+      return matches_context(other) && generation == other.generation;
+    }
+  };
   void refresh_embedded_web_product_view();
   void request_embedded_web_product_view_refresh(bool force = false);
   void maybe_start_next_embedded_web_prepare();
-  void start_embedded_web_prepare(const QString & scene, quint64 revision, bool force);
-  void on_embedded_web_prepare_finished(int exit_code, QProcess::ExitStatus exit_status);
-  void ensure_embedded_web_server_started(const QString & repo_root);
+  EmbeddedWebRequestIdentity embedded_web_request_identity(quint64 generation) const;
+  bool embedded_web_identity_is_current(const EmbeddedWebRequestIdentity & identity) const;
+  void start_embedded_web_prepare(const EmbeddedWebRequestIdentity & identity, bool force);
+  void on_embedded_web_prepare_finished(const EmbeddedWebRequestIdentity & identity, QProcess * process, int exit_code, QProcess::ExitStatus exit_status);
+  void ensure_embedded_web_server_started(const QString & repo_root, const EmbeddedWebRequestIdentity & identity);
   bool embedded_web_server_is_usable(const QString & repo_root = QString(), const QString & scene = QString());
-  void load_prepared_embedded_web_scene(const QString & scene, quint64 revision);
-  void start_embedded_web_readiness_polling(const QString & scene, quint64 revision, const QString & expected_json_path, const QString & viewer_url);
-  void poll_embedded_web_readiness(const QString & scene, quint64 revision, const QString & expected_json_path, const QString & viewer_url);
+  void load_prepared_embedded_web_scene(const EmbeddedWebRequestIdentity & identity);
+  void start_embedded_web_readiness_polling(const EmbeddedWebRequestIdentity & identity, const QString & expected_json_path, const QString & viewer_url);
+  void poll_embedded_web_readiness(const EmbeddedWebRequestIdentity & identity, const QString & expected_json_path, const QString & viewer_url);
   void set_embedded_product_view_state(EmbeddedProductViewState state, const QString & detail = QString());
   void activate_native_compatibility_preview(const QString & reason);
   void run_embedded_editor_command(const QString & script);
@@ -373,10 +392,12 @@ private:
   QString embedded_web_last_boot_status_;
   QDateTime embedded_web_readiness_deadline_;
   bool embedded_editor_polling_{ false };
-  QString pending_embedded_web_scene_;
-  quint64 embedded_web_request_revision_{ 0 };
-  quint64 embedded_web_active_revision_{ 0 };
-  quint64 pending_embedded_web_revision_{ 0 };
+  EmbeddedWebRequestIdentity embedded_web_active_identity_;
+  EmbeddedWebRequestIdentity pending_embedded_web_identity_;
+  EmbeddedWebRequestIdentity embedded_web_loading_identity_;
+  bool embedded_web_has_active_identity_{ false };
+  bool pending_embedded_web_request_{ false };
+  quint64 embedded_web_request_generation_{ 0 };
   bool pending_embedded_web_force_{ false };
   bool backend_startup_diagnostic_emitted_{ false };
   PreviewContext preview_context_;
