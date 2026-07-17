@@ -202,6 +202,13 @@ public:
   void set_scene_selected(bool selected);
   void set_3d_available(bool available, const QString & reason = QString());
   void set_preview_items(const QVector<PreviewItem> & items);
+  struct PreviewContext
+  {
+    QString scene_id;
+    QString absolute_scene_dir;
+    QString absolute_repo_root;
+  };
+  void set_preview_context(const PreviewContext & context);
   void set_preview_scene_name(const QString & scene_name);
   void set_preview_status_summary(const QString & summary);
   void set_clean_product_view_status(bool clean, int visual_count);
@@ -273,6 +280,8 @@ public:
   };
   RenderDebugCounters render_debug_counters() const;
   int total_warning_count() const;
+  QString runtime_preview_status_text() const;
+  bool runtime_preview_has_usable_content() const;
 
 signals:
   void studio_log_requested(const QString & message);
@@ -306,6 +315,7 @@ private:
   void start_embedded_web_readiness_polling(const QString & scene, quint64 revision, const QString & expected_json_path, const QString & viewer_url);
   void poll_embedded_web_readiness(const QString & scene, quint64 revision, const QString & expected_json_path, const QString & viewer_url);
   void set_embedded_product_view_state(EmbeddedProductViewState state, const QString & detail = QString());
+  void activate_native_compatibility_preview(const QString & reason);
   void run_embedded_editor_command(const QString & script);
   void poll_embedded_editor_events();
   void apply_embedded_editor_state(const QVariantMap & state);
@@ -364,6 +374,10 @@ private:
   quint64 pending_embedded_web_revision_{ 0 };
   bool pending_embedded_web_force_{ false };
   bool backend_startup_diagnostic_emitted_{ false };
+  PreviewContext preview_context_;
+  QString embedded_web_last_error_;
+  bool native_compatibility_fallback_active_{ false };
+  mutable QSet<QString> root_resolution_summary_keys_;
   QDateTime embedded_web_prepare_started_at_;
   int embedded_web_server_port_{ 8765 };
   QGraphicsView * fallback_2d_view_{ nullptr };
