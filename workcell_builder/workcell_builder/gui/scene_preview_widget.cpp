@@ -852,6 +852,16 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(int exit_code, QProces
   embedded_web_prepare_process_ = nullptr;
 
   const bool still_current = (preview_scene_name_.trimmed() == scene && revision == embedded_web_request_revision_);
+  if (!still_current) {
+    emit studio_log_requested(QStringLiteral("Discarded embedded Product View preparation result for completed scene %1 revision %2; current scene is %3 revision %4.")
+      .arg(scene)
+      .arg(revision)
+      .arg(preview_scene_name_.trimmed())
+      .arg(embedded_web_request_revision_));
+    maybe_start_next_embedded_web_prepare();
+    return;
+  }
+
   const QString absolute_output_path = QDir(embedded_web_repo_root_).filePath(output_path);
   const bool output_is_fresh = QFileInfo::exists(QDir(embedded_web_repo_root_).filePath(output_path));  // Contract validation supersedes mtime freshness.
   Q_UNUSED(output_is_fresh);
@@ -861,10 +871,6 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(int exit_code, QProces
     maybe_start_next_embedded_web_prepare();
   };
 
-  if (!still_current) {
-    reject_prepare(QStringLiteral("discarded stale preparation for %1; current scene is %2").arg(scene, preview_scene_name_));
-    return;
-  }
   if (exit_status != QProcess::NormalExit || exit_code != 0) {
     reject_prepare(QStringLiteral("prepare command failed with exit code %1; old output is rejected even if present").arg(exit_code));
     return;
