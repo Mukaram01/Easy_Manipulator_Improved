@@ -18,6 +18,19 @@ def test_cwd_is_not_used_to_invent_primary_selected_scene_path():
     body = CPP[start:CPP.index('void ScenePreviewWidget::on_embedded_web_prepare_finished', start)]
     assert 'preview_context_.absolute_scene_dir' in body
     assert 'QDir(QDir::currentPath()).absoluteFilePath(QStringLiteral("scenes/%1")' not in body
+    assert '"--scene", selected_scene_dir' in body
+    assert 'QStringLiteral("scenes/%1").arg(scene)' not in body
+
+
+def test_embedded_prepare_requires_a_matching_absolute_scene_context_and_safe_scene_id():
+    start = CPP.index('void ScenePreviewWidget::start_embedded_web_prepare')
+    body = CPP[start:CPP.index('void ScenePreviewWidget::on_embedded_web_prepare_finished', start)]
+    assert 'is_safe_embedded_web_scene_id(scene_id)' in body
+    assert 'selected_scene_info.isAbsolute()' in body
+    assert 'selected_scene_info.exists()' in body
+    assert 'selected_scene_info.isDir()' in body
+    assert 'scene_directory_matches_id(selected_scene_dir, scene_id)' in body
+    assert 'embedded_web_prepare_output_path_ = QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(scene_id)' in body
 
 
 def test_repo_root_resolution_prefers_scene_walk_then_secondary_fallbacks():
