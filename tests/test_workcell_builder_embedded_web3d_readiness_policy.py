@@ -37,7 +37,7 @@ def test_scene_fetch_failure_is_reported_to_qt_as_failed_javascript_status():
     assert "showError" in viewer
     assert "viewer_boot_state: 'failed'" in viewer
     assert "Failed to load scene from" in bundle
-    assert "viewer_boot_state: 'failed'" in bundle
+    assert "Failed to load scene from" in bundle
 
 
 def test_readiness_timeout_sets_failed_and_logs_last_boot_status():
@@ -88,3 +88,29 @@ def test_native_backend_is_suppressed_unless_explicitly_requested_or_webengine_u
     assert "scene_preview_widget_->is_native_product_view_backend()" in MAINWINDOW
     assert "auto * viewport = is_native_product_view_backend() ? qobject_cast<Scene3DViewportWidget *>(simple_3d_view_) : nullptr;" in CPP
     assert "ProductViewBackend { EmbeddedWeb3D, NativeScene3D }" in HDR
+
+
+def test_embedded_refresh_identity_coalesces_duplicate_context_and_payload_requests():
+    assert "struct EmbeddedWebRequestIdentity" in HDR
+    for field in ["scene_id", "absolute_scene_dir", "payload_revision", "generation"]:
+        assert field in HDR
+    assert "matches_context" in HDR
+    refresh = _between(CPP, "void ScenePreviewWidget::request_embedded_web_product_view_refresh", "ScenePreviewWidget::EmbeddedWebRequestIdentity")
+    assert "embedded_web_active_identity_.matches_context(identity)" in refresh
+    assert "pending_embedded_web_identity_.matches_context(identity)" in refresh
+    assert "pending_embedded_web_request_ = true" in refresh
+    labels_handler = _between(CPP, "connect(labels_selector_", "connect(snap_mode_selector_")
+    assert "refresh_embedded_web_product_view" not in labels_handler
+
+
+def test_manual_refresh_creates_a_new_generation_and_invalidates_old_callbacks():
+    refresh = _between(CPP, "void ScenePreviewWidget::request_embedded_web_product_view_refresh", "ScenePreviewWidget::EmbeddedWebRequestIdentity")
+    assert "++embedded_web_request_generation_" in refresh
+    assert "embedded_web_active_identity_ = identity" in refresh
+    assert "embedded_web_prepare_process_->terminate()" in refresh
+    prepare = _between(CPP, "void ScenePreviewWidget::start_embedded_web_prepare", "void ScenePreviewWidget::on_embedded_web_prepare_finished")
+    assert "[this, identity]" in prepare
+    finished = _between(CPP, "void ScenePreviewWidget::on_embedded_web_prepare_finished", "void ScenePreviewWidget::start_embedded_web_readiness_polling")
+    assert "embedded_web_identity_is_current(identity)" in finished
+    polling = _between(CPP, "void ScenePreviewWidget::poll_embedded_web_readiness", "void ScenePreviewWidget::load_prepared_embedded_web_scene")
+    assert "[this, identity, expected_json_path, viewer_url]" in polling

@@ -84,7 +84,7 @@ def test_embedded_backend_skips_native_scene3d_final_append_and_audit_paths():
 
 def test_product_view_lifecycle_prepares_before_loading_and_rejects_stale_output():
     prepare_idx = CPP.index('set_embedded_product_view_state(EmbeddedProductViewState::Preparing, scene_id)')
-    server_idx = CPP.index('ensure_embedded_web_server_started(embedded_web_repo_root_)')
+    server_idx = CPP.index('ensure_embedded_web_server_started(embedded_web_repo_root_, identity)')
     load_idx = CPP.index('set_embedded_product_view_state(EmbeddedProductViewState::Loading)', server_idx)
     assert prepare_idx < server_idx < load_idx
     assert 'scripts/ensure_workcell_studio_web_scene_fresh.py' in CPP
@@ -119,7 +119,7 @@ def test_product_view_ready_requires_viewer_status_not_load_finished_true():
     assert 'scene_json_loaded' in CPP
     assert 'source_web_scene_file' in CPP
     assert 'robot_preview_lifecycle_state' in CPP
-    assert 'scene == QStringLiteral("ur5_2f_test")' in CPP
+    assert 'identity.scene_id == QStringLiteral("ur5_2f_test")' in CPP
     assert 'boot_state == QStringLiteral("ready") && expected_json_loaded && robot_ready' in CPP
     assert 'startup timed out after 45s' in CPP
     assert 'failed_stage' in CPP
@@ -160,7 +160,7 @@ def test_embedded_web_repo_root_resolution_covers_launch_and_symlink_scenarios()
     assert "QDir::currentPath()" in cpp  # home/workspace/repository launch cwd is fallback only
     assert "QCoreApplication::applicationDirPath()" in cpp
     prepare = cpp[cpp.index('void ScenePreviewWidget::start_embedded_web_prepare'):cpp.index('void ScenePreviewWidget::on_embedded_web_prepare_finished')]
-    assert "preview_context_.absolute_scene_dir" in prepare
+    assert "identity.absolute_scene_dir" in prepare
     assert "selected_scene_info.exists()" in prepare
     assert "scene_directory_matches_id(selected_scene_dir, scene_id)" in prepare
     assert "QDir::currentPath()" not in prepare
