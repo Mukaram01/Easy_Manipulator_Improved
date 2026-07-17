@@ -49,12 +49,14 @@ def test_web3d_is_default_widget_and_native_ingest_is_skipped_when_active():
     assert 'embedded_web_view_->setObjectName("embeddedWeb3dProductView")' in CPP
     assert 'simple_3d_view_ = embedded_web_view_' in CPP
     assert 'simple_3d_view_ = new Scene3DViewportWidget(view3d_container_)' in CPP
+    assert 'Scene3DViewportWidget * compatibility_scene3d_viewport_{ nullptr };' in HDR
+    assert 'compatibility_scene3d_viewport_ = new Scene3DViewportWidget(view3d_container_);' in CPP
     assert 'ProductViewBackend product_view_backend_{ ProductViewBackend::NativeScene3D };' in HDR
     assert 'ProductViewBackend { EmbeddedWeb3D, NativeScene3D }' in HDR
     assert 'WORKCELL_BUILDER_PRODUCT_VIEW_BACKEND' in CPP
     assert 'product_view_backend_ = ProductViewBackend::EmbeddedWeb3D' in CPP
     assert 'product_view_backend_ = ProductViewBackend::NativeScene3D' in CPP
-    assert 'auto * viewport = is_native_product_view_backend() ? qobject_cast<Scene3DViewportWidget *>(simple_3d_view_) : nullptr;' in CPP
+    assert 'auto * viewport = active_native_viewport();' in CPP
     assert 'if (viewport) viewport->ingest_preview_items(preview_items_);' in CPP
 
 
