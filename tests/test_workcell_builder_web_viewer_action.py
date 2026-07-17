@@ -88,7 +88,8 @@ def test_embedded_web3d_product_view_prepares_scene_before_loading():
     assert '"--stage-assets"' in cpp
     assert "setWorkingDirectory(repo_root)" in cpp
     assert "setProcessEnvironment(QProcessEnvironment::systemEnvironment())" in cpp
-    assert "embedded_web_view_->load(QUrl(viewer_url))" in cpp
+    assert "embedded_web_expected_viewer_url_ = QUrl(viewer_url)" in cpp
+    assert "embedded_web_view_->load(embedded_web_expected_viewer_url_)" in cpp
     assert "QFileInfo::exists(QDir(embedded_web_repo_root_).filePath(output_path))" in cpp
     assert "stale output will not be loaded" in cpp
 

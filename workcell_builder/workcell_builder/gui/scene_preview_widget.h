@@ -7,6 +7,7 @@
 #include <QMatrix4x4>
 #include <QProcess>
 #include <QDateTime>
+#include <QUrl>
 
 class QComboBox;
 class QLabel;
@@ -333,8 +334,8 @@ private:
   void ensure_embedded_web_server_started(const QString & repo_root, const EmbeddedWebRequestIdentity & identity);
   bool embedded_web_server_is_usable(const QString & repo_root = QString(), const QString & scene = QString());
   void load_prepared_embedded_web_scene(const EmbeddedWebRequestIdentity & identity);
-  void start_embedded_web_readiness_polling(const EmbeddedWebRequestIdentity & identity, const QString & expected_json_path, const QString & viewer_url);
-  void poll_embedded_web_readiness(const EmbeddedWebRequestIdentity & identity, const QString & expected_json_path, const QString & viewer_url);
+  void start_embedded_web_readiness_polling(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token, const QString & expected_json_path, const QString & viewer_url);
+  void poll_embedded_web_readiness(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token, const QString & expected_json_path, const QString & viewer_url);
   void set_embedded_product_view_state(EmbeddedProductViewState state, const QString & detail = QString());
   void activate_native_compatibility_preview(const QString & reason);
   void run_embedded_editor_command(const QString & script);
@@ -395,6 +396,9 @@ private:
   EmbeddedWebRequestIdentity embedded_web_active_identity_;
   EmbeddedWebRequestIdentity pending_embedded_web_identity_;
   EmbeddedWebRequestIdentity embedded_web_loading_identity_;
+  quint64 embedded_web_navigation_token_{ 0 };
+  quint64 embedded_web_loading_navigation_token_{ 0 };
+  QUrl embedded_web_expected_viewer_url_;
   bool embedded_web_has_active_identity_{ false };
   bool pending_embedded_web_request_{ false };
   quint64 embedded_web_request_generation_{ 0 };

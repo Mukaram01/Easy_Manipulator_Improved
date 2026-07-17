@@ -323,17 +323,30 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     embedded_web_view_->setObjectName("embeddedWeb3dProductView");
     connect(embedded_web_view_, &QWebEngineView::loadFinished, this, [this](bool ok) {
       const EmbeddedWebRequestIdentity identity = embedded_web_loading_identity_;
-      if (!embedded_web_identity_is_current(identity)) return;
+      const quint64 navigation_token = embedded_web_loading_navigation_token_;
+      const QUrl expected_viewer_url = embedded_web_expected_viewer_url_;
+      if (!embedded_web_identity_is_current(identity) || navigation_token != embedded_web_navigation_token_) {
+        emit studio_log_requested(QStringLiteral("Ignored stale Embedded Product View load completion for scene %1 revision %2 navigation %3.")
+          .arg(identity.scene_id).arg(identity.generation).arg(navigation_token));
+        return;
+      }
+      if (embedded_web_view_->url() != expected_viewer_url) {
+        emit studio_log_requested(QStringLiteral("Ignored stale Embedded Product View load completion for scene %1 revision %2 navigation %3; expected viewer URL %4, active viewer URL %5.")
+          .arg(identity.scene_id).arg(identity.generation).arg(navigation_token)
+          .arg(expected_viewer_url.toString(), embedded_web_view_->url().toString()));
+        return;
+      }
       if (!ok) {
         const QString detail = QStringLiteral("browser failed to load Product View page for scene %1; viewer URL: %2; expected JSON: %3")
-          .arg(embedded_web_prepare_scene_, embedded_web_last_viewer_url_, embedded_web_prepare_output_path_);
+          .arg(identity.scene_id, expected_viewer_url.toString(), embedded_web_prepare_output_path_);
         // set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail) is intentionally replaced by native compatibility fallback.
+        embedded_web_view_->setVisible(false);
         activate_native_compatibility_preview(detail);
         emit studio_log_requested(QStringLiteral("Embedded Product View load failed. %1").arg(detail));
         return;
       }
       set_embedded_product_view_state(EmbeddedProductViewState::Loading, QStringLiteral("browser loaded; waiting for viewer readiness"));
-      start_embedded_web_readiness_polling(embedded_web_loading_identity_, embedded_web_prepare_output_path_, embedded_web_last_viewer_url_);
+      start_embedded_web_readiness_polling(identity, navigation_token, embedded_web_prepare_output_path_, expected_viewer_url.toString());
     });
     simple_3d_view_ = embedded_web_view_;
   } else {
@@ -1015,24 +1028,30 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
 #endif
 }
 
-void ScenePreviewWidget::start_embedded_web_readiness_polling(const EmbeddedWebRequestIdentity & identity, const QString & expected_json_path, const QString & viewer_url)
+void ScenePreviewWidget::start_embedded_web_readiness_polling(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token, const QString & expected_json_path, const QString & viewer_url)
 {
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
-  Q_UNUSED(identity); Q_UNUSED(expected_json_path); Q_UNUSED(viewer_url);
+  Q_UNUSED(identity); Q_UNUSED(navigation_token); Q_UNUSED(expected_json_path); Q_UNUSED(viewer_url);
 #else
   embedded_web_readiness_deadline_ = QDateTime::currentDateTimeUtc().addSecs(45);
   embedded_web_last_boot_status_ = QStringLiteral("browser_loaded");
-  poll_embedded_web_readiness(identity, expected_json_path, viewer_url);
+  poll_embedded_web_readiness(identity, navigation_token, expected_json_path, viewer_url);
 #endif
 }
 
-void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIdentity & identity, const QString & expected_json_path, const QString & viewer_url)
+void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token, const QString & expected_json_path, const QString & viewer_url)
 {
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
-  Q_UNUSED(identity); Q_UNUSED(expected_json_path); Q_UNUSED(viewer_url);
+  Q_UNUSED(identity); Q_UNUSED(navigation_token); Q_UNUSED(expected_json_path); Q_UNUSED(viewer_url);
 #else
   if (!embedded_web_view_) return;
-  if (!embedded_web_identity_is_current(identity)) return;
+  const QUrl expected_viewer_url(viewer_url);
+  if (!embedded_web_identity_is_current(identity) || navigation_token != embedded_web_navigation_token_ ||
+      embedded_web_view_->url() != expected_viewer_url) {
+    emit studio_log_requested(QStringLiteral("Ignored stale Embedded Product View readiness poll for scene %1 revision %2 navigation %3.")
+      .arg(identity.scene_id).arg(identity.generation).arg(navigation_token));
+    return;
+  }
 
   if (QDateTime::currentDateTimeUtc() > embedded_web_readiness_deadline_) {
     const QString detail = QStringLiteral(
@@ -1059,8 +1078,13 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
   };
 })()
 )JS";
-  embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kStatusScript), [this, identity, expected_json_path, viewer_url](const QVariant & value) {
-    if (!embedded_web_identity_is_current(identity)) return;
+  embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kStatusScript), [this, identity, navigation_token, expected_json_path, viewer_url](const QVariant & value) {
+    if (!embedded_web_identity_is_current(identity) || navigation_token != embedded_web_navigation_token_ ||
+        embedded_web_view_->url() != QUrl(viewer_url)) {
+      emit studio_log_requested(QStringLiteral("Ignored stale Embedded Product View readiness result for scene %1 revision %2 navigation %3.")
+        .arg(identity.scene_id).arg(identity.generation).arg(navigation_token));
+      return;
+    }
     const QVariantMap status = value.toMap();
     const QString boot_state = status.value(QStringLiteral("viewer_boot_state")).toString();
     const QString source_json = status.value(QStringLiteral("source_web_scene_file")).toString();
@@ -1103,8 +1127,8 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
     }
 
     set_embedded_product_view_state(EmbeddedProductViewState::Loading, QStringLiteral("waiting for viewer readiness (%1)").arg(embedded_web_last_boot_status_));
-    QTimer::singleShot(750, this, [this, identity, expected_json_path, viewer_url]() {
-      poll_embedded_web_readiness(identity, expected_json_path, viewer_url);
+    QTimer::singleShot(750, this, [this, identity, navigation_token, expected_json_path, viewer_url]() {
+      poll_embedded_web_readiness(identity, navigation_token, expected_json_path, viewer_url);
     });
   });
 #endif
@@ -1125,12 +1149,14 @@ void ScenePreviewWidget::load_prepared_embedded_web_scene(const EmbeddedWebReque
     .arg(embedded_web_server_port_)
     .arg(QString::fromUtf8(QUrl::toPercentEncoding(web_scene_url_path)))
     .arg(identity.generation) + QStringLiteral("&embedded=1");
-  embedded_web_loading_identity_ = identity;
-  embedded_web_last_viewer_url_ = viewer_url;
   embedded_web_readiness_deadline_ = QDateTime();
   embedded_web_last_boot_status_.clear();
   set_embedded_product_view_state(EmbeddedProductViewState::Loading);
-  embedded_web_view_->load(QUrl(viewer_url));
+  embedded_web_loading_identity_ = identity;
+  embedded_web_loading_navigation_token_ = ++embedded_web_navigation_token_;
+  embedded_web_expected_viewer_url_ = QUrl(viewer_url);
+  embedded_web_last_viewer_url_ = embedded_web_expected_viewer_url_.toString();
+  embedded_web_view_->load(embedded_web_expected_viewer_url_);
 #endif
 }
 

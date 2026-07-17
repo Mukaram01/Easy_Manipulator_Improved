@@ -112,6 +112,24 @@ def test_load_finished_true_only_starts_bounded_readiness_polling():
     assert 'set_embedded_product_view_state(EmbeddedProductViewState::Ready' not in handler
 
 
+def test_load_completion_and_readiness_are_scoped_to_the_current_navigation():
+    load_finished = CPP.index('&QWebEngineView::loadFinished')
+    handler = CPP[load_finished:CPP.index('simple_3d_view_ = embedded_web_view_', load_finished)]
+    load_scene = CPP[CPP.index('void ScenePreviewWidget::load_prepared_embedded_web_scene'):]
+    readiness = CPP[CPP.index('void ScenePreviewWidget::poll_embedded_web_readiness'):CPP.index('void ScenePreviewWidget::load_prepared_embedded_web_scene')]
+
+    assert 'embedded_web_loading_navigation_token_ = ++embedded_web_navigation_token_' in load_scene
+    assert 'embedded_web_expected_viewer_url_ = QUrl(viewer_url)' in load_scene
+    assert 'embedded_web_view_->load(embedded_web_expected_viewer_url_)' in load_scene
+    assert 'navigation_token != embedded_web_navigation_token_' in handler
+    assert 'embedded_web_view_->url() != expected_viewer_url' in handler
+    assert 'Ignored stale Embedded Product View load completion' in handler
+    assert 'embedded_web_view_->setVisible(false);' in handler
+    assert 'start_embedded_web_readiness_polling(identity, navigation_token' in handler
+    assert 'navigation_token != embedded_web_navigation_token_' in readiness
+    assert 'poll_embedded_web_readiness(identity, navigation_token' in readiness
+
+
 def test_product_view_ready_requires_viewer_status_not_load_finished_true():
     assert 'window.__WORKCELL_VIEWER_STATUS__' in CPP
     assert 'runJavaScript' in CPP

@@ -113,4 +113,4 @@ def test_manual_refresh_creates_a_new_generation_and_invalidates_old_callbacks()
     finished = _between(CPP, "void ScenePreviewWidget::on_embedded_web_prepare_finished", "void ScenePreviewWidget::start_embedded_web_readiness_polling")
     assert "embedded_web_identity_is_current(identity)" in finished
     polling = _between(CPP, "void ScenePreviewWidget::poll_embedded_web_readiness", "void ScenePreviewWidget::load_prepared_embedded_web_scene")
-    assert "[this, identity, expected_json_path, viewer_url]" in polling
+    assert "[this, identity, navigation_token, expected_json_path, viewer_url]" in polling
