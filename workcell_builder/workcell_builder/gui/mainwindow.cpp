@@ -10849,7 +10849,10 @@ void MainWindow::populate_scene_hierarchy()
   preview_warning_details_ = preview_warning_details;
   if (scene_preview_widget_) {
     scene_preview_widget_->set_scene_selected(true);
-    scene_preview_widget_->set_preview_scene_name(selected_scene_state_.name);
+    ScenePreviewWidget::PreviewContext preview_context;
+    preview_context.scene_id = selected_scene_state_.name;
+    preview_context.absolute_scene_dir = selected_scene_state_.path;
+    scene_preview_widget_->set_preview_context(preview_context);
     apply_scene3d_product_view_layer_defaults_and_commit();
 
     const auto scene3d_full_payload_counters = scene_preview_widget_->render_debug_counters();
@@ -11367,8 +11370,8 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     validation_gate_ready ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Current));
   const ScenePreviewWidget::RenderDebugCounters scene3d_counters =
     scene_preview_widget_ ? scene_preview_widget_->render_debug_counters() : ScenePreviewWidget::RenderDebugCounters{};
-  const bool preview_has_runtime_content = scene3d_counters.viewport_received_count > 0 || scene3d_counters.visible_count > 0 ||
-    scene3d_counters.rendered_count > 0 || preview_runtime_ready;
+  const bool preview_has_runtime_content = scene_preview_widget_ ? scene_preview_widget_->runtime_preview_has_usable_content() : (scene3d_counters.viewport_received_count > 0 || scene3d_counters.visible_count > 0 ||
+    scene3d_counters.rendered_count > 0 || preview_runtime_ready);
   const QString native_preview_counts = QString(
     "Scene3D counters: received=%1 visible=%2 rendered=%3; classified layers: editable=%4 generated=%5 fallback=%6 overlays/helpers=%7 warning/missing=%8 diagnostics=%9 other=%10.")
       .arg(preview_received_count)
@@ -11392,8 +11395,8 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   SceneWorkflowStepStatus preview_status = SceneWorkflowStepStatus::NeedsAction;
   if (preview_has_runtime_content) {
     preview_status = SceneWorkflowStepStatus::Done;
-    preview_detail = QString("3D Preview Technical Pass: native Scene3D has renderable content, but render/smoke counters alone do not prove demo-ready visual quality or RViz/MoveIt launch readiness. %1 %2")
-      .arg(native_preview_counts, launch_gate_detail);
+    preview_detail = QString("%1. %2 %3")
+      .arg(scene_preview_widget_ ? scene_preview_widget_->runtime_preview_status_text() : QStringLiteral("Preview ready"), native_preview_counts, launch_gate_detail);
     if (!transform_parity.warning.isEmpty()) {
       preview_status = transform_parity.failed
         ? SceneWorkflowStepStatus::Blocked
@@ -11574,7 +11577,7 @@ std::vector<MainWindow::RecommendedWorkflowAction> MainWindow::resolve_recommend
     }
   }
 
-  if (!has_asset_items) {
+  if (!has_asset_items && editable_layout_item_count_ == 0 && preview_fallback_item_count_ == 0) {
     const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
     const bool legacy_preview_only_scene =
       workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name).items.empty() &&

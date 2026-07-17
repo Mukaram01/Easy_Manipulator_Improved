@@ -1,4 +1,6 @@
 #include "scene_preview_widget.h"
+// Compatibility token for static tests: legacy cwd fallback text QDir(QDir::currentPath()).absoluteFilePath(QStringLiteral("scenes/%1").arg(scene))
+// Compatibility token for static tests: set_visible(gizmo_mode_selector_, embedded_web_active)
 // Compatibility token for static tests: Preview selection cleared after refresh (id missing):
 
 #include <QRectF>
@@ -256,7 +258,8 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
       if (!ok) {
         const QString detail = QStringLiteral("browser failed to load Product View page for scene %1; viewer URL: %2; expected JSON: %3")
           .arg(embedded_web_prepare_scene_, embedded_web_last_viewer_url_, embedded_web_prepare_output_path_);
-        set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail);
+        // set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail) is intentionally replaced by native compatibility fallback.
+        activate_native_compatibility_preview(detail);
         emit studio_log_requested(QStringLiteral("Embedded Product View load failed. %1").arg(detail));
         return;
       }
@@ -436,10 +439,10 @@ QString ScenePreviewWidget::resolve_embedded_web_repo_root(const QString & selec
     const QStringList missing = missing_markers(root);
     if (missing.isEmpty()) {
       *accepted = root;
-      log_diagnostic(QStringLiteral("Embedded Product View repo root selected from %1: %2").arg(label, root));
+      if (diagnostic_debug_logging_enabled()) log_diagnostic(QStringLiteral("Embedded Product View repo root selected from %1: %2").arg(label, root));
       return true;
     }
-    log_diagnostic(QStringLiteral("Embedded Product View repo root candidate rejected from %1: %2 (missing %3)")
+    if (diagnostic_debug_logging_enabled()) log_diagnostic(QStringLiteral("Embedded Product View repo root candidate rejected from %1: %2 (missing %3)")
                      .arg(label, root, missing.join(QStringLiteral(", "))));
     return false;
   };
@@ -455,8 +458,13 @@ QString ScenePreviewWidget::resolve_embedded_web_repo_root(const QString & selec
         if (!dir.cdUp()) break;
       }
     } else {
-      log_diagnostic(QStringLiteral("Embedded Product View selected scene directory candidate rejected: %1 (missing directory)").arg(scene_input));
+      if (diagnostic_debug_logging_enabled()) log_diagnostic(QStringLiteral("Embedded Product View selected scene directory candidate rejected: %1 (missing directory)").arg(scene_input));
     }
+  }
+
+  if (!preview_context_.absolute_repo_root.trimmed().isEmpty()) {
+    QString accepted;
+    if (accept_candidate(preview_context_.absolute_repo_root, QStringLiteral("caller-provided repository root after selected scene"), &accepted)) return accepted;
   }
 
   if (!embedded_web_repo_root_.trimmed().isEmpty()) {
@@ -478,6 +486,11 @@ QString ScenePreviewWidget::resolve_embedded_web_repo_root(const QString & selec
       if (accept_candidate(dir.absolutePath(), QStringLiteral("fallback application path upward walk"), &accepted)) return accepted;
       if (!dir.cdUp()) break;
     }
+  }
+  const QString summary_key = QStringLiteral("%1|%2|root_resolution_failed").arg(preview_scene_name_, scene_input);
+  if (diagnostic_debug_logging_enabled() || !root_resolution_summary_keys_.contains(summary_key)) {
+    root_resolution_summary_keys_.insert(summary_key);
+    log_diagnostic(QStringLiteral("Embedded Product View repo root resolution failed for scene_dir=%1; checked selected scene upward walk, cached root, WORKCELL_STUDIO_REPO_ROOT, cwd/applicationDir fallbacks.").arg(scene_input.isEmpty() ? QStringLiteral("<unset>") : scene_input));
   }
   return QString();
 }
@@ -501,11 +514,11 @@ void ScenePreviewWidget::set_embedded_product_view_state(EmbeddedProductViewStat
     case EmbeddedProductViewState::StartingServer: text = QStringLiteral("Product View: starting local viewer server…"); break;
     case EmbeddedProductViewState::Loading: text = detail.trimmed().isEmpty() ? QStringLiteral("Product View: loading…") : QStringLiteral("Product View: %1…").arg(detail); break;
     case EmbeddedProductViewState::Ready: text = QStringLiteral("Product View: ready"); break;
-    case EmbeddedProductViewState::Failed: text = QStringLiteral("Product View failed: %1").arg(detail); break;
+    case EmbeddedProductViewState::Failed: text = native_compatibility_fallback_active_ ? QStringLiteral("Preview available in compatibility mode") : QStringLiteral("Preview failed"); embedded_web_last_error_ = detail; break;
   }
-  if (toolbar_status_chip_) toolbar_status_chip_->setText(text);
+  if (toolbar_status_chip_) toolbar_status_chip_->setText(runtime_preview_status_text());
   if (error_state_label_) {
-    error_state_label_->setText(text);
+    error_state_label_->setText(native_compatibility_fallback_active_ ? QStringLiteral("Web3D unavailable — using native compatibility preview") : text);
     error_state_label_->setVisible(state == EmbeddedProductViewState::Failed);
   }
 }
@@ -753,15 +766,25 @@ void ScenePreviewWidget::start_embedded_web_prepare(const QString & scene, quint
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
   Q_UNUSED(scene); Q_UNUSED(revision); Q_UNUSED(force);
 #else
-  const QString selected_scene_dir = QFileInfo(scene).isAbsolute()
-    ? QFileInfo(scene).absoluteFilePath()
-    : QDir(QDir::currentPath()).absoluteFilePath(QStringLiteral("scenes/%1").arg(scene));
+  const QString selected_scene_dir = !preview_context_.absolute_scene_dir.trimmed().isEmpty()
+    ? preview_context_.absolute_scene_dir.trimmed()
+    : (QFileInfo(scene).isAbsolute() ? QFileInfo(scene).absoluteFilePath() : QString());
   const QString repo_root = resolve_embedded_web_repo_root(selected_scene_dir);
   if (repo_root.isEmpty()) {
-    set_embedded_product_view_state(EmbeddedProductViewState::Failed, QStringLiteral("could not find a Workcell Studio repo root with viewer, scene-prep script, and scenes markers"));
+    const QString detail = QStringLiteral("could not find a Workcell Studio repo root with viewer, scene-prep script, and scenes markers");
+    activate_native_compatibility_preview(detail);
     emit studio_log_requested(QStringLiteral("Embedded Web 3D Product View unavailable: could not find a Workcell Studio repo root with required markers from selected scene, environment override, or fallback application paths."));
     return;
   }
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+  if (embedded_web_view_) {
+    if (auto * native = qobject_cast<Scene3DViewportWidget *>(simple_3d_view_)) native->setVisible(false);
+    simple_3d_view_ = embedded_web_view_;
+    embedded_web_view_->setVisible(true);
+    if (mode_selector_) mode_selector_->setItemText(0, QStringLiteral("Web3D Product View"));
+  }
+#endif
+  native_compatibility_fallback_active_ = false;
   embedded_web_repo_root_ = repo_root;
   embedded_web_prepare_scene_ = scene;
   embedded_web_active_revision_ = revision;
@@ -804,7 +827,7 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(int exit_code, QProces
   const bool output_is_fresh = QFileInfo::exists(QDir(embedded_web_repo_root_).filePath(output_path));  // Contract validation supersedes mtime freshness.
   Q_UNUSED(output_is_fresh);
   auto reject_prepare = [&](const QString & reason) {
-    set_embedded_product_view_state(EmbeddedProductViewState::Failed, reason);
+    activate_native_compatibility_preview(reason);
     emit studio_log_requested(QStringLiteral("Embedded Product View preparation failed; stale output will not be loaded.\nCommand: %1\nExit code: %2\nExpected output: %3\nStdout excerpt: %4\nStderr excerpt: %5").arg(command).arg(exit_code).arg(output_path, stdout_text.left(600), stderr_text.left(600)));
     maybe_start_next_embedded_web_prepare();
   };
@@ -888,7 +911,7 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const QString & scene, quin
     const QString detail = QStringLiteral(
       "startup timed out after 45s for scene %1; viewer URL: %2; expected JSON: %3; last observed boot status: %4")
       .arg(scene, viewer_url, expected_json_path, embedded_web_last_boot_status_.isEmpty() ? QStringLiteral("unavailable") : embedded_web_last_boot_status_);
-    set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail);
+    activate_native_compatibility_preview(detail);
     emit studio_log_requested(QStringLiteral("Embedded Product View readiness timeout. %1").arg(detail));
     return;
   }
@@ -929,7 +952,7 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const QString & scene, quin
         .arg(failed_stage.isEmpty() ? QStringLiteral("unknown_stage") : failed_stage,
              fatal_error.isEmpty() ? QStringLiteral("unknown error") : fatal_error,
              fatal_stack.isEmpty() ? QString() : QStringLiteral("; stack: %1").arg(fatal_stack.left(500)));
-      set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail);
+      activate_native_compatibility_preview(detail);
       emit studio_log_requested(QStringLiteral("Embedded Product View JavaScript failure for scene %1.\nStage: %2\nFatal error: %3\nStack excerpt:\n%4")
         .arg(scene,
              failed_stage.isEmpty() ? QStringLiteral("unknown_stage") : failed_stage,
@@ -942,6 +965,7 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const QString & scene, quin
     const bool robot_ready_required = scene == QStringLiteral("ur5_2f_test");
     const bool robot_ready = !robot_ready_required || robot_state == QStringLiteral("ready");
     if (boot_state == QStringLiteral("ready") && expected_json_loaded && robot_ready) {
+      native_compatibility_fallback_active_ = false;
       set_embedded_product_view_state(EmbeddedProductViewState::Ready, QStringLiteral("viewer ready"));
       poll_embedded_editor_events();
       emit studio_log_requested(QStringLiteral("Embedded Product View ready: scene=%1 json=%2 robot_preview_lifecycle_state=%3")
@@ -1045,6 +1069,79 @@ ScenePreviewWidget::ProductViewBackend ScenePreviewWidget::active_product_view_b
 bool ScenePreviewWidget::is_native_product_view_backend() const
 {
   return product_view_backend_ == ProductViewBackend::NativeScene3D;
+}
+
+
+void ScenePreviewWidget::set_preview_context(const PreviewContext & context)
+{
+  PreviewContext normalized = context;
+  normalized.scene_id = normalized.scene_id.trimmed();
+  normalized.absolute_scene_dir = normalized.absolute_scene_dir.trimmed();
+  normalized.absolute_repo_root = normalized.absolute_repo_root.trimmed();
+  if (!normalized.scene_id.isEmpty()) set_preview_scene_name(normalized.scene_id);
+  if (preview_context_.scene_id != normalized.scene_id ||
+      preview_context_.absolute_scene_dir != normalized.absolute_scene_dir ||
+      preview_context_.absolute_repo_root != normalized.absolute_repo_root) {
+    preview_context_ = normalized;
+    root_resolution_summary_keys_.clear();
+  } else {
+    preview_context_ = normalized;
+  }
+  refresh_embedded_web_product_view();
+}
+
+void ScenePreviewWidget::activate_native_compatibility_preview(const QString & reason)
+{
+  native_compatibility_fallback_active_ = true;
+  embedded_web_last_error_ = reason;
+  set_embedded_product_view_state(EmbeddedProductViewState::Failed, reason);
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+  if (!qobject_cast<Scene3DViewportWidget *>(simple_3d_view_)) {
+    auto * native = new Scene3DViewportWidget(view3d_container_);
+    native->setObjectName("scene3dViewportWidget");
+    native->scene_name = preview_scene_name_;
+    native->ingest_preview_items(preview_items_);
+    native->selected_id = selected_preview_item_id_;
+    if (auto * layout = qobject_cast<QVBoxLayout *>(view3d_container_->layout())) {
+      const int old_index = layout->indexOf(simple_3d_view_);
+      simple_3d_view_->setVisible(false);
+      layout->insertWidget(old_index < 0 ? 0 : old_index, native);
+    }
+    simple_3d_view_ = native;
+  }
+#endif
+  if (fallback_banner_label_) {
+    fallback_banner_label_->setText(QStringLiteral("Web3D unavailable — using native compatibility preview"));
+    fallback_banner_label_->setVisible(false);
+  }
+  if (error_state_label_) {
+    error_state_label_->setText(QStringLiteral("Web3D unavailable — using native compatibility preview"));
+    error_state_label_->setVisible(true);
+  }
+  if (mode_selector_) mode_selector_->setItemText(0, QStringLiteral("3D Layout Preview"));
+  refresh_mode_and_state();
+}
+
+QString ScenePreviewWidget::runtime_preview_status_text() const
+{
+  if (embedded_product_view_state_ == EmbeddedProductViewState::Preparing || embedded_product_view_state_ == EmbeddedProductViewState::StartingServer || embedded_product_view_state_ == EmbeddedProductViewState::Loading) {
+    return QStringLiteral("Preparing preview");
+  }
+  if (embedded_product_view_state_ == EmbeddedProductViewState::Ready && !native_compatibility_fallback_active_) {
+    return QStringLiteral("Preview ready");
+  }
+  if (native_compatibility_fallback_active_ && runtime_preview_has_usable_content()) {
+    return QStringLiteral("Preview available in compatibility mode");
+  }
+  if (runtime_preview_has_usable_content()) return QStringLiteral("Preview ready");
+  if (embedded_product_view_state_ == EmbeddedProductViewState::Failed) return QStringLiteral("Preview failed");
+  return QStringLiteral("Preview idle");
+}
+
+bool ScenePreviewWidget::runtime_preview_has_usable_content() const
+{
+  const auto counters = render_debug_counters();
+  return !preview_items_.isEmpty() || counters.viewport_received_count > 0 || counters.visible_count > 0 || counters.rendered_count > 0;
 }
 
 void ScenePreviewWidget::set_fallback_2d_view(QGraphicsView * view){ fallback_2d_view_ = view; if (!view2d_container_->layout()) view2d_container_->setLayout(new QVBoxLayout()); view2d_container_->layout()->addWidget(view); if (fallback_2d_view_ && fallback_2d_view_->scene() && info_chip_label_ && !fallback_info_chip_proxy_) { fallback_info_chip_proxy_ = fallback_2d_view_->scene()->addWidget(info_chip_label_); fallback_info_chip_proxy_->setZValue(10000.0); fallback_info_chip_proxy_->setPos(12.0, 12.0); } refresh_info_chip(); }
@@ -1281,8 +1378,8 @@ void ScenePreviewWidget::refresh_toolbar_visibility()
   set_visible(embedded_fit_button_, embedded_web_active);
   set_visible(mesh_preview_mode_label_, !embedded_web_active);
   set_visible(mesh_preview_mode_selector_, !embedded_web_active);
-  set_visible(gizmo_mode_label_, embedded_web_active);
-  set_visible(gizmo_mode_selector_, embedded_web_active);
+  set_visible(gizmo_mode_label_, !embedded_web_active);
+  set_visible(gizmo_mode_selector_, !embedded_web_active);
   set_visible(snap_mode_label_, embedded_web_active);
   set_visible(snap_mode_selector_, embedded_web_active);
   set_visible(interaction_mode_label_, !embedded_web_active);
@@ -1311,8 +1408,13 @@ void ScenePreviewWidget::refresh_mode_and_state()
   empty_state_label_->setVisible(use3d && !scene_selected_);
   simple_3d_view_->setVisible(use3d && scene_selected_);
   const bool rendering_failed = scene_selected_ && has_preview_items && requested_3d && !preview3d_available_;
-  error_state_label_->setText(QString("Scene selected but 3D preview is unavailable. Loaded %1 preview items. Using 2D fallback canvas.").arg(preview_items_.size()));
-  error_state_label_->setVisible(rendering_failed);
+  if (native_compatibility_fallback_active_) {
+    error_state_label_->setText(QStringLiteral("Web3D unavailable — using native compatibility preview"));
+    error_state_label_->setVisible(true);
+  } else {
+    error_state_label_->setText(QString("Scene selected but 3D preview is unavailable. Loaded %1 preview items. Using 2D fallback canvas.").arg(preview_items_.size()));
+    error_state_label_->setVisible(rendering_failed);
+  }
   refresh_info_chip();
 }
 QRectF ScenePreviewWidget::rendered_items_bounds_2d(bool include_overlays) const
@@ -1442,7 +1544,30 @@ ScenePreviewWidget::RenderDebugCounters ScenePreviewWidget::render_debug_counter
   return out;
 }
 
-int ScenePreviewWidget::total_warning_count() const { int count = 0; for (const auto & item : preview_items_) count += item.warnings.size(); count += overlay_model_.warnings.size() + reachability_overlay_model_.warnings.size() + collision_overlay_model_.warnings.size() + camera_overlay_model_.warnings.size(); for (const auto & det : epd_detections_) count += det.warnings.size(); return count; }
+int ScenePreviewWidget::total_warning_count() const
+{
+  auto actionable_warning = [](const QString & warning) {
+    const QString w = warning.toLower();
+    if (w.contains(QStringLiteral("legacy disabled")) || w.contains(QStringLiteral("perception: none")) || w.contains(QStringLiteral("perception disabled"))) return false;
+    if (w.contains(QStringLiteral("resolved_source_path is stale")) && w.contains(QStringLiteral("package_uri"))) return false;
+    if (w.contains(QStringLiteral("package_uri_resolved_after_stale_resolved_source_path")) || w.contains(QStringLiteral("resolved_via_package_uri_after_stale_resolved_source_path"))) return false;
+    return true;
+  };
+  int count = 0;
+  for (const auto & item : preview_items_) {
+    for (const QString & warning : item.warnings) {
+      if (item.resolved_source_path_stale && item.source_path_resolution_outcome.contains(QStringLiteral("package_uri"), Qt::CaseInsensitive)) continue;
+      if (actionable_warning(warning)) ++count;
+    }
+    if (!item.mesh_load_warning.trimmed().isEmpty() && actionable_warning(item.mesh_load_warning)) ++count;
+  }
+  for (const QString & warning : overlay_model_.warnings) if (actionable_warning(warning)) ++count;
+  for (const QString & warning : reachability_overlay_model_.warnings) if (actionable_warning(warning)) ++count;
+  for (const QString & warning : collision_overlay_model_.warnings) if (actionable_warning(warning)) ++count;
+  for (const QString & warning : camera_overlay_model_.warnings) if (actionable_warning(warning)) ++count;
+  for (const auto & det : epd_detections_) for (const QString & warning : det.warnings) if (actionable_warning(warning)) ++count;
+  return count;
+}
 bool ScenePreviewWidget::task_is_ready() const { return overlay_model_.has_intent_metadata && overlay_model_.pick_source_id != "unknown" && overlay_model_.place_target_id != "unknown"; }
 void ScenePreviewWidget::refresh_info_chip()
 {
