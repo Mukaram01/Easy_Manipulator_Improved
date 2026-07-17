@@ -431,7 +431,8 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
         emit studio_log_requested(QStringLiteral("Embedded Product View load failed. %1").arg(detail));
         return;
       }
-      set_embedded_product_view_state(EmbeddedProductViewState::Loading, QStringLiteral("browser loaded; waiting for viewer readiness"));
+      set_embedded_product_view_state(EmbeddedProductViewState::WaitingForBrowserReadiness,
+        QStringLiteral("browser loaded; waiting for viewer readiness"));
       start_embedded_web_readiness_polling(identity, navigation_token, embedded_web_prepare_output_path_, expected_viewer_url.toString());
     });
     simple_3d_view_ = embedded_web_view_;
@@ -872,7 +873,7 @@ void ScenePreviewWidget::ensure_embedded_web_server_started(const QString & repo
     if (process != embedded_web_server_process_ || !embedded_web_identity_is_current(identity)) return;
     const QString output = QString::fromUtf8(process->readAll()).trimmed();
     if (embedded_product_view_state_ == EmbeddedProductViewState::StartingServer && !embedded_web_server_is_usable(embedded_web_repo_root_, identity.scene_id)) {
-      set_embedded_product_view_state(EmbeddedProductViewState::Failed, QStringLiteral("local server failed; exit %1; %2").arg(exit_code).arg(output.left(240)));
+      activate_native_compatibility_preview(QStringLiteral("local server failed; exit %1; %2").arg(exit_code).arg(output.left(240)));
       emit studio_log_requested(QStringLiteral("Embedded Product View local server failed: python3 -m http.server 8765 --bind 127.0.0.1\nExit code: %1\nOutput:\n%2").arg(exit_code).arg(output));
     }
   });
@@ -1310,7 +1311,6 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
     const QString detail = QStringLiteral(
       "startup timed out after 45s for scene %1; viewer URL: %2; expected JSON: %3; last observed boot status: %4")
       .arg(identity.scene_id, viewer_url, expected_json_path, embedded_web_last_boot_status_.isEmpty() ? QStringLiteral("unavailable") : embedded_web_last_boot_status_);
-    set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail);
     activate_native_compatibility_preview(detail);
     emit studio_log_requested(QStringLiteral("Embedded Product View readiness timeout. %1").arg(detail));
     return;
@@ -1357,7 +1357,6 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
         .arg(failed_stage.isEmpty() ? QStringLiteral("unknown_stage") : failed_stage,
              fatal_error.isEmpty() ? QStringLiteral("unknown error") : fatal_error,
              fatal_stack.isEmpty() ? QString() : QStringLiteral("; stack: %1").arg(fatal_stack.left(500)));
-      set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail);
       activate_native_compatibility_preview(detail);
       emit studio_log_requested(QStringLiteral("Embedded Product View JavaScript failure for scene %1.\nStage: %2\nFatal error: %3\nStack excerpt:\n%4")
         .arg(identity.scene_id,
@@ -1380,7 +1379,8 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
       return;
     }
 
-    set_embedded_product_view_state(EmbeddedProductViewState::Loading, QStringLiteral("waiting for viewer readiness (%1)").arg(embedded_web_last_boot_status_));
+    set_embedded_product_view_state(EmbeddedProductViewState::WaitingForBrowserReadiness,
+      QStringLiteral("waiting for viewer readiness (%1)").arg(embedded_web_last_boot_status_));
     QTimer::singleShot(750, this, [this, identity, navigation_token, expected_json_path, viewer_url]() {
       poll_embedded_web_readiness(identity, navigation_token, expected_json_path, viewer_url);
     });
@@ -1527,7 +1527,6 @@ void ScenePreviewWidget::activate_native_compatibility_preview(const QString & r
 {
   native_compatibility_fallback_active_ = true;
   embedded_web_last_error_ = reason;
-  set_embedded_product_view_state(EmbeddedProductViewState::Failed, reason);
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
   if (!compatibility_scene3d_viewport_) {
     compatibility_scene3d_viewport_ = new Scene3DViewportWidget(view3d_container_);
@@ -1544,16 +1543,28 @@ void ScenePreviewWidget::activate_native_compatibility_preview(const QString & r
       emit studio_log_requested(message);
     };
   }
+  // Hide the browser before exposing the fallback so the WebEngine surface
+  // cannot cover the compatibility viewport during the handoff.
+  if (embedded_web_view_) embedded_web_view_->setVisible(false);
+
   // Always refresh the retained viewport: a fallback can happen after the
   // payload or selection changed while Web3D was preparing a retry.
   compatibility_scene3d_viewport_->scene_name = preview_scene_name_;
   compatibility_scene3d_viewport_->ingest_preview_items(preview_items_);
+  const bool selection_is_current = std::any_of(preview_items_.cbegin(), preview_items_.cend(), [this](const PreviewItem & item) {
+    return item.id == selected_preview_item_id_;
+  });
+  if (!selection_is_current) selected_preview_item_id_.clear();
   compatibility_scene3d_viewport_->selected_id = selected_preview_item_id_;
   compatibility_scene3d_viewport_->fit_include_overlays = false;
   compatibility_scene3d_viewport_->setVisible(true);
+  compatibility_scene3d_viewport_->raise();
   compatibility_scene3d_viewport_->fit_product_view();
-  if (embedded_web_view_) embedded_web_view_->setVisible(false);
 #endif
+  set_embedded_product_view_state(native_compatibility_viewport_has_usable_content()
+      ? EmbeddedProductViewState::CompatibilityReady
+      : EmbeddedProductViewState::Failed,
+    reason);
   if (fallback_banner_label_) {
     fallback_banner_label_->setText(QStringLiteral("Web3D unavailable — using native compatibility preview"));
     fallback_banner_label_->setVisible(false);
@@ -1569,13 +1580,13 @@ void ScenePreviewWidget::activate_native_compatibility_preview(const QString & r
 
 QString ScenePreviewWidget::runtime_preview_status_text() const
 {
-  if (embedded_product_view_state_ == EmbeddedProductViewState::Preparing || embedded_product_view_state_ == EmbeddedProductViewState::StartingServer || embedded_product_view_state_ == EmbeddedProductViewState::Loading) {
+  if (embedded_product_view_state_ == EmbeddedProductViewState::Preparing || embedded_product_view_state_ == EmbeddedProductViewState::StartingServer || embedded_product_view_state_ == EmbeddedProductViewState::Loading || embedded_product_view_state_ == EmbeddedProductViewState::WaitingForBrowserReadiness) {
     return QStringLiteral("Preparing preview");
   }
   if (embedded_product_view_state_ == EmbeddedProductViewState::Ready && !native_compatibility_fallback_active_) {
     return QStringLiteral("Preview ready");
   }
-  if (native_compatibility_fallback_active_ && runtime_preview_has_usable_content()) {
+  if (embedded_product_view_state_ == EmbeddedProductViewState::CompatibilityReady && native_compatibility_viewport_has_usable_content()) {
     return QStringLiteral("Preview available in compatibility mode");
   }
   if (runtime_preview_has_usable_content()) return QStringLiteral("Preview ready");
@@ -1609,8 +1620,19 @@ void ScenePreviewWidget::refresh_toolbar_feedback_row()
 
 bool ScenePreviewWidget::runtime_preview_has_usable_content() const
 {
+  if (embedded_product_view_state_ == EmbeddedProductViewState::Ready && !native_compatibility_fallback_active_) return true;
+  if (native_compatibility_fallback_active_) return native_compatibility_viewport_has_usable_content();
   const auto counters = render_debug_counters();
-  return !preview_items_.isEmpty() || counters.viewport_received_count > 0 || counters.visible_count > 0 || counters.rendered_count > 0;
+  return counters.viewport_received_count > 0 &&
+    (counters.visible_count > 0 || counters.rendered_count > 0 || counters.unique_visible_item_count > 0);
+}
+
+bool ScenePreviewWidget::native_compatibility_viewport_has_usable_content() const
+{
+  if (!compatibility_scene3d_viewport_) return false;
+  const auto counters = compatibility_scene3d_viewport_->render_debug_counters();
+  return counters.viewport_received_count > 0 &&
+    (counters.visible_count > 0 || counters.rendered_count > 0 || counters.unique_visible_item_count > 0);
 }
 
 void ScenePreviewWidget::set_fallback_2d_view(QGraphicsView * view){ fallback_2d_view_ = view; if (!view2d_container_->layout()) view2d_container_->setLayout(new QVBoxLayout()); view2d_container_->layout()->addWidget(view); if (fallback_2d_view_ && fallback_2d_view_->scene() && info_chip_label_ && !fallback_info_chip_proxy_) { fallback_info_chip_proxy_ = fallback_2d_view_->scene()->addWidget(info_chip_label_); fallback_info_chip_proxy_->setZValue(10000.0); fallback_info_chip_proxy_->setPos(12.0, 12.0); } refresh_info_chip(); }

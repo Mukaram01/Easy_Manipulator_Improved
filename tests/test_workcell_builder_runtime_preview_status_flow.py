@@ -16,7 +16,7 @@ def test_authoritative_scene_context_is_passed_to_preview_widget():
 def test_cwd_is_not_used_to_invent_primary_selected_scene_path():
     start = CPP.index('void ScenePreviewWidget::start_embedded_web_prepare')
     body = CPP[start:CPP.index('void ScenePreviewWidget::on_embedded_web_prepare_finished', start)]
-    assert 'preview_context_.absolute_scene_dir' in body
+    assert 'identity.absolute_scene_dir' in body
     assert 'QDir(QDir::currentPath()).absoluteFilePath(QStringLiteral("scenes/%1")' not in body
     assert '"--scene", selected_scene_dir' in body
     assert 'QStringLiteral("scenes/%1").arg(scene)' not in body
@@ -54,8 +54,8 @@ def test_web3d_failure_activates_native_compatibility_and_preserves_error():
 
 def test_refresh_preview_can_retry_web3d_and_clear_fallback_on_success():
     assert 'request_embedded_web_product_view_refresh(bool force' in H
-    prepare = CPP[CPP.index('void ScenePreviewWidget::start_embedded_web_prepare'):CPP.index('void ScenePreviewWidget::on_embedded_web_prepare_finished')]
-    assert 'native_compatibility_fallback_active_ = false;' in prepare
+    ready_poll = CPP[CPP.index('void ScenePreviewWidget::poll_embedded_web_readiness'):CPP.index('void ScenePreviewWidget::load_prepared_embedded_web_scene')]
+    assert 'native_compatibility_fallback_active_ = false;' in ready_poll
     assert 'set_embedded_product_view_state(EmbeddedProductViewState::Ready' in CPP
 
 
@@ -86,14 +86,12 @@ def test_root_resolution_failure_summary_deduplicated():
 def test_stale_embedded_prepare_result_is_discarded_without_changing_current_preview_state():
     start = CPP.index('void ScenePreviewWidget::on_embedded_web_prepare_finished')
     body = CPP[start:CPP.index('void ScenePreviewWidget::load_prepared_embedded_web_scene', start)]
-    stale_start = body.index('if (!still_current)')
-    stale_body = body[stale_start:body.index('const QString absolute_output_path', stale_start)]
+    stale_start = body.index('if (!embedded_web_identity_is_current(identity))')
+    stale_body = body[stale_start:body.index('const EmbeddedWebPreparationDiagnostic existing_diagnostic', stale_start)]
 
-    assert 'Discarded embedded Product View preparation result for completed scene %1 revision %2' in stale_body
-    assert '.arg(scene)' in stale_body
-    assert '.arg(revision)' in stale_body
+    assert 'record_embedded_web_prepare_terminal(identity, process, QStringLiteral("stale_discarded")' in stale_body
     assert 'process->deleteLater();' in body[:stale_start]
-    assert 'embedded_web_prepare_process_ = nullptr;' in body[:stale_start]
+    assert 'embedded_web_prepare_process_ = nullptr;' in stale_body
     assert 'maybe_start_next_embedded_web_prepare();' in stale_body
     assert 'activate_native_compatibility_preview' not in stale_body
     assert 'set_embedded_product_view_state' not in stale_body
@@ -106,3 +104,23 @@ def test_current_embedded_prepare_failures_still_use_compatibility_preview():
     body = CPP[start:CPP.index('void ScenePreviewWidget::load_prepared_embedded_web_scene', start)]
     current_failure = body[body.index('auto reject_prepare'):]
     assert 'activate_native_compatibility_preview(reason);' in current_failure
+
+
+def test_populated_compatibility_fallback_is_ready_and_hides_webengine_before_exposure():
+    start = CPP.index('void ScenePreviewWidget::activate_native_compatibility_preview')
+    body = CPP[start:CPP.index('QString ScenePreviewWidget::runtime_preview_status_text', start)]
+    assert 'embedded_web_view_->setVisible(false);' in body
+    assert body.index('embedded_web_view_->setVisible(false);') < body.index('compatibility_scene3d_viewport_->setVisible(true);')
+    assert 'compatibility_scene3d_viewport_->raise();' in body
+    assert 'compatibility_scene3d_viewport_->ingest_preview_items(preview_items_);' in body
+    assert 'selection_is_current' in body
+    assert 'EmbeddedProductViewState::CompatibilityReady' in body
+    assert 'native_compatibility_viewport_has_usable_content()' in body
+
+    runtime = CPP[CPP.index('QString ScenePreviewWidget::runtime_preview_status_text'):CPP.index('void ScenePreviewWidget::refresh_toolbar_status_chip')]
+    assert 'Preview available in compatibility mode' in runtime
+    assert 'EmbeddedProductViewState::CompatibilityReady' in runtime
+
+    assert 'QStringLiteral("Compatibility Ready")' in MW
+    assert 'Preview available in compatibility mode' in MW
+    assert '!preview_in_compatibility_mode && !scene3d_clean_product_view_' in MW

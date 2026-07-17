@@ -5820,6 +5820,13 @@ void MainWindow::refresh_scene_builder_view_chips()
     const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
     launch_ready = s.has_launch_demo && s.has_package_xml;
     if (scene_preview_widget_) {
+      const QString runtime_preview_status = scene_preview_widget_->runtime_preview_status_text();
+      if (runtime_preview_status == QStringLiteral("Preview available in compatibility mode")) {
+        // Web3D may have failed, but the populated native compatibility
+        // viewport is still a usable Product View and must not be summarized
+        // as a failed or missing 3D preview.
+        preview_chip_status = QStringLiteral("Compatibility Ready");
+      } else {
       const auto counters = scene_preview_widget_->render_debug_counters();
       const QString quality = counters.visual_quality_status.trimmed().toUpper();
       const int mesh_source_count = counters.mesh_source_count > 0 ? counters.mesh_source_count : counters.mesh_backed_count;
@@ -5869,6 +5876,7 @@ void MainWindow::refresh_scene_builder_view_chips()
         preview_chip_status = QStringLiteral("Ready");
       } else {
         preview_chip_status = QStringLiteral("Warnings");
+      }
       }
     } else {
       preview_chip_status = QStringLiteral("Failed");
@@ -11372,6 +11380,8 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     validation_gate_ready ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Current));
   const ScenePreviewWidget::RenderDebugCounters scene3d_counters =
     scene_preview_widget_ ? scene_preview_widget_->render_debug_counters() : ScenePreviewWidget::RenderDebugCounters{};
+  const bool preview_in_compatibility_mode = scene_preview_widget_ &&
+    scene_preview_widget_->runtime_preview_status_text() == QStringLiteral("Preview available in compatibility mode");
   const bool preview_has_runtime_content = scene_preview_widget_ ? scene_preview_widget_->runtime_preview_has_usable_content() : (scene3d_counters.viewport_received_count > 0 || scene3d_counters.visible_count > 0 ||
     scene3d_counters.rendered_count > 0 || preview_runtime_ready);
   const QString native_preview_counts = QString(
@@ -11399,14 +11409,14 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     preview_status = SceneWorkflowStepStatus::Done;
     preview_detail = QString("%1. %2 %3")
       .arg(scene_preview_widget_ ? scene_preview_widget_->runtime_preview_status_text() : QStringLiteral("Preview ready"), native_preview_counts, launch_gate_detail);
-    if (!transform_parity.warning.isEmpty()) {
+    if (!preview_in_compatibility_mode && !transform_parity.warning.isEmpty()) {
       preview_status = transform_parity.failed
         ? SceneWorkflowStepStatus::Blocked
         : SceneWorkflowStepStatus::Warning;
       preview_detail = QString("%1 Source: %2 %3 %4")
         .arg(transform_parity.warning, transform_parity.source, native_preview_counts, launch_gate_detail);
     }
-    const bool visual_quality_needs_review = !scene3d_clean_product_view_ && (editable_layout_yaml_malformed || classified_fallback_count > 0 ||
+    const bool visual_quality_needs_review = !preview_in_compatibility_mode && !scene3d_clean_product_view_ && (editable_layout_yaml_malformed || classified_fallback_count > 0 ||
       classified_overlay_count > 0 || classified_warning_count > 0 || classified_editable_count == 0 ||
       classified_diagnostic_count > 0 || has_warnings);
     if (visual_quality_needs_review && transform_parity.warning.isEmpty()) {

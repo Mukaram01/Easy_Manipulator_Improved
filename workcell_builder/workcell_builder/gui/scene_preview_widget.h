@@ -317,7 +317,16 @@ private:
   void refresh_toolbar_visibility();
   void refresh_toolbar_status_chip();
   void refresh_toolbar_feedback_row();
-  enum class EmbeddedProductViewState { Idle, Preparing, StartingServer, Loading, Ready, Failed };
+  enum class EmbeddedProductViewState {
+    Idle,
+    Preparing,
+    StartingServer,
+    Loading,
+    WaitingForBrowserReadiness,
+    Ready,
+    CompatibilityReady,
+    Failed
+  };
   struct EmbeddedWebRequestIdentity
   {
     QString scene_id;
@@ -366,6 +375,7 @@ private:
   void poll_embedded_web_readiness(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token, const QString & expected_json_path, const QString & viewer_url);
   void set_embedded_product_view_state(EmbeddedProductViewState state, const QString & detail = QString());
   void activate_native_compatibility_preview(const QString & reason);
+  bool native_compatibility_viewport_has_usable_content() const;
   Scene3DViewportWidget * active_native_viewport() const;
   void show_embedded_web_product_view();
   void run_embedded_editor_command(const QString & script);

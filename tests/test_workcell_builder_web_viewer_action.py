@@ -81,7 +81,8 @@ def test_embedded_web3d_product_view_prepares_scene_before_loading():
     hdr = SCENE_PREVIEW_HDR.read_text(encoding="utf-8")
     assert "QWebEngineView" in cpp
     assert "embeddedWeb3dProductView" in cpp
-    assert "EmbeddedProductViewState { Idle, Preparing, StartingServer, Loading, Ready, Failed }" in hdr
+    assert "WaitingForBrowserReadiness" in hdr
+    assert "CompatibilityReady" in hdr
     assert "scripts/ensure_workcell_studio_web_scene_fresh.py" in cpp
     assert '"--scene", selected_scene_dir' in cpp
     assert '"--output", embedded_web_prepare_output_path_' in cpp
@@ -91,17 +92,17 @@ def test_embedded_web3d_product_view_prepares_scene_before_loading():
     assert "embedded_web_expected_viewer_url_ = QUrl(viewer_url)" in cpp
     assert "embedded_web_view_->load(embedded_web_expected_viewer_url_)" in cpp
     assert "QFileInfo::exists(QDir(embedded_web_repo_root_).filePath(output_path))" in cpp
-    assert "stale output will not be loaded" in cpp
+    assert "old output is rejected even if present" in cpp
 
 
 def test_embedded_web3d_coalesces_refreshes_and_rejects_stale_completions():
     cpp = SCENE_PREVIEW_CPP.read_text(encoding="utf-8")
     hdr = SCENE_PREVIEW_HDR.read_text(encoding="utf-8")
-    assert "pending_embedded_web_scene_" in hdr
-    assert "embedded_web_request_revision_" in hdr
+    assert "pending_embedded_web_identity_" in hdr
+    assert "embedded_web_request_generation_" in hdr
     assert "if (embedded_web_prepare_process_ && embedded_web_prepare_process_->state() != QProcess::NotRunning) return;" in cpp
-    assert "preview_scene_name_.trimmed() == scene && revision == embedded_web_request_revision_" in cpp
-    assert "ignored stale prepared scene" in cpp
+    assert "embedded_web_identity_is_current(identity)" in cpp
+    assert "Ignored stale Embedded Product View" in cpp
 
 
 def test_embedded_web3d_server_is_local_reused_and_controls_are_not_native_noops():
@@ -135,12 +136,12 @@ def test_embedded_web3d_header_and_mode_do_not_show_native_banner_text():
 def test_embedded_web3d_hides_native_only_toolbar_controls():
     cpp = SCENE_PREVIEW_CPP.read_text(encoding="utf-8")
     visibility_body = cpp.split("void ScenePreviewWidget::refresh_toolbar_visibility()", 1)[1].split("void ScenePreviewWidget::refresh_mode_and_state()", 1)[0]
-    assert "const bool embedded_web_active = (qobject_cast<Scene3DViewportWidget *>(simple_3d_view_) == nullptr);" in visibility_body
+    assert "const bool embedded_web_active = (active_native_viewport() == nullptr);" in visibility_body
     for token in [
         "set_visible(mesh_preview_mode_label_, !embedded_web_active)",
         "set_visible(mesh_preview_mode_selector_, !embedded_web_active)",
-        "set_visible(gizmo_mode_label_, !embedded_web_active)",
-        "set_visible(gizmo_mode_selector_, !embedded_web_active)",
+        "set_visible(gizmo_mode_label_, embedded_web_active)",
+        "set_visible(gizmo_mode_selector_, embedded_web_active)",
         "set_visible(labels_label_, !embedded_web_active)",
         "set_visible(labels_selector_, !embedded_web_active)",
         "set_visible(view_actions_label_, !embedded_web_active)",

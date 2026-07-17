@@ -5,7 +5,14 @@
 #include <QDir>
 #include <QTemporaryDir>
 
+#define private public
 #include "scene_preview_widget.h"
+#undef private
+#include "scene3d_viewport_widget.h"
+
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+#include <QWebEngineView>
+#endif
 
 namespace {
 QApplication * ensure_app()
@@ -183,3 +190,40 @@ TEST(ScenePreviewWidgetUi, EquivalentPreviewContextsPrepareProductViewOnlyOnce)
   widget.set_preview_scene_name(" ur5_2f_test ");
   EXPECT_EQ(widget.embedded_web_preparation_request_count(), preparations + 1);
 }
+
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+TEST(ScenePreviewWidgetUi, PreparationFailureUsesPopulatedCompatibilityViewport)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+
+  ScenePreviewWidget::PreviewItem table;
+  table.id = "layout/table";
+  table.display_name = "Workbench";
+  table.role = "environment";
+  table.linked_to_editable_layout_state = true;
+  table.sx = 1.2;
+  table.sy = 0.8;
+  table.sz = 0.75;
+
+  ScenePreviewWidget widget;
+  widget.resize(800, 600);
+  widget.show();
+  widget.set_preview_items({table});
+  widget.select_preview_item(table.id);
+  widget.activate_native_compatibility_preview("test preparation failure");
+  QApplication::processEvents();
+
+  auto * web_view = widget.findChild<QWebEngineView *>("embeddedWeb3dProductView");
+  auto * compatibility_viewport = widget.findChild<Scene3DViewportWidget *>("nativeCompatibilityScene3dViewport");
+  ASSERT_NE(web_view, nullptr);
+  ASSERT_NE(compatibility_viewport, nullptr);
+  EXPECT_TRUE(web_view->isHidden());
+  EXPECT_TRUE(compatibility_viewport->isVisible());
+  EXPECT_EQ(compatibility_viewport->items.size(), 1);
+  EXPECT_EQ(compatibility_viewport->selected_id, table.id);
+  EXPECT_EQ(widget.selected_preview_item_id(), table.id);
+  EXPECT_GT(compatibility_viewport->render_debug_counters().viewport_received_count, 0);
+  EXPECT_EQ(widget.runtime_preview_status_text(), QStringLiteral("Preview available in compatibility mode"));
+  EXPECT_NE(widget.runtime_preview_status_text(), QStringLiteral("Preview failed"));
+}
+#endif
