@@ -4,6 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CPP = (ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp").read_text(encoding="utf-8")
+MAINWINDOW_CPP = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
 
 
 @dataclass(frozen=True)
@@ -102,3 +103,48 @@ def test_cpp_coalesces_before_generation_and_retires_stale_process_before_ui_wor
     assert prepare.index("embedded_web_prepare_process_ = nullptr;", stale) > stale
     assert prepare.index("maybe_start_next_embedded_web_prepare();", stale) > stale
     assert stale < prepare.index("const QString scene = identity.scene_id;")
+
+
+def test_selected_scene_status_refreshes_leave_the_committed_product_payload_identity_unchanged():
+    """Status/audit work must not create another Web3D payload preparation."""
+
+    class SelectedSceneStatusRefresh:
+        def __init__(self):
+            self.preparations = 0
+            self.payload_revision = 0
+            self.payload_generation = 0
+            self.committed_fingerprint = None
+
+        def apply_filtered_payload(self, fingerprint):
+            if fingerprint == self.committed_fingerprint:
+                return
+            self.committed_fingerprint = fingerprint
+            self.payload_revision += 1
+            self.payload_generation += 1
+            self.preparations += 1
+
+        def refresh_status_and_audit(self):
+            # The extracted status/audit helper intentionally has no payload commit.
+            return "camera-fit-and-audit-updated"
+
+    refresh = SelectedSceneStatusRefresh()
+    refresh.apply_filtered_payload(b"stable-filtered-payload")
+    before = (refresh.preparations, refresh.payload_revision, refresh.payload_generation)
+
+    assert refresh.refresh_status_and_audit() == "camera-fit-and-audit-updated"
+    assert refresh.refresh_status_and_audit() == "camera-fit-and-audit-updated"
+    assert (refresh.preparations, refresh.payload_revision, refresh.payload_generation) == before
+
+    filter_start = MAINWINDOW_CPP.index("void MainWindow::apply_scene3d_preview_layer_filters")
+    audit_start = MAINWINDOW_CPP.index("void MainWindow::refresh_scene3d_product_view_status_and_audit", filter_start)
+    filter_block = MAINWINDOW_CPP[filter_start:audit_start]
+    audit_end = MAINWINDOW_CPP.index("void MainWindow::populate_scene_hierarchy", audit_start)
+    audit_block = MAINWINDOW_CPP[audit_start:audit_end]
+
+    assert "preview_payload_matches(filtered_items)" in filter_block
+    assert "if (filtered_payload_changed)" in filter_block
+    assert "scene_preview_widget_->set_preview_items(filtered_items);" in filter_block
+    assert "viewport->ingest_preview_items(filtered_items);" not in filter_block
+    assert "set_preview_items" not in audit_block
+    assert "fit_product_view();" in audit_block
+    assert "set_preview_status_summary" in audit_block

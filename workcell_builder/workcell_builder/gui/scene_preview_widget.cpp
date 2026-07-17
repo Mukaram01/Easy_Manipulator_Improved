@@ -1718,6 +1718,10 @@ void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items)
 int ScenePreviewWidget::preview_payload_revision() const { return preview_payload_revision_; }
 quint64 ScenePreviewWidget::preview_payload_generation() const { return preview_payload_generation_; }
 quint64 ScenePreviewWidget::embedded_web_preparation_request_count() const { return embedded_web_preparation_request_count_; }
+bool ScenePreviewWidget::preview_payload_matches(const QVector<PreviewItem> & items) const
+{
+  return preview_payload_fingerprint(items) == preview_payload_fingerprint_;
+}
 void ScenePreviewWidget::set_preview_scene_name(const QString & scene_name)
 {
   const QString normalized_scene_name = scene_name.trimmed().isEmpty() ? QStringLiteral("No scene") : scene_name.trimmed();

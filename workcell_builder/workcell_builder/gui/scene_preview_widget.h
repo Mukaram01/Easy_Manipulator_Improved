@@ -294,6 +294,7 @@ public:
   int preview_payload_revision() const;
   quint64 preview_payload_generation() const;
   quint64 embedded_web_preparation_request_count() const;
+  bool preview_payload_matches(const QVector<PreviewItem> & items) const;
 
 signals:
   void studio_log_requested(const QString & message);

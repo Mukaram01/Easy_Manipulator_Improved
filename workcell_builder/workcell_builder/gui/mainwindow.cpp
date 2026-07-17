@@ -7895,16 +7895,49 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
   if (filtered_items.isEmpty() && !all_scene_preview_items_.isEmpty()) {
     append_studio_log("Scene3D blocker: current layer filters hide all items. Re-enable editable layout, mesh preview, primitive fallback, or locked generated URDF visuals.");
   }
-  scene_preview_widget_->set_preview_items(filtered_items);
+  const bool filtered_payload_changed = !scene_preview_widget_->preview_payload_matches(filtered_items);
+  if (filtered_payload_changed) {
+    scene_preview_widget_->set_preview_items(filtered_items);
+  } else if (scene3d_debug_logging_enabled()) {
+    append_studio_log(QStringLiteral(
+      "Scene3D filtered payload unchanged; skipped Product View payload commit."));
+  }
+  refresh_scene3d_product_view_status_and_audit();
+  if (scene3d_debug_logging_enabled()) {
+    append_studio_log(
+      QString("Scene3D diagnostics {model_items_count=%1, filtered_visible_count=%2}")
+        .arg(all_scene_preview_items_.size())
+        .arg(filtered_items.size()));
+    append_studio_log(
+      QString("Scene3D diagnostics: visible item count after filters=%1/%2")
+        .arg(filtered_items.size())
+        .arg(all_scene_preview_items_.size()));
+  }
+  if (log_change) {
+    append_studio_log(
+      QString("Scene3D preview-only visibility updated: editable=%1 urdf_visuals=%2 mesh=%3 primitives=%4 overlays=%5 warnings=%6 (visible %7/%8). No files changed.")
+      .arg(preview_layer_editable_layout_box_ && preview_layer_editable_layout_box_->isChecked() ? "on" : "off")
+      .arg(preview_layer_generated_urdf_visual_box_ && preview_layer_generated_urdf_visual_box_->isChecked() ? "on" : "off")
+      .arg(preview_layer_mesh_preview_box_ && preview_layer_mesh_preview_box_->isChecked() ? "on" : "off")
+      .arg(preview_layer_primitive_fallback_box_ && preview_layer_primitive_fallback_box_->isChecked() ? "on" : "off")
+      .arg(preview_layer_overlays_helpers_box_ && preview_layer_overlays_helpers_box_->isChecked() ? "on" : "off")
+      .arg(preview_layer_warnings_missing_assets_box_ && preview_layer_warnings_missing_assets_box_->isChecked() ? "on" : "off")
+      .arg(filtered_items.size())
+      .arg(all_scene_preview_items_.size()));
+  }
+}
+
+
+void MainWindow::refresh_scene3d_product_view_status_and_audit()
+{
+  // This helper deliberately performs status, camera-fit, and audit work only.
+  // Payload delivery belongs to apply_scene3d_preview_layer_filters(), so a
+  // selected-scene status refresh cannot alter the Embedded Web3D request key.
+  if (!scene_preview_widget_) return;
+
   auto * viewport = scene_preview_widget_->is_native_product_view_backend()
     ? scene_preview_widget_->findChild<Scene3DViewportWidget *>()
     : nullptr;
-  if (scene_preview_widget_->is_native_product_view_backend() && viewport) {
-    // set_preview_items() normally commits the payload into the active viewport.
-    // Re-ingest here as an explicit guard so the camera fit below always uses
-    // the exact post-filter payload, including final UR5 mesh/fallback draw bounds.
-    viewport->ingest_preview_items(filtered_items);
-  }
   QStringList missing_required_visible_links;
   const QJsonObject viewport_audit =
     audit_ur5_2f_test_committed_viewport_items(viewport, &missing_required_visible_links);
@@ -7919,9 +7952,7 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     scene3d_filter_diagnostics_[QStringLiteral("camera_fit_target")] = viewport->last_camera_fit_target();
     scene3d_filter_diagnostics_[QStringLiteral("camera_fit_includes_robot")] = viewport->last_initial_fit_included_robot_bounds();
   }
-  if (scene_preview_widget_->is_native_product_view_backend() &&
-      has_selected_scene() && selected_scene_name() == QStringLiteral("ur5_2f_test")) {
-    // audit_ur5_2f_test_committed_viewport_items(viewport, &missing_required_visible_links) is computed above after final ingest.
+  if (scene_preview_widget_->is_native_product_view_backend() && selected_ur5_2f_test) {
     scene3d_filter_diagnostics_[QStringLiteral("ur5_2f_test_final_viewport_audit")] = viewport_audit;
     append_studio_log(
       QStringLiteral("Scene3D final viewport audit for ur5_2f_test: %1")
@@ -7946,28 +7977,6 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
       scene_preview_widget_->total_warning_count(),
       transform_parity.warning,
       transform_parity.failed));
-  if (scene3d_debug_logging_enabled()) {
-    append_studio_log(
-      QString("Scene3D diagnostics {model_items_count=%1, filtered_visible_count=%2}")
-        .arg(all_scene_preview_items_.size())
-        .arg(filtered_items.size()));
-    append_studio_log(
-      QString("Scene3D diagnostics: visible item count after filters=%1/%2")
-        .arg(filtered_items.size())
-        .arg(all_scene_preview_items_.size()));
-  }
-  if (log_change) {
-    append_studio_log(
-      QString("Scene3D preview-only visibility updated: editable=%1 urdf_visuals=%2 mesh=%3 primitives=%4 overlays=%5 warnings=%6 (visible %7/%8). No files changed.")
-      .arg(preview_layer_editable_layout_box_ && preview_layer_editable_layout_box_->isChecked() ? "on" : "off")
-      .arg(preview_layer_generated_urdf_visual_box_ && preview_layer_generated_urdf_visual_box_->isChecked() ? "on" : "off")
-      .arg(preview_layer_mesh_preview_box_ && preview_layer_mesh_preview_box_->isChecked() ? "on" : "off")
-      .arg(preview_layer_primitive_fallback_box_ && preview_layer_primitive_fallback_box_->isChecked() ? "on" : "off")
-      .arg(preview_layer_overlays_helpers_box_ && preview_layer_overlays_helpers_box_->isChecked() ? "on" : "off")
-      .arg(preview_layer_warnings_missing_assets_box_ && preview_layer_warnings_missing_assets_box_->isChecked() ? "on" : "off")
-      .arg(filtered_items.size())
-      .arg(all_scene_preview_items_.size()));
-  }
 }
 
 void MainWindow::populate_scene_hierarchy()

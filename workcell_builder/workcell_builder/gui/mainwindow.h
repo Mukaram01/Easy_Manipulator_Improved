@@ -362,6 +362,7 @@ private:
   void populate_scene_hierarchy();
   void apply_scene3d_product_view_layer_defaults_and_commit();
   void apply_scene3d_preview_layer_filters(bool log_change = false);
+  void refresh_scene3d_product_view_status_and_audit();
   void keyPressEvent(QKeyEvent * event) override;
   void populate_asset_catalog();
   void on_hierarchy_item_selected(QTreeWidgetItem * item);
