@@ -92,12 +92,12 @@ def test_native_backend_is_suppressed_unless_explicitly_requested_or_webengine_u
 
 def test_embedded_refresh_identity_coalesces_duplicate_context_and_payload_requests():
     assert "struct EmbeddedWebRequestIdentity" in HDR
-    for field in ["scene_id", "absolute_scene_dir", "payload_revision", "generation"]:
+    for field in ["scene_id", "absolute_scene_dir", "payload_fingerprint", "payload_revision", "generation"]:
         assert field in HDR
     assert "matches_context" in HDR
     refresh = _between(CPP, "void ScenePreviewWidget::request_embedded_web_product_view_refresh", "ScenePreviewWidget::EmbeddedWebRequestIdentity")
-    assert "embedded_web_active_identity_.matches_context(identity)" in refresh
-    assert "pending_embedded_web_identity_.matches_context(identity)" in refresh
+    assert "embedded_web_active_identity_.matches_context(request_key)" in refresh
+    assert "pending_embedded_web_identity_.matches_context(request_key)" in refresh
     assert "pending_embedded_web_request_ = true" in refresh
     labels_handler = _between(CPP, "connect(labels_selector_", "connect(snap_mode_selector_")
     assert "refresh_embedded_web_product_view" not in labels_handler

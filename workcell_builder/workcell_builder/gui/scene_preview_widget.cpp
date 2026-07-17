@@ -934,20 +934,26 @@ void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force)
   return;
 #else
   if (!embedded_web_view_) return;
-  if (force) cancel_embedded_web_lifecycle(false);
-  const quint64 generation = ++embedded_web_request_generation_;
-  const EmbeddedWebRequestIdentity identity = embedded_web_request_identity(generation);
-  if (identity.scene_id.isEmpty() || identity.scene_id == QStringLiteral("No scene")) {
+  // Form the effective key before allocating a generation.  Automatic callers
+  // can be noisy (payload delivery and UI state often arrive separately), so a
+  // duplicate must leave both in-flight work and its callback identity intact.
+  const EmbeddedWebRequestIdentity request_key = embedded_web_request_identity(0);
+  if (request_key.scene_id.isEmpty() || request_key.scene_id == QStringLiteral("No scene")) {
     set_embedded_product_view_state(EmbeddedProductViewState::Idle);
     return;
   }
 
-  // Automatic payload/context notifications are coalesced.  In particular, UI-only
-  // controls (such as Labels) must not start a fresh scene-preparation process.
-  if (!force && ((embedded_web_has_active_identity_ && embedded_web_active_identity_.matches_context(identity)) ||
-                 (pending_embedded_web_request_ && pending_embedded_web_identity_.matches_context(identity)))) {
+  // Automatic payload/context notifications are coalesced before they can
+  // consume a generation or replace the active callback identity.
+  if (!force && ((embedded_web_has_active_identity_ && embedded_web_active_identity_.matches_context(request_key)) ||
+                 (pending_embedded_web_request_ && pending_embedded_web_identity_.matches_context(request_key)))) {
     return;
   }
+
+  // Refresh Preview is deliberately the sole forced path.  It retires the
+  // previous lifecycle, then creates one fresh generation and one retry.
+  if (force) cancel_embedded_web_lifecycle(false);
+  const EmbeddedWebRequestIdentity identity = embedded_web_request_identity(++embedded_web_request_generation_);
 
   embedded_web_active_identity_ = identity;
   embedded_web_has_active_identity_ = true;
@@ -961,13 +967,15 @@ void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force)
 ScenePreviewWidget::EmbeddedWebRequestIdentity ScenePreviewWidget::embedded_web_request_identity(quint64 generation) const
 {
   EmbeddedWebRequestIdentity identity;
-  identity.scene_id = preview_context_.scene_id.trimmed().isEmpty() ? preview_scene_name_.trimmed() : preview_context_.scene_id.trimmed();
-  const QString scene_dir = preview_context_.absolute_scene_dir.trimmed();
+  const PreviewContext normalized_context = normalized_preview_context(preview_context_);
+  identity.scene_id = normalized_context.scene_id.isEmpty() ? preview_scene_name_.trimmed() : normalized_context.scene_id;
+  const QString scene_dir = normalized_context.absolute_scene_dir;
   if (!scene_dir.isEmpty()) {
     const QFileInfo info(scene_dir);
     identity.absolute_scene_dir = QDir::cleanPath(info.exists() ?
       (info.canonicalFilePath().isEmpty() ? info.absoluteFilePath() : info.canonicalFilePath()) : info.absoluteFilePath());
   }
+  identity.payload_fingerprint = preview_payload_fingerprint_;
   identity.payload_revision = static_cast<quint64>(preview_payload_revision_);
   identity.generation = generation;
   return identity;
@@ -995,6 +1003,12 @@ void ScenePreviewWidget::maybe_start_next_embedded_web_prepare()
   const bool force = pending_embedded_web_force_;
   pending_embedded_web_request_ = false;
   pending_embedded_web_force_ = false;
+  // A newer forced request can retire the pending identity while the previous
+  // process is finishing.  Do not revive that stale work.
+  if (!embedded_web_identity_is_current(identity)) {
+    maybe_start_next_embedded_web_prepare();
+    return;
+  }
   start_embedded_web_prepare(identity, force);
 #endif
 }
@@ -1051,8 +1065,6 @@ void ScenePreviewWidget::start_embedded_web_prepare(const EmbeddedWebRequestIden
   embedded_web_repo_root_ = repo_root;
   embedded_web_prepare_scene_ = scene_id;
   embedded_web_prepare_scene_dir_ = selected_scene_dir;
-  embedded_web_active_identity_ = identity;
-  embedded_web_has_active_identity_ = true;
   embedded_web_prepare_output_path_ = QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(scene_id);
   if (embedded_web_prepare_process_) embedded_web_prepare_process_->deleteLater();
   embedded_web_prepare_process_ = new QProcess(this);
@@ -1078,7 +1090,17 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
   Q_UNUSED(identity); Q_UNUSED(process); Q_UNUSED(exit_code); Q_UNUSED(exit_status);
 #else
-  if (!process || process != embedded_web_prepare_process_ || !embedded_web_identity_is_current(identity)) return;
+  if (!process || process != embedded_web_prepare_process_) return;
+
+  // A real automatic replacement updates the active identity without killing
+  // the old process.  Retire that completion before reading output, changing
+  // UI state, or loading its scene, then start the valid pending replacement.
+  if (!embedded_web_identity_is_current(identity)) {
+    process->deleteLater();
+    embedded_web_prepare_process_ = nullptr;
+    maybe_start_next_embedded_web_prepare();
+    return;
+  }
   const QString scene = identity.scene_id;
   const QString output_path = embedded_web_prepare_output_path_;
   const QString stdout_text = QString::fromUtf8(process->readAllStandardOutput()).trimmed();
