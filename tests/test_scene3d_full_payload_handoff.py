@@ -89,14 +89,14 @@ def test_ur5_2f_final_viewport_audit_requires_renderable_ur5_links_table_and_cam
 
 
 def test_loader_filter_warning_is_suppressed_when_required_final_viewport_links_are_visible():
-    filter_start = MAIN_CPP.index('if (has_selected_scene() && selected_scene_name() == QStringLiteral("ur5_2f_test"))')
-    filter_end = MAIN_CPP.index('const Scene3DTransformParityReadiness transform_parity', filter_start)
-    filter_block = MAIN_CPP[filter_start:filter_end]
+    audit_start = MAIN_CPP.index('void MainWindow::refresh_scene3d_product_view_status_and_audit')
+    audit_end = MAIN_CPP.index('void MainWindow::populate_scene_hierarchy', audit_start)
+    audit_block = MAIN_CPP[audit_start:audit_end]
 
-    assert 'audit_ur5_2f_test_committed_viewport_items(viewport, &missing_required_visible_links)' in filter_block
-    assert 'if (!missing_required_visible_links.isEmpty())' in filter_block
-    assert 'retained visual rows missing after loader filtering' in filter_block
-    assert 'final viewport audit passed for ur5_2f_test required visible UR5 viewport/renderable links' in filter_block
+    assert 'audit_ur5_2f_test_committed_viewport_items(viewport, &missing_required_visible_links)' in audit_block
+    assert 'if (!missing_required_visible_links.isEmpty())' in audit_block
+    assert 'retained visual rows missing after loader filtering' in audit_block
+    assert 'final viewport audit passed for ur5_2f_test required visible UR5 viewport/renderable links' in audit_block
 
 
 def test_viewport_generated_urdf_renderer_rejects_environment_yaml_semantic_rows_before_mesh_path():
