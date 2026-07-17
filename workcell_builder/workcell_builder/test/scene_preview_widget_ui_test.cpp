@@ -2,6 +2,8 @@
 
 #include <QApplication>
 #include <QComboBox>
+#include <QDir>
+#include <QTemporaryDir>
 
 #include "scene_preview_widget.h"
 
@@ -149,4 +151,35 @@ TEST(ScenePreviewWidgetUi, EquivalentPreviewPayloadsDoNotPrepareProductViewAgain
   EXPECT_EQ(widget.preview_payload_generation(), generation + 1);
   EXPECT_EQ(widget.embedded_web_preparation_request_count(), preparations + 1);
   EXPECT_EQ(widget.selected_preview_item_id(), robot.id);
+}
+
+TEST(ScenePreviewWidgetUi, EquivalentPreviewContextsPrepareProductViewOnlyOnce)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+
+  QTemporaryDir temporary_root;
+  ASSERT_TRUE(temporary_root.isValid());
+  const QString repo_root = temporary_root.path();
+  const QString scene_dir = QDir(repo_root).filePath("scenes/ur5_2f_test");
+  ASSERT_TRUE(QDir().mkpath(scene_dir));
+
+  ScenePreviewWidget::PreviewContext first_context;
+  first_context.scene_id = "  ur5_2f_test  ";
+  first_context.absolute_scene_dir = QDir(repo_root).filePath("scenes/./ur5_2f_test");
+  first_context.absolute_repo_root = repo_root + "/.";
+
+  ScenePreviewWidget::PreviewContext equivalent_context;
+  equivalent_context.scene_id = "ur5_2f_test";
+  equivalent_context.absolute_scene_dir = scene_dir;
+  equivalent_context.absolute_repo_root = repo_root;
+
+  ScenePreviewWidget widget;
+  const quint64 preparations = widget.embedded_web_preparation_request_count();
+  widget.set_preview_context(first_context);
+  EXPECT_EQ(widget.embedded_web_preparation_request_count(), preparations + 1);
+
+  widget.set_preview_context(equivalent_context);
+  widget.set_preview_context(first_context);
+  widget.set_preview_scene_name(" ur5_2f_test ");
+  EXPECT_EQ(widget.embedded_web_preparation_request_count(), preparations + 1);
 }

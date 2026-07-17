@@ -89,6 +89,35 @@ QString normalized_preview_token(const QString & value)
   return value.trimmed().toLower().replace('-', '_').replace(' ', '_');
 }
 
+QString normalized_absolute_preview_path(const QString & path)
+{
+  const QString trimmed_path = path.trimmed();
+  if (trimmed_path.isEmpty()) return {};
+
+  const QFileInfo info(trimmed_path);
+  const QString canonical_path = info.canonicalFilePath();
+  return QDir::cleanPath(canonical_path.isEmpty() ? info.absoluteFilePath() : canonical_path);
+}
+
+ScenePreviewWidget::PreviewContext normalized_preview_context(
+  const ScenePreviewWidget::PreviewContext & context)
+{
+  ScenePreviewWidget::PreviewContext normalized = context;
+  normalized.scene_id = normalized.scene_id.trimmed();
+  normalized.absolute_scene_dir = normalized_absolute_preview_path(normalized.absolute_scene_dir);
+  normalized.absolute_repo_root = normalized_absolute_preview_path(normalized.absolute_repo_root);
+  return normalized;
+}
+
+bool preview_contexts_equal(
+  const ScenePreviewWidget::PreviewContext & left,
+  const ScenePreviewWidget::PreviewContext & right)
+{
+  return left.scene_id == right.scene_id &&
+         left.absolute_scene_dir == right.absolute_scene_dir &&
+         left.absolute_repo_root == right.absolute_repo_root;
+}
+
 bool is_safe_embedded_web_scene_id(const QString & scene_id)
 {
   static const QRegularExpression kSafeSceneId(QStringLiteral("^[A-Za-z0-9][A-Za-z0-9_-]*$"));
@@ -1344,20 +1373,19 @@ void ScenePreviewWidget::show_embedded_web_product_view()
 
 void ScenePreviewWidget::set_preview_context(const PreviewContext & context)
 {
-  PreviewContext normalized = context;
-  normalized.scene_id = normalized.scene_id.trimmed();
-  normalized.absolute_scene_dir = normalized.absolute_scene_dir.trimmed();
-  normalized.absolute_repo_root = normalized.absolute_repo_root.trimmed();
-  const bool context_changed = preview_context_.scene_id != normalized.scene_id ||
-      preview_context_.absolute_scene_dir != normalized.absolute_scene_dir ||
-      preview_context_.absolute_repo_root != normalized.absolute_repo_root;
+  const PreviewContext normalized = normalized_preview_context(context);
+  const bool context_changed = !preview_contexts_equal(preview_context_, normalized);
+  if (!context_changed) return;
+
+  const QString effective_scene_name = normalized.scene_id.isEmpty() ?
+    QStringLiteral("No scene") : normalized.scene_id;
+  const bool scene_name_changed = preview_scene_name_ != effective_scene_name;
   if (context_changed) cancel_embedded_web_lifecycle(false);
   preview_context_ = normalized;
-  if (context_changed) {
-    root_resolution_summary_keys_.clear();
-  }
+  root_resolution_summary_keys_.clear();
   if (!normalized.scene_id.isEmpty()) {
     set_preview_scene_name(normalized.scene_id);
+    if (!scene_name_changed) refresh_embedded_web_product_view();
   } else {
     refresh_embedded_web_product_view();
   }
@@ -1539,19 +1567,17 @@ quint64 ScenePreviewWidget::embedded_web_preparation_request_count() const { ret
 void ScenePreviewWidget::set_preview_scene_name(const QString & scene_name)
 {
   const QString normalized_scene_name = scene_name.trimmed().isEmpty() ? QStringLiteral("No scene") : scene_name.trimmed();
-  if (preview_scene_name_ != normalized_scene_name) {
-    cancel_embedded_web_lifecycle(false);
-    preview_scene_name_ = normalized_scene_name;
-    preview_payload_revision_ = 0;
-    last_visual_quality_revision_logged_ = -1;
-    emitted_scene_diagnostic_keys_.clear();
-    emit_scene_diagnostic_once(
-      QStringLiteral("scene_load"),
-      0,
-      QStringLiteral("Scene loaded: %1").arg(preview_scene_name_));
-  } else {
-    preview_scene_name_ = normalized_scene_name;
-  }
+  if (preview_scene_name_ == normalized_scene_name) return;
+
+  cancel_embedded_web_lifecycle(false);
+  preview_scene_name_ = normalized_scene_name;
+  preview_payload_revision_ = 0;
+  last_visual_quality_revision_logged_ = -1;
+  emitted_scene_diagnostic_keys_.clear();
+  emit_scene_diagnostic_once(
+    QStringLiteral("scene_load"),
+    0,
+    QStringLiteral("Scene loaded: %1").arg(preview_scene_name_));
   auto * v = active_native_viewport();
   if (v) { v->scene_name = preview_scene_name_; v->update(); }
   refresh_embedded_web_product_view();

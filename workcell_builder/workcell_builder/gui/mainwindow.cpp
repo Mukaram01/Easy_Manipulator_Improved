@@ -10852,6 +10852,8 @@ void MainWindow::populate_scene_hierarchy()
     ScenePreviewWidget::PreviewContext preview_context;
     preview_context.scene_id = selected_scene_state_.name;
     preview_context.absolute_scene_dir = selected_scene_state_.path;
+    preview_context.absolute_repo_root = resolve_scene3d_extractor_script_path(
+      fs::path(selected_scene_state_.path.toStdString()));
     scene_preview_widget_->set_preview_context(preview_context);
     apply_scene3d_product_view_layer_defaults_and_commit();
 
