@@ -83,7 +83,7 @@ def test_embedded_web3d_product_view_prepares_scene_before_loading():
     assert "embeddedWeb3dProductView" in cpp
     assert "EmbeddedProductViewState { Idle, Preparing, StartingServer, Loading, Ready, Failed }" in hdr
     assert "scripts/ensure_workcell_studio_web_scene_fresh.py" in cpp
-    assert '"--scene", QStringLiteral("scenes/%1").arg(scene)' in cpp
+    assert '"--scene", selected_scene_dir' in cpp
     assert '"--output", embedded_web_prepare_output_path_' in cpp
     assert '"--stage-assets"' in cpp
     assert "setWorkingDirectory(repo_root)" in cpp

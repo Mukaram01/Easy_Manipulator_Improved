@@ -322,7 +322,7 @@ private:
   void poll_embedded_editor_events();
   void apply_embedded_editor_state(const QVariantMap & state);
   QString embedded_snap_command(const QString & choice) const;
-  QString embedded_web_prepare_command_for_log(const QString & scene, const QString & output_path, bool force = false) const;
+  QString embedded_web_prepare_command_for_log(const QString & scene_dir, const QString & output_path, bool force = false) const;
   QString resolve_embedded_web_repo_root(const QString & selected_scene_dir) const;
   void emit_backend_startup_diagnostic_once();
   bool diagnostic_debug_logging_enabled() const;
@@ -367,6 +367,7 @@ private:
   EmbeddedProductViewState embedded_product_view_state_{ EmbeddedProductViewState::Idle };
   QString embedded_web_repo_root_;
   QString embedded_web_prepare_scene_;
+  QString embedded_web_prepare_scene_dir_;
   QString embedded_web_prepare_output_path_;
   QString embedded_web_last_viewer_url_;
   QString embedded_web_last_boot_status_;

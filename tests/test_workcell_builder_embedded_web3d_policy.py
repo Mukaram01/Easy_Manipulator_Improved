@@ -83,12 +83,14 @@ def test_embedded_backend_skips_native_scene3d_final_append_and_audit_paths():
 
 
 def test_product_view_lifecycle_prepares_before_loading_and_rejects_stale_output():
-    prepare_idx = CPP.index('set_embedded_product_view_state(EmbeddedProductViewState::Preparing, scene)')
+    prepare_idx = CPP.index('set_embedded_product_view_state(EmbeddedProductViewState::Preparing, scene_id)')
     server_idx = CPP.index('ensure_embedded_web_server_started(embedded_web_repo_root_)')
     load_idx = CPP.index('set_embedded_product_view_state(EmbeddedProductViewState::Loading)', server_idx)
     assert prepare_idx < server_idx < load_idx
     assert 'scripts/ensure_workcell_studio_web_scene_fresh.py' in CPP
-    assert '"--scene", QStringLiteral("scenes/%1").arg(scene), "--output", embedded_web_prepare_output_path_, "--stage-assets"' in CPP
+    assert '"--scene", selected_scene_dir, "--output", embedded_web_prepare_output_path_, "--stage-assets"' in CPP
+    assert 'embedded_web_prepare_command_for_log(selected_scene_dir, embedded_web_prepare_output_path_, force)' in CPP
+    assert 'QStringLiteral("scenes/%1").arg(scene)' not in CPP
     assert 'build/workcell_studio_web_scene/%1.web_scene.json' in CPP
     assert 'output_is_fresh' in CPP
     assert 'stale output will not be loaded' in CPP
@@ -157,6 +159,9 @@ def test_embedded_web_repo_root_resolution_covers_launch_and_symlink_scenarios()
     assert "canonicalFilePath" in cpp  # symlinked scene path resolves to the real repository tree
     assert "QDir::currentPath()" in cpp  # home/workspace/repository launch cwd is fallback only
     assert "QCoreApplication::applicationDirPath()" in cpp
-    assert "QFileInfo(scene).isAbsolute()" in cpp
-    assert "QDir(QDir::currentPath()).absoluteFilePath(QStringLiteral(\"scenes/%1\").arg(scene))" in cpp
+    prepare = cpp[cpp.index('void ScenePreviewWidget::start_embedded_web_prepare'):cpp.index('void ScenePreviewWidget::on_embedded_web_prepare_finished')]
+    assert "preview_context_.absolute_scene_dir" in prepare
+    assert "selected_scene_info.exists()" in prepare
+    assert "scene_directory_matches_id(selected_scene_dir, scene_id)" in prepare
+    assert "QDir::currentPath()" not in prepare
     assert "could not find a Workcell Studio repo root with required markers" in cpp

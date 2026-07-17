@@ -1,5 +1,4 @@
 #include "scene_preview_widget.h"
-// Compatibility token for static tests: legacy cwd fallback text QDir(QDir::currentPath()).absoluteFilePath(QStringLiteral("scenes/%1").arg(scene))
 // Compatibility token for static tests: Preview selection cleared after refresh (id missing):
 
 #include <QRectF>
@@ -17,6 +16,7 @@
 #include <QEventLoop>
 #include <QTimer>
 #include <QProcessEnvironment>
+#include <QRegularExpression>
 #include <QJsonArray>
 #include <QSet>
 #include <QPushButton>
@@ -28,6 +28,37 @@ constexpr double kOverlayFitDominanceRatio = 4.0;
 QString normalized_preview_token(const QString & value)
 {
   return value.trimmed().toLower().replace('-', '_').replace(' ', '_');
+}
+
+bool is_safe_embedded_web_scene_id(const QString & scene_id)
+{
+  static const QRegularExpression kSafeSceneId(QStringLiteral("^[A-Za-z0-9][A-Za-z0-9_-]*$"));
+  return kSafeSceneId.match(scene_id).hasMatch();
+}
+
+bool scene_directory_matches_id(const QString & scene_dir, const QString & scene_id)
+{
+  const QFileInfo scene_info(scene_dir);
+  if (scene_info.fileName() == scene_id) return true;
+
+  const QDir dir(scene_dir);
+  for (const QString & metadata_name : {QStringLiteral("scene_manifest.yaml"), QStringLiteral("cell_definition.yaml"), QStringLiteral("environment.yaml")}) {
+    QFile metadata(dir.filePath(metadata_name));
+    if (!metadata.open(QIODevice::ReadOnly | QIODevice::Text)) continue;
+    const QString text = QString::fromUtf8(metadata.readAll());
+    const QRegularExpression scene_id_pattern(
+      QStringLiteral("^scene:\\s*$[\\s\\S]*?^  (?:id|name):\\s*%1\\s*(?:#.*)?$").arg(QRegularExpression::escape(scene_id)),
+      QRegularExpression::MultilineOption);
+    const QRegularExpression cell_id_pattern(
+      QStringLiteral("^cell:\\s*$[\\s\\S]*?^  (?:id|name):\\s*%1\\s*(?:#.*)?$").arg(QRegularExpression::escape(scene_id)),
+      QRegularExpression::MultilineOption);
+    const QRegularExpression top_level_id_pattern(
+      QStringLiteral("^scene_id:\\s*%1\\s*(?:#.*)?$").arg(QRegularExpression::escape(scene_id)),
+      QRegularExpression::MultilineOption);
+    if (scene_id_pattern.match(text).hasMatch() || cell_id_pattern.match(text).hasMatch() ||
+        top_level_id_pattern.match(text).hasMatch()) return true;
+  }
+  return false;
 }
 
 bool preview_item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item)
@@ -531,10 +562,10 @@ QString ScenePreviewWidget::resolve_embedded_web_repo_root(const QString & selec
   return QString();
 }
 
-QString ScenePreviewWidget::embedded_web_prepare_command_for_log(const QString & scene, const QString & output_path, bool force) const
+QString ScenePreviewWidget::embedded_web_prepare_command_for_log(const QString & scene_dir, const QString & output_path, bool force) const
 {
-  QString command = QStringLiteral("python3 scripts/ensure_workcell_studio_web_scene_fresh.py --scene scenes/%1 --output %2 --stage-assets")
-                      .arg(scene, output_path);
+  QString command = QStringLiteral("python3 scripts/ensure_workcell_studio_web_scene_fresh.py --scene %1 --output %2 --stage-assets")
+                      .arg(scene_dir, output_path);
   if (force) command += QStringLiteral(" --force");
   return command;
 }
@@ -795,9 +826,27 @@ void ScenePreviewWidget::start_embedded_web_prepare(const QString & scene, quint
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
   Q_UNUSED(scene); Q_UNUSED(revision); Q_UNUSED(force);
 #else
-  const QString selected_scene_dir = !preview_context_.absolute_scene_dir.trimmed().isEmpty()
-    ? preview_context_.absolute_scene_dir.trimmed()
-    : (QFileInfo(scene).isAbsolute() ? QFileInfo(scene).absoluteFilePath() : QString());
+  Q_UNUSED(scene);
+  const QString scene_id = preview_context_.scene_id.trimmed();
+  const QFileInfo selected_scene_info(preview_context_.absolute_scene_dir.trimmed());
+  if (!is_safe_embedded_web_scene_id(scene_id)) {
+    activate_native_compatibility_preview(QStringLiteral("selected scene ID is missing or unsafe for Product View output and URL: %1")
+      .arg(scene_id.isEmpty() ? QStringLiteral("<unset>") : scene_id));
+    return;
+  }
+  if (preview_context_.absolute_scene_dir.trimmed().isEmpty() || !selected_scene_info.isAbsolute() ||
+      !selected_scene_info.exists() || !selected_scene_info.isDir()) {
+    activate_native_compatibility_preview(QStringLiteral("selected scene directory is required and must exist: %1")
+      .arg(preview_context_.absolute_scene_dir.trimmed().isEmpty() ? QStringLiteral("<unset>") : preview_context_.absolute_scene_dir.trimmed()));
+    return;
+  }
+  const QString canonical_scene_dir = selected_scene_info.canonicalFilePath();
+  const QString selected_scene_dir = QDir::cleanPath(canonical_scene_dir.isEmpty() ? selected_scene_info.absoluteFilePath() : canonical_scene_dir);
+  if (!scene_directory_matches_id(selected_scene_dir, scene_id)) {
+    activate_native_compatibility_preview(QStringLiteral("selected scene directory %1 does not match requested scene ID %2 by directory name or scene metadata")
+      .arg(selected_scene_dir, scene_id));
+    return;
+  }
   const QString repo_root = resolve_embedded_web_repo_root(selected_scene_dir);
   if (repo_root.isEmpty()) {
     const QString detail = QStringLiteral("could not find a Workcell Studio repo root with viewer, scene-prep script, and scenes markers");
@@ -815,13 +864,14 @@ void ScenePreviewWidget::start_embedded_web_prepare(const QString & scene, quint
 #endif
   native_compatibility_fallback_active_ = false;
   embedded_web_repo_root_ = repo_root;
-  embedded_web_prepare_scene_ = scene;
+  embedded_web_prepare_scene_ = scene_id;
+  embedded_web_prepare_scene_dir_ = selected_scene_dir;
   embedded_web_active_revision_ = revision;
-  embedded_web_prepare_output_path_ = QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(scene);
+  embedded_web_prepare_output_path_ = QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(scene_id);
   if (embedded_web_prepare_process_) embedded_web_prepare_process_->deleteLater();
   embedded_web_prepare_process_ = new QProcess(this);
   embedded_web_prepare_process_->setProgram(QStringLiteral("python3"));
-  QStringList args{"scripts/ensure_workcell_studio_web_scene_fresh.py", "--scene", QStringLiteral("scenes/%1").arg(scene), "--output", embedded_web_prepare_output_path_, "--stage-assets"};
+  QStringList args{"scripts/ensure_workcell_studio_web_scene_fresh.py", "--scene", selected_scene_dir, "--output", embedded_web_prepare_output_path_, "--stage-assets"};
   if (force) args << "--force";
   embedded_web_prepare_process_->setArguments(args);
   embedded_web_prepare_process_->setWorkingDirectory(repo_root);
@@ -829,8 +879,8 @@ void ScenePreviewWidget::start_embedded_web_prepare(const QString & scene, quint
   embedded_web_prepare_process_->setProcessChannelMode(QProcess::SeparateChannels);
   embedded_web_prepare_started_at_ = QDateTime::currentDateTimeUtc();
   connect(embedded_web_prepare_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, &ScenePreviewWidget::on_embedded_web_prepare_finished);
-  set_embedded_product_view_state(EmbeddedProductViewState::Preparing, scene);
-  emit studio_log_requested(QStringLiteral("Preparing embedded Product View from repo root %1: %2").arg(repo_root, embedded_web_prepare_command_for_log(scene, embedded_web_prepare_output_path_, force)));
+  set_embedded_product_view_state(EmbeddedProductViewState::Preparing, scene_id);
+  emit studio_log_requested(QStringLiteral("Preparing embedded Product View from repo root %1: %2").arg(repo_root, embedded_web_prepare_command_for_log(selected_scene_dir, embedded_web_prepare_output_path_, force)));
   embedded_web_prepare_process_->start();
 #endif
 }
@@ -847,7 +897,7 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(int exit_code, QProces
   const QString output_path = embedded_web_prepare_output_path_;
   const QString stdout_text = QString::fromUtf8(process->readAllStandardOutput()).trimmed();
   const QString stderr_text = QString::fromUtf8(process->readAllStandardError()).trimmed();
-  const QString command = embedded_web_prepare_command_for_log(scene, output_path, false);
+  const QString command = embedded_web_prepare_command_for_log(embedded_web_prepare_scene_dir_, output_path, false);
   process->deleteLater();
   embedded_web_prepare_process_ = nullptr;
 
@@ -1107,16 +1157,18 @@ void ScenePreviewWidget::set_preview_context(const PreviewContext & context)
   normalized.scene_id = normalized.scene_id.trimmed();
   normalized.absolute_scene_dir = normalized.absolute_scene_dir.trimmed();
   normalized.absolute_repo_root = normalized.absolute_repo_root.trimmed();
-  if (!normalized.scene_id.isEmpty()) set_preview_scene_name(normalized.scene_id);
-  if (preview_context_.scene_id != normalized.scene_id ||
+  const bool context_changed = preview_context_.scene_id != normalized.scene_id ||
       preview_context_.absolute_scene_dir != normalized.absolute_scene_dir ||
-      preview_context_.absolute_repo_root != normalized.absolute_repo_root) {
-    preview_context_ = normalized;
+      preview_context_.absolute_repo_root != normalized.absolute_repo_root;
+  preview_context_ = normalized;
+  if (context_changed) {
     root_resolution_summary_keys_.clear();
-  } else {
-    preview_context_ = normalized;
   }
-  refresh_embedded_web_product_view();
+  if (!normalized.scene_id.isEmpty()) {
+    set_preview_scene_name(normalized.scene_id);
+  } else {
+    refresh_embedded_web_product_view();
+  }
 }
 
 void ScenePreviewWidget::activate_native_compatibility_preview(const QString & reason)
