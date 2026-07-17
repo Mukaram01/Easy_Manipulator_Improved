@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QWidget>
+#include <QByteArray>
 #include <QVector>
 #include <QStringList>
 #include <QSet>
@@ -105,6 +106,10 @@ public:
     QString visual_index_package_uri;
     QString visual_index_source;
   };
+  // Hashes all PreviewItem fields in a fixed field and item order.  This makes
+  // payload refreshes depend on rendered/editable content rather than QVector
+  // identity or the order in which producers happened to assemble it.
+  static QByteArray preview_payload_fingerprint(const QVector<PreviewItem> & items);
   struct CameraOverlayModel
   {
     QString camera_id{"unknown"};
@@ -285,6 +290,9 @@ public:
   int total_warning_count() const;
   QString runtime_preview_status_text() const;
   bool runtime_preview_has_usable_content() const;
+  int preview_payload_revision() const;
+  quint64 preview_payload_generation() const;
+  quint64 embedded_web_preparation_request_count() const;
 
 signals:
   void studio_log_requested(const QString & message);
@@ -439,6 +447,9 @@ private:
   int clean_product_visual_count_{ 0 };
   MeshPreviewMode mesh_preview_mode_{ MeshPreviewMode::Auto };
   int preview_payload_revision_{ 0 };
+  quint64 preview_payload_generation_{ 0 };
+  quint64 embedded_web_preparation_request_count_{ 0 };
+  QByteArray preview_payload_fingerprint_;
   int last_visual_quality_revision_logged_{ -1 };
   QSet<QString> emitted_scene_diagnostic_keys_;
 };
