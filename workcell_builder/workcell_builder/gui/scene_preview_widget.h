@@ -18,6 +18,7 @@ class QGraphicsView;
 class QGraphicsScene;
 class QGraphicsItem;
 class QGraphicsProxyWidget;
+class Scene3DViewportWidget;
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 class QWebEngineView;
 #endif
@@ -338,6 +339,8 @@ private:
   void poll_embedded_web_readiness(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token, const QString & expected_json_path, const QString & viewer_url);
   void set_embedded_product_view_state(EmbeddedProductViewState state, const QString & detail = QString());
   void activate_native_compatibility_preview(const QString & reason);
+  Scene3DViewportWidget * active_native_viewport() const;
+  void show_embedded_web_product_view();
   void run_embedded_editor_command(const QString & script);
   void poll_embedded_editor_events();
   void apply_embedded_editor_state(const QVariantMap & state);
@@ -378,6 +381,9 @@ private:
   QLabel * error_state_label_{ nullptr };
   QLabel * fallback_banner_label_{ nullptr };
   QWidget * simple_3d_view_{ nullptr };
+  // The WebEngine view remains the primary Product View.  Keep one owned native
+  // viewport alongside it for failures instead of replacing the primary widget.
+  Scene3DViewportWidget * compatibility_scene3d_viewport_{ nullptr };
   ProductViewBackend product_view_backend_{ ProductViewBackend::NativeScene3D };
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
   QWebEngineView * embedded_web_view_{ nullptr };
