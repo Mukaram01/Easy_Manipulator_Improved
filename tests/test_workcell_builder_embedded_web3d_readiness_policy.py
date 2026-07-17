@@ -86,7 +86,7 @@ def test_native_backend_is_suppressed_unless_explicitly_requested_or_webengine_u
     assert "product_view_backend_ = ProductViewBackend::NativeScene3D" in CPP
     assert "WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK" in (ROOT / "workcell_builder/workcell_builder/CMakeLists.txt").read_text(encoding="utf-8")
     assert "scene_preview_widget_->is_native_product_view_backend()" in MAINWINDOW
-    assert "auto * viewport = is_native_product_view_backend() ? qobject_cast<Scene3DViewportWidget *>(simple_3d_view_) : nullptr;" in CPP
+    assert "auto * viewport = active_native_viewport();" in CPP
     assert "ProductViewBackend { EmbeddedWeb3D, NativeScene3D }" in HDR
 
 
@@ -107,7 +107,7 @@ def test_manual_refresh_creates_a_new_generation_and_invalidates_old_callbacks()
     refresh = _between(CPP, "void ScenePreviewWidget::request_embedded_web_product_view_refresh", "ScenePreviewWidget::EmbeddedWebRequestIdentity")
     assert "++embedded_web_request_generation_" in refresh
     assert "embedded_web_active_identity_ = identity" in refresh
-    assert "embedded_web_prepare_process_->terminate()" in refresh
+    assert "if (force) cancel_embedded_web_lifecycle(false);" in refresh
     prepare = _between(CPP, "void ScenePreviewWidget::start_embedded_web_prepare", "void ScenePreviewWidget::on_embedded_web_prepare_finished")
     assert "[this, identity]" in prepare
     finished = _between(CPP, "void ScenePreviewWidget::on_embedded_web_prepare_finished", "void ScenePreviewWidget::start_embedded_web_readiness_polling")
