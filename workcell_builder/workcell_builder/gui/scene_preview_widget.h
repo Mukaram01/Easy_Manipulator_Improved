@@ -199,6 +199,7 @@ public:
     bool has_intent_metadata{ false };
   };
   explicit ScenePreviewWidget(QWidget * parent = nullptr);
+  ~ScenePreviewWidget() override;
 
   void set_fallback_2d_view(QGraphicsView * view);
   void set_scene_selected(bool selected);
@@ -327,6 +328,7 @@ private:
   };
   void refresh_embedded_web_product_view();
   void request_embedded_web_product_view_refresh(bool force = false);
+  void cancel_embedded_web_lifecycle(bool stop_owned_server);
   void maybe_start_next_embedded_web_prepare();
   EmbeddedWebRequestIdentity embedded_web_request_identity(quint64 generation) const;
   bool embedded_web_identity_is_current(const EmbeddedWebRequestIdentity & identity) const;
@@ -405,6 +407,7 @@ private:
   quint64 embedded_web_navigation_token_{ 0 };
   quint64 embedded_web_loading_navigation_token_{ 0 };
   QUrl embedded_web_expected_viewer_url_;
+  bool embedded_web_server_is_owned_{ false };
   bool embedded_web_has_active_identity_{ false };
   bool pending_embedded_web_request_{ false };
   quint64 embedded_web_request_generation_{ 0 };

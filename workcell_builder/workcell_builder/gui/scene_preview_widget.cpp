@@ -492,6 +492,11 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   QTimer::singleShot(0, this, [this]() { emit_backend_startup_diagnostic_once(); });
 }
 
+ScenePreviewWidget::~ScenePreviewWidget()
+{
+  cancel_embedded_web_lifecycle(true);
+}
+
 QString ScenePreviewWidget::resolve_embedded_web_repo_root(const QString & selected_scene_dir) const
 {
   auto canonical_path = [](const QString & path) -> QString {
@@ -765,25 +770,75 @@ void ScenePreviewWidget::ensure_embedded_web_server_started(const QString & repo
   set_embedded_product_view_state(EmbeddedProductViewState::StartingServer);
   if (embedded_web_server_process_) embedded_web_server_process_->deleteLater();
   embedded_web_server_process_ = new QProcess(this);
+  embedded_web_server_is_owned_ = true;
+  QProcess * const process = embedded_web_server_process_;
   embedded_web_server_process_->setProgram(QStringLiteral("python3"));
   embedded_web_server_process_->setArguments(QStringList{"-m", "http.server", QString::number(embedded_web_server_port_), "--bind", "127.0.0.1"});
   embedded_web_server_process_->setWorkingDirectory(repo_root);
   embedded_web_server_process_->setProcessEnvironment(QProcessEnvironment::systemEnvironment());
   embedded_web_server_process_->setProcessChannelMode(QProcess::MergedChannels);
-  connect(embedded_web_server_process_, &QProcess::started, this, [this, identity]() {
-    if (!embedded_web_identity_is_current(identity)) return;
+  connect(process, &QProcess::started, this, [this, identity, process]() {
+    if (process != embedded_web_server_process_ || !embedded_web_identity_is_current(identity)) return;
     emit studio_log_requested(QStringLiteral("Started embedded Web 3D Product View server from repo root: python3 -m http.server 8765 --bind 127.0.0.1"));
     load_prepared_embedded_web_scene(identity);
   });
-  connect(embedded_web_server_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this, identity](int exit_code, QProcess::ExitStatus) {
-    if (!embedded_web_identity_is_current(identity)) return;
-    const QString output = QString::fromUtf8(embedded_web_server_process_->readAll()).trimmed();
+  connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this, identity, process](int exit_code, QProcess::ExitStatus) {
+    if (process != embedded_web_server_process_ || !embedded_web_identity_is_current(identity)) return;
+    const QString output = QString::fromUtf8(process->readAll()).trimmed();
     if (embedded_product_view_state_ == EmbeddedProductViewState::StartingServer && !embedded_web_server_is_usable(embedded_web_repo_root_, identity.scene_id)) {
       set_embedded_product_view_state(EmbeddedProductViewState::Failed, QStringLiteral("local server failed; exit %1; %2").arg(exit_code).arg(output.left(240)));
       emit studio_log_requested(QStringLiteral("Embedded Product View local server failed: python3 -m http.server 8765 --bind 127.0.0.1\nExit code: %1\nOutput:\n%2").arg(exit_code).arg(output));
     }
   });
-  embedded_web_server_process_->start();
+  process->start();
+}
+
+void ScenePreviewWidget::cancel_embedded_web_lifecycle(bool stop_owned_server)
+{
+  // Every callback captures an identity.  Retiring it first makes queued browser,
+  // timer, and process callbacks harmless before any UI or process state changes.
+  ++embedded_web_request_generation_;
+  ++embedded_web_navigation_token_;
+  embedded_web_has_active_identity_ = false;
+  embedded_web_active_identity_ = EmbeddedWebRequestIdentity{};
+  embedded_web_loading_identity_ = EmbeddedWebRequestIdentity{};
+  embedded_web_loading_navigation_token_ = 0;
+  embedded_web_expected_viewer_url_ = QUrl();
+  pending_embedded_web_identity_ = EmbeddedWebRequestIdentity{};
+  pending_embedded_web_request_ = false;
+  pending_embedded_web_force_ = false;
+  embedded_editor_polling_ = false;
+  embedded_web_readiness_deadline_ = QDateTime();
+  embedded_web_last_boot_status_.clear();
+
+  if (embedded_web_prepare_process_) {
+    QProcess * const process = embedded_web_prepare_process_;
+    disconnect(process, nullptr, this, nullptr);
+    if (process->state() != QProcess::NotRunning) {
+      process->terminate();
+      if (!process->waitForFinished(1000)) {
+        process->kill();
+        process->waitForFinished(1000);
+      }
+    }
+    embedded_web_prepare_process_ = nullptr;
+    process->deleteLater();
+  }
+
+  if (stop_owned_server && embedded_web_server_is_owned_ && embedded_web_server_process_) {
+    QProcess * const process = embedded_web_server_process_;
+    disconnect(process, nullptr, this, nullptr);
+    if (process->state() != QProcess::NotRunning) {
+      process->terminate();
+      if (!process->waitForFinished(1000)) {
+        process->kill();
+        process->waitForFinished(1000);
+      }
+    }
+    embedded_web_server_process_ = nullptr;
+    embedded_web_server_is_owned_ = false;
+    process->deleteLater();
+  }
 }
 
 void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force)
@@ -793,6 +848,7 @@ void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force)
   return;
 #else
   if (!embedded_web_view_) return;
+  if (force) cancel_embedded_web_lifecycle(false);
   const quint64 generation = ++embedded_web_request_generation_;
   const EmbeddedWebRequestIdentity identity = embedded_web_request_identity(generation);
   if (identity.scene_id.isEmpty() || identity.scene_id == QStringLiteral("No scene")) {
@@ -812,11 +868,6 @@ void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force)
   pending_embedded_web_identity_ = identity;
   pending_embedded_web_request_ = true;
   pending_embedded_web_force_ = force;
-  if (force && embedded_web_prepare_process_ && embedded_web_prepare_process_->state() != QProcess::NotRunning) {
-    // A manual Refresh Preview is a new generation.  The finished callback retains
-    // its old identity and is therefore unable to load stale output.
-    embedded_web_prepare_process_->terminate();
-  }
   maybe_start_next_embedded_web_prepare();
 #endif
 }
@@ -940,7 +991,7 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
   Q_UNUSED(identity); Q_UNUSED(process); Q_UNUSED(exit_code); Q_UNUSED(exit_status);
 #else
-  if (!process || process != embedded_web_prepare_process_) return;
+  if (!process || process != embedded_web_prepare_process_ || !embedded_web_identity_is_current(identity)) return;
   const QString scene = identity.scene_id;
   const QString output_path = embedded_web_prepare_output_path_;
   const QString stdout_text = QString::fromUtf8(process->readAllStandardOutput()).trimmed();
@@ -948,17 +999,6 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
   const QString command = embedded_web_prepare_command_for_log(embedded_web_prepare_scene_dir_, output_path, false);
   process->deleteLater();
   embedded_web_prepare_process_ = nullptr;
-
-  const bool still_current = embedded_web_identity_is_current(identity);
-  if (!still_current) {
-    emit studio_log_requested(QStringLiteral("Discarded embedded Product View preparation result for completed scene %1 revision %2; current scene is %3 revision %4.")
-      .arg(scene)
-      .arg(identity.generation)
-      .arg(preview_scene_name_.trimmed())
-      .arg(embedded_web_request_generation_));
-    maybe_start_next_embedded_web_prepare();
-    return;
-  }
 
   const QString absolute_output_path = QDir(embedded_web_repo_root_).filePath(output_path);
   const bool output_is_fresh = QFileInfo::exists(QDir(embedded_web_repo_root_).filePath(output_path));  // Contract validation supersedes mtime freshness.
@@ -1026,6 +1066,7 @@ void ScenePreviewWidget::start_embedded_web_readiness_polling(const EmbeddedWebR
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
   Q_UNUSED(identity); Q_UNUSED(navigation_token); Q_UNUSED(expected_json_path); Q_UNUSED(viewer_url);
 #else
+  if (!embedded_web_identity_is_current(identity) || navigation_token != embedded_web_navigation_token_) return;
   embedded_web_readiness_deadline_ = QDateTime::currentDateTimeUtc().addSecs(45);
   embedded_web_last_boot_status_ = QStringLiteral("browser_loaded");
   poll_embedded_web_readiness(identity, navigation_token, expected_json_path, viewer_url);
@@ -1159,7 +1200,11 @@ void ScenePreviewWidget::load_prepared_embedded_web_scene(const EmbeddedWebReque
 void ScenePreviewWidget::run_embedded_editor_command(const QString & script)
 {
   if (!embedded_web_view_ || embedded_product_view_state_ != EmbeddedProductViewState::Ready) return;
-  embedded_web_view_->page()->runJavaScript(script, [this](const QVariant & value){ apply_embedded_editor_state(value.toMap()); });
+  const EmbeddedWebRequestIdentity identity = embedded_web_active_identity_;
+  embedded_web_view_->page()->runJavaScript(script, [this, identity](const QVariant & value){
+    if (!embedded_web_identity_is_current(identity)) return;
+    apply_embedded_editor_state(value.toMap());
+  });
 }
 
 QString ScenePreviewWidget::embedded_snap_command(const QString & choice) const
@@ -1184,8 +1229,10 @@ void ScenePreviewWidget::apply_embedded_editor_state(const QVariantMap & state)
 void ScenePreviewWidget::poll_embedded_editor_events()
 {
   if (!embedded_editor_polling_ || !embedded_web_view_ || embedded_product_view_state_ != EmbeddedProductViewState::Ready) return;
+  const EmbeddedWebRequestIdentity identity = embedded_web_active_identity_;
   static const char kPoll[] = "(() => { const api = window.__WORKCELL_EDITOR_API_V1__; if (!api) return {state:{},events:[]}; return {state:api.getState(),events:api.drainEvents()}; })()";
-  embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kPoll), [this](const QVariant & value){
+  embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kPoll), [this, identity](const QVariant & value){
+    if (!embedded_web_identity_is_current(identity)) return;
     const QVariantMap payload = value.toMap();
     apply_embedded_editor_state(payload.value(QStringLiteral("state")).toMap());
     for (const QVariant & event_value : payload.value(QStringLiteral("events")).toList()) {
@@ -1195,7 +1242,9 @@ void ScenePreviewWidget::poll_embedded_editor_events()
         if (id != selected_preview_item_id_) { selected_preview_item_id_ = id; emit preview_item_selected(id, event.value(QStringLiteral("itemType")).toString()); }
       }
     }
-    if (embedded_editor_polling_) QTimer::singleShot(200, this, &ScenePreviewWidget::poll_embedded_editor_events);
+    if (embedded_editor_polling_) QTimer::singleShot(200, this, [this, identity]() {
+      if (embedded_web_identity_is_current(identity)) poll_embedded_editor_events();
+    });
   });
 }
 #else
@@ -1244,6 +1293,7 @@ void ScenePreviewWidget::set_preview_context(const PreviewContext & context)
   const bool context_changed = preview_context_.scene_id != normalized.scene_id ||
       preview_context_.absolute_scene_dir != normalized.absolute_scene_dir ||
       preview_context_.absolute_repo_root != normalized.absolute_repo_root;
+  if (context_changed) cancel_embedded_web_lifecycle(false);
   preview_context_ = normalized;
   if (context_changed) {
     root_resolution_summary_keys_.clear();
@@ -1396,6 +1446,7 @@ void ScenePreviewWidget::set_preview_scene_name(const QString & scene_name)
 {
   const QString normalized_scene_name = scene_name.trimmed().isEmpty() ? QStringLiteral("No scene") : scene_name.trimmed();
   if (preview_scene_name_ != normalized_scene_name) {
+    cancel_embedded_web_lifecycle(false);
     preview_scene_name_ = normalized_scene_name;
     preview_payload_revision_ = 0;
     last_visual_quality_revision_logged_ = -1;
