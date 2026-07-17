@@ -321,13 +321,14 @@ private:
   {
     QString scene_id;
     QString absolute_scene_dir;
+    QByteArray payload_fingerprint;
     quint64 payload_revision{ 0 };
     quint64 generation{ 0 };
 
     bool matches_context(const EmbeddedWebRequestIdentity & other) const
     {
       return scene_id == other.scene_id && absolute_scene_dir == other.absolute_scene_dir &&
-        payload_revision == other.payload_revision;
+        payload_fingerprint == other.payload_fingerprint && payload_revision == other.payload_revision;
     }
     bool operator==(const EmbeddedWebRequestIdentity & other) const
     {
