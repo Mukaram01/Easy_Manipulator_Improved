@@ -116,6 +116,7 @@ void maybe_warn_overlay_fit_dominance(ScenePreviewWidget * self, const QRectF & 
 #include <QPainter>
 #include <QStackedWidget>
 #include <QSignalBlocker>
+#include <QSizePolicy>
 #include <QVector3D>
 #include <QVBoxLayout>
 #include <QtMath>
@@ -141,76 +142,100 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
 {
   setObjectName("scenePreviewWidget");
   auto * root = new QVBoxLayout(this);
-  auto * controls = new QHBoxLayout();
-  view_mode_label_ = new QLabel("View mode", this);
-  controls->addWidget(view_mode_label_);
+  auto * controls_header = new QWidget(this);
+  auto * controls = new QVBoxLayout(controls_header);
+  controls->setContentsMargins(0, 0, 0, 0);
+  controls->setSpacing(4);
+
+  // Keep preview identity and its single authoritative runtime status separate
+  // from backend-specific editing controls. This prevents a long status from
+  // squeezing the Select/Move/Rotate/Snap/Undo/Redo/Fit control row.
+  auto * identity_row = new QHBoxLayout();
+  view_mode_label_ = new QLabel("Preview:", controls_header);
+  identity_row->addWidget(view_mode_label_);
   mode_selector_ = new QComboBox(this);
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
   mode_selector_->addItems({"Web3D Product View", "2D Layout"});
 #else
   mode_selector_->addItems({"3D Layout Preview", "2D Layout"});
 #endif
-  controls->addWidget(mode_selector_);
-  controls->addSpacing(8);
-  mesh_preview_mode_label_ = new QLabel("Mesh Preview:", this);
-  controls->addWidget(mesh_preview_mode_label_);
+  identity_row->addWidget(mode_selector_);
+  identity_row->addStretch(1);
+  toolbar_status_chip_ = new QLabel(controls_header);
+  toolbar_status_chip_->setObjectName("previewToolbarChip");
+  toolbar_status_chip_->setStyleSheet("QLabel#previewToolbarChip { background-color: rgba(30,41,59,225); color: #e2e8f0; border-radius: 9px; padding: 2px 8px; }");
+  toolbar_status_chip_->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+  toolbar_status_chip_->setWordWrap(true);
+  toolbar_status_chip_->setMinimumWidth(140);
+  toolbar_status_chip_->setMaximumWidth(300);
+  toolbar_status_chip_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  identity_row->addWidget(toolbar_status_chip_, 0);
+  controls->addLayout(identity_row);
+
+  auto * backend_controls_row = new QHBoxLayout();
+  mesh_preview_mode_label_ = new QLabel("Mesh Preview:", controls_header);
+  backend_controls_row->addWidget(mesh_preview_mode_label_);
   mesh_preview_mode_selector_ = new QComboBox(this);
   mesh_preview_mode_selector_->addItems({"Auto", "Meshes", "Primitives"});
   mesh_preview_mode_selector_->setCurrentText("Auto");
   mesh_preview_mode_selector_->setToolTip("Mesh preview mode is visual-only and does not alter generated runtime files.");
-  controls->addWidget(mesh_preview_mode_selector_);
-  controls->addSpacing(8);
-  gizmo_mode_label_ = new QLabel("Gizmo:", this);
-  controls->addWidget(gizmo_mode_label_);
+  mesh_preview_mode_selector_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+  backend_controls_row->addWidget(mesh_preview_mode_selector_);
+  backend_controls_row->addSpacing(8);
+  gizmo_mode_label_ = new QLabel("Gizmo:", controls_header);
+  backend_controls_row->addWidget(gizmo_mode_label_);
   gizmo_mode_selector_ = new QComboBox(this);
   gizmo_mode_selector_->addItems({"Select", "Move", "Rotate", "Scale (disabled)"});
-  controls->addWidget(gizmo_mode_selector_);
-  snap_mode_label_ = new QLabel("Snap:", this);
-  controls->addWidget(snap_mode_label_);
+  gizmo_mode_selector_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+  backend_controls_row->addWidget(gizmo_mode_selector_);
+  snap_mode_label_ = new QLabel("Snap:", controls_header);
+  backend_controls_row->addWidget(snap_mode_label_);
   snap_mode_selector_ = new QComboBox(this);
   snap_mode_selector_->addItems({"Off", "1 cm", "5 cm", "10 cm", "5 deg", "15 deg"});
   snap_mode_selector_->setCurrentText("5 cm");
-  controls->addWidget(snap_mode_selector_);
+  snap_mode_selector_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+  backend_controls_row->addWidget(snap_mode_selector_);
   embedded_undo_button_ = new QPushButton(QStringLiteral("Undo"), this);
   embedded_undo_button_->setEnabled(false);
-  controls->addWidget(embedded_undo_button_);
+  embedded_undo_button_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+  backend_controls_row->addWidget(embedded_undo_button_);
   embedded_redo_button_ = new QPushButton(QStringLiteral("Redo"), this);
   embedded_redo_button_->setEnabled(false);
-  controls->addWidget(embedded_redo_button_);
+  embedded_redo_button_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+  backend_controls_row->addWidget(embedded_redo_button_);
   embedded_fit_button_ = new QPushButton(QStringLiteral("Fit"), this);
-  controls->addWidget(embedded_fit_button_);
-  controls->addSpacing(8);
-  labels_label_ = new QLabel("Labels:", this);
-  controls->addWidget(labels_label_);
+  embedded_fit_button_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+  backend_controls_row->addWidget(embedded_fit_button_);
+  backend_controls_row->addSpacing(8);
+  labels_label_ = new QLabel("Labels:", controls_header);
+  backend_controls_row->addWidget(labels_label_);
   labels_selector_ = new QComboBox(this);
   labels_selector_->addItems({"Off", "Important", "Selected", "All"});
   labels_selector_->setCurrentText("Selected");
   labels_selector_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
-  controls->addWidget(labels_selector_);
-  controls->addSpacing(8);
-  interaction_mode_label_ = new QLabel("Mode:", this);
-  controls->addWidget(interaction_mode_label_);
+  labels_selector_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+  backend_controls_row->addWidget(labels_selector_);
+  backend_controls_row->addSpacing(8);
+  interaction_mode_label_ = new QLabel("Mode:", controls_header);
+  backend_controls_row->addWidget(interaction_mode_label_);
   interaction_mode_selector_ = new QComboBox(this);
   interaction_mode_selector_->addItems({"Select", "Place Asset", "Move", "Rotate", "Inspect"});
-  controls->addWidget(interaction_mode_selector_);
-  view_actions_label_ = new QLabel("View:", this);
-  controls->addWidget(view_actions_label_);
+  interaction_mode_selector_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+  backend_controls_row->addWidget(interaction_mode_selector_);
+  view_actions_label_ = new QLabel("View:", controls_header);
+  backend_controls_row->addWidget(view_actions_label_);
   view_actions_selector_ = new QComboBox(this);
   view_actions_selector_->addItems({"Top", "Front", "Side", "Isometric", "Fit View"});
   {
     const QSignalBlocker blocker(view_actions_selector_);
     view_actions_selector_->setCurrentText("Isometric");
   }
-  controls->addWidget(view_actions_selector_);
-  toolbar_status_chip_ = new QLabel(this);
-  toolbar_status_chip_->setObjectName("previewToolbarChip");
-  toolbar_status_chip_->setStyleSheet("QLabel#previewToolbarChip { background-color: rgba(30,41,59,225); color: #e2e8f0; border-radius: 9px; padding: 2px 8px; }");
-  toolbar_status_chip_->setAlignment(Qt::AlignCenter);
-  controls->addWidget(toolbar_status_chip_);
-  auto * mouse_help_label = new QLabel(QStringLiteral("ⓘ"), this);
+  view_actions_selector_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+  backend_controls_row->addWidget(view_actions_selector_);
+  auto * mouse_help_label = new QLabel(QStringLiteral("ⓘ"), controls_header);
   mouse_help_label->setToolTip(scene_preview_mouse_help_tooltip(QString()));
   mouse_help_label->setStatusTip(QString::fromUtf8(kScenePreviewMouseHelpText));
-  controls->addWidget(mouse_help_label);
+  backend_controls_row->addWidget(mouse_help_label);
   overlays_selector_ = new QComboBox(this);
   overlays_selector_->addItems({
     "Overlays",
@@ -237,9 +262,21 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   });
   overlays_selector_->setCurrentText("Overlays");
   overlays_selector_->setToolTip("Product View starts clean. Use these diagnostics controls to explicitly enable helper overlays for the current preview session.");
-  controls->addWidget(overlays_selector_);
-  controls->addStretch(1);
-  root->addLayout(controls);
+  overlays_selector_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+  backend_controls_row->addWidget(overlays_selector_);
+  backend_controls_row->addStretch(1);
+  controls->addLayout(backend_controls_row);
+
+  toolbar_feedback_row_ = new QWidget(controls_header);
+  auto * feedback_layout = new QHBoxLayout(toolbar_feedback_row_);
+  feedback_layout->setContentsMargins(0, 0, 0, 0);
+  toolbar_feedback_label_ = new QLabel(toolbar_feedback_row_);
+  toolbar_feedback_label_->setWordWrap(true);
+  toolbar_feedback_label_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+  feedback_layout->addWidget(toolbar_feedback_label_);
+  toolbar_feedback_row_->setVisible(false);
+  controls->addWidget(toolbar_feedback_row_);
+  root->addWidget(controls_header);
   stack_ = new QStackedWidget(this);
   view3d_container_ = new QWidget(this); auto * v3 = new QVBoxLayout(view3d_container_);
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
@@ -506,20 +543,13 @@ void ScenePreviewWidget::set_embedded_product_view_state(EmbeddedProductViewStat
 {
   embedded_product_view_state_ = state;
   embedded_editor_polling_ = (state == EmbeddedProductViewState::Ready);
-  QString text;
-  switch (state) {
-    case EmbeddedProductViewState::Idle: text = QStringLiteral("Product View: idle"); break;
-    case EmbeddedProductViewState::Preparing: text = QStringLiteral("Product View: preparing %1…").arg(detail); break;
-    case EmbeddedProductViewState::StartingServer: text = QStringLiteral("Product View: starting local viewer server…"); break;
-    case EmbeddedProductViewState::Loading: text = detail.trimmed().isEmpty() ? QStringLiteral("Product View: loading…") : QStringLiteral("Product View: %1…").arg(detail); break;
-    case EmbeddedProductViewState::Ready: text = QStringLiteral("Product View: ready"); break;
-    case EmbeddedProductViewState::Failed: text = native_compatibility_fallback_active_ ? QStringLiteral("Preview available in compatibility mode") : QStringLiteral("Preview failed"); embedded_web_last_error_ = detail; break;
+  if (state == EmbeddedProductViewState::Failed) embedded_web_last_error_ = detail;
+  if (state == EmbeddedProductViewState::Failed && !detail.trimmed().isEmpty()) {
+    emit studio_log_requested(QStringLiteral("Embedded Product View failure: %1").arg(detail));
   }
-  if (toolbar_status_chip_) toolbar_status_chip_->setText(runtime_preview_status_text());
-  if (error_state_label_) {
-    error_state_label_->setText(native_compatibility_fallback_active_ ? QStringLiteral("Web3D unavailable — using native compatibility preview") : text);
-    error_state_label_->setVisible(state == EmbeddedProductViewState::Failed);
-  }
+  refresh_toolbar_status_chip();
+  refresh_toolbar_feedback_row();
+  if (error_state_label_) error_state_label_->setVisible(false);
 }
 
 bool ScenePreviewWidget::embedded_web_server_is_usable(const QString & repo_root, const QString & scene)
@@ -1025,15 +1055,9 @@ void ScenePreviewWidget::apply_embedded_editor_state(const QVariantMap & state)
   if (state.isEmpty()) return;
   if (embedded_undo_button_) embedded_undo_button_->setEnabled(state.value(QStringLiteral("canUndo")).toBool());
   if (embedded_redo_button_) embedded_redo_button_->setEnabled(state.value(QStringLiteral("canRedo")).toBool());
-  const QString selected = state.value(QStringLiteral("selectedItemId")).toString();
-  const bool editable = state.value(QStringLiteral("selectedEditable")).toBool();
-  const int dirty_count = state.value(QStringLiteral("dirtyCount")).toInt();
-  if (toolbar_status_chip_) {
-    if (dirty_count > 0) toolbar_status_chip_->setText(QStringLiteral("Unsaved preview edits: %1").arg(dirty_count));
-    else if (!selected.isEmpty() && !editable) toolbar_status_chip_->setText(QStringLiteral("Locked item — select an editable object or area"));
-    else if (!selected.isEmpty()) toolbar_status_chip_->setText(QStringLiteral("%1 selected").arg(selected));
-    else toolbar_status_chip_->setText(QStringLiteral("Product View ready"));
-  }
+  // Selection and dirty-state detail remains available through the embedded
+  // editor and Studio Log. The header chip always reports runtime state.
+  refresh_toolbar_status_chip();
 }
 
 void ScenePreviewWidget::poll_embedded_editor_events()
@@ -1114,9 +1138,10 @@ void ScenePreviewWidget::activate_native_compatibility_preview(const QString & r
     fallback_banner_label_->setVisible(false);
   }
   if (error_state_label_) {
-    error_state_label_->setText(QStringLiteral("Web3D unavailable — using native compatibility preview"));
-    error_state_label_->setVisible(true);
+    error_state_label_->setVisible(false);
   }
+  refresh_toolbar_status_chip();
+  refresh_toolbar_feedback_row();
   if (mode_selector_) mode_selector_->setItemText(0, QStringLiteral("3D Layout Preview"));
   refresh_mode_and_state();
 }
@@ -1135,6 +1160,30 @@ QString ScenePreviewWidget::runtime_preview_status_text() const
   if (runtime_preview_has_usable_content()) return QStringLiteral("Preview ready");
   if (embedded_product_view_state_ == EmbeddedProductViewState::Failed) return QStringLiteral("Preview failed");
   return QStringLiteral("Preview idle");
+}
+
+void ScenePreviewWidget::refresh_toolbar_status_chip()
+{
+  if (!toolbar_status_chip_) return;
+  const QString status = runtime_preview_status_text();
+  toolbar_status_chip_->setText(status);
+  toolbar_status_chip_->setToolTip(status);
+}
+
+void ScenePreviewWidget::refresh_toolbar_feedback_row()
+{
+  if (!toolbar_feedback_row_ || !toolbar_feedback_label_) return;
+  QString message;
+  if (native_compatibility_fallback_active_) {
+    message = QStringLiteral("Web3D unavailable — using native compatibility preview. Details are in Studio Log; use Refresh Preview to retry.");
+  } else if (embedded_product_view_state_ == EmbeddedProductViewState::Failed) {
+    message = QStringLiteral("Product View unavailable. Details are in Studio Log; use Refresh Preview to retry.");
+  } else if (!preview3d_available_ && scene_selected_) {
+    message = QStringLiteral("3D preview unavailable — using 2D fallback. Details are in Studio Log.");
+  }
+  toolbar_feedback_label_->setText(message);
+  toolbar_feedback_label_->setVisible(!message.isEmpty());
+  toolbar_feedback_row_->setVisible(!message.isEmpty());
 }
 
 bool ScenePreviewWidget::runtime_preview_has_usable_content() const
@@ -1384,6 +1433,8 @@ void ScenePreviewWidget::refresh_toolbar_visibility()
   set_visible(interaction_mode_label_, !embedded_web_active);
   set_visible(interaction_mode_selector_, !embedded_web_active);
   set_visible(overlays_selector_, !embedded_web_active);
+  refresh_toolbar_status_chip();
+  refresh_toolbar_feedback_row();
 }
 
 void ScenePreviewWidget::refresh_mode_and_state()
@@ -1403,17 +1454,10 @@ void ScenePreviewWidget::refresh_mode_and_state()
     fallback_banner_label_->setToolTip(scene_preview_mouse_help_tooltip(QString()));
     stack_->setCurrentWidget(use3d ? view3d_container_ : view2d_container_);
   }
-  const bool has_preview_items = !preview_items_.isEmpty();
   empty_state_label_->setVisible(use3d && !scene_selected_);
   simple_3d_view_->setVisible(use3d && scene_selected_);
-  const bool rendering_failed = scene_selected_ && has_preview_items && requested_3d && !preview3d_available_;
-  if (native_compatibility_fallback_active_) {
-    error_state_label_->setText(QStringLiteral("Web3D unavailable — using native compatibility preview"));
-    error_state_label_->setVisible(true);
-  } else {
-    error_state_label_->setText(QString("Scene selected but 3D preview is unavailable. Loaded %1 preview items. Using 2D fallback canvas.").arg(preview_items_.size()));
-    error_state_label_->setVisible(rendering_failed);
-  }
+  if (error_state_label_) error_state_label_->setVisible(false);
+  refresh_toolbar_feedback_row();
   refresh_info_chip();
 }
 QRectF ScenePreviewWidget::rendered_items_bounds_2d(bool include_overlays) const
@@ -1630,15 +1674,5 @@ void ScenePreviewWidget::refresh_info_chip()
                               .arg(total_warning_count()).arg(task_is_ready() ? "Ready" : "Missing") + QString("\n") + smoke_stats + QStringLiteral(" ") + initial_fit_audit);
   info_chip_label_->adjustSize();
   if (fallback_info_chip_proxy_) fallback_info_chip_proxy_->setPos(12.0, 12.0);
-  if (toolbar_status_chip_) {
-    if (clean_product_view_ && preview3d_available_) {
-      toolbar_status_chip_->setText(QStringLiteral("Scene3D Product View • %1 visuals").arg(clean_product_visual_count_));
-    } else {
-      const QString interaction = interaction_mode_selector_ ? interaction_mode_selector_->currentText() : QStringLiteral("Select");
-      toolbar_status_chip_->setText(QString("%1 • %2 • Warn %3")
-        .arg(preview3d_available_ ? QStringLiteral("3D") : QStringLiteral("2D fallback"))
-        .arg(interaction)
-        .arg(total_warning_count()));
-    }
-  }
+  refresh_toolbar_status_chip();
 }

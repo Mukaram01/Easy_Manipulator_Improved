@@ -303,6 +303,8 @@ private:
   void reset_fallback_scene_view();
   void refresh_info_chip();
   void refresh_toolbar_visibility();
+  void refresh_toolbar_status_chip();
+  void refresh_toolbar_feedback_row();
   enum class EmbeddedProductViewState { Idle, Preparing, StartingServer, Loading, Ready, Failed };
   void refresh_embedded_web_product_view();
   void request_embedded_web_product_view_refresh(bool force = false);
@@ -339,6 +341,8 @@ private:
   QLabel * interaction_mode_label_{ nullptr };
   QLabel * view_actions_label_{ nullptr };
   QLabel * toolbar_status_chip_{ nullptr };
+  QWidget * toolbar_feedback_row_{ nullptr };
+  QLabel * toolbar_feedback_label_{ nullptr };
   QPushButton * embedded_undo_button_{ nullptr };
   QPushButton * embedded_redo_button_{ nullptr };
   QPushButton * embedded_fit_button_{ nullptr };
