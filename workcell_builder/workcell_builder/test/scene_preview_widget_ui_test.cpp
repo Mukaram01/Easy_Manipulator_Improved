@@ -193,6 +193,31 @@ TEST(ScenePreviewWidgetUi, EquivalentPreviewContextsPrepareProductViewOnlyOnce)
 }
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+TEST(ScenePreviewWidgetUi, EmbeddedWebNavigationRequiresVerifiedServerReadiness)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+
+  ScenePreviewWidget widget;
+  widget.preview_scene_name_ = QStringLiteral("ur5_2f_test");
+  widget.embedded_web_request_generation_ = 1;
+  ScenePreviewWidget::EmbeddedWebRequestIdentity identity;
+  identity.scene_id = QStringLiteral("ur5_2f_test");
+  identity.absolute_repo_root = QDir::currentPath();
+  identity.selected_server_port = 18765;
+  identity.payload_revision = 1;
+  identity.generation = widget.embedded_web_request_generation_;
+  widget.embedded_web_active_identity_ = identity;
+  widget.embedded_web_has_active_identity_ = true;
+
+  widget.embedded_web_server_lifecycle_ = ScenePreviewWidget::EmbeddedWebServerLifecycle::ServerProbing;
+  widget.load_prepared_embedded_web_scene(identity);
+  EXPECT_TRUE(widget.embedded_web_expected_viewer_url_.isEmpty());
+
+  widget.embedded_web_server_lifecycle_ = ScenePreviewWidget::EmbeddedWebServerLifecycle::ServerReady;
+  widget.load_prepared_embedded_web_scene(identity);
+  EXPECT_EQ(widget.embedded_web_expected_viewer_url_.port(), identity.selected_server_port);
+}
+
 TEST(ScenePreviewWidgetUi, EmbeddedWebViewerUrlPreservesScenePathAndPayloadRevision)
 {
   ASSERT_NE(ensure_app(), nullptr);
@@ -207,6 +232,8 @@ TEST(ScenePreviewWidgetUi, EmbeddedWebViewerUrlPreservesScenePathAndPayloadRevis
 
     ScenePreviewWidget::EmbeddedWebRequestIdentity identity;
     identity.scene_id = QStringLiteral("ur5_2f_test");
+    identity.absolute_repo_root = QDir::currentPath();
+    identity.selected_server_port = 8765;
     identity.payload_revision = revision;
     identity.generation = widget.embedded_web_request_generation_;
     widget.load_prepared_embedded_web_scene(identity);
