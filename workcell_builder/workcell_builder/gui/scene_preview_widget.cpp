@@ -15,7 +15,6 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
-#include <QEventLoop>
 #include <QTimer>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
@@ -690,192 +689,145 @@ void ScenePreviewWidget::set_embedded_product_view_state(EmbeddedProductViewStat
   if (error_state_label_) error_state_label_->setVisible(false);
 }
 
-bool ScenePreviewWidget::embedded_web_server_is_usable(const QString & repo_root, const QString & scene)
+void ScenePreviewWidget::start_embedded_web_server_probes(
+  const EmbeddedWebRequestIdentity & identity, int port, quint64 navigation_token, const QString & repo_root)
 {
-  const QString trimmed_repo_root = repo_root.trimmed().isEmpty() ? embedded_web_repo_root_ : repo_root.trimmed();
-  const QString trimmed_scene = scene.trimmed().isEmpty() ? embedded_web_prepare_scene_ : scene.trimmed();
-  if (trimmed_repo_root.isEmpty() || trimmed_scene.isEmpty()) {
-    emit studio_log_requested(QStringLiteral("Embedded Web 3D server probe failed: missing selected repository root or scene id."));
-    return false;
-  }
-
-  const QDir repo_dir(trimmed_repo_root);
+  if (!embedded_web_identity_is_current(identity) || port != embedded_web_server_port_) return;
   const QString marker_path = QStringLiteral("workcell_studio_web/viewer/workcell_runtime_marker.json");
-  QFile marker_file(repo_dir.filePath(marker_path));
-  QByteArray expected_marker;
-  if (marker_file.open(QIODevice::ReadOnly)) expected_marker = marker_file.readAll().trimmed();
-
-  struct HttpCheck { QString label; QString path; int status{0}; bool ok{false}; QString detail; QByteArray body; };
-  auto get_url = [this](const QString & path, int timeout_ms = 1200) -> HttpCheck {
-    HttpCheck check;
-    check.path = path;
-    const QUrl url(QStringLiteral("http://127.0.0.1:%1/%2").arg(embedded_web_server_port_).arg(path));
-    QNetworkAccessManager manager;
-    QNetworkRequest request(url);
-    QNetworkReply * reply = manager.get(request);
-    QEventLoop loop;
-    QTimer timer;
-    timer.setSingleShot(true);
-    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
-    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    timer.start(timeout_ms);
-    loop.exec();
-    if (timer.isActive()) {
-      timer.stop();
-      check.status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-      check.body = reply->readAll();
-      check.ok = (reply->error() == QNetworkReply::NoError && check.status == 200);
-      if (!check.ok) check.detail = reply->errorString();
-    } else {
-      check.detail = QStringLiteral("timeout after %1 ms").arg(timeout_ms);
-      reply->abort();
-    }
-    reply->deleteLater();
-    return check;
-  };
-
-  QVector<HttpCheck> checks;
-  auto add_check = [&](const QString & label, const QString & path) {
-    HttpCheck check = get_url(path);
-    check.label = label;
-    checks.push_back(check);
-    return check;
-  };
-
-  const HttpCheck marker_check = add_check(QStringLiteral("repo marker"), marker_path);
-  if (expected_marker.isEmpty()) {
-    checks.last().ok = false;
-    checks.last().detail = QStringLiteral("local marker file missing or empty under selected repo root: %1").arg(marker_path);
-  } else if (marker_check.body.trimmed() != expected_marker) {
-    checks.last().ok = false;
-    checks.last().detail = QStringLiteral("marker response does not match selected repository root marker content");
+  QFile marker(QDir(repo_root).filePath(marker_path));
+  if (!marker.open(QIODevice::ReadOnly) || marker.readAll().trimmed().isEmpty()) {
+    fail_embedded_web_server_probe(identity, port, navigation_token,
+      QStringLiteral("selected repository marker is missing or empty: %1").arg(QDir(repo_root).filePath(marker_path)));
+    return;
   }
+  marker.seek(0);
+  embedded_web_server_probe_ = EmbeddedWebServerProbe{identity, port, navigation_token, marker.readAll().trimmed(),
+    QDateTime::currentDateTimeUtc().addSecs(8)};
+  embedded_web_server_lifecycle_ = EmbeddedWebServerLifecycle::ServerProbing;
+  set_embedded_product_view_state(EmbeddedProductViewState::Preparing, QStringLiteral("server_probing"));
+  run_embedded_web_server_probes(identity, port, navigation_token);
+}
 
-  add_check(QStringLiteral("viewer index"), QStringLiteral("workcell_studio_web/viewer/index.html"));
-  add_check(QStringLiteral("viewer bundle"), QStringLiteral("workcell_studio_web/viewer/dist/viewer.bundle.js"));
-  const QString web_scene_path = QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(trimmed_scene);
-  HttpCheck scene_check = add_check(QStringLiteral("web scene"), web_scene_path);
-
-  auto normalize_asset_path = [](QString value) {
-    value = value.trimmed();
-    if (value.startsWith(QStringLiteral("./"))) value = value.mid(2);
-    if (value.startsWith(QStringLiteral("/"))) value = value.mid(1);
-    if (value.startsWith(QStringLiteral("http://")) || value.startsWith(QStringLiteral("https://")) ||
-        value.startsWith(QStringLiteral("package://")) || value.startsWith(QStringLiteral("file://"))) return QString();
-    return value;
+void ScenePreviewWidget::run_embedded_web_server_probes(
+  const EmbeddedWebRequestIdentity & identity, int port, quint64 navigation_token)
+{
+  const auto current = [this, &identity, port, navigation_token]() {
+    return embedded_web_identity_is_current(identity) && port == embedded_web_server_port_ && embedded_web_server_probe_.identity == identity &&
+      embedded_web_server_probe_.port == port && embedded_web_server_probe_.navigation_token == navigation_token;
   };
-  auto classify_asset = [](const QString & path) {
-    const QString p = path.toLower();
-    if (p.endsWith(QStringLiteral(".urdf")) && p.contains(QStringLiteral("robot_preview"))) return QStringLiteral("robot-preview URDF");
-    if (p.contains(QStringLiteral("/ur_description/")) || p.contains(QStringLiteral("/ur5/"))) return QStringLiteral("UR5 mesh");
-    if (p.contains(QStringLiteral("robotiq")) || p.contains(QStringLiteral("2f"))) return QStringLiteral("Robotiq mesh");
-    if (p.contains(QStringLiteral("table")) || p.contains(QStringLiteral("workbench"))) return QStringLiteral("table/workbench mesh");
-    if (p.contains(QStringLiteral("camera"))) return QStringLiteral("camera mesh");
-    return QString();
+  if (!current() || embedded_web_server_probe_.terminal_recorded) return;
+  if (QDateTime::currentDateTimeUtc() >= embedded_web_server_probe_.deadline) {
+    fail_embedded_web_server_probe(identity, port, navigation_token, QStringLiteral("server resource probes timed out after 8 seconds"));
+    return;
+  }
+  if (!embedded_web_network_manager_) embedded_web_network_manager_ = new QNetworkAccessManager(this);
+  const QStringList paths{
+    QStringLiteral("workcell_studio_web/viewer/workcell_runtime_marker.json"),
+    QStringLiteral("workcell_studio_web/viewer/index.html"),
+    QStringLiteral("workcell_studio_web/viewer/dist/viewer.bundle.js"),
+    QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(identity.scene_id)
   };
-  std::function<void(const QJsonValue &, QSet<QString> &)> collect_assets = [&](const QJsonValue & value, QSet<QString> & out) {
-    if (value.isObject()) {
-      const QJsonObject obj = value.toObject();
-      for (auto it = obj.begin(); it != obj.end(); ++it) {
-        if (it.value().isString()) {
-          const QString key = it.key().toLower();
-          if (key.contains(QStringLiteral("mesh")) || key.contains(QStringLiteral("urdf")) || key.contains(QStringLiteral("uri")) || key.contains(QStringLiteral("path"))) {
-            const QString path = normalize_asset_path(it.value().toString());
-            if (!path.isEmpty() && classify_asset(path).size() > 0) out.insert(path);
-          }
-        }
-        collect_assets(it.value(), out);
-      }
-    } else if (value.isArray()) {
-      const QJsonArray array = value.toArray();
-      for (const QJsonValue & entry : array) collect_assets(entry, out);
-    }
-  };
-
-  if (scene_check.ok) {
-    QJsonParseError parse_error;
-    const QJsonDocument scene_doc = QJsonDocument::fromJson(scene_check.body, &parse_error);
-    if (parse_error.error != QJsonParseError::NoError || !scene_doc.isObject()) {
-      checks.last().ok = false;
-      checks.last().detail = QStringLiteral("web scene JSON parse failed: %1").arg(parse_error.errorString());
-    } else {
-      const QJsonObject scene_obj = scene_doc.object();
-      if (scene_obj.value(QStringLiteral("schema_version")).toString() != QStringLiteral("workcell_studio_web_scene/v1") ||
-          scene_obj.value(QStringLiteral("scene_id")).toString(scene_obj.value(QStringLiteral("scene_name")).toString()) != trimmed_scene) {
-        checks.last().ok = false;
-        checks.last().detail = QStringLiteral("web scene JSON does not match selected scene/repository contract");
-      }
-      QSet<QString> assets;
-      collect_assets(scene_doc.object(), assets);
-      QSet<QString> covered_classes;
-      for (const QString & asset : assets) {
-        const QString label = classify_asset(asset);
-        covered_classes.insert(label);
-        add_check(label, asset);
-      }
-      const QStringList required_classes{QStringLiteral("robot-preview URDF"), QStringLiteral("UR5 mesh"), QStringLiteral("Robotiq mesh"), QStringLiteral("table/workbench mesh"), QStringLiteral("camera mesh")};
-      for (const QString & required : required_classes) {
-        if (!covered_classes.contains(required)) {
-          HttpCheck missing;
-          missing.label = required;
-          missing.path = QStringLiteral("<referenced asset missing from web scene JSON>");
-          missing.ok = false;
-          missing.detail = QStringLiteral("no referenced staged asset found for required class");
-          checks.push_back(missing);
+  embedded_web_server_probe_.pending_replies = paths.size();
+  embedded_web_server_probe_.retryable_failure = false;
+  embedded_web_server_probe_.failure_detail.clear();
+  for (const QString & path : paths) {
+    const QUrl url(QStringLiteral("http://127.0.0.1:%1/%2").arg(port).arg(path));
+    QNetworkReply * reply = embedded_web_network_manager_->get(QNetworkRequest(url));
+    connect(reply, &QNetworkReply::finished, this, [this, identity, port, navigation_token, path, reply]() {
+      const bool current = embedded_web_identity_is_current(identity) && port == embedded_web_server_port_ && embedded_web_server_probe_.identity == identity &&
+        embedded_web_server_probe_.port == port && embedded_web_server_probe_.navigation_token == navigation_token;
+      if (!current || embedded_web_server_probe_.terminal_recorded) { reply->deleteLater(); return; }
+      const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+      const QByteArray body = reply->readAll();
+      const bool marker = path.endsWith(QStringLiteral("workcell_runtime_marker.json"));
+      const bool marker_matches = !marker || body.trimmed() == embedded_web_server_probe_.expected_marker;
+      const bool ok = reply->error() == QNetworkReply::NoError && status == 200 && marker_matches;
+      if (!ok) {
+        const bool terminal_http_failure = status >= 400 && status < 500;
+        if (terminal_http_failure || (marker && status == 200 && !marker_matches)) {
+          embedded_web_server_probe_.failure_detail = QStringLiteral("resource probe failed for %1: HTTP %2%3")
+            .arg(path).arg(status).arg(marker && !marker_matches ? QStringLiteral(" (marker does not match selected repository root)") : QString());
+          embedded_web_server_probe_.retryable_failure = false;
+        } else if (embedded_web_server_probe_.failure_detail.isEmpty()) {
+          embedded_web_server_probe_.failure_detail = QStringLiteral("resource probe pending for %1: %2")
+            .arg(path, reply->errorString());
+          embedded_web_server_probe_.retryable_failure = true;
         }
       }
-    }
+      reply->deleteLater();
+      if (--embedded_web_server_probe_.pending_replies != 0) return;
+      if (embedded_web_server_probe_.failure_detail.isEmpty()) {
+        embedded_web_server_lifecycle_ = EmbeddedWebServerLifecycle::ServerReady;
+        emit studio_log_requested(QStringLiteral("Embedded Web 3D Product View server verified: all required resources returned HTTP 200 on port %1.").arg(port));
+        load_prepared_embedded_web_scene(identity);
+        return;
+      }
+      if (!embedded_web_server_probe_.retryable_failure) {
+        fail_embedded_web_server_probe(identity, port, navigation_token, embedded_web_server_probe_.failure_detail);
+        return;
+      }
+      QTimer::singleShot(200, this, [this, identity, port, navigation_token]() {
+        if (!embedded_web_identity_is_current(identity) || port != embedded_web_server_port_ || embedded_web_server_probe_.identity != identity ||
+            embedded_web_server_probe_.port != port || embedded_web_server_probe_.navigation_token != navigation_token) return;
+        run_embedded_web_server_probes(identity, port, navigation_token);
+      });
+    });
   }
+}
 
-  QStringList diagnostic_lines{QStringLiteral("Embedded Web 3D server resource probe for repo=%1 scene=%2").arg(trimmed_repo_root, trimmed_scene)};
-  bool all_ok = true;
-  for (const HttpCheck & check : checks) {
-    all_ok = all_ok && check.ok;
-    diagnostic_lines << QStringLiteral("  [%1] %2 status=%3 result=%4%5")
-                          .arg(check.label,
-                               check.path,
-                               check.status > 0 ? QString::number(check.status) : QStringLiteral("n/a"),
-                               check.ok ? QStringLiteral("PASS") : QStringLiteral("FAIL"),
-                               check.detail.isEmpty() ? QString() : QStringLiteral(" detail=%1").arg(check.detail.left(240)));
-  }
-  emit studio_log_requested(diagnostic_lines.join(QStringLiteral("\n")));
-  return all_ok;
+void ScenePreviewWidget::fail_embedded_web_server_probe(
+  const EmbeddedWebRequestIdentity & identity, int port, quint64 navigation_token, const QString & detail)
+{
+  if (!embedded_web_identity_is_current(identity) || port != embedded_web_server_port_ || embedded_web_server_probe_.identity != identity ||
+      embedded_web_server_probe_.port != port || embedded_web_server_probe_.navigation_token != navigation_token ||
+      embedded_web_server_probe_.terminal_recorded) return;
+  embedded_web_server_probe_.terminal_recorded = true;
+  embedded_web_server_lifecycle_ = EmbeddedWebServerLifecycle::ServerNotStarted;
+  emit studio_log_requested(QStringLiteral("Embedded Product View server terminal diagnostic: scene=%1 generation=%2 port=%3 navigation=%4 detail=%5")
+    .arg(identity.scene_id).arg(identity.generation).arg(port).arg(navigation_token).arg(detail));
+  activate_native_compatibility_preview(detail);
 }
 
 void ScenePreviewWidget::ensure_embedded_web_server_started(const QString & repo_root, const EmbeddedWebRequestIdentity & identity)
 {
   if (repo_root.trimmed().isEmpty() || !embedded_web_identity_is_current(identity)) return;
+  const int port = embedded_web_server_port_;
+  const quint64 navigation_token = ++embedded_web_navigation_token_;
+  embedded_web_server_probe_ = EmbeddedWebServerProbe{identity, port, navigation_token};
   if (embedded_web_server_process_ && embedded_web_server_process_->state() != QProcess::NotRunning) {
-    load_prepared_embedded_web_scene(identity);
+    start_embedded_web_server_probes(identity, port, navigation_token, repo_root);
     return;
   }
-  if (embedded_web_server_is_usable(repo_root, identity.scene_id)) {
-    emit studio_log_requested(QStringLiteral("Embedded Web 3D Product View reused existing verified server at http://127.0.0.1:8765/."));
-    load_prepared_embedded_web_scene(identity);
-    return;
-  }
-  set_embedded_product_view_state(EmbeddedProductViewState::StartingServer);
+  embedded_web_server_lifecycle_ = EmbeddedWebServerLifecycle::ServerStarting;
+  set_embedded_product_view_state(EmbeddedProductViewState::StartingServer, QStringLiteral("server_starting"));
   if (embedded_web_server_process_) embedded_web_server_process_->deleteLater();
   embedded_web_server_process_ = new QProcess(this);
   embedded_web_server_is_owned_ = true;
   QProcess * const process = embedded_web_server_process_;
-  embedded_web_server_process_->setProgram(QStringLiteral("python3"));
-  embedded_web_server_process_->setArguments(QStringList{"-m", "http.server", QString::number(embedded_web_server_port_), "--bind", "127.0.0.1"});
-  embedded_web_server_process_->setWorkingDirectory(repo_root);
-  embedded_web_server_process_->setProcessEnvironment(QProcessEnvironment::systemEnvironment());
-  embedded_web_server_process_->setProcessChannelMode(QProcess::MergedChannels);
-  connect(process, &QProcess::started, this, [this, identity, process]() {
-    if (process != embedded_web_server_process_ || !embedded_web_identity_is_current(identity)) return;
-    emit studio_log_requested(QStringLiteral("Started embedded Web 3D Product View server from repo root: python3 -m http.server 8765 --bind 127.0.0.1"));
-    load_prepared_embedded_web_scene(identity);
+  process->setProgram(QStringLiteral("python3"));
+  process->setArguments(QStringList{"-m", "http.server", QString::number(port), "--bind", "127.0.0.1"});
+  process->setWorkingDirectory(repo_root);
+  process->setProcessEnvironment(QProcessEnvironment::systemEnvironment());
+  process->setProcessChannelMode(QProcess::MergedChannels);
+  connect(process, &QProcess::started, this, [this, identity, port, navigation_token, process, repo_root]() {
+    if (process != embedded_web_server_process_ || !embedded_web_identity_is_current(identity) || port != embedded_web_server_port_ ||
+        embedded_web_server_probe_.identity != identity || embedded_web_server_probe_.port != port ||
+        embedded_web_server_probe_.navigation_token != navigation_token) return;
+    emit studio_log_requested(QStringLiteral("Embedded Product View server_starting milestone: port=%1.").arg(port));
+    start_embedded_web_server_probes(identity, port, navigation_token, repo_root);
   });
-  connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this, identity, process](int exit_code, QProcess::ExitStatus) {
-    if (process != embedded_web_server_process_ || !embedded_web_identity_is_current(identity)) return;
-    const QString output = QString::fromUtf8(process->readAll()).trimmed();
-    if (embedded_product_view_state_ == EmbeddedProductViewState::StartingServer && !embedded_web_server_is_usable(embedded_web_repo_root_, identity.scene_id)) {
-      activate_native_compatibility_preview(QStringLiteral("local server failed; exit %1; %2").arg(exit_code).arg(output.left(240)));
-      emit studio_log_requested(QStringLiteral("Embedded Product View local server failed: python3 -m http.server 8765 --bind 127.0.0.1\nExit code: %1\nOutput:\n%2").arg(exit_code).arg(output));
-    }
+  connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this, identity, port, navigation_token, process](int exit_code, QProcess::ExitStatus) {
+    if (process != embedded_web_server_process_ || !embedded_web_identity_is_current(identity) || port != embedded_web_server_port_ ||
+        embedded_web_server_probe_.identity != identity || embedded_web_server_probe_.port != port ||
+        embedded_web_server_probe_.navigation_token != navigation_token) return;
+    fail_embedded_web_server_probe(identity, port, navigation_token, QStringLiteral("local server exited with code %1: %2").arg(exit_code).arg(QString::fromUtf8(process->readAll()).trimmed().left(240)));
+  });
+  connect(process, &QProcess::errorOccurred, this, [this, identity, port, navigation_token, process](QProcess::ProcessError error) {
+    if (process != embedded_web_server_process_ || !embedded_web_identity_is_current(identity) || port != embedded_web_server_port_ ||
+        embedded_web_server_probe_.identity != identity || embedded_web_server_probe_.port != port ||
+        embedded_web_server_probe_.navigation_token != navigation_token) return;
+    fail_embedded_web_server_probe(identity, port, navigation_token,
+      QStringLiteral("local server startup failure (%1): %2").arg(static_cast<int>(error)).arg(process->errorString()));
   });
   process->start();
 }
@@ -897,6 +849,8 @@ void ScenePreviewWidget::cancel_embedded_web_lifecycle(bool stop_owned_server)
   embedded_editor_polling_ = false;
   embedded_web_readiness_deadline_ = QDateTime();
   embedded_web_last_boot_status_.clear();
+  embedded_web_server_lifecycle_ = EmbeddedWebServerLifecycle::ServerNotStarted;
+  embedded_web_server_probe_ = EmbeddedWebServerProbe{};
 
   if (embedded_web_prepare_process_) {
     QProcess * const process = embedded_web_prepare_process_;
@@ -1398,6 +1352,7 @@ void ScenePreviewWidget::load_prepared_embedded_web_scene(const EmbeddedWebReque
     emit studio_log_requested(QStringLiteral("Embedded Product View ignored stale prepared scene %1 rev %2; current scene is %3 rev %4.").arg(identity.scene_id).arg(identity.generation).arg(preview_scene_name_).arg(embedded_web_request_generation_));
     return;
   }
+  if (embedded_web_server_lifecycle_ != EmbeddedWebServerLifecycle::ServerReady) return;
   const QString web_scene_url_path = QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(identity.scene_id);
   const QString viewer_url = QStringLiteral("http://127.0.0.1:%1/workcell_studio_web/viewer/index.html?scene=%2&builderRevision=%3")
     .arg(embedded_web_server_port_)
@@ -1408,6 +1363,7 @@ void ScenePreviewWidget::load_prepared_embedded_web_scene(const EmbeddedWebReque
   set_embedded_product_view_state(EmbeddedProductViewState::Loading);
   embedded_web_loading_identity_ = identity;
   embedded_web_loading_navigation_token_ = ++embedded_web_navigation_token_;
+  embedded_web_server_lifecycle_ = EmbeddedWebServerLifecycle::BrowserLoading;
   embedded_web_expected_viewer_url_ = QUrl(viewer_url);
   embedded_web_last_viewer_url_ = embedded_web_expected_viewer_url_.toString();
   embedded_web_view_->load(embedded_web_expected_viewer_url_);
