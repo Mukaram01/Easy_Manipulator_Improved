@@ -4,6 +4,7 @@
 #include <QComboBox>
 #include <QDir>
 #include <QTemporaryDir>
+#include <QUrlQuery>
 
 #define private public
 #include "scene_preview_widget.h"
@@ -192,6 +193,57 @@ TEST(ScenePreviewWidgetUi, EquivalentPreviewContextsPrepareProductViewOnlyOnce)
 }
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+TEST(ScenePreviewWidgetUi, EmbeddedWebViewerUrlPreservesScenePathAndPayloadRevision)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+
+  const QList<quint64> revisions{1, 2, 3, 4, 9, 10, 12, 38, 125};
+  for (const quint64 revision : revisions) {
+    ScenePreviewWidget widget;
+    widget.preview_scene_name_ = QStringLiteral("ur5_2f_test");
+    widget.embedded_web_request_generation_ = 1;
+    widget.embedded_web_server_lifecycle_ = ScenePreviewWidget::EmbeddedWebServerLifecycle::ServerReady;
+    widget.embedded_web_server_port_ = 8765;
+
+    ScenePreviewWidget::EmbeddedWebRequestIdentity identity;
+    identity.scene_id = QStringLiteral("ur5_2f_test");
+    identity.payload_revision = revision;
+    identity.generation = widget.embedded_web_request_generation_;
+    widget.load_prepared_embedded_web_scene(identity);
+
+    const QString logical_scene_path = QStringLiteral("build/workcell_studio_web_scene/ur5_2f_test.web_scene.json");
+    const QString expected_revision = QString::number(revision);
+    const QUrl viewer_url = widget.embedded_web_expected_viewer_url_;
+    const QUrlQuery query(viewer_url);
+    const QList<QPair<QString, QString>> query_items = query.queryItems(QUrl::FullyDecoded);
+    const auto query_item_count = [&query_items](const QString & key) {
+      int count = 0;
+      for (const auto & item : query_items) {
+        if (item.first == key) ++count;
+      }
+      return count;
+    };
+    EXPECT_EQ(viewer_url.scheme(), QStringLiteral("http"));
+    EXPECT_EQ(viewer_url.host(), QStringLiteral("127.0.0.1"));
+    EXPECT_EQ(viewer_url.port(), 8765);
+    EXPECT_EQ(viewer_url.path(), QStringLiteral("/workcell_studio_web/viewer/index.html"));
+    EXPECT_EQ(query.queryItemValue(QStringLiteral("scene"), QUrl::FullyDecoded), logical_scene_path);
+    EXPECT_EQ(query.queryItemValue(QStringLiteral("builderRevision"), QUrl::FullyDecoded), expected_revision);
+    EXPECT_EQ(query.queryItemValue(QStringLiteral("embedded"), QUrl::FullyDecoded), QStringLiteral("1"));
+    EXPECT_EQ(query_item_count(QStringLiteral("scene")), 1);
+    EXPECT_EQ(query_item_count(QStringLiteral("builderRevision")), 1);
+    EXPECT_EQ(query_item_count(QStringLiteral("embedded")), 1);
+
+    const QString encoded_url = viewer_url.toString(QUrl::FullyEncoded);
+    EXPECT_EQ(encoded_url.indexOf(QStringLiteral("build1F")), -1);
+    EXPECT_EQ(encoded_url.indexOf(QStringLiteral("build2F")), -1);
+    EXPECT_EQ(encoded_url.indexOf(QStringLiteral("build3F")), -1);
+    EXPECT_EQ(encoded_url.indexOf(QStringLiteral("build4F")), -1);
+    EXPECT_EQ(encoded_url.indexOf(QStringLiteral("build12F")), -1);
+    EXPECT_EQ(encoded_url.indexOf(QStringLiteral("%252F")), -1);
+  }
+}
+
 TEST(ScenePreviewWidgetUi, PreparationFailureUsesPopulatedCompatibilityViewport)
 {
   ASSERT_NE(ensure_app(), nullptr);

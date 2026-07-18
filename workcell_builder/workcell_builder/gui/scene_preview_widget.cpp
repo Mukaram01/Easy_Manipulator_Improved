@@ -18,6 +18,7 @@
 #include <QTimer>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
+#include <QUrlQuery>
 #include <QJsonArray>
 #include <QCryptographicHash>
 #include <QDataStream>
@@ -1354,17 +1355,38 @@ void ScenePreviewWidget::load_prepared_embedded_web_scene(const EmbeddedWebReque
   }
   if (embedded_web_server_lifecycle_ != EmbeddedWebServerLifecycle::ServerReady) return;
   const QString web_scene_url_path = QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(identity.scene_id);
-  const QString viewer_url = QStringLiteral("http://127.0.0.1:%1/workcell_studio_web/viewer/index.html?scene=%2&builderRevision=%3")
-    .arg(embedded_web_server_port_)
-    .arg(QString::fromUtf8(QUrl::toPercentEncoding(web_scene_url_path)))
-    .arg(identity.generation) + QStringLiteral("&embedded=1");
+  const QString builder_revision = QString::number(identity.payload_revision);
+  QUrl viewer_url;
+  viewer_url.setScheme(QStringLiteral("http"));
+  viewer_url.setHost(QStringLiteral("127.0.0.1"));
+  viewer_url.setPort(embedded_web_server_port_);
+  viewer_url.setPath(QStringLiteral("/workcell_studio_web/viewer/index.html"));
+  QUrlQuery viewer_query;
+  viewer_query.addQueryItem(QStringLiteral("scene"), web_scene_url_path);
+  viewer_query.addQueryItem(QStringLiteral("builderRevision"), builder_revision);
+  viewer_query.addQueryItem(QStringLiteral("embedded"), QStringLiteral("1"));
+  viewer_url.setQuery(viewer_query);
+
+  const QUrlQuery decoded_viewer_query(viewer_url);
+  const QString decoded_scene_path = decoded_viewer_query.queryItemValue(QStringLiteral("scene"), QUrl::FullyDecoded);
+  const QString decoded_builder_revision = decoded_viewer_query.queryItemValue(
+    QStringLiteral("builderRevision"), QUrl::FullyDecoded);
+  const bool valid_scene_path = decoded_scene_path == web_scene_url_path;
+  const bool valid_builder_revision = QRegularExpression(QStringLiteral("^[0-9]+$"))
+    .match(decoded_builder_revision).hasMatch();
+  if (!valid_scene_path || !valid_builder_revision) {
+    const QString detail = QStringLiteral("Embedded Product View URL validation failed; using native compatibility preview.");
+    emit studio_log_requested(detail);
+    activate_native_compatibility_preview(detail);
+    return;
+  }
   embedded_web_readiness_deadline_ = QDateTime();
   embedded_web_last_boot_status_.clear();
   set_embedded_product_view_state(EmbeddedProductViewState::Loading);
   embedded_web_loading_identity_ = identity;
   embedded_web_loading_navigation_token_ = ++embedded_web_navigation_token_;
   embedded_web_server_lifecycle_ = EmbeddedWebServerLifecycle::BrowserLoading;
-  embedded_web_expected_viewer_url_ = QUrl(viewer_url);
+  embedded_web_expected_viewer_url_ = viewer_url;
   embedded_web_last_viewer_url_ = embedded_web_expected_viewer_url_.toString();
   embedded_web_view_->load(embedded_web_expected_viewer_url_);
 #endif
