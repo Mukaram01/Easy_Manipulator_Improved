@@ -11,6 +11,8 @@
 #include <QDateTime>
 #include <QUrl>
 
+class QNetworkAccessManager;
+
 class QComboBox;
 class QLabel;
 class QPushButton;
@@ -328,6 +330,13 @@ private:
     CompatibilityReady,
     Failed
   };
+  enum class EmbeddedWebServerLifecycle {
+    ServerNotStarted,
+    ServerStarting,
+    ServerProbing,
+    ServerReady,
+    BrowserLoading
+  };
   struct EmbeddedWebRequestIdentity
   {
     QString scene_id;
@@ -357,6 +366,18 @@ private:
     bool terminal_recorded{ false };
     QString terminal_outcome;
   };
+  struct EmbeddedWebServerProbe
+  {
+    EmbeddedWebRequestIdentity identity;
+    int port{ 0 };
+    quint64 navigation_token{ 0 };
+    QByteArray expected_marker;
+    QDateTime deadline;
+    int pending_replies{ 0 };
+    bool retryable_failure{ false };
+    bool terminal_recorded{ false };
+    QString failure_detail;
+  };
   void refresh_embedded_web_product_view();
   void request_embedded_web_product_view_refresh(bool force = false);
   void cancel_embedded_web_lifecycle(bool stop_owned_server);
@@ -370,7 +391,11 @@ private:
     const QString & outcome, QProcess::ExitStatus exit_status, int exit_code, const QString & detail = QString());
   QString embedded_web_preparation_diagnostic_key(const EmbeddedWebRequestIdentity & identity) const;
   void ensure_embedded_web_server_started(const QString & repo_root, const EmbeddedWebRequestIdentity & identity);
-  bool embedded_web_server_is_usable(const QString & repo_root = QString(), const QString & scene = QString());
+  void start_embedded_web_server_probes(const EmbeddedWebRequestIdentity & identity, int port, quint64 navigation_token,
+    const QString & repo_root);
+  void run_embedded_web_server_probes(const EmbeddedWebRequestIdentity & identity, int port, quint64 navigation_token);
+  void fail_embedded_web_server_probe(const EmbeddedWebRequestIdentity & identity, int port, quint64 navigation_token,
+    const QString & detail);
   void load_prepared_embedded_web_scene(const EmbeddedWebRequestIdentity & identity);
   void start_embedded_web_readiness_polling(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token, const QString & expected_json_path, const QString & viewer_url);
   void poll_embedded_web_readiness(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token, const QString & expected_json_path, const QString & viewer_url);
@@ -427,6 +452,7 @@ private:
   QWebEngineView * embedded_web_view_{ nullptr };
 #endif
   QProcess * embedded_web_server_process_{ nullptr };
+  QNetworkAccessManager * embedded_web_network_manager_{ nullptr };
   QProcess * embedded_web_prepare_process_{ nullptr };
   QHash<QString, EmbeddedWebPreparationDiagnostic> embedded_web_preparation_diagnostics_;
   QHash<QProcess *, QString> embedded_web_preparation_process_keys_;
@@ -438,6 +464,8 @@ private:
   QString embedded_web_last_viewer_url_;
   QString embedded_web_last_boot_status_;
   QDateTime embedded_web_readiness_deadline_;
+  EmbeddedWebServerLifecycle embedded_web_server_lifecycle_{ EmbeddedWebServerLifecycle::ServerNotStarted };
+  EmbeddedWebServerProbe embedded_web_server_probe_;
   bool embedded_editor_polling_{ false };
   EmbeddedWebRequestIdentity embedded_web_active_identity_;
   EmbeddedWebRequestIdentity pending_embedded_web_identity_;
