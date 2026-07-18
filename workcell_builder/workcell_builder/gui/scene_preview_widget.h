@@ -341,6 +341,11 @@ private:
   {
     QString scene_id;
     QString absolute_scene_dir;
+    // These are part of the immutable request, rather than mutable server
+    // state, so delayed network/process/browser callbacks cannot cross a
+    // repository or port change.
+    QString absolute_repo_root;
+    int selected_server_port{ 0 };
     QByteArray payload_fingerprint;
     quint64 payload_revision{ 0 };
     quint64 generation{ 0 };
@@ -348,6 +353,7 @@ private:
     bool matches_context(const EmbeddedWebRequestIdentity & other) const
     {
       return scene_id == other.scene_id && absolute_scene_dir == other.absolute_scene_dir &&
+        absolute_repo_root == other.absolute_repo_root && selected_server_port == other.selected_server_port &&
         payload_fingerprint == other.payload_fingerprint && payload_revision == other.payload_revision;
     }
     bool operator==(const EmbeddedWebRequestIdentity & other) const
@@ -391,6 +397,8 @@ private:
     const QString & outcome, QProcess::ExitStatus exit_status, int exit_code, const QString & detail = QString());
   QString embedded_web_preparation_diagnostic_key(const EmbeddedWebRequestIdentity & identity) const;
   void ensure_embedded_web_server_started(const QString & repo_root, const EmbeddedWebRequestIdentity & identity);
+  void start_owned_embedded_web_server(const EmbeddedWebRequestIdentity & identity);
+  void select_owned_embedded_web_server(const EmbeddedWebRequestIdentity & identity, bool use_current_port);
   void start_embedded_web_server_probes(const EmbeddedWebRequestIdentity & identity, int port, quint64 navigation_token,
     const QString & repo_root);
   void run_embedded_web_server_probes(const EmbeddedWebRequestIdentity & identity, int port, quint64 navigation_token);

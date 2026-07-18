@@ -47,3 +47,25 @@ def test_async_web_callbacks_guard_their_captured_request_identity():
     assert "if (!embedded_web_identity_is_current(identity)) return;" in editor
     assert "[this, identity]" in editor_poll
     assert "if (embedded_web_identity_is_current(identity)) poll_embedded_editor_events();" in editor_poll
+
+
+def test_web_request_identity_binds_root_and_selected_port_for_every_async_gate():
+    identity = HDR[HDR.index("struct EmbeddedWebRequestIdentity"):HDR.index("struct EmbeddedWebPreparationDiagnostic")]
+    assert "QString absolute_repo_root;" in identity
+    assert "int selected_server_port" in identity
+    assert "absolute_repo_root == other.absolute_repo_root" in identity
+    assert "selected_server_port == other.selected_server_port" in identity
+
+    probes = _between("void ScenePreviewWidget::start_embedded_web_server_probes", "void ScenePreviewWidget::fail_embedded_web_server_probe")
+    assert "identity.absolute_repo_root != repo_root" in probes
+    assert "identity.selected_server_port != port" in probes
+    assert "load_prepared_embedded_web_scene(identity);" in probes
+
+    server = _between("void ScenePreviewWidget::start_owned_embedded_web_server", "void ScenePreviewWidget::cancel_embedded_web_lifecycle")
+    assert '"--directory", repo_root' in server
+    assert "identity.selected_server_port != port" in server
+    assert "&QProcess::started" in server
+
+    browser = _between("void ScenePreviewWidget::load_prepared_embedded_web_scene", "#ifdef WORKCELL_BUILDER_HAS_WEBENGINE")
+    assert "identity.selected_server_port <= 0" in browser
+    assert "viewer_url.setPort(identity.selected_server_port);" in browser
