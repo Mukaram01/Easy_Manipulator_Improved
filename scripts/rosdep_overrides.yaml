@@ -187,7 +187,28 @@ tesseract_rosutils:
     noble: [ros-jazzy-tesseract-rosutils]
 
 taskflow:
-  ubuntu: [libtaskflow-dev]
+  ubuntu:
+    # Jammy has no libtaskflow-dev provider; the pinned header-only source
+    # checkout is imported from dependencies/emd_epd_ws.repos and exported with
+    # scripts/ensure_taskflow_cmake_package.sh before build.
+    jammy: []
+    noble: [libtaskflow-dev]
+
+libtaskflow-cpp-dev:
+  ubuntu:
+    # Requested by the imported tesseract_planning package.xml. Ubuntu 22.04
+    # has no apt package for this rosdep key, so Humble/Jammy uses the pinned
+    # source checkout imported from dependencies/emd_epd_ws.repos instead.
+    jammy: []
+    noble: [libtaskflow-cpp-dev]
+
+gperftools:
+  ubuntu:
+    # Requested as a test dependency by imported tesseract_planning. Explicitly
+    # install libunwind-15-dev on Jammy so libgoogle-perftools-dev's unwind
+    # alternative does not collide with LLVM's libunwind-14-dev in Humble CI.
+    jammy: [google-perftools, libunwind-15-dev, libgoogle-perftools-dev]
+    noble: [google-perftools, libgoogle-perftools-dev]
 
 trajopt_sqp:
   ubuntu:
