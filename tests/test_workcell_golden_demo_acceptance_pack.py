@@ -48,4 +48,10 @@ def test_workspace_alias_policy_files_untouched_markers_present():
     assert 'ensure_workspace_alias "assets"' in fix
     assert 'ensure_workspace_alias "scenes"' in fix
     assert 'CANONICAL_REPO="$SRC_DIR/easy_manipulation_deployment"' in verify
-    assert 'Missing workspace layout: expected canonical repo at $CANONICAL_REPO' in verify
+    assert 'easy_manipulation_deployment' in verify
+    assert 'assets' in verify
+    assert 'scenes' in verify
+    assert 'Duplicate package discovered' in verify
+    assert 'Workspace validation passed:' in verify
+    assert 'required packages are discoverable exactly once' in verify
+    assert 'for alias in assets scenes' not in verify
