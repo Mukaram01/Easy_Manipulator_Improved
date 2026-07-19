@@ -88,6 +88,7 @@
 #include <QProgressDialog>
 #include <QProcessEnvironment>
 #include <QSettings>
+#include <QSizePolicy>
 #include <QLineEdit>
 #include <QFormLayout>
 #include <QEvent>
@@ -2626,44 +2627,64 @@ void MainWindow::setup_studio_shell()
   create_action_button(simulate_actions, "simulate.stop");
   create_action_button(diagnostics_actions, "diagnostics.self_test");
   create_action_button(diagnostics_actions, "diagnostics.golden_flow");
-  inspector_label_=new QLabel("Inspector selection: none"); inspector_label_->setObjectName("sceneBuilderInspectorLabel"); inspector_label_->setWordWrap(true); selection_tab_layout->addWidget(inspector_label_);
-  live_coordinate_label_ = new QLabel("Selected: none", scene_builder); selection_tab_layout->addWidget(live_coordinate_label_);
-  auto * pose_grid = new QGridLayout();
-  inspector_x_ = new QDoubleSpinBox(scene_builder); inspector_x_->setPrefix("x "); pose_grid->addWidget(inspector_x_, 0, 0);
-  inspector_y_ = new QDoubleSpinBox(scene_builder); inspector_y_->setPrefix("y "); pose_grid->addWidget(inspector_y_, 0, 1);
-  inspector_z_ = new QDoubleSpinBox(scene_builder); inspector_z_->setPrefix("z "); pose_grid->addWidget(inspector_z_, 0, 2);
-  inspector_roll_ = new QDoubleSpinBox(scene_builder); inspector_roll_->setPrefix("r "); pose_grid->addWidget(inspector_roll_, 1, 0);
-  inspector_pitch_ = new QDoubleSpinBox(scene_builder); inspector_pitch_->setPrefix("p "); pose_grid->addWidget(inspector_pitch_, 1, 1);
-  inspector_yaw_ = new QDoubleSpinBox(scene_builder); inspector_yaw_->setPrefix("yaw "); pose_grid->addWidget(inspector_yaw_, 1, 2);
-  auto * dim_grid = new QGridLayout();
-  inspector_dim_x_ = new QDoubleSpinBox(scene_builder); inspector_dim_x_->setPrefix("scale "); dim_grid->addWidget(inspector_dim_x_, 0, 0);
-  inspector_dim_y_ = new QDoubleSpinBox(scene_builder); inspector_dim_y_->setPrefix("sy "); dim_grid->addWidget(inspector_dim_y_, 0, 1);
-  inspector_dim_z_ = new QDoubleSpinBox(scene_builder); inspector_dim_z_->setPrefix("sz "); dim_grid->addWidget(inspector_dim_z_, 0, 2);
-  selection_tab_layout->addLayout(dim_grid);
-  selected_item_card_layout->addLayout(pose_grid);
-  auto * metadata_group = new QGroupBox("Metadata", scene_builder);
-  metadata_group->setObjectName("studioCard");
-  auto * metadata_form = new QFormLayout(metadata_group);
-  inspector_display_name_ = new QLineEdit(metadata_group);
+  inspector_label_=new QLabel("No item selected"); inspector_label_->setObjectName("sceneBuilderInspectorLabel"); inspector_label_->setWordWrap(true); selected_item_card_layout->addWidget(inspector_label_);
+  live_coordinate_label_ = new QLabel("Selected: none", scene_builder); selected_item_card_layout->addWidget(live_coordinate_label_);
+  auto * metadata_form = new QFormLayout();
+  metadata_form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+  inspector_display_name_ = new QLineEdit(scene_builder);
   inspector_display_name_->setPlaceholderText("Display name");
-  metadata_form->addRow("Display name", inspector_display_name_);
-  inspector_role_ = new QLineEdit(metadata_group);
-  inspector_role_->setReadOnly(true);
-  metadata_form->addRow("Role", inspector_role_);
-  inspector_category_ = new QLineEdit(metadata_group);
-  inspector_category_->setReadOnly(true);
-  metadata_form->addRow("Category", inspector_category_);
-  inspector_type_ = new QLineEdit(metadata_group);
+  metadata_form->addRow("Name", inspector_display_name_);
+  inspector_type_ = new QLineEdit(scene_builder);
   inspector_type_->setReadOnly(true);
   metadata_form->addRow("Type", inspector_type_);
-  selection_tab_layout->addWidget(metadata_group);
-  inspector_live_update_box_ = new QCheckBox("Live update", scene_builder); inspector_live_update_box_->setChecked(false); selection_tab_layout->addWidget(inspector_live_update_box_);
+  selected_item_card_layout->addLayout(metadata_form);
+  auto * transform_title = new QLabel("<b>Transform</b><br/>Position in metres; rotation in radians.", scene_builder);
+  transform_title->setWordWrap(true);
+  selected_item_card_layout->addWidget(transform_title);
+  auto * pose_grid = new QGridLayout();
+  pose_grid->setHorizontalSpacing(6);
+  auto configure_spin = [](QDoubleSpinBox *sb) { sb->setMinimumWidth(86); sb->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed); };
+  inspector_x_ = new QDoubleSpinBox(scene_builder); inspector_x_->setPrefix("X "); configure_spin(inspector_x_); pose_grid->addWidget(inspector_x_, 0, 0);
+  inspector_y_ = new QDoubleSpinBox(scene_builder); inspector_y_->setPrefix("Y "); configure_spin(inspector_y_); pose_grid->addWidget(inspector_y_, 0, 1);
+  inspector_z_ = new QDoubleSpinBox(scene_builder); inspector_z_->setPrefix("Z "); configure_spin(inspector_z_); pose_grid->addWidget(inspector_z_, 0, 2);
+  inspector_roll_ = new QDoubleSpinBox(scene_builder); inspector_roll_->setPrefix("Roll "); configure_spin(inspector_roll_); pose_grid->addWidget(inspector_roll_, 1, 0);
+  inspector_pitch_ = new QDoubleSpinBox(scene_builder); inspector_pitch_->setPrefix("Pitch "); configure_spin(inspector_pitch_); pose_grid->addWidget(inspector_pitch_, 1, 1);
+  inspector_yaw_ = new QDoubleSpinBox(scene_builder); inspector_yaw_->setPrefix("Yaw "); configure_spin(inspector_yaw_); pose_grid->addWidget(inspector_yaw_, 1, 2);
+  selected_item_card_layout->addLayout(pose_grid);
   auto * transform_actions = new QHBoxLayout();
   inspector_apply_button_ = new QPushButton("Apply", scene_builder); transform_actions->addWidget(inspector_apply_button_);
   inspector_revert_button_ = new QPushButton("Revert", scene_builder); transform_actions->addWidget(inspector_revert_button_);
   inspector_copy_transform_button_ = new QPushButton("Copy Transform", scene_builder); transform_actions->addWidget(inspector_copy_transform_button_);
   inspector_paste_transform_button_ = new QPushButton("Paste Transform", scene_builder); transform_actions->addWidget(inspector_paste_transform_button_);
-  selection_tab_layout->addLayout(transform_actions);
+  selected_item_card_layout->addLayout(transform_actions);
+  inspector_live_update_box_ = new QCheckBox("Live update", scene_builder); inspector_live_update_box_->setChecked(false); selected_item_card_layout->addWidget(inspector_live_update_box_);
+  auto * dim_grid = new QGridLayout();
+  inspector_dim_x_ = new QDoubleSpinBox(scene_builder); inspector_dim_x_->setPrefix("Scale X "); configure_spin(inspector_dim_x_); dim_grid->addWidget(inspector_dim_x_, 0, 0);
+  inspector_dim_y_ = new QDoubleSpinBox(scene_builder); inspector_dim_y_->setPrefix("Y "); configure_spin(inspector_dim_y_); dim_grid->addWidget(inspector_dim_y_, 0, 1);
+  inspector_dim_z_ = new QDoubleSpinBox(scene_builder); inspector_dim_z_->setPrefix("Z "); configure_spin(inspector_dim_z_); dim_grid->addWidget(inspector_dim_z_, 0, 2);
+  selected_item_card_layout->addLayout(dim_grid);
+  auto * advanced_details_group = new QGroupBox("Advanced details", scene_builder);
+  advanced_details_group->setObjectName("sceneBuilderInspectorAdvancedDetails");
+  advanced_details_group->setCheckable(true);
+  advanced_details_group->setChecked(false);
+  auto * advanced_details_outer_layout = new QVBoxLayout(advanced_details_group);
+  auto * advanced_details_contents = new QWidget(advanced_details_group);
+  auto * advanced_details_layout = new QFormLayout(advanced_details_contents);
+  inspector_role_ = new QLineEdit(advanced_details_contents);
+  inspector_role_->setReadOnly(true);
+  advanced_details_layout->addRow("Role", inspector_role_);
+  inspector_category_ = new QLineEdit(advanced_details_contents);
+  inspector_category_->setReadOnly(true);
+  advanced_details_layout->addRow("Category", inspector_category_);
+  inspector_advanced_details_label_ = new QLabel("No item selected", advanced_details_contents);
+  inspector_advanced_details_label_->setObjectName("sceneBuilderInspectorAdvancedDetailsText");
+  inspector_advanced_details_label_->setWordWrap(true);
+  inspector_advanced_details_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  advanced_details_layout->addRow(inspector_advanced_details_label_);
+  advanced_details_outer_layout->addWidget(advanced_details_contents);
+  advanced_details_contents->setVisible(false);
+  QObject::connect(advanced_details_group, &QGroupBox::toggled, advanced_details_contents, &QWidget::setVisible);
+  selection_tab_layout->addWidget(advanced_details_group);
   auto * robot_pose_group = new QGroupBox("Robot Base Pose", scene_builder);
   robot_pose_group->setObjectName("studioCard");
   auto * robot_pose_layout = new QVBoxLayout(robot_pose_group);
@@ -3819,20 +3840,24 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
 {
   if (!inspector_label_ || !live_coordinate_label_) return;
   refresh_selection_binding_actions(state);
-  QStringList inspector_lines;
-  inspector_lines << QString("Scene: %1").arg(selected_scene_state_.valid ? selected_scene_state_.name : QStringLiteral("none"));
-  inspector_lines << QString("Scene path: %1").arg(selected_scene_state_.valid ? selected_scene_state_.path : QStringLiteral("(none)"));
-  inspector_lines << QString("Scene status: %1").arg(selected_scene_state_.valid ? selected_scene_state_.status : QStringLiteral("(none)"));
-  inspector_lines << QString("Robot: %1").arg(selected_scene_state_.valid ? selected_scene_state_.robot_summary : QStringLiteral("unknown"));
-  inspector_lines << QString("End effector: %1").arg(selected_scene_state_.valid ? selected_scene_state_.end_effector_summary : QStringLiteral("unknown"));
-  inspector_lines << QString("Tool mount: %1").arg(selected_scene_state_.valid ? selected_scene_state_.tool_mount_summary : QStringLiteral("unknown"));
-  inspector_lines << QString("Grasp frame: %1").arg(selected_scene_state_.valid ? selected_scene_state_.grasp_frame_summary : QStringLiteral("unknown"));
-  inspector_lines << QString("Launch status: %1").arg(selected_scene_state_.valid ? (selected_scene_state_.launchable ? "ready" : "blocked") : QStringLiteral("(none)"));
+  QStringList advanced_lines;
+  advanced_lines << QString("Scene: %1").arg(selected_scene_state_.valid ? selected_scene_state_.name : QStringLiteral("none"));
+  advanced_lines << QString("Scene path: %1").arg(selected_scene_state_.valid ? selected_scene_state_.path : QStringLiteral("(none)"));
+  advanced_lines << QString("Scene status: %1").arg(selected_scene_state_.valid ? selected_scene_state_.status : QStringLiteral("(none)"));
+  advanced_lines << QString("Robot: %1").arg(selected_scene_state_.valid ? selected_scene_state_.robot_summary : QStringLiteral("unknown"));
+  advanced_lines << QString("End effector: %1").arg(selected_scene_state_.valid ? selected_scene_state_.end_effector_summary : QStringLiteral("unknown"));
+  advanced_lines << QString("Tool mount: %1").arg(selected_scene_state_.valid ? selected_scene_state_.tool_mount_summary : QStringLiteral("unknown"));
+  advanced_lines << QString("Grasp frame: %1").arg(selected_scene_state_.valid ? selected_scene_state_.grasp_frame_summary : QStringLiteral("unknown"));
+  advanced_lines << QString("Launch status: %1").arg(selected_scene_state_.valid ? (selected_scene_state_.launchable ? "ready" : "blocked") : QStringLiteral("(none)"));
   if (!state.valid) {
-    inspector_lines << "Selected item: (none)";
-    inspector_label_->setText(inspector_lines.join("\n"));
+    inspector_label_->setText("No item selected");
     inspector_label_->setToolTip(selected_scene_state_.valid ? selected_scene_state_.path : QString());
     live_coordinate_label_->setText("No item selected");
+    if (inspector_advanced_details_label_) {
+      inspector_advanced_details_label_->setText(QString());
+      inspector_advanced_details_label_->setToolTip(QString());
+    }
+    refresh_selection_transform_editor_from_state(state);
     return;
   }
   const QString display = state.display_name.isEmpty() ? state.id : state.display_name;
@@ -3851,43 +3876,44 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
     active_visual_source.compare(QStringLiteral("locked_generated_urdf_visual"), Qt::CaseInsensitive) == 0 ||
     active_visual_source.compare(QStringLiteral("generated_urdf_visual"), Qt::CaseInsensitive) == 0 ||
     active_visual_source.compare(QStringLiteral("primitive_fallback"), Qt::CaseInsensitive) == 0;
-  const QString selection_contract_label = editable_layout_contract ? QStringLiteral("editable layout item") :
-    (generated_or_preview_contract ? QStringLiteral("inspection-only generated preview") : QStringLiteral("locked item cannot be edited"));
+  const QString selection_contract_label = editable_layout_contract ? QStringLiteral("Editable layout item") :
+    (generated_or_preview_contract ? QStringLiteral("Locked preview item") : QStringLiteral("Locked item cannot be edited"));
   const bool is_locked_urdf_preview = state.locked && role.contains("urdf", Qt::CaseInsensitive);
-  const QString locked_line = state.locked ? QString("Locked: %1").arg(state.lock_reason.isEmpty() ? QStringLiteral("item is locked") : state.lock_reason) : QStringLiteral("Locked: no");
-  inspector_lines << "";
-  inspector_lines << QString("Selected item name: %1").arg(display);
-  inspector_lines << QString("Selected item role: %1").arg(role);
-  inspector_lines << QString("Selected item category: %1").arg(role);
-  inspector_lines << QString("Selected item ID: %1").arg(state.id);
-  inspector_lines << QString("Selected item editing mode: %1").arg(selection_contract_label);
-  inspector_lines << QString("Selected item source: %1").arg(source);
-  inspector_lines << QString("Selected item source_path: %1").arg(source);
-  inspector_lines << QString("Selected item source_layer: %1").arg(source_layer);
-  inspector_lines << QString("Selected item active_visual_source: %1").arg(active_visual_source);
-  inspector_lines << QString("Selected item editable/locked: %1").arg(state.editable ? "editable" : "locked");
-  inspector_lines << QString("Selected item linked_to_editable_layout_state: %1").arg(state.linked_to_editable_layout_state ? "true" : "false");
-  inspector_lines << QString("Selected item visual backing: %1").arg(visual_backing);
-  inspector_lines << QString("Selected item generated vs authoring: %1").arg(state.generated_visual ? "generated" : "authoring-backed");
-  inspector_lines << QString("Selected item item_type_classification: %1").arg(type_class);
-  if (is_locked_urdf_preview) inspector_lines << "Reason: locked/preview-only";
-  inspector_lines << locked_line;
+  const QString locked_line = state.locked ? QString("locked_reason: %1").arg(state.lock_reason.isEmpty() ? QStringLiteral("item is locked") : state.lock_reason) : QStringLiteral("locked: no");
+  inspector_label_->setText(QString("%1\nType: %2\nState: %3").arg(display, state.type.isEmpty() ? type_class : state.type, selection_contract_label));
+  inspector_label_->setToolTip(display);
+  advanced_lines << QString("Selected item name: %1").arg(display);
+  advanced_lines << QString("Selected item role: %1").arg(role);
+  advanced_lines << QString("Selected item category: %1").arg(state.category.isEmpty() ? role : state.category);
+  advanced_lines << QString("Selected item ID: %1").arg(state.id);
+  advanced_lines << QString("Selected item editing mode: %1").arg(selection_contract_label);
+  advanced_lines << QString("Selected item source_path: %1").arg(source);
+  advanced_lines << QString("Selected item source_layer: %1").arg(source_layer);
+  advanced_lines << QString("Selected item active_visual_source: %1").arg(active_visual_source);
+  advanced_lines << QString("Selected item editable/locked: %1").arg(state.editable ? "editable" : "locked");
+  advanced_lines << QString("Selected item linked_to_editable_layout_state: %1").arg(state.linked_to_editable_layout_state ? "true" : "false");
+  advanced_lines << QString("Selected item visual backing: %1").arg(visual_backing);
+  advanced_lines << QString("Selected item generated vs authoring: %1").arg(state.generated_visual ? "generated" : "authoring-backed");
+  advanced_lines << QString("Selected item item_type_classification: %1").arg(type_class);
+  if (is_locked_urdf_preview) advanced_lines << "Reason: locked/preview-only";
+  advanced_lines << locked_line;
   const bool is_detection_item = source_layer.compare("overlay", Qt::CaseInsensitive) == 0 || !state.detection_label.isEmpty();
   const bool is_camera_fov_item = role.contains("camera", Qt::CaseInsensitive) || type_class.contains("camera", Qt::CaseInsensitive);
   if (is_detection_item || is_camera_fov_item) {
-    inspector_lines << "";
-    inspector_lines << "Read-only details:";
-    if (!state.camera_id.isEmpty()) inspector_lines << QString("camera_id: %1").arg(state.camera_id);
-    if (!state.frame_id.isEmpty()) inspector_lines << QString("frame_id: %1").arg(state.frame_id);
-    if (!state.detection_label.isEmpty()) inspector_lines << QString("detection_label: %1").arg(state.detection_label);
-    if (state.confidence >= 0.0) inspector_lines << QString("confidence: %1").arg(state.confidence, 0, 'f', 3);
-    if (!state.tracking_id.isEmpty()) inspector_lines << QString("tracking_id: %1").arg(state.tracking_id);
-    if (!state.snapshot_source_file.isEmpty()) inspector_lines << QString("snapshot_source_file: %1").arg(state.snapshot_source_file);
-    if (!state.alignment_warning.isEmpty()) inspector_lines << QString("alignment_warning: %1").arg(state.alignment_warning);
-    if (!state.editable) inspector_lines << QString("locked_reason: %1").arg(state.lock_reason.isEmpty() ? QStringLiteral("preview-only overlay") : state.lock_reason);
+    advanced_lines << "Read-only details:";
+    if (!state.camera_id.isEmpty()) advanced_lines << QString("camera_id: %1").arg(state.camera_id);
+    if (!state.frame_id.isEmpty()) advanced_lines << QString("frame_id: %1").arg(state.frame_id);
+    if (!state.detection_label.isEmpty()) advanced_lines << QString("detection_label: %1").arg(state.detection_label);
+    if (state.confidence >= 0.0) advanced_lines << QString("confidence: %1").arg(state.confidence, 0, 'f', 3);
+    if (!state.tracking_id.isEmpty()) advanced_lines << QString("tracking_id: %1").arg(state.tracking_id);
+    if (!state.snapshot_source_file.isEmpty()) advanced_lines << QString("snapshot_source_file: %1").arg(state.snapshot_source_file);
+    if (!state.alignment_warning.isEmpty()) advanced_lines << QString("alignment_warning: %1").arg(state.alignment_warning);
   }
-  inspector_label_->setText(inspector_lines.join("\n"));
-  inspector_label_->setToolTip(QString("%1\n%2").arg(selected_scene_state_.valid ? selected_scene_state_.path : QString(), source));
+  if (inspector_advanced_details_label_) {
+    const QString advanced_text = advanced_lines.join("\n");
+    inspector_advanced_details_label_->setText(advanced_text);
+    inspector_advanced_details_label_->setToolTip(advanced_text);
+  }
   live_coordinate_label_->setText(QString("Transform: %1").arg(pose));
 }
 
@@ -7098,7 +7124,22 @@ void MainWindow::refresh_selection_transform_editor_from_item(QGraphicsItem * it
 
 void MainWindow::refresh_selection_transform_editor_from_state(const SelectedSceneItemState & state)
 {
-  if (!state.valid || !state.pose_available) return;
+  if (!state.valid || !state.pose_available) {
+    inspector_update_guard_ = true;
+    for (auto * sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_, inspector_dim_x_, inspector_dim_y_, inspector_dim_z_}) {
+      if (sb) { sb->clear(); sb->setEnabled(false); sb->setReadOnly(true); }
+    }
+    if (inspector_display_name_) { inspector_display_name_->clear(); inspector_display_name_->setPlaceholderText("Display name"); inspector_display_name_->setEnabled(false); }
+    for (auto * le : {inspector_role_, inspector_category_, inspector_type_}) {
+      if (le) { le->clear(); le->setEnabled(false); le->setReadOnly(true); }
+    }
+    if (inspector_apply_button_) inspector_apply_button_->setEnabled(false);
+    if (inspector_revert_button_) inspector_revert_button_->setEnabled(false);
+    if (inspector_live_update_box_) inspector_live_update_box_->setEnabled(false);
+    inspector_update_guard_ = false;
+    refresh_robot_base_pose_inspector();
+    return;
+  }
   const bool locked = state.locked || !state.editable || !state.linked_to_editable_layout_state;
   inspector_update_guard_ = true;
   if (inspector_x_) inspector_x_->setValue(state.pose_x);
@@ -7118,17 +7159,17 @@ void MainWindow::refresh_selection_transform_editor_from_state(const SelectedSce
   if (inspector_category_) inspector_category_->setText(state.category);
   if (inspector_type_) inspector_type_->setText(state.type);
   for (auto * sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_}) {
-    if (sb) sb->setReadOnly(locked);
+    if (sb) { sb->setEnabled(true); sb->setReadOnly(locked); }
   }
   for (auto * sb : {inspector_dim_x_, inspector_dim_y_, inspector_dim_z_}) {
-    if (sb) sb->setReadOnly(locked);
+    if (sb) { sb->setEnabled(true); sb->setReadOnly(locked); }
   }
   if (inspector_apply_button_) inspector_apply_button_->setEnabled(!locked);
   if (inspector_revert_button_) inspector_revert_button_->setEnabled(!locked);
   if (inspector_live_update_box_) inspector_live_update_box_->setEnabled(!locked);
-  if (inspector_display_name_) inspector_display_name_->setReadOnly(locked);
+  if (inspector_display_name_) { inspector_display_name_->setEnabled(true); inspector_display_name_->setReadOnly(locked); }
   for (auto * le : {inspector_role_, inspector_category_, inspector_type_}) {
-    if (le) le->setReadOnly(true);
+    if (le) { le->setEnabled(true); le->setReadOnly(true); }
   }
   inspector_update_guard_ = false;
   refresh_robot_base_pose_inspector();

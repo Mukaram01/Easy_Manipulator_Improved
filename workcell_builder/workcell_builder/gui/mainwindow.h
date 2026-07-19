@@ -475,6 +475,7 @@ private:
   QPushButton * inspector_copy_transform_button_{ nullptr };
   QPushButton * inspector_paste_transform_button_{ nullptr };
   QLabel * inspector_warning_label_{ nullptr };
+  QLabel * inspector_advanced_details_label_{ nullptr };
   QLabel * robot_pose_source_label_{ nullptr };
   QLabel * robot_pose_message_label_{ nullptr };
   QDoubleSpinBox * robot_base_x_{ nullptr };
