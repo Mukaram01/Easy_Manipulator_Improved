@@ -506,7 +506,6 @@ private:
   QLabel * scene_workflow_recommendation_label_{ nullptr };
   QPushButton * scene_workflow_recommendation_button_{ nullptr };
   QMenu * scene_workflow_recommendation_menu_{ nullptr };
-  QPlainTextEdit * scene_builder_studio_log_{ nullptr };
   QTreeWidget * scene_hierarchy_tree_{ nullptr };
   QTreeWidget * asset_catalog_tree_{ nullptr };
   QLabel * scene_files_selected_path_label_{ nullptr };
@@ -671,6 +670,9 @@ private:
   QTabWidget * scene_builder_inspector_tabs_{ nullptr };
   QPushButton * scene_builder_log_toggle_button_{ nullptr };
   QFrame * scene_builder_log_panel_{ nullptr };
+  QLabel * scene_builder_selection_summary_label_{ nullptr };
+  QLabel * scene_builder_status_message_label_{ nullptr };
+  QLabel * scene_builder_issue_count_label_{ nullptr };
   bool scene_builder_log_collapsed_{ false };
   QToolButton * preview_more_actions_button_{ nullptr };
   QToolButton * validation_more_actions_button_{ nullptr };
