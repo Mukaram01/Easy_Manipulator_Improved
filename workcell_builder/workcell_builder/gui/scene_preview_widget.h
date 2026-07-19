@@ -360,6 +360,10 @@ private:
     {
       return matches_context(other) && generation == other.generation;
     }
+    bool operator!=(const EmbeddedWebRequestIdentity & other) const
+    {
+      return !(*this == other);
+    }
   };
   struct EmbeddedWebPreparationDiagnostic
   {

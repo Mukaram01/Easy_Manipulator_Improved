@@ -127,7 +127,7 @@ TEST(ScenePreviewWidgetUi, EquivalentPreviewPayloadsDoNotPrepareProductViewAgain
   robot.editable = false;
   robot.source_layer = "generated_urdf";
   robot.x = 0.25;
-  robot.warnings = {"mesh staged"};
+  robot.warnings = QStringList{QStringLiteral("mesh staged")};
 
   ScenePreviewWidget::PreviewItem table;
   table.id = "layout/table";
