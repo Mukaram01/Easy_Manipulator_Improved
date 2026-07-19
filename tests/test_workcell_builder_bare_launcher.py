@@ -17,6 +17,10 @@ def test_cmake_installs_bare_launcher_into_prefix_bin() -> None:
     assert "DESTINATION lib/${PROJECT_NAME}" in cmake
 
 
+def test_launcher_source_is_executable_for_symlink_install() -> None:
+    assert LAUNCHER.stat().st_mode & 0o111
+
+
 def test_launcher_resolves_package_binary_and_forwards_arguments() -> None:
     launcher = LAUNCHER.read_text(encoding="utf-8")
     assert "${prefix_dir}/lib/workcell_builder/workcell_builder" in launcher
