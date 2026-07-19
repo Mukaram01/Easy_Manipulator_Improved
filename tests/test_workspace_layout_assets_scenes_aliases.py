@@ -21,7 +21,10 @@ def test_fix_workspace_layout_no_per_package_asset_symlink_creation():
 
 def test_verify_workspace_discovery_accepts_alias_layout():
     text = Path('scripts/verify_workspace_discovery.sh').read_text(encoding='utf-8')
-    assert 'for alias in assets scenes' in text
+    assert 'CANONICAL_REPO="$SRC_DIR/easy_manipulation_deployment"' in text
+    assert 'canonical repository layout at $CANONICAL_REPO' in text
+    assert 'legacy workspace aliases at $SRC_DIR/assets and $SRC_DIR/scenes' in text
+    assert 'Missing workspace layout: expected canonical repo at $CANONICAL_REPO' in text
     assert 'Duplicate package discovered' in text
     assert 'required=(easy_manipulation_deployment workcell_builder)' in text
 

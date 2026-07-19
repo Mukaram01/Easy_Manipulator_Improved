@@ -13,13 +13,32 @@ if ! command -v colcon >/dev/null 2>&1; then
   exit 1
 fi
 
-for alias in assets scenes; do
-  path="$SRC_DIR/$alias"
-  if [[ ! -L "$path" && ! -d "$path" ]]; then
-    echo "Missing workspace alias: $path" >&2
-    exit 1
-  fi
-done
+CANONICAL_REPO="$SRC_DIR/easy_manipulation_deployment"
+
+canonical_layout_valid=false
+if [[ -d "$CANONICAL_REPO" \
+  && -d "$CANONICAL_REPO/assets" \
+  && -d "$CANONICAL_REPO/scenes" \
+  && -f "$CANONICAL_REPO/workcell_builder/package.xml" \
+  && -f "$CANONICAL_REPO/scenes/ur5_2f_test/package.xml" ]]; then
+  canonical_layout_valid=true
+fi
+
+legacy_layout_valid=false
+if [[ -d "$SRC_DIR/assets" \
+  && -d "$SRC_DIR/scenes" \
+  && -f "$SRC_DIR/scenes/ur5_2f_test/package.xml" ]]; then
+  legacy_layout_valid=true
+fi
+
+if [[ "$canonical_layout_valid" == true ]]; then
+  layout_description="canonical repository layout at $CANONICAL_REPO"
+elif [[ "$legacy_layout_valid" == true ]]; then
+  layout_description="legacy workspace aliases at $SRC_DIR/assets and $SRC_DIR/scenes"
+else
+  echo "Missing workspace layout: expected canonical repo at $CANONICAL_REPO with assets/ and scenes/, or legacy aliases at $SRC_DIR/assets and $SRC_DIR/scenes." >&2
+  exit 1
+fi
 
 mapfile -t package_rows < <(colcon list --base-paths "$SRC_DIR" 2>/dev/null || true)
 if [[ ${#package_rows[@]} -eq 0 ]]; then
@@ -47,4 +66,4 @@ for pkg in "${required[@]}"; do
   [[ -n "${present[$pkg]:-}" ]] || { echo "Missing required package: $pkg" >&2; exit 1; }
 done
 
-echo "Workspace validation passed: aliases exist, packages are unique, and required packages are discoverable exactly once."
+echo "Workspace validation passed: $layout_description is present, packages are unique, and required packages are discoverable exactly once."
