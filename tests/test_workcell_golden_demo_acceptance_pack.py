@@ -47,4 +47,5 @@ def test_workspace_alias_policy_files_untouched_markers_present():
     verify = Path('scripts/verify_workspace_discovery.sh').read_text(encoding='utf-8')
     assert 'ensure_workspace_alias "assets"' in fix
     assert 'ensure_workspace_alias "scenes"' in fix
-    assert 'for alias in assets scenes' in verify
+    assert 'CANONICAL_REPO="$SRC_DIR/easy_manipulation_deployment"' in verify
+    assert 'Missing workspace layout: expected canonical repo at $CANONICAL_REPO' in verify

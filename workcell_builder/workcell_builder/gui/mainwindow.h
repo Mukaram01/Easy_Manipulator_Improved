@@ -179,6 +179,8 @@ private:
     SceneWorkflowStepStatus ready_status = SceneWorkflowStepStatus::Done) const;
   QString scene_workflow_status_text(SceneWorkflowStepStatus status) const;
   QString scene_workflow_status_chip(SceneWorkflowStepStatus status) const;
+  QString scene_workflow_compact_summary(const SceneWorkflowStep & step) const;
+  QString scene_workflow_details_tooltip(const std::vector<SceneWorkflowStep> & steps) const;
   void refresh_scene_workflow_rail();
   QAction * scene_builder_action(const QString & key) const;
   void register_scene_builder_action(const QString & key, QAction * action);

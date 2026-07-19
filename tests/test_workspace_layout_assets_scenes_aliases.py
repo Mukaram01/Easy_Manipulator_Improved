@@ -137,6 +137,10 @@ def test_verify_workspace_discovery_rejects_duplicate_packages(tmp_path):
 
 def test_verify_workspace_discovery_static_markers_present():
     text = Path('scripts/verify_workspace_discovery.sh').read_text(encoding='utf-8')
+    assert 'CANONICAL_REPO="$SRC_DIR/easy_manipulation_deployment"' in text
+    assert 'canonical repository layout at $CANONICAL_REPO' in text
+    assert 'legacy workspace aliases at $SRC_DIR/assets and $SRC_DIR/scenes' in text
+    assert 'Missing workspace layout: expected canonical repo at $CANONICAL_REPO' in text
     assert 'Duplicate package discovered' in text
     assert 'required=(easy_manipulation_deployment workcell_builder)' in text
 

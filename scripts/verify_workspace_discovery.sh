@@ -13,21 +13,30 @@ if ! command -v colcon >/dev/null 2>&1; then
   exit 1
 fi
 
-REPO_DIR="$SRC_DIR/easy_manipulation_deployment"
-if [[ ! -d "$REPO_DIR" ]]; then
-  echo "Missing canonical repository layout: $REPO_DIR" >&2
-  exit 1
+CANONICAL_REPO="$SRC_DIR/easy_manipulation_deployment"
+
+canonical_layout_valid=false
+if [[ -d "$CANONICAL_REPO" \
+  && -d "$CANONICAL_REPO/assets" \
+  && -d "$CANONICAL_REPO/scenes" \
+  && -f "$CANONICAL_REPO/workcell_builder/package.xml" \
+  && -f "$CANONICAL_REPO/scenes/ur5_2f_test/package.xml" ]]; then
+  canonical_layout_valid=true
 fi
-if [[ ! -d "$REPO_DIR/assets" ]]; then
-  echo "Missing canonical layout/content: $REPO_DIR/assets" >&2
-  exit 1
+
+legacy_layout_valid=false
+if [[ -d "$SRC_DIR/assets" \
+  && -d "$SRC_DIR/scenes" \
+  && -f "$SRC_DIR/scenes/ur5_2f_test/package.xml" ]]; then
+  legacy_layout_valid=true
 fi
-if [[ ! -f "$REPO_DIR/scenes/ur5_2f_test/package.xml" ]]; then
-  echo "Missing canonical layout/content: $REPO_DIR/scenes/ur5_2f_test/package.xml" >&2
-  exit 1
-fi
-if [[ ! -f "$REPO_DIR/workcell_builder/package.xml" ]]; then
-  echo "Missing canonical layout/content: $REPO_DIR/workcell_builder/package.xml" >&2
+
+if [[ "$canonical_layout_valid" == true ]]; then
+  layout_description="canonical repository layout at $CANONICAL_REPO"
+elif [[ "$legacy_layout_valid" == true ]]; then
+  layout_description="legacy workspace aliases at $SRC_DIR/assets and $SRC_DIR/scenes"
+else
+  echo "Missing workspace layout: expected canonical repo at $CANONICAL_REPO with assets/ and scenes/, or legacy aliases at $SRC_DIR/assets and $SRC_DIR/scenes." >&2
   exit 1
 fi
 
@@ -57,4 +66,4 @@ for pkg in "${required[@]}"; do
   [[ -n "${present[$pkg]:-}" ]] || { echo "Missing required package: $pkg" >&2; exit 1; }
 done
 
-echo "Workspace validation passed: canonical content exists, packages are unique, and required packages are discoverable exactly once."
+echo "Workspace validation passed: $layout_description is present, packages are unique, and required packages are discoverable exactly once."
