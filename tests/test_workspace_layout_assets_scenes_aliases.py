@@ -23,7 +23,13 @@ def _make_colcon_stub(bin_dir: Path, rows: list[tuple[str, Path]]) -> None:
     lines = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
-        "if [[ ${1:-} != 'list' ]]; then exit 2; fi",
+        "if [[ ${1:-} != 'list' || ${2:-} != '--base-paths' || -z ${3:-} ]]; then exit 2; fi",
+        "count_file=\"${COLCON_STUB_COUNT_FILE:-}\"",
+        "if [[ -n \"$count_file\" ]]; then",
+        "  count=0",
+        "  [[ -f \"$count_file\" ]] && count=$(cat \"$count_file\")",
+        "  printf '%s\\n' $((count + 1)) > \"$count_file\"",
+        "fi",
     ]
     lines.extend(
         f"printf '%s %s\\n' {shlex.quote(name)} {shlex.quote(str(path))}"
@@ -43,6 +49,7 @@ def _run_verify(
     env = os.environ.copy()
     env["WORKSPACE_ROOT"] = str(tmp_path / "ws")
     env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
+    env["COLCON_STUB_COUNT_FILE"] = str(tmp_path / "colcon-count.txt")
     return subprocess.run(
         [str(VERIFY_SCRIPT)],
         cwd=REPO_ROOT,
@@ -55,9 +62,9 @@ def _run_verify(
 
 def _create_canonical_repo(ws: Path) -> Path:
     repo = ws / "src" / "easy_manipulation_deployment"
-    (repo / "assets").mkdir(parents=True)
-    _write_package_xml(repo / "scenes" / "ur5_2f_test" / "package.xml", "ur5_2f_test")
     _write_package_xml(repo / "workcell_builder" / "package.xml", "workcell_builder")
+    _write_package_xml(repo / "scenes" / "ur5_2f_test" / "package.xml", "ur5_2f_test")
+    _write_package_xml(repo / "assets" / "environment" / "workbench_description" / "package.xml", "workbench_description")
     return repo
 
 
@@ -85,8 +92,9 @@ def test_verify_workspace_discovery_accepts_canonical_layout_without_aliases(tmp
     result = _run_verify(
         tmp_path,
         [
-            ("easy_manipulation_deployment", repo),
             ("workcell_builder", repo / "workcell_builder"),
+            ("ur5_2f_test", repo / "scenes" / "ur5_2f_test"),
+            ("workbench_description", repo / "assets" / "environment" / "workbench_description"),
         ],
     )
 
@@ -97,24 +105,33 @@ def test_verify_workspace_discovery_accepts_canonical_layout_without_aliases(tmp
     assert str(ws / "src" / "scenes") not in output
     assert not (ws / "src" / "assets").exists()
     assert not (ws / "src" / "scenes").exists()
+    assert (tmp_path / "colcon-count.txt").read_text(encoding="utf-8").strip() == "1"
 
 
-def test_verify_workspace_discovery_rejects_missing_canonical_content(tmp_path):
+def test_verify_workspace_discovery_rejects_missing_main_repository_anchor(tmp_path):
     ws = tmp_path / "ws"
     repo = ws / "src" / "easy_manipulation_deployment"
     repo.mkdir(parents=True)
-    _write_package_xml(repo / "workcell_builder" / "package.xml", "workcell_builder")
+    result = _run_verify(tmp_path, [])
+
+    assert result.returncode != 0
+    assert "Missing main repository anchor" in result.stderr
+    assert str(repo / "workcell_builder" / "package.xml") in result.stderr
+
+
+def test_verify_workspace_discovery_rejects_missing_required_package(tmp_path):
+    ws = tmp_path / "ws"
+    repo = _create_canonical_repo(ws)
     result = _run_verify(
         tmp_path,
         [
-            ("easy_manipulation_deployment", repo),
             ("workcell_builder", repo / "workcell_builder"),
+            ("ur5_2f_test", repo / "scenes" / "ur5_2f_test"),
         ],
     )
 
     assert result.returncode != 0
-    assert "Missing canonical layout/content" in result.stderr
-    assert str(repo / "assets") in result.stderr or str(repo / "scenes") in result.stderr
+    assert "Missing required package from colcon discovery: workbench_description" in result.stderr
 
 
 def test_verify_workspace_discovery_rejects_duplicate_packages(tmp_path):
@@ -125,9 +142,10 @@ def test_verify_workspace_discovery_rejects_duplicate_packages(tmp_path):
     result = _run_verify(
         tmp_path,
         [
-            ("easy_manipulation_deployment", repo),
-            ("easy_manipulation_deployment", duplicate_repo),
             ("workcell_builder", repo / "workcell_builder"),
+            ("ur5_2f_test", repo / "scenes" / "ur5_2f_test"),
+            ("workbench_description", repo / "assets" / "environment" / "workbench_description"),
+            ("workbench_description", duplicate_repo),
         ],
     )
 
@@ -138,11 +156,13 @@ def test_verify_workspace_discovery_rejects_duplicate_packages(tmp_path):
 def test_verify_workspace_discovery_static_markers_present():
     text = Path('scripts/verify_workspace_discovery.sh').read_text(encoding='utf-8')
     assert 'CANONICAL_REPO="$SRC_DIR/easy_manipulation_deployment"' in text
-    assert 'canonical repository layout at $CANONICAL_REPO' in text
-    assert 'legacy workspace aliases at $SRC_DIR/assets and $SRC_DIR/scenes' in text
-    assert 'Missing workspace layout: expected canonical repo at $CANONICAL_REPO' in text
+    assert 'CANONICAL_ANCHOR="$CANONICAL_REPO/workcell_builder/package.xml"' in text
+    assert 'Missing main repository anchor' in text
+    assert 'colcon list --base-paths "$SRC_DIR"' in text
     assert 'Duplicate package discovered' in text
-    assert 'required=(easy_manipulation_deployment workcell_builder)' in text
+    assert 'REQUIRED_PACKAGES=(workcell_builder ur5_2f_test workbench_description)' in text
+    assert '$CANONICAL_REPO/assets' not in text
+    assert '$CANONICAL_REPO/scenes' not in text
 
 
 def test_curated_asset_tokens_present():
