@@ -112,6 +112,10 @@ jobs:
           fi
           vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 
+      - name: Workspace package uniqueness preflight
+        working-directory: ws
+        run: ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh --layout-only
+
       - name: Install dependencies
         working-directory: ws
         run: |

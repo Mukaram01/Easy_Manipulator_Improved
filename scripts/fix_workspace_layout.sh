@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 WITH_GUI=${WITH_GUI:-0}
+LAYOUT_ONLY=${LAYOUT_ONLY:-0}
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --with-gui|--with-tesseract-qt)
@@ -13,13 +14,17 @@ while [[ $# -gt 0 ]]; do
     --without-gui)
       WITH_GUI=0
       ;;
+    --layout-only)
+      LAYOUT_ONLY=1
+      ;;
     -h|--help)
       cat <<'EOF'
-Usage: scripts/fix_workspace_layout.sh [--with-gui]
+Usage: scripts/fix_workspace_layout.sh [--with-gui] [--layout-only]
 
 Synchronize the workspace layout for this repository and gate optional GUI
 packages by default. Pass --with-gui to remove COLCON_IGNORE markers from
 src/tesseract_qt and src/qtadvanceddocking when those checkouts are present.
+Pass --layout-only to stop after workspace alias and duplicate-package checks.
 EOF
       exit 0
       ;;
@@ -130,6 +135,42 @@ prune_legacy_asset_package_symlinks() {
   done < <(find "$SRC_DIR" -mindepth 1 -maxdepth 1 -type l -print 2>/dev/null)
 }
 
+
+repo_exposed_through_src() {
+  local repo_resolved candidate candidate_resolved
+
+  repo_resolved="$(readlink -f "$REPO_DIR" 2>/dev/null || true)"
+  [[ -n "$repo_resolved" ]] || return 1
+
+  if [[ "$repo_resolved" == "$(readlink -f "$SRC_DIR" 2>/dev/null || echo "$SRC_DIR")"/* ]]; then
+    return 0
+  fi
+
+  while IFS= read -r candidate; do
+    candidate_resolved="$(readlink -f "$candidate" 2>/dev/null || true)"
+    if [[ -n "$candidate_resolved" && "$candidate_resolved" == "$repo_resolved" ]]; then
+      return 0
+    fi
+  done < <(find "$SRC_DIR" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) -print 2>/dev/null)
+
+  return 1
+}
+
+remove_redundant_repo_alias() {
+  local alias_name="$1"
+  local target="$2"
+  local dest="$SRC_DIR/$alias_name"
+  local expected_resolved actual_resolved
+
+  [[ -L "$dest" ]] || return 0
+  expected_resolved="$(readlink -f "$target" 2>/dev/null || true)"
+  actual_resolved="$(readlink -f "$dest" 2>/dev/null || true)"
+  if [[ -n "$expected_resolved" && "$actual_resolved" == "$expected_resolved" ]]; then
+    echo "Removing redundant workspace alias: $dest -> $actual_resolved"
+    rm -f "$dest"
+  fi
+}
+
 ensure_workspace_alias() {
   local alias_name="$1"
   local target="$2"
@@ -166,25 +207,18 @@ ensure_workspace_alias() {
 }
 
 ensure_workspace_aliases() {
+  if repo_exposed_through_src; then
+    remove_redundant_repo_alias "assets" "$REPO_DIR/assets"
+    remove_redundant_repo_alias "scenes" "$REPO_DIR/scenes"
+    return
+  fi
+
   ensure_workspace_alias "assets" "$REPO_DIR/assets"
   ensure_workspace_alias "scenes" "$REPO_DIR/scenes"
 }
 
 ensure_workcell_builder_link_policy() {
-  local repo_exposed_in_src=0
-  if [[ "${REPO_DIR}" == "${SRC_DIR}/"* ]]; then
-    repo_exposed_in_src=1
-  else
-    local candidate
-    while IFS= read -r candidate; do
-      if [ "$(readlink -f "$candidate")" = "$(readlink -f "$REPO_DIR")" ]; then
-        repo_exposed_in_src=1
-        break
-      fi
-    done < <(find "$SRC_DIR" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) -print 2>/dev/null)
-  fi
-
-  if [[ $repo_exposed_in_src -eq 1 ]]; then
+  if repo_exposed_through_src; then
     local legacy_link="$SRC_DIR/workcell_builder"
     if [ -L "$legacy_link" ] && [ "$(readlink -f "$legacy_link")" = "$(readlink -f "$REPO_DIR/workcell_builder/workcell_builder")" ]; then
       echo "Removing legacy workcell_builder symlink at ${legacy_link}"
@@ -321,25 +355,63 @@ ensure_workspace_aliases
 ensure_workcell_builder_link_policy
 set_gui_package_state
 
+discover_rosdep_package_paths() {
+  SRC_DIR="$SRC_DIR" python3 - <<'PY'
+import os
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+root = Path(os.environ["SRC_DIR"]).resolve()
+visited = set()
+ignore_markers = {"COLCON_IGNORE", "AMENT_IGNORE", "CATKIN_IGNORE"}
+
+
+def walk(path: Path):
+    try:
+        real = path.resolve()
+    except OSError:
+        return
+    if real in visited:
+        return
+    visited.add(real)
+    if any((path / marker).exists() for marker in ignore_markers):
+        return
+    pkg_xml = path / "package.xml"
+    if pkg_xml.is_file():
+        try:
+            name = (ET.parse(pkg_xml).getroot().findtext("name") or "").strip()
+        except Exception as exc:
+            print(f"warning: failed to parse {pkg_xml}: {exc}", file=sys.stderr)
+            name = ""
+        if name:
+            print(f"{name}\t{path}")
+    try:
+        children = sorted(path.iterdir(), key=lambda p: p.name)
+    except OSError:
+        return
+    for child in children:
+        if child.is_dir():
+            walk(child)
+
+
+walk(root)
+PY
+}
+
 check_duplicate_packages() {
   local -A seen=()
   local -a duplicates=()
-  local line name path
+  local name path
 
-  if ! command -v colcon >/dev/null 2>&1; then
-    echo "Error: colcon is required for duplicate package detection" >&2
-    exit 1
-  fi
-
-  while IFS= read -r line; do
-    name="${line%% *}"
-    path="${line#* }"
+  while IFS=$'\t' read -r name path; do
+    [[ -n "$name" ]] || continue
     if [[ -n "${seen[$name]:-}" ]]; then
       duplicates+=("$name: ${seen[$name]} | $path")
     else
       seen[$name]="$path"
     fi
-  done < <(colcon list --base-paths "$SRC_DIR" 2>/dev/null || true)
+  done < <(discover_rosdep_package_paths)
 
   if [[ ${#duplicates[@]} -gt 0 ]]; then
     echo "Duplicate package discovery detected:" >&2
@@ -360,8 +432,13 @@ summarize_workspace_layout() {
   echo "  $REPO_DIR"
   echo
   echo "Workspace aliases:"
-  echo "  src/assets -> $REPO_DIR/assets"
-  echo "  src/scenes -> $REPO_DIR/scenes"
+  if repo_exposed_through_src; then
+    echo "  src/assets: skipped (repository already discoverable under src)"
+    echo "  src/scenes: skipped (repository already discoverable under src)"
+  else
+    echo "  src/assets -> $REPO_DIR/assets"
+    echo "  src/scenes -> $REPO_DIR/scenes"
+  fi
   echo
   echo "Legacy asset package symlinks removed:"
   if [[ ${#LEGACY_ASSET_SYMLINKS_REMOVED[@]} -eq 0 ]]; then
@@ -376,13 +453,22 @@ summarize_workspace_layout() {
   echo "  duplicate package names: none"
   echo
   echo "Key status:"
-  echo "  assets alias: OK"
-  echo "  scenes alias: OK"
+  if repo_exposed_through_src; then
+    echo "  assets alias: skipped"
+    echo "  scenes alias: skipped"
+  else
+    echo "  assets alias: OK"
+    echo "  scenes alias: OK"
+  fi
   echo "  duplicate package check: OK"
 }
 
 check_duplicate_packages
 summarize_workspace_layout
+
+if [[ "$LAYOUT_ONLY" -eq 1 ]]; then
+  exit 0
+fi
 
 # Install core system dependencies (Boost graph/program_options/serialization and
 # TinyXML2) up front so users who only run this script still avoid
