@@ -2039,17 +2039,16 @@ void MainWindow::setup_studio_shell()
   hierarchy_layout->addWidget(new QLabel("<b>Scene Hierarchy</b>"));
   scene_hierarchy_tree_ = new QTreeWidget(hierarchy_card);
   scene_hierarchy_tree_->setObjectName("studioSceneHierarchyTree");
-  scene_hierarchy_tree_->setHeaderLabels({"Item", "Type", "State"});
+  scene_hierarchy_tree_->setHeaderLabels({"Name", "Type", "State"});
   scene_hierarchy_tree_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   scene_hierarchy_tree_->setTextElideMode(Qt::ElideRight);
   scene_hierarchy_tree_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-  scene_hierarchy_tree_->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-  scene_hierarchy_tree_->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-  scene_hierarchy_tree_->setColumnWidth(0, 420);
-  scene_hierarchy_tree_->setColumnWidth(1, 160);
-  scene_hierarchy_tree_->setColumnWidth(2, 120);
+  scene_hierarchy_tree_->header()->setSectionResizeMode(1, QHeaderView::Interactive);
+  scene_hierarchy_tree_->header()->setSectionResizeMode(2, QHeaderView::Fixed);
+  scene_hierarchy_tree_->setColumnWidth(1, 120);
+  scene_hierarchy_tree_->setColumnWidth(2, 72);
   hierarchy_layout->addWidget(scene_hierarchy_tree_);
-  auto * preview_layers_group = new QGroupBox("Scene3D Preview Layers", hierarchy_card);
+  auto * preview_layers_group = new QGroupBox("Layers", hierarchy_card);
   auto * preview_layers_layout = new QVBoxLayout(preview_layers_group);
   preview_layer_editable_layout_box_ = new QCheckBox("editable layout", preview_layers_group);
   preview_layer_generated_urdf_visual_box_ = new QCheckBox("Show Robot Links (generated)", preview_layers_group);
@@ -8244,43 +8243,30 @@ void MainWindow::populate_scene_hierarchy()
     return QString("ready");
   };
 
-  QMap<QString, QTreeWidgetItem*> hierarchy_groups;
-  auto group_for_item = [&](const ScenePreviewWidget::PreviewItem & p) {
-    const QString lower = (p.role + " " + p.category + " " + p.source_layer + " " + p.active_visual_source).toLower();
-    if (p.status.contains("warning", Qt::CaseInsensitive) || p.mesh_load_warning.contains("missing", Qt::CaseInsensitive)) return QString("Warnings / Missing Assets");
-    if (lower.contains("editable_layout")) return QString("Editable Layout");
-    if (lower.contains("camera") || lower.contains("sensor")) return QString("Cameras");
-    if (lower.contains("robot") || lower.contains("tool") || lower.contains("gripper") || lower.contains("end_effector")) return QString("Robot / Tooling");
-    if (lower.contains("helper") || lower.contains("overlay") || lower.contains("safety") || lower.contains("home/safety pose") || lower.contains("malformed snapshot") || lower.contains("detection snapshot")) return QString("Overlays / Helpers");
-    if (lower.contains("generated_urdf_visual")) return QString("Generated URDF Visuals");
-    if (lower.contains("primitive_fallback")) return QString("Primitive Fallbacks");
-    if (lower.contains("mesh_preview")) return QString("Mesh Preview");
-    return QString("Mesh Preview");
-  };
-  auto ensure_group = [&](const QString &name) {
-    if (hierarchy_groups.contains(name)) return hierarchy_groups[name];
-    auto *group = new QTreeWidgetItem(scene_hierarchy_tree_, {name, "", ""});
-    group->setFirstColumnSpanned(true);
-    group->setFlags(group->flags() & ~Qt::ItemIsSelectable);
-    hierarchy_groups[name] = group;
-    return group;
-  };
-  for (const QString &gn : {QString("Editable Layout"), QString("Mesh Preview"), QString("Generated URDF Visuals"), QString("Primitive Fallbacks"), QString("Cameras"), QString("Robot / Tooling"), QString("Overlays / Helpers"), QString("Warnings / Missing Assets")}) ensure_group(gn);
   auto add_tree_node = [&](const ScenePreviewWidget::PreviewItem & p) {
-    auto * parent = ensure_group(group_for_item(p));
-    const QString visual_status = p.mesh_path.trimmed().isEmpty() ? (p.active_visual_source.contains("primitive") ? "primitive" : "missing") : "mesh";
-    const QString state_badges = QString("%1 • %2 • %3 • %4")
-      .arg(p.status.isEmpty() ? QStringLiteral("ready") : p.status)
-      .arg(p.editable && p.source_layer == QStringLiteral("editable_layout")
-        ? QStringLiteral("editable layout item")
-        : (p.source_layer == QStringLiteral("editable_layout") ? QStringLiteral("locked editable layout item") : QStringLiteral("locked generated/preview item")))
-      .arg(p.source_layer.isEmpty() ? QStringLiteral("unknown-layer") : p.source_layer)
-      .arg(visual_status);
-    auto * node = new QTreeWidgetItem(parent, {QString("%1 [%2]").arg(p.display_name, p.id), p.role, state_badges});
-    node->setToolTip(0, p.display_name); node->setToolTip(1, p.role); node->setToolTip(2, p.status);
-    node->setToolTip(0, p.display_name);
-    node->setToolTip(1, p.role);
-    node->setToolTip(2, p.status);
+    const QString visual_status = p.mesh_path.trimmed().isEmpty()
+      ? (p.active_visual_source.contains("primitive") ? QStringLiteral("primitive") : QStringLiteral("missing"))
+      : QStringLiteral("mesh");
+    const QString display_name = p.id.trimmed().isEmpty()
+      ? p.display_name.trimmed()
+      : QStringLiteral("%1 [%2]").arg(p.display_name.trimmed(), p.id.trimmed());
+    const QString type_text = p.role.trimmed().isEmpty() ? p.category.trimmed() : p.role.trimmed();
+    const QString state_text = p.status.trimmed().isEmpty() ? QStringLiteral("ready") : p.status.trimmed();
+    const QString detail_tooltip = QStringLiteral("%1\nType: %2\nState: %3\nLayer: %4\nVisual: %5\nBacking: %6")
+      .arg(display_name,
+           type_text.isEmpty() ? QStringLiteral("object") : type_text,
+           state_text,
+           p.source_layer.trimmed().isEmpty() ? QStringLiteral("unknown") : p.source_layer.trimmed(),
+           p.active_visual_source.trimmed().isEmpty() ? QStringLiteral("unknown") : p.active_visual_source.trimmed(),
+           visual_status);
+    auto * node = new QTreeWidgetItem(scene_hierarchy_tree_, {
+      display_name,
+      type_text.isEmpty() ? QStringLiteral("object") : type_text,
+      state_text
+    });
+    node->setToolTip(0, detail_tooltip);
+    node->setToolTip(1, type_text.isEmpty() ? QStringLiteral("object") : type_text);
+    node->setToolTip(2, detail_tooltip);
     node->setData(0, TreeRoleId, p.id);
     node->setData(0, TreeRoleCategory, p.category);
     node->setData(
@@ -8319,7 +8305,6 @@ void MainWindow::populate_scene_hierarchy()
     node->setData(0, TreeRoleSnapshotSourceFile, p.snapshot_source_file);
     node->setData(0, TreeRoleAlignmentWarning, p.alignment_warning);
   };
-
   auto include_preview_item_in_hierarchy = [this](const ScenePreviewWidget::PreviewItem & p) {
     QSet<QString> enabled_layers;
     if (!preview_layer_editable_layout_box_ || preview_layer_editable_layout_box_->isChecked()) enabled_layers.insert("editable_layout");
@@ -10887,58 +10872,27 @@ void MainWindow::populate_scene_hierarchy()
   }
 
   scene_hierarchy_tree_->clear();
-  hierarchy_groups.clear();
-  for (const QString &gn : {QString("Editable Layout"), QString("Mesh Preview"), QString("Generated URDF Visuals"), QString("Primitive Fallbacks"), QString("Cameras"), QString("Robot / Tooling"), QString("Overlays / Helpers"), QString("Warnings / Missing Assets")}) ensure_group(gn);
   for (const auto & p : preview_items) {
     if (allowed_scene_roles.contains(p.role) && include_preview_item_in_hierarchy(p)) {
       add_tree_node(p);
     }
   }
 
-  const std::vector<std::string> key_files = {
-    "environment.yaml",
-    "scene_manifest.yaml",
-    "environment_layout.yaml",
-    "layout/workcell_studio_layout.yaml",
-    "config/workcell_builder_task_intent.yaml",
-    "package.xml",
-    "CMakeLists.txt",
-    "launch/demo.launch.py"
-  };
-
-  const QSet<QString> excluded_scene_file_artifacts = {
-    "package.xml",
-    "CMakeLists.txt",
-    "launch/demo.launch.py",
-    "environment.yaml",
-    "scene_manifest.yaml"
-  };
-  for (const auto & rel : key_files) {
-    const QString rel_q = QString::fromStdString(rel);
-    if (excluded_scene_file_artifacts.contains(rel_q)) continue;
-    const fs::path path = d / rel;
-    if (!fs::exists(path)) continue;
-
-    auto * node = new QTreeWidgetItem(
-      ensure_group("Overlays / Helpers"),
-      {QString::fromStdString(rel), "file", "present"});
-    node->setData(0, TreeRoleId, rel_q);
-    node->setData(0, TreeRoleStableId, rel_q);
-    node->setData(0, TreeRoleCategory, "file");
-    node->setData(0, TreeRoleSource, QString::fromStdString(path.string()));
-    node->setData(0, TreeRoleSourceLayer, QStringLiteral("helper_file"));
-    node->setData(0, TreeRoleActiveVisualSource, QStringLiteral("helper_file"));
-    node->setData(0, TreeRolePoseAvailable, false);
-    node->setData(0, TreeRoleRole, "file");
+  if (scene_hierarchy_tree_->topLevelItemCount() == 0) {
+    apply_scene_selection(QString(), QStringLiteral("unknown"), true, false);
+    auto * empty = new QTreeWidgetItem(scene_hierarchy_tree_, {QStringLiteral("No scene items"), QString(), QString()});
+    empty->setFlags(empty->flags() & ~Qt::ItemIsSelectable);
   }
+
 
 
   auto * header = scene_hierarchy_tree_->header();
   if (header) {
     header->setSectionResizeMode(0, QHeaderView::Stretch);
-    header->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    header->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    scene_hierarchy_tree_->setColumnWidth(0, 420);
+    header->setSectionResizeMode(1, QHeaderView::Interactive);
+    header->setSectionResizeMode(2, QHeaderView::Fixed);
+    scene_hierarchy_tree_->setColumnWidth(1, 120);
+    scene_hierarchy_tree_->setColumnWidth(2, 72);
     header->setStretchLastSection(false);
   }
 
@@ -10968,25 +10922,20 @@ void MainWindow::populate_scene_hierarchy()
   }
 
   for (int i = 0; i < scene_hierarchy_tree_->topLevelItemCount(); ++i) {
-    auto * group = scene_hierarchy_tree_->topLevelItem(i);
-    if (!group) continue;
-    for (int c = 0; c < group->childCount(); ++c) {
-      auto * node = group->child(c);
-      if (!node) continue;
-      const QString item_id = node->data(0, TreeRoleId).toString().trimmed();
-      const QString tag = role_tag_for_id(item_id);
-      if (!tag.isEmpty() && node->data(0, TreeRoleCategory).toString() != "file") {
-        const QString base_name = node->text(0);
-        node->setText(0, QString("%1 %2").arg(base_name, tag));
-        node->setToolTip(0, node->text(0));
-      }
+    auto * node = scene_hierarchy_tree_->topLevelItem(i);
+    if (!node || !(node->flags() & Qt::ItemIsSelectable)) continue;
+    const QString item_id = node->data(0, TreeRoleId).toString().trimmed();
+    const QString tag = role_tag_for_id(item_id);
+    if (!tag.isEmpty()) {
+      const QString base_name = node->text(0);
+      node->setText(0, QString("%1 %2").arg(base_name, tag));
+      node->setToolTip(0, node->toolTip(0) + QStringLiteral("\n") + tag);
     }
   }
   int hierarchy_child_row_count = 0;
   for (int i = 0; i < scene_hierarchy_tree_->topLevelItemCount(); ++i) {
-    auto * group = scene_hierarchy_tree_->topLevelItem(i);
-    if (!group) continue;
-    hierarchy_child_row_count += group->childCount();
+    auto * node = scene_hierarchy_tree_->topLevelItem(i);
+    if (node && (node->flags() & Qt::ItemIsSelectable)) ++hierarchy_child_row_count;
   }
   if (scene3d_debug_logging_enabled()) {
     append_studio_log(QString("Scene3D diagnostics {hierarchy_child_row_count=%1, selected_scene_name=%2, selected_item_id=%3}")
