@@ -1975,7 +1975,7 @@ void MainWindow::setup_studio_shell()
   dl->addWidget(dashboard_middle_split, 1);
   
   auto * scene_builder = new QWidget(studio_pages_); auto * sl=new QVBoxLayout(scene_builder);
-  scene_builder_title_=new QLabel("<h2>Scene Builder</h2>"); scene_builder_title_->setProperty("studioTitle", true); sl->addWidget(scene_builder_title_);
+  scene_builder_title_=new QLabel("<h2>Scene Builder</h2>"); scene_builder_title_->setProperty("studioTitle", true); scene_builder_title_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred); sl->addWidget(scene_builder_title_);
   auto * scene_header_row = new QHBoxLayout();
   scene_builder_preview_chip_ = new QLabel("Preview: Unavailable", scene_builder); scene_builder_preview_chip_->setObjectName("sceneStatusChip");
   scene_builder_launch_chip_ = new QLabel("Launch Artifacts: Missing", scene_builder); scene_builder_launch_chip_->setObjectName("sceneStatusChip");
@@ -3117,7 +3117,9 @@ void MainWindow::build_studio_header_actions()
     top_bar->addWidget(button);
   }
   auto * scenes_open_button = new QToolButton(this);
-  scenes_open_button->setText("Scenes");
+  scenes_open_button->setText("Files");
+  scenes_open_button->setToolTip("Open Scene Builder and scene file generation actions.");
+  scenes_open_button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
   scenes_open_button->setPopupMode(QToolButton::InstantPopup);
   auto * scenes_open_menu = new QMenu(scenes_open_button);
   scenes_open_menu->addAction(action_workspace_open_scene_builder_);
@@ -3142,15 +3144,17 @@ void MainWindow::build_studio_header_actions()
   auto * product_view_help_label = new QLabel(
     "Web3D Product View",
     this);
+  product_view_help_label->setText("Product View");
   product_view_help_label->setToolTip("Embedded Web3D Product View is active; use the viewer surface for product framing and overlay controls.");
 #else
   auto * product_view_help_label = new QLabel(
-    "Native Scene3D compatibility preview: lightweight editable layout preview; not guaranteed RViz-equivalent.",
+    "Product View",
     this);
-  product_view_help_label->setToolTip("Native compatibility wording is shown only when WebEngine is unavailable and the native fallback is active.");
+  product_view_help_label->setToolTip("Native Scene3D compatibility preview: lightweight editable layout preview; not guaranteed RViz-equivalent.");
 #endif
-  product_view_help_label->setWordWrap(true);
+  product_view_help_label->setWordWrap(false);
   product_view_help_label->setObjectName("studioProductViewHelpLabel");
+  product_view_help_label->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
   top_bar->addWidget(product_view_help_label);
   auto * more_button = new QToolButton(this);
   more_button->setText("More");
@@ -3168,11 +3172,11 @@ void MainWindow::build_studio_header_actions()
   more_menu->addAction(action_diagnostics_copy_build_launch_commands_);
   more_button->setMenu(more_menu);
   top_bar->addWidget(more_button);
-  auto * rviz_truth_preview_help_label = new QLabel(
-    "RViz Truth Preview: authoritative generated scene preview using ROS/MoveIt/RViz stack.",
-    this);
-  rviz_truth_preview_help_label->setWordWrap(true);
+  auto * rviz_truth_preview_help_label = new QLabel("RViz / MoveIt Preview", this);
+  rviz_truth_preview_help_label->setToolTip("Authoritative generated scene preview using the ROS/MoveIt/RViz stack.");
+  rviz_truth_preview_help_label->setWordWrap(false);
   rviz_truth_preview_help_label->setObjectName("studioRvizTruthPreviewHelpLabel");
+  rviz_truth_preview_help_label->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
   top_bar->addWidget(rviz_truth_preview_help_label);
 }
 
