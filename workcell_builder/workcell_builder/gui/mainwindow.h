@@ -135,6 +135,8 @@ private:
   QString selected_scene_name() const;
   QString selected_scene_path() const;
   bool has_selected_scene() const;
+  QString compact_scene_path_context(const QString & scene_name, const QString & full_path) const;
+  void update_scene_builder_path_header(const QString & scene_name, const QString & full_path);
   struct SelectedSceneState
   {
     bool valid{ false };
@@ -444,6 +446,7 @@ private:
   QPushButton * scene_builder_generate_launch_button_{ nullptr };
   bool scene_builder_is_3d_view_{ true };
   QLabel * scene_builder_path_label_{ nullptr };
+  QToolButton * scene_builder_copy_path_button_{ nullptr };
   QLabel * selection_scene_name_label_{ nullptr };
   QLabel * selection_scene_status_label_{ nullptr };
   QLabel * selection_scene_robot_label_{ nullptr };

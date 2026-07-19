@@ -78,6 +78,7 @@
 #include <QDialogButtonBox>
 #include <QMap>
 #include <QMatrix4x4>
+#include <QEvent>
 #include <QHash>
 #include <QSplitter>
 #include <QScrollArea>
@@ -1981,14 +1982,18 @@ void MainWindow::setup_studio_shell()
   scene_builder_preview_chip_ = new QLabel("Preview: Unavailable", scene_builder); scene_builder_preview_chip_->setObjectName("sceneStatusChip");
   scene_builder_launch_chip_ = new QLabel("Launch Artifacts: Missing", scene_builder); scene_builder_launch_chip_->setObjectName("sceneStatusChip");
   scene_builder_safety_chip_ = new QLabel("Safety: Fake hardware", scene_builder); scene_builder_safety_chip_->setObjectName("sceneStatusChip");
-  scene_builder_path_label_ = new QLabel("Path: (none)", scene_builder); scene_builder_path_label_->setWordWrap(false);
+  scene_builder_path_label_ = new QLabel("No scene selected", scene_builder); scene_builder_path_label_->setWordWrap(false);
   scene_builder_path_label_->setTextFormat(Qt::PlainText);
   scene_builder_path_label_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+  scene_builder_path_label_->setMinimumWidth(120);
+  scene_builder_path_label_->installEventFilter(this);
   scene_builder_generate_launch_button_ = new QPushButton("Generate launch package", scene_builder);
   scene_builder_generate_launch_button_->setVisible(false);
   scene_builder_generate_launch_button_->setMaximumHeight(24);
-  auto * copy_scene_path_header = new QToolButton(scene_builder); copy_scene_path_header->setText("Copy");
-  QObject::connect(copy_scene_path_header, &QToolButton::clicked, this, [this](){ if (!selected_scene_path().isEmpty()) QApplication::clipboard()->setText(selected_scene_path()); });
+  scene_builder_copy_path_button_ = new QToolButton(scene_builder); scene_builder_copy_path_button_->setText("Copy");
+  scene_builder_copy_path_button_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
+  scene_builder_copy_path_button_->setEnabled(false);
+  QObject::connect(scene_builder_copy_path_button_, &QToolButton::clicked, this, [this](){ if (scene_builder_copy_path_button_ && !scene_builder_copy_path_button_->property("fullScenePath").toString().isEmpty()) QApplication::clipboard()->setText(scene_builder_copy_path_button_->property("fullScenePath").toString()); });
   QObject::connect(scene_builder_generate_launch_button_, &QPushButton::clicked, this, [this](){
     generate_scene_package_for_selected_scene();
     refresh_scene_builder_selected_scene_ui();
@@ -1998,7 +2003,7 @@ void MainWindow::setup_studio_shell()
   scene_header_row->addWidget(scene_builder_safety_chip_);
   scene_header_row->addWidget(scene_builder_generate_launch_button_);
   scene_header_row->addWidget(scene_builder_path_label_,1);
-  scene_header_row->addWidget(copy_scene_path_header);
+  scene_header_row->addWidget(scene_builder_copy_path_button_);
   sl->addLayout(scene_header_row);
   auto * scene_shell = new QWidget(scene_builder); scene_shell->setObjectName("sceneBuilderWorkspace");
   auto * scene_shell_layout = new QVBoxLayout(scene_shell);
@@ -5297,6 +5302,56 @@ bool MainWindow::has_selected_scene() const
   return selected_scene_state_.valid;
 }
 
+QString MainWindow::compact_scene_path_context(const QString & scene_name, const QString & full_path) const
+{
+  const QString cleaned_path = full_path.trimmed();
+  if (cleaned_path.isEmpty()) return QStringLiteral("No scene selected");
+
+  const fs::path scene_dir(cleaned_path.toStdString());
+  const QString fallback_name = QString::fromStdString(scene_dir.filename().string()).trimmed();
+  const QString visible_name = scene_name.trimmed().isEmpty() || scene_name == QStringLiteral("none") ? fallback_name : scene_name.trimmed();
+  QString relative_path;
+  for (fs::path::const_iterator it = scene_dir.begin(); it != scene_dir.end(); ++it) {
+    if (it->string() == "scenes") {
+      fs::path rel;
+      for (; it != scene_dir.end(); ++it) rel /= *it;
+      relative_path = QString::fromStdString(rel.generic_string());
+      break;
+    }
+  }
+  if (relative_path.trimmed().isEmpty()) {
+    relative_path = fallback_name.trimmed().isEmpty() ? cleaned_path : fallback_name;
+  }
+  return QStringLiteral("%1  ·  %2").arg(visible_name, relative_path);
+}
+
+void MainWindow::update_scene_builder_path_header(const QString & scene_name, const QString & full_path)
+{
+  const QString cleaned_path = full_path.trimmed();
+  if (!scene_builder_path_label_) return;
+  if (cleaned_path.isEmpty()) {
+    scene_builder_path_label_->setText(QStringLiteral("No scene selected"));
+    scene_builder_path_label_->setToolTip(QString());
+    if (scene_builder_copy_path_button_) {
+      scene_builder_copy_path_button_->setProperty("fullScenePath", QString());
+      scene_builder_copy_path_button_->setToolTip(QStringLiteral("Select a scene before copying its full path."));
+      scene_builder_copy_path_button_->setEnabled(false);
+    }
+    return;
+  }
+
+  const QString compact_text = compact_scene_path_context(scene_name, cleaned_path);
+  const int available_width = qMax(40, scene_builder_path_label_->contentsRect().width());
+  const QFontMetrics metrics(scene_builder_path_label_->font());
+  scene_builder_path_label_->setText(metrics.elidedText(compact_text, Qt::ElideMiddle, available_width));
+  scene_builder_path_label_->setToolTip(cleaned_path);
+  if (scene_builder_copy_path_button_) {
+    scene_builder_copy_path_button_->setProperty("fullScenePath", cleaned_path);
+    scene_builder_copy_path_button_->setToolTip(QStringLiteral("Copy full scene path: %1").arg(cleaned_path));
+    scene_builder_copy_path_button_->setEnabled(true);
+  }
+}
+
 void MainWindow::sync_selected_scene_state()
 {
   selected_scene_state_ = {};
@@ -5415,7 +5470,7 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
   if (!selected_scene_state_.valid) {
     if (scene_builder_title_) scene_builder_title_->setText("<h2>Scene Builder</h2>");
     refresh_scene_builder_view_chips();
-    if (scene_builder_path_label_) scene_builder_path_label_->setText("Path: (none)");
+    update_scene_builder_path_header(QString(), QString());
     if (canvas_header_label_) canvas_header_label_->setText("No scene selected");
     if (scene_preview_label_) scene_preview_label_->setText("<b>Digital Twin Canvas</b>");
     if (scene_preview_widget_) scene_preview_widget_->set_scene_selected(false);
@@ -5425,13 +5480,7 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
   }
   const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_state_.index)];
   if (scene_builder_title_) scene_builder_title_->setText(QString("<h2>Scene Builder: %1</h2>").arg(selected_scene_state_.name));
-  if (scene_builder_path_label_) {
-    const QString sp = selected_scene_path();
-    const QFontMetrics metrics(scene_builder_path_label_->font());
-    const QString short_path = metrics.elidedText(sp, Qt::ElideMiddle, 460);
-    scene_builder_path_label_->setText(QString("Path: %1").arg(short_path));
-    scene_builder_path_label_->setToolTip(sp);
-  }
+  update_scene_builder_path_header(selected_scene_state_.name, selected_scene_path());
   refresh_scene_builder_view_chips();
   const auto metadata = selected_scene_metadata_summary(s);
   if (scene_preview_label_) scene_preview_label_->setText(QString("%1\nStatus: %2\nScene: %3\nPath: %4\nRobot: %5 (%6)\nEnd effector: %7 (%8)\nLaunch: %9")
@@ -5951,6 +6000,9 @@ void MainWindow::set_canvas_interaction_mode(CanvasInteractionMode mode)
 
 bool MainWindow::eventFilter(QObject * watched, QEvent * event)
 {
+  if (scene_builder_path_label_ && watched == scene_builder_path_label_ && event && event->type() == QEvent::Resize) {
+    update_scene_builder_path_header(selected_scene_state_.valid ? selected_scene_state_.name : QString(), selected_scene_path());
+  }
   if (scene_builder_top_controls_host_ && watched == scene_builder_top_controls_host_->parent() && event &&
     event->type() == QEvent::Resize)
   {
