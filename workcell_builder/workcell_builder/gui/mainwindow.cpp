@@ -2464,12 +2464,25 @@ void MainWindow::setup_studio_shell()
   center_panel_layout->addLayout(layout_controls);
   layout_state_label_ = new QLabel("Unsaved Layout Edits: none", scene_builder); center_panel_layout->addWidget(layout_state_label_);
   canvas_legend_label_ = new QLabel("Legend: robot | Robot Reach | camera | Camera FOV | pick zone | place zone | conveyor | bin | warning"); center_panel_layout->addWidget(canvas_legend_label_);
-  auto * bottom_cards = new QHBoxLayout();
-  bottom_cards->addWidget(new QLabel("<b>Validation</b><br/>Selected Scene: pending<br/>Preview Only safety gate enabled."));
-  bottom_cards->addWidget(new QLabel("<b>Readiness Checks</b><br/>Fake Hardware<br/>No Robot Motion"));
-  bottom_cards->addWidget(new QLabel("<b>Simulation Log</b><br/>Recent studio command summary appears in Studio Log."));
-  bottom_cards->addWidget(new QLabel("<b>Cycle/Timing Summary</b><br/>Offline estimate only."));
-  center_panel_layout->addLayout(bottom_cards);
+  auto * bottom_status_bar = new QFrame(scene_builder);
+  bottom_status_bar->setObjectName("sceneBuilderBottomStatusBar");
+  auto * bottom_status_layout = new QHBoxLayout(bottom_status_bar);
+  bottom_status_layout->setContentsMargins(8, 4, 8, 4);
+  scene_builder_selection_summary_label_ = new QLabel("Selection: none", bottom_status_bar);
+  scene_builder_selection_summary_label_->setObjectName("sceneBuilderSelectionSummary");
+  scene_builder_status_message_label_ = new QLabel("Ready: Product View preview-only; fake hardware remains default.", bottom_status_bar);
+  scene_builder_status_message_label_->setObjectName("sceneBuilderLatestStatus");
+  scene_builder_status_message_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  scene_builder_issue_count_label_ = new QLabel("Warnings: 0 | Errors: 0", bottom_status_bar);
+  scene_builder_issue_count_label_->setObjectName("sceneBuilderIssueCount");
+  scene_builder_log_toggle_button_ = new QPushButton("Logs", bottom_status_bar);
+  scene_builder_log_toggle_button_->setObjectName("sceneBuilderLogsButton");
+  scene_builder_log_toggle_button_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+  bottom_status_layout->addWidget(scene_builder_selection_summary_label_);
+  bottom_status_layout->addWidget(scene_builder_status_message_label_, 1);
+  bottom_status_layout->addWidget(scene_builder_issue_count_label_);
+  bottom_status_layout->addWidget(scene_builder_log_toggle_button_);
+  center_panel_layout->addWidget(bottom_status_bar, 0);
 
   auto * right_layout = new QVBoxLayout(right_panel);
   auto * workflow_card = new QFrame(right_panel);
@@ -2502,7 +2515,6 @@ void MainWindow::setup_studio_shell()
   auto * workflow_tab = new QWidget(scene_builder_inspector_tabs_); auto * workflow_tab_layout = new QVBoxLayout(workflow_tab);
   auto * actions_tab = new QWidget(scene_builder_inspector_tabs_); auto * actions_tab_layout = new QVBoxLayout(actions_tab);
   auto * readiness_tab = new QWidget(scene_builder_inspector_tabs_); auto * readiness_tab_layout = new QVBoxLayout(readiness_tab);
-  auto * logs_tab = new QWidget(scene_builder_inspector_tabs_); auto * logs_tab_layout = new QVBoxLayout(logs_tab);
   auto make_card = [&](QVBoxLayout *parent_layout, const QString &title) {
     auto *card = new QFrame(right_panel); card->setObjectName("studioCard");
     auto *layout = new QVBoxLayout(card);
@@ -2706,15 +2718,10 @@ void MainWindow::setup_studio_shell()
   robot_pose_layout->addLayout(robot_pose_actions);
   selection_tab_layout->addWidget(robot_pose_group);
   inspector_warning_label_ = new QLabel("Warnings: none | Reachability: unknown | Collision: unknown | Safety zone: unknown | Pick reach: unknown | Place reach: unknown | Warning count: 0 | Preview-only", scene_builder); inspector_warning_label_->setWordWrap(true); readiness_card_layout->addWidget(inspector_warning_label_);
-  scene_builder_studio_log_ = new QPlainTextEdit(logs_tab);
-  scene_builder_studio_log_->setReadOnly(true);
-  scene_builder_studio_log_->setPlaceholderText("Scene Builder logs and command traces appear here.");
-  logs_tab_layout->addWidget(scene_builder_studio_log_);
   scene_builder_inspector_tabs_->addTab(selection_tab, "Selection");
   scene_builder_inspector_tabs_->addTab(workflow_tab, "Workflow");
   scene_builder_inspector_tabs_->addTab(actions_tab, "Actions");
   scene_builder_inspector_tabs_->addTab(readiness_tab, "Readiness");
-  scene_builder_inspector_tabs_->addTab(logs_tab, "Logs");
   inspector_scroll_layout->addWidget(scene_builder_inspector_tabs_);
   inspector_scroll->setWidget(inspector_scroll_contents);
   right_layout->addWidget(inspector_scroll, 1);
@@ -2829,23 +2836,20 @@ void MainWindow::setup_studio_shell()
   studio_pages_->addWidget(validation);  // ValidationPage
   studio_pages_->addWidget(export_page);  // ExportPage
   auto * body=new QHBoxLayout(); body->addWidget(studio_pages_,1); root_layout->insertLayout(0,body,1);
-  constexpr int kCollapsedLogPanelHeight = 52;
-  constexpr int kExpandedLogPanelHeight = 240;
-  auto * log_card = new QFrame(content); log_card->setObjectName("studioCard");
-  log_card->setMaximumHeight(kCollapsedLogPanelHeight);
+  auto * log_card = new QFrame(content); log_card->setObjectName("sceneBuilderLogDrawer");
   auto * log_layout = new QVBoxLayout(log_card);
   auto * log_head = new QHBoxLayout();
   log_head->addWidget(new QLabel("Activity Log", log_card));
-  scene_builder_log_toggle_button_ = new QPushButton("Show Log", log_card);
-  scene_builder_log_toggle_button_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-  log_head->addWidget(scene_builder_log_toggle_button_, 0, Qt::AlignRight);
+  auto * copy_log = new QPushButton("Copy", log_card);
   auto * clear_log = new QPushButton("Clear", log_card);
+  log_head->addStretch(1);
+  log_head->addWidget(copy_log, 0, Qt::AlignRight);
   log_head->addWidget(clear_log, 0, Qt::AlignRight);
   log_layout->addLayout(log_head);
   scene_builder_log_panel_ = log_card;
-  studio_log_=new QTextEdit(log_card); studio_log_->setObjectName("studioHomeLog"); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(kExpandedLogPanelHeight); studio_log_->setPlaceholderText("Recent actions and diagnostics");
+  studio_log_=new QTextEdit(log_card); studio_log_->setObjectName("studioHomeLog"); studio_log_->setReadOnly(true); studio_log_->setMinimumHeight(160); studio_log_->setPlaceholderText("Recent actions and diagnostics");
   log_layout->addWidget(studio_log_);
-  studio_log_->setVisible(false);
+  log_card->setVisible(false);
   root_layout->addWidget(log_card, 0);
   root_layout->setStretch(0, 1);
   root_layout->setStretch(1, 0);
@@ -2874,14 +2878,13 @@ void MainWindow::setup_studio_shell()
     select_scene_by_row(item->data(Qt::UserRole).toInt());
   });
   connect_button(clear_log, [this](){ if (studio_log_) studio_log_->clear(); });
+  connect_button(copy_log, [this](){ if (studio_log_) QApplication::clipboard()->setText(studio_log_->toPlainText()); });
   connect_button(scene_builder_log_toggle_button_, [this]() {
     if (!studio_log_ || !scene_builder_log_toggle_button_ || !scene_builder_log_panel_) return;
-    constexpr int kCollapsedLogPanelHeight = 52;
-    constexpr int kExpandedLogPanelHeight = 240;
-    const bool show = !studio_log_->isVisible();
+    const bool show = !scene_builder_log_panel_->isVisible();
+    scene_builder_log_panel_->setVisible(show);
     studio_log_->setVisible(show);
-    scene_builder_log_panel_->setMaximumHeight(show ? kExpandedLogPanelHeight : kCollapsedLogPanelHeight);
-    scene_builder_log_toggle_button_->setText(show ? "Hide Log" : "Show Log");
+    scene_builder_log_toggle_button_->setText(show ? "Hide Logs" : "Logs");
   });
   connect_button(empty_new_cell, &MainWindow::open_new_scene_creation_flow);
   connect_button(dash_new_cell, &MainWindow::open_new_scene_creation_flow);
@@ -3849,6 +3852,7 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   advanced_lines << QString("Grasp frame: %1").arg(selected_scene_state_.valid ? selected_scene_state_.grasp_frame_summary : QStringLiteral("unknown"));
   advanced_lines << QString("Launch status: %1").arg(selected_scene_state_.valid ? (selected_scene_state_.launchable ? "ready" : "blocked") : QStringLiteral("(none)"));
   if (!state.valid) {
+    if (scene_builder_selection_summary_label_) scene_builder_selection_summary_label_->setText("Selection: none");
     inspector_label_->setText("No item selected");
     inspector_label_->setToolTip(selected_scene_state_.valid ? selected_scene_state_.path : QString());
     live_coordinate_label_->setText("No item selected");
@@ -3879,6 +3883,7 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
     (generated_or_preview_contract ? QStringLiteral("Locked preview item") : QStringLiteral("Locked item cannot be edited"));
   const bool is_locked_urdf_preview = state.locked && role.contains("urdf", Qt::CaseInsensitive);
   const QString locked_line = state.locked ? QString("locked_reason: %1").arg(state.lock_reason.isEmpty() ? QStringLiteral("item is locked") : state.lock_reason) : QStringLiteral("locked: no");
+  if (scene_builder_selection_summary_label_) scene_builder_selection_summary_label_->setText(QString("Selection: %1 (%2)").arg(display, role));
   inspector_label_->setText(QString("%1\nType: %2\nState: %3").arg(display, state.type.isEmpty() ? type_class : state.type, selection_contract_label));
   inspector_label_->setToolTip(display);
   advanced_lines << QString("Selected item name: %1").arg(display);
@@ -4408,6 +4413,23 @@ void MainWindow::append_studio_log(const QString & message)
 {
   if (studio_log_) {
     studio_log_->append(message);
+  }
+  if (scene_builder_status_message_label_) scene_builder_status_message_label_->setText(message);
+  static int warning_count = 0;
+  static int error_count = 0;
+  const QString lowered = message.toLower();
+  if (lowered.contains("error") || lowered.contains("failed") || lowered.contains("blocker")) {
+    ++error_count;
+    if (scene_builder_log_panel_ && studio_log_) {
+      scene_builder_log_panel_->setVisible(true);
+      studio_log_->setVisible(true);
+      if (scene_builder_log_toggle_button_) scene_builder_log_toggle_button_->setText("Hide Logs");
+    }
+  } else if (lowered.contains("warn")) {
+    ++warning_count;
+  }
+  if (scene_builder_issue_count_label_) {
+    scene_builder_issue_count_label_->setText(QString("Warnings: %1 | Errors: %2").arg(warning_count).arg(error_count));
   }
   statusBar()->showMessage(message);
 }

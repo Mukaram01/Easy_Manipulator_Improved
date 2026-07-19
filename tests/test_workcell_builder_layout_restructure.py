@@ -47,8 +47,8 @@ def test_scene_population_role_taxonomy_tokens_present():
         assert token in MAIN
 
 
-def test_inspector_scroll_and_activity_log_toggle_exist():
-    for token in ['QScrollArea(right_panel)', 'setWidgetResizable(true)', 'Show Log', 'Hide Log', 'Activity Log']:
+def test_inspector_scroll_and_activity_log_drawer_exist():
+    for token in ['QScrollArea(right_panel)', 'setWidgetResizable(true)', 'sceneBuilderLogDrawer', 'Activity Log', 'sceneBuilderLogsButton']:
         assert token in MAIN
 
 
