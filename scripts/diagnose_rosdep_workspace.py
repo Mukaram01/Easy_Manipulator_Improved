@@ -89,6 +89,9 @@ def main() -> int:
     print(f"  discovered source packages: {len(packages)}")
     if skip_keys:
         print(f"  skipped rosdep keys: {', '.join(sorted(skip_keys))}")
+    if not packages:
+        print(f"No source packages discovered under {args.src}; check source import and workspace layout before rosdep.", file=sys.stderr)
+        return 1
 
     unresolved = []
     for key in sorted(declared):

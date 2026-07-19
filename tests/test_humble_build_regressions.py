@@ -323,3 +323,53 @@ def test_rosdep_diagnostics_reports_source_providers_and_declaring_packages(tmp_
     assert "SOURCE source_only_dep: provided by" in output
     assert "declared by" in output and "consumer/package.xml" in output
     assert "SKIP skipped_dep" in output
+
+
+def test_humble_rosdep_overrides_resolve_jammy_taskflow_and_gperftools_without_changing_jazzy():
+    text = Path("scripts/rosdep_overrides.yaml").read_text()
+    assert "libtaskflow-cpp-dev:" in text
+    assert "jammy: []" in text
+    assert "noble: [libtaskflow-cpp-dev]" in text
+    assert "taskflow:\n  ubuntu:" in text
+    assert "noble: [libtaskflow-dev]" in text
+    assert "gperftools:" in text
+    assert "jammy: [google-perftools, libunwind-15-dev, libgoogle-perftools-dev]" in text
+    assert "noble: [google-perftools, libgoogle-perftools-dev]" in text
+    assert "libunwind-15-dev on Jammy" in text
+    assert "imported tesseract_planning" in text
+
+
+def test_humble_ci_exports_source_taskflow_cmake_package_before_build():
+    text = Path(".github/workflows/humble-ci.yml").read_text()
+    assert "ensure_taskflow_cmake_package.sh --export >> \"$GITHUB_ENV\"" in text
+    assert text.index("ensure_taskflow_cmake_package.sh --export") < text.index("rosdep install --from-paths src --ignore-src -yr --rosdistro humble")
+
+
+def test_rosdep_diagnostics_fails_when_no_source_packages_discovered(tmp_path, monkeypatch, capsys):
+    import importlib.util
+
+    script = Path("scripts/diagnose_rosdep_workspace.py")
+    spec = importlib.util.spec_from_file_location("diagnose_rosdep_workspace_empty", script)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    src = tmp_path / "src"
+    src.mkdir()
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            str(script),
+            "--src",
+            str(src),
+            "--rosdistro",
+            "humble",
+            "--os-codename",
+            "jammy",
+        ],
+    )
+
+    assert module.main() == 1
+    captured = capsys.readouterr()
+    assert "discovered source packages: 0" in captured.out
+    assert "No source packages discovered" in captured.err

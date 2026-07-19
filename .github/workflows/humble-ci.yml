@@ -122,6 +122,7 @@ jobs:
           set -o pipefail
           ./src/easy_manipulation_deployment/scripts/ensure_rosdep_overrides.sh
           ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+          ./src/easy_manipulation_deployment/scripts/ensure_taskflow_cmake_package.sh --export >> "$GITHUB_ENV"
           rosdep update
           if ! rosdep install --from-paths src --ignore-src -yr --rosdistro humble \
             --skip-keys "qt_advanced_docking tesseract_visualization"; then
