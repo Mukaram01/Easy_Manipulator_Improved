@@ -712,6 +712,10 @@ install(TARGETS workcell_builder
   DESTINATION lib/${PROJECT_NAME}
 )
 
+install(PROGRAMS
+  scripts/workcell_builder
+  DESTINATION bin)
+
 install(DIRECTORY templates
   DESTINATION share/${PROJECT_NAME})
 

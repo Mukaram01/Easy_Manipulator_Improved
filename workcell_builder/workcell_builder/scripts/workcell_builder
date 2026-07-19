@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+prefix_dir="$(cd -- "${script_dir}/.." && pwd -P)"
+binary="${prefix_dir}/lib/workcell_builder/workcell_builder"
+
+if [[ ! -x "${binary}" ]]; then
+  printf 'workcell_builder: installed application is missing or not executable: %s\n' "${binary}" >&2
+  printf 'Rebuild the workcell_builder package and source the workspace setup file, then try again.\n' >&2
+  exit 127
+fi
+
+exec "${binary}" "$@"
