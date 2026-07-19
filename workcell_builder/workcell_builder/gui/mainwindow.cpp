@@ -19,6 +19,7 @@
 #include "visual_mesh_source_resolver.hpp"
 #include <QFileDialog>
 #include <QAction>
+#include <QWidgetAction>
 #include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
@@ -2276,17 +2277,16 @@ void MainWindow::setup_studio_shell()
     };
   auto * select_mode_button = make_primary_button("Select"); primary_controls->addWidget(select_mode_button);
   auto * place_mode_button = make_primary_button("Place Asset"); primary_controls->addWidget(place_mode_button);
+  auto * move_mode_button = make_primary_button("Move"); primary_controls->addWidget(move_mode_button);
+  auto * inspect_mode_button = make_primary_button("Inspect");
+  save_layout_button_ = make_primary_button("Save Layout");
+  primary_controls->addWidget(save_layout_button_);
+  primary_controls->addStretch(1);
   place_mode_persistent_box_ = new QCheckBox("Keep placing", scene_builder);
   place_mode_persistent_box_->setChecked(false);
   place_mode_persistent_box_->setToolTip("When enabled, Place Asset mode stays armed after each placement.");
   place_mode_persistent_box_->setMinimumHeight(30);
   place_mode_persistent_box_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
-  primary_controls->addWidget(place_mode_persistent_box_);
-  auto * move_mode_button = make_primary_button("Move"); primary_controls->addWidget(move_mode_button);
-  auto * inspect_mode_button = make_primary_button("Inspect"); primary_controls->addWidget(inspect_mode_button);
-  save_layout_button_ = make_primary_button("Save Layout");
-  primary_controls->addWidget(save_layout_button_);
-  primary_controls->addStretch(1);
 
   scene_builder_camera_view_button_ = new QToolButton(scene_builder);
   auto * camera_view = scene_builder_camera_view_button_; camera_view->setText("Camera / View"); camera_view->setPopupMode(QToolButton::InstantPopup);
@@ -2302,7 +2302,6 @@ void MainWindow::setup_studio_shell()
   auto * zoom_in = camera_view_menu->addAction("Zoom In");
   auto * zoom_out = camera_view_menu->addAction("Zoom Out");
   camera_view->setMenu(camera_view_menu);
-  controls->addWidget(camera_view);
   toggle_grid_box_ = new QCheckBox("Toggle Grid", scene_builder); toggle_grid_box_->setChecked(true);
   snap_to_grid_box_ = new QCheckBox("Snap: 5 cm", scene_builder); snap_to_grid_box_->setToolTip("Snap applies to drag, keyboard nudge, and transform edits."); snap_to_grid_box_->setChecked(true);
   snap_step_label_ = new QLabel("Nudge step: 0.05 m", scene_builder);
@@ -2383,17 +2382,39 @@ void MainWindow::setup_studio_shell()
   scene_builder_secondary_overflow_button_->setText("More");
   scene_builder_secondary_overflow_button_->setPopupMode(QToolButton::InstantPopup);
   scene_builder_secondary_overflow_menu_ = new QMenu(scene_builder_secondary_overflow_button_);
+  auto * inspect_action = new QAction(inspect_mode_button->text(), scene_builder_secondary_overflow_menu_);
+  inspect_action->setToolTip(inspect_mode_button->toolTip());
+  QObject::connect(inspect_action, &QAction::triggered, inspect_mode_button, &QPushButton::click);
+  auto * keep_placing_action = new QWidgetAction(scene_builder_secondary_overflow_menu_);
+  keep_placing_action->setDefaultWidget(place_mode_persistent_box_);
+  auto * snap_menu_action = canvas_more_menu->menuAction();
+  snap_menu_action->setText("Snap");
+  auto * gizmo_menu_action = visual_modes_menu->menuAction();
+  gizmo_menu_action->setText("Gizmo Scale");
+  auto * undo_action = scene_builder_action("layout.undo");
+  auto * redo_action = scene_builder_action("layout.redo");
+  if (undo_action) undo_action->setShortcut(QKeySequence::Undo);
+  if (redo_action) redo_action->setShortcut(QKeySequence::Redo);
+  scene_builder_secondary_overflow_menu_->addAction(inspect_action);
+  scene_builder_secondary_overflow_menu_->addAction(keep_placing_action);
+  scene_builder_secondary_overflow_menu_->addAction(snap_menu_action);
+  scene_builder_secondary_overflow_menu_->addAction(gizmo_menu_action);
+  scene_builder_secondary_overflow_menu_->addSeparator();
+  scene_builder_secondary_overflow_menu_->addAction(undo_action);
+  scene_builder_secondary_overflow_menu_->addAction(redo_action);
+  scene_builder_secondary_overflow_menu_->addSeparator();
+  if (fit_robot_button) fit_robot_button->setText("Fit Selection");
+  scene_builder_secondary_overflow_menu_->addAction(fit_button);
+  scene_builder_secondary_overflow_menu_->addAction(fit_robot_button);
+  scene_builder_secondary_overflow_menu_->addSeparator();
   scene_builder_secondary_overflow_menu_->addMenu(overlays_menu)->setText("Overlays");
-  scene_builder_secondary_overflow_menu_->addMenu(visual_modes_menu)->setText("Visual Modes");
-  scene_builder_secondary_overflow_menu_->addMenu(canvas_more_menu)->setText("Layout/Edit Settings");
+  scene_builder_secondary_overflow_menu_->addMenu(camera_view_menu)->setText("Camera / View");
   auto * secondary_layout_menu = scene_builder_secondary_overflow_menu_->addMenu("Layout");
-  secondary_layout_menu->addAction(scene_builder_action("layout.undo"));
-  secondary_layout_menu->addAction(scene_builder_action("layout.redo"));
   secondary_layout_menu->addAction(scene_builder_action("layout.save"));
   secondary_layout_menu->addAction(scene_builder_action("layout.duplicate"));
   secondary_layout_menu->addAction(scene_builder_action("layout.remove"));
   scene_builder_secondary_overflow_button_->setMenu(scene_builder_secondary_overflow_menu_);
-  controls->addWidget(scene_builder_secondary_overflow_button_);
+  primary_controls->addWidget(scene_builder_secondary_overflow_button_);
   center_panel_layout->addLayout(controls);
   digital_twin_canvas_ = new QGraphicsView(scene_builder); digital_twin_canvas_->setObjectName("digital_twin_canvas_"); digital_twin_canvas_->setMinimumHeight(420);
   digital_twin_canvas_->viewport()->installEventFilter(this);
