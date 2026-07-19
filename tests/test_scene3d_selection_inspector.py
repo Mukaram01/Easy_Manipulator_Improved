@@ -37,6 +37,18 @@ def test_locked_items_remain_read_only_in_inspector():
     assert 'Locked/generated item edit rejected' in MAIN_CPP
 
 
-def test_inspector_renders_read_only_detection_and_camera_fov_detail_block():
-    for token in ['Read-only details:', 'detection_label:', 'snapshot_source_file:', 'locked_reason:', 'camera_id:', 'frame_id:', 'confidence:']:
+def test_inspector_prioritizes_authoritative_transform_controls():
+    assert 'connect_button(inspector_apply_button_, &MainWindow::apply_selection_transform_from_editor)' in MAIN_CPP
+    assert 'connect_button(inspector_revert_button_, &MainWindow::revert_selection_transform_editor)' in MAIN_CPP
+    assert 'setObjectName("sceneBuilderInspectorAdvancedDetails")' in MAIN_CPP
+    assert 'advanced_details_group->setChecked(false)' in MAIN_CPP
+    assert 'advanced_details_contents->setVisible(false)' in MAIN_CPP
+    assert 'No item selected' in MAIN_CPP
+    assert 'sb->clear(); sb->setEnabled(false); sb->setReadOnly(true)' in MAIN_CPP
+    assert 'inspector_apply_button_->setEnabled(false)' in MAIN_CPP
+    assert 'Locked preview item' in MAIN_CPP
+    assert 'inspector_apply_button_->setEnabled(!locked)' in MAIN_CPP
+    assert 'Selected item source: %1' not in MAIN_CPP
+    assert MAIN_CPP.count('Selected item source_path: %1') == 1
+    for token in ['Read-only details:', 'detection_label:', 'snapshot_source_file:', 'locked_reason:', 'camera_id:', 'frame_id:', 'confidence:', 'Selected item ID: %1', 'Selected item active_visual_source: %1']:
         assert token in MAIN_CPP
