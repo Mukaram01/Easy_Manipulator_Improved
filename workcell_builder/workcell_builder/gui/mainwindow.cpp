@@ -2474,13 +2474,17 @@ void MainWindow::setup_studio_shell()
   auto * right_layout = new QVBoxLayout(right_panel);
   auto * workflow_card = new QFrame(right_panel);
   workflow_card->setObjectName("studioCard");
+  workflow_card->setMinimumWidth(260);
   auto * workflow_card_layout = new QVBoxLayout(workflow_card);
   workflow_card_layout->addWidget(new QLabel("<b>Scene Builder Workflow</b>", workflow_card));
   scene_workflow_rail_label_ = new QLabel("Select a scene to view workflow steps.", workflow_card);
   scene_workflow_rail_label_->setWordWrap(true);
+  scene_workflow_rail_label_->setTextFormat(Qt::RichText);
+  scene_workflow_rail_label_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
   workflow_card_layout->addWidget(scene_workflow_rail_label_);
   scene_workflow_recommendation_label_ = new QLabel("Recommended next action updates as you progress.", workflow_card);
   scene_workflow_recommendation_label_->setWordWrap(true);
+  scene_workflow_recommendation_label_->setTextFormat(Qt::RichText);
   workflow_card_layout->addWidget(scene_workflow_recommendation_label_);
   scene_workflow_recommendation_button_ = new QPushButton("Open or create a scene", workflow_card);
   scene_workflow_recommendation_button_->setProperty("role", "primary");
@@ -11623,7 +11627,7 @@ QString MainWindow::scene_workflow_status_text(SceneWorkflowStepStatus status) c
 {
   switch (status) {
     case SceneWorkflowStepStatus::Done: return "Done";
-    case SceneWorkflowStepStatus::Current: return "Ready";
+    case SceneWorkflowStepStatus::Current: return "Needed";
     case SceneWorkflowStepStatus::NeedsAction: return "Needed";
     case SceneWorkflowStepStatus::Blocked: return "Blocked";
     case SceneWorkflowStepStatus::Warning: return "Warnings";
@@ -11641,6 +11645,48 @@ QString MainWindow::scene_workflow_status_chip(SceneWorkflowStepStatus status) c
   else if (status == SceneWorkflowStepStatus::Warning) bg = "#c2410c";
   return QString("<span style='color:#fff;background:%1;border-radius:10px;padding:2px 8px;font-size:11px;'>%2</span>")
     .arg(bg, scene_workflow_status_text(status));
+}
+
+
+QString MainWindow::scene_workflow_compact_summary(const SceneWorkflowStep & step) const
+{
+  QString detail = format_scene_builder_status_text(step.detail).trimmed();
+  if (detail.isEmpty() || step.status == SceneWorkflowStepStatus::Done) return QString();
+
+  const QString lower = detail.toLower();
+  if (lower.contains("stale")) return "Rerun validation";
+  if (lower.contains("validate") || lower.contains("offline validation")) return "Run scene validation";
+  if (lower.contains("save layout")) return "Save layout";
+  if (lower.contains("generate yaml") || lower.contains("cell_definition.yaml")) return "Generate YAML";
+  if (lower.contains("generate scene package") || lower.contains("launch artifacts") || lower.contains("scene urdf")) return "Generate package";
+  if (lower.contains("blocked by prerequisites")) return "Complete prerequisite";
+  if (lower.contains("visual review")) return "Review preview";
+  if (lower.contains("warning")) return "Review warnings";
+  if (lower.contains("select") || lower.contains("create a scene")) return "Select scene";
+  if (lower.contains("export")) return "Prepare export";
+  if (lower.contains("rviz") || lower.contains("moveit") || lower.contains("fake-hardware")) return "Prepare simulation";
+
+  QString summary = detail;
+  summary.replace('\n', ' ');
+  summary = summary.section('.', 0, 0).section(';', 0, 0).section(':', 0, 0).trimmed();
+  if (summary.size() > 46) summary = summary.left(43).trimmed() + "...";
+  return summary;
+}
+
+QString MainWindow::scene_workflow_details_tooltip(const std::vector<SceneWorkflowStep> & steps) const
+{
+  QStringList lines;
+  for (int i = 0; i < static_cast<int>(steps.size()); ++i) {
+    const auto & step = steps[static_cast<size_t>(i)];
+    const QString detail = format_scene_builder_status_text(step.detail).trimmed();
+    if (detail.isEmpty()) continue;
+    lines << QString("%1. %2 — %3: %4")
+      .arg(i + 1)
+      .arg(step.label)
+      .arg(scene_workflow_status_text(step.status))
+      .arg(detail);
+  }
+  return lines.join("\n\n");
 }
 
 MainWindow::RecommendedWorkflowAction MainWindow::resolve_recommended_workflow_action() const
@@ -11813,8 +11859,10 @@ void MainWindow::refresh_scene_workflow_rail()
   const auto steps = scene_workflow_steps();
   if (steps.empty()) {
     scene_workflow_rail_label_->setText("Select a scene to view workflow steps.");
+    scene_workflow_rail_label_->setToolTip(QString());
     if (scene_workflow_recommendation_label_) {
       scene_workflow_recommendation_label_->setText("Recommended next action appears after scene context is available.");
+      scene_workflow_recommendation_label_->setToolTip(QString());
     }
     if (scene_workflow_recommendation_button_) {
       scene_workflow_recommendation_button_->setText("Run Next: Open or create a scene");
@@ -11827,16 +11875,21 @@ void MainWindow::refresh_scene_workflow_rail()
   QString html;
   for (int i = 0; i < static_cast<int>(steps.size()); ++i) {
     const auto & step = steps[static_cast<size_t>(i)];
-    const QString detail = format_scene_builder_status_text(step.detail).toHtmlEscaped();
-    html += QString("%1. <span title='%4'>%2 %3</span><br/>")
-      .arg(i + 1)
-      .arg(step.label, scene_workflow_status_chip(step.status), detail);
+    const QString summary = scene_workflow_compact_summary(step).toHtmlEscaped();
+    html += QString("<div style='margin-bottom:6px;'><b>%1</b><br/>%2")
+      .arg(step.label.toHtmlEscaped(), scene_workflow_status_chip(step.status));
+    if (!summary.isEmpty()) {
+      html += QString("<br/><span style='color:#4b5563;'>%1</span>").arg(summary);
+    }
+    html += "</div>";
   }
   scene_workflow_rail_label_->setText(html);
+  scene_workflow_rail_label_->setToolTip(scene_workflow_details_tooltip(steps));
   const auto recommendations = resolve_recommended_workflow_actions();
   const auto recommendation = recommendations.empty() ? RecommendedWorkflowAction{} : recommendations.front();
   if (scene_workflow_recommendation_label_) {
-    scene_workflow_recommendation_label_->setText("<b>Next:</b> " + recommendation.explanatory_text);
+    scene_workflow_recommendation_label_->setText("<b>Next:</b> " + recommendation.label.toHtmlEscaped());
+    scene_workflow_recommendation_label_->setToolTip(recommendation.explanatory_text);
   }
   if (scene_workflow_recommendation_button_) {
     scene_workflow_recommendation_button_->setText(QString("Run Next: %1").arg(recommendation.label));
