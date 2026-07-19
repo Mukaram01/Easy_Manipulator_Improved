@@ -1978,7 +1978,7 @@ void MainWindow::setup_studio_shell()
   scene_builder_title_=new QLabel("<h2>Scene Builder</h2>"); scene_builder_title_->setProperty("studioTitle", true); sl->addWidget(scene_builder_title_);
   auto * scene_header_row = new QHBoxLayout();
   scene_builder_preview_chip_ = new QLabel("Preview: Unavailable", scene_builder); scene_builder_preview_chip_->setObjectName("sceneStatusChip");
-  scene_builder_launch_chip_ = new QLabel("Launch: Missing", scene_builder); scene_builder_launch_chip_->setObjectName("sceneStatusChip");
+  scene_builder_launch_chip_ = new QLabel("Launch Artifacts: Missing", scene_builder); scene_builder_launch_chip_->setObjectName("sceneStatusChip");
   scene_builder_safety_chip_ = new QLabel("Safety: Fake hardware", scene_builder); scene_builder_safety_chip_->setObjectName("sceneStatusChip");
   scene_builder_path_label_ = new QLabel("Path: (none)", scene_builder); scene_builder_path_label_->setWordWrap(false);
   scene_builder_path_label_->setTextFormat(Qt::PlainText);
@@ -2178,6 +2178,12 @@ void MainWindow::setup_studio_shell()
   });
   connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_selected, this, [this](const QString &id, const QString &role){
     apply_scene_selection(id, role, id.trimmed().isEmpty(), false);
+  });
+  connect(scene_preview_widget_, &ScenePreviewWidget::embedded_product_view_runtime_state_changed, this, [this](const QString &, bool){
+    refresh_scene_builder_view_chips();
+    refresh_scene_workflow_rail();
+    refresh_preview_launch_ui();
+    refresh_new_cell_checklist();
   });
   auto * scene3d_viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
   if (scene3d_viewport) {
@@ -5870,7 +5876,20 @@ void MainWindow::refresh_scene_builder_view_chips()
         source_render_ratio_failed ||
         high_mesh_source_low_render;
 
-      if (!has_active_runtime_render_evidence || !has_visible_or_rendered_geometry) {
+      if (scene_preview_widget_->runtime_preview_has_usable_content() &&
+          runtime_preview_status != QStringLiteral("Preview failed")) {
+        if (runtime_preview_status == QStringLiteral("Preview ready") && !has_warning_bucket) {
+          preview_chip_status = QStringLiteral("Ready");
+        } else if (!has_active_runtime_render_evidence || !has_visible_or_rendered_geometry) {
+          // Embedded Web3D readiness is runtime-based and does not depend on
+          // native Scene3D paint/render counters.
+          preview_chip_status = QStringLiteral("Ready");
+        } else if (quality == QStringLiteral("PASS") && !has_warning_bucket) {
+          preview_chip_status = QStringLiteral("Ready");
+        } else {
+          preview_chip_status = QStringLiteral("Warnings");
+        }
+      } else if (!has_active_runtime_render_evidence || !has_visible_or_rendered_geometry) {
         preview_chip_status = QStringLiteral("Failed");
       } else if (quality == QStringLiteral("PASS") && !has_warning_bucket) {
         preview_chip_status = QStringLiteral("Ready");
@@ -5883,7 +5902,7 @@ void MainWindow::refresh_scene_builder_view_chips()
     }
   }
   if (scene_builder_preview_chip_) scene_builder_preview_chip_->setText(QString("Preview: %1").arg(preview_chip_status));
-  if (scene_builder_launch_chip_) scene_builder_launch_chip_->setText(QString("Launch: %1").arg(launch_ready ? "Ready" : "Missing"));
+  if (scene_builder_launch_chip_) scene_builder_launch_chip_->setText(QString("Launch Artifacts: %1").arg(launch_ready ? "Present" : "Missing"));
   if (scene_builder_safety_chip_) scene_builder_safety_chip_->setText("Safety: Fake hardware");
   if (scene_builder_generate_launch_button_) scene_builder_generate_launch_button_->setVisible(has_selected_scene() && !launch_ready);
   if (canvas_mode_label_) {
@@ -11389,8 +11408,11 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     validation_gate_ready ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Current));
   const ScenePreviewWidget::RenderDebugCounters scene3d_counters =
     scene_preview_widget_ ? scene_preview_widget_->render_debug_counters() : ScenePreviewWidget::RenderDebugCounters{};
-  const bool preview_in_compatibility_mode = scene_preview_widget_ &&
-    scene_preview_widget_->runtime_preview_status_text() == QStringLiteral("Preview available in compatibility mode");
+  const QString runtime_preview_status_text = scene_preview_widget_
+    ? scene_preview_widget_->runtime_preview_status_text()
+    : QString();
+  const bool preview_in_compatibility_mode =
+    runtime_preview_status_text == QStringLiteral("Preview available in compatibility mode");
   const bool preview_has_runtime_content = scene_preview_widget_ ? scene_preview_widget_->runtime_preview_has_usable_content() : (scene3d_counters.viewport_received_count > 0 || scene3d_counters.visible_count > 0 ||
     scene3d_counters.rendered_count > 0 || preview_runtime_ready);
   const QString native_preview_counts = QString(
@@ -11417,7 +11439,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   if (preview_has_runtime_content) {
     preview_status = SceneWorkflowStepStatus::Done;
     preview_detail = QString("%1. %2 %3")
-      .arg(scene_preview_widget_ ? scene_preview_widget_->runtime_preview_status_text() : QStringLiteral("Preview ready"), native_preview_counts, launch_gate_detail);
+      .arg(runtime_preview_status_text.isEmpty() ? QStringLiteral("Preview ready") : runtime_preview_status_text, native_preview_counts, launch_gate_detail);
     if (!preview_in_compatibility_mode && !transform_parity.warning.isEmpty()) {
       preview_status = transform_parity.failed
         ? SceneWorkflowStepStatus::Blocked
@@ -11527,7 +11549,7 @@ QString MainWindow::scene_workflow_status_text(SceneWorkflowStepStatus status) c
     case SceneWorkflowStepStatus::Current: return "Ready";
     case SceneWorkflowStepStatus::NeedsAction: return "Needed";
     case SceneWorkflowStepStatus::Blocked: return "Blocked";
-    case SceneWorkflowStepStatus::Warning: return "Missing";
+    case SceneWorkflowStepStatus::Warning: return "Warnings";
   }
   return "Needed";
 }
@@ -11616,15 +11638,21 @@ std::vector<MainWindow::RecommendedWorkflowAction> MainWindow::resolve_recommend
     add_action("save_layout", "Save layout", false, "No asset items exist.", "Add at least one asset before saving.", RecommendedWorkflowActionHandler::SaveLayout);
     return actions;
   }
-  if (layout_dirty_ || !layout_saved_) {
-    add_action("save_layout", "Save layout", true, QString(),
-      "Commit current layout edits so downstream YAML and package outputs use the latest scene state.",
+  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  const auto canvas_model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, QString::fromStdString(s.scene_name));
+  const bool canonical_path_match = (canonical_scene_path_string(s.scene_dir) == canonical_scene_path_string(fs::path(selected_scene_path().toStdString())));
+  const LayoutStateModel layout_state = derive_layout_state_model(s.scene_dir, canvas_model, canonical_path_match);
+  const bool derived_layout_ready = !layout_dirty_ && (
+    layout_state == LayoutStateModel::EDITABLE_LAYOUT_PRESENT &&
+    workcell_builder::is_save_layout_workflow_ready(s.scene_dir));
+  if (!derived_layout_ready) {
+    add_action("save_layout", "Save layout", !layout_dirty_ || has_asset_items || editable_layout_item_count_ > 0, QString(),
+      layout_dirty_ ? "Commit current layout edits so downstream YAML and package outputs use the latest scene state." : "Save the editable layout before YAML generation.",
       RecommendedWorkflowActionHandler::SaveLayout);
-    add_action("generate_yaml", "Generate YAML", false, "Layout has unsaved edits.", "Save layout before YAML generation.", RecommendedWorkflowActionHandler::GenerateYaml);
+    add_action("generate_yaml", "Generate YAML", false, layout_dirty_ ? "Layout has unsaved edits." : "Layout is not saved.", "Save layout before YAML generation.", RecommendedWorkflowActionHandler::GenerateYaml);
     return actions;
   }
 
-  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const QString yaml_path = QString::fromStdString((s.scene_dir / "cell_definition.yaml").string());
   const bool yaml_ready = QFileInfo::exists(yaml_path);
   if (!yaml_ready) {

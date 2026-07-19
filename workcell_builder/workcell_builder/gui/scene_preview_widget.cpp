@@ -690,6 +690,11 @@ void ScenePreviewWidget::set_embedded_product_view_state(EmbeddedProductViewStat
   refresh_toolbar_status_chip();
   refresh_toolbar_feedback_row();
   if (error_state_label_) error_state_label_->setVisible(false);
+  QString state_text = QStringLiteral("preparing");
+  if (state == EmbeddedProductViewState::Ready) state_text = QStringLiteral("ready");
+  else if (state == EmbeddedProductViewState::CompatibilityReady) state_text = QStringLiteral("compatibility ready");
+  else if (state == EmbeddedProductViewState::Failed) state_text = QStringLiteral("failed");
+  emit embedded_product_view_runtime_state_changed(state_text, runtime_preview_has_usable_content());
 }
 
 void ScenePreviewWidget::start_embedded_web_server_probes(
