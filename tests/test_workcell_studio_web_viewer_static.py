@@ -1780,6 +1780,99 @@ def test_viewer_rotate_cancels_on_selection_mode_and_scene_change_without_yaml_w
     assert "metadata" not in object_change_body.lower()
 
 
+
+def test_expanded_urdf_tool_mesh_failure_keeps_status_scene_failed_not_shell_ready():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({
+  hidden: false,
+  checked: false,
+  disabled: false,
+  textContent: '',
+  className: '',
+  innerHTML: '',
+  classList: { toggle() {} },
+  setAttribute() {},
+  querySelector() { return { textContent: '' }; },
+  appendChild() {},
+  addEventListener() {},
+  getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; },
+});
+const context = {
+  console,
+  assert,
+  window: { location: { search: '' }, dispatchEvent() {}, parent: { postMessage() {} } },
+  document: { getElementById() { return element(); }, createElement() { return element(); } },
+  CustomEvent: function CustomEvent(type, init) { return { type, ...init }; },
+  URLSearchParams,
+  requestAnimationFrame() { return 0; },
+};
+vm.createContext(context);
+vm.runInContext(source + `
+populateObjectList = () => {};
+updateLabels = () => {};
+resetView = () => {};
+renderSceneSummary = () => updateViewerStatus();
+state.sourceWebSceneFile = 'build/workcell_studio_web_scene/ur5_2f_test.web_scene.json';
+state.sceneJson = {
+  scene: { id: 'ur5_2f_test' },
+  robot_preview: { mode: 'expanded_urdf_loader', urdf_url: 'assets/ur5_2f_test/scene.urdf' },
+  robots: [{ id: 'ur5', role: 'robot', category: 'robot', mesh_contract_category: 'robot' }],
+  tools: [{ id: 'robotiq_2f', role: 'end_effector', category: 'tool', display_name: 'Robotiq 2F', mesh_contract_category: 'tool', mesh_load_required: true, mesh_uri: 'assets/ur5_2f_test/robotiq/robotiq_85_gripper_visual.dae' }],
+  assets: [{ id: 'workbench', category: 'environment', mesh_contract_category: 'table', mesh_uri: 'assets/ur5_2f_test/table.stl' }],
+  sensors: [{ id: 'camera', category: 'camera', mesh_contract_category: 'camera', mesh_uri: 'assets/ur5_2f_test/realsense.stl' }],
+};
+const items = collectItems(state.sceneJson);
+beginWeb3dSceneReadiness(items);
+failExpandedUrdfReadiness(new Error('HTTP 404 loading required Robotiq tool mesh'), {
+  robot_urdf_url: 'assets/ur5_2f_test/scene.urdf',
+  robot_missing_meshes: ['build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq/robotiq_85_gripper_visual.dae: HTTP 404'],
+  robot_failed_visual_count: 1,
+  robotFailedVisualCount: 1,
+}, {
+  required_category: 'attached_tool_gripper',
+  link: 'gripper_base_link',
+  url: 'build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq/robotiq_85_gripper_visual.dae',
+  uri: 'package://robotiq_85_description/meshes/visual/robotiq_85_gripper_visual.dae',
+  path: 'package://robotiq_85_description/meshes/visual/robotiq_85_gripper_visual.dae',
+});
+let status = updateViewerStatus();
+assert.strictEqual(status.web3d_readiness_state, 'scene_failed');
+assert.strictEqual(status.web3dReadinessState, 'scene_failed');
+assert.strictEqual(status.viewer_boot_state, 'scene_failed');
+assert.strictEqual(status.final_lifecycle_state, 'scene_failed');
+assert.strictEqual(status.tool_status, 'failed');
+assert.strictEqual(status.failed_required_item_count > 0, true);
+assert.strictEqual(status.final_failed_url, 'build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq/robotiq_85_gripper_visual.dae');
+assert.strictEqual(status.finalFailedUrl, status.final_failed_url);
+assert.strictEqual(status.final_failed_link, 'gripper_base_link');
+assert.strictEqual(status.readiness_failure.link, 'gripper_base_link');
+assert.strictEqual(status.readiness_failure.url, status.final_failed_url);
+assert.ok(status.readiness_failure.robot_missing_meshes[0].includes('robotiq_85_gripper_visual.dae'));
+assert.ok(status.readiness_failure.reason.includes('Robotiq tool mesh'));
+emitWeb3dReadinessState('server_ready', { http_status: 200 });
+status = updateViewerStatus();
+assert.strictEqual(status.web3d_readiness_state, 'scene_failed');
+assert.strictEqual(status.web3dReadinessState, 'scene_failed');
+assert.notStrictEqual(status.web3d_readiness_state, 'scene_ready');
+assert.notStrictEqual(status.web3dReadinessState, 'scene_ready');
+assert.strictEqual(status.readiness_failure.url, status.final_failed_url);
+`, context);
+"""
+    result = subprocess.run(
+        ["node", "-e", harness, str(js_path)],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert result.stderr == ""
+
 def test_viewer_emits_explicit_web3d_readiness_states_and_required_categories():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     assert "'server_ready'" in js
@@ -1791,6 +1884,7 @@ def test_viewer_emits_explicit_web3d_readiness_states_and_required_categories():
     assert "function maybeEmitSceneReady()" in js
     assert "if (readinessState === 'scene_ready')" in js
     assert "if (state.web3dReadiness.emittedSceneReady)" in js
+    assert "state.web3dReadiness.failed && state.web3dReadiness.state === 'scene_failed'" in js
     assert "pending.add('robot_arm:expanded_urdf_loader')" in js
     assert "pending.add('attached_tool_gripper:expanded_urdf_loader')" in js
     assert "emitWeb3dReadinessState('scene_loading'" in js

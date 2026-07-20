@@ -72,6 +72,9 @@ const EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS = [
 const WEB3D_REQUIRED_CATEGORIES = ['robot_arm', 'attached_tool_gripper', 'workbench_support_surface', 'configured_camera'];
 function emitWeb3dReadinessState(readinessState, detail = {}) {
   state.web3dReadiness = state.web3dReadiness || { state: 'server_ready', emittedSceneReady: false, required: {}, pending: new Set(), failed: false, failure: null };
+  if (state.web3dReadiness.failed && state.web3dReadiness.state === 'scene_failed' && readinessState !== 'scene_failed') {
+    return updateViewerStatus();
+  }
   if (readinessState === 'scene_ready') {
     if (state.web3dReadiness.emittedSceneReady) return window.__WORKCELL_VIEWER_STATUS__;
     state.web3dReadiness.emittedSceneReady = true;
@@ -753,6 +756,10 @@ function updateViewerStatus() {
     pending_required_loads: Array.from(state.web3dReadiness?.pending || []),
     pendingRequiredLoads: Array.from(state.web3dReadiness?.pending || []),
     ...structuredWeb3dReadinessFields(state.web3dReadiness?.state || 'server_ready'),
+    final_failed_url: state.web3dReadiness?.failure?.url || state.web3dReadiness?.failure?.final_failed_url || '',
+    finalFailedUrl: state.web3dReadiness?.failure?.url || state.web3dReadiness?.failure?.finalFailedUrl || '',
+    final_failed_link: state.web3dReadiness?.failure?.link || state.web3dReadiness?.failure?.link_name || '',
+    finalFailedLink: state.web3dReadiness?.failure?.link || state.web3dReadiness?.failure?.linkName || '',
     readiness_failure: state.web3dReadiness?.failure || null,
     readinessFailure: state.web3dReadiness?.failure || null,
   };
