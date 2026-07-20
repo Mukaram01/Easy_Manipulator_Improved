@@ -335,6 +335,8 @@ private:
   void undo_layout_edit();
   void redo_layout_edit();
   void duplicate_selected_item();
+  bool selected_item_can_be_duplicated() const;
+  void refresh_duplicate_selected_action();
   bool selected_item_can_be_deleted() const;
   void refresh_delete_selected_action();
   void delete_selected_item();
