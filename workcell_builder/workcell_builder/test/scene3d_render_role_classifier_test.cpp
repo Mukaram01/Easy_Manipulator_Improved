@@ -464,6 +464,93 @@ TEST(IndependentPickZoneAuthoring, ModelYamlAndOverlayContract)
   EXPECT_FALSE(Scene3DViewportWidget::should_include_in_default_fit_for_test(item));
 }
 
+TEST(IndependentPlaceZoneAuthoring, ModelYamlAndOverlayContract)
+{
+  using namespace workcell_builder;
+  std::string message;
+  EXPECT_FALSE(can_create_place_zone_for_robots({}, &message));
+  EXPECT_EQ(message, "Add or select a robot before creating a Place Zone");
+  EXPECT_TRUE(can_create_place_zone_for_robots({"ur5"}, &message));
+  EXPECT_EQ(message, "ur5");
+  EXPECT_TRUE(can_create_place_zone_for_robots({"ur5", "ur10"}, &message));
+  EXPECT_EQ(message, "Choose a robot for the Place Zone");
+
+  std::vector<TaskZone> existing;
+  auto pick = suggest_robot_pick_zone("ur5", existing, 0.1, 0.2, 0.75, 0.0);
+  ASSERT_TRUE(pick.ok);
+  existing.push_back(pick.zone);
+  auto suggestion = suggest_robot_place_zone("ur5", existing, 1.8, -0.6, 0.82, 0.3);
+  ASSERT_TRUE(suggestion.ok);
+  const auto & z = suggestion.zone;
+  EXPECT_EQ(z.type, "place");
+  EXPECT_EQ(z.role, "place");
+  EXPECT_EQ(z.robot_id, "ur5");
+  EXPECT_TRUE(z.camera_id.empty());
+  EXPECT_TRUE(z.object_ref.empty());
+  EXPECT_TRUE(z.target_ref.empty());
+  EXPECT_NEAR(z.x, 1.8, 1e-9);
+  EXPECT_NEAR(z.y, -0.6, 1e-9);
+  EXPECT_NEAR(z.z, 0.82, 1e-9);
+  EXPECT_NE(z.x, pick.zone.x);
+  EXPECT_NE(z.y, pick.zone.y);
+  const auto defaults = default_task_zone_dimensions();
+  EXPECT_GT(defaults.width, 0.0);
+  EXPECT_GT(defaults.depth, 0.0);
+  EXPECT_GT(defaults.height, 0.0);
+  EXPECT_DOUBLE_EQ(z.dim_x, defaults.width);
+  EXPECT_DOUBLE_EQ(z.dim_y, defaults.depth);
+  EXPECT_DOUBLE_EQ(z.dim_z, defaults.height);
+
+  TaskZone bad = z;
+  bad.dim_z = -0.1;
+  EXPECT_FALSE(validate_task_zone_dimensions(bad, &message));
+  EXPECT_EQ(message, "Place Zone dimensions must be positive");
+
+  auto item = make_item("place_zone_1");
+  item.type = "place";
+  item.role = "place";
+  item.category = "Task Zones";
+  EXPECT_FALSE(Scene3DViewportWidget::should_include_in_default_fit_for_test(item));
+  EXPECT_EQ(Scene3DViewportWidget::material_color_for_test(item), QColor("#a855f7"));
+}
+
+TEST(IndependentPlaceZoneAuthoring, SaveReloadPreservesRobotAndIndependence)
+{
+  using namespace workcell_builder;
+  const QString path = QDir::tempPath() + QStringLiteral("/place_zone_contract_environment.yaml");
+  QFile::remove(path);
+  TaskZone z;
+  z.id = "place_zone_1";
+  z.type = "place";
+  z.role = "place";
+  z.robot_id = "ur5";
+  z.x = 1.8; z.y = -0.6; z.z = 0.82; z.yaw = 0.3;
+  z.dim_x = 0.5; z.dim_y = 0.5; z.dim_z = 0.12;
+  z.enabled = true; z.visible = false;
+  auto result = save_task_zones_to_environment_yaml(path.toStdString(), {z});
+  ASSERT_TRUE(result.ok);
+  QFile file(path);
+  ASSERT_TRUE(file.open(QIODevice::ReadOnly | QIODevice::Text));
+  const QString yaml = QString::fromUtf8(file.readAll());
+  EXPECT_TRUE(yaml.contains(QStringLiteral("type: place")));
+  EXPECT_TRUE(yaml.contains(QStringLiteral("robot_id: ur5")));
+  EXPECT_TRUE(yaml.contains(QStringLiteral("target_ref: place_zone_1")));
+  EXPECT_FALSE(yaml.contains(QStringLiteral("camera_id")));
+  EXPECT_FALSE(yaml.contains(QStringLiteral("pick_zone_id")));
+  EXPECT_FALSE(yaml.contains(QStringLiteral("observation_zone_id")));
+  EXPECT_FALSE(yaml.contains(QStringLiteral("/workspace/")));
+
+  std::vector<std::string> warnings;
+  const auto loaded = load_task_zones_from_environment_yaml(path.toStdString(), &warnings);
+  ASSERT_EQ(loaded.size(), 1u);
+  EXPECT_EQ(loaded.front().id, z.id);
+  EXPECT_EQ(loaded.front().type, "place");
+  EXPECT_EQ(loaded.front().robot_id, "ur5");
+  EXPECT_TRUE(loaded.front().camera_id.empty());
+  EXPECT_DOUBLE_EQ(loaded.front().z, 0.82);
+  EXPECT_FALSE(loaded.front().visible);
+}
+
 TEST(IndependentPickZoneAuthoring, SaveReloadPreservesRobotAndNoCameraLink)
 {
   using namespace workcell_builder;

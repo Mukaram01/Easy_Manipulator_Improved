@@ -86,17 +86,26 @@ bool can_create_observation_zone_for_camera(
 ObservationZoneSuggestion suggest_camera_observation_zone(
   const CameraPlacement & camera, const std::vector<TaskZone> & existing_zones, double work_surface_z = 0.0);
 
-struct PickZoneDefaults
+struct TaskZoneDefaults
 {
-  double width{0.40};
-  double depth{0.40};
-  double height{0.10};
+  double width{0.50};
+  double depth{0.50};
+  double height{0.12};
 };
 
-PickZoneDefaults default_pick_zone_dimensions();
+TaskZoneDefaults default_task_zone_dimensions();
+TaskZoneDefaults default_pick_zone_dimensions();
 bool validate_task_zone_dimensions(const TaskZone & zone, std::string * warning = nullptr);
 bool can_create_pick_zone_for_robots(
   const std::vector<std::string> & robot_ids, std::string * message = nullptr);
+bool can_create_place_zone_for_robots(
+  const std::vector<std::string> & robot_ids, std::string * message = nullptr);
+ObservationZoneSuggestion suggest_robot_task_zone(
+  const std::string & zone_type, const std::string & robot_id, const std::vector<TaskZone> & existing_zones,
+  double world_x, double world_y, double surface_z, double yaw = 0.0);
+ObservationZoneSuggestion suggest_robot_place_zone(
+  const std::string & robot_id, const std::vector<TaskZone> & existing_zones,
+  double world_x, double world_y, double surface_z, double yaw = 0.0);
 ObservationZoneSuggestion suggest_robot_pick_zone(
   const std::string & robot_id, const std::vector<TaskZone> & existing_zones,
   double world_x, double world_y, double surface_z, double yaw = 0.0);

@@ -166,12 +166,29 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     task_zones_.push_back(suggestion.zone); rebuild_table();
     QMessageBox::information(this, "Create Pick Zone", QString::fromStdString(suggestion.messages.front()));
   });
-  mk("Add Place Zone", [this]() {
-    TaskZone zone;
-    zone.id = QString("place_zone_%1").arg(task_zones_.size() + 1).toStdString();
-    zone.type = "place";
-    task_zones_.push_back(zone);
-    rebuild_table();
+  mk("Create Place Zone", [this]() {
+    const auto robots = robot_ids_from_environment(trim_copy(active_environment_yaml_path_));
+    std::string message;
+    if (!can_create_place_zone_for_robots(robots, &message)) {
+      QMessageBox::warning(this, "Create Place Zone", QString::fromStdString(message));
+      return;
+    }
+    QString robot = QString::fromStdString(robots.front());
+    if (robots.size() > 1) {
+      QStringList choices; for (const auto & id : robots) choices << QString::fromStdString(id);
+      bool ok = false; robot = QInputDialog::getItem(this, "Create Place Zone", "Robot", choices, 0, false, &ok);
+      if (!ok || robot.isEmpty()) return;
+    }
+    QDialog d(this); d.setWindowTitle("Create Place Zone"); auto * layout = new QFormLayout(&d);
+    std::array<QDoubleSpinBox *, 4> spin{}; const std::array<const char *, 4> labels = {"Center X", "Center Y", "Surface Z", "Yaw"};
+    for (int i = 0; i < 4; ++i) { spin[static_cast<size_t>(i)] = new QDoubleSpinBox(&d); spin[static_cast<size_t>(i)]->setDecimals(6); spin[static_cast<size_t>(i)]->setRange(-100.0, 100.0); layout->addRow(labels[static_cast<size_t>(i)], spin[static_cast<size_t>(i)]); }
+    QDialogButtonBox buttons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &d); layout->addRow(&buttons);
+    QObject::connect(&buttons, &QDialogButtonBox::accepted, &d, &QDialog::accept); QObject::connect(&buttons, &QDialogButtonBox::rejected, &d, &QDialog::reject);
+    if (d.exec() != QDialog::Accepted) { QMessageBox::information(this, "Create Place Zone", "Place Zone placement cancelled"); return; }
+    const auto suggestion = suggest_robot_place_zone(robot.toStdString(), task_zones_, spin[0]->value(), spin[1]->value(), spin[2]->value(), spin[3]->value());
+    if (!suggestion.ok) { QMessageBox::warning(this, "Create Place Zone", QString::fromStdString(suggestion.messages.empty() ? "Place Zone robot is unavailable" : suggestion.messages.front())); return; }
+    task_zones_.push_back(suggestion.zone); rebuild_table();
+    QMessageBox::information(this, "Create Place Zone", QString::fromStdString(suggestion.messages.front()));
   });
   mk("Create Observation Zone", [this]() {
     auto cameras = load_camera_placements_from_environment_yaml(trim_copy(active_environment_yaml_path_), nullptr);
