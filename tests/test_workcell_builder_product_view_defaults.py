@@ -85,8 +85,8 @@ def test_inspector_refresh_for_ur5_2f_test_uses_canonical_metadata_and_launch_pa
     mainwindow_cpp = MAINWINDOW_CPP.read_text()
     metadata_helper = mainwindow_cpp.split("static SelectedSceneMetadataSummary selected_scene_metadata_summary", 1)[1]
     metadata_helper = metadata_helper.split("static YAML::Node ensure_map_path", 1)[0]
-    refresh_helper = mainwindow_cpp.split("void MainWindow::refresh_scene_builder_selected_scene_ui()", 1)[1]
-    refresh_helper = refresh_helper.split("void MainWindow::refresh_create_starter_layout_action()", 1)[0]
+    metadata_panel_helper = mainwindow_cpp.split("void MainWindow::refresh_selected_scene_metadata_panel()", 1)[1]
+    metadata_panel_helper = metadata_panel_helper.split("void MainWindow::refresh_scene_builder_selection_state_ui()", 1)[0]
 
     assert "out.scene_name = QString::fromStdString(scene.scene_name);" in metadata_helper
     assert "out.scene_path = QString::fromStdString(scene.scene_dir.string());" in metadata_helper
@@ -94,10 +94,10 @@ def test_inspector_refresh_for_ur5_2f_test_uses_canonical_metadata_and_launch_pa
     assert "launch/demo.launch.py present" in metadata_helper
     assert '{"robot", "model"}' in metadata_helper
     assert "cell_definition.yaml" in metadata_helper
-    assert "metadata.scene_name" in refresh_helper
-    assert "metadata.scene_path" in refresh_helper
-    assert "metadata.robot" in refresh_helper
-    assert "metadata.launch" in refresh_helper
+    assert "metadata.scene_name" in metadata_panel_helper
+    assert "metadata.scene_path" in metadata_panel_helper
+    assert "metadata.robot" in metadata_panel_helper
+    assert "metadata.launch" in metadata_panel_helper
 
 
 def test_warning_chip_suppressed_for_clean_xacro_expanded_preview_payload() -> None:
