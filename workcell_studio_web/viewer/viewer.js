@@ -33,7 +33,7 @@ const STAGED_MESH_ROOTS = [
   'workcell_studio_web/',
   'assets/',
 ];
-const EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS = [
+const CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS = Object.freeze([
   'base_link_inertia',
   'shoulder_link',
   'upper_arm_link',
@@ -41,8 +41,32 @@ const EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS = [
   'wrist_1_link',
   'wrist_2_link',
   'wrist_3_link',
-  'tool0',
+]);
+const CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS = Object.freeze([
   'gripper_base_link',
+  'left_outer_knuckle',
+  'right_outer_knuckle',
+  'left_outer_finger',
+  'right_outer_finger',
+  'left_inner_knuckle',
+  'right_inner_knuckle',
+  'left_inner_finger',
+  'right_inner_finger',
+]);
+const CANONICAL_UR5_2F_REQUIRED_GENERATED_VISUAL_SET = Object.freeze({
+  scene_id: 'ur5_2f_test',
+  sceneId: 'ur5_2f_test',
+  ur5_visuals: CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS,
+  ur5Visuals: CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS,
+  robotiq_visuals: CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS,
+  robotiqVisuals: CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS,
+  physical_scene_visuals: Object.freeze(['workbench_support_surface', 'configured_camera']),
+  physicalSceneVisuals: Object.freeze(['workbench_support_surface', 'configured_camera']),
+});
+const EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS = [
+  ...CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS,
+  'tool0',
+  ...CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS,
 ];
 
 const WEB3D_REQUIRED_CATEGORIES = ['robot_arm', 'attached_tool_gripper', 'workbench_support_surface', 'configured_camera'];
@@ -178,6 +202,7 @@ function failExpandedUrdfReadiness(err, diagnostics = {}, detail = {}) {
   });
 }
 function maybeEmitSceneReady() {
+  if (failIfCanonicalRequiredVisualSetInvalid()) return;
   const readiness = state.web3dReadiness;
   if (!readiness || readiness.failed || readiness.state === 'scene_failed') return;
   const missing = WEB3D_REQUIRED_CATEGORIES.filter(category => !readiness.required?.[category]);
@@ -431,6 +456,87 @@ function box3DiagnosticsForObject(object) {
     size: vector3ToDiagnostics(size),
   };
 }
+
+function canonicalRequiredGeneratedVisualSet(json = state.sceneJson || {}) {
+  const id = String(json?.scene?.id || json?.scene_id || '').trim();
+  if (id !== CANONICAL_UR5_2F_REQUIRED_GENERATED_VISUAL_SET.scene_id) return null;
+  const preview = json?.robot_preview || {};
+  if (!isExpandedUrdfRobotPreview(preview)) return null;
+  const previewLinks = new Set(asArray(preview.expected_links).map(link => String(link || '').trim()).filter(Boolean));
+  const requiredUr5 = CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS.filter(link => !previewLinks.size || previewLinks.has(link));
+  const requiredRobotiq = CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS.filter(link => !previewLinks.size || previewLinks.has(link));
+  return {
+    scene_id: id,
+    sceneId: id,
+    ur5_visuals: requiredUr5,
+    ur5Visuals: requiredUr5,
+    robotiq_visuals: requiredRobotiq,
+    robotiqVisuals: requiredRobotiq,
+    table_visuals: ['workbench_support_surface'],
+    tableVisuals: ['workbench_support_surface'],
+    camera_visuals: ['configured_camera'],
+    cameraVisuals: ['configured_camera'],
+  };
+}
+function countBy(values) {
+  const counts = {};
+  for (const value of values || []) counts[value] = (counts[value] || 0) + 1;
+  return counts;
+}
+function canonicalVisualReadinessDiagnostics() {
+  const required = canonicalRequiredGeneratedVisualSet();
+  if (!required) return null;
+  const urdfVisualLinks = asArray(state.robotUrdfPreviewDiagnostics?.robot_visual_wrapper_world_matrices)
+    .map(visual => String(visual?.link_name || visual?.linkName || '').trim())
+    .filter(Boolean);
+  const urdfCounts = countBy(urdfVisualLinks);
+  const sceneDiagnostics = collectRenderedMeshDiagnostics();
+  const categoryCounts = countBy(sceneDiagnostics.map(item => readinessCategoryForItem(item)).filter(Boolean));
+  const missing = [];
+  const duplicate = [];
+  const failed = [];
+  for (const link of required.ur5_visuals.concat(required.robotiq_visuals)) {
+    const count = urdfCounts[link] || 0;
+    if (count === 0) missing.push(link);
+    if (count > 1) duplicate.push(link);
+  }
+  for (const category of required.table_visuals.concat(required.camera_visuals)) {
+    const count = categoryCounts[category] || 0;
+    if (count === 0) missing.push(category);
+    if (count > 1) duplicate.push(category);
+  }
+  for (const entry of sceneDiagnostics) {
+    if (isRequiredMeshFailureStatus({ item: entry, renderInfo: { render_status: entry.render_status } })) failed.push(entry.link_name || entry.id || entry.category);
+  }
+  if (Number(state.robotUrdfPreviewDiagnostics?.robot_failed_visual_count || 0) > 0) failed.push('expanded_urdf_loader');
+  return {
+    canonical_required_generated_visual_set: required,
+    canonicalRequiredGeneratedVisualSet: required,
+    canonical_required_visual_counts: { ...urdfCounts, ...categoryCounts },
+    canonicalRequiredVisualCounts: { ...urdfCounts, ...categoryCounts },
+    canonical_missing_required_visuals: missing,
+    canonicalMissingRequiredVisuals: missing,
+    canonical_duplicate_required_visuals: duplicate,
+    canonicalDuplicateRequiredVisuals: duplicate,
+    canonical_failed_required_visuals: Array.from(new Set(failed)),
+    canonicalFailedRequiredVisuals: Array.from(new Set(failed)),
+    canonical_required_visual_ready: missing.length === 0 && duplicate.length === 0 && failed.length === 0,
+    canonicalRequiredVisualReady: missing.length === 0 && duplicate.length === 0 && failed.length === 0,
+  };
+}
+function failIfCanonicalRequiredVisualSetInvalid() {
+  const lifecycle = String(state.robotUrdfPreviewDiagnostics?.robot_preview_lifecycle_state || state.robotUrdfPreviewDiagnostics?.robotPreviewLifecycleState || '');
+  if (canonicalRequiredGeneratedVisualSet() && lifecycle !== 'ready' && lifecycle !== 'failed') return false;
+  const diagnostics = canonicalVisualReadinessDiagnostics();
+  if (!diagnostics || diagnostics.canonical_required_visual_ready) return false;
+  emitWeb3dReadinessState('scene_failed', {
+    required_category: 'canonical_generated_visual_set',
+    reason: 'canonical required generated visual set is missing, failed, or duplicated',
+    ...diagnostics,
+  });
+  return true;
+}
+
 function collectRenderedMeshDiagnostics() {
   if (!THREE?.Vector3) return [];
   state.three?.scene?.updateMatrixWorld?.(true);
@@ -588,6 +694,7 @@ function updateViewerStatus() {
     };
   });
   const assemblyRenderDiagnostics = collectAssemblyRenderDiagnostics();
+  const canonicalVisualDiagnostics = canonicalVisualReadinessDiagnostics() || {};
   window.__WORKCELL_VIEWER_STATUS__ = {
     viewer_boot_state: state.web3dReadiness?.state || 'server_ready',
     viewerBootState: state.web3dReadiness?.state || 'server_ready',
@@ -639,6 +746,7 @@ function updateViewerStatus() {
     robot_hierarchy_mesh_count: (state.robotAssemblyDiagnostics || []).reduce((total, d) => total + Number(d.robot_hierarchy_mesh_count || 0), 0),
     robotHierarchyMeshCount: (state.robotAssemblyDiagnostics || []).reduce((total, d) => total + Number(d.robot_hierarchy_mesh_count || 0), 0),
     ...assemblyRenderDiagnostics,
+    ...canonicalVisualDiagnostics,
     required_physical_categories: state.web3dReadiness?.required || {},
     requiredPhysicalCategories: state.web3dReadiness?.required || {},
     pending_required_loads: Array.from(state.web3dReadiness?.pending || []),
@@ -2616,9 +2724,9 @@ function loadExpandedUrdfRobotPreview(preview) {
     rootName: `${sceneDisplayName()}_expanded_urdf_loader_robot`,
     skippedLegacyGeneratedUrdfVisualCount: diagnostics.skipped_legacy_generated_urdf_visual_count,
     onRobotLoaded: result => {
-      completeExpandedUrdfReadiness(result);
       state.robotPreviewResult = result;
       state.robotUrdfPreviewDiagnostics = result.diagnostics;
+      if (!failIfCanonicalRequiredVisualSetInvalid()) completeExpandedUrdfReadiness(result);
       refreshInitialPoseActionState();
       renderSceneSummary();
       attemptInitialCameraFit();
