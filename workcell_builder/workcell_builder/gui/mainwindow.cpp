@@ -417,7 +417,8 @@ enum SceneTreeRoles {
   TreeRoleSourceLayer, TreeRoleActiveVisualSource, TreeRoleEditable, TreeRoleLocked, TreeRoleLinkedEditableLayout, TreeRoleVisualBackingStatus, TreeRoleGeneratedVisual, TreeRoleItemTypeClass,
   TreeRoleStableId, TreeRoleCameraId, TreeRoleFrameId, TreeRoleDetectionLabel, TreeRoleConfidence, TreeRoleTrackingId, TreeRoleSnapshotSourceFile, TreeRoleAlignmentWarning
 };
-enum AssetCatalogRoles { CatalogRoleIndex = Qt::UserRole, CatalogRolePlaceable = Qt::UserRole + 10, CatalogRoleSourcePath = Qt::UserRole + 11 };
+enum AssetCatalogRoles { CatalogRoleIndex = Qt::UserRole, CatalogRolePlaceable = Qt::UserRole + 10, CatalogRoleSourcePath = Qt::UserRole + 11, CatalogRoleAssetId = Qt::UserRole + 12 };
+static constexpr const char * kWorkcellStudioAssetMime = "application/x-workcell-studio-asset";
 
 
 
@@ -2295,13 +2296,20 @@ void MainWindow::setup_studio_shell()
       }
     };
     scene3d_viewport->asset_drop_cb = [this](const QJsonObject & payload, double x, double y, double, bool shift_drop) {
-        const QString category = payload.value("category").toString();
-        const QString display_name = payload.value("display_name").toString();
-        const QString source_path = payload.value("source_path").toString();
-        if (category.isEmpty() || display_name.isEmpty()) {
-          append_studio_log("Cannot place here: drag payload missing category/display name.");
+        const QString asset_id = payload.value("asset_id").toString().trimmed();
+        const auto match = std::find_if(asset_catalog_entries_.cbegin(), asset_catalog_entries_.cend(),
+          [&asset_id](const AssetCatalogEntry & e) { return e.asset_id == asset_id; });
+        if (asset_id.isEmpty() || match == asset_catalog_entries_.cend()) {
+          append_studio_log("Asset is no longer available");
           return;
         }
+        if (!match->disabled_reason.trimmed().isEmpty() || !match->editable) {
+          append_studio_log(QString("Cannot place asset '%1': %2").arg(asset_id, match->disabled_reason));
+          return;
+        }
+        const QString category = match->category;
+        const QString display_name = match->display_name;
+        const QString source_path = match->source_path;
         if (shift_drop && !configure_asset_placement_transform(category, display_name)) return;
         armed_asset_use_clicked_xy_ = true;
         armed_asset_x_m_ = x;
@@ -6235,16 +6243,9 @@ bool MainWindow::eventFilter(QObject * watched, QEvent * event)
         return true;
       }
       QJsonObject payload;
-      payload["asset_id"] = e.display_name.toLower().replace(" ", "_");
-      payload["display_name"] = e.display_name;
-      payload["category"] = e.category;
-      payload["type"] = e.asset_type;
-      payload["source_path"] = e.source_path;
-      payload["mesh_path"] = e.source_path.endsWith(".stl", Qt::CaseInsensitive) ? e.source_path : "";
-      payload["default_dimensions"] = e.dimensions;
-      payload["default_pose"] = e.default_pose;
+      payload["asset_id"] = e.asset_id;
       auto * mime = new QMimeData();
-      mime->setData("application/x-workcell-asset-catalog-item", QJsonDocument(payload).toJson(QJsonDocument::Compact));
+      mime->setData(kWorkcellStudioAssetMime, QJsonDocument(payload).toJson(QJsonDocument::Compact));
       auto * drag = new QDrag(asset_catalog_tree_);
       drag->setMimeData(mime);
       drag->exec(Qt::CopyAction);
@@ -11669,6 +11670,7 @@ void MainWindow::populate_asset_catalog()
     item->setData(0, CatalogRoleIndex, idx);
     item->setData(0, CatalogRolePlaceable, e.disabled_reason.trimmed().isEmpty() && e.editable);
     item->setData(0, CatalogRoleSourcePath, e.source_path);
+    item->setData(0, CatalogRoleAssetId, e.asset_id);
     item->setToolTip(0, QString("%1\nID: %2\nVisual: %3").arg(e.display_name, e.asset_id, e.visual_uri));
   }
   for (auto * parent : groups) parent->setExpanded(parent->childCount() > 0);

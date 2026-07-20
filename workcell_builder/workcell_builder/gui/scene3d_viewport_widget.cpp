@@ -52,6 +52,7 @@
 namespace {
 constexpr int kMeshTriangleLimit = 1000000;
 constexpr double kWorkspaceLimitMeters = 1000.0;
+constexpr const char * kWorkcellStudioAssetMime = "application/x-workcell-studio-asset";
 
 [[maybe_unused]] QString snap_mode_label(Scene3DViewportWidget::SnapMode mode)
 {
@@ -2584,9 +2585,7 @@ void Scene3DViewportWidget::paintGL()
   }
   draw_viewport_quality_overlay(painter, visible_item_count, physical_item_count);
   if (drag_asset_preview_visible_) {
-    const double x = (drag_asset_screen_pos_.x() - width() * 0.5) / 50.0;
-    const double y = (height() * 0.6 - drag_asset_screen_pos_.y()) / 50.0;
-    draw_box(x, y, 0.0, 0.35, 0.35, 0.35, QColor(56, 189, 248, 120), true);
+    draw_box(drag_asset_world_pos_.x(), drag_asset_world_pos_.y(), drag_asset_world_pos_.z(), 0.35, 0.35, 0.35, QColor(56, 189, 248, 120), true);
     QToolTip::showText(mapToGlobal(drag_asset_screen_pos_), drag_asset_drop_status_, this);
   }
 }
@@ -4347,6 +4346,31 @@ void Scene3DViewportWidget::draw_frustum(const QColor & color, bool translucent)
   glBegin(GL_TRIANGLE_FAN); glVertex3f(camera_overlay.x, camera_overlay.y, camera_overlay.z); glVertex3f(ffl.x(), ffl.y(), ffl.z()); glVertex3f(ffr.x(), ffr.y(), ffr.z()); glVertex3f(fbr.x(), fbr.y(), fbr.z()); glVertex3f(fbl.x(), fbl.y(), fbl.z()); glVertex3f(ffl.x(), ffl.y(), ffl.z()); glEnd();
 }
 QPointF Scene3DViewportWidget::project_to_screen(double x, double y, double z) const { return QPointF(width() * 0.5 + x * 50.0, height() * 0.6 - y * 50.0 + z * 5.0); }
+bool Scene3DViewportWidget::drag_position_to_world_xy(const QPoint & pos, double z_m, double & out_x, double & out_y) const
+{
+  if (width() <= 0 || height() <= 0 || !std::isfinite(z_m)) return false;
+  QMatrix4x4 proj, view;
+  camera_matrices(proj, view);
+  const QMatrix4x4 inv = (proj * view).inverted();
+  const float ndc_x = (2.0f * static_cast<float>(pos.x()) / static_cast<float>(width())) - 1.0f;
+  const float ndc_y = 1.0f - (2.0f * static_cast<float>(pos.y()) / static_cast<float>(height()));
+  const QVector4D near_clip(ndc_x, ndc_y, -1.0f, 1.0f);
+  const QVector4D far_clip(ndc_x, ndc_y, 1.0f, 1.0f);
+  QVector4D near_world = inv * near_clip;
+  QVector4D far_world = inv * far_clip;
+  if (qFuzzyIsNull(near_world.w()) || qFuzzyIsNull(far_world.w())) return false;
+  near_world /= near_world.w();
+  far_world /= far_world.w();
+  const QVector3D origin = near_world.toVector3D();
+  const QVector3D dir = (far_world.toVector3D() - origin).normalized();
+  if (qAbs(dir.z()) < 1e-6f) return false;
+  const float t = (static_cast<float>(z_m) - origin.z()) / dir.z();
+  if (!std::isfinite(t) || t < 0.0f) return false;
+  const QVector3D hit = origin + dir * t;
+  out_x = snap_translation_value(hit.x(), snap_mode);
+  out_y = snap_translation_value(hit.y(), snap_mode);
+  return std::isfinite(out_x) && std::isfinite(out_y);
+}
 void Scene3DViewportWidget::camera_matrices(QMatrix4x4 & out_proj, QMatrix4x4 & out_view) const
 {
   const float aspect = height() > 0 ? static_cast<float>(width()) / static_cast<float>(height()) : 1.0f;
@@ -4802,16 +4826,29 @@ void Scene3DViewportWidget::keyPressEvent(QKeyEvent * e)
 
 void Scene3DViewportWidget::dragEnterEvent(QDragEnterEvent * event)
 {
-  if (event->mimeData() && event->mimeData()->hasFormat("application/x-workcell-asset-catalog-item")) event->acceptProposedAction();
+  if (!event->mimeData() || !event->mimeData()->hasFormat(kWorkcellStudioAssetMime)) return;
+  const QJsonObject payload = QJsonDocument::fromJson(event->mimeData()->data(kWorkcellStudioAssetMime)).object();
+  if (payload.value("asset_id").toString().trimmed().isEmpty()) return;
+  event->acceptProposedAction();
 }
 
 void Scene3DViewportWidget::dragMoveEvent(QDragMoveEvent * event)
 {
-  if (!event->mimeData() || !event->mimeData()->hasFormat("application/x-workcell-asset-catalog-item")) return;
-  const QByteArray payload = event->mimeData()->data("application/x-workcell-asset-catalog-item");
+  if (!event->mimeData() || !event->mimeData()->hasFormat(kWorkcellStudioAssetMime)) return;
+  const QByteArray payload = event->mimeData()->data(kWorkcellStudioAssetMime);
   drag_asset_payload_ = QJsonDocument::fromJson(payload).object();
-  drag_asset_label_ = drag_asset_payload_.value("display_name").toString("asset");
+  const QString asset_id = drag_asset_payload_.value("asset_id").toString().trimmed();
+  if (asset_id.isEmpty()) return;
+  double x = 0.0, y = 0.0;
+  if (!drag_position_to_world_xy(event->pos(), 0.0, x, y)) {
+    drag_asset_preview_visible_ = false;
+    drag_asset_drop_status_ = QStringLiteral("No valid workcell surface under the pointer");
+    update();
+    return;
+  }
+  drag_asset_label_ = asset_id;
   drag_asset_screen_pos_ = event->pos();
+  drag_asset_world_pos_ = QVector3D(x, y, 0.0f);
   drag_asset_preview_visible_ = true;
   drag_asset_drop_status_ = QStringLiteral("Drop to place %1").arg(drag_asset_label_);
   event->acceptProposedAction();
@@ -4826,11 +4863,15 @@ void Scene3DViewportWidget::dragLeaveEvent(QDragLeaveEvent *)
 
 void Scene3DViewportWidget::dropEvent(QDropEvent * event)
 {
-  if (!event->mimeData() || !event->mimeData()->hasFormat("application/x-workcell-asset-catalog-item")) return;
-  const QJsonObject payload = QJsonDocument::fromJson(event->mimeData()->data("application/x-workcell-asset-catalog-item")).object();
-  const QPoint p = event->pos();
-  const double x = snap_translation_value((p.x() - width() * 0.5) / 50.0, snap_mode);
-  const double y = snap_translation_value((height() * 0.6 - p.y()) / 50.0, snap_mode);
+  if (!event->mimeData() || !event->mimeData()->hasFormat(kWorkcellStudioAssetMime)) return;
+  const QJsonObject payload = QJsonDocument::fromJson(event->mimeData()->data(kWorkcellStudioAssetMime)).object();
+  double x = 0.0, y = 0.0;
+  if (payload.value("asset_id").toString().trimmed().isEmpty() || !drag_position_to_world_xy(event->pos(), 0.0, x, y)) {
+    drag_asset_preview_visible_ = false;
+    if (status_message_cb) status_message_cb(QStringLiteral("No valid workcell surface under the pointer"));
+    update();
+    return;
+  }
   const double z = 0.0;
   const bool shift_drop = (event->keyboardModifiers() & Qt::ShiftModifier);
   if (asset_drop_cb) asset_drop_cb(payload, x, y, z, shift_drop);

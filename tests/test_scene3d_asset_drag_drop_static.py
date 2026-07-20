@@ -6,11 +6,18 @@ def test_scene3d_asset_drag_drop_tokens_exist():
     viewport_h = Path("workcell_builder/workcell_builder/gui/scene3d_viewport_widget.h").read_text(encoding="utf-8")
     viewport_cpp = Path("workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(encoding="utf-8")
 
-    assert "application/x-workcell-asset-catalog-item" in main_cpp
+    assert "application/x-workcell-studio-asset" in main_cpp
+    assert "application/x-workcell-studio-asset" in viewport_cpp
     assert "QDrag" in main_cpp and "QMimeData" in main_cpp
     assert "disabled_reason" in main_cpp and "Cannot place here" in main_cpp
+    drag_payload = main_cpp[main_cpp.index('payload["asset_id"] = e.asset_id'):main_cpp.index("auto * mime = new QMimeData()", main_cpp.index('payload["asset_id"] = e.asset_id'))]
+    assert 'payload["asset_id"] = e.asset_id' in drag_payload
+    assert "source_path" not in drag_payload
+    assert "CatalogRoleAssetId" in main_cpp
     assert "asset_drop_cb" in viewport_h
     assert "dragEnterEvent" in viewport_h and "dropEvent" in viewport_h
+    assert "drag_position_to_world_xy" in viewport_cpp
+    assert "snap_translation_value(hit.x(), snap_mode)" in viewport_cpp
     assert "Drop to place" in viewport_cpp
     assert "drag_asset_preview_visible_" in viewport_h
     assert "workcell_studio_next_id" in main_cpp

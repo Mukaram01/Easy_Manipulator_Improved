@@ -193,6 +193,7 @@ private:
   bool pick_item_at_screen(const QPoint & pos, QString & out_id, QString & out_role, QString * out_tooltip = nullptr) const;
   bool pick_gizmo_axis_at_screen(const QPoint & pos, QString & out_axis, double * out_score = nullptr) const;
   bool pick_gizmo_rotation_ring_at_screen(const QPoint & pos, QString & out_axis, double * out_score = nullptr) const;
+  bool drag_position_to_world_xy(const QPoint & pos, double z_m, double & out_x, double & out_y) const;
   ItemBounds item_bounds_for_role(const ScenePreviewWidget::PreviewItem & item) const;
   bool mesh_world_bounds_for_item(const ScenePreviewWidget::PreviewItem & item, ItemBounds & out_bounds) const;
   bool ray_intersects_aabb(const QVector3D & ray_origin, const QVector3D & ray_dir,
@@ -325,6 +326,7 @@ private:
   QString drag_asset_label_;
   QString drag_asset_drop_status_;
   QPoint drag_asset_screen_pos_;
+  QVector3D drag_asset_world_pos_{ 0.0f, 0.0f, 0.0f };
   QJsonObject drag_asset_payload_;
   QString last_camera_fit_target_{ "scene" };
   QVector3D last_camera_fit_bounds_min_{ 0.0f, 0.0f, 0.0f };
