@@ -921,3 +921,81 @@ def test_robot_preview_relative_mesh_urls_resolve_without_duplicate_build_direct
         resolved = urlparse(urljoin(preview_url, mesh)).path
         assert resolved == f"/build/workcell_studio_web_scene/{mesh}"
         assert "build/workcell_studio_web_scene/build/workcell_studio_web_scene" not in resolved
+
+
+def test_export_shared_physical_iterator_covers_legacy_sections_and_failures(tmp_path):
+    scene = tmp_path / "scene"
+    (scene / "layout").mkdir(parents=True)
+    (scene / "generated").mkdir()
+    mesh_dir = scene / "meshes"
+    mesh_dir.mkdir()
+    (mesh_dir / "tray.stl").write_text("solid tray\nendsolid tray\n", encoding="utf-8")
+    (scene / "scene_manifest.yaml").write_text(yaml.safe_dump({"scene": {"name": "physical_coverage"}}), encoding="utf-8")
+    (scene / "cell_definition.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "objects": [
+                    {
+                        "id": "cell_fixture",
+                        "type": "fixture",
+                        "pose_xyz": [0.2, 0.1, 0.3],
+                        "dimensions": [0.1, 0.2, 0.05],
+                    }
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (scene / "environment.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "assets": [{"id": "tray", "type": "tray", "mesh_uri": "meshes/tray.stl", "pose_xyz": [0.4, 0.1, 0.2]}],
+                "objects": {
+                    "legacy_bin": {
+                        "type": "bin",
+                        "links": {"bin_link": {"visual": {"geometry": {"filepath": "missing/bin.stl"}}}},
+                    }
+                },
+                "environment": {
+                    "zones": [{"id": "pick_helper", "role": "pick_zone", "category": "safety_zone", "dimensions": [1, 1, 1]}]
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (scene / "layout/workcell_studio_layout.yaml").write_text(yaml.safe_dump({"items": []}), encoding="utf-8")
+    (scene / "generated/scene_visual_mesh_index.json").write_text(
+        json.dumps(
+            {
+                "visual_items": [
+                    {
+                        "id": "generated_tray_mesh",
+                        "category": "asset",
+                        "role": "tray",
+                        "mesh_uri": "meshes/tray.stl",
+                        "pose": {"xyz": [0.4, 0.1, 0.2], "rpy": [0, 0, 0]},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = exporter.build_web_scene(scene, stage_assets=True, output_path=tmp_path / "out.web_scene.json")
+    assets = {item["id"]: item for item in payload["assets"]}
+    assert {"tray", "legacy_bin", "cell_fixture", "generated_tray_mesh"} <= set(assets)
+    assert assets["tray"]["source_section"] == "assets"
+    assert assets["tray"]["active_visual_source"] == "declared_mesh"
+    assert assets["tray"]["pose_xyz"] == [0.4, 0.1, 0.2]
+    assert assets["legacy_bin"]["type"] == "bin"
+    assert assets["legacy_bin"]["link"] == "bin_link"
+    assert assets["legacy_bin"]["mesh_path"] == "missing/bin.stl"
+    assert assets["legacy_bin"]["mesh_staging_status"] == "resolve_failed"
+    assert "Mesh file does not exist" in assets["legacy_bin"]["mesh_resolve_warning"]
+    assert assets["cell_fixture"]["source_section"] == "objects"
+    assert assets["cell_fixture"]["active_visual_source"] == "declared_primitive"
+    assert any(item["id"] == "pick_helper" for item in payload["zones"])
+    assert "pick_helper" not in assets
+    assert sum(1 for item in payload["assets"] if item.get("id") == "generated_tray_mesh") == 1
