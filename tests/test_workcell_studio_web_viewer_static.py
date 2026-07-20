@@ -1859,3 +1859,64 @@ def test_viewer_canonical_ur5_2f_required_visual_set():
     assert "if (count > 1) duplicate.push(link);" in validation_body
     assert "if (count === 0) missing.push(category);" in validation_body
     assert "if (count > 1) duplicate.push(category);" in validation_body
+
+def test_expanded_urdf_mode_marks_flattened_robot_tool_rows_diagnostic_only():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    render_body = js.split("function renderScene(items)", 1)[1].split("function loadExpandedUrdfRobotPreview", 1)[0]
+    assert "if (urdfPreviewActive) loadExpandedUrdfRobotPreview(state.sceneJson.robot_preview);" in render_body
+    assert "new Set(robotToolGeneratedUrdfItems)" in render_body
+    assert "expanded_urdf_loader_skip_flattened_row" in render_body
+    assert "expanded URDF mode renders robot/tool only through loadRobotPreview and URDFLoader" in render_body
+    assert render_body.index("loadExpandedUrdfRobotPreview(state.sceneJson.robot_preview)") < render_body.index("for (const item of items)")
+
+
+def test_urdf_renderer_compares_browser_matrix_world_to_exported_expected_matrices(tmp_path):
+    script = tmp_path / "matrix_parity.mjs"
+    script.write_text(
+        f"""
+import assert from 'node:assert/strict';
+import * as THREE from {str((VIEWER / 'node_modules/three/build/three.module.js')).__repr__()};
+import URDFLoader from {str((VIEWER / 'node_modules/urdf-loader/src/URDFLoader.js')).__repr__()};
+
+globalThis.window = {{}};
+const originalUrdfLoadAsync = URDFLoader.prototype.loadAsync;
+URDFLoader.prototype.loadAsync = async function loadAsyncStub() {{
+  const robot = new THREE.Group();
+  const base = new THREE.Group();
+  base.name = 'base_link';
+  base.position.set(1, 2, 3);
+  const visual = new THREE.Group();
+  visual.name = 'visual_0';
+  visual.position.set(0.25, 0, 0);
+  visual.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial()));
+  base.add(visual);
+  robot.add(base);
+  robot.links = {{ base_link: base }};
+  robot.joints = {{}};
+  robot.setJointValues = () => {{}};
+  return robot;
+}};
+
+try {{
+  const {{ loadRobotPreview }} = await import({str((VIEWER / 'urdf_robot_renderer.js')).__repr__()});
+  const expectedLink = new THREE.Matrix4().makeTranslation(1, 2, 3).elements;
+  const expectedVisual = new THREE.Matrix4().makeTranslation(1.25, 2, 3).elements;
+  const result = loadRobotPreview({{
+    urdf_url: 'robot.urdf',
+    expected_robot_link_world_matrices: {{ base_link: expectedLink }},
+    expected_robot_visual_wrapper_world_matrices: {{ base_link: expectedVisual }},
+  }});
+  await result.ready;
+  assert.equal(result.diagnostics.robot_matrix_world_parity.pass, true);
+  assert.equal(result.diagnostics.robot_matrix_world_parity.tolerance, 1e-5);
+  assert.equal(result.diagnostics.robot_matrix_world_parity.link.compared_count, 1);
+  assert.equal(result.diagnostics.robot_matrix_world_parity.visual_wrapper.compared_count, 1);
+  assert.equal(result.diagnostics.robot_matrix_world_parity.link.comparisons[0].max_abs_delta <= 1e-5, true);
+  assert.equal(result.diagnostics.robot_matrix_world_parity.visual_wrapper.comparisons[0].max_abs_delta <= 1e-5, true);
+}} finally {{
+  URDFLoader.prototype.loadAsync = originalUrdfLoadAsync;
+}}
+""",
+        encoding="utf-8",
+    )
+    subprocess.run(["node", str(script)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
