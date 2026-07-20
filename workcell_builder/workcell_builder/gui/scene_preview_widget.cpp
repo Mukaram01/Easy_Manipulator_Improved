@@ -1617,9 +1617,14 @@ void ScenePreviewWidget::show_embedded_web_product_view()
 {
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
   if (!embedded_web_view_) return;
+  native_compatibility_fallback_active_ = false;
   if (compatibility_scene3d_viewport_) compatibility_scene3d_viewport_->setVisible(false);
-  embedded_web_view_->setVisible(true);
-  if (mode_selector_) mode_selector_->setItemText(0, QStringLiteral("Web3D Product View"));
+  embedded_web_view_->setVisible(scene_selected_);
+  if (mode_selector_) {
+    const QSignalBlocker blocker(mode_selector_);
+    mode_selector_->setItemText(0, QStringLiteral("Web3D Product View"));
+    mode_selector_->setCurrentIndex(0);
+  }
 #endif
   refresh_mode_and_state();
 }
@@ -1647,9 +1652,26 @@ void ScenePreviewWidget::set_preview_context(const PreviewContext & context)
 
 void ScenePreviewWidget::activate_native_compatibility_preview(const QString & reason)
 {
-  native_compatibility_fallback_active_ = true;
   embedded_web_last_error_ = reason;
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+  const bool web3d_selected = product_view_backend_ == ProductViewBackend::EmbeddedWeb3D && mode_selector_ &&
+    mode_selector_->currentText() == QStringLiteral("Web3D Product View");
+  if (web3d_selected) {
+    native_compatibility_fallback_active_ = false;
+    emit studio_log_requested(QStringLiteral("Native fallback prevented because Web3D is selected"));
+    set_embedded_product_view_state(EmbeddedProductViewState::Failed, reason);
+    if (embedded_fit_button_) {
+      embedded_fit_button_->setText(QStringLiteral("Retry"));
+      embedded_fit_button_->setToolTip(QStringLiteral("Retry loading the embedded Web3D Product View. Details remain available in Studio Log."));
+    }
+    if (compatibility_scene3d_viewport_) compatibility_scene3d_viewport_->setVisible(false);
+    if (embedded_web_view_) embedded_web_view_->setVisible(scene_selected_);
+    refresh_toolbar_status_chip();
+    refresh_toolbar_feedback_row();
+    refresh_mode_and_state();
+    return;
+  }
+  native_compatibility_fallback_active_ = true;
   if (!compatibility_scene3d_viewport_) {
     compatibility_scene3d_viewport_ = new Scene3DViewportWidget(view3d_container_);
     compatibility_scene3d_viewport_->setObjectName("nativeCompatibilityScene3dViewport");
@@ -1702,6 +1724,24 @@ void ScenePreviewWidget::activate_native_compatibility_preview(const QString & r
 
 QString ScenePreviewWidget::runtime_preview_status_text() const
 {
+  const bool web3d_selected = product_view_backend_ == ProductViewBackend::EmbeddedWeb3D && mode_selector_ &&
+    mode_selector_->currentText() == QStringLiteral("Web3D Product View");
+  if (web3d_selected) {
+    if (embedded_product_view_state_ == EmbeddedProductViewState::Preparing ||
+        embedded_product_view_state_ == EmbeddedProductViewState::StartingServer) {
+      return QStringLiteral("Web3D Product View — preparing");
+    }
+    if (embedded_product_view_state_ == EmbeddedProductViewState::Loading ||
+        embedded_product_view_state_ == EmbeddedProductViewState::WaitingForBrowserReadiness) {
+      return QStringLiteral("Web3D Product View — loading");
+    }
+    if (embedded_product_view_state_ == EmbeddedProductViewState::Ready && !native_compatibility_fallback_active_) {
+      return QStringLiteral("Web3D Product View — ready");
+    }
+    if (embedded_product_view_state_ == EmbeddedProductViewState::Failed) {
+      return QStringLiteral("Web3D Product View — failed, Retry");
+    }
+  }
   if (embedded_product_view_state_ == EmbeddedProductViewState::Preparing || embedded_product_view_state_ == EmbeddedProductViewState::StartingServer || embedded_product_view_state_ == EmbeddedProductViewState::Loading || embedded_product_view_state_ == EmbeddedProductViewState::WaitingForBrowserReadiness) {
     return QStringLiteral("Preparing preview");
   }
@@ -2044,8 +2084,15 @@ void ScenePreviewWidget::refresh_toolbar_visibility()
 void ScenePreviewWidget::refresh_mode_and_state()
 {
   const QString mode = mode_selector_->currentText();
+  const bool web3d_selected = product_view_backend_ == ProductViewBackend::EmbeddedWeb3D &&
+    mode == QStringLiteral("Web3D Product View");
   const bool requested_3d = (mode == "3D Layout Preview" || mode == "Web3D Product View");
   const bool use3d = requested_3d && preview3d_available_;
+
+  if (web3d_selected && native_compatibility_fallback_active_) {
+    native_compatibility_fallback_active_ = false;
+    emit studio_log_requested(QStringLiteral("Native fallback prevented because Web3D is selected"));
+  }
   refresh_toolbar_visibility();
 
   if (!preview3d_available_) {
@@ -2059,10 +2106,18 @@ void ScenePreviewWidget::refresh_mode_and_state()
     stack_->setCurrentWidget(use3d ? view3d_container_ : view2d_container_);
   }
   empty_state_label_->setVisible(use3d && !scene_selected_);
-  const bool show_native_compatibility = use3d && scene_selected_ && native_compatibility_fallback_active_ && compatibility_scene3d_viewport_;
+  const bool show_native_compatibility = use3d && scene_selected_ && !web3d_selected &&
+    native_compatibility_fallback_active_ && compatibility_scene3d_viewport_;
   if (compatibility_scene3d_viewport_) compatibility_scene3d_viewport_->setVisible(show_native_compatibility);
   if (simple_3d_view_) simple_3d_view_->setVisible(use3d && scene_selected_ && !show_native_compatibility);
-  if (error_state_label_) error_state_label_->setVisible(false);
+  if (web3d_selected && embedded_web_view_) embedded_web_view_->setVisible(use3d && scene_selected_);
+  if (error_state_label_) {
+    const bool show_web3d_error = web3d_selected && use3d && scene_selected_ &&
+      embedded_product_view_state_ == EmbeddedProductViewState::Failed;
+    error_state_label_->setText(show_web3d_error ? QStringLiteral("Product View failed — Retry") :
+      QStringLiteral("3D Layout Preview unavailable"));
+    error_state_label_->setVisible(show_web3d_error);
+  }
   refresh_toolbar_feedback_row();
   refresh_info_chip();
 }

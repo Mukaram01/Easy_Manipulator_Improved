@@ -285,3 +285,50 @@ def test_explicit_legacy_backend_selection_still_uses_native_scene3d():
     assert 'requested_product_view_backend == QStringLiteral("native_scene3d")' in backend_block
     assert "product_view_backend_ = ProductViewBackend::NativeScene3D;" in backend_block
     assert 'simple_3d_view_->setObjectName("scene3dViewportWidget");' in backend_block
+
+
+def test_web3d_selection_keeps_webengine_surface_and_blocks_native_fallback():
+    refresh_start = CPP.index("void ScenePreviewWidget::refresh_mode_and_state")
+    refresh_end = CPP.index("QRectF ScenePreviewWidget::rendered_items_bounds_2d", refresh_start)
+    refresh = CPP[refresh_start:refresh_end]
+
+    assert 'mode == QStringLiteral("Web3D Product View")' in refresh
+    assert 'Native fallback prevented because Web3D is selected' in refresh
+    assert 'native_compatibility_fallback_active_ = false;' in refresh
+    assert 'const bool show_native_compatibility = use3d && scene_selected_ && !web3d_selected' in refresh
+    assert 'compatibility_scene3d_viewport_->setVisible(show_native_compatibility)' in refresh
+    assert 'embedded_web_view_->setVisible(use3d && scene_selected_)' in refresh
+    assert 'Product View failed — Retry' in refresh
+
+    show_start = CPP.index("void ScenePreviewWidget::show_embedded_web_product_view")
+    context_start = CPP.index("void ScenePreviewWidget::set_preview_context", show_start)
+    show = CPP[show_start:context_start]
+    assert 'native_compatibility_fallback_active_ = false;' in show
+    assert 'compatibility_scene3d_viewport_->setVisible(false)' in show
+    assert 'embedded_web_view_->setVisible(scene_selected_)' in show
+    assert 'mode_selector_->setCurrentIndex(0)' in show
+
+    activate_start = CPP.index("void ScenePreviewWidget::activate_native_compatibility_preview")
+    status_start = CPP.index("QString ScenePreviewWidget::runtime_preview_status_text", activate_start)
+    activate = CPP[activate_start:status_start]
+    assert 'mode_selector_->currentText() == QStringLiteral("Web3D Product View")' in activate
+    assert 'Native fallback prevented because Web3D is selected' in activate
+    assert 'set_embedded_product_view_state(EmbeddedProductViewState::Failed, reason)' in activate
+    assert 'embedded_fit_button_->setText(QStringLiteral("Retry"))' in activate
+    assert 'compatibility_scene3d_viewport_->setVisible(false)' in activate
+    assert 'embedded_web_view_->setVisible(scene_selected_)' in activate
+    assert 'return;' in activate[:activate.index('native_compatibility_fallback_active_ = true;')]
+
+
+def test_web3d_status_chip_uses_required_lifecycle_labels():
+    status_start = CPP.index("QString ScenePreviewWidget::runtime_preview_status_text")
+    status_end = CPP.index("void ScenePreviewWidget::refresh_toolbar_status_chip", status_start)
+    status = CPP[status_start:status_end]
+
+    for label in (
+        'Web3D Product View — preparing',
+        'Web3D Product View — loading',
+        'Web3D Product View — ready',
+        'Web3D Product View — failed, Retry',
+    ):
+        assert label in status
