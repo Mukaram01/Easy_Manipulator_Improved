@@ -5632,7 +5632,7 @@ void MainWindow::refresh_selected_scene_metadata_panel()
   if (index < 0 || index >= static_cast<int>(scene_browser_result_.scenes.size())) return;
   const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(index)];
   const auto metadata = selected_scene_metadata_summary(scene);
-  const QString scene_path = selected_scene_path();
+  const QString scene_path = metadata.scene_path;
   const fs::path launch_path = scene.scene_dir / "launch" / "demo.launch.py";
   const bool launch_present = fs::exists(launch_path);
 
@@ -5648,7 +5648,7 @@ void MainWindow::refresh_selected_scene_metadata_panel()
     ? QStringLiteral("ready — required selected-scene metadata and launch/demo.launch.py are present")
     : QStringLiteral("warnings — %1").arg(warnings.join(QStringLiteral("; ")));
   const QString launch_text = launch_present
-    ? QStringLiteral("%1 (present)").arg(QString::fromStdString(launch_path.string()))
+    ? metadata.launch
     : QStringLiteral("launch/demo.launch.py missing at %1").arg(QString::fromStdString(launch_path.string()));
   const QString robot_text = QStringLiteral("%1 — %2").arg(metadata.robot, metadata.robot_source);
   const QString end_effector_text = QStringLiteral("%1 — %2").arg(metadata.end_effector, metadata.end_effector_source);
