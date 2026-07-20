@@ -77,6 +77,7 @@
 #include <QMenu>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QInputDialog>
 #include <QMap>
 #include <QMatrix4x4>
 #include <QEvent>
@@ -2174,7 +2175,7 @@ void MainWindow::setup_studio_shell()
   auto * asset_more_menu = new QMenu(asset_more_actions);
   auto * open_asset_folder_action = asset_more_menu->addAction("Open Asset Folder");
   auto * copy_asset_path_action = asset_more_menu->addAction("Copy Asset Path");
-  auto * import_asset_action = asset_more_menu->addAction("Import STL / URDF");
+  auto * import_asset_action = asset_more_menu->addAction("Import STL");
   auto * add_existing_stl_action = asset_more_menu->addAction("Add Existing STL to Canvas");
   auto * placeholder_action = asset_more_menu->addAction("Generate Simple Box/Cylinder Placeholder");
   asset_more_actions->setMenu(asset_more_menu);
@@ -3211,7 +3212,7 @@ void MainWindow::setup_studio_shell()
   });
   connect(asset_catalog_tree_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *it, int){ if (!it) return; const int idx = it->data(0, CatalogRoleIndex).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) return; add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path); });
   connect(asset_catalog_tree_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *, QTreeWidgetItem *){ validate_asset_catalog_selection(); update_asset_library_preview(); });
-  connect_action(import_asset_action, [this](){ QMessageBox::information(this, "Asset Catalog", "Import STL / URDF keeps existing behavior via filesystem import workflows."); });
+  connect_action(import_asset_action, [this](){ import_stl_to_asset_library(); });
   connect_action(add_existing_stl_action, [this](){ QMessageBox::information(this, "Asset Catalog", "Add Existing STL to Canvas keeps existing behavior for scene assets."); });
   connect_action(placeholder_action, [this](){ add_asset_to_canvas_from_catalog("Custom", "Generated Placeholder", "placeholder://generated"); });
   connect(preview_process_, &QProcess::started, this, &MainWindow::handle_preview_started);
@@ -11327,6 +11328,52 @@ void MainWindow::populate_scene_hierarchy()
   if (scene3d_debug_logging_enabled()) append_studio_log(scene3d_boundary_diag);
 }
 
+
+namespace {
+QString import_unit_label(double scale)
+{
+  if (scale == 0.001) return QStringLiteral("millimetres");
+  if (scale == 0.01) return QStringLiteral("centimetres");
+  return QStringLiteral("metres");
+}
+
+bool looks_like_stl_file(const QString & path, QString * error)
+{
+  QFile f(path);
+  if (QFileInfo(path).suffix().compare("stl", Qt::CaseInsensitive) != 0) { if (error) *error = "unsupported extension; choose one .stl file"; return false; }
+  if (!f.open(QIODevice::ReadOnly)) { if (error) *error = "source file is unreadable"; return false; }
+  const QByteArray head = f.read(512);
+  if (head.isEmpty()) { if (error) *error = "STL file is empty"; return false; }
+  const QByteArray lower = head.toLower();
+  if (lower.startsWith("solid") && (lower.contains("facet") || lower.contains("endsolid"))) return true;
+  if (f.size() >= 84) {
+    f.seek(80);
+    const QByteArray count = f.read(4);
+    if (count.size() == 4) return true;
+  }
+  if (error) *error = "file does not look like ASCII or binary STL";
+  return false;
+}
+
+QString safe_import_stl_stem(const QString & name)
+{
+  QString stem = QFileInfo(name).completeBaseName().toLower();
+  stem.replace(QRegularExpression("[^a-z0-9_-]+"), "_");
+  stem.replace(QRegularExpression("_+"), "_");
+  stem = stem.trimmed().trimmed('_');
+  if (stem.isEmpty() || stem == "." || stem == "..") return QString();
+  return stem;
+}
+
+bool same_file_bytes(const QString & a, const QString & b)
+{
+  QFile fa(a), fb(b);
+  if (!fa.open(QIODevice::ReadOnly) || !fb.open(QIODevice::ReadOnly) || fa.size() != fb.size()) return false;
+  while (!fa.atEnd()) if (fa.read(65536) != fb.read(65536)) return false;
+  return true;
+}
+}  // namespace
+
 void MainWindow::populate_asset_catalog()
 {
   if (!asset_catalog_tree_) return;
@@ -11336,8 +11383,8 @@ void MainWindow::populate_asset_catalog()
   const auto model = discover_asset_catalog(QString::fromLocal8Bit(qgetenv("WORKCELL_WORKSPACE_ROOT")).toStdString(), repo_root.string());
 
   QSet<QString> categories;
-  for (const auto & source_entry : model.assets) {
-    AssetCatalogEntry ui_entry;
+  auto append_catalog_entry = [this, &categories](const ::AssetCatalogEntry & source_entry) {
+    MainWindow::AssetCatalogEntry ui_entry;
     ui_entry.asset_id = QString::fromStdString(source_entry.id);
     ui_entry.display_name = QString::fromStdString(source_entry.display_name.empty() ? source_entry.id : source_entry.display_name);
     ui_entry.category = QString::fromStdString(source_entry.category.empty() ? "other" : source_entry.category);
@@ -11352,7 +11399,27 @@ void MainWindow::populate_asset_catalog()
     ui_entry.disabled_reason = source_entry.can_add_to_scene ? QString() : QString::fromStdString(source_entry.blockers.empty() ? source_entry.suggested_action : source_entry.blockers.front());
     asset_catalog_entries_.push_back(ui_entry);
     categories.insert(ui_entry.category);
+  };
+
+  for (const auto & source_entry : model.assets) append_catalog_entry(source_entry);
+  if (has_selected_scene()) {
+    QDirIterator it(selected_scene_path() + "/assets/imported", QStringList() << "*.stl" << "*.STL", QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+      const QString file = it.next();
+      ::AssetCatalogEntry e;
+      e.id = ("imported_" + QFileInfo(file).completeBaseName()).toStdString();
+      e.display_name = QFileInfo(file).completeBaseName().toStdString();
+      e.category = "Imported";
+      e.path = file.toStdString();
+      e.source = "scene_imported_asset";
+      e.role_hints = {"object"};
+      e.readiness = "PREVIEW_ONLY";
+      e.icon_key = "🧱";
+      e.can_add_to_scene = true;
+      append_catalog_entry(e);
+    }
   }
+
 
   std::sort(asset_catalog_entries_.begin(), asset_catalog_entries_.end(), [](const AssetCatalogEntry & a, const AssetCatalogEntry & b) {
     if (a.category != b.category) return a.category < b.category;
@@ -11398,6 +11465,92 @@ void MainWindow::populate_asset_catalog()
   on_asset_filter_changed(asset_filter_combo_ ? asset_filter_combo_->currentIndex() : 0);
   validate_asset_catalog_selection();
   update_asset_library_preview();
+}
+
+void MainWindow::import_stl_to_asset_library()
+{
+  if (!has_selected_scene()) {
+    QMessageBox::warning(this, "Import STL", "Open an editable scene before importing an STL asset.");
+    return;
+  }
+  const QString source = QFileDialog::getOpenFileName(this, "Import STL", QDir::homePath(), "STL meshes (*.stl *.STL)");
+  if (source.isEmpty()) return;
+  QString error;
+  if (!looks_like_stl_file(source, &error)) {
+    QMessageBox::warning(this, "Import STL", QString("Cannot import %1: %2.").arg(source, error));
+    return;
+  }
+  const QStringList labels{QStringLiteral("millimetres"), QStringLiteral("centimetres"), QStringLiteral("metres")};
+  bool ok = false;
+  const QString units = QInputDialog::getItem(this, "Import STL Units", "Source STL units:", labels, 0, false, &ok);
+  if (!ok || units.isEmpty()) return;
+  const double scale = units == "millimetres" ? 0.001 : (units == "centimetres" ? 0.01 : 1.0);
+  const QString stem = safe_import_stl_stem(source);
+  if (stem.isEmpty()) { QMessageBox::warning(this, "Import STL", "Cannot import STL: safe destination filename would be empty."); return; }
+
+  const fs::path scene_dir = fs::path(selected_scene_path().toStdString());
+  const fs::path asset_root = scene_dir / "assets" / "imported";
+  boost::system::error_code ec;
+  fs::create_directories(asset_root, ec);
+  if (ec) { QMessageBox::warning(this, "Import STL", QString("Cannot create scene asset directory %1: %2").arg(QString::fromStdString(asset_root.string()), QString::fromStdString(ec.message()))); return; }
+  const fs::path root_canon = fs::canonical(asset_root, ec);
+  if (ec) { QMessageBox::warning(this, "Import STL", "Cannot validate scene asset directory safety."); return; }
+  fs::path dest = root_canon / (stem.toStdString() + ".stl");
+  const fs::path source_canon = fs::canonical(fs::path(source.toStdString()), ec);
+  if (ec || !fs::is_regular_file(source_canon, ec)) { QMessageBox::warning(this, "Import STL", "Source is not a readable regular file."); return; }
+  const std::string root_str = root_canon.string() + fs::path::preferred_separator;
+  auto inside_root = [&](const fs::path & p){ const std::string v = p.string(); return v == root_canon.string() || v.rfind(root_str, 0) == 0; };
+  for (int suffix = 0; fs::exists(dest, ec); ++suffix) {
+    if (same_file_bytes(QString::fromStdString(source_canon.string()), QString::fromStdString(dest.string()))) break;
+    dest = root_canon / QString("%1_%2.stl").arg(stem).arg(suffix + 1).toStdString();
+  }
+  if (!inside_root(dest)) { QMessageBox::warning(this, "Import STL", "Unsafe destination escaped the scene asset directory."); return; }
+  const QString rel = QDir(QString::fromStdString(scene_dir.string())).relativeFilePath(QString::fromStdString(dest.string()));
+  const QString summary = QString("Display name: %1\nFilename: %2\nSource units: %3\nResulting scale: %4\nDestination: %5")
+    .arg(stem, QFileInfo(source).fileName(), import_unit_label(scale), QString::number(scale, 'g', 6), rel);
+  if (QMessageBox::question(this, "Confirm STL Import", summary) != QMessageBox::Yes) return;
+
+  const bool preexisting = fs::exists(dest, ec);
+  if (!preexisting) {
+    const fs::path tmp = dest.string() + ".tmp";
+    fs::copy_file(source_canon, tmp, fs::copy_option::fail_if_exists, ec);
+    if (ec) { QMessageBox::warning(this, "Import STL", QString("Copy failed: %1").arg(QString::fromStdString(ec.message()))); return; }
+    fs::rename(tmp, dest, ec);
+    if (ec) { fs::remove(tmp); QMessageBox::warning(this, "Import STL", QString("Copy finalize failed: %1").arg(QString::fromStdString(ec.message()))); return; }
+  }
+  try {
+    const fs::path manifest = asset_root / "asset_manifest.yaml";
+    YAML::Node root;
+    if (fs::exists(manifest)) root = YAML::LoadFile(manifest.string());
+    if (!root["assets"] || !root["assets"].IsSequence()) root["assets"] = YAML::Node(YAML::NodeType::Sequence);
+    YAML::Node asset;
+    asset["id"] = ("imported_" + stem).toStdString();
+    asset["display_name"] = stem.toStdString();
+    asset["path"] = fs::relative(dest, asset_root, ec).string();
+    asset["category"] = "Imported";
+    asset["visual_type"] = "stl";
+    asset["scale"] = scale;
+    root["assets"].push_back(asset);
+    std::ofstream out(manifest.string());
+    if (!out) throw std::runtime_error("failed opening asset manifest for write");
+    out << root;
+  } catch (const std::exception & e) {
+    if (!preexisting) fs::remove(dest);
+    QMessageBox::warning(this, "Import STL", QString("Catalog write failed; copied file was rolled back: %1").arg(e.what()));
+    return;
+  }
+  populate_asset_catalog();
+  for (int i = 0; asset_catalog_tree_ && i < asset_catalog_tree_->topLevelItemCount(); ++i) {
+    auto * parent = asset_catalog_tree_->topLevelItem(i);
+    for (int j = 0; parent && j < parent->childCount(); ++j) {
+      auto * child = parent->child(j);
+      if (child->data(0, CatalogRoleSourcePath).toString() == QString::fromStdString(dest.string())) {
+        asset_catalog_tree_->setCurrentItem(child);
+        break;
+      }
+    }
+  }
+  append_studio_log(QString("Import STL: registered %1 at %2; press Add to Scene to place it.").arg(stem, rel));
 }
 
 void MainWindow::open_add_asset_dialog()
