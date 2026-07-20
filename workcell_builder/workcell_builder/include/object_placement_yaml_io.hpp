@@ -73,6 +73,15 @@ PlacedObjectYamlWriteResult save_task_zones_to_environment_yaml(
   const std::string & environment_yaml_path,
   const std::vector<TaskZone> & task_zones);
 
+std::vector<TaskZoneLink> load_task_zone_links_from_environment_yaml(
+  const std::string & environment_yaml_path,
+  const std::vector<TaskZone> & task_zones,
+  std::vector<std::string> * warnings = nullptr);
+
+PlacedObjectYamlWriteResult save_task_zone_links_to_environment_yaml(
+  const std::string & environment_yaml_path,
+  const std::vector<TaskZoneLink> & task_zone_links);
+
 
 bool load_robot_tool_pose_from_environment_yaml(
   const std::string & environment_yaml_path,
