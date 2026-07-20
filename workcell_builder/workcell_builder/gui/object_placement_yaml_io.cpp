@@ -13,6 +13,12 @@ namespace
 {
 constexpr double kSuspiciousPositionMagnitudeMeters = 100.0;
 
+const TaskZone * find_task_zone_by_id(const std::vector<TaskZone> & zones, const std::string & id)
+{
+  auto it = std::find_if(zones.begin(), zones.end(), [&](const TaskZone & z){ return z.id == id; });
+  return it == zones.end() ? nullptr : &*it;
+}
+
 YAML::Node to_yaml_pose(const PlacedObject & o)
 {
   YAML::Node pose;
@@ -297,6 +303,60 @@ std::vector<TaskZone> load_task_zones_from_environment_yaml(const std::string & 
   return out;
 }
 
+std::vector<TaskZoneLink> load_task_zone_links_from_environment_yaml(
+  const std::string & path, const std::vector<TaskZone> & zones, std::vector<std::string> * warnings)
+{
+  std::vector<TaskZoneLink> out;
+  try {
+    YAML::Node root = YAML::LoadFile(path);
+    auto arr = root["task_zone_links"];
+    if (!arr) return out;
+    if (!arr.IsSequence()) { if (warnings) warnings->push_back("task_zone_links exists but is not a sequence; ignoring"); return out; }
+    for (const auto & n : arr) {
+      if (!n.IsMap()) { if (warnings) warnings->push_back("malformed task_zone_links entry skipped"); continue; }
+      TaskZoneLink link;
+      link.id = n["id"].as<std::string>("");
+      link.type = n["type"].as<std::string>("");
+      link.source_zone_id = n["source_zone_id"].as<std::string>("");
+      link.target_zone_id = n["target_zone_id"].as<std::string>("");
+      link.enabled = n["enabled"].as<bool>(true);
+      link.status = n["status"].as<std::string>("");
+      std::string warning;
+      link.resolved = validate_observation_to_pick_link(link, zones, out, &warning);
+      if (!link.resolved && warnings) warnings->push_back(warning);
+      out.push_back(link);
+    }
+  } catch (const std::exception & e) {
+    if (warnings) warnings->push_back(std::string("task_zone_links yaml parse warning: ") + e.what());
+  }
+  return out;
+}
+
+PlacedObjectYamlWriteResult save_task_zone_links_to_environment_yaml(
+  const std::string & path, const std::vector<TaskZoneLink> & links)
+{
+  PlacedObjectYamlWriteResult r; r.path_written = path;
+  try {
+    YAML::Node root;
+    if (std::filesystem::exists(path)) root = YAML::LoadFile(path);
+    YAML::Node arr(YAML::NodeType::Sequence);
+    for (const auto & l : links) {
+      YAML::Node n;
+      n["id"] = l.id; n["type"] = l.type;
+      n["source_zone_id"] = l.source_zone_id; n["target_zone_id"] = l.target_zone_id;
+      n["enabled"] = l.enabled;
+      if (!l.status.empty()) n["status"] = l.status;
+      arr.push_back(n);
+    }
+    root["task_zone_links"] = arr;
+    std::ofstream out(path); out << root;
+    r.ok = out.good(); r.objects_saved = links.size();
+  } catch (const std::exception & e) {
+    r.warnings.push_back(std::string("failed to save task zone links: ") + e.what());
+  }
+  return r;
+}
+
 PlacedObjectYamlWriteResult save_task_zones_to_environment_yaml(const std::string & path, const std::vector<TaskZone> & zones)
 {
   PlacedObjectYamlWriteResult r; r.path_written = path;
@@ -353,6 +413,59 @@ PlacedObjectYamlWriteResult save_task_zones_to_environment_yaml(const std::strin
     r.warnings.push_back(std::string("failed to save task zones: ") + e.what());
   }
   return r;
+}
+
+
+bool is_camera_observation_zone(const TaskZone & zone)
+{
+  return zone.type == "camera_observation" || zone.role == "camera_observation";
+}
+
+bool is_pick_task_zone(const TaskZone & zone)
+{
+  return zone.type == "pick" || zone.type == "pick_zone" || zone.role == "pick";
+}
+
+bool validate_observation_to_pick_link(
+  const TaskZoneLink & link, const std::vector<TaskZone> & zones,
+  const std::vector<TaskZoneLink> & existing_links, std::string * warning)
+{
+  if (link.type != "observation_to_pick") { if (warning) *warning = "unsupported task zone link type"; return false; }
+  if (link.source_zone_id.empty() || link.target_zone_id.empty()) { if (warning) *warning = "Observation-to-Pick link source or target is unavailable"; return false; }
+  if (link.source_zone_id == link.target_zone_id) { if (warning) *warning = "Observation-to-Pick link cannot target itself"; return false; }
+  const TaskZone * source = find_task_zone_by_id(zones, link.source_zone_id);
+  if (!source) { if (warning) *warning = "Observation-to-Pick link source is unavailable"; return false; }
+  const TaskZone * target = find_task_zone_by_id(zones, link.target_zone_id);
+  if (!target) { if (warning) *warning = "Observation-to-Pick link target is unavailable"; return false; }
+  if (!is_camera_observation_zone(*source)) { if (warning) *warning = "Observation-to-Pick link source must be a Camera Observation Zone"; return false; }
+  if (!is_pick_task_zone(*target)) { if (warning) *warning = "Observation-to-Pick link target must be a Pick Zone"; return false; }
+  int duplicates = 0;
+  for (const auto & existing : existing_links) {
+    if (existing.enabled && existing.type == link.type && existing.source_zone_id == link.source_zone_id &&
+      existing.target_zone_id == link.target_zone_id) ++duplicates;
+  }
+  if (duplicates > 1) { if (warning) *warning = "duplicate active Observation-to-Pick link"; return false; }
+  return true;
+}
+
+std::vector<TaskZoneLink> set_observation_pick_link(
+  std::vector<TaskZoneLink> links, const std::string & source_zone_id, const std::string & target_zone_id,
+  const std::vector<TaskZone> & zones, std::string * warning)
+{
+  links.erase(std::remove_if(links.begin(), links.end(), [&](const TaskZoneLink & l){
+    return l.type == "observation_to_pick" && l.source_zone_id == source_zone_id;
+  }), links.end());
+  if (target_zone_id.empty()) return links;
+  TaskZoneLink link;
+  link.id = "observation_to_pick_" + std::to_string(links.size() + 1);
+  link.type = "observation_to_pick";
+  link.source_zone_id = source_zone_id;
+  link.target_zone_id = target_zone_id;
+  link.enabled = true;
+  link.status = "Linked — tracking and timing not yet configured";
+  links.push_back(link);
+  if (!validate_observation_to_pick_link(link, zones, links, warning)) links.pop_back();
+  return links;
 }
 
 TaskZoneDefaults default_task_zone_dimensions() { return TaskZoneDefaults{}; }

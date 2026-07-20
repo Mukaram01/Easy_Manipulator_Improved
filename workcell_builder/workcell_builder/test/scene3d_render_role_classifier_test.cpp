@@ -585,3 +585,92 @@ TEST(IndependentPickZoneAuthoring, SaveReloadPreservesRobotAndNoCameraLink)
   EXPECT_DOUBLE_EQ(loaded.front().z, 0.75);
   EXPECT_FALSE(loaded.front().visible);
 }
+
+TEST(ObservationToPickZoneLinks, ValidateSaveReloadAndIndependence)
+{
+  using namespace workcell_builder;
+  TaskZone obs; obs.id = "camera_observation_1"; obs.type = "camera_observation"; obs.role = "camera_observation";
+  obs.x = 0.1; obs.y = 0.2; obs.z = 0.3; obs.dim_x = 0.4; obs.dim_y = 0.5; obs.dim_z = 0.6;
+  TaskZone pick; pick.id = "pick_zone_1"; pick.type = "pick"; pick.role = "pick";
+  pick.x = 1.1; pick.y = 1.2; pick.z = 1.3; pick.dim_x = 0.7; pick.dim_y = 0.8; pick.dim_z = 0.9;
+  TaskZone place; place.id = "place_zone_1"; place.type = "place"; place.role = "place";
+  std::vector<TaskZone> zones{obs, pick, place};
+
+  std::string warning;
+  auto links = set_observation_pick_link({}, obs.id, pick.id, zones, &warning);
+  ASSERT_EQ(links.size(), 1u);
+  EXPECT_EQ(links.front().type, "observation_to_pick");
+  EXPECT_EQ(links.front().source_zone_id, obs.id);
+  EXPECT_EQ(links.front().target_zone_id, pick.id);
+  EXPECT_TRUE(links.front().enabled);
+  EXPECT_TRUE(validate_observation_to_pick_link(links.front(), zones, links, &warning));
+  EXPECT_NE(links.front().status.find("tracking and timing not yet configured"), std::string::npos);
+  EXPECT_EQ(obs.x, 0.1);
+  EXPECT_EQ(pick.x, 1.1);
+
+  const QString path = QDir::tempPath() + QStringLiteral("/observation_pick_links_environment.yaml");
+  QFile::remove(path);
+  ASSERT_TRUE(save_task_zones_to_environment_yaml(path.toStdString(), zones).ok);
+  ASSERT_TRUE(save_task_zone_links_to_environment_yaml(path.toStdString(), links).ok);
+  QFile file(path);
+  ASSERT_TRUE(file.open(QIODevice::ReadOnly | QIODevice::Text));
+  const QString yaml = QString::fromUtf8(file.readAll());
+  EXPECT_TRUE(yaml.contains(QStringLiteral("task_zone_links:")));
+  EXPECT_TRUE(yaml.contains(QStringLiteral("type: observation_to_pick")));
+  EXPECT_TRUE(yaml.contains(QStringLiteral("source_zone_id: camera_observation_1")));
+  EXPECT_TRUE(yaml.contains(QStringLiteral("target_zone_id: pick_zone_1")));
+  EXPECT_FALSE(yaml.contains(QStringLiteral("conveyor_speed")));
+  EXPECT_FALSE(yaml.contains(QStringLiteral("arrival")));
+  EXPECT_FALSE(yaml.contains(QStringLiteral("robot_motion")));
+  EXPECT_FALSE(yaml.contains(QStringLiteral("/workspace/")));
+
+  std::vector<std::string> warnings;
+  const auto loaded = load_task_zone_links_from_environment_yaml(path.toStdString(), zones, &warnings);
+  ASSERT_EQ(loaded.size(), 1u);
+  EXPECT_TRUE(loaded.front().resolved);
+  EXPECT_EQ(loaded.front().source_zone_id, obs.id);
+  EXPECT_EQ(loaded.front().target_zone_id, pick.id);
+  EXPECT_TRUE(warnings.empty());
+
+  TaskZoneLink invalid = links.front();
+  invalid.target_zone_id = place.id;
+  EXPECT_FALSE(validate_observation_to_pick_link(invalid, zones, {}, &warning));
+  EXPECT_EQ(warning, "Observation-to-Pick link target must be a Pick Zone");
+}
+
+TEST(ObservationToPickZoneLinks, CardinalityChangeRemovalAndMissingReferenceWarnings)
+{
+  using namespace workcell_builder;
+  TaskZone obs1; obs1.id = "camera_observation_1"; obs1.type = "camera_observation"; obs1.role = "camera_observation";
+  TaskZone obs2 = obs1; obs2.id = "camera_observation_2";
+  TaskZone pick1; pick1.id = "pick_zone_1"; pick1.type = "pick"; pick1.role = "pick";
+  TaskZone pick2 = pick1; pick2.id = "pick_zone_2";
+  std::vector<TaskZone> zones{obs1, obs2, pick1, pick2};
+
+  std::string warning;
+  auto links = set_observation_pick_link({}, obs1.id, pick1.id, zones, &warning);
+  links = set_observation_pick_link(links, obs1.id, pick1.id, zones, &warning);
+  ASSERT_EQ(links.size(), 1u);
+  links = set_observation_pick_link(links, obs2.id, pick1.id, zones, &warning);
+  ASSERT_EQ(links.size(), 2u);
+  links = set_observation_pick_link(links, obs1.id, pick2.id, zones, &warning);
+  ASSERT_EQ(links.size(), 2u);
+  auto obs1_link = std::find_if(links.begin(), links.end(), [](const TaskZoneLink & l){ return l.source_zone_id == "camera_observation_1"; });
+  ASSERT_NE(obs1_link, links.end());
+  EXPECT_EQ(obs1_link->target_zone_id, pick2.id);
+  links = set_observation_pick_link(links, obs1.id, "", zones, &warning);
+  EXPECT_EQ(links.size(), 1u);
+  EXPECT_EQ(links.front().source_zone_id, obs2.id);
+
+  TaskZoneLink bad; bad.id = "bad"; bad.type = "observation_to_pick"; bad.source_zone_id = obs1.id; bad.target_zone_id = "missing_pick";
+  const QString path = QDir::tempPath() + QStringLiteral("/observation_pick_missing_target.yaml");
+  QFile::remove(path);
+  ASSERT_TRUE(save_task_zone_links_to_environment_yaml(path.toStdString(), {bad}).ok);
+  std::vector<std::string> warnings;
+  const auto loaded = load_task_zone_links_from_environment_yaml(path.toStdString(), zones, &warnings);
+  ASSERT_EQ(loaded.size(), 1u);
+  EXPECT_FALSE(loaded.front().resolved);
+  ASSERT_FALSE(warnings.empty());
+  EXPECT_NE(warnings.front().find("target is unavailable"), std::string::npos);
+  EXPECT_EQ(zones.size(), 4u);
+}

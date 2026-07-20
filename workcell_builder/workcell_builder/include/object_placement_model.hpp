@@ -44,6 +44,17 @@ struct CameraPlacement
   std::string status;
 };
 
+struct TaskZoneLink
+{
+  std::string id;
+  std::string type;
+  std::string source_zone_id;
+  std::string target_zone_id;
+  bool enabled{true};
+  bool resolved{true};
+  std::string status;
+};
+
 struct TaskZone
 {
   std::string id;
@@ -96,6 +107,14 @@ struct TaskZoneDefaults
 TaskZoneDefaults default_task_zone_dimensions();
 TaskZoneDefaults default_pick_zone_dimensions();
 bool validate_task_zone_dimensions(const TaskZone & zone, std::string * warning = nullptr);
+bool is_camera_observation_zone(const TaskZone & zone);
+bool is_pick_task_zone(const TaskZone & zone);
+bool validate_observation_to_pick_link(
+  const TaskZoneLink & link, const std::vector<TaskZone> & zones,
+  const std::vector<TaskZoneLink> & existing_links = {}, std::string * warning = nullptr);
+std::vector<TaskZoneLink> set_observation_pick_link(
+  std::vector<TaskZoneLink> links, const std::string & source_zone_id, const std::string & target_zone_id,
+  const std::vector<TaskZone> & zones, std::string * warning = nullptr);
 bool can_create_pick_zone_for_robots(
   const std::vector<std::string> & robot_ids, std::string * message = nullptr);
 bool can_create_place_zone_for_robots(
