@@ -43,7 +43,7 @@ INPUTS = {
     "visual_mesh_index": "generated/scene_visual_mesh_index.json",
 }
 SUPPORTED_MESH_SUFFIXES = {".stl", ".dae", ".obj"}
-MESH_URI_FIELDS = ("mesh_uri", "package_uri", "mesh_path", "source_path", "resolved_source_path")
+MESH_URI_FIELDS = ("mesh_uri", "package_uri", "mesh_path", "source_path", "resolved_source_path", "filepath")
 ROBOTIQ_85_VISUAL_MESHES = {
     "gripper_base_link": "robotiq_85_base_link.dae",
     "gripper_finger1_knuckle_link": "robotiq_85_knuckle_link.dae",
@@ -1276,10 +1276,67 @@ def _annotate_parent_to_child_poses(generated: Dict[str, List[Json]]) -> None:
             "parent_joint_origin": "web_export_parent_world_inverse_times_child_world",
         })
 
+
+
+def _iter_declared_physical_entries(data: Mapping[str, Any]) -> Iterable[Tuple[str, Mapping[str, Any], str]]:
+    """Yield authored physical scene entries through one shared path.
+
+    Scene files have evolved from top-level objects/assets to nested
+    environment sections and layout items.  Product View should classify helpers
+    explicitly, but unfamiliar tangible declarations still need an exported
+    record instead of disappearing because the section name is not special-cased.
+    """
+    roots: List[Tuple[str, Mapping[str, Any]]] = []
+    layout = _as_map(data.get("layout"))
+    if layout:
+        roots.append((INPUTS["layout"], layout))
+    env = _as_map(data.get("environment"))
+    if env:
+        roots.extend([(INPUTS["environment"], env), (INPUTS["environment"], _as_map(env.get("environment")))])
+    cell = _as_map(data.get("cell_definition"))
+    if cell:
+        roots.extend([(INPUTS["cell_definition"], cell), (INPUTS["cell_definition"], _as_map(cell.get("environment")))])
+
+    seen: set[Tuple[str, str, int]] = set()
+    for source, root in roots:
+        for key in ("items", "support_surfaces", "assets", "sensors", "objects", "placed_objects", "tools", "zones"):
+            value = root.get(key)
+            entries: Iterable[Tuple[str, Any]]
+            if isinstance(value, Mapping):
+                entries = value.items()
+            else:
+                entries = ((str(i), raw) for i, raw in enumerate(_as_list(value)))
+            for entry_key, raw in entries:
+                if not isinstance(raw, Mapping):
+                    continue
+                ident = (source, key, id(raw))
+                if ident in seen:
+                    continue
+                seen.add(ident)
+                item = dict(raw)
+                item.setdefault("id", str(_first_present(raw.get("id"), raw.get("name"), entry_key)))
+                item.setdefault("source_section", key)
+                # Legacy EMD object declarations often bury their visual mesh under
+                # links.<link>.visual.geometry.filepath; expose it to the normal
+                # resolver/stager without adding section-specific render logic.
+                links = raw.get("links")
+                if isinstance(links, Mapping) and not _has_mesh_reference(item):
+                    for link_name, link in links.items():
+                        geom = _as_map(_as_map(_as_map(link).get("visual")).get("geometry"))
+                        mesh = geom.get("filepath") or geom.get("mesh_uri") or geom.get("mesh_path")
+                        if isinstance(mesh, str) and mesh:
+                            item["mesh_path"] = mesh
+                            item.setdefault("link", str(link_name))
+                            scale = _as_map(geom.get("scale"))
+                            if scale:
+                                item.setdefault("mesh_scale", [scale.get("scale_x", 1), scale.get("scale_y", 1), scale.get("scale_z", 1)])
+                            break
+                yield key, item, source
+
 def _authored_item(raw: Mapping[str, Any], source: str, index: int, scene_dir: Path) -> Json:
     fields = (
-        "id", "type", "role", "category", "display_name", "frame", "pose", "pose_xyz", "pose_rpy", "dimensions",
-        "geometry_type", "primitive_geometry_type", "mesh_uri", "package_uri", "source_path", "mesh_path", "material",
+        "id", "type", "role", "category", "display_name", "source_section", "link", "object_name", "frame", "pose", "pose_xyz", "pose_rpy", "dimensions",
+        "geometry_type", "primitive_geometry_type", "mesh_uri", "package_uri", "source_path", "mesh_path", "filepath", "material",
         "layout_item_ref", "support_surface_ref", "task_zone_ref", "scale", "mesh_scale", "perception_mode", "runtime_enforced", "runtime_commanded",
         "support_surface_kind", "support_kind", "semantic_type", "top_surface_z_m", "topSurfaceZM", "support_surface_height_m", "supportSurfaceHeightM",
         "expected_support_footprint_m", "support_footprint_m", "footprint_m", "footprint", "table_height", "table_top_z", "surface_height_m",
@@ -1295,26 +1352,21 @@ def _authored_item(raw: Mapping[str, Any], source: str, index: int, scene_dir: P
 
 def _authored_sections(data: Dict[str, Any], scene_dir: Path, warnings: List[Json]) -> Dict[str, List[Json]]:
     sections = {"assets": [], "sensors": [], "zones": []}
-    counter = 0
-    layout = _as_map(data.get("layout"))
-    layout_items = _as_list(layout.get("items"))
-    if data.get("layout") is not None and "items" not in layout:
+    if data.get("layout") is not None and "items" not in _as_map(data.get("layout")):
         _warn(warnings, "layout_items_missing", "layout/workcell_studio_layout.yaml has no items list.", INPUTS["layout"])
-    for raw in layout_items:
-        if isinstance(raw, Mapping):
-            item = _authored_item(raw, INPUTS["layout"], counter, scene_dir)
-            counter += 1
-            sections[_section_from_item(raw) if _section_from_item(raw) in sections else "assets"].append(item)
-
-    env = _as_map(data.get("environment"))
-    env_root = _as_map(env.get("environment"))
-    for key in ("support_surfaces", "assets", "sensors", "zones"):
-        for raw in _as_list(env_root.get(key)):
-            if isinstance(raw, Mapping):
-                item = _authored_item(raw, INPUTS["environment"], counter, scene_dir)
-                counter += 1
-                section = "sensors" if key == "sensors" or _section_from_item(raw) == "sensors" else ("zones" if key == "zones" or _is_helper(raw) else "assets")
-                sections[section].append(item)
+    for counter, (source_section, raw, source) in enumerate(_iter_declared_physical_entries(data)):
+        item = _authored_item(raw, source, counter, scene_dir)
+        item["source_section"] = source_section
+        item["active_visual_source"] = "declared_mesh" if _has_mesh_reference(item) else ("declared_primitive" if _item_local_bounds(item) is not None else "declared_physical_metadata")
+        item.setdefault("source_layer", "editable_authored_physical")
+        item["provenance"].update({"source_section": source, "active_visual_source": source, "source_layer": source})
+        section = _section_from_item(item)
+        if source_section == "sensors" or section == "sensors":
+            sections["sensors"].append(item)
+        elif source_section == "zones" or _is_helper(item):
+            sections["zones"].append(item)
+        else:
+            sections["assets"].append(item)
     return sections
 
 
@@ -1458,7 +1510,15 @@ def _suppress_unresolved_placeholder_robot_visuals(generated: Dict[str, List[Jso
         generated[section] = kept
 
 def _sort_items(items: List[Json]) -> List[Json]:
-    return sorted(items, key=lambda x: (str(x.get("source_kind", "")), str(x.get("category", "")), str(x.get("role", "")), str(x.get("id", ""))))
+    deduped: List[Json] = []
+    seen: set[Tuple[str, str, str, bool]] = set()
+    for item in items:
+        key = (str(item.get("id", "")), str(item.get("source_kind", "")), str(item.get("source_section", "")), _has_mesh_reference(item))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return sorted(deduped, key=lambda x: (str(x.get("source_kind", "")), str(x.get("category", "")), str(x.get("role", "")), str(x.get("id", ""))))
 
 
 def _has_mesh_reference(item: Mapping[str, Any]) -> bool:
@@ -1886,7 +1946,7 @@ def _drop_shadowed_metadata_primitives(items: List[Json], generated_items: List[
         if item.get("source_kind") == "generated_preview" or _has_mesh_reference(item):
             kept.append(item)
             continue
-        text = _identity_text(item)
+        text = " ".join(str(item.get(key, "")).lower() for key in ("id", "display_name", "type", "role", "category", "mesh_uri", "mesh_path", "source_path", "package_uri"))
         if any(token in text for token in tokens):
             continue
         kept.append(item)
