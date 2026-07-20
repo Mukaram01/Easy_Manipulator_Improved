@@ -30,13 +30,20 @@ class RefreshLifecycle:
         self.backend_switches = []
         self.camera_state = {"target": [1, 2, 3], "distance": 4}
         self.camera_resets = 0
+        self.suppression_logs = []
+        self._last_suppression_key = None
 
     def request(self, key, force=False):
         if not force and ((self.active and key == self.active[0]) or (self.pending and key == self.pending[0])):
+            suppression_key = key
+            if self._last_suppression_key != suppression_key:
+                self.suppression_logs.append("Duplicate Product View navigation suppressed")
+                self._last_suppression_key = suppression_key
             return
         if force:
             self.active = None
             self.pending = None
+        self._last_suppression_key = None
         self.generation += 1
         request = (key, self.generation)
         self.active = request
@@ -127,7 +134,7 @@ def test_one_manual_refresh_invalidates_once_and_creates_one_retry():
     assert lifecycle.pending == (key, 2)
 
 
-def test_repeated_identical_metadata_refreshes_do_not_prepare_navigate_switch_or_reset_camera():
+def test_three_identical_refreshes_prepare_navigate_load_once_and_emit_one_suppression_group():
     lifecycle = RefreshLifecycle()
     key = RequestKey(
         "ur5_2f_test",
@@ -138,34 +145,25 @@ def test_repeated_identical_metadata_refreshes_do_not_prepare_navigate_switch_or
         7,
     )
     lifecycle.request(key)
+    lifecycle.request(key)
+    lifecycle.request(key)
     lifecycle.start_pending()
-    before = (
-        len(lifecycle.started),
-        len(lifecycle.navigations),
-        len(lifecycle.backend_switches),
-        dict(lifecycle.camera_state),
-        lifecycle.camera_resets,
-        lifecycle.active,
-    )
 
-    lifecycle.request(key)
-    lifecycle.request(key)
-    lifecycle.request(key)
-
-    assert len(lifecycle.started) - before[0] == 0
-    assert len(lifecycle.navigations) - before[1] == 0
-    assert len(lifecycle.backend_switches) - before[2] == 0
-    assert lifecycle.camera_state == before[3]
-    assert lifecycle.camera_resets == before[4]
-    assert lifecycle.active == before[5]
+    assert lifecycle.generation == 1
+    assert lifecycle.started == [(key, 1)]
+    assert lifecycle.navigations == [(key, 1)]
+    assert lifecycle.backend_switches == []
+    assert lifecycle.camera_resets == 1
+    assert lifecycle.suppression_logs == ["Duplicate Product View navigation suppressed"]
 
 
 def test_cpp_coalesces_before_generation_and_retires_stale_process_before_ui_work():
     refresh_start = CPP.index("void ScenePreviewWidget::request_embedded_web_product_view_refresh")
     identity_start = CPP.index("ScenePreviewWidget::EmbeddedWebRequestIdentity", refresh_start)
     refresh = CPP[refresh_start:identity_start]
-    assert refresh.index("matches_context(request_key)") < refresh.index("++embedded_web_request_generation_")
-    assert "duplicate navigation suppressed" in refresh
+    assert refresh.index("matches_effective_request(request_key)") < refresh.index("++embedded_web_request_generation_")
+    assert "Duplicate Product View navigation suppressed" in refresh
+    assert "embedded_web_last_suppressed_duplicate_key_ != suppression_key" in refresh
     assert "const PreviewContext normalized_context = normalized_preview_context(preview_context_);" in CPP
     assert "identity.product_view_backend =" in CPP
     assert "identity.generated_web_scene_path =" in CPP

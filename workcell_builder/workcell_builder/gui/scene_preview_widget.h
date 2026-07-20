@@ -353,12 +353,16 @@ private:
     quint64 payload_revision{ 0 };
     quint64 generation{ 0 };
 
-    bool matches_context(const EmbeddedWebRequestIdentity & other) const
+    bool matches_effective_request(const EmbeddedWebRequestIdentity & other) const
     {
       return scene_id == other.scene_id && absolute_scene_dir == other.absolute_scene_dir &&
-        absolute_repo_root == other.absolute_repo_root && selected_server_port == other.selected_server_port &&
-        product_view_backend == other.product_view_backend && generated_web_scene_path == other.generated_web_scene_path &&
+        absolute_repo_root == other.absolute_repo_root && product_view_backend == other.product_view_backend &&
+        generated_web_scene_path == other.generated_web_scene_path &&
         payload_fingerprint == other.payload_fingerprint && payload_revision == other.payload_revision;
+    }
+    bool matches_context(const EmbeddedWebRequestIdentity & other) const
+    {
+      return matches_effective_request(other) && selected_server_port == other.selected_server_port;
     }
     bool operator==(const EmbeddedWebRequestIdentity & other) const
     {
@@ -404,6 +408,7 @@ private:
   void record_embedded_web_prepare_terminal(const EmbeddedWebRequestIdentity & identity, QProcess * process,
     const QString & outcome, QProcess::ExitStatus exit_status, int exit_code, const QString & detail = QString());
   QString embedded_web_preparation_diagnostic_key(const EmbeddedWebRequestIdentity & identity) const;
+  QString embedded_web_effective_request_key(const EmbeddedWebRequestIdentity & identity) const;
   void ensure_embedded_web_server_started(const QString & repo_root, const EmbeddedWebRequestIdentity & identity);
   void start_owned_embedded_web_server(const EmbeddedWebRequestIdentity & identity);
   void select_owned_embedded_web_server(const EmbeddedWebRequestIdentity & identity, bool use_current_port);
@@ -497,6 +502,7 @@ private:
   bool pending_embedded_web_request_{ false };
   quint64 embedded_web_request_generation_{ 0 };
   bool pending_embedded_web_force_{ false };
+  QString embedded_web_last_suppressed_duplicate_key_;
   QSet<QString> embedded_web_automatic_recovery_attempts_;
   bool backend_startup_diagnostic_emitted_{ false };
   PreviewContext preview_context_;
