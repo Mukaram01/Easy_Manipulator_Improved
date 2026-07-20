@@ -377,3 +377,64 @@ TEST(SceneBuilderWorkspaceSource, FocusModeHidesPanelsWithoutReloadingProductVie
   EXPECT_FALSE(focus_block.contains(QStringLiteral("request_embedded_web_product_view_refresh")));
   EXPECT_FALSE(focus_block.contains(QStringLiteral("reload_meshes")));
 }
+
+TEST(SceneBuilderWorkspaceSource, CompactBottomStatusBarUsesSingleRowAndExistingLogDrawer)
+{
+  QFile source(QStringLiteral("workcell_builder/workcell_builder/gui/mainwindow.cpp"));
+  if (!source.exists()) source.setFileName(QStringLiteral("../workcell_builder/gui/mainwindow.cpp"));
+  ASSERT_TRUE(source.open(QIODevice::ReadOnly | QIODevice::Text));
+  const QString text = QString::fromUtf8(source.readAll());
+
+  const int bar_index = text.indexOf(QStringLiteral("sceneBuilderBottomStatusBar"));
+  ASSERT_GE(bar_index, 0);
+  const QString bar_block = text.mid(bar_index, 1900);
+  EXPECT_EQ(text.count(QStringLiteral("sceneBuilderBottomStatusBar")), 1);
+  EXPECT_EQ(text.count(QStringLiteral("sceneBuilderLatestStatus")), 1);
+  EXPECT_EQ(text.count(QStringLiteral("sceneBuilderLogDrawer")), 1);
+  EXPECT_FALSE(text.contains(QStringLiteral("sceneBuilderSelectionSummary")));
+  EXPECT_FALSE(bar_block.contains(QStringLiteral("Selection:")));
+  EXPECT_FALSE(bar_block.contains(QStringLiteral("Warnings: 0 | Errors: 0")));
+  EXPECT_FALSE(bar_block.contains(QStringLiteral("Product View preview-only; fake hardware remains default")));
+  EXPECT_TRUE(bar_block.contains(QStringLiteral("new QHBoxLayout")));
+  EXPECT_TRUE(bar_block.contains(QStringLiteral("setContentsMargins(8, 2, 8, 2)")));
+  EXPECT_TRUE(bar_block.contains(QStringLiteral("setWordWrap(false)")));
+  EXPECT_TRUE(bar_block.contains(QStringLiteral("setVisible(false)")));
+  EXPECT_TRUE(bar_block.contains(QStringLiteral("setCheckable(true)")));
+
+  const int append_index = text.indexOf(QStringLiteral("void MainWindow::append_studio_log"));
+  ASSERT_GE(append_index, 0);
+  const QString append_block = text.mid(append_index, 2300);
+  EXPECT_TRUE(append_block.contains(QStringLiteral("message.simplified()")));
+  EXPECT_TRUE(append_block.contains(QStringLiteral("setToolTip(concise)")));
+  EXPECT_TRUE(append_block.contains(QStringLiteral("elidedText(concise, Qt::ElideRight")));
+  EXPECT_TRUE(append_block.contains(QStringLiteral("scene_builder_warning_count_")));
+  EXPECT_TRUE(append_block.contains(QStringLiteral("scene_builder_error_count_")));
+  EXPECT_TRUE(append_block.contains(QStringLiteral("lowered.contains(\"warn\")")));
+  EXPECT_TRUE(append_block.contains(QStringLiteral("lowered.contains(\"error\")")));
+  EXPECT_TRUE(append_block.contains(QStringLiteral("lowered.contains(\"failed\")")));
+  EXPECT_TRUE(append_block.contains(QStringLiteral("setVisible(!visible_parts.isEmpty())")));
+  EXPECT_FALSE(append_block.contains(QStringLiteral("scene_builder_log_panel_->setVisible(true)")));
+
+  const int toggle_index = text.indexOf(QStringLiteral("connect_button(scene_builder_log_toggle_button_"));
+  ASSERT_GE(toggle_index, 0);
+  const QString toggle_block = text.mid(toggle_index, 650);
+  EXPECT_TRUE(toggle_block.contains(QStringLiteral("const bool show = !scene_builder_log_panel_->isVisible()")));
+  EXPECT_TRUE(toggle_block.contains(QStringLiteral("scene_builder_log_panel_->setVisible(show)")));
+  EXPECT_TRUE(toggle_block.contains(QStringLiteral("studio_log_->setVisible(show)")));
+  EXPECT_TRUE(toggle_block.contains(QStringLiteral("setChecked(show)")));
+  EXPECT_TRUE(toggle_block.contains(QStringLiteral("setText(\"Logs\")")));
+  EXPECT_FALSE(toggle_block.contains(QStringLiteral("new QTextEdit")));
+  EXPECT_FALSE(toggle_block.contains(QStringLiteral("clear()")));
+
+  EXPECT_EQ(text.count(QStringLiteral("sceneBuilderLogCopyButton")), 1);
+  EXPECT_EQ(text.count(QStringLiteral("sceneBuilderLogClearButton")), 1);
+  EXPECT_EQ(text.count(QStringLiteral("connect_button(clear_log")), 1);
+  EXPECT_EQ(text.count(QStringLiteral("connect_button(copy_log")), 1);
+
+  const int focus_index = text.indexOf(QStringLiteral("scene_builder_focus_3d_action_"));
+  ASSERT_GE(focus_index, 0);
+  const QString focus_block = text.mid(focus_index, 2200);
+  EXPECT_FALSE(focus_block.contains(QStringLiteral("sceneBuilderBottomStatusBar")));
+  EXPECT_FALSE(focus_block.contains(QStringLiteral("scene_builder_log_panel_->setVisible")));
+  EXPECT_FALSE(focus_block.contains(QStringLiteral("request_embedded_web_product_view_refresh")));
+}

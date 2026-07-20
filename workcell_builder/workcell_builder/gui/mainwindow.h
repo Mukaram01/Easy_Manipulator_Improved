@@ -697,9 +697,10 @@ private:
   QTabWidget * scene_builder_inspector_tabs_{ nullptr };
   QPushButton * scene_builder_log_toggle_button_{ nullptr };
   QFrame * scene_builder_log_panel_{ nullptr };
-  QLabel * scene_builder_selection_summary_label_{ nullptr };
   QLabel * scene_builder_status_message_label_{ nullptr };
   QLabel * scene_builder_issue_count_label_{ nullptr };
+  int scene_builder_warning_count_{ 0 };
+  int scene_builder_error_count_{ 0 };
   bool scene_builder_log_collapsed_{ false };
   QToolButton * preview_more_actions_button_{ nullptr };
   QToolButton * validation_more_actions_button_{ nullptr };
