@@ -6,6 +6,10 @@ let OBJLoader;
 let TransformControls;
 let loadRobotPreview;
 
+const PRODUCT_VIEW_WORKSPACE_BACKGROUND = 0xe9edf1;
+const PRODUCT_VIEW_GRID_MAJOR = 0x8996a3;
+const PRODUCT_VIEW_GRID_MINOR = 0xc3cbd3;
+
 const SUPPORTED_SCHEMA_VERSION = 'workcell_studio_web_scene/v1';
 const EDIT_PATCH_SCHEMA_VERSION = 'workcell_studio_web_scene_edit_patch/v1';
 const VIEWER_VERSION = 'static_web_viewer_edit_patch_v1';
@@ -1636,21 +1640,21 @@ function initThree() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     const scene = new THREE.Scene();
     scene.up.copy(ROS_Z_UP);
-    scene.background = new THREE.Color(0x0b1018);
+    scene.background = new THREE.Color(PRODUCT_VIEW_WORKSPACE_BACKGROUND);
     const camera = new THREE.PerspectiveCamera(55, 1, 0.01, 100);
     camera.up.copy(ROS_Z_UP);
     camera.position.set(2.4, -2.8, 1.8);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.object.up.copy(ROS_Z_UP);
     controls.enableDamping = true;
-    const grid = new THREE.GridHelper(5, 20, 0x3a4a5e, 0x263445);
+    const grid = new THREE.GridHelper(5, 20, PRODUCT_VIEW_GRID_MAJOR, PRODUCT_VIEW_GRID_MINOR);
     grid.name = 'ros_xy_ground_grid';
     grid.up.copy(ROS_Z_UP);
     grid.rotation.x = Math.PI / 2;
     scene.add(grid);
     scene.add(new THREE.AxesHelper(0.75));
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 1.2));
-    const light = new THREE.DirectionalLight(0xffffff, 1.5); light.position.set(2, -3, 4); scene.add(light);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8a96a3, 1.25));
+    const light = new THREE.DirectionalLight(0xffffff, 1.35); light.position.set(2, -3, 4); scene.add(light);
     const transformControls = new TransformControls(camera, renderer.domElement);
     transformControls.setMode('translate');
     transformControls.addEventListener('dragging-changed', event => {

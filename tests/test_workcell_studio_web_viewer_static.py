@@ -266,6 +266,46 @@ def test_viewer_ground_grid_is_ros_xy_not_threejs_default_xz_y_up():
     assert "grid.rotation.x = Math.PI / 2;" in init_body
 
 
+
+def test_viewer_product_workspace_uses_single_light_neutral_background():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    init_body = js.split("function initThree()", 1)[1].split("function animate()", 1)[0]
+
+    assert "const PRODUCT_VIEW_WORKSPACE_BACKGROUND = 0xe9edf1;" in js
+    assert "scene.background = new THREE.Color(PRODUCT_VIEW_WORKSPACE_BACKGROUND);" in init_body
+    assert "scene.background = new THREE.Color(0x0b1018);" not in js
+    assert js.count("PRODUCT_VIEW_WORKSPACE_BACKGROUND") == 2
+
+
+def test_viewer_product_grid_uses_distinct_subtle_major_minor_theme_colours():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    init_body = js.split("function initThree()", 1)[1].split("function animate()", 1)[0]
+
+    assert "const PRODUCT_VIEW_GRID_MAJOR = 0x8996a3;" in js
+    assert "const PRODUCT_VIEW_GRID_MINOR = 0xc3cbd3;" in js
+    assert "new THREE.GridHelper(5, 20, PRODUCT_VIEW_GRID_MAJOR, PRODUCT_VIEW_GRID_MINOR)" in init_body
+    assert "new THREE.GridHelper(5, 20, 0x3a4a5e, 0x263445)" not in js
+    assert "grid.name = 'ros_xy_ground_grid';" in init_body
+
+
+def test_viewer_product_theme_keeps_grid_controls_and_bounds_exclusions():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+
+    assert "if (el.resetView) el.resetView.addEventListener('click', resetView);" in js
+    assert "object.isGridHelper || object.isAxesHelper" in js
+    assert "object.userData?.selection_outline === true" in js
+    assert "camera.position.set(2.4, -2.8, 1.8);" in js
+    assert "fitSelection" not in js
+
+
+def test_viewer_product_theme_is_scene_independent():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    init_body = js.split("function initThree()", 1)[1].split("function animate()", 1)[0]
+
+    for scene_name in ["ur5_2f_test", "ur5_3f_test", "ur3_suction_test", "ur10_2f_test", "suction_test"]:
+        assert scene_name not in init_body
+    assert "sceneId()" not in init_body
+
 def test_repository_does_not_track_generated_web_scene_outputs_under_source_paths():
     result = subprocess.run(
         ["git", "ls-files", "*.web_scene.json"],
