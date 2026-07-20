@@ -1212,7 +1212,7 @@ NormalizedRole classify_item_role(const ScenePreviewWidget::PreviewItem & it)
   if (mix.contains("camera") || mix.contains("sensor") || mix.contains("realsense") ||
       mix.contains("depth_camera") || mix.contains("rgbd")) return NormalizedRole::Camera;
   if (mix.contains("pick_zone") || mix.contains("pick_area") || mix.contains("pick_region")) return NormalizedRole::PickZone;
-  if (mix.contains("place_zone") || mix.contains("place_area") || mix.contains("drop_zone") ||
+  if (role == "place" || mix.contains("place_zone") || mix.contains("place_area") || mix.contains("drop_zone") ||
       mix.contains("drop_area")) return NormalizedRole::PlaceZone;
   if (mix.contains("place_target") || mix.contains("target_bin") || mix.contains("sorting_bin") ||
       mix.contains("part_bin") || mix.contains("bin") || mix.contains("container") ||

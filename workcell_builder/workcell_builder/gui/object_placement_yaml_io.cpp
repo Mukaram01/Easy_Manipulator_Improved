@@ -335,7 +335,7 @@ PlacedObjectYamlWriteResult save_task_zones_to_environment_yaml(const std::strin
     root["task_zones"] = arr;
     for (const auto & z : zones) {
       const bool is_pick = z.role == "pick" || z.type == "pick" || z.type == "pick_zone";
-      const bool is_place = z.role == "place" || z.type == "place_zone";
+      const bool is_place = z.role == "place" || z.type == "place" || z.type == "place_zone";
       if (is_pick) {
         root["task"]["pick"]["source_ref"] = z.id;
         if (!z.object_ref.empty()) root["task"]["pick"]["object_ref"] = z.object_ref;
@@ -355,46 +355,73 @@ PlacedObjectYamlWriteResult save_task_zones_to_environment_yaml(const std::strin
   return r;
 }
 
-PickZoneDefaults default_pick_zone_dimensions() { return PickZoneDefaults{}; }
+TaskZoneDefaults default_task_zone_dimensions() { return TaskZoneDefaults{}; }
+TaskZoneDefaults default_pick_zone_dimensions() { return default_task_zone_dimensions(); }
 
 bool validate_task_zone_dimensions(const TaskZone & zone, std::string * warning)
 {
   const bool ok = std::isfinite(zone.dim_x) && std::isfinite(zone.dim_y) && std::isfinite(zone.dim_z) &&
     zone.dim_x > 0.0 && zone.dim_y > 0.0 && zone.dim_z > 0.0 &&
     zone.dim_x <= 100.0 && zone.dim_y <= 100.0 && zone.dim_z <= 100.0;
-  if (!ok && warning) *warning = "Pick Zone dimensions must be positive";
+  if (!ok && warning) *warning = (zone.role == "place" || zone.type == "place") ? "Place Zone dimensions must be positive" : "Pick Zone dimensions must be positive";
   return ok;
+}
+
+static bool can_create_zone_for_robots(const std::vector<std::string> & robot_ids, const std::string & label, std::string * message)
+{
+  if (robot_ids.empty()) {
+    if (message) *message = "Add or select a robot before creating a " + label;
+    return false;
+  }
+  if (message) *message = robot_ids.size() == 1 ? robot_ids.front() : "Choose a robot for the " + label;
+  return true;
 }
 
 bool can_create_pick_zone_for_robots(const std::vector<std::string> & robot_ids, std::string * message)
 {
-  if (robot_ids.empty()) {
-    if (message) *message = "Add or select a robot before creating a Pick Zone";
-    return false;
+  return can_create_zone_for_robots(robot_ids, "Pick Zone", message);
+}
+
+bool can_create_place_zone_for_robots(const std::vector<std::string> & robot_ids, std::string * message)
+{
+  return can_create_zone_for_robots(robot_ids, "Place Zone", message);
+}
+
+ObservationZoneSuggestion suggest_robot_task_zone(
+  const std::string & zone_type, const std::string & robot_id, const std::vector<TaskZone> & existing_zones,
+  double world_x, double world_y, double surface_z, double yaw)
+{
+  ObservationZoneSuggestion out;
+  const bool is_place = zone_type == "place";
+  const std::string label = is_place ? "Place Zone" : "Pick Zone";
+  if (robot_id.empty()) { out.messages.push_back(label + " robot is unavailable"); return out; }
+  TaskZone z;
+  for (int i = 1;; ++i) {
+    z.id = zone_type + "_zone_" + std::to_string(i);
+    if (std::none_of(existing_zones.begin(), existing_zones.end(), [&](const TaskZone & e){ return e.id == z.id; })) break;
   }
-  if (message) *message = robot_ids.size() == 1 ? robot_ids.front() : "Choose a robot for the Pick Zone";
-  return true;
+  const auto d = default_task_zone_dimensions();
+  z.type = zone_type; z.role = zone_type; z.shape = "box"; z.parent_frame = "world"; z.robot_id = robot_id;
+  z.x = world_x; z.y = world_y; z.z = surface_z; z.yaw = yaw; z.dim_x = d.width; z.dim_y = d.depth; z.dim_z = d.height;
+  z.status = "Robot association: " + robot_id + " — reachability not yet validated";
+  std::string warning;
+  if (!validate_task_zone_dimensions(z, &warning)) { out.messages.push_back(warning); return out; }
+  out.ok = true; out.zone = z; out.messages.push_back("Created " + label + " for " + robot_id);
+  return out;
 }
 
 ObservationZoneSuggestion suggest_robot_pick_zone(
   const std::string & robot_id, const std::vector<TaskZone> & existing_zones,
   double world_x, double world_y, double surface_z, double yaw)
 {
-  ObservationZoneSuggestion out;
-  if (robot_id.empty()) { out.messages.push_back("Pick Zone robot is unavailable"); return out; }
-  TaskZone z;
-  for (int i = 1;; ++i) {
-    z.id = "pick_zone_" + std::to_string(i);
-    if (std::none_of(existing_zones.begin(), existing_zones.end(), [&](const TaskZone & e){ return e.id == z.id; })) break;
-  }
-  const auto d = default_pick_zone_dimensions();
-  z.type = "pick"; z.role = "pick"; z.shape = "box"; z.parent_frame = "world"; z.robot_id = robot_id;
-  z.x = world_x; z.y = world_y; z.z = surface_z; z.yaw = yaw; z.dim_x = d.width; z.dim_y = d.depth; z.dim_z = d.height;
-  z.status = "Robot association: " + robot_id + " — reachability not yet validated";
-  std::string warning;
-  if (!validate_task_zone_dimensions(z, &warning)) { out.messages.push_back(warning); return out; }
-  out.ok = true; out.zone = z; out.messages.push_back("Created Pick Zone for " + robot_id);
-  return out;
+  return suggest_robot_task_zone("pick", robot_id, existing_zones, world_x, world_y, surface_z, yaw);
+}
+
+ObservationZoneSuggestion suggest_robot_place_zone(
+  const std::string & robot_id, const std::vector<TaskZone> & existing_zones,
+  double world_x, double world_y, double surface_z, double yaw)
+{
+  return suggest_robot_task_zone("place", robot_id, existing_zones, world_x, world_y, surface_z, yaw);
 }
 
 bool can_create_observation_zone_for_camera(
