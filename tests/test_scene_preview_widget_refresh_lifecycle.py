@@ -148,3 +148,65 @@ def test_selected_scene_status_refreshes_leave_the_committed_product_payload_ide
     assert "set_preview_items" not in audit_block
     assert "fit_product_view();" in audit_block
     assert "set_preview_status_summary" in audit_block
+
+
+def test_transient_web3d_runtime_failures_keep_web3d_selected_and_never_activate_qt3d():
+    failure_handler_start = CPP.index("void ScenePreviewWidget::handle_embedded_web_runtime_failure")
+    server_start = CPP.index("void ScenePreviewWidget::ensure_embedded_web_server_started", failure_handler_start)
+    failure_handler = CPP[failure_handler_start:server_start]
+
+    assert "native_compatibility_fallback_active_ = false;" in failure_handler
+    assert 'mode_selector_->setItemText(0, QStringLiteral("Web3D Product View"))' in failure_handler
+    assert "embedded_web_view_->setVisible(true);" in failure_handler
+    assert "compatibility_scene3d_viewport_->setVisible(false);" in failure_handler
+    assert 'embedded_fit_button_->setText(QStringLiteral("Retry"))' in failure_handler
+    assert "activate_native_compatibility_preview" not in failure_handler
+
+    for marker in (
+        "browser failed to load Product View page",
+        "browser render process terminated",
+        "viewer JavaScript failed",
+    ):
+        marker_index = CPP.index(marker)
+        block = CPP[max(0, marker_index - 700):marker_index + 1800]
+        assert "handle_embedded_web_runtime_failure" in block
+        assert "activate_native_compatibility_preview" not in block
+
+    server_probe_start = CPP.index("void ScenePreviewWidget::fail_embedded_web_server_probe")
+    server_probe_end = CPP.index("QString ScenePreviewWidget::embedded_web_recovery_key", server_probe_start)
+    server_probe_block = CPP[server_probe_start:server_probe_end]
+    assert "handle_embedded_web_runtime_failure(identity, navigation_token, detail);" in server_probe_block
+    assert "activate_native_compatibility_preview" not in server_probe_block
+
+    for marker in ("local server exited with code", "local server startup failure"):
+        marker_index = CPP.index(marker)
+        block = CPP[max(0, marker_index - 700):marker_index + 700]
+        assert "fail_embedded_web_server_probe" in block
+
+
+def test_web3d_runtime_recovery_is_bounded_to_one_attempt_per_request_identity():
+    key_start = CPP.index("QString ScenePreviewWidget::embedded_web_recovery_key")
+    handler_start = CPP.index("void ScenePreviewWidget::handle_embedded_web_runtime_failure", key_start)
+    key_block = CPP[key_start:handler_start]
+    handler_end = CPP.index("void ScenePreviewWidget::ensure_embedded_web_server_started", handler_start)
+    handler = CPP[handler_start:handler_end]
+
+    assert "payload_fingerprint.toHex()" in key_block
+    assert "identity.generation" not in key_block
+    assert "navigation_token" not in key_block
+    assert "embedded_web_automatic_recovery_attempts_.contains(recovery_key)" in handler
+    assert "embedded_web_automatic_recovery_attempts_.insert(recovery_key)" in handler
+    assert "request_embedded_web_product_view_refresh(true);" in handler
+    assert handler.count("request_embedded_web_product_view_refresh(true);") == 1
+    assert "automatic recovery already attempted" in handler
+
+
+def test_explicit_legacy_backend_selection_still_uses_native_scene3d():
+    constructor_backend_start = CPP.index("const QString requested_product_view_backend")
+    constructor_backend_end = CPP.index("#else", constructor_backend_start)
+    backend_block = CPP[constructor_backend_start:constructor_backend_end]
+
+    assert "native_scene3d_explicitly_requested" in backend_block
+    assert 'requested_product_view_backend == QStringLiteral("native_scene3d")' in backend_block
+    assert "product_view_backend_ = ProductViewBackend::NativeScene3D;" in backend_block
+    assert 'simple_3d_view_->setObjectName("scene3dViewportWidget");' in backend_block

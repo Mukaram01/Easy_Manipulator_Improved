@@ -427,9 +427,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
       if (!ok) {
         const QString detail = QStringLiteral("browser failed to load Product View page for scene %1; viewer URL: %2; expected JSON: %3")
           .arg(identity.scene_id, expected_viewer_url.toString(), embedded_web_prepare_output_path_);
-        // set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail) is intentionally replaced by native compatibility fallback.
-        embedded_web_view_->setVisible(false);
-        activate_native_compatibility_preview(detail);
+        handle_embedded_web_runtime_failure(identity, navigation_token, detail);
         emit studio_log_requested(QStringLiteral("Embedded Product View load failed. %1").arg(detail));
         return;
       }
@@ -437,6 +435,15 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
         QStringLiteral("browser loaded; waiting for viewer readiness"));
       start_embedded_web_readiness_polling(identity, navigation_token, embedded_web_prepare_output_path_, expected_viewer_url.toString());
     });
+    connect(embedded_web_view_->page(), &QWebEnginePage::renderProcessTerminated, this,
+      [this](QWebEnginePage::RenderProcessTerminationStatus status, int exit_code) {
+        const EmbeddedWebRequestIdentity identity = embedded_web_loading_identity_;
+        const quint64 navigation_token = embedded_web_loading_navigation_token_;
+        const QString detail = QStringLiteral("browser render process terminated for Product View scene %1; status=%2 exit_code=%3; viewer URL: %4")
+          .arg(identity.scene_id).arg(static_cast<int>(status)).arg(exit_code).arg(embedded_web_expected_viewer_url_.toString());
+        handle_embedded_web_runtime_failure(identity, navigation_token, detail);
+        emit studio_log_requested(QStringLiteral("Embedded Product View render-process termination. %1").arg(detail));
+      });
     simple_3d_view_ = embedded_web_view_;
   } else {
     product_view_backend_ = ProductViewBackend::NativeScene3D;
@@ -534,7 +541,13 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   });
   connect(embedded_undo_button_, &QPushButton::clicked, this, [this](){ run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.undo()")); });
   connect(embedded_redo_button_, &QPushButton::clicked, this, [this](){ run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.redo()")); });
-  connect(embedded_fit_button_, &QPushButton::clicked, this, [this](){ run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.fitScene()")); });
+  connect(embedded_fit_button_, &QPushButton::clicked, this, [this](){
+    if (embedded_product_view_state_ == EmbeddedProductViewState::Failed) {
+      request_embedded_web_product_view_refresh(true);
+      return;
+    }
+    run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.fitScene()"));
+  });
   connect(overlays_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     auto *v = active_native_viewport();
     const QString choice = overlays_selector_->currentText();
@@ -684,6 +697,10 @@ void ScenePreviewWidget::set_embedded_product_view_state(EmbeddedProductViewStat
   embedded_product_view_state_ = state;
   embedded_editor_polling_ = (state == EmbeddedProductViewState::Ready);
   if (state == EmbeddedProductViewState::Failed) embedded_web_last_error_ = detail;
+  if (embedded_fit_button_ && state != EmbeddedProductViewState::Failed) {
+    embedded_fit_button_->setText(QStringLiteral("Fit"));
+    embedded_fit_button_->setToolTip(QString());
+  }
   if (state == EmbeddedProductViewState::Failed && !detail.trimmed().isEmpty()) {
     emit studio_log_requested(QStringLiteral("Embedded Product View failure: %1").arg(detail));
   }
@@ -801,7 +818,48 @@ void ScenePreviewWidget::fail_embedded_web_server_probe(
   embedded_web_server_lifecycle_ = EmbeddedWebServerLifecycle::ServerNotStarted;
   emit studio_log_requested(QStringLiteral("Embedded Product View server terminal diagnostic: scene=%1 generation=%2 port=%3 navigation=%4 detail=%5")
     .arg(identity.scene_id).arg(identity.generation).arg(port).arg(navigation_token).arg(detail));
-  activate_native_compatibility_preview(detail);
+  handle_embedded_web_runtime_failure(identity, navigation_token, detail);
+}
+
+QString ScenePreviewWidget::embedded_web_recovery_key(const EmbeddedWebRequestIdentity & identity) const
+{
+  // Bound automatic recovery by logical navigation/request identity, not by the
+  // retry generation number.  A forced retry keeps the same scene/payload key,
+  // so a second failure leaves Web3D selected and exposes the manual Retry path.
+  return QStringLiteral("%1|%2|%3|%4|%5")
+    .arg(identity.scene_id, identity.absolute_scene_dir, identity.absolute_repo_root,
+         QString::fromLatin1(identity.payload_fingerprint.toHex()))
+    .arg(identity.payload_revision);
+}
+
+void ScenePreviewWidget::handle_embedded_web_runtime_failure(
+  const EmbeddedWebRequestIdentity & identity, quint64 navigation_token, const QString & detail)
+{
+#ifndef WORKCELL_BUILDER_HAS_WEBENGINE
+  Q_UNUSED(identity); Q_UNUSED(navigation_token); Q_UNUSED(detail);
+#else
+  if (!embedded_web_identity_is_current(identity) || navigation_token != embedded_web_navigation_token_) return;
+  native_compatibility_fallback_active_ = false;
+  embedded_web_last_error_ = detail;
+  set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail);
+  if (mode_selector_) mode_selector_->setItemText(0, QStringLiteral("Web3D Product View"));
+  if (embedded_web_view_) embedded_web_view_->setVisible(true);
+  if (compatibility_scene3d_viewport_) compatibility_scene3d_viewport_->setVisible(false);
+  if (embedded_fit_button_) {
+    embedded_fit_button_->setText(QStringLiteral("Retry"));
+    embedded_fit_button_->setToolTip(QStringLiteral("Retry loading the embedded Web3D Product View. Details remain available in Studio Log."));
+  }
+  refresh_mode_and_state();
+
+  const QString recovery_key = embedded_web_recovery_key(identity);
+  if (!embedded_web_automatic_recovery_attempts_.contains(recovery_key)) {
+    embedded_web_automatic_recovery_attempts_.insert(recovery_key);
+    emit studio_log_requested(QStringLiteral("Embedded Product View automatic recovery attempt 1/1: %1").arg(detail));
+    request_embedded_web_product_view_refresh(true);
+    return;
+  }
+  emit studio_log_requested(QStringLiteral("Embedded Product View automatic recovery already attempted for this request; leaving Web3D selected with Retry available. %1").arg(detail));
+#endif
 }
 
 void ScenePreviewWidget::ensure_embedded_web_server_started(const QString & repo_root, const EmbeddedWebRequestIdentity & identity)
@@ -1343,7 +1401,7 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
     const QString detail = QStringLiteral(
       "startup timed out after 45s for scene %1; viewer URL: %2; expected JSON: %3; last observed boot status: %4")
       .arg(identity.scene_id, viewer_url, expected_json_path, embedded_web_last_boot_status_.isEmpty() ? QStringLiteral("unavailable") : embedded_web_last_boot_status_);
-    activate_native_compatibility_preview(detail);
+    handle_embedded_web_runtime_failure(identity, navigation_token, detail);
     emit studio_log_requested(QStringLiteral("Embedded Product View readiness timeout. %1").arg(detail));
     return;
   }
@@ -1389,7 +1447,7 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
         .arg(failed_stage.isEmpty() ? QStringLiteral("unknown_stage") : failed_stage,
              fatal_error.isEmpty() ? QStringLiteral("unknown error") : fatal_error,
              fatal_stack.isEmpty() ? QString() : QStringLiteral("; stack: %1").arg(fatal_stack.left(500)));
-      activate_native_compatibility_preview(detail);
+      handle_embedded_web_runtime_failure(identity, navigation_token, detail);
       emit studio_log_requested(QStringLiteral("Embedded Product View JavaScript failure for scene %1.\nStage: %2\nFatal error: %3\nStack excerpt:\n%4")
         .arg(identity.scene_id,
              failed_stage.isEmpty() ? QStringLiteral("unknown_stage") : failed_stage,
