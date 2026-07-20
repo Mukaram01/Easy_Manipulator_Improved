@@ -62,7 +62,7 @@ def _run_verify(
 
 def _create_canonical_repo(ws: Path) -> Path:
     repo = ws / "src" / "easy_manipulation_deployment"
-    _write_package_xml(repo / "workcell_builder" / "package.xml", "workcell_builder")
+    _write_package_xml(repo / "workcell_builder" / "workcell_builder" / "package.xml", "workcell_builder")
     _write_package_xml(repo / "scenes" / "ur5_2f_test" / "package.xml", "ur5_2f_test")
     _write_package_xml(repo / "assets" / "environment" / "workbench_description" / "package.xml", "workbench_description")
     return repo
@@ -92,7 +92,7 @@ def test_verify_workspace_discovery_accepts_canonical_layout_without_aliases(tmp
     result = _run_verify(
         tmp_path,
         [
-            ("workcell_builder", repo / "workcell_builder"),
+            ("workcell_builder", repo / "workcell_builder" / "workcell_builder"),
             ("ur5_2f_test", repo / "scenes" / "ur5_2f_test"),
             ("workbench_description", repo / "assets" / "environment" / "workbench_description"),
         ],
@@ -108,15 +108,23 @@ def test_verify_workspace_discovery_accepts_canonical_layout_without_aliases(tmp
     assert (tmp_path / "colcon-count.txt").read_text(encoding="utf-8").strip() == "1"
 
 
-def test_verify_workspace_discovery_rejects_missing_main_repository_anchor(tmp_path):
+def test_verify_workspace_discovery_rejects_workcell_builder_outside_checkout(tmp_path):
     ws = tmp_path / "ws"
-    repo = ws / "src" / "easy_manipulation_deployment"
-    repo.mkdir(parents=True)
-    result = _run_verify(tmp_path, [])
+    repo = _create_canonical_repo(ws)
+    external_repo = ws / "src" / "external_workcell_builder"
+    _write_package_xml(external_repo / "package.xml", "workcell_builder")
+    result = _run_verify(
+        tmp_path,
+        [
+            ("workcell_builder", external_repo),
+            ("ur5_2f_test", repo / "scenes" / "ur5_2f_test"),
+            ("workbench_description", repo / "assets" / "environment" / "workbench_description"),
+        ],
+    )
 
     assert result.returncode != 0
-    assert "Missing main repository anchor" in result.stderr
-    assert str(repo / "workcell_builder" / "package.xml") in result.stderr
+    assert "Discovered workcell_builder path is outside easy_manipulation_deployment checkout" in result.stderr
+    assert str(external_repo) in result.stderr
 
 
 def test_verify_workspace_discovery_rejects_missing_required_package(tmp_path):
@@ -125,7 +133,7 @@ def test_verify_workspace_discovery_rejects_missing_required_package(tmp_path):
     result = _run_verify(
         tmp_path,
         [
-            ("workcell_builder", repo / "workcell_builder"),
+            ("workcell_builder", repo / "workcell_builder" / "workcell_builder"),
             ("ur5_2f_test", repo / "scenes" / "ur5_2f_test"),
         ],
     )
@@ -142,7 +150,7 @@ def test_verify_workspace_discovery_rejects_duplicate_packages(tmp_path):
     result = _run_verify(
         tmp_path,
         [
-            ("workcell_builder", repo / "workcell_builder"),
+            ("workcell_builder", repo / "workcell_builder" / "workcell_builder"),
             ("ur5_2f_test", repo / "scenes" / "ur5_2f_test"),
             ("workbench_description", repo / "assets" / "environment" / "workbench_description"),
             ("workbench_description", duplicate_repo),
@@ -156,8 +164,9 @@ def test_verify_workspace_discovery_rejects_duplicate_packages(tmp_path):
 def test_verify_workspace_discovery_static_markers_present():
     text = Path('scripts/verify_workspace_discovery.sh').read_text(encoding='utf-8')
     assert 'CANONICAL_REPO="$SRC_DIR/easy_manipulation_deployment"' in text
-    assert 'CANONICAL_ANCHOR="$CANONICAL_REPO/workcell_builder/package.xml"' in text
-    assert 'Missing main repository anchor' in text
+    assert 'CANONICAL_ANCHOR' not in text
+    assert 'Missing main repository anchor' not in text
+    assert 'workcell_builder/package.xml' not in text
     assert 'colcon list --base-paths "$SRC_DIR"' in text
     assert 'Duplicate package discovered' in text
     assert 'REQUIRED_PACKAGES=(workcell_builder ur5_2f_test workbench_description)' in text

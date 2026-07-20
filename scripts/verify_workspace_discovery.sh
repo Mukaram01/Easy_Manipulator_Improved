@@ -4,15 +4,10 @@ set -euo pipefail
 WORKSPACE_ROOT="${WORKSPACE_ROOT:-$(pwd)}"
 SRC_DIR="${SRC_DIR:-$WORKSPACE_ROOT/src}"
 CANONICAL_REPO="$SRC_DIR/easy_manipulation_deployment"
-CANONICAL_ANCHOR="$CANONICAL_REPO/workcell_builder/package.xml"
 REQUIRED_PACKAGES=(workcell_builder ur5_2f_test workbench_description)
 
 if [[ ! -d "$SRC_DIR" ]]; then
   echo "Workspace src directory not found: $SRC_DIR" >&2
-  exit 1
-fi
-if [[ ! -f "$CANONICAL_ANCHOR" ]]; then
-  echo "Missing main repository anchor: expected $CANONICAL_ANCHOR" >&2
   exit 1
 fi
 if ! command -v colcon >/dev/null 2>&1; then
@@ -63,4 +58,21 @@ for pkg in "${REQUIRED_PACKAGES[@]}"; do
   fi
 done
 
-echo "Workspace validation passed: main repository anchor is present, colcon discovered required packages exactly once, and package names are unique."
+repo_real="$(realpath "$CANONICAL_REPO")"
+workcell_builder_path="${seen[workcell_builder]}"
+workcell_builder_real="$(realpath "$workcell_builder_path")"
+if [[ ! -f "$workcell_builder_real/package.xml" ]]; then
+  echo "Discovered workcell_builder path is missing package.xml: $workcell_builder_real/package.xml" >&2
+  exit 1
+fi
+case "$workcell_builder_real" in
+  "$repo_real"|"$repo_real"/*) ;;
+  *)
+    echo "Discovered workcell_builder path is outside easy_manipulation_deployment checkout: $workcell_builder_real" >&2
+    echo "Expected within: $repo_real" >&2
+    echo "Command: colcon list --base-paths $SRC_DIR" >&2
+    exit 1
+    ;;
+esac
+
+echo "Workspace validation passed: colcon discovered required packages exactly once, workcell_builder resolves inside easy_manipulation_deployment, and package names are unique."
