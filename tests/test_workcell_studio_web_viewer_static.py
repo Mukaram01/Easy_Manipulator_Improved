@@ -1015,3 +1015,78 @@ def test_expanded_urdf_robot_assembly_stays_locked_single_root_and_legacy_rows_s
     assert ready_body.count("rendererContext?.scene?.add?.(robot)") == 1
     assert ready_body.count("rendererContext?.assemblyRoots?.push?.(robot)") == 1
     assert "world/root fixed chain -> URDF joint origin -> joint value -> link frame" in renderer
+
+
+def test_collect_physical_visible_bounds_filters_product_view_geometry():
+    js_path = VIEWER / "viewer.js"
+    harness = r'''
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+class MockVector3 {
+  constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+}
+class MockBox3 {
+  constructor(min, max) {
+    if (max) { this.min = { ...min }; this.max = { ...max }; }
+    else { this.min = { x: Infinity, y: Infinity, z: Infinity }; this.max = { x: -Infinity, y: -Infinity, z: -Infinity }; }
+  }
+  isEmpty() { return this.min.x > this.max.x || this.min.y > this.max.y || this.min.z > this.max.z; }
+  union(box) {
+    this.min.x = Math.min(this.min.x, box.min.x); this.min.y = Math.min(this.min.y, box.min.y); this.min.z = Math.min(this.min.z, box.min.z);
+    this.max.x = Math.max(this.max.x, box.max.x); this.max.y = Math.max(this.max.y, box.max.y); this.max.z = Math.max(this.max.z, box.max.z);
+    return this;
+  }
+  setFromObject(object) { this.min = { ...object.mockBounds.min }; this.max = { ...object.mockBounds.max }; return this; }
+  getSize(target) { target.x = this.max.x - this.min.x; target.y = this.max.y - this.min.y; target.z = this.max.z - this.min.z; return target; }
+  getCenter(target) { target.x = (this.min.x + this.max.x) / 2; target.y = (this.min.y + this.max.y) / 2; target.z = (this.min.z + this.max.z) / 2; return target; }
+  clone() { return new MockBox3(this.min, this.max); }
+}
+const element = () => ({ hidden: false, checked: false, disabled: false, textContent: '', className: '', innerHTML: '', classList: { toggle() {} }, setAttribute() {}, querySelector() { return { textContent: '' }; }, appendChild() {}, addEventListener() {}, getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; } });
+const sandbox = { console, assert, MockVector3, MockBox3, window: { location: { search: '' } }, document: { getElementById() { return element(); }, createElement() { return element(); } }, URLSearchParams, requestAnimationFrame() { return 0; } };
+vm.createContext(sandbox);
+vm.runInContext(source + `
+THREE = { Vector3: MockVector3, Box3: MockBox3 };
+function root(children = []) { return { visible: true, children, userData: {}, updateWorldMatrix() {} }; }
+function mesh(id, min, max, userData = {}) { return { isMesh: true, visible: true, children: [], name: id, mockBounds: { min, max }, userData }; }
+const physical = mesh('table', { x: 1, y: 2, z: 3 }, { x: 2, y: 3, z: 4 }, { item: { id: 'workbench', category: 'table', source_layer: 'editable_layout' } });
+let result = collectPhysicalVisibleBounds(root([physical]));
+assert.strictEqual(result.count, 1);
+assert.deepStrictEqual(result.bounds_json.min, { x: 1, y: 2, z: 3 });
+assert.deepStrictEqual(result.bounds_json.max, { x: 2, y: 3, z: 4 });
+
+const hidden = mesh('hidden', { x: -100, y: -100, z: -100 }, { x: -90, y: -90, z: -90 }, { item: { id: 'hidden_part', category: 'object' } });
+hidden.visible = false;
+const grid = mesh('grid', { x: -50, y: -50, z: 0 }, { x: 50, y: 50, z: 0 }, {}); grid.isGridHelper = true;
+const axes = mesh('axes', { x: -50, y: -50, z: 0 }, { x: 50, y: 50, z: 50 }, {}); axes.isAxesHelper = true;
+const zone = mesh('pick_zone', { x: -20, y: -20, z: 0 }, { x: 20, y: 20, z: 1 }, { item: { id: 'pick_zone', category: 'safety_zone', source_layer: 'editable_layout' } });
+const outline = mesh('selection', { x: -10, y: -10, z: -10 }, { x: 10, y: 10, z: 10 }, { selection_outline: true, item: { id: 'selection_outline', role: 'selection_highlight' } });
+result = collectPhysicalVisibleBounds(root([physical, hidden, grid, axes, zone, outline]));
+assert.strictEqual(result.count, 1);
+assert.deepStrictEqual(result.bounds_json.min, { x: 1, y: 2, z: 3 });
+
+const fallback = mesh('robot_box', { x: -100, y: -1, z: 0 }, { x: -90, y: 1, z: 2 }, { item: { id: 'robot_fallback', role: 'robot', source_layer: 'primitive_fallback', active_visual_source: 'primitive_fallback' } });
+const generated = mesh('robot_mesh', { x: 0, y: 0, z: 0 }, { x: 1, y: 1, z: 1 }, { item: { id: 'ur5_mesh', role: 'robot', source_layer: 'locked_generated_urdf_visual', active_visual_source: 'mesh_preview' } });
+result = collectPhysicalVisibleBounds(root([fallback, generated]));
+assert.strictEqual(result.count, 1);
+assert.deepStrictEqual(result.bounds_json.min, { x: 0, y: 0, z: 0 });
+
+result = collectPhysicalVisibleBounds(root([]));
+assert.strictEqual(result.count, 0);
+assert.strictEqual(result.bounds, null);
+assert.strictEqual(result.bounds_json, null);
+
+const finite = collectPhysicalVisibleBounds(root([physical])).bounds_json;
+for (const section of ['min', 'max', 'center', 'dimensions']) for (const value of Object.values(finite[section])) assert.strictEqual(Number.isFinite(value), true);
+`, sandbox);
+'''
+    result = subprocess.run(
+        ["node", "-e", harness, str(js_path)],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert result.stderr == ""

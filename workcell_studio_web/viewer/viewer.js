@@ -1695,6 +1695,82 @@ function animate() {
   updateLabels();
 }
 
+
+function physicalBoundsIdentityFor(object) {
+  const item = object?.userData?.item || {};
+  return [
+    object?.userData?.source_layer,
+    object?.userData?.active_visual_source,
+    object?.userData?.role,
+    object?.userData?.category,
+    object?.userData?.id,
+    object?.userData?.display_name,
+    object?.userData?.status,
+    object?.userData?.mesh_load_warning,
+    item?.source_layer,
+    item?.active_visual_source,
+    item?.role,
+    item?.category,
+    item?.type,
+    item?.id,
+    item?.display_name,
+    item?.status,
+    item?.mesh_load_warning,
+    ...(Array.isArray(item?.warnings) ? item.warnings : []),
+    itemLabel(item || {}),
+  ].map(value => String(value || '').toLowerCase().replace(/[_-]+/g, ' ')).join(' ');
+}
+function physicalBoundsItemFor(object, nearestItem = null) {
+  return object?.userData?.item || nearestItem || object?.userData || {};
+}
+function isPhysicalBoundsHelperObject(object, item, identity) {
+  if (!object || object.visible === false) return true;
+  if (object.isGridHelper || object.isAxesHelper) return true;
+  if (object.userData?.selection_outline === true || object.userData?.selection_highlight === true) return true;
+  if (object.userData?.exclude_from_physical_bounds === true || object.userData?.exclude_from_fit_bounds === true) return true;
+  if (item?.exclude_from_physical_bounds === true || item?.exclude_from_fit_bounds === true) return true;
+  return DEBUG_OVERLAY_TOKEN_RE.test(identity);
+}
+function isRobotPrimitiveFallbackObject(object, item, identity) {
+  const visualSource = String(item?.active_visual_source || object?.userData?.active_visual_source || '').toLowerCase();
+  const sourceLayer = String(item?.source_layer || object?.userData?.source_layer || '').toLowerCase();
+  return /primitive fallback|fallback/.test(identity) && /robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|wrist/.test(identity)
+    && (visualSource.includes('primitive_fallback') || visualSource.includes('fallback') || sourceLayer.includes('primitive_fallback'));
+}
+function collectPhysicalVisibleBounds(root, options = {}) {
+  if (!root || !THREE?.Box3) return { count: 0, bounds: null, bounds_json: null };
+  root.updateWorldMatrix?.(true, true);
+  const bounds = new THREE.Box3();
+  const candidates = [];
+  let hasGeneratedRobotMesh = false;
+  const visit = (node, nearestItem = null) => {
+    if (!node || node.visible === false) return;
+    const item = physicalBoundsItemFor(node, nearestItem);
+    const identity = physicalBoundsIdentityFor(node);
+    const nextNearestItem = node?.userData?.item || nearestItem;
+    const isRenderable = node.isMesh || node.isLine || node.isLineSegments || node.isPoints || node.isSprite;
+    if (isRenderable && !isPhysicalBoundsHelperObject(node, item, identity)) {
+      const visualSource = String(item?.active_visual_source || node?.userData?.active_visual_source || '').toLowerCase();
+      const isGenerated = /generated|urdf/.test(identity);
+      const isRobot = /robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|wrist/.test(identity);
+      if (isGenerated && isRobot && /mesh|generated urdf visual|mesh preview/.test(visualSource.replace(/_/g, ' '))) hasGeneratedRobotMesh = true;
+      candidates.push({ node, item, identity });
+    }
+    for (const child of node.children || []) visit(child, nextNearestItem);
+  };
+  visit(root);
+  let count = 0;
+  for (const candidate of candidates) {
+    if (hasGeneratedRobotMesh && isRobotPrimitiveFallbackObject(candidate.node, candidate.item, candidate.identity)) continue;
+    const nodeBounds = finiteBox3(new THREE.Box3().setFromObject(candidate.node));
+    if (!nodeBounds) continue;
+    bounds.union(nodeBounds);
+    count += 1;
+  }
+  const finite = count ? finiteBox3(bounds) : null;
+  return { count: finite ? count : 0, bounds: finite, bounds_json: box3ToJson(finite) };
+}
+
 function visibleRenderableBounds(object) {
   if (!object || object.visible === false) return null;
   object.updateWorldMatrix(true, true);
