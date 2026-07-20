@@ -1258,10 +1258,69 @@ def test_urdf_renderer_normalizes_collada_loader_root_transform_generically():
     js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
     assert "function normalizeRosColladaScene" in js
     assert "ColladaLoader(manager).load(url, dae => onDone(normalizeRosColladaScene(dae, uri, diagnostics))" in js
-    assert "upAxis === 'Z_UP' || upAxis === 'Y_UP'" in js
+    assert "upAxis === 'Z_UP' || (Number.isFinite(unitMeter)" in js
+    assert "upAxis === 'Z_UP' || upAxis === 'Y_UP'" not in js
     assert "robot_collada_root_normalization_count" in js
     assert "robot_descendant_render_mesh_diagnostics" in js
-    assert "shoulder_link" not in js.split("function normalizeRosColladaScene", 1)[1].split("function loadMesh", 1)[0]
+    collada_section = js.split("function normalizeRosColladaScene", 1)[1].split("function loadMesh", 1)[0]
+    assert "shoulder_link" not in collada_section
+    assert "Math.PI / 2" not in collada_section
+    assert "1.5707963267948966" not in collada_section
+    assert "rotateX" not in collada_section
+    assert "rotateY" not in collada_section
+    assert "rotateZ" not in collada_section
+
+
+def test_urdf_renderer_documents_single_ros_to_three_conversion_boundary():
+    js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
+    assert "ROS_TO_THREE_CONVERSION_BOUNDARY" in js
+    assert "DAE, STL, assembled URDF, and flattened fallback diagnostics" in js
+    assert "must not add per-link or per-mesh 90-degree corrections after ColladaLoader" in js
+    assert "Do not add a\n  // second hardcoded 90-degree correction to any link, mesh, baked world matrix" in js
+    assert "assembled URDF node, or flattened fallback diagnostic row" in js
+
+
+def test_urdf_renderer_collada_root_normalization_is_diagnostic_only_with_matrix_parity(tmp_path):
+    script = tmp_path / "collada_root_boundary.mjs"
+    script.write_text(
+        f"""
+import assert from 'node:assert/strict';
+import * as THREE from {str((VIEWER / 'node_modules/three/build/three.module.js')).__repr__()};
+import {{ normalizeRosColladaScene, ROS_TO_THREE_CONVERSION_BOUNDARY }} from {str((VIEWER / 'urdf_robot_renderer.js')).__repr__()};
+
+const diagnostics = {{
+  robot_collada_root_normalization_count: 0,
+  robotColladaRootNormalizationCount: 0,
+  robot_collada_mesh_diagnostics: [],
+}};
+const scene = new THREE.Group();
+scene.rotation.x = -Math.PI / 2;
+scene.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial()));
+const normalized = normalizeRosColladaScene({{ scene, asset: {{ upAxis: 'Z_UP', unit: 1 }} }}, 'base.dae', diagnostics);
+assert.equal(normalized, scene);
+assert.equal(diagnostics.robot_collada_root_normalization_count, 1);
+assert.equal(diagnostics.robotColladaRootNormalizationCount, 1);
+assert.equal(diagnostics.robot_collada_mesh_diagnostics[0].root_transform_normalized, true);
+assert.equal(scene.rotation.x, 0);
+assert.equal(scene.quaternion.x, 0);
+
+const visualWrapper = new THREE.Group();
+visualWrapper.position.set(1, 2, 3);
+visualWrapper.add(scene);
+visualWrapper.updateMatrixWorld(true);
+const expectedWrapper = new THREE.Matrix4().makeTranslation(1, 2, 3).elements;
+assert.deepEqual(Array.from(visualWrapper.matrixWorld.elements), Array.from(expectedWrapper));
+assert.equal(ROS_TO_THREE_CONVERSION_BOUNDARY.includes('DAE, STL, assembled URDF, and flattened fallback'), true);
+
+const authoredYUp = new THREE.Group();
+authoredYUp.rotation.x = -Math.PI / 2;
+normalizeRosColladaScene({{ scene: authoredYUp, asset: {{ upAxis: 'Y_UP', unit: 1 }} }}, 'authored-y-up.dae', diagnostics);
+assert.equal(diagnostics.robot_collada_root_normalization_count, 1);
+assert.equal(authoredYUp.rotation.x, -Math.PI / 2);
+""",
+        encoding="utf-8",
+    )
+    subprocess.run(["node", str(script)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
 def test_viewer_expanded_urdf_preview_helper_accepts_canonical_and_legacy_modes():

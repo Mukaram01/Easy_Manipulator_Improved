@@ -5,6 +5,7 @@ import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 
 const ROBOT_RENDER_MODE = 'expanded_urdf_loader';
+const ROS_TO_THREE_CONVERSION_BOUNDARY = 'URDFLoader owns the ROS visual frame and applies the one ROS-to-Three orientation boundary; DAE, STL, assembled URDF, and flattened fallback diagnostics must not add per-link or per-mesh 90-degree corrections after ColladaLoader.';
 
 function repoUrl(context, uri) {
   return context?.repoRootRelativeUrl ? context.repoRootRelativeUrl(uri) : uri;
@@ -155,17 +156,16 @@ function normalizeRosColladaScene(dae, uri, diagnostics) {
   const meshCount = countDescendantMeshes(scene);
   const rootHasMesh = Boolean(scene.isMesh);
 
-  // ROS/RViz import Collada through Assimp into the URDF visual frame.  Three's
-  // ColladaLoader can expose file-level up-axis or unit conversion as a transform
-  // on the returned dae.scene root.  urdf-loader has already applied the URDF
-  // visual origin and mesh scale to the visual wrapper, so leaving this loader
-  // root conversion in place rotates/scales the visible descendant meshes while
-  // wrapper/link FK diagnostics still look correct.  Neutralize only a loader
-  // root conversion that is derived from the Collada asset metadata; STL/OBJ and
-  // authored child-node transforms remain untouched.
+  // ROS-to-Three conversion boundary: URDFLoader owns the ROS visual frame for
+  // every mesh format (DAE, STL, assembled URDF, and flattened fallback rows).
+  // Three's ColladaLoader may expose file-level Z_UP or unit metadata as a
+  // transform on the returned dae.scene root before URDFLoader places the visual
+  // wrapper. Neutralize only that loader root metadata transform. Do not add a
+  // second hardcoded 90-degree correction to any link, mesh, baked world matrix,
+  // assembled URDF node, or flattened fallback diagnostic row.
   const hasLoaderRootConversion = !rootHasMesh
     && !isIdentityTransform(scene)
-    && (upAxis === 'Z_UP' || upAxis === 'Y_UP' || (Number.isFinite(unitMeter) && Math.abs(unitMeter - 1) > 1e-9));
+    && (upAxis === 'Z_UP' || (Number.isFinite(unitMeter) && Math.abs(unitMeter - 1) > 1e-9));
   if (!hasLoaderRootConversion) {
     diagnostics.robot_collada_mesh_diagnostics.push({
       uri,
@@ -545,6 +545,8 @@ function jointTypeCounts(joints) {
   }
   return counts;
 }
+
+export { normalizeRosColladaScene, ROS_TO_THREE_CONVERSION_BOUNDARY };
 
 export function loadRobotPreview(previewConfig, rendererContext = {}) {
   const diagnostics = {
