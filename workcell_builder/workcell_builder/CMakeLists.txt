@@ -357,7 +357,9 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_scene3d_render_role_classifier_test
     test/scene3d_render_role_classifier_test.cpp
     gui/scene3d_viewport_widget.cpp
-    gui/scene3d_visual_classification.cpp)
+    gui/scene3d_visual_classification.cpp
+    gui/object_placement_yaml_io.cpp
+    src_object_placement_model.cpp)
   ament_add_gtest(workcell_scene3d_ur5_baked_transform_test
     test/scene3d_ur5_baked_transform_test.cpp
     gui/scene3d_viewport_widget.cpp
@@ -439,6 +441,7 @@ if(BUILD_TESTING)
       Qt5::Widgets
       Qt5::OpenGL
       OpenGL::GL
+      yaml-cpp
     )
     target_include_directories(workcell_scene3d_render_role_classifier_test PRIVATE gui)
   endif()

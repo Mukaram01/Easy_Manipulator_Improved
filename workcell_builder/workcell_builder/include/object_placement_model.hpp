@@ -40,6 +40,7 @@ struct CameraPlacement
   double near_m{0.15};
   double far_m{1.5};
   bool enabled{true};
+  bool visible{true};
   std::string status;
 };
 
@@ -55,11 +56,13 @@ struct TaskZone
   double dim_x{0.0}, dim_y{0.0}, dim_z{0.0};
   std::string frame_id;
   std::string camera_id;
+  std::string robot_id;
   std::string support_surface_ref;
   std::string object_ref;
   std::string target_ref;
   std::vector<std::string> allowed_object_types;
   bool enabled{true};
+  bool visible{true};
   std::string status;
 };
 
@@ -82,6 +85,21 @@ bool can_create_observation_zone_for_camera(
   const CameraPlacement * selected_camera, bool editable_scene, bool scene_writable);
 ObservationZoneSuggestion suggest_camera_observation_zone(
   const CameraPlacement & camera, const std::vector<TaskZone> & existing_zones, double work_surface_z = 0.0);
+
+struct PickZoneDefaults
+{
+  double width{0.40};
+  double depth{0.40};
+  double height{0.10};
+};
+
+PickZoneDefaults default_pick_zone_dimensions();
+bool validate_task_zone_dimensions(const TaskZone & zone, std::string * warning = nullptr);
+bool can_create_pick_zone_for_robots(
+  const std::vector<std::string> & robot_ids, std::string * message = nullptr);
+ObservationZoneSuggestion suggest_robot_pick_zone(
+  const std::string & robot_id, const std::vector<TaskZone> & existing_zones,
+  double world_x, double world_y, double surface_z, double yaw = 0.0);
 
 std::string serialize_placed_objects_to_environment_yaml(const std::vector<PlacedObject> & objects);
 std::vector<PlacedObject> parse_placed_objects_from_environment_yaml(const std::string & content);
