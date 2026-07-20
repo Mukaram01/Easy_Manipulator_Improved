@@ -11,6 +11,8 @@ MAINWINDOW_CPP = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp")
 class RequestKey:
     scene: str
     directory: str
+    backend: str
+    generated_json_path: str
     fingerprint: bytes
     revision: int
 
@@ -24,6 +26,10 @@ class RefreshLifecycle:
         self.pending = None
         self.started = []
         self.retired = []
+        self.navigations = []
+        self.backend_switches = []
+        self.camera_state = {"target": [1, 2, 3], "distance": 4}
+        self.camera_resets = 0
 
     def request(self, key, force=False):
         if not force and ((self.active and key == self.active[0]) or (self.pending and key == self.pending[0])):
@@ -39,6 +45,11 @@ class RefreshLifecycle:
     def start_pending(self):
         if self.pending is not None:
             self.started.append(self.pending)
+            self.navigations.append(self.pending)
+            if self.pending[0].backend != "embedded_web3d":
+                self.backend_switches.append(self.pending[0].backend)
+            self.camera_state = {"target": [0, 0, 0], "distance": 10}
+            self.camera_resets += 1
             self.pending = None
 
     def finish(self, request):
@@ -51,7 +62,14 @@ class RefreshLifecycle:
 
 def test_repeated_automatic_notifications_keep_one_generation_and_active_request():
     lifecycle = RefreshLifecycle()
-    key = RequestKey("ur5_2f_test", "/cells/ur5_2f_test", b"same", 7)
+    key = RequestKey(
+        "ur5_2f_test",
+        "/cells/ur5_2f_test",
+        "embedded_web3d",
+        "build/workcell_studio_web_scene/ur5_2f_test.web_scene.json",
+        b"same",
+        7,
+    )
     lifecycle.request(key)
     active = lifecycle.active
     lifecycle.request(key)
@@ -64,8 +82,22 @@ def test_repeated_automatic_notifications_keep_one_generation_and_active_request
 
 def test_scene_or_payload_change_retires_old_completion_and_starts_replacement():
     lifecycle = RefreshLifecycle()
-    old = RequestKey("ur5_2f_test", "/cells/ur5_2f_test", b"old", 7)
-    changed_scene = RequestKey("ur5_3f_test", "/cells/ur5_3f_test", b"new", 8)
+    old = RequestKey(
+        "ur5_2f_test",
+        "/cells/ur5_2f_test",
+        "embedded_web3d",
+        "build/workcell_studio_web_scene/ur5_2f_test.web_scene.json",
+        b"old",
+        7,
+    )
+    changed_scene = RequestKey(
+        "ur5_3f_test",
+        "/cells/ur5_3f_test",
+        "embedded_web3d",
+        "build/workcell_studio_web_scene/ur5_3f_test.web_scene.json",
+        b"new",
+        8,
+    )
     lifecycle.request(old)
     lifecycle.start_pending()
     lifecycle.request(changed_scene)
@@ -78,7 +110,14 @@ def test_scene_or_payload_change_retires_old_completion_and_starts_replacement()
 
 def test_one_manual_refresh_invalidates_once_and_creates_one_retry():
     lifecycle = RefreshLifecycle()
-    key = RequestKey("ur5_2f_test", "/cells/ur5_2f_test", b"same", 7)
+    key = RequestKey(
+        "ur5_2f_test",
+        "/cells/ur5_2f_test",
+        "embedded_web3d",
+        "build/workcell_studio_web_scene/ur5_2f_test.web_scene.json",
+        b"same",
+        7,
+    )
     lifecycle.request(key)
     lifecycle.start_pending()
     lifecycle.request(key, force=True)
@@ -88,12 +127,48 @@ def test_one_manual_refresh_invalidates_once_and_creates_one_retry():
     assert lifecycle.pending == (key, 2)
 
 
+def test_repeated_identical_metadata_refreshes_do_not_prepare_navigate_switch_or_reset_camera():
+    lifecycle = RefreshLifecycle()
+    key = RequestKey(
+        "ur5_2f_test",
+        "/cells/ur5_2f_test",
+        "embedded_web3d",
+        "build/workcell_studio_web_scene/ur5_2f_test.web_scene.json",
+        b"same-fingerprint",
+        7,
+    )
+    lifecycle.request(key)
+    lifecycle.start_pending()
+    before = (
+        len(lifecycle.started),
+        len(lifecycle.navigations),
+        len(lifecycle.backend_switches),
+        dict(lifecycle.camera_state),
+        lifecycle.camera_resets,
+        lifecycle.active,
+    )
+
+    lifecycle.request(key)
+    lifecycle.request(key)
+    lifecycle.request(key)
+
+    assert len(lifecycle.started) - before[0] == 0
+    assert len(lifecycle.navigations) - before[1] == 0
+    assert len(lifecycle.backend_switches) - before[2] == 0
+    assert lifecycle.camera_state == before[3]
+    assert lifecycle.camera_resets == before[4]
+    assert lifecycle.active == before[5]
+
+
 def test_cpp_coalesces_before_generation_and_retires_stale_process_before_ui_work():
     refresh_start = CPP.index("void ScenePreviewWidget::request_embedded_web_product_view_refresh")
     identity_start = CPP.index("ScenePreviewWidget::EmbeddedWebRequestIdentity", refresh_start)
     refresh = CPP[refresh_start:identity_start]
     assert refresh.index("matches_context(request_key)") < refresh.index("++embedded_web_request_generation_")
+    assert "duplicate navigation suppressed" in refresh
     assert "const PreviewContext normalized_context = normalized_preview_context(preview_context_);" in CPP
+    assert "identity.product_view_backend =" in CPP
+    assert "identity.generated_web_scene_path =" in CPP
     assert "identity.payload_fingerprint = preview_payload_fingerprint_;" in CPP
 
     prepare_start = CPP.index("void ScenePreviewWidget::on_embedded_web_prepare_finished")

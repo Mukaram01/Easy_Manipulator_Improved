@@ -1035,6 +1035,12 @@ void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force)
   // consume a generation or replace the active callback identity.
   if (!force && ((embedded_web_has_active_identity_ && embedded_web_active_identity_.matches_context(request_key)) ||
                  (pending_embedded_web_request_ && pending_embedded_web_identity_.matches_context(request_key)))) {
+    emit studio_log_requested(QStringLiteral("Embedded Product View duplicate navigation suppressed: scene=%1 payload_revision=%2 backend=%3 json=%4 fingerprint=%5.")
+      .arg(request_key.scene_id)
+      .arg(request_key.payload_revision)
+      .arg(request_key.product_view_backend)
+      .arg(request_key.generated_web_scene_path)
+      .arg(QString::fromLatin1(request_key.payload_fingerprint.toHex().left(12))));
     return;
   }
 
@@ -1069,6 +1075,10 @@ ScenePreviewWidget::EmbeddedWebRequestIdentity ScenePreviewWidget::embedded_web_
   // Each refresh starts by probing the configured loopback endpoint.  An
   // alternate port, when needed, replaces the active immutable identity.
   identity.selected_server_port = 8765;
+  identity.product_view_backend = product_view_backend_ == ProductViewBackend::EmbeddedWeb3D ?
+    QStringLiteral("embedded_web3d") : QStringLiteral("native_scene3d");
+  identity.generated_web_scene_path = identity.scene_id.isEmpty() ?
+    QString() : QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(identity.scene_id);
   identity.payload_fingerprint = preview_payload_fingerprint_;
   identity.payload_revision = static_cast<quint64>(preview_payload_revision_);
   identity.generation = generation;
