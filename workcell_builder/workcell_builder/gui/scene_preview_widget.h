@@ -409,6 +409,9 @@ private:
   void run_embedded_web_server_probes(const EmbeddedWebRequestIdentity & identity, int port, quint64 navigation_token);
   void fail_embedded_web_server_probe(const EmbeddedWebRequestIdentity & identity, int port, quint64 navigation_token,
     const QString & detail);
+  QString embedded_web_recovery_key(const EmbeddedWebRequestIdentity & identity) const;
+  void handle_embedded_web_runtime_failure(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token,
+    const QString & detail);
   void load_prepared_embedded_web_scene(const EmbeddedWebRequestIdentity & identity);
   void start_embedded_web_readiness_polling(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token, const QString & expected_json_path, const QString & viewer_url);
   void poll_embedded_web_readiness(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token, const QString & expected_json_path, const QString & viewer_url);
@@ -491,6 +494,7 @@ private:
   bool pending_embedded_web_request_{ false };
   quint64 embedded_web_request_generation_{ 0 };
   bool pending_embedded_web_force_{ false };
+  QSet<QString> embedded_web_automatic_recovery_attempts_;
   bool backend_startup_diagnostic_emitted_{ false };
   PreviewContext preview_context_;
   QString embedded_web_last_error_;
