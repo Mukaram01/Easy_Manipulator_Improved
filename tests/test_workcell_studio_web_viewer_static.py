@@ -1090,3 +1090,75 @@ for (const section of ['min', 'max', 'center', 'dimensions']) for (const value o
         stderr=subprocess.PIPE,
     )
     assert result.stderr == ""
+
+
+def test_fit_cell_uses_physical_visible_bounds_and_preserves_camera_on_empty():
+    js_path = VIEWER / "viewer.js"
+    harness = r'''
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+class MockVector3 {
+  constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+  copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this; }
+  addScaledVector(v, s) { this.x += v.x * s; this.y += v.y * s; this.z += v.z * s; return this; }
+  normalize() { const l = Math.hypot(this.x, this.y, this.z) || 1; this.x /= l; this.y /= l; this.z /= l; return this; }
+}
+class MockSphere { constructor() { this.radius = 0; } }
+class MockBox3 {
+  constructor(min, max) {
+    if (max) { this.min = { ...min }; this.max = { ...max }; }
+    else { this.min = { x: Infinity, y: Infinity, z: Infinity }; this.max = { x: -Infinity, y: -Infinity, z: -Infinity }; }
+  }
+  isEmpty() { return this.min.x > this.max.x || this.min.y > this.max.y || this.min.z > this.max.z; }
+  union(box) { for (const k of ['x','y','z']) { this.min[k] = Math.min(this.min[k], box.min[k]); this.max[k] = Math.max(this.max[k], box.max[k]); } return this; }
+  setFromObject(object) { this.min = { ...object.mockBounds.min }; this.max = { ...object.mockBounds.max }; return this; }
+  getSize(target) { target.x = this.max.x - this.min.x; target.y = this.max.y - this.min.y; target.z = this.max.z - this.min.z; return target; }
+  getCenter(target) { target.x = (this.min.x + this.max.x) / 2; target.y = (this.min.y + this.max.y) / 2; target.z = (this.min.z + this.max.z) / 2; return target; }
+  getBoundingSphere(sphere) { const dx = this.max.x - this.min.x, dy = this.max.y - this.min.y, dz = this.max.z - this.min.z; sphere.radius = Math.hypot(dx, dy, dz) / 2; return sphere; }
+  clone() { return new MockBox3(this.min, this.max); }
+}
+const element = () => ({ hidden: true, checked: false, disabled: false, textContent: '', className: '', innerHTML: '', classList: { toggle() {} }, setAttribute() {}, querySelector() { return { textContent: '' }; }, appendChild() {}, addEventListener() {}, getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; } });
+const sandbox = { console, assert, MockVector3, MockSphere, MockBox3, window: { location: { search: '' } }, document: { getElementById() { return element(); }, createElement() { return element(); } }, URLSearchParams, requestAnimationFrame() { return 0; } };
+vm.createContext(sandbox);
+vm.runInContext(source + `
+THREE = { Vector3: MockVector3, Sphere: MockSphere, Box3: MockBox3 };
+function root(children = []) { return { visible: true, children, userData: {}, updateWorldMatrix() {} }; }
+function mesh(id, min, max, userData = {}) { return { isMesh: true, visible: true, children: [], name: id, mockBounds: { min, max }, userData }; }
+state.three.camera = { position: new MockVector3(9, 8, 7), near: 0.5, far: 50, updateProjectionMatrix() { this.updated = true; } };
+state.three.controls = { target: new MockVector3(1, 1, 1), update() { this.updated = true; } };
+const physical = mesh('robot_mesh', { x: 0, y: 0, z: 0 }, { x: 1, y: 1, z: 1 }, { item: { id: 'ur5_mesh', role: 'robot', source_layer: 'locked_generated_urdf_visual', active_visual_source: 'mesh_preview' } });
+const overlay = mesh('work_envelope', { x: -100, y: -100, z: -100 }, { x: 100, y: 100, z: 100 }, { item: { id: 'work_envelope', role: 'helper', category: 'reachability' } });
+const hidden = mesh('hidden_table', { x: 30, y: 30, z: 30 }, { x: 40, y: 40, z: 40 }, { item: { id: 'hidden_table', category: 'table' } }); hidden.visible = false;
+state.three.scene = root([physical, overlay, hidden]);
+let helperCalls = 0;
+const originalHelper = collectPhysicalVisibleBounds;
+collectPhysicalVisibleBounds = rootArg => { helperCalls += 1; return originalHelper(rootArg); };
+resetView();
+assert.strictEqual(helperCalls, 1);
+assert.strictEqual(JSON.stringify(state.lastFrameBounds.min), JSON.stringify({ x: 0, y: 0, z: 0 }));
+assert.strictEqual(JSON.stringify(state.lastFrameBounds.max), JSON.stringify({ x: 1, y: 1, z: 1 }));
+for (const value of [state.three.camera.position.x, state.three.camera.position.y, state.three.camera.position.z, state.three.camera.near, state.three.camera.far]) assert.strictEqual(Number.isFinite(value), true);
+const fittedPosition = { ...state.three.camera.position };
+updateViewerStatus(); refreshWarnings({ warnings: [] }); renderSceneSummary();
+assert.strictEqual(helperCalls, 1);
+assert.strictEqual(JSON.stringify(state.three.camera.position), JSON.stringify(fittedPosition));
+state.three.camera.position.copy(new MockVector3(3, 4, 5));
+state.three.scene = root([overlay]);
+resetView();
+assert.strictEqual(helperCalls, 2);
+assert.strictEqual(JSON.stringify(state.three.camera.position), JSON.stringify({ x: 3, y: 4, z: 5 }));
+assert.strictEqual(state.editorError, 'No visible physical geometry to frame');
+assert.strictEqual(state.editorEvents.at(-1).type, 'fit_cell_unavailable');
+`, sandbox);
+'''
+    result = subprocess.run(
+        ["node", "-e", harness, str(js_path)],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert result.stderr == ""
