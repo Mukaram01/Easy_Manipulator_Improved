@@ -456,8 +456,6 @@ private:
   QTableWidget * existing_scene_table_{ nullptr };
   QLabel * dashboard_summary_label_{ nullptr };
   QLabel * scene_builder_title_{ nullptr };
-  QLabel * scene_preview_label_{ nullptr };
-  QLabel * scene_builder_preview_chip_{ nullptr };
   QLabel * scene_builder_launch_chip_{ nullptr };
   QLabel * scene_builder_safety_chip_{ nullptr };
   QPushButton * scene_builder_generate_launch_button_{ nullptr };
@@ -468,7 +466,6 @@ private:
   QLabel * selection_scene_status_label_{ nullptr };
   QLabel * selection_scene_robot_label_{ nullptr };
   QLabel * selection_scene_end_effector_label_{ nullptr };
-  QLabel * selection_scene_path_label_{ nullptr };
   QLabel * selection_scene_launch_label_{ nullptr };
   QLabel * inspector_label_{ nullptr };
   QDoubleSpinBox * inspector_x_{ nullptr };
@@ -503,7 +500,6 @@ private:
   QPushButton * robot_base_reset_button_{ nullptr };
   QLabel * live_coordinate_label_{ nullptr };
   QLabel * readiness_label_{ nullptr };
-  QLabel * canvas_header_label_{ nullptr };
   QLabel * task_flow_label_{ nullptr };
   QLabel * new_cell_checklist_label_{ nullptr };
   QFrame * scene_builder_command_preview_card_{ nullptr };
@@ -523,7 +519,6 @@ private:
   QMenu * scene_workflow_recommendation_menu_{ nullptr };
   QTreeWidget * scene_hierarchy_tree_{ nullptr };
   QTreeWidget * asset_catalog_tree_{ nullptr };
-  QLabel * scene_files_selected_path_label_{ nullptr };
   QTreeWidget * scene_files_tree_{ nullptr };
   QComboBox * asset_filter_combo_{ nullptr };
   QLineEdit * asset_library_search_{ nullptr };
