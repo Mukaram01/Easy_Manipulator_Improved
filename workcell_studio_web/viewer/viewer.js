@@ -5,6 +5,7 @@ let ColladaLoader;
 let OBJLoader;
 let TransformControls;
 let loadRobotPreview;
+let applyRobotJointPreview;
 
 const PRODUCT_VIEW_WORKSPACE_BACKGROUND = 0xe9edf1;
 const PRODUCT_VIEW_GRID_MAJOR = 0x8996a3;
@@ -17,7 +18,7 @@ const LOCKED_EDIT_REASON = 'Locked/generated preview item; edit source layout/en
 const MIN_FRAME_RADIUS = 1.2;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
-const state = { sceneJson: null, sourceWebSceneFile: '', frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '' };
+const state = { sceneJson: null, sourceWebSceneFile: '', frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', robotPreviewResult: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' } };
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
 const STAGED_MESH_ROOTS = [
   'build/workcell_studio_web_scene/assets/',
@@ -49,6 +50,8 @@ const el = {
   rotationSnap: document.getElementById('rotation-snap'),
   labelsToggle: document.getElementById('labels-toggle'),
   debugOverlaysToggle: document.getElementById('debug-overlays-toggle'),
+  showInitialPose: document.getElementById('show-initial-pose'),
+  initialPoseStatus: document.getElementById('initial-pose-status'),
   canvas: document.getElementById('scene-canvas'),
   labelLayer: document.getElementById('label-layer'),
   empty: document.getElementById('empty-state'),
@@ -59,6 +62,76 @@ const el = {
   summary: document.getElementById('scene-summary'),
 };
 
+
+
+function robotRecords() {
+  const records = asArray(state.sceneJson?.robots).concat(asArray(state.sceneJson?.robot_preview?.robots));
+  if (state.sceneJson?.robot_preview && !records.length) records.push(state.sceneJson.robot_preview);
+  return records.filter(r => r && (r.urdf_url || r.joint_values || r.initial_joint_values || r.initial_positions || r.configured_initial_positions));
+}
+function robotRecordId(robot, index = 0) { return String(robot?.id || robot?.robot_id || robot?.robot_instance_id || robot?.name || `robot_${index}`).trim(); }
+function selectedRobotRecord() {
+  const robots = robotRecords();
+  if (robots.length === 1) return { robot: robots[0], id: robotRecordId(robots[0], 0), automatic: true };
+  const selected = String(state.selected || '');
+  const found = robots.find((robot, index) => robotRecordId(robot, index) === selected);
+  return found ? { robot: found, id: selected, automatic: false } : null;
+}
+function configuredInitialJointValues(robot) {
+  return robot?.initial_joint_values || robot?.configured_initial_positions || robot?.initial_positions || robot?.joint_initial_positions || null;
+}
+function normalJointValues(robot) { return robot?.joint_values || {}; }
+function validateInitialJointMap(robot, result) {
+  const values = configuredInitialJointValues(robot);
+  if (!values || Array.isArray(values) || typeof values !== 'object') throw new Error('Initial pose is not configured');
+  const joints = Array.from((result?.joints || new Map()).entries());
+  if (!joints.length) throw new Error('Product View is not ready');
+  const movable = joints.filter(([, joint]) => !['fixed'].includes(String(joint?.jointType || '').toLowerCase()) && !joint?.isURDFMimicJoint && !joint?.mimicJoint);
+  const names = new Set();
+  for (const [name] of joints) { if (names.has(name)) throw new Error(`Initial pose has duplicate joint: ${name}`); names.add(name); }
+  for (const name of Object.keys(values)) {
+    if (!names.has(name)) throw new Error(`Initial pose has unknown joint: ${name}`);
+    if (!Number.isFinite(Number(values[name]))) throw new Error('Initial pose contains an invalid value');
+  }
+  for (const [name] of movable) if (!(name in values)) throw new Error(`Initial pose is missing joint: ${name}`);
+  return Object.fromEntries(Object.entries(values).map(([name, value]) => [name, Number(value)]));
+}
+function setInitialPosePreviewUi(active, message = '') {
+  if (el.initialPoseStatus) { el.initialPoseStatus.hidden = !active; el.initialPoseStatus.textContent = active ? 'Initial pose preview' : ''; }
+  if (message) pushEditorEvent('status', { message });
+}
+function refreshInitialPoseActionState() {
+  if (!el.showInitialPose) return;
+  const robots = robotRecords();
+  el.showInitialPose.disabled = robots.length === 0 || (robots.length > 1 && !selectedRobotRecord());
+}
+function clearInitialPosePreview({ message = '' } = {}) {
+  if (!state.initialPosePreview.active) { refreshInitialPoseActionState(); return; }
+  const selected = selectedRobotRecord();
+  const result = state.robotPreviewResult;
+  if (selected && result) applyRobotJointPreview?.(result, normalJointValues(selected.robot));
+  state.initialPosePreview = { active: false, robotId: '', sceneKey: '' };
+  if (el.showInitialPose) el.showInitialPose.checked = false;
+  setInitialPosePreviewUi(false, message || 'Initial pose preview ended');
+  refreshWarnings();
+}
+function toggleInitialPosePreview(checked) {
+  if (!checked) { clearInitialPosePreview(); return; }
+  try {
+    if (!state.robotPreviewResult?.root) throw new Error('Product View is not ready');
+    const selected = selectedRobotRecord();
+    if (!selected) throw new Error(robotRecords().length > 1 ? 'Select a robot to preview its initial pose' : 'Initial pose is not configured');
+    const jointMap = validateInitialJointMap(selected.robot, state.robotPreviewResult);
+    applyRobotJointPreview(state.robotPreviewResult, jointMap);
+    state.initialPosePreview = { active: true, robotId: selected.id, sceneKey: sceneId() };
+    setInitialPosePreviewUi(true, `Showing initial pose for ${selected.robot.name || selected.id}`);
+  } catch (err) {
+    if (el.showInitialPose) el.showInitialPose.checked = false;
+    state.initialPosePreview = { active: false, robotId: '', sceneKey: '' };
+    setInitialPosePreviewUi(false);
+    showError(err.message || String(err));
+  }
+}
 
 function sceneDisplayName() { return state.sceneJson?.scene?.id || state.sceneJson?.scene_id || state.sourceWebSceneFile || 'No scene loaded'; }
 function isGeneratedOrLockedItem(item) {
@@ -2260,6 +2333,10 @@ function clearSceneObjects() {
   state._fitBlockerWarnings = new Set();
   state._generatedUrdfFramePoseWarnings = new Set();
   state._supportSurfaceSemanticWarnings = new Set();
+  state.robotPreviewResult = null;
+  state.initialPosePreview = { active: false, robotId: '', sceneKey: '' };
+  if (el.showInitialPose) el.showInitialPose.checked = false;
+  setInitialPosePreviewUi(false);
   if (el.resetView) el.resetView.disabled = true;
   renderSceneSummary();
 }
@@ -2365,7 +2442,9 @@ function loadExpandedUrdfRobotPreview(preview) {
     rootName: `${sceneDisplayName()}_expanded_urdf_loader_robot`,
     skippedLegacyGeneratedUrdfVisualCount: diagnostics.skipped_legacy_generated_urdf_visual_count,
     onRobotLoaded: result => {
+      state.robotPreviewResult = result;
       state.robotUrdfPreviewDiagnostics = result.diagnostics;
+      refreshInitialPoseActionState();
       renderSceneSummary();
       attemptInitialCameraFit();
     },
@@ -2760,6 +2839,7 @@ function populateObjectList() {
 }
 
 function selectObject(id) {
+  const wasInitialPreviewActive = state.initialPosePreview.active;
   if (state.directMoveDrag && state.directMoveDrag.itemId !== (id || '')) cancelDirectMoveDrag('Move cancelled');
   if (state.directRotateDrag && state.directRotateDrag.itemId !== (id || '')) cancelDirectRotateDrag('Rotation cancelled');
   const previous = state.selected || '';
@@ -3165,6 +3245,7 @@ async function loadSceneUrl(rawUrl) {
 if (el.resetView) el.resetView.addEventListener('click', resetView);
 if (el.labelsToggle) el.labelsToggle.addEventListener('change', event => setLabelsVisible(event.target.checked));
 if (el.debugOverlaysToggle) el.debugOverlaysToggle.addEventListener('change', event => setDebugOverlaysVisible(event.target.checked));
+if (el.showInitialPose) el.showInitialPose.addEventListener('change', event => toggleInitialPosePreview(event.target.checked));
 if (el.undoEdit) el.undoEdit.addEventListener('click', undoPreviewEdit);
 if (el.redoEdit) el.redoEdit.addEventListener('click', redoPreviewEdit);
 if (el.clearEdits) el.clearEdits.addEventListener('click', clearPreviewEdits);
@@ -3225,6 +3306,7 @@ async function boot() {
     ColladaLoader = colladaModule.ColladaLoader;
     OBJLoader = objModule.OBJLoader;
     loadRobotPreview = urdfRobotRendererModule.loadRobotPreview;
+    applyRobotJointPreview = urdfRobotRendererModule.applyRobotJointPreview;
     initThree();
     setLabelsVisible(el.labelsToggle?.checked || false);
     setDebugOverlaysVisible(el.debugOverlaysToggle?.checked || false);

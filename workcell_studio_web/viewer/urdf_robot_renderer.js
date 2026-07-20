@@ -344,6 +344,22 @@ function linkRootDiagnostics(robot, links) {
   return { roots, disconnected, duplicateLinks };
 }
 
+export function applyRobotJointPreview(result, jointValues = {}) {
+  const robot = result?.root;
+  if (!robot?.setJointValues) throw new Error('Product View is not ready');
+  robot.setJointValues(jointValues);
+  robot.updateMatrixWorld?.(true);
+  const links = Object.fromEntries(result.links || []);
+  result.diagnostics.robot_joint_values_applied = { ...jointValues };
+  result.diagnostics.robot_link_world_matrices = collectLinkMatrixDiagnostics(robot, links);
+  result.diagnostics.robotLinkWorldMatrices = result.diagnostics.robot_link_world_matrices;
+  result.diagnostics.robot_visual_wrapper_world_matrices = collectVisualWrapperMatrixDiagnostics(links);
+  result.diagnostics.robotVisualWrapperWorldMatrices = result.diagnostics.robot_visual_wrapper_world_matrices;
+  result.diagnostics.robot_descendant_render_mesh_diagnostics = collectDescendantRenderMeshDiagnostics(links);
+  result.diagnostics.robotDescendantRenderMeshDiagnostics = result.diagnostics.robot_descendant_render_mesh_diagnostics;
+  return result.diagnostics;
+}
+
 function jointTypeCounts(joints) {
   const counts = { fixed: 0, revolute: 0, continuous: 0, prismatic: 0, mimic: 0, other: 0 };
   for (const joint of Object.values(joints || {})) {

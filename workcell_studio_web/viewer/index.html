@@ -42,6 +42,10 @@
         <input id="debug-overlays-toggle" type="checkbox" />
         Show zones/debug overlays
       </label>
+      <label class="toolbar-toggle" title="Preview the selected robot at its configured initial joint pose. This does not command the robot.">
+        <input id="show-initial-pose" type="checkbox" disabled />
+        Show Initial Pose
+      </label>
     </div>
   </header>
 
@@ -68,6 +72,7 @@
     <section class="viewport-panel" aria-label="3D canvas area">
       <div id="error-state" class="state error" hidden></div>
       <div id="dirty-state" class="state dirty" hidden>Unsaved preview edits</div>
+      <div id="initial-pose-status" class="state preview-status" hidden>Initial pose preview</div>
       <canvas id="scene-canvas"></canvas>
       <div id="label-layer" class="label-layer" aria-hidden="true"></div>
     </section>
