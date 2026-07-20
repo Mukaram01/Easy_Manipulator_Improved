@@ -56,6 +56,16 @@ def test_embedded_product_view_ready_requires_browser_scene_ready_not_shell_http
     readiness_handler = PREVIEW_CPP[PREVIEW_CPP.index('const QVariantMap status = value.toMap();') : PREVIEW_CPP.index('QTimer::singleShot(750')]
     assert "s.web3d_readiness_state || s.web3dReadinessState" in status_script
     assert 'server_ready' in status_script
-    assert 'boot_state == QStringLiteral("scene_ready") && expected_json_loaded' in readiness_handler
+    assert 'failed_required_item_count' in status_script
+    assert 'scene_id: s.scene_id || s.sceneId' in status_script
+    assert 'expected_physical_item_count' in status_script
+    assert 'rendered_physical_item_count' in status_script
+    assert 'robot_status' in status_script
+    assert 'tool_status' in status_script
+    assert 'environment_status' in status_script
+    assert 'camera_status' in status_script
+    assert 'final_lifecycle_state' in status_script
+    assert 'boot_state == QStringLiteral("scene_ready") && expected_json_loaded && failed_required_count == 0' in readiness_handler
     assert 'boot_state == QStringLiteral("ready")' not in readiness_handler
     assert 'scene_json_loaded && source_json == expected_json_path' in readiness_handler
+    assert 'failed_required=%7' in readiness_handler

@@ -53,13 +53,15 @@ function emitWeb3dReadinessState(readinessState, detail = {}) {
     state.web3dReadiness.emittedSceneReady = true;
   }
   state.web3dReadiness.state = readinessState;
+  const structured = structuredWeb3dReadinessFields(readinessState);
+  const eventDetail = { ...structured, ...detail, final_lifecycle_state: readinessState, finalLifecycleState: readinessState };
   if (readinessState === 'scene_failed') {
     state.web3dReadiness.failed = true;
-    state.web3dReadiness.failure = detail;
+    state.web3dReadiness.failure = eventDetail;
   }
   const status = updateViewerStatus();
-  window.dispatchEvent?.(new CustomEvent('workcell:web3d_readiness', { detail: { state: readinessState, ...detail, status } }));
-  window.parent?.postMessage?.({ type: 'workcell_web3d_readiness', state: readinessState, ...detail, status }, '*');
+  window.dispatchEvent?.(new CustomEvent('workcell:web3d_readiness', { detail: { state: readinessState, ...eventDetail, status } }));
+  window.parent?.postMessage?.({ type: 'workcell_web3d_readiness', state: readinessState, ...eventDetail, status }, '*');
   return status;
 }
 function readinessCategoryForItem(item) {
@@ -73,6 +75,56 @@ function readinessCategoryForItem(item) {
   return '';
 }
 function readinessKey(category, item) { return `${category}:${item?.id || item?.link || itemLabel(item || {})}`; }
+
+function physicalReadinessItems() {
+  return collectItems(state.sceneJson || {}).filter(item => !isDebugOverlayItem(item) && readinessCategoryForItem(item));
+}
+function renderedPhysicalItemCount() {
+  const assemblyCount = collectPhysicalAssemblyBounds?.()?.count || 0;
+  return statusCountedRenderables().length + assemblyCount;
+}
+function expectedPhysicalItemCount() {
+  const items = physicalReadinessItems();
+  const hasExpanded = isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview);
+  return items.length + (hasExpanded && !items.some(item => readinessCategoryForItem(item) === 'robot_arm') ? 1 : 0);
+}
+function failedRequiredItemCount() {
+  const renderFailures = statusCountedRenderables().filter(isRequiredMeshFailureStatus).length;
+  return renderFailures + (state.web3dReadiness?.state === 'scene_failed' && renderFailures === 0 ? 1 : 0);
+}
+function readinessCategoryStatus(category) {
+  const readiness = state.web3dReadiness || {};
+  if (!readiness.required?.[category]) return 'missing';
+  const pending = Array.from(readiness.pending || []).some(key => String(key).startsWith(`${category}:`));
+  if (readiness.state === 'scene_failed' && (readiness.failure?.required_category === category || pending)) return 'failed';
+  if (pending) return 'pending';
+  return readiness.state === 'scene_ready' ? 'ready' : 'loading';
+}
+function structuredWeb3dReadinessFields(lifecycleState) {
+  const finalState = lifecycleState || state.web3dReadiness?.state || 'server_ready';
+  return {
+    scene_id: sceneId(),
+    sceneId: sceneId(),
+    expected_physical_item_count: expectedPhysicalItemCount(),
+    expectedPhysicalItemCount: expectedPhysicalItemCount(),
+    rendered_physical_item_count: renderedPhysicalItemCount(),
+    renderedPhysicalItemCount: renderedPhysicalItemCount(),
+    failed_required_item_count: failedRequiredItemCount(),
+    failedRequiredItemCount: failedRequiredItemCount(),
+    robot_status: readinessCategoryStatus('robot_arm'),
+    robotStatus: readinessCategoryStatus('robot_arm'),
+    tool_status: readinessCategoryStatus('attached_tool_gripper'),
+    toolStatus: readinessCategoryStatus('attached_tool_gripper'),
+    end_effector_status: readinessCategoryStatus('attached_tool_gripper'),
+    endEffectorStatus: readinessCategoryStatus('attached_tool_gripper'),
+    environment_status: readinessCategoryStatus('workbench_support_surface'),
+    environmentStatus: readinessCategoryStatus('workbench_support_surface'),
+    camera_status: readinessCategoryStatus('configured_camera'),
+    cameraStatus: readinessCategoryStatus('configured_camera'),
+    final_lifecycle_state: finalState,
+    finalLifecycleState: finalState,
+  };
+}
 function beginWeb3dSceneReadiness(items) {
   const required = Object.fromEntries(WEB3D_REQUIRED_CATEGORIES.map(category => [category, false]));
   const pending = new Set();
@@ -591,6 +643,7 @@ function updateViewerStatus() {
     requiredPhysicalCategories: state.web3dReadiness?.required || {},
     pending_required_loads: Array.from(state.web3dReadiness?.pending || []),
     pendingRequiredLoads: Array.from(state.web3dReadiness?.pending || []),
+    ...structuredWeb3dReadinessFields(state.web3dReadiness?.state || 'server_ready'),
     readiness_failure: state.web3dReadiness?.failure || null,
     readinessFailure: state.web3dReadiness?.failure || null,
   };

@@ -1488,6 +1488,15 @@ def test_viewer_emits_explicit_web3d_readiness_states_and_required_categories():
     assert "pending.add('attached_tool_gripper:expanded_urdf_loader')" in js
     assert "emitWeb3dReadinessState('scene_loading'" in js
     assert "emitWeb3dReadinessState('scene_ready'" in js
+    assert "scene_id: sceneId()" in js
+    assert "expected_physical_item_count" in js
+    assert "rendered_physical_item_count" in js
+    assert "failed_required_item_count" in js
+    assert "robot_status" in js
+    assert "tool_status" in js
+    assert "environment_status" in js
+    assert "camera_status" in js
+    assert "final_lifecycle_state" in js
 
 
 def test_required_gripper_mesh_failures_transition_scene_failed_with_url_and_link_details():
@@ -1497,6 +1506,7 @@ def test_required_gripper_mesh_failures_transition_scene_failed_with_url_and_lin
     assert "emitWeb3dReadinessState('scene_failed'" in viewer
     assert "url: url || displayMeshUri(item)" in viewer
     assert "link: item?.link || item?.link_name || item?.object_name || ''" in viewer
+    assert "const eventDetail = { ...structured, ...detail, final_lifecycle_state: readinessState" in viewer
     assert "if (required) failWeb3dSceneReadiness(item, preflight.url || loadUrl" in viewer
     assert "http_status: preflight.http_status || null" in viewer
     assert "onRobotMeshLoadError: (err, uri, detail) => { failExpandedUrdfReadiness" in viewer
@@ -1504,6 +1514,21 @@ def test_required_gripper_mesh_failures_transition_scene_failed_with_url_and_lin
     assert "'gripper_base_link'" in renderer
     assert "context?.onRobotMeshLoadError?.(err, uri, { url, uri, path, ...inferMeshLinkDetail(path) })" in renderer
     assert "diagnostics.robot_missing_meshes.push(`${url}:" in renderer
+
+
+def test_gripper_mesh_404_scene_failed_payload_includes_structured_url_and_link_detail():
+    viewer = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    preflight_body = _viewer_function_body(viewer, "async function preflightMeshUrl", "function supportSurfaceKindOf")
+    try_load_body = _viewer_function_body(viewer, "async function tryLoadMesh", "function collectItems")
+    failure_body = _viewer_function_body(viewer, "function failWeb3dSceneReadiness", "function completeExpandedUrdfReadiness")
+    assert "HTTP ${response.status}" in preflight_body
+    assert "http_status: response.status" in preflight_body
+    assert "if (required) failWeb3dSceneReadiness(item, preflight.url || loadUrl" in try_load_body
+    assert "http_status: preflight.http_status || null" in try_load_body
+    assert "url: url || displayMeshUri(item)" in failure_body
+    assert "link: item?.link || item?.link_name || item?.object_name || ''" in failure_body
+    assert "required_category: category" in failure_body
+    assert "scene_id: sceneId()" in viewer
 
 
 def test_successful_required_loads_emit_scene_ready_exactly_once_after_completion():
