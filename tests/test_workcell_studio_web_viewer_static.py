@@ -1277,12 +1277,48 @@ def test_viewer_expanded_urdf_preview_helper_accepts_canonical_and_legacy_modes(
 def test_viewer_urdf_preview_suppression_is_limited_to_robot_tool_generated_rows():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     helper = js.split("function isRobotToolGeneratedUrdfMeshVisualItem(item)", 1)[1].split("function itemAssemblyGroup", 1)[0]
+    identity_helper = js.split("function viewerGroupIdentity(item)", 1)[1].split("function isGeneratedPreviewIdentity", 1)[0]
     assert "isGeneratedUrdfMeshVisualItem(item)" in helper
     assert "isGeneratedRobotItem(item) || isGeneratedToolOrGripperItem(item)" in helper
+    for semantic_field in [
+        "robot_instance_id",
+        "link_name",
+        "visual_index",
+        "category",
+        "role",
+        "renderer_owner",
+        "renderer_ownership",
+    ]:
+        assert semantic_field in identity_helper
     render_body = js.split("function renderScene(items)", 1)[1].split("function loadExpandedUrdfRobotPreview", 1)[0]
     assert "items.filter(isRobotToolGeneratedUrdfMeshVisualItem)" in render_body
     assert "items.filter(isGeneratedUrdfMeshVisualItem)" not in render_body
     assert "new Set(robotToolGeneratedUrdfItems)" in render_body
+    assert "if (assemblyBuild.handled.has(item)) continue" in render_body
+    assert "mesh_uri" not in helper
+    assert "mesh_path" not in helper
+    assert "source_path" not in helper
+
+
+def test_expanded_urdf_loader_keeps_environment_urdf_rows_generic_renderable():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    render_body = js.split("function renderScene(items)", 1)[1].split("function loadExpandedUrdfRobotPreview", 1)[0]
+
+    assert "const urdfPreviewActive = isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview)" in render_body
+    assert "const robotToolGeneratedUrdfItems = items.filter(isRobotToolGeneratedUrdfMeshVisualItem)" in render_body
+    assert "handled: new Set(robotToolGeneratedUrdfItems)" in render_body
+    assert "if (assemblyBuild.handled.has(item)) continue" in render_body
+
+    helper = js.split("function isRobotToolGeneratedUrdfMeshVisualItem(item)", 1)[1].split("function itemAssemblyGroup", 1)[0]
+    assert "isGeneratedRobotItem(item) || isGeneratedToolOrGripperItem(item)" in helper
+    for environment_semantic in ["table", "camera", "workbench", "environment"]:
+        assert environment_semantic not in helper
+    # The expanded-URDF ownership set is intentionally object-identity based so
+    # generated robot/tool rows that share Robotiq mesh filenames remain distinct,
+    # while generated table/camera/workbench URDF rows are never suppressed merely
+    # because they are mesh-backed urdf_flattened rows.
+    assert "new Set(robotToolGeneratedUrdfItems)" in render_body
+    assert "displayMeshUri(item)" not in helper
 
 
 def test_viewer_summary_reports_expanded_urdf_loader_for_aliases():
