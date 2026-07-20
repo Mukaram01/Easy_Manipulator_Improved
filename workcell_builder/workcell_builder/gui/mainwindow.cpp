@@ -17,6 +17,7 @@
 #include "gui/scene3d_viewport_widget.h"
 #include "gui/preview_item_suppression.h"
 #include "visual_mesh_source_resolver.hpp"
+#include "include/asset_catalog_model.h"
 #include <QFileDialog>
 #include <QAction>
 #include <QWidgetAction>
@@ -2067,24 +2068,39 @@ void MainWindow::setup_studio_shell()
     preview_layers_layout->addWidget(box);
   }
   hierarchy_layout->addWidget(preview_layers_group);
-  scene_tab_layout->addWidget(hierarchy_card);
-  auto * catalog_card = new QFrame(assets_tab); catalog_card->setObjectName("studioCard");
+  auto * left_vertical_splitter = new QSplitter(Qt::Vertical, scene_tab);
+  left_vertical_splitter->setObjectName("sceneBuilderLeftVerticalSplitter");
+  left_vertical_splitter->addWidget(hierarchy_card);
+  auto * catalog_card = new QFrame(scene_tab); catalog_card->setObjectName("studioCard");
   auto * catalog_layout = new QVBoxLayout(catalog_card);
-  catalog_layout->addWidget(new QLabel("<b>Asset Browser</b> <span style=\"color:#8aa\">(Asset Catalog)</span>"));
+  catalog_layout->addWidget(new QLabel("<b>Asset Library</b> <span style=\"color:#8aa\">(Asset Catalog)</span>"));
   // Asset Catalog compatibility tokens: Robots End Effectors Cameras Tables Conveyors Bins Fixtures Objects / STLs Pick/Place Zones Custom / Imported
-  auto * asset_browser_hint = new QLabel("Meshes discovered from repo assets/ (.stl, .dae, .obj). Select one and click Add to Scene.", catalog_card);
+  auto * asset_browser_hint = new QLabel("Browse the existing catalog, preview one visual asset, then start Place Asset.", catalog_card);
   asset_browser_hint->setWordWrap(true);
   catalog_layout->addWidget(asset_browser_hint);
+  asset_library_search_ = new QLineEdit(catalog_card);
+  asset_library_search_->setObjectName("assetLibrarySearchBox");
+  asset_library_search_->setPlaceholderText("Search assets...");
+  catalog_layout->addWidget(asset_library_search_);
   asset_filter_combo_ = new QComboBox(catalog_card);
-  asset_filter_combo_->addItems({"All", "robots", "grippers", "cameras", "table/workbench", "environment", "other"});
+  asset_filter_combo_->addItem("All");
   catalog_layout->addWidget(asset_filter_combo_);
   asset_catalog_tree_ = new QTreeWidget(catalog_card);
   asset_catalog_tree_->setObjectName("studioAssetCatalogTree");
-  asset_catalog_tree_->setHeaderLabels({"Asset", "Category", "Type/Source", "Status"});
+  asset_catalog_tree_->setHeaderLabels({"Asset", "Category", "Type", "Status"});
   asset_catalog_tree_->viewport()->setAcceptDrops(false);
   asset_catalog_tree_->setDragEnabled(true);
   asset_catalog_tree_->viewport()->installEventFilter(this);
   catalog_layout->addWidget(asset_catalog_tree_, 1);
+  asset_library_preview_ = new ScenePreviewWidget(catalog_card);
+  asset_library_preview_->setObjectName("assetLibraryLivePreview");
+  asset_library_preview_->setMinimumHeight(150);
+  asset_library_preview_->set_scene_selected(true);
+  asset_library_preview_->set_3d_available(true);
+  catalog_layout->addWidget(asset_library_preview_);
+  asset_library_preview_status_ = new QLabel("Select an asset to preview.", catalog_card);
+  asset_library_preview_status_->setWordWrap(true);
+  catalog_layout->addWidget(asset_library_preview_status_);
   add_to_canvas_button_ = new QPushButton("Add to Scene", scene_builder);
   add_to_canvas_button_->setEnabled(false);
   catalog_layout->addWidget(add_to_canvas_button_);
@@ -2101,7 +2117,10 @@ void MainWindow::setup_studio_shell()
   auto * placeholder_action = asset_more_menu->addAction("Generate Simple Box/Cylinder Placeholder");
   asset_more_actions->setMenu(asset_more_menu);
   catalog_layout->addWidget(asset_more_actions);
-  assets_tab_layout->addWidget(catalog_card, 1);
+  left_vertical_splitter->addWidget(catalog_card);
+  left_vertical_splitter->setSizes({420, 260});
+  scene_tab_layout->addWidget(left_vertical_splitter, 1);
+  assets_tab_layout->addWidget(new QLabel("Asset Library is available below Scene Hierarchy in the Scene tab.", assets_tab), 1);
   auto * files_card = new QFrame(files_tab); files_card->setObjectName("studioCard");
   auto * files_card_layout = new QVBoxLayout(files_card);
   files_card_layout->addWidget(new QLabel("<b>Scene Files</b>"));
@@ -3043,6 +3062,7 @@ void MainWindow::setup_studio_shell()
   auto * fit_sc = new QShortcut(QKeySequence(Qt::Key_F), scene_builder); connect(fit_sc,&QShortcut::activated,fit_button,&QAction::trigger);
   connect(scene_hierarchy_tree_, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int column){ Q_UNUSED(column); on_hierarchy_item_selected(item); });
   connect(asset_filter_combo_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::on_asset_filter_changed);
+  connect(asset_library_search_, &QLineEdit::textChanged, this, [this](const QString &){ on_asset_filter_changed(asset_filter_combo_ ? asset_filter_combo_->currentIndex() : 0); });
   connect_action(open_asset_folder_action, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).isDir() ? p : QFileInfo(p).absolutePath())); });
   connect_action(copy_asset_path_action, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QApplication::clipboard()->setText(p); append_studio_log("Copy Asset Path: " + p); });
   connect_button(add_to_canvas_button_, [this](){ if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) { QMessageBox::information(this, "Asset Catalog", "Select an asset to add to canvas."); return; } auto *it = asset_catalog_tree_->currentItem(); const int idx = it->data(0, CatalogRoleIndex).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) { QMessageBox::information(this, "Asset Catalog", e.disabled_reason); return; } add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path); });
@@ -3051,7 +3071,7 @@ void MainWindow::setup_studio_shell()
     trigger_recommended_workflow_action(resolve_recommended_workflow_action().handler);
   });
   connect(asset_catalog_tree_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *it, int){ if (!it) return; const int idx = it->data(0, CatalogRoleIndex).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) return; add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path); });
-  connect(asset_catalog_tree_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *, QTreeWidgetItem *){ validate_asset_catalog_selection(); });
+  connect(asset_catalog_tree_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *, QTreeWidgetItem *){ validate_asset_catalog_selection(); update_asset_library_preview(); });
   connect_action(import_asset_action, [this](){ QMessageBox::information(this, "Asset Catalog", "Import STL / URDF keeps existing behavior via filesystem import workflows."); });
   connect_action(add_existing_stl_action, [this](){ QMessageBox::information(this, "Asset Catalog", "Add Existing STL to Canvas keeps existing behavior for scene assets."); });
   connect_action(placeholder_action, [this](){ add_asset_to_canvas_from_catalog("Custom", "Generated Placeholder", "placeholder://generated"); });
@@ -7466,23 +7486,11 @@ void MainWindow::keyPressEvent(QKeyEvent * event)
 
 void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path)
 {
-  const QString lower_path = source_path.toLower();
-  const bool repo_mesh_asset = lower_path.endsWith(".stl") || lower_path.endsWith(".dae") || lower_path.endsWith(".obj");
-  if (repo_mesh_asset) {
-    armed_asset_category_ = category;
-    armed_asset_display_name_ = display_name;
-    armed_asset_source_path_ = source_path;
-    reset_armed_asset_transform_to_defaults();
-    armed_asset_use_clicked_xy_ = false;
-    arm_place_asset_mode(category, display_name, source_path);
-    commit_armed_asset_placement(armed_asset_default_xy_px_);
-    return;
-  }
-  if (!configure_asset_placement_transform(category, display_name)) {
-    append_studio_log(QString("Add Asset validation failed: %1 (%2) placement canceled.")
-      .arg(display_name, category));
-    return;
-  }
+  armed_asset_category_ = category;
+  armed_asset_display_name_ = display_name;
+  armed_asset_source_path_ = source_path;
+  reset_armed_asset_transform_to_defaults();
+  armed_asset_use_clicked_xy_ = true;
   arm_place_asset_mode(category, display_name, source_path);
 }
 
@@ -7759,13 +7767,20 @@ void MainWindow::validate_asset_catalog_selection()
 {
   if (!add_to_canvas_button_) return;
   bool can_add = false;
-  if (asset_catalog_tree_) {
+  QString disabled_reason;
+  if (!digital_twin_scene_) {
+    disabled_reason = "Open an editable scene before adding catalog assets.";
+  } else if (asset_catalog_tree_) {
     auto * item = asset_catalog_tree_->currentItem();
     if (item && !item->isHidden()) {
       can_add = item->data(0, CatalogRolePlaceable).toBool();
+      if (!can_add) disabled_reason = "Selected asset is not placeable with the current visual/primitive support.";
+    } else {
+      disabled_reason = "Select a visible catalog asset.";
     }
   }
   add_to_canvas_button_->setEnabled(can_add);
+  add_to_canvas_button_->setToolTip(can_add ? "Start existing Place Asset mode for the selected catalog asset." : disabled_reason);
 }
 
 
@@ -7785,15 +7800,70 @@ QJsonObject MainWindow::scene3d_filter_diagnostics() const
 void MainWindow::on_asset_filter_changed(int)
 {
   const QString selected = asset_filter_combo_ ? asset_filter_combo_->currentText() : "All";
+  const QString query = asset_library_search_ ? asset_library_search_->text().trimmed().toLower() : QString();
   if (!asset_catalog_tree_) return;
   for (int i = 0; i < asset_catalog_tree_->topLevelItemCount(); ++i) {
     auto * group = asset_catalog_tree_->topLevelItem(i);
-    const QString group_name = group->text(0);
-    const bool group_visible = (selected == "All" || group_name == selected);
-    group->setHidden(!group_visible);
-    for (int c = 0; c < group->childCount(); ++c) group->child(c)->setHidden(!group_visible);
+    bool any_child_visible = false;
+    for (int c = 0; c < group->childCount(); ++c) {
+      auto * child = group->child(c);
+      const int idx = child->data(0, CatalogRoleIndex).toInt();
+      const bool category_match = (selected == "All" || group->text(0) == selected);
+      bool search_match = query.isEmpty();
+      if (idx >= 0 && idx < asset_catalog_entries_.size()) {
+        const auto & e = asset_catalog_entries_[idx];
+        const QString haystack = QString("%1 %2 %3 %4").arg(e.display_name, e.category, e.tags, e.asset_id).toLower();
+        search_match = search_match || haystack.contains(query);
+      }
+      const bool visible = category_match && search_match;
+      child->setHidden(!visible);
+      any_child_visible = any_child_visible || visible;
+    }
+    group->setHidden(!any_child_visible);
   }
   validate_asset_catalog_selection();
+}
+
+void MainWindow::update_asset_library_preview()
+{
+  if (!asset_library_preview_) return;
+  auto * item = asset_catalog_tree_ ? asset_catalog_tree_->currentItem() : nullptr;
+  const int idx = item ? item->data(0, CatalogRoleIndex).toInt() : -1;
+  if (!item || item->isHidden() || idx < 0 || idx >= asset_catalog_entries_.size()) {
+    asset_library_preview_->set_preview_items({});
+    if (asset_library_preview_status_) asset_library_preview_status_->setText("Select an asset to preview.");
+    return;
+  }
+  const auto & e = asset_catalog_entries_[idx];
+  ScenePreviewWidget::PreviewItem preview;
+  preview.id = QString("asset_library_%1").arg(e.asset_id.isEmpty() ? QString::number(idx) : e.asset_id);
+  preview.display_name = e.display_name;
+  preview.category = e.category;
+  preview.role = e.role.isEmpty() ? QStringLiteral("asset_catalog_preview") : e.role;
+  preview.source_layer = "asset_catalog";
+  preview.active_visual_source = "asset_catalog_live_preview";
+  preview.source_path = e.source_path;
+  const fs::path scene_dir = (selected_scene_index_ >= 0 && selected_scene_index_ < static_cast<int>(scene_browser_result_.scenes.size()))
+    ? scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_dir : workcell_builder_repo_root_from_source();
+  QStringList tried_candidates;
+  const QString resolved_visual = resolve_visual_mesh_source_path(
+    e.source_path, e.visual_uri.startsWith("package://") ? e.visual_uri : QString(), scene_dir, detect_workspace_root(), &tried_candidates);
+  preview.mesh_path = resolved_visual.isEmpty() ? e.visual_uri : resolved_visual;
+  preview.mesh_type = QFileInfo(preview.mesh_path).suffix().toLower();
+  preview.mesh_available = QFileInfo(preview.mesh_path).isFile();
+  preview.selectable = false;
+  preview.editable = false;
+  preview.locked = true;
+  preview.lock_reason = "Asset Library preview is inspect-only; use Add to Scene to place.";
+  preview.status = preview.mesh_available ? "preview" : "preview_failed";
+  preview.source_path_resolution_outcome = preview.mesh_available ? "resolved" : "missing_file";
+  if (!preview.mesh_available) preview.mesh_load_warning = QString("missing_file: %1; tried=%2").arg(e.visual_uri.isEmpty() ? e.source_path : e.visual_uri, tried_candidates.join(", "));
+  if (preview.mesh_type.isEmpty()) { preview.primitive_geometry_type = "box"; preview.sx = preview.sy = preview.sz = 0.25; }
+  asset_library_preview_->set_preview_items({preview});
+  if (asset_library_preview_status_) {
+    asset_library_preview_status_->setToolTip(QString("Source URI: %1").arg(e.visual_uri));
+    asset_library_preview_status_->setText(preview.mesh_available ? QString("Previewing %1 from existing resolver/loader path.").arg(e.display_name) : preview.mesh_load_warning);
+  }
 }
 
 void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
@@ -11133,74 +11203,72 @@ void MainWindow::populate_asset_catalog()
   if (!asset_catalog_tree_) return;
   asset_catalog_tree_->clear();
   asset_catalog_entries_.clear();
-
   const fs::path repo_root = fs::current_path();
-  const QDir assets_dir(QString::fromStdString((repo_root / "assets").string()));
-  auto group_for_path = [](const QString & path) {
-    const QString lower = path.toLower();
-    if (lower.contains("robot") || lower.contains("/ur") || lower.contains("manipulator")) return QStringLiteral("robots");
-    if (lower.contains("gripper") || lower.contains("robotiq") || lower.contains("suction") || lower.contains("airpick") || lower.contains("endeffector")) return QStringLiteral("grippers");
-    if (lower.contains("camera") || lower.contains("realsense") || lower.contains("sensor")) return QStringLiteral("cameras");
-    if (lower.contains("table") || lower.contains("workbench") || lower.contains("bench")) return QStringLiteral("table/workbench");
-    if (lower.contains("environment") || lower.contains("fixture") || lower.contains("bin") || lower.contains("conveyor") || lower.contains("scene")) return QStringLiteral("environment");
-    return QStringLiteral("other");
-  };
+  const auto model = discover_asset_catalog(QString::fromLocal8Bit(qgetenv("WORKCELL_WORKSPACE_ROOT")).toStdString(), repo_root.string());
 
-  if (assets_dir.exists()) {
-    QDirIterator it(assets_dir.absolutePath(), {QStringLiteral("*.stl"), QStringLiteral("*.dae"), QStringLiteral("*.obj")},
-                    QDir::Files, QDirIterator::Subdirectories);
-    while (it.hasNext()) {
-      const QString source = it.next();
-      const QFileInfo info(source);
-      AssetCatalogEntry ui_entry;
-      ui_entry.asset_type = info.suffix().toLower();
-      ui_entry.display_name = info.completeBaseName();
-      ui_entry.role = QStringLiteral("mesh_asset");
-      ui_entry.dimensions = QStringLiteral("scale=1");
-      ui_entry.default_pose = QStringLiteral("xyz=[0,0,0] rpy=[0,0,0]");
-      ui_entry.source_path = source;
-      ui_entry.editable = true;
-      ui_entry.availability_status = QStringLiteral("ready");
-      ui_entry.disabled_reason.clear();
-      ui_entry.category = group_for_path(source);
-      asset_catalog_entries_.push_back(ui_entry);
-    }
+  QSet<QString> categories;
+  for (const auto & source_entry : model.assets) {
+    AssetCatalogEntry ui_entry;
+    ui_entry.asset_id = QString::fromStdString(source_entry.id);
+    ui_entry.display_name = QString::fromStdString(source_entry.display_name.empty() ? source_entry.id : source_entry.display_name);
+    ui_entry.category = QString::fromStdString(source_entry.category.empty() ? "other" : source_entry.category);
+    ui_entry.asset_type = QString::fromStdString(source_entry.icon_key.empty() ? source_entry.source : source_entry.icon_key);
+    ui_entry.role = QString::fromStdString(source_entry.role_hints.empty() ? "asset_catalog" : source_entry.role_hints.front());
+    ui_entry.source_path = QString::fromStdString(source_entry.path);
+    ui_entry.visual_uri = ui_entry.source_path;
+    ui_entry.tags = QString::fromStdString(source_entry.id + " " + source_entry.category + " " + source_entry.vendor + " " + source_entry.model);
+    ui_entry.icon_key = QString::fromStdString(source_entry.icon_key);
+    ui_entry.editable = source_entry.can_add_to_scene;
+    ui_entry.availability_status = QString::fromStdString(source_entry.readiness.empty() ? "unknown" : source_entry.readiness);
+    ui_entry.disabled_reason = source_entry.can_add_to_scene ? QString() : QString::fromStdString(source_entry.blockers.empty() ? source_entry.suggested_action : source_entry.blockers.front());
+    asset_catalog_entries_.push_back(ui_entry);
+    categories.insert(ui_entry.category);
   }
 
   std::sort(asset_catalog_entries_.begin(), asset_catalog_entries_.end(), [](const AssetCatalogEntry & a, const AssetCatalogEntry & b) {
     if (a.category != b.category) return a.category < b.category;
     return a.display_name < b.display_name;
   });
-
-  QMap<QString, QTreeWidgetItem *> groups;
-  const QStringList ordered_groups = {"robots", "grippers", "cameras", "table/workbench", "environment", "other"};
-  for (const QString & group : ordered_groups) {
-    auto * parent = new QTreeWidgetItem(asset_catalog_tree_, {group, group, "assets/ mesh group", ""});
-    parent->setFirstColumnSpanned(false);
-    parent->setData(0, CatalogRoleIndex, -1);
-    parent->setData(0, CatalogRolePlaceable, false);
-    groups.insert(group, parent);
+  if (asset_filter_combo_) {
+    const QString current = asset_filter_combo_->currentText();
+    const QSignalBlocker blocker(asset_filter_combo_);
+    asset_filter_combo_->clear();
+    asset_filter_combo_->addItem("All");
+    QStringList sorted = categories.values();
+    sorted.sort(Qt::CaseInsensitive);
+    asset_filter_combo_->addItems(sorted);
+    const int idx = asset_filter_combo_->findText(current);
+    if (idx >= 0) asset_filter_combo_->setCurrentIndex(idx);
   }
 
+  QMap<QString, QTreeWidgetItem *> groups;
+  for (const auto & e : asset_catalog_entries_) {
+    if (!groups.contains(e.category)) {
+      auto * parent = new QTreeWidgetItem(asset_catalog_tree_, {e.category, e.category, "catalog", ""});
+      parent->setData(0, CatalogRoleIndex, -1);
+      parent->setData(0, CatalogRolePlaceable, false);
+      groups.insert(e.category, parent);
+    }
+  }
   for (int idx = 0; idx < asset_catalog_entries_.size(); ++idx) {
     const auto & e = asset_catalog_entries_[idx];
-    auto * parent = groups.value(e.category, groups.value("other"));
-    auto * item = new QTreeWidgetItem(parent, {e.display_name, e.category, e.asset_type, e.availability_status});
+    auto * item = new QTreeWidgetItem(groups.value(e.category), {QString("%1 %2").arg(e.icon_key, e.display_name).trimmed(), e.category, e.asset_type, e.availability_status});
     item->setData(0, CatalogRoleIndex, idx);
-    item->setData(0, CatalogRolePlaceable, true);
+    item->setData(0, CatalogRolePlaceable, e.disabled_reason.trimmed().isEmpty() && e.editable);
     item->setData(0, CatalogRoleSourcePath, e.source_path);
-    item->setToolTip(0, e.source_path);
+    item->setToolTip(0, QString("%1\nID: %2\nVisual: %3").arg(e.display_name, e.asset_id, e.visual_uri));
   }
   for (auto * parent : groups) parent->setExpanded(parent->childCount() > 0);
 
   if (asset_catalog_entries_.isEmpty()) {
-    auto * info = new QTreeWidgetItem(asset_catalog_tree_, {"No mesh assets found", "Info", "assets/", "blocked"});
+    auto * info = new QTreeWidgetItem(asset_catalog_tree_, {"No catalog assets found", "Info", "asset catalog", "blocked"});
     info->setDisabled(true);
-    info->setToolTip(0, "No .stl, .dae, or .obj files were found under repo assets/.");
+    info->setToolTip(0, "discover_asset_catalog returned no placeable or previewable assets.");
   }
 
   on_asset_filter_changed(asset_filter_combo_ ? asset_filter_combo_->currentIndex() : 0);
   validate_asset_catalog_selection();
+  update_asset_library_preview();
 }
 
 void MainWindow::open_add_asset_dialog()

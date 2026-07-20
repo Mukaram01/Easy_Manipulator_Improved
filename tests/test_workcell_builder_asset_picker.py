@@ -17,14 +17,14 @@ def test_asset_discovery_helper_paths_and_statuses_present():
 
 def test_empty_asset_catalog_diagnostic_includes_searched_paths():
     main = Path('workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
-    assert 'No assets found. Searched paths:' in main
-    assert '{"No assets found", "Info", "Searched paths", "Unavailable"}' in main
+    assert 'No catalog assets found' in main
+    assert 'discover_asset_catalog returned no placeable or previewable assets.' in main
 
 
 def test_add_to_canvas_button_is_disabled_then_enabled_via_selection_signal():
     main = Path('workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
     assert 'add_to_canvas_button_->setEnabled(false);' in main
-    assert 'connect(asset_catalog_tree_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *, QTreeWidgetItem *){ validate_asset_catalog_selection(); });' in main
+    assert 'connect(asset_catalog_tree_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *, QTreeWidgetItem *){ validate_asset_catalog_selection(); update_asset_library_preview(); });' in main
     assert 'validate_asset_catalog_selection();' in main
     assert 'add_to_canvas_button_->setEnabled(can_add);' in main
 
