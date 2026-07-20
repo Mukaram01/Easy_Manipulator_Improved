@@ -1152,6 +1152,7 @@ function failedMeshDebugEdgeMaterial() {
   return new THREE.LineBasicMaterial({ color: PRODUCT_VIEW_LIGHT_PALETTE.errorAccent, transparent: true, opacity: 1 });
 }
 function styleFailedMeshDebugFallback(fallback, item, reason) {
+  if (!fallback) return;
   fallback.visible = true;
   fallback.name = `${item.id || itemLabel(item)}_FAILED_REQUIRED_MESH_DEBUG_FALLBACK`;
   fallback.traverse?.(child => {
@@ -1439,7 +1440,7 @@ function isGeneratedRobotItem(item) {
 }
 function viewerGroupFor(item) {
   const identity = viewerGroupIdentity(item);
-  if (/\b(zone|pick zone|place zone|spawn zone|safety zone|work envelope|reachability|collision)\b/.test(identity)) return 'zones';
+  if (/\b(zone|pick zone|place zone|observation zone|spawn zone|safety zone|work envelope|reachability|collision)\b/.test(identity)) return 'zones';
   if (/\b(camera|sensor|realsense|depth camera|rgbd|lidar|vision)\b/.test(identity)) return 'sensors';
   if (isGeneratedToolOrGripperItem(item)) return 'tool/gripper';
   if (isGeneratedRobotItem(item)) return 'robot';
@@ -1447,11 +1448,19 @@ function viewerGroupFor(item) {
   if (/\b(robot|arm|manipulator|ur3|ur5|ur10|tool|gripper|end effector|eef|suction|vacuum|robotiq|airpick|generated|generated preview|urdf|moveit)\b/.test(identity)) return 'robot/tool/generated';
   return 'unknown';
 }
-const DEBUG_OVERLAY_TOKEN_RE = /\b(overlay|helper|debug|diagnostic|safety zone|pick zone|place zone|robot reach|warning anchor|warning badge|camera fov|fov|pick coverage|reachability|collision|work envelope|task route|approach retreat|epd detection|detection label|bounds box|bounding box)\b/;
+const DEBUG_OVERLAY_TOKEN_RE = /\b(overlay|helper|debug|diagnostic|safety zone|pick zone|place zone|robot reach|transform anchor|warning marker|warning anchor|warning badge|camera fov|fov|pick coverage|reachability|collision|work envelope|task route|home pose|approach retreat|epd detection|detection label|bounds box|bounding box)\b/;
+const PHYSICAL_SEMANTIC_TOKEN_RE = /\b(robot|arm|manipulator|tool|gripper|end effector|eef|camera body|configured camera|sensor body|conveyor|object|workpiece|part|product|bin|tray|support surface|table|tabletop|workbench|fixture|pallet|physical safety barrier|safety barrier|guard fence|fence)\b/;
 function isZone(item) { return viewerGroupFor(item) === 'zones'; }
+function isPhysicalSemanticItem(item) {
+  if (isGeneratedToolOrGripperItem(item) || isGeneratedRobotItem(item) || supportSurfaceDisplayType(item) || isSensor(item)) return true;
+  const identity = viewerGroupIdentity(item);
+  return PHYSICAL_SEMANTIC_TOKEN_RE.test(identity);
+}
+function hasDimensionBackedPhysicalPrimitive(item) {
+  return isPhysicalSemanticItem(item) && Boolean(dimensionsFromPrimitive(primitiveOf(item)));
+}
 function isDebugOverlayItem(item) {
   if (item?.debug_overlay === true || item?.exclude_from_fit_bounds === true || item?.source_layer === 'debug_overlay') return true;
-  if (viewerGroupFor(item) === 'zones') return true;
   const identity = [
     item?.source_layer,
     item?.active_visual_source,
@@ -1468,6 +1477,8 @@ function isDebugOverlayItem(item) {
     ...(Array.isArray(item?.warnings) ? item.warnings : []),
     itemLabel(item || {}),
   ].map(value => String(value || '').toLowerCase().replace(/[_-]+/g, ' ')).join(' ');
+  if (isPhysicalSemanticItem(item) && !/\b(safety zone|pick zone|place zone|observation zone|spawn zone|work envelope|robot reach|camera fov|fov|home pose|transform anchor|warning marker|warning anchor|warning badge)\b/.test(identity)) return false;
+  if (viewerGroupFor(item) === 'zones') return true;
   return DEBUG_OVERLAY_TOKEN_RE.test(identity);
 }
 function isSensor(item) { return viewerGroupFor(item) === 'sensors'; }
@@ -1513,9 +1524,13 @@ function applyFallbackRenderMetadata(object, item, status = 'fallback_geometry')
   });
 }
 function dimensionsFromPrimitive(primitive) {
-  if (!primitive) return [0.25, 0.25, 0.25];
-  if (Array.isArray(primitive)) return primitive.slice(0, 3);
-  return primitive.size || primitive.dimensions || primitive.extents || [primitive.x || primitive.width || 0.25, primitive.y || primitive.depth || 0.25, primitive.z || primitive.height || 0.25];
+  if (!primitive) return null;
+  const dims = Array.isArray(primitive)
+    ? primitive.slice(0, 3)
+    : (primitive.size || primitive.dimensions || primitive.extents || [primitive.x || primitive.width, primitive.y || primitive.depth, primitive.z || primitive.height]);
+  if (!Array.isArray(dims) || dims.length < 3) return null;
+  const numeric = dims.slice(0, 3).map(Number);
+  return numeric.every(value => Number.isFinite(value) && value > 0) ? numeric : null;
 }
 function makePrimitiveMesh(item) {
   const primitive = primitiveOf(item);
@@ -1525,7 +1540,8 @@ function makePrimitiveMesh(item) {
   else if (kind.includes('cylinder')) geometry = new THREE.CylinderGeometry(Number(primitive?.radius || 0.08), Number(primitive?.radius || 0.08), Number(primitive?.height || 0.25), 24);
   else {
     const dims = dimensionsFromPrimitive(primitive);
-    geometry = new THREE.BoxGeometry(Number(dims[0] || 0.25), Number(dims[1] || 0.25), Number(dims[2] || 0.25));
+    if (!dims) return null;
+    geometry = new THREE.BoxGeometry(dims[0], dims[1], dims[2]);
   }
   const group = new THREE.Group();
   group.name = `${item.id || itemLabel(item)}_fallback_primitive`;
@@ -1672,7 +1688,7 @@ async function tryLoadMesh(item, rendered, fallback) {
       setRenderInfo(rendered, 'required_mesh_failed_debug_fallback', uri, item.mesh_load_error);
       warnRequiredMeshFallback(item, preflight.url || loadUrl, item.mesh_load_error, { mesh_url: preflight.url || loadUrl, http_status: preflight.http_status || null });
     } else {
-      fallback.visible = true;
+      if (fallback) fallback.visible = true;
       setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', uri, item.mesh_load_error);
       appendRuntimeWarning(item, uri, item.mesh_load_error, preflight.code || 'mesh_url_not_served', { mesh_url: preflight.url || loadUrl, http_status: preflight.http_status || null });
     }
@@ -1696,7 +1712,7 @@ async function tryLoadMesh(item, rendered, fallback) {
     const nativeBounds = new THREE.Box3().setFromObject(visualRoot);
     const autoscaled = maybeApplyMeshUnitAutoscale(item, meshObject, nativeBounds, uri);
     const validationBounds = autoscaled ? new THREE.Box3().setFromObject(visualRoot) : nativeBounds;
-    fallback.visible = false;
+    if (fallback) fallback.visible = false;
     rendered.object3d.add(visualRoot);
     rendered.meshObject = visualRoot;
     rendered.loadedMeshObject = meshObject;
@@ -1721,7 +1737,7 @@ async function tryLoadMesh(item, rendered, fallback) {
       setRenderInfo(rendered, 'required_mesh_failed_debug_fallback', uri, reason);
       warnRequiredMeshFallback(item, loadUrl, reason, { extension: ext, loader: loaderName, mesh_url: loadUrl });
     } else {
-      fallback.visible = true;
+      if (fallback) fallback.visible = true;
       setRenderInfo(rendered, rendered.renderInfo?.render_status || 'box_fallback', uri, reason);
       appendRuntimeWarning(item, uri, reason, 'mesh_loader_failure', { extension: ext, loader: loaderName, mesh_url: loadUrl });
     }
@@ -2648,18 +2664,20 @@ function renderScene(items) {
     object3d.up.copy(THREE.Object3D.DEFAULT_UP);
     const primitive = primitiveOf(item);
     const fallback = isSensor(item) ? makeSensorMarker(item) : makePrimitiveMesh(item);
-    fallback.name = `${item.id || itemLabel(item)}_fallback`;
-    assignItemUserData(fallback, item);
-    object3d.add(fallback);
+    if (fallback) {
+      fallback.name = `${item.id || itemLabel(item)}_fallback`;
+      assignItemUserData(fallback, item);
+      object3d.add(fallback);
+    }
     if (!applyPose(object3d, item)) continue;
     assignItemUserData(object3d, item);
     object3d.visible = state.debugOverlaysVisible || !isDebugOverlayItem(item);
     scene.add(object3d);
     const rendered = { item, object3d, fallback, labelEl: createLabelElement(item), originalTransform: transformOf(item) };
     const requiredMesh = itemRequiresMeshBackedVisual(item);
-    const fallbackStatus = requiredMesh ? 'mesh_loading_required' : (primitive || isSensor(item) ? 'primitive_fallback' : 'box_fallback');
-    const fallbackReason = requiredMesh ? 'required mesh is loading; primitive fallback hidden unless mesh load fails as debug geometry' : (primitive || isSensor(item) ? 'primitive geometry rendered while mesh loads or is unavailable' : 'no primitive geometry or mesh was provided; using box fallback');
-    fallback.visible = !requiredMesh;
+    const fallbackStatus = requiredMesh ? 'mesh_loading_required' : (fallback ? 'primitive_fallback' : 'no_physical_dimensions');
+    const fallbackReason = requiredMesh ? 'required mesh is loading; primitive fallback hidden unless mesh load fails as debug geometry' : (fallback ? 'primitive geometry rendered while mesh loads or is unavailable' : 'no mesh or physical primitive dimensions were provided; Product View box fallback suppressed');
+    if (fallback) fallback.visible = !requiredMesh;
     setRenderInfo(rendered, fallbackStatus, displayMeshUri(item), fallbackReason);
     state.objects.push(rendered);
     maybeWarnSupportSurfaceSemantics(item);
