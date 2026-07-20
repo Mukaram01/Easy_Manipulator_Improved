@@ -277,6 +277,97 @@ function vector3ToDiagnostics(value) {
   return value ? { x: Number(value.x), y: Number(value.y), z: Number(value.z) } : null;
 }
 
+
+function finiteMatrix16(value) {
+  if (Array.isArray(value) && value.length === 4 && value.every(row => Array.isArray(row) && row.length === 4)) {
+    const out = [];
+    for (let col = 0; col < 4; col += 1) {
+      for (let row = 0; row < 4; row += 1) out.push(Number(value[row][col]));
+    }
+    return out.every(Number.isFinite) ? out : null;
+  }
+  if (Array.isArray(value) && value.length === 16) {
+    const out = value.map(Number);
+    return out.every(Number.isFinite) ? out : null;
+  }
+  const matrix = value?.matrix_world || value?.matrixWorld || value?.expected_matrix || value?.expectedMatrix || null;
+  return matrix && matrix !== value ? finiteMatrix16(matrix) : null;
+}
+
+function matrixMaxAbsDelta(a, b) {
+  const ma = finiteMatrix16(a);
+  const mb = finiteMatrix16(b);
+  if (!ma || !mb) return Infinity;
+  return Math.max(...ma.map((value, index) => Math.abs(value - mb[index])));
+}
+
+function expectedMatrixMap(...sources) {
+  const out = new Map();
+  for (const source of sources) {
+    if (!source) continue;
+    if (Array.isArray(source)) {
+      for (const entry of source) {
+        const key = String(entry?.link_name || entry?.linkName || entry?.link || entry?.name || '').trim();
+        const matrix = finiteMatrix16(entry);
+        if (key && matrix) out.set(key, matrix);
+      }
+    } else if (typeof source === 'object') {
+      for (const [key, value] of Object.entries(source)) {
+        const matrix = finiteMatrix16(value);
+        if (key && matrix) out.set(key, matrix);
+      }
+    }
+  }
+  return out;
+}
+
+function compareMatrixDiagnostics(actualByLink, expectedByLink, tolerance = 1e-5) {
+  const comparisons = [];
+  let pass = true;
+  for (const [linkName, expectedMatrix] of expectedByLink.entries()) {
+    const actualEntry = actualByLink instanceof Map ? actualByLink.get(linkName) : actualByLink?.[linkName];
+    const actualMatrix = finiteMatrix16(actualEntry);
+    const maxAbsDelta = matrixMaxAbsDelta(expectedMatrix, actualMatrix);
+    const ok = Number.isFinite(maxAbsDelta) && maxAbsDelta <= tolerance;
+    pass = pass && ok;
+    comparisons.push({
+      link_name: linkName,
+      linkName,
+      max_abs_delta: maxAbsDelta,
+      maxAbsDelta,
+      tolerance,
+      pass: ok,
+      expected_matrix_world: expectedMatrix,
+      expectedMatrixWorld: expectedMatrix,
+      actual_matrix_world: actualMatrix,
+      actualMatrixWorld: actualMatrix,
+    });
+  }
+  return { pass, tolerance, compared_count: comparisons.length, comparedCount: comparisons.length, comparisons };
+}
+
+function collectMatrixParityDiagnostics(previewConfig, diagnostics) {
+  const tolerance = Number(previewConfig?.matrix_diagnostic_tolerance ?? previewConfig?.matrixDiagnosticTolerance ?? 1e-5);
+  const linkExpected = expectedMatrixMap(
+    previewConfig?.expected_robot_link_world_matrices,
+    previewConfig?.expectedRobotLinkWorldMatrices,
+    previewConfig?.robot_link_world_matrices_expected,
+    previewConfig?.robotLinkWorldMatricesExpected
+  );
+  const visualExpected = expectedMatrixMap(
+    previewConfig?.expected_robot_visual_wrapper_world_matrices,
+    previewConfig?.expectedRobotVisualWrapperWorldMatrices,
+    previewConfig?.robot_visual_wrapper_world_matrices_expected,
+    previewConfig?.robotVisualWrapperWorldMatricesExpected
+  );
+  const linkParity = compareMatrixDiagnostics(diagnostics.robot_link_world_matrices || {}, linkExpected, tolerance);
+  const visualActual = new Map((diagnostics.robot_visual_wrapper_world_matrices || []).map(entry => [String(entry?.link_name || entry?.linkName || '').trim(), entry]).filter(([key]) => key));
+  const visualParity = compareMatrixDiagnostics(visualActual, visualExpected, tolerance);
+  diagnostics.robot_matrix_world_parity = { tolerance, link: linkParity, visual_wrapper: visualParity, pass: linkParity.pass && visualParity.pass };
+  diagnostics.robotMatrixWorldParity = diagnostics.robot_matrix_world_parity;
+  return diagnostics.robot_matrix_world_parity;
+}
+
 function collectLinkMatrixDiagnostics(robot, links) {
   robot?.updateMatrixWorld?.(true);
   const out = {};
@@ -440,6 +531,7 @@ export function applyRobotJointPreview(result, jointValues = {}) {
   result.diagnostics.robotVisualWrapperWorldMatrices = result.diagnostics.robot_visual_wrapper_world_matrices;
   result.diagnostics.robot_descendant_render_mesh_diagnostics = collectDescendantRenderMeshDiagnostics(links);
   result.diagnostics.robotDescendantRenderMeshDiagnostics = result.diagnostics.robot_descendant_render_mesh_diagnostics;
+  collectMatrixParityDiagnostics(result?.previewConfig || {}, result.diagnostics);
   return result.diagnostics;
 }
 
@@ -492,7 +584,7 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     robotDescendantRenderMeshDiagnostics: [],
     skipped_legacy_generated_urdf_visual_count: rendererContext?.skippedLegacyGeneratedUrdfVisualCount || 0,
   };
-  const result = { root: null, links: new Map(), joints: new Map(), diagnostics, ready: null };
+  const result = { root: null, links: new Map(), joints: new Map(), diagnostics, ready: null, previewConfig };
 
   result.ready = (async () => {
     setLifecycleState(diagnostics, 'loading_urdf');
@@ -536,6 +628,7 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     diagnostics.robotVisualWrapperWorldMatrices = diagnostics.robot_visual_wrapper_world_matrices;
     diagnostics.robot_descendant_render_mesh_diagnostics = collectDescendantRenderMeshDiagnostics(robot.links);
     diagnostics.robotDescendantRenderMeshDiagnostics = diagnostics.robot_descendant_render_mesh_diagnostics;
+    collectMatrixParityDiagnostics(previewConfig, diagnostics);
     diagnostics.robot_collada_mesh_diagnostics = diagnostics.robot_collada_mesh_diagnostics || [];
     diagnostics.robotColladaMeshDiagnostics = diagnostics.robot_collada_mesh_diagnostics;
     const rootDiagnostics = linkRootDiagnostics(robot, robot.links);

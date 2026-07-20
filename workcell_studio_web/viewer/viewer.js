@@ -2661,6 +2661,13 @@ function renderScene(items) {
   state.robotUrdfPreviewDiagnostics = {};
   const urdfPreviewActive = isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview);
   const robotToolGeneratedUrdfItems = items.filter(isRobotToolGeneratedUrdfMeshVisualItem);
+  if (urdfPreviewActive) {
+    for (const item of robotToolGeneratedUrdfItems) {
+      item.workcell_web_render_pose_mode = 'expanded_urdf_loader_skip_flattened_row';
+      item.expanded_urdf_loader_skip_reason = 'expanded URDF mode renders robot/tool only through loadRobotPreview and URDFLoader; flattened row transforms are diagnostics only';
+      item.baked_world_visual_pose_diagnostic_only = Boolean(item.baked_world_visual_pose || item.expected_visual_pose || item.baked_world_visual_matrix || item.visual_origin || item.robot_world_pose);
+    }
+  }
   const assemblyBuild = urdfPreviewActive ? { handled: new Set(robotToolGeneratedUrdfItems), assemblies: [], renderDiagnostics: { skipped_flattened_urdf_visual_count: 0, assembled_hierarchy_rendered_mesh_count: 0, rendered_fk_visual_count: 0, skipped_legacy_generated_urdf_count: robotToolGeneratedUrdfItems.length, skipped_legacy_generated_urdf_visual_count: robotToolGeneratedUrdfItems.length, visible_duplicate_generated_urdf_count: 0, visible_tool0_fallback_count: 0, detached_robot_mesh_clusters: 0 } } : buildRobotAssemblies(items);
   state.robotAssemblyDiagnostics = assemblyBuild.assemblies;
   state.robotAssemblyRenderDiagnostics = assemblyBuild.renderDiagnostics || {};
