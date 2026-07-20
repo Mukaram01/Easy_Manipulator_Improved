@@ -308,6 +308,39 @@ TEST(ScenePreviewWidgetUi, PreparationFailureUsesPopulatedCompatibilityViewport)
 }
 #endif
 
+
+TEST(SceneBuilderWorkspaceSource, CompactTopCommandRowKeepsActionsAndPathAccess)
+{
+  QFile source(QStringLiteral("workcell_builder/workcell_builder/gui/mainwindow.cpp"));
+  if (!source.exists()) source.setFileName(QStringLiteral("../workcell_builder/gui/mainwindow.cpp"));
+  ASSERT_TRUE(source.open(QIODevice::ReadOnly | QIODevice::Text));
+  const QString text = QString::fromUtf8(source.readAll());
+
+  const int row_index = text.indexOf(QStringLiteral("sceneBuilderCompactCommandRow"));
+  ASSERT_GE(row_index, 0);
+  const QString row_block = text.mid(row_index, 5200);
+  EXPECT_TRUE(row_block.contains(QStringLiteral("new QHBoxLayout")));
+  EXPECT_TRUE(row_block.contains(QStringLiteral("setWordWrap(false)")));
+  EXPECT_TRUE(row_block.contains(QStringLiteral("sceneBuilderCompactSceneIdentity")));
+  EXPECT_TRUE(text.contains(QStringLiteral("ElideMiddle")));
+  EXPECT_TRUE(text.contains(QStringLiteral("setToolTip(cleaned_path)")));
+  EXPECT_TRUE(row_block.contains(QStringLiteral("Copy full scene path")));
+  EXPECT_TRUE(row_block.contains(QStringLiteral("sceneBuilderHeaderFilesButton")));
+  EXPECT_TRUE(row_block.contains(QStringLiteral("sceneBuilderHeaderSaveLayoutButton")));
+  EXPECT_TRUE(row_block.contains(QStringLiteral("if (save_layout_button_) save_layout_button_->click()")));
+  EXPECT_TRUE(row_block.contains(QStringLiteral("sceneBuilderHeaderRunNextButton")));
+  EXPECT_FALSE(row_block.contains(QStringLiteral("<h2>Scene Builder</h2>")));
+  EXPECT_FALSE(row_block.contains(QStringLiteral("setWordWrap(true)")));
+
+  EXPECT_EQ(text.count(QStringLiteral("sceneBuilderCompactCommandRow")), 1);
+  EXPECT_TRUE(text.contains(QStringLiteral("scene_builder_preview_chip_->setText(QString(\"Preview: %1\")")));
+  const int focus_action_index = text.indexOf(QStringLiteral("scene_builder_focus_3d_action_"));
+  ASSERT_GE(focus_action_index, 0);
+  const QString focus_block = text.mid(focus_action_index, 2200);
+  EXPECT_FALSE(focus_block.contains(QStringLiteral("sceneBuilderCompactCommandRow")));
+  EXPECT_FALSE(focus_block.contains(QStringLiteral("sceneBuilderHeaderSaveLayoutButton")));
+}
+
 TEST(SceneBuilderWorkspaceSource, ResizablePanelActionsAndFocusAreWired)
 {
   QFile source(QStringLiteral("workcell_builder/workcell_builder/gui/mainwindow.cpp"));
