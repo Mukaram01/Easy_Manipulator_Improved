@@ -1391,3 +1391,48 @@ def test_viewer_rotate_cancels_on_selection_mode_and_scene_change_without_yaml_w
     assert "state.undoStack.push" not in object_change_body
     assert "yaml" not in object_change_body.lower()
     assert "metadata" not in object_change_body.lower()
+
+
+def test_viewer_emits_explicit_web3d_readiness_states_and_required_categories():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    assert "'server_ready'" in js
+    assert "'scene_loading'" in js
+    assert "'scene_ready'" in js
+    assert "'scene_failed'" in js
+    assert "const WEB3D_REQUIRED_CATEGORIES = ['robot_arm', 'attached_tool_gripper', 'workbench_support_surface', 'configured_camera']" in js
+    assert "function beginWeb3dSceneReadiness(items)" in js
+    assert "function maybeEmitSceneReady()" in js
+    assert "if (readinessState === 'scene_ready')" in js
+    assert "if (state.web3dReadiness.emittedSceneReady)" in js
+    assert "pending.add('robot_arm:expanded_urdf_loader')" in js
+    assert "pending.add('attached_tool_gripper:expanded_urdf_loader')" in js
+    assert "emitWeb3dReadinessState('scene_loading'" in js
+    assert "emitWeb3dReadinessState('scene_ready'" in js
+
+
+def test_required_gripper_mesh_failures_transition_scene_failed_with_url_and_link_details():
+    viewer = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    renderer = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
+    assert "function failWeb3dSceneReadiness(item, url, reason" in viewer
+    assert "emitWeb3dReadinessState('scene_failed'" in viewer
+    assert "url: url || displayMeshUri(item)" in viewer
+    assert "link: item?.link || item?.link_name || item?.object_name || ''" in viewer
+    assert "if (required) failWeb3dSceneReadiness(item, preflight.url || loadUrl" in viewer
+    assert "http_status: preflight.http_status || null" in viewer
+    assert "onRobotMeshLoadError: (err, uri, detail) => { failExpandedUrdfReadiness" in viewer
+    assert "function inferMeshLinkDetail(path)" in renderer
+    assert "'gripper_base_link'" in renderer
+    assert "context?.onRobotMeshLoadError?.(err, uri, { url, uri, path, ...inferMeshLinkDetail(path) })" in renderer
+    assert "diagnostics.robot_missing_meshes.push(`${url}:" in renderer
+
+
+def test_successful_required_loads_emit_scene_ready_exactly_once_after_completion():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    body = _viewer_function_body(js, "function emitWeb3dReadinessState", "function readinessCategoryForItem")
+    maybe_body = _viewer_function_body(js, "function maybeEmitSceneReady", "function isGeneratedUrdfItem")
+    assert "if (state.web3dReadiness.emittedSceneReady) return" in body
+    assert "state.web3dReadiness.emittedSceneReady = true" in body
+    assert "readiness.pending?.size === 0" in maybe_body
+    assert "emitWeb3dReadinessState('scene_ready'" in maybe_body
+    assert "requiredReadinessCompleteForItem(item);" in js
+    assert "completeExpandedUrdfReadiness(result);" in js
