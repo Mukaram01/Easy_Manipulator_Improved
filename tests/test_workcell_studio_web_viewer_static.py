@@ -222,6 +222,39 @@ def test_urdf_renderer_resolves_package_meshes_to_staged_scene_assets():
     assert "URDF package mesh rejected:" in js
 
 
+def test_expanded_urdf_robot_preview_callbacks_are_scene_current_guarded():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    clear_body = js.split("function clearSceneObjects()", 1)[1].split("function renderScene(items)", 1)[0]
+    load_body = js.split("function loadExpandedUrdfRobotPreview(preview)", 1)[1].split("function linkNameOfItem(item)", 1)[0]
+
+    assert "let robotPreviewLoadToken = 0;" in js
+    assert "robotPreviewLoadToken += 1;" in clear_body
+    assert "state.assemblyRoots = [];" in clear_body
+    assert "state.objects = [];" in clear_body
+    assert "state.robotPreviewResult = null;" in clear_body
+    assert "state.robotUrdfPreviewDiagnostics = {};" in clear_body
+
+    assert "const loadToken = ++robotPreviewLoadToken;" in load_body
+    assert "const loadSceneId = sceneId();" in load_body
+    assert "loadToken === robotPreviewLoadToken && loadSceneId === sceneId()" in load_body
+    assert "sceneId: loadSceneId" in load_body
+    assert "if (callbackIsCurrent()) state.three.scene?.add?.(root);" in load_body
+    assert "if (callbackIsCurrent()) state.assemblyRoots.push(root);" in load_body
+    assert "Ignored stale robot preview callback: callback_scene=${loadSceneId} active_scene=${sceneId()}" in load_body
+
+    guard_token = "if (!callbackIsCurrent()) return ignoreStaleCallback();"
+    callback_mutations = {
+        "onRobotLoaded: result => {": "state.robotPreviewResult = result;",
+        "onRobotMeshLoaded: () => {": "renderSceneSummary();",
+        "onRobotMeshLoadError: (err, uri, detail) => {": "failExpandedUrdfReadiness(err, state.robotUrdfPreviewDiagnostics, detail || { uri });",
+        "onRobotError: (err, diagnostics) => {": "failExpandedUrdfReadiness(err, diagnostics || state.robotUrdfPreviewDiagnostics);",
+    }
+    for callback, mutation in callback_mutations.items():
+        section = load_body.split(callback, 1)[1].split("},", 1)[0]
+        assert guard_token in section
+        assert section.find(guard_token) < section.find(mutation)
+
+
 def test_urdf_renderer_rejects_unsafe_package_mesh_sources():
     js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
     package_body = js.split("function resolvePackageMeshUri", 1)[1].split("function normalizeMeshUri", 1)[0]
@@ -262,7 +295,7 @@ def test_urdf_renderer_passes_loaded_scene_id_without_changing_staged_meshes():
     assert "const diagnostic = context?.meshUriDiagnostic?.({ mesh_uri: raw, mesh_staging_status: 'staged' });" in normalize_body
     assert "return diagnostic?.uri || raw;" in normalize_body
     preview_call = viewer.split("const previewResult = loadRobotPreview(preview, {", 1)[1].split("onRobotLoaded", 1)[0]
-    assert "sceneId: sceneId()," in preview_call
+    assert "sceneId: loadSceneId," in preview_call
 
 
 
@@ -1910,7 +1943,7 @@ def test_required_gripper_mesh_failures_transition_scene_failed_with_url_and_lin
     assert "const eventDetail = { ...structured, ...detail, final_lifecycle_state: readinessState" in viewer
     assert "if (required) failWeb3dSceneReadiness(item, preflight.url || loadUrl" in viewer
     assert "http_status: preflight.http_status || null" in viewer
-    assert "onRobotMeshLoadError: (err, uri, detail) => { failExpandedUrdfReadiness" in viewer
+    assert "onRobotMeshLoadError: (err, uri, detail) => { if (!callbackIsCurrent()) return ignoreStaleCallback(); failExpandedUrdfReadiness" in viewer
     assert "function inferMeshLinkDetail(path)" in renderer
     assert "'gripper_base_link'" in renderer
     assert "context?.onRobotMeshLoadError?.(err, uri, { url, uri, path, ...inferMeshLinkDetail(path) })" in renderer

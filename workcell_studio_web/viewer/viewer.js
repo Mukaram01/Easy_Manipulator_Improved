@@ -27,6 +27,7 @@ const MIN_FRAME_RADIUS = 1.2;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
 const state = { sceneJson: null, sourceWebSceneFile: '', frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', robotPreviewResult: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'server_ready', emittedSceneReady: false, required: {}, pending: new Set(), failed: false, failure: null } };
+let robotPreviewLoadToken = 0;
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
 const STAGED_MESH_ROOTS = [
   'build/workcell_studio_web_scene/assets/',
@@ -2634,6 +2635,7 @@ function clearLabels() {
 function clearSceneObjects() {
   const scene = state.three.scene;
   if (!scene) return;
+  robotPreviewLoadToken += 1;
   for (const root of state.assemblyRoots || []) scene.remove(root);
   for (const rendered of state.objects) scene.remove(rendered.object3d);
   clearLabels();
@@ -2641,6 +2643,7 @@ function clearSceneObjects() {
   state.assemblyRoots = [];
   state.robotAssemblyDiagnostics = [];
   state.robotAssemblyRenderDiagnostics = {};
+  state.robotUrdfPreviewDiagnostics = {};
   state.physicalAssemblyBounds = null;
   state.finalPhysicalFitBounds = null;
   state.resolvedFramePoses.clear();
@@ -2721,6 +2724,17 @@ function renderScene(items) {
 
 
 function loadExpandedUrdfRobotPreview(preview) {
+  const loadToken = ++robotPreviewLoadToken;
+  const loadSceneId = sceneId();
+  let staleCallbackLogged = false;
+  const callbackIsCurrent = () => loadToken === robotPreviewLoadToken && loadSceneId === sceneId();
+  const ignoreStaleCallback = () => {
+    if (!staleCallbackLogged) {
+      console.warn(`Ignored stale robot preview callback: callback_scene=${loadSceneId} active_scene=${sceneId()}`);
+      staleCallbackLogged = true;
+    }
+    return true;
+  };
   const diagnostics = state.robotUrdfPreviewDiagnostics = {
     robot_render_mode: 'expanded_urdf_loader',
     robot_preview_loaded: false,
@@ -2761,14 +2775,15 @@ function loadExpandedUrdfRobotPreview(preview) {
     return { root: null, links: new Map(), joints: new Map(), diagnostics, ready: Promise.resolve(null) };
   }
   const previewResult = loadRobotPreview(preview, {
-    sceneId: sceneId(),
-    scene: state.three.scene,
-    assemblyRoots: state.assemblyRoots,
+    sceneId: loadSceneId,
+    scene: { add: root => { if (callbackIsCurrent()) state.three.scene?.add?.(root); } },
+    assemblyRoots: { push: root => { if (callbackIsCurrent()) state.assemblyRoots.push(root); } },
     repoRootRelativeUrl,
     meshUriDiagnostic,
     rootName: `${sceneDisplayName()}_expanded_urdf_loader_robot`,
     skippedLegacyGeneratedUrdfVisualCount: diagnostics.skipped_legacy_generated_urdf_visual_count,
     onRobotLoaded: result => {
+      if (!callbackIsCurrent()) return ignoreStaleCallback();
       state.robotPreviewResult = result;
       state.robotUrdfPreviewDiagnostics = result.diagnostics;
       if (!failIfCanonicalRequiredVisualSetInvalid()) completeExpandedUrdfReadiness(result);
@@ -2776,10 +2791,12 @@ function loadExpandedUrdfRobotPreview(preview) {
       renderSceneSummary();
     },
     onRobotMeshLoaded: () => {
+      if (!callbackIsCurrent()) return ignoreStaleCallback();
       renderSceneSummary();
     },
-    onRobotMeshLoadError: (err, uri, detail) => { failExpandedUrdfReadiness(err, state.robotUrdfPreviewDiagnostics, detail || { uri }); renderSceneSummary(); },
+    onRobotMeshLoadError: (err, uri, detail) => { if (!callbackIsCurrent()) return ignoreStaleCallback(); failExpandedUrdfReadiness(err, state.robotUrdfPreviewDiagnostics, detail || { uri }); renderSceneSummary(); },
     onRobotError: (err, diagnostics) => {
+      if (!callbackIsCurrent()) return ignoreStaleCallback();
       failExpandedUrdfReadiness(err, diagnostics || state.robotUrdfPreviewDiagnostics);
       appendRuntimeWarning({}, preview?.urdf_url || '', `expanded_urdf_loader failed: ${err?.message || err}`, 'expanded_urdf_loader_failed');
       refreshWarnings();
