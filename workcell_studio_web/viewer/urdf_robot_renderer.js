@@ -28,6 +28,7 @@ function resolvePackageMeshUri(uri, sceneId, diagnostics) {
   if (!raw.startsWith('package://')) return '';
   const scene = String(sceneId || '').trim();
   if (!scene) return rejectPackageMeshUri('missing scene ID', diagnostics);
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(scene) || scene.includes('%')) return rejectPackageMeshUri(`malformed scene ID: ${scene}`, diagnostics);
   const packagePath = raw.slice('package://'.length);
   if (packagePath.startsWith('/') || /^(?:file|https?):\/\//i.test(packagePath) || /^[A-Za-z]:[\\/]/.test(packagePath)) {
     return rejectPackageMeshUri(raw, diagnostics);
@@ -49,9 +50,38 @@ function resolvePackageMeshUri(uri, sceneId, diagnostics) {
     }
     safeParts.push(encodeURIComponent(decoded));
   }
-  const resolved = `build/workcell_studio_web_scene/assets/${encodeURIComponent(scene)}/${encodeURIComponent(packageName)}/${safeParts.join('/')}`;
+  const resolved = `build/workcell_studio_web_scene/assets/${scene}/${packageName}/${safeParts.join('/')}`;
   diagnostics.robot_package_mesh_resolutions.push(`URDF package mesh resolved: ${raw} -> ${resolved}`);
   return resolved;
+}
+
+
+function packageRootResolver(sceneId, diagnostics) {
+  const scene = String(sceneId || '').trim();
+  return targetPackage => {
+    const packageName = String(targetPackage || '').trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(scene) || scene.includes('%') || !/^[A-Za-z][A-Za-z0-9_]*$/.test(packageName)) {
+      rejectPackageMeshUri(`package resolver rejected ${packageName || '<empty>'} for scene ${scene || '<empty>'}`, diagnostics);
+      return 'build/workcell_studio_web_scene/assets/__rejected_package_uri__';
+    }
+    return `build/workcell_studio_web_scene/assets/${scene}/${packageName}`;
+  };
+}
+
+function configureUrdfPackageResolution(loader, manager, context, diagnostics) {
+  const resolver = packageRootResolver(context?.sceneId, diagnostics);
+  if ('packages' in loader) loader.packages = resolver;
+  else loader.packages = resolver;
+  if (manager?.setURLModifier) {
+    manager.setURLModifier(url => {
+      const raw = String(url || '').trim();
+      if (raw.startsWith('package://')) return resolvePackageMeshUri(raw, context?.sceneId, diagnostics);
+      if (/^\/(?:[A-Za-z][A-Za-z0-9_]*)(?:\/|$)/.test(raw)) {
+        return rejectPackageMeshUri(`bare package-root URL: ${raw}`, diagnostics);
+      }
+      return url;
+    });
+  }
 }
 
 function normalizeMeshUri(path, context, diagnostics) {
@@ -471,7 +501,7 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     const loader = new URDFLoader(manager);
     loader.parseVisual = true;
     loader.parseCollision = false;
-    loader.packages = '';
+    configureUrdfPackageResolution(loader, manager, rendererContext, diagnostics);
     loader.workingPath = '';
     loader.loadMeshCb = (path, meshManager, material, done) => loadMesh(path, meshManager, material, done, rendererContext, diagnostics);
 

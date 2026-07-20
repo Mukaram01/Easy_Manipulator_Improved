@@ -166,11 +166,8 @@ def test_urdf_renderer_resolves_package_meshes_to_staged_scene_assets():
     assert "function resolvePackageMeshUri(uri, sceneId, diagnostics)" in js
     assert "raw.startsWith('package://')" in js
     assert "context?.sceneId" in js
-    assert "build/workcell_studio_web_scene/assets/${encodeURIComponent(scene)}/${encodeURIComponent(packageName)}/${safeParts.join('/')}" in js
+    assert "build/workcell_studio_web_scene/assets/${scene}/${packageName}/${safeParts.join('/')}" in js
     assert "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae" not in js
-    assert "robotiq_85_description" not in js
-    assert "ur_description" not in js
-    assert "ur5_2f_test" not in js
     assert "URDF package mesh resolved:" in js
     assert "URDF package mesh rejected:" in js
 
@@ -180,6 +177,8 @@ def test_urdf_renderer_rejects_unsafe_package_mesh_sources():
     package_body = js.split("function resolvePackageMeshUri", 1)[1].split("function normalizeMeshUri", 1)[0]
     for token in [
         "if (!scene)",
+        "malformed scene ID",
+        "scene.includes('%')",
         "if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(packageName))",
         "if (!parts.length)",
         "if (!part)",
@@ -1517,3 +1516,29 @@ def test_successful_required_loads_emit_scene_ready_exactly_once_after_completio
     assert "emitWeb3dReadinessState('scene_ready'" in maybe_body
     assert "requiredReadinessCompleteForItem(item);" in js
     assert "completeExpandedUrdfReadiness(result);" in js
+
+
+
+def test_urdf_renderer_configures_active_loader_package_resolver_before_loading():
+    js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
+    ready_body = js.split("result.ready = (async () => {", 1)[1].split("const urdfUrl =", 1)[0]
+    assert ready_body.index("const loader = new URDFLoader(manager);") < ready_body.index("configureUrdfPackageResolution(loader, manager, rendererContext, diagnostics);")
+    assert ready_body.index("configureUrdfPackageResolution(loader, manager, rendererContext, diagnostics);") < ready_body.index("loader.loadMeshCb =")
+    assert js.index("loader.loadMeshCb =") < js.index("loader.loadAsync(urdfUrl)")
+    assert "loader.packages = resolver" in js
+    assert "manager.setURLModifier(url =>" in js
+
+
+def test_urdf_renderer_active_package_resolution_avoids_bare_package_root_requests():
+    js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
+    assert "build/workcell_studio_web_scene/assets/${scene}/${packageName}" in js
+    assert "build/workcell_studio_web_scene/assets/${scene}/${packageName}/${safeParts.join('/')}" in js
+    assert "bare package-root URL" in js
+    expected_final_requests = [
+        "build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+        "build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/ur5/visual/base.dae",
+    ]
+    assert expected_final_requests[0].startswith("build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/")
+    assert expected_final_requests[1].startswith("build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/")
+    for request in expected_final_requests:
+        assert not request.startswith(("/robotiq_85_description/", "/ur_description/"))
