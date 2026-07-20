@@ -1987,8 +1987,6 @@ void MainWindow::setup_studio_shell()
   scene_header_row->setObjectName("sceneBuilderCompactCommandRow");
   scene_header_row->setContentsMargins(0, 0, 0, 0);
   scene_header_row->setSpacing(6);
-  scene_builder_preview_chip_ = new QLabel("Preview: Unavailable", scene_builder); scene_builder_preview_chip_->setObjectName("sceneStatusChip");
-  scene_builder_preview_chip_->setWordWrap(false);
   scene_builder_launch_chip_ = new QLabel("Launch Artifacts: Missing", scene_builder); scene_builder_launch_chip_->setObjectName("sceneStatusChip");
   scene_builder_launch_chip_->setVisible(false);
   scene_builder_safety_chip_ = new QLabel("Safety: Fake hardware", scene_builder); scene_builder_safety_chip_->setObjectName("sceneStatusChip");
@@ -2035,7 +2033,6 @@ void MainWindow::setup_studio_shell()
   scene_header_run_next_button->setMenu(scene_header_run_next_menu);
   scene_header_row->addWidget(scene_builder_title_);
   scene_header_row->addWidget(scene_builder_path_label_,1);
-  scene_header_row->addWidget(scene_builder_preview_chip_);
   scene_header_row->addWidget(scene_header_files_button);
   scene_header_row->addWidget(scene_header_save_button);
   scene_header_row->addWidget(scene_header_run_next_button);
@@ -2193,9 +2190,6 @@ void MainWindow::setup_studio_shell()
   scene_files_summary_label_->setWordWrap(true);
   files_card_layout->addWidget(scene_files_summary_label_);
 
-  scene_files_selected_path_label_ = new QLabel("Selected scene path: (none)", files_card);
-  scene_files_selected_path_label_->setWordWrap(true);
-  files_card_layout->addWidget(scene_files_selected_path_label_);
 
   scene_files_tree_ = new QTreeWidget(files_card);
   scene_files_tree_->setObjectName("studioSceneFilesTree");
@@ -2244,8 +2238,6 @@ void MainWindow::setup_studio_shell()
   left_layout->addWidget(scene_builder_left_tabs_, 1);
 
   auto * center_panel_layout = new QVBoxLayout(center_panel);
-  scene_preview_label_=new QLabel("<b>Digital Twin Canvas</b>"); scene_preview_label_->setWordWrap(true); center_panel_layout->addWidget(scene_preview_label_);
-  canvas_header_label_ = new QLabel("UR5 + Robotiq 2F | Pick and Place | READY"); canvas_header_label_->setWordWrap(true); center_panel_layout->addWidget(canvas_header_label_);
   auto * controls = new QHBoxLayout();
   controls->setObjectName("scene_builder_top_controls_row");
   controls->setContentsMargins(0, 0, 0, 0);
@@ -2704,7 +2696,6 @@ void MainWindow::setup_studio_shell()
   selection_scene_status_label_ = make_row(scene_card_layout, "Status", "unknown", false);
   selection_scene_robot_label_ = make_row(scene_card_layout, "Robot", "unknown", false);
   selection_scene_end_effector_label_ = make_row(scene_card_layout, "End Effector", "unknown", false);
-  selection_scene_path_label_ = make_row(scene_card_layout, "Path", "(none)", true);
   selection_scene_launch_label_ = make_row(scene_card_layout, "Launch", "(none)", true);
 
   auto * task_intent = new QFrame(right_panel); task_intent->setObjectName("studioCard"); auto * task_intent_layout = new QVBoxLayout(task_intent);
@@ -5615,10 +5606,6 @@ void MainWindow::refresh_selected_scene_metadata_panel()
     if (selection_scene_status_label_) selection_scene_status_label_->setText("unknown");
     if (selection_scene_robot_label_) selection_scene_robot_label_->setText("unknown");
     if (selection_scene_end_effector_label_) selection_scene_end_effector_label_->setText("unknown");
-    if (selection_scene_path_label_) {
-      selection_scene_path_label_->setText("(none)");
-      selection_scene_path_label_->setToolTip("(none)");
-    }
     if (selection_scene_launch_label_) {
       selection_scene_launch_label_->setText("(none)");
       selection_scene_launch_label_->setToolTip("(none)");
@@ -5660,7 +5647,6 @@ void MainWindow::refresh_selected_scene_metadata_panel()
   set_label(selection_scene_status_label_, status_text);
   set_label(selection_scene_robot_label_, robot_text);
   set_label(selection_scene_end_effector_label_, end_effector_text);
-  set_label(selection_scene_path_label_, scene_path);
   set_label(selection_scene_launch_label_, launch_text);
 
   refresh_selected_scene_item_labels(selected_item_state_);
@@ -5696,8 +5682,6 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
     if (scene_builder_title_) scene_builder_title_->setText("<h2>Scene Builder</h2>");
     refresh_scene_builder_view_chips();
     update_scene_builder_path_header(QString(), QString());
-    if (canvas_header_label_) canvas_header_label_->setText("No scene selected");
-    if (scene_preview_label_) scene_preview_label_->setText("<b>Digital Twin Canvas</b>");
     if (scene_preview_widget_) scene_preview_widget_->set_scene_selected(false);
     populate_scene_files_tab();
     refresh_create_starter_layout_action();
@@ -5707,13 +5691,6 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
   if (scene_builder_title_) scene_builder_title_->setText(QString("<h2>Scene Builder: %1</h2>").arg(selected_scene_state_.name));
   update_scene_builder_path_header(selected_scene_state_.name, selected_scene_path());
   refresh_scene_builder_view_chips();
-  const auto metadata = selected_scene_metadata_summary(s);
-  if (scene_preview_label_) scene_preview_label_->setText(QString("%1\nStatus: %2\nScene: %3\nPath: %4\nRobot: %5 (%6)\nEnd effector: %7 (%8)\nLaunch: %9")
-    .arg(s.has_static_preview_svg ? "Preview SVG available" : "Generate preview/readiness pack to populate this panel",
-      selected_scene_state_.status, metadata.scene_name, metadata.scene_path, metadata.robot, metadata.robot_source,
-      metadata.end_effector, metadata.end_effector_source, metadata.launch));
-  if (canvas_header_label_) canvas_header_label_->setText(QString("%1 | status: %2 | source: %3")
-    .arg(selected_scene_state_.name, selected_scene_state_.status, selected_scene_state_.path));
   refresh_selected_scene_item_labels(selected_item_state_);
   if (scene_preview_widget_) scene_preview_widget_->set_scene_selected(true);
   populate_scene_files_tab();
@@ -5751,7 +5728,7 @@ void MainWindow::refresh_create_starter_layout_action()
 
 void MainWindow::populate_scene_files_tab()
 {
-  if (!scene_files_selected_path_label_ || !scene_files_tree_) {
+  if (!scene_files_tree_) {
     return;
   }
   scene_files_tree_->clear();
@@ -5759,13 +5736,11 @@ void MainWindow::populate_scene_files_tab()
   scene_files_tree_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
   scene_files_tree_->header()->setSectionResizeMode(1, QHeaderView::Stretch);
   if (!has_selected_scene()) {
-    scene_files_selected_path_label_->setText("Selected scene path: (none)");
     return;
   }
 
   const auto & selected = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
   const fs::path scene_dir = selected.scene_dir;
-  scene_files_selected_path_label_->setText(QString("Selected scene path: %1").arg(QString::fromStdString(scene_dir.string())));
   const std::vector<std::pair<QString, QString>> required_artifacts = {
     {"Environment YAML", "environment.yaml"},
     {"Scene Manifest", "scene_manifest.yaml"},
@@ -6200,7 +6175,7 @@ void MainWindow::refresh_scene_builder_view_chips()
       preview_chip_status = QStringLiteral("Failed");
     }
   }
-  if (scene_builder_preview_chip_) scene_builder_preview_chip_->setText(QString("Preview: %1").arg(preview_chip_status));
+  Q_UNUSED(preview_chip_status);
   if (scene_builder_launch_chip_) scene_builder_launch_chip_->setText(QString("Launch Artifacts: %1").arg(launch_ready ? "Present" : "Missing"));
   if (scene_builder_safety_chip_) scene_builder_safety_chip_->setText("Safety: Fake hardware");
   if (scene_builder_generate_launch_button_) scene_builder_generate_launch_button_->setVisible(has_selected_scene() && !launch_ready);

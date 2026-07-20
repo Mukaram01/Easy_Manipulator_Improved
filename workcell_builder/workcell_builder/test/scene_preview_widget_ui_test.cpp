@@ -333,12 +333,41 @@ TEST(SceneBuilderWorkspaceSource, CompactTopCommandRowKeepsActionsAndPathAccess)
   EXPECT_FALSE(row_block.contains(QStringLiteral("setWordWrap(true)")));
 
   EXPECT_EQ(text.count(QStringLiteral("sceneBuilderCompactCommandRow")), 1);
-  EXPECT_TRUE(text.contains(QStringLiteral("scene_builder_preview_chip_->setText(QString(\"Preview: %1\")")));
+  EXPECT_FALSE(text.contains(QStringLiteral("scene_builder_preview_chip_")));
   const int focus_action_index = text.indexOf(QStringLiteral("scene_builder_focus_3d_action_"));
   ASSERT_GE(focus_action_index, 0);
   const QString focus_block = text.mid(focus_action_index, 2200);
   EXPECT_FALSE(focus_block.contains(QStringLiteral("sceneBuilderCompactCommandRow")));
   EXPECT_FALSE(focus_block.contains(QStringLiteral("sceneBuilderHeaderSaveLayoutButton")));
+}
+
+TEST(SceneBuilderWorkspaceSource, StatusInformationHasAuthoritativeLocationsOnly)
+{
+  QFile source(QStringLiteral("workcell_builder/workcell_builder/gui/mainwindow.cpp"));
+  if (!source.exists()) source.setFileName(QStringLiteral("../workcell_builder/gui/mainwindow.cpp"));
+  ASSERT_TRUE(source.open(QIODevice::ReadOnly | QIODevice::Text));
+  const QString text = QString::fromUtf8(source.readAll());
+  const QString header = text.mid(text.indexOf(QStringLiteral("sceneBuilderCompactCommandRow")), 5200);
+  const QString bottom = text.mid(text.indexOf(QStringLiteral("sceneBuilderBottomStatusBar")), 1900);
+
+  EXPECT_EQ(text.count(QStringLiteral("sceneBuilderCompactSceneIdentity")), 1);
+  EXPECT_TRUE(text.contains(QStringLiteral("setToolTip(cleaned_path)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("Copy full scene path")));
+  EXPECT_FALSE(text.contains(QStringLiteral("selection_scene_path_label_")));
+  EXPECT_FALSE(text.contains(QStringLiteral("Selected scene path:")));
+  EXPECT_FALSE(header.contains(QStringLiteral("Run Next:")));
+  EXPECT_FALSE(bottom.contains(QStringLiteral("Run Next:")));
+  EXPECT_FALSE(bottom.contains(QStringLiteral("Selected:")));
+  EXPECT_FALSE(bottom.contains(QStringLiteral("No item selected")));
+  EXPECT_TRUE(bottom.contains(QStringLiteral("sceneBuilderIssueCount")));
+  EXPECT_TRUE(bottom.contains(QStringLiteral("sceneBuilderLogsButton")));
+  EXPECT_FALSE(text.contains(QStringLiteral("scene_builder_preview_chip_")));
+  EXPECT_FALSE(text.contains(QStringLiteral("scene_preview_label_")));
+  EXPECT_FALSE(text.contains(QStringLiteral("canvas_header_label_")));
+  EXPECT_TRUE(text.contains(QStringLiteral("studio_log_->append(message)")));
+  EXPECT_EQ(text.count(QStringLiteral("connect_button(save_layout_button_, &MainWindow::save_layout_changes)")), 1);
+  EXPECT_EQ(text.count(QStringLiteral("connect_if(scene_workflow_recommendation_button_")), 1);
+  EXPECT_EQ(text.count(QStringLiteral("if (save_layout_button_) save_layout_button_->click()")), 2);
 }
 
 TEST(SceneBuilderWorkspaceSource, ResizablePanelActionsAndFocusAreWired)
