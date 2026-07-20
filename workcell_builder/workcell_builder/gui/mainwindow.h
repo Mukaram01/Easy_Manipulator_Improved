@@ -383,6 +383,7 @@ private:
   void refresh_scene3d_product_view_status_and_audit();
   void keyPressEvent(QKeyEvent * event) override;
   void populate_asset_catalog();
+  void import_stl_to_asset_library();
   void on_hierarchy_item_selected(QTreeWidgetItem * item);
   void on_asset_filter_changed(int index);
   void open_add_asset_dialog();
