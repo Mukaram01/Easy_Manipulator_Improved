@@ -10,12 +10,55 @@ function repoUrl(context, uri) {
   return context?.repoRootRelativeUrl ? context.repoRootRelativeUrl(uri) : uri;
 }
 
+function safeDecodeUriSegment(segment) {
+  try {
+    return decodeURIComponent(segment);
+  } catch (_) {
+    return null;
+  }
+}
+
+function rejectPackageMeshUri(reason, diagnostics) {
+  diagnostics.robot_missing_meshes.push(`URDF package mesh rejected: ${reason}`);
+  return '';
+}
+
+function resolvePackageMeshUri(uri, sceneId, diagnostics) {
+  const raw = String(uri || '').trim();
+  if (!raw.startsWith('package://')) return '';
+  const scene = String(sceneId || '').trim();
+  if (!scene) return rejectPackageMeshUri('missing scene ID', diagnostics);
+  const packagePath = raw.slice('package://'.length);
+  if (packagePath.startsWith('/') || /^(?:file|https?):\/\//i.test(packagePath) || /^[A-Za-z]:[\\/]/.test(packagePath)) {
+    return rejectPackageMeshUri(raw, diagnostics);
+  }
+  const parts = packagePath.split('/');
+  const packageName = parts.shift() || '';
+  if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(packageName)) return rejectPackageMeshUri(raw, diagnostics);
+  if (!parts.length) return rejectPackageMeshUri(raw, diagnostics);
+  const safeParts = [];
+  for (const part of parts) {
+    if (!part) return rejectPackageMeshUri(raw, diagnostics);
+    const decoded = safeDecodeUriSegment(part);
+    if (!decoded || decoded === '.' || decoded === '..' || decoded.includes('\0') || decoded.includes('/') || decoded.includes('\\') || /^[A-Za-z]:[\\/]/.test(decoded) || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(decoded)) {
+      return rejectPackageMeshUri(raw, diagnostics);
+    }
+    if (decoded.includes('%')) {
+      const decodedAgain = safeDecodeUriSegment(decoded);
+      if (decodedAgain !== decoded) return rejectPackageMeshUri(raw, diagnostics);
+    }
+    safeParts.push(encodeURIComponent(decoded));
+  }
+  const resolved = `build/workcell_studio_web_scene/assets/${encodeURIComponent(scene)}/${encodeURIComponent(packageName)}/${safeParts.join('/')}`;
+  diagnostics.robot_package_mesh_resolutions.push(`URDF package mesh resolved: ${raw} -> ${resolved}`);
+  return resolved;
+}
+
 function normalizeMeshUri(path, context, diagnostics) {
   const raw = String(path || '').trim();
   if (!raw) return '';
   if (raw.startsWith('package://')) {
-    diagnostics.robot_missing_meshes.push(`${raw}: package:// URI was not staged for static web loading`);
-    return '';
+    return resolvePackageMeshUri(raw, context?.sceneId, diagnostics);
   }
   const diagnostic = context?.meshUriDiagnostic?.({ mesh_uri: raw, mesh_staging_status: 'staged' });
   return diagnostic?.uri || raw;
@@ -414,6 +457,7 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     robotColladaRootNormalizationCount: 0,
     robot_collada_mesh_diagnostics: [],
     robotColladaMeshDiagnostics: [],
+    robot_package_mesh_resolutions: [],
     robot_descendant_render_mesh_diagnostics: [],
     robotDescendantRenderMeshDiagnostics: [],
     skipped_legacy_generated_urdf_visual_count: rendererContext?.skippedLegacyGeneratedUrdfVisualCount || 0,

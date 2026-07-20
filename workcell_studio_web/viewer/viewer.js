@@ -2555,6 +2555,7 @@ function loadExpandedUrdfRobotPreview(preview) {
     return { root: null, links: new Map(), joints: new Map(), diagnostics, ready: Promise.resolve(null) };
   }
   const previewResult = loadRobotPreview(preview, {
+    sceneId: sceneId(),
     scene: state.three.scene,
     assemblyRoots: state.assemblyRoots,
     repoRootRelativeUrl,
