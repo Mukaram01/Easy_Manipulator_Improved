@@ -2628,18 +2628,21 @@ void MainWindow::setup_studio_shell()
   auto * bottom_status_bar = new QFrame(scene_builder);
   bottom_status_bar->setObjectName("sceneBuilderBottomStatusBar");
   auto * bottom_status_layout = new QHBoxLayout(bottom_status_bar);
-  bottom_status_layout->setContentsMargins(8, 4, 8, 4);
-  scene_builder_selection_summary_label_ = new QLabel("Selection: none", bottom_status_bar);
-  scene_builder_selection_summary_label_->setObjectName("sceneBuilderSelectionSummary");
-  scene_builder_status_message_label_ = new QLabel("Ready: Product View preview-only; fake hardware remains default.", bottom_status_bar);
+  bottom_status_layout->setContentsMargins(8, 2, 8, 2);
+  bottom_status_layout->setSpacing(8);
+  scene_builder_status_message_label_ = new QLabel("Ready", bottom_status_bar);
   scene_builder_status_message_label_->setObjectName("sceneBuilderLatestStatus");
-  scene_builder_status_message_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
-  scene_builder_issue_count_label_ = new QLabel("Warnings: 0 | Errors: 0", bottom_status_bar);
+  scene_builder_status_message_label_->setWordWrap(false);
+  scene_builder_status_message_label_->setToolTip("Ready");
+  scene_builder_status_message_label_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+  scene_builder_issue_count_label_ = new QLabel(bottom_status_bar);
   scene_builder_issue_count_label_->setObjectName("sceneBuilderIssueCount");
+  scene_builder_issue_count_label_->setVisible(false);
+  scene_builder_issue_count_label_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
   scene_builder_log_toggle_button_ = new QPushButton("Logs", bottom_status_bar);
   scene_builder_log_toggle_button_->setObjectName("sceneBuilderLogsButton");
+  scene_builder_log_toggle_button_->setCheckable(true);
   scene_builder_log_toggle_button_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-  bottom_status_layout->addWidget(scene_builder_selection_summary_label_);
   bottom_status_layout->addWidget(scene_builder_status_message_label_, 1);
   bottom_status_layout->addWidget(scene_builder_issue_count_label_);
   bottom_status_layout->addWidget(scene_builder_log_toggle_button_);
@@ -3002,7 +3005,9 @@ void MainWindow::setup_studio_shell()
   auto * log_head = new QHBoxLayout();
   log_head->addWidget(new QLabel("Activity Log", log_card));
   auto * copy_log = new QPushButton("Copy", log_card);
+  copy_log->setObjectName("sceneBuilderLogCopyButton");
   auto * clear_log = new QPushButton("Clear", log_card);
+  clear_log->setObjectName("sceneBuilderLogClearButton");
   log_head->addStretch(1);
   log_head->addWidget(copy_log, 0, Qt::AlignRight);
   log_head->addWidget(clear_log, 0, Qt::AlignRight);
@@ -3045,7 +3050,8 @@ void MainWindow::setup_studio_shell()
     const bool show = !scene_builder_log_panel_->isVisible();
     scene_builder_log_panel_->setVisible(show);
     studio_log_->setVisible(show);
-    scene_builder_log_toggle_button_->setText(show ? "Hide Logs" : "Logs");
+    scene_builder_log_toggle_button_->setChecked(show);
+    scene_builder_log_toggle_button_->setText("Logs");
   });
   connect_button(empty_new_cell, &MainWindow::open_new_scene_creation_flow);
   connect_button(dash_new_cell, &MainWindow::open_new_scene_creation_flow);
@@ -4014,7 +4020,6 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   advanced_lines << QString("Grasp frame: %1").arg(selected_scene_state_.valid ? selected_scene_state_.grasp_frame_summary : QStringLiteral("unknown"));
   advanced_lines << QString("Launch status: %1").arg(selected_scene_state_.valid ? (selected_scene_state_.launchable ? "ready" : "blocked") : QStringLiteral("(none)"));
   if (!state.valid) {
-    if (scene_builder_selection_summary_label_) scene_builder_selection_summary_label_->setText("Selection: none");
     inspector_label_->setText("No item selected");
     inspector_label_->setToolTip(selected_scene_state_.valid ? selected_scene_state_.path : QString());
     live_coordinate_label_->setText("No item selected");
@@ -4045,7 +4050,6 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
     (generated_or_preview_contract ? QStringLiteral("Locked preview item") : QStringLiteral("Locked item cannot be edited"));
   const bool is_locked_urdf_preview = state.locked && role.contains("urdf", Qt::CaseInsensitive);
   const QString locked_line = state.locked ? QString("locked_reason: %1").arg(state.lock_reason.isEmpty() ? QStringLiteral("item is locked") : state.lock_reason) : QStringLiteral("locked: no");
-  if (scene_builder_selection_summary_label_) scene_builder_selection_summary_label_->setText(QString("Selection: %1 (%2)").arg(display, role));
   inspector_label_->setText(QString("%1\nType: %2\nState: %3").arg(display, state.type.isEmpty() ? type_class : state.type, selection_contract_label));
   inspector_label_->setToolTip(display);
   advanced_lines << QString("Selected item name: %1").arg(display);
@@ -4576,22 +4580,30 @@ void MainWindow::append_studio_log(const QString & message)
   if (studio_log_) {
     studio_log_->append(message);
   }
-  if (scene_builder_status_message_label_) scene_builder_status_message_label_->setText(message);
-  static int warning_count = 0;
-  static int error_count = 0;
+  if (scene_builder_status_message_label_) {
+    const QString concise = message.trimmed().isEmpty() ? QStringLiteral("Ready") : message.simplified();
+    scene_builder_status_message_label_->setToolTip(concise);
+    const int elide_width = qMax(220, scene_builder_status_message_label_->width());
+    scene_builder_status_message_label_->setText(scene_builder_status_message_label_->fontMetrics().elidedText(concise, Qt::ElideRight, elide_width));
+  }
   const QString lowered = message.toLower();
   if (lowered.contains("error") || lowered.contains("failed") || lowered.contains("blocker")) {
-    ++error_count;
-    if (scene_builder_log_panel_ && studio_log_) {
-      scene_builder_log_panel_->setVisible(true);
-      studio_log_->setVisible(true);
-      if (scene_builder_log_toggle_button_) scene_builder_log_toggle_button_->setText("Hide Logs");
-    }
+    ++scene_builder_error_count_;
   } else if (lowered.contains("warn")) {
-    ++warning_count;
+    ++scene_builder_warning_count_;
   }
   if (scene_builder_issue_count_label_) {
-    scene_builder_issue_count_label_->setText(QString("Warnings: %1 | Errors: %2").arg(warning_count).arg(error_count));
+    const QStringList parts = {
+      scene_builder_error_count_ > 0 ? QStringLiteral("%1 %2").arg(scene_builder_error_count_).arg(scene_builder_error_count_ == 1 ? QStringLiteral("error") : QStringLiteral("errors")) : QString(),
+      scene_builder_warning_count_ > 0 ? QStringLiteral("%1 %2").arg(scene_builder_warning_count_).arg(scene_builder_warning_count_ == 1 ? QStringLiteral("warning") : QStringLiteral("warnings")) : QString()
+    };
+    QStringList visible_parts;
+    for (const QString & part : parts) if (!part.isEmpty()) visible_parts << part;
+    scene_builder_issue_count_label_->setText(visible_parts.join(QStringLiteral(" · ")));
+    scene_builder_issue_count_label_->setVisible(!visible_parts.isEmpty());
+  }
+  if (scene_builder_log_toggle_button_) {
+    scene_builder_log_toggle_button_->setProperty("hasIssues", scene_builder_warning_count_ > 0 || scene_builder_error_count_ > 0);
   }
   statusBar()->showMessage(message);
 }
