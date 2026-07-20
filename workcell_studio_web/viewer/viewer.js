@@ -2112,27 +2112,37 @@ function maybeWarnSceneBoundsExceedWorkspace(bounds) {
 }
 function frameScene(bounds) {
   const { camera, controls } = state.three;
-  if (!camera || !controls || !bounds || bounds.isEmpty()) return false;
+  const finiteBounds = finiteBox3(bounds);
+  if (!camera || !controls || !finiteBounds) return false;
   const center = new THREE.Vector3();
   const sphere = new THREE.Sphere();
-  bounds.getCenter(center);
-  bounds.getBoundingSphere(sphere);
+  finiteBounds.getCenter(center);
+  finiteBounds.getBoundingSphere(sphere);
+  if (![center.x, center.y, center.z, sphere.radius].every(Number.isFinite)) return false;
   const radius = Math.max(sphere.radius, MIN_FRAME_RADIUS);
   const direction = new THREE.Vector3(1.35, -1.65, 1.05).normalize();
   const distance = Math.max(radius * FRAME_DISTANCE_MULTIPLIER, MIN_FRAME_RADIUS * FRAME_DISTANCE_MULTIPLIER);
   camera.position.copy(center).addScaledVector(direction, distance);
-  camera.near = Math.max(0.01, radius / 100);
-  camera.far = Math.max(100, distance + radius * 6);
+  camera.near = Math.max(0.01, Math.min(radius / 100, distance / 10));
+  camera.far = Math.max(camera.near + 1, distance + radius * 6, 100);
+  if (![camera.position.x, camera.position.y, camera.position.z, camera.near, camera.far].every(Number.isFinite)) return false;
   camera.updateProjectionMatrix();
   controls.target.copy(center);
   controls.update();
-  state.lastFrameBounds = bounds.clone();
+  state.lastFrameBounds = finiteBounds.clone();
   if (el.resetView) el.resetView.disabled = false;
   return true;
 }
+function reportFitCellNoGeometry() {
+  const message = 'No visible physical geometry to frame';
+  state.editorError = message;
+  pushEditorEvent('fit_cell_unavailable', { message });
+  if (el.error) { el.error.textContent = message; el.error.hidden = false; }
+}
 function resetView() {
-  const bounds = computeFitBounds() || state.lastFrameBounds || computeFitBounds({ includeDebugFallbacks: true });
-  if (bounds) frameScene(bounds);
+  const physical = collectPhysicalVisibleBounds(state.three.scene);
+  if (!physical.bounds || !frameScene(physical.bounds)) { reportFitCellNoGeometry(); return; }
+  if (state.editorError === 'No visible physical geometry to frame') clearError();
 }
 if (el.resetView) {
   el.resetView.title = RESET_VIEW_TITLE;
