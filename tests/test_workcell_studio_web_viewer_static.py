@@ -265,6 +265,93 @@ def test_urdf_renderer_passes_loaded_scene_id_without_changing_staged_meshes():
     assert "sceneId: sceneId()," in preview_call
 
 
+
+def test_load_robot_preview_resolves_urdf_package_mesh_requests_through_runtime_loader_path(tmp_path):
+    script = tmp_path / "capture_robot_preview_mesh_requests.mjs"
+    script.write_text(
+        f"""
+import assert from 'node:assert/strict';
+import * as THREE from {str((VIEWER / 'node_modules/three/build/three.module.js')).__repr__()};
+import URDFLoader from {str((VIEWER / 'node_modules/urdf-loader/src/URDFLoader.js')).__repr__()};
+import {{ ColladaLoader }} from {str((VIEWER / 'node_modules/three/examples/jsm/loaders/ColladaLoader.js')).__repr__()};
+import {{ STLLoader }} from {str((VIEWER / 'node_modules/three/examples/jsm/loaders/STLLoader.js')).__repr__()};
+
+globalThis.window = {{}};
+
+const requestedUrls = [];
+const originalUrdfLoadAsync = URDFLoader.prototype.loadAsync;
+const originalColladaLoad = ColladaLoader.prototype.load;
+const originalStlLoad = STLLoader.prototype.load;
+
+URDFLoader.prototype.loadAsync = async function loadAsyncStub() {{
+  assert.equal(this.constructor, URDFLoader);
+  assert.equal(this.parseVisual, true);
+  assert.equal(this.parseCollision, false);
+  this.loadMeshCb(
+    'package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae',
+    this.manager,
+    new THREE.MeshPhongMaterial(),
+    (mesh, error) => {{ if (error) throw error; }}
+  );
+  const robot = new THREE.Group();
+  robot.links = {{ base_link: new THREE.Group() }};
+  robot.joints = {{}};
+  robot.setJointValues = () => {{}};
+  return robot;
+}};
+
+ColladaLoader.prototype.load = function loadStub(url, onLoad, onProgress, onError) {{
+  requestedUrls.push(url);
+  this.manager?.itemStart?.(url);
+  onLoad({{ scene: new THREE.Group(), asset: {{}} }});
+  this.manager?.itemEnd?.(url);
+}};
+
+STLLoader.prototype.load = function loadStub(url, onLoad, onProgress, onError) {{
+  requestedUrls.push(url);
+  this.manager?.itemStart?.(url);
+  onLoad({{}});
+  this.manager?.itemEnd?.(url);
+}};
+
+try {{
+  const {{ loadRobotPreview }} = await import({str((VIEWER / 'urdf_robot_renderer.js')).__repr__()});
+  const result = loadRobotPreview(
+    {{ urdf_url: 'build/workcell_studio_web_scene/assets/ur5_2f_test/robot.urdf' }},
+    {{ sceneId: 'ur5_2f_test' }}
+  );
+  await result.ready;
+  assert.deepEqual(requestedUrls, [
+    'build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae',
+  ]);
+  for (const url of requestedUrls) {{
+    for (const forbidden of [
+      '/robotiq_85_description/',
+      '/ur_description/',
+      '/single_suction_description/',
+      '/robotiq_3f_gripper_description/',
+    ]) {{
+      assert.equal(url.startsWith(forbidden), false, `${{url}} unexpectedly starts with ${{forbidden}}`);
+    }}
+  }}
+}} finally {{
+  URDFLoader.prototype.loadAsync = originalUrdfLoadAsync;
+  ColladaLoader.prototype.load = originalColladaLoad;
+  STLLoader.prototype.load = originalStlLoad;
+}}
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        ["node", str(script)],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
 def test_viewer_applies_mesh_local_transform_only_below_object_roots():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     for token in [
