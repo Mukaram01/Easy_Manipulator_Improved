@@ -17,7 +17,7 @@ const LOCKED_EDIT_REASON = 'Locked/generated preview item; edit source layout/en
 const MIN_FRAME_RADIUS = 1.2;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
-const state = { sceneJson: null, sourceWebSceneFile: '', frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, editorMode: 'select', editorEvents: [], editorError: '' };
+const state = { sceneJson: null, sourceWebSceneFile: '', frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, editorMode: 'select', editorEvents: [], editorError: '' };
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
 const STAGED_MESH_ROOTS = [
   'build/workcell_studio_web_scene/assets/',
@@ -1672,6 +1672,7 @@ function initThree() {
       syncInspectorTransformFields(rendered);
       updateLabels();
     });
+    controls.addEventListener('start', markCameraUserControlled);
     scene.add(transformControls);
     state.three = { renderer, scene, camera, controls, transformControls, raycaster: new THREE.Raycaster(), pointer: new THREE.Vector2() };
     resize();
@@ -2137,16 +2138,65 @@ function frameScene(bounds) {
   if (el.resetView) el.resetView.disabled = false;
   return true;
 }
-function reportFitCellNoGeometry() {
-  const message = 'No visible physical geometry to frame';
+function stableSceneCameraKey() {
+  return [
+    state.sceneJson?.scene?.root,
+    state.sceneJson?.scene?.canonical_root,
+    state.sceneJson?.scene?.id,
+    state.sceneJson?.scene_id,
+    state.sceneJson?.scene?.generation_version,
+    state.sceneJson?.scene_generation_token,
+    state.sourceWebSceneFile,
+    state.sceneJson?.schema_version,
+  ].map(value => String(value || '')).filter(Boolean).join('|');
+}
+function cancelInitialCameraFitRetry() {
+  if (state.initialCameraFit?.pendingRetry) clearTimeout(state.initialCameraFit.pendingRetry);
+  state.initialCameraFit.pendingRetry = null;
+}
+function beginInitialCameraFitForCurrentScene() {
+  const sceneKey = stableSceneCameraKey();
+  if (state.initialCameraFit?.sceneKey === sceneKey) return;
+  cancelInitialCameraFitRetry();
+  state.initialCameraFit = { sceneKey, done: false, attempts: 0, pendingRetry: null, userControlled: false };
+}
+function markCameraUserControlled() {
+  if (!state.initialCameraFit) return;
+  state.initialCameraFit.userControlled = true;
+  cancelInitialCameraFitRetry();
+}
+function reportFitCellNoGeometry(message = 'No visible physical geometry to frame') {
   state.editorError = message;
   pushEditorEvent('fit_cell_unavailable', { message });
   if (el.error) { el.error.textContent = message; el.error.hidden = false; }
 }
-function resetView() {
+function resetView({ userInitiated = true } = {}) {
+  if (userInitiated) markCameraUserControlled();
   const physical = collectPhysicalVisibleBounds(state.three.scene);
   if (!physical.bounds || !frameScene(physical.bounds)) { reportFitCellNoGeometry(); return; }
   if (state.editorError === 'No visible physical geometry to frame') clearError();
+}
+function attemptInitialCameraFit({ allowRetry = true } = {}) {
+  const fit = state.initialCameraFit;
+  if (!fit || fit.done || fit.userControlled || fit.sceneKey !== stableSceneCameraKey()) return false;
+  cancelInitialCameraFitRetry();
+  fit.attempts += 1;
+  const physical = collectPhysicalVisibleBounds(state.three.scene);
+  if (physical.bounds && frameScene(physical.bounds)) {
+    fit.done = true;
+    return true;
+  }
+  if (allowRetry && fit.attempts < 2) {
+    fit.pendingRetry = setTimeout(() => attemptInitialCameraFit({ allowRetry: false }), 250);
+  } else {
+    reportFitCellNoGeometry('No visible physical geometry available for initial framing');
+  }
+  return false;
+}
+function scheduleInitialCameraFitRetry() {
+  const fit = state.initialCameraFit;
+  if (!fit || fit.done || fit.userControlled || fit.pendingRetry || fit.attempts >= 2) return;
+  fit.pendingRetry = setTimeout(() => attemptInitialCameraFit({ allowRetry: false }), 0);
 }
 if (el.resetView) {
   el.resetView.title = RESET_VIEW_TITLE;
@@ -2225,8 +2275,7 @@ function renderScene(items) {
   renderFrameDebugOverlays();
   populateObjectList();
   updateLabels();
-  const bounds = computeFitBounds();
-  if (bounds) frameScene(bounds);
+  attemptInitialCameraFit();
   renderSceneSummary();
 }
 
@@ -2282,11 +2331,11 @@ function loadExpandedUrdfRobotPreview(preview) {
     onRobotLoaded: result => {
       state.robotUrdfPreviewDiagnostics = result.diagnostics;
       renderSceneSummary();
-      const bounds = computeFitBounds();
-      if (bounds) frameScene(bounds);
+      attemptInitialCameraFit();
     },
     onRobotMeshLoaded: () => {
       renderSceneSummary();
+      scheduleInitialCameraFitRetry();
     },
     onRobotMeshLoadError: () => renderSceneSummary(),
     onRobotError: err => {
@@ -2536,7 +2585,6 @@ function setDebugOverlaysVisible(visible) {
   populateObjectList();
   updateLabels();
   renderSceneSummary();
-  resetView();
 }
 
 function updateLabels() {
@@ -2919,6 +2967,7 @@ async function loadFile(file) {
     const items = validateSceneJson(json);
     state.sceneJson = json;
     state.sourceWebSceneFile = file.name || '';
+    beginInitialCameraFitForCurrentScene();
     state.runtimeWarnings = [];
     state.dirtyTransforms.clear();
     state.undoStack = [];
@@ -2985,6 +3034,7 @@ async function loadSceneUrl(rawUrl) {
     state.frameLookup = parseSceneFrames(json);
     state.resolvedFramePoses.clear();
     state.sourceWebSceneFile = sceneUrl;
+    beginInitialCameraFitForCurrentScene();
     state.runtimeWarnings = [];
     state.dirtyTransforms.clear();
     state.undoStack = [];
