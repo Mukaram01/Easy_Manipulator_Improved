@@ -103,3 +103,26 @@ TEST(LayoutSerializationContractTest, SaveLayoutForSceneWithNonCanonicalManifest
   EXPECT_NE(src.find("root = YAML::LoadFile(candidate.string())"), std::string::npos);
   EXPECT_NE(src.find("std::ofstream out(layout_path.string())"), std::string::npos);
 }
+
+TEST(LayoutSerializationContractTest, DeleteSelectedUsesEditableSelectionAndUndoRedo)
+{
+  const std::string src = load_file("gui/mainwindow.cpp");
+  const std::string hdr = load_file("gui/mainwindow.h");
+  EXPECT_NE(src.find("register_scene_action(\"layout.remove\", \"Delete Selected\""), std::string::npos);
+  EXPECT_NE(src.find("delete_action->setShortcut(QKeySequence(Qt::Key_Delete))"), std::string::npos);
+  EXPECT_NE(src.find("resolve_selected_editable_layout_target()"), std::string::npos);
+  EXPECT_NE(src.find("Selected item cannot be deleted"), std::string::npos);
+  EXPECT_NE(src.find("deleted_layout_item_ids_.insert(id)"), std::string::npos);
+  EXPECT_NE(src.find("undo_stack_.push_back(command); redo_stack_.clear();"), std::string::npos);
+  EXPECT_NE(src.find("Restored %1"), std::string::npos);
+  EXPECT_NE(src.find("Deleted %1"), std::string::npos);
+  EXPECT_NE(hdr.find("QSet<QString> deleted_layout_item_ids_"), std::string::npos);
+}
+
+TEST(LayoutSerializationContractTest, SaveLayoutPersistsDeletedAuthoredItemAbsence)
+{
+  const std::string src = load_file("gui/mainwindow.cpp");
+  EXPECT_NE(src.find("deleted_layout_item_ids_.contains(id)"), std::string::npos);
+  EXPECT_NE(src.find("deleted_layout_item_ids_.clear();"), std::string::npos);
+  EXPECT_NE(src.find("for (int i = all_scene_preview_items_.size() - 1; i >= 0; --i) if (all_scene_preview_items_[i].id == id) all_scene_preview_items_.removeAt(i);"), std::string::npos);
+}

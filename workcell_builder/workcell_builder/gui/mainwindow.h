@@ -335,6 +335,8 @@ private:
   void undo_layout_edit();
   void redo_layout_edit();
   void duplicate_selected_item();
+  bool selected_item_can_be_deleted() const;
+  void refresh_delete_selected_action();
   void delete_selected_item();
   void add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path);
   QPointF compute_default_canvas_pose(const QString & category, const QString & display_name) const;
@@ -652,7 +654,8 @@ private:
   SelectedSceneState selected_scene_state_;
   SelectedSceneItemState selected_item_state_;
   QString current_selected_scene_item_id_;
-  struct CanvasEditCommand { QString kind; QString item_id; QPointF old_pos; QPointF new_pos; bool created{false}; bool deleted{false}; };
+  struct CanvasEditCommand { QString kind; QString item_id; QPointF old_pos; QPointF new_pos; bool created{false}; bool deleted{false}; QVector<ScenePreviewWidget::PreviewItem> preview_items; };
+  QSet<QString> deleted_layout_item_ids_;
   std::vector<CanvasEditCommand> undo_stack_;
   std::vector<CanvasEditCommand> redo_stack_;
   QLabel * preview_scene_label_{ nullptr };
