@@ -132,7 +132,9 @@ function loadMesh(path, manager, material, done, context, diagnostics) {
   if (!uri) {
     diagnostics.robot_failed_visual_count += 1;
     diagnostics.robotFailedVisualCount = diagnostics.robot_failed_visual_count;
-    done(null, new Error(`unloadable URDF mesh URI: ${path}`));
+    const err = new Error(`unloadable URDF mesh URI: ${path}`);
+    done(null, err);
+    context?.onRobotMeshLoadError?.(err, '', { path, ...inferMeshLinkDetail(path) });
     return;
   }
   const url = repoUrl(context, uri);
@@ -147,15 +149,23 @@ function loadMesh(path, manager, material, done, context, diagnostics) {
   const onError = err => {
     diagnostics.robot_failed_visual_count += 1;
     diagnostics.robotFailedVisualCount = diagnostics.robot_failed_visual_count;
-    diagnostics.robot_missing_meshes.push(`${uri}: ${err?.message || err || 'load failed'}`);
+    diagnostics.robot_missing_meshes.push(`${url}: ${err?.message || err || 'load failed'}`);
     done(null, err);
-    context?.onRobotMeshLoadError?.(err, uri);
+    context?.onRobotMeshLoadError?.(err, uri, { url, uri, path, ...inferMeshLinkDetail(path) });
   };
   if (ext === 'stl') new STLLoader(manager).load(url, geom => onDone(new THREE.Mesh(geom, material || new THREE.MeshPhongMaterial())), undefined, onError);
   else if (ext === 'dae') new ColladaLoader(manager).load(url, dae => onDone(normalizeRosColladaScene(dae, uri, diagnostics)), undefined, onError);
   else if (ext === 'obj') new OBJLoader(manager).load(url, obj => onDone(obj), undefined, onError);
   else onError(new Error(`unsupported mesh format .${ext || 'unknown'}`));
 }
+
+function inferMeshLinkDetail(path) {
+  const text = String(path || '').toLowerCase();
+  const known = ['gripper_base_link', 'tool0', 'wrist_3_link', 'wrist_2_link', 'wrist_1_link', 'forearm_link', 'upper_arm_link', 'shoulder_link', 'base_link_inertia', 'base_link'];
+  const link = known.find(name => text.includes(name.toLowerCase())) || (/gripper|robotiq|finger|suction|airpick/.test(text) ? 'gripper_base_link' : '');
+  return { link, link_name: link, item: link || String(path || '') };
+}
+
 
 function meshCompletionPromise(diagnostics, manager) {
   let managerComplete = false;

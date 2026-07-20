@@ -49,3 +49,13 @@ def test_failed_embedded_state_still_renders_failed():
 def test_launch_artifacts_are_not_labeled_fake_hardware_ready():
     assert 'Launch Artifacts: %1' in MAINWINDOW_CPP
     assert 'fake_hardware_launch=%3' in MAINWINDOW_CPP
+
+
+def test_embedded_product_view_ready_requires_browser_scene_ready_not_shell_http_200():
+    status_script = PREVIEW_CPP[PREVIEW_CPP.index('static const char kStatusScript') : PREVIEW_CPP.index('embedded_web_view_->page()->runJavaScript')]
+    readiness_handler = PREVIEW_CPP[PREVIEW_CPP.index('const QVariantMap status = value.toMap();') : PREVIEW_CPP.index('QTimer::singleShot(750')]
+    assert "s.web3d_readiness_state || s.web3dReadinessState" in status_script
+    assert 'server_ready' in status_script
+    assert 'boot_state == QStringLiteral("scene_ready") && expected_json_loaded' in readiness_handler
+    assert 'boot_state == QStringLiteral("ready")' not in readiness_handler
+    assert 'scene_json_loaded && source_json == expected_json_path' in readiness_handler

@@ -1352,7 +1352,7 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
 (() => {
   const s = window.__WORKCELL_VIEWER_STATUS__ || {};
   return {
-    viewer_boot_state: s.viewer_boot_state || s.viewerBootState || 'booting',
+    viewer_boot_state: s.web3d_readiness_state || s.web3dReadinessState || s.viewer_boot_state || s.viewerBootState || 'server_ready',
     scene_name: s.scene_name || s.sceneName || '',
     source_web_scene_file: s.source_web_scene_file || s.sourceWebSceneFile || '',
     scene_json_loaded: Boolean(s.scene_json_loaded || s.sceneJsonLoaded || s.source_web_scene_file || s.sourceWebSceneFile),
@@ -1384,7 +1384,7 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
       .arg(source_json.isEmpty() ? QStringLiteral("unknown") : source_json)
       .arg(robot_state.isEmpty() ? QStringLiteral("unknown") : robot_state);
 
-    if (boot_state == QStringLiteral("failed")) {
+    if (boot_state == QStringLiteral("scene_failed") || boot_state == QStringLiteral("failed")) {
       const QString detail = QStringLiteral("viewer JavaScript failed at %1: %2%3")
         .arg(failed_stage.isEmpty() ? QStringLiteral("unknown_stage") : failed_stage,
              fatal_error.isEmpty() ? QStringLiteral("unknown error") : fatal_error,
@@ -1399,14 +1399,12 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
     }
 
     const bool expected_json_loaded = scene_json_loaded && source_json == expected_json_path;
-    const bool robot_ready_required = identity.scene_id == QStringLiteral("ur5_2f_test");
-    const bool robot_ready = !robot_ready_required || robot_state == QStringLiteral("ready");
-    if (boot_state == QStringLiteral("ready") && expected_json_loaded && robot_ready) {
+    if (boot_state == QStringLiteral("scene_ready") && expected_json_loaded) {
       native_compatibility_fallback_active_ = false;
       show_embedded_web_product_view();
       set_embedded_product_view_state(EmbeddedProductViewState::Ready, QStringLiteral("viewer ready"));
       poll_embedded_editor_events();
-      emit studio_log_requested(QStringLiteral("Embedded Product View ready: scene=%1 json=%2 robot_preview_lifecycle_state=%3")
+      emit studio_log_requested(QStringLiteral("Embedded Product View ready after scene_ready: scene=%1 json=%2 robot_preview_lifecycle_state=%3")
         .arg(identity.scene_id, expected_json_path, robot_state.isEmpty() ? QStringLiteral("not_required") : robot_state));
       return;
     }
