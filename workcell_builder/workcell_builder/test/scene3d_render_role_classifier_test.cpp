@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <QApplication>
+#include <QFile>
+#include <QIODevice>
 
 #include "../gui/scene3d_viewport_widget.h"
 
@@ -84,6 +86,11 @@ TEST(Scene3DRenderRoleClassifier, DefaultProductFitIncludesPhysicalItemsAndExclu
   camera_fov.role = "camera_fov_cone";
   camera_fov.category = "diagnostic_overlay";
   EXPECT_FALSE(Scene3DViewportWidget::should_include_in_default_fit_for_test(camera_fov));
+
+  auto observation_zone = make_item("camera_observation_1");
+  observation_zone.role = "camera_observation";
+  observation_zone.category = "Task Zones";
+  EXPECT_FALSE(Scene3DViewportWidget::should_include_in_default_fit_for_test(observation_zone));
 
   auto reachability = make_item("reachability");
   reachability.role = "reachability_heatmap";
@@ -387,4 +394,28 @@ TEST(Scene3DRenderRoleClassifier, ValidStlAndDaePreviewItemsAreMeshSurfaceCandid
   EXPECT_FALSE(Scene3DViewportWidget::should_draw_as_wireframe_for_test(dae, ScenePreviewWidget::MeshPreviewMode::Auto));
   EXPECT_EQ(Scene3DViewportWidget::render_role_for_test(stl), "generated_urdf_mesh");
   EXPECT_EQ(Scene3DViewportWidget::render_role_for_test(dae), "generated_urdf_mesh");
+}
+
+TEST(CameraObservationZoneAuthoringSource, UsesIndependentTaskZoneModelAndProjection)
+{
+  QString root = QString::fromUtf8(__FILE__);
+  root = root.left(root.lastIndexOf(QStringLiteral("/test/")));
+  auto read = [](const QString & path) {
+    QFile file(path);
+    file.open(QIODevice::ReadOnly | QIODevice::Text);
+    return QString::fromUtf8(file.readAll());
+  };
+  const QString model = read(root + QStringLiteral("/include/object_placement_model.hpp"));
+  const QString yaml = read(root + QStringLiteral("/gui/object_placement_yaml_io.cpp"));
+  const QString dialog = read(root + QStringLiteral("/gui/object_placement_dialog.cpp"));
+  EXPECT_TRUE(model.contains(QStringLiteral("std::string camera_id;")));
+  EXPECT_TRUE(yaml.contains(QStringLiteral("camera_observation")));
+  EXPECT_TRUE(yaml.contains(QStringLiteral("z.camera_id = camera.name")));
+  EXPECT_FALSE(yaml.contains(QStringLiteral("pick_zone_id")));
+  EXPECT_TRUE(yaml.contains(QStringLiteral("Camera view does not intersect the work surface")));
+  EXPECT_TRUE(yaml.contains(QStringLiteral("Observation zone uses default dimensions")));
+  EXPECT_TRUE(yaml.contains(QStringLiteral("camera.x + t * dx")));
+  EXPECT_TRUE(yaml.contains(QStringLiteral("camera.y + t * dy")));
+  EXPECT_TRUE(dialog.contains(QStringLiteral("Create Observation Zone")));
+  EXPECT_FALSE(dialog.contains(QStringLiteral("robot_motion")));
 }

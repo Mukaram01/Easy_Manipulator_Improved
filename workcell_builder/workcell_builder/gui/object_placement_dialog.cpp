@@ -136,6 +136,21 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     task_zones_.push_back(zone);
     rebuild_table();
   });
+  mk("Create Observation Zone", [this]() {
+    auto cameras = load_camera_placements_from_environment_yaml(trim_copy(active_environment_yaml_path_), nullptr);
+    if (cameras.empty()) {
+      QMessageBox::warning(this, "Create Observation Zone", "Observation zone camera is unavailable");
+      return;
+    }
+    const auto suggestion = suggest_camera_observation_zone(cameras.front(), task_zones_);
+    if (!suggestion.ok) {
+      QMessageBox::warning(this, "Create Observation Zone", QString::fromStdString(suggestion.messages.empty() ? "Camera view does not intersect the work surface" : suggestion.messages.front()));
+      return;
+    }
+    task_zones_.push_back(suggestion.zone);
+    rebuild_table();
+    QMessageBox::information(this, "Create Observation Zone", QString::fromStdString(suggestion.messages.front()));
+  });
   mk("Edit Zone Pose", [this]() {
     const int row_index = task_zone_table_->currentRow();
     if (row_index < 0 || row_index >= static_cast<int>(task_zones_.size())) return;
@@ -442,7 +457,7 @@ void ObjectPlacementDialog::rebuild_table()
   for (int i = 0; i < static_cast<int>(task_zones_.size()); ++i) {
     const auto & z = task_zones_[static_cast<size_t>(i)];
     const std::array<QString, 13> vals = {
-      QString::fromStdString(z.id), QString::fromStdString(z.type), QString::number(z.x), QString::number(z.y), QString::number(z.z),
+      QString::fromStdString(z.id), QString::fromStdString(z.type == "camera_observation" ? "Camera Observation" : z.type), QString::number(z.x), QString::number(z.y), QString::number(z.z),
       QString::number(z.roll), QString::number(z.pitch), QString::number(z.yaw), QString::number(z.dim_x),
       QString::number(z.dim_y), QString::number(z.dim_z), QString::fromStdString(z.frame_id), QString::fromStdString(z.status)
     };
