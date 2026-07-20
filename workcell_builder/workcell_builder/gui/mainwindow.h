@@ -58,6 +58,7 @@ class QPushButton;
 class QDoubleSpinBox;
 class QGraphicsSceneMouseEvent;
 class QTreeWidget;
+class QLineEdit;
 class QTreeWidgetItem;
 class QComboBox;
 class QToolButton;
@@ -230,6 +231,10 @@ private:
     QString category;
     QString type;
     QString source_path;
+    QString asset_id;
+    QString visual_uri;
+    QString tags;
+    QString icon_key;
     QString source_layer;
     QString active_visual_source;
     bool editable{ true };
@@ -263,6 +268,10 @@ private:
     bool ok{ false };
     SelectedSceneItemState state;
     QString source_path;
+    QString asset_id;
+    QString visual_uri;
+    QString tags;
+    QString icon_key;
     QString blocker;
     QGraphicsItem * fallback_item{ nullptr };
   };
@@ -345,6 +354,10 @@ private:
     QString dimensions;
     QString default_pose;
     QString source_path;
+    QString asset_id;
+    QString visual_uri;
+    QString tags;
+    QString icon_key;
     bool editable{ true };
     QString availability_status;
     QString disabled_reason;
@@ -375,6 +388,7 @@ private:
   void refresh_add_asset_dialog_details();
   void place_selected_asset_from_dialog();
   void validate_asset_catalog_selection();
+  void update_asset_library_preview();
   QString selected_catalog_item_path() const;
   void run_diagnostics_self_test();
   void run_diagnostics_golden_flow_dry_run();
@@ -511,6 +525,9 @@ private:
   QLabel * scene_files_selected_path_label_{ nullptr };
   QTreeWidget * scene_files_tree_{ nullptr };
   QComboBox * asset_filter_combo_{ nullptr };
+  QLineEdit * asset_library_search_{ nullptr };
+  ScenePreviewWidget * asset_library_preview_{ nullptr };
+  QLabel * asset_library_preview_status_{ nullptr };
   QPushButton * add_to_canvas_button_{ nullptr };
   QPushButton * add_asset_button_{ nullptr };
   QPushButton * pick_source_button_{ nullptr };
