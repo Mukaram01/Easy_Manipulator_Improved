@@ -1355,3 +1355,39 @@ assert.strictEqual(state.editorError, 'No visible physical geometry available fo
         stderr=subprocess.PIPE,
     )
     assert result.stderr == ""
+
+
+def test_viewer_world_z_rotate_gizmo_transaction_contract():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    assert "directRotateDrag: null" in js
+    assert "beginDirectRotateDrag(rendered)" in js
+    assert "finishDirectRotateDrag(rendered)" in js
+    assert "cancelDirectRotateDrag('Rotation cancelled')" in js
+    assert "pushEditorEvent('status', { message: `Rotated ${itemLabel(rendered.item)}` })" in js
+    assert "pushEditorEvent('status', { message: message || 'Rotation cancelled' })" in js
+    assert "gizmo.setSpace('world')" in js
+    assert "gizmo.showX = false; gizmo.showY = false; gizmo.showZ = true" in js
+    assert "const next = cloneTransform(drag.start);" in js
+    assert "next.pose.rpy.z = transformFromObject(rendered.object3d).pose.rpy.z" in js
+    assert "snapTransform(next, { translationAxes: [], rotationAxes: ['z'] })" in js
+    assert "markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start, snapOptions: { translationAxes: [], rotationAxes: ['z'] } })" in js
+    assert "if (sameTransform(drag.start, finalTransform))" in js
+
+
+def test_viewer_rotate_cancels_on_selection_mode_and_scene_change_without_yaml_writes():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    select_body = _viewer_function_body(js, "function selectObject(id)", "function clearSelection()")
+    mode_body = _viewer_function_body(js, "function setEditorMode(mode)", "function setEditorSnap")
+    load_file_body = _viewer_function_body(js, "async function loadFile(file)", "function safeRelativeSceneUrl")
+    load_url_body = _viewer_function_body(js, "async function loadSceneUrl(rawUrl)", "if (el.resetView)")
+    object_change_body = js.split("transformControls.addEventListener('objectChange'", 1)[1].split("controls.addEventListener('start'", 1)[0]
+    assert "state.directRotateDrag && state.directRotateDrag.itemId !== (id || '')" in select_body
+    assert "cancelDirectRotateDrag('Rotation cancelled')" in select_body
+    assert "if (state.editorMode !== normalized)" in mode_body
+    assert "cancelDirectRotateDrag('Rotation cancelled')" in mode_body
+    assert "cancelDirectRotateDrag('Rotation cancelled')" in load_file_body
+    assert "cancelDirectRotateDrag('Rotation cancelled')" in load_url_body
+    assert "previewDirectRotateDrag(rendered); return;" in object_change_body
+    assert "state.undoStack.push" not in object_change_body
+    assert "yaml" not in object_change_body.lower()
+    assert "metadata" not in object_change_body.lower()
