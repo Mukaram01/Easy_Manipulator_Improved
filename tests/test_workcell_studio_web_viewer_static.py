@@ -119,10 +119,60 @@ def test_viewer_includes_render_status_strings_and_fallback_reasons():
         "unsupported_format",
         "unresolved_package_uri",
         "primitive geometry rendered while mesh loads or is unavailable",
-        "no primitive geometry or mesh was provided; using box fallback",
+        "no mesh or physical primitive dimensions were provided; Product View box fallback suppressed",
         "unsafe mesh_uri rejected by viewer policy",
         "no mesh_uri provided",
         "loader_failure",
+    ]:
+        assert token in js
+
+
+def test_product_view_physical_dimension_semantics_do_not_require_overlays():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    for token in [
+        "PHYSICAL_SEMANTIC_TOKEN_RE",
+        "conveyor",
+        "workpiece",
+        "bin",
+        "support surface",
+        "fixture",
+        "pallet",
+        "physical safety barrier",
+        "function isPhysicalSemanticItem(item)",
+        "function hasDimensionBackedPhysicalPrimitive(item)",
+        "isPhysicalSemanticItem(item) && !/\\b(safety zone|pick zone|place zone|observation zone|spawn zone|work envelope|robot reach|camera fov|fov|home pose|transform anchor|warning marker|warning anchor|warning badge)\\b/",
+        "object3d.visible = state.debugOverlaysVisible || !isDebugOverlayItem(item)",
+    ]:
+        assert token in js
+
+
+def test_product_view_helper_semantics_stay_overlay_gated():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    overlay_body = js.split("const DEBUG_OVERLAY_TOKEN_RE", 1)[1].split("function isSensor(item)", 1)[0]
+    for token in [
+        "robot reach",
+        "camera fov",
+        "pick zone",
+        "place zone",
+        "observation zone",
+        "home pose",
+        "transform anchor",
+        "warning marker",
+        "viewerGroupFor(item) === 'zones'",
+        "return DEBUG_OVERLAY_TOKEN_RE.test(identity)",
+    ]:
+        assert token in overlay_body
+
+
+def test_product_view_suppresses_missing_mesh_box_without_physical_dimensions():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    for token in [
+        "if (!primitive) return null",
+        "return numeric.every(value => Number.isFinite(value) && value > 0) ? numeric : null",
+        "if (!dims) return null",
+        "no_physical_dimensions",
+        "no mesh or physical primitive dimensions were provided; Product View box fallback suppressed",
+        "if (fallback) fallback.visible = !requiredMesh",
     ]:
         assert token in js
 
