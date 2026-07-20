@@ -7,9 +7,17 @@ let TransformControls;
 let loadRobotPreview;
 let applyRobotJointPreview;
 
-const PRODUCT_VIEW_WORKSPACE_BACKGROUND = 0xe9edf1;
-const PRODUCT_VIEW_GRID_MAJOR = 0x8996a3;
-const PRODUCT_VIEW_GRID_MINOR = 0xc3cbd3;
+const PRODUCT_VIEW_LIGHT_PALETTE = Object.freeze({
+  workspaceBackground: 0xe9edf1,
+  rendererClearColor: 0xe9edf1,
+  gridMajor: 0x8996a3,
+  gridMinor: 0xc3cbd3,
+  labelText: 0x123040,
+  labelSurface: 0xf8fafc,
+  overlaySurface: 0xfff6dd,
+  errorSurface: 0xffeef0,
+  errorAccent: 0xc43434,
+});
 
 const SUPPORTED_SCHEMA_VERSION = 'workcell_studio_web_scene/v1';
 const EDIT_PATCH_SCHEMA_VERSION = 'workcell_studio_web_scene_edit_patch/v1';
@@ -971,7 +979,7 @@ function logRequiredMeshFailure(item, meshUrl, error) {
 }
 function failedMeshDebugMaterial() {
   return new THREE.MeshBasicMaterial({
-    color: 0xff2bd6,
+    color: PRODUCT_VIEW_LIGHT_PALETTE.errorAccent,
     wireframe: true,
     transparent: true,
     opacity: 0.82,
@@ -980,7 +988,7 @@ function failedMeshDebugMaterial() {
   });
 }
 function failedMeshDebugEdgeMaterial() {
-  return new THREE.LineBasicMaterial({ color: 0xff2bd6, transparent: true, opacity: 1 });
+  return new THREE.LineBasicMaterial({ color: PRODUCT_VIEW_LIGHT_PALETTE.errorAccent, transparent: true, opacity: 1 });
 }
 function styleFailedMeshDebugFallback(fallback, item, reason) {
   fallback.visible = true;
@@ -1828,14 +1836,15 @@ function initThree() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     const scene = new THREE.Scene();
     scene.up.copy(ROS_Z_UP);
-    scene.background = new THREE.Color(PRODUCT_VIEW_WORKSPACE_BACKGROUND);
+    scene.background = new THREE.Color(PRODUCT_VIEW_LIGHT_PALETTE.workspaceBackground);
+    renderer.setClearColor(PRODUCT_VIEW_LIGHT_PALETTE.rendererClearColor, 1);
     const camera = new THREE.PerspectiveCamera(55, 1, 0.01, 100);
     camera.up.copy(ROS_Z_UP);
     camera.position.set(2.4, -2.8, 1.8);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.object.up.copy(ROS_Z_UP);
     controls.enableDamping = true;
-    const grid = new THREE.GridHelper(5, 20, PRODUCT_VIEW_GRID_MAJOR, PRODUCT_VIEW_GRID_MINOR);
+    const grid = new THREE.GridHelper(5, 20, PRODUCT_VIEW_LIGHT_PALETTE.gridMajor, PRODUCT_VIEW_LIGHT_PALETTE.gridMinor);
     grid.name = 'ros_xy_ground_grid';
     grid.up.copy(ROS_Z_UP);
     grid.rotation.x = Math.PI / 2;

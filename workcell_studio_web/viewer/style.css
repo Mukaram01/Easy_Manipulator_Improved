@@ -1,6 +1,7 @@
 :root {
   color-scheme: light;
-  --bg: #e9edf1;
+  --workspace-bg: #e9edf1;
+  --bg: var(--workspace-bg);
   --panel: #f8fafc;
   --panel-2: #eef2f6;
   --text: #17202a;
@@ -8,6 +9,8 @@
   --accent: #0078a8;
   --warn: #b26b00;
   --error: #c43434;
+  --error-surface: #ffeef0;
+  --overlay-surface: #fff6dd;
   --border: #c5ced8;
 }
 
@@ -104,6 +107,7 @@ body {
   grid-template-columns: minmax(13rem, 18rem) 1fr minmax(16rem, 22rem);
   height: calc(100vh - 74px);
   min-height: 34rem;
+  background: var(--workspace-bg);
 }
 .object-panel, .details-panel {
   overflow: auto;
@@ -115,8 +119,8 @@ body {
 .details-panel { border-left: 1px solid var(--border); }
 h2 { margin: 0 0 0.75rem; font-size: 0.95rem; color: var(--accent); }
 
-.viewport-panel { position: relative; min-width: 0; background: var(--bg); }
-#scene-canvas { width: 100%; height: 100%; display: block; }
+.viewport-panel { position: relative; min-width: 0; background: var(--workspace-bg); }
+#scene-canvas { width: 100%; height: 100%; display: block; background: var(--workspace-bg); }
 
 .label-layer {
   position: absolute;
@@ -164,15 +168,15 @@ h2 { margin: 0 0 0.75rem; font-size: 0.95rem; color: var(--accent); }
   top: 1rem;
   left: 1rem;
   right: 1rem;
-  color: #fff;
+  color: #701b24;
   border-color: var(--error);
-  background: rgba(139, 30, 45, 0.94);
+  background: var(--error-surface);
 }
 .warning-item {
   margin: 0 0 0.5rem;
   padding: 0.55rem;
   border-left: 3px solid var(--warn);
-  background: #fff6dd;
+  background: var(--overlay-surface);
   color: #5f3a00;
 }
 
@@ -272,7 +276,7 @@ code { color: #0b5f80; }
   right: 1rem;
   top: 1rem;
   border-color: var(--warn);
-  background: #fff6dd;
+  background: var(--overlay-surface);
   color: #5f3a00;
 }
 .transform-editor {
