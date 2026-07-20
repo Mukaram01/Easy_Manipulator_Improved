@@ -8,8 +8,8 @@ let loadRobotPreview;
 let applyRobotJointPreview;
 
 const PRODUCT_VIEW_LIGHT_PALETTE = Object.freeze({
-  workspaceBackground: 0xe9edf1,
-  rendererClearColor: 0xe9edf1,
+  workspaceBackground: 0xeef1f4,
+  rendererClearColor: 0xeef1f4,
   gridMajor: 0x8996a3,
   gridMinor: 0xc3cbd3,
   labelText: 0x123040,

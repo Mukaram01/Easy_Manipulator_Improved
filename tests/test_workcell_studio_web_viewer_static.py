@@ -378,8 +378,8 @@ def test_viewer_product_workspace_uses_central_light_palette_for_scene_and_css()
 
     assert "const PRODUCT_VIEW_LIGHT_PALETTE = Object.freeze({" in js
     for token in [
-        "workspaceBackground: 0xe9edf1",
-        "rendererClearColor: 0xe9edf1",
+        "workspaceBackground: 0xeef1f4",
+        "rendererClearColor: 0xeef1f4",
         "gridMajor: 0x8996a3",
         "gridMinor: 0xc3cbd3",
         "labelText: 0x123040",
@@ -391,8 +391,12 @@ def test_viewer_product_workspace_uses_central_light_palette_for_scene_and_css()
         assert token in js
     assert "scene.background = new THREE.Color(PRODUCT_VIEW_LIGHT_PALETTE.workspaceBackground);" in init_body
     assert "renderer.setClearColor(PRODUCT_VIEW_LIGHT_PALETTE.rendererClearColor, 1);" in init_body
+    assert "scene.background = new THREE.Color(0xe9edf1);" not in js
+    assert "setClearColor(0xe9edf1" not in js
+    assert "new THREE.Fog(0xe9edf1" not in js
     assert "scene.background = new THREE.Color(0x0b1018);" not in js
     assert "setClearColor(0x0b1018" not in js
+    assert "new THREE.Fog(0x0b1018" not in js
     assert "Fog" not in js and ".fog" not in js
 
     assert "--workspace-bg: #e9edf1;" in css
@@ -410,7 +414,7 @@ def test_viewer_product_grid_uses_visible_major_minor_palette_colours():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     init_body = js.split("function initThree()", 1)[1].split("function animate()", 1)[0]
 
-    assert "workspaceBackground: 0xe9edf1" in js
+    assert "workspaceBackground: 0xeef1f4" in js
     assert "gridMajor: 0x8996a3" in js
     assert "gridMinor: 0xc3cbd3" in js
     assert "new THREE.GridHelper(5, 20, PRODUCT_VIEW_LIGHT_PALETTE.gridMajor, PRODUCT_VIEW_LIGHT_PALETTE.gridMinor)" in init_body
