@@ -347,6 +347,8 @@ private:
     // repository or port change.
     QString absolute_repo_root;
     int selected_server_port{ 0 };
+    QString product_view_backend;
+    QString generated_web_scene_path;
     QByteArray payload_fingerprint;
     quint64 payload_revision{ 0 };
     quint64 generation{ 0 };
@@ -355,6 +357,7 @@ private:
     {
       return scene_id == other.scene_id && absolute_scene_dir == other.absolute_scene_dir &&
         absolute_repo_root == other.absolute_repo_root && selected_server_port == other.selected_server_port &&
+        product_view_backend == other.product_view_backend && generated_web_scene_path == other.generated_web_scene_path &&
         payload_fingerprint == other.payload_fingerprint && payload_revision == other.payload_revision;
     }
     bool operator==(const EmbeddedWebRequestIdentity & other) const
