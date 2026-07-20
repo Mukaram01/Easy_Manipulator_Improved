@@ -267,23 +267,49 @@ def test_viewer_ground_grid_is_ros_xy_not_threejs_default_xz_y_up():
 
 
 
-def test_viewer_product_workspace_uses_single_light_neutral_background():
+def test_viewer_product_workspace_uses_central_light_palette_for_scene_and_css():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    css = (VIEWER / "style.css").read_text(encoding="utf-8")
     init_body = js.split("function initThree()", 1)[1].split("function animate()", 1)[0]
 
-    assert "const PRODUCT_VIEW_WORKSPACE_BACKGROUND = 0xe9edf1;" in js
-    assert "scene.background = new THREE.Color(PRODUCT_VIEW_WORKSPACE_BACKGROUND);" in init_body
+    assert "const PRODUCT_VIEW_LIGHT_PALETTE = Object.freeze({" in js
+    for token in [
+        "workspaceBackground: 0xe9edf1",
+        "rendererClearColor: 0xe9edf1",
+        "gridMajor: 0x8996a3",
+        "gridMinor: 0xc3cbd3",
+        "labelText: 0x123040",
+        "labelSurface: 0xf8fafc",
+        "overlaySurface: 0xfff6dd",
+        "errorSurface: 0xffeef0",
+        "errorAccent: 0xc43434",
+    ]:
+        assert token in js
+    assert "scene.background = new THREE.Color(PRODUCT_VIEW_LIGHT_PALETTE.workspaceBackground);" in init_body
+    assert "renderer.setClearColor(PRODUCT_VIEW_LIGHT_PALETTE.rendererClearColor, 1);" in init_body
     assert "scene.background = new THREE.Color(0x0b1018);" not in js
-    assert js.count("PRODUCT_VIEW_WORKSPACE_BACKGROUND") == 2
+    assert "setClearColor(0x0b1018" not in js
+    assert "Fog" not in js and ".fog" not in js
+
+    assert "--workspace-bg: #e9edf1;" in css
+    assert "body {" in css and "background: var(--bg);" in css
+    assert ".app-shell" in css and "background: var(--workspace-bg);" in css
+    assert ".viewport-panel { position: relative; min-width: 0; background: var(--workspace-bg); }" in css
+    assert "#scene-canvas { width: 100%; height: 100%; display: block; background: var(--workspace-bg); }" in css
+    assert "color: #123040;" in css
+    assert "background: rgba(248, 250, 252, 0.86);" in css
+    assert "background: var(--error-surface);" in css
+    assert "background: rgba(139, 30, 45, 0.94);" not in css
 
 
-def test_viewer_product_grid_uses_distinct_subtle_major_minor_theme_colours():
+def test_viewer_product_grid_uses_visible_major_minor_palette_colours():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     init_body = js.split("function initThree()", 1)[1].split("function animate()", 1)[0]
 
-    assert "const PRODUCT_VIEW_GRID_MAJOR = 0x8996a3;" in js
-    assert "const PRODUCT_VIEW_GRID_MINOR = 0xc3cbd3;" in js
-    assert "new THREE.GridHelper(5, 20, PRODUCT_VIEW_GRID_MAJOR, PRODUCT_VIEW_GRID_MINOR)" in init_body
+    assert "workspaceBackground: 0xe9edf1" in js
+    assert "gridMajor: 0x8996a3" in js
+    assert "gridMinor: 0xc3cbd3" in js
+    assert "new THREE.GridHelper(5, 20, PRODUCT_VIEW_LIGHT_PALETTE.gridMajor, PRODUCT_VIEW_LIGHT_PALETTE.gridMinor)" in init_body
     assert "new THREE.GridHelper(5, 20, 0x3a4a5e, 0x263445)" not in js
     assert "grid.name = 'ros_xy_ground_grid';" in init_body
 
