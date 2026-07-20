@@ -161,6 +161,61 @@ def test_viewer_includes_mesh_loader_references_and_safe_mesh_uri_logic():
         assert unsafe_token in js
 
 
+def test_urdf_renderer_resolves_package_meshes_to_staged_scene_assets():
+    js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
+    assert "function resolvePackageMeshUri(uri, sceneId, diagnostics)" in js
+    assert "raw.startsWith('package://')" in js
+    assert "context?.sceneId" in js
+    assert "build/workcell_studio_web_scene/assets/${encodeURIComponent(scene)}/${encodeURIComponent(packageName)}/${safeParts.join('/')}" in js
+    assert "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae" not in js
+    assert "robotiq_85_description" not in js
+    assert "ur_description" not in js
+    assert "ur5_2f_test" not in js
+    assert "URDF package mesh resolved:" in js
+    assert "URDF package mesh rejected:" in js
+
+
+def test_urdf_renderer_rejects_unsafe_package_mesh_sources():
+    js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
+    package_body = js.split("function resolvePackageMeshUri", 1)[1].split("function normalizeMeshUri", 1)[0]
+    for token in [
+        "if (!scene)",
+        "if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(packageName))",
+        "if (!parts.length)",
+        "if (!part)",
+        "decoded === '.'",
+        "decoded === '..'",
+        "decoded.includes('\\0')",
+        "decoded.includes('/')",
+        "decoded.includes('\\\\')",
+        "decodedAgain !== decoded",
+        "/^(?:file|https?):\\/\\//i.test(packagePath)",
+        "/^[A-Za-z]:[\\\\/]/.test(packagePath)",
+        "/^[A-Za-z][A-Za-z0-9+.-]*:/.test(decoded)",
+    ]:
+        assert token in package_body
+    for rejected_uri in [
+        "package://pkg/../secret",
+        "package://pkg/%2e%2e/secret",
+        "package://pkg/%2Fetc/passwd",
+        "package://pkg/C:/secret",
+        "file:///tmp/mesh.dae",
+        "http://example.com/mesh.dae",
+    ]:
+        assert rejected_uri not in js
+
+
+def test_urdf_renderer_passes_loaded_scene_id_without_changing_staged_meshes():
+    renderer = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
+    viewer = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    normalize_body = renderer.split("function normalizeMeshUri", 1)[1].split("function meshExtension", 1)[0]
+    assert "return resolvePackageMeshUri(raw, context?.sceneId, diagnostics);" in normalize_body
+    assert "const diagnostic = context?.meshUriDiagnostic?.({ mesh_uri: raw, mesh_staging_status: 'staged' });" in normalize_body
+    assert "return diagnostic?.uri || raw;" in normalize_body
+    preview_call = viewer.split("const previewResult = loadRobotPreview(preview, {", 1)[1].split("onRobotLoaded", 1)[0]
+    assert "sceneId: sceneId()," in preview_call
+
+
 def test_viewer_applies_mesh_local_transform_only_below_object_roots():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     for token in [
