@@ -2339,7 +2339,7 @@ void MainWindow::setup_studio_shell()
   register_scene_action("layout.undo", "Undo Layout Edit", [this]() { undo_layout_edit(); });
   register_scene_action("layout.redo", "Redo Layout Edit", [this]() { redo_layout_edit(); });
   register_scene_action("layout.duplicate", "Duplicate Selected", [this]() { duplicate_selected_item(); });
-  register_scene_action("layout.remove", "Remove Selected Layout Item", [this]() { delete_selected_item(); });
+  register_scene_action("layout.remove", "Delete Selected", [this]() { delete_selected_item(); });
   register_scene_action("generate.scene_package", "Generate", [this]() { generate_scene_package_for_selected_scene(); });
   register_scene_action("generate.yaml", "Generate YAML", [this]() { generate_yaml_draft_for_selected_scene(); });
   register_scene_action("generate.task", "Generate Task/Grasp Files", [this]() { generate_or_update_task_intent_for_selected_scene(); });
@@ -2475,8 +2475,10 @@ void MainWindow::setup_studio_shell()
   gizmo_menu_action->setText("Gizmo Scale");
   auto * undo_action = scene_builder_action("layout.undo");
   auto * redo_action = scene_builder_action("layout.redo");
+  auto * delete_action = scene_builder_action("layout.remove");
   if (undo_action) undo_action->setShortcut(QKeySequence::Undo);
   if (redo_action) redo_action->setShortcut(QKeySequence::Redo);
+  if (delete_action) delete_action->setShortcut(QKeySequence(Qt::Key_Delete));
   if (scene_builder_last_splitter_sizes_.size() != 3)
     scene_builder_last_splitter_sizes_ = scene_builder_splitter_ ? scene_builder_splitter_->sizes() : QList<int>{300, 900, 320};
   auto sync_scene_builder_view_actions = [this]() {
@@ -2556,6 +2558,7 @@ void MainWindow::setup_studio_shell()
   scene_builder_secondary_overflow_menu_->addSeparator();
   scene_builder_secondary_overflow_menu_->addAction(undo_action);
   scene_builder_secondary_overflow_menu_->addAction(redo_action);
+  scene_builder_secondary_overflow_menu_->addAction(delete_action);
   scene_builder_secondary_overflow_menu_->addSeparator();
   if (fit_robot_button) fit_robot_button->setText("Fit Selection");
   scene_builder_secondary_overflow_menu_->addAction(fit_button);
@@ -3194,7 +3197,6 @@ void MainWindow::setup_studio_shell()
       connect(box, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
     }
   }
-  auto * del_sc = new QShortcut(QKeySequence(Qt::Key_Delete), scene_builder); connect(del_sc,&QShortcut::activated,this,&MainWindow::delete_selected_item);
   auto * save_sc = new QShortcut(QKeySequence::Save, scene_builder); connect(save_sc,&QShortcut::activated,this,&MainWindow::save_layout_changes);
   auto * undo_sc = new QShortcut(QKeySequence::Undo, scene_builder); connect(undo_sc, &QShortcut::activated, this, &MainWindow::undo_layout_edit);
   auto * redo_sc = new QShortcut(QKeySequence::Redo, scene_builder); connect(redo_sc, &QShortcut::activated, this, &MainWindow::redo_layout_edit);
@@ -4020,6 +4022,7 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
       inspector_advanced_details_label_->setToolTip(QString());
     }
     refresh_selection_transform_editor_from_state(state);
+    refresh_delete_selected_action();
     return;
   }
   const QString display = state.display_name.isEmpty() ? state.id : state.display_name;
@@ -5651,6 +5654,7 @@ void MainWindow::refresh_selected_scene_metadata_panel()
   set_label(selection_scene_launch_label_, launch_text);
 
   refresh_selected_scene_item_labels(selected_item_state_);
+  refresh_delete_selected_action();
 }
 
 void MainWindow::refresh_scene_builder_selection_state_ui()
@@ -6930,6 +6934,9 @@ void MainWindow::save_layout_changes(){
           continue;
         }
         const QString id = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(existing_item, "id")).trimmed();
+        if (!id.isEmpty() && deleted_layout_item_ids_.contains(id)) {
+          continue;
+        }
         if (!id.isEmpty() && editable_by_id.contains(id)) {
           YAML::Node item = serialized_editable_canvas_item(editable_by_id.value(id), existing_item);
           if (!item["source"]) item["source"] = "layout/workcell_studio_layout.yaml";
@@ -7023,6 +7030,7 @@ void MainWindow::save_layout_changes(){
   std::ofstream out(effective_layout_path.string());
   out << root;
   out.close();
+  deleted_layout_item_ids_.clear();
   layout_dirty_ = false;
   layout_saved_ = true;
   validation_stale_ = true;
@@ -7344,6 +7352,7 @@ void MainWindow::refresh_selection_transform_editor_from_state(const SelectedSce
   }
   inspector_update_guard_ = false;
   refresh_robot_base_pose_inspector();
+  refresh_delete_selected_action();
 }
 
 QGraphicsItem * MainWindow::find_authoring_robot_base_item() const
@@ -7554,10 +7563,85 @@ void MainWindow::paste_selection_transform_from_clipboard()
   inspector_update_guard_ = false;
   apply_selection_transform_from_editor();
 }
-void MainWindow::undo_layout_edit(){ if(undo_stack_.empty() || !digital_twin_scene_) return; auto c=undo_stack_.back(); undo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;} redo_stack_.push_back(c); mark_layout_dirty("Undo"); }
-void MainWindow::redo_layout_edit(){ if(redo_stack_.empty() || !digital_twin_scene_) return; auto c=redo_stack_.back(); redo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.new_pos); break;} undo_stack_.push_back(c); mark_layout_dirty("Redo"); }
+void MainWindow::undo_layout_edit(){
+  if(undo_stack_.empty() || !digital_twin_scene_) return;
+  auto c=undo_stack_.back(); undo_stack_.pop_back();
+  if (c.kind == QStringLiteral("delete")) {
+    deleted_layout_item_ids_.remove(c.item_id);
+    for (const auto & p : c.preview_items) {
+      bool exists = false;
+      for (const auto & existing : all_scene_preview_items_) if (existing.id == p.id) { exists = true; break; }
+      if (!exists) all_scene_preview_items_.push_back(p);
+    }
+    apply_scene3d_preview_layer_filters(false);
+    if (scene_preview_widget_) scene_preview_widget_->select_preview_item(c.item_id);
+    current_selected_scene_item_id_ = c.item_id;
+    selected_item_state_ = current_selected_scene_item();
+    refresh_selected_scene_item_labels(selected_item_state_);
+    append_studio_log(QString("Restored %1").arg(selected_item_state_.display_name.isEmpty() ? c.item_id : selected_item_state_.display_name));
+  } else {
+    for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;}
+  }
+  redo_stack_.push_back(c); mark_layout_dirty("Undo"); refresh_scene_builder_left_explorer(); refresh_delete_selected_action();
+}
+void MainWindow::redo_layout_edit(){
+  if(redo_stack_.empty() || !digital_twin_scene_) return;
+  auto c=redo_stack_.back(); redo_stack_.pop_back();
+  if (c.kind == QStringLiteral("delete")) {
+    deleted_layout_item_ids_.insert(c.item_id);
+    for (int i = all_scene_preview_items_.size() - 1; i >= 0; --i) if (all_scene_preview_items_[i].id == c.item_id) all_scene_preview_items_.removeAt(i);
+    if (digital_twin_scene_) for (auto * item : digital_twin_scene_->items()) if (item->data(RoleId).toString() == c.item_id) { delete item; break; }
+    current_selected_scene_item_id_.clear(); selected_item_state_ = {};
+    apply_scene3d_preview_layer_filters(false);
+    refresh_selected_scene_item_labels(selected_item_state_);
+  } else {
+    for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.new_pos); break;}
+  }
+  undo_stack_.push_back(c); mark_layout_dirty("Redo"); refresh_scene_builder_left_explorer(); refresh_delete_selected_action();
+}
 void MainWindow::duplicate_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); if(s->data(RoleLocked).toBool()){ append_studio_log("Duplicate blocked: locked item"); return; } auto *c=new DraggableCanvasItem(static_cast<QGraphicsRectItem*>(s)->rect()); c->setPos(s->pos()+QPointF(18,18)); c->setBrush(static_cast<QGraphicsRectItem*>(s)->brush()); for(int r=RoleId;r<=RoleSource;++r) c->setData(r,s->data(r)); c->setData(RoleId, s->data(RoleId).toString()+"_copy"); c->setFlags(s->flags()); digital_twin_scene_->addItem(c); c->setSelected(true); undo_stack_.push_back({"duplicate", c->data(RoleId).toString(), s->pos(), c->pos(), true, false}); mark_layout_dirty("Duplicate Selected"); append_studio_log(QString("Duplicate selected item: %1").arg(c->data(RoleId).toString())); refresh_scene_builder_left_explorer(); }
-void MainWindow::delete_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); const QString id=s->data(RoleId).toString(); const QString t=s->data(RoleType).toString(); if(t=="robot_base"||t=="reach"||t=="safety/home"){ QMessageBox::warning(this,"Remove Selected Layout Item","Delete robot is blocked/guarded unless Unlock Robot Base is enabled."); return;} if(QMessageBox::question(this,"Remove Selected Layout Item","Remove selected layout instance from environment_layout.yaml?")!=QMessageBox::Yes) return; undo_stack_.push_back({"delete", id, s->pos(), s->pos(), false, true}); delete s; refresh_scene_builder_left_explorer(); mark_layout_dirty("Remove Selected Layout Item"); append_studio_log(QString("Removed layout item %1 from canvas; save layout to persist.").arg(id)); }
+bool MainWindow::selected_item_can_be_deleted() const
+{
+  if (!selected_scene_state_.valid || place_asset_armed_) return false;
+  return resolve_selected_editable_layout_target().ok;
+}
+
+void MainWindow::refresh_delete_selected_action()
+{
+  if (auto * action = scene_builder_action(QStringLiteral("layout.remove"))) action->setEnabled(selected_item_can_be_deleted());
+}
+
+void MainWindow::delete_selected_item(){
+  const auto target = resolve_selected_editable_layout_target();
+  if(!target.ok || place_asset_armed_) {
+    append_studio_log("Selected item cannot be deleted");
+    statusBar()->showMessage("Selected item cannot be deleted", 4000);
+    refresh_delete_selected_action();
+    return;
+  }
+  const QString id = target.state.id.trimmed();
+  CanvasEditCommand command{"delete", id, target.fallback_item ? target.fallback_item->pos() : QPointF(), target.fallback_item ? target.fallback_item->pos() : QPointF(), false, true};
+  for (const auto & p : all_scene_preview_items_) if (p.id == id) command.preview_items.push_back(p);
+  if (command.preview_items.isEmpty()) {
+    append_studio_log("Selected item cannot be deleted");
+    statusBar()->showMessage("Selected item cannot be deleted", 4000);
+    refresh_delete_selected_action();
+    return;
+  }
+  deleted_layout_item_ids_.insert(id);
+  for (int i = all_scene_preview_items_.size() - 1; i >= 0; --i) if (all_scene_preview_items_[i].id == id) all_scene_preview_items_.removeAt(i);
+  if (target.fallback_item) delete target.fallback_item;
+  if (digital_twin_scene_) digital_twin_scene_->clearSelection();
+  if (scene_hierarchy_tree_) scene_hierarchy_tree_->clearSelection();
+  current_selected_scene_item_id_.clear(); selected_item_state_ = {};
+  undo_stack_.push_back(command); redo_stack_.clear();
+  apply_scene3d_preview_layer_filters(false);
+  refresh_selected_scene_item_labels(selected_item_state_);
+  refresh_scene_builder_left_explorer();
+  mark_layout_dirty("Delete Selected");
+  append_studio_log(QString("Deleted %1").arg(target.state.display_name.isEmpty() ? id : target.state.display_name));
+  refresh_delete_selected_action();
+}
 
 double MainWindow::current_nudge_step_m(Qt::KeyboardModifiers modifiers) const
 {
