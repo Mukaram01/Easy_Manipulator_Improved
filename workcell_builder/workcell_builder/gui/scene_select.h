@@ -26,6 +26,8 @@
 #include <memory>
 
 #include <map>
+#include <cstdint>
+#include <ctime>
 
 class QLabel;
 struct RobotHomeJointState;
@@ -236,8 +238,31 @@ private:
   void mark_robot_home_edited();
   bool save_robot_home_to_scene(const boost::filesystem::path & scene_dir, std::string * reason);
   bool validate_robot_home_for_save();
+  void invalidate_scene_metadata_snapshot();
+
+  struct SceneMetadataFileIdentity
+  {
+    bool exists{false};
+    std::time_t modified_time{0};
+    std::uintmax_t size{0};
+  };
+
+  struct SceneMetadataSnapshot
+  {
+    boost::filesystem::path scene_dir;
+    SceneMetadataFileIdentity environment_yaml;
+    SceneMetadataFileIdentity cell_definition_yaml;
+    SceneMetadataFileIdentity scene_manifest_yaml;
+    SceneMetadataFileIdentity workcell_studio_layout_yaml;
+    Scene scene;
+    bool scene_loaded{false};
+  };
+
+  SceneMetadataFileIdentity metadata_file_identity(const boost::filesystem::path & path) const;
+  bool scene_metadata_snapshot_valid(const boost::filesystem::path & scene_dir) const;
 
   int scaffold_scene_index_ = -1;
+  SceneMetadataSnapshot scene_metadata_snapshot_;
   workcell_builder::ValidationDashboardResult latest_dashboard_result_;
   void render_workcell_studio_status(const workcell_builder::SceneStatusReport & report);
   workcell_builder::SceneStatusReport latest_scene_status_report_;
