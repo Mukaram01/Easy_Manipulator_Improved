@@ -76,6 +76,7 @@
 #include <QPainter>
 #include <QWheelEvent>
 #include <QMouseEvent>
+#include <QTimer>
 #include "workcell_studio_template_instantiator.hpp"
 #include <boost/filesystem.hpp>
 #include <filesystem>
@@ -1352,11 +1353,26 @@ void SceneSelect::clear_messages()
 
 void SceneSelect::refresh_scene_status(bool strict, const std::string & trigger)
 {
+  static bool refresh_in_progress = false;
+  static bool refresh_queued = false;
+  if (refresh_in_progress) {
+    refresh_queued = true;
+    QTimer::singleShot(0, this, [this, strict]() {
+      if (!refresh_queued) {
+        return;
+      }
+      refresh_queued = false;
+      refresh_scene_status(strict, "Coalesced Refresh");
+    });
+    return;
+  }
+  refresh_in_progress = true;
   clear_messages();
   const std::string timestamp =
     QDateTime::currentDateTime().toString(Qt::ISODate).toStdString();
   append_info("Status snapshot [" + trigger + "] @ " + timestamp);
   check_scene(strict);
+  refresh_in_progress = false;
 }
 
 void SceneSelect::render_workcell_studio_status(const workcell_builder::SceneStatusReport & report)
@@ -1672,6 +1688,7 @@ void SceneSelect::on_browse_scenes_folder_clicked()
   scenes_path = fs::path(selected.toStdString());
   workcell_path = scenes_path.parent_path();
   assets_path = workcell_path / "assets";
+  invalidate_scene_metadata_snapshot();
   workcell.scene_vector.clear();
   discover_scene_packages_on_startup();
   refresh_scenes(0, false);
@@ -1679,6 +1696,7 @@ void SceneSelect::on_browse_scenes_folder_clicked()
 
 void SceneSelect::on_refresh_scenes_button_clicked()
 {
+  invalidate_scene_metadata_snapshot();
   workcell.scene_vector.clear();
   discover_scene_packages_on_startup();
   refresh_scenes(0, false);
@@ -2053,8 +2071,8 @@ void SceneSelect::refresh_scenes(int latest_scene, bool scaffold_only_status)
   if (workcell.scene_vector.size() > 0) {  // There are scenes in the workcell
     ui->scene_list->setDisabled(false);     // Enable the dropdown menu
     for (int scene = 0; scene < static_cast<int>(workcell.scene_vector.size()); scene++) {
-      Scene scene_value = workcell.scene_vector[scene];
-      if (!scene_value.loaded) {
+      Scene & scene_value = workcell.scene_vector[scene];
+      if (!scene_value.loaded || !scene_metadata_snapshot_valid(scenes_path / scene_value.name)) {
         load_scene_from_yaml(&scene_value);
       }
       const SceneUiStatus status = compute_scene_status_label(scene_value, scenes_path / workcell.scene_vector[scene].name);
@@ -2341,6 +2359,7 @@ void SceneSelect::on_generate_yaml_clicked()
     }
   }
   scaffold_scene_index_ = -1;
+  invalidate_scene_metadata_snapshot();
   refresh_scene_status(true, "Generate YAML");
   task_editor_state_.unsaved_task_edits = false;
   task_area_dirty_ = false;
@@ -2368,10 +2387,11 @@ bool SceneSelect::check_scene(bool strict)
     Scene curr_scene;
     const int current_index = current_scene_index();
     if (current_index >= 0 && current_index < static_cast<int>(workcell.scene_vector.size())) {
-      curr_scene = workcell.scene_vector[current_index];
-      if (!curr_scene.loaded) {
-        load_scene_from_yaml(&curr_scene);
+      Scene & stored_scene = workcell.scene_vector[current_index];
+      if (!stored_scene.loaded || !scene_metadata_snapshot_valid(scenes_path / stored_scene.name)) {
+        load_scene_from_yaml(&stored_scene);
       }
+      curr_scene = stored_scene;
       if (!scene_has_valid_robot(curr_scene)) {
         scene_incomplete = true;
       }
@@ -2483,8 +2503,8 @@ bool SceneSelect::check_files(bool strict)
   }
   const int current_index = current_scene_index();
   if (current_index >= 0 && current_index < static_cast<int>(workcell.scene_vector.size())) {
-    Scene curr_scene = workcell.scene_vector[current_index];
-    if (!curr_scene.loaded) {
+    Scene & curr_scene = workcell.scene_vector[current_index];
+    if (!curr_scene.loaded || !scene_metadata_snapshot_valid(scenes_path / curr_scene.name)) {
       if (!load_scene_from_yaml(&curr_scene)) {
         append_error("Scene status: unable to load scene metadata from environment.yaml.");
         return false;
@@ -2498,9 +2518,10 @@ bool SceneSelect::check_files(bool strict)
 }
 void SceneSelect::on_scene_list_currentIndexChanged(int index)
 {
+  invalidate_scene_metadata_snapshot();
   if (index >= 0 && index < static_cast<int>(workcell.scene_vector.size())) {
-    Scene curr_scene = workcell.scene_vector[index];
-    if (!curr_scene.loaded) {
+    Scene & curr_scene = workcell.scene_vector[index];
+    if (!curr_scene.loaded || !scene_metadata_snapshot_valid(scenes_path / curr_scene.name)) {
       load_scene_from_yaml(&curr_scene);
     }
     const SceneUiStatus status = compute_scene_status_label(curr_scene, scenes_path / curr_scene.name);
@@ -2614,6 +2635,7 @@ void SceneSelect::on_generate_files_clicked()
     append_error("No scene selected to generate files from.");
   }
   scaffold_scene_index_ = -1;
+  invalidate_scene_metadata_snapshot();
   refresh_scene_status(true, "Generate Files");
   refresh_primary_workflow_state("Success", "Generate Package", "Refresh the preview or copy the fake-hardware launch command.");
 }
@@ -2622,6 +2644,10 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
   configure_startup_fallback_paths();
   const fs::path scene_dir = scenes_path / input_scene->name;
   const fs::path yaml_path = scene_dir / "environment.yaml";
+  if (scene_metadata_snapshot_valid(scene_dir) && scene_metadata_snapshot_.scene_loaded) {
+    *input_scene = scene_metadata_snapshot_.scene;
+    return true;
+  }
   if (!boost::filesystem::exists(scene_dir)) {
     std::cerr << "Scene directory does not exist: " << scene_dir.string() << '\n';
     return false;
@@ -2643,11 +2669,6 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
   if (!yaml.IsMap()) {
     append_error("Invalid scene YAML: " + yaml_path.string() + " root must be a map.");
     return false;
-  }
-  {
-    std::vector<std::string> task_zone_warnings;
-    (void)workcell_builder::load_task_zones_from_environment_yaml(yaml_path.string(), &task_zone_warnings);
-    for (const auto & warning : task_zone_warnings) append_warning("Task zone parse warning: " + warning);
   }
   const YAML::Node perception = yaml["perception"];
   if (!perception) {
@@ -2876,7 +2897,74 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
 
   resolve_scene_paths(input_scene, workcell_path);
   input_scene->loaded = true;
+  boost::system::error_code ec;
+  scene_metadata_snapshot_.scene_dir = fs::canonical(scene_dir, ec);
+  if (ec) {
+    scene_metadata_snapshot_.scene_dir = fs::absolute(scene_dir);
+  }
+  scene_metadata_snapshot_.environment_yaml = metadata_file_identity(yaml_path);
+  scene_metadata_snapshot_.cell_definition_yaml = metadata_file_identity(scene_dir / "cell_definition.yaml");
+  scene_metadata_snapshot_.scene_manifest_yaml = metadata_file_identity(scene_dir / "scene_manifest.yaml");
+  scene_metadata_snapshot_.workcell_studio_layout_yaml =
+    metadata_file_identity(scene_dir / "layout" / "workcell_studio_layout.yaml");
+  scene_metadata_snapshot_.scene = *input_scene;
+  scene_metadata_snapshot_.scene_loaded = true;
   return true;
+}
+
+void SceneSelect::invalidate_scene_metadata_snapshot()
+{
+  scene_metadata_snapshot_ = SceneMetadataSnapshot{};
+}
+
+SceneSelect::SceneMetadataFileIdentity SceneSelect::metadata_file_identity(const fs::path & path) const
+{
+  SceneMetadataFileIdentity identity;
+  boost::system::error_code ec;
+  identity.exists = fs::exists(path, ec);
+  if (ec || !identity.exists) {
+    return identity;
+  }
+  identity.modified_time = fs::last_write_time(path, ec);
+  if (ec) {
+    identity.modified_time = 0;
+  }
+  identity.size = fs::file_size(path, ec);
+  if (ec) {
+    identity.size = 0;
+  }
+  return identity;
+}
+
+bool SceneSelect::scene_metadata_snapshot_valid(const fs::path & scene_dir) const
+{
+  boost::system::error_code ec;
+  fs::path canonical_scene_dir = fs::canonical(scene_dir, ec);
+  if (ec) {
+    canonical_scene_dir = fs::absolute(scene_dir);
+  }
+  if (scene_metadata_snapshot_.scene_dir.empty() ||
+    canonical_scene_dir != scene_metadata_snapshot_.scene_dir)
+  {
+    return false;
+  }
+  const auto current_env = metadata_file_identity(scene_dir / "environment.yaml");
+  const auto current_cell = metadata_file_identity(scene_dir / "cell_definition.yaml");
+  const auto current_manifest = metadata_file_identity(scene_dir / "scene_manifest.yaml");
+  const auto current_layout =
+    metadata_file_identity(scene_dir / "layout" / "workcell_studio_layout.yaml");
+  return current_env.exists == scene_metadata_snapshot_.environment_yaml.exists &&
+    current_env.modified_time == scene_metadata_snapshot_.environment_yaml.modified_time &&
+    current_env.size == scene_metadata_snapshot_.environment_yaml.size &&
+    current_cell.exists == scene_metadata_snapshot_.cell_definition_yaml.exists &&
+    current_cell.modified_time == scene_metadata_snapshot_.cell_definition_yaml.modified_time &&
+    current_cell.size == scene_metadata_snapshot_.cell_definition_yaml.size &&
+    current_manifest.exists == scene_metadata_snapshot_.scene_manifest_yaml.exists &&
+    current_manifest.modified_time == scene_metadata_snapshot_.scene_manifest_yaml.modified_time &&
+    current_manifest.size == scene_metadata_snapshot_.scene_manifest_yaml.size &&
+    current_layout.exists == scene_metadata_snapshot_.workcell_studio_layout_yaml.exists &&
+    current_layout.modified_time == scene_metadata_snapshot_.workcell_studio_layout_yaml.modified_time &&
+    current_layout.size == scene_metadata_snapshot_.workcell_studio_layout_yaml.size;
 }
 
 fs::path SceneSelect::scene_dir_for_current_selection() const
@@ -4526,6 +4614,7 @@ void SceneSelect::on_import_scene_bundle_clicked()
 
 void SceneSelect::on_refresh_status_button_clicked()
 {
+  invalidate_scene_metadata_snapshot();
   refresh_scene_status(true, "Refresh Scene Status");
 }
 
