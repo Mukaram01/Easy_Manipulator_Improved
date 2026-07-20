@@ -437,6 +437,75 @@ def test_viewer_product_theme_is_scene_independent():
         assert scene_name not in init_body
     assert "sceneId()" not in init_body
 
+
+def test_viewer_initial_fit_waits_for_terminal_scene_ready_once():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+
+    readiness_body = js.split("function emitWeb3dReadinessState", 1)[1].split("function readinessCategoryForItem", 1)[0]
+    assert "if (readinessState === 'scene_ready')" in readiness_body
+    assert "if (state.web3dReadiness.emittedSceneReady) return window.__WORKCELL_VIEWER_STATUS__;" in readiness_body
+    assert "state.web3dReadiness.emittedSceneReady = true;" in readiness_body
+    assert "if (readinessState === 'scene_ready') triggerInitialCameraFitAfterSceneReady();" in readiness_body
+
+    scene_ready_body = js.split("function maybeEmitSceneReady()", 1)[1].split("const el = {", 1)[0]
+    assert "if (readiness.pending?.size === 0) emitWeb3dReadinessState('scene_ready'" in scene_ready_body
+
+    trigger_body = js.split("function triggerInitialCameraFitAfterSceneReady()", 1)[1].split("function scheduleInitialCameraFitRetry", 1)[0]
+    assert "return attemptInitialCameraFit({ allowRetry: false });" in trigger_body
+
+    fit_body = js.split("function attemptInitialCameraFit", 1)[1].split("function triggerInitialCameraFitAfterSceneReady", 1)[0]
+    assert "if (!fit || fit.done || fit.userControlled || fit.sceneKey !== stableSceneCameraKey()) return false;" in fit_body
+    assert "fit.done = true;" in fit_body
+
+
+def test_viewer_initial_fit_not_reframed_per_mesh_load_but_manual_fit_remains():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+
+    try_load_body = js.split("async function tryLoadMesh", 1)[1].split("function collectItems", 1)[0]
+    assert "loadAsync(loadUrl)" in try_load_body
+    assert "frameScene(bounds)" not in try_load_body
+    assert "attemptInitialCameraFit" not in try_load_body
+    assert "scheduleInitialCameraFitRetry" not in try_load_body
+
+    expanded_body = js.split("function loadExpandedUrdfRobotPreview", 1)[1].split("function renderFrameDebugOverlays", 1)[0]
+    assert "onRobotLoaded" in expanded_body
+    assert "onRobotMeshLoaded" in expanded_body
+    assert "attemptInitialCameraFit" not in expanded_body
+    assert "scheduleInitialCameraFitRetry" not in expanded_body
+
+    render_scene_body = js.split("function renderScene(items)", 1)[1].split("function loadExpandedUrdfRobotPreview", 1)[0]
+    assert "tryLoadMesh(item, rendered, fallback);" in render_scene_body
+    assert "maybeEmitSceneReady();" in render_scene_body
+    assert "attemptInitialCameraFit" not in render_scene_body
+
+    reset_body = js.split("function resetView", 1)[1].split("function reportFitSelectionFallback", 1)[0]
+    assert "if (userInitiated) markCameraUserControlled();" in reset_body
+    assert "const physical = collectPhysicalVisibleBounds(state.three.scene);" in reset_body
+    assert "frameScene(physical.bounds)" in reset_body
+    assert "el.resetView.addEventListener('click', resetView)" in js
+    assert "fitScene: () => { resetView(); return editorState(); }" in js
+
+
+def test_viewer_initial_fit_bounds_use_visible_physical_geometry_only():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+
+    assert "function isInitialFitPhysicalGeometryItem(item, identity = '')" in js
+    physical_body = js.split("function isInitialFitPhysicalGeometryItem", 1)[1].split("function isPhysicalBoundsHelperObject", 1)[0]
+    for token in ["'robot'", "'tool'", "'table'", "'camera'", "'object'", "conveyor", "bin", "workbench", "configured camera"]:
+        assert token in physical_body
+
+    helper_body = js.split("function isPhysicalBoundsHelperObject", 1)[1].split("function isRobotPrimitiveFallbackObject", 1)[0]
+    for token in [
+        "object.isGridHelper || object.isAxesHelper",
+        "selection_outline",
+        "exclude_from_fit_bounds",
+        "DEBUG_OVERLAY_TOKEN_RE.test(identity)",
+        "return !isInitialFitPhysicalGeometryItem(item, identity);",
+    ]:
+        assert token in helper_body
+    for token in ["robot reach", "camera fov", "pick zone", "place zone", "warning badge", "helper", "diagnostic"]:
+        assert token in js
+
 def test_repository_does_not_track_generated_web_scene_outputs_under_source_paths():
     result = subprocess.run(
         ["git", "ls-files", "*.web_scene.json"],
@@ -1159,15 +1228,17 @@ def test_expanded_urdf_assembly_roots_are_first_class_physical_fit_bounds():
         assert token in status_body
 
 
-def test_expanded_urdf_robot_preview_fits_once_after_ready_not_per_mesh_callback():
+def test_expanded_urdf_robot_preview_defers_initial_fit_until_scene_ready():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     preview_body = js.split("function loadExpandedUrdfRobotPreview", 1)[1].split("function linkNameOfItem", 1)[0]
     loaded_body = preview_body.split("onRobotLoaded: result =>", 1)[1].split("onRobotMeshLoaded", 1)[0]
     mesh_loaded_body = preview_body.split("onRobotMeshLoaded: () =>", 1)[1].split("onRobotMeshLoadError", 1)[0]
 
-    assert "attemptInitialCameraFit()" in loaded_body
+    assert "completeExpandedUrdfReadiness(result)" in loaded_body
+    assert "attemptInitialCameraFit" not in loaded_body
     assert "renderSceneSummary()" in mesh_loaded_body
-    assert "scheduleInitialCameraFitRetry()" in mesh_loaded_body
+    assert "scheduleInitialCameraFitRetry" not in mesh_loaded_body
+    assert "attemptInitialCameraFit" not in mesh_loaded_body
 
 
 def test_expanded_urdf_robot_assembly_stays_locked_single_root_and_legacy_rows_suppressed():
