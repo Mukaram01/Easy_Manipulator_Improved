@@ -2173,8 +2173,27 @@ function reportFitCellNoGeometry(message = 'No visible physical geometry to fram
 function resetView({ userInitiated = true } = {}) {
   if (userInitiated) markCameraUserControlled();
   const physical = collectPhysicalVisibleBounds(state.three.scene);
-  if (!physical.bounds || !frameScene(physical.bounds)) { reportFitCellNoGeometry(); return; }
+  if (!physical.bounds || !frameScene(physical.bounds)) { reportFitCellNoGeometry(); return false; }
   if (state.editorError === 'No visible physical geometry to frame') clearError();
+  return true;
+}
+function reportFitSelectionFallback(message) {
+  state.editorError = message;
+  pushEditorEvent('fit_selection_fallback', { message, itemId: state.selected || '' });
+  if (el.error) { el.error.textContent = message; el.error.hidden = false; }
+}
+function fitSelection() {
+  markCameraUserControlled();
+  const selectedId = String(state.selected || '').trim();
+  const rendered = selectedId ? renderedById(selectedId) : null;
+  const fallback = message => { reportFitSelectionFallback(message); resetView({ userInitiated: false }); return false; };
+  if (!selectedId) return fallback('No physical item selected; fitting the workcell');
+  if (!rendered?.object3d) return fallback('Selected item has no visible physical geometry; fitting the workcell');
+  const physical = collectPhysicalVisibleBounds(rendered.object3d);
+  if (!physical.bounds || !frameScene(physical.bounds)) return fallback('Selected item has no visible physical geometry; fitting the workcell');
+  if (state.editorError === 'No physical item selected; fitting the workcell' || state.editorError === 'Selected item has no visible physical geometry; fitting the workcell') clearError();
+  pushEditorEvent('fit_selection', { itemId: selectedId, physicalRenderableCount: physical.count, bounds: physical.bounds_json });
+  return true;
 }
 function attemptInitialCameraFit({ allowRetry = true } = {}) {
   const fit = state.initialCameraFit;
@@ -3088,6 +3107,7 @@ window.__WORKCELL_EDITOR_API_V1__ = {
   undo: () => { undoPreviewEdit(); return editorState(); },
   redo: () => { redoPreviewEdit(); return editorState(); },
   fitScene: () => { resetView(); return editorState(); },
+  fitSelection: () => { fitSelection(); return editorState(); },
   getEditPatch: () => buildEditPatch(),
   drainEvents: () => { const events = state.editorEvents.slice(); state.editorEvents.length = 0; return events; },
 };

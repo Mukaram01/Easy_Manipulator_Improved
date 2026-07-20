@@ -97,7 +97,7 @@ def test_viewer_includes_auto_frame_and_reset_view_helpers():
         "computeRenderedBounds",
         "frameScene",
         "resetView",
-        "bounds.getBoundingSphere",
+        "finiteBounds.getBoundingSphere",
         "controls.target.copy(center)",
         "el.resetView.addEventListener('click', resetView)",
     ]:
@@ -295,7 +295,8 @@ def test_viewer_product_theme_keeps_grid_controls_and_bounds_exclusions():
     assert "object.isGridHelper || object.isAxesHelper" in js
     assert "object.userData?.selection_outline === true" in js
     assert "camera.position.set(2.4, -2.8, 1.8);" in js
-    assert "fitSelection" not in js
+    assert "function fitSelection()" in js
+    assert "fitSelection: () => { fitSelection(); return editorState(); }" in js
 
 
 def test_viewer_product_theme_is_scene_independent():
@@ -650,7 +651,6 @@ def test_viewer_load_contract_keeps_selection_empty_until_manual_pick():
     assert "selectObject(" not in render_scene_body
     assert "state.selected =" not in render_scene_body
     assert "populateObjectList();" in render_scene_body
-    assert "frameScene(bounds);" in render_scene_body
 
     assert "li.addEventListener('click', () => selectObject(rendered.item.id));" in append_object_list_body
     assert "const selected = rendered.item.id === id;" in select_body
@@ -1201,6 +1201,72 @@ assert.strictEqual(state.editorEvents.at(-1).type, 'fit_cell_unavailable');
     )
     assert result.stderr == ""
 
+
+
+def test_fit_selection_frames_shared_selected_physical_root_and_safe_fallbacks():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+class MockVector3 { constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; } copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this; } addScaledVector(v, s) { this.x += v.x * s; this.y += v.y * s; this.z += v.z * s; return this; } normalize() { const l = Math.hypot(this.x, this.y, this.z) || 1; this.x /= l; this.y /= l; this.z /= l; return this; } }
+class MockSphere { constructor() { this.radius = 0; } }
+class MockBox3 {
+  constructor(min, max) { if (max) { this.min = { ...min }; this.max = { ...max }; } else { this.min = { x: Infinity, y: Infinity, z: Infinity }; this.max = { x: -Infinity, y: -Infinity, z: -Infinity }; } }
+  isEmpty() { return this.min.x > this.max.x || this.min.y > this.max.y || this.min.z > this.max.z; }
+  union(box) { for (const k of ['x','y','z']) { this.min[k] = Math.min(this.min[k], box.min[k]); this.max[k] = Math.max(this.max[k], box.max[k]); } return this; }
+  setFromObject(object) { this.min = { ...object.mockBounds.min }; this.max = { ...object.mockBounds.max }; return this; }
+  getCenter(target) { target.x = (this.min.x + this.max.x) / 2; target.y = (this.min.y + this.max.y) / 2; target.z = (this.min.z + this.max.z) / 2; return target; }
+  getSize(target) { target.x = this.max.x - this.min.x; target.y = this.max.y - this.min.y; target.z = this.max.z - this.min.z; return target; }
+  getBoundingSphere(sphere) { sphere.radius = Math.hypot(this.max.x - this.min.x, this.max.y - this.min.y, this.max.z - this.min.z) / 2; return sphere; }
+  clone() { return new MockBox3(this.min, this.max); }
+}
+const element = () => ({ hidden: true, checked: false, disabled: false, textContent: '', className: '', innerHTML: '', classList: { toggle() {} }, setAttribute() {}, querySelector() { return element(); }, querySelectorAll() { return []; }, appendChild() {}, addEventListener() {}, getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; } });
+const sandbox = { console, assert, MockVector3, MockSphere, MockBox3, window: { location: { search: '' } }, document: { getElementById() { return element(); }, querySelectorAll() { return []; }, createElement() { return element(); } }, URLSearchParams, requestAnimationFrame() { return 0; } };
+vm.createContext(sandbox);
+vm.runInContext(source + `
+THREE = { Vector3: MockVector3, Sphere: MockSphere, Box3: MockBox3 };
+function group(item, children = []) { return { visible: true, children, userData: { item }, traverse(fn) { fn(this); for (const c of children) c.traverse ? c.traverse(fn) : fn(c); }, updateWorldMatrix() {} }; }
+function mesh(min, max, userData = {}) { return { isMesh: true, visible: true, children: [], mockBounds: { min, max }, userData, traverse(fn) { fn(this); } }; }
+state.three.camera = { position: new MockVector3(9, 8, 7), near: 0.5, far: 50, updateProjectionMatrix() {} };
+state.three.controls = { target: new MockVector3(1, 1, 1), update() {} };
+const tableRoot = group({ id: 'table', category: 'table', source_layer: 'editable_layout' }, [
+  mesh({ x: 10, y: 0, z: 0 }, { x: 12, y: 2, z: 1 }, { item: { id: 'table', category: 'table', source_layer: 'editable_layout' } }),
+  mesh({ x: -99, y: -99, z: -99 }, { x: 99, y: 99, z: 99 }, { selection_outline: true, item: { id: 'outline', role: 'helper' } })
+]);
+const robotRoot = group({ id: 'robot', role: 'robot', locked: true, source_layer: 'locked_generated_urdf_visual' }, [
+  mesh({ x: 0, y: 0, z: 0 }, { x: 1, y: 1, z: 1 }, { item: { id: 'base_link', role: 'robot', active_visual_source: 'mesh_preview' } }),
+  mesh({ x: 1, y: 0, z: 0 }, { x: 2, y: 1, z: 1 }, { item: { id: 'tool_link', role: 'tool', active_visual_source: 'mesh_preview' } })
+]);
+const helperRoot = group({ id: 'helper', role: 'helper', category: 'work_envelope' }, [mesh({ x: -50, y: -50, z: -50 }, { x: 50, y: 50, z: 50 }, { item: { id: 'work_envelope', role: 'helper', category: 'reachability' } })]);
+state.three.scene = group({}, [tableRoot, robotRoot, helperRoot, mesh({ x: -5, y: -5, z: 0 }, { x: -4, y: -4, z: 1 }, { item: { id: 'bin', category: 'bin' } })]);
+state.objects = [{ item: tableRoot.userData.item, object3d: tableRoot }, { item: robotRoot.userData.item, object3d: robotRoot }, { item: helperRoot.userData.item, object3d: helperRoot }];
+selectObject('table');
+const beforeSelectOnly = JSON.stringify(state.three.camera.position);
+selectObject('robot');
+assert.strictEqual(JSON.stringify(state.three.camera.position), beforeSelectOnly);
+fitSelection();
+assert.strictEqual(JSON.stringify(state.lastFrameBounds.min), JSON.stringify({ x: 0, y: 0, z: 0 }));
+assert.strictEqual(JSON.stringify(state.lastFrameBounds.max), JSON.stringify({ x: 2, y: 1, z: 1 }));
+assert.strictEqual(state.editorEvents.at(-1).type, 'fit_selection');
+selectObject('table');
+fitSelection();
+assert.strictEqual(JSON.stringify(state.lastFrameBounds.min), JSON.stringify({ x: 10, y: 0, z: 0 }));
+assert.strictEqual(JSON.stringify(state.lastFrameBounds.max), JSON.stringify({ x: 12, y: 2, z: 1 }));
+clearSelection();
+fitSelection();
+assert.ok(state.editorEvents.some(event => event.type === 'fit_selection_fallback'));
+assert.strictEqual(state.editorError, 'No physical item selected; fitting the workcell');
+selectObject('helper');
+state.three.camera.position.copy(new MockVector3(3, 4, 5));
+fitSelection();
+assert.strictEqual(state.editorError, 'Selected item has no visible physical geometry; fitting the workcell');
+for (const value of [state.three.camera.position.x, state.three.camera.position.y, state.three.camera.position.z, state.three.camera.near, state.three.camera.far]) assert.strictEqual(Number.isFinite(value), true);
+`, sandbox);
+"""
+    result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert result.stderr == ""
 
 def test_initial_camera_fit_runs_once_per_stable_scene_and_respects_manual_camera():
     js_path = VIEWER / "viewer.js"
