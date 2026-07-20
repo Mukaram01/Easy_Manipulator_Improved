@@ -1425,6 +1425,16 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
     source_web_scene_file: s.source_web_scene_file || s.sourceWebSceneFile || '',
     scene_json_loaded: Boolean(s.scene_json_loaded || s.sceneJsonLoaded || s.source_web_scene_file || s.sourceWebSceneFile),
     robot_preview_lifecycle_state: s.robot_preview_lifecycle_state || s.robotPreviewLifecycleState || '',
+    scene_id: s.scene_id || s.sceneId || '',
+    expected_physical_item_count: Number(s.expected_physical_item_count ?? s.expectedPhysicalItemCount ?? 0),
+    rendered_physical_item_count: Number(s.rendered_physical_item_count ?? s.renderedPhysicalItemCount ?? 0),
+    failed_required_item_count: Number(s.failed_required_item_count ?? s.failedRequiredItemCount ?? s.required_mesh_failed_count ?? s.requiredMeshFailedCount ?? 0),
+    robot_status: s.robot_status || s.robotStatus || '',
+    tool_status: s.tool_status || s.toolStatus || s.end_effector_status || s.endEffectorStatus || '',
+    environment_status: s.environment_status || s.environmentStatus || '',
+    camera_status: s.camera_status || s.cameraStatus || '',
+    final_lifecycle_state: s.final_lifecycle_state || s.finalLifecycleState || s.web3d_readiness_state || s.web3dReadinessState || '',
+    readiness_failure: s.readiness_failure || s.readinessFailure || null,
     failed_stage: s.failed_stage || s.failedStage || '',
     fatal_error: s.fatal_error || s.fatalError || '',
     fatal_stack: String(s.fatal_stack || s.fatalStack || '').split('\n').slice(0, 6).join('\n')
@@ -1443,14 +1453,31 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
     const QString source_json = status.value(QStringLiteral("source_web_scene_file")).toString();
     const bool scene_json_loaded = status.value(QStringLiteral("scene_json_loaded")).toBool();
     const QString robot_state = status.value(QStringLiteral("robot_preview_lifecycle_state")).toString();
+    const QString reported_scene_id = status.value(QStringLiteral("scene_id")).toString();
+    const int expected_physical_count = status.value(QStringLiteral("expected_physical_item_count")).toInt();
+    const int rendered_physical_count = status.value(QStringLiteral("rendered_physical_item_count")).toInt();
+    const int failed_required_count = status.value(QStringLiteral("failed_required_item_count")).toInt();
+    const QString robot_status = status.value(QStringLiteral("robot_status")).toString();
+    const QString tool_status = status.value(QStringLiteral("tool_status")).toString();
+    const QString environment_status = status.value(QStringLiteral("environment_status")).toString();
+    const QString camera_status = status.value(QStringLiteral("camera_status")).toString();
+    const QString final_lifecycle_state = status.value(QStringLiteral("final_lifecycle_state")).toString();
     const QString failed_stage = status.value(QStringLiteral("failed_stage")).toString();
     const QString fatal_error = status.value(QStringLiteral("fatal_error")).toString();
     const QString fatal_stack = status.value(QStringLiteral("fatal_stack")).toString();
-    embedded_web_last_boot_status_ = QStringLiteral("boot=%1 json=%2 source=%3 robot=%4")
+    embedded_web_last_boot_status_ = QStringLiteral("boot=%1 json=%2 source=%3 scene_id=%4 expected_physical=%5 rendered_physical=%6 failed_required=%7 robot=%8 tool=%9 environment=%10 camera=%11 lifecycle=%12")
       .arg(boot_state.isEmpty() ? QStringLiteral("unknown") : boot_state)
       .arg(scene_json_loaded ? QStringLiteral("loaded") : QStringLiteral("not_loaded"))
       .arg(source_json.isEmpty() ? QStringLiteral("unknown") : source_json)
-      .arg(robot_state.isEmpty() ? QStringLiteral("unknown") : robot_state);
+      .arg(reported_scene_id.isEmpty() ? QStringLiteral("unknown") : reported_scene_id)
+      .arg(expected_physical_count)
+      .arg(rendered_physical_count)
+      .arg(failed_required_count)
+      .arg(robot_status.isEmpty() ? QStringLiteral("unknown") : robot_status)
+      .arg(tool_status.isEmpty() ? QStringLiteral("unknown") : tool_status)
+      .arg(environment_status.isEmpty() ? QStringLiteral("unknown") : environment_status)
+      .arg(camera_status.isEmpty() ? QStringLiteral("unknown") : camera_status)
+      .arg(final_lifecycle_state.isEmpty() ? QStringLiteral("unknown") : final_lifecycle_state);
 
     if (boot_state == QStringLiteral("scene_failed") || boot_state == QStringLiteral("failed")) {
       const QString detail = QStringLiteral("viewer JavaScript failed at %1: %2%3")
@@ -1467,12 +1494,12 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
     }
 
     const bool expected_json_loaded = scene_json_loaded && source_json == expected_json_path;
-    if (boot_state == QStringLiteral("scene_ready") && expected_json_loaded) {
+    if (boot_state == QStringLiteral("scene_ready") && expected_json_loaded && failed_required_count == 0) {
       native_compatibility_fallback_active_ = false;
       show_embedded_web_product_view();
       set_embedded_product_view_state(EmbeddedProductViewState::Ready, QStringLiteral("viewer ready"));
       poll_embedded_editor_events();
-      emit studio_log_requested(QStringLiteral("Embedded Product View ready after scene_ready: scene=%1 json=%2 robot_preview_lifecycle_state=%3")
+      emit studio_log_requested(QStringLiteral("Embedded Product View ready after scene_ready: scene=%1 json=%2 robot_preview_lifecycle_state=%3 failed_required_item_count=0")
         .arg(identity.scene_id, expected_json_path, robot_state.isEmpty() ? QStringLiteral("not_required") : robot_state));
       return;
     }
