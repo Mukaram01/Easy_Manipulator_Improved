@@ -970,6 +970,7 @@ void ScenePreviewWidget::cancel_embedded_web_lifecycle(bool stop_owned_server)
   pending_embedded_web_identity_ = EmbeddedWebRequestIdentity{};
   pending_embedded_web_request_ = false;
   pending_embedded_web_force_ = false;
+  embedded_web_last_suppressed_duplicate_key_.clear();
   embedded_editor_polling_ = false;
   embedded_web_readiness_deadline_ = QDateTime();
   embedded_web_last_boot_status_.clear();
@@ -1033,16 +1034,22 @@ void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force)
 
   // Automatic payload/context notifications are coalesced before they can
   // consume a generation or replace the active callback identity.
-  if (!force && ((embedded_web_has_active_identity_ && embedded_web_active_identity_.matches_context(request_key)) ||
-                 (pending_embedded_web_request_ && pending_embedded_web_identity_.matches_context(request_key)))) {
-    emit studio_log_requested(QStringLiteral("Embedded Product View duplicate navigation suppressed: scene=%1 payload_revision=%2 backend=%3 json=%4 fingerprint=%5.")
-      .arg(request_key.scene_id)
-      .arg(request_key.payload_revision)
-      .arg(request_key.product_view_backend)
-      .arg(request_key.generated_web_scene_path)
-      .arg(QString::fromLatin1(request_key.payload_fingerprint.toHex().left(12))));
+  if (!force && ((embedded_web_has_active_identity_ && embedded_web_active_identity_.matches_effective_request(request_key)) ||
+                 (pending_embedded_web_request_ && pending_embedded_web_identity_.matches_effective_request(request_key)))) {
+    const QString suppression_key = embedded_web_effective_request_key(request_key);
+    if (embedded_web_last_suppressed_duplicate_key_ != suppression_key) {
+      embedded_web_last_suppressed_duplicate_key_ = suppression_key;
+      emit studio_log_requested(QStringLiteral("Duplicate Product View navigation suppressed: scene=%1 payload_revision=%2 backend=%3 json=%4 fingerprint=%5.")
+        .arg(request_key.scene_id)
+        .arg(request_key.payload_revision)
+        .arg(request_key.product_view_backend)
+        .arg(request_key.generated_web_scene_path)
+        .arg(QString::fromLatin1(request_key.payload_fingerprint.toHex().left(12))));
+    }
     return;
   }
+
+  embedded_web_last_suppressed_duplicate_key_.clear();
 
   // Refresh Preview is deliberately the sole forced path.  It retires the
   // previous lifecycle, then creates one fresh generation and one retry.
@@ -1098,6 +1105,15 @@ QString ScenePreviewWidget::embedded_web_preparation_diagnostic_key(const Embedd
     .arg(identity.scene_id, identity.absolute_scene_dir, identity.absolute_repo_root,
          QString::fromLatin1(identity.payload_fingerprint.toHex()))
     .arg(identity.selected_server_port).arg(identity.payload_revision).arg(identity.generation);
+}
+
+QString ScenePreviewWidget::embedded_web_effective_request_key(const EmbeddedWebRequestIdentity & identity) const
+{
+  return QStringLiteral("%1|%2|%3|%4|%5|%6|%7")
+    .arg(identity.scene_id, identity.absolute_scene_dir, identity.absolute_repo_root,
+         identity.product_view_backend, identity.generated_web_scene_path,
+         QString::fromLatin1(identity.payload_fingerprint.toHex()))
+    .arg(identity.payload_revision);
 }
 
 void ScenePreviewWidget::append_embedded_web_prepare_output(QProcess * process, bool standard_error)
@@ -1663,11 +1679,15 @@ void ScenePreviewWidget::set_preview_context(const PreviewContext & context)
   const bool context_changed = !preview_contexts_equal(preview_context_, normalized);
   if (!context_changed) return;
 
+  const EmbeddedWebRequestIdentity previous_effective_identity = embedded_web_request_identity(0);
   const QString effective_scene_name = normalized.scene_id.isEmpty() ?
     QStringLiteral("No scene") : normalized.scene_id;
   const bool scene_name_changed = preview_scene_name_ != effective_scene_name;
-  if (context_changed) cancel_embedded_web_lifecycle(false);
   preview_context_ = normalized;
+  const EmbeddedWebRequestIdentity next_effective_identity = embedded_web_request_identity(0);
+  if (!previous_effective_identity.matches_effective_request(next_effective_identity)) {
+    cancel_embedded_web_lifecycle(false);
+  }
   root_resolution_summary_keys_.clear();
   if (!normalized.scene_id.isEmpty()) {
     set_preview_scene_name(normalized.scene_id);
