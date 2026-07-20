@@ -126,3 +126,35 @@ TEST(LayoutSerializationContractTest, SaveLayoutPersistsDeletedAuthoredItemAbsen
   EXPECT_NE(src.find("deleted_layout_item_ids_.clear();"), std::string::npos);
   EXPECT_NE(src.find("for (int i = all_scene_preview_items_.size() - 1; i >= 0; --i) if (all_scene_preview_items_[i].id == id) all_scene_preview_items_.removeAt(i);"), std::string::npos);
 }
+
+TEST(LayoutSerializationContractTest, DuplicateSelectedUsesSharedEditableSelectionActionAndUndo)
+{
+  const std::string src = load_file("gui/mainwindow.cpp");
+  const std::string hdr = load_file("gui/mainwindow.h");
+  EXPECT_NE(src.find("register_scene_action(\"layout.duplicate\", \"Duplicate Selected\""), std::string::npos);
+  EXPECT_NE(src.find("duplicate_action->setShortcut(QKeySequence(QStringLiteral(\"Ctrl+D\")))"), std::string::npos);
+  EXPECT_NE(src.find("canvas_more_menu->addAction(scene_builder_action(\"layout.duplicate\"))"), std::string::npos);
+  EXPECT_NE(src.find("selected_item_can_be_duplicated()"), std::string::npos);
+  EXPECT_NE(src.find("resolve_selected_editable_layout_target()"), std::string::npos);
+  EXPECT_NE(src.find("Selected item cannot be duplicated"), std::string::npos);
+  EXPECT_NE(src.find("CanvasEditCommand command{\"duplicate\""), std::string::npos);
+  EXPECT_NE(src.find("undo_stack_.push_back(command); redo_stack_.clear();"), std::string::npos);
+  EXPECT_NE(src.find("Removed duplicate %1"), std::string::npos);
+  EXPECT_NE(hdr.find("refresh_duplicate_selected_action"), std::string::npos);
+}
+
+TEST(LayoutSerializationContractTest, DuplicateSelectedCopiesAuthoredRecordWithStableOffsetIdentity)
+{
+  const std::string src = load_file("gui/mainwindow.cpp");
+  EXPECT_NE(src.find("copy = p; found_preview = true"), std::string::npos);
+  EXPECT_NE(src.find("reserved_ids.insert(c.item_id.trimmed().toStdString())"), std::string::npos);
+  EXPECT_NE(src.find("const QString copy_base = base_id + QStringLiteral(\"_copy\")"), std::string::npos);
+  EXPECT_NE(src.find("base_name.replace(copy_suffix, QString())"), std::string::npos);
+  EXPECT_NE(src.find("new_name = QStringLiteral(\"%1 copy %2\")"), std::string::npos);
+  EXPECT_NE(src.find("copy.x += 0.10"), std::string::npos);
+  EXPECT_NE(src.find("copy.y += 0.10"), std::string::npos);
+  EXPECT_NE(src.find("item->setData(RoleSource, copy.source_path)"), std::string::npos);
+  EXPECT_NE(src.find("item->setData(RoleWidth, copy.sx)"), std::string::npos);
+  EXPECT_NE(src.find("apply_scene_selection(new_id, copy.role, false, false)"), std::string::npos);
+  EXPECT_NE(src.find("Duplicated %1 as %2"), std::string::npos);
+}

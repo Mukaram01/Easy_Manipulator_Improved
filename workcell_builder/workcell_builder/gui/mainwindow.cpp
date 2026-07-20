@@ -2475,9 +2475,11 @@ void MainWindow::setup_studio_shell()
   gizmo_menu_action->setText("Gizmo Scale");
   auto * undo_action = scene_builder_action("layout.undo");
   auto * redo_action = scene_builder_action("layout.redo");
+  auto * duplicate_action = scene_builder_action("layout.duplicate");
   auto * delete_action = scene_builder_action("layout.remove");
   if (undo_action) undo_action->setShortcut(QKeySequence::Undo);
   if (redo_action) redo_action->setShortcut(QKeySequence::Redo);
+  if (duplicate_action) { duplicate_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+D"))); duplicate_action->setEnabled(false); }
   if (delete_action) delete_action->setShortcut(QKeySequence(Qt::Key_Delete));
   if (scene_builder_last_splitter_sizes_.size() != 3)
     scene_builder_last_splitter_sizes_ = scene_builder_splitter_ ? scene_builder_splitter_->sizes() : QList<int>{300, 900, 320};
@@ -2590,7 +2592,7 @@ void MainWindow::setup_studio_shell()
   create_starter_layout_button_->setVisible(false);
   layout_controls->addWidget(create_starter_layout_button_);
   canvas_more_menu->addSeparator();
-  canvas_more_menu->addAction("Duplicate Selected", this, [this](){ duplicate_selected_item(); });
+  canvas_more_menu->addAction(scene_builder_action("layout.duplicate"));
   canvas_more_menu->addAction("Remove Selected Layout Item", this, [this](){ delete_selected_item(); });
   canvas_more_menu->addAction("Revert Layout", this, &MainWindow::revert_layout_changes);
   canvas_more_menu->addAction("Run Layout Merge", this, [this](){ run_layout_merge_for_selected_scene(false); });
@@ -4023,6 +4025,7 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
     }
     refresh_selection_transform_editor_from_state(state);
     refresh_delete_selected_action();
+    refresh_duplicate_selected_action();
     return;
   }
   const QString display = state.display_name.isEmpty() ? state.id : state.display_name;
@@ -5655,6 +5658,7 @@ void MainWindow::refresh_selected_scene_metadata_panel()
 
   refresh_selected_scene_item_labels(selected_item_state_);
   refresh_delete_selected_action();
+  refresh_duplicate_selected_action();
 }
 
 void MainWindow::refresh_scene_builder_selection_state_ui()
@@ -7579,10 +7583,17 @@ void MainWindow::undo_layout_edit(){
     selected_item_state_ = current_selected_scene_item();
     refresh_selected_scene_item_labels(selected_item_state_);
     append_studio_log(QString("Restored %1").arg(selected_item_state_.display_name.isEmpty() ? c.item_id : selected_item_state_.display_name));
+  } else if (c.kind == QStringLiteral("duplicate")) {
+    for (int i = all_scene_preview_items_.size() - 1; i >= 0; --i) if (all_scene_preview_items_[i].id == c.item_id) all_scene_preview_items_.removeAt(i);
+    for (auto * item : digital_twin_scene_->items()) if (item->data(RoleId).toString() == c.item_id) { delete item; break; }
+    current_selected_scene_item_id_.clear(); selected_item_state_ = {};
+    apply_scene3d_preview_layer_filters(false);
+    refresh_selected_scene_item_labels(selected_item_state_);
+    if (c.kind == QStringLiteral("duplicate") && !c.preview_items.isEmpty()) append_studio_log(QString("Removed duplicate %1").arg(c.preview_items.front().display_name));
   } else {
     for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;}
   }
-  redo_stack_.push_back(c); mark_layout_dirty("Undo"); refresh_scene_builder_left_explorer(); refresh_delete_selected_action();
+  redo_stack_.push_back(c); mark_layout_dirty("Undo"); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
 }
 void MainWindow::redo_layout_edit(){
   if(redo_stack_.empty() || !digital_twin_scene_) return;
@@ -7594,12 +7605,133 @@ void MainWindow::redo_layout_edit(){
     current_selected_scene_item_id_.clear(); selected_item_state_ = {};
     apply_scene3d_preview_layer_filters(false);
     refresh_selected_scene_item_labels(selected_item_state_);
+  } else if ((c.kind == QStringLiteral("duplicate")) && !c.preview_items.isEmpty()) {
+    const auto p = c.preview_items.front();
+    bool exists = false;
+    for (const auto & existing : all_scene_preview_items_) if (existing.id == p.id) { exists = true; break; }
+    if (!exists) all_scene_preview_items_.push_back(p);
+    if (!find_canvas_item_by_stable_id(p.id)) {
+      auto * item = new DraggableCanvasItem(QRectF(0, 0, qMax(10.0, p.sx * 35.0), qMax(10.0, p.sy * 35.0)));
+      item->setPos(p.x * 100.0, p.y * 100.0);
+      item->setData(RoleId, p.id); item->setData(RoleDisplayName, p.display_name); item->setData(RoleCategory, p.category); item->setData(RoleRole, p.role);
+      item->setData(RoleSource, p.source_path); item->setData(RoleSourcePackage, QStringLiteral("asset_folder")); item->setData(RoleSourceLayer, QStringLiteral("editable_layout")); item->setData(RoleLocked, false);
+      item->setData(RolePoseZ, p.z); item->setData(RoleRoll, p.roll); item->setData(RolePitch, p.pitch); item->setData(RoleYaw, p.yaw);
+      item->setData(RoleWidth, p.sx); item->setData(RoleDepth, p.sy); item->setData(RoleHeight, p.sz);
+      item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | QGraphicsItem::ItemIsMovable);
+      item->position_filter = [this](const QPointF & pos){ return snap_canvas_position(pos); };
+      digital_twin_scene_->addItem(item);
+    }
+    apply_scene3d_preview_layer_filters(false);
+    apply_scene_selection(p.id, p.role, false, false);
   } else {
     for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.new_pos); break;}
   }
-  undo_stack_.push_back(c); mark_layout_dirty("Redo"); refresh_scene_builder_left_explorer(); refresh_delete_selected_action();
+  undo_stack_.push_back(c); mark_layout_dirty("Redo"); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
 }
-void MainWindow::duplicate_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); if(s->data(RoleLocked).toBool()){ append_studio_log("Duplicate blocked: locked item"); return; } auto *c=new DraggableCanvasItem(static_cast<QGraphicsRectItem*>(s)->rect()); c->setPos(s->pos()+QPointF(18,18)); c->setBrush(static_cast<QGraphicsRectItem*>(s)->brush()); for(int r=RoleId;r<=RoleSource;++r) c->setData(r,s->data(r)); c->setData(RoleId, s->data(RoleId).toString()+"_copy"); c->setFlags(s->flags()); digital_twin_scene_->addItem(c); c->setSelected(true); undo_stack_.push_back({"duplicate", c->data(RoleId).toString(), s->pos(), c->pos(), true, false}); mark_layout_dirty("Duplicate Selected"); append_studio_log(QString("Duplicate selected item: %1").arg(c->data(RoleId).toString())); refresh_scene_builder_left_explorer(); }
+bool MainWindow::selected_item_can_be_duplicated() const
+{
+  if (!selected_scene_state_.valid || place_asset_armed_) return false;
+  return resolve_selected_editable_layout_target().ok;
+}
+
+void MainWindow::refresh_duplicate_selected_action()
+{
+  if (auto * action = scene_builder_action(QStringLiteral("layout.duplicate"))) action->setEnabled(selected_item_can_be_duplicated());
+}
+
+void MainWindow::duplicate_selected_item()
+{
+  const auto target = resolve_selected_editable_layout_target();
+  if (!target.ok || place_asset_armed_) {
+    append_studio_log("Selected item cannot be duplicated");
+    statusBar()->showMessage("Selected item cannot be duplicated", 4000);
+    refresh_duplicate_selected_action();
+    return;
+  }
+
+  ScenePreviewWidget::PreviewItem copy;
+  bool found_preview = false;
+  for (const auto & p : all_scene_preview_items_) {
+    if (p.id.trimmed() == target.state.id.trimmed()) { copy = p; found_preview = true; break; }
+  }
+  if (!found_preview) {
+    append_studio_log(QString("Selected item cannot be duplicated: no authored-object record for %1").arg(target.state.id));
+    statusBar()->showMessage("Selected item cannot be duplicated", 4000);
+    return;
+  }
+
+  std::set<std::string> reserved_ids;
+  QSet<QString> reserved_names;
+  for (const auto & p : all_scene_preview_items_) {
+    const QString id = p.id.trimmed();
+    if (!id.isEmpty()) reserved_ids.insert(id.toStdString());
+    if (!p.display_name.trimmed().isEmpty()) reserved_names.insert(p.display_name.trimmed().toLower());
+  }
+  for (const auto & c : undo_stack_) if (!c.item_id.trimmed().isEmpty()) reserved_ids.insert(c.item_id.trimmed().toStdString());
+  for (const auto & c : redo_stack_) if (!c.item_id.trimmed().isEmpty()) reserved_ids.insert(c.item_id.trimmed().toStdString());
+
+  auto normalize_id = [](QString text) {
+    text = text.trimmed().toLower();
+    QString out;
+    for (const QChar ch : text) out += (ch.isLetterOrNumber() ? ch : QChar('_'));
+    while (out.contains("__")) out.replace("__", "_");
+    out = out.trimmed();
+    while (out.startsWith('_')) out.remove(0, 1);
+    while (out.endsWith('_')) out.chop(1);
+    if (out.isEmpty() || !out.front().isLetter()) out.prepend("object_");
+    return out.left(58);
+  };
+  QString base_id = normalize_id(target.state.id);
+  if (base_id.endsWith("_copy")) base_id.chop(5);
+  const QString copy_base = base_id + QStringLiteral("_copy");
+  QString new_id = copy_base;
+  for (int n = 2; reserved_ids.count(new_id.toStdString()) > 0 && n < 1000; ++n) new_id = QStringLiteral("%1_%2").arg(copy_base).arg(n);
+  if (!workcell_builder::workcell_studio_is_valid_id(new_id.toStdString()) || reserved_ids.count(new_id.toStdString()) > 0) {
+    append_studio_log(QString("Selected item cannot be duplicated: failed to generate a valid unique id from %1").arg(target.state.id));
+    statusBar()->showMessage("Selected item cannot be duplicated", 4000);
+    return;
+  }
+
+  QString base_name = target.state.display_name.trimmed().isEmpty() ? target.state.id.trimmed() : target.state.display_name.trimmed();
+  QRegularExpression copy_suffix(QStringLiteral("\\s+copy(?:\\s+\\d+)?$"), QRegularExpression::CaseInsensitiveOption);
+  base_name.replace(copy_suffix, QString());
+  QString new_name = base_name + QStringLiteral(" copy");
+  for (int n = 2; reserved_names.contains(new_name.toLower()) && n < 1000; ++n) new_name = QStringLiteral("%1 copy %2").arg(base_name).arg(n);
+
+  copy.id = new_id;
+  copy.display_name = new_name;
+  copy.x += 0.10;
+  copy.y += 0.10;
+  copy.editable = true;
+  copy.locked = false;
+  copy.linked_to_editable_layout_state = true;
+  copy.source_layer = QStringLiteral("editable_layout");
+  copy.selectable = true;
+  copy.status = QStringLiteral("ready");
+
+  auto * item = new DraggableCanvasItem(QRectF(0, 0, qMax(10.0, copy.sx * 35.0), qMax(10.0, copy.sy * 35.0)));
+  item->setPos(copy.x * 100.0, copy.y * 100.0);
+  item->setData(RoleId, copy.id); item->setData(RoleDisplayName, copy.display_name);
+  item->setData(RoleType, target.state.type); item->setData(RoleCategory, copy.category); item->setData(RoleRole, copy.role);
+  item->setData(RoleSource, copy.source_path); item->setData(RoleSourcePackage, QStringLiteral("asset_folder"));
+  item->setData(RolePoseZ, copy.z); item->setData(RoleRoll, copy.roll); item->setData(RolePitch, copy.pitch); item->setData(RoleYaw, copy.yaw);
+  item->setData(RoleWidth, copy.sx); item->setData(RoleDepth, copy.sy); item->setData(RoleHeight, copy.sz);
+  item->setData(RoleImported, copy.mesh_type.compare(QStringLiteral("stl"), Qt::CaseInsensitive) == 0);
+  item->setData(RoleGeneratedPlaceholder, false); item->setData(RoleSourceLayer, QStringLiteral("editable_layout")); item->setData(RoleLocked, false);
+  item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | QGraphicsItem::ItemIsMovable);
+  item->position_filter = [this](const QPointF & p){ return snap_canvas_position(p); };
+  digital_twin_scene_->addItem(item);
+  all_scene_preview_items_.push_back(copy);
+  CanvasEditCommand command{"duplicate", new_id, QPointF(copy.x * 100.0, copy.y * 100.0), QPointF(copy.x * 100.0, copy.y * 100.0), true, false};
+  command.preview_items.push_back(copy);
+  undo_stack_.push_back(command); redo_stack_.clear();
+  apply_scene3d_preview_layer_filters(false);
+  refresh_scene_builder_left_explorer();
+  apply_scene_selection(new_id, copy.role, false, false);
+  mark_layout_dirty("Duplicate Selected");
+  append_studio_log(QString("Duplicated %1 as %2").arg(base_name, new_name));
+  refresh_duplicate_selected_action(); refresh_delete_selected_action();
+}
 bool MainWindow::selected_item_can_be_deleted() const
 {
   if (!selected_scene_state_.valid || place_asset_armed_) return false;
@@ -7641,6 +7773,7 @@ void MainWindow::delete_selected_item(){
   mark_layout_dirty("Delete Selected");
   append_studio_log(QString("Deleted %1").arg(target.state.display_name.isEmpty() ? id : target.state.display_name));
   refresh_delete_selected_action();
+  refresh_duplicate_selected_action();
 }
 
 double MainWindow::current_nudge_step_m(Qt::KeyboardModifiers modifiers) const
