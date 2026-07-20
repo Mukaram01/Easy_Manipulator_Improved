@@ -84,6 +84,7 @@ function emitWeb3dReadinessState(readinessState, detail = {}) {
     state.web3dReadiness.failure = eventDetail;
   }
   const status = updateViewerStatus();
+  if (readinessState === 'scene_ready') triggerInitialCameraFitAfterSceneReady();
   window.dispatchEvent?.(new CustomEvent('workcell:web3d_readiness', { detail: { state: readinessState, ...eventDetail, status } }));
   window.parent?.postMessage?.({ type: 'workcell_web3d_readiness', state: readinessState, ...eventDetail, status }, '*');
   return status;
@@ -1721,8 +1722,6 @@ async function tryLoadMesh(item, rendered, fallback) {
     trackMeshLoadAttempt(item, 'loaded', loadUrl, '');
     setRenderInfo(rendered, 'mesh_loaded', uri, '');
     diagnoseLoadedMeshBounds(item, visualRoot, rendered, validationBounds);
-    const bounds = computeFitBounds();
-    if (bounds) frameScene(bounds);
     refreshMeshLoadUi(rendered);
     requiredReadinessCompleteForItem(item);
   } catch (err) {
@@ -2113,13 +2112,19 @@ function physicalBoundsIdentityFor(object) {
 function physicalBoundsItemFor(object, nearestItem = null) {
   return object?.userData?.item || nearestItem || object?.userData || {};
 }
+function isInitialFitPhysicalGeometryItem(item, identity = '') {
+  const category = meshContractCategoryOf(item);
+  if (['robot', 'tool', 'table', 'camera', 'object'].includes(category)) return true;
+  return /\b(robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|wrist|tool|gripper|end effector|eef|suction|robotiq|airpick|camera body|configured camera|sensor body|conveyor|object|workpiece|part|product|bin|tray|support surface|table|tabletop|workbench|fixture|pallet)\b/.test(identity);
+}
 function isPhysicalBoundsHelperObject(object, item, identity) {
   if (!object || object.visible === false) return true;
   if (object.isGridHelper || object.isAxesHelper) return true;
   if (object.userData?.selection_outline === true || object.userData?.selection_highlight === true) return true;
   if (object.userData?.exclude_from_physical_bounds === true || object.userData?.exclude_from_fit_bounds === true) return true;
   if (item?.exclude_from_physical_bounds === true || item?.exclude_from_fit_bounds === true) return true;
-  return DEBUG_OVERLAY_TOKEN_RE.test(identity);
+  if (DEBUG_OVERLAY_TOKEN_RE.test(identity)) return true;
+  return !isInitialFitPhysicalGeometryItem(item, identity);
 }
 function isRobotPrimitiveFallbackObject(object, item, identity) {
   const visualSource = String(item?.active_visual_source || object?.userData?.active_visual_source || '').toLowerCase();
@@ -2597,6 +2602,9 @@ function attemptInitialCameraFit({ allowRetry = true } = {}) {
   }
   return false;
 }
+function triggerInitialCameraFitAfterSceneReady() {
+  return attemptInitialCameraFit({ allowRetry: false });
+}
 function scheduleInitialCameraFitRetry() {
   const fit = state.initialCameraFit;
   if (!fit || fit.done || fit.userControlled || fit.pendingRetry || fit.attempts >= 2) return;
@@ -2686,7 +2694,6 @@ function renderScene(items) {
   renderFrameDebugOverlays();
   populateObjectList();
   updateLabels();
-  attemptInitialCameraFit();
   renderSceneSummary();
   maybeEmitSceneReady();
 }
@@ -2747,11 +2754,9 @@ function loadExpandedUrdfRobotPreview(preview) {
       if (!failIfCanonicalRequiredVisualSetInvalid()) completeExpandedUrdfReadiness(result);
       refreshInitialPoseActionState();
       renderSceneSummary();
-      attemptInitialCameraFit();
     },
     onRobotMeshLoaded: () => {
       renderSceneSummary();
-      scheduleInitialCameraFitRetry();
     },
     onRobotMeshLoadError: (err, uri, detail) => { failExpandedUrdfReadiness(err, state.robotUrdfPreviewDiagnostics, detail || { uri }); renderSceneSummary(); },
     onRobotError: (err, diagnostics) => {
