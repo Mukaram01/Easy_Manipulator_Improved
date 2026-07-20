@@ -2012,18 +2012,50 @@ void MainWindow::setup_studio_shell()
   auto * scene_splitter = new QSplitter(Qt::Horizontal, scene_shell);
   scene_builder_splitter_ = scene_splitter;
   scene_splitter->setObjectName("sceneBuilderMainSplitter");
-  auto * left_panel = new QFrame(scene_builder); left_panel->setObjectName("studioPanel"); left_panel->setMinimumWidth(360);
-  auto * center_panel = new QFrame(scene_builder); center_panel->setObjectName("studioPanel");
-  auto * right_panel = new QFrame(scene_builder); right_panel->setObjectName("studioPanel"); right_panel->setMinimumWidth(320);
+  auto * left_panel = new QFrame(scene_builder); left_panel->setObjectName("sceneBuilderLeftPanel"); left_panel->setMinimumWidth(260);
+  auto * center_panel = new QFrame(scene_builder); center_panel->setObjectName("sceneBuilderProductViewPanel"); center_panel->setMinimumWidth(520);
+  auto * right_panel = new QFrame(scene_builder); right_panel->setObjectName("sceneBuilderRightPanel"); right_panel->setMinimumWidth(280);
+  scene_builder_left_panel_ = left_panel;
+  scene_builder_right_panel_ = right_panel;
   scene_splitter->addWidget(left_panel);
   scene_splitter->addWidget(center_panel);
   scene_splitter->addWidget(right_panel);
   scene_splitter->setCollapsible(0, true);
+  scene_splitter->setCollapsible(1, false);
   scene_splitter->setCollapsible(2, true);
+  scene_splitter->setChildrenCollapsible(false);
   scene_splitter->setStretchFactor(0, 1);
-  scene_splitter->setStretchFactor(1, 7);
-  scene_splitter->setStretchFactor(2, 2);
-  scene_splitter->setSizes({300, 1180, 360});
+  scene_splitter->setStretchFactor(1, 8);
+  scene_splitter->setStretchFactor(2, 1);
+  scene_splitter->setSizes({300, 900, 320});
+  const auto clamp_scene_builder_sizes = [this, scene_splitter](QList<int> sizes) {
+    if (sizes.size() != 3) sizes = {300, 900, 320};
+    scene_builder_last_splitter_sizes_ = sizes;
+    const int total = qMax(900, sizes[0] + sizes[1] + sizes[2]);
+    sizes[0] = qBound(0, sizes[0], total / 3);
+    sizes[2] = qBound(0, sizes[2], total / 3);
+    sizes[1] = qMax(520, total - sizes[0] - sizes[2]);
+    scene_builder_last_splitter_sizes_ = sizes;
+    scene_splitter->setSizes(sizes);
+  };
+  {
+    QSettings settings;
+    QList<int> saved_sizes;
+    const auto values = settings.value(QStringLiteral("scene_builder/main_splitter_sizes")).toList();
+    for (const auto & value : values) saved_sizes.append(value.toInt());
+    clamp_scene_builder_sizes(saved_sizes);
+    left_panel->setVisible(settings.value(QStringLiteral("scene_builder/left_panel_visible"), true).toBool());
+    right_panel->setVisible(settings.value(QStringLiteral("scene_builder/right_panel_visible"), true).toBool());
+  }
+  QObject::connect(scene_splitter, &QSplitter::splitterMoved, this, [this]() {
+    if (!scene_builder_focus_3d_active_ && scene_builder_splitter_) {
+      scene_builder_last_splitter_sizes_ = scene_builder_splitter_->sizes();
+      QSettings settings;
+      QVariantList values;
+      for (const int size : scene_builder_last_splitter_sizes_) values.append(size);
+      settings.setValue(QStringLiteral("scene_builder/main_splitter_sizes"), values);
+    }
+  });
   scene_shell_layout->addWidget(scene_splitter, 1);
   sl->addWidget(scene_shell, 1);
 
@@ -2419,6 +2451,78 @@ void MainWindow::setup_studio_shell()
   auto * redo_action = scene_builder_action("layout.redo");
   if (undo_action) undo_action->setShortcut(QKeySequence::Undo);
   if (redo_action) redo_action->setShortcut(QKeySequence::Redo);
+  if (scene_builder_last_splitter_sizes_.size() != 3)
+    scene_builder_last_splitter_sizes_ = scene_builder_splitter_ ? scene_builder_splitter_->sizes() : QList<int>{300, 900, 320};
+  auto sync_scene_builder_view_actions = [this]() {
+    if (scene_builder_show_left_panel_action_ && scene_builder_left_panel_)
+      scene_builder_show_left_panel_action_->setChecked(scene_builder_left_panel_->isVisible());
+    if (scene_builder_show_right_panel_action_ && scene_builder_right_panel_)
+      scene_builder_show_right_panel_action_->setChecked(scene_builder_right_panel_->isVisible());
+    if (scene_builder_focus_3d_action_)
+      scene_builder_focus_3d_action_->setChecked(scene_builder_focus_3d_active_);
+  };
+  auto save_scene_builder_panel_state = [this]() {
+    if (scene_builder_focus_3d_active_ || !scene_builder_splitter_) return;
+    scene_builder_last_splitter_sizes_ = scene_builder_splitter_->sizes();
+    QSettings settings;
+    QVariantList values;
+    for (const int size : scene_builder_last_splitter_sizes_) values.append(size);
+    settings.setValue(QStringLiteral("scene_builder/main_splitter_sizes"), values);
+    settings.setValue(QStringLiteral("scene_builder/left_panel_visible"), scene_builder_left_panel_ && scene_builder_left_panel_->isVisible());
+    settings.setValue(QStringLiteral("scene_builder/right_panel_visible"), scene_builder_right_panel_ && scene_builder_right_panel_->isVisible());
+  };
+  auto restore_scene_builder_sizes = [this]() {
+    if (!scene_builder_splitter_) return;
+    QList<int> sizes = scene_builder_last_splitter_sizes_;
+    if (sizes.size() != 3) sizes = {300, 900, 320};
+    const int total = qMax(900, sizes[0] + sizes[1] + sizes[2]);
+    sizes[0] = scene_builder_left_panel_ && scene_builder_left_panel_->isVisible() ? qBound(0, sizes[0], total / 3) : 0;
+    sizes[2] = scene_builder_right_panel_ && scene_builder_right_panel_->isVisible() ? qBound(0, sizes[2], total / 3) : 0;
+    sizes[1] = qMax(520, total - sizes[0] - sizes[2]);
+    scene_builder_splitter_->setSizes(sizes);
+  };
+  scene_builder_show_left_panel_action_ = new QAction("Show Left Panel", scene_builder_secondary_overflow_menu_);
+  scene_builder_show_left_panel_action_->setObjectName("sceneBuilderShowLeftPanelAction");
+  scene_builder_show_left_panel_action_->setCheckable(true);
+  QObject::connect(scene_builder_show_left_panel_action_, &QAction::toggled, this, [this, restore_scene_builder_sizes, save_scene_builder_panel_state, sync_scene_builder_view_actions](bool checked) {
+    if (!scene_builder_left_panel_) return;
+    if (!scene_builder_focus_3d_active_) scene_builder_left_panel_->setVisible(checked);
+    restore_scene_builder_sizes();
+    save_scene_builder_panel_state();
+    sync_scene_builder_view_actions();
+  });
+  scene_builder_show_right_panel_action_ = new QAction("Show Right Panel", scene_builder_secondary_overflow_menu_);
+  scene_builder_show_right_panel_action_->setObjectName("sceneBuilderShowRightPanelAction");
+  scene_builder_show_right_panel_action_->setCheckable(true);
+  QObject::connect(scene_builder_show_right_panel_action_, &QAction::toggled, this, [this, restore_scene_builder_sizes, save_scene_builder_panel_state, sync_scene_builder_view_actions](bool checked) {
+    if (!scene_builder_right_panel_) return;
+    if (!scene_builder_focus_3d_active_) scene_builder_right_panel_->setVisible(checked);
+    restore_scene_builder_sizes();
+    save_scene_builder_panel_state();
+    sync_scene_builder_view_actions();
+  });
+  scene_builder_focus_3d_action_ = new QAction("Focus 3D View", scene_builder_secondary_overflow_menu_);
+  scene_builder_focus_3d_action_->setObjectName("sceneBuilderFocus3dViewAction");
+  scene_builder_focus_3d_action_->setCheckable(true);
+  QObject::connect(scene_builder_focus_3d_action_, &QAction::toggled, this, [this, restore_scene_builder_sizes, sync_scene_builder_view_actions](bool checked) {
+    if (!scene_builder_left_panel_ || !scene_builder_right_panel_ || !scene_builder_splitter_) return;
+    if (checked) {
+      scene_builder_focus_restore_left_visible_ = scene_builder_left_panel_->isVisible();
+      scene_builder_focus_restore_right_visible_ = scene_builder_right_panel_->isVisible();
+      scene_builder_last_splitter_sizes_ = scene_builder_splitter_->sizes();
+      scene_builder_focus_3d_active_ = true;
+      scene_builder_left_panel_->hide();
+      scene_builder_right_panel_->hide();
+      scene_builder_splitter_->setSizes({0, qMax(900, scene_builder_last_splitter_sizes_.value(0) + scene_builder_last_splitter_sizes_.value(1) + scene_builder_last_splitter_sizes_.value(2)), 0});
+    } else {
+      scene_builder_focus_3d_active_ = false;
+      scene_builder_left_panel_->setVisible(scene_builder_focus_restore_left_visible_);
+      scene_builder_right_panel_->setVisible(scene_builder_focus_restore_right_visible_);
+      restore_scene_builder_sizes();
+    }
+    sync_scene_builder_view_actions();
+  });
+  sync_scene_builder_view_actions();
   scene_builder_secondary_overflow_menu_->addAction(inspect_action);
   scene_builder_secondary_overflow_menu_->addAction(keep_placing_action);
   scene_builder_secondary_overflow_menu_->addAction(snap_menu_action);
@@ -2431,6 +2535,11 @@ void MainWindow::setup_studio_shell()
   scene_builder_secondary_overflow_menu_->addAction(fit_button);
   scene_builder_secondary_overflow_menu_->addAction(fit_robot_button);
   scene_builder_secondary_overflow_menu_->addSeparator();
+  auto * scene_builder_view_menu = scene_builder_secondary_overflow_menu_->addMenu("View");
+  scene_builder_view_menu->setObjectName("sceneBuilderViewMenu");
+  scene_builder_view_menu->addAction(scene_builder_show_left_panel_action_);
+  scene_builder_view_menu->addAction(scene_builder_show_right_panel_action_);
+  scene_builder_view_menu->addAction(scene_builder_focus_3d_action_);
   scene_builder_secondary_overflow_menu_->addMenu(overlays_menu)->setText("Overlays");
   scene_builder_secondary_overflow_menu_->addMenu(camera_view_menu)->setText("Camera / View");
   auto * secondary_layout_menu = scene_builder_secondary_overflow_menu_->addMenu("Layout");

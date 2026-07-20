@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QDir>
+#include <QFile>
 #include <QTemporaryDir>
 #include <QUrlQuery>
 
@@ -306,3 +307,40 @@ TEST(ScenePreviewWidgetUi, PreparationFailureUsesPopulatedCompatibilityViewport)
   EXPECT_NE(widget.runtime_preview_status_text(), QStringLiteral("Preview failed"));
 }
 #endif
+
+TEST(SceneBuilderWorkspaceSource, ResizablePanelActionsAndFocusAreWired)
+{
+  QFile source(QStringLiteral("workcell_builder/workcell_builder/gui/mainwindow.cpp"));
+  if (!source.exists()) source.setFileName(QStringLiteral("../workcell_builder/gui/mainwindow.cpp"));
+  ASSERT_TRUE(source.open(QIODevice::ReadOnly | QIODevice::Text));
+  const QString text = QString::fromUtf8(source.readAll());
+
+  EXPECT_TRUE(text.contains(QStringLiteral("sceneBuilderMainSplitter")));
+  EXPECT_TRUE(text.contains(QStringLiteral("sceneBuilderLeftPanel")));
+  EXPECT_TRUE(text.contains(QStringLiteral("sceneBuilderProductViewPanel")));
+  EXPECT_TRUE(text.contains(QStringLiteral("sceneBuilderRightPanel")));
+  EXPECT_TRUE(text.contains(QStringLiteral("setStretchFactor(1, 8)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("Show Left Panel")));
+  EXPECT_TRUE(text.contains(QStringLiteral("Show Right Panel")));
+  EXPECT_TRUE(text.contains(QStringLiteral("Focus 3D View")));
+  EXPECT_TRUE(text.contains(QStringLiteral("scene_builder/main_splitter_sizes")));
+}
+
+TEST(SceneBuilderWorkspaceSource, FocusModeHidesPanelsWithoutReloadingProductView)
+{
+  QFile source(QStringLiteral("workcell_builder/workcell_builder/gui/mainwindow.cpp"));
+  if (!source.exists()) source.setFileName(QStringLiteral("../workcell_builder/gui/mainwindow.cpp"));
+  ASSERT_TRUE(source.open(QIODevice::ReadOnly | QIODevice::Text));
+  const QString text = QString::fromUtf8(source.readAll());
+
+  EXPECT_TRUE(text.contains(QStringLiteral("scene_builder_left_panel_->hide()")));
+  EXPECT_TRUE(text.contains(QStringLiteral("scene_builder_right_panel_->hide()")));
+  EXPECT_TRUE(text.contains(QStringLiteral("scene_builder_left_panel_->setVisible(scene_builder_focus_restore_left_visible_)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("scene_builder_right_panel_->setVisible(scene_builder_focus_restore_right_visible_)")));
+  const int focus_action_index = text.indexOf(QStringLiteral("scene_builder_focus_3d_action_"));
+  ASSERT_GE(focus_action_index, 0);
+  const QString focus_block = text.mid(focus_action_index, 2200);
+  EXPECT_FALSE(focus_block.contains(QStringLiteral("new ScenePreviewWidget")));
+  EXPECT_FALSE(focus_block.contains(QStringLiteral("request_embedded_web_product_view_refresh")));
+  EXPECT_FALSE(focus_block.contains(QStringLiteral("reload_meshes")));
+}

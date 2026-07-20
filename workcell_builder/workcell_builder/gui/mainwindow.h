@@ -26,6 +26,7 @@
 #include <QMap>
 #include <QSet>
 #include <QLineEdit>
+#include <QList>
 #include <QPointF>
 #include <atomic>
 #include <QProcess>
@@ -683,6 +684,15 @@ private:
   QToolButton * scene_builder_more_actions_button_{ nullptr };
   QSplitter * scene_builder_splitter_{ nullptr };
   QSplitter * scene_builder_center_splitter_{ nullptr };
+  QFrame * scene_builder_left_panel_{ nullptr };
+  QFrame * scene_builder_right_panel_{ nullptr };
+  QAction * scene_builder_show_left_panel_action_{ nullptr };
+  QAction * scene_builder_show_right_panel_action_{ nullptr };
+  QAction * scene_builder_focus_3d_action_{ nullptr };
+  QList<int> scene_builder_last_splitter_sizes_{300, 900, 320};
+  bool scene_builder_focus_3d_active_{ false };
+  bool scene_builder_focus_restore_left_visible_{ true };
+  bool scene_builder_focus_restore_right_visible_{ true };
   QTabWidget * scene_builder_left_tabs_{ nullptr };
   QTabWidget * scene_builder_inspector_tabs_{ nullptr };
   QPushButton * scene_builder_log_toggle_button_{ nullptr };
