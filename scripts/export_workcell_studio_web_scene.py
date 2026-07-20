@@ -34,6 +34,11 @@ try:
 except ImportError:  # pragma: no cover - exercised only in minimal envs
     yaml = None  # type: ignore
 
+try:
+    from scripts.workcell_visual_asset_resolver import discover_package_map
+except ImportError:  # pragma: no cover - direct script execution fallback
+    from workcell_visual_asset_resolver import discover_package_map
+
 SCHEMA_VERSION = "workcell_studio_web_scene/v1"
 INPUTS = {
     "scene_manifest": "scene_manifest.yaml",
@@ -249,18 +254,24 @@ def _resolve_package_uri(uri: str, repo_root: Path) -> Tuple[Optional[Path], str
         return None, package or "package", None, f"Invalid or unsafe package URI: {uri}"
     if rel.suffix.lower() not in SUPPORTED_MESH_SUFFIXES:
         return None, package, None, f"Unsupported mesh format for {uri}; supported formats are .stl, .dae, and .obj."
+
     stage_rel = Path(package, *rel_parts)
+    package_map = discover_package_map(repo_root)
+    package_dir = package_map.get(package)
+    if package_dir is not None:
+        candidate = (package_dir / rel).resolve()
+        if not _is_relative_to(candidate, package_dir.resolve()):
+            return None, package, None, f"Invalid or unsafe package URI: {uri}"
+        if candidate.is_file():
+            return candidate, package, stage_rel, None
+        return None, package, None, f"Package mesh file does not exist: {uri}"
+
+    # Keep AMENT/share probing as a fallback for ROS packages that are not
+    # described by a package.xml under the repository discovery roots.
     for root in _package_share_roots(repo_root):
         direct = (root / package / rel).resolve()
         if _is_relative_to(direct, root) and direct.is_file():
             return direct, package, stage_rel, None
-        if root.exists():
-            for pkg_dir in root.rglob(package):
-                if not pkg_dir.is_dir():
-                    continue
-                candidate = (pkg_dir / rel).resolve()
-                if _is_relative_to(candidate, root) and candidate.is_file():
-                    return candidate, package, stage_rel, None
     return None, package, None, f"Could not resolve package mesh URI: {uri}"
 
 
@@ -321,6 +332,8 @@ def _staging_failure_status(warnings: Sequence[str]) -> str:
         return "unsupported_format"
     if "unsafe" in text or "escaped" in text:
         return "unsafe_path"
+    if "mesh file does not exist" in text:
+        return "missing_file"
     if "unsupported" in text and ("scheme" in text or "file uri host" in text):
         return "unsupported_scheme"
     return "resolve_failed"

@@ -320,3 +320,117 @@ def test_ur5_2f_export_with_asset_staging_reduces_unresolved_package_fallback_ca
 
     assert len(_fallback_causes(staged_payload)) < len(_fallback_causes(unstaged_payload))
     assert any("package://" in cause for cause in _fallback_causes(unstaged_payload))
+
+
+def _repo_discovered_package(root: Path, package: str, rel: str, contents: str = "solid pkg\nendsolid pkg\n") -> Path:
+    pkg_dir = root / "assets" / "end_effectors" / "nested" / package
+    (pkg_dir).mkdir(parents=True, exist_ok=True)
+    (pkg_dir / "package.xml").write_text(
+        f"<package format=\"3\"><name>{package}</name><version>0.0.0</version><description>test</description><maintainer email=\"test@example.com\">Test</maintainer><license>Apache-2.0</license></package>\n",
+        encoding="utf-8",
+    )
+    mesh = pkg_dir / rel
+    mesh.parent.mkdir(parents=True, exist_ok=True)
+    mesh.write_text(contents, encoding="utf-8")
+    return mesh
+
+
+def test_nested_repo_package_mesh_uri_uses_package_discovery(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    mesh = _repo_discovered_package(tmp_path, "nested_tool_description", "meshes/visual/finger.dae", "<COLLADA></COLLADA>\n")
+    package_uri = "package://nested_tool_description/meshes/visual/finger.dae"
+    scene = _scene(tmp_path, "nested_package_scene", [{"id": "finger", "category": "tool", "mesh_uri": package_uri}])
+
+    payload = _export_with_prefix(monkeypatch, scene, tmp_path / "out" / "scene.web_scene.json", None)
+    item = _item(payload, "finger")
+
+    assert item["mesh_staging_status"] == "staged"
+    assert item["resolved_source_path"] == str(mesh.relative_to(tmp_path)).replace("/", "/")
+    assert item["original_package_uri"] == package_uri
+    assert item["mesh_uri"] == "build/workcell_studio_web_scene/assets/nested_package_scene/nested_tool_description/meshes/visual/finger.dae"
+    assert (tmp_path / item["mesh_uri"]).read_text(encoding="utf-8") == "<COLLADA></COLLADA>\n"
+
+
+def test_package_uri_with_url_encoded_spaces_is_staged(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    mesh = _repo_discovered_package(tmp_path, "space_pkg", "meshes/visual/gripper jaw.dae", "<COLLADA></COLLADA>\n")
+    scene = _scene(tmp_path, "space_scene", [{"id": "jaw", "category": "tool", "mesh_uri": "package://space_pkg/meshes/visual/gripper%20jaw.dae"}])
+
+    payload = _export_with_prefix(monkeypatch, scene, tmp_path / "out" / "scene.web_scene.json", None)
+    item = _item(payload, "jaw")
+
+    assert item["mesh_staging_status"] == "staged"
+    assert item["resolved_source_path"] == str(mesh.relative_to(tmp_path)).replace("/", "/")
+    assert item["mesh_uri"].endswith("/space_pkg/meshes/visual/gripper jaw.dae")
+    assert (tmp_path / item["mesh_uri"]).is_file()
+
+
+def test_package_uri_accepts_uppercase_and_lowercase_dae_suffixes(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    _repo_discovered_package(tmp_path, "case_pkg", "meshes/visual/upper.DAE", "<COLLADA>upper</COLLADA>\n")
+    _repo_discovered_package(tmp_path, "case_pkg", "meshes/visual/lower.dae", "<COLLADA>lower</COLLADA>\n")
+    scene = _scene(
+        tmp_path,
+        "case_scene",
+        [
+            {"id": "upper", "category": "asset", "mesh_uri": "package://case_pkg/meshes/visual/upper.DAE"},
+            {"id": "lower", "category": "asset", "mesh_uri": "package://case_pkg/meshes/visual/lower.dae"},
+        ],
+    )
+
+    payload = _export_with_prefix(monkeypatch, scene, tmp_path / "out" / "scene.web_scene.json", None)
+
+    assert _item(payload, "upper")["mesh_staging_status"] == "staged"
+    assert _item(payload, "upper")["mesh_format"] == "dae"
+    assert _item(payload, "upper")["mesh_uri"].endswith("upper.DAE")
+    assert _item(payload, "lower")["mesh_staging_status"] == "staged"
+    assert _item(payload, "lower")["mesh_format"] == "dae"
+    assert _item(payload, "lower")["mesh_uri"].endswith("lower.dae")
+
+
+def test_unknown_package_and_package_traversal_keep_explicit_failure_statuses(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    scene = _scene(
+        tmp_path,
+        "package_failure_scene",
+        [
+            {"id": "unknown", "category": "asset", "mesh_uri": "package://unknown_pkg/meshes/missing.dae"},
+            {"id": "traversal", "category": "asset", "mesh_uri": "package://unknown_pkg/../secret.dae"},
+        ],
+    )
+
+    payload = _export_with_prefix(monkeypatch, scene, tmp_path / "out" / "scene.web_scene.json", None)
+
+    assert _item(payload, "unknown")["mesh_staging_status"] == "resolve_failed"
+    assert "Could not resolve package mesh URI" in _item(payload, "unknown")["mesh_resolve_warning"]
+    assert _item(payload, "traversal")["mesh_staging_status"] == "unsafe_path"
+    assert _item(payload, "traversal")["mesh_uri"] == "package://unknown_pkg/../secret.dae"
+
+
+def test_staged_url_maps_to_intended_file_under_scene_asset_root(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    mesh = _repo_discovered_package(tmp_path, "map_pkg", "meshes/visual/part.dae", "<COLLADA>mapped</COLLADA>\n")
+    scene = _scene(tmp_path, "mapped_scene", [{"id": "mapped", "category": "asset", "mesh_uri": "package://map_pkg/meshes/visual/part.dae"}])
+
+    payload = _export_with_prefix(monkeypatch, scene, tmp_path / "out" / "scene.web_scene.json", None)
+    item = _item(payload, "mapped")
+    staged = (tmp_path / item["mesh_url"]).resolve()
+    asset_root = (tmp_path / "build" / "workcell_studio_web_scene" / "assets" / "mapped_scene").resolve()
+
+    assert item["mesh_staging_status"] == "staged"
+    assert item["mesh_staged_path"] == item["mesh_url"] == item["mesh_uri"]
+    assert staged.relative_to(asset_root)
+    assert staged.read_text(encoding="utf-8") == mesh.read_text(encoding="utf-8")
+
+
+def test_known_package_missing_mesh_file_reports_missing_file(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    _repo_discovered_package(tmp_path, "known_missing_pkg", "meshes/visual/existing.dae", "<COLLADA></COLLADA>\n")
+    scene = _scene(tmp_path, "known_missing_scene", [{"id": "missing", "category": "asset", "mesh_uri": "package://known_missing_pkg/meshes/visual/missing.dae"}])
+
+    payload = _export_with_prefix(monkeypatch, scene, tmp_path / "out" / "scene.web_scene.json", None)
+    item = _item(payload, "missing")
+
+    assert item["mesh_staging_status"] == "missing_file"
+    assert "Package mesh file does not exist" in item["mesh_resolve_warning"]
+    assert item["mesh_uri"] == "package://known_missing_pkg/meshes/visual/missing.dae"
