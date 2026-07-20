@@ -1035,11 +1035,9 @@ def test_expanded_urdf_robot_preview_fits_once_after_ready_not_per_mesh_callback
     loaded_body = preview_body.split("onRobotLoaded: result =>", 1)[1].split("onRobotMeshLoaded", 1)[0]
     mesh_loaded_body = preview_body.split("onRobotMeshLoaded: () =>", 1)[1].split("onRobotMeshLoadError", 1)[0]
 
-    assert "const bounds = computeFitBounds()" in loaded_body
-    assert "if (bounds) frameScene(bounds)" in loaded_body
+    assert "attemptInitialCameraFit()" in loaded_body
     assert "renderSceneSummary()" in mesh_loaded_body
-    assert "frameScene" not in mesh_loaded_body
-    assert "computeFitBounds" not in mesh_loaded_body
+    assert "scheduleInitialCameraFitRetry()" in mesh_loaded_body
 
 
 def test_expanded_urdf_robot_assembly_stays_locked_single_root_and_legacy_rows_suppressed():
@@ -1191,6 +1189,95 @@ assert.strictEqual(helperCalls, 2);
 assert.strictEqual(JSON.stringify(state.three.camera.position), JSON.stringify({ x: 3, y: 4, z: 5 }));
 assert.strictEqual(state.editorError, 'No visible physical geometry to frame');
 assert.strictEqual(state.editorEvents.at(-1).type, 'fit_cell_unavailable');
+`, sandbox);
+'''
+    result = subprocess.run(
+        ["node", "-e", harness, str(js_path)],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert result.stderr == ""
+
+
+def test_initial_camera_fit_runs_once_per_stable_scene_and_respects_manual_camera():
+    js_path = VIEWER / "viewer.js"
+    harness = r'''
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+class MockVector3 {
+  constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+  copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this; }
+  addScaledVector(v, s) { this.x += v.x * s; this.y += v.y * s; this.z += v.z * s; return this; }
+  normalize() { const l = Math.hypot(this.x, this.y, this.z) || 1; this.x /= l; this.y /= l; this.z /= l; return this; }
+}
+class MockSphere { constructor() { this.radius = 0; } }
+class MockBox3 {
+  constructor(min, max) {
+    if (max) { this.min = { ...min }; this.max = { ...max }; }
+    else { this.min = { x: Infinity, y: Infinity, z: Infinity }; this.max = { x: -Infinity, y: -Infinity, z: -Infinity }; }
+  }
+  isEmpty() { return this.min.x > this.max.x || this.min.y > this.max.y || this.min.z > this.max.z; }
+  union(box) { for (const k of ['x','y','z']) { this.min[k] = Math.min(this.min[k], box.min[k]); this.max[k] = Math.max(this.max[k], box.max[k]); } return this; }
+  setFromObject(object) { this.min = { ...object.mockBounds.min }; this.max = { ...object.mockBounds.max }; return this; }
+  getSize(target) { target.x = this.max.x - this.min.x; target.y = this.max.y - this.min.y; target.z = this.max.z - this.min.z; return target; }
+  getCenter(target) { target.x = (this.min.x + this.max.x) / 2; target.y = (this.min.y + this.max.y) / 2; target.z = (this.min.z + this.max.z) / 2; return target; }
+  getBoundingSphere(sphere) { sphere.radius = Math.hypot(this.max.x - this.min.x, this.max.y - this.min.y, this.max.z - this.min.z) / 2; return sphere; }
+  clone() { return new MockBox3(this.min, this.max); }
+}
+const element = () => ({ hidden: true, checked: false, disabled: false, textContent: '', className: '', innerHTML: '', classList: { toggle() {} }, setAttribute() {}, querySelector() { return { textContent: '' }; }, appendChild() {}, addEventListener() {}, getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; } });
+const timers = [];
+const sandbox = { console, assert, MockVector3, MockSphere, MockBox3, timers, window: { location: { search: '' } }, document: { getElementById() { return element(); }, createElement() { return element(); } }, URLSearchParams, requestAnimationFrame() { return 0; }, setTimeout(fn) { timers.push(fn); return fn; }, clearTimeout(fn) { const index = timers.indexOf(fn); if (index >= 0) timers.splice(index, 1); } };
+vm.createContext(sandbox);
+vm.runInContext(source + `
+THREE = { Vector3: MockVector3, Sphere: MockSphere, Box3: MockBox3 };
+function root(children = []) { return { visible: true, children, userData: {}, updateWorldMatrix() {} }; }
+function mesh(id, min, max) { return { isMesh: true, visible: true, children: [], name: id, mockBounds: { min, max }, userData: { item: { id, category: 'table' } } }; }
+state.sceneJson = { schema_version: SUPPORTED_SCHEMA_VERSION, scene: { id: 'scene_a', root: '/cells/scene_a', generation_version: 'v1' } };
+state.sourceWebSceneFile = 'build/workcell_studio_web_scene/scene_a.web_scene.json';
+state.three.camera = { position: new MockVector3(9, 8, 7), near: 0.5, far: 50, updateProjectionMatrix() { this.updated = true; } };
+state.three.controls = { target: new MockVector3(1, 1, 1), update() { this.updated = true; } };
+state.three.scene = root([mesh('table', { x: 0, y: 0, z: 0 }, { x: 1, y: 1, z: 1 })]);
+let fitCalls = 0;
+const originalFrame = frameScene;
+frameScene = bounds => { fitCalls += 1; return originalFrame(bounds); };
+beginInitialCameraFitForCurrentScene();
+assert.strictEqual(attemptInitialCameraFit(), true);
+assert.strictEqual(fitCalls, 1);
+const fitted = JSON.stringify(state.three.camera.position);
+attemptInitialCameraFit(); refreshWarnings({ warnings: [] }); renderSceneSummary(); setDebugOverlaysVisible(false);
+assert.strictEqual(fitCalls, 1);
+assert.strictEqual(JSON.stringify(state.three.camera.position), fitted);
+resetView();
+assert.strictEqual(fitCalls, 2);
+markCameraUserControlled();
+state.initialCameraFit.done = false;
+attemptInitialCameraFit();
+assert.strictEqual(fitCalls, 2);
+state.sceneJson = { schema_version: SUPPORTED_SCHEMA_VERSION, scene: { id: 'scene_b', root: '/cells/scene_b', generation_version: 'v1' } };
+state.sourceWebSceneFile = 'build/workcell_studio_web_scene/scene_b.web_scene.json';
+beginInitialCameraFitForCurrentScene();
+state.three.scene = root([mesh('camera', { x: 2, y: 0, z: 0 }, { x: 3, y: 1, z: 1 })]);
+assert.strictEqual(attemptInitialCameraFit(), true);
+assert.strictEqual(fitCalls, 3);
+for (const value of [state.three.camera.position.x, state.three.camera.position.y, state.three.camera.position.z, state.three.camera.near, state.three.camera.far, state.three.controls.target.x, state.three.controls.target.y, state.three.controls.target.z]) assert.strictEqual(Number.isFinite(value), true);
+state.sceneJson = { schema_version: SUPPORTED_SCHEMA_VERSION, scene: { id: 'empty', root: '/cells/empty' } };
+state.sourceWebSceneFile = 'build/workcell_studio_web_scene/empty.web_scene.json';
+beginInitialCameraFitForCurrentScene();
+state.three.scene = root([]);
+attemptInitialCameraFit();
+assert.strictEqual(timers.length, 1);
+state.sceneJson = { schema_version: SUPPORTED_SCHEMA_VERSION, scene: { id: 'after_empty', root: '/cells/after_empty' } };
+beginInitialCameraFitForCurrentScene();
+assert.strictEqual(timers.length, 0);
+attemptInitialCameraFit();
+assert.strictEqual(timers.length, 1);
+timers.shift()();
+assert.strictEqual(state.editorError, 'No visible physical geometry available for initial framing');
 `, sandbox);
 '''
     result = subprocess.run(
