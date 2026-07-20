@@ -12,6 +12,7 @@
 #include <QPushButton>
 #include <QTextEdit>
 #include <QVBoxLayout>
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <fstream>
@@ -24,6 +25,7 @@
 #include <QClipboard>
 #include <QFormLayout>
 #include <QDoubleSpinBox>
+#include <yaml-cpp/yaml.h>
 
 namespace workcell_builder
 {
@@ -47,6 +49,24 @@ static std::string trim_copy(const std::string & input)
   while (e > b && std::isspace(static_cast<unsigned char>(input[e - 1]))) --e;
   return input.substr(b, e - b);
 }
+std::vector<std::string> robot_ids_from_environment(const std::string & path)
+{
+  std::vector<std::string> ids;
+  try {
+    YAML::Node root = YAML::LoadFile(path);
+    if (root["robot"] && root["robot"].IsMap()) {
+      const auto id = root["robot"]["id"].as<std::string>(root["robot"]["name"].as<std::string>(""));
+      if (!id.empty()) ids.push_back(id);
+    }
+    if (root["robots"] && root["robots"].IsSequence()) {
+      for (const auto & r : root["robots"]) {
+        const auto id = r["id"].as<std::string>(r["name"].as<std::string>(""));
+        if (!id.empty() && std::find(ids.begin(), ids.end(), id) == ids.end()) ids.push_back(id);
+      }
+    }
+  } catch (const std::exception &) {}
+  return ids;
+}
 }  // namespace
 
 ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
@@ -63,8 +83,8 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
 
   outer->addWidget(new QLabel("Task Zones", this));
   task_zone_table_ = new QTableWidget(this);
-  task_zone_table_->setColumnCount(13);
-  task_zone_table_->setHorizontalHeaderLabels({"ID", "Type", "X", "Y", "Z", "Roll", "Pitch", "Yaw", "Size X", "Size Y", "Size Z", "Frame", "Status / Warnings"});
+  task_zone_table_->setColumnCount(14);
+  task_zone_table_->setHorizontalHeaderLabels({"ID", "Type", "Robot", "X", "Y", "Z", "Roll", "Pitch", "Yaw", "Size X", "Size Y", "Size Z", "Frame", "Status / Warnings"});
   task_zone_table_->horizontalHeader()->setStretchLastSection(true);
   outer->addWidget(task_zone_table_);
 
@@ -122,12 +142,29 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
   });
 
 
-  mk("Add Pick Zone", [this]() {
-    TaskZone zone;
-    zone.id = QString("pick_zone_%1").arg(task_zones_.size() + 1).toStdString();
-    zone.type = "pick";
-    task_zones_.push_back(zone);
-    rebuild_table();
+  mk("Create Pick Zone", [this]() {
+    const auto robots = robot_ids_from_environment(trim_copy(active_environment_yaml_path_));
+    std::string message;
+    if (!can_create_pick_zone_for_robots(robots, &message)) {
+      QMessageBox::warning(this, "Create Pick Zone", QString::fromStdString(message));
+      return;
+    }
+    QString robot = QString::fromStdString(robots.front());
+    if (robots.size() > 1) {
+      QStringList choices; for (const auto & id : robots) choices << QString::fromStdString(id);
+      bool ok = false; robot = QInputDialog::getItem(this, "Create Pick Zone", "Robot", choices, 0, false, &ok);
+      if (!ok || robot.isEmpty()) return;
+    }
+    QDialog d(this); d.setWindowTitle("Create Pick Zone"); auto * layout = new QFormLayout(&d);
+    std::array<QDoubleSpinBox *, 4> spin{}; const std::array<const char *, 4> labels = {"Center X", "Center Y", "Surface Z", "Yaw"};
+    for (int i = 0; i < 4; ++i) { spin[static_cast<size_t>(i)] = new QDoubleSpinBox(&d); spin[static_cast<size_t>(i)]->setDecimals(6); spin[static_cast<size_t>(i)]->setRange(-100.0, 100.0); layout->addRow(labels[static_cast<size_t>(i)], spin[static_cast<size_t>(i)]); }
+    QDialogButtonBox buttons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &d); layout->addRow(&buttons);
+    QObject::connect(&buttons, &QDialogButtonBox::accepted, &d, &QDialog::accept); QObject::connect(&buttons, &QDialogButtonBox::rejected, &d, &QDialog::reject);
+    if (d.exec() != QDialog::Accepted) { QMessageBox::information(this, "Create Pick Zone", "Pick Zone placement cancelled"); return; }
+    const auto suggestion = suggest_robot_pick_zone(robot.toStdString(), task_zones_, spin[0]->value(), spin[1]->value(), spin[2]->value(), spin[3]->value());
+    if (!suggestion.ok) { QMessageBox::warning(this, "Create Pick Zone", QString::fromStdString(suggestion.messages.empty() ? "Pick Zone robot is unavailable" : suggestion.messages.front())); return; }
+    task_zones_.push_back(suggestion.zone); rebuild_table();
+    QMessageBox::information(this, "Create Pick Zone", QString::fromStdString(suggestion.messages.front()));
   });
   mk("Add Place Zone", [this]() {
     TaskZone zone;
@@ -155,21 +192,24 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     const int row_index = task_zone_table_->currentRow();
     if (row_index < 0 || row_index >= static_cast<int>(task_zones_.size())) return;
     auto & z = task_zones_[static_cast<size_t>(row_index)];
-    z.x = task_zone_table_->item(row_index, 2) ? task_zone_table_->item(row_index, 2)->text().toDouble() : z.x;
-    z.y = task_zone_table_->item(row_index, 3) ? task_zone_table_->item(row_index, 3)->text().toDouble() : z.y;
-    z.z = task_zone_table_->item(row_index, 4) ? task_zone_table_->item(row_index, 4)->text().toDouble() : z.z;
-    z.roll = task_zone_table_->item(row_index, 5) ? task_zone_table_->item(row_index, 5)->text().toDouble() : z.roll;
-    z.pitch = task_zone_table_->item(row_index, 6) ? task_zone_table_->item(row_index, 6)->text().toDouble() : z.pitch;
-    z.yaw = task_zone_table_->item(row_index, 7) ? task_zone_table_->item(row_index, 7)->text().toDouble() : z.yaw;
+    z.robot_id = task_zone_table_->item(row_index, 2) ? task_zone_table_->item(row_index, 2)->text().toStdString() : z.robot_id;
+    z.x = task_zone_table_->item(row_index, 3) ? task_zone_table_->item(row_index, 3)->text().toDouble() : z.x;
+    z.y = task_zone_table_->item(row_index, 4) ? task_zone_table_->item(row_index, 4)->text().toDouble() : z.y;
+    z.z = task_zone_table_->item(row_index, 5) ? task_zone_table_->item(row_index, 5)->text().toDouble() : z.z;
+    z.roll = task_zone_table_->item(row_index, 6) ? task_zone_table_->item(row_index, 6)->text().toDouble() : z.roll;
+    z.pitch = task_zone_table_->item(row_index, 7) ? task_zone_table_->item(row_index, 7)->text().toDouble() : z.pitch;
+    z.yaw = task_zone_table_->item(row_index, 8) ? task_zone_table_->item(row_index, 8)->text().toDouble() : z.yaw;
     rebuild_table();
   });
   mk("Edit Zone Size", [this]() {
     const int row_index = task_zone_table_->currentRow();
     if (row_index < 0 || row_index >= static_cast<int>(task_zones_.size())) return;
     auto & z = task_zones_[static_cast<size_t>(row_index)];
-    z.dim_x = task_zone_table_->item(row_index, 8) ? task_zone_table_->item(row_index, 8)->text().toDouble() : z.dim_x;
-    z.dim_y = task_zone_table_->item(row_index, 9) ? task_zone_table_->item(row_index, 9)->text().toDouble() : z.dim_y;
-    z.dim_z = task_zone_table_->item(row_index, 10) ? task_zone_table_->item(row_index, 10)->text().toDouble() : z.dim_z;
+    z.dim_x = task_zone_table_->item(row_index, 9) ? task_zone_table_->item(row_index, 9)->text().toDouble() : z.dim_x;
+    z.dim_y = task_zone_table_->item(row_index, 10) ? task_zone_table_->item(row_index, 10)->text().toDouble() : z.dim_y;
+    z.dim_z = task_zone_table_->item(row_index, 11) ? task_zone_table_->item(row_index, 11)->text().toDouble() : z.dim_z;
+    std::string warning;
+    if (!validate_task_zone_dimensions(z, &warning)) { QMessageBox::warning(this, "Edit Zone Size", QString::fromStdString(warning)); return; }
     rebuild_table();
   });
   mk("Save Task Zones to Scene YAML", [this]() {
@@ -456,12 +496,13 @@ void ObjectPlacementDialog::rebuild_table()
   task_zone_table_->setRowCount(static_cast<int>(task_zones_.size()));
   for (int i = 0; i < static_cast<int>(task_zones_.size()); ++i) {
     const auto & z = task_zones_[static_cast<size_t>(i)];
-    const std::array<QString, 13> vals = {
-      QString::fromStdString(z.id), QString::fromStdString(z.type == "camera_observation" ? "Camera Observation" : z.type), QString::number(z.x), QString::number(z.y), QString::number(z.z),
+    const std::array<QString, 14> vals = {
+      QString::fromStdString(z.id), QString::fromStdString(z.type == "camera_observation" ? "Camera Observation" : (z.type == "pick" ? "Pick Zone" : z.type)),
+      QString::fromStdString(z.robot_id), QString::number(z.x), QString::number(z.y), QString::number(z.z),
       QString::number(z.roll), QString::number(z.pitch), QString::number(z.yaw), QString::number(z.dim_x),
       QString::number(z.dim_y), QString::number(z.dim_z), QString::fromStdString(z.frame_id), QString::fromStdString(z.status)
     };
-    for (int c = 0; c < 13; ++c) task_zone_table_->setItem(i, c, new QTableWidgetItem(vals[static_cast<size_t>(c)]));
+    for (int c = 0; c < 14; ++c) task_zone_table_->setItem(i, c, new QTableWidgetItem(vals[static_cast<size_t>(c)]));
   }
 }
 

@@ -3,8 +3,10 @@
 #include <QApplication>
 #include <QFile>
 #include <QIODevice>
+#include <QDir>
 
 #include "../gui/scene3d_viewport_widget.h"
+#include "../include/object_placement_yaml_io.hpp"
 
 namespace {
 QApplication * ensure_app()
@@ -418,4 +420,81 @@ TEST(CameraObservationZoneAuthoringSource, UsesIndependentTaskZoneModelAndProjec
   EXPECT_TRUE(yaml.contains(QStringLiteral("camera.y + t * dy")));
   EXPECT_TRUE(dialog.contains(QStringLiteral("Create Observation Zone")));
   EXPECT_FALSE(dialog.contains(QStringLiteral("robot_motion")));
+}
+
+TEST(IndependentPickZoneAuthoring, ModelYamlAndOverlayContract)
+{
+  using namespace workcell_builder;
+  std::string message;
+  EXPECT_FALSE(can_create_pick_zone_for_robots({}, &message));
+  EXPECT_EQ(message, "Add or select a robot before creating a Pick Zone");
+  EXPECT_TRUE(can_create_pick_zone_for_robots({"ur5"}, &message));
+  EXPECT_EQ(message, "ur5");
+  EXPECT_TRUE(can_create_pick_zone_for_robots({"ur5", "ur10"}, &message));
+  EXPECT_EQ(message, "Choose a robot for the Pick Zone");
+
+  std::vector<TaskZone> existing;
+  auto suggestion = suggest_robot_pick_zone("ur5", existing, 1.8, 0.2, 0.75, 0.3);
+  ASSERT_TRUE(suggestion.ok);
+  const auto & z = suggestion.zone;
+  EXPECT_EQ(z.type, "pick");
+  EXPECT_EQ(z.role, "pick");
+  EXPECT_EQ(z.robot_id, "ur5");
+  EXPECT_TRUE(z.camera_id.empty());
+  EXPECT_NEAR(z.x, 1.8, 1e-9);
+  EXPECT_NEAR(z.y, 0.2, 1e-9);
+  EXPECT_NEAR(z.z, 0.75, 1e-9);
+  const auto defaults = default_pick_zone_dimensions();
+  EXPECT_GT(defaults.width, 0.0);
+  EXPECT_GT(defaults.depth, 0.0);
+  EXPECT_GT(defaults.height, 0.0);
+  EXPECT_DOUBLE_EQ(z.dim_x, defaults.width);
+  EXPECT_DOUBLE_EQ(z.dim_y, defaults.depth);
+  EXPECT_DOUBLE_EQ(z.dim_z, defaults.height);
+
+  TaskZone bad = z;
+  bad.dim_x = 0.0;
+  EXPECT_FALSE(validate_task_zone_dimensions(bad, &message));
+  EXPECT_EQ(message, "Pick Zone dimensions must be positive");
+
+  auto item = make_item("pick_zone_1");
+  item.type = "pick";
+  item.role = "pick";
+  item.category = "Task Zones";
+  EXPECT_FALSE(Scene3DViewportWidget::should_include_in_default_fit_for_test(item));
+}
+
+TEST(IndependentPickZoneAuthoring, SaveReloadPreservesRobotAndNoCameraLink)
+{
+  using namespace workcell_builder;
+  const QString path = QDir::tempPath() + QStringLiteral("/pick_zone_contract_environment.yaml");
+  QFile::remove(path);
+  TaskZone z;
+  z.id = "pick_zone_1";
+  z.type = "pick";
+  z.role = "pick";
+  z.robot_id = "ur5";
+  z.x = 1.8; z.y = 0.2; z.z = 0.75; z.yaw = 0.3;
+  z.dim_x = 0.4; z.dim_y = 0.5; z.dim_z = 0.1;
+  z.enabled = true; z.visible = false;
+  auto result = save_task_zones_to_environment_yaml(path.toStdString(), {z});
+  ASSERT_TRUE(result.ok);
+  QFile file(path);
+  ASSERT_TRUE(file.open(QIODevice::ReadOnly | QIODevice::Text));
+  const QString yaml = QString::fromUtf8(file.readAll());
+  EXPECT_TRUE(yaml.contains(QStringLiteral("type: pick")));
+  EXPECT_TRUE(yaml.contains(QStringLiteral("robot_id: ur5")));
+  EXPECT_FALSE(yaml.contains(QStringLiteral("camera_id")));
+  EXPECT_FALSE(yaml.contains(QStringLiteral("observation_zone_id")));
+  EXPECT_FALSE(yaml.contains(QStringLiteral("/workspace/")));
+
+  std::vector<std::string> warnings;
+  const auto loaded = load_task_zones_from_environment_yaml(path.toStdString(), &warnings);
+  ASSERT_EQ(loaded.size(), 1u);
+  EXPECT_EQ(loaded.front().id, z.id);
+  EXPECT_EQ(loaded.front().type, "pick");
+  EXPECT_EQ(loaded.front().robot_id, "ur5");
+  EXPECT_TRUE(loaded.front().camera_id.empty());
+  EXPECT_DOUBLE_EQ(loaded.front().z, 0.75);
+  EXPECT_FALSE(loaded.front().visible);
 }
