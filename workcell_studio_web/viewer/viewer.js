@@ -17,7 +17,7 @@ const LOCKED_EDIT_REASON = 'Locked/generated preview item; edit source layout/en
 const MIN_FRAME_RADIUS = 1.2;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
-const state = { sceneJson: null, sourceWebSceneFile: '', frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, editorMode: 'select', editorEvents: [], editorError: '' };
+const state = { sceneJson: null, sourceWebSceneFile: '', frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, editorMode: 'select', editorEvents: [], editorError: '' };
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
 const STAGED_MESH_ROOTS = [
   'build/workcell_studio_web_scene/assets/',
@@ -626,19 +626,25 @@ function transformFromObject(object) {
 }
 function translationSnapValue() { const v = Number(el.translationSnap?.value || 0); return Number.isFinite(v) && v > 0 ? v : null; }
 function rotationSnapRadians() { const v = Number(el.rotationSnap?.value || 0); return Number.isFinite(v) && v > 0 ? THREE.MathUtils.degToRad(v) : null; }
-function snapTransform(transform) {
+function snapTransform(transform, { translationAxes = ['x', 'y', 'z'], rotationAxes = ['x', 'y', 'z'] } = {}) {
   if (!el.snapToggle?.checked) return transform;
   const out = cloneTransform(transform);
   const t = translationSnapValue();
-  if (t) for (const axis of ['x', 'y', 'z']) out.pose.xyz[axis] = Math.round(out.pose.xyz[axis] / t) * t;
+  if (t) for (const axis of translationAxes) out.pose.xyz[axis] = Math.round(out.pose.xyz[axis] / t) * t;
   const r = rotationSnapRadians();
-  if (r) for (const axis of ['x', 'y', 'z']) out.pose.rpy[axis] = Math.round(out.pose.rpy[axis] / r) * r;
+  if (r) for (const axis of rotationAxes) out.pose.rpy[axis] = Math.round(out.pose.rpy[axis] / r) * r;
   return out;
 }
+function isFiniteTransform(transform) {
+  const values = [transform?.pose?.xyz?.x, transform?.pose?.xyz?.y, transform?.pose?.xyz?.z, transform?.pose?.rpy?.x, transform?.pose?.rpy?.y, transform?.pose?.rpy?.z, transform?.scale?.x, transform?.scale?.y, transform?.scale?.z];
+  return values.every(value => Number.isFinite(Number(value)));
+}
 function applyTransformToObject(object, transform) {
+  if (!isFiniteTransform(transform)) return false;
   object.position.set(transform.pose.xyz.x, transform.pose.xyz.y, transform.pose.xyz.z);
   object.rotation.set(transform.pose.rpy.x, transform.pose.rpy.y, transform.pose.rpy.z, 'XYZ');
   object.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
+  return true;
 }
 function markDirtyTransform(rendered, next, { pushHistory = true, oldTransform = null } = {}) {
   if (!rendered || !canEditItem(rendered.item)) return false;
@@ -648,7 +654,7 @@ function markDirtyTransform(rendered, next, { pushHistory = true, oldTransform =
     state.undoStack.push({ itemId: rendered.item.id, before: cloneTransform(previous), after: cloneTransform(snapped) });
     state.redoStack = [];
   }
-  applyTransformToObject(rendered.object3d, snapped);
+  if (!applyTransformToObject(rendered.object3d, snapped)) return false;
   if (sameTransform(rendered.originalTransform, snapped)) state.dirtyTransforms.delete(rendered.item.id);
   else state.dirtyTransforms.set(rendered.item.id, { oldTransform: cloneTransform(rendered.originalTransform), newTransform: cloneTransform(snapped) });
   syncInspectorTransformFields(rendered);
@@ -1677,7 +1683,11 @@ function initThree() {
     state.three = { renderer, scene, camera, controls, transformControls, raycaster: new THREE.Raycaster(), pointer: new THREE.Vector2() };
     resize();
     window.addEventListener('resize', resize);
-    el.canvas.addEventListener('pointerdown', pickObject);
+    el.canvas.addEventListener('pointerdown', onCanvasPointerDown);
+    el.canvas.addEventListener('pointermove', onCanvasPointerMove);
+    el.canvas.addEventListener('pointerup', onCanvasPointerUp);
+    el.canvas.addEventListener('pointercancel', () => cancelDirectMoveDrag('Move cancelled'));
+    window.addEventListener('keydown', event => { if (event.key === 'Escape') cancelDirectMoveDrag('Move cancelled'); });
     animate();
   } catch (err) {
     showError(`Bundled Three.js module load failure: ${err.message || err}`);
@@ -2743,6 +2753,7 @@ function populateObjectList() {
 }
 
 function selectObject(id) {
+  if (state.directMoveDrag && state.directMoveDrag.itemId !== (id || '')) cancelDirectMoveDrag('Move cancelled');
   const previous = state.selected || '';
   state.selected = id;
   document.querySelectorAll('.object-list li').forEach(li => li.classList.toggle('selected', li.dataset.id === id));
@@ -2768,7 +2779,21 @@ function pickObject(event) {
   const hit = hits.find(h => h.object?.parent || h.object);
   const item = hit?.object?.userData?.item || hit?.object?.parent?.userData?.item;
   if (item?.id) selectObject(item.id);
+  return item?.id || '';
 }
+
+
+
+function pointerToWorldPlane(event, z) { const rect = el.canvas.getBoundingClientRect(); if (!rect.width || !rect.height) return null; state.three.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1; state.three.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1; state.three.raycaster.setFromCamera(state.three.pointer, state.three.camera); const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -z); const hit = new THREE.Vector3(); if (!state.three.raycaster.ray.intersectPlane(plane, hit)) return null; return Number.isFinite(hit.x) && Number.isFinite(hit.y) && Number.isFinite(hit.z) ? hit : null; }
+function snapHorizontalPreview(transform) { const snapped = snapTransform(transform, { translationAxes: ['x', 'y'], rotationAxes: [] }); snapped.pose.xyz.z = transform.pose.xyz.z; return snapped; }
+function beginDirectMoveDrag(event, rendered) { if (state.editorMode !== 'move' || !rendered || !canEditItem(rendered.item)) return false; const start = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d)); const hit = pointerToWorldPlane(event, start.pose.xyz.z); if (!hit) return false; const controls = state.three.controls; state.directMoveDrag = { itemId: rendered.item.id, start, last: cloneTransform(start), offset: { x: start.pose.xyz.x - hit.x, y: start.pose.xyz.y - hit.y }, controlsWasEnabled: controls ? controls.enabled : true }; if (controls) controls.enabled = false; el.canvas.setPointerCapture?.(event.pointerId); el.canvas.classList.add('direct-move-dragging'); event.preventDefault(); event.stopPropagation(); return true; }
+function updateDirectMoveDrag(event) { const drag = state.directMoveDrag; if (!drag) return false; const rendered = renderedById(drag.itemId); if (!rendered || state.selected !== drag.itemId || !canEditItem(rendered.item)) return cancelDirectMoveDrag('Move cancelled'), true; const hit = pointerToWorldPlane(event, drag.start.pose.xyz.z); if (!hit) return true; const next = cloneTransform(drag.start); next.pose.xyz.x = hit.x + drag.offset.x; next.pose.xyz.y = hit.y + drag.offset.y; next.pose.xyz.z = drag.start.pose.xyz.z; const preview = snapHorizontalPreview(next); if (!isFiniteTransform(preview)) return true; drag.last = cloneTransform(preview); applyTransformToObject(rendered.object3d, preview); syncInspectorTransformFields(rendered); updateLabels(); event.preventDefault(); event.stopPropagation(); return true; }
+function finishDirectMoveDrag(event) { const drag = state.directMoveDrag; if (!drag) return false; const rendered = renderedById(drag.itemId); const finalTransform = cloneTransform(drag.last); endDirectMoveDrag(event); if (!rendered || !canEditItem(rendered.item) || !isFiniteTransform(finalTransform)) return false; if (sameTransform(drag.start, finalTransform)) { applyTransformToObject(rendered.object3d, drag.start); syncInspectorTransformFields(rendered); return true; } const committed = markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start }); if (!committed) { applyTransformToObject(rendered.object3d, drag.start); showError(`Move failed for ${itemLabel(rendered.item)}: final transform was rejected by the editor bridge.`); return true; } emitTransformCommitted(rendered); pushEditorEvent('status', { message: `Moved ${itemLabel(rendered.item)}` }); return true; }
+function endDirectMoveDrag(event) { const drag = state.directMoveDrag; state.directMoveDrag = null; if (state.three.controls) state.three.controls.enabled = drag ? drag.controlsWasEnabled : state.three.controls.enabled; el.canvas.classList.remove('direct-move-dragging'); if (event?.pointerId !== undefined) el.canvas.releasePointerCapture?.(event.pointerId); }
+function cancelDirectMoveDrag(message) { const drag = state.directMoveDrag; if (!drag) return false; const rendered = renderedById(drag.itemId); if (rendered) { applyTransformToObject(rendered.object3d, drag.start); syncInspectorTransformFields(rendered); updateLabels(); } endDirectMoveDrag(); pushEditorEvent('status', { message: message || 'Move cancelled' }); return true; }
+function onCanvasPointerDown(event) { const hitId = pickObject(event); const rendered = hitId && hitId === state.selected ? renderedById(state.selected) : null; if (beginDirectMoveDrag(event, rendered)) return; }
+function onCanvasPointerMove(event) { updateDirectMoveDrag(event); }
+function onCanvasPointerUp(event) { finishDirectMoveDrag(event); }
 
 function attachTransformGizmo(rendered) {
   const gizmo = state.three.transformControls;
@@ -2858,6 +2883,7 @@ function updateDirtyState() {
   populateObjectList();
 }
 function clearPreviewEdits() {
+  cancelDirectMoveDrag('Move cancelled');
   for (const rendered of state.objects) applyTransformToObject(rendered.object3d, rendered.originalTransform);
   state.dirtyTransforms.clear();
   state.undoStack = [];
@@ -2874,6 +2900,7 @@ function applyHistoryEntry(entry, direction) {
   if (state.selected === rendered.item.id) populateInspector(rendered);
 }
 function undoPreviewEdit() {
+  cancelDirectMoveDrag('Move cancelled');
   const entry = state.undoStack.pop();
   if (!entry) return;
   applyHistoryEntry(entry, 'undo');
@@ -2882,6 +2909,7 @@ function undoPreviewEdit() {
   emitDirtyChanged();
 }
 function redoPreviewEdit() {
+  cancelDirectMoveDrag('Move cancelled');
   const entry = state.redoStack.pop();
   if (!entry) return;
   applyHistoryEntry(entry, 'redo');
@@ -2992,6 +3020,7 @@ async function loadFile(file) {
     state.undoStack = [];
     state.redoStack = [];
     state.selected = null;
+    cancelDirectMoveDrag('Move cancelled');
     detachTransformGizmo();
     el.empty.hidden = true;
     if (items.length) renderScene(items);
@@ -3059,6 +3088,7 @@ async function loadSceneUrl(rawUrl) {
     state.undoStack = [];
     state.redoStack = [];
     state.selected = null;
+    cancelDirectMoveDrag('Move cancelled');
     detachTransformGizmo();
     el.empty.hidden = true;
     renderScene(items);
