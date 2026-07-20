@@ -31,6 +31,7 @@ QStringList canonical_helper_overlay_tokens()
     QStringLiteral("warning_anchor"),
     QStringLiteral("warning_badge"),
     QStringLiteral("camera_fov"),
+    QStringLiteral("camera_observation"),
     QStringLiteral("fov"),
     QStringLiteral("pick_coverage"),
     QStringLiteral("reachability"),

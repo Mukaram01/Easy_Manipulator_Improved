@@ -54,6 +54,7 @@ struct TaskZone
   double roll{0.0}, pitch{0.0}, yaw{0.0};
   double dim_x{0.0}, dim_y{0.0}, dim_z{0.0};
   std::string frame_id;
+  std::string camera_id;
   std::string support_surface_ref;
   std::string object_ref;
   std::string target_ref;
@@ -70,6 +71,18 @@ std::string import_stl_to_asset_library(
   const std::string & stl_path,
   const std::string & repo_root,
   const std::string & managed_folder = "easy_manipulation_deployment/assets/environment/custom_meshes");
+struct ObservationZoneSuggestion
+{
+  bool ok{false};
+  TaskZone zone;
+  std::vector<std::string> messages;
+};
+
+bool can_create_observation_zone_for_camera(
+  const CameraPlacement * selected_camera, bool editable_scene, bool scene_writable);
+ObservationZoneSuggestion suggest_camera_observation_zone(
+  const CameraPlacement & camera, const std::vector<TaskZone> & existing_zones, double work_surface_z = 0.0);
+
 std::string serialize_placed_objects_to_environment_yaml(const std::vector<PlacedObject> & objects);
 std::vector<PlacedObject> parse_placed_objects_from_environment_yaml(const std::string & content);
 bool save_environment_layout(const std::string & output_path, const std::vector<PlacedObject> & objects);

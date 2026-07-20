@@ -73,6 +73,7 @@ PlacedObjectYamlWriteResult save_task_zones_to_environment_yaml(
   const std::string & environment_yaml_path,
   const std::vector<TaskZone> & task_zones);
 
+
 bool load_robot_tool_pose_from_environment_yaml(
   const std::string & environment_yaml_path,
   RobotMountConfig * robot_mount,

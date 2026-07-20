@@ -1,5 +1,6 @@
 #include "object_placement_yaml_io.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -225,6 +226,7 @@ std::vector<TaskZone> load_task_zones_from_environment_yaml(const std::string & 
       z.shape = n["shape"].as<std::string>("box");
       z.parent_frame = n["frame"].as<std::string>(n["parent_frame"].as<std::string>("world"));
       z.frame_id = n["frame_id"].as<std::string>("");
+      z.camera_id = n["camera_id"].as<std::string>(n["linked_camera"].as<std::string>(""));
       z.support_surface_ref = n["support_surface_ref"].as<std::string>("");
       z.object_ref = n["object_ref"].as<std::string>("");
       z.target_ref = n["target_ref"].as<std::string>("");
@@ -314,6 +316,7 @@ PlacedObjectYamlWriteResult save_task_zones_to_environment_yaml(const std::strin
       n["dimensions"].push_back(z.dim_y);
       n["dimensions"].push_back(z.dim_z);
       if (!z.frame_id.empty()) n["frame_id"] = z.frame_id;
+      if (!z.camera_id.empty()) n["camera_id"] = z.camera_id;
       if (!z.support_surface_ref.empty()) n["support_surface_ref"] = z.support_surface_ref;
       if (!z.object_ref.empty()) n["object_ref"] = z.object_ref;
       if (!z.target_ref.empty()) n["target_ref"] = z.target_ref;
@@ -346,6 +349,58 @@ PlacedObjectYamlWriteResult save_task_zones_to_environment_yaml(const std::strin
     r.warnings.push_back(std::string("failed to save task zones: ") + e.what());
   }
   return r;
+}
+
+bool can_create_observation_zone_for_camera(
+  const CameraPlacement * selected_camera, bool editable_scene, bool scene_writable)
+{
+  std::string warning;
+  return editable_scene && scene_writable && selected_camera &&
+    selected_camera->enabled && validate_camera_placement(*selected_camera, &warning);
+}
+
+ObservationZoneSuggestion suggest_camera_observation_zone(
+  const CameraPlacement & camera, const std::vector<TaskZone> & existing_zones, double work_surface_z)
+{
+  ObservationZoneSuggestion out;
+  if (!can_create_observation_zone_for_camera(&camera, true, true)) {
+    out.messages.push_back("Observation zone camera is unavailable");
+    return out;
+  }
+  const double cr = std::cos(camera.roll), sr = std::sin(camera.roll);
+  const double cp = std::cos(camera.pitch), sp = std::sin(camera.pitch);
+  const double cy = std::cos(camera.yaw), sy = std::sin(camera.yaw);
+  const double dx = -(cy * sp * cr + sy * sr);
+  const double dy = -(sy * sp * cr - cy * sr);
+  const double dz = -(cp * cr);
+  if (std::fabs(dz) < 1e-6 || ((work_surface_z - camera.z) / dz) <= 0.0) {
+    out.messages.push_back("Camera view does not intersect the work surface");
+    return out;
+  }
+  const double t = (work_surface_z - camera.z) / dz;
+  double width = 0.6, depth = 0.4;
+  if (camera.horizontal_fov_deg > 1.0 && camera.vertical_fov_deg > 1.0) {
+    width = std::clamp(2.0 * t * std::tan(camera.horizontal_fov_deg * 3.14159265358979323846 / 360.0), 0.05, 5.0);
+    depth = std::clamp(2.0 * t * std::tan(camera.vertical_fov_deg * 3.14159265358979323846 / 360.0), 0.05, 5.0);
+  } else {
+    out.messages.push_back("Observation zone uses default dimensions");
+  }
+  TaskZone z;
+  z.id = "camera_observation_1";
+  for (int i = 1;; ++i) {
+    z.id = "camera_observation_" + std::to_string(i);
+    if (std::none_of(existing_zones.begin(), existing_zones.end(), [&](const TaskZone & e){ return e.id == z.id; })) break;
+  }
+  z.type = "camera_observation";
+  z.role = "camera_observation";
+  z.shape = "box";
+  z.parent_frame = "world";
+  z.camera_id = camera.name;
+  z.x = camera.x + t * dx; z.y = camera.y + t * dy; z.z = work_surface_z;
+  z.yaw = camera.yaw; z.dim_x = width; z.dim_y = depth; z.dim_z = 0.02;
+  z.status = "Created observation zone for " + camera.name;
+  out.ok = true; out.zone = z; out.messages.push_back(z.status);
+  return out;
 }
 
 bool load_robot_tool_pose_from_environment_yaml(
