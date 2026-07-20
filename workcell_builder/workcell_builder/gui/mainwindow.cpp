@@ -11578,7 +11578,13 @@ QString safe_import_stl_stem(const QString & name)
   QString stem = QFileInfo(name).completeBaseName().toLower();
   stem.replace(QRegularExpression("[^a-z0-9_-]+"), "_");
   stem.replace(QRegularExpression("_+"), "_");
-  stem = stem.trimmed().trimmed('_');
+  stem = stem.trimmed();
+  while (stem.startsWith(QLatin1Char('_'))) {
+    stem.remove(0, 1);
+  }
+  while (stem.endsWith(QLatin1Char('_'))) {
+    stem.chop(1);
+  }
   if (stem.isEmpty() || stem == "." || stem == "..") return QString();
   return stem;
 }
@@ -12343,7 +12349,7 @@ std::vector<MainWindow::RecommendedWorkflowAction> MainWindow::resolve_recommend
     return actions;
   }
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
-  const auto canvas_model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, QString::fromStdString(s.scene_name));
+  const auto canvas_model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
   const bool canonical_path_match = (canonical_scene_path_string(s.scene_dir) == canonical_scene_path_string(fs::path(selected_scene_path().toStdString())));
   const LayoutStateModel layout_state = derive_layout_state_model(s.scene_dir, canvas_model, canonical_path_match);
   const bool derived_layout_ready = !layout_dirty_ && (

@@ -373,3 +373,15 @@ def test_rosdep_diagnostics_fails_when_no_source_packages_discovered(tmp_path, m
     captured = capsys.readouterr()
     assert "discovered source packages: 0" in captured.out
     assert "No source packages discovered" in captured.err
+
+
+def test_mainwindow_qt5_scene_builder_regressions_are_fixed():
+    text = Path("workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text()
+    assert "trimmed('_')" not in text
+    assert "build_workcell_studio_canvas_model(s.scene_dir, QString::fromStdString(s.scene_name))" not in text
+    assert "stem = stem.trimmed();" in text
+    assert "stem.startsWith(QLatin1Char('_'))" in text
+    assert "stem.remove(0, 1);" in text
+    assert "stem.endsWith(QLatin1Char('_'))" in text
+    assert "stem.chop(1);" in text
+    assert "build_workcell_studio_canvas_model(s.scene_dir, s.scene_name)" in text
