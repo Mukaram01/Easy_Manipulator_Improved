@@ -21,8 +21,10 @@ ASSETS = [
     "cylinder_object",
 ]
 URDF_PRIMITIVES = {
+    "fixture_plate": '<box size="0.5 0.5 0.03"/>',
     "calibration_cube": '<box size="0.1 0.1 0.1"/>',
     "pick_box": '<box size="0.08 0.08 0.08"/>',
+    "cylinder_object": '<cylinder radius="0.03" length="0.12"/>',
 }
 
 
