@@ -1,0 +1,13 @@
+{
+  "schema_version": "workcell_studio_curated_add_objects/v1",
+  "objects": [
+    {"asset_id": "bin_small", "placement_policy": "support_surface"},
+    {"asset_id": "bin_large", "placement_policy": "support_surface"},
+    {"asset_id": "tray", "placement_policy": "support_surface"},
+    {"asset_id": "tote_box", "placement_policy": "support_surface"},
+    {"asset_id": "fixture_plate", "placement_policy": "support_surface", "primitive_geometry_type": "box"},
+    {"asset_id": "calibration_cube", "placement_policy": "support_surface", "primitive_geometry_type": "box"},
+    {"asset_id": "pick_box", "placement_policy": "support_surface", "primitive_geometry_type": "box"},
+    {"asset_id": "cylinder_object", "placement_policy": "support_surface", "primitive_geometry_type": "cylinder"}
+  ]
+}
