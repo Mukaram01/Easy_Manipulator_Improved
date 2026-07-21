@@ -2,8 +2,14 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="fixture_plate">
   <xacro:macro name="fixture_plate" params="prefix parent xyz:='0 0 0' rpy:='0 0 0'">
     <link name="${prefix}fixture_plate_link">
-      <visual><origin xyz="0 0 0" rpy="0 0 0"/><geometry><mesh filename="package://workcell_builder/assets/environment/fixture_plate_description/meshes/fixture_plate.stl" scale="1 1 1"/></geometry></visual>
-      <collision><origin xyz="0 0 0" rpy="0 0 0"/><geometry><box size="0.5 0.5 0.03"/></geometry></collision>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><box size="0.5 0.5 0.03"/></geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><box size="0.5 0.5 0.03"/></geometry>
+      </collision>
     </link>
   </xacro:macro>
 </robot>
