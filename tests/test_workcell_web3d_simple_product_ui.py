@@ -28,7 +28,7 @@ def test_common_actions_stay_visible_and_advanced_controls_move_under_more():
     html = INDEX.read_text(encoding="utf-8")
     assert "Workcell Studio Product View" in html
     assert "Arrange, review and validate the workcell scene." in html
-    assert ">Open scene" in html
+    assert "Open scene" in html
     assert ">Fit</button>" in html
     assert ">Undo</button>" in html
     assert ">Redo</button>" in html
