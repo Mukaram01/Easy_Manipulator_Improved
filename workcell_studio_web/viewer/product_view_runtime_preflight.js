@@ -56,12 +56,14 @@
 
   function installFetchRewrite() {
     if (typeof window.fetch !== 'function' || window.fetch[PATCH_FLAG]) return;
+    const RequestConstructor = window.Request;
+    const isRequest = input => typeof RequestConstructor === 'function' && input instanceof RequestConstructor;
     const originalFetch = window.fetch.bind(window);
     const rewrittenFetch = function workcellProductViewFetch(input, init) {
-      const originalUrl = input instanceof Request ? input.url : input;
+      const originalUrl = isRequest(input) ? input.url : input;
       const rewrittenUrl = rewritePackageRootUrl(originalUrl);
       if (rewrittenUrl === String(originalUrl || '')) return originalFetch(input, init);
-      if (input instanceof Request) return originalFetch(new Request(rewrittenUrl, input), init);
+      if (isRequest(input)) return originalFetch(new RequestConstructor(rewrittenUrl, input), init);
       return originalFetch(rewrittenUrl, init);
     };
     rewrittenFetch[PATCH_FLAG] = true;
@@ -99,10 +101,26 @@
     prototype.clearColor = forcedClearColor;
   }
 
+  function installCanvasContextHook() {
+    const prototype = window.HTMLCanvasElement?.prototype;
+    if (!prototype?.getContext || prototype.getContext[PATCH_FLAG]) return;
+    const originalGetContext = prototype.getContext;
+    const hookedGetContext = function workcellProductViewGetContext(type, ...rest) {
+      const context = originalGetContext.call(this, type, ...rest);
+      if (context && (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl')) {
+        installClearColorOverride(Object.getPrototypeOf(context));
+      }
+      return context;
+    };
+    hookedGetContext[PATCH_FLAG] = true;
+    prototype.getContext = hookedGetContext;
+  }
+
   installFetchRewrite();
   installXhrRewrite();
   installClearColorOverride(window.WebGLRenderingContext?.prototype);
   installClearColorOverride(window.WebGL2RenderingContext?.prototype);
+  installCanvasContextHook();
   document.documentElement.style.setProperty('--workcell-product-view-background', LIGHT_BACKGROUND.css);
 
   window.__WORKCELL_PRODUCT_VIEW_RUNTIME_PREFLIGHT_V1__ = Object.freeze({
