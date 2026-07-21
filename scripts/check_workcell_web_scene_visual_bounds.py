@@ -87,7 +87,10 @@ def _category(section: str, item: Mapping[str, Any]) -> str:
     explicit_category = str(item.get("category") or "").strip().lower()
     if section == "zones" or explicit_category in HELPER_ZONE_CATEGORIES:
         return explicit_category or str(item.get("role") or "zone").lower()
-    text = _text_for(item, "id", "name", "display_name", "role", "category", "source_layer", "active_visual_source")
+    # Infer physical type only from identity fields. Provenance/source-layer values
+    # describe editability and data ownership; for example, "editable" contains
+    # the substring "table" and must never turn an ordinary object into a table.
+    text = _text_for(item, "id", "name", "display_name", "role", "category", "model")
     if section == "robots" or "robot" in text or "ur5" in text or "ur10" in text or "ur3" in text:
         return "robot_link"
     if section == "tools" or "gripper" in text or "tool" in text or "robotiq" in text:
