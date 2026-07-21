@@ -6,26 +6,12 @@
     "asset_type": "table",
     "mesh_path": "workcell_builder/workcell_builder/assets/environment/table_small_description/meshes/table_small.stl",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/table_small_description/urdf/table_small.urdf.xacro",
-    "default_dimensions_m": [
-      1.2,
-      0.8,
-      0.75
-    ],
-    "default_pose": [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0
-    ],
+    "default_dimensions_m": [1.2, 0.8, 0.75],
+    "default_pose": [0, 0, 0, 0, 0, 0],
     "default_z_hint": 0.0,
     "placement_notes": "General workstation table.",
     "license": "generated_internal",
-    "tags": [
-      "table",
-      "worksurface"
-    ],
+    "tags": ["table", "worksurface"],
     "source_note": "self-authored primitive placeholder"
   },
   {
@@ -35,25 +21,12 @@
     "asset_type": "table",
     "mesh_path": "workcell_builder/workcell_builder/assets/environment/table_large_description/meshes/table_large.stl",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/table_large_description/urdf/table_large.urdf.xacro",
-    "default_dimensions_m": [
-      1.8,
-      0.9,
-      0.75
-    ],
-    "default_pose": [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0
-    ],
+    "default_dimensions_m": [1.8, 0.9, 0.75],
+    "default_pose": [0, 0, 0, 0, 0, 0],
     "default_z_hint": 0.0,
     "placement_notes": "Large table for multi-bin layouts.",
     "license": "generated_internal",
-    "tags": [
-      "table"
-    ],
+    "tags": ["table"],
     "source_note": "self-authored primitive placeholder"
   },
   {
@@ -63,25 +36,12 @@
     "asset_type": "workbench",
     "mesh_path": "workcell_builder/workcell_builder/assets/environment/workbench_description/meshes/workbench.stl",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/workbench_description/urdf/workbench.urdf.xacro",
-    "default_dimensions_m": [
-      1.5,
-      0.75,
-      0.9
-    ],
-    "default_pose": [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0
-    ],
+    "default_dimensions_m": [1.5, 0.75, 0.9],
+    "default_pose": [0, 0, 0, 0, 0, 0],
     "default_z_hint": 0.0,
     "placement_notes": "Raised workbench for fixture tasks.",
     "license": "generated_internal",
-    "tags": [
-      "bench"
-    ],
+    "tags": ["bench"],
     "source_note": "self-authored primitive placeholder"
   },
   {
@@ -91,25 +51,12 @@
     "asset_type": "bin",
     "mesh_path": "workcell_builder/workcell_builder/assets/environment/bin_small_description/meshes/bin_small.stl",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/bin_small_description/urdf/bin_small.urdf.xacro",
-    "default_dimensions_m": [
-      0.4,
-      0.3,
-      0.2
-    ],
-    "default_pose": [
-      0.55,
-      0.25,
-      0.75,
-      0,
-      0,
-      0
-    ],
+    "default_dimensions_m": [0.4, 0.3, 0.2],
+    "default_pose": [0.55, 0.25, 0.75, 0, 0, 0],
     "default_z_hint": 0.75,
     "placement_notes": "Place on table surfaces.",
     "license": "generated_internal",
-    "tags": [
-      "bin"
-    ],
+    "tags": ["bin"],
     "source_note": "self-authored primitive placeholder"
   },
   {
@@ -119,25 +66,12 @@
     "asset_type": "bin",
     "mesh_path": "workcell_builder/workcell_builder/assets/environment/bin_large_description/meshes/bin_large.stl",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/bin_large_description/urdf/bin_large.urdf.xacro",
-    "default_dimensions_m": [
-      0.7,
-      0.5,
-      0.35
-    ],
-    "default_pose": [
-      0.55,
-      -0.25,
-      0.75,
-      0,
-      0,
-      0
-    ],
+    "default_dimensions_m": [0.7, 0.5, 0.35],
+    "default_pose": [0.55, -0.25, 0.75, 0, 0, 0],
     "default_z_hint": 0.75,
     "placement_notes": "Large source/target bin.",
     "license": "generated_internal",
-    "tags": [
-      "bin"
-    ],
+    "tags": ["bin"],
     "source_note": "self-authored primitive placeholder"
   },
   {
@@ -147,25 +81,12 @@
     "asset_type": "tray",
     "mesh_path": "workcell_builder/workcell_builder/assets/environment/tray_description/meshes/tray.stl",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/tray_description/urdf/tray.urdf.xacro",
-    "default_dimensions_m": [
-      0.5,
-      0.35,
-      0.06
-    ],
-    "default_pose": [
-      0.35,
-      0.15,
-      0.75,
-      0,
-      0,
-      0
-    ],
+    "default_dimensions_m": [0.5, 0.35, 0.06],
+    "default_pose": [0.35, 0.15, 0.75, 0, 0, 0],
     "default_z_hint": 0.75,
     "placement_notes": "Shallow parts tray.",
     "license": "generated_internal",
-    "tags": [
-      "tray"
-    ],
+    "tags": ["tray"],
     "source_note": "self-authored primitive placeholder"
   },
   {
@@ -175,26 +96,12 @@
     "asset_type": "tote",
     "mesh_path": "workcell_builder/workcell_builder/assets/environment/tote_box_description/meshes/tote_box.stl",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/tote_box_description/urdf/tote_box.urdf.xacro",
-    "default_dimensions_m": [
-      0.6,
-      0.4,
-      0.28
-    ],
-    "default_pose": [
-      0.45,
-      0.0,
-      0.75,
-      0,
-      0,
-      0
-    ],
+    "default_dimensions_m": [0.6, 0.4, 0.28],
+    "default_pose": [0.45, 0.0, 0.75, 0, 0, 0],
     "default_z_hint": 0.75,
     "placement_notes": "Standard tote box.",
     "license": "generated_internal",
-    "tags": [
-      "tote",
-      "box"
-    ],
+    "tags": ["tote", "box"],
     "source_note": "self-authored primitive placeholder"
   },
   {
@@ -204,25 +111,12 @@
     "asset_type": "conveyor",
     "mesh_path": "workcell_builder/workcell_builder/assets/environment/conveyor_placeholder_description/meshes/conveyor_placeholder.stl",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/conveyor_placeholder_description/urdf/conveyor_placeholder.urdf.xacro",
-    "default_dimensions_m": [
-      1.2,
-      0.4,
-      0.25
-    ],
-    "default_pose": [
-      0.9,
-      0,
-      0,
-      0,
-      0,
-      0
-    ],
+    "default_dimensions_m": [1.2, 0.4, 0.25],
+    "default_pose": [0.9, 0, 0, 0, 0, 0],
     "default_z_hint": 0.0,
     "placement_notes": "Static visual conveyor only.",
     "license": "placeholder",
-    "tags": [
-      "conveyor"
-    ],
+    "tags": ["conveyor"],
     "source_note": "self-authored primitive placeholder"
   },
   {
@@ -230,28 +124,16 @@
     "label": "Fixture Plate",
     "category": "Fixtures",
     "asset_type": "fixture",
-    "mesh_path": "workcell_builder/workcell_builder/assets/environment/fixture_plate_description/meshes/fixture_plate.stl",
+    "mesh_path": "workcell_builder/workcell_builder/assets/environment/fixture_plate_description/urdf/fixture_plate.urdf.xacro",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/fixture_plate_description/urdf/fixture_plate.urdf.xacro",
-    "default_dimensions_m": [
-      0.5,
-      0.5,
-      0.03
-    ],
-    "default_pose": [
-      0.3,
-      -0.3,
-      0.75,
-      0,
-      0,
-      0
-    ],
+    "geometry_type": "urdf_primitive",
+    "default_dimensions_m": [0.5, 0.5, 0.03],
+    "default_pose": [0.3, -0.3, 0.75, 0, 0, 0],
     "default_z_hint": 0.75,
     "placement_notes": "Fixture mounting plate.",
     "license": "generated_internal",
-    "tags": [
-      "fixture"
-    ],
-    "source_note": "self-authored primitive placeholder"
+    "tags": ["fixture"],
+    "source_note": "self-authored URDF box primitive; no mesh file"
   },
   {
     "asset_id": "pallet",
@@ -260,25 +142,12 @@
     "asset_type": "pallet",
     "mesh_path": "workcell_builder/workcell_builder/assets/environment/pallet_description/meshes/pallet.stl",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/pallet_description/urdf/pallet.urdf.xacro",
-    "default_dimensions_m": [
-      1.0,
-      0.8,
-      0.14
-    ],
-    "default_pose": [
-      1.2,
-      0,
-      0,
-      0,
-      0,
-      0
-    ],
+    "default_dimensions_m": [1.0, 0.8, 0.14],
+    "default_pose": [1.2, 0, 0, 0, 0, 0],
     "default_z_hint": 0.0,
     "placement_notes": "Shipping pallet footprint.",
     "license": "generated_internal",
-    "tags": [
-      "pallet"
-    ],
+    "tags": ["pallet"],
     "source_note": "self-authored primitive placeholder"
   },
   {
@@ -288,25 +157,12 @@
     "asset_type": "pedestal",
     "mesh_path": "workcell_builder/workcell_builder/assets/environment/pedestal_description/meshes/pedestal.stl",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/pedestal_description/urdf/pedestal.urdf.xacro",
-    "default_dimensions_m": [
-      0.4,
-      0.4,
-      0.7
-    ],
-    "default_pose": [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0
-    ],
+    "default_dimensions_m": [0.4, 0.4, 0.7],
+    "default_pose": [0, 0, 0, 0, 0, 0],
     "default_z_hint": 0.0,
     "placement_notes": "Pedestal stand geometry.",
     "license": "generated_internal",
-    "tags": [
-      "base"
-    ],
+    "tags": ["base"],
     "source_note": "self-authored primitive placeholder"
   },
   {
@@ -316,25 +172,12 @@
     "asset_type": "camera_mount",
     "mesh_path": "workcell_builder/workcell_builder/assets/environment/camera_stand_description/meshes/camera_stand.stl",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/camera_stand_description/urdf/camera_stand.urdf.xacro",
-    "default_dimensions_m": [
-      0.08,
-      0.08,
-      1.2
-    ],
-    "default_pose": [
-      0.25,
-      -0.45,
-      0.0,
-      0,
-      0,
-      0
-    ],
+    "default_dimensions_m": [0.08, 0.08, 1.2],
+    "default_pose": [0.25, -0.45, 0.0, 0, 0, 0],
     "default_z_hint": 0.0,
     "placement_notes": "Camera mounting stand.",
     "license": "generated_internal",
-    "tags": [
-      "camera"
-    ],
+    "tags": ["camera"],
     "source_note": "self-authored primitive placeholder"
   },
   {
@@ -344,26 +187,12 @@
     "asset_type": "safety_panel",
     "mesh_path": "workcell_builder/workcell_builder/assets/environment/safety_fence_panel_description/meshes/safety_fence_panel.stl",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/safety_fence_panel_description/urdf/safety_fence_panel.urdf.xacro",
-    "default_dimensions_m": [
-      1.2,
-      0.05,
-      1.8
-    ],
-    "default_pose": [
-      1.0,
-      -0.8,
-      0.0,
-      0,
-      0,
-      0
-    ],
+    "default_dimensions_m": [1.2, 0.05, 1.8],
+    "default_pose": [1.0, -0.8, 0.0, 0, 0, 0],
     "default_z_hint": 0.0,
     "placement_notes": "Perimeter safety panel.",
     "license": "generated_internal",
-    "tags": [
-      "safety",
-      "fence"
-    ],
+    "tags": ["safety", "fence"],
     "source_note": "self-authored primitive placeholder"
   },
   {
@@ -373,26 +202,12 @@
     "asset_type": "robot_base",
     "mesh_path": "workcell_builder/workcell_builder/assets/environment/robot_base_plate_description/meshes/robot_base_plate.stl",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/robot_base_plate_description/urdf/robot_base_plate.urdf.xacro",
-    "default_dimensions_m": [
-      0.6,
-      0.6,
-      0.04
-    ],
-    "default_pose": [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0
-    ],
+    "default_dimensions_m": [0.6, 0.6, 0.04],
+    "default_pose": [0, 0, 0, 0, 0, 0],
     "default_z_hint": 0.0,
     "placement_notes": "Robot base mounting plate.",
     "license": "generated_internal",
-    "tags": [
-      "robot",
-      "base"
-    ],
+    "tags": ["robot", "base"],
     "source_note": "self-authored primitive placeholder"
   },
   {
@@ -403,26 +218,12 @@
     "mesh_path": "workcell_builder/workcell_builder/assets/environment/calibration_cube_description/urdf/calibration_cube.urdf.xacro",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/calibration_cube_description/urdf/calibration_cube.urdf.xacro",
     "geometry_type": "urdf_primitive",
-    "default_dimensions_m": [
-      0.1,
-      0.1,
-      0.1
-    ],
-    "default_pose": [
-      0.4,
-      0.0,
-      0.8,
-      0,
-      0,
-      0
-    ],
+    "default_dimensions_m": [0.1, 0.1, 0.1],
+    "default_pose": [0.4, 0.0, 0.8, 0, 0, 0],
     "default_z_hint": 0.8,
     "placement_notes": "Calibration target object.",
     "license": "generated_internal",
-    "tags": [
-      "calibration",
-      "object"
-    ],
+    "tags": ["calibration", "object"],
     "source_note": "self-authored URDF box primitive; no mesh file"
   },
   {
@@ -433,26 +234,12 @@
     "mesh_path": "workcell_builder/workcell_builder/assets/environment/pick_box_description/urdf/pick_box.urdf.xacro",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/pick_box_description/urdf/pick_box.urdf.xacro",
     "geometry_type": "urdf_primitive",
-    "default_dimensions_m": [
-      0.08,
-      0.08,
-      0.08
-    ],
-    "default_pose": [
-      0.45,
-      0.0,
-      0.78,
-      0,
-      0,
-      0
-    ],
+    "default_dimensions_m": [0.08, 0.08, 0.08],
+    "default_pose": [0.45, 0.0, 0.78, 0, 0, 0],
     "default_z_hint": 0.78,
     "placement_notes": "Default pickable box.",
     "license": "generated_internal",
-    "tags": [
-      "pick",
-      "object"
-    ],
+    "tags": ["pick", "object"],
     "source_note": "self-authored URDF box primitive; no mesh file"
   },
   {
@@ -460,28 +247,15 @@
     "label": "Cylinder Object",
     "category": "Pick Objects",
     "asset_type": "object",
-    "mesh_path": "workcell_builder/workcell_builder/assets/environment/cylinder_object_description/meshes/cylinder_object.stl",
+    "mesh_path": "workcell_builder/workcell_builder/assets/environment/cylinder_object_description/urdf/cylinder_object.urdf.xacro",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/cylinder_object_description/urdf/cylinder_object.urdf.xacro",
-    "default_dimensions_m": [
-      0.06,
-      0.06,
-      0.12
-    ],
-    "default_pose": [
-      0.5,
-      0.05,
-      0.81,
-      0,
-      0,
-      0
-    ],
+    "geometry_type": "urdf_primitive",
+    "default_dimensions_m": [0.06, 0.06, 0.12],
+    "default_pose": [0.5, 0.05, 0.81, 0, 0, 0],
     "default_z_hint": 0.81,
     "placement_notes": "Default cylindrical object.",
     "license": "user_replaceable",
-    "tags": [
-      "pick",
-      "cylinder"
-    ],
-    "source_note": "self-authored primitive placeholder"
+    "tags": ["pick", "cylinder"],
+    "source_note": "self-authored URDF cylinder primitive; no mesh file"
   }
 ]
