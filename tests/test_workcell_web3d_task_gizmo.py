@@ -56,7 +56,7 @@ def test_free_height_is_explicit_and_pauses_surface_snapping():
         assert token in source
 
 
-def test_shift_temporarily_enables_fine_snap_without_changing_saved_settings():
+def test_shift_temporarily_enables_fine_snap_and_restores_user_values():
     source = GIZMO.read_text(encoding="utf-8")
 
     for token in [
@@ -66,15 +66,17 @@ def test_shift_temporarily_enables_fine_snap_without_changing_saved_settings():
         "setFineMode(true)",
         "setFineMode(false)",
         "window.addEventListener('blur'",
-        "numericInputValue('translation-snap', 0.01)",
-        "numericInputValue('rotation-snap', 5)",
+        "runtime.savedTranslationValue = translation.value",
+        "runtime.savedRotationValue = rotation.value",
+        "translation.value = String(FINE_TRANSLATION_M)",
+        "rotation.value = String(FINE_ROTATION_DEG)",
+        "translation.value = runtime.savedTranslationValue",
+        "rotation.value = runtime.savedRotationValue",
         "THREE.MathUtils.degToRad",
         "snapDiffers(gizmo.translationSnap, desiredTranslation)",
         "snapDiffers(gizmo.rotationSnap, rotation)",
     ]:
         assert token in source
-
-    assert ".value =" not in source
 
 
 def test_task_gizmo_is_preview_only_and_does_not_add_motion_or_source_writes():
