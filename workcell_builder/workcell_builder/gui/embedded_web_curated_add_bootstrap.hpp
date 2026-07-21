@@ -30,6 +30,10 @@ inline void bootstrapEmbeddedWebCuratedAddControllers()
 }
 }  // namespace workcell_builder
 
-Q_COREAPP_STARTUP_FUNCTION(workcell_builder::bootstrapEmbeddedWebCuratedAddControllers)
+inline void workcellBuilderBootstrapCuratedAddControllers()
+{
+  workcell_builder::bootstrapEmbeddedWebCuratedAddControllers();
+}
+Q_COREAPP_STARTUP_FUNCTION(workcellBuilderBootstrapCuratedAddControllers)
 
 #endif
