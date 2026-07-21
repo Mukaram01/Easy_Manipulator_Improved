@@ -2,8 +2,14 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="cylinder_object">
   <xacro:macro name="cylinder_object" params="prefix parent xyz:='0 0 0' rpy:='0 0 0'">
     <link name="${prefix}cylinder_object_link">
-      <visual><origin xyz="0 0 0" rpy="0 0 0"/><geometry><mesh filename="package://workcell_builder/assets/environment/cylinder_object_description/meshes/cylinder_object.stl" scale="1 1 1"/></geometry></visual>
-      <collision><origin xyz="0 0 0" rpy="0 0 0"/><geometry><box size="0.06 0.06 0.12"/></geometry></collision>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><cylinder radius="0.03" length="0.12"/></geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><cylinder radius="0.03" length="0.12"/></geometry>
+      </collision>
     </link>
   </xacro:macro>
 </robot>
