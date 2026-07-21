@@ -10,8 +10,10 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
+import os
 import shutil
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -56,8 +58,26 @@ def _load_yaml(path: Path) -> Any:
 
 
 def _write_yaml(path: Path, data: Any) -> None:
+    """Atomically replace one approved YAML file in its original directory."""
     assert yaml is not None
-    path.write_text(yaml.safe_dump(data, sort_keys=False, default_flow_style=False), encoding="utf-8")
+    payload = yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if path.exists():
+            os.chmod(temporary, path.stat().st_mode)
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def _as_list3(value: Any, field: str) -> list[float]:
