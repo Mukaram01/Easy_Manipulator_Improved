@@ -6,7 +6,6 @@ import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import URDFLoader from 'urdf-loader';
 
-import './rviz_light_baseline.js';
 import '../urdf_robot_renderer.js';
 import '../viewer.js';
 
