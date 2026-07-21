@@ -1,4 +1,5 @@
 #include "workcell_builder_ui_utils.hpp"
+#include "embedded_web_edit_save_controller.hpp"
 
 #include <QAbstractButton>
 #include <QAbstractItemView>
@@ -320,5 +321,6 @@ void applyCompactDialogDefaults(QWidget * widget)
   configureContainedWidgets(widget);
   applyWorkcellStudioTheme(widget);
   applyPrimarySecondaryButtonStyle(widget);
+  installEmbeddedWebEditSaveControllers(widget);
 }
 }  // namespace workcell_builder
