@@ -5,6 +5,8 @@
 #include <QPushButton>
 #include <QString>
 
+#include "embedded_web_curated_add_bootstrap.hpp"
+
 namespace workcell_builder
 {
 enum class StatusType
