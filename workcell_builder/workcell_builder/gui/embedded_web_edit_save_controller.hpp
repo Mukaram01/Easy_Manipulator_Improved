@@ -22,6 +22,7 @@
 #include <QSaveFile>
 #include <QSizePolicy>
 #include <QTimer>
+#include <QUrl>
 #include <QUrlQuery>
 #include <QVariantMap>
 #include <QWebEnginePage>
@@ -116,7 +117,7 @@ public:
 
     connect(save_button_, &QPushButton::clicked, this, [this]() { requestSave(); });
     connect(view_, &QWebEngineView::loadFinished, this, [this](bool) {
-      last_polled_url_ = {};
+      last_polled_url_ = QUrl();
       QTimer::singleShot(250, this, [this]() { pollEditorState(); });
     });
     poll_timer_.setInterval(350);
