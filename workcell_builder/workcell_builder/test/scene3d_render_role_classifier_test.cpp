@@ -458,7 +458,6 @@ TEST(IndependentPickZoneAuthoring, ModelYamlAndOverlayContract)
   EXPECT_EQ(message, "Pick Zone dimensions must be positive");
 
   auto item = make_item("pick_zone_1");
-  item.type = "pick";
   item.role = "pick";
   item.category = "Task Zones";
   EXPECT_FALSE(Scene3DViewportWidget::should_include_in_default_fit_for_test(item));
@@ -507,7 +506,6 @@ TEST(IndependentPlaceZoneAuthoring, ModelYamlAndOverlayContract)
   EXPECT_EQ(message, "Place Zone dimensions must be positive");
 
   auto item = make_item("place_zone_1");
-  item.type = "place";
   item.role = "place";
   item.category = "Task Zones";
   EXPECT_FALSE(Scene3DViewportWidget::should_include_in_default_fit_for_test(item));
