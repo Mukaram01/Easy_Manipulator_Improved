@@ -3,73 +3,82 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Workcell Studio Web 3D Viewer</title>
+  <title>Workcell Studio Product View</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="simple_product_ui.css" />
 </head>
 <body>
   <header class="topbar">
-    <div>
-      <h1>Workcell Studio Web 3D Viewer</h1>
-      <p>Fast browser-based 3D visual review for Workcell Studio <code>web_scene.json</code> exports.</p>
+    <div class="product-title">
+      <h1>Product View</h1>
+      <p>Arrange, review and validate the workcell scene.</p>
     </div>
-    <div class="toolbar">
-      <label class="file-picker">
-        Load web_scene.json
+    <div class="toolbar" aria-label="Product View actions">
+      <label class="file-picker primary-action">
+        Open scene
         <input id="scene-file" type="file" accept="application/json,.json" />
       </label>
-      <button id="reset-view" class="toolbar-button" type="button" disabled title="Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds." aria-label="Fit Scene / Reset View">Fit Scene / Reset View</button>
+      <button id="reset-view" class="toolbar-button" type="button" disabled title="Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds." aria-label="Fit Scene / Reset View">Fit</button>
       <button id="undo-edit" class="toolbar-button" type="button" disabled>Undo</button>
       <button id="redo-edit" class="toolbar-button" type="button" disabled>Redo</button>
-      <button id="clear-edits" class="toolbar-button" type="button" disabled>Clear Preview Edits</button>
-      <button id="export-edit-patch" class="toolbar-button" type="button" disabled>Export Edit Patch</button>
-      <label class="toolbar-toggle" title="Snap editable preview transforms to grid increments">
-        <input id="snap-toggle" type="checkbox" checked />
-        Snap
-      </label>
-      <label class="toolbar-number" title="Translation snap increment in meters">
-        Move snap (m)
-        <input id="translation-snap" type="number" min="0" step="0.005" value="0.01" />
-      </label>
-      <label class="toolbar-number" title="Rotation snap increment in degrees">
-        Rot snap (deg)
-        <input id="rotation-snap" type="number" min="0" step="1" value="5" />
-      </label>
-      <label class="toolbar-toggle" title="Show read-only object labels in the viewer">
-        <input id="labels-toggle" type="checkbox" />
-        Labels
-      </label>
-      <label class="toolbar-toggle" title="Show zones and helper/debug overlay geometry in the viewer">
-        <input id="debug-overlays-toggle" type="checkbox" />
-        Show zones/debug overlays
-      </label>
-      <label class="toolbar-toggle" title="Preview the selected robot at its configured initial joint pose. This does not command the robot.">
-        <input id="show-initial-pose" type="checkbox" disabled />
-        Show Initial Pose
-      </label>
+      <button id="export-edit-patch" class="toolbar-button primary-action" type="button" disabled title="Export preview changes as an edit patch">Export edits</button>
+      <span id="task-gizmo-slot" class="task-gizmo-slot" aria-live="polite"></span>
+      <details id="more-tools" class="toolbar-more">
+        <summary>More</summary>
+        <div class="toolbar-more-panel">
+          <button id="clear-edits" class="toolbar-button" type="button" disabled>Clear edits</button>
+          <label class="toolbar-toggle" title="Snap editable preview transforms to grid increments">
+            <input id="snap-toggle" type="checkbox" checked />
+            Snap
+          </label>
+          <label class="toolbar-number" title="Translation snap increment in meters">
+            Move snap (m)
+            <input id="translation-snap" type="number" min="0" step="0.005" value="0.01" />
+          </label>
+          <label class="toolbar-number" title="Rotation snap increment in degrees">
+            Turn snap (deg)
+            <input id="rotation-snap" type="number" min="0" step="1" value="5" />
+          </label>
+          <label class="toolbar-toggle" title="Show read-only object labels in the viewer">
+            <input id="labels-toggle" type="checkbox" />
+            Object labels
+          </label>
+          <label class="toolbar-toggle" title="Show zones and helper/debug overlay geometry in the viewer">
+            <input id="debug-overlays-toggle" type="checkbox" />
+            Zones and helpers
+          </label>
+          <label class="toolbar-toggle" title="Preview the selected robot at its configured initial joint pose. This does not command the robot.">
+            <input id="show-initial-pose" type="checkbox" disabled />
+            Robot initial pose
+          </label>
+        </div>
+      </details>
     </div>
   </header>
 
   <main class="app-shell">
-    <aside class="object-panel" aria-label="Object list panel">
-      <h2>Objects</h2>
-      <section id="scene-summary" class="scene-summary state empty" aria-live="polite">
-        <h3>Scene summary</h3>
-        <div class="summary-grid">
-          <span>Scene</span><strong data-summary-field="scene-name">No scene loaded</strong>
-          <span>Renderable</span><strong data-summary-field="renderable-count">0</strong>
-          <span>Meshes loaded</span><strong data-summary-field="mesh-loaded-count">0</strong>
-          <span>Fallbacks</span><strong data-summary-field="fallback-count">0</strong>
-          <span>Missing/failed meshes</span><strong data-summary-field="mesh-failed-count">0</strong>
-          <span>Generated/locked</span><strong data-summary-field="generated-locked-count">0</strong>
-          <span>Editable layout/env</span><strong data-summary-field="editable-count">0</strong>
-          <span>Robot preview</span><strong data-summary-field="robot-preview-mode">mesh rows</strong>
-        </div>
-      </section>
-      <div id="empty-state" class="state empty">Choose an exported <code>web_scene.json</code> file to begin.</div>
+    <aside class="object-panel" aria-label="Scene items panel">
+      <h2>Scene items</h2>
+      <details id="scene-details" class="panel-disclosure">
+        <summary>Scene details</summary>
+        <section id="scene-summary" class="scene-summary state empty" aria-live="polite">
+          <div class="summary-grid">
+            <span>Scene</span><strong data-summary-field="scene-name">No scene loaded</strong>
+            <span>Renderable</span><strong data-summary-field="renderable-count">0</strong>
+            <span>Meshes loaded</span><strong data-summary-field="mesh-loaded-count">0</strong>
+            <span>Fallbacks</span><strong data-summary-field="fallback-count">0</strong>
+            <span>Missing/failed</span><strong data-summary-field="mesh-failed-count">0</strong>
+            <span>Generated/locked</span><strong data-summary-field="generated-locked-count">0</strong>
+            <span>Editable</span><strong data-summary-field="editable-count">0</strong>
+            <span>Robot preview</span><strong data-summary-field="robot-preview-mode">mesh rows</strong>
+          </div>
+        </section>
+      </details>
+      <div id="empty-state" class="state empty">Open a scene to start.</div>
       <ul id="object-list" class="object-list"></ul>
     </aside>
 
-    <section class="viewport-panel" aria-label="3D canvas area">
+    <section class="viewport-panel" aria-label="3D product view">
       <div id="error-state" class="state error" hidden></div>
       <div id="dirty-state" class="state dirty" hidden>Unsaved preview edits</div>
       <div id="initial-pose-status" class="state preview-status" hidden>Initial pose preview</div>
@@ -77,15 +86,15 @@
       <div id="label-layer" class="label-layer" aria-hidden="true"></div>
     </section>
 
-    <aside class="details-panel" aria-label="Inspector and warnings panel">
-      <section>
-        <h2>Inspector</h2>
-        <div id="inspector" class="state empty">Select an object from the list or canvas.</div>
+    <aside class="details-panel" aria-label="Selected item and warnings panel">
+      <section class="selected-item-section">
+        <h2>Selected item</h2>
+        <div id="inspector" class="state empty">Select an item from the list or the scene.</div>
       </section>
-      <section>
-        <h2>Warnings</h2>
+      <details id="warnings-details" class="panel-disclosure warning-disclosure" hidden>
+        <summary>Warnings <span id="warning-count" class="disclosure-count">0</span></summary>
         <div id="warnings" class="warnings state empty">No scene loaded.</div>
-      </section>
+      </details>
     </aside>
   </main>
 
@@ -93,5 +102,6 @@
   <script type="module" src="./rviz_light_baseline.js"></script>
   <script type="module" src="./support_surface_placement.js"></script>
   <script type="module" src="./workcell_task_gizmo.js"></script>
+  <script type="module" src="./simple_product_ui.js"></script>
 </body>
 </html>
