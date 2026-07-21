@@ -101,20 +101,32 @@ function ensureToolbarControl() {
   runtime.labelText = text;
 }
 
+function snapDiffers(current, desired) {
+  if (current === desired) return false;
+  if (current == null || desired == null) return true;
+  return Math.abs(Number(current) - Number(desired)) > 1e-12;
+}
+
 function applySnap(gizmo, mode) {
-  if (!snapEnabled()) {
-    gizmo.setTranslationSnap(null);
-    gizmo.setRotationSnap(null);
-    return;
-  }
-  const translation = runtime.fineMode
-    ? FINE_TRANSLATION_M
-    : numericInputValue('translation-snap', 0.01);
-  const rotationDegrees = runtime.fineMode
-    ? FINE_ROTATION_DEG
-    : numericInputValue('rotation-snap', 5);
-  gizmo.setTranslationSnap(mode === 'move' ? translation : numericInputValue('translation-snap', 0.01));
-  gizmo.setRotationSnap(THREE.MathUtils.degToRad(rotationDegrees));
+  const enabled = snapEnabled();
+  const translation = enabled
+    ? (runtime.fineMode ? FINE_TRANSLATION_M : numericInputValue('translation-snap', 0.01))
+    : null;
+  const rotation = enabled
+    ? THREE.MathUtils.degToRad(runtime.fineMode ? FINE_ROTATION_DEG : numericInputValue('rotation-snap', 5))
+    : null;
+  const desiredTranslation = mode === 'move' ? translation : (enabled ? numericInputValue('translation-snap', 0.01) : null);
+
+  if (snapDiffers(gizmo.translationSnap, desiredTranslation)) gizmo.setTranslationSnap(desiredTranslation);
+  if (snapDiffers(gizmo.rotationSnap, rotation)) gizmo.setRotationSnap(rotation);
+}
+
+function configureAxes(gizmo, mode, showX, showY, showZ) {
+  if (gizmo.mode !== mode) gizmo.setMode(mode);
+  if (gizmo.space !== 'world') gizmo.setSpace('world');
+  if (gizmo.showX !== showX) gizmo.showX = showX;
+  if (gizmo.showY !== showY) gizmo.showY = showY;
+  if (gizmo.showZ !== showZ) gizmo.showZ = showZ;
 }
 
 function applyTaskGizmo() {
@@ -139,18 +151,10 @@ function applyTaskGizmo() {
   }
 
   if (state.mode === 'move') {
-    gizmo.setMode('translate');
-    gizmo.setSpace('world');
-    gizmo.showX = true;
-    gizmo.showY = true;
-    gizmo.showZ = runtime.freeHeight;
+    configureAxes(gizmo, 'translate', true, true, runtime.freeHeight);
     applySnap(gizmo, 'move');
   } else if (state.mode === 'rotate') {
-    gizmo.setMode('rotate');
-    gizmo.setSpace('world');
-    gizmo.showX = false;
-    gizmo.showY = false;
-    gizmo.showZ = true;
+    configureAxes(gizmo, 'rotate', false, false, true);
     applySnap(gizmo, 'rotate');
   }
 }
