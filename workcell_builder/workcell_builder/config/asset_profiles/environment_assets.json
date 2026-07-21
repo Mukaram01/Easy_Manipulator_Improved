@@ -140,15 +140,15 @@
     "label": "Pallet",
     "category": "Fixtures",
     "asset_type": "pallet",
-    "mesh_path": "workcell_builder/workcell_builder/assets/environment/pallet_description/meshes/pallet.stl",
+    "mesh_path": "workcell_builder/workcell_builder/assets/environment/pallet_description/meshes/pallet.obj",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/pallet_description/urdf/pallet.urdf.xacro",
-    "default_dimensions_m": [1.0, 0.8, 0.14],
+    "default_dimensions_m": [1.2, 0.8, 0.144],
     "default_pose": [1.2, 0, 0, 0, 0, 0],
     "default_z_hint": 0.0,
-    "placement_notes": "Shipping pallet footprint.",
-    "license": "generated_internal",
+    "placement_notes": "Shipping pallet footprint; imported visual pilot.",
+    "license": "CC0-1.0",
     "tags": ["pallet"],
-    "source_note": "self-authored primitive placeholder"
+    "source_note": "normalized Kenney Retro Urban Kit pallet visual; see pallet_description/SOURCE.md"
   },
   {
     "asset_id": "pedestal",

@@ -2,8 +2,20 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="pallet">
   <xacro:macro name="pallet" params="prefix parent xyz:='0 0 0' rpy:='0 0 0'">
     <link name="${prefix}pallet_link">
-      <visual><origin xyz="0 0 0" rpy="0 0 0"/><geometry><mesh filename="package://workcell_builder/assets/environment/pallet_description/meshes/pallet.stl" scale="1 1 1"/></geometry></visual>
-      <collision><origin xyz="0 0 0" rpy="0 0 0"/><geometry><box size="1.0 0.8 0.14"/></geometry></collision>
+      <visual>
+        <!-- Kenney source mesh is Y-up. Rotate to ROS Z-up and scale to 1.2 x 0.8 x 0.144 m. -->
+        <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+        <geometry>
+          <mesh filename="package://workcell_builder/assets/environment/pallet_description/meshes/pallet.obj" scale="1.2 0.96 0.8"/>
+        </geometry>
+        <material name="pallet_wood">
+          <color rgba="0.55 0.34 0.16 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.072" rpy="0 0 0"/>
+        <geometry><box size="1.2 0.8 0.144"/></geometry>
+      </collision>
     </link>
   </xacro:macro>
 </robot>
