@@ -200,15 +200,16 @@
     "label": "Robot Base Plate",
     "category": "Robot Bases",
     "asset_type": "robot_base",
-    "mesh_path": "workcell_builder/workcell_builder/assets/environment/robot_base_plate_description/meshes/robot_base_plate.stl",
+    "mesh_path": "workcell_builder/workcell_builder/assets/environment/robot_base_plate_description/urdf/robot_base_plate.urdf.xacro",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/robot_base_plate_description/urdf/robot_base_plate.urdf.xacro",
+    "geometry_type": "urdf_primitive",
     "default_dimensions_m": [0.6, 0.6, 0.04],
     "default_pose": [0, 0, 0, 0, 0, 0],
     "default_z_hint": 0.0,
     "placement_notes": "Robot base mounting plate.",
     "license": "generated_internal",
     "tags": ["robot", "base"],
-    "source_note": "self-authored primitive placeholder"
+    "source_note": "self-authored URDF box primitive; no mesh file"
   },
   {
     "asset_id": "calibration_cube",
