@@ -2,8 +2,14 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="robot_base_plate">
   <xacro:macro name="robot_base_plate" params="prefix parent xyz:='0 0 0' rpy:='0 0 0'">
     <link name="${prefix}robot_base_plate_link">
-      <visual><origin xyz="0 0 0" rpy="0 0 0"/><geometry><mesh filename="package://workcell_builder/assets/environment/robot_base_plate_description/meshes/robot_base_plate.stl" scale="1 1 1"/></geometry></visual>
-      <collision><origin xyz="0 0 0" rpy="0 0 0"/><geometry><box size="0.6 0.6 0.04"/></geometry></collision>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><box size="0.6 0.6 0.04"/></geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><box size="0.6 0.6 0.04"/></geometry>
+      </collision>
     </link>
   </xacro:macro>
 </robot>

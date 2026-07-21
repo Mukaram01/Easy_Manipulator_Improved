@@ -22,6 +22,7 @@ ASSETS = [
 ]
 URDF_PRIMITIVES = {
     "fixture_plate": '<box size="0.5 0.5 0.03"/>',
+    "robot_base_plate": '<box size="0.6 0.6 0.04"/>',
     "calibration_cube": '<box size="0.1 0.1 0.1"/>',
     "pick_box": '<box size="0.08 0.08 0.08"/>',
     "cylinder_object": '<cylinder radius="0.03" length="0.12"/>',
