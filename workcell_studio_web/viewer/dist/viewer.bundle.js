@@ -37395,18 +37395,98 @@ No loader available`);
 // urdf_robot_renderer.js
 var urdf_robot_renderer_exports = {};
 __export(urdf_robot_renderer_exports, {
-  loadRobotPreview: () => loadRobotPreview
+  ROS_TO_THREE_CONVERSION_BOUNDARY: () => ROS_TO_THREE_CONVERSION_BOUNDARY,
+  applyRobotJointPreview: () => applyRobotJointPreview,
+  loadRobotPreview: () => loadRobotPreview,
+  normalizeRosColladaScene: () => normalizeRosColladaScene
 });
 function repoUrl(context, uri) {
   return context?.repoRootRelativeUrl ? context.repoRootRelativeUrl(uri) : uri;
+}
+function safeDecodeUriSegment(segment) {
+  try {
+    return decodeURIComponent(segment);
+  } catch (_) {
+    return null;
+  }
+}
+function rejectPackageMeshUri(reason, diagnostics) {
+  diagnostics.robot_missing_meshes.push(`URDF package mesh rejected: ${reason}`);
+  return "";
+}
+function resolvePackageMeshUri(uri, sceneId2, diagnostics) {
+  const raw = String(uri || "").trim();
+  if (!raw.startsWith("package://"))
+    return "";
+  const scene = String(sceneId2 || "").trim();
+  if (!scene)
+    return rejectPackageMeshUri("missing scene ID", diagnostics);
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(scene) || scene.includes("%"))
+    return rejectPackageMeshUri(`malformed scene ID: ${scene}`, diagnostics);
+  const packagePath = raw.slice("package://".length);
+  if (packagePath.startsWith("/") || /^(?:file|https?):\/\//i.test(packagePath) || /^[A-Za-z]:[\\/]/.test(packagePath)) {
+    return rejectPackageMeshUri(raw, diagnostics);
+  }
+  const parts = packagePath.split("/");
+  const packageName = parts.shift() || "";
+  if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(packageName))
+    return rejectPackageMeshUri(raw, diagnostics);
+  if (!parts.length)
+    return rejectPackageMeshUri(raw, diagnostics);
+  const safeParts = [];
+  for (const part of parts) {
+    if (!part)
+      return rejectPackageMeshUri(raw, diagnostics);
+    const decoded = safeDecodeUriSegment(part);
+    if (!decoded || decoded === "." || decoded === ".." || decoded.includes("\0") || decoded.includes("/") || decoded.includes("\\") || /^[A-Za-z]:[\\/]/.test(decoded) || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(decoded)) {
+      return rejectPackageMeshUri(raw, diagnostics);
+    }
+    if (decoded.includes("%")) {
+      const decodedAgain = safeDecodeUriSegment(decoded);
+      if (decodedAgain !== decoded)
+        return rejectPackageMeshUri(raw, diagnostics);
+    }
+    safeParts.push(encodeURIComponent(decoded));
+  }
+  const resolved = `build/workcell_studio_web_scene/assets/${scene}/${packageName}/${safeParts.join("/")}`;
+  diagnostics.robot_package_mesh_resolutions.push(`URDF package mesh resolved: ${raw} -> ${resolved}`);
+  return resolved;
+}
+function packageRootResolver(sceneId2, diagnostics) {
+  const scene = String(sceneId2 || "").trim();
+  return (targetPackage) => {
+    const packageName = String(targetPackage || "").trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(scene) || scene.includes("%") || !/^[A-Za-z][A-Za-z0-9_]*$/.test(packageName)) {
+      rejectPackageMeshUri(`package resolver rejected ${packageName || "<empty>"} for scene ${scene || "<empty>"}`, diagnostics);
+      return "build/workcell_studio_web_scene/assets/__rejected_package_uri__";
+    }
+    return `build/workcell_studio_web_scene/assets/${scene}/${packageName}`;
+  };
+}
+function configureUrdfPackageResolution(loader, manager, context, diagnostics) {
+  const resolver = packageRootResolver(context?.sceneId, diagnostics);
+  if ("packages" in loader)
+    loader.packages = resolver;
+  else
+    loader.packages = resolver;
+  if (manager?.setURLModifier) {
+    manager.setURLModifier((url) => {
+      const raw = String(url || "").trim();
+      if (raw.startsWith("package://"))
+        return resolvePackageMeshUri(raw, context?.sceneId, diagnostics);
+      if (/^\/(?:[A-Za-z][A-Za-z0-9_]*)(?:\/|$)/.test(raw)) {
+        return rejectPackageMeshUri(`bare package-root URL: ${raw}`, diagnostics);
+      }
+      return url;
+    });
+  }
 }
 function normalizeMeshUri(path, context, diagnostics) {
   const raw = String(path || "").trim();
   if (!raw)
     return "";
   if (raw.startsWith("package://")) {
-    diagnostics.robot_missing_meshes.push(`${raw}: package:// URI was not staged for static web loading`);
-    return "";
+    return resolvePackageMeshUri(raw, context?.sceneId, diagnostics);
   }
   const diagnostic = context?.meshUriDiagnostic?.({ mesh_uri: raw, mesh_staging_status: "staged" });
   return diagnostic?.uri || raw;
@@ -37462,7 +37542,7 @@ function normalizeRosColladaScene(dae, uri, diagnostics) {
   const before = objectLocalTransformDiagnostics(scene);
   const meshCount = countDescendantMeshes(scene);
   const rootHasMesh = Boolean(scene.isMesh);
-  const hasLoaderRootConversion = !rootHasMesh && !isIdentityTransform(scene) && (upAxis === "Z_UP" || upAxis === "Y_UP" || Number.isFinite(unitMeter) && Math.abs(unitMeter - 1) > 1e-9);
+  const hasLoaderRootConversion = !rootHasMesh && !isIdentityTransform(scene) && (upAxis === "Z_UP" || Number.isFinite(unitMeter) && Math.abs(unitMeter - 1) > 1e-9);
   if (!hasLoaderRootConversion) {
     diagnostics.robot_collada_mesh_diagnostics.push({
       uri,
@@ -37500,7 +37580,9 @@ function loadMesh(path, manager, material, done, context, diagnostics) {
   if (!uri) {
     diagnostics.robot_failed_visual_count += 1;
     diagnostics.robotFailedVisualCount = diagnostics.robot_failed_visual_count;
-    done(null, new Error(`unloadable URDF mesh URI: ${path}`));
+    const err = new Error(`unloadable URDF mesh URI: ${path}`);
+    done(null, err);
+    context?.onRobotMeshLoadError?.(err, "", { path, ...inferMeshLinkDetail(path) });
     return;
   }
   const url = repoUrl(context, uri);
@@ -37515,9 +37597,9 @@ function loadMesh(path, manager, material, done, context, diagnostics) {
   const onError = (err) => {
     diagnostics.robot_failed_visual_count += 1;
     diagnostics.robotFailedVisualCount = diagnostics.robot_failed_visual_count;
-    diagnostics.robot_missing_meshes.push(`${uri}: ${err?.message || err || "load failed"}`);
+    diagnostics.robot_missing_meshes.push(`${url}: ${err?.message || err || "load failed"}`);
     done(null, err);
-    context?.onRobotMeshLoadError?.(err, uri);
+    context?.onRobotMeshLoadError?.(err, uri, { url, uri, path, ...inferMeshLinkDetail(path) });
   };
   if (ext === "stl")
     new STLLoader(manager).load(url, (geom) => onDone(new Mesh(geom, material || new MeshPhongMaterial())), void 0, onError);
@@ -37527,6 +37609,12 @@ function loadMesh(path, manager, material, done, context, diagnostics) {
     new OBJLoader(manager).load(url, (obj) => onDone(obj), void 0, onError);
   else
     onError(new Error(`unsupported mesh format .${ext || "unknown"}`));
+}
+function inferMeshLinkDetail(path) {
+  const text = String(path || "").toLowerCase();
+  const known = ["gripper_base_link", "tool0", "wrist_3_link", "wrist_2_link", "wrist_1_link", "forearm_link", "upper_arm_link", "shoulder_link", "base_link_inertia", "base_link"];
+  const link = known.find((name) => text.includes(name.toLowerCase())) || (/gripper|robotiq|finger|suction|airpick/.test(text) ? "gripper_base_link" : "");
+  return { link, link_name: link, item: link || String(path || "") };
 }
 function meshCompletionPromise(diagnostics, manager) {
   let managerComplete = false;
@@ -37566,6 +37654,96 @@ function matrix4ToDiagnostics(object) {
 }
 function vector3ToDiagnostics(value) {
   return value ? { x: Number(value.x), y: Number(value.y), z: Number(value.z) } : null;
+}
+function finiteMatrix16(value) {
+  if (Array.isArray(value) && value.length === 4 && value.every((row) => Array.isArray(row) && row.length === 4)) {
+    const out = [];
+    for (let col = 0; col < 4; col += 1) {
+      for (let row = 0; row < 4; row += 1)
+        out.push(Number(value[row][col]));
+    }
+    return out.every(Number.isFinite) ? out : null;
+  }
+  if (Array.isArray(value) && value.length === 16) {
+    const out = value.map(Number);
+    return out.every(Number.isFinite) ? out : null;
+  }
+  const matrix = value?.matrix_world || value?.matrixWorld || value?.expected_matrix || value?.expectedMatrix || null;
+  return matrix && matrix !== value ? finiteMatrix16(matrix) : null;
+}
+function matrixMaxAbsDelta(a, b) {
+  const ma = finiteMatrix16(a);
+  const mb = finiteMatrix16(b);
+  if (!ma || !mb)
+    return Infinity;
+  return Math.max(...ma.map((value, index) => Math.abs(value - mb[index])));
+}
+function expectedMatrixMap(...sources) {
+  const out = /* @__PURE__ */ new Map();
+  for (const source of sources) {
+    if (!source)
+      continue;
+    if (Array.isArray(source)) {
+      for (const entry of source) {
+        const key = String(entry?.link_name || entry?.linkName || entry?.link || entry?.name || "").trim();
+        const matrix = finiteMatrix16(entry);
+        if (key && matrix)
+          out.set(key, matrix);
+      }
+    } else if (typeof source === "object") {
+      for (const [key, value] of Object.entries(source)) {
+        const matrix = finiteMatrix16(value);
+        if (key && matrix)
+          out.set(key, matrix);
+      }
+    }
+  }
+  return out;
+}
+function compareMatrixDiagnostics(actualByLink, expectedByLink, tolerance = 1e-5) {
+  const comparisons = [];
+  let pass = true;
+  for (const [linkName, expectedMatrix] of expectedByLink.entries()) {
+    const actualEntry = actualByLink instanceof Map ? actualByLink.get(linkName) : actualByLink?.[linkName];
+    const actualMatrix = finiteMatrix16(actualEntry);
+    const maxAbsDelta = matrixMaxAbsDelta(expectedMatrix, actualMatrix);
+    const ok = Number.isFinite(maxAbsDelta) && maxAbsDelta <= tolerance;
+    pass = pass && ok;
+    comparisons.push({
+      link_name: linkName,
+      linkName,
+      max_abs_delta: maxAbsDelta,
+      maxAbsDelta,
+      tolerance,
+      pass: ok,
+      expected_matrix_world: expectedMatrix,
+      expectedMatrixWorld: expectedMatrix,
+      actual_matrix_world: actualMatrix,
+      actualMatrixWorld: actualMatrix
+    });
+  }
+  return { pass, tolerance, compared_count: comparisons.length, comparedCount: comparisons.length, comparisons };
+}
+function collectMatrixParityDiagnostics(previewConfig, diagnostics) {
+  const tolerance = Number(previewConfig?.matrix_diagnostic_tolerance ?? previewConfig?.matrixDiagnosticTolerance ?? 1e-5);
+  const linkExpected = expectedMatrixMap(
+    previewConfig?.expected_robot_link_world_matrices,
+    previewConfig?.expectedRobotLinkWorldMatrices,
+    previewConfig?.robot_link_world_matrices_expected,
+    previewConfig?.robotLinkWorldMatricesExpected
+  );
+  const visualExpected = expectedMatrixMap(
+    previewConfig?.expected_robot_visual_wrapper_world_matrices,
+    previewConfig?.expectedRobotVisualWrapperWorldMatrices,
+    previewConfig?.robot_visual_wrapper_world_matrices_expected,
+    previewConfig?.robotVisualWrapperWorldMatricesExpected
+  );
+  const linkParity = compareMatrixDiagnostics(diagnostics.robot_link_world_matrices || {}, linkExpected, tolerance);
+  const visualActual = new Map((diagnostics.robot_visual_wrapper_world_matrices || []).map((entry) => [String(entry?.link_name || entry?.linkName || "").trim(), entry]).filter(([key]) => key));
+  const visualParity = compareMatrixDiagnostics(visualActual, visualExpected, tolerance);
+  diagnostics.robot_matrix_world_parity = { tolerance, link: linkParity, visual_wrapper: visualParity, pass: linkParity.pass && visualParity.pass };
+  diagnostics.robotMatrixWorldParity = diagnostics.robot_matrix_world_parity;
+  return diagnostics.robot_matrix_world_parity;
 }
 function collectLinkMatrixDiagnostics(robot, links) {
   robot?.updateMatrixWorld?.(true);
@@ -37719,6 +37897,23 @@ function linkRootDiagnostics(robot, links) {
   }
   return { roots, disconnected, duplicateLinks };
 }
+function applyRobotJointPreview(result, jointValues = {}) {
+  const robot = result?.root;
+  if (!robot?.setJointValues)
+    throw new Error("Product View is not ready");
+  robot.setJointValues(jointValues);
+  robot.updateMatrixWorld?.(true);
+  const links = Object.fromEntries(result.links || []);
+  result.diagnostics.robot_joint_values_applied = { ...jointValues };
+  result.diagnostics.robot_link_world_matrices = collectLinkMatrixDiagnostics(robot, links);
+  result.diagnostics.robotLinkWorldMatrices = result.diagnostics.robot_link_world_matrices;
+  result.diagnostics.robot_visual_wrapper_world_matrices = collectVisualWrapperMatrixDiagnostics(links);
+  result.diagnostics.robotVisualWrapperWorldMatrices = result.diagnostics.robot_visual_wrapper_world_matrices;
+  result.diagnostics.robot_descendant_render_mesh_diagnostics = collectDescendantRenderMeshDiagnostics(links);
+  result.diagnostics.robotDescendantRenderMeshDiagnostics = result.diagnostics.robot_descendant_render_mesh_diagnostics;
+  collectMatrixParityDiagnostics(result?.previewConfig || {}, result.diagnostics);
+  return result.diagnostics;
+}
 function jointTypeCounts(joints) {
   const counts = { fixed: 0, revolute: 0, continuous: 0, prismatic: 0, mimic: 0, other: 0 };
   for (const joint of Object.values(joints || {})) {
@@ -37765,11 +37960,12 @@ function loadRobotPreview(previewConfig, rendererContext = {}) {
     robotColladaRootNormalizationCount: 0,
     robot_collada_mesh_diagnostics: [],
     robotColladaMeshDiagnostics: [],
+    robot_package_mesh_resolutions: [],
     robot_descendant_render_mesh_diagnostics: [],
     robotDescendantRenderMeshDiagnostics: [],
     skipped_legacy_generated_urdf_visual_count: rendererContext?.skippedLegacyGeneratedUrdfVisualCount || 0
   };
-  const result = { root: null, links: /* @__PURE__ */ new Map(), joints: /* @__PURE__ */ new Map(), diagnostics, ready: null };
+  const result = { root: null, links: /* @__PURE__ */ new Map(), joints: /* @__PURE__ */ new Map(), diagnostics, ready: null, previewConfig };
   result.ready = (async () => {
     setLifecycleState(diagnostics, "loading_urdf");
     const manager = new LoadingManager();
@@ -37777,7 +37973,7 @@ function loadRobotPreview(previewConfig, rendererContext = {}) {
     const loader = new URDFLoader_default(manager);
     loader.parseVisual = true;
     loader.parseCollision = false;
-    loader.packages = "";
+    configureUrdfPackageResolution(loader, manager, rendererContext, diagnostics);
     loader.workingPath = "";
     loader.loadMeshCb = (path, meshManager, material, done) => loadMesh(path, meshManager, material, done, rendererContext, diagnostics);
     const urdfUrl = repoUrl(rendererContext, previewConfig?.urdf_url || "");
@@ -37803,6 +37999,7 @@ function loadRobotPreview(previewConfig, rendererContext = {}) {
     diagnostics.robotVisualWrapperWorldMatrices = diagnostics.robot_visual_wrapper_world_matrices;
     diagnostics.robot_descendant_render_mesh_diagnostics = collectDescendantRenderMeshDiagnostics(robot.links);
     diagnostics.robotDescendantRenderMeshDiagnostics = diagnostics.robot_descendant_render_mesh_diagnostics;
+    collectMatrixParityDiagnostics(previewConfig, diagnostics);
     diagnostics.robot_collada_mesh_diagnostics = diagnostics.robot_collada_mesh_diagnostics || [];
     diagnostics.robotColladaMeshDiagnostics = diagnostics.robot_collada_mesh_diagnostics;
     const rootDiagnostics = linkRootDiagnostics(robot, robot.links);
@@ -37839,7 +38036,7 @@ function loadRobotPreview(previewConfig, rendererContext = {}) {
   window.__WORKCELL_ROBOT_PREVIEW_READY__ = result.ready;
   return result;
 }
-var ROBOT_RENDER_MODE;
+var ROBOT_RENDER_MODE, ROS_TO_THREE_CONVERSION_BOUNDARY;
 var init_urdf_robot_renderer = __esm({
   "urdf_robot_renderer.js"() {
     init_three_module();
@@ -37848,74 +38045,276 @@ var init_urdf_robot_renderer = __esm({
     init_ColladaLoader();
     init_OBJLoader();
     ROBOT_RENDER_MODE = "expanded_urdf_loader";
+    ROS_TO_THREE_CONVERSION_BOUNDARY = "URDFLoader owns the ROS visual frame and applies the one ROS-to-Three orientation boundary; DAE, STL, assembled URDF, and flattened fallback diagnostics must not add per-link or per-mesh 90-degree corrections after ColladaLoader.";
   }
 });
 
-// src/viewer_entry.js
-init_three_module();
-init_OrbitControls();
-init_TransformControls();
-init_STLLoader();
-init_ColladaLoader();
-init_OBJLoader();
-init_URDFLoader();
-init_urdf_robot_renderer();
-
 // viewer.js
-var THREE;
-var OrbitControls2;
-var STLLoader2;
-var ColladaLoader2;
-var OBJLoader2;
-var TransformControls2;
-var loadRobotPreview2;
-var SUPPORTED_SCHEMA_VERSION = "workcell_studio_web_scene/v1";
-var EDIT_PATCH_SCHEMA_VERSION = "workcell_studio_web_scene_edit_patch/v1";
-var VIEWER_VERSION = "static_web_viewer_edit_patch_v1";
-var LOCKED_EDIT_REASON = "Locked/generated preview item; edit source layout/environment instead.";
-var MIN_FRAME_RADIUS = 1.2;
-var EMPTY_SCENE_MESSAGE = "Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.";
-var FRAME_DISTANCE_MULTIPLIER = 2.7;
-var state = { sceneJson: null, sourceWebSceneFile: "", frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, editorMode: "select", editorEvents: [], editorError: "" };
-var RESET_VIEW_TITLE = "Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.";
-var STAGED_MESH_ROOTS = [
-  "build/workcell_studio_web_scene/assets/",
-  "workcell_studio_web/",
-  "assets/"
-];
-var EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS = [
-  "base_link_inertia",
-  "shoulder_link",
-  "upper_arm_link",
-  "forearm_link",
-  "wrist_1_link",
-  "wrist_2_link",
-  "wrist_3_link",
-  "tool0",
-  "gripper_base_link"
-];
-var el = {
-  file: document.getElementById("scene-file"),
-  resetView: document.getElementById("reset-view"),
-  undoEdit: document.getElementById("undo-edit"),
-  redoEdit: document.getElementById("redo-edit"),
-  clearEdits: document.getElementById("clear-edits"),
-  exportEditPatch: document.getElementById("export-edit-patch"),
-  dirty: document.getElementById("dirty-state"),
-  snapToggle: document.getElementById("snap-toggle"),
-  translationSnap: document.getElementById("translation-snap"),
-  rotationSnap: document.getElementById("rotation-snap"),
-  labelsToggle: document.getElementById("labels-toggle"),
-  debugOverlaysToggle: document.getElementById("debug-overlays-toggle"),
-  canvas: document.getElementById("scene-canvas"),
-  labelLayer: document.getElementById("label-layer"),
-  empty: document.getElementById("empty-state"),
-  error: document.getElementById("error-state"),
-  list: document.getElementById("object-list"),
-  inspector: document.getElementById("inspector"),
-  warnings: document.getElementById("warnings"),
-  summary: document.getElementById("scene-summary")
-};
+var viewer_exports = {};
+function emitWeb3dReadinessState(readinessState, detail = {}) {
+  state.web3dReadiness = state.web3dReadiness || { state: "server_ready", emittedSceneReady: false, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null };
+  if (state.web3dReadiness.failed && state.web3dReadiness.state === "scene_failed" && readinessState !== "scene_failed") {
+    return updateViewerStatus();
+  }
+  if (readinessState === "scene_ready") {
+    if (state.web3dReadiness.emittedSceneReady)
+      return window.__WORKCELL_VIEWER_STATUS__;
+    state.web3dReadiness.emittedSceneReady = true;
+  }
+  state.web3dReadiness.state = readinessState;
+  const structured = structuredWeb3dReadinessFields(readinessState);
+  const eventDetail = { ...structured, ...detail, final_lifecycle_state: readinessState, finalLifecycleState: readinessState };
+  if (readinessState === "scene_failed") {
+    state.web3dReadiness.failed = true;
+    state.web3dReadiness.failure = eventDetail;
+  }
+  const status = updateViewerStatus();
+  if (readinessState === "scene_ready")
+    triggerInitialCameraFitAfterSceneReady();
+  window.dispatchEvent?.(new CustomEvent("workcell:web3d_readiness", { detail: { state: readinessState, ...eventDetail, status } }));
+  window.parent?.postMessage?.({ type: "workcell_web3d_readiness", state: readinessState, ...eventDetail, status }, "*");
+  return status;
+}
+function readinessCategoryForItem(item2) {
+  if (!item2 || isDebugOverlayItem(item2))
+    return "";
+  const category = meshContractCategoryOf(item2);
+  const identity = viewerGroupIdentity(item2);
+  if (category === "camera" || isSensor(item2))
+    return "configured_camera";
+  if (category === "table" || supportSurfaceDisplayType(item2) || /\b(workbench|support surface|tabletop|table)\b/.test(identity))
+    return "workbench_support_surface";
+  if (isGeneratedToolOrGripperItem(item2) || category === "tool")
+    return "attached_tool_gripper";
+  if (isGeneratedRobotItem(item2) || category === "robot")
+    return "robot_arm";
+  return "";
+}
+function readinessKey(category, item2) {
+  return `${category}:${item2?.id || item2?.link || itemLabel(item2 || {})}`;
+}
+function physicalReadinessItems() {
+  return collectItems(state.sceneJson || {}).filter((item2) => !isDebugOverlayItem(item2) && readinessCategoryForItem(item2));
+}
+function renderedPhysicalItemCount() {
+  const assemblyCount = collectPhysicalAssemblyBounds?.()?.count || 0;
+  return statusCountedRenderables().length + assemblyCount;
+}
+function expectedPhysicalItemCount() {
+  const items = physicalReadinessItems();
+  const hasExpanded = isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview);
+  return items.length + (hasExpanded && !items.some((item2) => readinessCategoryForItem(item2) === "robot_arm") ? 1 : 0);
+}
+function failedRequiredItemCount() {
+  const renderFailures = statusCountedRenderables().filter(isRequiredMeshFailureStatus).length;
+  return renderFailures + (state.web3dReadiness?.state === "scene_failed" && renderFailures === 0 ? 1 : 0);
+}
+function readinessCategoryStatus(category) {
+  const readiness = state.web3dReadiness || {};
+  if (!readiness.required?.[category])
+    return "missing";
+  const pending = Array.from(readiness.pending || []).some((key) => String(key).startsWith(`${category}:`));
+  if (readiness.state === "scene_failed" && (readiness.failure?.required_category === category || pending))
+    return "failed";
+  if (pending)
+    return "pending";
+  return readiness.state === "scene_ready" ? "ready" : "loading";
+}
+function structuredWeb3dReadinessFields(lifecycleState) {
+  const finalState = lifecycleState || state.web3dReadiness?.state || "server_ready";
+  return {
+    scene_id: sceneId(),
+    sceneId: sceneId(),
+    expected_physical_item_count: expectedPhysicalItemCount(),
+    expectedPhysicalItemCount: expectedPhysicalItemCount(),
+    rendered_physical_item_count: renderedPhysicalItemCount(),
+    renderedPhysicalItemCount: renderedPhysicalItemCount(),
+    failed_required_item_count: failedRequiredItemCount(),
+    failedRequiredItemCount: failedRequiredItemCount(),
+    robot_status: readinessCategoryStatus("robot_arm"),
+    robotStatus: readinessCategoryStatus("robot_arm"),
+    tool_status: readinessCategoryStatus("attached_tool_gripper"),
+    toolStatus: readinessCategoryStatus("attached_tool_gripper"),
+    end_effector_status: readinessCategoryStatus("attached_tool_gripper"),
+    endEffectorStatus: readinessCategoryStatus("attached_tool_gripper"),
+    environment_status: readinessCategoryStatus("workbench_support_surface"),
+    environmentStatus: readinessCategoryStatus("workbench_support_surface"),
+    camera_status: readinessCategoryStatus("configured_camera"),
+    cameraStatus: readinessCategoryStatus("configured_camera"),
+    final_lifecycle_state: finalState,
+    finalLifecycleState: finalState
+  };
+}
+function beginWeb3dSceneReadiness(items) {
+  const required = Object.fromEntries(WEB3D_REQUIRED_CATEGORIES.map((category) => [category, false]));
+  const pending = /* @__PURE__ */ new Set();
+  for (const item2 of items || []) {
+    const category = readinessCategoryForItem(item2);
+    if (!category)
+      continue;
+    required[category] = true;
+    if (itemRequiresMeshBackedVisual(item2) || displayMeshUri(item2))
+      pending.add(readinessKey(category, item2));
+  }
+  if (isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview)) {
+    required.robot_arm = true;
+    required.attached_tool_gripper = true;
+    pending.add("robot_arm:expanded_urdf_loader");
+    pending.add("attached_tool_gripper:expanded_urdf_loader");
+  }
+  state.web3dReadiness = { state: "scene_loading", emittedSceneReady: false, required, pending, failed: false, failure: null };
+  emitWeb3dReadinessState("scene_loading", { required_categories: required, pending_required_loads: Array.from(pending) });
+}
+function requiredReadinessCompleteForItem(item2) {
+  const category = readinessCategoryForItem(item2);
+  if (!category || !state.web3dReadiness?.pending)
+    return;
+  state.web3dReadiness.pending.delete(readinessKey(category, item2));
+  maybeEmitSceneReady();
+}
+function failWeb3dSceneReadiness(item2, url, reason, extra = {}) {
+  const category = readinessCategoryForItem(item2) || extra.category || "required_physical_item";
+  emitWeb3dReadinessState("scene_failed", {
+    required_category: category,
+    item_id: item2?.id || "",
+    link: item2?.link || item2?.link_name || item2?.object_name || "",
+    url: url || displayMeshUri(item2),
+    reason: reason || "required mesh failed",
+    ...extra
+  });
+}
+function completeExpandedUrdfReadiness(result) {
+  if (!state.web3dReadiness?.pending)
+    return;
+  state.web3dReadiness.pending.delete("robot_arm:expanded_urdf_loader");
+  state.web3dReadiness.pending.delete("attached_tool_gripper:expanded_urdf_loader");
+  maybeEmitSceneReady();
+}
+function failExpandedUrdfReadiness(err, diagnostics = {}, detail = {}) {
+  emitWeb3dReadinessState("scene_failed", {
+    required_category: "robot_arm",
+    item_id: "expanded_urdf_loader",
+    link: detail.link || detail.link_name || "",
+    url: detail.url || detail.uri || diagnostics.robot_urdf_url || "",
+    reason: err?.message || String(err || "expanded URDF required mesh failed"),
+    robot_missing_meshes: diagnostics.robot_missing_meshes || [],
+    ...detail
+  });
+}
+function maybeEmitSceneReady() {
+  if (failIfCanonicalRequiredVisualSetInvalid())
+    return;
+  const readiness = state.web3dReadiness;
+  if (!readiness || readiness.failed || readiness.state === "scene_failed")
+    return;
+  const missing = WEB3D_REQUIRED_CATEGORIES.filter((category) => !readiness.required?.[category]);
+  if (missing.length) {
+    emitWeb3dReadinessState("scene_failed", { reason: `missing required physical categories: ${missing.join(", ")}`, missing_required_categories: missing });
+    return;
+  }
+  if (readiness.pending?.size === 0)
+    emitWeb3dReadinessState("scene_ready", { required_categories: readiness.required });
+}
+function robotRecords() {
+  const records = asArray(state.sceneJson?.robots).concat(asArray(state.sceneJson?.robot_preview?.robots));
+  if (state.sceneJson?.robot_preview && !records.length)
+    records.push(state.sceneJson.robot_preview);
+  return records.filter((r) => r && (r.urdf_url || r.joint_values || r.initial_joint_values || r.initial_positions || r.configured_initial_positions));
+}
+function robotRecordId(robot, index = 0) {
+  return String(robot?.id || robot?.robot_id || robot?.robot_instance_id || robot?.name || `robot_${index}`).trim();
+}
+function selectedRobotRecord() {
+  const robots = robotRecords();
+  if (robots.length === 1)
+    return { robot: robots[0], id: robotRecordId(robots[0], 0), automatic: true };
+  const selected = String(state.selected || "");
+  const found = robots.find((robot, index) => robotRecordId(robot, index) === selected);
+  return found ? { robot: found, id: selected, automatic: false } : null;
+}
+function configuredInitialJointValues(robot) {
+  return robot?.initial_joint_values || robot?.configured_initial_positions || robot?.initial_positions || robot?.joint_initial_positions || null;
+}
+function normalJointValues(robot) {
+  return robot?.joint_values || {};
+}
+function validateInitialJointMap(robot, result) {
+  const values = configuredInitialJointValues(robot);
+  if (!values || Array.isArray(values) || typeof values !== "object")
+    throw new Error("Initial pose is not configured");
+  const joints = Array.from((result?.joints || /* @__PURE__ */ new Map()).entries());
+  if (!joints.length)
+    throw new Error("Product View is not ready");
+  const movable = joints.filter(([, joint]) => !["fixed"].includes(String(joint?.jointType || "").toLowerCase()) && !joint?.isURDFMimicJoint && !joint?.mimicJoint);
+  const names = /* @__PURE__ */ new Set();
+  for (const [name] of joints) {
+    if (names.has(name))
+      throw new Error(`Initial pose has duplicate joint: ${name}`);
+    names.add(name);
+  }
+  for (const name of Object.keys(values)) {
+    if (!names.has(name))
+      throw new Error(`Initial pose has unknown joint: ${name}`);
+    if (!Number.isFinite(Number(values[name])))
+      throw new Error("Initial pose contains an invalid value");
+  }
+  for (const [name] of movable)
+    if (!(name in values))
+      throw new Error(`Initial pose is missing joint: ${name}`);
+  return Object.fromEntries(Object.entries(values).map(([name, value]) => [name, Number(value)]));
+}
+function setInitialPosePreviewUi(active, message = "") {
+  if (el.initialPoseStatus) {
+    el.initialPoseStatus.hidden = !active;
+    el.initialPoseStatus.textContent = active ? "Initial pose preview" : "";
+  }
+  if (message)
+    pushEditorEvent("status", { message });
+}
+function refreshInitialPoseActionState() {
+  if (!el.showInitialPose)
+    return;
+  const robots = robotRecords();
+  el.showInitialPose.disabled = robots.length === 0 || robots.length > 1 && !selectedRobotRecord();
+}
+function clearInitialPosePreview({ message = "" } = {}) {
+  if (!state.initialPosePreview.active) {
+    refreshInitialPoseActionState();
+    return;
+  }
+  const selected = selectedRobotRecord();
+  const result = state.robotPreviewResult;
+  if (selected && result)
+    applyRobotJointPreview2?.(result, normalJointValues(selected.robot));
+  state.initialPosePreview = { active: false, robotId: "", sceneKey: "" };
+  if (el.showInitialPose)
+    el.showInitialPose.checked = false;
+  setInitialPosePreviewUi(false, message || "Initial pose preview ended");
+  refreshWarnings();
+}
+function toggleInitialPosePreview(checked) {
+  if (!checked) {
+    clearInitialPosePreview();
+    return;
+  }
+  try {
+    if (!state.robotPreviewResult?.root)
+      throw new Error("Product View is not ready");
+    const selected = selectedRobotRecord();
+    if (!selected)
+      throw new Error(robotRecords().length > 1 ? "Select a robot to preview its initial pose" : "Initial pose is not configured");
+    const jointMap = validateInitialJointMap(selected.robot, state.robotPreviewResult);
+    applyRobotJointPreview2(state.robotPreviewResult, jointMap);
+    state.initialPosePreview = { active: true, robotId: selected.id, sceneKey: sceneId() };
+    setInitialPosePreviewUi(true, `Showing initial pose for ${selected.robot.name || selected.id}`);
+  } catch (err) {
+    if (el.showInitialPose)
+      el.showInitialPose.checked = false;
+    state.initialPosePreview = { active: false, robotId: "", sceneKey: "" };
+    setInitialPosePreviewUi(false);
+    showError(err.message || String(err));
+  }
+}
 function sceneDisplayName() {
   return state.sceneJson?.scene?.id || state.sceneJson?.scene_id || state.sourceWebSceneFile || "No scene loaded";
 }
@@ -38107,6 +38506,95 @@ function box3DiagnosticsForObject(object) {
     size: vector3ToDiagnostics2(size)
   };
 }
+function canonicalRequiredGeneratedVisualSet(json = state.sceneJson || {}) {
+  const id = String(json?.scene?.id || json?.scene_id || "").trim();
+  if (id !== CANONICAL_UR5_2F_REQUIRED_GENERATED_VISUAL_SET.scene_id)
+    return null;
+  const preview = json?.robot_preview || {};
+  if (!isExpandedUrdfRobotPreview(preview))
+    return null;
+  const previewLinks = new Set(asArray(preview.expected_links).map((link) => String(link || "").trim()).filter(Boolean));
+  const requiredUr5 = CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS.filter((link) => !previewLinks.size || previewLinks.has(link));
+  const requiredRobotiq = CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS.filter((link) => !previewLinks.size || previewLinks.has(link));
+  return {
+    scene_id: id,
+    sceneId: id,
+    ur5_visuals: requiredUr5,
+    ur5Visuals: requiredUr5,
+    robotiq_visuals: requiredRobotiq,
+    robotiqVisuals: requiredRobotiq,
+    table_visuals: ["workbench_support_surface"],
+    tableVisuals: ["workbench_support_surface"],
+    camera_visuals: ["configured_camera"],
+    cameraVisuals: ["configured_camera"]
+  };
+}
+function countBy(values) {
+  const counts = {};
+  for (const value of values || [])
+    counts[value] = (counts[value] || 0) + 1;
+  return counts;
+}
+function canonicalVisualReadinessDiagnostics() {
+  const required = canonicalRequiredGeneratedVisualSet();
+  if (!required)
+    return null;
+  const urdfVisualLinks = asArray(state.robotUrdfPreviewDiagnostics?.robot_visual_wrapper_world_matrices).map((visual) => String(visual?.link_name || visual?.linkName || "").trim()).filter(Boolean);
+  const urdfCounts = countBy(urdfVisualLinks);
+  const sceneDiagnostics = collectRenderedMeshDiagnostics();
+  const categoryCounts = countBy(sceneDiagnostics.map((item2) => readinessCategoryForItem(item2)).filter(Boolean));
+  const missing = [];
+  const duplicate = [];
+  const failed = [];
+  for (const link of required.ur5_visuals.concat(required.robotiq_visuals)) {
+    const count = urdfCounts[link] || 0;
+    if (count === 0)
+      missing.push(link);
+    if (count > 1)
+      duplicate.push(link);
+  }
+  for (const category of required.table_visuals.concat(required.camera_visuals)) {
+    const count = categoryCounts[category] || 0;
+    if (count === 0)
+      missing.push(category);
+    if (count > 1)
+      duplicate.push(category);
+  }
+  for (const entry of sceneDiagnostics) {
+    if (isRequiredMeshFailureStatus({ item: entry, renderInfo: { render_status: entry.render_status } }))
+      failed.push(entry.link_name || entry.id || entry.category);
+  }
+  if (Number(state.robotUrdfPreviewDiagnostics?.robot_failed_visual_count || 0) > 0)
+    failed.push("expanded_urdf_loader");
+  return {
+    canonical_required_generated_visual_set: required,
+    canonicalRequiredGeneratedVisualSet: required,
+    canonical_required_visual_counts: { ...urdfCounts, ...categoryCounts },
+    canonicalRequiredVisualCounts: { ...urdfCounts, ...categoryCounts },
+    canonical_missing_required_visuals: missing,
+    canonicalMissingRequiredVisuals: missing,
+    canonical_duplicate_required_visuals: duplicate,
+    canonicalDuplicateRequiredVisuals: duplicate,
+    canonical_failed_required_visuals: Array.from(new Set(failed)),
+    canonicalFailedRequiredVisuals: Array.from(new Set(failed)),
+    canonical_required_visual_ready: missing.length === 0 && duplicate.length === 0 && failed.length === 0,
+    canonicalRequiredVisualReady: missing.length === 0 && duplicate.length === 0 && failed.length === 0
+  };
+}
+function failIfCanonicalRequiredVisualSetInvalid() {
+  const lifecycle = String(state.robotUrdfPreviewDiagnostics?.robot_preview_lifecycle_state || state.robotUrdfPreviewDiagnostics?.robotPreviewLifecycleState || "");
+  if (canonicalRequiredGeneratedVisualSet() && lifecycle !== "ready" && lifecycle !== "failed")
+    return false;
+  const diagnostics = canonicalVisualReadinessDiagnostics();
+  if (!diagnostics || diagnostics.canonical_required_visual_ready)
+    return false;
+  emitWeb3dReadinessState("scene_failed", {
+    required_category: "canonical_generated_visual_set",
+    reason: "canonical required generated visual set is missing, failed, or duplicated",
+    ...diagnostics
+  });
+  return true;
+}
 function collectRenderedMeshDiagnostics() {
   if (!THREE?.Vector3)
     return [];
@@ -38266,13 +38754,16 @@ function updateViewerStatus() {
     };
   });
   const assemblyRenderDiagnostics = collectAssemblyRenderDiagnostics();
+  const canonicalVisualDiagnostics = canonicalVisualReadinessDiagnostics() || {};
   window.__WORKCELL_VIEWER_STATUS__ = {
-    viewer_boot_state: "ready",
-    viewerBootState: "ready",
-    failed_stage: "",
-    failedStage: "",
-    fatal_error: "",
-    fatalError: "",
+    viewer_boot_state: state.web3dReadiness?.state || "server_ready",
+    viewerBootState: state.web3dReadiness?.state || "server_ready",
+    web3d_readiness_state: state.web3dReadiness?.state || "server_ready",
+    web3dReadinessState: state.web3dReadiness?.state || "server_ready",
+    failed_stage: state.web3dReadiness?.state === "scene_failed" ? "scene_failed" : "",
+    failedStage: state.web3dReadiness?.state === "scene_failed" ? "scene_failed" : "",
+    fatal_error: state.web3dReadiness?.failure?.reason || "",
+    fatalError: state.web3dReadiness?.failure?.reason || "",
     fatal_stack: "",
     fatalStack: "",
     source_web_scene_file: state.sourceWebSceneFile || "",
@@ -38314,7 +38805,19 @@ function updateViewerStatus() {
     robot_hierarchy_missing_parents: Array.from(new Set((state.robotAssemblyDiagnostics || []).flatMap((d) => d.robot_hierarchy_missing_parents || []))),
     robot_hierarchy_mesh_count: (state.robotAssemblyDiagnostics || []).reduce((total, d) => total + Number(d.robot_hierarchy_mesh_count || 0), 0),
     robotHierarchyMeshCount: (state.robotAssemblyDiagnostics || []).reduce((total, d) => total + Number(d.robot_hierarchy_mesh_count || 0), 0),
-    ...assemblyRenderDiagnostics
+    ...assemblyRenderDiagnostics,
+    ...canonicalVisualDiagnostics,
+    required_physical_categories: state.web3dReadiness?.required || {},
+    requiredPhysicalCategories: state.web3dReadiness?.required || {},
+    pending_required_loads: Array.from(state.web3dReadiness?.pending || []),
+    pendingRequiredLoads: Array.from(state.web3dReadiness?.pending || []),
+    ...structuredWeb3dReadinessFields(state.web3dReadiness?.state || "server_ready"),
+    final_failed_url: state.web3dReadiness?.failure?.url || state.web3dReadiness?.failure?.final_failed_url || "",
+    finalFailedUrl: state.web3dReadiness?.failure?.url || state.web3dReadiness?.failure?.finalFailedUrl || "",
+    final_failed_link: state.web3dReadiness?.failure?.link || state.web3dReadiness?.failure?.link_name || "",
+    finalFailedLink: state.web3dReadiness?.failure?.link || state.web3dReadiness?.failure?.linkName || "",
+    readiness_failure: state.web3dReadiness?.failure || null,
+    readinessFailure: state.web3dReadiness?.failure || null
   };
   return window.__WORKCELL_VIEWER_STATUS__;
 }
@@ -38359,8 +38862,10 @@ function showError(message) {
   el.error.hidden = false;
   window.__WORKCELL_VIEWER_STATUS__ = {
     ...window.__WORKCELL_VIEWER_STATUS__ || {},
-    viewer_boot_state: "failed",
-    viewerBootState: "failed",
+    viewer_boot_state: "scene_failed",
+    viewerBootState: "scene_failed",
+    web3d_readiness_state: "scene_failed",
+    web3dReadinessState: "scene_failed",
     failed_stage: "viewer_runtime",
     failedStage: "viewer_runtime",
     fatal_error: text,
@@ -38558,35 +39063,43 @@ function rotationSnapRadians() {
   const v = Number(el.rotationSnap?.value || 0);
   return Number.isFinite(v) && v > 0 ? THREE.MathUtils.degToRad(v) : null;
 }
-function snapTransform(transform) {
+function snapTransform(transform, { translationAxes = ["x", "y", "z"], rotationAxes = ["x", "y", "z"] } = {}) {
   if (!el.snapToggle?.checked)
     return transform;
   const out = cloneTransform(transform);
   const t = translationSnapValue();
   if (t)
-    for (const axis of ["x", "y", "z"])
+    for (const axis of translationAxes)
       out.pose.xyz[axis] = Math.round(out.pose.xyz[axis] / t) * t;
   const r = rotationSnapRadians();
   if (r)
-    for (const axis of ["x", "y", "z"])
+    for (const axis of rotationAxes)
       out.pose.rpy[axis] = Math.round(out.pose.rpy[axis] / r) * r;
   return out;
 }
+function isFiniteTransform(transform) {
+  const values = [transform?.pose?.xyz?.x, transform?.pose?.xyz?.y, transform?.pose?.xyz?.z, transform?.pose?.rpy?.x, transform?.pose?.rpy?.y, transform?.pose?.rpy?.z, transform?.scale?.x, transform?.scale?.y, transform?.scale?.z];
+  return values.every((value) => Number.isFinite(Number(value)));
+}
 function applyTransformToObject(object, transform) {
+  if (!isFiniteTransform(transform))
+    return false;
   object.position.set(transform.pose.xyz.x, transform.pose.xyz.y, transform.pose.xyz.z);
   object.rotation.set(transform.pose.rpy.x, transform.pose.rpy.y, transform.pose.rpy.z, "XYZ");
   object.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
+  return true;
 }
-function markDirtyTransform(rendered, next, { pushHistory = true, oldTransform = null } = {}) {
+function markDirtyTransform(rendered, next, { pushHistory = true, oldTransform = null, snapOptions = void 0 } = {}) {
   if (!rendered || !canEditItem(rendered.item))
     return false;
   const previous = oldTransform || state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d);
-  const snapped = snapTransform(next);
+  const snapped = snapOptions === null ? cloneTransform(next) : snapTransform(next, snapOptions);
   if (pushHistory && !sameTransform(previous, snapped)) {
     state.undoStack.push({ itemId: rendered.item.id, before: cloneTransform(previous), after: cloneTransform(snapped) });
     state.redoStack = [];
   }
-  applyTransformToObject(rendered.object3d, snapped);
+  if (!applyTransformToObject(rendered.object3d, snapped))
+    return false;
   if (sameTransform(rendered.originalTransform, snapped))
     state.dirtyTransforms.delete(rendered.item.id);
   else
@@ -38737,7 +39250,7 @@ function logRequiredMeshFailure(item2, meshUrl, error) {
 }
 function failedMeshDebugMaterial() {
   return new THREE.MeshBasicMaterial({
-    color: 16722902,
+    color: PRODUCT_VIEW_LIGHT_PALETTE.errorAccent,
     wireframe: true,
     transparent: true,
     opacity: 0.82,
@@ -38746,9 +39259,11 @@ function failedMeshDebugMaterial() {
   });
 }
 function failedMeshDebugEdgeMaterial() {
-  return new THREE.LineBasicMaterial({ color: 16722902, transparent: true, opacity: 1 });
+  return new THREE.LineBasicMaterial({ color: PRODUCT_VIEW_LIGHT_PALETTE.errorAccent, transparent: true, opacity: 1 });
 }
 function styleFailedMeshDebugFallback(fallback, item2, reason) {
+  if (!fallback)
+    return;
   fallback.visible = true;
   fallback.name = `${item2.id || itemLabel(item2)}_FAILED_REQUIRED_MESH_DEBUG_FALLBACK`;
   fallback.traverse?.((child) => {
@@ -39010,6 +39525,12 @@ function viewerGroupIdentity(item2) {
     item2?.source_kind,
     item2?.source_layer,
     item2?.active_visual_source,
+    item2?.renderer_owner,
+    item2?.renderer_ownership,
+    item2?.renderer,
+    item2?.robot_instance_id,
+    item2?.link_name,
+    item2?.visual_index,
     item2?.type,
     item2?.category,
     item2?.role,
@@ -39039,7 +39560,7 @@ function isGeneratedRobotItem(item2) {
 }
 function viewerGroupFor(item2) {
   const identity = viewerGroupIdentity(item2);
-  if (/\b(zone|pick zone|place zone|spawn zone|safety zone|work envelope|reachability|collision)\b/.test(identity))
+  if (/\b(zone|pick zone|place zone|observation zone|spawn zone|safety zone|work envelope|reachability|collision)\b/.test(identity))
     return "zones";
   if (/\b(camera|sensor|realsense|depth camera|rgbd|lidar|vision)\b/.test(identity))
     return "sensors";
@@ -39053,14 +39574,17 @@ function viewerGroupFor(item2) {
     return "robot/tool/generated";
   return "unknown";
 }
-var DEBUG_OVERLAY_TOKEN_RE = /\b(overlay|helper|debug|diagnostic|safety zone|pick zone|place zone|robot reach|warning anchor|warning badge|camera fov|fov|pick coverage|reachability|collision|work envelope|task route|approach retreat|epd detection|detection label|bounds box|bounding box)\b/;
 function isZone(item2) {
   return viewerGroupFor(item2) === "zones";
 }
+function isPhysicalSemanticItem(item2) {
+  if (isGeneratedToolOrGripperItem(item2) || isGeneratedRobotItem(item2) || supportSurfaceDisplayType(item2) || isSensor(item2))
+    return true;
+  const identity = viewerGroupIdentity(item2);
+  return PHYSICAL_SEMANTIC_TOKEN_RE.test(identity);
+}
 function isDebugOverlayItem(item2) {
   if (item2?.debug_overlay === true || item2?.exclude_from_fit_bounds === true || item2?.source_layer === "debug_overlay")
-    return true;
-  if (viewerGroupFor(item2) === "zones")
     return true;
   const identity = [
     item2?.source_layer,
@@ -39078,6 +39602,10 @@ function isDebugOverlayItem(item2) {
     ...Array.isArray(item2?.warnings) ? item2.warnings : [],
     itemLabel(item2 || {})
   ].map((value) => String(value || "").toLowerCase().replace(/[_-]+/g, " ")).join(" ");
+  if (isPhysicalSemanticItem(item2) && !/\b(safety zone|pick zone|place zone|observation zone|spawn zone|work envelope|robot reach|camera fov|fov|home pose|transform anchor|warning marker|warning anchor|warning badge)\b/.test(identity))
+    return false;
+  if (viewerGroupFor(item2) === "zones")
+    return true;
   return DEBUG_OVERLAY_TOKEN_RE.test(identity);
 }
 function isSensor(item2) {
@@ -39131,10 +39659,12 @@ function applyFallbackRenderMetadata(object, item2, status = "fallback_geometry"
 }
 function dimensionsFromPrimitive(primitive) {
   if (!primitive)
-    return [0.25, 0.25, 0.25];
-  if (Array.isArray(primitive))
-    return primitive.slice(0, 3);
-  return primitive.size || primitive.dimensions || primitive.extents || [primitive.x || primitive.width || 0.25, primitive.y || primitive.depth || 0.25, primitive.z || primitive.height || 0.25];
+    return null;
+  const dims = Array.isArray(primitive) ? primitive.slice(0, 3) : primitive.size || primitive.dimensions || primitive.extents || [primitive.x || primitive.width, primitive.y || primitive.depth, primitive.z || primitive.height];
+  if (!Array.isArray(dims) || dims.length < 3)
+    return null;
+  const numeric = dims.slice(0, 3).map(Number);
+  return numeric.every((value) => Number.isFinite(value) && value > 0) ? numeric : null;
 }
 function makePrimitiveMesh(item2) {
   const primitive = primitiveOf(item2);
@@ -39146,7 +39676,9 @@ function makePrimitiveMesh(item2) {
     geometry = new THREE.CylinderGeometry(Number(primitive?.radius || 0.08), Number(primitive?.radius || 0.08), Number(primitive?.height || 0.25), 24);
   else {
     const dims = dimensionsFromPrimitive(primitive);
-    geometry = new THREE.BoxGeometry(Number(dims[0] || 0.25), Number(dims[1] || 0.25), Number(dims[2] || 0.25));
+    if (!dims)
+      return null;
+    geometry = new THREE.BoxGeometry(dims[0], dims[1], dims[2]);
   }
   const group = new THREE.Group();
   group.name = `${item2.id || itemLabel(item2)}_fallback_primitive`;
@@ -39290,6 +39822,10 @@ async function tryLoadMesh(item2, rendered, fallback) {
         appendRuntimeWarning(item2, requestedUri, diagnostic.reason);
     }
     refreshMeshLoadUi(rendered);
+    if (required)
+      failWeb3dSceneReadiness(item2, requestedUri, diagnostic.reason, { mesh_status: diagnostic.status });
+    else
+      requiredReadinessCompleteForItem(item2);
     return;
   }
   const ext = meshExtensionFromUri(uri);
@@ -39307,11 +39843,16 @@ async function tryLoadMesh(item2, rendered, fallback) {
       setRenderInfo(rendered, "required_mesh_failed_debug_fallback", uri, item2.mesh_load_error);
       warnRequiredMeshFallback(item2, preflight.url || loadUrl, item2.mesh_load_error, { mesh_url: preflight.url || loadUrl, http_status: preflight.http_status || null });
     } else {
-      fallback.visible = true;
+      if (fallback)
+        fallback.visible = true;
       setRenderInfo(rendered, rendered.renderInfo?.render_status || "box_fallback", uri, item2.mesh_load_error);
       appendRuntimeWarning(item2, uri, item2.mesh_load_error, preflight.code || "mesh_url_not_served", { mesh_url: preflight.url || loadUrl, http_status: preflight.http_status || null });
     }
     refreshMeshLoadUi(rendered);
+    if (required)
+      failWeb3dSceneReadiness(item2, preflight.url || loadUrl, item2.mesh_load_error, { http_status: preflight.http_status || null, mesh_status: item2.mesh_status });
+    else
+      requiredReadinessCompleteForItem(item2);
     return;
   }
   try {
@@ -39328,7 +39869,8 @@ async function tryLoadMesh(item2, rendered, fallback) {
     const nativeBounds = new THREE.Box3().setFromObject(visualRoot);
     const autoscaled = maybeApplyMeshUnitAutoscale(item2, meshObject, nativeBounds, uri);
     const validationBounds = autoscaled ? new THREE.Box3().setFromObject(visualRoot) : nativeBounds;
-    fallback.visible = false;
+    if (fallback)
+      fallback.visible = false;
     rendered.object3d.add(visualRoot);
     rendered.meshObject = visualRoot;
     rendered.loadedMeshObject = meshObject;
@@ -39337,10 +39879,8 @@ async function tryLoadMesh(item2, rendered, fallback) {
     trackMeshLoadAttempt(item2, "loaded", loadUrl, "");
     setRenderInfo(rendered, "mesh_loaded", uri, "");
     diagnoseLoadedMeshBounds(item2, visualRoot, rendered, validationBounds);
-    const bounds = computeFitBounds();
-    if (bounds)
-      frameScene(bounds);
     refreshMeshLoadUi(rendered);
+    requiredReadinessCompleteForItem(item2);
   } catch (err) {
     const required = itemRequiresMeshBackedVisual(item2);
     item2.mesh_status = "loader_failure";
@@ -39353,11 +39893,16 @@ async function tryLoadMesh(item2, rendered, fallback) {
       setRenderInfo(rendered, "required_mesh_failed_debug_fallback", uri, reason);
       warnRequiredMeshFallback(item2, loadUrl, reason, { extension: ext, loader: loaderName, mesh_url: loadUrl });
     } else {
-      fallback.visible = true;
+      if (fallback)
+        fallback.visible = true;
       setRenderInfo(rendered, rendered.renderInfo?.render_status || "box_fallback", uri, reason);
       appendRuntimeWarning(item2, uri, reason, "mesh_loader_failure", { extension: ext, loader: loaderName, mesh_url: loadUrl });
     }
     refreshMeshLoadUi(rendered);
+    if (required)
+      failWeb3dSceneReadiness(item2, loadUrl, reason, { extension: ext, loader: loaderName, mesh_status: item2.mesh_status });
+    else
+      requiredReadinessCompleteForItem(item2);
   }
 }
 function collectItems(sceneJson) {
@@ -39660,30 +40205,40 @@ function initThree() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     const scene = new THREE.Scene();
     scene.up.copy(ROS_Z_UP);
-    scene.background = new THREE.Color(725016);
+    scene.background = new THREE.Color(PRODUCT_VIEW_LIGHT_PALETTE.workspaceBackground);
+    renderer.setClearColor(PRODUCT_VIEW_LIGHT_PALETTE.rendererClearColor, 1);
     const camera = new THREE.PerspectiveCamera(55, 1, 0.01, 100);
     camera.up.copy(ROS_Z_UP);
     camera.position.set(2.4, -2.8, 1.8);
     const controls = new OrbitControls2(camera, renderer.domElement);
     controls.object.up.copy(ROS_Z_UP);
     controls.enableDamping = true;
-    const grid = new THREE.GridHelper(5, 20, 3820126, 2503749);
+    const grid = new THREE.GridHelper(5, 20, PRODUCT_VIEW_LIGHT_PALETTE.gridMajor, PRODUCT_VIEW_LIGHT_PALETTE.gridMinor);
     grid.name = "ros_xy_ground_grid";
     grid.up.copy(ROS_Z_UP);
     grid.rotation.x = Math.PI / 2;
     scene.add(grid);
     scene.add(new THREE.AxesHelper(0.75));
-    scene.add(new THREE.HemisphereLight(16777215, 2241348, 1.2));
-    const light = new THREE.DirectionalLight(16777215, 1.5);
+    scene.add(new THREE.HemisphereLight(16777215, 9082531, 1.25));
+    const light = new THREE.DirectionalLight(16777215, 1.35);
     light.position.set(2, -3, 4);
     scene.add(light);
     const transformControls = new TransformControls2(camera, renderer.domElement);
     transformControls.setMode("translate");
+    transformControls.setSpace("world");
     transformControls.addEventListener("dragging-changed", (event) => {
-      controls.enabled = !event.value;
+      if (state.editorMode !== "rotate")
+        controls.enabled = !event.value;
       const rendered = renderedById(state.selected);
       if (!rendered || !canEditItem(rendered.item))
         return;
+      if (state.editorMode === "rotate") {
+        if (event.value)
+          beginDirectRotateDrag(rendered);
+        else
+          finishDirectRotateDrag(rendered);
+        return;
+      }
       if (event.value)
         state.gizmoDragStart = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d));
       else {
@@ -39697,16 +40252,33 @@ function initThree() {
       const rendered = renderedById(state.selected);
       if (!rendered || !canEditItem(rendered.item))
         return;
+      if (state.editorMode === "rotate") {
+        previewDirectRotateDrag(rendered);
+        return;
+      }
       const snapped = snapTransform(transformFromObject(rendered.object3d));
       applyTransformToObject(rendered.object3d, snapped);
       syncInspectorTransformFields(rendered);
       updateLabels();
     });
+    controls.addEventListener("start", markCameraUserControlled);
     scene.add(transformControls);
     state.three = { renderer, scene, camera, controls, transformControls, raycaster: new THREE.Raycaster(), pointer: new THREE.Vector2() };
     resize();
     window.addEventListener("resize", resize);
-    el.canvas.addEventListener("pointerdown", pickObject);
+    el.canvas.addEventListener("pointerdown", onCanvasPointerDown);
+    el.canvas.addEventListener("pointermove", onCanvasPointerMove);
+    el.canvas.addEventListener("pointerup", onCanvasPointerUp);
+    el.canvas.addEventListener("pointercancel", () => {
+      cancelDirectMoveDrag("Move cancelled");
+      cancelDirectRotateDrag("Rotation cancelled");
+    });
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        cancelDirectMoveDrag("Move cancelled");
+        cancelDirectRotateDrag("Rotation cancelled");
+      }
+    });
     animate();
   } catch (err) {
     showError(`Bundled Three.js module load failure: ${err.message || err}`);
@@ -39730,6 +40302,98 @@ function animate() {
   renderer.render(scene, camera);
   updateLabels();
 }
+function physicalBoundsIdentityFor(object) {
+  const item2 = object?.userData?.item || {};
+  return [
+    object?.userData?.source_layer,
+    object?.userData?.active_visual_source,
+    object?.userData?.role,
+    object?.userData?.category,
+    object?.userData?.id,
+    object?.userData?.display_name,
+    object?.userData?.status,
+    object?.userData?.mesh_load_warning,
+    item2?.source_layer,
+    item2?.active_visual_source,
+    item2?.role,
+    item2?.category,
+    item2?.type,
+    item2?.id,
+    item2?.display_name,
+    item2?.status,
+    item2?.mesh_load_warning,
+    ...Array.isArray(item2?.warnings) ? item2.warnings : [],
+    itemLabel(item2 || {})
+  ].map((value) => String(value || "").toLowerCase().replace(/[_-]+/g, " ")).join(" ");
+}
+function physicalBoundsItemFor(object, nearestItem = null) {
+  return object?.userData?.item || nearestItem || object?.userData || {};
+}
+function isInitialFitPhysicalGeometryItem(item2, identity = "") {
+  const category = meshContractCategoryOf(item2);
+  if (["robot", "tool", "table", "camera", "object"].includes(category))
+    return true;
+  return /\b(robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|wrist|tool|gripper|end effector|eef|suction|robotiq|airpick|camera body|configured camera|sensor body|conveyor|object|workpiece|part|product|bin|tray|support surface|table|tabletop|workbench|fixture|pallet)\b/.test(identity);
+}
+function isPhysicalBoundsHelperObject(object, item2, identity) {
+  if (!object || object.visible === false)
+    return true;
+  if (object.isGridHelper || object.isAxesHelper)
+    return true;
+  if (object.userData?.selection_outline === true || object.userData?.selection_highlight === true)
+    return true;
+  if (object.userData?.exclude_from_physical_bounds === true || object.userData?.exclude_from_fit_bounds === true)
+    return true;
+  if (item2?.exclude_from_physical_bounds === true || item2?.exclude_from_fit_bounds === true)
+    return true;
+  if (DEBUG_OVERLAY_TOKEN_RE.test(identity))
+    return true;
+  return !isInitialFitPhysicalGeometryItem(item2, identity);
+}
+function isRobotPrimitiveFallbackObject(object, item2, identity) {
+  const visualSource = String(item2?.active_visual_source || object?.userData?.active_visual_source || "").toLowerCase();
+  const sourceLayer = String(item2?.source_layer || object?.userData?.source_layer || "").toLowerCase();
+  return /primitive fallback|fallback/.test(identity) && /robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|wrist/.test(identity) && (visualSource.includes("primitive_fallback") || visualSource.includes("fallback") || sourceLayer.includes("primitive_fallback"));
+}
+function collectPhysicalVisibleBounds(root, options = {}) {
+  if (!root || !THREE?.Box3)
+    return { count: 0, bounds: null, bounds_json: null };
+  root.updateWorldMatrix?.(true, true);
+  const bounds = new THREE.Box3();
+  const candidates = [];
+  let hasGeneratedRobotMesh = false;
+  const visit = (node, nearestItem = null) => {
+    if (!node || node.visible === false)
+      return;
+    const item2 = physicalBoundsItemFor(node, nearestItem);
+    const identity = physicalBoundsIdentityFor(node);
+    const nextNearestItem = node?.userData?.item || nearestItem;
+    const isRenderable = node.isMesh || node.isLine || node.isLineSegments || node.isPoints || node.isSprite;
+    if (isRenderable && !isPhysicalBoundsHelperObject(node, item2, identity)) {
+      const visualSource = String(item2?.active_visual_source || node?.userData?.active_visual_source || "").toLowerCase();
+      const isGenerated = /generated|urdf/.test(identity);
+      const isRobot = /robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|wrist/.test(identity);
+      if (isGenerated && isRobot && /mesh|generated urdf visual|mesh preview/.test(visualSource.replace(/_/g, " ")))
+        hasGeneratedRobotMesh = true;
+      candidates.push({ node, item: item2, identity });
+    }
+    for (const child of node.children || [])
+      visit(child, nextNearestItem);
+  };
+  visit(root);
+  let count = 0;
+  for (const candidate of candidates) {
+    if (hasGeneratedRobotMesh && isRobotPrimitiveFallbackObject(candidate.node, candidate.item, candidate.identity))
+      continue;
+    const nodeBounds = finiteBox3(new THREE.Box3().setFromObject(candidate.node));
+    if (!nodeBounds)
+      continue;
+    bounds.union(nodeBounds);
+    count += 1;
+  }
+  const finite = count ? finiteBox3(bounds) : null;
+  return { count: finite ? count : 0, bounds: finite, bounds_json: box3ToJson(finite) };
+}
 function visibleRenderableBounds(object) {
   if (!object || object.visible === false)
     return null;
@@ -39751,9 +40415,6 @@ function visibleRenderableBounds(object) {
   };
   visit(object);
   return hasVisible ? finiteBox3(bounds) : null;
-}
-function objectHasVisibleRenderable(object) {
-  return Boolean(visibleRenderableBounds(object));
 }
 function assemblyRootHiddenForFit(root) {
   const data = root?.userData || {};
@@ -39777,117 +40438,6 @@ function collectPhysicalAssemblyBounds() {
   }
   const finite = count ? finiteBox3(bounds) : null;
   return { count: finite ? count : 0, bounds: finite, bounds_json: box3ToJson(finite), roots };
-}
-function itemHiddenForFit(item2) {
-  return item2?.visible === false || item2?.hidden === true || item2?.rendered === false || item2?.enabled === false;
-}
-function renderedStatusForFit(rendered) {
-  return String(rendered?.renderInfo?.render_status || rendered?.item?.renderInfo?.render_status || rendered?.item?.mesh_status || "").toLowerCase();
-}
-function isRequiredMeshDebugFallback(rendered) {
-  const status = renderedStatusForFit(rendered);
-  if (status === "required_mesh_failed_debug_fallback")
-    return true;
-  let debug = false;
-  rendered?.object3d?.traverse?.((child) => {
-    if (debug)
-      return;
-    const childStatus = String(child?.userData?.render_status || child?.userData?.renderInfo?.render_status || "").toLowerCase();
-    if (childStatus === "required_mesh_failed_debug_fallback")
-      debug = true;
-  });
-  return debug;
-}
-function isLoadingPlaceholderHidden(rendered) {
-  return renderedStatusForFit(rendered) === "mesh_loading_required" && rendered?.fallback?.visible === false && !rendered?.meshObject;
-}
-function warnFitBlockerExcluded(rendered, reason, bounds = null, extra = {}) {
-  const item2 = rendered?.item || {};
-  const key = `${item2.id || itemLabel(item2)}:${reason}`;
-  state._fitBlockerWarnings = state._fitBlockerWarnings || /* @__PURE__ */ new Set();
-  if (state._fitBlockerWarnings.has(key))
-    return;
-  state._fitBlockerWarnings.add(key);
-  appendViewerDiagnosticWarning(item2, "camera_framing_blocker_excluded", reason, {
-    render_status: renderedStatusForFit(rendered),
-    visual_bounds_status: item2?.visual_bounds_status || "",
-    excluded_fit_bounds: box3ToJson(bounds),
-    ...extra
-  });
-}
-function computeFitBounds({ includeDebugFallbacks = false } = {}) {
-  const normalBounds = new THREE.Box3();
-  const fallbackBounds = new THREE.Box3();
-  let hasNormal = false;
-  let hasFallback = false;
-  const deferredWarnings = [];
-  const assemblyBounds = collectPhysicalAssemblyBounds();
-  if (assemblyBounds.bounds) {
-    normalBounds.union(assemblyBounds.bounds);
-    hasNormal = true;
-    state.physicalAssemblyBounds = assemblyBounds.bounds.clone();
-  } else {
-    state.physicalAssemblyBounds = null;
-  }
-  for (const rendered of state.objects) {
-    if (!rendered?.object3d)
-      continue;
-    if (rendered.item?.exclude_from_fit_bounds === true || rendered.object3d.userData?.exclude_from_fit_bounds === true) {
-      deferredWarnings.push([rendered, "debug diagnostic excluded from camera fit bounds", null]);
-      continue;
-    }
-    if (!state.debugOverlaysVisible && isDebugOverlayItem(rendered.item) || itemHiddenForFit(rendered.item) || rendered.object3d.visible === false) {
-      deferredWarnings.push([rendered, "hidden renderable excluded from camera fit bounds", null]);
-      continue;
-    }
-    if (isLoadingPlaceholderHidden(rendered) || !objectHasVisibleRenderable(rendered.object3d)) {
-      deferredWarnings.push([rendered, "hidden loading placeholder excluded from camera fit bounds", null]);
-      continue;
-    }
-    const itemBounds = visibleRenderableBounds(rendered.object3d);
-    if (!itemBounds)
-      continue;
-    const isDebugFallback = isRequiredMeshDebugFallback(rendered);
-    const isOversized = rendered.item?.visual_bounds_status === "oversized";
-    if (isDebugFallback || isOversized) {
-      fallbackBounds.union(itemBounds);
-      hasFallback = true;
-      deferredWarnings.push([
-        rendered,
-        isDebugFallback ? "required_mesh_failed_debug_fallback excluded from normal camera fit bounds" : "oversized visual bounds excluded from normal camera fit bounds",
-        itemBounds
-      ]);
-      continue;
-    }
-    normalBounds.union(itemBounds);
-    hasNormal = true;
-  }
-  const finiteNormal = hasNormal ? finiteBox3(normalBounds) : null;
-  if (finiteNormal) {
-    for (const warning of deferredWarnings)
-      warnFitBlockerExcluded(...warning);
-    maybeWarnSceneBoundsExceedWorkspace(finiteNormal);
-    state.finalPhysicalFitBounds = finiteNormal.clone();
-    return finiteNormal;
-  }
-  const finiteFallback = includeDebugFallbacks || hasFallback ? finiteBox3(fallbackBounds) : null;
-  if (finiteFallback) {
-    for (const warning of deferredWarnings)
-      warnFitBlockerExcluded(...warning);
-    const fallbackKey = `${sceneId() || sceneDisplayName()}:fallback_fit_bounds`;
-    state._fitBlockerWarnings = state._fitBlockerWarnings || /* @__PURE__ */ new Set();
-    if (!state._fitBlockerWarnings.has(fallbackKey)) {
-      state._fitBlockerWarnings.add(fallbackKey);
-      appendViewerDiagnosticWarning({ id: sceneId(), label: sceneDisplayName() }, "camera_framing_blocker_excluded", "camera fit fell back to debug or oversized geometry because no normal physical bounds were available", {
-        fallback_fit_bounds: box3ToJson(finiteFallback)
-      });
-    }
-    maybeWarnSceneBoundsExceedWorkspace(finiteFallback);
-    state.finalPhysicalFitBounds = finiteFallback.clone();
-    return finiteFallback;
-  }
-  state.finalPhysicalFitBounds = null;
-  return null;
 }
 function box3ToJson(box) {
   if (!box || box.isEmpty() || !finiteBox3(box))
@@ -40081,84 +40631,204 @@ function diagnoseLoadedMeshBounds(item2, meshObject, rendered, nativeBounds = nu
       item2.visual_bounds_status = "corrected_by_local_unit_scale";
   }
 }
-function workspaceDimensionsOf(sceneJson) {
-  return dimensionsVectorFrom(sceneJson?.workspace?.dimensions_m || sceneJson?.workspace?.size_m || sceneJson?.workspace_dimensions_m || sceneJson?.scene?.workspace_dimensions_m);
-}
-function maybeWarnSceneBoundsExceedWorkspace(bounds) {
-  const workspace = workspaceDimensionsOf(state.sceneJson);
-  if (!workspace || state._sceneBoundsExceededWarned)
-    return;
-  const dims = box3Dimensions(bounds);
-  if (dims.x > workspace.x || dims.y > workspace.y || dims.z > workspace.z) {
-    state._sceneBoundsExceededWarned = true;
-    appendViewerDiagnosticWarning({ id: sceneId(), label: sceneDisplayName() }, "scene_bounds_exceed_workspace", "rendered scene bounds exceed configured workspace dimensions", {
-      scene_bounds: box3ToJson(bounds),
-      workspace_dimensions_m: { x: workspace.x, y: workspace.y, z: workspace.z }
-    });
-  }
-}
 function frameScene(bounds) {
   const { camera, controls } = state.three;
-  if (!camera || !controls || !bounds || bounds.isEmpty())
+  const finiteBounds = finiteBox3(bounds);
+  if (!camera || !controls || !finiteBounds)
     return false;
   const center = new THREE.Vector3();
   const sphere = new THREE.Sphere();
-  bounds.getCenter(center);
-  bounds.getBoundingSphere(sphere);
+  finiteBounds.getCenter(center);
+  finiteBounds.getBoundingSphere(sphere);
+  if (![center.x, center.y, center.z, sphere.radius].every(Number.isFinite))
+    return false;
   const radius = Math.max(sphere.radius, MIN_FRAME_RADIUS);
   const direction = new THREE.Vector3(1.35, -1.65, 1.05).normalize();
   const distance = Math.max(radius * FRAME_DISTANCE_MULTIPLIER, MIN_FRAME_RADIUS * FRAME_DISTANCE_MULTIPLIER);
   camera.position.copy(center).addScaledVector(direction, distance);
-  camera.near = Math.max(0.01, radius / 100);
-  camera.far = Math.max(100, distance + radius * 6);
+  camera.near = Math.max(0.01, Math.min(radius / 100, distance / 10));
+  camera.far = Math.max(camera.near + 1, distance + radius * 6, 100);
+  if (![camera.position.x, camera.position.y, camera.position.z, camera.near, camera.far].every(Number.isFinite))
+    return false;
   camera.updateProjectionMatrix();
   controls.target.copy(center);
   controls.update();
-  state.lastFrameBounds = bounds.clone();
+  state.lastFrameBounds = finiteBounds.clone();
   if (el.resetView)
     el.resetView.disabled = false;
   return true;
 }
-function resetView() {
-  const bounds = computeFitBounds() || state.lastFrameBounds || computeFitBounds({ includeDebugFallbacks: true });
-  if (bounds)
-    frameScene(bounds);
+function stableSceneCameraKey() {
+  return [
+    state.sceneJson?.scene?.root,
+    state.sceneJson?.scene?.canonical_root,
+    state.sceneJson?.scene?.id,
+    state.sceneJson?.scene_id,
+    state.sceneJson?.scene?.generation_version,
+    state.sceneJson?.scene_generation_token,
+    state.sourceWebSceneFile,
+    state.sceneJson?.schema_version
+  ].map((value) => String(value || "")).filter(Boolean).join("|");
 }
-if (el.resetView) {
-  el.resetView.title = RESET_VIEW_TITLE;
-  el.resetView.setAttribute("aria-label", "Fit Scene / Reset View");
+function cancelInitialCameraFitRetry() {
+  if (state.initialCameraFit?.pendingRetry)
+    clearTimeout(state.initialCameraFit.pendingRetry);
+  state.initialCameraFit.pendingRetry = null;
+}
+function beginInitialCameraFitForCurrentScene() {
+  const sceneKey = stableSceneCameraKey();
+  if (state.initialCameraFit?.sceneKey === sceneKey)
+    return;
+  cancelInitialCameraFitRetry();
+  state.initialCameraFit = { sceneKey, done: false, attempts: 0, pendingRetry: null, userControlled: false };
+}
+function markCameraUserControlled() {
+  if (!state.initialCameraFit)
+    return;
+  state.initialCameraFit.userControlled = true;
+  cancelInitialCameraFitRetry();
+}
+function reportFitCellNoGeometry(message = "No visible physical geometry to frame") {
+  state.editorError = message;
+  pushEditorEvent("fit_cell_unavailable", { message });
+  if (el.error) {
+    el.error.textContent = message;
+    el.error.hidden = false;
+  }
+}
+function resetView({ userInitiated = true } = {}) {
+  if (userInitiated)
+    markCameraUserControlled();
+  const physical = collectPhysicalVisibleBounds(state.three.scene);
+  if (!physical.bounds || !frameScene(physical.bounds)) {
+    reportFitCellNoGeometry();
+    return false;
+  }
+  if (state.editorError === "No visible physical geometry to frame")
+    clearError();
+  return true;
+}
+function reportFitSelectionFallback(message) {
+  state.editorError = message;
+  pushEditorEvent("fit_selection_fallback", { message, itemId: state.selected || "" });
+  if (el.error) {
+    el.error.textContent = message;
+    el.error.hidden = false;
+  }
+}
+function fitSelection() {
+  markCameraUserControlled();
+  const selectedId = String(state.selected || "").trim();
+  const rendered = selectedId ? renderedById(selectedId) : null;
+  const fallback = (message) => {
+    reportFitSelectionFallback(message);
+    resetView({ userInitiated: false });
+    return false;
+  };
+  if (!selectedId)
+    return fallback("No physical item selected; fitting the workcell");
+  if (!rendered?.object3d)
+    return fallback("Selected item has no visible physical geometry; fitting the workcell");
+  const physical = collectPhysicalVisibleBounds(rendered.object3d);
+  if (!physical.bounds || !frameScene(physical.bounds))
+    return fallback("Selected item has no visible physical geometry; fitting the workcell");
+  if (state.editorError === "No physical item selected; fitting the workcell" || state.editorError === "Selected item has no visible physical geometry; fitting the workcell")
+    clearError();
+  pushEditorEvent("fit_selection", { itemId: selectedId, physicalRenderableCount: physical.count, bounds: physical.bounds_json });
+  return true;
+}
+function attemptInitialCameraFit({ allowRetry = true } = {}) {
+  const fit = state.initialCameraFit;
+  if (!fit || fit.done || fit.userControlled || fit.sceneKey !== stableSceneCameraKey())
+    return false;
+  cancelInitialCameraFitRetry();
+  fit.attempts += 1;
+  const physical = collectPhysicalVisibleBounds(state.three.scene);
+  if (physical.bounds && frameScene(physical.bounds)) {
+    fit.done = true;
+    return true;
+  }
+  if (allowRetry && fit.attempts < 2) {
+    fit.pendingRetry = setTimeout(() => attemptInitialCameraFit({ allowRetry: false }), 250);
+  } else {
+    reportFitCellNoGeometry("No visible physical geometry available for initial framing");
+  }
+  return false;
+}
+function triggerInitialCameraFitAfterSceneReady() {
+  return attemptInitialCameraFit({ allowRetry: false });
 }
 function clearLabels() {
   if (el.labelLayer)
     el.labelLayer.innerHTML = "";
 }
-function clearSceneObjects() {
-  const scene = state.three.scene;
-  if (!scene)
+function disposeOwnedObject3d(object3d, seen = /* @__PURE__ */ new Set()) {
+  if (!object3d || seen.has(object3d))
     return;
-  for (const root of state.assemblyRoots || [])
-    scene.remove(root);
-  for (const rendered of state.objects)
-    scene.remove(rendered.object3d);
-  clearLabels();
+  seen.add(object3d);
+  if (Array.isArray(object3d.children)) {
+    for (const child of [...object3d.children])
+      disposeOwnedObject3d(child, seen);
+  }
+  object3d.geometry?.dispose?.();
+  const material = object3d.material;
+  if (Array.isArray(material)) {
+    for (const entry of material)
+      entry?.dispose?.();
+  } else {
+    material?.dispose?.();
+  }
+}
+function resetSceneLifecycleState() {
+  robotPreviewLoadToken += 1;
+  cancelInitialCameraFitRetry();
   state.objects = [];
   state.assemblyRoots = [];
   state.robotAssemblyDiagnostics = [];
   state.robotAssemblyRenderDiagnostics = {};
+  state.robotUrdfPreviewDiagnostics = {};
   state.physicalAssemblyBounds = null;
   state.finalPhysicalFitBounds = null;
   state.resolvedFramePoses.clear();
+  state.frameLookup = /* @__PURE__ */ new Map();
   state.lastFrameBounds = null;
   state._sceneBoundsExceededWarned = false;
   state._fitBlockerWarnings = /* @__PURE__ */ new Set();
   state._generatedUrdfFramePoseWarnings = /* @__PURE__ */ new Set();
   state._supportSurfaceSemanticWarnings = /* @__PURE__ */ new Set();
+  state.robotPreviewResult = null;
+  state.initialPosePreview = { active: false, robotId: "", sceneKey: "" };
+  state.web3dReadiness = { state: "server_ready", emittedSceneReady: false, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null };
+}
+function clearSceneObjects() {
+  const scene = state.three.scene;
+  const previousAssemblyRoots = [...state.assemblyRoots || []];
+  const previousObjects = [...state.objects || []];
+  resetSceneLifecycleState();
+  if (scene) {
+    const disposed = /* @__PURE__ */ new Set();
+    for (const root of previousAssemblyRoots) {
+      scene.remove(root);
+      disposeOwnedObject3d(root, disposed);
+    }
+    for (const rendered of previousObjects) {
+      scene.remove(rendered.object3d);
+      disposeOwnedObject3d(rendered.object3d, disposed);
+    }
+  }
+  clearLabels();
+  if (el.showInitialPose)
+    el.showInitialPose.checked = false;
+  setInitialPosePreviewUi(false);
   if (el.resetView)
     el.resetView.disabled = true;
   renderSceneSummary();
 }
 function renderScene(items) {
   clearSceneObjects();
+  state.frameLookup = parseSceneFrames(state.sceneJson || {});
+  state.resolvedFramePoses.clear();
+  beginWeb3dSceneReadiness(items);
   state.dirtyTransforms.clear();
   state.undoStack = [];
   state.redoStack = [];
@@ -40168,6 +40838,13 @@ function renderScene(items) {
   state.robotUrdfPreviewDiagnostics = {};
   const urdfPreviewActive = isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview);
   const robotToolGeneratedUrdfItems = items.filter(isRobotToolGeneratedUrdfMeshVisualItem);
+  if (urdfPreviewActive) {
+    for (const item2 of robotToolGeneratedUrdfItems) {
+      item2.workcell_web_render_pose_mode = "expanded_urdf_loader_skip_flattened_row";
+      item2.expanded_urdf_loader_skip_reason = "expanded URDF mode renders robot/tool only through loadRobotPreview and URDFLoader; flattened row transforms are diagnostics only";
+      item2.baked_world_visual_pose_diagnostic_only = Boolean(item2.baked_world_visual_pose || item2.expected_visual_pose || item2.baked_world_visual_matrix || item2.visual_origin || item2.robot_world_pose);
+    }
+  }
   const assemblyBuild = urdfPreviewActive ? { handled: new Set(robotToolGeneratedUrdfItems), assemblies: [], renderDiagnostics: { skipped_flattened_urdf_visual_count: 0, assembled_hierarchy_rendered_mesh_count: 0, rendered_fk_visual_count: 0, skipped_legacy_generated_urdf_count: robotToolGeneratedUrdfItems.length, skipped_legacy_generated_urdf_visual_count: robotToolGeneratedUrdfItems.length, visible_duplicate_generated_urdf_count: 0, visible_tool0_fallback_count: 0, detached_robot_mesh_clusters: 0 } } : buildRobotAssemblies(items);
   state.robotAssemblyDiagnostics = assemblyBuild.assemblies;
   state.robotAssemblyRenderDiagnostics = assemblyBuild.renderDiagnostics || {};
@@ -40185,9 +40862,11 @@ function renderScene(items) {
     object3d.up.copy(THREE.Object3D.DEFAULT_UP);
     const primitive = primitiveOf(item2);
     const fallback = isSensor(item2) ? makeSensorMarker(item2) : makePrimitiveMesh(item2);
-    fallback.name = `${item2.id || itemLabel(item2)}_fallback`;
-    assignItemUserData(fallback, item2);
-    object3d.add(fallback);
+    if (fallback) {
+      fallback.name = `${item2.id || itemLabel(item2)}_fallback`;
+      assignItemUserData(fallback, item2);
+      object3d.add(fallback);
+    }
     if (!applyPose(object3d, item2))
       continue;
     assignItemUserData(object3d, item2);
@@ -40195,9 +40874,10 @@ function renderScene(items) {
     scene.add(object3d);
     const rendered = { item: item2, object3d, fallback, labelEl: createLabelElement(item2), originalTransform: transformOf(item2) };
     const requiredMesh = itemRequiresMeshBackedVisual(item2);
-    const fallbackStatus = requiredMesh ? "mesh_loading_required" : primitive || isSensor(item2) ? "primitive_fallback" : "box_fallback";
-    const fallbackReason = requiredMesh ? "required mesh is loading; primitive fallback hidden unless mesh load fails as debug geometry" : primitive || isSensor(item2) ? "primitive geometry rendered while mesh loads or is unavailable" : "no primitive geometry or mesh was provided; using box fallback";
-    fallback.visible = !requiredMesh;
+    const fallbackStatus = requiredMesh ? "mesh_loading_required" : fallback ? "primitive_fallback" : "no_physical_dimensions";
+    const fallbackReason = requiredMesh ? "required mesh is loading; primitive fallback hidden unless mesh load fails as debug geometry" : fallback ? "primitive geometry rendered while mesh loads or is unavailable" : "no mesh or physical primitive dimensions were provided; Product View box fallback suppressed";
+    if (fallback)
+      fallback.visible = !requiredMesh;
     setRenderInfo(rendered, fallbackStatus, displayMeshUri(item2), fallbackReason);
     state.objects.push(rendered);
     maybeWarnSupportSurfaceSemantics(item2);
@@ -40206,12 +40886,21 @@ function renderScene(items) {
   renderFrameDebugOverlays();
   populateObjectList();
   updateLabels();
-  const bounds = computeFitBounds();
-  if (bounds)
-    frameScene(bounds);
   renderSceneSummary();
+  maybeEmitSceneReady();
 }
 function loadExpandedUrdfRobotPreview(preview) {
+  const loadToken = ++robotPreviewLoadToken;
+  const loadSceneId = sceneId();
+  let staleCallbackLogged = false;
+  const callbackIsCurrent = () => loadToken === robotPreviewLoadToken && loadSceneId === sceneId();
+  const ignoreStaleCallback = () => {
+    if (!staleCallbackLogged) {
+      console.warn(`Ignored stale robot preview callback: callback_scene=${loadSceneId} active_scene=${sceneId()}`);
+      staleCallbackLogged = true;
+    }
+    return true;
+  };
   const diagnostics = state.robotUrdfPreviewDiagnostics = {
     robot_render_mode: "expanded_urdf_loader",
     robot_preview_loaded: false,
@@ -40252,24 +40941,44 @@ function loadExpandedUrdfRobotPreview(preview) {
     return { root: null, links: /* @__PURE__ */ new Map(), joints: /* @__PURE__ */ new Map(), diagnostics, ready: Promise.resolve(null) };
   }
   const previewResult = loadRobotPreview2(preview, {
-    scene: state.three.scene,
-    assemblyRoots: state.assemblyRoots,
+    sceneId: loadSceneId,
+    scene: { add: (root) => {
+      if (callbackIsCurrent())
+        state.three.scene?.add?.(root);
+    } },
+    assemblyRoots: { push: (root) => {
+      if (callbackIsCurrent())
+        state.assemblyRoots.push(root);
+    } },
     repoRootRelativeUrl,
     meshUriDiagnostic,
     rootName: `${sceneDisplayName()}_expanded_urdf_loader_robot`,
     skippedLegacyGeneratedUrdfVisualCount: diagnostics.skipped_legacy_generated_urdf_visual_count,
     onRobotLoaded: (result) => {
+      if (!callbackIsCurrent())
+        return ignoreStaleCallback();
+      state.robotPreviewResult = result;
       state.robotUrdfPreviewDiagnostics = result.diagnostics;
+      if (!failIfCanonicalRequiredVisualSetInvalid())
+        completeExpandedUrdfReadiness(result);
+      refreshInitialPoseActionState();
       renderSceneSummary();
-      const bounds = computeFitBounds();
-      if (bounds)
-        frameScene(bounds);
     },
     onRobotMeshLoaded: () => {
+      if (!callbackIsCurrent())
+        return ignoreStaleCallback();
       renderSceneSummary();
     },
-    onRobotMeshLoadError: () => renderSceneSummary(),
-    onRobotError: (err) => {
+    onRobotMeshLoadError: (err, uri, detail) => {
+      if (!callbackIsCurrent())
+        return ignoreStaleCallback();
+      failExpandedUrdfReadiness(err, state.robotUrdfPreviewDiagnostics, detail || { uri });
+      renderSceneSummary();
+    },
+    onRobotError: (err, diagnostics2) => {
+      if (!callbackIsCurrent())
+        return ignoreStaleCallback();
+      failExpandedUrdfReadiness(err, diagnostics2 || state.robotUrdfPreviewDiagnostics);
       appendRuntimeWarning({}, preview?.urdf_url || "", `expanded_urdf_loader failed: ${err?.message || err}`, "expanded_urdf_loader_failed");
       refreshWarnings();
       renderSceneSummary();
@@ -40543,7 +41252,6 @@ function setDebugOverlaysVisible(visible) {
   populateObjectList();
   updateLabels();
   renderSceneSummary();
-  resetView();
 }
 function updateLabels() {
   const { camera } = state.three;
@@ -40681,6 +41389,11 @@ function populateObjectList() {
   }
 }
 function selectObject(id) {
+  const wasInitialPreviewActive = state.initialPosePreview.active;
+  if (state.directMoveDrag && state.directMoveDrag.itemId !== (id || ""))
+    cancelDirectMoveDrag("Move cancelled");
+  if (state.directRotateDrag && state.directRotateDrag.itemId !== (id || ""))
+    cancelDirectRotateDrag("Rotation cancelled");
   const previous = state.selected || "";
   state.selected = id;
   document.querySelectorAll(".object-list li").forEach((li) => li.classList.toggle("selected", li.dataset.id === id));
@@ -40718,6 +41431,198 @@ function pickObject(event) {
   const item2 = hit?.object?.userData?.item || hit?.object?.parent?.userData?.item;
   if (item2?.id)
     selectObject(item2.id);
+  return item2?.id || "";
+}
+function pointerToWorldPlane(event, z) {
+  const rect = el.canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height)
+    return null;
+  state.three.pointer.x = (event.clientX - rect.left) / rect.width * 2 - 1;
+  state.three.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  state.three.raycaster.setFromCamera(state.three.pointer, state.three.camera);
+  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -z);
+  const hit = new THREE.Vector3();
+  if (!state.three.raycaster.ray.intersectPlane(plane, hit))
+    return null;
+  return Number.isFinite(hit.x) && Number.isFinite(hit.y) && Number.isFinite(hit.z) ? hit : null;
+}
+function snapHorizontalPreview(transform) {
+  const snapped = snapTransform(transform, { translationAxes: ["x", "y"], rotationAxes: [] });
+  snapped.pose.xyz.z = transform.pose.xyz.z;
+  return snapped;
+}
+function beginDirectMoveDrag(event, rendered) {
+  if (state.editorMode !== "move" || !rendered || !canEditItem(rendered.item))
+    return false;
+  const start = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d));
+  const hit = pointerToWorldPlane(event, start.pose.xyz.z);
+  if (!hit)
+    return false;
+  const controls = state.three.controls;
+  state.directMoveDrag = { itemId: rendered.item.id, start, last: cloneTransform(start), offset: { x: start.pose.xyz.x - hit.x, y: start.pose.xyz.y - hit.y }, controlsWasEnabled: controls ? controls.enabled : true };
+  if (controls)
+    controls.enabled = false;
+  el.canvas.setPointerCapture?.(event.pointerId);
+  el.canvas.classList.add("direct-move-dragging");
+  event.preventDefault();
+  event.stopPropagation();
+  return true;
+}
+function updateDirectMoveDrag(event) {
+  const drag = state.directMoveDrag;
+  if (!drag)
+    return false;
+  const rendered = renderedById(drag.itemId);
+  if (!rendered || state.selected !== drag.itemId || !canEditItem(rendered.item))
+    return cancelDirectMoveDrag("Move cancelled"), true;
+  const hit = pointerToWorldPlane(event, drag.start.pose.xyz.z);
+  if (!hit)
+    return true;
+  const next = cloneTransform(drag.start);
+  next.pose.xyz.x = hit.x + drag.offset.x;
+  next.pose.xyz.y = hit.y + drag.offset.y;
+  next.pose.xyz.z = drag.start.pose.xyz.z;
+  const preview = snapHorizontalPreview(next);
+  if (!isFiniteTransform(preview))
+    return true;
+  drag.last = cloneTransform(preview);
+  applyTransformToObject(rendered.object3d, preview);
+  syncInspectorTransformFields(rendered);
+  updateLabels();
+  event.preventDefault();
+  event.stopPropagation();
+  return true;
+}
+function finishDirectMoveDrag(event) {
+  const drag = state.directMoveDrag;
+  if (!drag)
+    return false;
+  const rendered = renderedById(drag.itemId);
+  const finalTransform = cloneTransform(drag.last);
+  endDirectMoveDrag(event);
+  if (!rendered || !canEditItem(rendered.item) || !isFiniteTransform(finalTransform))
+    return false;
+  if (sameTransform(drag.start, finalTransform)) {
+    applyTransformToObject(rendered.object3d, drag.start);
+    syncInspectorTransformFields(rendered);
+    return true;
+  }
+  const committed = markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start });
+  if (!committed) {
+    applyTransformToObject(rendered.object3d, drag.start);
+    showError(`Move failed for ${itemLabel(rendered.item)}: final transform was rejected by the editor bridge.`);
+    return true;
+  }
+  emitTransformCommitted(rendered);
+  pushEditorEvent("status", { message: `Moved ${itemLabel(rendered.item)}` });
+  return true;
+}
+function endDirectMoveDrag(event) {
+  const drag = state.directMoveDrag;
+  state.directMoveDrag = null;
+  if (state.three.controls)
+    state.three.controls.enabled = drag ? drag.controlsWasEnabled : state.three.controls.enabled;
+  el.canvas.classList.remove("direct-move-dragging");
+  if (event?.pointerId !== void 0)
+    el.canvas.releasePointerCapture?.(event.pointerId);
+}
+function cancelDirectMoveDrag(message) {
+  const drag = state.directMoveDrag;
+  if (!drag)
+    return false;
+  const rendered = renderedById(drag.itemId);
+  if (rendered) {
+    applyTransformToObject(rendered.object3d, drag.start);
+    syncInspectorTransformFields(rendered);
+    updateLabels();
+  }
+  endDirectMoveDrag();
+  pushEditorEvent("status", { message: message || "Move cancelled" });
+  return true;
+}
+function onCanvasPointerDown(event) {
+  const hitId = pickObject(event);
+  const rendered = hitId && hitId === state.selected ? renderedById(state.selected) : null;
+  if (beginDirectMoveDrag(event, rendered))
+    return;
+}
+function onCanvasPointerMove(event) {
+  updateDirectMoveDrag(event);
+}
+function onCanvasPointerUp(event) {
+  finishDirectMoveDrag(event);
+}
+function directRotatePreviewTransform(rendered) {
+  const drag = state.directRotateDrag;
+  if (!drag || !rendered || rendered.item.id !== drag.itemId)
+    return null;
+  const next = cloneTransform(drag.start);
+  next.pose.rpy.z = transformFromObject(rendered.object3d).pose.rpy.z;
+  return snapTransform(next, { translationAxes: [], rotationAxes: ["z"] });
+}
+function beginDirectRotateDrag(rendered) {
+  if (state.editorMode !== "rotate" || !rendered || !canEditItem(rendered.item))
+    return false;
+  const controls = state.three.controls;
+  const start = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d));
+  state.directRotateDrag = { itemId: rendered.item.id, start, last: cloneTransform(start), controlsWasEnabled: controls ? controls.enabled : true };
+  if (controls)
+    controls.enabled = false;
+  return true;
+}
+function previewDirectRotateDrag(rendered) {
+  const preview = directRotatePreviewTransform(rendered);
+  if (!preview || !isFiniteTransform(preview))
+    return false;
+  state.directRotateDrag.last = cloneTransform(preview);
+  applyTransformToObject(rendered.object3d, preview);
+  syncInspectorTransformFields(rendered);
+  updateLabels();
+  return true;
+}
+function finishDirectRotateDrag(rendered) {
+  const drag = state.directRotateDrag;
+  if (!drag)
+    return false;
+  rendered = rendered || renderedById(drag.itemId);
+  const finalTransform = cloneTransform(drag.last);
+  endDirectRotateDrag();
+  if (!rendered || !canEditItem(rendered.item) || !isFiniteTransform(finalTransform))
+    return false;
+  if (sameTransform(drag.start, finalTransform)) {
+    applyTransformToObject(rendered.object3d, drag.start);
+    syncInspectorTransformFields(rendered);
+    return true;
+  }
+  const committed = markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start, snapOptions: { translationAxes: [], rotationAxes: ["z"] } });
+  if (!committed) {
+    applyTransformToObject(rendered.object3d, drag.start);
+    showError(`Rotation failed for ${itemLabel(rendered.item)}: final transform was rejected by the editor bridge.`);
+    return true;
+  }
+  emitTransformCommitted(rendered);
+  pushEditorEvent("status", { message: `Rotated ${itemLabel(rendered.item)}` });
+  return true;
+}
+function endDirectRotateDrag() {
+  const drag = state.directRotateDrag;
+  state.directRotateDrag = null;
+  if (state.three.controls)
+    state.three.controls.enabled = drag ? drag.controlsWasEnabled : state.three.controls.enabled;
+}
+function cancelDirectRotateDrag(message) {
+  const drag = state.directRotateDrag;
+  if (!drag)
+    return false;
+  const rendered = renderedById(drag.itemId);
+  if (rendered) {
+    applyTransformToObject(rendered.object3d, drag.start);
+    syncInspectorTransformFields(rendered);
+    updateLabels();
+  }
+  endDirectRotateDrag();
+  pushEditorEvent("status", { message: message || "Rotation cancelled" });
+  return true;
 }
 function attachTransformGizmo(rendered) {
   const gizmo = state.three.transformControls;
@@ -40727,10 +41632,19 @@ function attachTransformGizmo(rendered) {
     gizmo.attach(rendered.object3d);
     gizmo.visible = true;
     gizmo.enabled = true;
-    if (state.editorMode === "rotate")
+    if (state.editorMode === "rotate") {
       gizmo.setMode("rotate");
-    else
+      gizmo.setSpace("world");
+      gizmo.showX = false;
+      gizmo.showY = false;
+      gizmo.showZ = true;
+    } else {
       gizmo.setMode("translate");
+      gizmo.setSpace("world");
+      gizmo.showX = true;
+      gizmo.showY = true;
+      gizmo.showZ = true;
+    }
     gizmo.enabled = state.editorMode !== "select";
     gizmo.setTranslationSnap(el.snapToggle?.checked ? translationSnapValue() : null);
     gizmo.setRotationSnap(el.snapToggle?.checked ? rotationSnapRadians() : null);
@@ -40836,6 +41750,7 @@ function updateDirtyState() {
   populateObjectList();
 }
 function clearPreviewEdits() {
+  cancelDirectMoveDrag("Move cancelled");
   for (const rendered of state.objects)
     applyTransformToObject(rendered.object3d, rendered.originalTransform);
   state.dirtyTransforms.clear();
@@ -40859,6 +41774,7 @@ function applyHistoryEntry(entry, direction) {
     populateInspector(rendered);
 }
 function undoPreviewEdit() {
+  cancelDirectMoveDrag("Move cancelled");
   const entry = state.undoStack.pop();
   if (!entry)
     return;
@@ -40868,6 +41784,7 @@ function undoPreviewEdit() {
   emitDirtyChanged();
 }
 function redoPreviewEdit() {
+  cancelDirectMoveDrag("Move cancelled");
   const entry = state.redoStack.pop();
   if (!entry)
     return;
@@ -41008,14 +41925,18 @@ async function loadFile(file) {
     } catch (err) {
       throw new Error(`Invalid JSON in ${file.name}: ${err.message}`);
     }
+    emitWeb3dReadinessState("server_ready");
     const items = validateSceneJson(json);
     state.sceneJson = json;
     state.sourceWebSceneFile = file.name || "";
+    beginInitialCameraFitForCurrentScene();
     state.runtimeWarnings = [];
     state.dirtyTransforms.clear();
     state.undoStack = [];
     state.redoStack = [];
     state.selected = null;
+    cancelDirectMoveDrag("Move cancelled");
+    cancelDirectRotateDrag("Rotation cancelled");
     detachTransformGizmo();
     el.empty.hidden = true;
     if (items.length)
@@ -41068,16 +41989,20 @@ async function loadSceneUrl(rawUrl) {
     if (!response.ok)
       throw new Error(`HTTP ${response.status} ${response.statusText}`);
     const json = await response.json();
+    emitWeb3dReadinessState("server_ready");
     const items = validateSceneJson(json);
     state.sceneJson = json;
     state.frameLookup = parseSceneFrames(json);
     state.resolvedFramePoses.clear();
     state.sourceWebSceneFile = sceneUrl;
+    beginInitialCameraFitForCurrentScene();
     state.runtimeWarnings = [];
     state.dirtyTransforms.clear();
     state.undoStack = [];
     state.redoStack = [];
     state.selected = null;
+    cancelDirectMoveDrag("Move cancelled");
+    cancelDirectRotateDrag("Rotation cancelled");
     detachTransformGizmo();
     el.empty.hidden = true;
     renderScene(items);
@@ -41089,36 +42014,28 @@ async function loadSceneUrl(rawUrl) {
     showError(`Failed to load scene from ${sceneUrl}: ${err.message || err}`);
   }
 }
-if (el.resetView)
-  el.resetView.addEventListener("click", resetView);
-if (el.labelsToggle)
-  el.labelsToggle.addEventListener("change", (event) => setLabelsVisible(event.target.checked));
-if (el.debugOverlaysToggle)
-  el.debugOverlaysToggle.addEventListener("change", (event) => setDebugOverlaysVisible(event.target.checked));
-if (el.undoEdit)
-  el.undoEdit.addEventListener("click", undoPreviewEdit);
-if (el.redoEdit)
-  el.redoEdit.addEventListener("click", redoPreviewEdit);
-if (el.clearEdits)
-  el.clearEdits.addEventListener("click", clearPreviewEdits);
-if (el.snapToggle)
-  el.snapToggle.addEventListener("change", refreshGizmoSnap);
-if (el.translationSnap)
-  el.translationSnap.addEventListener("input", refreshGizmoSnap);
-if (el.rotationSnap)
-  el.rotationSnap.addEventListener("input", refreshGizmoSnap);
-if (el.exportEditPatch)
-  el.exportEditPatch.addEventListener("click", exportEditPatch);
 function setEditorMode(mode) {
   const normalized = mode === "move" ? "move" : mode === "rotate" ? "rotate" : "select";
+  if (state.editorMode !== normalized) {
+    cancelDirectMoveDrag("Move cancelled");
+    cancelDirectRotateDrag("Rotation cancelled");
+  }
   state.editorMode = normalized;
   const gizmo = state.three.transformControls;
   if (gizmo) {
     if (normalized === "move") {
       gizmo.setMode("translate");
+      gizmo.setSpace("world");
+      gizmo.showX = true;
+      gizmo.showY = true;
+      gizmo.showZ = true;
       gizmo.enabled = true;
     } else if (normalized === "rotate") {
       gizmo.setMode("rotate");
+      gizmo.setSpace("world");
+      gizmo.showX = false;
+      gizmo.showY = false;
+      gizmo.showZ = true;
       gizmo.enabled = true;
     } else {
       gizmo.enabled = false;
@@ -41134,48 +42051,6 @@ function setEditorSnap(enabled, translationMeters, rotationDegrees) {
     el.rotationSnap.value = String(Number(rotationDegrees));
   refreshGizmoSnap();
 }
-window.__WORKCELL_EDITOR_API_V1__ = {
-  getState: () => editorState(),
-  selectItem: (id) => {
-    selectObject(String(id || ""));
-    return editorState();
-  },
-  clearSelection: () => {
-    clearSelection();
-    return editorState();
-  },
-  setMode: (mode) => {
-    setEditorMode(mode);
-    return editorState();
-  },
-  setSnap: (enabled, translationMeters, rotationDegrees) => {
-    setEditorSnap(enabled, translationMeters, rotationDegrees);
-    return editorState();
-  },
-  undo: () => {
-    undoPreviewEdit();
-    return editorState();
-  },
-  redo: () => {
-    redoPreviewEdit();
-    return editorState();
-  },
-  fitScene: () => {
-    resetView();
-    return editorState();
-  },
-  getEditPatch: () => buildEditPatch(),
-  drainEvents: () => {
-    const events = state.editorEvents.slice();
-    state.editorEvents.length = 0;
-    return events;
-  }
-};
-el.file.addEventListener("change", (event) => {
-  const file = event.target.files?.[0];
-  if (file)
-    loadFile(file);
-});
 async function boot() {
   try {
     const threeModule = await Promise.resolve().then(() => (init_three_module(), three_module_exports));
@@ -41192,6 +42067,7 @@ async function boot() {
     ColladaLoader2 = colladaModule.ColladaLoader;
     OBJLoader2 = objModule.OBJLoader;
     loadRobotPreview2 = urdfRobotRendererModule.loadRobotPreview;
+    applyRobotJointPreview2 = urdfRobotRendererModule.applyRobotJointPreview;
     initThree();
     setLabelsVisible(el.labelsToggle?.checked || false);
     setDebugOverlaysVisible(el.debugOverlaysToggle?.checked || false);
@@ -41205,7 +42081,363 @@ async function boot() {
     showError(`Bundled Three.js module load failure: ${err.message || err}`);
   }
 }
-boot();
+var THREE, OrbitControls2, STLLoader2, ColladaLoader2, OBJLoader2, TransformControls2, loadRobotPreview2, applyRobotJointPreview2, PRODUCT_VIEW_LIGHT_PALETTE, SUPPORTED_SCHEMA_VERSION, EDIT_PATCH_SCHEMA_VERSION, VIEWER_VERSION, LOCKED_EDIT_REASON, MIN_FRAME_RADIUS, EMPTY_SCENE_MESSAGE, FRAME_DISTANCE_MULTIPLIER, state, robotPreviewLoadToken, RESET_VIEW_TITLE, STAGED_MESH_ROOTS, CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS, CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS, CANONICAL_UR5_2F_REQUIRED_GENERATED_VISUAL_SET, EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS, WEB3D_REQUIRED_CATEGORIES, el, DEBUG_OVERLAY_TOKEN_RE, PHYSICAL_SEMANTIC_TOKEN_RE;
+var init_viewer = __esm({
+  "viewer.js"() {
+    PRODUCT_VIEW_LIGHT_PALETTE = Object.freeze({
+      workspaceBackground: 15659508,
+      rendererClearColor: 15659508,
+      gridMajor: 9016995,
+      gridMinor: 12831699,
+      labelText: 1192e3,
+      labelSurface: 16317180,
+      overlaySurface: 16774877,
+      errorSurface: 16772848,
+      errorAccent: 12858420
+    });
+    SUPPORTED_SCHEMA_VERSION = "workcell_studio_web_scene/v1";
+    EDIT_PATCH_SCHEMA_VERSION = "workcell_studio_web_scene_edit_patch/v1";
+    VIEWER_VERSION = "static_web_viewer_edit_patch_v1";
+    LOCKED_EDIT_REASON = "Locked/generated preview item; edit source layout/environment instead.";
+    MIN_FRAME_RADIUS = 1.2;
+    EMPTY_SCENE_MESSAGE = "Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.";
+    FRAME_DISTANCE_MULTIPLIER = 2.7;
+    state = { sceneJson: null, sourceWebSceneFile: "", frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: "", done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: "select", editorEvents: [], editorError: "", robotPreviewResult: null, initialPosePreview: { active: false, robotId: "", sceneKey: "" }, web3dReadiness: { state: "server_ready", emittedSceneReady: false, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null } };
+    robotPreviewLoadToken = 0;
+    RESET_VIEW_TITLE = "Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.";
+    STAGED_MESH_ROOTS = [
+      "build/workcell_studio_web_scene/assets/",
+      "workcell_studio_web/",
+      "assets/"
+    ];
+    CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS = Object.freeze([
+      "base_link_inertia",
+      "shoulder_link",
+      "upper_arm_link",
+      "forearm_link",
+      "wrist_1_link",
+      "wrist_2_link",
+      "wrist_3_link"
+    ]);
+    CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS = Object.freeze([
+      "gripper_base_link",
+      "left_outer_knuckle",
+      "right_outer_knuckle",
+      "left_outer_finger",
+      "right_outer_finger",
+      "left_inner_knuckle",
+      "right_inner_knuckle",
+      "left_inner_finger",
+      "right_inner_finger"
+    ]);
+    CANONICAL_UR5_2F_REQUIRED_GENERATED_VISUAL_SET = Object.freeze({
+      scene_id: "ur5_2f_test",
+      sceneId: "ur5_2f_test",
+      ur5_visuals: CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS,
+      ur5Visuals: CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS,
+      robotiq_visuals: CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS,
+      robotiqVisuals: CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS,
+      physical_scene_visuals: Object.freeze(["workbench_support_surface", "configured_camera"]),
+      physicalSceneVisuals: Object.freeze(["workbench_support_surface", "configured_camera"])
+    });
+    EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS = [
+      ...CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS,
+      "tool0",
+      ...CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS
+    ];
+    WEB3D_REQUIRED_CATEGORIES = ["robot_arm", "attached_tool_gripper", "workbench_support_surface", "configured_camera"];
+    el = {
+      file: document.getElementById("scene-file"),
+      resetView: document.getElementById("reset-view"),
+      undoEdit: document.getElementById("undo-edit"),
+      redoEdit: document.getElementById("redo-edit"),
+      clearEdits: document.getElementById("clear-edits"),
+      exportEditPatch: document.getElementById("export-edit-patch"),
+      dirty: document.getElementById("dirty-state"),
+      snapToggle: document.getElementById("snap-toggle"),
+      translationSnap: document.getElementById("translation-snap"),
+      rotationSnap: document.getElementById("rotation-snap"),
+      labelsToggle: document.getElementById("labels-toggle"),
+      debugOverlaysToggle: document.getElementById("debug-overlays-toggle"),
+      showInitialPose: document.getElementById("show-initial-pose"),
+      initialPoseStatus: document.getElementById("initial-pose-status"),
+      canvas: document.getElementById("scene-canvas"),
+      labelLayer: document.getElementById("label-layer"),
+      empty: document.getElementById("empty-state"),
+      error: document.getElementById("error-state"),
+      list: document.getElementById("object-list"),
+      inspector: document.getElementById("inspector"),
+      warnings: document.getElementById("warnings"),
+      summary: document.getElementById("scene-summary")
+    };
+    DEBUG_OVERLAY_TOKEN_RE = /\b(overlay|helper|debug|diagnostic|safety zone|pick zone|place zone|robot reach|transform anchor|warning marker|warning anchor|warning badge|camera fov|fov|pick coverage|reachability|collision|work envelope|task route|home pose|approach retreat|epd detection|detection label|bounds box|bounding box)\b/;
+    PHYSICAL_SEMANTIC_TOKEN_RE = /\b(robot|arm|manipulator|tool|gripper|end effector|eef|camera body|configured camera|sensor body|conveyor|object|workpiece|part|product|bin|tray|support surface|table|tabletop|workbench|fixture|pallet|physical safety barrier|safety barrier|guard fence|fence)\b/;
+    if (el.resetView) {
+      el.resetView.title = RESET_VIEW_TITLE;
+      el.resetView.setAttribute("aria-label", "Fit Scene / Reset View");
+    }
+    if (el.resetView)
+      el.resetView.addEventListener("click", resetView);
+    if (el.labelsToggle)
+      el.labelsToggle.addEventListener("change", (event) => setLabelsVisible(event.target.checked));
+    if (el.debugOverlaysToggle)
+      el.debugOverlaysToggle.addEventListener("change", (event) => setDebugOverlaysVisible(event.target.checked));
+    if (el.showInitialPose)
+      el.showInitialPose.addEventListener("change", (event) => toggleInitialPosePreview(event.target.checked));
+    if (el.undoEdit)
+      el.undoEdit.addEventListener("click", undoPreviewEdit);
+    if (el.redoEdit)
+      el.redoEdit.addEventListener("click", redoPreviewEdit);
+    if (el.clearEdits)
+      el.clearEdits.addEventListener("click", clearPreviewEdits);
+    if (el.snapToggle)
+      el.snapToggle.addEventListener("change", refreshGizmoSnap);
+    if (el.translationSnap)
+      el.translationSnap.addEventListener("input", refreshGizmoSnap);
+    if (el.rotationSnap)
+      el.rotationSnap.addEventListener("input", refreshGizmoSnap);
+    if (el.exportEditPatch)
+      el.exportEditPatch.addEventListener("click", exportEditPatch);
+    window.__WORKCELL_EDITOR_API_V1__ = {
+      getState: () => editorState(),
+      selectItem: (id) => {
+        selectObject(String(id || ""));
+        return editorState();
+      },
+      clearSelection: () => {
+        clearSelection();
+        return editorState();
+      },
+      setMode: (mode) => {
+        setEditorMode(mode);
+        return editorState();
+      },
+      setSnap: (enabled, translationMeters, rotationDegrees) => {
+        setEditorSnap(enabled, translationMeters, rotationDegrees);
+        return editorState();
+      },
+      undo: () => {
+        undoPreviewEdit();
+        return editorState();
+      },
+      redo: () => {
+        redoPreviewEdit();
+        return editorState();
+      },
+      fitScene: () => {
+        resetView();
+        return editorState();
+      },
+      fitSelection: () => {
+        fitSelection();
+        return editorState();
+      },
+      getEditPatch: () => buildEditPatch(),
+      drainEvents: () => {
+        const events = state.editorEvents.slice();
+        state.editorEvents.length = 0;
+        return events;
+      }
+    };
+    el.file.addEventListener("change", (event) => {
+      const file = event.target.files?.[0];
+      if (file)
+        loadFile(file);
+    });
+    boot();
+  }
+});
+
+// src/viewer_entry.js
+init_three_module();
+init_OrbitControls();
+init_TransformControls();
+init_STLLoader();
+init_ColladaLoader();
+init_OBJLoader();
+init_URDFLoader();
+var RVIZ_LIGHT_BASELINE = Object.freeze({
+  background: 15922422,
+  ground: 16251130,
+  hemisphereSky: 16777215,
+  hemisphereGround: 13358044,
+  primaryLight: 16777215,
+  fillLight: 14412542,
+  exposure: 1.12
+});
+var PATCH_FLAG = Symbol.for("workcell-studio.rviz-light-baseline.v1");
+var configuredMeshes = /* @__PURE__ */ new WeakSet();
+function isHelperOrOverlay(node) {
+  const data = node?.userData || {};
+  const identity = [
+    node?.name,
+    data?.source_layer,
+    data?.role,
+    data?.category,
+    data?.status,
+    data?.item?.source_layer,
+    data?.item?.role,
+    data?.item?.category,
+    data?.item?.status
+  ].map((value) => String(value || "").toLowerCase().replace(/[_-]+/g, " ")).join(" ");
+  return Boolean(
+    node?.isGridHelper || node?.isAxesHelper || data?.exclude_from_fit_bounds === true || data?.debug_only === true || data?.diagnostic_only === true || data?.helper_overlay === true || /\b(debug|diagnostic|overlay|helper|zone|reach|fov|warning|transform anchor)\b/.test(identity)
+  );
+}
+function materialIsTranslucent(material) {
+  const materials = Array.isArray(material) ? material : [material];
+  return materials.some((entry) => entry && entry.transparent && Number(entry.opacity ?? 1) < 0.9);
+}
+function configureMeshShadows(scene) {
+  scene.traverse((node) => {
+    if (!node?.isMesh || configuredMeshes.has(node))
+      return;
+    configuredMeshes.add(node);
+    if (node.name === "rviz_light_ground" || isHelperOrOverlay(node)) {
+      node.castShadow = false;
+      return;
+    }
+    const translucent = materialIsTranslucent(node.material);
+    node.castShadow = !translucent;
+    node.receiveShadow = !translucent;
+  });
+}
+function configureGround(scene) {
+  let ground = scene.getObjectByName("rviz_light_ground");
+  if (!ground) {
+    ground = new Mesh(
+      new PlaneGeometry(12, 12),
+      new MeshStandardMaterial({
+        color: RVIZ_LIGHT_BASELINE.ground,
+        roughness: 1,
+        metalness: 0,
+        side: DoubleSide
+      })
+    );
+    ground.name = "rviz_light_ground";
+    ground.position.z = -0.01;
+    ground.receiveShadow = true;
+    ground.castShadow = false;
+    ground.renderOrder = -10;
+    ground.userData.exclude_from_fit_bounds = true;
+    ground.userData.exclude_from_physical_bounds = true;
+    ground.userData.helper_overlay = true;
+    ground.userData.rviz_light_baseline = true;
+    scene.add(ground);
+  }
+}
+function configureLights(scene) {
+  let hemisphere = scene.children.find((child) => child?.isHemisphereLight);
+  if (!hemisphere) {
+    hemisphere = new HemisphereLight(
+      RVIZ_LIGHT_BASELINE.hemisphereSky,
+      RVIZ_LIGHT_BASELINE.hemisphereGround,
+      1.45
+    );
+    hemisphere.name = "rviz_light_hemisphere";
+    scene.add(hemisphere);
+  } else {
+    hemisphere.color.setHex(RVIZ_LIGHT_BASELINE.hemisphereSky);
+    hemisphere.groundColor.setHex(RVIZ_LIGHT_BASELINE.hemisphereGround);
+    hemisphere.intensity = 1.45;
+  }
+  let primary = scene.children.find(
+    (child) => child?.isDirectionalLight && child.name !== "rviz_light_fill"
+  );
+  if (!primary) {
+    primary = new DirectionalLight(RVIZ_LIGHT_BASELINE.primaryLight, 1.65);
+    scene.add(primary);
+  }
+  primary.name = "rviz_light_key";
+  primary.color.setHex(RVIZ_LIGHT_BASELINE.primaryLight);
+  primary.intensity = 1.65;
+  primary.position.set(3.5, -4.5, 6.5);
+  primary.castShadow = true;
+  primary.shadow.mapSize.set(2048, 2048);
+  primary.shadow.camera.near = 0.1;
+  primary.shadow.camera.far = 20;
+  primary.shadow.camera.left = -5;
+  primary.shadow.camera.right = 5;
+  primary.shadow.camera.top = 5;
+  primary.shadow.camera.bottom = -5;
+  primary.shadow.bias = -25e-5;
+  primary.shadow.normalBias = 0.018;
+  let fill = scene.getObjectByName("rviz_light_fill");
+  if (!fill) {
+    fill = new DirectionalLight(RVIZ_LIGHT_BASELINE.fillLight, 0.55);
+    fill.name = "rviz_light_fill";
+    fill.position.set(-4, 2.5, 3.5);
+    fill.castShadow = false;
+    fill.userData.exclude_from_fit_bounds = true;
+    scene.add(fill);
+  }
+}
+function configureGrid(scene) {
+  scene.traverse((node) => {
+    if (!node?.isGridHelper)
+      return;
+    node.position.z = 2e-3;
+    node.renderOrder = -5;
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    for (const material of materials) {
+      if (!material)
+        continue;
+      material.transparent = true;
+      material.opacity = 0.72;
+      material.depthWrite = false;
+    }
+  });
+}
+function configureRvizLightScene(renderer, scene) {
+  if (!renderer || !scene?.isScene)
+    return;
+  renderer.outputColorSpace = SRGBColorSpace;
+  renderer.toneMapping = ACESFilmicToneMapping;
+  renderer.toneMappingExposure = RVIZ_LIGHT_BASELINE.exposure;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = PCFSoftShadowMap;
+  renderer.shadowMap.autoUpdate = true;
+  renderer.setClearColor(RVIZ_LIGHT_BASELINE.background, 1);
+  if (!scene.background?.isColor)
+    scene.background = new Color();
+  scene.background.setHex(RVIZ_LIGHT_BASELINE.background);
+  scene.fog = null;
+  if (!scene.userData.rviz_light_baseline_initialized) {
+    configureGround(scene);
+    configureLights(scene);
+    configureGrid(scene);
+    scene.userData.rviz_light_baseline_initialized = true;
+  }
+  configureMeshShadows(scene);
+}
+function installRvizLightBaseline() {
+  const prototype = WebGLRenderer?.prototype;
+  if (!prototype || prototype[PATCH_FLAG])
+    return;
+  const originalRender = prototype.render;
+  prototype.render = function renderWithRvizLightBaseline(scene, camera) {
+    configureRvizLightScene(this, scene);
+    return originalRender.call(this, scene, camera);
+  };
+  prototype[PATCH_FLAG] = true;
+  window.__WORKCELL_RVIZ_LIGHT_BASELINE__ = Object.freeze({
+    enabled: true,
+    version: 1,
+    background: "#f2f4f6",
+    ground: "#f7f8fa",
+    shadows: "pcf_soft",
+    tone_mapping: "aces_filmic",
+    exposure: RVIZ_LIGHT_BASELINE.exposure
+  });
+}
+installRvizLightBaseline();
+async function bootViewerBundle() {
+  await Promise.resolve().then(() => (init_urdf_robot_renderer(), urdf_robot_renderer_exports));
+  await Promise.resolve().then(() => (init_viewer(), viewer_exports));
+}
+bootViewerBundle().catch((error) => {
+  console.error("Workcell Studio viewer bundle failed to start:", error);
+});
 export {
   ColladaLoader,
   OBJLoader,
