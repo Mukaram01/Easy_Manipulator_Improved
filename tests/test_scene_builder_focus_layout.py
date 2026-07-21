@@ -75,8 +75,8 @@ def test_focus_layout_change_does_not_add_motion_or_source_writes():
         "execute_trajectory",
         "move_group",
         "real_hardware_enabled",
-        "environment.yaml").write",
-        "scene_manifest.yaml").write",
+        'environment.yaml").write',
+        'scene_manifest.yaml").write',
     ):
         assert forbidden not in combined
 
