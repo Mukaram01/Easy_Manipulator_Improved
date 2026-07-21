@@ -228,11 +228,11 @@ def test_expanded_urdf_robot_preview_callbacks_are_scene_current_guarded():
     load_body = js.split("function loadExpandedUrdfRobotPreview(preview)", 1)[1].split("function linkNameOfItem(item)", 1)[0]
 
     assert "let robotPreviewLoadToken = 0;" in js
-    assert "robotPreviewLoadToken += 1;" in clear_body
-    assert "state.assemblyRoots = [];" in clear_body
-    assert "state.objects = [];" in clear_body
-    assert "state.robotPreviewResult = null;" in clear_body
-    assert "state.robotUrdfPreviewDiagnostics = {};" in clear_body
+    assert "robotPreviewLoadToken += 1;" in js
+    assert "state.assemblyRoots = [];" in js
+    assert "state.objects = [];" in js
+    assert "state.robotPreviewResult = null;" in js
+    assert "state.robotUrdfPreviewDiagnostics = {};" in js
 
     assert "const loadToken = ++robotPreviewLoadToken;" in load_body
     assert "const loadSceneId = sceneId();" in load_body
@@ -254,6 +254,100 @@ def test_expanded_urdf_robot_preview_callbacks_are_scene_current_guarded():
         assert guard_token in section
         assert section.find(guard_token) < section.find(mutation)
 
+
+
+def test_expanded_urdf_stale_callbacks_cannot_mutate_new_scene_runtime_state():
+    js_path = VIEWER / "viewer.js"
+    harness = r'''
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({ hidden: false, checked: false, disabled: false, textContent: '', className: '', innerHTML: '', classList: { toggle() {} }, setAttribute() {}, querySelector() { return { textContent: '' }; }, appendChild() {}, addEventListener() {}, getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; } });
+const context = { console: { ...console, warn() {} }, assert, window: { dispatched: [], location: { search: '' }, dispatchEvent(event) { this.dispatched.push(event?.detail?.state); }, parent: { postMessage() {} } }, document: { getElementById() { return element(); }, createElement() { return element(); } }, URLSearchParams, CustomEvent: function CustomEvent(type, init) { return { type, detail: init?.detail || {} }; }, requestAnimationFrame() { return 0; }, setTimeout() { return 1; }, clearTimeout() {} };
+vm.createContext(context);
+vm.runInContext(source + `
+renderSceneSummary = () => updateViewerStatus();
+setInitialPosePreviewUi = () => {};
+refreshInitialPoseActionState = () => {};
+refreshWarnings = () => {};
+appendRuntimeWarning = () => {};
+failIfCanonicalRequiredVisualSetInvalid = () => false;
+let captured = [];
+loadRobotPreview = (preview, rendererContext) => {
+  const root = { name: preview.rootName || 'old_root', children: [], geometry: { dispose() {} }, material: { dispose() {} } };
+  captured.push({ preview, rendererContext, root });
+  return { root, links: new Map([['old_link', {}]]), joints: new Map([['old_joint', {}]]), diagnostics: { robot_preview_lifecycle_state: 'loading', robotPreviewLifecycleState: 'loading', scene: sceneId() }, ready: Promise.resolve(root) };
+};
+function makeSceneRecorder(id) { return { id, added: [], removed: [], add(root) { this.added.push(root); }, remove(root) { this.removed.push(root); } }; }
+function beginScene(id, sceneExists = true) {
+  state.sceneJson = { scene: { id }, robot_preview: { urdf_url: id + '.urdf', rootName: id + '_root' } };
+  state.three.scene = sceneExists ? makeSceneRecorder(id) : null;
+  state.web3dReadiness = { state: 'scene_loading', emittedSceneReady: false, required: { robot_arm: true, attached_tool_gripper: true, workbench_support_surface: true, configured_camera: true }, pending: new Set(['robot_arm:expanded_urdf_loader', 'attached_tool_gripper:expanded_urdf_loader']), failed: false, failure: null };
+}
+function dirtyOldState() {
+  state.robotPreviewResult = { stale: true };
+  state.robotUrdfPreviewDiagnostics = { stale: true };
+  state.robotAssemblyDiagnostics = [{ stale: true }];
+  state.robotAssemblyRenderDiagnostics = { stale: true };
+  state.resolvedFramePoses.set('old_frame', {});
+  state.frameLookup.set('old_link', {});
+  state.assemblyRoots = [{ name: 'previous_assembly_root' }];
+  state.objects = [{ object3d: { name: 'previous_flattened_fallback' }, item: { id: 'old' } }];
+}
+function fireOldCallbacks(capture) {
+  capture.rendererContext.scene.add(capture.root);
+  capture.rendererContext.assemblyRoots.push(capture.root);
+  capture.rendererContext.onRobotLoaded({ root: capture.root, diagnostics: { robot_preview_lifecycle_state: 'loaded', robotPreviewLifecycleState: 'loaded' } });
+  capture.rendererContext.onRobotMeshLoaded(capture.root);
+  capture.rendererContext.onRobotMeshLoadError(new Error('old mesh failed'), 'old.dae', { uri: 'old.dae' });
+  capture.rendererContext.onRobotError(new Error('old robot failed'), { robot_urdf_url: 'old.urdf' });
+}
+function assertOldCallbacksRejected(targetSceneId) {
+  assert.strictEqual(state.robotPreviewResult, null);
+  assert.deepStrictEqual(state.robotUrdfPreviewDiagnostics, {});
+  assert.deepStrictEqual(state.robotAssemblyDiagnostics, []);
+  assert.deepStrictEqual(state.robotAssemblyRenderDiagnostics, {});
+  assert.deepStrictEqual(Array.from(state.resolvedFramePoses.keys()), []);
+  assert.deepStrictEqual(Array.from(state.frameLookup.keys()), []);
+  assert.deepStrictEqual(state.assemblyRoots, []);
+  assert.deepStrictEqual(state.objects, []);
+  assert.strictEqual(state.web3dReadiness.state, 'server_ready');
+  assert.strictEqual(state.web3dReadiness.failed, false);
+  assert.strictEqual(state.web3dReadiness.emittedSceneReady, false);
+  assert.strictEqual(state.sceneJson.scene.id, targetSceneId);
+  assert.ok(!window.dispatched.includes('scene_ready'));
+  assert.ok(!window.dispatched.includes('scene_failed'));
+}
+function runSwitchScenario(targetSceneId) {
+  window.dispatched.length = 0; captured = [];
+  beginScene('ur5_2f_test', true);
+  loadExpandedUrdfRobotPreview(state.sceneJson.robot_preview);
+  const old = captured[0];
+  beginScene(targetSceneId, true);
+  dirtyOldState();
+  clearSceneObjects();
+  fireOldCallbacks(old);
+  assert.strictEqual(state.three.scene.id, targetSceneId);
+  assert.deepStrictEqual(state.three.scene.added, []);
+  assertOldCallbacksRejected(targetSceneId);
+}
+runSwitchScenario('suction_test');
+runSwitchScenario('ur5_3f_test');
+window.dispatched.length = 0; captured = [];
+beginScene('ur5_2f_test', true);
+loadExpandedUrdfRobotPreview(state.sceneJson.robot_preview);
+const oldWithoutScene = captured[0];
+beginScene('suction_test', false);
+dirtyOldState();
+clearSceneObjects();
+fireOldCallbacks(oldWithoutScene);
+assert.strictEqual(state.three.scene, null);
+assertOldCallbacksRejected('suction_test');
+`, context);
+'''
+    result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert result.stderr == ""
 
 def test_urdf_renderer_rejects_unsafe_package_mesh_sources():
     js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")

@@ -2632,13 +2632,23 @@ if (el.resetView) {
 function clearLabels() {
   if (el.labelLayer) el.labelLayer.innerHTML = '';
 }
-function clearSceneObjects() {
-  const scene = state.three.scene;
-  if (!scene) return;
+function disposeOwnedObject3d(object3d, seen = new Set()) {
+  if (!object3d || seen.has(object3d)) return;
+  seen.add(object3d);
+  if (Array.isArray(object3d.children)) {
+    for (const child of [...object3d.children]) disposeOwnedObject3d(child, seen);
+  }
+  object3d.geometry?.dispose?.();
+  const material = object3d.material;
+  if (Array.isArray(material)) {
+    for (const entry of material) entry?.dispose?.();
+  } else {
+    material?.dispose?.();
+  }
+}
+function resetSceneLifecycleState() {
   robotPreviewLoadToken += 1;
-  for (const root of state.assemblyRoots || []) scene.remove(root);
-  for (const rendered of state.objects) scene.remove(rendered.object3d);
-  clearLabels();
+  cancelInitialCameraFitRetry();
   state.objects = [];
   state.assemblyRoots = [];
   state.robotAssemblyDiagnostics = [];
@@ -2647,6 +2657,7 @@ function clearSceneObjects() {
   state.physicalAssemblyBounds = null;
   state.finalPhysicalFitBounds = null;
   state.resolvedFramePoses.clear();
+  state.frameLookup = new Map();
   state.lastFrameBounds = null;
   state._sceneBoundsExceededWarned = false;
   state._fitBlockerWarnings = new Set();
@@ -2654,6 +2665,25 @@ function clearSceneObjects() {
   state._supportSurfaceSemanticWarnings = new Set();
   state.robotPreviewResult = null;
   state.initialPosePreview = { active: false, robotId: '', sceneKey: '' };
+  state.web3dReadiness = { state: 'server_ready', emittedSceneReady: false, required: {}, pending: new Set(), failed: false, failure: null };
+}
+function clearSceneObjects() {
+  const scene = state.three.scene;
+  const previousAssemblyRoots = [...(state.assemblyRoots || [])];
+  const previousObjects = [...(state.objects || [])];
+  resetSceneLifecycleState();
+  if (scene) {
+    const disposed = new Set();
+    for (const root of previousAssemblyRoots) {
+      scene.remove(root);
+      disposeOwnedObject3d(root, disposed);
+    }
+    for (const rendered of previousObjects) {
+      scene.remove(rendered.object3d);
+      disposeOwnedObject3d(rendered.object3d, disposed);
+    }
+  }
+  clearLabels();
   if (el.showInitialPose) el.showInitialPose.checked = false;
   setInitialPosePreviewUi(false);
   if (el.resetView) el.resetView.disabled = true;
@@ -2661,6 +2691,8 @@ function clearSceneObjects() {
 }
 function renderScene(items) {
   clearSceneObjects();
+  state.frameLookup = parseSceneFrames(state.sceneJson || {});
+  state.resolvedFramePoses.clear();
   beginWeb3dSceneReadiness(items);
   state.dirtyTransforms.clear();
   state.undoStack = [];
