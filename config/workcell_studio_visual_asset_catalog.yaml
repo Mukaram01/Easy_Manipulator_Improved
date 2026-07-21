@@ -29,27 +29,39 @@ categories:
     primitive_fallback_dimensions: [1.2,0.8,0.2]
     preview_label: Table
     required_for_new_cell_preview: true
+    quality_tier: canonical
+    replacement_required: false
   workbench:
     package_candidates: [workbench_description]
     preferred_mesh_uris: [package://workbench_description/meshes/visual/table.stl]
     primitive_fallback_dimensions: [1.4,0.8,0.25]
     preview_label: Workbench
     required_for_new_cell_preview: false
+    quality_tier: canonical
+    replacement_required: false
   conveyor_placeholder:
     package_candidates: [conveyor_placeholder_description]
     preferred_mesh_uris: [package://conveyor_placeholder_description/meshes/conveyor_placeholder.stl]
     primitive_fallback_dimensions: [1.2,0.3,0.2]
-    preview_label: Conveyor
+    preview_label: Conveyor (Placeholder)
     required_for_new_cell_preview: false
+    quality_tier: placeholder
+    replacement_required: true
+    support_status: preview_only
   camera_realsense:
     package_candidates: [realsense2_description]
     preferred_mesh_uris: [package://realsense2_description/meshes/d435.dae]
     primitive_fallback_dimensions: [0.08,0.08,0.08]
     preview_label: Camera
     required_for_new_cell_preview: false
+    quality_tier: canonical
+    replacement_required: false
   bin_box_fixture:
     package_candidates: [bin_small_description, bin_large_description, fixture_plate_description]
     preferred_mesh_uris: [package://bin_small_description/meshes/bin_small.stl]
     primitive_fallback_dimensions: [0.3,0.2,0.2]
-    preview_label: Bin/Fixture
+    preview_label: Bin/Fixture (Placeholder)
     required_for_new_cell_preview: false
+    quality_tier: placeholder
+    replacement_required: true
+    support_status: preview_only
