@@ -69,11 +69,11 @@ assets:
     preferred_search_terms: [belt conveyor 1200mm CAD, modular conveyor STEP]
 
   fixture_plate:
-    current_quality: placeholder
+    current_quality: acceptable_primitive
     action: migrate_to_urdf_primitive
-    replacement_status: code_change_required
+    replacement_status: migrated_to_urdf_primitive
     expected_dimensions_m: [0.5, 0.5, 0.03]
-    notes: A dimensioned box primitive is more honest than a generated STL.
+    notes: URDF box visual and collision are authoritative; generated STL removed.
 
   pallet:
     current_quality: placeholder
@@ -126,6 +126,6 @@ assets:
   cylinder_object:
     current_quality: acceptable_primitive
     action: migrate_to_urdf_primitive
-    replacement_status: code_change_required
+    replacement_status: migrated_to_urdf_primitive
     expected_dimensions_m: [0.06, 0.06, 0.12]
-    notes: Use a URDF cylinder primitive rather than preserving a generated STL.
+    notes: URDF cylinder visual and collision are authoritative; generated STL removed.
