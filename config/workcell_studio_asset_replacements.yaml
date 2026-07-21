@@ -76,11 +76,15 @@ assets:
     notes: URDF box visual and collision are authoritative; generated STL removed.
 
   pallet:
-    current_quality: placeholder
+    current_quality: imported_visual_pilot
     action: replace_with_downloaded_model
-    replacement_status: awaiting_model
+    replacement_status: pilot_imported_pending_visual_validation
     expected_dimensions_m: [1.2, 0.8, 0.144]
-    preferred_search_terms: [EUR EPAL pallet CAD 1200x800]
+    source_repository: henrylewis2004/Code-Geass-SRPG
+    source_commit: c3006c78bc764fc86a113316cbf2a0e5e48b7231
+    source_path: assets/3d/kenney_retro-urban-kit/Models/OBJ format/pallet.obj
+    license: CC0-1.0
+    notes: Exactly one external OBJ is enabled for pipeline validation; the old generated STL remains as rollback until Product View/Web3D is visually confirmed.
 
   pedestal:
     current_quality: placeholder
