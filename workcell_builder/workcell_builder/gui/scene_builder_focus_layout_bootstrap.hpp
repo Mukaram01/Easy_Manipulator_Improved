@@ -108,10 +108,12 @@ inline void installSceneBuilderFocusLayout(QWidget * root)
   const int workflow_index = tabIndexByText(right_tabs, QStringLiteral("Workflow"));
   QWidget * assets_page = assets_index >= 0 ? left_tabs->widget(assets_index) : nullptr;
   QWidget * workflow_page = workflow_index >= 0 ? right_tabs->widget(workflow_index) : nullptr;
-  if (!assets_page || !assets_page->layout() || !workflow_page || !workflow_page->layout()) return;
+  auto * assets_layout = assets_page ? qobject_cast<QBoxLayout *>(assets_page->layout()) : nullptr;
+  auto * workflow_layout = workflow_page ? qobject_cast<QBoxLayout *>(workflow_page->layout()) : nullptr;
+  if (!assets_layout || !workflow_layout) return;
 
   // The Scene tab is for hierarchy/layers. The catalog belongs in the Assets tab.
-  assets_page->layout()->addWidget(asset_card);
+  assets_layout->addWidget(asset_card, 1);
   asset_card->show();
   for (QLabel * label : assets_page->findChildren<QLabel *>()) {
     if (label->text().contains(QStringLiteral("available below Scene Hierarchy"), Qt::CaseInsensitive)) label->hide();
@@ -119,8 +121,7 @@ inline void installSceneBuilderFocusLayout(QWidget * root)
 
   // Put workflow guidance inside its existing Workflow tab instead of stacking it
   // above the inspector and reducing every right-panel tab to a narrow strip.
-  if (auto * box = qobject_cast<QBoxLayout *>(workflow_page->layout())) box->insertWidget(0, workflow_card);
-  else workflow_page->layout()->addWidget(workflow_card);
+  workflow_layout->insertWidget(0, workflow_card);
   workflow_card->show();
 
   left_panel->setMinimumWidth(300);
@@ -155,7 +156,7 @@ inline void installSceneBuilderFocusLayout(QWidget * root)
 
   // One-time migration from the old three-panel-at-once default. Keep hierarchy
   // available, give the Product View the majority of the window, and open the
-  // inspector only when it is needed.
+  // inspector only when the operator explicitly asks for it.
   QSettings settings;
   constexpr int kFocusLayoutVersion = 1;
   if (settings.value(QStringLiteral("scene_builder/focus_layout_version"), 0).toInt() < kFocusLayoutVersion) {
@@ -168,8 +169,11 @@ inline void installSceneBuilderFocusLayout(QWidget * root)
     int total = 0;
     for (const int size : old_sizes) total += size;
     total = qMax(total, 1200);
-    splitter->setSizes({320, qMax(760, total - 320), 0});
-    settings.setValue(QStringLiteral("scene_builder/main_splitter_sizes"), QVariantList{320, qMax(760, total - 320), 0});
+    const int center_width = qMax(760, total - 320);
+    splitter->setSizes({320, center_width, 0});
+    QVariantList migrated_sizes;
+    migrated_sizes << 320 << center_width << 0;
+    settings.setValue(QStringLiteral("scene_builder/main_splitter_sizes"), migrated_sizes);
     settings.setValue(QStringLiteral("scene_builder/left_panel_visible"), true);
     settings.setValue(QStringLiteral("scene_builder/right_panel_visible"), false);
     settings.setValue(QStringLiteral("scene_builder/focus_layout_version"), kFocusLayoutVersion);
@@ -182,12 +186,15 @@ inline void installSceneBuilderFocusLayout(QWidget * root)
     const int selection_index = tabIndexByText(right_tabs, QStringLiteral("Selection"));
     if (selection_index >= 0) right_tabs->setCurrentIndex(selection_index);
   };
-  QObject::connect(hierarchy_tree, &QTreeWidget::itemSelectionChanged, workspace, [hierarchy_tree, revealSelection]() {
-    if (QTreeWidgetItem * item = hierarchy_tree->currentItem()) revealSelection(item->text(0));
-  });
+  QObject::connect(hierarchy_tree, &QTreeWidget::itemClicked, workspace,
+    [revealSelection](QTreeWidgetItem * item, int) {
+      if (item) revealSelection(item->text(0));
+    });
   if (auto * preview = workspace->findChild<ScenePreviewWidget *>(QStringLiteral("scenePreviewWidget"))) {
     QObject::connect(preview, &ScenePreviewWidget::preview_item_selected, workspace,
-      [revealSelection](const QString & id, const QString &) { revealSelection(id); });
+      [revealSelection](const QString & id, const QString &) {
+        if (QApplication::mouseButtons() != Qt::NoButton) revealSelection(id);
+      });
   }
 
   workspace->setProperty("workcell_scene_builder_focus_layout_v1", true);
