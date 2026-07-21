@@ -1,0 +1,288 @@
+/* Focused Product View layer: keep common actions visible and technical controls optional. */
+.product-title {
+  flex: 0 0 auto;
+  min-width: 9rem;
+}
+
+.product-title h1 {
+  font-size: 1rem;
+}
+
+.product-title p {
+  max-width: 22rem;
+  margin-top: 0.08rem;
+  font-size: 0.75rem;
+}
+
+.topbar {
+  align-items: center;
+  padding: 0.5rem 0.7rem;
+}
+
+.toolbar {
+  flex-basis: auto;
+  gap: 0.38rem;
+}
+
+.toolbar .primary-action {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: #083f55;
+  font-weight: 650;
+}
+
+.toolbar .primary-action:not(:disabled):hover,
+.toolbar .primary-action:focus-visible {
+  background: #c4e5f3;
+}
+
+.task-gizmo-slot {
+  display: contents;
+}
+
+.toolbar-more {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.toolbar-more > summary {
+  min-height: 2.25rem;
+  padding: 0.48rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 650;
+  line-height: 1.15;
+  list-style: none;
+  user-select: none;
+}
+
+.toolbar-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.toolbar-more > summary::after {
+  content: "▾";
+  margin-left: 0.42rem;
+  color: var(--muted);
+}
+
+.toolbar-more[open] > summary,
+.toolbar-more > summary:hover,
+.toolbar-more > summary:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  outline: none;
+}
+
+.toolbar-more-panel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.42rem);
+  right: 0;
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr);
+  gap: 0.42rem;
+  width: min(18rem, calc(100vw - 1.4rem));
+  max-height: min(70vh, 30rem);
+  padding: 0.62rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: rgba(248, 250, 252, 0.99);
+  box-shadow: 0 0.65rem 1.8rem rgba(23, 32, 42, 0.2);
+}
+
+.toolbar-more-panel > * {
+  width: 100%;
+  justify-content: space-between;
+}
+
+.toolbar-more-panel .toolbar-button {
+  text-align: left;
+}
+
+.panel-disclosure {
+  width: 100%;
+  margin: 0 0 0.65rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(238, 242, 246, 0.72);
+}
+
+.panel-disclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.58rem;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.2;
+  list-style: none;
+}
+
+.panel-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel-disclosure > summary::after {
+  content: "+";
+  color: var(--accent);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.panel-disclosure[open] > summary::after {
+  content: "−";
+}
+
+.panel-disclosure > summary:hover,
+.panel-disclosure > summary:focus-visible {
+  background: var(--accent-soft);
+  color: var(--text);
+  outline: none;
+}
+
+#scene-summary {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--panel);
+}
+
+.disclosure-count {
+  min-width: 1.35rem;
+  padding: 0.06rem 0.35rem;
+  border-radius: 999px;
+  background: var(--error-surface);
+  color: var(--error);
+  text-align: center;
+}
+
+.warning-disclosure {
+  margin-top: 0.8rem;
+  border-color: rgba(178, 107, 0, 0.45);
+}
+
+.warning-disclosure #warnings {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid rgba(178, 107, 0, 0.35);
+  border-radius: 0;
+}
+
+.selected-item-section {
+  min-width: 0;
+}
+
+.technical-details {
+  margin-top: 0.68rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+}
+
+.technical-details > summary {
+  padding: 0.46rem 0.56rem;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.technical-details .inspector-table {
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.simple-ui-hidden-field {
+  display: none !important;
+}
+
+.transform-editor h3 {
+  font-size: 0.9rem;
+}
+
+.transform-editor .edit-note {
+  line-height: 1.4;
+}
+
+body.simple-product-ui .details-panel {
+  gap: 0.65rem;
+}
+
+@media (max-width: 1100px) {
+  .topbar {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .topbar > div:first-child {
+    width: auto;
+  }
+
+  .toolbar {
+    width: auto;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .product-title p {
+    display: none;
+  }
+
+  .toolbar {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .toolbar-more-panel {
+    right: auto;
+    left: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .toolbar {
+    display: flex;
+  }
+
+  .toolbar .file-picker,
+  .toolbar .toolbar-button,
+  .toolbar .toolbar-toggle,
+  .toolbar .toolbar-number {
+    width: auto;
+    justify-content: center;
+  }
+
+  .toolbar-more-panel {
+    position: fixed;
+    top: auto;
+    right: 0.55rem;
+    bottom: 0.55rem;
+    left: 0.55rem;
+    width: auto;
+    max-height: 65vh;
+  }
+}
+
+body.embedded-mode .toolbar-more,
+body.embedded-mode .panel-disclosure {
+  display: none !important;
+}
