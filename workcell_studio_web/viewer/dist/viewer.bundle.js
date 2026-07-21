@@ -38049,8 +38049,266 @@ var init_urdf_robot_renderer = __esm({
   }
 });
 
+// src/viewer_entry.js
+init_three_module();
+init_OrbitControls();
+init_TransformControls();
+init_STLLoader();
+init_ColladaLoader();
+init_OBJLoader();
+init_URDFLoader();
+
+// src/rviz_light_baseline.js
+init_three_module();
+var RVIZ_LIGHT_BASELINE = Object.freeze({
+  background: 15922422,
+  ground: 16251130,
+  hemisphereSky: 16777215,
+  hemisphereGround: 13358044,
+  primaryLight: 16777215,
+  fillLight: 14412542,
+  exposure: 1.12
+});
+var PATCH_FLAG = Symbol.for("workcell-studio.rviz-light-baseline.v1");
+var configuredMeshes = /* @__PURE__ */ new WeakSet();
+function isHelperOrOverlay(node) {
+  const data = node?.userData || {};
+  const identity = [
+    node?.name,
+    data?.source_layer,
+    data?.role,
+    data?.category,
+    data?.status,
+    data?.item?.source_layer,
+    data?.item?.role,
+    data?.item?.category,
+    data?.item?.status
+  ].map((value) => String(value || "").toLowerCase().replace(/[_-]+/g, " ")).join(" ");
+  return Boolean(
+    node?.isGridHelper || node?.isAxesHelper || data?.exclude_from_fit_bounds === true || data?.debug_only === true || data?.diagnostic_only === true || data?.helper_overlay === true || /\b(debug|diagnostic|overlay|helper|zone|reach|fov|warning|transform anchor)\b/.test(identity)
+  );
+}
+function materialIsTranslucent(material) {
+  const materials = Array.isArray(material) ? material : [material];
+  return materials.some((entry) => entry && entry.transparent && Number(entry.opacity ?? 1) < 0.9);
+}
+function configureMeshShadows(scene) {
+  scene.traverse((node) => {
+    if (!node?.isMesh || configuredMeshes.has(node))
+      return;
+    configuredMeshes.add(node);
+    if (node.name === "rviz_light_ground" || isHelperOrOverlay(node)) {
+      node.castShadow = false;
+      return;
+    }
+    const translucent = materialIsTranslucent(node.material);
+    node.castShadow = !translucent;
+    node.receiveShadow = !translucent;
+  });
+}
+function configureGround(scene) {
+  if (scene.getObjectByName("rviz_light_ground"))
+    return;
+  const ground = new Mesh(
+    new PlaneGeometry(12, 12),
+    new MeshStandardMaterial({
+      color: RVIZ_LIGHT_BASELINE.ground,
+      roughness: 1,
+      metalness: 0,
+      side: DoubleSide
+    })
+  );
+  ground.name = "rviz_light_ground";
+  ground.position.z = -0.01;
+  ground.receiveShadow = true;
+  ground.castShadow = false;
+  ground.renderOrder = -10;
+  ground.userData.exclude_from_fit_bounds = true;
+  ground.userData.exclude_from_physical_bounds = true;
+  ground.userData.helper_overlay = true;
+  ground.userData.rviz_light_baseline = true;
+  scene.add(ground);
+}
+function configureLights(scene) {
+  let hemisphere = scene.children.find((child) => child?.isHemisphereLight);
+  if (!hemisphere) {
+    hemisphere = new HemisphereLight(
+      RVIZ_LIGHT_BASELINE.hemisphereSky,
+      RVIZ_LIGHT_BASELINE.hemisphereGround,
+      1.45
+    );
+    hemisphere.name = "rviz_light_hemisphere";
+    scene.add(hemisphere);
+  } else {
+    hemisphere.color.setHex(RVIZ_LIGHT_BASELINE.hemisphereSky);
+    hemisphere.groundColor.setHex(RVIZ_LIGHT_BASELINE.hemisphereGround);
+    hemisphere.intensity = 1.45;
+  }
+  let primary = scene.children.find(
+    (child) => child?.isDirectionalLight && child.name !== "rviz_light_fill"
+  );
+  if (!primary) {
+    primary = new DirectionalLight(RVIZ_LIGHT_BASELINE.primaryLight, 1.65);
+    scene.add(primary);
+  }
+  primary.name = "rviz_light_key";
+  primary.color.setHex(RVIZ_LIGHT_BASELINE.primaryLight);
+  primary.intensity = 1.65;
+  primary.position.set(3.5, -4.5, 6.5);
+  primary.castShadow = true;
+  primary.shadow.mapSize.set(2048, 2048);
+  primary.shadow.camera.near = 0.1;
+  primary.shadow.camera.far = 20;
+  primary.shadow.camera.left = -5;
+  primary.shadow.camera.right = 5;
+  primary.shadow.camera.top = 5;
+  primary.shadow.camera.bottom = -5;
+  primary.shadow.bias = -25e-5;
+  primary.shadow.normalBias = 0.018;
+  let fill = scene.getObjectByName("rviz_light_fill");
+  if (!fill) {
+    fill = new DirectionalLight(RVIZ_LIGHT_BASELINE.fillLight, 0.55);
+    fill.name = "rviz_light_fill";
+    fill.position.set(-4, 2.5, 3.5);
+    fill.castShadow = false;
+    fill.userData.exclude_from_fit_bounds = true;
+    scene.add(fill);
+  }
+}
+function configureGrid(scene) {
+  scene.traverse((node) => {
+    if (!node?.isGridHelper)
+      return;
+    node.position.z = 2e-3;
+    node.renderOrder = -5;
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    for (const material of materials) {
+      if (!material)
+        continue;
+      material.transparent = true;
+      material.opacity = 0.72;
+      material.depthWrite = false;
+    }
+  });
+}
+function configureRvizLightScene(renderer, scene) {
+  if (!renderer || !scene?.isScene)
+    return;
+  renderer.outputColorSpace = SRGBColorSpace;
+  renderer.toneMapping = ACESFilmicToneMapping;
+  renderer.toneMappingExposure = RVIZ_LIGHT_BASELINE.exposure;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = PCFSoftShadowMap;
+  renderer.shadowMap.autoUpdate = true;
+  renderer.setClearColor(RVIZ_LIGHT_BASELINE.background, 1);
+  if (!scene.background?.isColor)
+    scene.background = new Color();
+  scene.background.setHex(RVIZ_LIGHT_BASELINE.background);
+  scene.fog = null;
+  if (!scene.userData.rviz_light_baseline_initialized) {
+    configureGround(scene);
+    configureLights(scene);
+    configureGrid(scene);
+    scene.userData.rviz_light_baseline_initialized = true;
+  }
+  configureMeshShadows(scene);
+}
+function installRvizLightBaseline() {
+  const prototype = WebGLRenderer?.prototype;
+  if (!prototype || prototype[PATCH_FLAG])
+    return;
+  const originalRender = prototype.render;
+  prototype.render = function renderWithRvizLightBaseline(scene, camera) {
+    configureRvizLightScene(this, scene);
+    return originalRender.call(this, scene, camera);
+  };
+  prototype[PATCH_FLAG] = true;
+  window.__WORKCELL_RVIZ_LIGHT_BASELINE__ = Object.freeze({
+    enabled: true,
+    version: 1,
+    background: "#f2f4f6",
+    ground: "#f7f8fa",
+    shadows: "pcf_soft",
+    tone_mapping: "aces_filmic",
+    exposure: RVIZ_LIGHT_BASELINE.exposure
+  });
+}
+installRvizLightBaseline();
+
+// src/viewer_entry.js
+init_urdf_robot_renderer();
+
 // viewer.js
-var viewer_exports = {};
+var THREE;
+var OrbitControls2;
+var STLLoader2;
+var ColladaLoader2;
+var OBJLoader2;
+var TransformControls2;
+var loadRobotPreview2;
+var applyRobotJointPreview2;
+var PRODUCT_VIEW_LIGHT_PALETTE = Object.freeze({
+  workspaceBackground: 15659508,
+  rendererClearColor: 15659508,
+  gridMajor: 9016995,
+  gridMinor: 12831699,
+  labelText: 1192e3,
+  labelSurface: 16317180,
+  overlaySurface: 16774877,
+  errorSurface: 16772848,
+  errorAccent: 12858420
+});
+var SUPPORTED_SCHEMA_VERSION = "workcell_studio_web_scene/v1";
+var EDIT_PATCH_SCHEMA_VERSION = "workcell_studio_web_scene_edit_patch/v1";
+var VIEWER_VERSION = "static_web_viewer_edit_patch_v1";
+var LOCKED_EDIT_REASON = "Locked/generated preview item; edit source layout/environment instead.";
+var MIN_FRAME_RADIUS = 1.2;
+var EMPTY_SCENE_MESSAGE = "Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.";
+var FRAME_DISTANCE_MULTIPLIER = 2.7;
+var state = { sceneJson: null, sourceWebSceneFile: "", frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: "", done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: "select", editorEvents: [], editorError: "", robotPreviewResult: null, initialPosePreview: { active: false, robotId: "", sceneKey: "" }, web3dReadiness: { state: "server_ready", emittedSceneReady: false, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null } };
+var robotPreviewLoadToken = 0;
+var RESET_VIEW_TITLE = "Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.";
+var STAGED_MESH_ROOTS = [
+  "build/workcell_studio_web_scene/assets/",
+  "workcell_studio_web/",
+  "assets/"
+];
+var CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS = Object.freeze([
+  "base_link_inertia",
+  "shoulder_link",
+  "upper_arm_link",
+  "forearm_link",
+  "wrist_1_link",
+  "wrist_2_link",
+  "wrist_3_link"
+]);
+var CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS = Object.freeze([
+  "gripper_base_link",
+  "left_outer_knuckle",
+  "right_outer_knuckle",
+  "left_outer_finger",
+  "right_outer_finger",
+  "left_inner_knuckle",
+  "right_inner_knuckle",
+  "left_inner_finger",
+  "right_inner_finger"
+]);
+var CANONICAL_UR5_2F_REQUIRED_GENERATED_VISUAL_SET = Object.freeze({
+  scene_id: "ur5_2f_test",
+  sceneId: "ur5_2f_test",
+  ur5_visuals: CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS,
+  ur5Visuals: CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS,
+  robotiq_visuals: CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS,
+  robotiqVisuals: CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS,
+  physical_scene_visuals: Object.freeze(["workbench_support_surface", "configured_camera"]),
+  physicalSceneVisuals: Object.freeze(["workbench_support_surface", "configured_camera"])
+});
+var EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS = [
+  ...CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS,
+  "tool0",
+  ...CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS
+];
+var WEB3D_REQUIRED_CATEGORIES = ["robot_arm", "attached_tool_gripper", "workbench_support_surface", "configured_camera"];
 function emitWeb3dReadinessState(readinessState, detail = {}) {
   state.web3dReadiness = state.web3dReadiness || { state: "server_ready", emittedSceneReady: false, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null };
   if (state.web3dReadiness.failed && state.web3dReadiness.state === "scene_failed" && readinessState !== "scene_failed") {
@@ -38215,6 +38473,30 @@ function maybeEmitSceneReady() {
   if (readiness.pending?.size === 0)
     emitWeb3dReadinessState("scene_ready", { required_categories: readiness.required });
 }
+var el = {
+  file: document.getElementById("scene-file"),
+  resetView: document.getElementById("reset-view"),
+  undoEdit: document.getElementById("undo-edit"),
+  redoEdit: document.getElementById("redo-edit"),
+  clearEdits: document.getElementById("clear-edits"),
+  exportEditPatch: document.getElementById("export-edit-patch"),
+  dirty: document.getElementById("dirty-state"),
+  snapToggle: document.getElementById("snap-toggle"),
+  translationSnap: document.getElementById("translation-snap"),
+  rotationSnap: document.getElementById("rotation-snap"),
+  labelsToggle: document.getElementById("labels-toggle"),
+  debugOverlaysToggle: document.getElementById("debug-overlays-toggle"),
+  showInitialPose: document.getElementById("show-initial-pose"),
+  initialPoseStatus: document.getElementById("initial-pose-status"),
+  canvas: document.getElementById("scene-canvas"),
+  labelLayer: document.getElementById("label-layer"),
+  empty: document.getElementById("empty-state"),
+  error: document.getElementById("error-state"),
+  list: document.getElementById("object-list"),
+  inspector: document.getElementById("inspector"),
+  warnings: document.getElementById("warnings"),
+  summary: document.getElementById("scene-summary")
+};
 function robotRecords() {
   const records = asArray(state.sceneJson?.robots).concat(asArray(state.sceneJson?.robot_preview?.robots));
   if (state.sceneJson?.robot_preview && !records.length)
@@ -39574,6 +39856,8 @@ function viewerGroupFor(item2) {
     return "robot/tool/generated";
   return "unknown";
 }
+var DEBUG_OVERLAY_TOKEN_RE = /\b(overlay|helper|debug|diagnostic|safety zone|pick zone|place zone|robot reach|transform anchor|warning marker|warning anchor|warning badge|camera fov|fov|pick coverage|reachability|collision|work envelope|task route|home pose|approach retreat|epd detection|detection label|bounds box|bounding box)\b/;
+var PHYSICAL_SEMANTIC_TOKEN_RE = /\b(robot|arm|manipulator|tool|gripper|end effector|eef|camera body|configured camera|sensor body|conveyor|object|workpiece|part|product|bin|tray|support surface|table|tabletop|workbench|fixture|pallet|physical safety barrier|safety barrier|guard fence|fence)\b/;
 function isZone(item2) {
   return viewerGroupFor(item2) === "zones";
 }
@@ -40757,6 +41041,10 @@ function attemptInitialCameraFit({ allowRetry = true } = {}) {
 }
 function triggerInitialCameraFitAfterSceneReady() {
   return attemptInitialCameraFit({ allowRetry: false });
+}
+if (el.resetView) {
+  el.resetView.title = RESET_VIEW_TITLE;
+  el.resetView.setAttribute("aria-label", "Fit Scene / Reset View");
 }
 function clearLabels() {
   if (el.labelLayer)
@@ -42014,6 +42302,28 @@ async function loadSceneUrl(rawUrl) {
     showError(`Failed to load scene from ${sceneUrl}: ${err.message || err}`);
   }
 }
+if (el.resetView)
+  el.resetView.addEventListener("click", resetView);
+if (el.labelsToggle)
+  el.labelsToggle.addEventListener("change", (event) => setLabelsVisible(event.target.checked));
+if (el.debugOverlaysToggle)
+  el.debugOverlaysToggle.addEventListener("change", (event) => setDebugOverlaysVisible(event.target.checked));
+if (el.showInitialPose)
+  el.showInitialPose.addEventListener("change", (event) => toggleInitialPosePreview(event.target.checked));
+if (el.undoEdit)
+  el.undoEdit.addEventListener("click", undoPreviewEdit);
+if (el.redoEdit)
+  el.redoEdit.addEventListener("click", redoPreviewEdit);
+if (el.clearEdits)
+  el.clearEdits.addEventListener("click", clearPreviewEdits);
+if (el.snapToggle)
+  el.snapToggle.addEventListener("change", refreshGizmoSnap);
+if (el.translationSnap)
+  el.translationSnap.addEventListener("input", refreshGizmoSnap);
+if (el.rotationSnap)
+  el.rotationSnap.addEventListener("input", refreshGizmoSnap);
+if (el.exportEditPatch)
+  el.exportEditPatch.addEventListener("click", exportEditPatch);
 function setEditorMode(mode) {
   const normalized = mode === "move" ? "move" : mode === "rotate" ? "rotate" : "select";
   if (state.editorMode !== normalized) {
@@ -42051,6 +42361,52 @@ function setEditorSnap(enabled, translationMeters, rotationDegrees) {
     el.rotationSnap.value = String(Number(rotationDegrees));
   refreshGizmoSnap();
 }
+window.__WORKCELL_EDITOR_API_V1__ = {
+  getState: () => editorState(),
+  selectItem: (id) => {
+    selectObject(String(id || ""));
+    return editorState();
+  },
+  clearSelection: () => {
+    clearSelection();
+    return editorState();
+  },
+  setMode: (mode) => {
+    setEditorMode(mode);
+    return editorState();
+  },
+  setSnap: (enabled, translationMeters, rotationDegrees) => {
+    setEditorSnap(enabled, translationMeters, rotationDegrees);
+    return editorState();
+  },
+  undo: () => {
+    undoPreviewEdit();
+    return editorState();
+  },
+  redo: () => {
+    redoPreviewEdit();
+    return editorState();
+  },
+  fitScene: () => {
+    resetView();
+    return editorState();
+  },
+  fitSelection: () => {
+    fitSelection();
+    return editorState();
+  },
+  getEditPatch: () => buildEditPatch(),
+  drainEvents: () => {
+    const events = state.editorEvents.slice();
+    state.editorEvents.length = 0;
+    return events;
+  }
+};
+el.file.addEventListener("change", (event) => {
+  const file = event.target.files?.[0];
+  if (file)
+    loadFile(file);
+});
 async function boot() {
   try {
     const threeModule = await Promise.resolve().then(() => (init_three_module(), three_module_exports));
@@ -42081,363 +42437,7 @@ async function boot() {
     showError(`Bundled Three.js module load failure: ${err.message || err}`);
   }
 }
-var THREE, OrbitControls2, STLLoader2, ColladaLoader2, OBJLoader2, TransformControls2, loadRobotPreview2, applyRobotJointPreview2, PRODUCT_VIEW_LIGHT_PALETTE, SUPPORTED_SCHEMA_VERSION, EDIT_PATCH_SCHEMA_VERSION, VIEWER_VERSION, LOCKED_EDIT_REASON, MIN_FRAME_RADIUS, EMPTY_SCENE_MESSAGE, FRAME_DISTANCE_MULTIPLIER, state, robotPreviewLoadToken, RESET_VIEW_TITLE, STAGED_MESH_ROOTS, CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS, CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS, CANONICAL_UR5_2F_REQUIRED_GENERATED_VISUAL_SET, EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS, WEB3D_REQUIRED_CATEGORIES, el, DEBUG_OVERLAY_TOKEN_RE, PHYSICAL_SEMANTIC_TOKEN_RE;
-var init_viewer = __esm({
-  "viewer.js"() {
-    PRODUCT_VIEW_LIGHT_PALETTE = Object.freeze({
-      workspaceBackground: 15659508,
-      rendererClearColor: 15659508,
-      gridMajor: 9016995,
-      gridMinor: 12831699,
-      labelText: 1192e3,
-      labelSurface: 16317180,
-      overlaySurface: 16774877,
-      errorSurface: 16772848,
-      errorAccent: 12858420
-    });
-    SUPPORTED_SCHEMA_VERSION = "workcell_studio_web_scene/v1";
-    EDIT_PATCH_SCHEMA_VERSION = "workcell_studio_web_scene_edit_patch/v1";
-    VIEWER_VERSION = "static_web_viewer_edit_patch_v1";
-    LOCKED_EDIT_REASON = "Locked/generated preview item; edit source layout/environment instead.";
-    MIN_FRAME_RADIUS = 1.2;
-    EMPTY_SCENE_MESSAGE = "Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.";
-    FRAME_DISTANCE_MULTIPLIER = 2.7;
-    state = { sceneJson: null, sourceWebSceneFile: "", frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: "", done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: "select", editorEvents: [], editorError: "", robotPreviewResult: null, initialPosePreview: { active: false, robotId: "", sceneKey: "" }, web3dReadiness: { state: "server_ready", emittedSceneReady: false, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null } };
-    robotPreviewLoadToken = 0;
-    RESET_VIEW_TITLE = "Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.";
-    STAGED_MESH_ROOTS = [
-      "build/workcell_studio_web_scene/assets/",
-      "workcell_studio_web/",
-      "assets/"
-    ];
-    CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS = Object.freeze([
-      "base_link_inertia",
-      "shoulder_link",
-      "upper_arm_link",
-      "forearm_link",
-      "wrist_1_link",
-      "wrist_2_link",
-      "wrist_3_link"
-    ]);
-    CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS = Object.freeze([
-      "gripper_base_link",
-      "left_outer_knuckle",
-      "right_outer_knuckle",
-      "left_outer_finger",
-      "right_outer_finger",
-      "left_inner_knuckle",
-      "right_inner_knuckle",
-      "left_inner_finger",
-      "right_inner_finger"
-    ]);
-    CANONICAL_UR5_2F_REQUIRED_GENERATED_VISUAL_SET = Object.freeze({
-      scene_id: "ur5_2f_test",
-      sceneId: "ur5_2f_test",
-      ur5_visuals: CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS,
-      ur5Visuals: CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS,
-      robotiq_visuals: CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS,
-      robotiqVisuals: CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS,
-      physical_scene_visuals: Object.freeze(["workbench_support_surface", "configured_camera"]),
-      physicalSceneVisuals: Object.freeze(["workbench_support_surface", "configured_camera"])
-    });
-    EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS = [
-      ...CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS,
-      "tool0",
-      ...CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS
-    ];
-    WEB3D_REQUIRED_CATEGORIES = ["robot_arm", "attached_tool_gripper", "workbench_support_surface", "configured_camera"];
-    el = {
-      file: document.getElementById("scene-file"),
-      resetView: document.getElementById("reset-view"),
-      undoEdit: document.getElementById("undo-edit"),
-      redoEdit: document.getElementById("redo-edit"),
-      clearEdits: document.getElementById("clear-edits"),
-      exportEditPatch: document.getElementById("export-edit-patch"),
-      dirty: document.getElementById("dirty-state"),
-      snapToggle: document.getElementById("snap-toggle"),
-      translationSnap: document.getElementById("translation-snap"),
-      rotationSnap: document.getElementById("rotation-snap"),
-      labelsToggle: document.getElementById("labels-toggle"),
-      debugOverlaysToggle: document.getElementById("debug-overlays-toggle"),
-      showInitialPose: document.getElementById("show-initial-pose"),
-      initialPoseStatus: document.getElementById("initial-pose-status"),
-      canvas: document.getElementById("scene-canvas"),
-      labelLayer: document.getElementById("label-layer"),
-      empty: document.getElementById("empty-state"),
-      error: document.getElementById("error-state"),
-      list: document.getElementById("object-list"),
-      inspector: document.getElementById("inspector"),
-      warnings: document.getElementById("warnings"),
-      summary: document.getElementById("scene-summary")
-    };
-    DEBUG_OVERLAY_TOKEN_RE = /\b(overlay|helper|debug|diagnostic|safety zone|pick zone|place zone|robot reach|transform anchor|warning marker|warning anchor|warning badge|camera fov|fov|pick coverage|reachability|collision|work envelope|task route|home pose|approach retreat|epd detection|detection label|bounds box|bounding box)\b/;
-    PHYSICAL_SEMANTIC_TOKEN_RE = /\b(robot|arm|manipulator|tool|gripper|end effector|eef|camera body|configured camera|sensor body|conveyor|object|workpiece|part|product|bin|tray|support surface|table|tabletop|workbench|fixture|pallet|physical safety barrier|safety barrier|guard fence|fence)\b/;
-    if (el.resetView) {
-      el.resetView.title = RESET_VIEW_TITLE;
-      el.resetView.setAttribute("aria-label", "Fit Scene / Reset View");
-    }
-    if (el.resetView)
-      el.resetView.addEventListener("click", resetView);
-    if (el.labelsToggle)
-      el.labelsToggle.addEventListener("change", (event) => setLabelsVisible(event.target.checked));
-    if (el.debugOverlaysToggle)
-      el.debugOverlaysToggle.addEventListener("change", (event) => setDebugOverlaysVisible(event.target.checked));
-    if (el.showInitialPose)
-      el.showInitialPose.addEventListener("change", (event) => toggleInitialPosePreview(event.target.checked));
-    if (el.undoEdit)
-      el.undoEdit.addEventListener("click", undoPreviewEdit);
-    if (el.redoEdit)
-      el.redoEdit.addEventListener("click", redoPreviewEdit);
-    if (el.clearEdits)
-      el.clearEdits.addEventListener("click", clearPreviewEdits);
-    if (el.snapToggle)
-      el.snapToggle.addEventListener("change", refreshGizmoSnap);
-    if (el.translationSnap)
-      el.translationSnap.addEventListener("input", refreshGizmoSnap);
-    if (el.rotationSnap)
-      el.rotationSnap.addEventListener("input", refreshGizmoSnap);
-    if (el.exportEditPatch)
-      el.exportEditPatch.addEventListener("click", exportEditPatch);
-    window.__WORKCELL_EDITOR_API_V1__ = {
-      getState: () => editorState(),
-      selectItem: (id) => {
-        selectObject(String(id || ""));
-        return editorState();
-      },
-      clearSelection: () => {
-        clearSelection();
-        return editorState();
-      },
-      setMode: (mode) => {
-        setEditorMode(mode);
-        return editorState();
-      },
-      setSnap: (enabled, translationMeters, rotationDegrees) => {
-        setEditorSnap(enabled, translationMeters, rotationDegrees);
-        return editorState();
-      },
-      undo: () => {
-        undoPreviewEdit();
-        return editorState();
-      },
-      redo: () => {
-        redoPreviewEdit();
-        return editorState();
-      },
-      fitScene: () => {
-        resetView();
-        return editorState();
-      },
-      fitSelection: () => {
-        fitSelection();
-        return editorState();
-      },
-      getEditPatch: () => buildEditPatch(),
-      drainEvents: () => {
-        const events = state.editorEvents.slice();
-        state.editorEvents.length = 0;
-        return events;
-      }
-    };
-    el.file.addEventListener("change", (event) => {
-      const file = event.target.files?.[0];
-      if (file)
-        loadFile(file);
-    });
-    boot();
-  }
-});
-
-// src/viewer_entry.js
-init_three_module();
-init_OrbitControls();
-init_TransformControls();
-init_STLLoader();
-init_ColladaLoader();
-init_OBJLoader();
-init_URDFLoader();
-var RVIZ_LIGHT_BASELINE = Object.freeze({
-  background: 15922422,
-  ground: 16251130,
-  hemisphereSky: 16777215,
-  hemisphereGround: 13358044,
-  primaryLight: 16777215,
-  fillLight: 14412542,
-  exposure: 1.12
-});
-var PATCH_FLAG = Symbol.for("workcell-studio.rviz-light-baseline.v1");
-var configuredMeshes = /* @__PURE__ */ new WeakSet();
-function isHelperOrOverlay(node) {
-  const data = node?.userData || {};
-  const identity = [
-    node?.name,
-    data?.source_layer,
-    data?.role,
-    data?.category,
-    data?.status,
-    data?.item?.source_layer,
-    data?.item?.role,
-    data?.item?.category,
-    data?.item?.status
-  ].map((value) => String(value || "").toLowerCase().replace(/[_-]+/g, " ")).join(" ");
-  return Boolean(
-    node?.isGridHelper || node?.isAxesHelper || data?.exclude_from_fit_bounds === true || data?.debug_only === true || data?.diagnostic_only === true || data?.helper_overlay === true || /\b(debug|diagnostic|overlay|helper|zone|reach|fov|warning|transform anchor)\b/.test(identity)
-  );
-}
-function materialIsTranslucent(material) {
-  const materials = Array.isArray(material) ? material : [material];
-  return materials.some((entry) => entry && entry.transparent && Number(entry.opacity ?? 1) < 0.9);
-}
-function configureMeshShadows(scene) {
-  scene.traverse((node) => {
-    if (!node?.isMesh || configuredMeshes.has(node))
-      return;
-    configuredMeshes.add(node);
-    if (node.name === "rviz_light_ground" || isHelperOrOverlay(node)) {
-      node.castShadow = false;
-      return;
-    }
-    const translucent = materialIsTranslucent(node.material);
-    node.castShadow = !translucent;
-    node.receiveShadow = !translucent;
-  });
-}
-function configureGround(scene) {
-  let ground = scene.getObjectByName("rviz_light_ground");
-  if (!ground) {
-    ground = new Mesh(
-      new PlaneGeometry(12, 12),
-      new MeshStandardMaterial({
-        color: RVIZ_LIGHT_BASELINE.ground,
-        roughness: 1,
-        metalness: 0,
-        side: DoubleSide
-      })
-    );
-    ground.name = "rviz_light_ground";
-    ground.position.z = -0.01;
-    ground.receiveShadow = true;
-    ground.castShadow = false;
-    ground.renderOrder = -10;
-    ground.userData.exclude_from_fit_bounds = true;
-    ground.userData.exclude_from_physical_bounds = true;
-    ground.userData.helper_overlay = true;
-    ground.userData.rviz_light_baseline = true;
-    scene.add(ground);
-  }
-}
-function configureLights(scene) {
-  let hemisphere = scene.children.find((child) => child?.isHemisphereLight);
-  if (!hemisphere) {
-    hemisphere = new HemisphereLight(
-      RVIZ_LIGHT_BASELINE.hemisphereSky,
-      RVIZ_LIGHT_BASELINE.hemisphereGround,
-      1.45
-    );
-    hemisphere.name = "rviz_light_hemisphere";
-    scene.add(hemisphere);
-  } else {
-    hemisphere.color.setHex(RVIZ_LIGHT_BASELINE.hemisphereSky);
-    hemisphere.groundColor.setHex(RVIZ_LIGHT_BASELINE.hemisphereGround);
-    hemisphere.intensity = 1.45;
-  }
-  let primary = scene.children.find(
-    (child) => child?.isDirectionalLight && child.name !== "rviz_light_fill"
-  );
-  if (!primary) {
-    primary = new DirectionalLight(RVIZ_LIGHT_BASELINE.primaryLight, 1.65);
-    scene.add(primary);
-  }
-  primary.name = "rviz_light_key";
-  primary.color.setHex(RVIZ_LIGHT_BASELINE.primaryLight);
-  primary.intensity = 1.65;
-  primary.position.set(3.5, -4.5, 6.5);
-  primary.castShadow = true;
-  primary.shadow.mapSize.set(2048, 2048);
-  primary.shadow.camera.near = 0.1;
-  primary.shadow.camera.far = 20;
-  primary.shadow.camera.left = -5;
-  primary.shadow.camera.right = 5;
-  primary.shadow.camera.top = 5;
-  primary.shadow.camera.bottom = -5;
-  primary.shadow.bias = -25e-5;
-  primary.shadow.normalBias = 0.018;
-  let fill = scene.getObjectByName("rviz_light_fill");
-  if (!fill) {
-    fill = new DirectionalLight(RVIZ_LIGHT_BASELINE.fillLight, 0.55);
-    fill.name = "rviz_light_fill";
-    fill.position.set(-4, 2.5, 3.5);
-    fill.castShadow = false;
-    fill.userData.exclude_from_fit_bounds = true;
-    scene.add(fill);
-  }
-}
-function configureGrid(scene) {
-  scene.traverse((node) => {
-    if (!node?.isGridHelper)
-      return;
-    node.position.z = 2e-3;
-    node.renderOrder = -5;
-    const materials = Array.isArray(node.material) ? node.material : [node.material];
-    for (const material of materials) {
-      if (!material)
-        continue;
-      material.transparent = true;
-      material.opacity = 0.72;
-      material.depthWrite = false;
-    }
-  });
-}
-function configureRvizLightScene(renderer, scene) {
-  if (!renderer || !scene?.isScene)
-    return;
-  renderer.outputColorSpace = SRGBColorSpace;
-  renderer.toneMapping = ACESFilmicToneMapping;
-  renderer.toneMappingExposure = RVIZ_LIGHT_BASELINE.exposure;
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = PCFSoftShadowMap;
-  renderer.shadowMap.autoUpdate = true;
-  renderer.setClearColor(RVIZ_LIGHT_BASELINE.background, 1);
-  if (!scene.background?.isColor)
-    scene.background = new Color();
-  scene.background.setHex(RVIZ_LIGHT_BASELINE.background);
-  scene.fog = null;
-  if (!scene.userData.rviz_light_baseline_initialized) {
-    configureGround(scene);
-    configureLights(scene);
-    configureGrid(scene);
-    scene.userData.rviz_light_baseline_initialized = true;
-  }
-  configureMeshShadows(scene);
-}
-function installRvizLightBaseline() {
-  const prototype = WebGLRenderer?.prototype;
-  if (!prototype || prototype[PATCH_FLAG])
-    return;
-  const originalRender = prototype.render;
-  prototype.render = function renderWithRvizLightBaseline(scene, camera) {
-    configureRvizLightScene(this, scene);
-    return originalRender.call(this, scene, camera);
-  };
-  prototype[PATCH_FLAG] = true;
-  window.__WORKCELL_RVIZ_LIGHT_BASELINE__ = Object.freeze({
-    enabled: true,
-    version: 1,
-    background: "#f2f4f6",
-    ground: "#f7f8fa",
-    shadows: "pcf_soft",
-    tone_mapping: "aces_filmic",
-    exposure: RVIZ_LIGHT_BASELINE.exposure
-  });
-}
-installRvizLightBaseline();
-async function bootViewerBundle() {
-  await Promise.resolve().then(() => (init_urdf_robot_renderer(), urdf_robot_renderer_exports));
-  await Promise.resolve().then(() => (init_viewer(), viewer_exports));
-}
-bootViewerBundle().catch((error) => {
-  console.error("Workcell Studio viewer bundle failed to start:", error);
-});
+boot();
 export {
   ColladaLoader,
   OBJLoader,
