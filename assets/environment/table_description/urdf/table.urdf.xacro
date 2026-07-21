@@ -9,7 +9,7 @@
 	  </visual>
 	  <collision name="None_${prefix}">
 	    <geometry>
-	      <mesh filename="package://table_description/meshes/visual/table.stl" scale="0.001000 0.001000 0.001000"/>
+	      <mesh filename="package://table_description/meshes/collision/table.stl" scale="0.001000 0.001000 0.001000"/>
 	    </geometry>
 	  </collision>
 	</link>
@@ -19,4 +19,4 @@
 	  <child link="table_${prefix}"/>
 	</joint>
 </xacro:macro>
-</robot> 
+</robot>
