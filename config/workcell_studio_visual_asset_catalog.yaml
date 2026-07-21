@@ -25,13 +25,13 @@ categories:
     required_for_new_cell_preview: false
   table:
     package_candidates: [table_description]
-    preferred_mesh_uris: [package://table_description/meshes/table.stl]
+    preferred_mesh_uris: [package://table_description/meshes/visual/table.stl]
     primitive_fallback_dimensions: [1.2,0.8,0.2]
     preview_label: Table
     required_for_new_cell_preview: true
   workbench:
     package_candidates: [workbench_description]
-    preferred_mesh_uris: [package://workbench_description/meshes/workbench.stl]
+    preferred_mesh_uris: [package://workbench_description/meshes/visual/table.stl]
     primitive_fallback_dimensions: [1.4,0.8,0.25]
     preview_label: Workbench
     required_for_new_cell_preview: false
