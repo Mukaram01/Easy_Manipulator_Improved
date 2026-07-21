@@ -11,10 +11,12 @@
 #include <QMenu>
 #include <QSettings>
 #include <QSplitter>
+#include <QStringList>
 #include <QTabWidget>
 #include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
+#include <QVariant>
 
 namespace workcell_builder
 {
