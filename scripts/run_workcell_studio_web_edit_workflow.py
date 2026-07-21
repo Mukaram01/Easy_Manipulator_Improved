@@ -111,6 +111,19 @@ def _readiness_cmd(output_dir: Path) -> list[str]:
     ]
 
 
+def _product_view_refresh_cmd(scene: Path, output_dir: Path, scene_id: str) -> list[str]:
+    return [
+        sys.executable,
+        str(SCRIPT_DIR / "ensure_workcell_studio_web_scene_fresh.py"),
+        "--scene",
+        str(scene),
+        "--output",
+        str(output_dir / f"{scene_id}.web_scene.json"),
+        "--stage-assets",
+        "--force",
+    ]
+
+
 def _generated_summary_paths(scene: Path) -> list[Path]:
     return [
         scene / "package.xml",
@@ -207,13 +220,13 @@ def main(argv: list[str] | None = None) -> int:
             _print_next_write_command(args)
             return 0
 
-        write_cmd = [*dry_cmd, "--write"]
+        write_cmd = [*dry_cmd, "--write", "--backup"]
         write_rc = _run_step("write apply", write_cmd)
         if write_rc != 0:
             print("write/apply result: FAIL", file=sys.stderr)
             return write_rc
         patch_applied = True
-        print("write/apply result: PASS")
+        print("write/apply result: PASS (timestamped source backups created)")
 
         try:
             _write_web_scene(scene, after_path)
@@ -251,6 +264,14 @@ def main(argv: list[str] | None = None) -> int:
             return validation_rc
     else:
         print("validation command/result: SKIPPED (pass --validate or --generate-and-validate)")
+
+    if patch_applied:
+        product_view_output = output_dir / f"{scene_id}.web_scene.json"
+        refresh_cmd = _product_view_refresh_cmd(scene, output_dir, scene_id)
+        refresh_rc = _run_step("Product View refresh", refresh_cmd)
+        print(f"Product View refresh result: {'PASS' if refresh_rc == 0 else 'FAIL'} ({product_view_output})")
+        if refresh_rc != 0:
+            return refresh_rc
 
     readiness_output_dir: Path | None = None
     if args.run_readiness:
