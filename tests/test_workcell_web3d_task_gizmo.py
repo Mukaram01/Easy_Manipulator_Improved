@@ -25,15 +25,13 @@ def test_task_gizmo_defaults_to_xy_move_and_yaw_only_rotation():
     for token in [
         "state.mode === 'move'",
         "state.selectedEditable === true",
-        "gizmo.setMode('translate')",
-        "gizmo.setSpace('world')",
-        "gizmo.showX = true",
-        "gizmo.showY = true",
-        "gizmo.showZ = runtime.freeHeight",
-        "gizmo.setMode('rotate')",
-        "gizmo.showX = false",
-        "gizmo.showY = false",
-        "gizmo.showZ = true",
+        "configureAxes(gizmo, 'translate', true, true, runtime.freeHeight)",
+        "configureAxes(gizmo, 'rotate', false, false, true)",
+        "if (gizmo.mode !== mode) gizmo.setMode(mode)",
+        "if (gizmo.space !== 'world') gizmo.setSpace('world')",
+        "if (gizmo.showX !== showX) gizmo.showX = showX",
+        "if (gizmo.showY !== showY) gizmo.showY = showY",
+        "if (gizmo.showZ !== showZ) gizmo.showZ = showZ",
         "rotation_axes: ['z']",
     ]:
         assert token in source
@@ -70,7 +68,9 @@ def test_shift_temporarily_enables_fine_snap_without_changing_saved_settings():
         "window.addEventListener('blur'",
         "numericInputValue('translation-snap', 0.01)",
         "numericInputValue('rotation-snap', 5)",
-        "THREE.MathUtils.degToRad(rotationDegrees)",
+        "THREE.MathUtils.degToRad",
+        "snapDiffers(gizmo.translationSnap, desiredTranslation)",
+        "snapDiffers(gizmo.rotationSnap, rotation)",
     ]:
         assert token in source
 
