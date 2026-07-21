@@ -21,7 +21,6 @@ const runtime = {
   observer: null,
   installed: false,
   frame: 0,
-  selectedId: '',
   message: '',
   severity: 'neutral',
   messageTimer: null,
@@ -66,7 +65,9 @@ function identity(item, node = null) {
     item?.type,
     item?.category,
     item?.zone_kind,
+    item?.zone_type,
     item?.task_zone,
+    item?.task_zone_name,
     item?.source_layer,
     node?.name,
   ].map(value => String(value || '').toLowerCase().replace(/[_-]+/g, ' ')).join(' ');
@@ -125,7 +126,7 @@ function supportEntries() {
 
 function zoneKind(item, node) {
   const text = identity(item, node);
-  const zoneLike = /\b(zone|area|region|task)\b/.test(text) || item?.task_zone || item?.zone_kind;
+  const zoneLike = /\b(zone|area|region|task)\b/.test(text) || item?.task_zone || item?.zone_kind || item?.zone_type;
   if (!zoneLike) return '';
   if (/\bpick(?:ing)?\b/.test(text)) return 'pick';
   if (/\bplace(?:ment)?\b/.test(text)) return 'place';
@@ -147,9 +148,10 @@ function outsideDistance(value, min, max) {
 }
 
 function supportDistanceToPoint(support, point) {
-  const dx = outsideDistance(point.x, support.box.min.x, support.box.max.x);
-  const dy = outsideDistance(point.y, support.box.min.y, support.box.max.y);
-  return Math.hypot(dx, dy);
+  return Math.hypot(
+    outsideDistance(point.x, support.box.min.x, support.box.max.x),
+    outsideDistance(point.y, support.box.min.y, support.box.max.y),
+  );
 }
 
 function nearestSupport(point) {
@@ -167,18 +169,20 @@ function containingOrNearestSupport(point) {
     point.x >= support.box.min.x - EPSILON && point.x <= support.box.max.x + EPSILON &&
     point.y >= support.box.min.y - EPSILON && point.y <= support.box.max.y + EPSILON
   ));
-  if (containing) return { ...containing, distance: 0 };
-  return nearestSupport(point);
+  return containing ? { ...containing, distance: 0 } : nearestSupport(point);
 }
 
 function availableInnerBounds(support, objectBox) {
   const size = objectBox.getSize(new THREE.Vector3());
-  const minX = support.box.min.x + EDGE_MARGIN_M;
-  const maxX = support.box.max.x - EDGE_MARGIN_M;
-  const minY = support.box.min.y + EDGE_MARGIN_M;
-  const maxY = support.box.max.y - EDGE_MARGIN_M;
-  if (size.x > maxX - minX + EPSILON || size.y > maxY - minY + EPSILON) return null;
-  return { minX, maxX, minY, maxY, size };
+  const inner = {
+    minX: support.box.min.x + EDGE_MARGIN_M,
+    maxX: support.box.max.x - EDGE_MARGIN_M,
+    minY: support.box.min.y + EDGE_MARGIN_M,
+    maxY: support.box.max.y - EDGE_MARGIN_M,
+    size,
+  };
+  if (size.x > inner.maxX - inner.minX + EPSILON || size.y > inner.maxY - inner.minY + EPSILON) return null;
+  return inner;
 }
 
 function clampCenterToSupport(center, inner) {
@@ -191,7 +195,7 @@ function clampCenterToSupport(center, inner) {
 
 function targetDelta(action, objectBox, support, zone = null) {
   const inner = availableInnerBounds(support, objectBox);
-  if (!inner) return { error: `${itemLabel(itemOf(support.root), 'Selected item')} is too large for ${itemLabel(support.item, 'the surface')}` };
+  if (!inner) return { error: `Selected item is too large for ${itemLabel(support.item, 'the surface')}` };
 
   const current = boxCenter(objectBox);
   let target = current.clone();
@@ -222,8 +226,6 @@ function targetDelta(action, objectBox, support, zone = null) {
       target.y - current.y,
       support.top - objectBox.min.z,
     ),
-    target,
-    inner,
   };
 }
 
@@ -255,6 +257,12 @@ function collisionResult(id) {
   return window.__WORKCELL_COLLISION_PLACEMENT_V1__?.validateItem?.(id) || null;
 }
 
+function publish(action, state, extra = {}) {
+  const detail = { action, item_id: state?.selectedItemId || '', ...extra };
+  window.dispatchEvent?.(new CustomEvent('workcell:contextual-placement-action', { detail }));
+  window.parent?.postMessage?.({ type: 'workcell_contextual_placement_action', ...detail }, '*');
+}
+
 function showMessage(message, severity = 'neutral', timeoutMs = 1800) {
   runtime.message = message;
   runtime.severity = severity;
@@ -269,12 +277,6 @@ function showMessage(message, severity = 'neutral', timeoutMs = 1800) {
   }
 }
 
-function publish(action, state, extra = {}) {
-  const detail = { action, item_id: state?.selectedItemId || '', ...extra };
-  window.dispatchEvent?.(new CustomEvent('workcell:contextual-placement-action', { detail }));
-  window.parent?.postMessage?.({ type: 'workcell_contextual_placement_action', ...detail }, '*');
-}
-
 function runAction(action) {
   const state = editorState();
   if (!state?.selectedItemId || state.selectedEditable !== true) return false;
@@ -285,7 +287,6 @@ function runAction(action) {
     return false;
   }
 
-  const objectCenter = boxCenter(objectBox);
   let zone = null;
   let support = null;
   if (action === 'move-pick' || action === 'move-place') {
@@ -297,7 +298,7 @@ function runAction(action) {
     }
     support = containingOrNearestSupport(boxCenter(zone.box));
   } else {
-    support = containingOrNearestSupport(objectCenter);
+    support = containingOrNearestSupport(boxCenter(objectBox));
   }
   if (!support) {
     showMessage('No table or workbench is available.', 'error');
@@ -325,7 +326,8 @@ function runAction(action) {
   }
 
   const label = ACTIONS.find(([name]) => name === action)?.[1] || action;
-  showMessage(`${label} · ${itemLabel(support.item, 'surface')}`, collision?.severity === 'warning' ? 'warning' : 'success');
+  const severity = collision?.severity === 'warning' ? 'warning' : 'success';
+  showMessage(`${label} · ${itemLabel(support.item, 'surface')}`, severity);
   publish(action, state, {
     valid: true,
     support_surface_id: itemId(support.item),
@@ -353,10 +355,20 @@ function actionAvailability(state) {
   };
 }
 
-function createActionsSection(state) {
+function sectionSignature(state, availability) {
+  return JSON.stringify({
+    item: state.selectedItemId,
+    availability,
+    message: runtime.message,
+    severity: runtime.severity,
+  });
+}
+
+function createActionsSection(state, availability = actionAvailability(state)) {
   const section = document.createElement('section');
   section.className = 'contextual-placement-actions';
   section.dataset.itemId = state.selectedItemId;
+  section.dataset.signature = sectionSignature(state, availability);
 
   const title = document.createElement('h3');
   title.textContent = 'Quick placement';
@@ -365,7 +377,6 @@ function createActionsSection(state) {
   note.textContent = 'Use the current surface, edge or task area. Collision validation still applies.';
   const grid = document.createElement('div');
   grid.className = 'contextual-placement-grid';
-  const availability = actionAvailability(state);
 
   for (const [name, label] of ACTIONS) {
     const button = document.createElement('button');
@@ -398,12 +409,13 @@ function refreshActions() {
   const editable = Boolean(state?.selectedItemId && state.selectedEditable === true && rootForItemId(state.selectedItemId));
   if (!editable) {
     existing?.remove();
-    runtime.selectedId = '';
     return;
   }
 
-  runtime.selectedId = state.selectedItemId;
-  const replacement = createActionsSection(state);
+  const availability = actionAvailability(state);
+  const signature = sectionSignature(state, availability);
+  if (existing?.dataset.signature === signature) return;
+  const replacement = createActionsSection(state, availability);
   if (existing) existing.replaceWith(replacement);
   else {
     const editor = inspector.querySelector(':scope > .transform-editor');
