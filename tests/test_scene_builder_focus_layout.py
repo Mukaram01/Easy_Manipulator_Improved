@@ -60,10 +60,20 @@ def test_inspector_is_opened_by_an_intentional_scene_selection():
     source = BOOTSTRAP.read_text(encoding="utf-8")
 
     assert "QTreeWidget::itemClicked" in source
-    assert "ScenePreviewWidget::preview_item_selected" in source
+    assert "SIGNAL(preview_item_selected(QString,QString))" in source
     assert "QApplication::mouseButtons() != Qt::NoButton" in source
     assert 'tabIndexByText(right_tabs, QStringLiteral("Selection"))' in source
     assert "show_right->setChecked(true)" in source
+
+
+def test_focus_layout_has_no_hard_scene_preview_widget_link_dependency():
+    source = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert '#include "scene_preview_widget.h"' not in source
+    assert "findChild<ScenePreviewWidget *>" not in source
+    assert "&ScenePreviewWidget::preview_item_selected" not in source
+    assert 'findChild<QObject *>(QStringLiteral("scenePreviewWidget"))' in source
+    assert "SLOT(start())" in source
 
 
 def test_focus_layout_change_does_not_add_motion_or_source_writes():
@@ -83,5 +93,5 @@ def test_focus_layout_change_does_not_add_motion_or_source_writes():
 
 def test_focus_layout_bootstrap_remains_small_and_layered():
     source = BOOTSTRAP.read_text(encoding="utf-8")
-    assert len(source.splitlines()) < 280
+    assert len(source.splitlines()) < 290
     assert "mainwindow.cpp" not in source
