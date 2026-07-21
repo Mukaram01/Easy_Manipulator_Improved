@@ -1,0 +1,49 @@
+name: Temporary Web3D light bundle rebuild
+
+on:
+  push:
+    branches:
+      - web3d/light-rviz-visual-baseline
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          persist-credentials: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: workcell_studio_web/viewer/package-lock.json
+
+      - name: Install pinned viewer dependencies
+        working-directory: workcell_studio_web/viewer
+        run: npm ci
+
+      - name: Rebuild committed Web3D bundle
+        working-directory: workcell_studio_web/viewer
+        run: npm run build:web3d
+
+      - name: Commit generated bundle only
+        shell: bash
+        run: |
+          git checkout -- workcell_studio_web/viewer/dist/viewer.bundle.js.map
+          if git diff --quiet -- workcell_studio_web/viewer/dist/viewer.bundle.js; then
+            echo "Viewer bundle is already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add workcell_studio_web/viewer/dist/viewer.bundle.js
+          git commit -m "Rebuild Web3D bundle for RViz light baseline"
+          git push origin HEAD:${{ github.ref_name }}
