@@ -400,8 +400,9 @@
     "label": "Calibration Cube",
     "category": "Pick Objects",
     "asset_type": "object",
-    "mesh_path": "workcell_builder/workcell_builder/assets/environment/calibration_cube_description/meshes/calibration_cube.stl",
+    "mesh_path": "workcell_builder/workcell_builder/assets/environment/calibration_cube_description/urdf/calibration_cube.urdf.xacro",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/calibration_cube_description/urdf/calibration_cube.urdf.xacro",
+    "geometry_type": "urdf_primitive",
     "default_dimensions_m": [
       0.1,
       0.1,
@@ -422,15 +423,16 @@
       "calibration",
       "object"
     ],
-    "source_note": "self-authored primitive placeholder"
+    "source_note": "self-authored URDF box primitive; no mesh file"
   },
   {
     "asset_id": "pick_box",
     "label": "Pick Box",
     "category": "Pick Objects",
     "asset_type": "object",
-    "mesh_path": "workcell_builder/workcell_builder/assets/environment/pick_box_description/meshes/pick_box.stl",
+    "mesh_path": "workcell_builder/workcell_builder/assets/environment/pick_box_description/urdf/pick_box.urdf.xacro",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/pick_box_description/urdf/pick_box.urdf.xacro",
+    "geometry_type": "urdf_primitive",
     "default_dimensions_m": [
       0.08,
       0.08,
@@ -451,7 +453,7 @@
       "pick",
       "object"
     ],
-    "source_note": "self-authored primitive placeholder"
+    "source_note": "self-authored URDF box primitive; no mesh file"
   },
   {
     "asset_id": "cylinder_object",

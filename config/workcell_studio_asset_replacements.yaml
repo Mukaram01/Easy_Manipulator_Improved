@@ -112,16 +112,16 @@ assets:
   calibration_cube:
     current_quality: acceptable_primitive
     action: migrate_to_urdf_primitive
-    replacement_status: code_change_required
+    replacement_status: migrated_to_urdf_primitive
     expected_dimensions_m: [0.1, 0.1, 0.1]
-    notes: No downloaded mesh is required for a calibration cube.
+    notes: URDF box visual and collision are authoritative; generated STL removed.
 
   pick_box:
     current_quality: acceptable_primitive
     action: migrate_to_urdf_primitive
-    replacement_status: code_change_required
+    replacement_status: migrated_to_urdf_primitive
     expected_dimensions_m: [0.08, 0.08, 0.08]
-    notes: No downloaded mesh is required for a simple pick box.
+    notes: URDF box visual and collision are authoritative; generated STL removed.
 
   cylinder_object:
     current_quality: acceptable_primitive

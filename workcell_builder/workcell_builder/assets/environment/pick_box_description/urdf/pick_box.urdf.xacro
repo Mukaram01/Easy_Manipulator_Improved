@@ -2,8 +2,18 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="pick_box">
   <xacro:macro name="pick_box" params="prefix parent xyz:='0 0 0' rpy:='0 0 0'">
     <link name="${prefix}pick_box_link">
-      <visual><origin xyz="0 0 0" rpy="0 0 0"/><geometry><mesh filename="package://workcell_builder/assets/environment/pick_box_description/meshes/pick_box.stl" scale="1 1 1"/></geometry></visual>
-      <collision><origin xyz="0 0 0" rpy="0 0 0"/><geometry><box size="0.08 0.08 0.08"/></geometry></collision>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.08 0.08 0.08"/>
+        </geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.08 0.08 0.08"/>
+        </geometry>
+      </collision>
     </link>
   </xacro:macro>
 </robot>

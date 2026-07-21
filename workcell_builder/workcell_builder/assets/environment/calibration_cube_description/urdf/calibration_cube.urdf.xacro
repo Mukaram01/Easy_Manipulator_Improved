@@ -2,8 +2,18 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="calibration_cube">
   <xacro:macro name="calibration_cube" params="prefix parent xyz:='0 0 0' rpy:='0 0 0'">
     <link name="${prefix}calibration_cube_link">
-      <visual><origin xyz="0 0 0" rpy="0 0 0"/><geometry><mesh filename="package://workcell_builder/assets/environment/calibration_cube_description/meshes/calibration_cube.stl" scale="1 1 1"/></geometry></visual>
-      <collision><origin xyz="0 0 0" rpy="0 0 0"/><geometry><box size="0.1 0.1 0.1"/></geometry></collision>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.1 0.1 0.1"/>
+        </geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.1 0.1 0.1"/>
+        </geometry>
+      </collision>
     </link>
   </xacro:macro>
 </robot>
