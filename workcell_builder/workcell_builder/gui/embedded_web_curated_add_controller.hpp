@@ -165,10 +165,11 @@ private:
     for (const QJsonValue & value : curated_doc.object().value(QStringLiteral("objects")).toArray()) {
       const QString id = value.toObject().value(QStringLiteral("asset_id")).toString();
       const QJsonObject item = profiles.value(id);
-      if (id.isEmpty() || item.isEmpty()) continue;
+      const QJsonArray dimensions = item.value(QStringLiteral("default_dimensions_m")).toArray();
+      if (id.isEmpty() || item.isEmpty() || dimensions.size() != 3) continue;
       choices.push_back({id, item.value(QStringLiteral("label")).toString(),
         item.value(QStringLiteral("category")).toString(), item.value(QStringLiteral("license")).toString(),
-        item.value(QStringLiteral("source_note")).toString(), item.value(QStringLiteral("default_dimensions_m")).toArray()});
+        item.value(QStringLiteral("source_note")).toString(), dimensions});
     }
     std::sort(choices.begin(), choices.end(), [](const CatalogChoice & a, const CatalogChoice & b) {
       return a.category == b.category ? a.label < b.label : a.category < b.category;
@@ -193,9 +194,9 @@ private:
     QStringList labels; QMap<QString, CatalogChoice> by_label;
     for (const CatalogChoice & choice : choices) {
       const QString dims = QStringLiteral("%1 × %2 × %3 m")
-        .arg(choice.dimensions.value(0).toDouble(), 0, 'f', 2)
-        .arg(choice.dimensions.value(1).toDouble(), 0, 'f', 2)
-        .arg(choice.dimensions.value(2).toDouble(), 0, 'f', 2);
+        .arg(choice.dimensions.at(0).toDouble(), 0, 'f', 2)
+        .arg(choice.dimensions.at(1).toDouble(), 0, 'f', 2)
+        .arg(choice.dimensions.at(2).toDouble(), 0, 'f', 2);
       const QString label = QStringLiteral("%1 — %2 (%3)").arg(choice.category, choice.label, dims);
       labels << label; by_label.insert(label, choice);
     }
@@ -241,7 +242,10 @@ private:
     connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
       [this, process, phase](int code, QProcess::ExitStatus status) {
         const QByteArray output = process->readAll();
-        if (process == process_) process_ = nullptr; process->deleteLater();
+        if (process == process_) {
+          process_ = nullptr;
+        }
+        process->deleteLater();
         if (!contextCurrent()) { sceneChanged(); return; }
         if (status != QProcess::NormalExit || code != 0) {
           busy_ = false; setStatus(QStringLiteral("Add failed"), QStringLiteral("error"));
@@ -258,19 +262,19 @@ private:
   {
     if (phase == Phase::Plan) {
       const QJsonObject plan = QJsonDocument::fromJson(output.trimmed()).object();
+      const QJsonArray xyz = plan.value(QStringLiteral("pose_xyz")).toArray();
       if (plan.value(QStringLiteral("status")).toString() != QStringLiteral("planned") ||
-          plan.value(QStringLiteral("scene_id")).toString() != scene_id_) {
+          plan.value(QStringLiteral("scene_id")).toString() != scene_id_ || xyz.size() != 3) {
         busy_ = false; setStatus(QStringLiteral("Add failed"), QStringLiteral("error")); return;
       }
       planned_instance_ = plan.value(QStringLiteral("instance_id")).toString();
       planned_sha_ = plan.value(QStringLiteral("layout_sha256")).toString();
-      const QJsonArray xyz = plan.value(QStringLiteral("pose_xyz")).toArray();
       const QString message = QStringLiteral(
         "Add %1 as %2?\n\nSupport: %3\nPose XYZ: %4, %5, %6 m\nLicense: %7\nSource: %8\n\n"
         "Workcell Studio will back up and atomically update only the editable layout, then regenerate, validate and reload Product View. No robot motion is started.")
         .arg(selected_.label, planned_instance_, plan.value(QStringLiteral("support_surface_id")).toString())
-        .arg(xyz.value(0).toDouble(), 0, 'f', 3).arg(xyz.value(1).toDouble(), 0, 'f', 3)
-        .arg(xyz.value(2).toDouble(), 0, 'f', 3).arg(selected_.license, selected_.source_note);
+        .arg(xyz.at(0).toDouble(), 0, 'f', 3).arg(xyz.at(1).toDouble(), 0, 'f', 3)
+        .arg(xyz.at(2).toDouble(), 0, 'f', 3).arg(selected_.license, selected_.source_note);
       if (QMessageBox::question(preview_, QStringLiteral("Confirm Add Curated Object"), message,
           QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
         busy_ = false; setStatus(QStringLiteral("Add cancelled"), QStringLiteral("warning")); pollEditorState(); return;
@@ -280,7 +284,10 @@ private:
     if (phase == Phase::Write) { start(Phase::GenerateValidate); return; }
     if (phase == Phase::GenerateValidate) { start(Phase::Refresh); return; }
     busy_ = false; setStatus(QStringLiteral("Added"), QStringLiteral("success"));
-    if (view_) view_->reload(); QTimer::singleShot(700, this, [this]() { pollEditorState(); });
+    if (view_) {
+      view_->reload();
+    }
+    QTimer::singleShot(700, this, [this]() { pollEditorState(); });
   }
 
   void pollEditorState()
