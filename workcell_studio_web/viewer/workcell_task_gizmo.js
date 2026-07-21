@@ -12,6 +12,8 @@ const runtime = {
   toggle: null,
   labelText: null,
   listenersInstalled: false,
+  savedTranslationValue: null,
+  savedRotationValue: null,
 };
 
 function editorState() {
@@ -109,12 +111,8 @@ function snapDiffers(current, desired) {
 
 function applySnap(gizmo, mode) {
   const enabled = snapEnabled();
-  const translation = enabled
-    ? (runtime.fineMode ? FINE_TRANSLATION_M : numericInputValue('translation-snap', 0.01))
-    : null;
-  const rotation = enabled
-    ? THREE.MathUtils.degToRad(runtime.fineMode ? FINE_ROTATION_DEG : numericInputValue('rotation-snap', 5))
-    : null;
+  const translation = enabled ? numericInputValue('translation-snap', 0.01) : null;
+  const rotation = enabled ? THREE.MathUtils.degToRad(numericInputValue('rotation-snap', 5)) : null;
   const desiredTranslation = mode === 'move' ? translation : (enabled ? numericInputValue('translation-snap', 0.01) : null);
 
   if (snapDiffers(gizmo.translationSnap, desiredTranslation)) gizmo.setTranslationSnap(desiredTranslation);
@@ -159,10 +157,27 @@ function applyTaskGizmo() {
   }
 }
 
+function applyFineInputOverride(enabled) {
+  const translation = document.getElementById('translation-snap');
+  const rotation = document.getElementById('rotation-snap');
+  if (enabled) {
+    if (translation && runtime.savedTranslationValue == null) runtime.savedTranslationValue = translation.value;
+    if (rotation && runtime.savedRotationValue == null) runtime.savedRotationValue = rotation.value;
+    if (translation) translation.value = String(FINE_TRANSLATION_M);
+    if (rotation) rotation.value = String(FINE_ROTATION_DEG);
+    return;
+  }
+  if (translation && runtime.savedTranslationValue != null) translation.value = runtime.savedTranslationValue;
+  if (rotation && runtime.savedRotationValue != null) rotation.value = runtime.savedRotationValue;
+  runtime.savedTranslationValue = null;
+  runtime.savedRotationValue = null;
+}
+
 function setFineMode(enabled) {
   const next = Boolean(enabled);
   if (runtime.fineMode === next) return;
   runtime.fineMode = next;
+  applyFineInputOverride(next);
   applyTaskGizmo();
   publishMode();
 }
