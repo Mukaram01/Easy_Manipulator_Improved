@@ -140,7 +140,7 @@
     "label": "Pallet",
     "category": "Fixtures",
     "asset_type": "pallet",
-    "mesh_path": "workcell_builder/workcell_builder/assets/environment/pallet_description/meshes/pallet.obj",
+    "mesh_path": "workcell_builder/workcell_builder/assets/environment/pallet_description/meshes/visual/pallet.obj",
     "urdf_path": "workcell_builder/workcell_builder/assets/environment/pallet_description/urdf/pallet.urdf.xacro",
     "default_dimensions_m": [1.2, 0.8, 0.144],
     "default_pose": [1.2, 0, 0, 0, 0, 0],

@@ -1,0 +1,36 @@
+schema_version: workcell_studio_asset/v1
+asset_id: pallet
+name: Pallet
+asset_type: pallet
+status: external_visual_pilot
+source:
+  creator: Kenney
+  pack: Retro Urban Kit 2.0
+  repository: henrylewis2004/Code-Geass-SRPG
+  commit: c3006c78bc764fc86a113316cbf2a0e5e48b7231
+  path: assets/3d/kenney_retro-urban-kit/Models/OBJ format/pallet.obj
+  source_record: SOURCE.md
+license:
+  spdx: CC0-1.0
+  file: LICENSE_KENNEY.txt
+  redistribution_confirmed: true
+geometry:
+  visual_uri: package://workcell_builder/assets/environment/pallet_description/meshes/visual/pallet.obj
+  visual_format: obj
+  source_bounds_m: [1.0, 0.15, 1.0]
+  mesh_scale: [1.2, 0.96, 0.8]
+  visual_rpy: [1.57079632679, 0.0, 0.0]
+  final_dimensions_m: [1.2, 0.8, 0.144]
+  collision:
+    type: box
+    size_m: [1.2, 0.8, 0.144]
+    origin_xyz_m: [0.0, 0.0, 0.072]
+validation:
+  obj_vertices: 56
+  obj_faces: 84
+  self_contained: true
+  package_staging_required: true
+  manual_product_view_confirmation_required: true
+rollback:
+  retained_mesh: meshes/pallet.stl
+  remove_after_manual_confirmation: true

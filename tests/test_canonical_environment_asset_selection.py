@@ -141,3 +141,72 @@ def test_canonical_table_and_camera_stage_as_mesh_backed_web_assets(tmp_path):
         assert payload["metadata"]["mesh_contract"]["core_mesh_failures"] == []
     finally:
         shutil.rmtree(staged_dir, ignore_errors=True)
+
+
+def test_imported_pallet_obj_manifest_and_web_staging(tmp_path):
+    package = (
+        ROOT
+        / "workcell_builder/workcell_builder/assets/environment/pallet_description"
+    )
+    manifest = yaml.safe_load((package / "asset_manifest.yaml").read_text(encoding="utf-8"))
+    visual_uri = (
+        "package://workcell_builder/assets/environment/pallet_description/"
+        "meshes/visual/pallet.obj"
+    )
+
+    assert manifest["source"]["creator"] == "Kenney"
+    assert manifest["license"]["spdx"] == "CC0-1.0"
+    assert manifest["license"]["redistribution_confirmed"] is True
+    assert manifest["geometry"]["visual_uri"] == visual_uri
+    assert manifest["geometry"]["final_dimensions_m"] == [1.2, 0.8, 0.144]
+    assert (package / "meshes/visual/pallet.obj").is_file()
+    assert not (package / "meshes/pallet.obj").exists()
+
+    scene_id = "imported_pallet_asset_test"
+    scene = tmp_path / scene_id
+    scene.mkdir()
+    (scene / "environment.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "scene": {"id": scene_id, "name": scene_id},
+                "environment": {
+                    "support_surfaces": [
+                        {
+                            "id": "imported_pallet",
+                            "type": "pallet",
+                            "role": "support_surface",
+                            "category": "fixture",
+                            "frame": "world",
+                            "pose_xyz": [0.0, 0.0, 0.0],
+                            "pose_rpy": [1.57079632679, 0.0, 0.0],
+                            "mesh_uri": visual_uri,
+                            "mesh_scale": [1.2, 0.96, 0.8],
+                        }
+                    ]
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    staged_dir = ROOT / "build/workcell_studio_web_scene/assets" / scene_id
+    try:
+        payload = EXPORTER.build_web_scene(
+            scene,
+            stage_assets=True,
+            output_path=tmp_path / "build" / f"{scene_id}.web_scene.json",
+        )
+        pallet = next(item for item in payload["assets"] if item["id"] == "imported_pallet")
+
+        assert pallet["mesh_staging_status"] == "staged"
+        assert pallet["original_package_uri"] == visual_uri
+        assert pallet["mesh_uri"].endswith(
+            "workcell_builder/assets/environment/pallet_description/meshes/visual/pallet.obj"
+        )
+        assert pallet["mesh_scale"] == [1.2, 0.96, 0.8]
+        staged_mesh = ROOT / "build/workcell_studio_web_scene" / pallet["mesh_uri"]
+        assert staged_mesh.is_file()
+        assert staged_mesh.read_text(encoding="utf-8").count("\nf ") == 84
+    finally:
+        shutil.rmtree(staged_dir, ignore_errors=True)
