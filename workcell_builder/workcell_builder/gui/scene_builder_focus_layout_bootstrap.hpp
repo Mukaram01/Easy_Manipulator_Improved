@@ -1,7 +1,5 @@
 #pragma once
 
-#include "scene_preview_widget.h"
-
 #include <QAction>
 #include <QApplication>
 #include <QBoxLayout>
@@ -192,10 +190,22 @@ inline void installSceneBuilderFocusLayout(QWidget * root)
     [revealSelection](QTreeWidgetItem * item, int) {
       if (item) revealSelection(item->text(0));
     });
-  if (auto * preview = workspace->findChild<ScenePreviewWidget *>(QStringLiteral("scenePreviewWidget"))) {
-    QObject::connect(preview, &ScenePreviewWidget::preview_item_selected, workspace,
-      [revealSelection](const QString & id, const QString &) {
-        if (QApplication::mouseButtons() != Qt::NoButton) revealSelection(id);
+
+  // This header is linked into small utility-test executables that do not link
+  // ScenePreviewWidget or its MOC object. Use Qt's runtime signal bridge so the
+  // Product View selection behaviour remains available without introducing a
+  // hard ScenePreviewWidget::staticMetaObject dependency into those targets.
+  if (QObject * preview = workspace->findChild<QObject *>(QStringLiteral("scenePreviewWidget"))) {
+    auto * selection_relay = new QTimer(workspace);
+    selection_relay->setSingleShot(true);
+    selection_relay->setInterval(0);
+    QObject::connect(preview, SIGNAL(preview_item_selected(QString,QString)),
+      selection_relay, SLOT(start()));
+    QObject::connect(selection_relay, &QTimer::timeout, workspace,
+      [revealSelection]() {
+        if (QApplication::mouseButtons() != Qt::NoButton) {
+          revealSelection(QStringLiteral("product_view_selection"));
+        }
       });
   }
 
