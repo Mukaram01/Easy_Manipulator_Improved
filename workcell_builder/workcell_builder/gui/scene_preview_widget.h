@@ -360,6 +360,10 @@ private:
         generated_web_scene_path == other.generated_web_scene_path &&
         payload_fingerprint == other.payload_fingerprint && payload_revision == other.payload_revision;
     }
+    bool matches_server_session(const EmbeddedWebRequestIdentity & other) const
+    {
+      return absolute_repo_root == other.absolute_repo_root && selected_server_port == other.selected_server_port;
+    }
     bool matches_context(const EmbeddedWebRequestIdentity & other) const
     {
       return matches_effective_request(other) && selected_server_port == other.selected_server_port;
@@ -494,6 +498,8 @@ private:
   EmbeddedWebRequestIdentity embedded_web_active_identity_;
   EmbeddedWebRequestIdentity pending_embedded_web_identity_;
   EmbeddedWebRequestIdentity embedded_web_loading_identity_;
+  EmbeddedWebRequestIdentity embedded_web_preparing_identity_;
+  EmbeddedWebRequestIdentity embedded_web_prepared_identity_;
   quint64 embedded_web_navigation_token_{ 0 };
   quint64 embedded_web_loading_navigation_token_{ 0 };
   QUrl embedded_web_expected_viewer_url_;
@@ -503,6 +509,14 @@ private:
   quint64 embedded_web_request_generation_{ 0 };
   bool pending_embedded_web_force_{ false };
   QString embedded_web_last_suppressed_duplicate_key_;
+  QString embedded_web_server_session_repo_root_;
+  int embedded_web_server_session_port_{ 0 };
+  quint64 embedded_web_effective_refresh_requests_received_{ 0 };
+  quint64 embedded_web_duplicate_requests_coalesced_{ 0 };
+  quint64 embedded_web_preparations_started_{ 0 };
+  quint64 embedded_web_preparations_cancelled_superseded_{ 0 };
+  quint64 embedded_web_browser_navigations_started_{ 0 };
+  quint64 embedded_web_terminal_results_accepted_{ 0 };
   QSet<QString> embedded_web_automatic_recovery_attempts_;
   QSet<QString> embedded_web_terminal_runtime_failures_;
   bool backend_startup_diagnostic_emitted_{ false };

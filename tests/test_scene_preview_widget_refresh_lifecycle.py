@@ -257,7 +257,7 @@ def test_transient_web3d_runtime_failures_keep_web3d_selected_and_never_activate
         assert "fail_embedded_web_server_probe" in block
 
 
-def test_web3d_runtime_recovery_is_bounded_to_one_attempt_per_request_identity():
+def test_web3d_runtime_failure_does_not_start_automatic_forced_recovery():
     key_start = CPP.index("QString ScenePreviewWidget::embedded_web_recovery_key")
     handler_start = CPP.index("void ScenePreviewWidget::handle_embedded_web_runtime_failure", key_start)
     key_block = CPP[key_start:handler_start]
@@ -267,11 +267,11 @@ def test_web3d_runtime_recovery_is_bounded_to_one_attempt_per_request_identity()
     assert "payload_fingerprint.toHex()" in key_block
     assert "identity.generation" not in key_block
     assert "navigation_token" not in key_block
-    assert "embedded_web_automatic_recovery_attempts_.contains(recovery_key)" in handler
-    assert "embedded_web_automatic_recovery_attempts_.insert(recovery_key)" in handler
-    assert "request_embedded_web_product_view_refresh(true);" in handler
-    assert handler.count("request_embedded_web_product_view_refresh(true);") == 1
-    assert "automatic recovery already attempted" in handler
+    assert "Embedded Product View terminal failure accepted" in handler
+    assert "embedded_web_terminal_runtime_failures_.insert(terminal_key)" in handler
+    assert "request_embedded_web_product_view_refresh(true);" not in handler
+    assert "automatic recovery attempt" not in handler
+    assert "Retry" in handler
 
 
 def test_explicit_legacy_backend_selection_still_uses_native_scene3d():

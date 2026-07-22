@@ -110,7 +110,9 @@ def test_manual_refresh_creates_a_new_generation_and_invalidates_old_callbacks()
     refresh = _between(CPP, "void ScenePreviewWidget::request_embedded_web_product_view_refresh", "ScenePreviewWidget::EmbeddedWebRequestIdentity")
     assert "++embedded_web_request_generation_" in refresh
     assert "embedded_web_active_identity_ = identity" in refresh
-    assert "if (force) cancel_embedded_web_lifecycle(false);" in refresh
+    assert "if (force) {" in refresh
+    assert "cancel_embedded_web_lifecycle(false);" in refresh
+    assert "embedded_web_request_generation_ = identity.generation;" in refresh
     prepare = _between(CPP, "void ScenePreviewWidget::start_embedded_web_prepare", "void ScenePreviewWidget::on_embedded_web_prepare_finished")
     assert "[this, identity" in prepare
     finished = _between(CPP, "void ScenePreviewWidget::on_embedded_web_prepare_finished", "void ScenePreviewWidget::start_embedded_web_readiness_polling")
