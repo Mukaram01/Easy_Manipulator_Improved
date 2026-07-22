@@ -551,3 +551,46 @@ def test_real_nested_robotiq_3f_package_uri_stages_from_repo_assets(monkeypatch,
     assert item["resolved_source_path"] == "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper_articulated/visual/palm.dae"
     assert item["mesh_uri"] == "build/workcell_studio_web_scene/assets/real_nested_3f_scene/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper_articulated/visual/palm.dae"
     assert (REPO_ROOT / item["mesh_uri"]).is_file()
+
+
+def test_package_resolver_augments_incomplete_map_and_waits_for_existing_mesh(tmp_path):
+    stale = tmp_path / "stale" / "share" / "aug_pkg"
+    stale.mkdir(parents=True)
+    (stale / "package.xml").write_text("<package><name>aug_pkg</name></package>\n", encoding="utf-8")
+    repo_mesh = _repo_discovered_package(tmp_path, "aug_pkg", "meshes/visual/ok.dae", "<COLLADA>repo</COLLADA>\n")
+
+    resolved, package, dest_rel, warning, checked = exporter.resolve_package_mesh_uri(
+        "package://aug_pkg/meshes/visual/ok.dae",
+        repo_root=tmp_path,
+        package_map={"aug_pkg": stale},
+        supported_suffixes=exporter.SUPPORTED_MESH_SUFFIXES,
+    )
+
+    assert resolved == repo_mesh.resolve()
+    assert package == "aug_pkg"
+    assert dest_rel == Path("aug_pkg/meshes/visual/ok.dae")
+    assert warning is None
+    assert checked[0] == repo_mesh.parents[2].resolve()
+
+
+def test_expanded_urdf_staging_uses_repository_root_when_cwd_is_scene(monkeypatch):
+    scene = REPO_ROOT / "scenes" / "ur5_2f_test"
+    source = scene / "expanded_root_regression.urdf"
+    source.write_text(
+        '<robot name="root_regression"><link name="world"/><link name="base_link"><visual><geometry><mesh filename="package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae"/></geometry></visual></link><joint name="world_to_base" type="fixed"><parent link="world"/><child link="base_link"/></joint></robot>\n',
+        encoding="utf-8",
+    )
+    try:
+        monkeypatch.chdir(scene)
+        payload = {"scene": {"id": "ur5_2f_test"}, "_visual_mesh_index_source": {"source_expanded_urdf_path": str(source)}}
+
+        exporter._stage_expanded_robot_urdf(payload, scene, scene / "tmp.web_scene.json", [])
+    finally:
+        source.unlink(missing_ok=True)
+
+    preview = payload["robot_preview"]
+    assert preview["mode"] == "expanded_urdf_loader"
+    assert preview["urdf_url"].startswith("build/workcell_studio_web_scene/")
+    diagnostics = payload["metadata"]["expanded_urdf_staging"]
+    assert diagnostics["expanded_urdf_unresolved_mesh_count"] == 0
+    assert (REPO_ROOT / "build" / "workcell_studio_web_scene" / "assets" / "ur5_2f_test" / "robotiq_85_description" / "meshes" / "visual" / "robotiq_85_base_link.dae").is_file()

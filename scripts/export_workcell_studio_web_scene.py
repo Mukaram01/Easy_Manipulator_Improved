@@ -35,9 +35,9 @@ except ImportError:  # pragma: no cover - exercised only in minimal envs
     yaml = None  # type: ignore
 
 try:
-    from scripts.workcell_visual_asset_resolver import discover_package_map
+    from scripts.workcell_visual_asset_resolver import resolve_package_mesh_uri
 except ImportError:  # pragma: no cover - direct script execution fallback
-    from workcell_visual_asset_resolver import discover_package_map
+    from workcell_visual_asset_resolver import resolve_package_mesh_uri
 
 SCHEMA_VERSION = "workcell_studio_web_scene/v1"
 INPUTS = {
@@ -224,56 +224,52 @@ def _safe_relative_parts(rel: Path) -> Optional[Tuple[str, ...]]:
     return parts
 
 
-def _package_share_roots(repo_root: Path) -> List[Path]:
-    roots = [
-        repo_root / "assets",
-        repo_root / "assets" / "robots",
-        repo_root / "assets" / "environment",
-        repo_root / "assets" / "sensors",
-    ]
-    for prefix in os.environ.get("AMENT_PREFIX_PATH", "").split(os.pathsep):
-        if prefix:
-            roots.append(Path(prefix) / "share")
-    roots.append(Path("/opt/ros/humble/share"))
+def _candidate_repo_roots(scene_dir: Optional[Path] = None, output_path: Optional[Path] = None) -> List[Path]:
+    starts = [Path(__file__).resolve().parents[1], Path.cwd()]
+    if scene_dir is not None:
+        starts.extend([scene_dir, *scene_dir.parents])
+    if output_path is not None:
+        starts.extend([output_path, *output_path.parents])
     out: List[Path] = []
-    seen = set()
-    for root in roots:
-        resolved = root.resolve()
-        if str(resolved) not in seen:
-            seen.add(str(resolved))
+    seen: set[str] = set()
+    for start in starts:
+        try:
+            resolved = start.resolve()
+        except OSError:
+            resolved = start
+        if resolved.is_file():
+            resolved = resolved.parent
+        key = str(resolved)
+        if key not in seen:
+            seen.add(key)
             out.append(resolved)
     return out
 
 
+def _looks_like_repo_root(root: Path) -> bool:
+    return (root / "assets").is_dir() and (root / "scenes").is_dir() and (root / "scripts").is_dir()
+
+
+def _repo_root(scene_dir: Optional[Path] = None, output_path: Optional[Path] = None) -> Path:
+    cwd = Path.cwd().resolve()
+    if scene_dir is not None:
+        try:
+            scene_dir.resolve().relative_to(cwd)
+            if (cwd / "assets").exists() or (cwd / "scenes").exists():
+                return cwd
+        except ValueError:
+            pass
+    for candidate in _candidate_repo_roots(scene_dir, output_path):
+        if _looks_like_repo_root(candidate):
+            return candidate
+    return cwd
+
+
 def _resolve_package_uri(uri: str, repo_root: Path) -> Tuple[Optional[Path], str, Optional[Path], Optional[str]]:
-    parsed = urlparse(uri)
-    package = parsed.netloc
-    rel = Path(unquote(parsed.path).lstrip("/"))
-    rel_parts = _safe_relative_parts(rel)
-    if parsed.scheme != "package" or not package or rel_parts is None:
-        return None, package or "package", None, f"Invalid or unsafe package URI: {uri}"
-    if rel.suffix.lower() not in SUPPORTED_MESH_SUFFIXES:
-        return None, package, None, f"Unsupported mesh format for {uri}; supported formats are .stl, .dae, and .obj."
-
-    stage_rel = Path(package, *rel_parts)
-    package_map = discover_package_map(repo_root)
-    package_dir = package_map.get(package)
-    if package_dir is not None:
-        candidate = (package_dir / rel).resolve()
-        if not _is_relative_to(candidate, package_dir.resolve()):
-            return None, package, None, f"Invalid or unsafe package URI: {uri}"
-        if candidate.is_file():
-            return candidate, package, stage_rel, None
-        return None, package, None, f"Package mesh file does not exist: {uri}"
-
-    # Keep AMENT/share probing as a fallback for ROS packages that are not
-    # described by a package.xml under the repository discovery roots.
-    for root in _package_share_roots(repo_root):
-        direct = (root / package / rel).resolve()
-        if _is_relative_to(direct, root) and direct.is_file():
-            return direct, package, stage_rel, None
-    return None, package, None, f"Could not resolve package mesh URI: {uri}"
-
+    resolved, package, dest_rel, warning, _checked = resolve_package_mesh_uri(
+        uri, repo_root=repo_root, supported_suffixes=SUPPORTED_MESH_SUFFIXES
+    )
+    return resolved, package, dest_rel, warning
 
 def _resolve_local_mesh_uri(uri: str, scene_dir: Path, repo_root: Path) -> Tuple[Optional[Path], str, Optional[Path], Optional[str]]:
     source_root = "local"
@@ -550,7 +546,9 @@ def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path
         if not synthesized_text:
             _warn(warnings, "expanded_robot_urdf_missing", "Expanded robot URDF was not available for browser robot preview; legacy rows remain as fallback metadata only.", rel)
             return
-    repo_root = Path.cwd().resolve()
+    repo_root = _repo_root(scene_dir, output_path)
+    if not _looks_like_repo_root(repo_root):
+        _warn(warnings, "repo_root_contract_unverified", f"Repository root for expanded URDF staging does not contain assets, scenes and scripts: {repo_root}; continuing for isolated test/workspace export.", str(repo_root))
     dest = (repo_root / "build" / "workcell_studio_web_scene" / f"{scene_id}.expanded.urdf").resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     if synthesized_text is not None:
@@ -679,7 +677,7 @@ def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path
     }
 
 def _stage_visual_meshes(payload: Json, scene_dir: Path, output_path: Path) -> None:
-    repo_root = Path.cwd().resolve()
+    repo_root = _repo_root(scene_dir, output_path)
     scene_id = str(payload.get("scene", {}).get("id") or scene_dir.name)
     asset_root = (repo_root / "build" / "workcell_studio_web_scene" / "assets" / scene_id).resolve()
     asset_root.mkdir(parents=True, exist_ok=True)
