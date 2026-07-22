@@ -324,11 +324,9 @@ TEST(SceneBuilderWorkspaceSource, CompactTopCommandRowKeepsActionsAndPathAccess)
   EXPECT_TRUE(row_block.contains(QStringLiteral("sceneBuilderCompactSceneIdentity")));
   EXPECT_TRUE(text.contains(QStringLiteral("ElideMiddle")));
   EXPECT_TRUE(text.contains(QStringLiteral("setToolTip(cleaned_path)")));
-  EXPECT_TRUE(row_block.contains(QStringLiteral("Copy full scene path")));
-  EXPECT_TRUE(row_block.contains(QStringLiteral("sceneBuilderHeaderFilesButton")));
-  EXPECT_TRUE(row_block.contains(QStringLiteral("sceneBuilderHeaderSaveLayoutButton")));
-  EXPECT_TRUE(row_block.contains(QStringLiteral("if (save_layout_button_) save_layout_button_->click()")));
-  EXPECT_TRUE(row_block.contains(QStringLiteral("sceneBuilderHeaderRunNextButton")));
+  EXPECT_FALSE(row_block.contains(QStringLiteral("sceneBuilderHeaderFilesButton")));
+  EXPECT_FALSE(row_block.contains(QStringLiteral("sceneBuilderHeaderSaveLayoutButton")));
+  EXPECT_FALSE(row_block.contains(QStringLiteral("sceneBuilderHeaderRunNextButton")));
   EXPECT_FALSE(row_block.contains(QStringLiteral("<h2>Scene Builder</h2>")));
   EXPECT_FALSE(row_block.contains(QStringLiteral("setWordWrap(true)")));
 
@@ -367,7 +365,7 @@ TEST(SceneBuilderWorkspaceSource, StatusInformationHasAuthoritativeLocationsOnly
   EXPECT_TRUE(text.contains(QStringLiteral("studio_log_->append(message)")));
   EXPECT_EQ(text.count(QStringLiteral("connect_button(save_layout_button_, &MainWindow::save_layout_changes)")), 1);
   EXPECT_EQ(text.count(QStringLiteral("connect_if(scene_workflow_recommendation_button_")), 1);
-  EXPECT_EQ(text.count(QStringLiteral("if (save_layout_button_) save_layout_button_->click()")), 2);
+  EXPECT_EQ(text.count(QStringLiteral("if (save_layout_button_) save_layout_button_->click()")), 1);
 }
 
 TEST(SceneBuilderWorkspaceSource, ResizablePanelActionsAndFocusAreWired)
@@ -382,6 +380,8 @@ TEST(SceneBuilderWorkspaceSource, ResizablePanelActionsAndFocusAreWired)
   EXPECT_TRUE(text.contains(QStringLiteral("sceneBuilderProductViewPanel")));
   EXPECT_TRUE(text.contains(QStringLiteral("sceneBuilderRightPanel")));
   EXPECT_TRUE(text.contains(QStringLiteral("setStretchFactor(1, 8)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("scene_splitter->setSizes({320, 1000, 0})")));
+  EXPECT_TRUE(text.contains(QStringLiteral("right_panel->setVisible(false)")));
   EXPECT_TRUE(text.contains(QStringLiteral("Show Left Panel")));
   EXPECT_TRUE(text.contains(QStringLiteral("Show Right Panel")));
   EXPECT_TRUE(text.contains(QStringLiteral("Focus 3D View")));
