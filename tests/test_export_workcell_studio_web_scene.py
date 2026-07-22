@@ -55,6 +55,24 @@ def test_robot_preview_extraction_keeps_robot_subtree_and_excludes_scene_sibling
     assert "table_gray" not in extracted
 
 
+def test_expanded_urdf_visual_readiness_metadata_separates_robot_and_tools():
+    root = exporter.ET.fromstring('''<robot name="generic">
+      <link name="world"/>
+      <link name="base_link"><visual><geometry><mesh filename="package://robot/base.dae"/></geometry></visual></link>
+      <link name="arm_link"><visual><geometry><mesh filename="package://robot/arm.dae"/></geometry></visual></link>
+      <link name="tool0"/>
+      <link name="suction_cup_link"><visual><geometry><mesh filename="package://tool/suction.stl"/></geometry></visual></link>
+      <joint name="world_to_base" type="fixed"><parent link="world"/><child link="base_link"/></joint>
+      <joint name="arm" type="revolute"><parent link="base_link"/><child link="arm_link"/></joint>
+      <joint name="tool" type="fixed"><parent link="arm_link"/><child link="tool0"/></joint>
+      <joint name="cup" type="fixed"><parent link="tool0"/><child link="suction_cup_link"/></joint>
+    </robot>''')
+    metadata = exporter._expanded_urdf_visual_readiness_metadata(root)
+    assert metadata["expected_robot_visual_links"] == ["arm_link", "base_link"]
+    assert metadata["expected_tool_visual_links"] == ["suction_cup_link"]
+    assert "suction_cup_link" in metadata["expected_links"]
+    assert metadata["tool_root_links"] == ["tool0"]
+
 def test_export_web_scene_contract_and_determinism(tmp_path):
     scene = tmp_path / "scene"
     (scene / "layout").mkdir(parents=True)

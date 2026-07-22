@@ -82,18 +82,6 @@ DEFAULT_ROBOT_PREVIEW_JOINT_VALUES = {
     "wrist_2_joint": -1.5708,
     "wrist_3_joint": 0.0,
 }
-EXPECTED_ROBOT_PREVIEW_LINKS = [
-    "base_link",
-    "base_link_inertia",
-    "shoulder_link",
-    "upper_arm_link",
-    "forearm_link",
-    "wrist_1_link",
-    "wrist_2_link",
-    "wrist_3_link",
-    "tool0",
-    "gripper_base_link",
-]
 
 HELPER_TOKENS = (
     "overlay",
@@ -479,12 +467,6 @@ def _extract_robot_preview_urdf(expanded_urdf_text: str, source: Path) -> str:
             selected_links.add(child)
             stack.append(child)
 
-    required = {"base_link", "tool0", "gripper_base_link"}
-    missing = sorted(link for link in required if link not in selected_links)
-    if missing:
-        raise BlockingExportError(
-            f"expanded scene URDF {source} robot-preview extraction is missing required robot/tool links: {', '.join(missing)}"
-        )
 
     material_names = {
         material.get("name", "")
@@ -503,6 +485,49 @@ def _extract_robot_preview_urdf(expanded_urdf_text: str, source: Path) -> str:
     ET.indent(out, space="  ")
     return ET.tostring(out, encoding="unicode", xml_declaration=True) + "\n"
 
+
+
+def _expanded_urdf_visual_readiness_metadata(root: ET.Element, robot_root_link: str = "base_link") -> Json:
+    """Build scene-generic robot/tool visual expectations from an expanded URDF subtree."""
+    links = {link.get("name", ""): link for link in root.findall("link") if link.get("name")}
+    children_by_parent: Dict[str, List[str]] = {}
+    parent_by_child: Dict[str, str] = {}
+    for joint in root.findall("joint"):
+        parent = _child_text(joint, "parent", "link")
+        child = _child_text(joint, "child", "link")
+        if parent and child:
+            children_by_parent.setdefault(parent, []).append(child)
+            parent_by_child[child] = parent
+
+    visual_links = [name for name, link in links.items() if link.findall("./visual/geometry/mesh") or link.findall("./visual/geometry")]
+    tool_roots = [name for name in links if name == "tool0"]
+    if not tool_roots:
+        token_re = re.compile(r"(tool|gripper|finger|suction|vacuum|eef|end_effector|airpick)", re.I)
+        tool_roots = [name for name in links if token_re.search(name)]
+
+    tool_descendants: set[str] = set()
+    stack = list(tool_roots)
+    while stack:
+        parent = stack.pop()
+        for child in children_by_parent.get(parent, []):
+            if child in tool_descendants:
+                continue
+            tool_descendants.add(child)
+            stack.append(child)
+
+    tool_visual_links = sorted(name for name in visual_links if name in tool_descendants or (name in tool_roots and name != "tool0"))
+    robot_visual_links = sorted(name for name in visual_links if name not in set(tool_visual_links))
+    expected_links = sorted(name for name in links if name != "world")
+    return {
+        "contract_version": 1,
+        "source": "expanded_urdf",
+        "robot_root_link": robot_root_link,
+        "tool_root_links": sorted(tool_roots),
+        "expected_links": expected_links,
+        "expected_robot_visual_links": robot_visual_links,
+        "expected_tool_visual_links": tool_visual_links,
+        "expected_visual_links": sorted(set(robot_visual_links) | set(tool_visual_links)),
+    }
 
 def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path, warnings: List[Json]) -> None:
     """Stage a browser robot-preview URDF extracted from the xacro-expanded scene URDF."""
@@ -563,7 +588,7 @@ def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path
             "robot_root_link": "base_link",
             "rviz_parity": rviz_parity,
             "joint_values": dict(DEFAULT_ROBOT_PREVIEW_JOINT_VALUES),
-            "expected_links": list(EXPECTED_ROBOT_PREVIEW_LINKS),
+            **_expanded_urdf_visual_readiness_metadata(ET.fromstring(text)),
         }
         return
 
@@ -650,7 +675,7 @@ def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path
         "robot_root_link": "base_link",
         "rviz_parity": rviz_parity,
         "joint_values": dict(DEFAULT_ROBOT_PREVIEW_JOINT_VALUES),
-        "expected_links": list(EXPECTED_ROBOT_PREVIEW_LINKS),
+        **_expanded_urdf_visual_readiness_metadata(root),
     }
 
 def _stage_visual_meshes(payload: Json, scene_dir: Path, output_path: Path) -> None:

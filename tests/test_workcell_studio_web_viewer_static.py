@@ -2143,49 +2143,19 @@ def test_urdf_renderer_active_package_resolution_avoids_bare_package_root_reques
     for request in expected_final_requests:
         assert not request.startswith(("/robotiq_85_description/", "/ur_description/"))
 
-def test_viewer_canonical_ur5_2f_required_visual_set():
+def test_viewer_uses_expanded_urdf_expected_visual_metadata_not_ur5_2f_constants():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
-    assert "CANONICAL_UR5_2F_REQUIRED_GENERATED_VISUAL_SET" in js
-    assert "canonicalRequiredGeneratedVisualSet" in js
-    assert "canonicalRequiredVisualCounts" in js
-    assert "canonicalMissingRequiredVisuals" in js
-    assert "canonicalDuplicateRequiredVisuals" in js
-    assert "canonicalFailedRequiredVisuals" in js
-    assert "canonical required generated visual set is missing, failed, or duplicated" in js
-    ur5_body = js.split("const CANONICAL_UR5_2F_REQUIRED_UR5_VISUALS", 1)[1].split("const CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS", 1)[0]
-    for link in [
-        "base_link_inertia",
-        "shoulder_link",
-        "upper_arm_link",
-        "forearm_link",
-        "wrist_1_link",
-        "wrist_2_link",
-        "wrist_3_link",
-    ]:
-        assert ur5_body.count(f"'{link}'") == 1
-    assert ur5_body.count("'") == 14
-    robotiq_body = js.split("const CANONICAL_UR5_2F_REQUIRED_ROBOTIQ_VISUALS", 1)[1].split("const CANONICAL_UR5_2F_REQUIRED_GENERATED_VISUAL_SET", 1)[0]
-    for link in [
-        "gripper_base_link",
-        "left_outer_knuckle",
-        "right_outer_knuckle",
-        "left_outer_finger",
-        "right_outer_finger",
-        "left_inner_knuckle",
-        "right_inner_knuckle",
-        "left_inner_finger",
-        "right_inner_finger",
-    ]:
-        assert robotiq_body.count(f"'{link}'") == 1
-    assert robotiq_body.count("'") == 18
-    canonical_body = js.split("const CANONICAL_UR5_2F_REQUIRED_GENERATED_VISUAL_SET", 1)[1].split("const EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS", 1)[0]
-    assert "'workbench_support_surface'" in canonical_body
-    assert "'configured_camera'" in canonical_body
-    validation_body = js.split("function canonicalVisualReadinessDiagnostics", 1)[1].split("function failIfCanonicalRequiredVisualSetInvalid", 1)[0]
-    assert "if (count === 0) missing.push(link);" in validation_body
-    assert "if (count > 1) duplicate.push(link);" in validation_body
-    assert "if (count === 0) missing.push(category);" in validation_body
-    assert "if (count > 1) duplicate.push(category);" in validation_body
+    assert "CANONICAL_UR5_2F_REQUIRED" not in js
+    assert "expandedUrdfExpectedVisualSet" in js
+    assert "expected_robot_visual_links" in js
+    assert "expected_tool_visual_links" in js
+    assert "missing_required_robot_visuals" in js
+    assert "missing_required_tool_visuals" in js
+    assert "expanded URDF expected robot/tool visuals are missing, failed, or duplicated" in js
+    readiness_body = js.split("function failExpandedUrdfReadiness", 1)[1].split("function maybeEmitSceneReady", 1)[0]
+    assert "attached_tool_gripper" in readiness_body
+    assert "expected_tool_visual_links" in readiness_body
+
 
 def test_expanded_urdf_mode_marks_flattened_robot_tool_rows_diagnostic_only():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
