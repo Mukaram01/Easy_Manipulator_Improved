@@ -5,8 +5,12 @@
 #include <array>
 #include <cctype>
 #include <fstream>
+#include <iostream>
 #include <initializer_list>
+#include <map>
+#include <ctime>
 #include <set>
+#include <sstream>
 #include <mutex>
 #include <vector>
 #include <yaml-cpp/yaml.h>
@@ -58,6 +62,153 @@ static YamlLoadStatus read_yaml(const fs::path & p, YAML::Node * out)
   }
   log_task_metadata_loader_path_once(p, "scene YAML parse warning: " + status.reason);
   return status;
+}
+
+
+struct SceneMetadataFileRevision
+{
+  bool exists{false};
+  uintmax_t size{0};
+  std::time_t mtime{0};
+  std::size_t content_hash{0};
+};
+
+struct SceneMetadataSnapshot
+{
+  fs::path scene_dir;
+  std::string scene_id;
+  std::string revision;
+  std::string invalidation_reason{"initial"};
+  std::size_t files_parsed{0};
+  std::size_t cache_hits{0};
+  std::map<std::string, SceneMetadataFileRevision> file_revisions;
+  std::map<std::string, YamlLoadStatus> statuses;
+  std::map<std::string, YAML::Node> documents;
+};
+
+static const std::array<const char *, 7> kSceneMetadataFiles = {{
+  "environment.yaml",
+  "cell_definition.yaml",
+  "scene_manifest.yaml",
+  "environment_layout.yaml",
+  "layout/workcell_studio_layout.yaml",
+  "config/workcell_builder_task_intent.yaml",
+  "config/task_recipe.yaml"
+}};
+
+static SceneMetadataFileRevision scene_metadata_file_revision(const fs::path & path)
+{
+  SceneMetadataFileRevision revision;
+  boost::system::error_code ec;
+  revision.exists = fs::exists(path, ec);
+  if (!revision.exists || ec) return revision;
+  revision.size = fs::file_size(path, ec);
+  if (ec) revision.size = 0;
+  revision.mtime = fs::last_write_time(path, ec);
+  if (ec) revision.mtime = 0;
+  std::ifstream in(path.string(), std::ios::binary);
+  if (in) {
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    revision.content_hash = std::hash<std::string>{}(buffer.str());
+  }
+  return revision;
+}
+
+static fs::path canonical_scene_cache_key(const fs::path & scene_dir)
+{
+  boost::system::error_code ec;
+  const fs::path canonical = fs::weakly_canonical(scene_dir, ec);
+  return ec ? fs::absolute(scene_dir).lexically_normal() : canonical;
+}
+
+static std::string scene_metadata_revision_token(const std::map<std::string, SceneMetadataFileRevision> & revisions)
+{
+  std::ostringstream out;
+  for (const auto & entry : revisions) {
+    out << entry.first << ':' << entry.second.exists << ':' << entry.second.size << ':'
+        << entry.second.mtime << ':' << entry.second.content_hash << ';';
+  }
+  return std::to_string(std::hash<std::string>{}(out.str()));
+}
+
+
+struct SceneMetadataSnapshotCacheState
+{
+  std::mutex mutex;
+  SceneMetadataSnapshot cached;
+  fs::path invalidated_scene_dir;
+  std::string invalidation_reason;
+};
+
+static SceneMetadataSnapshotCacheState & scene_metadata_snapshot_cache_state()
+{
+  static SceneMetadataSnapshotCacheState state;
+  return state;
+}
+
+void invalidate_workcell_studio_scene_metadata_snapshot(const fs::path & scene_dir, const std::string & reason)
+{
+  auto & state = scene_metadata_snapshot_cache_state();
+  std::lock_guard<std::mutex> lock(state.mutex);
+  const fs::path key = canonical_scene_cache_key(scene_dir);
+  if (!state.cached.scene_dir.empty() && state.cached.scene_dir == key) state.cached = SceneMetadataSnapshot{};
+  state.invalidated_scene_dir = key;
+  state.invalidation_reason = reason.empty() ? "explicit_refresh" : reason;
+}
+
+static SceneMetadataSnapshot load_scene_metadata_snapshot(const fs::path & scene_dir, const std::string & scene_id, const std::string & reason)
+{
+  auto & state = scene_metadata_snapshot_cache_state();
+  const fs::path key = canonical_scene_cache_key(scene_dir);
+  std::map<std::string, SceneMetadataFileRevision> revisions;
+  for (const char * rel : kSceneMetadataFiles) revisions[rel] = scene_metadata_file_revision(key / rel);
+  const std::string revision = scene_metadata_revision_token(revisions);
+  std::lock_guard<std::mutex> lock(state.mutex);
+  const bool explicitly_invalidated = !state.invalidated_scene_dir.empty() && state.invalidated_scene_dir == key;
+  SceneMetadataSnapshot & cached = state.cached;
+  if (!explicitly_invalidated && !cached.scene_dir.empty() && cached.scene_dir == key && cached.revision == revision) {
+    ++cached.cache_hits;
+    cached.invalidation_reason = reason.empty() ? "cache_hit" : reason;
+    std::cerr << "Workcell Studio scene metadata snapshot: scene_id=" << scene_id
+              << " revision=" << cached.revision << " files_parsed=0 cache_hits=" << cached.cache_hits
+              << " invalidation_reason=" << cached.invalidation_reason << std::endl;
+    return cached;
+  }
+
+  SceneMetadataSnapshot snapshot;
+  snapshot.scene_dir = key;
+  snapshot.scene_id = scene_id;
+  snapshot.revision = revision;
+  snapshot.invalidation_reason = explicitly_invalidated ? state.invalidation_reason : (reason.empty() ? (cached.scene_dir.empty() ? "initial" : (cached.scene_dir == key ? "file_revision_change" : "scene_switch")) : reason);
+  snapshot.file_revisions = revisions;
+  for (const char * rel : kSceneMetadataFiles) {
+    YAML::Node doc;
+    YamlLoadStatus status = read_yaml(key / rel, &doc);
+    snapshot.statuses[rel] = status;
+    if (status.loaded) {
+      snapshot.documents[rel] = doc;
+      ++snapshot.files_parsed;
+    }
+  }
+  cached = snapshot;
+  if (explicitly_invalidated) {
+    state.invalidated_scene_dir.clear();
+    state.invalidation_reason.clear();
+  }
+  std::cerr << "Workcell Studio scene metadata snapshot: scene_id=" << scene_id
+            << " revision=" << snapshot.revision << " files_parsed=" << snapshot.files_parsed
+            << " cache_hits=0 invalidation_reason=" << snapshot.invalidation_reason << std::endl;
+  return cached;
+}
+
+static YamlLoadStatus snapshot_yaml(const SceneMetadataSnapshot & snapshot, const char * relative_path, YAML::Node * out)
+{
+  const auto status_it = snapshot.statuses.find(relative_path);
+  if (status_it == snapshot.statuses.end()) return {};
+  const auto doc_it = snapshot.documents.find(relative_path);
+  if (doc_it != snapshot.documents.end() && out != nullptr) *out = doc_it->second;
+  return status_it->second;
 }
 
 static void add_mesh_candidate(const YAML::Node & node, std::vector<std::string> * out)
@@ -398,12 +549,15 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   const fs::path env_path = scene_dir / "environment.yaml";
   const fs::path manifest_path = scene_dir / "scene_manifest.yaml";
   const fs::path task_path = scene_dir / "config" / "task_recipe.yaml";
+  const fs::path intent_path = scene_dir / "config" / "workcell_builder_task_intent.yaml";
   const fs::path layout_path = scene_dir / "layout" / "workcell_studio_layout.yaml";
   const fs::path legacy_layout_path = scene_dir / "environment_layout.yaml";
-  const YamlLoadStatus env_status = read_yaml(env_path, &env);
-  const YamlLoadStatus manifest_status = read_yaml(manifest_path, &manifest);
-  const YamlLoadStatus task_status = read_yaml(task_path, &task);
-  const YamlLoadStatus canonical_layout_status = read_yaml(layout_path, &layout);
+  const SceneMetadataSnapshot snapshot = load_scene_metadata_snapshot(scene_dir, scene_name, "scene_selection_refresh");
+  const YamlLoadStatus env_status = snapshot_yaml(snapshot, "environment.yaml", &env);
+  const YamlLoadStatus manifest_status = snapshot_yaml(snapshot, "scene_manifest.yaml", &manifest);
+  YamlLoadStatus task_status = snapshot_yaml(snapshot, "config/task_recipe.yaml", &task);
+  if (!task_status.loaded) task_status = snapshot_yaml(snapshot, "config/workcell_builder_task_intent.yaml", &task);
+  const YamlLoadStatus canonical_layout_status = snapshot_yaml(snapshot, "layout/workcell_studio_layout.yaml", &layout);
   const bool env_ok = env_status.loaded;
   const bool manifest_ok = manifest_status.loaded;
   const bool task_ok = task_status.loaded;
@@ -415,7 +569,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     ("scene_manifest.yaml parse warning (" + manifest_path.string() + "): " + manifest_status.reason + ". Validate YAML syntax (e.g., `yamllint`) and retry.") :
     "Missing scene_manifest.yaml");
   if (!task_ok) m.warnings.push_back(task_status.parse_warning ?
-    ("task_recipe.yaml parse warning (" + task_path.string() + "): " + task_status.reason + ". Validate YAML syntax (e.g., `yamllint`) and retry.") :
+    ("task intent parse warning (" + (task_status.exists ? task_path.string() : intent_path.string()) + "): " + task_status.reason + ". Validate YAML syntax (e.g., `yamllint`) and retry.") :
     "Task intent missing");
   m.template_name = manifest_ok ? yaml_map_value_or_empty(manifest, "template_name") : "";
   if (m.template_name.empty()) m.template_name = "unknown_template";
@@ -573,7 +727,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     }
 
     YAML::Node legacy_layout;
-    const YamlLoadStatus legacy_layout_status = read_yaml(legacy_layout_path, &legacy_layout);
+    const YamlLoadStatus legacy_layout_status = snapshot_yaml(snapshot, "environment_layout.yaml", &legacy_layout);
     if (legacy_layout_status.loaded) {
       YAML::Node legacy_items(YAML::NodeType::Sequence);
       append_legacy_source_items(legacy_layout, &legacy_items);
