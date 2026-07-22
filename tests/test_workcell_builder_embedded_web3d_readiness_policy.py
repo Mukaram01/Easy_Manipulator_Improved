@@ -16,7 +16,7 @@ def _between(text: str, start: str, end: str) -> str:
 
 def test_load_finished_true_does_not_mark_embedded_product_view_ready():
     handler = _between(CPP, "&QWebEngineView::loadFinished", "simple_3d_view_ = embedded_web_view_")
-    assert "set_embedded_product_view_state(EmbeddedProductViewState::Loading" in handler
+    assert "set_embedded_product_view_state(EmbeddedProductViewState::WaitingForBrowserReadiness" in handler
     assert "start_embedded_web_readiness_polling" in handler
     assert "set_embedded_product_view_state(EmbeddedProductViewState::Ready" not in handler
 
@@ -24,7 +24,7 @@ def test_load_finished_true_does_not_mark_embedded_product_view_ready():
 def test_javascript_failed_status_sets_failed_with_stage_and_error_detail():
     poll = _between(CPP, "void ScenePreviewWidget::poll_embedded_web_readiness", "void ScenePreviewWidget::load_prepared_embedded_web_scene")
     assert "boot_state == QStringLiteral(\"failed\")" in poll
-    assert "set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail)" in poll
+    assert "handle_embedded_web_runtime_failure(identity, navigation_token, detail)" in poll
     assert "failed_stage" in poll
     assert "fatal_error" in poll
     assert "fatal_stack" in poll
@@ -35,7 +35,7 @@ def test_scene_fetch_failure_is_reported_to_qt_as_failed_javascript_status():
     bundle = (ROOT / "workcell_studio_web/viewer/dist/viewer.bundle.js").read_text(encoding="utf-8")
     assert "Failed to load scene from" in viewer
     assert "showError" in viewer
-    assert "viewer_boot_state: 'failed'" in viewer
+    assert "lifecycle_state: 'scene_failed'" in viewer
     assert "Failed to load scene from" in bundle
     assert "Failed to load scene from" in bundle
 
@@ -44,15 +44,18 @@ def test_readiness_timeout_sets_failed_and_logs_last_boot_status():
     poll = _between(CPP, "void ScenePreviewWidget::poll_embedded_web_readiness", "static const char kStatusScript[]")
     assert "startup timed out after 45s" in poll
     assert "embedded_web_last_boot_status_" in poll
-    assert "set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail)" in poll
+    assert "handle_embedded_web_runtime_failure(identity, navigation_token, detail)" in poll
 
 
 def test_ready_requires_scene_json_and_renderer_readiness():
-    poll = _between(CPP, "const bool expected_json_loaded", "set_embedded_product_view_state(EmbeddedProductViewState::Loading")
-    assert "scene_json_loaded && source_json == expected_json_path" in poll
-    assert "robot_ready_required" in poll
-    assert "robot_state == QStringLiteral(\"ready\")" in poll
-    assert "boot_state == QStringLiteral(\"ready\") && expected_json_loaded && robot_ready" in poll
+    poll = _between(CPP, "const QString expected_builder_revision", "set_embedded_product_view_state(EmbeddedProductViewState::WaitingForBrowserReadiness")
+    assert "contract_version != 1" in poll
+    assert "lifecycle_state != QStringLiteral(\"scene_ready\")" in poll
+    assert "!terminal" in poll
+    assert "reported_scene_id != identity.scene_id" in poll
+    assert "source_json != expected_json_path" in poll
+    assert "builder_revision != expected_builder_revision" in poll
+    assert "failed_required_count != 0" in poll
 
 
 def test_preparation_accepts_only_rebuilt_or_current_and_rejects_malformed_wrong_scene_missing_and_failed_command():
@@ -96,8 +99,8 @@ def test_embedded_refresh_identity_coalesces_duplicate_context_and_payload_reque
         assert field in HDR
     assert "matches_context" in HDR
     refresh = _between(CPP, "void ScenePreviewWidget::request_embedded_web_product_view_refresh", "ScenePreviewWidget::EmbeddedWebRequestIdentity")
-    assert "embedded_web_active_identity_.matches_context(request_key)" in refresh
-    assert "pending_embedded_web_identity_.matches_context(request_key)" in refresh
+    assert "embedded_web_active_identity_.matches_effective_request(request_key)" in refresh
+    assert "pending_embedded_web_identity_.matches_effective_request(request_key)" in refresh
     assert "pending_embedded_web_request_ = true" in refresh
     labels_handler = _between(CPP, "connect(labels_selector_", "connect(snap_mode_selector_")
     assert "refresh_embedded_web_product_view" not in labels_handler
@@ -109,8 +112,34 @@ def test_manual_refresh_creates_a_new_generation_and_invalidates_old_callbacks()
     assert "embedded_web_active_identity_ = identity" in refresh
     assert "if (force) cancel_embedded_web_lifecycle(false);" in refresh
     prepare = _between(CPP, "void ScenePreviewWidget::start_embedded_web_prepare", "void ScenePreviewWidget::on_embedded_web_prepare_finished")
-    assert "[this, identity]" in prepare
+    assert "[this, identity" in prepare
     finished = _between(CPP, "void ScenePreviewWidget::on_embedded_web_prepare_finished", "void ScenePreviewWidget::start_embedded_web_readiness_polling")
     assert "embedded_web_identity_is_current(identity)" in finished
     polling = _between(CPP, "void ScenePreviewWidget::poll_embedded_web_readiness", "void ScenePreviewWidget::load_prepared_embedded_web_scene")
     assert "[this, identity, navigation_token, expected_json_path, viewer_url]" in polling
+
+
+def test_qt_readiness_contract_rejects_mismatches_and_infrastructure_states():
+    poll = _between(CPP, "const QString expected_builder_revision", "set_embedded_product_view_state(EmbeddedProductViewState::WaitingForBrowserReadiness")
+    for token in [
+        "contract_version != 1",
+        "server_ready is infrastructure state",
+        "lifecycle_state != QStringLiteral(\"scene_ready\")",
+        "!terminal",
+        "reported_scene_id != identity.scene_id",
+        "source_json != expected_json_path",
+        "builder_revision != expected_builder_revision",
+        "!scene_json_loaded",
+        "failed_required_count != 0",
+        "component status incomplete",
+    ]:
+        assert token in poll
+
+
+def test_runtime_failure_accounting_is_request_scoped_and_deduplicated():
+    failure = _between(CPP, "void ScenePreviewWidget::handle_embedded_web_runtime_failure", "void ScenePreviewWidget::ensure_embedded_web_server_started")
+    assert "embedded_web_terminal_runtime_failures_" in HDR
+    assert "embedded_web_terminal_runtime_failures_.contains(terminal_key)" in failure
+    assert "Suppressed duplicate Embedded Product View terminal failure" in failure
+    assert "Ignored stale Embedded Product View runtime failure" in failure
+    assert "set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail)" in failure

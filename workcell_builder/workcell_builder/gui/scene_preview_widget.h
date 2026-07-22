@@ -504,6 +504,7 @@ private:
   bool pending_embedded_web_force_{ false };
   QString embedded_web_last_suppressed_duplicate_key_;
   QSet<QString> embedded_web_automatic_recovery_attempts_;
+  QSet<QString> embedded_web_terminal_runtime_failures_;
   bool backend_startup_diagnostic_emitted_{ false };
   PreviewContext preview_context_;
   QString embedded_web_last_error_;

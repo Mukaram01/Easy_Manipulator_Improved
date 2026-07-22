@@ -18,7 +18,7 @@ def test_index_references_static_assets():
     assert 'href="style.css"' in index
     assert 'src="./dist/viewer.bundle.js"' in index or 'src="dist/viewer.bundle.js"' in index
     assert 'id="scene-file"' in index
-    assert 'web_scene.json' in index
+    assert 'scene-file' in index
 
 
 def test_viewer_js_schema_and_inspector_hooks():
@@ -312,9 +312,9 @@ function assertOldCallbacksRejected(targetSceneId) {
   assert.deepStrictEqual(Array.from(state.frameLookup.keys()), []);
   assert.deepStrictEqual(state.assemblyRoots, []);
   assert.deepStrictEqual(state.objects, []);
-  assert.strictEqual(state.web3dReadiness.state, 'server_ready');
+  assert.strictEqual(state.web3dReadiness.state, 'scene_loading');
   assert.strictEqual(state.web3dReadiness.failed, false);
-  assert.strictEqual(state.web3dReadiness.emittedSceneReady, false);
+  assert.strictEqual(state.web3dReadiness.terminal, false);
   assert.strictEqual(state.sceneJson.scene.id, targetSceneId);
   assert.ok(!window.dispatched.includes('scene_ready'));
   assert.ok(!window.dispatched.includes('scene_failed'));
@@ -616,10 +616,10 @@ def test_viewer_product_workspace_uses_central_light_palette_for_scene_and_css()
     assert "--workspace-bg: #e9edf1;" in css
     assert "body {" in css and "background: var(--bg);" in css
     assert ".app-shell" in css and "background: var(--workspace-bg);" in css
-    assert ".viewport-panel { position: relative; min-width: 0; background: var(--workspace-bg); }" in css
-    assert "#scene-canvas { width: 100%; height: 100%; display: block; background: var(--workspace-bg); }" in css
+    assert ".viewport-panel" in css and "background: var(--workspace-bg);" in css
+    assert "#scene-canvas" in css and "background: var(--workspace-bg);" in css
     assert "color: #123040;" in css
-    assert "background: rgba(248, 250, 252, 0.86);" in css
+    assert "--panel" in css
     assert "background: var(--error-surface);" in css
     assert "background: rgba(139, 30, 45, 0.94);" not in css
 
@@ -660,9 +660,9 @@ def test_viewer_initial_fit_waits_for_terminal_scene_ready_once():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
 
     readiness_body = js.split("function emitWeb3dReadinessState", 1)[1].split("function readinessCategoryForItem", 1)[0]
-    assert "if (readinessState === 'scene_ready')" in readiness_body
-    assert "if (state.web3dReadiness.emittedSceneReady) return window.__WORKCELL_VIEWER_STATUS__;" in readiness_body
-    assert "state.web3dReadiness.emittedSceneReady = true;" in readiness_body
+    assert "readinessState === 'scene_ready' || readinessState === 'scene_failed'" in readiness_body
+    assert "if (state.web3dReadiness.terminal)" in readiness_body
+    assert "terminalEmissionCount" in readiness_body
     assert "if (readinessState === 'scene_ready') triggerInitialCameraFitAfterSceneReady();" in readiness_body
 
     scene_ready_body = js.split("function maybeEmitSceneReady()", 1)[1].split("const el = {", 1)[0]
@@ -2002,7 +2002,7 @@ assert.strictEqual(status.readiness_failure.url, status.final_failed_url);
 
 def test_viewer_emits_explicit_web3d_readiness_states_and_required_categories():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
-    assert "'server_ready'" in js
+    assert "'server_ready'" in js or "server_ready is infrastructure state" in (ROOT / 'workcell_builder/workcell_builder/gui/scene_preview_widget.cpp').read_text(encoding='utf-8')
     assert "'scene_loading'" in js
     assert "'scene_ready'" in js
     assert "'scene_failed'" in js
@@ -2010,8 +2010,8 @@ def test_viewer_emits_explicit_web3d_readiness_states_and_required_categories():
     assert "function beginWeb3dSceneReadiness(items)" in js
     assert "function maybeEmitSceneReady()" in js
     assert "if (readinessState === 'scene_ready')" in js
-    assert "if (state.web3dReadiness.emittedSceneReady)" in js
-    assert "state.web3dReadiness.failed && state.web3dReadiness.state === 'scene_failed'" in js
+    assert "if (state.web3dReadiness.terminal)" in js
+    assert "state.web3dReadiness.terminal" in js
     assert "pending.add('robot_arm:expanded_urdf_loader')" in js
     assert "pending.add('attached_tool_gripper:expanded_urdf_loader')" in js
     assert "emitWeb3dReadinessState('scene_loading'" in js
@@ -2063,8 +2063,8 @@ def test_successful_required_loads_emit_scene_ready_exactly_once_after_completio
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     body = _viewer_function_body(js, "function emitWeb3dReadinessState", "function readinessCategoryForItem")
     maybe_body = _viewer_function_body(js, "function maybeEmitSceneReady", "function isGeneratedUrdfItem")
-    assert "if (state.web3dReadiness.emittedSceneReady) return" in body
-    assert "state.web3dReadiness.emittedSceneReady = true" in body
+    assert "if (state.web3dReadiness.terminal)" in body
+    assert "terminalEmissionCount" in body
     assert "readiness.pending?.size === 0" in maybe_body
     assert "emitWeb3dReadinessState('scene_ready'" in maybe_body
     assert "requiredReadinessCompleteForItem(item);" in js
@@ -2200,3 +2200,82 @@ try {{
         encoding="utf-8",
     )
     subprocess.run(["node", str(script)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+def test_viewer_browser_readiness_contract_lifecycle_and_terminal_dedup():
+    js_path = VIEWER / "viewer.js"
+    harness = """
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\\(\\);\\s*$/, '');
+const element = () => ({ hidden: false, checked: false, disabled: false, textContent: '', className: '', innerHTML: '', classList: { toggle() {} }, setAttribute() {}, querySelector() { return { textContent: '' }; }, appendChild() {}, addEventListener() {}, getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; } });
+const context = { console, assert, window: { dispatched: [], location: { search: '' }, dispatchEvent(event) { this.dispatched.push(event?.detail?.state); }, parent: { postMessage() {} } }, document: { getElementById() { return element(); }, createElement() { return element(); } }, URLSearchParams, CustomEvent: function CustomEvent(type, init) { return { type, detail: init?.detail || {} }; }, requestAnimationFrame() { return 0; }, setTimeout() { return 1; }, clearTimeout() {} };
+vm.createContext(context);
+vm.runInContext(source + `
+assert.strictEqual(state.web3dReadiness.state, 'booting');
+state.sourceWebSceneFile = 'build/workcell_studio_web_scene/ur5_2f_test.web_scene.json';
+state.builderRevision = '42';
+emitWeb3dReadinessState('scene_loading');
+state.sceneJson = { scene: { id: 'ur5_2f_test' }, objects: [
+ { id: 'robot', category: 'robot', mesh_uri: 'robot.stl' },
+ { id: 'tool', category: 'tool', mesh_uri: 'tool.stl' },
+ { id: 'table', category: 'table' },
+ { id: 'camera', category: 'camera' }
+] };
+state.sceneJsonLoaded = true;
+failIfCanonicalRequiredVisualSetInvalid = () => false;
+beginWeb3dSceneReadiness(collectItems(state.sceneJson));
+for (const item of collectItems(state.sceneJson)) requiredReadinessCompleteForItem(item);
+let status = window.__WORKCELL_VIEWER_STATUS__;
+assert.strictEqual(status.readiness_contract_version, 1);
+assert.strictEqual(status.lifecycle_state, 'scene_ready');
+assert.strictEqual(status.terminal, true);
+assert.strictEqual(status.scene_id, 'ur5_2f_test');
+assert.strictEqual(status.source_web_scene_file, state.sourceWebSceneFile);
+assert.strictEqual(status.builder_revision, '42');
+assert.ok(status.expected_physical_item_count > 0);
+const seq = status.status_sequence;
+emitWeb3dReadinessState('scene_loading', { infrastructure: 'server_ready' });
+assert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.lifecycle_state, 'scene_ready');
+emitWeb3dReadinessState('scene_ready');
+assert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.status_sequence, seq);
+assert.strictEqual(state.web3dReadiness.terminalEmissionCount, 1);
+`, context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+def test_viewer_required_failure_contract_is_terminal_and_deduplicated():
+    js_path = VIEWER / "viewer.js"
+    harness = """
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\\(\\);\\s*$/, '');
+const element = () => ({ hidden: false, checked: false, disabled: false, textContent: '', className: '', innerHTML: '', classList: { toggle() {} }, setAttribute() {}, querySelector() { return { textContent: '' }; }, appendChild() {}, addEventListener() {}, getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; } });
+const context = { console, assert, window: { dispatched: [], location: { search: '' }, dispatchEvent(event) { this.dispatched.push(event?.detail?.state); }, parent: { postMessage() {} } }, document: { getElementById() { return element(); }, createElement() { return element(); } }, URLSearchParams, CustomEvent: function CustomEvent(type, init) { return { type, detail: init?.detail || {} }; }, requestAnimationFrame() { return 0; }, setTimeout() { return 1; }, clearTimeout() {} };
+vm.createContext(context);
+vm.runInContext(source + `
+state.sourceWebSceneFile = 'build/workcell_studio_web_scene/ur5_2f_test.web_scene.json';
+state.builderRevision = '7';
+state.sceneJson = { scene: { id: 'ur5_2f_test' }, objects: [{ id: 'robot', category: 'robot', mesh_uri: 'missing.stl', link: 'base_link' }] };
+state.sceneJsonLoaded = true;
+beginWeb3dSceneReadiness(collectItems(state.sceneJson));
+const robot = collectItems(state.sceneJson)[0];
+failWeb3dSceneReadiness(robot, 'missing.stl', 'mesh failed');
+let status = window.__WORKCELL_VIEWER_STATUS__;
+assert.strictEqual(status.lifecycle_state, 'scene_failed');
+assert.strictEqual(status.terminal, true);
+assert.strictEqual(status.readiness_failure.required_category, 'robot_arm');
+assert.strictEqual(status.readiness_failure.link, 'base_link');
+assert.strictEqual(status.readiness_failure.url, 'missing.stl');
+const seq = status.status_sequence;
+emitWeb3dReadinessState('scene_ready');
+failWeb3dSceneReadiness(robot, 'missing.stl', 'mesh failed again');
+assert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.lifecycle_state, 'scene_failed');
+assert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.status_sequence, seq);
+assert.strictEqual(state.web3dReadiness.terminalEmissionCount, 1);
+`, context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

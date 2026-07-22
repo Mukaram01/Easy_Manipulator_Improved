@@ -22,11 +22,13 @@ const PRODUCT_VIEW_LIGHT_PALETTE = Object.freeze({
 const SUPPORTED_SCHEMA_VERSION = 'workcell_studio_web_scene/v1';
 const EDIT_PATCH_SCHEMA_VERSION = 'workcell_studio_web_scene_edit_patch/v1';
 const VIEWER_VERSION = 'static_web_viewer_edit_patch_v1';
+const READINESS_CONTRACT_VERSION = 1;
+const VALID_SCENE_LIFECYCLE_STATES = Object.freeze(['booting', 'scene_loading', 'scene_ready', 'scene_failed']);
 const LOCKED_EDIT_REASON = 'Locked/generated preview item; edit source layout/environment instead.';
 const MIN_FRAME_RADIUS = 1.2;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
-const state = { sceneJson: null, sourceWebSceneFile: '', frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', robotPreviewResult: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'server_ready', emittedSceneReady: false, required: {}, pending: new Set(), failed: false, failure: null } };
+const state = { sceneJson: null, sourceWebSceneFile: '', frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', robotPreviewResult: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
 let robotPreviewLoadToken = 0;
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
 const STAGED_MESH_ROOTS = [
@@ -71,16 +73,25 @@ const EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS = [
 ];
 
 const WEB3D_REQUIRED_CATEGORIES = ['robot_arm', 'attached_tool_gripper', 'workbench_support_surface', 'configured_camera'];
+function web3dNavigationKey() { return `${state.sourceWebSceneFile || ''}#${state.builderRevision || ''}`; }
 function emitWeb3dReadinessState(readinessState, detail = {}) {
-  state.web3dReadiness = state.web3dReadiness || { state: 'server_ready', emittedSceneReady: false, required: {}, pending: new Set(), failed: false, failure: null };
-  if (state.web3dReadiness.failed && state.web3dReadiness.state === 'scene_failed' && readinessState !== 'scene_failed') {
-    return updateViewerStatus();
+  state.web3dReadiness = state.web3dReadiness || { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null };
+  if (!VALID_SCENE_LIFECYCLE_STATES.includes(readinessState)) readinessState = 'scene_loading';
+  const navigationKey = detail.navigation_key || detail.navigationKey || web3dNavigationKey();
+  if (state.web3dReadiness.terminal) {
+    if (state.web3dReadiness.terminalNavigationKey && navigationKey && navigationKey !== state.web3dReadiness.terminalNavigationKey) return window.__WORKCELL_VIEWER_STATUS__;
+    if (readinessState !== state.web3dReadiness.terminalState) return updateViewerStatus();
+    return window.__WORKCELL_VIEWER_STATUS__;
   }
-  if (readinessState === 'scene_ready') {
-    if (state.web3dReadiness.emittedSceneReady) return window.__WORKCELL_VIEWER_STATUS__;
-    state.web3dReadiness.emittedSceneReady = true;
-  }
+  const terminalTransition = readinessState === 'scene_ready' || readinessState === 'scene_failed';
   state.web3dReadiness.state = readinessState;
+  state.web3dReadiness.statusSequence = Number(state.web3dReadiness.statusSequence || 0) + 1;
+  if (terminalTransition) {
+    state.web3dReadiness.terminal = true;
+    state.web3dReadiness.terminalState = readinessState;
+    state.web3dReadiness.terminalNavigationKey = navigationKey;
+    state.web3dReadiness.terminalEmissionCount = Number(state.web3dReadiness.terminalEmissionCount || 0) + 1;
+  }
   const structured = structuredWeb3dReadinessFields(readinessState);
   const eventDetail = { ...structured, ...detail, final_lifecycle_state: readinessState, finalLifecycleState: readinessState };
   if (readinessState === 'scene_failed') {
@@ -130,7 +141,7 @@ function readinessCategoryStatus(category) {
   return readiness.state === 'scene_ready' ? 'ready' : 'loading';
 }
 function structuredWeb3dReadinessFields(lifecycleState) {
-  const finalState = lifecycleState || state.web3dReadiness?.state || 'server_ready';
+  const finalState = lifecycleState || state.web3dReadiness?.state || 'booting';
   return {
     scene_id: sceneId(),
     sceneId: sceneId(),
@@ -150,6 +161,17 @@ function structuredWeb3dReadinessFields(lifecycleState) {
     environmentStatus: readinessCategoryStatus('workbench_support_surface'),
     camera_status: readinessCategoryStatus('configured_camera'),
     cameraStatus: readinessCategoryStatus('configured_camera'),
+    readiness_contract_version: READINESS_CONTRACT_VERSION,
+    readinessContractVersion: READINESS_CONTRACT_VERSION,
+    lifecycle_state: finalState,
+    lifecycleState: finalState,
+    terminal: Boolean(state.web3dReadiness?.terminal),
+    status_sequence: Number(state.web3dReadiness?.statusSequence || 0),
+    statusSequence: Number(state.web3dReadiness?.statusSequence || 0),
+    source_web_scene_file: state.sourceWebSceneFile || '',
+    sourceWebSceneFile: state.sourceWebSceneFile || '',
+    builder_revision: state.builderRevision || '',
+    builderRevision: state.builderRevision || '',
     final_lifecycle_state: finalState,
     finalLifecycleState: finalState,
   };
@@ -169,7 +191,7 @@ function beginWeb3dSceneReadiness(items) {
     pending.add('robot_arm:expanded_urdf_loader');
     pending.add('attached_tool_gripper:expanded_urdf_loader');
   }
-  state.web3dReadiness = { state: 'scene_loading', emittedSceneReady: false, required, pending, failed: false, failure: null };
+  state.web3dReadiness = { state: 'scene_loading', terminal: false, terminalState: '', terminalNavigationKey: web3dNavigationKey(), terminalEmissionCount: 0, statusSequence: 0, required, pending, failed: false, failure: null };
   emitWeb3dReadinessState('scene_loading', { required_categories: required, pending_required_loads: Array.from(pending) });
 }
 function requiredReadinessCompleteForItem(item) {
@@ -701,10 +723,10 @@ function updateViewerStatus() {
   const assemblyRenderDiagnostics = collectAssemblyRenderDiagnostics();
   const canonicalVisualDiagnostics = canonicalVisualReadinessDiagnostics() || {};
   window.__WORKCELL_VIEWER_STATUS__ = {
-    viewer_boot_state: state.web3dReadiness?.state || 'server_ready',
-    viewerBootState: state.web3dReadiness?.state || 'server_ready',
-    web3d_readiness_state: state.web3dReadiness?.state || 'server_ready',
-    web3dReadinessState: state.web3dReadiness?.state || 'server_ready',
+    viewer_boot_state: state.web3dReadiness?.state || 'booting',
+    viewerBootState: state.web3dReadiness?.state || 'booting',
+    web3d_readiness_state: state.web3dReadiness?.state || 'booting',
+    web3dReadinessState: state.web3dReadiness?.state || 'booting',
     failed_stage: state.web3dReadiness?.state === 'scene_failed' ? 'scene_failed' : '',
     failedStage: state.web3dReadiness?.state === 'scene_failed' ? 'scene_failed' : '',
     fatal_error: state.web3dReadiness?.failure?.reason || '',
@@ -713,8 +735,8 @@ function updateViewerStatus() {
     fatalStack: '',
     source_web_scene_file: state.sourceWebSceneFile || '',
     sourceWebSceneFile: state.sourceWebSceneFile || '',
-    scene_json_loaded: Boolean(state.sceneJson),
-    sceneJsonLoaded: Boolean(state.sceneJson),
+    scene_json_loaded: Boolean(state.sceneJsonLoaded),
+    sceneJsonLoaded: Boolean(state.sceneJsonLoaded),
     scene_name: summary.sceneName,
     sceneName: summary.sceneName,
     renderable_count: summary.renderableCount,
@@ -756,7 +778,7 @@ function updateViewerStatus() {
     requiredPhysicalCategories: state.web3dReadiness?.required || {},
     pending_required_loads: Array.from(state.web3dReadiness?.pending || []),
     pendingRequiredLoads: Array.from(state.web3dReadiness?.pending || []),
-    ...structuredWeb3dReadinessFields(state.web3dReadiness?.state || 'server_ready'),
+    ...structuredWeb3dReadinessFields(state.web3dReadiness?.state || 'booting'),
     final_failed_url: state.web3dReadiness?.failure?.url || state.web3dReadiness?.failure?.final_failed_url || '',
     finalFailedUrl: state.web3dReadiness?.failure?.url || state.web3dReadiness?.failure?.finalFailedUrl || '',
     final_failed_link: state.web3dReadiness?.failure?.link || state.web3dReadiness?.failure?.link_name || '',
@@ -803,6 +825,11 @@ function showError(message) {
   el.error.hidden = false;
   window.__WORKCELL_VIEWER_STATUS__ = {
     ...(window.__WORKCELL_VIEWER_STATUS__ || {}),
+    readiness_contract_version: READINESS_CONTRACT_VERSION,
+    readinessContractVersion: READINESS_CONTRACT_VERSION,
+    lifecycle_state: 'scene_failed',
+    lifecycleState: 'scene_failed',
+    terminal: true,
     viewer_boot_state: 'scene_failed',
     viewerBootState: 'scene_failed',
     web3d_readiness_state: 'scene_failed',
@@ -1266,7 +1293,7 @@ function meshUriDiagnostic(item) {
     } catch (_) { /* fall through to unsafe_path below */ }
     return null;
   })();
-  if (stagedHttpUrl) return meshUriDiagnostic({ ...item, mesh_uri: stagedHttpUrl });
+  if (stagedHttpUrl) return stagedHttpUrl;
   if (
     lower.startsWith('http://') ||
     lower.startsWith('https://') ||
@@ -2665,7 +2692,7 @@ function resetSceneLifecycleState() {
   state._supportSurfaceSemanticWarnings = new Set();
   state.robotPreviewResult = null;
   state.initialPosePreview = { active: false, robotId: '', sceneKey: '' };
-  state.web3dReadiness = { state: 'server_ready', emittedSceneReady: false, required: {}, pending: new Set(), failed: false, failure: null };
+  state.web3dReadiness = { state: 'scene_loading', terminal: false, terminalState: '', terminalNavigationKey: web3dNavigationKey(), terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null };
 }
 function clearSceneObjects() {
   const scene = state.three.scene;
@@ -3526,10 +3553,14 @@ async function loadFile(file) {
     const text = await file.text();
     let json;
     try { json = JSON.parse(text); } catch (err) { throw new Error(`Invalid JSON in ${file.name}: ${err.message}`); }
-    emitWeb3dReadinessState('server_ready');
+    state.sourceWebSceneFile = file.name || '';
+    state.builderRevision = '';
+    state.sceneJsonLoaded = false;
+    emitWeb3dReadinessState('scene_loading');
     const items = validateSceneJson(json);
     state.sceneJson = json;
-    state.sourceWebSceneFile = file.name || '';
+    state.sceneJsonLoaded = true;
+    emitWeb3dReadinessState('scene_loading');
     beginInitialCameraFitForCurrentScene();
     state.runtimeWarnings = [];
     state.dirtyTransforms.clear();
@@ -3565,7 +3596,7 @@ function safeRelativeSceneUrl(raw) {
     } catch (_) { /* fall through to unsafe_path below */ }
     return null;
   })();
-  if (stagedHttpUrl) return meshUriDiagnostic({ ...item, mesh_uri: stagedHttpUrl });
+  if (stagedHttpUrl) return stagedHttpUrl;
   if (
     lower.startsWith('http://') ||
     lower.startsWith('https://') ||
@@ -3591,15 +3622,18 @@ function safeRelativeSceneUrl(raw) {
 async function loadSceneUrl(rawUrl) {
   const sceneUrl = safeRelativeSceneUrl(rawUrl);
   try {
+    state.sourceWebSceneFile = sceneUrl;
+    state.sceneJsonLoaded = false;
+    emitWeb3dReadinessState('scene_loading', { source_web_scene_file: sceneUrl });
     const response = await fetch(repoRootRelativeUrl(sceneUrl), { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
     const json = await response.json();
-    emitWeb3dReadinessState('server_ready');
     const items = validateSceneJson(json);
     state.sceneJson = json;
+    state.sceneJsonLoaded = true;
+    emitWeb3dReadinessState('scene_loading');
     state.frameLookup = parseSceneFrames(json);
     state.resolvedFramePoses.clear();
-    state.sourceWebSceneFile = sceneUrl;
     beginInitialCameraFitForCurrentScene();
     state.runtimeWarnings = [];
     state.dirtyTransforms.clear();
@@ -3690,8 +3724,16 @@ async function boot() {
     setDebugOverlaysVisible(el.debugOverlaysToggle?.checked || false);
     const params = new URLSearchParams(window.location.search);
     if (params.get('embedded') === '1') document.body.classList.add('embedded-mode');
+    state.builderRevision = params.get('builderRevision') || '';
     const sceneParam = params.get('scene');
-    if (sceneParam) await loadSceneUrl(sceneParam);
+    if (sceneParam) {
+      state.sourceWebSceneFile = safeRelativeSceneUrl(sceneParam);
+      state.sceneJsonLoaded = false;
+      emitWeb3dReadinessState('scene_loading');
+      await loadSceneUrl(state.sourceWebSceneFile);
+    } else {
+      updateViewerStatus();
+    }
   } catch (err) {
     showError(`Bundled Three.js module load failure: ${err.message || err}`);
   }
