@@ -20801,12 +20801,12 @@ var init_three_module = __esm({
             z: -1
           });
         }
-        const item2 = pool[this.index];
-        list.push(item2);
+        const item = pool[this.index];
+        list.push(item);
         this.index++;
-        item2.start = drawRange.start;
-        item2.count = drawRange.count;
-        item2.z = z;
+        item.start = drawRange.start;
+        item.count = drawRange.count;
+        item.z = z;
       }
       reset() {
         this.list.length = 0;
@@ -21303,9 +21303,9 @@ var init_three_module = __esm({
             customSort.call(this, list, camera);
           }
           for (let i = 0, l = list.length; i < l; i++) {
-            const item2 = list[i];
-            multiDrawStarts[count] = item2.start * bytesPerElement;
-            multiDrawCounts[count] = item2.count;
+            const item = list[i];
+            multiDrawStarts[count] = item.start * bytesPerElement;
+            multiDrawCounts[count] = item.count;
             count++;
           }
           _renderList.reset();
@@ -37395,18 +37395,172 @@ No loader available`);
 // urdf_robot_renderer.js
 var urdf_robot_renderer_exports = {};
 __export(urdf_robot_renderer_exports, {
-  loadRobotPreview: () => loadRobotPreview
+  ROS_TO_THREE_CONVERSION_BOUNDARY: () => ROS_TO_THREE_CONVERSION_BOUNDARY,
+  applyRobotJointPreview: () => applyRobotJointPreview,
+  canonicalStagedMeshUrl: () => canonicalStagedMeshUrl,
+  loadRobotPreview: () => loadRobotPreview,
+  normalizeRosColladaScene: () => normalizeRosColladaScene
 });
 function repoUrl(context, uri) {
   return context?.repoRootRelativeUrl ? context.repoRootRelativeUrl(uri) : uri;
+}
+function safeDecodeUriSegment(segment) {
+  try {
+    return decodeURIComponent(segment);
+  } catch (_) {
+    return null;
+  }
+}
+function rejectPackageMeshUri(reason, diagnostics, sourceUrl = "") {
+  const detail = sourceUrl ? `${sourceUrl}: ${reason}` : reason;
+  diagnostics.robot_missing_meshes.push(`URDF package mesh rejected: ${detail}`);
+  diagnostics.robot_package_mesh_rejections = diagnostics.robot_package_mesh_rejections || [];
+  diagnostics.robot_package_mesh_rejections.push({ source_url: sourceUrl || "", sourceUrl: sourceUrl || "", policy_reason: reason, policyReason: reason });
+  return "";
+}
+function safeSceneAssetId(value) {
+  const text = String(value || "").trim();
+  return /^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(text) && !text.includes("%") ? text : "";
+}
+function safePackageAssetId(value) {
+  const text = String(value || "").trim();
+  return /^[A-Za-z][A-Za-z0-9_]*$/.test(text) ? text : "";
+}
+function canonicalStagedMeshUrl(rawUrl, context, diagnostics) {
+  const raw = String(rawUrl || "").trim();
+  const sourceUrl = raw;
+  if (!raw)
+    return { uri: "", reason: "empty URL", sourceUrl };
+  if (/^(?:https?|file|data):/i.test(raw) || raw.startsWith("//")) {
+    return { uri: "", reason: `remote, file, or data URL rejected by viewer policy: ${raw}`, sourceUrl };
+  }
+  if (raw.includes("\\"))
+    return { uri: "", reason: `backslash path rejected by viewer policy: ${raw}`, sourceUrl };
+  if (/^[A-Za-z]:[\\/]/.test(raw))
+    return { uri: "", reason: `absolute filesystem path rejected by viewer policy: ${raw}`, sourceUrl };
+  const withoutQuery = raw.split(/[?#]/, 1)[0];
+  if (/^\/(?!build\/workcell_studio_web_scene\/assets\/)/.test(withoutQuery)) {
+    if (/^\/[A-Za-z][A-Za-z0-9_]*(?:\/|$)/.test(withoutQuery))
+      return { uri: "", reason: `bare package-root URL: ${raw}`, sourceUrl };
+    return { uri: "", reason: `absolute filesystem path rejected by viewer policy: ${raw}`, sourceUrl };
+  }
+  const normalized = raw.replace(/^\/+/, "");
+  const pathOnly = normalized.split(/[?#]/, 1)[0];
+  const prefix = "build/workcell_studio_web_scene/assets/";
+  if (!pathOnly.startsWith(prefix))
+    return { uri: "", reason: `URL is not under canonical staged mesh root ${prefix}: ${raw}`, sourceUrl };
+  const suffix = pathOnly.slice(prefix.length);
+  const parts = suffix.split("/");
+  const scene = safeSceneAssetId(parts.shift());
+  const packageName = safePackageAssetId(parts.shift());
+  const expectedScene = safeSceneAssetId(context?.sceneId);
+  if (!scene)
+    return { uri: "", reason: `malformed staged scene ID in URL: ${raw}`, sourceUrl };
+  if (expectedScene && scene !== expectedScene)
+    return { uri: "", reason: `staged scene ID mismatch: expected ${expectedScene}, got ${scene}`, sourceUrl };
+  if (!packageName)
+    return { uri: "", reason: `malformed staged package ID in URL: ${raw}`, sourceUrl };
+  if (!parts.length)
+    return { uri: "", reason: `staged URL is missing a mesh path: ${raw}`, sourceUrl };
+  const safeParts = [];
+  for (const part of parts) {
+    if (!part)
+      return { uri: "", reason: `empty path segment rejected in staged URL: ${raw}`, sourceUrl };
+    const decoded = safeDecodeUriSegment(part);
+    if (!decoded || decoded === "." || decoded === ".." || decoded.includes("\0") || decoded.includes("/") || decoded.includes("\\") || /^[A-Za-z]:[\\/]/.test(decoded) || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(decoded)) {
+      return { uri: "", reason: `unsafe path segment rejected in staged URL: ${raw}`, sourceUrl };
+    }
+    if (decoded.includes("%")) {
+      const decodedAgain = safeDecodeUriSegment(decoded);
+      if (decodedAgain !== decoded)
+        return { uri: "", reason: `encoded traversal rejected in staged URL: ${raw}`, sourceUrl };
+    }
+    safeParts.push(encodeURIComponent(decoded));
+  }
+  return { uri: `${prefix}${scene}/${packageName}/${safeParts.join("/")}`, reason: "", sourceUrl };
+}
+function resolvePackageMeshUri(uri, sceneId2, diagnostics) {
+  const raw = String(uri || "").trim();
+  if (!raw.startsWith("package://"))
+    return "";
+  const scene = String(sceneId2 || "").trim();
+  if (!scene)
+    return rejectPackageMeshUri("missing scene ID", diagnostics, raw);
+  if (!safeSceneAssetId(scene))
+    return rejectPackageMeshUri(`malformed scene ID: ${scene}`, diagnostics, raw);
+  const packagePath = raw.slice("package://".length);
+  if (packagePath.startsWith("/") || /^(?:file|https?):\/\//i.test(packagePath) || /^[A-Za-z]:[\\/]/.test(packagePath)) {
+    return rejectPackageMeshUri(raw, diagnostics, raw);
+  }
+  const parts = packagePath.split("/");
+  const packageName = parts.shift() || "";
+  if (!safePackageAssetId(packageName))
+    return rejectPackageMeshUri(raw, diagnostics, raw);
+  if (!parts.length)
+    return rejectPackageMeshUri(raw, diagnostics, raw);
+  const safeParts = [];
+  for (const part of parts) {
+    if (!part)
+      return rejectPackageMeshUri(raw, diagnostics, raw);
+    const decoded = safeDecodeUriSegment(part);
+    if (!decoded || decoded === "." || decoded === ".." || decoded.includes("\0") || decoded.includes("/") || decoded.includes("\\") || /^[A-Za-z]:[\\/]/.test(decoded) || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(decoded)) {
+      return rejectPackageMeshUri(raw, diagnostics, raw);
+    }
+    if (decoded.includes("%")) {
+      const decodedAgain = safeDecodeUriSegment(decoded);
+      if (decodedAgain !== decoded)
+        return rejectPackageMeshUri(raw, diagnostics, raw);
+    }
+    safeParts.push(encodeURIComponent(decoded));
+  }
+  const resolved = `build/workcell_studio_web_scene/assets/${scene}/${packageName}/${safeParts.join("/")}`;
+  diagnostics.robot_package_mesh_resolutions.push(`URDF package mesh resolved: ${raw} -> ${resolved}`);
+  return resolved;
+}
+function packageRootResolver(sceneId2, diagnostics) {
+  const scene = String(sceneId2 || "").trim();
+  return (targetPackage) => {
+    const packageName = String(targetPackage || "").trim();
+    if (!safeSceneAssetId(scene) || !safePackageAssetId(packageName)) {
+      rejectPackageMeshUri(`package resolver rejected ${packageName || "<empty>"} for scene ${scene || "<empty>"}`, diagnostics);
+      return "build/workcell_studio_web_scene/assets/__rejected_package_uri__";
+    }
+    return `build/workcell_studio_web_scene/assets/${scene}/${packageName}`;
+  };
+}
+function configureUrdfPackageResolution(loader, manager, context, diagnostics) {
+  const resolver = packageRootResolver(context?.sceneId, diagnostics);
+  if ("packages" in loader)
+    loader.packages = resolver;
+  else
+    loader.packages = resolver;
+  if (manager?.setURLModifier) {
+    manager.setURLModifier((url) => {
+      const raw = String(url || "").trim();
+      if (raw.startsWith("package://"))
+        return resolvePackageMeshUri(raw, context?.sceneId, diagnostics);
+      const staged = canonicalStagedMeshUrl(raw, context, diagnostics);
+      if (staged.uri)
+        return staged.uri;
+      if (raw.startsWith("/") || /^(?:https?|file|data):/i.test(raw) || raw.startsWith("//") || raw.includes("\\") || /^[A-Za-z]:[\\/]/.test(raw)) {
+        return rejectPackageMeshUri(staged.reason, diagnostics, staged.sourceUrl);
+      }
+      return url;
+    });
+  }
 }
 function normalizeMeshUri(path, context, diagnostics) {
   const raw = String(path || "").trim();
   if (!raw)
     return "";
   if (raw.startsWith("package://")) {
-    diagnostics.robot_missing_meshes.push(`${raw}: package:// URI was not staged for static web loading`);
-    return "";
+    return resolvePackageMeshUri(raw, context?.sceneId, diagnostics);
+  }
+  const staged = canonicalStagedMeshUrl(raw, context, diagnostics);
+  if (staged.uri)
+    return staged.uri;
+  if (raw.startsWith("/") || /^(?:https?|file|data):/i.test(raw) || raw.startsWith("//") || raw.includes("\\") || /^[A-Za-z]:[\\/]/.test(raw)) {
+    return rejectPackageMeshUri(staged.reason, diagnostics, staged.sourceUrl);
   }
   const diagnostic = context?.meshUriDiagnostic?.({ mesh_uri: raw, mesh_staging_status: "staged" });
   return diagnostic?.uri || raw;
@@ -37452,6 +37606,19 @@ function countDescendantMeshes(object) {
   });
   return count;
 }
+function summarizeColladaDiagnostic(diagnostics, detail) {
+  const key = [detail.up_axis || "", detail.unit_meter ?? "", detail.root_transform_normalized ? "normalized" : "unchanged"].join("|");
+  diagnostics.robot_collada_summary_keys = diagnostics.robot_collada_summary_keys || [];
+  if (!diagnostics.robot_collada_summary_keys.includes(key))
+    diagnostics.robot_collada_summary_keys.push(key);
+  diagnostics.robot_collada_summary = diagnostics.robot_collada_summary || [];
+  const row = diagnostics.robot_collada_summary.find((entry) => entry.key === key);
+  if (row) {
+    row.count += 1;
+    return;
+  }
+  diagnostics.robot_collada_summary.push({ key, count: 1, severity: "debug", ...detail });
+}
 function normalizeRosColladaScene(dae, uri, diagnostics) {
   const scene = dae?.scene;
   if (!scene)
@@ -37462,16 +37629,18 @@ function normalizeRosColladaScene(dae, uri, diagnostics) {
   const before = objectLocalTransformDiagnostics(scene);
   const meshCount = countDescendantMeshes(scene);
   const rootHasMesh = Boolean(scene.isMesh);
-  const hasLoaderRootConversion = !rootHasMesh && !isIdentityTransform(scene) && (upAxis === "Z_UP" || upAxis === "Y_UP" || Number.isFinite(unitMeter) && Math.abs(unitMeter - 1) > 1e-9);
+  const hasLoaderRootConversion = !rootHasMesh && !isIdentityTransform(scene) && (upAxis === "Z_UP" || Number.isFinite(unitMeter) && Math.abs(unitMeter - 1) > 1e-9);
   if (!hasLoaderRootConversion) {
-    diagnostics.robot_collada_mesh_diagnostics.push({
+    const detail2 = {
       uri,
       up_axis: upAxis || null,
       unit_meter: Number.isFinite(unitMeter) ? unitMeter : null,
       descendant_mesh_count: meshCount,
       root_transform_normalized: false,
       root_transform_before: before
-    });
+    };
+    diagnostics.robot_collada_mesh_diagnostics.push(detail2);
+    summarizeColladaDiagnostic(diagnostics, detail2);
     return scene;
   }
   scene.position.set(0, 0, 0);
@@ -37482,7 +37651,7 @@ function normalizeRosColladaScene(dae, uri, diagnostics) {
   scene.updateMatrixWorld(true);
   diagnostics.robot_collada_root_normalization_count += 1;
   diagnostics.robotColladaRootNormalizationCount = diagnostics.robot_collada_root_normalization_count;
-  diagnostics.robot_collada_mesh_diagnostics.push({
+  const detail = {
     uri,
     up_axis: upAxis || null,
     unit_meter: Number.isFinite(unitMeter) ? unitMeter : null,
@@ -37490,7 +37659,9 @@ function normalizeRosColladaScene(dae, uri, diagnostics) {
     root_transform_normalized: true,
     root_transform_before: before,
     root_transform_after: objectLocalTransformDiagnostics(scene)
-  });
+  };
+  diagnostics.robot_collada_mesh_diagnostics.push(detail);
+  summarizeColladaDiagnostic(diagnostics, detail);
   return scene;
 }
 function loadMesh(path, manager, material, done, context, diagnostics) {
@@ -37500,7 +37671,11 @@ function loadMesh(path, manager, material, done, context, diagnostics) {
   if (!uri) {
     diagnostics.robot_failed_visual_count += 1;
     diagnostics.robotFailedVisualCount = diagnostics.robot_failed_visual_count;
-    done(null, new Error(`unloadable URDF mesh URI: ${path}`));
+    const policy = canonicalStagedMeshUrl(path, context, diagnostics);
+    const reason = policy.reason || `unloadable URDF mesh URI: ${path}`;
+    const err = new Error(`unloadable URDF mesh URI: link=${inferMeshLinkDetail(path).link || "<unknown>"} source_url=${path} policy_reason=${reason}`);
+    done(null, err);
+    context?.onRobotMeshLoadError?.(err, "", { path, source_url: path, sourceUrl: path, policy_reason: reason, policyReason: reason, ...inferMeshLinkDetail(path) });
     return;
   }
   const url = repoUrl(context, uri);
@@ -37515,9 +37690,9 @@ function loadMesh(path, manager, material, done, context, diagnostics) {
   const onError = (err) => {
     diagnostics.robot_failed_visual_count += 1;
     diagnostics.robotFailedVisualCount = diagnostics.robot_failed_visual_count;
-    diagnostics.robot_missing_meshes.push(`${uri}: ${err?.message || err || "load failed"}`);
+    diagnostics.robot_missing_meshes.push(`${url}: ${err?.message || err || "load failed"}`);
     done(null, err);
-    context?.onRobotMeshLoadError?.(err, uri);
+    context?.onRobotMeshLoadError?.(err, uri, { url, uri, path, source_url: path, sourceUrl: path, policy_reason: err?.message || "loader failure", policyReason: err?.message || "loader failure", ...inferMeshLinkDetail(path) });
   };
   if (ext === "stl")
     new STLLoader(manager).load(url, (geom) => onDone(new Mesh(geom, material || new MeshPhongMaterial())), void 0, onError);
@@ -37527,6 +37702,12 @@ function loadMesh(path, manager, material, done, context, diagnostics) {
     new OBJLoader(manager).load(url, (obj) => onDone(obj), void 0, onError);
   else
     onError(new Error(`unsupported mesh format .${ext || "unknown"}`));
+}
+function inferMeshLinkDetail(path) {
+  const text = String(path || "").toLowerCase();
+  const known = ["gripper_base_link", "tool0", "wrist_3_link", "wrist_2_link", "wrist_1_link", "forearm_link", "upper_arm_link", "shoulder_link", "base_link_inertia", "base_link"];
+  const link = known.find((name) => text.includes(name.toLowerCase())) || (/gripper|robotiq|finger|suction|airpick/.test(text) ? "gripper_base_link" : "");
+  return { link, link_name: link, item: link || String(path || "") };
 }
 function meshCompletionPromise(diagnostics, manager) {
   let managerComplete = false;
@@ -37566,6 +37747,96 @@ function matrix4ToDiagnostics(object) {
 }
 function vector3ToDiagnostics(value) {
   return value ? { x: Number(value.x), y: Number(value.y), z: Number(value.z) } : null;
+}
+function finiteMatrix16(value) {
+  if (Array.isArray(value) && value.length === 4 && value.every((row) => Array.isArray(row) && row.length === 4)) {
+    const out = [];
+    for (let col = 0; col < 4; col += 1) {
+      for (let row = 0; row < 4; row += 1)
+        out.push(Number(value[row][col]));
+    }
+    return out.every(Number.isFinite) ? out : null;
+  }
+  if (Array.isArray(value) && value.length === 16) {
+    const out = value.map(Number);
+    return out.every(Number.isFinite) ? out : null;
+  }
+  const matrix = value?.matrix_world || value?.matrixWorld || value?.expected_matrix || value?.expectedMatrix || null;
+  return matrix && matrix !== value ? finiteMatrix16(matrix) : null;
+}
+function matrixMaxAbsDelta(a, b) {
+  const ma = finiteMatrix16(a);
+  const mb = finiteMatrix16(b);
+  if (!ma || !mb)
+    return Infinity;
+  return Math.max(...ma.map((value, index) => Math.abs(value - mb[index])));
+}
+function expectedMatrixMap(...sources) {
+  const out = /* @__PURE__ */ new Map();
+  for (const source of sources) {
+    if (!source)
+      continue;
+    if (Array.isArray(source)) {
+      for (const entry of source) {
+        const key = String(entry?.link_name || entry?.linkName || entry?.link || entry?.name || "").trim();
+        const matrix = finiteMatrix16(entry);
+        if (key && matrix)
+          out.set(key, matrix);
+      }
+    } else if (typeof source === "object") {
+      for (const [key, value] of Object.entries(source)) {
+        const matrix = finiteMatrix16(value);
+        if (key && matrix)
+          out.set(key, matrix);
+      }
+    }
+  }
+  return out;
+}
+function compareMatrixDiagnostics(actualByLink, expectedByLink, tolerance = 1e-5) {
+  const comparisons = [];
+  let pass = true;
+  for (const [linkName, expectedMatrix] of expectedByLink.entries()) {
+    const actualEntry = actualByLink instanceof Map ? actualByLink.get(linkName) : actualByLink?.[linkName];
+    const actualMatrix = finiteMatrix16(actualEntry);
+    const maxAbsDelta = matrixMaxAbsDelta(expectedMatrix, actualMatrix);
+    const ok = Number.isFinite(maxAbsDelta) && maxAbsDelta <= tolerance;
+    pass = pass && ok;
+    comparisons.push({
+      link_name: linkName,
+      linkName,
+      max_abs_delta: maxAbsDelta,
+      maxAbsDelta,
+      tolerance,
+      pass: ok,
+      expected_matrix_world: expectedMatrix,
+      expectedMatrixWorld: expectedMatrix,
+      actual_matrix_world: actualMatrix,
+      actualMatrixWorld: actualMatrix
+    });
+  }
+  return { pass, tolerance, compared_count: comparisons.length, comparedCount: comparisons.length, comparisons };
+}
+function collectMatrixParityDiagnostics(previewConfig, diagnostics) {
+  const tolerance = Number(previewConfig?.matrix_diagnostic_tolerance ?? previewConfig?.matrixDiagnosticTolerance ?? 1e-5);
+  const linkExpected = expectedMatrixMap(
+    previewConfig?.expected_robot_link_world_matrices,
+    previewConfig?.expectedRobotLinkWorldMatrices,
+    previewConfig?.robot_link_world_matrices_expected,
+    previewConfig?.robotLinkWorldMatricesExpected
+  );
+  const visualExpected = expectedMatrixMap(
+    previewConfig?.expected_robot_visual_wrapper_world_matrices,
+    previewConfig?.expectedRobotVisualWrapperWorldMatrices,
+    previewConfig?.robot_visual_wrapper_world_matrices_expected,
+    previewConfig?.robotVisualWrapperWorldMatricesExpected
+  );
+  const linkParity = compareMatrixDiagnostics(diagnostics.robot_link_world_matrices || {}, linkExpected, tolerance);
+  const visualActual = new Map((diagnostics.robot_visual_wrapper_world_matrices || []).map((entry) => [String(entry?.link_name || entry?.linkName || "").trim(), entry]).filter(([key]) => key));
+  const visualParity = compareMatrixDiagnostics(visualActual, visualExpected, tolerance);
+  diagnostics.robot_matrix_world_parity = { tolerance, link: linkParity, visual_wrapper: visualParity, pass: linkParity.pass && visualParity.pass };
+  diagnostics.robotMatrixWorldParity = diagnostics.robot_matrix_world_parity;
+  return diagnostics.robot_matrix_world_parity;
 }
 function collectLinkMatrixDiagnostics(robot, links) {
   robot?.updateMatrixWorld?.(true);
@@ -37719,6 +37990,23 @@ function linkRootDiagnostics(robot, links) {
   }
   return { roots, disconnected, duplicateLinks };
 }
+function applyRobotJointPreview(result, jointValues = {}) {
+  const robot = result?.root;
+  if (!robot?.setJointValues)
+    throw new Error("Product View is not ready");
+  robot.setJointValues(jointValues);
+  robot.updateMatrixWorld?.(true);
+  const links = Object.fromEntries(result.links || []);
+  result.diagnostics.robot_joint_values_applied = { ...jointValues };
+  result.diagnostics.robot_link_world_matrices = collectLinkMatrixDiagnostics(robot, links);
+  result.diagnostics.robotLinkWorldMatrices = result.diagnostics.robot_link_world_matrices;
+  result.diagnostics.robot_visual_wrapper_world_matrices = collectVisualWrapperMatrixDiagnostics(links);
+  result.diagnostics.robotVisualWrapperWorldMatrices = result.diagnostics.robot_visual_wrapper_world_matrices;
+  result.diagnostics.robot_descendant_render_mesh_diagnostics = collectDescendantRenderMeshDiagnostics(links);
+  result.diagnostics.robotDescendantRenderMeshDiagnostics = result.diagnostics.robot_descendant_render_mesh_diagnostics;
+  collectMatrixParityDiagnostics(result?.previewConfig || {}, result.diagnostics);
+  return result.diagnostics;
+}
 function jointTypeCounts(joints) {
   const counts = { fixed: 0, revolute: 0, continuous: 0, prismatic: 0, mimic: 0, other: 0 };
   for (const joint of Object.values(joints || {})) {
@@ -37765,11 +38053,15 @@ function loadRobotPreview(previewConfig, rendererContext = {}) {
     robotColladaRootNormalizationCount: 0,
     robot_collada_mesh_diagnostics: [],
     robotColladaMeshDiagnostics: [],
+    robot_collada_summary: [],
+    robotColladaSummary: [],
+    robot_package_mesh_resolutions: [],
+    robot_package_mesh_rejections: [],
     robot_descendant_render_mesh_diagnostics: [],
     robotDescendantRenderMeshDiagnostics: [],
     skipped_legacy_generated_urdf_visual_count: rendererContext?.skippedLegacyGeneratedUrdfVisualCount || 0
   };
-  const result = { root: null, links: /* @__PURE__ */ new Map(), joints: /* @__PURE__ */ new Map(), diagnostics, ready: null };
+  const result = { root: null, links: /* @__PURE__ */ new Map(), joints: /* @__PURE__ */ new Map(), diagnostics, ready: null, previewConfig };
   result.ready = (async () => {
     setLifecycleState(diagnostics, "loading_urdf");
     const manager = new LoadingManager();
@@ -37777,7 +38069,7 @@ function loadRobotPreview(previewConfig, rendererContext = {}) {
     const loader = new URDFLoader_default(manager);
     loader.parseVisual = true;
     loader.parseCollision = false;
-    loader.packages = "";
+    configureUrdfPackageResolution(loader, manager, rendererContext, diagnostics);
     loader.workingPath = "";
     loader.loadMeshCb = (path, meshManager, material, done) => loadMesh(path, meshManager, material, done, rendererContext, diagnostics);
     const urdfUrl = repoUrl(rendererContext, previewConfig?.urdf_url || "");
@@ -37803,8 +38095,11 @@ function loadRobotPreview(previewConfig, rendererContext = {}) {
     diagnostics.robotVisualWrapperWorldMatrices = diagnostics.robot_visual_wrapper_world_matrices;
     diagnostics.robot_descendant_render_mesh_diagnostics = collectDescendantRenderMeshDiagnostics(robot.links);
     diagnostics.robotDescendantRenderMeshDiagnostics = diagnostics.robot_descendant_render_mesh_diagnostics;
+    collectMatrixParityDiagnostics(previewConfig, diagnostics);
     diagnostics.robot_collada_mesh_diagnostics = diagnostics.robot_collada_mesh_diagnostics || [];
     diagnostics.robotColladaMeshDiagnostics = diagnostics.robot_collada_mesh_diagnostics;
+    diagnostics.robot_collada_summary = diagnostics.robot_collada_summary || [];
+    diagnostics.robotColladaSummary = diagnostics.robot_collada_summary;
     const rootDiagnostics = linkRootDiagnostics(robot, robot.links);
     diagnostics.robot_root_links = rootDiagnostics.roots;
     diagnostics.robotRootLinks = rootDiagnostics.roots;
@@ -37814,7 +38109,19 @@ function loadRobotPreview(previewConfig, rendererContext = {}) {
     diagnostics.robotDisconnectedLinks = rootDiagnostics.disconnected;
     diagnostics.robot_duplicate_links = rootDiagnostics.duplicateLinks;
     diagnostics.robotDuplicateLinks = rootDiagnostics.duplicateLinks;
-    diagnostics.robot_hierarchy_missing_links = Array.isArray(previewConfig?.expected_links) ? previewConfig.expected_links.filter((link) => !result.links.has(link)) : [];
+    const loadedVisualLinks = new Set((diagnostics.robot_visual_wrapper_world_matrices || []).map((visual) => String(visual?.link_name || visual?.linkName || "").trim()).filter(Boolean));
+    const expectedLinks = Array.isArray(previewConfig?.expected_links) ? previewConfig.expected_links : [];
+    const expectedRobotVisualLinks = Array.isArray(previewConfig?.expected_robot_visual_links) ? previewConfig.expected_robot_visual_links : [];
+    const expectedToolVisualLinks = Array.isArray(previewConfig?.expected_tool_visual_links) ? previewConfig.expected_tool_visual_links : [];
+    diagnostics.robot_hierarchy_missing_links = expectedLinks.filter((link) => !result.links.has(link));
+    diagnostics.robot_missing_required_robot_visual_links = expectedRobotVisualLinks.filter((link) => !loadedVisualLinks.has(link));
+    diagnostics.robotMissingRequiredRobotVisualLinks = diagnostics.robot_missing_required_robot_visual_links;
+    diagnostics.robot_missing_required_tool_visual_links = expectedToolVisualLinks.filter((link) => !loadedVisualLinks.has(link));
+    diagnostics.robotMissingRequiredToolVisualLinks = diagnostics.robot_missing_required_tool_visual_links;
+    diagnostics.robot_expected_robot_visual_links = expectedRobotVisualLinks;
+    diagnostics.robotExpectedRobotVisualLinks = expectedRobotVisualLinks;
+    diagnostics.robot_expected_tool_visual_links = expectedToolVisualLinks;
+    diagnostics.robotExpectedToolVisualLinks = expectedToolVisualLinks;
     diagnostics.robot_link_world_matrices = collectLinkMatrixDiagnostics(robot, robot.links);
     diagnostics.robotLinkWorldMatrices = diagnostics.robot_link_world_matrices;
     diagnostics.robot_visual_wrapper_world_matrices = collectVisualWrapperMatrixDiagnostics(robot.links);
@@ -37823,7 +38130,7 @@ function loadRobotPreview(previewConfig, rendererContext = {}) {
     diagnostics.robotDescendantRenderMeshDiagnostics = diagnostics.robot_descendant_render_mesh_diagnostics;
     diagnostics.robot_mesh_callbacks_complete = diagnostics.robot_expected_visual_count === diagnostics.robot_loaded_visual_count + diagnostics.robot_failed_visual_count;
     diagnostics.robotMeshCallbacksComplete = diagnostics.robot_mesh_callbacks_complete;
-    diagnostics.robot_preview_loaded = diagnostics.robot_failed_visual_count === 0 && diagnostics.robot_hierarchy_missing_links.length === 0 && diagnostics.robot_mesh_callbacks_complete;
+    diagnostics.robot_preview_loaded = diagnostics.robot_failed_visual_count === 0 && diagnostics.robot_hierarchy_missing_links.length === 0 && diagnostics.robot_missing_required_robot_visual_links.length === 0 && diagnostics.robot_missing_required_tool_visual_links.length === 0 && diagnostics.robot_mesh_callbacks_complete;
     setLifecycleState(diagnostics, diagnostics.robot_preview_loaded ? "ready" : "failed");
     rendererContext?.scene?.add?.(robot);
     rendererContext?.assemblyRoots?.push?.(robot);
@@ -37839,7 +38146,7 @@ function loadRobotPreview(previewConfig, rendererContext = {}) {
   window.__WORKCELL_ROBOT_PREVIEW_READY__ = result.ready;
   return result;
 }
-var ROBOT_RENDER_MODE;
+var ROBOT_RENDER_MODE, ROS_TO_THREE_CONVERSION_BOUNDARY;
 var init_urdf_robot_renderer = __esm({
   "urdf_robot_renderer.js"() {
     init_three_module();
@@ -37848,6 +38155,7 @@ var init_urdf_robot_renderer = __esm({
     init_ColladaLoader();
     init_OBJLoader();
     ROBOT_RENDER_MODE = "expanded_urdf_loader";
+    ROS_TO_THREE_CONVERSION_BOUNDARY = "URDFLoader owns the ROS visual frame and applies the one ROS-to-Three orientation boundary; DAE, STL, assembled URDF, and flattened fallback diagnostics must not add per-link or per-mesh 90-degree corrections after ColladaLoader.";
   }
 });
 
@@ -37869,34 +38177,256 @@ var ColladaLoader2;
 var OBJLoader2;
 var TransformControls2;
 var loadRobotPreview2;
+var applyRobotJointPreview2;
+var PRODUCT_VIEW_LIGHT_PALETTE = Object.freeze({
+  workspaceBackground: 15659508,
+  rendererClearColor: 15659508,
+  gridMajor: 8358808,
+  gridMinor: 11976906,
+  ambientSky: 16777215,
+  ambientGround: 13358044,
+  keyLight: 16777215,
+  fillLight: 14479359,
+  labelText: 1192e3,
+  labelSurface: 16317180,
+  overlaySurface: 16774877,
+  errorSurface: 16772848,
+  errorAccent: 12858420
+});
 var SUPPORTED_SCHEMA_VERSION = "workcell_studio_web_scene/v1";
 var EDIT_PATCH_SCHEMA_VERSION = "workcell_studio_web_scene_edit_patch/v1";
 var VIEWER_VERSION = "static_web_viewer_edit_patch_v1";
+var READINESS_CONTRACT_VERSION = 1;
+var VALID_SCENE_LIFECYCLE_STATES = Object.freeze(["booting", "scene_loading", "scene_ready", "scene_failed"]);
 var LOCKED_EDIT_REASON = "Locked/generated preview item; edit source layout/environment instead.";
 var MIN_FRAME_RADIUS = 1.2;
 var EMPTY_SCENE_MESSAGE = "Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.";
-var FRAME_DISTANCE_MULTIPLIER = 2.7;
-var state = { sceneJson: null, sourceWebSceneFile: "", frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, editorMode: "select", editorEvents: [], editorError: "" };
+var FRAME_DISTANCE_MULTIPLIER = 2.35;
+var CAMERA_PRESET_DIRECTIONS = Object.freeze({
+  isometric: [1.35, -1.65, 1.05],
+  front: [0, -1, 0.28],
+  top: [0, -1e-3, 1],
+  robot: [1.1, -1.25, 0.72]
+});
+var state = { sceneJson: null, sourceWebSceneFile: "", diagnosticKeys: /* @__PURE__ */ new Set(), frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: "", done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: "select", editorEvents: [], editorError: "", robotPreviewResult: null, initialPosePreview: { active: false, robotId: "", sceneKey: "" }, web3dReadiness: { state: "booting", terminal: false, terminalState: "", terminalNavigationKey: "", terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null }, builderRevision: "", sceneJsonLoaded: false, activeNavigationKey: "" };
+var robotPreviewLoadToken = 0;
 var RESET_VIEW_TITLE = "Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.";
 var STAGED_MESH_ROOTS = [
   "build/workcell_studio_web_scene/assets/",
   "workcell_studio_web/",
   "assets/"
 ];
-var EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS = [
-  "base_link_inertia",
-  "shoulder_link",
-  "upper_arm_link",
-  "forearm_link",
-  "wrist_1_link",
-  "wrist_2_link",
-  "wrist_3_link",
-  "tool0",
-  "gripper_base_link"
-];
+var EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS = Object.freeze([]);
+var WEB3D_REQUIRED_CATEGORIES = ["robot_arm", "attached_tool_gripper", "workbench_support_surface", "configured_camera"];
+function web3dNavigationKey() {
+  return `${state.sourceWebSceneFile || ""}#${state.builderRevision || ""}`;
+}
+function emitWeb3dReadinessState(readinessState, detail = {}) {
+  state.web3dReadiness = state.web3dReadiness || { state: "booting", terminal: false, terminalState: "", terminalNavigationKey: "", terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null };
+  if (!VALID_SCENE_LIFECYCLE_STATES.includes(readinessState))
+    readinessState = "scene_loading";
+  const navigationKey = detail.navigation_key || detail.navigationKey || web3dNavigationKey();
+  if (state.web3dReadiness.terminal) {
+    if (state.web3dReadiness.terminalNavigationKey && navigationKey && navigationKey !== state.web3dReadiness.terminalNavigationKey)
+      return window.__WORKCELL_VIEWER_STATUS__;
+    if (readinessState !== state.web3dReadiness.terminalState)
+      return updateViewerStatus();
+    return window.__WORKCELL_VIEWER_STATUS__;
+  }
+  const terminalTransition = readinessState === "scene_ready" || readinessState === "scene_failed";
+  state.web3dReadiness.state = readinessState;
+  state.web3dReadiness.statusSequence = Number(state.web3dReadiness.statusSequence || 0) + 1;
+  if (terminalTransition) {
+    state.web3dReadiness.terminal = true;
+    state.web3dReadiness.terminalState = readinessState;
+    state.web3dReadiness.terminalNavigationKey = navigationKey;
+    state.web3dReadiness.terminalEmissionCount = Number(state.web3dReadiness.terminalEmissionCount || 0) + 1;
+  }
+  const structured = structuredWeb3dReadinessFields(readinessState);
+  const eventDetail = { ...structured, ...detail, final_lifecycle_state: readinessState, finalLifecycleState: readinessState };
+  if (readinessState === "scene_failed") {
+    state.web3dReadiness.failed = true;
+    state.web3dReadiness.failure = eventDetail;
+  }
+  const status = updateViewerStatus();
+  if (readinessState === "scene_ready")
+    triggerInitialCameraFitAfterSceneReady();
+  window.dispatchEvent?.(new CustomEvent("workcell:web3d_readiness", { detail: { state: readinessState, ...eventDetail, status } }));
+  window.parent?.postMessage?.({ type: "workcell_web3d_readiness", state: readinessState, ...eventDetail, status }, "*");
+  return status;
+}
+function itemRenderPolicy(item) {
+  return String(item?.render_policy || item?.renderPolicy || "legacy_primary").toLowerCase();
+}
+function isPrimaryRenderableItem(item) {
+  const policy = itemRenderPolicy(item);
+  return policy === "primary" || policy === "legacy_primary";
+}
+function isDiagnosticOnlyItem(item) {
+  return itemRenderPolicy(item) === "diagnostic_only";
+}
+function isOverlayPolicyItem(item) {
+  return itemRenderPolicy(item) === "overlay";
+}
+function readinessCategoryForItem(item) {
+  if (!item || !isPrimaryRenderableItem(item) || isDebugOverlayItem(item))
+    return "";
+  if (item?.readiness_category || item?.readinessCategory)
+    return String(item.readiness_category || item.readinessCategory);
+  const category = meshContractCategoryOf(item);
+  const identity = viewerGroupIdentity(item);
+  if (category === "camera" || isSensor(item))
+    return "configured_camera";
+  if (category === "table" || supportSurfaceDisplayType(item) || /\b(workbench|support surface|tabletop|table)\b/.test(identity))
+    return "workbench_support_surface";
+  if (isGeneratedToolOrGripperItem(item) || category === "tool")
+    return "attached_tool_gripper";
+  if (isGeneratedRobotItem(item) || category === "robot")
+    return "robot_arm";
+  return "";
+}
+function readinessKey(category, item) {
+  return `${category}:${item?.id || item?.link || itemLabel(item || {})}`;
+}
+function physicalReadinessItems() {
+  return collectItems(state.sceneJson || {}).filter((item) => isPrimaryRenderableItem(item) && !isDebugOverlayItem(item) && readinessCategoryForItem(item));
+}
+function renderedPhysicalItemCount() {
+  const assemblyCount = collectPhysicalAssemblyBounds?.()?.count || 0;
+  return statusCountedRenderables().length + assemblyCount;
+}
+function expectedPhysicalItemCount() {
+  const items = physicalReadinessItems();
+  const hasExpanded = isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview);
+  return items.length + (hasExpanded && !items.some((item) => readinessCategoryForItem(item) === "robot_arm") ? 1 : 0);
+}
+function failedRequiredItemCount() {
+  const renderFailures = statusCountedRenderables().filter(isRequiredMeshFailureStatus).length;
+  return renderFailures + (state.web3dReadiness?.state === "scene_failed" && renderFailures === 0 ? 1 : 0);
+}
+function readinessCategoryStatus(category) {
+  const readiness = state.web3dReadiness || {};
+  if (!readiness.required?.[category])
+    return "missing";
+  const pending = Array.from(readiness.pending || []).some((key) => String(key).startsWith(`${category}:`));
+  if (readiness.state === "scene_failed" && (readiness.failure?.required_category === category || pending))
+    return "failed";
+  if (pending)
+    return "pending";
+  return readiness.state === "scene_ready" ? "ready" : "loading";
+}
+function structuredWeb3dReadinessFields(lifecycleState) {
+  const finalState = lifecycleState || state.web3dReadiness?.state || "booting";
+  return {
+    scene_id: sceneId(),
+    sceneId: sceneId(),
+    expected_physical_item_count: expectedPhysicalItemCount(),
+    expectedPhysicalItemCount: expectedPhysicalItemCount(),
+    rendered_physical_item_count: renderedPhysicalItemCount(),
+    renderedPhysicalItemCount: renderedPhysicalItemCount(),
+    failed_required_item_count: failedRequiredItemCount(),
+    failedRequiredItemCount: failedRequiredItemCount(),
+    robot_status: readinessCategoryStatus("robot_arm"),
+    robotStatus: readinessCategoryStatus("robot_arm"),
+    tool_status: readinessCategoryStatus("attached_tool_gripper"),
+    toolStatus: readinessCategoryStatus("attached_tool_gripper"),
+    end_effector_status: readinessCategoryStatus("attached_tool_gripper"),
+    endEffectorStatus: readinessCategoryStatus("attached_tool_gripper"),
+    environment_status: readinessCategoryStatus("workbench_support_surface"),
+    environmentStatus: readinessCategoryStatus("workbench_support_surface"),
+    camera_status: readinessCategoryStatus("configured_camera"),
+    cameraStatus: readinessCategoryStatus("configured_camera"),
+    readiness_contract_version: READINESS_CONTRACT_VERSION,
+    readinessContractVersion: READINESS_CONTRACT_VERSION,
+    lifecycle_state: finalState,
+    lifecycleState: finalState,
+    terminal: Boolean(state.web3dReadiness?.terminal),
+    status_sequence: Number(state.web3dReadiness?.statusSequence || 0),
+    statusSequence: Number(state.web3dReadiness?.statusSequence || 0),
+    source_web_scene_file: state.sourceWebSceneFile || "",
+    sourceWebSceneFile: state.sourceWebSceneFile || "",
+    builder_revision: state.builderRevision || "",
+    builderRevision: state.builderRevision || "",
+    final_lifecycle_state: finalState,
+    finalLifecycleState: finalState
+  };
+}
+function beginWeb3dSceneReadiness(items) {
+  const required = Object.fromEntries(WEB3D_REQUIRED_CATEGORIES.map((category) => [category, false]));
+  const pending = /* @__PURE__ */ new Set();
+  for (const item of items || []) {
+    const category = readinessCategoryForItem(item);
+    if (!category)
+      continue;
+    required[category] = true;
+    if (itemRequiresMeshBackedVisual(item) || displayMeshUri(item))
+      pending.add(readinessKey(category, item));
+  }
+  if (isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview)) {
+    required.robot_arm = true;
+    required.attached_tool_gripper = true;
+    pending.add("robot_arm:expanded_urdf_loader");
+    pending.add("attached_tool_gripper:expanded_urdf_loader");
+  }
+  state.web3dReadiness = { state: "scene_loading", terminal: false, terminalState: "", terminalNavigationKey: web3dNavigationKey(), terminalEmissionCount: 0, statusSequence: 0, required, pending, failed: false, failure: null };
+  emitWeb3dReadinessState("scene_loading", { required_categories: required, pending_required_loads: Array.from(pending) });
+}
+function requiredReadinessCompleteForItem(item) {
+  const category = readinessCategoryForItem(item);
+  if (!category || !state.web3dReadiness?.pending)
+    return;
+  state.web3dReadiness.pending.delete(readinessKey(category, item));
+  maybeEmitSceneReady();
+}
+function failWeb3dSceneReadiness(item, url, reason, extra = {}) {
+  const category = readinessCategoryForItem(item) || extra.category || "required_physical_item";
+  emitWeb3dReadinessState("scene_failed", {
+    required_category: category,
+    item_id: item?.id || "",
+    link: item?.link || item?.link_name || item?.object_name || "",
+    url: url || displayMeshUri(item),
+    reason: reason || "required mesh failed",
+    ...extra
+  });
+}
+function completeExpandedUrdfReadiness(result) {
+  if (!state.web3dReadiness?.pending)
+    return;
+  state.web3dReadiness.pending.delete("robot_arm:expanded_urdf_loader");
+  state.web3dReadiness.pending.delete("attached_tool_gripper:expanded_urdf_loader");
+  maybeEmitSceneReady();
+}
+function failExpandedUrdfReadiness(err, diagnostics = {}, detail = {}) {
+  const link = String(detail.link || detail.link_name || "").trim();
+  const expectedTool = new Set(asArray(state.sceneJson?.robot_preview?.expected_tool_visual_links || state.sceneJson?.robot_preview?.expectedToolVisualLinks).map((value) => String(value || "").trim()).filter(Boolean));
+  emitWeb3dReadinessState("scene_failed", {
+    required_category: expectedTool.has(link) ? "attached_tool_gripper" : "robot_arm",
+    item_id: "expanded_urdf_loader",
+    link,
+    url: detail.url || detail.uri || diagnostics.robot_urdf_url || "",
+    reason: err?.message || String(err || "expanded URDF required mesh failed"),
+    robot_missing_meshes: diagnostics.robot_missing_meshes || [],
+    ...detail
+  });
+}
+function maybeEmitSceneReady() {
+  if (failIfExpandedUrdfExpectedVisualSetInvalid())
+    return;
+  const readiness = state.web3dReadiness;
+  if (!readiness || readiness.failed || readiness.state === "scene_failed")
+    return;
+  const missing = WEB3D_REQUIRED_CATEGORIES.filter((category) => !readiness.required?.[category]);
+  if (missing.length) {
+    emitWeb3dReadinessState("scene_failed", { reason: `missing required physical categories: ${missing.join(", ")}`, missing_required_categories: missing });
+    return;
+  }
+  if (readiness.pending?.size === 0)
+    emitWeb3dReadinessState("scene_ready", { required_categories: readiness.required });
+}
 var el = {
   file: document.getElementById("scene-file"),
   resetView: document.getElementById("reset-view"),
+  cameraPreset: document.getElementById("camera-preset"),
   undoEdit: document.getElementById("undo-edit"),
   redoEdit: document.getElementById("redo-edit"),
   clearEdits: document.getElementById("clear-edits"),
@@ -37907,6 +38437,8 @@ var el = {
   rotationSnap: document.getElementById("rotation-snap"),
   labelsToggle: document.getElementById("labels-toggle"),
   debugOverlaysToggle: document.getElementById("debug-overlays-toggle"),
+  showInitialPose: document.getElementById("show-initial-pose"),
+  initialPoseStatus: document.getElementById("initial-pose-status"),
   canvas: document.getElementById("scene-canvas"),
   labelLayer: document.getElementById("label-layer"),
   empty: document.getElementById("empty-state"),
@@ -37916,12 +38448,112 @@ var el = {
   warnings: document.getElementById("warnings"),
   summary: document.getElementById("scene-summary")
 };
+function robotRecords() {
+  const records = asArray(state.sceneJson?.robots).concat(asArray(state.sceneJson?.robot_preview?.robots));
+  if (state.sceneJson?.robot_preview && !records.length)
+    records.push(state.sceneJson.robot_preview);
+  return records.filter((r) => r && (r.urdf_url || r.joint_values || r.initial_joint_values || r.initial_positions || r.configured_initial_positions));
+}
+function robotRecordId(robot, index = 0) {
+  return String(robot?.id || robot?.robot_id || robot?.robot_instance_id || robot?.name || `robot_${index}`).trim();
+}
+function selectedRobotRecord() {
+  const robots = robotRecords();
+  if (robots.length === 1)
+    return { robot: robots[0], id: robotRecordId(robots[0], 0), automatic: true };
+  const selected = String(state.selected || "");
+  const found = robots.find((robot, index) => robotRecordId(robot, index) === selected);
+  return found ? { robot: found, id: selected, automatic: false } : null;
+}
+function configuredInitialJointValues(robot) {
+  return robot?.initial_joint_values || robot?.configured_initial_positions || robot?.initial_positions || robot?.joint_initial_positions || null;
+}
+function normalJointValues(robot) {
+  return robot?.joint_values || {};
+}
+function validateInitialJointMap(robot, result) {
+  const values = configuredInitialJointValues(robot);
+  if (!values || Array.isArray(values) || typeof values !== "object")
+    throw new Error("Initial pose is not configured");
+  const joints = Array.from((result?.joints || /* @__PURE__ */ new Map()).entries());
+  if (!joints.length)
+    throw new Error("Product View is not ready");
+  const movable = joints.filter(([, joint]) => !["fixed"].includes(String(joint?.jointType || "").toLowerCase()) && !joint?.isURDFMimicJoint && !joint?.mimicJoint);
+  const names = /* @__PURE__ */ new Set();
+  for (const [name] of joints) {
+    if (names.has(name))
+      throw new Error(`Initial pose has duplicate joint: ${name}`);
+    names.add(name);
+  }
+  for (const name of Object.keys(values)) {
+    if (!names.has(name))
+      throw new Error(`Initial pose has unknown joint: ${name}`);
+    if (!Number.isFinite(Number(values[name])))
+      throw new Error("Initial pose contains an invalid value");
+  }
+  for (const [name] of movable)
+    if (!(name in values))
+      throw new Error(`Initial pose is missing joint: ${name}`);
+  return Object.fromEntries(Object.entries(values).map(([name, value]) => [name, Number(value)]));
+}
+function setInitialPosePreviewUi(active, message = "") {
+  if (el.initialPoseStatus) {
+    el.initialPoseStatus.hidden = !active;
+    el.initialPoseStatus.textContent = active ? "Initial pose preview" : "";
+  }
+  if (message)
+    pushEditorEvent("status", { message });
+}
+function refreshInitialPoseActionState() {
+  if (!el.showInitialPose)
+    return;
+  const robots = robotRecords();
+  el.showInitialPose.disabled = robots.length === 0 || robots.length > 1 && !selectedRobotRecord();
+}
+function clearInitialPosePreview({ message = "" } = {}) {
+  if (!state.initialPosePreview.active) {
+    refreshInitialPoseActionState();
+    return;
+  }
+  const selected = selectedRobotRecord();
+  const result = state.robotPreviewResult;
+  if (selected && result)
+    applyRobotJointPreview2?.(result, normalJointValues(selected.robot));
+  state.initialPosePreview = { active: false, robotId: "", sceneKey: "" };
+  if (el.showInitialPose)
+    el.showInitialPose.checked = false;
+  setInitialPosePreviewUi(false, message || "Initial pose preview ended");
+  refreshWarnings();
+}
+function toggleInitialPosePreview(checked) {
+  if (!checked) {
+    clearInitialPosePreview();
+    return;
+  }
+  try {
+    if (!state.robotPreviewResult?.root)
+      throw new Error("Product View is not ready");
+    const selected = selectedRobotRecord();
+    if (!selected)
+      throw new Error(robotRecords().length > 1 ? "Select a robot to preview its initial pose" : "Initial pose is not configured");
+    const jointMap = validateInitialJointMap(selected.robot, state.robotPreviewResult);
+    applyRobotJointPreview2(state.robotPreviewResult, jointMap);
+    state.initialPosePreview = { active: true, robotId: selected.id, sceneKey: sceneId() };
+    setInitialPosePreviewUi(true, `Showing initial pose for ${selected.robot.name || selected.id}`);
+  } catch (err) {
+    if (el.showInitialPose)
+      el.showInitialPose.checked = false;
+    state.initialPosePreview = { active: false, robotId: "", sceneKey: "" };
+    setInitialPosePreviewUi(false);
+    showError(err.message || String(err));
+  }
+}
 function sceneDisplayName() {
   return state.sceneJson?.scene?.id || state.sceneJson?.scene_id || state.sourceWebSceneFile || "No scene loaded";
 }
-function isGeneratedOrLockedItem(item2) {
-  const sourceIdentity = [item2?.source_kind, item2?.source_layer, item2?.active_visual_source, item2?.role, item2?.category, item2?.id, itemLabel(item2 || {})].map((value) => String(value || "").toLowerCase()).join(" ");
-  return Boolean(item2?.locked || sourceIdentity.includes("generated") || sourceIdentity.includes("urdf") || sourceIdentity.includes("moveit"));
+function isGeneratedOrLockedItem(item) {
+  const sourceIdentity = [item?.source_kind, item?.source_layer, item?.active_visual_source, item?.role, item?.category, item?.id, itemLabel(item || {})].map((value) => String(value || "").toLowerCase()).join(" ");
+  return Boolean(item?.locked || sourceIdentity.includes("generated") || sourceIdentity.includes("urdf") || sourceIdentity.includes("moveit"));
 }
 function isRuntimeFallbackStatus(status) {
   return /fallback/.test(String(status || "").toLowerCase());
@@ -37930,7 +38562,7 @@ function isMissingOrFailedMeshStatus(status) {
   return ["missing_file", "unresolved_package_uri", "unsafe_path", "unsupported_format", "load_error", "url_not_served", "file_access_blocked", "loader_failure"].includes(String(status || "").toLowerCase());
 }
 function statusCountedRenderables() {
-  return (state.objects || []).filter((obj) => !isDebugOverlayItem(obj.item));
+  return (state.objects || []).filter((obj) => isPrimaryRenderableItem(obj.item) && !isDebugOverlayItem(obj.item));
 }
 function isRequiredMeshFailureStatus(obj) {
   return obj?.renderInfo?.render_status === "required_mesh_failed_debug_fallback" || obj?.item?.renderInfo?.render_status === "required_mesh_failed_debug_fallback";
@@ -37951,14 +38583,14 @@ function computeSceneSummary() {
     robotPreviewMode: robotPreviewSummaryMode(state.sceneJson?.robot_preview)
   };
 }
-function isExpectedMeshlessTool0Frame(item2) {
-  const link = linkNameOfItem(item2);
+function isExpectedMeshlessTool0Frame(item) {
+  const link = linkNameOfItem(item);
   if (link !== "tool0")
     return false;
-  if (displayMeshUri(item2))
+  if (displayMeshUri(item))
     return false;
-  const geometry = String(item2?.geometry_type || item2?.primitive_geometry_type || item2?.type || "").toLowerCase();
-  return !geometry || ["frame", "anchor", "none", "link_frame", "meshless_frame"].includes(geometry) || item2?.render_expected === false;
+  const geometry = String(item?.geometry_type || item?.primitive_geometry_type || item?.type || "").toLowerCase();
+  return !geometry || ["frame", "anchor", "none", "link_frame", "meshless_frame"].includes(geometry) || item?.render_expected === false;
 }
 function collectAssemblyRenderDiagnostics() {
   const diagnostics = state.robotAssemblyRenderDiagnostics || {};
@@ -37971,12 +38603,12 @@ function collectAssemblyRenderDiagnostics() {
   const finalFitBounds = effectiveFinalFitBox ? box3ToJson(effectiveFinalFitBox) : null;
   const rendered = state.objects || [];
   const independentGenerated = rendered.filter((obj) => {
-    const item2 = obj?.item || {};
-    return isGeneratedUrdfMeshVisualItem(item2) && usesAssembledUrdfHierarchy(item2) && !obj?.object3d?.userData?.assembled_urdf_hierarchy;
+    const item = obj?.item || {};
+    return isGeneratedUrdfMeshVisualItem(item) && usesAssembledUrdfHierarchy(item) && !obj?.object3d?.userData?.assembled_urdf_hierarchy;
   });
   const visibleTool0Fallback = rendered.filter((obj) => {
-    const item2 = obj?.item || {};
-    return linkNameOfItem(item2) === "tool0" && Boolean(obj?.fallback?.visible);
+    const item = obj?.item || {};
+    return linkNameOfItem(item) === "tool0" && Boolean(obj?.fallback?.visible);
   });
   const distances = (state.robotAssemblyDiagnostics || []).flatMap((d) => {
     const adjacency = d.assembled_link_adjacency_distances_m || {};
@@ -38107,15 +38739,114 @@ function box3DiagnosticsForObject(object) {
     size: vector3ToDiagnostics2(size)
   };
 }
+function expandedUrdfExpectedVisualSet(json = state.sceneJson || {}) {
+  const preview = json?.robot_preview || {};
+  if (!isExpandedUrdfRobotPreview(preview))
+    return null;
+  const robotVisuals = asArray(preview.expected_robot_visual_links || preview.expectedRobotVisualLinks).map((link) => String(link || "").trim()).filter(Boolean);
+  const toolVisuals = asArray(preview.expected_tool_visual_links || preview.expectedToolVisualLinks).map((link) => String(link || "").trim()).filter(Boolean);
+  return {
+    scene_id: String(json?.scene?.id || json?.scene_id || "").trim(),
+    sceneId: String(json?.scene?.id || json?.scene_id || "").trim(),
+    robot_visuals: robotVisuals,
+    robotVisuals,
+    tool_visuals: toolVisuals,
+    toolVisuals,
+    table_visuals: ["workbench_support_surface"],
+    tableVisuals: ["workbench_support_surface"],
+    camera_visuals: ["configured_camera"],
+    cameraVisuals: ["configured_camera"]
+  };
+}
+function countBy(values) {
+  const counts = {};
+  for (const value of values || [])
+    counts[value] = (counts[value] || 0) + 1;
+  return counts;
+}
+function expandedUrdfVisualReadinessDiagnostics() {
+  const required = expandedUrdfExpectedVisualSet();
+  if (!required)
+    return null;
+  const urdfVisualLinks = asArray(state.robotUrdfPreviewDiagnostics?.robot_visual_wrapper_world_matrices).map((visual) => String(visual?.link_name || visual?.linkName || "").trim()).filter(Boolean);
+  const urdfCounts = countBy(urdfVisualLinks);
+  const sceneDiagnostics = collectRenderedMeshDiagnostics();
+  const categoryCounts = countBy(sceneDiagnostics.map((item) => readinessCategoryForItem(item)).filter(Boolean));
+  const missingRobot = [];
+  const missingTool = [];
+  const duplicate = [];
+  const failed = [];
+  for (const link of required.robot_visuals) {
+    const count = urdfCounts[link] || 0;
+    if (count === 0)
+      missingRobot.push(link);
+    if (count > 1)
+      duplicate.push(link);
+  }
+  for (const link of required.tool_visuals) {
+    const count = urdfCounts[link] || 0;
+    if (count === 0)
+      missingTool.push(link);
+    if (count > 1)
+      duplicate.push(link);
+  }
+  for (const category of required.table_visuals.concat(required.camera_visuals)) {
+    const count = categoryCounts[category] || 0;
+    if (count === 0)
+      failed.push(category);
+    if (count > 1)
+      duplicate.push(category);
+  }
+  for (const entry of sceneDiagnostics) {
+    if (isRequiredMeshFailureStatus({ item: entry, renderInfo: { render_status: entry.render_status } }))
+      failed.push(entry.link_name || entry.id || entry.category);
+  }
+  if (Number(state.robotUrdfPreviewDiagnostics?.robot_failed_visual_count || 0) > 0)
+    failed.push("expanded_urdf_loader");
+  const missing = missingRobot.concat(missingTool);
+  return {
+    expanded_urdf_expected_visual_set: required,
+    expandedUrdfExpectedVisualSet: required,
+    expanded_urdf_required_visual_counts: { ...urdfCounts, ...categoryCounts },
+    expandedUrdfRequiredVisualCounts: { ...urdfCounts, ...categoryCounts },
+    missing_required_robot_visuals: missingRobot,
+    missingRequiredRobotVisuals: missingRobot,
+    missing_required_tool_visuals: missingTool,
+    missingRequiredToolVisuals: missingTool,
+    missing_required_visuals: missing,
+    missingRequiredVisuals: missing,
+    duplicate_required_visuals: duplicate,
+    duplicateRequiredVisuals: duplicate,
+    failed_required_visuals: Array.from(new Set(failed)),
+    failedRequiredVisuals: Array.from(new Set(failed)),
+    required_visual_ready: missing.length === 0 && duplicate.length === 0 && failed.length === 0,
+    requiredVisualReady: missing.length === 0 && duplicate.length === 0 && failed.length === 0
+  };
+}
+function failIfExpandedUrdfExpectedVisualSetInvalid() {
+  const lifecycle = String(state.robotUrdfPreviewDiagnostics?.robot_preview_lifecycle_state || state.robotUrdfPreviewDiagnostics?.robotPreviewLifecycleState || "");
+  if (expandedUrdfExpectedVisualSet() && lifecycle !== "ready" && lifecycle !== "failed")
+    return false;
+  const diagnostics = expandedUrdfVisualReadinessDiagnostics();
+  if (!diagnostics || diagnostics.required_visual_ready)
+    return false;
+  const requiredCategory = diagnostics.missing_required_tool_visuals?.length ? "attached_tool_gripper" : "robot_arm";
+  emitWeb3dReadinessState("scene_failed", {
+    required_category: requiredCategory,
+    reason: "expanded URDF expected robot/tool visuals are missing, failed, or duplicated",
+    ...diagnostics
+  });
+  return true;
+}
 function collectRenderedMeshDiagnostics() {
   if (!THREE?.Vector3)
     return [];
   state.three?.scene?.updateMatrixWorld?.(true);
   const diagnostics = [];
   for (const rendered of state.objects || []) {
-    const item2 = rendered?.item || {};
-    const category = meshContractCategoryOf(item2);
-    if (!rendered?.object3d || !isGeneratedUrdfItem(item2) && !["table", "environment", "camera", "tool", "robot"].includes(category))
+    const item = rendered?.item || {};
+    const category = meshContractCategoryOf(item);
+    if (!rendered?.object3d || !isGeneratedUrdfItem(item) && !["table", "environment", "camera", "tool", "robot"].includes(category))
       continue;
     if (typeof rendered.object3d.updateMatrixWorld !== "function")
       continue;
@@ -38141,56 +38872,56 @@ function collectRenderedMeshDiagnostics() {
     rendered.object3d.getWorldQuaternion(worldQuaternion);
     const worldEuler = new THREE.Euler().setFromQuaternion(worldQuaternion, "XYZ");
     const inferredUpAxis = worldUpDiagnosticsForObject(rendered.object3d);
-    const expectedDimensions = expectedDimensionsOf(item2);
-    const meshLocal = meshLocalTransformOf(item2);
-    const renderStatus = rendered.renderInfo?.render_status || item2.renderInfo?.render_status || item2.mesh_status || "";
+    const expectedDimensions = expectedDimensionsOf(item);
+    const meshLocal = meshLocalTransformOf(item);
+    const renderStatus = rendered.renderInfo?.render_status || item.renderInfo?.render_status || item.mesh_status || "";
     diagnostics.push({
-      id: item2.id || "",
-      object_id: item2.id || item2.object_name || item2.name || "",
-      object_name: item2.object_name || item2.name || item2.display_name || item2.label || item2.id || "",
+      id: item.id || "",
+      object_id: item.id || item.object_name || item.name || "",
+      object_name: item.object_name || item.name || item.display_name || item.label || item.id || "",
       category,
-      link: item2.link || item2.object_name || item2.visual || "",
-      link_name: item2.link_name || item2.link || item2.object_name || "",
-      frame: item2.frame || item2.frame_id || item2.link || item2.link_name || "",
-      display_name: item2.display_name || item2.label || item2.name || item2.object_name || item2.link || item2.id || "",
-      source_layer: item2.source_layer || "",
-      active_visual_source: item2.active_visual_source || "",
-      role: item2.role || "",
-      status: item2.status || "",
-      support_surface_display_type: supportSurfaceDisplayType(item2),
-      supportSurfaceDisplayType: supportSurfaceDisplayType(item2),
-      ...supportSurfaceMetadata(item2),
+      link: item.link || item.object_name || item.visual || "",
+      link_name: item.link_name || item.link || item.object_name || "",
+      frame: item.frame || item.frame_id || item.link || item.link_name || "",
+      display_name: item.display_name || item.label || item.name || item.object_name || item.link || item.id || "",
+      source_layer: item.source_layer || "",
+      active_visual_source: item.active_visual_source || "",
+      role: item.role || "",
+      status: item.status || "",
+      support_surface_display_type: supportSurfaceDisplayType(item),
+      supportSurfaceDisplayType: supportSurfaceDisplayType(item),
+      ...supportSurfaceMetadata(item),
       render_status: renderStatus,
       renderStatus,
       mesh_loaded: renderStatus === "mesh_loaded",
       meshLoaded: renderStatus === "mesh_loaded",
       fallback_visible: Boolean(rendered.fallback?.visible),
       fallbackVisible: Boolean(rendered.fallback?.visible),
-      exclude_from_fit_bounds: Boolean(item2.exclude_from_fit_bounds || rendered.object3d.userData?.exclude_from_fit_bounds),
-      excludeFromFitBounds: Boolean(item2.exclude_from_fit_bounds || rendered.object3d.userData?.exclude_from_fit_bounds),
-      debug_overlay: Boolean(isDebugOverlayItem(item2)),
-      debugOverlay: Boolean(isDebugOverlayItem(item2)),
-      visual_bounds_status: item2.visual_bounds_status || "",
-      visualBoundsStatus: item2.visual_bounds_status || "",
-      workcell_web_render_pose_mode: effectiveWorkcellWebRenderPoseMode(item2),
-      workcellWebRenderPoseMode: effectiveWorkcellWebRenderPoseMode(item2),
-      exported_workcell_web_render_pose_mode: item2.workcell_web_render_pose_mode || "",
-      exportedWorkcellWebRenderPoseMode: item2.workcell_web_render_pose_mode || "",
-      baked_world_visual_pose: item2.baked_world_visual_pose || null,
-      bakedWorldVisualPose: item2.baked_world_visual_pose || null,
-      expected_visual_pose: item2.expected_visual_pose || null,
-      expectedVisualPose: item2.expected_visual_pose || null,
-      final_transform: item2.final_transform || null,
-      finalTransform: item2.final_transform || null,
-      world_from_visual: item2.world_from_visual || null,
-      worldFromVisual: item2.world_from_visual || null,
-      mesh_unit_correction: item2.mesh_unit_correction || null,
-      meshUnitCorrection: item2.mesh_unit_correction || null,
+      exclude_from_fit_bounds: Boolean(item.exclude_from_fit_bounds || rendered.object3d.userData?.exclude_from_fit_bounds),
+      excludeFromFitBounds: Boolean(item.exclude_from_fit_bounds || rendered.object3d.userData?.exclude_from_fit_bounds),
+      debug_overlay: Boolean(isDebugOverlayItem(item)),
+      debugOverlay: Boolean(isDebugOverlayItem(item)),
+      visual_bounds_status: item.visual_bounds_status || "",
+      visualBoundsStatus: item.visual_bounds_status || "",
+      workcell_web_render_pose_mode: effectiveWorkcellWebRenderPoseMode(item),
+      workcellWebRenderPoseMode: effectiveWorkcellWebRenderPoseMode(item),
+      exported_workcell_web_render_pose_mode: item.workcell_web_render_pose_mode || "",
+      exportedWorkcellWebRenderPoseMode: item.workcell_web_render_pose_mode || "",
+      baked_world_visual_pose: item.baked_world_visual_pose || null,
+      bakedWorldVisualPose: item.baked_world_visual_pose || null,
+      expected_visual_pose: item.expected_visual_pose || null,
+      expectedVisualPose: item.expected_visual_pose || null,
+      final_transform: item.final_transform || null,
+      finalTransform: item.final_transform || null,
+      world_from_visual: item.world_from_visual || null,
+      worldFromVisual: item.world_from_visual || null,
+      mesh_unit_correction: item.mesh_unit_correction || null,
+      meshUnitCorrection: item.mesh_unit_correction || null,
       expected_dimensions_m: expectedDimensions ? vector3ToDiagnostics2(expectedDimensions) : null,
       expectedDimensionsM: expectedDimensions ? vector3ToDiagnostics2(expectedDimensions) : null,
       mesh_local_scale: vector3ToDiagnostics2(meshLocal.scale),
       meshLocalScale: vector3ToDiagnostics2(meshLocal.scale),
-      mesh_uri: rendered.renderInfo?.mesh_uri || displayMeshUri(item2),
+      mesh_uri: rendered.renderInfo?.mesh_uri || displayMeshUri(item),
       fallback_reason: rendered.renderInfo?.fallback_reason || "",
       linkFrameWorldPosition: vector3ToDiagnostics2(linkFrameWorldPosition),
       link_frame_world_position: vector3ToDiagnostics2(linkFrameWorldPosition),
@@ -38237,48 +38968,51 @@ function updateViewerStatus() {
   const renderedMeshDiagnostics = collectRenderedMeshDiagnostics();
   const frameDiagnostics = collectFrameDiagnostics();
   const renderedObjectStatuses = statusCountedRenderables().map((obj) => {
-    const item2 = obj?.item || {};
-    const renderStatus = obj?.renderInfo?.render_status || item2?.renderInfo?.render_status || item2?.mesh_status || "";
+    const item = obj?.item || {};
+    const renderStatus = obj?.renderInfo?.render_status || item?.renderInfo?.render_status || item?.mesh_status || "";
     return {
-      id: item2.id || "",
-      display_name: item2.display_name || item2.label || item2.name || item2.object_name || item2.link || item2.id || "",
-      category: meshContractCategoryOf(item2),
+      id: item.id || "",
+      display_name: item.display_name || item.label || item.name || item.object_name || item.link || item.id || "",
+      category: meshContractCategoryOf(item),
       render_status: renderStatus,
       renderStatus,
       mesh_loaded: renderStatus === "mesh_loaded",
       meshLoaded: renderStatus === "mesh_loaded",
       fallback_visible: Boolean(obj?.fallback?.visible),
       fallbackVisible: Boolean(obj?.fallback?.visible),
-      mesh_uri: obj?.renderInfo?.mesh_uri || displayMeshUri(item2),
+      mesh_uri: obj?.renderInfo?.mesh_uri || displayMeshUri(item),
       fallback_reason: obj?.renderInfo?.fallback_reason || "",
-      visual_bounds_status: item2.visual_bounds_status || "",
-      visualBoundsStatus: item2.visual_bounds_status || "",
-      support_surface_kind: item2.support_surface_kind || "",
-      supportSurfaceKind: item2.supportSurfaceKind || item2.support_surface_kind || "",
-      support_surface_display_type: supportSurfaceDisplayType(item2),
-      supportSurfaceDisplayType: supportSurfaceDisplayType(item2),
-      top_surface_z_m: item2.top_surface_z_m ?? null,
-      topSurfaceZM: item2.topSurfaceZM ?? item2.top_surface_z_m ?? null,
-      support_surface_height_m: item2.support_surface_height_m ?? null,
-      supportSurfaceHeightM: item2.supportSurfaceHeightM ?? item2.support_surface_height_m ?? null,
-      expected_support_footprint_m: item2.expected_support_footprint_m || null,
-      expectedSupportFootprintM: item2.expectedSupportFootprintM || item2.expected_support_footprint_m || null
+      visual_bounds_status: item.visual_bounds_status || "",
+      visualBoundsStatus: item.visual_bounds_status || "",
+      support_surface_kind: item.support_surface_kind || "",
+      supportSurfaceKind: item.supportSurfaceKind || item.support_surface_kind || "",
+      support_surface_display_type: supportSurfaceDisplayType(item),
+      supportSurfaceDisplayType: supportSurfaceDisplayType(item),
+      top_surface_z_m: item.top_surface_z_m ?? null,
+      topSurfaceZM: item.topSurfaceZM ?? item.top_surface_z_m ?? null,
+      support_surface_height_m: item.support_surface_height_m ?? null,
+      supportSurfaceHeightM: item.supportSurfaceHeightM ?? item.support_surface_height_m ?? null,
+      expected_support_footprint_m: item.expected_support_footprint_m || null,
+      expectedSupportFootprintM: item.expectedSupportFootprintM || item.expected_support_footprint_m || null
     };
   });
   const assemblyRenderDiagnostics = collectAssemblyRenderDiagnostics();
+  const expandedUrdfVisualDiagnostics = expandedUrdfVisualReadinessDiagnostics() || {};
   window.__WORKCELL_VIEWER_STATUS__ = {
-    viewer_boot_state: "ready",
-    viewerBootState: "ready",
-    failed_stage: "",
-    failedStage: "",
-    fatal_error: "",
-    fatalError: "",
+    viewer_boot_state: state.web3dReadiness?.state || "booting",
+    viewerBootState: state.web3dReadiness?.state || "booting",
+    web3d_readiness_state: state.web3dReadiness?.state || "booting",
+    web3dReadinessState: state.web3dReadiness?.state || "booting",
+    failed_stage: state.web3dReadiness?.state === "scene_failed" ? "scene_failed" : "",
+    failedStage: state.web3dReadiness?.state === "scene_failed" ? "scene_failed" : "",
+    fatal_error: state.web3dReadiness?.failure?.reason || "",
+    fatalError: state.web3dReadiness?.failure?.reason || "",
     fatal_stack: "",
     fatalStack: "",
     source_web_scene_file: state.sourceWebSceneFile || "",
     sourceWebSceneFile: state.sourceWebSceneFile || "",
-    scene_json_loaded: Boolean(state.sceneJson),
-    sceneJsonLoaded: Boolean(state.sceneJson),
+    scene_json_loaded: Boolean(state.sceneJsonLoaded),
+    sceneJsonLoaded: Boolean(state.sceneJsonLoaded),
     scene_name: summary.sceneName,
     sceneName: summary.sceneName,
     renderable_count: summary.renderableCount,
@@ -38314,7 +39048,19 @@ function updateViewerStatus() {
     robot_hierarchy_missing_parents: Array.from(new Set((state.robotAssemblyDiagnostics || []).flatMap((d) => d.robot_hierarchy_missing_parents || []))),
     robot_hierarchy_mesh_count: (state.robotAssemblyDiagnostics || []).reduce((total, d) => total + Number(d.robot_hierarchy_mesh_count || 0), 0),
     robotHierarchyMeshCount: (state.robotAssemblyDiagnostics || []).reduce((total, d) => total + Number(d.robot_hierarchy_mesh_count || 0), 0),
-    ...assemblyRenderDiagnostics
+    ...assemblyRenderDiagnostics,
+    ...expandedUrdfVisualDiagnostics,
+    required_physical_categories: state.web3dReadiness?.required || {},
+    requiredPhysicalCategories: state.web3dReadiness?.required || {},
+    pending_required_loads: Array.from(state.web3dReadiness?.pending || []),
+    pendingRequiredLoads: Array.from(state.web3dReadiness?.pending || []),
+    ...structuredWeb3dReadinessFields(state.web3dReadiness?.state || "booting"),
+    final_failed_url: state.web3dReadiness?.failure?.url || state.web3dReadiness?.failure?.final_failed_url || "",
+    finalFailedUrl: state.web3dReadiness?.failure?.url || state.web3dReadiness?.failure?.finalFailedUrl || "",
+    final_failed_link: state.web3dReadiness?.failure?.link || state.web3dReadiness?.failure?.link_name || "",
+    finalFailedLink: state.web3dReadiness?.failure?.link || state.web3dReadiness?.failure?.linkName || "",
+    readiness_failure: state.web3dReadiness?.failure || null,
+    readinessFailure: state.web3dReadiness?.failure || null
   };
   return window.__WORKCELL_VIEWER_STATUS__;
 }
@@ -38344,9 +39090,28 @@ function pushEditorEvent(type, payload = {}) {
   if (state.editorEvents.length > 100)
     state.editorEvents.splice(0, state.editorEvents.length - 100);
 }
+function currentSelectionDiagnostics() {
+  const id = String(state.selected || "");
+  const rendered = renderedById(id);
+  const item = rendered?.item || null;
+  return {
+    sceneId: sceneId(),
+    selectedItemId: id,
+    renderIdentity: id,
+    selectedItemType: rendered ? itemType(item) : "",
+    selectable: Boolean(item && item.selectable !== false && !isDiagnosticOnlyItem(item) && !isOverlayPolicyItem(item)),
+    editable: Boolean(item && canEditItem(item)),
+    locked: Boolean(item?.locked),
+    sourceLayer: String(item?.source_layer || ""),
+    activeVisualSource: String(item?.active_visual_source || ""),
+    diagnosticOnly: Boolean(item && isDiagnosticOnlyItem(item)),
+    helperOrOverlay: Boolean(item && isOverlayPolicyItem(item)),
+    objectPresent: Boolean(rendered)
+  };
+}
 function editorState() {
   const rendered = renderedById(state.selected);
-  return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || "", selectedItemType: rendered ? itemType(rendered.item) : "", selectedEditable: Boolean(rendered && rendered.item && canEditItem(rendered["item"])), dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, error: state.editorError || "" };
+  return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || "", selectedItemType: rendered ? itemType(rendered.item) : "", selectedEditable: Boolean(rendered && rendered.item && canEditItem(rendered["item"])), selectionDiagnostics: currentSelectionDiagnostics(), dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, error: state.editorError || "" };
 }
 function emitDirtyChanged() {
   pushEditorEvent("dirty_changed", { dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0 });
@@ -38359,8 +39124,15 @@ function showError(message) {
   el.error.hidden = false;
   window.__WORKCELL_VIEWER_STATUS__ = {
     ...window.__WORKCELL_VIEWER_STATUS__ || {},
-    viewer_boot_state: "failed",
-    viewerBootState: "failed",
+    readiness_contract_version: READINESS_CONTRACT_VERSION,
+    readinessContractVersion: READINESS_CONTRACT_VERSION,
+    lifecycle_state: "scene_failed",
+    lifecycleState: "scene_failed",
+    terminal: true,
+    viewer_boot_state: "scene_failed",
+    viewerBootState: "scene_failed",
+    web3d_readiness_state: "scene_failed",
+    web3dReadinessState: "scene_failed",
     failed_stage: "viewer_runtime",
     failedStage: "viewer_runtime",
     fatal_error: text,
@@ -38387,11 +39159,11 @@ function vector3(value, fallback = [0, 0, 0]) {
   const arr = Array.isArray(value) ? value : fallback;
   return new THREE.Vector3(Number(arr[0] || 0), Number(arr[1] || 0), Number(arr[2] || 0));
 }
-function isGeneratedUrdfItem(item2) {
-  const identity = viewerGroupIdentity(item2);
-  const source = String(item2?.source || item2?.source_kind || item2?.source_layer || item2?.active_visual_source || "").toLowerCase();
+function isGeneratedUrdfItem(item) {
+  const identity = viewerGroupIdentity(item);
+  const source = String(item?.source || item?.source_kind || item?.source_layer || item?.active_visual_source || "").toLowerCase();
   return Boolean(
-    item2?.source === "urdf_flattened" || source.includes("urdf") || isGeneratedPreviewIdentity(item2) && /\b(link|visual|robot|tool|gripper|urdf|moveit)\b/.test(identity) || String(item2?.baked_world_visual_transform_source || item2?.transform_source || "").toLowerCase().includes("urdf")
+    item?.source === "urdf_flattened" || source.includes("urdf") || isGeneratedPreviewIdentity(item) && /\b(link|visual|robot|tool|gripper|urdf|moveit)\b/.test(identity) || String(item?.baked_world_visual_transform_source || item?.transform_source || "").toLowerCase().includes("urdf")
   );
 }
 function poseBlockOf(source, fallback = {}) {
@@ -38406,11 +39178,11 @@ function hasFinitePoseBlock(source) {
   const pose = poseBlockOf(source);
   return finiteVector(pose.xyz) && finiteVector(pose.rpy);
 }
-function bakedVisibleWorldPoseSource(item2) {
-  return item2?.baked_world_visual_pose || item2?.expected_visual_pose || item2?.final_transform || item2?.world_from_visual || null;
+function bakedVisibleWorldPoseSource(item) {
+  return item?.baked_world_visual_pose || item?.expected_visual_pose || item?.final_transform || item?.world_from_visual || null;
 }
-function hasMeshBackedVisualContract(item2) {
-  return Boolean(displayMeshUri(item2) || item2?.mesh_loaded || item2?.meshLoaded || item2?.mesh_status === "loaded" || item2?.renderInfo?.render_status === "mesh_loaded");
+function hasMeshBackedVisualContract(item) {
+  return Boolean(displayMeshUri(item) || item?.mesh_loaded || item?.meshLoaded || item?.mesh_status === "loaded" || item?.renderInfo?.render_status === "mesh_loaded");
 }
 function isExpandedUrdfRobotPreview(preview) {
   const mode = String(preview?.mode || "").trim();
@@ -38419,86 +39191,86 @@ function isExpandedUrdfRobotPreview(preview) {
 function robotPreviewSummaryMode(preview) {
   return isExpandedUrdfRobotPreview(preview) ? "Robot preview: expanded URDF loader" : preview?.mode || "mesh rows";
 }
-function isGeneratedUrdfMeshVisualItem(item2) {
-  if (!isGeneratedUrdfItem(item2))
+function isGeneratedUrdfMeshVisualItem(item) {
+  if (!isGeneratedUrdfItem(item))
     return false;
-  if (!hasMeshBackedVisualContract(item2))
+  if (!hasMeshBackedVisualContract(item))
     return false;
-  const identity = viewerGroupIdentity(item2);
+  const identity = viewerGroupIdentity(item);
   return Boolean(
-    item2?.visual !== void 0 || item2?.visual_name !== void 0 || item2?.visual_index !== void 0 || item2?.mesh_uri || item2?.package_uri || item2?.mesh_path || item2?.source_path || /\b(mesh|visual|link|robot|tool|gripper|camera|table|workbench)\b/.test(identity)
+    item?.visual !== void 0 || item?.visual_name !== void 0 || item?.visual_index !== void 0 || item?.mesh_uri || item?.package_uri || item?.mesh_path || item?.source_path || /\b(mesh|visual|link|robot|tool|gripper|camera|table|workbench)\b/.test(identity)
   );
 }
-function isRobotToolGeneratedUrdfMeshVisualItem(item2) {
-  return Boolean(isGeneratedUrdfMeshVisualItem(item2) && (isGeneratedRobotItem(item2) || isGeneratedToolOrGripperItem(item2)));
+function isRobotToolGeneratedUrdfMeshVisualItem(item) {
+  return Boolean(isGeneratedUrdfMeshVisualItem(item) && (isGeneratedRobotItem(item) || isGeneratedToolOrGripperItem(item)));
 }
-function itemAssemblyGroup(item2) {
-  return String(item2?.assembly_group || item2?.robot_instance_id || "").trim();
+function itemAssemblyGroup(item) {
+  return String(item?.assembly_group || item?.robot_instance_id || "").trim();
 }
-function isAssemblyCandidateItem(item2) {
-  if (!isGeneratedUrdfItem(item2))
+function isAssemblyCandidateItem(item) {
+  if (!isGeneratedUrdfItem(item))
     return false;
-  if (itemAssemblyGroup(item2))
+  if (itemAssemblyGroup(item))
     return true;
-  const link = String(item2?.link_name || item2?.link || item2?.frame || item2?.object_name || "");
-  const parent = String(item2?.parent_link || item2?.joint_parent_link || item2?.immediate_parent_link || "");
-  return Boolean(link && (parent || link === "base_link" || link === "base_link_inertia") && (isGeneratedRobotItem(item2) || isGeneratedToolOrGripperItem(item2)));
+  const link = String(item?.link_name || item?.link || item?.frame || item?.object_name || "");
+  const parent = String(item?.parent_link || item?.joint_parent_link || item?.immediate_parent_link || "");
+  return Boolean(link && (parent || link === "base_link" || link === "base_link_inertia") && (isGeneratedRobotItem(item) || isGeneratedToolOrGripperItem(item)));
 }
-function usesUrdfFkVisualWorldPose(item2) {
-  return Boolean(item2?.urdf_fk_verified_against_ros_tf === true && item2?.urdf_fk_source === "expanded_urdf_joint_tree" && hasFinitePoseBlock(item2?.urdf_fk_visual_world_pose));
+function usesUrdfFkVisualWorldPose(item) {
+  return Boolean(item?.urdf_fk_verified_against_ros_tf === true && item?.urdf_fk_source === "expanded_urdf_joint_tree" && hasFinitePoseBlock(item?.urdf_fk_visual_world_pose));
 }
-function usesAssembledUrdfHierarchy(item2) {
-  return Boolean(!usesUrdfFkVisualWorldPose(item2) && (item2?.robot_render_mode === "assembled_urdf_hierarchy" || item2?.workcell_web_render_pose_mode === "assembled_urdf_hierarchy" || itemAssemblyGroup(item2)));
+function usesAssembledUrdfHierarchy(item) {
+  return Boolean(!usesUrdfFkVisualWorldPose(item) && (item?.robot_render_mode === "assembled_urdf_hierarchy" || item?.workcell_web_render_pose_mode === "assembled_urdf_hierarchy" || itemAssemblyGroup(item)));
 }
-function usesBakedVisibleWorldPose(item2) {
-  if (usesAssembledUrdfHierarchy(item2))
+function usesBakedVisibleWorldPose(item) {
+  if (usesAssembledUrdfHierarchy(item))
     return false;
-  if (!hasFinitePoseBlock(bakedVisibleWorldPoseSource(item2)))
+  if (!hasFinitePoseBlock(bakedVisibleWorldPoseSource(item)))
     return false;
-  if (item2?.workcell_web_render_pose_mode === "baked_visible_world_pose")
+  if (item?.workcell_web_render_pose_mode === "baked_visible_world_pose")
     return true;
-  return isGeneratedUrdfMeshVisualItem(item2);
+  return isGeneratedUrdfMeshVisualItem(item);
 }
-function effectiveWorkcellWebRenderPoseMode(item2) {
-  return usesUrdfFkVisualWorldPose(item2) ? "urdf_fk_visual_world_pose" : usesAssembledUrdfHierarchy(item2) ? "assembled_urdf_hierarchy" : usesBakedVisibleWorldPose(item2) ? "baked_visible_world_pose" : item2?.workcell_web_render_pose_mode || "";
+function effectiveWorkcellWebRenderPoseMode(item) {
+  return usesUrdfFkVisualWorldPose(item) ? "urdf_fk_visual_world_pose" : usesAssembledUrdfHierarchy(item) ? "assembled_urdf_hierarchy" : usesBakedVisibleWorldPose(item) ? "baked_visible_world_pose" : item?.workcell_web_render_pose_mode || "";
 }
-function generatedUrdfFramePoseSource(item2) {
-  if (item2?.frame_world_pose)
-    return item2.frame_world_pose;
-  if (item2?.link_world_pose)
-    return item2.link_world_pose;
-  warnMissingGeneratedUrdfFramePose(item2);
+function generatedUrdfFramePoseSource(item) {
+  if (item?.frame_world_pose)
+    return item.frame_world_pose;
+  if (item?.link_world_pose)
+    return item.link_world_pose;
+  warnMissingGeneratedUrdfFramePose(item);
   return {};
 }
-function visualOriginOf(item2) {
-  return poseBlockOf(item2?.visual_origin || item2?.visual_local_transform || {});
+function visualOriginOf(item) {
+  return poseBlockOf(item?.visual_origin || item?.visual_local_transform || {});
 }
-function canonicalFinalPose(item2) {
-  if (isGeneratedUrdfItem(item2)) {
-    if (usesUrdfFkVisualWorldPose(item2))
-      return item2.urdf_fk_visual_world_pose || {};
-    if (usesBakedVisibleWorldPose(item2)) {
-      return item2.baked_world_visual_pose || item2.expected_visual_pose || item2.final_transform || item2.world_from_visual || {};
+function canonicalFinalPose(item) {
+  if (isGeneratedUrdfItem(item)) {
+    if (usesUrdfFkVisualWorldPose(item))
+      return item.urdf_fk_visual_world_pose || {};
+    if (usesBakedVisibleWorldPose(item)) {
+      return item.baked_world_visual_pose || item.expected_visual_pose || item.final_transform || item.world_from_visual || {};
     }
-    return generatedUrdfFramePoseSource(item2);
+    return generatedUrdfFramePoseSource(item);
   }
-  return item2.final_transform || item2.world_from_visual || item2.baked_world_visual_pose || item2.pose || item2.world_pose || {};
+  return item.final_transform || item.world_from_visual || item.baked_world_visual_pose || item.pose || item.world_pose || {};
 }
-function poseOf(item2) {
-  const pose = canonicalFinalPose(item2);
-  if (isGeneratedUrdfItem(item2))
+function poseOf(item) {
+  const pose = canonicalFinalPose(item);
+  if (isGeneratedUrdfItem(item))
     return poseBlockOf(pose);
-  const xyz = item2.final_transform || item2.world_from_visual || item2.baked_world_visual_pose ? pose.xyz || pose.position || pose.translation || (Array.isArray(pose) ? pose.slice(0, 3) : [0, 0, 0]) : item2.pose_xyz || pose.xyz || pose.position || pose.translation || (Array.isArray(pose) ? pose.slice(0, 3) : [0, 0, 0]);
-  const rpy = item2.final_transform || item2.world_from_visual || item2.baked_world_visual_pose ? pose.rpy || pose.rotation_rpy || (Array.isArray(pose) ? pose.slice(3, 6) : [0, 0, 0]) : item2.pose_rpy || pose.rpy || pose.rotation_rpy || (Array.isArray(pose) ? pose.slice(3, 6) : [0, 0, 0]);
+  const xyz = item.final_transform || item.world_from_visual || item.baked_world_visual_pose ? pose.xyz || pose.position || pose.translation || (Array.isArray(pose) ? pose.slice(0, 3) : [0, 0, 0]) : item.pose_xyz || pose.xyz || pose.position || pose.translation || (Array.isArray(pose) ? pose.slice(0, 3) : [0, 0, 0]);
+  const rpy = item.final_transform || item.world_from_visual || item.baked_world_visual_pose ? pose.rpy || pose.rotation_rpy || (Array.isArray(pose) ? pose.slice(3, 6) : [0, 0, 0]) : item.pose_rpy || pose.rpy || pose.rotation_rpy || (Array.isArray(pose) ? pose.slice(3, 6) : [0, 0, 0]);
   return { xyz: vector3(xyz), rpy: vector3(rpy) };
 }
-function scaleOf(item2) {
-  const scale = isGeneratedUrdfItem(item2) ? [1, 1, 1] : item2.scale || item2.mesh_scale || [1, 1, 1];
+function scaleOf(item) {
+  const scale = isGeneratedUrdfItem(item) ? [1, 1, 1] : item.scale || item.mesh_scale || [1, 1, 1];
   return vector3(scale, [1, 1, 1]);
 }
-function transformOf(item2) {
-  const pose = poseOf(item2);
-  const scale = scaleOf(item2);
+function transformOf(item) {
+  const pose = poseOf(item);
+  const scale = scaleOf(item);
   return {
     pose: { xyz: { x: pose.xyz.x, y: pose.xyz.y, z: pose.xyz.z }, rpy: { x: pose.rpy.x, y: pose.rpy.y, z: pose.rpy.z } },
     scale: { x: scale.x, y: scale.y, z: scale.z }
@@ -38519,14 +39291,14 @@ function meshLocalVector(value, fallback, fieldName, reasons) {
   });
   return new THREE.Vector3(out[0], out[1], out[2]);
 }
-function meshLocalTransformOf(item2) {
-  const source = item2?.mesh_local_transform;
+function meshLocalTransformOf(item) {
+  const source = item?.mesh_local_transform;
   const reasons = [];
   if (source !== void 0 && (!source || typeof source !== "object" || Array.isArray(source))) {
     reasons.push("mesh_local_transform must be an object");
   }
   const transform = source && typeof source === "object" && !Array.isArray(source) ? source : {};
-  const scaleSource = transform.scale || item2?.mesh_scale || item2?.scale || [1, 1, 1];
+  const scaleSource = transform.scale || item?.mesh_scale || item?.scale || [1, 1, 1];
   return {
     pose: {
       xyz: meshLocalVector(transform.xyz || transform.origin || transform.position, [0, 0, 0], "mesh_local_transform.xyz", reasons),
@@ -38558,35 +39330,43 @@ function rotationSnapRadians() {
   const v = Number(el.rotationSnap?.value || 0);
   return Number.isFinite(v) && v > 0 ? THREE.MathUtils.degToRad(v) : null;
 }
-function snapTransform(transform) {
+function snapTransform(transform, { translationAxes = ["x", "y", "z"], rotationAxes = ["x", "y", "z"] } = {}) {
   if (!el.snapToggle?.checked)
     return transform;
   const out = cloneTransform(transform);
   const t = translationSnapValue();
   if (t)
-    for (const axis of ["x", "y", "z"])
+    for (const axis of translationAxes)
       out.pose.xyz[axis] = Math.round(out.pose.xyz[axis] / t) * t;
   const r = rotationSnapRadians();
   if (r)
-    for (const axis of ["x", "y", "z"])
+    for (const axis of rotationAxes)
       out.pose.rpy[axis] = Math.round(out.pose.rpy[axis] / r) * r;
   return out;
 }
+function isFiniteTransform(transform) {
+  const values = [transform?.pose?.xyz?.x, transform?.pose?.xyz?.y, transform?.pose?.xyz?.z, transform?.pose?.rpy?.x, transform?.pose?.rpy?.y, transform?.pose?.rpy?.z, transform?.scale?.x, transform?.scale?.y, transform?.scale?.z];
+  return values.every((value) => Number.isFinite(Number(value)));
+}
 function applyTransformToObject(object, transform) {
+  if (!isFiniteTransform(transform))
+    return false;
   object.position.set(transform.pose.xyz.x, transform.pose.xyz.y, transform.pose.xyz.z);
   object.rotation.set(transform.pose.rpy.x, transform.pose.rpy.y, transform.pose.rpy.z, "XYZ");
   object.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
+  return true;
 }
-function markDirtyTransform(rendered, next, { pushHistory = true, oldTransform = null } = {}) {
+function markDirtyTransform(rendered, next, { pushHistory = true, oldTransform = null, snapOptions = void 0 } = {}) {
   if (!rendered || !canEditItem(rendered.item))
     return false;
   const previous = oldTransform || state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d);
-  const snapped = snapTransform(next);
+  const snapped = snapOptions === null ? cloneTransform(next) : snapTransform(next, snapOptions);
   if (pushHistory && !sameTransform(previous, snapped)) {
     state.undoStack.push({ itemId: rendered.item.id, before: cloneTransform(previous), after: cloneTransform(snapped) });
     state.redoStack = [];
   }
-  applyTransformToObject(rendered.object3d, snapped);
+  if (!applyTransformToObject(rendered.object3d, snapped))
+    return false;
   if (sameTransform(rendered.originalTransform, snapped))
     state.dirtyTransforms.delete(rendered.item.id);
   else
@@ -38615,17 +39395,17 @@ function finiteVector(value) {
 function positiveFiniteVector(value) {
   return finiteVector(value) && value.x > 0 && value.y > 0 && value.z > 0;
 }
-function rawPoseDiagnostics(item2) {
+function rawPoseDiagnostics(item) {
   return {
-    pose: item2?.pose,
-    world_pose: item2?.world_pose,
-    baked_world_visual_pose: item2?.baked_world_visual_pose,
-    expected_visual_pose: item2?.expected_visual_pose,
-    final_transform: item2?.final_transform,
-    world_from_visual: item2?.world_from_visual,
-    frame_world_pose: item2?.frame_world_pose,
-    link_world_pose: item2?.link_world_pose,
-    visual_origin: item2?.visual_origin
+    pose: item?.pose,
+    world_pose: item?.world_pose,
+    baked_world_visual_pose: item?.baked_world_visual_pose,
+    expected_visual_pose: item?.expected_visual_pose,
+    final_transform: item?.final_transform,
+    world_from_visual: item?.world_from_visual,
+    frame_world_pose: item?.frame_world_pose,
+    link_world_pose: item?.link_world_pose,
+    visual_origin: item?.visual_origin
   };
 }
 function viewerFinalPoseDiagnostics(pose, scale) {
@@ -38635,45 +39415,55 @@ function viewerFinalPoseDiagnostics(pose, scale) {
     scale: { x: scale?.x, y: scale?.y, z: scale?.z }
   };
 }
-function warnMissingGeneratedUrdfFramePose(item2) {
-  const key = `${item2?.id || itemLabel(item2 || {})}:missing_generated_urdf_frame_pose`;
+function warnMissingGeneratedUrdfFramePose(item) {
+  const key = `${item?.id || itemLabel(item || {})}:missing_generated_urdf_frame_pose`;
   state._generatedUrdfFramePoseWarnings = state._generatedUrdfFramePoseWarnings || /* @__PURE__ */ new Set();
   if (state._generatedUrdfFramePoseWarnings.has(key))
     return;
   state._generatedUrdfFramePoseWarnings.add(key);
-  const meshUri = displayMeshUri(item2);
-  appendViewerDiagnosticWarning(item2, "missing_generated_urdf_frame_pose", `generated URDF item lacks both frame_world_pose and link_world_pose; placing generated URDF link at identity and reporting legacy visual-world fields only for diagnostics (mesh_uri=${meshUri || "none"})`, {
+  const meshUri = displayMeshUri(item);
+  appendViewerDiagnosticWarning(item, "missing_generated_urdf_frame_pose", `generated URDF item lacks both frame_world_pose and link_world_pose; placing generated URDF link at identity and reporting legacy visual-world fields only for diagnostics (mesh_uri=${meshUri || "none"})`, {
     mesh_uri: meshUri,
-    legacy_fallback_pose: item2?.final_transform || item2?.world_from_visual || item2?.baked_world_visual_pose || item2?.pose || item2?.world_pose || null
+    legacy_fallback_pose: item?.final_transform || item?.world_from_visual || item?.baked_world_visual_pose || item?.pose || item?.world_pose || null
   });
 }
-function appendViewerDiagnosticWarning(item2, code, reason, extra = {}) {
-  const warning = {
-    source: "runtime_viewer",
-    code,
-    object_id: item2?.id || itemLabel(item2 || {}),
-    id: item2?.id || "",
-    link: item2?.link || item2?.object_name || item2?.visual || "",
-    object_name: item2?.object_name || item2?.link || itemLabel(item2 || {}),
-    parent_link: item2?.parent_link || "",
-    immediate_parent_link: item2?.immediate_parent_link || "",
-    pose: item2?.pose,
-    world_pose: item2?.world_pose,
-    baked_world_visual_pose: item2?.baked_world_visual_pose,
-    visual_origin: item2?.visual_origin,
-    scale: item2?.scale,
-    mesh_scale: item2?.mesh_scale,
-    reason: reason || "viewer diagnostic warning",
-    message: `${code}: ${item2?.id || itemLabel(item2 || {})} (${item2?.link || item2?.object_name || itemLabel(item2 || {})}): ${reason || "viewer diagnostic warning"}`,
-    ...extra
-  };
+function diagnosticResourceKey(item, meshUri = "") {
+  return String(meshUri || item?.mesh_uri || item?.original_mesh_uri || item?.package_uri || item?.source_path || item?.mesh_path || item?.id || itemLabel(item || {}) || "").trim();
+}
+function appendDedupedRuntimeDiagnostic(warning) {
+  const key = [sceneId(), warning?.code || warning?.source || "diagnostic", diagnosticResourceKey(warning, warning?.mesh_uri || warning?.original_mesh_uri)].join("\n");
+  if (state.diagnosticKeys.has(key))
+    return null;
+  state.diagnosticKeys.add(key);
   state.runtimeWarnings.push(warning);
   refreshWarnings();
   return warning;
 }
-function validateRenderableTransform(item2) {
-  const pose = poseOf(item2);
-  const scale = scaleOf(item2);
+function appendViewerDiagnosticWarning(item, code, reason, extra = {}) {
+  const warning = {
+    source: "runtime_viewer",
+    code,
+    object_id: item?.id || itemLabel(item || {}),
+    id: item?.id || "",
+    link: item?.link || item?.object_name || item?.visual || "",
+    object_name: item?.object_name || item?.link || itemLabel(item || {}),
+    parent_link: item?.parent_link || "",
+    immediate_parent_link: item?.immediate_parent_link || "",
+    pose: item?.pose,
+    world_pose: item?.world_pose,
+    baked_world_visual_pose: item?.baked_world_visual_pose,
+    visual_origin: item?.visual_origin,
+    scale: item?.scale,
+    mesh_scale: item?.mesh_scale,
+    reason: reason || "viewer diagnostic warning",
+    message: `${code}: ${item?.id || itemLabel(item || {})} (${item?.link || item?.object_name || itemLabel(item || {})}): ${reason || "viewer diagnostic warning"}`,
+    ...extra
+  };
+  return appendDedupedRuntimeDiagnostic(warning);
+}
+function validateRenderableTransform(item) {
+  const pose = poseOf(item);
+  const scale = scaleOf(item);
   const finalPose = viewerFinalPoseDiagnostics(pose, scale);
   const reasons = [];
   if (!finiteVector(pose.xyz))
@@ -38685,10 +39475,10 @@ function validateRenderableTransform(item2) {
   else if (!positiveFiniteVector(scale))
     reasons.push("scale must be positive on every axis");
   if (reasons.length) {
-    appendViewerDiagnosticWarning(item2, "invalid_renderable_transform", reasons.join("; "), {
+    appendViewerDiagnosticWarning(item, "invalid_renderable_transform", reasons.join("; "), {
       final_pose: finalPose,
       final_scale: finalPose.scale,
-      raw_pose_fields: rawPoseDiagnostics(item2),
+      raw_pose_fields: rawPoseDiagnostics(item),
       fallback_or_skip_reason: "renderable skipped before applyPose because transform validation failed"
     });
     return { valid: false, pose, scale, reason: reasons.join("; ") };
@@ -38698,46 +39488,46 @@ function validateRenderableTransform(item2) {
 function truthyFlag(value) {
   return value === true || String(value).toLowerCase() === "true";
 }
-function itemRequiresMeshBackedVisual(item2) {
-  const explicit = item2?.mesh_load_required || item2?.requires_mesh || item2?.mesh_required || item2?.required_mesh || item2?.mesh_backed_required || item2?.requires_mesh_backed_visual;
+function itemRequiresMeshBackedVisual(item) {
+  const explicit = item?.mesh_load_required || item?.requires_mesh || item?.mesh_required || item?.required_mesh || item?.mesh_backed_required || item?.requires_mesh_backed_visual;
   if (truthyFlag(explicit))
     return true;
-  const source = String(item2?.source_kind || item2?.source_layer || item2?.active_visual_source || "").toLowerCase();
-  const role = String(item2?.role || item2?.category || item2?.type || "").toLowerCase();
-  const hasMeshContract = Boolean(displayMeshUri(item2) || item2?.original_mesh_uri || item2?.mesh_path || item2?.source_path || item2?.package_uri);
+  const source = String(item?.source_kind || item?.source_layer || item?.active_visual_source || "").toLowerCase();
+  const role = String(item?.role || item?.category || item?.type || "").toLowerCase();
+  const hasMeshContract = Boolean(displayMeshUri(item) || item?.original_mesh_uri || item?.mesh_path || item?.source_path || item?.package_uri);
   return hasMeshContract && (source.includes("generated") || role.includes("robot") || role.includes("tool") || role.includes("gripper"));
 }
-function warnRequiredMeshFallback(item2, meshUri, reason, extra = {}) {
-  const transform = transformOf(item2);
-  const itemId = item2?.id || itemLabel(item2 || {});
-  const url = meshUri || displayMeshUri(item2);
-  appendViewerDiagnosticWarning(item2, "required_mesh_failed", `Required mesh failed: ${itemId} ${url}`, {
+function warnRequiredMeshFallback(item, meshUri, reason, extra = {}) {
+  const transform = transformOf(item);
+  const itemId = item?.id || itemLabel(item || {});
+  const url = meshUri || displayMeshUri(item);
+  appendViewerDiagnosticWarning(item, "required_mesh_failed", `Required mesh failed: ${itemId} ${url}`, {
     mesh_uri: url,
-    original_mesh_uri: item2?.original_mesh_uri || item2?.package_uri || item2?.source_path || item2?.mesh_path || "",
+    original_mesh_uri: item?.original_mesh_uri || item?.package_uri || item?.source_path || item?.mesh_path || "",
     final_pose: transform.pose,
     final_scale: transform.scale,
-    raw_pose_fields: rawPoseDiagnostics(item2),
+    raw_pose_fields: rawPoseDiagnostics(item),
     fallback_or_skip_reason: reason || "required mesh failed; normal primitive fallback suppressed",
     mesh_load_error: reason || "",
     message: `Required mesh failed: ${itemId} ${url}`,
     ...extra
   });
 }
-function trackMeshLoadAttempt(item2, status, meshUrl, error = "") {
-  item2.mesh_load_required = truthyFlag(item2?.mesh_load_required) || itemRequiresMeshBackedVisual(item2);
-  item2.mesh_load_url = meshUrl || displayMeshUri(item2);
-  item2.mesh_load_status = status;
+function trackMeshLoadAttempt(item, status, meshUrl, error = "") {
+  item.mesh_load_required = truthyFlag(item?.mesh_load_required) || itemRequiresMeshBackedVisual(item);
+  item.mesh_load_url = meshUrl || displayMeshUri(item);
+  item.mesh_load_status = status;
   if (error)
-    item2.mesh_load_error = error;
+    item.mesh_load_error = error;
 }
-function logRequiredMeshFailure(item2, meshUrl, error) {
-  if (!itemRequiresMeshBackedVisual(item2))
+function logRequiredMeshFailure(item, meshUrl, error) {
+  if (!itemRequiresMeshBackedVisual(item))
     return;
-  console.error("Required mesh failed:", item2?.id || itemLabel(item2 || {}), meshUrl || displayMeshUri(item2), error || "mesh load failed");
+  console.error("Required mesh failed:", item?.id || itemLabel(item || {}), meshUrl || displayMeshUri(item), error || "mesh load failed");
 }
 function failedMeshDebugMaterial() {
   return new THREE.MeshBasicMaterial({
-    color: 16722902,
+    color: PRODUCT_VIEW_LIGHT_PALETTE.errorAccent,
     wireframe: true,
     transparent: true,
     opacity: 0.82,
@@ -38746,11 +39536,13 @@ function failedMeshDebugMaterial() {
   });
 }
 function failedMeshDebugEdgeMaterial() {
-  return new THREE.LineBasicMaterial({ color: 16722902, transparent: true, opacity: 1 });
+  return new THREE.LineBasicMaterial({ color: PRODUCT_VIEW_LIGHT_PALETTE.errorAccent, transparent: true, opacity: 1 });
 }
-function styleFailedMeshDebugFallback(fallback, item2, reason) {
+function styleFailedMeshDebugFallback(fallback, item, reason) {
+  if (!fallback)
+    return;
   fallback.visible = true;
-  fallback.name = `${item2.id || itemLabel(item2)}_FAILED_REQUIRED_MESH_DEBUG_FALLBACK`;
+  fallback.name = `${item.id || itemLabel(item)}_FAILED_REQUIRED_MESH_DEBUG_FALLBACK`;
   fallback.traverse?.((child) => {
     if (child.isMesh)
       child.material = failedMeshDebugMaterial();
@@ -38759,16 +39551,16 @@ function styleFailedMeshDebugFallback(fallback, item2, reason) {
     child.userData.render_status = "required_mesh_failed_debug_fallback";
     child.userData.renderInfo = {
       render_status: "required_mesh_failed_debug_fallback",
-      mesh_uri: displayMeshUri(item2),
+      mesh_uri: displayMeshUri(item),
       fallback_reason: reason || "required mesh failed; debug fallback is not product geometry"
     };
   });
 }
-function primitiveOf(item2) {
-  return item2.primitive || item2.primitive_details || item2.dimensions || item2.geometry || item2.primitive_geometry || null;
+function primitiveOf(item) {
+  return item.primitive || item.primitive_details || item.dimensions || item.geometry || item.primitive_geometry || null;
 }
-function displayMeshUri(item2) {
-  return item2.mesh_uri || item2.package_uri || item2.mesh_path || item2.source_path || "";
+function displayMeshUri(item) {
+  return item.mesh_uri || item.package_uri || item.mesh_path || item.source_path || "";
 }
 function setRenderInfo(rendered, renderStatus, meshUri, fallbackReason) {
   if (!rendered)
@@ -38809,35 +39601,34 @@ function meshStatusLabel(rendered) {
     return "mesh error";
   return String(status || "unknown").replace(/_/g, " ");
 }
-function appendRuntimeWarning(item2, meshUri, reason, code = "mesh_primitive_fallback", extra = {}) {
-  state.runtimeWarnings.push({
+function appendRuntimeWarning(item, meshUri, reason, code = "mesh_primitive_fallback", extra = {}) {
+  return appendDedupedRuntimeDiagnostic({
     source: "runtime_mesh",
     code,
-    object_id: item2?.id || itemLabel(item2 || {}),
-    link: item2?.link || item2?.object_name || item2?.visual || "",
-    object_name: item2?.object_name || item2?.link || itemLabel(item2 || {}),
-    original_mesh_uri: item2?.original_mesh_uri || item2?.package_uri || item2?.source_path || item2?.mesh_path || meshUri || "",
+    object_id: item?.id || itemLabel(item || {}),
+    link: item?.link || item?.object_name || item?.visual || "",
+    object_name: item?.object_name || item?.link || itemLabel(item || {}),
+    original_mesh_uri: item?.original_mesh_uri || item?.package_uri || item?.source_path || item?.mesh_path || meshUri || "",
     mesh_uri: meshUri || "",
-    parent_link: item2?.parent_link || "",
-    immediate_parent_link: item2?.immediate_parent_link || "",
-    pose: item2?.pose,
-    world_pose: item2?.world_pose,
-    baked_world_visual_pose: item2?.baked_world_visual_pose,
-    visual_origin: item2?.visual_origin,
-    final_pose: transformOf(item2).pose,
-    final_scale: transformOf(item2).scale,
-    scale: item2?.scale,
-    mesh_scale: item2?.mesh_scale,
+    parent_link: item?.parent_link || "",
+    immediate_parent_link: item?.immediate_parent_link || "",
+    pose: item?.pose,
+    world_pose: item?.world_pose,
+    baked_world_visual_pose: item?.baked_world_visual_pose,
+    visual_origin: item?.visual_origin,
+    final_pose: transformOf(item).pose,
+    final_scale: transformOf(item).scale,
+    scale: item?.scale,
+    mesh_scale: item?.mesh_scale,
     fallback_or_skip_reason: reason || "mesh loading skipped",
     reason: reason || "mesh loading skipped",
-    message: `${code}: Primitive fallback for ${item2?.id || itemLabel(item2 || {})} (${item2?.link || item2?.object_name || itemLabel(item2 || {})}): ${reason || "mesh loading skipped"}`,
+    message: `${code}: Primitive fallback for ${item?.id || itemLabel(item || {})} (${item?.link || item?.object_name || itemLabel(item || {})}): ${reason || "mesh loading skipped"}`,
     ...extra
   });
-  refreshWarnings();
 }
-function meshUriDiagnostic(item2) {
-  const raw = item2?.mesh_uri;
-  const requested = displayMeshUri(item2);
+function meshUriDiagnostic(item) {
+  const raw = item?.mesh_uri;
+  const requested = displayMeshUri(item);
   if (typeof raw !== "string" || !raw.trim()) {
     if (requested && String(requested).startsWith("package://")) {
       return { uri: null, status: "unresolved_package_uri", reason: `package URI was not staged for browser loading: ${requested}` };
@@ -38862,7 +39653,7 @@ function meshUriDiagnostic(item2) {
     return null;
   })();
   if (stagedHttpUrl)
-    return meshUriDiagnostic({ ...item2, mesh_uri: stagedHttpUrl });
+    return stagedHttpUrl;
   if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("file://") || lower.startsWith("data:") || lower.startsWith("//") || uri.startsWith("/") || uri.startsWith("\\") || /^[a-zA-Z]:[\\/]/.test(uri) || /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(uri) || uri.includes("\\"))
     return { uri: null, status: "unsafe_path", reason: `unsafe mesh_uri rejected by viewer policy: ${uri}` };
   const pathOnly = uri.split(/[?#]/, 1)[0];
@@ -38875,10 +39666,10 @@ function meshUriDiagnostic(item2) {
   const ext = pathOnly.includes(".") ? pathOnly.slice(pathOnly.lastIndexOf(".") + 1).toLowerCase() : "";
   if (!["stl", "dae", "obj"].includes(ext))
     return { uri: null, status: "unsupported_format", reason: `unsupported mesh format .${ext || "unknown"} for ${uri}` };
-  const stagingStatus = String(item2?.mesh_staging_status || "").toLowerCase();
+  const stagingStatus = String(item?.mesh_staging_status || "").toLowerCase();
   if (stagingStatus && !["staged", "copied", "available", "loaded"].includes(stagingStatus)) {
     const status = stagingStatus === "unsupported_format" ? "unsupported_format" : stagingStatus === "unsafe_path" || stagingStatus === "unsafe_destination" || stagingStatus === "unsupported_scheme" ? "unsafe_path" : stagingStatus === "no_mesh_uri" ? "missing_file" : stagingStatus === "resolve_failed" ? "missing_file" : stagingStatus === "unresolved_package_uri" ? "unresolved_package_uri" : "missing_file";
-    return { uri: null, status, reason: item2?.mesh_resolve_warning || `mesh staging did not produce a loadable file (mesh_staging_status=${stagingStatus})` };
+    return { uri: null, status, reason: item?.mesh_resolve_warning || `mesh staging did not produce a loadable file (mesh_staging_status=${stagingStatus})` };
   }
   return { uri, status: "loaded", reason: "" };
 }
@@ -38931,121 +39722,127 @@ async function preflightMeshUrl(uri, loadUrl) {
     return describeFailure(err);
   }
 }
-function supportSurfaceKindOf(item2) {
-  return String(item2?.support_surface_kind || item2?.supportSurfaceKind || "").trim().toLowerCase();
+function supportSurfaceKindOf(item) {
+  return String(item?.support_surface_kind || item?.supportSurfaceKind || "").trim().toLowerCase();
 }
-function supportSurfaceDisplayType(item2) {
-  const kind = supportSurfaceKindOf(item2);
+function supportSurfaceDisplayType(item) {
+  const kind = supportSurfaceKindOf(item);
   if (kind === "workbench_body")
     return "Workbench / support surface";
   if (kind === "table_surface" || kind === "tabletop")
     return "Tabletop / support surface";
   return "";
 }
-function supportSurfaceMetadata(item2) {
+function supportSurfaceMetadata(item) {
   return {
-    support_surface_kind: item2?.support_surface_kind || "",
-    supportSurfaceKind: item2?.supportSurfaceKind || item2?.support_surface_kind || "",
-    top_surface_z_m: item2?.top_surface_z_m ?? null,
-    topSurfaceZM: item2?.topSurfaceZM ?? item2?.top_surface_z_m ?? null,
-    support_surface_height_m: item2?.support_surface_height_m ?? null,
-    supportSurfaceHeightM: item2?.supportSurfaceHeightM ?? item2?.support_surface_height_m ?? null,
-    expected_support_footprint_m: item2?.expected_support_footprint_m || null,
-    expectedSupportFootprintM: item2?.expectedSupportFootprintM || item2?.expected_support_footprint_m || null
+    support_surface_kind: item?.support_surface_kind || "",
+    supportSurfaceKind: item?.supportSurfaceKind || item?.support_surface_kind || "",
+    top_surface_z_m: item?.top_surface_z_m ?? null,
+    topSurfaceZM: item?.topSurfaceZM ?? item?.top_surface_z_m ?? null,
+    support_surface_height_m: item?.support_surface_height_m ?? null,
+    supportSurfaceHeightM: item?.supportSurfaceHeightM ?? item?.support_surface_height_m ?? null,
+    expected_support_footprint_m: item?.expected_support_footprint_m || null,
+    expectedSupportFootprintM: item?.expectedSupportFootprintM || item?.expected_support_footprint_m || null
   };
 }
-function supportSurfaceWarningKey(item2, code) {
-  return `${item2?.id || itemLabel(item2 || {})}:${code}`;
+function supportSurfaceWarningKey(item, code) {
+  return `${item?.id || itemLabel(item || {})}:${code}`;
 }
-function warnInconsistentSupportSurfaceSemantics(item2, code, reason, extra = {}) {
+function warnInconsistentSupportSurfaceSemantics(item, code, reason, extra = {}) {
   state._supportSurfaceSemanticWarnings = state._supportSurfaceSemanticWarnings || /* @__PURE__ */ new Set();
-  const key = supportSurfaceWarningKey(item2, code);
+  const key = supportSurfaceWarningKey(item, code);
   if (state._supportSurfaceSemanticWarnings.has(key))
     return;
   state._supportSurfaceSemanticWarnings.add(key);
-  appendViewerDiagnosticWarning(item2, code, reason, {
-    support_surface_display_type: supportSurfaceDisplayType(item2),
-    ...supportSurfaceMetadata(item2),
+  appendViewerDiagnosticWarning(item, code, reason, {
+    support_surface_display_type: supportSurfaceDisplayType(item),
+    ...supportSurfaceMetadata(item),
     ...extra
   });
 }
-function maybeWarnSupportSurfaceSemantics(item2, dims = null) {
-  const kind = supportSurfaceKindOf(item2);
+function maybeWarnSupportSurfaceSemantics(item, dims = null) {
+  const kind = supportSurfaceKindOf(item);
   if (!kind)
     return;
-  const topSurface = item2?.top_surface_z_m ?? item2?.topSurfaceZM;
-  const supportHeight = item2?.support_surface_height_m ?? item2?.supportSurfaceHeightM;
+  const topSurface = item?.top_surface_z_m ?? item?.topSurfaceZM;
+  const supportHeight = item?.support_surface_height_m ?? item?.supportSurfaceHeightM;
   if (kind === "workbench_body" && (!Number.isFinite(Number(topSurface)) || !Number.isFinite(Number(supportHeight)))) {
-    warnInconsistentSupportSurfaceSemantics(item2, "support_surface_semantics_missing_height", "workbench_body support surface is missing top/support height metadata");
+    warnInconsistentSupportSurfaceSemantics(item, "support_surface_semantics_missing_height", "workbench_body support surface is missing top/support height metadata");
   }
   if ((kind === "tabletop" || kind === "table_surface") && dims) {
     const thickness = Number(dims.z);
     const footprint = Math.max(Number(dims.x) || 0, Number(dims.y) || 0);
     if (Number.isFinite(thickness) && Number.isFinite(footprint) && footprint > 0 && thickness > Math.max(0.12, footprint * 0.12)) {
-      warnInconsistentSupportSurfaceSemantics(item2, "support_surface_semantics_non_thin_tabletop", "tabletop/table_surface support surface has non-thin loaded bounds", {
+      warnInconsistentSupportSurfaceSemantics(item, "support_surface_semantics_non_thin_tabletop", "tabletop/table_surface support surface has non-thin loaded bounds", {
         loaded_dimensions: { x: dims.x, y: dims.y, z: dims.z },
         thickness_to_footprint_ratio: thickness / footprint
       });
     }
   }
 }
-function itemType(item2) {
-  const supportSurfaceType = supportSurfaceDisplayType(item2);
+function itemType(item) {
+  const supportSurfaceType = supportSurfaceDisplayType(item);
   if (supportSurfaceType)
     return supportSurfaceType;
-  if (isGeneratedToolOrGripperItem(item2))
-    return item2.type || item2.category || item2.role || "tool/gripper";
-  if (isGeneratedRobotItem(item2))
-    return item2.type || item2.category || item2.role || "robot";
-  return item2.type || item2.category || item2.role || item2.source_kind || "asset";
+  if (isGeneratedToolOrGripperItem(item))
+    return item.type || item.category || item.role || "tool/gripper";
+  if (isGeneratedRobotItem(item))
+    return item.type || item.category || item.role || "robot";
+  return item.type || item.category || item.role || item.source_kind || "asset";
 }
-function itemLabel(item2) {
-  const supportSurfaceType = supportSurfaceDisplayType(item2);
+function itemLabel(item) {
+  const supportSurfaceType = supportSurfaceDisplayType(item);
   if (supportSurfaceType)
-    return `${item2.label || item2.display_name || item2.object_name || item2.name || item2.link || item2.id || "unnamed"} (${supportSurfaceType})`;
-  return item2.label || item2.display_name || item2.object_name || item2.name || item2.link || item2.id || "unnamed";
+    return `${item.label || item.display_name || item.object_name || item.name || item.link || item.id || "unnamed"} (${supportSurfaceType})`;
+  return item.label || item.display_name || item.object_name || item.name || item.link || item.id || "unnamed";
 }
-function viewerGroupIdentity(item2) {
+function viewerGroupIdentity(item) {
   return [
-    item2?.source_kind,
-    item2?.source_layer,
-    item2?.active_visual_source,
-    item2?.type,
-    item2?.category,
-    item2?.role,
-    item2?.id,
-    item2?.label,
-    item2?.display_name,
-    item2?.object_name,
-    item2?.link,
-    itemLabel(item2 || {})
+    item?.source_kind,
+    item?.source_layer,
+    item?.active_visual_source,
+    item?.renderer_owner,
+    item?.renderer_ownership,
+    item?.renderer,
+    item?.robot_instance_id,
+    item?.link_name,
+    item?.visual_index,
+    item?.type,
+    item?.category,
+    item?.role,
+    item?.id,
+    item?.label,
+    item?.display_name,
+    item?.object_name,
+    item?.link,
+    itemLabel(item || {})
   ].map((value) => String(value || "").toLowerCase().replace(/[_-]+/g, " ")).join(" ");
 }
-function isGeneratedPreviewIdentity(item2) {
-  const identity = viewerGroupIdentity(item2);
-  return Boolean(item2?.locked || /\b(generated|generated preview|urdf|moveit)\b/.test(identity));
+function isGeneratedPreviewIdentity(item) {
+  const identity = viewerGroupIdentity(item);
+  return Boolean(item?.locked || /\b(generated|generated preview|urdf|moveit)\b/.test(identity));
 }
-function isGeneratedToolOrGripperItem(item2) {
-  const identity = viewerGroupIdentity(item2);
-  if (!isGeneratedPreviewIdentity(item2))
+function isGeneratedToolOrGripperItem(item) {
+  const identity = viewerGroupIdentity(item);
+  if (!isGeneratedPreviewIdentity(item))
     return false;
   return /\b(tool|gripper|end effector|eef|suction|vacuum|robotiq|airpick|finger|coupler|flange|tcp|tool0)\b/.test(identity);
 }
-function isGeneratedRobotItem(item2) {
-  const identity = viewerGroupIdentity(item2);
-  if (!isGeneratedPreviewIdentity(item2) || isGeneratedToolOrGripperItem(item2))
+function isGeneratedRobotItem(item) {
+  const identity = viewerGroupIdentity(item);
+  if (!isGeneratedPreviewIdentity(item) || isGeneratedToolOrGripperItem(item))
     return false;
   return /\b(robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|upper arm|forearm|wrist|elbow|base)\b/.test(identity);
 }
-function viewerGroupFor(item2) {
-  const identity = viewerGroupIdentity(item2);
-  if (/\b(zone|pick zone|place zone|spawn zone|safety zone|work envelope|reachability|collision)\b/.test(identity))
+function viewerGroupFor(item) {
+  const identity = viewerGroupIdentity(item);
+  if (/\b(zone|pick zone|place zone|observation zone|spawn zone|safety zone|work envelope|reachability|collision)\b/.test(identity))
     return "zones";
   if (/\b(camera|sensor|realsense|depth camera|rgbd|lidar|vision)\b/.test(identity))
     return "sensors";
-  if (isGeneratedToolOrGripperItem(item2))
+  if (isGeneratedToolOrGripperItem(item))
     return "tool/gripper";
-  if (isGeneratedRobotItem(item2))
+  if (isGeneratedRobotItem(item))
     return "robot";
   if (/\b(environment|layout|asset|object|item|table|workbench|fixture|bin|tray|conveyor|shelf|rack|pallet|floor|wall|part|product)\b/.test(identity))
     return "environment/layout";
@@ -39053,50 +39850,73 @@ function viewerGroupFor(item2) {
     return "robot/tool/generated";
   return "unknown";
 }
-var DEBUG_OVERLAY_TOKEN_RE = /\b(overlay|helper|debug|diagnostic|safety zone|pick zone|place zone|robot reach|warning anchor|warning badge|camera fov|fov|pick coverage|reachability|collision|work envelope|task route|approach retreat|epd detection|detection label|bounds box|bounding box)\b/;
-function isZone(item2) {
-  return viewerGroupFor(item2) === "zones";
+var DEBUG_OVERLAY_TOKEN_RE = /\b(overlay|helper|debug|diagnostic|safety zone|pick zone|place zone|robot reach|transform anchor|warning marker|warning anchor|warning badge|camera fov|fov|pick coverage|reachability|collision|work envelope|task route|home pose|approach retreat|epd detection|detection label|bounds box|bounding box)\b/;
+var PHYSICAL_SEMANTIC_TOKEN_RE = /\b(robot|arm|manipulator|tool|gripper|end effector|eef|camera body|configured camera|sensor body|conveyor|object|workpiece|part|product|bin|tray|support surface|table|tabletop|workbench|fixture|pallet|physical safety barrier|safety barrier|guard fence|fence)\b/;
+function isZone(item) {
+  return viewerGroupFor(item) === "zones";
 }
-function isDebugOverlayItem(item2) {
-  if (item2?.debug_overlay === true || item2?.exclude_from_fit_bounds === true || item2?.source_layer === "debug_overlay")
+function isPhysicalSemanticItem(item) {
+  if (isGeneratedToolOrGripperItem(item) || isGeneratedRobotItem(item) || supportSurfaceDisplayType(item) || isSensor(item))
     return true;
-  if (viewerGroupFor(item2) === "zones")
+  const identity = viewerGroupIdentity(item);
+  return PHYSICAL_SEMANTIC_TOKEN_RE.test(identity);
+}
+function isDebugOverlayItem(item) {
+  if (isOverlayPolicyItem(item))
+    return true;
+  if (item?.debug_overlay === true || item?.exclude_from_fit_bounds === true || item?.source_layer === "debug_overlay")
     return true;
   const identity = [
-    item2?.source_layer,
-    item2?.active_visual_source,
-    item2?.role,
-    item2?.category,
-    item2?.type,
-    item2?.status,
-    item2?.id,
-    item2?.display_name,
-    item2?.source_path,
-    item2?.mesh_path,
-    item2?.mesh_uri,
-    item2?.mesh_load_warning,
-    ...Array.isArray(item2?.warnings) ? item2.warnings : [],
-    itemLabel(item2 || {})
+    item?.source_layer,
+    item?.active_visual_source,
+    item?.role,
+    item?.category,
+    item?.type,
+    item?.status,
+    item?.id,
+    item?.display_name,
+    item?.source_path,
+    item?.mesh_path,
+    item?.mesh_uri,
+    item?.mesh_load_warning,
+    ...Array.isArray(item?.warnings) ? item.warnings : [],
+    itemLabel(item || {})
   ].map((value) => String(value || "").toLowerCase().replace(/[_-]+/g, " ")).join(" ");
+  if (isPhysicalSemanticItem(item) && !/\b(safety zone|pick zone|place zone|observation zone|spawn zone|work envelope|robot reach|camera fov|fov|home pose|transform anchor|warning marker|warning anchor|warning badge)\b/.test(identity))
+    return false;
+  if (viewerGroupFor(item) === "zones")
+    return true;
   return DEBUG_OVERLAY_TOKEN_RE.test(identity);
 }
-function isSensor(item2) {
-  return viewerGroupFor(item2) === "sensors";
+function isSensor(item) {
+  return viewerGroupFor(item) === "sensors";
 }
-function shouldLabelItem(item2) {
-  return !isDebugOverlayItem(item2);
+function shouldLabelItem(item) {
+  return !isDebugOverlayItem(item);
 }
-function materialFor(item2) {
-  if (isZone(item2))
-    return new THREE.MeshBasicMaterial({ color: 16762967, transparent: true, opacity: 0.08, side: THREE.DoubleSide, wireframe: true, depthWrite: false });
-  if (isSensor(item2))
-    return new THREE.MeshStandardMaterial({ color: 6476543, roughness: 0.65 });
-  if (item2.locked || item2.source_kind === "generated_preview")
-    return new THREE.MeshStandardMaterial({ color: 8885418, roughness: 0.78, metalness: 0.05 });
-  return new THREE.MeshStandardMaterial({ color: 8116367, roughness: 0.72 });
+function materialFor(item) {
+  if (isZone(item))
+    return new THREE.MeshBasicMaterial({ color: 16762967, transparent: true, opacity: 0.1, side: THREE.DoubleSide, wireframe: true, depthWrite: false });
+  if (isSensor(item))
+    return new THREE.MeshStandardMaterial({ color: 6255749, roughness: 0.62, metalness: 0.08 });
+  if (item.locked || item.source_kind === "generated_preview")
+    return new THREE.MeshStandardMaterial({ color: 9148070, roughness: 0.76, metalness: 0.04 });
+  return new THREE.MeshStandardMaterial({ color: 9085837, roughness: 0.72, metalness: 0.02 });
 }
-function fallbackMaterialFor(item2) {
-  const isZoneFallback = isZone(item2);
+function materialHasUsableAppearance(material) {
+  if (!material)
+    return false;
+  const materials = Array.isArray(material) ? material : [material];
+  return materials.some((entry) => entry && (entry.map || entry.color || entry.vertexColors || entry.emissive || entry.metalness !== void 0 || entry.roughness !== void 0));
+}
+function applyNeutralFallbackToUnmaterialedMeshes(object, item) {
+  object?.traverse?.((child) => {
+    if (child?.isMesh && !materialHasUsableAppearance(child.material))
+      child.material = materialFor(item);
+  });
+}
+function fallbackMaterialFor(item) {
+  const isZoneFallback = isZone(item);
   return new THREE.MeshStandardMaterial({
     color: isZoneFallback ? 16762967 : 16752412,
     emissive: isZoneFallback ? 3810816 : 4859392,
@@ -39110,18 +39930,18 @@ function fallbackMaterialFor(item2) {
     depthWrite: false
   });
 }
-function fallbackEdgeMaterialFor(item2) {
+function fallbackEdgeMaterialFor(item) {
   return new THREE.LineBasicMaterial({
-    color: isZone(item2) ? 16765802 : 16757575,
+    color: isZone(item) ? 16765802 : 16757575,
     transparent: true,
     opacity: 0.9
   });
 }
-function applyFallbackRenderMetadata(object, item2, status = "fallback_geometry") {
+function applyFallbackRenderMetadata(object, item, status = "fallback_geometry") {
   object.userData.render_status = status;
   object.userData.renderInfo = {
     render_status: status,
-    mesh_uri: displayMeshUri(item2),
+    mesh_uri: displayMeshUri(item),
     fallback_reason: "fallback geometry rendered while a real mesh is unavailable"
   };
   object.traverse?.((child) => {
@@ -39131,14 +39951,16 @@ function applyFallbackRenderMetadata(object, item2, status = "fallback_geometry"
 }
 function dimensionsFromPrimitive(primitive) {
   if (!primitive)
-    return [0.25, 0.25, 0.25];
-  if (Array.isArray(primitive))
-    return primitive.slice(0, 3);
-  return primitive.size || primitive.dimensions || primitive.extents || [primitive.x || primitive.width || 0.25, primitive.y || primitive.depth || 0.25, primitive.z || primitive.height || 0.25];
+    return null;
+  const dims = Array.isArray(primitive) ? primitive.slice(0, 3) : primitive.size || primitive.dimensions || primitive.extents || [primitive.x || primitive.width, primitive.y || primitive.depth, primitive.z || primitive.height];
+  if (!Array.isArray(dims) || dims.length < 3)
+    return null;
+  const numeric = dims.slice(0, 3).map(Number);
+  return numeric.every((value) => Number.isFinite(value) && value > 0) ? numeric : null;
 }
-function makePrimitiveMesh(item2) {
-  const primitive = primitiveOf(item2);
-  const kind = String(item2.geometry_type || item2.primitive_geometry_type || primitive?.type || primitive?.shape || "").toLowerCase();
+function makePrimitiveMesh(item) {
+  const primitive = primitiveOf(item);
+  const kind = String(item.geometry_type || item.primitive_geometry_type || primitive?.type || primitive?.shape || "").toLowerCase();
   let geometry;
   if (kind.includes("sphere"))
     geometry = new THREE.SphereGeometry(Number(primitive?.radius || 0.12), 24, 16);
@@ -39146,24 +39968,26 @@ function makePrimitiveMesh(item2) {
     geometry = new THREE.CylinderGeometry(Number(primitive?.radius || 0.08), Number(primitive?.radius || 0.08), Number(primitive?.height || 0.25), 24);
   else {
     const dims = dimensionsFromPrimitive(primitive);
-    geometry = new THREE.BoxGeometry(Number(dims[0] || 0.25), Number(dims[1] || 0.25), Number(dims[2] || 0.25));
+    if (!dims)
+      return null;
+    geometry = new THREE.BoxGeometry(dims[0], dims[1], dims[2]);
   }
   const group = new THREE.Group();
-  group.name = `${item2.id || itemLabel(item2)}_fallback_primitive`;
-  const mesh = new THREE.Mesh(geometry, fallbackMaterialFor(item2));
-  mesh.name = `${item2.id || itemLabel(item2)}_fallback_solid`;
+  group.name = `${item.id || itemLabel(item)}_fallback_primitive`;
+  const mesh = new THREE.Mesh(geometry, fallbackMaterialFor(item));
+  mesh.name = `${item.id || itemLabel(item)}_fallback_solid`;
   group.add(mesh);
-  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), fallbackEdgeMaterialFor(item2));
-  edges.name = `${item2.id || itemLabel(item2)}_fallback_edges`;
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), fallbackEdgeMaterialFor(item));
+  edges.name = `${item.id || itemLabel(item)}_fallback_edges`;
   group.add(edges);
-  applyFallbackRenderMetadata(group, item2, "primitive_fallback");
+  applyFallbackRenderMetadata(group, item, "primitive_fallback");
   return group;
 }
-function makeSensorMarker(item2) {
+function makeSensorMarker(item) {
   const group = new THREE.Group();
-  group.name = `${item2.id || itemLabel(item2)}_fallback_sensor`;
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.08), fallbackMaterialFor(item2));
-  body.name = `${item2.id || itemLabel(item2)}_fallback_sensor_body`;
+  group.name = `${item.id || itemLabel(item)}_fallback_sensor`;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.08), fallbackMaterialFor(item));
+  body.name = `${item.id || itemLabel(item)}_fallback_sensor_body`;
   group.add(body);
   const frustum = new THREE.LineSegments(
     new THREE.BufferGeometry().setFromPoints([
@@ -39184,15 +40008,15 @@ function makeSensorMarker(item2) {
       new THREE.Vector3(0.35, 0.22, 0.18),
       new THREE.Vector3(0.35, 0.22, -0.18)
     ]),
-    fallbackEdgeMaterialFor(item2)
+    fallbackEdgeMaterialFor(item)
   );
-  frustum.name = `${item2.id || itemLabel(item2)}_fallback_sensor_frustum`;
+  frustum.name = `${item.id || itemLabel(item)}_fallback_sensor_frustum`;
   group.add(frustum);
-  applyFallbackRenderMetadata(group, item2, "sensor_fallback");
+  applyFallbackRenderMetadata(group, item, "sensor_fallback");
   return group;
 }
-function applyPose(object, item2) {
-  const validation = validateRenderableTransform(item2);
+function applyPose(object, item) {
+  const validation = validateRenderableTransform(item);
   if (!validation.valid)
     return false;
   const pose = validation.pose;
@@ -39202,48 +40026,49 @@ function applyPose(object, item2) {
   object.scale.set(s.x, s.y, s.z);
   return true;
 }
-function assignItemUserData(object, item2) {
-  object.userData.item = item2;
+function assignItemUserData(object, item) {
+  object.userData.item = item;
   object.traverse?.((child) => {
-    child.userData.item = item2;
+    child.userData.item = item;
   });
 }
-function applyLoadedMeshOverlayMaterial(object, item2) {
-  if (!isZone(item2) || !object?.traverse)
+function applyLoadedMeshOverlayMaterial(object, item) {
+  if (!isZone(item) || !object?.traverse)
     return;
   object.traverse((child) => {
     if (child?.isMesh)
-      child.material = materialFor(item2);
+      child.material = materialFor(item);
   });
 }
-function materializeLoadedMesh(item2, uri, loaded) {
+function materializeLoadedMesh(item, uri, loaded) {
   const ext = uri.split(/[?#]/, 1)[0].slice(uri.split(/[?#]/, 1)[0].lastIndexOf(".") + 1).toLowerCase();
   let object;
   if (ext === "stl")
-    object = new THREE.Mesh(loaded, materialFor(item2));
+    object = new THREE.Mesh(loaded, materialFor(item));
   else if (ext === "dae")
     object = loaded.scene;
   else
     object = loaded;
-  object.name = `${item2.id || itemLabel(item2)}_mesh`;
-  applyLoadedMeshOverlayMaterial(object, item2);
-  assignItemUserData(object, item2);
+  applyNeutralFallbackToUnmaterialedMeshes(object, item);
+  object.name = `${item.id || itemLabel(item)}_mesh`;
+  applyLoadedMeshOverlayMaterial(object, item);
+  assignItemUserData(object, item);
   return object;
 }
-function makeMeshVisualRoot(item2, meshObject) {
+function makeMeshVisualRoot(item, meshObject) {
   const visualRoot = new THREE.Group();
-  visualRoot.name = `${item2.id || itemLabel(item2)}_visual_origin`;
+  visualRoot.name = `${item.id || itemLabel(item)}_visual_origin`;
   visualRoot.up.copy(THREE.Object3D.DEFAULT_UP);
-  applyMeshLocalTransform(visualRoot, item2);
-  applyLoadedMeshScaleHandling(meshObject, item2);
+  applyMeshLocalTransform(visualRoot, item);
+  applyLoadedMeshScaleHandling(meshObject, item);
   visualRoot.add(meshObject);
-  assignItemUserData(visualRoot, item2);
+  assignItemUserData(visualRoot, item);
   return visualRoot;
 }
-function applyMeshLocalTransform(meshObject, item2) {
-  const transform = meshLocalTransformOf(item2);
-  const generatedUrdf = isGeneratedUrdfItem(item2);
-  const visualOrigin = generatedUrdf ? usesUrdfFkVisualWorldPose(item2) ? poseBlockOf({ xyz: [0, 0, 0], rpy: [0, 0, 0] }) : usesBakedVisibleWorldPose(item2) ? poseBlockOf({ xyz: [0, 0, 0], rpy: [0, 0, 0] }) : visualOriginOf(item2) : transform.pose;
+function applyMeshLocalTransform(meshObject, item) {
+  const transform = meshLocalTransformOf(item);
+  const generatedUrdf = isGeneratedUrdfItem(item);
+  const visualOrigin = generatedUrdf ? usesUrdfFkVisualWorldPose(item) ? poseBlockOf({ xyz: [0, 0, 0], rpy: [0, 0, 0] }) : usesBakedVisibleWorldPose(item) ? poseBlockOf({ xyz: [0, 0, 0], rpy: [0, 0, 0] }) : visualOriginOf(item) : transform.pose;
   meshObject.position.copy(visualOrigin.xyz);
   meshObject.rotation.set(visualOrigin.rpy.x, visualOrigin.rpy.y, visualOrigin.rpy.z, "XYZ");
   if (generatedUrdf)
@@ -39251,10 +40076,10 @@ function applyMeshLocalTransform(meshObject, item2) {
   else
     meshObject.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
   if (!transform.valid) {
-    appendViewerDiagnosticWarning(item2, "invalid_mesh_local_transform", transform.reason, {
-      mesh_local_transform: item2?.mesh_local_transform,
-      visual_local_transform: item2?.visual_local_transform,
-      visual_origin: item2?.visual_origin,
+    appendViewerDiagnosticWarning(item, "invalid_mesh_local_transform", transform.reason, {
+      mesh_local_transform: item?.mesh_local_transform,
+      visual_local_transform: item?.visual_local_transform,
+      visual_origin: item?.visual_origin,
       applied_mesh_local_transform: {
         xyz: { x: visualOrigin.xyz.x, y: visualOrigin.xyz.y, z: visualOrigin.xyz.z },
         rpy: { x: visualOrigin.rpy.x, y: visualOrigin.rpy.y, z: visualOrigin.rpy.z },
@@ -39265,31 +40090,35 @@ function applyMeshLocalTransform(meshObject, item2) {
   }
   return transform.valid;
 }
-function applyLoadedMeshScaleHandling(meshObject, item2) {
-  if (!isGeneratedUrdfItem(item2))
+function applyLoadedMeshScaleHandling(meshObject, item) {
+  if (!isGeneratedUrdfItem(item))
     return;
-  const transform = meshLocalTransformOf(item2);
+  const transform = meshLocalTransformOf(item);
   meshObject.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
 }
-async function tryLoadMesh(item2, rendered, fallback) {
-  const diagnostic = meshUriDiagnostic(item2);
+async function tryLoadMesh(item, rendered, fallback) {
+  const diagnostic = meshUriDiagnostic(item);
   const uri = diagnostic.uri;
-  const requestedUri = displayMeshUri(item2);
-  item2.mesh_status = uri ? "loading" : diagnostic.status;
+  const requestedUri = displayMeshUri(item);
+  item.mesh_status = uri ? "loading" : diagnostic.status;
   if (!uri) {
-    const required = itemRequiresMeshBackedVisual(item2);
-    trackMeshLoadAttempt(item2, diagnostic.status, requestedUri, diagnostic.reason);
+    const required = itemRequiresMeshBackedVisual(item);
+    trackMeshLoadAttempt(item, diagnostic.status, requestedUri, diagnostic.reason);
     if (required) {
-      logRequiredMeshFailure(item2, requestedUri, diagnostic.reason);
-      styleFailedMeshDebugFallback(fallback, item2, diagnostic.reason);
+      logRequiredMeshFailure(item, requestedUri, diagnostic.reason);
+      styleFailedMeshDebugFallback(fallback, item, diagnostic.reason);
       setRenderInfo(rendered, "required_mesh_failed_debug_fallback", requestedUri, diagnostic.reason);
-      warnRequiredMeshFallback(item2, requestedUri, diagnostic.reason, { mesh_url: requestedUri, mesh_status: diagnostic.status });
+      warnRequiredMeshFallback(item, requestedUri, diagnostic.reason, { mesh_url: requestedUri, mesh_status: diagnostic.status });
     } else {
       setRenderInfo(rendered, rendered.renderInfo?.render_status || "box_fallback", requestedUri, diagnostic.reason);
       if (requestedUri)
-        appendRuntimeWarning(item2, requestedUri, diagnostic.reason);
+        appendRuntimeWarning(item, requestedUri, diagnostic.reason);
     }
     refreshMeshLoadUi(rendered);
+    if (required)
+      failWeb3dSceneReadiness(item, requestedUri, diagnostic.reason, { mesh_status: diagnostic.status });
+    else
+      requiredReadinessCompleteForItem(item);
     return;
   }
   const ext = meshExtensionFromUri(uri);
@@ -39297,21 +40126,26 @@ async function tryLoadMesh(item2, rendered, fallback) {
   const loadUrl = repoRootRelativeUrl(uri);
   const preflight = await preflightMeshUrl(uri, loadUrl);
   if (!preflight.ok) {
-    const required = itemRequiresMeshBackedVisual(item2);
-    item2.mesh_status = preflight.status || "url_not_served";
-    item2.mesh_load_error = `${preflight.reason}; url=${preflight.url || loadUrl}`;
-    trackMeshLoadAttempt(item2, item2.mesh_status, preflight.url || loadUrl, item2.mesh_load_error);
+    const required = itemRequiresMeshBackedVisual(item);
+    item.mesh_status = preflight.status || "url_not_served";
+    item.mesh_load_error = `${preflight.reason}; url=${preflight.url || loadUrl}`;
+    trackMeshLoadAttempt(item, item.mesh_status, preflight.url || loadUrl, item.mesh_load_error);
     if (required) {
-      logRequiredMeshFailure(item2, preflight.url || loadUrl, item2.mesh_load_error);
-      styleFailedMeshDebugFallback(fallback, item2, item2.mesh_load_error);
-      setRenderInfo(rendered, "required_mesh_failed_debug_fallback", uri, item2.mesh_load_error);
-      warnRequiredMeshFallback(item2, preflight.url || loadUrl, item2.mesh_load_error, { mesh_url: preflight.url || loadUrl, http_status: preflight.http_status || null });
+      logRequiredMeshFailure(item, preflight.url || loadUrl, item.mesh_load_error);
+      styleFailedMeshDebugFallback(fallback, item, item.mesh_load_error);
+      setRenderInfo(rendered, "required_mesh_failed_debug_fallback", uri, item.mesh_load_error);
+      warnRequiredMeshFallback(item, preflight.url || loadUrl, item.mesh_load_error, { mesh_url: preflight.url || loadUrl, http_status: preflight.http_status || null });
     } else {
-      fallback.visible = true;
-      setRenderInfo(rendered, rendered.renderInfo?.render_status || "box_fallback", uri, item2.mesh_load_error);
-      appendRuntimeWarning(item2, uri, item2.mesh_load_error, preflight.code || "mesh_url_not_served", { mesh_url: preflight.url || loadUrl, http_status: preflight.http_status || null });
+      if (fallback)
+        fallback.visible = true;
+      setRenderInfo(rendered, rendered.renderInfo?.render_status || "box_fallback", uri, item.mesh_load_error);
+      appendRuntimeWarning(item, uri, item.mesh_load_error, preflight.code || "mesh_url_not_served", { mesh_url: preflight.url || loadUrl, http_status: preflight.http_status || null });
     }
     refreshMeshLoadUi(rendered);
+    if (required)
+      failWeb3dSceneReadiness(item, preflight.url || loadUrl, item.mesh_load_error, { http_status: preflight.http_status || null, mesh_status: item.mesh_status });
+    else
+      requiredReadinessCompleteForItem(item);
     return;
   }
   try {
@@ -39322,51 +40156,55 @@ async function tryLoadMesh(item2, rendered, fallback) {
       loaded = await new ColladaLoader2().loadAsync(loadUrl);
     else
       loaded = await new OBJLoader2().loadAsync(loadUrl);
-    const meshObject = materializeLoadedMesh(item2, uri, loaded);
-    const visualRoot = makeMeshVisualRoot(item2, meshObject);
+    const meshObject = materializeLoadedMesh(item, uri, loaded);
+    const visualRoot = makeMeshVisualRoot(item, meshObject);
     visualRoot.updateMatrixWorld(true);
     const nativeBounds = new THREE.Box3().setFromObject(visualRoot);
-    const autoscaled = maybeApplyMeshUnitAutoscale(item2, meshObject, nativeBounds, uri);
+    const autoscaled = maybeApplyMeshUnitAutoscale(item, meshObject, nativeBounds, uri);
     const validationBounds = autoscaled ? new THREE.Box3().setFromObject(visualRoot) : nativeBounds;
-    fallback.visible = false;
+    if (fallback)
+      fallback.visible = false;
     rendered.object3d.add(visualRoot);
     rendered.meshObject = visualRoot;
     rendered.loadedMeshObject = meshObject;
-    item2.mesh_status = "loaded";
-    item2.mesh_load_error = "";
-    trackMeshLoadAttempt(item2, "loaded", loadUrl, "");
+    item.mesh_status = "loaded";
+    item.mesh_load_error = "";
+    trackMeshLoadAttempt(item, "loaded", loadUrl, "");
     setRenderInfo(rendered, "mesh_loaded", uri, "");
-    diagnoseLoadedMeshBounds(item2, visualRoot, rendered, validationBounds);
-    const bounds = computeFitBounds();
-    if (bounds)
-      frameScene(bounds);
+    diagnoseLoadedMeshBounds(item, visualRoot, rendered, validationBounds);
     refreshMeshLoadUi(rendered);
+    requiredReadinessCompleteForItem(item);
   } catch (err) {
-    const required = itemRequiresMeshBackedVisual(item2);
-    item2.mesh_status = "loader_failure";
-    item2.mesh_load_error = err?.message || String(err);
-    const reason = `loader_failure: ${loaderName} failed for .${ext || "unknown"} after fetchable URL ${loadUrl}: ${item2.mesh_load_error}`;
-    trackMeshLoadAttempt(item2, "loader_failure", loadUrl, reason);
+    const required = itemRequiresMeshBackedVisual(item);
+    item.mesh_status = "loader_failure";
+    item.mesh_load_error = err?.message || String(err);
+    const reason = `loader_failure: ${loaderName} failed for .${ext || "unknown"} after fetchable URL ${loadUrl}: ${item.mesh_load_error}`;
+    trackMeshLoadAttempt(item, "loader_failure", loadUrl, reason);
     if (required) {
-      logRequiredMeshFailure(item2, loadUrl, reason);
-      styleFailedMeshDebugFallback(fallback, item2, reason);
+      logRequiredMeshFailure(item, loadUrl, reason);
+      styleFailedMeshDebugFallback(fallback, item, reason);
       setRenderInfo(rendered, "required_mesh_failed_debug_fallback", uri, reason);
-      warnRequiredMeshFallback(item2, loadUrl, reason, { extension: ext, loader: loaderName, mesh_url: loadUrl });
+      warnRequiredMeshFallback(item, loadUrl, reason, { extension: ext, loader: loaderName, mesh_url: loadUrl });
     } else {
-      fallback.visible = true;
+      if (fallback)
+        fallback.visible = true;
       setRenderInfo(rendered, rendered.renderInfo?.render_status || "box_fallback", uri, reason);
-      appendRuntimeWarning(item2, uri, reason, "mesh_loader_failure", { extension: ext, loader: loaderName, mesh_url: loadUrl });
+      appendRuntimeWarning(item, uri, reason, "mesh_loader_failure", { extension: ext, loader: loaderName, mesh_url: loadUrl });
     }
     refreshMeshLoadUi(rendered);
+    if (required)
+      failWeb3dSceneReadiness(item, loadUrl, reason, { extension: ext, loader: loaderName, mesh_status: item.mesh_status });
+    else
+      requiredReadinessCompleteForItem(item);
   }
 }
 function collectItems(sceneJson) {
   const buckets = ["robots", "tools", "assets", "sensors", "zones", "items", "objects", "frames"];
   const byId = /* @__PURE__ */ new Map();
   for (const bucket of buckets)
-    for (const item2 of asArray(sceneJson[bucket]))
-      if (item2 && typeof item2 === "object")
-        byId.set(item2.id || `${bucket}_${byId.size}`, { ...item2, id: item2.id || `${bucket}_${byId.size}` });
+    for (const item of asArray(sceneJson[bucket]))
+      if (item && typeof item === "object")
+        byId.set(item.id || `${bucket}_${byId.size}`, { ...item, id: item.id || `${bucket}_${byId.size}` });
   return Array.from(byId.values());
 }
 function frameNameOf(frame, fallback = "") {
@@ -39448,16 +40286,16 @@ function finiteXyzArrayFromPoseSource(source) {
     return null;
   return finiteXyzArrayFromVector(poseBlockOf(source).xyz);
 }
-function renderedObjectFrameNames(item2, object3d) {
+function renderedObjectFrameNames(item, object3d) {
   const names = [
-    item2?.frame,
-    item2?.frame_id,
-    item2?.link,
-    item2?.link_name,
-    item2?.name,
-    item2?.id,
-    item2?.label,
-    item2?.display_name,
+    item?.frame,
+    item?.frame_id,
+    item?.link,
+    item?.link_name,
+    item?.name,
+    item?.id,
+    item?.label,
+    item?.display_name,
     object3d?.name
   ];
   return new Set(names.filter((value) => value !== void 0 && value !== null && value !== "").map((value) => String(value)));
@@ -39491,10 +40329,10 @@ function metadataWorldXyzForFrame(name) {
   if (!name)
     return null;
   for (const rendered of state.objects || []) {
-    const item2 = rendered?.item;
-    if (!item2 || !renderedObjectFrameNames(item2, rendered?.object3d).has(String(name)))
+    const item = rendered?.item;
+    if (!item || !renderedObjectFrameNames(item, rendered?.object3d).has(String(name)))
       continue;
-    const xyz = finiteXyzArrayFromPoseSource(item2.frame_world_pose) || finiteXyzArrayFromPoseSource(item2.link_world_pose);
+    const xyz = finiteXyzArrayFromPoseSource(item.frame_world_pose) || finiteXyzArrayFromPoseSource(item.link_world_pose);
     if (xyz)
       return xyz;
   }
@@ -39513,8 +40351,8 @@ function renderedObjectForFrame(name) {
   if (!name)
     return null;
   for (const rendered of state.objects || []) {
-    const item2 = rendered?.item;
-    if (!item2 || !renderedObjectFrameNames(item2, rendered?.object3d).has(String(name)))
+    const item = rendered?.item;
+    if (!item || !renderedObjectFrameNames(item, rendered?.object3d).has(String(name)))
       continue;
     return rendered;
   }
@@ -39538,23 +40376,23 @@ function collectFrameDiagnostics() {
     const frame = state.frameLookup?.get?.(name) || {};
     const pose = state.resolvedFramePoses.get(name) || resolveFrameWorldPose(name);
     const rendered = renderedObjectForFrame(name);
-    const item2 = rendered?.item || {};
-    const renderStatus = rendered?.renderInfo?.render_status || item2?.renderInfo?.render_status || item2?.mesh_status || "";
-    const sourceLayer = frame.source_layer || item2.source_layer || "";
-    const provenance = frame.provenance || item2.provenance || null;
+    const item = rendered?.item || {};
+    const renderStatus = rendered?.renderInfo?.render_status || item?.renderInfo?.render_status || item?.mesh_status || "";
+    const sourceLayer = frame.source_layer || item.source_layer || "";
+    const provenance = frame.provenance || item.provenance || null;
     const worldPose = frame.world_pose || frame.world_transform || null;
     const xyz = finiteXyzArrayFromVector(pose?.xyz);
     diagnostics.push({
-      id: frame.id || item2.id || name,
+      id: frame.id || item.id || name,
       name: frame.name || name,
-      frame: frame.frame || frame.frame_id || item2.frame || item2.frame_id || name,
-      link: frame.link || frame.link_name || item2.link || item2.link_name || name,
-      parent: frame.parent || frame.parent_frame || frame.parent_frame_id || item2.parent || item2.parent_frame || "",
-      parent_link: frame.parent_link || frame.parent_link_name || item2.parent_link || item2.parent_link_name || frameParentNameOf(frame) || "",
-      role: frame.role || item2.role || "",
-      type: frame.type || item2.type || "",
-      render_expected: Boolean((frame.render_expected ?? item2.render_expected) || displayMeshUri(frame) || displayMeshUri(item2) || rendered),
-      mesh_available: Boolean(renderStatus === "mesh_loaded" || displayMeshUri(frame) || displayMeshUri(item2)),
+      frame: frame.frame || frame.frame_id || item.frame || item.frame_id || name,
+      link: frame.link || frame.link_name || item.link || item.link_name || name,
+      parent: frame.parent || frame.parent_frame || frame.parent_frame_id || item.parent || item.parent_frame || "",
+      parent_link: frame.parent_link || frame.parent_link_name || item.parent_link || item.parent_link_name || frameParentNameOf(frame) || "",
+      role: frame.role || item.role || "",
+      type: frame.type || item.type || "",
+      render_expected: Boolean((frame.render_expected ?? item.render_expected) || displayMeshUri(frame) || displayMeshUri(item) || rendered),
+      mesh_available: Boolean(renderStatus === "mesh_loaded" || displayMeshUri(frame) || displayMeshUri(item)),
       source_layer: sourceLayer,
       provenance,
       world_pose: worldPose,
@@ -39607,12 +40445,12 @@ function diagnosticDebugItem(id, label) {
     locked: true
   };
 }
-function addDebugRenderedObject(object3d, item2) {
+function addDebugRenderedObject(object3d, item) {
   object3d.visible = state.debugOverlaysVisible;
   object3d.userData.exclude_from_fit_bounds = true;
-  assignItemUserData(object3d, item2);
+  assignItemUserData(object3d, item);
   state.three.scene.add(object3d);
-  state.objects.push({ item: item2, object3d, fallback: null, labelEl: null, renderInfo: { render_status: "debug_overlay" }, originalTransform: transformOf(item2) });
+  state.objects.push({ item, object3d, fallback: null, labelEl: null, renderInfo: { render_status: "debug_overlay" }, originalTransform: transformOf(item) });
 }
 function renderFrameDebugOverlays() {
   const targets = ["wrist_3_link", "tool0", "gripper_base_link"];
@@ -39650,6 +40488,32 @@ function validateSceneJson(json) {
   const items = collectItems(json);
   return items;
 }
+function installProductViewLights(scene) {
+  for (const child of [...scene.children]) {
+    if (child?.userData?.product_view_light === true)
+      scene.remove(child);
+  }
+  const ambient = new THREE.HemisphereLight(PRODUCT_VIEW_LIGHT_PALETTE.ambientSky, PRODUCT_VIEW_LIGHT_PALETTE.ambientGround, 1.18);
+  ambient.name = "product_view_balanced_ambient_light";
+  ambient.userData.product_view_light = true;
+  scene.add(ambient);
+  const key = new THREE.DirectionalLight(PRODUCT_VIEW_LIGHT_PALETTE.keyLight, 1.28);
+  key.name = "product_view_key_light";
+  key.position.set(3.4, -4.2, 5.6);
+  key.castShadow = true;
+  key.shadow.mapSize.set(1024, 1024);
+  Object.assign(key.shadow.camera, { near: 0.1, far: 12, left: -4, right: 4, top: 4, bottom: -4 });
+  key.shadow.camera.updateProjectionMatrix();
+  key.shadow.bias = -2e-4;
+  key.shadow.normalBias = 0.015;
+  key.userData.product_view_light = true;
+  scene.add(key);
+  const fill = new THREE.DirectionalLight(PRODUCT_VIEW_LIGHT_PALETTE.fillLight, 0.42);
+  fill.name = "product_view_fill_light";
+  fill.position.set(-3.2, 3.8, 2.8);
+  fill.userData.product_view_light = true;
+  scene.add(fill);
+}
 function initThree() {
   try {
     if (!THREE?.Scene || !OrbitControls2 || !STLLoader2 || !ColladaLoader2 || !OBJLoader2 || !TransformControls2)
@@ -39660,30 +40524,51 @@ function initThree() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     const scene = new THREE.Scene();
     scene.up.copy(ROS_Z_UP);
-    scene.background = new THREE.Color(725016);
+    scene.background = new THREE.Color(PRODUCT_VIEW_LIGHT_PALETTE.workspaceBackground);
+    renderer.setClearColor(PRODUCT_VIEW_LIGHT_PALETTE.rendererClearColor, 1);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.02;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     const camera = new THREE.PerspectiveCamera(55, 1, 0.01, 100);
     camera.up.copy(ROS_Z_UP);
     camera.position.set(2.4, -2.8, 1.8);
     const controls = new OrbitControls2(camera, renderer.domElement);
     controls.object.up.copy(ROS_Z_UP);
     controls.enableDamping = true;
-    const grid = new THREE.GridHelper(5, 20, 3820126, 2503749);
+    const grid = new THREE.GridHelper(5, 20, PRODUCT_VIEW_LIGHT_PALETTE.gridMajor, PRODUCT_VIEW_LIGHT_PALETTE.gridMinor);
     grid.name = "ros_xy_ground_grid";
+    for (const material of Array.isArray(grid.material) ? grid.material : [grid.material]) {
+      if (!material)
+        continue;
+      material.transparent = true;
+      material.opacity = 0.34;
+      material.depthWrite = false;
+    }
+    grid.userData.exclude_from_fit_bounds = true;
+    grid.userData.exclude_from_physical_bounds = true;
     grid.up.copy(ROS_Z_UP);
     grid.rotation.x = Math.PI / 2;
     scene.add(grid);
     scene.add(new THREE.AxesHelper(0.75));
-    scene.add(new THREE.HemisphereLight(16777215, 2241348, 1.2));
-    const light = new THREE.DirectionalLight(16777215, 1.5);
-    light.position.set(2, -3, 4);
-    scene.add(light);
+    installProductViewLights(scene);
     const transformControls = new TransformControls2(camera, renderer.domElement);
     transformControls.setMode("translate");
+    transformControls.setSpace("world");
     transformControls.addEventListener("dragging-changed", (event) => {
-      controls.enabled = !event.value;
+      if (state.editorMode !== "rotate")
+        controls.enabled = !event.value;
       const rendered = renderedById(state.selected);
       if (!rendered || !canEditItem(rendered.item))
         return;
+      if (state.editorMode === "rotate") {
+        if (event.value)
+          beginDirectRotateDrag(rendered);
+        else
+          finishDirectRotateDrag(rendered);
+        return;
+      }
       if (event.value)
         state.gizmoDragStart = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d));
       else {
@@ -39697,16 +40582,33 @@ function initThree() {
       const rendered = renderedById(state.selected);
       if (!rendered || !canEditItem(rendered.item))
         return;
+      if (state.editorMode === "rotate") {
+        previewDirectRotateDrag(rendered);
+        return;
+      }
       const snapped = snapTransform(transformFromObject(rendered.object3d));
       applyTransformToObject(rendered.object3d, snapped);
       syncInspectorTransformFields(rendered);
       updateLabels();
     });
+    controls.addEventListener("start", markCameraUserControlled);
     scene.add(transformControls);
     state.three = { renderer, scene, camera, controls, transformControls, raycaster: new THREE.Raycaster(), pointer: new THREE.Vector2() };
     resize();
     window.addEventListener("resize", resize);
-    el.canvas.addEventListener("pointerdown", pickObject);
+    el.canvas.addEventListener("pointerdown", onCanvasPointerDown);
+    el.canvas.addEventListener("pointermove", onCanvasPointerMove);
+    el.canvas.addEventListener("pointerup", onCanvasPointerUp);
+    el.canvas.addEventListener("pointercancel", () => {
+      cancelDirectMoveDrag("Move cancelled");
+      cancelDirectRotateDrag("Rotation cancelled");
+    });
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        cancelDirectMoveDrag("Move cancelled");
+        cancelDirectRotateDrag("Rotation cancelled");
+      }
+    });
     animate();
   } catch (err) {
     showError(`Bundled Three.js module load failure: ${err.message || err}`);
@@ -39730,6 +40632,98 @@ function animate() {
   renderer.render(scene, camera);
   updateLabels();
 }
+function physicalBoundsIdentityFor(object) {
+  const item = object?.userData?.item || {};
+  return [
+    object?.userData?.source_layer,
+    object?.userData?.active_visual_source,
+    object?.userData?.role,
+    object?.userData?.category,
+    object?.userData?.id,
+    object?.userData?.display_name,
+    object?.userData?.status,
+    object?.userData?.mesh_load_warning,
+    item?.source_layer,
+    item?.active_visual_source,
+    item?.role,
+    item?.category,
+    item?.type,
+    item?.id,
+    item?.display_name,
+    item?.status,
+    item?.mesh_load_warning,
+    ...Array.isArray(item?.warnings) ? item.warnings : [],
+    itemLabel(item || {})
+  ].map((value) => String(value || "").toLowerCase().replace(/[_-]+/g, " ")).join(" ");
+}
+function physicalBoundsItemFor(object, nearestItem = null) {
+  return object?.userData?.item || nearestItem || object?.userData || {};
+}
+function isInitialFitPhysicalGeometryItem(item, identity = "") {
+  const category = meshContractCategoryOf(item);
+  if (["robot", "tool", "table", "camera", "object"].includes(category))
+    return true;
+  return /\b(robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|wrist|tool|gripper|end effector|eef|suction|robotiq|airpick|camera body|configured camera|sensor body|conveyor|object|workpiece|part|product|bin|tray|support surface|table|tabletop|workbench|fixture|pallet)\b/.test(identity);
+}
+function isPhysicalBoundsHelperObject(object, item, identity) {
+  if (!object || object.visible === false)
+    return true;
+  if (object.isGridHelper || object.isAxesHelper)
+    return true;
+  if (object.userData?.selection_outline === true || object.userData?.selection_highlight === true)
+    return true;
+  if (object.userData?.exclude_from_physical_bounds === true || object.userData?.exclude_from_fit_bounds === true)
+    return true;
+  if (item?.exclude_from_physical_bounds === true || item?.exclude_from_fit_bounds === true)
+    return true;
+  if (DEBUG_OVERLAY_TOKEN_RE.test(identity))
+    return true;
+  return !isInitialFitPhysicalGeometryItem(item, identity);
+}
+function isRobotPrimitiveFallbackObject(object, item, identity) {
+  const visualSource = String(item?.active_visual_source || object?.userData?.active_visual_source || "").toLowerCase();
+  const sourceLayer = String(item?.source_layer || object?.userData?.source_layer || "").toLowerCase();
+  return /primitive fallback|fallback/.test(identity) && /robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|wrist/.test(identity) && (visualSource.includes("primitive_fallback") || visualSource.includes("fallback") || sourceLayer.includes("primitive_fallback"));
+}
+function collectPhysicalVisibleBounds(root, options = {}) {
+  if (!root || !THREE?.Box3)
+    return { count: 0, bounds: null, bounds_json: null };
+  root.updateWorldMatrix?.(true, true);
+  const bounds = new THREE.Box3();
+  const candidates = [];
+  let hasGeneratedRobotMesh = false;
+  const visit = (node, nearestItem = null) => {
+    if (!node || node.visible === false)
+      return;
+    const item = physicalBoundsItemFor(node, nearestItem);
+    const identity = physicalBoundsIdentityFor(node);
+    const nextNearestItem = node?.userData?.item || nearestItem;
+    const isRenderable = node.isMesh || node.isLine || node.isLineSegments || node.isPoints || node.isSprite;
+    if (isRenderable && !isPhysicalBoundsHelperObject(node, item, identity)) {
+      const visualSource = String(item?.active_visual_source || node?.userData?.active_visual_source || "").toLowerCase();
+      const isGenerated = /generated|urdf/.test(identity);
+      const isRobot = /robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|wrist/.test(identity);
+      if (isGenerated && isRobot && /mesh|generated urdf visual|mesh preview/.test(visualSource.replace(/_/g, " ")))
+        hasGeneratedRobotMesh = true;
+      candidates.push({ node, item, identity });
+    }
+    for (const child of node.children || [])
+      visit(child, nextNearestItem);
+  };
+  visit(root);
+  let count = 0;
+  for (const candidate of candidates) {
+    if (hasGeneratedRobotMesh && isRobotPrimitiveFallbackObject(candidate.node, candidate.item, candidate.identity))
+      continue;
+    const nodeBounds = finiteBox3(new THREE.Box3().setFromObject(candidate.node));
+    if (!nodeBounds)
+      continue;
+    bounds.union(nodeBounds);
+    count += 1;
+  }
+  const finite = count ? finiteBox3(bounds) : null;
+  return { count: finite ? count : 0, bounds: finite, bounds_json: box3ToJson(finite) };
+}
 function visibleRenderableBounds(object) {
   if (!object || object.visible === false)
     return null;
@@ -39751,9 +40745,6 @@ function visibleRenderableBounds(object) {
   };
   visit(object);
   return hasVisible ? finiteBox3(bounds) : null;
-}
-function objectHasVisibleRenderable(object) {
-  return Boolean(visibleRenderableBounds(object));
 }
 function assemblyRootHiddenForFit(root) {
   const data = root?.userData || {};
@@ -39777,117 +40768,6 @@ function collectPhysicalAssemblyBounds() {
   }
   const finite = count ? finiteBox3(bounds) : null;
   return { count: finite ? count : 0, bounds: finite, bounds_json: box3ToJson(finite), roots };
-}
-function itemHiddenForFit(item2) {
-  return item2?.visible === false || item2?.hidden === true || item2?.rendered === false || item2?.enabled === false;
-}
-function renderedStatusForFit(rendered) {
-  return String(rendered?.renderInfo?.render_status || rendered?.item?.renderInfo?.render_status || rendered?.item?.mesh_status || "").toLowerCase();
-}
-function isRequiredMeshDebugFallback(rendered) {
-  const status = renderedStatusForFit(rendered);
-  if (status === "required_mesh_failed_debug_fallback")
-    return true;
-  let debug = false;
-  rendered?.object3d?.traverse?.((child) => {
-    if (debug)
-      return;
-    const childStatus = String(child?.userData?.render_status || child?.userData?.renderInfo?.render_status || "").toLowerCase();
-    if (childStatus === "required_mesh_failed_debug_fallback")
-      debug = true;
-  });
-  return debug;
-}
-function isLoadingPlaceholderHidden(rendered) {
-  return renderedStatusForFit(rendered) === "mesh_loading_required" && rendered?.fallback?.visible === false && !rendered?.meshObject;
-}
-function warnFitBlockerExcluded(rendered, reason, bounds = null, extra = {}) {
-  const item2 = rendered?.item || {};
-  const key = `${item2.id || itemLabel(item2)}:${reason}`;
-  state._fitBlockerWarnings = state._fitBlockerWarnings || /* @__PURE__ */ new Set();
-  if (state._fitBlockerWarnings.has(key))
-    return;
-  state._fitBlockerWarnings.add(key);
-  appendViewerDiagnosticWarning(item2, "camera_framing_blocker_excluded", reason, {
-    render_status: renderedStatusForFit(rendered),
-    visual_bounds_status: item2?.visual_bounds_status || "",
-    excluded_fit_bounds: box3ToJson(bounds),
-    ...extra
-  });
-}
-function computeFitBounds({ includeDebugFallbacks = false } = {}) {
-  const normalBounds = new THREE.Box3();
-  const fallbackBounds = new THREE.Box3();
-  let hasNormal = false;
-  let hasFallback = false;
-  const deferredWarnings = [];
-  const assemblyBounds = collectPhysicalAssemblyBounds();
-  if (assemblyBounds.bounds) {
-    normalBounds.union(assemblyBounds.bounds);
-    hasNormal = true;
-    state.physicalAssemblyBounds = assemblyBounds.bounds.clone();
-  } else {
-    state.physicalAssemblyBounds = null;
-  }
-  for (const rendered of state.objects) {
-    if (!rendered?.object3d)
-      continue;
-    if (rendered.item?.exclude_from_fit_bounds === true || rendered.object3d.userData?.exclude_from_fit_bounds === true) {
-      deferredWarnings.push([rendered, "debug diagnostic excluded from camera fit bounds", null]);
-      continue;
-    }
-    if (!state.debugOverlaysVisible && isDebugOverlayItem(rendered.item) || itemHiddenForFit(rendered.item) || rendered.object3d.visible === false) {
-      deferredWarnings.push([rendered, "hidden renderable excluded from camera fit bounds", null]);
-      continue;
-    }
-    if (isLoadingPlaceholderHidden(rendered) || !objectHasVisibleRenderable(rendered.object3d)) {
-      deferredWarnings.push([rendered, "hidden loading placeholder excluded from camera fit bounds", null]);
-      continue;
-    }
-    const itemBounds = visibleRenderableBounds(rendered.object3d);
-    if (!itemBounds)
-      continue;
-    const isDebugFallback = isRequiredMeshDebugFallback(rendered);
-    const isOversized = rendered.item?.visual_bounds_status === "oversized";
-    if (isDebugFallback || isOversized) {
-      fallbackBounds.union(itemBounds);
-      hasFallback = true;
-      deferredWarnings.push([
-        rendered,
-        isDebugFallback ? "required_mesh_failed_debug_fallback excluded from normal camera fit bounds" : "oversized visual bounds excluded from normal camera fit bounds",
-        itemBounds
-      ]);
-      continue;
-    }
-    normalBounds.union(itemBounds);
-    hasNormal = true;
-  }
-  const finiteNormal = hasNormal ? finiteBox3(normalBounds) : null;
-  if (finiteNormal) {
-    for (const warning of deferredWarnings)
-      warnFitBlockerExcluded(...warning);
-    maybeWarnSceneBoundsExceedWorkspace(finiteNormal);
-    state.finalPhysicalFitBounds = finiteNormal.clone();
-    return finiteNormal;
-  }
-  const finiteFallback = includeDebugFallbacks || hasFallback ? finiteBox3(fallbackBounds) : null;
-  if (finiteFallback) {
-    for (const warning of deferredWarnings)
-      warnFitBlockerExcluded(...warning);
-    const fallbackKey = `${sceneId() || sceneDisplayName()}:fallback_fit_bounds`;
-    state._fitBlockerWarnings = state._fitBlockerWarnings || /* @__PURE__ */ new Set();
-    if (!state._fitBlockerWarnings.has(fallbackKey)) {
-      state._fitBlockerWarnings.add(fallbackKey);
-      appendViewerDiagnosticWarning({ id: sceneId(), label: sceneDisplayName() }, "camera_framing_blocker_excluded", "camera fit fell back to debug or oversized geometry because no normal physical bounds were available", {
-        fallback_fit_bounds: box3ToJson(finiteFallback)
-      });
-    }
-    maybeWarnSceneBoundsExceedWorkspace(finiteFallback);
-    state.finalPhysicalFitBounds = finiteFallback.clone();
-    return finiteFallback;
-  }
-  state.finalPhysicalFitBounds = null;
-  return null;
 }
 function box3ToJson(box) {
   if (!box || box.isEmpty() || !finiteBox3(box))
@@ -39927,18 +40807,18 @@ function dimensionsVectorFrom(value) {
   const dims = raw.slice(0, 3).map(Number);
   return dims.every((n) => Number.isFinite(n) && n > 0) ? new THREE.Vector3(dims[0], dims[1], dims[2]) : null;
 }
-function expectedDimensionsOf(item2) {
-  return dimensionsVectorFrom(item2?.expected_dimensions_m || item2?.expected_dimensions || item2?.dimensions_m || primitiveOf(item2));
+function expectedDimensionsOf(item) {
+  return dimensionsVectorFrom(item?.expected_dimensions_m || item?.expected_dimensions || item?.dimensions_m || primitiveOf(item));
 }
-function meshContractCategoryOf(item2) {
+function meshContractCategoryOf(item) {
   const identity = [
-    item2?.source_layer,
-    item2?.active_visual_source,
-    item2?.role,
-    item2?.category,
-    item2?.type,
-    item2?.id,
-    itemLabel(item2 || {})
+    item?.source_layer,
+    item?.active_visual_source,
+    item?.role,
+    item?.category,
+    item?.type,
+    item?.id,
+    itemLabel(item || {})
   ].map((value) => String(value || "").toLowerCase()).join(" ");
   if (/\b(table|workbench|bench)\b/.test(identity))
     return "table";
@@ -39956,29 +40836,29 @@ function meshContractCategoryOf(item2) {
     return "helper";
   return "core";
 }
-function meshUnitAutoscaleAllowed(item2) {
-  if (!item2 || item2.allow_mesh_unit_autoscale !== true || !item2.expected_dimensions_m)
+function meshUnitAutoscaleAllowed(item) {
+  if (!item || item.allow_mesh_unit_autoscale !== true || !item.expected_dimensions_m)
     return false;
-  if (item2.source_kind === "generated_preview" || item2.active_visual_source === "generated_preview")
+  if (item.source_kind === "generated_preview" || item.active_visual_source === "generated_preview")
     return false;
-  const category = meshContractCategoryOf(item2);
+  const category = meshContractCategoryOf(item);
   if (!["table", "camera", "object", "environment"].includes(category))
     return false;
   const identity = [
-    item2.source_layer,
-    item2.active_visual_source,
-    item2.role,
-    item2.category,
-    item2.type,
-    item2.id,
-    item2.link,
-    item2.object_name,
-    item2.display_name,
-    item2.source_path,
-    item2.mesh_path,
-    item2.package_uri,
-    item2.original_mesh_uri,
-    itemLabel(item2 || {})
+    item.source_layer,
+    item.active_visual_source,
+    item.role,
+    item.category,
+    item.type,
+    item.id,
+    item.link,
+    item.object_name,
+    item.display_name,
+    item.source_path,
+    item.mesh_path,
+    item.package_uri,
+    item.original_mesh_uri,
+    itemLabel(item || {})
   ].map((value) => String(value || "").toLowerCase()).join(" ");
   return !/\b(robot|arm|manipulator|ur3|ur5|ur10|ur_|universal_robot|robotiq|gripper|suction|airpick|tool|eef|end_effector)\b/.test(identity);
 }
@@ -39993,10 +40873,10 @@ function meshUnitCorrectionPayload(source, confidence, nativeBounds, correctedBo
     target_ratio: targetRatio
   };
 }
-function maybeApplyMeshUnitAutoscale(item2, meshObject, nativeBounds, meshUri) {
-  if (!meshUnitAutoscaleAllowed(item2))
+function maybeApplyMeshUnitAutoscale(item, meshObject, nativeBounds, meshUri) {
+  if (!meshUnitAutoscaleAllowed(item))
     return false;
-  const expected = expectedDimensionsOf(item2);
+  const expected = expectedDimensionsOf(item);
   const finiteNative = finiteBox3(nativeBounds);
   const dims = finiteNative ? box3Dimensions(finiteNative) : null;
   const axes = ["x", "y", "z"];
@@ -40009,8 +40889,8 @@ function maybeApplyMeshUnitAutoscale(item2, meshObject, nativeBounds, meshUri) {
   const uniformRatio = minRatio > 0 ? maxRatio / minRatio : Infinity;
   const targetRatio = [1e3, 100].find((target) => Math.abs(maxRatio - target) / target <= 0.2 && Math.abs(minRatio - target) / target <= 0.2 && uniformRatio <= 1.25);
   if (!targetRatio) {
-    item2.mesh_unit_correction = meshUnitCorrectionPayload("viewer_expected_dimensions_m", "rejected_non_uniform_or_unclear_ratio", finiteNative, finiteNative, 1, axisRatios, null);
-    appendRuntimeWarning(item2, meshUri, `mesh unit autoscale rejected: native bounds do not have a clear uniform 100x or 1000x ratio to expected_dimensions_m (uniform_ratio=${uniformRatio.toFixed(3)})`, "mesh_unit_autoscale_rejected", item2.mesh_unit_correction);
+    item.mesh_unit_correction = meshUnitCorrectionPayload("viewer_expected_dimensions_m", "rejected_non_uniform_or_unclear_ratio", finiteNative, finiteNative, 1, axisRatios, null);
+    appendRuntimeWarning(item, meshUri, `mesh unit autoscale rejected: native bounds do not have a clear uniform 100x or 1000x ratio to expected_dimensions_m (uniform_ratio=${uniformRatio.toFixed(3)})`, "mesh_unit_autoscale_rejected", item.mesh_unit_correction);
     return false;
   }
   const scale = targetRatio === 1e3 ? 1e-3 : 0.01;
@@ -40018,46 +40898,46 @@ function maybeApplyMeshUnitAutoscale(item2, meshObject, nativeBounds, meshUri) {
   meshObject.updateMatrixWorld(true);
   const correctedBounds = finiteBox3(new THREE.Box3().setFromObject(meshObject));
   const confidence = targetRatio === 1e3 ? "auto_detected_mm_to_m" : "auto_detected_cm_to_m";
-  item2.mesh_unit_correction = meshUnitCorrectionPayload("viewer_expected_dimensions_m", confidence, finiteNative, correctedBounds, scale, axisRatios, targetRatio);
-  item2.visual_bounds_status = "corrected_by_local_unit_scale";
-  appendRuntimeWarning(item2, meshUri, `mesh unit autoscale applied: native bounds matched a clear ${targetRatio}x ratio to expected_dimensions_m`, "mesh_unit_autoscale_applied", item2.mesh_unit_correction);
+  item.mesh_unit_correction = meshUnitCorrectionPayload("viewer_expected_dimensions_m", confidence, finiteNative, correctedBounds, scale, axisRatios, targetRatio);
+  item.visual_bounds_status = "corrected_by_local_unit_scale";
+  appendRuntimeWarning(item, meshUri, `mesh unit autoscale applied: native bounds matched a clear ${targetRatio}x ratio to expected_dimensions_m`, "mesh_unit_autoscale_applied", item.mesh_unit_correction);
   return true;
 }
-function isCoreMeshContractItem(item2) {
-  return !["helper"].includes(meshContractCategoryOf(item2)) && !isZone(item2);
+function isCoreMeshContractItem(item) {
+  return !["helper"].includes(meshContractCategoryOf(item)) && !isZone(item);
 }
-function warnLoadedMeshBounds(item2, code, reason, extra = {}) {
-  item2.visual_bounds_status = code === "loaded_mesh_oversized" ? "oversized" : code === "loaded_mesh_collapsed" ? "collapsed" : "invalid";
-  appendViewerDiagnosticWarning(item2, code, reason, {
-    mesh_uri: displayMeshUri(item2),
-    loaded_mesh_bounds: item2.loaded_mesh_bounds,
-    loaded_mesh_world_bounds: item2.loaded_mesh_world_bounds,
-    expected_dimensions_m: item2.expected_dimensions_m,
-    mesh_contract_category: meshContractCategoryOf(item2),
+function warnLoadedMeshBounds(item, code, reason, extra = {}) {
+  item.visual_bounds_status = code === "loaded_mesh_oversized" ? "oversized" : code === "loaded_mesh_collapsed" ? "collapsed" : "invalid";
+  appendViewerDiagnosticWarning(item, code, reason, {
+    mesh_uri: displayMeshUri(item),
+    loaded_mesh_bounds: item.loaded_mesh_bounds,
+    loaded_mesh_world_bounds: item.loaded_mesh_world_bounds,
+    expected_dimensions_m: item.expected_dimensions_m,
+    mesh_contract_category: meshContractCategoryOf(item),
     ...extra
   });
 }
-function diagnoseLoadedMeshBounds(item2, meshObject, rendered, nativeBounds = null) {
+function diagnoseLoadedMeshBounds(item, meshObject, rendered, nativeBounds = null) {
   const localBounds = finiteBox3(nativeBounds || new THREE.Box3().setFromObject(meshObject));
   rendered.object3d.updateWorldMatrix(true, true);
   const worldBounds = finiteBox3(new THREE.Box3().setFromObject(meshObject));
-  item2.loaded_mesh_bounds = box3ToJson(localBounds);
-  item2.loaded_mesh_world_bounds = box3ToJson(worldBounds);
-  item2.visual_bounds_status = item2.mesh_unit_correction?.scale && item2.mesh_unit_correction.scale !== 1 ? "corrected_by_local_unit_scale" : "valid";
-  const expected = expectedDimensionsOf(item2);
+  item.loaded_mesh_bounds = box3ToJson(localBounds);
+  item.loaded_mesh_world_bounds = box3ToJson(worldBounds);
+  item.visual_bounds_status = item.mesh_unit_correction?.scale && item.mesh_unit_correction.scale !== 1 ? "corrected_by_local_unit_scale" : "valid";
+  const expected = expectedDimensionsOf(item);
   const dims = localBounds ? box3Dimensions(localBounds) : null;
   const worldDims = worldBounds ? box3Dimensions(worldBounds) : null;
   const tiny = 1e-9;
   if (!localBounds || !worldBounds || !dims || !worldDims) {
-    if (isCoreMeshContractItem(item2))
-      warnLoadedMeshBounds(item2, "loaded_mesh_bounds_invalid", "loaded mesh produced empty or non-finite bounds");
+    if (isCoreMeshContractItem(item))
+      warnLoadedMeshBounds(item, "loaded_mesh_bounds_invalid", "loaded mesh produced empty or non-finite bounds");
     return;
   }
-  maybeWarnSupportSurfaceSemantics(item2, dims);
+  maybeWarnSupportSurfaceSemantics(item, dims);
   const collapsedAxes = ["x", "y", "z"].filter((axis) => dims[axis] <= tiny || worldDims[axis] <= tiny);
   if (collapsedAxes.length) {
-    if (isCoreMeshContractItem(item2))
-      warnLoadedMeshBounds(item2, "loaded_mesh_collapsed", `loaded mesh bounds are zero-volume or collapsed on ${collapsedAxes.join(", ")}`, { collapsed_axes: collapsedAxes });
+    if (isCoreMeshContractItem(item))
+      warnLoadedMeshBounds(item, "loaded_mesh_collapsed", `loaded mesh bounds are zero-volume or collapsed on ${collapsedAxes.join(", ")}`, { collapsed_axes: collapsedAxes });
     return;
   }
   if (!expected)
@@ -40067,10 +40947,10 @@ function diagnoseLoadedMeshBounds(item2, meshObject, rendered, nativeBounds = nu
   const maxRatio = Math.max(...Object.values(axisRatios));
   const minRatio = Math.min(...Object.values(axisRatios));
   const uniformRatio = minRatio > 0 ? maxRatio / minRatio : Infinity;
-  const category = meshContractCategoryOf(item2);
+  const category = meshContractCategoryOf(item);
   if (maxRatio > 3 || uniformRatio > 3) {
     if (["table", "camera", "object"].includes(category))
-      warnLoadedMeshBounds(item2, "loaded_mesh_oversized", `loaded mesh dimensions exceed expected_dimensions_m by more than 3x (max_axis_ratio=${maxRatio.toFixed(3)}, uniform_ratio=${uniformRatio.toFixed(3)})`, {
+      warnLoadedMeshBounds(item, "loaded_mesh_oversized", `loaded mesh dimensions exceed expected_dimensions_m by more than 3x (max_axis_ratio=${maxRatio.toFixed(3)}, uniform_ratio=${uniformRatio.toFixed(3)})`, {
         expected_dimensions: { x: expected.x, y: expected.y, z: expected.z },
         loaded_dimensions: { x: dims.x, y: dims.y, z: dims.z },
         axis_ratios: axisRatios,
@@ -40078,51 +40958,153 @@ function diagnoseLoadedMeshBounds(item2, meshObject, rendered, nativeBounds = nu
         uniform_ratio: uniformRatio
       });
     else if (Math.abs(maxRatio - 1e3) < 100 || Math.abs(maxRatio - 1e-3) < 1e-3)
-      item2.visual_bounds_status = "corrected_by_local_unit_scale";
+      item.visual_bounds_status = "corrected_by_local_unit_scale";
   }
 }
-function workspaceDimensionsOf(sceneJson) {
-  return dimensionsVectorFrom(sceneJson?.workspace?.dimensions_m || sceneJson?.workspace?.size_m || sceneJson?.workspace_dimensions_m || sceneJson?.scene?.workspace_dimensions_m);
+function cameraDirectionForPreset(preset = "isometric") {
+  const raw = CAMERA_PRESET_DIRECTIONS[String(preset || "isometric").toLowerCase()] || CAMERA_PRESET_DIRECTIONS.isometric;
+  return new THREE.Vector3(raw[0], raw[1], raw[2]).normalize();
 }
-function maybeWarnSceneBoundsExceedWorkspace(bounds) {
-  const workspace = workspaceDimensionsOf(state.sceneJson);
-  if (!workspace || state._sceneBoundsExceededWarned)
-    return;
-  const dims = box3Dimensions(bounds);
-  if (dims.x > workspace.x || dims.y > workspace.y || dims.z > workspace.z) {
-    state._sceneBoundsExceededWarned = true;
-    appendViewerDiagnosticWarning({ id: sceneId(), label: sceneDisplayName() }, "scene_bounds_exceed_workspace", "rendered scene bounds exceed configured workspace dimensions", {
-      scene_bounds: box3ToJson(bounds),
-      workspace_dimensions_m: { x: workspace.x, y: workspace.y, z: workspace.z }
-    });
-  }
+function applyCameraClipping(camera, radius, distance) {
+  const safeRadius = Math.max(Number(radius) || 0, 0.01);
+  const safeDistance = Math.max(Number(distance) || 0, safeRadius * 2);
+  camera.near = Math.max(1e-3, Math.min(safeRadius / 200, safeDistance / 50));
+  camera.far = Math.max(camera.near + 1, safeDistance + safeRadius * 8, safeRadius * 20, 100);
+  camera.updateProjectionMatrix();
 }
-function frameScene(bounds) {
+function frameScene(bounds, { preset = "isometric" } = {}) {
   const { camera, controls } = state.three;
-  if (!camera || !controls || !bounds || bounds.isEmpty())
+  const finiteBounds = finiteBox3(bounds);
+  if (!camera || !controls || !finiteBounds)
     return false;
   const center = new THREE.Vector3();
   const sphere = new THREE.Sphere();
-  bounds.getCenter(center);
-  bounds.getBoundingSphere(sphere);
+  finiteBounds.getCenter(center);
+  finiteBounds.getBoundingSphere(sphere);
+  if (![center.x, center.y, center.z, sphere.radius].every(Number.isFinite))
+    return false;
   const radius = Math.max(sphere.radius, MIN_FRAME_RADIUS);
-  const direction = new THREE.Vector3(1.35, -1.65, 1.05).normalize();
-  const distance = Math.max(radius * FRAME_DISTANCE_MULTIPLIER, MIN_FRAME_RADIUS * FRAME_DISTANCE_MULTIPLIER);
+  const direction = cameraDirectionForPreset(preset);
+  const multiplier = preset === "top" ? 2.15 : preset === "robot" ? 2.05 : FRAME_DISTANCE_MULTIPLIER;
+  const distance = Math.max(radius * multiplier, MIN_FRAME_RADIUS * multiplier);
   camera.position.copy(center).addScaledVector(direction, distance);
-  camera.near = Math.max(0.01, radius / 100);
-  camera.far = Math.max(100, distance + radius * 6);
-  camera.updateProjectionMatrix();
+  applyCameraClipping(camera, radius, distance);
+  if (![camera.position.x, camera.position.y, camera.position.z, camera.near, camera.far].every(Number.isFinite))
+    return false;
   controls.target.copy(center);
   controls.update();
-  state.lastFrameBounds = bounds.clone();
+  state.lastFrameBounds = finiteBounds.clone();
   if (el.resetView)
     el.resetView.disabled = false;
+  if (el.cameraPreset)
+    el.cameraPreset.disabled = false;
   return true;
 }
-function resetView() {
-  const bounds = computeFitBounds() || state.lastFrameBounds || computeFitBounds({ includeDebugFallbacks: true });
-  if (bounds)
-    frameScene(bounds);
+function stableSceneCameraKey() {
+  return [
+    state.sceneJson?.scene?.root,
+    state.sceneJson?.scene?.canonical_root,
+    state.sceneJson?.scene?.id,
+    state.sceneJson?.scene_id,
+    state.sceneJson?.scene?.generation_version,
+    state.sceneJson?.scene_generation_token,
+    state.sourceWebSceneFile,
+    state.sceneJson?.schema_version
+  ].map((value) => String(value || "")).filter(Boolean).join("|");
+}
+function cancelInitialCameraFitRetry() {
+  if (state.initialCameraFit?.pendingRetry)
+    clearTimeout(state.initialCameraFit.pendingRetry);
+  state.initialCameraFit.pendingRetry = null;
+}
+function beginInitialCameraFitForCurrentScene() {
+  const sceneKey = stableSceneCameraKey();
+  if (state.initialCameraFit?.sceneKey === sceneKey)
+    return;
+  cancelInitialCameraFitRetry();
+  state.initialCameraFit = { sceneKey, done: false, attempts: 0, pendingRetry: null, userControlled: false };
+}
+function markCameraUserControlled() {
+  if (!state.initialCameraFit)
+    return;
+  state.initialCameraFit.userControlled = true;
+  cancelInitialCameraFitRetry();
+}
+function reportFitCellNoGeometry(message = "No visible physical geometry to frame") {
+  state.editorError = message;
+  pushEditorEvent("fit_cell_unavailable", { message });
+  if (el.error) {
+    el.error.textContent = message;
+    el.error.hidden = false;
+  }
+}
+function resetView({ userInitiated = true, preset = "isometric" } = {}) {
+  if (userInitiated)
+    markCameraUserControlled();
+  const physical = collectPhysicalVisibleBounds(state.three.scene);
+  if (!physical.bounds || !frameScene(physical.bounds, { preset })) {
+    reportFitCellNoGeometry();
+    return false;
+  }
+  if (state.editorError === "No visible physical geometry to frame")
+    clearError();
+  return true;
+}
+function reportFitSelectionFallback(message) {
+  state.editorError = message;
+  pushEditorEvent("fit_selection_fallback", { message, itemId: state.selected || "" });
+  if (el.error) {
+    el.error.textContent = message;
+    el.error.hidden = false;
+  }
+}
+function fitSelection() {
+  markCameraUserControlled();
+  const selectedId = String(state.selected || "").trim();
+  const rendered = selectedId ? renderedById(selectedId) : null;
+  const fallback = (message) => {
+    reportFitSelectionFallback(message);
+    resetView({ userInitiated: false });
+    return false;
+  };
+  if (!selectedId)
+    return fallback("No physical item selected; fitting the workcell");
+  if (!rendered?.object3d)
+    return fallback("Selected item has no visible physical geometry; fitting the workcell");
+  const physical = collectPhysicalVisibleBounds(rendered.object3d);
+  if (!physical.bounds || !frameScene(physical.bounds))
+    return fallback("Selected item has no visible physical geometry; fitting the workcell");
+  if (state.editorError === "No physical item selected; fitting the workcell" || state.editorError === "Selected item has no visible physical geometry; fitting the workcell")
+    clearError();
+  pushEditorEvent("fit_selection", { itemId: selectedId, physicalRenderableCount: physical.count, bounds: physical.bounds_json });
+  return true;
+}
+function attemptInitialCameraFit({ allowRetry = true } = {}) {
+  const fit = state.initialCameraFit;
+  if (!fit || fit.done || fit.userControlled || fit.sceneKey !== stableSceneCameraKey())
+    return false;
+  cancelInitialCameraFitRetry();
+  fit.attempts += 1;
+  const physical = collectPhysicalVisibleBounds(state.three.scene);
+  if (physical.bounds && frameScene(physical.bounds)) {
+    fit.done = true;
+    return true;
+  }
+  if (allowRetry && fit.attempts < 2) {
+    fit.pendingRetry = setTimeout(() => attemptInitialCameraFit({ allowRetry: false }), 250);
+  } else {
+    reportFitCellNoGeometry("No visible physical geometry available for initial framing");
+  }
+  return false;
+}
+function triggerInitialCameraFitAfterSceneReady() {
+  return attemptInitialCameraFit({ allowRetry: false });
+}
+function applyCameraPreset(preset) {
+  const selectedPreset = String(preset || "").toLowerCase();
+  if (!CAMERA_PRESET_DIRECTIONS[selectedPreset])
+    return false;
+  return resetView({ userInitiated: true, preset: selectedPreset });
 }
 if (el.resetView) {
   el.resetView.title = RESET_VIEW_TITLE;
@@ -40132,33 +41114,75 @@ function clearLabels() {
   if (el.labelLayer)
     el.labelLayer.innerHTML = "";
 }
-function clearSceneObjects() {
-  const scene = state.three.scene;
-  if (!scene)
+function disposeOwnedObject3d(object3d, seen = /* @__PURE__ */ new Set()) {
+  if (!object3d || seen.has(object3d))
     return;
-  for (const root of state.assemblyRoots || [])
-    scene.remove(root);
-  for (const rendered of state.objects)
-    scene.remove(rendered.object3d);
-  clearLabels();
+  seen.add(object3d);
+  if (Array.isArray(object3d.children)) {
+    for (const child of [...object3d.children])
+      disposeOwnedObject3d(child, seen);
+  }
+  object3d.geometry?.dispose?.();
+  const material = object3d.material;
+  if (Array.isArray(material)) {
+    for (const entry of material)
+      entry?.dispose?.();
+  } else {
+    material?.dispose?.();
+  }
+}
+function resetSceneLifecycleState() {
+  robotPreviewLoadToken += 1;
+  cancelInitialCameraFitRetry();
   state.objects = [];
   state.assemblyRoots = [];
   state.robotAssemblyDiagnostics = [];
   state.robotAssemblyRenderDiagnostics = {};
+  state.robotUrdfPreviewDiagnostics = {};
   state.physicalAssemblyBounds = null;
   state.finalPhysicalFitBounds = null;
   state.resolvedFramePoses.clear();
+  state.frameLookup = /* @__PURE__ */ new Map();
   state.lastFrameBounds = null;
+  removeSelectionHighlight();
   state._sceneBoundsExceededWarned = false;
+  state.diagnosticKeys = /* @__PURE__ */ new Set();
   state._fitBlockerWarnings = /* @__PURE__ */ new Set();
   state._generatedUrdfFramePoseWarnings = /* @__PURE__ */ new Set();
   state._supportSurfaceSemanticWarnings = /* @__PURE__ */ new Set();
+  state.robotPreviewResult = null;
+  state.initialPosePreview = { active: false, robotId: "", sceneKey: "" };
+  state.web3dReadiness = { state: "scene_loading", terminal: false, terminalState: "", terminalNavigationKey: web3dNavigationKey(), terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null };
+}
+function clearSceneObjects() {
+  const scene = state.three.scene;
+  const previousAssemblyRoots = [...state.assemblyRoots || []];
+  const previousObjects = [...state.objects || []];
+  resetSceneLifecycleState();
+  if (scene) {
+    const disposed = /* @__PURE__ */ new Set();
+    for (const root of previousAssemblyRoots) {
+      scene.remove(root);
+      disposeOwnedObject3d(root, disposed);
+    }
+    for (const rendered of previousObjects) {
+      scene.remove(rendered.object3d);
+      disposeOwnedObject3d(rendered.object3d, disposed);
+    }
+  }
+  clearLabels();
+  if (el.showInitialPose)
+    el.showInitialPose.checked = false;
+  setInitialPosePreviewUi(false);
   if (el.resetView)
     el.resetView.disabled = true;
   renderSceneSummary();
 }
 function renderScene(items) {
   clearSceneObjects();
+  state.frameLookup = parseSceneFrames(state.sceneJson || {});
+  state.resolvedFramePoses.clear();
+  beginWeb3dSceneReadiness(items);
   state.dirtyTransforms.clear();
   state.undoStack = [];
   state.redoStack = [];
@@ -40167,51 +41191,76 @@ function renderScene(items) {
   const scene = state.three.scene;
   state.robotUrdfPreviewDiagnostics = {};
   const urdfPreviewActive = isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview);
+  const diagnosticOnlyItems = items.filter(isDiagnosticOnlyItem);
+  const overlayPolicyItems = items.filter(isOverlayPolicyItem);
+  const primaryItems = items.filter(isPrimaryRenderableItem);
   const robotToolGeneratedUrdfItems = items.filter(isRobotToolGeneratedUrdfMeshVisualItem);
-  const assemblyBuild = urdfPreviewActive ? { handled: new Set(robotToolGeneratedUrdfItems), assemblies: [], renderDiagnostics: { skipped_flattened_urdf_visual_count: 0, assembled_hierarchy_rendered_mesh_count: 0, rendered_fk_visual_count: 0, skipped_legacy_generated_urdf_count: robotToolGeneratedUrdfItems.length, skipped_legacy_generated_urdf_visual_count: robotToolGeneratedUrdfItems.length, visible_duplicate_generated_urdf_count: 0, visible_tool0_fallback_count: 0, detached_robot_mesh_clusters: 0 } } : buildRobotAssemblies(items);
+  const policyEligibleRobotToolGeneratedUrdfItems = robotToolGeneratedUrdfItems.filter((item) => isDiagnosticOnlyItem(item) || isPrimaryRenderableItem(item));
+  if (urdfPreviewActive) {
+    for (const item of policyEligibleRobotToolGeneratedUrdfItems) {
+      item.workcell_web_render_pose_mode = "expanded_urdf_loader_skip_flattened_row";
+      item.expanded_urdf_loader_skip_reason = "expanded URDF mode renders robot/tool only through loadRobotPreview and URDFLoader; flattened row transforms are diagnostics only";
+      item.baked_world_visual_pose_diagnostic_only = Boolean(item.baked_world_visual_pose || item.expected_visual_pose || item.baked_world_visual_matrix || item.visual_origin || item.robot_world_pose);
+    }
+  }
+  const assemblyBuild = urdfPreviewActive ? { handled: new Set(policyEligibleRobotToolGeneratedUrdfItems), assemblies: [], renderDiagnostics: { skipped_flattened_urdf_visual_count: 0, diagnostic_only_record_count: diagnosticOnlyItems.length, overlay_record_count: overlayPolicyItems.length, primary_physical_record_count: primaryItems.length, assembled_hierarchy_rendered_mesh_count: 0, rendered_fk_visual_count: 0, skipped_legacy_generated_urdf_count: policyEligibleRobotToolGeneratedUrdfItems.length, skipped_legacy_generated_urdf_visual_count: policyEligibleRobotToolGeneratedUrdfItems.length, visible_duplicate_generated_urdf_count: 0, visible_tool0_fallback_count: 0, detached_robot_mesh_clusters: 0 } } : buildRobotAssemblies(primaryItems.concat(overlayPolicyItems));
   state.robotAssemblyDiagnostics = assemblyBuild.assemblies;
   state.robotAssemblyRenderDiagnostics = assemblyBuild.renderDiagnostics || {};
   if (urdfPreviewActive)
     loadExpandedUrdfRobotPreview(state.sceneJson.robot_preview);
-  for (const item2 of items) {
-    if (assemblyBuild.handled.has(item2))
+  for (const item of items) {
+    if (isDiagnosticOnlyItem(item))
       continue;
-    if (usesAssembledUrdfHierarchy(item2)) {
+    if (assemblyBuild.handled.has(item))
+      continue;
+    if (usesAssembledUrdfHierarchy(item)) {
       state.robotAssemblyRenderDiagnostics.skipped_flattened_urdf_visual_count = Number(state.robotAssemblyRenderDiagnostics.skipped_flattened_urdf_visual_count || 0) + 1;
       continue;
     }
     const object3d = new THREE.Group();
-    object3d.name = isGeneratedUrdfItem(item2) ? `${item2.id || itemLabel(item2)}_link_frame_root` : `${item2.id || itemLabel(item2)}_object_root`;
+    object3d.name = isGeneratedUrdfItem(item) ? `${item.id || itemLabel(item)}_link_frame_root` : `${item.id || itemLabel(item)}_object_root`;
     object3d.up.copy(THREE.Object3D.DEFAULT_UP);
-    const primitive = primitiveOf(item2);
-    const fallback = isSensor(item2) ? makeSensorMarker(item2) : makePrimitiveMesh(item2);
-    fallback.name = `${item2.id || itemLabel(item2)}_fallback`;
-    assignItemUserData(fallback, item2);
-    object3d.add(fallback);
-    if (!applyPose(object3d, item2))
+    const primitive = primitiveOf(item);
+    const fallback = isSensor(item) ? makeSensorMarker(item) : makePrimitiveMesh(item);
+    if (fallback) {
+      fallback.name = `${item.id || itemLabel(item)}_fallback`;
+      assignItemUserData(fallback, item);
+      object3d.add(fallback);
+    }
+    if (!applyPose(object3d, item))
       continue;
-    assignItemUserData(object3d, item2);
-    object3d.visible = state.debugOverlaysVisible || !isDebugOverlayItem(item2);
+    assignItemUserData(object3d, item);
+    object3d.visible = state.debugOverlaysVisible || !isDebugOverlayItem(item);
     scene.add(object3d);
-    const rendered = { item: item2, object3d, fallback, labelEl: createLabelElement(item2), originalTransform: transformOf(item2) };
-    const requiredMesh = itemRequiresMeshBackedVisual(item2);
-    const fallbackStatus = requiredMesh ? "mesh_loading_required" : primitive || isSensor(item2) ? "primitive_fallback" : "box_fallback";
-    const fallbackReason = requiredMesh ? "required mesh is loading; primitive fallback hidden unless mesh load fails as debug geometry" : primitive || isSensor(item2) ? "primitive geometry rendered while mesh loads or is unavailable" : "no primitive geometry or mesh was provided; using box fallback";
-    fallback.visible = !requiredMesh;
-    setRenderInfo(rendered, fallbackStatus, displayMeshUri(item2), fallbackReason);
+    const rendered = { item, object3d, fallback, labelEl: createLabelElement(item), originalTransform: transformOf(item) };
+    const requiredMesh = itemRequiresMeshBackedVisual(item);
+    const fallbackStatus = requiredMesh ? "mesh_loading_required" : fallback ? "primitive_fallback" : "no_physical_dimensions";
+    const fallbackReason = requiredMesh ? "required mesh is loading; primitive fallback hidden unless mesh load fails as debug geometry" : fallback ? "primitive geometry rendered while mesh loads or is unavailable" : "no mesh or physical primitive dimensions were provided; Product View box fallback suppressed";
+    if (fallback)
+      fallback.visible = !requiredMesh;
+    setRenderInfo(rendered, fallbackStatus, displayMeshUri(item), fallbackReason);
     state.objects.push(rendered);
-    maybeWarnSupportSurfaceSemantics(item2);
-    tryLoadMesh(item2, rendered, fallback);
+    maybeWarnSupportSurfaceSemantics(item);
+    tryLoadMesh(item, rendered, fallback);
   }
   renderFrameDebugOverlays();
   populateObjectList();
   updateLabels();
-  const bounds = computeFitBounds();
-  if (bounds)
-    frameScene(bounds);
   renderSceneSummary();
+  maybeEmitSceneReady();
 }
 function loadExpandedUrdfRobotPreview(preview) {
+  const loadToken = ++robotPreviewLoadToken;
+  const loadSceneId = sceneId();
+  let staleCallbackLogged = false;
+  const callbackIsCurrent = () => loadToken === robotPreviewLoadToken && loadSceneId === sceneId();
+  const ignoreStaleCallback = () => {
+    if (!staleCallbackLogged) {
+      console.debug?.(`Ignored stale robot preview callback: callback_scene=${loadSceneId} active_scene=${sceneId()}`);
+      staleCallbackLogged = true;
+    }
+    return true;
+  };
   const diagnostics = state.robotUrdfPreviewDiagnostics = {
     robot_render_mode: "expanded_urdf_loader",
     robot_preview_loaded: false,
@@ -40252,24 +41301,44 @@ function loadExpandedUrdfRobotPreview(preview) {
     return { root: null, links: /* @__PURE__ */ new Map(), joints: /* @__PURE__ */ new Map(), diagnostics, ready: Promise.resolve(null) };
   }
   const previewResult = loadRobotPreview2(preview, {
-    scene: state.three.scene,
-    assemblyRoots: state.assemblyRoots,
+    sceneId: loadSceneId,
+    scene: { add: (root) => {
+      if (callbackIsCurrent())
+        state.three.scene?.add?.(root);
+    } },
+    assemblyRoots: { push: (root) => {
+      if (callbackIsCurrent())
+        state.assemblyRoots.push(root);
+    } },
     repoRootRelativeUrl,
     meshUriDiagnostic,
     rootName: `${sceneDisplayName()}_expanded_urdf_loader_robot`,
     skippedLegacyGeneratedUrdfVisualCount: diagnostics.skipped_legacy_generated_urdf_visual_count,
     onRobotLoaded: (result) => {
+      if (!callbackIsCurrent())
+        return ignoreStaleCallback();
+      state.robotPreviewResult = result;
       state.robotUrdfPreviewDiagnostics = result.diagnostics;
+      if (!failIfExpandedUrdfExpectedVisualSetInvalid())
+        completeExpandedUrdfReadiness(result);
+      refreshInitialPoseActionState();
       renderSceneSummary();
-      const bounds = computeFitBounds();
-      if (bounds)
-        frameScene(bounds);
     },
     onRobotMeshLoaded: () => {
+      if (!callbackIsCurrent())
+        return ignoreStaleCallback();
       renderSceneSummary();
     },
-    onRobotMeshLoadError: () => renderSceneSummary(),
-    onRobotError: (err) => {
+    onRobotMeshLoadError: (err, uri, detail) => {
+      if (!callbackIsCurrent())
+        return ignoreStaleCallback();
+      failExpandedUrdfReadiness(err, state.robotUrdfPreviewDiagnostics, detail || { uri });
+      renderSceneSummary();
+    },
+    onRobotError: (err, diagnostics2) => {
+      if (!callbackIsCurrent())
+        return ignoreStaleCallback();
+      failExpandedUrdfReadiness(err, diagnostics2 || state.robotUrdfPreviewDiagnostics);
       appendRuntimeWarning({}, preview?.urdf_url || "", `expanded_urdf_loader failed: ${err?.message || err}`, "expanded_urdf_loader_failed");
       refreshWarnings();
       renderSceneSummary();
@@ -40278,16 +41347,16 @@ function loadExpandedUrdfRobotPreview(preview) {
   state.robotUrdfPreviewDiagnostics = previewResult.diagnostics;
   return previewResult;
 }
-function linkNameOfItem(item2) {
-  return String(item2?.link_name || item2?.link || item2?.frame || item2?.object_name || item2?.id || "").trim();
+function linkNameOfItem(item) {
+  return String(item?.link_name || item?.link || item?.frame || item?.object_name || item?.id || "").trim();
 }
-function parentLinkOfItem(item2) {
-  return String(item2?.parent_link || item2?.joint_parent_link || item2?.immediate_parent_link || "").trim();
+function parentLinkOfItem(item) {
+  return String(item?.parent_link || item?.joint_parent_link || item?.immediate_parent_link || "").trim();
 }
-function derivedParentToChildPose(item2, parentItem) {
-  if (!THREE?.Matrix4 || !item2 || !parentItem)
+function derivedParentToChildPose(item, parentItem) {
+  if (!THREE?.Matrix4 || !item || !parentItem)
     return null;
-  const childPose = item2?.link_world_pose || item2?.frame_world_pose;
+  const childPose = item?.link_world_pose || item?.frame_world_pose;
   const parentPose = parentItem?.link_world_pose || parentItem?.frame_world_pose;
   if (!hasFinitePoseBlock(childPose) || !hasFinitePoseBlock(parentPose))
     return null;
@@ -40295,19 +41364,19 @@ function derivedParentToChildPose(item2, parentItem) {
   const childWorld = matrixFromPoseBlock(childPose);
   return poseBlockFromMatrix(parentWorld.clone().invert().multiply(childWorld));
 }
-function jointOriginForChildItem(item2, parentItem) {
-  const explicit = item2?.parent_to_child_pose || item2?.parent_from_child || item2?.joint_origin || item2?.parent_joint_origin;
+function jointOriginForChildItem(item, parentItem) {
+  const explicit = item?.parent_to_child_pose || item?.parent_from_child || item?.joint_origin || item?.parent_joint_origin;
   if (hasFinitePoseBlock(explicit))
     return explicit;
-  const derived = derivedParentToChildPose(item2, parentItem);
+  const derived = derivedParentToChildPose(item, parentItem);
   if (derived) {
     const pose = { xyz: finiteXyzArrayFromVector(derived.xyz) || [0, 0, 0], rpy: finiteXyzArrayFromVector(derived.rpy) || [0, 0, 0] };
-    item2.parent_to_child_pose = pose;
-    item2.parent_from_child = pose;
-    item2.joint_origin = pose;
-    item2.parent_joint_origin = pose;
-    item2.parent_to_child_pose_source = "viewer_derived_parent_world_inverse_times_child_world";
-    item2.parent_from_child_source = "viewer_derived_parent_world_inverse_times_child_world";
+    item.parent_to_child_pose = pose;
+    item.parent_from_child = pose;
+    item.joint_origin = pose;
+    item.parent_joint_origin = pose;
+    item.parent_to_child_pose_source = "viewer_derived_parent_world_inverse_times_child_world";
+    item.parent_from_child_source = "viewer_derived_parent_world_inverse_times_child_world";
     return pose;
   }
   return { xyz: [0, 0, 0], rpy: [0, 0, 0] };
@@ -40318,11 +41387,11 @@ function applyPoseBlockToObject(object, poseSource) {
   object.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, "XYZ");
   object.scale.set(1, 1, 1);
 }
-function assemblyGroupKey(item2) {
-  if (itemAssemblyGroup(item2))
-    return itemAssemblyGroup(item2);
+function assemblyGroupKey(item) {
+  if (itemAssemblyGroup(item))
+    return itemAssemblyGroup(item);
   const scene = sceneId() || sceneDisplayName() || "scene";
-  const tool = isGeneratedToolOrGripperItem(item2) ? "tool" : "robot";
+  const tool = isGeneratedToolOrGripperItem(item) ? "tool" : "robot";
   return `${scene}_${tool}_generated_urdf`;
 }
 function createAssemblyLinkNode(name) {
@@ -40350,36 +41419,36 @@ function buildRobotAssemblies(items) {
     const linkPositions = {};
     const visualPositions = {};
     const chainLinks = ["base_link_inertia", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link", "wrist_3_link", "tool0", "gripper_base_link"];
-    for (const item2 of fkItems) {
-      item2.robot_render_mode = "verified_urdf_fk_visual_world_pose";
-      item2.workcell_web_render_pose_mode = "verified_urdf_fk_visual_world_pose";
-      item2.baked_world_visual_pose_diagnostic_only = Boolean(item2.baked_world_visual_pose || item2.expected_visual_pose);
+    for (const item of fkItems) {
+      item.robot_render_mode = "verified_urdf_fk_visual_world_pose";
+      item.workcell_web_render_pose_mode = "verified_urdf_fk_visual_world_pose";
+      item.baked_world_visual_pose_diagnostic_only = Boolean(item.baked_world_visual_pose || item.expected_visual_pose);
       const object3d = new THREE.Group();
-      object3d.name = `${item2.id || itemLabel(item2)}_urdf_fk_visual_world_pose_root`;
+      object3d.name = `${item.id || itemLabel(item)}_urdf_fk_visual_world_pose_root`;
       object3d.up.copy(THREE.Object3D.DEFAULT_UP);
-      applyPoseBlockToObject(object3d, item2.urdf_fk_visual_world_pose || item2.final_transform || item2.world_from_visual || item2.link_world_pose || item2.frame_world_pose);
+      applyPoseBlockToObject(object3d, item.urdf_fk_visual_world_pose || item.final_transform || item.world_from_visual || item.link_world_pose || item.frame_world_pose);
       root.add(object3d);
-      assignItemUserData(object3d, item2);
-      const primitive = primitiveOf(item2);
-      const meshlessTool0Frame = isExpectedMeshlessTool0Frame(item2);
-      const fallback = meshlessTool0Frame ? null : isSensor(item2) ? makeSensorMarker(item2) : makePrimitiveMesh(item2);
+      assignItemUserData(object3d, item);
+      const primitive = primitiveOf(item);
+      const meshlessTool0Frame = isExpectedMeshlessTool0Frame(item);
+      const fallback = meshlessTool0Frame ? null : isSensor(item) ? makeSensorMarker(item) : makePrimitiveMesh(item);
       if (fallback) {
-        fallback.name = `${item2.id || itemLabel(item2)}_fallback`;
-        assignItemUserData(fallback, item2);
+        fallback.name = `${item.id || itemLabel(item)}_fallback`;
+        assignItemUserData(fallback, item);
         fallback.visible = false;
         object3d.add(fallback);
       }
-      const rendered = { item: item2, object3d, fallback, labelEl: createLabelElement(item2), originalTransform: transformOf(item2) };
-      setRenderInfo(rendered, meshlessTool0Frame ? "meshless_frame" : itemRequiresMeshBackedVisual(item2) ? "mesh_loading_required" : primitive ? "primitive_fallback" : "box_fallback", displayMeshUri(item2), meshlessTool0Frame ? "tool0 is an expected meshless frame; no visible fallback is rendered" : "rendered from ROS TF verified URDF FK visual world pose");
+      const rendered = { item, object3d, fallback, labelEl: createLabelElement(item), originalTransform: transformOf(item) };
+      setRenderInfo(rendered, meshlessTool0Frame ? "meshless_frame" : itemRequiresMeshBackedVisual(item) ? "mesh_loading_required" : primitive ? "primitive_fallback" : "box_fallback", displayMeshUri(item), meshlessTool0Frame ? "tool0 is an expected meshless frame; no visible fallback is rendered" : "rendered from ROS TF verified URDF FK visual world pose");
       state.objects.push(rendered);
-      handled2.add(item2);
+      handled2.add(item);
       if (!meshlessTool0Frame) {
         const loadMeshForUrdfFk = tryLoadMesh;
-        loadMeshForUrdfFk(item2, rendered, fallback);
+        loadMeshForUrdfFk(item, rendered, fallback);
       }
-      const link = linkNameOfItem(item2);
-      const linkPoseSource = item2.urdf_fk_link_world_pose || item2.link_world_pose || item2.frame_world_pose || item2.final_transform;
-      const visualPoseSource = item2.urdf_fk_visual_world_pose || item2.final_transform || item2.world_from_visual || item2.link_world_pose || item2.frame_world_pose;
+      const link = linkNameOfItem(item);
+      const linkPoseSource = item.urdf_fk_link_world_pose || item.link_world_pose || item.frame_world_pose || item.final_transform;
+      const visualPoseSource = item.urdf_fk_visual_world_pose || item.final_transform || item.world_from_visual || item.link_world_pose || item.frame_world_pose;
       if (link && !linkPositions[link] && hasFinitePoseBlock(linkPoseSource))
         linkPositions[link] = finiteXyzArrayFromVector(poseBlockOf(linkPoseSource).xyz);
       if (link && !visualPositions[link] && hasFinitePoseBlock(visualPoseSource))
@@ -40391,22 +41460,22 @@ function buildRobotAssemblies(items) {
     const distances = {};
     for (const [a, b] of pairs)
       distances[`${a} -> ${b}`] = distanceMetersBetweenXyz(linkPositions[a], linkPositions[b]);
-    assemblies2.push({ assembly_group: assemblyGroupKey(fkItems[0] || {}), robot_instance_id: fkItems.find((i) => i.robot_instance_id)?.robot_instance_id || assemblyGroupKey(fkItems[0] || {}), robot_transform_source: "ros_tf_verified_urdf_fk", robot_render_mode: "verified_urdf_fk_visual_world_pose", robot_hierarchy_links: chainLinks.filter((l) => linkPositions[l] || visualPositions[l]), robot_hierarchy_missing_links: chainLinks.filter((l) => !linkPositions[l] && !visualPositions[l]), robot_hierarchy_missing_parents: [], robot_hierarchy_mesh_count: fkItems.filter((item2) => displayMeshUri(item2)).length, assembled_hierarchy_rendered_mesh_count: fkItems.filter((item2) => displayMeshUri(item2)).length, assembled_link_world_positions: linkPositions, assembled_visual_world_positions: visualPositions, assembled_link_adjacency_distances_m: distances, urdf_fk_debug_chain: chainLinks.map((link) => {
-      const item2 = fkItems.find((i) => linkNameOfItem(i) === link) || {};
-      return { link, parent: item2.urdf_joint_parent || parentLinkOfItem(item2), joint_name: item2.joint_name || item2.parent_joint_name || "", joint_origin: item2.urdf_joint_origin || item2.joint_origin || item2.parent_joint_origin || null, joint_value: item2.joint_value ?? item2.parent_joint_value ?? 0, world_xyz: linkPositions[link] || null, visual_world_xyz: visualPositions[link] || null };
+    assemblies2.push({ assembly_group: assemblyGroupKey(fkItems[0] || {}), robot_instance_id: fkItems.find((i) => i.robot_instance_id)?.robot_instance_id || assemblyGroupKey(fkItems[0] || {}), robot_transform_source: "ros_tf_verified_urdf_fk", robot_render_mode: "verified_urdf_fk_visual_world_pose", robot_hierarchy_links: chainLinks.filter((l) => linkPositions[l] || visualPositions[l]), robot_hierarchy_missing_links: chainLinks.filter((l) => !linkPositions[l] && !visualPositions[l]), robot_hierarchy_missing_parents: [], robot_hierarchy_mesh_count: fkItems.filter((item) => displayMeshUri(item)).length, assembled_hierarchy_rendered_mesh_count: fkItems.filter((item) => displayMeshUri(item)).length, assembled_link_world_positions: linkPositions, assembled_visual_world_positions: visualPositions, assembled_link_adjacency_distances_m: distances, urdf_fk_debug_chain: chainLinks.map((link) => {
+      const item = fkItems.find((i) => linkNameOfItem(i) === link) || {};
+      return { link, parent: item.urdf_joint_parent || parentLinkOfItem(item), joint_name: item.joint_name || item.parent_joint_name || "", joint_origin: item.urdf_joint_origin || item.joint_origin || item.parent_joint_origin || null, joint_value: item.joint_value ?? item.parent_joint_value ?? 0, world_xyz: linkPositions[link] || null, visual_world_xyz: visualPositions[link] || null };
     }), urdf_fk_distances_m: distances });
-    renderDiagnostics.assembled_hierarchy_rendered_mesh_count = fkItems.filter((item2) => displayMeshUri(item2)).length;
-    renderDiagnostics.rendered_fk_visual_count = fkItems.filter((item2) => displayMeshUri(item2)).length;
+    renderDiagnostics.assembled_hierarchy_rendered_mesh_count = fkItems.filter((item) => displayMeshUri(item)).length;
+    renderDiagnostics.rendered_fk_visual_count = fkItems.filter((item) => displayMeshUri(item)).length;
     renderDiagnostics.skipped_legacy_generated_urdf_count = handled2.size;
     renderDiagnostics.skipped_flattened_urdf_visual_count = handled2.size;
     return { handled: handled2, assemblies: assemblies2, renderDiagnostics };
   }
   const groups = /* @__PURE__ */ new Map();
-  for (const item2 of candidates) {
-    const key = assemblyGroupKey(item2);
+  for (const item of candidates) {
+    const key = assemblyGroupKey(item);
     if (!groups.has(key))
       groups.set(key, []);
-    groups.get(key).push(item2);
+    groups.get(key).push(item);
   }
   const handled = /* @__PURE__ */ new Set();
   const assemblies = [];
@@ -40417,13 +41486,13 @@ function buildRobotAssemblies(items) {
     root.userData.robot_render_mode = "assembled_urdf_hierarchy";
     root.userData.assembly_group = groupKey;
     const byLink = /* @__PURE__ */ new Map();
-    for (const item2 of groupItems) {
-      const link = linkNameOfItem(item2);
+    for (const item of groupItems) {
+      const link = linkNameOfItem(item);
       if (!link)
         continue;
       if (!byLink.has(link))
         byLink.set(link, []);
-      byLink.get(link).push(item2);
+      byLink.get(link).push(item);
     }
     for (const name of Array.from(byLink.keys())) {
       const parent = parentLinkOfItem(byLink.get(name)[0]);
@@ -40447,31 +41516,31 @@ function buildRobotAssemblies(items) {
         root.add(node);
       }
     }
-    for (const item2 of groupItems) {
-      const link = linkNameOfItem(item2);
+    for (const item of groupItems) {
+      const link = linkNameOfItem(item);
       const node = nodes.get(link);
       if (!node)
         continue;
-      item2.robot_render_mode = "assembled_urdf_hierarchy";
-      item2.workcell_web_render_pose_mode = "assembled_urdf_hierarchy";
-      item2.baked_world_visual_pose_diagnostic_only = Boolean(item2.baked_world_visual_pose || item2.expected_visual_pose);
-      const primitive = primitiveOf(item2);
-      const meshlessTool0Frame = isExpectedMeshlessTool0Frame(item2);
-      const fallback = meshlessTool0Frame ? null : isSensor(item2) ? makeSensorMarker(item2) : makePrimitiveMesh(item2);
+      item.robot_render_mode = "assembled_urdf_hierarchy";
+      item.workcell_web_render_pose_mode = "assembled_urdf_hierarchy";
+      item.baked_world_visual_pose_diagnostic_only = Boolean(item.baked_world_visual_pose || item.expected_visual_pose);
+      const primitive = primitiveOf(item);
+      const meshlessTool0Frame = isExpectedMeshlessTool0Frame(item);
+      const fallback = meshlessTool0Frame ? null : isSensor(item) ? makeSensorMarker(item) : makePrimitiveMesh(item);
       if (fallback) {
-        fallback.name = `${item2.id || itemLabel(item2)}_fallback`;
-        assignItemUserData(fallback, item2);
+        fallback.name = `${item.id || itemLabel(item)}_fallback`;
+        assignItemUserData(fallback, item);
         fallback.visible = false;
         node.add(fallback);
       }
-      assignItemUserData(node, item2);
-      const rendered = { item: item2, object3d: node, fallback, labelEl: createLabelElement(item2), originalTransform: transformOf(item2) };
-      const requiredMesh = itemRequiresMeshBackedVisual(item2);
-      setRenderInfo(rendered, meshlessTool0Frame ? "meshless_frame" : requiredMesh ? "mesh_loading_required" : primitive ? "primitive_fallback" : "box_fallback", displayMeshUri(item2), meshlessTool0Frame ? "tool0 is an expected meshless frame; no visible fallback is rendered" : requiredMesh ? "required mesh is loading under assembled URDF hierarchy" : "assembled URDF hierarchy fallback");
+      assignItemUserData(node, item);
+      const rendered = { item, object3d: node, fallback, labelEl: createLabelElement(item), originalTransform: transformOf(item) };
+      const requiredMesh = itemRequiresMeshBackedVisual(item);
+      setRenderInfo(rendered, meshlessTool0Frame ? "meshless_frame" : requiredMesh ? "mesh_loading_required" : primitive ? "primitive_fallback" : "box_fallback", displayMeshUri(item), meshlessTool0Frame ? "tool0 is an expected meshless frame; no visible fallback is rendered" : requiredMesh ? "required mesh is loading under assembled URDF hierarchy" : "assembled URDF hierarchy fallback");
       state.objects.push(rendered);
-      handled.add(item2);
+      handled.add(item);
       if (!meshlessTool0Frame)
-        tryLoadMesh(item2, rendered, fallback);
+        tryLoadMesh(item, rendered, fallback);
     }
     state.three.scene.add(root);
     state.assemblyRoots.push(root);
@@ -40494,24 +41563,24 @@ function buildRobotAssemblies(items) {
       robot_hierarchy_links: Array.from(nodes.keys()),
       robot_hierarchy_missing_links: requiredLinks.filter((link) => !nodes.has(link)),
       robot_hierarchy_missing_parents: Array.from(new Set(missingParents)),
-      robot_hierarchy_mesh_count: groupItems.filter((item2) => displayMeshUri(item2)).length,
-      assembled_hierarchy_rendered_mesh_count: groupItems.filter((item2) => displayMeshUri(item2)).length,
+      robot_hierarchy_mesh_count: groupItems.filter((item) => displayMeshUri(item)).length,
+      assembled_hierarchy_rendered_mesh_count: groupItems.filter((item) => displayMeshUri(item)).length,
       assembled_link_world_positions: linkPositions,
       assembled_link_adjacency_distances_m: adjacency
     });
-    renderDiagnostics.assembled_hierarchy_rendered_mesh_count += groupItems.filter((item2) => displayMeshUri(item2)).length;
+    renderDiagnostics.assembled_hierarchy_rendered_mesh_count += groupItems.filter((item) => displayMeshUri(item)).length;
   }
   renderDiagnostics.skipped_flattened_urdf_visual_count = handled.size;
   return { handled, assemblies, renderDiagnostics };
 }
-function createLabelElement(item2) {
-  if (!el.labelLayer || !shouldLabelItem(item2))
+function createLabelElement(item) {
+  if (!el.labelLayer || !shouldLabelItem(item))
     return null;
   const label = document.createElement("div");
   label.className = "object-label";
-  label.textContent = itemLabel(item2);
-  label.title = `${item2.id || itemLabel(item2)} \u2014 ${itemType(item2)}`;
-  label.setAttribute("data-object-id", item2.id || itemLabel(item2));
+  label.textContent = itemLabel(item);
+  label.title = `${item.id || itemLabel(item)} \u2014 ${itemType(item)}`;
+  label.setAttribute("data-object-id", item.id || itemLabel(item));
   el.labelLayer.appendChild(label);
   return label;
 }
@@ -40543,7 +41612,6 @@ function setDebugOverlaysVisible(visible) {
   populateObjectList();
   updateLabels();
   renderSceneSummary();
-  resetView();
 }
 function updateLabels() {
   const { camera } = state.three;
@@ -40680,16 +41748,56 @@ function populateObjectList() {
       appendObjectListRow(rendered, group);
   }
 }
+function removeSelectionHighlight() {
+  const highlight = state.three.selectionHighlight;
+  if (!highlight)
+    return;
+  state.three.scene?.remove(highlight);
+  disposeOwnedObject3d(highlight);
+  state.three.selectionHighlight = null;
+}
+function refreshSelectionHighlight(rendered) {
+  removeSelectionHighlight();
+  if (!rendered?.object3d || !state.three.scene || !THREE?.Box3Helper)
+    return;
+  const box = new THREE.Box3().setFromObject(rendered.object3d);
+  if (box.isEmpty())
+    return;
+  const helper = new THREE.Box3Helper(box, 30888);
+  helper.name = "selection_subtle_bounds_highlight";
+  helper.userData.selection_outline = true;
+  helper.userData.selection_highlight = true;
+  helper.userData.exclude_from_fit_bounds = true;
+  helper.userData.exclude_from_physical_bounds = true;
+  helper.material.transparent = true;
+  helper.material.opacity = 0.62;
+  helper.material.depthTest = false;
+  helper.renderOrder = 10;
+  state.three.selectionHighlight = helper;
+  state.three.scene.add(helper);
+}
+function isNormalSelectableRendered(rendered) {
+  const item = rendered?.item;
+  return Boolean(item?.id) && item.selectable !== false && !isDiagnosticOnlyItem(item) && !isOverlayPolicyItem(item);
+}
 function selectObject(id) {
+  const wasInitialPreviewActive = state.initialPosePreview.active;
+  if (state.directMoveDrag && state.directMoveDrag.itemId !== (id || ""))
+    cancelDirectMoveDrag("Move cancelled");
+  if (state.directRotateDrag && state.directRotateDrag.itemId !== (id || ""))
+    cancelDirectRotateDrag("Rotation cancelled");
+  const requestedId = String(id || "");
+  const requested = requestedId ? renderedById(requestedId) : null;
+  if (requestedId && !isNormalSelectableRendered(requested)) {
+    pushEditorEvent("selection_ignored", { itemId: requestedId, reason: requested ? "diagnostic_helper_or_non_selectable" : "missing_render_identity", sceneId: sceneId() });
+    return "";
+  }
+  id = requestedId;
   const previous = state.selected || "";
   state.selected = id;
   document.querySelectorAll(".object-list li").forEach((li) => li.classList.toggle("selected", li.dataset.id === id));
   for (const rendered2 of state.objects) {
     const selected = rendered2.item.id === id;
-    rendered2.object3d.traverse((child) => {
-      if (child.material?.emissive)
-        child.material.emissive.setHex(selected ? 1798031 : 0);
-    });
     if (rendered2.labelEl)
       rendered2.labelEl.classList.toggle("selected", selected);
   }
@@ -40698,8 +41806,11 @@ function selectObject(id) {
   if (rendered) {
     populateInspector(rendered);
     attachTransformGizmo(rendered);
-  } else
+    refreshSelectionHighlight(rendered);
+  } else {
     detachTransformGizmo();
+    removeSelectionHighlight();
+  }
   if (previous !== (id || ""))
     pushEditorEvent("selection_changed", { itemId: id || "", itemType: rendered ? itemType(rendered.item) : "", editable: Boolean(rendered && rendered.item && canEditItem(rendered["item"])) });
 }
@@ -40714,10 +41825,206 @@ function pickObject(event) {
   state.three.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   state.three.raycaster.setFromCamera(state.three.pointer, state.three.camera);
   const hits = state.three.raycaster.intersectObjects(state.objects.map((o) => o.object3d), true);
-  const hit = hits.find((h) => h.object?.parent || h.object);
-  const item2 = hit?.object?.userData?.item || hit?.object?.parent?.userData?.item;
-  if (item2?.id)
-    selectObject(item2.id);
+  for (const hit of hits) {
+    const item = hit?.object?.userData?.item || hit?.object?.parent?.userData?.item;
+    const rendered = item?.id ? renderedById(item.id) : null;
+    if (!isNormalSelectableRendered(rendered))
+      continue;
+    selectObject(item.id);
+    return item.id;
+  }
+  return "";
+}
+function pointerToWorldPlane(event, z) {
+  const rect = el.canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height)
+    return null;
+  state.three.pointer.x = (event.clientX - rect.left) / rect.width * 2 - 1;
+  state.three.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  state.three.raycaster.setFromCamera(state.three.pointer, state.three.camera);
+  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -z);
+  const hit = new THREE.Vector3();
+  if (!state.three.raycaster.ray.intersectPlane(plane, hit))
+    return null;
+  return Number.isFinite(hit.x) && Number.isFinite(hit.y) && Number.isFinite(hit.z) ? hit : null;
+}
+function snapHorizontalPreview(transform) {
+  const snapped = snapTransform(transform, { translationAxes: ["x", "y"], rotationAxes: [] });
+  snapped.pose.xyz.z = transform.pose.xyz.z;
+  return snapped;
+}
+function beginDirectMoveDrag(event, rendered) {
+  if (state.editorMode !== "move" || !rendered || !canEditItem(rendered.item))
+    return false;
+  const start = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d));
+  const hit = pointerToWorldPlane(event, start.pose.xyz.z);
+  if (!hit)
+    return false;
+  const controls = state.three.controls;
+  state.directMoveDrag = { itemId: rendered.item.id, start, last: cloneTransform(start), offset: { x: start.pose.xyz.x - hit.x, y: start.pose.xyz.y - hit.y }, controlsWasEnabled: controls ? controls.enabled : true };
+  if (controls)
+    controls.enabled = false;
+  el.canvas.setPointerCapture?.(event.pointerId);
+  el.canvas.classList.add("direct-move-dragging");
+  event.preventDefault();
+  event.stopPropagation();
+  return true;
+}
+function updateDirectMoveDrag(event) {
+  const drag = state.directMoveDrag;
+  if (!drag)
+    return false;
+  const rendered = renderedById(drag.itemId);
+  if (!rendered || state.selected !== drag.itemId || !canEditItem(rendered.item))
+    return cancelDirectMoveDrag("Move cancelled"), true;
+  const hit = pointerToWorldPlane(event, drag.start.pose.xyz.z);
+  if (!hit)
+    return true;
+  const next = cloneTransform(drag.start);
+  next.pose.xyz.x = hit.x + drag.offset.x;
+  next.pose.xyz.y = hit.y + drag.offset.y;
+  next.pose.xyz.z = drag.start.pose.xyz.z;
+  const preview = snapHorizontalPreview(next);
+  if (!isFiniteTransform(preview))
+    return true;
+  drag.last = cloneTransform(preview);
+  applyTransformToObject(rendered.object3d, preview);
+  syncInspectorTransformFields(rendered);
+  updateLabels();
+  event.preventDefault();
+  event.stopPropagation();
+  return true;
+}
+function finishDirectMoveDrag(event) {
+  const drag = state.directMoveDrag;
+  if (!drag)
+    return false;
+  const rendered = renderedById(drag.itemId);
+  const finalTransform = cloneTransform(drag.last);
+  endDirectMoveDrag(event);
+  if (!rendered || !canEditItem(rendered.item) || !isFiniteTransform(finalTransform))
+    return false;
+  if (sameTransform(drag.start, finalTransform)) {
+    applyTransformToObject(rendered.object3d, drag.start);
+    syncInspectorTransformFields(rendered);
+    return true;
+  }
+  const committed = markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start });
+  if (!committed) {
+    applyTransformToObject(rendered.object3d, drag.start);
+    showError(`Move failed for ${itemLabel(rendered.item)}: final transform was rejected by the editor bridge.`);
+    return true;
+  }
+  emitTransformCommitted(rendered);
+  pushEditorEvent("status", { message: `Moved ${itemLabel(rendered.item)}` });
+  return true;
+}
+function endDirectMoveDrag(event) {
+  const drag = state.directMoveDrag;
+  state.directMoveDrag = null;
+  if (state.three.controls)
+    state.three.controls.enabled = drag ? drag.controlsWasEnabled : state.three.controls.enabled;
+  el.canvas.classList.remove("direct-move-dragging");
+  if (event?.pointerId !== void 0)
+    el.canvas.releasePointerCapture?.(event.pointerId);
+}
+function cancelDirectMoveDrag(message) {
+  const drag = state.directMoveDrag;
+  if (!drag)
+    return false;
+  const rendered = renderedById(drag.itemId);
+  if (rendered) {
+    applyTransformToObject(rendered.object3d, drag.start);
+    syncInspectorTransformFields(rendered);
+    updateLabels();
+  }
+  endDirectMoveDrag();
+  pushEditorEvent("status", { message: message || "Move cancelled" });
+  return true;
+}
+function onCanvasPointerDown(event) {
+  const hitId = pickObject(event);
+  const rendered = hitId && hitId === state.selected ? renderedById(state.selected) : null;
+  if (beginDirectMoveDrag(event, rendered))
+    return;
+}
+function onCanvasPointerMove(event) {
+  updateDirectMoveDrag(event);
+}
+function onCanvasPointerUp(event) {
+  finishDirectMoveDrag(event);
+}
+function directRotatePreviewTransform(rendered) {
+  const drag = state.directRotateDrag;
+  if (!drag || !rendered || rendered.item.id !== drag.itemId)
+    return null;
+  const next = cloneTransform(drag.start);
+  next.pose.rpy.z = transformFromObject(rendered.object3d).pose.rpy.z;
+  return snapTransform(next, { translationAxes: [], rotationAxes: ["z"] });
+}
+function beginDirectRotateDrag(rendered) {
+  if (state.editorMode !== "rotate" || !rendered || !canEditItem(rendered.item))
+    return false;
+  const controls = state.three.controls;
+  const start = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d));
+  state.directRotateDrag = { itemId: rendered.item.id, start, last: cloneTransform(start), controlsWasEnabled: controls ? controls.enabled : true };
+  if (controls)
+    controls.enabled = false;
+  return true;
+}
+function previewDirectRotateDrag(rendered) {
+  const preview = directRotatePreviewTransform(rendered);
+  if (!preview || !isFiniteTransform(preview))
+    return false;
+  state.directRotateDrag.last = cloneTransform(preview);
+  applyTransformToObject(rendered.object3d, preview);
+  syncInspectorTransformFields(rendered);
+  updateLabels();
+  return true;
+}
+function finishDirectRotateDrag(rendered) {
+  const drag = state.directRotateDrag;
+  if (!drag)
+    return false;
+  rendered = rendered || renderedById(drag.itemId);
+  const finalTransform = cloneTransform(drag.last);
+  endDirectRotateDrag();
+  if (!rendered || !canEditItem(rendered.item) || !isFiniteTransform(finalTransform))
+    return false;
+  if (sameTransform(drag.start, finalTransform)) {
+    applyTransformToObject(rendered.object3d, drag.start);
+    syncInspectorTransformFields(rendered);
+    return true;
+  }
+  const committed = markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start, snapOptions: { translationAxes: [], rotationAxes: ["z"] } });
+  if (!committed) {
+    applyTransformToObject(rendered.object3d, drag.start);
+    showError(`Rotation failed for ${itemLabel(rendered.item)}: final transform was rejected by the editor bridge.`);
+    return true;
+  }
+  emitTransformCommitted(rendered);
+  pushEditorEvent("status", { message: `Rotated ${itemLabel(rendered.item)}` });
+  return true;
+}
+function endDirectRotateDrag() {
+  const drag = state.directRotateDrag;
+  state.directRotateDrag = null;
+  if (state.three.controls)
+    state.three.controls.enabled = drag ? drag.controlsWasEnabled : state.three.controls.enabled;
+}
+function cancelDirectRotateDrag(message) {
+  const drag = state.directRotateDrag;
+  if (!drag)
+    return false;
+  const rendered = renderedById(drag.itemId);
+  if (rendered) {
+    applyTransformToObject(rendered.object3d, drag.start);
+    syncInspectorTransformFields(rendered);
+    updateLabels();
+  }
+  endDirectRotateDrag();
+  pushEditorEvent("status", { message: message || "Rotation cancelled" });
+  return true;
 }
 function attachTransformGizmo(rendered) {
   const gizmo = state.three.transformControls;
@@ -40727,10 +42034,19 @@ function attachTransformGizmo(rendered) {
     gizmo.attach(rendered.object3d);
     gizmo.visible = true;
     gizmo.enabled = true;
-    if (state.editorMode === "rotate")
+    if (state.editorMode === "rotate") {
       gizmo.setMode("rotate");
-    else
+      gizmo.setSpace("world");
+      gizmo.showX = false;
+      gizmo.showY = false;
+      gizmo.showZ = true;
+    } else {
       gizmo.setMode("translate");
+      gizmo.setSpace("world");
+      gizmo.showX = true;
+      gizmo.showY = true;
+      gizmo.showZ = true;
+    }
     gizmo.enabled = state.editorMode !== "select";
     gizmo.setTranslationSnap(el.snapToggle?.checked ? translationSnapValue() : null);
     gizmo.setRotationSnap(el.snapToggle?.checked ? rotationSnapRadians() : null);
@@ -40752,10 +42068,12 @@ function refreshGizmoSnap() {
   gizmo.setTranslationSnap(el.snapToggle?.checked ? translationSnapValue() : null);
   gizmo.setRotationSnap(el.snapToggle?.checked ? rotationSnapRadians() : null);
 }
-function canEditItem(item2) {
-  const sourceIdentity = [item2?.source_kind, item2?.source_layer, item2?.active_visual_source, item2?.role, item2?.category].map((value) => String(value || "").toLowerCase()).join(" ");
+function canEditItem(item) {
+  if (!isPrimaryRenderableItem(item) || isDiagnosticOnlyItem(item) || isOverlayPolicyItem(item))
+    return false;
+  const sourceIdentity = [item?.source_kind, item?.source_layer, item?.active_visual_source, item?.role, item?.category].map((value) => String(value || "").toLowerCase()).join(" ");
   const source = sourceIdentity;
-  if (item2?.locked || item2?.editable !== true || source.includes("generated"))
+  if (item?.locked || item?.editable !== true || source.includes("generated"))
     return false;
   return true;
 }
@@ -40764,9 +42082,9 @@ function currentTransformFromInputs(container) {
   return { pose: { xyz: { x: get("x"), y: get("y"), z: get("z") }, rpy: { x: get("roll"), y: get("pitch"), z: get("yaw") } }, scale: { x: get("scale_x"), y: get("scale_y"), z: get("scale_z") } };
 }
 function renderTransformInputs(rendered) {
-  const item2 = rendered.item;
-  const editable = canEditItem(item2);
-  const transform = state.dirtyTransforms.get(item2.id)?.newTransform || transformOf(item2);
+  const item = rendered.item;
+  const editable = canEditItem(item);
+  const transform = state.dirtyTransforms.get(item.id)?.newTransform || transformOf(item);
   const fields = [
     ["x", "X", transform.pose.xyz.x],
     ["y", "Y", transform.pose.xyz.y],
@@ -40836,6 +42154,7 @@ function updateDirtyState() {
   populateObjectList();
 }
 function clearPreviewEdits() {
+  cancelDirectMoveDrag("Move cancelled");
   for (const rendered of state.objects)
     applyTransformToObject(rendered.object3d, rendered.originalTransform);
   state.dirtyTransforms.clear();
@@ -40859,6 +42178,7 @@ function applyHistoryEntry(entry, direction) {
     populateInspector(rendered);
 }
 function undoPreviewEdit() {
+  cancelDirectMoveDrag("Move cancelled");
   const entry = state.undoStack.pop();
   if (!entry)
     return;
@@ -40868,6 +42188,7 @@ function undoPreviewEdit() {
   emitDirtyChanged();
 }
 function redoPreviewEdit() {
+  cancelDirectMoveDrag("Move cancelled");
   const entry = state.redoStack.pop();
   if (!entry)
     return;
@@ -40918,62 +42239,62 @@ function exportEditPatch() {
   a.remove();
   URL.revokeObjectURL(a.href);
 }
-function firstPresent(item2, keys) {
+function firstPresent(item, keys) {
   for (const key of keys) {
-    if (item2?.[key] !== void 0 && item2?.[key] !== null && item2?.[key] !== "")
-      return item2[key];
+    if (item?.[key] !== void 0 && item?.[key] !== null && item?.[key] !== "")
+      return item[key];
   }
   return void 0;
 }
 function populateInspector(renderedOrItem) {
   const rendered = renderedOrItem?.item ? renderedOrItem : state.objects.find((obj) => obj.item.id === renderedOrItem?.id);
-  const item2 = rendered?.item || renderedOrItem;
-  const renderInfo = rendered?.renderInfo || item2.renderInfo || {};
-  const pose = poseOf(item2);
+  const item = rendered?.item || renderedOrItem;
+  const renderInfo = rendered?.renderInfo || item.renderInfo || {};
+  const pose = poseOf(item);
   const rows = {
-    id: item2.id,
-    label: itemLabel(item2),
-    type: itemType(item2),
-    details: supportSurfaceDisplayType(item2),
-    source: item2.source_kind || item2.source || valueOrDash(item2.provenance && Object.values(item2.provenance)[0]),
+    id: item.id,
+    label: itemLabel(item),
+    type: itemType(item),
+    details: supportSurfaceDisplayType(item),
+    source: item.source_kind || item.source || valueOrDash(item.provenance && Object.values(item.provenance)[0]),
     "pose xyz": [pose.xyz.x, pose.xyz.y, pose.xyz.z].map((n) => n.toFixed(3)).join(", "),
     "pose rpy": [pose.rpy.x, pose.rpy.y, pose.rpy.z].map((n) => n.toFixed(3)).join(", "),
-    scale: JSON.stringify(item2.scale || item2.mesh_scale || [1, 1, 1]),
-    editable: String(Boolean(item2.editable)),
-    locked: String(Boolean(item2.locked)),
+    scale: JSON.stringify(item.scale || item.mesh_scale || [1, 1, 1]),
+    editable: String(Boolean(item.editable)),
+    locked: String(Boolean(item.locked)),
     render_status: renderInfo.render_status,
-    mesh_uri: renderInfo.mesh_uri || displayMeshUri(item2),
+    mesh_uri: renderInfo.mesh_uri || displayMeshUri(item),
     fallback_reason: renderInfo.fallback_reason,
-    mesh_status: item2.mesh_status,
-    mesh_load_required: item2.mesh_load_required,
-    mesh_load_status: item2.mesh_load_status,
-    mesh_load_url: item2.mesh_load_url,
-    mesh_load_error: item2.mesh_load_error,
-    original_mesh_uri: item2.original_mesh_uri,
-    mesh_staging_status: item2.mesh_staging_status,
-    mesh_staged_path: item2.mesh_staged_path,
-    mesh_resolve_warning: item2.mesh_resolve_warning,
-    support_surface_kind: item2.support_surface_kind,
-    supportSurfaceKind: item2.supportSurfaceKind,
-    top_surface_z_m: item2.top_surface_z_m,
-    topSurfaceZM: item2.topSurfaceZM,
-    support_surface_height_m: item2.support_surface_height_m,
-    supportSurfaceHeightM: item2.supportSurfaceHeightM,
-    expected_support_footprint_m: JSON.stringify(item2.expected_support_footprint_m || ""),
-    expectedSupportFootprintM: JSON.stringify(item2.expectedSupportFootprintM || ""),
-    primitive: JSON.stringify(primitiveOf(item2) || "box fallback")
+    mesh_status: item.mesh_status,
+    mesh_load_required: item.mesh_load_required,
+    mesh_load_status: item.mesh_load_status,
+    mesh_load_url: item.mesh_load_url,
+    mesh_load_error: item.mesh_load_error,
+    original_mesh_uri: item.original_mesh_uri,
+    mesh_staging_status: item.mesh_staging_status,
+    mesh_staged_path: item.mesh_staged_path,
+    mesh_resolve_warning: item.mesh_resolve_warning,
+    support_surface_kind: item.support_surface_kind,
+    supportSurfaceKind: item.supportSurfaceKind,
+    top_surface_z_m: item.top_surface_z_m,
+    topSurfaceZM: item.topSurfaceZM,
+    support_surface_height_m: item.support_surface_height_m,
+    supportSurfaceHeightM: item.supportSurfaceHeightM,
+    expected_support_footprint_m: JSON.stringify(item.expected_support_footprint_m || ""),
+    expectedSupportFootprintM: JSON.stringify(item.expectedSupportFootprintM || ""),
+    primitive: JSON.stringify(primitiveOf(item) || "box fallback")
   };
-  if (isSensor(item2)) {
+  if (isSensor(item)) {
     Object.assign(rows, {
-      camera_id: firstPresent(item2, ["camera_id", "camera", "sensor_id"]),
-      frame_id: firstPresent(item2, ["frame_id", "camera_frame", "frame"]),
-      model: firstPresent(item2, ["model", "profile", "camera_model", "sensor_model"]),
-      optical_frame_id: firstPresent(item2, ["optical_frame_id", "optical_frame", "color_optical_frame", "rgb_optical_frame"]),
-      depth_frame_id: firstPresent(item2, ["depth_frame_id", "depth_frame"]),
-      rgb_topic: firstPresent(item2, ["rgb_topic", "color_topic", "image_topic"]),
-      depth_topic: firstPresent(item2, ["depth_topic"]),
-      camera_info_topic: firstPresent(item2, ["camera_info_topic", "info_topic"]),
-      pointcloud_topic: firstPresent(item2, ["pointcloud_topic", "points_topic"])
+      camera_id: firstPresent(item, ["camera_id", "camera", "sensor_id"]),
+      frame_id: firstPresent(item, ["frame_id", "camera_frame", "frame"]),
+      model: firstPresent(item, ["model", "profile", "camera_model", "sensor_model"]),
+      optical_frame_id: firstPresent(item, ["optical_frame_id", "optical_frame", "color_optical_frame", "rgb_optical_frame"]),
+      depth_frame_id: firstPresent(item, ["depth_frame_id", "depth_frame"]),
+      rgb_topic: firstPresent(item, ["rgb_topic", "color_topic", "image_topic"]),
+      depth_topic: firstPresent(item, ["depth_topic"]),
+      camera_info_topic: firstPresent(item, ["camera_info_topic", "info_topic"]),
+      pointcloud_topic: firstPresent(item, ["pointcloud_topic", "points_topic"])
     });
   }
   el.inspector.className = "";
@@ -41008,14 +42329,22 @@ async function loadFile(file) {
     } catch (err) {
       throw new Error(`Invalid JSON in ${file.name}: ${err.message}`);
     }
+    state.sourceWebSceneFile = file.name || "";
+    state.builderRevision = "";
+    state.sceneJsonLoaded = false;
+    emitWeb3dReadinessState("scene_loading");
     const items = validateSceneJson(json);
     state.sceneJson = json;
-    state.sourceWebSceneFile = file.name || "";
+    state.sceneJsonLoaded = true;
+    emitWeb3dReadinessState("scene_loading");
+    beginInitialCameraFitForCurrentScene();
     state.runtimeWarnings = [];
     state.dirtyTransforms.clear();
     state.undoStack = [];
     state.redoStack = [];
     state.selected = null;
+    cancelDirectMoveDrag("Move cancelled");
+    cancelDirectRotateDrag("Rotation cancelled");
     detachTransformGizmo();
     el.empty.hidden = true;
     if (items.length)
@@ -41049,7 +42378,7 @@ function safeRelativeSceneUrl(raw) {
     return null;
   })();
   if (stagedHttpUrl)
-    return meshUriDiagnostic({ ...item, mesh_uri: stagedHttpUrl });
+    return stagedHttpUrl;
   if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("file://") || lower.startsWith("data:") || lower.startsWith("//") || uri.startsWith("/") || uri.startsWith("\\") || /^[a-zA-Z]:[\\/]/.test(uri) || /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(uri) || uri.includes("\\"))
     throw new Error(`unsafe scene URL rejected by viewer policy: ${uri}`);
   const pathOnly = uri.split(/[?#]/, 1)[0];
@@ -41064,20 +42393,27 @@ function safeRelativeSceneUrl(raw) {
 async function loadSceneUrl(rawUrl) {
   const sceneUrl = safeRelativeSceneUrl(rawUrl);
   try {
+    state.sourceWebSceneFile = sceneUrl;
+    state.sceneJsonLoaded = false;
+    emitWeb3dReadinessState("scene_loading", { source_web_scene_file: sceneUrl });
     const response = await fetch(repoRootRelativeUrl(sceneUrl), { cache: "no-store" });
     if (!response.ok)
       throw new Error(`HTTP ${response.status} ${response.statusText}`);
     const json = await response.json();
     const items = validateSceneJson(json);
     state.sceneJson = json;
+    state.sceneJsonLoaded = true;
+    emitWeb3dReadinessState("scene_loading");
     state.frameLookup = parseSceneFrames(json);
     state.resolvedFramePoses.clear();
-    state.sourceWebSceneFile = sceneUrl;
+    beginInitialCameraFitForCurrentScene();
     state.runtimeWarnings = [];
     state.dirtyTransforms.clear();
     state.undoStack = [];
     state.redoStack = [];
     state.selected = null;
+    cancelDirectMoveDrag("Move cancelled");
+    cancelDirectRotateDrag("Rotation cancelled");
     detachTransformGizmo();
     el.empty.hidden = true;
     renderScene(items);
@@ -41091,10 +42427,17 @@ async function loadSceneUrl(rawUrl) {
 }
 if (el.resetView)
   el.resetView.addEventListener("click", resetView);
+if (el.cameraPreset)
+  el.cameraPreset.addEventListener("change", (event) => {
+    applyCameraPreset(event.target.value);
+    event.target.value = "";
+  });
 if (el.labelsToggle)
   el.labelsToggle.addEventListener("change", (event) => setLabelsVisible(event.target.checked));
 if (el.debugOverlaysToggle)
   el.debugOverlaysToggle.addEventListener("change", (event) => setDebugOverlaysVisible(event.target.checked));
+if (el.showInitialPose)
+  el.showInitialPose.addEventListener("change", (event) => toggleInitialPosePreview(event.target.checked));
 if (el.undoEdit)
   el.undoEdit.addEventListener("click", undoPreviewEdit);
 if (el.redoEdit)
@@ -41111,14 +42454,26 @@ if (el.exportEditPatch)
   el.exportEditPatch.addEventListener("click", exportEditPatch);
 function setEditorMode(mode) {
   const normalized = mode === "move" ? "move" : mode === "rotate" ? "rotate" : "select";
+  if (state.editorMode !== normalized) {
+    cancelDirectMoveDrag("Move cancelled");
+    cancelDirectRotateDrag("Rotation cancelled");
+  }
   state.editorMode = normalized;
   const gizmo = state.three.transformControls;
   if (gizmo) {
     if (normalized === "move") {
       gizmo.setMode("translate");
+      gizmo.setSpace("world");
+      gizmo.showX = true;
+      gizmo.showY = true;
+      gizmo.showZ = true;
       gizmo.enabled = true;
     } else if (normalized === "rotate") {
       gizmo.setMode("rotate");
+      gizmo.setSpace("world");
+      gizmo.showX = false;
+      gizmo.showY = false;
+      gizmo.showZ = true;
       gizmo.enabled = true;
     } else {
       gizmo.enabled = false;
@@ -41140,6 +42495,7 @@ window.__WORKCELL_EDITOR_API_V1__ = {
     selectObject(String(id || ""));
     return editorState();
   },
+  selectionDiagnostics: () => currentSelectionDiagnostics(),
   clearSelection: () => {
     clearSelection();
     return editorState();
@@ -41162,6 +42518,14 @@ window.__WORKCELL_EDITOR_API_V1__ = {
   },
   fitScene: () => {
     resetView();
+    return editorState();
+  },
+  applyCameraPreset: (preset) => {
+    applyCameraPreset(preset);
+    return editorState();
+  },
+  fitSelection: () => {
+    fitSelection();
     return editorState();
   },
   getEditPatch: () => buildEditPatch(),
@@ -41192,15 +42556,23 @@ async function boot() {
     ColladaLoader2 = colladaModule.ColladaLoader;
     OBJLoader2 = objModule.OBJLoader;
     loadRobotPreview2 = urdfRobotRendererModule.loadRobotPreview;
+    applyRobotJointPreview2 = urdfRobotRendererModule.applyRobotJointPreview;
     initThree();
     setLabelsVisible(el.labelsToggle?.checked || false);
     setDebugOverlaysVisible(el.debugOverlaysToggle?.checked || false);
     const params = new URLSearchParams(window.location.search);
     if (params.get("embedded") === "1")
       document.body.classList.add("embedded-mode");
+    state.builderRevision = params.get("builderRevision") || "";
     const sceneParam = params.get("scene");
-    if (sceneParam)
-      await loadSceneUrl(sceneParam);
+    if (sceneParam) {
+      state.sourceWebSceneFile = safeRelativeSceneUrl(sceneParam);
+      state.sceneJsonLoaded = false;
+      emitWeb3dReadinessState("scene_loading");
+      await loadSceneUrl(state.sourceWebSceneFile);
+    } else {
+      updateViewerStatus();
+    }
   } catch (err) {
     showError(`Bundled Three.js module load failure: ${err.message || err}`);
   }
