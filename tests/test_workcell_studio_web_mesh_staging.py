@@ -523,3 +523,31 @@ def test_expanded_urdf_rejects_unsafe_and_non_package_mesh_uris(monkeypatch, tmp
             raise AssertionError(f'unsafe URI was accepted: {uri}')
         assert uri in message
         assert ('Invalid or unsafe package URI' in message) or ('must be a package:// URI' in message)
+
+
+def test_real_nested_robotiq_85_package_uri_stages_from_repo_assets(monkeypatch, tmp_path):
+    monkeypatch.chdir(REPO_ROOT)
+    package_uri = "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae"
+    scene = _scene(tmp_path, "real_nested_2f_scene", [{"id": "robotiq_85_base", "category": "tool", "mesh_uri": package_uri}])
+
+    payload = _export_with_prefix(monkeypatch, scene, tmp_path / "out" / "scene.web_scene.json", None)
+    item = _item(payload, "robotiq_85_base")
+
+    assert item["mesh_staging_status"] == "staged"
+    assert item["resolved_source_path"] == "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae"
+    assert item["mesh_uri"] == "build/workcell_studio_web_scene/assets/real_nested_2f_scene/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae"
+    assert (REPO_ROOT / item["mesh_uri"]).is_file()
+
+
+def test_real_nested_robotiq_3f_package_uri_stages_from_repo_assets(monkeypatch, tmp_path):
+    monkeypatch.chdir(REPO_ROOT)
+    package_uri = "package://robotiq_3f_gripper_description/meshes/robotiq-3f-gripper_articulated/visual/palm.dae"
+    scene = _scene(tmp_path, "real_nested_3f_scene", [{"id": "robotiq_3f_palm", "category": "tool", "mesh_uri": package_uri}])
+
+    payload = _export_with_prefix(monkeypatch, scene, tmp_path / "out" / "scene.web_scene.json", None)
+    item = _item(payload, "robotiq_3f_palm")
+
+    assert item["mesh_staging_status"] == "staged"
+    assert item["resolved_source_path"] == "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper_articulated/visual/palm.dae"
+    assert item["mesh_uri"] == "build/workcell_studio_web_scene/assets/real_nested_3f_scene/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper_articulated/visual/palm.dae"
+    assert (REPO_ROOT / item["mesh_uri"]).is_file()
