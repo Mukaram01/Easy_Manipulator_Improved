@@ -3549,6 +3549,7 @@ void MainWindow::generate_yaml_draft_for_selected_scene()
     out << "layout:\n  items: []\n";
   }
   append_studio_log(QString("Generate YAML: ensured environment.yaml, cell_definition.yaml, scene_manifest.yaml, environment_layout.yaml for '%1'.").arg(QString::fromStdString(sc.scene_name)));
+  workcell_builder::invalidate_workcell_studio_scene_metadata_snapshot(sc.scene_dir, "generation");
   refresh_scene_browser_ui();
   refresh_scene_builder_selected_scene_ui();
   refresh_new_cell_checklist();
@@ -3649,6 +3650,7 @@ void MainWindow::generate_scene_package_for_selected_scene() {
   append_studio_log(QString("Next: colcon build --symlink-install --packages-select %1").arg(scene_name));
   append_studio_log("Next: source install/setup.bash");
   append_studio_log(QString("Next: ros2 launch %1 demo.launch.py use_fake_hardware:=true launch_rviz:=true").arg(scene_name));
+  workcell_builder::invalidate_workcell_studio_scene_metadata_snapshot(sc.scene_dir, "generation");
   if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400));
   QString post_warning;
   bool post_blocked = false;
@@ -7047,6 +7049,7 @@ void MainWindow::save_layout_changes(){
     .arg(static_cast<int>(editable_saved_count)));
   append_studio_log(QString("Save Layout: rebuilding Scene3D data after save (selection id snapshot='%1').")
     .arg(stable_selected_id_before_refresh.isEmpty() ? "<none>" : stable_selected_id_before_refresh));
+  workcell_builder::invalidate_workcell_studio_scene_metadata_snapshot(scene_dir, "save_layout");
   refresh_scene_builder_left_explorer();
   if (!stable_selected_id_before_refresh.isEmpty()) {
     apply_scene_selection(stable_selected_id_before_refresh, QStringLiteral("unknown"), false, false);
