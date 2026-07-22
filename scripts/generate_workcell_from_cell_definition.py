@@ -257,6 +257,52 @@ def _render_environment_yaml(cell_def: dict[str, Any], scene_generator: Any, cel
     return _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, payload)
 
 
+
+def _build_perception_adapter_config(cell_def: dict[str, Any], task_recipe: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
+    cell = cell_def.get("cell", {}) if isinstance(cell_def.get("cell"), dict) else {}
+    camera = cell_def.get("camera", {}) if isinstance(cell_def.get("camera"), dict) else {}
+    perception = cell_def.get("perception", {}) if isinstance(cell_def.get("perception"), dict) else {}
+    task = cell_def.get("task", {}) if isinstance(cell_def.get("task"), dict) else {}
+    scene_id = str(cell.get("id") or cell_def.get("scene_id") or "").strip()
+    enabled = bool(perception.get("enabled", camera.get("enabled", False)))
+    mode = str(perception.get("mode", "off" if not enabled else "epd_snapshot")).strip()
+    if not enabled or mode in {"off", "disabled", "none"}:
+        return {"schema_version": "workcell_perception_adapter_config/v1", "status": "NOT_APPLICABLE", "reason": "scene has no perception requirement", "scene_id": scene_id, "normalized_output_contract": "workcell_perception_snapshot/v1"}
+    camera_id = str(perception.get("camera_id") or camera.get("camera_id") or camera.get("id") or "").strip()
+    frame_id = str(perception.get("frame_id") or camera.get("frame_id") or camera.get("frame") or "").strip()
+    expected_frames = perception.get("expected_frames") or [f for f in [frame_id, camera.get("optical_frame_id"), (cell_def.get("environment", {}) or {}).get("frame")] if f]
+    epd = perception.get("epd_input", {}) if isinstance(perception.get("epd_input"), dict) else {}
+    required = perception.get("required_object_classes") or task.get("required_object_classes") or []
+    threshold = perception.get("confidence_threshold", 0.5)
+    blockers=[]
+    if not scene_id: blockers.append("cell.id is required for perception adapter config")
+    if not camera_id or camera_id == "UNKNOWN_CAMERA": blockers.append("camera_id is required for perception-backed scenes")
+    if not frame_id or frame_id == "UNKNOWN_FRAME": blockers.append("frame_id is required for perception-backed scenes")
+    if not epd.get("topic"): blockers.append("perception.epd_input.topic is required")
+    if not epd.get("message_type"): blockers.append("perception.epd_input.message_type is required")
+    if not isinstance(required, list) or not required: blockers.append("required_object_classes must list at least one class")
+    try:
+        threshold = float(threshold)
+        if threshold < 0.0 or threshold > 1.0: blockers.append("confidence_threshold must be in [0, 1]")
+    except Exception:
+        blockers.append("confidence_threshold must be numeric")
+        threshold = 0.5
+    if blockers:
+        raise ValueError("Invalid perception-backed scene metadata: " + "; ".join(blockers))
+    return {
+        "schema_version": "workcell_perception_adapter_config/v1",
+        "status": "READY",
+        "scene_id": scene_id,
+        "camera": {"camera_id": camera_id, "frame_id": frame_id},
+        "expected_frames": list(dict.fromkeys(str(f) for f in expected_frames if f)),
+        "epd_input": {"topic": epd.get("topic"), "message_type": epd.get("message_type")},
+        "required_object_classes": required,
+        "confidence_threshold": threshold,
+        "task_binding": {"task_id": task.get("id", task_recipe.get("id")), "pick_source": (task.get("pick") or {}).get("source_ref") or task.get("source_object"), "object_source": "epd_snapshot"},
+        "normalized_output_contract": {"schema_version": "workcell_perception_snapshot/v1", "required_fields": ["scene_id", "camera_id", "timestamp", "frame_id", "objects[].object_id_or_track_id", "objects[].label", "objects[].pose_or_centroid", "objects[].confidence"]},
+        "ownership": {"epd": "camera processing, detection, localization, tracking", "workcell_studio": "contract validation, scene/task binding, adapter configuration"},
+    }
+
 def _render_cmakelists(package_name: str) -> str:
     template_path = TEMPLATE_DIR / "CMakeLists_example.txt"
     contract_installs = """
@@ -1292,6 +1338,7 @@ def write_scene_package_contract(
                 "visual_mesh_index": "generated/scene_visual_mesh_index.json",
                 "validation_report": "generated/validation_report.md",
                 "scene_package_readiness": "generated/scene_package_readiness.json",
+                "perception_adapter_config": "generated/perception_adapter_config.yaml",
             }
         )
     scene_manifest["safety"] = {
@@ -1321,6 +1368,8 @@ def write_scene_package_contract(
     task_recipe_path.write_text(task_recipe_text, encoding="utf-8")
     (package_dir / "generated" / "task_recipe.preview.yaml").write_text(task_recipe_text, encoding="utf-8")
     (package_dir / "generated" / "scene_manifest.preview.yaml").write_text(scene_manifest_text, encoding="utf-8")
+    perception_adapter_config = _build_perception_adapter_config(loaded, task_recipe, warnings)
+    (package_dir / "generated" / "perception_adapter_config.yaml").write_text(_yaml_text_from(scene_generator, perception_adapter_config), encoding="utf-8")
     canonical_layout_text = source_snapshot.get("canonical_layout_text")
     if isinstance(canonical_layout_text, str):
         (package_dir / "layout" / "workcell_studio_layout.yaml").write_text(canonical_layout_text, encoding="utf-8")

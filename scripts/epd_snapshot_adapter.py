@@ -4,6 +4,116 @@ import argparse, json, math
 from pathlib import Path
 from typing import Any
 
+NORMALIZED_SNAPSHOT_SCHEMA_VERSION = "workcell_perception_snapshot/v1"
+
+def _finite_vec(values: Any, size: int, name: str, errors: list[str]) -> list[float] | None:
+    if not isinstance(values, list) or len(values) != size:
+        errors.append(f"{name} must be a {size}-value list")
+        return None
+    out=[]
+    for v in values:
+        try:
+            f=float(v)
+        except Exception:
+            errors.append(f"{name} contains non-numeric value")
+            return None
+        if not math.isfinite(f):
+            errors.append(f"{name} contains non-finite value")
+            return None
+        out.append(f)
+    return out
+
+def validate_normalized_snapshot(snapshot: dict[str, Any], *, expected_scene_id: str | None = None, expected_camera_id: str | None = None) -> list[str]:
+    """Validate the versioned Workcell Studio normalized EPD snapshot contract."""
+    errors: list[str] = []
+    if snapshot.get("schema_version") != NORMALIZED_SNAPSHOT_SCHEMA_VERSION:
+        errors.append(f"schema_version must be {NORMALIZED_SNAPSHOT_SCHEMA_VERSION}")
+    scene_id = snapshot.get("scene_id")
+    camera_id = snapshot.get("camera_id")
+    timestamp = snapshot.get("timestamp")
+    frame_id = snapshot.get("frame_id")
+    if not scene_id: errors.append("scene_id is required")
+    if not camera_id: errors.append("camera_id is required")
+    if not timestamp: errors.append("timestamp is required")
+    if not frame_id: errors.append("frame_id is required")
+    if expected_scene_id and scene_id != expected_scene_id:
+        errors.append(f"scene_id mismatch: expected {expected_scene_id}, got {scene_id}")
+    if expected_camera_id and camera_id != expected_camera_id:
+        errors.append(f"camera_id mismatch: expected {expected_camera_id}, got {camera_id}")
+    objects = snapshot.get("objects")
+    if not isinstance(objects, list):
+        errors.append("objects must be a list")
+        return errors
+    seen: set[str] = set()
+    for idx, obj in enumerate(objects):
+        if not isinstance(obj, dict):
+            errors.append(f"objects[{idx}] must be a mapping")
+            continue
+        oid = obj.get("object_id") or obj.get("track_id")
+        if not oid:
+            errors.append(f"objects[{idx}] requires object_id or track_id")
+        elif str(oid) in seen:
+            errors.append(f"duplicate object id: {oid}")
+        else:
+            seen.add(str(oid))
+        if not obj.get("label"):
+            errors.append(f"objects[{idx}].label is required")
+        try:
+            conf = float(obj.get("confidence"))
+            if not math.isfinite(conf) or conf < 0.0 or conf > 1.0:
+                errors.append(f"objects[{idx}].confidence must be in [0, 1]")
+        except Exception:
+            errors.append(f"objects[{idx}].confidence is required and numeric")
+        pose = obj.get("pose") if isinstance(obj.get("pose"), dict) else None
+        centroid = obj.get("centroid")
+        if pose:
+            _finite_vec(pose.get("position"), 3, f"objects[{idx}].pose.position", errors)
+            q = _finite_vec(pose.get("orientation_xyzw"), 4, f"objects[{idx}].pose.orientation_xyzw", errors)
+            if q is not None and abs(math.sqrt(sum(v*v for v in q)) - 1.0) > 1e-3:
+                errors.append(f"objects[{idx}].pose.orientation_xyzw must be normalized")
+            if pose.get("frame_id") and pose.get("frame_id") != frame_id:
+                errors.append(f"objects[{idx}].pose.frame_id must match snapshot frame_id")
+        elif centroid is not None:
+            _finite_vec(centroid, 3, f"objects[{idx}].centroid", errors)
+        else:
+            errors.append(f"objects[{idx}] requires pose or centroid")
+        attrs = obj.get("attributes", {})
+        if attrs is not None and not isinstance(attrs, dict):
+            errors.append(f"objects[{idx}].attributes must be a mapping when present")
+    return errors
+
+def normalize_detected_objects_snapshot(detected: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
+    perception = profile.get("perception", {}) if isinstance(profile.get("perception"), dict) else {}
+    camera = perception.get("camera", {}) if isinstance(perception.get("camera"), dict) else {}
+    scene_id = detected.get("scene_id") or perception.get("scene_id") or profile.get("scene_id")
+    camera_id = detected.get("camera_id") or camera.get("camera_id") or camera.get("id") or detected.get("camera")
+    frame_id = detected.get("frame_id") or camera.get("frame_id") or camera.get("optical_frame_id")
+    source = detected.get("source") if isinstance(detected.get("source"), dict) else {}
+    timestamp = detected.get("timestamp") or detected.get("captured_at") or source.get("captured_at")
+    out = {"schema_version": NORMALIZED_SNAPSHOT_SCHEMA_VERSION, "scene_id": scene_id, "camera_id": camera_id, "timestamp": timestamp, "frame_id": frame_id, "objects": []}
+    for obj in detected.get("objects", []):
+        if not isinstance(obj, dict):
+            continue
+        pose = obj.get("pose") if isinstance(obj.get("pose"), dict) else {}
+        centroid = obj.get("centroid")
+        item = {
+            "object_id": str(obj.get("object_id") or obj.get("id") or obj.get("name") or obj.get("tracking_id") or obj.get("track_id") or ""),
+            "track_id": obj.get("tracking_id") or obj.get("track_id"),
+            "label": obj.get("label") or obj.get("class_label") or obj.get("class") or obj.get("class_id") or obj.get("name"),
+            "confidence": obj.get("confidence"),
+            "attributes": obj.get("attributes", {}),
+        }
+        pos = pose.get("position") or pose.get("xyz") or obj.get("position")
+        quat = pose.get("orientation_xyzw") or pose.get("quaternion_xyzw")
+        if pos is not None:
+            item["pose"] = {"frame_id": pose.get("frame_id") or frame_id, "position": pos, "orientation_xyzw": quat or [0.0, 0.0, 0.0, 1.0]}
+        elif isinstance(centroid, dict):
+            item["centroid"] = [centroid.get("x"), centroid.get("y"), centroid.get("z")]
+        elif isinstance(centroid, list):
+            item["centroid"] = centroid
+        out["objects"].append(item)
+    return out
+
 def _load(path: Path)->dict[str,Any]:
     return json.loads(path.read_text(encoding='utf-8')) if path and path.exists() else {}
 
@@ -45,6 +155,14 @@ def main() -> int:
 
     if detected.get('schema_version')!='detected_objects/v1':
         raise SystemExit('invalid detected_objects schema')
+
+    normalized_snapshot = normalize_detected_objects_snapshot(detected, profile)
+    expected_scene = (profile.get('perception', {}) or {}).get('scene_id') or profile.get('scene_id')
+    expected_camera = (((profile.get('perception', {}) or {}).get('camera', {}) or {}).get('camera_id')
+                       or (((profile.get('perception', {}) or {}).get('camera', {}) or {}).get('id')))
+    snapshot_errors = validate_normalized_snapshot(normalized_snapshot, expected_scene_id=expected_scene, expected_camera_id=expected_camera)
+    if snapshot_errors:
+        raise SystemExit('invalid normalized perception snapshot: ' + '; '.join(snapshot_errors))
 
     mapping=((profile.get('perception',{}) or {}).get('object_mapping',{}))
     conf=float(mapping.get('confidence_threshold',0.5))

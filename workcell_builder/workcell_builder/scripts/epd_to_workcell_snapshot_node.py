@@ -44,7 +44,7 @@ def _normalize_detection(obj: dict, default_zone: str, min_confidence: float) ->
     }
 
 
-def build_snapshot_from_epd_payload(payload: dict, camera: str, camera_frame: str, default_zone: str, min_confidence: float = 0.0) -> dict:
+def build_snapshot_from_epd_payload(payload: dict, camera: str, camera_frame: str, default_zone: str, min_confidence: float = 0.0, scene_id: str = "") -> dict:
     objs = payload.get("objects", payload.get("detections", []))
     detections = []
     for o in objs:
@@ -52,14 +52,28 @@ def build_snapshot_from_epd_payload(payload: dict, camera: str, camera_frame: st
             d = _normalize_detection(o, default_zone, min_confidence)
             if d is not None:
                 detections.append(d)
+    normalized_objects = []
+    for d in detections:
+        position = d.get("estimated_xyz_world") or d.get("estimated_xyz_camera")
+        item = {
+            "object_id": d.get("id"),
+            "track_id": d.get("tracking_id"),
+            "label": d.get("class_label"),
+            "confidence": d.get("confidence"),
+            "attributes": {"zone_hint": d.get("zone_hint"), "segmented_cloud_available": d.get("segmented_cloud_available")},
+        }
+        if position is not None:
+            item["pose"] = {"frame_id": camera_frame, "position": position, "orientation_xyzw": [0.0, 0.0, 0.0, 1.0]}
+        normalized_objects.append(item)
     return {
-        "schema_version": 1,
+        "schema_version": "workcell_perception_snapshot/v1",
         "source": "epd_live",
         "runtime_mode": "live_adapter_metadata_only",
-        "camera": camera,
-        "camera_frame": camera_frame,
-        "timestamp_sec": time.time(),
-        "detections": detections,
+        "scene_id": scene_id,
+        "camera_id": camera,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "frame_id": camera_frame,
+        "objects": normalized_objects,
     }
 
 
@@ -71,6 +85,7 @@ class EpdToWorkcellSnapshotNode(Node):
         self.declare_parameter("use_tracking", False)
         self.declare_parameter("output_snapshot_topic", "/workcell_studio/epd_detection_snapshot_json")
         self.declare_parameter("output_status_topic", "/workcell_studio/epd_connector_status")
+        self.declare_parameter("scene_id", "")
         self.declare_parameter("camera_name", "realsense_d435i_1")
         self.declare_parameter("camera_frame", "camera_color_optical_frame")
         self.declare_parameter("default_zone_hint", "detection_zone_1")
@@ -103,6 +118,7 @@ class EpdToWorkcellSnapshotNode(Node):
             self.get_parameter("camera_frame").value,
             self.get_parameter("default_zone_hint").value,
             float(self.get_parameter("min_confidence").value),
+            self.get_parameter("scene_id").value,
         )
         self.snapshot_pub.publish(String(data=json.dumps(snap)))
         age = 1e9 if self.last_msg_time <= 0 else max(0.0, time.time() - self.last_msg_time)
@@ -110,7 +126,7 @@ class EpdToWorkcellSnapshotNode(Node):
             "epd_connected": age <= float(self.get_parameter("stale_timeout_s").value),
             "source_topic": self.sub.topic_name,
             "last_msg_age_s": round(age, 3),
-            "detections": len(snap.get("detections", [])),
+            "detections": len(snap.get("objects", [])),
             "last_error": self.last_error,
             "camera": self.get_parameter("camera_name").value,
             "output_topic": self.get_parameter("output_snapshot_topic").value,
