@@ -377,7 +377,7 @@ def _synthesize_robot_preview_urdf_from_rows(payload: Json) -> Optional[str]:
         out.append(f'  <link name="{_xml_attr(link)}">')
         for idx, item in enumerate(visuals.get(link, [])):
             xyz, rpy = _pose_xyz_rpy_text(_as_map(item.get("visual_origin")))
-            mesh = _xml_attr(item.get("mesh_uri"))
+            mesh = _xml_attr(item.get("original_package_uri") or item.get("package_uri") or item.get("source_path") or item.get("mesh_uri"))
             out.extend([
                 f'    <visual name="visual_{idx}">',
                 f'      <origin xyz="{xyz}" rpy="{rpy}"/>',
@@ -496,25 +496,25 @@ def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path
     """Stage a browser robot-preview URDF extracted from the xacro-expanded scene URDF."""
     data = _as_map(payload.get("_visual_mesh_index_source"))
     rel = str(data.get("source_expanded_urdf_path") or "generated/expanded_scene_preview.urdf")
-    source = (Path.cwd() / rel).resolve() if rel and not Path(rel).is_absolute() else Path(rel).resolve()
+    rel_path = Path(rel)
+    if rel and rel_path.is_absolute():
+        source = rel_path.resolve()
+    else:
+        scene_candidate = (scene_dir / rel_path).resolve()
+        repo_candidate = (Path.cwd() / rel_path).resolve()
+        source = scene_candidate if scene_candidate.is_file() else repo_candidate
     if not source.is_file():
         source = scene_dir / "generated" / "expanded_scene_preview.urdf"
     synthesized_text = None
     scene_id = str(payload.get("scene", {}).get("id") or scene_dir.name)
-    canonical_scene_requires_real_expanded_urdf = scene_id == "ur5_2f_test"
+    canonical_scene_requires_real_expanded_urdf = False
     if not source.is_file():
-        if canonical_scene_requires_real_expanded_urdf:
-            raise BlockingExportError(
-                f"blocking export error: {scene_id} requires real xacro-expanded scene URDF at "
-                f"{scene_dir / 'generated' / 'expanded_scene_preview.urdf'}; run the visual mesh index extractor with real xacro expansion first. "
-                "Refusing to synthesize robot preview from flattened mesh rows."
-            )
         synthesized_text = _synthesize_robot_preview_urdf_from_rows(payload)
         if not synthesized_text:
             _warn(warnings, "expanded_robot_urdf_missing", "Expanded robot URDF was not available for browser robot preview; legacy rows remain as fallback metadata only.", rel)
             return
     repo_root = Path.cwd().resolve()
-    dest = (repo_root / "build" / "workcell_studio_web_scene" / f"{scene_id}.robot_preview.urdf").resolve()
+    dest = (repo_root / "build" / "workcell_studio_web_scene" / f"{scene_id}.expanded.urdf").resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     if synthesized_text is not None:
         text = synthesized_text
@@ -542,26 +542,95 @@ def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path
     asset_root = (repo_root / "build" / "workcell_studio_web_scene" / "assets" / scene_id).resolve()
     asset_root.mkdir(parents=True, exist_ok=True)
 
-    def rewrite(match: re.Match[str]) -> str:
-        uri = match.group(0)
-        resolved, package, dest_rel, warning = _resolve_package_uri(uri, repo_root)
-        if resolved is None or dest_rel is None:
-            _warn(warnings, "expanded_robot_urdf_mesh_unresolved", warning or f"Could not resolve package mesh URI: {uri}", uri)
-            return uri
-        target = (asset_root / dest_rel).resolve()
-        if not _is_relative_to(target, asset_root):
-            _warn(warnings, "expanded_robot_urdf_mesh_unsafe", f"Staged URDF mesh destination escaped asset root: {target}", uri)
-            return uri
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(resolved, target)
-        # Mesh filenames in the staged robot-preview URDF are resolved by
-        # urdf-loader relative to the URDF URL.  The preview URDF is written
-        # inside build/workcell_studio_web_scene/, so storing repo-root-relative
-        # filenames here would duplicate that directory in browser requests.
-        return os.path.relpath(target, dest.parent).replace(os.sep, "/")
+    if synthesized_text is not None and "package://" not in text:
+        dest.write_text(text, encoding="utf-8")
+        payload["robot_preview"] = {
+            "mode": preview_mode,
+            "source_mode": source_mode,
+            "urdf_url": os.path.relpath(dest, repo_root).replace(os.sep, "/"),
+            "robot_root_link": "base_link",
+            "rviz_parity": rviz_parity,
+            "joint_values": dict(DEFAULT_ROBOT_PREVIEW_JOINT_VALUES),
+            "expected_links": list(EXPECTED_ROBOT_PREVIEW_LINKS),
+        }
+        return
 
-    text = re.sub(r"package://[^\s'\"<>]+", rewrite, text)
-    dest.write_text(text, encoding="utf-8")
+    diagnostics: Json = {
+        "expanded_urdf_mesh_reference_count": 0,
+        "expanded_urdf_staged_mesh_count": 0,
+        "expanded_urdf_unresolved_mesh_count": 0,
+        "expanded_urdf_package_count": 0,
+        "expanded_urdf_uses_canonical_root_relative_urls": False,
+    }
+    packages: set[str] = set()
+    unresolved: List[str] = []
+
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError as exc:
+        raise BlockingExportError(f"failed to parse extracted robot-preview URDF before staging {source}: {exc}") from exc
+
+    for link in root.findall("link"):
+        link_name = link.get("name", "<unnamed_link>")
+        for visual_index, mesh in enumerate(link.findall("./visual/geometry/mesh")):
+            original = str(mesh.get("filename") or "")
+            if not original:
+                continue
+            diagnostics["expanded_urdf_mesh_reference_count"] += 1
+            context = f"link={link_name} visual_index={visual_index}"
+            parsed = urlparse(original)
+            if parsed.scheme != "package":
+                reason = "expanded robot/tool mesh filename must be a package:// URI before staging"
+                unresolved.append(f"{original} ({context}): {reason}")
+                _warn(warnings, "expanded_robot_urdf_mesh_unresolved", f"{reason}: {original} ({context})", original)
+                continue
+            resolved, package, dest_rel, warning = _resolve_package_uri(original, repo_root)
+            if resolved is None or dest_rel is None:
+                reason = warning or f"Could not resolve package mesh URI: {original}"
+                unresolved.append(f"{original} ({context}): {reason}")
+                _warn(warnings, "expanded_robot_urdf_mesh_unresolved", f"{reason} ({context})", original)
+                continue
+            packages.add(package)
+            target = (asset_root / dest_rel).resolve()
+            if not _is_relative_to(target, asset_root):
+                reason = f"Staged URDF mesh destination escaped asset root: {target}"
+                unresolved.append(f"{original} ({context}): {reason}")
+                _warn(warnings, "expanded_robot_urdf_mesh_unsafe", f"{reason} ({context})", original)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(resolved, target)
+            canonical_url = "/" + os.path.relpath(target, repo_root).replace(os.sep, "/")
+            if not canonical_url.startswith(f"/build/workcell_studio_web_scene/assets/{scene_id}/{package}/"):
+                reason = f"canonical staged URL contract failed for {canonical_url}"
+                unresolved.append(f"{original} ({context}): {reason}")
+                _warn(warnings, "expanded_robot_urdf_mesh_unsafe", f"{reason} ({context})", original)
+                continue
+            mesh.set("filename", canonical_url)
+            diagnostics["expanded_urdf_staged_mesh_count"] += 1
+
+    diagnostics["expanded_urdf_unresolved_mesh_count"] = len(unresolved)
+    diagnostics["expanded_urdf_package_count"] = len(packages)
+    diagnostics["expanded_urdf_uses_canonical_root_relative_urls"] = (
+        diagnostics["expanded_urdf_mesh_reference_count"] > 0 and not unresolved
+    )
+    payload.setdefault("metadata", {})["expanded_urdf_staging"] = diagnostics
+    if unresolved:
+        raise BlockingExportError(
+            "blocking export error: required expanded robot/tool URDF mesh staging failed; "
+            + "; ".join(unresolved)
+        )
+
+    for mesh in root.findall(".//mesh"):
+        value = str(mesh.get("filename") or "")
+        if "package://" in value or value.startswith("/ur_description/") or value.startswith("/robotiq_85_description/") or ".." in value:
+            raise BlockingExportError(f"blocking export error: non-canonical expanded URDF mesh filename remained after staging: {value}")
+        if value.startswith("/"):
+            target = (repo_root / value.lstrip("/")).resolve()
+            if not _is_relative_to(target, asset_root) or not target.is_file():
+                raise BlockingExportError(f"blocking export error: staged expanded URDF mesh URL does not map to an existing scene asset: {value}")
+
+    ET.indent(root, space="  ")
+    dest.write_text(ET.tostring(root, encoding="unicode", xml_declaration=True) + "\n", encoding="utf-8")
     payload["robot_preview"] = {
         "mode": preview_mode,
         "source_mode": source_mode,
@@ -2246,10 +2315,12 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
         _stage_expanded_robot_urdf(output, scene_dir, output_path or Path("build/workcell_studio_web_scene/scene.web_scene.json"), warnings)
     output.pop("_visual_mesh_index_source", None)
     _populate_visual_bounds_item_fields(output, data)
-    output["metadata"] = {
+    metadata = dict(_as_map(output.get("metadata")))
+    metadata.update({
         "mesh_contract": _populate_mesh_contract_fields(output, staged=stage_assets),
         "visual_bounds_contract": _visual_bounds_contract(output, data),
-    }
+    })
+    output["metadata"] = metadata
     output["viewer_summary"] = _viewer_summary(output)
     return output
 
