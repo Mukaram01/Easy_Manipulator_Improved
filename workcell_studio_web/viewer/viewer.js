@@ -809,9 +809,28 @@ function pushEditorEvent(type, payload = {}) {
   state.editorEvents.push({ type, timestamp: new Date().toISOString(), ...payload });
   if (state.editorEvents.length > 100) state.editorEvents.splice(0, state.editorEvents.length - 100);
 }
+function currentSelectionDiagnostics() {
+  const id = String(state.selected || '');
+  const rendered = renderedById(id);
+  const item = rendered?.item || null;
+  return {
+    sceneId: sceneId(),
+    selectedItemId: id,
+    renderIdentity: id,
+    selectedItemType: rendered ? itemType(item) : '',
+    selectable: Boolean(item && item.selectable !== false && !isDiagnosticOnlyItem(item) && !isOverlayPolicyItem(item)),
+    editable: Boolean(item && canEditItem(item)),
+    locked: Boolean(item?.locked),
+    sourceLayer: String(item?.source_layer || ''),
+    activeVisualSource: String(item?.active_visual_source || ''),
+    diagnosticOnly: Boolean(item && isDiagnosticOnlyItem(item)),
+    helperOrOverlay: Boolean(item && isOverlayPolicyItem(item)),
+    objectPresent: Boolean(rendered),
+  };
+}
 function editorState() {
   const rendered = renderedById(state.selected);
-  return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || '', selectedItemType: rendered ? itemType(rendered.item) : '', selectedEditable: Boolean(rendered && rendered.item && canEditItem(rendered['item'])), dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, error: state.editorError || '' };
+  return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || '', selectedItemType: rendered ? itemType(rendered.item) : '', selectedEditable: Boolean(rendered && rendered.item && canEditItem(rendered['item'])), selectionDiagnostics: currentSelectionDiagnostics(), dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, error: state.editorError || '' };
 }
 function emitDirtyChanged() { pushEditorEvent('dirty_changed', { dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0 }); }
 function showError(message) {
@@ -3349,10 +3368,21 @@ function refreshSelectionHighlight(rendered) {
   state.three.scene.add(helper);
 }
 
+function isNormalSelectableRendered(rendered) {
+  const item = rendered?.item;
+  return Boolean(item?.id) && item.selectable !== false && !isDiagnosticOnlyItem(item) && !isOverlayPolicyItem(item);
+}
 function selectObject(id) {
   const wasInitialPreviewActive = state.initialPosePreview.active;
   if (state.directMoveDrag && state.directMoveDrag.itemId !== (id || '')) cancelDirectMoveDrag('Move cancelled');
   if (state.directRotateDrag && state.directRotateDrag.itemId !== (id || '')) cancelDirectRotateDrag('Rotation cancelled');
+  const requestedId = String(id || '');
+  const requested = requestedId ? renderedById(requestedId) : null;
+  if (requestedId && !isNormalSelectableRendered(requested)) {
+    pushEditorEvent('selection_ignored', { itemId: requestedId, reason: requested ? 'diagnostic_helper_or_non_selectable' : 'missing_render_identity', sceneId: sceneId() });
+    return '';
+  }
+  id = requestedId;
   const previous = state.selected || '';
   state.selected = id;
   document.querySelectorAll('.object-list li').forEach(li => li.classList.toggle('selected', li.dataset.id === id));
@@ -3372,10 +3402,14 @@ function pickObject(event) {
   state.three.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   state.three.raycaster.setFromCamera(state.three.pointer, state.three.camera);
   const hits = state.three.raycaster.intersectObjects(state.objects.map(o => o.object3d), true);
-  const hit = hits.find(h => h.object?.parent || h.object);
-  const item = hit?.object?.userData?.item || hit?.object?.parent?.userData?.item;
-  if (item?.id) selectObject(item.id);
-  return item?.id || '';
+  for (const hit of hits) {
+    const item = hit?.object?.userData?.item || hit?.object?.parent?.userData?.item;
+    const rendered = item?.id ? renderedById(item.id) : null;
+    if (!isNormalSelectableRendered(rendered)) continue;
+    selectObject(item.id);
+    return item.id;
+  }
+  return '';
 }
 
 
@@ -3793,6 +3827,7 @@ function setEditorSnap(enabled, translationMeters, rotationDegrees) {
 window.__WORKCELL_EDITOR_API_V1__ = {
   getState: () => editorState(),
   selectItem: id => { selectObject(String(id || '')); return editorState(); },
+  selectionDiagnostics: () => currentSelectionDiagnostics(),
   clearSelection: () => { clearSelection(); return editorState(); },
   setMode: mode => { setEditorMode(mode); return editorState(); },
   setSnap: (enabled, translationMeters, rotationDegrees) => { setEditorSnap(enabled, translationMeters, rotationDegrees); return editorState(); },
