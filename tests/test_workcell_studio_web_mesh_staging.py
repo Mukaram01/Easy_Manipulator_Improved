@@ -439,11 +439,17 @@ def test_known_package_missing_mesh_file_reports_missing_file(monkeypatch, tmp_p
 def _expanded_robot_scene(tmp_path: Path, scene_id: str, mesh_uris: list[tuple[str, str]]) -> Path:
     scene = _scene(tmp_path, scene_id, [])
     links = ['world', 'base_link', 'tool0', 'gripper_base_link']
-    visuals = []
+    link_blocks: dict[str, list[str]] = {}
     for link, uri in mesh_uris:
-        visuals.append(f'''  <link name="{link}">\n    <visual>\n      <origin xyz="0 0 0" rpy="0 0 0"/>\n      <geometry><mesh filename="{uri}" scale="1 1 1"/></geometry>\n    </visual>\n  </link>''')
+        kind = 'visual'
+        if '|' in link:
+            link, kind = link.split('|', 1)
+        link_blocks.setdefault(link, []).append(
+            f'    <{kind}>\n      <origin xyz="0 0 0" rpy="0 0 0"/>\n      <geometry><mesh filename="{uri}" scale="1 1 1"/></geometry>\n    </{kind}>'
+        )
+    visuals = [f'  <link name="{link}">\n' + '\n'.join(blocks) + '\n  </link>' for link, blocks in link_blocks.items()]
     for link in links:
-        if not any(v.startswith(f'  <link name="{link}"') for v in visuals):
+        if link not in link_blocks:
             visuals.append(f'  <link name="{link}"/>')
     joints = '''  <joint name="world_to_base" type="fixed"><parent link="world"/><child link="base_link"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>\n  <joint name="base_to_tool" type="fixed"><parent link="base_link"/><child link="tool0"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>\n  <joint name="tool_to_gripper" type="fixed"><parent link="tool0"/><child link="gripper_base_link"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>'''
     (scene / 'generated' / 'expanded_scene_preview.urdf').write_text('<robot name="fixture">\n' + '\n'.join(visuals) + '\n' + joints + '\n</robot>\n', encoding='utf-8')
@@ -484,6 +490,64 @@ def test_expanded_urdf_meshes_use_canonical_root_relative_urls(monkeypatch, tmp_
     assert diagnostics['expanded_urdf_uses_canonical_root_relative_urls'] is True
 
 
+def test_expanded_urdf_visual_and_collision_meshes_are_canonicalized_once(monkeypatch, tmp_path):
+    prefix = tmp_path / 'ament'
+    _package(prefix, 'generic_robot_description', 'meshes/visual/base.dae', '<COLLADA>visual</COLLADA>')
+    _package(prefix, 'generic_robot_description', 'meshes/collision/base.stl', 'solid collision\nendsolid collision\n')
+    scene = _expanded_robot_scene(
+        tmp_path,
+        'visual_collision_scene',
+        [
+            ('base_link', 'package://generic_robot_description/meshes/visual/base.dae'),
+            ('base_link|collision', 'package://generic_robot_description/meshes/collision/base.stl'),
+            ('tool0|collision', 'package://generic_robot_description/meshes/collision/base.stl'),
+        ],
+    )
+
+    payload = _export_with_prefix(monkeypatch, scene, tmp_path / 'out' / 'scene.web_scene.json', prefix)
+    urdf_path = REPO_ROOT / payload['robot_preview']['urdf_url']
+    root = exporter.ET.fromstring(urdf_path.read_text(encoding='utf-8'))
+    filenames = [mesh.get('filename') for mesh in root.findall('.//mesh')]
+
+    assert filenames == [
+        '/build/workcell_studio_web_scene/assets/visual_collision_scene/generic_robot_description/meshes/visual/base.dae',
+        '/build/workcell_studio_web_scene/assets/visual_collision_scene/generic_robot_description/meshes/collision/base.stl',
+        '/build/workcell_studio_web_scene/assets/visual_collision_scene/generic_robot_description/meshes/collision/base.stl',
+    ]
+    assert all('package://' not in filename and 'file://' not in filename for filename in filenames)
+    diagnostics = payload['metadata']['expanded_urdf_staging']
+    assert diagnostics['expanded_urdf_mesh_reference_count'] == 3
+    assert diagnostics['expanded_urdf_visual_mesh_reference_count'] == 1
+    assert diagnostics['expanded_urdf_collision_mesh_reference_count'] == 2
+    assert diagnostics['expanded_urdf_visual_meshes_staged'] == 1
+    assert diagnostics['expanded_urdf_collision_meshes_staged'] == 1
+    assert diagnostics['expanded_urdf_deduplicated_reference_count'] == 1
+    assert diagnostics['expanded_urdf_unresolved_references'] == []
+    readiness = payload['robot_preview']
+    assert readiness['expected_visual_links'] == ['base_link']
+    assert readiness['expected_tool_visual_links'] == []
+
+
+def test_expanded_urdf_unresolved_collision_mesh_remains_blocking(monkeypatch, tmp_path):
+    monkeypatch.setenv('AMENT_PREFIX_PATH', str(tmp_path / 'ament'))
+    scene = _expanded_robot_scene(
+        tmp_path,
+        'missing_collision_expanded_scene',
+        [('base_link|collision', 'package://missing_robot/meshes/collision/base.stl')],
+    )
+
+    try:
+        exporter.build_web_scene(scene, stage_assets=True, output_path=tmp_path / 'out.json')
+    except exporter.BlockingExportError as exc:
+        message = str(exc)
+    else:  # pragma: no cover
+        raise AssertionError('missing required expanded URDF collision mesh did not fail')
+
+    assert 'package://missing_robot/meshes/collision/base.stl' in message
+    assert 'collision_index=0' in message
+    assert 'Could not resolve package mesh URI' in message
+
+
 def test_expanded_urdf_missing_required_mesh_fails_clearly(monkeypatch, tmp_path):
     monkeypatch.setenv('AMENT_PREFIX_PATH', str(tmp_path / 'ament'))
     scene = _expanded_robot_scene(
@@ -511,6 +575,7 @@ def test_expanded_urdf_rejects_unsafe_and_non_package_mesh_uris(monkeypatch, tmp
         'package://bad_pkg/../escape.dae',
         'package://bad_pkg/meshes/%2e%2e/escape.dae',
         'https://example.test/mesh.dae',
+        'file:///tmp/mesh.dae',
         '/tmp/mesh.dae',
     ]
     for index, uri in enumerate(bad_uris):
