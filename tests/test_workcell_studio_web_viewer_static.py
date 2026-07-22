@@ -216,7 +216,7 @@ def test_urdf_renderer_resolves_package_meshes_to_staged_scene_assets():
     assert "function resolvePackageMeshUri(uri, sceneId, diagnostics)" in js
     assert "raw.startsWith('package://')" in js
     assert "context?.sceneId" in js
-    assert "build/workcell_studio_web_scene/assets/${scene}/${packageName}/${safeParts.join('/')}" in js
+    assert "${STAGED_MESH_ASSET_ROOT}${scene}/${packageName}/${safeParts.join('/')}" in js
     assert "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae" not in js
     assert "URDF package mesh resolved:" in js
     assert "URDF package mesh rejected:" in js
@@ -449,7 +449,7 @@ try {{
   );
   await result.ready;
   assert.deepEqual(requestedUrls, [
-    'build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae',
+    '/build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae',
   ]);
   for (const url of requestedUrls) {{
     for (const forbidden of [
@@ -2134,15 +2134,15 @@ def test_urdf_renderer_configures_active_loader_package_resolver_before_loading(
 
 def test_urdf_renderer_active_package_resolution_avoids_bare_package_root_requests():
     js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
-    assert "build/workcell_studio_web_scene/assets/${scene}/${packageName}" in js
-    assert "build/workcell_studio_web_scene/assets/${scene}/${packageName}/${safeParts.join('/')}" in js
+    assert "${STAGED_MESH_ASSET_ROOT}${scene}/${packageName}" in js
+    assert "${STAGED_MESH_ASSET_ROOT}${scene}/${packageName}/${safeParts.join('/')}" in js
     assert "bare package-root URL" in js
     expected_final_requests = [
-        "build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
-        "build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/ur5/visual/base.dae",
+        "/build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+        "/build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/ur5/visual/base.dae",
     ]
-    assert expected_final_requests[0].startswith("build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/")
-    assert expected_final_requests[1].startswith("build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/")
+    assert expected_final_requests[0].startswith("/build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/")
+    assert expected_final_requests[1].startswith("/build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/")
     for request in expected_final_requests:
         assert not request.startswith(("/robotiq_85_description/", "/ur_description/"))
 
@@ -2335,6 +2335,29 @@ assert.strictEqual(physicalReadinessItems().length, 1);
     subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
+def test_staged_mesh_urls_resolve_from_expanded_urdf_without_doubling(tmp_path):
+    script = tmp_path / "browser_url_resolution.mjs"
+    script.write_text(
+        """
+import assert from 'node:assert/strict';
+const base = 'http://127.0.0.1:8765/build/workcell_studio_web_scene/expanded_robot.urdf';
+const cases = [
+  '/build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/ur5/visual/base.dae',
+  '/build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae',
+];
+for (const url of cases) {
+  const href = new URL(url, base).href;
+  assert.equal(href, `http://127.0.0.1:8765${url}`);
+  assert.equal((href.match(/build\/workcell_studio_web_scene/g) || []).length, 1, href);
+  assert.ok(!href.includes('/build/workcell_studio_web_scene/build/workcell_studio_web_scene/'), href);
+  assert.ok(!href.replace('http://127.0.0.1:8765', '').includes('//build/workcell_studio_web_scene/assets'), href);
+}
+""",
+        encoding="utf-8",
+    )
+    subprocess.run(["node", str(script)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
 def test_urdf_renderer_accepts_only_canonical_staged_mesh_urls(tmp_path):
     script = tmp_path / "canonical_staged_mesh_policy.mjs"
     script.write_text(
@@ -2345,11 +2368,11 @@ const diagnostics = {{ robot_missing_meshes: [], robot_package_mesh_resolutions:
 const context = {{ sceneId: 'ur5_2f_test' }};
 assert.equal(
   canonicalStagedMeshUrl('/build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/visual/base.dae', context, diagnostics).uri,
-  'build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/visual/base.dae'
+  '/build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/visual/base.dae'
 );
 assert.equal(
   canonicalStagedMeshUrl('build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/finger.stl', context, diagnostics).uri,
-  'build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/finger.stl'
+  '/build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/finger.stl'
 );
 for (const rejected of [
   '/ur_description/meshes/visual/base.dae',
@@ -2390,6 +2413,8 @@ URDFLoader.prototype.loadAsync = async function loadAsyncStub() {{
   for (const path of [
     '/build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/visual/base.dae',
     'build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/gripper.dae',
+    'package://ur_description/meshes/ur5/visual/shoulder.dae',
+    'package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae',
   ]) {{
     this.loadMeshCb(path, this.manager, new THREE.MeshPhongMaterial(), (mesh, error) => {{ if (error) throw error; }});
   }}
@@ -2410,9 +2435,12 @@ try {{
   const result = loadRobotPreview({{ urdf_url: 'robot.urdf' }}, {{ sceneId: 'ur5_2f_test' }});
   await result.ready;
   assert.deepEqual(requestedUrls, [
-    'build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/visual/base.dae',
-    'build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/gripper.dae',
+    '/build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/visual/base.dae',
+    '/build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/gripper.dae',
+    '/build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/ur5/visual/shoulder.dae',
+    '/build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae',
   ]);
+  for (const requested of requestedUrls) assert.ok(requested.startsWith('/build/workcell_studio_web_scene/assets/'), requested);
   assert.equal(result.diagnostics.robot_failed_visual_count, 0);
 }} finally {{
   URDFLoader.prototype.loadAsync = originalUrdfLoadAsync;
