@@ -37444,12 +37444,15 @@ function canonicalStagedMeshUrl(rawUrl, context, diagnostics) {
       return { uri: "", reason: `bare package-root URL: ${raw}`, sourceUrl };
     return { uri: "", reason: `absolute filesystem path rejected by viewer policy: ${raw}`, sourceUrl };
   }
-  const normalized = raw.replace(/^\/+/, "");
+  const normalized = raw.startsWith(STAGED_MESH_ASSET_ROOT) ? raw : raw.replace(/^\/+/, "");
   const pathOnly = normalized.split(/[?#]/, 1)[0];
-  const prefix = "build/workcell_studio_web_scene/assets/";
-  if (!pathOnly.startsWith(prefix))
+  const prefix = STAGED_MESH_ASSET_ROOT;
+  const legacyPrefix = LEGACY_STAGED_MESH_ASSET_ROOT;
+  const hasCanonicalPrefix = pathOnly.startsWith(prefix);
+  const hasLegacyPrefix = pathOnly.startsWith(legacyPrefix);
+  if (!hasCanonicalPrefix && !hasLegacyPrefix)
     return { uri: "", reason: `URL is not under canonical staged mesh root ${prefix}: ${raw}`, sourceUrl };
-  const suffix = pathOnly.slice(prefix.length);
+  const suffix = pathOnly.slice(hasCanonicalPrefix ? prefix.length : legacyPrefix.length);
   const parts = suffix.split("/");
   const scene = safeSceneAssetId(parts.shift());
   const packageName = safePackageAssetId(parts.shift());
@@ -37477,7 +37480,7 @@ function canonicalStagedMeshUrl(rawUrl, context, diagnostics) {
     }
     safeParts.push(encodeURIComponent(decoded));
   }
-  return { uri: `${prefix}${scene}/${packageName}/${safeParts.join("/")}`, reason: "", sourceUrl };
+  return { uri: `${STAGED_MESH_ASSET_ROOT}${scene}/${packageName}/${safeParts.join("/")}`, reason: "", sourceUrl };
 }
 function resolvePackageMeshUri(uri, sceneId2, diagnostics) {
   const raw = String(uri || "").trim();
@@ -37513,7 +37516,7 @@ function resolvePackageMeshUri(uri, sceneId2, diagnostics) {
     }
     safeParts.push(encodeURIComponent(decoded));
   }
-  const resolved = `build/workcell_studio_web_scene/assets/${scene}/${packageName}/${safeParts.join("/")}`;
+  const resolved = `${STAGED_MESH_ASSET_ROOT}${scene}/${packageName}/${safeParts.join("/")}`;
   diagnostics.robot_package_mesh_resolutions.push(`URDF package mesh resolved: ${raw} -> ${resolved}`);
   return resolved;
 }
@@ -37523,9 +37526,9 @@ function packageRootResolver(sceneId2, diagnostics) {
     const packageName = String(targetPackage || "").trim();
     if (!safeSceneAssetId(scene) || !safePackageAssetId(packageName)) {
       rejectPackageMeshUri(`package resolver rejected ${packageName || "<empty>"} for scene ${scene || "<empty>"}`, diagnostics);
-      return "build/workcell_studio_web_scene/assets/__rejected_package_uri__";
+      return `${STAGED_MESH_ASSET_ROOT}__rejected_package_uri__`;
     }
-    return `build/workcell_studio_web_scene/assets/${scene}/${packageName}`;
+    return `${STAGED_MESH_ASSET_ROOT}${scene}/${packageName}`;
   };
 }
 function configureUrdfPackageResolution(loader, manager, context, diagnostics) {
@@ -38146,7 +38149,7 @@ function loadRobotPreview(previewConfig, rendererContext = {}) {
   window.__WORKCELL_ROBOT_PREVIEW_READY__ = result.ready;
   return result;
 }
-var ROBOT_RENDER_MODE, ROS_TO_THREE_CONVERSION_BOUNDARY;
+var ROBOT_RENDER_MODE, ROS_TO_THREE_CONVERSION_BOUNDARY, STAGED_MESH_ASSET_ROOT, LEGACY_STAGED_MESH_ASSET_ROOT;
 var init_urdf_robot_renderer = __esm({
   "urdf_robot_renderer.js"() {
     init_three_module();
@@ -38156,6 +38159,8 @@ var init_urdf_robot_renderer = __esm({
     init_OBJLoader();
     ROBOT_RENDER_MODE = "expanded_urdf_loader";
     ROS_TO_THREE_CONVERSION_BOUNDARY = "URDFLoader owns the ROS visual frame and applies the one ROS-to-Three orientation boundary; DAE, STL, assembled URDF, and flattened fallback diagnostics must not add per-link or per-mesh 90-degree corrections after ColladaLoader.";
+    STAGED_MESH_ASSET_ROOT = "/build/workcell_studio_web_scene/assets/";
+    LEGACY_STAGED_MESH_ASSET_ROOT = STAGED_MESH_ASSET_ROOT.slice(1);
   }
 });
 

@@ -6,6 +6,9 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 
 const ROBOT_RENDER_MODE = 'expanded_urdf_loader';
 const ROS_TO_THREE_CONVERSION_BOUNDARY = 'URDFLoader owns the ROS visual frame and applies the one ROS-to-Three orientation boundary; DAE, STL, assembled URDF, and flattened fallback diagnostics must not add per-link or per-mesh 90-degree corrections after ColladaLoader.';
+const STAGED_MESH_ASSET_ROOT = '/build/workcell_studio_web_scene/assets/';
+const LEGACY_STAGED_MESH_ASSET_ROOT = STAGED_MESH_ASSET_ROOT.slice(1);
+
 
 function repoUrl(context, uri) {
   return context?.repoRootRelativeUrl ? context.repoRootRelativeUrl(uri) : uri;
@@ -52,11 +55,14 @@ function canonicalStagedMeshUrl(rawUrl, context, diagnostics) {
     if (/^\/[A-Za-z][A-Za-z0-9_]*(?:\/|$)/.test(withoutQuery)) return { uri: '', reason: `bare package-root URL: ${raw}`, sourceUrl };
     return { uri: '', reason: `absolute filesystem path rejected by viewer policy: ${raw}`, sourceUrl };
   }
-  const normalized = raw.replace(/^\/+/, '');
+  const normalized = raw.startsWith(STAGED_MESH_ASSET_ROOT) ? raw : raw.replace(/^\/+/, '');
   const pathOnly = normalized.split(/[?#]/, 1)[0];
-  const prefix = 'build/workcell_studio_web_scene/assets/';
-  if (!pathOnly.startsWith(prefix)) return { uri: '', reason: `URL is not under canonical staged mesh root ${prefix}: ${raw}`, sourceUrl };
-  const suffix = pathOnly.slice(prefix.length);
+  const prefix = STAGED_MESH_ASSET_ROOT;
+  const legacyPrefix = LEGACY_STAGED_MESH_ASSET_ROOT;
+  const hasCanonicalPrefix = pathOnly.startsWith(prefix);
+  const hasLegacyPrefix = pathOnly.startsWith(legacyPrefix);
+  if (!hasCanonicalPrefix && !hasLegacyPrefix) return { uri: '', reason: `URL is not under canonical staged mesh root ${prefix}: ${raw}`, sourceUrl };
+  const suffix = pathOnly.slice(hasCanonicalPrefix ? prefix.length : legacyPrefix.length);
   const parts = suffix.split('/');
   const scene = safeSceneAssetId(parts.shift());
   const packageName = safePackageAssetId(parts.shift());
@@ -78,7 +84,7 @@ function canonicalStagedMeshUrl(rawUrl, context, diagnostics) {
     }
     safeParts.push(encodeURIComponent(decoded));
   }
-  return { uri: `${prefix}${scene}/${packageName}/${safeParts.join('/')}`, reason: '', sourceUrl };
+  return { uri: `${STAGED_MESH_ASSET_ROOT}${scene}/${packageName}/${safeParts.join('/')}`, reason: '', sourceUrl };
 }
 
 function resolvePackageMeshUri(uri, sceneId, diagnostics) {
@@ -108,7 +114,7 @@ function resolvePackageMeshUri(uri, sceneId, diagnostics) {
     }
     safeParts.push(encodeURIComponent(decoded));
   }
-  const resolved = `build/workcell_studio_web_scene/assets/${scene}/${packageName}/${safeParts.join('/')}`;
+  const resolved = `${STAGED_MESH_ASSET_ROOT}${scene}/${packageName}/${safeParts.join('/')}`;
   diagnostics.robot_package_mesh_resolutions.push(`URDF package mesh resolved: ${raw} -> ${resolved}`);
   return resolved;
 }
@@ -120,9 +126,9 @@ function packageRootResolver(sceneId, diagnostics) {
     const packageName = String(targetPackage || '').trim();
     if (!safeSceneAssetId(scene) || !safePackageAssetId(packageName)) {
       rejectPackageMeshUri(`package resolver rejected ${packageName || '<empty>'} for scene ${scene || '<empty>'}`, diagnostics);
-      return 'build/workcell_studio_web_scene/assets/__rejected_package_uri__';
+      return `${STAGED_MESH_ASSET_ROOT}__rejected_package_uri__`;
     }
-    return `build/workcell_studio_web_scene/assets/${scene}/${packageName}`;
+    return `${STAGED_MESH_ASSET_ROOT}${scene}/${packageName}`;
   };
 }
 
