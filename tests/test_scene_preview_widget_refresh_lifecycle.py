@@ -330,3 +330,92 @@ def test_web3d_status_chip_uses_required_lifecycle_labels():
         'Web3D Product View — failed, Retry',
     ):
         assert label in status
+
+@dataclass(frozen=True)
+class SceneContextKey:
+    scene: str = ""
+    scene_dir: str = ""
+    repo_root: str = ""
+    generated_json_path: str = ""
+    fingerprint: bytes = b""
+    revision: int = 0
+
+
+class SelectionLifecycleGate:
+    def __init__(self):
+        self.generation = 0
+        self.active = None
+        self.started = []
+        self.terminal = []
+        self.deferred = 0
+        self.coalesced = 0
+        self.cancelled = []
+
+    def ready(self, key):
+        return all((key.scene, key.scene_dir, key.repo_root, key.generated_json_path, key.fingerprint)) and key.revision > 0
+
+    def request(self, key, origin="automatic", force=False):
+        if not self.ready(key):
+            self.deferred += 1
+            return None
+        if not force and self.active and self.active[0] == key:
+            self.coalesced += 1
+            return self.active
+        if self.active and self.active[0].scene != key.scene:
+            self.cancelled.append(self.active)
+        self.generation += 1
+        self.active = (key, self.generation, origin)
+        self.started.append(self.active)
+        return self.active
+
+    def callback(self, request, state):
+        if request != self.active:
+            return "stale_ignored"
+        self.terminal.append((request, state))
+        return state
+
+
+def test_initial_incomplete_scene_context_starts_no_preparation_until_payload_identity_ready():
+    lifecycle = SelectionLifecycleGate()
+    incomplete = SceneContextKey(scene="ur5_2f_test", scene_dir="/cells/ur5_2f_test", repo_root="/repo")
+    ready = SceneContextKey("ur5_2f_test", "/cells/ur5_2f_test", "/repo", "build/workcell_studio_web_scene/ur5_2f_test.web_scene.json", b"fp", 1)
+
+    assert lifecycle.request(incomplete, origin="scene_context_ready") is None
+    assert lifecycle.started == []
+    assert lifecycle.deferred == 1
+    assert lifecycle.request(ready, origin="payload_commit") == (ready, 1, "payload_commit")
+    assert lifecycle.started == [(ready, 1, "payload_commit")]
+
+
+def test_normal_selection_has_one_terminal_scene_ready_and_stale_callbacks_cannot_clear_it():
+    lifecycle = SelectionLifecycleGate()
+    old = SceneContextKey("ur5_2f_test", "/cells/ur5_2f_test", "/repo", "build/workcell_studio_web_scene/ur5_2f_test.web_scene.json", b"old", 1)
+    new = SceneContextKey("ur5_3f_test", "/cells/ur5_3f_test", "/repo", "build/workcell_studio_web_scene/ur5_3f_test.web_scene.json", b"new", 1)
+    old_request = lifecycle.request(old, origin="payload_commit")
+    new_request = lifecycle.request(new, origin="scene_switch")
+
+    assert lifecycle.cancelled == [old_request]
+    assert lifecycle.callback(old_request, "failed") == "stale_ignored"
+    assert lifecycle.callback(new_request, "scene_ready") == "scene_ready"
+    assert lifecycle.terminal == [(new_request, "scene_ready")]
+
+
+def test_cpp_defers_until_complete_context_and_payload_and_logs_origin():
+    refresh_start = CPP.index("void ScenePreviewWidget::request_embedded_web_product_view_refresh")
+    identity_start = CPP.index("ScenePreviewWidget::EmbeddedWebRequestIdentity", refresh_start)
+    refresh = CPP[refresh_start:identity_start]
+
+    assert "const bool context_ready" in refresh
+    assert "request_key.payload_revision > 0" in refresh
+    assert "Product View lifecycle deferred" in refresh
+    assert "origin=%4" in refresh
+    assert refresh.index("if (!context_ready)") < refresh.index("++embedded_web_effective_refresh_requests_received_")
+    assert "Product View lifecycle requested" in refresh
+
+
+def test_cpp_counts_effective_preparation_starts_not_incomplete_context_requests():
+    refresh_wrapper = CPP[CPP.index("void ScenePreviewWidget::refresh_embedded_web_product_view"):CPP.index("void ScenePreviewWidget::maybe_start_next_embedded_web_prepare")]
+    prepare = CPP[CPP.index("void ScenePreviewWidget::start_embedded_web_prepare"):CPP.index("void ScenePreviewWidget::on_embedded_web_prepare_finished")]
+
+    assert "++embedded_web_preparation_request_count_" not in refresh_wrapper
+    assert "++embedded_web_preparation_request_count_" in prepare
