@@ -904,8 +904,8 @@ def test_stage_expanded_robot_preview_rebases_package_meshes_relative_to_preview
     staged_urdf = tmp_path / payload["robot_preview"]["urdf_url"]
     text = staged_urdf.read_text(encoding="utf-8")
     assert 'filename="build/workcell_studio_web_scene/assets/' not in text
-    assert 'filename="assets/ur5_2f_test/ur_description/meshes/ur5/visual/base.dae"' in text
-    assert 'filename="assets/ur5_2f_test/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae"' in text
+    assert 'filename="/build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/ur5/visual/base.dae"' in text
+    assert 'filename="/build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae"' in text
     assert (tmp_path / "build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/ur5/visual/base.dae").is_file()
     assert (tmp_path / "build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae").is_file()
 
@@ -992,7 +992,7 @@ def test_export_shared_physical_iterator_covers_legacy_sections_and_failures(tmp
     assert assets["legacy_bin"]["type"] == "bin"
     assert assets["legacy_bin"]["link"] == "bin_link"
     assert assets["legacy_bin"]["mesh_path"] == "missing/bin.stl"
-    assert assets["legacy_bin"]["mesh_staging_status"] == "resolve_failed"
+    assert assets["legacy_bin"]["mesh_staging_status"] == "missing_file"
     assert "Mesh file does not exist" in assets["legacy_bin"]["mesh_resolve_warning"]
     assert assets["cell_fixture"]["source_section"] == "objects"
     assert assets["cell_fixture"]["active_visual_source"] == "declared_primitive"

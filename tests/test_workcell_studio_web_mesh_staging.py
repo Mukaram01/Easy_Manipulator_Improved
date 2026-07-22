@@ -151,7 +151,7 @@ def test_viewer_uri_policy_allows_staged_assets_and_rejects_traversal():
     js = VIEWER_JS.read_text(encoding="utf-8")
 
     assert "build/workcell_studio_web_scene/assets/" in js
-    assert "allowedRoots.some(root => pathOnly.startsWith(root))" in js
+    assert "STAGED_MESH_ROOTS.some(root => pathOnly.startsWith(root))" in js
     assert "repoRootRelativeUrl(uri)" in js
     assert "fetch(repoRootRelativeUrl(sceneUrl)" in js
     assert "part === '..'" in js
@@ -186,7 +186,7 @@ def test_staged_mesh_uri_resolves_from_builder_opened_viewer_base_url():
         viewer_js = VIEWER_JS.read_text(encoding="utf-8")
         scene_select_cpp = (REPO_ROOT / "workcell_builder" / "workcell_builder" / "gui" / "scene_select.cpp").read_text(encoding="utf-8")
         assert "function repoRootRelativeUrl(uri)" in viewer_js
-        assert "new URL(uri, `${window.location.origin}/`).href" in viewer_js
+        assert "new URL(uri, base).href" in viewer_js
         assert "repoRootRelativeUrl(uri)" in viewer_js
         assert 'QString::fromStdString(repo_root.string())' in scene_select_cpp
         assert "python3 -m http.server 8765 --bind 127.0.0.1" in scene_select_cpp
@@ -434,3 +434,92 @@ def test_known_package_missing_mesh_file_reports_missing_file(monkeypatch, tmp_p
     assert item["mesh_staging_status"] == "missing_file"
     assert "Package mesh file does not exist" in item["mesh_resolve_warning"]
     assert item["mesh_uri"] == "package://known_missing_pkg/meshes/visual/missing.dae"
+
+
+def _expanded_robot_scene(tmp_path: Path, scene_id: str, mesh_uris: list[tuple[str, str]]) -> Path:
+    scene = _scene(tmp_path, scene_id, [])
+    links = ['world', 'base_link', 'tool0', 'gripper_base_link']
+    visuals = []
+    for link, uri in mesh_uris:
+        visuals.append(f'''  <link name="{link}">\n    <visual>\n      <origin xyz="0 0 0" rpy="0 0 0"/>\n      <geometry><mesh filename="{uri}" scale="1 1 1"/></geometry>\n    </visual>\n  </link>''')
+    for link in links:
+        if not any(v.startswith(f'  <link name="{link}"') for v in visuals):
+            visuals.append(f'  <link name="{link}"/>')
+    joints = '''  <joint name="world_to_base" type="fixed"><parent link="world"/><child link="base_link"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>\n  <joint name="base_to_tool" type="fixed"><parent link="base_link"/><child link="tool0"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>\n  <joint name="tool_to_gripper" type="fixed"><parent link="tool0"/><child link="gripper_base_link"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>'''
+    (scene / 'generated' / 'expanded_scene_preview.urdf').write_text('<robot name="fixture">\n' + '\n'.join(visuals) + '\n' + joints + '\n</robot>\n', encoding='utf-8')
+    _write_json(scene / 'generated' / 'scene_visual_mesh_index.json', {
+        'source_expanded_urdf_path': str(scene / 'generated' / 'expanded_scene_preview.urdf'),
+        'visual_items': [],
+    })
+    return scene
+
+
+def test_expanded_urdf_meshes_use_canonical_root_relative_urls(monkeypatch, tmp_path):
+    prefix = tmp_path / 'ament'
+    _package(prefix, 'generic_tool_description', 'meshes/visual/tool.dae', '<COLLADA/>')
+    scene = _expanded_robot_scene(
+        tmp_path,
+        'canonical_scene',
+        [('base_link', 'package://generic_tool_description/meshes/visual/tool.dae')],
+    )
+
+    payload = _export_with_prefix(monkeypatch, scene, tmp_path / 'out' / 'scene.web_scene.json', prefix)
+    urdf_path = REPO_ROOT / payload['robot_preview']['urdf_url']
+    root = exporter.ET.fromstring(urdf_path.read_text(encoding='utf-8'))
+    filenames = [mesh.get('filename') for mesh in root.findall('.//mesh')]
+
+    assert filenames == ['/build/workcell_studio_web_scene/assets/canonical_scene/generic_tool_description/meshes/visual/tool.dae']
+    for filename in filenames:
+        assert 'package://' not in filename
+        assert '..' not in filename
+        assert (REPO_ROOT / filename.lstrip('/')).is_file()
+        resolved = urljoin('http://127.0.0.1:8765/build/workcell_studio_web_scene/canonical_scene.expanded.urdf', filename)
+        assert resolved.startswith('http://127.0.0.1:8765/build/workcell_studio_web_scene/assets/canonical_scene/')
+        assert '/build/workcell_studio_web_scene/build/' not in resolved
+    diagnostics = payload['metadata']['expanded_urdf_staging']
+    assert diagnostics['expanded_urdf_mesh_reference_count'] == 1
+    assert diagnostics['expanded_urdf_staged_mesh_count'] == 1
+    assert diagnostics['expanded_urdf_unresolved_mesh_count'] == 0
+    assert diagnostics['expanded_urdf_package_count'] == 1
+    assert diagnostics['expanded_urdf_uses_canonical_root_relative_urls'] is True
+
+
+def test_expanded_urdf_missing_required_mesh_fails_clearly(monkeypatch, tmp_path):
+    monkeypatch.setenv('AMENT_PREFIX_PATH', str(tmp_path / 'ament'))
+    scene = _expanded_robot_scene(
+        tmp_path,
+        'missing_expanded_scene',
+        [('base_link', 'package://missing_robot/meshes/visual/base.dae')],
+    )
+
+    try:
+        exporter.build_web_scene(scene, stage_assets=True, output_path=tmp_path / 'out.json')
+    except exporter.BlockingExportError as exc:
+        message = str(exc)
+    else:  # pragma: no cover
+        raise AssertionError('missing required expanded URDF mesh did not fail')
+
+    assert 'package://missing_robot/meshes/visual/base.dae' in message
+    assert 'Could not resolve package mesh URI' in message
+    staged = REPO_ROOT / 'build' / 'workcell_studio_web_scene' / 'missing_expanded_scene.expanded.urdf'
+    assert not staged.exists() or 'package://missing_robot' not in staged.read_text(encoding='utf-8')
+
+
+def test_expanded_urdf_rejects_unsafe_and_non_package_mesh_uris(monkeypatch, tmp_path):
+    monkeypatch.setenv('AMENT_PREFIX_PATH', str(tmp_path / 'ament'))
+    bad_uris = [
+        'package://bad_pkg/../escape.dae',
+        'package://bad_pkg/meshes/%2e%2e/escape.dae',
+        'https://example.test/mesh.dae',
+        '/tmp/mesh.dae',
+    ]
+    for index, uri in enumerate(bad_uris):
+        scene = _expanded_robot_scene(tmp_path, f'bad_expanded_{index}', [('base_link', uri)])
+        try:
+            exporter.build_web_scene(scene, stage_assets=True, output_path=tmp_path / f'out_{index}.json')
+        except exporter.BlockingExportError as exc:
+            message = str(exc)
+        else:  # pragma: no cover
+            raise AssertionError(f'unsafe URI was accepted: {uri}')
+        assert uri in message
+        assert ('Invalid or unsafe package URI' in message) or ('must be a package:// URI' in message)
