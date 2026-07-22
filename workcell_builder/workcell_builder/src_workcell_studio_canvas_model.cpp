@@ -7,11 +7,27 @@
 #include <fstream>
 #include <initializer_list>
 #include <set>
+#include <mutex>
 #include <vector>
 #include <yaml-cpp/yaml.h>
+#include <boost/system/error_code.hpp>
 
 namespace fs = boost::filesystem;
 namespace workcell_builder {
+
+
+static bool log_task_metadata_loader_path_once(const fs::path & p, const std::string & reason)
+{
+  static std::mutex mutex;
+  static std::set<std::string> seen_paths;
+  boost::system::error_code ec;
+  const fs::path normalized = fs::weakly_canonical(p, ec);
+  const std::string key = (ec ? p.lexically_normal() : normalized).string();
+  std::lock_guard<std::mutex> lock(mutex);
+  if (!seen_paths.insert(key).second) return false;
+  return workcell_builder::log_warning_once_per_context_path_reason(
+    "task_metadata_summary_loader", p, reason);
+}
 
 struct YamlLoadStatus
 {
@@ -40,8 +56,7 @@ static YamlLoadStatus read_yaml(const fs::path & p, YAML::Node * out)
     status.parse_warning = true;
     status.reason = "unknown exception";
   }
-  workcell_builder::log_warning_once_per_context_path_reason(
-    "task_metadata_summary_loader", p, "scene YAML parse warning: " + status.reason);
+  log_task_metadata_loader_path_once(p, "scene YAML parse warning: " + status.reason);
   return status;
 }
 
@@ -360,7 +375,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     if (deterministic_fallback_layout) return;
     deterministic_fallback_layout = true;
     deterministic_fallback_reason = reason;
-    workcell_builder::log_warning_once_per_context_path_reason("task_metadata_summary_loader", scene_dir / "layout" / "workcell_studio_layout.yaml", "downgraded to legacy mode");
+    log_task_metadata_loader_path_once(scene_dir / "layout" / "workcell_studio_layout.yaml", "downgraded to legacy mode");
   };
   const auto add_warning = [&m](const std::string & context, const std::string & detail) {
     m.warnings.push_back("layout/workcell_studio_layout.yaml [" + context + "]: " + detail);
@@ -853,9 +868,9 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   else { m.status = "READY"; }
   return m;
   } catch (const YAML::Exception & e) {
-    workcell_builder::log_warning_once_per_context_path_reason("task_metadata_summary_loader", scene_dir / "layout" / "workcell_studio_layout.yaml", std::string("YAML parse exception in preview loader: ") + e.what());
+    log_task_metadata_loader_path_once(scene_dir / "layout" / "workcell_studio_layout.yaml", std::string("YAML parse exception in preview loader: ") + e.what());
   } catch (const std::exception & e) {
-    workcell_builder::log_warning_once_per_context_path_reason("task_metadata_summary_loader", scene_dir / "layout" / "workcell_studio_layout.yaml", std::string("std exception in preview loader: ") + e.what());
+    log_task_metadata_loader_path_once(scene_dir / "layout" / "workcell_studio_layout.yaml", std::string("std exception in preview loader: ") + e.what());
   }
   WorkcellStudioCanvasModel fallback;
   fallback.scene_name = scene_name;

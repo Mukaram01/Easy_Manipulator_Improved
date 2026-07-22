@@ -171,27 +171,33 @@ PerceptionContractSummary parse_perception_contract_summary(const YAML::Node & t
   const YAML::Node task = (task_or_root && task_or_root.IsMap() && task_or_root["task"]) ?
     task_or_root["task"] : task_or_root;
   if (!task || !task.IsMap()) {
-    out.warning = "perception is not a map; downgraded to legacy disabled mode";
     return out;
   }
   const YAML::Node perception = task["perception"];
   if (!perception) {
-    out.warning = "perception missing; downgraded to legacy disabled mode";
     return out;
   }
   if (!perception.IsMap()) {
-    out.warning = "perception is not a map; downgraded to legacy disabled mode";
+    std::string scalar = yaml_scalar_or_empty(perception);
+    std::string legacy;
+    const std::string mode = canonicalize_scene3d_camera_mode(scalar, &legacy);
+    if (mode == "none") {
+      out.mode = "legacy_disabled";
+      out.legacy_source_mode = legacy.empty() ? scalar : legacy;
+      return out;
+    }
+    out.enabled = true;
+    out.mode = mode;
+    out.legacy_source_mode = legacy;
     return out;
   }
   if (perception.size() == 0) {
-    out.warning = "perception map is empty; downgraded to legacy disabled mode";
     return out;
   }
   out.enabled = true;
   const std::string raw_mode = yaml_map_value_or_empty(perception, "mode");
   if (raw_mode.empty()) {
     out.mode = "epd_optional";
-    out.warning = "perception map present but mode missing; defaulted to epd_optional";
     return out;
   }
   out.mode = canonicalize_scene3d_camera_mode(raw_mode, &out.legacy_source_mode);

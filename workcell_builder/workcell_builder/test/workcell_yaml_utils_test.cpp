@@ -65,9 +65,9 @@ TEST(WorkcellYamlUtils, PerceptionContractSummaryHandlesScalarAndMissing)
   const auto d = workcell_builder::parse_perception_contract_summary(empty_map);
   const auto e = workcell_builder::parse_perception_contract_summary(missing);
 
-  EXPECT_FALSE(a.enabled); EXPECT_EQ(a.mode, "legacy_disabled"); EXPECT_FALSE(a.warning.empty());
-  EXPECT_FALSE(b.enabled); EXPECT_EQ(b.mode, "legacy_disabled"); EXPECT_FALSE(b.warning.empty());
-  EXPECT_FALSE(c.enabled); EXPECT_EQ(c.mode, "legacy_disabled"); EXPECT_FALSE(c.warning.empty());
-  EXPECT_FALSE(d.enabled); EXPECT_EQ(d.mode, "legacy_disabled"); EXPECT_FALSE(d.warning.empty());
-  EXPECT_FALSE(e.enabled); EXPECT_EQ(e.mode, "legacy_disabled"); EXPECT_FALSE(e.warning.empty());
+  EXPECT_FALSE(a.enabled); EXPECT_EQ(a.mode, "legacy_disabled"); EXPECT_TRUE(a.warning.empty());
+  EXPECT_FALSE(b.enabled); EXPECT_EQ(b.mode, "legacy_disabled"); EXPECT_TRUE(b.warning.empty());
+  EXPECT_FALSE(c.enabled); EXPECT_EQ(c.mode, "legacy_disabled"); EXPECT_TRUE(c.warning.empty());
+  EXPECT_FALSE(d.enabled); EXPECT_EQ(d.mode, "legacy_disabled"); EXPECT_TRUE(d.warning.empty());
+  EXPECT_FALSE(e.enabled); EXPECT_EQ(e.mode, "legacy_disabled"); EXPECT_TRUE(e.warning.empty());
 }
