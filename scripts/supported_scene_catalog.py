@@ -19,6 +19,7 @@ REQUIRED_SCENE_FIELDS = (
     "validation_command",
     "build_package_name",
     "fake_hardware_launch_command",
+    "moveit_required",
     "status",
     "known_blocker",
 )
@@ -41,6 +42,8 @@ class SupportedSceneEntry:
     build_package_name: str
     build_command: str
     fake_hardware_launch_command: str
+    moveit_required: bool
+    fake_hardware_acceptance: dict[str, Any]
     enabled: bool
     raw: dict[str, Any]
 
@@ -110,6 +113,8 @@ def load_supported_scene_catalog(path: Path) -> tuple[dict[str, Any], list[Suppo
         build_command = str(raw.get("build_command", f"colcon build --symlink-install --packages-select {build_package_name}")).strip()
         fake_hardware_launch_command = str(raw.get("fake_hardware_launch_command", "")).strip()
         enabled = bool(raw.get("enabled", True))
+        moveit_required = bool(raw.get("moveit_required", "fake_hardware_launch" in required_capabilities))
+        acceptance = raw.get("fake_hardware_acceptance") if isinstance(raw.get("fake_hardware_acceptance"), dict) else {}
 
         if status not in ACCEPTED_CATALOG_STATUSES:
             accepted = ", ".join(sorted(ACCEPTED_CATALOG_STATUSES))
@@ -131,6 +136,11 @@ def load_supported_scene_catalog(path: Path) -> tuple[dict[str, Any], list[Suppo
             errors.append(f"{scene_name}: fake_hardware_launch_command must explicitly set use_fake_hardware:=true")
         if "ros2 launch" not in fake_hardware_launch_command:
             errors.append(f"{scene_name}: fake_hardware_launch_command must be a ros2 launch command")
+        if moveit_required and acceptance:
+            if acceptance.get("motion_allowed") is not False:
+                errors.append(f"{scene_name}: fake_hardware_acceptance.motion_allowed must be false")
+            if not acceptance.get("require_fake_controllers", False):
+                errors.append(f"{scene_name}: fake_hardware_acceptance.require_fake_controllers must be true")
 
         entries.append(
             SupportedSceneEntry(
@@ -149,6 +159,8 @@ def load_supported_scene_catalog(path: Path) -> tuple[dict[str, Any], list[Suppo
                 build_package_name=build_package_name,
                 build_command=build_command,
                 fake_hardware_launch_command=fake_hardware_launch_command,
+                moveit_required=moveit_required,
+                fake_hardware_acceptance=dict(acceptance),
                 enabled=enabled,
                 raw=dict(raw),
             )

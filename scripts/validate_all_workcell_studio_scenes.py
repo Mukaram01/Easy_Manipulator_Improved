@@ -364,6 +364,9 @@ def audit_scene(
         elif sim_status == SKIP:
             moveit_reasons.append("simulation launch evidence: SKIP")
             moveit_reasons.extend(_with_prefix("simulation warning", sim_warnings))
+        elif sim_status == BLOCKED:
+            moveit_reasons.append("simulation launch evidence: BLOCKED")
+            moveit_reasons.extend(_with_prefix("simulation blocker", sim_blockers))
         else:
             moveit_reasons.append(f"simulation launch report returned unknown status: {sim_status or '(missing)'}")
 
@@ -386,6 +389,8 @@ def audit_scene(
             moveit_status = WARN
         elif sim_status == SKIP:
             moveit_status = SKIP
+        elif sim_status == BLOCKED:
+            moveit_status = BLOCKED
         elif launch_report_status in {PASS, WARN, FAIL, SKIP}:
             moveit_status = launch_report_status
         else:
