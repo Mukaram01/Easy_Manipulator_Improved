@@ -45,7 +45,7 @@ def evaluate_scene(scene:Path,strict:bool,in_place:bool)->dict:
     cell_def = work_scene/'generated/cell_definition.yaml'
     if not cell_def.is_file(): blockers.append('missing generated/cell_definition.yaml')
 
-    gen_code, _, gen_msg = _run(['python3', str(GENERATOR), '--cell-definition', str(cell_def), '--output-dir', str(work_scene/'generated_package'), '--json']) if cell_def.is_file() else (1,{},'skipped generation')
+    gen_code, _, gen_msg = _run(['python3', str(GENERATOR), str(cell_def), '--output-dir', str(work_scene/'generated_package'), '--package-name', scene.name, '--force']) if cell_def.is_file() else (1,{},'skipped generation')
     if gen_code != 0: blockers.append(f'generation failed: {gen_msg[:200]}')
 
     parity_status='SKIPPED'

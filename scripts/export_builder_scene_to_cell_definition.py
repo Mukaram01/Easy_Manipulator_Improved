@@ -449,9 +449,12 @@ def main() -> int:
     ap.add_argument("scene_path", type=Path)
     ap.add_argument("--output-dir", type=Path)
     ap.add_argument("--validate", action="store_true")
+    ap.add_argument("--json", action="store_true", help="Print the export summary JSON to stdout")
     args = ap.parse_args()
     output_dir = args.output_dir or (args.scene_path / "generated")
-    export_scene(args.scene_path, output_dir, validate=args.validate)
+    summary = export_scene(args.scene_path, output_dir, validate=args.validate)
+    if args.json:
+        print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
 
