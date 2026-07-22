@@ -19,7 +19,7 @@ def test_rviz_light_baseline_loads_after_the_pinned_viewer_bundle():
 def test_rviz_light_baseline_is_light_clear_and_shadow_enabled():
     source = BASELINE.read_text(encoding="utf-8")
     for token in [
-        "background: 0xf2f4f6",
+        "background: 0xeef1f4",
         "renderer.outputColorSpace = THREE.SRGBColorSpace",
         "renderer.toneMapping = THREE.ACESFilmicToneMapping",
         "renderer.shadowMap.enabled = true",
@@ -27,7 +27,7 @@ def test_rviz_light_baseline_is_light_clear_and_shadow_enabled():
         "rviz_light_hemisphere",
         "rviz_light_key",
         "gridMajor: 0x8996a3",
-        "gridMinor: 0xc8d0d8",
+        "gridMinor: 0xb6c0ca",
         "node.castShadow = shadows",
         "node.receiveShadow = shadows",
         "workcell-studio.rviz-light-baseline.v1",

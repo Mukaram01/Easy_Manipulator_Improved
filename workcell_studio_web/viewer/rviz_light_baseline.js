@@ -1,11 +1,11 @@
 import { THREE } from './dist/viewer.bundle.js';
 
 const BASELINE = Object.freeze({
-  background: 0xf2f4f6,
+  background: 0xeef1f4,
   sky: 0xffffff,
   groundBounce: 0xcbd3dc,
   gridMajor: 0x8996a3,
-  gridMinor: 0xc8d0d8,
+  gridMinor: 0xb6c0ca,
   exposure: 1.08,
 });
 const PATCH_FLAG = Symbol.for('workcell-studio.rviz-light-baseline.v1');
@@ -120,7 +120,7 @@ function install() {
   window.__WORKCELL_RVIZ_LIGHT_BASELINE__ = Object.freeze({
     enabled: true,
     version: 1,
-    background: '#f2f4f6',
+    background: '#eef1f4',
     shadows: 'pcf_soft',
     tone_mapping: 'aces_filmic',
   });
