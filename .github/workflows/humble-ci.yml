@@ -139,6 +139,11 @@ jobs:
         working-directory: ws
         run: ./src/easy_manipulation_deployment/scripts/verify_workspace_discovery.sh
 
+      - name: Workcell Studio static release gate
+        working-directory: ws/src/easy_manipulation_deployment
+        continue-on-error: true
+        run: python3 scripts/run_workcell_studio_release_gate.py --profile static --workspace-root "$GITHUB_WORKSPACE/ws"
+
       - name: Build
         working-directory: ws
         run: |
