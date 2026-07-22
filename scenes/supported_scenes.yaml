@@ -63,6 +63,13 @@ scenes:
       required_topics: [/joint_states, /tf_static]
       require_fake_controllers: true
       motion_allowed: false
+    task_smoke:
+      planning_group: manipulator
+      tool_type: suction
+      end_effector_link: wrist_fixture
+      pick_zone: pick_zone_main
+      place_zone: default_drop_zone
+      test_object: commissioning_object
     fake_hardware_launch_command: ros2 launch suction_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
   - scene_name: ur10_2f_test
     robot: ur10
@@ -178,6 +185,13 @@ scenes:
       required_topics: [/joint_states, /tf_static]
       require_fake_controllers: true
       motion_allowed: false
+    task_smoke:
+      planning_group: manipulator
+      tool_type: parallel_gripper
+      end_effector_link: ee_palm
+      pick_zone: commissioning_pick_pose
+      place_zone: default_drop_zone
+      test_object: commissioning_object
     fake_hardware_launch_command: ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
   - scene_name: ur5_3f_test
     robot: ur5

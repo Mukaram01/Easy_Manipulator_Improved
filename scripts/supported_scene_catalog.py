@@ -44,6 +44,7 @@ class SupportedSceneEntry:
     fake_hardware_launch_command: str
     moveit_required: bool
     fake_hardware_acceptance: dict[str, Any]
+    task_smoke: dict[str, Any]
     enabled: bool
     raw: dict[str, Any]
 
@@ -115,6 +116,7 @@ def load_supported_scene_catalog(path: Path) -> tuple[dict[str, Any], list[Suppo
         enabled = bool(raw.get("enabled", True))
         moveit_required = bool(raw.get("moveit_required", "fake_hardware_launch" in required_capabilities))
         acceptance = raw.get("fake_hardware_acceptance") if isinstance(raw.get("fake_hardware_acceptance"), dict) else {}
+        task_smoke = raw.get("task_smoke") if isinstance(raw.get("task_smoke"), dict) else {}
 
         if status not in ACCEPTED_CATALOG_STATUSES:
             accepted = ", ".join(sorted(ACCEPTED_CATALOG_STATUSES))
@@ -161,6 +163,7 @@ def load_supported_scene_catalog(path: Path) -> tuple[dict[str, Any], list[Suppo
                 fake_hardware_launch_command=fake_hardware_launch_command,
                 moveit_required=moveit_required,
                 fake_hardware_acceptance=dict(acceptance),
+                task_smoke=dict(task_smoke),
                 enabled=enabled,
                 raw=dict(raw),
             )
