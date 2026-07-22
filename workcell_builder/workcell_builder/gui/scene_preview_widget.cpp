@@ -1787,6 +1787,14 @@ void ScenePreviewWidget::set_preview_context(const PreviewContext & context)
     cancel_embedded_web_lifecycle(false);
   }
   root_resolution_summary_keys_.clear();
+  selected_preview_item_id_.clear();
+  if (auto * viewport = active_native_viewport()) {
+    viewport->selected_id.clear();
+    viewport->update();
+  }
+  run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.clearSelection()"));
+  emit preview_item_selected(QString(), QStringLiteral("scene_context_changed"));
+
   if (!normalized.scene_id.isEmpty()) {
     set_preview_scene_name(normalized.scene_id);
     if (!scene_name_changed) refresh_embedded_web_product_view();
@@ -1943,7 +1951,19 @@ bool ScenePreviewWidget::native_compatibility_viewport_has_usable_content() cons
 }
 
 void ScenePreviewWidget::set_fallback_2d_view(QGraphicsView * view){ fallback_2d_view_ = view; if (!view2d_container_->layout()) view2d_container_->setLayout(new QVBoxLayout()); view2d_container_->layout()->addWidget(view); if (fallback_2d_view_ && fallback_2d_view_->scene() && info_chip_label_ && !fallback_info_chip_proxy_) { fallback_info_chip_proxy_ = fallback_2d_view_->scene()->addWidget(info_chip_label_); fallback_info_chip_proxy_->setZValue(10000.0); fallback_info_chip_proxy_->setPos(12.0, 12.0); } refresh_info_chip(); }
-void ScenePreviewWidget::set_scene_selected(bool selected){ scene_selected_ = selected; refresh_mode_and_state(); }
+void ScenePreviewWidget::set_scene_selected(bool selected){
+  scene_selected_ = selected;
+  if (!selected && !selected_preview_item_id_.isEmpty()) {
+    selected_preview_item_id_.clear();
+    if (auto * viewport = active_native_viewport()) {
+      viewport->selected_id.clear();
+      viewport->update();
+    }
+    run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.clearSelection()"));
+    emit preview_item_selected(QString(), QStringLiteral("scene_cleared"));
+  }
+  refresh_mode_and_state();
+}
 void ScenePreviewWidget::set_3d_available(bool available, const QString & reason){
   preview3d_available_ = available;
   unavailable_reason_ = reason;
@@ -1998,9 +2018,18 @@ void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items)
   auto * viewport = active_native_viewport();
   if (viewport) viewport->ingest_preview_items(preview_items_);
   const bool has_selected = std::any_of(preview_items_.cbegin(), preview_items_.cend(), [this](const PreviewItem & it){ return it.id == selected_preview_item_id_; });
-  if (viewport) viewport->selected_id = selected_preview_item_id_;
+  if (!selected_preview_item_id_.isEmpty() && !has_selected) {
+    const QString missing_id = selected_preview_item_id_;
+    selected_preview_item_id_.clear();
+    if (viewport) viewport->selected_id.clear();
+    run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.clearSelection()"));
+    emit studio_log_requested(QString("Preview selection cleared after refresh (id missing): %1").arg(missing_id));
+    emit preview_item_selected(QString(), QStringLiteral("selection_missing_after_refresh"));
+  } else if (viewport) {
+    viewport->selected_id = selected_preview_item_id_;
+  }
   if (diagnostic_debug_logging_enabled() && !selected_preview_item_id_.isEmpty()) {
-    emit studio_log_requested(has_selected ? QString("Preview selection restored after refresh: %1").arg(selected_preview_item_id_) : QString("Preview selection retained after refresh; id is hidden by filters or absent from the visible preview payload: %1").arg(selected_preview_item_id_));
+    emit studio_log_requested(QString("Preview selection restored after refresh: %1").arg(selected_preview_item_id_));
   }
   if (viewport) viewport->fit_include_overlays = false;
   apply_product_view_defaults();
@@ -2116,7 +2145,23 @@ void ScenePreviewWidget::set_task_overlay_visibility(bool task_route, bool pick_
   // else if (v->label_mode == LabelMode::All) v->label_mode = LabelMode::SelectedOnly;
   v->update();
 }
-void ScenePreviewWidget::select_preview_item(const QString & id){ selected_preview_item_id_ = id; if (auto * v = active_native_viewport()) { v->selected_id = id; v->update(); } else run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.selectItem(%1)").arg(QString::fromUtf8(QJsonDocument(QJsonArray{id}).toJson(QJsonDocument::Compact)).mid(1).chopped(1))); if (simple_3d_view_) simple_3d_view_->update(); }
+void ScenePreviewWidget::select_preview_item(const QString & id){
+  const QString stable_id = id.trimmed();
+  if (!stable_id.isEmpty() && !preview_item_by_id(stable_id)) {
+    if (diagnostic_debug_logging_enabled()) emit studio_log_requested(QString("Preview selection ignored because id is absent from current payload: %1").arg(stable_id));
+    return;
+  }
+  selected_preview_item_id_ = stable_id;
+  if (auto * v = active_native_viewport()) {
+    v->selected_id = stable_id;
+    v->update();
+  } else if (stable_id.isEmpty()) {
+    run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.clearSelection()"));
+  } else {
+    run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.selectItem(%1)").arg(QString::fromUtf8(QJsonDocument(QJsonArray{stable_id}).toJson(QJsonDocument::Compact)).mid(1).chopped(1)));
+  }
+  if (simple_3d_view_) simple_3d_view_->update();
+}
 QString ScenePreviewWidget::selected_preview_item_id() const { return selected_preview_item_id_; }
 const ScenePreviewWidget::PreviewItem * ScenePreviewWidget::preview_item_by_id(const QString & id) const
 {

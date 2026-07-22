@@ -68,3 +68,32 @@ def test_qt_compact_toolbar_for_embedded_web3d():
     assert "set_visible(snap_mode_selector_, embedded_web_active)" in CPP
     assert "Unsaved preview edits: %1" in CPP
     assert "Locked item — select an editable object or area" in CPP
+
+
+def test_product_view_selection_uses_stable_identity_and_filters_helpers():
+    assert "function isNormalSelectableRendered(rendered)" in VIEWER
+    assert "item.selectable !== false" in VIEWER
+    assert "!isDiagnosticOnlyItem(item) && !isOverlayPolicyItem(item)" in VIEWER
+    assert "renderedById(requestedId)" in VIEWER
+    assert "missing_render_identity" in VIEWER
+    assert "diagnostic_helper_or_non_selectable" in VIEWER
+    assert "selectObject(item.id);" in VIEWER
+    assert "itemLabel(item)" not in VIEWER.split("function pickObject", 1)[1].split("function beginDirectMoveDrag", 1)[0]
+
+
+def test_qt_selection_clears_stale_scene_and_missing_id_callbacks():
+    assert "selected_preview_item_id_.clear();" in CPP
+    assert "scene_context_changed" in CPP
+    assert "selection_missing_after_refresh" in CPP
+    assert "Preview selection cleared after refresh (id missing):" in CPP
+    assert "if (!embedded_web_identity_is_current(identity)) return;" in CPP
+    assert "if (id != selected_preview_item_id_)" in CPP
+    assert "selection_update_guard_" in (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+
+
+def test_selection_diagnostics_are_exposed_to_qt_bridge():
+    assert "function currentSelectionDiagnostics()" in VIEWER
+    assert "selectionDiagnostics: currentSelectionDiagnostics()" in VIEWER
+    assert "selectionDiagnostics: () => currentSelectionDiagnostics()" in VIEWER
+    for field in ["renderIdentity", "sourceLayer", "activeVisualSource", "diagnosticOnly", "helperOrOverlay", "objectPresent"]:
+        assert field in VIEWER
