@@ -2279,3 +2279,37 @@ assert.strictEqual(state.web3dReadiness.terminalEmissionCount, 1);
 `, context);
 """
     subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+def test_viewer_render_policy_excludes_diagnostics_from_readiness_and_editing():
+    js_path = VIEWER / "viewer.js"
+    harness = """
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({ hidden: false, checked: false, disabled: false, textContent: '', className: '', innerHTML: '', classList: { toggle() {} }, setAttribute() {}, querySelector() { return { textContent: '' }; }, appendChild() {}, addEventListener() {}, getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; } });
+const context = { console, assert, window: { dispatched: [], location: { search: '' }, dispatchEvent(event) { this.dispatched.push(event?.detail?.state); }, parent: { postMessage() {} } }, document: { getElementById() { return element(); }, createElement() { return element(); } }, URLSearchParams, CustomEvent: function CustomEvent(type, init) { return { type, detail: init?.detail || {} }; }, requestAnimationFrame() { return 0; }, setTimeout() { return 1; }, clearTimeout() {} };
+vm.createContext(context);
+vm.runInContext(source + `
+state.sceneJson = { scene: { id: 'policy_scene' }, assets: [
+  { id: 'table', category: 'table', render_policy: 'primary', render_owner: 'editable_layout', render_identity: 'scene|layout|table', readiness_category: 'workbench_support_surface', editable: true },
+  { id: 'pick_zone', category: 'pick_zone', render_policy: 'overlay', render_owner: 'task_overlay', render_identity: 'scene|overlay|pick' },
+  { id: 'base_link_flattened', category: 'robot_static_mesh_visual', role: 'robot', mesh_uri: 'robot.dae', render_policy: 'diagnostic_only', render_owner: 'expanded_urdf_robot', render_identity: 'scene|robot|base_link|0' }
+] };
+const items = collectItems(state.sceneJson);
+assert.strictEqual(items.length, 3);
+assert.strictEqual(readinessCategoryForItem(items.find(i => i.id === 'table')), 'workbench_support_surface');
+assert.strictEqual(readinessCategoryForItem(items.find(i => i.id === 'base_link_flattened')), '');
+assert.strictEqual(readinessCategoryForItem(items.find(i => i.id === 'pick_zone')), '');
+assert.strictEqual(isDebugOverlayItem(items.find(i => i.id === 'pick_zone')), true);
+assert.strictEqual(canEditItem(items.find(i => i.id === 'table')), true);
+assert.strictEqual(canEditItem(items.find(i => i.id === 'base_link_flattened')), false);
+beginWeb3dSceneReadiness(items);
+assert.deepStrictEqual(Array.from(state.web3dReadiness.pending), []);
+assert.strictEqual(state.web3dReadiness.required.workbench_support_surface, true);
+assert.strictEqual(state.web3dReadiness.required.robot_arm, false);
+assert.strictEqual(physicalReadinessItems().length, 1);
+`, context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

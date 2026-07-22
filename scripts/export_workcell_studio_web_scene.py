@@ -121,6 +121,18 @@ HELPER_TOKENS = (
 GENERATED_OUTPUT_SECTIONS = ("robots", "tools", "assets", "sensors", "zones", "frames")
 RENDERABLE_OUTPUT_SECTIONS = ("robots", "tools", "assets", "sensors", "zones")
 
+RENDER_POLICIES = {"primary", "diagnostic_only", "overlay"}
+RENDER_OWNERS = {
+    "expanded_urdf_robot",
+    "expanded_urdf_tool",
+    "generated_urdf_fallback",
+    "environment_mesh",
+    "editable_layout",
+    "task_overlay",
+    "diagnostic_helper",
+}
+
+
 Json = Dict[str, Any]
 
 
@@ -2225,6 +2237,178 @@ def _annotate_urdf_assembly_metadata(generated: Dict[str, List[Json]], scene_nam
                 "robot_render_mode": "web_export_urdf_assembly_metadata",
             })
 
+
+def _render_identity_part(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    text = re.sub(r"[^a-z0-9_.:/+-]+", "_", text)
+    return text.strip("_") or "none"
+
+
+def _generated_render_identity(scene_id: str, owner: str, item: Mapping[str, Any], index: int) -> str:
+    link = _first_present(item.get("link_name"), item.get("link"), item.get("object_name"), item.get("frame"), f"row_{index}")
+    visual = _first_present(item.get("visual_name"), item.get("visual"), item.get("visual_index"), item.get("id"), f"visual_{index}")
+    mesh = _first_present(item.get("mesh_uri"), item.get("package_uri"), item.get("source_path"), item.get("mesh_path"), item.get("resolved_source_path"), "meshless")
+    source = _first_present(item.get("source_row_identity"), item.get("urdf_fk_source"), item.get("source_kind"), "generated")
+    return "|".join(_render_identity_part(v) for v in (scene_id, owner, link, visual, mesh, source))
+
+
+def _source_identity_for_item(scene_id: str, section: str, item: Mapping[str, Any], index: int) -> str:
+    source = _first_present(item.get("layout_item_ref"), item.get("support_surface_ref"), item.get("task_zone_ref"), item.get("source_section"), item.get("source_kind"), section)
+    logical = _first_present(item.get("id"), item.get("object_name"), item.get("link"), item.get("frame"), item.get("display_name"), f"row_{index}")
+    mesh = _first_present(item.get("mesh_uri"), item.get("package_uri"), item.get("source_path"), item.get("mesh_path"), "meshless")
+    return "|".join(_render_identity_part(v) for v in (scene_id, section, source, logical, mesh))
+
+
+def _semantic_role_for_item(item: Mapping[str, Any], section: str) -> str:
+    if section == "zones" or _is_helper(item):
+        role = str(_first_present(item.get("role"), item.get("category"), item.get("type"), "task_overlay"))
+        return _render_identity_part(role)
+    category = _core_mesh_category(item, section) or _visual_contract_category(item, section)
+    if category in {"robot_arm_link", "robot_link"}:
+        return "robot_visual"
+    if category in {"gripper_link", "gripper"}:
+        return "tool_visual"
+    if category in {"table_workbench", "table"}:
+        return "support_surface"
+    if category in {"camera_realsense", "camera"}:
+        return "configured_camera"
+    return _render_identity_part(_first_present(item.get("semantic_type"), item.get("role"), item.get("category"), item.get("type"), "physical_object"))
+
+
+def _is_generated_robot_tool_record(item: Mapping[str, Any], section: str) -> bool:
+    return item.get("source_kind") == "generated_preview" and (_core_mesh_category(item, section) in {"robot_arm_link", "gripper_link"})
+
+
+def _owner_for_primary_item(item: Mapping[str, Any], section: str) -> str:
+    if section == "zones" or _is_helper(item):
+        return "task_overlay"
+    category = _core_mesh_category(item, section)
+    if item.get("source_kind") == "user_authored":
+        return "editable_layout"
+    if section == "robots" or (item.get("source_kind") == "generated_preview" and category == "robot_arm_link"):
+        return "generated_urdf_fallback"
+    if section == "tools" or (item.get("source_kind") == "generated_preview" and category == "gripper_link"):
+        return "generated_urdf_fallback"
+    if section in {"assets", "sensors"} and category in {"table_workbench", "camera_realsense"}:
+        return "environment_mesh"
+    if section == "assets" and category == "authored_asset_object" and item.get("source_kind") == "user_authored":
+        return "editable_layout"
+    if section == "assets" and category == "authored_asset_object" and item.get("source_kind") == "generated_preview":
+        text = _identity_text(item)
+        if any(token in text for token in ("asset", "tray", "bin", "fixture", "conveyor", "object")):
+            return "environment_mesh"
+    return "diagnostic_helper"
+
+
+def _apply_render_ownership_contract(payload: Json, *, expanded_urdf_active: bool) -> None:
+    scene_id = str(payload.get("scene_id") or _as_map(payload.get("scene")).get("id") or "scene")
+    primary_identities: Dict[str, Tuple[str, str]] = {}
+    authored_physical_keys: set[str] = set()
+    for section in RENDERABLE_OUTPUT_SECTIONS:
+        for item in _as_list(payload.get(section)):
+            if isinstance(item, Mapping) and item.get("source_kind") == "user_authored" and _core_mesh_category(item, section) in {"table_workbench", "camera_realsense"}:
+                authored_physical_keys.add(_render_identity_part(_first_present(item.get("id"), item.get("object_name"), item.get("link"), item.get("display_name"))))
+    counters = {"total_scene_records": 0, "primary_physical_records": 0, "expanded_assembly_owned_physical_visuals": 0, "diagnostic_only_records": 0, "overlay_records": 0}
+
+    for section in RENDERABLE_OUTPUT_SECTIONS:
+        for index, item in enumerate(_as_list(payload.get(section))):
+            if not isinstance(item, dict):
+                continue
+            counters["total_scene_records"] += 1
+            semantic_role = _semantic_role_for_item(item, section)
+            item["semantic_role"] = semantic_role
+            item.setdefault("render_contract_version", 1)
+            item.setdefault("readiness_category", "")
+            item.setdefault("render_policy_reason", "classified_by_exporter")
+
+            if section == "zones" or _is_helper(item):
+                item["render_policy"] = "overlay"
+                item["render_owner"] = "task_overlay"
+                item["render_identity"] = _source_identity_for_item(scene_id, section, item, index)
+                item["readiness_category"] = ""
+                counters["overlay_records"] += 1
+                continue
+
+            category = _core_mesh_category(item, section)
+            generated_robot_tool = _is_generated_robot_tool_record(item, section)
+            if expanded_urdf_active and generated_robot_tool:
+                owner = "expanded_urdf_tool" if category == "gripper_link" else "expanded_urdf_robot"
+                item["render_policy"] = "diagnostic_only"
+                item["render_owner"] = owner
+                item["render_identity"] = _generated_render_identity(scene_id, owner, item, index)
+                item["readiness_category"] = ""
+                item["render_policy_reason"] = "expanded_urdf_loader_owns_robot_tool_visuals"
+                item["render_expected"] = False
+                item["mesh_load_required"] = False
+                item["selectable"] = False
+                item["exclude_from_fit_bounds"] = True
+                counters["diagnostic_only_records"] += 1
+                continue
+
+            if item.get("source_kind") == "generated_preview" and category in {"table_workbench", "camera_realsense"}:
+                logical_key = _render_identity_part(_first_present(item.get("id"), item.get("object_name"), item.get("link"), item.get("display_name")))
+                if logical_key in authored_physical_keys:
+                    item["render_policy"] = "diagnostic_only"
+                    item["render_owner"] = "environment_mesh"
+                    item["render_identity"] = _generated_render_identity(scene_id, "environment_mesh", item, index)
+                    item["readiness_category"] = ""
+                    item["render_policy_reason"] = "authored_layout_record_is_authoritative_for_environment_visual"
+                    item["render_expected"] = False
+                    item["mesh_load_required"] = False
+                    item["selectable"] = False
+                    item["exclude_from_fit_bounds"] = True
+                    counters["diagnostic_only_records"] += 1
+                    continue
+
+            physical = _has_mesh_reference(item) or _item_local_bounds(item) is not None
+            if not physical:
+                item["render_policy"] = "diagnostic_only"
+                item["render_owner"] = "diagnostic_helper"
+                item["render_identity"] = _source_identity_for_item(scene_id, section, item, index)
+                item["render_policy_reason"] = "nonphysical_metadata_record"
+                counters["diagnostic_only_records"] += 1
+                continue
+
+            owner = _owner_for_primary_item(item, section)
+            if owner == "diagnostic_helper":
+                raise BlockingExportError(
+                    f"Unclassified physical render ownership: scene={scene_id} collection={section} id={item.get('id','')} "
+                    f"source_layer={item.get('source_layer','')} role={item.get('role','')} mesh_uri={_first_present(*(item.get(f) for f in MESH_URI_FIELDS)) or ''}"
+                )
+            item["render_policy"] = "primary"
+            item["render_owner"] = owner
+            if item.get("source_kind") == "generated_preview":
+                item["render_identity"] = _generated_render_identity(scene_id, owner, item, index)
+            else:
+                item["render_identity"] = _source_identity_for_item(scene_id, section, item, index)
+            if category == "robot_arm_link":
+                item["readiness_category"] = "robot_arm"
+            elif category == "gripper_link":
+                item["readiness_category"] = "attached_tool_gripper"
+            elif category == "table_workbench":
+                item["readiness_category"] = "workbench_support_surface"
+            elif category == "camera_realsense":
+                item["readiness_category"] = "configured_camera"
+            counters["primary_physical_records"] += 1
+            ident = str(item.get("render_identity") or "")
+            if not ident:
+                raise BlockingExportError(f"Primary render record has empty render_identity: scene={scene_id} collection={section} id={item.get('id','')}")
+            prior = primary_identities.get(ident)
+            if prior:
+                raise BlockingExportError(f"Duplicate primary render_identity: scene={scene_id} identity={ident} first={prior[0]}/{prior[1]} second={section}/{item.get('id','')}")
+            primary_identities[ident] = (section, str(item.get("id", "")))
+
+    preview = _as_map(payload.get("robot_preview"))
+    if expanded_urdf_active and preview:
+        preview["render_owner"] = "expanded_urdf_robot"
+        preview["tool_render_owner"] = "expanded_urdf_tool"
+        preview["render_policy"] = "primary"
+        preview["semantic_role"] = "expanded_urdf_robot_tool_assembly"
+        preview["render_identity"] = "|".join(_render_identity_part(v) for v in (scene_id, "expanded_urdf_loader", preview.get("urdf_url") or preview.get("source_urdf") or "robot_preview"))
+        preview["readiness_categories"] = ["robot_arm", "attached_tool_gripper"]
+        counters["expanded_assembly_owned_physical_visuals"] = 2
+    payload["render_ownership_summary"] = counters | {"duplicate_primary_identities": 0, "unknown_physical_owners": 0}
+
 def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path: Optional[Path] = None) -> Json:
     scene_dir = scene_dir.resolve()
     warnings: List[Json] = []
@@ -2313,6 +2497,7 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
     if stage_assets:
         _stage_visual_meshes(output, scene_dir, output_path or Path("build/workcell_studio_web_scene/scene.web_scene.json"))
         _stage_expanded_robot_urdf(output, scene_dir, output_path or Path("build/workcell_studio_web_scene/scene.web_scene.json"), warnings)
+    _apply_render_ownership_contract(output, expanded_urdf_active=_as_map(output.get("robot_preview")).get("mode") == "expanded_urdf_loader")
     output.pop("_visual_mesh_index_source", None)
     _populate_visual_bounds_item_fields(output, data)
     metadata = dict(_as_map(output.get("metadata")))

@@ -999,3 +999,88 @@ def test_export_shared_physical_iterator_covers_legacy_sections_and_failures(tmp
     assert any(item["id"] == "pick_helper" for item in payload["zones"])
     assert "pick_helper" not in assets
     assert sum(1 for item in payload["assets"] if item.get("id") == "generated_tray_mesh") == 1
+
+
+def _ownership_items(payload):
+    return [item for bucket in ("robots", "tools", "assets", "sensors", "zones") for item in payload.get(bucket, [])]
+
+
+def test_render_ownership_contract_marks_expanded_urdf_rows_diagnostic(tmp_path):
+    payload = exporter.build_web_scene(ROOT / "scenes" / "ur5_2f_test", stage_assets=True, output_path=tmp_path / "scene.web_scene.json")
+    if payload["robot_preview"]["mode"] != "expanded_urdf_loader":
+        scene = tmp_path / "expanded_scene"
+        (scene / "layout").mkdir(parents=True)
+        (scene / "generated").mkdir()
+        (scene / "scene_manifest.yaml").write_text(yaml.safe_dump({"scene": {"name": "expanded"}, "robot": {"model": "ur5"}}), encoding="utf-8")
+        (scene / "cell_definition.yaml").write_text(yaml.safe_dump({"cell": {"id": "expanded"}, "robot": {"model": "ur5"}}), encoding="utf-8")
+        (scene / "environment.yaml").write_text(yaml.safe_dump({"environment": {"support_surfaces": [{"id": "table", "role": "support_surface", "dimensions": [1, 1, 0.1]}], "sensors": [{"id": "camera", "role": "camera", "dimensions": [0.1, 0.1, 0.1]}]}}), encoding="utf-8")
+        (scene / "layout/workcell_studio_layout.yaml").write_text(yaml.safe_dump({"items": []}), encoding="utf-8")
+        urdf = '''<?xml version="1.0"?><robot name="r"><link name="world"/><link name="base_link"><visual><geometry><mesh filename="package://ur_description/meshes/ur5/visual/base.dae"/></geometry></visual></link><link name="tool0"/><link name="gripper_base_link"><visual><geometry><mesh filename="package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae"/></geometry></visual></link><joint name="world_to_base" type="fixed"><parent link="world"/><child link="base_link"/></joint><joint name="base_to_tool" type="fixed"><parent link="base_link"/><child link="tool0"/></joint><joint name="tool_to_gripper" type="fixed"><parent link="tool0"/><child link="gripper_base_link"/></joint></robot>'''
+        (scene / "generated/expanded_scene_preview.urdf").write_text(urdf, encoding="utf-8")
+        (scene / "generated/scene_visual_mesh_index.json").write_text(json.dumps({"source_expanded_urdf_path": "generated/expanded_scene_preview.urdf", "visual_items": [{"id": "base", "category": "robot_static_mesh_visual", "role": "robot", "link": "base_link", "mesh_uri": "package://ur_description/meshes/ur5/visual/base.dae"}, {"id": "gripper", "category": "gripper", "role": "tool", "link": "gripper_base_link", "mesh_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae"}]}), encoding="utf-8")
+        payload = exporter.build_web_scene(scene, stage_assets=True, output_path=tmp_path / "expanded.web_scene.json")
+    assert payload["robot_preview"]["mode"] == "expanded_urdf_loader"
+    assert payload["robot_preview"]["render_owner"] == "expanded_urdf_robot"
+    assert payload["robot_preview"]["tool_render_owner"] == "expanded_urdf_tool"
+    items = _ownership_items(payload)
+    for item in items:
+        assert item.get("render_owner")
+        assert item.get("render_policy") in {"primary", "diagnostic_only", "overlay"}
+        assert item.get("render_identity")
+        assert item.get("semantic_role")
+    primary = [item for item in items if item.get("render_policy") == "primary"]
+    identities = [item["render_identity"] for item in primary]
+    assert len(identities) == len(set(identities))
+    flattened_robot_tool = [item for item in items if item.get("source_kind") == "generated_preview" and item.get("semantic_role") in {"robot_visual", "tool_visual"}]
+    assert flattened_robot_tool
+    assert {item["render_policy"] for item in flattened_robot_tool} == {"diagnostic_only"}
+    assert {item["readiness_category"] for item in flattened_robot_tool} == {""}
+    assert {item["selectable"] for item in flattened_robot_tool} == {False}
+    assert not [item for item in primary if item.get("source_kind") == "generated_preview" and item.get("semantic_role") in {"robot_visual", "tool_visual"}]
+    summary = payload["render_ownership_summary"]
+    assert summary["duplicate_primary_identities"] == 0
+    assert summary["unknown_physical_owners"] == 0
+    assert summary["diagnostic_only_records"] >= len(flattened_robot_tool)
+
+
+def test_generated_urdf_fallback_rows_keep_distinct_render_identity(tmp_path):
+    scene = tmp_path / "scene"
+    (scene / "layout").mkdir(parents=True)
+    (scene / "generated").mkdir()
+    (scene / "scene_manifest.yaml").write_text(yaml.safe_dump({"scene": {"name": "fallback"}, "robot": {"model": "ur5"}}), encoding="utf-8")
+    (scene / "cell_definition.yaml").write_text(yaml.safe_dump({"cell": {"id": "fallback"}, "robot": {"model": "ur5"}}), encoding="utf-8")
+    (scene / "environment.yaml").write_text(yaml.safe_dump({"environment": {}}), encoding="utf-8")
+    (scene / "layout/workcell_studio_layout.yaml").write_text(yaml.safe_dump({"items": []}), encoding="utf-8")
+    (scene / "generated/scene_visual_mesh_index.json").write_text(json.dumps({"visual_items": [
+        {"id": "left", "category": "gripper", "role": "tool", "link": "left_outer_finger", "visual": "visual_0", "mesh_uri": "package://robotiq/meshes/finger.dae", "pose": {"xyz": [0, 0.1, 0], "rpy": [0, 0, 0]}},
+        {"id": "right", "category": "gripper", "role": "tool", "link": "right_outer_finger", "visual": "visual_0", "mesh_uri": "package://robotiq/meshes/finger.dae", "pose": {"xyz": [0, -0.1, 0], "rpy": [0, 0, 0]}},
+    ]}), encoding="utf-8")
+    payload = exporter.build_web_scene(scene, stage_assets=False, output_path=tmp_path / "out.json")
+    tools = payload["tools"]
+    assert {item["render_policy"] for item in tools} == {"primary"}
+    assert {item["render_owner"] for item in tools} == {"generated_urdf_fallback"}
+    assert len({item["render_identity"] for item in tools}) == 2
+
+
+def test_unknown_physical_record_fails_export(tmp_path):
+    scene = tmp_path / "scene"
+    (scene / "layout").mkdir(parents=True)
+    (scene / "generated").mkdir()
+    for rel, data in {
+        "scene_manifest.yaml": {"scene": {"name": "bad"}},
+        "cell_definition.yaml": {"cell": {"id": "bad"}},
+        "environment.yaml": {},
+        "layout/workcell_studio_layout.yaml": {"items": []},
+    }.items():
+        (scene / rel).write_text(yaml.safe_dump(data), encoding="utf-8")
+    (scene / "generated/scene_visual_mesh_index.json").write_text(json.dumps({"visual_items": [
+        {"id": "mystery_mesh", "category": "mystery", "role": "mystery", "mesh_uri": "package://mystery/mesh.dae"}
+    ]}), encoding="utf-8")
+    try:
+        exporter.build_web_scene(scene, stage_assets=False, output_path=tmp_path / "out.json")
+    except exporter.BlockingExportError as exc:
+        assert "Unclassified physical render ownership" in str(exc)
+        assert "collection=assets" in str(exc)
+        assert "mystery_mesh" in str(exc)
+    else:
+        raise AssertionError("expected unknown physical ownership to fail export")
