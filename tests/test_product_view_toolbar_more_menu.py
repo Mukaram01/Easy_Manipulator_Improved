@@ -17,7 +17,7 @@ def test_product_view_primary_toolbar_keeps_only_core_controls_visible():
 
     for text in ["Select", "Place Asset", "Move", "Save Layout"]:
         assert text in primary
-    assert 'scene_builder_secondary_overflow_button_->setText("More")' in CPP
+    assert 'scene_builder_secondary_overflow_button_->setText("Panels & Tools")' in CPP
     assert 'primary_controls->addWidget(scene_builder_secondary_overflow_button_)' in CPP
 
     assert 'primary_controls->addWidget(place_mode_persistent_box_)' not in primary

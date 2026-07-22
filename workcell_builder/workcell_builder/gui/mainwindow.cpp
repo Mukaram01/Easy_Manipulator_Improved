@@ -1996,7 +1996,7 @@ void MainWindow::setup_studio_shell()
   scene_builder_path_label_ = new QLabel("No scene selected", scene_builder); scene_builder_path_label_->setObjectName("sceneBuilderCompactSceneIdentity"); scene_builder_path_label_->setWordWrap(false);
   scene_builder_path_label_->setTextFormat(Qt::PlainText);
   scene_builder_path_label_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-  scene_builder_path_label_->setMinimumWidth(80);
+  scene_builder_path_label_->setMinimumWidth(180);
   scene_builder_path_label_->installEventFilter(this);
   scene_builder_generate_launch_button_ = new QPushButton("Generate launch package", scene_builder);
   scene_builder_generate_launch_button_->setVisible(false);
@@ -2010,43 +2010,18 @@ void MainWindow::setup_studio_shell()
     generate_scene_package_for_selected_scene();
     refresh_scene_builder_selected_scene_ui();
   });
-  auto * scene_header_files_button = new QToolButton(scene_builder);
-  scene_header_files_button->setObjectName("sceneBuilderHeaderFilesButton");
-  scene_header_files_button->setText("Files");
-  scene_header_files_button->setPopupMode(QToolButton::InstantPopup);
-  auto * scene_header_files_menu = new QMenu(scene_header_files_button);
-  auto * scene_header_open_action = scene_header_files_menu->addAction("Open Scene");
-  QObject::connect(scene_header_open_action, &QAction::triggered, this, [this]() { open_scene_builder_for_selected_scene("Scene Builder Header Files/Open"); });
-  auto * scene_header_copy_action = scene_header_files_menu->addAction("Copy full scene path");
-  QObject::connect(scene_header_copy_action, &QAction::triggered, scene_builder_copy_path_button_, &QToolButton::click);
-  scene_header_files_menu->addAction("Generate launch package", scene_builder_generate_launch_button_, &QPushButton::click);
-  scene_header_files_button->setMenu(scene_header_files_menu);
-  auto * scene_header_save_button = new QPushButton("Save Layout", scene_builder);
-  scene_header_save_button->setObjectName("sceneBuilderHeaderSaveLayoutButton");
-  QObject::connect(scene_header_save_button, &QPushButton::clicked, this, [this]() { if (save_layout_button_) save_layout_button_->click(); });
-  auto * scene_header_run_next_button = new QToolButton(scene_builder);
-  scene_header_run_next_button->setObjectName("sceneBuilderHeaderRunNextButton");
-  scene_header_run_next_button->setText("Run Next");
-  scene_header_run_next_button->setPopupMode(QToolButton::InstantPopup);
-  auto * scene_header_run_next_menu = new QMenu(scene_header_run_next_button);
-  scene_header_run_next_menu->addAction("Validate", this, &MainWindow::run_offline_validation);
-  scene_header_run_next_menu->addAction("Validate Generated Scene", this, &MainWindow::validate_generated_scene_for_selected_scene);
-  scene_header_run_next_menu->addAction("Plan/Simulate Preview", this, &MainWindow::run_fake_hardware_preview);
-  scene_header_run_next_button->setMenu(scene_header_run_next_menu);
   scene_header_row->addWidget(scene_builder_title_);
-  scene_header_row->addWidget(scene_builder_path_label_,1);
-  scene_header_row->addWidget(scene_header_files_button);
-  scene_header_row->addWidget(scene_header_save_button);
-  scene_header_row->addWidget(scene_header_run_next_button);
+  scene_header_row->addWidget(scene_builder_path_label_, 1);
   sl->addLayout(scene_header_row);
   auto * scene_shell = new QWidget(scene_builder); scene_shell->setObjectName("sceneBuilderWorkspace");
   auto * scene_shell_layout = new QVBoxLayout(scene_shell);
   auto * scene_splitter = new QSplitter(Qt::Horizontal, scene_shell);
   scene_builder_splitter_ = scene_splitter;
   scene_splitter->setObjectName("sceneBuilderMainSplitter");
-  auto * left_panel = new QFrame(scene_builder); left_panel->setObjectName("sceneBuilderLeftPanel"); left_panel->setMinimumWidth(260);
-  auto * center_panel = new QFrame(scene_builder); center_panel->setObjectName("sceneBuilderProductViewPanel"); center_panel->setMinimumWidth(520);
-  auto * right_panel = new QFrame(scene_builder); right_panel->setObjectName("sceneBuilderRightPanel"); right_panel->setMinimumWidth(280);
+  auto * left_panel = new QFrame(scene_builder); left_panel->setObjectName("sceneBuilderLeftPanel"); left_panel->setMinimumWidth(320);
+  auto * center_panel = new QFrame(scene_builder); center_panel->setObjectName("sceneBuilderProductViewPanel"); center_panel->setMinimumWidth(720);
+  center_panel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+  auto * right_panel = new QFrame(scene_builder); right_panel->setObjectName("sceneBuilderRightPanel"); right_panel->setMinimumWidth(360);
   scene_builder_left_panel_ = left_panel;
   scene_builder_right_panel_ = right_panel;
   scene_splitter->addWidget(left_panel);
@@ -2058,10 +2033,10 @@ void MainWindow::setup_studio_shell()
   scene_splitter->setChildrenCollapsible(false);
   scene_splitter->setStretchFactor(0, 1);
   scene_splitter->setStretchFactor(1, 8);
-  scene_splitter->setStretchFactor(2, 1);
-  scene_splitter->setSizes({300, 900, 320});
+  scene_splitter->setStretchFactor(2, 0);
+  scene_splitter->setSizes({320, 1000, 0});
   const auto clamp_scene_builder_sizes = [this, scene_splitter](QList<int> sizes) {
-    if (sizes.size() != 3) sizes = {300, 900, 320};
+    if (sizes.size() != 3) sizes = {320, 1000, 0};
     scene_builder_last_splitter_sizes_ = sizes;
     const int total = qMax(900, sizes[0] + sizes[1] + sizes[2]);
     sizes[0] = qBound(0, sizes[0], total / 3);
@@ -2077,7 +2052,15 @@ void MainWindow::setup_studio_shell()
     for (const auto & value : values) saved_sizes.append(value.toInt());
     clamp_scene_builder_sizes(saved_sizes);
     left_panel->setVisible(settings.value(QStringLiteral("scene_builder/left_panel_visible"), true).toBool());
-    right_panel->setVisible(settings.value(QStringLiteral("scene_builder/right_panel_visible"), true).toBool());
+    const int kNativeLayoutVersion = 2;
+    const int saved_layout_version = settings.value(QStringLiteral("scene_builder/native_layout_version"), 0).toInt();
+    if (saved_layout_version < kNativeLayoutVersion) {
+      right_panel->setVisible(false);
+      settings.setValue(QStringLiteral("scene_builder/right_panel_visible"), false);
+      settings.setValue(QStringLiteral("scene_builder/native_layout_version"), kNativeLayoutVersion);
+    } else {
+      right_panel->setVisible(settings.value(QStringLiteral("scene_builder/right_panel_visible"), false).toBool());
+    }
   }
   QObject::connect(scene_splitter, &QSplitter::splitterMoved, this, [this]() {
     if (!scene_builder_focus_3d_active_ && scene_builder_splitter_) {
@@ -2181,10 +2164,9 @@ void MainWindow::setup_studio_shell()
   auto * placeholder_action = asset_more_menu->addAction("Generate Simple Box/Cylinder Placeholder");
   asset_more_actions->setMenu(asset_more_menu);
   catalog_layout->addWidget(asset_more_actions);
-  left_vertical_splitter->addWidget(catalog_card);
   left_vertical_splitter->setSizes({420, 260});
   scene_tab_layout->addWidget(left_vertical_splitter, 1);
-  assets_tab_layout->addWidget(new QLabel("Asset Library is available below Scene Hierarchy in the Scene tab.", assets_tab), 1);
+  assets_tab_layout->addWidget(catalog_card, 1);
   auto * files_card = new QFrame(files_tab); files_card->setObjectName("studioCard");
   auto * files_card_layout = new QVBoxLayout(files_card);
   files_card_layout->addWidget(new QLabel("<b>Scene Files</b>"));
@@ -2236,7 +2218,7 @@ void MainWindow::setup_studio_shell()
   files_tab_layout->addWidget(files_card);
   scene_builder_left_tabs_->addTab(scene_tab, "Scene");
   scene_builder_left_tabs_->addTab(assets_tab, "Assets");
-  scene_builder_left_tabs_->addTab(files_tab, "Files");
+  scene_builder_left_tabs_->addTab(files_tab, "Workflow");
   left_layout->addWidget(scene_builder_left_tabs_, 1);
 
   auto * center_panel_layout = new QVBoxLayout(center_panel);
@@ -2469,7 +2451,7 @@ void MainWindow::setup_studio_shell()
   scene_builder_visual_modes_button_->setMenu(visual_modes_menu);
   scene_builder_secondary_overflow_button_ = new QToolButton(scene_builder);
   scene_builder_secondary_overflow_button_->setObjectName("scene_builder_secondary_overflow_button");
-  scene_builder_secondary_overflow_button_->setText("More");
+  scene_builder_secondary_overflow_button_->setText("Panels & Tools");
   scene_builder_secondary_overflow_button_->setPopupMode(QToolButton::InstantPopup);
   scene_builder_secondary_overflow_menu_ = new QMenu(scene_builder_secondary_overflow_button_);
   auto * inspect_action = new QAction(inspect_mode_button->text(), scene_builder_secondary_overflow_menu_);
@@ -2490,7 +2472,7 @@ void MainWindow::setup_studio_shell()
   if (duplicate_action) { duplicate_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+D"))); duplicate_action->setEnabled(false); }
   if (delete_action) delete_action->setShortcut(QKeySequence(Qt::Key_Delete));
   if (scene_builder_last_splitter_sizes_.size() != 3)
-    scene_builder_last_splitter_sizes_ = scene_builder_splitter_ ? scene_builder_splitter_->sizes() : QList<int>{300, 900, 320};
+    scene_builder_last_splitter_sizes_ = scene_builder_splitter_ ? scene_builder_splitter_->sizes() : QList<int>{320, 1000, 0};
   auto sync_scene_builder_view_actions = [this]() {
     if (scene_builder_show_left_panel_action_ && scene_builder_left_panel_)
       scene_builder_show_left_panel_action_->setChecked(scene_builder_left_panel_->isVisible());
@@ -2512,7 +2494,7 @@ void MainWindow::setup_studio_shell()
   auto restore_scene_builder_sizes = [this]() {
     if (!scene_builder_splitter_) return;
     QList<int> sizes = scene_builder_last_splitter_sizes_;
-    if (sizes.size() != 3) sizes = {300, 900, 320};
+    if (sizes.size() != 3) sizes = {320, 1000, 0};
     const int total = qMax(900, sizes[0] + sizes[1] + sizes[2]);
     sizes[0] = scene_builder_left_panel_ && scene_builder_left_panel_->isVisible() ? qBound(0, sizes[0], total / 3) : 0;
     sizes[2] = scene_builder_right_panel_ && scene_builder_right_panel_->isVisible() ? qBound(0, sizes[2], total / 3) : 0;
@@ -3342,7 +3324,7 @@ void MainWindow::build_studio_header_actions()
     top_bar->addWidget(button);
   }
   auto * scenes_open_button = new QToolButton(this);
-  scenes_open_button->setText("Files");
+  scenes_open_button->setText("Scenes");
   scenes_open_button->setToolTip("Open Scene Builder and scene file generation actions.");
   scenes_open_button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
   scenes_open_button->setPopupMode(QToolButton::InstantPopup);
@@ -6440,6 +6422,15 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
     refresh_selected_scene_item_labels(selected_item_state_);
     refresh_selection_transform_editor_from_state(selected_item_state_);
   }
+  if (scene_builder_right_panel_) {
+    scene_builder_right_panel_->setVisible(true);
+    if (scene_builder_show_right_panel_action_) scene_builder_show_right_panel_action_->setChecked(true);
+    if (scene_builder_inspector_tabs_) {
+      const int selection_tab = 0;
+      scene_builder_inspector_tabs_->setCurrentIndex(selection_tab);
+    }
+  }
+
   const auto selected_state = current_selected_scene_item();
   const QString selected_scene_name_for_log = selected_scene_state_.valid ? selected_scene_state_.name : QStringLiteral("unknown");
   const QString selected_source_layer_for_log = selected_state.source_layer.isEmpty() ? QStringLiteral("unknown") : selected_state.source_layer;
