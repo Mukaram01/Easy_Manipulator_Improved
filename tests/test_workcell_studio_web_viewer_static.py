@@ -647,6 +647,26 @@ def test_viewer_product_theme_keeps_grid_controls_and_bounds_exclusions():
     assert "fitSelection: () => { fitSelection(); return editorState(); }" in js
 
 
+def test_viewer_product_view_camera_presets_and_grid_are_workcell_focused():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    html = (VIEWER / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="camera-preset"' in html
+    for preset in ["isometric", "front", "top", "robot"]:
+        assert f'value="{preset}"' in html
+    assert "const CAMERA_PRESET_DIRECTIONS = Object.freeze" in js
+    for token in ["isometric", "front", "top", "robot"]:
+        assert token in js
+    assert "function applyCameraClipping(camera, radius, distance)" in js
+    assert "function applyCameraPreset(preset)" in js
+    assert "applyCameraPreset: preset =>" in js
+    assert "el.cameraPreset.addEventListener('change'" in js
+    assert "material.opacity = 0.22" in js
+    assert "grid.userData.exclude_from_fit_bounds = true" in js
+    assert "grid.userData.exclude_from_physical_bounds = true" in js
+    assert "if (el.cameraPreset) el.cameraPreset.disabled = false" in js
+
+
 def test_viewer_product_theme_is_scene_independent():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     init_body = js.split("function initThree()", 1)[1].split("function animate()", 1)[0]
@@ -699,7 +719,7 @@ def test_viewer_initial_fit_not_reframed_per_mesh_load_but_manual_fit_remains():
     reset_body = js.split("function resetView", 1)[1].split("function reportFitSelectionFallback", 1)[0]
     assert "if (userInitiated) markCameraUserControlled();" in reset_body
     assert "const physical = collectPhysicalVisibleBounds(state.three.scene);" in reset_body
-    assert "frameScene(physical.bounds)" in reset_body
+    assert "frameScene(physical.bounds, { preset })" in reset_body
     assert "el.resetView.addEventListener('click', resetView)" in js
     assert "fitScene: () => { resetView(); return editorState(); }" in js
 
