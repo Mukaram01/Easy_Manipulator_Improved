@@ -265,9 +265,13 @@ def _build_perception_adapter_config(cell_def: dict[str, Any], task_recipe: dict
     task = cell_def.get("task", {}) if isinstance(cell_def.get("task"), dict) else {}
     scene_id = str(cell.get("id") or cell_def.get("scene_id") or "").strip()
     enabled = bool(perception.get("enabled", camera.get("enabled", False)))
-    mode = str(perception.get("mode", "off" if not enabled else "epd_snapshot")).strip()
-    if not enabled or mode in {"off", "disabled", "none"}:
-        return {"schema_version": "workcell_perception_adapter_config/v1", "status": "NOT_APPLICABLE", "reason": "scene has no perception requirement", "scene_id": scene_id, "normalized_output_contract": "workcell_perception_snapshot/v1"}
+    mode = str(perception.get("mode", perception.get("source_mode", "disabled" if not enabled else "live"))).strip().lower()
+    aliases = {"off": "disabled", "none": "disabled", "epd_snapshot": "replay", "replayed_snapshot": "replay", "live_epd": "live"}
+    mode = aliases.get(mode, mode)
+    if not enabled or mode == "disabled":
+        return {"schema_version": "workcell_perception_adapter_config/v1", "status": "NOT_APPLICABLE", "mode": "disabled", "state": "DISABLED", "reason": "scene has no perception requirement", "scene_id": scene_id, "normalized_output_contract": "workcell_perception_snapshot/v1"}
+    if mode not in {"replay", "live"}:
+        raise ValueError(f"Invalid perception source mode: {mode}")
     camera_id = str(perception.get("camera_id") or camera.get("camera_id") or camera.get("id") or "").strip()
     frame_id = str(perception.get("frame_id") or camera.get("frame_id") or camera.get("frame") or "").strip()
     expected_frames = perception.get("expected_frames") or [f for f in [frame_id, camera.get("optical_frame_id"), (cell_def.get("environment", {}) or {}).get("frame")] if f]
@@ -292,10 +296,14 @@ def _build_perception_adapter_config(cell_def: dict[str, Any], task_recipe: dict
     return {
         "schema_version": "workcell_perception_adapter_config/v1",
         "status": "READY",
+        "mode": mode,
+        "state": "WAITING",
         "scene_id": scene_id,
         "camera": {"camera_id": camera_id, "frame_id": frame_id},
         "expected_frames": list(dict.fromkeys(str(f) for f in expected_frames if f)),
         "epd_input": {"topic": epd.get("topic"), "message_type": epd.get("message_type")},
+        "freshness_timeout_s": float(perception.get("freshness_timeout_s", 2.0)),
+        "replay": {"path": perception.get("replay_path", ""), "rate_hz": float(perception.get("replay_rate_hz", 1.0)), "single_step": bool(perception.get("single_step", False)), "loop": bool(perception.get("loop", False))},
         "required_object_classes": required,
         "confidence_threshold": threshold,
         "task_binding": {"task_id": task.get("id", task_recipe.get("id")), "pick_source": (task.get("pick") or {}).get("source_ref") or task.get("source_object"), "object_source": "epd_snapshot"},

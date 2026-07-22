@@ -65,3 +65,64 @@ def test_artifact_tokens_exist_for_connector_and_preview_outputs():
     combined = wizard_text + preview_text
     for token in ['preview/live_epd_detection_snapshot.json', 'preview/live_epd_detection_mapping.yaml', 'live_conveyor_sorting_status.json', 'live_task_intent_preview.yaml', 'live_emd_grasp_planner_request.yaml', 'robot_motion_commanded', 'gripper_command_sent', 'conveyor_command_sent']:
         assert token.split('/')[-1] in combined
+
+
+def _snap(scene='scene1', camera='cam1', ts='2026-07-22T00:00:00Z', oid='o1'):
+    return {'schema_version':'workcell_perception_snapshot/v1','scene_id':scene,'camera_id':camera,'timestamp':ts,'frame_id':'camera_frame','objects':[{'object_id':oid,'label':'part','confidence':0.9,'centroid':[0.1,0.2,0.3]}]}
+
+
+def test_disabled_mode_is_clean_without_subscription_intent():
+    adapter = mod.PerceptionSourceAdapter({'status':'NOT_APPLICABLE','scene_id':'scene1','camera':{'camera_id':'cam1'}})
+    assert adapter.mode == 'disabled'
+    assert adapter.status()['state'] == 'DISABLED'
+    assert adapter.status()['object_count'] == 0
+    assert adapter.accept_live_payload(_snap()) is None
+
+
+def test_deterministic_replay_no_loop_by_default(tmp_path):
+    replay = tmp_path / 'snapshots.jsonl'
+    replay.write_text(json.dumps(_snap(ts='2026-07-22T00:00:00Z', oid='o1'))+'\n'+json.dumps(_snap(ts='2026-07-22T00:00:01Z', oid='o2'))+'\n', encoding='utf-8')
+    adapter = mod.PerceptionSourceAdapter({'mode':'replay','scene_id':'scene1','camera':{'camera_id':'cam1'},'replay':{'path':str(replay),'rate_hz':5}})
+    assert adapter.next_replay_snapshot()['objects'][0]['object_id'] == 'o1'
+    assert adapter.next_replay_snapshot()['objects'][0]['object_id'] == 'o2'
+    assert adapter.next_replay_snapshot() is None
+    assert adapter.status()['state'] == 'STALE'
+    assert adapter.status()['reason'] == 'replay exhausted'
+
+
+def test_live_waiting_ready_stale_without_repeated_warning():
+    adapter = mod.PerceptionSourceAdapter({'mode':'live','scene_id':'scene1','camera':{'camera_id':'cam1','frame_id':'camera_frame'},'freshness_timeout_s':0.01})
+    assert adapter.status()['state'] == 'WAITING'
+    assert adapter.accept_live_payload(_snap()) is not None
+    assert adapter.status()['state'] == 'READY'
+    adapter.refresh_staleness(now=adapter.last_wall_time + 1.0)
+    first = adapter.status()
+    adapter.refresh_staleness(now=adapter.last_wall_time + 2.0)
+    second = adapter.status()
+    assert first['state'] == second['state'] == 'STALE'
+    assert first['reason'] == second['reason'] == 'freshness timeout exceeded'
+
+
+def test_scene_camera_mismatch_rejected_and_source_switch_clears():
+    adapter = mod.PerceptionSourceAdapter({'mode':'live','scene_id':'scene1','camera':{'camera_id':'cam1'}})
+    assert adapter.accept_live_payload(_snap(scene='wrong', camera='cam1')) is None
+    assert adapter.status()['state'] == 'FAILED'
+    adapter.configure({'mode':'disabled','scene_id':'scene2','camera':{'camera_id':'cam2'}})
+    assert adapter.status()['state'] == 'DISABLED'
+    assert adapter.status()['object_count'] == 0
+
+
+def test_malformed_replay_fails_precisely(tmp_path):
+    replay = tmp_path / 'bad.json'
+    bad = _snap(); bad['objects'].append(dict(bad['objects'][0]))
+    replay.write_text(json.dumps([bad]), encoding='utf-8')
+    adapter = mod.PerceptionSourceAdapter({'mode':'replay','scene_id':'scene1','camera':{'camera_id':'cam1'},'replay':{'path':str(replay)}})
+    status = adapter.status()
+    assert status['state'] == 'FAILED'
+    assert 'duplicate object id' in status['reason']
+
+
+def test_no_motion_or_epd_processing_added_to_connector():
+    text = SCRIPT.read_text(encoding='utf-8')
+    forbidden = ['move_group', 'FollowJointTrajectory', 'create_client', 'create_service', 'send_goal', 'robot_motion']
+    assert not any(token in text for token in forbidden)
