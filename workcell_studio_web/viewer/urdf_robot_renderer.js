@@ -146,6 +146,16 @@ function countDescendantMeshes(object) {
   return count;
 }
 
+function summarizeColladaDiagnostic(diagnostics, detail) {
+  const key = [detail.up_axis || '', detail.unit_meter ?? '', detail.root_transform_normalized ? 'normalized' : 'unchanged'].join('|');
+  diagnostics.robot_collada_summary_keys = diagnostics.robot_collada_summary_keys || [];
+  if (!diagnostics.robot_collada_summary_keys.includes(key)) diagnostics.robot_collada_summary_keys.push(key);
+  diagnostics.robot_collada_summary = diagnostics.robot_collada_summary || [];
+  const row = diagnostics.robot_collada_summary.find(entry => entry.key === key);
+  if (row) { row.count += 1; return; }
+  diagnostics.robot_collada_summary.push({ key, count: 1, severity: 'debug', ...detail });
+}
+
 function normalizeRosColladaScene(dae, uri, diagnostics) {
   const scene = dae?.scene;
   if (!scene) return scene;
@@ -167,14 +177,16 @@ function normalizeRosColladaScene(dae, uri, diagnostics) {
     && !isIdentityTransform(scene)
     && (upAxis === 'Z_UP' || (Number.isFinite(unitMeter) && Math.abs(unitMeter - 1) > 1e-9));
   if (!hasLoaderRootConversion) {
-    diagnostics.robot_collada_mesh_diagnostics.push({
+    const detail = {
       uri,
       up_axis: upAxis || null,
       unit_meter: Number.isFinite(unitMeter) ? unitMeter : null,
       descendant_mesh_count: meshCount,
       root_transform_normalized: false,
       root_transform_before: before,
-    });
+    };
+    diagnostics.robot_collada_mesh_diagnostics.push(detail);
+    summarizeColladaDiagnostic(diagnostics, detail);
     return scene;
   }
 
@@ -186,7 +198,7 @@ function normalizeRosColladaScene(dae, uri, diagnostics) {
   scene.updateMatrixWorld(true);
   diagnostics.robot_collada_root_normalization_count += 1;
   diagnostics.robotColladaRootNormalizationCount = diagnostics.robot_collada_root_normalization_count;
-  diagnostics.robot_collada_mesh_diagnostics.push({
+  const detail = {
     uri,
     up_axis: upAxis || null,
     unit_meter: Number.isFinite(unitMeter) ? unitMeter : null,
@@ -194,7 +206,9 @@ function normalizeRosColladaScene(dae, uri, diagnostics) {
     root_transform_normalized: true,
     root_transform_before: before,
     root_transform_after: objectLocalTransformDiagnostics(scene),
-  });
+  };
+  diagnostics.robot_collada_mesh_diagnostics.push(detail);
+  summarizeColladaDiagnostic(diagnostics, detail);
   return scene;
 }
 
@@ -581,6 +595,8 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     robotColladaRootNormalizationCount: 0,
     robot_collada_mesh_diagnostics: [],
     robotColladaMeshDiagnostics: [],
+    robot_collada_summary: [],
+    robotColladaSummary: [],
     robot_package_mesh_resolutions: [],
     robot_descendant_render_mesh_diagnostics: [],
     robotDescendantRenderMeshDiagnostics: [],
@@ -633,6 +649,8 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     collectMatrixParityDiagnostics(previewConfig, diagnostics);
     diagnostics.robot_collada_mesh_diagnostics = diagnostics.robot_collada_mesh_diagnostics || [];
     diagnostics.robotColladaMeshDiagnostics = diagnostics.robot_collada_mesh_diagnostics;
+    diagnostics.robot_collada_summary = diagnostics.robot_collada_summary || [];
+    diagnostics.robotColladaSummary = diagnostics.robot_collada_summary;
     const rootDiagnostics = linkRootDiagnostics(robot, robot.links);
     diagnostics.robot_root_links = rootDiagnostics.roots;
     diagnostics.robotRootLinks = rootDiagnostics.roots;

@@ -28,7 +28,7 @@ const LOCKED_EDIT_REASON = 'Locked/generated preview item; edit source layout/en
 const MIN_FRAME_RADIUS = 1.2;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.7;
-const state = { sceneJson: null, sourceWebSceneFile: '', frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', robotPreviewResult: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
+const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', robotPreviewResult: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
 let robotPreviewLoadToken = 0;
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
 const STAGED_MESH_ROOTS = [
@@ -1101,6 +1101,17 @@ function warnMissingGeneratedUrdfFramePose(item) {
     legacy_fallback_pose: item?.final_transform || item?.world_from_visual || item?.baked_world_visual_pose || item?.pose || item?.world_pose || null,
   });
 }
+function diagnosticResourceKey(item, meshUri = '') {
+  return String(meshUri || item?.mesh_uri || item?.original_mesh_uri || item?.package_uri || item?.source_path || item?.mesh_path || item?.id || itemLabel(item || {}) || '').trim();
+}
+function appendDedupedRuntimeDiagnostic(warning) {
+  const key = [sceneId(), warning?.code || warning?.source || 'diagnostic', diagnosticResourceKey(warning, warning?.mesh_uri || warning?.original_mesh_uri)].join('\n');
+  if (state.diagnosticKeys.has(key)) return null;
+  state.diagnosticKeys.add(key);
+  state.runtimeWarnings.push(warning);
+  refreshWarnings();
+  return warning;
+}
 function appendViewerDiagnosticWarning(item, code, reason, extra = {}) {
   const warning = {
     source: 'runtime_viewer',
@@ -1121,9 +1132,7 @@ function appendViewerDiagnosticWarning(item, code, reason, extra = {}) {
     message: `${code}: ${item?.id || itemLabel(item || {})} (${item?.link || item?.object_name || itemLabel(item || {})}): ${reason || 'viewer diagnostic warning'}`,
     ...extra,
   };
-  state.runtimeWarnings.push(warning);
-  refreshWarnings();
-  return warning;
+  return appendDedupedRuntimeDiagnostic(warning);
 }
 function validateRenderableTransform(item) {
   const pose = poseOf(item);
@@ -1254,7 +1263,7 @@ function meshStatusLabel(rendered) {
   return String(status || 'unknown').replace(/_/g, ' ');
 }
 function appendRuntimeWarning(item, meshUri, reason, code = 'mesh_primitive_fallback', extra = {}) {
-  state.runtimeWarnings.push({
+  return appendDedupedRuntimeDiagnostic({
     source: 'runtime_mesh',
     code,
     object_id: item?.id || itemLabel(item || {}),
@@ -1277,7 +1286,6 @@ function appendRuntimeWarning(item, meshUri, reason, code = 'mesh_primitive_fall
     message: `${code}: Primitive fallback for ${item?.id || itemLabel(item || {})} (${item?.link || item?.object_name || itemLabel(item || {})}): ${reason || 'mesh loading skipped'}`,
     ...extra,
   });
-  refreshWarnings();
 }
 
 function meshUriDiagnostic(item) {
@@ -2697,6 +2705,7 @@ function resetSceneLifecycleState() {
   state.frameLookup = new Map();
   state.lastFrameBounds = null;
   state._sceneBoundsExceededWarned = false;
+  state.diagnosticKeys = new Set();
   state._fitBlockerWarnings = new Set();
   state._generatedUrdfFramePoseWarnings = new Set();
   state._supportSurfaceSemanticWarnings = new Set();
@@ -2806,7 +2815,7 @@ function loadExpandedUrdfRobotPreview(preview) {
   const callbackIsCurrent = () => loadToken === robotPreviewLoadToken && loadSceneId === sceneId();
   const ignoreStaleCallback = () => {
     if (!staleCallbackLogged) {
-      console.warn(`Ignored stale robot preview callback: callback_scene=${loadSceneId} active_scene=${sceneId()}`);
+      console.debug?.(`Ignored stale robot preview callback: callback_scene=${loadSceneId} active_scene=${sceneId()}`);
       staleCallbackLogged = true;
     }
     return true;
