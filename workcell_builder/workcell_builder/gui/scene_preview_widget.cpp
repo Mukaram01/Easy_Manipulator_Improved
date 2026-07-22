@@ -543,7 +543,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   connect(embedded_redo_button_, &QPushButton::clicked, this, [this](){ run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.redo()")); });
   connect(embedded_fit_button_, &QPushButton::clicked, this, [this](){
     if (embedded_product_view_state_ == EmbeddedProductViewState::Failed) {
-      request_embedded_web_product_view_refresh(true);
+      request_embedded_web_product_view_refresh(true, QStringLiteral("user_retry"));
       return;
     }
     run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.fitScene()"));
@@ -1037,21 +1037,33 @@ void ScenePreviewWidget::cancel_embedded_web_lifecycle(bool stop_owned_server)
   }
 }
 
-void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force)
+void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force, const QString & origin)
 {
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
-  Q_UNUSED(force);
+  Q_UNUSED(force); Q_UNUSED(origin);
   return;
 #else
   if (!embedded_web_view_) return;
-  ++embedded_web_effective_refresh_requests_received_;
+  const QString request_origin = origin.trimmed().isEmpty() ? QStringLiteral("automatic") : origin.trimmed();
   const EmbeddedWebRequestIdentity request_key = embedded_web_request_identity(0);
-  if (request_key.scene_id.isEmpty() || request_key.scene_id == QStringLiteral("No scene") ||
-      request_key.absolute_scene_dir.isEmpty() || request_key.absolute_repo_root.isEmpty() ||
-      request_key.generated_web_scene_path.isEmpty()) {
+  const bool context_ready = !request_key.scene_id.isEmpty() &&
+    request_key.scene_id != QStringLiteral("No scene") &&
+    !request_key.absolute_scene_dir.isEmpty() &&
+    !request_key.absolute_repo_root.isEmpty() &&
+    !request_key.generated_web_scene_path.isEmpty() &&
+    request_key.payload_revision > 0 && !request_key.payload_fingerprint.isEmpty();
+  if (!context_ready) {
+    emit studio_log_requested(QStringLiteral("Product View lifecycle deferred: scene=%1 generation=%2 payload_revision=%3 origin=%4 scene_dir=%5 repo_root=%6.")
+      .arg(request_key.scene_id.isEmpty() ? QStringLiteral("<unset>") : request_key.scene_id)
+      .arg(embedded_web_request_generation_)
+      .arg(request_key.payload_revision)
+      .arg(request_origin)
+      .arg(request_key.absolute_scene_dir.isEmpty() ? QStringLiteral("<unset>") : request_key.absolute_scene_dir)
+      .arg(request_key.absolute_repo_root.isEmpty() ? QStringLiteral("<unset>") : request_key.absolute_repo_root));
     set_embedded_product_view_state(EmbeddedProductViewState::Idle);
     return;
   }
+  ++embedded_web_effective_refresh_requests_received_;
 
   const bool duplicate_active = embedded_web_has_active_identity_ &&
     embedded_web_active_identity_.matches_effective_request(request_key);
@@ -1071,12 +1083,13 @@ void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force)
     const QString suppression_key = embedded_web_effective_request_key(request_key);
     if (embedded_web_last_suppressed_duplicate_key_ != suppression_key) {
       embedded_web_last_suppressed_duplicate_key_ = suppression_key;
-      emit studio_log_requested(QStringLiteral("Duplicate Product View navigation suppressed: scene=%1 payload_revision=%2 backend=%3 json=%4 fingerprint=%5.")
+      emit studio_log_requested(QStringLiteral("Duplicate Product View navigation suppressed: scene=%1 payload_revision=%2 backend=%3 json=%4 fingerprint=%5 origin=%6.")
         .arg(request_key.scene_id)
         .arg(request_key.payload_revision)
         .arg(request_key.product_view_backend)
         .arg(request_key.generated_web_scene_path)
-        .arg(QString::fromLatin1(request_key.payload_fingerprint.toHex().left(12))));
+        .arg(QString::fromLatin1(request_key.payload_fingerprint.toHex().left(12)))
+        .arg(request_origin));
     }
     return;
   }
@@ -1111,6 +1124,9 @@ void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force)
   pending_embedded_web_identity_ = identity;
   pending_embedded_web_request_ = true;
   pending_embedded_web_force_ = force;
+  emit studio_log_requested(QStringLiteral("Product View lifecycle requested: scene=%1 generation=%2 payload_revision=%3 origin=%4 force=%5.")
+    .arg(identity.scene_id).arg(identity.generation).arg(identity.payload_revision).arg(request_origin)
+    .arg(force ? QStringLiteral("true") : QStringLiteral("false")));
   maybe_start_next_embedded_web_prepare();
 #endif
 }
@@ -1218,8 +1234,7 @@ void ScenePreviewWidget::record_embedded_web_prepare_terminal(
 
 void ScenePreviewWidget::refresh_embedded_web_product_view()
 {
-  ++embedded_web_preparation_request_count_;
-  request_embedded_web_product_view_refresh(false);
+  request_embedded_web_product_view_refresh(false, QStringLiteral("automatic"));
 }
 
 void ScenePreviewWidget::maybe_start_next_embedded_web_prepare()
@@ -1316,6 +1331,7 @@ void ScenePreviewWidget::start_embedded_web_prepare(const EmbeddedWebRequestIden
   embedded_web_preparation_process_keys_.insert(process, diagnostic_key);
   embedded_web_prepare_started_at_ = QDateTime::currentDateTimeUtc();
   embedded_web_preparing_identity_ = identity;
+  ++embedded_web_preparation_request_count_;
   ++embedded_web_preparations_started_;
   connect(process, &QProcess::started, this, [this, identity, process]() {
     if (!embedded_web_identity_is_current(identity)) return;
@@ -1339,7 +1355,8 @@ void ScenePreviewWidget::start_embedded_web_prepare(const EmbeddedWebRequestIden
     on_embedded_web_prepare_finished(identity, process, exit_code, exit_status);
   });
   set_embedded_product_view_state(EmbeddedProductViewState::Preparing, scene_id);
-  emit studio_log_requested(QStringLiteral("Preparing embedded Product View from repo root %1: %2").arg(repo_root, embedded_web_prepare_command_for_log(selected_scene_dir, embedded_web_prepare_output_path_, force)));
+  emit studio_log_requested(QStringLiteral("Preparing embedded Product View: scene=%1 generation=%2 payload_revision=%3 origin=%4 repo_root=%5 command=%6").arg(identity.scene_id).arg(identity.generation).arg(identity.payload_revision)
+    .arg(force ? QStringLiteral("user_retry") : QStringLiteral("automatic"), repo_root, embedded_web_prepare_command_for_log(selected_scene_dir, embedded_web_prepare_output_path_, force)));
   embedded_web_prepare_process_->start();
 #endif
 }
@@ -1797,9 +1814,9 @@ void ScenePreviewWidget::set_preview_context(const PreviewContext & context)
 
   if (!normalized.scene_id.isEmpty()) {
     set_preview_scene_name(normalized.scene_id);
-    if (!scene_name_changed) refresh_embedded_web_product_view();
+    if (!scene_name_changed) request_embedded_web_product_view_refresh(false, QStringLiteral("scene_context_ready"));
   } else {
-    refresh_embedded_web_product_view();
+    request_embedded_web_product_view_refresh(false, QStringLiteral("scene_context_incomplete"));
   }
 }
 
@@ -2178,7 +2195,7 @@ ScenePreviewWidget::MeshPreviewMode ScenePreviewWidget::mesh_preview_mode() cons
 void ScenePreviewWidget::reload_meshes()
 {
   auto * v = active_native_viewport();
-  if (!v) { request_embedded_web_product_view_refresh(true); emit studio_log_requested("Reloaded embedded Web 3D Product View."); return; }
+  if (!v) { request_embedded_web_product_view_refresh(true, QStringLiteral("user_refresh")); emit studio_log_requested("Reloaded embedded Web 3D Product View."); return; }
   v->invalidate_mesh_cache();
   apply_product_view_defaults();
   update();

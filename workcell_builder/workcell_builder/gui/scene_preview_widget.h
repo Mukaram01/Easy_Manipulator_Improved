@@ -401,7 +401,7 @@ private:
     QString failure_detail;
   };
   void refresh_embedded_web_product_view();
-  void request_embedded_web_product_view_refresh(bool force = false);
+  void request_embedded_web_product_view_refresh(bool force = false, const QString & origin = QStringLiteral("automatic"));
   void cancel_embedded_web_lifecycle(bool stop_owned_server);
   void maybe_start_next_embedded_web_prepare();
   EmbeddedWebRequestIdentity embedded_web_request_identity(quint64 generation) const;
