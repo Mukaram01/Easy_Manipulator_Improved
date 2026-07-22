@@ -594,8 +594,12 @@ def test_viewer_product_workspace_uses_central_light_palette_for_scene_and_css()
     for token in [
         "workspaceBackground: 0xeef1f4",
         "rendererClearColor: 0xeef1f4",
-        "gridMajor: 0x8996a3",
-        "gridMinor: 0xc3cbd3",
+        "gridMajor: 0x7f8b98",
+        "gridMinor: 0xb6c0ca",
+        "ambientSky: 0xffffff",
+        "ambientGround: 0xcbd3dc",
+        "keyLight: 0xffffff",
+        "fillLight: 0xdcefff",
         "labelText: 0x123040",
         "labelSurface: 0xf8fafc",
         "overlaySurface: 0xfff6dd",
@@ -613,7 +617,7 @@ def test_viewer_product_workspace_uses_central_light_palette_for_scene_and_css()
     assert "new THREE.Fog(0x0b1018" not in js
     assert "Fog" not in js and ".fog" not in js
 
-    assert "--workspace-bg: #e9edf1;" in css
+    assert "--workspace-bg: #eef1f4;" in css
     assert "body {" in css and "background: var(--bg);" in css
     assert ".app-shell" in css and "background: var(--workspace-bg);" in css
     assert ".viewport-panel" in css and "background: var(--workspace-bg);" in css
@@ -629,11 +633,34 @@ def test_viewer_product_grid_uses_visible_major_minor_palette_colours():
     init_body = js.split("function initThree()", 1)[1].split("function animate()", 1)[0]
 
     assert "workspaceBackground: 0xeef1f4" in js
-    assert "gridMajor: 0x8996a3" in js
-    assert "gridMinor: 0xc3cbd3" in js
+    assert "gridMajor: 0x7f8b98" in js
+    assert "gridMinor: 0xb6c0ca" in js
     assert "new THREE.GridHelper(5, 20, PRODUCT_VIEW_LIGHT_PALETTE.gridMajor, PRODUCT_VIEW_LIGHT_PALETTE.gridMinor)" in init_body
     assert "new THREE.GridHelper(5, 20, 0x3a4a5e, 0x263445)" not in js
     assert "grid.name = 'ros_xy_ground_grid';" in init_body
+    assert "material.opacity = 0.34;" in init_body
+
+
+def test_viewer_product_visual_baseline_preserves_materials_and_selection_detail():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    assert "function materialHasUsableAppearance(material)" in js
+    assert "applyNeutralFallbackToUnmaterialedMeshes(object, item);" in js
+    assert "if (child?.isMesh && !materialHasUsableAppearance(child.material)) child.material = materialFor(item);" in js
+    assert "child.material?.emissive" not in js
+    assert "function refreshSelectionHighlight(rendered)" in js
+    assert "helper.userData.selection_outline = true;" in js
+    assert "function removeSelectionHighlight()" in js
+
+
+def test_viewer_product_lights_are_named_bounded_and_reload_safe():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    assert "function installProductViewLights(scene)" in js
+    assert "if (child?.userData?.product_view_light === true) scene.remove(child);" in js
+    assert "product_view_balanced_ambient_light" in js
+    assert "product_view_key_light" in js
+    assert "product_view_fill_light" in js
+    assert "key.shadow.mapSize.set(1024, 1024);" in js
+    assert "Object.assign(key.shadow.camera, { near: 0.1, far: 12, left: -4, right: 4, top: 4, bottom: -4 });" in js
 
 
 def test_viewer_product_theme_keeps_grid_controls_and_bounds_exclusions():
@@ -661,7 +688,7 @@ def test_viewer_product_view_camera_presets_and_grid_are_workcell_focused():
     assert "function applyCameraPreset(preset)" in js
     assert "applyCameraPreset: preset =>" in js
     assert "el.cameraPreset.addEventListener('change'" in js
-    assert "material.opacity = 0.22" in js
+    assert "material.opacity = 0.34" in js
     assert "grid.userData.exclude_from_fit_bounds = true" in js
     assert "grid.userData.exclude_from_physical_bounds = true" in js
     assert "if (el.cameraPreset) el.cameraPreset.disabled = false" in js

@@ -10,8 +10,12 @@ let applyRobotJointPreview;
 const PRODUCT_VIEW_LIGHT_PALETTE = Object.freeze({
   workspaceBackground: 0xeef1f4,
   rendererClearColor: 0xeef1f4,
-  gridMajor: 0x8996a3,
-  gridMinor: 0xc3cbd3,
+  gridMajor: 0x7f8b98,
+  gridMinor: 0xb6c0ca,
+  ambientSky: 0xffffff,
+  ambientGround: 0xcbd3dc,
+  keyLight: 0xffffff,
+  fillLight: 0xdcefff,
   labelText: 0x123040,
   labelSurface: 0xf8fafc,
   overlaySurface: 0xfff6dd,
@@ -1551,10 +1555,20 @@ function isDebugOverlayItem(item) {
 function isSensor(item) { return viewerGroupFor(item) === 'sensors'; }
 function shouldLabelItem(item) { return !isDebugOverlayItem(item); }
 function materialFor(item) {
-  if (isZone(item)) return new THREE.MeshBasicMaterial({ color: 0xffc857, transparent: true, opacity: 0.08, side: THREE.DoubleSide, wireframe: true, depthWrite: false });
-  if (isSensor(item)) return new THREE.MeshStandardMaterial({ color: 0x62d2ff, roughness: 0.65 });
-  if (item.locked || item.source_kind === 'generated_preview') return new THREE.MeshStandardMaterial({ color: 0x8794aa, roughness: 0.78, metalness: 0.05 });
-  return new THREE.MeshStandardMaterial({ color: 0x7bd88f, roughness: 0.72 });
+  if (isZone(item)) return new THREE.MeshBasicMaterial({ color: 0xffc857, transparent: true, opacity: 0.1, side: THREE.DoubleSide, wireframe: true, depthWrite: false });
+  if (isSensor(item)) return new THREE.MeshStandardMaterial({ color: 0x5f7485, roughness: 0.62, metalness: 0.08 });
+  if (item.locked || item.source_kind === 'generated_preview') return new THREE.MeshStandardMaterial({ color: 0x8b96a6, roughness: 0.76, metalness: 0.04 });
+  return new THREE.MeshStandardMaterial({ color: 0x8aa38d, roughness: 0.72, metalness: 0.02 });
+}
+function materialHasUsableAppearance(material) {
+  if (!material) return false;
+  const materials = Array.isArray(material) ? material : [material];
+  return materials.some(entry => entry && (entry.map || entry.color || entry.vertexColors || entry.emissive || entry.metalness !== undefined || entry.roughness !== undefined));
+}
+function applyNeutralFallbackToUnmaterialedMeshes(object, item) {
+  object?.traverse?.(child => {
+    if (child?.isMesh && !materialHasUsableAppearance(child.material)) child.material = materialFor(item);
+  });
 }
 function fallbackMaterialFor(item) {
   const isZoneFallback = isZone(item);
@@ -1668,6 +1682,7 @@ function materializeLoadedMesh(item, uri, loaded) {
   if (ext === 'stl') object = new THREE.Mesh(loaded, materialFor(item));
   else if (ext === 'dae') object = loaded.scene;
   else object = loaded;
+  applyNeutralFallbackToUnmaterialedMeshes(object, item);
   object.name = `${item.id || itemLabel(item)}_mesh`;
   applyLoadedMeshOverlayMaterial(object, item);
   assignItemUserData(object, item);
@@ -2069,6 +2084,34 @@ function validateSceneJson(json) {
   const items = collectItems(json);
   return items;
 }
+function installProductViewLights(scene) {
+  for (const child of [...scene.children]) {
+    if (child?.userData?.product_view_light === true) scene.remove(child);
+  }
+  const ambient = new THREE.HemisphereLight(PRODUCT_VIEW_LIGHT_PALETTE.ambientSky, PRODUCT_VIEW_LIGHT_PALETTE.ambientGround, 1.18);
+  ambient.name = 'product_view_balanced_ambient_light';
+  ambient.userData.product_view_light = true;
+  scene.add(ambient);
+
+  const key = new THREE.DirectionalLight(PRODUCT_VIEW_LIGHT_PALETTE.keyLight, 1.28);
+  key.name = 'product_view_key_light';
+  key.position.set(3.4, -4.2, 5.6);
+  key.castShadow = true;
+  key.shadow.mapSize.set(1024, 1024);
+  Object.assign(key.shadow.camera, { near: 0.1, far: 12, left: -4, right: 4, top: 4, bottom: -4 });
+  key.shadow.camera.updateProjectionMatrix();
+  key.shadow.bias = -0.0002;
+  key.shadow.normalBias = 0.015;
+  key.userData.product_view_light = true;
+  scene.add(key);
+
+  const fill = new THREE.DirectionalLight(PRODUCT_VIEW_LIGHT_PALETTE.fillLight, 0.42);
+  fill.name = 'product_view_fill_light';
+  fill.position.set(-3.2, 3.8, 2.8);
+  fill.userData.product_view_light = true;
+  scene.add(fill);
+}
+
 function initThree() {
   try {
     if (!THREE?.Scene || !OrbitControls || !STLLoader || !ColladaLoader || !OBJLoader || !TransformControls) throw new Error('Three.js modules were not available.');
@@ -2080,6 +2123,11 @@ function initThree() {
     scene.up.copy(ROS_Z_UP);
     scene.background = new THREE.Color(PRODUCT_VIEW_LIGHT_PALETTE.workspaceBackground);
     renderer.setClearColor(PRODUCT_VIEW_LIGHT_PALETTE.rendererClearColor, 1);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.02;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     const camera = new THREE.PerspectiveCamera(55, 1, 0.01, 100);
     camera.up.copy(ROS_Z_UP);
     camera.position.set(2.4, -2.8, 1.8);
@@ -2091,7 +2139,7 @@ function initThree() {
     for (const material of Array.isArray(grid.material) ? grid.material : [grid.material]) {
       if (!material) continue;
       material.transparent = true;
-      material.opacity = 0.22;
+      material.opacity = 0.34;
       material.depthWrite = false;
     }
     grid.userData.exclude_from_fit_bounds = true;
@@ -2100,8 +2148,7 @@ function initThree() {
     grid.rotation.x = Math.PI / 2;
     scene.add(grid);
     scene.add(new THREE.AxesHelper(0.75));
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x8a96a3, 1.25));
-    const light = new THREE.DirectionalLight(0xffffff, 1.35); light.position.set(2, -3, 4); scene.add(light);
+    installProductViewLights(scene);
     const transformControls = new TransformControls(camera, renderer.domElement);
     transformControls.setMode('translate');
     transformControls.setSpace('world');
@@ -2735,6 +2782,7 @@ function resetSceneLifecycleState() {
   state.resolvedFramePoses.clear();
   state.frameLookup = new Map();
   state.lastFrameBounds = null;
+  removeSelectionHighlight();
   state._sceneBoundsExceededWarned = false;
   state.diagnosticKeys = new Set();
   state._fitBlockerWarnings = new Set();
@@ -3298,6 +3346,32 @@ function populateObjectList() {
   }
 }
 
+function removeSelectionHighlight() {
+  const highlight = state.three.selectionHighlight;
+  if (!highlight) return;
+  state.three.scene?.remove(highlight);
+  disposeOwnedObject3d(highlight);
+  state.three.selectionHighlight = null;
+}
+function refreshSelectionHighlight(rendered) {
+  removeSelectionHighlight();
+  if (!rendered?.object3d || !state.three.scene || !THREE?.Box3Helper) return;
+  const box = new THREE.Box3().setFromObject(rendered.object3d);
+  if (box.isEmpty()) return;
+  const helper = new THREE.Box3Helper(box, 0x0078a8);
+  helper.name = 'selection_subtle_bounds_highlight';
+  helper.userData.selection_outline = true;
+  helper.userData.selection_highlight = true;
+  helper.userData.exclude_from_fit_bounds = true;
+  helper.userData.exclude_from_physical_bounds = true;
+  helper.material.transparent = true;
+  helper.material.opacity = 0.62;
+  helper.material.depthTest = false;
+  helper.renderOrder = 10;
+  state.three.selectionHighlight = helper;
+  state.three.scene.add(helper);
+}
+
 function selectObject(id) {
   const wasInitialPreviewActive = state.initialPosePreview.active;
   if (state.directMoveDrag && state.directMoveDrag.itemId !== (id || '')) cancelDirectMoveDrag('Move cancelled');
@@ -3307,14 +3381,11 @@ function selectObject(id) {
   document.querySelectorAll('.object-list li').forEach(li => li.classList.toggle('selected', li.dataset.id === id));
   for (const rendered of state.objects) {
     const selected = rendered.item.id === id;
-    rendered.object3d.traverse(child => {
-      if (child.material?.emissive) child.material.emissive.setHex(selected ? 0x1b6f8f : 0x000000);
-    });
     if (rendered.labelEl) rendered.labelEl.classList.toggle('selected', selected);
   }
   updateLabels();
   const rendered = state.objects.find(obj => obj.item.id === id);
-  if (rendered) { populateInspector(rendered); attachTransformGizmo(rendered); } else detachTransformGizmo();
+  if (rendered) { populateInspector(rendered); attachTransformGizmo(rendered); refreshSelectionHighlight(rendered); } else { detachTransformGizmo(); removeSelectionHighlight(); }
   if (previous !== (id || '')) pushEditorEvent('selection_changed', { itemId: id || '', itemType: rendered ? itemType(rendered.item) : '', editable: Boolean(rendered && rendered.item && canEditItem(rendered['item'])) });
 }
 function clearSelection() { selectObject(''); el.inspector.className = 'state empty'; el.inspector.textContent = state.objects.length ? 'Select an object from the list or canvas.' : EMPTY_SCENE_MESSAGE; }
