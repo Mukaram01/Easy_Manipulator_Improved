@@ -592,13 +592,21 @@ def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path
 
     diagnostics: Json = {
         "expanded_urdf_mesh_reference_count": 0,
+        "expanded_urdf_visual_mesh_reference_count": 0,
+        "expanded_urdf_collision_mesh_reference_count": 0,
         "expanded_urdf_staged_mesh_count": 0,
+        "expanded_urdf_visual_meshes_staged": 0,
+        "expanded_urdf_collision_meshes_staged": 0,
+        "expanded_urdf_deduplicated_reference_count": 0,
         "expanded_urdf_unresolved_mesh_count": 0,
+        "expanded_urdf_unresolved_references": [],
         "expanded_urdf_package_count": 0,
         "expanded_urdf_uses_canonical_root_relative_urls": False,
     }
     packages: set[str] = set()
     unresolved: List[str] = []
+    staged_sources: Dict[Path, str] = {}
+    staged_sources_by_kind: Dict[str, set[Path]] = {"visual": set(), "collision": set()}
 
     try:
         root = ET.fromstring(text)
@@ -607,12 +615,18 @@ def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path
 
     for link in root.findall("link"):
         link_name = link.get("name", "<unnamed_link>")
+        mesh_contexts: List[Tuple[str, int, ET.Element]] = []
         for visual_index, mesh in enumerate(link.findall("./visual/geometry/mesh")):
+            mesh_contexts.append(("visual", visual_index, mesh))
+        for collision_index, mesh in enumerate(link.findall("./collision/geometry/mesh")):
+            mesh_contexts.append(("collision", collision_index, mesh))
+        for mesh_kind, mesh_index, mesh in mesh_contexts:
             original = str(mesh.get("filename") or "")
             if not original:
                 continue
             diagnostics["expanded_urdf_mesh_reference_count"] += 1
-            context = f"link={link_name} visual_index={visual_index}"
+            diagnostics[f"expanded_urdf_{mesh_kind}_mesh_reference_count"] += 1
+            context = f"link={link_name} {mesh_kind}_index={mesh_index}"
             parsed = urlparse(original)
             if parsed.scheme != "package":
                 reason = "expanded robot/tool mesh filename must be a package:// URI before staging"
@@ -632,18 +646,27 @@ def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path
                 unresolved.append(f"{original} ({context}): {reason}")
                 _warn(warnings, "expanded_robot_urdf_mesh_unsafe", f"{reason} ({context})", original)
                 continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(resolved, target)
             canonical_url = "/" + os.path.relpath(target, repo_root).replace(os.sep, "/")
             if not canonical_url.startswith(f"/build/workcell_studio_web_scene/assets/{scene_id}/{package}/"):
                 reason = f"canonical staged URL contract failed for {canonical_url}"
                 unresolved.append(f"{original} ({context}): {reason}")
                 _warn(warnings, "expanded_robot_urdf_mesh_unsafe", f"{reason} ({context})", original)
                 continue
-            mesh.set("filename", canonical_url)
+            resolved_key = resolved.resolve()
+            if resolved_key in staged_sources:
+                diagnostics["expanded_urdf_deduplicated_reference_count"] += 1
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(resolved_key, target)
+                staged_sources[resolved_key] = canonical_url
+            mesh.set("filename", staged_sources[resolved_key])
+            staged_sources_by_kind[mesh_kind].add(resolved_key)
             diagnostics["expanded_urdf_staged_mesh_count"] += 1
 
+    diagnostics["expanded_urdf_visual_meshes_staged"] = len(staged_sources_by_kind["visual"])
+    diagnostics["expanded_urdf_collision_meshes_staged"] = len(staged_sources_by_kind["collision"])
     diagnostics["expanded_urdf_unresolved_mesh_count"] = len(unresolved)
+    diagnostics["expanded_urdf_unresolved_references"] = list(unresolved)
     diagnostics["expanded_urdf_package_count"] = len(packages)
     diagnostics["expanded_urdf_uses_canonical_root_relative_urls"] = (
         diagnostics["expanded_urdf_mesh_reference_count"] > 0 and not unresolved
