@@ -355,8 +355,8 @@ def test_urdf_renderer_rejects_unsafe_package_mesh_sources():
     for token in [
         "if (!scene)",
         "malformed scene ID",
-        "scene.includes('%')",
-        "if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(packageName))",
+        "safeSceneAssetId(scene)",
+        "safePackageAssetId(packageName)",
         "if (!parts.length)",
         "if (!part)",
         "decoded === '.'",
@@ -1120,7 +1120,9 @@ def test_viewer_load_contract_keeps_selection_empty_until_manual_pick():
     assert "const selected = rendered.item.id === id;" in select_body
     assert "rendered.item.locked" not in select_body
     assert "canEditItem(rendered.item)" not in select_body
-    assert "if (item?.id) selectObject(item.id);" in pick_body
+    assert "if (!isNormalSelectableRendered(rendered)) continue;" in pick_body
+    assert "selectObject(item.id);" in pick_body
+    assert "return item.id;" in pick_body
 
 
 def test_viewer_status_reporting_ignores_hidden_helper_overlay_counters(tmp_path):
@@ -2087,7 +2089,8 @@ def test_required_gripper_mesh_failures_transition_scene_failed_with_url_and_lin
     assert "onRobotMeshLoadError: (err, uri, detail) => { if (!callbackIsCurrent()) return ignoreStaleCallback(); failExpandedUrdfReadiness" in viewer
     assert "function inferMeshLinkDetail(path)" in renderer
     assert "'gripper_base_link'" in renderer
-    assert "context?.onRobotMeshLoadError?.(err, uri, { url, uri, path, ...inferMeshLinkDetail(path) })" in renderer
+    assert "context?.onRobotMeshLoadError?.(err, uri, { url, uri, path, source_url: path, sourceUrl: path, policy_reason:" in renderer
+    assert "policyReason: err?.message || 'loader failure'" in renderer
     assert "diagnostics.robot_missing_meshes.push(`${url}:" in renderer
 
 
@@ -2330,3 +2333,92 @@ assert.strictEqual(physicalReadinessItems().length, 1);
 `, context);
 """
     subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+def test_urdf_renderer_accepts_only_canonical_staged_mesh_urls(tmp_path):
+    script = tmp_path / "canonical_staged_mesh_policy.mjs"
+    script.write_text(
+        f"""
+import assert from 'node:assert/strict';
+const {{ canonicalStagedMeshUrl }} = await import({str((VIEWER / 'urdf_robot_renderer.js')).__repr__()});
+const diagnostics = {{ robot_missing_meshes: [], robot_package_mesh_resolutions: [] }};
+const context = {{ sceneId: 'ur5_2f_test' }};
+assert.equal(
+  canonicalStagedMeshUrl('/build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/visual/base.dae', context, diagnostics).uri,
+  'build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/visual/base.dae'
+);
+assert.equal(
+  canonicalStagedMeshUrl('build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/finger.stl', context, diagnostics).uri,
+  'build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/finger.stl'
+);
+for (const rejected of [
+  '/ur_description/meshes/visual/base.dae',
+  'https://example.invalid/mesh.dae',
+  'file:///tmp/mesh.dae',
+  '/tmp/mesh.dae',
+  'C:/tmp/mesh.dae',
+  '/build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/../secret.dae',
+  '/build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/%2e%2e/secret.dae',
+  String.raw`/build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes\\visual\\base.dae`,
+  '/build/workcell_studio_web_scene/assets/ur5_3f_test/ur_description/meshes/visual/base.dae',
+  '/build/workcell_studio_web_scene/assets/ur5_2f_test/../meshes/visual/base.dae',
+]) {{
+  const result = canonicalStagedMeshUrl(rejected, context, diagnostics);
+  assert.equal(result.uri, '', rejected);
+  assert.ok(result.reason, rejected);
+}}
+""",
+        encoding="utf-8",
+    )
+    subprocess.run(["node", str(script)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+def test_load_robot_preview_accepts_canonical_leading_slash_and_relative_staged_urls(tmp_path):
+    script = tmp_path / "capture_canonical_staged_mesh_requests.mjs"
+    script.write_text(
+        f"""
+import assert from 'node:assert/strict';
+import * as THREE from {str((VIEWER / 'node_modules/three/build/three.module.js')).__repr__()};
+import URDFLoader from {str((VIEWER / 'node_modules/urdf-loader/src/URDFLoader.js')).__repr__()};
+import {{ ColladaLoader }} from {str((VIEWER / 'node_modules/three/examples/jsm/loaders/ColladaLoader.js')).__repr__()};
+
+globalThis.window = {{}};
+const requestedUrls = [];
+const originalUrdfLoadAsync = URDFLoader.prototype.loadAsync;
+const originalColladaLoad = ColladaLoader.prototype.load;
+URDFLoader.prototype.loadAsync = async function loadAsyncStub() {{
+  for (const path of [
+    '/build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/visual/base.dae',
+    'build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/gripper.dae',
+  ]) {{
+    this.loadMeshCb(path, this.manager, new THREE.MeshPhongMaterial(), (mesh, error) => {{ if (error) throw error; }});
+  }}
+  const robot = new THREE.Group();
+  robot.links = {{ base_link: new THREE.Group(), gripper_base_link: new THREE.Group() }};
+  robot.joints = {{}};
+  robot.setJointValues = () => {{}};
+  return robot;
+}};
+ColladaLoader.prototype.load = function loadStub(url, onLoad) {{
+  requestedUrls.push(url);
+  this.manager?.itemStart?.(url);
+  onLoad({{ scene: new THREE.Group(), asset: {{}} }});
+  this.manager?.itemEnd?.(url);
+}};
+try {{
+  const {{ loadRobotPreview }} = await import({str((VIEWER / 'urdf_robot_renderer.js')).__repr__()});
+  const result = loadRobotPreview({{ urdf_url: 'robot.urdf' }}, {{ sceneId: 'ur5_2f_test' }});
+  await result.ready;
+  assert.deepEqual(requestedUrls, [
+    'build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/visual/base.dae',
+    'build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/gripper.dae',
+  ]);
+  assert.equal(result.diagnostics.robot_failed_visual_count, 0);
+}} finally {{
+  URDFLoader.prototype.loadAsync = originalUrdfLoadAsync;
+  ColladaLoader.prototype.load = originalColladaLoad;
+}}
+""",
+        encoding="utf-8",
+    )
+    subprocess.run(["node", str(script)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
