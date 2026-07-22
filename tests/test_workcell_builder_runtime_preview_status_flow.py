@@ -89,7 +89,7 @@ def test_stale_embedded_prepare_result_is_discarded_without_changing_current_pre
     stale_start = body.index('if (!embedded_web_identity_is_current(identity))')
     stale_body = body[stale_start:body.index('const EmbeddedWebPreparationDiagnostic existing_diagnostic', stale_start)]
 
-    assert 'record_embedded_web_prepare_terminal(identity, process, QStringLiteral("stale_discarded")' in stale_body
+    assert 'record_embedded_web_prepare_terminal(identity, process, QStringLiteral("cancelled_superseded")' in stale_body
     assert 'process->deleteLater();' in body[:stale_start]
     assert 'embedded_web_prepare_process_ = nullptr;' in stale_body
     assert 'maybe_start_next_embedded_web_prepare();' in stale_body
