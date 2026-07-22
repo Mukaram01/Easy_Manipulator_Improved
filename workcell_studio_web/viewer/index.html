@@ -21,6 +21,13 @@
         <input id="scene-file" type="file" accept="application/json,.json" />
       </label>
       <button id="reset-view" class="toolbar-button" type="button" disabled title="Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds." aria-label="Fit Scene / Reset View">Fit</button>
+      <select id="camera-preset" class="toolbar-button" disabled title="Apply a deterministic Product View camera preset" aria-label="Camera preset">
+        <option value="">View presets</option>
+        <option value="isometric">Isometric</option>
+        <option value="front">Front</option>
+        <option value="top">Top</option>
+        <option value="robot">Robot</option>
+      </select>
       <button id="undo-edit" class="toolbar-button" type="button" disabled>Undo</button>
       <button id="redo-edit" class="toolbar-button" type="button" disabled>Redo</button>
       <button id="export-edit-patch" class="toolbar-button primary-action" type="button" disabled title="Export preview changes as an edit patch">Export edits</button>

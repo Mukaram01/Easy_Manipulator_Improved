@@ -27,7 +27,13 @@ const VALID_SCENE_LIFECYCLE_STATES = Object.freeze(['booting', 'scene_loading', 
 const LOCKED_EDIT_REASON = 'Locked/generated preview item; edit source layout/environment instead.';
 const MIN_FRAME_RADIUS = 1.2;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
-const FRAME_DISTANCE_MULTIPLIER = 2.7;
+const FRAME_DISTANCE_MULTIPLIER = 2.35;
+const CAMERA_PRESET_DIRECTIONS = Object.freeze({
+  isometric: [1.35, -1.65, 1.05],
+  front: [0, -1, 0.28],
+  top: [0, -0.001, 1],
+  robot: [1.1, -1.25, 0.72],
+});
 const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', robotPreviewResult: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
 let robotPreviewLoadToken = 0;
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
@@ -253,6 +259,7 @@ function maybeEmitSceneReady() {
 const el = {
   file: document.getElementById('scene-file'),
   resetView: document.getElementById('reset-view'),
+  cameraPreset: document.getElementById('camera-preset'),
   undoEdit: document.getElementById('undo-edit'),
   redoEdit: document.getElementById('redo-edit'),
   clearEdits: document.getElementById('clear-edits'),
@@ -2081,6 +2088,14 @@ function initThree() {
     controls.enableDamping = true;
     const grid = new THREE.GridHelper(5, 20, PRODUCT_VIEW_LIGHT_PALETTE.gridMajor, PRODUCT_VIEW_LIGHT_PALETTE.gridMinor);
     grid.name = 'ros_xy_ground_grid';
+    for (const material of Array.isArray(grid.material) ? grid.material : [grid.material]) {
+      if (!material) continue;
+      material.transparent = true;
+      material.opacity = 0.22;
+      material.depthWrite = false;
+    }
+    grid.userData.exclude_from_fit_bounds = true;
+    grid.userData.exclude_from_physical_bounds = true;
     grid.up.copy(ROS_Z_UP);
     grid.rotation.x = Math.PI / 2;
     scene.add(grid);
@@ -2564,7 +2579,18 @@ function maybeWarnSceneBoundsExceedWorkspace(bounds) {
     });
   }
 }
-function frameScene(bounds) {
+function cameraDirectionForPreset(preset = 'isometric') {
+  const raw = CAMERA_PRESET_DIRECTIONS[String(preset || 'isometric').toLowerCase()] || CAMERA_PRESET_DIRECTIONS.isometric;
+  return new THREE.Vector3(raw[0], raw[1], raw[2]).normalize();
+}
+function applyCameraClipping(camera, radius, distance) {
+  const safeRadius = Math.max(Number(radius) || 0, 0.01);
+  const safeDistance = Math.max(Number(distance) || 0, safeRadius * 2);
+  camera.near = Math.max(0.001, Math.min(safeRadius / 200, safeDistance / 50));
+  camera.far = Math.max(camera.near + 1, safeDistance + safeRadius * 8, safeRadius * 20, 100);
+  camera.updateProjectionMatrix();
+}
+function frameScene(bounds, { preset = 'isometric' } = {}) {
   const { camera, controls } = state.three;
   const finiteBounds = finiteBox3(bounds);
   if (!camera || !controls || !finiteBounds) return false;
@@ -2574,17 +2600,17 @@ function frameScene(bounds) {
   finiteBounds.getBoundingSphere(sphere);
   if (![center.x, center.y, center.z, sphere.radius].every(Number.isFinite)) return false;
   const radius = Math.max(sphere.radius, MIN_FRAME_RADIUS);
-  const direction = new THREE.Vector3(1.35, -1.65, 1.05).normalize();
-  const distance = Math.max(radius * FRAME_DISTANCE_MULTIPLIER, MIN_FRAME_RADIUS * FRAME_DISTANCE_MULTIPLIER);
+  const direction = cameraDirectionForPreset(preset);
+  const multiplier = preset === 'top' ? 2.15 : (preset === 'robot' ? 2.05 : FRAME_DISTANCE_MULTIPLIER);
+  const distance = Math.max(radius * multiplier, MIN_FRAME_RADIUS * multiplier);
   camera.position.copy(center).addScaledVector(direction, distance);
-  camera.near = Math.max(0.01, Math.min(radius / 100, distance / 10));
-  camera.far = Math.max(camera.near + 1, distance + radius * 6, 100);
+  applyCameraClipping(camera, radius, distance);
   if (![camera.position.x, camera.position.y, camera.position.z, camera.near, camera.far].every(Number.isFinite)) return false;
-  camera.updateProjectionMatrix();
   controls.target.copy(center);
   controls.update();
   state.lastFrameBounds = finiteBounds.clone();
   if (el.resetView) el.resetView.disabled = false;
+  if (el.cameraPreset) el.cameraPreset.disabled = false;
   return true;
 }
 function stableSceneCameraKey() {
@@ -2619,10 +2645,10 @@ function reportFitCellNoGeometry(message = 'No visible physical geometry to fram
   pushEditorEvent('fit_cell_unavailable', { message });
   if (el.error) { el.error.textContent = message; el.error.hidden = false; }
 }
-function resetView({ userInitiated = true } = {}) {
+function resetView({ userInitiated = true, preset = 'isometric' } = {}) {
   if (userInitiated) markCameraUserControlled();
   const physical = collectPhysicalVisibleBounds(state.three.scene);
-  if (!physical.bounds || !frameScene(physical.bounds)) { reportFitCellNoGeometry(); return false; }
+  if (!physical.bounds || !frameScene(physical.bounds, { preset })) { reportFitCellNoGeometry(); return false; }
   if (state.editorError === 'No visible physical geometry to frame') clearError();
   return true;
 }
@@ -2663,6 +2689,11 @@ function attemptInitialCameraFit({ allowRetry = true } = {}) {
 }
 function triggerInitialCameraFitAfterSceneReady() {
   return attemptInitialCameraFit({ allowRetry: false });
+}
+function applyCameraPreset(preset) {
+  const selectedPreset = String(preset || '').toLowerCase();
+  if (!CAMERA_PRESET_DIRECTIONS[selectedPreset]) return false;
+  return resetView({ userInitiated: true, preset: selectedPreset });
 }
 function scheduleInitialCameraFitRetry() {
   const fit = state.initialCameraFit;
@@ -3682,6 +3713,7 @@ async function loadSceneUrl(rawUrl) {
 }
 
 if (el.resetView) el.resetView.addEventListener('click', resetView);
+if (el.cameraPreset) el.cameraPreset.addEventListener('change', event => { applyCameraPreset(event.target.value); event.target.value = ''; });
 if (el.labelsToggle) el.labelsToggle.addEventListener('change', event => setLabelsVisible(event.target.checked));
 if (el.debugOverlaysToggle) el.debugOverlaysToggle.addEventListener('change', event => setDebugOverlaysVisible(event.target.checked));
 if (el.showInitialPose) el.showInitialPose.addEventListener('change', event => toggleInitialPosePreview(event.target.checked));
@@ -3719,6 +3751,7 @@ window.__WORKCELL_EDITOR_API_V1__ = {
   undo: () => { undoPreviewEdit(); return editorState(); },
   redo: () => { redoPreviewEdit(); return editorState(); },
   fitScene: () => { resetView(); return editorState(); },
+  applyCameraPreset: preset => { applyCameraPreset(preset); return editorState(); },
   fitSelection: () => { fitSelection(); return editorState(); },
   getEditPatch: () => buildEditPatch(),
   drainEvents: () => { const events = state.editorEvents.slice(); state.editorEvents.length = 0; return events; },
