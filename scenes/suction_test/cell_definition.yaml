@@ -15,9 +15,23 @@ end_effector:
   brand: generic
   grasp_frame: tool0
 camera:
-  enabled: false
-  camera_id: UNKNOWN_CAMERA
-  frame_id: UNKNOWN_FRAME
+  enabled: true
+  camera_id: realsense_suction_overhead
+  frame_id: camera_color_optical_frame
+perception:
+  enabled: true
+  mode: epd_snapshot
+  camera_id: realsense_suction_overhead
+  frame_id: camera_color_optical_frame
+  expected_frames:
+    - camera_color_optical_frame
+    - world
+  epd_input:
+    topic: /easy_perception_deployment/epd_localize_output
+    message_type: std_msgs/msg/String
+  required_object_classes:
+    - part
+  confidence_threshold: 0.6
 environment:
   frame: world
   layout: layout/workcell_studio_layout.yaml

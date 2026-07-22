@@ -55,3 +55,12 @@ python3 scripts/run_task_recipe_adapter.py \
   --objects tests/fixtures/detected_objects/valid_epd_colour_sorting.yaml \
   --json
 ```
+
+
+## Workcell Studio normalized snapshot contract
+
+Workcell Studio now validates EPD payloads through the machine-readable `workcell_perception_snapshot/v1` contract before task binding. EPD remains responsible for RealSense camera processing, detection, localization, and tracking; Workcell Studio owns scene identity checks, camera identity checks, task binding, and adapter configuration.
+
+Required normalized fields are `scene_id`, `camera_id`, `timestamp`, `frame_id`, and `objects`. Each object requires an `object_id` or `track_id`, `label`, `confidence`, optional `attributes`, and either a finite pose (`position` plus normalized `orientation_xyzw`) or a finite `centroid`. Validation rejects duplicate object IDs, non-finite poses, non-normalized quaternions, confidence outside `[0, 1]`, and scene/camera mismatches.
+
+Generated scene packages write `generated/perception_adapter_config.yaml`. Perception-backed scenes receive camera identity, expected frames, EPD input topic/message type, required object classes, confidence threshold, task binding, and the normalized output contract. Scenes with perception disabled report `NOT_APPLICABLE`; incomplete perception-backed metadata fails generation clearly.
