@@ -32,6 +32,9 @@ class SupportedSceneEntry:
     support_level: str
     status: str
     known_blocker: str
+    robot: str
+    tool: str
+    required_capabilities: tuple[str, ...]
     authoring_files: tuple[str, ...]
     generated_files: tuple[str, ...]
     validation_command: str
@@ -98,6 +101,9 @@ def load_supported_scene_catalog(path: Path) -> tuple[dict[str, Any], list[Suppo
         support_level = str(raw.get("support_level", "supported")).strip() or "supported"
         status = str(raw.get("status", "supported")).strip() or "supported"
         known_blocker = str(raw.get("known_blocker", "")).strip()
+        robot = str(raw.get("robot", "")).strip() or scene_name.split("_", 1)[0]
+        tool = str(raw.get("tool", "")).strip() or "unspecified_tool"
+        required_capabilities = _string_list(raw.get("required_capabilities")) or ("fake_hardware_launch",)
         authoring_files = _string_list(raw.get("authoring_files"))
         generated_files = _string_list(raw.get("generated_files"))
         validation_command = str(raw.get("validation_command", "")).strip()
@@ -134,6 +140,9 @@ def load_supported_scene_catalog(path: Path) -> tuple[dict[str, Any], list[Suppo
                 support_level=support_level,
                 status=status,
                 known_blocker=known_blocker,
+                robot=robot,
+                tool=tool,
+                required_capabilities=required_capabilities,
                 authoring_files=authoring_files,
                 generated_files=generated_files,
                 validation_command=validation_command,
