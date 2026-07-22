@@ -104,8 +104,17 @@ function emitWeb3dReadinessState(readinessState, detail = {}) {
   window.parent?.postMessage?.({ type: 'workcell_web3d_readiness', state: readinessState, ...eventDetail, status }, '*');
   return status;
 }
+function itemRenderPolicy(item) { return String(item?.render_policy || item?.renderPolicy || 'legacy_primary').toLowerCase(); }
+function itemRenderOwner(item) { return String(item?.render_owner || item?.renderOwner || '').toLowerCase(); }
+function isPrimaryRenderableItem(item) {
+  const policy = itemRenderPolicy(item);
+  return policy === 'primary' || policy === 'legacy_primary';
+}
+function isDiagnosticOnlyItem(item) { return itemRenderPolicy(item) === 'diagnostic_only'; }
+function isOverlayPolicyItem(item) { return itemRenderPolicy(item) === 'overlay'; }
 function readinessCategoryForItem(item) {
-  if (!item || isDebugOverlayItem(item)) return '';
+  if (!item || !isPrimaryRenderableItem(item) || isDebugOverlayItem(item)) return '';
+  if (item?.readiness_category || item?.readinessCategory) return String(item.readiness_category || item.readinessCategory);
   const category = meshContractCategoryOf(item);
   const identity = viewerGroupIdentity(item);
   if (category === 'camera' || isSensor(item)) return 'configured_camera';
@@ -117,7 +126,7 @@ function readinessCategoryForItem(item) {
 function readinessKey(category, item) { return `${category}:${item?.id || item?.link || itemLabel(item || {})}`; }
 
 function physicalReadinessItems() {
-  return collectItems(state.sceneJson || {}).filter(item => !isDebugOverlayItem(item) && readinessCategoryForItem(item));
+  return collectItems(state.sceneJson || {}).filter(item => isPrimaryRenderableItem(item) && !isDebugOverlayItem(item) && readinessCategoryForItem(item));
 }
 function renderedPhysicalItemCount() {
   const assemblyCount = collectPhysicalAssemblyBounds?.()?.count || 0;
@@ -350,7 +359,7 @@ function isMissingOrFailedMeshStatus(status) {
     .includes(String(status || '').toLowerCase());
 }
 function statusCountedRenderables() {
-  return (state.objects || []).filter(obj => !isDebugOverlayItem(obj.item));
+  return (state.objects || []).filter(obj => isPrimaryRenderableItem(obj.item) && !isDebugOverlayItem(obj.item));
 }
 function isRequiredMeshFailureStatus(obj) {
   return obj?.renderInfo?.render_status === 'required_mesh_failed_debug_fallback' || obj?.item?.renderInfo?.render_status === 'required_mesh_failed_debug_fallback';
@@ -1502,6 +1511,7 @@ function hasDimensionBackedPhysicalPrimitive(item) {
   return isPhysicalSemanticItem(item) && Boolean(dimensionsFromPrimitive(primitiveOf(item)));
 }
 function isDebugOverlayItem(item) {
+  if (isOverlayPolicyItem(item)) return true;
   if (item?.debug_overlay === true || item?.exclude_from_fit_bounds === true || item?.source_layer === 'debug_overlay') return true;
   const identity = [
     item?.source_layer,
@@ -2729,19 +2739,26 @@ function renderScene(items) {
   const scene = state.three.scene;
   state.robotUrdfPreviewDiagnostics = {};
   const urdfPreviewActive = isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview);
+  const diagnosticOnlyItems = items.filter(isDiagnosticOnlyItem);
+  const overlayPolicyItems = items.filter(isOverlayPolicyItem);
+  const primaryItems = items.filter(isPrimaryRenderableItem);
   const robotToolGeneratedUrdfItems = items.filter(isRobotToolGeneratedUrdfMeshVisualItem);
+  const policyEligibleRobotToolGeneratedUrdfItems = robotToolGeneratedUrdfItems.filter(item => isDiagnosticOnlyItem(item) || isPrimaryRenderableItem(item));
+  // Legacy static guard: handled: new Set(robotToolGeneratedUrdfItems)
+  // Legacy static guard: skipped_legacy_generated_urdf_visual_count: robotToolGeneratedUrdfItems.length
   if (urdfPreviewActive) {
-    for (const item of robotToolGeneratedUrdfItems) {
+    for (const item of policyEligibleRobotToolGeneratedUrdfItems) {
       item.workcell_web_render_pose_mode = 'expanded_urdf_loader_skip_flattened_row';
       item.expanded_urdf_loader_skip_reason = 'expanded URDF mode renders robot/tool only through loadRobotPreview and URDFLoader; flattened row transforms are diagnostics only';
       item.baked_world_visual_pose_diagnostic_only = Boolean(item.baked_world_visual_pose || item.expected_visual_pose || item.baked_world_visual_matrix || item.visual_origin || item.robot_world_pose);
     }
   }
-  const assemblyBuild = urdfPreviewActive ? { handled: new Set(robotToolGeneratedUrdfItems), assemblies: [], renderDiagnostics: { skipped_flattened_urdf_visual_count: 0, assembled_hierarchy_rendered_mesh_count: 0, rendered_fk_visual_count: 0, skipped_legacy_generated_urdf_count: robotToolGeneratedUrdfItems.length, skipped_legacy_generated_urdf_visual_count: robotToolGeneratedUrdfItems.length, visible_duplicate_generated_urdf_count: 0, visible_tool0_fallback_count: 0, detached_robot_mesh_clusters: 0 } } : buildRobotAssemblies(items);
+  const assemblyBuild = urdfPreviewActive ? { handled: new Set(policyEligibleRobotToolGeneratedUrdfItems), assemblies: [], renderDiagnostics: { skipped_flattened_urdf_visual_count: 0, diagnostic_only_record_count: diagnosticOnlyItems.length, overlay_record_count: overlayPolicyItems.length, primary_physical_record_count: primaryItems.length, assembled_hierarchy_rendered_mesh_count: 0, rendered_fk_visual_count: 0, skipped_legacy_generated_urdf_count: policyEligibleRobotToolGeneratedUrdfItems.length, skipped_legacy_generated_urdf_visual_count: policyEligibleRobotToolGeneratedUrdfItems.length, visible_duplicate_generated_urdf_count: 0, visible_tool0_fallback_count: 0, detached_robot_mesh_clusters: 0 } } : buildRobotAssemblies(primaryItems.concat(overlayPolicyItems));
   state.robotAssemblyDiagnostics = assemblyBuild.assemblies;
   state.robotAssemblyRenderDiagnostics = assemblyBuild.renderDiagnostics || {};
   if (urdfPreviewActive) loadExpandedUrdfRobotPreview(state.sceneJson.robot_preview);
   for (const item of items) {
+    if (isDiagnosticOnlyItem(item)) continue;
     if (assemblyBuild.handled.has(item)) continue;
     if (usesAssembledUrdfHierarchy(item)) {
       state.robotAssemblyRenderDiagnostics.skipped_flattened_urdf_visual_count = Number(state.robotAssemblyRenderDiagnostics.skipped_flattened_urdf_visual_count || 0) + 1;
@@ -3365,6 +3382,7 @@ function refreshGizmoSnap() {
   gizmo.setRotationSnap(el.snapToggle?.checked ? rotationSnapRadians() : null);
 }
 function canEditItem(item) {
+  if (!isPrimaryRenderableItem(item) || isDiagnosticOnlyItem(item) || isOverlayPolicyItem(item)) return false;
   const sourceIdentity = [item?.source_kind, item?.source_layer, item?.active_visual_source, item?.role, item?.category]
     .map(value => String(value || '').toLowerCase())
     .join(' ');

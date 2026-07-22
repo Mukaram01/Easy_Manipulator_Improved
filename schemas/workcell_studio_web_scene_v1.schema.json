@@ -92,7 +92,7 @@
         },
         "metadata": {
             "type": "object",
-            "additionalProperties": false,
+            "additionalProperties": true,
             "required": [
                 "mesh_contract"
             ],
@@ -163,6 +163,28 @@
             "items": {
                 "$ref": "#/$defs/backendAction"
             }
+        },
+        "render_ownership_summary": {
+            "type": "object",
+            "additionalProperties": {
+                "type": [
+                    "integer",
+                    "string",
+                    "boolean"
+                ]
+            }
+        },
+        "robot_preview": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "scene_id": {
+            "type": "string",
+            "minLength": 1
+        },
+        "scene_name": {
+            "type": "string",
+            "minLength": 1
         }
     },
     "$defs": {
@@ -295,6 +317,38 @@
                 },
                 "provenance": {
                     "$ref": "#/$defs/provenance"
+                },
+                "render_owner": {
+                    "enum": [
+                        "expanded_urdf_robot",
+                        "expanded_urdf_tool",
+                        "generated_urdf_fallback",
+                        "environment_mesh",
+                        "editable_layout",
+                        "task_overlay",
+                        "diagnostic_helper"
+                    ]
+                },
+                "render_policy": {
+                    "enum": [
+                        "primary",
+                        "diagnostic_only",
+                        "overlay"
+                    ]
+                },
+                "render_identity": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "semantic_role": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "readiness_category": {
+                    "type": "string"
+                },
+                "render_policy_reason": {
+                    "type": "string"
                 }
             }
         },
