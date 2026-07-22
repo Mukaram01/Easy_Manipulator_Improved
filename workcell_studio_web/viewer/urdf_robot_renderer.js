@@ -660,9 +660,21 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     diagnostics.robotDisconnectedLinks = rootDiagnostics.disconnected;
     diagnostics.robot_duplicate_links = rootDiagnostics.duplicateLinks;
     diagnostics.robotDuplicateLinks = rootDiagnostics.duplicateLinks;
-    diagnostics.robot_hierarchy_missing_links = Array.isArray(previewConfig?.expected_links)
-      ? previewConfig.expected_links.filter(link => !result.links.has(link))
-      : [];
+    const loadedVisualLinks = new Set((diagnostics.robot_visual_wrapper_world_matrices || [])
+      .map(visual => String(visual?.link_name || visual?.linkName || '').trim())
+      .filter(Boolean));
+    const expectedLinks = Array.isArray(previewConfig?.expected_links) ? previewConfig.expected_links : [];
+    const expectedRobotVisualLinks = Array.isArray(previewConfig?.expected_robot_visual_links) ? previewConfig.expected_robot_visual_links : [];
+    const expectedToolVisualLinks = Array.isArray(previewConfig?.expected_tool_visual_links) ? previewConfig.expected_tool_visual_links : [];
+    diagnostics.robot_hierarchy_missing_links = expectedLinks.filter(link => !result.links.has(link));
+    diagnostics.robot_missing_required_robot_visual_links = expectedRobotVisualLinks.filter(link => !loadedVisualLinks.has(link));
+    diagnostics.robotMissingRequiredRobotVisualLinks = diagnostics.robot_missing_required_robot_visual_links;
+    diagnostics.robot_missing_required_tool_visual_links = expectedToolVisualLinks.filter(link => !loadedVisualLinks.has(link));
+    diagnostics.robotMissingRequiredToolVisualLinks = diagnostics.robot_missing_required_tool_visual_links;
+    diagnostics.robot_expected_robot_visual_links = expectedRobotVisualLinks;
+    diagnostics.robotExpectedRobotVisualLinks = expectedRobotVisualLinks;
+    diagnostics.robot_expected_tool_visual_links = expectedToolVisualLinks;
+    diagnostics.robotExpectedToolVisualLinks = expectedToolVisualLinks;
     diagnostics.robot_link_world_matrices = collectLinkMatrixDiagnostics(robot, robot.links);
     diagnostics.robotLinkWorldMatrices = diagnostics.robot_link_world_matrices;
     diagnostics.robot_visual_wrapper_world_matrices = collectVisualWrapperMatrixDiagnostics(robot.links);
@@ -671,7 +683,7 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     diagnostics.robotDescendantRenderMeshDiagnostics = diagnostics.robot_descendant_render_mesh_diagnostics;
     diagnostics.robot_mesh_callbacks_complete = diagnostics.robot_expected_visual_count === (diagnostics.robot_loaded_visual_count + diagnostics.robot_failed_visual_count);
     diagnostics.robotMeshCallbacksComplete = diagnostics.robot_mesh_callbacks_complete;
-    diagnostics.robot_preview_loaded = diagnostics.robot_failed_visual_count === 0 && diagnostics.robot_hierarchy_missing_links.length === 0 && diagnostics.robot_mesh_callbacks_complete;
+    diagnostics.robot_preview_loaded = diagnostics.robot_failed_visual_count === 0 && diagnostics.robot_hierarchy_missing_links.length === 0 && diagnostics.robot_missing_required_robot_visual_links.length === 0 && diagnostics.robot_missing_required_tool_visual_links.length === 0 && diagnostics.robot_mesh_callbacks_complete;
     setLifecycleState(diagnostics, diagnostics.robot_preview_loaded ? 'ready' : 'failed');
     rendererContext?.scene?.add?.(robot);
     rendererContext?.assemblyRoots?.push?.(robot);
