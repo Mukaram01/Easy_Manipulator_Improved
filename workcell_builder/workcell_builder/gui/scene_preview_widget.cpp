@@ -838,7 +838,18 @@ void ScenePreviewWidget::handle_embedded_web_runtime_failure(
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
   Q_UNUSED(identity); Q_UNUSED(navigation_token); Q_UNUSED(detail);
 #else
-  if (!embedded_web_identity_is_current(identity) || navigation_token != embedded_web_navigation_token_) return;
+  if (!embedded_web_identity_is_current(identity) || navigation_token != embedded_web_navigation_token_) {
+    emit studio_log_requested(QStringLiteral("Ignored stale Embedded Product View runtime failure for scene %1 revision %2 navigation %3: %4")
+      .arg(identity.scene_id).arg(identity.generation).arg(navigation_token).arg(detail));
+    return;
+  }
+  const QString terminal_key = QStringLiteral("%1|%2|%3|%4").arg(identity.scene_id).arg(identity.generated_web_scene_path).arg(identity.payload_revision).arg(navigation_token);
+  if (embedded_web_terminal_runtime_failures_.contains(terminal_key)) {
+    emit studio_log_requested(QStringLiteral("Suppressed duplicate Embedded Product View terminal failure for scene %1 revision %2 navigation %3: %4")
+      .arg(identity.scene_id).arg(identity.generation).arg(navigation_token).arg(detail));
+    return;
+  }
+  embedded_web_terminal_runtime_failures_.insert(terminal_key);
   native_compatibility_fallback_active_ = false;
   embedded_web_last_error_ = detail;
   set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail);
@@ -1436,10 +1447,15 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
 (() => {
   const s = window.__WORKCELL_VIEWER_STATUS__ || {};
   return {
-    viewer_boot_state: s.web3d_readiness_state || s.web3dReadinessState || s.viewer_boot_state || s.viewerBootState || 'server_ready',
+    readiness_contract_version: Number(s.readiness_contract_version ?? s.readinessContractVersion ?? 0),
+    lifecycle_state: s.lifecycle_state || s.lifecycleState || '',
+    terminal: Boolean(s.terminal),
+    status_sequence: Number(s.status_sequence ?? s.statusSequence ?? 0),
+    builder_revision: String(s.builder_revision ?? s.builderRevision ?? ''),
+    viewer_boot_state: s.web3d_readiness_state || s.web3dReadinessState || s.viewer_boot_state || s.viewerBootState || '',
     scene_name: s.scene_name || s.sceneName || '',
     source_web_scene_file: s.source_web_scene_file || s.sourceWebSceneFile || '',
-    scene_json_loaded: Boolean(s.scene_json_loaded || s.sceneJsonLoaded || s.source_web_scene_file || s.sourceWebSceneFile),
+    scene_json_loaded: Boolean(s.scene_json_loaded || s.sceneJsonLoaded),
     robot_preview_lifecycle_state: s.robot_preview_lifecycle_state || s.robotPreviewLifecycleState || '',
     scene_id: s.scene_id || s.sceneId || '',
     expected_physical_item_count: Number(s.expected_physical_item_count ?? s.expectedPhysicalItemCount ?? 0),
@@ -1449,7 +1465,7 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
     tool_status: s.tool_status || s.toolStatus || s.end_effector_status || s.endEffectorStatus || '',
     environment_status: s.environment_status || s.environmentStatus || '',
     camera_status: s.camera_status || s.cameraStatus || '',
-    final_lifecycle_state: s.final_lifecycle_state || s.finalLifecycleState || s.web3d_readiness_state || s.web3dReadinessState || '',
+    final_lifecycle_state: s.final_lifecycle_state || s.finalLifecycleState || s.lifecycle_state || s.lifecycleState || '',
     readiness_failure: s.readiness_failure || s.readinessFailure || null,
     failed_stage: s.failed_stage || s.failedStage || '',
     fatal_error: s.fatal_error || s.fatalError || '',
@@ -1465,6 +1481,10 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
       return;
     }
     const QVariantMap status = value.toMap();
+    const int contract_version = status.value(QStringLiteral("readiness_contract_version")).toInt();
+    const QString lifecycle_state = status.value(QStringLiteral("lifecycle_state")).toString();
+    const bool terminal = status.value(QStringLiteral("terminal")).toBool();
+    const QString builder_revision = status.value(QStringLiteral("builder_revision")).toString();
     const QString boot_state = status.value(QStringLiteral("viewer_boot_state")).toString();
     const QString source_json = status.value(QStringLiteral("source_web_scene_file")).toString();
     const bool scene_json_loaded = status.value(QStringLiteral("scene_json_loaded")).toBool();
@@ -1481,7 +1501,7 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
     const QString failed_stage = status.value(QStringLiteral("failed_stage")).toString();
     const QString fatal_error = status.value(QStringLiteral("fatal_error")).toString();
     const QString fatal_stack = status.value(QStringLiteral("fatal_stack")).toString();
-    embedded_web_last_boot_status_ = QStringLiteral("boot=%1 json=%2 source=%3 scene_id=%4 expected_physical=%5 rendered_physical=%6 failed_required=%7 robot=%8 tool=%9 environment=%10 camera=%11 lifecycle=%12")
+    embedded_web_last_boot_status_ = QStringLiteral("contract=%13 terminal=%14 builder_revision=%15 boot=%1 json=%2 source=%3 scene_id=%4 expected_physical=%5 rendered_physical=%6 failed_required=%7 robot=%8 tool=%9 environment=%10 camera=%11 lifecycle=%12")
       .arg(boot_state.isEmpty() ? QStringLiteral("unknown") : boot_state)
       .arg(scene_json_loaded ? QStringLiteral("loaded") : QStringLiteral("not_loaded"))
       .arg(source_json.isEmpty() ? QStringLiteral("unknown") : source_json)
@@ -1493,7 +1513,10 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
       .arg(tool_status.isEmpty() ? QStringLiteral("unknown") : tool_status)
       .arg(environment_status.isEmpty() ? QStringLiteral("unknown") : environment_status)
       .arg(camera_status.isEmpty() ? QStringLiteral("unknown") : camera_status)
-      .arg(final_lifecycle_state.isEmpty() ? QStringLiteral("unknown") : final_lifecycle_state);
+      .arg(final_lifecycle_state.isEmpty() ? QStringLiteral("unknown") : final_lifecycle_state)
+      .arg(contract_version)
+      .arg(terminal ? QStringLiteral("true") : QStringLiteral("false"))
+      .arg(builder_revision.isEmpty() ? QStringLiteral("unknown") : builder_revision);
 
     if (boot_state == QStringLiteral("scene_failed") || boot_state == QStringLiteral("failed")) {
       const QString detail = QStringLiteral("viewer JavaScript failed at %1: %2%3")
@@ -1509,19 +1532,32 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
       return;
     }
 
-    const bool expected_json_loaded = scene_json_loaded && source_json == expected_json_path;
-    if (boot_state == QStringLiteral("scene_ready") && expected_json_loaded && failed_required_count == 0) {
+    const QString expected_builder_revision = QString::number(identity.payload_revision);
+    QString contract_reason;
+    const auto component_ready = [](const QString & value) { return value == QStringLiteral("ready") || value == QStringLiteral("missing"); };
+    if (contract_version != 1) contract_reason = QStringLiteral("missing or unsupported readiness_contract_version");
+    else if (lifecycle_state == QStringLiteral("server_ready") || boot_state == QStringLiteral("server_ready")) contract_reason = QStringLiteral("server_ready is infrastructure state, not scene readiness");
+    else if (lifecycle_state != QStringLiteral("scene_ready")) contract_reason = QStringLiteral("lifecycle_state is %1").arg(lifecycle_state.isEmpty() ? QStringLiteral("missing") : lifecycle_state);
+    else if (!terminal) contract_reason = QStringLiteral("terminal is false");
+    else if (reported_scene_id != identity.scene_id) contract_reason = QStringLiteral("scene_id mismatch: reported %1 expected %2").arg(reported_scene_id.isEmpty() ? QStringLiteral("missing") : reported_scene_id, identity.scene_id);
+    else if (source_json != expected_json_path) contract_reason = QStringLiteral("source_web_scene_file mismatch: reported %1 expected %2").arg(source_json.isEmpty() ? QStringLiteral("missing") : source_json, expected_json_path);
+    else if (builder_revision != expected_builder_revision) contract_reason = QStringLiteral("builder_revision mismatch: reported %1 expected %2").arg(builder_revision.isEmpty() ? QStringLiteral("missing") : builder_revision, expected_builder_revision);
+    else if (!scene_json_loaded) contract_reason = QStringLiteral("scene_json_loaded is false");
+    else if (failed_required_count != 0) contract_reason = QStringLiteral("failed_required_item_count is %1").arg(failed_required_count);
+    else if (!component_ready(robot_status) || !component_ready(tool_status) || !component_ready(environment_status) || !component_ready(camera_status)) contract_reason = QStringLiteral("component status incomplete: robot=%1 tool=%2 environment=%3 camera=%4").arg(robot_status, tool_status, environment_status, camera_status);
+
+    if (contract_reason.isEmpty()) {
       native_compatibility_fallback_active_ = false;
       show_embedded_web_product_view();
       set_embedded_product_view_state(EmbeddedProductViewState::Ready, QStringLiteral("viewer ready"));
       poll_embedded_editor_events();
-      emit studio_log_requested(QStringLiteral("Embedded Product View ready after scene_ready: scene=%1 json=%2 robot_preview_lifecycle_state=%3 failed_required_item_count=0")
-        .arg(identity.scene_id, expected_json_path, robot_state.isEmpty() ? QStringLiteral("not_required") : robot_state));
+      emit studio_log_requested(QStringLiteral("Embedded Product View ready after terminal scene_ready: scene=%1 json=%2 builder_revision=%3 robot_preview_lifecycle_state=%4 failed_required_item_count=0")
+        .arg(identity.scene_id, expected_json_path, expected_builder_revision, robot_state.isEmpty() ? QStringLiteral("not_required") : robot_state));
       return;
     }
 
     set_embedded_product_view_state(EmbeddedProductViewState::WaitingForBrowserReadiness,
-      QStringLiteral("waiting for viewer readiness (%1)").arg(embedded_web_last_boot_status_));
+      QStringLiteral("waiting for viewer readiness: %1 (%2)").arg(contract_reason, embedded_web_last_boot_status_));
     QTimer::singleShot(750, this, [this, identity, navigation_token, expected_json_path, viewer_url]() {
       poll_embedded_web_readiness(identity, navigation_token, expected_json_path, viewer_url);
     });
