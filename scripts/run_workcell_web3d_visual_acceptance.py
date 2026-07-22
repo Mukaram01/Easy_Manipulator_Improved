@@ -1048,15 +1048,131 @@ def run_browser(url: str, status_path: Path, screenshot_path: Path, require: boo
     return {"available": False, "method": "skipped", "status": None, "reason": f"No Playwright/chromium/google-chrome browser available. Playwright error: {playwright_error}"}
 
 
+SCENE_REPRODUCIBILITY_SCHEMA = "workcell_studio_supported_scene_reproducibility/v1"
+
+
+def _load_supported_entries(catalog_path: Path | None = None) -> tuple[list[Any], list[str]]:
+    if str(REPO_ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    from supported_scene_catalog import default_catalog_path, load_supported_scene_catalog
+    path = catalog_path or default_catalog_path(REPO_ROOT)
+    _catalog, entries, errors = load_supported_scene_catalog(path)
+    return entries, errors
+
+
+def _step_status(ok: bool, reason: str = "") -> dict[str, Any]:
+    return {"status": "PASS" if ok else "FAIL", "reason": reason}
+
+
+def _check_render_ownership(web_scene_path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(web_scene_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return _step_status(False, f"could not read staged web scene JSON {repo_relative(web_scene_path)}: {exc}")
+    summary = payload.get("render_ownership_summary") if isinstance(payload, Mapping) else None
+    if not isinstance(summary, Mapping):
+        return _step_status(False, "staged web scene missing render_ownership_summary")
+    unknown = int(summary.get("unknown_physical_owners") or 0)
+    duplicate = int(summary.get("duplicate_primary_identities") or 0)
+    if unknown or duplicate:
+        return _step_status(False, f"render ownership has unknown={unknown} duplicate_primary={duplicate}")
+    return {"status": "PASS", "summary": dict(summary)}
+
+
+def _check_readiness_metadata(scene_dir: Path, entry: Any) -> dict[str, Any]:
+    paths = [scene_dir / "generated/generated_workcell_summary.json", scene_dir / "generated/scene_package_readiness.json"]
+    missing = [repo_relative(p) for p in paths if not p.is_file()]
+    if missing:
+        return _step_status(False, "missing robot/tool readiness metadata: " + ", ".join(missing))
+    try:
+        summary = json.loads(paths[0].read_text(encoding="utf-8"))
+    except Exception as exc:
+        return _step_status(False, f"could not parse {repo_relative(paths[0])}: {exc}")
+    missing_fields = [key for key in ("robot", "end_effector", "grasp_strategy") if not summary.get(key)]
+    missing_caps = [cap for cap in getattr(entry, "required_capabilities", ()) if cap not in json.dumps(summary).lower() and cap not in json.dumps(getattr(entry, "raw", {})).lower()]
+    if missing_fields:
+        return _step_status(False, "generated readiness metadata missing fields: " + ", ".join(missing_fields))
+    return {"status": "PASS", "robot": getattr(entry, "robot", ""), "tool": getattr(entry, "tool", ""), "required_capabilities": list(getattr(entry, "required_capabilities", ())), "unmatched_registry_capabilities": missing_caps}
+
+
+def evaluate_supported_scene_reproducibility(entry: Any, *, output_root: Path, require_browser: bool = False, port: int = 8765) -> dict[str, Any]:
+    scene_dir = (REPO_ROOT / entry.scene_path).resolve()
+    row: dict[str, Any] = {"scene_id": entry.scene_name, "robot": entry.robot, "tool": entry.tool, "required_capabilities": list(entry.required_capabilities), "status": "PASS", "blocker_reason": "", "checks": {}}
+    if entry.status == "blocked" or not entry.enabled:
+        reason = entry.known_blocker or "catalog marks scene blocked/disabled without an explicit blocker reason"
+        row.update(status="BLOCKED", blocker_reason=reason)
+        row["checks"]["catalog_status"] = {"status": "BLOCKED", "reason": reason}
+        return row
+    missing_source = [rel for rel in entry.authoring_files if not (scene_dir / rel).is_file()]
+    row["checks"]["required_source_files"] = _step_status(not missing_source, "missing: " + ", ".join(missing_source) if missing_source else "")
+    gen_root = (output_root / entry.scene_name).resolve()
+    cmd = [sys.executable, "scripts/generate_workcell_from_cell_definition.py", repo_relative(scene_dir / "cell_definition.yaml"), "--output-dir", repo_relative(gen_root.parent), "--package-name", entry.package_name, "--force"]
+    row["checks"]["scene_generation"] = run_step(cmd)
+    generated_scene = gen_root.parent / entry.package_name
+    if row["checks"]["scene_generation"]["returncode"] == 0:
+        val_cmd = [sys.executable, "scripts/validate_builder_generated_scene.py", repo_relative(generated_scene), "--json"]
+        row["checks"]["schema_validation"] = run_step(val_cmd)
+        web_json = BUILD_ROOT / f"{entry.scene_name}.web_scene.json"
+        row["checks"]["web3d_acceptance_tooling"] = run_step([sys.executable, "scripts/ensure_workcell_studio_web_scene_fresh.py", "--scene", repo_relative(generated_scene), "--output", repo_relative(web_json), "--stage-assets"])
+        if row["checks"]["web3d_acceptance_tooling"]["returncode"] == 0:
+            row["checks"]["staged_urdf_meshes"] = run_step([sys.executable, "scripts/check_workcell_web_scene_mesh_contract.py", repo_relative(web_json)])
+            row["checks"]["visual_bounds"] = run_step([sys.executable, "scripts/check_workcell_web_scene_visual_bounds.py", repo_relative(web_json), "--json"])
+            row["checks"]["render_ownership"] = _check_render_ownership(web_json)
+        row["checks"]["robot_tool_readiness_metadata"] = _check_readiness_metadata(generated_scene, entry)
+        missing_launch = [rel for rel in ("launch/demo.launch.py", "urdf/scene.urdf.xacro") if not (generated_scene / rel).is_file()]
+        row["checks"]["fake_hardware_launch_files"] = _step_status(not missing_launch and "use_fake_hardware:=true" in entry.fake_hardware_launch_command, "missing/unguarded launch contract: " + ", ".join(missing_launch) if missing_launch else "")
+    failed = []
+    for name, check in row["checks"].items():
+        if check.get("status") == "FAIL" or check.get("returncode", 0) != 0:
+            failed.append(name)
+    if failed:
+        row["status"] = "FAIL"
+        row["failure_reason"] = "failed checks: " + ", ".join(failed)
+    return row
+
+
+def run_supported_scene_reproducibility_gate(*, output: Path | None = None, catalog: Path | None = None, scene_ids: Sequence[str] | None = None, require_browser: bool = False, port: int = 8765) -> dict[str, Any]:
+    entries, catalog_errors = _load_supported_entries(catalog)
+    if scene_ids:
+        wanted = set(scene_ids)
+        entries = [e for e in entries if e.scene_name in wanted]
+    out_root = REPO_ROOT / "build" / "workcell_studio_supported_scene_reproducibility"
+    out_root.mkdir(parents=True, exist_ok=True)
+    rows = [evaluate_supported_scene_reproducibility(e, output_root=out_root, require_browser=require_browser, port=port) for e in entries]
+    counts = {"PASS": 0, "FAIL": 0, "BLOCKED": 0}
+    for row in rows:
+        counts[row["status"]] += 1
+    report = {"schema": SCENE_REPRODUCIBILITY_SCHEMA, "status": "FAIL" if counts["FAIL"] or catalog_errors else "PASS", "counts": counts, "catalog_errors": catalog_errors, "scenes": rows}
+    if output:
+        out = output if output.is_absolute() else (REPO_ROOT / output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print("Supported scene reproducibility gate")
+    for row in rows:
+        reason = row.get("blocker_reason") or row.get("failure_reason") or ""
+        print(f"{row['status']}: {row['scene_id']} robot={row['robot']} tool={row['tool']} {reason}")
+    print(json.dumps({"status": report["status"], "counts": counts}, sort_keys=True))
+    return report
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run browser visual acceptance for a Workcell Studio Web 3D scene.")
-    parser.add_argument("--scene", required=True, help="Scene directory to export and validate.")
+    parser.add_argument("--scene", help="Scene directory to export and validate.")
     parser.add_argument("--output", help="Optional staged web_scene.json output path.")
     parser.add_argument("--scene-id", help="Override derived scene id used for default output/report names.")
     parser.add_argument("--require-browser", action="store_true", help="Fail if Playwright/chromium/google-chrome is unavailable or cannot run.")
     parser.add_argument("--port", type=int, default=8765, help="Repo-root HTTP server port (default: 8765).")
+    parser.add_argument("--all-supported-scenes", action="store_true", help="Run the supported-scene reproducibility gate instead of one browser scene.")
+    parser.add_argument("--catalog", type=Path, help="Supported-scene catalog path for --all-supported-scenes.")
+    parser.add_argument("--only-scene", action="append", default=[], help="Limit --all-supported-scenes to one scene id; repeatable.")
     args = parser.parse_args(argv)
 
+    if args.all_supported_scenes:
+        report = run_supported_scene_reproducibility_gate(output=Path(args.output) if args.output else BUILD_ROOT / "supported_scene_reproducibility.json", catalog=args.catalog, scene_ids=args.only_scene, require_browser=args.require_browser, port=args.port)
+        return 1 if report["status"] == "FAIL" else 0
+
+    if not args.scene:
+        print("error: --scene is required unless --all-supported-scenes is used", file=sys.stderr)
+        return 2
     scene_dir = Path(args.scene).expanduser()
     if not scene_dir.is_absolute():
         scene_dir = (REPO_ROOT / scene_dir).resolve()

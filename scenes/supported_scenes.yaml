@@ -21,6 +21,14 @@ update_policy: >-
   When adding, renaming, disabling, or removing a supported scene, update this
   catalog in the same PR as the scene change and re-run the catalog-backed
   all-scenes validators. Use known_blocker: "" when there is no known blocker.
+
+common_required_capabilities:
+  ur_arm: &cap_ur_arm ur_arm
+  robotiq_2f: &cap_robotiq_2f robotiq_2f_gripper
+  robotiq_3f: &cap_robotiq_3f robotiq_3f_gripper
+  suction: &cap_suction suction_gripper
+  fake_hardware: &cap_fake_hardware fake_hardware_launch
+  web3d: &cap_web3d web3d_visual_acceptance
 common_authoring_files: &common_authoring_files
   - environment.yaml
   - layout/workcell_studio_layout.yaml
@@ -33,6 +41,9 @@ common_generated_files: &common_generated_files
   - generated/scene3d_gui_smoke.json
 scenes:
   - scene_name: suction_test
+    robot: cartesian_placeholder
+    tool: suction
+    required_capabilities: [*cap_suction, *cap_fake_hardware, *cap_web3d]
     package_name: suction_test
     scene_path: scenes/suction_test
     support_level: supported
@@ -45,6 +56,9 @@ scenes:
     build_command: colcon build --symlink-install --packages-select suction_test
     fake_hardware_launch_command: ros2 launch suction_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
   - scene_name: ur10_2f_test
+    robot: ur10
+    tool: robotiq_2f
+    required_capabilities: [*cap_ur_arm, *cap_robotiq_2f, *cap_fake_hardware, *cap_web3d]
     package_name: ur10_2f_test
     scene_path: scenes/ur10_2f_test
     support_level: supported
@@ -57,6 +71,9 @@ scenes:
     build_command: colcon build --symlink-install --packages-select ur10_2f_test
     fake_hardware_launch_command: ros2 launch ur10_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
   - scene_name: ur3_suction_test
+    robot: ur3
+    tool: suction
+    required_capabilities: [*cap_ur_arm, *cap_suction, *cap_fake_hardware, *cap_web3d]
     package_name: ur3_suction_test
     scene_path: scenes/ur3_suction_test
     support_level: supported
@@ -69,6 +86,9 @@ scenes:
     build_command: colcon build --symlink-install --packages-select ur3_suction_test
     fake_hardware_launch_command: ros2 launch ur3_suction_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
   - scene_name: ur5_2f_builder_pick_place_demo
+    robot: ur5
+    tool: robotiq_2f
+    required_capabilities: [*cap_ur_arm, *cap_robotiq_2f, *cap_fake_hardware, *cap_web3d]
     package_name: ur5_2f_builder_pick_place_demo
     scene_path: scenes/ur5_2f_builder_pick_place_demo
     support_level: supported
@@ -81,6 +101,9 @@ scenes:
     build_command: colcon build --symlink-install --packages-select ur5_2f_builder_pick_place_demo
     fake_hardware_launch_command: ros2 launch ur5_2f_builder_pick_place_demo demo.launch.py use_fake_hardware:=true launch_rviz:=true
   - scene_name: ur5_2f_sorting_test
+    robot: ur5
+    tool: robotiq_2f
+    required_capabilities: [*cap_ur_arm, *cap_robotiq_2f, *cap_fake_hardware, *cap_web3d]
     package_name: ur5_2f_sorting_test
     scene_path: scenes/ur5_2f_sorting_test
     support_level: supported
@@ -93,6 +116,9 @@ scenes:
     build_command: colcon build --symlink-install --packages-select ur5_2f_sorting_test
     fake_hardware_launch_command: ros2 launch ur5_2f_sorting_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
   - scene_name: ur5_2f_test
+    robot: ur5
+    tool: robotiq_2f
+    required_capabilities: [*cap_ur_arm, *cap_robotiq_2f, *cap_fake_hardware, *cap_web3d]
     package_name: ur5_2f_test
     scene_path: scenes/ur5_2f_test
     support_level: supported
@@ -105,6 +131,9 @@ scenes:
     build_command: colcon build --symlink-install --packages-select ur5_2f_test
     fake_hardware_launch_command: ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
   - scene_name: ur5_3f_test
+    robot: ur5
+    tool: robotiq_3f
+    required_capabilities: [*cap_ur_arm, *cap_robotiq_3f, *cap_fake_hardware, *cap_web3d]
     package_name: ur5_3f_test
     scene_path: scenes/ur5_3f_test
     support_level: supported
@@ -117,6 +146,9 @@ scenes:
     build_command: colcon build --symlink-install --packages-select ur5_3f_test
     fake_hardware_launch_command: ros2 launch ur5_3f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
   - scene_name: ur5_airpick4_test
+    robot: ur5
+    tool: airpick4_suction
+    required_capabilities: [*cap_ur_arm, *cap_suction, *cap_fake_hardware, *cap_web3d]
     package_name: ur5_airpick4_test
     scene_path: scenes/ur5_airpick4_test
     support_level: supported

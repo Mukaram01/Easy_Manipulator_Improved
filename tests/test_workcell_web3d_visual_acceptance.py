@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 
 import yaml
@@ -769,3 +770,79 @@ def test_acceptance_requires_all_robotiq_collada_diagnostics():
 
 def test_acceptance_no_longer_rewrites_physical_fit_bounds():
     assert not hasattr(module, 'normalize_physical_fit_bounds')
+
+
+def test_supported_scene_registry_includes_robot_tool_and_required_capabilities():
+    catalog = yaml.safe_load((ROOT / "scenes/supported_scenes.yaml").read_text(encoding="utf-8"))
+    registered = {row["scene_name"]: row for row in catalog["scenes"]}
+    for scene_id in ["ur5_2f_test", "ur5_3f_test", "suction_test", "ur10_2f_test", "ur3_suction_test"]:
+        row = registered[scene_id]
+        assert row["robot"]
+        assert row["tool"]
+        assert row["required_capabilities"]
+        assert "fake_hardware_launch" in row["required_capabilities"]
+
+
+def test_supported_scene_reproducibility_gate_reports_blocked_with_reason(monkeypatch, tmp_path):
+    entry = type("Entry", (), {
+        "scene_name": "blocked_scene", "scene_path": "scenes/blocked_scene", "package_name": "blocked_scene",
+        "robot": "ur5", "tool": "robotiq_2f", "required_capabilities": ("fake_hardware_launch",),
+        "status": "blocked", "enabled": True, "known_blocker": "explicit ROS workspace blocker",
+        "authoring_files": ("environment.yaml",), "fake_hardware_launch_command": "ros2 launch blocked_scene demo.launch.py use_fake_hardware:=true",
+    })()
+    monkeypatch.setattr(module, "_load_supported_entries", lambda catalog=None: ([entry], []))
+    report = module.run_supported_scene_reproducibility_gate(output=tmp_path / "report.json")
+    assert report["counts"] == {"PASS": 0, "FAIL": 0, "BLOCKED": 1}
+    assert report["status"] == "PASS"
+    assert report["scenes"][0]["blocker_reason"] == "explicit ROS workspace blocker"
+
+
+def test_supported_scene_reproducibility_gate_reports_fail_and_nonzero_reason(monkeypatch, tmp_path):
+    scene = ROOT / "scenes/fail_fixture"
+    entry = type("Entry", (), {
+        "scene_name": "fail_fixture", "scene_path": "scenes/fail_fixture", "package_name": "fail_fixture",
+        "robot": "ur5", "tool": "robotiq_2f", "required_capabilities": ("fake_hardware_launch",),
+        "status": "supported", "enabled": True, "known_blocker": "",
+        "authoring_files": ("environment.yaml", "cell_definition.yaml"),
+        "fake_hardware_launch_command": "ros2 launch fail_fixture demo.launch.py use_fake_hardware:=true",
+    })()
+    monkeypatch.setattr(module, "_load_supported_entries", lambda catalog=None: ([entry], []))
+    report = module.run_supported_scene_reproducibility_gate(output=tmp_path / "report.json")
+    row = report["scenes"][0]
+    assert row["status"] == "FAIL"
+    assert report["status"] == "FAIL"
+    assert "required_source_files" in row["failure_reason"]
+
+
+def test_supported_scene_reproducibility_gate_reports_pass(monkeypatch, tmp_path):
+    scene = tmp_path / "repo" / "scenes" / "pass_scene"
+    (scene / "generated").mkdir(parents=True)
+    for rel in ["environment.yaml", "cell_definition.yaml", "layout/workcell_studio_layout.yaml", "launch/demo.launch.py", "urdf/scene.urdf.xacro"]:
+        (scene / rel).parent.mkdir(parents=True, exist_ok=True)
+        (scene / rel).write_text("ok\n", encoding="utf-8")
+    (scene / "generated/generated_workcell_summary.json").write_text(json.dumps({"robot": {"capability": "ur5"}, "end_effector": {"capability": "robotiq_2f"}, "grasp_strategy": {"id": "finger"}}), encoding="utf-8")
+    (scene / "generated/scene_package_readiness.json").write_text("{}", encoding="utf-8")
+    generated = tmp_path / "repo" / "build/workcell_studio_supported_scene_reproducibility/pass_scene"
+    (generated / "generated").mkdir(parents=True)
+    for rel in ["launch/demo.launch.py", "urdf/scene.urdf.xacro"]:
+        (generated / rel).parent.mkdir(parents=True, exist_ok=True)
+        (generated / rel).write_text("ok\n", encoding="utf-8")
+    (generated / "generated/generated_workcell_summary.json").write_text(json.dumps({"robot": {"capability": "ur5"}, "end_effector": {"capability": "robotiq_2f"}, "grasp_strategy": {"id": "finger"}}), encoding="utf-8")
+    (generated / "generated/scene_package_readiness.json").write_text("{}", encoding="utf-8")
+    web = tmp_path / "web.json"
+    web.write_text(json.dumps({"render_ownership_summary": {"unknown_physical_owners": 0, "duplicate_primary_identities": 0}}), encoding="utf-8")
+    entry = type("Entry", (), {
+        "scene_name": "pass_scene", "scene_path": "scenes/pass_scene", "package_name": "pass_scene",
+        "robot": "ur5", "tool": "robotiq_2f", "required_capabilities": ("fake_hardware_launch",),
+        "status": "supported", "enabled": True, "known_blocker": "",
+        "authoring_files": ("environment.yaml", "cell_definition.yaml"),
+        "fake_hardware_launch_command": "ros2 launch pass_scene demo.launch.py use_fake_hardware:=true",
+    })()
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path / "repo")
+    monkeypatch.setattr(module, "BUILD_ROOT", tmp_path)
+    monkeypatch.setattr(module, "run_step", lambda cmd: {"command": cmd, "returncode": 0, "stdout": "", "stderr": ""})
+    monkeypatch.setattr(module, "_load_supported_entries", lambda catalog=None: ([entry], []))
+    monkeypatch.setattr(module, "_check_render_ownership", lambda path: {"status": "PASS", "summary": {}})
+    report = module.run_supported_scene_reproducibility_gate(output=tmp_path / "report.json")
+    assert report["counts"]["PASS"] == 1
+    assert report["status"] == "PASS"
