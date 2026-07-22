@@ -300,8 +300,10 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
 
 def main() -> int:
     args = parse_args()
-    repo_root = (args.repo_root.resolve() if args.repo_root else resolve_repo_root())
-    workspace_root = args.workspace_root.resolve() if args.workspace_root else resolve_workspace_root(repo_root)
+    repo_arg = getattr(args, "repo_root", None)
+    workspace_arg = getattr(args, "workspace_root", None)
+    repo_root = (repo_arg.resolve() if repo_arg else Path(__file__).resolve().parents[1])
+    workspace_root = workspace_arg.resolve() if workspace_arg else resolve_workspace_root(repo_root)
 
     sim_report_path = args.json_output.parent / "rviz_moveit_simulation_launch_report.json"
     sim_report_path = DEFAULT_SIM_REPORT if sim_report_path != DEFAULT_SIM_REPORT else sim_report_path
@@ -336,7 +338,7 @@ def main() -> int:
     audit_payload = _load_json(audit_report_path) if audit_report_path.exists() else {"scenes": []}
 
     visual_assets = None
-    if args.include_visual_assets:
+    if getattr(args, "include_visual_assets", False):
         subprocess.run(["python3", "scripts/regenerate_scene_visual_mesh_indexes.py", "--all", "--portable"], cwd=repo_root, capture_output=True, text=True)
         va_cmd = ["python3", "scripts/audit_workcell_studio_visual_assets.py"]
         va_proc = _run_command(va_cmd, repo_root)
@@ -345,13 +347,13 @@ def main() -> int:
         if va_json.exists():
             visual_assets["summary"] = _load_json(va_json).get("summary", {})
     mesh_index_regeneration = None
-    if args.include_visual_assets:
+    if getattr(args, "include_visual_assets", False):
         regen_json = repo_root / "build/workcell_studio/visual_mesh_index_regeneration_report.json"
         if regen_json.exists():
             regen = _load_json(regen_json)
             mesh_index_regeneration = {"json_report": str(regen_json), "summary": {"scene_count": len(regen.get("scenes", [])), "xacro_fallback_scenes": [r.get("scene") for r in regen.get("scenes", []) if r.get("extraction_mode") != "xacro_expanded"], "unsafe_scenes": [r.get("scene") for r in regen.get("scenes", []) if not r.get("safe_for_preview", False)]}}
     scene3d_gui_smoke = None
-    if args.include_scene3d_gui_smoke:
+    if getattr(args, "include_scene3d_gui_smoke", False):
         smoke_script = repo_root / "scripts/run_workcell_builder_scene3d_gui_smoke.py"
         smoke_scenes = ("ur5_2f_test", "ur5_2f_sorting_test")
         mode = "ci_or_dry_run" if (args.dry_run_launches or _is_ci_environment()) else "local_validation"
@@ -373,9 +375,10 @@ def main() -> int:
                 scene3d_gui_smoke["status"] = FAIL
         else:
             resolved_setup = resolve_install_setup(workspace_root)
-            resolved_executable = args.workcell_builder_executable.resolve() if args.workcell_builder_executable else resolve_workcell_builder_executable(workspace_root)
+            executable_arg = getattr(args, "workcell_builder_executable", None)
+            resolved_executable = executable_arg.resolve() if executable_arg else resolve_workcell_builder_executable(workspace_root)
             setup_candidates = _resolve_setup_candidates(workspace_root, repo_root)
-            executable_candidates = [args.workcell_builder_executable.resolve()] if args.workcell_builder_executable else _resolve_executable_candidates(workspace_root, repo_root)
+            executable_candidates = [executable_arg.resolve()] if executable_arg else _resolve_executable_candidates(workspace_root, repo_root)
             if resolved_setup is None:
                 msg = "missing install setup.bash; searched=" + " | ".join(str(p) for p in setup_candidates)
                 if mode == "ci_or_dry_run":
@@ -465,25 +468,28 @@ def main() -> int:
                 scene3d_gui_smoke["status"] = WARN
 
     local_validation = {}
-    if args.include_local_validation:
+    if getattr(args, "include_local_validation", False):
         lv_cmd = [
             "python3",
             "scripts/run_workcell_studio_local_validation.py",
             "--repo-root", str(repo_root),
-            "--output-dir", str(args.output_dir / "local_validation"),
+            "--output-dir", str(getattr(args, "output_dir", Path("build/workcell_studio")) / "local_validation"),
             "--include-gui-smoke",
             "--dry-run" if args.dry_run_launches or _is_ci_environment() else "--require-gui-smoke",
         ]
         if workspace_root:
             lv_cmd += ["--workspace-root", str(workspace_root)]
-        if args.workcell_builder_executable:
+        if getattr(args, "workcell_builder_executable", None):
             lv_cmd += ["--workcell-builder-executable", str(args.workcell_builder_executable.resolve())]
         lv_proc = _run_command([c for c in lv_cmd if c], repo_root)
         lv_json = repo_root / (args.output_dir / "local_validation/workcell_studio_local_validation.json")
         local_validation = {"returncode": lv_proc.returncode, "json_report": str(lv_json)}
 
     scene_names = [row.get("scene_name") for row in audit_payload.get("scenes", []) if isinstance(row, dict) and row.get("scene_name")]
-    scene3d_consolidated_gate = _run_scene3d_consolidated_gate(repo_root, scene_names)
+    if getattr(args, "dry_run_launches", False):
+        scene3d_consolidated_gate = {"status": WARN, "scenes": [], "blockers": [], "warnings": ["dry_run_launches: Scene3D consolidated gate not run"]}
+    else:
+        scene3d_consolidated_gate = _run_scene3d_consolidated_gate(repo_root, scene_names)
     final_report = build_gate_report(DEFAULT_SIM_REPORT, DEFAULT_AUDIT_REPORT, audit_payload, visual_assets, mesh_index_regeneration, scene3d_gui_smoke)
     final_report["scene3d_consolidated_gate"] = scene3d_consolidated_gate
     final_report["local_validation"] = local_validation
@@ -493,7 +499,7 @@ def main() -> int:
 
     strict_fail = args.strict and any(scene["artifact_readiness"] == FAIL or scene["preview_readiness"] == FAIL or scene["moveit_launch_readiness"] == FAIL for scene in final_report["scenes"])
 
-    scene3d_fail = args.include_scene3d_gui_smoke and bool(scene3d_gui_smoke) and scene3d_gui_smoke.get("status") == FAIL
+    scene3d_fail = getattr(args, "include_scene3d_gui_smoke", False) and bool(scene3d_gui_smoke) and scene3d_gui_smoke.get("status") == FAIL
     scene3d_consolidated_fail = scene3d_consolidated_gate.get("status") == FAIL
 
     local_validation_fail = bool(local_validation) and local_validation.get("returncode",0) != 0

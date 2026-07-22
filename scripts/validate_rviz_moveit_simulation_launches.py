@@ -4,16 +4,29 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
+import yaml  # type: ignore
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from supported_scene_catalog import SupportedSceneEntry, default_catalog_path, load_supported_scene_catalog
+
 DEFAULT_JSON_OUTPUT = Path("build/workcell_studio/rviz_moveit_simulation_launch_report.json")
 DEFAULT_TIMEOUT_SEC = 45
 TAIL_CHARS = 5000
+PASS = "PASS"
+FAIL = "FAIL"
+BLOCKED = "BLOCKED"
 
 REAL_HARDWARE_TOKENS = [
     "use_fake_hardware:=false",
@@ -23,266 +36,269 @@ REAL_HARDWARE_TOKENS = [
     "driver_mode:=real",
     "hardware_driver",
     "ur_robot_driver",
-    "realsense",
     "ethercat",
     "canopen",
 ]
-
-PASS_EVIDENCE_PATTERNS = {
-    "robot_description": ["robot_description"],
-    "robot_state_publisher": ["robot_state_publisher"],
-    "move_group": ["move_group"],
-    "fake_controller": ["fake", "controller_manager", "ros2_control"],
-}
-
-WARN_EVIDENCE_PATTERNS = {
-    "rviz": ["rviz"],
-}
-
-BLOCKER_PATTERNS = {
-    "missing_launch_or_package": ["package '", "not found", "launch file", "does not exist"],
-    "xacro_urdf_failure": ["xacro", "urdf", "error", "failed"],
-    "controller_manager_crash": ["controller_manager", "segmentation fault", "crash", "fatal"],
-    "parse_failure": ["traceback", "syntaxerror", "unable to parse"],
-    "real_driver_attempt": ["ur_robot_driver", "real hardware", "hardware interface", "ethercat", "canopen"],
-}
+MOVEIT_REQUIRED_CAPABILITY = "fake_hardware_launch"
+REQUIRED_SCENES = {"ur5_2f_test", "ur5_3f_test", "suction_test", "ur10_2f_test", "ur3_suction_test"}
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Validate fake-hardware RViz/MoveIt simulation launches for scenes.")
-    parser.add_argument("--scene", help="Single scene name under scenes/<scene>/")
-    parser.add_argument("--all", action="store_true", dest="run_all", help="Run against all discovered scenes")
+    parser = argparse.ArgumentParser(description="Validate supported-scene fake-hardware MoveIt acceptance.")
+    parser.add_argument("--scene", help="Single supported scene name")
+    parser.add_argument("--all", action="store_true", dest="run_all", help="Run against all supported scenes that require MoveIt")
+    parser.add_argument("--catalog", type=Path, default=None, help="Supported scene catalog path")
     parser.add_argument("--timeout-sec", type=int, default=DEFAULT_TIMEOUT_SEC)
-    parser.add_argument("--headless", action="store_true", help="Imply launch_rviz:=false")
-    parser.add_argument("--launch-rviz", action="store_true", help="Manual GUI mode launch_rviz:=true")
+    parser.add_argument("--headless", action="store_true", help="Run bounded smoke without RViz")
+    parser.add_argument("--launch-rviz", action="store_true", help="Pass launch_rviz:=true when a scene declares that argument")
     parser.add_argument("--json-output", type=Path, default=DEFAULT_JSON_OUTPUT)
-    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--dry-run", action="store_true", help="Run static/default/model checks only")
     return parser.parse_args()
 
 
-def discover_scenes(root: Path) -> list[dict[str, Any]]:
-    scenes_dir = root / "scenes"
-    if not scenes_dir.is_dir():
-        return []
-    discovered: list[dict[str, Any]] = []
-    for path in sorted(scenes_dir.iterdir()):
-        if not path.is_dir():
-            continue
-        launch_file = path / "launch" / "demo.launch.py"
-        discovered.append({
-            "scene": path.name,
-            "scene_path": path,
-            "launch_file": launch_file,
-            "supported": launch_file.is_file(),
-        })
-    return discovered
-
-
-def collect_evidence(blob: str) -> tuple[list[str], list[str], list[str]]:
-    low = blob.lower()
-    evidence: list[str] = []
-    warnings: list[str] = []
-    blockers: list[str] = []
-
-    for key, patterns in PASS_EVIDENCE_PATTERNS.items():
-        if all(p in low for p in patterns):
-            evidence.append(key)
-
-    for key, patterns in WARN_EVIDENCE_PATTERNS.items():
-        if all(p in low for p in patterns):
-            evidence.append(key)
-
-    for key, patterns in BLOCKER_PATTERNS.items():
-        if all(p in low for p in patterns):
-            blockers.append(key)
-
-    if "rviz" not in low:
-        warnings.append("rviz_not_seen_in_logs")
-
-    return evidence, blockers, warnings
-
-
-def safety_violations(command: str) -> list[str]:
-    lower = command.lower()
-    return [token for token in REAL_HARDWARE_TOKENS if token in lower]
-
-
-def _run_truth_preview_guard(scene_name: str, repo_root: Path, workspace_root: Path) -> tuple[bool, dict[str, Any]]:
-    cmd = [
-        sys.executable,
-        str(repo_root / "scripts" / "validate_rviz_truth_preview_command.py"),
-        scene_name,
-        "--repo-root",
-        str(repo_root),
-        "--workspace-root",
-        str(workspace_root),
-        "--check-ros2-prefix",
-        "--json",
-    ]
-    proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True)
-    payload: dict[str, Any] = {
-        "status": "FAIL",
-        "blockers": [f"truth_preview_guard_invocation_failed: exit={proc.returncode}"],
-        "stdout": proc.stdout.strip(),
-        "stderr": proc.stderr.strip(),
-    }
-    if proc.stdout.strip():
-        try:
-            payload = json.loads(proc.stdout)
-        except json.JSONDecodeError:
-            payload["blockers"].append("truth_preview_guard_invalid_json")
-    ok = proc.returncode == 0 and str(payload.get("status", "")).upper() == "PASS"
-    return ok, payload
-
-
-def run_scene(scene_name: str, launch_file: Path, timeout_sec: int, launch_rviz: bool, dry_run: bool, repo_root: Path, workspace_root: Path) -> dict[str, Any]:
-    command = f"ros2 launch {scene_name} demo.launch.py use_fake_hardware:=true launch_rviz:={'true' if launch_rviz else 'false'}"
-    print(command)
-
-    result: dict[str, Any] = {
-        "scene": scene_name,
-        "command": command,
-        "status": "SKIP",
-        "timeout": timeout_sec,
-        "launch_file_path": str(launch_file),
-        "use_fake_hardware": True,
-        "launch_rviz": launch_rviz,
-        "evidence": [],
-        "blockers": [],
-        "warnings": [],
-        "stdout_tail": "",
-        "stderr_tail": "",
-        "truth_preview_guard": {},
-    }
-
-    if not launch_file.is_file():
-        result["status"] = "SKIP"
-        result["warnings"].append("unsupported_metadata: missing launch/demo.launch.py")
-        return result
-
-    violations = safety_violations(command)
-    if violations:
-        result["status"] = "FAIL"
-        result["blockers"].append(f"safety_rejected: {', '.join(violations)}")
-        return result
-
-    guard_ok, guard_payload = _run_truth_preview_guard(scene_name, repo_root, workspace_root)
-    result["truth_preview_guard"] = guard_payload
-    if not guard_ok:
-        result["status"] = "FAIL"
-        guard_blockers = guard_payload.get("blockers", [])
-        if isinstance(guard_blockers, list):
-            result["blockers"].extend([f"truth_preview_guard: {str(item)}" for item in guard_blockers])
-        else:
-            result["blockers"].append("truth_preview_guard: failed")
-        return result
-
-    if dry_run:
-        result["status"] = "SKIP"
-        result["warnings"].append("dry_run")
-        return result
-
+def _load_yaml(path: Path) -> dict[str, Any]:
     try:
-        proc = subprocess.Popen(
-            shlex.split(command),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            preexec_fn=os.setsid,
-        )
-        try:
-            stdout, stderr = proc.communicate(timeout=max(1, timeout_sec))
-            timed_out = False
-        except subprocess.TimeoutExpired:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-            stdout, stderr = proc.communicate(timeout=5)
-            timed_out = True
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
 
-        combined = f"{stdout}\n{stderr}"
-        evidence, blockers, warnings = collect_evidence(combined)
-        result["evidence"] = evidence
-        result["blockers"] = blockers
-        result["warnings"] = warnings
-        result["stdout_tail"] = stdout[-TAIL_CHARS:]
-        result["stderr_tail"] = stderr[-TAIL_CHARS:]
 
-        if timed_out and {"robot_description", "robot_state_publisher", "move_group", "fake_controller"}.issubset(set(evidence)) and not blockers:
-            result["status"] = "PASS"
-        elif proc.returncode == 0 and {"robot_description", "robot_state_publisher", "move_group"}.issubset(set(evidence)) and not blockers:
-            result["status"] = "PASS"
-        elif evidence and not blockers:
-            result["status"] = "WARN"
-            if timed_out:
-                result["warnings"].append("timeout_before_full_readiness_confirmation")
+def _string_list(value: Any) -> list[str]:
+    return [str(v) for v in value] if isinstance(value, list) else []
+
+
+def scene_requires_moveit(entry: SupportedSceneEntry) -> bool:
+    return MOVEIT_REQUIRED_CAPABILITY in entry.required_capabilities
+
+
+def _declared_launch_args(launch_text: str) -> dict[str, str | None]:
+    args: dict[str, str | None] = {}
+    for match in re.finditer(r'DeclareLaunchArgument\(\s*["\']([^"\']+)["\'](?P<body>.*?)\)', launch_text, re.S):
+        body = match.group("body")
+        default = re.search(r'default_value\s*=\s*["\']([^"\']+)["\']', body)
+        args[match.group(1)] = default.group(1) if default else None
+    return args
+
+
+def validate_launch_contract(entry: SupportedSceneEntry, scene_dir: Path, launch_file: Path, launch_rviz: bool) -> tuple[list[str], list[str], dict[str, Any]]:
+    failures: list[str] = []
+    evidence: list[str] = []
+    meta: dict[str, Any] = {"declared_launch_arguments": {}}
+    if not launch_file.is_file():
+        return ["missing launch/demo.launch.py"], evidence, meta
+    text = launch_file.read_text(encoding="utf-8")
+    args = _declared_launch_args(text)
+    meta["declared_launch_arguments"] = args
+    fake_default = args.get("use_fake_hardware")
+    if fake_default is None:
+        failures.append("launch argument use_fake_hardware is missing")
+    elif str(fake_default).lower() != "true":
+        failures.append(f"use_fake_hardware default must be true; got {fake_default!r}")
+    else:
+        evidence.append("fake_hardware_default_true")
+    if "use_fake_hardware" not in entry.fake_hardware_launch_command or "use_fake_hardware:=true" not in entry.fake_hardware_launch_command:
+        failures.append("catalog fake_hardware_launch_command must pass use_fake_hardware:=true")
+    if any(tok in entry.fake_hardware_launch_command.lower() for tok in REAL_HARDWARE_TOKENS):
+        failures.append("catalog launch command contains real-hardware token")
+    if re.search(r"allow_trajectory_execution[\"']?\s*[:=]\s*True", text):
+        failures.append("launch enables trajectory execution; acceptance must not permit motion")
+    if re.search(r"ExecuteTrajectory|FollowJointTrajectory", text) and "allow_trajectory_execution":
+        evidence.append("trajectory_execution_disabled_checked")
+    if launch_rviz and "launch_rviz" not in args:
+        failures.append("--launch-rviz requested but launch file does not declare launch_rviz")
+    return failures, evidence, meta
+
+
+def validate_scene_model(entry: SupportedSceneEntry, scene_dir: Path, launch_file: Path) -> tuple[list[str], list[str], dict[str, Any]]:
+    failures: list[str] = []
+    evidence: list[str] = []
+    manifest = _load_yaml(scene_dir / "scene_manifest.yaml")
+    cell = _load_yaml(scene_dir / "cell_definition.yaml")
+    launch_text = launch_file.read_text(encoding="utf-8") if launch_file.exists() else ""
+    robot = manifest.get("robot") if isinstance(manifest.get("robot"), dict) else {}
+    tool = manifest.get("end_effector") if isinstance(manifest.get("end_effector"), dict) else {}
+    cell_robot = cell.get("robot") if isinstance(cell.get("robot"), dict) else {}
+    cell_tool = cell.get("end_effector") if isinstance(cell.get("end_effector"), dict) else {}
+    planning_group = robot.get("planning_group") or cell_robot.get("planning_group")
+    base_link = robot.get("base_frame") or cell_robot.get("base_frame") or "base_link"
+    tool_root = tool.get("grasp_frame") or tool.get("mount_link") or cell_tool.get("grasp_frame") or cell_robot.get("tool_link")
+    joints = re.findall(r'["\']([A-Za-z0-9_]+_joint)["\']', launch_text)
+    arm_joints = [j for j in joints if not j.startswith("gripper_")]
+    srdf_xacro = scene_dir / "urdf" / "arm_hand.srdf.xacro"
+    srdf_text = srdf_xacro.read_text(encoding="utf-8") if srdf_xacro.exists() else ""
+    urdf_xacro = scene_dir / "urdf" / "scene.urdf.xacro"
+    urdf_text = urdf_xacro.read_text(encoding="utf-8") if urdf_xacro.exists() else ""
+    if not planning_group:
+        failures.append("missing planning_group in scene_manifest.yaml/cell_definition.yaml")
+    elif planning_group not in srdf_text and planning_group not in launch_text and "xacro:include" not in srdf_text:
+        failures.append(f"planning group {planning_group!r} not found in SRDF/launch metadata")
+    else:
+        evidence.append("planning_group_matches_metadata")
+    if not tool_root:
+        failures.append("missing tool planning metadata: grasp_frame/mount_link/tool_link")
+    elif tool_root not in srdf_text and tool_root not in urdf_text and tool_root not in launch_text:
+        failures.append(f"tool root/link {tool_root!r} not found in generated URDF/SRDF/launch metadata")
+    else:
+        evidence.append("tool_link_matches_metadata")
+    if not base_link:
+        failures.append("missing robot base frame metadata")
+    elif base_link not in urdf_text and base_link not in launch_text:
+        failures.append(f"base link {base_link!r} not found in generated URDF/launch metadata")
+    else:
+        evidence.append("base_link_matches_metadata")
+    if not arm_joints:
+        failures.append("no arm joint names found in launch controller metadata")
+    elif srdf_text and "_joint" in srdf_text and not all(j in srdf_text for j in arm_joints[:6]):
+        missing = [j for j in arm_joints[:6] if j not in srdf_text]
+        failures.append(f"robot/SRDF joint mismatch: {', '.join(missing)}")
+    else:
+        evidence.append("controller_joints_match_srdf")
+    return failures, evidence, {"planning_group": planning_group, "base_link": base_link, "tool_root": tool_root, "controller_joints": sorted(set(joints))}
+
+
+def _run_ros(args: list[str], timeout: int) -> tuple[int, str, str]:
+    proc = subprocess.run(args, capture_output=True, text=True, timeout=max(1, timeout))
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def run_headless_smoke(scene_name: str, command: str, timeout_sec: int) -> tuple[str, list[str], list[str], dict[str, Any]]:
+    if shutil.which("ros2") is None:
+        return BLOCKED, ["ros2 executable not found; source ROS 2 Humble and the workspace install/setup.bash"], [], {"launched": False, "terminated": True}
+    proc: subprocess.Popen[str] | None = None
+    diagnostics: dict[str, Any] = {"launched": False, "terminated": False, "checks": {}}
+    blockers: list[str] = []
+    evidence: list[str] = []
+    try:
+        proc = subprocess.Popen(shlex.split(command), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, preexec_fn=os.setsid)
+        diagnostics["launched"] = True
+        per_check = max(2, min(8, timeout_sec // 5 or 2))
+        checks = {
+            "nodes": ["ros2", "node", "list"],
+            "robot_description": ["ros2", "param", "get", "/move_group", "robot_description"],
+            "robot_description_semantic": ["ros2", "param", "get", "/move_group", "robot_description_semantic"],
+            "joint_states": ["ros2", "topic", "list"],
+            "tf": ["ros2", "topic", "echo", "/tf_static", "--once"],
+            "controllers": ["ros2", "control", "list_controllers"],
+        }
+        for key, cmd in checks.items():
+            rc, out, err = _run_ros(cmd, per_check)
+            diagnostics["checks"][key] = {"returncode": rc, "stdout_tail": out[-1000:], "stderr_tail": err[-1000:]}
+        nodes = diagnostics["checks"]["nodes"]["stdout_tail"]
+        if "robot_state_publisher" in nodes:
+            evidence.append("robot_state_publisher_available")
         else:
-            result["status"] = "FAIL"
-            if proc.returncode not in (0, None):
-                result["blockers"].append(f"early_exit_code:{proc.returncode}")
-            if timed_out and not evidence:
-                result["blockers"].append("timeout_no_readiness_evidence")
+            blockers.append("robot_state_publisher node did not become available")
+        if "move_group" in nodes:
+            evidence.append("move_group_available")
+        else:
+            blockers.append("move_group node did not become available")
+        if diagnostics["checks"]["robot_description"]["returncode"] == 0:
+            evidence.append("robot_description_loaded")
+        else:
+            blockers.append("robot_description parameter not available on /move_group")
+        if diagnostics["checks"]["robot_description_semantic"]["returncode"] == 0:
+            evidence.append("robot_description_semantic_loaded")
+        else:
+            blockers.append("robot_description_semantic parameter not available on /move_group")
+        if "/joint_states" in diagnostics["checks"]["joint_states"]["stdout_tail"] or f"/{scene_name}/joint_states" in diagnostics["checks"]["joint_states"]["stdout_tail"]:
+            evidence.append("joint_states_topic_available")
+        else:
+            blockers.append("/joint_states topic did not appear")
+        if diagnostics["checks"]["tf"]["returncode"] == 0:
+            evidence.append("tf_available")
+        else:
+            blockers.append("TF did not provide a base/tool transform sample")
+        if diagnostics["checks"]["controllers"]["returncode"] == 0:
+            evidence.append("fake_controllers_listed")
+        else:
+            blockers.append("fake controllers could not be listed")
+        return (FAIL if blockers else PASS), blockers, evidence, diagnostics
+    except subprocess.TimeoutExpired as exc:
+        return BLOCKED, [f"ROS CLI check timed out: {exc}"], evidence, diagnostics
+    finally:
+        if proc is not None:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                proc.communicate(timeout=5)
+            except Exception:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except Exception:
+                    pass
+                try:
+                    proc.communicate(timeout=2)
+                except Exception:
+                    pass
+            diagnostics["terminated"] = True
 
-    except FileNotFoundError:
-        result["status"] = "FAIL"
-        result["blockers"].append("missing ros2 executable / environment not sourced")
-    except Exception as exc:  # broad catch for robust reporting
-        result["status"] = "FAIL"
-        result["blockers"].append(f"launch_execution_exception: {exc}")
 
+def command_for_scene(entry: SupportedSceneEntry, launch_rviz: bool) -> str:
+    command = entry.fake_hardware_launch_command
+    if not launch_rviz and "launch_rviz:=" in command:
+        command = re.sub(r"launch_rviz:=\S+", "launch_rviz:=false", command)
+    elif launch_rviz and "launch_rviz:=" in command:
+        command = re.sub(r"launch_rviz:=\S+", "launch_rviz:=true", command)
+    return command
+
+
+def run_scene(entry: SupportedSceneEntry, timeout_sec: int, launch_rviz: bool, dry_run: bool, repo_root: Path) -> dict[str, Any]:
+    scene_dir = repo_root / entry.scene_path
+    launch_file = scene_dir / "launch" / "demo.launch.py"
+    command = command_for_scene(entry, launch_rviz)
+    result: dict[str, Any] = {"scene": entry.scene_name, "command": command, "status": PASS, "timeout": timeout_sec, "launch_file_path": str(launch_file), "use_fake_hardware": True, "launch_rviz": launch_rviz, "evidence": [], "blockers": [], "warnings": [], "model": {}, "launch_contract": {}, "smoke": {}}
+    launch_failures, launch_evidence, launch_meta = validate_launch_contract(entry, scene_dir, launch_file, launch_rviz)
+    model_failures, model_evidence, model_meta = validate_scene_model(entry, scene_dir, launch_file)
+    result["launch_contract"] = launch_meta
+    result["model"] = model_meta
+    result["evidence"].extend(launch_evidence + model_evidence)
+    result["blockers"].extend(launch_failures + model_failures)
+    if result["blockers"]:
+        result["status"] = FAIL
+        return result
+    if dry_run:
+        result["status"] = PASS
+        result["warnings"].append("dry_run_static_acceptance_only")
+        return result
+    status, smoke_blockers, smoke_evidence, diagnostics = run_headless_smoke(entry.scene_name, command, timeout_sec)
+    result["status"] = status
+    result["blockers"].extend(smoke_blockers)
+    result["evidence"].extend(smoke_evidence)
+    result["smoke"] = diagnostics
     return result
+
+
+def load_targets(repo_root: Path, catalog_path: Path | None, scene: str | None, run_all: bool) -> list[SupportedSceneEntry]:
+    catalog, entries, errors = load_supported_scene_catalog((catalog_path or default_catalog_path(repo_root)).resolve())
+    if errors:
+        raise SystemExit("Supported scene catalog is invalid:\n" + "\n".join(f"- {e}" for e in errors))
+    moveit_entries = [e for e in entries if e.enabled and scene_requires_moveit(e)]
+    missing = sorted(REQUIRED_SCENES - {e.scene_name for e in moveit_entries})
+    if missing:
+        raise SystemExit("Supported MoveIt scene registry missing required scenes: " + ", ".join(missing))
+    if scene:
+        matches = [e for e in moveit_entries if e.scene_name == scene]
+        if not matches:
+            raise SystemExit(f"Unknown or non-MoveIt scene: {scene}")
+        return matches
+    if run_all:
+        return sorted(moveit_entries, key=lambda e: e.scene_name)
+    raise SystemExit("Exactly one of --scene or --all must be provided")
 
 
 def main() -> int:
     args = parse_args()
-
-    if bool(args.scene) == bool(args.run_all):
-        raise SystemExit("Exactly one of --scene or --all must be provided")
-
-    launch_rviz = True if args.launch_rviz else False
-    if args.headless:
-        launch_rviz = False
-
     repo_root = Path(__file__).resolve().parents[1]
-    workspace_root = repo_root
-    scenes = discover_scenes(repo_root)
-    scene_map = {item["scene"]: item for item in scenes}
-
-    targets: list[dict[str, Any]]
-    if args.scene:
-        if args.scene not in scene_map:
-            raise SystemExit(f"Unknown scene: {args.scene}")
-        targets = [scene_map[args.scene]]
-    else:
-        targets = scenes
-
-    results = [
-        run_scene(
-            scene_name=item["scene"],
-            launch_file=item["launch_file"],
-            timeout_sec=args.timeout_sec,
-            launch_rviz=launch_rviz,
-            dry_run=args.dry_run,
-            repo_root=repo_root,
-            workspace_root=workspace_root,
-        )
-        for item in targets
-    ]
-
+    targets = load_targets(repo_root, args.catalog, args.scene, args.run_all)
+    launch_rviz = bool(args.launch_rviz and not args.headless)
+    results = [run_scene(e, args.timeout_sec, launch_rviz, args.dry_run, repo_root) for e in targets]
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "schema": "rviz_moveit_simulation_launch_report/v1",
-        "dry_run": args.dry_run,
-        "timeout_sec": args.timeout_sec,
-        "launch_rviz": launch_rviz,
-        "results": results,
-    }
+    payload = {"schema": "rviz_moveit_simulation_launch_report/v1", "dry_run": args.dry_run, "timeout_sec": args.timeout_sec, "launch_rviz": launch_rviz, "results": results}
     args.json_output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-
-    statuses = {entry["status"] for entry in results}
-    if "FAIL" in statuses:
-        return 1
-    if statuses == {"SKIP"}:
-        return 0
-    return 0
+    for r in results:
+        reason = "; ".join(r.get("blockers") or r.get("warnings") or ["ok"])
+        print(f"{r['scene']}: {r['status']} - {reason}")
+    return 1 if any(r["status"] == FAIL for r in results) else 0
 
 
 if __name__ == "__main__":

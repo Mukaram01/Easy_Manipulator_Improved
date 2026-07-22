@@ -15,6 +15,7 @@ required_entry_fields:
   - validation_command
   - build_package_name
   - fake_hardware_launch_command
+  - moveit_required
   - status
   - known_blocker
 update_policy: >-
@@ -54,6 +55,14 @@ scenes:
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/suction_test --json
     build_package_name: suction_test
     build_command: colcon build --symlink-install --packages-select suction_test
+    moveit_required: true
+    fake_hardware_acceptance:
+      smoke_mode: bounded_headless
+      required_nodes: [robot_state_publisher, move_group]
+      required_parameters: [robot_description, robot_description_semantic]
+      required_topics: [/joint_states, /tf_static]
+      require_fake_controllers: true
+      motion_allowed: false
     fake_hardware_launch_command: ros2 launch suction_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
   - scene_name: ur10_2f_test
     robot: ur10
@@ -69,6 +78,14 @@ scenes:
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur10_2f_test --json
     build_package_name: ur10_2f_test
     build_command: colcon build --symlink-install --packages-select ur10_2f_test
+    moveit_required: true
+    fake_hardware_acceptance:
+      smoke_mode: bounded_headless
+      required_nodes: [robot_state_publisher, move_group]
+      required_parameters: [robot_description, robot_description_semantic]
+      required_topics: [/joint_states, /tf_static]
+      require_fake_controllers: true
+      motion_allowed: false
     fake_hardware_launch_command: ros2 launch ur10_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
   - scene_name: ur3_suction_test
     robot: ur3
@@ -84,6 +101,14 @@ scenes:
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur3_suction_test --json
     build_package_name: ur3_suction_test
     build_command: colcon build --symlink-install --packages-select ur3_suction_test
+    moveit_required: true
+    fake_hardware_acceptance:
+      smoke_mode: bounded_headless
+      required_nodes: [robot_state_publisher, move_group]
+      required_parameters: [robot_description, robot_description_semantic]
+      required_topics: [/joint_states, /tf_static]
+      require_fake_controllers: true
+      motion_allowed: false
     fake_hardware_launch_command: ros2 launch ur3_suction_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
   - scene_name: ur5_2f_builder_pick_place_demo
     robot: ur5
@@ -99,6 +124,14 @@ scenes:
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_builder_pick_place_demo --json
     build_package_name: ur5_2f_builder_pick_place_demo
     build_command: colcon build --symlink-install --packages-select ur5_2f_builder_pick_place_demo
+    moveit_required: true
+    fake_hardware_acceptance:
+      smoke_mode: bounded_headless
+      required_nodes: [robot_state_publisher, move_group]
+      required_parameters: [robot_description, robot_description_semantic]
+      required_topics: [/joint_states, /tf_static]
+      require_fake_controllers: true
+      motion_allowed: false
     fake_hardware_launch_command: ros2 launch ur5_2f_builder_pick_place_demo demo.launch.py use_fake_hardware:=true launch_rviz:=true
   - scene_name: ur5_2f_sorting_test
     robot: ur5
@@ -114,6 +147,14 @@ scenes:
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_sorting_test --json
     build_package_name: ur5_2f_sorting_test
     build_command: colcon build --symlink-install --packages-select ur5_2f_sorting_test
+    moveit_required: true
+    fake_hardware_acceptance:
+      smoke_mode: bounded_headless
+      required_nodes: [robot_state_publisher, move_group]
+      required_parameters: [robot_description, robot_description_semantic]
+      required_topics: [/joint_states, /tf_static]
+      require_fake_controllers: true
+      motion_allowed: false
     fake_hardware_launch_command: ros2 launch ur5_2f_sorting_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
   - scene_name: ur5_2f_test
     robot: ur5
@@ -129,6 +170,14 @@ scenes:
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_test --json
     build_package_name: ur5_2f_test
     build_command: colcon build --symlink-install --packages-select ur5_2f_test
+    moveit_required: true
+    fake_hardware_acceptance:
+      smoke_mode: bounded_headless
+      required_nodes: [robot_state_publisher, move_group]
+      required_parameters: [robot_description, robot_description_semantic]
+      required_topics: [/joint_states, /tf_static]
+      require_fake_controllers: true
+      motion_allowed: false
     fake_hardware_launch_command: ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
   - scene_name: ur5_3f_test
     robot: ur5
@@ -144,6 +193,14 @@ scenes:
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_3f_test --json
     build_package_name: ur5_3f_test
     build_command: colcon build --symlink-install --packages-select ur5_3f_test
+    moveit_required: true
+    fake_hardware_acceptance:
+      smoke_mode: bounded_headless
+      required_nodes: [robot_state_publisher, move_group]
+      required_parameters: [robot_description, robot_description_semantic]
+      required_topics: [/joint_states, /tf_static]
+      require_fake_controllers: true
+      motion_allowed: false
     fake_hardware_launch_command: ros2 launch ur5_3f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
   - scene_name: ur5_airpick4_test
     robot: ur5
@@ -159,4 +216,12 @@ scenes:
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_airpick4_test --json
     build_package_name: ur5_airpick4_test
     build_command: colcon build --symlink-install --packages-select ur5_airpick4_test
+    moveit_required: true
+    fake_hardware_acceptance:
+      smoke_mode: bounded_headless
+      required_nodes: [robot_state_publisher, move_group]
+      required_parameters: [robot_description, robot_description_semantic]
+      required_topics: [/joint_states, /tf_static]
+      require_fake_controllers: true
+      motion_allowed: false
     fake_hardware_launch_command: ros2 launch ur5_airpick4_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
