@@ -2358,6 +2358,77 @@ for (const url of cases) {
     subprocess.run(["node", str(script)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
+
+
+def test_load_robot_preview_preserves_canonical_mesh_urls_after_normalize_and_repo_url(tmp_path):
+    script = tmp_path / "capture_final_staged_mesh_urls.mjs"
+    script.write_text(
+        f"""
+import assert from 'node:assert/strict';
+import * as THREE from {str((VIEWER / 'node_modules/three/build/three.module.js')).__repr__()};
+import URDFLoader from {str((VIEWER / 'node_modules/urdf-loader/src/URDFLoader.js')).__repr__()};
+import {{ ColladaLoader }} from {str((VIEWER / 'node_modules/three/examples/jsm/loaders/ColladaLoader.js')).__repr__()};
+
+globalThis.window = {{}};
+const requestedUrls = [];
+const repoRootRelativeCalls = [];
+const originalUrdfLoadAsync = URDFLoader.prototype.loadAsync;
+const originalColladaLoad = ColladaLoader.prototype.load;
+
+URDFLoader.prototype.loadAsync = async function loadAsyncStub() {{
+  for (const path of [
+    'package://ur_description/meshes/ur5/visual/base.dae',
+    'package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae',
+  ]) {{
+    this.loadMeshCb(path, this.manager, new THREE.MeshPhongMaterial(), (mesh, error) => {{ if (error) throw error; }});
+  }}
+  const robot = new THREE.Group();
+  robot.links = {{ base_link: new THREE.Group(), gripper_base_link: new THREE.Group() }};
+  robot.joints = {{}};
+  robot.setJointValues = () => {{}};
+  return robot;
+}};
+
+ColladaLoader.prototype.load = function loadStub(url, onLoad) {{
+  requestedUrls.push(url);
+  this.manager?.itemStart?.(url);
+  onLoad({{ scene: new THREE.Group(), asset: {{}} }});
+  this.manager?.itemEnd?.(url);
+}};
+
+try {{
+  const {{ loadRobotPreview }} = await import({str((VIEWER / 'urdf_robot_renderer.js')).__repr__()});
+  const result = loadRobotPreview(
+    {{ urdf_url: '/build/workcell_studio_web_scene/assets/ur5_2f_test/robot.urdf' }},
+    {{
+      sceneId: 'ur5_2f_test',
+      repoRootRelativeUrl: (value) => {{
+        repoRootRelativeCalls.push(value);
+        return `/build/workcell_studio_web_scene/${{value}}`;
+      }},
+    }}
+  );
+  await result.ready;
+  assert.deepEqual(requestedUrls, [
+    '/build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/ur5/visual/base.dae',
+    '/build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae',
+  ]);
+  assert.deepEqual(repoRootRelativeCalls, []);
+  for (const url of requestedUrls) {{
+    assert.equal((url.match(/build\/workcell_studio_web_scene/g) || []).length, 1, url);
+    assert.equal(url.includes('//build/workcell_studio_web_scene/assets'), false, url);
+    assert.equal(url.includes('/build/workcell_studio_web_scene//build/workcell_studio_web_scene/'), false, url);
+  }}
+}} finally {{
+  URDFLoader.prototype.loadAsync = originalUrdfLoadAsync;
+  ColladaLoader.prototype.load = originalColladaLoad;
+}}
+""",
+        encoding="utf-8",
+    )
+    subprocess.run(["node", str(script)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
 def test_urdf_renderer_accepts_only_canonical_staged_mesh_urls(tmp_path):
     script = tmp_path / "canonical_staged_mesh_policy.mjs"
     script.write_text(

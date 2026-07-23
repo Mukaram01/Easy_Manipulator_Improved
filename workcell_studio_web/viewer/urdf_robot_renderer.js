@@ -11,7 +11,13 @@ const LEGACY_STAGED_MESH_ASSET_ROOT = STAGED_MESH_ASSET_ROOT.slice(1);
 
 
 function repoUrl(context, uri) {
-  return context?.repoRootRelativeUrl ? context.repoRootRelativeUrl(uri) : uri;
+  const value = String(uri || '').trim();
+  if (value.startsWith('/build/workcell_studio_web_scene/')) {
+    return value;
+  }
+  return context?.repoRootRelativeUrl
+    ? context.repoRootRelativeUrl(value)
+    : value;
 }
 
 function safeDecodeUriSegment(segment) {
