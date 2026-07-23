@@ -460,6 +460,49 @@ function collectMatrixParityDiagnostics(previewConfig, diagnostics) {
   return diagnostics.robot_matrix_world_parity;
 }
 
+
+function urdfLoadError(url, status, stage, detail) {
+  const statusText = status === null || status === undefined ? 'n/a' : String(status);
+  return new Error(`URDF preview failed at ${stage}: url=${url || '<empty>'} http_status=${statusText} detail=${detail || 'unknown error'}`);
+}
+
+export async function fetchValidatedUrdfRobotElement(urdfUrl) {
+  const response = await fetch(urdfUrl, { cache: 'no-store' }).catch(err => {
+    throw urdfLoadError(urdfUrl, null, 'fetch', err?.message || String(err));
+  });
+  if (!response?.ok) {
+    throw urdfLoadError(urdfUrl, response?.status ?? null, 'http', response?.statusText || 'HTTP request failed');
+  }
+  const text = await response.text().catch(err => {
+    throw urdfLoadError(urdfUrl, response?.status ?? null, 'read', err?.message || String(err));
+  });
+  let document;
+  try {
+    if (typeof DOMParser !== 'undefined') {
+      document = new DOMParser().parseFromString(text, 'application/xml');
+    } else {
+      const trimmed = String(text || '').trim();
+      const rootMatch = trimmed.match(/^<([A-Za-z_][\w:.-]*)(\s|>|\/)/);
+      const malformed = !rootMatch || /<\//i.test(trimmed) && !new RegExp(`<\/${rootMatch?.[1]}>\\s*$`).test(trimmed);
+      document = {
+        documentElement: rootMatch ? { tagName: rootMatch[1] } : null,
+        getElementsByTagName: (name) => name === 'parsererror' && malformed ? [{ textContent: 'malformed XML' }] : [],
+      };
+    }
+  } catch (err) {
+    throw urdfLoadError(urdfUrl, response.status, 'parse_xml', err?.message || String(err));
+  }
+  const parserError = document?.getElementsByTagName?.('parsererror')?.[0];
+  if (parserError) {
+    throw urdfLoadError(urdfUrl, response.status, 'parse_xml', parserError.textContent?.trim() || 'malformed XML');
+  }
+  const root = document?.documentElement;
+  if (!root || String(root.tagName || '').toLowerCase() !== 'robot') {
+    throw urdfLoadError(urdfUrl, response.status, 'validate_robot_root', `expected top-level <robot> element, got <${root?.tagName || 'none'}>`);
+  }
+  return root;
+}
+
 function collectLinkMatrixDiagnostics(robot, links) {
   robot?.updateMatrixWorld?.(true);
   const out = {};
@@ -495,7 +538,8 @@ function collectVisualWrapperMatrixDiagnostics(links) {
   const out = [];
   for (const [linkName, link] of Object.entries(links || {})) {
     let visualIndex = 0;
-    for (const child of link.children || []) {
+    if (!link) continue;
+    for (const child of link?.children || []) {
       if (!isVisualWrapperCandidate(child, links)) continue;
       child.updateMatrixWorld?.(true);
       const position = new THREE.Vector3();
@@ -530,7 +574,8 @@ function collectDescendantRenderMeshDiagnostics(links) {
   const out = [];
   for (const [linkName, link] of Object.entries(links || {})) {
     let visualIndex = 0;
-    for (const visual of link.children || []) {
+    if (!link) continue;
+    for (const visual of link?.children || []) {
       if (!isVisualWrapperCandidate(visual, links)) continue;
       let meshIndex = 0;
       visual.updateMatrixWorld?.(true);
@@ -695,7 +740,8 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
     loader.loadMeshCb = (path, meshManager, material, done) => loadMesh(path, meshManager, material, done, rendererContext, diagnostics);
 
     const urdfUrl = repoUrl(rendererContext, previewConfig?.urdf_url || '');
-    const robot = await loader.loadAsync(urdfUrl);
+    const urdfRobotElement = await fetchValidatedUrdfRobotElement(urdfUrl);
+    const robot = loader.parse(urdfRobotElement, loader.workingPath || '');
     setLifecycleState(diagnostics, 'loading_meshes');
     robot.name = rendererContext?.rootName || 'workcell_studio_urdf_loader_robot';
     robot.userData.robot_render_mode = ROBOT_RENDER_MODE;

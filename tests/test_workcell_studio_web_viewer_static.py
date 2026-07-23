@@ -406,11 +406,12 @@ import {{ STLLoader }} from {str((VIEWER / 'node_modules/three/examples/jsm/load
 globalThis.window = {{}};
 
 const requestedUrls = [];
-const originalUrdfLoadAsync = URDFLoader.prototype.loadAsync;
+globalThis.fetch = async () => ({{ ok: true, status: 200, statusText: 'OK', text: async () => '<robot name="test"/>' }});
+const originalUrdfParse = URDFLoader.prototype.parse;
 const originalColladaLoad = ColladaLoader.prototype.load;
 const originalStlLoad = STLLoader.prototype.load;
 
-URDFLoader.prototype.loadAsync = async function loadAsyncStub() {{
+URDFLoader.prototype.parse = function parseStub() {{
   assert.equal(this.constructor, URDFLoader);
   assert.equal(this.parseVisual, true);
   assert.equal(this.parseCollision, false);
@@ -462,7 +463,7 @@ try {{
     }}
   }}
 }} finally {{
-  URDFLoader.prototype.loadAsync = originalUrdfLoadAsync;
+  URDFLoader.prototype.parse = originalUrdfParse;
   ColladaLoader.prototype.load = originalColladaLoad;
   STLLoader.prototype.load = originalStlLoad;
 }}
@@ -1430,6 +1431,70 @@ def test_urdf_renderer_waits_for_mesh_completion_before_ready():
     assert "collectDescendantRenderMeshDiagnostics(robot.links)" in ready_section
 
 
+def test_urdf_renderer_fetches_and_validates_urdf_before_parse():
+    js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
+    body = _viewer_function_body(js, "export async function fetchValidatedUrdfRobotElement", "function collectLinkMatrixDiagnostics")
+    assert "fetch(urdfUrl, { cache: 'no-store' })" in body
+    assert "if (!response?.ok)" in body
+    assert "http_status=${statusText}" in js
+    assert "new DOMParser().parseFromString(text, 'application/xml')" in body
+    assert "getElementsByTagName?.('parsererror')" in body
+    assert "stage}: url=${url" in js
+    assert "validate_robot_root" in body
+    assert "expected top-level <robot> element" in body
+
+
+def test_urdf_renderer_parse_path_uses_validated_xml_element_not_load_async():
+    js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
+    ready_body = js.split("result.ready = (async () => {", 1)[1].split("setLifecycleState(diagnostics, 'loading_meshes');", 1)[0]
+    assert "const urdfUrl = repoUrl(rendererContext, previewConfig?.urdf_url || '');" in ready_body
+    assert "const urdfRobotElement = await fetchValidatedUrdfRobotElement(urdfUrl);" in ready_body
+    assert "const robot = loader.parse(urdfRobotElement" in ready_body
+    assert "loader.loadAsync(urdfUrl)" not in js
+
+
+def test_urdf_renderer_reports_html_malformed_xml_and_missing_robot_root_stages():
+    js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
+    body = _viewer_function_body(js, "export async function fetchValidatedUrdfRobotElement", "function collectLinkMatrixDiagnostics")
+    # HTTP 200 HTML and malformed XML both surface through parsererror / parse_xml instead of URDFLoader children crashes.
+    assert "parse_xml" in body
+    assert "parserError.textContent?.trim() || 'malformed XML'" in body
+    # XML without a top-level robot is rejected before URDFLoader.parse.
+    assert "String(root.tagName || '').toLowerCase() !== 'robot'" in body
+    assert "got <${root?.tagName || 'none'}>" in body
+
+
+def test_urdf_renderer_diagnostics_skip_undefined_links_and_use_optional_children():
+    js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
+    visual_body = _viewer_function_body(js, "function collectVisualWrapperMatrixDiagnostics", "function collectDescendantRenderMeshDiagnostics")
+    descendant_body = _viewer_function_body(js, "function collectDescendantRenderMeshDiagnostics", "function buildLookupMap")
+    assert "if (!link) continue;" in visual_body
+    assert "for (const child of link?.children || [])" in visual_body
+    assert "if (!link) continue;" in descendant_body
+    assert "for (const visual of link?.children || [])" in descendant_body
+
+
+def test_urdf_renderer_adds_successful_robot_only_after_meshes_joints_and_diagnostics():
+    js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
+    ready_body = js.split("result.ready = (async () => {", 1)[1].split("})().catch(err =>", 1)[0]
+    assert ready_body.index("await meshCompletion.wait();") < ready_body.index("robot.setJointValues(jointValues)")
+    assert ready_body.index("robot.setJointValues(jointValues)") < ready_body.index("diagnostics.robot_preview_loaded =")
+    assert ready_body.index("diagnostics.robot_preview_loaded =") < ready_body.index("rendererContext?.scene?.add?.(robot)")
+    assert "rendererContext?.scene?.add?.(robot);" in ready_body
+    assert "rendererContext?.onRobotLoaded?.(result);" in ready_body
+    assert ready_body.index("rendererContext?.scene?.add?.(robot)") < ready_body.index("rendererContext?.onRobotLoaded?.(result)")
+
+
+def test_urdf_renderer_optional_diagnostics_do_not_scene_fail_successful_render():
+    js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
+    ready_body = js.split("result.ready = (async () => {", 1)[1].split("})().catch(err =>", 1)[0]
+    assert "collectDescendantRenderMeshDiagnostics(robot.links)" in ready_body
+    assert "for (const visual of link?.children || [])" in js
+    diagnostics_tail = ready_body.split("diagnostics.robot_preview_loaded =", 1)[1]
+    assert "rendererContext?.onRobotError" not in diagnostics_tail
+    assert "throw" not in diagnostics_tail
+
+
 def test_urdf_renderer_normalizes_collada_loader_root_transform_generically():
     js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
     assert "function normalizeRosColladaScene" in js
@@ -2127,7 +2192,10 @@ def test_urdf_renderer_configures_active_loader_package_resolver_before_loading(
     ready_body = js.split("result.ready = (async () => {", 1)[1].split("const urdfUrl =", 1)[0]
     assert ready_body.index("const loader = new URDFLoader(manager);") < ready_body.index("configureUrdfPackageResolution(loader, manager, rendererContext, diagnostics);")
     assert ready_body.index("configureUrdfPackageResolution(loader, manager, rendererContext, diagnostics);") < ready_body.index("loader.loadMeshCb =")
-    assert js.index("loader.loadMeshCb =") < js.index("loader.loadAsync(urdfUrl)")
+    load_body = js.split("export function loadRobotPreview", 1)[1]
+    assert load_body.index("loader.loadMeshCb =") < load_body.index("fetchValidatedUrdfRobotElement(urdfUrl)")
+    assert load_body.index("fetchValidatedUrdfRobotElement(urdfUrl)") < load_body.index("loader.parse(urdfRobotElement")
+    assert "loader.loadAsync(urdfUrl)" not in js
     assert "loader.packages = resolver" in js
     assert "manager.setURLModifier(url =>" in js
 
@@ -2179,8 +2247,9 @@ import * as THREE from {str((VIEWER / 'node_modules/three/build/three.module.js'
 import URDFLoader from {str((VIEWER / 'node_modules/urdf-loader/src/URDFLoader.js')).__repr__()};
 
 globalThis.window = {{}};
-const originalUrdfLoadAsync = URDFLoader.prototype.loadAsync;
-URDFLoader.prototype.loadAsync = async function loadAsyncStub() {{
+globalThis.fetch = async () => ({{ ok: true, status: 200, statusText: 'OK', text: async () => '<robot name="test"/>' }});
+const originalUrdfParse = URDFLoader.prototype.parse;
+URDFLoader.prototype.parse = function parseStub() {{
   const robot = new THREE.Group();
   const base = new THREE.Group();
   base.name = 'base_link';
@@ -2214,7 +2283,7 @@ try {{
   assert.equal(result.diagnostics.robot_matrix_world_parity.link.comparisons[0].max_abs_delta <= 1e-5, true);
   assert.equal(result.diagnostics.robot_matrix_world_parity.visual_wrapper.comparisons[0].max_abs_delta <= 1e-5, true);
 }} finally {{
-  URDFLoader.prototype.loadAsync = originalUrdfLoadAsync;
+  URDFLoader.prototype.parse = originalUrdfParse;
 }}
 """,
         encoding="utf-8",
@@ -2372,10 +2441,11 @@ import {{ ColladaLoader }} from {str((VIEWER / 'node_modules/three/examples/jsm/
 globalThis.window = {{}};
 const requestedUrls = [];
 const repoRootRelativeCalls = [];
-const originalUrdfLoadAsync = URDFLoader.prototype.loadAsync;
+globalThis.fetch = async () => ({{ ok: true, status: 200, statusText: 'OK', text: async () => '<robot name="test"/>' }});
+const originalUrdfParse = URDFLoader.prototype.parse;
 const originalColladaLoad = ColladaLoader.prototype.load;
 
-URDFLoader.prototype.loadAsync = async function loadAsyncStub() {{
+URDFLoader.prototype.parse = function parseStub() {{
   for (const path of [
     'package://ur_description/meshes/ur5/visual/base.dae',
     'package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae',
@@ -2420,7 +2490,7 @@ try {{
     assert.equal(url.includes('/build/workcell_studio_web_scene//build/workcell_studio_web_scene/'), false, url);
   }}
 }} finally {{
-  URDFLoader.prototype.loadAsync = originalUrdfLoadAsync;
+  URDFLoader.prototype.parse = originalUrdfParse;
   ColladaLoader.prototype.load = originalColladaLoad;
 }}
 """,
@@ -2478,9 +2548,10 @@ import {{ ColladaLoader }} from {str((VIEWER / 'node_modules/three/examples/jsm/
 
 globalThis.window = {{}};
 const requestedUrls = [];
-const originalUrdfLoadAsync = URDFLoader.prototype.loadAsync;
+globalThis.fetch = async () => ({{ ok: true, status: 200, statusText: 'OK', text: async () => '<robot name="test"/>' }});
+const originalUrdfParse = URDFLoader.prototype.parse;
 const originalColladaLoad = ColladaLoader.prototype.load;
-URDFLoader.prototype.loadAsync = async function loadAsyncStub() {{
+URDFLoader.prototype.parse = function parseStub() {{
   for (const path of [
     '/build/workcell_studio_web_scene/assets/ur5_2f_test/ur_description/meshes/visual/base.dae',
     'build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq_85_description/meshes/visual/gripper.dae',
@@ -2514,7 +2585,7 @@ try {{
   for (const requested of requestedUrls) assert.ok(requested.startsWith('/build/workcell_studio_web_scene/assets/'), requested);
   assert.equal(result.diagnostics.robot_failed_visual_count, 0);
 }} finally {{
-  URDFLoader.prototype.loadAsync = originalUrdfLoadAsync;
+  URDFLoader.prototype.parse = originalUrdfParse;
   ColladaLoader.prototype.load = originalColladaLoad;
 }}
 """,
