@@ -37402,7 +37402,11 @@ __export(urdf_robot_renderer_exports, {
   normalizeRosColladaScene: () => normalizeRosColladaScene
 });
 function repoUrl(context, uri) {
-  return context?.repoRootRelativeUrl ? context.repoRootRelativeUrl(uri) : uri;
+  const value = String(uri || "").trim();
+  if (value.startsWith("/build/workcell_studio_web_scene/")) {
+    return value;
+  }
+  return context?.repoRootRelativeUrl ? context.repoRootRelativeUrl(value) : value;
 }
 function safeDecodeUriSegment(segment) {
   try {
