@@ -2592,3 +2592,111 @@ try {{
         encoding="utf-8",
     )
     subprocess.run(["node", str(script)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+def test_expanded_urdf_readiness_allows_legitimate_multi_visual_links_and_equivalent_records():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({ hidden: false, checked: false, disabled: false, textContent: '', className: '', innerHTML: '', classList: { toggle() {} }, setAttribute() {}, querySelector() { return { textContent: '' }; }, appendChild() {}, addEventListener() {}, getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; } });
+const context = { console, assert, window: { dispatched: [], location: { search: '' }, dispatchEvent(event) { this.dispatched.push(event?.detail?.state); }, parent: { postMessage() {} } }, document: { getElementById() { return element(); }, createElement() { return element(); } }, URLSearchParams, CustomEvent: function CustomEvent(type, init) { return { type, detail: init?.detail || {} }; }, requestAnimationFrame() { return 0; }, setTimeout() { return 1; }, clearTimeout() {} };
+vm.createContext(context);
+vm.runInContext(source + `
+state.sceneJson = { scene: { id: 'ur5_2f_test' }, robot_preview: { mode: 'expanded_urdf_loader', robot_instance_id: 'ur5', expected_robot_visual_links: ['base_link', 'shoulder_link'], expected_tool_visual_links: ['robotiq_85_base_link'] } };
+state.robotUrdfPreviewDiagnostics = { robot_preview_lifecycle_state: 'ready', robot_failed_visual_count: 0, robot_visual_wrapper_world_matrices: [
+  { link_name: 'base_link', visual_index: 0, object_name: 'visual_0' },
+  { link_name: 'base_link', visual_index: 1, object_name: 'visual_1' },
+  { link_name: 'shoulder_link', visual_index: 0, object_name: 'visual_0' },
+  { link_name: 'robotiq_85_base_link', visual_index: 0, object_name: 'visual_0' },
+  { link_name: 'robotiq_85_base_link', visual_index: 1, object_name: 'visual_1' },
+] };
+collectRenderedMeshDiagnostics = () => [
+  { id: 'table_generated', category: 'table', render_policy: 'primary', render_status: 'mesh_loaded', mesh_loaded: true, readiness_category: 'workbench_support_surface' },
+  { id: 'table_semantic_equivalent', category: 'table', render_policy: 'primary', render_status: 'mesh_loaded', mesh_loaded: true, readiness_category: 'workbench_support_surface' },
+  { id: 'camera_generated', category: 'camera', render_policy: 'primary', render_status: 'mesh_loaded', mesh_loaded: true, readiness_category: 'configured_camera' },
+  { id: 'camera_semantic_equivalent', category: 'camera', render_policy: 'primary', render_status: 'mesh_loaded', mesh_loaded: true, readiness_category: 'configured_camera' },
+];
+const diagnostics = expandedUrdfVisualReadinessDiagnostics();
+assert.strictEqual(diagnostics.required_visual_ready, true);
+assert.deepStrictEqual(diagnostics.missing_required_visuals, []);
+assert.deepStrictEqual(diagnostics.duplicate_required_visuals, []);
+assert.strictEqual(failIfExpandedUrdfExpectedVisualSetInvalid(), false);
+`, context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+def test_expanded_urdf_readiness_fails_missing_required_link_and_required_mesh_failure():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({ hidden: false, checked: false, disabled: false, textContent: '', className: '', innerHTML: '', classList: { toggle() {} }, setAttribute() {}, querySelector() { return { textContent: '' }; }, appendChild() {}, addEventListener() {}, getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; } });
+const context = { console, assert, window: { dispatched: [], location: { search: '' }, dispatchEvent(event) { this.dispatched.push(event?.detail?.state); }, parent: { postMessage() {} } }, document: { getElementById() { return element(); }, createElement() { return element(); } }, URLSearchParams, CustomEvent: function CustomEvent(type, init) { return { type, detail: init?.detail || {} }; }, requestAnimationFrame() { return 0; }, setTimeout() { return 1; }, clearTimeout() {} };
+vm.createContext(context);
+vm.runInContext(source + `
+state.sceneJson = { scene: { id: 'ur5_2f_test' }, robot_preview: { mode: 'expanded_urdf_loader', expected_robot_visual_links: ['base_link', 'shoulder_link'], expected_tool_visual_links: ['robotiq_85_base_link'] } };
+state.robotUrdfPreviewDiagnostics = { robot_preview_lifecycle_state: 'ready', robot_failed_visual_count: 0, robot_visual_wrapper_world_matrices: [
+  { link_name: 'base_link', visual_index: 0 },
+  { link_name: 'robotiq_85_base_link', visual_index: 0 },
+] };
+collectRenderedMeshDiagnostics = () => [
+  { id: 'table', category: 'table', render_policy: 'primary', render_status: 'mesh_loaded', mesh_loaded: true, readiness_category: 'workbench_support_surface' },
+  { id: 'camera', category: 'camera', render_policy: 'primary', render_status: 'mesh_loaded', mesh_loaded: true, readiness_category: 'configured_camera' },
+];
+let diagnostics = expandedUrdfVisualReadinessDiagnostics();
+assert.deepStrictEqual(diagnostics.missing_required_robot_visuals, ['shoulder_link']);
+assert.strictEqual(diagnostics.required_visual_ready, false);
+assert.strictEqual(failIfExpandedUrdfExpectedVisualSetInvalid(), true);
+assert.strictEqual(state.web3dReadiness.state, 'scene_failed');
+assert.ok(state.web3dReadiness.failure.missing_required_robot_visuals.includes('shoulder_link'));
+state.web3dReadiness = null;
+state.robotUrdfPreviewDiagnostics.robot_visual_wrapper_world_matrices.push({ link_name: 'shoulder_link', visual_index: 0 });
+state.robotUrdfPreviewDiagnostics.robot_failed_visual_count = 1;
+state.robotUrdfPreviewDiagnostics.robot_missing_meshes = ['/assets/robotiq_85_base_link.dae: 404'];
+diagnostics = expandedUrdfVisualReadinessDiagnostics();
+assert.strictEqual(diagnostics.required_visual_ready, false);
+assert.ok(diagnostics.failed_required_links.includes('expanded_urdf_loader'));
+assert.ok(diagnostics.failed_mesh_urls.includes('/assets/robotiq_85_base_link.dae'));
+assert.strictEqual(failIfExpandedUrdfExpectedVisualSetInvalid(), true);
+assert.strictEqual(state.web3dReadiness.state, 'scene_failed');
+assert.ok(state.web3dReadiness.failure.failed_mesh_urls.includes('/assets/robotiq_85_base_link.dae'));
+`, context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+def test_expanded_urdf_visible_ur5_2f_multi_visual_diagnostics_no_generic_false_failure():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({ hidden: false, checked: false, disabled: false, textContent: '', className: '', innerHTML: '', classList: { toggle() {} }, setAttribute() {}, querySelector() { return { textContent: '' }; }, appendChild() {}, addEventListener() {}, getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; } });
+const context = { console, assert, window: { dispatched: [], location: { search: '' }, dispatchEvent(event) { this.dispatched.push(event?.detail?.state); }, parent: { postMessage() {} } }, document: { getElementById() { return element(); }, createElement() { return element(); } }, URLSearchParams, CustomEvent: function CustomEvent(type, init) { return { type, detail: init?.detail || {} }; }, requestAnimationFrame() { return 0; }, setTimeout() { return 1; }, clearTimeout() {} };
+vm.createContext(context);
+vm.runInContext(source + `
+const robotLinks = ['base_link', 'shoulder_link', 'upper_arm_link', 'forearm_link', 'wrist_1_link', 'wrist_2_link', 'wrist_3_link'];
+const toolLinks = ['robotiq_85_base_link', 'robotiq_85_left_finger_link', 'robotiq_85_right_finger_link'];
+state.sceneJson = { scene: { id: 'ur5_2f_test' }, robot_preview: { mode: 'expanded_urdf_loader', robot_instance_id: 'ur5_2f', expected_robot_visual_links: robotLinks, expected_tool_visual_links: toolLinks } };
+state.robotUrdfPreviewDiagnostics = { robot_preview_lifecycle_state: 'ready', robot_failed_visual_count: 0, robot_visual_wrapper_world_matrices: robotLinks.concat(toolLinks).flatMap(link => [
+  { link_name: link, visual_index: 0, object_name: 'visual_0' },
+  { link_name: link, visual_index: 1, object_name: 'visual_1' },
+]) };
+collectRenderedMeshDiagnostics = () => [
+  { id: 'workbench_generated', category: 'table', render_policy: 'primary', render_status: 'mesh_loaded', mesh_loaded: true, readiness_category: 'workbench_support_surface' },
+  { id: 'configured_camera_generated', category: 'camera', render_policy: 'primary', render_status: 'mesh_loaded', mesh_loaded: true, readiness_category: 'configured_camera' },
+];
+const diagnostics = expandedUrdfVisualReadinessDiagnostics();
+assert.strictEqual(diagnostics.required_visual_ready, true);
+assert.deepStrictEqual(diagnostics.duplicate_required_visuals, []);
+assert.strictEqual(failIfExpandedUrdfExpectedVisualSetInvalid(), false);
+assert.notStrictEqual(state.web3dReadiness?.state, 'scene_failed');
+`, context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

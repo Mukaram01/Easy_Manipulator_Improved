@@ -38819,46 +38819,106 @@ function countBy(values) {
     counts[value] = (counts[value] || 0) + 1;
   return counts;
 }
+function expandedUrdfVisualIdentity(sceneId2, robotInstanceId, visual) {
+  const link = String(visual?.link_name || visual?.linkName || "").trim();
+  if (!link)
+    return "";
+  const visualName = String(visual?.visual_name || visual?.visualName || visual?.object_name || visual?.objectName || "").trim();
+  const visualIndex = visual?.visual_index ?? visual?.visualIndex;
+  const visualKey = visualIndex !== void 0 && visualIndex !== null && String(visualIndex).trim() !== "" ? `index:${String(visualIndex).trim()}` : `name:${visualName || "visual"}`;
+  return [sceneId2 || "<scene>", robotInstanceId || "<robot>", link, visualKey].join("|");
+}
+function renderedPhysicalVisualIdentity(sceneId2, entry) {
+  const category = readinessCategoryForItem(entry);
+  const link = String(entry?.link_name || entry?.link || entry?.frame || entry?.id || category || "").trim();
+  if (!link)
+    return "";
+  const visualName = String(entry?.visual_name || entry?.visualName || entry?.object_name || entry?.objectName || entry?.display_name || entry?.id || "").trim();
+  const visualIndex = entry?.visual_index ?? entry?.visualIndex;
+  const visualKey = visualIndex !== void 0 && visualIndex !== null && String(visualIndex).trim() !== "" ? `index:${String(visualIndex).trim()}` : `name:${visualName || "physical"}`;
+  return [sceneId2 || "<scene>", String(entry?.robot_instance_id || entry?.robotInstanceId || entry?.source_instance || entry?.sourceInstance || "physical").trim() || "physical", link, visualKey].join("|");
+}
+function dedupeByStableIdentity(records, identityFn) {
+  const byIdentity = /* @__PURE__ */ new Map();
+  const duplicates = [];
+  for (const record of records || []) {
+    const identity = identityFn(record);
+    if (!identity)
+      continue;
+    if (byIdentity.has(identity))
+      duplicates.push(identity);
+    else
+      byIdentity.set(identity, record);
+  }
+  return { records: Array.from(byIdentity.values()), duplicateIdentities: Array.from(new Set(duplicates)) };
+}
+function isSuccessfulPhysicalVisualDiagnostic(entry) {
+  if (!entry || entry.debug_overlay || entry.debugOverlay)
+    return false;
+  if (entry.mesh_loaded !== true && entry.meshLoaded !== true && entry.render_status !== "mesh_loaded" && entry.renderStatus !== "mesh_loaded")
+    return false;
+  return Boolean(readinessCategoryForItem(entry));
+}
+function failedRequiredMeshUrlFromEntry(entry) {
+  const url = entry?.mesh_uri || entry?.meshUri || entry?.url || entry?.source_url || entry?.sourceUrl || "";
+  return String(url || "").trim();
+}
 function expandedUrdfVisualReadinessDiagnostics() {
   const required = expandedUrdfExpectedVisualSet();
   if (!required)
     return null;
-  const urdfVisualLinks = asArray(state.robotUrdfPreviewDiagnostics?.robot_visual_wrapper_world_matrices).map((visual) => String(visual?.link_name || visual?.linkName || "").trim()).filter(Boolean);
-  const urdfCounts = countBy(urdfVisualLinks);
+  const sceneId2 = required.scene_id || required.sceneId || "";
+  const preview = state.sceneJson?.robot_preview || {};
+  const robotInstanceId = String(preview.robot_instance_id || preview.robotInstanceId || preview.instance_id || preview.instanceId || preview.id || "expanded_urdf_robot").trim();
+  const rawUrdfVisuals = asArray(state.robotUrdfPreviewDiagnostics?.robot_visual_wrapper_world_matrices);
+  const urdfDedupe = dedupeByStableIdentity(rawUrdfVisuals, (visual) => expandedUrdfVisualIdentity(sceneId2, robotInstanceId, visual));
+  const urdfVisuals = urdfDedupe.records;
+  const urdfLinksWithLoadedVisuals = new Set(urdfVisuals.map((visual) => String(visual?.link_name || visual?.linkName || "").trim()).filter(Boolean));
+  const urdfCounts = countBy(urdfVisuals.map((visual) => String(visual?.link_name || visual?.linkName || "").trim()).filter(Boolean));
   const sceneDiagnostics = collectRenderedMeshDiagnostics();
-  const categoryCounts = countBy(sceneDiagnostics.map((item) => readinessCategoryForItem(item)).filter(Boolean));
+  const physicalDiagnostics = dedupeByStableIdentity(sceneDiagnostics.filter(isSuccessfulPhysicalVisualDiagnostic), (entry) => renderedPhysicalVisualIdentity(sceneId2, entry));
+  const categoryCounts = countBy(physicalDiagnostics.records.map((item) => readinessCategoryForItem(item)).filter(Boolean));
   const missingRobot = [];
   const missingTool = [];
-  const duplicate = [];
-  const failed = [];
+  const failedLinks = [];
+  const failedMeshUrls = [];
+  const requiredLinks = new Set(required.robot_visuals.concat(required.tool_visuals));
   for (const link of required.robot_visuals) {
-    const count = urdfCounts[link] || 0;
-    if (count === 0)
+    if (!urdfLinksWithLoadedVisuals.has(link))
       missingRobot.push(link);
-    if (count > 1)
-      duplicate.push(link);
   }
   for (const link of required.tool_visuals) {
-    const count = urdfCounts[link] || 0;
-    if (count === 0)
+    if (!urdfLinksWithLoadedVisuals.has(link))
       missingTool.push(link);
-    if (count > 1)
-      duplicate.push(link);
   }
   for (const category of required.table_visuals.concat(required.camera_visuals)) {
-    const count = categoryCounts[category] || 0;
-    if (count === 0)
-      failed.push(category);
-    if (count > 1)
-      duplicate.push(category);
+    if ((categoryCounts[category] || 0) === 0)
+      failedLinks.push(category);
   }
   for (const entry of sceneDiagnostics) {
-    if (isRequiredMeshFailureStatus({ item: entry, renderInfo: { render_status: entry.render_status } }))
-      failed.push(entry.link_name || entry.id || entry.category);
+    const link = String(entry.link_name || entry.link || entry.id || entry.category || "").trim();
+    const category = readinessCategoryForItem(entry);
+    const requiredPhysical = requiredLinks.has(link) || required.table_visuals.includes(category) || required.camera_visuals.includes(category);
+    if (!requiredPhysical)
+      continue;
+    if (isRequiredMeshFailureStatus({ item: entry, renderInfo: { render_status: entry.render_status } })) {
+      failedLinks.push(link || category);
+      const url = failedRequiredMeshUrlFromEntry(entry);
+      if (url)
+        failedMeshUrls.push(url);
+    }
   }
-  if (Number(state.robotUrdfPreviewDiagnostics?.robot_failed_visual_count || 0) > 0)
-    failed.push("expanded_urdf_loader");
+  for (const detail of asArray(state.robotUrdfPreviewDiagnostics?.robot_missing_meshes)) {
+    const text = String(detail || "").trim();
+    if (text)
+      failedMeshUrls.push(text.split(": ")[0] || text);
+  }
+  if (Number(state.robotUrdfPreviewDiagnostics?.robot_failed_visual_count || 0) > 0) {
+    failedLinks.push("expanded_urdf_loader");
+  }
   const missing = missingRobot.concat(missingTool);
+  const failed = Array.from(new Set(failedLinks.filter(Boolean)));
+  const duplicatePhysicalIdentities = Array.from(new Set(urdfDedupe.duplicateIdentities.concat(physicalDiagnostics.duplicateIdentities)));
   return {
     expanded_urdf_expected_visual_set: required,
     expandedUrdfExpectedVisualSet: required,
@@ -38870,12 +38930,18 @@ function expandedUrdfVisualReadinessDiagnostics() {
     missingRequiredToolVisuals: missingTool,
     missing_required_visuals: missing,
     missingRequiredVisuals: missing,
-    duplicate_required_visuals: duplicate,
-    duplicateRequiredVisuals: duplicate,
-    failed_required_visuals: Array.from(new Set(failed)),
-    failedRequiredVisuals: Array.from(new Set(failed)),
-    required_visual_ready: missing.length === 0 && duplicate.length === 0 && failed.length === 0,
-    requiredVisualReady: missing.length === 0 && duplicate.length === 0 && failed.length === 0
+    duplicate_required_visuals: duplicatePhysicalIdentities,
+    duplicateRequiredVisuals: duplicatePhysicalIdentities,
+    duplicate_physical_visual_identities: duplicatePhysicalIdentities,
+    duplicatePhysicalVisualIdentities: duplicatePhysicalIdentities,
+    failed_required_visuals: failed,
+    failedRequiredVisuals: failed,
+    failed_required_links: failed,
+    failedRequiredLinks: failed,
+    failed_mesh_urls: Array.from(new Set(failedMeshUrls)),
+    failedMeshUrls: Array.from(new Set(failedMeshUrls)),
+    required_visual_ready: missing.length === 0 && failed.length === 0 && duplicatePhysicalIdentities.length === 0,
+    requiredVisualReady: missing.length === 0 && failed.length === 0 && duplicatePhysicalIdentities.length === 0
   };
 }
 function failIfExpandedUrdfExpectedVisualSetInvalid() {
