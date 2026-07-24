@@ -23,13 +23,15 @@ def test_snapshot_tracks_authoritative_scene_metadata_files_and_content_identity
     assert "std::hash<std::string>{}(buffer.str())" in CPP
 
 
-def test_repeated_consumers_share_one_same_scene_snapshot_parse():
+def test_repeated_consumers_share_one_same_scene_snapshot_parse_without_cache_hit_log_noise():
     assert "load_scene_metadata_snapshot(scene_dir, scene_name" in CPP
     assert "snapshot_yaml(snapshot, \"environment.yaml\"" in CPP
     assert "snapshot_yaml(snapshot, \"scene_manifest.yaml\"" in CPP
     assert "snapshot_yaml(snapshot, \"environment_layout.yaml\"" in CPP
     assert "snapshot_yaml(snapshot, \"layout/workcell_studio_layout.yaml\"" in CPP
-    assert "files_parsed=0 cache_hits=" in CPP
+    assert "++cached.cache_hits;" in CPP
+    assert "files_parsed=0 cache_hits=" not in CPP
+    assert CPP.count("Workcell Studio scene metadata snapshot: scene_id=") == 1
 
 
 def test_revision_change_and_scene_switch_cannot_reuse_old_metadata():
@@ -55,9 +57,23 @@ def test_explicit_successful_mutations_invalidate_snapshot_once():
     assert "if (!state.cached.scene_dir.empty() && state.cached.scene_dir == key) state.cached = SceneMetadataSnapshot{};" in CPP
 
 
-def test_snapshot_logging_replaces_per_file_success_noise_with_one_summary():
+def test_snapshot_logging_replaces_per_file_success_noise_with_one_reload_summary():
     assert "Workcell Studio scene metadata snapshot: scene_id=" in CPP
     assert "revision=" in CPP
     assert "files_parsed=" in CPP
-    assert "cache_hits=" in CPP
+    assert "cache_hits=0" in CPP
     assert "invalidation_reason=" in CPP
+
+
+def test_fifty_unchanged_cache_reads_do_not_emit_repeated_summary_logs():
+    cache_hit_block = "if (!explicitly_invalidated && !cached.scene_dir.empty() && cached.scene_dir == key && cached.revision == revision)"
+    assert cache_hit_block in CPP
+    after_cache_hit = CPP.split(cache_hit_block, 1)[1].split("SceneMetadataSnapshot snapshot", 1)[0]
+    assert "++cached.cache_hits;" in after_cache_hit
+    assert "std::cerr" not in after_cache_hit
+
+
+def test_real_file_revision_change_emits_one_new_summary_log():
+    assert "cached.scene_dir == key ? \"file_revision_change\" : \"scene_switch\"" in CPP
+    assert "cached = snapshot;" in CPP
+    assert CPP.count("Workcell Studio scene metadata snapshot: scene_id=") == 1

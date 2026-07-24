@@ -169,18 +169,18 @@ static SceneMetadataSnapshot load_scene_metadata_snapshot(const fs::path & scene
   SceneMetadataSnapshot & cached = state.cached;
   if (!explicitly_invalidated && !cached.scene_dir.empty() && cached.scene_dir == key && cached.revision == revision) {
     ++cached.cache_hits;
-    cached.invalidation_reason = reason.empty() ? "cache_hit" : reason;
-    std::cerr << "Workcell Studio scene metadata snapshot: scene_id=" << scene_id
-              << " revision=" << cached.revision << " files_parsed=0 cache_hits=" << cached.cache_hits
-              << " invalidation_reason=" << cached.invalidation_reason << std::endl;
     return cached;
   }
+
+  const std::string reload_reason = explicitly_invalidated ?
+    (state.invalidation_reason.empty() ? "explicit_refresh" : state.invalidation_reason) :
+    (cached.scene_dir.empty() ? "initial" : (cached.scene_dir == key ? "file_revision_change" : "scene_switch"));
 
   SceneMetadataSnapshot snapshot;
   snapshot.scene_dir = key;
   snapshot.scene_id = scene_id;
   snapshot.revision = revision;
-  snapshot.invalidation_reason = explicitly_invalidated ? state.invalidation_reason : (reason.empty() ? (cached.scene_dir.empty() ? "initial" : (cached.scene_dir == key ? "file_revision_change" : "scene_switch")) : reason);
+  snapshot.invalidation_reason = reload_reason;
   snapshot.file_revisions = revisions;
   for (const char * rel : kSceneMetadataFiles) {
     YAML::Node doc;
