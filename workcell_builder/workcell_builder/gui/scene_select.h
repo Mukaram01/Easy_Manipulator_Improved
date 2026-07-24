@@ -261,8 +261,28 @@ private:
   SceneMetadataFileIdentity metadata_file_identity(const boost::filesystem::path & path) const;
   bool scene_metadata_snapshot_valid(const boost::filesystem::path & scene_dir) const;
 
+  struct SceneRefreshIdentity
+  {
+    boost::filesystem::path canonical_scene_dir;
+    std::string selected_scene;
+    SceneMetadataFileIdentity environment_yaml;
+    SceneMetadataFileIdentity cell_definition_yaml;
+    SceneMetadataFileIdentity scene_manifest_yaml;
+    SceneMetadataFileIdentity workcell_studio_layout_yaml;
+    bool valid{false};
+  };
+
+  SceneRefreshIdentity current_scene_refresh_identity() const;
+  static bool scene_refresh_identity_equal(const SceneRefreshIdentity & lhs, const SceneRefreshIdentity & rhs);
+  bool scene_refresh_trigger_forces_reload(const std::string & trigger) const;
+
   int scaffold_scene_index_ = -1;
   SceneMetadataSnapshot scene_metadata_snapshot_;
+  bool refresh_in_progress_{false};
+  bool refresh_queued_{false};
+  bool programmatic_scene_selection_update_{false};
+  SceneRefreshIdentity last_completed_automatic_refresh_identity_;
+  SceneRefreshIdentity queued_refresh_identity_;
   workcell_builder::ValidationDashboardResult latest_dashboard_result_;
   void render_workcell_studio_status(const workcell_builder::SceneStatusReport & report);
   workcell_builder::SceneStatusReport latest_scene_status_report_;

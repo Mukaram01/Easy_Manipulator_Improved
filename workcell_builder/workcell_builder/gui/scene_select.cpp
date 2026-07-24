@@ -1353,26 +1353,43 @@ void SceneSelect::clear_messages()
 
 void SceneSelect::refresh_scene_status(bool strict, const std::string & trigger)
 {
-  static bool refresh_in_progress = false;
-  static bool refresh_queued = false;
-  if (refresh_in_progress) {
-    refresh_queued = true;
-    QTimer::singleShot(0, this, [this, strict]() {
-      if (!refresh_queued) {
+  const bool force_reload = scene_refresh_trigger_forces_reload(trigger);
+  const SceneRefreshIdentity refresh_identity = current_scene_refresh_identity();
+  if (!force_reload &&
+    scene_refresh_identity_equal(refresh_identity, last_completed_automatic_refresh_identity_))
+  {
+    return;
+  }
+  if (refresh_in_progress_) {
+    if (refresh_queued_ &&
+      scene_refresh_identity_equal(refresh_identity, queued_refresh_identity_))
+    {
+      return;
+    }
+    refresh_queued_ = true;
+    queued_refresh_identity_ = refresh_identity;
+    QTimer::singleShot(0, this, [this, strict, refresh_identity]() {
+      if (!refresh_queued_) {
         return;
       }
-      refresh_queued = false;
+      refresh_queued_ = false;
+      if (scene_refresh_identity_equal(refresh_identity, last_completed_automatic_refresh_identity_)) {
+        return;
+      }
       refresh_scene_status(strict, "Coalesced Refresh");
     });
     return;
   }
-  refresh_in_progress = true;
+  refresh_in_progress_ = true;
   clear_messages();
   const std::string timestamp =
     QDateTime::currentDateTime().toString(Qt::ISODate).toStdString();
   append_info("Status snapshot [" + trigger + "] @ " + timestamp);
   check_scene(strict);
-  refresh_in_progress = false;
+  refresh_in_progress_ = false;
+  if (refresh_identity.valid) {
+    last_completed_automatic_refresh_identity_ = refresh_identity;
+  }
 }
 
 void SceneSelect::render_workcell_studio_status(const workcell_builder::SceneStatusReport & report)
@@ -2066,7 +2083,8 @@ void SceneSelect::refresh_scenes(int latest_scene, bool scaffold_only_status)
 {
   if (latest_scene < 0) {latest_scene = 0;}
   scaffold_scene_index_ = scaffold_only_status ? latest_scene : -1;
-  bool oldState = ui->scene_list->blockSignals(true);
+  const QSignalBlocker scene_list_blocker(ui->scene_list);
+  programmatic_scene_selection_update_ = true;
   ui->scene_list->clear();  // Clear the dropdown menu
   if (workcell.scene_vector.size() > 0) {  // There are scenes in the workcell
     ui->scene_list->setDisabled(false);     // Enable the dropdown menu
@@ -2082,7 +2100,6 @@ void SceneSelect::refresh_scenes(int latest_scene, bool scaffold_only_status)
       ui->scene_list->addItem(QString::fromStdString(label));
     }
     ui->scene_list->setCurrentIndex(latest_scene);     // Display the latest scene the user created
-    on_scene_list_currentIndexChanged(latest_scene);
     ui->edit_scene->setDisabled(false);
     ui->delete_scene->setDisabled(false);
     ui->generate_yaml->setDisabled(false);
@@ -2095,7 +2112,7 @@ void SceneSelect::refresh_scenes(int latest_scene, bool scaffold_only_status)
     ui->delete_scene->setDisabled(true);
     append_warning("No scenes available. Add a scene to continue.");
   }
-  ui->scene_list->blockSignals(oldState);
+  programmatic_scene_selection_update_ = false;
 }
 int SceneSelect::current_scene_index() const
 {
@@ -2518,7 +2535,16 @@ bool SceneSelect::check_files(bool strict)
 }
 void SceneSelect::on_scene_list_currentIndexChanged(int index)
 {
-  invalidate_scene_metadata_snapshot();
+  if (programmatic_scene_selection_update_) {
+    return;
+  }
+  const SceneRefreshIdentity previous_identity = last_completed_automatic_refresh_identity_;
+  const bool actual_scene_switch = !previous_identity.valid ||
+    index < 0 || index >= static_cast<int>(workcell.scene_vector.size()) ||
+    previous_identity.selected_scene != workcell.scene_vector[index].name;
+  if (actual_scene_switch) {
+    invalidate_scene_metadata_snapshot();
+  }
   if (index >= 0 && index < static_cast<int>(workcell.scene_vector.size())) {
     Scene & curr_scene = workcell.scene_vector[index];
     if (!curr_scene.loaded || !scene_metadata_snapshot_valid(scenes_path / curr_scene.name)) {
@@ -2533,9 +2559,8 @@ void SceneSelect::on_scene_list_currentIndexChanged(int index)
   }
   load_robot_home_for_selected_scene();
   load_task_areas_for_selected_scene();
-  refresh_scene_status(index != scaffold_scene_index_, "Scene Selection Changed");
+  refresh_scene_status(index != scaffold_scene_index_, actual_scene_switch ? "Scene Switch" : "scene_selection_refresh");
   refresh_primary_workflow_state("Warning", "Select Cell", "Open the selected cell or validate its current files.");
-  on_refresh_status_button_clicked();
   const int current_index = ui->scene_list->currentIndex();
   if (current_index >= 0 && current_index < static_cast<int>(workcell.scene_vector.size())) {
     const auto name = workcell.scene_vector[current_index].name;
@@ -2965,6 +2990,57 @@ bool SceneSelect::scene_metadata_snapshot_valid(const fs::path & scene_dir) cons
     current_layout.exists == scene_metadata_snapshot_.workcell_studio_layout_yaml.exists &&
     current_layout.modified_time == scene_metadata_snapshot_.workcell_studio_layout_yaml.modified_time &&
     current_layout.size == scene_metadata_snapshot_.workcell_studio_layout_yaml.size;
+}
+
+SceneSelect::SceneRefreshIdentity SceneSelect::current_scene_refresh_identity() const
+{
+  SceneRefreshIdentity identity;
+  const int current_index = current_scene_index();
+  if (current_index < 0 || current_index >= static_cast<int>(workcell.scene_vector.size())) {
+    return identity;
+  }
+  identity.selected_scene = workcell.scene_vector[current_index].name;
+  const fs::path scene_dir = scenes_path / identity.selected_scene;
+  boost::system::error_code ec;
+  identity.canonical_scene_dir = fs::canonical(scene_dir, ec);
+  if (ec) {
+    identity.canonical_scene_dir = fs::absolute(scene_dir);
+  }
+  identity.environment_yaml = metadata_file_identity(scene_dir / "environment.yaml");
+  identity.cell_definition_yaml = metadata_file_identity(scene_dir / "cell_definition.yaml");
+  identity.scene_manifest_yaml = metadata_file_identity(scene_dir / "scene_manifest.yaml");
+  identity.workcell_studio_layout_yaml =
+    metadata_file_identity(scene_dir / "layout" / "workcell_studio_layout.yaml");
+  identity.valid = true;
+  return identity;
+}
+
+bool SceneSelect::scene_refresh_identity_equal(
+  const SceneRefreshIdentity & lhs, const SceneRefreshIdentity & rhs)
+{
+  const auto file_equal = [](const SceneMetadataFileIdentity & a, const SceneMetadataFileIdentity & b) {
+    return a.exists == b.exists && a.modified_time == b.modified_time && a.size == b.size;
+  };
+  return lhs.valid && rhs.valid &&
+    lhs.canonical_scene_dir == rhs.canonical_scene_dir &&
+    lhs.selected_scene == rhs.selected_scene &&
+    file_equal(lhs.environment_yaml, rhs.environment_yaml) &&
+    file_equal(lhs.cell_definition_yaml, rhs.cell_definition_yaml) &&
+    file_equal(lhs.scene_manifest_yaml, rhs.scene_manifest_yaml) &&
+    file_equal(lhs.workcell_studio_layout_yaml, rhs.workcell_studio_layout_yaml);
+}
+
+bool SceneSelect::scene_refresh_trigger_forces_reload(const std::string & trigger) const
+{
+  return trigger == "Refresh Scene Status" ||
+    trigger == "Explicit Refresh" ||
+    trigger == "Generate YAML" ||
+    trigger == "Generate Files" ||
+    trigger == "Repair Scene YAML" ||
+    trigger == "Open/Edit Cell" ||
+    trigger == "Scene Switch" ||
+    trigger == "Save Layout" ||
+    trigger == "Generate Scene Package";
 }
 
 fs::path SceneSelect::scene_dir_for_current_selection() const
