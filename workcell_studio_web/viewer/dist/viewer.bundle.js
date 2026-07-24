@@ -37402,6 +37402,28 @@ __export(urdf_robot_renderer_exports, {
   loadRobotPreview: () => loadRobotPreview,
   normalizeRosColladaScene: () => normalizeRosColladaScene
 });
+function loadColladaWithSceneScopedZUpDiagnostic(loader, url, onLoad, onProgress, onError, diagnostics) {
+  const originalWarn = console.warn;
+  console.warn = (...args) => {
+    if (String(args?.[0] || "") === COLLADA_Z_UP_CONSOLE_MESSAGE) {
+      diagnostics.collada_z_up_console_message_count = (diagnostics.collada_z_up_console_message_count || 0) + 1;
+      diagnostics.colladaZUpConsoleMessageCount = diagnostics.collada_z_up_console_message_count;
+      if (!diagnostics.collada_z_up_console_message_emitted) {
+        diagnostics.collada_z_up_console_message_emitted = true;
+        console.info(`Collada Z-UP loader notice collapsed for scene load: ${COLLADA_Z_UP_CONSOLE_MESSAGE}`);
+      }
+      return;
+    }
+    originalWarn.apply(console, args);
+  };
+  loader.load(url, (dae) => {
+    console.warn = originalWarn;
+    onLoad(dae);
+  }, onProgress, (err) => {
+    console.warn = originalWarn;
+    onError(err);
+  });
+}
 function repoUrl(context, uri) {
   const value = String(uri || "").trim();
   if (value.startsWith("/build/workcell_studio_web_scene/")) {
@@ -37705,7 +37727,7 @@ function loadMesh(path, manager, material, done, context, diagnostics) {
   if (ext === "stl")
     new STLLoader(manager).load(url, (geom) => onDone(new Mesh(geom, material || new MeshPhongMaterial())), void 0, onError);
   else if (ext === "dae")
-    new ColladaLoader(manager).load(url, (dae) => onDone(normalizeRosColladaScene(dae, uri, diagnostics)), void 0, onError);
+    loadColladaWithSceneScopedZUpDiagnostic(new ColladaLoader(manager), url, (dae) => onDone(normalizeRosColladaScene(dae, uri, diagnostics)), void 0, onError, diagnostics);
   else if (ext === "obj")
     new OBJLoader(manager).load(url, (obj) => onDone(obj), void 0, onError);
   else
@@ -38199,7 +38221,7 @@ function loadRobotPreview(previewConfig, rendererContext = {}) {
   window.__WORKCELL_ROBOT_PREVIEW_READY__ = result.ready;
   return result;
 }
-var ROBOT_RENDER_MODE, ROS_TO_THREE_CONVERSION_BOUNDARY, STAGED_MESH_ASSET_ROOT, LEGACY_STAGED_MESH_ASSET_ROOT;
+var ROBOT_RENDER_MODE, COLLADA_Z_UP_CONSOLE_MESSAGE, ROS_TO_THREE_CONVERSION_BOUNDARY, STAGED_MESH_ASSET_ROOT, LEGACY_STAGED_MESH_ASSET_ROOT;
 var init_urdf_robot_renderer = __esm({
   "urdf_robot_renderer.js"() {
     init_three_module();
@@ -38208,6 +38230,7 @@ var init_urdf_robot_renderer = __esm({
     init_ColladaLoader();
     init_OBJLoader();
     ROBOT_RENDER_MODE = "expanded_urdf_loader";
+    COLLADA_Z_UP_CONSOLE_MESSAGE = "THREE.ColladaLoader: You are loading an asset with a Z-UP coordinate system. The loader just rotates the asset to transform it into Y-UP. The vertex data are not converted, see #24289.";
     ROS_TO_THREE_CONVERSION_BOUNDARY = "URDFLoader owns the ROS visual frame and applies the one ROS-to-Three orientation boundary; DAE, STL, assembled URDF, and flattened fallback diagnostics must not add per-link or per-mesh 90-degree corrections after ColladaLoader.";
     STAGED_MESH_ASSET_ROOT = "/build/workcell_studio_web_scene/assets/";
     LEGACY_STAGED_MESH_ASSET_ROOT = STAGED_MESH_ASSET_ROOT.slice(1);
