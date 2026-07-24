@@ -547,11 +547,25 @@ function collectLinkMatrixDiagnostics(robot, links) {
   return out;
 }
 
+function hasDescendantRenderMesh(object, links) {
+  if (!object) return false;
+  const linkObjects = new Set(Object.values(links || {}));
+  const stack = [...(object.children || [])];
+  while (stack.length) {
+    const child = stack.pop();
+    if (!child || linkObjects.has(child)) continue;
+    const type = String(child.type || '').toLowerCase();
+    if (child.isMesh || type.includes('mesh')) return true;
+    stack.push(...(child.children || []));
+  }
+  return false;
+}
+
 function isVisualWrapperCandidate(child, links) {
   if (!child || Object.values(links || {}).includes(child)) return false;
   const type = String(child.type || '').toLowerCase();
   const name = String(child.name || '').toLowerCase();
-  return child.isMesh || type.includes('mesh') || type.includes('group') || name.includes('visual') || child.children?.some?.(desc => desc?.isMesh);
+  return child.isMesh || type.includes('mesh') || type.includes('group') || name.includes('visual') || hasDescendantRenderMesh(child, links);
 }
 
 function collectVisualWrapperMatrixDiagnostics(links) {
