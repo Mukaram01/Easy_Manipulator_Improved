@@ -2292,6 +2292,68 @@ try {{
     subprocess.run(["node", str(script)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
+
+def test_urdf_renderer_detects_expanded_visual_wrappers_with_deep_descendant_meshes(tmp_path):
+    script = tmp_path / "deep_visual_wrapper.mjs"
+    script.write_text(
+        f"""
+import assert from 'node:assert/strict';
+import * as THREE from {str((VIEWER / 'node_modules/three/build/three.module.js')).__repr__()};
+import URDFLoader from {str((VIEWER / 'node_modules/urdf-loader/src/URDFLoader.js')).__repr__()};
+
+globalThis.window = {{}};
+globalThis.fetch = async () => ({{ ok: true, status: 200, statusText: 'OK', text: async () => '<robot name="test"/>' }});
+const originalUrdfParse = URDFLoader.prototype.parse;
+URDFLoader.prototype.parse = function parseStub() {{
+  const robot = new THREE.Group();
+  const base = new THREE.Group();
+  base.name = 'base_link';
+  const tool = new THREE.Group();
+  tool.name = 'robotiq_85_base_link';
+
+  for (const link of [base, tool]) {{
+    const wrapper = new THREE.Object3D();
+    const importedScene = new THREE.Scene();
+    const nestedGroup = new THREE.Object3D();
+    nestedGroup.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial()));
+    importedScene.add(nestedGroup);
+    wrapper.add(importedScene);
+    link.add(wrapper);
+    robot.add(link);
+  }}
+
+  robot.links = {{ base_link: base, robotiq_85_base_link: tool }};
+  robot.joints = {{}};
+  robot.setJointValues = () => {{}};
+  return robot;
+}};
+
+try {{
+  const {{ loadRobotPreview }} = await import({str((VIEWER / 'urdf_robot_renderer.js')).__repr__()});
+  const result = loadRobotPreview({{
+    urdf_url: 'robot.urdf',
+    expected_robot_visual_links: ['base_link'],
+    expected_tool_visual_links: ['robotiq_85_base_link'],
+  }});
+  await result.ready;
+  assert.equal(result.diagnostics.robot_preview_loaded, true);
+  assert.equal(result.diagnostics.robot_preview_lifecycle_state, 'ready');
+  assert.deepEqual(result.diagnostics.robot_missing_required_robot_visual_links, []);
+  assert.deepEqual(result.diagnostics.robot_missing_required_tool_visual_links, []);
+  assert.deepEqual(
+    result.diagnostics.robot_visual_wrapper_world_matrices.map(entry => entry.link_name).sort(),
+    ['base_link', 'robotiq_85_base_link']
+  );
+  assert.equal(result.diagnostics.robot_descendant_render_mesh_diagnostics.length, 2);
+}} finally {{
+  URDFLoader.prototype.parse = originalUrdfParse;
+}}
+""",
+        encoding="utf-8",
+    )
+    subprocess.run(["node", str(script)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
 def test_viewer_browser_readiness_contract_lifecycle_and_terminal_dedup():
     js_path = VIEWER / "viewer.js"
     harness = """
