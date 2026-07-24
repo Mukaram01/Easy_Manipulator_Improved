@@ -1498,7 +1498,7 @@ def test_urdf_renderer_optional_diagnostics_do_not_scene_fail_successful_render(
 def test_urdf_renderer_normalizes_collada_loader_root_transform_generically():
     js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
     assert "function normalizeRosColladaScene" in js
-    assert "ColladaLoader(manager).load(url, dae => onDone(normalizeRosColladaScene(dae, uri, diagnostics))" in js
+    assert "loadColladaWithSceneScopedZUpDiagnostic(new ColladaLoader(manager), url, dae => onDone(normalizeRosColladaScene(dae, uri, diagnostics))" in js
     assert "upAxis === 'Z_UP' || (Number.isFinite(unitMeter)" in js
     assert "upAxis === 'Z_UP' || upAxis === 'Y_UP'" not in js
     assert "robot_collada_root_normalization_count" in js
