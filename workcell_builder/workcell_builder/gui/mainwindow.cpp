@@ -366,7 +366,9 @@ Scene3DDetectionSnapshotLoadResult load_scene3d_detection_snapshot_preview(const
     parse(candidate);
     return out;
   }
-  out.warnings << QStringLiteral("detection snapshot missing: generated/perception_bridge_preview_report.json -> generated/emd_bridge_payload_preview.json -> generated/epd_detection_snapshot.json -> workcell_studio_detection_snapshot/v1");
+  // Optional perception modes intentionally load no detection snapshot and should remain silent.
+  // Callers only surface this warning when perception/EPD input is explicitly required.
+  out.warnings << QStringLiteral("required detection snapshot missing: generated/perception_bridge_preview_report.json -> generated/emd_bridge_payload_preview.json -> generated/epd_detection_snapshot.json -> workcell_studio_detection_snapshot/v1");
   return out;
 }
 [[maybe_unused]] static const char * kSceneBuilderGuidedWorkflowLegacyContractTokens =
@@ -3454,7 +3456,15 @@ void MainWindow::refresh_task_intent_panel()
     scene_preview_widget_->set_camera_overlay_model(camera);
     const auto snapshot_preview = load_scene3d_detection_snapshot_preview(sc.scene_dir);
     scene_preview_widget_->set_epd_detection_overlays(snapshot_preview.detections);
+    const QString perception_requirement = ti.perception_mode.trimmed().toLower();
+    const bool perception_snapshot_required =
+      perception_requirement == QStringLiteral("live_epd") ||
+      perception_requirement == QStringLiteral("replayed_snapshot") ||
+      perception_requirement == QStringLiteral("epd_required") ||
+      perception_requirement == QStringLiteral("required");
     for (const auto & snapshot_warning : snapshot_preview.warnings) {
+      const bool missing_optional_snapshot = snapshot_warning.startsWith(QStringLiteral("required detection snapshot missing")) && !perception_snapshot_required;
+      if (missing_optional_snapshot) continue;
       append_studio_log(QString("Scene3D detection snapshot warning: %1").arg(snapshot_warning));
       model.warnings << snapshot_warning;
     }
@@ -10281,9 +10291,6 @@ void MainWindow::populate_scene_hierarchy()
             p.resolved_source_path_stale = true;
             p.source_path_resolution_outcome = QStringLiteral("resolved_source_path_missing");
             ++stale_resolved_source_path_count;
-            append_studio_log(QString(
-              "URDF visual stale resolved_source_path for %1: resolved_source_path=%2 package_uri=%3")
-              .arg(p.id, resolved_source_path, package_uri));
           }
           if (p.source_path.trimmed().isEmpty() && (package_uri.startsWith("file://") || package_uri.startsWith("/"))) {
             QString candidate = package_uri;
@@ -10292,14 +10299,13 @@ void MainWindow::populate_scene_hierarchy()
             if (candidate_info.exists() && candidate_info.isFile()) {
               p.source_path = candidate_info.canonicalFilePath();
               if (p.source_path.isEmpty()) p.source_path = candidate_info.absoluteFilePath();
-              p.source_path_resolution_outcome = p.resolved_source_path_stale
-                ? QStringLiteral("resolved_via_package_uri_after_stale_resolved_source_path")
-                : QStringLiteral("resolved_via_package_uri");
+              if (p.resolved_source_path_stale) {
+                p.resolved_source_path_stale = false;
+                p.resolved_source_path_original = p.source_path;
+                ++package_uri_resolved_after_stale_resolved_source_path;
+              }
+              p.source_path_resolution_outcome = QStringLiteral("resolved_via_package_uri");
               ++package_uri_resolved_by_loader;
-              if (p.resolved_source_path_stale) ++package_uri_resolved_after_stale_resolved_source_path;
-              append_studio_log(QString(
-                "URDF visual resolution outcome for %1: resolved_source_path=%2 package_uri=%3 outcome=%4 source_path=%5")
-                .arg(p.id, resolved_source_path, package_uri, p.source_path_resolution_outcome, p.source_path));
             }
           }
           p.locked = true;
@@ -10568,13 +10574,11 @@ void MainWindow::populate_scene_hierarchy()
                 if (!resolved_mesh_path.trimmed().isEmpty()) {
                   const QFileInfo resolved_mesh_info(resolved_mesh_path);
                   if (resolved_mesh_info.exists() && resolved_mesh_info.isFile()) {
-                    p.source_path_resolution_outcome =
-                      QStringLiteral("resolved_via_package_uri_after_stale_resolved_source_path");
+                    p.source_path_resolution_outcome = QStringLiteral("resolved_via_package_uri");
+                    p.resolved_source_path_stale = false;
+                    p.resolved_source_path_original = resolved_mesh_path;
                     ++package_uri_resolved_by_loader;
                     ++package_uri_resolved_after_stale_resolved_source_path;
-                    append_studio_log(QString(
-                      "URDF visual resolution outcome for %1: resolved_source_path=%2 package_uri=%3 outcome=%4 source_path=%5")
-                      .arg(p.id, resolved_source_path, package_uri, p.source_path_resolution_outcome, resolved_mesh_path));
                   } else {
                     resolved_mesh_path.clear();
                   }
@@ -10700,7 +10704,7 @@ void MainWindow::populate_scene_hierarchy()
               p.warnings << QStringLiteral("Preview warning: URDF visual mesh unavailable; using generic primitive fallback diagnostic");
             }
             if (p.resolved_source_path_stale) {
-              p.warnings << QStringLiteral("Preview warning: resolved_source_path is stale; package_uri fallback was attempted");
+              p.warnings << QStringLiteral("Preview warning: resolved_source_path is stale; package_uri fallback did not resolve a mesh");
             }
           } else if (!resolved || (geometry_type == "mesh" && p.source_path.trimmed().isEmpty())) {
             p.status = "warning";

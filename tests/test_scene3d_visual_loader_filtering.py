@@ -849,3 +849,28 @@ def test_viewport_required_robot_profiles_include_non_ur5_supported_scenes() -> 
     assert 'QStringLiteral("ur3")' in viewport
     assert 'QStringLiteral("ur_description/meshes/ur10")' in viewport
     assert 'QStringLiteral("ur_description/meshes/ur3")' in viewport
+
+
+def test_successful_package_fallback_is_canonical_and_not_user_facing_warning():
+    src = MAINWINDOW.read_text(encoding="utf-8")
+    assert 'p.source_path_resolution_outcome = QStringLiteral("resolved_via_package_uri");' in src
+    assert 'p.resolved_source_path_stale = false;' in src
+    assert 'p.resolved_source_path_original = resolved_mesh_path;' in src
+    assert 'URDF visual stale resolved_source_path for %1' not in src
+    assert 'resolved_via_package_uri_after_stale_resolved_source_path' not in src
+    assert 'package_uri_resolved_after_stale=%2' in src
+
+
+def test_missing_package_mesh_remains_warning_after_package_attempt():
+    src = MAINWINDOW.read_text(encoding="utf-8")
+    assert 'stale_resolved_source_path_unresolved_after_package_uri_attempt' in src
+    assert 'Preview warning: resolved_source_path is stale; package_uri fallback did not resolve a mesh' in src
+    assert 'Preview warning: URDF visual unresolved' in src
+
+
+def test_collada_z_up_console_message_collapsed_once_per_scene_load():
+    js = (ROOT / "workcell_studio_web/viewer/urdf_robot_renderer.js").read_text(encoding="utf-8")
+    assert "COLLADA_Z_UP_CONSOLE_MESSAGE" in js
+    assert "collada_z_up_console_message_emitted" in js
+    assert "console.info(`Collada Z-UP loader notice collapsed for scene load:" in js
+    assert "originalWarn.apply(console, args);" in js

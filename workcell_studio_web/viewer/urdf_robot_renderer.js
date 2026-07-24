@@ -5,6 +5,26 @@ import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 
 const ROBOT_RENDER_MODE = 'expanded_urdf_loader';
+
+const COLLADA_Z_UP_CONSOLE_MESSAGE = 'THREE.ColladaLoader: You are loading an asset with a Z-UP coordinate system. The loader just rotates the asset to transform it into Y-UP. The vertex data are not converted, see #24289.';
+
+function loadColladaWithSceneScopedZUpDiagnostic(loader, url, onLoad, onProgress, onError, diagnostics) {
+  const originalWarn = console.warn;
+  console.warn = (...args) => {
+    if (String(args?.[0] || '') === COLLADA_Z_UP_CONSOLE_MESSAGE) {
+      diagnostics.collada_z_up_console_message_count = (diagnostics.collada_z_up_console_message_count || 0) + 1;
+      diagnostics.colladaZUpConsoleMessageCount = diagnostics.collada_z_up_console_message_count;
+      if (!diagnostics.collada_z_up_console_message_emitted) {
+        diagnostics.collada_z_up_console_message_emitted = true;
+        console.info(`Collada Z-UP loader notice collapsed for scene load: ${COLLADA_Z_UP_CONSOLE_MESSAGE}`);
+      }
+      return;
+    }
+    originalWarn.apply(console, args);
+  };
+  loader.load(url, dae => { console.warn = originalWarn; onLoad(dae); }, onProgress, err => { console.warn = originalWarn; onError(err); });
+}
+
 const ROS_TO_THREE_CONVERSION_BOUNDARY = 'URDFLoader owns the ROS visual frame and applies the one ROS-to-Three orientation boundary; DAE, STL, assembled URDF, and flattened fallback diagnostics must not add per-link or per-mesh 90-degree corrections after ColladaLoader.';
 const STAGED_MESH_ASSET_ROOT = '/build/workcell_studio_web_scene/assets/';
 const LEGACY_STAGED_MESH_ASSET_ROOT = STAGED_MESH_ASSET_ROOT.slice(1);
@@ -319,7 +339,7 @@ function loadMesh(path, manager, material, done, context, diagnostics) {
     context?.onRobotMeshLoadError?.(err, uri, { url, uri, path, source_url: path, sourceUrl: path, policy_reason: err?.message || 'loader failure', policyReason: err?.message || 'loader failure', ...inferMeshLinkDetail(path) });
   };
   if (ext === 'stl') new STLLoader(manager).load(url, geom => onDone(new THREE.Mesh(geom, material || new THREE.MeshPhongMaterial())), undefined, onError);
-  else if (ext === 'dae') new ColladaLoader(manager).load(url, dae => onDone(normalizeRosColladaScene(dae, uri, diagnostics)), undefined, onError);
+  else if (ext === 'dae') loadColladaWithSceneScopedZUpDiagnostic(new ColladaLoader(manager), url, dae => onDone(normalizeRosColladaScene(dae, uri, diagnostics)), undefined, onError, diagnostics);
   else if (ext === 'obj') new OBJLoader(manager).load(url, obj => onDone(obj), undefined, onError);
   else onError(new Error(`unsupported mesh format .${ext || 'unknown'}`));
 }

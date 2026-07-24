@@ -29,9 +29,11 @@ def test_scene3d_epd_detection_loader_known_file_order_tokens_present():
         assert tok in MAIN_CPP
 
 
-def test_scene3d_epd_detection_loader_missing_snapshot_warns_without_throw_tokens_present():
+def test_scene3d_epd_detection_loader_missing_snapshot_warns_only_when_required():
     for tok in [
-        'detection snapshot missing: generated/perception_bridge_preview_report.json -> generated/emd_bridge_payload_preview.json -> generated/epd_detection_snapshot.json -> workcell_studio_detection_snapshot/v1',
+        'required detection snapshot missing: generated/perception_bridge_preview_report.json -> generated/emd_bridge_payload_preview.json -> generated/epd_detection_snapshot.json -> workcell_studio_detection_snapshot/v1',
+        'const bool perception_snapshot_required',
+        'if (missing_optional_snapshot) continue;',
         'Scene3D detection snapshot warning:',
         'scene_preview_widget_->set_epd_detection_overlays(snapshot_preview.detections);',
     ]:
