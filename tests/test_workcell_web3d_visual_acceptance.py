@@ -53,6 +53,17 @@ def test_web3d_visual_acceptance_workflow_requires_browser_runtime():
     assert "python3 -m playwright install --with-deps chromium" in text
 
 
+def test_web3d_visual_acceptance_workflow_installs_viewer_node_dependencies_before_static_tests():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "actions/setup-node@v4" in text
+    assert "node-version: '20'" in text
+    assert "cache-dependency-path: workcell_studio_web/viewer/package-lock.json" in text
+    assert "working-directory: workcell_studio_web/viewer" in text
+    assert "npm ci" in text
+    assert "npm run check:stale-bundle" in text
+    assert text.index("npm ci") < text.index("Run static acceptance tests")
+
+
 def test_web3d_visual_acceptance_workflow_installs_pinned_real_xacro_and_preflights():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "xacro==2.1.1" in text
