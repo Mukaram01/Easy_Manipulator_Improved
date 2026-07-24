@@ -75,6 +75,24 @@ REQUIRED_ROBOTIQ_MESH_BASENAMES = (
     "robotiq_85_finger_tip_link.dae",
 )
 
+SUPPORTED_SCENE_ACCEPTANCE_ORDER = (
+    "ur5_2f_test",
+    "ur5_3f_test",
+    "suction_test",
+    "ur10_2f_test",
+    "ur3_suction_test",
+    "ur5_airpick4_test",
+    "ur5_2f_sorting_test",
+    "ur5_2f_builder_pick_place_demo",
+)
+SEQUENTIAL_SCENE_SWITCH_ORDER = (
+    "ur5_2f_test",
+    "suction_test",
+    "ur5_3f_test",
+    "ur5_airpick4_test",
+    "ur5_2f_test",
+)
+
 
 
 def _status_value(status: Mapping[str, Any], *keys: str) -> Any:
@@ -1019,33 +1037,40 @@ def browser_command(url: str, screenshot: Path) -> dict[str, Any] | None:
 
 
 def run_browser(url: str, status_path: Path, screenshot_path: Path, require: bool) -> dict[str, Any]:
+    js_errors: list[str] = []
+    failed_requests: list[str] = []
+    console_messages: list[str] = []
     try:
         from playwright.sync_api import sync_playwright  # type: ignore
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=["--ignore-certificate-errors"])
             page = browser.new_page(viewport={"width": 1280, "height": 900}, ignore_https_errors=True)
+            page.on("pageerror", lambda exc: js_errors.append(str(exc)))
+            page.on("console", lambda msg: console_messages.append(f"{msg.type}: {msg.text}"))
+            page.on("requestfailed", lambda req: failed_requests.append(f"{req.method} {req.url} {req.failure.error_text if req.failure else ''}"))
             page.goto(url, wait_until="networkidle", timeout=45000)
             page.wait_for_function("window.__WORKCELL_VIEWER_STATUS__ && typeof window.__WORKCELL_VIEWER_STATUS__ === 'object'", timeout=45000)
+            page.wait_for_function("() => { const s = window.__WORKCELL_VIEWER_STATUS__ || {}; const state = s.web3d_readiness_state || s.web3dReadinessState || s.viewer_boot_state || ''; return state === 'scene_ready' || state === 'scene_failed'; }", timeout=60000)
             page.wait_for_function("window.__WORKCELL_ROBOT_PREVIEW_READY__ && typeof window.__WORKCELL_ROBOT_PREVIEW_READY__.then === 'function'", timeout=45000)
             page.evaluate("() => window.__WORKCELL_ROBOT_PREVIEW_READY__.then(() => true)")
-            page.wait_for_function("() => { const s = window.__WORKCELL_VIEWER_STATUS__ || {}; const state = s.robot_preview_lifecycle_state || s.robotPreviewLifecycleState || ''; return state === 'ready' || state === 'failed'; }", timeout=45000)
+            page.wait_for_function("() => { const s = window.__WORKCELL_VIEWER_STATUS__ || {}; const state = s.robot_preview_lifecycle_state || s.robotPreviewLifecycleState || ''; return state === 'ready' || state === 'failed' || (s.web3d_readiness_state || s.web3dReadinessState) === 'scene_failed'; }", timeout=45000)
             status = page.evaluate("window.__WORKCELL_VIEWER_STATUS__ || null")
             final_state = page.evaluate("() => (window.__WORKCELL_VIEWER_STATUS__ || {}).robot_preview_lifecycle_state || (window.__WORKCELL_VIEWER_STATUS__ || {}).robotPreviewLifecycleState || ''")
-            screenshot_before_ready = final_state != 'ready'
+            screenshot_before_ready = final_state not in {'ready', 'failed'}
             page.screenshot(path=str(screenshot_path), full_page=True)
             browser.close()
-        return {"available": True, "method": "playwright", "status": status, "screenshot_before_ready": screenshot_before_ready}
+        return {"available": True, "method": "playwright", "status": status, "screenshot_before_ready": screenshot_before_ready, "javascript_errors": js_errors, "failed_network_requests": failed_requests, "console_messages": console_messages[-100:]}
     except Exception as exc:
         playwright_error = str(exc)
 
     command_spec = browser_command(url, screenshot_path)
     if command_spec:
         result = subprocess.run(command_spec["command"], cwd=REPO_ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
-        return {"available": result.returncode == 0, "method": command_spec["kind"], "status": None, "returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr, "playwright_error": playwright_error}
+        return {"available": result.returncode == 0, "method": command_spec["kind"], "status": None, "returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr, "playwright_error": playwright_error, "javascript_errors": js_errors, "failed_network_requests": failed_requests}
     if require:
         raise RuntimeError(f"No usable browser found. Playwright error: {playwright_error}")
     screenshot_path.write_bytes(PNG_1X1)
-    return {"available": False, "method": "skipped", "status": None, "reason": f"No Playwright/chromium/google-chrome browser available. Playwright error: {playwright_error}"}
+    return {"available": False, "method": "skipped", "status": None, "reason": f"No Playwright/chromium/google-chrome browser available. Playwright error: {playwright_error}", "javascript_errors": js_errors, "failed_network_requests": failed_requests}
 
 
 SCENE_REPRODUCIBILITY_SCHEMA = "workcell_studio_supported_scene_reproducibility/v1"
@@ -1154,6 +1179,172 @@ def run_supported_scene_reproducibility_gate(*, output: Path | None = None, cata
     print(json.dumps({"status": report["status"], "counts": counts}, sort_keys=True))
     return report
 
+def _entry_by_scene_name(entries: Sequence[Any]) -> dict[str, Any]:
+    return {str(getattr(entry, "scene_name", "")): entry for entry in entries}
+
+
+def _scene_expectations(entry: Any | None, scene_dir: Path) -> dict[str, str]:
+    robot = str(getattr(entry, "robot", "") or "") if entry is not None else ""
+    tool = str(getattr(entry, "tool", "") or "") if entry is not None else ""
+    if robot and tool:
+        return {"robot": robot, "tool": tool}
+    cell = _load_yaml(scene_dir / "cell_definition.yaml")
+    for key in ("robot", "robot_model", "robot_type"):
+        value = cell.get(key)
+        if isinstance(value, str) and value.strip() and not robot:
+            robot = value.strip()
+        elif isinstance(value, Mapping) and not robot:
+            robot = _first_text(value.get("model"), value.get("type"), value.get("name")) or robot
+    for key in ("end_effector", "tool", "gripper"):
+        value = cell.get(key)
+        if isinstance(value, str) and value.strip() and not tool:
+            tool = value.strip()
+        elif isinstance(value, Mapping) and not tool:
+            tool = _first_text(value.get("model"), value.get("type"), value.get("name")) or tool
+    return {"robot": robot or "unknown", "tool": tool or "unknown"}
+
+
+def _count_status_links(status: Mapping[str, Any], expected_tool: str) -> tuple[int, int]:
+    links = [str(x) for x in _status_list(status, "robot_hierarchy_links", "robotHierarchyLinks")]
+    robot_links = [x for x in links if x and not any(tok in x.lower() for tok in ("gripper", "finger", "suction", "vacuum", "airpick"))]
+    tool_links = [x for x in links if x and x not in robot_links]
+    return len(robot_links), len(tool_links)
+
+
+def _missing_required_link_lists(status: Mapping[str, Any]) -> tuple[list[Any], list[Any]]:
+    robot_missing = _status_list(status, "robot_missing_required_robot_visual_links", "robotMissingRequiredRobotVisualLinks", "missing_required_robot_visuals")
+    if not robot_missing:
+        robot_missing = _status_list(status, "robot_hierarchy_missing_links", "robotHierarchyMissingLinks")
+    tool_missing = _status_list(status, "robot_missing_required_tool_visual_links", "robotMissingRequiredToolVisualLinks", "missing_required_tool_visuals")
+    return robot_missing, tool_missing
+
+
+def _matrix_row_from_report(report: Mapping[str, Any], expected: Mapping[str, str], require_browser: bool) -> dict[str, Any]:
+    browser = report.get("browser") if isinstance(report.get("browser"), Mapping) else {}
+    status = browser.get("status") if isinstance(browser.get("status"), Mapping) else {}
+    robot_links, tool_links = _count_status_links(status, expected.get("tool", "")) if isinstance(status, Mapping) else (0, 0)
+    missing_robot, missing_tool = _missing_required_link_lists(status) if isinstance(status, Mapping) else ([], [])
+    missing_meshes = _status_list(status, "robot_missing_meshes", "robotMissingMeshes") if isinstance(status, Mapping) else []
+    unresolved = _status_list(status, "unresolved_package_uris", "unresolvedPackageUris") if isinstance(status, Mapping) else []
+    failed_mesh_urls = _status_list(status, "failed_mesh_urls", "failedMeshUrls", "robot_failed_mesh_urls", "robotFailedMeshUrls") if isinstance(status, Mapping) else []
+    terminal_stage = str(_status_value(status, "web3d_readiness_state", "web3dReadinessState", "viewer_boot_state", "viewerBootState") or "not_run") if isinstance(status, Mapping) else "not_run"
+    errors: list[str] = []
+    if require_browser and browser.get("available") is not True:
+        errors.append("browser unavailable; acceptance is BLOCKED")
+    if browser.get("method") != "playwright":
+        errors.append(f"real Playwright browser required, got {browser.get('method')!r}")
+    if terminal_stage != "scene_ready":
+        errors.append(f"terminal stage must be scene_ready, got {terminal_stage!r}")
+    if _status_bool(status, "robot_preview_loaded", "robotPreviewLoaded") is False:
+        errors.append("robot_preview_loaded is false")
+    if _status_int_any(status, "robot_failed_visual_count", "robotFailedVisualCount") != 0:
+        errors.append("robot_failed_visual_count is non-zero")
+    if missing_robot:
+        errors.append("missing required robot links: " + ", ".join(map(str, missing_robot)))
+    if missing_tool:
+        errors.append("missing required tool links: " + ", ".join(map(str, missing_tool)))
+    if missing_meshes:
+        errors.append("missing meshes: " + ", ".join(map(str, missing_meshes[:10])))
+    if unresolved:
+        errors.append("unresolved assets: " + ", ".join(map(str, unresolved[:10])))
+    if browser.get("javascript_errors"):
+        errors.append("JavaScript errors: " + "; ".join(map(str, browser.get("javascript_errors")[:5])))
+    if browser.get("failed_network_requests"):
+        errors.append("failed network requests: " + "; ".join(map(str, browser.get("failed_network_requests")[:5])))
+    if any(step.get("returncode", 0) != 0 for step in report.get("steps", []) if isinstance(step, Mapping)):
+        errors.append("one or more staging/static checks failed")
+    return {
+        "scene_id": report.get("scene_id", ""),
+        "status": "BLOCKED" if errors and browser.get("available") is not True else ("FAIL" if errors else "PASS"),
+        "terminal_stage": terminal_stage,
+        "expected_robot": expected.get("robot", "unknown"),
+        "expected_tool": expected.get("tool", "unknown"),
+        "rendered_robot_link_count": robot_links,
+        "rendered_tool_link_count": tool_links,
+        "failed_mesh_urls": failed_mesh_urls,
+        "missing_required_robot_links": missing_robot,
+        "missing_required_tool_links": missing_tool,
+        "missing_mesh_count": len(missing_meshes),
+        "missing_meshes": missing_meshes,
+        "unresolved_asset_count": len(unresolved),
+        "unresolved_assets": unresolved,
+        "javascript_errors": browser.get("javascript_errors", []),
+        "failed_network_requests": browser.get("failed_network_requests", []),
+        "screenshot": report.get("screenshot", "") if browser.get("available") is True else "",
+        "errors": errors,
+    }
+
+
+def run_one_scene(scene_dir: Path, *, output_path: Path | None, scene_id: str | None, require_browser: bool, port: int, expected: Mapping[str, str] | None = None) -> tuple[int, dict[str, Any]]:
+    scene_id = derive_scene_id(scene_dir, scene_id)
+    output_path = output_path or BUILD_ROOT / f"{scene_id}.web_scene.json"
+    if not output_path.is_absolute():
+        output_path = (REPO_ROOT / output_path).resolve()
+    report_path = BUILD_ROOT / f"{scene_id}.visual_acceptance.json"
+    screenshot_path = BUILD_ROOT / (f"{scene_id}.rviz_parity.png" if scene_id == "ur5_2f_test" else f"{scene_id}.visual_acceptance.png")
+    BUILD_ROOT.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    steps = [run_step([sys.executable, "scripts/ensure_workcell_studio_web_scene_fresh.py", "--scene", repo_relative(scene_dir), "--output", repo_relative(output_path), "--stage-assets"])]
+    if steps[-1]["returncode"] == 0:
+        steps.append(run_step([sys.executable, "scripts/check_workcell_web_scene_mesh_contract.py", repo_relative(output_path)]))
+    if steps[-1]["returncode"] == 0:
+        steps.append(run_step([sys.executable, "scripts/check_workcell_web_scene_visual_bounds.py", repo_relative(output_path), "--json"]))
+    server_status = "not_started"; server = None
+    browser = {"available": False, "method": "not_run", "status": None}
+    viewer_url = f"http://localhost:{port}/workcell_studio_web/viewer/index.html?scene={quote(repo_relative(output_path))}&force_refresh={int(time.time() * 1000)}"
+    if all(step["returncode"] == 0 for step in steps):
+        server_status, server = start_or_reuse_server(port)
+        if server_status != "failed":
+            try:
+                browser = run_browser(viewer_url, report_path, screenshot_path, require_browser)
+            except Exception as exc:
+                browser = {"available": False, "method": "failed", "status": None, "error": str(exc), "javascript_errors": [], "failed_network_requests": []}
+        elif require_browser:
+            browser = {"available": False, "method": "server_failed", "status": None, "error": f"could not start or reuse HTTP server on port {port}", "javascript_errors": [], "failed_network_requests": []}
+    if not screenshot_path.exists() and not require_browser:
+        screenshot_path.write_bytes(PNG_1X1)
+    browser_status_path = BUILD_ROOT / f"{scene_id}.browser_status.json"
+    if isinstance(browser.get("status"), Mapping):
+        browser_status_path.write_text(json.dumps({"status": browser.get("status")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    report = {"scene_id": scene_id, "scene_dir": repo_relative(scene_dir), "expected": dict(expected or {}), "web_scene_json": repo_relative(output_path), "viewer_url": viewer_url, "server_status": server_status, "browser": browser, "robot_preview_lifecycle_diagnostics": robot_preview_lifecycle_diagnostics(browser.get("status")) if isinstance(browser.get("status"), Mapping) else {}, "steps": steps, "browser_status_json": repo_relative(browser_status_path) if browser_status_path.exists() else "", "report": repo_relative(report_path), "screenshot": repo_relative(screenshot_path), "screenshot_dimensions": png_dimensions(screenshot_path), "screenshot_size_bytes": screenshot_path.stat().st_size if screenshot_path.exists() else 0}
+    report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if server is not None:
+        server.shutdown()
+    rc = 0
+    if any(step["returncode"] != 0 for step in steps): rc = 1
+    if require_browser and require_browser_artifact_errors(browser, server_status, screenshot_path, browser_status_path): rc = 1
+    status = browser.get("status") if isinstance(browser, Mapping) else None
+    legacy_strict_scene = not expected or (expected.get("robot") == "ur5" and expected.get("tool") == "robotiq_2f")
+    if isinstance(status, Mapping) and legacy_strict_scene and validate_browser_status(status): rc = 1
+    elif require_browser and not isinstance(status, Mapping): rc = 1
+    return rc, report
+
+
+def run_supported_scene_browser_matrix(*, output: Path, catalog: Path | None, scene_ids: Sequence[str] | None, require_browser: bool, port: int, sequential: bool) -> dict[str, Any]:
+    entries, catalog_errors = _load_supported_entries(catalog)
+    by_name = _entry_by_scene_name(entries)
+    order = list(scene_ids or SUPPORTED_SCENE_ACCEPTANCE_ORDER)
+    rows = []
+    for scene_name in order:
+        entry = by_name.get(scene_name)
+        scene_dir = (REPO_ROOT / (getattr(entry, "scene_path", f"scenes/{scene_name}"))).resolve() if entry else (REPO_ROOT / "scenes" / scene_name).resolve()
+        expected = _scene_expectations(entry, scene_dir)
+        if not scene_dir.is_dir():
+            rows.append({"scene_id": scene_name, "status": "BLOCKED", "terminal_stage": "not_run", "expected_robot": expected["robot"], "expected_tool": expected["tool"], "errors": [f"scene directory missing: {repo_relative(scene_dir)}"]})
+            continue
+        rc, report = run_one_scene(scene_dir, output_path=BUILD_ROOT / f"{scene_name}.web_scene.json", scene_id=scene_name, require_browser=require_browser, port=port, expected=expected)
+        row = _matrix_row_from_report(report, expected, require_browser)
+        if rc != 0 and row["status"] == "PASS": row["status"] = "FAIL"
+        rows.append(row)
+    counts = {"PASS": 0, "FAIL": 0, "BLOCKED": 0}
+    for row in rows: counts[row.get("status", "FAIL")] += 1
+    report = {"schema": "workcell_studio_web3d_supported_scenes_acceptance_matrix/v1", "sequential": bool(sequential), "status": "FAIL" if counts["FAIL"] or catalog_errors else ("BLOCKED" if counts["BLOCKED"] else "PASS"), "counts": counts, "catalog_errors": catalog_errors, "scenes": rows, "scene_switch_sequence": list(SEQUENTIAL_SCENE_SWITCH_ORDER)}
+    out = output if output.is_absolute() else REPO_ROOT / output
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return report
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run browser visual acceptance for a Workcell Studio Web 3D scene.")
     parser.add_argument("--scene", help="Scene directory to export and validate.")
@@ -1161,14 +1352,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--scene-id", help="Override derived scene id used for default output/report names.")
     parser.add_argument("--require-browser", action="store_true", help="Fail if Playwright/chromium/google-chrome is unavailable or cannot run.")
     parser.add_argument("--port", type=int, default=8765, help="Repo-root HTTP server port (default: 8765).")
-    parser.add_argument("--all-supported-scenes", action="store_true", help="Run the supported-scene reproducibility gate instead of one browser scene.")
+    parser.add_argument("--all-supported-scenes", action="store_true", help="Run the supported-scenes browser Product View acceptance matrix.")
+    parser.add_argument("--sequential", action="store_true", help="Run matrix scenes sequentially and include the scene-switch contract sequence.")
     parser.add_argument("--catalog", type=Path, help="Supported-scene catalog path for --all-supported-scenes.")
     parser.add_argument("--only-scene", action="append", default=[], help="Limit --all-supported-scenes to one scene id; repeatable.")
     args = parser.parse_args(argv)
 
     if args.all_supported_scenes:
-        report = run_supported_scene_reproducibility_gate(output=Path(args.output) if args.output else BUILD_ROOT / "supported_scene_reproducibility.json", catalog=args.catalog, scene_ids=args.only_scene, require_browser=args.require_browser, port=args.port)
-        return 1 if report["status"] == "FAIL" else 0
+        report = run_supported_scene_browser_matrix(output=Path(args.output) if args.output else BUILD_ROOT / "supported_scenes_visual_acceptance_matrix.json", catalog=args.catalog, scene_ids=args.only_scene, require_browser=args.require_browser, port=args.port, sequential=args.sequential)
+        return 1 if report["status"] in {"FAIL", "BLOCKED"} and args.require_browser else (1 if report["status"] == "FAIL" else 0)
 
     if not args.scene:
         print("error: --scene is required unless --all-supported-scenes is used", file=sys.stderr)
@@ -1181,93 +1373,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     scene_id = derive_scene_id(scene_dir, args.scene_id)
-    output_path = Path(args.output).expanduser() if args.output else BUILD_ROOT / f"{scene_id}.web_scene.json"
-    if not output_path.is_absolute():
-        output_path = (REPO_ROOT / output_path).resolve()
-    report_path = BUILD_ROOT / f"{scene_id}.visual_acceptance.json"
-    screenshot_path = BUILD_ROOT / (f"{scene_id}.rviz_parity.png" if scene_id == "ur5_2f_test" else f"{scene_id}.visual_acceptance.png")
-    BUILD_ROOT.mkdir(parents=True, exist_ok=True)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    steps = []
-    steps.append(run_step([sys.executable, "scripts/ensure_workcell_studio_web_scene_fresh.py", "--scene", repo_relative(scene_dir), "--output", repo_relative(output_path), "--stage-assets"]))
-    if steps[-1]["returncode"] == 0:
-        steps.append(run_step([sys.executable, "scripts/check_workcell_web_scene_mesh_contract.py", repo_relative(output_path)]))
-    if steps[-1]["returncode"] == 0:
-        steps.append(run_step([sys.executable, "scripts/check_workcell_web_scene_visual_bounds.py", repo_relative(output_path), "--json"]))
-
-    server_status = "not_started"
-    server = None
-    browser = {"available": False, "method": "not_run", "status": None}
-    viewer_url = f"http://localhost:{args.port}/workcell_studio_web/viewer/index.html?scene={quote(repo_relative(output_path))}"
-    if all(step["returncode"] == 0 for step in steps):
-        server_status, server = start_or_reuse_server(args.port)
-        if server_status != "failed":
-            try:
-                browser = run_browser(viewer_url, report_path, screenshot_path, args.require_browser)
-            except Exception as exc:
-                browser = {"available": False, "method": "failed", "status": None, "error": str(exc)}
-        elif args.require_browser:
-            browser = {"available": False, "method": "server_failed", "status": None, "error": f"could not start or reuse HTTP server on port {args.port}"}
-
-    if not screenshot_path.exists() and not args.require_browser:
-        screenshot_path.write_bytes(PNG_1X1)
-
-    browser_status_path = BUILD_ROOT / f"{scene_id}.browser_status.json"
-    if isinstance(browser.get("status"), Mapping):
-        browser_status_path.write_text(json.dumps({"status": browser.get("status")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        compare_report_path = BUILD_ROOT / f"{scene_id}.browser_fk_vs_ros_tf.json"
-        steps.append(run_step([sys.executable, "scripts/compare_web_scene_fk_to_ros_tf.py", "--scene", repo_relative(scene_dir), "--web-scene", repo_relative(output_path), "--output", repo_relative(compare_report_path), "--browser-status", repo_relative(browser_status_path), "--tolerance", "0.0001"]))
-
-    report = {
-        "scene_id": scene_id,
-        "scene_dir": repo_relative(scene_dir),
-        "web_scene_json": repo_relative(output_path),
-        "viewer_url": viewer_url,
-        "server_status": server_status,
-        "browser": browser,
-        "robot_preview_lifecycle_diagnostics": robot_preview_lifecycle_diagnostics(browser.get("status")) if isinstance(browser.get("status"), Mapping) else {},
-        "steps": steps,
-        "browser_status_json": repo_relative(browser_status_path) if browser_status_path.exists() else "",
-        "report": repo_relative(report_path),
-        "screenshot": repo_relative(screenshot_path),
-        "screenshot_dimensions": png_dimensions(screenshot_path),
-        "screenshot_size_bytes": screenshot_path.stat().st_size if screenshot_path.exists() else 0,
-    }
-    report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    if server is not None:
-        server.shutdown()
+    rc, report = run_one_scene(scene_dir, output_path=Path(args.output).expanduser() if args.output else None, scene_id=scene_id, require_browser=args.require_browser, port=args.port, expected=_scene_expectations(None, scene_dir))
     print(json.dumps(report, indent=2, sort_keys=True))
-    print(f"viewer_url: {viewer_url}")
-    print(f"screenshot_path: {repo_relative(screenshot_path)}")
-    print(f"report_path: {repo_relative(report_path)}")
-    if any(step["returncode"] != 0 for step in steps):
-        return 1
-    if args.require_browser:
-        artifact_errors = require_browser_artifact_errors(browser, server_status, screenshot_path, browser_status_path)
-        if artifact_errors:
-            for error in artifact_errors:
-                print(f"error: {error}", file=sys.stderr)
-            return 1
-    status = browser.get("status") if isinstance(browser, Mapping) else None
-    if isinstance(status, Mapping):
-        lifecycle_diagnostics = robot_preview_lifecycle_diagnostics(status)
-        debug_summary = baked_pose_render_mode_summary(status)
-        print("robot_preview_lifecycle_diagnostics: " + json.dumps(lifecycle_diagnostics, sort_keys=True))
-        print("visual_debug_baked_pose_summary: " + json.dumps(debug_summary, sort_keys=True))
-        print("visual_acceptance_debug_dump: " + json.dumps(_visual_acceptance_debug_dump(status), sort_keys=True))
-        if browser.get("screenshot_before_ready"):
-            print("error: browser screenshot was captured before robot-preview readiness completed", file=sys.stderr)
-            return 1
-        status_errors = validate_browser_status(status)
-        if status_errors:
-            for error in status_errors:
-                print(f"error: {error}", file=sys.stderr)
-            return 1
-    elif args.require_browser:
-        print("error: browser viewer did not expose window.__WORKCELL_VIEWER_STATUS__", file=sys.stderr)
-        return 1
-    return 0
+    print(f"viewer_url: {report['viewer_url']}")
+    print(f"screenshot_path: {report.get('screenshot', '')}")
+    print(f"report_path: {report.get('report', '')}")
+    return rc
+
 
 
 if __name__ == "__main__":

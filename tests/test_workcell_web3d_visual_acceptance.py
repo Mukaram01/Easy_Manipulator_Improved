@@ -58,32 +58,29 @@ def test_web3d_visual_acceptance_workflow_installs_pinned_real_xacro_and_preflig
     assert "xacro==2.1.1" in text
     assert "importlib.metadata.version('xacro')" in text or 'importlib.metadata.version("xacro")' in text
     assert "discover_xacro_command()" in text
-    assert "xacro-lite cannot satisfy ur5_2f_test acceptance" in text
+    assert "xacro-lite cannot satisfy supported-scenes acceptance" in text
 
 
-def test_web3d_visual_acceptance_workflow_proves_real_expansion_before_browser():
+def test_web3d_visual_acceptance_workflow_runs_supported_scene_matrix_before_browser():
     text = WORKFLOW.read_text(encoding="utf-8")
-    assert "scripts/extract_scene_urdf_visual_mesh_index.py --scene ur5_2f_test --require-xacro --fail-on-unexpanded" in text
-    assert "expanded_scene_preview.urdf" in text
-    assert "real_xacro_succeeded" in text
-    assert "xacro:include" in text
+    assert "--all-supported-scenes" in text
+    assert "--sequential" in text
+    assert "--output build/web3d_supported_scenes_matrix.json" in text
+    assert "python3 scripts/run_workcell_studio_scene_readiness_matrix.py" in text
 
 
-def test_web3d_visual_acceptance_workflow_uploads_screenshot_report_and_scene_artifacts():
+def test_web3d_visual_acceptance_workflow_uploads_matrix_report_and_scene_artifacts():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "actions/upload-artifact@v4" in text
-    assert "build/workcell_studio_web_scene/ur5_2f_test.visual_acceptance.json" in text
-    assert "build/workcell_studio_web_scene/ur5_2f_test.rviz_parity.png" in text
-    assert "build/workcell_studio_web_scene/ur5_2f_test.web_scene.json" in text
+    assert "build/web3d_supported_scenes_matrix.json" in text
+    assert "build/workcell_studio_web_scene/*.visual_acceptance.json" in text
+    assert "build/workcell_studio_web_scene/*.png" in text
     assert "GITHUB_STEP_SUMMARY" in text
     for token in [
-        "scene id",
         "browser runtime method",
-        "xacro status",
-        "required_mesh_failed_count",
-        "fallback_count",
         "screenshot artifact name",
         "report artifact name",
+        "web3d_supported_scenes_matrix.json",
     ]:
         assert token in text
 
@@ -105,6 +102,26 @@ def test_web3d_visual_acceptance_workflow_does_not_commit_generated_outputs():
     )
     assert result.stdout.splitlines() == []
 
+
+
+def test_acceptance_script_defines_supported_scene_browser_matrix_order():
+    assert module.SUPPORTED_SCENE_ACCEPTANCE_ORDER == (
+        "ur5_2f_test",
+        "ur5_3f_test",
+        "suction_test",
+        "ur10_2f_test",
+        "ur3_suction_test",
+        "ur5_airpick4_test",
+        "ur5_2f_sorting_test",
+        "ur5_2f_builder_pick_place_demo",
+    )
+    assert module.SEQUENTIAL_SCENE_SWITCH_ORDER == (
+        "ur5_2f_test",
+        "suction_test",
+        "ur5_3f_test",
+        "ur5_airpick4_test",
+        "ur5_2f_test",
+    )
 
 def test_acceptance_script_supports_playwright_browser_status_path():
     text = SCRIPT.read_text(encoding="utf-8")
