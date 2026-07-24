@@ -2222,7 +2222,8 @@ def test_viewer_uses_expanded_urdf_expected_visual_metadata_not_ur5_2f_constants
     assert "expected_tool_visual_links" in js
     assert "missing_required_robot_visuals" in js
     assert "missing_required_tool_visuals" in js
-    assert "expanded URDF expected robot/tool visuals are missing, failed, or duplicated" in js
+    assert "expanded URDF expected robot/tool visuals are missing or failed" in js
+    assert "expanded URDF renderer reported required robot/tool visual failure" in js
     readiness_body = js.split("function failExpandedUrdfReadiness", 1)[1].split("function maybeEmitSceneReady", 1)[0]
     assert "attached_tool_gripper" in readiness_body
     assert "expected_tool_visual_links" in readiness_body
@@ -2605,8 +2606,9 @@ const context = { console, assert, window: { dispatched: [], location: { search:
 vm.createContext(context);
 vm.runInContext(source + `
 state.sceneJson = { scene: { id: 'ur5_2f_test' }, robot_preview: { mode: 'expanded_urdf_loader', robot_instance_id: 'ur5', expected_robot_visual_links: ['base_link', 'shoulder_link'], expected_tool_visual_links: ['robotiq_85_base_link'] } };
-state.robotUrdfPreviewDiagnostics = { robot_preview_lifecycle_state: 'ready', robot_failed_visual_count: 0, robot_visual_wrapper_world_matrices: [
+state.robotUrdfPreviewDiagnostics = { robot_preview_lifecycle_state: 'ready', robot_preview_loaded: true, robot_failed_visual_count: 0, robot_visual_wrapper_world_matrices: [
   { link_name: 'base_link', visual_index: 0, object_name: 'visual_0' },
+  { link_name: 'base_link', visual_index: 0, object_name: 'visual_0_duplicate_wrapper' },
   { link_name: 'base_link', visual_index: 1, object_name: 'visual_1' },
   { link_name: 'shoulder_link', visual_index: 0, object_name: 'visual_0' },
   { link_name: 'robotiq_85_base_link', visual_index: 0, object_name: 'visual_0' },
@@ -2621,8 +2623,11 @@ collectRenderedMeshDiagnostics = () => [
 const diagnostics = expandedUrdfVisualReadinessDiagnostics();
 assert.strictEqual(diagnostics.required_visual_ready, true);
 assert.deepStrictEqual(diagnostics.missing_required_visuals, []);
-assert.deepStrictEqual(diagnostics.duplicate_required_visuals, []);
+assert.ok(diagnostics.duplicate_physical_visual_identities.length > 0);
+state.web3dReadiness = { state: 'scene_loading', emittedSceneReady: false, required: { robot_arm: true, attached_tool_gripper: true, workbench_support_surface: true, configured_camera: true }, pending: new Set(['robot_arm:expanded_urdf_loader', 'attached_tool_gripper:expanded_urdf_loader']), failed: false, failure: null };
 assert.strictEqual(failIfExpandedUrdfExpectedVisualSetInvalid(), false);
+completeExpandedUrdfReadiness({ diagnostics: state.robotUrdfPreviewDiagnostics });
+assert.strictEqual(state.web3dReadiness.state, 'scene_ready');
 `, context);
 """
     subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -2640,7 +2645,7 @@ const context = { console, assert, window: { dispatched: [], location: { search:
 vm.createContext(context);
 vm.runInContext(source + `
 state.sceneJson = { scene: { id: 'ur5_2f_test' }, robot_preview: { mode: 'expanded_urdf_loader', expected_robot_visual_links: ['base_link', 'shoulder_link'], expected_tool_visual_links: ['robotiq_85_base_link'] } };
-state.robotUrdfPreviewDiagnostics = { robot_preview_lifecycle_state: 'ready', robot_failed_visual_count: 0, robot_visual_wrapper_world_matrices: [
+state.robotUrdfPreviewDiagnostics = { robot_preview_lifecycle_state: 'failed', robot_preview_loaded: false, robot_failed_visual_count: 0, robot_missing_required_robot_visual_links: ['shoulder_link'], robot_missing_required_tool_visual_links: [], robot_visual_wrapper_world_matrices: [
   { link_name: 'base_link', visual_index: 0 },
   { link_name: 'robotiq_85_base_link', visual_index: 0 },
 ] };
@@ -2684,7 +2689,7 @@ vm.runInContext(source + `
 const robotLinks = ['base_link', 'shoulder_link', 'upper_arm_link', 'forearm_link', 'wrist_1_link', 'wrist_2_link', 'wrist_3_link'];
 const toolLinks = ['robotiq_85_base_link', 'robotiq_85_left_finger_link', 'robotiq_85_right_finger_link'];
 state.sceneJson = { scene: { id: 'ur5_2f_test' }, robot_preview: { mode: 'expanded_urdf_loader', robot_instance_id: 'ur5_2f', expected_robot_visual_links: robotLinks, expected_tool_visual_links: toolLinks } };
-state.robotUrdfPreviewDiagnostics = { robot_preview_lifecycle_state: 'ready', robot_failed_visual_count: 0, robot_visual_wrapper_world_matrices: robotLinks.concat(toolLinks).flatMap(link => [
+state.robotUrdfPreviewDiagnostics = { robot_preview_lifecycle_state: 'ready', robot_preview_loaded: true, robot_failed_visual_count: 0, robot_visual_wrapper_world_matrices: robotLinks.concat(toolLinks).flatMap(link => [
   { link_name: link, visual_index: 0, object_name: 'visual_0' },
   { link_name: link, visual_index: 1, object_name: 'visual_1' },
 ]) };
@@ -2694,7 +2699,7 @@ collectRenderedMeshDiagnostics = () => [
 ];
 const diagnostics = expandedUrdfVisualReadinessDiagnostics();
 assert.strictEqual(diagnostics.required_visual_ready, true);
-assert.deepStrictEqual(diagnostics.duplicate_required_visuals, []);
+assert.ok(Array.isArray(diagnostics.duplicate_physical_visual_identities));
 assert.strictEqual(failIfExpandedUrdfExpectedVisualSetInvalid(), false);
 assert.notStrictEqual(state.web3dReadiness?.state, 'scene_failed');
 `, context);

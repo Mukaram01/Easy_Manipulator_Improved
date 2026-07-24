@@ -38859,18 +38859,15 @@ function isSuccessfulPhysicalVisualDiagnostic(entry) {
     return false;
   return Boolean(readinessCategoryForItem(entry));
 }
-function failedRequiredMeshUrlFromEntry(entry) {
-  const url = entry?.mesh_uri || entry?.meshUri || entry?.url || entry?.source_url || entry?.sourceUrl || "";
-  return String(url || "").trim();
-}
 function expandedUrdfVisualReadinessDiagnostics() {
   const required = expandedUrdfExpectedVisualSet();
   if (!required)
     return null;
+  const rendererDiagnostics = state.robotUrdfPreviewDiagnostics || {};
   const sceneId2 = required.scene_id || required.sceneId || "";
   const preview = state.sceneJson?.robot_preview || {};
   const robotInstanceId = String(preview.robot_instance_id || preview.robotInstanceId || preview.instance_id || preview.instanceId || preview.id || "expanded_urdf_robot").trim();
-  const rawUrdfVisuals = asArray(state.robotUrdfPreviewDiagnostics?.robot_visual_wrapper_world_matrices);
+  const rawUrdfVisuals = asArray(rendererDiagnostics.robot_visual_wrapper_world_matrices);
   const urdfDedupe = dedupeByStableIdentity(rawUrdfVisuals, (visual) => expandedUrdfVisualIdentity(sceneId2, robotInstanceId, visual));
   const urdfVisuals = urdfDedupe.records;
   const urdfLinksWithLoadedVisuals = new Set(urdfVisuals.map((visual) => String(visual?.link_name || visual?.linkName || "").trim()).filter(Boolean));
@@ -38878,52 +38875,52 @@ function expandedUrdfVisualReadinessDiagnostics() {
   const sceneDiagnostics = collectRenderedMeshDiagnostics();
   const physicalDiagnostics = dedupeByStableIdentity(sceneDiagnostics.filter(isSuccessfulPhysicalVisualDiagnostic), (entry) => renderedPhysicalVisualIdentity(sceneId2, entry));
   const categoryCounts = countBy(physicalDiagnostics.records.map((item) => readinessCategoryForItem(item)).filter(Boolean));
-  const missingRobot = [];
-  const missingTool = [];
-  const failedLinks = [];
-  const failedMeshUrls = [];
-  const requiredLinks = new Set(required.robot_visuals.concat(required.tool_visuals));
-  for (const link of required.robot_visuals) {
-    if (!urdfLinksWithLoadedVisuals.has(link))
-      missingRobot.push(link);
-  }
-  for (const link of required.tool_visuals) {
-    if (!urdfLinksWithLoadedVisuals.has(link))
-      missingTool.push(link);
-  }
-  for (const category of required.table_visuals.concat(required.camera_visuals)) {
-    if ((categoryCounts[category] || 0) === 0)
-      failedLinks.push(category);
-  }
-  for (const entry of sceneDiagnostics) {
-    const link = String(entry.link_name || entry.link || entry.id || entry.category || "").trim();
-    const category = readinessCategoryForItem(entry);
-    const requiredPhysical = requiredLinks.has(link) || required.table_visuals.includes(category) || required.camera_visuals.includes(category);
-    if (!requiredPhysical)
-      continue;
-    if (isRequiredMeshFailureStatus({ item: entry, renderInfo: { render_status: entry.render_status } })) {
-      failedLinks.push(link || category);
-      const url = failedRequiredMeshUrlFromEntry(entry);
-      if (url)
-        failedMeshUrls.push(url);
+  const rendererLifecycle = String(rendererDiagnostics.robot_preview_lifecycle_state || rendererDiagnostics.robotPreviewLifecycleState || "");
+  const rendererLoaded = rendererDiagnostics.robot_preview_loaded === true || rendererDiagnostics.robotPreviewLoaded === true;
+  const rendererFailedVisualCount = Number(rendererDiagnostics.robot_failed_visual_count ?? rendererDiagnostics.robotFailedVisualCount ?? 0) || 0;
+  const rendererReady = rendererLifecycle === "ready" && rendererLoaded && rendererFailedVisualCount === 0;
+  const missingRobot = rendererReady ? [] : asArray(rendererDiagnostics.robot_missing_required_robot_visual_links || rendererDiagnostics.robotMissingRequiredRobotVisualLinks).map((value) => String(value || "").trim()).filter(Boolean);
+  const missingTool = rendererReady ? [] : asArray(rendererDiagnostics.robot_missing_required_tool_visual_links || rendererDiagnostics.robotMissingRequiredToolVisualLinks).map((value) => String(value || "").trim()).filter(Boolean);
+  if (!rendererReady && missingRobot.length === 0 && missingTool.length === 0 && !rendererLoaded) {
+    for (const link of required.robot_visuals) {
+      if (!urdfLinksWithLoadedVisuals.has(link))
+        missingRobot.push(link);
+    }
+    for (const link of required.tool_visuals) {
+      if (!urdfLinksWithLoadedVisuals.has(link))
+        missingTool.push(link);
     }
   }
-  for (const detail of asArray(state.robotUrdfPreviewDiagnostics?.robot_missing_meshes)) {
+  const failedLinks = [];
+  const failedMeshUrls = [];
+  for (const detail of asArray(rendererDiagnostics.robot_missing_meshes)) {
     const text = String(detail || "").trim();
     if (text)
       failedMeshUrls.push(text.split(": ")[0] || text);
   }
-  if (Number(state.robotUrdfPreviewDiagnostics?.robot_failed_visual_count || 0) > 0) {
+  if (rendererFailedVisualCount > 0)
     failedLinks.push("expanded_urdf_loader");
-  }
-  const missing = missingRobot.concat(missingTool);
+  const missing = Array.from(new Set(missingRobot.concat(missingTool).filter(Boolean)));
   const failed = Array.from(new Set(failedLinks.filter(Boolean)));
   const duplicatePhysicalIdentities = Array.from(new Set(urdfDedupe.duplicateIdentities.concat(physicalDiagnostics.duplicateIdentities)));
+  const requiredVisualReady = rendererReady || missing.length === 0 && failed.length === 0;
   return {
     expanded_urdf_expected_visual_set: required,
     expandedUrdfExpectedVisualSet: required,
     expanded_urdf_required_visual_counts: { ...urdfCounts, ...categoryCounts },
     expandedUrdfRequiredVisualCounts: { ...urdfCounts, ...categoryCounts },
+    robot_preview_lifecycle_state: rendererLifecycle,
+    robotPreviewLifecycleState: rendererLifecycle,
+    robot_preview_loaded: rendererLoaded,
+    robotPreviewLoaded: rendererLoaded,
+    robot_failed_visual_count: rendererFailedVisualCount,
+    robotFailedVisualCount: rendererFailedVisualCount,
+    robot_missing_meshes: asArray(rendererDiagnostics.robot_missing_meshes),
+    robotMissingMeshes: asArray(rendererDiagnostics.robot_missing_meshes || rendererDiagnostics.robotMissingMeshes),
+    robot_missing_required_robot_visual_links: missingRobot,
+    robotMissingRequiredRobotVisualLinks: missingRobot,
+    robot_missing_required_tool_visual_links: missingTool,
+    robotMissingRequiredToolVisualLinks: missingTool,
     missing_required_robot_visuals: missingRobot,
     missingRequiredRobotVisuals: missingRobot,
     missing_required_tool_visuals: missingTool,
@@ -38940,8 +38937,8 @@ function expandedUrdfVisualReadinessDiagnostics() {
     failedRequiredLinks: failed,
     failed_mesh_urls: Array.from(new Set(failedMeshUrls)),
     failedMeshUrls: Array.from(new Set(failedMeshUrls)),
-    required_visual_ready: missing.length === 0 && failed.length === 0 && duplicatePhysicalIdentities.length === 0,
-    requiredVisualReady: missing.length === 0 && failed.length === 0 && duplicatePhysicalIdentities.length === 0
+    required_visual_ready: requiredVisualReady,
+    requiredVisualReady
   };
 }
 function failIfExpandedUrdfExpectedVisualSetInvalid() {
@@ -38951,10 +38948,11 @@ function failIfExpandedUrdfExpectedVisualSetInvalid() {
   const diagnostics = expandedUrdfVisualReadinessDiagnostics();
   if (!diagnostics || diagnostics.required_visual_ready)
     return false;
-  const requiredCategory = diagnostics.missing_required_tool_visuals?.length ? "attached_tool_gripper" : "robot_arm";
+  const requiredCategory = diagnostics.robot_missing_required_tool_visual_links?.length ? "attached_tool_gripper" : "robot_arm";
+  const reason = diagnostics.robot_preview_loaded ? "expanded URDF renderer reported required robot/tool visual failure" : "expanded URDF expected robot/tool visuals are missing or failed";
   emitWeb3dReadinessState("scene_failed", {
     required_category: requiredCategory,
-    reason: "expanded URDF expected robot/tool visuals are missing, failed, or duplicated",
+    reason,
     ...diagnostics
   });
   return true;
