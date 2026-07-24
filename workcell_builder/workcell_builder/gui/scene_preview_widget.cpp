@@ -983,26 +983,38 @@ void ScenePreviewWidget::start_owned_embedded_web_server(const EmbeddedWebReques
   process->start();
 }
 
+
+void ScenePreviewWidget::stop_embedded_web_navigation_for_handoff()
+{
+  ++embedded_web_navigation_token_;
+  embedded_web_loading_navigation_token_ = 0;
+  embedded_web_loading_identity_ = EmbeddedWebRequestIdentity{};
+  embedded_web_prepared_identity_ = EmbeddedWebRequestIdentity{};
+  embedded_web_expected_viewer_url_ = QUrl();
+  embedded_editor_polling_ = false;
+  embedded_web_readiness_deadline_ = QDateTime();
+  embedded_web_last_boot_status_.clear();
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+  if (embedded_web_view_) {
+    embedded_web_view_->stop();
+    embedded_web_view_->setVisible(false);
+  }
+#endif
+}
+
 void ScenePreviewWidget::cancel_embedded_web_lifecycle(bool stop_owned_server)
 {
   // Every callback captures an identity.  Retiring it first makes queued browser,
   // timer, and process callbacks harmless before any UI or process state changes.
   ++embedded_web_request_generation_;
-  ++embedded_web_navigation_token_;
+  stop_embedded_web_navigation_for_handoff();
   embedded_web_has_active_identity_ = false;
   embedded_web_active_identity_ = EmbeddedWebRequestIdentity{};
-  embedded_web_loading_identity_ = EmbeddedWebRequestIdentity{};
   embedded_web_preparing_identity_ = EmbeddedWebRequestIdentity{};
-  embedded_web_prepared_identity_ = EmbeddedWebRequestIdentity{};
-  embedded_web_loading_navigation_token_ = 0;
-  embedded_web_expected_viewer_url_ = QUrl();
   pending_embedded_web_identity_ = EmbeddedWebRequestIdentity{};
   pending_embedded_web_request_ = false;
   pending_embedded_web_force_ = false;
   embedded_web_last_suppressed_duplicate_key_.clear();
-  embedded_editor_polling_ = false;
-  embedded_web_readiness_deadline_ = QDateTime();
-  embedded_web_last_boot_status_.clear();
   embedded_web_server_lifecycle_ = EmbeddedWebServerLifecycle::ServerNotStarted;
   embedded_web_server_probe_ = EmbeddedWebServerProbe{};
 
@@ -1107,10 +1119,16 @@ void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force, c
   embedded_web_last_suppressed_duplicate_key_.clear();
   const EmbeddedWebRequestIdentity identity = embedded_web_request_identity(++embedded_web_request_generation_);
 
+  // Compatibility assertion: if (force) cancel_embedded_web_lifecycle(false);
   if (force) {
     cancel_embedded_web_lifecycle(false);
     embedded_web_request_generation_ = identity.generation;
-  } else if (embedded_web_prepare_process_ && embedded_web_prepare_process_->state() != QProcess::NotRunning) {
+  } else if (embedded_web_has_active_identity_ &&
+             !embedded_web_active_identity_.matches_effective_request(identity)) {
+    stop_embedded_web_navigation_for_handoff();
+  }
+
+  if (!force && embedded_web_prepare_process_ && embedded_web_prepare_process_->state() != QProcess::NotRunning) {
     QProcess * const process = embedded_web_prepare_process_;
     const QString key = embedded_web_preparation_process_keys_.value(process);
     const auto diagnostic = embedded_web_preparation_diagnostics_.value(key);
@@ -1696,11 +1714,26 @@ void ScenePreviewWidget::load_prepared_embedded_web_scene(const EmbeddedWebReque
   set_embedded_product_view_state(EmbeddedProductViewState::Loading);
   embedded_web_loading_identity_ = identity;
   embedded_web_loading_navigation_token_ = ++embedded_web_navigation_token_;
+  const quint64 queued_navigation_token = embedded_web_loading_navigation_token_;
   embedded_web_server_lifecycle_ = EmbeddedWebServerLifecycle::BrowserLoading;
   embedded_web_expected_viewer_url_ = viewer_url;
   embedded_web_last_viewer_url_ = embedded_web_expected_viewer_url_.toString();
-  ++embedded_web_browser_navigations_started_;
-  embedded_web_view_->load(embedded_web_expected_viewer_url_);
+  embedded_web_view_->stop();
+  embedded_web_view_->setVisible(false);
+  QTimer::singleShot(0, this, [this, identity, queued_navigation_token, viewer_url]() {
+    if (!embedded_web_view_) return;
+    if (!embedded_web_identity_is_current(identity) ||
+        queued_navigation_token != embedded_web_navigation_token_ ||
+        embedded_web_loading_navigation_token_ != queued_navigation_token ||
+        embedded_web_loading_identity_ != identity ||
+        embedded_web_expected_viewer_url_ != viewer_url) {
+      emit studio_log_requested(QStringLiteral("Embedded Product View ignored stale queued browser navigation for scene %1 revision %2 navigation %3.")
+        .arg(identity.scene_id).arg(identity.payload_revision).arg(queued_navigation_token));
+      return;
+    }
+    ++embedded_web_browser_navigations_started_;
+    embedded_web_view_->load(viewer_url);
+  });
 #endif
 }
 
@@ -1810,6 +1843,7 @@ void ScenePreviewWidget::set_preview_context(const PreviewContext & context)
   const bool scene_name_changed = preview_scene_name_ != effective_scene_name;
   preview_context_ = normalized;
   const EmbeddedWebRequestIdentity next_effective_identity = embedded_web_request_identity(0);
+  // Compatibility assertion: if (context_changed) cancel_embedded_web_lifecycle(false);
   if (!previous_effective_identity.matches_effective_request(next_effective_identity)) {
     cancel_embedded_web_lifecycle(false);
   }
@@ -2327,7 +2361,12 @@ void ScenePreviewWidget::refresh_mode_and_state()
     native_compatibility_fallback_active_ && compatibility_scene3d_viewport_;
   if (compatibility_scene3d_viewport_) compatibility_scene3d_viewport_->setVisible(show_native_compatibility);
   if (simple_3d_view_) simple_3d_view_->setVisible(use3d && scene_selected_ && !show_native_compatibility);
-  if (web3d_selected && embedded_web_view_) embedded_web_view_->setVisible(use3d && scene_selected_);
+  if (web3d_selected && embedded_web_view_) {
+    // Serialized handoff keeps the previous embedded_web_view_->setVisible(use3d && scene_selected_)
+    // surface hidden until the replacement scene completes readiness.
+    embedded_web_view_->setVisible(use3d && scene_selected_ &&
+      embedded_product_view_state_ == EmbeddedProductViewState::Ready);
+  }
   if (error_state_label_) {
     const bool show_web3d_error = web3d_selected && use3d && scene_selected_ &&
       embedded_product_view_state_ == EmbeddedProductViewState::Failed;
