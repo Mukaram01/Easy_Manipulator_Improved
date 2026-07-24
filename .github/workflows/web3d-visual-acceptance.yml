@@ -34,9 +34,30 @@ jobs:
       - name: Install Python test, xacro and browser tooling
         run: python3 -m pip install --upgrade pip pytest playwright pyyaml xacro==2.1.1
 
+      - name: Initialize blocked matrix artifact
+        run: |
+          mkdir -p build
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = {
+              'schema': 'workcell_studio_web3d_supported_scenes_acceptance_matrix/v1',
+              'sequential': True,
+              'status': 'BLOCKED',
+              'failure_reason': 'Workflow preflight has not completed yet.',
+              'counts': {'PASS': 0, 'FAIL': 0, 'BLOCKED': 0},
+              'catalog_errors': [],
+              'scenes': [],
+              'scene_switch_sequence': [],
+          }
+          Path('build/web3d_supported_scenes_matrix.json').write_text(json.dumps(report, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+
       - name: Preflight real xacro discovery
         run: |
-          python3 - <<'PY'
+          set +e
+          output=$(python3 - <<'PY' 2>&1
+
           import importlib.metadata
           import importlib.util
           import sys
@@ -58,12 +79,45 @@ jobs:
           if command[0] == 'xacro-lite' or any('xacro-lite' in str(part) for part in command):
               raise SystemExit(f'xacro-lite cannot satisfy supported-scenes acceptance: {command}')
           PY
+          )
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            MATRIX_FAILURE_REASON="Preflight real xacro discovery failed: $output" python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path('build/web3d_supported_scenes_matrix.json')
+          report = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+          report.update(status='BLOCKED', failure_reason=os.environ['MATRIX_FAILURE_REASON'])
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(json.dumps(report, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+            printf '%s\n' "$output"
+            exit $rc
+          fi
+          printf '%s\n' "$output"
 
       - name: Install Playwright Chromium
         run: python3 -m playwright install --with-deps chromium
 
       - name: Run static acceptance tests
-        run: python3 -m pytest tests/test_workcell_web3d_visual_acceptance.py tests/test_workcell_studio_web_viewer_static.py -q
+        run: |
+          set +e
+          output=$(python3 -m pytest tests/test_workcell_web3d_visual_acceptance.py tests/test_workcell_studio_web_viewer_static.py -q 2>&1)
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            MATRIX_FAILURE_REASON="Run static acceptance tests failed: $output" python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path('build/web3d_supported_scenes_matrix.json')
+          report = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+          report.update(status='BLOCKED', failure_reason=os.environ['MATRIX_FAILURE_REASON'])
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(json.dumps(report, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+            printf '%s\n' "$output"
+            exit $rc
+          fi
+          printf '%s\n' "$output"
 
       - name: Run offline scene readiness matrix
         run: python3 scripts/run_workcell_studio_scene_readiness_matrix.py
@@ -102,7 +156,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: supported-scenes-web3d-visual-acceptance
-          if-no-files-found: error
+          if-no-files-found: warn
           path: |
             build/web3d_supported_scenes_matrix.json
             build/workcell_studio_web_scene/*.visual_acceptance.json

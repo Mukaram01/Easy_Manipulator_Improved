@@ -76,6 +76,7 @@ def test_web3d_visual_acceptance_workflow_uploads_matrix_report_and_scene_artifa
     assert "build/workcell_studio_web_scene/*.visual_acceptance.json" in text
     assert "build/workcell_studio_web_scene/*.png" in text
     assert "GITHUB_STEP_SUMMARY" in text
+    assert "if-no-files-found: warn" in text
     for token in [
         "browser runtime method",
         "screenshot artifact name",
@@ -84,6 +85,16 @@ def test_web3d_visual_acceptance_workflow_uploads_matrix_report_and_scene_artifa
     ]:
         assert token in text
 
+
+
+def test_web3d_visual_acceptance_workflow_writes_blocked_matrix_before_preflight_and_static_failures():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "Initialize blocked matrix artifact" in text
+    assert "'status': 'BLOCKED'" in text
+    assert "Workflow preflight has not completed yet." in text
+    assert 'MATRIX_FAILURE_REASON="Preflight real xacro discovery failed: $output"' in text
+    assert 'MATRIX_FAILURE_REASON="Run static acceptance tests failed: $output"' in text
+    assert "report.update(status='BLOCKED', failure_reason=os.environ['MATRIX_FAILURE_REASON'])" in text
 
 def test_web3d_visual_acceptance_workflow_does_not_commit_generated_outputs():
     result = __import__("subprocess").run(
