@@ -185,3 +185,11 @@ def test_embedded_web_repo_root_resolution_covers_launch_and_symlink_scenarios()
     assert "scene_directory_matches_id(selected_scene_dir, scene_id)" in prepare
     assert "QDir::currentPath()" not in prepare
     assert "could not find a Workcell Studio repo root with required markers" in cpp
+
+
+def test_embedded_web_repo_root_resolution_defers_unset_context_without_failure_log():
+    resolve = CPP[CPP.index('QString ScenePreviewWidget::resolve_embedded_web_repo_root'):CPP.index('QString ScenePreviewWidget::embedded_web_prepare_command_for_log')]
+    assert 'repo root resolution deferred until scene_id, scene_dir, and repo root context are available' in resolve
+    assert 'scene_input.isEmpty() && !has_complete_preview_context' in resolve
+    assert resolve.index('repo root resolution deferred') < resolve.index('root_resolution_failed')
+    assert 'scene_input.isEmpty() ? QStringLiteral("<unset>") : scene_input' in resolve

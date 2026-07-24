@@ -637,6 +637,16 @@ QString ScenePreviewWidget::resolve_embedded_web_repo_root(const QString & selec
   };
 
   const QString scene_input = selected_scene_dir.trimmed();
+  const bool has_complete_preview_context =
+    !preview_context_.scene_id.trimmed().isEmpty() &&
+    !preview_context_.absolute_scene_dir.trimmed().isEmpty() &&
+    !preview_context_.absolute_repo_root.trimmed().isEmpty();
+  if (scene_input.isEmpty() && !has_complete_preview_context) {
+    if (diagnostic_debug_logging_enabled()) {
+      log_diagnostic(QStringLiteral("Embedded Product View repo root resolution deferred until scene_id, scene_dir, and repo root context are available."));
+    }
+    return QString();
+  }
   if (!scene_input.isEmpty()) {
     QFileInfo scene_info(scene_input);
     if (scene_info.exists() && scene_info.isDir()) {
