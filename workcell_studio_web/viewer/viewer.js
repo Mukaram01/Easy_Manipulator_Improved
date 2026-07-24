@@ -547,14 +547,25 @@ function expandedUrdfVisualReadinessDiagnostics() {
   const urdfDedupe = dedupeByStableIdentity(rawUrdfVisuals, visual => expandedUrdfVisualIdentity(sceneId, robotInstanceId, visual));
   const urdfVisuals = urdfDedupe.records;
   const urdfLinksWithLoadedVisuals = new Set(urdfVisuals.map(visual => String(visual?.link_name || visual?.linkName || '').trim()).filter(Boolean));
-  const urdfCounts = countBy(urdfVisuals.map(visual => String(visual?.link_name || visual?.linkName || '').trim()).filter(Boolean));
   const sceneDiagnostics = collectRenderedMeshDiagnostics();
   const physicalDiagnostics = dedupeByStableIdentity(sceneDiagnostics.filter(isSuccessfulPhysicalVisualDiagnostic), entry => renderedPhysicalVisualIdentity(sceneId, entry));
   const categoryCounts = countBy(physicalDiagnostics.records.map(item => readinessCategoryForItem(item)).filter(Boolean));
   const rendererLifecycle = String(rendererDiagnostics.robot_preview_lifecycle_state || rendererDiagnostics.robotPreviewLifecycleState || '');
   const rendererLoaded = rendererDiagnostics.robot_preview_loaded === true || rendererDiagnostics.robotPreviewLoaded === true;
+  const rendererExpectedVisualCount = Number(rendererDiagnostics.robot_expected_visual_count ?? rendererDiagnostics.robotExpectedVisualCount ?? 0) || 0;
+  const rendererCompletedVisualCount = Number(rendererDiagnostics.robot_completed_visual_count ?? rendererDiagnostics.robotCompletedVisualCount ?? 0) || 0;
+  const rendererLoadedVisualCount = Number(rendererDiagnostics.robot_loaded_visual_count ?? rendererDiagnostics.robotLoadedVisualCount ?? 0) || 0;
   const rendererFailedVisualCount = Number(rendererDiagnostics.robot_failed_visual_count ?? rendererDiagnostics.robotFailedVisualCount ?? 0) || 0;
-  const rendererReady = rendererLifecycle === 'ready' && rendererLoaded && rendererFailedVisualCount === 0;
+  const rendererMissingMeshes = asArray(rendererDiagnostics.robot_missing_meshes || rendererDiagnostics.robotMissingMeshes);
+  const rendererMeshCallbacksComplete = rendererDiagnostics.robot_mesh_callbacks_complete === true || rendererDiagnostics.robotMeshCallbacksComplete === true;
+  const rendererSuccessfulCallbackAccounting = rendererMeshCallbacksComplete
+    && rendererExpectedVisualCount > 0
+    && rendererCompletedVisualCount === rendererExpectedVisualCount
+    && rendererLoadedVisualCount === rendererExpectedVisualCount
+    && rendererFailedVisualCount === 0
+    && rendererMissingMeshes.length === 0;
+  const rendererReady = (rendererLifecycle === 'ready' && rendererLoaded && rendererFailedVisualCount === 0 && rendererMissingMeshes.length === 0)
+    || rendererSuccessfulCallbackAccounting;
   const missingRobot = rendererReady
     ? []
     : asArray(rendererDiagnostics.robot_missing_required_robot_visual_links || rendererDiagnostics.robotMissingRequiredRobotVisualLinks).map(value => String(value || '').trim()).filter(Boolean);
@@ -571,7 +582,7 @@ function expandedUrdfVisualReadinessDiagnostics() {
   }
   const failedLinks = [];
   const failedMeshUrls = [];
-  for (const detail of asArray(rendererDiagnostics.robot_missing_meshes)) {
+  for (const detail of rendererMissingMeshes) {
     const text = String(detail || '').trim();
     if (text) failedMeshUrls.push(text.split(': ')[0] || text);
   }
@@ -583,16 +594,28 @@ function expandedUrdfVisualReadinessDiagnostics() {
   return {
     expanded_urdf_expected_visual_set: required,
     expandedUrdfExpectedVisualSet: required,
-    expanded_urdf_required_visual_counts: { ...urdfCounts, ...categoryCounts },
-    expandedUrdfRequiredVisualCounts: { ...urdfCounts, ...categoryCounts },
+    expanded_urdf_required_visual_counts: { ...categoryCounts },
+    expandedUrdfRequiredVisualCounts: { ...categoryCounts },
+    expanded_urdf_loaded_visual_link_counts: countBy(urdfVisuals.map(visual => String(visual?.link_name || visual?.linkName || '').trim()).filter(Boolean)),
+    expandedUrdfLoadedVisualLinkCounts: countBy(urdfVisuals.map(visual => String(visual?.link_name || visual?.linkName || '').trim()).filter(Boolean)),
     robot_preview_lifecycle_state: rendererLifecycle,
     robotPreviewLifecycleState: rendererLifecycle,
     robot_preview_loaded: rendererLoaded,
     robotPreviewLoaded: rendererLoaded,
+    robot_expected_visual_count: rendererExpectedVisualCount,
+    robotExpectedVisualCount: rendererExpectedVisualCount,
+    robot_completed_visual_count: rendererCompletedVisualCount,
+    robotCompletedVisualCount: rendererCompletedVisualCount,
+    robot_loaded_visual_count: rendererLoadedVisualCount,
+    robotLoadedVisualCount: rendererLoadedVisualCount,
     robot_failed_visual_count: rendererFailedVisualCount,
     robotFailedVisualCount: rendererFailedVisualCount,
-    robot_missing_meshes: asArray(rendererDiagnostics.robot_missing_meshes),
-    robotMissingMeshes: asArray(rendererDiagnostics.robot_missing_meshes || rendererDiagnostics.robotMissingMeshes),
+    robot_mesh_callbacks_complete: rendererMeshCallbacksComplete,
+    robotMeshCallbacksComplete: rendererMeshCallbacksComplete,
+    robot_successful_callback_accounting: rendererSuccessfulCallbackAccounting,
+    robotSuccessfulCallbackAccounting: rendererSuccessfulCallbackAccounting,
+    robot_missing_meshes: rendererMissingMeshes,
+    robotMissingMeshes: rendererMissingMeshes,
     robot_missing_required_robot_visual_links: missingRobot,
     robotMissingRequiredRobotVisualLinks: missingRobot,
     robot_missing_required_tool_visual_links: missingTool,

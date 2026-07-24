@@ -2633,6 +2633,58 @@ assert.strictEqual(state.web3dReadiness.state, 'scene_ready');
     subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
+
+def test_expanded_urdf_successful_16_of_16_callback_accounting_is_authoritative():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({ hidden: false, checked: false, disabled: false, textContent: '', className: '', innerHTML: '', classList: { toggle() {} }, setAttribute() {}, querySelector() { return { textContent: '' }; }, appendChild() {}, addEventListener() {}, getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; } });
+const context = { console, assert, window: { dispatched: [], location: { search: '' }, dispatchEvent(event) { this.dispatched.push(event?.detail?.state); }, parent: { postMessage() {} } }, document: { getElementById() { return element(); }, createElement() { return element(); } }, URLSearchParams, CustomEvent: function CustomEvent(type, init) { return { type, detail: init?.detail || {} }; }, requestAnimationFrame() { return 0; }, setTimeout() { return 1; }, clearTimeout() {} };
+vm.createContext(context);
+vm.runInContext(source + `
+const falseMissingRobotLinks = ['base_link_inertia', 'shoulder_link', 'upper_arm_link', 'forearm_link', 'wrist_1_link', 'wrist_2_link', 'wrist_3_link'];
+state.sceneJson = { scene: { id: 'ur5_2f_test' }, robot_preview: { mode: 'expanded_urdf_loader', robot_instance_id: 'ur5_2f', expected_robot_visual_links: falseMissingRobotLinks, expected_tool_visual_links: ['robotiq_85_base_link'] } };
+state.robotUrdfPreviewDiagnostics = {
+  robot_preview_lifecycle_state: 'failed',
+  robot_preview_loaded: false,
+  robot_expected_visual_count: 16,
+  robot_completed_visual_count: 16,
+  robot_loaded_visual_count: 16,
+  robot_failed_visual_count: 0,
+  robot_mesh_callbacks_complete: true,
+  robot_missing_meshes: [],
+  robot_missing_required_robot_visual_links: falseMissingRobotLinks,
+  robot_missing_required_tool_visual_links: [],
+  robot_visual_wrapper_world_matrices: []
+};
+collectRenderedMeshDiagnostics = () => [
+  { id: 'workbench_generated', category: 'table', render_policy: 'primary', render_status: 'mesh_loaded', mesh_loaded: true, readiness_category: 'workbench_support_surface' },
+  { id: 'configured_camera_generated', category: 'camera', render_policy: 'primary', render_status: 'mesh_loaded', mesh_loaded: true, readiness_category: 'configured_camera' },
+];
+const diagnostics = expandedUrdfVisualReadinessDiagnostics();
+assert.strictEqual(diagnostics.robot_expected_visual_count, 16);
+assert.strictEqual(diagnostics.robot_completed_visual_count, 16);
+assert.strictEqual(diagnostics.robot_loaded_visual_count, 16);
+assert.strictEqual(diagnostics.robot_failed_visual_count, 0);
+assert.strictEqual(diagnostics.robot_mesh_callbacks_complete, true);
+assert.strictEqual(diagnostics.robot_successful_callback_accounting, true);
+assert.deepStrictEqual(diagnostics.robot_missing_meshes, []);
+assert.deepStrictEqual(diagnostics.missing_required_visuals, []);
+assert.strictEqual(diagnostics.expanded_urdf_required_visual_counts.shoulder_link, undefined);
+state.web3dReadiness = { state: 'scene_loading', emittedSceneReady: false, required: { robot_arm: true, attached_tool_gripper: true, workbench_support_surface: true, configured_camera: true }, pending: new Set(['robot_arm:expanded_urdf_loader', 'attached_tool_gripper:expanded_urdf_loader']), failed: false, failure: null };
+assert.strictEqual(failIfExpandedUrdfExpectedVisualSetInvalid(), false);
+completeExpandedUrdfReadiness({ diagnostics: state.robotUrdfPreviewDiagnostics });
+assert.strictEqual(state.web3dReadiness.state, 'scene_ready');
+assert.ok(window.dispatched.includes('scene_ready'));
+assert.ok(!window.dispatched.includes('scene_failed'));
+`, context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
 def test_expanded_urdf_readiness_fails_missing_required_link_and_required_mesh_failure():
     js_path = VIEWER / "viewer.js"
     harness = r"""
