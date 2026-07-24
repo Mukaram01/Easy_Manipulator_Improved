@@ -1036,6 +1036,48 @@ def browser_command(url: str, screenshot: Path) -> dict[str, Any] | None:
     return None
 
 
+def _request_failure_error_text(failure: Any) -> str:
+    if failure is None:
+        return ""
+    if isinstance(failure, str):
+        return failure
+    if isinstance(failure, Mapping):
+        for key in ("error_text", "errorText", "message", "error"):
+            value = failure.get(key)
+            if value is not None:
+                return str(value)
+        return str(dict(failure))
+    try:
+        value = getattr(failure, "error_text")
+    except Exception as exc:
+        return f"<unreadable failure.error_text: {exc}>"
+    return "" if value is None else str(value)
+
+
+def _safe_request_field(request: Any, field: str) -> str:
+    try:
+        value = getattr(request, field)
+    except Exception as exc:
+        return f"<unreadable {field}: {exc}>"
+    return "" if value is None else str(value)
+
+
+def _record_failed_request(request: Any, failed_requests: list[str]) -> None:
+    try:
+        method = _safe_request_field(request, "method")
+        url = _safe_request_field(request, "url")
+        try:
+            failure = getattr(request, "failure", None)
+        except Exception as exc:
+            failure = f"<unreadable failure: {exc}>"
+        failed_requests.append(f"{method} {url} {_request_failure_error_text(failure)}")
+    except Exception as exc:
+        try:
+            failed_requests.append(f"<requestfailed callback error: {exc}>")
+        except Exception:
+            pass
+
+
 def run_browser(url: str, status_path: Path, screenshot_path: Path, require: bool) -> dict[str, Any]:
     js_errors: list[str] = []
     failed_requests: list[str] = []
@@ -1047,7 +1089,7 @@ def run_browser(url: str, status_path: Path, screenshot_path: Path, require: boo
             page = browser.new_page(viewport={"width": 1280, "height": 900}, ignore_https_errors=True)
             page.on("pageerror", lambda exc: js_errors.append(str(exc)))
             page.on("console", lambda msg: console_messages.append(f"{msg.type}: {msg.text}"))
-            page.on("requestfailed", lambda req: failed_requests.append(f"{req.method} {req.url} {req.failure.error_text if req.failure else ''}"))
+            page.on("requestfailed", lambda req: _record_failed_request(req, failed_requests))
             page.goto(url, wait_until="networkidle", timeout=45000)
             page.wait_for_function("window.__WORKCELL_VIEWER_STATUS__ && typeof window.__WORKCELL_VIEWER_STATUS__ === 'object'", timeout=45000)
             page.wait_for_function("() => { const s = window.__WORKCELL_VIEWER_STATUS__ || {}; const state = s.web3d_readiness_state || s.web3dReadinessState || s.viewer_boot_state || ''; return state === 'scene_ready' || state === 'scene_failed'; }", timeout=60000)
