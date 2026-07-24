@@ -1,5 +1,7 @@
 import importlib.util
 import json
+import sys
+import types
 from pathlib import Path
 
 import yaml
@@ -9,6 +11,101 @@ SCRIPT = ROOT / "scripts/run_workcell_web3d_visual_acceptance.py"
 spec = importlib.util.spec_from_file_location("web3d_acceptance", SCRIPT)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+
+
+def test_request_failure_text_handles_none_string_mapping_and_object():
+    failure_object = type("Failure", (), {"error_text": "object network reset"})()
+    assert module._request_failure_error_text(None) == ""
+    assert module._request_failure_error_text("string network reset") == "string network reset"
+    assert module._request_failure_error_text({"error_text": "dict network reset"}) == "dict network reset"
+    assert module._request_failure_error_text({"message": "dict message reset"}) == "dict message reset"
+    assert module._request_failure_error_text(failure_object) == "object network reset"
+
+
+def test_record_failed_request_records_string_object_and_dict_failures_without_throwing():
+    failures = []
+    for failure in (
+        "string failed",
+        {"error_text": "dict failed"},
+        type("Failure", (), {"error_text": "object failed"})(),
+    ):
+        request = type("Request", (), {"method": "GET", "url": "http://viewer/asset.dae", "failure": failure})()
+        module._record_failed_request(request, failures)
+
+    class BrokenRequest:
+        @property
+        def method(self):
+            raise RuntimeError("method broke")
+
+        @property
+        def url(self):
+            raise RuntimeError("url broke")
+
+        @property
+        def failure(self):
+            raise RuntimeError("failure broke")
+
+    module._record_failed_request(BrokenRequest(), failures)
+    assert any("string failed" in item for item in failures)
+    assert any("dict failed" in item for item in failures)
+    assert any("object failed" in item for item in failures)
+    assert any("unreadable method" in item and "unreadable url" in item for item in failures)
+
+
+def test_playwright_requestfailed_callback_does_not_abort_collection_and_reports_playwright(monkeypatch, tmp_path):
+    class FakePage:
+        def __init__(self):
+            self.handlers = {}
+
+        def on(self, event, callback):
+            self.handlers[event] = callback
+            if event == "requestfailed":
+                callback(type("Request", (), {"method": "GET", "url": "http://viewer/missing.dae", "failure": "net::ERR_FAILED"})())
+
+        def goto(self, *args, **kwargs):
+            return None
+
+        def wait_for_function(self, *args, **kwargs):
+            return True
+
+        def evaluate(self, script):
+            if "robot_preview_lifecycle_state" in script:
+                return "ready"
+            if "__WORKCELL_ROBOT_PREVIEW_READY__" in script:
+                return True
+            return {"robot_preview_lifecycle_state": "ready", "web3d_readiness_state": "scene_ready"}
+
+        def screenshot(self, path, full_page):
+            Path(path).write_bytes(module.PNG_1X1)
+
+    class FakeBrowser:
+        def __init__(self):
+            self.page = FakePage()
+
+        def new_page(self, **kwargs):
+            return self.page
+
+        def close(self):
+            return None
+
+    class FakePlaywright:
+        def __enter__(self):
+            self.chromium = types.SimpleNamespace(launch=lambda **kwargs: FakeBrowser())
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    fake_sync_api = types.SimpleNamespace(sync_playwright=lambda: FakePlaywright())
+    monkeypatch.setitem(sys.modules, "playwright", types.SimpleNamespace(sync_api=fake_sync_api))
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_sync_api)
+
+    result = module.run_browser("http://viewer", tmp_path / "status.json", tmp_path / "shot.png", require=True)
+
+    assert result["available"] is True
+    assert result["method"] == "playwright"
+    assert result["status"]["web3d_readiness_state"] == "scene_ready"
+    assert result["failed_network_requests"] == ["GET http://viewer/missing.dae net::ERR_FAILED"]
 
 
 def test_derives_scene_id_from_arbitrary_manifest_scene(tmp_path):
