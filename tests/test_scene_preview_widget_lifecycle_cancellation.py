@@ -14,7 +14,7 @@ def _between(start: str, end: str) -> str:
 def test_lifecycle_cancellation_is_declared_and_used_for_destructor_scene_changes_and_force_refresh():
     assert "~ScenePreviewWidget() override;" in HDR
     assert "void cancel_embedded_web_lifecycle(bool stop_owned_server);" in HDR
-    assert "void stop_embedded_web_navigation_for_handoff();" in HDR
+    assert "void retire_embedded_web_navigation_for_handoff();" in HDR
     assert "ScenePreviewWidget::~ScenePreviewWidget()\n{\n  cancel_embedded_web_lifecycle(true);" in CPP
 
     context = _between("void ScenePreviewWidget::set_preview_context", "void ScenePreviewWidget::activate_native_compatibility_preview")
@@ -27,7 +27,7 @@ def test_lifecycle_cancellation_is_declared_and_used_for_destructor_scene_change
 
 def test_cancellation_retires_callbacks_and_owns_process_shutdown():
     helper = _between("void ScenePreviewWidget::cancel_embedded_web_lifecycle", "void ScenePreviewWidget::request_embedded_web_product_view_refresh")
-    handoff = _between("void ScenePreviewWidget::stop_embedded_web_navigation_for_handoff", "void ScenePreviewWidget::cancel_embedded_web_lifecycle")
+    handoff = _between("void ScenePreviewWidget::retire_embedded_web_navigation_for_handoff", "void ScenePreviewWidget::cancel_embedded_web_lifecycle")
     for token in [
         "++embedded_web_request_generation_",
         "process->terminate()",
@@ -39,11 +39,11 @@ def test_cancellation_retires_callbacks_and_owns_process_shutdown():
         "++embedded_web_navigation_token_",
         "embedded_editor_polling_ = false",
         "embedded_web_readiness_deadline_ = QDateTime()",
-        "embedded_web_view_->stop()",
-        "embedded_web_view_->setVisible(false)",
     ]:
         assert token in handoff
-    assert "stop_embedded_web_navigation_for_handoff();" in helper
+    assert "embedded_web_view_->stop()" not in handoff
+    assert "embedded_web_view_->setVisible(false)" not in handoff
+    assert "retire_embedded_web_navigation_for_handoff();" in helper
 
 
 def test_async_web_callbacks_guard_their_captured_request_identity():
@@ -86,7 +86,7 @@ def test_server_probe_initialization_preserves_safe_default_state():
     )
     owned = _between(
         "void ScenePreviewWidget::start_owned_embedded_web_server",
-        "void ScenePreviewWidget::stop_embedded_web_navigation_for_handoff",
+        "void ScenePreviewWidget::retire_embedded_web_navigation_for_handoff",
     )
     expected_initialization = [
         "embedded_web_server_probe_ = EmbeddedWebServerProbe{};",
@@ -124,9 +124,9 @@ def test_serialized_browser_navigation_handoff_queues_only_current_scene_load():
     mode = _between("void ScenePreviewWidget::refresh_mode_and_state", "QRectF ScenePreviewWidget::rendered_items_bounds_2d")
 
     assert "!embedded_web_active_identity_.matches_effective_request(identity)" in request
-    assert "stop_embedded_web_navigation_for_handoff();" in request
-    assert "embedded_web_view_->stop();" in browser
-    assert "embedded_web_view_->setVisible(false);" in browser
+    assert "retire_embedded_web_navigation_for_handoff();" in request
+    assert "embedded_web_view_->stop();" not in browser
+    assert "embedded_web_view_->setVisible(false);" not in browser
     assert "QTimer::singleShot(0, this, [this, identity, queued_navigation_token, viewer_url]()" in browser
     stale_guard = browser.index("if (!embedded_web_identity_is_current(identity)")
     assert browser.index("embedded_web_view_->load(viewer_url);", stale_guard) > stale_guard
@@ -135,4 +135,18 @@ def test_serialized_browser_navigation_handoff_queues_only_current_scene_load():
     assert "embedded_web_loading_identity_ != identity" in browser
     assert "embedded_web_expected_viewer_url_ != viewer_url" in browser
     assert "++embedded_web_browser_navigations_started_;" in browser
+    assert browser.count("embedded_web_view_->load(viewer_url);") == 1
+    assert "embedded_web_has_committed_surface_ ||" in mode
     assert "embedded_product_view_state_ == EmbeddedProductViewState::Ready" in mode
+
+
+def test_first_load_stays_hidden_but_committed_surface_remains_visible_during_handoff():
+    mode = _between("void ScenePreviewWidget::refresh_mode_and_state", "QRectF ScenePreviewWidget::rendered_items_bounds_2d")
+    assert "bool embedded_web_has_committed_surface_{ false };" in HDR
+    visibility = _between("const bool show_embedded_surface", "if (error_state_label_)")
+    assert "embedded_web_has_committed_surface_ ||" in visibility
+    assert "EmbeddedProductViewState::Ready" in visibility
+    assert "EmbeddedProductViewState::Failed" in visibility
+    assert "EmbeddedProductViewState::Loading" not in visibility
+    assert "EmbeddedProductViewState::WaitingForBrowserReadiness" not in visibility
+    assert "setVisible(use3d && scene_selected_ && show_embedded_surface)" in mode

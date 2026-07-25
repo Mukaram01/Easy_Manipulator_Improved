@@ -994,7 +994,7 @@ void ScenePreviewWidget::start_owned_embedded_web_server(const EmbeddedWebReques
 }
 
 
-void ScenePreviewWidget::stop_embedded_web_navigation_for_handoff()
+void ScenePreviewWidget::retire_embedded_web_navigation_for_handoff()
 {
   ++embedded_web_navigation_token_;
   embedded_web_loading_navigation_token_ = 0;
@@ -1004,12 +1004,9 @@ void ScenePreviewWidget::stop_embedded_web_navigation_for_handoff()
   embedded_editor_polling_ = false;
   embedded_web_readiness_deadline_ = QDateTime();
   embedded_web_last_boot_status_.clear();
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
-  if (embedded_web_view_) {
-    embedded_web_view_->stop();
-    embedded_web_view_->setVisible(false);
-  }
-#endif
+  // Do not stop or unmount the Qt 5 WebEngine surface here. Loading the newest
+  // guarded URL replaces any in-flight navigation, while an already committed
+  // frame remains compositor-owned and available throughout the handoff.
 }
 
 void ScenePreviewWidget::cancel_embedded_web_lifecycle(bool stop_owned_server)
@@ -1017,7 +1014,7 @@ void ScenePreviewWidget::cancel_embedded_web_lifecycle(bool stop_owned_server)
   // Every callback captures an identity.  Retiring it first makes queued browser,
   // timer, and process callbacks harmless before any UI or process state changes.
   ++embedded_web_request_generation_;
-  stop_embedded_web_navigation_for_handoff();
+  retire_embedded_web_navigation_for_handoff();
   embedded_web_has_active_identity_ = false;
   embedded_web_active_identity_ = EmbeddedWebRequestIdentity{};
   embedded_web_preparing_identity_ = EmbeddedWebRequestIdentity{};
@@ -1135,7 +1132,7 @@ void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force, c
     embedded_web_request_generation_ = identity.generation;
   } else if (embedded_web_has_active_identity_ &&
              !embedded_web_active_identity_.matches_effective_request(identity)) {
-    stop_embedded_web_navigation_for_handoff();
+    retire_embedded_web_navigation_for_handoff();
   }
 
   if (!force && embedded_web_prepare_process_ && embedded_web_prepare_process_->state() != QProcess::NotRunning) {
@@ -1661,6 +1658,7 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
     if (contract_reason.isEmpty()) {
       native_compatibility_fallback_active_ = false;
       ++embedded_web_terminal_results_accepted_;
+      embedded_web_has_committed_surface_ = true;
       set_embedded_product_view_state(EmbeddedProductViewState::Ready, QStringLiteral("viewer ready"));
       show_embedded_web_product_view();
       poll_embedded_editor_events();
@@ -1731,8 +1729,6 @@ void ScenePreviewWidget::load_prepared_embedded_web_scene(const EmbeddedWebReque
   embedded_web_server_lifecycle_ = EmbeddedWebServerLifecycle::BrowserLoading;
   embedded_web_expected_viewer_url_ = viewer_url;
   embedded_web_last_viewer_url_ = embedded_web_expected_viewer_url_.toString();
-  embedded_web_view_->stop();
-  embedded_web_view_->setVisible(false);
   QTimer::singleShot(0, this, [this, identity, queued_navigation_token, viewer_url]() {
     if (!embedded_web_view_) return;
     if (!embedded_web_identity_is_current(identity) ||
@@ -2375,10 +2371,14 @@ void ScenePreviewWidget::refresh_mode_and_state()
   if (compatibility_scene3d_viewport_) compatibility_scene3d_viewport_->setVisible(show_native_compatibility);
   if (simple_3d_view_) simple_3d_view_->setVisible(use3d && scene_selected_ && !show_native_compatibility);
   if (web3d_selected && embedded_web_view_) {
-    // Serialized handoff keeps the previous embedded_web_view_->setVisible(use3d && scene_selected_)
-    // surface hidden until the replacement scene completes readiness.
-    embedded_web_view_->setVisible(use3d && scene_selected_ &&
-      embedded_product_view_state_ == EmbeddedProductViewState::Ready);
+    // The first load keeps the existing empty/loading presentation. Once a
+    // scene_ready result has committed a surface, keep that single WebEngine
+    // surface mounted through later Loading/Waiting handoffs so Qt 5 Chromium
+    // can retire and replace compositor resources in navigation order.
+    const bool show_embedded_surface = embedded_web_has_committed_surface_ ||
+      embedded_product_view_state_ == EmbeddedProductViewState::Ready ||
+      embedded_product_view_state_ == EmbeddedProductViewState::Failed;
+    embedded_web_view_->setVisible(use3d && scene_selected_ && show_embedded_surface);
   }
   if (error_state_label_) {
     const bool show_web3d_error = web3d_selected && use3d && scene_selected_ &&
