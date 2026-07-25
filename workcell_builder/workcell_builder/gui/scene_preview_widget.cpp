@@ -737,8 +737,12 @@ void ScenePreviewWidget::start_embedded_web_server_probes(
     return;
   }
   marker.seek(0);
-  embedded_web_server_probe_ = EmbeddedWebServerProbe{identity, port, navigation_token, marker.readAll().trimmed(),
-    QDateTime::currentDateTimeUtc().addSecs(8)};
+  embedded_web_server_probe_ = EmbeddedWebServerProbe{};
+  embedded_web_server_probe_.identity = identity;
+  embedded_web_server_probe_.port = port;
+  embedded_web_server_probe_.navigation_token = navigation_token;
+  embedded_web_server_probe_.expected_marker = marker.readAll().trimmed();
+  embedded_web_server_probe_.deadline = QDateTime::currentDateTimeUtc().addSecs(8);
   embedded_web_server_lifecycle_ = EmbeddedWebServerLifecycle::ServerProbing;
   set_embedded_product_view_state(EmbeddedProductViewState::Preparing, QStringLiteral("server_probing"));
   run_embedded_web_server_probes(identity, port, navigation_token);
@@ -897,7 +901,10 @@ void ScenePreviewWidget::ensure_embedded_web_server_started(const QString & repo
   // An old owned process remains tracked separately and is never confused with
   // a listener discovered at the configured port.
   embedded_web_server_is_owned_ = false;
-  embedded_web_server_probe_ = EmbeddedWebServerProbe{identity, port, navigation_token};
+  embedded_web_server_probe_ = EmbeddedWebServerProbe{};
+  embedded_web_server_probe_.identity = identity;
+  embedded_web_server_probe_.port = port;
+  embedded_web_server_probe_.navigation_token = navigation_token;
   // Probe the configured/default endpoint first; it is reusable only after all
   // resources and the repository marker have been verified.
   start_embedded_web_server_probes(identity, port, navigation_token, repo_root);
@@ -933,7 +940,10 @@ void ScenePreviewWidget::start_owned_embedded_web_server(const EmbeddedWebReques
   const QString repo_root = identity.absolute_repo_root;
   const int port = identity.selected_server_port;
   const quint64 navigation_token = ++embedded_web_navigation_token_;
-  embedded_web_server_probe_ = EmbeddedWebServerProbe{identity, port, navigation_token};
+  embedded_web_server_probe_ = EmbeddedWebServerProbe{};
+  embedded_web_server_probe_.identity = identity;
+  embedded_web_server_probe_.port = port;
+  embedded_web_server_probe_.navigation_token = navigation_token;
   if (embedded_web_server_process_ && embedded_web_server_process_->state() != QProcess::NotRunning) {
     // This is an earlier owned request, never an arbitrary listener. Retire it
     // before replacing it; callbacks remain guarded by their old identity.
