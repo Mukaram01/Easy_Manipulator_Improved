@@ -7,6 +7,10 @@ MAIN = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text
 WARNING_ONCE = (ROOT / "workcell_builder/workcell_builder/src_workcell_warning_once.cpp").read_text(encoding="utf-8")
 
 
+def test_canvas_model_has_no_removed_task_metadata_loader_symbol():
+    assert "log_task_metadata_loader_path_once" not in CPP
+
+
 def test_snapshot_tracks_authoritative_scene_metadata_files_and_content_identity():
     for token in [
         "environment.yaml",
