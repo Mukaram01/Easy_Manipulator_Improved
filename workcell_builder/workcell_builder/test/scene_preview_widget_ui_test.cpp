@@ -436,11 +436,9 @@ TEST(SceneBuilderWorkspaceSource, CompactBottomStatusBarUsesSingleRowAndExisting
   EXPECT_TRUE(append_block.contains(QStringLiteral("message.simplified()")));
   EXPECT_TRUE(append_block.contains(QStringLiteral("setToolTip(concise)")));
   EXPECT_TRUE(append_block.contains(QStringLiteral("elidedText(concise, Qt::ElideRight")));
-  EXPECT_TRUE(append_block.contains(QStringLiteral("scene_builder_warning_count_")));
-  EXPECT_TRUE(append_block.contains(QStringLiteral("scene_builder_error_count_")));
-  EXPECT_TRUE(append_block.contains(QStringLiteral("lowered.contains(\"warn\")")));
-  EXPECT_TRUE(append_block.contains(QStringLiteral("lowered.contains(\"error\")")));
-  EXPECT_TRUE(append_block.contains(QStringLiteral("lowered.contains(\"failed\")")));
+  EXPECT_TRUE(append_block.contains(QStringLiteral("studio_log_issue_tracker_.warning_count()")));
+  EXPECT_TRUE(append_block.contains(QStringLiteral("studio_log_issue_tracker_.error_count()")));
+  EXPECT_FALSE(append_block.contains(QStringLiteral("lowered.contains")));
   EXPECT_TRUE(append_block.contains(QStringLiteral("setVisible(!visible_parts.isEmpty())")));
   EXPECT_FALSE(append_block.contains(QStringLiteral("scene_builder_log_panel_->setVisible(true)")));
 

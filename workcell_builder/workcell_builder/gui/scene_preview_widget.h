@@ -300,6 +300,7 @@ public:
 
 signals:
   void studio_log_requested(const QString & message);
+  void studio_issue_requested(const QString & message, const QString & severity, const QString & issue_key);
   void preview_item_selected(const QString & id, const QString & role);
   void embedded_product_view_runtime_state_changed(const QString & state, bool has_usable_content);
 

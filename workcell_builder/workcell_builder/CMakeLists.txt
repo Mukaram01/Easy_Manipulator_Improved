@@ -687,7 +687,10 @@ if(BUILD_TESTING)
     mainwindow_rviz_preview_compile_test.cpp
     rviz_preview_metadata_command_test.cpp
     visual_mesh_source_resolver_test.cpp
+    studio_log_issue_tracker_test.cpp
   )
+  ament_add_gtest(workcell_studio_log_issue_tracker_test
+    test/studio_log_issue_tracker_test.cpp)
 
   file(GLOB workcell_builder_discovered_cpp_tests RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/test ${CMAKE_CURRENT_SOURCE_DIR}/test/*.cpp)
   list(SORT workcell_builder_registered_cpp_tests)
