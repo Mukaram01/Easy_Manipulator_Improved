@@ -1014,9 +1014,9 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   else { m.status = "READY"; }
   return m;
   } catch (const YAML::Exception & e) {
-    log_task_metadata_loader_path_once(scene_dir / "layout" / "workcell_studio_layout.yaml", std::string("YAML parse exception in preview loader: ") + e.what());
+    log_task_metadata_loader_warning_once(scene_dir / "layout" / "workcell_studio_layout.yaml", std::string("YAML parse exception in preview loader: ") + e.what());
   } catch (const std::exception & e) {
-    log_task_metadata_loader_path_once(scene_dir / "layout" / "workcell_studio_layout.yaml", std::string("std exception in preview loader: ") + e.what());
+    log_task_metadata_loader_warning_once(scene_dir / "layout" / "workcell_studio_layout.yaml", std::string("std exception in preview loader: ") + e.what());
   }
   WorkcellStudioCanvasModel fallback;
   fallback.scene_name = scene_name;
