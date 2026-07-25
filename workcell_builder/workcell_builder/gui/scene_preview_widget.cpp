@@ -1448,6 +1448,9 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
   const bool output_is_fresh = QFileInfo::exists(QDir(embedded_web_repo_root_).filePath(output_path));  // Contract validation supersedes mtime freshness.
   Q_UNUSED(output_is_fresh);
   auto reject_prepare = [&](const QString & reason) {
+    emit studio_issue_requested(
+      QStringLiteral("Embedded Product View scene preparation failed: %1").arg(reason),
+      QStringLiteral("Error"), QStringLiteral("embedded_product_view_scene_preparation"));
     activate_native_compatibility_preview(reason);
     record_embedded_web_prepare_terminal(identity, process, QStringLiteral("command_failure"), exit_status, exit_code,
       QStringLiteral("%1; command=%2").arg(reason, command));

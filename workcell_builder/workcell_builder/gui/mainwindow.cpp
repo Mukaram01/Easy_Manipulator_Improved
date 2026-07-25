@@ -1707,10 +1707,14 @@ bool MainWindow::open_scene_builder_for_selected_scene(const QString & source_ac
   try {
     refresh_scene_builder_selection_state_ui();
   } catch (const YAML::Exception & error) {
-    append_studio_log(source_action + ": scene metadata warning: " + QString::fromStdString(error.what()));
+    append_studio_log(
+      source_action + ": scene metadata warning: " + QString::fromStdString(error.what()),
+      workcell_builder::StudioLogSeverity::Warning, QStringLiteral("scene_metadata_parse"));
     QMessageBox::warning(this, "Workcell Studio", "Scene metadata could not be fully parsed. Opened with warnings.");
   } catch (const std::exception & error) {
-    append_studio_log(source_action + ": scene metadata warning: " + QString::fromStdString(error.what()));
+    append_studio_log(
+      source_action + ": scene metadata warning: " + QString::fromStdString(error.what()),
+      workcell_builder::StudioLogSeverity::Warning, QStringLiteral("scene_metadata_parse"));
     QMessageBox::warning(this, "Workcell Studio", "Scene metadata could not be fully parsed. Opened with warnings.");
   }
   show_studio_page(StudioPage::SceneBuilderPage);
@@ -2278,6 +2282,12 @@ void MainWindow::setup_studio_shell()
         "Warnings: " + m + " | Reachability: preview-only | Collision: preview-only | Safety zone: preview-only | Pick source reach: unknown | Place target reach: unknown | Warning count: 1 | Preview-only");
     }
   });
+  connect(scene_preview_widget_, &ScenePreviewWidget::studio_issue_requested, this,
+    [this](const QString & message, const QString & severity, const QString & issue_key) {
+      const auto explicit_severity = severity == QStringLiteral("Warning") ?
+        workcell_builder::StudioLogSeverity::Warning : workcell_builder::StudioLogSeverity::Error;
+      append_studio_log(message, explicit_severity, issue_key);
+    });
   connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_selected, this, [this](const QString &id, const QString &role){
     apply_scene_selection(id, role, id.trimmed().isEmpty(), false);
   });
@@ -4504,6 +4514,14 @@ void MainWindow::select_scene_by_row(int row)
   sync_selected_scene_state();
   refresh_selected_scene_metadata_panel();
   if (previous_scene_path != selected_scene_path()) {
+    studio_log_issue_tracker_.set_scope(selected_scene_path().toStdString());
+    if (scene_builder_issue_count_label_) {
+      scene_builder_issue_count_label_->clear();
+      scene_builder_issue_count_label_->setVisible(false);
+    }
+    if (scene_builder_log_toggle_button_) {
+      scene_builder_log_toggle_button_->setProperty("hasIssues", false);
+    }
     visual_index_script_missing_reported_scene_key_.clear();
     visual_index_regen_failure_reported_scene_key_.clear();
     visual_index_regen_throttle_session_active_ = false;
@@ -4609,7 +4627,8 @@ void MainWindow::open_selected_scene_artifact(const QString & artifact)
   QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(target.string())));
 }
 
-void MainWindow::append_studio_log(const QString & message)
+void MainWindow::append_studio_log(
+  const QString & message, workcell_builder::StudioLogSeverity severity, const QString & issue_key)
 {
   if (studio_log_) {
     studio_log_->append(message);
@@ -4620,16 +4639,14 @@ void MainWindow::append_studio_log(const QString & message)
     const int elide_width = qMax(220, scene_builder_status_message_label_->width());
     scene_builder_status_message_label_->setText(scene_builder_status_message_label_->fontMetrics().elidedText(concise, Qt::ElideRight, elide_width));
   }
-  const QString lowered = message.toLower();
-  if (lowered.contains("error") || lowered.contains("failed") || lowered.contains("blocker")) {
-    ++scene_builder_error_count_;
-  } else if (lowered.contains("warn")) {
-    ++scene_builder_warning_count_;
-  }
+  const QString stable_key = issue_key.isEmpty() ? message : issue_key;
+  studio_log_issue_tracker_.report(severity, stable_key.toStdString());
+  const int scene_builder_error_count = studio_log_issue_tracker_.error_count();
+  const int scene_builder_warning_count = studio_log_issue_tracker_.warning_count();
   if (scene_builder_issue_count_label_) {
     const QStringList parts = {
-      scene_builder_error_count_ > 0 ? QStringLiteral("%1 %2").arg(scene_builder_error_count_).arg(scene_builder_error_count_ == 1 ? QStringLiteral("error") : QStringLiteral("errors")) : QString(),
-      scene_builder_warning_count_ > 0 ? QStringLiteral("%1 %2").arg(scene_builder_warning_count_).arg(scene_builder_warning_count_ == 1 ? QStringLiteral("warning") : QStringLiteral("warnings")) : QString()
+      scene_builder_error_count > 0 ? QStringLiteral("%1 %2").arg(scene_builder_error_count).arg(scene_builder_error_count == 1 ? QStringLiteral("error") : QStringLiteral("errors")) : QString(),
+      scene_builder_warning_count > 0 ? QStringLiteral("%1 %2").arg(scene_builder_warning_count).arg(scene_builder_warning_count == 1 ? QStringLiteral("warning") : QStringLiteral("warnings")) : QString()
     };
     QStringList visible_parts;
     for (const QString & part : parts) if (!part.isEmpty()) visible_parts << part;
@@ -4637,7 +4654,7 @@ void MainWindow::append_studio_log(const QString & message)
     scene_builder_issue_count_label_->setVisible(!visible_parts.isEmpty());
   }
   if (scene_builder_log_toggle_button_) {
-    scene_builder_log_toggle_button_->setProperty("hasIssues", scene_builder_warning_count_ > 0 || scene_builder_error_count_ > 0);
+    scene_builder_log_toggle_button_->setProperty("hasIssues", scene_builder_warning_count > 0 || scene_builder_error_count > 0);
   }
   statusBar()->showMessage(message);
 }

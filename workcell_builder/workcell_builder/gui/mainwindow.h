@@ -38,6 +38,7 @@
 #include "attributes/workcell.h"
 #include "workcell_studio_scene_browser.hpp"
 #include "workcell_studio_layout_merge.hpp"
+#include "studio_log_issue_tracker.hpp"
 #include "gui/scene_preview_widget.h"
 
 namespace fs = boost::filesystem;
@@ -130,7 +131,10 @@ private:
   void setup_studio_shell();
   void build_studio_header_actions();
   void apply_studio_theme();
-  void append_studio_log(const QString & message);
+  void append_studio_log(
+    const QString & message,
+    workcell_builder::StudioLogSeverity severity = workcell_builder::StudioLogSeverity::Info,
+    const QString & issue_key = QString());
   bool append_scene_diagnostic_log_once(const QString & event, int payload_revision, int payload_count, const QString & message);
   bool scene3d_debug_logging_enabled() const;
   void show_not_wired_message(const QString & action_label);
@@ -700,8 +704,7 @@ private:
   QFrame * scene_builder_log_panel_{ nullptr };
   QLabel * scene_builder_status_message_label_{ nullptr };
   QLabel * scene_builder_issue_count_label_{ nullptr };
-  int scene_builder_warning_count_{ 0 };
-  int scene_builder_error_count_{ 0 };
+  workcell_builder::StudioLogIssueTracker studio_log_issue_tracker_;
   bool scene_builder_log_collapsed_{ false };
   QToolButton * preview_more_actions_button_{ nullptr };
   QToolButton * validation_more_actions_button_{ nullptr };
