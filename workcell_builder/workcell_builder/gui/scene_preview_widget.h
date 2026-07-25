@@ -404,7 +404,7 @@ private:
   void refresh_embedded_web_product_view();
   void request_embedded_web_product_view_refresh(bool force = false, const QString & origin = QStringLiteral("automatic"));
   void cancel_embedded_web_lifecycle(bool stop_owned_server);
-  void stop_embedded_web_navigation_for_handoff();
+  void retire_embedded_web_navigation_for_handoff();
   void maybe_start_next_embedded_web_prepare();
   EmbeddedWebRequestIdentity embedded_web_request_identity(quint64 generation) const;
   bool embedded_web_identity_is_current(const EmbeddedWebRequestIdentity & identity) const;
@@ -507,6 +507,7 @@ private:
   QUrl embedded_web_expected_viewer_url_;
   bool embedded_web_server_is_owned_{ false };
   bool embedded_web_has_active_identity_{ false };
+  bool embedded_web_has_committed_surface_{ false };
   bool pending_embedded_web_request_{ false };
   quint64 embedded_web_request_generation_{ 0 };
   bool pending_embedded_web_force_{ false };

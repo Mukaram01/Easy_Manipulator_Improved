@@ -64,6 +64,8 @@ def test_accepted_scene_ready_transition_refreshes_visible_view_after_ready_stat
         "set_embedded_product_view_state(EmbeddedProductViewState::Ready, "
         "QStringLiteral(\"viewer ready\"));"
     )
+    commit = "embedded_web_has_committed_surface_ = true;"
+    assert poll.index(commit) < poll.index(ready_transition)
     assert poll.index(ready_transition) < poll.index("show_embedded_web_product_view();")
 
     show = _between(
@@ -162,3 +164,16 @@ def test_runtime_failure_accounting_is_request_scoped_and_deduplicated():
     assert "Suppressed duplicate Embedded Product View terminal failure" in failure
     assert "Ignored stale Embedded Product View runtime failure" in failure
     assert "set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail)" in failure
+
+
+def test_stale_readiness_and_terminal_failure_cannot_commit_or_label_replacement_ready():
+    poll = _between(CPP, "void ScenePreviewWidget::poll_embedded_web_readiness", "void ScenePreviewWidget::load_prepared_embedded_web_scene")
+    stale_guard = poll.index("if (!embedded_web_identity_is_current(identity)")
+    commit = poll.index("embedded_web_has_committed_surface_ = true;")
+    assert stale_guard < commit
+    assert "navigation_token != embedded_web_navigation_token_" in poll[:commit]
+
+    failure = _between(CPP, "void ScenePreviewWidget::handle_embedded_web_runtime_failure", "void ScenePreviewWidget::ensure_embedded_web_server_started")
+    assert "set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail)" in failure
+    assert "embedded_web_has_committed_surface_ = true" not in failure
+    assert "EmbeddedProductViewState::Ready" not in failure
