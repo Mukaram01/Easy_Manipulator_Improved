@@ -1648,8 +1648,8 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
     if (contract_reason.isEmpty()) {
       native_compatibility_fallback_active_ = false;
       ++embedded_web_terminal_results_accepted_;
-      show_embedded_web_product_view();
       set_embedded_product_view_state(EmbeddedProductViewState::Ready, QStringLiteral("viewer ready"));
+      show_embedded_web_product_view();
       poll_embedded_editor_events();
       emit studio_log_requested(QStringLiteral("Embedded Product View ready after terminal scene_ready: scene=%1 json=%2 builder_revision=%3 robot_preview_lifecycle_state=%4 failed_required_item_count=0")
         .arg(identity.scene_id, expected_json_path, expected_builder_revision, robot_state.isEmpty() ? QStringLiteral("not_required") : robot_state));

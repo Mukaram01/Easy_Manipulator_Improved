@@ -58,6 +58,23 @@ def test_ready_requires_scene_json_and_renderer_readiness():
     assert "failed_required_count != 0" in poll
 
 
+def test_accepted_scene_ready_transition_refreshes_visible_view_after_ready_state():
+    poll = _between(CPP, "if (contract_reason.isEmpty())", "poll_embedded_editor_events();")
+    ready_transition = (
+        "set_embedded_product_view_state(EmbeddedProductViewState::Ready, "
+        "QStringLiteral(\"viewer ready\"));"
+    )
+    assert poll.index(ready_transition) < poll.index("show_embedded_web_product_view();")
+
+    show = _between(
+        CPP,
+        "void ScenePreviewWidget::show_embedded_web_product_view()",
+        "void ScenePreviewWidget::set_preview_context",
+    )
+    assert "embedded_web_view_->setVisible(scene_selected_)" in show
+    assert "refresh_mode_and_state();" in show
+
+
 def test_preparation_accepts_only_rebuilt_or_current_and_rejects_malformed_wrong_scene_missing_and_failed_command():
     prepare = _between(CPP, "void ScenePreviewWidget::on_embedded_web_prepare_finished", "void ScenePreviewWidget::start_embedded_web_readiness_polling")
     assert "freshener_status != QStringLiteral(\"current\") && freshener_status != QStringLiteral(\"rebuilt\")" in prepare
