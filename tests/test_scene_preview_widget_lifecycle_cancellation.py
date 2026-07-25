@@ -79,6 +79,45 @@ def test_web_request_identity_binds_root_and_selected_port_for_every_async_gate(
     assert "viewer_url.setPort(identity.selected_server_port);" in browser
 
 
+def test_server_probe_initialization_preserves_safe_default_state():
+    unowned = _between(
+        "void ScenePreviewWidget::ensure_embedded_web_server_started",
+        "void ScenePreviewWidget::select_owned_embedded_web_server",
+    )
+    owned = _between(
+        "void ScenePreviewWidget::start_owned_embedded_web_server",
+        "void ScenePreviewWidget::stop_embedded_web_navigation_for_handoff",
+    )
+    expected_initialization = [
+        "embedded_web_server_probe_ = EmbeddedWebServerProbe{};",
+        "embedded_web_server_probe_.identity = identity;",
+        "embedded_web_server_probe_.port = port;",
+        "embedded_web_server_probe_.navigation_token = navigation_token;",
+    ]
+    for server_start in (unowned, owned):
+        for statement in expected_initialization:
+            assert statement in server_start
+
+    probe = HDR[HDR.index("struct EmbeddedWebServerProbe"):HDR.index("void refresh_embedded_web_product_view")]
+    for default in [
+        "int pending_replies{ 0 };",
+        "bool retryable_failure{ false };",
+        "bool terminal_recorded{ false };",
+        "QString failure_detail;",
+    ]:
+        assert default in probe
+
+
+def test_server_probe_initialization_preserves_marker_and_eight_second_deadline():
+    probes = _between(
+        "void ScenePreviewWidget::start_embedded_web_server_probes",
+        "void ScenePreviewWidget::run_embedded_web_server_probes",
+    )
+    assert "embedded_web_server_probe_ = EmbeddedWebServerProbe{};" in probes
+    assert "embedded_web_server_probe_.expected_marker = marker.readAll().trimmed();" in probes
+    assert "embedded_web_server_probe_.deadline = QDateTime::currentDateTimeUtc().addSecs(8);" in probes
+
+
 def test_serialized_browser_navigation_handoff_queues_only_current_scene_load():
     request = _between("void ScenePreviewWidget::request_embedded_web_product_view_refresh", "ScenePreviewWidget::EmbeddedWebRequestIdentity")
     browser = _between("void ScenePreviewWidget::load_prepared_embedded_web_scene", "#ifdef WORKCELL_BUILDER_HAS_WEBENGINE")
