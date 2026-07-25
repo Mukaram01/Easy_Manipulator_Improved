@@ -17,6 +17,7 @@
 #include "gui/scene3d_viewport_widget.h"
 #include "gui/preview_item_suppression.h"
 #include "visual_mesh_source_resolver.hpp"
+#include "workcell_warning_once.hpp"
 #include "include/asset_catalog_model.h"
 #include <QFileDialog>
 #include <QAction>
@@ -1025,7 +1026,40 @@ static QString ystr(const YAML::Node & n){ return (n && n.IsScalar()) ? QString:
 static QString scalar_path(const YAML::Node & root, std::initializer_list<const char *> keys){ YAML::Node n=root; for(auto *k:keys){ if(!n || !n.IsMap() || !n[k]) return "unknown"; n=n[k]; } return ystr(n); }
 static QString normalize_bound_id(QString value){ value=value.trimmed(); if(value.isEmpty()||value=="unknown") return "unknown"; return value; }
 
-static bool read_yaml(const fs::path & p, YAML::Node * out){ try{ if(!fs::exists(p)) return false; qInfo("[workcell_builder] context=task_metadata_summary_loader path=%s", p.string().c_str()); *out=YAML::LoadFile(p.string()); return true; }catch(const YAML::Exception&){ return false; } catch(const std::exception&){ return false; } }
+static bool read_yaml(const fs::path & p, YAML::Node * out, bool required = false)
+{
+  const std::string context = "task_metadata_summary_loader";
+  try {
+    if (!fs::exists(p)) {
+      if (required) {
+        workcell_builder::log_warning_once_per_context_path_reason(
+          context, p, "required YAML file is missing");
+      }
+      return false;
+    }
+    *out = YAML::LoadFile(p.string());
+    if (required && (!out->IsDefined() || !out->IsMap())) {
+      workcell_builder::log_warning_once_per_context_path_reason(
+        context, p, "invalid required metadata: expected a YAML map");
+      return false;
+    }
+    return true;
+  } catch (const YAML::BadFile & e) {
+    if (required) {
+      workcell_builder::log_warning_once_per_context_path_reason(
+        context, p, "required YAML file is unreadable: " + std::string(e.what()));
+    }
+  } catch (const YAML::Exception & e) {
+    workcell_builder::log_warning_once_per_context_path_reason(
+      context, p, "YAML parse exception: " + std::string(e.what()));
+  } catch (const std::exception & e) {
+    if (required) {
+      workcell_builder::log_warning_once_per_context_path_reason(
+        context, p, "required YAML file is unreadable: " + std::string(e.what()));
+    }
+  }
+  return false;
+}
 
 struct SelectedSceneMetadataSummary
 {
@@ -1075,7 +1109,7 @@ static SelectedSceneMetadataSummary selected_scene_metadata_summary(
     QStringLiteral("launch/demo.launch.py missing; generate scene package to create launch metadata");
 
   YAML::Node env;
-  if (read_yaml(scene.scene_dir / "environment.yaml", &env)) {
+  if (read_yaml(scene.scene_dir / "environment.yaml", &env, true)) {
     out.robot = first_present_scalar(env, {
       {"robot", "model"}, {"robot", "id"}, {"robot", "name"}, {"compatibility", "robot"}
     });
