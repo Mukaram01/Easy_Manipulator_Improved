@@ -20,15 +20,8 @@ namespace fs = boost::filesystem;
 namespace workcell_builder {
 
 
-static bool log_task_metadata_loader_path_once(const fs::path & p, const std::string & reason)
+static bool log_task_metadata_loader_warning_once(const fs::path & p, const std::string & reason)
 {
-  static std::mutex mutex;
-  static std::set<std::string> seen_paths;
-  boost::system::error_code ec;
-  const fs::path normalized = fs::weakly_canonical(p, ec);
-  const std::string key = (ec ? p.lexically_normal() : normalized).string();
-  std::lock_guard<std::mutex> lock(mutex);
-  if (!seen_paths.insert(key).second) return false;
   return workcell_builder::log_warning_once_per_context_path_reason(
     "task_metadata_summary_loader", p, reason);
 }
@@ -60,7 +53,7 @@ static YamlLoadStatus read_yaml(const fs::path & p, YAML::Node * out)
     status.parse_warning = true;
     status.reason = "unknown exception";
   }
-  log_task_metadata_loader_path_once(p, "scene YAML parse warning: " + status.reason);
+  log_task_metadata_loader_warning_once(p, "scene YAML parse warning: " + status.reason);
   return status;
 }
 
@@ -157,7 +150,7 @@ void invalidate_workcell_studio_scene_metadata_snapshot(const fs::path & scene_d
   state.invalidation_reason = reason.empty() ? "explicit_refresh" : reason;
 }
 
-static SceneMetadataSnapshot load_scene_metadata_snapshot(const fs::path & scene_dir, const std::string & scene_id, const std::string & reason)
+static SceneMetadataSnapshot load_scene_metadata_snapshot(const fs::path & scene_dir, const std::string & scene_id)
 {
   auto & state = scene_metadata_snapshot_cache_state();
   const fs::path key = canonical_scene_cache_key(scene_dir);
@@ -526,7 +519,6 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     if (deterministic_fallback_layout) return;
     deterministic_fallback_layout = true;
     deterministic_fallback_reason = reason;
-    log_task_metadata_loader_path_once(scene_dir / "layout" / "workcell_studio_layout.yaml", "downgraded to legacy mode");
   };
   const auto add_warning = [&m](const std::string & context, const std::string & detail) {
     m.warnings.push_back("layout/workcell_studio_layout.yaml [" + context + "]: " + detail);
@@ -552,7 +544,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   const fs::path intent_path = scene_dir / "config" / "workcell_builder_task_intent.yaml";
   const fs::path layout_path = scene_dir / "layout" / "workcell_studio_layout.yaml";
   const fs::path legacy_layout_path = scene_dir / "environment_layout.yaml";
-  const SceneMetadataSnapshot snapshot = load_scene_metadata_snapshot(scene_dir, scene_name, "scene_selection_refresh");
+  const SceneMetadataSnapshot snapshot = load_scene_metadata_snapshot(scene_dir, scene_name);
   const YamlLoadStatus env_status = snapshot_yaml(snapshot, "environment.yaml", &env);
   const YamlLoadStatus manifest_status = snapshot_yaml(snapshot, "scene_manifest.yaml", &manifest);
   YamlLoadStatus task_status = snapshot_yaml(snapshot, "config/task_recipe.yaml", &task);
