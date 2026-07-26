@@ -2396,7 +2396,6 @@ void MainWindow::setup_studio_shell()
   auto * select_mode_button = make_primary_button("Select"); primary_controls->addWidget(select_mode_button);
   auto * place_mode_button = make_primary_button("Place Asset"); primary_controls->addWidget(place_mode_button);
   auto * move_mode_button = make_primary_button("Move"); primary_controls->addWidget(move_mode_button);
-  auto * inspect_mode_button = make_primary_button("Inspect");
   save_layout_button_ = make_primary_button("Save Layout");
   primary_controls->addWidget(save_layout_button_);
   primary_controls->addStretch(1);
@@ -2500,9 +2499,6 @@ void MainWindow::setup_studio_shell()
   scene_builder_secondary_overflow_button_->setText("Panels & Tools");
   scene_builder_secondary_overflow_button_->setPopupMode(QToolButton::InstantPopup);
   scene_builder_secondary_overflow_menu_ = new QMenu(scene_builder_secondary_overflow_button_);
-  auto * inspect_action = new QAction(inspect_mode_button->text(), scene_builder_secondary_overflow_menu_);
-  inspect_action->setToolTip(inspect_mode_button->toolTip());
-  QObject::connect(inspect_action, &QAction::triggered, inspect_mode_button, &QPushButton::click);
   auto * keep_placing_action = new QWidgetAction(scene_builder_secondary_overflow_menu_);
   keep_placing_action->setDefaultWidget(place_mode_persistent_box_);
   auto * snap_menu_action = canvas_more_menu->menuAction();
@@ -2589,7 +2585,10 @@ void MainWindow::setup_studio_shell()
     sync_scene_builder_view_actions();
   });
   sync_scene_builder_view_actions();
-  scene_builder_secondary_overflow_menu_->addAction(inspect_action);
+  auto * inspect_action = scene_builder_secondary_overflow_menu_->addAction("Inspect");
+  QObject::connect(inspect_action, &QAction::triggered, this, [this]() {
+    set_canvas_interaction_mode(CanvasInteractionMode::Inspect);
+  });
   scene_builder_secondary_overflow_menu_->addAction(keep_placing_action);
   scene_builder_secondary_overflow_menu_->addAction(snap_menu_action);
   scene_builder_secondary_overflow_menu_->addAction(gizmo_menu_action);
@@ -3202,7 +3201,6 @@ void MainWindow::setup_studio_shell()
   connect_button(select_mode_button, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Select); });
   connect_button(place_mode_button, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Place); });
   connect_button(move_mode_button, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Move); });
-  connect_button(inspect_mode_button, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Inspect); });
   if (snap_to_grid_box_) {
     connect(snap_to_grid_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
   }

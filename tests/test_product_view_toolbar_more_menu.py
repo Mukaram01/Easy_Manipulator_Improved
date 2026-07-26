@@ -21,7 +21,8 @@ def test_product_view_primary_toolbar_keeps_only_core_controls_visible():
     assert 'primary_controls->addWidget(scene_builder_secondary_overflow_button_)' in CPP
 
     assert 'primary_controls->addWidget(place_mode_persistent_box_)' not in primary
-    assert 'primary_controls->addWidget(inspect_mode_button)' not in primary
+    assert 'make_primary_button("Inspect")' not in primary
+    assert 'inspect_mode_button' not in CPP
     assert 'controls->addWidget(camera_view)' not in CPP
     assert '  controls->addWidget(scene_builder_secondary_overflow_button_);' not in CPP
 
@@ -33,7 +34,6 @@ def test_secondary_actions_are_reused_in_more_menu_with_groups_and_state():
     )
 
     for token in [
-        'addAction(inspect_action)',
         'addAction(keep_placing_action)',
         'addAction(snap_menu_action)',
         'addAction(gizmo_menu_action)',
@@ -52,7 +52,8 @@ def test_secondary_actions_are_reused_in_more_menu_with_groups_and_state():
     assert 'scene_builder_action("layout.redo")' in more
     assert 'setShortcut(QKeySequence::Undo)' in more
     assert 'setShortcut(QKeySequence::Redo)' in more
-    assert 'QObject::connect(inspect_action, &QAction::triggered, inspect_mode_button, &QPushButton::click)' in more
+    assert 'inspect_action = scene_builder_secondary_overflow_menu_->addAction("Inspect")' in more
+    assert 'set_canvas_interaction_mode(CanvasInteractionMode::Inspect)' in more
 
     assert 'place_mode_persistent_box_->setChecked(false);' in CPP
     assert 'snap_action->setCheckable(true)' in CPP
