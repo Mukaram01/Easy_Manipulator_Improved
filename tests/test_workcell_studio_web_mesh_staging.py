@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -68,6 +69,82 @@ def _all_renderable_items(payload: dict) -> list[dict]:
 
 def _item(payload: dict, item_id: str) -> dict:
     return next(item for item in _all_renderable_items(payload) if item.get("id") == item_id)
+
+
+def test_nested_layout_target_bin_mesh_is_the_authoritative_physical_render(monkeypatch, tmp_path):
+    scene = tmp_path / "nested_target_bin_scene"
+    _write_yaml(
+        scene / "layout" / "workcell_studio_layout.yaml",
+        {
+            "items": [
+                {
+                    "id": "target_bin_default",
+                    "type": "target_bin",
+                    "role": "target_bin",
+                    "category": "place_zone",
+                    "pose": {"xyz": [0.55, -0.28, 0.19], "rpy": [0.0, 0.0, 0.0]},
+                    "dimensions": [0.35, 0.25, 0.18],
+                    "geometry_type": "mesh",
+                    "mesh": {
+                        "path": "assets/environment/sorting_bin_description/meshes/sorting_bin.stl",
+                        "scale": [0.001, 0.001, 0.001],
+                        "rpy": [0.0, 0.0, 0.0],
+                        "origin_offset": [0.0, 0.0, 0.0],
+                    },
+                },
+                {
+                    "id": "place_zone_default",
+                    "type": "place_zone",
+                    "role": "place_zone",
+                    "category": "work_surface",
+                    "dimensions": [0.35, 0.30, 0.01],
+                },
+            ]
+        },
+    )
+    _write_yaml(
+        scene / "environment.yaml",
+        {
+            "scene": {"id": scene.name, "name": scene.name},
+            "environment": {
+                "assets": [
+                    {
+                        "id": "target_bin_default",
+                        "type": "target_bin",
+                        "role": "target_bin",
+                        "category": "place_zone",
+                        "layout_item_ref": "target_bin_default",
+                        "support_surface_ref": "support_surface_table",
+                        "task_zone_ref": "default_drop_zone",
+                    }
+                ]
+            },
+        },
+    )
+    staged_root = REPO_ROOT / "build" / "workcell_studio_web_scene" / "assets" / scene.name
+
+    try:
+        payload = _export_with_prefix(monkeypatch, scene, tmp_path / "out" / "scene.web_scene.json")
+        matching = [item for item in _all_renderable_items(payload) if item.get("id") == "target_bin_default"]
+
+        assert len(matching) == 1
+        target_bin = matching[0]
+        assert target_bin["source_kind"] == "user_authored"
+        assert target_bin["render_policy"] == "primary"
+        assert target_bin["render_owner"] == "editable_layout"
+        assert target_bin["mesh_staging_status"] == "staged"
+        assert target_bin["mesh_scale"] == [0.001, 0.001, 0.001]
+        assert target_bin["visual_origin"] == {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]}
+        assert target_bin["mesh_uri"] == target_bin["mesh_url"]
+        assert target_bin["mesh_uri"].endswith("sorting_bin.stl")
+        assert target_bin["support_surface_ref"] == "support_surface_table"
+        assert target_bin["task_zone_ref"] == "default_drop_zone"
+        assert target_bin["mesh_contract_category"] == "object"
+        assert payload["metadata"]["mesh_contract"]["mesh_contract_status"] == "passed"
+        assert any(item.get("id") == "place_zone_default" for item in payload["zones"])
+        assert (REPO_ROOT / target_bin["mesh_uri"]).is_file()
+    finally:
+        shutil.rmtree(staged_root, ignore_errors=True)
 
 
 def test_package_mesh_uri_is_staged_and_preserves_original_uri(monkeypatch, tmp_path):

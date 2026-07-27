@@ -791,7 +791,20 @@ def _identity_text(item: Mapping[str, Any]) -> str:
     return " ".join(parts)
 
 
+def _is_tangible_target_bin(item: Mapping[str, Any]) -> bool:
+    return (
+        _has_mesh_reference(item)
+        and str(_first_present(item.get("type"), item.get("role"), "")).lower() == "target_bin"
+    )
+
+
 def _is_helper(item: Mapping[str, Any]) -> bool:
+    # A target bin is tangible product geometry even when its task-facing
+    # category also associates it with a place zone.  Keep the separate,
+    # meshless zone declaration as an overlay, but never demote the authored
+    # bin mesh itself.
+    if _is_tangible_target_bin(item):
+        return False
     text = _identity_text(item)
     return any(token in text for token in HELPER_TOKENS)
 
@@ -1456,6 +1469,27 @@ def _iter_declared_physical_entries(data: Mapping[str, Any]) -> Iterable[Tuple[s
                 item = dict(raw)
                 item.setdefault("id", str(_first_present(raw.get("id"), raw.get("name"), entry_key)))
                 item.setdefault("source_section", key)
+                # Layout YAML stores mesh authoring data as a cohesive nested
+                # block.  Normalize it before the authored-field allowlist is
+                # copied so web export does not require duplicate top-level
+                # mesh_path/mesh_scale fields.
+                mesh_block = _as_map(raw.get("mesh"))
+                mesh_path = _first_present(mesh_block.get("path"), mesh_block.get("uri"))
+                if isinstance(mesh_path, str) and mesh_path:
+                    item.setdefault("mesh_path", mesh_path)
+                    item.setdefault("geometry_type", "mesh")
+                if mesh_block.get("scale") not in (None, [], {}):
+                    item.setdefault("mesh_scale", mesh_block.get("scale"))
+                mesh_rpy = mesh_block.get("rpy")
+                origin_offset = mesh_block.get("origin_offset")
+                if mesh_rpy not in (None, [], {}) or origin_offset not in (None, [], {}):
+                    item.setdefault(
+                        "visual_origin",
+                        {
+                            "xyz": origin_offset if origin_offset not in (None, [], {}) else [0.0, 0.0, 0.0],
+                            "rpy": mesh_rpy if mesh_rpy not in (None, [], {}) else [0.0, 0.0, 0.0],
+                        },
+                    )
                 # Legacy EMD object declarations often bury their visual mesh under
                 # links.<link>.visual.geometry.filepath; expose it to the normal
                 # resolver/stager without adding section-specific render logic.
@@ -1476,8 +1510,8 @@ def _iter_declared_physical_entries(data: Mapping[str, Any]) -> Iterable[Tuple[s
 def _authored_item(raw: Mapping[str, Any], source: str, index: int, scene_dir: Path) -> Json:
     fields = (
         "id", "type", "role", "category", "display_name", "source_section", "link", "object_name", "frame", "pose", "pose_xyz", "pose_rpy", "dimensions",
-        "geometry_type", "primitive_geometry_type", "mesh_uri", "package_uri", "source_path", "mesh_path", "filepath", "material",
-        "layout_item_ref", "support_surface_ref", "task_zone_ref", "scale", "mesh_scale", "perception_mode", "runtime_enforced", "runtime_commanded",
+        "geometry_type", "primitive_geometry_type", "mesh_uri", "package_uri", "source_path", "mesh_path", "filepath", "mesh_scale", "visual_origin", "material",
+        "layout_item_ref", "support_surface_ref", "task_zone_ref", "scale", "perception_mode", "runtime_enforced", "runtime_commanded",
         "support_surface_kind", "support_kind", "semantic_type", "top_surface_z_m", "topSurfaceZM", "support_surface_height_m", "supportSurfaceHeightM",
         "expected_support_footprint_m", "support_footprint_m", "footprint_m", "footprint", "table_height", "table_top_z", "surface_height_m",
     )
@@ -1492,9 +1526,22 @@ def _authored_item(raw: Mapping[str, Any], source: str, index: int, scene_dir: P
 
 def _authored_sections(data: Dict[str, Any], scene_dir: Path, warnings: List[Json]) -> Dict[str, List[Json]]:
     sections = {"assets": [], "sensors": [], "zones": []}
+    physical_layout_items: Dict[str, Json] = {}
     if data.get("layout") is not None and "items" not in _as_map(data.get("layout")):
         _warn(warnings, "layout_items_missing", "layout/workcell_studio_layout.yaml has no items list.", INPUTS["layout"])
     for counter, (source_section, raw, source) in enumerate(_iter_declared_physical_entries(data)):
+        layout_ref = str(_first_present(raw.get("layout_item_ref"), raw.get("id"), ""))
+        existing_layout_item = physical_layout_items.get(layout_ref)
+        if source == INPUTS["environment"] and existing_layout_item is not None:
+            # environment.yaml describes semantic/task relationships for the
+            # same editable layout object.  Enrich that authoritative physical
+            # record instead of exporting a second meshless marker with the
+            # same target-bin identity.
+            for field in ("frame", "layout_item_ref", "support_surface_ref", "task_zone_ref", "perception_mode", "runtime_enforced", "runtime_commanded"):
+                if field in raw and field not in existing_layout_item:
+                    existing_layout_item[field] = raw[field]
+                    existing_layout_item["provenance"][field] = source
+            continue
         item = _authored_item(raw, source, counter, scene_dir)
         item["source_section"] = source_section
         item["active_visual_source"] = "declared_mesh" if _has_mesh_reference(item) else ("declared_primitive" if _item_local_bounds(item) is not None else "declared_physical_metadata")
@@ -1507,6 +1554,8 @@ def _authored_sections(data: Dict[str, Any], scene_dir: Path, warnings: List[Jso
             sections["zones"].append(item)
         else:
             sections["assets"].append(item)
+        if source == INPUTS["layout"] and _has_mesh_reference(item):
+            physical_layout_items[str(item.get("id"))] = item
     return sections
 
 
@@ -1688,6 +1737,8 @@ def _is_mesh_item(item: Mapping[str, Any]) -> bool:
 def _core_mesh_category(item: Mapping[str, Any], section: str) -> Optional[str]:
     if _is_helper(item) or section == "zones":
         return None
+    if section == "assets" and _is_tangible_target_bin(item):
+        return "authored_asset_object"
     text = _identity_text(item)
     role = str(item.get("role", "")).lower()
     category = str(item.get("category", "")).lower()
@@ -1736,6 +1787,8 @@ def _visual_contract_category(item: Mapping[str, Any], section: str) -> str:
     category = str(item.get("category", "")).lower()
     if section == "zones" or _is_helper(item):
         return "zone"
+    if section == "assets" and _is_tangible_target_bin(item):
+        return "object"
     if section == "sensors" or any(token in text for token in ("camera", "realsense")):
         return "camera"
     if any(token in text for token in ("table", "workbench", "support_surface")):
