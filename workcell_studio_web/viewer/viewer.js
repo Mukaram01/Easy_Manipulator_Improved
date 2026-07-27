@@ -88,9 +88,16 @@ function isPrimaryRenderableItem(item) {
 }
 function isDiagnosticOnlyItem(item) { return itemRenderPolicy(item) === 'diagnostic_only'; }
 function isOverlayPolicyItem(item) { return itemRenderPolicy(item) === 'overlay'; }
+function isPrimaryAuthoredPhysicalMesh(item) {
+  if (itemRenderPolicy(item) !== 'primary' || !truthyFlag(item?.mesh_load_required)) return false;
+  const contractCategory = String(item?.mesh_contract_category || item?.meshContractCategory || '').toLowerCase();
+  const identity = viewerGroupIdentity(item);
+  return contractCategory === 'object' || /\b(target bin|target container|destination bin)\b/.test(identity);
+}
 function readinessCategoryForItem(item) {
   if (!item || !isPrimaryRenderableItem(item) || isDebugOverlayItem(item)) return '';
   if (item?.readiness_category || item?.readinessCategory) return String(item.readiness_category || item.readinessCategory);
+  if (isPrimaryAuthoredPhysicalMesh(item)) return 'authored_physical_mesh';
   const category = meshContractCategoryOf(item);
   const identity = viewerGroupIdentity(item);
   if (category === 'camera' || isSensor(item)) return 'configured_camera';
@@ -1603,11 +1610,7 @@ function isGeneratedRobotItem(item) {
 }
 function viewerGroupFor(item) {
   const identity = viewerGroupIdentity(item);
-  const contractCategory = meshContractCategoryOf(item);
-  const primaryAuthoredPhysical = isPrimaryRenderableItem(item) && hasMeshBackedVisualContract(item) && (
-    contractCategory === 'object' || /\b(target bin|object|workpiece|part|product|bin|tray)\b/.test(identity)
-  );
-  if (primaryAuthoredPhysical) return 'environment/layout';
+  if (isPrimaryAuthoredPhysicalMesh(item)) return 'environment/layout';
   if (/\b(zone|pick zone|place zone|observation zone|spawn zone|safety zone|work envelope|reachability|collision)\b/.test(identity)) return 'zones';
   if (/\b(camera|sensor|realsense|depth camera|rgbd|lidar|vision)\b/.test(identity)) return 'sensors';
   if (isGeneratedToolOrGripperItem(item)) return 'tool/gripper';
@@ -1630,6 +1633,7 @@ function hasDimensionBackedPhysicalPrimitive(item) {
 function isDebugOverlayItem(item) {
   if (isOverlayPolicyItem(item)) return true;
   if (item?.debug_overlay === true || item?.exclude_from_fit_bounds === true || item?.source_layer === 'debug_overlay') return true;
+  if (isPrimaryAuthoredPhysicalMesh(item)) return false;
   const identity = [
     item?.source_layer,
     item?.active_visual_source,
