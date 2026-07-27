@@ -42,13 +42,31 @@ def test_embedded_mode_hides_standalone_browser_ui_only_when_requested():
 
 
 def test_qt_loads_embedded_view_and_routes_controls_without_reload():
-    assert "&embedded=1" in CPP
+    assert 'viewer_query.addQueryItem(QStringLiteral("embedded"), QStringLiteral("1"))' in CPP
     for helper in ["run_embedded_editor_command", "poll_embedded_editor_events", "apply_embedded_editor_state", "embedded_snap_command"]:
         assert helper in CPP and helper in HDR
     for command in ["setMode", "setSnap", "fitScene", "undo()", "redo()", "selectItem"]:
         assert command in CPP
-    assert "QTimer::singleShot(200, this, &ScenePreviewWidget::poll_embedded_editor_events)" in CPP
+    assert "QTimer::singleShot(200, this, [this, identity]()" in CPP
     assert "refresh_embedded_web_product_view();" not in CPP.split('connect(gizmo_mode_selector_', 1)[1].split('connect(mesh_preview_mode_selector_', 1)[0]
+
+
+def test_outer_qt_authoring_controls_use_typed_web3d_bridge():
+    main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    for method in ["set_authoring_mode", "undo_authoring_edit", "redo_authoring_edit", "request_authoring_save"]:
+        assert method in HDR
+        assert f"scene_preview_widget_->{method}" in main
+    assert "authoring_mode_changed" in CPP
+    assert "authoring_mode_changed" in main
+    assert 'make_primary_button("Rotate")' in main
+
+
+def test_move_mode_first_click_selects_and_starts_drag_without_bypassing_locks():
+    handler = VIEWER.split("function onCanvasPointerDown", 1)[1].split("function onCanvasPointerMove", 1)[0]
+    assert "const rendered = hitId ? renderedById(hitId) : null" in handler
+    assert "hitId === state.selected" not in handler
+    assert "beginDirectMoveDrag(event, rendered)" in handler
+    assert "!canEditItem(rendered.item)" in VIEWER.split("function beginDirectMoveDrag", 1)[1].split("function updateDirectMoveDrag", 1)[0]
 
 
 def test_qt_compact_toolbar_for_embedded_web3d():
@@ -66,8 +84,8 @@ def test_qt_compact_toolbar_for_embedded_web3d():
     assert "set_visible(gizmo_mode_label_, embedded_web_active)" in CPP
     assert "set_visible(gizmo_mode_selector_, embedded_web_active)" in CPP
     assert "set_visible(snap_mode_selector_, embedded_web_active)" in CPP
-    assert "Unsaved preview edits: %1" in CPP
-    assert "Locked item — select an editable object or area" in CPP
+    assert 'state.value(QStringLiteral("canUndo")).toBool()' in CPP
+    assert 'state.value(QStringLiteral("canRedo")).toBool()' in CPP
 
 
 def test_product_view_selection_uses_stable_identity_and_filters_helpers():
