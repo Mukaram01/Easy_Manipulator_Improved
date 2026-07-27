@@ -550,7 +550,7 @@ def test_viewer_generated_urdf_baked_pose_mode_uses_identity_mesh_local_transfor
     assert "visualOriginOf(item)" in mesh_transform_body
     assert mesh_transform_body.index("usesBakedVisibleWorldPose(item)") < mesh_transform_body.index("visualOriginOf(item)")
     assert "meshObject.position.copy(visualOrigin.xyz)" in mesh_transform_body
-    assert "meshObject.rotation.set(visualOrigin.rpy.x, visualOrigin.rpy.y, visualOrigin.rpy.z, 'XYZ')" in mesh_transform_body
+    assert "applyRosRpy(meshObject, visualOrigin.rpy)" in mesh_transform_body
 
 
 def test_viewer_generated_urdf_unflagged_mesh_wrapper_still_applies_visual_origin():
@@ -856,13 +856,25 @@ def test_viewer_local_mesh_transform_is_applied_to_mesh_object_not_parent_pose()
     local_transform_body = js.split("function applyMeshLocalTransform", 1)[1].split("async function tryLoadMesh", 1)[0]
     assert "meshObject" in local_transform_body
     assert ".position" in local_transform_body
-    assert ".rotation" in local_transform_body
+    assert "applyRosRpy(meshObject, visualOrigin.rpy)" in local_transform_body
     assert ".scale" in local_transform_body
 
     apply_pose_body = js.split("function applyPose", 1)[1].split("function assignItemUserData", 1)[0]
     assert "mesh_local_transform" not in apply_pose_body
     assert "visual_local_transform" not in apply_pose_body
     assert "visual_origin" not in apply_pose_body
+
+
+def test_viewer_mesh_local_ros_rpy_order_regression():
+    result = subprocess.run(
+        [str(ROOT / "tests" / "test_web3d_mesh_ros_rpy_order.mjs")],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Three.js 160" in result.stdout
 
 
 def test_primary_mesh_backed_target_bin_keeps_product_visibility_scale_color_and_readiness():
