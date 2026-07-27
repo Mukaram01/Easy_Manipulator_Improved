@@ -865,6 +865,39 @@ def test_viewer_local_mesh_transform_is_applied_to_mesh_object_not_parent_pose()
     assert "visual_origin" not in apply_pose_body
 
 
+def test_primary_mesh_backed_target_bin_keeps_product_visibility_scale_color_and_readiness():
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+
+    grouping = js.split("function viewerGroupFor(item)", 1)[1].split("const DEBUG_OVERLAY_TOKEN_RE", 1)[0]
+    assert grouping.index("if (primaryAuthoredPhysical) return 'environment/layout';") < grouping.index("return 'zones';")
+    assert "contractCategory === 'object'" in grouping
+    assert "target bin" in grouping
+
+    overlay_filter = js.split("function isDebugOverlayItem(item)", 1)[1].split("function isSensor(item)", 1)[0]
+    assert "if (viewerGroupFor(item) === 'zones') return true;" in overlay_filter
+    assert "if (isOverlayPolicyItem(item)) return true;" in overlay_filter
+    render_scene = js.split("function renderScene(items)", 1)[1].split("function loadExpandedUrdfRobotPreview", 1)[0]
+    assert "object3d.visible = state.debugOverlaysVisible || !isDebugOverlayItem(item);" in render_scene
+
+    root_scale = js.split("function scaleOf(item)", 1)[1].split("function transformOf", 1)[0]
+    mesh_scale = js.split("function meshLocalTransformOf(item)", 1)[1].split("function cloneTransform", 1)[0]
+    assert "item.scale || [1, 1, 1]" in root_scale
+    assert "item.scale || item.mesh_scale" not in root_scale
+    assert "transform.scale || item?.mesh_scale" in mesh_scale
+
+    readiness = js.split("function beginWeb3dSceneReadiness(items)", 1)[1].split("function requiredReadinessCompleteForItem", 1)[0]
+    assert "pending.add(readinessKey(category, item))" in readiness
+    category = js.split("function readinessCategoryForItem(item)", 1)[1].split("function readinessKey", 1)[0]
+    assert "return 'authored_physical_mesh';" in category
+    load = js.split("async function tryLoadMesh", 1)[1].split("function collectItems", 1)[0]
+    assert load.index("setRenderInfo(rendered, 'mesh_loaded'") < load.rindex("requiredReadinessCompleteForItem(item)")
+    assert "failWeb3dSceneReadiness(item, loadUrl, `loaded mesh bounds validation failed" in load
+
+    material = js.split("function materialFor(item)", 1)[1].split("function materialHasUsableAppearance", 1)[0]
+    assert "item?.material?.color" in material
+    assert "material.color.setRGB" in material
+
+
 def test_viewer_visual_bounds_diagnostics_and_fit_bounds_contract_are_source_guarded():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     for token in [

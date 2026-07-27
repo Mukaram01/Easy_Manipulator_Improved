@@ -97,6 +97,7 @@ function readinessCategoryForItem(item) {
   if (category === 'table' || supportSurfaceDisplayType(item) || /\b(workbench|support surface|tabletop|table)\b/.test(identity)) return 'workbench_support_surface';
   if (isGeneratedToolOrGripperItem(item) || category === 'tool') return 'attached_tool_gripper';
   if (isGeneratedRobotItem(item) || category === 'robot') return 'robot_arm';
+  if (itemRequiresMeshBackedVisual(item) && (category === 'object' || viewerGroupFor(item) === 'environment/layout')) return 'authored_physical_mesh';
   return '';
 }
 function readinessKey(category, item) { return `${category}:${item?.id || item?.link || itemLabel(item || {})}`; }
@@ -1066,7 +1067,7 @@ function poseOf(item) {
 function scaleOf(item) {
   // Generated URDF item roots are link/frame nodes. URDF mesh scale is
   // applied only to the loaded mesh/local wrapper, never to the link root.
-  const scale = isGeneratedUrdfItem(item) ? [1, 1, 1] : (item.scale || item.mesh_scale || [1, 1, 1]);
+  const scale = isGeneratedUrdfItem(item) ? [1, 1, 1] : (item.scale || [1, 1, 1]);
   return vector3(scale, [1, 1, 1]);
 }
 function transformOf(item) {
@@ -1098,7 +1099,7 @@ function meshLocalTransformOf(item) {
     reasons.push('mesh_local_transform must be an object');
   }
   const transform = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
-  const scaleSource = transform.scale || item?.mesh_scale || item?.scale || [1, 1, 1];
+  const scaleSource = transform.scale || item?.mesh_scale || (isGeneratedUrdfItem(item) ? item?.scale : null) || [1, 1, 1];
   return {
     pose: {
       xyz: meshLocalVector(transform.xyz || transform.origin || transform.position, [0, 0, 0], 'mesh_local_transform.xyz', reasons),
@@ -1602,6 +1603,11 @@ function isGeneratedRobotItem(item) {
 }
 function viewerGroupFor(item) {
   const identity = viewerGroupIdentity(item);
+  const contractCategory = meshContractCategoryOf(item);
+  const primaryAuthoredPhysical = isPrimaryRenderableItem(item) && hasMeshBackedVisualContract(item) && (
+    contractCategory === 'object' || /\b(target bin|object|workpiece|part|product|bin|tray)\b/.test(identity)
+  );
+  if (primaryAuthoredPhysical) return 'environment/layout';
   if (/\b(zone|pick zone|place zone|observation zone|spawn zone|safety zone|work envelope|reachability|collision)\b/.test(identity)) return 'zones';
   if (/\b(camera|sensor|realsense|depth camera|rgbd|lidar|vision)\b/.test(identity)) return 'sensors';
   if (isGeneratedToolOrGripperItem(item)) return 'tool/gripper';
@@ -1650,7 +1656,16 @@ function materialFor(item) {
   if (isZone(item)) return new THREE.MeshBasicMaterial({ color: 0xffc857, transparent: true, opacity: 0.1, side: THREE.DoubleSide, wireframe: true, depthWrite: false });
   if (isSensor(item)) return new THREE.MeshStandardMaterial({ color: 0x5f7485, roughness: 0.62, metalness: 0.08 });
   if (item.locked || item.source_kind === 'generated_preview') return new THREE.MeshStandardMaterial({ color: 0x8b96a6, roughness: 0.76, metalness: 0.04 });
-  return new THREE.MeshStandardMaterial({ color: 0x8aa38d, roughness: 0.72, metalness: 0.02 });
+  const authoredColor = item?.material?.color || item?.material?.rgba || item?.material_color || item?.color;
+  const material = new THREE.MeshStandardMaterial({ color: 0x8aa38d, roughness: 0.72, metalness: 0.02 });
+  if (Array.isArray(authoredColor) && authoredColor.length >= 3) {
+    material.color.setRGB(Number(authoredColor[0]), Number(authoredColor[1]), Number(authoredColor[2]));
+    if (authoredColor.length > 3) {
+      material.opacity = Number(authoredColor[3]);
+      material.transparent = material.opacity < 1;
+    }
+  }
+  return material;
 }
 function materialHasUsableAppearance(material) {
   if (!material) return false;
@@ -1894,8 +1909,12 @@ async function tryLoadMesh(item, rendered, fallback) {
     item.mesh_load_error = '';
     trackMeshLoadAttempt(item, 'loaded', loadUrl, '');
     setRenderInfo(rendered, 'mesh_loaded', uri, '');
-    diagnoseLoadedMeshBounds(item, visualRoot, rendered, validationBounds);
+    const boundsValid = diagnoseLoadedMeshBounds(item, visualRoot, rendered, validationBounds);
     refreshMeshLoadUi(rendered);
+    if (!boundsValid && itemRequiresMeshBackedVisual(item)) {
+      failWeb3dSceneReadiness(item, loadUrl, `loaded mesh bounds validation failed (${item.visual_bounds_status || 'invalid'})`, { mesh_status: item.mesh_status });
+      return;
+    }
     requiredReadinessCompleteForItem(item);
   } catch (err) {
     const required = itemRequiresMeshBackedVisual(item);
@@ -2677,15 +2696,15 @@ function diagnoseLoadedMeshBounds(item, meshObject, rendered, nativeBounds = nul
   const tiny = 1e-9;
   if (!localBounds || !worldBounds || !dims || !worldDims) {
     if (isCoreMeshContractItem(item)) warnLoadedMeshBounds(item, 'loaded_mesh_bounds_invalid', 'loaded mesh produced empty or non-finite bounds');
-    return;
+    return !isCoreMeshContractItem(item);
   }
   maybeWarnSupportSurfaceSemantics(item, dims);
   const collapsedAxes = ['x', 'y', 'z'].filter(axis => dims[axis] <= tiny || worldDims[axis] <= tiny);
   if (collapsedAxes.length) {
     if (isCoreMeshContractItem(item)) warnLoadedMeshBounds(item, 'loaded_mesh_collapsed', `loaded mesh bounds are zero-volume or collapsed on ${collapsedAxes.join(', ')}`, { collapsed_axes: collapsedAxes });
-    return;
+    return !isCoreMeshContractItem(item);
   }
-  if (!expected) return;
+  if (!expected) return true;
   const axes = ['x', 'y', 'z'];
   const axisRatios = Object.fromEntries(axes.map(axis => [axis, dims[axis] / expected[axis]]));
   const maxRatio = Math.max(...Object.values(axisRatios));
@@ -2702,6 +2721,7 @@ function diagnoseLoadedMeshBounds(item, meshObject, rendered, nativeBounds = nul
     });
     else if (Math.abs(maxRatio - 1000) < 100 || Math.abs(maxRatio - 0.001) < 0.001) item.visual_bounds_status = 'corrected_by_local_unit_scale';
   }
+  return item.visual_bounds_status !== 'oversized';
 }
 function workspaceDimensionsOf(sceneJson) {
   return dimensionsVectorFrom(sceneJson?.workspace?.dimensions_m || sceneJson?.workspace?.size_m || sceneJson?.workspace_dimensions_m || sceneJson?.scene?.workspace_dimensions_m);
