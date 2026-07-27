@@ -1,5 +1,7 @@
 #pragma once
 
+#include "scene_preview_widget.h"
+
 #include <QWidget>
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
@@ -109,13 +111,15 @@ inline QString resolveSceneDir(const QString & repo_root, const QString & scene_
 class EmbeddedWebEditSaveController : public QObject
 {
 public:
-  EmbeddedWebEditSaveController(QWidget * preview, QWebEngineView * view)
+  EmbeddedWebEditSaveController(ScenePreviewWidget * preview, QWebEngineView * view)
   : QObject(preview), preview_(preview), view_(view)
   {
     installed_ = createControls();
     if (!installed_) return;
 
     connect(save_button_, &QPushButton::clicked, this, [this]() { requestSave(); });
+    connect(preview_, &ScenePreviewWidget::embedded_authoring_save_requested,
+      this, [this]() { requestSave(); });
     connect(view_, &QWebEngineView::loadFinished, this, [this](bool) {
       last_polled_url_ = QUrl();
       QTimer::singleShot(250, this, [this]() { pollEditorState(); });
@@ -134,13 +138,7 @@ private:
   bool createControls()
   {
     if (!preview_ || !view_) return false;
-    QPushButton * fit_button = nullptr;
-    for (QPushButton * button : preview_->findChildren<QPushButton *>()) {
-      if (button->text() == QStringLiteral("Fit")) {
-        fit_button = button;
-        break;
-      }
-    }
+    QPushButton * fit_button = preview_->findChild<QPushButton *>(QStringLiteral("embeddedFitButton"));
     if (!fit_button) return false;
 
     QBoxLayout * toolbar = nullptr;
@@ -421,7 +419,7 @@ private:
     });
   }
 
-  QPointer<QWidget> preview_;
+  QPointer<ScenePreviewWidget> preview_;
   QPointer<QWebEngineView> view_;
   QPointer<QPushButton> save_button_;
   QPointer<QLabel> status_label_;
@@ -442,10 +440,10 @@ private:
 inline void installEmbeddedWebEditSaveControllers(QWidget * root)
 {
   if (!root) return;
-  QList<QWidget *> previews;
-  if (root->objectName() == QStringLiteral("scenePreviewWidget")) previews << root;
-  previews.append(root->findChildren<QWidget *>(QStringLiteral("scenePreviewWidget"), Qt::FindChildrenRecursively));
-  for (QWidget * preview : previews) {
+  QList<ScenePreviewWidget *> previews;
+  if (auto * preview = qobject_cast<ScenePreviewWidget *>(root)) previews << preview;
+  previews.append(root->findChildren<ScenePreviewWidget *>(QString(), Qt::FindChildrenRecursively));
+  for (ScenePreviewWidget * preview : previews) {
     if (!preview || preview->property("workcell_embedded_save_controller").toBool()) continue;
     QWebEngineView * view = preview->findChild<QWebEngineView *>(QStringLiteral("embeddedWeb3dProductView"));
     if (!view) continue;

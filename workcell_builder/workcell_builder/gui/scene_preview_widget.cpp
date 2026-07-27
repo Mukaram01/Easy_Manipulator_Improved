@@ -25,6 +25,7 @@
 #include <QCryptographicHash>
 #include <QDataStream>
 #include <QSet>
+#include <QSignalBlocker>
 #include <QPushButton>
 #include <functional>
 
@@ -323,6 +324,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   embedded_redo_button_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
   backend_controls_row->addWidget(embedded_redo_button_);
   embedded_fit_button_ = new QPushButton(QStringLiteral("Fit"), this);
+  embedded_fit_button_->setObjectName(QStringLiteral("embeddedFitButton"));
   embedded_fit_button_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
   backend_controls_row->addWidget(embedded_fit_button_);
   backend_controls_row->addSpacing(8);
@@ -518,7 +520,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   connect(interaction_mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     const QString choice = interaction_mode_selector_->currentText();
     auto * v = active_native_viewport();
-    if (!v) return;
+    if (!v) { set_authoring_mode(choice); return; }
     if (choice == "Move") { v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Move; if (gizmo_mode_selector_) gizmo_mode_selector_->setCurrentText("Move"); }
     else if (choice == "Rotate") { v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Rotate; if (gizmo_mode_selector_) gizmo_mode_selector_->setCurrentText("Rotate"); }
     else { v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Select; if (gizmo_mode_selector_) gizmo_mode_selector_->setCurrentText("Select"); }
@@ -1772,6 +1774,16 @@ void ScenePreviewWidget::apply_embedded_editor_state(const QVariantMap & state)
   if (state.isEmpty()) return;
   if (embedded_undo_button_) embedded_undo_button_->setEnabled(state.value(QStringLiteral("canUndo")).toBool());
   if (embedded_redo_button_) embedded_redo_button_->setEnabled(state.value(QStringLiteral("canRedo")).toBool());
+  const QString mode = state.value(QStringLiteral("mode")).toString().trimmed().toLower();
+  if ((mode == QStringLiteral("select") || mode == QStringLiteral("move") || mode == QStringLiteral("rotate")) &&
+      gizmo_mode_selector_) {
+    const QString label = mode.left(1).toUpper() + mode.mid(1);
+    if (gizmo_mode_selector_->currentText() != label) {
+      const QSignalBlocker blocker(gizmo_mode_selector_);
+      gizmo_mode_selector_->setCurrentText(label);
+    }
+    emit authoring_mode_changed(mode);
+  }
   // Selection and dirty-state detail remains available through the embedded
   // editor and Studio Log. The header chip always reports runtime state.
   refresh_toolbar_status_chip();
@@ -1813,6 +1825,49 @@ ScenePreviewWidget::ProductViewBackend ScenePreviewWidget::active_product_view_b
 bool ScenePreviewWidget::is_native_product_view_backend() const
 {
   return product_view_backend_ == ProductViewBackend::NativeScene3D;
+}
+
+bool ScenePreviewWidget::embedded_web_authoring_active() const
+{
+  return product_view_backend_ == ProductViewBackend::EmbeddedWeb3D &&
+    !native_compatibility_fallback_active_ && stack_ && stack_->currentWidget() == view3d_container_;
+}
+
+void ScenePreviewWidget::set_authoring_mode(const QString & requested_mode)
+{
+  const QString mode = requested_mode.trimmed().toLower();
+  if (mode != QStringLiteral("select") && mode != QStringLiteral("move") &&
+      mode != QStringLiteral("rotate")) return;
+  if (embedded_web_authoring_active()) {
+    const QString script = QStringLiteral(
+      "window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.setMode(%1)")
+      .arg(QString(QJsonDocument(QJsonArray{mode}).toJson(QJsonDocument::Compact)).mid(1).chopped(1));
+    run_embedded_editor_command(script);
+    return;
+  }
+  auto * viewport = active_native_viewport();
+  if (!viewport) return;
+  if (mode == QStringLiteral("move")) viewport->gizmo_mode = Scene3DViewportWidget::GizmoMode::Move;
+  else if (mode == QStringLiteral("rotate")) viewport->gizmo_mode = Scene3DViewportWidget::GizmoMode::Rotate;
+  else viewport->gizmo_mode = Scene3DViewportWidget::GizmoMode::Select;
+  viewport->update();
+}
+
+void ScenePreviewWidget::undo_authoring_edit()
+{
+  if (embedded_web_authoring_active())
+    run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.undo()"));
+}
+
+void ScenePreviewWidget::redo_authoring_edit()
+{
+  if (embedded_web_authoring_active())
+    run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.redo()"));
+}
+
+void ScenePreviewWidget::request_authoring_save()
+{
+  if (embedded_web_authoring_active()) emit embedded_authoring_save_requested();
 }
 
 Scene3DViewportWidget * ScenePreviewWidget::active_native_viewport() const

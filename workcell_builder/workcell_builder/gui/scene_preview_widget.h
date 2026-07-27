@@ -237,6 +237,11 @@ public:
   MeshPreviewMode mesh_preview_mode() const;
   ProductViewBackend active_product_view_backend() const;
   bool is_native_product_view_backend() const;
+  bool embedded_web_authoring_active() const;
+  void set_authoring_mode(const QString & mode);
+  void undo_authoring_edit();
+  void redo_authoring_edit();
+  void request_authoring_save();
   void reload_meshes();
   void apply_product_view_defaults();
   struct RenderDebugCounters
@@ -303,6 +308,8 @@ signals:
   void studio_issue_requested(const QString & message, const QString & severity, const QString & issue_key);
   void preview_item_selected(const QString & id, const QString & role);
   void embedded_product_view_runtime_state_changed(const QString & state, bool has_usable_content);
+  void authoring_mode_changed(const QString & mode);
+  void embedded_authoring_save_requested();
 
 private slots:
   void on_mode_changed(int index);

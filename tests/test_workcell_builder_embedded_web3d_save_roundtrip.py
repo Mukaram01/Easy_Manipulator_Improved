@@ -15,11 +15,14 @@ def test_qt_product_view_installs_one_contextual_save_action():
 
     assert '#include "embedded_web_edit_save_controller.hpp"' in ui_utils
     assert "installEmbeddedWebEditSaveControllers(widget);" in ui_utils
-    assert 'objectName() == QStringLiteral("scenePreviewWidget")' in controller
+    assert "qobject_cast<ScenePreviewWidget *>(root)" in controller
     assert 'findChild<QWebEngineView *>(QStringLiteral("embeddedWeb3dProductView"))' in controller
     assert 'setObjectName(QStringLiteral("embeddedSaveLayoutButton"))' in controller
     assert 'QPushButton(QStringLiteral("Save layout")' in controller
     assert 'property("workcell_embedded_save_controller")' in controller
+    assert "ScenePreviewWidget::embedded_authoring_save_requested" in controller
+    assert 'findChild<QPushButton *>(QStringLiteral("embeddedFitButton"))' in controller
+    assert "button->text()" not in controller
 
 
 def test_qt_reads_patch_from_existing_browser_editor_api_and_checks_identity():
