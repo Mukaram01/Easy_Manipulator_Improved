@@ -157,6 +157,10 @@ def test_ur5_target_bin_calibrated_mesh_transform_and_bounds_survive_export():
     scene = REPO_ROOT / "scenes" / "ur5_2f_test"
     payload = json.loads(json.dumps(exporter.build_web_scene(scene)))
     target_bin = _item(payload, "target_bin_default")
+    place_zone = _item(payload, "place_zone_default")
+
+    assert target_bin["transform_group"] == "default_drop_destination"
+    assert place_zone["transform_group"] == "default_drop_destination"
 
     world_pose = {"xyz": [0.55, -0.28, 0.20], "rpy": [0.0, 0.0, 0.0]}
     mesh_transform = {

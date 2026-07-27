@@ -1523,7 +1523,7 @@ def _authored_item(raw: Mapping[str, Any], source: str, index: int, scene_dir: P
     fields = (
         "id", "type", "role", "category", "display_name", "source_section", "link", "object_name", "frame", "pose", "pose_xyz", "pose_rpy", "dimensions",
         "geometry_type", "primitive_geometry_type", "mesh_uri", "package_uri", "source_path", "mesh_path", "filepath", "mesh_scale", "mesh_local_transform", "visual_origin", "material",
-        "layout_item_ref", "support_surface_ref", "task_zone_ref", "scale", "perception_mode", "runtime_enforced", "runtime_commanded",
+        "layout_item_ref", "support_surface_ref", "task_zone_ref", "transform_group", "scale", "perception_mode", "runtime_enforced", "runtime_commanded",
         "support_surface_kind", "support_kind", "semantic_type", "top_surface_z_m", "topSurfaceZM", "support_surface_height_m", "supportSurfaceHeightM",
         "expected_support_footprint_m", "support_footprint_m", "footprint_m", "footprint", "table_height", "table_top_z", "surface_height_m",
     )
