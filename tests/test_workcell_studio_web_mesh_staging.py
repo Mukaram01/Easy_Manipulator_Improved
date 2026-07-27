@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import math
 import shutil
 import subprocess
 import sys
@@ -134,6 +135,11 @@ def test_nested_layout_target_bin_mesh_is_the_authoritative_physical_render(monk
         assert target_bin["render_owner"] == "editable_layout"
         assert target_bin["mesh_staging_status"] == "staged"
         assert target_bin["mesh_scale"] == [0.001, 0.001, 0.001]
+        assert target_bin["mesh_local_transform"] == {
+            "xyz": [0.0, 0.0, 0.0],
+            "rpy": [0.0, 0.0, 0.0],
+            "scale": [0.001, 0.001, 0.001],
+        }
         assert target_bin["visual_origin"] == {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]}
         assert target_bin["mesh_uri"] == target_bin["mesh_url"]
         assert target_bin["mesh_uri"].endswith("sorting_bin.stl")
@@ -145,6 +151,56 @@ def test_nested_layout_target_bin_mesh_is_the_authoritative_physical_render(monk
         assert (REPO_ROOT / target_bin["mesh_uri"]).is_file()
     finally:
         shutil.rmtree(staged_root, ignore_errors=True)
+
+
+def test_ur5_target_bin_calibrated_mesh_transform_and_bounds_survive_export():
+    scene = REPO_ROOT / "scenes" / "ur5_2f_test"
+    payload = json.loads(json.dumps(exporter.build_web_scene(scene)))
+    target_bin = _item(payload, "target_bin_default")
+
+    world_pose = {"xyz": [0.55, -0.28, 0.20], "rpy": [0.0, 0.0, 0.0]}
+    mesh_transform = {
+        "xyz": [-0.1738994366, 0.0, -0.10],
+        "rpy": [1.57079632679, 0.0, 1.57079632679],
+        "scale": [0.001, 0.001, 0.001],
+    }
+    assert target_bin["pose"] == world_pose
+    assert target_bin["mesh_local_transform"] == mesh_transform
+    assert target_bin["pose"] is not target_bin["mesh_local_transform"]
+    assert target_bin["dimensions"] == [0.3522011268, 0.2133871002, 0.20]
+
+    # Apply the exported XYZ fixed-axis RPY transform to all STL bound corners.
+    stl_bounds_mm = (
+        (-106.69355, 106.69355),
+        (0.0, 200.0),
+        (-2.2011268, 350.0),
+    )
+    roll, pitch, yaw = mesh_transform["rpy"]
+    cr, sr = math.cos(roll), math.sin(roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    rotation = (
+        (cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr),
+        (sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr),
+        (-sp, cp * sr, cp * cr),
+    )
+    transformed = []
+    for x in stl_bounds_mm[0]:
+        for y in stl_bounds_mm[1]:
+            for z in stl_bounds_mm[2]:
+                scaled = tuple(value * scale for value, scale in zip((x, y, z), mesh_transform["scale"]))
+                rotated = tuple(sum(rotation[row][column] * scaled[column] for column in range(3)) for row in range(3))
+                transformed.append(
+                    tuple(world_pose["xyz"][axis] + mesh_transform["xyz"][axis] + rotated[axis] for axis in range(3))
+                )
+    bounds = tuple((min(point[axis] for point in transformed), max(point[axis] for point in transformed)) for axis in range(3))
+
+    expected = ((0.3738994366, 0.7261005634), (-0.38669355, -0.17330645), (0.10, 0.30))
+    for actual_axis, expected_axis in zip(bounds, expected):
+        assert all(math.isclose(actual, wanted, abs_tol=1e-9) for actual, wanted in zip(actual_axis, expected_axis))
+    assert math.isclose(sum(bounds[0]) / 2, 0.55, abs_tol=1e-9)
+    assert math.isclose(sum(bounds[1]) / 2, -0.28, abs_tol=1e-9)
+    assert math.isclose(bounds[2][0], 0.10, abs_tol=1e-9)
 
 
 def test_package_mesh_uri_is_staged_and_preserves_original_uri(monkeypatch, tmp_path):

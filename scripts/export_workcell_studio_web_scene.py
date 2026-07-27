@@ -1482,12 +1482,24 @@ def _iter_declared_physical_entries(data: Mapping[str, Any]) -> Iterable[Tuple[s
                     item.setdefault("mesh_scale", mesh_block.get("scale"))
                 mesh_rpy = mesh_block.get("rpy")
                 origin_offset = mesh_block.get("origin_offset")
-                if mesh_rpy not in (None, [], {}) or origin_offset not in (None, [], {}):
+                if (
+                    mesh_rpy not in (None, [], {})
+                    or origin_offset not in (None, [], {})
+                    or mesh_block.get("scale") not in (None, [], {})
+                ):
+                    mesh_local_transform = {
+                        # origin_offset is already expressed in metres in the
+                        # item-local frame; mesh scale applies only to vertices.
+                        "xyz": origin_offset if origin_offset not in (None, [], {}) else [0.0, 0.0, 0.0],
+                        "rpy": mesh_rpy if mesh_rpy not in (None, [], {}) else [0.0, 0.0, 0.0],
+                        "scale": mesh_block.get("scale") if mesh_block.get("scale") not in (None, [], {}) else [1.0, 1.0, 1.0],
+                    }
+                    item.setdefault("mesh_local_transform", mesh_local_transform)
                     item.setdefault(
                         "visual_origin",
                         {
-                            "xyz": origin_offset if origin_offset not in (None, [], {}) else [0.0, 0.0, 0.0],
-                            "rpy": mesh_rpy if mesh_rpy not in (None, [], {}) else [0.0, 0.0, 0.0],
+                            "xyz": mesh_local_transform["xyz"],
+                            "rpy": mesh_local_transform["rpy"],
                         },
                     )
                 # Legacy EMD object declarations often bury their visual mesh under
@@ -1510,7 +1522,7 @@ def _iter_declared_physical_entries(data: Mapping[str, Any]) -> Iterable[Tuple[s
 def _authored_item(raw: Mapping[str, Any], source: str, index: int, scene_dir: Path) -> Json:
     fields = (
         "id", "type", "role", "category", "display_name", "source_section", "link", "object_name", "frame", "pose", "pose_xyz", "pose_rpy", "dimensions",
-        "geometry_type", "primitive_geometry_type", "mesh_uri", "package_uri", "source_path", "mesh_path", "filepath", "mesh_scale", "visual_origin", "material",
+        "geometry_type", "primitive_geometry_type", "mesh_uri", "package_uri", "source_path", "mesh_path", "filepath", "mesh_scale", "mesh_local_transform", "visual_origin", "material",
         "layout_item_ref", "support_surface_ref", "task_zone_ref", "scale", "perception_mode", "runtime_enforced", "runtime_commanded",
         "support_surface_kind", "support_kind", "semantic_type", "top_surface_z_m", "topSurfaceZM", "support_surface_height_m", "supportSurfaceHeightM",
         "expected_support_footprint_m", "support_footprint_m", "footprint_m", "footprint", "table_height", "table_top_z", "surface_height_m",
