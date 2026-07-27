@@ -1766,6 +1766,9 @@ function makeSensorMarker(item) {
   applyFallbackRenderMetadata(group, item, 'sensor_fallback');
   return group;
 }
+function applyRosRpy(object, rpy) {
+  object.rotation.set(rpy.x, rpy.y, rpy.z, 'ZYX');
+}
 function applyPose(object, item) {
   const validation = validateRenderableTransform(item);
   if (!validation.valid) return false;
@@ -1821,7 +1824,7 @@ function applyMeshLocalTransform(meshObject, item) {
     ? (usesUrdfFkVisualWorldPose(item) ? poseBlockOf({ xyz: [0, 0, 0], rpy: [0, 0, 0] }) : (usesBakedVisibleWorldPose(item) ? poseBlockOf({ xyz: [0, 0, 0], rpy: [0, 0, 0] }) : visualOriginOf(item)))
     : transform.pose;
   meshObject.position.copy(visualOrigin.xyz);
-  meshObject.rotation.set(visualOrigin.rpy.x, visualOrigin.rpy.y, visualOrigin.rpy.z, 'XYZ');
+  applyRosRpy(meshObject, visualOrigin.rpy);
   if (generatedUrdf) meshObject.scale.set(1, 1, 1);
   else meshObject.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
   if (!transform.valid) {
