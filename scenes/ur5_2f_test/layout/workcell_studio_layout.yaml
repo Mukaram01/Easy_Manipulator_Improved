@@ -61,17 +61,17 @@ items:
     source_layer: editable_layout
     source: layout/workcell_studio_layout.yaml
     pose:
-      xyz: [0.55, -0.28, 0.10]
+      xyz: [0.55, -0.28, 0.20]
       rpy: [0.0, 0.0, 0.0]
-    dimensions: [0.352201, 0.213387, 0.20]
+    dimensions: [0.3522011268, 0.2133871002, 0.20]
     geometry_type: mesh
     mesh:
       path: assets/environment/sorting_bin_description/meshes/sorting_bin.stl
       scale: [0.001, 0.001, 0.001]
-      rpy: [0.0, 0.0, 0.0]
-      origin_offset: [0.0, 0.0, 0.0]
+      rpy: [1.57079632679, 0.0, 1.57079632679]
+      origin_offset: [-0.1738994366, 0.0, -0.10]
     material:
-      color: [0.10, 0.35, 0.90, 1.0]
+      color: [0.95, 0.68, 0.20, 0.65]
   - id: realsense_overhead
     type: realsense
     role: camera
