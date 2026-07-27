@@ -119,3 +119,12 @@ def test_roundtrip_change_stays_focused():
     assert len(CONTROLLER.read_text(encoding="utf-8").splitlines()) < 520
     assert len(WORKFLOW.read_text(encoding="utf-8").splitlines()) < 340
     assert len(APPLICATOR.read_text(encoding="utf-8").splitlines()) < 290
+
+
+def test_linked_group_patch_uses_existing_two_edit_save_path():
+    viewer = (ROOT / "workcell_studio_web/viewer/viewer.js").read_text(encoding="utf-8")
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    assert "state.undoStack.push({ changes:" in viewer
+    assert "for (const rendered of state.objects)" in viewer
+    assert "api.getEditPatch()" in controller
+    assert "scripts/run_workcell_studio_web_edit_workflow.py" in controller
