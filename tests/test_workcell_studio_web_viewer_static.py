@@ -869,13 +869,15 @@ def test_primary_mesh_backed_target_bin_keeps_product_visibility_scale_color_and
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
 
     grouping = js.split("function viewerGroupFor(item)", 1)[1].split("const DEBUG_OVERLAY_TOKEN_RE", 1)[0]
-    assert grouping.index("if (primaryAuthoredPhysical) return 'environment/layout';") < grouping.index("return 'zones';")
-    assert "contractCategory === 'object'" in grouping
-    assert "target bin" in grouping
+    assert grouping.index("if (isPrimaryAuthoredPhysicalMesh(item)) return 'environment/layout';") < grouping.index("return 'zones';")
+    primary_physical = js.split("function isPrimaryAuthoredPhysicalMesh(item)", 1)[1].split("function readinessCategoryForItem", 1)[0]
+    assert "contractCategory === 'object'" in primary_physical
+    assert "target bin" in primary_physical
 
     overlay_filter = js.split("function isDebugOverlayItem(item)", 1)[1].split("function isSensor(item)", 1)[0]
     assert "if (viewerGroupFor(item) === 'zones') return true;" in overlay_filter
     assert "if (isOverlayPolicyItem(item)) return true;" in overlay_filter
+    assert overlay_filter.index("if (isPrimaryAuthoredPhysicalMesh(item)) return false;") < overlay_filter.index("const identity")
     render_scene = js.split("function renderScene(items)", 1)[1].split("function loadExpandedUrdfRobotPreview", 1)[0]
     assert "object3d.visible = state.debugOverlaysVisible || !isDebugOverlayItem(item);" in render_scene
 
@@ -896,6 +898,49 @@ def test_primary_mesh_backed_target_bin_keeps_product_visibility_scale_color_and
     material = js.split("function materialFor(item)", 1)[1].split("function materialHasUsableAppearance", 1)[0]
     assert "item?.material?.color" in material
     assert "material.color.setRGB" in material
+
+
+def test_primary_target_bin_place_zone_identity_remains_physical_until_staged_mesh_loads():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({ hidden: false, checked: false, disabled: false, textContent: '', className: '', innerHTML: '', classList: { toggle() {} }, setAttribute() {}, querySelector() { return { textContent: '' }; }, appendChild() {}, addEventListener() {}, getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; } });
+const context = { console, assert, window: { location: { search: '' }, dispatchEvent() {}, parent: { postMessage() {} } }, document: { getElementById() { return element(); }, createElement() { return element(); } }, URLSearchParams, CustomEvent: function CustomEvent(type, init) { return { type, detail: init?.detail || {} }; }, requestAnimationFrame() { return 0; }, setTimeout() { return 1; }, clearTimeout() {} };
+vm.createContext(context);
+vm.runInContext(source + `
+const targetBin = {
+  id: 'target_bin_default',
+  display_name: 'Target bin',
+  category: 'place_zone',
+  render_policy: 'primary',
+  mesh_contract_category: 'object',
+  mesh_load_required: true,
+  mesh_uri: 'build/workcell_studio_web_scene/assets/ur5_2f_test/target_bin.stl'
+};
+const placeZone = { id: 'place_zone_default', category: 'place_zone', render_policy: 'overlay' };
+assert.strictEqual(isPrimaryAuthoredPhysicalMesh(targetBin), true);
+assert.strictEqual(isDebugOverlayItem(targetBin), false);
+assert.strictEqual(viewerGroupFor(targetBin), 'environment/layout');
+assert.strictEqual(readinessCategoryForItem(targetBin), 'authored_physical_mesh');
+assert.strictEqual(isPrimaryAuthoredPhysicalMesh(placeZone), false);
+assert.strictEqual(isDebugOverlayItem(placeZone), true);
+assert.strictEqual(viewerGroupFor(placeZone), 'zones');
+assert.strictEqual(false || !isDebugOverlayItem(targetBin), true);
+assert.strictEqual(false || !isDebugOverlayItem(placeZone), false);
+state.sceneJson = { assets: [targetBin, placeZone] };
+beginWeb3dSceneReadiness(collectItems(state.sceneJson));
+const readinessKeyForTarget = readinessKey('authored_physical_mesh', targetBin);
+assert.strictEqual(state.web3dReadiness.pending.has(readinessKeyForTarget), true);
+assert.strictEqual(state.web3dReadiness.required.authored_physical_mesh, true);
+targetBin.mesh_status = 'loaded';
+requiredReadinessCompleteForItem(targetBin);
+assert.strictEqual(state.web3dReadiness.pending.has(readinessKeyForTarget), false);
+`, context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
 def test_viewer_visual_bounds_diagnostics_and_fit_bounds_contract_are_source_guarded():
