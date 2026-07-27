@@ -42151,7 +42151,7 @@ function cancelDirectMoveDrag(message) {
 }
 function onCanvasPointerDown(event) {
   const hitId = pickObject(event);
-  const rendered = hitId && hitId === state.selected ? renderedById(state.selected) : null;
+  const rendered = hitId ? renderedById(hitId) : null;
   if (beginDirectMoveDrag(event, rendered))
     return;
 }
