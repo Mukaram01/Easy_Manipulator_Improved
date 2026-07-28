@@ -49,14 +49,40 @@ def test_qt_reads_patch_from_existing_browser_editor_api_and_checks_identity():
         'kPatchSchema = "workcell_studio_web_scene_edit_patch/v1"',
         'kPatchCreator = "static_web_viewer"',
         'patch.value(QStringLiteral("scene_id")).toString() != scene_id_',
-        "view_->url() == expected_url_",
-        "sceneIdFromViewerUrl(view_->url()) == scene_id_",
+        "view_->url() != expected_url_",
+        "sceneIdFromViewerUrl(view_->url()) != scene_id_",
         "Scene changed—reload required",
         "No changes",
         "Validation failed",
         "Saved",
     ]:
         assert token in source
+
+
+def test_preview_context_is_the_primary_bounded_save_path_source():
+    source = CONTROLLER.read_text(encoding="utf-8")
+    header = (GUI / "scene_preview_widget.h").read_text(encoding="utf-8")
+    implementation = (GUI / "scene_preview_widget.cpp").read_text(encoding="utf-8")
+
+    assert "PreviewContext preview_context() const;" in header
+    assert "ScenePreviewWidget::PreviewContext ScenePreviewWidget::preview_context() const" in implementation
+    for field in ["context.absolute_repo_root", "context.absolute_scene_dir", "context.scene_id"]:
+        assert field in source
+    assert "QDir::currentPath()" not in source
+    assert "applicationDirPath()" not in source
+    assert "if (!dir.cdUp())" not in source
+    assert 'value(QStringLiteral("WORKCELL_STUDIO_REPO_ROOT"))' in source
+
+
+def test_save_rejects_url_mismatch_stale_context_and_scene_path_escape():
+    source = CONTROLLER.read_text(encoding="utf-8")
+    assert "scene_id_ != url_scene_id" in source
+    assert "expected_scene_path" in source
+    assert "preview_->preview_context()" in source
+    assert "canonicalPath(current.absolute_repo_root.trimmed()) == repo_root_" in source
+    assert "canonicalPath(current.absolute_scene_dir.trimmed()) == scene_dir_" in source
+    assert "Web3D edits preserved" in source
+    assert "QFileInfo(scene_dir_).absolutePath()) != scenes_root" in source
 
 
 def test_qt_writes_patch_atomically_then_runs_dry_run_before_confirmation_and_write():
@@ -130,7 +156,7 @@ def test_save_roundtrip_has_no_browser_source_writes_or_robot_motion():
 
 
 def test_roundtrip_change_stays_focused():
-    assert len(CONTROLLER.read_text(encoding="utf-8").splitlines()) < 520
+    assert len(CONTROLLER.read_text(encoding="utf-8").splitlines()) < 540
     assert len(WORKFLOW.read_text(encoding="utf-8").splitlines()) < 340
     assert len(APPLICATOR.read_text(encoding="utf-8").splitlines()) < 290
 
