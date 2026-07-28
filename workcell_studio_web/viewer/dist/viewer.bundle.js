@@ -39285,13 +39285,13 @@ function currentSelectionDiagnostics() {
     selectedItemId: id,
     renderIdentity: id,
     selectedItemType: rendered ? itemType(item) : "",
-    selectable: Boolean(item && item.selectable !== false && !isDiagnosticOnlyItem(item) && !isOverlayPolicyItem(item)),
+    selectable: Boolean(rendered && isNormalSelectableRendered(rendered)),
     editable: Boolean(item && canEditItem(item)),
     locked: Boolean(item?.locked),
     sourceLayer: String(item?.source_layer || ""),
     activeVisualSource: String(item?.active_visual_source || ""),
     diagnosticOnly: Boolean(item && isDiagnosticOnlyItem(item)),
-    helperOrOverlay: Boolean(item && isOverlayPolicyItem(item)),
+    helperOrOverlay: Boolean(item && isDebugOverlayItem(item)),
     objectPresent: Boolean(rendered)
   };
 }
@@ -42026,20 +42026,20 @@ function refreshSelectionHighlight(rendered) {
 }
 function isNormalSelectableRendered(rendered) {
   const item = rendered?.item;
-  return Boolean(item?.id) && item.selectable !== false && !isDiagnosticOnlyItem(item) && !isOverlayPolicyItem(item);
+  return Boolean(item?.id) && item.selectable !== false && !isDiagnosticOnlyItem(item) && !isOverlayPolicyItem(item) && !isDebugOverlayItem(item);
 }
 function selectObject(id) {
-  const wasInitialPreviewActive = state.initialPosePreview.active;
-  if (state.directMoveDrag && state.directMoveDrag.itemId !== (id || ""))
-    cancelDirectMoveDrag("Move cancelled");
-  if (state.directRotateDrag && state.directRotateDrag.itemId !== (id || ""))
-    cancelDirectRotateDrag("Rotation cancelled");
   const requestedId = String(id || "");
   const requested = requestedId ? renderedById(requestedId) : null;
   if (requestedId && !isNormalSelectableRendered(requested)) {
     pushEditorEvent("selection_ignored", { itemId: requestedId, reason: requested ? "diagnostic_helper_or_non_selectable" : "missing_render_identity", sceneId: sceneId() });
     return "";
   }
+  const wasInitialPreviewActive = state.initialPosePreview.active;
+  if (state.directMoveDrag && state.directMoveDrag.itemId !== requestedId)
+    cancelDirectMoveDrag("Move cancelled");
+  if (state.directRotateDrag && state.directRotateDrag.itemId !== requestedId)
+    cancelDirectRotateDrag("Rotation cancelled");
   id = requestedId;
   const previous = state.selected || "";
   state.selected = id;
