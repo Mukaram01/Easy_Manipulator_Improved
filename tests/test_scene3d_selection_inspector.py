@@ -17,7 +17,7 @@ def test_inspector_exposes_transform_editor_controls_and_units():
 def test_selection_refresh_restore_and_clear_logs_present():
     assert 'Preview selection restored after refresh:' in PREVIEW_CPP
     assert 'Preview selection cleared after refresh (id missing):' in PREVIEW_CPP
-    assert 'Selection id missing after refresh, clearing atomically:' in MAIN_CPP
+    assert 'Ignored selection id absent from active scene payload; existing selection preserved:' in MAIN_CPP
     assert "Save Layout: no selected stable item id to reselect." in MAIN_CPP
 
 

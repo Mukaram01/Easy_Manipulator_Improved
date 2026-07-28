@@ -120,7 +120,8 @@ def test_product_view_selection_uses_stable_identity_and_filters_helpers():
     assert "renderedById(requestedId)" in VIEWER
     assert "missing_render_identity" in VIEWER
     assert "diagnostic_helper_or_non_selectable" in VIEWER
-    assert "selectObject(item.id);" in VIEWER
+    assert "canonicalSelectionRendered" in VIEWER
+    assert "selectObject(rendered.item.id);" in VIEWER
     assert "itemLabel(item)" not in VIEWER.split("function pickObject", 1)[1].split("function beginDirectMoveDrag", 1)[0]
 
 
@@ -132,6 +133,15 @@ def test_qt_selection_clears_stale_scene_and_missing_id_callbacks():
     assert "if (!embedded_web_identity_is_current(identity)) return;" in CPP
     assert "if (valid_browser_selection && browser_selected_id != selected_preview_item_id_)" in CPP
     assert "selection_update_guard_" in (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+
+
+def test_missing_nonempty_selection_is_preserved_and_warning_is_bounded():
+    main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    body = main.split("void MainWindow::apply_scene_selection", 1)[1].split("void MainWindow::mark_layout_dirty", 1)[0]
+    assert "Ignored selection id absent from active scene payload; existing selection preserved:" in body
+    assert "emitted_scene_diagnostic_log_keys_.contains(warning_key)" in body
+    assert body.find("if (!active_scene_item_present)") < body.find("current_selected_scene_item_id_ = selected_id")
+    assert "apply_scene_selection(QString(), selected_role, true, false)" not in body
 
 
 def test_selection_diagnostics_are_exposed_to_qt_bridge():
