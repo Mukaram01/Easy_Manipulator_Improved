@@ -42701,6 +42701,9 @@ function setEditorMode(mode) {
   if (state.editorMode !== normalized) {
     cancelDirectMoveDrag("Move cancelled");
     cancelDirectRotateDrag("Rotation cancelled");
+  } else if (normalized === "select") {
+    cancelDirectMoveDrag("Move cancelled");
+    cancelDirectRotateDrag("Rotation cancelled");
   }
   state.editorMode = normalized;
   const gizmo = state.three.transformControls;
@@ -42720,9 +42723,19 @@ function setEditorMode(mode) {
       gizmo.showZ = true;
       gizmo.enabled = true;
     } else {
+      gizmo.reset?.();
+      gizmo.detach();
+      gizmo.visible = false;
       gizmo.enabled = false;
+      state.gizmoDragStart = null;
+      state.gizmoDragGroupStart = null;
     }
   }
+  if (normalized === "select" && state.three.controls)
+    state.three.controls.enabled = true;
+  if (normalized !== "select")
+    attachTransformGizmo(renderedById(state.selected));
+  return state.editorMode;
 }
 function setEditorSnap(enabled, translationMeters, rotationDegrees) {
   if (el.snapToggle)
