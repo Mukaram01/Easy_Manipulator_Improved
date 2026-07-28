@@ -6440,6 +6440,53 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
     return;
   }
 
+  const auto find_preview_item_by_id = [&](const QString & stable_id) -> const ScenePreviewWidget::PreviewItem * {
+    const QString trimmed_id = stable_id.trimmed();
+    if (trimmed_id.isEmpty()) return nullptr;
+    for (const auto & item : all_scene_preview_items_) {
+      if (item.id.trimmed() == trimmed_id) return &item;
+    }
+    return scene_preview_widget_ ? scene_preview_widget_->preview_item_by_id(trimmed_id) : nullptr;
+  };
+  const ScenePreviewWidget::PreviewItem * matched_preview_item = find_preview_item_by_id(selected_id);
+  bool active_scene_item_present = matched_preview_item != nullptr;
+  if (!active_scene_item_present && scene_hierarchy_tree_) {
+    for (int row = 0; row < scene_hierarchy_tree_->topLevelItemCount() && !active_scene_item_present; ++row) {
+      auto * tree_item = scene_hierarchy_tree_->topLevelItem(row);
+      if (!tree_item) continue;
+      active_scene_item_present = tree_item->data(0, TreeRoleId).toString().trimmed() == selected_id;
+      for (int child = 0; child < tree_item->childCount() && !active_scene_item_present; ++child) {
+        auto * node = tree_item->child(child);
+        active_scene_item_present = node && node->data(0, TreeRoleId).toString().trimmed() == selected_id;
+      }
+    }
+  }
+  if (!active_scene_item_present && digital_twin_scene_) {
+    for (auto * item : digital_twin_scene_->items()) {
+      if (item && item->data(RoleId).toString().trimmed() == selected_id) {
+        active_scene_item_present = true;
+        break;
+      }
+    }
+  }
+
+  // A non-empty ID is a selection attempt, never an implicit clear. Web3D may
+  // receive stale task references (for example commissioning_object) that are
+  // not placed objects in the active payload. Preserve the valid selection and
+  // report each missing ID only once for this scene payload.
+  if (!active_scene_item_present) {
+    const QString scene_key = selected_scene_state_.name.trimmed().isEmpty() ? selected_scene_name() : selected_scene_state_.name.trimmed();
+    const QString warning_key = QStringLiteral("missing_scene_selection|%1|%2").arg(scene_key, selected_id);
+    if (!emitted_scene_diagnostic_log_keys_.contains(warning_key)) {
+      emitted_scene_diagnostic_log_keys_.insert(warning_key);
+      append_studio_log(
+        QStringLiteral("Ignored selection id absent from active scene payload; existing selection preserved: %1").arg(selected_id),
+        workcell_builder::StudioLogSeverity::Warning,
+        warning_key);
+    }
+    return;
+  }
+
   current_selected_scene_item_id_ = selected_id;
   selection_update_guard_ = true;
 
@@ -6481,24 +6528,11 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
     }
   }
 
-  const auto find_preview_item_by_id = [&](const QString & stable_id) -> const ScenePreviewWidget::PreviewItem * {
-    const QString trimmed_id = stable_id.trimmed();
-    if (trimmed_id.isEmpty()) return nullptr;
-    for (const auto & item : all_scene_preview_items_) {
-      if (item.id.trimmed() == trimmed_id) return &item;
-    }
-    return scene_preview_widget_ ? scene_preview_widget_->preview_item_by_id(trimmed_id) : nullptr;
-  };
-  const ScenePreviewWidget::PreviewItem * matched_preview_item = find_preview_item_by_id(selected_id);
   if (scene_preview_widget_) scene_preview_widget_->select_preview_item(selected_id);
   selection_update_guard_ = false;
 
   const bool selection_resolved = matched_tree_item || matched_canvas_item || matched_preview_item;
-  if (!selection_resolved) {
-    append_studio_log(QString("Selection id absent from active scene payload after refresh, clearing atomically: %1").arg(selected_id));
-    apply_scene_selection(QString(), selected_role, true, false);
-    return;
-  }
+  if (!selection_resolved) return;
 
   if (matched_canvas_item) {
     select_canvas_item(matched_canvas_item);
