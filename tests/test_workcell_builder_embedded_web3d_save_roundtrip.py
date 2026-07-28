@@ -15,11 +15,14 @@ def test_qt_product_view_installs_one_contextual_save_action():
 
     assert '#include "embedded_web_edit_save_controller.hpp"' in ui_utils
     assert "installEmbeddedWebEditSaveControllers(widget);" in ui_utils
-    assert 'objectName() == QStringLiteral("scenePreviewWidget")' in controller
+    assert "qobject_cast<ScenePreviewWidget *>(root)" in controller
     assert 'findChild<QWebEngineView *>(QStringLiteral("embeddedWeb3dProductView"))' in controller
     assert 'setObjectName(QStringLiteral("embeddedSaveLayoutButton"))' in controller
     assert 'QPushButton(QStringLiteral("Save layout")' in controller
     assert 'property("workcell_embedded_save_controller")' in controller
+    assert "ScenePreviewWidget::embedded_authoring_save_requested" in controller
+    assert 'findChild<QPushButton *>(QStringLiteral("embeddedFitButton"))' in controller
+    assert "button->text()" not in controller
 
 
 def test_qt_reads_patch_from_existing_browser_editor_api_and_checks_identity():
@@ -116,3 +119,12 @@ def test_roundtrip_change_stays_focused():
     assert len(CONTROLLER.read_text(encoding="utf-8").splitlines()) < 520
     assert len(WORKFLOW.read_text(encoding="utf-8").splitlines()) < 340
     assert len(APPLICATOR.read_text(encoding="utf-8").splitlines()) < 290
+
+
+def test_linked_group_patch_uses_existing_two_edit_save_path():
+    viewer = (ROOT / "workcell_studio_web/viewer/viewer.js").read_text(encoding="utf-8")
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    assert "state.undoStack.push({ changes:" in viewer
+    assert "for (const rendered of state.objects)" in viewer
+    assert "api.getEditPatch()" in controller
+    assert "scripts/run_workcell_studio_web_edit_workflow.py" in controller

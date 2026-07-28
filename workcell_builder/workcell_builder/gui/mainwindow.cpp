@@ -2297,6 +2297,13 @@ void MainWindow::setup_studio_shell()
     refresh_preview_launch_ui();
     refresh_new_cell_checklist();
   });
+  connect(scene_preview_widget_, &ScenePreviewWidget::authoring_mode_changed, this, [this](const QString & mode) {
+    canvas_mode_ = mode == QStringLiteral("move") ? CanvasInteractionMode::Move : CanvasInteractionMode::Select;
+    if (canvas_mode_label_) canvas_mode_label_->setText(QStringLiteral("Mode: ") +
+      (mode == QStringLiteral("rotate") ? QStringLiteral("Rotate") :
+       mode == QStringLiteral("move") ? QStringLiteral("Move") : QStringLiteral("Select")));
+    refresh_scene_builder_view_chips();
+  });
   auto * scene3d_viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
   if (scene3d_viewport) {
     scene3d_viewport->setObjectName("scene3dViewportWidget");
@@ -2396,6 +2403,7 @@ void MainWindow::setup_studio_shell()
   auto * select_mode_button = make_primary_button("Select"); primary_controls->addWidget(select_mode_button);
   auto * place_mode_button = make_primary_button("Place Asset"); primary_controls->addWidget(place_mode_button);
   auto * move_mode_button = make_primary_button("Move"); primary_controls->addWidget(move_mode_button);
+  auto * rotate_mode_button = make_primary_button("Rotate"); primary_controls->addWidget(rotate_mode_button);
   save_layout_button_ = make_primary_button("Save Layout");
   primary_controls->addWidget(save_layout_button_);
   primary_controls->addStretch(1);
@@ -3201,6 +3209,9 @@ void MainWindow::setup_studio_shell()
   connect_button(select_mode_button, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Select); });
   connect_button(place_mode_button, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Place); });
   connect_button(move_mode_button, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Move); });
+  connect_button(rotate_mode_button, [this](){
+    if (scene_preview_widget_) scene_preview_widget_->set_authoring_mode(QStringLiteral("rotate"));
+  });
   if (snap_to_grid_box_) {
     connect(snap_to_grid_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
   }
@@ -6254,6 +6265,10 @@ void MainWindow::set_canvas_interaction_mode(CanvasInteractionMode mode)
   if (mode == CanvasInteractionMode::Place) n = "Place";
   if (mode == CanvasInteractionMode::Move) n = "Move";
   if (mode == CanvasInteractionMode::Inspect) n = "Inspect";
+  if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
+    scene_preview_widget_->set_authoring_mode(
+      mode == CanvasInteractionMode::Move ? QStringLiteral("move") : QStringLiteral("select"));
+  }
   if (canvas_mode_label_) canvas_mode_label_->setText("Mode: " + n);
   refresh_scene_builder_view_chips();
 }
@@ -6771,6 +6786,10 @@ static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML
 }
 
 void MainWindow::save_layout_changes(){
+  if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
+    scene_preview_widget_->request_authoring_save();
+    return;
+  }
   const auto scene_name_for_save_log = [this]() {
     if (selected_scene_state_.valid && !selected_scene_state_.name.trimmed().isEmpty()) {
       return selected_scene_state_.name.trimmed();
@@ -7622,6 +7641,10 @@ void MainWindow::paste_selection_transform_from_clipboard()
   apply_selection_transform_from_editor();
 }
 void MainWindow::undo_layout_edit(){
+  if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
+    scene_preview_widget_->undo_authoring_edit();
+    return;
+  }
   if(undo_stack_.empty() || !digital_twin_scene_) return;
   auto c=undo_stack_.back(); undo_stack_.pop_back();
   if (c.kind == QStringLiteral("delete")) {
@@ -7650,6 +7673,10 @@ void MainWindow::undo_layout_edit(){
   redo_stack_.push_back(c); mark_layout_dirty("Undo"); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
 }
 void MainWindow::redo_layout_edit(){
+  if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
+    scene_preview_widget_->redo_authoring_edit();
+    return;
+  }
   if(redo_stack_.empty() || !digital_twin_scene_) return;
   auto c=redo_stack_.back(); redo_stack_.pop_back();
   if (c.kind == QStringLiteral("delete")) {

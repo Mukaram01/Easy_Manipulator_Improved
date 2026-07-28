@@ -39542,24 +39542,63 @@ function applyTransformToObject(object, transform) {
   object.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
   return true;
 }
-function markDirtyTransform(rendered, next, { pushHistory = true, oldTransform = null, snapOptions = void 0 } = {}) {
+function editableTransformGroupMembers(rendered) {
+  const group = String(rendered?.item?.transform_group || "").trim();
+  if (!group || !canEditItem(rendered.item))
+    return rendered ? [rendered] : [];
+  return state.objects.filter((candidate) => canEditItem(candidate.item) && String(candidate.item.transform_group || "").trim() === group);
+}
+function captureTransformGroup(rendered) {
+  return new Map(editableTransformGroupMembers(rendered).map((member) => [member.item.id, cloneTransform(state.dirtyTransforms.get(member.item.id)?.newTransform || transformFromObject(member.object3d))]));
+}
+function linkedTransformChanges(rendered, before, after, memberStarts = null) {
+  const yawDelta = after.pose.rpy.z - before.pose.rpy.z;
+  const cosine = Math.cos(yawDelta);
+  const sine = Math.sin(yawDelta);
+  return editableTransformGroupMembers(rendered).map((member) => {
+    const memberBefore = member === rendered ? cloneTransform(before) : cloneTransform(memberStarts?.get(member.item.id) || state.dirtyTransforms.get(member.item.id)?.newTransform || transformFromObject(member.object3d));
+    if (member === rendered)
+      return { rendered: member, before: memberBefore, after: cloneTransform(after) };
+    const relativeX = memberBefore.pose.xyz.x - before.pose.xyz.x;
+    const relativeY = memberBefore.pose.xyz.y - before.pose.xyz.y;
+    const relativeZ = memberBefore.pose.xyz.z - before.pose.xyz.z;
+    const memberAfter = cloneTransform(memberBefore);
+    memberAfter.pose.xyz.x = after.pose.xyz.x + cosine * relativeX - sine * relativeY;
+    memberAfter.pose.xyz.y = after.pose.xyz.y + sine * relativeX + cosine * relativeY;
+    memberAfter.pose.xyz.z = after.pose.xyz.z + relativeZ;
+    memberAfter.pose.rpy.z += yawDelta;
+    return { rendered: member, before: memberBefore, after: memberAfter };
+  });
+}
+function applyTransformChanges(changes, { updateDirty = false } = {}) {
+  if (!changes.every((change) => isFiniteTransform(change.after)))
+    return false;
+  for (const change of changes) {
+    applyTransformToObject(change.rendered.object3d, change.after);
+    if (!updateDirty)
+      continue;
+    if (sameTransform(change.rendered.originalTransform, change.after))
+      state.dirtyTransforms.delete(change.rendered.item.id);
+    else
+      state.dirtyTransforms.set(change.rendered.item.id, { oldTransform: cloneTransform(change.rendered.originalTransform), newTransform: cloneTransform(change.after) });
+    syncInspectorTransformFields(change.rendered);
+  }
+  updateLabels();
+  return true;
+}
+function markDirtyTransform(rendered, next, { pushHistory = true, oldTransform = null, snapOptions = void 0, memberStarts = null } = {}) {
   if (!rendered || !canEditItem(rendered.item))
     return false;
   const previous = oldTransform || state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d);
   const snapped = snapOptions === null ? cloneTransform(next) : snapTransform(next, snapOptions);
+  const changes = linkedTransformChanges(rendered, previous, snapped, memberStarts);
   if (pushHistory && !sameTransform(previous, snapped)) {
-    state.undoStack.push({ itemId: rendered.item.id, before: cloneTransform(previous), after: cloneTransform(snapped) });
+    state.undoStack.push({ changes: changes.map((change) => ({ itemId: change.rendered.item.id, before: cloneTransform(change.before), after: cloneTransform(change.after) })) });
     state.redoStack = [];
   }
-  if (!applyTransformToObject(rendered.object3d, snapped))
+  if (!applyTransformChanges(changes, { updateDirty: true }))
     return false;
-  if (sameTransform(rendered.originalTransform, snapped))
-    state.dirtyTransforms.delete(rendered.item.id);
-  else
-    state.dirtyTransforms.set(rendered.item.id, { oldTransform: cloneTransform(rendered.originalTransform), newTransform: cloneTransform(snapped) });
-  syncInspectorTransformFields(rendered);
   updateDirtyState();
-  updateLabels();
   emitDirtyChanged();
   return true;
 }
@@ -40775,13 +40814,15 @@ function initThree() {
           finishDirectRotateDrag(rendered);
         return;
       }
-      if (event.value)
+      if (event.value) {
         state.gizmoDragStart = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d));
-      else {
-        const committed = markDirtyTransform(rendered, transformFromObject(rendered.object3d), { pushHistory: true, oldTransform: state.gizmoDragStart });
+        state.gizmoDragGroupStart = captureTransformGroup(rendered);
+      } else {
+        const committed = markDirtyTransform(rendered, transformFromObject(rendered.object3d), { pushHistory: true, oldTransform: state.gizmoDragStart, memberStarts: state.gizmoDragGroupStart });
         if (committed)
           emitTransformCommitted(rendered);
         state.gizmoDragStart = null;
+        state.gizmoDragGroupStart = null;
       }
     });
     transformControls.addEventListener("objectChange", () => {
@@ -40793,7 +40834,7 @@ function initThree() {
         return;
       }
       const snapped = snapTransform(transformFromObject(rendered.object3d));
-      applyTransformToObject(rendered.object3d, snapped);
+      applyTransformChanges(linkedTransformChanges(rendered, state.gizmoDragStart || transformFromObject(rendered.object3d), snapped, state.gizmoDragGroupStart));
       syncInspectorTransformFields(rendered);
       updateLabels();
     });
@@ -42068,7 +42109,7 @@ function beginDirectMoveDrag(event, rendered) {
   if (!hit)
     return false;
   const controls = state.three.controls;
-  state.directMoveDrag = { itemId: rendered.item.id, start, last: cloneTransform(start), offset: { x: start.pose.xyz.x - hit.x, y: start.pose.xyz.y - hit.y }, controlsWasEnabled: controls ? controls.enabled : true };
+  state.directMoveDrag = { itemId: rendered.item.id, start, groupStart: captureTransformGroup(rendered), last: cloneTransform(start), offset: { x: start.pose.xyz.x - hit.x, y: start.pose.xyz.y - hit.y }, controlsWasEnabled: controls ? controls.enabled : true };
   if (controls)
     controls.enabled = false;
   el.canvas.setPointerCapture?.(event.pointerId);
@@ -42095,9 +42136,8 @@ function updateDirectMoveDrag(event) {
   if (!isFiniteTransform(preview))
     return true;
   drag.last = cloneTransform(preview);
-  applyTransformToObject(rendered.object3d, preview);
+  applyTransformChanges(linkedTransformChanges(rendered, drag.start, preview, drag.groupStart));
   syncInspectorTransformFields(rendered);
-  updateLabels();
   event.preventDefault();
   event.stopPropagation();
   return true;
@@ -42112,13 +42152,13 @@ function finishDirectMoveDrag(event) {
   if (!rendered || !canEditItem(rendered.item) || !isFiniteTransform(finalTransform))
     return false;
   if (sameTransform(drag.start, finalTransform)) {
-    applyTransformToObject(rendered.object3d, drag.start);
+    applyTransformChanges([...drag.groupStart].map(([itemId, after]) => ({ rendered: renderedById(itemId), after })));
     syncInspectorTransformFields(rendered);
     return true;
   }
-  const committed = markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start });
+  const committed = markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start, memberStarts: drag.groupStart });
   if (!committed) {
-    applyTransformToObject(rendered.object3d, drag.start);
+    applyTransformChanges([...drag.groupStart].map(([itemId, after]) => ({ rendered: renderedById(itemId), after })));
     showError(`Move failed for ${itemLabel(rendered.item)}: final transform was rejected by the editor bridge.`);
     return true;
   }
@@ -42141,9 +42181,8 @@ function cancelDirectMoveDrag(message) {
     return false;
   const rendered = renderedById(drag.itemId);
   if (rendered) {
-    applyTransformToObject(rendered.object3d, drag.start);
+    applyTransformChanges([...drag.groupStart].map(([itemId, after]) => ({ rendered: renderedById(itemId), after })));
     syncInspectorTransformFields(rendered);
-    updateLabels();
   }
   endDirectMoveDrag();
   pushEditorEvent("status", { message: message || "Move cancelled" });
@@ -42151,7 +42190,7 @@ function cancelDirectMoveDrag(message) {
 }
 function onCanvasPointerDown(event) {
   const hitId = pickObject(event);
-  const rendered = hitId && hitId === state.selected ? renderedById(state.selected) : null;
+  const rendered = hitId ? renderedById(hitId) : null;
   if (beginDirectMoveDrag(event, rendered))
     return;
 }
@@ -42174,7 +42213,7 @@ function beginDirectRotateDrag(rendered) {
     return false;
   const controls = state.three.controls;
   const start = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d));
-  state.directRotateDrag = { itemId: rendered.item.id, start, last: cloneTransform(start), controlsWasEnabled: controls ? controls.enabled : true };
+  state.directRotateDrag = { itemId: rendered.item.id, start, groupStart: captureTransformGroup(rendered), last: cloneTransform(start), controlsWasEnabled: controls ? controls.enabled : true };
   if (controls)
     controls.enabled = false;
   return true;
@@ -42184,7 +42223,7 @@ function previewDirectRotateDrag(rendered) {
   if (!preview || !isFiniteTransform(preview))
     return false;
   state.directRotateDrag.last = cloneTransform(preview);
-  applyTransformToObject(rendered.object3d, preview);
+  applyTransformChanges(linkedTransformChanges(rendered, state.directRotateDrag.start, preview, state.directRotateDrag.groupStart));
   syncInspectorTransformFields(rendered);
   updateLabels();
   return true;
@@ -42203,7 +42242,7 @@ function finishDirectRotateDrag(rendered) {
     syncInspectorTransformFields(rendered);
     return true;
   }
-  const committed = markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start, snapOptions: { translationAxes: [], rotationAxes: ["z"] } });
+  const committed = markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start, snapOptions: { translationAxes: [], rotationAxes: ["z"] }, memberStarts: drag.groupStart });
   if (!committed) {
     applyTransformToObject(rendered.object3d, drag.start);
     showError(`Rotation failed for ${itemLabel(rendered.item)}: final transform was rejected by the editor bridge.`);
@@ -42225,9 +42264,8 @@ function cancelDirectRotateDrag(message) {
     return false;
   const rendered = renderedById(drag.itemId);
   if (rendered) {
-    applyTransformToObject(rendered.object3d, drag.start);
+    applyTransformChanges([...drag.groupStart].map(([itemId, after]) => ({ rendered: renderedById(itemId), after })));
     syncInspectorTransformFields(rendered);
-    updateLabels();
   }
   endDirectRotateDrag();
   pushEditorEvent("status", { message: message || "Rotation cancelled" });
@@ -42276,7 +42314,7 @@ function refreshGizmoSnap() {
   gizmo.setRotationSnap(el.snapToggle?.checked ? rotationSnapRadians() : null);
 }
 function canEditItem(item) {
-  if (!isPrimaryRenderableItem(item) || isDiagnosticOnlyItem(item) || isOverlayPolicyItem(item))
+  if (isDiagnosticOnlyItem(item))
     return false;
   const sourceIdentity = [item?.source_kind, item?.source_layer, item?.active_visual_source, item?.role, item?.category].map((value) => String(value || "").toLowerCase()).join(" ");
   const source = sourceIdentity;
@@ -42376,13 +42414,12 @@ function clearPreviewEdits() {
   updateLabels();
 }
 function applyHistoryEntry(entry, direction) {
-  const rendered = renderedById(entry.itemId);
-  if (!rendered || !canEditItem(rendered.item))
-    return;
-  const target = direction === "undo" ? entry.before : entry.after;
-  markDirtyTransform(rendered, target, { pushHistory: false });
-  if (state.selected === rendered.item.id)
-    populateInspector(rendered);
+  const records = entry.changes || [entry];
+  const changes = records.map((record) => ({ rendered: renderedById(record.itemId), after: cloneTransform(direction === "undo" ? record.before : record.after) })).filter((change) => change.rendered && canEditItem(change.rendered.item));
+  applyTransformChanges(changes, { updateDirty: true });
+  const selected = renderedById(state.selected);
+  if (selected)
+    populateInspector(selected);
 }
 function undoPreviewEdit() {
   cancelDirectMoveDrag("Move cancelled");

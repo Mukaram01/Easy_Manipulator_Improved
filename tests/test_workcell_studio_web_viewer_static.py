@@ -2088,8 +2088,35 @@ def test_viewer_world_z_rotate_gizmo_transaction_contract():
     assert "const next = cloneTransform(drag.start);" in js
     assert "next.pose.rpy.z = transformFromObject(rendered.object3d).pose.rpy.z" in js
     assert "snapTransform(next, { translationAxes: [], rotationAxes: ['z'] })" in js
-    assert "markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start, snapOptions: { translationAxes: [], rotationAxes: ['z'] } })" in js
+    assert "markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start, snapOptions: { translationAxes: [], rotationAxes: ['z'] }, memberStarts: drag.groupStart })" in js
     assert "if (sameTransform(drag.start, finalTransform))" in js
+
+
+def test_linked_transform_group_moves_rotates_and_records_atomic_two_edit_patch():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs = require('fs'); const vm = require('vm'); const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({ hidden:false, checked:false, disabled:false, textContent:'', innerHTML:'', classList:{toggle(){}}, querySelector(){return null;}, addEventListener(){}, setAttribute(){}, appendChild(){}, remove(){} });
+const context = { console, assert, window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}}, document:{getElementById(){return element();},createElement(){return element();}}, URLSearchParams, CustomEvent:function(){}, requestAnimationFrame(){}, setTimeout(){}, clearTimeout(){} };
+vm.createContext(context);
+vm.runInContext(source + `
+const object = (x,y,z,yaw=0) => ({ position:{x,y,z,set(a,b,c){this.x=a;this.y=b;this.z=c;}}, rotation:{x:0,y:0,z:yaw,set(a,b,c){this.x=a;this.y=b;this.z=c;}}, scale:{x:1,y:1,z:1,set(a,b,c){this.x=a;this.y=b;this.z=c;}} });
+const rendered = (id,x,y,z,group='destination') => ({ item:{id,editable:true,locked:false,source_layer:'editable_layout',render_policy:'primary',transform_group:group}, object3d:object(x,y,z), originalTransform:null });
+const bin=rendered('bin',1,2,0.2), zone=rendered('zone',1,2,0.1), free=rendered('free',4,5,0,'');
+for (const row of [bin,zone,free]) row.originalTransform=transformFromObject(row.object3d);
+state.objects=[bin,zone,free]; state.sceneJson={scene:{id:'group_test'}}; state.dirtyTransforms=new Map(); state.undoStack=[]; state.redoStack=[];
+updateLabels=()=>{}; updateDirtyState=()=>{}; emitDirtyChanged=()=>{}; populateObjectList=()=>{};
+let next=cloneTransform(bin.originalTransform); next.pose.xyz.x+=0.4; next.pose.xyz.y-=0.3;
+assert.strictEqual(markDirtyTransform(bin,next),true); assert.strictEqual(zone.object3d.position.x,1.4); assert.strictEqual(zone.object3d.position.y,1.7); assert.ok(Math.abs((bin.object3d.position.z-zone.object3d.position.z)-0.1)<1e-12);
+assert.strictEqual(state.undoStack.length,1); assert.strictEqual(state.undoStack[0].changes.length,2); assert.strictEqual(buildEditPatch().edits.length,2);
+undoPreviewEdit(); assert.strictEqual(bin.object3d.position.x,1); assert.strictEqual(zone.object3d.position.x,1); redoPreviewEdit(); assert.strictEqual(bin.object3d.position.x,1.4); assert.strictEqual(zone.object3d.position.x,1.4);
+next=transformFromObject(zone.object3d); next.pose.rpy.z=Math.PI/2; markDirtyTransform(zone,next);
+assert.ok(Math.abs(bin.object3d.rotation.z-Math.PI/2)<1e-12); assert.ok(Math.abs(bin.object3d.position.z-zone.object3d.position.z-0.1)<1e-12);
+let freeNext=cloneTransform(free.originalTransform); freeNext.pose.xyz.x=8; markDirtyTransform(free,freeNext); assert.strictEqual(bin.object3d.position.x,1.4);
+`, context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, capture_output=True, text=True)
 
 
 def test_viewer_rotate_cancels_on_selection_mode_and_scene_change_without_yaml_writes():

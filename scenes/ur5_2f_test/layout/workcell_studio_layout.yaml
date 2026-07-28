@@ -35,6 +35,7 @@ items:
     material:
       color: [0.12, 0.55, 1.0, 0.45]
   - id: place_zone_default
+    transform_group: default_drop_destination
     type: place_zone
     role: place_zone
     category: work_surface
@@ -52,6 +53,7 @@ items:
     material:
       color: [0.10, 0.75, 0.35, 0.45]
   - id: target_bin_default
+    transform_group: default_drop_destination
     type: target_bin
     role: target_bin
     category: place_zone

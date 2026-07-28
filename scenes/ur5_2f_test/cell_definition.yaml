@@ -63,8 +63,8 @@ task:
   - id: default_drop_zone
     frame: world
     pose_xyz:
-    - 0.5
-    - -0.3
+    - 0.55
+    - -0.28
     - 0.1
     pose_rpy:
     - 0.0
