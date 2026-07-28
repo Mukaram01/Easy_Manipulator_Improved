@@ -55,13 +55,12 @@ def test_save_roundtrip_preserves_metadata_and_updates_task_zones_contract_prese
         assert token in MAIN_CPP
 
 
-def test_save_roundtrip_reselects_by_stable_id_or_clears_when_missing():
+def test_save_roundtrip_reselects_by_stable_id_and_preserves_selection_when_missing():
     for token in [
         'stable_selected_id_before_refresh',
         'Save Layout: rebuilding Scene3D data after save',
         'apply_scene_selection(stable_selected_id_before_refresh',
-        'Selection id missing after refresh, clearing atomically',
-        'apply_scene_selection(QString(), selected_role, true, false);',
+        'Ignored selection id absent from active scene payload; existing selection preserved',
     ]:
         assert token in MAIN_CPP
 

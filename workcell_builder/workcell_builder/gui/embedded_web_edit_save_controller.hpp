@@ -122,6 +122,22 @@ public:
       this, [this]() { requestSave(); });
     connect(view_, &QWebEngineView::loadFinished, this, [this](bool) {
       last_polled_url_ = QUrl();
+      if (saved_reload_pending_) {
+        saved_reload_pending_ = false;
+        const QString selected_id = selected_item_id_before_save_;
+        selected_item_id_before_save_.clear();
+        const QString script = QStringLiteral(
+          "(() => { const api=window.__WORKCELL_EDITOR_API_V1__; "
+          "if (!api) return false; api.selectItem(%1); "
+          "return api.getState().selectedItemId === %1 && !api.getState().dirty; })()")
+          .arg(QString::fromUtf8(QJsonDocument(QJsonArray{selected_id}).toJson(QJsonDocument::Compact)).mid(1).chopped(1));
+        view_->page()->runJavaScript(script, [this](const QVariant & restored) {
+          if (!restored.toBool()) {
+            setStatus(QStringLiteral("Saved; selection could not be restored"), QStringLiteral("warning"));
+          }
+          pollEditorState();
+        });
+      }
       QTimer::singleShot(250, this, [this]() { pollEditorState(); });
     });
     poll_timer_.setInterval(350);
@@ -154,7 +170,7 @@ private:
     save_button_->setObjectName(QStringLiteral("embeddedSaveLayoutButton"));
     save_button_->setProperty("class", "safe_action");
     save_button_->setToolTip(QStringLiteral(
-      "Validate the current Web3D edit patch, create source-YAML backups, apply it through Qt, regenerate, validate and reload Product View. No robot motion is started."));
+      "Validate the current Web3D edit patch, create source-YAML backups, apply it atomically, regenerate and reload Product View. No robot motion is started."));
     save_button_->setEnabled(false);
     save_button_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
 
@@ -283,6 +299,7 @@ private:
         return;
       }
       const QJsonObject patch = patch_doc.object();
+      const QVariantMap editor_state = payload.value(QStringLiteral("state")).toMap();
       const QJsonArray edits = patch.value(QStringLiteral("edits")).toArray();
       if (patch.value(QStringLiteral("schema_version")).toString() != QString::fromUtf8(kPatchSchema) ||
           patch.value(QStringLiteral("created_by")).toString() != QString::fromUtf8(kPatchCreator) ||
@@ -300,6 +317,7 @@ private:
         pollEditorState();
         return;
       }
+      selected_item_id_before_save_ = editor_state.value(QStringLiteral("selectedItemId")).toString();
 
       QString write_error;
       if (!writePatchAtomically(patch, &write_error)) {
@@ -330,7 +348,7 @@ private:
       arguments << QStringLiteral("--dry-run-apply");
       setStatus(QStringLiteral("Validating…"));
     } else {
-      arguments << QStringLiteral("--write") << QStringLiteral("--generate-and-validate");
+      arguments << QStringLiteral("--write");
       setStatus(QStringLiteral("Saving…"));
     }
     process_->setArguments(arguments);
@@ -341,6 +359,10 @@ private:
       if (process != process_) return;
       busy_ = false;
       setStatus(QStringLiteral("Validation failed"), QStringLiteral("error"));
+      QMessageBox::critical(preview_, QStringLiteral("Save Product View Layout"),
+        QStringLiteral("Could not start the save workflow for %1: %2. The Web3D edit remains unsaved.")
+          .arg(scene_id_, process->errorString()));
+      pollEditorState();
     });
     connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
       [this, process, phase](int exit_code, QProcess::ExitStatus exit_status) {
@@ -368,7 +390,7 @@ private:
           const QString confirmation = QStringLiteral(
             "Validation passed for %1. Apply these edits now?\n\n"
             "Qt will create timestamped backups, update only approved editable source YAML, verify persistence, "
-            "regenerate and validate the scene, refresh Product View, and reload it.\n\n"
+            "regenerate the Web3D scene, refresh Product View, and reload it.\n\n"
             "This does not launch controllers, execute MoveIt plans, or move real hardware.").arg(scene_id_);
           if (QMessageBox::question(preview_, QStringLiteral("Confirm Save Product View Layout"), confirmation,
               QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
@@ -383,6 +405,7 @@ private:
 
         busy_ = false;
         setStatus(QStringLiteral("Saved"), QStringLiteral("success"));
+        saved_reload_pending_ = true;
         if (view_) view_->reload();
         QTimer::singleShot(600, this, [this]() { pollEditorState(); });
       });
@@ -401,9 +424,19 @@ private:
     static const char kStateScript[] = R"JS(
 (() => {
   const api = window.__WORKCELL_EDITOR_API_V1__;
-  if (!api) return {ready:false,dirty:false,dirtyCount:0,sceneId:''};
+  if (!api) return {ready:false,dirty:false,dirtyCount:0,sceneId:'',validDirtyTransforms:false};
   const state = api.getState();
-  return {ready:Boolean(state.ready),dirty:Boolean(state.dirty),dirtyCount:Number(state.dirtyCount||0),sceneId:String(state.sceneId||'')};
+  const patch = api.getEditPatch();
+  const edits = Array.isArray(patch?.edits) ? patch.edits : [];
+  const finiteTransform = transform => ['x','y','z'].every(axis =>
+    Number.isFinite(Number(transform?.pose?.xyz?.[axis])) &&
+    Number.isFinite(Number(transform?.pose?.rpy?.[axis])) &&
+    Number.isFinite(Number(transform?.scale?.[axis])));
+  const validDirtyTransforms = Boolean(state.dirty) && edits.length > 0 &&
+    edits.length === Number(state.dirtyCount || 0) && edits.every(edit =>
+      typeof edit?.item_id === 'string' && edit.item_id.length > 0 &&
+      finiteTransform(edit.old_transform) && finiteTransform(edit.new_transform));
+  return {ready:Boolean(state.ready),dirty:Boolean(state.dirty),dirtyCount:Number(state.dirtyCount||0),sceneId:String(state.sceneId||''),validDirtyTransforms};
 })()
 )JS";
     view_->page()->runJavaScript(QString::fromUtf8(kStateScript), [this, poll_url](const QVariant & value) {
@@ -412,9 +445,10 @@ private:
       const QVariantMap state = value.toMap();
       const bool ready = state.value(QStringLiteral("ready")).toBool();
       const bool dirty = state.value(QStringLiteral("dirty")).toBool();
+      const bool valid_dirty_transforms = state.value(QStringLiteral("validDirtyTransforms")).toBool();
       const QString reported_scene = state.value(QStringLiteral("sceneId")).toString();
       const QString url_scene = sceneIdFromViewerUrl(poll_url);
-      if (save_button_) save_button_->setEnabled(ready && dirty && !url_scene.isEmpty() && reported_scene == url_scene);
+      if (save_button_) save_button_->setEnabled(ready && dirty && valid_dirty_transforms && !url_scene.isEmpty() && reported_scene == url_scene);
       last_polled_url_ = poll_url;
     });
   }
@@ -434,6 +468,8 @@ private:
   bool installed_{false};
   bool busy_{false};
   bool state_poll_pending_{false};
+  bool saved_reload_pending_{false};
+  QString selected_item_id_before_save_;
 };
 }  // namespace embedded_web_edit_save_detail
 
