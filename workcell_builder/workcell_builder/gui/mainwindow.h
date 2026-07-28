@@ -414,6 +414,7 @@ private:
   bool helper_script_exists(const QString & script_name, QString * path = nullptr) const;
   QStringList helper_script_search_paths(const QString & script_name) const;
   QString resolve_scene3d_extractor_script_path(const fs::path & selected_scene_dir) const;
+  QString resolve_workcell_studio_repo_root(const fs::path & selected_scene_dir) const;
   QString find_repo_root_with_extractor(const QStringList & candidate_roots) const;
   QStringList candidate_repo_roots_for_scene(const fs::path & selected_scene_dir) const;
   QString diagnostics_output_root() const;

@@ -28,5 +28,5 @@ def test_visual_mesh_regen_uses_resolved_script_and_expected_flags():
     assert 'QCoreApplication::applicationDirPath() + "/../../../scripts/"' in MAIN
     assert 'QDir::currentPath() + "/scripts/"' in MAIN
     assert "resolve_scene3d_extractor_script_path(d)" in MAIN
-    assert '"--scene"' in MAIN
-    assert '"--prefer-xacro"' in MAIN
+    assert '--scene \\"$VISUAL_INDEX_SCENE\\"' in MAIN
+    assert '--workspace-root \\"$VISUAL_INDEX_WORKSPACE_ROOT\\"' in MAIN
