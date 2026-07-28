@@ -39505,6 +39505,40 @@ function sameTransform(a, b) {
 function renderedById(id) {
   return state.objects.find((obj) => obj.item.id === id);
 }
+function canonicalSelectionRendered(rendered) {
+  const item = rendered?.item;
+  if (!item?.id || !isGeneratedUrdfItem(item) || isGeneratedRobotItem(item) || isGeneratedToolOrGripperItem(item))
+    return rendered || null;
+  const explicitIds = [
+    item.canonical_scene_item_id,
+    item.canonical_item_id,
+    item.layout_item_ref,
+    item.authored_item_id,
+    item.scene_item_id,
+    item.object_ref,
+    item.support_surface_ref,
+    item.camera_id
+  ].map((value) => String(value || "").trim()).filter(Boolean);
+  for (const id of explicitIds) {
+    const candidate = renderedById(id);
+    if (candidate && !isGeneratedUrdfItem(candidate.item) && isNormalSelectableRendered(candidate))
+      return candidate;
+  }
+  const group = viewerGroupFor(item);
+  const authored = state.objects.filter(
+    (candidate) => candidate !== rendered && !isGeneratedUrdfItem(candidate.item) && isNormalSelectableRendered(candidate) && viewerGroupFor(candidate.item) === group
+  );
+  if (!authored.length)
+    return rendered;
+  const generatedIdentity = viewerGroupIdentity(item);
+  const score = (candidate) => {
+    const candidateIdentity = viewerGroupIdentity(candidate.item);
+    const semanticTokens = group === "sensors" ? ["realsense", "camera", "sensor", "depth", "rgbd"] : ["support surface", "table", "tabletop", "workbench", "fixture"];
+    return semanticTokens.reduce((total, token) => total + (generatedIdentity.includes(token) && candidateIdentity.includes(token) ? 1 : 0), 0);
+  };
+  const ranked = authored.map((candidate) => ({ candidate, score: score(candidate) })).sort((a, b) => b.score - a.score);
+  return ranked[0].score > 0 && (ranked.length === 1 || ranked[0].score > ranked[1].score) ? ranked[0].candidate : rendered;
+}
 function transformFromObject(object) {
   return { pose: { xyz: { x: object.position.x, y: object.position.y, z: object.position.z }, rpy: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z } }, scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z } };
 }
@@ -41398,6 +41432,7 @@ function resetSceneLifecycleState() {
   state._fitBlockerWarnings = /* @__PURE__ */ new Set();
   state._generatedUrdfFramePoseWarnings = /* @__PURE__ */ new Set();
   state._supportSurfaceSemanticWarnings = /* @__PURE__ */ new Set();
+  state.ignoredSelectionKeys = /* @__PURE__ */ new Set();
   state.robotPreviewResult = null;
   state.initialPosePreview = { active: false, robotId: "", sceneKey: "" };
   state.web3dReadiness = { state: "scene_loading", terminal: false, terminalState: "", terminalNavigationKey: web3dNavigationKey(), terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null };
@@ -42032,7 +42067,13 @@ function selectObject(id) {
   const requestedId = String(id || "");
   const requested = requestedId ? renderedById(requestedId) : null;
   if (requestedId && !isNormalSelectableRendered(requested)) {
-    pushEditorEvent("selection_ignored", { itemId: requestedId, reason: requested ? "diagnostic_helper_or_non_selectable" : "missing_render_identity", sceneId: sceneId() });
+    const reason = requested ? "diagnostic_helper_or_non_selectable" : "missing_render_identity";
+    state.ignoredSelectionKeys || (state.ignoredSelectionKeys = /* @__PURE__ */ new Set());
+    const warningKey = `${sceneId()}|${requestedId}|${reason}`;
+    if (!state.ignoredSelectionKeys.has(warningKey)) {
+      state.ignoredSelectionKeys.add(warningKey);
+      pushEditorEvent("selection_ignored", { itemId: requestedId, reason, sceneId: sceneId() });
+    }
     return "";
   }
   const wasInitialPreviewActive = state.initialPosePreview.active;
@@ -42075,11 +42116,11 @@ function pickObject(event) {
   const hits = state.three.raycaster.intersectObjects(state.objects.map((o) => o.object3d), true);
   for (const hit of hits) {
     const item = hit?.object?.userData?.item || hit?.object?.parent?.userData?.item;
-    const rendered = item?.id ? renderedById(item.id) : null;
+    const rendered = canonicalSelectionRendered(item?.id ? renderedById(item.id) : null);
     if (!isNormalSelectableRendered(rendered))
       continue;
-    selectObject(item.id);
-    return item.id;
+    selectObject(rendered.item.id);
+    return rendered.item.id;
   }
   return "";
 }
