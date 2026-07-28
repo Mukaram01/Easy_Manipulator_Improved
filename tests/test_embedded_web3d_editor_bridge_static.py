@@ -61,6 +61,30 @@ def test_outer_qt_authoring_controls_use_typed_web3d_bridge():
     assert 'make_primary_button("Rotate")' in main
 
 
+def test_authoring_mode_round_trip_cleanup_and_selection_preservation():
+    mode_body = VIEWER.split("function setEditorMode", 1)[1].split("function setEditorSnap", 1)[0]
+    for mode in ["'move'", "'rotate'", "'select'"]:
+        assert mode in mode_body
+    assert "cancelDirectMoveDrag('Move cancelled')" in mode_body
+    assert "cancelDirectRotateDrag('Rotation cancelled')" in mode_body
+    assert "gizmo.reset?.()" in mode_body
+    assert "gizmo.detach()" in mode_body
+    assert "state.three.controls.enabled = true" in mode_body
+    assert "state.selected =" not in mode_body
+    assert "return state.editorMode" in mode_body
+
+
+def test_browser_mode_state_synchronizes_all_qt_controls_without_stale_callbacks():
+    apply_body = CPP.split("void ScenePreviewWidget::apply_embedded_editor_state", 1)[1].split("void ScenePreviewWidget::poll_embedded_editor_events", 1)[0]
+    assert "QSignalBlocker blocker(gizmo_mode_selector_)" in apply_body
+    assert "QSignalBlocker blocker(interaction_mode_selector_)" in apply_body
+    assert "emit authoring_mode_changed(mode)" in apply_body
+    assert "state_request_token != embedded_editor_state_request_token_" in CPP
+    main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    for control in ["select_mode_button", "move_mode_button", "rotate_mode_button"]:
+        assert f"QSignalBlocker {control.removesuffix('_mode_button')}_blocker({control})" in main
+
+
 def test_move_mode_first_click_selects_and_starts_drag_without_bypassing_locks():
     handler = VIEWER.split("function onCanvasPointerDown", 1)[1].split("function onCanvasPointerMove", 1)[0]
     assert "const rendered = hitId ? renderedById(hitId) : null" in handler

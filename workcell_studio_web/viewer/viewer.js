@@ -3970,14 +3970,33 @@ if (el.exportEditPatch) el.exportEditPatch.addEventListener('click', exportEditP
 
 function setEditorMode(mode) {
   const normalized = mode === 'move' ? 'move' : (mode === 'rotate' ? 'rotate' : 'select');
-  if (state.editorMode !== normalized) { cancelDirectMoveDrag('Move cancelled'); cancelDirectRotateDrag('Rotation cancelled'); }
+  // Mode is the single authoring state.  Always clean up transient drag state,
+  // even when a repeated Select command arrives while a pointer callback is
+  // still in flight.
+  if (state.editorMode !== normalized) {
+    cancelDirectMoveDrag('Move cancelled');
+    cancelDirectRotateDrag('Rotation cancelled');
+  } else if (normalized === 'select') {
+    cancelDirectMoveDrag('Move cancelled');
+    cancelDirectRotateDrag('Rotation cancelled');
+  }
   state.editorMode = normalized;
   const gizmo = state.three.transformControls;
   if (gizmo) {
     if (normalized === 'move') { gizmo.setMode('translate'); gizmo.setSpace('world'); gizmo.showX = true; gizmo.showY = true; gizmo.showZ = true; gizmo.enabled = true; }
     else if (normalized === 'rotate') { gizmo.setMode('rotate'); gizmo.setSpace('world'); gizmo.showX = false; gizmo.showY = false; gizmo.showZ = true; gizmo.enabled = true; }
-    else { gizmo.enabled = false; }
+    else {
+      gizmo.reset?.();
+      gizmo.detach();
+      gizmo.visible = false;
+      gizmo.enabled = false;
+      state.gizmoDragStart = null;
+      state.gizmoDragGroupStart = null;
+    }
   }
+  if (normalized === 'select' && state.three.controls) state.three.controls.enabled = true;
+  if (normalized !== 'select') attachTransformGizmo(renderedById(state.selected));
+  return state.editorMode;
 }
 function setEditorSnap(enabled, translationMeters, rotationDegrees) {
   if (el.snapToggle) el.snapToggle.checked = Boolean(enabled);

@@ -2297,13 +2297,6 @@ void MainWindow::setup_studio_shell()
     refresh_preview_launch_ui();
     refresh_new_cell_checklist();
   });
-  connect(scene_preview_widget_, &ScenePreviewWidget::authoring_mode_changed, this, [this](const QString & mode) {
-    canvas_mode_ = mode == QStringLiteral("move") ? CanvasInteractionMode::Move : CanvasInteractionMode::Select;
-    if (canvas_mode_label_) canvas_mode_label_->setText(QStringLiteral("Mode: ") +
-      (mode == QStringLiteral("rotate") ? QStringLiteral("Rotate") :
-       mode == QStringLiteral("move") ? QStringLiteral("Move") : QStringLiteral("Select")));
-    refresh_scene_builder_view_chips();
-  });
   auto * scene3d_viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
   if (scene3d_viewport) {
     scene3d_viewport->setObjectName("scene3dViewportWidget");
@@ -2404,6 +2397,22 @@ void MainWindow::setup_studio_shell()
   auto * place_mode_button = make_primary_button("Place Asset"); primary_controls->addWidget(place_mode_button);
   auto * move_mode_button = make_primary_button("Move"); primary_controls->addWidget(move_mode_button);
   auto * rotate_mode_button = make_primary_button("Rotate"); primary_controls->addWidget(rotate_mode_button);
+  for (auto * button : {select_mode_button, move_mode_button, rotate_mode_button}) button->setCheckable(true);
+  select_mode_button->setChecked(true);
+  connect(scene_preview_widget_, &ScenePreviewWidget::authoring_mode_changed, this,
+    [this, select_mode_button, move_mode_button, rotate_mode_button](const QString & mode) {
+      const QSignalBlocker select_blocker(select_mode_button);
+      const QSignalBlocker move_blocker(move_mode_button);
+      const QSignalBlocker rotate_blocker(rotate_mode_button);
+      select_mode_button->setChecked(mode == QStringLiteral("select"));
+      move_mode_button->setChecked(mode == QStringLiteral("move"));
+      rotate_mode_button->setChecked(mode == QStringLiteral("rotate"));
+      canvas_mode_ = mode == QStringLiteral("move") ? CanvasInteractionMode::Move : CanvasInteractionMode::Select;
+      if (canvas_mode_label_) canvas_mode_label_->setText(QStringLiteral("Mode: ") +
+        (mode == QStringLiteral("rotate") ? QStringLiteral("Rotate") :
+         mode == QStringLiteral("move") ? QStringLiteral("Move") : QStringLiteral("Select")));
+      refresh_scene_builder_view_chips();
+    });
   save_layout_button_ = make_primary_button("Save Layout");
   primary_controls->addWidget(save_layout_button_);
   primary_controls->addStretch(1);
