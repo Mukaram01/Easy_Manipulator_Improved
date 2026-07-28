@@ -58,15 +58,15 @@ environment:
     pose_xyz:
     - 0.55
     - -0.28
-    - 0.19
+    - 0.10
     pose_rpy:
     - 0.0
     - 0.0
     - 0.0
     dimensions:
-    - 0.35
-    - 0.25
-    - 0.18
+    - 0.352201
+    - 0.213387
+    - 0.20
     support_surface_ref: support_surface_table
     task_zone_ref: default_drop_zone
     layout_item_ref: target_bin_default
@@ -287,15 +287,15 @@ assets:
   pose_xyz:
   - 0.55
   - -0.28
-  - 0.19
+  - 0.10
   pose_rpy:
   - 0.0
   - 0.0
   - 0.0
   dimensions:
-  - 0.35
-  - 0.25
-  - 0.18
+  - 0.352201
+  - 0.213387
+  - 0.20
   support_surface_ref: support_surface_table
   task_zone_ref: default_drop_zone
   layout_item_ref: target_bin_default
