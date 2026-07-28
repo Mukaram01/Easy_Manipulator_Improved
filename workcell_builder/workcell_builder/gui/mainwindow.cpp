@@ -136,6 +136,7 @@
 #include "workcell_studio_scene_browser.hpp"
 #include "workcell_studio_canvas_model.hpp"
 #include "scene_preview_widget.h"
+#include "embedded_web_edit_save_controller.hpp"
 #include "scene3d_viewport_widget.h"
 #include "scene3d_candidate_assembly.h"
 #include "workcell_studio_layout_editor.hpp"
@@ -3214,6 +3215,11 @@ void MainWindow::setup_studio_shell()
   inspector_dim_x_->setToolTip("Scale X (uniform Scale control for simple mesh assets)"); inspector_dim_y_->setToolTip("Scale Y"); inspector_dim_z_->setToolTip("Scale Z");
   refresh_robot_base_pose_inspector();
   connect_button(save_layout_button_, &MainWindow::save_layout_changes);
+  // Install only after the main preview's WebEngine view and the existing top-level
+  // Save Layout/dirty-state controls exist. The button continues through
+  // save_layout_changes() so Web3D and native authoring share one action.
+  workcell_builder::installEmbeddedWebEditSaveController(
+    scene_preview_widget_, save_layout_button_, layout_state_label_);
   connect_button(create_starter_layout_button_, &MainWindow::create_starter_layout_from_preview);
   connect_button(select_mode_button, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Select); });
   connect_button(place_mode_button, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Place); });
