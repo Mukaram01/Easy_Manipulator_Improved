@@ -504,6 +504,7 @@ private:
   EmbeddedWebServerLifecycle embedded_web_server_lifecycle_{ EmbeddedWebServerLifecycle::ServerNotStarted };
   EmbeddedWebServerProbe embedded_web_server_probe_;
   bool embedded_editor_polling_{ false };
+  quint64 embedded_editor_state_request_token_{ 0 };
   EmbeddedWebRequestIdentity embedded_web_active_identity_;
   EmbeddedWebRequestIdentity pending_embedded_web_identity_;
   EmbeddedWebRequestIdentity embedded_web_loading_identity_;

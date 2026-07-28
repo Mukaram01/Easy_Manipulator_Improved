@@ -1754,8 +1754,10 @@ void ScenePreviewWidget::run_embedded_editor_command(const QString & script)
 {
   if (!embedded_web_view_ || embedded_product_view_state_ != EmbeddedProductViewState::Ready) return;
   const EmbeddedWebRequestIdentity identity = embedded_web_active_identity_;
-  embedded_web_view_->page()->runJavaScript(script, [this, identity](const QVariant & value){
-    if (!embedded_web_identity_is_current(identity)) return;
+  const quint64 state_request_token = ++embedded_editor_state_request_token_;
+  embedded_web_view_->page()->runJavaScript(script, [this, identity, state_request_token](const QVariant & value){
+    if (!embedded_web_identity_is_current(identity) ||
+        state_request_token != embedded_editor_state_request_token_) return;
     apply_embedded_editor_state(value.toMap());
   });
 }
@@ -1782,6 +1784,10 @@ void ScenePreviewWidget::apply_embedded_editor_state(const QVariantMap & state)
       const QSignalBlocker blocker(gizmo_mode_selector_);
       gizmo_mode_selector_->setCurrentText(label);
     }
+    if (interaction_mode_selector_ && interaction_mode_selector_->currentText() != label) {
+      const QSignalBlocker blocker(interaction_mode_selector_);
+      interaction_mode_selector_->setCurrentText(label);
+    }
     emit authoring_mode_changed(mode);
   }
   // Selection and dirty-state detail remains available through the embedded
@@ -1793,9 +1799,16 @@ void ScenePreviewWidget::poll_embedded_editor_events()
 {
   if (!embedded_editor_polling_ || !embedded_web_view_ || embedded_product_view_state_ != EmbeddedProductViewState::Ready) return;
   const EmbeddedWebRequestIdentity identity = embedded_web_active_identity_;
+  const quint64 state_request_token = ++embedded_editor_state_request_token_;
   static const char kPoll[] = "(() => { const api = window.__WORKCELL_EDITOR_API_V1__; if (!api) return {state:{},events:[]}; return {state:api.getState(),events:api.drainEvents()}; })()";
-  embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kPoll), [this, identity](const QVariant & value){
+  embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kPoll), [this, identity, state_request_token](const QVariant & value){
     if (!embedded_web_identity_is_current(identity)) return;
+    if (state_request_token != embedded_editor_state_request_token_) {
+      if (embedded_editor_polling_) QTimer::singleShot(200, this, [this, identity]() {
+        if (embedded_web_identity_is_current(identity)) poll_embedded_editor_events();
+      });
+      return;
+    }
     const QVariantMap payload = value.toMap();
     const QVariantMap editor_state = payload.value(QStringLiteral("state")).toMap();
     apply_embedded_editor_state(editor_state);
