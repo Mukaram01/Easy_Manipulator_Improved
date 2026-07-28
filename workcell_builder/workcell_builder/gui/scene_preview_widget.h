@@ -220,6 +220,7 @@ public:
     QString absolute_repo_root;
   };
   void set_preview_context(const PreviewContext & context);
+  PreviewContext preview_context() const;
   void set_preview_scene_name(const QString & scene_name);
   void set_preview_status_summary(const QString & summary);
   void set_clean_product_view_status(bool clean, int visual_count);

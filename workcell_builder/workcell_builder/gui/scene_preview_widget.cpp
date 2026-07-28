@@ -1962,6 +1962,11 @@ void ScenePreviewWidget::set_preview_context(const PreviewContext & context)
   }
 }
 
+ScenePreviewWidget::PreviewContext ScenePreviewWidget::preview_context() const
+{
+  return preview_context_;
+}
+
 void ScenePreviewWidget::activate_native_compatibility_preview(const QString & reason)
 {
   embedded_web_last_error_ = reason;

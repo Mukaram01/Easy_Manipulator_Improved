@@ -8,7 +8,6 @@
 
 #include <QApplication>
 #include <QBoxLayout>
-#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -55,23 +54,9 @@ inline bool repoMarkersExist(const QString & root)
 
 inline QString findRepoRoot()
 {
-  const auto walk = [](const QString & start) {
-    QDir dir(canonicalPath(start));
-    for (int depth = 0; depth < 16; ++depth) {
-      if (repoMarkersExist(dir.absolutePath())) return canonicalPath(dir.absolutePath());
-      if (!dir.cdUp()) break;
-    }
-    return QString();
-  };
-
   const QString configured = QProcessEnvironment::systemEnvironment()
     .value(QStringLiteral("WORKCELL_STUDIO_REPO_ROOT")).trimmed();
   if (!configured.isEmpty() && repoMarkersExist(configured)) return canonicalPath(configured);
-
-  for (const QString & candidate : {QDir::currentPath(), QCoreApplication::applicationDirPath()}) {
-    const QString root = walk(candidate);
-    if (!root.isEmpty()) return root;
-  }
   return {};
 }
 
@@ -88,24 +73,9 @@ inline QString sceneIdFromViewerUrl(const QUrl & url)
 
 inline QString resolveSceneDir(const QString & repo_root, const QString & scene_id)
 {
-  const QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-  QStringList candidates;
-  for (const QString & key : {QStringLiteral("WORKCELL_STUDIO_SELECTED_SCENE_DIR"),
-      QStringLiteral("WORKCELL_STUDIO_SCENE_DIR")}) {
-    const QString exact = env.value(key).trimmed();
-    if (!exact.isEmpty()) candidates << exact;
-  }
-  const QString scenes_root = env.value(QStringLiteral("WORKCELL_STUDIO_SCENES_PATH")).trimmed();
-  if (!scenes_root.isEmpty()) candidates << QDir(scenes_root).filePath(scene_id);
-  candidates << QDir(repo_root).filePath(QStringLiteral("scenes/%1").arg(scene_id));
-
-  for (const QString & candidate : candidates) {
-    const QFileInfo info(candidate);
-    if (!info.exists() || !info.isDir()) continue;
-    const QString resolved = canonicalPath(candidate);
-    if (QFileInfo(resolved).fileName() == scene_id) return resolved;
-  }
-  return {};
+  const QString candidate = QDir(repo_root).filePath(QStringLiteral("scenes/%1").arg(scene_id));
+  const QFileInfo info(candidate);
+  return info.exists() && info.isDir() ? canonicalPath(candidate) : QString();
 }
 
 class EmbeddedWebEditSaveController : public QObject
@@ -183,34 +153,92 @@ private:
 
   bool saveContextIsCurrent() const
   {
-    return view_ && view_->url() == expected_url_ &&
-      sceneIdFromViewerUrl(view_->url()) == scene_id_;
+    if (!view_ || !preview_ || view_->url() != expected_url_ ||
+        sceneIdFromViewerUrl(view_->url()) != scene_id_) return false;
+    const ScenePreviewWidget::PreviewContext current = preview_->preview_context();
+    if (using_environment_fallback_) {
+      return current.scene_id.trimmed().isEmpty() &&
+        current.absolute_repo_root.trimmed().isEmpty() &&
+        current.absolute_scene_dir.trimmed().isEmpty() && findRepoRoot() == repo_root_;
+    }
+    return current.scene_id.trimmed() == scene_id_ &&
+      canonicalPath(current.absolute_repo_root.trimmed()) == repo_root_ &&
+      canonicalPath(current.absolute_scene_dir.trimmed()) == scene_dir_;
   }
 
   void reportSceneChanged()
   {
     busy_ = false;
     if (save_button_) save_button_->setEnabled(false);
-    setStatus(QStringLiteral("Scene changed—reload required"), QStringLiteral("warning"));
+    setStatus(QStringLiteral("Scene changed—reload required; Web3D edits preserved"), QStringLiteral("warning"));
+    logPhase(QStringLiteral("validation failed: viewer URL or PreviewContext changed; Web3D edits preserved"));
   }
 
   bool resolveSaveContext(QString * error)
   {
     expected_url_ = view_ ? view_->url() : QUrl();
-    scene_id_ = sceneIdFromViewerUrl(expected_url_);
-    if (scene_id_.isEmpty()) {
+    const QString url_scene_id = sceneIdFromViewerUrl(expected_url_);
+    if (url_scene_id.isEmpty()) {
       if (error) *error = QStringLiteral("The embedded viewer URL does not identify a safe active scene.");
       return false;
     }
-    repo_root_ = findRepoRoot();
+
+    const ScenePreviewWidget::PreviewContext context = preview_ ?
+      preview_->preview_context() : ScenePreviewWidget::PreviewContext{};
+    using_environment_fallback_ = context.scene_id.trimmed().isEmpty() &&
+      context.absolute_repo_root.trimmed().isEmpty() && context.absolute_scene_dir.trimmed().isEmpty();
+    scene_id_ = context.scene_id.trimmed();
+    repo_root_ = context.absolute_repo_root.trimmed().isEmpty() ?
+      QString() : canonicalPath(context.absolute_repo_root.trimmed());
+    scene_dir_ = context.absolute_scene_dir.trimmed().isEmpty() ?
+      QString() : canonicalPath(context.absolute_scene_dir.trimmed());
+
+    // The environment is retained only for older callers that have not yet
+    // supplied a PreviewContext. Never infer a repository from the process CWD.
+    if (context.absolute_repo_root.trimmed().isEmpty()) repo_root_ = findRepoRoot();
+    if (scene_id_.isEmpty()) scene_id_ = url_scene_id;
+    if (context.absolute_scene_dir.trimmed().isEmpty() && !repo_root_.isEmpty()) {
+      scene_dir_ = resolveSceneDir(repo_root_, scene_id_);
+    }
+
+    if (scene_id_ != url_scene_id) {
+      if (error) *error = QStringLiteral(
+        "Active Product View scene '%1' does not match PreviewContext scene '%2'. Web3D edits were preserved; reload Product View before saving.")
+        .arg(url_scene_id, scene_id_);
+      return false;
+    }
+    const QString expected_scene_path = QStringLiteral("build/workcell_studio_web_scene/%1%2")
+      .arg(scene_id_, QString::fromUtf8(kSceneSuffix));
+    if (QUrlQuery(expected_url_).queryItemValue(QStringLiteral("scene"), QUrl::FullyDecoded) !=
+        expected_scene_path) {
+      if (error) *error = QStringLiteral("Active Product View URL does not match the PreviewContext scene output.");
+      return false;
+    }
     if (repo_root_.isEmpty()) {
       if (error) *error = QStringLiteral("Workcell Studio repository root could not be resolved.");
       return false;
     }
-    scene_dir_ = resolveSceneDir(repo_root_, scene_id_);
-    if (scene_dir_.isEmpty()) {
-      if (error) *error = QStringLiteral("Selected scene directory could not be resolved for %1.").arg(scene_id_);
+    if (!repoMarkersExist(repo_root_)) {
+      if (error) *error = QStringLiteral("PreviewContext repository root is invalid: %1").arg(repo_root_);
       return false;
+    }
+
+    const QString scenes_root = canonicalPath(QDir(repo_root_).filePath(QStringLiteral("scenes")));
+    const QFileInfo scene_info(scene_dir_);
+    if (!scene_info.exists() || !scene_info.isDir() ||
+        QFileInfo(scene_dir_).fileName() != scene_id_ ||
+        QDir::cleanPath(QFileInfo(scene_dir_).absolutePath()) != scenes_root) {
+      if (error) *error = QStringLiteral(
+        "PreviewContext scene directory is invalid or outside the repository scenes directory: %1")
+        .arg(scene_dir_);
+      return false;
+    }
+
+    const QString context_key = QStringLiteral("%1|%2|%3").arg(repo_root_, scene_dir_, scene_id_);
+    if (context_key != last_logged_context_key_) {
+      last_logged_context_key_ = context_key;
+      logPhase(QStringLiteral("resolved save context: repo_root=%1 scene_dir=%2 scene_id=%3")
+        .arg(repo_root_, scene_dir_, scene_id_));
     }
     patch_path_ = QDir(repo_root_).filePath(
       QStringLiteral("build/workcell_studio_web_scene/%1.qt_edit_patch.json").arg(scene_id_));
@@ -465,10 +493,12 @@ private:
   QString repo_root_;
   QString scene_dir_;
   QString patch_path_;
+  QString last_logged_context_key_;
   bool installed_{false};
   bool busy_{false};
   bool state_poll_pending_{false};
   bool saved_reload_pending_{false};
+  bool using_environment_fallback_{false};
   QString selected_item_id_before_save_;
 };
 }  // namespace embedded_web_edit_save_detail
