@@ -92,6 +92,7 @@ def test_product_view_selection_uses_stable_identity_and_filters_helpers():
     assert "function isNormalSelectableRendered(rendered)" in VIEWER
     assert "item.selectable !== false" in VIEWER
     assert "!isDiagnosticOnlyItem(item) && !isOverlayPolicyItem(item)" in VIEWER
+    assert "!isDebugOverlayItem(item)" in VIEWER
     assert "renderedById(requestedId)" in VIEWER
     assert "missing_render_identity" in VIEWER
     assert "diagnostic_helper_or_non_selectable" in VIEWER
@@ -105,7 +106,7 @@ def test_qt_selection_clears_stale_scene_and_missing_id_callbacks():
     assert "selection_missing_after_refresh" in CPP
     assert "Preview selection cleared after refresh (id missing):" in CPP
     assert "if (!embedded_web_identity_is_current(identity)) return;" in CPP
-    assert "if (id != selected_preview_item_id_)" in CPP
+    assert "if (valid_browser_selection && browser_selected_id != selected_preview_item_id_)" in CPP
     assert "selection_update_guard_" in (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
 
 
@@ -115,3 +116,21 @@ def test_selection_diagnostics_are_exposed_to_qt_bridge():
     assert "selectionDiagnostics: () => currentSelectionDiagnostics()" in VIEWER
     for field in ["renderIdentity", "sourceLayer", "activeVisualSource", "diagnosticOnly", "helperOrOverlay", "objectPresent"]:
         assert field in VIEWER
+
+
+def test_qt_poll_accepts_only_final_valid_browser_selection_and_explicit_clear():
+    poll = CPP.split("void ScenePreviewWidget::poll_embedded_editor_events()", 1)[1].split("#else", 1)[0]
+    for token in [
+        'editor_state.value(QStringLiteral("selectedItemId"))',
+        'editor_state.value(QStringLiteral("selectionDiagnostics"))',
+        'editor_state.value(QStringLiteral("sceneId"))',
+        'id == browser_selected_id',
+        'selection_diagnostics.value(QStringLiteral("objectPresent")).toBool()',
+        '!selection_diagnostics.value(QStringLiteral("diagnosticOnly")).toBool()',
+        '!selection_diagnostics.value(QStringLiteral("helperOrOverlay")).toBool()',
+        'browser_scene_id == identity.scene_id',
+    ]:
+        assert token in poll
+    assert "selected_preview_item_id_ = id" not in poll
+    assert "browser_selected_id.isEmpty()" in poll
+    assert "selected_preview_item_id_.clear();" in poll

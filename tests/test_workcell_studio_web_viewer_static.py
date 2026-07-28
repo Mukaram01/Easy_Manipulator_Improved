@@ -1216,6 +1216,38 @@ def test_viewer_load_contract_keeps_selection_empty_until_manual_pick():
     assert "return item.id;" in pick_body
 
 
+def test_selection_rejects_late_helper_without_clearing_valid_physical_item():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs = require('fs'); const vm = require('vm'); const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({ hidden:false, checked:false, disabled:false, textContent:'', className:'', innerHTML:'', classList:{toggle(){}}, querySelector(){return null;}, querySelectorAll(){return[];}, addEventListener(){}, setAttribute(){}, appendChild(){} });
+const context = { console, assert, window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}}, document:{getElementById(){return element();},querySelectorAll(){return[];},createElement(){return element();}}, URLSearchParams, CustomEvent:function(){}, requestAnimationFrame(){}, setTimeout(){}, clearTimeout(){} };
+vm.createContext(context);
+vm.runInContext(source + `
+updateLabels=()=>{}; populateInspector=()=>{}; attachTransformGizmo=()=>{}; detachTransformGizmo=()=>{}; refreshSelectionHighlight=()=>{}; removeSelectionHighlight=()=>{};
+const rendered = item => ({ item, object3d:{} });
+const target = rendered({id:'target_bin_default', editable:true, render_policy:'primary', mesh_load_required:true, mesh_contract_category:'object', category:'place_zone_bin', source_layer:'editable_layout'});
+const commissioning = rendered({id:'commissioning_object', editable:true, render_policy:'primary', mesh_load_required:true, mesh_contract_category:'object', source_layer:'editable_layout'});
+const robot = rendered({id:'ur5_generated', editable:false, locked:true, render_policy:'primary', role:'robot', source_layer:'locked_generated_urdf_visual'});
+const helper = rendered({id:'debug_frame_axes_tool0', editable:false, render_policy:'primary', role:'helper', source_layer:'debug_overlay'});
+state.sceneJson={scene:{id:'ur5_2f_test'}}; state.objects=[target,commissioning,robot,helper]; state.editorEvents=[];
+selectObject('target_bin_default');
+assert.strictEqual(state.selected,'target_bin_default');
+assert.strictEqual(state.editorEvents.filter(e=>e.type==='selection_changed'&&e.itemId==='target_bin_default').length,1);
+selectObject('debug_frame_axes_tool0');
+assert.strictEqual(state.selected,'target_bin_default');
+assert.strictEqual(state.editorEvents.filter(e=>e.type==='selection_changed').length,1);
+assert.strictEqual(state.editorEvents.at(-1).type,'selection_ignored');
+selectObject('commissioning_object'); assert.strictEqual(state.selected,'commissioning_object');
+selectObject('ur5_generated'); assert.strictEqual(state.selected,'ur5_generated'); assert.strictEqual(canEditItem(robot.item),false);
+selectObject('target_bin_default'); assert.strictEqual(state.selected,'target_bin_default'); assert.strictEqual(isNormalSelectableRendered(target),true);
+clearSelection(); assert.strictEqual(state.selected,''); assert.strictEqual(state.editorEvents.at(-1).itemId,'');
+`, context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, capture_output=True, text=True)
+
+
 def test_viewer_status_reporting_ignores_hidden_helper_overlay_counters(tmp_path):
     js_path = VIEWER / "viewer.js"
     harness = r"""
@@ -1977,9 +2009,10 @@ fitSelection();
 assert.ok(state.editorEvents.some(event => event.type === 'fit_selection_fallback'));
 assert.strictEqual(state.editorError, 'No physical item selected; fitting the workcell');
 selectObject('helper');
+assert.strictEqual(state.selected, '');
 state.three.camera.position.copy(new MockVector3(3, 4, 5));
 fitSelection();
-assert.strictEqual(state.editorError, 'Selected item has no visible physical geometry; fitting the workcell');
+assert.strictEqual(state.editorError, 'No physical item selected; fitting the workcell');
 for (const value of [state.three.camera.position.x, state.three.camera.position.y, state.three.camera.position.z, state.three.camera.near, state.three.camera.far]) assert.strictEqual(Number.isFinite(value), true);
 `, sandbox);
 """
@@ -2126,7 +2159,7 @@ def test_viewer_rotate_cancels_on_selection_mode_and_scene_change_without_yaml_w
     load_file_body = _viewer_function_body(js, "async function loadFile(file)", "function safeRelativeSceneUrl")
     load_url_body = _viewer_function_body(js, "async function loadSceneUrl(rawUrl)", "if (el.resetView)")
     object_change_body = js.split("transformControls.addEventListener('objectChange'", 1)[1].split("controls.addEventListener('start'", 1)[0]
-    assert "state.directRotateDrag && state.directRotateDrag.itemId !== (id || '')" in select_body
+    assert "state.directRotateDrag && state.directRotateDrag.itemId !== requestedId" in select_body
     assert "cancelDirectRotateDrag('Rotation cancelled')" in select_body
     assert "if (state.editorMode !== normalized)" in mode_body
     assert "cancelDirectRotateDrag('Rotation cancelled')" in mode_body
