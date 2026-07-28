@@ -1797,13 +1797,34 @@ void ScenePreviewWidget::poll_embedded_editor_events()
   embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kPoll), [this, identity](const QVariant & value){
     if (!embedded_web_identity_is_current(identity)) return;
     const QVariantMap payload = value.toMap();
-    apply_embedded_editor_state(payload.value(QStringLiteral("state")).toMap());
+    const QVariantMap editor_state = payload.value(QStringLiteral("state")).toMap();
+    apply_embedded_editor_state(editor_state);
+    const QString browser_scene_id = editor_state.value(QStringLiteral("sceneId")).toString().trimmed();
+    const QString browser_selected_id = editor_state.value(QStringLiteral("selectedItemId")).toString();
+    const QVariantMap selection_diagnostics = editor_state.value(QStringLiteral("selectionDiagnostics")).toMap();
+    const bool scene_identity_matches = browser_scene_id.isEmpty() || browser_scene_id == identity.scene_id;
+    bool matching_selection_event = false;
+    QString matching_item_type;
     for (const QVariant & event_value : payload.value(QStringLiteral("events")).toList()) {
       const QVariantMap event = event_value.toMap();
       if (event.value(QStringLiteral("type")).toString() == QStringLiteral("selection_changed")) {
         const QString id = event.value(QStringLiteral("itemId")).toString();
-        if (id != selected_preview_item_id_) { selected_preview_item_id_ = id; emit preview_item_selected(id, event.value(QStringLiteral("itemType")).toString()); }
+        if (!id.isEmpty() && id == browser_selected_id) {
+          matching_selection_event = true;
+          matching_item_type = event.value(QStringLiteral("itemType")).toString();
+        }
       }
+    }
+    const bool valid_browser_selection = matching_selection_event && scene_identity_matches &&
+      selection_diagnostics.value(QStringLiteral("objectPresent")).toBool() &&
+      !selection_diagnostics.value(QStringLiteral("diagnosticOnly")).toBool() &&
+      !selection_diagnostics.value(QStringLiteral("helperOrOverlay")).toBool();
+    if (valid_browser_selection && browser_selected_id != selected_preview_item_id_) {
+      selected_preview_item_id_ = browser_selected_id;
+      emit preview_item_selected(browser_selected_id, matching_item_type);
+    } else if (browser_selected_id.isEmpty() && scene_identity_matches && !selected_preview_item_id_.isEmpty()) {
+      selected_preview_item_id_.clear();
+      emit preview_item_selected(QString(), QString());
     }
     if (embedded_editor_polling_) QTimer::singleShot(200, this, [this, identity]() {
       if (embedded_web_identity_is_current(identity)) poll_embedded_editor_events();
