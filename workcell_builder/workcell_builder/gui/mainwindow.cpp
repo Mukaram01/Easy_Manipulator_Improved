@@ -5583,6 +5583,31 @@ QString MainWindow::resolve_scene3d_extractor_script_path(const fs::path & selec
   return find_repo_root_with_extractor(candidate_roots);
 }
 
+QString MainWindow::resolve_workcell_studio_repo_root(const fs::path & selected_scene_dir) const
+{
+  for (const QString & candidate : candidate_repo_roots_for_scene(selected_scene_dir)) {
+    const QFileInfo root_info(candidate);
+    if (!root_info.exists() || !root_info.isDir()) {
+      continue;
+    }
+
+    const QString canonical_root = root_info.canonicalFilePath();
+    const QDir root(canonical_root);
+    if (canonical_root.isEmpty() ||
+      !QFileInfo(root.filePath(QStringLiteral("scenes"))).isDir() ||
+      !QFileInfo(root.filePath(
+        QStringLiteral("scripts/run_workcell_studio_web_edit_workflow.py"))).isFile() ||
+      !QFileInfo(root.filePath(
+        QStringLiteral("workcell_studio_web/viewer/index.html"))).isFile())
+    {
+      continue;
+    }
+
+    return QDir::cleanPath(canonical_root);
+  }
+  return {};
+}
+
 QString MainWindow::selected_scene_name() const
 {
   if (!selected_scene_state_.valid) {
@@ -9378,9 +9403,9 @@ void MainWindow::populate_scene_hierarchy()
         "to rewrite generated/scene_visual_mesh_index.json for Debug 3D Preview only");
       return false;
     }
-    QString script;
-    if (!helper_script_exists("extract_scene_urdf_visual_mesh_index.py", &script)) {
-      visual_index_refresh_blocker = QStringLiteral("extractor script not found in helper script search paths");
+    const QString script = resolve_scene3d_extractor_script_path(d);
+    if (script.isEmpty()) {
+      visual_index_refresh_blocker = QStringLiteral("extractor script not found from the selected scene repository");
       return false;
     }
     if (workspace_root.trimmed().isEmpty() || !QDir(workspace_root).exists()) {
@@ -11521,9 +11546,31 @@ void MainWindow::populate_scene_hierarchy()
     scene_preview_widget_->set_scene_selected(true);
     ScenePreviewWidget::PreviewContext preview_context;
     preview_context.scene_id = selected_scene_state_.name;
-    preview_context.absolute_scene_dir = selected_scene_state_.path;
-    preview_context.absolute_repo_root = resolve_scene3d_extractor_script_path(
-      fs::path(selected_scene_state_.path.toStdString()));
+    const QFileInfo selected_scene_info(selected_scene_state_.path);
+    preview_context.absolute_scene_dir = selected_scene_info.isDir()
+      ? QDir::cleanPath(selected_scene_info.canonicalFilePath()) : QString();
+    preview_context.absolute_repo_root = resolve_workcell_studio_repo_root(
+      fs::path(preview_context.absolute_scene_dir.toStdString()));
+
+    // Only publish a repository root when the active scene is exactly its canonical
+    // <repo>/scenes/<scene_id> directory. The save controller retains the final,
+    // strict stale-context and containment checks.
+    const QString expected_scene_dir = preview_context.absolute_repo_root.isEmpty()
+      ? QString()
+      : QFileInfo(QDir(preview_context.absolute_repo_root).filePath(
+          QStringLiteral("scenes/%1").arg(preview_context.scene_id))).canonicalFilePath();
+    if (preview_context.scene_id.trimmed().isEmpty() ||
+      preview_context.absolute_scene_dir.isEmpty() || expected_scene_dir.isEmpty() ||
+      QDir::cleanPath(expected_scene_dir) != preview_context.absolute_scene_dir)
+    {
+      preview_context.absolute_repo_root.clear();
+    }
+    append_scene_diagnostic_log_once(
+      QStringLiteral("preview_context"), 0, 0,
+      QStringLiteral("PreviewContext resolved: scene_id=%1 repo_root=%2 scene_dir=%3")
+        .arg(preview_context.scene_id,
+          preview_context.absolute_repo_root.isEmpty() ? QStringLiteral("(invalid)") : preview_context.absolute_repo_root,
+          preview_context.absolute_scene_dir.isEmpty() ? QStringLiteral("(invalid)") : preview_context.absolute_scene_dir));
     scene_preview_widget_->set_preview_context(preview_context);
     apply_scene3d_product_view_layer_defaults_and_commit();
 

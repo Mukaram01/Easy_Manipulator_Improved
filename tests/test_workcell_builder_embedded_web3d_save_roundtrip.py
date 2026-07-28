@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 GUI = ROOT / "workcell_builder/workcell_builder/gui"
 CONTROLLER = GUI / "embedded_web_edit_save_controller.hpp"
 MAINWINDOW = GUI / "mainwindow.cpp"
+MAINWINDOW_HEADER = GUI / "mainwindow.h"
 WORKFLOW = ROOT / "scripts/run_workcell_studio_web_edit_workflow.py"
 APPLICATOR = ROOT / "scripts/apply_workcell_studio_web_scene_edit_patch.py"
 EXPORTER = ROOT / "scripts/export_workcell_studio_web_scene.py"
@@ -72,6 +73,38 @@ def test_preview_context_is_the_primary_bounded_save_path_source():
     assert "applicationDirPath()" not in source
     assert "if (!dir.cdUp())" not in source
     assert 'value(QStringLiteral("WORKCELL_STUDIO_REPO_ROOT"))' in source
+
+
+def test_mainwindow_preview_context_uses_canonical_repository_root_not_extractor_file():
+    mainwindow = MAINWINDOW.read_text(encoding="utf-8")
+    header = MAINWINDOW_HEADER.read_text(encoding="utf-8")
+    wiring = mainwindow.split("ScenePreviewWidget::PreviewContext preview_context;", 1)[1].split(
+        "scene_preview_widget_->set_preview_context(preview_context);", 1
+    )[0]
+
+    assert "resolve_workcell_studio_repo_root" in header
+    assert "preview_context.scene_id = selected_scene_state_.name" in wiring
+    assert "selected_scene_info.canonicalFilePath()" in wiring
+    assert "preview_context.absolute_repo_root = resolve_workcell_studio_repo_root" in wiring
+    assert "resolve_scene3d_extractor_script_path" not in wiring
+    assert "extract_scene_urdf_visual_mesh_index.py" not in wiring
+    assert 'QStringLiteral("scenes/%1").arg(preview_context.scene_id)' in wiring
+    assert "expected_scene_dir" in wiring
+    assert "preview_context.absolute_repo_root.clear()" in wiring
+
+
+def test_preview_repository_root_resolver_requires_product_markers_and_directory():
+    source = MAINWINDOW.read_text(encoding="utf-8")
+    resolver = source.split("QString MainWindow::resolve_workcell_studio_repo_root", 1)[1].split(
+        "QString MainWindow::selected_scene_name", 1
+    )[0]
+
+    assert "root_info.exists()" in resolver
+    assert "root_info.isDir()" in resolver
+    assert 'QStringLiteral("scenes")' in resolver
+    assert 'QStringLiteral("scripts/run_workcell_studio_web_edit_workflow.py")' in resolver
+    assert 'QStringLiteral("workcell_studio_web/viewer/index.html")' in resolver
+    assert "extract_scene_urdf_visual_mesh_index.py" not in resolver
 
 
 def test_save_rejects_url_mismatch_stale_context_and_scene_path_escape():
