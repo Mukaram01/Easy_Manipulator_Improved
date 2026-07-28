@@ -11,26 +11,33 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 GUI = ROOT / "workcell_builder/workcell_builder/gui"
 CONTROLLER = GUI / "embedded_web_edit_save_controller.hpp"
-UI_UTILS = GUI / "workcell_builder_ui_utils.cpp"
+MAINWINDOW = GUI / "mainwindow.cpp"
 WORKFLOW = ROOT / "scripts/run_workcell_studio_web_edit_workflow.py"
 APPLICATOR = ROOT / "scripts/apply_workcell_studio_web_scene_edit_patch.py"
 EXPORTER = ROOT / "scripts/export_workcell_studio_web_scene.py"
 
 
-def test_qt_product_view_installs_one_contextual_save_action():
+def test_mainwindow_installs_controller_on_existing_top_save_action():
     controller = CONTROLLER.read_text(encoding="utf-8")
-    ui_utils = UI_UTILS.read_text(encoding="utf-8")
+    mainwindow = MAINWINDOW.read_text(encoding="utf-8")
 
-    assert '#include "embedded_web_edit_save_controller.hpp"' in ui_utils
-    assert "installEmbeddedWebEditSaveControllers(widget);" in ui_utils
-    assert "qobject_cast<ScenePreviewWidget *>(root)" in controller
+    assert '#include "embedded_web_edit_save_controller.hpp"' in mainwindow
+    assert "installEmbeddedWebEditSaveController(" in mainwindow
+    assert "scene_preview_widget_, save_layout_button_, layout_state_label_" in mainwindow
     assert 'findChild<QWebEngineView *>(QStringLiteral("embeddedWeb3dProductView"))' in controller
-    assert 'setObjectName(QStringLiteral("embeddedSaveLayoutButton"))' in controller
-    assert 'QPushButton(QStringLiteral("Save layout")' in controller
     assert 'property("workcell_embedded_save_controller")' in controller
     assert "ScenePreviewWidget::embedded_authoring_save_requested" in controller
-    assert 'findChild<QPushButton *>(QStringLiteral("embeddedFitButton"))' in controller
+    assert 'QPushButton(QStringLiteral("Save layout")' not in controller
+    assert "embeddedSaveLayoutButton" not in controller
     assert "button->text()" not in controller
+
+
+def test_mainwindow_web3d_state_drives_existing_save_and_dirty_label():
+    source = CONTROLLER.read_text(encoding="utf-8")
+    assert "ready && dirty && valid_dirty_transforms && matching_scene" in source
+    assert 'QStringLiteral("Unsaved Layout Edits: %1 (Web3D)")' in source
+    for phase in ["save requested", "checking edits", "validation started", "validation failed", "saving", "saved", "reload"]:
+        assert phase in source
 
 
 def test_qt_reads_patch_from_existing_browser_editor_api_and_checks_identity():

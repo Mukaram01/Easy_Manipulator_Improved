@@ -111,13 +111,15 @@ inline QString resolveSceneDir(const QString & repo_root, const QString & scene_
 class EmbeddedWebEditSaveController : public QObject
 {
 public:
-  EmbeddedWebEditSaveController(ScenePreviewWidget * preview, QWebEngineView * view)
-  : QObject(preview), preview_(preview), view_(view)
+  EmbeddedWebEditSaveController(
+    ScenePreviewWidget * preview, QWebEngineView * view, QPushButton * save_button,
+    QLabel * dirty_label)
+  : QObject(preview), preview_(preview), view_(view), save_button_(save_button), dirty_label_(dirty_label)
   {
-    installed_ = createControls();
+    installed_ = preview_ && view_ && save_button_;
     if (!installed_) return;
+    configureControls();
 
-    connect(save_button_, &QPushButton::clicked, this, [this]() { requestSave(); });
     connect(preview_, &ScenePreviewWidget::embedded_authoring_save_requested,
       this, [this]() { requestSave(); });
     connect(view_, &QWebEngineView::loadFinished, this, [this](bool) {
@@ -151,42 +153,14 @@ public:
 private:
   enum class WorkflowPhase { DryRun, Write };
 
-  bool createControls()
+  void configureControls()
   {
-    if (!preview_ || !view_) return false;
-    QPushButton * fit_button = preview_->findChild<QPushButton *>(QStringLiteral("embeddedFitButton"));
-    if (!fit_button) return false;
-
-    QBoxLayout * toolbar = nullptr;
-    for (QBoxLayout * layout : preview_->findChildren<QBoxLayout *>()) {
-      if (layout->indexOf(fit_button) >= 0) {
-        toolbar = layout;
-        break;
-      }
-    }
-    if (!toolbar) return false;
-
-    save_button_ = new QPushButton(QStringLiteral("Save layout"), preview_);
-    save_button_->setObjectName(QStringLiteral("embeddedSaveLayoutButton"));
-    save_button_->setProperty("class", "safe_action");
     save_button_->setToolTip(QStringLiteral(
       "Validate the current Web3D edit patch, create source-YAML backups, apply it atomically, regenerate and reload Product View. No robot motion is started."));
     save_button_->setEnabled(false);
-    save_button_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
-
-    status_label_ = new QLabel(preview_);
-    status_label_->setObjectName(QStringLiteral("embeddedSaveLayoutStatus"));
-    status_label_->setWordWrap(true);
-    status_label_->setMinimumWidth(0);
-    status_label_->setMaximumWidth(190);
-    status_label_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    status_label_->setVisible(false);
-
-    const int fit_index = toolbar->indexOf(fit_button);
-    toolbar->insertWidget(fit_index + 1, save_button_);
-    toolbar->insertWidget(fit_index + 2, status_label_);
-    return true;
   }
+
+  void logPhase(const QString & phase) { emit preview_->studio_log_requested(QStringLiteral("Web3D Save Layout: %1").arg(phase)); }
 
   void setStatus(const QString & text, const QString & level = QStringLiteral("info"))
   {
@@ -261,9 +235,11 @@ private:
   void requestSave()
   {
     if (busy_ || !view_) return;
+    logPhase(QStringLiteral("save requested"));
     QString context_error;
     if (!resolveSaveContext(&context_error)) {
       setStatus(QStringLiteral("Validation failed"), QStringLiteral("error"));
+      logPhase(QStringLiteral("validation failed: save context is not current; Web3D edits preserved"));
       QMessageBox::warning(preview_, QStringLiteral("Save Product View Layout"), context_error);
       return;
     }
@@ -271,6 +247,7 @@ private:
     busy_ = true;
     if (save_button_) save_button_->setEnabled(false);
     setStatus(QStringLiteral("Checking edits…"));
+    logPhase(QStringLiteral("checking edits"));
     static const char kPatchScript[] = R"JS(
 (() => {
   const api = window.__WORKCELL_EDITOR_API_V1__;
@@ -289,6 +266,7 @@ private:
         setStatus(QStringLiteral("Validation failed"), QStringLiteral("error"));
         QMessageBox::warning(preview_, QStringLiteral("Save Product View Layout"),
           payload.value(QStringLiteral("error")).toString());
+        logPhase(QStringLiteral("validation failed: editor API unavailable; Web3D edits preserved"));
         return;
       }
 
@@ -296,6 +274,7 @@ private:
       if (!patch_doc.isObject()) {
         busy_ = false;
         setStatus(QStringLiteral("Validation failed"), QStringLiteral("error"));
+        logPhase(QStringLiteral("validation failed: patch is not an object; Web3D edits preserved"));
         return;
       }
       const QJsonObject patch = patch_doc.object();
@@ -309,6 +288,7 @@ private:
         setStatus(QStringLiteral("Validation failed"), QStringLiteral("error"));
         QMessageBox::warning(preview_, QStringLiteral("Save Product View Layout"),
           QStringLiteral("The browser returned an invalid or stale edit-patch contract."));
+        logPhase(QStringLiteral("validation failed: invalid or stale patch; Web3D edits preserved"));
         return;
       }
       if (edits.isEmpty()) {
@@ -324,8 +304,10 @@ private:
         busy_ = false;
         setStatus(QStringLiteral("Validation failed"), QStringLiteral("error"));
         QMessageBox::critical(preview_, QStringLiteral("Save Product View Layout"), write_error);
+        logPhase(QStringLiteral("validation failed: patch staging write failed; Web3D edits preserved"));
         return;
       }
+      logPhase(QStringLiteral("validation started"));
       startWorkflow(WorkflowPhase::DryRun);
     });
   }
@@ -350,6 +332,7 @@ private:
     } else {
       arguments << QStringLiteral("--write");
       setStatus(QStringLiteral("Saving…"));
+      logPhase(QStringLiteral("saving"));
     }
     process_->setArguments(arguments);
     process_->setWorkingDirectory(repo_root_);
@@ -362,6 +345,7 @@ private:
       QMessageBox::critical(preview_, QStringLiteral("Save Product View Layout"),
         QStringLiteral("Could not start the save workflow for %1: %2. The Web3D edit remains unsaved.")
           .arg(scene_id_, process->errorString()));
+      logPhase(QStringLiteral("validation failed: workflow could not start; Web3D edits preserved"));
       pollEditorState();
     });
     connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
@@ -382,6 +366,8 @@ private:
             QStringLiteral("%1\n\n%2")
               .arg(phase == WorkflowPhase::DryRun ? QStringLiteral("The edit patch did not pass validation.") :
                 QStringLiteral("The edit patch could not be saved."), output.left(8000)));
+          logPhase(phase == WorkflowPhase::DryRun ? QStringLiteral("validation failed; Web3D edits preserved") :
+            QStringLiteral("saving failed; Web3D edits preserved"));
           pollEditorState();
           return;
         }
@@ -405,7 +391,9 @@ private:
 
         busy_ = false;
         setStatus(QStringLiteral("Saved"), QStringLiteral("success"));
+        logPhase(QStringLiteral("saved"));
         saved_reload_pending_ = true;
+        logPhase(QStringLiteral("reload"));
         if (view_) view_->reload();
         QTimer::singleShot(600, this, [this]() { pollEditorState(); });
       });
@@ -415,6 +403,10 @@ private:
   void pollEditorState()
   {
     if (!installed_ || !view_ || busy_ || state_poll_pending_) return;
+    if (!preview_->embedded_web_authoring_active()) {
+      if (save_button_) save_button_->setEnabled(true);
+      return;
+    }
     const QUrl poll_url = view_->url();
     if (sceneIdFromViewerUrl(poll_url).isEmpty()) {
       if (save_button_) save_button_->setEnabled(false);
@@ -448,7 +440,14 @@ private:
       const bool valid_dirty_transforms = state.value(QStringLiteral("validDirtyTransforms")).toBool();
       const QString reported_scene = state.value(QStringLiteral("sceneId")).toString();
       const QString url_scene = sceneIdFromViewerUrl(poll_url);
-      if (save_button_) save_button_->setEnabled(ready && dirty && valid_dirty_transforms && !url_scene.isEmpty() && reported_scene == url_scene);
+      const bool matching_scene = !url_scene.isEmpty() && reported_scene == url_scene;
+      if (save_button_) save_button_->setEnabled(ready && dirty && valid_dirty_transforms && matching_scene);
+      if (dirty_label_) {
+        const int dirty_count = state.value(QStringLiteral("dirtyCount")).toInt();
+        dirty_label_->setText(dirty && matching_scene ?
+          QStringLiteral("Unsaved Layout Edits: %1 (Web3D)").arg(dirty_count) :
+          QStringLiteral("Unsaved Layout Edits: none"));
+      }
       last_polled_url_ = poll_url;
     });
   }
@@ -456,6 +455,7 @@ private:
   QPointer<ScenePreviewWidget> preview_;
   QPointer<QWebEngineView> view_;
   QPointer<QPushButton> save_button_;
+  QPointer<QLabel> dirty_label_;
   QPointer<QLabel> status_label_;
   QPointer<QProcess> process_;
   QTimer poll_timer_{this};
@@ -473,20 +473,16 @@ private:
 };
 }  // namespace embedded_web_edit_save_detail
 
-inline void installEmbeddedWebEditSaveControllers(QWidget * root)
+inline void installEmbeddedWebEditSaveController(
+  ScenePreviewWidget * preview, QPushButton * save_button, QLabel * dirty_label)
 {
-  if (!root) return;
-  QList<ScenePreviewWidget *> previews;
-  if (auto * preview = qobject_cast<ScenePreviewWidget *>(root)) previews << preview;
-  previews.append(root->findChildren<ScenePreviewWidget *>(QString(), Qt::FindChildrenRecursively));
-  for (ScenePreviewWidget * preview : previews) {
-    if (!preview || preview->property("workcell_embedded_save_controller").toBool()) continue;
-    QWebEngineView * view = preview->findChild<QWebEngineView *>(QStringLiteral("embeddedWeb3dProductView"));
-    if (!view) continue;
-    auto * controller = new embedded_web_edit_save_detail::EmbeddedWebEditSaveController(preview, view);
-    if (controller->installed()) preview->setProperty("workcell_embedded_save_controller", true);
-    else controller->deleteLater();
-  }
+  if (!preview || preview->property("workcell_embedded_save_controller").toBool()) return;
+  QWebEngineView * view = preview->findChild<QWebEngineView *>(QStringLiteral("embeddedWeb3dProductView"));
+  if (!view) return;
+  auto * controller = new embedded_web_edit_save_detail::EmbeddedWebEditSaveController(
+    preview, view, save_button, dirty_label);
+  if (controller->installed()) preview->setProperty("workcell_embedded_save_controller", true);
+  else controller->deleteLater();
 }
 }  // namespace workcell_builder
 
@@ -494,7 +490,7 @@ inline void installEmbeddedWebEditSaveControllers(QWidget * root)
 
 namespace workcell_builder
 {
-inline void installEmbeddedWebEditSaveControllers(QWidget *) {}
+inline void installEmbeddedWebEditSaveController(ScenePreviewWidget *, QPushButton *, QLabel *) {}
 }  // namespace workcell_builder
 
 #endif
