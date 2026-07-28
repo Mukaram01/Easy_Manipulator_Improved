@@ -114,13 +114,11 @@ def _readiness_cmd(output_dir: Path) -> list[str]:
 def _product_view_refresh_cmd(scene: Path, output_dir: Path, scene_id: str) -> list[str]:
     return [
         sys.executable,
-        str(SCRIPT_DIR / "ensure_workcell_studio_web_scene_fresh.py"),
+        str(SCRIPT_DIR / "export_workcell_studio_web_scene.py"),
         "--scene",
         str(scene),
         "--output",
         str(output_dir / f"{scene_id}.web_scene.json"),
-        "--stage-assets",
-        "--force",
     ]
 
 

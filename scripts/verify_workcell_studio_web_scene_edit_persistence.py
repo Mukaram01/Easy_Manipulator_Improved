@@ -109,10 +109,23 @@ def verify(before: dict[str, Any], patch: dict[str, Any], after: dict[str, Any])
         if not isinstance(old_transform, dict) or not isinstance(new_transform, dict):
             errors.append(f"{prefix}: old_transform and new_transform must be objects")
             continue
-        old_errors = _numbers_close(old_transform, _item_transform(before_item), f"{prefix} old_transform")
+        # Browser object scale is 1 for ordinary layout transforms; mesh_scale
+        # belongs to the mesh child and is not an authored object-scale edit.
+        # Only verify scale when the patch actually changes it.
+        scale_changed = old_transform.get("scale") != new_transform.get("scale")
+        expected_old = dict(old_transform)
+        expected_new = dict(new_transform)
+        actual_old = _item_transform(before_item)
+        actual_new = _item_transform(after_item)
+        if not scale_changed:
+            expected_old.pop("scale", None)
+            expected_new.pop("scale", None)
+            actual_old.pop("scale", None)
+            actual_new.pop("scale", None)
+        old_errors = _numbers_close(expected_old, actual_old, f"{prefix} old_transform")
         if old_errors:
             errors.extend(old_errors)
-        new_errors = _numbers_close(new_transform, _item_transform(after_item), f"{prefix} new_transform")
+        new_errors = _numbers_close(expected_new, actual_new, f"{prefix} new_transform")
         if new_errors:
             errors.extend(new_errors)
         if not new_errors:

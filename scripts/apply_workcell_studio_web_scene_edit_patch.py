@@ -101,14 +101,23 @@ def _scale_list(transform: dict[str, Any]) -> list[float] | None:
 
 
 def _source_from_item(item: dict[str, Any]) -> str | None:
+    # A merged web-scene item can legitimately contain fields from both layout
+    # and environment YAML. The transform's own provenance is authoritative for
+    # an update_transform operation; considering every provenance value made
+    # such items look ambiguous and blocked all real Product View saves.
+    prov = item.get("provenance")
+    if isinstance(prov, dict):
+        pose_source = prov.get("pose")
+        if isinstance(pose_source, str) and pose_source in ALLOWED_SOURCES:
+            return pose_source
     candidates: set[str] = set()
     for key in ("source", "source_file", "source_path"):
         value = item.get(key)
         if isinstance(value, str) and value in ALLOWED_SOURCES:
             candidates.add(value)
-    prov = item.get("provenance")
     if isinstance(prov, dict):
-        for value in prov.values():
+        for key in ("source", "source_file", "source_path", "source_kind"):
+            value = prov.get(key)
             if isinstance(value, str) and value in ALLOWED_SOURCES:
                 candidates.add(value)
     if len(candidates) == 1:
