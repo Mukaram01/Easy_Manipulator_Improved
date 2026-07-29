@@ -1211,10 +1211,45 @@ def test_viewer_load_contract_keeps_selection_empty_until_manual_pick():
     assert "const selected = rendered.item.id === id;" in select_body
     assert "rendered.item.locked" not in select_body
     assert "canEditItem(rendered.item)" not in select_body
-    assert "if (!isNormalSelectableRendered(rendered)) continue;" in pick_body
-    assert "canonicalSelectionRendered" in pick_body
-    assert "selectObject(rendered.item.id);" in pick_body
-    assert "return rendered.item.id;" in pick_body
+    assert "rankedPickingCandidates(hits)" in pick_body
+    assert "candidates.find(candidate => Number.isFinite(candidate.priority)" in pick_body
+    ranking_body = _viewer_function_body(js, "function rankedPickingCandidates(hits)", "function selectObject(id)")
+    assert "canonicalSelectionRendered" in ranking_body
+    assert "selectObject(selectedCandidate.rendered.item.id);" in pick_body
+    assert "return selectedCandidate.rendered.item.id;" in pick_body
+
+
+def test_raycast_ranking_prefers_authored_bin_over_place_zone_and_task_marker():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs = require('fs'); const vm = require('vm'); const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100};}});
+const context={console,assert,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element();},querySelectorAll(){return[];},createElement(){return element();}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context);
+vm.runInContext(source + `
+updateLabels=()=>{}; populateInspector=()=>{}; attachTransformGizmo=()=>{}; detachTransformGizmo=()=>{}; refreshSelectionHighlight=()=>{}; removeSelectionHighlight=()=>{};
+const rendered = item => ({item,object3d:{userData:{item}}});
+const bin=rendered({id:'target_bin_default',editable:true,locked:false,render_policy:'primary',mesh_load_required:true,mesh_contract_category:'object',category:'place_zone',source_layer:'editable_layout',transform_group:'default_drop_destination'});
+const zone=rendered({id:'place_zone_default',editable:true,locked:false,render_policy:'overlay',role:'place_zone',source_layer:'editable_layout',transform_group:'default_drop_destination'});
+const marker=rendered({id:'commissioning_object',editable:false,locked:true,render_policy:'primary',role:'task_marker',source_layer:'task_preview'});
+const robot=rendered({id:'ur5_generated',editable:false,locked:true,render_policy:'primary',role:'robot',source_layer:'locked_generated_urdf_visual'});
+state.sceneJson={scene:{id:'ur5_2f_test'}}; state.objects=[bin,zone,marker,robot]; state.editorEvents=[]; state.debugOverlaysVisible=false;
+const hits=[{object:marker.object3d,distance:1},{object:zone.object3d,distance:2},{object:bin.object3d,distance:3}];
+assert.strictEqual(rankedPickingCandidates(hits)[0].rendered.item.id,'target_bin_default');
+state.three.pointer={}; state.three.camera={}; state.three.raycaster={setFromCamera(){},intersectObjects(){return hits;}};
+assert.strictEqual(pickObject({clientX:10,clientY:10}),'target_bin_default');
+assert.strictEqual(state.selected,'target_bin_default');
+assert.strictEqual(state.editorEvents.filter(e=>e.type==='helper_pick_skipped').length,1);
+pickObject({clientX:10,clientY:10}); assert.strictEqual(state.editorEvents.filter(e=>e.type==='helper_pick_skipped').length,1);
+state.editorMode='move'; assert.strictEqual(pickObject({clientX:10,clientY:10}),'target_bin_default');
+assert.strictEqual(isNormalSelectableRendered(marker),false);
+state.debugOverlaysVisible=true; assert.strictEqual(isNormalSelectableRendered(marker),true); assert.strictEqual(pickingPriority(marker),4);
+assert.strictEqual(isNormalSelectableRendered(robot),true); assert.strictEqual(pickingPriority(robot),3);
+assert.strictEqual(editableTransformGroupMembers(bin).map(r=>r.item.id).sort().join(','),'place_zone_default,target_bin_default');
+`, context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, capture_output=True, text=True)
 
 
 def test_selection_rejects_late_helper_without_clearing_valid_physical_item():
