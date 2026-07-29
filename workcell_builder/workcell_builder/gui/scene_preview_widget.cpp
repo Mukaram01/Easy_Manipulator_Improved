@@ -28,10 +28,13 @@
 #include <QSignalBlocker>
 #include <QPushButton>
 #include <QDoubleSpinBox>
+#include <QGroupBox>
 #include <functional>
 #include <algorithm>
+#include <cmath>
 #include <yaml-cpp/yaml.h>
 #include "object_placement_yaml_io.hpp"
+#include "robot_home_yaml_io.hpp"
 
 namespace {
 constexpr double kOverlayFitDominanceRatio = 4.0;
@@ -370,6 +373,50 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     product_view_tool_pitch_spin_->setValue(p);
     product_view_tool_yaw_spin_->setValue(y);
   });
+
+  product_view_robot_home_row_ = new QGroupBox(QStringLiteral("Robot Initial Pose"), controls_header);
+  product_view_robot_home_row_->setObjectName(QStringLiteral("product_view_robot_initial_pose"));
+  product_view_robot_home_row_->setCheckable(true);
+  product_view_robot_home_row_->setChecked(false);
+  auto * robot_home_layout = new QVBoxLayout(product_view_robot_home_row_);
+  auto * robot_home_grid = new QGridLayout();
+  const QStringList robot_joint_names{QStringLiteral("shoulder_pan_joint"), QStringLiteral("shoulder_lift_joint"),
+    QStringLiteral("elbow_joint"), QStringLiteral("wrist_1_joint"), QStringLiteral("wrist_2_joint"),
+    QStringLiteral("wrist_3_joint")};
+  for (int row = 0; row < robot_joint_names.size(); ++row) {
+    robot_home_grid->addWidget(new QLabel(robot_joint_names[row], product_view_robot_home_row_), row, 0);
+    auto * spin = new QDoubleSpinBox(product_view_robot_home_row_);
+    spin->setObjectName(QStringLiteral("product_view_robot_home_%1_degrees").arg(robot_joint_names[row]));
+    spin->setRange(-360.0, 360.0);
+    spin->setDecimals(2);
+    spin->setSuffix(QStringLiteral("°"));
+    robot_home_grid->addWidget(spin, row, 1);
+    product_view_robot_home_spins_.push_back(spin);
+  }
+  robot_home_layout->addLayout(robot_home_grid);
+  auto * robot_home_buttons = new QHBoxLayout();
+  product_view_robot_home_current_button_ = new QPushButton(QStringLiteral("Current Scene Pose"), product_view_robot_home_row_);
+  product_view_robot_home_suggested_button_ = new QPushButton(QStringLiteral("Suggested Pose"), product_view_robot_home_row_);
+  product_view_robot_home_reset_button_ = new QPushButton(QStringLiteral("Reset Changes"), product_view_robot_home_row_);
+  product_view_robot_home_apply_button_ = new QPushButton(QStringLiteral("Apply Initial Pose"), product_view_robot_home_row_);
+  for (auto * button : {product_view_robot_home_current_button_, product_view_robot_home_suggested_button_,
+      product_view_robot_home_reset_button_, product_view_robot_home_apply_button_}) robot_home_buttons->addWidget(button);
+  robot_home_layout->addLayout(robot_home_buttons);
+  product_view_robot_home_status_ = new QLabel(QStringLiteral("Authoring/simulation pose only; no robot commands are sent."), product_view_robot_home_row_);
+  robot_home_layout->addWidget(product_view_robot_home_status_);
+  const auto set_robot_home_expanded = [this](bool expanded) {
+    const auto children = product_view_robot_home_row_->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly);
+    for (auto * child : children) child->setVisible(expanded);
+    product_view_robot_home_row_->updateGeometry();
+  };
+  connect(product_view_robot_home_row_, &QGroupBox::toggled, this, set_robot_home_expanded);
+  set_robot_home_expanded(false);
+  product_view_robot_home_row_->setVisible(false);
+  controls->addWidget(product_view_robot_home_row_);
+  connect(product_view_robot_home_current_button_, &QPushButton::clicked, this, &ScenePreviewWidget::reset_product_view_robot_home);
+  connect(product_view_robot_home_reset_button_, &QPushButton::clicked, this, &ScenePreviewWidget::reset_product_view_robot_home);
+  connect(product_view_robot_home_suggested_button_, &QPushButton::clicked, this, &ScenePreviewWidget::use_suggested_product_view_robot_home);
+  connect(product_view_robot_home_apply_button_, &QPushButton::clicked, this, &ScenePreviewWidget::apply_product_view_robot_home);
 
   auto * backend_controls_row = new QHBoxLayout();
   mesh_preview_mode_label_ = new QLabel("Mesh Preview:", controls_header);
@@ -797,6 +844,7 @@ void ScenePreviewWidget::set_embedded_product_view_state(EmbeddedProductViewStat
   embedded_product_view_state_ = state;
   refresh_product_view_destination_control();
   refresh_product_view_tool_orientation_control();
+  refresh_product_view_robot_home_control();
   embedded_editor_polling_ = (state == EmbeddedProductViewState::Ready);
   if (state == EmbeddedProductViewState::Failed) embedded_web_last_error_ = detail;
   if (embedded_fit_button_ && state != EmbeddedProductViewState::Failed) {
@@ -890,6 +938,91 @@ void ScenePreviewWidget::apply_product_view_tool_orientation()
   emit studio_log_requested(QStringLiteral("Product View tool orientation saved to %1; backup: %2; regenerating around %3 attachment.")
     .arg(environment_path, backup_path, QString::fromStdString(tool_attachment.parent_link)));
   request_embedded_web_product_view_refresh(true, QStringLiteral("tool_orientation_update"));
+}
+
+void ScenePreviewWidget::refresh_product_view_robot_home_control()
+{
+  if (!product_view_robot_home_row_) return;
+  const QString environment_path = QDir(preview_context_.absolute_scene_dir).filePath(QStringLiteral("environment.yaml"));
+  workcell_builder::RobotHomeConfig loaded;
+  std::string detail;
+  const bool available = QFileInfo::exists(environment_path) &&
+    workcell_builder::load_robot_home_from_environment_yaml(environment_path.toStdString(), &loaded, &detail);
+  const bool enabled = available && embedded_product_view_state_ == EmbeddedProductViewState::Ready &&
+    !property("diagnostic_preview_active").toBool() && !product_view_robot_home_save_in_progress_;
+  product_view_robot_home_row_->setVisible(available);
+  product_view_robot_home_loaded_ = available;
+  if (available && !product_view_robot_home_save_in_progress_) {
+    loaded_product_view_robot_home_ = loaded;
+    reset_product_view_robot_home();
+  }
+  for (auto * spin : product_view_robot_home_spins_) spin->setEnabled(enabled);
+  for (auto * button : {product_view_robot_home_current_button_, product_view_robot_home_suggested_button_,
+      product_view_robot_home_reset_button_, product_view_robot_home_apply_button_}) button->setEnabled(enabled);
+  if (!available && !detail.empty()) product_view_robot_home_status_->setText(
+    QStringLiteral("Robot Initial Pose unavailable: %1").arg(QString::fromStdString(detail)));
+  else if (!enabled) product_view_robot_home_status_->setText(
+    QStringLiteral("Robot Initial Pose is disabled while Product View is loading, saving, or showing diagnostics."));
+  else product_view_robot_home_status_->setText(
+    QStringLiteral("Values are displayed in degrees and stored scene-locally in radians."));
+}
+
+void ScenePreviewWidget::reset_product_view_robot_home()
+{
+  if (!product_view_robot_home_loaded_) return;
+  for (int index = 0; index < product_view_robot_home_spins_.size() &&
+      index < static_cast<int>(loaded_product_view_robot_home_.joint_order.size()); ++index) {
+    const auto & name = loaded_product_view_robot_home_.joint_order[static_cast<size_t>(index)];
+    const QSignalBlocker blocker(product_view_robot_home_spins_[index]);
+    product_view_robot_home_spins_[index]->setValue(
+      workcell_builder::robot_home_radians_to_degrees(loaded_product_view_robot_home_.joints.at(name)));
+  }
+}
+
+void ScenePreviewWidget::use_suggested_product_view_robot_home()
+{
+  if (!product_view_robot_home_loaded_) return;
+  for (int index = 0; index < product_view_robot_home_spins_.size() &&
+      index < static_cast<int>(loaded_product_view_robot_home_.joint_order.size()); ++index) {
+    const auto & name = loaded_product_view_robot_home_.joint_order[static_cast<size_t>(index)];
+    product_view_robot_home_spins_[index]->setValue(
+      workcell_builder::robot_home_radians_to_degrees(loaded_product_view_robot_home_.suggested_joints.at(name)));
+  }
+}
+
+void ScenePreviewWidget::apply_product_view_robot_home()
+{
+  if (!product_view_robot_home_loaded_ || product_view_robot_home_save_in_progress_ ||
+      embedded_product_view_state_ != EmbeddedProductViewState::Ready || property("diagnostic_preview_active").toBool()) return;
+  workcell_builder::RobotHomeConfig edited = loaded_product_view_robot_home_;
+  edited.source = "user";
+  for (int index = 0; index < product_view_robot_home_spins_.size() &&
+      index < static_cast<int>(edited.joint_order.size()); ++index) {
+    const double radians = workcell_builder::robot_home_degrees_to_radians(product_view_robot_home_spins_[index]->value());
+    if (!std::isfinite(radians)) {
+      emit studio_issue_requested(QStringLiteral("Robot Initial Pose save blocked: every joint value must be finite."),
+        QStringLiteral("Error"), QStringLiteral("product_view_robot_home_save"));
+      return;
+    }
+    edited.joints[edited.joint_order[static_cast<size_t>(index)]] = radians;
+  }
+  product_view_robot_home_save_in_progress_ = true;
+  refresh_product_view_robot_home_control();
+  const QString environment_path = QDir(preview_context_.absolute_scene_dir).filePath(QStringLiteral("environment.yaml"));
+  const auto result = workcell_builder::save_robot_home_to_environment_yaml(environment_path.toStdString(), edited);
+  product_view_robot_home_save_in_progress_ = false;
+  if (!result.ok) {
+    emit studio_issue_requested(QStringLiteral("Robot Initial Pose save failed for %1: %2")
+      .arg(environment_path, QString::fromStdString(result.detail)), QStringLiteral("Error"),
+      QStringLiteral("product_view_robot_home_save"));
+    refresh_product_view_robot_home_control();
+    return;
+  }
+  loaded_product_view_robot_home_ = edited;
+  product_view_robot_home_status_->setText(QStringLiteral("Initial pose saved; strictly regenerating Product View."));
+  emit studio_log_requested(QStringLiteral("Product View Robot Initial Pose saved to %1; backup: %2. No motion command was sent.")
+    .arg(environment_path, QString::fromStdString(result.backup_path)));
+  request_embedded_web_product_view_refresh(true, QStringLiteral("robot_initial_pose_update"));
 }
 
 void ScenePreviewWidget::refresh_product_view_destination_control()
@@ -1920,6 +2053,7 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
   const bool diagnostic_preview = output.value(QStringLiteral("preview_mode")).toString() == QStringLiteral("diagnostic") &&
     output.value(QStringLiteral("authoring_status")).toString() == QStringLiteral("blocked");
   setProperty("diagnostic_preview_active", diagnostic_preview);
+  refresh_product_view_robot_home_control();
   interaction_mode_selector_->setEnabled(!diagnostic_preview);
   const QJsonArray authoring_blockers = output.value(QStringLiteral("authoring_blockers")).toArray();
   const QString blocker_message = authoring_blockers.isEmpty() ? QString() :

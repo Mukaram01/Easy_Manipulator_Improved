@@ -37,6 +37,7 @@
 #include "workcell_yaml_utils.hpp"
 #include "workcell_warning_once.hpp"
 #include "object_placement_yaml_io.hpp"
+#include "robot_home_yaml_io.hpp"
 
 
 #include <QDesktopServices>
@@ -198,8 +199,8 @@ namespace {
 
 constexpr double kRobotHomePi = 3.14159265358979323846;
 
-double robot_home_deg_to_rad(double deg) { return deg * kRobotHomePi / 180.0; }
-double robot_home_rad_to_deg(double rad) { return rad * 180.0 / kRobotHomePi; }
+double robot_home_deg_to_rad(double deg) { return workcell_builder::robot_home_degrees_to_radians(deg); }
+double robot_home_rad_to_deg(double rad) { return workcell_builder::robot_home_radians_to_degrees(rad); }
 
 std::vector<RobotHomeJoint> default_ur5_robot_home_joints()
 {
