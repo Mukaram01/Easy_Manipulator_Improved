@@ -74,6 +74,26 @@ def test_scene_preview_widget_product_defaults_turn_off_viewport_helpers_and_war
         assert expected in apply_defaults
 
 
+def test_product_view_destination_selector_is_strict_and_explicitly_applied() -> None:
+    source = SCENE_PREVIEW_CPP.read_text()
+    assert 'QStringLiteral("product_view_destination_combo")' in source
+    assert 'QStringLiteral("Apply Destination")' in source
+    refresh = source.split("void ScenePreviewWidget::refresh_product_view_destination_control()", 1)[1]
+    refresh = refresh.split("void ScenePreviewWidget::apply_product_view_destination()", 1)[0]
+    assert "EmbeddedProductViewState::Ready" in refresh
+    assert 'property("diagnostic_preview_active").toBool()' in refresh
+    assert 'task["place"]["target_ref"]' in refresh
+    assert 'zone["target_ref"]' in refresh
+    assert "discover_task_area_destinations" in refresh
+
+    apply = source.split("void ScenePreviewWidget::apply_product_view_destination()", 1)[1]
+    apply = apply.split("void ScenePreviewWidget::", 1)[0]
+    assert "zone->target_ref = destination_id.toStdString();" in apply
+    assert "save_task_zones_to_environment_yaml" in apply
+    assert 'request_embedded_web_product_view_refresh(true, QStringLiteral("destination_rebind"));' in apply
+    assert 'task["place"]["target_ref"]' not in apply
+
+
 def test_inspector_refresh_for_ur5_2f_test_uses_canonical_metadata_and_launch_path() -> None:
     assert UR5_SCENE.is_dir(), "ur5_2f_test fixture scene must exist"
     assert (UR5_SCENE / "cell_definition.yaml").is_file(), "robot metadata source must exist"

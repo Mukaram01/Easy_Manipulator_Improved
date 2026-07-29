@@ -16,6 +16,17 @@ struct PlacedObjectYamlWriteResult
   size_t objects_saved{0};
 };
 
+struct TaskAreaDestination
+{
+  std::string id;
+  std::string display_name;
+};
+
+// Shared by the Task Areas editor and Product View destination selector.
+std::vector<TaskAreaDestination> discover_task_area_destinations(
+  const std::string & environment_yaml_path,
+  std::vector<std::string> * warnings = nullptr);
+
 struct RobotMountConfig
 {
   std::string parent_link{"world"};

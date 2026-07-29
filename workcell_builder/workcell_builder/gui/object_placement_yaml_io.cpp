@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <unordered_set>
@@ -60,6 +61,59 @@ bool check_finite(const std::string & context, double value, std::vector<std::st
   if (warnings) warnings->push_back(context + " has non-finite numeric value");
   return false;
 }
+}
+
+std::vector<TaskAreaDestination> discover_task_area_destinations(
+  const std::string & path, std::vector<std::string> * warnings)
+{
+  std::vector<TaskAreaDestination> result;
+  try {
+    const YAML::Node root = YAML::LoadFile(path);
+    const YAML::Node assets = root["environment"]["assets"];
+    if (!assets || !assets.IsSequence()) return result;
+    auto normalized = [](const YAML::Node & node, const char * key) {
+      std::string value = node[key].as<std::string>("");
+      std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+      });
+      return value;
+    };
+    const auto contains_any = [](const std::string & value, const std::vector<std::string> & tokens) {
+      return std::any_of(tokens.begin(), tokens.end(), [&value](const std::string & token) {
+        return value.find(token) != std::string::npos;
+      });
+    };
+    const std::vector<std::string> destination_tokens{
+      "bin", "tote", "destination_container", "destination container", "container"};
+    const std::vector<std::string> excluded_tokens{
+      "overlay", "helper", "diagnostic", "place_zone", "pick_zone", "robot", "tool",
+      "gripper", "camera", "generated_urdf", "generated urdf"};
+    const std::vector<std::string> excluded_category_tokens{
+      "overlay", "helper", "diagnostic", "robot", "tool", "gripper", "camera",
+      "generated_urdf", "generated urdf"};
+    for (const auto & asset : assets) {
+      const std::string id = asset["id"].as<std::string>("");
+      const std::string type = normalized(asset, "type");
+      const std::string role = normalized(asset, "role");
+      const std::string category = normalized(asset, "category");
+      const std::string source_layer = normalized(asset, "source_layer");
+      const std::string active_visual_source = normalized(asset, "active_visual_source");
+      if (id.empty() || contains_any(source_layer, excluded_tokens) ||
+        contains_any(active_visual_source, excluded_tokens)) continue;
+      const bool semantic_destination = contains_any(type, destination_tokens) ||
+        contains_any(role, destination_tokens) || contains_any(category, destination_tokens);
+      const bool helper_identity = contains_any(type, excluded_tokens) ||
+        contains_any(role, excluded_tokens) || contains_any(category, excluded_category_tokens);
+      if (!semantic_destination || helper_identity) continue;
+      result.push_back({id, asset["display_name"].as<std::string>(asset["name"].as<std::string>(id))});
+    }
+    std::sort(result.begin(), result.end(), [](const auto & lhs, const auto & rhs) {
+      return lhs.display_name == rhs.display_name ? lhs.id < rhs.id : lhs.display_name < rhs.display_name;
+    });
+  } catch (const std::exception & e) {
+    if (warnings) warnings->push_back(std::string("destination discovery failed: ") + e.what());
+  }
+  return result;
 }
 
 std::vector<PlacedObject> load_placed_objects_from_environment_yaml(const std::string & path, std::vector<std::string> * warnings)

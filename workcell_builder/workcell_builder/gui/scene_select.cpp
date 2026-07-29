@@ -3875,46 +3875,12 @@ void SceneSelect::sync_task_area_inspector()
   }
 }
 
-std::vector<SceneSelect::TaskAreaDestination> SceneSelect::task_area_destinations() const
+std::vector<workcell_builder::TaskAreaDestination> SceneSelect::task_area_destinations() const
 {
-  std::vector<TaskAreaDestination> result;
   const fs::path environment = scene_dir_for_current_selection() / "environment.yaml";
-  if (!fs::exists(environment)) return result;
-  YAML::Node root;
-  try { root = YAML::LoadFile(environment.string()); } catch (const YAML::Exception &) { return result; }
-  const YAML::Node assets = root["environment"]["assets"];
-  if (!assets || !assets.IsSequence()) return result;
-  auto normalized = [](const YAML::Node & node, const char * key) {
-    std::string value = node[key].as<std::string>("");
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return value;
-  };
-  const auto contains_any = [](const std::string & value, const std::vector<std::string> & tokens) {
-    for (const auto & token : tokens) if (value.find(token) != std::string::npos) return true;
-    return false;
-  };
-  const std::vector<std::string> destination_tokens{"bin", "tote", "destination_container", "destination container", "container"};
-  const std::vector<std::string> excluded_tokens{"overlay", "helper", "diagnostic", "place_zone", "pick_zone", "robot", "tool", "gripper", "camera", "generated_urdf", "generated urdf"};
-  for (const auto & asset : assets) {
-    const std::string id = asset["id"].as<std::string>("");
-    const std::string type = normalized(asset, "type");
-    const std::string role = normalized(asset, "role");
-    const std::string category = normalized(asset, "category");
-    const std::string source_layer = normalized(asset, "source_layer");
-    const std::string active_visual_source = normalized(asset, "active_visual_source");
-    if (id.empty() || contains_any(source_layer, excluded_tokens) ||
-      contains_any(active_visual_source, excluded_tokens)) continue;
-    const bool semantic_destination = contains_any(type, destination_tokens) ||
-      contains_any(role, destination_tokens) || contains_any(category, destination_tokens);
-    const bool helper_identity = contains_any(type, excluded_tokens) || contains_any(role, excluded_tokens);
-    if (!semantic_destination || helper_identity) continue;
-    std::string display_name = asset["display_name"].as<std::string>(asset["name"].as<std::string>(id));
-    result.push_back({id, display_name});
-  }
-  std::sort(result.begin(), result.end(), [](const auto & lhs, const auto & rhs) {
-    return lhs.display_name < rhs.display_name;
-  });
-  return result;
+  return fs::exists(environment) ?
+    workcell_builder::discover_task_area_destinations(environment.string()) :
+    std::vector<workcell_builder::TaskAreaDestination>{};
 }
 
 bool SceneSelect::is_valid_task_area_destination(const std::string & id) const

@@ -28,6 +28,9 @@
 #include <QSignalBlocker>
 #include <QPushButton>
 #include <functional>
+#include <algorithm>
+#include <yaml-cpp/yaml.h>
+#include "object_placement_yaml_io.hpp"
 
 namespace {
 constexpr double kOverlayFitDominanceRatio = 4.0;
@@ -291,6 +294,33 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   toolbar_status_chip_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
   identity_row->addWidget(toolbar_status_chip_, 0);
   controls->addLayout(identity_row);
+
+  product_view_destination_row_ = new QWidget(controls_header);
+  auto * destination_layout = new QHBoxLayout(product_view_destination_row_);
+  destination_layout->setContentsMargins(0, 0, 0, 0);
+  destination_layout->setSpacing(6);
+  destination_layout->addWidget(new QLabel(QStringLiteral("Destination Bin"), product_view_destination_row_));
+  product_view_destination_combo_ = new QComboBox(product_view_destination_row_);
+  product_view_destination_combo_->setObjectName(QStringLiteral("product_view_destination_combo"));
+  product_view_destination_combo_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+  destination_layout->addWidget(product_view_destination_combo_);
+  product_view_apply_destination_button_ = new QPushButton(QStringLiteral("Apply Destination"), product_view_destination_row_);
+  destination_layout->addWidget(product_view_apply_destination_button_);
+  product_view_destination_status_ = new QLabel(product_view_destination_row_);
+  product_view_destination_status_->setObjectName(QStringLiteral("product_view_destination_status"));
+  destination_layout->addWidget(product_view_destination_status_, 1);
+  product_view_destination_row_->setVisible(false);
+  controls->addWidget(product_view_destination_row_);
+  connect(product_view_apply_destination_button_, &QPushButton::clicked,
+    this, &ScenePreviewWidget::apply_product_view_destination);
+  connect(product_view_destination_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+    this, [this](int) {
+      if (!product_view_apply_destination_button_) return;
+      const bool selectable = !product_view_destination_combo_->currentData().toString().trimmed().isEmpty();
+      product_view_apply_destination_button_->setEnabled(selectable &&
+        embedded_product_view_state_ == EmbeddedProductViewState::Ready &&
+        !property("diagnostic_preview_active").toBool() && !product_view_destination_save_in_progress_);
+    });
 
   auto * backend_controls_row = new QHBoxLayout();
   mesh_preview_mode_label_ = new QLabel("Mesh Preview:", controls_header);
@@ -716,6 +746,7 @@ QString ScenePreviewWidget::embedded_web_prepare_command_for_log(const QString &
 void ScenePreviewWidget::set_embedded_product_view_state(EmbeddedProductViewState state, const QString & detail)
 {
   embedded_product_view_state_ = state;
+  refresh_product_view_destination_control();
   embedded_editor_polling_ = (state == EmbeddedProductViewState::Ready);
   if (state == EmbeddedProductViewState::Failed) embedded_web_last_error_ = detail;
   if (embedded_fit_button_ && state != EmbeddedProductViewState::Failed) {
@@ -733,6 +764,140 @@ void ScenePreviewWidget::set_embedded_product_view_state(EmbeddedProductViewStat
   else if (state == EmbeddedProductViewState::CompatibilityReady) state_text = QStringLiteral("compatibility ready");
   else if (state == EmbeddedProductViewState::Failed) state_text = QStringLiteral("failed");
   emit embedded_product_view_runtime_state_changed(state_text, runtime_preview_has_usable_content());
+}
+
+void ScenePreviewWidget::refresh_product_view_destination_control()
+{
+  if (!product_view_destination_row_) return;
+  const bool strict_ready = embedded_product_view_state_ == EmbeddedProductViewState::Ready &&
+    !property("diagnostic_preview_active").toBool() && !product_view_destination_save_in_progress_;
+  const QString environment_path = QDir(preview_context_.absolute_scene_dir).filePath(QStringLiteral("environment.yaml"));
+  active_product_view_place_zone_id_.clear();
+  QString current_destination;
+  bool editable_pick_place = false;
+  try {
+    const YAML::Node root = YAML::LoadFile(environment_path.toStdString());
+    const YAML::Node task = root["task"];
+    const std::string task_kind = task["type"].as<std::string>(task["template"].as<std::string>(""));
+    editable_pick_place = task_kind == "pick_place";
+    std::string place_zone_id = task["place"]["target_ref"].as<std::string>("");
+    if (place_zone_id.empty()) {
+      const YAML::Node rules = task["rules"];
+      if (rules && rules.IsSequence()) {
+        for (const auto & rule : rules) {
+          const YAML::Node when = rule["when"];
+          if (when && (when["always"].as<bool>(false) || when["default"].as<bool>(false))) {
+            place_zone_id = rule["destination"].as<std::string>("");
+            if (!place_zone_id.empty()) break;
+          }
+        }
+      }
+    }
+    const YAML::Node zones = root["task_zones"];
+    if (zones && zones.IsSequence()) {
+      for (const auto & zone : zones) {
+        const std::string id = zone["id"].as<std::string>("");
+        const std::string role = zone["role"].as<std::string>(zone["type"].as<std::string>(""));
+        if (id == place_zone_id && (role == "place" || role == "place_zone")) {
+          active_product_view_place_zone_id_ = QString::fromStdString(id);
+          current_destination = QString::fromStdString(zone["target_ref"].as<std::string>(""));
+          break;
+        }
+      }
+    }
+  } catch (const std::exception & e) {
+    if (product_view_destination_status_) {
+      product_view_destination_status_->setText(QStringLiteral("Destination unavailable: %1").arg(e.what()));
+    }
+  }
+
+  const bool resolved = editable_pick_place && !active_product_view_place_zone_id_.isEmpty();
+  product_view_destination_row_->setVisible(strict_ready && resolved);
+  if (!resolved) {
+    if (product_view_destination_combo_) product_view_destination_combo_->setEnabled(false);
+    if (product_view_apply_destination_button_) product_view_apply_destination_button_->setEnabled(false);
+    return;
+  }
+
+  const QSignalBlocker blocker(product_view_destination_combo_);
+  product_view_destination_combo_->clear();
+  const auto candidates = workcell_builder::discover_task_area_destinations(environment_path.toStdString());
+  for (const auto & candidate : candidates) {
+    product_view_destination_combo_->addItem(
+      QString::fromStdString(candidate.display_name), QString::fromStdString(candidate.id));
+  }
+  const int current_index = product_view_destination_combo_->findData(current_destination);
+  if (current_index >= 0) {
+    product_view_destination_combo_->setCurrentIndex(current_index);
+    product_view_destination_status_->setText(QStringLiteral("Current destination: %1").arg(current_destination));
+  } else {
+    product_view_destination_combo_->insertItem(0, QStringLiteral("Missing destination: %1").arg(
+      current_destination.isEmpty() ? QStringLiteral("<none>") : current_destination), QVariant());
+    product_view_destination_combo_->setCurrentIndex(0);
+    product_view_destination_status_->setText(QStringLiteral("Missing destination: %1").arg(
+      current_destination.isEmpty() ? QStringLiteral("<none>") : current_destination));
+  }
+  product_view_destination_combo_->setEnabled(strict_ready);
+  product_view_apply_destination_button_->setEnabled(strict_ready && current_index >= 0);
+}
+
+void ScenePreviewWidget::apply_product_view_destination()
+{
+  if (product_view_destination_save_in_progress_ || !product_view_destination_combo_ ||
+    active_product_view_place_zone_id_.isEmpty()) return;
+  const QString destination_id = product_view_destination_combo_->currentData().toString().trimmed();
+  const QString environment_path = QDir(preview_context_.absolute_scene_dir).filePath(QStringLiteral("environment.yaml"));
+  const auto candidates = workcell_builder::discover_task_area_destinations(environment_path.toStdString());
+  const bool valid_destination = std::any_of(candidates.begin(), candidates.end(), [&destination_id](const auto & candidate) {
+    return QString::fromStdString(candidate.id) == destination_id;
+  });
+  if (!valid_destination) {
+    product_view_destination_status_->setText(QStringLiteral("Missing destination: selection is not a valid physical bin."));
+    emit studio_issue_requested(product_view_destination_status_->text(), QStringLiteral("Error"),
+      QStringLiteral("product_view_destination_invalid"));
+    return;
+  }
+
+  product_view_destination_save_in_progress_ = true;
+  product_view_destination_combo_->setEnabled(false);
+  product_view_apply_destination_button_->setEnabled(false);
+  std::vector<std::string> warnings;
+  auto zones = workcell_builder::load_task_zones_from_environment_yaml(environment_path.toStdString(), &warnings);
+  const std::string place_zone_id = active_product_view_place_zone_id_.toStdString();
+  auto zone = std::find_if(zones.begin(), zones.end(), [&place_zone_id](const auto & candidate) {
+    return candidate.id == place_zone_id && (candidate.role == "place" || candidate.type == "place_zone");
+  });
+  if (zone == zones.end()) {
+    product_view_destination_save_in_progress_ = false;
+    product_view_destination_status_->setText(QStringLiteral("Save failed: active place zone could not be resolved in %1").arg(environment_path));
+    emit studio_issue_requested(product_view_destination_status_->text(), QStringLiteral("Error"),
+      QStringLiteral("product_view_destination_save"));
+    refresh_product_view_destination_control();
+    return;
+  }
+  zone->target_ref = destination_id.toStdString();
+  const QString backup_path = environment_path + QStringLiteral(".task_areas.") +
+    QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMddHHmmss")) + QStringLiteral(".bak");
+  bool backup_ok = false;
+  if (QFile::exists(backup_path)) QFile::remove(backup_path);
+  backup_ok = QFile::copy(environment_path, backup_path);
+  if (!backup_ok) warnings.push_back("backup failed for " + backup_path.toStdString());
+  const auto saved = backup_ok ? workcell_builder::save_task_zones_to_environment_yaml(
+    environment_path.toStdString(), zones) : workcell_builder::PlacedObjectYamlWriteResult{};
+  product_view_destination_save_in_progress_ = false;
+  if (!saved.ok) {
+    const QString detail = warnings.empty() && saved.warnings.empty() ? QStringLiteral("unknown filesystem error") :
+      QString::fromStdString(!saved.warnings.empty() ? saved.warnings.front() : warnings.front());
+    product_view_destination_status_->setText(QStringLiteral("Save failed for %1: %2").arg(environment_path, detail));
+    emit studio_issue_requested(product_view_destination_status_->text(), QStringLiteral("Error"),
+      QStringLiteral("product_view_destination_save"));
+    refresh_product_view_destination_control();
+    return;
+  }
+  product_view_destination_status_->setText(QStringLiteral("Destination rebound to %1; refreshing Product View.").arg(destination_id));
+  emit studio_log_requested(QStringLiteral("Product View destination rebound: place zone %1 -> %2; backup: %3")
+    .arg(active_product_view_place_zone_id_, destination_id, backup_path));
+  request_embedded_web_product_view_refresh(true, QStringLiteral("destination_rebind"));
 }
 
 void ScenePreviewWidget::start_embedded_web_server_probes(

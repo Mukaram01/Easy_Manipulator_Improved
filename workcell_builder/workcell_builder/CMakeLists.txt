@@ -380,7 +380,9 @@ if(BUILD_TESTING)
     test/scene_preview_widget_ui_test.cpp
     gui/scene_preview_widget.cpp
     gui/scene3d_viewport_widget.cpp
-    gui/scene3d_visual_classification.cpp)
+    gui/scene3d_visual_classification.cpp
+    gui/object_placement_yaml_io.cpp
+    src_object_placement_model.cpp)
   ament_add_gtest(workcell_studio_canvas_model_mesh_test
     test/workcell_studio_canvas_model_mesh_test.cpp
     src_workcell_studio_canvas_model.cpp
@@ -412,7 +414,7 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_mainwindow_rviz_preview_compile_test
     test/mainwindow_rviz_preview_compile_test.cpp)
   if(TARGET workcell_scene_preview_widget_ui_test)
-    target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Widgets Qt5::OpenGL Qt5::Network OpenGL::GL)
+    target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Widgets Qt5::OpenGL Qt5::Network OpenGL::GL yaml-cpp)
     if(Qt5WebEngineWidgets_FOUND)
       target_compile_definitions(workcell_scene_preview_widget_ui_test PRIVATE WORKCELL_BUILDER_HAS_WEBENGINE=1)
       target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::WebEngineWidgets)

@@ -4,6 +4,7 @@ REPO = Path(__file__).resolve().parents[1]
 SCENE_SELECT_CPP = REPO / "workcell_builder/workcell_builder/gui/scene_select.cpp"
 SCENE_SELECT_H = REPO / "workcell_builder/workcell_builder/gui/scene_select.h"
 YAML_IO_CPP = REPO / "workcell_builder/workcell_builder/gui/object_placement_yaml_io.cpp"
+YAML_IO_H = REPO / "workcell_builder/workcell_builder/include/object_placement_yaml_io.hpp"
 MODEL_H = REPO / "workcell_builder/workcell_builder/include/object_placement_model.hpp"
 
 
@@ -82,15 +83,17 @@ def test_no_web3d_or_generated_bundle_paths_touched_by_task_area_editor():
 def test_place_area_uses_validated_destination_selector():
     cpp = SCENE_SELECT_CPP.read_text(encoding="utf-8")
     header = SCENE_SELECT_H.read_text(encoding="utf-8")
+    discovery = YAML_IO_CPP.read_text(encoding="utf-8")
     assert 'setObjectName("task_area_destination_combo")' in cpp
     assert 'setObjectName("task_area_association_edit")' in cpp
     assert "association->setVisible(is_pick)" in cpp
     assert "combo->setVisible(!is_pick)" in cpp
     assert "task_area_destinations() const" in header
+    assert "discover_task_area_destinations(environment.string())" in cpp
     for semantic in ['"bin"', '"tote"', '"destination_container"', '"container"']:
-        assert semantic in cpp
+        assert semantic in discovery
     for excluded in ['"overlay"', '"helper"', '"robot"', '"tool"', '"camera"', '"generated_urdf"']:
-        assert excluded in cpp
+        assert excluded in discovery
     assert 'combo->addItem(QString::fromStdString(candidate.display_name), QString::fromStdString(candidate.id))' in cpp
 
 
