@@ -469,7 +469,12 @@ private:
       const QString reported_scene = state.value(QStringLiteral("sceneId")).toString();
       const QString url_scene = sceneIdFromViewerUrl(poll_url);
       const bool matching_scene = !url_scene.isEmpty() && reported_scene == url_scene;
-      if (save_button_) save_button_->setEnabled(ready && dirty && valid_dirty_transforms && matching_scene);
+      const bool diagnostic_preview = preview_ && preview_->property("diagnostic_preview_active").toBool();
+      if (save_button_) {
+        save_button_->setEnabled(ready && dirty && valid_dirty_transforms && matching_scene && !diagnostic_preview);
+        if (diagnostic_preview) save_button_->setToolTip(QStringLiteral(
+          "Save Layout is disabled for a diagnostic preview. Fix scene authoring blockers first."));
+      }
       if (dirty_label_) {
         const int dirty_count = state.value(QStringLiteral("dirtyCount")).toInt();
         dirty_label_->setText(dirty && matching_scene ?

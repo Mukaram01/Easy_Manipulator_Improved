@@ -178,6 +178,15 @@ def test_cpp_coalesces_before_generation_and_retires_stale_process_before_ui_wor
     assert stale < prepare.index("const QString scene = identity.scene_id;")
 
 
+def test_product_view_retries_diagnostic_only_for_destination_authoring_blockers():
+    assert 'args << "--allow-incomplete-preview"' in CPP
+    assert 'diagnostic.stderr_tail.contains("environment.yaml:")' in CPP
+    assert 'diagnostic.stderr_tail.contains("relationship")' in CPP
+    assert "if (!diagnostic.diagnostic_preview && destination_authoring_blocker" in CPP
+    assert "Diagnostic preview — scene authoring incomplete" in CPP
+    assert 'setProperty("diagnostic_preview_active", diagnostic_preview)' in CPP
+
+
 def test_selected_scene_status_refreshes_leave_the_committed_product_payload_identity_unchanged():
     """Status/audit work must not create another Web3D payload preparation."""
 

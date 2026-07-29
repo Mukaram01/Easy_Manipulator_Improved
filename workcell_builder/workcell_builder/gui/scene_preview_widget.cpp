@@ -1409,7 +1409,7 @@ void ScenePreviewWidget::emit_backend_startup_diagnostic_once()
 #endif
 }
 
-void ScenePreviewWidget::start_embedded_web_prepare(const EmbeddedWebRequestIdentity & identity, bool force)
+void ScenePreviewWidget::start_embedded_web_prepare(const EmbeddedWebRequestIdentity & identity, bool force, bool diagnostic_preview)
 {
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
   Q_UNUSED(identity); Q_UNUSED(force);
@@ -1453,6 +1453,7 @@ void ScenePreviewWidget::start_embedded_web_prepare(const EmbeddedWebRequestIden
   embedded_web_prepare_process_->setProgram(QStringLiteral("python3"));
   QStringList args{"scripts/ensure_workcell_studio_web_scene_fresh.py", "--scene", selected_scene_dir, "--output", embedded_web_prepare_output_path_, "--stage-assets"};
   if (force) args << "--force";
+  if (diagnostic_preview) args << "--allow-incomplete-preview";
   embedded_web_prepare_process_->setArguments(args);
   embedded_web_prepare_process_->setWorkingDirectory(repo_root);
   embedded_web_prepare_process_->setProcessEnvironment(QProcessEnvironment::systemEnvironment());
@@ -1463,6 +1464,7 @@ void ScenePreviewWidget::start_embedded_web_prepare(const EmbeddedWebRequestIden
   diagnostic.identity = identity;
   diagnostic.expected_output_path = embedded_web_prepare_output_path_;
   diagnostic.expected_output_absolute_path = QDir(repo_root).filePath(diagnostic.expected_output_path);
+  diagnostic.diagnostic_preview = diagnostic_preview;
   embedded_web_preparation_diagnostics_.insert(diagnostic_key, diagnostic);
   embedded_web_preparation_process_keys_.insert(process, diagnostic_key);
   embedded_web_prepare_started_at_ = QDateTime::currentDateTimeUtc();
@@ -1566,6 +1568,17 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
   };
 
   if (exit_status != QProcess::NormalExit || exit_code != 0) {
+    const bool destination_authoring_blocker =
+      diagnostic.stderr_tail.contains("environment.yaml:") &&
+      diagnostic.stderr_tail.contains("relationship") &&
+      (diagnostic.stderr_tail.contains("unresolved ID") || diagnostic.stderr_tail.contains("ambiguous applicable destinations"));
+    if (!diagnostic.diagnostic_preview && destination_authoring_blocker && embedded_web_identity_is_current(identity)) {
+      record_embedded_web_prepare_terminal(identity, process, QStringLiteral("strict_authoring_blocked"), exit_status, exit_code,
+        QStringLiteral("strict preparation rejected an unresolved destination chain; starting diagnostic preview"));
+      emit studio_log_requested(QStringLiteral("Strict Product View preparation blocked by scene authoring for %1; retrying read-only diagnostic preview.").arg(scene));
+      start_embedded_web_prepare(identity, true, true);
+      return;
+    }
     reject_prepare(QStringLiteral("prepare command failed with exit code %1; old output is rejected even if present").arg(exit_code));
     return;
   }
@@ -1610,6 +1623,26 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
   if (web_schema != QStringLiteral("workcell_studio_web_scene/v1") || output_scene != scene) {
     reject_prepare(QStringLiteral("prepared output semantic validation failed for scene %1").arg(scene));
     return;
+  }
+
+  const bool was_diagnostic_preview = property("diagnostic_preview_active").toBool();
+  const bool diagnostic_preview = output.value(QStringLiteral("preview_mode")).toString() == QStringLiteral("diagnostic") &&
+    output.value(QStringLiteral("authoring_status")).toString() == QStringLiteral("blocked");
+  setProperty("diagnostic_preview_active", diagnostic_preview);
+  interaction_mode_selector_->setEnabled(!diagnostic_preview);
+  const QJsonArray authoring_blockers = output.value(QStringLiteral("authoring_blockers")).toArray();
+  const QString blocker_message = authoring_blockers.isEmpty() ? QString() :
+    authoring_blockers.at(0).toObject().value(QStringLiteral("message")).toString();
+  if (diagnostic_preview) {
+    const QString explanation = QStringLiteral("Diagnostic preview — scene authoring incomplete\nScene: %1\n%2").arg(scene, blocker_message);
+    toolbar_feedback_label_->setText(explanation);
+    toolbar_feedback_label_->setToolTip(QStringLiteral("Save Layout and execution actions are disabled. Fix scene authoring blockers first: %1").arg(blocker_message));
+    toolbar_feedback_row_->setVisible(true);
+    emit studio_issue_requested(explanation, QStringLiteral("Warning"), QStringLiteral("diagnostic_product_view"));
+  } else if (was_diagnostic_preview) {
+    toolbar_feedback_row_->setVisible(false);
+    toolbar_feedback_label_->clear();
+    toolbar_feedback_label_->setToolTip(QString());
   }
 
   record_embedded_web_prepare_terminal(identity, process, QStringLiteral("success"), exit_status, exit_code);

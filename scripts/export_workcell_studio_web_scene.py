@@ -2690,11 +2690,46 @@ def _apply_render_ownership_contract(payload: Json, *, expanded_urdf_active: boo
         counters["expanded_assembly_owned_physical_visuals"] = 2
     payload["render_ownership_summary"] = counters | {"duplicate_primary_identities": 0, "unknown_physical_owners": 0}
 
-def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path: Optional[Path] = None) -> Json:
+def _destination_blocker(exc: BlockingExportError) -> Json:
+    """Translate a destination-chain failure into stable diagnostic metadata."""
+    message = str(exc)
+    source, _, detail = message.partition(": ")
+    relationship = "destination chain"
+    marker = "relationship "
+    if marker in detail:
+        relationship = detail.split(marker, 1)[1].split(" failed", 1)[0].split(" must ", 1)[0]
+    unresolved_id = "<active destination>"
+    match = re.search(r"unresolved ID (?:'([^']+)'|\"([^\"]+)\")", detail)
+    if match:
+        unresolved_id = next(value for value in match.groups() if value is not None)
+    return {
+        "source": source or "environment.yaml",
+        "relationship": relationship,
+        "unresolved_id": unresolved_id,
+        "message": message,
+    }
+
+
+def build_web_scene(
+    scene_dir: Path,
+    *,
+    stage_assets: bool = False,
+    output_path: Optional[Path] = None,
+    allow_incomplete_preview: bool = False,
+) -> Json:
     scene_dir = scene_dir.resolve()
     warnings: List[Json] = []
     data = _load_inputs(scene_dir, warnings)
-    _normalise_active_place_zone(data)
+    authoring_blockers: List[Json] = []
+    try:
+        _normalise_active_place_zone(data)
+    except BlockingExportError as exc:
+        if not allow_incomplete_preview:
+            raise
+        # Destination resolution only enriches the derived place-zone overlay.
+        # Physical authored and generated visuals remain independent and are
+        # exported without guessing a destination or transform.
+        authoring_blockers.append(_destination_blocker(exc))
 
     manifest = _as_map(data.get("scene_manifest"))
     scene_meta = _as_map(manifest.get("scene"))
@@ -2775,6 +2810,27 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
             },
         ],
     }
+    if authoring_blockers:
+        output.update({
+            "authoring_status": "blocked",
+            "preview_mode": "diagnostic",
+            "authoring_blockers": authoring_blockers,
+        })
+        # Diagnostic preview is deliberately read-only and cannot advertise an
+        # execution path while canonical authoring relationships are invalid.
+        for section in RENDERABLE_OUTPUT_SECTIONS:
+            for item in output[section]:
+                item["editable"] = False
+                item["locked"] = True
+        for action in output["backend_actions"]:
+            if action.get("id") != "validate":
+                action["enabled"] = False
+                action["disabled_reason"] = "Fix scene authoring blockers before generation or execution."
+        output["authoring_actions"] = {
+            "save_layout_enabled": False,
+            "execution_enabled": False,
+            "disabled_reason": "Fix scene authoring blockers before saving layout or executing actions.",
+        }
     output["_visual_mesh_index_source"] = _as_map(data.get("visual_mesh_index"))
     if stage_assets:
         _stage_visual_meshes(output, scene_dir, output_path or Path("build/workcell_studio_web_scene/scene.web_scene.json"))
@@ -2798,6 +2854,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--output", required=True, help="Output JSON path, typically under build/")
     parser.add_argument("--stage-assets", dest="stage_assets", action="store_true", default=True, help="Copy resolvable mesh assets into build/workcell_studio_web_scene/assets/<scene_id> and rewrite mesh_uri for browser loading. Enabled by default.")
     parser.add_argument("--no-stage-assets", dest="stage_assets", action="store_false", help="Disable mesh asset staging and leave mesh URI fields unchanged.")
+    parser.add_argument("--allow-incomplete-preview", action="store_true", help="Export a read-only diagnostic preview when the authored destination chain is unresolved.")
     args = parser.parse_args(argv)
 
     scene_dir = Path(args.scene)
@@ -2807,7 +2864,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
 
     try:
-        payload = build_web_scene(scene_dir, stage_assets=args.stage_assets, output_path=output_path)
+        payload = build_web_scene(scene_dir, stage_assets=args.stage_assets, output_path=output_path,
+                                  allow_incomplete_preview=args.allow_incomplete_preview)
     except BlockingExportError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 3
