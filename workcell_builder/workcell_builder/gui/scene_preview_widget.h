@@ -412,6 +412,10 @@ private:
   void refresh_embedded_web_product_view();
   void request_embedded_web_product_view_refresh(bool force = false, const QString & origin = QStringLiteral("automatic"));
   void cancel_embedded_web_lifecycle(bool stop_owned_server);
+  void invalidate_embedded_web_scene_handoff(const QString & scene_id);
+  void show_embedded_web_loading_document(const QString & scene_id);
+  void show_embedded_web_preparation_failure(const EmbeddedWebRequestIdentity & identity, const QString & detail);
+  void clear_embedded_editor_state_for_scene_handoff();
   void retire_embedded_web_navigation_for_handoff();
   void maybe_start_next_embedded_web_prepare();
   EmbeddedWebRequestIdentity embedded_web_request_identity(quint64 generation) const;
@@ -436,7 +440,8 @@ private:
     const QString & detail);
   void load_prepared_embedded_web_scene(const EmbeddedWebRequestIdentity & identity);
   void start_embedded_web_readiness_polling(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token, const QString & expected_json_path, const QString & viewer_url);
-  void poll_embedded_web_readiness(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token, const QString & expected_json_path, const QString & viewer_url);
+  void poll_embedded_web_readiness(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token,
+    quint64 readiness_token, const QString & expected_json_path, const QString & viewer_url);
   void set_embedded_product_view_state(EmbeddedProductViewState state, const QString & detail = QString());
   void activate_native_compatibility_preview(const QString & reason);
   bool native_compatibility_viewport_has_usable_content() const;
@@ -513,6 +518,9 @@ private:
   EmbeddedWebRequestIdentity embedded_web_prepared_identity_;
   quint64 embedded_web_navigation_token_{ 0 };
   quint64 embedded_web_loading_navigation_token_{ 0 };
+  quint64 embedded_web_readiness_token_{ 0 };
+  quint64 embedded_web_browser_load_token_{ 0 };
+  quint64 embedded_web_loading_browser_load_token_{ 0 };
   QUrl embedded_web_expected_viewer_url_;
   bool embedded_web_server_is_owned_{ false };
   bool embedded_web_has_active_identity_{ false };

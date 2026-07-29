@@ -419,3 +419,85 @@ def test_cpp_counts_effective_preparation_starts_not_incomplete_context_requests
 
     assert "++embedded_web_preparation_request_count_" not in refresh_wrapper
     assert "++embedded_web_preparation_request_count_" in prepare
+
+
+def test_scene_identity_handoff_failure_late_readiness_and_return_to_original_scene():
+    """A failed replacement scene must never reveal or revive the old surface."""
+
+    class ProductSurface:
+        def __init__(self):
+            self.generation = 0
+            self.scene = ""
+            self.committed = None
+            self.presentation = None
+            self.ready = False
+
+        def select(self, scene):
+            self.generation += 1
+            self.scene = scene
+            self.committed = None
+            self.ready = False
+            self.presentation = ("loading", scene)
+            return scene, self.generation
+
+        def preparation_failed(self, request, error):
+            if request != (self.scene, self.generation):
+                return "stale_ignored"
+            self.presentation = ("failure", self.scene, error, "Retry")
+            return "failed"
+
+        def readiness(self, request):
+            if request != (self.scene, self.generation):
+                return "stale_ignored"
+            self.committed = self.scene
+            self.presentation = ("ready", self.scene)
+            self.ready = True
+            return "ready"
+
+    surface = ProductSurface()
+    old_ur5 = surface.select("ur5_2f_test")
+    assert surface.readiness(old_ur5) == "ready"
+
+    failing_suction = surface.select("suction_test")
+    assert surface.committed is None
+    assert surface.presentation == ("loading", "suction_test")
+    assert surface.preparation_failed(failing_suction, "missing authored environment") == "failed"
+    assert surface.presentation == (
+        "failure", "suction_test", "missing authored environment", "Retry"
+    )
+
+    assert surface.readiness(old_ur5) == "stale_ignored"
+    assert surface.scene == "suction_test"
+    assert surface.ready is False
+
+    new_ur5 = surface.select("ur5_2f_test")
+    assert new_ur5 != old_ur5
+    assert surface.readiness(new_ur5) == "ready"
+    assert surface.presentation == ("ready", "ur5_2f_test")
+
+
+def test_cpp_scene_handoff_invalidates_every_async_surface_and_renders_scene_documents():
+    handoff_start = CPP.index("void ScenePreviewWidget::invalidate_embedded_web_scene_handoff")
+    handoff_end = CPP.index("void ScenePreviewWidget::cancel_embedded_web_lifecycle", handoff_start)
+    handoff = CPP[handoff_start:handoff_end]
+    context_start = CPP.index("void ScenePreviewWidget::set_preview_context")
+    context_end = CPP.index("ScenePreviewWidget::PreviewContext ScenePreviewWidget::preview_context", context_start)
+    context = CPP[context_start:context_end]
+
+    assert "scene_identity_changed" in context
+    assert "invalidate_embedded_web_scene_handoff(normalized.scene_id)" in context
+    assert "cancel_embedded_web_lifecycle(false)" in handoff
+    assert "++embedded_web_readiness_token_" in handoff
+    assert "++embedded_web_browser_load_token_" in handoff
+    assert "embedded_web_server_probe_ = EmbeddedWebServerProbe{}" in handoff
+    assert "embedded_web_has_committed_surface_ = false" in handoff
+    assert "clear_embedded_editor_state_for_scene_handoff()" in handoff
+    assert "show_embedded_web_loading_document(scene_id)" in handoff
+
+    assert "Loading Product View" in CPP
+    assert "Product View preparation failed" in CPP
+    assert "Correct the scene-authoring blockers" in CPP
+    assert "workcell-retry://%1" in CPP
+    assert "identity.scene_id == selected_scene" in CPP
+    assert "readiness_token != embedded_web_readiness_token_" in CPP
+    assert "browser_load_token != embedded_web_browser_load_token_" in CPP
