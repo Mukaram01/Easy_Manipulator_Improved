@@ -330,6 +330,8 @@ private:
   void refresh_toolbar_visibility();
   void refresh_toolbar_status_chip();
   void refresh_toolbar_feedback_row();
+  void refresh_product_view_destination_control();
+  void apply_product_view_destination();
   enum class EmbeddedProductViewState {
     Idle,
     Preparing,
@@ -461,6 +463,12 @@ private:
   bool task_is_ready() const;
 
   QComboBox * mode_selector_{ nullptr };
+  QWidget * product_view_destination_row_{ nullptr };
+  QComboBox * product_view_destination_combo_{ nullptr };
+  QPushButton * product_view_apply_destination_button_{ nullptr };
+  QLabel * product_view_destination_status_{ nullptr };
+  QString active_product_view_place_zone_id_;
+  bool product_view_destination_save_in_progress_{ false };
   QComboBox * interaction_mode_selector_{ nullptr };
   QComboBox * view_actions_selector_{ nullptr };
   QLabel * view_mode_label_{ nullptr };
