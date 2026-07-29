@@ -226,6 +226,13 @@ private:
   void load_task_areas_for_selected_scene();
   void refresh_task_area_canvas_items();
   void sync_task_area_inspector();
+  struct TaskAreaDestination
+  {
+    std::string id;
+    std::string display_name;
+  };
+  std::vector<TaskAreaDestination> task_area_destinations() const;
+  bool is_valid_task_area_destination(const std::string & id) const;
   void mark_task_areas_dirty(const QString & reason);
   bool save_task_areas_to_scene(const boost::filesystem::path & scene_dir, std::string * reason);
   bool validate_task_areas_for_save(std::vector<std::string> * errors, std::vector<std::string> * warnings) const;

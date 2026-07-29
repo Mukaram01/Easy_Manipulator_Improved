@@ -401,8 +401,10 @@ PlacedObjectYamlWriteResult save_task_zones_to_environment_yaml(const std::strin
         if (!z.object_ref.empty()) root["task"]["pick"]["object_ref"] = z.object_ref;
       }
       if (is_place) {
-        root["task"]["place"]["target_ref"] = z.id;
-        root["task"]["place"]["intent_target_ref"] = z.id;
+        // task.place.target_ref selects the place zone; zone.target_ref selects its physical bin.
+        // Preserve an existing active-zone selection when only the bin association changes.
+        if (!root["task"]["place"]["target_ref"]) root["task"]["place"]["target_ref"] = z.id;
+        if (!root["task"]["place"]["intent_target_ref"]) root["task"]["place"]["intent_target_ref"] = z.id;
       }
     }
     std::ofstream out(path);

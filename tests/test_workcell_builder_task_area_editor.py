@@ -64,7 +64,7 @@ def test_task_area_save_validation_and_backup_tokens_present():
         "duplicate Pick Area ID",
         "duplicate Place Area ID",
         "unresolved Pick Object association",
-        "unresolved Destination Bin association",
+        "Missing destination:",
         "may be outside support surface",
         "Pick and Place Areas may be overlapping",
         ".task_areas.",
@@ -77,3 +77,42 @@ def test_no_web3d_or_generated_bundle_paths_touched_by_task_area_editor():
     changed_scope = "\n".join(p.name for p in [SCENE_SELECT_CPP, SCENE_SELECT_H, YAML_IO_CPP, MODEL_H])
     assert "workcell_studio_web" not in changed_scope
     assert "generated" not in changed_scope
+
+
+def test_place_area_uses_validated_destination_selector():
+    cpp = SCENE_SELECT_CPP.read_text(encoding="utf-8")
+    header = SCENE_SELECT_H.read_text(encoding="utf-8")
+    assert 'setObjectName("task_area_destination_combo")' in cpp
+    assert 'setObjectName("task_area_association_edit")' in cpp
+    assert "association->setVisible(is_pick)" in cpp
+    assert "combo->setVisible(!is_pick)" in cpp
+    assert "task_area_destinations() const" in header
+    for semantic in ['"bin"', '"tote"', '"destination_container"', '"container"']:
+        assert semantic in cpp
+    for excluded in ['"overlay"', '"helper"', '"robot"', '"tool"', '"camera"', '"generated_urdf"']:
+        assert excluded in cpp
+    assert 'combo->addItem(QString::fromStdString(candidate.display_name), QString::fromStdString(candidate.id))' in cpp
+
+
+def test_destination_selection_updates_only_place_zone_stable_id():
+    cpp = SCENE_SELECT_CPP.read_text(encoding="utf-8")
+    yaml_io = YAML_IO_CPP.read_text(encoding="utf-8")
+    selection_handler = cpp.split("QComboBox::activated", 1)[1].split("});", 1)[0]
+    assert "area.target_ref = destination_id" in selection_handler
+    assert 'mark_task_areas_dirty("Destination Bin")' in selection_handler
+    assert "task_editor_state_.place_target" not in selection_handler
+    assert 'if (!root["task"]["place"]["target_ref"])' in yaml_io
+    assert "zone.target_ref selects its physical bin" in yaml_io
+
+
+def test_missing_destination_is_visible_and_blocks_save():
+    cpp = SCENE_SELECT_CPP.read_text(encoding="utf-8")
+    assert '"Missing destination: " + a.target_ref' in cpp
+    assert "!is_valid_task_area_destination(z.target_ref)" in cpp
+    assert 'errors->push_back("Missing destination: "' in cpp
+
+
+def test_pick_area_free_text_association_is_unchanged():
+    cpp = SCENE_SELECT_CPP.read_text(encoding="utf-8")
+    assert 'if (a.role == "pick") a.object_ref = assoc->text().trimmed().toStdString();' in cpp
+    assert 'set_text("task_area_association_edit", QString::fromStdString(a.object_ref))' in cpp
