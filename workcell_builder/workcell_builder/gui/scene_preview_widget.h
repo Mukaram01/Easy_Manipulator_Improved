@@ -395,6 +395,7 @@ private:
     QByteArray stderr_tail;
     bool started{ false };
     bool terminal_recorded{ false };
+    bool diagnostic_preview{ false };
     QString terminal_outcome;
   };
   struct EmbeddedWebServerProbe
@@ -420,7 +421,7 @@ private:
   void maybe_start_next_embedded_web_prepare();
   EmbeddedWebRequestIdentity embedded_web_request_identity(quint64 generation) const;
   bool embedded_web_identity_is_current(const EmbeddedWebRequestIdentity & identity) const;
-  void start_embedded_web_prepare(const EmbeddedWebRequestIdentity & identity, bool force);
+  void start_embedded_web_prepare(const EmbeddedWebRequestIdentity & identity, bool force, bool diagnostic_preview = false);
   void on_embedded_web_prepare_finished(const EmbeddedWebRequestIdentity & identity, QProcess * process, int exit_code, QProcess::ExitStatus exit_status);
   void append_embedded_web_prepare_output(QProcess * process, bool standard_error);
   void record_embedded_web_prepare_terminal(const EmbeddedWebRequestIdentity & identity, QProcess * process,

@@ -16,6 +16,45 @@ exporter = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(exporter)
 
 
+@pytest.mark.parametrize("scene_id", ["suction_test", "ur5_3f_test"])
+def test_incomplete_destination_scenes_are_strictly_rejected_but_have_read_only_diagnostic_previews(tmp_path, scene_id):
+    scene = ROOT / "scenes" / scene_id
+    strict_output = tmp_path / f"{scene_id}.strict.json"
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--scene", str(scene), "--output", str(strict_output), "--no-stage-assets"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 3
+    assert not strict_output.exists()
+    assert "relationship" in result.stderr
+
+    payload = exporter.build_web_scene(scene, allow_incomplete_preview=True)
+    assert payload["scene_id"] == scene_id
+    assert payload["authoring_status"] == "blocked"
+    assert payload["preview_mode"] == "diagnostic"
+    assert payload["authoring_blockers"]
+    assert set(payload["authoring_blockers"][0]) == {"source", "relationship", "unresolved_id", "message"}
+    assert payload["robots"]
+    assert payload["tools"]
+    assert not any(
+        "derived_place" in str(item.get("source_kind", "")) or item.get("derived_from_destination")
+        for item in payload["zones"]
+    )
+    blocker_id = payload["authoring_blockers"][0]["unresolved_id"]
+    assert not any(item.get("id") == blocker_id for item in payload["assets"])
+    assert payload["authoring_actions"]["save_layout_enabled"] is False
+    assert all(not item.get("editable", False) for section in exporter.RENDERABLE_OUTPUT_SECTIONS for item in payload[section])
+
+
+def test_valid_scene_remains_strict_and_editable_without_diagnostic_metadata():
+    payload = exporter.build_web_scene(ROOT / "scenes" / "ur5_2f_test")
+    assert "authoring_status" not in payload
+    assert "preview_mode" not in payload
+    assert any(item.get("editable") for item in payload["assets"])
+
+
 def test_robot_preview_extraction_keeps_robot_subtree_and_excludes_scene_siblings(tmp_path):
     source = tmp_path / "expanded_scene_preview.urdf"
     text = """<?xml version="1.0"?>
