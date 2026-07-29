@@ -252,9 +252,9 @@ task_zones:
   - 0.0
   - 0.0
   dimensions:
-  - 0.2
-  - 0.2
-  - 0.1
+  - 0.352201
+  - 0.213387
+  - 0.01
   target_ref: target_bin_default
   support_surface_ref: support_surface_table
   layout_item_ref: place_zone_default
