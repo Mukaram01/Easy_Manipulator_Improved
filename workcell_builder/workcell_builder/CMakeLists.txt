@@ -381,6 +381,7 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_scene_preview_widget_ui_test
     test/scene_preview_widget_ui_test.cpp
     gui/scene_preview_widget.cpp
+    gui/robot_home_yaml_io.cpp
     gui/scene3d_viewport_widget.cpp
     gui/scene3d_visual_classification.cpp
     gui/object_placement_yaml_io.cpp
@@ -416,7 +417,7 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_mainwindow_rviz_preview_compile_test
     test/mainwindow_rviz_preview_compile_test.cpp)
   if(TARGET workcell_scene_preview_widget_ui_test)
-    target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Widgets Qt5::OpenGL Qt5::Network OpenGL::GL yaml-cpp)
+    target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Core Qt5::Widgets Qt5::OpenGL Qt5::Network OpenGL::GL yaml-cpp)
     if(Qt5WebEngineWidgets_FOUND)
       target_compile_definitions(workcell_scene_preview_widget_ui_test PRIVATE WORKCELL_BUILDER_HAS_WEBENGINE=1)
       target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::WebEngineWidgets)

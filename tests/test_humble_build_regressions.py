@@ -196,7 +196,7 @@ def test_scene_preview_widget_targets_link_qt_network():
     assert "find_package(Qt5 COMPONENTS Widgets Concurrent Svg OpenGL Network REQUIRED)" in cmake
     assert "target_link_libraries(workcell_builder" in cmake and "Qt5::Network" in cmake
     assert "ament_add_gtest(workcell_scene_preview_widget_ui_test" in cmake
-    assert "target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Widgets Qt5::OpenGL Qt5::Network OpenGL::GL)" in cmake
+    assert "target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Core Qt5::Widgets Qt5::OpenGL Qt5::Network OpenGL::GL yaml-cpp)" in cmake
 
 
 def test_scene_preview_widget_still_uses_qtcp_socket_for_server_probe():
