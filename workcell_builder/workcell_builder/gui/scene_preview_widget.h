@@ -14,6 +14,7 @@
 class QNetworkAccessManager;
 
 class QComboBox;
+class QDoubleSpinBox;
 class QLabel;
 class QPushButton;
 class QStackedWidget;
@@ -332,6 +333,9 @@ private:
   void refresh_toolbar_feedback_row();
   void refresh_product_view_destination_control();
   void apply_product_view_destination();
+  void refresh_product_view_tool_orientation_control();
+  void apply_product_view_tool_orientation();
+  void reset_product_view_tool_orientation();
   enum class EmbeddedProductViewState {
     Idle,
     Preparing,
@@ -469,6 +473,16 @@ private:
   QLabel * product_view_destination_status_{ nullptr };
   QString active_product_view_place_zone_id_;
   bool product_view_destination_save_in_progress_{ false };
+  QWidget * product_view_tool_orientation_row_{ nullptr };
+  QDoubleSpinBox * product_view_tool_roll_spin_{ nullptr };
+  QDoubleSpinBox * product_view_tool_pitch_spin_{ nullptr };
+  QDoubleSpinBox * product_view_tool_yaw_spin_{ nullptr };
+  QComboBox * product_view_tool_orientation_preset_{ nullptr };
+  QPushButton * product_view_tool_orientation_reset_button_{ nullptr };
+  QPushButton * product_view_apply_tool_orientation_{ nullptr };
+  double loaded_product_view_tool_rpy_[3]{ 0.0, 0.0, 0.0 };
+  bool product_view_tool_orientation_loaded_{ false };
+  bool product_view_tool_orientation_save_in_progress_{ false };
   QComboBox * interaction_mode_selector_{ nullptr };
   QComboBox * view_actions_selector_{ nullptr };
   QLabel * view_mode_label_{ nullptr };
