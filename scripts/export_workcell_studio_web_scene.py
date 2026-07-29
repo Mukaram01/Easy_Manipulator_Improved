@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import shutil
 import sys
@@ -180,6 +181,11 @@ def _normalise_active_place_zone(data: Dict[str, Any]) -> None:
 
     task = _as_map(environment.get("task"))
     place = _as_map(task.get("place"))
+    # Scenes without place-task authoring have no destination chain to
+    # validate. Once any place intent is authored, however, an unresolved
+    # destination is blocking rather than an invitation to guess a default.
+    if not task or not ("place" in task or "rules" in task or str(task.get("type", "")).lower() in {"pick_place", "place"}):
+        return
     destination = place.get("target_ref")
     if not isinstance(destination, str) or not destination.strip():
         applicable: List[Mapping[str, Any]] = []
@@ -201,25 +207,32 @@ def _normalise_active_place_zone(data: Dict[str, Any]) -> None:
         }
         if len(destinations) > 1:
             raise BlockingExportError(
-                "environment.yaml task.rules has ambiguous applicable destinations: "
+                "environment.yaml: ambiguous applicable destinations; unresolved IDs "
                 + ", ".join(sorted(destinations))
+                + "; relationship task.rules.destination -> active destination is ambiguous"
             )
         destination = next(iter(destinations), None)
 
-    if not isinstance(destination, str) or not destination:
-        return
+    if not isinstance(destination, str) or not destination.strip():
+        raise BlockingExportError(
+            "environment.yaml: unresolved ID '<active destination>'; relationship "
+            "task.place.target_ref or matching task.rules.destination -> active destination failed"
+        )
+    destination = destination.strip()
 
     zones = [zone for zone in _as_list(environment.get("task_zones")) if isinstance(zone, Mapping)]
     matching_zones = [zone for zone in zones if str(zone.get("id", "")) == destination]
     if len(matching_zones) != 1:
         raise BlockingExportError(
-            f"environment.yaml active task destination {destination!r} must resolve to exactly one task_zones entry"
+            f"environment.yaml: unresolved ID {destination!r}; relationship active destination -> task_zones.id "
+            "must resolve to exactly one task zone"
         )
     zone = matching_zones[0]
     target_ref = zone.get("target_ref")
     if not isinstance(target_ref, str) or not target_ref.strip():
         raise BlockingExportError(
-            f"environment.yaml task zone {destination!r} must contain a non-empty target_ref"
+            f"environment.yaml: unresolved ID '<target_ref>' for task zone {destination!r}; relationship "
+            "task_zones.id -> task zone.target_ref failed because target_ref is missing"
         )
     target_ref = target_ref.strip()
 
@@ -239,7 +252,8 @@ def _normalise_active_place_zone(data: Dict[str, Any]) -> None:
                 asset_candidates.append((raw, section))
     if not asset_candidates:
         raise BlockingExportError(
-            f"environment.yaml task zone {destination!r} target_ref {target_ref!r} does not resolve to a physical asset"
+            f"environment.yaml: unresolved ID {target_ref!r}; relationship task zone {destination!r}.target_ref "
+            "-> physical asset failed"
         )
 
     # Mirrored nested/top-level assets are supported, but conflicting records
@@ -250,7 +264,8 @@ def _normalise_active_place_zone(data: Dict[str, Any]) -> None:
     signatures = {json.dumps(physical_signature(asset), sort_keys=True) for asset, _ in asset_candidates}
     if len(signatures) != 1:
         raise BlockingExportError(
-            f"environment.yaml physical asset ID {target_ref!r} is ambiguous across supported asset forms"
+            f"environment.yaml: unresolved ID {target_ref!r}; relationship task zone.target_ref -> physical "
+            "asset is ambiguous across supported asset forms"
         )
     asset, asset_source = asset_candidates[0]
     xyz, rpy, dimensions = asset.get("pose_xyz"), asset.get("pose_rpy"), asset.get("dimensions")
@@ -263,7 +278,10 @@ def _normalise_active_place_zone(data: Dict[str, Any]) -> None:
         if isinstance(item, Mapping) and str(item.get("id", "")) == target_ref
     ]
     if len(layout_matches) > 1:
-        raise BlockingExportError(f"layout destination {target_ref!r} is ambiguous")
+        raise BlockingExportError(
+            f"layout/workcell_studio_layout.yaml: unresolved ID {target_ref!r}; relationship physical asset "
+            "-> layout destination is ambiguous"
+        )
     if layout_matches:
         layout_target = layout_matches[0]
         layout_pose = _as_map(layout_target.get("pose"))
@@ -271,10 +289,21 @@ def _normalise_active_place_zone(data: Dict[str, Any]) -> None:
         rpy = layout_pose.get("rpy", rpy)
         dimensions = layout_target.get("dimensions", dimensions)
         asset_source = "layout/workcell_studio_layout.yaml"
-    if not (isinstance(xyz, (list, tuple)) and len(xyz) >= 3 and isinstance(rpy, (list, tuple)) and len(rpy) >= 3):
-        raise BlockingExportError(f"environment.yaml physical asset {target_ref!r} must define world pose_xyz and pose_rpy")
-    if not isinstance(dimensions, (list, tuple)) or len(dimensions) < 2:
-        raise BlockingExportError(f"environment.yaml physical asset {target_ref!r} must define X/Y dimensions")
+    source_file = asset_source if asset_source.endswith(".yaml") else "environment.yaml"
+    valid_vector = lambda value, size: (isinstance(value, (list, tuple)) and len(value) >= size and all(
+        isinstance(component, (int, float)) and not isinstance(component, bool) and math.isfinite(component)
+        for component in value[:size]
+    ))
+    if not (valid_vector(xyz, 3) and valid_vector(rpy, 3)):
+        raise BlockingExportError(
+            f"{source_file}: unresolved ID {target_ref!r}; relationship physical target asset -> valid "
+            "world pose failed (requires finite numeric pose_xyz and pose_rpy)"
+        )
+    if not valid_vector(dimensions, 2) or any(component <= 0 for component in dimensions[:2]):
+        raise BlockingExportError(
+            f"{source_file}: unresolved ID {target_ref!r}; relationship physical target asset -> positive "
+            "X/Y dimensions failed"
+        )
 
     authored_dimensions = zone.get("dimensions")
     authored_height = authored_dimensions[2] if isinstance(authored_dimensions, (list, tuple)) and len(authored_dimensions) >= 3 else None
@@ -290,12 +319,20 @@ def _normalise_active_place_zone(data: Dict[str, Any]) -> None:
     # A layout-authored visual may mirror the semantic environment zone under
     # a different ID. Keep that dependent record derived in the export payload
     # without writing its pose back to layout YAML.
+    overlay_id = str(zone.get("layout_item_ref", "")).strip()
     for layout_item in _as_list(layout.get("items")):
-        if not isinstance(layout_item, dict) or str(layout_item.get("target_ref", "")).strip() != target_ref:
+        if not isinstance(layout_item, dict):
             continue
         layout_identity = " ".join(str(layout_item.get(key, "")).lower().replace("_", " ") for key in ("role", "type", "category", "id"))
         if "place zone" not in layout_identity:
             continue
+        # Rebind the overlay selected by the active task zone. Do not use its
+        # possibly stale target_ref as the selector after a destination change.
+        if overlay_id and str(layout_item.get("id", "")).strip() != overlay_id:
+            continue
+        if not overlay_id and str(layout_item.get("target_ref", "")).strip() != target_ref:
+            continue
+        layout_item["target_ref"] = target_ref
         layout_item["pose"] = {"xyz": list(xyz[:3]), "rpy": list(rpy[:3])}
         layout_item["dimensions"] = [dimensions[0], dimensions[1], height]
 
