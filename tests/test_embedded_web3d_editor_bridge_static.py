@@ -115,13 +115,14 @@ def test_qt_compact_toolbar_for_embedded_web3d():
 def test_product_view_selection_uses_stable_identity_and_filters_helpers():
     assert "function isNormalSelectableRendered(rendered)" in VIEWER
     assert "item.selectable !== false" in VIEWER
-    assert "!isDiagnosticOnlyItem(item) && !isOverlayPolicyItem(item)" in VIEWER
+    assert "state.debugOverlaysVisible && (isTaskOnlyHelperItem(item)" in VIEWER
+    assert "!isTaskOnlyHelperItem(item) && !isOverlayPolicyItem(item)" in VIEWER
     assert "!isDebugOverlayItem(item)" in VIEWER
     assert "renderedById(requestedId)" in VIEWER
     assert "missing_render_identity" in VIEWER
     assert "diagnostic_helper_or_non_selectable" in VIEWER
     assert "canonicalSelectionRendered" in VIEWER
-    assert "selectObject(rendered.item.id);" in VIEWER
+    assert "selectObject(selectedCandidate.rendered.item.id);" in VIEWER
     assert "itemLabel(item)" not in VIEWER.split("function pickObject", 1)[1].split("function beginDirectMoveDrag", 1)[0]
 
 

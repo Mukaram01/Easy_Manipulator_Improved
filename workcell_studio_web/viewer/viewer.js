@@ -88,6 +88,20 @@ function isPrimaryRenderableItem(item) {
 }
 function isDiagnosticOnlyItem(item) { return itemRenderPolicy(item) === 'diagnostic_only'; }
 function isOverlayPolicyItem(item) { return itemRenderPolicy(item) === 'overlay'; }
+function isTaskOnlyHelperItem(item) {
+  const identity = [
+    item?.source_layer,
+    item?.active_visual_source,
+    item?.render_owner,
+    item?.role,
+    item?.category,
+    item?.type,
+    item?.id,
+    item?.display_name,
+  ].map(value => String(value || '').toLowerCase().replace(/[_-]+/g, ' ')).join(' ');
+  return item?.task_only === true || item?.non_blocking_pick === true ||
+    /\b(task helper|task marker|source helper|commissioning object)\b/.test(identity);
+}
 function isPrimaryAuthoredPhysicalMesh(item) {
   if (itemRenderPolicy(item) !== 'primary' || !truthyFlag(item?.mesh_load_required)) return false;
   const contractCategory = String(item?.mesh_contract_category || item?.meshContractCategory || '').toLowerCase();
@@ -1814,6 +1828,10 @@ function makePrimitiveMesh(item) {
   else {
     const dims = dimensionsFromPrimitive(primitive);
     if (!dims) return null;
+    // Zones are visual editing context, not destination volumes.  Keep place
+    // zones as a thin floor footprint so the linked physical bin remains
+    // visible and receives normal product picking.
+    if (isZone(item) && /\bplace zone\b/.test(viewerGroupIdentity(item))) dims[2] = Math.min(dims[2], 0.01);
     geometry = new THREE.BoxGeometry(dims[0], dims[1], dims[2]);
   }
   const group = new THREE.Group();
@@ -3575,7 +3593,29 @@ function refreshSelectionHighlight(rendered) {
 
 function isNormalSelectableRendered(rendered) {
   const item = rendered?.item;
-  return Boolean(item?.id) && item.selectable !== false && !isDiagnosticOnlyItem(item) && !isOverlayPolicyItem(item) && !isDebugOverlayItem(item);
+  const inspectionSelectable = state.debugOverlaysVisible && (isTaskOnlyHelperItem(item) || isOverlayPolicyItem(item) || isDebugOverlayItem(item));
+  return Boolean(item?.id) && item.selectable !== false && !isDiagnosticOnlyItem(item) && (inspectionSelectable || (!isTaskOnlyHelperItem(item) && !isOverlayPolicyItem(item) && !isDebugOverlayItem(item)));
+}
+function pickingPriority(rendered) {
+  const item = rendered?.item;
+  if (!item?.id) return Number.POSITIVE_INFINITY;
+  if (isTaskOnlyHelperItem(item) || isOverlayPolicyItem(item) || isDebugOverlayItem(item)) return state.debugOverlaysVisible ? 4 : Number.POSITIVE_INFINITY;
+  if (canEditItem(item) && isPrimaryRenderableItem(item) && isPhysicalSemanticItem(item)) return 1;
+  if (canEditItem(item) && !isGeneratedUrdfItem(item)) return 2;
+  if ((isGeneratedUrdfItem(item) || item.locked) && isPhysicalSemanticItem(item)) return 3;
+  return 2;
+}
+function rankedPickingCandidates(hits) {
+  const candidates = [];
+  const seen = new Set();
+  for (const hit of hits || []) {
+    const item = hit?.object?.userData?.item || hit?.object?.parent?.userData?.item;
+    const rendered = canonicalSelectionRendered(item?.id ? renderedById(item.id) : null);
+    if (!rendered?.item?.id || seen.has(rendered.item.id)) continue;
+    seen.add(rendered.item.id);
+    candidates.push({ rendered, hit, priority: pickingPriority(rendered) });
+  }
+  return candidates.sort((a, b) => a.priority - b.priority || Number(a.hit?.distance || 0) - Number(b.hit?.distance || 0));
 }
 function selectObject(id) {
   const requestedId = String(id || '');
@@ -3613,14 +3653,20 @@ function pickObject(event) {
   state.three.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   state.three.raycaster.setFromCamera(state.three.pointer, state.three.camera);
   const hits = state.three.raycaster.intersectObjects(state.objects.map(o => o.object3d), true);
-  for (const hit of hits) {
-    const item = hit?.object?.userData?.item || hit?.object?.parent?.userData?.item;
-    const rendered = canonicalSelectionRendered(item?.id ? renderedById(item.id) : null);
-    if (!isNormalSelectableRendered(rendered)) continue;
-    selectObject(rendered.item.id);
-    return rendered.item.id;
+  const candidates = rankedPickingCandidates(hits);
+  const selectedCandidate = candidates.find(candidate => Number.isFinite(candidate.priority) && isNormalSelectableRendered(candidate.rendered));
+  if (!selectedCandidate) return '';
+  const skippedHelper = candidates.find(candidate => candidate !== selectedCandidate && candidate.priority > selectedCandidate.priority && (isTaskOnlyHelperItem(candidate.rendered.item) || isDebugOverlayItem(candidate.rendered.item)));
+  if (skippedHelper) {
+    state.skippedHelperPickKeys ||= new Set();
+    const warningKey = `${sceneId()}|${skippedHelper.rendered.item.id}|${selectedCandidate.rendered.item.id}`;
+    if (!state.skippedHelperPickKeys.has(warningKey)) {
+      state.skippedHelperPickKeys.add(warningKey);
+      pushEditorEvent('helper_pick_skipped', { helperItemId: skippedHelper.rendered.item.id, selectedItemId: selectedCandidate.rendered.item.id, sceneId: sceneId() });
+    }
   }
-  return '';
+  selectObject(selectedCandidate.rendered.item.id);
+  return selectedCandidate.rendered.item.id;
 }
 
 
