@@ -5,6 +5,7 @@ from pathlib import Path
 
 import yaml
 import importlib.util
+import pytest
 
 
 SCRIPT = Path("scripts/export_workcell_studio_web_scene.py")
@@ -220,6 +221,76 @@ def test_export_web_scene_warns_for_missing_optional_inputs(tmp_path):
         "layout/workcell_studio_layout.yaml",
         "generated/scene_visual_mesh_index.json",
     }
+
+
+def test_active_place_zone_is_normalized_from_referenced_physical_asset(tmp_path):
+    scene = tmp_path / "scene"
+    scene.mkdir()
+    (scene / "environment.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "task": {"place": {}, "rules": [{"when": {"always": True}, "destination": "place_area"}]},
+                "task_zones": [
+                    {
+                        "id": "place_area",
+                        "target_ref": "finished_part_tote",
+                        "pose_xyz": [0, 0, 0],
+                        "pose_rpy": [0, 0, 0],
+                        "dimensions": [0.1, 0.1, 0.004],
+                        "transform_group": "destination",
+                        "layout_item_ref": "place_overlay",
+                    }
+                ],
+                "environment": {
+                    "assets": [
+                        {
+                            "id": "finished_part_tote",
+                            "pose_xyz": [1.2, -0.4, 0.3],
+                            "pose_rpy": [0.1, 0.2, 0.3],
+                            "dimensions": [0.6, 0.4, 0.25],
+                        }
+                    ]
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    payload = exporter.build_web_scene(scene)
+    zone = next(item for item in payload["zones"] if item["id"] == "place_area")
+
+    assert zone["pose_xyz"] == [1.2, -0.4, 0.3]
+    assert zone["pose_rpy"] == [0.1, 0.2, 0.3]
+    assert zone["dimensions"] == [0.6, 0.4, 0.004]
+    assert zone["target_ref"] == "finished_part_tote"
+    assert zone["transform_group"] == "destination"
+    assert zone["layout_item_ref"] == "place_overlay"
+    assert zone["normalization_provenance"]["physical_asset"] == "environment.assets"
+
+
+def test_active_place_zone_rejects_ambiguous_applicable_rule_destinations(tmp_path):
+    scene = tmp_path / "scene"
+    scene.mkdir()
+    (scene / "environment.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "task": {
+                    "place": {},
+                    "rules": [
+                        {"when": {"always": True}, "destination": "zone_a"},
+                        {"when": {"default": True}, "destination": "zone_b"},
+                    ],
+                },
+                "task_zones": [],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(exporter.BlockingExportError, match="ambiguous applicable destinations"):
+        exporter.build_web_scene(scene)
 
 
 def test_export_visual_bounds_contract_ignores_helper_zones_outside_workspace(tmp_path):

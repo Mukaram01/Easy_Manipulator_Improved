@@ -167,6 +167,111 @@ def _load_inputs(scene_dir: Path, warnings: List[Json]) -> Dict[str, Any]:
     return loaded
 
 
+def _normalise_active_place_zone(data: Dict[str, Any]) -> None:
+    """Bind the active authored place zone to its physical destination asset.
+
+    Task zones are semantic overlays, but their useful web-preview footprint is
+    the footprint of the physical asset they reference.  Resolve that chain by
+    ID rather than by scene- or asset-specific names.
+    """
+    environment = _as_map(data.get("environment"))
+    if not environment:
+        return
+
+    task = _as_map(environment.get("task"))
+    place = _as_map(task.get("place"))
+    destination = place.get("target_ref")
+    if not isinstance(destination, str) or not destination.strip():
+        applicable: List[Mapping[str, Any]] = []
+        for raw_rule in _as_list(task.get("rules")):
+            rule = _as_map(raw_rule)
+            when = _as_map(rule.get("when"))
+            # With no runtime object classification available, only an
+            # unconditional/default rule is applicable.  A sole rule is also
+            # deterministic and supports older pick/place authoring files.
+            if not when or when.get("always") is True or when.get("default") is True:
+                applicable.append(rule)
+        if not applicable:
+            rules = [_as_map(rule) for rule in _as_list(task.get("rules"))]
+            applicable = rules if len(rules) == 1 else []
+        destinations = {
+            str(rule.get("destination")).strip()
+            for rule in applicable
+            if isinstance(rule.get("destination"), str) and str(rule.get("destination")).strip()
+        }
+        if len(destinations) > 1:
+            raise BlockingExportError(
+                "environment.yaml task.rules has ambiguous applicable destinations: "
+                + ", ".join(sorted(destinations))
+            )
+        destination = next(iter(destinations), None)
+
+    if not isinstance(destination, str) or not destination:
+        return
+
+    zones = [zone for zone in _as_list(environment.get("task_zones")) if isinstance(zone, Mapping)]
+    matching_zones = [zone for zone in zones if str(zone.get("id", "")) == destination]
+    if len(matching_zones) != 1:
+        raise BlockingExportError(
+            f"environment.yaml active task destination {destination!r} must resolve to exactly one task_zones entry"
+        )
+    zone = matching_zones[0]
+    target_ref = zone.get("target_ref")
+    if not isinstance(target_ref, str) or not target_ref.strip():
+        raise BlockingExportError(
+            f"environment.yaml task zone {destination!r} must contain a non-empty target_ref"
+        )
+    target_ref = target_ref.strip()
+
+    asset_candidates: List[Tuple[Mapping[str, Any], str]] = []
+    nested = _as_map(environment.get("environment"))
+    for source_root, source_name in ((nested, "environment.assets"), (environment, "assets")):
+        values = source_root.get("assets")
+        entries = values.items() if isinstance(values, Mapping) else ((None, raw) for raw in _as_list(values))
+        for entry_id, raw in entries:
+            if isinstance(raw, Mapping) and str(raw.get("id", raw.get("name", entry_id or ""))) == target_ref:
+                asset_candidates.append((raw, source_name))
+    for section in ("objects", "placed_objects"):
+        values = environment.get(section)
+        entries = values.items() if isinstance(values, Mapping) else ((None, raw) for raw in _as_list(values))
+        for entry_id, raw in entries:
+            if isinstance(raw, Mapping) and str(raw.get("id", raw.get("name", entry_id or ""))) == target_ref:
+                asset_candidates.append((raw, section))
+    if not asset_candidates:
+        raise BlockingExportError(
+            f"environment.yaml task zone {destination!r} target_ref {target_ref!r} does not resolve to a physical asset"
+        )
+
+    # Mirrored nested/top-level assets are supported, but conflicting records
+    # with one ID are not safe to choose between silently.
+    def physical_signature(candidate: Mapping[str, Any]) -> Tuple[Any, Any, Any]:
+        return (candidate.get("pose_xyz"), candidate.get("pose_rpy"), candidate.get("dimensions"))
+
+    signatures = {json.dumps(physical_signature(asset), sort_keys=True) for asset, _ in asset_candidates}
+    if len(signatures) != 1:
+        raise BlockingExportError(
+            f"environment.yaml physical asset ID {target_ref!r} is ambiguous across supported asset forms"
+        )
+    asset, asset_source = asset_candidates[0]
+    xyz, rpy, dimensions = asset.get("pose_xyz"), asset.get("pose_rpy"), asset.get("dimensions")
+    if not (isinstance(xyz, (list, tuple)) and len(xyz) >= 3 and isinstance(rpy, (list, tuple)) and len(rpy) >= 3):
+        raise BlockingExportError(f"environment.yaml physical asset {target_ref!r} must define world pose_xyz and pose_rpy")
+    if not isinstance(dimensions, (list, tuple)) or len(dimensions) < 2:
+        raise BlockingExportError(f"environment.yaml physical asset {target_ref!r} must define X/Y dimensions")
+
+    authored_dimensions = zone.get("dimensions")
+    authored_height = authored_dimensions[2] if isinstance(authored_dimensions, (list, tuple)) and len(authored_dimensions) >= 3 else None
+    height = min(float(authored_height), 0.01) if isinstance(authored_height, (int, float)) and authored_height > 0 else 0.01
+    zone["pose_xyz"] = list(xyz[:3])
+    zone["pose_rpy"] = list(rpy[:3])
+    zone["dimensions"] = [dimensions[0], dimensions[1], height]
+    zone["normalization_provenance"] = {
+        "destination": "task.place.target_ref" if place.get("target_ref") else "task.rules.destination",
+        "task_zone": "task_zones",
+        "physical_asset": asset_source,
+    }
+
+
 def _provenance(fields: Iterable[str], source: str) -> Dict[str, str]:
     return {field: source for field in sorted(set(fields))}
 
@@ -1452,7 +1557,7 @@ def _iter_declared_physical_entries(data: Mapping[str, Any]) -> Iterable[Tuple[s
 
     seen: set[Tuple[str, str, int]] = set()
     for source, root in roots:
-        for key in ("items", "support_surfaces", "assets", "sensors", "objects", "placed_objects", "tools", "zones"):
+        for key in ("items", "support_surfaces", "assets", "sensors", "objects", "placed_objects", "tools", "zones", "task_zones"):
             value = root.get(key)
             entries: Iterable[Tuple[str, Any]]
             if isinstance(value, Mapping):
@@ -1523,7 +1628,7 @@ def _authored_item(raw: Mapping[str, Any], source: str, index: int, scene_dir: P
     fields = (
         "id", "type", "role", "category", "display_name", "source_section", "link", "object_name", "frame", "pose", "pose_xyz", "pose_rpy", "dimensions",
         "geometry_type", "primitive_geometry_type", "mesh_uri", "package_uri", "source_path", "mesh_path", "filepath", "mesh_scale", "mesh_local_transform", "visual_origin", "material",
-        "layout_item_ref", "support_surface_ref", "task_zone_ref", "transform_group", "scale", "perception_mode", "runtime_enforced", "runtime_commanded",
+        "layout_item_ref", "support_surface_ref", "task_zone_ref", "target_ref", "transform_group", "normalization_provenance", "scale", "perception_mode", "runtime_enforced", "runtime_commanded",
         "support_surface_kind", "support_kind", "semantic_type", "top_surface_z_m", "topSurfaceZM", "support_surface_height_m", "supportSurfaceHeightM",
         "expected_support_footprint_m", "support_footprint_m", "footprint_m", "footprint", "table_height", "table_top_z", "surface_height_m",
     )
@@ -1562,7 +1667,7 @@ def _authored_sections(data: Dict[str, Any], scene_dir: Path, warnings: List[Jso
         section = _section_from_item(item)
         if source_section == "sensors" or section == "sensors":
             sections["sensors"].append(item)
-        elif source_section == "zones" or _is_helper(item):
+        elif source_section in {"zones", "task_zones"} or _is_helper(item):
             sections["zones"].append(item)
         else:
             sections["assets"].append(item)
@@ -2524,6 +2629,7 @@ def build_web_scene(scene_dir: Path, *, stage_assets: bool = False, output_path:
     scene_dir = scene_dir.resolve()
     warnings: List[Json] = []
     data = _load_inputs(scene_dir, warnings)
+    _normalise_active_place_zone(data)
 
     manifest = _as_map(data.get("scene_manifest"))
     scene_meta = _as_map(manifest.get("scene"))
