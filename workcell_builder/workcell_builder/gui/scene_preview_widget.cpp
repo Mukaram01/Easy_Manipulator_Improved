@@ -27,6 +27,7 @@
 #include <QSet>
 #include <QSignalBlocker>
 #include <QPushButton>
+#include <QDoubleSpinBox>
 #include <functional>
 #include <algorithm>
 #include <yaml-cpp/yaml.h>
@@ -321,6 +322,54 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
         embedded_product_view_state_ == EmbeddedProductViewState::Ready &&
         !property("diagnostic_preview_active").toBool() && !product_view_destination_save_in_progress_);
     });
+
+  product_view_tool_orientation_row_ = new QWidget(controls_header);
+  auto * tool_orientation_layout = new QHBoxLayout(product_view_tool_orientation_row_);
+  tool_orientation_layout->setContentsMargins(0, 0, 0, 0);
+  tool_orientation_layout->setSpacing(6);
+  tool_orientation_layout->addWidget(new QLabel(QStringLiteral("Tool Orientation"), product_view_tool_orientation_row_));
+  const auto make_angle_spin = [this, tool_orientation_layout](const QString & label, const QString & object_name) {
+    tool_orientation_layout->addWidget(new QLabel(label, product_view_tool_orientation_row_));
+    auto * spin = new QDoubleSpinBox(product_view_tool_orientation_row_);
+    spin->setObjectName(object_name);
+    spin->setRange(-360.0, 360.0);
+    spin->setDecimals(2);
+    spin->setSingleStep(5.0);
+    spin->setSuffix(QStringLiteral("°"));
+    tool_orientation_layout->addWidget(spin);
+    return spin;
+  };
+  product_view_tool_roll_spin_ = make_angle_spin(QStringLiteral("Roll"), QStringLiteral("product_view_tool_roll_spin"));
+  product_view_tool_pitch_spin_ = make_angle_spin(QStringLiteral("Pitch"), QStringLiteral("product_view_tool_pitch_spin"));
+  product_view_tool_yaw_spin_ = make_angle_spin(QStringLiteral("Yaw"), QStringLiteral("product_view_tool_yaw_spin"));
+  product_view_tool_orientation_preset_ = new QComboBox(product_view_tool_orientation_row_);
+  product_view_tool_orientation_preset_->setObjectName(QStringLiteral("product_view_tool_orientation_preset"));
+  product_view_tool_orientation_preset_->addItems({QStringLiteral("Current scene value"), QStringLiteral("Identity"),
+    QStringLiteral("Roll +90"), QStringLiteral("Roll -90"), QStringLiteral("Pitch +90"), QStringLiteral("Pitch -90"),
+    QStringLiteral("Yaw +90"), QStringLiteral("Yaw -90"), QStringLiteral("Yaw 180")});
+  tool_orientation_layout->addWidget(product_view_tool_orientation_preset_);
+  product_view_tool_orientation_reset_button_ = new QPushButton(QStringLiteral("Reset"), product_view_tool_orientation_row_);
+  tool_orientation_layout->addWidget(product_view_tool_orientation_reset_button_);
+  product_view_apply_tool_orientation_ = new QPushButton(QStringLiteral("Apply Orientation"), product_view_tool_orientation_row_);
+  product_view_apply_tool_orientation_->setObjectName(QStringLiteral("product_view_apply_tool_orientation"));
+  tool_orientation_layout->addWidget(product_view_apply_tool_orientation_);
+  tool_orientation_layout->addStretch(1);
+  product_view_tool_orientation_row_->setVisible(false);
+  controls->addWidget(product_view_tool_orientation_row_);
+  connect(product_view_tool_orientation_reset_button_, &QPushButton::clicked,
+    this, &ScenePreviewWidget::reset_product_view_tool_orientation);
+  connect(product_view_apply_tool_orientation_, &QPushButton::clicked,
+    this, &ScenePreviewWidget::apply_product_view_tool_orientation);
+  connect(product_view_tool_orientation_preset_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
+    if (index == 0) { reset_product_view_tool_orientation(); return; }
+    double r = 0.0, p = 0.0, y = 0.0;
+    if (index == 2) r = 90.0; else if (index == 3) r = -90.0;
+    else if (index == 4) p = 90.0; else if (index == 5) p = -90.0;
+    else if (index == 6) y = 90.0; else if (index == 7) y = -90.0; else if (index == 8) y = 180.0;
+    product_view_tool_roll_spin_->setValue(r);
+    product_view_tool_pitch_spin_->setValue(p);
+    product_view_tool_yaw_spin_->setValue(y);
+  });
 
   auto * backend_controls_row = new QHBoxLayout();
   mesh_preview_mode_label_ = new QLabel("Mesh Preview:", controls_header);
@@ -747,6 +796,7 @@ void ScenePreviewWidget::set_embedded_product_view_state(EmbeddedProductViewStat
 {
   embedded_product_view_state_ = state;
   refresh_product_view_destination_control();
+  refresh_product_view_tool_orientation_control();
   embedded_editor_polling_ = (state == EmbeddedProductViewState::Ready);
   if (state == EmbeddedProductViewState::Failed) embedded_web_last_error_ = detail;
   if (embedded_fit_button_ && state != EmbeddedProductViewState::Failed) {
@@ -764,6 +814,82 @@ void ScenePreviewWidget::set_embedded_product_view_state(EmbeddedProductViewStat
   else if (state == EmbeddedProductViewState::CompatibilityReady) state_text = QStringLiteral("compatibility ready");
   else if (state == EmbeddedProductViewState::Failed) state_text = QStringLiteral("failed");
   emit embedded_product_view_runtime_state_changed(state_text, runtime_preview_has_usable_content());
+}
+
+void ScenePreviewWidget::refresh_product_view_tool_orientation_control()
+{
+  if (!product_view_tool_orientation_row_) return;
+  const bool strict_ready = embedded_product_view_state_ == EmbeddedProductViewState::Ready &&
+    !property("diagnostic_preview_active").toBool() && !product_view_tool_orientation_save_in_progress_;
+  const QString environment_path = QDir(preview_context_.absolute_scene_dir).filePath(QStringLiteral("environment.yaml"));
+  workcell_builder::RobotMountConfig robot_mount;
+  workcell_builder::ToolAttachmentConfig tool_attachment;
+  std::vector<std::string> warnings;
+  const bool loaded = strict_ready && workcell_builder::load_robot_tool_pose_from_environment_yaml(
+    environment_path.toStdString(), &robot_mount, &tool_attachment, &warnings) &&
+    !tool_attachment.parent_link.empty() && !tool_attachment.child_link.empty();
+  product_view_tool_orientation_row_->setVisible(loaded);
+  product_view_tool_orientation_loaded_ = loaded;
+  if (loaded) {
+    loaded_product_view_tool_rpy_[0] = tool_attachment.roll;
+    loaded_product_view_tool_rpy_[1] = tool_attachment.pitch;
+    loaded_product_view_tool_rpy_[2] = tool_attachment.yaw;
+    reset_product_view_tool_orientation();
+  }
+  for (auto * spin : {product_view_tool_roll_spin_, product_view_tool_pitch_spin_, product_view_tool_yaw_spin_}) spin->setEnabled(loaded);
+  product_view_tool_orientation_preset_->setEnabled(loaded);
+  product_view_tool_orientation_reset_button_->setEnabled(loaded);
+  product_view_apply_tool_orientation_->setEnabled(loaded);
+}
+
+void ScenePreviewWidget::reset_product_view_tool_orientation()
+{
+  if (!product_view_tool_orientation_loaded_) return;
+  const QSignalBlocker preset_blocker(product_view_tool_orientation_preset_);
+  product_view_tool_orientation_preset_->setCurrentIndex(0);
+  product_view_tool_roll_spin_->setValue(qRadiansToDegrees(loaded_product_view_tool_rpy_[0]));
+  product_view_tool_pitch_spin_->setValue(qRadiansToDegrees(loaded_product_view_tool_rpy_[1]));
+  product_view_tool_yaw_spin_->setValue(qRadiansToDegrees(loaded_product_view_tool_rpy_[2]));
+}
+
+void ScenePreviewWidget::apply_product_view_tool_orientation()
+{
+  if (!product_view_tool_orientation_loaded_ || product_view_tool_orientation_save_in_progress_ ||
+      embedded_product_view_state_ != EmbeddedProductViewState::Ready || property("diagnostic_preview_active").toBool()) return;
+  const QString environment_path = QDir(preview_context_.absolute_scene_dir).filePath(QStringLiteral("environment.yaml"));
+  workcell_builder::RobotMountConfig robot_mount;
+  workcell_builder::ToolAttachmentConfig tool_attachment;
+  std::vector<std::string> warnings;
+  if (!workcell_builder::load_robot_tool_pose_from_environment_yaml(
+      environment_path.toStdString(), &robot_mount, &tool_attachment, &warnings)) {
+    emit studio_issue_requested(QStringLiteral("Tool orientation save failed: could not read %1").arg(environment_path),
+      QStringLiteral("Error"), QStringLiteral("product_view_tool_orientation_save"));
+    return;
+  }
+  tool_attachment.roll = qDegreesToRadians(product_view_tool_roll_spin_->value());
+  tool_attachment.pitch = qDegreesToRadians(product_view_tool_pitch_spin_->value());
+  tool_attachment.yaw = qDegreesToRadians(product_view_tool_yaw_spin_->value());
+  product_view_tool_orientation_save_in_progress_ = true;
+  refresh_product_view_tool_orientation_control();
+  const QString backup_path = environment_path + QStringLiteral(".robot_tool_pose.") +
+    QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMddHHmmss")) + QStringLiteral(".bak");
+  const bool backup_ok = QFile::copy(environment_path, backup_path);
+  const auto saved = backup_ok ? workcell_builder::save_robot_tool_pose_to_environment_yaml(
+    environment_path.toStdString(), robot_mount, tool_attachment) : workcell_builder::PlacedObjectYamlWriteResult{};
+  product_view_tool_orientation_save_in_progress_ = false;
+  if (!saved.ok) {
+    emit studio_issue_requested(QStringLiteral("Tool orientation save failed for %1: %2").arg(environment_path,
+      backup_ok ? QStringLiteral("environment YAML could not be written") : QStringLiteral("timestamped backup could not be created at %1").arg(backup_path)),
+      QStringLiteral("Error"), QStringLiteral("product_view_tool_orientation_save"));
+    refresh_product_view_tool_orientation_control();
+    return;
+  }
+  loaded_product_view_tool_rpy_[0] = tool_attachment.roll;
+  loaded_product_view_tool_rpy_[1] = tool_attachment.pitch;
+  loaded_product_view_tool_rpy_[2] = tool_attachment.yaw;
+  emit studio_log_requested(QStringLiteral("Product View tool orientation saved to %1; backup: %2; regenerating around %3 attachment.")
+    .arg(environment_path, backup_path, QString::fromStdString(tool_attachment.parent_link)));
+  request_embedded_web_product_view_refresh(true, QStringLiteral("tool_orientation_update"));
 }
 
 void ScenePreviewWidget::refresh_product_view_destination_control()

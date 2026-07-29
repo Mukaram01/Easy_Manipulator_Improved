@@ -94,6 +94,40 @@ def test_product_view_destination_selector_is_strict_and_explicitly_applied() ->
     assert 'task["place"]["target_ref"]' not in apply
 
 
+def test_product_view_tool_orientation_editor_is_scene_local_and_strict() -> None:
+    source = SCENE_PREVIEW_CPP.read_text()
+    for object_name in (
+        "product_view_tool_roll_spin",
+        "product_view_tool_pitch_spin",
+        "product_view_tool_yaw_spin",
+        "product_view_tool_orientation_preset",
+        "product_view_apply_tool_orientation",
+    ):
+        assert f'QStringLiteral("{object_name}")' in source
+    for preset in (
+        "Current scene value", "Identity", "Roll +90", "Roll -90",
+        "Pitch +90", "Pitch -90", "Yaw +90", "Yaw -90", "Yaw 180",
+    ):
+        assert f'QStringLiteral("{preset}")' in source
+
+    refresh = source.split("void ScenePreviewWidget::refresh_product_view_tool_orientation_control()", 1)[1]
+    refresh = refresh.split("void ScenePreviewWidget::reset_product_view_tool_orientation()", 1)[0]
+    assert "EmbeddedProductViewState::Ready" in refresh
+    assert 'property("diagnostic_preview_active").toBool()' in refresh
+    assert "product_view_tool_orientation_save_in_progress_" in refresh
+    assert "load_robot_tool_pose_from_environment_yaml" in refresh
+    assert "qRadiansToDegrees" in source
+
+    apply = source.split("void ScenePreviewWidget::apply_product_view_tool_orientation()", 1)[1]
+    apply = apply.split("void ScenePreviewWidget::", 1)[0]
+    assert "load_robot_tool_pose_from_environment_yaml" in apply
+    assert "qDegreesToRadians" in apply
+    assert "save_robot_tool_pose_to_environment_yaml" in apply
+    assert 'QStringLiteral(".robot_tool_pose.")' in apply
+    assert 'request_embedded_web_product_view_refresh(true, QStringLiteral("tool_orientation_update"));' in apply
+    assert apply.count("request_embedded_web_product_view_refresh") == 1
+
+
 def test_inspector_refresh_for_ur5_2f_test_uses_canonical_metadata_and_launch_path() -> None:
     assert UR5_SCENE.is_dir(), "ur5_2f_test fixture scene must exist"
     assert (UR5_SCENE / "cell_definition.yaml").is_file(), "robot metadata source must exist"
