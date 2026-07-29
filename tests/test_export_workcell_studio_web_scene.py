@@ -312,6 +312,77 @@ def test_active_place_zone_rejects_ambiguous_applicable_rule_destinations(tmp_pa
         exporter.build_web_scene(scene)
 
 
+def _write_destination_scene(scene, *, destination="zone_a", zone_target="bin_a", dimensions=(0.4, 0.3, 0.2)):
+    (scene / "layout").mkdir(parents=True, exist_ok=True)
+    (scene / "environment.yaml").write_text(yaml.safe_dump({
+        "task": {"place": {"target_ref": destination}},
+        "task_zones": [
+            {"id": "zone_a", "target_ref": "bin_a", "layout_item_ref": "place_overlay", "dimensions": [0.1, 0.1, 0.01]},
+            {"id": "zone_b", "target_ref": zone_target, "layout_item_ref": "place_overlay", "dimensions": [0.1, 0.1, 0.01]},
+        ],
+        "environment": {"assets": [
+            {"id": "bin_a", "pose_xyz": [1, 0, 0], "pose_rpy": [0, 0, 0], "dimensions": [0.2, 0.2, 0.2]},
+            {"id": "bin_b", "pose_xyz": [2, 3, 0.4], "pose_rpy": [0, 0, 0.5], "dimensions": list(dimensions)},
+        ]},
+    }, sort_keys=False), encoding="utf-8")
+    (scene / "layout/workcell_studio_layout.yaml").write_text(yaml.safe_dump({"items": [{
+        "id": "place_overlay", "role": "place_zone", "target_ref": "bin_a",
+        "pose": {"xyz": [1, 0, 0], "rpy": [0, 0, 0]}, "dimensions": [0.2, 0.2, 0.01],
+    }]}), encoding="utf-8")
+
+
+def test_active_destination_is_reresolved_and_rebinds_stale_overlay_on_each_export(tmp_path):
+    scene = tmp_path / "scene"
+    _write_destination_scene(scene)
+    first = exporter.build_web_scene(scene)
+    assert next(zone for zone in first["zones"] if zone["id"] == "zone_a")["pose_xyz"] == [1, 0, 0]
+
+    _write_destination_scene(scene, destination="zone_b", zone_target="bin_b")
+    second = exporter.build_web_scene(scene)
+    active = next(zone for zone in second["zones"] if zone["id"] == "zone_b")
+    overlay = next(zone for zone in second["zones"] if zone["id"] == "place_overlay")
+    assert active["pose_xyz"] == [2, 3, 0.4]
+    assert overlay["target_ref"] == "bin_b"
+    assert overlay["pose"]["xyz"] == [2, 3, 0.4]
+
+
+@pytest.mark.parametrize(("mutate", "message"), [
+    (lambda doc: doc["task"]["place"].clear(), "environment.yaml.*<active destination>.*task.place.target_ref"),
+    (lambda doc: doc["task"]["place"].update(target_ref="missing_zone"), "missing_zone.*active destination -> task_zones.id"),
+    (lambda doc: doc["task_zones"][0].pop("target_ref"), "<target_ref>.*task zone.target_ref"),
+    (lambda doc: doc["task_zones"][0].update(target_ref="missing_asset"), "missing_asset.*physical asset"),
+    (lambda doc: doc["environment"]["assets"][0].update(pose_xyz=[None, 0, 0]), "bin_a.*valid world pose"),
+    (lambda doc: doc["environment"]["assets"][0].update(dimensions=[0, 0.2, 0.2]), "bin_a.*positive X/Y dimensions"),
+])
+def test_destination_chain_failures_are_blocking_and_identify_relationship_and_source(tmp_path, mutate, message):
+    scene = tmp_path / "scene"
+    _write_destination_scene(scene)
+    path = scene / "environment.yaml"
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    mutate(document)
+    path.write_text(yaml.safe_dump(document), encoding="utf-8")
+    with pytest.raises(exporter.BlockingExportError, match=message):
+        exporter.build_web_scene(scene)
+
+
+def test_cli_chain_failure_preserves_existing_export_and_authoring_files(tmp_path):
+    scene = tmp_path / "scene"
+    _write_destination_scene(scene, destination="missing_zone")
+    output = tmp_path / "scene.json"
+    output.write_text("existing export\n", encoding="utf-8")
+    before = {path: path.read_bytes() for path in (scene / "environment.yaml", scene / "layout/workcell_studio_layout.yaml")}
+
+    result = subprocess.run(
+        [sys.executable, str(ROOT / SCRIPT), "--scene", str(scene), "--output", str(output), "--no-stage-assets"],
+        text=True, capture_output=True, check=False,
+    )
+
+    assert result.returncode == 3
+    assert "missing_zone" in result.stderr and "environment.yaml" in result.stderr
+    assert output.read_text(encoding="utf-8") == "existing export\n"
+    assert all(path.read_bytes() == contents for path, contents in before.items())
+
+
 def test_export_visual_bounds_contract_ignores_helper_zones_outside_workspace(tmp_path):
     scene = tmp_path / "scene"
     (scene / "layout").mkdir(parents=True)
