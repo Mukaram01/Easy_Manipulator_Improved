@@ -16,7 +16,7 @@ FIXTURE = ROOT / "scenes/ur5_2f_test"
 EXPORTER = ROOT / "scripts/export_workcell_studio_web_scene.py"
 WORKFLOW = ROOT / "scripts/run_workcell_studio_web_edit_workflow.py"
 BUNDLE = ROOT / "workcell_studio_web/viewer/dist/viewer.bundle.js"
-BUNDLE_SHA256 = "4640e94e08ebcfca1af070c37807765ff50c60b7f098e09dc271f238dbe32287"
+BUNDLE_SHA256 = "9269c990ce086df12a796c858788409d374012d5c5e4a38c3d916180ddf365eb"
 
 
 @pytest.fixture
