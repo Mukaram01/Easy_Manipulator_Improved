@@ -254,6 +254,23 @@ def _normalise_active_place_zone(data: Dict[str, Any]) -> None:
         )
     asset, asset_source = asset_candidates[0]
     xyz, rpy, dimensions = asset.get("pose_xyz"), asset.get("pose_rpy"), asset.get("dimensions")
+    # Layout YAML is the transform authoring source used by the web editor.
+    # Prefer its matching destination record so a saved destination edit also
+    # drives the derived overlay on the very next export/reload.
+    layout = _as_map(data.get("layout"))
+    layout_matches = [
+        item for item in _as_list(layout.get("items"))
+        if isinstance(item, Mapping) and str(item.get("id", "")) == target_ref
+    ]
+    if len(layout_matches) > 1:
+        raise BlockingExportError(f"layout destination {target_ref!r} is ambiguous")
+    if layout_matches:
+        layout_target = layout_matches[0]
+        layout_pose = _as_map(layout_target.get("pose"))
+        xyz = layout_pose.get("xyz", xyz)
+        rpy = layout_pose.get("rpy", rpy)
+        dimensions = layout_target.get("dimensions", dimensions)
+        asset_source = "layout/workcell_studio_layout.yaml"
     if not (isinstance(xyz, (list, tuple)) and len(xyz) >= 3 and isinstance(rpy, (list, tuple)) and len(rpy) >= 3):
         raise BlockingExportError(f"environment.yaml physical asset {target_ref!r} must define world pose_xyz and pose_rpy")
     if not isinstance(dimensions, (list, tuple)) or len(dimensions) < 2:
@@ -270,6 +287,17 @@ def _normalise_active_place_zone(data: Dict[str, Any]) -> None:
         "task_zone": "task_zones",
         "physical_asset": asset_source,
     }
+    # A layout-authored visual may mirror the semantic environment zone under
+    # a different ID. Keep that dependent record derived in the export payload
+    # without writing its pose back to layout YAML.
+    for layout_item in _as_list(layout.get("items")):
+        if not isinstance(layout_item, dict) or str(layout_item.get("target_ref", "")).strip() != target_ref:
+            continue
+        layout_identity = " ".join(str(layout_item.get(key, "")).lower().replace("_", " ") for key in ("role", "type", "category", "id"))
+        if "place zone" not in layout_identity:
+            continue
+        layout_item["pose"] = {"xyz": list(xyz[:3]), "rpy": list(rpy[:3])}
+        layout_item["dimensions"] = [dimensions[0], dimensions[1], height]
 
 
 def _provenance(fields: Iterable[str], source: str) -> Dict[str, str]:

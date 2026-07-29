@@ -23,7 +23,7 @@ for import_path in (SCRIPT_DIR, REPO_ROOT):
 
 from export_workcell_studio_web_scene import build_web_scene  # noqa: E402
 from workcell_builder_studio_panel import build_export_sources_command  # noqa: E402
-from validate_workcell_studio_web_scene_edit_patch import _load_json, _scene_id, validate  # noqa: E402
+from validate_workcell_studio_web_scene_edit_patch import _derived_transform_target, _items_by_id, _load_json, _scene_id, validate  # noqa: E402
 
 
 def _scene_id_from_dir(scene: Path) -> str:
@@ -59,6 +59,17 @@ def _validate_patch(before: dict[str, Any], patch_path: Path) -> tuple[bool, dic
     except ValueError as exc:
         return False, None, [str(exc)]
     errors = validate(before, patch)
+    if errors:
+        derived = [
+            (str(edit.get("item_id", "")), _derived_transform_target(_items_by_id(before).get(str(edit.get("item_id", "")), {})))
+            for edit in patch.get("edits", []) if isinstance(edit, dict)
+        ]
+        for item_id, target_id in derived:
+            if target_id:
+                errors.append(
+                    f"user action required: select/move destination {target_id!r}, not derived overlay {item_id!r}; "
+                    "only the destination transform is persisted and re-export regenerates the overlay"
+                )
     return not errors, patch, errors
 
 

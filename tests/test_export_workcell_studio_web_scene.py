@@ -269,6 +269,25 @@ def test_active_place_zone_is_normalized_from_referenced_physical_asset(tmp_path
     assert zone["normalization_provenance"]["physical_asset"] == "environment.assets"
 
 
+def test_active_place_zone_prefers_saved_layout_destination_transform(tmp_path):
+    scene = tmp_path / "scene"
+    (scene / "layout").mkdir(parents=True)
+    (scene / "environment.yaml").write_text(yaml.safe_dump({
+        "task": {"place": {"target_ref": "place_area"}},
+        "task_zones": [{"id": "place_area", "target_ref": "bin", "dimensions": [0.1, 0.1, 0.01]}],
+        "environment": {"assets": [{"id": "bin", "pose_xyz": [0, 0, 0], "pose_rpy": [0, 0, 0], "dimensions": [0.2, 0.3, 0.4]}]},
+    }, sort_keys=False), encoding="utf-8")
+    (scene / "layout" / "workcell_studio_layout.yaml").write_text(yaml.safe_dump({
+        "items": [{"id": "bin", "pose": {"xyz": [1, 2, 3], "rpy": [0, 0, 0.5]}, "dimensions": [0.6, 0.7, 0.8]}],
+    }, sort_keys=False), encoding="utf-8")
+
+    zone = next(item for item in exporter.build_web_scene(scene)["zones"] if item["id"] == "place_area")
+    assert zone["pose_xyz"] == [1, 2, 3]
+    assert zone["pose_rpy"] == [0, 0, 0.5]
+    assert zone["dimensions"] == [0.6, 0.7, 0.01]
+    assert zone["normalization_provenance"]["physical_asset"] == "layout/workcell_studio_layout.yaml"
+
+
 def test_active_place_zone_rejects_ambiguous_applicable_rule_destinations(tmp_path):
     scene = tmp_path / "scene"
     scene.mkdir()

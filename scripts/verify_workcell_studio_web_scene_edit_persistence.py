@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from validate_workcell_studio_web_scene_edit_patch import _is_generated_robot_or_tool, _items_by_id, _load_json, _scene_id, validate
+from validate_workcell_studio_web_scene_edit_patch import _derived_transform_target, _is_generated_robot_or_tool, _items_by_id, _load_json, _scene_id, validate
 
 _ALLOWED_ITEM_METADATA = {
     "provenance",
@@ -91,6 +91,10 @@ def verify(before: dict[str, Any], patch: dict[str, Any], after: dict[str, Any])
     before_items = _items_by_id(before)
     after_items = _items_by_id(after)
     edited_ids: set[str] = set()
+    derived_dependents = {
+        item_id: target_id for item_id, item in before_items.items()
+        if (target_id := _derived_transform_target(item))
+    }
 
     for index, edit in enumerate(patch.get("edits", []) if isinstance(patch.get("edits"), list) else []):
         item_id = str(edit.get("item_id", ""))
@@ -137,6 +141,12 @@ def verify(before: dict[str, Any], patch: dict[str, Any], after: dict[str, Any])
             errors.append(f"item {item_id!r}: missing from after web_scene")
             continue
         if item_id in edited_ids:
+            continue
+        if derived_dependents.get(item_id) in edited_ids:
+            if _strip_allowed_metadata(before_item) == _strip_allowed_metadata(after_item):
+                details.append(f"PASS linked place-zone record {item_id}: remained exporter-consistent with destination {derived_dependents[item_id]}")
+            else:
+                details.append(f"PASS derived place-zone overlay {item_id}: regenerated from destination {derived_dependents[item_id]}")
             continue
         if before_item.get("locked") is True or _is_generated_robot_or_tool(before_item):
             label = "locked/generated"

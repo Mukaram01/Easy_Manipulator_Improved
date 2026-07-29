@@ -23,7 +23,7 @@ try:
 except ImportError:  # pragma: no cover
     yaml = None  # type: ignore
 
-from validate_workcell_studio_web_scene_edit_patch import _items_by_id, _load_json, _scene_id, validate
+from validate_workcell_studio_web_scene_edit_patch import _derived_transform_target, _items_by_id, _load_json, _scene_id, validate
 
 ALLOWED_SOURCES = {
     "layout/workcell_studio_layout.yaml",
@@ -174,6 +174,12 @@ def _plan(scene_dir: Path, web_scene: dict[str, Any], patch: dict[str, Any]) -> 
     for edit in patch.get("edits", []):
         item_id = str(edit["item_id"])
         item = items[item_id]
+        derived_target = _derived_transform_target(item)
+        if derived_target:
+            raise ValueError(
+                f"{item_id}: derived place zone is a linked visual dependent of destination {derived_target!r}; "
+                "persist one update_transform edit for the destination instead"
+            )
         rel = _source_from_item(item)
         if rel is None:
             raise ValueError(f"{item_id}: ambiguous source mapping; item provenance must clearly identify layout/workcell_studio_layout.yaml or environment.yaml")

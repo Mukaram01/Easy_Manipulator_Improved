@@ -2220,7 +2220,7 @@ def test_viewer_rotate_cancels_on_selection_mode_and_scene_change_without_yaml_w
     load_file_body = _viewer_function_body(js, "async function loadFile(file)", "function safeRelativeSceneUrl")
     load_url_body = _viewer_function_body(js, "async function loadSceneUrl(rawUrl)", "if (el.resetView)")
     object_change_body = js.split("transformControls.addEventListener('objectChange'", 1)[1].split("controls.addEventListener('start'", 1)[0]
-    assert "state.directRotateDrag && state.directRotateDrag.itemId !== requestedId" in select_body
+    assert "state.directRotateDrag && state.directRotateDrag.itemId !== selectionId" in select_body
     assert "cancelDirectRotateDrag('Rotation cancelled')" in select_body
     assert "if (state.editorMode !== normalized)" in mode_body
     assert "cancelDirectRotateDrag('Rotation cancelled')" in mode_body

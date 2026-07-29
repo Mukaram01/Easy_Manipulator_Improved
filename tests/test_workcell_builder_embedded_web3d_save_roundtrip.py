@@ -252,15 +252,12 @@ def test_executable_target_bin_linked_save_and_reload_roundtrip(tmp_path):
         "created_at": "2026-07-28T00:00:00Z",
         "created_by": "static_web_viewer",
         "provenance": {"source_web_scene_file": before_path.name},
-        "edits": [
-            {"item_id": item_id, "operation": "update_transform", "editable_required": True,
-             "locked_required": False, "old_transform": old, "new_transform": moved(old)}
-            for item_id, old in (("target_bin_default", old_bin), ("place_zone_default", old_zone))
-        ],
+        "edits": [{"item_id": "target_bin_default", "operation": "update_transform", "editable_required": True,
+                   "locked_required": False, "old_transform": old_bin, "new_transform": moved(old_bin)}],
     }
     patch_path = output / "edit_patch.json"
     patch_path.write_text(json.dumps(patch), encoding="utf-8")
-    assert {edit["item_id"] for edit in patch["edits"]} == {"target_bin_default", "place_zone_default"}
+    assert {edit["item_id"] for edit in patch["edits"]} == {"target_bin_default"}
 
     layout_path = scene / "layout/workcell_studio_layout.yaml"
     layout_before = layout_path.read_bytes()
@@ -285,10 +282,14 @@ def test_executable_target_bin_linked_save_and_reload_roundtrip(tmp_path):
     layout_items = {item["id"]: item for item in layout["items"]}
     after = json.loads((output / "ur5_2f_test.after.web_scene.json").read_text(encoding="utf-8"))
     reloaded = {item["id"]: item for item in _rendered_items(after)}
-    for item_id, old in (("target_bin_default", old_bin), ("place_zone_default", old_zone)):
-        expected = moved(old)
-        assert layout_items[item_id]["pose"]["xyz"] == list(expected["pose"]["xyz"].values())
-        assert _transform(reloaded[item_id])["pose"] == expected["pose"]
+    expected = moved(old_bin)
+    assert layout_items["target_bin_default"]["pose"]["xyz"] == list(expected["pose"]["xyz"].values())
+    assert _transform(reloaded["target_bin_default"])["pose"] == expected["pose"]
+    # The authored overlay pose is not persisted independently. Export derives
+    # both its transform and footprint from the destination asset.
+    assert layout_items["place_zone_default"]["pose"]["xyz"] == list(old_zone["pose"]["xyz"].values())
+    assert _transform(reloaded["place_zone_default"])["pose"] == expected["pose"]
+    assert reloaded["place_zone_default"]["dimensions"][:2] == reloaded["target_bin_default"]["dimensions"][:2]
 
 
 def test_executable_linked_edit_undo_redo_preserves_canonical_selection():
@@ -300,13 +301,13 @@ const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',inn
 const context={console,assert,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element();},createElement(){return element();}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
 vm.createContext(context); vm.runInContext(source+`
 const object=(x,y,z)=>({position:{x,y,z,set(a,b,c){this.x=a;this.y=b;this.z=c;}},rotation:{x:0,y:0,z:0,set(a,b,c){this.x=a;this.y=b;this.z=c;}},scale:{x:1,y:1,z:1,set(a,b,c){this.x=a;this.y=b;this.z=c;}}});
-const row=(id,z)=>({item:{id,editable:true,locked:false,source_layer:'editable_layout',render_policy:'primary',transform_group:'default_drop_destination'},object3d:object(.55,-.28,z),originalTransform:null});
+const row=(id,z)=>({item:{id,editable:true,locked:false,source_layer:'editable_layout',render_policy:'primary',transform_group:'default_drop_destination',...(id==='place_zone_default'?{role:'place_zone',target_ref:'target_bin_default'}:{role:'target_bin'})},object3d:object(.55,-.28,z),originalTransform:null});
 const bin=row('target_bin_default',.2),zone=row('place_zone_default',.105); for(const item of [bin,zone]) item.originalTransform=transformFromObject(item.object3d);
 state.objects=[bin,zone];state.sceneJson={scene:{id:'ur5_2f_test'}};state.dirtyTransforms=new Map();state.undoStack=[];state.redoStack=[];state.selected='target_bin_default';
 updateLabels=()=>{};updateDirtyState=()=>{};emitDirtyChanged=()=>{};populateObjectList=()=>{};populateInspector=()=>{};
-let savedTransform=cloneTransform(bin.originalTransform);savedTransform.pose.xyz.x+=.08;assert.strictEqual(markDirtyTransform(bin,savedTransform),true);assert.strictEqual(buildEditPatch().edits.length,2);
+let savedTransform=cloneTransform(bin.originalTransform);savedTransform.pose.xyz.x+=.08;assert.strictEqual(markDirtyTransform(bin,savedTransform),true);assert.strictEqual(buildEditPatch().edits.length,1);assert.strictEqual(buildEditPatch().edits[0].item_id,'target_bin_default');
 undoPreviewEdit();assert.strictEqual(state.selected,'target_bin_default');assert.strictEqual(state.dirtyTransforms.size,0);
-redoPreviewEdit();assert.strictEqual(state.selected,'target_bin_default');assert.strictEqual(state.dirtyTransforms.size,2);
+redoPreviewEdit();assert.strictEqual(state.selected,'target_bin_default');assert.strictEqual(state.dirtyTransforms.size,1);assert.strictEqual(zone.object3d.position.x,.63);
 `,context);
 """
     result = subprocess.run(["node", "-e", harness, str(viewer)], cwd=ROOT, capture_output=True, text=True)
