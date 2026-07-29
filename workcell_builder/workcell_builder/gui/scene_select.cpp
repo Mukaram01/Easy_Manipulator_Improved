@@ -44,6 +44,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QLineEdit>
+#include <QComboBox>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFile>
@@ -95,6 +96,7 @@
 #include <vector>
 #include <set>
 #include <cmath>
+#include <cctype>
 #include <fstream>
 #include <functional>
 
@@ -3747,7 +3749,10 @@ void SceneSelect::initialize_task_area_editor()
   auto * w = make_spin("task_area_width_spin", 0.001, 10, 0.30); form->addRow("Width", w);
   auto * d = make_spin("task_area_depth_spin", 0.001, 10, 0.30); form->addRow("Depth", d);
   auto * h = make_spin("task_area_height_spin", 0.001, 10, 0.10); form->addRow("Height", h);
-  auto * assoc = new QLineEdit(group); assoc->setObjectName("task_area_association_edit"); form->addRow("Pick Object / Destination Bin", assoc);
+  auto * assoc = new QLineEdit(group); assoc->setObjectName("task_area_association_edit");
+  auto * association_label = new QLabel("Pick Object", group); association_label->setObjectName("task_area_association_label"); form->addRow(association_label, assoc);
+  auto * destination = new QComboBox(group); destination->setObjectName("task_area_destination_combo");
+  auto * destination_label = new QLabel("Destination Bin", group); destination_label->setObjectName("task_area_destination_label"); form->addRow(destination_label, destination);
   auto * status = new QLabel("status/warning", group); status->setObjectName("task_area_status_label"); status->setWordWrap(true); form->addRow("status/warning", status);
   layout->addLayout(form);
   ui->layoutLayout->insertWidget(1, group);
@@ -3762,11 +3767,24 @@ void SceneSelect::initialize_task_area_editor()
       a.id = name->text().trimmed().toStdString(); selected_task_area_id_ = a.id;
       a.x = snap_task_area_value(x->value()); a.y = snap_task_area_value(y->value()); a.z = snap_task_area_value(z->value());
       a.yaw = snap_task_area_value(rot->value()); a.dim_x = snap_task_area_value(w->value()); a.dim_y = snap_task_area_value(d->value()); a.dim_z = snap_task_area_value(h->value());
-      if (a.role == "pick") a.object_ref = assoc->text().trimmed().toStdString(); else a.target_ref = assoc->text().trimmed().toStdString();
+      if (a.role == "pick") a.object_ref = assoc->text().trimmed().toStdString();
       mark_task_areas_dirty("Task Area inspector"); refresh_preview_status(); break;
     }
   };
   connect(name, &QLineEdit::editingFinished, this, update); connect(assoc, &QLineEdit::editingFinished, this, update);
+  connect(destination, QOverload<int>::of(&QComboBox::activated), this, [this, destination](int index) {
+    const std::string destination_id = destination->itemData(index).toString().toStdString();
+    if (destination_id.empty()) return;
+    for (auto & area : task_area_zones_) if (area.id == selected_task_area_id_) {
+      if (area.role != "place" && area.type != "place_zone") return;
+      if (area.target_ref == destination_id) return;
+      area.target_ref = destination_id;
+      mark_task_areas_dirty("Destination Bin");
+      sync_task_area_inspector();
+      refresh_preview_status();
+      return;
+    }
+  });
   for (auto * spin : {x,y,z,rot,w,d,h}) connect(spin, &QAbstractSpinBox::editingFinished, this, update);
 }
 
@@ -3793,13 +3811,13 @@ bool SceneSelect::ensure_suggested_task_areas()
   bool changed = false;
   auto has_role = [this](const std::string & role) { for (const auto & z : task_area_zones_) if (z.role == role || z.type == role + "_zone") return true; return false; };
   if (!has_role("pick")) { workcell_builder::TaskZone z; z.id="commissioning_pick_pose"; z.type="pick_zone"; z.role="pick"; z.shape="box"; z.dim_x=.30; z.dim_y=.30; z.dim_z=.10; z.x=-.20; z.support_surface_ref="default_support_surface"; z.object_ref="Pick Object"; task_area_zones_.push_back(z); changed = true; }
-  if (!has_role("place")) { workcell_builder::TaskZone z; z.id="default_drop_zone"; z.type="place_zone"; z.role="place"; z.shape="box"; z.dim_x=.30; z.dim_y=.30; z.dim_z=.10; z.x=.25; z.support_surface_ref="default_support_surface"; z.target_ref="Destination Bin"; task_area_zones_.push_back(z); changed = true; }
+  if (!has_role("place")) { workcell_builder::TaskZone z; z.id="default_drop_zone"; z.type="place_zone"; z.role="place"; z.shape="box"; z.dim_x=.30; z.dim_y=.30; z.dim_z=.10; z.x=.25; z.support_surface_ref="default_support_surface"; task_area_zones_.push_back(z); changed = true; }
   return changed;
 }
 
 void SceneSelect::add_task_area(const std::string & role)
 {
-  workcell_builder::TaskZone z; z.id = role == "pick" ? "pick_area" : "place_area"; z.type = role + "_zone"; z.role = role; z.shape="box"; z.parent_frame="world"; z.dim_x=.30; z.dim_y=.30; z.dim_z=.10; z.x = role == "pick" ? -.20 : .25; z.support_surface_ref="default_support_surface"; if (role=="pick") z.object_ref="Pick Object"; else z.target_ref="Destination Bin";
+  workcell_builder::TaskZone z; z.id = role == "pick" ? "pick_area" : "place_area"; z.type = role + "_zone"; z.role = role; z.shape="box"; z.parent_frame="world"; z.dim_x=.30; z.dim_y=.30; z.dim_z=.10; z.x = role == "pick" ? -.20 : .25; z.support_surface_ref="default_support_surface"; if (role=="pick") z.object_ref="Pick Object";
   int suffix = 1; auto exists=[&](const std::string & id){ for (const auto & a: task_area_zones_) if (a.id==id) return true; return false;}; const std::string base=z.id; while (exists(z.id)) z.id=base+"_"+std::to_string(++suffix);
   task_area_zones_.push_back(z); selected_task_area_id_ = z.id; mark_task_areas_dirty(role == "pick" ? "Add Pick Area" : "Add Place Area"); refresh_preview_status();
 }
@@ -3824,9 +3842,87 @@ void SceneSelect::sync_task_area_inspector()
   for (const auto & a : task_area_zones_) if (a.id == selected_task_area_id_) {
     auto set_text=[this](const char * n, const QString & v){ if (auto * w=ui->layout_tab->findChild<QLineEdit *>(n)) { QSignalBlocker b(w); w->setText(v);} };
     auto set_spin=[this](const char * n, double v){ if (auto * w=ui->layout_tab->findChild<QDoubleSpinBox *>(n)) { QSignalBlocker b(w); w->setValue(v);} };
-    set_text("task_area_name_edit", QString::fromStdString(a.id)); set_spin("task_area_x_spin", a.x); set_spin("task_area_y_spin", a.y); set_spin("task_area_z_spin", a.z); set_spin("task_area_rotation_spin", a.yaw); set_spin("task_area_width_spin", a.dim_x); set_spin("task_area_depth_spin", a.dim_y); set_spin("task_area_height_spin", a.dim_z); set_text("task_area_association_edit", QString::fromStdString(a.role == "pick" ? a.object_ref : a.target_ref));
-    if (auto * l=ui->layout_tab->findChild<QLabel *>("task_area_status_label")) l->setText(QString::fromStdString((a.role=="pick" ? "Pick Area" : "Place Area") + std::string(" selected. Offline layout check only; motion planning is checked later.")));
+    const bool is_pick = a.role == "pick" || a.type == "pick_zone";
+    set_text("task_area_name_edit", QString::fromStdString(a.id)); set_spin("task_area_x_spin", a.x); set_spin("task_area_y_spin", a.y); set_spin("task_area_z_spin", a.z); set_spin("task_area_rotation_spin", a.yaw); set_spin("task_area_width_spin", a.dim_x); set_spin("task_area_depth_spin", a.dim_y); set_spin("task_area_height_spin", a.dim_z); set_text("task_area_association_edit", QString::fromStdString(a.object_ref));
+    if (auto * association = ui->layout_tab->findChild<QLineEdit *>("task_area_association_edit")) association->setVisible(is_pick);
+    if (auto * label = ui->layout_tab->findChild<QLabel *>("task_area_association_label")) label->setVisible(is_pick);
+    if (auto * label = ui->layout_tab->findChild<QLabel *>("task_area_destination_label")) label->setVisible(!is_pick);
+    bool missing_destination = false;
+    if (auto * combo = ui->layout_tab->findChild<QComboBox *>("task_area_destination_combo")) {
+      QSignalBlocker blocker(combo);
+      combo->setVisible(!is_pick);
+      combo->clear();
+      for (const auto & candidate : task_area_destinations()) {
+        combo->addItem(QString::fromStdString(candidate.display_name), QString::fromStdString(candidate.id));
+      }
+      const int current = combo->findData(QString::fromStdString(a.target_ref));
+      if (!is_pick && current < 0 && !a.target_ref.empty()) {
+        combo->insertItem(0, QString::fromStdString("Missing destination: " + a.target_ref), QVariant());
+        combo->setCurrentIndex(0);
+        missing_destination = true;
+      } else if (current >= 0) {
+        combo->setCurrentIndex(current);
+      } else {
+        combo->insertItem(0, "Choose a destination", QVariant());
+        combo->setCurrentIndex(0);
+        missing_destination = !is_pick;
+      }
+    }
+    if (auto * l=ui->layout_tab->findChild<QLabel *>("task_area_status_label")) {
+      const std::string prefix = missing_destination ? "Missing destination: " + a.target_ref + ". " : "";
+      l->setText(QString::fromStdString(prefix + (is_pick ? "Pick Area" : "Place Area") + " selected. Offline layout check only; motion planning is checked later."));
+    }
   }
+}
+
+std::vector<SceneSelect::TaskAreaDestination> SceneSelect::task_area_destinations() const
+{
+  std::vector<TaskAreaDestination> result;
+  const fs::path environment = scene_dir_for_current_selection() / "environment.yaml";
+  if (!fs::exists(environment)) return result;
+  YAML::Node root;
+  try { root = YAML::LoadFile(environment.string()); } catch (const YAML::Exception &) { return result; }
+  const YAML::Node assets = root["environment"]["assets"];
+  if (!assets || !assets.IsSequence()) return result;
+  auto normalized = [](const YAML::Node & node, const char * key) {
+    std::string value = node[key].as<std::string>("");
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+  };
+  const auto contains_any = [](const std::string & value, const std::vector<std::string> & tokens) {
+    for (const auto & token : tokens) if (value.find(token) != std::string::npos) return true;
+    return false;
+  };
+  const std::vector<std::string> destination_tokens{"bin", "tote", "destination_container", "destination container", "container"};
+  const std::vector<std::string> excluded_tokens{"overlay", "helper", "diagnostic", "place_zone", "pick_zone", "robot", "tool", "gripper", "camera", "generated_urdf", "generated urdf"};
+  for (const auto & asset : assets) {
+    const std::string id = asset["id"].as<std::string>("");
+    const std::string type = normalized(asset, "type");
+    const std::string role = normalized(asset, "role");
+    const std::string category = normalized(asset, "category");
+    const std::string source_layer = normalized(asset, "source_layer");
+    const std::string active_visual_source = normalized(asset, "active_visual_source");
+    if (id.empty() || contains_any(source_layer, excluded_tokens) ||
+      contains_any(active_visual_source, excluded_tokens)) continue;
+    const bool semantic_destination = contains_any(type, destination_tokens) ||
+      contains_any(role, destination_tokens) || contains_any(category, destination_tokens);
+    const bool helper_identity = contains_any(type, excluded_tokens) || contains_any(role, excluded_tokens);
+    if (!semantic_destination || helper_identity) continue;
+    std::string display_name = asset["display_name"].as<std::string>(asset["name"].as<std::string>(id));
+    result.push_back({id, display_name});
+  }
+  std::sort(result.begin(), result.end(), [](const auto & lhs, const auto & rhs) {
+    return lhs.display_name < rhs.display_name;
+  });
+  return result;
+}
+
+bool SceneSelect::is_valid_task_area_destination(const std::string & id) const
+{
+  const auto destinations = task_area_destinations();
+  return std::any_of(destinations.begin(), destinations.end(), [&id](const auto & destination) {
+    return destination.id == id;
+  });
 }
 
 bool SceneSelect::validate_task_areas_for_save(std::vector<std::string> * errors, std::vector<std::string> * warnings) const
@@ -3841,7 +3937,9 @@ bool SceneSelect::validate_task_areas_for_save(std::vector<std::string> * errors
     if (is_pick && !pick_ids.insert(z.id).second) errors->push_back("duplicate Pick Area ID: " + z.id);
     if (is_place && !place_ids.insert(z.id).second) errors->push_back("duplicate Place Area ID: " + z.id);
     if (is_pick && z.object_ref.empty()) errors->push_back("unresolved Pick Object association for " + z.id);
-    if (is_place && z.target_ref.empty()) errors->push_back("unresolved Destination Bin association for " + z.id);
+    if (is_place && !is_valid_task_area_destination(z.target_ref)) {
+      errors->push_back("Missing destination: " + (z.target_ref.empty() ? std::string("<none>") : z.target_ref) + " for " + z.id);
+    }
     if (std::fabs(z.x) > 1.0 || std::fabs(z.y) > 1.0) warnings->push_back(z.id + " may be outside support surface / approximate reach concern");
   }
   for (const auto & a : task_area_zones_) for (const auto & b : task_area_zones_) if (a.id < b.id && std::fabs(a.x-b.x) < (a.dim_x+b.dim_x)/2.0 && std::fabs(a.y-b.y) < (a.dim_y+b.dim_y)/2.0) warnings->push_back("Pick and Place Areas may be overlapping: " + a.id + " / " + b.id);
