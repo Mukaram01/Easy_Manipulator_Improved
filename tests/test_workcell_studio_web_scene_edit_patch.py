@@ -87,6 +87,18 @@ def test_validator_rejects_missing_item_id(tmp_path):
     assert "item not found" in result.stderr
 
 
+def test_validator_rejects_direct_derived_place_zone_edit_with_destination_guidance(tmp_path):
+    web_scene = _web_scene()
+    web_scene["zones"].append({
+        "id": "place_zone", "role": "place_zone", "target_ref": "layout_bin",
+        "source_kind": "user_authored", "editable": True, "locked": False,
+    })
+    result = _run_validator(tmp_path, web_scene, _patch("place_zone"))
+    assert result.returncode == 1
+    assert "derived place zone transforms are owned by destination 'layout_bin'" in result.stderr
+    assert "edit that destination instead" in result.stderr
+
+
 def test_validator_rejects_non_finite_transform_values(tmp_path):
     patch = _patch()
     patch["edits"][0]["new_transform"]["pose"]["xyz"]["x"] = math.inf

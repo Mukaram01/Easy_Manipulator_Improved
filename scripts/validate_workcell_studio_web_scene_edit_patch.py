@@ -57,6 +57,13 @@ def _is_generated_robot_or_tool(item: dict[str, Any]) -> bool:
     return False
 
 
+def _derived_transform_target(item: dict[str, Any]) -> str | None:
+    """Return the authored transform owner for a derived place-zone overlay."""
+    target = str(item.get("target_ref", "")).strip()
+    identity = _identity(item).replace("-", " ")
+    return target if target and "place zone" in identity else None
+
+
 def _walk_numbers(value: Any, path: str, errors: list[str]) -> None:
     if isinstance(value, dict):
         for key, child in value.items():
@@ -97,6 +104,14 @@ def validate(web_scene: dict[str, Any], patch: dict[str, Any]) -> list[str]:
         if item is None:
             errors.append(f"{prefix}.item_id={item_id!r}: item not found in web scene")
             continue
+        derived_target = _derived_transform_target(item)
+        if derived_target:
+            if derived_target not in items:
+                errors.append(f"{prefix}.item_id={item_id!r}: derived place zone references missing destination {derived_target!r}")
+            errors.append(
+                f"{prefix}.item_id={item_id!r}: derived place zone transforms are owned by destination "
+                f"{derived_target!r}; edit that destination instead (the overlay pose and footprint are regenerated on export)"
+            )
         if item.get("locked") is True:
             errors.append(f"{prefix}.item_id={item_id!r}: locked=true items cannot be edited")
         if item.get("editable") is not True:

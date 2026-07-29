@@ -1135,8 +1135,17 @@ function meshLocalTransformOf(item) {
 function cloneTransform(transform) { return JSON.parse(JSON.stringify(transform)); }
 function sameTransform(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 function renderedById(id) { return state.objects.find(obj => obj.item.id === id); }
+function derivedTransformTargetId(item) {
+  const targetId = String(item?.target_ref || '').trim();
+  const identity = [item?.role, item?.semantic_role, item?.type, item?.category, item?.id]
+    .map(value => String(value || '').toLowerCase().replaceAll('_', ' ')).join(' ');
+  return targetId && /\bplace zone\b/.test(identity) ? targetId : '';
+}
+function isDerivedTransformDependent(item) { return Boolean(derivedTransformTargetId(item)); }
 function canonicalSelectionRendered(rendered) {
   const item = rendered?.item;
+  const derivedTarget = renderedById(derivedTransformTargetId(item));
+  if (derivedTarget && canEditItem(derivedTarget.item)) return derivedTarget;
   if (!item?.id || !isGeneratedUrdfItem(item) || isGeneratedRobotItem(item) || isGeneratedToolOrGripperItem(item)) return rendered || null;
 
   // Generated environment visuals are render children, not separate authored
@@ -1236,7 +1245,7 @@ function applyTransformChanges(changes, { updateDirty = false } = {}) {
   if (!changes.every(change => isFiniteTransform(change.after))) return false;
   for (const change of changes) {
     applyTransformToObject(change.rendered.object3d, change.after);
-    if (!updateDirty) continue;
+    if (!updateDirty || isDerivedTransformDependent(change.rendered.item)) continue;
     if (sameTransform(change.rendered.originalTransform, change.after)) state.dirtyTransforms.delete(change.rendered.item.id);
     else state.dirtyTransforms.set(change.rendered.item.id, { oldTransform: cloneTransform(change.rendered.originalTransform), newTransform: cloneTransform(change.after) });
     syncInspectorTransformFields(change.rendered);
@@ -1246,6 +1255,18 @@ function applyTransformChanges(changes, { updateDirty = false } = {}) {
 }
 function markDirtyTransform(rendered, next, { pushHistory = true, oldTransform = null, snapOptions = undefined, memberStarts = null } = {}) {
   if (!rendered || !canEditItem(rendered.item)) return false;
+  const owner = canonicalSelectionRendered(rendered);
+  if (owner && owner !== rendered) {
+    const dependentBefore = oldTransform || state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d);
+    const ownerBefore = state.dirtyTransforms.get(owner.item.id)?.newTransform || transformFromObject(owner.object3d);
+    const ownerNext = cloneTransform(ownerBefore);
+    ownerNext.pose.xyz.x += next.pose.xyz.x - dependentBefore.pose.xyz.x;
+    ownerNext.pose.xyz.y += next.pose.xyz.y - dependentBefore.pose.xyz.y;
+    ownerNext.pose.xyz.z += next.pose.xyz.z - dependentBefore.pose.xyz.z;
+    ownerNext.pose.rpy.z += next.pose.rpy.z - dependentBefore.pose.rpy.z;
+    ownerNext.scale = cloneTransform(next).scale;
+    return markDirtyTransform(owner, ownerNext, { pushHistory, oldTransform: ownerBefore, snapOptions, memberStarts: memberStarts || captureTransformGroup(owner) });
+  }
   const previous = oldTransform || state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d);
   const snapped = snapOptions === null ? cloneTransform(next) : snapTransform(next, snapOptions);
   const changes = linkedTransformChanges(rendered, previous, snapped, memberStarts);
@@ -3619,7 +3640,9 @@ function rankedPickingCandidates(hits) {
 }
 function selectObject(id) {
   const requestedId = String(id || '');
-  const requested = requestedId ? renderedById(requestedId) : null;
+  const rawRequested = requestedId ? renderedById(requestedId) : null;
+  const requested = canonicalSelectionRendered(rawRequested);
+  const selectionId = requested?.item?.id || requestedId;
   if (requestedId && !isNormalSelectableRendered(requested)) {
     const reason = requested ? 'diagnostic_helper_or_non_selectable' : 'missing_render_identity';
     state.ignoredSelectionKeys ||= new Set();
@@ -3631,9 +3654,9 @@ function selectObject(id) {
     return '';
   }
   const wasInitialPreviewActive = state.initialPosePreview.active;
-  if (state.directMoveDrag && state.directMoveDrag.itemId !== requestedId) cancelDirectMoveDrag('Move cancelled');
-  if (state.directRotateDrag && state.directRotateDrag.itemId !== requestedId) cancelDirectRotateDrag('Rotation cancelled');
-  id = requestedId;
+  if (state.directMoveDrag && state.directMoveDrag.itemId !== selectionId) cancelDirectMoveDrag('Move cancelled');
+  if (state.directRotateDrag && state.directRotateDrag.itemId !== selectionId) cancelDirectRotateDrag('Rotation cancelled');
+  id = selectionId;
   const previous = state.selected || '';
   state.selected = id;
   document.querySelectorAll('.object-list li').forEach(li => li.classList.toggle('selected', li.dataset.id === id));
