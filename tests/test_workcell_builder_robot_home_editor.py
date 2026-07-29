@@ -1,5 +1,6 @@
 from pathlib import Path
 import math
+import re
 import shutil
 import yaml
 
@@ -7,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CPP = ROOT / "workcell_builder/workcell_builder/gui/scene_select.cpp"
 H = ROOT / "workcell_builder/workcell_builder/gui/scene_select.h"
 SHARED_INITIAL = ROOT / "assets/robots/universal_robot/ur5_moveit_config/config/initial_positions.yaml"
+CMAKE = ROOT / "workcell_builder/workcell_builder/CMakeLists.txt"
 
 JOINTS = [
     ("Base", "shoulder_pan_joint", 0.0),
@@ -20,6 +22,26 @@ JOINTS = [
 
 def text():
     return CPP.read_text(encoding="utf-8") + "\n" + H.read_text(encoding="utf-8")
+
+
+def test_scene_preview_ui_target_includes_direct_robot_home_helper_implementation():
+    cmake = CMAKE.read_text(encoding="utf-8")
+    target_sources = re.search(
+        r"ament_add_gtest\(workcell_scene_preview_widget_ui_test\s+(.*?)\)",
+        cmake,
+        re.DOTALL,
+    )
+    assert target_sources is not None
+    assert "gui/scene_preview_widget.cpp" in target_sources.group(1)
+    assert "gui/robot_home_yaml_io.cpp" in target_sources.group(1)
+    target_links = re.search(
+        r"target_link_libraries\(workcell_scene_preview_widget_ui_test\s+(.*?)\)",
+        cmake,
+        re.DOTALL,
+    )
+    assert target_links is not None
+    for dependency in ("Qt5::Core", "Qt5::Widgets", "yaml-cpp"):
+        assert dependency in target_links.group(1)
 
 
 def test_suggested_ur5_joint_order_and_values_are_finite():
