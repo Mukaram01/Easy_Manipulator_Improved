@@ -10,6 +10,7 @@
 #include <QHash>
 #include <QDateTime>
 #include <QUrl>
+#include "robot_home_yaml_io.hpp"
 
 class QNetworkAccessManager;
 
@@ -17,6 +18,7 @@ class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QPushButton;
+class QGroupBox;
 class QStackedWidget;
 class QComboBox;
 class QGraphicsView;
@@ -336,6 +338,10 @@ private:
   void refresh_product_view_tool_orientation_control();
   void apply_product_view_tool_orientation();
   void reset_product_view_tool_orientation();
+  void refresh_product_view_robot_home_control();
+  void reset_product_view_robot_home();
+  void use_suggested_product_view_robot_home();
+  void apply_product_view_robot_home();
   enum class EmbeddedProductViewState {
     Idle,
     Preparing,
@@ -483,6 +489,16 @@ private:
   double loaded_product_view_tool_rpy_[3]{ 0.0, 0.0, 0.0 };
   bool product_view_tool_orientation_loaded_{ false };
   bool product_view_tool_orientation_save_in_progress_{ false };
+  QGroupBox * product_view_robot_home_row_{ nullptr };
+  QVector<QDoubleSpinBox *> product_view_robot_home_spins_;
+  QPushButton * product_view_robot_home_current_button_{ nullptr };
+  QPushButton * product_view_robot_home_suggested_button_{ nullptr };
+  QPushButton * product_view_robot_home_reset_button_{ nullptr };
+  QPushButton * product_view_robot_home_apply_button_{ nullptr };
+  QLabel * product_view_robot_home_status_{ nullptr };
+  workcell_builder::RobotHomeConfig loaded_product_view_robot_home_;
+  bool product_view_robot_home_loaded_{ false };
+  bool product_view_robot_home_save_in_progress_{ false };
   QComboBox * interaction_mode_selector_{ nullptr };
   QComboBox * view_actions_selector_{ nullptr };
   QLabel * view_mode_label_{ nullptr };

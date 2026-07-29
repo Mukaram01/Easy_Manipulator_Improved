@@ -68,6 +68,8 @@ add_executable(workcell_builder
     gui/mainwindow.ui
     gui/scene_preview_widget.cpp
     gui/scene_preview_widget.h
+    gui/robot_home_yaml_io.cpp
+    gui/robot_home_yaml_io.hpp
     gui/scene3d_viewport_widget.cpp
     gui/scene3d_viewport_widget.h
     gui/scene3d_candidate_assembly.cpp
