@@ -283,13 +283,17 @@ def test_executable_target_bin_linked_save_and_reload_roundtrip(tmp_path):
     after = json.loads((output / "ur5_2f_test.after.web_scene.json").read_text(encoding="utf-8"))
     reloaded = {item["id"]: item for item in _rendered_items(after)}
     expected = moved(old_bin)
+    assert {edit["item_id"] for edit in patch["edits"]} == {"target_bin_default"}
     assert layout_items["target_bin_default"]["pose"]["xyz"] == list(expected["pose"]["xyz"].values())
+    assert layout_items["target_bin_default"]["pose"]["rpy"] == list(expected["pose"]["rpy"].values())
     assert _transform(reloaded["target_bin_default"])["pose"] == expected["pose"]
     # The authored overlay pose is not persisted independently. Export derives
     # both its transform and footprint from the destination asset.
     assert layout_items["place_zone_default"]["pose"]["xyz"] == list(old_zone["pose"]["xyz"].values())
+    assert layout_items["place_zone_default"]["pose"]["rpy"] == list(old_zone["pose"]["rpy"].values())
     assert _transform(reloaded["place_zone_default"])["pose"] == expected["pose"]
     assert reloaded["place_zone_default"]["dimensions"][:2] == reloaded["target_bin_default"]["dimensions"][:2]
+    assert 0 < reloaded["place_zone_default"]["dimensions"][2] <= 0.01
 
 
 def test_executable_linked_edit_undo_redo_preserves_canonical_selection():
