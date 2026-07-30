@@ -199,10 +199,25 @@ def test_scene_preview_widget_targets_link_qt_network():
     assert "target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Core Qt5::Widgets Qt5::OpenGL Qt5::Network OpenGL::GL yaml-cpp)" in cmake
 
 
-def test_scene_preview_widget_still_uses_qtcp_socket_for_server_probe():
+def test_scene_preview_widget_uses_temporary_qtcp_server_for_owned_server_port():
     source = Path("workcell_builder/workcell_builder/gui/scene_preview_widget.cpp").read_text()
-    assert "#include <QTcpSocket>" in source
-    assert "QTcpSocket socket" in source
+    assert "#include <QTcpServer>" in source
+
+    function_start = source.index("void ScenePreviewWidget::select_owned_embedded_web_server(")
+    function_end = source.index("void ScenePreviewWidget::start_owned_embedded_web_server(", function_start)
+    function = source[function_start:function_end]
+
+    # Bind an ephemeral loopback-only listener and validate that Qt actually
+    # acquired the port before passing its number to the owned HTTP process.
+    assert "QTcpServer socket;" in function
+    assert "if (!socket.listen(QHostAddress::LocalHost, 0))" in function
+    assert "port = socket.serverPort();" in function
+
+    # The temporary server is scoped to the alternate-port selection block, so
+    # its destructor releases the listener before the owned process is started.
+    selection_block_end = function.index("\n  }\n", function.index("QTcpServer socket;"))
+    owned_server_start = function.index("start_owned_embedded_web_server(owned_identity);")
+    assert selection_block_end < owned_server_start
 
 
 def test_embedded_workcell_builder_asset_copies_are_not_colcon_packages():
