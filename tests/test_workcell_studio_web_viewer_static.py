@@ -96,6 +96,65 @@ assert.strictEqual(state.pickRecords.length, before);
     )
 
 
+def test_expanded_urdf_descendant_mesh_picks_use_registered_link_identity():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs = require('fs'); const vm = require('vm'); const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){}});
+const context={console,assert,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element();},querySelectorAll(){return[];},createElement(){return element();}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context);
+vm.runInContext(source + `
+const node = (name, children=[]) => ({name,children,visible:true,userData:{}});
+let callbacks=[];
+loadRobotPreview=(_preview,options)=>{callbacks.push(options); return {diagnostics:{},links:new Map()};};
+renderSceneSummary=()=>{}; refreshInitialPoseActionState=()=>{};
+failIfExpandedUrdfExpectedVisualSetInvalid=()=>false; completeExpandedUrdfReadiness=()=>{};
+rebuildSelectionIdentityIndex=()=>({itemById:new Map(),explicitUiIdByLink:new Map()});
+state.sceneJson={scene:{id:'urdf_descendants'},objects:[]}; state.objects=[]; state.dirtyTransforms=new Map();
+const preview={robot_instance_id:'robot',expected_robot_visual_links:['base_link','wrist_link']};
+loadExpandedUrdfRobotPreview(preview);
+const mesh=node('base-mesh');
+mesh.userData.item={id:'stale-diagnostic',diagnostic_only:true,selectable:false};
+const visualWrapper=node('base-visual',[mesh]);
+const childMesh=node('wrist-mesh');
+const childVisual=node('wrist-visual',[childMesh]);
+const childLink=node('wrist_link',[childVisual]);
+const linkRoot=node('base_link',[visualWrapper,childLink]);
+callbacks[0].onRobotLoaded({root:node('robot-root',[linkRoot]),links:new Map([['base_link',linkRoot],['wrist_link',childLink]]),diagnostics:{}});
+assert.strictEqual(state.pickRecords.length,2);
+const baseRecord=state.pickRecords.find(record=>record.item.link_name==='base_link');
+const childRecord=state.pickRecords.find(record=>record.item.link_name==='wrist_link');
+assert.strictEqual(state.pickIdentityByObject.get(linkRoot),baseRecord,'link root');
+assert.strictEqual(state.pickIdentityByObject.get(visualWrapper),baseRecord,'visual wrapper');
+assert.strictEqual(state.pickIdentityByObject.get(mesh),baseRecord,'mesh identity');
+assert.strictEqual(itemFromRaycastHit({object:mesh}),baseRecord,'mesh raycast');
+assert.strictEqual(state.pickIdentityByObject.get(childLink),childRecord,'child link');
+assert.strictEqual(state.pickIdentityByObject.get(childMesh),childRecord,'child mesh');
+assert.strictEqual(itemFromRaycastHit({object:childMesh}),childRecord,'child raycast');
+assert.strictEqual(state.pickRecords.filter(record=>record.item.link_name==='base_link').length,1);
+assert.strictEqual(state.pickRecords.filter(record=>record.item.link_name==='wrist_link').length,1);
+assert.strictEqual(state.objects.length,0);
+assert.strictEqual(state.dirtyTransforms.size,0);
+assert.strictEqual(buildEditPatch().edits.length,0);
+
+const staleCallback=callbacks[0];
+state.sceneJson={scene:{id:'replacement_scene'},objects:[]};
+loadExpandedUrdfRobotPreview(preview);
+const before=state.pickRecords.length;
+staleCallback.onRobotLoaded({root:node('stale-root'),links:new Map([['base_link',node('stale-link')]]),diagnostics:{}});
+assert.strictEqual(state.pickRecords.length,before);
+`, context);
+"""
+    subprocess.run(
+        ["node", "-e", harness, str(js_path)],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_static_viewer_files_exist():
     assert (VIEWER / "index.html").is_file()
     assert (VIEWER / "viewer.js").is_file()
