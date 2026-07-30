@@ -1796,7 +1796,15 @@ void Scene3DViewportWidget::invalidate_mesh_cache()
 }
 void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidget::PreviewItem> & preview_items)
 {
-  items = preview_items;
+  items.clear();
+  items.reserve(preview_items.size());
+  for (const auto & item : preview_items) {
+    // Selection-owner registry rows exist only in ScenePreviewWidget's
+    // identity inventory. They intentionally have no native viewport object,
+    // bounds, picking record, transform gizmo, or renderable geometry.
+    if (item.source_layer == QStringLiteral("selection_owner_registry")) continue;
+    items.push_back(item);
+  }
   const bool debug_logs = scene3d_debug_logs_enabled();
   const QString scene_key = scene_name.trimmed().isEmpty() ? QStringLiteral("No scene") : scene_name.trimmed();
   int visible_item_count = 0;

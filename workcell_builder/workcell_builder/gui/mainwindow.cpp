@@ -8541,6 +8541,13 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     return QString("hidden_by_unknown_filter");
   };
   for (const auto & p : all_scene_preview_items_) {
+    if (p.source_layer == QStringLiteral("selection_owner_registry")) {
+      // Identity-only rows must reach ScenePreviewWidget::preview_item_by_id(),
+      // but have zero dimensions and no visual source so neither renderer nor
+      // transform tooling treats them as geometry.
+      filtered_items.push_back(p);
+      continue;
+    }
     if (workcell_builder::include_preview_item_for_scene3d(p, enabled_layers)) {
       if (scene3d_viewport_link_token(p) == QStringLiteral("base_link_inertia")) {
         append_studio_log(QStringLiteral("Scene3D base_link_inertia trace: stage=visible/filter result=visible item_id=%1 source_layer=%2 active_visual_source=%3")
@@ -11750,6 +11757,91 @@ void MainWindow::populate_scene_hierarchy()
           preview_context.absolute_repo_root.isEmpty() ? QStringLiteral("(invalid)") : preview_context.absolute_repo_root,
           preview_context.absolute_scene_dir.isEmpty() ? QStringLiteral("(invalid)") : preview_context.absolute_scene_dir));
     scene_preview_widget_->set_preview_context(preview_context);
+
+    // The exported Web3D scene owns the stable selection identities used when
+    // an expanded robot/tool visual is picked.  They are inventory-only rows:
+    // keep them in the Qt hierarchy/selection payload, but give them no visual
+    // backing and never let them become authored layout state.
+    const QString selection_owner_contract_path = QDir(preview_context.absolute_repo_root).filePath(
+      QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(preview_context.scene_id));
+    QFile selection_owner_contract_file(selection_owner_contract_path);
+    QJsonParseError selection_owner_parse_error;
+    QJsonDocument selection_owner_document;
+    if (selection_owner_contract_file.open(QIODevice::ReadOnly)) {
+      selection_owner_document = QJsonDocument::fromJson(
+        selection_owner_contract_file.readAll(), &selection_owner_parse_error);
+    }
+    const QJsonObject selection_owner_root = selection_owner_document.object();
+    const QJsonValue selection_owner_value = selection_owner_root.value(QStringLiteral("ui_selection_owners"));
+    const QJsonObject selection_owner_robot_preview =
+      selection_owner_root.value(QStringLiteral("robot_preview")).toObject();
+    const bool selection_owner_contract_valid = selection_owner_document.isObject() &&
+      selection_owner_parse_error.error == QJsonParseError::NoError && selection_owner_value.isArray() &&
+      !selection_owner_robot_preview.isEmpty();
+    if (selection_owner_contract_valid) {
+      struct SelectionOwnerDeclaration { QString id; QString label; QString type; };
+      QVector<SelectionOwnerDeclaration> selection_owner_declarations;
+      QSet<QString> declared_selection_owner_ids;
+      auto declare_selection_owner = [&](QString id, QString label, QString type) {
+        id = id.trimmed();
+        if (id.isEmpty() || declared_selection_owner_ids.contains(id)) return;
+        declared_selection_owner_ids.insert(id);
+        selection_owner_declarations.push_back({id, label.trimmed(), type.trimmed()});
+      };
+      for (const QJsonValue & value : selection_owner_value.toArray()) {
+        if (!value.isObject()) continue;
+        const QJsonObject owner = value.toObject();
+        declare_selection_owner(owner.value(QStringLiteral("id")).toString(),
+          owner.value(QStringLiteral("label")).toString(), owner.value(QStringLiteral("type")).toString());
+      }
+      declare_selection_owner(
+        selection_owner_robot_preview.value(QStringLiteral("selection_robot_owner_id")).toString(),
+        QString(), QStringLiteral("robot"));
+      declare_selection_owner(
+        selection_owner_robot_preview.value(QStringLiteral("selection_tool_owner_id")).toString(),
+        QString(), QStringLiteral("end_effector"));
+
+      // Reconciliation is deliberately remove-then-add. This clears rows from
+      // the preceding refresh while preserving any authored/preview row which
+      // already owns an exact declared ID, and makes repeated refreshes
+      // idempotent.
+      for (int i = all_scene_preview_items_.size() - 1; i >= 0; --i) {
+        if (all_scene_preview_items_[i].source_layer == QStringLiteral("selection_owner_registry")) {
+          all_scene_preview_items_.removeAt(i);
+        }
+      }
+      for (const auto & declaration : selection_owner_declarations) {
+        const bool id_already_owned = std::any_of(
+          all_scene_preview_items_.cbegin(), all_scene_preview_items_.cend(), [&](const auto & item) {
+            return item.id.trimmed() == declaration.id;
+          });
+        if (id_already_owned) continue;
+        ScenePreviewWidget::PreviewItem owner;
+        owner.id = declaration.id;
+        owner.display_name = declaration.label.isEmpty() ? declaration.id : declaration.label;
+        owner.category = declaration.type;
+        owner.role = declaration.type;
+        owner.source_layer = QStringLiteral("selection_owner_registry");
+        owner.active_visual_source.clear();
+        owner.status = QStringLiteral("ready");
+        owner.locked = true;
+        owner.editable = false;
+        owner.linked_to_editable_layout_state = false;
+        owner.mesh_available = false;
+        owner.has_mesh_metadata = false;
+        owner.mesh_path.clear();
+        owner.source_path.clear();
+        owner.primitive_geometry_type.clear();
+        owner.sx = owner.sy = owner.sz = 0.0;
+        all_scene_preview_items_.push_back(owner);
+        add_tree_node(owner);
+      }
+    } else {
+      append_scene_diagnostic_log_once(
+        QStringLiteral("selection_owner_registry_contract"), 0, 0,
+        QStringLiteral("Scene3D diagnostic: selection-owner registry unavailable or malformed; retained usable preview state (%1).")
+          .arg(selection_owner_contract_path));
+    }
     apply_scene3d_product_view_layer_defaults_and_commit();
 
     const auto scene3d_full_payload_counters = scene_preview_widget_->render_debug_counters();
