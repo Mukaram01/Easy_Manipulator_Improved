@@ -4,6 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -40,6 +42,53 @@ def test_before_export_artifacts_are_warn_not_fail(tmp_path: Path) -> None:
     assert any("generated/environment_layout.yaml missing; run ./generated/export_workcell_studio_sources.sh" in w for w in report["warnings"])
     assert all("cell_definition.yaml" not in e for e in report["errors"])
     assert all("environment_layout.yaml" not in e for e in report["errors"])
+
+
+@pytest.mark.parametrize(
+    ("present_filename", "missing_filename"),
+    [
+        ("cell_definition.yaml", "environment_layout.yaml"),
+        ("environment_layout.yaml", "cell_definition.yaml"),
+    ],
+)
+def test_require_generated_fails_when_either_canonical_handoff_is_missing(
+    tmp_path: Path, present_filename: str, missing_filename: str
+) -> None:
+    _write_required_scene_files(tmp_path)
+    generated = tmp_path / "generated"
+    generated.mkdir()
+    schema = "cell_definition/v1" if present_filename == "cell_definition.yaml" else "environment_layout/v1"
+    (generated / present_filename).write_text(f"schema_version: {schema}\n", encoding="utf-8")
+
+    report = validator.validate_scene(tmp_path, require_generated=True)
+
+    assert report["ok"] is False
+    assert any(f"generated/{missing_filename} missing" in error for error in report["errors"])
+    checks = {check["check"]: check for check in report["checks"]}
+    assert checks[f"generated/{missing_filename} present"].get("optional") is False
+
+
+@pytest.mark.parametrize(
+    ("filename", "invalid_content", "expected_error"),
+    [
+        ("cell_definition.yaml", "schema_version: wrong\n", "generated/cell_definition.yaml validation failed"),
+        ("environment_layout.yaml", "schema_version: wrong\n", "generated/environment_layout.yaml validation failed"),
+    ],
+)
+def test_require_generated_fails_when_canonical_handoff_is_invalid(
+    tmp_path: Path, filename: str, invalid_content: str, expected_error: str
+) -> None:
+    _write_required_scene_files(tmp_path)
+    generated = tmp_path / "generated"
+    generated.mkdir()
+    (generated / "cell_definition.yaml").write_text("schema_version: cell_definition/v1\n", encoding="utf-8")
+    (generated / "environment_layout.yaml").write_text("schema_version: environment_layout/v1\n", encoding="utf-8")
+    (generated / filename).write_text(invalid_content, encoding="utf-8")
+
+    report = validator.validate_scene(tmp_path, require_generated=True)
+
+    assert report["ok"] is False
+    assert any(expected_error in error for error in report["errors"])
 
 
 def test_after_export_artifacts_present_are_pass(tmp_path: Path) -> None:

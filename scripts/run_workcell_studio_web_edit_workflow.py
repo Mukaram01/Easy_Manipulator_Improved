@@ -105,8 +105,11 @@ def _generation_cmd(scene: Path) -> list[str]:
     ]
 
 
-def _validation_cmd(scene: Path) -> list[str]:
-    return [sys.executable, str(SCRIPT_DIR / "validate_builder_generated_scene.py"), str(scene), "--json"]
+def _validation_cmd(scene: Path, *, require_generated: bool = True) -> list[str]:
+    command = [sys.executable, str(SCRIPT_DIR / "validate_builder_generated_scene.py"), str(scene), "--json"]
+    if require_generated:
+        command.append("--require-generated")
+    return command
 
 
 def _readiness_cmd(output_dir: Path) -> list[str]:
@@ -266,7 +269,9 @@ def main(argv: list[str] | None = None) -> int:
         print("generation command/result: SKIPPED (pass --generate or --generate-and-validate)")
 
     if validate_requested:
-        validation_cmd = _validation_cmd(scene)
+        # Explicit workflow validation verifies the generated runtime handoff,
+        # rather than performing the validator's warning-only pre-export inspection.
+        validation_cmd = _validation_cmd(scene, require_generated=True)
         validation_rc = _run_step("selected-scene validation", validation_cmd)
         print(f"validation command/result: {_format_cmd(validation_cmd)} -> {'PASS' if validation_rc == 0 else 'FAIL'}")
         if validation_rc != 0:
