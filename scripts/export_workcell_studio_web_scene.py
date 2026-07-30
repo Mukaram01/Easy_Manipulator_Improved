@@ -1245,6 +1245,143 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
     return sections
 
 
+
+def _unique_authored_ui_item_id(
+    items: Sequence[Mapping[str, Any]],
+    identity_tokens: Sequence[str],
+) -> str:
+    """Return one unambiguous authored hierarchy ID for a generated visual.
+
+    Prefer the editable layout record because top-level camera/fixture metadata
+    may use generic IDs such as ``camera`` while referring to the same physical
+    item through camera_id or other capability fields.
+    """
+    all_matches: List[str] = []
+    layout_matches: List[str] = []
+
+    for raw in items:
+        if not isinstance(raw, Mapping):
+            continue
+
+        # Top-level capability entities are not hierarchy rows. Only records
+        # created by the authored physical-item path are valid UI owners.
+        if raw.get("source_kind") != "user_authored":
+            continue
+
+        identity = _identity_text(raw)
+        if not any(token in identity for token in identity_tokens):
+            continue
+
+        item_id = str(raw.get("id") or "").strip()
+        if not item_id:
+            continue
+
+        if item_id not in all_matches:
+            all_matches.append(item_id)
+
+        source_layer = str(raw.get("source_layer") or "").strip().lower()
+        provenance = _as_map(raw.get("provenance"))
+        provenance_text = " ".join(str(value).lower() for value in provenance.values())
+
+        if (
+            source_layer == "editable_layout"
+            or "layout/workcell_studio_layout.yaml" in provenance_text
+        ):
+            if item_id not in layout_matches:
+                layout_matches.append(item_id)
+
+    if len(layout_matches) == 1:
+        return layout_matches[0]
+
+    if len(all_matches) == 1:
+        return all_matches[0]
+
+    return ""
+
+
+def _annotate_generated_ui_selection_refs(
+    generated: Dict[str, List[Json]],
+    authored_sensors: Sequence[Mapping[str, Any]],
+    authored_assets: Sequence[Mapping[str, Any]],
+) -> None:
+    """Connect generated fixture meshes to stable authored hierarchy identities.
+
+    These references affect inspection/UI synchronization only. They do not
+    change the exact rendered identity, transform ownership, editability,
+    rendering, or source-of-truth scene data.
+    """
+    reference_fields = (
+        "canonical_scene_item_id",
+        "canonical_item_id",
+        "layout_item_ref",
+        "authored_item_id",
+        "scene_item_id",
+        "object_ref",
+        "support_surface_ref",
+        "camera_id",
+    )
+
+    camera_id = _unique_authored_ui_item_id(
+        authored_sensors,
+        ("camera", "realsense", "d435"),
+    )
+    authored_support_surfaces = []
+    for raw in authored_assets:
+        if not isinstance(raw, Mapping):
+            continue
+
+        semantic_values = {
+            str(raw.get(field) or "").strip().lower().replace(" ", "_")
+            for field in ("type", "role", "category")
+        }
+        item_id = str(raw.get("id") or "").strip().lower()
+
+        if (
+            semantic_values
+            & {"support_surface", "table", "workbench", "work_surface"}
+        ) or item_id.startswith("support_surface"):
+            authored_support_surfaces.append(raw)
+
+    support_surface_id = _unique_authored_ui_item_id(
+        authored_support_surfaces,
+        ("table", "workbench", "support_surface", "support surface"),
+    )
+
+    if camera_id:
+        for item in generated.get("sensors", []):
+            if not isinstance(item, dict):
+                continue
+            if any(str(item.get(field) or "").strip() for field in reference_fields):
+                continue
+            identity = _identity_text(item)
+            if not any(token in identity for token in ("camera", "realsense", "d435")):
+                continue
+            item["canonical_scene_item_id"] = camera_id
+            item["camera_id"] = camera_id
+            item.setdefault("provenance", {}).update({
+                "canonical_scene_item_id": "web_export_authored_ui_identity",
+                "camera_id": "web_export_authored_ui_identity",
+            })
+
+    if support_surface_id:
+        for item in generated.get("assets", []):
+            if not isinstance(item, dict):
+                continue
+            if any(str(item.get(field) or "").strip() for field in reference_fields):
+                continue
+            identity = _identity_text(item)
+            if not any(
+                token in identity
+                for token in ("table", "workbench", "support_surface", "support surface")
+            ):
+                continue
+            item["canonical_scene_item_id"] = support_surface_id
+            item["support_surface_ref"] = support_surface_id
+            item.setdefault("provenance", {}).update({
+                "canonical_scene_item_id": "web_export_authored_ui_identity",
+                "support_surface_ref": "web_export_authored_ui_identity",
+            })
+
 def _supplement_missing_tool_meshes(data: Dict[str, Any], generated: Dict[str, List[Json]]) -> None:
     """Add capability-described tool visuals when the flattened index omitted them.
 
@@ -2745,6 +2882,11 @@ def build_web_scene(
     _suppress_unresolved_placeholder_robot_visuals(generated, warnings)
     authored = _authored_sections(data, scene_dir, warnings)
     top_robots, top_tools, top_sensors = _top_level_entities(data, warnings)
+    _annotate_generated_ui_selection_refs(
+        generated,
+        top_sensors + authored["sensors"],
+        authored["assets"],
+    )
 
     robots = _drop_shadowed_metadata_primitives(top_robots + generated["robots"], generated["robots"], ("robot", "ur5", "ur3", "ur10"))
     tools = _drop_shadowed_metadata_primitives(top_tools + generated["tools"], generated["tools"], ("tool", "gripper", "robotiq", "end_effector"))
