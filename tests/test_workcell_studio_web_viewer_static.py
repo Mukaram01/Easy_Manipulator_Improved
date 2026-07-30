@@ -1214,7 +1214,9 @@ def test_viewer_load_contract_keeps_selection_empty_until_manual_pick():
     assert "rankedPickingCandidates(hits)" in pick_body
     assert "candidates.find(candidate => Number.isFinite(candidate.priority)" in pick_body
     ranking_body = _viewer_function_body(js, "function rankedPickingCandidates(hits)", "function selectObject(id)")
-    assert "canonicalSelectionRendered" in ranking_body
+    assert "inspectionSelectionRendered" in ranking_body
+    assert "canonicalEditOwnerRendered" not in ranking_body
+    assert "inspectionSelectionRendered" in select_body
     assert "selectObject(selectedCandidate.rendered.item.id);" in pick_body
     assert "return selectedCandidate.rendered.item.id;" in pick_body
 
@@ -1285,7 +1287,7 @@ clearSelection(); assert.strictEqual(state.selected,''); assert.strictEqual(stat
     subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, capture_output=True, text=True)
 
 
-def test_generated_environment_clicks_resolve_to_canonical_authored_items():
+def test_selection_identity_is_separate_from_transform_edit_ownership():
     js_path = VIEWER / "viewer.js"
     harness = r"""
 const fs = require('fs'); const vm = require('vm'); const assert = require('assert');
@@ -1295,18 +1297,32 @@ const context={console,assert,window:{location:{search:''},dispatchEvent(){},par
 vm.createContext(context);
 vm.runInContext(source + `
 updateLabels=()=>{}; populateInspector=()=>{}; attachTransformGizmo=()=>{}; detachTransformGizmo=()=>{}; refreshSelectionHighlight=()=>{}; removeSelectionHighlight=()=>{};
-const rendered=item=>({item,object3d:{}});
-const camera=rendered({id:'realsense_overhead',role:'sensor',category:'camera',source_layer:'editable_layout',editable:true});
-const table=rendered({id:'support_surface_table',role:'asset',category:'support_surface',display_name:'workbench table',source_layer:'editable_layout',editable:true});
-const cameraChild=rendered({id:'urdf_visual_17_camera_link_mesh',role:'sensor',category:'camera',link:'camera_link',source:'urdf_flattened',source_layer:'locked_generated_urdf_visual',locked:true,mesh_uri:'camera.dae'});
-const tableChild=rendered({id:'urdf_visual_16_table_mesh',role:'environment',category:'workbench',link:'table',source:'urdf_flattened',source_layer:'locked_generated_urdf_visual',locked:true,mesh_uri:'table.dae'});
-state.objects=[camera,table,cameraChild,tableChild]; state.sceneJson={scene:{id:'ur5_2f_test'}};
-selectObject(canonicalSelectionRendered(cameraChild).item.id); assert.strictEqual(editorState().selectedItemId,'realsense_overhead');
-selectObject(canonicalSelectionRendered(tableChild).item.id); assert.strictEqual(editorState().selectedItemId,'support_surface_table');
+const rendered=item=>({item,object3d:{userData:{item}}});
+const target=rendered({id:'target_bin_default',role:'target_bin',source_layer:'editable_layout',editable:true});
+const zone=rendered({id:'place_zone_default',role:'place_zone',render_policy:'overlay',target_ref:'target_bin_default',source_layer:'editable_layout',editable:true});
+const robot=rendered({id:'ur5_generated',role:'robot',source_layer:'locked_generated_urdf_visual',locked:true});
+const commissioning=rendered({id:'commissioning_object',role:'task_marker',source_layer:'task_preview',locked:true});
+state.objects=[target,zone,robot,commissioning]; state.sceneJson={scene:{id:'ur5_2f_test'}}; state.debugOverlaysVisible=false;
+selectObject('place_zone_default');
+assert.strictEqual(editorState().selectedItemId,'place_zone_default');
+assert.strictEqual(editorState().selectedEditable,false);
+assert.strictEqual(editorState().editOwnerItemId,'target_bin_default');
+assert.strictEqual(editorState().selectionDiagnostics.editOwnerItemId,'target_bin_default');
+assert.strictEqual(canonicalEditOwnerRendered(zone).item.id,'target_bin_default');
+assert.strictEqual(inspectionSelectionRendered(zone).item.id,'place_zone_default');
+assert.strictEqual(rankedPickingCandidates([{object:zone.object3d,distance:1}])[0].rendered.item.id,'place_zone_default');
+selectObject('target_bin_default'); assert.strictEqual(editorState().selectedItemId,'target_bin_default'); assert.strictEqual(editorState().selectedEditable,true);
+selectObject('ur5_generated'); assert.strictEqual(editorState().selectedItemId,'ur5_generated'); assert.strictEqual(editorState().editOwnerItemId,'ur5_generated');
+selectObject('commissioning_object'); assert.strictEqual(editorState().selectedItemId,'commissioning_object');
 clearSelection(); assert.strictEqual(editorState().selectedItemId,'');
 `,context);
 """
     subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, capture_output=True, text=True)
+
+    select_body = _viewer_function_body(js_path.read_text(encoding="utf-8"), "function selectObject(id)", "function clearSelection()")
+    dirty_body = _viewer_function_body(js_path.read_text(encoding="utf-8"), "function markDirtyTransform(rendered", "function editPatchEntryFor")
+    assert "inspectionSelectionRendered(rawRequested)" in select_body
+    assert "canonicalEditOwnerRendered(rendered)" in dirty_body
 
 
 def test_viewer_status_reporting_ignores_hidden_helper_overlay_counters(tmp_path):
