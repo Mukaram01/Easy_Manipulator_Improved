@@ -802,6 +802,7 @@ function collectRenderedMeshDiagnostics() {
 
 function updateViewerStatus() {
   const summary = computeSceneSummary();
+  const selectionDiagnostics = currentSelectionDiagnostics();
   const warnings = asArray(state.sceneJson?.warnings).concat(asArray(state.sceneJson?.notes_warnings), asArray(state.runtimeWarnings));
   const resolvedFrameStatus = buildResolvedFrameStatus();
   const renderedMeshDiagnostics = collectRenderedMeshDiagnostics();
@@ -854,6 +855,13 @@ function updateViewerStatus() {
     sceneJsonLoaded: Boolean(state.sceneJsonLoaded),
     scene_name: summary.sceneName,
     sceneName: summary.sceneName,
+    selectionOwnerRegistryCount: selectionDiagnostics.selectionOwnerRegistryCount,
+    selectionOwnerIds: selectionDiagnostics.selectionOwnerIds,
+    selectedItemId: selectionDiagnostics.selectedItemId,
+    uiSelectionItemId: selectionDiagnostics.uiSelectionItemId,
+    selectedLinkName: selectionDiagnostics.selectedLinkName,
+    uiSelectionResolution: selectionDiagnostics.uiSelectionResolution,
+    pickRecordSource: selectionDiagnostics.pickRecordSource,
     renderable_count: summary.renderableCount,
     renderableCount: summary.renderableCount,
     mesh_loaded_count: summary.meshLoadedCount,
@@ -949,7 +957,8 @@ function exactSelectionLinkName(item) {
 }
 function rebuildSelectionIdentityIndex(sceneJson = state.sceneJson || {}) {
   const items = collectItems(sceneJson);
-  const itemById = new Map(items.map(item => [String(item?.id || '').trim(), item]).filter(([id]) => id));
+  const selectionOwners = asArray(sceneJson.ui_selection_owners).filter(owner => owner && typeof owner === 'object');
+  const itemById = new Map(items.concat(selectionOwners).map(item => [String(item?.id || '').trim(), item]).filter(([id]) => id));
   const recordsByLink = new Map();
   for (const item of items) {
     const link = exactSelectionLinkName(item);
@@ -968,7 +977,7 @@ function rebuildSelectionIdentityIndex(sceneJson = state.sceneJson || {}) {
     }
     if (candidates.size === 1) explicitUiIdByLink.set(link, [...candidates][0]);
   }
-  state.selectionIdentityIndex = { itemById, recordsByLink, explicitUiIdByLink };
+  state.selectionIdentityIndex = { itemById, recordsByLink, explicitUiIdByLink, selectionOwners };
   return state.selectionIdentityIndex;
 }
 function uiSelectionIdentity(rendered) {
@@ -996,6 +1005,7 @@ function currentSelectionDiagnostics() {
   const editOwner = canonicalEditOwnerRendered(rendered);
   const item = rendered?.item || null;
   const selectionIdentity = uiSelectionIdentity(rendered);
+  const selectionOwners = state.selectionIdentityIndex?.selectionOwners || [];
   return {
     sceneId: sceneId(),
     selectedItemId: id,
@@ -1014,6 +1024,8 @@ function currentSelectionDiagnostics() {
     selectedLinkName: selectionIdentity.linkName,
     uiSelectionResolution: selectionIdentity.resolution,
     pickRecordSource: selectionIdentity.pickRecordSource,
+    selectionOwnerRegistryCount: selectionOwners.length,
+    selectionOwnerIds: selectionOwners.map(owner => String(owner.id || '')).filter(Boolean),
     lastRaycastHitCount: state.lastRaycastHitCount,
     lastRaycastCandidateIds: [...state.lastRaycastCandidateIds],
     lastCanvasSelectedItemId: state.lastCanvasSelectedItemId,
@@ -3111,7 +3123,10 @@ function clearSceneObjects() {
 }
 function renderScene(items) {
   clearSceneObjects();
-  rebuildSelectionIdentityIndex(state.sceneJson || {});
+  const selectionIndex = rebuildSelectionIdentityIndex(state.sceneJson || {});
+  const ownersByType = type => selectionIndex.selectionOwners.filter(owner => owner.type === type).map(owner => owner.id);
+  const preview = state.sceneJson?.robot_preview || {};
+  console.info?.(`Product View selection owners: count=${selectionIndex.selectionOwners.length} robot=${preview.selection_robot_owner_id || 'missing'} tool=${preview.selection_tool_owner_id || 'missing'} camera=${ownersByType('camera').join(',') || 'missing'} support_surface=${ownersByType('support_surface').join(',') || 'missing'}`);
   state.frameLookup = parseSceneFrames(state.sceneJson || {});
   state.resolvedFramePoses.clear();
   beginWeb3dSceneReadiness(items);
@@ -3253,18 +3268,15 @@ function loadExpandedUrdfRobotPreview(preview) {
       const robotLinks = new Set(asArray(preview?.expected_robot_visual_links || preview?.expectedRobotVisualLinks).map(value => String(value || '').trim()).filter(Boolean));
       const toolLinks = new Set(asArray(preview?.expected_tool_visual_links || preview?.expectedToolVisualLinks).map(value => String(value || '').trim()).filter(Boolean));
       const index = state.selectionIdentityIndex || rebuildSelectionIdentityIndex();
-      const ownerFromExplicitContract = (fields, readinessCategory) => {
+      const ownerFromExplicitContract = fields => {
         for (const field of fields) {
           const id = String(preview?.[field] || '').trim();
           if (id && index.itemById.has(id)) return id;
         }
-        const candidates = [...index.itemById.values()].filter(item =>
-          String(item?.readiness_category || item?.readinessCategory || '').trim() === readinessCategory &&
-          !isGeneratedUrdfItem(item));
-        return candidates.length === 1 ? String(candidates[0].id) : '';
+        return '';
       };
-      const robotOwnerId = ownerFromExplicitContract(['robot_instance_id', 'robotInstanceId', 'robot_id', 'robotId'], 'robot_arm');
-      const toolOwnerId = ownerFromExplicitContract(['tool_instance_id', 'toolInstanceId', 'tool_id', 'toolId', 'end_effector_id', 'endEffectorId'], 'attached_tool_gripper');
+      const robotOwnerId = ownerFromExplicitContract(['selection_robot_owner_id', 'selectionRobotOwnerId', 'robot_instance_id', 'robotInstanceId', 'robot_id', 'robotId']);
+      const toolOwnerId = ownerFromExplicitContract(['selection_tool_owner_id', 'selectionToolOwnerId', 'tool_instance_id', 'toolInstanceId', 'tool_id', 'toolId', 'end_effector_id', 'endEffectorId']);
       const robotInstance = String(preview?.robot_instance_id || preview?.robotInstanceId || preview?.robot_id || preview?.robotId || 'robot').trim();
       for (const [linkName, linkObject] of result?.links || []) {
         const exactLink = String(linkName || '').trim();

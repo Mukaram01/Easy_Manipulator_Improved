@@ -1,3 +1,5 @@
+import pytest
+
 from scripts import export_workcell_studio_web_scene as exporter
 
 
@@ -10,6 +12,16 @@ def empty_generated():
         "zones": [],
         "frames": [],
     }
+
+
+def test_selection_owner_registry_rejects_ambiguous_configured_robot():
+    with pytest.raises(exporter.BlockingExportError, match="unambiguous robot owner"):
+        exporter._selection_owner_registry(
+            [{"id": "robot_a"}, {"id": "robot_b"}],
+            [{"id": "tool"}],
+            [],
+            [],
+        )
 
 
 def test_generated_camera_and_table_receive_authored_ui_identity():
