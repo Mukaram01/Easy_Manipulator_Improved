@@ -238,6 +238,19 @@ function failExpandedUrdfReadiness(err, diagnostics = {}, detail = {}) {
   });
 }
 function maybeEmitSceneReady() {
+  if (isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview)) {
+    const diagnostics = state.robotUrdfPreviewDiagnostics || {};
+    const lifecycle = String(diagnostics.robot_preview_lifecycle_state || diagnostics.robotPreviewLifecycleState || '');
+    if (lifecycle === 'failed') {
+      const failureReason = String(diagnostics.robot_preview_failure_reason || diagnostics.robotPreviewFailureReason || '').trim();
+      const missingMeshes = asArray(diagnostics.robot_missing_meshes || diagnostics.robotMissingMeshes);
+      const failedVisualCount = Number(diagnostics.robot_failed_visual_count ?? diagnostics.robotFailedVisualCount ?? 0) || 0;
+      if (!failureReason && missingMeshes.length === 0 && failedVisualCount === 0) return;
+      failExpandedUrdfReadiness(new Error(failureReason || missingMeshes[0] || 'expanded URDF preview failed'), diagnostics);
+      return;
+    }
+    if (lifecycle !== 'ready') return;
+  }
   if (failIfExpandedUrdfExpectedVisualSetInvalid()) return;
   const readiness = state.web3dReadiness;
   if (!readiness || readiness.failed || readiness.state === 'scene_failed') return;
@@ -3351,8 +3364,14 @@ function loadExpandedUrdfRobotPreview(preview) {
       };
       state.robotPreviewResult = result;
       result.diagnostics = { ...state.robotUrdfPreviewDiagnostics, ...(result.diagnostics || {}), ...localDiagnostics };
+      const resultLifecycle = String(result.diagnostics.robot_preview_lifecycle_state || result.diagnostics.robotPreviewLifecycleState || '');
+      if (resultLifecycle === 'ready') {
+        result.diagnostics.robot_preview_lifecycle_state = 'ready';
+        result.diagnostics.robotPreviewLifecycleState = 'ready';
+      }
       state.robotUrdfPreviewDiagnostics = result.diagnostics;
-      if (!failIfExpandedUrdfExpectedVisualSetInvalid()) completeExpandedUrdfReadiness(result);
+      if (resultLifecycle === 'ready' && !failIfExpandedUrdfExpectedVisualSetInvalid()) completeExpandedUrdfReadiness(result);
+      maybeEmitSceneReady();
       refreshInitialPoseActionState();
       renderSceneSummary();
     },
@@ -3363,7 +3382,13 @@ function loadExpandedUrdfRobotPreview(preview) {
     onRobotMeshLoadError: (err, uri, detail) => { if (!callbackIsCurrent()) return ignoreStaleCallback(); failExpandedUrdfReadiness(err, state.robotUrdfPreviewDiagnostics, detail || { uri }); renderSceneSummary(); },
     onRobotError: (err, diagnostics) => {
       if (!callbackIsCurrent()) return ignoreStaleCallback();
-      failExpandedUrdfReadiness(err, diagnostics || state.robotUrdfPreviewDiagnostics);
+      state.robotUrdfPreviewDiagnostics = { ...state.robotUrdfPreviewDiagnostics, ...(diagnostics || {}) };
+      state.robotUrdfPreviewDiagnostics.robot_preview_lifecycle_state = 'failed';
+      state.robotUrdfPreviewDiagnostics.robotPreviewLifecycleState = 'failed';
+      state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason = err?.message || String(err || 'expanded URDF preview failed');
+      state.robotUrdfPreviewDiagnostics.robotPreviewFailureReason = state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason;
+      failExpandedUrdfReadiness(err, state.robotUrdfPreviewDiagnostics);
+      maybeEmitSceneReady();
       appendRuntimeWarning({}, preview?.urdf_url || '', `expanded_urdf_loader failed: ${err?.message || err}`, 'expanded_urdf_loader_failed');
       refreshWarnings();
       renderSceneSummary();

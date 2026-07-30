@@ -467,7 +467,7 @@ def test_expanded_urdf_robot_preview_callbacks_are_scene_current_guarded():
         "onRobotLoaded: result => {": "state.robotPreviewResult = result;",
         "onRobotMeshLoaded: () => {": "renderSceneSummary();",
         "onRobotMeshLoadError: (err, uri, detail) => {": "failExpandedUrdfReadiness(err, state.robotUrdfPreviewDiagnostics, detail || { uri });",
-        "onRobotError: (err, diagnostics) => {": "failExpandedUrdfReadiness(err, diagnostics || state.robotUrdfPreviewDiagnostics);",
+        "onRobotError: (err, diagnostics) => {": "state.robotUrdfPreviewDiagnostics.robot_preview_lifecycle_state = 'failed';",
     }
     for callback, mutation in callback_mutations.items():
         section = load_body.split(callback, 1)[1].split("},", 1)[0]
@@ -532,6 +532,7 @@ function assertOldCallbacksRejected(targetSceneId) {
   assert.deepStrictEqual(Array.from(state.frameLookup.keys()), []);
   assert.deepStrictEqual(state.assemblyRoots, []);
   assert.deepStrictEqual(state.objects, []);
+  assert.deepStrictEqual(state.pickRecords, []);
   assert.strictEqual(state.web3dReadiness.state, 'scene_loading');
   assert.strictEqual(state.web3dReadiness.failed, false);
   assert.strictEqual(state.web3dReadiness.terminal, false);
@@ -564,6 +565,58 @@ clearSceneObjects();
 fireOldCallbacks(oldWithoutScene);
 assert.strictEqual(state.three.scene, null);
 assertOldCallbacksRejected('suction_test');
+`, context);
+'''
+    result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert result.stderr == ""
+
+
+def test_expanded_urdf_readiness_waits_for_current_terminal_loader_callback():
+    js_path = VIEWER / "viewer.js"
+    harness = r'''
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({ hidden:false, checked:false, disabled:false, textContent:'', className:'', innerHTML:'', classList:{toggle(){}}, setAttribute(){}, querySelector(){return {textContent:''}}, appendChild(){}, addEventListener(){} });
+const context = { console, assert, window:{dispatched:[],location:{search:''},dispatchEvent(event){this.dispatched.push(event.detail.state)},parent:{postMessage(){}}}, document:{getElementById(){return element()},createElement(){return element()}}, URLSearchParams, CustomEvent:function(type,init){return {type,detail:init.detail}}, requestAnimationFrame(){return 0}, setTimeout(){return 1}, clearTimeout(){} };
+vm.createContext(context);
+vm.runInContext(source + `
+renderSceneSummary = () => {};
+refreshInitialPoseActionState = () => {};
+refreshWarnings = () => {};
+appendRuntimeWarning = () => {};
+rebuildSelectionIdentityIndex = () => ({ itemById:new Map(), explicitUiIdByLink:new Map() });
+let callback;
+loadRobotPreview = (preview, rendererContext) => { callback = rendererContext; return { diagnostics:{ robot_preview_lifecycle_state:'loading_urdf', robotPreviewLifecycleState:'loading_urdf' } }; };
+const required = { robot_arm:true, attached_tool_gripper:true, workbench_support_surface:true, configured_camera:true };
+function beginExpanded() {
+  window.dispatched.length = 0;
+  state.sceneJson = { scene:{id:'ur5_2f_test'}, robot_preview:{mode:'expanded_urdf_loader', expected_robot_visual_links:[], expected_tool_visual_links:[]} };
+  state.web3dReadiness = { state:'scene_loading', terminal:false, required, pending:new Set(['robot_arm:expanded_urdf_loader','attached_tool_gripper:expanded_urdf_loader']), failed:false, failure:null };
+  loadExpandedUrdfRobotPreview(state.sceneJson.robot_preview);
+}
+beginExpanded();
+maybeEmitSceneReady();
+assert.strictEqual(window.dispatched.length, 0, 'loading_urdf must not become terminal');
+callback.onRobotLoaded({ root:{}, links:new Map(), diagnostics:{robot_preview_lifecycle_state:'ready',robot_preview_loaded:true} });
+assert.strictEqual(window.dispatched.join(','), 'scene_ready', 'current successful callback becomes ready');
+assert.strictEqual(state.robotUrdfPreviewDiagnostics.robot_preview_lifecycle_state, 'ready');
+
+beginExpanded();
+state.robotUrdfPreviewDiagnostics = {robot_preview_lifecycle_state:'failed'};
+maybeEmitSceneReady();
+assert.strictEqual(window.dispatched.length, 0, 'failed without diagnostics is not terminal');
+callback.onRobotError(new Error('URDF parse failed'), {robot_preview_lifecycle_state:'failed'});
+assert.strictEqual(window.dispatched.join(','), 'scene_failed', 'explicit current failure becomes terminal');
+assert.strictEqual(state.web3dReadiness.failure.reason, 'URDF parse failed');
+
+window.dispatched.length = 0;
+state.sceneJson = { scene:{id:'legacy'}, robot_preview:{mode:'flattened_rows'} };
+state.web3dReadiness = { state:'scene_loading', terminal:false, required, pending:new Set(), failed:false, failure:null };
+state.robotUrdfPreviewDiagnostics = {robot_preview_lifecycle_state:'loading_urdf'};
+maybeEmitSceneReady();
+assert.strictEqual(window.dispatched.join(','), 'scene_ready', 'non-expanded scenes retain existing readiness behavior');
 `, context);
 '''
     result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -3226,8 +3279,8 @@ vm.runInContext(source + `
 const falseMissingRobotLinks = ['base_link_inertia', 'shoulder_link', 'upper_arm_link', 'forearm_link', 'wrist_1_link', 'wrist_2_link', 'wrist_3_link'];
 state.sceneJson = { scene: { id: 'ur5_2f_test' }, robot_preview: { mode: 'expanded_urdf_loader', robot_instance_id: 'ur5_2f', expected_robot_visual_links: falseMissingRobotLinks, expected_tool_visual_links: ['robotiq_85_base_link'] } };
 state.robotUrdfPreviewDiagnostics = {
-  robot_preview_lifecycle_state: 'failed',
-  robot_preview_loaded: false,
+  robot_preview_lifecycle_state: 'ready',
+  robot_preview_loaded: true,
   robot_expected_visual_count: 16,
   robot_completed_visual_count: 16,
   robot_loaded_visual_count: 16,
