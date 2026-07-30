@@ -4,6 +4,7 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
 import yaml
 
 from scripts.workcell_builder_gui_workflow import generate_files_from_yaml
@@ -36,6 +37,7 @@ def test_existing_scene_regeneration_uses_saved_layout_without_rewriting_authore
     shutil.copytree(SCENE, scene)
     layout_path = scene / "layout" / "workcell_studio_layout.yaml"
     environment_path = scene / "environment.yaml"
+    task_intent_path = scene / "config" / "workcell_builder_task_intent.yaml"
 
     layout = yaml.safe_load(layout_path.read_text(encoding="utf-8"))
     items = {item["id"]: item for item in layout["items"]}
@@ -47,6 +49,7 @@ def test_existing_scene_regeneration_uses_saved_layout_without_rewriting_authore
     authored_before = {
         environment_path: environment_path.read_bytes(),
         layout_path: layout_path.read_bytes(),
+        task_intent_path: task_intent_path.read_bytes(),
     }
     first = generate_files_from_yaml(scene)
     assert first["ok"], first
@@ -71,6 +74,17 @@ def test_existing_scene_regeneration_uses_saved_layout_without_rewriting_authore
     assert destination["target_ref"] == target["id"]
     assert destination["transform_group"] == target["transform_group"]
     assert destination["pose"] == target["pose"]
+    generated_cell = yaml.safe_load(
+        (scene / "generated" / "cell_definition.yaml").read_text(encoding="utf-8")
+    )
+    place = generated_cell["task"]["place"]["target"]
+    assert place["id"] == "default_drop_zone"
+    assert place["layout_item_ref"] == "place_zone_default"
+    assert place["target_ref"] == "target_bin_default"
+    generated_destination = generated_cell["task"]["destinations"][0]
+    assert generated_destination["target_ref"] == "target_bin_default"
+    assert generated_destination["pose_xyz"] == edited_xyz
+    assert generated_destination["pose_rpy"] == target["pose"]["rpy"]
     assert {path: path.read_bytes() for path in authored_before} == authored_before
 
     first_generation = {
@@ -85,3 +99,46 @@ def test_existing_scene_regeneration_uses_saved_layout_without_rewriting_authore
     }
     assert second_generation == first_generation
     assert {path: path.read_bytes() for path in authored_before} == authored_before
+
+
+@pytest.mark.parametrize(
+    ("break_contract", "unresolved_id"),
+    [
+        ("missing_pick", "missing_pick_zone"),
+        ("broken_target_ref", "missing_target_bin"),
+        ("inconsistent_group", "target_bin_default"),
+        ("invalid_intent", "invalid/task-intent-schema"),
+    ],
+)
+def test_existing_scene_regeneration_blocks_unresolved_authored_task_contract(
+    tmp_path, break_contract, unresolved_id
+):
+    scene = tmp_path / "ur5_2f_test"
+    shutil.copytree(SCENE, scene)
+    layout_path = scene / "layout" / "workcell_studio_layout.yaml"
+    intent_path = scene / "config" / "workcell_builder_task_intent.yaml"
+
+    if break_contract == "missing_pick":
+        intent = yaml.safe_load(intent_path.read_text(encoding="utf-8"))
+        intent["pick"]["source"]["id"] = unresolved_id
+        intent_path.write_text(yaml.safe_dump(intent, sort_keys=False), encoding="utf-8")
+    elif break_contract == "broken_target_ref":
+        layout = yaml.safe_load(layout_path.read_text(encoding="utf-8"))
+        next(item for item in layout["items"] if item["id"] == "place_zone_default")["target_ref"] = unresolved_id
+        layout_path.write_text(yaml.safe_dump(layout, sort_keys=False), encoding="utf-8")
+    elif break_contract == "inconsistent_group":
+        layout = yaml.safe_load(layout_path.read_text(encoding="utf-8"))
+        next(item for item in layout["items"] if item["id"] == unresolved_id)["transform_group"] = "different_group"
+        layout_path.write_text(yaml.safe_dump(layout, sort_keys=False), encoding="utf-8")
+    else:
+        intent = yaml.safe_load(intent_path.read_text(encoding="utf-8"))
+        intent["schema"] = unresolved_id
+        intent_path.write_text(yaml.safe_dump(intent, sort_keys=False), encoding="utf-8")
+
+    result = generate_files_from_yaml(scene)
+
+    assert not result["ok"]
+    assert str(intent_path) in result["error"]
+    assert str(layout_path) in result["error"]
+    assert unresolved_id in result["error"]
+    assert not (scene / "generated" / "cell_definition.yaml").exists()
