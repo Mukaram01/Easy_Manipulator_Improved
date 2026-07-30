@@ -113,6 +113,10 @@ def test_qt_compact_toolbar_for_embedded_web3d():
 
 
 def test_product_view_selection_uses_stable_identity_and_filters_helpers():
+    assert "function isExpandedUrdfInspectionPick(rendered)" in VIEWER
+    assert "function isCanvasSelectableRendered(rendered)" in VIEWER
+    assert "state.pickRecords.includes(rendered)" in VIEWER
+    assert "rendered.readOnlyPick === true" in VIEWER
     assert "function isNormalSelectableRendered(rendered)" in VIEWER
     assert "item.selectable !== false" in VIEWER
     assert "state.debugOverlaysVisible && (isTaskOnlyHelperItem(item)" in VIEWER
@@ -124,6 +128,32 @@ def test_product_view_selection_uses_stable_identity_and_filters_helpers():
     assert "canonicalSelectionRendered" in VIEWER
     assert "selectObject(selectedCandidate.rendered.item.id);" in VIEWER
     assert "itemLabel(item)" not in VIEWER.split("function pickObject", 1)[1].split("function beginDirectMoveDrag", 1)[0]
+
+
+def test_expanded_urdf_inspection_selection_policy_executes_in_browser_harness(tmp_path):
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100}}});
+const context={console,assert,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element()},querySelectorAll(){return[]},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context); vm.runInContext(source+`
+updateLabels=()=>{}; populateInspector=()=>{}; attachTransformGizmo=()=>{}; detachTransformGizmo=()=>{}; removeSelectionHighlight=()=>{};
+const highlighted=[]; refreshSelectionHighlight=record=>highlighted.push(record);
+const object=name=>({name,visible:true,userData:{},children:[],parent:null});
+const normal=id=>{const item={id,editable:true,source_layer:'editable_layout'};const object3d=object(id);object3d.userData.item=item;return {item,object3d};};
+const table=normal('support_surface_table'),camera=normal('realsense_overhead'),bin=normal('target_bin_default');
+state.objects=[table,camera,bin]; state.sceneJson={scene:{id:'ur5_2f_test'},ui_selection_owners:[{id:'ur5'},{id:'robotiq_85_gripper'}]}; rebuildSelectionIdentityIndex();
+for(const rendered of [table,camera,bin]){assert.strictEqual(itemFromRaycastHit({object:rendered.object3d}),rendered);selectObject(rendered.item.id);assert.strictEqual(state.selected,rendered.item.id);}
+const register=(id,link,owner)=>{const node=object(link);return registerPickRecord({id,link_name:link,locked:true,editable:false,selectable:true},node,node,{pickRecordSource:'expanded_urdf_inspection',uiSelectionOwnerId:owner});};
+const wrist=register('scene::inspection::wrist_3_link','wrist_3_link','ur5');
+const finger=register('scene::inspection::robotiq_85_right_finger_link','robotiq_85_right_finger_link','robotiq_85_gripper');
+for(const [record,owner] of [[wrist,'ur5'],[finger,'robotiq_85_gripper']]){assert.strictEqual(isCanvasSelectableRendered(record),true);selectObject(record.item.id);assert.strictEqual(editorState().selectedItemId,record.item.id);assert.strictEqual(editorState().uiSelectionItemId,owner);assert.strictEqual(editorState().selectedEditable,false);assert.strictEqual(highlighted.at(-1),record);}
+const diagnostic=normal('ordinary_diagnostic'); diagnostic.item.diagnostic_only=true; state.objects.push(diagnostic); assert.strictEqual(isCanvasSelectableRendered(diagnostic),false); assert.strictEqual(selectObject(diagnostic.item.id),'');
+assert.strictEqual(state.objects.includes(wrist),false);assert.strictEqual(state.objects.includes(finger),false);assert.strictEqual(state.dirtyTransforms.size,0);assert.strictEqual(buildEditPatch().edits.length,0);assert.strictEqual(state.undoStack.length,0);assert.strictEqual(state.redoStack.length,0);
+`,context);
+"""
+    import subprocess
+    subprocess.run(["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js")], cwd=ROOT, check=True, capture_output=True, text=True)
 
 
 def test_qt_selection_clears_stale_scene_and_missing_id_callbacks():
