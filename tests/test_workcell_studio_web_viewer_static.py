@@ -1322,8 +1322,10 @@ const commissioning=rendered({id:'commissioning_object',role:'task_marker',sourc
 state.objects=[target,zone,robot,commissioning]; state.sceneJson={scene:{id:'ur5_2f_test'}}; state.debugOverlaysVisible=false;
 selectObject('place_zone_default');
 assert.strictEqual(editorState().selectedItemId,'place_zone_default');
+assert.strictEqual(editorState().uiSelectionItemId,'place_zone_default');
 assert.strictEqual(editorState().selectedEditable,false);
 assert.strictEqual(editorState().editOwnerItemId,'target_bin_default');
+assert.strictEqual(editorState().selectionDiagnostics.uiSelectionItemId,'place_zone_default');
 assert.strictEqual(editorState().selectionDiagnostics.editOwnerItemId,'target_bin_default');
 assert.strictEqual(canonicalEditOwnerRendered(zone).item.id,'target_bin_default');
 assert.strictEqual(inspectionSelectionRendered(zone).item.id,'place_zone_default');
@@ -1332,6 +1334,7 @@ selectObject('target_bin_default'); assert.strictEqual(editorState().selectedIte
 selectObject('ur5_generated'); assert.strictEqual(editorState().selectedItemId,'ur5_generated'); assert.strictEqual(editorState().editOwnerItemId,'ur5_generated');
 selectObject('commissioning_object'); assert.strictEqual(editorState().selectedItemId,'commissioning_object');
 clearSelection(); assert.strictEqual(editorState().selectedItemId,'');
+assert.strictEqual(editorState().uiSelectionItemId,'');
 `,context);
 """
     subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, capture_output=True, text=True)
@@ -1340,6 +1343,43 @@ clearSelection(); assert.strictEqual(editorState().selectedItemId,'');
     dirty_body = _viewer_function_body(js_path.read_text(encoding="utf-8"), "function markDirtyTransform(rendered", "function editPatchEntryFor")
     assert "inspectionSelectionRendered(rawRequested)" in select_body
     assert "canonicalEditOwnerRendered(rendered)" in dirty_body
+
+
+def test_explicit_ui_selection_identity_preserves_render_and_edit_identities():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const element=()=>({hidden:false,checked:false,className:'',textContent:'',classList:{toggle(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){}});
+const context={console,assert,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element();},querySelectorAll(){return[];},createElement(){return element();}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context); vm.runInContext(source+`
+updateLabels=()=>{}; populateInspector=()=>{}; attachTransformGizmo=()=>{}; detachTransformGizmo=()=>{}; refreshSelectionHighlight=()=>{}; removeSelectionHighlight=()=>{};
+const rendered=item=>({item,object3d:{userData:{item}}});
+const authored=[{id:'realsense_overhead'},{id:'support_surface_table'},{id:'target_bin_default'},{id:'place_zone_default'},{id:'pick_zone_commissioning'}];
+const camera=rendered({id:'generated_urdf::camera_link::visual_17::17',camera_id:'realsense_overhead'});
+const table=rendered({id:'generated_urdf::table_link::visual_2::2',support_surface_ref:'support_surface_table'});
+const bin=rendered({id:'target_bin_default',editable:true});
+const zone=rendered({id:'place_zone_default',target_ref:'target_bin_default',render_policy:'overlay'});
+const invalid=rendered({id:'generated_robot_visual',canonical_item_id:'missing_robot'});
+state.sceneJson={scene:{id:'ur5_2f_test'},items:authored}; state.objects=[camera,table,bin,zone,invalid,...authored.map(rendered)]; state.editorEvents=[];
+selectObject(camera.item.id); assert.strictEqual(editorState().selectedItemId,camera.item.id); assert.strictEqual(editorState().uiSelectionItemId,'realsense_overhead'); assert.strictEqual(state.editorEvents.at(-1).uiItemId,'realsense_overhead');
+selectObject(table.item.id); assert.strictEqual(editorState().selectedItemId,table.item.id); assert.strictEqual(editorState().uiSelectionItemId,'support_surface_table');
+selectObject(bin.item.id); assert.strictEqual(editorState().uiSelectionItemId,'target_bin_default');
+selectObject(zone.item.id); assert.strictEqual(editorState().uiSelectionItemId,'place_zone_default'); assert.strictEqual(editorState().editOwnerItemId,'target_bin_default');
+selectObject(invalid.item.id); assert.strictEqual(editorState().uiSelectionItemId,invalid.item.id);
+`,context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, capture_output=True, text=True)
+
+
+def test_hierarchy_selection_keeps_single_product_view_command_path():
+    cpp = (ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp").read_text(encoding="utf-8")
+    selection = cpp.split("void ScenePreviewWidget::select_preview_item", 1)[1].split("void ScenePreviewWidget::", 1)[0]
+    for item_id in ["target_bin_default", "realsense_overhead", "support_surface_table", "pick_zone_commissioning", "commissioning_pick_pose", "place_zone_default"]:
+        assert item_id not in selection
+    assert selection.count("run_embedded_editor_command") == 2
+    assert selection.count(".selectItem(") == 1
+    assert selection.count(".clearSelection()") == 1
 
 
 def test_viewer_status_reporting_ignores_hidden_helper_overlay_counters(tmp_path):

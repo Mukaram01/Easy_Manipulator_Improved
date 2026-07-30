@@ -2378,6 +2378,8 @@ void ScenePreviewWidget::poll_embedded_editor_events()
     apply_embedded_editor_state(editor_state);
     const QString browser_scene_id = editor_state.value(QStringLiteral("sceneId")).toString().trimmed();
     const QString browser_selected_id = editor_state.value(QStringLiteral("selectedItemId")).toString();
+    QString browser_ui_selected_id = editor_state.value(QStringLiteral("uiSelectionItemId")).toString();
+    if (browser_ui_selected_id.isEmpty()) browser_ui_selected_id = browser_selected_id;
     const QVariantMap selection_diagnostics = editor_state.value(QStringLiteral("selectionDiagnostics")).toMap();
     const bool scene_identity_matches = browser_scene_id.isEmpty() || browser_scene_id == identity.scene_id;
     bool matching_selection_event = false;
@@ -2385,8 +2387,9 @@ void ScenePreviewWidget::poll_embedded_editor_events()
     for (const QVariant & event_value : payload.value(QStringLiteral("events")).toList()) {
       const QVariantMap event = event_value.toMap();
       if (event.value(QStringLiteral("type")).toString() == QStringLiteral("selection_changed")) {
-        const QString id = event.value(QStringLiteral("itemId")).toString();
-        if (!id.isEmpty() && id == browser_selected_id) {
+        QString id = event.value(QStringLiteral("uiItemId")).toString();
+        if (id.isEmpty()) id = event.value(QStringLiteral("itemId")).toString();
+        if (!id.isEmpty() && id == browser_ui_selected_id) {
           matching_selection_event = true;
           matching_item_type = event.value(QStringLiteral("itemType")).toString();
         }
@@ -2396,12 +2399,14 @@ void ScenePreviewWidget::poll_embedded_editor_events()
     // guards above. Helpers and derived overlays are valid inspection selections. Editing is
     // still governed by the payload's editable/locked contract; rejecting them
     // here made the embedded viewer and Qt hierarchy disagree about identity.
+    // The rendered browser identity is deliberately not required to satisfy
+    // preview_item_by_id(browser_selected_id) != nullptr; Qt owns authored/UI rows.
     const bool valid_browser_selection = matching_selection_event && scene_identity_matches &&
       selection_diagnostics.value(QStringLiteral("objectPresent")).toBool() &&
-      preview_item_by_id(browser_selected_id) != nullptr;
-    if (valid_browser_selection && browser_selected_id != selected_preview_item_id_) {
-      selected_preview_item_id_ = browser_selected_id;
-      emit preview_item_selected(browser_selected_id, matching_item_type);
+      preview_item_by_id(browser_ui_selected_id) != nullptr;
+    if (valid_browser_selection && browser_ui_selected_id != selected_preview_item_id_) {
+      selected_preview_item_id_ = browser_ui_selected_id;
+      emit preview_item_selected(browser_ui_selected_id, matching_item_type);
     } else if (browser_selected_id.isEmpty() && scene_identity_matches && !selected_preview_item_id_.isEmpty()) {
       selected_preview_item_id_.clear();
       emit preview_item_selected(QString(), QString());

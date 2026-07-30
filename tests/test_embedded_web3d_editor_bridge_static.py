@@ -12,7 +12,7 @@ def test_browser_editor_api_v1_contract_and_bounded_events():
     assert "window.__WORKCELL_EDITOR_API_V1__" in VIEWER
     for method in ["getState", "selectItem", "clearSelection", "setMode", "setSnap", "undo", "redo", "fitScene", "getEditPatch", "drainEvents"]:
         assert f"{method}:" in VIEWER
-    for field in ["ready", "sceneId", "selectedItemId", "selectedItemType", "selectedEditable", "dirty", "dirtyCount", "canUndo", "canRedo", "mode", "error"]:
+    for field in ["ready", "sceneId", "selectedItemId", "uiSelectionItemId", "selectedItemType", "selectedEditable", "dirty", "dirtyCount", "canUndo", "canRedo", "mode", "error"]:
         assert field in VIEWER
     for event in ["selection_changed", "dirty_changed", "transform_committed", "editor_error"]:
         assert event in VIEWER
@@ -90,7 +90,7 @@ def test_move_mode_first_click_selects_and_starts_drag_without_bypassing_locks()
     assert "const rendered = hitId ? renderedById(hitId) : null" in handler
     assert "hitId === state.selected" not in handler
     assert "beginDirectMoveDrag(event, rendered)" in handler
-    assert "!canEditItem(rendered.item)" in VIEWER.split("function beginDirectMoveDrag", 1)[1].split("function updateDirectMoveDrag", 1)[0]
+    assert "!selectionIsEditable(rendered)" in VIEWER.split("function beginDirectMoveDrag", 1)[1].split("function updateDirectMoveDrag", 1)[0]
 
 
 def test_qt_compact_toolbar_for_embedded_web3d():
@@ -132,7 +132,7 @@ def test_qt_selection_clears_stale_scene_and_missing_id_callbacks():
     assert "selection_missing_after_refresh" in CPP
     assert "Preview selection cleared after refresh (id missing):" in CPP
     assert "if (!embedded_web_identity_is_current(identity)) return;" in CPP
-    assert "if (valid_browser_selection && browser_selected_id != selected_preview_item_id_)" in CPP
+    assert "if (valid_browser_selection && browser_ui_selected_id != selected_preview_item_id_)" in CPP
     assert "selection_update_guard_" in (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
 
 
@@ -157,14 +157,18 @@ def test_qt_poll_accepts_only_final_valid_browser_selection_and_explicit_clear()
     poll = CPP.split("void ScenePreviewWidget::poll_embedded_editor_events()", 1)[1].split("#else", 1)[0]
     for token in [
         'editor_state.value(QStringLiteral("selectedItemId"))',
+        'editor_state.value(QStringLiteral("uiSelectionItemId"))',
         'editor_state.value(QStringLiteral("selectionDiagnostics"))',
         'editor_state.value(QStringLiteral("sceneId"))',
-        'id == browser_selected_id',
+        'id == browser_ui_selected_id',
         'selection_diagnostics.value(QStringLiteral("objectPresent")).toBool()',
-        'preview_item_by_id(browser_selected_id) != nullptr',
+        'preview_item_by_id(browser_ui_selected_id) != nullptr',
         'browser_scene_id == identity.scene_id',
     ]:
         assert token in poll
     assert "selected_preview_item_id_ = id" not in poll
+    assert 'event.value(QStringLiteral("uiItemId"))' in poll
+    assert "browser_ui_selected_id = browser_selected_id" in poll
+    assert "selected_preview_item_id_ = browser_ui_selected_id" in poll
     assert "browser_selected_id.isEmpty()" in poll
     assert "selected_preview_item_id_.clear();" in poll
