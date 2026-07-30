@@ -160,7 +160,6 @@ def test_qt_poll_accepts_only_final_valid_browser_selection_and_explicit_clear()
         'editor_state.value(QStringLiteral("uiSelectionItemId"))',
         'editor_state.value(QStringLiteral("selectionDiagnostics"))',
         'editor_state.value(QStringLiteral("sceneId"))',
-        'id == browser_ui_selected_id',
         'selection_diagnostics.value(QStringLiteral("objectPresent")).toBool()',
         'preview_item_by_id(browser_ui_selected_id) != nullptr',
         'browser_scene_id == identity.scene_id',
@@ -172,3 +171,28 @@ def test_qt_poll_accepts_only_final_valid_browser_selection_and_explicit_clear()
     assert "selected_preview_item_id_ = browser_ui_selected_id" in poll
     assert "browser_selected_id.isEmpty()" in poll
     assert "selected_preview_item_id_.clear();" in poll
+
+
+def test_qt_poll_treats_current_browser_state_as_authoritative_without_same_cycle_event():
+    poll = CPP.split("void ScenePreviewWidget::poll_embedded_editor_events()", 1)[1].split("#else", 1)[0]
+    assert "matching_selection_event" not in poll
+    assert "const bool valid_browser_selection = scene_identity_matches && !browser_ui_selected_id.isEmpty()" in poll
+    assert 'editor_state.value(QStringLiteral("selectedItemType"))' in poll
+    assert "browser_ui_selected_id != selected_preview_item_id_" in poll
+    assert "emit preview_item_selected(browser_ui_selected_id, matching_item_type);" in poll
+    assert "browser_selected_id.isEmpty() && scene_identity_matches" in poll
+    assert "state_request_token != embedded_editor_state_request_token_" in poll
+    assert "preview_item_by_id(browser_ui_selected_id) != nullptr" in poll
+    assert "Embedded Product View selection rejected:" in poll
+    assert "emitted_scene_diagnostic_keys_.contains(rejection_key)" in poll
+
+
+def test_qt_inventory_preserves_unique_locked_robot_and_tool_owner_rows():
+    main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    body = main.split("auto preserve_unique_inspection_owner", 1)[1].split("const bool filtered_payload_changed", 1)[0]
+    assert "item.locked && !item.editable" in body
+    assert 'source_layer != QStringLiteral("locked_generated_urdf_visual")' in body
+    assert "if (candidates.size() != 1) return;" in body
+    assert 'QStringLiteral("robot_arm")' in body
+    assert 'QStringLiteral("end_effector")' in body
+    assert "filtered_items.push_back(candidates.front())" in body

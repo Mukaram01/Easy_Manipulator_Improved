@@ -8708,6 +8708,30 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
   if (filtered_items.isEmpty() && !all_scene_preview_items_.isEmpty()) {
     append_studio_log("Scene3D blocker: current layer filters hide all items. Re-enable editable layout, mesh preview, primitive fallback, or locked generated URDF visuals.");
   }
+  // Keep the single configured robot and end-effector inspection owners in the
+  // Qt identity inventory even when their generated per-link render rows are
+  // suppressed. These are existing payload records, not renderable URDF-link
+  // rows, and remain locked/read-only hierarchy and Selected Item owners.
+  auto preserve_unique_inspection_owner = [&](const QSet<QString> & categories) {
+    QVector<ScenePreviewWidget::PreviewItem> candidates;
+    for (const auto & item : all_scene_preview_items_) {
+      const QString category = item.category.trimmed().toLower();
+      const QString source_layer = item.source_layer.trimmed().toLower();
+      if (categories.contains(category) && item.locked && !item.editable &&
+          source_layer != QStringLiteral("locked_generated_urdf_visual") &&
+          source_layer != QStringLiteral("generated_urdf_visual")) {
+        candidates.push_back(item);
+      }
+    }
+    if (candidates.size() != 1) return;
+    const QString owner_id = candidates.front().id.trimmed();
+    const bool already_present = std::any_of(filtered_items.cbegin(), filtered_items.cend(), [&](const auto & item) {
+      return item.id.trimmed() == owner_id;
+    });
+    if (!already_present) filtered_items.push_back(candidates.front());
+  };
+  preserve_unique_inspection_owner({QStringLiteral("robot"), QStringLiteral("robot_arm")});
+  preserve_unique_inspection_owner({QStringLiteral("tool"), QStringLiteral("end_effector"), QStringLiteral("gripper")});
   const bool filtered_payload_changed = !scene_preview_widget_->preview_payload_matches(filtered_items);
   if (filtered_payload_changed) {
     scene_preview_widget_->set_preview_items(filtered_items);

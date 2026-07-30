@@ -38,7 +38,7 @@ const CAMERA_PRESET_DIRECTIONS = Object.freeze({
   top: [0, -0.001, 1],
   robot: [1.1, -1.25, 0.72],
 });
-const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], pickRecords: [], pickIdentityByObject: new WeakMap(), assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: '', lastCanvasPickReason: '', initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
+const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], pickRecords: [], pickIdentityByObject: new WeakMap(), selectionIdentityIndex: null, assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: '', lastCanvasPickReason: '', initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
 let robotPreviewLoadToken = 0;
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
 const STAGED_MESH_ROOTS = [
@@ -937,25 +937,69 @@ const UI_SELECTION_REFERENCE_FIELDS = Object.freeze([
   'support_surface_ref',
   'camera_id',
 ]);
-function explicitUiSelectionItemId(rendered) {
+const SELECTION_LINK_IDENTITY_FIELDS = Object.freeze([
+  'link_name', 'link', 'canonical_link_name', 'object_name', 'final_render_link',
+]);
+function exactSelectionLinkName(item) {
+  for (const field of SELECTION_LINK_IDENTITY_FIELDS) {
+    const value = String(item?.[field] || '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+function rebuildSelectionIdentityIndex(sceneJson = state.sceneJson || {}) {
+  const items = collectItems(sceneJson);
+  const itemById = new Map(items.map(item => [String(item?.id || '').trim(), item]).filter(([id]) => id));
+  const recordsByLink = new Map();
+  for (const item of items) {
+    const link = exactSelectionLinkName(item);
+    if (!link) continue;
+    if (!recordsByLink.has(link)) recordsByLink.set(link, []);
+    recordsByLink.get(link).push(item);
+  }
+  const explicitUiIdByLink = new Map();
+  for (const [link, records] of recordsByLink) {
+    const candidates = new Set();
+    for (const record of records) {
+      for (const field of UI_SELECTION_REFERENCE_FIELDS) {
+        const candidate = String(record?.[field] || '').trim();
+        if (candidate && itemById.has(candidate)) candidates.add(candidate);
+      }
+    }
+    if (candidates.size === 1) explicitUiIdByLink.set(link, [...candidates][0]);
+  }
+  state.selectionIdentityIndex = { itemById, recordsByLink, explicitUiIdByLink };
+  return state.selectionIdentityIndex;
+}
+function uiSelectionIdentity(rendered) {
   const exactId = String(rendered?.item?.id || '');
-  if (!exactId) return '';
-  const activeItemIds = new Set(collectItems(state.sceneJson || {}).map(item => String(item?.id || '')).filter(Boolean));
+  if (!exactId) return { id: '', resolution: 'exact_identity_fallback', linkName: '', pickRecordSource: '' };
+  const index = state.selectionIdentityIndex || rebuildSelectionIdentityIndex();
   for (const field of UI_SELECTION_REFERENCE_FIELDS) {
     const candidate = String(rendered.item?.[field] || '').trim();
-    if (candidate && activeItemIds.has(candidate)) return candidate;
+    if (candidate && index.itemById.has(candidate)) return { id: candidate, resolution: 'direct_explicit_ref', linkName: exactSelectionLinkName(rendered.item), pickRecordSource: rendered.pickRecordSource || 'payload_item' };
   }
-  return exactId;
+  const linkName = exactSelectionLinkName(rendered.item);
+  const linkedId = linkName ? index.explicitUiIdByLink.get(linkName) : '';
+  if (linkedId) return { id: linkedId, resolution: 'exact_link_explicit_ref', linkName, pickRecordSource: rendered.pickRecordSource || 'payload_item' };
+  if (rendered.uiSelectionOwnerId && index.itemById.has(rendered.uiSelectionOwnerId)) {
+    return { id: rendered.uiSelectionOwnerId, resolution: rendered.uiSelectionResolution || 'exact_identity_fallback', linkName, pickRecordSource: rendered.pickRecordSource || 'expanded_urdf_inspection' };
+  }
+  return { id: exactId, resolution: 'exact_identity_fallback', linkName, pickRecordSource: rendered.pickRecordSource || 'payload_item' };
+}
+function explicitUiSelectionItemId(rendered) {
+  return uiSelectionIdentity(rendered).id;
 }
 function currentSelectionDiagnostics() {
   const id = String(state.selected || '');
   const rendered = renderedById(id);
   const editOwner = canonicalEditOwnerRendered(rendered);
   const item = rendered?.item || null;
+  const selectionIdentity = uiSelectionIdentity(rendered);
   return {
     sceneId: sceneId(),
     selectedItemId: id,
-    uiSelectionItemId: explicitUiSelectionItemId(rendered),
+    uiSelectionItemId: selectionIdentity.id,
     editOwnerItemId: editOwner?.item?.id || '',
     renderIdentity: id,
     selectedItemType: rendered ? itemType(item) : '',
@@ -967,6 +1011,9 @@ function currentSelectionDiagnostics() {
     diagnosticOnly: Boolean(item && isDiagnosticOnlyItem(item)),
     helperOrOverlay: Boolean(item && isDebugOverlayItem(item)),
     objectPresent: Boolean(rendered),
+    selectedLinkName: selectionIdentity.linkName,
+    uiSelectionResolution: selectionIdentity.resolution,
+    pickRecordSource: selectionIdentity.pickRecordSource,
     lastRaycastHitCount: state.lastRaycastHitCount,
     lastRaycastCandidateIds: [...state.lastRaycastCandidateIds],
     lastCanvasSelectedItemId: state.lastCanvasSelectedItemId,
@@ -1163,9 +1210,9 @@ function meshLocalTransformOf(item) {
 function cloneTransform(transform) { return JSON.parse(JSON.stringify(transform)); }
 function sameTransform(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 function renderedById(id) { return state.objects.find(obj => obj.item.id === id) || state.pickRecords.find(obj => obj.item.id === id); }
-function registerPickRecord(item, object3d, root = object3d) {
+function registerPickRecord(item, object3d, root = object3d, options = {}) {
   if (!item?.id || !object3d) return null;
-  const record = { item, object3d, pickRoot: root, readOnlyPick: true };
+  const record = { item, object3d, pickRoot: root, readOnlyPick: true, ...options };
   state.pickRecords.push(record);
   state.pickIdentityByObject.set(object3d, record);
   return record;
@@ -3015,6 +3062,7 @@ function resetSceneLifecycleState() {
   state.objects = [];
   state.pickRecords = [];
   state.pickIdentityByObject = new WeakMap();
+  state.selectionIdentityIndex = null;
   state.lastRaycastHitCount = 0;
   state.lastRaycastCandidateIds = [];
   state.lastCanvasSelectedItemId = '';
@@ -3063,6 +3111,7 @@ function clearSceneObjects() {
 }
 function renderScene(items) {
   clearSceneObjects();
+  rebuildSelectionIdentityIndex(state.sceneJson || {});
   state.frameLookup = parseSceneFrames(state.sceneJson || {});
   state.resolvedFramePoses.clear();
   beginWeb3dSceneReadiness(items);
@@ -3198,12 +3247,42 @@ function loadExpandedUrdfRobotPreview(preview) {
       const itemsByLink = new Map();
       for (const item of collectItems(state.sceneJson || {})) {
         if (!isGeneratedUrdfItem(item)) continue;
-        const explicitLink = String(item?.link_name || item?.link || '').trim();
+        const explicitLink = exactSelectionLinkName(item);
         if (explicitLink && !itemsByLink.has(explicitLink)) itemsByLink.set(explicitLink, item);
       }
+      const robotLinks = new Set(asArray(preview?.expected_robot_visual_links || preview?.expectedRobotVisualLinks).map(value => String(value || '').trim()).filter(Boolean));
+      const toolLinks = new Set(asArray(preview?.expected_tool_visual_links || preview?.expectedToolVisualLinks).map(value => String(value || '').trim()).filter(Boolean));
+      const index = state.selectionIdentityIndex || rebuildSelectionIdentityIndex();
+      const ownerFromExplicitContract = (fields, readinessCategory) => {
+        for (const field of fields) {
+          const id = String(preview?.[field] || '').trim();
+          if (id && index.itemById.has(id)) return id;
+        }
+        const candidates = [...index.itemById.values()].filter(item =>
+          String(item?.readiness_category || item?.readinessCategory || '').trim() === readinessCategory &&
+          !isGeneratedUrdfItem(item));
+        return candidates.length === 1 ? String(candidates[0].id) : '';
+      };
+      const robotOwnerId = ownerFromExplicitContract(['robot_instance_id', 'robotInstanceId', 'robot_id', 'robotId'], 'robot_arm');
+      const toolOwnerId = ownerFromExplicitContract(['tool_instance_id', 'toolInstanceId', 'tool_id', 'toolId', 'end_effector_id', 'endEffectorId'], 'attached_tool_gripper');
+      const robotInstance = String(preview?.robot_instance_id || preview?.robotInstanceId || preview?.robot_id || preview?.robotId || 'robot').trim();
       for (const [linkName, linkObject] of result?.links || []) {
-        const item = itemsByLink.get(String(linkName));
-        if (item) registerPickRecord(item, linkObject, result.root || linkObject);
+        const exactLink = String(linkName || '').trim();
+        const fixtureOwnerId = index.explicitUiIdByLink.get(exactLink) || '';
+        const eligible = toolLinks.has(exactLink) || robotLinks.has(exactLink) || Boolean(fixtureOwnerId);
+        if (!eligible || !linkObject || linkObject.visible === false) continue;
+        const payloadItem = itemsByLink.get(exactLink);
+        const inspectionId = `${loadSceneId}::expanded_urdf_inspection::${robotInstance}::${exactLink}`;
+        const item = payloadItem || { id: inspectionId, link_name: exactLink, locked: true, editable: false, selectable: true, source_layer: 'expanded_urdf_inspection' };
+        let ownerId = fixtureOwnerId;
+        let resolution = fixtureOwnerId ? 'exact_link_explicit_ref' : 'exact_identity_fallback';
+        if (toolLinks.has(exactLink) && toolOwnerId) { ownerId = toolOwnerId; resolution = 'tool_owner'; }
+        else if (robotLinks.has(exactLink) && robotOwnerId) { ownerId = robotOwnerId; resolution = 'robot_owner'; }
+        registerPickRecord(item, linkObject, result.root || linkObject, {
+          pickRecordSource: payloadItem ? 'payload_item' : 'expanded_urdf_inspection',
+          uiSelectionOwnerId: ownerId,
+          uiSelectionResolution: resolution,
+        });
       }
       state.robotPreviewResult = result;
       state.robotUrdfPreviewDiagnostics = result.diagnostics;
