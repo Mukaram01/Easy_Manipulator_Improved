@@ -38302,7 +38302,7 @@ var CAMERA_PRESET_DIRECTIONS = Object.freeze({
   top: [0, -1e-3, 1],
   robot: [1.1, -1.25, 0.72]
 });
-var state = { sceneJson: null, sourceWebSceneFile: "", diagnosticKeys: /* @__PURE__ */ new Set(), frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], pickRecords: [], pickIdentityByObject: /* @__PURE__ */ new WeakMap(), selectionIdentityIndex: null, assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: "", done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: "select", editorEvents: [], editorError: "", robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: "", lastCanvasPickReason: "", initialPosePreview: { active: false, robotId: "", sceneKey: "" }, web3dReadiness: { state: "booting", terminal: false, terminalState: "", terminalNavigationKey: "", terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null }, builderRevision: "", sceneJsonLoaded: false, activeNavigationKey: "" };
+var state = { sceneJson: null, sourceWebSceneFile: "", diagnosticKeys: /* @__PURE__ */ new Set(), frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], pickRecords: [], pickIdentityByObject: /* @__PURE__ */ new WeakMap(), selectionIdentityIndex: null, assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: "", done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: "select", editorEvents: [], editorError: "", robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: "", lastCanvasPickReason: "", lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: "", sceneKey: "" }, web3dReadiness: { state: "booting", terminal: false, terminalState: "", terminalNavigationKey: "", terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null }, builderRevision: "", sceneJsonLoaded: false, activeNavigationKey: "" };
 var robotPreviewLoadToken = 0;
 var RESET_VIEW_TITLE = "Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.";
 var STAGED_MESH_ROOTS = [
@@ -39222,6 +39222,8 @@ function updateViewerStatus() {
     selectedLinkName: selectionDiagnostics.selectedLinkName,
     uiSelectionResolution: selectionDiagnostics.uiSelectionResolution,
     pickRecordSource: selectionDiagnostics.pickRecordSource,
+    last_failed_canvas_pick_diagnostic: state.lastFailedCanvasPickDiagnostic,
+    lastFailedCanvasPickDiagnostic: state.lastFailedCanvasPickDiagnostic,
     renderable_count: summary.renderableCount,
     renderableCount: summary.renderableCount,
     mesh_loaded_count: summary.meshLoadedCount,
@@ -39403,13 +39405,14 @@ function currentSelectionDiagnostics() {
     lastRaycastHitCount: state.lastRaycastHitCount,
     lastRaycastCandidateIds: [...state.lastRaycastCandidateIds],
     lastCanvasSelectedItemId: state.lastCanvasSelectedItemId,
-    lastCanvasPickReason: state.lastCanvasPickReason
+    lastCanvasPickReason: state.lastCanvasPickReason,
+    lastFailedCanvasPickDiagnostic: state.lastFailedCanvasPickDiagnostic
   };
 }
 function editorState() {
   const rendered = renderedById(state.selected);
   const editOwner = canonicalEditOwnerRendered(rendered);
-  return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || "", uiSelectionItemId: explicitUiSelectionItemId(rendered), editOwnerItemId: editOwner?.item?.id || "", selectedItemType: rendered ? itemType(rendered.item) : "", selectedEditable: selectionIsEditable(rendered), selectionDiagnostics: currentSelectionDiagnostics(), lastRaycastHitCount: state.lastRaycastHitCount, lastRaycastCandidateIds: [...state.lastRaycastCandidateIds], lastCanvasSelectedItemId: state.lastCanvasSelectedItemId, lastCanvasPickReason: state.lastCanvasPickReason, dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, error: state.editorError || "" };
+  return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || "", uiSelectionItemId: explicitUiSelectionItemId(rendered), editOwnerItemId: editOwner?.item?.id || "", selectedItemType: rendered ? itemType(rendered.item) : "", selectedEditable: selectionIsEditable(rendered), selectionDiagnostics: currentSelectionDiagnostics(), lastRaycastHitCount: state.lastRaycastHitCount, lastRaycastCandidateIds: [...state.lastRaycastCandidateIds], lastCanvasSelectedItemId: state.lastCanvasSelectedItemId, lastCanvasPickReason: state.lastCanvasPickReason, lastFailedCanvasPickDiagnostic: state.lastFailedCanvasPickDiagnostic, dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, error: state.editorError || "" };
 }
 function emitDirtyChanged() {
   pushEditorEvent("dirty_changed", { dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0 });
@@ -39624,6 +39627,23 @@ function registerPickRecord(item, object3d, root = object3d, options = {}) {
   state.pickRecords.push(record);
   state.pickIdentityByObject.set(object3d, record);
   return record;
+}
+function bindExpandedUrdfPickRecordToSubtree(linkRoot, record, urdfLinkRoots) {
+  if (!linkRoot || !record)
+    return 0;
+  let boundNodeCount = 0;
+  const pending = [linkRoot];
+  while (pending.length) {
+    const node = pending.pop();
+    if (node !== linkRoot && urdfLinkRoots?.has(node))
+      continue;
+    state.pickIdentityByObject.set(node, record);
+    if (node !== linkRoot)
+      boundNodeCount += 1;
+    for (const child of node.children || [])
+      pending.push(child);
+  }
+  return boundNodeCount;
 }
 function derivedTransformTargetId(item) {
   const targetId = String(item?.target_ref || "").trim();
@@ -41542,6 +41562,7 @@ function resetSceneLifecycleState() {
   state.lastRaycastCandidateIds = [];
   state.lastCanvasSelectedItemId = "";
   state.lastCanvasPickReason = "";
+  state.lastFailedCanvasPickDiagnostic = null;
   state.assemblyRoots = [];
   state.robotAssemblyDiagnostics = [];
   state.robotAssemblyRenderDiagnostics = {};
@@ -41751,6 +41772,9 @@ function loadExpandedUrdfRobotPreview(preview) {
       const robotOwnerId = ownerFromExplicitContract(["selection_robot_owner_id", "selectionRobotOwnerId", "robot_instance_id", "robotInstanceId", "robot_id", "robotId"]);
       const toolOwnerId = ownerFromExplicitContract(["selection_tool_owner_id", "selectionToolOwnerId", "tool_instance_id", "toolInstanceId", "tool_id", "toolId", "end_effector_id", "endEffectorId"]);
       const robotInstance = String(preview?.robot_instance_id || preview?.robotInstanceId || preview?.robot_id || preview?.robotId || "robot").trim();
+      const urdfLinkRoots = new Set(result.links.values());
+      const loadedPickRecords = [];
+      let boundNodeCount = 0;
       for (const [linkName, linkObject] of result?.links || []) {
         const exactLink = String(linkName || "").trim();
         const fixtureOwnerId = index.explicitUiIdByLink.get(exactLink) || "";
@@ -41769,13 +41793,50 @@ function loadExpandedUrdfRobotPreview(preview) {
           ownerId = robotOwnerId;
           resolution = "robot_owner";
         }
-        registerPickRecord(item, linkObject, result.root || linkObject, {
+        if (!callbackIsCurrent())
+          return ignoreStaleCallback();
+        const record = registerPickRecord(item, linkObject, result.root || linkObject, {
           pickRecordSource: payloadItem ? "payload_item" : "expanded_urdf_inspection",
           uiSelectionOwnerId: ownerId,
           uiSelectionResolution: resolution
         });
+        if (record)
+          loadedPickRecords.push(record);
+        if (callbackIsCurrent())
+          boundNodeCount += bindExpandedUrdfPickRecordToSubtree(linkObject, record, urdfLinkRoots);
       }
+      const robotPickRecords = loadedPickRecords.filter((record) => robotLinks.has(exactSelectionLinkName(record.item)));
+      const toolPickRecords = loadedPickRecords.filter((record) => toolLinks.has(exactSelectionLinkName(record.item)));
+      const localDiagnostics = {
+        robot_pick_record_count: loadedPickRecords.length,
+        robotPickRecordCount: loadedPickRecords.length,
+        expanded_urdf_pick_record_count: loadedPickRecords.length,
+        expandedUrdfPickRecordCount: loadedPickRecords.length,
+        expanded_urdf_unique_link_record_count: new Set(loadedPickRecords.map((record) => exactSelectionLinkName(record.item)).filter(Boolean)).size,
+        expandedUrdfUniqueLinkRecordCount: new Set(loadedPickRecords.map((record) => exactSelectionLinkName(record.item)).filter(Boolean)).size,
+        expanded_urdf_bound_node_count: boundNodeCount,
+        expandedUrdfBoundNodeCount: boundNodeCount,
+        robot_pick_bound_descendant_node_count: boundNodeCount,
+        robotPickBoundDescendantNodeCount: boundNodeCount,
+        expanded_urdf_robot_pick_record_count: robotPickRecords.length,
+        expandedUrdfRobotPickRecordCount: robotPickRecords.length,
+        robot_pick_robot_record_count: robotPickRecords.length,
+        robotPickRobotRecordCount: robotPickRecords.length,
+        expanded_urdf_tool_pick_record_count: toolPickRecords.length,
+        expandedUrdfToolPickRecordCount: toolPickRecords.length,
+        robot_pick_tool_record_count: toolPickRecords.length,
+        robotPickToolRecordCount: toolPickRecords.length,
+        expanded_urdf_robot_pick_record_links: robotPickRecords.map((record) => exactSelectionLinkName(record.item)),
+        expandedUrdfRobotPickRecordLinks: robotPickRecords.map((record) => exactSelectionLinkName(record.item)),
+        expanded_urdf_tool_pick_record_links: toolPickRecords.map((record) => exactSelectionLinkName(record.item)),
+        expandedUrdfToolPickRecordLinks: toolPickRecords.map((record) => exactSelectionLinkName(record.item)),
+        selection_robot_owner_id: robotOwnerId,
+        selectionRobotOwnerId: robotOwnerId,
+        selection_tool_owner_id: toolOwnerId,
+        selectionToolOwnerId: toolOwnerId
+      };
       state.robotPreviewResult = result;
+      result.diagnostics = { ...state.robotUrdfPreviewDiagnostics, ...result.diagnostics || {}, ...localDiagnostics };
       state.robotUrdfPreviewDiagnostics = result.diagnostics;
       if (!failIfExpandedUrdfExpectedVisualSetInvalid())
         completeExpandedUrdfReadiness(result);
@@ -41802,7 +41863,8 @@ function loadExpandedUrdfRobotPreview(preview) {
       renderSceneSummary();
     }
   });
-  state.robotUrdfPreviewDiagnostics = previewResult.diagnostics;
+  state.robotUrdfPreviewDiagnostics = { ...state.robotUrdfPreviewDiagnostics, ...previewResult.diagnostics || {} };
+  previewResult.diagnostics = state.robotUrdfPreviewDiagnostics;
   return previewResult;
 }
 function linkNameOfItem(item) {
@@ -42252,10 +42314,15 @@ function itemFromRaycastHit(hit) {
       return null;
     if (!candidate) {
       const registered = state.pickIdentityByObject.get(node);
-      const item = node.userData?.item || registered?.item;
+      const registeredInspection = registered?.pickRecordSource === "expanded_urdf_inspection" || Boolean(String(registered?.uiSelectionOwnerId || "").trim());
+      const nodeItem = node.userData?.item;
+      const nodeItemWithoutStalePickFlags = nodeItem ? { ...nodeItem, id: "", display_name: "", status: "", diagnostic_only: false, selectable: true } : null;
+      if (registeredInspection && nodeItemWithoutStalePickFlags && (isTaskOnlyHelperItem(nodeItemWithoutStalePickFlags) || isOverlayPolicyItem(nodeItemWithoutStalePickFlags) || isDebugOverlayItem(nodeItemWithoutStalePickFlags)))
+        return null;
+      const item = registeredInspection ? registered.item : nodeItem || registered?.item;
       if (item?.id) {
         const rendered = renderedById(item.id) || registered;
-        if (!rendered || !isNormalSelectableRendered(rendered))
+        if (!rendered || !registeredInspection && !isNormalSelectableRendered(rendered))
           return null;
         candidate = rendered;
       }
@@ -42293,6 +42360,50 @@ function rankedPickingCandidates(hits) {
     const distanceDelta = Number(a.hit?.distance || 0) - Number(b.hit?.distance || 0);
     return Math.abs(distanceDelta) <= PICK_COINCIDENCE_TOLERANCE_M ? a.priority - b.priority || distanceDelta : distanceDelta;
   });
+}
+function failedCanvasPickDiagnostic(hits) {
+  const objectNames = [];
+  let traversedRegisteredIdentity = false;
+  let firstActionableRejectionReason = "";
+  let nearestKnownUrdfLinkAncestor = "";
+  const knownLinks = state.robotPreviewResult?.links instanceof Map ? state.robotPreviewResult.links : /* @__PURE__ */ new Map();
+  const knownLinkByNode = new Map(Array.from(knownLinks.entries()).map(([name, node]) => [node, String(name || "")]));
+  for (const hit of hits || []) {
+    const rawName = String(hit?.object?.name || "").trim();
+    if (rawName && !objectNames.includes(rawName) && objectNames.length < 12)
+      objectNames.push(rawName);
+    let node = hit?.object || null;
+    while (node) {
+      const registered = state.pickIdentityByObject.get(node);
+      if (registered)
+        traversedRegisteredIdentity = true;
+      if (!nearestKnownUrdfLinkAncestor)
+        nearestKnownUrdfLinkAncestor = knownLinkByNode.get(node) || String(registered?.item?.link_name || registered?.item?.link || "").trim();
+      if (!firstActionableRejectionReason) {
+        if (excludedPickNode(node))
+          firstActionableRejectionReason = "hit_node_excluded_from_picking";
+        else if (registered && !registered?.item?.id)
+          firstActionableRejectionReason = "registered_identity_missing_item_id";
+        else if (registered && !isNormalSelectableRendered(inspectionSelectionRendered(registered)))
+          firstActionableRejectionReason = "registered_identity_not_selectable";
+      }
+      node = node.parent;
+    }
+  }
+  if (!firstActionableRejectionReason)
+    firstActionableRejectionReason = traversedRegisteredIdentity ? "registered_identity_rejected_by_selection_policy" : "no_registered_identity_in_hit_ancestry";
+  return {
+    raw_hit_count: (hits || []).length,
+    rawHitCount: (hits || []).length,
+    hit_object_names: objectNames,
+    hitObjectNames: objectNames,
+    traversed_registered_identity: traversedRegisteredIdentity,
+    traversedRegisteredIdentity,
+    first_actionable_rejection_reason: firstActionableRejectionReason,
+    firstActionableRejectionReason,
+    nearest_known_urdf_link_ancestor: nearestKnownUrdfLinkAncestor,
+    nearestKnownUrdfLinkAncestor
+  };
 }
 function selectObject(id) {
   const requestedId = String(id || "");
@@ -42356,6 +42467,15 @@ function pickObject(event) {
   if (!selectedCandidate) {
     state.lastCanvasSelectedItemId = "";
     state.lastCanvasPickReason = hits.length ? "no_eligible_candidate" : "empty_select_click";
+    state.lastFailedCanvasPickDiagnostic = hits.length ? failedCanvasPickDiagnostic(hits) : null;
+    if (state.lastFailedCanvasPickDiagnostic) {
+      const diagnostic = state.lastFailedCanvasPickDiagnostic;
+      const signature = ["failed_canvas_pick", sceneId(), diagnostic.raw_hit_count, diagnostic.hit_object_names.join("|"), diagnostic.first_actionable_rejection_reason, diagnostic.nearest_known_urdf_link_ancestor].join("\n");
+      if (!state.diagnosticKeys.has(signature)) {
+        state.diagnosticKeys.add(signature);
+        console.warn?.("Product View canvas pick rejected", diagnostic);
+      }
+    }
     if (state.editorMode === "select")
       clearSelection();
     return "";
@@ -42372,6 +42492,7 @@ function pickObject(event) {
   selectObject(selectedCandidate.rendered.item.id);
   state.lastCanvasSelectedItemId = selectedCandidate.rendered.item.id;
   state.lastCanvasPickReason = "eligible_candidate";
+  state.lastFailedCanvasPickDiagnostic = null;
   return selectedCandidate.rendered.item.id;
 }
 function pointerToWorldPlane(event, z) {
