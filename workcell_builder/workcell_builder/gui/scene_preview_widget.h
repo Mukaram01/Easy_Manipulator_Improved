@@ -63,6 +63,8 @@ public:
     bool locked{ false };
     QString lock_reason;
     QString metadata_tags;
+    QString target_ref;
+    QString transform_group;
     QString source_layer;
     QString active_visual_source;
     bool linked_to_editable_layout_state{ false };

@@ -393,6 +393,7 @@ private:
   void populate_asset_catalog();
   void import_stl_to_asset_library();
   void on_hierarchy_item_selected(QTreeWidgetItem * item);
+  void refresh_selected_item_card();
   void on_asset_filter_changed(int index);
   void open_add_asset_dialog();
   void refresh_add_asset_dialog_details();
@@ -528,6 +529,12 @@ private:
   QPushButton * scene_workflow_recommendation_button_{ nullptr };
   QMenu * scene_workflow_recommendation_menu_{ nullptr };
   QTreeWidget * scene_hierarchy_tree_{ nullptr };
+  QLabel * selected_item_name_label_{ nullptr };
+  QLabel * selected_item_summary_label_{ nullptr };
+  QLabel * selected_item_id_label_{ nullptr };
+  QLabel * selected_item_reason_label_{ nullptr };
+  QPushButton * scene_move_mode_button_{ nullptr };
+  QPushButton * scene_rotate_mode_button_{ nullptr };
   QTreeWidget * asset_catalog_tree_{ nullptr };
   QTreeWidget * scene_files_tree_{ nullptr };
   QComboBox * asset_filter_combo_{ nullptr };
