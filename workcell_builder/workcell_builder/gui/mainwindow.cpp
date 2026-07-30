@@ -2137,6 +2137,27 @@ void MainWindow::setup_studio_shell()
   scene_hierarchy_tree_->setColumnWidth(1, 120);
   scene_hierarchy_tree_->setColumnWidth(2, 72);
   hierarchy_layout->addWidget(scene_hierarchy_tree_);
+  auto * selected_item_card = new QFrame(hierarchy_card);
+  selected_item_card->setObjectName("studioSelectedItemCard");
+  selected_item_card->setFrameShape(QFrame::StyledPanel);
+  auto * selected_item_layout = new QVBoxLayout(selected_item_card);
+  selected_item_layout->setContentsMargins(10, 8, 10, 8);
+  selected_item_layout->setSpacing(2);
+  selected_item_layout->addWidget(new QLabel("<b>Selected Item</b>", selected_item_card));
+  selected_item_name_label_ = new QLabel("No selection", selected_item_card);
+  selected_item_name_label_->setObjectName("selectedItemName");
+  selected_item_summary_label_ = new QLabel("Select an item in the hierarchy or 3D view.", selected_item_card);
+  selected_item_summary_label_->setWordWrap(true);
+  selected_item_id_label_ = new QLabel(selected_item_card);
+  selected_item_id_label_->setStyleSheet("color: #8aa0b5; font-size: 11px;");
+  selected_item_reason_label_ = new QLabel(selected_item_card);
+  selected_item_reason_label_->setWordWrap(true);
+  selected_item_reason_label_->setStyleSheet("color: #c9a227;");
+  selected_item_layout->addWidget(selected_item_name_label_);
+  selected_item_layout->addWidget(selected_item_summary_label_);
+  selected_item_layout->addWidget(selected_item_id_label_);
+  selected_item_layout->addWidget(selected_item_reason_label_);
+  hierarchy_layout->addWidget(selected_item_card);
   auto * preview_layers_group = new QGroupBox("Layers", hierarchy_card);
   auto * preview_layers_layout = new QVBoxLayout(preview_layers_group);
   preview_layer_editable_layout_box_ = new QCheckBox("editable layout", preview_layers_group);
@@ -2398,6 +2419,8 @@ void MainWindow::setup_studio_shell()
   auto * place_mode_button = make_primary_button("Place Asset"); primary_controls->addWidget(place_mode_button);
   auto * move_mode_button = make_primary_button("Move"); primary_controls->addWidget(move_mode_button);
   auto * rotate_mode_button = make_primary_button("Rotate"); primary_controls->addWidget(rotate_mode_button);
+  scene_move_mode_button_ = move_mode_button;
+  scene_rotate_mode_button_ = rotate_mode_button;
   for (auto * button : {select_mode_button, move_mode_button, rotate_mode_button}) button->setCheckable(true);
   select_mode_button->setChecked(true);
   connect(scene_preview_widget_, &ScenePreviewWidget::authoring_mode_changed, this,
@@ -6467,6 +6490,7 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
     selection_update_guard_ = false;
     sync_selected_item_state();
     refresh_selected_scene_item_labels(selected_item_state_);
+    refresh_selected_item_card();
     append_studio_log("Selected item: <none> (unknown)");
     return;
   }
@@ -6582,6 +6606,7 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
   }
 
   const auto selected_state = current_selected_scene_item();
+  refresh_selected_item_card();
   const QString selected_scene_name_for_log = selected_scene_state_.valid ? selected_scene_state_.name : QStringLiteral("unknown");
   const QString selected_source_layer_for_log = selected_state.source_layer.isEmpty() ? QStringLiteral("unknown") : selected_state.source_layer;
   append_studio_log(QString("Scene3D selection changed: scene=%1 id=%2 editable=%3 locked=%4 source_layer=%5")
@@ -8373,7 +8398,61 @@ void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
   if (!item || selection_update_guard_) return;
   const QString selected_id = item->data(0, TreeRoleId).toString().trimmed();
   const QString selected_role = item->data(0, TreeRoleRole).toString().trimmed();
+  const auto * preview_item = scene_preview_widget_ ? scene_preview_widget_->preview_item_by_id(selected_id) : nullptr;
+  if (preview_item && preview_item->source_layer == QStringLiteral("overlay") &&
+      preview_layer_overlays_helpers_box_ && !preview_layer_overlays_helpers_box_->isChecked()) {
+    // An explicit hierarchy choice is deterministic opt-in to seeing that
+    // helper. Hidden helpers never participate in ordinary canvas picking.
+    preview_layer_overlays_helpers_box_->setChecked(true);
+  }
   apply_scene_selection(selected_id, selected_role, false, true);
+}
+
+void MainWindow::refresh_selected_item_card()
+{
+  if (!selected_item_name_label_) return;
+  const QString id = current_selected_scene_item_id_.trimmed();
+  const auto * item = scene_preview_widget_ ? scene_preview_widget_->preview_item_by_id(id) : nullptr;
+  if (id.isEmpty() || !item) {
+    selected_item_name_label_->setText(QStringLiteral("No selection"));
+    selected_item_summary_label_->setText(QStringLiteral("Select an item in the hierarchy or 3D view."));
+    selected_item_id_label_->clear();
+    selected_item_reason_label_->clear();
+    if (scene_move_mode_button_) scene_move_mode_button_->setEnabled(false);
+    if (scene_rotate_mode_button_) scene_rotate_mode_button_->setEnabled(false);
+    return;
+  }
+
+  const QString friendly_name = item->display_name.trimmed().isEmpty() ? id : item->display_name.trimmed();
+  selected_item_name_label_->setText(friendly_name);
+  selected_item_id_label_->setText(QStringLiteral("ID: %1").arg(id));
+  selected_item_id_label_->setToolTip(QStringLiteral("Stable scene item ID: %1").arg(id));
+  const bool derived_area = !item->target_ref.trimmed().isEmpty();
+  const bool generated = item->source_layer != QStringLiteral("editable_layout") && !derived_area;
+  QString kind = derived_area ? QStringLiteral("Read-only destination area") :
+    generated ? QStringLiteral("Generated preview · read-only") : QStringLiteral("Editable physical item");
+  QStringList details{kind};
+  if (derived_area) {
+    const auto * target = scene_preview_widget_->preview_item_by_id(item->target_ref);
+    details << QStringLiteral("Follows: %1").arg(target && !target->display_name.trimmed().isEmpty() ? target->display_name : item->target_ref);
+    details << QStringLiteral("Position derived from %1").arg(item->target_ref);
+  } else if (!generated) {
+    details << QStringLiteral("Position: X %1 · Y %2 · Z %3 · Yaw %4°")
+      .arg(item->x, 0, 'f', 3).arg(item->y, 0, 'f', 3).arg(item->z, 0, 'f', 3)
+      .arg(qRound(item->yaw * 180.0 / 3.14159265358979323846));
+    if (!item->transform_group.trimmed().isEmpty())
+      details << QStringLiteral("Destination group: %1").arg(item->transform_group);
+  }
+  selected_item_summary_label_->setText(details.join(QStringLiteral("\n")));
+  const bool editable = item->editable && !item->locked && !derived_area;
+  const QString reason = derived_area
+    ? QStringLiteral("This area follows %1. Move the bin instead.").arg(
+        scene_preview_widget_->preview_item_by_id(item->target_ref) ?
+          scene_preview_widget_->preview_item_by_id(item->target_ref)->display_name : item->target_ref)
+    : (!editable ? QStringLiteral("This generated item is read-only.") : QString());
+  selected_item_reason_label_->setText(reason);
+  if (scene_move_mode_button_) { scene_move_mode_button_->setEnabled(editable); scene_move_mode_button_->setToolTip(reason); }
+  if (scene_rotate_mode_button_) { scene_rotate_mode_button_->setEnabled(editable); scene_rotate_mode_button_->setToolTip(reason); }
 }
 
 
@@ -11459,9 +11538,38 @@ void MainWindow::populate_scene_hierarchy()
     }
   }
 
+  // Preserve authored relationship context for friendly inspection without
+  // exposing the source file or schema in the card. A destination area that
+  // follows a physical target is derived and therefore never transformable.
+  YAML::Node authored_layout;
+  if (read_yaml(d / "layout" / "workcell_studio_layout.yaml", &authored_layout)) {
+    const YAML::Node items = authored_layout["items"] ? authored_layout["items"] : authored_layout["placed_assets"];
+    if (items && items.IsSequence()) {
+      for (const auto & node : items) {
+        if (!node || !node.IsMap()) continue;
+        const QString authored_id = semantic_yaml_scalar(node["id"]);
+        for (auto & preview_item : preview_items) {
+          if (preview_item.id != authored_id) continue;
+          preview_item.target_ref = semantic_yaml_scalar(node["target_ref"]);
+          preview_item.transform_group = semantic_yaml_scalar(node["transform_group"]);
+          if (!preview_item.target_ref.isEmpty()) {
+            preview_item.editable = false;
+            preview_item.locked = true;
+            preview_item.source_layer = QStringLiteral("overlay");
+            preview_item.lock_reason = QStringLiteral("Derived destination area; move its linked target instead.");
+          }
+          break;
+        }
+      }
+    }
+  }
+
   scene_hierarchy_tree_->clear();
   for (const auto & p : preview_items) {
-    if (allowed_scene_roles.contains(p.role) && include_preview_item_in_hierarchy(p)) {
+    // Keep one identity tree even when helpers are visually hidden. Selecting
+    // such a row explicitly opts into its layer in on_hierarchy_item_selected().
+    if (allowed_scene_roles.contains(p.role) &&
+        (include_preview_item_in_hierarchy(p) || p.source_layer == QStringLiteral("overlay"))) {
       add_tree_node(p);
     }
   }

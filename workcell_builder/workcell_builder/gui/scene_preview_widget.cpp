@@ -66,7 +66,8 @@ QByteArray serialized_preview_item(const ScenePreviewWidget::PreviewItem & item)
   write_bool(item.mesh_available);
   stream << item.mesh_load_warning;
   write_bool(item.selectable); write_bool(item.editable); write_bool(item.locked);
-  stream << item.lock_reason << item.metadata_tags << item.source_layer << item.active_visual_source;
+  stream << item.lock_reason << item.metadata_tags << item.target_ref << item.transform_group
+         << item.source_layer << item.active_visual_source;
   write_bool(item.linked_to_editable_layout_state); write_bool(item.metadata_complete);
   write_string_list(item.warnings);
   write_bool(item.has_mesh_metadata);
@@ -2391,10 +2392,13 @@ void ScenePreviewWidget::poll_embedded_editor_events()
         }
       }
     }
+    // scene_context_changed selections are invalidated by the identity/token
+    // guards above. Helpers and derived overlays are valid inspection selections. Editing is
+    // still governed by the payload's editable/locked contract; rejecting them
+    // here made the embedded viewer and Qt hierarchy disagree about identity.
     const bool valid_browser_selection = matching_selection_event && scene_identity_matches &&
       selection_diagnostics.value(QStringLiteral("objectPresent")).toBool() &&
-      !selection_diagnostics.value(QStringLiteral("diagnosticOnly")).toBool() &&
-      !selection_diagnostics.value(QStringLiteral("helperOrOverlay")).toBool();
+      preview_item_by_id(browser_selected_id) != nullptr;
     if (valid_browser_selection && browser_selected_id != selected_preview_item_id_) {
       selected_preview_item_id_ = browser_selected_id;
       emit preview_item_selected(browser_selected_id, matching_item_type);

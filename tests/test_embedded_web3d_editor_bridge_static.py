@@ -161,8 +161,7 @@ def test_qt_poll_accepts_only_final_valid_browser_selection_and_explicit_clear()
         'editor_state.value(QStringLiteral("sceneId"))',
         'id == browser_selected_id',
         'selection_diagnostics.value(QStringLiteral("objectPresent")).toBool()',
-        '!selection_diagnostics.value(QStringLiteral("diagnosticOnly")).toBool()',
-        '!selection_diagnostics.value(QStringLiteral("helperOrOverlay")).toBool()',
+        'preview_item_by_id(browser_selected_id) != nullptr',
         'browser_scene_id == identity.scene_id',
     ]:
         assert token in poll
