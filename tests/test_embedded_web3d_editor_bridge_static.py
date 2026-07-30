@@ -187,12 +187,32 @@ def test_qt_poll_treats_current_browser_state_as_authoritative_without_same_cycl
     assert "emitted_scene_diagnostic_keys_.contains(rejection_key)" in poll
 
 
-def test_qt_inventory_preserves_unique_locked_robot_and_tool_owner_rows():
+def test_qt_inventory_preserves_explicit_locked_robot_and_tool_owner_rows():
     main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
-    body = main.split("auto preserve_unique_inspection_owner", 1)[1].split("const bool filtered_payload_changed", 1)[0]
+    body = main.split("QString selection_robot_owner_id", 1)[1].split("const bool filtered_payload_changed", 1)[0]
+    assert 'value(QStringLiteral("selection_robot_owner_id"))' in body
+    assert 'value(QStringLiteral("selection_tool_owner_id"))' in body
+    assert "item.id.trimmed() == owner_id" in body
+    assert "filtered_items.push_back(*owner)" in body
+    assert "selection_robot_owner_id.isEmpty() && !explicit_robot_owner" in body
+    assert "selection_tool_owner_id.isEmpty() && !explicit_tool_owner" in body
+    assert "used unique category fallback" in body
     assert "item.locked && !item.editable" in body
     assert 'source_layer != QStringLiteral("locked_generated_urdf_visual")' in body
     assert "if (candidates.size() != 1) return;" in body
     assert 'QStringLiteral("robot_arm")' in body
     assert 'QStringLiteral("end_effector")' in body
     assert "filtered_items.push_back(candidates.front())" in body
+
+
+def test_qt_exact_ur5_and_robotiq_owner_ids_remain_selectable_in_preview_inventory():
+    main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    environment = (ROOT / "scenes/ur5_2f_test/environment.yaml").read_text(encoding="utf-8")
+    owner_body = main.split("auto preserve_explicit_inspection_owner", 1)[1].split("// Compatibility fallback", 1)[0]
+    poll = CPP.split("void ScenePreviewWidget::poll_embedded_editor_events()", 1)[1].split("#else", 1)[0]
+    assert "all_scene_preview_items_.cbegin()" in owner_body
+    assert "item.id.trimmed() == owner_id" in owner_body
+    assert "filtered_items.push_back(*owner)" in owner_body
+    for owner_id in ("ur5", "robotiq_85_gripper"):
+        assert f"id: {owner_id}" in environment
+    assert "preview_item_by_id(browser_ui_selected_id) != nullptr" in poll
