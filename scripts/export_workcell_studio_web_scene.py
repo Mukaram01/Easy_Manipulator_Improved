@@ -1382,6 +1382,88 @@ def _annotate_generated_ui_selection_refs(
                 "support_surface_ref": "web_export_authored_ui_identity",
             })
 
+
+def _selection_owner_registry(
+    top_robots: Sequence[Mapping[str, Any]],
+    top_tools: Sequence[Mapping[str, Any]],
+    authored_sensors: Sequence[Mapping[str, Any]],
+    authored_assets: Sequence[Mapping[str, Any]],
+) -> Tuple[List[Json], str, str]:
+    """Declare stable Qt hierarchy identities without restoring shadowed visuals."""
+
+    def unique_owner_id(records: Sequence[Mapping[str, Any]], kind: str) -> str:
+        environment_records = [
+            record for record in records
+            if "environment.yaml" in {str(value) for value in _as_map(record.get("provenance")).values()}
+        ]
+        if environment_records:
+            records = environment_records
+        ids = {str(record.get("id") or "").strip() for record in records}
+        ids.discard("")
+        if len(ids) > 1:
+            raise BlockingExportError(
+                f"selection owner contract requires one unambiguous {kind} owner; candidates={sorted(ids)}"
+            )
+        return next(iter(ids), "")
+
+    robot_id = unique_owner_id(top_robots, "robot")
+    tool_id = unique_owner_id(top_tools, "end_effector")
+    camera_ids = sorted({
+        str(item.get("id") or "").strip()
+        for item in authored_sensors
+        if item.get("source_kind") == "user_authored"
+        and any(token in _identity_text(item) for token in ("camera", "realsense", "d435"))
+    } | {
+        str(item.get("camera_id") or "").strip()
+        for item in authored_sensors
+        if str(item.get("camera_id") or "").strip()
+        and not str(item.get("camera_id") or "").startswith("UNKNOWN_")
+    } - {""})
+    support_surface_ids = sorted({
+        str(item.get("id") or "").strip()
+        for item in authored_assets
+        if item.get("source_kind") == "user_authored"
+        and (
+            str(item.get("id") or "").startswith("support_surface")
+            or {str(item.get(field) or "").lower().replace(" ", "_") for field in ("type", "role", "category")}
+            & {"support_surface", "table", "workbench", "work_surface"}
+        )
+    } - {""})
+    owners = [
+        *({"id": value, "type": "camera", "locked": True, "editable": False} for value in camera_ids),
+        *({"id": value, "type": "support_surface", "locked": True, "editable": False} for value in support_surface_ids),
+    ]
+    if robot_id:
+        owners.append({"id": robot_id, "type": "robot", "locked": True, "editable": False})
+    if tool_id:
+        owners.append({"id": tool_id, "type": "end_effector", "locked": True, "editable": False})
+    return sorted(owners, key=lambda owner: (owner["type"], owner["id"])), robot_id, tool_id
+
+
+def _validate_selection_owner_contract(payload: Json) -> None:
+    owner_ids = {str(owner.get("id") or "").strip() for owner in payload.get("ui_selection_owners", [])}
+    reference_fields = (
+        "canonical_scene_item_id", "camera_id", "support_surface_ref",
+    )
+    for section in RENDERABLE_OUTPUT_SECTIONS:
+        for item in payload.get(section, []):
+            if item.get("source_kind") != "generated_preview":
+                continue
+            for field in reference_fields:
+                value = str(item.get(field) or "").strip()
+                if value.startswith("UNKNOWN_"):
+                    continue
+                if value and value not in owner_ids:
+                    raise BlockingExportError(
+                        f"undeclared selection owner reference: section={section} id={item.get('id', '')} "
+                        f"field={field} owner={value}"
+                    )
+    preview = _as_map(payload.get("robot_preview"))
+    for field in ("selection_robot_owner_id", "selection_tool_owner_id"):
+        value = str(preview.get(field) or "").strip()
+        if value and value not in owner_ids:
+            raise BlockingExportError(f"robot_preview {field} is undeclared: {value}")
+
 def _supplement_missing_tool_meshes(data: Dict[str, Any], generated: Dict[str, List[Json]]) -> None:
     """Add capability-described tool visuals when the flattened index omitted them.
 
@@ -2887,6 +2969,12 @@ def build_web_scene(
         top_sensors + authored["sensors"],
         authored["assets"],
     )
+    selection_owners, robot_owner_id, tool_owner_id = _selection_owner_registry(
+        top_robots,
+        top_tools,
+        top_sensors + authored["sensors"],
+        authored["assets"],
+    )
 
     robots = _drop_shadowed_metadata_primitives(top_robots + generated["robots"], generated["robots"], ("robot", "ur5", "ur3", "ur10"))
     tools = _drop_shadowed_metadata_primitives(top_tools + generated["tools"], generated["tools"], ("tool", "gripper", "robotiq", "end_effector"))
@@ -2924,6 +3012,7 @@ def build_web_scene(
         "sensors": _sort_items(sensors),
         "zones": _sort_items(zones),
         "frames": _sort_items(generated["frames"]),
+        "ui_selection_owners": selection_owners,
         "warnings": sorted(warnings, key=lambda w: (str(w.get("source", "")), str(w.get("code", "")), str(w.get("message", "")))),
         "backend_actions": [
             {
@@ -2977,6 +3066,12 @@ def build_web_scene(
     if stage_assets:
         _stage_visual_meshes(output, scene_dir, output_path or Path("build/workcell_studio_web_scene/scene.web_scene.json"))
         _stage_expanded_robot_urdf(output, scene_dir, output_path or Path("build/workcell_studio_web_scene/scene.web_scene.json"), warnings)
+        if output.get("robot_preview"):
+            output["robot_preview"].update({
+                "selection_robot_owner_id": robot_owner_id,
+                "selection_tool_owner_id": tool_owner_id,
+            })
+    _validate_selection_owner_contract(output)
     _apply_render_ownership_contract(output, expanded_urdf_active=_as_map(output.get("robot_preview")).get("mode") == "expanded_urdf_loader")
     output.pop("_visual_mesh_index_source", None)
     _populate_visual_bounds_item_fields(output, data)

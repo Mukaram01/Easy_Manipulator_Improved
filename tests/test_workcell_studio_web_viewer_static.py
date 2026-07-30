@@ -1,5 +1,8 @@
+import json
 import subprocess
 from pathlib import Path
+
+from scripts import export_workcell_studio_web_scene as exporter
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -7,36 +10,38 @@ VIEWER = ROOT / "workcell_studio_web" / "viewer"
 
 
 def test_selection_identity_index_and_expanded_urdf_picks_behave_end_to_end(tmp_path):
+    payload = exporter.build_web_scene(
+        ROOT / "scenes" / "ur5_2f_test",
+        stage_assets=True,
+        output_path=tmp_path / "ur5_2f_test.web_scene.json",
+    )
+    payload_path = tmp_path / "ur5_2f_test.web_scene.json"
+    payload_path.write_text(json.dumps(payload), encoding="utf-8")
     harness = r"""
 const fs = require('fs');
 const vm = require('vm');
 const assert = require('assert');
 let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
 const element = () => ({ hidden:false, checked:false, disabled:false, textContent:'', className:'', innerHTML:'', classList:{toggle(){}}, querySelector(){return {textContent:''}}, appendChild(){}, addEventListener(){}, setAttribute(){} });
-const context = { console, assert, window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}}, document:{getElementById(){return element()},createElement(){return element()}}, URLSearchParams, CustomEvent:function(){}, requestAnimationFrame(){return 0}, setTimeout(){return 0}, clearTimeout(){} };
+const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const context = { console, assert, payload, window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}}, document:{getElementById(){return element()},createElement(){return element()}}, URLSearchParams, CustomEvent:function(){}, requestAnimationFrame(){return 0}, setTimeout(){return 0}, clearTimeout(){} };
 vm.createContext(context);
 vm.runInContext(source + `
-const cameraOwner = { id:'camera_owner', category:'camera' };
-const tableOwner = { id:'table_owner', category:'table' };
-const robotOwner = { id:'configured_robot', category:'robot', readiness_category:'robot_arm', locked:true, editable:false };
-const toolOwner = { id:'configured_tool', category:'tool', readiness_category:'attached_tool_gripper', locked:true, editable:false };
-const cameraMapped = { id:'camera_payload_visual', link_name:'fixture_camera_link', canonical_scene_item_id:'camera_owner' };
-const cameraClicked = { id:'generated_urdf::fixture_camera_link::visual_17::17', link_name:'fixture_camera_link' };
-const tableMapped = { id:'table_payload_visual', final_render_link:'fixture_table_link', support_surface_ref:'table_owner' };
-const tableClicked = { id:'generated_urdf::fixture_table_link::visual_4::4', canonical_link_name:'fixture_table_link' };
-state.sceneJson = { scene:{id:'selection_scene'}, objects:[cameraOwner, tableOwner, robotOwner, toolOwner, cameraMapped, cameraClicked, tableMapped, tableClicked], robot_preview:{ mode:'expanded_urdf_loader', robot_instance_id:'configured_robot', tool_id:'configured_tool', expected_robot_visual_links:['arm_link'], expected_tool_visual_links:['finger_link'] } };
+state.sceneJson = payload;
 rebuildSelectionIdentityIndex();
-let camera = uiSelectionIdentity({item:cameraClicked, pickRecordSource:'payload_item'});
-assert.deepStrictEqual(JSON.parse(JSON.stringify(camera)), {id:'camera_owner', resolution:'exact_link_explicit_ref', linkName:'fixture_camera_link', pickRecordSource:'payload_item'});
-let table = uiSelectionIdentity({item:tableClicked, pickRecordSource:'payload_item'});
-assert.strictEqual(table.id, 'table_owner');
-assert.strictEqual(table.resolution, 'exact_link_explicit_ref');
-
-state.sceneJson.objects.push({id:'other_owner'}, {id:'ambiguous_mapping', link_name:'fixture_camera_link', canonical_item_id:'other_owner'});
-rebuildSelectionIdentityIndex();
-assert.strictEqual(explicitUiSelectionItemId({item:cameraClicked}), cameraClicked.id);
-state.sceneJson.objects.splice(-2);
-rebuildSelectionIdentityIndex();
+const owners = state.sceneJson.ui_selection_owners;
+assert(owners.some(owner => owner.id === 'realsense_overhead'));
+assert(owners.some(owner => owner.id === 'support_surface_table'));
+const cameraClicked = state.sceneJson.sensors.find(item => item.camera_id === 'realsense_overhead' && item.source_kind === 'generated_preview');
+const tableClicked = state.sceneJson.assets.find(item => item.support_surface_ref === 'support_surface_table' && item.source_kind === 'generated_preview');
+assert.strictEqual(uiSelectionIdentity({item:cameraClicked, pickRecordSource:'payload_item'}).id, 'realsense_overhead');
+assert.strictEqual(uiSelectionIdentity({item:tableClicked, pickRecordSource:'payload_item'}).id, 'support_surface_table');
+assert(!collectItems(state.sceneJson).some(item => owners.some(owner => owner.id === item.id)));
+assert(!state.objects.some(record => owners.some(owner => owner.id === record.item?.id)));
+assert.strictEqual(state.dirtyTransforms.size, 0);
+assert.strictEqual(buildEditPatch().edits.length, 0);
+const invalid = {id:'invalid_visual', canonical_scene_item_id:'undeclared_owner'};
+assert.strictEqual(uiSelectionIdentity({item:invalid}).id, 'invalid_visual');
 
 let callbacks = [];
 loadRobotPreview = (_preview, options) => { callbacks.push(options); return {diagnostics:{}, links:new Map()}; };
@@ -47,36 +52,42 @@ refreshInitialPoseActionState = () => {};
 failIfExpandedUrdfExpectedVisualSetInvalid = () => false;
 completeExpandedUrdfReadiness = () => {};
 loadExpandedUrdfRobotPreview(state.sceneJson.robot_preview);
+const robotOwner = state.sceneJson.robot_preview.selection_robot_owner_id;
+const toolOwner = state.sceneJson.robot_preview.selection_tool_owner_id;
+assert(owners.some(owner => owner.id === robotOwner));
+assert(owners.some(owner => owner.id === toolOwner));
+const armLink = state.sceneJson.robot_preview.expected_robot_visual_links[0];
+const toolLink = state.sceneJson.robot_preview.expected_tool_visual_links[0];
 const armObject = {visible:true};
 const fingerObject = {visible:true};
-callbacks[0].onRobotLoaded({root:{}, links:new Map([['arm_link',armObject],['finger_link',fingerObject]]), diagnostics:{}});
+callbacks[0].onRobotLoaded({root:{}, links:new Map([[armLink,armObject],[toolLink,fingerObject]]), diagnostics:{}});
 assert.strictEqual(state.pickRecords.length, 2);
-const armPick = state.pickRecords.find(record => record.item.link_name === 'arm_link');
-const fingerPick = state.pickRecords.find(record => record.item.link_name === 'finger_link');
-assert.strictEqual(armPick.pickRecordSource, 'expanded_urdf_inspection');
-assert.strictEqual(uiSelectionIdentity(armPick).id, 'configured_robot');
+const armPick = state.pickRecords.find(record => record.item.link_name === armLink);
+const fingerPick = state.pickRecords.find(record => record.item.link_name === toolLink);
+assert.strictEqual(armPick.pickRecordSource, 'payload_item');
+assert.strictEqual(uiSelectionIdentity(armPick).id, robotOwner);
 assert.strictEqual(uiSelectionIdentity(armPick).resolution, 'robot_owner');
-assert.strictEqual(uiSelectionIdentity(fingerPick).id, 'configured_tool');
+assert.strictEqual(uiSelectionIdentity(fingerPick).id, toolOwner);
 assert.strictEqual(uiSelectionIdentity(fingerPick).resolution, 'tool_owner');
 state.selected = armPick.item.id;
 let diagnostic = currentSelectionDiagnostics();
 assert.strictEqual(diagnostic.selectedItemId, armPick.item.id);
-assert.strictEqual(diagnostic.uiSelectionItemId, 'configured_robot');
-assert.strictEqual(diagnostic.pickRecordSource, 'expanded_urdf_inspection');
+assert.strictEqual(diagnostic.uiSelectionItemId, robotOwner);
+assert.strictEqual(diagnostic.pickRecordSource, 'payload_item');
 assert.strictEqual(state.objects.some(record => record.item.id === armPick.item.id), false);
 assert.strictEqual(state.dirtyTransforms.has(armPick.item.id), false);
 assert.strictEqual(buildEditPatch().edits.some(edit => edit.id === armPick.item.id), false);
 
 const stale = callbacks[0];
-state.sceneJson = {scene:{id:'next_scene'}, objects:[]};
+state.sceneJson = {scene:{id:'next_scene'}, objects:[], ui_selection_owners:[]};
 resetSceneLifecycleState();
 const before = state.pickRecords.length;
-stale.onRobotLoaded({root:{}, links:new Map([['arm_link',{visible:true}]]), diagnostics:{}});
+stale.onRobotLoaded({root:{}, links:new Map([[armLink,{visible:true}]]), diagnostics:{}});
 assert.strictEqual(state.pickRecords.length, before);
 `, context);
 """
     subprocess.run(
-        ["node", "-e", harness, str(VIEWER / "viewer.js")],
+        ["node", "-e", harness, str(VIEWER / "viewer.js"), str(payload_path)],
         cwd=ROOT,
         check=True,
         text=True,
