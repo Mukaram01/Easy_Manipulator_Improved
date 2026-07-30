@@ -30,7 +30,29 @@ def _find_task_intent(scene_path: Path) -> Path | None:
     return None
 
 
-def validate_scene(scene_path: Path) -> dict[str, Any]:
+def _run_generated_validator(path: Path, validator_name: str) -> tuple[dict[str, Any], str | None]:
+    run = subprocess.run(
+        ["python3", str(SCRIPT_DIR / validator_name), str(path), "--json"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    try:
+        report = json.loads(run.stdout) if run.stdout.strip() else {}
+    except json.JSONDecodeError as exc:
+        report = {}
+        return report, f"{path.relative_to(path.parent.parent)} validator returned invalid JSON: {exc}"
+
+    if run.returncode != 0 or report.get("result") == "FAIL":
+        details = report.get("errors") if isinstance(report.get("errors"), list) else []
+        detail = "; ".join(str(item) for item in details if str(item).strip())
+        if not detail:
+            detail = run.stderr.strip() or run.stdout.strip() or f"exit code {run.returncode}"
+        return report, f"{path.relative_to(path.parent.parent)} validation failed: {detail}"
+    return report, None
+
+
+def validate_scene(scene_path: Path, *, require_generated: bool = False) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     warnings: list[str] = []
     errors: list[str] = []
@@ -68,19 +90,27 @@ def validate_scene(scene_path: Path) -> dict[str, Any]:
 
     exported_cell = scene_path / "generated" / "cell_definition.yaml"
     exported_layout = scene_path / "generated" / "environment_layout.yaml"
-    checks.append({"check": "generated/cell_definition.yaml present", "ok": exported_cell.is_file(), "optional": True})
-    checks.append({"check": "generated/environment_layout.yaml present", "ok": exported_layout.is_file(), "optional": True})
+    checks.append({"check": "generated/cell_definition.yaml present", "ok": exported_cell.is_file(), "optional": not require_generated})
+    checks.append({"check": "generated/environment_layout.yaml present", "ok": exported_layout.is_file(), "optional": not require_generated})
     export_validation = {}
     if exported_cell.is_file():
-        run = subprocess.run(["python3", str(SCRIPT_DIR / "validate_cell_definition.py"), str(exported_cell), "--json"], capture_output=True, text=True, check=False)
-        export_validation["cell_definition"] = json.loads(run.stdout) if run.stdout.strip() else {"result": "FAIL"}
+        export_validation["cell_definition"], failure = _run_generated_validator(
+            exported_cell, "validate_cell_definition.py"
+        )
+        if failure:
+            errors.append(failure)
     else:
-        warnings.append("generated/cell_definition.yaml missing; run ./generated/export_workcell_studio_sources.sh")
+        message = "generated/cell_definition.yaml missing; run ./generated/export_workcell_studio_sources.sh"
+        (errors if require_generated else warnings).append(message)
     if exported_layout.is_file():
-        run = subprocess.run(["python3", str(SCRIPT_DIR / "validate_environment_layout.py"), str(exported_layout), "--json"], capture_output=True, text=True, check=False)
-        export_validation["environment_layout"] = json.loads(run.stdout) if run.stdout.strip() else {"result": "FAIL"}
+        export_validation["environment_layout"], failure = _run_generated_validator(
+            exported_layout, "validate_environment_layout.py"
+        )
+        if failure:
+            errors.append(failure)
     else:
-        warnings.append("generated/environment_layout.yaml missing; run ./generated/export_workcell_studio_sources.sh")
+        message = "generated/environment_layout.yaml missing; run ./generated/export_workcell_studio_sources.sh"
+        (errors if require_generated else warnings).append(message)
 
     task_intent_report = {}
     task_flow_summary: dict[str, Any] = {}
@@ -176,9 +206,14 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("scene_path", type=Path)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument(
+        "--require-generated",
+        action="store_true",
+        help="Require both canonical generated handoffs and fail when either is missing or invalid.",
+    )
     args = ap.parse_args()
 
-    report = validate_scene(args.scene_path)
+    report = validate_scene(args.scene_path, require_generated=args.require_generated)
     if args.json:
         print(json.dumps(report, indent=2))
     else:

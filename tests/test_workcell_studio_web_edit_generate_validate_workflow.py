@@ -81,7 +81,15 @@ def test_generate_and_validate_triggers_generation_validation_path(workflow, sce
     assert "validation requested: True" in out
     assert "== scene generation ==" in out
     assert "== selected-scene validation ==" in out
-    assert any("validate_builder_generated_scene.py" in " ".join(cmd) for cmd in recorder.commands)
+    validation_commands = [cmd for cmd in recorder.commands if "validate_builder_generated_scene.py" in " ".join(cmd)]
+    assert validation_commands
+    assert "--require-generated" in validation_commands[0]
+
+
+def test_validation_command_can_retain_warning_only_pre_export_contract(workflow, scene):
+    command = workflow._validation_cmd(scene, require_generated=False)
+
+    assert "--require-generated" not in command
 
 
 def test_false_generation_result_returns_nonzero_and_skips_validation(workflow, scene, monkeypatch, capsys):
