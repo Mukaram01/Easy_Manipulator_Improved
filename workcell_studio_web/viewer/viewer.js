@@ -1015,7 +1015,7 @@ function currentSelectionDiagnostics() {
     editOwnerItemId: editOwner?.item?.id || '',
     renderIdentity: id,
     selectedItemType: rendered ? itemType(item) : '',
-    selectable: Boolean(rendered && isNormalSelectableRendered(rendered)),
+    selectable: Boolean(rendered && isCanvasSelectableRendered(rendered)),
     editable: Boolean(item && editOwner === rendered && !rendered?.readOnlyPick && canEditItem(item)),
     locked: Boolean(item?.locked),
     sourceLayer: String(item?.source_layer || ''),
@@ -3780,6 +3780,18 @@ function isNormalSelectableRendered(rendered) {
   const inspectionSelectable = state.debugOverlaysVisible && (isTaskOnlyHelperItem(item) || isOverlayPolicyItem(item) || isDebugOverlayItem(item));
   return Boolean(item?.id) && item.selectable !== false && !isDiagnosticOnlyItem(item) && (inspectionSelectable || (!isTaskOnlyHelperItem(item) && !isOverlayPolicyItem(item) && !isDebugOverlayItem(item)));
 }
+function isExpandedUrdfInspectionPick(rendered) {
+  const item = rendered?.item;
+  const registeredReadOnlyRecord = Boolean(rendered && rendered.readOnlyPick === true && state.pickRecords.includes(rendered));
+  const explicitInspectionMetadata = rendered?.pickRecordSource === 'expanded_urdf_inspection' ||
+    Boolean(String(rendered?.uiSelectionOwnerId || '').trim()) ||
+    String(item?.source_layer || '').trim() === 'expanded_urdf_inspection';
+  return registeredReadOnlyRecord && explicitInspectionMetadata && Boolean(item?.id) && item.selectable !== false &&
+    rendered.object3d?.visible !== false && !isTaskOnlyHelperItem(item) && !isOverlayPolicyItem(item) && !isDebugOverlayItem(item);
+}
+function isCanvasSelectableRendered(rendered) {
+  return isExpandedUrdfInspectionPick(rendered) || isNormalSelectableRendered(rendered);
+}
 function excludedPickNode(node) {
   const data = node?.userData || {};
   const name = String(node?.name || '').toLowerCase();
@@ -3794,14 +3806,14 @@ function itemFromRaycastHit(hit) {
     if (excludedPickNode(node)) return null;
     if (!candidate) {
       const registered = state.pickIdentityByObject.get(node);
-      const registeredInspection = registered?.pickRecordSource === 'expanded_urdf_inspection' || Boolean(String(registered?.uiSelectionOwnerId || '').trim());
+      const registeredInspection = isExpandedUrdfInspectionPick(registered);
       const nodeItem = node.userData?.item;
       const nodeItemWithoutStalePickFlags = nodeItem ? { ...nodeItem, id: '', display_name: '', status: '', diagnostic_only: false, selectable: true } : null;
       if (registeredInspection && nodeItemWithoutStalePickFlags && (isTaskOnlyHelperItem(nodeItemWithoutStalePickFlags) || isOverlayPolicyItem(nodeItemWithoutStalePickFlags) || isDebugOverlayItem(nodeItemWithoutStalePickFlags))) return null;
       const item = registeredInspection ? registered.item : nodeItem || registered?.item;
       if (item?.id) {
         const rendered = renderedById(item.id) || registered;
-        if (!rendered || (!registeredInspection && !isNormalSelectableRendered(rendered))) return null;
+        if (!rendered || !isCanvasSelectableRendered(rendered)) return null;
         candidate = rendered;
       }
     }
@@ -3853,7 +3865,7 @@ function failedCanvasPickDiagnostic(hits) {
       if (!firstActionableRejectionReason) {
         if (excludedPickNode(node)) firstActionableRejectionReason = 'hit_node_excluded_from_picking';
         else if (registered && !registered?.item?.id) firstActionableRejectionReason = 'registered_identity_missing_item_id';
-        else if (registered && !isNormalSelectableRendered(inspectionSelectionRendered(registered))) firstActionableRejectionReason = 'registered_identity_not_selectable';
+        else if (registered && !isCanvasSelectableRendered(inspectionSelectionRendered(registered))) firstActionableRejectionReason = 'registered_identity_not_selectable';
       }
       node = node.parent;
     }
@@ -3877,8 +3889,7 @@ function selectObject(id) {
   const rawRequested = requestedId ? renderedById(requestedId) : null;
   const requested = inspectionSelectionRendered(rawRequested);
   const selectionId = requested?.item?.id || requestedId;
-  const explicitlySelectable = requested && !isDiagnosticOnlyItem(requested.item) && requested.item.selectable !== false &&
-    (isNormalSelectableRendered(requested) || isOverlayPolicyItem(requested.item) || isTaskOnlyHelperItem(requested.item));
+  const explicitlySelectable = requested && isCanvasSelectableRendered(requested);
   if (requestedId && !explicitlySelectable) {
     const reason = requested ? 'diagnostic_helper_or_non_selectable' : 'missing_render_identity';
     state.ignoredSelectionKeys ||= new Set();
@@ -3917,7 +3928,7 @@ function pickObject(event) {
   const candidates = rankedPickingCandidates(hits);
   state.lastRaycastHitCount = hits.length;
   state.lastRaycastCandidateIds = candidates.map(candidate => candidate.rendered.item.id);
-  const selectedCandidate = candidates.find(candidate => Number.isFinite(candidate.priority) && isNormalSelectableRendered(candidate.rendered));
+  const selectedCandidate = candidates.find(candidate => Number.isFinite(candidate.priority) && isCanvasSelectableRendered(candidate.rendered));
   if (!selectedCandidate) {
     state.lastCanvasSelectedItemId = '';
     state.lastCanvasPickReason = hits.length ? 'no_eligible_candidate' : 'empty_select_click';
