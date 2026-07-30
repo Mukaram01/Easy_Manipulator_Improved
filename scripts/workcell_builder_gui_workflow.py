@@ -1,10 +1,16 @@
 from __future__ import annotations
+import argparse
 import json, os, shutil, subprocess, sys, traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 import re
 import yaml
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.export_builder_scene_to_cell_definition import export_scene
 from scripts.workcell_studio_path_resolver import resolve_repo_root
@@ -967,3 +973,24 @@ def generate_files_from_yaml(scene_dir:str|Path)->dict[str,Any]:
         "validation": validation,
         "build_command": cmd,
     }
+
+
+def main(argv:list[str]|None=None)->int:
+    """Expose existing-scene generation without an inline ``python -c`` helper."""
+    parser = argparse.ArgumentParser(description="Workcell Builder workflow utilities")
+    parser.add_argument(
+        "--generate-from-yaml",
+        metavar="SCENE_DIR",
+        help="Regenerate canonical outputs from an existing authored scene",
+    )
+    args = parser.parse_args(argv)
+    if not args.generate_from_yaml:
+        parser.error("--generate-from-yaml is required")
+
+    result = generate_files_from_yaml(args.generate_from_yaml)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0 if result.get("ok") is True else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

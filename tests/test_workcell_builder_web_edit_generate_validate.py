@@ -1,4 +1,7 @@
+import json
 from pathlib import Path
+
+from scripts import workcell_builder_gui_workflow
 
 REPO = Path(__file__).resolve().parents[1]
 SCENE_SELECT_CPP = REPO / "workcell_builder/workcell_builder/gui/scene_select.cpp"
@@ -87,9 +90,13 @@ def test_generate_validate_action_has_no_ros_rviz_moveit_or_gazebo_launch_comman
         "launch_rviz",
         "rviz2",
         "move_group",
+        "controller_manager",
         "gazebo",
         "ign gazebo",
         "gz sim",
+        "isaac",
+        "use_fake_hardware:=false",
+        "real_hardware:=true",
     )
     for token in forbidden_launch_tokens:
         assert token.lower() not in combined.lower()
@@ -115,6 +122,35 @@ def test_generate_validate_pass_fail_messaging_is_present():
     assert "Exit code:" in combined
     assert "STDOUT:" in combined
     assert "STDERR:" in combined
+
+
+def test_generation_cli_prints_false_result_and_returns_nonzero(monkeypatch, capsys, tmp_path):
+    result = {"ok": False, "error": f"Required canonical output is absent: {tmp_path / 'generated/cell_definition.yaml'}"}
+    monkeypatch.setattr(workcell_builder_gui_workflow, "generate_files_from_yaml", lambda scene: result)
+
+    rc = workcell_builder_gui_workflow.main(["--generate-from-yaml", str(tmp_path)])
+
+    assert rc != 0
+    assert json.loads(capsys.readouterr().out) == result
+
+
+def test_generation_cli_prints_exact_generated_files_on_success(monkeypatch, capsys, tmp_path):
+    generated = [str(tmp_path / "generated" / name) for name in (
+        "cell_definition.yaml",
+        "environment_layout.yaml",
+        "task_recipe_from_builder_intent.yaml",
+        "offline_plan_preview_request.yaml",
+        "selected_assets.json",
+        "compatibility_report.json",
+        "builder_export_summary.json",
+    )]
+    result = {"ok": True, "generated_files": generated}
+    monkeypatch.setattr(workcell_builder_gui_workflow, "generate_files_from_yaml", lambda scene: result)
+
+    rc = workcell_builder_gui_workflow.main(["--generate-from-yaml", str(tmp_path)])
+
+    assert rc == 0
+    assert json.loads(capsys.readouterr().out)["generated_files"] == generated
 
 
 def test_no_direct_browser_yaml_write_logic_is_added_to_web_viewer_or_builder_action():

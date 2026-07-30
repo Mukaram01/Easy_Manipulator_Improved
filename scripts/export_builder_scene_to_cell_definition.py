@@ -571,9 +571,60 @@ def main() -> int:
     ap.add_argument("--json", action="store_true", help="Print the export summary JSON to stdout")
     args = ap.parse_args()
     output_dir = args.output_dir or (args.scene_path / "generated")
-    summary = export_scene(args.scene_path, output_dir, validate=args.validate)
+    try:
+        authored_yaml = [
+            args.scene_path / "environment.yaml",
+            args.scene_path / "layout" / "workcell_studio_layout.yaml",
+            args.scene_path / "config" / "workcell_builder_task_intent.yaml",
+            args.scene_path / "workcell_builder_task_intent.yaml",
+            args.scene_path / "workcell_builder_metadata.yaml",
+        ]
+        if not authored_yaml[0].is_file():
+            raise ValueError(f"required authored file is missing: {authored_yaml[0]}")
+        if _pyyaml is not None:
+            for source_path in authored_yaml:
+                if not source_path.is_file():
+                    continue
+                try:
+                    _pyyaml.safe_load(source_path.read_text(encoding="utf-8"))
+                except (_pyyaml.YAMLError, OSError, UnicodeError) as exc:
+                    raise ValueError(f"cannot parse authored YAML '{source_path}': {exc}") from exc
+        summary = export_scene(args.scene_path, output_dir, validate=args.validate)
+    except Exception as exc:  # noqa: BLE001 - command boundary reports authored source.
+        print(f"Export failed for authored scene '{args.scene_path}': {exc}", file=sys.stderr)
+        return 1
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True))
+
+    if args.validate:
+        validation = summary.get("validation") if isinstance(summary, dict) else None
+        if not isinstance(validation, dict) or not validation:
+            print(f"Export failed for authored scene '{args.scene_path}': canonical validation results are absent", file=sys.stderr)
+            return 1
+        failed = [name for name, result in validation.items()
+                  if not isinstance(result, dict) or result.get("result") == "FAIL"]
+        if failed:
+            print(
+                f"Export failed for authored scene '{args.scene_path}': canonical validation failed: "
+                + ", ".join(sorted(failed)),
+                file=sys.stderr,
+            )
+            return 1
+
+    required_outputs = [
+        output_dir / "cell_definition.yaml",
+        output_dir / "environment_layout.yaml",
+        output_dir / "selected_assets.json",
+        output_dir / "compatibility_report.json",
+        output_dir / "builder_export_summary.json",
+    ]
+    missing = [path for path in required_outputs if not path.is_file()]
+    if missing:
+        print(
+            f"Export failed for authored scene '{args.scene_path}': required canonical output is absent: {missing[0]}",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
