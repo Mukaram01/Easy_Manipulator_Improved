@@ -927,6 +927,26 @@ function pushEditorEvent(type, payload = {}) {
   state.editorEvents.push({ type, timestamp: new Date().toISOString(), ...payload });
   if (state.editorEvents.length > 100) state.editorEvents.splice(0, state.editorEvents.length - 100);
 }
+const UI_SELECTION_REFERENCE_FIELDS = Object.freeze([
+  'canonical_scene_item_id',
+  'canonical_item_id',
+  'layout_item_ref',
+  'authored_item_id',
+  'scene_item_id',
+  'object_ref',
+  'support_surface_ref',
+  'camera_id',
+]);
+function explicitUiSelectionItemId(rendered) {
+  const exactId = String(rendered?.item?.id || '');
+  if (!exactId) return '';
+  const activeItemIds = new Set(collectItems(state.sceneJson || {}).map(item => String(item?.id || '')).filter(Boolean));
+  for (const field of UI_SELECTION_REFERENCE_FIELDS) {
+    const candidate = String(rendered.item?.[field] || '').trim();
+    if (candidate && activeItemIds.has(candidate)) return candidate;
+  }
+  return exactId;
+}
 function currentSelectionDiagnostics() {
   const id = String(state.selected || '');
   const rendered = renderedById(id);
@@ -935,6 +955,7 @@ function currentSelectionDiagnostics() {
   return {
     sceneId: sceneId(),
     selectedItemId: id,
+    uiSelectionItemId: explicitUiSelectionItemId(rendered),
     editOwnerItemId: editOwner?.item?.id || '',
     renderIdentity: id,
     selectedItemType: rendered ? itemType(item) : '',
@@ -955,7 +976,7 @@ function currentSelectionDiagnostics() {
 function editorState() {
   const rendered = renderedById(state.selected);
   const editOwner = canonicalEditOwnerRendered(rendered);
-  return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || '', editOwnerItemId: editOwner?.item?.id || '', selectedItemType: rendered ? itemType(rendered.item) : '', selectedEditable: selectionIsEditable(rendered), selectionDiagnostics: currentSelectionDiagnostics(), lastRaycastHitCount: state.lastRaycastHitCount, lastRaycastCandidateIds: [...state.lastRaycastCandidateIds], lastCanvasSelectedItemId: state.lastCanvasSelectedItemId, lastCanvasPickReason: state.lastCanvasPickReason, dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, error: state.editorError || '' };
+  return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || '', uiSelectionItemId: explicitUiSelectionItemId(rendered), editOwnerItemId: editOwner?.item?.id || '', selectedItemType: rendered ? itemType(rendered.item) : '', selectedEditable: selectionIsEditable(rendered), selectionDiagnostics: currentSelectionDiagnostics(), lastRaycastHitCount: state.lastRaycastHitCount, lastRaycastCandidateIds: [...state.lastRaycastCandidateIds], lastCanvasSelectedItemId: state.lastCanvasSelectedItemId, lastCanvasPickReason: state.lastCanvasPickReason, dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, error: state.editorError || '' };
 }
 function emitDirtyChanged() { pushEditorEvent('dirty_changed', { dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0 }); }
 function showError(message) {
@@ -3695,7 +3716,7 @@ function selectObject(id) {
   updateLabels();
   const rendered = renderedById(id);
   if (rendered) { populateInspector(rendered); attachTransformGizmo(rendered); refreshSelectionHighlight(rendered); } else { detachTransformGizmo(); removeSelectionHighlight(); }
-  if (previous !== (id || '')) pushEditorEvent('selection_changed', { itemId: id || '', itemType: rendered ? itemType(rendered.item) : '', editable: Boolean(rendered && rendered.item && canEditItem(rendered['item'])) });
+  if (previous !== (id || '')) pushEditorEvent('selection_changed', { itemId: id || '', uiItemId: explicitUiSelectionItemId(rendered), itemType: rendered ? itemType(rendered.item) : '', editable: Boolean(rendered && rendered.item && canEditItem(rendered['item'])) });
 }
 function clearSelection() { selectObject(''); el.inspector.className = 'state empty'; el.inspector.textContent = state.objects.length ? 'Select an object from the list or canvas.' : EMPTY_SCENE_MESSAGE; }
 function pickObject(event) {
