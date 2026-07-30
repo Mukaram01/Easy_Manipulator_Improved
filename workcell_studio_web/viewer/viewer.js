@@ -1229,6 +1229,16 @@ function registerPickRecord(item, object3d, root = object3d, options = {}) {
   state.pickIdentityByObject.set(object3d, record);
   return record;
 }
+function bindExpandedUrdfPickRecordToSubtree(linkRoot, record, urdfLinkRoots) {
+  if (!linkRoot || !record) return;
+  const pending = [linkRoot];
+  while (pending.length) {
+    const node = pending.pop();
+    if (node !== linkRoot && urdfLinkRoots?.has(node)) continue;
+    state.pickIdentityByObject.set(node, record);
+    for (const child of node.children || []) pending.push(child);
+  }
+}
 function derivedTransformTargetId(item) {
   const targetId = String(item?.target_ref || '').trim();
   const identity = [item?.role, item?.semantic_role, item?.type, item?.category, item?.id]
@@ -3278,6 +3288,7 @@ function loadExpandedUrdfRobotPreview(preview) {
       const robotOwnerId = ownerFromExplicitContract(['selection_robot_owner_id', 'selectionRobotOwnerId', 'robot_instance_id', 'robotInstanceId', 'robot_id', 'robotId']);
       const toolOwnerId = ownerFromExplicitContract(['selection_tool_owner_id', 'selectionToolOwnerId', 'tool_instance_id', 'toolInstanceId', 'tool_id', 'toolId', 'end_effector_id', 'endEffectorId']);
       const robotInstance = String(preview?.robot_instance_id || preview?.robotInstanceId || preview?.robot_id || preview?.robotId || 'robot').trim();
+      const urdfLinkRoots = new Set(result.links.values());
       for (const [linkName, linkObject] of result?.links || []) {
         const exactLink = String(linkName || '').trim();
         const fixtureOwnerId = index.explicitUiIdByLink.get(exactLink) || '';
@@ -3290,11 +3301,13 @@ function loadExpandedUrdfRobotPreview(preview) {
         let resolution = fixtureOwnerId ? 'exact_link_explicit_ref' : 'exact_identity_fallback';
         if (toolLinks.has(exactLink) && toolOwnerId) { ownerId = toolOwnerId; resolution = 'tool_owner'; }
         else if (robotLinks.has(exactLink) && robotOwnerId) { ownerId = robotOwnerId; resolution = 'robot_owner'; }
-        registerPickRecord(item, linkObject, result.root || linkObject, {
+        if (!callbackIsCurrent()) return ignoreStaleCallback();
+        const record = registerPickRecord(item, linkObject, result.root || linkObject, {
           pickRecordSource: payloadItem ? 'payload_item' : 'expanded_urdf_inspection',
           uiSelectionOwnerId: ownerId,
           uiSelectionResolution: resolution,
         });
+        if (callbackIsCurrent()) bindExpandedUrdfPickRecordToSubtree(linkObject, record, urdfLinkRoots);
       }
       state.robotPreviewResult = result;
       state.robotUrdfPreviewDiagnostics = result.diagnostics;
@@ -3739,10 +3752,14 @@ function itemFromRaycastHit(hit) {
     if (excludedPickNode(node)) return null;
     if (!candidate) {
       const registered = state.pickIdentityByObject.get(node);
-      const item = node.userData?.item || registered?.item;
+      const registeredInspection = registered?.pickRecordSource === 'expanded_urdf_inspection' || Boolean(String(registered?.uiSelectionOwnerId || '').trim());
+      const nodeItem = node.userData?.item;
+      const nodeItemWithoutStalePickFlags = nodeItem ? { ...nodeItem, id: '', display_name: '', status: '', diagnostic_only: false, selectable: true } : null;
+      if (registeredInspection && nodeItemWithoutStalePickFlags && (isTaskOnlyHelperItem(nodeItemWithoutStalePickFlags) || isOverlayPolicyItem(nodeItemWithoutStalePickFlags) || isDebugOverlayItem(nodeItemWithoutStalePickFlags))) return null;
+      const item = registeredInspection ? registered.item : nodeItem || registered?.item;
       if (item?.id) {
         const rendered = renderedById(item.id) || registered;
-        if (!rendered || !isNormalSelectableRendered(rendered)) return null;
+        if (!rendered || (!registeredInspection && !isNormalSelectableRendered(rendered))) return null;
         candidate = rendered;
       }
     }
