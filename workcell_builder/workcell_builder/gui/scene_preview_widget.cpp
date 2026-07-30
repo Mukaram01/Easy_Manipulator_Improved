@@ -2381,8 +2381,7 @@ void ScenePreviewWidget::poll_embedded_editor_events()
     QString browser_ui_selected_id = editor_state.value(QStringLiteral("uiSelectionItemId")).toString();
     if (browser_ui_selected_id.isEmpty()) browser_ui_selected_id = browser_selected_id;
     const QVariantMap selection_diagnostics = editor_state.value(QStringLiteral("selectionDiagnostics")).toMap();
-    const bool scene_identity_matches = browser_scene_id.isEmpty() || browser_scene_id == identity.scene_id;
-    bool matching_selection_event = false;
+    const bool scene_identity_matches = !browser_scene_id.isEmpty() && browser_scene_id == identity.scene_id;
     QString matching_item_type;
     for (const QVariant & event_value : payload.value(QStringLiteral("events")).toList()) {
       const QVariantMap event = event_value.toMap();
@@ -2390,7 +2389,6 @@ void ScenePreviewWidget::poll_embedded_editor_events()
         QString id = event.value(QStringLiteral("uiItemId")).toString();
         if (id.isEmpty()) id = event.value(QStringLiteral("itemId")).toString();
         if (!id.isEmpty() && id == browser_ui_selected_id) {
-          matching_selection_event = true;
           matching_item_type = event.value(QStringLiteral("itemType")).toString();
         }
       }
@@ -2401,9 +2399,30 @@ void ScenePreviewWidget::poll_embedded_editor_events()
     // here made the embedded viewer and Qt hierarchy disagree about identity.
     // The rendered browser identity is deliberately not required to satisfy
     // preview_item_by_id(browser_selected_id) != nullptr; Qt owns authored/UI rows.
-    const bool valid_browser_selection = matching_selection_event && scene_identity_matches &&
-      selection_diagnostics.value(QStringLiteral("objectPresent")).toBool() &&
-      preview_item_by_id(browser_ui_selected_id) != nullptr;
+    if (matching_item_type.isEmpty()) {
+      matching_item_type = editor_state.value(QStringLiteral("selectedItemType")).toString();
+    }
+    const bool object_present = selection_diagnostics.value(QStringLiteral("objectPresent")).toBool();
+    const bool preview_item_found = preview_item_by_id(browser_ui_selected_id) != nullptr;
+    const bool valid_browser_selection = scene_identity_matches && !browser_ui_selected_id.isEmpty() &&
+      object_present && preview_item_found;
+    if (!browser_selected_id.isEmpty() && !valid_browser_selection) {
+      QString rejection_reason;
+      if (!scene_identity_matches) rejection_reason = QStringLiteral("scene_identity_mismatch");
+      else if (browser_ui_selected_id.isEmpty()) rejection_reason = QStringLiteral("empty_ui_identity");
+      else if (!object_present) rejection_reason = QStringLiteral("browser_object_absent");
+      else rejection_reason = QStringLiteral("preview_item_absent");
+      const QString rejection_key = QStringLiteral("embedded_selection_rejected|%1|%2|%3|%4")
+        .arg(identity.scene_id, browser_selected_id, browser_ui_selected_id, rejection_reason);
+      if (!emitted_scene_diagnostic_keys_.contains(rejection_key)) {
+        emitted_scene_diagnostic_keys_.insert(rejection_key);
+        emit studio_log_requested(QStringLiteral(
+          "Embedded Product View selection rejected: browser_exact_id=%1 browser_ui_id=%2 scene_id=%3 objectPresent=%4 preview_item_found=%5 reason=%6")
+          .arg(browser_selected_id, browser_ui_selected_id, identity.scene_id,
+               object_present ? QStringLiteral("true") : QStringLiteral("false"),
+               preview_item_found ? QStringLiteral("true") : QStringLiteral("false"), rejection_reason));
+      }
+    }
     if (valid_browser_selection && browser_ui_selected_id != selected_preview_item_id_) {
       selected_preview_item_id_ = browser_ui_selected_id;
       emit preview_item_selected(browser_ui_selected_id, matching_item_type);
