@@ -121,7 +121,7 @@ const childMesh=node('wrist-mesh');
 const childVisual=node('wrist-visual',[childMesh]);
 const childLink=node('wrist_link',[childVisual]);
 const linkRoot=node('base_link',[visualWrapper,childLink]);
-callbacks[0].onRobotLoaded({root:node('robot-root',[linkRoot]),links:new Map([['base_link',linkRoot],['wrist_link',childLink]]),diagnostics:{}});
+callbacks[0].onRobotLoaded({root:node('robot-root',[linkRoot]),links:new Map([['base_link',linkRoot],['wrist_link',childLink]]),diagnostics:{loader_value:'preserved'}});
 assert.strictEqual(state.pickRecords.length,2);
 const baseRecord=state.pickRecords.find(record=>record.item.link_name==='base_link');
 const childRecord=state.pickRecords.find(record=>record.item.link_name==='wrist_link');
@@ -134,6 +134,12 @@ assert.strictEqual(state.pickIdentityByObject.get(childMesh),childRecord,'child 
 assert.strictEqual(itemFromRaycastHit({object:childMesh}),childRecord,'child raycast');
 assert.strictEqual(state.pickRecords.filter(record=>record.item.link_name==='base_link').length,1);
 assert.strictEqual(state.pickRecords.filter(record=>record.item.link_name==='wrist_link').length,1);
+assert.strictEqual(state.robotUrdfPreviewDiagnostics.loader_value,'preserved');
+assert.strictEqual(state.robotUrdfPreviewDiagnostics.expanded_urdf_unique_link_record_count,2);
+assert.strictEqual(state.robotUrdfPreviewDiagnostics.expanded_urdf_bound_node_count,4);
+assert.strictEqual(state.robotUrdfPreviewDiagnostics.expanded_urdf_robot_pick_record_count,2);
+assert.strictEqual(state.robotUrdfPreviewDiagnostics.expanded_urdf_tool_pick_record_count,0);
+assert.strictEqual(state.robotUrdfPreviewDiagnostics.selection_robot_owner_id,'');
 assert.strictEqual(state.objects.length,0);
 assert.strictEqual(state.dirtyTransforms.size,0);
 assert.strictEqual(buildEditPatch().edits.length,0);
@@ -1415,6 +1421,18 @@ assert.strictEqual(isNormalSelectableRendered(renderedById('ur5_generated')),tru
 assert.strictEqual(editableTransformGroupMembers(bin).map(r=>r.item.id).sort().join(','),'place_zone_default,target_bin_default');
 const staleIdentity=state.pickIdentityByObject; resetSceneLifecycleState(); assert.strictEqual(state.pickRecords.length,0); assert.notStrictEqual(state.pickIdentityByObject,staleIdentity); assert.strictEqual(renderedById('ur5_generated'),undefined);
 state.editorMode='select'; state.selected='target_bin_default'; state.three.raycaster={setFromCamera(){},intersectObjects(){return[];}}; pickObject({clientX:10,clientY:10}); assert.strictEqual(state.selected,''); assert.strictEqual(state.lastCanvasPickReason,'empty_select_click');
+const rejected=node('unregistered-mesh'); const knownLink=node('known_link'); rejected.parent=knownLink; knownLink.children=[rejected];
+state.robotPreviewResult={links:new Map([['known_link',knownLink]])};
+let warnings=0; console.warn=()=>{warnings+=1;};
+state.three.raycaster={setFromCamera(){},intersectObjects(){return[{object:rejected,distance:1}];}};
+pickObject({clientX:10,clientY:10}); pickObject({clientX:10,clientY:10});
+assert.strictEqual(warnings,1);
+assert.strictEqual(state.lastFailedCanvasPickDiagnostic.raw_hit_count,1);
+assert.strictEqual(state.lastFailedCanvasPickDiagnostic.hit_object_names[0],'unregistered-mesh');
+assert.strictEqual(state.lastFailedCanvasPickDiagnostic.traversed_registered_identity,false);
+assert.strictEqual(state.lastFailedCanvasPickDiagnostic.first_actionable_rejection_reason,'no_registered_identity_in_hit_ancestry');
+assert.strictEqual(state.lastFailedCanvasPickDiagnostic.nearest_known_urdf_link_ancestor,'known_link');
+assert.strictEqual(editorState().lastFailedCanvasPickDiagnostic.rawHitCount,1);
 `, context);
 """
     subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, capture_output=True, text=True)
