@@ -6,6 +6,7 @@ from typing import Any
 import re
 import yaml
 
+from scripts.export_builder_scene_to_cell_definition import export_scene
 from scripts.workcell_studio_path_resolver import resolve_repo_root
 
 DEFAULTS={
@@ -889,16 +890,80 @@ def generate_yaml_files_for_scene(state:dict[str,Any], scene_dir:str|Path)->dict
 
 
 def generate_files_from_yaml(scene_dir:str|Path)->dict[str,Any]:
-    sdir=Path(scene_dir)
-    env=sdir/"environment.yaml"
-    if not env.exists():
-        return {"ok":False,"error":"environment.yaml is required before generating package files"}
-    cell_name=sdir.name
-    if not (sdir/"package.xml").exists() or not (sdir/"CMakeLists.txt").exists():
-        created=create_new_cell(cell_name, sdir.parent)
-        if not created.get("ok"):
-            return created
-    cmake=sdir/"CMakeLists.txt"
-    cmake.write_text("cmake_minimum_required(VERSION 3.8)\nproject({})\nfind_package(ament_cmake REQUIRED)\ninstall(FILES environment.yaml scene_manifest.yaml DESTINATION share/${{PROJECT_NAME}})\nament_package()\n".format(cell_name), encoding="utf-8")
-    cmd=f"cd {Path.home()/ 'workcell_ws'} && colcon build --symlink-install --packages-select {cell_name}"
-    return {"ok":True,"scene_dir":str(sdir),"build_command":cmd}
+    """Regenerate an existing authored scene through the canonical exporter.
+
+    This entry point deliberately does not scaffold a package or repair authored
+    YAML.  Existing-scene regeneration consumes the two authored sources and
+    writes derived artifacts only below ``generated``.
+    """
+    requested = Path(scene_dir).expanduser()
+    try:
+        sdir = requested.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        return {"ok": False, "error": f"Cannot resolve scene directory '{requested}': {exc}"}
+    if not sdir.is_dir():
+        return {"ok": False, "error": f"Scene path is not a directory: {sdir}"}
+
+    authored_paths = (
+        sdir / "environment.yaml",
+        sdir / "layout" / "workcell_studio_layout.yaml",
+    )
+    authored_bytes: dict[Path, bytes] = {}
+    for path in authored_paths:
+        if not path.is_file():
+            return {"ok": False, "error": f"Required authored file is missing: {path}"}
+        try:
+            raw = path.read_bytes()
+            parsed = yaml.safe_load(raw)
+        except (OSError, yaml.YAMLError, UnicodeError) as exc:
+            return {"ok": False, "error": f"Failed to parse authored file '{path}': {exc}"}
+        if not isinstance(parsed, dict):
+            return {"ok": False, "error": f"Authored file must contain a YAML mapping: {path}"}
+        authored_bytes[path] = raw
+
+    output_dir = sdir / "generated"
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        summary = export_scene(sdir, output_dir, validate=True)
+    except Exception as exc:
+        return {"ok": False, "error": f"Canonical export failed for authored scene '{sdir}': {exc}"}
+
+    for path, before in authored_bytes.items():
+        try:
+            after = path.read_bytes()
+        except OSError as exc:
+            return {"ok": False, "error": f"Cannot verify authored file after export '{path}': {exc}"}
+        if after != before:
+            return {"ok": False, "error": f"Canonical export modified authored file unexpectedly: {path}"}
+
+    validation = summary.get("validation") if isinstance(summary, dict) else None
+    if not isinstance(validation, dict):
+        return {"ok": False, "error": f"Canonical export returned no validation results for authored scene: {sdir}"}
+    failed = [name for name, result in validation.items()
+              if not isinstance(result, dict) or result.get("result") == "FAIL"]
+    if failed:
+        return {"ok": False, "error": f"Canonical export validation failed for authored file '{authored_paths[0]}': {', '.join(sorted(failed))}"}
+
+    required_names = (
+        "cell_definition.yaml",
+        "environment_layout.yaml",
+        "task_recipe_from_builder_intent.yaml",
+        "offline_plan_preview_request.yaml",
+        "selected_assets.json",
+        "compatibility_report.json",
+        "builder_export_summary.json",
+    )
+    generated_files = [output_dir / name for name in required_names]
+    missing = [path for path in generated_files if not path.is_file()]
+    if missing:
+        return {"ok": False, "error": f"Canonical export of authored file '{authored_paths[0]}' did not produce required artifact: {missing[0]}"}
+
+    cmd=f"cd {Path.home()/ 'workcell_ws'} && colcon build --symlink-install --packages-select {sdir.name}"
+    return {
+        "ok": True,
+        "scene_dir": str(sdir),
+        "output_dir": str(output_dir),
+        "generated_files": [str(path) for path in generated_files],
+        "validation": validation,
+        "build_command": cmd,
+    }

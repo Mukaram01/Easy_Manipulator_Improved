@@ -26,6 +26,11 @@ def test_generate_files_from_yaml_requires_environment(tmp_path):
 def test_generate_files_from_yaml_returns_build_command(tmp_path):
     scene = tmp_path / 'new_scene'
     wf.create_new_cell('new_scene', tmp_path)
+    (scene / 'layout').mkdir()
+    (scene / 'layout/workcell_studio_layout.yaml').write_text(
+        'schema_version: workcell_studio_layout/v1\nitems: []\nzones: []\ntargets: []\n',
+        encoding='utf-8',
+    )
     result = wf.generate_files_from_yaml(scene)
-    assert result['ok']
-    assert '--packages-select new_scene' in result['build_command']
+    assert not result['ok']
+    assert str(scene / 'environment.yaml') in result['error']

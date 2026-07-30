@@ -295,12 +295,26 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
             generated_task_intent_path = output_dir / "workcell_builder_task_intent.yaml"
             _write_structured(generated_task_intent_path, generated_intent)
             task_intent_path = generated_task_intent_path
+    authored_items = authored_layout.get("items") if isinstance(authored_layout.get("items"), list) else []
+    layout_assets = []
+    for item in authored_items:
+        if not isinstance(item, dict):
+            continue
+        exported_item = dict(item)
+        item_type = str(item.get("type") or "")
+        exported_item["type"] = {
+            "pick_zone": "object_spawn_area",
+            "realsense": "camera_mount",
+        }.get(item_type, item_type)
+        exported_item.setdefault("pose", {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]})
+        layout_assets.append(exported_item)
+
     environment_layout = {
-        "schema_version": authored_layout.get("schema_version", "environment_layout/v1"),
+        "schema_version": "environment_layout/v1",
         "layout_id": authored_layout.get("layout_id", f"{scene_path.name}_layout"),
         "name": authored_layout.get("name", f"{scene_path.name} Builder Layout"),
         "frame": authored_layout.get("frame", "world"),
-        "assets": assets,
+        "assets": assets + layout_assets,
         "source_metadata": {
             "generated_by": "workcell_builder",
             "raw_environment_keys": sorted(env.keys()),
@@ -314,6 +328,13 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
         environment_layout["objects"] = authored_layout["objects"]
     if isinstance(authored_layout.get("camera"), dict):
         environment_layout["camera"] = authored_layout["camera"]
+    # Preserve the Workcell Studio authored item graph verbatim in the derived
+    # handoff.  In particular, destination ``target_ref``/``transform_group``
+    # relationships and edited poses must survive regeneration.
+    if isinstance(authored_layout.get("items"), list):
+        environment_layout["items"] = authored_layout["items"]
+    if isinstance(authored_layout.get("task_bindings"), dict):
+        environment_layout["task_bindings"] = authored_layout["task_bindings"]
 
     cell_def = {
         "schema_version": "cell_definition/v1",
@@ -330,6 +351,7 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
             "base_frame": robot_env.get("base_link", "base_link"),
             "tool_link": ee_env.get("parent_link", "tool0"),
             "home_named_target": "home",
+            "safe_joint_state": [],
         },
         "end_effector": {
             "id": ee_id,
@@ -351,7 +373,7 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
                    }),
         "environment": {
             "frame": "world",
-            "layout": authored_layout_ref or "layout/workcell_studio_layout.yaml",
+            "layout": "generated/environment_layout.yaml",
             "task_zones": task_zones,
             "task_zones_summary": task_zone_counts,
             "support_surfaces": [{"id": a["id"], "type": "table", "frame": "world", "pose_xyz": a["pose"]["xyz"], "pose_rpy": a["pose"]["rpy"], "dimensions": a["dimensions"]} for a in assets],
@@ -366,7 +388,7 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
             "destinations": [{"id": "default_drop", "frame": "world", "pose_xyz": [0.4, 0.0, 0.2], "pose_rpy": [0.0, 0.0, 0.0]}],
             "rules": [{"id": "default_rule", "when": {"always": True}, "destination": "default_drop"}],
         },
-        "grasp": {"strategy_ref": normalized_grasp.get("strategy_id"), "strategy": normalized_grasp},
+        "grasp": {"strategy_ref": normalized_grasp.get("strategy_id") or "auto"},
         "commissioning": {"self_test_enabled": True, "export_bundle": False, "generated_by": "workcell_builder", "review_required": True, "fake_hardware_first": True, "runtime_send_disabled_by_default": True},
     }
 
