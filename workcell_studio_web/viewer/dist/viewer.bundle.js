@@ -38302,7 +38302,7 @@ var CAMERA_PRESET_DIRECTIONS = Object.freeze({
   top: [0, -1e-3, 1],
   robot: [1.1, -1.25, 0.72]
 });
-var state = { sceneJson: null, sourceWebSceneFile: "", diagnosticKeys: /* @__PURE__ */ new Set(), frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: "", done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: "select", editorEvents: [], editorError: "", robotPreviewResult: null, initialPosePreview: { active: false, robotId: "", sceneKey: "" }, web3dReadiness: { state: "booting", terminal: false, terminalState: "", terminalNavigationKey: "", terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null }, builderRevision: "", sceneJsonLoaded: false, activeNavigationKey: "" };
+var state = { sceneJson: null, sourceWebSceneFile: "", diagnosticKeys: /* @__PURE__ */ new Set(), frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], pickRecords: [], pickIdentityByObject: /* @__PURE__ */ new WeakMap(), assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: "", done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: "select", editorEvents: [], editorError: "", robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: "", lastCanvasPickReason: "", initialPosePreview: { active: false, robotId: "", sceneKey: "" }, web3dReadiness: { state: "booting", terminal: false, terminalState: "", terminalNavigationKey: "", terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null }, builderRevision: "", sceneJsonLoaded: false, activeNavigationKey: "" };
 var robotPreviewLoadToken = 0;
 var RESET_VIEW_TITLE = "Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.";
 var STAGED_MESH_ROOTS = [
@@ -39301,19 +39301,23 @@ function currentSelectionDiagnostics() {
     renderIdentity: id,
     selectedItemType: rendered ? itemType(item) : "",
     selectable: Boolean(rendered && isNormalSelectableRendered(rendered)),
-    editable: Boolean(item && editOwner === rendered && canEditItem(item)),
+    editable: Boolean(item && editOwner === rendered && !rendered?.readOnlyPick && canEditItem(item)),
     locked: Boolean(item?.locked),
     sourceLayer: String(item?.source_layer || ""),
     activeVisualSource: String(item?.active_visual_source || ""),
     diagnosticOnly: Boolean(item && isDiagnosticOnlyItem(item)),
     helperOrOverlay: Boolean(item && isDebugOverlayItem(item)),
-    objectPresent: Boolean(rendered)
+    objectPresent: Boolean(rendered),
+    lastRaycastHitCount: state.lastRaycastHitCount,
+    lastRaycastCandidateIds: [...state.lastRaycastCandidateIds],
+    lastCanvasSelectedItemId: state.lastCanvasSelectedItemId,
+    lastCanvasPickReason: state.lastCanvasPickReason
   };
 }
 function editorState() {
   const rendered = renderedById(state.selected);
   const editOwner = canonicalEditOwnerRendered(rendered);
-  return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || "", editOwnerItemId: editOwner?.item?.id || "", selectedItemType: rendered ? itemType(rendered.item) : "", selectedEditable: Boolean(rendered && editOwner === rendered && rendered.item && canEditItem(rendered["item"])), selectionDiagnostics: currentSelectionDiagnostics(), dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, error: state.editorError || "" };
+  return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || "", editOwnerItemId: editOwner?.item?.id || "", selectedItemType: rendered ? itemType(rendered.item) : "", selectedEditable: selectionIsEditable(rendered), selectionDiagnostics: currentSelectionDiagnostics(), lastRaycastHitCount: state.lastRaycastHitCount, lastRaycastCandidateIds: [...state.lastRaycastCandidateIds], lastCanvasSelectedItemId: state.lastCanvasSelectedItemId, lastCanvasPickReason: state.lastCanvasPickReason, dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, error: state.editorError || "" };
 }
 function emitDirtyChanged() {
   pushEditorEvent("dirty_changed", { dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0 });
@@ -39519,7 +39523,15 @@ function sameTransform(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 function renderedById(id) {
-  return state.objects.find((obj) => obj.item.id === id);
+  return state.objects.find((obj) => obj.item.id === id) || state.pickRecords.find((obj) => obj.item.id === id);
+}
+function registerPickRecord(item, object3d, root = object3d) {
+  if (!item?.id || !object3d)
+    return null;
+  const record = { item, object3d, pickRoot: root, readOnlyPick: true };
+  state.pickRecords.push(record);
+  state.pickIdentityByObject.set(object3d, record);
+  return record;
 }
 function derivedTransformTargetId(item) {
   const targetId = String(item?.target_ref || "").trim();
@@ -39537,7 +39549,7 @@ function canonicalEditOwnerRendered(rendered) {
   return derivedTarget && canEditItem(derivedTarget.item) ? derivedTarget : inspectionSelectionRendered(rendered);
 }
 function selectionIsEditable(rendered) {
-  return Boolean(rendered && canonicalEditOwnerRendered(rendered) === rendered && canEditItem(rendered.item));
+  return Boolean(rendered && !rendered.readOnlyPick && canonicalEditOwnerRendered(rendered) === rendered && canEditItem(rendered.item));
 }
 function transformFromObject(object) {
   return { pose: { xyz: { x: object.position.x, y: object.position.y, z: object.position.z }, rpy: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z } }, scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z } };
@@ -41431,6 +41443,12 @@ function resetSceneLifecycleState() {
   robotPreviewLoadToken += 1;
   cancelInitialCameraFitRetry();
   state.objects = [];
+  state.pickRecords = [];
+  state.pickIdentityByObject = /* @__PURE__ */ new WeakMap();
+  state.lastRaycastHitCount = 0;
+  state.lastRaycastCandidateIds = [];
+  state.lastCanvasSelectedItemId = "";
+  state.lastCanvasPickReason = "";
   state.assemblyRoots = [];
   state.robotAssemblyDiagnostics = [];
   state.robotAssemblyRenderDiagnostics = {};
@@ -41614,6 +41632,19 @@ function loadExpandedUrdfRobotPreview(preview) {
     onRobotLoaded: (result) => {
       if (!callbackIsCurrent())
         return ignoreStaleCallback();
+      const itemsByLink = /* @__PURE__ */ new Map();
+      for (const item of collectItems(state.sceneJson || {})) {
+        if (!isGeneratedUrdfItem(item))
+          continue;
+        const explicitLink = String(item?.link_name || item?.link || "").trim();
+        if (explicitLink && !itemsByLink.has(explicitLink))
+          itemsByLink.set(explicitLink, item);
+      }
+      for (const [linkName, linkObject] of result?.links || []) {
+        const item = itemsByLink.get(String(linkName));
+        if (item)
+          registerPickRecord(item, linkObject, result.root || linkObject);
+      }
       state.robotPreviewResult = result;
       state.robotUrdfPreviewDiagnostics = result.diagnostics;
       if (!failIfExpandedUrdfExpectedVisualSetInvalid())
@@ -42078,6 +42109,31 @@ function isNormalSelectableRendered(rendered) {
   const inspectionSelectable = state.debugOverlaysVisible && (isTaskOnlyHelperItem(item) || isOverlayPolicyItem(item) || isDebugOverlayItem(item));
   return Boolean(item?.id) && item.selectable !== false && !isDiagnosticOnlyItem(item) && (inspectionSelectable || !isTaskOnlyHelperItem(item) && !isOverlayPolicyItem(item) && !isDebugOverlayItem(item));
 }
+function excludedPickNode(node) {
+  const data = node?.userData || {};
+  const name = String(node?.name || "").toLowerCase();
+  return node?.visible === false || data.selection_outline || data.selection_highlight || data.diagnostic_only || data.hidden_overlay || data.helper_hidden || data.non_selectable || data.selectable === false || /transformcontrols|transform_controls|gizmo|selection_.*highlight/.test(name);
+}
+function itemFromRaycastHit(hit) {
+  let node = hit?.object || null;
+  let candidate = null;
+  while (node) {
+    if (excludedPickNode(node))
+      return null;
+    if (!candidate) {
+      const registered = state.pickIdentityByObject.get(node);
+      const item = node.userData?.item || registered?.item;
+      if (item?.id) {
+        const rendered = renderedById(item.id) || registered;
+        if (!rendered || !isNormalSelectableRendered(rendered))
+          return null;
+        candidate = rendered;
+      }
+    }
+    node = node.parent;
+  }
+  return candidate;
+}
 function pickingPriority(rendered) {
   const item = rendered?.item;
   if (!item?.id)
@@ -42096,14 +42152,17 @@ function rankedPickingCandidates(hits) {
   const candidates = [];
   const seen = /* @__PURE__ */ new Set();
   for (const hit of hits || []) {
-    const item = hit?.object?.userData?.item || hit?.object?.parent?.userData?.item;
-    const rendered = inspectionSelectionRendered(item?.id ? renderedById(item.id) : null);
+    const rendered = inspectionSelectionRendered(itemFromRaycastHit(hit));
     if (!rendered?.item?.id || seen.has(rendered.item.id))
       continue;
     seen.add(rendered.item.id);
     candidates.push({ rendered, hit, priority: pickingPriority(rendered) });
   }
-  return candidates.sort((a, b) => a.priority - b.priority || Number(a.hit?.distance || 0) - Number(b.hit?.distance || 0));
+  const PICK_COINCIDENCE_TOLERANCE_M = 1e-3;
+  return candidates.sort((a, b) => {
+    const distanceDelta = Number(a.hit?.distance || 0) - Number(b.hit?.distance || 0);
+    return Math.abs(distanceDelta) <= PICK_COINCIDENCE_TOLERANCE_M ? a.priority - b.priority || distanceDelta : distanceDelta;
+  });
 }
 function selectObject(id) {
   const requestedId = String(id || "");
@@ -42136,7 +42195,7 @@ function selectObject(id) {
       rendered2.labelEl.classList.toggle("selected", selected);
   }
   updateLabels();
-  const rendered = state.objects.find((obj) => obj.item.id === id);
+  const rendered = renderedById(id);
   if (rendered) {
     populateInspector(rendered);
     attachTransformGizmo(rendered);
@@ -42158,11 +42217,19 @@ function pickObject(event) {
   state.three.pointer.x = (event.clientX - rect.left) / rect.width * 2 - 1;
   state.three.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   state.three.raycaster.setFromCamera(state.three.pointer, state.three.camera);
-  const hits = state.three.raycaster.intersectObjects(state.objects.map((o) => o.object3d), true);
+  const roots = [...state.objects.map((o) => o.object3d), ...state.pickRecords.map((o) => o.pickRoot || o.object3d)].filter((root, index, all) => root?.visible !== false && !excludedPickNode(root) && all.indexOf(root) === index);
+  const hits = state.three.raycaster.intersectObjects(roots, true);
   const candidates = rankedPickingCandidates(hits);
+  state.lastRaycastHitCount = hits.length;
+  state.lastRaycastCandidateIds = candidates.map((candidate) => candidate.rendered.item.id);
   const selectedCandidate = candidates.find((candidate) => Number.isFinite(candidate.priority) && isNormalSelectableRendered(candidate.rendered));
-  if (!selectedCandidate)
+  if (!selectedCandidate) {
+    state.lastCanvasSelectedItemId = "";
+    state.lastCanvasPickReason = hits.length ? "no_eligible_candidate" : "empty_select_click";
+    if (state.editorMode === "select")
+      clearSelection();
     return "";
+  }
   const skippedHelper = candidates.find((candidate) => candidate !== selectedCandidate && candidate.priority > selectedCandidate.priority && (isTaskOnlyHelperItem(candidate.rendered.item) || isDebugOverlayItem(candidate.rendered.item)));
   if (skippedHelper) {
     state.skippedHelperPickKeys || (state.skippedHelperPickKeys = /* @__PURE__ */ new Set());
@@ -42173,6 +42240,8 @@ function pickObject(event) {
     }
   }
   selectObject(selectedCandidate.rendered.item.id);
+  state.lastCanvasSelectedItemId = selectedCandidate.rendered.item.id;
+  state.lastCanvasPickReason = "eligible_candidate";
   return selectedCandidate.rendered.item.id;
 }
 function pointerToWorldPlane(event, z) {
@@ -42194,7 +42263,7 @@ function snapHorizontalPreview(transform) {
   return snapped;
 }
 function beginDirectMoveDrag(event, rendered) {
-  if (state.editorMode !== "move" || !rendered || !canEditItem(rendered.item))
+  if (state.editorMode !== "move" || !selectionIsEditable(rendered))
     return false;
   const start = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d));
   const hit = pointerToWorldPlane(event, start.pose.xyz.z);
@@ -42215,7 +42284,7 @@ function updateDirectMoveDrag(event) {
   if (!drag)
     return false;
   const rendered = renderedById(drag.itemId);
-  if (!rendered || state.selected !== drag.itemId || !canEditItem(rendered.item))
+  if (!rendered || state.selected !== drag.itemId || !selectionIsEditable(rendered))
     return cancelDirectMoveDrag("Move cancelled"), true;
   const hit = pointerToWorldPlane(event, drag.start.pose.xyz.z);
   if (!hit)
@@ -42241,7 +42310,7 @@ function finishDirectMoveDrag(event) {
   const rendered = renderedById(drag.itemId);
   const finalTransform = cloneTransform(drag.last);
   endDirectMoveDrag(event);
-  if (!rendered || !canEditItem(rendered.item) || !isFiniteTransform(finalTransform))
+  if (!selectionIsEditable(rendered) || !isFiniteTransform(finalTransform))
     return false;
   if (sameTransform(drag.start, finalTransform)) {
     applyTransformChanges([...drag.groupStart].map(([itemId, after]) => ({ rendered: renderedById(itemId), after })));
@@ -42301,7 +42370,7 @@ function directRotatePreviewTransform(rendered) {
   return snapTransform(next, { translationAxes: [], rotationAxes: ["z"] });
 }
 function beginDirectRotateDrag(rendered) {
-  if (state.editorMode !== "rotate" || !rendered || !canEditItem(rendered.item))
+  if (state.editorMode !== "rotate" || !selectionIsEditable(rendered))
     return false;
   const controls = state.three.controls;
   const start = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d));
@@ -42327,7 +42396,7 @@ function finishDirectRotateDrag(rendered) {
   rendered = rendered || renderedById(drag.itemId);
   const finalTransform = cloneTransform(drag.last);
   endDirectRotateDrag();
-  if (!rendered || !canEditItem(rendered.item) || !isFiniteTransform(finalTransform))
+  if (!selectionIsEditable(rendered) || !isFiniteTransform(finalTransform))
     return false;
   if (sameTransform(drag.start, finalTransform)) {
     applyTransformToObject(rendered.object3d, drag.start);
