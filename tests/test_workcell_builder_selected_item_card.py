@@ -61,3 +61,20 @@ def test_selection_poll_remains_scene_and_request_token_guarded():
     assert "embedded_web_identity_is_current(identity)" in poll
     assert "state_request_token != embedded_editor_state_request_token_" in poll
     assert "browser_scene_id == identity.scene_id" in poll
+
+
+def test_selection_owner_inventory_rows_feed_hierarchy_and_selected_card_lookup():
+    reconciliation = MAIN.split("const QString selection_owner_contract_path", 1)[1].split(
+        "apply_scene3d_product_view_layer_defaults_and_commit();", 1
+    )[0]
+    assert "all_scene_preview_items_.push_back(owner)" in reconciliation
+    assert "add_tree_node(owner)" in reconciliation
+    assert 'owner.source_layer = QStringLiteral("selection_owner_registry")' in reconciliation
+    assert "owner.display_name = declaration.label.isEmpty() ? declaration.id : declaration.label" in reconciliation
+    assert "owner.category = declaration.type" in reconciliation
+    assert "owner.role = declaration.type" in reconciliation
+    card = MAIN.split("void MainWindow::refresh_selected_item_card()", 1)[1].split(
+        "void MainWindow::apply_scene3d_product_view_layer_defaults", 1
+    )[0]
+    assert "preview_item_by_id" in card
+    assert "preview_item_by_id(browser_ui_selected_id) != nullptr" in PREVIEW

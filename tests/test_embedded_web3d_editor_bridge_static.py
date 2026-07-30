@@ -6,6 +6,7 @@ INDEX = (ROOT / "workcell_studio_web/viewer/index.html").read_text(encoding="utf
 STYLE = (ROOT / "workcell_studio_web/viewer/style.css").read_text(encoding="utf-8")
 CPP = (ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp").read_text(encoding="utf-8")
 HDR = (ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.h").read_text(encoding="utf-8")
+VIEWPORT_CPP = (ROOT / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(encoding="utf-8")
 
 
 def test_browser_editor_api_v1_contract_and_bounded_events():
@@ -233,6 +234,52 @@ def test_qt_inventory_preserves_explicit_locked_robot_and_tool_owner_rows():
     assert 'QStringLiteral("robot_arm")' in body
     assert 'QStringLiteral("end_effector")' in body
     assert "filtered_items.push_back(candidates.front())" in body
+
+
+def test_qt_reconciles_exported_selection_owner_registry_as_identity_only_rows():
+    main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    body = main.split("const QString selection_owner_contract_path", 1)[1].split(
+        "apply_scene3d_product_view_layer_defaults_and_commit();", 1
+    )[0]
+    for token in [
+        'value(QStringLiteral("ui_selection_owners"))',
+        'value(QStringLiteral("robot_preview"))',
+        'value(QStringLiteral("selection_robot_owner_id"))',
+        'value(QStringLiteral("selection_tool_owner_id"))',
+        'QStringLiteral("robot")',
+        'QStringLiteral("end_effector")',
+    ]:
+        assert token in body
+    assert 'source_layer == QStringLiteral("selection_owner_registry")' in body
+    assert "all_scene_preview_items_.removeAt(i)" in body
+    assert "item.id.trimmed() == declaration.id" in body
+    assert "if (id_already_owned) continue;" in body
+    assert 'owner.source_layer = QStringLiteral("selection_owner_registry")' in body
+    assert "owner.locked = true" in body
+    assert "owner.editable = false" in body
+    assert "owner.mesh_available = false" in body
+    assert "owner.has_mesh_metadata = false" in body
+    assert "owner.primitive_geometry_type.clear()" in body
+    assert "owner.sx = owner.sy = owner.sz = 0.0" in body
+    assert "all_scene_preview_items_.push_back(owner)" in body
+    assert "add_tree_node(owner)" in body
+    assert "retained usable preview state" in body
+
+
+def test_selection_owner_registry_is_forwarded_for_lookup_but_not_geometry():
+    main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    filters = main.split("void MainWindow::apply_scene3d_preview_layer_filters", 1)[1].split(
+        "void MainWindow::refresh_scene3d_product_view_status_and_audit", 1
+    )[0]
+    registry_branch = filters.split('p.source_layer == QStringLiteral("selection_owner_registry")', 1)[1]
+    registry_branch = registry_branch.split("if (workcell_builder::include_preview_item_for_scene3d", 1)[0]
+    assert "filtered_items.push_back(p)" in registry_branch
+    assert "continue;" in registry_branch
+    assert "preview_item_by_id(browser_ui_selected_id) != nullptr" in CPP
+    ingest = VIEWPORT_CPP.split("void Scene3DViewportWidget::ingest_preview_items", 1)[1]
+    ingest = ingest.split("void Scene3DViewportWidget::", 1)[0]
+    assert 'item.source_layer == QStringLiteral("selection_owner_registry")' in ingest
+    assert "continue;" in ingest
 
 
 def test_qt_exact_ur5_and_robotiq_owner_ids_remain_selectable_in_preview_inventory():
