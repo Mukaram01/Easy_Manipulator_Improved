@@ -112,11 +112,78 @@ def _write_structured(path: Path, payload: dict[str, Any]) -> None:
 
 
 def _find_task_intent(scene_path: Path) -> Path | None:
-    for rel in ["generated/workcell_builder_task_intent.yaml", "workcell_builder_task_intent.yaml"]:
+    # Authored inputs always win.  The generated copy is only a compatibility
+    # fallback and must never shadow the canonical config source.
+    for rel in [
+        "config/workcell_builder_task_intent.yaml",
+        "workcell_builder_task_intent.yaml",
+        "generated/workcell_builder_task_intent.yaml",
+    ]:
         cand = scene_path / rel
         if cand.is_file():
             return cand
     return None
+
+
+def _resolve_authored_task(
+    task_intent: dict[str, Any], task_intent_path: Path, environment: dict[str, Any],
+    layout: dict[str, Any], layout_path: Path,
+) -> dict[str, Any]:
+    """Resolve task IDs through environment bindings into authored layout items."""
+    def fail(identifier: Any, reason: str) -> None:
+        raise ValueError(
+            f"Task intent '{task_intent_path}' and layout '{layout_path}' cannot resolve "
+            f"identifier '{identifier}': {reason}"
+        )
+
+    if task_intent.get("schema") != "workcell_builder_task_intent/v1":
+        fail(task_intent.get("schema", "<missing schema>"), "invalid task intent schema")
+
+    items = layout.get("items")
+    if not isinstance(items, list):
+        fail("items", "authored layout does not contain an items list")
+    item_by_id = {str(item.get("id")): item for item in items
+                  if isinstance(item, dict) and item.get("id")}
+    task_zones = environment.get("task_zones")
+    zone_by_id = {str(zone.get("id")): zone for zone in task_zones
+                  if isinstance(zone, dict) and zone.get("id")} if isinstance(task_zones, list) else {}
+
+    def intent_ref(block: str, child: str) -> tuple[str, dict[str, Any]]:
+        section = task_intent.get(block)
+        ref = section.get(child) if isinstance(section, dict) else None
+        identifier = ref.get("id") if isinstance(ref, dict) else None
+        if not identifier:
+            fail(f"{block}.{child}.id", "required identifier is missing")
+        zone = zone_by_id.get(str(identifier))
+        if zone is None:
+            fail(identifier, f"not found in task_zones from authored environment for {block}.{child}.id")
+        layout_id = zone.get("layout_item_ref")
+        if not layout_id or str(layout_id) not in item_by_id:
+            fail(layout_id or identifier, f"layout_item_ref for task zone '{identifier}' is missing or unresolved")
+        return str(identifier), item_by_id[str(layout_id)]
+
+    pick_id, pick_item = intent_ref("pick", "source")
+    place_id, place_zone = intent_ref("place", "target")
+    target_ref = place_zone.get("target_ref")
+    if not target_ref or str(target_ref) not in item_by_id:
+        fail(target_ref or place_zone.get("id"), f"target_ref on place layout item '{place_zone.get('id')}' is missing or unresolved")
+    target = item_by_id[str(target_ref)]
+    zone_group = place_zone.get("transform_group")
+    target_group = target.get("transform_group")
+    if not zone_group or zone_group != target_group:
+        fail(target_ref, f"inconsistent transform_group between '{place_zone.get('id')}' and '{target_ref}'")
+    zone_pose = place_zone.get("pose")
+    target_pose = target.get("pose")
+    if not isinstance(zone_pose, dict) or zone_pose != target_pose:
+        fail(target_ref, f"inconsistent pose in transform_group '{zone_group}'")
+    for item_id, item in ((pick_item.get("id"), pick_item), (target_ref, target)):
+        pose = item.get("pose")
+        if (not isinstance(pose, dict) or not isinstance(pose.get("xyz"), list)
+                or len(pose["xyz"]) != 3 or not isinstance(pose.get("rpy"), list)
+                or len(pose["rpy"]) != 3):
+            fail(item_id, "layout pose must contain three-element xyz and rpy lists")
+    return {"pick_id": pick_id, "pick_item": pick_item, "place_id": place_id,
+            "place_zone": place_zone, "target_ref": str(target_ref), "target": target}
 
 
 def _validate_task_intent(task_intent_path: Path, scene_path: Path) -> dict[str, Any]:
@@ -220,11 +287,9 @@ def _task_type_from_meta(meta: dict[str, Any]) -> str:
 def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str, Any]:
     env = _load_optional(scene_path / "environment.yaml")
     meta = _load_optional(scene_path / "workcell_builder_metadata.yaml")
-    task_zones, task_zone_counts, task_zone_ids = _extract_task_zones(env)
+    task_zones, task_zone_counts, _ = _extract_task_zones(env)
     warnings: list[str] = []
     task_intent_path = _find_task_intent(scene_path)
-    preferred_pick = "pick_zone_01" if "pick_zone_01" in task_zone_ids else (task_zones[0]["id"] if task_zones else "unknown_pick_zone")
-    preferred_place = "place_zone_01" if "place_zone_01" in task_zone_ids else (next((z["id"] for z in task_zones if z.get("role")=="place"), "unknown_place_zone"))
     builder_task_intent: dict[str, Any] = {}
     task_intent_validation: dict[str, Any] = {}
     task_recipe_generation: dict[str, Any] = {}
@@ -295,6 +360,24 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
             generated_task_intent_path = output_dir / "workcell_builder_task_intent.yaml"
             _write_structured(generated_task_intent_path, generated_intent)
             task_intent_path = generated_task_intent_path
+    if not task_intent_path:
+        raise ValueError(
+            f"Task intent '{scene_path / 'config/workcell_builder_task_intent.yaml'}' is missing; "
+            f"layout '{authored_layout_ref or scene_path / 'layout/workcell_studio_layout.yaml'}' cannot resolve task identifiers"
+        )
+    resolved_layout_path = (Path(authored_layout_ref) if authored_layout_ref else
+                            scene_path / "layout" / "workcell_studio_layout.yaml")
+    try:
+        task_intent_payload = _load_optional(task_intent_path)
+    except Exception as exc:
+        raise ValueError(
+            f"Task intent '{task_intent_path}' and layout '{resolved_layout_path}' cannot resolve "
+            f"identifier '<invalid task intent>': {exc}"
+        ) from exc
+    resolved_task = _resolve_authored_task(
+        task_intent_payload, task_intent_path, env, authored_layout,
+        resolved_layout_path,
+    )
     authored_items = authored_layout.get("items") if isinstance(authored_layout.get("items"), list) else []
     layout_assets = []
     for item in authored_items:
@@ -380,13 +463,23 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
         },
         "objects": [{"id": o["id"], "class": "part", "shape": "mesh", "color": "unknown", "material": "unknown", "frame": "world", "dimensions": o["dimensions"], "pose_xyz": [0.0,0.0,0.0], "pose_rpy": [0.0,0.0,0.0]} for o in object_entries],
         "task": {
-            "id": "default_task",
+            "id": ((task_intent_payload.get("task") or {}).get("id")
+                   if isinstance(task_intent_payload.get("task"), dict) else "default_task"),
             "type": task_type,
             "source_object": object_entries[0]["id"] if object_entries else "unknown_object",
-            "pick": {"source": {"id": preferred_pick, "type": "zone"}},
-            "place": {"target": {"id": preferred_place, "type": "zone"}},
-            "destinations": [{"id": "default_drop", "frame": "world", "pose_xyz": [0.4, 0.0, 0.2], "pose_rpy": [0.0, 0.0, 0.0]}],
-            "rules": [{"id": "default_rule", "when": {"always": True}, "destination": "default_drop"}],
+            "pick": {"source": {"id": resolved_task["pick_id"], "type": "zone",
+                                  "layout_item_ref": resolved_task["pick_item"]["id"]}},
+            "place": {"target": {"id": resolved_task["place_id"], "type": "zone",
+                                   "layout_item_ref": resolved_task["place_zone"]["id"],
+                                   "target_ref": resolved_task["target_ref"]}},
+            "destinations": [{
+                "id": resolved_task["place_id"], "target_ref": resolved_task["target_ref"],
+                "frame": authored_layout.get("frame", "world"),
+                "pose_xyz": resolved_task["target"]["pose"]["xyz"],
+                "pose_rpy": resolved_task["target"]["pose"]["rpy"],
+            }],
+            "rules": [{"id": "default_rule", "when": {"always": True},
+                       "destination": resolved_task["place_id"]}],
         },
         "grasp": {"strategy_ref": normalized_grasp.get("strategy_id") or "auto"},
         "commissioning": {"self_test_enabled": True, "export_bundle": False, "generated_by": "workcell_builder", "review_required": True, "fake_hardware_first": True, "runtime_send_disabled_by_default": True},
@@ -402,7 +495,11 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
     if task_intent_path:
         task_intent_validation = _validate_task_intent(task_intent_path, scene_path)
         if task_intent_validation.get("status") == "FAIL":
-            warnings.append("Builder task intent validation failed; preserving metadata for review.")
+            details = "; ".join(str(e) for e in task_intent_validation.get("errors", []))
+            raise ValueError(
+                f"Task intent '{task_intent_path}' and layout '{resolved_layout_path}' cannot resolve "
+                f"identifier '<invalid task intent>': {details or 'validation failed'}"
+            )
         ti = task_intent_validation.get("task_intent", {})
         builder_task_intent = {
             "schema": ti.get("schema"),
