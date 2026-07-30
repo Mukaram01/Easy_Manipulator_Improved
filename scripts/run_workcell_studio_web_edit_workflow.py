@@ -97,14 +97,12 @@ def _generation_cmd(scene: Path) -> list[str]:
     export_cmd = build_export_sources_command(scene)
     if (scene / "generated" / "export_workcell_studio_sources.sh").is_file():
         return export_cmd
-    helper = (
-        "import json; "
-        "from pathlib import Path; "
-        "from scripts.workcell_builder_gui_workflow import generate_files_from_yaml; "
-        f"scene=Path({str(scene)!r}); "
-        "print(json.dumps(generate_files_from_yaml(scene), indent=2, sort_keys=True))"
-    )
-    return [sys.executable, "-c", helper]
+    return [
+        sys.executable,
+        str(SCRIPT_DIR / "workcell_builder_gui_workflow.py"),
+        "--generate-from-yaml",
+        str(scene),
+    ]
 
 
 def _validation_cmd(scene: Path) -> list[str]:
@@ -135,10 +133,13 @@ def _product_view_refresh_cmd(scene: Path, output_dir: Path, scene_id: str) -> l
 
 def _generated_summary_paths(scene: Path) -> list[Path]:
     return [
-        scene / "package.xml",
-        scene / "CMakeLists.txt",
         scene / "generated" / "cell_definition.yaml",
         scene / "generated" / "environment_layout.yaml",
+        scene / "generated" / "task_recipe_from_builder_intent.yaml",
+        scene / "generated" / "offline_plan_preview_request.yaml",
+        scene / "generated" / "selected_assets.json",
+        scene / "generated" / "compatibility_report.json",
+        scene / "generated" / "builder_export_summary.json",
     ]
 
 

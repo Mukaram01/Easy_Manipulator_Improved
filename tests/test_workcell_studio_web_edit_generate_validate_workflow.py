@@ -37,14 +37,16 @@ def _patch(tmp_path):
 
 
 class RunRecorder:
-    def __init__(self, returncodes=None):
+    def __init__(self, returncodes=None, stdouts=None):
         self.commands = []
         self.returncodes = list(returncodes or [])
+        self.stdouts = list(stdouts or [])
 
     def __call__(self, cmd, **kwargs):
         self.commands.append([str(part) for part in cmd])
         rc = self.returncodes.pop(0) if self.returncodes else 0
-        return subprocess.CompletedProcess(cmd, rc, stdout=f"stub rc={rc}\n", stderr="")
+        stdout = self.stdouts.pop(0) if self.stdouts else f"stub rc={rc}\n"
+        return subprocess.CompletedProcess(cmd, rc, stdout=stdout, stderr="")
 
     def joined(self):
         return "\n".join(" ".join(cmd) for cmd in self.commands)
@@ -80,6 +82,30 @@ def test_generate_and_validate_triggers_generation_validation_path(workflow, sce
     assert "== scene generation ==" in out
     assert "== selected-scene validation ==" in out
     assert any("validate_builder_generated_scene.py" in " ".join(cmd) for cmd in recorder.commands)
+
+
+def test_false_generation_result_returns_nonzero_and_skips_validation(workflow, scene, monkeypatch, capsys):
+    result = '{"ok": false, "error": "required canonical output is absent"}\n'
+    recorder = RunRecorder([1], [result])
+    monkeypatch.setattr(workflow.subprocess, "run", recorder)
+
+    rc = workflow.main(["--scene", str(scene), "--generate-and-validate"])
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert result.strip() in out
+    assert "scene generation result: FAIL" in out
+    assert "selected-scene validation" not in recorder.joined()
+    assert not any("validate_builder_generated_scene.py" in " ".join(cmd) for cmd in recorder.commands)
+    assert len(recorder.commands) == 1
+
+
+def test_generation_command_uses_cli_entry_point_instead_of_inline_python(workflow, scene):
+    command = workflow._generation_cmd(scene)
+
+    assert command[1].endswith("scripts/workcell_builder_gui_workflow.py")
+    assert command[2:] == ["--generate-from-yaml", str(scene)]
+    assert "-c" not in command
 
 
 def test_generation_not_attempted_if_patch_validation_fails(workflow, scene, tmp_path, monkeypatch):
@@ -156,6 +182,12 @@ def test_output_summary_includes_generated_and_readiness_paths_where_applicable(
     assert rc == 0
     assert "generated output paths:" in out
     assert str(scene / "generated" / "cell_definition.yaml") in out
+    assert str(scene / "generated" / "environment_layout.yaml") in out
+    assert str(scene / "generated" / "task_recipe_from_builder_intent.yaml") in out
+    assert str(scene / "generated" / "offline_plan_preview_request.yaml") in out
+    assert str(scene / "generated" / "selected_assets.json") in out
+    assert str(scene / "generated" / "compatibility_report.json") in out
+    assert str(scene / "generated" / "builder_export_summary.json") in out
     assert "readiness output path:" in out
     assert "readiness output paths:" in out
     assert "scene_readiness_summary.json" in out
@@ -163,7 +195,18 @@ def test_output_summary_includes_generated_and_readiness_paths_where_applicable(
 
 def test_no_ros_rviz_moveit_gazebo_launch_command_is_introduced():
     source = WORKFLOW_PATH.read_text(encoding="utf-8")
-    forbidden = ("ros2 launch", "launch_rviz", "rviz2", "move_group", "gazebo", "ign gazebo")
+    forbidden = (
+        "ros2 launch",
+        "launch_rviz",
+        "rviz2",
+        "move_group",
+        "controller_manager",
+        "gazebo",
+        "ign gazebo",
+        "isaac",
+        "use_fake_hardware:=false",
+        "real_hardware:=true",
+    )
     for token in forbidden:
         assert token not in source
 
