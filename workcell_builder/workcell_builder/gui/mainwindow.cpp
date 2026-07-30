@@ -8708,10 +8708,45 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
   if (filtered_items.isEmpty() && !all_scene_preview_items_.isEmpty()) {
     append_studio_log("Scene3D blocker: current layer filters hide all items. Re-enable editable layout, mesh preview, primitive fallback, or locked generated URDF visuals.");
   }
-  // Keep the single configured robot and end-effector inspection owners in the
-  // Qt identity inventory even when their generated per-link render rows are
-  // suppressed. These are existing payload records, not renderable URDF-link
-  // rows, and remain locked/read-only hierarchy and Selected Item owners.
+  // Keep the explicitly exported robot and end-effector inspection owners in
+  // the Qt identity inventory even when filtering suppresses them.  The web
+  // preview has already ingested this contract from the same exported payload;
+  // only re-use matching locked/read-only records from the Qt inventory here.
+  QString selection_robot_owner_id;
+  QString selection_tool_owner_id;
+  bool owner_contract_loaded = false;
+  const auto preview_context = scene_preview_widget_->preview_context();
+  const QString owner_contract_path = QDir(preview_context.absolute_repo_root).filePath(
+    QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(preview_context.scene_id));
+  QFile owner_contract_file(owner_contract_path);
+  if (owner_contract_file.open(QIODevice::ReadOnly)) {
+    const QJsonDocument owner_contract_document = QJsonDocument::fromJson(owner_contract_file.readAll());
+    const QJsonObject robot_preview = owner_contract_document.object().value(QStringLiteral("robot_preview")).toObject();
+    owner_contract_loaded = owner_contract_document.isObject() && !robot_preview.isEmpty();
+    selection_robot_owner_id = robot_preview.value(QStringLiteral("selection_robot_owner_id")).toString().trimmed();
+    selection_tool_owner_id = robot_preview.value(QStringLiteral("selection_tool_owner_id")).toString().trimmed();
+  }
+  auto preserve_explicit_inspection_owner = [&](const QString & owner_id, const QString & owner_type) {
+    if (owner_id.isEmpty()) return false;
+    const auto owner = std::find_if(all_scene_preview_items_.cbegin(), all_scene_preview_items_.cend(),
+      [&](const auto & item) { return item.id.trimmed() == owner_id; });
+    if (owner == all_scene_preview_items_.cend() || !owner->locked || owner->editable) {
+      append_studio_log(QStringLiteral(
+        "Scene3D selection-owner contract mismatch: type=%1 id=%2 is absent from the locked/read-only Qt preview inventory.")
+        .arg(owner_type, owner_id));
+      return true;
+    }
+    const bool already_present = std::any_of(filtered_items.cbegin(), filtered_items.cend(), [&](const auto & item) {
+      return item.id.trimmed() == owner_id;
+    });
+    if (!already_present) filtered_items.push_back(*owner);
+    return true;
+  };
+  const bool explicit_robot_owner = preserve_explicit_inspection_owner(selection_robot_owner_id, QStringLiteral("robot"));
+  const bool explicit_tool_owner = preserve_explicit_inspection_owner(selection_tool_owner_id, QStringLiteral("tool"));
+
+  // Compatibility fallback is intentionally category-based only when the
+  // exported robot-preview payload truly has no explicit ID for that owner.
   auto preserve_unique_inspection_owner = [&](const QSet<QString> & categories) {
     QVector<ScenePreviewWidget::PreviewItem> candidates;
     for (const auto & item : all_scene_preview_items_) {
@@ -8730,8 +8765,19 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     });
     if (!already_present) filtered_items.push_back(candidates.front());
   };
-  preserve_unique_inspection_owner({QStringLiteral("robot"), QStringLiteral("robot_arm")});
-  preserve_unique_inspection_owner({QStringLiteral("tool"), QStringLiteral("end_effector"), QStringLiteral("gripper")});
+  if (owner_contract_loaded && selection_robot_owner_id.isEmpty() && !explicit_robot_owner) {
+    preserve_unique_inspection_owner({QStringLiteral("robot"), QStringLiteral("robot_arm")});
+    append_studio_log(QStringLiteral("Scene3D diagnostic: selection_robot_owner_id missing; used unique category fallback."));
+  }
+  if (owner_contract_loaded && selection_tool_owner_id.isEmpty() && !explicit_tool_owner) {
+    preserve_unique_inspection_owner({QStringLiteral("tool"), QStringLiteral("end_effector"), QStringLiteral("gripper")});
+    append_studio_log(QStringLiteral("Scene3D diagnostic: selection_tool_owner_id missing; used unique category fallback."));
+  }
+  if (!owner_contract_loaded) {
+    append_studio_log(QStringLiteral(
+      "Scene3D diagnostic: active robot-preview selection-owner contract unavailable; category fallback was not used: %1")
+      .arg(owner_contract_path));
+  }
   const bool filtered_payload_changed = !scene_preview_widget_->preview_payload_matches(filtered_items);
   if (filtered_payload_changed) {
     scene_preview_widget_->set_preview_items(filtered_items);
