@@ -38528,6 +38528,21 @@ function failExpandedUrdfReadiness(err, diagnostics = {}, detail = {}) {
   });
 }
 function maybeEmitSceneReady() {
+  if (isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview)) {
+    const diagnostics = state.robotUrdfPreviewDiagnostics || {};
+    const lifecycle = String(diagnostics.robot_preview_lifecycle_state || diagnostics.robotPreviewLifecycleState || "");
+    if (lifecycle === "failed") {
+      const failureReason = String(diagnostics.robot_preview_failure_reason || diagnostics.robotPreviewFailureReason || "").trim();
+      const missingMeshes = asArray(diagnostics.robot_missing_meshes || diagnostics.robotMissingMeshes);
+      const failedVisualCount = Number(diagnostics.robot_failed_visual_count ?? diagnostics.robotFailedVisualCount ?? 0) || 0;
+      if (!failureReason && missingMeshes.length === 0 && failedVisualCount === 0)
+        return;
+      failExpandedUrdfReadiness(new Error(failureReason || missingMeshes[0] || "expanded URDF preview failed"), diagnostics);
+      return;
+    }
+    if (lifecycle !== "ready")
+      return;
+  }
   if (failIfExpandedUrdfExpectedVisualSetInvalid())
     return;
   const readiness = state.web3dReadiness;
@@ -39389,7 +39404,7 @@ function currentSelectionDiagnostics() {
     editOwnerItemId: editOwner?.item?.id || "",
     renderIdentity: id,
     selectedItemType: rendered ? itemType(item) : "",
-    selectable: Boolean(rendered && isNormalSelectableRendered(rendered)),
+    selectable: Boolean(rendered && isCanvasSelectableRendered(rendered)),
     editable: Boolean(item && editOwner === rendered && !rendered?.readOnlyPick && canEditItem(item)),
     locked: Boolean(item?.locked),
     sourceLayer: String(item?.source_layer || ""),
@@ -41837,9 +41852,15 @@ function loadExpandedUrdfRobotPreview(preview) {
       };
       state.robotPreviewResult = result;
       result.diagnostics = { ...state.robotUrdfPreviewDiagnostics, ...result.diagnostics || {}, ...localDiagnostics };
+      const resultLifecycle = String(result.diagnostics.robot_preview_lifecycle_state || result.diagnostics.robotPreviewLifecycleState || "");
+      if (resultLifecycle === "ready") {
+        result.diagnostics.robot_preview_lifecycle_state = "ready";
+        result.diagnostics.robotPreviewLifecycleState = "ready";
+      }
       state.robotUrdfPreviewDiagnostics = result.diagnostics;
-      if (!failIfExpandedUrdfExpectedVisualSetInvalid())
+      if (resultLifecycle === "ready" && !failIfExpandedUrdfExpectedVisualSetInvalid())
         completeExpandedUrdfReadiness(result);
+      maybeEmitSceneReady();
       refreshInitialPoseActionState();
       renderSceneSummary();
     },
@@ -41857,7 +41878,13 @@ function loadExpandedUrdfRobotPreview(preview) {
     onRobotError: (err, diagnostics2) => {
       if (!callbackIsCurrent())
         return ignoreStaleCallback();
-      failExpandedUrdfReadiness(err, diagnostics2 || state.robotUrdfPreviewDiagnostics);
+      state.robotUrdfPreviewDiagnostics = { ...state.robotUrdfPreviewDiagnostics, ...diagnostics2 || {} };
+      state.robotUrdfPreviewDiagnostics.robot_preview_lifecycle_state = "failed";
+      state.robotUrdfPreviewDiagnostics.robotPreviewLifecycleState = "failed";
+      state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason = err?.message || String(err || "expanded URDF preview failed");
+      state.robotUrdfPreviewDiagnostics.robotPreviewFailureReason = state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason;
+      failExpandedUrdfReadiness(err, state.robotUrdfPreviewDiagnostics);
+      maybeEmitSceneReady();
       appendRuntimeWarning({}, preview?.urdf_url || "", `expanded_urdf_loader failed: ${err?.message || err}`, "expanded_urdf_loader_failed");
       refreshWarnings();
       renderSceneSummary();
@@ -42301,6 +42328,15 @@ function isNormalSelectableRendered(rendered) {
   const inspectionSelectable = state.debugOverlaysVisible && (isTaskOnlyHelperItem(item) || isOverlayPolicyItem(item) || isDebugOverlayItem(item));
   return Boolean(item?.id) && item.selectable !== false && !isDiagnosticOnlyItem(item) && (inspectionSelectable || !isTaskOnlyHelperItem(item) && !isOverlayPolicyItem(item) && !isDebugOverlayItem(item));
 }
+function isExpandedUrdfInspectionPick(rendered) {
+  const item = rendered?.item;
+  const registeredReadOnlyRecord = Boolean(rendered && rendered.readOnlyPick === true && state.pickRecords.includes(rendered));
+  const explicitInspectionMetadata = rendered?.pickRecordSource === "expanded_urdf_inspection" || Boolean(String(rendered?.uiSelectionOwnerId || "").trim()) || String(item?.source_layer || "").trim() === "expanded_urdf_inspection";
+  return registeredReadOnlyRecord && explicitInspectionMetadata && Boolean(item?.id) && item.selectable !== false && rendered.object3d?.visible !== false && !isTaskOnlyHelperItem(item) && !isOverlayPolicyItem(item) && !isDebugOverlayItem(item);
+}
+function isCanvasSelectableRendered(rendered) {
+  return isExpandedUrdfInspectionPick(rendered) || isNormalSelectableRendered(rendered);
+}
 function excludedPickNode(node) {
   const data = node?.userData || {};
   const name = String(node?.name || "").toLowerCase();
@@ -42314,7 +42350,7 @@ function itemFromRaycastHit(hit) {
       return null;
     if (!candidate) {
       const registered = state.pickIdentityByObject.get(node);
-      const registeredInspection = registered?.pickRecordSource === "expanded_urdf_inspection" || Boolean(String(registered?.uiSelectionOwnerId || "").trim());
+      const registeredInspection = isExpandedUrdfInspectionPick(registered);
       const nodeItem = node.userData?.item;
       const nodeItemWithoutStalePickFlags = nodeItem ? { ...nodeItem, id: "", display_name: "", status: "", diagnostic_only: false, selectable: true } : null;
       if (registeredInspection && nodeItemWithoutStalePickFlags && (isTaskOnlyHelperItem(nodeItemWithoutStalePickFlags) || isOverlayPolicyItem(nodeItemWithoutStalePickFlags) || isDebugOverlayItem(nodeItemWithoutStalePickFlags)))
@@ -42322,7 +42358,7 @@ function itemFromRaycastHit(hit) {
       const item = registeredInspection ? registered.item : nodeItem || registered?.item;
       if (item?.id) {
         const rendered = renderedById(item.id) || registered;
-        if (!rendered || !registeredInspection && !isNormalSelectableRendered(rendered))
+        if (!rendered || !isCanvasSelectableRendered(rendered))
           return null;
         candidate = rendered;
       }
@@ -42384,7 +42420,7 @@ function failedCanvasPickDiagnostic(hits) {
           firstActionableRejectionReason = "hit_node_excluded_from_picking";
         else if (registered && !registered?.item?.id)
           firstActionableRejectionReason = "registered_identity_missing_item_id";
-        else if (registered && !isNormalSelectableRendered(inspectionSelectionRendered(registered)))
+        else if (registered && !isCanvasSelectableRendered(inspectionSelectionRendered(registered)))
           firstActionableRejectionReason = "registered_identity_not_selectable";
       }
       node = node.parent;
@@ -42410,7 +42446,7 @@ function selectObject(id) {
   const rawRequested = requestedId ? renderedById(requestedId) : null;
   const requested = inspectionSelectionRendered(rawRequested);
   const selectionId = requested?.item?.id || requestedId;
-  const explicitlySelectable = requested && !isDiagnosticOnlyItem(requested.item) && requested.item.selectable !== false && (isNormalSelectableRendered(requested) || isOverlayPolicyItem(requested.item) || isTaskOnlyHelperItem(requested.item));
+  const explicitlySelectable = requested && isCanvasSelectableRendered(requested);
   if (requestedId && !explicitlySelectable) {
     const reason = requested ? "diagnostic_helper_or_non_selectable" : "missing_render_identity";
     state.ignoredSelectionKeys || (state.ignoredSelectionKeys = /* @__PURE__ */ new Set());
@@ -42463,7 +42499,7 @@ function pickObject(event) {
   const candidates = rankedPickingCandidates(hits);
   state.lastRaycastHitCount = hits.length;
   state.lastRaycastCandidateIds = candidates.map((candidate) => candidate.rendered.item.id);
-  const selectedCandidate = candidates.find((candidate) => Number.isFinite(candidate.priority) && isNormalSelectableRendered(candidate.rendered));
+  const selectedCandidate = candidates.find((candidate) => Number.isFinite(candidate.priority) && isCanvasSelectableRendered(candidate.rendered));
   if (!selectedCandidate) {
     state.lastCanvasSelectedItemId = "";
     state.lastCanvasPickReason = hits.length ? "no_eligible_candidate" : "empty_select_click";
