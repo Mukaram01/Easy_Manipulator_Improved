@@ -930,14 +930,16 @@ function pushEditorEvent(type, payload = {}) {
 function currentSelectionDiagnostics() {
   const id = String(state.selected || '');
   const rendered = renderedById(id);
+  const editOwner = canonicalEditOwnerRendered(rendered);
   const item = rendered?.item || null;
   return {
     sceneId: sceneId(),
     selectedItemId: id,
+    editOwnerItemId: editOwner?.item?.id || '',
     renderIdentity: id,
     selectedItemType: rendered ? itemType(item) : '',
     selectable: Boolean(rendered && isNormalSelectableRendered(rendered)),
-    editable: Boolean(item && canEditItem(item)),
+    editable: Boolean(item && editOwner === rendered && canEditItem(item)),
     locked: Boolean(item?.locked),
     sourceLayer: String(item?.source_layer || ''),
     activeVisualSource: String(item?.active_visual_source || ''),
@@ -948,7 +950,8 @@ function currentSelectionDiagnostics() {
 }
 function editorState() {
   const rendered = renderedById(state.selected);
-  return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || '', selectedItemType: rendered ? itemType(rendered.item) : '', selectedEditable: Boolean(rendered && rendered.item && canEditItem(rendered['item'])), selectionDiagnostics: currentSelectionDiagnostics(), dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, error: state.editorError || '' };
+  const editOwner = canonicalEditOwnerRendered(rendered);
+  return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || '', editOwnerItemId: editOwner?.item?.id || '', selectedItemType: rendered ? itemType(rendered.item) : '', selectedEditable: Boolean(rendered && editOwner === rendered && rendered.item && canEditItem(rendered['item'])), selectionDiagnostics: currentSelectionDiagnostics(), dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, error: state.editorError || '' };
 }
 function emitDirtyChanged() { pushEditorEvent('dirty_changed', { dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0 }); }
 function showError(message) {
@@ -1142,51 +1145,17 @@ function derivedTransformTargetId(item) {
   return targetId && /\bplace zone\b/.test(identity) ? targetId : '';
 }
 function isDerivedTransformDependent(item) { return Boolean(derivedTransformTargetId(item)); }
-function canonicalSelectionRendered(rendered) {
-  const item = rendered?.item;
-  const derivedTarget = renderedById(derivedTransformTargetId(item));
-  if (derivedTarget && canEditItem(derivedTarget.item)) return derivedTarget;
-  if (!item?.id || !isGeneratedUrdfItem(item) || isGeneratedRobotItem(item) || isGeneratedToolOrGripperItem(item)) return rendered || null;
-
-  // Generated environment visuals are render children, not separate authored
-  // objects. Prefer an explicit exporter reference, then resolve against the
-  // active payload's authored physical items by semantic group. Robot/tool
-  // visuals deliberately keep their stable generated IDs for read-only
-  // inspection.
-  const explicitIds = [
-    item.canonical_scene_item_id,
-    item.canonical_item_id,
-    item.layout_item_ref,
-    item.authored_item_id,
-    item.scene_item_id,
-    item.object_ref,
-    item.support_surface_ref,
-    item.camera_id,
-  ].map(value => String(value || '').trim()).filter(Boolean);
-  for (const id of explicitIds) {
-    const candidate = renderedById(id);
-    if (candidate && !isGeneratedUrdfItem(candidate.item) && isNormalSelectableRendered(candidate)) return candidate;
-  }
-
-  const group = viewerGroupFor(item);
-  const authored = state.objects.filter(candidate =>
-    candidate !== rendered &&
-    !isGeneratedUrdfItem(candidate.item) &&
-    isNormalSelectableRendered(candidate) &&
-    viewerGroupFor(candidate.item) === group
-  );
-  if (!authored.length) return rendered;
-  const generatedIdentity = viewerGroupIdentity(item);
-  const score = candidate => {
-    const candidateIdentity = viewerGroupIdentity(candidate.item);
-    const semanticTokens = group === 'sensors'
-      ? ['realsense', 'camera', 'sensor', 'depth', 'rgbd']
-      : ['support surface', 'table', 'tabletop', 'workbench', 'fixture'];
-    return semanticTokens.reduce((total, token) =>
-      total + (generatedIdentity.includes(token) && candidateIdentity.includes(token) ? 1 : 0), 0);
-  };
-  const ranked = authored.map(candidate => ({ candidate, score: score(candidate) })).sort((a, b) => b.score - a.score);
-  return ranked[0].score > 0 && (ranked.length === 1 || ranked[0].score > ranked[1].score) ? ranked[0].candidate : rendered;
+function inspectionSelectionRendered(rendered) {
+  return rendered?.item?.id ? rendered : null;
+}
+function canonicalEditOwnerRendered(rendered) {
+  const derivedTarget = renderedById(derivedTransformTargetId(rendered?.item));
+  return derivedTarget && canEditItem(derivedTarget.item) ? derivedTarget : inspectionSelectionRendered(rendered);
+}
+// canonicalSelectionRendered intentionally retired: inspection identity must
+// never be rewritten to the transform owner.
+function selectionIsEditable(rendered) {
+  return Boolean(rendered && canonicalEditOwnerRendered(rendered) === rendered && canEditItem(rendered.item));
 }
 function transformFromObject(object) {
   return { pose: { xyz: { x: object.position.x, y: object.position.y, z: object.position.z }, rpy: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z } }, scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z } };
@@ -1255,7 +1224,7 @@ function applyTransformChanges(changes, { updateDirty = false } = {}) {
 }
 function markDirtyTransform(rendered, next, { pushHistory = true, oldTransform = null, snapOptions = undefined, memberStarts = null } = {}) {
   if (!rendered || !canEditItem(rendered.item)) return false;
-  const owner = canonicalSelectionRendered(rendered);
+  const owner = canonicalEditOwnerRendered(rendered);
   if (owner && owner !== rendered) {
     const dependentBefore = oldTransform || state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d);
     const ownerBefore = state.dirtyTransforms.get(owner.item.id)?.newTransform || transformFromObject(owner.object3d);
@@ -3631,7 +3600,7 @@ function rankedPickingCandidates(hits) {
   const seen = new Set();
   for (const hit of hits || []) {
     const item = hit?.object?.userData?.item || hit?.object?.parent?.userData?.item;
-    const rendered = canonicalSelectionRendered(item?.id ? renderedById(item.id) : null);
+    const rendered = inspectionSelectionRendered(item?.id ? renderedById(item.id) : null);
     if (!rendered?.item?.id || seen.has(rendered.item.id)) continue;
     seen.add(rendered.item.id);
     candidates.push({ rendered, hit, priority: pickingPriority(rendered) });
@@ -3641,9 +3610,11 @@ function rankedPickingCandidates(hits) {
 function selectObject(id) {
   const requestedId = String(id || '');
   const rawRequested = requestedId ? renderedById(requestedId) : null;
-  const requested = canonicalSelectionRendered(rawRequested);
+  const requested = inspectionSelectionRendered(rawRequested);
   const selectionId = requested?.item?.id || requestedId;
-  if (requestedId && !isNormalSelectableRendered(requested)) {
+  const explicitlySelectable = requested && !isDiagnosticOnlyItem(requested.item) && requested.item.selectable !== false &&
+    (isNormalSelectableRendered(requested) || isOverlayPolicyItem(requested.item) || isTaskOnlyHelperItem(requested.item));
+  if (requestedId && !explicitlySelectable) {
     const reason = requested ? 'diagnostic_helper_or_non_selectable' : 'missing_render_identity';
     state.ignoredSelectionKeys ||= new Set();
     const warningKey = `${sceneId()}|${requestedId}|${reason}`;
@@ -3759,7 +3730,7 @@ function cancelDirectRotateDrag(message) {
 function attachTransformGizmo(rendered) {
   const gizmo = state.three.transformControls;
   if (!gizmo) return;
-  if (rendered && canEditItem(rendered.item)) {
+  if (selectionIsEditable(rendered)) {
     gizmo.attach(rendered.object3d);
     gizmo.visible = true;
     gizmo.enabled = true;
@@ -3798,7 +3769,7 @@ function currentTransformFromInputs(container) {
 }
 function renderTransformInputs(rendered) {
   const item = rendered.item;
-  const editable = canEditItem(item);
+  const editable = selectionIsEditable(rendered);
   const transform = state.dirtyTransforms.get(item.id)?.newTransform || transformOf(item);
   const fields = [
     ['x', 'X', transform.pose.xyz.x], ['y', 'Y', transform.pose.xyz.y], ['z', 'Z', transform.pose.xyz.z],
@@ -3820,7 +3791,7 @@ function wireTransformInputs(rendered) {
   const editor = el.inspector.querySelector('.transform-editor');
   if (!editor) return;
   editor.querySelectorAll('[data-transform-field]').forEach(input => input.addEventListener('input', () => {
-    if (!canEditItem(rendered.item)) return;
+    if (!selectionIsEditable(rendered)) return;
     const next = currentTransformFromInputs(editor);
     if (Object.values(next.pose.xyz).concat(Object.values(next.pose.rpy), Object.values(next.scale)).some(v => !Number.isFinite(v))) return;
     markDirtyTransform(rendered, next);
@@ -3830,7 +3801,7 @@ function wireTransformInputs(rendered) {
 }
 function resetSelectedTransform(id = state.selected) {
   const rendered = state.objects.find(obj => obj.item.id === id);
-  if (!rendered || !canEditItem(rendered.item)) return;
+  if (!selectionIsEditable(rendered)) return;
   markDirtyTransform(rendered, rendered.originalTransform);
   populateInspector(rendered);
   updateLabels();
