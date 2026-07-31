@@ -54,6 +54,13 @@ src/ros_industrial_cmake_boilerplate/
 scenes/*/generated/
 !scenes/*/generated/.gitkeep
 
+# Workcell Studio local authoring backups
+scenes/**/*.yaml.bak
+scenes/**/*.yml.bak
+
 # Workcell Studio Web 3D exports
 *.web_scene.json
 workcell_studio_web_scene/
+
+# Workcell Studio Web viewer dependencies
+workcell_studio_web/viewer/node_modules/
