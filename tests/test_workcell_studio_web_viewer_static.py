@@ -1972,6 +1972,71 @@ def test_urdf_renderer_waits_for_mesh_completion_before_ready():
     assert "collectDescendantRenderMeshDiagnostics(robot.links)" in ready_section
 
 
+def test_urdf_renderer_mesh_completion_does_not_require_loading_manager(tmp_path):
+    script = tmp_path / "mesh_completion_without_manager.mjs"
+    script.write_text(
+        f"""
+import assert from 'node:assert/strict';
+import * as THREE from {str((VIEWER / 'node_modules/three/build/three.module.js')).__repr__()};
+import URDFLoader from {str((VIEWER / 'node_modules/urdf-loader/src/URDFLoader.js')).__repr__()};
+import {{ STLLoader }} from {str((VIEWER / 'node_modules/three/examples/jsm/loaders/STLLoader.js')).__repr__()};
+
+globalThis.window = {{ setTimeout }};
+globalThis.fetch = async () => ({{ ok: true, status: 200, statusText: 'OK', text: async () => '<robot name="test"/>' }});
+const originalUrdfParse = URDFLoader.prototype.parse;
+const originalStlLoad = STLLoader.prototype.load;
+STLLoader.prototype.load = function loadStub(_url, onLoad) {{
+  onLoad(new THREE.BoxGeometry(1, 1, 1));
+  // Deliberately do not notify this.manager.onLoad().
+}};
+URDFLoader.prototype.parse = function parseStub() {{
+  const robot = new THREE.Group();
+  const base = new THREE.Group();
+  base.name = 'base_link';
+  const visual = new THREE.Group();
+  base.add(visual);
+  robot.add(base);
+  this.loadMeshCb('mesh.stl', this.manager, null, mesh => visual.add(mesh));
+  robot.links = {{ base_link: base }};
+  robot.joints = {{}};
+  robot.setJointValues = () => {{}};
+  return robot;
+}};
+
+let loaded = 0;
+let failed = 0;
+try {{
+  const {{ loadRobotPreview }} = await import({str((VIEWER / 'urdf_robot_renderer.js')).__repr__()});
+  const result = loadRobotPreview({{ urdf_url: 'robot.urdf' }}, {{
+    onRobotLoaded: () => {{ loaded += 1; }},
+    onRobotError: () => {{ failed += 1; }},
+  }});
+  await result.ready;
+  assert.equal(result.diagnostics.robot_expected_visual_count, 1);
+  assert.equal(result.diagnostics.robot_loaded_visual_count, 1);
+  assert.equal(result.diagnostics.robot_failed_visual_count, 0);
+  assert.equal(result.diagnostics.robot_loading_manager_complete, false);
+  assert.equal(result.diagnostics.robot_preview_lifecycle_state, 'ready');
+  assert.equal(loaded, 1);
+  assert.equal(failed, 0);
+}} finally {{
+  URDFLoader.prototype.parse = originalUrdfParse;
+  STLLoader.prototype.load = originalStlLoad;
+}}
+""",
+        encoding="utf-8",
+    )
+    subprocess.run(
+        ["node", str(script)],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=5,
+    )
+
+
 def test_urdf_renderer_fetches_and_validates_urdf_before_parse():
     js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
     body = _viewer_function_body(js, "export async function fetchValidatedUrdfRobotElement", "function collectLinkMatrixDiagnostics")

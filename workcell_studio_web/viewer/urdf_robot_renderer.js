@@ -354,23 +354,28 @@ function inferMeshLinkDetail(path) {
 
 function meshCompletionPromise(diagnostics, manager) {
   let managerComplete = false;
+  const timeoutMs = 30000;
   const waitTick = callback => (typeof window !== 'undefined' && window.setTimeout ? window.setTimeout(callback, 0) : setTimeout(callback, 0));
-  const managerDone = new Promise(resolve => {
-    const previousOnLoad = manager.onLoad;
-    manager.onLoad = () => {
-      managerComplete = true;
-      previousOnLoad?.();
-      resolve();
-    };
-  });
+  diagnostics.robot_loading_manager_complete = false;
+  diagnostics.robotLoadingManagerComplete = false;
+  const previousOnLoad = manager.onLoad;
+  manager.onLoad = () => {
+    managerComplete = true;
+    diagnostics.robot_loading_manager_complete = true;
+    diagnostics.robotLoadingManagerComplete = true;
+    previousOnLoad?.();
+  };
   const countsSettled = () => diagnostics.robot_expected_visual_count === (diagnostics.robot_loaded_visual_count + diagnostics.robot_failed_visual_count);
   return {
     async wait() {
       if (diagnostics.robot_expected_visual_count === 0) return;
-      if (!managerComplete) await managerDone;
-      await new Promise(resolve => {
+      await new Promise((resolve, reject) => {
+        const startedAt = Date.now();
         const check = () => {
           if (countsSettled()) resolve();
+          else if (Date.now() - startedAt >= timeoutMs) reject(new Error(
+            `URDF mesh callbacks timed out: expected=${diagnostics.robot_expected_visual_count} loaded=${diagnostics.robot_loaded_visual_count} failed=${diagnostics.robot_failed_visual_count} loading_manager_complete=${managerComplete}`,
+          ));
           else waitTick(check);
         };
         check();
