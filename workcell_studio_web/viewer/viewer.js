@@ -69,7 +69,7 @@ function emitWeb3dReadinessState(readinessState, detail = {}) {
     state.web3dReadiness.terminalEmissionCount = Number(state.web3dReadiness.terminalEmissionCount || 0) + 1;
   }
   const structured = structuredWeb3dReadinessFields(readinessState);
-  const eventDetail = { ...structured, ...detail, final_lifecycle_state: readinessState, finalLifecycleState: readinessState };
+  const eventDetail = { ...structured, ...detail, final_lifecycle_state: readinessState, finalLifecycleState: readinessState, pending_required_loads: pendingRequiredLoads() };
   if (readinessState === 'scene_failed') {
     state.web3dReadiness.failed = true;
     state.web3dReadiness.failure = eventDetail;
@@ -121,7 +121,24 @@ function readinessCategoryForItem(item) {
   if (itemRequiresMeshBackedVisual(item) && (category === 'object' || viewerGroupFor(item) === 'environment/layout')) return 'authored_physical_mesh';
   return '';
 }
-function readinessKey(category, item) { return `${category}:${item?.id || item?.link || itemLabel(item || {})}`; }
+function readinessIdentityForItem(category, item) {
+  if (category === 'configured_camera') {
+    const cameraIdentityFields = [
+      'configured_camera_id', 'configuredCameraId', 'camera_id', 'cameraId',
+      'canonical_scene_item_id', 'canonicalSceneItemId', 'canonical_item_id', 'canonicalItemId',
+      'authored_item_id', 'authoredItemId', 'layout_item_ref', 'layoutItemRef',
+      'scene_item_id', 'sceneItemId', 'selection_owner_id', 'selectionOwnerId',
+      'owner_id', 'ownerId', 'object_ref', 'objectRef',
+    ];
+    for (const field of cameraIdentityFields) {
+      const value = String(item?.[field] || '').trim();
+      if (value) return value;
+    }
+  }
+  return String(item?.id || item?.link || itemLabel(item || {}));
+}
+function readinessKey(category, item) { return `${category}:${readinessIdentityForItem(category, item)}`; }
+function pendingRequiredLoads() { return Array.from(state.web3dReadiness?.pending || []); }
 
 function physicalReadinessItems() {
   return collectItems(state.sceneJson || {}).filter(item => isPrimaryRenderableItem(item) && !isDebugOverlayItem(item) && readinessCategoryForItem(item));
@@ -142,13 +159,14 @@ function failedRequiredItemCount() {
 function readinessCategoryStatus(category) {
   const readiness = state.web3dReadiness || {};
   if (!readiness.required?.[category]) return 'missing';
-  const pending = Array.from(readiness.pending || []).some(key => String(key).startsWith(`${category}:`));
+  const pending = pendingRequiredLoads().some(key => String(key).startsWith(`${category}:`));
   if (readiness.state === 'scene_failed' && (readiness.failure?.required_category === category || pending)) return 'failed';
   if (pending) return 'pending';
   return readiness.state === 'scene_ready' ? 'ready' : 'loading';
 }
 function structuredWeb3dReadinessFields(lifecycleState) {
   const finalState = lifecycleState || state.web3dReadiness?.state || 'booting';
+  const pendingLoads = pendingRequiredLoads();
   return {
     scene_id: sceneId(),
     sceneId: sceneId(),
@@ -168,6 +186,8 @@ function structuredWeb3dReadinessFields(lifecycleState) {
     environmentStatus: readinessCategoryStatus('workbench_support_surface'),
     camera_status: readinessCategoryStatus('configured_camera'),
     cameraStatus: readinessCategoryStatus('configured_camera'),
+    pending_required_loads: pendingLoads,
+    pendingRequiredLoads: pendingLoads,
     readiness_contract_version: READINESS_CONTRACT_VERSION,
     readinessContractVersion: READINESS_CONTRACT_VERSION,
     lifecycle_state: finalState,
@@ -199,7 +219,7 @@ function beginWeb3dSceneReadiness(items) {
     pending.add('attached_tool_gripper:expanded_urdf_loader');
   }
   state.web3dReadiness = { state: 'scene_loading', terminal: false, terminalState: '', terminalNavigationKey: web3dNavigationKey(), terminalEmissionCount: 0, statusSequence: 0, required, pending, failed: false, failure: null };
-  emitWeb3dReadinessState('scene_loading', { required_categories: required, pending_required_loads: Array.from(pending) });
+  emitWeb3dReadinessState('scene_loading', { required_categories: required });
 }
 function requiredReadinessCompleteForItem(item) {
   const category = readinessCategoryForItem(item);
@@ -209,8 +229,11 @@ function requiredReadinessCompleteForItem(item) {
 }
 function failWeb3dSceneReadiness(item, url, reason, extra = {}) {
   const category = readinessCategoryForItem(item) || extra.category || 'required_physical_item';
+  const readinessIdentity = readinessIdentityForItem(category, item);
   emitWeb3dReadinessState('scene_failed', {
     required_category: category,
+    readiness_identity: readinessIdentity,
+    readiness_key: `${category}:${readinessIdentity}`,
     item_id: item?.id || '',
     link: item?.link || item?.link_name || item?.object_name || '',
     url: url || displayMeshUri(item),
@@ -978,8 +1001,8 @@ function updateViewerStatus() {
     ...expandedUrdfVisualDiagnostics,
     required_physical_categories: state.web3dReadiness?.required || {},
     requiredPhysicalCategories: state.web3dReadiness?.required || {},
-    pending_required_loads: Array.from(state.web3dReadiness?.pending || []),
-    pendingRequiredLoads: Array.from(state.web3dReadiness?.pending || []),
+    pending_required_loads: pendingRequiredLoads(),
+    pendingRequiredLoads: pendingRequiredLoads(),
     ...structuredWeb3dReadinessFields(state.web3dReadiness?.state || 'booting'),
     final_failed_url: state.web3dReadiness?.failure?.url || state.web3dReadiness?.failure?.final_failed_url || '',
     finalFailedUrl: state.web3dReadiness?.failure?.url || state.web3dReadiness?.failure?.finalFailedUrl || '',
