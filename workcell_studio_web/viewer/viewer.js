@@ -4027,7 +4027,7 @@ function pickObject(event) {
       const signature = ['failed_canvas_pick', sceneId(), diagnostic.raw_hit_count, diagnostic.hit_object_names.join('|'), diagnostic.first_actionable_rejection_reason, diagnostic.nearest_known_urdf_link_ancestor].join('\n');
       if (!state.diagnosticKeys.has(signature)) {
         state.diagnosticKeys.add(signature);
-        console.warn?.('Product View canvas pick rejected', diagnostic);
+        console.warn?.(`Product View canvas pick rejected: ${JSON.stringify(diagnostic)}`);
       }
     }
     if (state.editorMode === 'select') clearSelection();
