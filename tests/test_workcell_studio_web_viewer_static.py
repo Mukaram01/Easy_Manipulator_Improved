@@ -3352,7 +3352,7 @@ state.robotUrdfPreviewDiagnostics = {
   robot_failed_visual_count: 0,
   robot_mesh_callbacks_complete: true,
   robot_missing_meshes: [],
-  robot_missing_required_robot_visual_links: falseMissingRobotLinks,
+  robot_missing_required_robot_visual_links: [],
   robot_missing_required_tool_visual_links: [],
   robot_visual_wrapper_world_matrices: []
 };
@@ -3376,6 +3376,59 @@ completeExpandedUrdfReadiness({ diagnostics: state.robotUrdfPreviewDiagnostics }
 assert.strictEqual(state.web3dReadiness.state, 'scene_ready');
 assert.ok(window.dispatched.includes('scene_ready'));
 assert.ok(!window.dispatched.includes('scene_failed'));
+`, context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+def test_expanded_urdf_terminal_diagnostics_emit_one_normalized_failure_or_scene_ready():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({ hidden: false, checked: false, disabled: false, textContent: '', className: '', innerHTML: '', classList: { toggle() {} }, setAttribute() {}, querySelector() { return { textContent: '' }; }, appendChild() {}, addEventListener() {}, getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; } });
+const context = { console, assert, window: { events: [], location: { search: '' }, dispatchEvent(event) { this.events.push(event?.detail); }, parent: { postMessage() {} } }, document: { getElementById() { return element(); }, createElement() { return element(); } }, URLSearchParams, CustomEvent: function CustomEvent(type, init) { return { type, detail: init?.detail || {} }; }, requestAnimationFrame() { return 0; }, setTimeout() { return 1; }, clearTimeout() {} };
+vm.createContext(context);
+vm.runInContext(source + `
+state.sceneJson = { scene: { id: 'ur5_2f_test' }, robot_preview: { mode: 'expanded_urdf_loader', expected_robot_visual_links: ['base_link'], expected_tool_visual_links: ['tool0'] } };
+const resetReadiness = pending => {
+  window.events = [];
+  state.web3dReadiness = { state: 'scene_loading', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: { robot_arm: true, attached_tool_gripper: true, workbench_support_surface: true, configured_camera: true }, pending: new Set(pending || []), failed: false, failure: null };
+};
+const completed = { robot_preview_lifecycle_state: 'failed', robot_preview_loaded: false, robot_expected_visual_count: 3, robot_loaded_visual_count: 2, robot_completed_visual_count: 3, robot_failed_visual_count: 1, robot_loading_manager_complete: true, robot_mesh_callbacks_complete: true };
+
+resetReadiness(['robot_arm:expanded_urdf_loader', 'attached_tool_gripper:expanded_urdf_loader']);
+state.robotUrdfPreviewDiagnostics = { ...completed, robot_missing_required_tool_visual_links: ['tool0'], robot_missing_required_robot_visual_links: ['base_link'], robot_hierarchy_missing_links: ['wrist_3_link'] };
+maybeEmitSceneReady();
+maybeEmitSceneReady();
+assert.strictEqual(window.events.length, 1, 'terminal guard emits exactly one event for the navigation');
+assert.strictEqual(window.events[0].state, 'scene_failed');
+assert.strictEqual(window.events[0].required_category, 'attached_tool_gripper');
+assert.deepStrictEqual(window.events[0].robot_missing_required_tool_visual_links, ['tool0']);
+assert.strictEqual(window.events[0].robot_loading_manager_completion_state, 'complete');
+assert.match(window.events[0].reason, /tool preview.*tool0.*regenerate/i);
+
+for (const diagnostic of [
+  { ...completed, robot_missing_required_robot_visual_links: ['base_link'], robot_missing_required_tool_visual_links: [], robot_hierarchy_missing_links: [] },
+  { ...completed, robot_missing_required_robot_visual_links: [], robot_missing_required_tool_visual_links: [], robot_hierarchy_missing_links: ['wrist_3_link'] },
+]) {
+  resetReadiness(['robot_arm:expanded_urdf_loader']);
+  state.robotUrdfPreviewDiagnostics = diagnostic;
+  maybeEmitSceneReady();
+  assert.strictEqual(window.events.length, 1);
+  assert.strictEqual(window.events[0].state, 'scene_failed');
+  assert.strictEqual(window.events[0].required_category, 'robot_arm');
+  assert.ok(window.events[0].robot_missing_required_robot_visual_links.length || window.events[0].robot_hierarchy_missing_links.length);
+}
+
+resetReadiness([]);
+state.robotUrdfPreviewDiagnostics = { robot_preview_lifecycle_state: 'ready', robot_preview_loaded: true, robot_expected_visual_count: 2, robot_loaded_visual_count: 2, robot_completed_visual_count: 2, robot_failed_visual_count: 0, robot_loading_manager_complete: true, robot_mesh_callbacks_complete: true, robot_missing_required_robot_visual_links: [], robot_missing_required_tool_visual_links: [], robot_hierarchy_missing_links: [], robot_missing_meshes: [], robot_visual_wrapper_world_matrices: [] };
+maybeEmitSceneReady();
+assert.strictEqual(window.events.length, 1);
+assert.strictEqual(window.events[0].state, 'scene_ready', 'successful expanded URDF diagnostics reach scene_ready');
+assert.strictEqual(state.web3dReadiness.terminalEmissionCount, 1);
 `, context);
 """
     subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
