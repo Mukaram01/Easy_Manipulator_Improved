@@ -237,10 +237,74 @@ function failExpandedUrdfReadiness(err, diagnostics = {}, detail = {}) {
     ...detail,
   });
 }
+function expandedUrdfTerminalFailure(rendererDiagnostics = {}) {
+  const list = (snakeName, camelName) => asArray(rendererDiagnostics[snakeName] || rendererDiagnostics[camelName])
+    .map(value => String(value || '').trim()).filter(Boolean);
+  const lifecycle = String(rendererDiagnostics.robot_preview_lifecycle_state || rendererDiagnostics.robotPreviewLifecycleState || '').trim();
+  const previewLoaded = rendererDiagnostics.robot_preview_loaded === true || rendererDiagnostics.robotPreviewLoaded === true;
+  const previewExplicitlyNotLoaded = rendererDiagnostics.robot_preview_loaded === false || rendererDiagnostics.robotPreviewLoaded === false;
+  const expectedVisualCount = Number(rendererDiagnostics.robot_expected_visual_count ?? rendererDiagnostics.robotExpectedVisualCount ?? 0) || 0;
+  const loadedVisualCount = Number(rendererDiagnostics.robot_loaded_visual_count ?? rendererDiagnostics.robotLoadedVisualCount ?? 0) || 0;
+  const completedVisualCount = Number(rendererDiagnostics.robot_completed_visual_count ?? rendererDiagnostics.robotCompletedVisualCount ?? 0) || 0;
+  const failedVisualCount = Number(rendererDiagnostics.robot_failed_visual_count ?? rendererDiagnostics.robotFailedVisualCount ?? 0) || 0;
+  const missingToolLinks = list('robot_missing_required_tool_visual_links', 'robotMissingRequiredToolVisualLinks');
+  const missingRobotLinks = list('robot_missing_required_robot_visual_links', 'robotMissingRequiredRobotVisualLinks');
+  const missingHierarchyLinks = list('robot_hierarchy_missing_links', 'robotHierarchyMissingLinks');
+  const loadingManagerComplete = rendererDiagnostics.robot_loading_manager_complete === true || rendererDiagnostics.robotLoadingManagerComplete === true;
+  const loadingManagerExplicitlyIncomplete = rendererDiagnostics.robot_loading_manager_complete === false || rendererDiagnostics.robotLoadingManagerComplete === false;
+  const meshCallbacksComplete = rendererDiagnostics.robot_mesh_callbacks_complete === true || rendererDiagnostics.robotMeshCallbacksComplete === true;
+  const meshCallbacksExplicitlyIncomplete = rendererDiagnostics.robot_mesh_callbacks_complete === false || rendererDiagnostics.robotMeshCallbacksComplete === false;
+
+  let requiredCategory = '';
+  let reason = '';
+  if (missingToolLinks.length) {
+    requiredCategory = 'attached_tool_gripper';
+    reason = `Expanded URDF tool preview is missing required visual links: ${missingToolLinks.join(', ')}. Check the tool URDF mesh paths and regenerate the scene.`;
+  } else if (missingRobotLinks.length) {
+    requiredCategory = 'robot_arm';
+    reason = `Expanded URDF robot preview is missing required visual links: ${missingRobotLinks.join(', ')}. Check the robot URDF mesh paths and regenerate the scene.`;
+  } else if (missingHierarchyLinks.length) {
+    requiredCategory = 'robot_arm';
+    reason = `Expanded URDF robot hierarchy is missing required links: ${missingHierarchyLinks.join(', ')}. Check the generated URDF link/joint hierarchy and regenerate the scene.`;
+  } else if (meshCallbacksExplicitlyIncomplete) {
+    requiredCategory = 'robot_arm';
+    reason = `Expanded URDF mesh callbacks did not complete (${completedVisualCount}/${expectedVisualCount} completed). Check failed mesh requests and the browser console, then regenerate or reload the scene.`;
+  } else if (lifecycle === 'failed' && previewExplicitlyNotLoaded) {
+    requiredCategory = 'robot_arm';
+    reason = String(rendererDiagnostics.robot_preview_failure_reason || rendererDiagnostics.robotPreviewFailureReason || '').trim()
+      || 'Expanded URDF preview entered the failed lifecycle without loading. Check the URDF and mesh request diagnostics, then regenerate or reload the scene.';
+  } else {
+    return null;
+  }
+
+  return {
+    required_category: requiredCategory,
+    item_id: 'expanded_urdf_loader',
+    reason,
+    robot_preview_lifecycle_state: lifecycle,
+    robot_preview_loaded: previewLoaded,
+    robot_expected_visual_count: expectedVisualCount,
+    robot_loaded_visual_count: loadedVisualCount,
+    robot_completed_visual_count: completedVisualCount,
+    robot_failed_visual_count: failedVisualCount,
+    robot_missing_required_tool_visual_links: missingToolLinks,
+    robot_missing_required_robot_visual_links: missingRobotLinks,
+    robot_hierarchy_missing_links: missingHierarchyLinks,
+    robot_loading_manager_complete: loadingManagerComplete,
+    robot_loading_manager_completion_state: loadingManagerComplete ? 'complete' : (loadingManagerExplicitlyIncomplete ? 'incomplete' : 'unknown'),
+    robot_mesh_callbacks_complete: meshCallbacksComplete,
+    robot_mesh_callback_completion_state: meshCallbacksComplete ? 'complete' : (meshCallbacksExplicitlyIncomplete ? 'incomplete' : 'unknown'),
+  };
+}
 function maybeEmitSceneReady() {
   if (isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview)) {
     const diagnostics = state.robotUrdfPreviewDiagnostics || {};
     const lifecycle = String(diagnostics.robot_preview_lifecycle_state || diagnostics.robotPreviewLifecycleState || '');
+    const terminalFailure = expandedUrdfTerminalFailure(diagnostics);
+    if (terminalFailure) {
+      emitWeb3dReadinessState('scene_failed', terminalFailure);
+      return;
+    }
     if (lifecycle === 'failed') {
       const failureReason = String(diagnostics.robot_preview_failure_reason || diagnostics.robotPreviewFailureReason || '').trim();
       const missingMeshes = asArray(diagnostics.robot_missing_meshes || diagnostics.robotMissingMeshes);
