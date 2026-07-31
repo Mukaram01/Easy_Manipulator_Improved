@@ -242,6 +242,55 @@ def test_static_viewer_files_exist():
     assert (VIEWER / "README.md").is_file()
 
 
+def test_configured_camera_readiness_identity_is_shared_across_authored_and_generated_rows():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({ hidden:false, checked:false, disabled:false, textContent:'', className:'', innerHTML:'', classList:{toggle(){}}, querySelector(){return null;}, appendChild(){}, addEventListener(){}, setAttribute(){} });
+const context = { console, assert, window:{events:[], location:{search:''}, dispatchEvent(event){this.events.push(event.detail);}, parent:{postMessage(){}}}, document:{getElementById(){return element();},createElement(){return element();}}, URLSearchParams, CustomEvent:function(type, init){return {type, detail:init?.detail || {}};}, requestAnimationFrame(){return 0;}, setTimeout(){return 0;}, clearTimeout(){} };
+vm.createContext(context);
+vm.runInContext(source + `
+const authoredCamera = { id:'realsense_overhead', category:'camera', readiness_category:'configured_camera', render_policy:'primary', mesh_uri:'camera.dae' };
+const generatedCamera = { id:'generated_urdf::camera_link::visual_17', camera_id:'realsense_overhead', category:'camera', readiness_category:'configured_camera', render_policy:'primary', mesh_uri:'camera.dae' };
+assert.strictEqual(readinessIdentityForItem('configured_camera', authoredCamera), 'realsense_overhead');
+assert.strictEqual(readinessIdentityForItem('configured_camera', generatedCamera), 'realsense_overhead');
+assert.strictEqual(readinessKey('configured_camera', authoredCamera), readinessKey('configured_camera', generatedCamera));
+
+state.sceneJson = {scene:{id:'ur5_2f_test'}};
+beginWeb3dSceneReadiness([authoredCamera, generatedCamera]);
+assert.deepStrictEqual(Array.from(state.web3dReadiness.pending), ['configured_camera:realsense_overhead']);
+assert.deepStrictEqual(window.events.at(-1).pending_required_loads, ['configured_camera:realsense_overhead']);
+requiredReadinessCompleteForItem(generatedCamera);
+assert.strictEqual(state.web3dReadiness.pending.size, 0);
+
+state.web3dReadiness = {state:'scene_loading', terminal:false, terminalState:'', terminalNavigationKey:'', terminalEmissionCount:0, statusSequence:0, required:{configured_camera:true}, pending:new Set(['configured_camera:realsense_overhead']), failed:false, failure:null};
+failWeb3dSceneReadiness(generatedCamera, 'camera.dae', 'camera mesh failed');
+const failure = window.events.at(-1);
+assert.strictEqual(failure.required_category, 'configured_camera');
+assert.strictEqual(failure.readiness_identity, 'realsense_overhead');
+assert.strictEqual(failure.readiness_key, 'configured_camera:realsense_overhead');
+assert.deepStrictEqual(failure.pending_required_loads, ['configured_camera:realsense_overhead']);
+
+const unchanged = [
+  ['robot_arm', {id:'ur5'}, 'robot_arm:ur5'],
+  ['attached_tool_gripper', {id:'robotiq_85'}, 'attached_tool_gripper:robotiq_85'],
+  ['workbench_support_surface', {id:'support_surface_table'}, 'workbench_support_surface:support_surface_table'],
+  ['authored_physical_mesh', {id:'target_bin'}, 'authored_physical_mesh:target_bin'],
+];
+for (const [category, item, expected] of unchanged) assert.strictEqual(readinessKey(category, item), expected);
+`, context);
+"""
+    subprocess.run(
+        ["node", "-e", harness, str(js_path)],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
 def test_index_references_static_assets():
     index = (VIEWER / "index.html").read_text(encoding="utf-8")
     assert 'href="style.css"' in index
