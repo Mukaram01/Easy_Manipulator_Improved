@@ -41,6 +41,7 @@ find_package(pluginlib REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system filesystem)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 option(WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK "Allow the legacy native Scene3DViewportWidget Product View when Qt WebEngine is unavailable" OFF)
 
 find_package(Qt5 COMPONENTS Widgets Concurrent Svg OpenGL Network REQUIRED)
@@ -267,6 +268,33 @@ add_custom_target(generate_workcell_builder_secondary_assets ALL
   COMMENT "Generating secondary default-asset tree from canonical package assets")
 
 add_dependencies(workcell_builder generate_workcell_builder_secondary_assets)
+
+# The checked-in bundle remains the runtime/offline asset.  Refresh it at build
+# time only when one of its frontend inputs changes; node_modules is deliberately
+# neither an input nor an output of this target.
+set(WORKCELL_WEB3D_VIEWER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../workcell_studio_web/viewer")
+set(WORKCELL_WEB3D_FRESHNESS_SCRIPT
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/ensure_workcell_studio_web_bundle_fresh.py")
+file(GLOB WORKCELL_WEB3D_SOURCE_DEPENDENCIES CONFIGURE_DEPENDS
+  "${WORKCELL_WEB3D_VIEWER_DIR}/*.js"
+  "${WORKCELL_WEB3D_VIEWER_DIR}/src/*.js"
+  "${WORKCELL_WEB3D_VIEWER_DIR}/scripts/*.mjs")
+set(WORKCELL_WEB3D_BUNDLE_STAMP "${CMAKE_CURRENT_BINARY_DIR}/workcell_web3d_bundle_fresh.stamp")
+add_custom_command(
+  OUTPUT "${WORKCELL_WEB3D_BUNDLE_STAMP}"
+  COMMAND "${Python3_EXECUTABLE}" "${WORKCELL_WEB3D_FRESHNESS_SCRIPT}"
+    --stamp "${WORKCELL_WEB3D_BUNDLE_STAMP}"
+  DEPENDS
+    ${WORKCELL_WEB3D_SOURCE_DEPENDENCIES}
+    "${WORKCELL_WEB3D_VIEWER_DIR}/package.json"
+    "${WORKCELL_WEB3D_VIEWER_DIR}/package-lock.json"
+    "${WORKCELL_WEB3D_VIEWER_DIR}/dist/viewer.bundle.js"
+    "${WORKCELL_WEB3D_FRESHNESS_SCRIPT}"
+  COMMENT "Ensuring the Workcell Studio Web3D production bundle is current"
+  VERBATIM)
+add_custom_target(ensure_workcell_web3d_bundle_fresh
+  DEPENDS "${WORKCELL_WEB3D_BUNDLE_STAMP}")
+add_dependencies(workcell_builder ensure_workcell_web3d_bundle_fresh)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

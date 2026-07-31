@@ -41,14 +41,20 @@ URL: `http://localhost:8765/workcell_studio_web/viewer/index.html?scene=build%2F
 
 Expected result: when source meshes exist and are supported by the exporter/viewer, the robot, table/workbench, camera, and gripper/tool should be recognizable mesh-backed visuals rather than only generic boxes.
 
-The checked-in bundle contains the pinned Three.js and URDF loader modules, so the served viewer does not depend on CDN import maps at runtime. Regenerate it after source or dependency changes with:
+The checked-in bundle contains the pinned Three.js and URDF loader modules, so the served viewer does not depend on CDN import maps or Node.js at runtime. A normal Workcell Builder build automatically checks and, when necessary, refreshes this bundle:
+
+```bash
+colcon build --symlink-install --packages-select workcell_builder
+```
+
+An unchanged subsequent build uses the CMake freshness stamp and does not rerun esbuild or `npm ci`. For direct frontend development, the explicit build remains available:
 
 ```bash
 cd workcell_studio_web/viewer
 npm ci && npm run build:web3d
 ```
 
-Check that the committed bundle is not stale with:
+CI still rejects a committed stale bundle. Check the same condition locally with:
 
 ```bash
 cd workcell_studio_web/viewer
