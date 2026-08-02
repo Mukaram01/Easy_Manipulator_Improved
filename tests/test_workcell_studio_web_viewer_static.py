@@ -127,6 +127,7 @@ const childVisual=node('wrist-visual',[childMesh]);
 const childLink=node('wrist_link',[childVisual]);
 const linkRoot=node('base_link',[visualWrapper,childLink]); // link root -> visual wrapper -> descendant mesh
 const toolMesh=node('robotiq-mesh');
+toolMesh.userData.item={id:'stale_tool_visual',diagnostic_only:true,selectable:false};
 const toolLink=node('robotiq_85_base_link',[toolMesh]);
 const robotRoot=node('robot-root',[linkRoot,toolLink]);
 callbacks[0].onRobotLoaded({root:robotRoot,links:new Map([['base_link',linkRoot],['wrist_link',childLink],['robotiq_85_base_link',toolLink]]),diagnostics:{loader_value:'preserved'}});
@@ -144,11 +145,14 @@ assert.strictEqual(state.pickIdentityByObject.get(childLink),childRecord,'child 
 assert.strictEqual(state.pickIdentityByObject.get(childVisual),childRecord,'child visual wrapper');
 assert.strictEqual(state.pickIdentityByObject.get(childMesh),childRecord,'child mesh');
 assert.strictEqual(itemFromRaycastHit({object:childMesh}),childRecord,'child raycast');
+state.pickIdentityByObject.delete(childMesh); state.pickIdentityByObject.delete(childVisual);
+assert.strictEqual(itemFromRaycastHit({object:childMesh}),childRecord,'nested traversal stops at the child URDF link root instead of crossing to the base link');
 assert.strictEqual(state.pickRecords.filter(record=>record.item.link_name==='base_link').length,1);
 assert.strictEqual(state.pickRecords.filter(record=>record.item.link_name==='wrist_link').length,1);
 assert.strictEqual(baseRecord.uiSelectionOwnerId,'ur5');
 assert.strictEqual(childRecord.uiSelectionOwnerId,'ur5');
 assert.strictEqual(toolRecord.uiSelectionOwnerId,'robotiq_85_gripper');
+assert.strictEqual(itemFromRaycastHit({object:toolMesh}),toolRecord,'stale tool descendant flags do not override its explicit registration');
 for (const record of [baseRecord,childRecord,toolRecord]) {
   assert.strictEqual(isExpandedUrdfInspectionPick(record),true);
   assert.strictEqual(isCanvasSelectableRendered(record),true);
@@ -160,6 +164,25 @@ assert.strictEqual(isExpandedUrdfInspectionPick(nameSpoof),false,'names and link
 const ordinaryDiagnostic={item:{id:'ordinary_diagnostic',diagnostic_only:true},object3d:{visible:true},readOnlyPick:true};
 state.pickRecords.push(ordinaryDiagnostic);
 assert.strictEqual(isCanvasSelectableRendered(ordinaryDiagnostic),false);
+
+const physicalItem={id:'editable_fixture',role:'table',editable:true,locked:false,render_policy:'primary',source_layer:'editable_layout'};
+const physicalRoot=node('editable_fixture'); physicalRoot.userData.item=physicalItem;
+const physicalRecord={item:physicalItem,object3d:physicalRoot}; state.objects.push(physicalRecord);
+const edge=node('fixture_fallback_edges'); edge.userData.selectable=false; edge.parent=physicalRoot;
+const frustum=node('camera_fallback_sensor_frustum'); frustum.userData.non_selectable=true; frustum.parent=physicalRoot;
+assert.strictEqual(itemFromRaycastHit({object:edge}),physicalRecord,'non-selectable edge passes through to its physical parent');
+assert.strictEqual(itemFromRaycastHit({object:frustum}),physicalRecord,'non-selectable frustum passes through to its physical parent');
+const hiddenFallback=node('hidden_fallback_edges'); hiddenFallback.visible=false; hiddenFallback.parent=physicalRoot;
+assert.strictEqual(rankedPickingCandidates([{object:hiddenFallback,distance:1},{object:physicalRoot,distance:2}])[0].rendered,physicalRecord,'a hidden fallback hit does not suppress a later physical hit');
+const taskOverlay=node('task-overlay'); taskOverlay.userData.item={id:'task_overlay',role:'task_marker',source_layer:'task_preview'};
+const debugOverlay=node('debug-overlay'); debugOverlay.userData.item={id:'debug_overlay',diagnostic_only:true,role:'debug_overlay'};
+const gizmo=node('TransformControls_gizmo');
+const highlight=node('selection_subtle_bounds_highlight'); highlight.userData.selection_highlight=true;
+const hiddenHelper=node('hidden-helper'); hiddenHelper.userData.helper_hidden=true;
+for (const excluded of [taskOverlay,debugOverlay,gizmo,highlight,hiddenHelper]) assert.strictEqual(itemFromRaycastHit({object:excluded}),null,excluded.name+' remains intrinsically excluded');
+assert.strictEqual(rankedPickingCandidates([{object:mesh,distance:1},{object:physicalRoot,distance:1}])[0].rendered,physicalRecord,'editable primary physical items retain priority over generated inspection records');
+assert.strictEqual(pickingPriority(physicalRecord),1);
+state.objects=[];
 
 selectObject(baseRecord.item.id);
 assert.strictEqual(editorState().selectedItemId,baseRecord.item.id);
