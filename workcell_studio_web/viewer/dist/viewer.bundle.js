@@ -38296,6 +38296,7 @@ var SUPPORTED_SCHEMA_VERSION = "workcell_studio_web_scene/v1";
 var EDIT_PATCH_SCHEMA_VERSION = "workcell_studio_web_scene_edit_patch/v1";
 var VIEWER_VERSION = "static_web_viewer_edit_patch_v1";
 var READINESS_CONTRACT_VERSION = 1;
+var PHYSICAL_MESH_LOAD_TIMEOUT_MS = 3e4;
 var VALID_SCENE_LIFECYCLE_STATES = Object.freeze(["booting", "scene_loading", "scene_ready", "scene_failed"]);
 var LOCKED_EDIT_REASON = "Locked/generated preview item; edit source layout/environment instead.";
 var MIN_FRAME_RADIUS = 1.2;
@@ -38309,6 +38310,7 @@ var CAMERA_PRESET_DIRECTIONS = Object.freeze({
 });
 var state = { sceneJson: null, sourceWebSceneFile: "", diagnosticKeys: /* @__PURE__ */ new Set(), frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], pickRecords: [], pickIdentityByObject: /* @__PURE__ */ new WeakMap(), selectionIdentityIndex: null, assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: "", done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: "select", editorEvents: [], editorError: "", robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: "", lastCanvasPickReason: "", lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: "", sceneKey: "" }, web3dReadiness: { state: "booting", terminal: false, terminalState: "", terminalNavigationKey: "", terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null }, builderRevision: "", sceneJsonLoaded: false, activeNavigationKey: "" };
 var robotPreviewLoadToken = 0;
+var physicalLoadToken = 0;
 var RESET_VIEW_TITLE = "Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.";
 var STAGED_MESH_ROOTS = [
   "build/workcell_studio_web_scene/assets/",
@@ -38342,7 +38344,7 @@ function emitWeb3dReadinessState(readinessState, detail = {}) {
     state.web3dReadiness.terminalEmissionCount = Number(state.web3dReadiness.terminalEmissionCount || 0) + 1;
   }
   const structured = structuredWeb3dReadinessFields(readinessState);
-  const eventDetail = { ...structured, ...detail, final_lifecycle_state: readinessState, finalLifecycleState: readinessState };
+  const eventDetail = { ...structured, ...detail, final_lifecycle_state: readinessState, finalLifecycleState: readinessState, pending_required_loads: pendingRequiredLoads() };
   if (readinessState === "scene_failed") {
     state.web3dReadiness.failed = true;
     state.web3dReadiness.failure = eventDetail;
@@ -38408,8 +38410,68 @@ function readinessCategoryForItem(item) {
     return "authored_physical_mesh";
   return "";
 }
+function configuredCameraRelationshipIds(item) {
+  const fields = [
+    "configured_camera_id",
+    "configuredCameraId",
+    "camera_id",
+    "cameraId",
+    "canonical_scene_item_id",
+    "canonicalSceneItemId",
+    "canonical_item_id",
+    "canonicalItemId",
+    "authored_item_id",
+    "authoredItemId",
+    "authored_id",
+    "authoredId",
+    "layout_item_ref",
+    "layoutItemRef",
+    "scene_item_id",
+    "sceneItemId",
+    "selection_owner_id",
+    "selectionOwnerId",
+    "owner_id",
+    "ownerId",
+    "object_ref",
+    "objectRef",
+    "source_item_id",
+    "sourceItemId"
+  ];
+  return fields.map((field) => String(item?.[field] || "").trim()).filter(Boolean);
+}
+function canonicalAuthoredCameraId(item) {
+  const relationshipIds = new Set(configuredCameraRelationshipIds(item));
+  const ownId = String(item?.id || "").trim();
+  if (ownId)
+    relationshipIds.add(ownId);
+  const authoredRows = collectItems(state.sceneJson || {}).filter((candidate) => {
+    if (candidate === item || readinessCategoryForItem(candidate) !== "configured_camera")
+      return false;
+    const candidateId = String(candidate?.id || "").trim();
+    if (!candidateId || isGeneratedUrdfItem(candidate))
+      return false;
+    const candidateRefs = configuredCameraRelationshipIds(candidate);
+    return relationshipIds.has(candidateId) || candidateRefs.some((value) => relationshipIds.has(value));
+  });
+  const canonical = authoredRows.find((candidate) => isPrimaryRenderableItem(candidate) && (candidate?.editable === true || String(candidate?.source_layer || "").includes("authored"))) || authoredRows.find((candidate) => isPrimaryRenderableItem(candidate)) || authoredRows[0];
+  return String(canonical?.id || "").trim();
+}
+function readinessIdentityForItem(category, item) {
+  if (category === "configured_camera") {
+    const authoredId = canonicalAuthoredCameraId(item);
+    if (authoredId)
+      return authoredId;
+    const relationshipId = configuredCameraRelationshipIds(item)[0];
+    if (relationshipId)
+      return relationshipId;
+  }
+  return String(item?.id || item?.link || itemLabel(item || {}));
+}
 function readinessKey(category, item) {
-  return `${category}:${item?.id || item?.link || itemLabel(item || {})}`;
+  return `${category}:${readinessIdentityForItem(category, item)}`;
+}
+function pendingRequiredLoads() {
+  return Array.from(state.web3dReadiness?.pending || []);
 }
 function physicalReadinessItems() {
   return collectItems(state.sceneJson || {}).filter((item) => isPrimaryRenderableItem(item) && !isDebugOverlayItem(item) && readinessCategoryForItem(item));
@@ -38431,7 +38493,7 @@ function readinessCategoryStatus(category) {
   const readiness = state.web3dReadiness || {};
   if (!readiness.required?.[category])
     return "missing";
-  const pending = Array.from(readiness.pending || []).some((key) => String(key).startsWith(`${category}:`));
+  const pending = pendingRequiredLoads().some((key) => String(key).startsWith(`${category}:`));
   if (readiness.state === "scene_failed" && (readiness.failure?.required_category === category || pending))
     return "failed";
   if (pending)
@@ -38440,6 +38502,7 @@ function readinessCategoryStatus(category) {
 }
 function structuredWeb3dReadinessFields(lifecycleState) {
   const finalState = lifecycleState || state.web3dReadiness?.state || "booting";
+  const pendingLoads = pendingRequiredLoads();
   return {
     scene_id: sceneId(),
     sceneId: sceneId(),
@@ -38459,6 +38522,8 @@ function structuredWeb3dReadinessFields(lifecycleState) {
     environmentStatus: readinessCategoryStatus("workbench_support_surface"),
     camera_status: readinessCategoryStatus("configured_camera"),
     cameraStatus: readinessCategoryStatus("configured_camera"),
+    pending_required_loads: pendingLoads,
+    pendingRequiredLoads: pendingLoads,
     readiness_contract_version: READINESS_CONTRACT_VERSION,
     readinessContractVersion: READINESS_CONTRACT_VERSION,
     lifecycle_state: finalState,
@@ -38476,50 +38541,109 @@ function structuredWeb3dReadinessFields(lifecycleState) {
 }
 function beginWeb3dSceneReadiness(items) {
   const required = Object.fromEntries(WEB3D_REQUIRED_CATEGORIES.map((category) => [category, false]));
-  const pending = /* @__PURE__ */ new Set();
   for (const item of items || []) {
     const category = readinessCategoryForItem(item);
-    if (!category)
-      continue;
-    required[category] = true;
-    if (itemRequiresMeshBackedVisual(item) || displayMeshUri(item))
-      pending.add(readinessKey(category, item));
+    if (category)
+      required[category] = true;
   }
   if (isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview)) {
     required.robot_arm = true;
     required.attached_tool_gripper = true;
-    pending.add("robot_arm:expanded_urdf_loader");
-    pending.add("attached_tool_gripper:expanded_urdf_loader");
   }
-  state.web3dReadiness = { state: "scene_loading", terminal: false, terminalState: "", terminalNavigationKey: web3dNavigationKey(), terminalEmissionCount: 0, statusSequence: 0, required, pending, failed: false, failure: null };
-  emitWeb3dReadinessState("scene_loading", { required_categories: required, pending_required_loads: Array.from(pending) });
+  state.web3dReadiness = { state: "scene_loading", terminal: false, terminalState: "", terminalNavigationKey: web3dNavigationKey(), terminalEmissionCount: 0, statusSequence: 0, required, pending: /* @__PURE__ */ new Set(), failed: false, failure: null };
+  emitWeb3dReadinessState("scene_loading", { required_categories: required });
+}
+function registerReadinessOperation(keys, options = {}) {
+  const operation = {
+    pendingKeys: new Set(asArray(keys).map((key) => String(key || "").trim()).filter(Boolean)),
+    physicalLoadToken,
+    navigationKey: web3dNavigationKey(),
+    robotPreviewLoadToken: options.robotPreviewLoadToken,
+    completed: false
+  };
+  for (const key of operation.pendingKeys)
+    state.web3dReadiness?.pending?.add(key);
+  return operation;
+}
+function readinessOperationIsCurrent(operation) {
+  return Boolean(operation) && operation.physicalLoadToken === physicalLoadToken && operation.navigationKey === web3dNavigationKey() && (operation.robotPreviewLoadToken === void 0 || operation.robotPreviewLoadToken === robotPreviewLoadToken);
+}
+function completeReadinessOperation(operation) {
+  if (!readinessOperationIsCurrent(operation) || operation.completed)
+    return false;
+  operation.completed = true;
+  for (const key of operation.pendingKeys)
+    state.web3dReadiness?.pending?.delete(key);
+  maybeEmitSceneReady();
+  return true;
 }
 function requiredReadinessCompleteForItem(item) {
   const category = readinessCategoryForItem(item);
-  if (!category || !state.web3dReadiness?.pending)
+  if (!category)
     return;
-  state.web3dReadiness.pending.delete(readinessKey(category, item));
+  state.web3dReadiness?.pending?.delete(readinessKey(category, item));
   maybeEmitSceneReady();
 }
-function failWeb3dSceneReadiness(item, url, reason, extra = {}) {
-  const category = readinessCategoryForItem(item) || extra.category || "required_physical_item";
+function physicalMeshAttempt(item, operation) {
+  const category = readinessCategoryForItem(item);
+  const identity = category ? readinessIdentityForItem(category, item) : "";
+  return {
+    operation: operation || registerReadinessOperation(category ? [`${category}:${identity}`] : []),
+    token: physicalLoadToken,
+    navigationKey: web3dNavigationKey(),
+    category,
+    identity,
+    readinessKey: category ? `${category}:${identity}` : "",
+    deadlineAt: Date.now() + PHYSICAL_MESH_LOAD_TIMEOUT_MS
+  };
+}
+function physicalMeshAttemptIsCurrent(attempt) {
+  return readinessOperationIsCurrent(attempt?.operation) && attempt.token === physicalLoadToken && attempt.navigationKey === web3dNavigationKey();
+}
+function completePhysicalMeshAttempt(attempt) {
+  if (!physicalMeshAttemptIsCurrent(attempt))
+    return false;
+  return completeReadinessOperation(attempt.operation);
+}
+function failPhysicalMeshAttempt(attempt, item, url, reason, extra = {}) {
+  if (!physicalMeshAttemptIsCurrent(attempt))
+    return false;
   emitWeb3dReadinessState("scene_failed", {
-    required_category: category,
+    required_category: attempt.category || "required_physical_item",
+    readiness_identity: attempt.identity,
+    readiness_key: attempt.readinessKey,
     item_id: item?.id || "",
     link: item?.link || item?.link_name || item?.object_name || "",
     url: url || displayMeshUri(item),
     reason: reason || "required mesh failed",
-    ...extra
+    ...extra,
+    loader: extra.loader || extra.loader_type || "",
+    loader_type: extra.loader_type || extra.loader || "",
+    pending_required_loads: pendingRequiredLoads()
+  });
+  return true;
+}
+function failWeb3dSceneReadiness(item, url, reason, extra = {}) {
+  const category = readinessCategoryForItem(item) || extra.category || "required_physical_item";
+  const readinessIdentity = readinessIdentityForItem(category, item);
+  emitWeb3dReadinessState("scene_failed", {
+    required_category: category,
+    readiness_identity: readinessIdentity,
+    readiness_key: `${category}:${readinessIdentity}`,
+    item_id: item?.id || "",
+    link: item?.link || item?.link_name || item?.object_name || "",
+    url: url || displayMeshUri(item),
+    reason: reason || "required mesh failed",
+    ...extra,
+    pending_required_loads: pendingRequiredLoads()
   });
 }
-function completeExpandedUrdfReadiness(result) {
-  if (!state.web3dReadiness?.pending)
-    return;
-  state.web3dReadiness.pending.delete("robot_arm:expanded_urdf_loader");
-  state.web3dReadiness.pending.delete("attached_tool_gripper:expanded_urdf_loader");
-  maybeEmitSceneReady();
+function completeExpandedUrdfReadiness(operation) {
+  return completeReadinessOperation(operation);
 }
-function failExpandedUrdfReadiness(err, diagnostics = {}, detail = {}) {
+function failExpandedUrdfReadiness(operation, err, diagnostics = {}, detail = {}) {
+  if (!readinessOperationIsCurrent(operation) || operation.completed)
+    return false;
   const link = String(detail.link || detail.link_name || "").trim();
   const expectedTool = new Set(asArray(state.sceneJson?.robot_preview?.expected_tool_visual_links || state.sceneJson?.robot_preview?.expectedToolVisualLinks).map((value) => String(value || "").trim()).filter(Boolean));
   emitWeb3dReadinessState("scene_failed", {
@@ -38529,20 +38653,81 @@ function failExpandedUrdfReadiness(err, diagnostics = {}, detail = {}) {
     url: detail.url || detail.uri || diagnostics.robot_urdf_url || "",
     reason: err?.message || String(err || "expanded URDF required mesh failed"),
     robot_missing_meshes: diagnostics.robot_missing_meshes || [],
-    ...detail
+    ...detail,
+    pending_required_loads: pendingRequiredLoads()
   });
+  return true;
+}
+function expandedUrdfTerminalFailure(rendererDiagnostics = {}) {
+  const list = (snakeName, camelName) => asArray(rendererDiagnostics[snakeName] || rendererDiagnostics[camelName]).map((value) => String(value || "").trim()).filter(Boolean);
+  const lifecycle = String(rendererDiagnostics.robot_preview_lifecycle_state || rendererDiagnostics.robotPreviewLifecycleState || "").trim();
+  const previewLoaded = rendererDiagnostics.robot_preview_loaded === true || rendererDiagnostics.robotPreviewLoaded === true;
+  const previewExplicitlyNotLoaded = rendererDiagnostics.robot_preview_loaded === false || rendererDiagnostics.robotPreviewLoaded === false;
+  const expectedVisualCount = Number(rendererDiagnostics.robot_expected_visual_count ?? rendererDiagnostics.robotExpectedVisualCount ?? 0) || 0;
+  const loadedVisualCount = Number(rendererDiagnostics.robot_loaded_visual_count ?? rendererDiagnostics.robotLoadedVisualCount ?? 0) || 0;
+  const completedVisualCount = Number(rendererDiagnostics.robot_completed_visual_count ?? rendererDiagnostics.robotCompletedVisualCount ?? 0) || 0;
+  const failedVisualCount = Number(rendererDiagnostics.robot_failed_visual_count ?? rendererDiagnostics.robotFailedVisualCount ?? 0) || 0;
+  const missingToolLinks = list("robot_missing_required_tool_visual_links", "robotMissingRequiredToolVisualLinks");
+  const missingRobotLinks = list("robot_missing_required_robot_visual_links", "robotMissingRequiredRobotVisualLinks");
+  const missingHierarchyLinks = list("robot_hierarchy_missing_links", "robotHierarchyMissingLinks");
+  const loadingManagerComplete = rendererDiagnostics.robot_loading_manager_complete === true || rendererDiagnostics.robotLoadingManagerComplete === true;
+  const loadingManagerExplicitlyIncomplete = rendererDiagnostics.robot_loading_manager_complete === false || rendererDiagnostics.robotLoadingManagerComplete === false;
+  const meshCallbacksComplete = rendererDiagnostics.robot_mesh_callbacks_complete === true || rendererDiagnostics.robotMeshCallbacksComplete === true;
+  const meshCallbacksExplicitlyIncomplete = rendererDiagnostics.robot_mesh_callbacks_complete === false || rendererDiagnostics.robotMeshCallbacksComplete === false;
+  let requiredCategory = "";
+  let reason = "";
+  if (missingToolLinks.length) {
+    requiredCategory = "attached_tool_gripper";
+    reason = `Expanded URDF tool preview is missing required visual links: ${missingToolLinks.join(", ")}. Check the tool URDF mesh paths and regenerate the scene.`;
+  } else if (missingRobotLinks.length) {
+    requiredCategory = "robot_arm";
+    reason = `Expanded URDF robot preview is missing required visual links: ${missingRobotLinks.join(", ")}. Check the robot URDF mesh paths and regenerate the scene.`;
+  } else if (missingHierarchyLinks.length) {
+    requiredCategory = "robot_arm";
+    reason = `Expanded URDF robot hierarchy is missing required links: ${missingHierarchyLinks.join(", ")}. Check the generated URDF link/joint hierarchy and regenerate the scene.`;
+  } else if (meshCallbacksExplicitlyIncomplete) {
+    requiredCategory = "robot_arm";
+    reason = `Expanded URDF mesh callbacks did not complete (${completedVisualCount}/${expectedVisualCount} completed). Check failed mesh requests and the browser console, then regenerate or reload the scene.`;
+  } else if (lifecycle === "failed" && previewExplicitlyNotLoaded) {
+    requiredCategory = "robot_arm";
+    reason = String(rendererDiagnostics.robot_preview_failure_reason || rendererDiagnostics.robotPreviewFailureReason || "").trim() || "Expanded URDF preview entered the failed lifecycle without loading. Check the URDF and mesh request diagnostics, then regenerate or reload the scene.";
+  } else {
+    return null;
+  }
+  return {
+    required_category: requiredCategory,
+    item_id: "expanded_urdf_loader",
+    reason,
+    robot_preview_lifecycle_state: lifecycle,
+    robot_preview_loaded: previewLoaded,
+    robot_expected_visual_count: expectedVisualCount,
+    robot_loaded_visual_count: loadedVisualCount,
+    robot_completed_visual_count: completedVisualCount,
+    robot_failed_visual_count: failedVisualCount,
+    robot_missing_required_tool_visual_links: missingToolLinks,
+    robot_missing_required_robot_visual_links: missingRobotLinks,
+    robot_hierarchy_missing_links: missingHierarchyLinks,
+    robot_loading_manager_complete: loadingManagerComplete,
+    robot_loading_manager_completion_state: loadingManagerComplete ? "complete" : loadingManagerExplicitlyIncomplete ? "incomplete" : "unknown",
+    robot_mesh_callbacks_complete: meshCallbacksComplete,
+    robot_mesh_callback_completion_state: meshCallbacksComplete ? "complete" : meshCallbacksExplicitlyIncomplete ? "incomplete" : "unknown"
+  };
 }
 function maybeEmitSceneReady() {
   if (isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview)) {
     const diagnostics = state.robotUrdfPreviewDiagnostics || {};
     const lifecycle = String(diagnostics.robot_preview_lifecycle_state || diagnostics.robotPreviewLifecycleState || "");
+    const terminalFailure = expandedUrdfTerminalFailure(diagnostics);
+    if (terminalFailure) {
+      emitWeb3dReadinessState("scene_failed", terminalFailure);
+      return;
+    }
     if (lifecycle === "failed") {
       const failureReason = String(diagnostics.robot_preview_failure_reason || diagnostics.robotPreviewFailureReason || "").trim();
       const missingMeshes = asArray(diagnostics.robot_missing_meshes || diagnostics.robotMissingMeshes);
       const failedVisualCount = Number(diagnostics.robot_failed_visual_count ?? diagnostics.robotFailedVisualCount ?? 0) || 0;
       if (!failureReason && missingMeshes.length === 0 && failedVisualCount === 0)
         return;
-      failExpandedUrdfReadiness(new Error(failureReason || missingMeshes[0] || "expanded URDF preview failed"), diagnostics);
       return;
     }
     if (lifecycle !== "ready")
@@ -39281,8 +39466,8 @@ function updateViewerStatus() {
     ...expandedUrdfVisualDiagnostics,
     required_physical_categories: state.web3dReadiness?.required || {},
     requiredPhysicalCategories: state.web3dReadiness?.required || {},
-    pending_required_loads: Array.from(state.web3dReadiness?.pending || []),
-    pendingRequiredLoads: Array.from(state.web3dReadiness?.pending || []),
+    pending_required_loads: pendingRequiredLoads(),
+    pendingRequiredLoads: pendingRequiredLoads(),
     ...structuredWeb3dReadinessFields(state.web3dReadiness?.state || "booting"),
     final_failed_url: state.web3dReadiness?.failure?.url || state.web3dReadiness?.failure?.final_failed_url || "",
     finalFailedUrl: state.web3dReadiness?.failure?.url || state.web3dReadiness?.failure?.finalFailedUrl || "",
@@ -40529,7 +40714,42 @@ function applyLoadedMeshScaleHandling(meshObject, item) {
   const transform = meshLocalTransformOf(item);
   meshObject.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
 }
-async function tryLoadMesh(item, rendered, fallback) {
+function promiseWithDeadline(start, timeoutMs = PHYSICAL_MESH_LOAD_TIMEOUT_MS) {
+  let timeoutId;
+  let settled = false;
+  return new Promise((resolve, reject) => {
+    const finish = (handler, value) => {
+      if (settled)
+        return;
+      settled = true;
+      clearTimeout(timeoutId);
+      handler(value);
+    };
+    timeoutId = setTimeout(() => {
+      const error = new Error(`mesh load timed out after ${timeoutMs}ms`);
+      error.code = "mesh_load_timeout";
+      error.timeoutMs = timeoutMs;
+      finish(reject, error);
+    }, timeoutMs);
+    try {
+      start((value) => finish(resolve, value), (error) => finish(reject, error));
+    } catch (error) {
+      finish(reject, error);
+    }
+  });
+}
+function loadMeshWithDeadline(loader, url, timeoutMs = PHYSICAL_MESH_LOAD_TIMEOUT_MS) {
+  return promiseWithDeadline((resolve, reject) => {
+    if (typeof loader?.loadAsync === "function")
+      Promise.resolve(loader.loadAsync(url)).then(resolve, reject);
+    else if (typeof loader?.load === "function")
+      loader.load(url, resolve, void 0, reject);
+    else
+      reject(new Error("mesh loader provides neither loadAsync() nor load()"));
+  }, timeoutMs);
+}
+async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
+  const attempt = physicalMeshAttempt(item, readinessOperation);
   const diagnostic = meshUriDiagnostic(item);
   const uri = diagnostic.uri;
   const requestedUri = displayMeshUri(item);
@@ -40557,7 +40777,19 @@ async function tryLoadMesh(item, rendered, fallback) {
   const ext = meshExtensionFromUri(uri);
   const loaderName = meshLoaderNameForExtension(ext);
   const loadUrl = repoRootRelativeUrl(uri);
-  const preflight = await preflightMeshUrl(uri, loadUrl);
+  const remainingPreflightMs = Math.max(1, attempt.deadlineAt - Date.now());
+  const preflight = await promiseWithDeadline(
+    (resolve, reject) => Promise.resolve(preflightMeshUrl(uri, loadUrl)).then(resolve, reject),
+    remainingPreflightMs
+  ).catch((error) => ({
+    ok: false,
+    status: "loader_failure",
+    reason: error?.message || String(error),
+    url: loadUrl,
+    timeout_ms: error?.code === "mesh_load_timeout" ? PHYSICAL_MESH_LOAD_TIMEOUT_MS : void 0
+  }));
+  if (!physicalMeshAttemptIsCurrent(attempt))
+    return;
   if (!preflight.ok) {
     const required = itemRequiresMeshBackedVisual(item);
     item.mesh_status = preflight.status || "url_not_served";
@@ -40576,19 +40808,16 @@ async function tryLoadMesh(item, rendered, fallback) {
     }
     refreshMeshLoadUi(rendered);
     if (required)
-      failWeb3dSceneReadiness(item, preflight.url || loadUrl, item.mesh_load_error, { http_status: preflight.http_status || null, mesh_status: item.mesh_status });
+      failPhysicalMeshAttempt(attempt, item, preflight.url || loadUrl, item.mesh_load_error, { http_status: preflight.http_status || null, mesh_status: item.mesh_status, loader: loaderName, ...preflight.timeout_ms ? { timeout_ms: preflight.timeout_ms } : {} });
     else
       requiredReadinessCompleteForItem(item);
     return;
   }
   try {
-    let loaded;
-    if (ext === "stl")
-      loaded = await new STLLoader2().loadAsync(loadUrl);
-    else if (ext === "dae")
-      loaded = await new ColladaLoader2().loadAsync(loadUrl);
-    else
-      loaded = await new OBJLoader2().loadAsync(loadUrl);
+    const loader = ext === "stl" ? new STLLoader2() : ext === "dae" ? new ColladaLoader2() : new OBJLoader2();
+    const loaded = await loadMeshWithDeadline(loader, loadUrl, Math.max(1, attempt.deadlineAt - Date.now()));
+    if (!physicalMeshAttemptIsCurrent(attempt))
+      return;
     const meshObject = materializeLoadedMesh(item, uri, loaded);
     const visualRoot = makeMeshVisualRoot(item, meshObject);
     visualRoot.updateMatrixWorld(true);
@@ -40607,11 +40836,13 @@ async function tryLoadMesh(item, rendered, fallback) {
     const boundsValid = diagnoseLoadedMeshBounds(item, visualRoot, rendered, validationBounds);
     refreshMeshLoadUi(rendered);
     if (!boundsValid && itemRequiresMeshBackedVisual(item)) {
-      failWeb3dSceneReadiness(item, loadUrl, `loaded mesh bounds validation failed (${item.visual_bounds_status || "invalid"})`, { mesh_status: item.mesh_status });
+      failPhysicalMeshAttempt(attempt, item, loadUrl, `loaded mesh bounds validation failed (${item.visual_bounds_status || "invalid"})`, { mesh_status: item.mesh_status, loader: loaderName });
       return;
     }
-    requiredReadinessCompleteForItem(item);
+    completePhysicalMeshAttempt(attempt);
   } catch (err) {
+    if (!physicalMeshAttemptIsCurrent(attempt))
+      return;
     const required = itemRequiresMeshBackedVisual(item);
     item.mesh_status = "loader_failure";
     item.mesh_load_error = err?.message || String(err);
@@ -40630,7 +40861,7 @@ async function tryLoadMesh(item, rendered, fallback) {
     }
     refreshMeshLoadUi(rendered);
     if (required)
-      failWeb3dSceneReadiness(item, loadUrl, reason, { extension: ext, loader: loaderName, mesh_status: item.mesh_status });
+      failPhysicalMeshAttempt(attempt, item, loadUrl, reason, { extension: ext, loader: loaderName, mesh_status: item.mesh_status, ...err?.code === "mesh_load_timeout" ? { timeout_ms: PHYSICAL_MESH_LOAD_TIMEOUT_MS } : {} });
     else
       requiredReadinessCompleteForItem(item);
   }
@@ -41573,6 +41804,7 @@ function disposeOwnedObject3d(object3d, seen = /* @__PURE__ */ new Set()) {
 }
 function resetSceneLifecycleState() {
   robotPreviewLoadToken += 1;
+  physicalLoadToken += 1;
   cancelInitialCameraFitRetry();
   state.objects = [];
   state.pickRecords = [];
@@ -41694,7 +41926,9 @@ function renderScene(items) {
     setRenderInfo(rendered, fallbackStatus, displayMeshUri(item), fallbackReason);
     state.objects.push(rendered);
     maybeWarnSupportSurfaceSemantics(item);
-    tryLoadMesh(item, rendered, fallback);
+    const category = readinessCategoryForItem(item);
+    const operation = registerReadinessOperation(category ? [readinessKey(category, item)] : []);
+    tryLoadMesh(item, rendered, fallback, operation);
   }
   renderFrameDebugOverlays();
   populateObjectList();
@@ -41705,8 +41939,12 @@ function renderScene(items) {
 function loadExpandedUrdfRobotPreview(preview) {
   const loadToken = ++robotPreviewLoadToken;
   const loadSceneId = sceneId();
+  const readinessOperation = registerReadinessOperation([
+    "robot_arm:expanded_urdf_loader",
+    "attached_tool_gripper:expanded_urdf_loader"
+  ], { robotPreviewLoadToken: loadToken });
   let staleCallbackLogged = false;
-  const callbackIsCurrent = () => loadToken === robotPreviewLoadToken && loadSceneId === sceneId();
+  const callbackIsCurrent = () => readinessOperationIsCurrent(readinessOperation) && loadSceneId === sceneId();
   const ignoreStaleCallback = () => {
     if (!staleCallbackLogged) {
       console.debug?.(`Ignored stale robot preview callback: callback_scene=${loadSceneId} active_scene=${sceneId()}`);
@@ -41750,6 +41988,7 @@ function loadExpandedUrdfRobotPreview(preview) {
     diagnostics.robotFailedVisualCount = 1;
     diagnostics.robot_missing_meshes.push("urdf_robot_renderer module was not loaded");
     appendRuntimeWarning({}, preview?.urdf_url || "", "expanded_urdf_loader failed: urdf_robot_renderer module was not loaded", "expanded_urdf_loader_failed");
+    failExpandedUrdfReadiness(readinessOperation, new Error("expanded_urdf_loader failed: urdf_robot_renderer module was not loaded"), diagnostics);
     refreshWarnings();
     return { root: null, links: /* @__PURE__ */ new Map(), joints: /* @__PURE__ */ new Map(), diagnostics, ready: Promise.resolve(null) };
   }
@@ -41864,7 +42103,7 @@ function loadExpandedUrdfRobotPreview(preview) {
       }
       state.robotUrdfPreviewDiagnostics = result.diagnostics;
       if (resultLifecycle === "ready" && !failIfExpandedUrdfExpectedVisualSetInvalid())
-        completeExpandedUrdfReadiness(result);
+        completeExpandedUrdfReadiness(readinessOperation);
       maybeEmitSceneReady();
       refreshInitialPoseActionState();
       renderSceneSummary();
@@ -41877,7 +42116,7 @@ function loadExpandedUrdfRobotPreview(preview) {
     onRobotMeshLoadError: (err, uri, detail) => {
       if (!callbackIsCurrent())
         return ignoreStaleCallback();
-      failExpandedUrdfReadiness(err, state.robotUrdfPreviewDiagnostics, detail || { uri });
+      failExpandedUrdfReadiness(readinessOperation, err, state.robotUrdfPreviewDiagnostics, detail || { uri });
       renderSceneSummary();
     },
     onRobotError: (err, diagnostics2) => {
@@ -41888,7 +42127,7 @@ function loadExpandedUrdfRobotPreview(preview) {
       state.robotUrdfPreviewDiagnostics.robotPreviewLifecycleState = "failed";
       state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason = err?.message || String(err || "expanded URDF preview failed");
       state.robotUrdfPreviewDiagnostics.robotPreviewFailureReason = state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason;
-      failExpandedUrdfReadiness(err, state.robotUrdfPreviewDiagnostics);
+      failExpandedUrdfReadiness(readinessOperation, err, state.robotUrdfPreviewDiagnostics);
       maybeEmitSceneReady();
       appendRuntimeWarning({}, preview?.urdf_url || "", `expanded_urdf_loader failed: ${err?.message || err}`, "expanded_urdf_loader_failed");
       refreshWarnings();
@@ -42342,25 +42581,50 @@ function isExpandedUrdfInspectionPick(rendered) {
 function isCanvasSelectableRendered(rendered) {
   return isExpandedUrdfInspectionPick(rendered) || isNormalSelectableRendered(rendered);
 }
-function excludedPickNode(node) {
+function intrinsicallyExcludedPickNode(node) {
   const data = node?.userData || {};
   const name = String(node?.name || "").toLowerCase();
-  return node?.visible === false || data.selection_outline || data.selection_highlight || data.diagnostic_only || data.hidden_overlay || data.helper_hidden || data.non_selectable || data.selectable === false || /transformcontrols|transform_controls|gizmo|selection_.*highlight/.test(name);
+  return node?.visible === false || data.selection_outline || data.selection_highlight || data.hidden_overlay || data.helper_hidden || /transformcontrols|transform_controls|gizmo|selection_.*highlight/.test(name);
+}
+function passThroughPickNode(node) {
+  const data = node?.userData || {};
+  const name = String(node?.name || "").toLowerCase();
+  return data.diagnostic_only || data.non_selectable || data.selectable === false || /(?:^|[_-])(?:edges?|frustum|helper)(?:$|[_-])/.test(name);
+}
+function excludedPickNode(node) {
+  return intrinsicallyExcludedPickNode(node) || passThroughPickNode(node);
+}
+function intrinsicallyExcludedPickItem(item) {
+  const sourceLayer = String(item?.source_layer || "").toLowerCase();
+  const identity = [item?.role, item?.category, item?.id].map((value) => String(value || "").toLowerCase()).join(" ");
+  const explicitDebug = isDebugOverlayItem(item) && (item?.diagnostic_only === true || /debug|diagnostic/.test(`${sourceLayer} ${identity}`));
+  return explicitDebug || isTaskOnlyHelperItem(item) && /task|debug/.test(sourceLayer);
 }
 function itemFromRaycastHit(hit) {
   let node = hit?.object || null;
   let candidate = null;
   while (node) {
-    if (excludedPickNode(node))
+    const registered = state.pickIdentityByObject.get(node);
+    if (intrinsicallyExcludedPickNode(node))
       return null;
-    if (!candidate) {
-      const registered = state.pickIdentityByObject.get(node);
-      const registeredInspection = isExpandedUrdfInspectionPick(registered);
-      const nodeItem = node.userData?.item;
-      const nodeItemWithoutStalePickFlags = nodeItem ? { ...nodeItem, id: "", display_name: "", status: "", diagnostic_only: false, selectable: true } : null;
-      if (registeredInspection && nodeItemWithoutStalePickFlags && (isTaskOnlyHelperItem(nodeItemWithoutStalePickFlags) || isOverlayPolicyItem(nodeItemWithoutStalePickFlags) || isDebugOverlayItem(nodeItemWithoutStalePickFlags)))
+    if (isExpandedUrdfInspectionPick(registered)) {
+      const descendantItem = node.userData?.item;
+      const identityFreeDescendant = descendantItem ? { ...descendantItem, id: "", display_name: "", status: "", diagnostic_only: false, selectable: true } : null;
+      if (identityFreeDescendant && intrinsicallyExcludedPickItem(identityFreeDescendant))
         return null;
-      const item = registeredInspection ? registered.item : nodeItem || registered?.item;
+      return registered;
+    }
+    if (candidate && registered && registered !== candidate)
+      return candidate;
+    if (passThroughPickNode(node)) {
+      node = node.parent;
+      continue;
+    }
+    if (!candidate) {
+      const nodeItem = node.userData?.item;
+      if (nodeItem && intrinsicallyExcludedPickItem(nodeItem))
+        return null;
+      const item = nodeItem || registered?.item;
       if (item?.id) {
         const rendered = renderedById(item.id) || registered;
         if (!rendered || !isCanvasSelectableRendered(rendered))
@@ -42514,7 +42778,7 @@ function pickObject(event) {
       const signature = ["failed_canvas_pick", sceneId(), diagnostic.raw_hit_count, diagnostic.hit_object_names.join("|"), diagnostic.first_actionable_rejection_reason, diagnostic.nearest_known_urdf_link_ancestor].join("\n");
       if (!state.diagnosticKeys.has(signature)) {
         state.diagnosticKeys.add(signature);
-        console.warn?.("Product View canvas pick rejected", diagnostic);
+        console.warn?.(`Product View canvas pick rejected: ${JSON.stringify(diagnostic)}`);
       }
     }
     if (state.editorMode === "select")
