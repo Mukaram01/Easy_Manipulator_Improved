@@ -291,6 +291,104 @@ for (const [category, item, expected] of unchanged) assert.strictEqual(readiness
         text=True,
     )
 
+
+def test_required_mesh_physical_load_deadline_and_stale_camera_callbacks():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8')
+  .replace('const PHYSICAL_MESH_LOAD_TIMEOUT_MS = 30000;', 'const PHYSICAL_MESH_LOAD_TIMEOUT_MS = 20;')
+  .replace(/boot\(\);\s*$/, '');
+const element = () => ({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},querySelector(){return null;},appendChild(){},addEventListener(){},setAttribute(){}});
+const events = [];
+const context = {console, assert, setTimeout, clearTimeout, Promise, events, process,
+  window:{events,location:{search:''},dispatchEvent(event){events.push(event.detail);},parent:{postMessage(){}}},
+  document:{getElementById(){return element();},createElement(){return element();}}, URLSearchParams,
+  CustomEvent:function(type, init){return {type,detail:init?.detail || {}};}, requestAnimationFrame(){return 0;}};
+vm.createContext(context);
+vm.runInContext(source + `
+(async () => {
+  preflightMeshUrl = async (uri, url) => ({ok:true,url});
+  repoRootRelativeUrl = uri => uri;
+  refreshMeshLoadUi = () => {};
+  trackMeshLoadAttempt = () => {};
+  logRequiredMeshFailure = () => {};
+  styleFailedMeshDebugFallback = fallback => { if (fallback) fallback.visible = true; };
+  warnRequiredMeshFallback = () => {};
+  appendRuntimeWarning = () => {};
+  setRenderInfo = (rendered, status, uri, reason) => { rendered.renderInfo = {render_status:status,mesh_uri:uri,fallback_reason:reason}; };
+  materializeLoadedMesh = (item, uri, loaded) => loaded;
+  makeMeshVisualRoot = (item, loaded) => ({loaded,updateMatrixWorld(){}});
+  maybeApplyMeshUnitAutoscale = () => false;
+  diagnoseLoadedMeshBounds = () => true;
+  THREE = {Box3:class {setFromObject(){return this;}}};
+  const camera = {id:'generated_camera_visual',camera_id:'realsense_overhead',category:'camera',readiness_category:'configured_camera',render_policy:'primary',mesh_uri:'assets/camera.dae',mesh_load_required:true};
+  const rendered = () => ({object3d:{add(value){this.added=value;}},renderInfo:{render_status:'mesh_loading_required'}});
+  const fallback = () => ({visible:false});
+  const readiness = pending => ({state:'scene_loading',terminal:false,terminalState:'',terminalNavigationKey:'',terminalEmissionCount:0,statusSequence:0,required:{robot_arm:true,attached_tool_gripper:true,workbench_support_surface:true,configured_camera:true},pending:new Set(pending),failed:false,failure:null});
+
+  state.sceneJson={scene:{id:'timeout_scene'}}; state.sourceWebSceneFile='timeout.json'; physicalLoadToken++;
+  state.web3dReadiness=readiness(['configured_camera:realsense_overhead']);
+  ColladaLoader=class {loadAsync(){return new Promise(() => {});}};
+  const started=Date.now(); await tryLoadMesh(camera,rendered(),fallback());
+  assert(Date.now()-started < 45000);
+  const failure=events.at(-1);
+  assert.strictEqual(failure.state,'scene_failed');
+  assert.strictEqual(failure.required_category,'configured_camera');
+  assert.strictEqual(failure.readiness_identity,'realsense_overhead');
+  assert.strictEqual(failure.readiness_key,'configured_camera:realsense_overhead');
+  assert.strictEqual(failure.url,'assets/camera.dae');
+  assert.strictEqual(failure.loader,'ColladaLoader');
+  assert.match(failure.reason,/timed out/);
+  assert.strictEqual(failure.timeout_ms,20);
+  assert.deepStrictEqual(failure.pending_required_loads,['configured_camera:realsense_overhead']);
+
+  events.length=0; state.sceneJson={scene:{id:'success_scene'}}; state.sourceWebSceneFile='success.json'; physicalLoadToken++;
+  state.web3dReadiness=readiness(['configured_camera:realsense_overhead']);
+  ColladaLoader=class {loadAsync(){return Promise.resolve({mesh:true});}};
+  await tryLoadMesh(camera,rendered(),fallback());
+  assert.strictEqual(state.web3dReadiness.pending.size,0);
+  await new Promise(resolve => setTimeout(resolve,35));
+  assert.strictEqual(events.filter(event => event.state==='scene_failed').length,0);
+
+  let resolveA; events.length=0; state.sceneJson={scene:{id:'scene_a'}}; state.sourceWebSceneFile='a.json'; physicalLoadToken++;
+  state.web3dReadiness=readiness(['configured_camera:realsense_overhead']);
+  ColladaLoader=class {loadAsync(){return new Promise(resolve => {resolveA=resolve;});}};
+  const staleSuccess=tryLoadMesh(camera,rendered(),fallback()); await Promise.resolve(); await Promise.resolve();
+  state.sceneJson={scene:{id:'scene_b'}}; state.sourceWebSceneFile='b.json'; physicalLoadToken++;
+  state.web3dReadiness=readiness(['configured_camera:replacement_camera']);
+  resolveA({mesh:true}); await staleSuccess;
+  assert.deepStrictEqual(Array.from(state.web3dReadiness.pending),['configured_camera:replacement_camera']);
+
+  let rejectA; events.length=0; state.sceneJson={scene:{id:'scene_a'}}; state.sourceWebSceneFile='a.json'; physicalLoadToken++;
+  state.web3dReadiness=readiness(['configured_camera:realsense_overhead']);
+  ColladaLoader=class {loadAsync(){return new Promise((resolve,reject) => {rejectA=reject;});}};
+  const staleError=tryLoadMesh(camera,rendered(),fallback()); await Promise.resolve(); await Promise.resolve();
+  state.sceneJson={scene:{id:'scene_b'}}; state.sourceWebSceneFile='b.json'; physicalLoadToken++;
+  state.web3dReadiness=readiness(['configured_camera:replacement_camera']);
+  rejectA(new Error('scene A failed')); await staleError;
+  assert.strictEqual(events.filter(event => event.state==='scene_failed').length,0);
+
+  events.length=0; const optional={id:'optional_fixture',category:'fixture',render_policy:'primary',mesh_uri:'assets/fixture.obj'};
+  state.sceneJson={scene:{id:'optional_scene'}}; state.sourceWebSceneFile='optional.json'; physicalLoadToken++;
+  state.web3dReadiness=readiness([]); const optionalFallback=fallback();
+  OBJLoader=class {load(url,onLoad,onProgress,onError){}};
+  await tryLoadMesh(optional,rendered(),optionalFallback);
+  assert.strictEqual(optionalFallback.visible,true);
+  assert.strictEqual(events.filter(event => event.state==='scene_failed').length,0);
+})().catch(error => { console.error(error); process.exitCode=1; });
+`, context);
+"""
+    subprocess.run(
+        ["node", "-e", harness, str(js_path)],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
 def test_index_references_static_assets():
     index = (VIEWER / "index.html").read_text(encoding="utf-8")
     assert 'href="style.css"' in index
@@ -466,7 +564,7 @@ def test_viewer_includes_mesh_loader_references_and_safe_mesh_uri_logic():
         "three/addons/loaders/OBJLoader.js",
         "safeMeshUri",
         "displayMeshUri",
-        "loadAsync(loadUrl)",
+        "loadMeshWithDeadline",
         "materializeLoadedMesh",
         "appendRuntimeWarning",
         "build/workcell_studio_web_scene/assets/",
@@ -1059,7 +1157,7 @@ def test_viewer_initial_fit_not_reframed_per_mesh_load_but_manual_fit_remains():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
 
     try_load_body = js.split("async function tryLoadMesh", 1)[1].split("function collectItems", 1)[0]
-    assert "loadAsync(loadUrl)" in try_load_body
+    assert "loadMeshWithDeadline(loader, loadUrl" in try_load_body
     assert "frameScene(bounds)" not in try_load_body
     assert "attemptInitialCameraFit" not in try_load_body
     assert "scheduleInitialCameraFitRetry" not in try_load_body
@@ -1169,7 +1267,7 @@ def test_viewer_mesh_preflight_surfaces_distinct_failure_reasons():
     assert "response.status" in preflight_body
     assert "!response.ok" in preflight_body
     try_load_body = js.split("async function tryLoadMesh", 1)[1].split("function collectItems", 1)[0]
-    assert try_load_body.index("await preflightMeshUrl") < try_load_body.index("new STLLoader().loadAsync")
+    assert try_load_body.index("preflightMeshUrl(uri, loadUrl)") < try_load_body.index("loadMeshWithDeadline(loader, loadUrl")
     assert "item.mesh_status = preflight.status || 'url_not_served'" in try_load_body
     assert "item.mesh_status = 'loader_failure'" in try_load_body
 
@@ -1235,8 +1333,8 @@ def test_primary_mesh_backed_target_bin_keeps_product_visibility_scale_color_and
     category = js.split("function readinessCategoryForItem(item)", 1)[1].split("function readinessKey", 1)[0]
     assert "return 'authored_physical_mesh';" in category
     load = js.split("async function tryLoadMesh", 1)[1].split("function collectItems", 1)[0]
-    assert load.index("setRenderInfo(rendered, 'mesh_loaded'") < load.rindex("requiredReadinessCompleteForItem(item)")
-    assert "failWeb3dSceneReadiness(item, loadUrl, `loaded mesh bounds validation failed" in load
+    assert load.index("setRenderInfo(rendered, 'mesh_loaded'") < load.index("completePhysicalMeshAttempt(attempt)")
+    assert "failPhysicalMeshAttempt(attempt, item, loadUrl, `loaded mesh bounds validation failed" in load
 
     material = js.split("function materialFor(item)", 1)[1].split("function materialHasUsableAppearance", 1)[0]
     assert "item?.material?.color" in material
@@ -2845,7 +2943,7 @@ def test_required_gripper_mesh_failures_transition_scene_failed_with_url_and_lin
     assert "url: url || displayMeshUri(item)" in viewer
     assert "link: item?.link || item?.link_name || item?.object_name || ''" in viewer
     assert "const eventDetail = { ...structured, ...detail, final_lifecycle_state: readinessState" in viewer
-    assert "if (required) failWeb3dSceneReadiness(item, preflight.url || loadUrl" in viewer
+    assert "if (required) failPhysicalMeshAttempt(attempt, item, preflight.url || loadUrl" in viewer
     assert "http_status: preflight.http_status || null" in viewer
     assert "onRobotMeshLoadError: (err, uri, detail) => { if (!callbackIsCurrent()) return ignoreStaleCallback(); failExpandedUrdfReadiness" in viewer
     assert "function inferMeshLinkDetail(path)" in renderer
@@ -2859,14 +2957,14 @@ def test_gripper_mesh_404_scene_failed_payload_includes_structured_url_and_link_
     viewer = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     preflight_body = _viewer_function_body(viewer, "async function preflightMeshUrl", "function supportSurfaceKindOf")
     try_load_body = _viewer_function_body(viewer, "async function tryLoadMesh", "function collectItems")
-    failure_body = _viewer_function_body(viewer, "function failWeb3dSceneReadiness", "function completeExpandedUrdfReadiness")
+    failure_body = _viewer_function_body(viewer, "function failPhysicalMeshAttempt", "function failWeb3dSceneReadiness")
     assert "HTTP ${response.status}" in preflight_body
     assert "http_status: response.status" in preflight_body
-    assert "if (required) failWeb3dSceneReadiness(item, preflight.url || loadUrl" in try_load_body
+    assert "if (required) failPhysicalMeshAttempt(attempt, item, preflight.url || loadUrl" in try_load_body
     assert "http_status: preflight.http_status || null" in try_load_body
     assert "url: url || displayMeshUri(item)" in failure_body
     assert "link: item?.link || item?.link_name || item?.object_name || ''" in failure_body
-    assert "required_category: category" in failure_body
+    assert "required_category: attempt.category || 'required_physical_item'" in failure_body
     assert "scene_id: sceneId()" in viewer
 
 

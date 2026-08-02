@@ -27,6 +27,7 @@ const SUPPORTED_SCHEMA_VERSION = 'workcell_studio_web_scene/v1';
 const EDIT_PATCH_SCHEMA_VERSION = 'workcell_studio_web_scene_edit_patch/v1';
 const VIEWER_VERSION = 'static_web_viewer_edit_patch_v1';
 const READINESS_CONTRACT_VERSION = 1;
+const PHYSICAL_MESH_LOAD_TIMEOUT_MS = 30000;
 const VALID_SCENE_LIFECYCLE_STATES = Object.freeze(['booting', 'scene_loading', 'scene_ready', 'scene_failed']);
 const LOCKED_EDIT_REASON = 'Locked/generated preview item; edit source layout/environment instead.';
 const MIN_FRAME_RADIUS = 1.2;
@@ -40,6 +41,7 @@ const CAMERA_PRESET_DIRECTIONS = Object.freeze({
 });
 const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], pickRecords: [], pickIdentityByObject: new WeakMap(), selectionIdentityIndex: null, assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: '', lastCanvasPickReason: '', lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
 let robotPreviewLoadToken = 0;
+let physicalLoadToken = 0;
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
 const STAGED_MESH_ROOTS = [
   'build/workcell_studio_web_scene/assets/',
@@ -226,6 +228,43 @@ function requiredReadinessCompleteForItem(item) {
   if (!category || !state.web3dReadiness?.pending) return;
   state.web3dReadiness.pending.delete(readinessKey(category, item));
   maybeEmitSceneReady();
+}
+function physicalMeshAttempt(item) {
+  const category = readinessCategoryForItem(item);
+  const identity = category ? readinessIdentityForItem(category, item) : '';
+  return {
+    token: physicalLoadToken,
+    navigationKey: web3dNavigationKey(),
+    category,
+    identity,
+    readinessKey: category ? `${category}:${identity}` : '',
+    deadlineAt: Date.now() + PHYSICAL_MESH_LOAD_TIMEOUT_MS,
+  };
+}
+function physicalMeshAttemptIsCurrent(attempt) {
+  return attempt.token === physicalLoadToken && attempt.navigationKey === web3dNavigationKey();
+}
+function completePhysicalMeshAttempt(attempt) {
+  if (!physicalMeshAttemptIsCurrent(attempt)) return false;
+  if (attempt.readinessKey && state.web3dReadiness?.pending) state.web3dReadiness.pending.delete(attempt.readinessKey);
+  maybeEmitSceneReady();
+  return true;
+}
+function failPhysicalMeshAttempt(attempt, item, url, reason, extra = {}) {
+  if (!physicalMeshAttemptIsCurrent(attempt)) return false;
+  emitWeb3dReadinessState('scene_failed', {
+    required_category: attempt.category || 'required_physical_item',
+    readiness_identity: attempt.identity,
+    readiness_key: attempt.readinessKey,
+    item_id: item?.id || '',
+    link: item?.link || item?.link_name || item?.object_name || '',
+    url: url || displayMeshUri(item),
+    reason: reason || 'required mesh failed',
+    ...extra,
+    loader: extra.loader || extra.loader_type || '',
+    loader_type: extra.loader_type || extra.loader || '',
+  });
+  return true;
 }
 function failWeb3dSceneReadiness(item, url, reason, extra = {}) {
   const category = readinessCategoryForItem(item) || extra.category || 'required_physical_item';
@@ -2143,7 +2182,38 @@ function applyLoadedMeshScaleHandling(meshObject, item) {
   const transform = meshLocalTransformOf(item);
   meshObject.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
 }
+function promiseWithDeadline(start, timeoutMs = PHYSICAL_MESH_LOAD_TIMEOUT_MS) {
+  let timeoutId;
+  let settled = false;
+  return new Promise((resolve, reject) => {
+    const finish = (handler, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      handler(value);
+    };
+    timeoutId = setTimeout(() => {
+      const error = new Error(`mesh load timed out after ${timeoutMs}ms`);
+      error.code = 'mesh_load_timeout';
+      error.timeoutMs = timeoutMs;
+      finish(reject, error);
+    }, timeoutMs);
+    try {
+      start(value => finish(resolve, value), error => finish(reject, error));
+    } catch (error) {
+      finish(reject, error);
+    }
+  });
+}
+function loadMeshWithDeadline(loader, url, timeoutMs = PHYSICAL_MESH_LOAD_TIMEOUT_MS) {
+  return promiseWithDeadline((resolve, reject) => {
+    if (typeof loader?.loadAsync === 'function') Promise.resolve(loader.loadAsync(url)).then(resolve, reject);
+    else if (typeof loader?.load === 'function') loader.load(url, resolve, undefined, reject);
+    else reject(new Error('mesh loader provides neither loadAsync() nor load()'));
+  }, timeoutMs);
+}
 async function tryLoadMesh(item, rendered, fallback) {
+  const attempt = physicalMeshAttempt(item);
   const diagnostic = meshUriDiagnostic(item);
   const uri = diagnostic.uri;
   const requestedUri = displayMeshUri(item);
@@ -2168,7 +2238,18 @@ async function tryLoadMesh(item, rendered, fallback) {
   const ext = meshExtensionFromUri(uri);
   const loaderName = meshLoaderNameForExtension(ext);
   const loadUrl = repoRootRelativeUrl(uri);
-  const preflight = await preflightMeshUrl(uri, loadUrl);
+  const remainingPreflightMs = Math.max(1, attempt.deadlineAt - Date.now());
+  const preflight = await promiseWithDeadline(
+    (resolve, reject) => Promise.resolve(preflightMeshUrl(uri, loadUrl)).then(resolve, reject),
+    remainingPreflightMs,
+  ).catch(error => ({
+    ok: false,
+    status: 'loader_failure',
+    reason: error?.message || String(error),
+    url: loadUrl,
+    timeout_ms: error?.code === 'mesh_load_timeout' ? PHYSICAL_MESH_LOAD_TIMEOUT_MS : undefined,
+  }));
+  if (!physicalMeshAttemptIsCurrent(attempt)) return;
   if (!preflight.ok) {
     const required = itemRequiresMeshBackedVisual(item);
     item.mesh_status = preflight.status || 'url_not_served';
@@ -2185,15 +2266,14 @@ async function tryLoadMesh(item, rendered, fallback) {
       appendRuntimeWarning(item, uri, item.mesh_load_error, preflight.code || 'mesh_url_not_served', { mesh_url: preflight.url || loadUrl, http_status: preflight.http_status || null });
     }
     refreshMeshLoadUi(rendered);
-    if (required) failWeb3dSceneReadiness(item, preflight.url || loadUrl, item.mesh_load_error, { http_status: preflight.http_status || null, mesh_status: item.mesh_status });
+    if (required) failPhysicalMeshAttempt(attempt, item, preflight.url || loadUrl, item.mesh_load_error, { http_status: preflight.http_status || null, mesh_status: item.mesh_status, loader: loaderName, ...(preflight.timeout_ms ? { timeout_ms: preflight.timeout_ms } : {}) });
     else requiredReadinessCompleteForItem(item);
     return;
   }
   try {
-    let loaded;
-    if (ext === 'stl') loaded = await new STLLoader().loadAsync(loadUrl);
-    else if (ext === 'dae') loaded = await new ColladaLoader().loadAsync(loadUrl);
-    else loaded = await new OBJLoader().loadAsync(loadUrl);
+    const loader = ext === 'stl' ? new STLLoader() : (ext === 'dae' ? new ColladaLoader() : new OBJLoader());
+    const loaded = await loadMeshWithDeadline(loader, loadUrl, Math.max(1, attempt.deadlineAt - Date.now()));
+    if (!physicalMeshAttemptIsCurrent(attempt)) return;
     const meshObject = materializeLoadedMesh(item, uri, loaded);
     // Legacy flow was applyMeshLocalTransform(meshObject, item) followed by
     // rendered.object3d.add(meshObject); generated URDF now applies that
@@ -2215,11 +2295,12 @@ async function tryLoadMesh(item, rendered, fallback) {
     const boundsValid = diagnoseLoadedMeshBounds(item, visualRoot, rendered, validationBounds);
     refreshMeshLoadUi(rendered);
     if (!boundsValid && itemRequiresMeshBackedVisual(item)) {
-      failWeb3dSceneReadiness(item, loadUrl, `loaded mesh bounds validation failed (${item.visual_bounds_status || 'invalid'})`, { mesh_status: item.mesh_status });
+      failPhysicalMeshAttempt(attempt, item, loadUrl, `loaded mesh bounds validation failed (${item.visual_bounds_status || 'invalid'})`, { mesh_status: item.mesh_status, loader: loaderName });
       return;
     }
-    requiredReadinessCompleteForItem(item);
+    completePhysicalMeshAttempt(attempt);
   } catch (err) {
+    if (!physicalMeshAttemptIsCurrent(attempt)) return;
     const required = itemRequiresMeshBackedVisual(item);
     item.mesh_status = 'loader_failure';
     item.mesh_load_error = err?.message || String(err);
@@ -2236,7 +2317,7 @@ async function tryLoadMesh(item, rendered, fallback) {
       appendRuntimeWarning(item, uri, reason, 'mesh_loader_failure', { extension: ext, loader: loaderName, mesh_url: loadUrl });
     }
     refreshMeshLoadUi(rendered);
-    if (required) failWeb3dSceneReadiness(item, loadUrl, reason, { extension: ext, loader: loaderName, mesh_status: item.mesh_status });
+    if (required) failPhysicalMeshAttempt(attempt, item, loadUrl, reason, { extension: ext, loader: loaderName, mesh_status: item.mesh_status, ...(err?.code === 'mesh_load_timeout' ? { timeout_ms: PHYSICAL_MESH_LOAD_TIMEOUT_MS } : {}) });
     else requiredReadinessCompleteForItem(item);
   }
 }
@@ -3186,6 +3267,7 @@ function disposeOwnedObject3d(object3d, seen = new Set()) {
 }
 function resetSceneLifecycleState() {
   robotPreviewLoadToken += 1;
+  physicalLoadToken += 1;
   cancelInitialCameraFitRetry();
   state.objects = [];
   state.pickRecords = [];
