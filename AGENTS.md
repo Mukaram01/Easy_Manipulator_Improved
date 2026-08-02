@@ -6,6 +6,12 @@ This file is the operating contract for AI/Codex work in this repository.
 
 Use it to keep development aligned with the evidence-driven Workcell Studio roadmap. When repository evidence, runtime evidence, and old planning notes disagree, prefer the newest verified repository/runtime evidence and update the documentation rather than preserving an optimistic claim.
 
+### Instruction-document authority
+
+- `AGENTS.md` is the authoritative contributor and AI/Codex operating contract.
+- `docs/manuals/WORKCELL_STUDIO_ROADMAP.md` is the current product roadmap; use other manuals only when they are relevant to the scoped change.
+- `Workcell_Studio_AI_Operating_Guardrail.md` is not a current or historical tracked path in the available repository refs. It was not renamed to the roadmap. Treat requests to read it as stale references to this `AGENTS.md`, and do not recreate a second operating contract under that name.
+
 Do not measure progress by PR count, test count, or the amount of scaffolding added. Measure progress by user-visible acceptance evidence for the canonical Workcell Studio workflow.
 
 ## Project identity
@@ -805,7 +811,7 @@ Risks / rollback:
 
 Before editing:
 
-1. Read this file and the relevant current roadmap/manual.
+1. Read `AGENTS.md`, `docs/manuals/WORKCELL_STUDIO_ROADMAP.md`, and only the additional manuals relevant to the scoped change. Do not request the obsolete `Workcell_Studio_AI_Operating_Guardrail.md` path.
 2. Inspect the actual repository files that own the state.
 3. Inspect recent merged PRs or commits relevant to the blocker when available.
 4. Identify authored, generated, cached, mirror, and runtime layers.
