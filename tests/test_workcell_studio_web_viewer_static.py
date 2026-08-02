@@ -261,9 +261,10 @@ assert.strictEqual(readinessKey('configured_camera', authoredCamera), readinessK
 
 state.sceneJson = {scene:{id:'ur5_2f_test'}};
 beginWeb3dSceneReadiness([authoredCamera, generatedCamera]);
+assert.deepStrictEqual(Array.from(state.web3dReadiness.pending), []);
+const cameraOperation = registerReadinessOperation([readinessKey('configured_camera', generatedCamera)]);
 assert.deepStrictEqual(Array.from(state.web3dReadiness.pending), ['configured_camera:realsense_overhead']);
-assert.deepStrictEqual(window.events.at(-1).pending_required_loads, ['configured_camera:realsense_overhead']);
-requiredReadinessCompleteForItem(generatedCamera);
+completeReadinessOperation(cameraOperation);
 assert.strictEqual(state.web3dReadiness.pending.size, 0);
 
 state.web3dReadiness = {state:'scene_loading', terminal:false, terminalState:'', terminalNavigationKey:'', terminalEmissionCount:0, statusSequence:0, required:{configured_camera:true}, pending:new Set(['configured_camera:realsense_overhead']), failed:false, failure:null};
@@ -329,7 +330,7 @@ vm.runInContext(source + `
   const fallback = () => ({visible:false});
   const readiness = pending => ({state:'scene_loading',terminal:false,terminalState:'',terminalNavigationKey:'',terminalEmissionCount:0,statusSequence:0,required:{robot_arm:true,attached_tool_gripper:true,workbench_support_surface:true,configured_camera:true},pending:new Set(pending),failed:false,failure:null});
 
-  state.sceneJson={scene:{id:'timeout_scene'}}; state.sourceWebSceneFile='timeout.json'; physicalLoadToken++;
+  state.sceneJson={scene:{id:'timeout_scene'}}; state.sourceWebSceneFile='timeout.json'; resetSceneLifecycleState();
   state.web3dReadiness=readiness(['configured_camera:realsense_overhead']);
   ColladaLoader=class {loadAsync(){return new Promise(() => {});}};
   const started=Date.now(); await tryLoadMesh(camera,rendered(),fallback());
@@ -345,7 +346,7 @@ vm.runInContext(source + `
   assert.strictEqual(failure.timeout_ms,20);
   assert.deepStrictEqual(failure.pending_required_loads,['configured_camera:realsense_overhead']);
 
-  events.length=0; state.sceneJson={scene:{id:'success_scene'}}; state.sourceWebSceneFile='success.json'; physicalLoadToken++;
+  events.length=0; state.sceneJson={scene:{id:'success_scene'}}; state.sourceWebSceneFile='success.json'; resetSceneLifecycleState();
   state.web3dReadiness=readiness(['configured_camera:realsense_overhead']);
   ColladaLoader=class {loadAsync(){return Promise.resolve({mesh:true});}};
   await tryLoadMesh(camera,rendered(),fallback());
@@ -353,26 +354,26 @@ vm.runInContext(source + `
   await new Promise(resolve => setTimeout(resolve,35));
   assert.strictEqual(events.filter(event => event.state==='scene_failed').length,0);
 
-  let resolveA; events.length=0; state.sceneJson={scene:{id:'scene_a'}}; state.sourceWebSceneFile='a.json'; physicalLoadToken++;
+  let resolveA; events.length=0; state.sceneJson={scene:{id:'scene_a'}}; state.sourceWebSceneFile='a.json'; resetSceneLifecycleState();
   state.web3dReadiness=readiness(['configured_camera:realsense_overhead']);
   ColladaLoader=class {loadAsync(){return new Promise(resolve => {resolveA=resolve;});}};
   const staleSuccess=tryLoadMesh(camera,rendered(),fallback()); await Promise.resolve(); await Promise.resolve();
-  state.sceneJson={scene:{id:'scene_b'}}; state.sourceWebSceneFile='b.json'; physicalLoadToken++;
+  state.sceneJson={scene:{id:'scene_b'}}; state.sourceWebSceneFile='b.json'; resetSceneLifecycleState();
   state.web3dReadiness=readiness(['configured_camera:replacement_camera']);
   resolveA({mesh:true}); await staleSuccess;
   assert.deepStrictEqual(Array.from(state.web3dReadiness.pending),['configured_camera:replacement_camera']);
 
-  let rejectA; events.length=0; state.sceneJson={scene:{id:'scene_a'}}; state.sourceWebSceneFile='a.json'; physicalLoadToken++;
+  let rejectA; events.length=0; state.sceneJson={scene:{id:'scene_a'}}; state.sourceWebSceneFile='a.json'; resetSceneLifecycleState();
   state.web3dReadiness=readiness(['configured_camera:realsense_overhead']);
   ColladaLoader=class {loadAsync(){return new Promise((resolve,reject) => {rejectA=reject;});}};
   const staleError=tryLoadMesh(camera,rendered(),fallback()); await Promise.resolve(); await Promise.resolve();
-  state.sceneJson={scene:{id:'scene_b'}}; state.sourceWebSceneFile='b.json'; physicalLoadToken++;
+  state.sceneJson={scene:{id:'scene_b'}}; state.sourceWebSceneFile='b.json'; resetSceneLifecycleState();
   state.web3dReadiness=readiness(['configured_camera:replacement_camera']);
   rejectA(new Error('scene A failed')); await staleError;
   assert.strictEqual(events.filter(event => event.state==='scene_failed').length,0);
 
   events.length=0; const optional={id:'optional_fixture',category:'fixture',render_policy:'primary',mesh_uri:'assets/fixture.obj'};
-  state.sceneJson={scene:{id:'optional_scene'}}; state.sourceWebSceneFile='optional.json'; physicalLoadToken++;
+  state.sceneJson={scene:{id:'optional_scene'}}; state.sourceWebSceneFile='optional.json'; resetSceneLifecycleState();
   state.web3dReadiness=readiness([]); const optionalFallback=fallback();
   OBJLoader=class {load(url,onLoad,onProgress,onError){}};
   await tryLoadMesh(optional,rendered(),optionalFallback);
@@ -612,7 +613,7 @@ def test_expanded_urdf_robot_preview_callbacks_are_scene_current_guarded():
 
     assert "const loadToken = ++robotPreviewLoadToken;" in load_body
     assert "const loadSceneId = sceneId();" in load_body
-    assert "loadToken === robotPreviewLoadToken && loadSceneId === sceneId()" in load_body
+    assert "readinessOperationIsCurrent(readinessOperation) && loadSceneId === sceneId()" in load_body
     assert "sceneId: loadSceneId" in load_body
     assert "if (callbackIsCurrent()) state.three.scene?.add?.(root);" in load_body
     assert "if (callbackIsCurrent()) state.assemblyRoots.push(root);" in load_body
@@ -622,7 +623,7 @@ def test_expanded_urdf_robot_preview_callbacks_are_scene_current_guarded():
     callback_mutations = {
         "onRobotLoaded: result => {": "state.robotPreviewResult = result;",
         "onRobotMeshLoaded: () => {": "renderSceneSummary();",
-        "onRobotMeshLoadError: (err, uri, detail) => {": "failExpandedUrdfReadiness(err, state.robotUrdfPreviewDiagnostics, detail || { uri });",
+        "onRobotMeshLoadError: (err, uri, detail) => {": "failExpandedUrdfReadiness(readinessOperation, err, state.robotUrdfPreviewDiagnostics, detail || { uri });",
         "onRobotError: (err, diagnostics) => {": "state.robotUrdfPreviewDiagnostics.robot_preview_lifecycle_state = 'failed';",
     }
     for callback, mutation in callback_mutations.items():
@@ -1169,7 +1170,7 @@ def test_viewer_initial_fit_not_reframed_per_mesh_load_but_manual_fit_remains():
     assert "scheduleInitialCameraFitRetry" not in expanded_body
 
     render_scene_body = js.split("function renderScene(items)", 1)[1].split("function loadExpandedUrdfRobotPreview", 1)[0]
-    assert "tryLoadMesh(item, rendered, fallback);" in render_scene_body
+    assert "tryLoadMesh(item, rendered, fallback, operation);" in render_scene_body
     assert "maybeEmitSceneReady();" in render_scene_body
     assert "attemptInitialCameraFit" not in render_scene_body
 
@@ -1329,7 +1330,8 @@ def test_primary_mesh_backed_target_bin_keeps_product_visibility_scale_color_and
     assert "transform.scale || item?.mesh_scale" in mesh_scale
 
     readiness = js.split("function beginWeb3dSceneReadiness(items)", 1)[1].split("function requiredReadinessCompleteForItem", 1)[0]
-    assert "pending.add(readinessKey(category, item))" in readiness
+    assert "pending.add(readinessKey(category, item))" not in readiness
+    assert "required[category] = true" in readiness
     category = js.split("function readinessCategoryForItem(item)", 1)[1].split("function readinessKey", 1)[0]
     assert "return 'authored_physical_mesh';" in category
     load = js.split("async function tryLoadMesh", 1)[1].split("function collectItems", 1)[0]
@@ -1374,10 +1376,12 @@ assert.strictEqual(false || !isDebugOverlayItem(placeZone), false);
 state.sceneJson = { assets: [targetBin, placeZone] };
 beginWeb3dSceneReadiness(collectItems(state.sceneJson));
 const readinessKeyForTarget = readinessKey('authored_physical_mesh', targetBin);
-assert.strictEqual(state.web3dReadiness.pending.has(readinessKeyForTarget), true);
+assert.strictEqual(state.web3dReadiness.pending.has(readinessKeyForTarget), false);
 assert.strictEqual(state.web3dReadiness.required.authored_physical_mesh, true);
+const targetOperation = registerReadinessOperation([readinessKeyForTarget]);
+assert.strictEqual(state.web3dReadiness.pending.has(readinessKeyForTarget), true);
 targetBin.mesh_status = 'loaded';
-requiredReadinessCompleteForItem(targetBin);
+completeReadinessOperation(targetOperation);
 assert.strictEqual(state.web3dReadiness.pending.has(readinessKeyForTarget), false);
 `, context);
 """
@@ -2427,7 +2431,7 @@ def test_expanded_urdf_robot_preview_defers_initial_fit_until_scene_ready():
     loaded_body = preview_body.split("onRobotLoaded: result =>", 1)[1].split("onRobotMeshLoaded", 1)[0]
     mesh_loaded_body = preview_body.split("onRobotMeshLoaded: () =>", 1)[1].split("onRobotMeshLoadError", 1)[0]
 
-    assert "completeExpandedUrdfReadiness(result)" in loaded_body
+    assert "completeExpandedUrdfReadiness(readinessOperation)" in loaded_body
     assert "attemptInitialCameraFit" not in loaded_body
     assert "renderSceneSummary()" in mesh_loaded_body
     assert "scheduleInitialCameraFitRetry" not in mesh_loaded_body
@@ -2863,7 +2867,8 @@ state.sceneJson = {
 };
 const items = collectItems(state.sceneJson);
 beginWeb3dSceneReadiness(items);
-failExpandedUrdfReadiness(new Error('HTTP 404 loading required Robotiq tool mesh'), {
+const expandedOperation = registerReadinessOperation(['robot_arm:expanded_urdf_loader', 'attached_tool_gripper:expanded_urdf_loader'], { robotPreviewLoadToken });
+failExpandedUrdfReadiness(expandedOperation, new Error('HTTP 404 loading required Robotiq tool mesh'), {
   robot_urdf_url: 'assets/ur5_2f_test/scene.urdf',
   robot_missing_meshes: ['build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq/robotiq_85_gripper_visual.dae: HTTP 404'],
   robot_failed_visual_count: 1,
@@ -2920,8 +2925,9 @@ def test_viewer_emits_explicit_web3d_readiness_states_and_required_categories():
     assert "if (readinessState === 'scene_ready')" in js
     assert "if (state.web3dReadiness.terminal)" in js
     assert "state.web3dReadiness.terminal" in js
-    assert "pending.add('robot_arm:expanded_urdf_loader')" in js
-    assert "pending.add('attached_tool_gripper:expanded_urdf_loader')" in js
+    assert "'robot_arm:expanded_urdf_loader'" in js
+    assert "registerReadinessOperation" in js
+    assert "'attached_tool_gripper:expanded_urdf_loader'" in js
     assert "emitWeb3dReadinessState('scene_loading'" in js
     assert "emitWeb3dReadinessState('scene_ready'" in js
     assert "scene_id: sceneId()" in js
@@ -2977,7 +2983,7 @@ def test_successful_required_loads_emit_scene_ready_exactly_once_after_completio
     assert "readiness.pending?.size === 0" in maybe_body
     assert "emitWeb3dReadinessState('scene_ready'" in maybe_body
     assert "requiredReadinessCompleteForItem(item);" in js
-    assert "completeExpandedUrdfReadiness(result);" in js
+    assert "completeExpandedUrdfReadiness(readinessOperation);" in js
 
 
 
@@ -3482,7 +3488,8 @@ assert.deepStrictEqual(diagnostics.missing_required_visuals, []);
 assert.ok(diagnostics.duplicate_physical_visual_identities.length > 0);
 state.web3dReadiness = { state: 'scene_loading', emittedSceneReady: false, required: { robot_arm: true, attached_tool_gripper: true, workbench_support_surface: true, configured_camera: true }, pending: new Set(['robot_arm:expanded_urdf_loader', 'attached_tool_gripper:expanded_urdf_loader']), failed: false, failure: null };
 assert.strictEqual(failIfExpandedUrdfExpectedVisualSetInvalid(), false);
-completeExpandedUrdfReadiness({ diagnostics: state.robotUrdfPreviewDiagnostics });
+const expandedOperation = registerReadinessOperation(['robot_arm:expanded_urdf_loader', 'attached_tool_gripper:expanded_urdf_loader'], { robotPreviewLoadToken });
+completeExpandedUrdfReadiness(expandedOperation);
 assert.strictEqual(state.web3dReadiness.state, 'scene_ready');
 `, context);
 """
@@ -3532,7 +3539,8 @@ assert.deepStrictEqual(diagnostics.missing_required_visuals, []);
 assert.strictEqual(diagnostics.expanded_urdf_required_visual_counts.shoulder_link, undefined);
 state.web3dReadiness = { state: 'scene_loading', emittedSceneReady: false, required: { robot_arm: true, attached_tool_gripper: true, workbench_support_surface: true, configured_camera: true }, pending: new Set(['robot_arm:expanded_urdf_loader', 'attached_tool_gripper:expanded_urdf_loader']), failed: false, failure: null };
 assert.strictEqual(failIfExpandedUrdfExpectedVisualSetInvalid(), false);
-completeExpandedUrdfReadiness({ diagnostics: state.robotUrdfPreviewDiagnostics });
+const expandedOperation = registerReadinessOperation(['robot_arm:expanded_urdf_loader', 'attached_tool_gripper:expanded_urdf_loader'], { robotPreviewLoadToken });
+completeExpandedUrdfReadiness(expandedOperation);
 assert.strictEqual(state.web3dReadiness.state, 'scene_ready');
 assert.ok(window.dispatched.includes('scene_ready'));
 assert.ok(!window.dispatched.includes('scene_failed'));

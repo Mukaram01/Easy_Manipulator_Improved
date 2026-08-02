@@ -123,19 +123,39 @@ function readinessCategoryForItem(item) {
   if (itemRequiresMeshBackedVisual(item) && (category === 'object' || viewerGroupFor(item) === 'environment/layout')) return 'authored_physical_mesh';
   return '';
 }
+function configuredCameraRelationshipIds(item) {
+  const fields = [
+    'configured_camera_id', 'configuredCameraId', 'camera_id', 'cameraId',
+    'canonical_scene_item_id', 'canonicalSceneItemId', 'canonical_item_id', 'canonicalItemId',
+    'authored_item_id', 'authoredItemId', 'authored_id', 'authoredId',
+    'layout_item_ref', 'layoutItemRef', 'scene_item_id', 'sceneItemId',
+    'selection_owner_id', 'selectionOwnerId', 'owner_id', 'ownerId',
+    'object_ref', 'objectRef', 'source_item_id', 'sourceItemId',
+  ];
+  return fields.map(field => String(item?.[field] || '').trim()).filter(Boolean);
+}
+function canonicalAuthoredCameraId(item) {
+  const relationshipIds = new Set(configuredCameraRelationshipIds(item));
+  const ownId = String(item?.id || '').trim();
+  if (ownId) relationshipIds.add(ownId);
+  const authoredRows = collectItems(state.sceneJson || {}).filter(candidate => {
+    if (candidate === item || readinessCategoryForItem(candidate) !== 'configured_camera') return false;
+    const candidateId = String(candidate?.id || '').trim();
+    if (!candidateId || isGeneratedUrdfItem(candidate)) return false;
+    const candidateRefs = configuredCameraRelationshipIds(candidate);
+    return relationshipIds.has(candidateId) || candidateRefs.some(value => relationshipIds.has(value));
+  });
+  const canonical = authoredRows.find(candidate => isPrimaryRenderableItem(candidate) && (candidate?.editable === true || String(candidate?.source_layer || '').includes('authored')))
+    || authoredRows.find(candidate => isPrimaryRenderableItem(candidate))
+    || authoredRows[0];
+  return String(canonical?.id || '').trim();
+}
 function readinessIdentityForItem(category, item) {
   if (category === 'configured_camera') {
-    const cameraIdentityFields = [
-      'configured_camera_id', 'configuredCameraId', 'camera_id', 'cameraId',
-      'canonical_scene_item_id', 'canonicalSceneItemId', 'canonical_item_id', 'canonicalItemId',
-      'authored_item_id', 'authoredItemId', 'layout_item_ref', 'layoutItemRef',
-      'scene_item_id', 'sceneItemId', 'selection_owner_id', 'selectionOwnerId',
-      'owner_id', 'ownerId', 'object_ref', 'objectRef',
-    ];
-    for (const field of cameraIdentityFields) {
-      const value = String(item?.[field] || '').trim();
-      if (value) return value;
-    }
+    const authoredId = canonicalAuthoredCameraId(item);
+    if (authoredId) return authoredId;
+    const relationshipId = configuredCameraRelationshipIds(item)[0];
+    if (relationshipId) return relationshipId;
   }
   return String(item?.id || item?.link || itemLabel(item || {}));
 }
@@ -207,32 +227,50 @@ function structuredWeb3dReadinessFields(lifecycleState) {
 }
 function beginWeb3dSceneReadiness(items) {
   const required = Object.fromEntries(WEB3D_REQUIRED_CATEGORIES.map(category => [category, false]));
-  const pending = new Set();
   for (const item of items || []) {
     const category = readinessCategoryForItem(item);
-    if (!category) continue;
-    required[category] = true;
-    if (itemRequiresMeshBackedVisual(item) || displayMeshUri(item)) pending.add(readinessKey(category, item));
+    if (category) required[category] = true;
   }
   if (isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview)) {
     required.robot_arm = true;
     required.attached_tool_gripper = true;
-    pending.add('robot_arm:expanded_urdf_loader');
-    pending.add('attached_tool_gripper:expanded_urdf_loader');
   }
-  state.web3dReadiness = { state: 'scene_loading', terminal: false, terminalState: '', terminalNavigationKey: web3dNavigationKey(), terminalEmissionCount: 0, statusSequence: 0, required, pending, failed: false, failure: null };
+  state.web3dReadiness = { state: 'scene_loading', terminal: false, terminalState: '', terminalNavigationKey: web3dNavigationKey(), terminalEmissionCount: 0, statusSequence: 0, required, pending: new Set(), failed: false, failure: null };
   emitWeb3dReadinessState('scene_loading', { required_categories: required });
+}
+function registerReadinessOperation(keys, options = {}) {
+  const operation = {
+    pendingKeys: new Set(asArray(keys).map(key => String(key || '').trim()).filter(Boolean)),
+    physicalLoadToken,
+    navigationKey: web3dNavigationKey(),
+    robotPreviewLoadToken: options.robotPreviewLoadToken,
+    completed: false,
+  };
+  for (const key of operation.pendingKeys) state.web3dReadiness?.pending?.add(key);
+  return operation;
+}
+function readinessOperationIsCurrent(operation) {
+  return Boolean(operation) && operation.physicalLoadToken === physicalLoadToken && operation.navigationKey === web3dNavigationKey()
+    && (operation.robotPreviewLoadToken === undefined || operation.robotPreviewLoadToken === robotPreviewLoadToken);
+}
+function completeReadinessOperation(operation) {
+  if (!readinessOperationIsCurrent(operation) || operation.completed) return false;
+  operation.completed = true;
+  for (const key of operation.pendingKeys) state.web3dReadiness?.pending?.delete(key);
+  maybeEmitSceneReady();
+  return true;
 }
 function requiredReadinessCompleteForItem(item) {
   const category = readinessCategoryForItem(item);
-  if (!category || !state.web3dReadiness?.pending) return;
-  state.web3dReadiness.pending.delete(readinessKey(category, item));
+  if (!category) return;
+  state.web3dReadiness?.pending?.delete(readinessKey(category, item));
   maybeEmitSceneReady();
 }
-function physicalMeshAttempt(item) {
+function physicalMeshAttempt(item, operation) {
   const category = readinessCategoryForItem(item);
   const identity = category ? readinessIdentityForItem(category, item) : '';
   return {
+    operation: operation || registerReadinessOperation(category ? [`${category}:${identity}`] : []),
     token: physicalLoadToken,
     navigationKey: web3dNavigationKey(),
     category,
@@ -242,13 +280,11 @@ function physicalMeshAttempt(item) {
   };
 }
 function physicalMeshAttemptIsCurrent(attempt) {
-  return attempt.token === physicalLoadToken && attempt.navigationKey === web3dNavigationKey();
+  return readinessOperationIsCurrent(attempt?.operation) && attempt.token === physicalLoadToken && attempt.navigationKey === web3dNavigationKey();
 }
 function completePhysicalMeshAttempt(attempt) {
   if (!physicalMeshAttemptIsCurrent(attempt)) return false;
-  if (attempt.readinessKey && state.web3dReadiness?.pending) state.web3dReadiness.pending.delete(attempt.readinessKey);
-  maybeEmitSceneReady();
-  return true;
+  return completeReadinessOperation(attempt.operation);
 }
 function failPhysicalMeshAttempt(attempt, item, url, reason, extra = {}) {
   if (!physicalMeshAttemptIsCurrent(attempt)) return false;
@@ -263,6 +299,7 @@ function failPhysicalMeshAttempt(attempt, item, url, reason, extra = {}) {
     ...extra,
     loader: extra.loader || extra.loader_type || '',
     loader_type: extra.loader_type || extra.loader || '',
+    pending_required_loads: pendingRequiredLoads(),
   });
   return true;
 }
@@ -278,15 +315,12 @@ function failWeb3dSceneReadiness(item, url, reason, extra = {}) {
     url: url || displayMeshUri(item),
     reason: reason || 'required mesh failed',
     ...extra,
+    pending_required_loads: pendingRequiredLoads(),
   });
 }
-function completeExpandedUrdfReadiness(result) {
-  if (!state.web3dReadiness?.pending) return;
-  state.web3dReadiness.pending.delete('robot_arm:expanded_urdf_loader');
-  state.web3dReadiness.pending.delete('attached_tool_gripper:expanded_urdf_loader');
-  maybeEmitSceneReady();
-}
-function failExpandedUrdfReadiness(err, diagnostics = {}, detail = {}) {
+function completeExpandedUrdfReadiness(operation) { return completeReadinessOperation(operation); }
+function failExpandedUrdfReadiness(operation, err, diagnostics = {}, detail = {}) {
+  if (!readinessOperationIsCurrent(operation) || operation.completed) return false;
   const link = String(detail.link || detail.link_name || '').trim();
   const expectedTool = new Set(asArray(state.sceneJson?.robot_preview?.expected_tool_visual_links || state.sceneJson?.robot_preview?.expectedToolVisualLinks).map(value => String(value || '').trim()).filter(Boolean));
   emitWeb3dReadinessState('scene_failed', {
@@ -297,7 +331,9 @@ function failExpandedUrdfReadiness(err, diagnostics = {}, detail = {}) {
     reason: err?.message || String(err || 'expanded URDF required mesh failed'),
     robot_missing_meshes: diagnostics.robot_missing_meshes || [],
     ...detail,
+    pending_required_loads: pendingRequiredLoads(),
   });
+  return true;
 }
 function expandedUrdfTerminalFailure(rendererDiagnostics = {}) {
   const list = (snakeName, camelName) => asArray(rendererDiagnostics[snakeName] || rendererDiagnostics[camelName])
@@ -372,7 +408,6 @@ function maybeEmitSceneReady() {
       const missingMeshes = asArray(diagnostics.robot_missing_meshes || diagnostics.robotMissingMeshes);
       const failedVisualCount = Number(diagnostics.robot_failed_visual_count ?? diagnostics.robotFailedVisualCount ?? 0) || 0;
       if (!failureReason && missingMeshes.length === 0 && failedVisualCount === 0) return;
-      failExpandedUrdfReadiness(new Error(failureReason || missingMeshes[0] || 'expanded URDF preview failed'), diagnostics);
       return;
     }
     if (lifecycle !== 'ready') return;
@@ -2212,8 +2247,8 @@ function loadMeshWithDeadline(loader, url, timeoutMs = PHYSICAL_MESH_LOAD_TIMEOU
     else reject(new Error('mesh loader provides neither loadAsync() nor load()'));
   }, timeoutMs);
 }
-async function tryLoadMesh(item, rendered, fallback) {
-  const attempt = physicalMeshAttempt(item);
+async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
+  const attempt = physicalMeshAttempt(item, readinessOperation);
   const diagnostic = meshUriDiagnostic(item);
   const uri = diagnostic.uri;
   const requestedUri = displayMeshUri(item);
@@ -3386,7 +3421,9 @@ function renderScene(items) {
     setRenderInfo(rendered, fallbackStatus, displayMeshUri(item), fallbackReason);
     state.objects.push(rendered);
     maybeWarnSupportSurfaceSemantics(item);
-    tryLoadMesh(item, rendered, fallback);
+    const category = readinessCategoryForItem(item);
+    const operation = registerReadinessOperation(category ? [readinessKey(category, item)] : []);
+    tryLoadMesh(item, rendered, fallback, operation);
   }
   renderFrameDebugOverlays();
   populateObjectList();
@@ -3400,8 +3437,12 @@ function renderScene(items) {
 function loadExpandedUrdfRobotPreview(preview) {
   const loadToken = ++robotPreviewLoadToken;
   const loadSceneId = sceneId();
+  const readinessOperation = registerReadinessOperation([
+    'robot_arm:expanded_urdf_loader',
+    'attached_tool_gripper:expanded_urdf_loader',
+  ], { robotPreviewLoadToken: loadToken });
   let staleCallbackLogged = false;
-  const callbackIsCurrent = () => loadToken === robotPreviewLoadToken && loadSceneId === sceneId();
+  const callbackIsCurrent = () => readinessOperationIsCurrent(readinessOperation) && loadSceneId === sceneId();
   const ignoreStaleCallback = () => {
     if (!staleCallbackLogged) {
       console.debug?.(`Ignored stale robot preview callback: callback_scene=${loadSceneId} active_scene=${sceneId()}`);
@@ -3445,6 +3486,7 @@ function loadExpandedUrdfRobotPreview(preview) {
     diagnostics.robotFailedVisualCount = 1;
     diagnostics.robot_missing_meshes.push('urdf_robot_renderer module was not loaded');
     appendRuntimeWarning({}, preview?.urdf_url || '', 'expanded_urdf_loader failed: urdf_robot_renderer module was not loaded', 'expanded_urdf_loader_failed');
+    failExpandedUrdfReadiness(readinessOperation, new Error('expanded_urdf_loader failed: urdf_robot_renderer module was not loaded'), diagnostics);
     refreshWarnings();
     return { root: null, links: new Map(), joints: new Map(), diagnostics, ready: Promise.resolve(null) };
   }
@@ -3539,7 +3581,7 @@ function loadExpandedUrdfRobotPreview(preview) {
         result.diagnostics.robotPreviewLifecycleState = 'ready';
       }
       state.robotUrdfPreviewDiagnostics = result.diagnostics;
-      if (resultLifecycle === 'ready' && !failIfExpandedUrdfExpectedVisualSetInvalid()) completeExpandedUrdfReadiness(result);
+      if (resultLifecycle === 'ready' && !failIfExpandedUrdfExpectedVisualSetInvalid()) completeExpandedUrdfReadiness(readinessOperation);
       maybeEmitSceneReady();
       refreshInitialPoseActionState();
       renderSceneSummary();
@@ -3548,7 +3590,7 @@ function loadExpandedUrdfRobotPreview(preview) {
       if (!callbackIsCurrent()) return ignoreStaleCallback();
       renderSceneSummary();
     },
-    onRobotMeshLoadError: (err, uri, detail) => { if (!callbackIsCurrent()) return ignoreStaleCallback(); failExpandedUrdfReadiness(err, state.robotUrdfPreviewDiagnostics, detail || { uri }); renderSceneSummary(); },
+    onRobotMeshLoadError: (err, uri, detail) => { if (!callbackIsCurrent()) return ignoreStaleCallback(); failExpandedUrdfReadiness(readinessOperation, err, state.robotUrdfPreviewDiagnostics, detail || { uri }); renderSceneSummary(); },
     onRobotError: (err, diagnostics) => {
       if (!callbackIsCurrent()) return ignoreStaleCallback();
       state.robotUrdfPreviewDiagnostics = { ...state.robotUrdfPreviewDiagnostics, ...(diagnostics || {}) };
@@ -3556,7 +3598,7 @@ function loadExpandedUrdfRobotPreview(preview) {
       state.robotUrdfPreviewDiagnostics.robotPreviewLifecycleState = 'failed';
       state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason = err?.message || String(err || 'expanded URDF preview failed');
       state.robotUrdfPreviewDiagnostics.robotPreviewFailureReason = state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason;
-      failExpandedUrdfReadiness(err, state.robotUrdfPreviewDiagnostics);
+      failExpandedUrdfReadiness(readinessOperation, err, state.robotUrdfPreviewDiagnostics);
       maybeEmitSceneReady();
       appendRuntimeWarning({}, preview?.urdf_url || '', `expanded_urdf_loader failed: ${err?.message || err}`, 'expanded_urdf_loader_failed');
       refreshWarnings();
