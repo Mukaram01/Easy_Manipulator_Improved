@@ -4028,25 +4028,53 @@ function isExpandedUrdfInspectionPick(rendered) {
 function isCanvasSelectableRendered(rendered) {
   return isExpandedUrdfInspectionPick(rendered) || isNormalSelectableRendered(rendered);
 }
-function excludedPickNode(node) {
+function intrinsicallyExcludedPickNode(node) {
   const data = node?.userData || {};
   const name = String(node?.name || '').toLowerCase();
-  return node?.visible === false || data.selection_outline || data.selection_highlight || data.diagnostic_only ||
-    data.hidden_overlay || data.helper_hidden || data.non_selectable || data.selectable === false ||
+  return node?.visible === false || data.selection_outline || data.selection_highlight ||
+    data.hidden_overlay || data.helper_hidden ||
     /transformcontrols|transform_controls|gizmo|selection_.*highlight/.test(name);
+}
+function passThroughPickNode(node) {
+  const data = node?.userData || {};
+  const name = String(node?.name || '').toLowerCase();
+  return data.diagnostic_only || data.non_selectable || data.selectable === false ||
+    /(?:^|[_-])(?:edges?|frustum|helper)(?:$|[_-])/.test(name);
+}
+function excludedPickNode(node) {
+  return intrinsicallyExcludedPickNode(node) || passThroughPickNode(node);
+}
+function intrinsicallyExcludedPickItem(item) {
+  const sourceLayer = String(item?.source_layer || '').toLowerCase();
+  const identity = [item?.role, item?.category, item?.id].map(value => String(value || '').toLowerCase()).join(' ');
+  const explicitDebug = isDebugOverlayItem(item) && (item?.diagnostic_only === true || /debug|diagnostic/.test(`${sourceLayer} ${identity}`));
+  return explicitDebug || (isTaskOnlyHelperItem(item) && /task|debug/.test(sourceLayer));
 }
 function itemFromRaycastHit(hit) {
   let node = hit?.object || null;
   let candidate = null;
   while (node) {
-    if (excludedPickNode(node)) return null;
+    // Registration is authoritative for expanded-URDF inspection descendants.
+    // Loader-provided Collada/URDF userData can contain stale diagnostic flags,
+    // so consult the registry before interpreting those descendant flags.
+    const registered = state.pickIdentityByObject.get(node);
+    if (intrinsicallyExcludedPickNode(node)) return null;
+    if (isExpandedUrdfInspectionPick(registered)) {
+      const descendantItem = node.userData?.item;
+      const identityFreeDescendant = descendantItem ? { ...descendantItem, id: '', display_name: '', status: '', diagnostic_only: false, selectable: true } : null;
+      if (identityFreeDescendant && intrinsicallyExcludedPickItem(identityFreeDescendant)) return null;
+      return registered;
+    }
+    // A different registered root is a nested URDF-link ownership boundary.
+    if (candidate && registered && registered !== candidate) return candidate;
+    if (passThroughPickNode(node)) {
+      node = node.parent;
+      continue;
+    }
     if (!candidate) {
-      const registered = state.pickIdentityByObject.get(node);
-      const registeredInspection = isExpandedUrdfInspectionPick(registered);
       const nodeItem = node.userData?.item;
-      const nodeItemWithoutStalePickFlags = nodeItem ? { ...nodeItem, id: '', display_name: '', status: '', diagnostic_only: false, selectable: true } : null;
-      if (registeredInspection && nodeItemWithoutStalePickFlags && (isTaskOnlyHelperItem(nodeItemWithoutStalePickFlags) || isOverlayPolicyItem(nodeItemWithoutStalePickFlags) || isDebugOverlayItem(nodeItemWithoutStalePickFlags))) return null;
-      const item = registeredInspection ? registered.item : nodeItem || registered?.item;
+      if (nodeItem && intrinsicallyExcludedPickItem(nodeItem)) return null;
+      const item = nodeItem || registered?.item;
       if (item?.id) {
         const rendered = renderedById(item.id) || registered;
         if (!rendered || !isCanvasSelectableRendered(rendered)) return null;
