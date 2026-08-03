@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +37,37 @@ def _write_web_scene(scene: Path, output: Path) -> dict[str, Any]:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return payload
+
+
+def _source_snapshot(scene: Path) -> dict[Path, bytes]:
+    return {
+        path: path.read_bytes()
+        for path in (scene / "layout/workcell_studio_layout.yaml", scene / "environment.yaml")
+        if path.is_file()
+    }
+
+
+def _atomic_restore(path: Path, payload: bytes) -> None:
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".rollback.tmp", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, path.stat().st_mode)
+        os.replace(temporary, path)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def _rollback_changed_sources(snapshot: dict[Path, bytes], reason: str) -> None:
+    changed = [(path, payload) for path, payload in snapshot.items() if not path.is_file() or path.read_bytes() != payload]
+    for path, payload in changed:
+        _atomic_restore(path, payload)
+        print(f"ROLLBACK: atomically restored exact pre-write bytes: {path}", file=sys.stderr)
+    print(f"ROLLBACK complete after {reason}; timestamped backup files were retained.", file=sys.stderr)
 
 
 def _format_cmd(cmd: list[str]) -> str:
@@ -233,6 +266,7 @@ def main(argv: list[str] | None = None) -> int:
             _print_next_write_command(args)
             return 0
 
+        source_snapshot = _source_snapshot(scene)
         write_cmd = [*dry_cmd, "--write", "--backup"]
         write_rc = _run_step("write apply", write_cmd)
         if write_rc != 0:
@@ -245,6 +279,7 @@ def main(argv: list[str] | None = None) -> int:
             _write_web_scene(scene, after_path)
         except Exception as exc:  # noqa: BLE001
             print(f"FAIL: after web_scene export failed for {scene}: {exc}", file=sys.stderr)
+            _rollback_changed_sources(source_snapshot, "post-write re-export failure")
             return 1
         print(f"after web_scene path: {after_path}")
         print("re-export after result: PASS")
@@ -253,6 +288,7 @@ def main(argv: list[str] | None = None) -> int:
         verify_rc = _run_step("persistence verification", verify_cmd)
         print(f"persistence verification result: {'PASS' if verify_rc == 0 else 'FAIL'}")
         if verify_rc != 0:
+            _rollback_changed_sources(source_snapshot, "post-write persistence verification failure")
             return verify_rc
         print("patch applied/skipped: APPLIED")
 

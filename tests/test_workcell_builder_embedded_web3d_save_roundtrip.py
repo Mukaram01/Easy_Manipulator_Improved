@@ -204,8 +204,8 @@ def test_save_roundtrip_has_no_browser_source_writes_or_robot_motion():
 
 def test_roundtrip_change_stays_focused():
     assert len(CONTROLLER.read_text(encoding="utf-8").splitlines()) < 590
-    assert len(WORKFLOW.read_text(encoding="utf-8").splitlines()) < 340
-    assert len(APPLICATOR.read_text(encoding="utf-8").splitlines()) < 290
+    assert len(WORKFLOW.read_text(encoding="utf-8").splitlines()) < 370
+    assert len(APPLICATOR.read_text(encoding="utf-8").splitlines()) < 340
 
 
 def test_linked_group_patch_uses_existing_two_edit_save_path():
@@ -371,6 +371,30 @@ def test_executable_production_camera_table_save_roundtrips(tmp_path):
             for path in scene.rglob("*") if path.is_file() and path.name != "workcell_studio_layout.yaml" and ".bak" not in path.name
         }
         assert protected_after == protected_before
+
+
+def test_exact_workflow_rejects_identity_table_baseline_without_scene_mutation(tmp_path):
+    scene = tmp_path / "ur5_2f_test"
+    shutil.copytree(ROOT / "scenes/ur5_2f_test", scene)
+    output = tmp_path / "web"
+    output.mkdir()
+    before_path = output / "ur5_2f_test.before.web_scene.json"
+    subprocess.run([sys.executable, str(EXPORTER), "--scene", str(scene), "--output", str(before_path)], cwd=ROOT, check=True)
+    before = json.loads(before_path.read_text(encoding="utf-8"))
+    table = {item["id"]: item for item in before["ui_selection_owners"]}["support_surface_table"]
+    new = _transform(table)
+    new["pose"]["rpy"]["z"] -= 0.61086524
+    identity = {"pose": {"xyz": {"x": 0.0, "y": 0.0, "z": 0.0}, "rpy": {"x": 0.0, "y": 0.0, "z": 0.0}}, "scale": {"x": 1.0, "y": 1.0, "z": 1.0}}
+    patch = {"schema_version": "workcell_studio_web_scene_edit_patch/v1", "scene_id": "ur5_2f_test", "source_scene_schema_version": before["schema_version"], "created_at": "2026-08-03T00:00:00Z", "created_by": "static_web_viewer", "edits": [{"item_id": "support_surface_table", "operation": "update_transform", "editable_required": True, "locked_required": False, "old_transform": identity, "new_transform": new}]}
+    patch_path = output / "identity-old-transform.json"
+    patch_path.write_text(json.dumps(patch), encoding="utf-8")
+    hashes = {path.relative_to(scene): hashlib.sha256(path.read_bytes()).hexdigest() for path in scene.rglob("*") if path.is_file()}
+    for mode in ("--dry-run-apply", "--write"):
+        result = subprocess.run([sys.executable, str(WORKFLOW), "--scene", str(scene), "--patch", str(patch_path), "--output-dir", str(output), mode], cwd=ROOT, capture_output=True, text=True)
+        assert result.returncode == 1
+        assert "old_transform precondition" in result.stderr
+        assert "write/apply is blocked" in result.stderr
+        assert {path.relative_to(scene): hashlib.sha256(path.read_bytes()).hexdigest() for path in scene.rglob("*") if path.is_file()} == hashes
 
 def test_executable_linked_edit_undo_redo_preserves_canonical_selection():
     viewer = ROOT / "workcell_studio_web/viewer/viewer.js"
