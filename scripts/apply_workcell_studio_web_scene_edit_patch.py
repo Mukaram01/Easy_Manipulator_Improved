@@ -24,6 +24,7 @@ except ImportError:  # pragma: no cover
     yaml = None  # type: ignore
 
 from validate_workcell_studio_web_scene_edit_patch import _derived_transform_target, _items_by_id, _load_json, _scene_id, validate
+from verify_workcell_studio_web_scene_edit_persistence import _item_transform, _numbers_close
 
 ALLOWED_SOURCES = {
     "layout/workcell_studio_layout.yaml",
@@ -77,6 +78,21 @@ def _write_yaml(path: Path, data: Any) -> None:
             temporary.unlink()
         except FileNotFoundError:
             pass
+        raise
+
+
+def _write_bytes_atomic(path: Path, payload: bytes) -> None:
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".rollback.tmp", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, path.stat().st_mode)
+        os.replace(temporary, path)
+    except Exception:
+        temporary.unlink(missing_ok=True)
         raise
 
 
@@ -164,6 +180,30 @@ def _has_obvious_scale(record: dict[str, Any]) -> bool:
     return isinstance(record.get("scale"), (list, dict)) or isinstance(record.get("mesh_scale"), (list, dict))
 
 
+def _record_transform(record: dict[str, Any], source: str) -> dict[str, Any]:
+    if source == "layout/workcell_studio_layout.yaml":
+        item = {"pose": record.get("pose", {})}
+    else:
+        item = {"pose_xyz": record.get("pose_xyz"), "pose_rpy": record.get("pose_rpy")}
+    if "scale" in record:
+        item["scale"] = record["scale"]
+    elif "mesh_scale" in record:
+        item["mesh_scale"] = record["mesh_scale"]
+    return _item_transform(item)
+
+
+def _pose_only(transform: dict[str, Any]) -> dict[str, Any]:
+    return {"pose": transform.get("pose", {})}
+
+
+def _require_current_old_transform(item_id: str, old: dict[str, Any], item: dict[str, Any], record: dict[str, Any], source: str) -> None:
+    expected = _pose_only(old)
+    for authority, actual in ((source, _pose_only(_record_transform(record, source))), ("current web_scene export", _pose_only(_item_transform(item)))):
+        errors = _numbers_close(expected, actual, f"{item_id} old_transform precondition against {authority}")
+        if errors:
+            raise ValueError("stale edit patch; authoritative pose no longer matches old_transform:\n" + "\n".join(f"- {error}" for error in errors))
+
+
 def _plan(scene_dir: Path, web_scene: dict[str, Any], patch: dict[str, Any]) -> list[PlannedUpdate]:
     errors = validate(web_scene, patch)
     if errors:
@@ -189,6 +229,7 @@ def _plan(scene_dir: Path, web_scene: dict[str, Any], patch: dict[str, Any]) -> 
         record = _find_layout_record(loaded_yaml[rel], item_id) if rel == "layout/workcell_studio_layout.yaml" else _find_environment_record(loaded_yaml[rel], item_id)
         if record is None:
             raise ValueError(f"{item_id}: source item not found exactly once in {rel}")
+        _require_current_old_transform(item_id, edit["old_transform"], item, record, rel)
         new_scale = _scale_list(edit["new_transform"])
         old_scale = _scale_list(edit["old_transform"])
         scale_changed = new_scale is not None and old_scale is not None and new_scale != old_scale
@@ -253,19 +294,27 @@ def main(argv: list[str] | None = None) -> int:
         by_file: dict[Path, list[PlannedUpdate]] = {}
         for update in planned:
             by_file.setdefault(update.target_file, []).append(update)
-        for path, updates in by_file.items():
-            data = _load_yaml(path)
-            for update in updates:
-                update.record = _find_layout_record(data, update.item_id) if update.target_rel == "layout/workcell_studio_layout.yaml" else _find_environment_record(data, update.item_id)  # type: ignore[assignment]
-                if update.record is None:
-                    raise ValueError(f"{update.item_id}: source item disappeared from {update.target_rel}")
-                _apply_update(update)
-            if args.backup:
-                stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-                shutil.copy2(path, path.with_name(f"{path.name}.{stamp}.bak"))
-            _write_yaml(path, data)
-            print(f"updated file path: {path}")
-            print(f"updated item count: {len(updates)}")
+        original_bytes = {path: path.read_bytes() for path in by_file}
+        try:
+            for path, updates in by_file.items():
+                data = _load_yaml(path)
+                for update in updates:
+                    update.record = _find_layout_record(data, update.item_id) if update.target_rel == "layout/workcell_studio_layout.yaml" else _find_environment_record(data, update.item_id)  # type: ignore[assignment]
+                    if update.record is None:
+                        raise ValueError(f"{update.item_id}: source item disappeared from {update.target_rel}")
+                    _apply_update(update)
+                if args.backup:
+                    stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+                    shutil.copy2(path, path.with_name(f"{path.name}.{stamp}.bak"))
+                _write_yaml(path, data)
+                print(f"updated file path: {path}")
+                print(f"updated item count: {len(updates)}")
+        except Exception:
+            for path, payload in original_bytes.items():
+                if path.read_bytes() != payload:
+                    _write_bytes_atomic(path, payload)
+                    print(f"ROLLBACK: atomically restored exact pre-write bytes: {path}", file=sys.stderr)
+            raise
         print("skipped/rejected edits: none")
         print(f"next suggested command: python3 scripts/export_workcell_studio_web_scene.py --scene {args.scene} --output {args.web_scene}")
         return 0

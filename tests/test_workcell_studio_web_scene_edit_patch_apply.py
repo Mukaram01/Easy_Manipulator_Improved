@@ -21,7 +21,7 @@ def _web_scene(source="layout/workcell_studio_layout.yaml", editable=True, locke
         "scene": {"id": "tiny_scene"},
         "robots": [{"id": "ur5_visual", "label": "UR5", "type": "robot", "source_kind": "generated_preview", "source_layer": "generated_preview", "editable": False, "locked": True}],
         "tools": [],
-        "assets": [{"id": "layout_bin", "label": "Bin", "type": "bin", "source_kind": source_kind, "editable": editable, "locked": locked, "provenance": {"pose": source, "id": source}}],
+        "assets": [{"id": "layout_bin", "label": "Bin", "type": "bin", "source_kind": source_kind, "editable": editable, "locked": locked, "pose": {"xyz": [0.0, 0.1, 0.2], "rpy": [0.0, 0.0, 0.3]}, "provenance": {"pose": source, "id": source}}],
         "sensors": [],
         "zones": [],
         "warnings": [],
@@ -92,6 +92,21 @@ def test_write_updates_editable_layout_item_pose(tmp_path):
     assert "updated item count: 1" in result.stdout
     data = yaml.safe_load((scene / "layout" / "workcell_studio_layout.yaml").read_text(encoding="utf-8"))
     assert data["items"][0]["pose"]["xyz"] == [0.7, 0.1, 0.2]
+
+
+def test_stale_old_transform_blocks_dry_run_and_write_without_mutation(tmp_path):
+    scene = _scene(tmp_path)
+    scene_hashes = {path.relative_to(scene): path.read_bytes() for path in scene.rglob("*") if path.is_file()}
+    stale = _patch()
+    stale["edits"][0]["old_transform"] = {
+        "pose": {"xyz": {"x": 0.55, "y": 0.1, "z": 0.2}, "rpy": {"x": 0.0, "y": 0.0, "z": 0.3}},
+        "scale": {"x": 1.0, "y": 1.0, "z": 1.0},
+    }
+    for mode in ((), ("--write",)):
+        result = _run(tmp_path, scene, _web_scene(), stale, *mode)
+        assert result.returncode == 1
+        assert "old_transform precondition" in result.stderr
+        assert {path.relative_to(scene): path.read_bytes() for path in scene.rglob("*") if path.is_file()} == scene_hashes
 
 
 def test_locked_generated_edit_is_rejected(tmp_path):

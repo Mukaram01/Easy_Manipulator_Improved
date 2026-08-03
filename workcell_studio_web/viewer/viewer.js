@@ -1520,17 +1520,16 @@ function bindExportedPhysicalTransformOwnership() {
     if (!ownerId) continue;
     let owner = selectionOwnerRenderedById(ownerId);
     if (!owner?.object3d) {
+      const exportedOwner = (state.selectionIdentityIndex || rebuildSelectionIdentityIndex()).itemById.get(ownerId) || {};
+      const authoredTransform = transformOf(exportedOwner);
       const object3d = new THREE.Group();
       object3d.name = `${ownerId}_physical_edit_root`;
       object3d.up.copy(THREE.Object3D.DEFAULT_UP);
-      object3d.position.copy(rendered.object3d.position);
-      object3d.quaternion.copy(rendered.object3d.quaternion);
-      object3d.scale.copy(rendered.object3d.scale);
-      const exportedOwner = (state.selectionIdentityIndex || rebuildSelectionIdentityIndex()).itemById.get(ownerId) || {};
+      applyTransformToObject(object3d, authoredTransform);
       const item = { ...exportedOwner, id: ownerId, editable: true, locked: false, source_layer: 'editable_authored_physical', render_policy: 'primary' };
       assignItemUserData(object3d, item);
       state.three.scene.add(object3d);
-      owner = { item, object3d, fallback: null, labelEl: createLabelElement(item), originalTransform: transformFromObject(object3d), physicalEditRoot: true };
+      owner = { item, object3d, fallback: null, labelEl: createLabelElement(item), originalTransform: cloneTransform(authoredTransform), physicalEditRoot: true };
       state.objects.push(owner);
     }
     if (!owner?.object3d || owner === rendered || rendered.object3d.parent === owner.object3d) continue;

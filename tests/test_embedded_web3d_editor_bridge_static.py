@@ -221,12 +221,15 @@ const context={console,assert,THREE_IMPL,inputPayload:payload,window:{location:{
 vm.createContext(context); vm.runInContext(source+`
 THREE=THREE_IMPL; updateLabels=()=>{}; populateObjectList=()=>{}; renderSceneSummary=()=>{}; maybeEmitSceneReady=()=>{}; updateDirtyState=()=>{}; renderFrameDebugOverlays=()=>{}; beginWeb3dSceneReadiness=()=>{}; registerReadinessOperation=()=>null; maybeWarnSupportSurfaceSemantics=()=>{}; isExpandedUrdfRobotPreview=()=>false;buildRobotAssemblies=()=>({handled:new Set(),assemblies:[],renderDiagnostics:{}});const productionUsesAssembly=usesAssembledUrdfHierarchy;usesAssembledUrdfHierarchy=item=>item.editable===true?false:productionUsesAssembly(item);
 tryLoadMesh=(item,rendered,fallback)=>{if(!item.mesh_uri)return;const mesh=new THREE.Mesh(new THREE.BoxGeometry(.04,.03,.02),new THREE.MeshBasicMaterial());mesh.name=item.id+'_physical_mesh';rendered.object3d.add(mesh);rendered.meshObject=mesh;item.mesh_status='loaded';if(fallback)fallback.visible=false;suppressOwnedAuthoredFallback(rendered);};
-const exportedItems=[];for(const bucket of ['robots','tools','assets','sensors','zones','items','objects','frames','ui_selection_owners'])for(const item of inputPayload[bucket]||[]){if(bucket==='ui_selection_owners'&&item.editable!==true)continue;const old=exportedItems.findIndex(row=>row.id===item.id);if(old<0)exportedItems.push(item);else if(item.pose)exportedItems[old]=item;}state.sceneJson=inputPayload;state.three.scene=new THREE.Scene();renderScene(exportedItems);
+state.sceneJson=inputPayload;state.three.scene=new THREE.Scene();const exportedItems=validateSceneJson(inputPayload);assert(!exportedItems.some(item=>item.id==='realsense_overhead'));assert(!exportedItems.some(item=>item.id==='support_surface_table'));renderScene(exportedItems);
 const byId=id=>state.objects.find(record=>record.item.id===id);
 const camera=byId('realsense_overhead'),table=byId('support_surface_table'),bin=byId('target_bin_default');
 const cameraVisual=state.objects.find(record=>record.item.camera_id==='realsense_overhead'&&record.item.locked===true);
 const tableVisual=state.objects.find(record=>record.item.support_surface_ref==='support_surface_table'&&record.item.locked===true);
 assert(camera&&table&&bin&&cameraVisual&&tableVisual,JSON.stringify({camera:!!camera,table:!!table,bin:!!bin,cameraVisual:!!cameraVisual,tableVisual:!!tableVisual}));
+assert.strictEqual(camera.physicalEditRoot,true);assert.strictEqual(table.physicalEditRoot,true);
+assert.deepStrictEqual(transformFromObject(camera.object3d).pose.xyz,{x:.35,y:0,z:.85});assert(Math.abs(transformFromObject(camera.object3d).pose.rpy.y-1.5708)<1e-12);
+assert.deepStrictEqual(transformFromObject(table.object3d).pose.xyz,{x:.55,y:0,z:.06});
 assert.strictEqual(cameraVisual.object3d.parent,camera.object3d);assert.strictEqual(tableVisual.object3d.parent,table.object3d);
 const worldPose=o=>{o.updateWorldMatrix(true,true);return {p:new THREE.Vector3().setFromMatrixPosition(o.matrixWorld),q:new THREE.Quaternion().setFromRotationMatrix(o.matrixWorld)}};
 const gizmo={object:null,visible:false,enabled:false,showX:false,showY:false,showZ:false,attach(o){this.object=o},detach(){this.object=null},setMode(){},setSpace(){},setTranslationSnap(){},setRotationSnap(){},reset(){}};
@@ -236,13 +239,14 @@ pick(cameraVisual,'realsense_overhead',camera.object3d);pick(tableVisual,'suppor
 assert.strictEqual(byId('ur5'),undefined);assert.strictEqual(byId('robotiq_85_gripper'),undefined);for(const record of state.objects.filter(record=>record!==cameraVisual&&record!==tableVisual&&record.item.locked===true))assert.strictEqual(record.object3d.parent.type,'Scene');
 setEditorMode('rotate');hits=[{object:cameraVisual.object3d,distance:1}];pickObject({clientX:5,clientY:5});assert.strictEqual(gizmo.object,camera.object3d);setEditorMode('move');assert.strictEqual(gizmo.object,camera.object3d);
 const before=cloneTransform(transformFromObject(camera.object3d));camera.object3d.position.x+=.04;camera.object3d.rotation.z+=.2;const after=transformFromObject(camera.object3d);assert.strictEqual(markDirtyTransform(camera,after,{pushHistory:true,oldTransform:before}),true);undoPreviewEdit();redoPreviewEdit();
-const tableBefore=cloneTransform(transformFromObject(table.object3d));table.object3d.position.y-=.03;table.object3d.rotation.x+=.15;assert.strictEqual(markDirtyTransform(table,transformFromObject(table.object3d),{pushHistory:true,oldTransform:tableBefore}),true);undoPreviewEdit();redoPreviewEdit();
+const tableBefore=cloneTransform(transformFromObject(table.object3d));table.object3d.rotation.z-=.61086524;assert.strictEqual(markDirtyTransform(table,transformFromObject(table.object3d),{pushHistory:true,oldTransform:tableBefore}),true);undoPreviewEdit();redoPreviewEdit();
 assert.strictEqual(state.dirtyTransforms.has(cameraVisual.item.id),false);assert.strictEqual(state.dirtyTransforms.has(tableVisual.item.id),false);
 const patch=window.__WORKCELL_EDITOR_API_V1__.getEditPatch(),edits=new Map(patch.edits.map(edit=>[edit.item_id,edit]));
 assert.deepStrictEqual([...edits.keys()].sort(),['realsense_overhead','support_surface_table']);
 assert.deepStrictEqual(edits.get('realsense_overhead').old_transform.pose.xyz,{x:.35,y:0,z:.85});
 assert(Math.abs(edits.get('realsense_overhead').old_transform.pose.rpy.y-1.5708)<1e-12);
 assert.deepStrictEqual(edits.get('support_surface_table').old_transform.pose.xyz,{x:.55,y:0,z:.06});
+assert.deepStrictEqual(edits.get('support_surface_table').new_transform.pose.xyz,{x:.55,y:0,z:.06});
 for(const edit of edits.values()){assert.strictEqual(edit.operation,'update_transform');assert.strictEqual(edit.persistence_source,'layout/workcell_studio_layout.yaml');assert.deepStrictEqual(edit.old_transform.scale,{x:1,y:1,z:1});assert.deepStrictEqual(edit.new_transform.scale,{x:1,y:1,z:1});assert(!edit.item_id.startsWith('urdf_'));}
 const raycastCandidates=[...state.objects.map(o=>o.object3d),...state.pickRecords.map(o=>o.pickRoot||o.object3d)].filter((root,index,all)=>root?.visible!==false&&!excludedPickNode(root)&&all.indexOf(root)===index),candidateSet=new Set(raycastCandidates),roots=raycastCandidates.filter(root=>{for(let p=root.parent;p;p=p.parent)if(candidateSet.has(p))return false;return true});for(const root of roots){for(let p=root.parent;p;p=p.parent)assert.strictEqual(roots.includes(p),false,'raycast roots must be top-level');}assert(!roots.includes(cameraVisual.object3d)&&!roots.includes(tableVisual.object3d));
 `,context);

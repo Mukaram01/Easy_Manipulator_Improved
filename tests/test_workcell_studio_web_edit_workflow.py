@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import yaml
+import scripts.run_workcell_studio_web_edit_workflow as workflow_module
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = REPO_ROOT / "scripts" / "run_workcell_studio_web_edit_workflow.py"
@@ -95,6 +96,25 @@ def test_write_applies_reexports_and_verifies_persistence(tmp_path):
     assert (out / "tiny_scene.after.web_scene.json").exists()
     data = yaml.safe_load((scene / "layout" / "workcell_studio_layout.yaml").read_text(encoding="utf-8"))
     assert data["items"][0]["pose"]["xyz"] == [0.7, 0.1, 0.2]
+
+
+def test_post_write_verification_failure_rolls_back_exact_source_bytes(tmp_path, monkeypatch, capsys):
+    scene = _scene(tmp_path)
+    patch = _write_patch(tmp_path, _patch(new_x=0.7))
+    sources = [scene / "layout/workcell_studio_layout.yaml", scene / "environment.yaml"]
+    before = {path: path.read_bytes() for path in sources}
+    real_run_step = workflow_module._run_step
+
+    def fail_verification(label, command):
+        return 1 if label == "persistence verification" else real_run_step(label, command)
+
+    monkeypatch.setattr(workflow_module, "_run_step", fail_verification)
+    result = workflow_module.main(["--scene", str(scene), "--patch", str(patch), "--output-dir", str(tmp_path / "out"), "--write"])
+    captured = capsys.readouterr()
+    assert result == 1
+    assert "ROLLBACK complete after post-write persistence verification failure" in captured.err
+    assert {path: path.read_bytes() for path in sources} == before
+    assert list((scene / "layout").glob("workcell_studio_layout.yaml.*.bak"))
 
 
 def test_invalid_patch_fails_before_write(tmp_path):
