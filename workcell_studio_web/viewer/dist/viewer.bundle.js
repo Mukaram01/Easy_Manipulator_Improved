@@ -38661,6 +38661,10 @@ function failExpandedUrdfReadiness(operation, err, diagnostics = {}, detail = {}
     link,
     url: detail.url || detail.uri || diagnostics.robot_urdf_url || "",
     reason: err?.message || String(err || "expanded URDF required mesh failed"),
+    robot_preview_lifecycle_state: diagnostics.robot_preview_lifecycle_state || diagnostics.robotPreviewLifecycleState || "",
+    robot_loaded_visual_count: Number(diagnostics.robot_loaded_visual_count ?? diagnostics.robotLoadedVisualCount ?? 0) || 0,
+    robot_expected_visual_count: Number(diagnostics.robot_expected_visual_count ?? diagnostics.robotExpectedVisualCount ?? 0) || 0,
+    robot_failed_visual_count: Number(diagnostics.robot_failed_visual_count ?? diagnostics.robotFailedVisualCount ?? 0) || 0,
     robot_missing_meshes: diagnostics.robot_missing_meshes || [],
     ...detail,
     pending_required_loads: pendingRequiredLoads()
@@ -42021,6 +42025,20 @@ function loadExpandedUrdfRobotPreview(preview) {
     robotPreviewCanonicalFallbackUsed: false,
     skipped_legacy_generated_urdf_visual_count: state.robotAssemblyRenderDiagnostics?.skipped_legacy_generated_urdf_visual_count || state.robotAssemblyRenderDiagnostics?.skipped_legacy_generated_urdf_count || 0
   };
+  const mergeMissingDiagnosticsInPlace = (target, additions) => {
+    if (!target || typeof target !== "object")
+      return target;
+    for (const [key, value] of Object.entries(additions || {})) {
+      if (target[key] === void 0)
+        target[key] = value;
+    }
+    return target;
+  };
+  const rendererReady = (rendererDiagnostics) => {
+    const lifecycle = String(rendererDiagnostics?.robot_preview_lifecycle_state || rendererDiagnostics?.robotPreviewLifecycleState || "");
+    const loaded = rendererDiagnostics?.robot_preview_loaded === true || rendererDiagnostics?.robotPreviewLoaded === true;
+    return lifecycle === "ready" && loaded;
+  };
   if (typeof loadRobotPreview2 !== "function") {
     diagnostics.robot_preview_lifecycle_state = "failed";
     diagnostics.robotPreviewLifecycleState = "failed";
@@ -42135,14 +42153,11 @@ function loadExpandedUrdfRobotPreview(preview) {
         selectionToolOwnerId: toolOwnerId
       };
       state.robotPreviewResult = result;
-      result.diagnostics = { ...state.robotUrdfPreviewDiagnostics, ...result.diagnostics || {}, ...localDiagnostics };
-      const resultLifecycle = String(result.diagnostics.robot_preview_lifecycle_state || result.diagnostics.robotPreviewLifecycleState || "");
-      if (resultLifecycle === "ready") {
-        result.diagnostics.robot_preview_lifecycle_state = "ready";
-        result.diagnostics.robotPreviewLifecycleState = "ready";
-      }
-      state.robotUrdfPreviewDiagnostics = result.diagnostics;
-      if (resultLifecycle === "ready" && !failIfExpandedUrdfExpectedVisualSetInvalid())
+      const authoritativeDiagnostics = result.diagnostics || previewResult.diagnostics;
+      mergeMissingDiagnosticsInPlace(authoritativeDiagnostics, diagnostics);
+      Object.assign(authoritativeDiagnostics, localDiagnostics);
+      state.robotUrdfPreviewDiagnostics = authoritativeDiagnostics;
+      if (rendererReady(authoritativeDiagnostics) && !failIfExpandedUrdfExpectedVisualSetInvalid())
         finalizeRequiredLoad("success", { completion_source: "onRobotLoaded" });
       maybeEmitSceneReady();
       refreshInitialPoseActionState();
@@ -42162,7 +42177,9 @@ function loadExpandedUrdfRobotPreview(preview) {
     onRobotError: (err, diagnostics2) => {
       if (!callbackIsCurrent())
         return ignoreStaleCallback();
-      state.robotUrdfPreviewDiagnostics = { ...state.robotUrdfPreviewDiagnostics, ...diagnostics2 || {} };
+      const authoritativeDiagnostics = diagnostics2 || previewResult.diagnostics || state.robotUrdfPreviewDiagnostics;
+      mergeMissingDiagnosticsInPlace(authoritativeDiagnostics, state.robotUrdfPreviewDiagnostics);
+      state.robotUrdfPreviewDiagnostics = authoritativeDiagnostics;
       state.robotUrdfPreviewDiagnostics.robot_preview_lifecycle_state = "failed";
       state.robotUrdfPreviewDiagnostics.robotPreviewLifecycleState = "failed";
       state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason = err?.message || String(err || "expanded URDF preview failed");
@@ -42174,8 +42191,10 @@ function loadExpandedUrdfRobotPreview(preview) {
       renderSceneSummary();
     }
   });
-  state.robotUrdfPreviewDiagnostics = { ...state.robotUrdfPreviewDiagnostics, ...previewResult.diagnostics || {} };
-  previewResult.diagnostics = state.robotUrdfPreviewDiagnostics;
+  if (previewResult.diagnostics && typeof previewResult.diagnostics === "object") {
+    mergeMissingDiagnosticsInPlace(previewResult.diagnostics, diagnostics);
+    state.robotUrdfPreviewDiagnostics = previewResult.diagnostics;
+  }
   if (!previewResult.ready || typeof previewResult.ready.then !== "function") {
     finalizeRequiredLoad("failure", {
       completion_source: "previewResult.ready",
@@ -42186,12 +42205,13 @@ function loadExpandedUrdfRobotPreview(preview) {
       if (!callbackIsCurrent())
         return ignoreStaleCallback("previewResult.ready");
       const terminalResult = readyResult || previewResult;
-      const terminalDiagnostics = terminalResult?.diagnostics || previewResult.diagnostics || {};
+      const terminalDiagnostics = terminalResult?.diagnostics || previewResult.diagnostics;
       state.robotPreviewResult = terminalResult;
-      state.robotUrdfPreviewDiagnostics = { ...state.robotUrdfPreviewDiagnostics, ...terminalDiagnostics };
-      const lifecycle = String(state.robotUrdfPreviewDiagnostics.robot_preview_lifecycle_state || state.robotUrdfPreviewDiagnostics.robotPreviewLifecycleState || "");
-      const ready = state.robotUrdfPreviewDiagnostics.robot_preview_loaded === true || state.robotUrdfPreviewDiagnostics.robotPreviewLoaded === true || lifecycle === "ready";
-      if (ready && !failIfExpandedUrdfExpectedVisualSetInvalid()) {
+      if (terminalDiagnostics && typeof terminalDiagnostics === "object") {
+        mergeMissingDiagnosticsInPlace(terminalDiagnostics, diagnostics);
+        state.robotUrdfPreviewDiagnostics = terminalDiagnostics;
+      }
+      if (rendererReady(state.robotUrdfPreviewDiagnostics) && !failIfExpandedUrdfExpectedVisualSetInvalid()) {
         finalizeRequiredLoad("success", { completion_source: "previewResult.ready" });
       } else {
         finalizeRequiredLoad("failure", {
