@@ -39839,8 +39839,12 @@ function sameTransform(a, b) {
 function renderedById(id) {
   return state.objects.find((obj) => obj.item.id === id) || state.pickRecords.find((obj) => obj.item.id === id);
 }
+function selectionOwnerRenderedById(id) {
+  const matches = state.objects.filter((record) => record?.item?.id === id);
+  return matches.find((record) => canEditItem(record.item) && !isGeneratedUrdfItem(record.item)) || matches.find((record) => !isGeneratedUrdfItem(record.item)) || matches[0] || state.pickRecords.find((record) => record?.item?.id === id);
+}
 function selectedRenderIdentity() {
-  return renderedById(state.selectedRenderIdentityId) || renderedById(state.selected);
+  return state.pickRecords.find((record) => record.authoritativePhysicalPick === true && record.item?.id === state.selectedRenderIdentityId) || renderedById(state.selectedRenderIdentityId) || renderedById(state.selected);
 }
 function registerPickRecord(item, object3d, root = object3d, options = {}) {
   if (!item?.id || !object3d)
@@ -39879,7 +39883,7 @@ function inspectionSelectionRendered(rendered) {
   return rendered?.item?.id ? rendered : null;
 }
 function canonicalEditOwnerRendered(rendered) {
-  const selectionOwner = renderedById(explicitUiSelectionItemId(rendered));
+  const selectionOwner = selectionOwnerRenderedById(explicitUiSelectionItemId(rendered));
   if (selectionOwner && selectionOwner !== rendered && canEditItem(selectionOwner.item))
     return selectionOwner;
   const derivedTarget = renderedById(derivedTransformTargetId(rendered?.item));
@@ -42121,6 +42125,7 @@ function loadExpandedUrdfRobotPreview(preview) {
           return ignoreStaleCallback();
         const record = registerPickRecord(item, linkObject, result.root || linkObject, {
           pickRecordSource: payloadItem ? "payload_item" : "expanded_urdf_inspection",
+          authoritativePhysicalPick: true,
           uiSelectionOwnerId: ownerId,
           uiSelectionResolution: resolution
         });
@@ -42667,10 +42672,7 @@ function isNormalSelectableRendered(rendered) {
   return Boolean(item?.id) && item.selectable !== false && !isDiagnosticOnlyItem(item) && (inspectionSelectable || !isTaskOnlyHelperItem(item) && !isOverlayPolicyItem(item) && !isDebugOverlayItem(item));
 }
 function isExpandedUrdfInspectionPick(rendered) {
-  const item = rendered?.item;
-  const registeredReadOnlyRecord = Boolean(rendered && rendered.readOnlyPick === true && state.pickRecords.includes(rendered));
-  const explicitInspectionMetadata = rendered?.pickRecordSource === "expanded_urdf_inspection" || rendered?.pickRecordSource === "payload_item" || Boolean(String(rendered?.uiSelectionOwnerId || "").trim()) || String(item?.source_layer || "").trim() === "expanded_urdf_inspection";
-  return registeredReadOnlyRecord && explicitInspectionMetadata && Boolean(item?.id) && rendered.object3d?.visible !== false;
+  return Boolean(rendered?.authoritativePhysicalPick === true && state.pickRecords.includes(rendered) && rendered?.item?.id && rendered.object3d?.visible !== false);
 }
 function isCanvasSelectableRendered(rendered) {
   return isExpandedUrdfInspectionPick(rendered) || isNormalSelectableRendered(rendered);
@@ -42694,35 +42696,55 @@ function intrinsicallyExcludedPickItem(item) {
   const explicitDebug = isDebugOverlayItem(item) && (item?.diagnostic_only === true || /debug|diagnostic/.test(`${sourceLayer} ${identity}`));
   return explicitDebug || isTaskOnlyHelperItem(item) && /task|debug/.test(sourceLayer);
 }
-function itemFromRaycastHit(hit) {
+function resolveCanvasPickHit(hit) {
   let node = hit?.object || null;
   let candidate = null;
+  let registeredRecord = null;
+  let rejectionReason = "no_registered_or_rendered_identity";
   while (node) {
     const registered = state.pickIdentityByObject.get(node);
-    if (intrinsicallyExcludedPickNode(node))
-      return null;
+    if (intrinsicallyExcludedPickNode(node)) {
+      rejectionReason = "hit_node_intrinsically_excluded";
+      return { renderIdentity: null, selectionOwner: null, editOwner: null, eligible: false, rejectionReason, registeredRecord, hit };
+    }
     if (isExpandedUrdfInspectionPick(registered)) {
-      return registered;
+      registeredRecord = registered;
+      candidate = registered;
+      break;
     }
     if (candidate && registered && registered !== candidate)
-      return candidate;
-    if (passThroughPickNode(node))
-      return null;
+      break;
+    if (passThroughPickNode(node)) {
+      rejectionReason = "hit_node_non_selectable_metadata";
+      return { renderIdentity: null, selectionOwner: null, editOwner: null, eligible: false, rejectionReason, registeredRecord, hit };
+    }
     if (!candidate) {
       const nodeItem = node.userData?.item;
-      if (nodeItem && intrinsicallyExcludedPickItem(nodeItem))
-        return null;
+      if (nodeItem && intrinsicallyExcludedPickItem(nodeItem)) {
+        rejectionReason = "render_item_intrinsically_excluded";
+        return { renderIdentity: null, selectionOwner: null, editOwner: null, eligible: false, rejectionReason, registeredRecord, hit };
+      }
       const item = nodeItem || registered?.item;
       if (item?.id) {
-        const rendered = renderedById(item.id) || registered;
-        if (!rendered || !isCanvasSelectableRendered(rendered))
-          return null;
+        const rendered = registered?.authoritativePhysicalPick === true ? registered : renderedById(item.id) || registered;
+        if (!rendered)
+          break;
         candidate = rendered;
       }
     }
     node = node.parent;
   }
-  return candidate;
+  const renderIdentity = candidate;
+  const ownerId = renderIdentity ? explicitUiSelectionItemId(renderIdentity) : "";
+  const selectionOwner = ownerId ? selectionOwnerRenderedById(ownerId) : null;
+  const editOwner = selectionOwner && canEditItem(selectionOwner.item) ? selectionOwner : null;
+  const explicitlyPhysical = renderIdentity?.authoritativePhysicalPick === true;
+  const eligible = Boolean(renderIdentity && (explicitlyPhysical || isCanvasSelectableRendered(selectionOwner || renderIdentity)));
+  if (!eligible)
+    rejectionReason = renderIdentity ? "resolved_owner_not_canvas_selectable" : rejectionReason;
+  else
+    rejectionReason = "";
+  return { renderIdentity, selectionOwner, editOwner, eligible, rejectionReason, registeredRecord: registeredRecord || (explicitlyPhysical ? renderIdentity : null), hit };
 }
 function pickingPriority(rendered) {
   const item = rendered?.item;
@@ -42742,11 +42764,13 @@ function rankedPickingCandidates(hits) {
   const candidates = [];
   const seen = /* @__PURE__ */ new Set();
   for (const hit of hits || []) {
-    const rendered = inspectionSelectionRendered(itemFromRaycastHit(hit));
-    if (!rendered?.item?.id || seen.has(rendered.item.id))
+    const resolved = resolveCanvasPickHit(hit);
+    const rendered = resolved.renderIdentity;
+    const identityKey = `${rendered?.item?.id || ""}|${resolved.selectionOwner?.item?.id || ""}`;
+    if (!rendered?.item?.id || seen.has(identityKey))
       continue;
-    seen.add(rendered.item.id);
-    candidates.push({ rendered, hit, priority: pickingPriority(rendered) });
+    seen.add(identityKey);
+    candidates.push({ ...resolved, rendered, priority: pickingPriority(resolved.editOwner || resolved.selectionOwner || rendered) });
   }
   const PICK_COINCIDENCE_TOLERANCE_M = 1e-3;
   return candidates.sort((a, b) => {
@@ -42758,10 +42782,12 @@ function failedCanvasPickDiagnostic(hits) {
   const objectNames = [];
   let traversedRegisteredIdentity = false;
   let firstActionableRejectionReason = "";
+  const hitResolutions = [];
   let nearestKnownUrdfLinkAncestor = "";
   const knownLinks = state.robotPreviewResult?.links instanceof Map ? state.robotPreviewResult.links : /* @__PURE__ */ new Map();
   const knownLinkByNode = new Map(Array.from(knownLinks.entries()).map(([name, node]) => [node, String(name || "")]));
   for (const hit of hits || []) {
+    const resolution = resolveCanvasPickHit(hit);
     const rawName = String(hit?.object?.name || "").trim();
     if (rawName && !objectNames.includes(rawName) && objectNames.length < 12)
       objectNames.push(rawName);
@@ -42772,16 +42798,20 @@ function failedCanvasPickDiagnostic(hits) {
         traversedRegisteredIdentity = true;
       if (!nearestKnownUrdfLinkAncestor)
         nearestKnownUrdfLinkAncestor = knownLinkByNode.get(node) || String(registered?.item?.link_name || registered?.item?.link || "").trim();
-      if (!firstActionableRejectionReason) {
-        if (excludedPickNode(node))
-          firstActionableRejectionReason = "hit_node_excluded_from_picking";
-        else if (registered && !registered?.item?.id)
-          firstActionableRejectionReason = "registered_identity_missing_item_id";
-        else if (registered && !isCanvasSelectableRendered(inspectionSelectionRendered(registered)))
-          firstActionableRejectionReason = "registered_identity_not_selectable";
-      }
       node = node.parent;
     }
+    if (!firstActionableRejectionReason && resolution.rejectionReason)
+      firstActionableRejectionReason = resolution.rejectionReason;
+    hitResolutions.push({
+      hit_node_name: rawName,
+      registered_record_id: resolution.registeredRecord?.item?.id || "",
+      pick_source: resolution.registeredRecord?.pickRecordSource || "",
+      authoritative_physical_pick: resolution.registeredRecord?.authoritativePhysicalPick === true,
+      selection_owner_id: resolution.selectionOwner?.item?.id || "",
+      edit_owner_id: resolution.editOwner?.item?.id || "",
+      rejection_stage_reason: resolution.rejectionReason || "",
+      candidate_priority: pickingPriority(resolution.editOwner || resolution.selectionOwner || resolution.renderIdentity)
+    });
   }
   if (!firstActionableRejectionReason)
     firstActionableRejectionReason = traversedRegisteredIdentity ? "registered_identity_rejected_by_selection_policy" : "no_registered_identity_in_hit_ancestry";
@@ -42795,7 +42825,9 @@ function failedCanvasPickDiagnostic(hits) {
     first_actionable_rejection_reason: firstActionableRejectionReason,
     firstActionableRejectionReason,
     nearest_known_urdf_link_ancestor: nearestKnownUrdfLinkAncestor,
-    nearestKnownUrdfLinkAncestor
+    nearestKnownUrdfLinkAncestor,
+    hit_resolutions: hitResolutions,
+    hitResolutions
   };
 }
 function selectObject(id) {
@@ -42844,7 +42876,7 @@ function selectObjectFromRender(id, renderIdentity = null) {
     removeSelectionHighlight();
   }
   if (previous !== (id || ""))
-    pushEditorEvent("selection_changed", { itemId: id || "", uiItemId: explicitUiSelectionItemId(rendered), itemType: rendered ? itemType(rendered.item) : "", editable: Boolean(rendered && rendered.item && canEditItem(rendered["item"])) });
+    pushEditorEvent("selection_changed", { itemId: id || "", uiItemId: explicitUiSelectionItemId(rendered), itemType: editOwner || rendered ? itemType((editOwner || rendered).item) : "", editable: Boolean(editOwner && selectionIsEditable(editOwner)) });
 }
 function clearSelection() {
   selectObject("");
@@ -42861,7 +42893,7 @@ function pickObject(event) {
   const candidates = rankedPickingCandidates(hits);
   state.lastRaycastHitCount = hits.length;
   state.lastRaycastCandidateIds = candidates.map((candidate) => candidate.rendered.item.id);
-  const selectedCandidate = candidates.find((candidate) => Number.isFinite(candidate.priority) && isCanvasSelectableRendered(candidate.rendered));
+  const selectedCandidate = candidates.find((candidate) => Number.isFinite(candidate.priority) && candidate.eligible);
   if (!selectedCandidate) {
     state.lastCanvasSelectedItemId = "";
     state.lastCanvasPickReason = hits.length ? "no_eligible_candidate" : "empty_select_click";
@@ -42887,7 +42919,7 @@ function pickObject(event) {
       pushEditorEvent("helper_pick_skipped", { helperItemId: skippedHelper.rendered.item.id, selectedItemId: selectedCandidate.rendered.item.id, sceneId: sceneId() });
     }
   }
-  const canonicalId = explicitUiSelectionItemId(selectedCandidate.rendered);
+  const canonicalId = selectedCandidate.selectionOwner?.item?.id || explicitUiSelectionItemId(selectedCandidate.rendered);
   selectObjectFromRender(canonicalId, selectedCandidate.rendered);
   state.lastCanvasSelectedItemId = canonicalId;
   state.lastCanvasPickReason = "eligible_candidate";
