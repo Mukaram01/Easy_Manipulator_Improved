@@ -1973,7 +1973,7 @@ const rendered=item=>({item,object3d:{userData:{item}}});
 const authored=[{id:'realsense_overhead'},{id:'support_surface_table'},{id:'target_bin_default'},{id:'place_zone_default'},{id:'pick_zone_commissioning'}];
 const camera=rendered({id:'generated_urdf::camera_link::visual_17::17',camera_id:'realsense_overhead'});
 const table=rendered({id:'generated_urdf::table_link::visual_2::2',support_surface_ref:'support_surface_table'});
-const bin=rendered({id:'target_bin_default',editable:true});
+const bin=rendered({id:'target_bin_default',editable:true,locked:false,source_layer:'editable_layout'});
 const zone=rendered({id:'place_zone_default',target_ref:'target_bin_default',render_policy:'overlay'});
 const invalid=rendered({id:'generated_robot_visual',canonical_item_id:'missing_robot'});
 state.sceneJson={scene:{id:'ur5_2f_test'},items:authored}; state.objects=[camera,table,bin,zone,invalid,...authored.map(rendered)]; state.editorEvents=[]; state.debugOverlaysVisible=true;
