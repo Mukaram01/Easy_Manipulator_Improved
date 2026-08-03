@@ -38309,7 +38309,7 @@ var CAMERA_PRESET_DIRECTIONS = Object.freeze({
   top: [0, -1e-3, 1],
   robot: [1.1, -1.25, 0.72]
 });
-var state = { sceneJson: null, sourceWebSceneFile: "", diagnosticKeys: /* @__PURE__ */ new Set(), frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], pickRecords: [], pickIdentityByObject: /* @__PURE__ */ new WeakMap(), selectionIdentityIndex: null, assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: "", three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: "", done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: "select", editorEvents: [], editorError: "", robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: "", lastCanvasPickReason: "", lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: "", sceneKey: "" }, web3dReadiness: { state: "booting", terminal: false, terminalState: "", terminalNavigationKey: "", terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null }, builderRevision: "", sceneJsonLoaded: false, activeNavigationKey: "" };
+var state = { sceneJson: null, sourceWebSceneFile: "", diagnosticKeys: /* @__PURE__ */ new Set(), frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], pickRecords: [], pickIdentityByObject: /* @__PURE__ */ new WeakMap(), selectionIdentityIndex: null, assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: "", three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: "", done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, gizmoAttachmentDiagnostic: { targetId: "", reason: "not_evaluated" }, directMoveDrag: null, directRotateDrag: null, editorMode: "select", editorEvents: [], editorError: "", robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: "", lastCanvasPickReason: "", lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: "", sceneKey: "" }, web3dReadiness: { state: "booting", terminal: false, terminalState: "", terminalNavigationKey: "", terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null }, builderRevision: "", sceneJsonLoaded: false, activeNavigationKey: "" };
 var robotPreviewLoadToken = 0;
 var physicalLoadToken = 0;
 var RESET_VIEW_TITLE = "Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.";
@@ -39634,6 +39634,12 @@ function currentSelectionDiagnostics() {
     selectedItemId: id,
     uiSelectionItemId: selectionIdentity.id,
     editOwnerItemId: editOwner?.item?.id || "",
+    canonicalSelectedId: id,
+    editAuthoritySource: editAuthoritySource(editOwner?.item),
+    gizmoAttachedTargetId: state.three?.transformControls?.object === editOwner?.object3d ? editOwner?.item?.id || "" : state.gizmoAttachmentDiagnostic?.targetId || "",
+    gizmoVisible: Boolean(state.three?.transformControls?.visible),
+    gizmoEnabled: Boolean(state.three?.transformControls?.enabled),
+    gizmoAttachmentReason: state.gizmoAttachmentDiagnostic?.reason || "not_evaluated",
     renderIdentity: rendered?.item?.id || "",
     selectedItemType: rendered ? itemType(item) : "",
     selectable: Boolean(rendered && isCanvasSelectableRendered(rendered)),
@@ -39933,7 +39939,7 @@ function canonicalEditOwnerRendered(rendered) {
   return derivedTarget && canEditItem(derivedTarget.item) ? derivedTarget : inspectionSelectionRendered(rendered);
 }
 function selectionIsEditable(rendered) {
-  return Boolean(rendered && !rendered.readOnlyPick && canonicalEditOwnerRendered(rendered) === rendered && canEditItem(rendered.item));
+  return Boolean(rendered && !rendered.readOnlyPick && !isTaskOnlyHelperItem(rendered.item) && !isDebugOverlayItem(rendered.item) && canonicalEditOwnerRendered(rendered) === rendered && canEditItem(rendered.item));
 }
 function transformFromObject(object) {
   return { pose: { xyz: { x: object.position.x, y: object.position.y, z: object.position.z }, rpy: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z } }, scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z } };
@@ -43179,8 +43185,10 @@ function cancelDirectRotateDrag(message) {
 }
 function attachTransformGizmo(rendered) {
   const gizmo = state.three.transformControls;
-  if (!gizmo)
+  if (!gizmo) {
+    state.gizmoAttachmentDiagnostic = { targetId: "", reason: "transform_controls_unavailable" };
     return;
+  }
   if (selectionIsEditable(rendered)) {
     gizmo.attach(rendered.object3d);
     gizmo.visible = true;
@@ -43201,11 +43209,16 @@ function attachTransformGizmo(rendered) {
     gizmo.enabled = state.editorMode !== "select";
     gizmo.setTranslationSnap(el.snapToggle?.checked ? translationSnapValue() : null);
     gizmo.setRotationSnap(el.snapToggle?.checked ? rotationSnapRadians() : null);
-  } else
-    detachTransformGizmo();
+    state.gizmoAttachmentDiagnostic = { targetId: rendered.item.id, reason: "attached_to_canonical_edit_owner" };
+  } else {
+    const authority = editAuthorityForItem(rendered?.item);
+    const refusal = rendered && (isTaskOnlyHelperItem(rendered.item) || isDebugOverlayItem(rendered.item)) ? "helper_or_overlay_record" : rendered?.readOnlyPick ? "read_only_render_identity" : authority.eligible ? "not_canonical_edit_owner" : authority.reason;
+    detachTransformGizmo(refusal);
+  }
 }
-function detachTransformGizmo() {
+function detachTransformGizmo(reason = "detached") {
   const gizmo = state.three.transformControls;
+  state.gizmoAttachmentDiagnostic = { targetId: "", reason };
   if (!gizmo)
     return;
   gizmo.detach();
@@ -43219,14 +43232,27 @@ function refreshGizmoSnap() {
   gizmo.setTranslationSnap(el.snapToggle?.checked ? translationSnapValue() : null);
   gizmo.setRotationSnap(el.snapToggle?.checked ? rotationSnapRadians() : null);
 }
-function canEditItem(item) {
+function editAuthoritySource(item) {
+  return String(item?.source_layer || item?.authoring_source_layer || item?.render_owner || item?.source_kind || "").trim();
+}
+function editAuthorityForItem(item) {
+  if (!item)
+    return { eligible: false, source: "", reason: "missing_item" };
+  if (item.locked === true)
+    return { eligible: false, source: editAuthoritySource(item), reason: "owner_locked" };
+  if (item.editable !== true)
+    return { eligible: false, source: editAuthoritySource(item), reason: "owner_not_editable" };
   if (isDiagnosticOnlyItem(item))
-    return false;
-  const sourceIdentity = [item?.source_kind, item?.source_layer, item?.active_visual_source, item?.role, item?.category].map((value) => String(value || "").toLowerCase()).join(" ");
-  const source = sourceIdentity;
-  if (item?.locked || item?.editable !== true || source.includes("generated"))
-    return false;
-  return true;
+    return { eligible: false, source: editAuthoritySource(item), reason: "diagnostic_record" };
+  const source = editAuthoritySource(item);
+  const normalizedSource = source.toLowerCase();
+  const authoredSource = /(?:^|[_\s-])(?:editable|authored|authoring|layout)(?:$|[_\s-])/.test(normalizedSource);
+  if (!authoredSource)
+    return { eligible: false, source, reason: normalizedSource.includes("generated") ? "generated_authority_layer" : "non_authored_authority_layer" };
+  return { eligible: true, source, reason: "authored_edit_authority" };
+}
+function canEditItem(item) {
+  return editAuthorityForItem(item).eligible;
 }
 function currentTransformFromInputs(container) {
   const get = (name) => Number(container.querySelector(`[data-transform-field="${name}"]`)?.value);
