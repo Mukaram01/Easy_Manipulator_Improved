@@ -1504,6 +1504,52 @@ function canonicalEditOwnerRendered(rendered) {
   const derivedTarget = renderedById(derivedTransformTargetId(rendered?.item));
   return derivedTarget && canEditItem(derivedTarget.item) ? derivedTarget : inspectionSelectionRendered(rendered);
 }
+function exportedPhysicalEditOwnerId(rendered) {
+  const item = rendered?.item;
+  if (!item || !isGeneratedUrdfItem(item) || item.editable === true || item.locked !== true) return '';
+  const category = String(item.mesh_contract_category || item.meshContractCategory || '').toLowerCase();
+  if (category !== 'camera' && category !== 'table') return '';
+  const ownerId = uiSelectionIdentity(rendered).id;
+  const ownerType = String((state.selectionIdentityIndex || rebuildSelectionIdentityIndex()).itemById.get(ownerId)?.type || '').toLowerCase();
+  return (category === 'camera' && ownerType === 'camera') || (category === 'table' && ownerType === 'support_surface') ? ownerId : '';
+}
+function bindExportedPhysicalTransformOwnership() {
+  const bindings = [];
+  for (const rendered of state.objects) {
+    const ownerId = exportedPhysicalEditOwnerId(rendered);
+    if (!ownerId) continue;
+    let owner = selectionOwnerRenderedById(ownerId);
+    if (!owner?.object3d) {
+      const object3d = new THREE.Group();
+      object3d.name = `${ownerId}_physical_edit_root`;
+      object3d.up.copy(THREE.Object3D.DEFAULT_UP);
+      object3d.position.copy(rendered.object3d.position);
+      object3d.quaternion.copy(rendered.object3d.quaternion);
+      object3d.scale.copy(rendered.object3d.scale);
+      const exportedOwner = (state.selectionIdentityIndex || rebuildSelectionIdentityIndex()).itemById.get(ownerId) || {};
+      const item = { ...exportedOwner, id: ownerId, editable: true, locked: false, source_layer: 'editable_authored_physical', render_policy: 'primary' };
+      assignItemUserData(object3d, item);
+      state.three.scene.add(object3d);
+      owner = { item, object3d, fallback: null, labelEl: createLabelElement(item), originalTransform: transformFromObject(object3d), physicalEditRoot: true };
+      state.objects.push(owner);
+    }
+    if (!owner?.object3d || owner === rendered || rendered.object3d.parent === owner.object3d) continue;
+    // Object3D.attach performs the reparent while retaining the generated
+    // visual's world matrix. The authored root is the only transform root.
+    owner.object3d.attach(rendered.object3d);
+    rendered.physicalEditOwner = owner;
+    owner.ownedPhysicalVisual = rendered;
+    bindings.push({ owner, rendered });
+  }
+  return bindings;
+}
+function suppressOwnedAuthoredFallback(rendered) {
+  const owner = rendered?.physicalEditOwner;
+  if (!owner || !rendered.meshObject || rendered.item?.mesh_status !== 'loaded') return false;
+  if (owner.fallback) owner.fallback.visible = false;
+  owner.authoritativePhysicalVisualLoaded = true;
+  return true;
+}
 // canonicalSelectionRendered intentionally retired: inspection identity must
 // never be rewritten to the transform owner.
 function selectionIsEditable(rendered) {
@@ -2399,6 +2445,7 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
     rendered.meshObject = visualRoot;
     rendered.loadedMeshObject = meshObject;
     item.mesh_status = 'loaded';
+    suppressOwnedAuthoredFallback(rendered);
     item.mesh_load_error = '';
     trackMeshLoadAttempt(item, 'loaded', loadUrl, '');
     setRenderInfo(rendered, 'mesh_loaded', uri, '');
@@ -3500,6 +3547,7 @@ function renderScene(items) {
     const operation = registerReadinessOperation(category ? [readinessKey(category, item)] : []);
     tryLoadMesh(item, rendered, fallback, operation);
   }
+  bindExportedPhysicalTransformOwnership();
   renderFrameDebugOverlays();
   populateObjectList();
   updateLabels();
@@ -4378,8 +4426,13 @@ function pickObject(event) {
   state.three.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   state.three.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   state.three.raycaster.setFromCamera(state.three.pointer, state.three.camera);
-  const roots = [...state.objects.map(o => o.object3d), ...state.pickRecords.map(o => o.pickRoot || o.object3d)]
+  const rootCandidates = [...state.objects.map(o => o.object3d), ...state.pickRecords.map(o => o.pickRoot || o.object3d)]
     .filter((root, index, all) => root?.visible !== false && !excludedPickNode(root) && all.indexOf(root) === index);
+  const candidateSet = new Set(rootCandidates);
+  const roots = rootCandidates.filter(root => {
+    for (let ancestor = root.parent; ancestor; ancestor = ancestor.parent) if (candidateSet.has(ancestor)) return false;
+    return true;
+  });
   const hits = state.three.raycaster.intersectObjects(roots, true);
   const candidates = rankedPickingCandidates(hits);
   state.lastRaycastHitCount = hits.length;

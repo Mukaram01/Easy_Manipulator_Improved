@@ -195,40 +195,55 @@ def test_selection_diagnostics_are_exposed_to_qt_bridge():
 
 
 def test_authored_camera_and_table_generated_visuals_attach_to_canonical_edit_owners(tmp_path):
+    import json
+    import subprocess
+
+    web_scene = tmp_path / "ur5_2f_test.web_scene.json"
+    subprocess.run(
+        [
+            "python3", "scripts/ensure_workcell_studio_web_scene_fresh.py",
+            "--scene", "scenes/ur5_2f_test", "--output", str(web_scene),
+            "--stage-assets", "--force",
+        ],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    )
+    payload = json.loads(web_scene.read_text(encoding="utf-8"))
+    assert any(item.get("camera_id") == "realsense_overhead" for item in payload["sensors"])
+    assert any(item.get("support_surface_ref") == "support_surface_table" for item in payload["assets"])
+
     harness = r"""
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
 let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
-const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100}}});
-const context={console,assert,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element()},querySelectorAll(){return[]},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+const THREE_IMPL=require('./workcell_studio_web/viewer/node_modules/three/build/three.cjs');
+const payload=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',dataset:{},classList:{toggle(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){},remove(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100}}});
+const context={console,assert,THREE_IMPL,inputPayload:payload,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element()},querySelectorAll(){return[]},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
 vm.createContext(context); vm.runInContext(source+`
-updateLabels=()=>{}; populateInspector=()=>{}; refreshSelectionHighlight=()=>{}; removeSelectionHighlight=()=>{}; updateDirtyState=()=>{};
-const vector=(x,y,z)=>({x,y,z,set(nx,ny,nz){this.x=nx;this.y=ny;this.z=nz}});
-const object=(name,item=null)=>({name,visible:true,userData:item?{item}:{},children:[],parent:null,position:vector(0,0,0),rotation:vector(0,0,0),scale:vector(1,1,1)});
-const owner=item=>({item,object3d:object(item.id,item),originalTransform:{pose:{xyz:{x:0,y:0,z:0},rpy:{x:0,y:0,z:0}},scale:{x:1,y:1,z:1}}});
-const camera=owner({id:'realsense_overhead',type:'realsense',role:'camera',category:'camera',editable:true,locked:false,source_layer:'editable_layout',active_visual_source:'generated_preview',render_policy:'primary'});
-const table=owner({id:'support_surface_table',type:'support_surface',role:'support_surface',category:'work_surface',editable:true,locked:false,source_layer:'editable_layout',active_visual_source:'mesh_preview',render_policy:'primary'});
-const bin=owner({id:'target_bin_default',type:'bin',role:'target_bin',editable:true,locked:false,source_layer:'editable_layout',active_visual_source:'declared_mesh',render_policy:'primary'});
-const robot=owner({id:'ur5',role:'robot',editable:false,locked:true,source_layer:'selection_owner_registry'});
-const gripper=owner({id:'robotiq_85_gripper',role:'tool',editable:false,locked:true,source_layer:'selection_owner_registry'});
-const generated=(id,refs,parent)=>{const item={id,editable:false,locked:true,source_layer:'locked_generated_urdf_visual',active_visual_source:'generated_urdf_visual',render_policy:'primary',...refs};const mesh=object(id,item);mesh.parent=parent.object3d;parent.object3d.children.push(mesh);return {item,object3d:mesh,readOnlyPick:true};};
-const cameraVisual=generated('generated_urdf::camera_link::visual_17::17',{camera_id:'realsense_overhead',type:'camera',role:'sensor'},camera);
-const tableVisual=generated('generated_urdf::table_link::visual_2::2',{support_surface_ref:'support_surface_table',type:'table',role:'support_surface'},table);
-const robotVisual=generated('generated_urdf::wrist_3_link::visual_1',{canonical_item_id:'ur5',role:'robot'},robot);
-const gripperVisual=generated('generated_urdf::robotiq_link::visual_1',{canonical_item_id:'robotiq_85_gripper',role:'tool'},gripper);
-state.objects=[camera,table,bin,robot,gripper,cameraVisual,tableVisual,robotVisual,gripperVisual];state.sceneJson={scene:{id:'ur5_2f_test'},items:state.objects.map(r=>r.item)};rebuildSelectionIdentityIndex();
+THREE=THREE_IMPL; updateLabels=()=>{}; populateObjectList=()=>{}; renderSceneSummary=()=>{}; maybeEmitSceneReady=()=>{}; updateDirtyState=()=>{}; renderFrameDebugOverlays=()=>{}; beginWeb3dSceneReadiness=()=>{}; registerReadinessOperation=()=>null; maybeWarnSupportSurfaceSemantics=()=>{}; isExpandedUrdfRobotPreview=()=>false;buildRobotAssemblies=()=>({handled:new Set(),assemblies:[],renderDiagnostics:{}});const productionUsesAssembly=usesAssembledUrdfHierarchy;usesAssembledUrdfHierarchy=item=>item.editable===true?false:productionUsesAssembly(item);
+tryLoadMesh=(item,rendered,fallback)=>{if(!item.mesh_uri)return;const mesh=new THREE.Mesh(new THREE.BoxGeometry(.04,.03,.02),new THREE.MeshBasicMaterial());mesh.name=item.id+'_physical_mesh';rendered.object3d.add(mesh);rendered.meshObject=mesh;item.mesh_status='loaded';if(fallback)fallback.visible=false;suppressOwnedAuthoredFallback(rendered);};
+const exportedItems=[];for(const bucket of ['robots','tools','assets','sensors','zones','items','objects','frames'])for(const item of inputPayload[bucket]||[]){const old=exportedItems.findIndex(row=>row.id===item.id);if(old<0)exportedItems.push(item);else if(item.pose)exportedItems[old]=item;}state.sceneJson=inputPayload;state.three.scene=new THREE.Scene();renderScene(exportedItems);
+const byId=id=>state.objects.find(record=>record.item.id===id);
+const camera=byId('realsense_overhead'),table=byId('support_surface_table'),bin=byId('target_bin_default');
+const cameraVisual=state.objects.find(record=>record.item.camera_id==='realsense_overhead'&&record.item.locked===true);
+const tableVisual=state.objects.find(record=>record.item.support_surface_ref==='support_surface_table'&&record.item.locked===true);
+assert(camera&&table&&bin&&cameraVisual&&tableVisual,JSON.stringify({camera:!!camera,table:!!table,bin:!!bin,cameraVisual:!!cameraVisual,tableVisual:!!tableVisual}));
+assert.strictEqual(cameraVisual.object3d.parent,camera.object3d);assert.strictEqual(tableVisual.object3d.parent,table.object3d);
+assert(!camera.fallback||camera.fallback.visible===false);assert(!table.fallback||table.fallback.visible===false);
+const worldPose=o=>{o.updateWorldMatrix(true,true);return {p:new THREE.Vector3().setFromMatrixPosition(o.matrixWorld),q:new THREE.Quaternion().setFromRotationMatrix(o.matrixWorld)}};
+const cameraInitial=worldPose(cameraVisual.meshObject),tableInitial=worldPose(tableVisual.meshObject);
 const gizmo={object:null,visible:false,enabled:false,showX:false,showY:false,showZ:false,attach(o){this.object=o},detach(){this.object=null},setMode(){},setSpace(){},setTranslationSnap(){},setRotationSnap(){},reset(){}};
 let hits=[];state.three={transformControls:gizmo,pointer:{},camera:{},controls:{enabled:true},raycaster:{setFromCamera(){},intersectObjects(){return hits}}};state.editorMode='move';
 const pick=(visual,canonical,editableObject)=>{hits=[{object:visual.object3d,distance:1}];assert.strictEqual(pickObject({clientX:5,clientY:5}),canonical);assert.strictEqual(state.selected,canonical);assert.strictEqual(editorState().selectedEditable,true);assert.strictEqual(gizmo.object,editableObject);assert.strictEqual(gizmo.visible,true);assert.strictEqual(gizmo.enabled,true);assert.strictEqual(gizmo.showX&&gizmo.showY&&gizmo.showZ,true);assert.strictEqual(currentSelectionDiagnostics().gizmoAttachedTargetId,canonical);};
 pick(cameraVisual,'realsense_overhead',camera.object3d);pick(tableVisual,'support_surface_table',table.object3d);hits=[{object:bin.object3d,distance:1}];assert.strictEqual(pickObject({clientX:5,clientY:5}),'target_bin_default');assert.strictEqual(gizmo.object,bin.object3d);
-for(const [visual,id] of [[robotVisual,'ur5'],[gripperVisual,'robotiq_85_gripper']]){hits=[{object:visual.object3d,distance:1}];assert.strictEqual(pickObject({clientX:5,clientY:5}),id);assert.strictEqual(editorState().selectedEditable,false);assert.strictEqual(gizmo.object,null);assert.strictEqual(gizmo.visible,false);}
+assert.strictEqual(byId('ur5'),undefined);assert.strictEqual(byId('robotiq_85_gripper'),undefined);for(const record of state.objects.filter(record=>record!==cameraVisual&&record!==tableVisual&&record.item.locked===true))assert.strictEqual(record.object3d.parent.type,'Scene');
 setEditorMode('rotate');hits=[{object:cameraVisual.object3d,distance:1}];pickObject({clientX:5,clientY:5});assert.strictEqual(gizmo.object,camera.object3d);setEditorMode('move');assert.strictEqual(gizmo.object,camera.object3d);
-const before=cloneTransform(transformFromObject(camera.object3d));camera.object3d.position.x=.04;const after=transformFromObject(camera.object3d);assert.strictEqual(markDirtyTransform(camera,after,{pushHistory:true,oldTransform:before}),true);assert.deepStrictEqual([...state.dirtyTransforms.keys()],['realsense_overhead']);assert.strictEqual(cameraVisual.object3d.parent.position.x,.04);undoPreviewEdit();assert.strictEqual(camera.object3d.position.x,0);redoPreviewEdit();assert.strictEqual(camera.object3d.position.x,.04);
-const tableBefore=cloneTransform(transformFromObject(table.object3d));table.object3d.position.y=-.03;assert.strictEqual(markDirtyTransform(table,transformFromObject(table.object3d),{pushHistory:true,oldTransform:tableBefore}),true);assert.strictEqual(tableVisual.object3d.parent.position.y,-.03);assert.strictEqual(state.dirtyTransforms.has('support_surface_table'),true);undoPreviewEdit();assert.strictEqual(table.object3d.position.y,0);redoPreviewEdit();assert.strictEqual(table.object3d.position.y,-.03);
+const before=cloneTransform(transformFromObject(camera.object3d));camera.object3d.position.x+=.04;camera.object3d.rotation.z+=.2;const after=transformFromObject(camera.object3d);assert.strictEqual(markDirtyTransform(camera,after,{pushHistory:true,oldTransform:before}),true);const cameraMoved=worldPose(cameraVisual.meshObject);assert(Math.abs(cameraMoved.p.distanceTo(cameraInitial.p)-.04)<1e-8);assert(cameraMoved.q.angleTo(cameraInitial.q)>.19);undoPreviewEdit();assert(worldPose(cameraVisual.meshObject).p.distanceTo(cameraInitial.p)<1e-8);redoPreviewEdit();assert(worldPose(cameraVisual.meshObject).p.distanceTo(cameraMoved.p)<1e-8);
+const tableBefore=cloneTransform(transformFromObject(table.object3d));table.object3d.position.y-=.03;table.object3d.rotation.x+=.15;assert.strictEqual(markDirtyTransform(table,transformFromObject(table.object3d),{pushHistory:true,oldTransform:tableBefore}),true);const tableMoved=worldPose(tableVisual.meshObject);assert(Math.abs(tableMoved.p.distanceTo(tableInitial.p)-.03)<1e-8);assert(tableMoved.q.angleTo(tableInitial.q)>.14);undoPreviewEdit();assert(worldPose(tableVisual.meshObject).p.distanceTo(tableInitial.p)<1e-8);redoPreviewEdit();assert(worldPose(tableVisual.meshObject).p.distanceTo(tableMoved.p)<1e-8);
 assert.strictEqual(state.dirtyTransforms.has(cameraVisual.item.id),false);assert.strictEqual(state.dirtyTransforms.has(tableVisual.item.id),false);
+const raycastCandidates=[...state.objects.map(o=>o.object3d),...state.pickRecords.map(o=>o.pickRoot||o.object3d)].filter((root,index,all)=>root?.visible!==false&&!excludedPickNode(root)&&all.indexOf(root)===index),candidateSet=new Set(raycastCandidates),roots=raycastCandidates.filter(root=>{for(let p=root.parent;p;p=p.parent)if(candidateSet.has(p))return false;return true});for(const root of roots){for(let p=root.parent;p;p=p.parent)assert.strictEqual(roots.includes(p),false,'raycast roots must be top-level');}assert(!roots.includes(cameraVisual.object3d)&&!roots.includes(tableVisual.object3d));
 `,context);
 """
-    import subprocess
-    subprocess.run(["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js")], cwd=ROOT, check=True, capture_output=True, text=True)
+    subprocess.run(["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js"), str(web_scene)], cwd=ROOT, check=True, text=True)
 
 
 def test_qt_poll_accepts_only_final_valid_browser_selection_and_explicit_clear():
