@@ -170,8 +170,8 @@ const physicalRoot=node('editable_fixture'); physicalRoot.userData.item=physical
 const physicalRecord={item:physicalItem,object3d:physicalRoot}; state.objects.push(physicalRecord);
 const edge=node('fixture_fallback_edges'); edge.userData.selectable=false; edge.parent=physicalRoot;
 const frustum=node('camera_fallback_sensor_frustum'); frustum.userData.non_selectable=true; frustum.parent=physicalRoot;
-assert.strictEqual(itemFromRaycastHit({object:edge}),physicalRecord,'non-selectable edge passes through to its physical parent');
-assert.strictEqual(itemFromRaycastHit({object:frustum}),physicalRecord,'non-selectable frustum passes through to its physical parent');
+assert.strictEqual(itemFromRaycastHit({object:edge}),null,'fallback edges do not alias their physical parent');
+assert.strictEqual(itemFromRaycastHit({object:frustum}),null,'sensor frustums do not alias their physical parent');
 const hiddenFallback=node('hidden_fallback_edges'); hiddenFallback.visible=false; hiddenFallback.parent=physicalRoot;
 assert.strictEqual(rankedPickingCandidates([{object:hiddenFallback,distance:1},{object:physicalRoot,distance:2}])[0].rendered,physicalRecord,'a hidden fallback hit does not suppress a later physical hit');
 const taskOverlay=node('task-overlay'); taskOverlay.userData.item={id:'task_overlay',role:'task_marker',source_layer:'task_preview'};
@@ -263,6 +263,65 @@ def test_static_viewer_files_exist():
     assert (VIEWER / "viewer.js").is_file()
     assert (VIEWER / "style.css").is_file()
     assert (VIEWER / "README.md").is_file()
+
+
+def test_production_canvas_pointer_handler_selects_physical_owners_after_excluded_hits():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+(async()=>{
+const THREE=await import(process.argv[2]);
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},querySelector(){return null},querySelectorAll(){return[]},addEventListener(){},setAttribute(){},appendChild(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100}}});
+const warnings=[];
+const context={__THREE:THREE,__warnings:warnings,console:{...console,warn(message){warnings.push(message)}},assert,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element()},querySelectorAll(){return[]},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context);vm.runInContext(source+`
+THREE=globalThis.__THREE;
+updateLabels=()=>{};populateInspector=()=>{};detachTransformGizmo=()=>{};refreshSelectionHighlight=()=>{};removeSelectionHighlight=()=>{};
+{
+const gizmoCalls=[];attachTransformGizmo=rendered=>gizmoCalls.push({id:rendered?.item?.id||'',eligible:selectionIsEditable(rendered)});
+const makeTestPhysical=(item,name=item.id)=>{const root=new THREE.Group();root.name=name+'_object_root';root.userData.item=item;const mesh=new THREE.Mesh(new THREE.BoxGeometry(1,1,1));mesh.name=name+'_loaded_mesh';mesh.userData.item=item;root.add(mesh);return {item,object3d:root,mesh,readOnlyPick:false}};
+const owner=(id,type)=>makeTestPhysical({id,type,role:type,editable:false,locked:true,selectable:true,render_policy:'primary'},id);
+const ur5Owner=owner('ur5','robot'),toolOwner=owner('robotiq_85_gripper','tool');
+const camera=makeTestPhysical({id:'realsense_overhead',type:'camera',role:'sensor',editable:true,locked:false,selectable:true,render_policy:'primary',source_layer:'editable_layout'});
+const table=makeTestPhysical({id:'support_surface_table',type:'support_surface',role:'table',editable:true,locked:false,selectable:true,render_policy:'primary',source_layer:'editable_layout'});
+const bin=makeTestPhysical({id:'target_bin_default',type:'environment_asset',role:'bin',category:'object',editable:true,locked:false,selectable:true,render_policy:'primary',source_layer:'editable_layout'});
+state.objects=[ur5Owner,toolOwner,camera,table,bin];state.sceneJson={scene:{id:'ur5_2f_test'},objects:state.objects.map(record=>record.item),ui_selection_owners:[ur5Owner.item,toolOwner.item,camera.item,table.item,bin.item]};rebuildSelectionIdentityIndex();state.editorEvents=[];state.editorMode='select';
+const generatedParent=new THREE.Group();generatedParent.name='generated_robot_parent';generatedParent.userData={diagnostic_only:true,selectable:false,item:{id:'stale_generated_parent',diagnostic_only:true,selectable:false,render_policy:'diagnostic_only'}};
+const ur5Link=new THREE.Group();ur5Link.name='wrist_3_link';const ur5Mesh=new THREE.Mesh(new THREE.BoxGeometry(1,1,1));ur5Mesh.name='wrist_visual_mesh';ur5Mesh.userData={diagnostic_only:true,selectable:false,item:{id:'stale_ur5_visual',diagnostic_only:true,selectable:false,render_policy:'diagnostic_only'}};ur5Link.add(ur5Mesh);generatedParent.add(ur5Link);
+const toolLink=new THREE.Group();toolLink.name='robotiq_85_base_link';const toolMesh=new THREE.Mesh(new THREE.BoxGeometry(1,1,1));toolMesh.name='robotiq_visual_mesh';toolMesh.userData={diagnostic_only:true,selectable:false,item:{id:'stale_tool_visual',diagnostic_only:true,selectable:false,render_policy:'diagnostic_only'}};toolLink.add(toolMesh);generatedParent.add(toolLink);
+const ur5Record=registerPickRecord({id:'generated::wrist',link_name:'wrist_3_link',diagnostic_only:true,selectable:false,render_policy:'diagnostic_only'},ur5Link,generatedParent,{pickRecordSource:'payload_item',uiSelectionOwnerId:'ur5'});
+const toolRecord=registerPickRecord({id:'generated::tool',link_name:'robotiq_85_base_link',diagnostic_only:true,selectable:false,render_policy:'diagnostic_only'},toolLink,generatedParent,{pickRecordSource:'payload_item',uiSelectionOwnerId:'robotiq_85_gripper'});
+bindExpandedUrdfPickRecordToSubtree(ur5Link,ur5Record,new Set([ur5Link,toolLink]));bindExpandedUrdfPickRecordToSubtree(toolLink,toolRecord,new Set([ur5Link,toolLink]));
+const fallbackEdge=new THREE.LineSegments();fallbackEdge.name='robot_fallback_edges';
+const frustum=new THREE.LineSegments();frustum.name='realsense_overhead_fallback_sensor_frustum';frustum.userData={non_selectable:true,item:camera.item};camera.object3d.add(frustum);
+const gizmo=new THREE.Object3D();gizmo.name='TransformControls_gizmo';
+let hits=[];state.three={pointer:new THREE.Vector2(),camera:new THREE.PerspectiveCamera(),raycaster:{setFromCamera(){},intersectObjects(){return hits}}};
+const click=(ordered,expected,editable)=>{const before=state.editorEvents.filter(event=>event.type==='selection_changed').length;hits=ordered;assert.strictEqual(pickObject({clientX:50,clientY:50}),expected);assert.strictEqual(state.selected,expected);assert.strictEqual(editorState().selectedEditable,editable);assert.strictEqual(gizmoCalls.at(-1).eligible,editable);assert.strictEqual(state.editorEvents.filter(event=>event.type==='selection_changed').length,before+1);};
+click([{object:fallbackEdge,distance:.1},{object:ur5Mesh,distance:.2}],'ur5',false);
+click([{object:frustum,distance:.1},{object:camera.mesh,distance:.2}],'realsense_overhead',true);
+click([{object:ur5Mesh,distance:.1}],'ur5',false);
+click([{object:toolMesh,distance:.1}],'robotiq_85_gripper',false);
+click([{object:table.mesh,distance:.1}],'support_surface_table',true);
+click([{object:bin.mesh,distance:.1}],'target_bin_default',true);
+hits=[{object:gizmo,distance:.1},{object:frustum,distance:.2}];assert.strictEqual(pickObject({clientX:50,clientY:50}),'');assert.strictEqual(state.lastCanvasPickReason,'no_eligible_candidate');assert.strictEqual(globalThis.__warnings.length,1);assert.ok(globalThis.__warnings[0].startsWith('Product View canvas pick rejected: '));
+}
+`,context);
+})().catch(error=>{console.error(error);process.exit(1)});
+"""
+    subprocess.run(
+        [
+            "node",
+            "-e",
+            harness,
+            str(js_path),
+            str(VIEWER / "node_modules/three/build/three.module.js"),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_configured_camera_readiness_identity_is_shared_across_authored_and_generated_rows():

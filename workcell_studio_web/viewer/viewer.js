@@ -4107,10 +4107,11 @@ function isExpandedUrdfInspectionPick(rendered) {
   const item = rendered?.item;
   const registeredReadOnlyRecord = Boolean(rendered && rendered.readOnlyPick === true && state.pickRecords.includes(rendered));
   const explicitInspectionMetadata = rendered?.pickRecordSource === 'expanded_urdf_inspection' ||
+    rendered?.pickRecordSource === 'payload_item' ||
     Boolean(String(rendered?.uiSelectionOwnerId || '').trim()) ||
     String(item?.source_layer || '').trim() === 'expanded_urdf_inspection';
   return registeredReadOnlyRecord && explicitInspectionMetadata && Boolean(item?.id) &&
-    rendered.object3d?.visible !== false && !isTaskOnlyHelperItem(item) && !isOverlayPolicyItem(item) && !isDebugOverlayItem(item);
+    rendered.object3d?.visible !== false;
 }
 function isCanvasSelectableRendered(rendered) {
   return isExpandedUrdfInspectionPick(rendered) || isNormalSelectableRendered(rendered);
@@ -4120,13 +4121,13 @@ function intrinsicallyExcludedPickNode(node) {
   const name = String(node?.name || '').toLowerCase();
   return node?.visible === false || data.selection_outline || data.selection_highlight ||
     data.hidden_overlay || data.helper_hidden ||
-    /transformcontrols|transform_controls|gizmo|selection_.*highlight/.test(name);
+    /transformcontrols|transform_controls|gizmo|selection_.*highlight/.test(name) ||
+    /(?:^|[_-])(?:edges?|frustum|helper)(?:$|[_-])/.test(name);
 }
 function passThroughPickNode(node) {
   const data = node?.userData || {};
   const name = String(node?.name || '').toLowerCase();
-  return data.diagnostic_only || data.non_selectable || data.selectable === false ||
-    /(?:^|[_-])(?:edges?|frustum|helper)(?:$|[_-])/.test(name);
+  return data.diagnostic_only || data.non_selectable || data.selectable === false;
 }
 function excludedPickNode(node) {
   return intrinsicallyExcludedPickNode(node) || passThroughPickNode(node);
@@ -4147,17 +4148,15 @@ function itemFromRaycastHit(hit) {
     const registered = state.pickIdentityByObject.get(node);
     if (intrinsicallyExcludedPickNode(node)) return null;
     if (isExpandedUrdfInspectionPick(registered)) {
-      const descendantItem = node.userData?.item;
-      const identityFreeDescendant = descendantItem ? { ...descendantItem, id: '', display_name: '', status: '', diagnostic_only: false, selectable: true } : null;
-      if (identityFreeDescendant && intrinsicallyExcludedPickItem(identityFreeDescendant)) return null;
       return registered;
     }
     // A different registered root is a nested URDF-link ownership boundary.
     if (candidate && registered && registered !== candidate) return candidate;
-    if (passThroughPickNode(node)) {
-      node = node.parent;
-      continue;
-    }
+    // Edges, frustums, and other helpers are transparent to the ordered hit
+    // list, not aliases for a physical ancestor. Reject this intersection and
+    // let the caller evaluate the next raycast hit (for example the camera
+    // body behind its frustum).
+    if (passThroughPickNode(node)) return null;
     if (!candidate) {
       const nodeItem = node.userData?.item;
       if (nodeItem && intrinsicallyExcludedPickItem(nodeItem)) return null;
