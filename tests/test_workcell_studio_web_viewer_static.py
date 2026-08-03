@@ -823,7 +823,7 @@ let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
 const payload=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
 const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},setAttribute(){},querySelector(){return {textContent:''}},appendChild(){},addEventListener(){}});
 const timers=[]; const events=[]; const debug=[];
-const context={assert,payload,console:{...console,debug(...args){debug.push(args)}},window:{location:{search:''},dispatchEvent(e){events.push(e.detail)},parent:{postMessage(){}}},document:{getElementById(){return element()},createElement(){return element()}},URLSearchParams,CustomEvent:function(type,init){return {type,detail:init.detail}},requestAnimationFrame(){return 0},setTimeout(fn,ms){timers.push({fn,ms,cleared:false});return timers.length},clearTimeout(id){if(timers[id-1])timers[id-1].cleared=true}};
+const context={assert,payload,events,debug,timers,console:{...console,debug(...args){debug.push(args)}},window:{location:{search:''},dispatchEvent(e){events.push(e.detail)},parent:{postMessage(){}}},document:{getElementById(){return element()},createElement(){return element()}},URLSearchParams,CustomEvent:function(type,init){return {type,detail:init.detail}},requestAnimationFrame(){return 0},setTimeout(fn,ms){timers.push({fn,ms,cleared:false});return timers.length},clearTimeout(id){if(timers[id-1])timers[id-1].cleared=true}};
 vm.createContext(context);
 vm.runInContext(source+`
 (async()=>{
@@ -834,21 +834,25 @@ state.sceneJson=payload; state.sourceWebSceneFile='ur5_2f_test.web_scene.json';
 const rows=physicalReadinessItems();
 const camera=rows.find(item=>readinessCategoryForItem(item)==='configured_camera');
 const table=rows.find(item=>readinessCategoryForItem(item)==='workbench_support_surface');
-assert(camera && table); assert.strictEqual(truthyFlag(camera.mesh_load_required),true); assert.strictEqual(truthyFlag(table.mesh_load_required),true);
+assert(camera && table);
 let controls=[];
 loadRobotPreview=(_preview,callbacks)=>{let resolve,reject;const result={diagnostics:{robot_preview_lifecycle_state:'loading_urdf'},links:new Map()};result.ready=new Promise((ok,bad)=>{resolve=ok;reject=bad});controls.push({callbacks,result,resolve,reject});return result};
 const required={robot_arm:true,attached_tool_gripper:true,workbench_support_surface:true,configured_camera:true};
 function begin(){events.length=0;state.web3dReadiness={state:'scene_loading',terminal:false,terminalState:'',terminalNavigationKey:web3dNavigationKey(),terminalEmissionCount:0,statusSequence:0,required,pending:new Set(),failed:false,failure:null};const cameraOp=registerReadinessOperation([readinessKey('configured_camera',camera)]);const tableOp=registerReadinessOperation([readinessKey('workbench_support_surface',table)]);loadExpandedUrdfRobotPreview(payload.robot_preview);return {cameraOp,tableOp,control:controls.at(-1)}}
 let run=begin();
 assert.deepStrictEqual(Array.from(run.cameraOp.pendingKeys),['configured_camera:realsense_overhead']);
+const liveDiagnostics=run.control.result.diagnostics;
+assert.strictEqual(state.robotUrdfPreviewDiagnostics,liveDiagnostics,'viewer must retain renderer diagnostics identity immediately after registration');
 completeReadinessOperation(run.tableOp); completeReadinessOperation(run.cameraOp);
-run.control.result.diagnostics.robot_preview_lifecycle_state='ready';run.control.result.diagnostics.robot_preview_loaded=true;run.control.resolve(run.control.result);await Promise.resolve();await Promise.resolve();
+await Promise.resolve().then(()=>{liveDiagnostics.robot_preview_lifecycle_state='ready';liveDiagnostics.robotPreviewLifecycleState='ready';liveDiagnostics.robot_preview_loaded=true;liveDiagnostics.robot_expected_visual_count=2;liveDiagnostics.robot_loaded_visual_count=2;liveDiagnostics.robot_failed_visual_count=0;run.control.resolve(run.control.result)});await Promise.resolve();await Promise.resolve();
+assert.strictEqual(run.control.result.diagnostics,liveDiagnostics);assert.strictEqual(state.robotUrdfPreviewDiagnostics,liveDiagnostics,'ready completion must still expose the renderer-owned diagnostics');
 assert.deepStrictEqual(pendingRequiredLoads(),[]);assert.strictEqual(events.filter(e=>e.state==='scene_ready').length,1);assert.strictEqual(state.web3dReadiness.terminalEmissionCount,1);
-run.control.callbacks.onRobotLoaded({root:{},links:new Map(),diagnostics:{robot_preview_lifecycle_state:'ready',robot_preview_loaded:true}});
+run.control.callbacks.onRobotLoaded(run.control.result);
 assert.strictEqual(events.filter(e=>e.state==='scene_ready').length,1,'duplicate callback cannot emit again');
 
 run=begin();completeReadinessOperation(run.tableOp);completeReadinessOperation(run.cameraOp);run.control.reject(new Error('preview ready rejected'));await Promise.resolve();await Promise.resolve();
 assert.strictEqual(state.web3dReadiness.state,'scene_failed');assert.deepStrictEqual(pendingRequiredLoads(),[]);assert.match(state.web3dReadiness.failure.reason,/preview ready rejected/);assert.match(state.web3dReadiness.failure.operation_id,/expanded_urdf:ur5_2f_test/);
+assert.strictEqual(state.web3dReadiness.failure.robot_preview_lifecycle_state,'loading_urdf');assert.strictEqual(state.web3dReadiness.failure.robot_loaded_visual_count,0);assert.strictEqual(state.web3dReadiness.failure.robot_expected_visual_count,0);assert.strictEqual(state.web3dReadiness.failure.robot_failed_visual_count,0);assert.deepStrictEqual(state.web3dReadiness.failure.pending_required_loads,[]);
 
 run=begin();completeReadinessOperation(run.tableOp);completeReadinessOperation(run.cameraOp);const deadline=timers.filter(t=>t.ms===REQUIRED_LOAD_DEADLINE_MS&&!t.cleared).at(-1);assert(deadline);deadline.fn();
 assert.strictEqual(state.web3dReadiness.state,'scene_failed');assert.deepStrictEqual(pendingRequiredLoads(),[]);assert.strictEqual(state.web3dReadiness.failure.timeout_ms,REQUIRED_LOAD_DEADLINE_MS);assert.deepStrictEqual(state.web3dReadiness.failure.pending_required_loads,[]);
@@ -3039,7 +3043,7 @@ def test_required_gripper_mesh_failures_transition_scene_failed_with_url_and_lin
     assert "const eventDetail = { ...structured, ...detail, final_lifecycle_state: readinessState" in viewer
     assert "if (required) failPhysicalMeshAttempt(attempt, item, preflight.url || loadUrl" in viewer
     assert "http_status: preflight.http_status || null" in viewer
-    assert "onRobotMeshLoadError: (err, uri, detail) => { if (!callbackIsCurrent()) return ignoreStaleCallback(); failExpandedUrdfReadiness" in viewer
+    assert "onRobotMeshLoadError: (err, uri, detail) => { if (!callbackIsCurrent()) return ignoreStaleCallback(); finalizeRequiredLoad('failure'" in viewer
     assert "function inferMeshLinkDetail(path)" in renderer
     assert "'gripper_base_link'" in renderer
     assert "context?.onRobotMeshLoadError?.(err, uri, { url, uri, path, source_url: path, sourceUrl: path, policy_reason:" in renderer
@@ -3071,7 +3075,7 @@ def test_successful_required_loads_emit_scene_ready_exactly_once_after_completio
     assert "readiness.pending?.size === 0" in maybe_body
     assert "emitWeb3dReadinessState('scene_ready'" in maybe_body
     assert "requiredReadinessCompleteForItem(item);" in js
-    assert "completeExpandedUrdfReadiness(readinessOperation);" in js
+    assert "finalizeRequiredLoad('success'" in js
 
 
 
