@@ -18,10 +18,10 @@ def _index_text():
 def test_viewer_has_edit_mode_guard_for_editable_and_unlocked_items():
     viewer = _viewer_text()
     assert "function canEditItem" in viewer
-    assert "item?.locked" in viewer
-    assert "item?.editable !== true" in viewer
-    assert "source.includes('generated')" in viewer
-    assert "sourceIdentity" in viewer
+    assert "item.locked === true" in viewer
+    assert "item.editable !== true" in viewer
+    assert "generated_authority_layer" in viewer
+    assert "editAuthoritySource" in viewer
     assert "active_visual_source" in viewer
     assert "Edit mode active for editable/unlocked item" in viewer
 
@@ -70,8 +70,8 @@ def test_patch_export_still_exists_and_remains_preview_only():
     assert "schema_version: EDIT_PATCH_SCHEMA_VERSION" in viewer
     assert "Preview-only browser transform edit. Source scene files were not modified." in viewer
     assert "canEditItem" in viewer
-    assert "item?.editable !== true" in viewer
-    assert "item?.locked" in viewer
+    assert "item.editable !== true" in viewer
+    assert "item.locked === true" in viewer
 
 
 def test_no_direct_yaml_write_or_browser_apply_logic_added():

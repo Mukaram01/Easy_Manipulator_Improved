@@ -25,8 +25,10 @@ def test_browser_api_reuses_existing_editor_functions_and_preserves_locks():
     for token in ["selectObject(String(id || ''))", "refreshGizmoSnap()", "undoPreviewEdit()", "redoPreviewEdit()", "resetView()", "buildEditPatch()"]:
         assert token in VIEWER
     assert "function canEditItem(item)" in VIEWER
-    assert "source.includes('generated')" in VIEWER
-    assert "item?.locked || item?.editable !== true" in VIEWER
+    assert "function editAuthorityForItem(item)" in VIEWER
+    assert "item.locked === true" in VIEWER
+    assert "item.editable !== true" in VIEWER
+    assert "active_visual_source and renderer/mesh provenance deliberately do not" in VIEWER
     assert "emitTransformCommitted(rendered)" in VIEWER
     assert "dragging-changed" in VIEWER
 
@@ -188,8 +190,45 @@ def test_selection_diagnostics_are_exposed_to_qt_bridge():
     assert "function currentSelectionDiagnostics()" in VIEWER
     assert "selectionDiagnostics: currentSelectionDiagnostics()" in VIEWER
     assert "selectionDiagnostics: () => currentSelectionDiagnostics()" in VIEWER
-    for field in ["renderIdentity", "sourceLayer", "activeVisualSource", "diagnosticOnly", "helperOrOverlay", "objectPresent"]:
+    for field in ["renderIdentity", "sourceLayer", "activeVisualSource", "diagnosticOnly", "helperOrOverlay", "objectPresent", "canonicalSelectedId", "editAuthoritySource", "gizmoAttachedTargetId", "gizmoVisible", "gizmoEnabled", "gizmoAttachmentReason"]:
         assert field in VIEWER
+
+
+def test_authored_camera_and_table_generated_visuals_attach_to_canonical_edit_owners(tmp_path):
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100}}});
+const context={console,assert,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element()},querySelectorAll(){return[]},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context); vm.runInContext(source+`
+updateLabels=()=>{}; populateInspector=()=>{}; refreshSelectionHighlight=()=>{}; removeSelectionHighlight=()=>{}; updateDirtyState=()=>{};
+const vector=(x,y,z)=>({x,y,z,set(nx,ny,nz){this.x=nx;this.y=ny;this.z=nz}});
+const object=(name,item=null)=>({name,visible:true,userData:item?{item}:{},children:[],parent:null,position:vector(0,0,0),rotation:vector(0,0,0),scale:vector(1,1,1)});
+const owner=item=>({item,object3d:object(item.id,item),originalTransform:{pose:{xyz:{x:0,y:0,z:0},rpy:{x:0,y:0,z:0}},scale:{x:1,y:1,z:1}}});
+const camera=owner({id:'realsense_overhead',type:'realsense',role:'camera',category:'camera',editable:true,locked:false,source_layer:'editable_layout',active_visual_source:'generated_preview',render_policy:'primary'});
+const table=owner({id:'support_surface_table',type:'support_surface',role:'support_surface',category:'work_surface',editable:true,locked:false,source_layer:'editable_layout',active_visual_source:'mesh_preview',render_policy:'primary'});
+const bin=owner({id:'target_bin_default',type:'bin',role:'target_bin',editable:true,locked:false,source_layer:'editable_layout',active_visual_source:'declared_mesh',render_policy:'primary'});
+const robot=owner({id:'ur5',role:'robot',editable:false,locked:true,source_layer:'selection_owner_registry'});
+const gripper=owner({id:'robotiq_85_gripper',role:'tool',editable:false,locked:true,source_layer:'selection_owner_registry'});
+const generated=(id,refs,parent)=>{const item={id,editable:false,locked:true,source_layer:'locked_generated_urdf_visual',active_visual_source:'generated_urdf_visual',render_policy:'primary',...refs};const mesh=object(id,item);mesh.parent=parent.object3d;parent.object3d.children.push(mesh);return {item,object3d:mesh,readOnlyPick:true};};
+const cameraVisual=generated('generated_urdf::camera_link::visual_17::17',{camera_id:'realsense_overhead',type:'camera',role:'sensor'},camera);
+const tableVisual=generated('generated_urdf::table_link::visual_2::2',{support_surface_ref:'support_surface_table',type:'table',role:'support_surface'},table);
+const robotVisual=generated('generated_urdf::wrist_3_link::visual_1',{canonical_item_id:'ur5',role:'robot'},robot);
+const gripperVisual=generated('generated_urdf::robotiq_link::visual_1',{canonical_item_id:'robotiq_85_gripper',role:'tool'},gripper);
+state.objects=[camera,table,bin,robot,gripper,cameraVisual,tableVisual,robotVisual,gripperVisual];state.sceneJson={scene:{id:'ur5_2f_test'},items:state.objects.map(r=>r.item)};rebuildSelectionIdentityIndex();
+const gizmo={object:null,visible:false,enabled:false,showX:false,showY:false,showZ:false,attach(o){this.object=o},detach(){this.object=null},setMode(){},setSpace(){},setTranslationSnap(){},setRotationSnap(){},reset(){}};
+let hits=[];state.three={transformControls:gizmo,pointer:{},camera:{},controls:{enabled:true},raycaster:{setFromCamera(){},intersectObjects(){return hits}}};state.editorMode='move';
+const pick=(visual,canonical,editableObject)=>{hits=[{object:visual.object3d,distance:1}];assert.strictEqual(pickObject({clientX:5,clientY:5}),canonical);assert.strictEqual(state.selected,canonical);assert.strictEqual(editorState().selectedEditable,true);assert.strictEqual(gizmo.object,editableObject);assert.strictEqual(gizmo.visible,true);assert.strictEqual(gizmo.enabled,true);assert.strictEqual(gizmo.showX&&gizmo.showY&&gizmo.showZ,true);assert.strictEqual(currentSelectionDiagnostics().gizmoAttachedTargetId,canonical);};
+pick(cameraVisual,'realsense_overhead',camera.object3d);pick(tableVisual,'support_surface_table',table.object3d);hits=[{object:bin.object3d,distance:1}];assert.strictEqual(pickObject({clientX:5,clientY:5}),'target_bin_default');assert.strictEqual(gizmo.object,bin.object3d);
+for(const [visual,id] of [[robotVisual,'ur5'],[gripperVisual,'robotiq_85_gripper']]){hits=[{object:visual.object3d,distance:1}];assert.strictEqual(pickObject({clientX:5,clientY:5}),id);assert.strictEqual(editorState().selectedEditable,false);assert.strictEqual(gizmo.object,null);assert.strictEqual(gizmo.visible,false);}
+setEditorMode('rotate');hits=[{object:cameraVisual.object3d,distance:1}];pickObject({clientX:5,clientY:5});assert.strictEqual(gizmo.object,camera.object3d);setEditorMode('move');assert.strictEqual(gizmo.object,camera.object3d);
+const before=cloneTransform(transformFromObject(camera.object3d));camera.object3d.position.x=.04;const after=transformFromObject(camera.object3d);assert.strictEqual(markDirtyTransform(camera,after,{pushHistory:true,oldTransform:before}),true);assert.deepStrictEqual([...state.dirtyTransforms.keys()],['realsense_overhead']);assert.strictEqual(cameraVisual.object3d.parent.position.x,.04);undoPreviewEdit();assert.strictEqual(camera.object3d.position.x,0);redoPreviewEdit();assert.strictEqual(camera.object3d.position.x,.04);
+const tableBefore=cloneTransform(transformFromObject(table.object3d));table.object3d.position.y=-.03;assert.strictEqual(markDirtyTransform(table,transformFromObject(table.object3d),{pushHistory:true,oldTransform:tableBefore}),true);assert.strictEqual(tableVisual.object3d.parent.position.y,-.03);assert.strictEqual(state.dirtyTransforms.has('support_surface_table'),true);undoPreviewEdit();assert.strictEqual(table.object3d.position.y,0);redoPreviewEdit();assert.strictEqual(table.object3d.position.y,-.03);
+assert.strictEqual(state.dirtyTransforms.has(cameraVisual.item.id),false);assert.strictEqual(state.dirtyTransforms.has(tableVisual.item.id),false);
+`,context);
+"""
+    import subprocess
+    subprocess.run(["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js")], cwd=ROOT, check=True, capture_output=True, text=True)
 
 
 def test_qt_poll_accepts_only_final_valid_browser_selection_and_explicit_clear():
