@@ -133,6 +133,20 @@ def test_qt_writes_patch_atomically_then_runs_dry_run_before_confirmation_and_wr
     assert "waitForFinished" not in source
 
 
+def test_qt_logs_bounded_patch_summary_and_failed_subprocess_details():
+    source = CONTROLLER.read_text(encoding="utf-8")
+    for token in [
+        "patch summary: scene_id=%1 dirty_edit_count=%2",
+        "patch edit: item_id=%1 operation=%2",
+        "persistence_source=%5",
+        "exit_code=%2 subprocess_output=%3; Web3D edits preserved",
+        "subprocess output truncated",
+        "QProcess::MergedChannels",
+    ]:
+        assert token in source
+    assert source.index("logPatchSummary(patch)") < source.index("validation started")
+
+
 def test_successful_qt_save_reuses_backend_refreshes_and_reloads_product_view():
     controller = CONTROLLER.read_text(encoding="utf-8")
     workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -189,7 +203,7 @@ def test_save_roundtrip_has_no_browser_source_writes_or_robot_motion():
 
 
 def test_roundtrip_change_stays_focused():
-    assert len(CONTROLLER.read_text(encoding="utf-8").splitlines()) < 540
+    assert len(CONTROLLER.read_text(encoding="utf-8").splitlines()) < 590
     assert len(WORKFLOW.read_text(encoding="utf-8").splitlines()) < 340
     assert len(APPLICATOR.read_text(encoding="utf-8").splitlines()) < 290
 
@@ -295,6 +309,68 @@ def test_executable_target_bin_linked_save_and_reload_roundtrip(tmp_path):
     assert reloaded["place_zone_default"]["dimensions"][:2] == reloaded["target_bin_default"]["dimensions"][:2]
     assert 0 < reloaded["place_zone_default"]["dimensions"][2] <= 0.01
 
+
+def test_executable_production_camera_table_save_roundtrips(tmp_path):
+    """Use real exported owner records and the exact Qt dry-run/write workflow."""
+    for edited_ids in [
+        ("realsense_overhead",),
+        ("support_surface_table",),
+        ("realsense_overhead", "support_surface_table"),
+    ]:
+        case = "_and_".join(edited_ids)
+        scene = tmp_path / case / "ur5_2f_test"
+        shutil.copytree(ROOT / "scenes/ur5_2f_test", scene)
+        output = tmp_path / case / "web"
+        before_path = output / "ur5_2f_test.before.web_scene.json"
+        output.mkdir()
+        subprocess.run(
+            [sys.executable, str(EXPORTER), "--scene", str(scene), "--output", str(before_path)],
+            cwd=ROOT, check=True, capture_output=True, text=True,
+        )
+        before = json.loads(before_path.read_text(encoding="utf-8"))
+        owners = {item["id"]: item for item in before["ui_selection_owners"]}
+        assert owners["realsense_overhead"]["provenance"]["pose"] == "layout/workcell_studio_layout.yaml"
+        assert owners["support_surface_table"]["provenance"]["pose"] == "layout/workcell_studio_layout.yaml"
+        edits = []
+        for item_id in edited_ids:
+            old = _transform(owners[item_id])
+            new = json.loads(json.dumps(old))
+            new["pose"]["xyz"]["x"] += 0.04
+            new["pose"]["rpy"]["z"] += 0.12
+            edits.append({
+                "item_id": item_id, "operation": "update_transform",
+                "editable_required": True, "locked_required": False,
+                "old_transform": old, "new_transform": new,
+            })
+        patch = {
+            "schema_version": "workcell_studio_web_scene_edit_patch/v1",
+            "scene_id": "ur5_2f_test", "source_scene_schema_version": before["schema_version"],
+            "created_at": "2026-08-03T00:00:00Z", "created_by": "static_web_viewer",
+            "edits": edits,
+        }
+        patch_path = output / "edit_patch.json"
+        patch_path.write_text(json.dumps(patch), encoding="utf-8")
+        protected_before = {
+            path.relative_to(scene): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in scene.rglob("*") if path.is_file() and path.name != "workcell_studio_layout.yaml"
+        }
+        for mode in ("--dry-run-apply", "--write"):
+            result = subprocess.run(
+                [sys.executable, str(WORKFLOW), "--scene", str(scene), "--patch", str(patch_path),
+                 "--output-dir", str(output), mode], cwd=ROOT, capture_output=True, text=True,
+            )
+            assert result.returncode == 0, result.stdout + result.stderr
+        assert "persistence verification result: PASS" in result.stdout
+        after = json.loads((output / "ur5_2f_test.web_scene.json").read_text(encoding="utf-8"))
+        after_owners = {item["id"]: item for item in after["ui_selection_owners"]}
+        for edit in edits:
+            assert _transform(after_owners[edit["item_id"]]) == edit["new_transform"]
+            assert edit["old_transform"]["scale"] == edit["new_transform"]["scale"] == {"x": 1.0, "y": 1.0, "z": 1.0}
+        protected_after = {
+            path.relative_to(scene): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in scene.rglob("*") if path.is_file() and path.name != "workcell_studio_layout.yaml" and ".bak" not in path.name
+        }
+        assert protected_after == protected_before
 
 def test_executable_linked_edit_undo_redo_preserves_canonical_selection():
     viewer = ROOT / "workcell_studio_web/viewer/viewer.js"

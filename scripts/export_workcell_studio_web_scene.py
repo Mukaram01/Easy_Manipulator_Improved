@@ -1391,6 +1391,27 @@ def _selection_owner_registry(
 ) -> Tuple[List[Json], str, str]:
     """Declare stable Qt hierarchy identities without restoring shadowed visuals."""
 
+    def authored_pose_owner(records: Sequence[Mapping[str, Any]], owner_id: str) -> Json | None:
+        """Return the one authored record whose pose has approved persistence provenance."""
+        candidates = [
+            record for record in records
+            if str(record.get("id") or "").strip() == owner_id
+            and record.get("editable") is True
+            and record.get("locked") is not True
+            and _as_map(record.get("provenance")).get("pose")
+            in {"layout/workcell_studio_layout.yaml", "environment.yaml"}
+        ]
+        if not candidates:
+            return None
+        if len(candidates) != 1:
+            sources = sorted(str(_as_map(row.get("provenance")).get("pose") or "missing") for row in candidates)
+            raise BlockingExportError(
+                f"selection owner {owner_id!r} requires one approved authored pose source; candidates={sources}"
+            )
+        # Do not mutate the authored-section row. The registry record is the
+        # canonical editable transform root consumed by Product View.
+        return json.loads(json.dumps(candidates[0]))
+
     def unique_owner_id(records: Sequence[Mapping[str, Any]], kind: str) -> str:
         environment_records = [
             record for record in records
@@ -1429,10 +1450,23 @@ def _selection_owner_registry(
             & {"support_surface", "table", "workbench", "work_surface"}
         )
     } - {""})
-    owners = [
-        *({"id": value, "type": "camera", "locked": True, "editable": False} for value in camera_ids),
-        *({"id": value, "type": "support_surface", "locked": True, "editable": False} for value in support_surface_ids),
-    ]
+    owners = []
+    for value in camera_ids:
+        owner = authored_pose_owner(authored_sensors, value)
+        if owner is None:
+            owners.append({"id": value, "type": "camera", "locked": True, "editable": False})
+            continue
+        owner["authored_type"] = owner.get("type")
+        owner["type"] = "camera"
+        owners.append(owner)
+    for value in support_surface_ids:
+        owner = authored_pose_owner(authored_assets, value)
+        if owner is None:
+            owners.append({"id": value, "type": "support_surface", "locked": True, "editable": False})
+            continue
+        owner["authored_type"] = owner.get("type")
+        owner["type"] = "support_surface"
+        owners.append(owner)
     if robot_id:
         owners.append({"id": robot_id, "type": "robot", "locked": True, "editable": False})
     if tool_id:

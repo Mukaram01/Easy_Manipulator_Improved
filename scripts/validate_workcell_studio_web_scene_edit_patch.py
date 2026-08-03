@@ -36,7 +36,9 @@ def _scene_id(web_scene: dict[str, Any]) -> str:
 
 def _items_by_id(web_scene: dict[str, Any]) -> dict[str, dict[str, Any]]:
     items: dict[str, dict[str, Any]] = {}
-    for bucket in ("robots", "tools", "assets", "sensors", "zones", "items", "objects"):
+    # ui_selection_owners contains the canonical authored transform roots when
+    # a generated physical mesh shadows the layout primitive in render buckets.
+    for bucket in ("robots", "tools", "assets", "sensors", "zones", "items", "objects", "ui_selection_owners"):
         for item in web_scene.get(bucket, []) if isinstance(web_scene.get(bucket, []), list) else []:
             if isinstance(item, dict) and item.get("id"):
                 items[str(item["id"])] = item
