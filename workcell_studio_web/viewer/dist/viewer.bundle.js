@@ -43449,6 +43449,7 @@ function buildEditPatch() {
       editable_required: true,
       locked_required: false,
       operation: "update_transform",
+      persistence_source: rendered.item.provenance?.pose || "",
       old_transform: dirty.oldTransform,
       new_transform: dirty.newTransform,
       notes: ["Preview-only browser transform edit. Source scene files were not modified."]
