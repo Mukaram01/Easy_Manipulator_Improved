@@ -39591,7 +39591,36 @@ function uiSelectionIdentity(rendered) {
   return { id: exactId, resolution: "exact_identity_fallback", linkName, pickRecordSource: rendered.pickRecordSource || "payload_item" };
 }
 function explicitUiSelectionItemId(rendered) {
-  return uiSelectionIdentity(rendered).id;
+  return expandedUrdfPhysicalOwnerId(rendered) || uiSelectionIdentity(rendered).id;
+}
+function expandedUrdfPhysicalOwnerId(rendered) {
+  if (rendered?.authoritativePhysicalPick !== true)
+    return "";
+  const directOwnerId = String(rendered.uiSelectionOwnerId || "").trim();
+  const index = state.selectionIdentityIndex || rebuildSelectionIdentityIndex();
+  if (directOwnerId && (selectionOwnerRenderedById(directOwnerId) || index.itemById.has(directOwnerId)))
+    return directOwnerId;
+  const preview = state.sceneJson?.robot_preview || {};
+  const diagnostics = state.robotUrdfPreviewDiagnostics || {};
+  const linkName = exactSelectionLinkName(rendered.item);
+  const expectedLinks = (fields) => new Set(fields.flatMap((field) => asArray(preview?.[field])).map((value) => String(value || "").trim()).filter(Boolean));
+  const toolLinks = expectedLinks(["expected_tool_visual_links", "expectedToolVisualLinks"]);
+  const robotLinks = expectedLinks(["expected_robot_visual_links", "expectedRobotVisualLinks"]);
+  const ownerFromContract = (fields) => {
+    for (const source of [preview, diagnostics]) {
+      for (const field of fields) {
+        const id = String(source?.[field] || "").trim();
+        if (id && (selectionOwnerRenderedById(id) || index.itemById.has(id)))
+          return id;
+      }
+    }
+    return "";
+  };
+  if (toolLinks.has(linkName))
+    return ownerFromContract(["selection_tool_owner_id", "selectionToolOwnerId"]);
+  if (robotLinks.has(linkName))
+    return ownerFromContract(["selection_robot_owner_id", "selectionRobotOwnerId"]);
+  return "";
 }
 function currentSelectionDiagnostics() {
   const id = String(state.selected || "");
@@ -40627,6 +40656,8 @@ function makeSensorMarker(item) {
   group.name = `${item.id || itemLabel(item)}_fallback_sensor`;
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.08), fallbackMaterialFor(item));
   body.name = `${item.id || itemLabel(item)}_fallback_sensor_body`;
+  body.userData.fallback_sensor_body = true;
+  body.userData.selection_owner_id = String(item.id || "");
   group.add(body);
   const frustum = new THREE.LineSegments(
     new THREE.BufferGeometry().setFromPoints([
@@ -40650,6 +40681,8 @@ function makeSensorMarker(item) {
     fallbackEdgeMaterialFor(item)
   );
   frustum.name = `${item.id || itemLabel(item)}_fallback_sensor_frustum`;
+  frustum.userData.fallback_sensor_frustum = true;
+  frustum.userData.non_selectable = true;
   group.add(frustum);
   applyFallbackRenderMetadata(group, item, "sensor_fallback");
   return group;
@@ -42680,7 +42713,12 @@ function isCanvasSelectableRendered(rendered) {
 function intrinsicallyExcludedPickNode(node) {
   const data = node?.userData || {};
   const name = String(node?.name || "").toLowerCase();
-  return node?.visible === false || data.selection_outline || data.selection_highlight || data.hidden_overlay || data.helper_hidden || /transformcontrols|transform_controls|gizmo|selection_.*highlight/.test(name) || /(?:^|[_-])(?:edges?|frustum|helper)(?:$|[_-])/.test(name);
+  const explicitlyExcluded = node?.visible === false || data.selection_outline || data.selection_highlight || data.hidden_overlay || data.helper_hidden || /transformcontrols|transform_controls|gizmo|selection_.*highlight/.test(name);
+  if (explicitlyExcluded)
+    return true;
+  if (data.fallback_sensor_body === true || /(?:^|[_-])fallback_sensor_body(?:$|[_-])/.test(name))
+    return false;
+  return /(?:^|[_-])(?:edges?|frustum|helper)(?:$|[_-])/.test(name);
 }
 function passThroughPickNode(node) {
   const data = node?.userData || {};
@@ -42735,13 +42773,14 @@ function resolveCanvasPickHit(hit) {
     node = node.parent;
   }
   const renderIdentity = candidate;
-  const ownerId = renderIdentity ? explicitUiSelectionItemId(renderIdentity) : "";
+  const authoritativeOwnerId = expandedUrdfPhysicalOwnerId(renderIdentity);
+  const ownerId = authoritativeOwnerId || (renderIdentity ? explicitUiSelectionItemId(renderIdentity) : "");
   const selectionOwner = ownerId ? selectionOwnerRenderedById(ownerId) : null;
   const editOwner = selectionOwner && canEditItem(selectionOwner.item) ? selectionOwner : null;
   const explicitlyPhysical = renderIdentity?.authoritativePhysicalPick === true;
-  const eligible = Boolean(renderIdentity && (explicitlyPhysical || isCanvasSelectableRendered(selectionOwner || renderIdentity)));
+  const eligible = Boolean(renderIdentity && (explicitlyPhysical ? ownerId : isCanvasSelectableRendered(selectionOwner || renderIdentity)));
   if (!eligible)
-    rejectionReason = renderIdentity ? "resolved_owner_not_canvas_selectable" : rejectionReason;
+    rejectionReason = explicitlyPhysical && !ownerId ? "authoritative_physical_owner_unresolved" : renderIdentity ? "resolved_owner_not_canvas_selectable" : rejectionReason;
   else
     rejectionReason = "";
   return { renderIdentity, selectionOwner, editOwner, eligible, rejectionReason, registeredRecord: registeredRecord || (explicitlyPhysical ? renderIdentity : null), hit };
