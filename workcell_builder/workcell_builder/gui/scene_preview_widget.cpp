@@ -2108,7 +2108,7 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
 
   if (QDateTime::currentDateTimeUtc() > embedded_web_readiness_deadline_) {
     const QString detail = QStringLiteral(
-      "startup timed out after 45s for scene %1; viewer URL: %2; expected JSON: %3; last observed boot status: %4")
+      "startup timed out after 45s for scene %1; viewer URL: %2; expected JSON: %3; pending_required_loads and last observed boot status: %4")
       .arg(identity.scene_id, viewer_url, expected_json_path, embedded_web_last_boot_status_.isEmpty() ? QStringLiteral("unavailable") : embedded_web_last_boot_status_);
     handle_embedded_web_runtime_failure(identity, navigation_token, detail);
     emit studio_log_requested(QStringLiteral("Embedded Product View readiness timeout. %1").arg(detail));
@@ -2137,6 +2137,7 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
     tool_status: s.tool_status || s.toolStatus || s.end_effector_status || s.endEffectorStatus || '',
     environment_status: s.environment_status || s.environmentStatus || '',
     camera_status: s.camera_status || s.cameraStatus || '',
+    pending_required_loads: Array.isArray(s.pending_required_loads || s.pendingRequiredLoads) ? (s.pending_required_loads || s.pendingRequiredLoads) : [],
     final_lifecycle_state: s.final_lifecycle_state || s.finalLifecycleState || s.lifecycle_state || s.lifecycleState || '',
     readiness_failure: s.readiness_failure || s.readinessFailure || null,
     failed_stage: s.failed_stage || s.failedStage || '',
@@ -2170,11 +2171,12 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
     const QString tool_status = status.value(QStringLiteral("tool_status")).toString();
     const QString environment_status = status.value(QStringLiteral("environment_status")).toString();
     const QString camera_status = status.value(QStringLiteral("camera_status")).toString();
+    const QStringList pending_required_loads = status.value(QStringLiteral("pending_required_loads")).toStringList();
     const QString final_lifecycle_state = status.value(QStringLiteral("final_lifecycle_state")).toString();
     const QString failed_stage = status.value(QStringLiteral("failed_stage")).toString();
     const QString fatal_error = status.value(QStringLiteral("fatal_error")).toString();
     const QString fatal_stack = status.value(QStringLiteral("fatal_stack")).toString();
-    embedded_web_last_boot_status_ = QStringLiteral("contract=%13 terminal=%14 builder_revision=%15 boot=%1 json=%2 source=%3 scene_id=%4 expected_physical=%5 rendered_physical=%6 failed_required=%7 robot=%8 tool=%9 environment=%10 camera=%11 lifecycle=%12")
+    embedded_web_last_boot_status_ = QStringLiteral("contract=%13 terminal=%14 builder_revision=%15 boot=%1 json=%2 source=%3 scene_id=%4 expected_physical=%5 rendered_physical=%6 failed_required=%7 robot=%8 tool=%9 environment=%10 camera=%11 lifecycle=%12 pending_required_loads=%16")
       .arg(boot_state.isEmpty() ? QStringLiteral("unknown") : boot_state)
       .arg(scene_json_loaded ? QStringLiteral("loaded") : QStringLiteral("not_loaded"))
       .arg(source_json.isEmpty() ? QStringLiteral("unknown") : source_json)
@@ -2189,7 +2191,8 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
       .arg(final_lifecycle_state.isEmpty() ? QStringLiteral("unknown") : final_lifecycle_state)
       .arg(contract_version)
       .arg(terminal ? QStringLiteral("true") : QStringLiteral("false"))
-      .arg(builder_revision.isEmpty() ? QStringLiteral("unknown") : builder_revision);
+      .arg(builder_revision.isEmpty() ? QStringLiteral("unknown") : builder_revision)
+      .arg(QStringLiteral("[%1]").arg(pending_required_loads.join(QStringLiteral(", "))));
 
     if (boot_state == QStringLiteral("scene_failed") || boot_state == QStringLiteral("failed")) {
       const QString detail = QStringLiteral("viewer JavaScript failed at %1: %2%3")
