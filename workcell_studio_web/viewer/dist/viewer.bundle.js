@@ -39869,8 +39869,22 @@ function renderedById(id) {
   return state.objects.find((obj) => obj.item.id === id) || state.pickRecords.find((obj) => obj.item.id === id);
 }
 function selectionOwnerRenderedById(id) {
-  const matches = state.objects.filter((record) => record?.item?.id === id);
-  return matches.find((record) => canEditItem(record.item) && !isGeneratedUrdfItem(record.item)) || matches.find((record) => !isGeneratedUrdfItem(record.item)) || matches[0] || state.pickRecords.find((record) => record?.item?.id === id);
+  return resolveSelectionOwner(id).record;
+}
+function resolveSelectionOwner(id) {
+  const ownerId = String(id || "").trim();
+  if (!ownerId)
+    return { record: null, source: "" };
+  const objectMatches = state.objects.filter((record) => record?.item?.id === ownerId);
+  const rendered = objectMatches.find((record) => canEditItem(record.item) && !isGeneratedUrdfItem(record.item)) || objectMatches.find((record) => !isGeneratedUrdfItem(record.item)) || objectMatches[0] || state.pickRecords.find((record) => record?.item?.id === ownerId);
+  if (rendered)
+    return { record: rendered, source: "state.objects" };
+  const index = state.selectionIdentityIndex || rebuildSelectionIdentityIndex();
+  const item = index.selectionOwners.find((owner) => String(owner?.id || "").trim() === ownerId);
+  return item ? {
+    record: { item, object3d: null, pickRoot: null, readOnlyPick: true, virtualSelectionOwner: true },
+    source: "ui_selection_owners"
+  } : { record: null, source: "" };
 }
 function selectedRenderIdentity() {
   return state.pickRecords.find((record) => record.authoritativePhysicalPick === true && record.item?.id === state.selectedRenderIdentityId) || renderedById(state.selectedRenderIdentityId) || renderedById(state.selected);
@@ -42741,9 +42755,12 @@ function resolveCanvasPickHit(hit) {
   let rejectionReason = "no_registered_or_rendered_identity";
   while (node) {
     const registered = state.pickIdentityByObject.get(node);
+    const nodeItem = node.userData?.item;
+    const nodeName = String(node?.name || "").toLowerCase();
+    const directlyHitPhysicalCamera = node === hit?.object && Boolean(nodeItem && isSensor(nodeItem) && (node.userData?.fallback_sensor_body === true || !/(?:edges?|frustum|helper|overlay|highlight|gizmo)/.test(nodeName) && (node.isMesh || node.type === "Mesh")));
     if (intrinsicallyExcludedPickNode(node)) {
       rejectionReason = "hit_node_intrinsically_excluded";
-      return { renderIdentity: null, selectionOwner: null, editOwner: null, eligible: false, rejectionReason, registeredRecord, hit };
+      return { renderIdentity: null, selectionOwner: null, selectionOwnerSource: "", editOwner: null, eligible: false, rejectionReason, exclusionNode: node, exclusionFlag: "intrinsic_node_identity", registeredRecord, hit };
     }
     if (isExpandedUrdfInspectionPick(registered)) {
       registeredRecord = registered;
@@ -42752,15 +42769,15 @@ function resolveCanvasPickHit(hit) {
     }
     if (candidate && registered && registered !== candidate)
       break;
-    if (passThroughPickNode(node)) {
+    if (passThroughPickNode(node) && !directlyHitPhysicalCamera) {
       rejectionReason = "hit_node_non_selectable_metadata";
-      return { renderIdentity: null, selectionOwner: null, editOwner: null, eligible: false, rejectionReason, registeredRecord, hit };
+      const flag = node.userData?.diagnostic_only ? "diagnostic_only" : node.userData?.non_selectable ? "non_selectable" : "selectable=false";
+      return { renderIdentity: null, selectionOwner: null, selectionOwnerSource: "", editOwner: null, eligible: false, rejectionReason, exclusionNode: node, exclusionFlag: flag, registeredRecord, hit };
     }
     if (!candidate) {
-      const nodeItem = node.userData?.item;
-      if (nodeItem && intrinsicallyExcludedPickItem(nodeItem)) {
+      if (nodeItem && intrinsicallyExcludedPickItem(nodeItem) && !directlyHitPhysicalCamera) {
         rejectionReason = "render_item_intrinsically_excluded";
-        return { renderIdentity: null, selectionOwner: null, editOwner: null, eligible: false, rejectionReason, registeredRecord, hit };
+        return { renderIdentity: null, selectionOwner: null, selectionOwnerSource: "", editOwner: null, eligible: false, rejectionReason, exclusionNode: node, exclusionFlag: "item_diagnostic_policy", registeredRecord, hit };
       }
       const item = nodeItem || registered?.item;
       if (item?.id) {
@@ -42770,12 +42787,15 @@ function resolveCanvasPickHit(hit) {
         candidate = rendered;
       }
     }
+    if (directlyHitPhysicalCamera && candidate)
+      break;
     node = node.parent;
   }
   const renderIdentity = candidate;
   const authoritativeOwnerId = expandedUrdfPhysicalOwnerId(renderIdentity);
   const ownerId = authoritativeOwnerId || (renderIdentity ? explicitUiSelectionItemId(renderIdentity) : "");
-  const selectionOwner = ownerId ? selectionOwnerRenderedById(ownerId) : null;
+  const ownerResolution = resolveSelectionOwner(ownerId);
+  const selectionOwner = ownerResolution.record;
   const editOwner = selectionOwner && canEditItem(selectionOwner.item) ? selectionOwner : null;
   const explicitlyPhysical = renderIdentity?.authoritativePhysicalPick === true;
   const eligible = Boolean(renderIdentity && (explicitlyPhysical ? ownerId : isCanvasSelectableRendered(selectionOwner || renderIdentity)));
@@ -42783,7 +42803,7 @@ function resolveCanvasPickHit(hit) {
     rejectionReason = explicitlyPhysical && !ownerId ? "authoritative_physical_owner_unresolved" : renderIdentity ? "resolved_owner_not_canvas_selectable" : rejectionReason;
   else
     rejectionReason = "";
-  return { renderIdentity, selectionOwner, editOwner, eligible, rejectionReason, registeredRecord: registeredRecord || (explicitlyPhysical ? renderIdentity : null), hit };
+  return { renderIdentity, selectionOwner, selectionOwnerSource: ownerResolution.source, editOwner, eligible, rejectionReason, exclusionNode: null, exclusionFlag: "", registeredRecord: registeredRecord || (explicitlyPhysical ? renderIdentity : null), hit };
 }
 function pickingPriority(rendered) {
   const item = rendered?.item;
@@ -42847,9 +42867,12 @@ function failedCanvasPickDiagnostic(hits) {
       pick_source: resolution.registeredRecord?.pickRecordSource || "",
       authoritative_physical_pick: resolution.registeredRecord?.authoritativePhysicalPick === true,
       selection_owner_id: resolution.selectionOwner?.item?.id || "",
+      selection_owner_source: resolution.selectionOwnerSource || "",
       edit_owner_id: resolution.editOwner?.item?.id || "",
       rejection_stage_reason: resolution.rejectionReason || "",
-      candidate_priority: pickingPriority(resolution.editOwner || resolution.selectionOwner || resolution.renderIdentity)
+      exclusion_ancestor_node: resolution.exclusionNode?.name || "",
+      exclusion_flag: resolution.exclusionFlag || "",
+      candidate_priority: Number.isFinite(pickingPriority(resolution.editOwner || resolution.selectionOwner || resolution.renderIdentity)) ? pickingPriority(resolution.editOwner || resolution.selectionOwner || resolution.renderIdentity) : "Infinity"
     });
   }
   if (!firstActionableRejectionReason)
@@ -42906,16 +42929,17 @@ function selectObjectFromRender(id, renderIdentity = null) {
   updateLabels();
   const rendered = requested || renderedById(id);
   const editOwner = canonicalEditOwnerRendered(rendered);
+  const selectionOwner = resolveSelectionOwner(selectionId).record;
   if (rendered) {
-    populateInspector(editOwner || rendered);
-    attachTransformGizmo(editOwner || rendered);
+    populateInspector(editOwner || selectionOwner || rendered);
+    attachTransformGizmo(editOwner || selectionOwner || rendered);
     refreshSelectionHighlight(rendered);
   } else {
     detachTransformGizmo();
     removeSelectionHighlight();
   }
   if (previous !== (id || ""))
-    pushEditorEvent("selection_changed", { itemId: id || "", uiItemId: explicitUiSelectionItemId(rendered), itemType: editOwner || rendered ? itemType((editOwner || rendered).item) : "", editable: Boolean(editOwner && selectionIsEditable(editOwner)) });
+    pushEditorEvent("selection_changed", { itemId: id || "", uiItemId: explicitUiSelectionItemId(rendered), itemType: editOwner || selectionOwner || rendered ? itemType((editOwner || selectionOwner || rendered).item) : "", editable: Boolean(editOwner && selectionIsEditable(editOwner)) });
 }
 function clearSelection() {
   selectObject("");
