@@ -117,7 +117,7 @@ def test_product_view_selection_uses_stable_identity_and_filters_helpers():
     assert "function isExpandedUrdfInspectionPick(rendered)" in VIEWER
     assert "function isCanvasSelectableRendered(rendered)" in VIEWER
     assert "state.pickRecords.includes(rendered)" in VIEWER
-    assert "rendered.readOnlyPick === true" in VIEWER
+    assert "rendered?.authoritativePhysicalPick === true" in VIEWER
     assert "function isNormalSelectableRendered(rendered)" in VIEWER
     assert "item.selectable !== false" in VIEWER
     assert "state.debugOverlaysVisible && (isTaskOnlyHelperItem(item)" in VIEWER

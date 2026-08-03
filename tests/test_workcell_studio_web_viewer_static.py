@@ -230,12 +230,12 @@ assert.ok(!warning.includes('[object Object]'));
 const serializedDiagnostic=JSON.parse(warning.slice('Product View canvas pick rejected: '.length));
 assert.strictEqual(serializedDiagnostic.raw_hit_count,1);
 assert.deepStrictEqual(serializedDiagnostic.hit_object_names,['rejected-stale-mesh']);
-assert.strictEqual(serializedDiagnostic.first_actionable_rejection_reason,'hit_node_excluded_from_picking');
+assert.strictEqual(serializedDiagnostic.first_actionable_rejection_reason,'hit_node_non_selectable_metadata');
 const failed=state.lastFailedCanvasPickDiagnostic;
 assert.strictEqual(failed.raw_hit_count,1);
 assert.deepStrictEqual(Array.from(failed.hit_object_names),['rejected-stale-mesh']);
 assert.strictEqual(failed.traversed_registered_identity,false);
-assert.strictEqual(failed.first_actionable_rejection_reason,'hit_node_excluded_from_picking');
+assert.strictEqual(failed.first_actionable_rejection_reason,'hit_node_non_selectable_metadata');
 assert.strictEqual(failed.nearest_known_urdf_link_ancestor,'');
 
 const staleCallback=callbacks[0];
@@ -290,8 +290,8 @@ state.objects=[ur5Owner,toolOwner,camera,table,bin];state.sceneJson={scene:{id:'
 const generatedParent=new THREE.Group();generatedParent.name='generated_robot_parent';generatedParent.userData={diagnostic_only:true,selectable:false,item:{id:'stale_generated_parent',diagnostic_only:true,selectable:false,render_policy:'diagnostic_only'}};
 const ur5Link=new THREE.Group();ur5Link.name='wrist_3_link';const ur5Mesh=new THREE.Mesh(new THREE.BoxGeometry(1,1,1));ur5Mesh.name='wrist_visual_mesh';ur5Mesh.userData={diagnostic_only:true,selectable:false,item:{id:'stale_ur5_visual',diagnostic_only:true,selectable:false,render_policy:'diagnostic_only'}};ur5Link.add(ur5Mesh);generatedParent.add(ur5Link);
 const toolLink=new THREE.Group();toolLink.name='robotiq_85_base_link';const toolMesh=new THREE.Mesh(new THREE.BoxGeometry(1,1,1));toolMesh.name='robotiq_visual_mesh';toolMesh.userData={diagnostic_only:true,selectable:false,item:{id:'stale_tool_visual',diagnostic_only:true,selectable:false,render_policy:'diagnostic_only'}};toolLink.add(toolMesh);generatedParent.add(toolLink);
-const ur5Record=registerPickRecord({id:'generated::wrist',link_name:'wrist_3_link',diagnostic_only:true,selectable:false,render_policy:'diagnostic_only'},ur5Link,generatedParent,{pickRecordSource:'payload_item',uiSelectionOwnerId:'ur5'});
-const toolRecord=registerPickRecord({id:'generated::tool',link_name:'robotiq_85_base_link',diagnostic_only:true,selectable:false,render_policy:'diagnostic_only'},toolLink,generatedParent,{pickRecordSource:'payload_item',uiSelectionOwnerId:'robotiq_85_gripper'});
+const ur5Record=registerPickRecord({id:'generated::wrist',link_name:'wrist_3_link',diagnostic_only:true,selectable:false,render_policy:'diagnostic_only'},ur5Link,generatedParent,{pickRecordSource:'payload_item',authoritativePhysicalPick:true,uiSelectionOwnerId:'ur5'});
+const toolRecord=registerPickRecord({id:'generated::tool',link_name:'robotiq_85_base_link',diagnostic_only:true,selectable:false,render_policy:'diagnostic_only'},toolLink,generatedParent,{pickRecordSource:'payload_item',authoritativePhysicalPick:true,uiSelectionOwnerId:'robotiq_85_gripper'});
 bindExpandedUrdfPickRecordToSubtree(ur5Link,ur5Record,new Set([ur5Link,toolLink]));bindExpandedUrdfPickRecordToSubtree(toolLink,toolRecord,new Set([ur5Link,toolLink]));
 const fallbackEdge=new THREE.LineSegments();fallbackEdge.name='robot_fallback_edges';
 const frustum=new THREE.LineSegments();frustum.name='realsense_overhead_fallback_sensor_frustum';frustum.userData={non_selectable:true,item:camera.item};camera.object3d.add(frustum);
@@ -1798,7 +1798,10 @@ def test_viewer_load_contract_keeps_selection_empty_until_manual_pick():
     assert "rankedPickingCandidates(hits)" in pick_body
     assert "candidates.find(candidate => Number.isFinite(candidate.priority)" in pick_body
     ranking_body = _viewer_function_body(js, "function rankedPickingCandidates(hits)", "function selectObject(id)")
-    assert "inspectionSelectionRendered" in ranking_body
+    assert "resolveCanvasPickHit(hit)" in ranking_body
+    resolution_body = _viewer_function_body(js, "function resolveCanvasPickHit(hit)", "function itemFromRaycastHit(hit)")
+    for identity in ["renderIdentity", "selectionOwner", "editOwner", "eligible", "rejectionReason"]:
+        assert identity in resolution_body
     assert "canonicalEditOwnerRendered" not in ranking_body
     assert "inspectionSelectionRendered" in select_body
     assert "selectObjectFromRender(canonicalId, selectedCandidate.rendered);" in pick_body
@@ -1863,7 +1866,7 @@ assert.strictEqual(JSON.parse(warnings[0][0].slice('Product View canvas pick rej
 assert.strictEqual(state.lastFailedCanvasPickDiagnostic.raw_hit_count,1);
 assert.strictEqual(state.lastFailedCanvasPickDiagnostic.hit_object_names[0],'unregistered-mesh');
 assert.strictEqual(state.lastFailedCanvasPickDiagnostic.traversed_registered_identity,false);
-assert.strictEqual(state.lastFailedCanvasPickDiagnostic.first_actionable_rejection_reason,'no_registered_identity_in_hit_ancestry');
+assert.strictEqual(state.lastFailedCanvasPickDiagnostic.first_actionable_rejection_reason,'no_registered_or_rendered_identity');
 assert.strictEqual(state.lastFailedCanvasPickDiagnostic.nearest_known_urdf_link_ancestor,'known_link');
 assert.strictEqual(editorState().lastFailedCanvasPickDiagnostic.rawHitCount,1);
 `, context);
