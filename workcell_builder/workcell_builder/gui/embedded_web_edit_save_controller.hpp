@@ -132,6 +132,43 @@ private:
 
   void logPhase(const QString & phase) { emit preview_->studio_log_requested(QStringLiteral("Web3D Save Layout: %1").arg(phase)); }
 
+  static QString boundedWorkflowOutput(QString output)
+  {
+    output = output.trimmed();
+    constexpr int kLimit = 8000;
+    if (output.size() <= kLimit) return output;
+    return output.left(kLimit) + QStringLiteral("\n… subprocess output truncated …");
+  }
+
+  void logPatchSummary(const QJsonObject & patch)
+  {
+    const QJsonArray edits = patch.value(QStringLiteral("edits")).toArray();
+    logPhase(QStringLiteral("patch summary: scene_id=%1 dirty_edit_count=%2")
+      .arg(patch.value(QStringLiteral("scene_id")).toString()).arg(edits.size()));
+    for (const QJsonValue & value : edits) {
+      const QJsonObject edit = value.toObject();
+      const auto transformText = [](const QJsonValue & value) {
+        const QJsonObject transform = value.toObject();
+        const QJsonObject pose = transform.value(QStringLiteral("pose")).toObject();
+        const QJsonObject xyz = pose.value(QStringLiteral("xyz")).toObject();
+        const QJsonObject rpy = pose.value(QStringLiteral("rpy")).toObject();
+        return QStringLiteral("xyz=[%1,%2,%3] rpy=[%4,%5,%6]")
+          .arg(xyz.value(QStringLiteral("x")).toDouble(), 0, 'g', 8)
+          .arg(xyz.value(QStringLiteral("y")).toDouble(), 0, 'g', 8)
+          .arg(xyz.value(QStringLiteral("z")).toDouble(), 0, 'g', 8)
+          .arg(rpy.value(QStringLiteral("x")).toDouble(), 0, 'g', 8)
+          .arg(rpy.value(QStringLiteral("y")).toDouble(), 0, 'g', 8)
+          .arg(rpy.value(QStringLiteral("z")).toDouble(), 0, 'g', 8);
+      };
+      logPhase(QStringLiteral("patch edit: item_id=%1 operation=%2 old_%3 new_%4 persistence_source=%5")
+        .arg(edit.value(QStringLiteral("item_id")).toString(),
+          edit.value(QStringLiteral("operation")).toString(),
+          transformText(edit.value(QStringLiteral("old_transform"))),
+          transformText(edit.value(QStringLiteral("new_transform"))),
+          edit.value(QStringLiteral("persistence_source")).toString()));
+    }
+  }
+
   void setStatus(const QString & text, const QString & level = QStringLiteral("info"))
   {
     if (!status_label_) return;
@@ -327,6 +364,8 @@ private:
       }
       selected_item_id_before_save_ = editor_state.value(QStringLiteral("selectedItemId")).toString();
 
+      logPatchSummary(patch);
+
       QString write_error;
       if (!writePatchAtomically(patch, &write_error)) {
         busy_ = false;
@@ -378,7 +417,7 @@ private:
     });
     connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
       [this, process, phase](int exit_code, QProcess::ExitStatus exit_status) {
-        const QString output = QString::fromLocal8Bit(process->readAll());
+        const QString output = boundedWorkflowOutput(QString::fromLocal8Bit(process->readAll()));
         if (process == process_) process_ = nullptr;
         process->deleteLater();
         if (!saveContextIsCurrent()) {
@@ -393,9 +432,10 @@ private:
           QMessageBox::critical(preview_, QStringLiteral("Save Product View Layout"),
             QStringLiteral("%1\n\n%2")
               .arg(phase == WorkflowPhase::DryRun ? QStringLiteral("The edit patch did not pass validation.") :
-                QStringLiteral("The edit patch could not be saved."), output.left(8000)));
-          logPhase(phase == WorkflowPhase::DryRun ? QStringLiteral("validation failed; Web3D edits preserved") :
-            QStringLiteral("saving failed; Web3D edits preserved"));
+                QStringLiteral("The edit patch could not be saved."), output));
+          const QString phase_name = phase == WorkflowPhase::DryRun ? QStringLiteral("validation") : QStringLiteral("write");
+          logPhase(QStringLiteral("%1 failed: exit_code=%2 subprocess_output=%3; Web3D edits preserved")
+            .arg(phase_name).arg(exit_code).arg(output.isEmpty() ? QStringLiteral("(empty)") : output));
           pollEditorState();
           return;
         }
