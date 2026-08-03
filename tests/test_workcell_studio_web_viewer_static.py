@@ -185,15 +185,15 @@ assert.strictEqual(pickingPriority(physicalRecord),1);
 state.objects=[];
 
 selectObject(baseRecord.item.id);
-assert.strictEqual(editorState().selectedItemId,baseRecord.item.id);
+assert.strictEqual(editorState().selectedItemId,'ur5');
 assert.strictEqual(editorState().uiSelectionItemId,'ur5');
 assert.strictEqual(highlighted.at(-1),baseRecord,'highlight exact base link only');
 selectObject(childRecord.item.id);
-assert.strictEqual(editorState().selectedItemId,childRecord.item.id);
+assert.strictEqual(editorState().selectedItemId,'ur5');
 assert.strictEqual(editorState().uiSelectionItemId,'ur5');
 assert.strictEqual(highlighted.at(-1),childRecord,'highlight exact nested link only');
 selectObject(toolRecord.item.id);
-assert.strictEqual(editorState().selectedItemId,toolRecord.item.id);
+assert.strictEqual(editorState().selectedItemId,'robotiq_85_gripper');
 assert.strictEqual(editorState().uiSelectionItemId,'robotiq_85_gripper');
 assert.strictEqual(highlighted.at(-1),toolRecord,'highlight exact tool link only');
 assert.strictEqual(state.robotUrdfPreviewDiagnostics.loader_value,'preserved');
@@ -1742,8 +1742,8 @@ def test_viewer_load_contract_keeps_selection_empty_until_manual_pick():
     assert "inspectionSelectionRendered" in ranking_body
     assert "canonicalEditOwnerRendered" not in ranking_body
     assert "inspectionSelectionRendered" in select_body
-    assert "selectObject(selectedCandidate.rendered.item.id);" in pick_body
-    assert "return selectedCandidate.rendered.item.id;" in pick_body
+    assert "selectObjectFromRender(canonicalId, selectedCandidate.rendered);" in pick_body
+    assert "return canonicalId;" in pick_body
 
 
 def test_raycast_registry_ancestry_distance_overlays_reload_and_empty_select():
@@ -1882,7 +1882,7 @@ assert.strictEqual(editorState().uiSelectionItemId,'');
 
     select_body = _viewer_function_body(js_path.read_text(encoding="utf-8"), "function selectObject(id)", "function clearSelection()")
     dirty_body = _viewer_function_body(js_path.read_text(encoding="utf-8"), "function markDirtyTransform(rendered", "function editPatchEntryFor")
-    assert "inspectionSelectionRendered(rawRequested)" in select_body
+    assert "inspectionSelectionRendered(renderIdentity || rawRequested)" in select_body
     assert "canonicalEditOwnerRendered(rendered)" in dirty_body
 
 
@@ -1903,8 +1903,8 @@ const bin=rendered({id:'target_bin_default',editable:true});
 const zone=rendered({id:'place_zone_default',target_ref:'target_bin_default',render_policy:'overlay'});
 const invalid=rendered({id:'generated_robot_visual',canonical_item_id:'missing_robot'});
 state.sceneJson={scene:{id:'ur5_2f_test'},items:authored}; state.objects=[camera,table,bin,zone,invalid,...authored.map(rendered)]; state.editorEvents=[]; state.debugOverlaysVisible=true;
-selectObject(camera.item.id); assert.strictEqual(editorState().selectedItemId,camera.item.id); assert.strictEqual(editorState().uiSelectionItemId,'realsense_overhead'); assert.strictEqual(state.editorEvents.at(-1).uiItemId,'realsense_overhead');
-selectObject(table.item.id); assert.strictEqual(editorState().selectedItemId,table.item.id); assert.strictEqual(editorState().uiSelectionItemId,'support_surface_table');
+selectObject(camera.item.id); assert.strictEqual(editorState().selectedItemId,'realsense_overhead'); assert.strictEqual(editorState().uiSelectionItemId,'realsense_overhead'); assert.strictEqual(state.editorEvents.at(-1).uiItemId,'realsense_overhead');
+selectObject(table.item.id); assert.strictEqual(editorState().selectedItemId,'support_surface_table'); assert.strictEqual(editorState().uiSelectionItemId,'support_surface_table');
 selectObject(bin.item.id); assert.strictEqual(editorState().uiSelectionItemId,'target_bin_default');
 selectObject(zone.item.id); assert.strictEqual(editorState().uiSelectionItemId,'place_zone_default'); assert.strictEqual(editorState().editOwnerItemId,'target_bin_default');
 selectObject(invalid.item.id); assert.strictEqual(editorState().uiSelectionItemId,invalid.item.id);

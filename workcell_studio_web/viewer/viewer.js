@@ -40,7 +40,7 @@ const CAMERA_PRESET_DIRECTIONS = Object.freeze({
   top: [0, -0.001, 1],
   robot: [1.1, -1.25, 0.72],
 });
-const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], pickRecords: [], pickIdentityByObject: new WeakMap(), selectionIdentityIndex: null, assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: '', lastCanvasPickReason: '', lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
+const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], pickRecords: [], pickIdentityByObject: new WeakMap(), selectionIdentityIndex: null, assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: '', three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: '', lastCanvasPickReason: '', lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
 let robotPreviewLoadToken = 0;
 let physicalLoadToken = 0;
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
@@ -1193,7 +1193,7 @@ function explicitUiSelectionItemId(rendered) {
 }
 function currentSelectionDiagnostics() {
   const id = String(state.selected || '');
-  const rendered = renderedById(id);
+  const rendered = selectedRenderIdentity();
   const editOwner = canonicalEditOwnerRendered(rendered);
   const item = rendered?.item || null;
   const selectionIdentity = uiSelectionIdentity(rendered);
@@ -1203,7 +1203,7 @@ function currentSelectionDiagnostics() {
     selectedItemId: id,
     uiSelectionItemId: selectionIdentity.id,
     editOwnerItemId: editOwner?.item?.id || '',
-    renderIdentity: id,
+    renderIdentity: rendered?.item?.id || '',
     selectedItemType: rendered ? itemType(item) : '',
     selectable: Boolean(rendered && isCanvasSelectableRendered(rendered)),
     editable: Boolean(item && editOwner === rendered && !rendered?.readOnlyPick && canEditItem(item)),
@@ -1226,9 +1226,10 @@ function currentSelectionDiagnostics() {
   };
 }
 function editorState() {
-  const rendered = renderedById(state.selected);
+  const rendered = selectedRenderIdentity();
   const editOwner = canonicalEditOwnerRendered(rendered);
-  return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || '', uiSelectionItemId: explicitUiSelectionItemId(rendered), editOwnerItemId: editOwner?.item?.id || '', selectedItemType: rendered ? itemType(rendered.item) : '', selectedEditable: selectionIsEditable(rendered), selectionDiagnostics: currentSelectionDiagnostics(), lastRaycastHitCount: state.lastRaycastHitCount, lastRaycastCandidateIds: [...state.lastRaycastCandidateIds], lastCanvasSelectedItemId: state.lastCanvasSelectedItemId, lastCanvasPickReason: state.lastCanvasPickReason, lastFailedCanvasPickDiagnostic: state.lastFailedCanvasPickDiagnostic, dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, error: state.editorError || '' };
+  const hasExplicitTransformOwner = explicitUiSelectionItemId(rendered) !== rendered?.item?.id;
+  return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || '', uiSelectionItemId: state.selected || '', editOwnerItemId: editOwner?.item?.id || '', selectedItemType: rendered ? itemType(rendered.item) : '', selectedEditable: selectionIsEditable(rendered) || (hasExplicitTransformOwner && selectionIsEditable(editOwner)), selectionDiagnostics: currentSelectionDiagnostics(), lastRaycastHitCount: state.lastRaycastHitCount, lastRaycastCandidateIds: [...state.lastRaycastCandidateIds], lastCanvasSelectedItemId: state.lastCanvasSelectedItemId, lastCanvasPickReason: state.lastCanvasPickReason, lastFailedCanvasPickDiagnostic: state.lastFailedCanvasPickDiagnostic, dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, error: state.editorError || '' };
 }
 function emitDirtyChanged() { pushEditorEvent('dirty_changed', { dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0 }); }
 function showError(message) {
@@ -1415,6 +1416,7 @@ function meshLocalTransformOf(item) {
 function cloneTransform(transform) { return JSON.parse(JSON.stringify(transform)); }
 function sameTransform(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 function renderedById(id) { return state.objects.find(obj => obj.item.id === id) || state.pickRecords.find(obj => obj.item.id === id); }
+function selectedRenderIdentity() { return renderedById(state.selectedRenderIdentityId) || renderedById(state.selected); }
 function registerPickRecord(item, object3d, root = object3d, options = {}) {
   if (!item?.id || !object3d) return null;
   const record = { item, object3d, pickRoot: root, readOnlyPick: true, ...options };
@@ -1446,6 +1448,8 @@ function inspectionSelectionRendered(rendered) {
   return rendered?.item?.id ? rendered : null;
 }
 function canonicalEditOwnerRendered(rendered) {
+  const selectionOwner = renderedById(explicitUiSelectionItemId(rendered));
+  if (selectionOwner && selectionOwner !== rendered && canEditItem(selectionOwner.item)) return selectionOwner;
   const derivedTarget = renderedById(derivedTransformTargetId(rendered?.item));
   return derivedTarget && canEditItem(derivedTarget.item) ? derivedTarget : inspectionSelectionRendered(rendered);
 }
@@ -3921,6 +3925,7 @@ function setDebugOverlaysVisible(visible) {
     const selected = state.objects.find(obj => obj.item.id === state.selected);
     if (selected && isDebugOverlayItem(selected.item)) {
       state.selected = null;
+      state.selectedRenderIdentityId = '';
       detachTransformGizmo();
       el.inspector.className = 'state empty';
       el.inspector.textContent = state.objects.length ? 'Select an object from the list or canvas.' : EMPTY_SCENE_MESSAGE;
@@ -4104,7 +4109,7 @@ function isExpandedUrdfInspectionPick(rendered) {
   const explicitInspectionMetadata = rendered?.pickRecordSource === 'expanded_urdf_inspection' ||
     Boolean(String(rendered?.uiSelectionOwnerId || '').trim()) ||
     String(item?.source_layer || '').trim() === 'expanded_urdf_inspection';
-  return registeredReadOnlyRecord && explicitInspectionMetadata && Boolean(item?.id) && item.selectable !== false &&
+  return registeredReadOnlyRecord && explicitInspectionMetadata && Boolean(item?.id) &&
     rendered.object3d?.visible !== false && !isTaskOnlyHelperItem(item) && !isOverlayPolicyItem(item) && !isDebugOverlayItem(item);
 }
 function isCanvasSelectableRendered(rendered) {
@@ -4230,11 +4235,12 @@ function failedCanvasPickDiagnostic(hits) {
     nearestKnownUrdfLinkAncestor,
   };
 }
-function selectObject(id) {
+function selectObject(id) { return selectObjectFromRender(id, null); }
+function selectObjectFromRender(id, renderIdentity = null) {
   const requestedId = String(id || '');
   const rawRequested = requestedId ? renderedById(requestedId) : null;
-  const requested = inspectionSelectionRendered(rawRequested);
-  const selectionId = requested?.item?.id || requestedId;
+  const requested = inspectionSelectionRendered(renderIdentity || rawRequested);
+  const selectionId = requested ? explicitUiSelectionItemId(requested) : requestedId;
   const explicitlySelectable = requested && isCanvasSelectableRendered(requested);
   if (requestedId && !explicitlySelectable) {
     const reason = requested ? 'diagnostic_helper_or_non_selectable' : 'missing_render_identity';
@@ -4252,14 +4258,16 @@ function selectObject(id) {
   id = selectionId;
   const previous = state.selected || '';
   state.selected = id;
+  state.selectedRenderIdentityId = requested?.item?.id || '';
   document.querySelectorAll('.object-list li').forEach(li => li.classList.toggle('selected', li.dataset.id === id));
   for (const rendered of state.objects) {
     const selected = rendered.item.id === id;
     if (rendered.labelEl) rendered.labelEl.classList.toggle('selected', selected);
   }
   updateLabels();
-  const rendered = renderedById(id);
-  if (rendered) { populateInspector(rendered); attachTransformGizmo(rendered); refreshSelectionHighlight(rendered); } else { detachTransformGizmo(); removeSelectionHighlight(); }
+  const rendered = requested || renderedById(id);
+  const editOwner = canonicalEditOwnerRendered(rendered);
+  if (rendered) { populateInspector(editOwner || rendered); attachTransformGizmo(editOwner || rendered); refreshSelectionHighlight(rendered); } else { detachTransformGizmo(); removeSelectionHighlight(); }
   if (previous !== (id || '')) pushEditorEvent('selection_changed', { itemId: id || '', uiItemId: explicitUiSelectionItemId(rendered), itemType: rendered ? itemType(rendered.item) : '', editable: Boolean(rendered && rendered.item && canEditItem(rendered['item'])) });
 }
 function clearSelection() { selectObject(''); el.inspector.className = 'state empty'; el.inspector.textContent = state.objects.length ? 'Select an object from the list or canvas.' : EMPTY_SCENE_MESSAGE; }
@@ -4299,11 +4307,12 @@ function pickObject(event) {
       pushEditorEvent('helper_pick_skipped', { helperItemId: skippedHelper.rendered.item.id, selectedItemId: selectedCandidate.rendered.item.id, sceneId: sceneId() });
     }
   }
-  selectObject(selectedCandidate.rendered.item.id);
-  state.lastCanvasSelectedItemId = selectedCandidate.rendered.item.id;
+  const canonicalId = explicitUiSelectionItemId(selectedCandidate.rendered);
+  selectObjectFromRender(canonicalId, selectedCandidate.rendered);
+  state.lastCanvasSelectedItemId = canonicalId;
   state.lastCanvasPickReason = 'eligible_candidate';
   state.lastFailedCanvasPickDiagnostic = null;
-  return selectedCandidate.rendered.item.id;
+  return canonicalId;
 }
 
 
@@ -4602,6 +4611,7 @@ async function loadFile(file) {
     state.undoStack = [];
     state.redoStack = [];
     state.selected = null;
+    state.selectedRenderIdentityId = '';
     cancelDirectMoveDrag('Move cancelled');
     cancelDirectRotateDrag('Rotation cancelled');
     detachTransformGizmo();
@@ -4675,6 +4685,7 @@ async function loadSceneUrl(rawUrl) {
     state.undoStack = [];
     state.redoStack = [];
     state.selected = null;
+    state.selectedRenderIdentityId = '';
     cancelDirectMoveDrag('Move cancelled');
     cancelDirectRotateDrag('Rotation cancelled');
     detachTransformGizmo();

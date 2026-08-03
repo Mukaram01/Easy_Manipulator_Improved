@@ -127,7 +127,7 @@ def test_product_view_selection_uses_stable_identity_and_filters_helpers():
     assert "missing_render_identity" in VIEWER
     assert "diagnostic_helper_or_non_selectable" in VIEWER
     assert "canonicalSelectionRendered" in VIEWER
-    assert "selectObject(selectedCandidate.rendered.item.id);" in VIEWER
+    assert "selectObjectFromRender(canonicalId, selectedCandidate.rendered);" in VIEWER
     assert "itemLabel(item)" not in VIEWER.split("function pickObject", 1)[1].split("function beginDirectMoveDrag", 1)[0]
 
 
@@ -148,7 +148,15 @@ for(const rendered of [table,camera,bin]){assert.strictEqual(itemFromRaycastHit(
 const register=(id,link,owner)=>{const node=object(link);return registerPickRecord({id,link_name:link,locked:true,editable:false,selectable:true},node,node,{pickRecordSource:'expanded_urdf_inspection',uiSelectionOwnerId:owner});};
 const wrist=register('scene::inspection::wrist_3_link','wrist_3_link','ur5');
 const finger=register('scene::inspection::robotiq_85_right_finger_link','robotiq_85_right_finger_link','robotiq_85_gripper');
-for(const [record,owner] of [[wrist,'ur5'],[finger,'robotiq_85_gripper']]){assert.strictEqual(isCanvasSelectableRendered(record),true);selectObject(record.item.id);assert.strictEqual(editorState().selectedItemId,record.item.id);assert.strictEqual(editorState().uiSelectionItemId,owner);assert.strictEqual(editorState().selectedEditable,false);assert.strictEqual(highlighted.at(-1),record);}
+for(const [record,owner] of [[wrist,'ur5'],[finger,'robotiq_85_gripper']]){assert.strictEqual(isCanvasSelectableRendered(record),true);selectObject(record.item.id);assert.strictEqual(editorState().selectedItemId,owner);assert.strictEqual(editorState().uiSelectionItemId,owner);assert.strictEqual(editorState().selectedEditable,false);assert.strictEqual(highlighted.at(-1),record);}
+const excluded=object('selection_subtle_bounds_highlight'); excluded.userData.selection_highlight=true;
+state.three={pointer:{},camera:{},raycaster:{setFromCamera(){},intersectObjects(){return this.hits;},hits:[]}};
+for(const [record,canonical,editable] of [[wrist,'ur5',false],[finger,'robotiq_85_gripper',false],[camera,'realsense_overhead',true],[table,'support_surface_table',true],[bin,'target_bin_default',true]]){
+  state.three.raycaster.hits=[{object:excluded,distance:0.5},{object:record.object3d,distance:1}];
+  assert.strictEqual(pickObject({clientX:5,clientY:5}),canonical,'excluded first hit must not reject '+canonical);
+  assert.strictEqual(editorState().selectedItemId,canonical);
+  assert.strictEqual(editorState().selectedEditable,editable);
+}
 const diagnostic=normal('ordinary_diagnostic'); diagnostic.item.diagnostic_only=true; state.objects.push(diagnostic); assert.strictEqual(isCanvasSelectableRendered(diagnostic),false); assert.strictEqual(selectObject(diagnostic.item.id),'');
 assert.strictEqual(state.objects.includes(wrist),false);assert.strictEqual(state.objects.includes(finger),false);assert.strictEqual(state.dirtyTransforms.size,0);assert.strictEqual(buildEditPatch().edits.length,0);assert.strictEqual(state.undoStack.length,0);assert.strictEqual(state.redoStack.length,0);
 `,context);
