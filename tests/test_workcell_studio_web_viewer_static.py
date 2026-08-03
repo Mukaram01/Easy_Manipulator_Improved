@@ -640,13 +640,14 @@ def test_expanded_urdf_robot_preview_callbacks_are_scene_current_guarded():
     assert "sceneId: loadSceneId" in load_body
     assert "if (callbackIsCurrent()) state.three.scene?.add?.(root);" in load_body
     assert "if (callbackIsCurrent()) state.assemblyRoots.push(root);" in load_body
-    assert "Ignored stale robot preview callback: callback_scene=${loadSceneId} active_scene=${sceneId()}" in load_body
+    assert "Ignored stale robot preview completion." in load_body
+    assert "readinessOperationDiagnostic(readinessOperation, 'stale_replacement'" in load_body
 
     guard_token = "if (!callbackIsCurrent()) return ignoreStaleCallback();"
     callback_mutations = {
         "onRobotLoaded: result => {": "state.robotPreviewResult = result;",
         "onRobotMeshLoaded: () => {": "renderSceneSummary();",
-        "onRobotMeshLoadError: (err, uri, detail) => {": "failExpandedUrdfReadiness(readinessOperation, err, state.robotUrdfPreviewDiagnostics, detail || { uri });",
+        "onRobotMeshLoadError: (err, uri, detail) => {": "finalizeRequiredLoad('failure'",
         "onRobotError: (err, diagnostics) => {": "state.robotUrdfPreviewDiagnostics.robot_preview_lifecycle_state = 'failed';",
     }
     for callback, mutation in callback_mutations.items():
@@ -751,7 +752,7 @@ assertOldCallbacksRejected('suction_test');
     assert result.stderr == ""
 
 
-def test_expanded_urdf_readiness_waits_for_current_terminal_loader_callback():
+def test_expanded_urdf_readiness_waits_for_current_terminal_loader_result():
     js_path = VIEWER / "viewer.js"
     harness = r'''
 const fs = require('fs');
@@ -767,8 +768,13 @@ refreshInitialPoseActionState = () => {};
 refreshWarnings = () => {};
 appendRuntimeWarning = () => {};
 rebuildSelectionIdentityIndex = () => ({ itemById:new Map(), explicitUiIdByLink:new Map() });
-let callback;
-loadRobotPreview = (preview, rendererContext) => { callback = rendererContext; return { diagnostics:{ robot_preview_lifecycle_state:'loading_urdf', robotPreviewLifecycleState:'loading_urdf' } }; };
+let callback, resolveReady;
+loadRobotPreview = (preview, rendererContext) => {
+  callback = rendererContext;
+  const result = { diagnostics:{ robot_preview_lifecycle_state:'loading_urdf', robotPreviewLifecycleState:'loading_urdf' } };
+  result.ready = new Promise(resolve => { resolveReady = resolve; });
+  return result;
+};
 const required = { robot_arm:true, attached_tool_gripper:true, workbench_support_surface:true, configured_camera:true };
 function beginExpanded() {
   window.dispatched.length = 0;
@@ -801,6 +807,65 @@ assert.strictEqual(window.dispatched.join(','), 'scene_ready', 'non-expanded sce
 '''
     result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     assert result.stderr == ""
+
+
+def test_exported_ur5_required_loads_finalize_from_preview_ready_timeout_and_stale_reset(tmp_path):
+    payload = exporter.build_web_scene(
+        ROOT / "scenes" / "ur5_2f_test",
+        stage_assets=True,
+        output_path=tmp_path / "ur5_2f_test.web_scene.json",
+    )
+    payload_path = tmp_path / "ur5_2f_test.web_scene.json"
+    payload_path.write_text(json.dumps(payload), encoding="utf-8")
+    harness = r'''
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const payload=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},setAttribute(){},querySelector(){return {textContent:''}},appendChild(){},addEventListener(){}});
+const timers=[]; const events=[]; const debug=[];
+const context={assert,payload,console:{...console,debug(...args){debug.push(args)}},window:{location:{search:''},dispatchEvent(e){events.push(e.detail)},parent:{postMessage(){}}},document:{getElementById(){return element()},createElement(){return element()}},URLSearchParams,CustomEvent:function(type,init){return {type,detail:init.detail}},requestAnimationFrame(){return 0},setTimeout(fn,ms){timers.push({fn,ms,cleared:false});return timers.length},clearTimeout(id){if(timers[id-1])timers[id-1].cleared=true}};
+vm.createContext(context);
+vm.runInContext(source+`
+(async()=>{
+renderSceneSummary=()=>{}; refreshInitialPoseActionState=()=>{}; refreshWarnings=()=>{}; appendRuntimeWarning=()=>{};
+rebuildSelectionIdentityIndex=()=>({itemById:new Map(),explicitUiIdByLink:new Map()});
+failIfExpandedUrdfExpectedVisualSetInvalid=()=>false;
+state.sceneJson=payload; state.sourceWebSceneFile='ur5_2f_test.web_scene.json';
+const rows=physicalReadinessItems();
+const camera=rows.find(item=>readinessCategoryForItem(item)==='configured_camera');
+const table=rows.find(item=>readinessCategoryForItem(item)==='workbench_support_surface');
+assert(camera && table); assert.strictEqual(truthyFlag(camera.mesh_load_required),true); assert.strictEqual(truthyFlag(table.mesh_load_required),true);
+let controls=[];
+loadRobotPreview=(_preview,callbacks)=>{let resolve,reject;const result={diagnostics:{robot_preview_lifecycle_state:'loading_urdf'},links:new Map()};result.ready=new Promise((ok,bad)=>{resolve=ok;reject=bad});controls.push({callbacks,result,resolve,reject});return result};
+const required={robot_arm:true,attached_tool_gripper:true,workbench_support_surface:true,configured_camera:true};
+function begin(){events.length=0;state.web3dReadiness={state:'scene_loading',terminal:false,terminalState:'',terminalNavigationKey:web3dNavigationKey(),terminalEmissionCount:0,statusSequence:0,required,pending:new Set(),failed:false,failure:null};const cameraOp=registerReadinessOperation([readinessKey('configured_camera',camera)]);const tableOp=registerReadinessOperation([readinessKey('workbench_support_surface',table)]);loadExpandedUrdfRobotPreview(payload.robot_preview);return {cameraOp,tableOp,control:controls.at(-1)}}
+let run=begin();
+assert.deepStrictEqual(Array.from(run.cameraOp.pendingKeys),['configured_camera:realsense_overhead']);
+completeReadinessOperation(run.tableOp); completeReadinessOperation(run.cameraOp);
+run.control.result.diagnostics.robot_preview_lifecycle_state='ready';run.control.result.diagnostics.robot_preview_loaded=true;run.control.resolve(run.control.result);await Promise.resolve();await Promise.resolve();
+assert.deepStrictEqual(pendingRequiredLoads(),[]);assert.strictEqual(events.filter(e=>e.state==='scene_ready').length,1);assert.strictEqual(state.web3dReadiness.terminalEmissionCount,1);
+run.control.callbacks.onRobotLoaded({root:{},links:new Map(),diagnostics:{robot_preview_lifecycle_state:'ready',robot_preview_loaded:true}});
+assert.strictEqual(events.filter(e=>e.state==='scene_ready').length,1,'duplicate callback cannot emit again');
+
+run=begin();completeReadinessOperation(run.tableOp);completeReadinessOperation(run.cameraOp);run.control.reject(new Error('preview ready rejected'));await Promise.resolve();await Promise.resolve();
+assert.strictEqual(state.web3dReadiness.state,'scene_failed');assert.deepStrictEqual(pendingRequiredLoads(),[]);assert.match(state.web3dReadiness.failure.reason,/preview ready rejected/);assert.match(state.web3dReadiness.failure.operation_id,/expanded_urdf:ur5_2f_test/);
+
+run=begin();completeReadinessOperation(run.tableOp);completeReadinessOperation(run.cameraOp);const deadline=timers.filter(t=>t.ms===REQUIRED_LOAD_DEADLINE_MS&&!t.cleared).at(-1);assert(deadline);deadline.fn();
+assert.strictEqual(state.web3dReadiness.state,'scene_failed');assert.deepStrictEqual(pendingRequiredLoads(),[]);assert.strictEqual(state.web3dReadiness.failure.timeout_ms,REQUIRED_LOAD_DEADLINE_MS);assert.deepStrictEqual(state.web3dReadiness.failure.pending_required_loads,[]);
+
+run=begin();const old=run.control;state.sceneJson={scene:{id:'replacement'}};resetSceneLifecycleState();state.web3dReadiness.required={...required};const replacementPending=['configured_camera:replacement'];state.web3dReadiness.pending=new Set(replacementPending);old.result.diagnostics.robot_preview_lifecycle_state='ready';old.result.diagnostics.robot_preview_loaded=true;old.resolve(old.result);await Promise.resolve();await Promise.resolve();old.callbacks.onRobotError(new Error('late old failure'),{});
+assert.strictEqual(state.sceneJson.scene.id,'replacement');assert.deepStrictEqual(pendingRequiredLoads(),replacementPending);assert.strictEqual(state.web3dReadiness.state,'scene_loading');assert(debug.some(entry=>entry[1]?.operation_outcome==='stale_replacement'&&Array.isArray(entry[1]?.pending_required_loads)));
+})().catch(err=>{console.error(err);process.exitCode=1});
+`,context);
+'''
+    subprocess.run(
+        ["node", "-e", harness, str(VIEWER / "viewer.js"), str(payload_path)],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
 
 def test_urdf_renderer_rejects_unsafe_package_mesh_sources():
     js = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
@@ -2454,7 +2519,7 @@ def test_expanded_urdf_robot_preview_defers_initial_fit_until_scene_ready():
     loaded_body = preview_body.split("onRobotLoaded: result =>", 1)[1].split("onRobotMeshLoaded", 1)[0]
     mesh_loaded_body = preview_body.split("onRobotMeshLoaded: () =>", 1)[1].split("onRobotMeshLoadError", 1)[0]
 
-    assert "completeExpandedUrdfReadiness(readinessOperation)" in loaded_body
+    assert "finalizeRequiredLoad('success'" in loaded_body
     assert "attemptInitialCameraFit" not in loaded_body
     assert "renderSceneSummary()" in mesh_loaded_body
     assert "scheduleInitialCameraFitRetry" not in mesh_loaded_body

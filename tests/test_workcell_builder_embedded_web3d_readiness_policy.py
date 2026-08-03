@@ -44,6 +44,7 @@ def test_readiness_timeout_sets_failed_and_logs_last_boot_status():
     poll = _between(CPP, "void ScenePreviewWidget::poll_embedded_web_readiness", "static const char kStatusScript[]")
     assert "startup timed out after 45s" in poll
     assert "embedded_web_last_boot_status_" in poll
+    assert "pending_required_loads" in poll
     assert "handle_embedded_web_runtime_failure(identity, navigation_token, detail)" in poll
 
 
@@ -137,7 +138,7 @@ def test_manual_refresh_creates_a_new_generation_and_invalidates_old_callbacks()
     finished = _between(CPP, "void ScenePreviewWidget::on_embedded_web_prepare_finished", "void ScenePreviewWidget::start_embedded_web_readiness_polling")
     assert "embedded_web_identity_is_current(identity)" in finished
     polling = _between(CPP, "void ScenePreviewWidget::poll_embedded_web_readiness", "void ScenePreviewWidget::load_prepared_embedded_web_scene")
-    assert "[this, identity, navigation_token, expected_json_path, viewer_url]" in polling
+    assert "[this, identity, navigation_token, readiness_token, expected_json_path, viewer_url]" in polling
 
 
 def test_qt_readiness_contract_rejects_mismatches_and_infrastructure_states():

@@ -28,6 +28,7 @@ const EDIT_PATCH_SCHEMA_VERSION = 'workcell_studio_web_scene_edit_patch/v1';
 const VIEWER_VERSION = 'static_web_viewer_edit_patch_v1';
 const READINESS_CONTRACT_VERSION = 1;
 const PHYSICAL_MESH_LOAD_TIMEOUT_MS = 30000;
+const REQUIRED_LOAD_DEADLINE_MS = 40000;
 const VALID_SCENE_LIFECYCLE_STATES = Object.freeze(['booting', 'scene_loading', 'scene_ready', 'scene_failed']);
 const LOCKED_EDIT_REASON = 'Locked/generated preview item; edit source layout/environment instead.';
 const MIN_FRAME_RADIUS = 1.2;
@@ -239,8 +240,10 @@ function beginWeb3dSceneReadiness(items) {
   emitWeb3dReadinessState('scene_loading', { required_categories: required });
 }
 function registerReadinessOperation(keys, options = {}) {
+  const pendingKeys = new Set(asArray(keys).map(key => String(key || '').trim()).filter(Boolean));
   const operation = {
-    pendingKeys: new Set(asArray(keys).map(key => String(key || '').trim()).filter(Boolean)),
+    id: String(options.operationId || `required_load:${Array.from(pendingKeys).join('|')}`),
+    pendingKeys,
     physicalLoadToken,
     navigationKey: web3dNavigationKey(),
     robotPreviewLoadToken: options.robotPreviewLoadToken,
@@ -259,6 +262,15 @@ function completeReadinessOperation(operation) {
   for (const key of operation.pendingKeys) state.web3dReadiness?.pending?.delete(key);
   maybeEmitSceneReady();
   return true;
+}
+function readinessOperationDiagnostic(operation, outcome, extra = {}) {
+  return {
+    operation_id: operation?.id || 'unknown_required_load',
+    operation_pending_keys: Array.from(operation?.pendingKeys || []),
+    operation_outcome: outcome,
+    pending_required_loads: pendingRequiredLoads(),
+    ...extra,
+  };
 }
 function requiredReadinessCompleteForItem(item) {
   const category = readinessCategoryForItem(item);
@@ -3440,16 +3452,43 @@ function loadExpandedUrdfRobotPreview(preview) {
   const readinessOperation = registerReadinessOperation([
     'robot_arm:expanded_urdf_loader',
     'attached_tool_gripper:expanded_urdf_loader',
-  ], { robotPreviewLoadToken: loadToken });
+  ], { robotPreviewLoadToken: loadToken, operationId: `expanded_urdf:${loadSceneId}:${loadToken}` });
   let staleCallbackLogged = false;
   const callbackIsCurrent = () => readinessOperationIsCurrent(readinessOperation) && loadSceneId === sceneId();
-  const ignoreStaleCallback = () => {
+  const ignoreStaleCallback = (source = 'callback') => {
     if (!staleCallbackLogged) {
-      console.debug?.(`Ignored stale robot preview callback: callback_scene=${loadSceneId} active_scene=${sceneId()}`);
+      console.debug?.('Ignored stale robot preview completion.', readinessOperationDiagnostic(readinessOperation, 'stale_replacement', {
+        completion_source: source,
+        callback_scene: loadSceneId,
+        active_scene: sceneId(),
+      }));
       staleCallbackLogged = true;
     }
     return true;
   };
+  let requiredLoadDeadline = null;
+  const finalizeRequiredLoad = (outcome, detail = {}) => {
+    if (readinessOperation.completed) return false;
+    if (!callbackIsCurrent()) return ignoreStaleCallback(detail.completion_source || outcome);
+    readinessOperation.completed = true;
+    if (requiredLoadDeadline !== null) clearTimeout(requiredLoadDeadline);
+    for (const key of readinessOperation.pendingKeys) state.web3dReadiness?.pending?.delete(key);
+    const terminalDetail = readinessOperationDiagnostic(readinessOperation, outcome, detail);
+    if (outcome === 'success') {
+      maybeEmitSceneReady();
+      return true;
+    }
+    const err = detail.error instanceof Error ? detail.error : new Error(detail.reason || 'Expanded URDF required load failed');
+    failExpandedUrdfReadiness({ ...readinessOperation, completed: false }, err, state.robotUrdfPreviewDiagnostics, terminalDetail);
+    return true;
+  };
+  requiredLoadDeadline = setTimeout(() => {
+    finalizeRequiredLoad('timeout', {
+      completion_source: 'required_load_deadline',
+      timeout_ms: REQUIRED_LOAD_DEADLINE_MS,
+      reason: `Expanded URDF required load timed out after ${REQUIRED_LOAD_DEADLINE_MS}ms. Check URDF and mesh requests, then reload the scene.`,
+    });
+  }, REQUIRED_LOAD_DEADLINE_MS);
   const diagnostics = state.robotUrdfPreviewDiagnostics = {
     robot_render_mode: 'expanded_urdf_loader',
     robot_preview_loaded: false,
@@ -3486,7 +3525,7 @@ function loadExpandedUrdfRobotPreview(preview) {
     diagnostics.robotFailedVisualCount = 1;
     diagnostics.robot_missing_meshes.push('urdf_robot_renderer module was not loaded');
     appendRuntimeWarning({}, preview?.urdf_url || '', 'expanded_urdf_loader failed: urdf_robot_renderer module was not loaded', 'expanded_urdf_loader_failed');
-    failExpandedUrdfReadiness(readinessOperation, new Error('expanded_urdf_loader failed: urdf_robot_renderer module was not loaded'), diagnostics);
+    finalizeRequiredLoad('failure', { completion_source: 'module_preflight', reason: 'expanded_urdf_loader failed: urdf_robot_renderer module was not loaded' });
     refreshWarnings();
     return { root: null, links: new Map(), joints: new Map(), diagnostics, ready: Promise.resolve(null) };
   }
@@ -3581,7 +3620,7 @@ function loadExpandedUrdfRobotPreview(preview) {
         result.diagnostics.robotPreviewLifecycleState = 'ready';
       }
       state.robotUrdfPreviewDiagnostics = result.diagnostics;
-      if (resultLifecycle === 'ready' && !failIfExpandedUrdfExpectedVisualSetInvalid()) completeExpandedUrdfReadiness(readinessOperation);
+      if (resultLifecycle === 'ready' && !failIfExpandedUrdfExpectedVisualSetInvalid()) finalizeRequiredLoad('success', { completion_source: 'onRobotLoaded' });
       maybeEmitSceneReady();
       refreshInitialPoseActionState();
       renderSceneSummary();
@@ -3590,7 +3629,7 @@ function loadExpandedUrdfRobotPreview(preview) {
       if (!callbackIsCurrent()) return ignoreStaleCallback();
       renderSceneSummary();
     },
-    onRobotMeshLoadError: (err, uri, detail) => { if (!callbackIsCurrent()) return ignoreStaleCallback(); failExpandedUrdfReadiness(readinessOperation, err, state.robotUrdfPreviewDiagnostics, detail || { uri }); renderSceneSummary(); },
+    onRobotMeshLoadError: (err, uri, detail) => { if (!callbackIsCurrent()) return ignoreStaleCallback(); finalizeRequiredLoad('failure', { ...(detail || { uri }), error: err, completion_source: 'onRobotMeshLoadError' }); renderSceneSummary(); },
     onRobotError: (err, diagnostics) => {
       if (!callbackIsCurrent()) return ignoreStaleCallback();
       state.robotUrdfPreviewDiagnostics = { ...state.robotUrdfPreviewDiagnostics, ...(diagnostics || {}) };
@@ -3598,7 +3637,7 @@ function loadExpandedUrdfRobotPreview(preview) {
       state.robotUrdfPreviewDiagnostics.robotPreviewLifecycleState = 'failed';
       state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason = err?.message || String(err || 'expanded URDF preview failed');
       state.robotUrdfPreviewDiagnostics.robotPreviewFailureReason = state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason;
-      failExpandedUrdfReadiness(readinessOperation, err, state.robotUrdfPreviewDiagnostics);
+      finalizeRequiredLoad('failure', { error: err, completion_source: 'onRobotError' });
       maybeEmitSceneReady();
       appendRuntimeWarning({}, preview?.urdf_url || '', `expanded_urdf_loader failed: ${err?.message || err}`, 'expanded_urdf_loader_failed');
       refreshWarnings();
@@ -3607,6 +3646,31 @@ function loadExpandedUrdfRobotPreview(preview) {
   });
   state.robotUrdfPreviewDiagnostics = { ...state.robotUrdfPreviewDiagnostics, ...(previewResult.diagnostics || {}) };
   previewResult.diagnostics = state.robotUrdfPreviewDiagnostics;
+  if (!previewResult.ready || typeof previewResult.ready.then !== 'function') {
+    finalizeRequiredLoad('failure', {
+      completion_source: 'previewResult.ready',
+      reason: 'Expanded URDF renderer did not provide previewResult.ready. Reload the viewer bundle or repair the renderer contract.',
+    });
+  } else {
+    previewResult.ready.then(readyResult => {
+      if (!callbackIsCurrent()) return ignoreStaleCallback('previewResult.ready');
+      const terminalResult = readyResult || previewResult;
+      const terminalDiagnostics = terminalResult?.diagnostics || previewResult.diagnostics || {};
+      state.robotPreviewResult = terminalResult;
+      state.robotUrdfPreviewDiagnostics = { ...state.robotUrdfPreviewDiagnostics, ...terminalDiagnostics };
+      const lifecycle = String(state.robotUrdfPreviewDiagnostics.robot_preview_lifecycle_state || state.robotUrdfPreviewDiagnostics.robotPreviewLifecycleState || '');
+      const ready = state.robotUrdfPreviewDiagnostics.robot_preview_loaded === true || state.robotUrdfPreviewDiagnostics.robotPreviewLoaded === true || lifecycle === 'ready';
+      if (ready && !failIfExpandedUrdfExpectedVisualSetInvalid()) {
+        finalizeRequiredLoad('success', { completion_source: 'previewResult.ready' });
+      } else {
+        finalizeRequiredLoad('failure', {
+          completion_source: 'previewResult.ready',
+          reason: String(state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason || state.robotUrdfPreviewDiagnostics.robotPreviewFailureReason || 'Expanded URDF previewResult.ready resolved without a ready preview. Check required robot/tool visual diagnostics.'),
+        });
+      }
+      renderSceneSummary();
+    }, err => finalizeRequiredLoad('failure', { error: err, completion_source: 'previewResult.ready_rejection' }));
+  }
   return previewResult;
 }
 
