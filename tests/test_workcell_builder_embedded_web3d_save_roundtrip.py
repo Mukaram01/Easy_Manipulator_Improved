@@ -24,20 +24,33 @@ def _run_production_owner_binding_assertions(web_scene: Path, owner_id: str, exp
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
 let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
 const THREE_IMPL=require('./workcell_studio_web/viewer/node_modules/three/build/three.cjs');
-const payload=JSON.parse(fs.readFileSync(process.argv[2],'utf8')),ownerId=process.argv[3],expectDelta=process.argv[4]==='true';
+const payload=JSON.parse(fs.readFileSync(process.argv[2],'utf8')),ownerId=process.argv[3],expectDelta=process.argv[4]==='true',tableStl=process.argv[5];
 const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return null},querySelectorAll(){return[]},addEventListener(){},setAttribute(){},appendChild(){},remove(){}});
-const context={console,assert,THREE_IMPL,payload,ownerId,expectDelta,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element()},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+const context={console,assert,fs,THREE_IMPL,payload,ownerId,expectDelta,tableStl,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element()},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
 vm.createContext(context);vm.runInContext(source+`
 THREE=THREE_IMPL;createLabelElement=()=>null;state.sceneJson=payload;state.three.scene=new THREE.Scene();state.objects=[];state.physicalEditBindings=new Map();rebuildSelectionIdentityIndex(payload);
 const visual=[...asArray(payload.sensors),...asArray(payload.assets)].find(item=>(item.camera_id===ownerId||item.support_surface_ref===ownerId)&&item.owner_relative_visual_transform);
-assert(visual,'generated physical visual missing');const root=new THREE.Group();applyTransformToObject(root,transformOf(visual));state.three.scene.add(root);const rendered={item:visual,object3d:root,meshObject:new THREE.Group(),originalTransform:transformOf(visual)};root.add(rendered.meshObject);state.objects.push(rendered);
+assert(visual,'generated physical visual missing');const root=new THREE.Group();applyTransformToObject(root,transformOf(visual));state.three.scene.add(root);let meshObject=new THREE.Group();
+if(ownerId==='support_surface_table'){
+  assert.strictEqual(JSON.stringify(visual.scale),'[0.001,0.001,0.001]','production workbench must retain its URDF mesh-unit scale');
+  const bytes=fs.readFileSync(tableStl),triangles=bytes.readUInt32LE(80),positions=new Float32Array(triangles*9);
+  for(let triangle=0;triangle<triangles;triangle++)for(let vertex=0;vertex<3;vertex++)for(let axis=0;axis<3;axis++)positions[triangle*9+vertex*3+axis]=bytes.readFloatLE(84+triangle*50+12+vertex*12+axis*4);
+  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));geometry.computeBoundingBox();
+  meshObject=materializeLoadedMesh(visual,visual.original_mesh_uri,geometry);
+  const visualRoot=makeMeshVisualRoot(visual,meshObject);root.add(visualRoot);
+  assert.strictEqual(meshObject.scale.toArray().join(','),'0.001,0.001,0.001','loaded workbench mesh must receive 0.001 exactly once');
+}
+const rendered={item:visual,object3d:root,meshObject,originalTransform:transformOf(visual)};state.objects.push(rendered);
 const generatedWorld=root.position.clone();const bindings=bindExportedPhysicalTransformOwnership();assert.strictEqual(bindings.length,1);const binding=bindings[0];
+assert.strictEqual(binding.owner.object3d.scale.toArray().join(','),'1,1,1','authored physical owner root must remain unit scale');assert.strictEqual(root.scale.toArray().join(','),'1,1,1','generated physical visual root must remain unit scale');
 const expected=new THREE.Matrix4().compose(binding.owner.object3d.position,binding.owner.object3d.quaternion,binding.owner.object3d.scale).multiply(new THREE.Matrix4().compose(root.position,root.quaternion,root.scale));root.updateWorldMatrix(true,true);for(let i=0;i<16;i++)assert(Math.abs(root.matrixWorld.elements[i]-expected.elements[i])<1e-10,'owner world x stable local must equal visual world');const actual=new THREE.Vector3().setFromMatrixPosition(root.matrixWorld);
+if(ownerId==='support_surface_table'){const bounds=new THREE.Box3().setFromObject(root),size=bounds.getSize(new THREE.Vector3());assert(!bounds.isEmpty(),'physical workbench bounds must be non-empty');assert(size.x>0.5&&size.x<2&&size.y>0.3&&size.y<2&&size.z>0.5&&size.z<1.5,'physical workbench bounds must be realistic metres, got '+size.toArray());}
 assert.strictEqual(actual.distanceTo(generatedWorld)>1e-8,expectDelta,'reopen must move from stale generated pose iff owner was edited');const beforeAsync=root.matrixWorld.clone();visual.mesh_status='loaded';suppressOwnedAuthoredFallback(rendered);root.updateWorldMatrix(true,true);for(let i=0;i<16;i++)assert(Math.abs(root.matrixWorld.elements[i]-beforeAsync.elements[i])<1e-10,'async mesh completion changed visual pose');
 `,context);
 """
     result = subprocess.run(
-        ["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js"), str(web_scene), owner_id, str(expect_generated_pose_delta).lower()],
+        ["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js"), str(web_scene), owner_id, str(expect_generated_pose_delta).lower(),
+         str(ROOT / "assets/environment/workbench_description/meshes/visual/table.stl")],
         cwd=ROOT, capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
@@ -399,6 +412,7 @@ def test_executable_production_camera_table_save_roundtrips(tmp_path):
             if item.get("owner_relative_visual_transform")
         }
         assert set(before_visuals) == {"realsense_overhead", "support_surface_table"}
+        assert all(visual["owner_relative_visual_transform"]["scale"] == [1.0, 1.0, 1.0] for visual in before_visuals.values())
         for owner_id in before_visuals:
             _run_production_owner_binding_assertions(before_path, owner_id, False)
         assert owners["realsense_overhead"]["provenance"]["pose"] == "layout/workcell_studio_layout.yaml"

@@ -1550,9 +1550,11 @@ function applyExportedOwnerRelativeVisualTransform(rendered, owner) {
   const pose = poseBlockOf(relative);
   rendered.object3d.position.copy(pose.xyz);
   rendered.object3d.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, 'XYZ');
-  // Scale remains generated visual metadata (not authored owner state), but it
-  // is carried with the stable local transform so reparenting cannot drop it.
-  rendered.object3d.scale.copy(vector3(relative.scale, [1, 1, 1]));
+  // The rendered root follows the item's root-scale contract.  In particular,
+  // generated URDF roots are unit scale; their mesh/unit conversion is applied
+  // exactly once below this root by applyLoadedMeshScaleHandling().  Ignoring
+  // legacy relative.scale also makes older exported payloads safe to reopen.
+  rendered.object3d.scale.copy(scaleOf(rendered.item));
   rendered.object3d.updateMatrixWorld(true);
   return true;
 }
