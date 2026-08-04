@@ -279,7 +279,9 @@ vm.createContext(context);vm.runInContext(source+`
 THREE=globalThis.__THREE;
 updateLabels=()=>{};populateInspector=()=>{};detachTransformGizmo=()=>{};refreshSelectionHighlight=()=>{};removeSelectionHighlight=()=>{};
 {
-const gizmoCalls=[];attachTransformGizmo=rendered=>gizmoCalls.push({id:rendered?.item?.id||'',eligible:selectionIsEditable(rendered)});
+const gizmoCalls=[];const detachGizmoCalls=[];
+attachTransformGizmo=rendered=>gizmoCalls.push({id:rendered?.item?.id||'',eligible:selectionIsEditable(rendered)});
+detachTransformGizmo=()=>detachGizmoCalls.push(true);
 const makeTestPhysical=(item,name=item.id)=>{const root=new THREE.Group();root.name=name+'_object_root';root.userData.item=item;const mesh=new THREE.Mesh(new THREE.BoxGeometry(1,1,1));mesh.name=name+'_loaded_mesh';mesh.userData.item=item;root.add(mesh);return {item,object3d:root,mesh,readOnlyPick:false}};
 const ur5Owner={id:'ur5',type:'robot',role:'robot',editable:false,locked:true,selectable:true,render_policy:'primary'};
 const toolOwner={id:'robotiq_85_gripper',type:'tool',role:'tool',editable:false,locked:true,selectable:true,render_policy:'primary'};
@@ -304,7 +306,7 @@ camera.object3d.remove(camera.mesh);generatedCameraParent.add(camera.mesh);camer
 camera.mesh.name='realsense_overhead_fallback_sensor_body';camera.mesh.userData={item:generatedCameraItem,fallback_sensor_body:true,diagnostic_only:true,selectable:false};state.objects.push({item:generatedCameraItem,object3d:camera.mesh,readOnlyPick:true});state.sceneJson.objects.push(generatedCameraItem);rebuildSelectionIdentityIndex();
 const gizmo=new THREE.Object3D();gizmo.name='TransformControls_gizmo';
 let hits=[];state.three={pointer:new THREE.Vector2(),camera:new THREE.PerspectiveCamera(),raycaster:{setFromCamera(){},intersectObjects(){return hits}}};
-const click=(ordered,expected,editable)=>{const before=state.editorEvents.filter(event=>event.type==='selection_changed').length;hits=ordered;assert.strictEqual(pickObject({clientX:50,clientY:50}),expected);assert.strictEqual(state.selected,expected);assert.strictEqual(editorState().selectedEditable,editable);assert.strictEqual(gizmoCalls.at(-1).eligible,editable);assert.strictEqual(state.editorEvents.filter(event=>event.type==='selection_changed').length,before+1);};
+const click=(ordered,expected,editable)=>{const before=state.editorEvents.filter(event=>event.type==='selection_changed').length;const detachBefore=detachGizmoCalls.length;hits=ordered;assert.strictEqual(pickObject({clientX:50,clientY:50}),expected);assert.strictEqual(state.selected,expected);assert.strictEqual(editorState().selectedEditable,editable);assert.strictEqual(gizmoCalls.length,0,'Select mode must not attach TransformControls');assert.strictEqual(detachGizmoCalls.length,detachBefore+1,'Select mode must detach TransformControls after selection');assert.strictEqual(state.editorEvents.filter(event=>event.type==='selection_changed').length,before+1);};
 const actor1=rankedPickingCandidates([{object:ur5Mesh,distance:.2}])[0];assert.strictEqual(actor1.rendered.item.id,'urdf_visual_3_forearm_link::generated_visual');assert.strictEqual(actor1.selectionOwner.item.id,'ur5');assert.ok(Number.isFinite(actor1.priority));assert.strictEqual(actor1.rendered.uiSelectionOwnerId,undefined,'Actor1 begins without a direct owner ID');
 assert.strictEqual(actor1.selectionOwnerSource,'ui_selection_owners');assert.strictEqual(actor1.selectionOwner.virtualSelectionOwner,true);
 const robotiqCandidate=rankedPickingCandidates([{object:toolMesh,distance:.2}])[0];assert.strictEqual(robotiqCandidate.selectionOwner.item.id,'robotiq_85_gripper');assert.ok(Number.isFinite(robotiqCandidate.priority));
