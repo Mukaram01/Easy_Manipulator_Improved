@@ -1474,6 +1474,80 @@ def _selection_owner_registry(
     return sorted(owners, key=lambda owner: (owner["type"], owner["id"])), robot_id, tool_id
 
 
+def _annotate_owner_relative_physical_visual_transforms(
+    generated: Dict[str, List[Json]],
+    selection_owners: Sequence[Mapping[str, Any]],
+    authored_sensors: Sequence[Mapping[str, Any]],
+    authored_assets: Sequence[Mapping[str, Any]],
+    source_data: Mapping[str, Any],
+) -> None:
+    """Export stable authored-owner-to-generated-visual local transforms.
+
+    Camera and support-surface meshes are generated at a world pose derived
+    from the authored physical owner.  Persisting that relationship explicitly
+    lets the viewer recompute the visual world pose after an authored edit,
+    without treating the generated pose as a second source of truth.  The full
+    rigid transform intentionally retains mesh-origin translation and rotation.
+    """
+    owners = {
+        str(owner.get("id") or "").strip(): owner
+        for owner in selection_owners
+        if owner.get("editable") is True and owner.get("locked") is not True
+    }
+    generated_source_owners: Dict[str, Mapping[str, Any]] = {}
+    for record in list(authored_sensors) + list(authored_assets):
+        owner_id = str(record.get("id") or "").strip()
+        pose_source = str(_as_map(record.get("provenance")).get("pose") or "")
+        if owner_id and pose_source == INPUTS["environment"]:
+            generated_source_owners[owner_id] = record
+    environment_root = _as_map(source_data.get("environment"))
+    physical_environment = _as_map(environment_root.get("environment"))
+    for section in ("support_surfaces", "assets", "sensors"):
+        for raw in _as_list(physical_environment.get(section)):
+            if not isinstance(raw, Mapping):
+                continue
+            owner_id = str(raw.get("id") or "").strip()
+            xyz, rpy = raw.get("pose_xyz"), raw.get("pose_rpy")
+            if owner_id and isinstance(xyz, list) and len(xyz) >= 3:
+                generated_source_owners[owner_id] = {
+                    "pose": {"xyz": list(xyz[:3]), "rpy": list((rpy or [0.0, 0.0, 0.0])[:3])},
+                    "provenance": {"pose": INPUTS["environment"]},
+                }
+    for section, category, reference_field in (
+        ("sensors", "camera", "camera_id"),
+        ("assets", "table", "support_surface_ref"),
+    ):
+        for item in generated.get(section, []):
+            if item.get("source_kind") != "generated_preview":
+                continue
+            owner_id = str(item.get(reference_field) or item.get("canonical_scene_item_id") or "").strip()
+            owner = owners.get(owner_id)
+            if owner is None:
+                continue
+            owner_type = str(owner.get("type") or "").lower()
+            if (category == "camera" and owner_type != "camera") or (
+                category == "table" and owner_type != "support_surface"
+            ):
+                continue
+            visual_world_pose = item.get("final_transform") or item.get("world_from_visual") or item.get("pose")
+            source_owner = generated_source_owners.get(owner_id, owner)
+            owner_world_pose = source_owner.get("pose") or source_owner.get("world_pose") or source_owner.get("final_transform")
+            relative_pose = _parent_to_child_pose(owner_world_pose, visual_world_pose)
+            if relative_pose is None:
+                continue
+            relative_pose["scale"] = copy.deepcopy(item.get("scale") or [1.0, 1.0, 1.0])
+            item["owner_relative_visual_transform"] = relative_pose
+            item.setdefault("provenance", {})["owner_relative_visual_transform"] = {
+                "operation": "inverse(source_physical_owner_world_pose)_times_generated_visual_world_pose",
+                "owner_id": owner_id,
+                "source_owner_pose": copy.deepcopy(owner_world_pose),
+                "source_owner_pose_provenance": _as_map(source_owner.get("provenance")).get("pose", "unavailable"),
+                "generated_visual_id": str(item.get("id") or ""),
+                "generated_visual_pose": copy.deepcopy(visual_world_pose),
+                "generated_visual_pose_source": str(item.get("transform_source") or "generated preview world pose"),
+            }
+
+
 def _validate_selection_owner_contract(payload: Json) -> None:
     owner_ids = {str(owner.get("id") or "").strip() for owner in payload.get("ui_selection_owners", [])}
     reference_fields = (
@@ -3008,6 +3082,13 @@ def build_web_scene(
         top_tools,
         top_sensors + authored["sensors"],
         authored["assets"],
+    )
+    _annotate_owner_relative_physical_visual_transforms(
+        generated,
+        selection_owners,
+        top_sensors + authored["sensors"],
+        authored["assets"],
+        data,
     )
 
     robots = _drop_shadowed_metadata_primitives(top_robots + generated["robots"], generated["robots"], ("robot", "ur5", "ur3", "ur10"))

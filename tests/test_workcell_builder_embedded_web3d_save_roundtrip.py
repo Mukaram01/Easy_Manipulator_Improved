@@ -18,6 +18,31 @@ APPLICATOR = ROOT / "scripts/apply_workcell_studio_web_scene_edit_patch.py"
 EXPORTER = ROOT / "scripts/export_workcell_studio_web_scene.py"
 
 
+def _run_production_owner_binding_assertions(web_scene: Path, owner_id: str, expect_generated_pose_delta: bool) -> None:
+    """Execute the production ownership binding against an exported payload."""
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const THREE_IMPL=require('./workcell_studio_web/viewer/node_modules/three/build/three.cjs');
+const payload=JSON.parse(fs.readFileSync(process.argv[2],'utf8')),ownerId=process.argv[3],expectDelta=process.argv[4]==='true';
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return null},querySelectorAll(){return[]},addEventListener(){},setAttribute(){},appendChild(){},remove(){}});
+const context={console,assert,THREE_IMPL,payload,ownerId,expectDelta,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element()},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context);vm.runInContext(source+`
+THREE=THREE_IMPL;createLabelElement=()=>null;state.sceneJson=payload;state.three.scene=new THREE.Scene();state.objects=[];state.physicalEditBindings=new Map();rebuildSelectionIdentityIndex(payload);
+const visual=[...asArray(payload.sensors),...asArray(payload.assets)].find(item=>(item.camera_id===ownerId||item.support_surface_ref===ownerId)&&item.owner_relative_visual_transform);
+assert(visual,'generated physical visual missing');const root=new THREE.Group();applyTransformToObject(root,transformOf(visual));state.three.scene.add(root);const rendered={item:visual,object3d:root,meshObject:new THREE.Group(),originalTransform:transformOf(visual)};root.add(rendered.meshObject);state.objects.push(rendered);
+const generatedWorld=root.position.clone();const bindings=bindExportedPhysicalTransformOwnership();assert.strictEqual(bindings.length,1);const binding=bindings[0];
+const expected=new THREE.Matrix4().compose(binding.owner.object3d.position,binding.owner.object3d.quaternion,binding.owner.object3d.scale).multiply(new THREE.Matrix4().compose(root.position,root.quaternion,root.scale));root.updateWorldMatrix(true,true);for(let i=0;i<16;i++)assert(Math.abs(root.matrixWorld.elements[i]-expected.elements[i])<1e-10,'owner world x stable local must equal visual world');const actual=new THREE.Vector3().setFromMatrixPosition(root.matrixWorld);
+assert.strictEqual(actual.distanceTo(generatedWorld)>1e-8,expectDelta,'reopen must move from stale generated pose iff owner was edited');const beforeAsync=root.matrixWorld.clone();visual.mesh_status='loaded';suppressOwnedAuthoredFallback(rendered);root.updateWorldMatrix(true,true);for(let i=0;i<16;i++)assert(Math.abs(root.matrixWorld.elements[i]-beforeAsync.elements[i])<1e-10,'async mesh completion changed visual pose');
+`,context);
+"""
+    result = subprocess.run(
+        ["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js"), str(web_scene), owner_id, str(expect_generated_pose_delta).lower()],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_mainwindow_installs_controller_on_existing_top_save_action():
     controller = CONTROLLER.read_text(encoding="utf-8")
     mainwindow = MAINWINDOW.read_text(encoding="utf-8")
@@ -315,6 +340,7 @@ def test_executable_target_bin_linked_save_and_reload_roundtrip(tmp_path):
     protected_before = {
         path.relative_to(scene): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in scene.rglob("*") if path.is_file() and path != layout_path
+        and path.relative_to(scene) != Path("generated/scene_visual_mesh_index.json")
     }
     result = subprocess.run(
         [sys.executable, str(WORKFLOW), "--scene", str(scene), "--patch", str(patch_path),
@@ -367,6 +393,14 @@ def test_executable_production_camera_table_save_roundtrips(tmp_path):
         )
         before = json.loads(before_path.read_text(encoding="utf-8"))
         owners = {item["id"]: item for item in before["ui_selection_owners"]}
+        before_visuals = {
+            item.get("camera_id") or item.get("support_surface_ref"): item
+            for section in ("sensors", "assets") for item in before[section]
+            if item.get("owner_relative_visual_transform")
+        }
+        assert set(before_visuals) == {"realsense_overhead", "support_surface_table"}
+        for owner_id in before_visuals:
+            _run_production_owner_binding_assertions(before_path, owner_id, False)
         assert owners["realsense_overhead"]["provenance"]["pose"] == "layout/workcell_studio_layout.yaml"
         assert owners["support_surface_table"]["provenance"]["pose"] == "layout/workcell_studio_layout.yaml"
         edits = []
@@ -391,6 +425,7 @@ def test_executable_production_camera_table_save_roundtrips(tmp_path):
         protected_before = {
             path.relative_to(scene): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in scene.rglob("*") if path.is_file() and path.name != "workcell_studio_layout.yaml"
+            and path.relative_to(scene) != Path("generated/scene_visual_mesh_index.json")
         }
         for mode in ("--dry-run-apply", "--write"):
             result = subprocess.run(
@@ -401,9 +436,24 @@ def test_executable_production_camera_table_save_roundtrips(tmp_path):
         assert "persistence verification result: PASS" in result.stdout
         after = json.loads((output / "ur5_2f_test.web_scene.json").read_text(encoding="utf-8"))
         after_owners = {item["id"]: item for item in after["ui_selection_owners"]}
+        after_visuals = {
+            item.get("camera_id") or item.get("support_surface_ref"): item
+            for section in ("sensors", "assets") for item in after[section]
+            if item.get("owner_relative_visual_transform")
+        }
         for edit in edits:
             assert _transform(after_owners[edit["item_id"]]) == edit["new_transform"]
             assert edit["old_transform"]["scale"] == edit["new_transform"]["scale"] == {"x": 1.0, "y": 1.0, "z": 1.0}
+        # Re-export must retain the original generated mesh-origin/orientation
+        # relationship rather than deriving a new local pose from the edited owner.
+        for owner_id in before_visuals:
+            assert after_visuals[owner_id]["owner_relative_visual_transform"] == before_visuals[owner_id]["owner_relative_visual_transform"]
+            provenance = after_visuals[owner_id]["provenance"]["owner_relative_visual_transform"]
+            assert provenance["source_owner_pose_provenance"] == "environment.yaml"
+            assert provenance["generated_visual_pose"]
+            _run_production_owner_binding_assertions(
+                output / "ur5_2f_test.web_scene.json", owner_id, owner_id in edited_ids,
+            )
         protected_after = {
             path.relative_to(scene): hashlib.sha256(path.read_bytes()).hexdigest()
                 for path in scene.rglob("*") if path.is_file() and path.name != "workcell_studio_layout.yaml" and ".bak" not in path.name

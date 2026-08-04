@@ -210,6 +210,15 @@ def test_authored_camera_and_table_generated_visuals_attach_to_canonical_edit_ow
     payload = json.loads(web_scene.read_text(encoding="utf-8"))
     assert any(item.get("camera_id") == "realsense_overhead" for item in payload["sensors"])
     assert any(item.get("support_surface_ref") == "support_surface_table" for item in payload["assets"])
+    physical_visuals = [
+        item for section in ("sensors", "assets") for item in payload[section]
+        if item.get("mesh_contract_category") in {"camera", "table"}
+    ]
+    assert physical_visuals
+    assert all("owner_relative_visual_transform" in item for item in physical_visuals)
+    assert all(item["provenance"]["owner_relative_visual_transform"]["source_owner_pose"] for item in physical_visuals)
+    assert "Object3D.attach" not in VIEWER.split("function bindExportedPhysicalTransformOwnership", 1)[1].split("function suppressOwnedAuthoredFallback", 1)[0]
+    assert "applyExportedOwnerRelativeVisualTransform(rendered, owner)" in VIEWER
 
     harness = r"""
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
