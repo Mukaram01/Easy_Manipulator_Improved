@@ -1300,6 +1300,7 @@ void ScenePreviewWidget::handle_embedded_web_runtime_failure(
     return;
   }
   embedded_web_terminal_runtime_failures_.insert(terminal_key);
+  if (finish_post_save_product_view_refresh(identity, navigation_token, false, detail)) return;
   native_compatibility_fallback_active_ = false;
   embedded_web_last_error_ = detail;
   set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail);
@@ -1315,6 +1316,20 @@ void ScenePreviewWidget::handle_embedded_web_runtime_failure(
   ++embedded_web_terminal_results_accepted_;
   emit studio_log_requested(QStringLiteral("Embedded Product View terminal failure accepted; leaving Web3D selected with Retry available. %1").arg(detail));
 #endif
+}
+
+bool ScenePreviewWidget::finish_post_save_product_view_refresh(
+  const EmbeddedWebRequestIdentity & identity, quint64 navigation_token, bool success, const QString & detail)
+{
+  if (post_save_refresh_generation_ == 0 ||
+      identity.generation != post_save_refresh_generation_ ||
+      static_cast<int>(identity.payload_revision) != post_save_refresh_payload_revision_) return false;
+  const int revision = post_save_refresh_payload_revision_;
+  post_save_refresh_generation_ = 0;
+  post_save_refresh_payload_revision_ = 0;
+  emit post_save_product_view_refresh_finished(
+    revision, identity.generation, navigation_token, success, detail);
+  return !success;
 }
 
 void ScenePreviewWidget::ensure_embedded_web_server_started(const QString & repo_root, const EmbeddedWebRequestIdentity & identity)
@@ -1490,6 +1505,11 @@ void ScenePreviewWidget::show_embedded_web_preparation_failure(
 {
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
   if (!embedded_web_view_ || !embedded_web_identity_is_current(identity)) return;
+  if (finish_post_save_product_view_refresh(identity, 0, false, detail)) {
+    emit studio_log_requested(QStringLiteral(
+      "Post-save Product View regeneration failed; retained the current browser edits. Correct the preparation error and use Save Layout again: %1").arg(detail));
+    return;
+  }
   native_compatibility_fallback_active_ = false;
   const QString concise_error = detail.trimmed().left(320).toHtmlEscaped();
   const QString scene = identity.scene_id.toHtmlEscaped();
@@ -2231,6 +2251,7 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
       poll_embedded_editor_events();
       emit studio_log_requested(QStringLiteral("Embedded Product View ready after terminal scene_ready: scene=%1 json=%2 builder_revision=%3 robot_preview_lifecycle_state=%4 failed_required_item_count=0")
         .arg(identity.scene_id, expected_json_path, expected_builder_revision, robot_state.isEmpty() ? QStringLiteral("not_required") : robot_state));
+      finish_post_save_product_view_refresh(identity, navigation_token, true, QStringLiteral("matching terminal scene_ready accepted"));
       return;
     }
 
@@ -2810,6 +2831,23 @@ void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items)
 int ScenePreviewWidget::preview_payload_revision() const { return preview_payload_revision_; }
 quint64 ScenePreviewWidget::preview_payload_generation() const { return preview_payload_generation_; }
 quint64 ScenePreviewWidget::embedded_web_preparation_request_count() const { return embedded_web_preparation_request_count_; }
+int ScenePreviewWidget::request_post_save_product_view_refresh()
+{
+#ifndef WORKCELL_BUILDER_HAS_WEBENGINE
+  return 0;
+#else
+  if (!embedded_web_view_ || normalized_preview_context(preview_context_).scene_id.isEmpty()) return 0;
+  // A save changes authored inputs even when the in-memory PreviewItem list is
+  // byte-identical. Renew every identity used by preparation/readiness so an
+  // earlier load completion or scene_ready can never complete this refresh.
+  ++preview_payload_revision_;
+  ++preview_payload_generation_;
+  request_embedded_web_product_view_refresh(true, QStringLiteral("post_save"));
+  post_save_refresh_generation_ = embedded_web_request_generation_;
+  post_save_refresh_payload_revision_ = preview_payload_revision_;
+  return post_save_refresh_payload_revision_;
+#endif
+}
 bool ScenePreviewWidget::preview_payload_matches(const QVector<PreviewItem> & items) const
 {
   return preview_payload_fingerprint(items) == preview_payload_fingerprint_;

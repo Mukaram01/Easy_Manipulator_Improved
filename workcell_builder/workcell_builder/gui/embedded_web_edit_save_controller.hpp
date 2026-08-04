@@ -92,24 +92,30 @@ public:
 
     connect(preview_, &ScenePreviewWidget::embedded_authoring_save_requested,
       this, [this]() { requestSave(); });
+    connect(preview_, &ScenePreviewWidget::post_save_product_view_refresh_finished,
+      this, [this](int revision, quint64, quint64, bool success, const QString & detail) {
+        if (!saved_reload_pending_ || revision != saved_reload_revision_) return;
+        if (!success) {
+          saved_reload_pending_ = false;
+          saved_reload_revision_ = 0;
+          busy_ = false;
+          setStatus(QStringLiteral("Saved; Product View refresh failed—edits retained"), QStringLiteral("error"));
+          logPhase(QStringLiteral("reload failed: %1; persisted YAML was not written again and browser edits were preserved").arg(detail));
+          QMessageBox::critical(preview_, QStringLiteral("Save Product View Layout"),
+            QStringLiteral("The authored YAML was saved and verified, but the canonical Product View could not be regenerated or loaded. "
+              "The current browser edits were retained. Correct the Product View preparation error, then choose Save Layout again; the YAML will not be rewritten automatically.\n\n%1").arg(detail));
+          pollEditorState();
+          return;
+        }
+        saved_reload_pending_ = false;
+        saved_reload_revision_ = 0;
+        busy_ = false;
+        setStatus(QStringLiteral("Saved and reloaded"), QStringLiteral("success"));
+        logPhase(QStringLiteral("reload complete: matching regenerated Product View scene_ready"));
+        restoreSelectionAfterReload();
+      });
     connect(view_, &QWebEngineView::loadFinished, this, [this](bool) {
       last_polled_url_ = QUrl();
-      if (saved_reload_pending_) {
-        saved_reload_pending_ = false;
-        const QString selected_id = selected_item_id_before_save_;
-        selected_item_id_before_save_.clear();
-        const QString script = QStringLiteral(
-          "(() => { const api=window.__WORKCELL_EDITOR_API_V1__; "
-          "if (!api) return false; api.selectItem(%1); "
-          "return api.getState().selectedItemId === %1 && !api.getState().dirty; })()")
-          .arg(QString::fromUtf8(QJsonDocument(QJsonArray{selected_id}).toJson(QJsonDocument::Compact)).mid(1).chopped(1));
-        view_->page()->runJavaScript(script, [this](const QVariant & restored) {
-          if (!restored.toBool()) {
-            setStatus(QStringLiteral("Saved; selection could not be restored"), QStringLiteral("warning"));
-          }
-          pollEditorState();
-        });
-      }
       QTimer::singleShot(250, this, [this]() { pollEditorState(); });
     });
     poll_timer_.setInterval(350);
@@ -122,6 +128,21 @@ public:
 
 private:
   enum class WorkflowPhase { DryRun, Write };
+
+  void restoreSelectionAfterReload()
+  {
+    const QString selected_id = selected_item_id_before_save_;
+    selected_item_id_before_save_.clear();
+    const QString encoded = QString::fromUtf8(
+      QJsonDocument(QJsonArray{selected_id}).toJson(QJsonDocument::Compact)).mid(1).chopped(1);
+    const QString script = QStringLiteral(
+      "(() => { const api=window.__WORKCELL_EDITOR_API_V1__; if (!api) return false; "
+      "api.selectItem(%1); return api.getState().selectedItemId === %1 && !api.getState().dirty; })()").arg(encoded);
+    view_->page()->runJavaScript(script, [this](const QVariant & restored) {
+      if (!restored.toBool()) setStatus(QStringLiteral("Saved; selection could not be restored"), QStringLiteral("warning"));
+      pollEditorState();
+    });
+  }
 
   void configureControls()
   {
@@ -457,13 +478,20 @@ private:
           return;
         }
 
-        busy_ = false;
-        setStatus(QStringLiteral("Saved"), QStringLiteral("success"));
+        setStatus(QStringLiteral("Saved; refreshing Product View…"), QStringLiteral("success"));
         logPhase(QStringLiteral("saved"));
         saved_reload_pending_ = true;
-        logPhase(QStringLiteral("reload"));
-        if (view_) view_->reload();
-        QTimer::singleShot(600, this, [this]() { pollEditorState(); });
+        saved_reload_revision_ = preview_->request_post_save_product_view_refresh();
+        if (saved_reload_revision_ <= 0) {
+          saved_reload_pending_ = false;
+          busy_ = false;
+          setStatus(QStringLiteral("Saved; Product View refresh could not start"), QStringLiteral("error"));
+          logPhase(QStringLiteral("reload failed: Product View lifecycle context unavailable; browser edits preserved"));
+          pollEditorState();
+          return;
+        }
+        logPhase(QStringLiteral("reload: forced canonical Product View regeneration requested for payload_revision=%1")
+          .arg(saved_reload_revision_));
       });
     process_->start();
   }
@@ -543,6 +571,7 @@ private:
   bool busy_{false};
   bool state_poll_pending_{false};
   bool saved_reload_pending_{false};
+  int saved_reload_revision_{0};
   bool using_environment_fallback_{false};
   QString selected_item_id_before_save_;
 };

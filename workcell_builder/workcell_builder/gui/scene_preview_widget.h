@@ -307,6 +307,7 @@ public:
   int preview_payload_revision() const;
   quint64 preview_payload_generation() const;
   quint64 embedded_web_preparation_request_count() const;
+  int request_post_save_product_view_refresh();
   bool preview_payload_matches(const QVector<PreviewItem> & items) const;
 
 signals:
@@ -316,6 +317,8 @@ signals:
   void embedded_product_view_runtime_state_changed(const QString & state, bool has_usable_content);
   void authoring_mode_changed(const QString & mode);
   void embedded_authoring_save_requested();
+  void post_save_product_view_refresh_finished(
+    int payload_revision, quint64 generation, quint64 navigation_token, bool success, const QString & detail);
 
 private slots:
   void on_mode_changed(int index);
@@ -453,6 +456,8 @@ private:
   QString embedded_web_recovery_key(const EmbeddedWebRequestIdentity & identity) const;
   void handle_embedded_web_runtime_failure(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token,
     const QString & detail);
+  bool finish_post_save_product_view_refresh(
+    const EmbeddedWebRequestIdentity & identity, quint64 navigation_token, bool success, const QString & detail);
   void load_prepared_embedded_web_scene(const EmbeddedWebRequestIdentity & identity);
   void start_embedded_web_readiness_polling(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token, const QString & expected_json_path, const QString & viewer_url);
   void poll_embedded_web_readiness(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token,
@@ -609,6 +614,8 @@ private:
   int preview_payload_revision_{ 0 };
   quint64 preview_payload_generation_{ 0 };
   quint64 embedded_web_preparation_request_count_{ 0 };
+  quint64 post_save_refresh_generation_{ 0 };
+  int post_save_refresh_payload_revision_{ 0 };
   QByteArray preview_payload_fingerprint_;
   int last_visual_quality_revision_logged_{ -1 };
   QSet<QString> emitted_scene_diagnostic_keys_;

@@ -154,14 +154,51 @@ def test_successful_qt_save_reuses_backend_refreshes_and_reloads_product_view():
     assert "scripts/run_workcell_studio_web_edit_workflow.py" in controller
     assert "scripts/apply_workcell_studio_web_scene_edit_patch.py" not in controller
     assert "scripts/validate_workcell_studio_web_scene_edit_patch.py" not in controller
-    assert "if (view_) view_->reload();" in controller
+    assert "request_post_save_product_view_refresh()" in controller
+    assert "view_->reload()" not in controller
+    assert "post_save_product_view_refresh_finished" in controller
+    assert "matching regenerated Product View scene_ready" in controller
 
     assert 'write_cmd = [*dry_cmd, "--write", "--backup"]' in workflow
     assert "persistence verification" in workflow
     assert "_product_view_refresh_cmd" in workflow
-    assert "export_workcell_studio_web_scene.py" in workflow
-    assert '"--stage-assets"' not in workflow.split("def _product_view_refresh_cmd", 1)[1].split("def _generated_summary_paths", 1)[0]
+    refresh = workflow.split("def _product_view_refresh_cmd", 1)[1].split("def _generated_summary_paths", 1)[0]
+    assert "ensure_workcell_studio_web_scene_fresh.py" in refresh
+    assert '"--stage-assets"' in refresh
+    assert '"--force"' in refresh
     assert "Product View refresh result" in workflow
+
+
+def test_post_save_refresh_renews_all_lifecycle_identities_and_rejects_stale_ready():
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    header = (GUI / "scene_preview_widget.h").read_text(encoding="utf-8")
+    preview = (GUI / "scene_preview_widget.cpp").read_text(encoding="utf-8")
+    refresh = preview.split("int ScenePreviewWidget::request_post_save_product_view_refresh()", 1)[1].split(
+        "bool ScenePreviewWidget::preview_payload_matches", 1
+    )[0]
+
+    assert "++preview_payload_revision_" in refresh
+    assert "++preview_payload_generation_" in refresh
+    assert 'request_embedded_web_product_view_refresh(true, QStringLiteral("post_save"))' in refresh
+    assert "post_save_refresh_generation_ = embedded_web_request_generation_" in refresh
+    assert "post_save_refresh_payload_revision_ = preview_payload_revision_" in refresh
+    assert "post_save_product_view_refresh_finished" in header
+    assert "revision != saved_reload_revision_" in controller
+    assert "builder_revision != expected_builder_revision" in preview
+    assert "navigation_token != embedded_web_navigation_token_" in preview
+
+
+def test_post_save_refresh_failure_keeps_browser_edits_and_never_rewrites_yaml():
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    preview = (GUI / "scene_preview_widget.cpp").read_text(encoding="utf-8")
+    failure = preview.split("void ScenePreviewWidget::show_embedded_web_preparation_failure", 1)[1].split(
+        "void ScenePreviewWidget::clear_embedded_editor_state_for_scene_handoff", 1
+    )[0]
+
+    assert "finish_post_save_product_view_refresh(identity, 0, false, detail)" in failure
+    assert failure.index("finish_post_save_product_view_refresh") < failure.index("embedded_web_view_->setHtml")
+    assert "persisted YAML was not written again and browser edits were preserved" in controller
+    assert "choose Save Layout again; the YAML will not be rewritten automatically" in controller
 
 
 def test_source_yaml_write_is_allowlisted_backed_up_and_atomic():
@@ -203,7 +240,7 @@ def test_save_roundtrip_has_no_browser_source_writes_or_robot_motion():
 
 
 def test_roundtrip_change_stays_focused():
-    assert len(CONTROLLER.read_text(encoding="utf-8").splitlines()) < 590
+    assert len(CONTROLLER.read_text(encoding="utf-8").splitlines()) < 630
     assert len(WORKFLOW.read_text(encoding="utf-8").splitlines()) < 370
     assert len(APPLICATOR.read_text(encoding="utf-8").splitlines()) < 340
 
@@ -289,6 +326,7 @@ def test_executable_target_bin_linked_save_and_reload_roundtrip(tmp_path):
     protected_after = {
         path.relative_to(scene): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in scene.rglob("*") if path.is_file() and path != layout_path and ".bak" not in path.name
+        and path.relative_to(scene) != Path("generated/scene_visual_mesh_index.json")
     }
     assert protected_after == protected_before  # generated files, robot transforms, and hardware stay untouched
 
@@ -368,7 +406,8 @@ def test_executable_production_camera_table_save_roundtrips(tmp_path):
             assert edit["old_transform"]["scale"] == edit["new_transform"]["scale"] == {"x": 1.0, "y": 1.0, "z": 1.0}
         protected_after = {
             path.relative_to(scene): hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in scene.rglob("*") if path.is_file() and path.name != "workcell_studio_layout.yaml" and ".bak" not in path.name
+                for path in scene.rglob("*") if path.is_file() and path.name != "workcell_studio_layout.yaml" and ".bak" not in path.name
+                and path.relative_to(scene) != Path("generated/scene_visual_mesh_index.json")
         }
         assert protected_after == protected_before
 
