@@ -1543,6 +1543,19 @@ function exportedPhysicalEditOwnerId(rendered) {
   const ownerType = String((state.selectionIdentityIndex || rebuildSelectionIdentityIndex()).itemById.get(ownerId)?.type || '').toLowerCase();
   return (category === 'camera' && ownerType === 'camera') || (category === 'table' && ownerType === 'support_surface') ? ownerId : '';
 }
+function applyExportedOwnerRelativeVisualTransform(rendered, owner) {
+  const relative = rendered?.item?.owner_relative_visual_transform;
+  if (!owner?.object3d || !rendered?.object3d || !hasFinitePoseBlock(relative)) return false;
+  if (rendered.object3d.parent !== owner.object3d) owner.object3d.add(rendered.object3d);
+  const pose = poseBlockOf(relative);
+  rendered.object3d.position.copy(pose.xyz);
+  rendered.object3d.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, 'XYZ');
+  // Scale remains generated visual metadata (not authored owner state), but it
+  // is carried with the stable local transform so reparenting cannot drop it.
+  rendered.object3d.scale.copy(vector3(relative.scale, [1, 1, 1]));
+  rendered.object3d.updateMatrixWorld(true);
+  return true;
+}
 function bindExportedPhysicalTransformOwnership() {
   state.physicalEditBindings.clear();
   const bindings = [];
@@ -1563,10 +1576,10 @@ function bindExportedPhysicalTransformOwnership() {
       owner = { item, object3d, fallback: null, labelEl: createLabelElement(item), originalTransform: cloneTransform(authoredTransform), physicalEditRoot: true };
       state.objects.push(owner);
     }
-    if (!owner?.object3d || owner === rendered || rendered.object3d.parent === owner.object3d) continue;
-    // Object3D.attach performs the reparent while retaining the generated
-    // visual's world matrix. The authored root is the only transform root.
-    owner.object3d.attach(rendered.object3d);
+    if (!owner?.object3d || owner === rendered) continue;
+    // Reconstruct the generated visual from its exported stable owner-local
+    // transform. Never preserve a stale generated world matrix during reparent.
+    if (!applyExportedOwnerRelativeVisualTransform(rendered, owner)) continue;
     rendered.physicalEditOwner = owner;
     owner.ownedPhysicalVisual = rendered;
     const binding = { ownerId, owner, visual: rendered, ownerRecordSource: owner.physicalEditRoot ? 'synthetic_authored_selection_owner' : 'state.objects_authored_owner' };
@@ -1579,6 +1592,9 @@ function suppressOwnedAuthoredFallback(rendered) {
   const binding = resolveCanonicalPhysicalEditBinding(rendered);
   const owner = binding?.owner || rendered?.physicalEditOwner;
   if (!owner || !rendered.meshObject || rendered.item?.mesh_status !== 'loaded') return false;
+  // Mesh loaders complete asynchronously. Reassert the same stable local
+  // relationship so completion cannot restore the generated default world pose.
+  applyExportedOwnerRelativeVisualTransform(rendered, owner);
   if (owner.fallback) owner.fallback.visible = false;
   owner.authoritativePhysicalVisualLoaded = true;
   if (state.selected === owner.item?.id && state.editorMode !== 'select') attachTransformGizmo(owner, 'asynchronous_physical_mesh_completion');
