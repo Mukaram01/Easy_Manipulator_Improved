@@ -353,6 +353,9 @@ private:
   void reset_armed_asset_transform_to_defaults();
   void update_arm_transform_validation_ui();
   void update_scene_builder_top_controls_overflow();
+  void apply_scene_builder_panel_visibility(bool left_visible, bool right_visible, bool persist = true);
+  void save_scene_builder_panel_state();
+  void sync_scene_builder_view_actions();
   double default_asset_pose_z(const QString & category, const QString & display_name) const;
 
   struct AssetCatalogEntry
@@ -702,7 +705,10 @@ private:
   QAction * scene_builder_show_left_panel_action_{ nullptr };
   QAction * scene_builder_show_right_panel_action_{ nullptr };
   QAction * scene_builder_focus_3d_action_{ nullptr };
-  QList<int> scene_builder_last_splitter_sizes_{300, 900, 320};
+  QList<int> scene_builder_last_splitter_sizes_{320, 900, 360};
+  int scene_builder_preferred_left_width_{320};
+  int scene_builder_preferred_right_width_{360};
+  bool scene_builder_panel_state_syncing_{false};
   bool scene_builder_focus_3d_active_{ false };
   bool scene_builder_focus_restore_left_visible_{ true };
   bool scene_builder_focus_restore_right_visible_{ true };

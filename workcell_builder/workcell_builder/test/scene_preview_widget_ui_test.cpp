@@ -380,8 +380,8 @@ TEST(SceneBuilderWorkspaceSource, ResizablePanelActionsAndFocusAreWired)
   EXPECT_TRUE(text.contains(QStringLiteral("sceneBuilderProductViewPanel")));
   EXPECT_TRUE(text.contains(QStringLiteral("sceneBuilderRightPanel")));
   EXPECT_TRUE(text.contains(QStringLiteral("setStretchFactor(1, 8)")));
-  EXPECT_TRUE(text.contains(QStringLiteral("scene_splitter->setSizes({320, 1000, 0})")));
-  EXPECT_TRUE(text.contains(QStringLiteral("right_panel->setVisible(false)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("scene_splitter->setSizes({320, 900, 360})")));
+  EXPECT_TRUE(text.contains(QStringLiteral("scene_builder/preferred_right_width")));
   EXPECT_TRUE(text.contains(QStringLiteral("Show Left Panel")));
   EXPECT_TRUE(text.contains(QStringLiteral("Show Right Panel")));
   EXPECT_TRUE(text.contains(QStringLiteral("Focus 3D View")));
@@ -397,14 +397,51 @@ TEST(SceneBuilderWorkspaceSource, FocusModeHidesPanelsWithoutReloadingProductVie
 
   EXPECT_TRUE(text.contains(QStringLiteral("scene_builder_left_panel_->hide()")));
   EXPECT_TRUE(text.contains(QStringLiteral("scene_builder_right_panel_->hide()")));
-  EXPECT_TRUE(text.contains(QStringLiteral("scene_builder_left_panel_->setVisible(scene_builder_focus_restore_left_visible_)")));
-  EXPECT_TRUE(text.contains(QStringLiteral("scene_builder_right_panel_->setVisible(scene_builder_focus_restore_right_visible_)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("apply_scene_builder_panel_visibility(\n        scene_builder_focus_restore_left_visible_, scene_builder_focus_restore_right_visible_, false)")));
   const int focus_action_index = text.indexOf(QStringLiteral("scene_builder_focus_3d_action_"));
   ASSERT_GE(focus_action_index, 0);
   const QString focus_block = text.mid(focus_action_index, 2200);
   EXPECT_FALSE(focus_block.contains(QStringLiteral("new ScenePreviewWidget")));
   EXPECT_FALSE(focus_block.contains(QStringLiteral("request_embedded_web_product_view_refresh")));
   EXPECT_FALSE(focus_block.contains(QStringLiteral("reload_meshes")));
+}
+
+TEST(SceneBuilderWorkspaceSource, PanelLayoutV3RepairsAndRestoresInspector)
+{
+  QFile source(QStringLiteral("workcell_builder/workcell_builder/gui/mainwindow.cpp"));
+  if (!source.exists()) source.setFileName(QStringLiteral("../workcell_builder/gui/mainwindow.cpp"));
+  ASSERT_TRUE(source.open(QIODevice::ReadOnly | QIODevice::Text));
+  const QString text = QString::fromUtf8(source.readAll());
+
+  // Fresh settings and old v2 {320, 1000, 0} both obtain a non-zero default.
+  EXPECT_TRUE(text.contains(QStringLiteral("scene_builder_preferred_right_width_{360}")) ||
+    text.contains(QStringLiteral("scene_builder_preferred_right_width_ = 360")));
+  EXPECT_TRUE(text.contains(QStringLiteral("if (scene_builder_preferred_right_width_ <= 0) scene_builder_preferred_right_width_ = 360")));
+  EXPECT_TRUE(text.contains(QStringLiteral("native_layout_version\"), 3")));
+  EXPECT_TRUE(text.contains(QStringLiteral("right = qMin(qMax(240, right), right_available)")));
+
+  // Hiding cannot overwrite a preferred width with the splitter's zero.
+  EXPECT_TRUE(text.contains(QStringLiteral("!scene_builder_right_panel_->isHidden() && sizes[2] > 0")));
+  EXPECT_TRUE(text.contains(QStringLiteral("scene_builder/preferred_left_width")));
+  EXPECT_TRUE(text.contains(QStringLiteral("scene_builder/preferred_right_width")));
+
+  // Menu toggles, selection auto-open, startup, and Focus 3D exit share one path.
+  EXPECT_GE(text.count(QStringLiteral("apply_scene_builder_panel_visibility(")), 6);
+  EXPECT_TRUE(text.contains(QStringLiteral("scene_builder_focus_restore_right_visible_, false")));
+  EXPECT_TRUE(text.contains(QStringLiteral("scene_builder_left_panel_ && !scene_builder_left_panel_->isHidden(), true")));
+  EXPECT_TRUE(text.contains(QStringLiteral("QSignalBlocker blocker(scene_builder_show_right_panel_action_)")));
+
+  // Responsive rebuilding always puts the persistent View actions back.
+  const int overflow = text.indexOf(QStringLiteral("void MainWindow::update_scene_builder_top_controls_overflow()"));
+  ASSERT_GE(overflow, 0);
+  const QString overflow_block = text.mid(overflow, 2600);
+  EXPECT_TRUE(overflow_block.contains(QStringLiteral("addMenu(\"View\")")));
+  EXPECT_TRUE(overflow_block.contains(QStringLiteral("addAction(scene_builder_show_left_panel_action_)")));
+  EXPECT_TRUE(overflow_block.contains(QStringLiteral("addAction(scene_builder_show_right_panel_action_)")));
+  EXPECT_TRUE(overflow_block.contains(QStringLiteral("addAction(scene_builder_focus_3d_action_)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("new QAction(\"Show Right Panel\", this)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("new QAction(\"Focus 3D View\", this)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("setText(\"Panels & Tools\")")));
 }
 
 TEST(SceneBuilderWorkspaceSource, CompactBottomStatusBarUsesSingleRowAndExistingLogDrawer)
