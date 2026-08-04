@@ -1535,7 +1535,12 @@ def _annotate_owner_relative_physical_visual_transforms(
             relative_pose = _parent_to_child_pose(owner_world_pose, visual_world_pose)
             if relative_pose is None:
                 continue
-            relative_pose["scale"] = copy.deepcopy(item.get("scale") or [1.0, 1.0, 1.0])
+            # This is the transform of the generated item root in its authored
+            # owner's coordinate system.  URDF mesh/unit scale belongs below
+            # that root and is applied by the viewer's mesh-local scale path.
+            # Copying item.scale here would make reparenting apply mesh scale a
+            # second time (notably the workbench STL's millimetre conversion).
+            relative_pose["scale"] = [1.0, 1.0, 1.0]
             item["owner_relative_visual_transform"] = relative_pose
             item.setdefault("provenance", {})["owner_relative_visual_transform"] = {
                 "operation": "inverse(source_physical_owner_world_pose)_times_generated_visual_world_pose",
