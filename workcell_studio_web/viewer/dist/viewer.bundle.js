@@ -39981,6 +39981,19 @@ function exportedPhysicalEditOwnerId(rendered) {
   const ownerType = String((state.selectionIdentityIndex || rebuildSelectionIdentityIndex()).itemById.get(ownerId)?.type || "").toLowerCase();
   return category === "camera" && ownerType === "camera" || category === "table" && ownerType === "support_surface" ? ownerId : "";
 }
+function applyExportedOwnerRelativeVisualTransform(rendered, owner) {
+  const relative = rendered?.item?.owner_relative_visual_transform;
+  if (!owner?.object3d || !rendered?.object3d || !hasFinitePoseBlock(relative))
+    return false;
+  if (rendered.object3d.parent !== owner.object3d)
+    owner.object3d.add(rendered.object3d);
+  const pose = poseBlockOf(relative);
+  rendered.object3d.position.copy(pose.xyz);
+  rendered.object3d.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, "XYZ");
+  rendered.object3d.scale.copy(scaleOf(rendered.item));
+  rendered.object3d.updateMatrixWorld(true);
+  return true;
+}
 function bindExportedPhysicalTransformOwnership() {
   state.physicalEditBindings.clear();
   const bindings = [];
@@ -40002,9 +40015,10 @@ function bindExportedPhysicalTransformOwnership() {
       owner = { item, object3d, fallback: null, labelEl: createLabelElement(item), originalTransform: cloneTransform(authoredTransform), physicalEditRoot: true };
       state.objects.push(owner);
     }
-    if (!owner?.object3d || owner === rendered || rendered.object3d.parent === owner.object3d)
+    if (!owner?.object3d || owner === rendered)
       continue;
-    owner.object3d.attach(rendered.object3d);
+    if (!applyExportedOwnerRelativeVisualTransform(rendered, owner))
+      continue;
     rendered.physicalEditOwner = owner;
     owner.ownedPhysicalVisual = rendered;
     const binding = { ownerId, owner, visual: rendered, ownerRecordSource: owner.physicalEditRoot ? "synthetic_authored_selection_owner" : "state.objects_authored_owner" };
@@ -40018,6 +40032,7 @@ function suppressOwnedAuthoredFallback(rendered) {
   const owner = binding?.owner || rendered?.physicalEditOwner;
   if (!owner || !rendered.meshObject || rendered.item?.mesh_status !== "loaded")
     return false;
+  applyExportedOwnerRelativeVisualTransform(rendered, owner);
   if (owner.fallback)
     owner.fallback.visible = false;
   owner.authoritativePhysicalVisualLoaded = true;
@@ -41398,8 +41413,7 @@ function initThree() {
     transformControls.setMode("translate");
     transformControls.setSpace("world");
     transformControls.addEventListener("dragging-changed", (event) => {
-      if (state.editorMode !== "rotate")
-        controls.enabled = !event.value;
+      syncOrbitControlsForEditorMode();
       const rendered = canonicalTransformOwner(state.selected);
       if (!rendered || !canEditItem(rendered.item))
         return;
@@ -41448,21 +41462,14 @@ function initThree() {
     controls.addEventListener("start", markCameraUserControlled);
     scene.add(transformControls);
     state.three = { renderer, scene, camera, controls, transformControls, raycaster: new THREE.Raycaster(), pointer: new THREE.Vector2() };
+    syncOrbitControlsForEditorMode();
     resize();
     window.addEventListener("resize", resize);
     el.canvas.addEventListener("pointerdown", onCanvasPointerDown);
     el.canvas.addEventListener("pointermove", onCanvasPointerMove);
     el.canvas.addEventListener("pointerup", onCanvasPointerUp);
-    el.canvas.addEventListener("pointercancel", () => {
-      cancelDirectMoveDrag("Move cancelled");
-      cancelDirectRotateDrag("Rotation cancelled");
-    });
-    window.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
-        cancelDirectMoveDrag("Move cancelled");
-        cancelDirectRotateDrag("Rotation cancelled");
-      }
-    });
+    el.canvas.addEventListener("pointercancel", onCanvasPointerCancel);
+    window.addEventListener("keydown", onEditorKeyDown);
     animate();
   } catch (err) {
     showError(`Bundled Three.js module load failure: ${err.message || err}`);
@@ -43132,6 +43139,10 @@ function snapHorizontalPreview(transform) {
   snapped.pose.xyz.z = transform.pose.xyz.z;
   return snapped;
 }
+function syncOrbitControlsForEditorMode() {
+  if (state.three.controls)
+    state.three.controls.enabled = state.editorMode === "select";
+}
 function beginDirectMoveDrag(event, rendered) {
   if (state.editorMode !== "move" || !selectionIsEditable(rendered))
     return false;
@@ -43139,10 +43150,8 @@ function beginDirectMoveDrag(event, rendered) {
   const hit = pointerToWorldPlane(event, start.pose.xyz.z);
   if (!hit)
     return false;
-  const controls = state.three.controls;
-  state.directMoveDrag = { itemId: rendered.item.id, start, groupStart: captureTransformGroup(rendered), last: cloneTransform(start), offset: { x: start.pose.xyz.x - hit.x, y: start.pose.xyz.y - hit.y }, controlsWasEnabled: controls ? controls.enabled : true };
-  if (controls)
-    controls.enabled = false;
+  state.directMoveDrag = { itemId: rendered.item.id, start, groupStart: captureTransformGroup(rendered), last: cloneTransform(start), offset: { x: start.pose.xyz.x - hit.x, y: start.pose.xyz.y - hit.y } };
+  syncOrbitControlsForEditorMode();
   el.canvas.setPointerCapture?.(event.pointerId);
   el.canvas.classList.add("direct-move-dragging");
   event.preventDefault();
@@ -43198,10 +43207,8 @@ function finishDirectMoveDrag(event) {
   return true;
 }
 function endDirectMoveDrag(event) {
-  const drag = state.directMoveDrag;
   state.directMoveDrag = null;
-  if (state.three.controls)
-    state.three.controls.enabled = drag ? drag.controlsWasEnabled : state.three.controls.enabled;
+  syncOrbitControlsForEditorMode();
   el.canvas.classList.remove("direct-move-dragging");
   if (event?.pointerId !== void 0)
     el.canvas.releasePointerCapture?.(event.pointerId);
@@ -43231,6 +43238,18 @@ function onCanvasPointerMove(event) {
 function onCanvasPointerUp(event) {
   finishDirectMoveDrag(event);
 }
+function onCanvasPointerCancel() {
+  cancelDirectMoveDrag("Move cancelled");
+  cancelDirectRotateDrag("Rotation cancelled");
+  syncOrbitControlsForEditorMode();
+}
+function onEditorKeyDown(event) {
+  if (event.key !== "Escape")
+    return;
+  cancelDirectMoveDrag("Move cancelled");
+  cancelDirectRotateDrag("Rotation cancelled");
+  syncOrbitControlsForEditorMode();
+}
 function directRotatePreviewTransform(rendered) {
   const drag = state.directRotateDrag;
   if (!drag || !rendered || rendered.item.id !== drag.itemId)
@@ -43242,11 +43261,9 @@ function directRotatePreviewTransform(rendered) {
 function beginDirectRotateDrag(rendered) {
   if (state.editorMode !== "rotate" || !selectionIsEditable(rendered))
     return false;
-  const controls = state.three.controls;
   const start = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d));
-  state.directRotateDrag = { itemId: rendered.item.id, start, groupStart: captureTransformGroup(rendered), last: cloneTransform(start), controlsWasEnabled: controls ? controls.enabled : true };
-  if (controls)
-    controls.enabled = false;
+  state.directRotateDrag = { itemId: rendered.item.id, start, groupStart: captureTransformGroup(rendered), last: cloneTransform(start) };
+  syncOrbitControlsForEditorMode();
   return true;
 }
 function previewDirectRotateDrag(rendered) {
@@ -43284,10 +43301,8 @@ function finishDirectRotateDrag(rendered) {
   return true;
 }
 function endDirectRotateDrag() {
-  const drag = state.directRotateDrag;
   state.directRotateDrag = null;
-  if (state.three.controls)
-    state.three.controls.enabled = drag ? drag.controlsWasEnabled : state.three.controls.enabled;
+  syncOrbitControlsForEditorMode();
 }
 function cancelDirectRotateDrag(message) {
   const drag = state.directRotateDrag;
@@ -43779,6 +43794,7 @@ async function loadFile(file) {
       renderScene(items);
     else
       renderScene([]);
+    syncOrbitControlsForEditorMode();
     refreshWarnings(json);
     renderSceneSummary();
     el.inspector.className = "state empty";
@@ -43846,6 +43862,7 @@ async function loadSceneUrl(rawUrl) {
     detachTransformGizmo();
     el.empty.hidden = true;
     renderScene(items);
+    syncOrbitControlsForEditorMode();
     refreshWarnings(json);
     renderSceneSummary();
     el.inspector.className = "state empty";
@@ -43891,6 +43908,7 @@ function setEditorMode(mode) {
     cancelDirectRotateDrag("Rotation cancelled");
   }
   state.editorMode = normalized;
+  syncOrbitControlsForEditorMode();
   const gizmo = state.three.transformControls;
   if (gizmo) {
     if (normalized === "move") {
@@ -43916,8 +43934,6 @@ function setEditorMode(mode) {
       state.gizmoDragGroupStart = null;
     }
   }
-  if (normalized === "select" && state.three.controls)
-    state.three.controls.enabled = true;
   if (normalized !== "select")
     attachTransformGizmo(canonicalTransformOwner(state.selected), "mode_change");
   return state.editorMode;
