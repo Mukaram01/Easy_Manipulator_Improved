@@ -38309,7 +38309,7 @@ var CAMERA_PRESET_DIRECTIONS = Object.freeze({
   top: [0, -1e-3, 1],
   robot: [1.1, -1.25, 0.72]
 });
-var state = { sceneJson: null, sourceWebSceneFile: "", diagnosticKeys: /* @__PURE__ */ new Set(), frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], pickRecords: [], pickIdentityByObject: /* @__PURE__ */ new WeakMap(), selectionIdentityIndex: null, assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: "", three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: "", done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, gizmoAttachmentDiagnostic: { targetId: "", reason: "not_evaluated" }, directMoveDrag: null, directRotateDrag: null, editorMode: "select", editorEvents: [], editorError: "", robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: "", lastCanvasPickReason: "", lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: "", sceneKey: "" }, web3dReadiness: { state: "booting", terminal: false, terminalState: "", terminalNavigationKey: "", terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null }, builderRevision: "", sceneJsonLoaded: false, activeNavigationKey: "" };
+var state = { sceneJson: null, sourceWebSceneFile: "", diagnosticKeys: /* @__PURE__ */ new Set(), frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], pickRecords: [], pickIdentityByObject: /* @__PURE__ */ new WeakMap(), selectionIdentityIndex: null, physicalEditBindings: /* @__PURE__ */ new Map(), assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: "", three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: "", done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, gizmoPivot: null, gizmoPivotDragStart: null, gizmoAttachmentDiagnostic: { targetId: "", reason: "not_evaluated" }, directMoveDrag: null, directRotateDrag: null, editorMode: "select", editorEvents: [], editorError: "", robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: "", lastCanvasPickReason: "", lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: "", sceneKey: "" }, web3dReadiness: { state: "booting", terminal: false, terminalState: "", terminalNavigationKey: "", terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null }, builderRevision: "", sceneJsonLoaded: false, activeNavigationKey: "" };
 var robotPreviewLoadToken = 0;
 var physicalLoadToken = 0;
 var RESET_VIEW_TITLE = "Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.";
@@ -39625,7 +39625,8 @@ function expandedUrdfPhysicalOwnerId(rendered) {
 function currentSelectionDiagnostics() {
   const id = String(state.selected || "");
   const rendered = selectedRenderIdentity();
-  const editOwner = canonicalEditOwnerRendered(rendered);
+  const editOwner = canonicalTransformOwner(rendered);
+  const binding = resolveCanonicalPhysicalEditBinding(rendered || id);
   const item = rendered?.item || null;
   const selectionIdentity = uiSelectionIdentity(rendered);
   const selectionOwners = state.selectionIdentityIndex?.selectionOwners || [];
@@ -39640,6 +39641,15 @@ function currentSelectionDiagnostics() {
     gizmoVisible: Boolean(state.three?.transformControls?.visible),
     gizmoEnabled: Boolean(state.three?.transformControls?.enabled),
     gizmoAttachmentReason: state.gizmoAttachmentDiagnostic?.reason || "not_evaluated",
+    physicalEditBinding: binding ? {
+      canonicalOwnerId: binding.ownerId,
+      ownerRecordSource: binding.ownerRecordSource,
+      physicalVisualId: binding.visual?.item?.id || "",
+      pivotWorldCentre: state.gizmoAttachmentDiagnostic?.pivotWorldCentre || null,
+      attachedObjectWorldPosition: state.gizmoAttachmentDiagnostic?.attachedObjectWorldPosition || null,
+      distance: Number.isFinite(state.gizmoAttachmentDiagnostic?.distance) ? state.gizmoAttachmentDiagnostic.distance : null,
+      attachmentReason: state.gizmoAttachmentDiagnostic?.reason || "not_evaluated"
+    } : null,
     renderIdentity: rendered?.item?.id || "",
     selectedItemType: rendered ? itemType(item) : "",
     selectable: Boolean(rendered && isCanvasSelectableRendered(rendered)),
@@ -39664,7 +39674,7 @@ function currentSelectionDiagnostics() {
 }
 function editorState() {
   const rendered = selectedRenderIdentity();
-  const editOwner = canonicalEditOwnerRendered(rendered);
+  const editOwner = canonicalTransformOwner(rendered);
   const hasExplicitTransformOwner = explicitUiSelectionItemId(rendered) !== rendered?.item?.id;
   return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || "", uiSelectionItemId: state.selected || "", editOwnerItemId: editOwner?.item?.id || "", selectedItemType: rendered ? itemType(rendered.item) : "", selectedEditable: selectionIsEditable(rendered) || hasExplicitTransformOwner && selectionIsEditable(editOwner), selectionDiagnostics: currentSelectionDiagnostics(), lastRaycastHitCount: state.lastRaycastHitCount, lastRaycastCandidateIds: [...state.lastRaycastCandidateIds], lastCanvasSelectedItemId: state.lastCanvasSelectedItemId, lastCanvasPickReason: state.lastCanvasPickReason, lastFailedCanvasPickDiagnostic: state.lastFailedCanvasPickDiagnostic, dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, error: state.editorError || "" };
 }
@@ -39874,6 +39884,28 @@ function sameTransform(a, b) {
 function renderedById(id) {
   return state.objects.find((obj) => obj.item.id === id) || state.pickRecords.find((obj) => obj.item.id === id);
 }
+function resolveCanonicalPhysicalEditBinding(value = state.selected) {
+  const record = value?.item ? value : null;
+  const candidateIds = [
+    record?.physicalEditOwner?.item?.id,
+    record?.item?.id,
+    record ? explicitUiSelectionItemId(record) : value,
+    state.selected
+  ].map((id) => String(id || "").trim()).filter(Boolean);
+  for (const ownerId of candidateIds) {
+    const binding = state.physicalEditBindings.get(ownerId);
+    if (binding)
+      return binding;
+  }
+  return null;
+}
+function canonicalTransformOwner(value = state.selected) {
+  const binding = resolveCanonicalPhysicalEditBinding(value);
+  if (binding)
+    return binding.owner;
+  const rendered = value?.item ? value : renderedById(value);
+  return canonicalEditOwnerRendered(rendered);
+}
 function selectionOwnerRenderedById(id) {
   return resolveSelectionOwner(id).record;
 }
@@ -39950,6 +39982,7 @@ function exportedPhysicalEditOwnerId(rendered) {
   return category === "camera" && ownerType === "camera" || category === "table" && ownerType === "support_surface" ? ownerId : "";
 }
 function bindExportedPhysicalTransformOwnership() {
+  state.physicalEditBindings.clear();
   const bindings = [];
   for (const rendered of state.objects) {
     const ownerId = exportedPhysicalEditOwnerId(rendered);
@@ -39974,18 +40007,27 @@ function bindExportedPhysicalTransformOwnership() {
     owner.object3d.attach(rendered.object3d);
     rendered.physicalEditOwner = owner;
     owner.ownedPhysicalVisual = rendered;
-    bindings.push({ owner, rendered });
+    const binding = { ownerId, owner, visual: rendered, ownerRecordSource: owner.physicalEditRoot ? "synthetic_authored_selection_owner" : "state.objects_authored_owner" };
+    state.physicalEditBindings.set(ownerId, binding);
+    bindings.push(binding);
   }
   return bindings;
 }
 function suppressOwnedAuthoredFallback(rendered) {
-  const owner = rendered?.physicalEditOwner;
+  const binding = resolveCanonicalPhysicalEditBinding(rendered);
+  const owner = binding?.owner || rendered?.physicalEditOwner;
   if (!owner || !rendered.meshObject || rendered.item?.mesh_status !== "loaded")
     return false;
   if (owner.fallback)
     owner.fallback.visible = false;
   owner.authoritativePhysicalVisualLoaded = true;
+  if (state.selected === owner.item?.id && state.editorMode !== "select")
+    attachTransformGizmo(owner, "asynchronous_physical_mesh_completion");
   return true;
+}
+function detachTransientPivotForFailedPhysicalVisual(rendered) {
+  if (resolveCanonicalPhysicalEditBinding(rendered)?.owner === state.gizmoPivot?.owner)
+    detachTransformGizmo("authoritative_physical_mesh_failed");
 }
 function selectionIsEditable(rendered) {
   return Boolean(rendered && !rendered.readOnlyPick && !isTaskOnlyHelperItem(rendered.item) && !isDebugOverlayItem(rendered.item) && canonicalEditOwnerRendered(rendered) === rendered && canEditItem(rendered.item));
@@ -40894,6 +40936,7 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
         appendRuntimeWarning(item, requestedUri, diagnostic.reason);
     }
     refreshMeshLoadUi(rendered);
+    detachTransientPivotForFailedPhysicalVisual(rendered);
     if (required)
       failWeb3dSceneReadiness(item, requestedUri, diagnostic.reason, { mesh_status: diagnostic.status });
     else
@@ -40933,6 +40976,7 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
       appendRuntimeWarning(item, uri, item.mesh_load_error, preflight.code || "mesh_url_not_served", { mesh_url: preflight.url || loadUrl, http_status: preflight.http_status || null });
     }
     refreshMeshLoadUi(rendered);
+    detachTransientPivotForFailedPhysicalVisual(rendered);
     if (required)
       failPhysicalMeshAttempt(attempt, item, preflight.url || loadUrl, item.mesh_load_error, { http_status: preflight.http_status || null, mesh_status: item.mesh_status, loader: loaderName, ...preflight.timeout_ms ? { timeout_ms: preflight.timeout_ms } : {} });
     else
@@ -40963,6 +41007,7 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
     const boundsValid = diagnoseLoadedMeshBounds(item, visualRoot, rendered, validationBounds);
     refreshMeshLoadUi(rendered);
     if (!boundsValid && itemRequiresMeshBackedVisual(item)) {
+      detachTransientPivotForFailedPhysicalVisual(rendered);
       failPhysicalMeshAttempt(attempt, item, loadUrl, `loaded mesh bounds validation failed (${item.visual_bounds_status || "invalid"})`, { mesh_status: item.mesh_status, loader: loaderName });
       return;
     }
@@ -40987,6 +41032,7 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
       appendRuntimeWarning(item, uri, reason, "mesh_loader_failure", { extension: ext, loader: loaderName, mesh_url: loadUrl });
     }
     refreshMeshLoadUi(rendered);
+    detachTransientPivotForFailedPhysicalVisual(rendered);
     if (required)
       failPhysicalMeshAttempt(attempt, item, loadUrl, reason, { extension: ext, loader: loaderName, mesh_status: item.mesh_status, ...err?.code === "mesh_load_timeout" ? { timeout_ms: PHYSICAL_MESH_LOAD_TIMEOUT_MS } : {} });
     else
@@ -41354,9 +41400,16 @@ function initThree() {
     transformControls.addEventListener("dragging-changed", (event) => {
       if (state.editorMode !== "rotate")
         controls.enabled = !event.value;
-      const rendered = renderedById(state.selected);
+      const rendered = canonicalTransformOwner(state.selected);
       if (!rendered || !canEditItem(rendered.item))
         return;
+      if (state.gizmoPivot?.owner === rendered && transformControls.object === state.gizmoPivot.group) {
+        if (event.value)
+          beginTransientPivotDrag(rendered);
+        else
+          finishTransientPivotDrag(rendered);
+        return;
+      }
       if (state.editorMode === "rotate") {
         if (event.value)
           beginDirectRotateDrag(rendered);
@@ -41376,9 +41429,13 @@ function initThree() {
       }
     });
     transformControls.addEventListener("objectChange", () => {
-      const rendered = renderedById(state.selected);
+      const rendered = canonicalTransformOwner(state.selected);
       if (!rendered || !canEditItem(rendered.item))
         return;
+      if (state.gizmoPivot?.owner === rendered && transformControls.object === state.gizmoPivot.group) {
+        previewTransientPivotDrag(rendered);
+        return;
+      }
       if (state.editorMode === "rotate") {
         previewDirectRotateDrag(rendered);
         return;
@@ -41937,6 +41994,7 @@ function resetSceneLifecycleState() {
   state.pickRecords = [];
   state.pickIdentityByObject = /* @__PURE__ */ new WeakMap();
   state.selectionIdentityIndex = null;
+  state.physicalEditBindings.clear();
   state.lastRaycastHitCount = 0;
   state.lastRaycastCandidateIds = [];
   state.lastCanvasSelectedItemId = "";
@@ -42985,11 +43043,14 @@ function selectObjectFromRender(id, renderIdentity = null) {
   }
   updateLabels();
   const rendered = requested || renderedById(id);
-  const editOwner = canonicalEditOwnerRendered(rendered);
+  const editOwner = canonicalTransformOwner(rendered);
   const selectionOwner = resolveSelectionOwner(selectionId).record;
   if (rendered) {
     populateInspector(editOwner || selectionOwner || rendered);
-    attachTransformGizmo(editOwner || selectionOwner || rendered);
+    if (state.editorMode === "select")
+      detachTransformGizmo("select_mode");
+    else
+      attachTransformGizmo(editOwner || selectionOwner || rendered, "selection");
     refreshSelectionHighlight(rendered);
   } else {
     detachTransformGizmo();
@@ -43241,14 +43302,143 @@ function cancelDirectRotateDrag(message) {
   pushEditorEvent("status", { message: message || "Rotation cancelled" });
   return true;
 }
-function attachTransformGizmo(rendered) {
+function authoritativePhysicalMeshCentre(owner) {
+  const visual = resolveCanonicalPhysicalEditBinding(owner)?.visual;
+  if (!visual?.meshObject || visual.item?.mesh_status !== "loaded")
+    return null;
+  visual.meshObject.updateWorldMatrix(true, true);
+  const bounds = new THREE.Box3();
+  visual.meshObject.traverse((node) => {
+    if (!node.visible || node.isMesh !== true || !node.geometry)
+      return;
+    const identity = `${node.name || ""} ${node.userData?.role || ""} ${node.userData?.category || ""}`.toLowerCase();
+    if (node.userData?.fallback_geometry === true || node.userData?.isFallback === true || node.userData?.selection_highlight === true || node.userData?.exclude_from_physical_bounds === true || /helper|frustum|label|highlight|fallback/.test(identity))
+      return;
+    node.updateWorldMatrix(true, false);
+    if (!node.geometry.boundingBox)
+      node.geometry.computeBoundingBox();
+    if (node.geometry.boundingBox && !node.geometry.boundingBox.isEmpty())
+      bounds.union(node.geometry.boundingBox.clone().applyMatrix4(node.matrixWorld));
+  });
+  if (bounds.isEmpty())
+    return null;
+  const centre = bounds.getCenter(new THREE.Vector3());
+  return Number.isFinite(centre.x) && Number.isFinite(centre.y) && Number.isFinite(centre.z) ? centre : null;
+}
+function removeTransientGizmoPivot() {
+  const pivot = state.gizmoPivot;
+  if (pivot?.group?.parent)
+    pivot.group.parent.remove(pivot.group);
+  state.gizmoPivot = null;
+  state.gizmoPivotDragStart = null;
+}
+function refreshTransientGizmoPivot(owner, attachmentReason = "physical_binding") {
+  const binding = resolveCanonicalPhysicalEditBinding(owner);
+  owner = binding?.owner || owner;
+  if (!owner || state.selected !== owner.item?.id)
+    return false;
+  const centre = authoritativePhysicalMeshCentre(owner);
+  if (!centre) {
+    detachTransformGizmo("authoritative_physical_mesh_unavailable");
+    return false;
+  }
+  let pivot = state.gizmoPivot;
+  if (!pivot || pivot.owner !== owner) {
+    removeTransientGizmoPivot();
+    const group = new THREE.Group();
+    group.name = `${owner.item.id}_transient_gizmo_pivot`;
+    group.userData.transient_gizmo_pivot = true;
+    state.three.scene?.add(group);
+    pivot = state.gizmoPivot = { owner, group };
+  }
+  const parent = pivot.group.parent;
+  const localCentre = parent ? parent.worldToLocal(centre.clone()) : centre.clone();
+  pivot.group.position.copy(localCentre);
+  pivot.group.quaternion.identity();
+  pivot.group.scale.set(1, 1, 1);
+  pivot.group.updateMatrixWorld(true);
+  const attachedWorld = new THREE.Vector3().setFromMatrixPosition(pivot.group.matrixWorld);
+  const distance = attachedWorld.distanceTo(centre);
+  state.gizmoAttachmentDiagnostic = {
+    targetId: owner.item.id,
+    reason: attachmentReason,
+    canonicalOwnerId: binding?.ownerId || owner.item.id,
+    ownerRecordSource: binding?.ownerRecordSource || editAuthoritySource(owner.item),
+    physicalVisualId: binding?.visual?.item?.id || "",
+    pivotWorldCentre: { x: centre.x, y: centre.y, z: centre.z },
+    attachedObjectWorldPosition: { x: attachedWorld.x, y: attachedWorld.y, z: attachedWorld.z },
+    distance
+  };
+  if (distance >= 1e-6) {
+    detachTransformGizmo("physical_pivot_world_position_mismatch");
+    return false;
+  }
+  if (state.three.transformControls?.object !== pivot.group)
+    state.three.transformControls?.attach(pivot.group);
+  return true;
+}
+function beginTransientPivotDrag(owner) {
+  const pivot = state.gizmoPivot;
+  if (!pivot || pivot.owner !== owner)
+    return false;
+  owner.object3d.updateWorldMatrix(true, false);
+  pivot.group.updateWorldMatrix(true, false);
+  state.gizmoDragStart = cloneTransform(state.dirtyTransforms.get(owner.item.id)?.newTransform || transformFromObject(owner.object3d));
+  state.gizmoDragGroupStart = captureTransformGroup(owner);
+  state.gizmoPivotDragStart = { ownerWorld: owner.object3d.matrixWorld.clone(), pivotWorld: pivot.group.matrixWorld.clone() };
+  return true;
+}
+function previewTransientPivotDrag(owner) {
+  const start = state.gizmoPivotDragStart;
+  const pivot = state.gizmoPivot;
+  if (!start || !pivot || pivot.owner !== owner)
+    return false;
+  pivot.group.updateWorldMatrix(true, false);
+  const delta = pivot.group.matrixWorld.clone().multiply(start.pivotWorld.clone().invert());
+  const ownerWorld = delta.multiply(start.ownerWorld);
+  const ownerLocal = owner.object3d.parent ? owner.object3d.parent.matrixWorld.clone().invert().multiply(ownerWorld) : ownerWorld;
+  ownerLocal.decompose(owner.object3d.position, owner.object3d.quaternion, owner.object3d.scale);
+  owner.object3d.scale.set(state.gizmoDragStart.scale.x, state.gizmoDragStart.scale.y, state.gizmoDragStart.scale.z);
+  owner.object3d.updateMatrixWorld(true);
+  const next = transformFromObject(owner.object3d);
+  applyTransformChanges(linkedTransformChanges(owner, state.gizmoDragStart, next, state.gizmoDragGroupStart));
+  syncInspectorTransformFields(owner);
+  updateLabels();
+  return true;
+}
+function finishTransientPivotDrag(owner) {
+  if (!state.gizmoPivotDragStart)
+    return false;
+  previewTransientPivotDrag(owner);
+  const committed = markDirtyTransform(owner, transformFromObject(owner.object3d), { pushHistory: true, oldTransform: state.gizmoDragStart, memberStarts: state.gizmoDragGroupStart });
+  if (committed)
+    emitTransformCommitted(owner);
+  state.gizmoDragStart = null;
+  state.gizmoDragGroupStart = null;
+  state.gizmoPivotDragStart = null;
+  return committed;
+}
+function attachTransformGizmo(rendered, attachmentReason = "mode_or_selection") {
   const gizmo = state.three.transformControls;
   if (!gizmo) {
     state.gizmoAttachmentDiagnostic = { targetId: "", reason: "transform_controls_unavailable" };
     return;
   }
+  if (state.editorMode === "select") {
+    detachTransformGizmo("select_mode");
+    return;
+  }
+  const binding = resolveCanonicalPhysicalEditBinding(rendered);
+  if (binding)
+    rendered = binding.owner;
   if (selectionIsEditable(rendered)) {
-    gizmo.attach(rendered.object3d);
+    const usesPhysicalPivot = Boolean(binding);
+    if (!usesPhysicalPivot || !refreshTransientGizmoPivot(rendered, attachmentReason === "asynchronous_physical_mesh_completion" ? attachmentReason : "attached_to_authoritative_physical_centre")) {
+      if (usesPhysicalPivot)
+        return;
+      removeTransientGizmoPivot();
+      gizmo.attach(rendered.object3d);
+    }
     gizmo.visible = true;
     gizmo.enabled = true;
     if (state.editorMode === "rotate") {
@@ -43267,7 +43457,8 @@ function attachTransformGizmo(rendered) {
     gizmo.enabled = state.editorMode !== "select";
     gizmo.setTranslationSnap(el.snapToggle?.checked ? translationSnapValue() : null);
     gizmo.setRotationSnap(el.snapToggle?.checked ? rotationSnapRadians() : null);
-    state.gizmoAttachmentDiagnostic = { targetId: rendered.item.id, reason: "attached_to_canonical_edit_owner" };
+    if (!usesPhysicalPivot)
+      state.gizmoAttachmentDiagnostic = { targetId: rendered.item.id, reason: "attached_to_canonical_edit_owner" };
   } else {
     const authority = editAuthorityForItem(rendered?.item);
     const refusal = rendered && (isTaskOnlyHelperItem(rendered.item) || isDebugOverlayItem(rendered.item)) ? "helper_or_overlay_record" : rendered?.readOnlyPick ? "read_only_render_identity" : authority.eligible ? "not_canonical_edit_owner" : authority.reason;
@@ -43282,6 +43473,7 @@ function detachTransformGizmo(reason = "detached") {
   gizmo.detach();
   gizmo.visible = false;
   gizmo.enabled = false;
+  removeTransientGizmoPivot();
 }
 function refreshGizmoSnap() {
   const gizmo = state.three.transformControls;
@@ -43727,7 +43919,7 @@ function setEditorMode(mode) {
   if (normalized === "select" && state.three.controls)
     state.three.controls.enabled = true;
   if (normalized !== "select")
-    attachTransformGizmo(renderedById(state.selected));
+    attachTransformGizmo(canonicalTransformOwner(state.selected), "mode_change");
   return state.editorMode;
 }
 function setEditorSnap(enabled, translationMeters, rotationDegrees) {
