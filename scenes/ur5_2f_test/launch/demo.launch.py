@@ -9,6 +9,7 @@ import subprocess
 from launch import LaunchDescription
 from launch.actions import OpaqueFunction
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -162,6 +163,7 @@ def _write_robot_description_file(scene_name, robot_description_config):
 def _launch_setup(context):
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
+    launch_rviz = LaunchConfiguration("launch_rviz")
     joint_states_topic = f"/{scene_pkg}/joint_states"
 
     robot_description_config = load_xacro(
@@ -360,6 +362,7 @@ def _launch_setup(context):
         executable="rviz2",
         name="rviz2",
         output="screen",
+        condition=IfCondition(launch_rviz),
         arguments=["-d", rviz_config_file] if os.path.exists(rviz_config_file) else [],
         parameters=_param_list(
             validated_use_sim_time,
@@ -385,6 +388,14 @@ def _launch_setup(context):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("use_sim_time", default_value="false"),
+        DeclareLaunchArgument(
+            "launch_rviz",
+            default_value="true",
+            description=(
+                "Launch RViz for interactive fake-hardware visualization. "
+                "Set false for bounded headless acceptance checks."
+            ),
+        ),
         DeclareLaunchArgument(
             "use_fake_hardware",
             default_value="true",
