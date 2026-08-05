@@ -213,6 +213,12 @@ private:
   {
     if (!view_ || !preview_ || view_->url() != expected_url_ ||
         sceneIdFromViewerUrl(view_->url()) != scene_id_) return false;
+    return saveTargetContextIsActive();
+  }
+
+  bool saveTargetContextIsActive() const
+  {
+    if (!view_ || !preview_ || sceneIdFromViewerUrl(view_->url()) != scene_id_) return false;
     const ScenePreviewWidget::PreviewContext current = preview_->preview_context();
     if (using_environment_fallback_) {
       return current.scene_id.trimmed().isEmpty() &&
@@ -230,6 +236,19 @@ private:
     if (save_button_) save_button_->setEnabled(false);
     setStatus(QStringLiteral("Scene changed—reload required; Web3D edits preserved"), QStringLiteral("warning"));
     logPhase(QStringLiteral("validation failed: viewer URL or PreviewContext changed; Web3D edits preserved"));
+  }
+
+  void reportSavedButSceneChanged()
+  {
+    saved_reload_pending_ = false;
+    saved_reload_revision_ = 0;
+    busy_ = false;
+    if (save_button_) save_button_->setEnabled(false);
+    setStatus(QStringLiteral("Saved; active scene changed before Product View refresh"), QStringLiteral("warning"));
+    logPhase(QStringLiteral("saved; active scene changed before reload; persisted YAML remains authoritative"));
+    QMessageBox::information(preview_, QStringLiteral("Save Product View Layout"),
+      QStringLiteral("The authored YAML was saved and verified, but the active Product View changed before the post-save refresh could start. "
+        "Reopen the saved scene to load the canonical result."));
   }
 
   bool resolveSaveContext(QString * error)
@@ -441,11 +460,11 @@ private:
         const QString output = boundedWorkflowOutput(QString::fromLocal8Bit(process->readAll()));
         if (process == process_) process_ = nullptr;
         process->deleteLater();
-        if (!saveContextIsCurrent()) {
+        const bool ok = exit_status == QProcess::NormalExit && exit_code == 0;
+        if (phase == WorkflowPhase::DryRun && !saveContextIsCurrent()) {
           reportSceneChanged();
           return;
         }
-        const bool ok = exit_status == QProcess::NormalExit && exit_code == 0;
         if (!ok) {
           busy_ = false;
           setStatus(phase == WorkflowPhase::DryRun ? QStringLiteral("Validation failed") : QStringLiteral("Save failed"),
@@ -478,6 +497,10 @@ private:
           return;
         }
 
+        if (!saveTargetContextIsActive()) {
+          reportSavedButSceneChanged();
+          return;
+        }
         setStatus(QStringLiteral("Saved; refreshing Product View…"), QStringLiteral("success"));
         logPhase(QStringLiteral("saved"));
         saved_reload_pending_ = true;
