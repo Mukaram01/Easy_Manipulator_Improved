@@ -1,4 +1,6 @@
-const VERSION = 1;
+import './canonical_helper_pick_proxies.js';
+
+const VERSION = 2;
 
 const MODULES = Object.freeze([
   Object.freeze({
@@ -36,6 +38,12 @@ const MODULES = Object.freeze([
     file: 'contextual_placement_actions.js',
     global: '__WORKCELL_CONTEXTUAL_PLACEMENT_ACTIONS_V1__',
     purpose: 'one-click placement actions',
+  }),
+  Object.freeze({
+    id: 'canonical-helper-pick-proxies',
+    file: 'canonical_helper_pick_proxies.js',
+    global: '__WORKCELL_CANONICAL_HELPER_PICK_PROXIES_V1__',
+    purpose: 'canonical owner forwarding for helper-only canvas hits',
   }),
 ]);
 
