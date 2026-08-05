@@ -17,6 +17,9 @@ jobs:
           ref: codex/repair-cpp-command-process-warnings
           fetch-depth: 0
 
+      - name: Correct temporary patch quoting
+        run: python3 scripts/pr7_fix_applicator.py
+
       - name: Apply focused C++ warning repairs
         run: python3 scripts/pr7_apply_patch.py
 
