@@ -18,6 +18,7 @@
 #include <QTimer>
 #include <QTcpServer>
 #include <QHostAddress>
+#include <QProcess>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
 #include <QUrlQuery>
@@ -204,6 +205,32 @@ bool preview_item_is_raw_generated_bounds_only(const ScenePreviewWidget::Preview
   return preview_item_is_generated_or_locked_urdf(item) &&
          item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001 &&
          (preview_item_has_credible_mesh_handoff(item) || preview_item_has_valid_urdf_primitive(item));
+}
+
+
+QString summarize_process_arguments(const QStringList & arguments)
+{
+  QStringList rendered;
+  for (const QString & argument : arguments) {
+    rendered << QStringLiteral("'%1'").arg(argument.left(180).replace(QStringLiteral("'"), QStringLiteral("'\\''")));
+  }
+  return rendered.join(QStringLiteral(" "));
+}
+
+QString summarize_prepare_process_failure(
+  const QString & executable, const QStringList & arguments, const QString & working_directory,
+  QProcess::ExitStatus exit_status, int exit_code, const QString & start_error, const QByteArray & stderr_tail)
+{
+  const QString stderr_summary = QString::fromUtf8(stderr_tail).trimmed().left(1200);
+  QString detail = QStringLiteral("executable=%1 arguments=%2 working_directory=%3 exit_status=%4 exit_code=%5")
+    .arg(executable,
+         summarize_process_arguments(arguments),
+         working_directory.isEmpty() ? QStringLiteral("<unset>") : working_directory,
+         exit_status == QProcess::NormalExit ? QStringLiteral("normal") : QStringLiteral("crash"))
+    .arg(exit_code);
+  if (!start_error.trimmed().isEmpty()) detail += QStringLiteral(" start_error=%1").arg(start_error.trimmed().left(400));
+  if (!stderr_summary.isEmpty()) detail += QStringLiteral(" stderr=%1").arg(stderr_summary);
+  return detail;
 }
 
 void maybe_warn_overlay_fit_dominance(ScenePreviewWidget * self, const QRectF & physical_bounds, const QRectF & overlay_bounds)
@@ -1931,8 +1958,25 @@ void ScenePreviewWidget::start_embedded_web_prepare(const EmbeddedWebRequestIden
   });
   connect(process, &QProcess::errorOccurred, this, [this, identity, process](QProcess::ProcessError error) {
     if (!embedded_web_identity_is_current(identity)) return;
-    record_embedded_web_prepare_terminal(identity, process, QStringLiteral("process_error"), process->exitStatus(), process->exitCode(),
-      QStringLiteral("qprocess_error=%1").arg(static_cast<int>(error)));
+    const QString key = embedded_web_preparation_process_keys_.value(process);
+    const EmbeddedWebPreparationDiagnostic diagnostic = embedded_web_preparation_diagnostics_.value(key);
+    const QString detail = summarize_prepare_process_failure(
+      process->program(), process->arguments(), process->workingDirectory(), process->exitStatus(), process->exitCode(),
+      QStringLiteral("qprocess_error=%1 %2").arg(static_cast<int>(error)).arg(process->errorString()), diagnostic.stderr_tail);
+    record_embedded_web_prepare_terminal(identity, process, QStringLiteral("process_error"), process->exitStatus(), process->exitCode(), detail);
+  });
+  QTimer::singleShot(120000, this, [this, identity, process]() {
+    if (process != embedded_web_prepare_process_ || !embedded_web_identity_is_current(identity) ||
+        process->state() == QProcess::NotRunning) return;
+    append_embedded_web_prepare_output(process, false);
+    append_embedded_web_prepare_output(process, true);
+    const QString key = embedded_web_preparation_process_keys_.value(process);
+    const EmbeddedWebPreparationDiagnostic diagnostic = embedded_web_preparation_diagnostics_.value(key);
+    const QString detail = summarize_prepare_process_failure(
+      process->program(), process->arguments(), process->workingDirectory(), process->exitStatus(), process->exitCode(),
+      QStringLiteral("timeout after 120000 ms"), diagnostic.stderr_tail);
+    record_embedded_web_prepare_terminal(identity, process, QStringLiteral("timeout"), process->exitStatus(), process->exitCode(), detail);
+    process->kill();
   });
   connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this, identity, process](int exit_code, QProcess::ExitStatus exit_status) {
     on_embedded_web_prepare_finished(identity, process, exit_code, exit_status);
@@ -1956,7 +2000,7 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
   // A stale process is never allowed to touch current UI state, but its
   // immutable request still receives one explicit discarded terminal record.
   if (process != embedded_web_prepare_process_) {
-    record_embedded_web_prepare_terminal(identity, process, QStringLiteral("cancelled_superseded"), exit_status, exit_code,
+    record_embedded_web_prepare_terminal(identity, process, QStringLiteral("stale_discarded"), exit_status, exit_code,
       QStringLiteral("process no longer owns the active preparation slot"));
     embedded_web_preparation_process_keys_.remove(process);
     process->deleteLater();
@@ -1967,7 +2011,7 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
   // the old process.  Retire that completion before reading output, changing
   // UI state, or loading its scene, then start the valid pending replacement.
   if (!embedded_web_identity_is_current(identity)) {
-    record_embedded_web_prepare_terminal(identity, process, QStringLiteral("cancelled_superseded"), exit_status, exit_code,
+    record_embedded_web_prepare_terminal(identity, process, QStringLiteral("stale_discarded"), exit_status, exit_code,
       QStringLiteral("request identity retired before completion"));
     process->deleteLater();
     embedded_web_preparation_process_keys_.remove(process);
@@ -1984,7 +2028,10 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
     process->deleteLater();
     embedded_web_preparation_process_keys_.remove(process);
     embedded_web_prepare_process_ = nullptr;
-    show_embedded_web_preparation_failure(identity, QStringLiteral("Product View preparation process error"));
+    const QString detail = summarize_prepare_process_failure(
+      process->program(), process->arguments(), process->workingDirectory(), process->exitStatus(), process->exitCode(),
+      QStringLiteral("process failed to start or reported a QProcess error"), existing_diagnostic.stderr_tail);
+    show_embedded_web_preparation_failure(identity, QStringLiteral("Product View preparation process error: %1").arg(detail));
     maybe_start_next_embedded_web_prepare();
     return;
   }
@@ -2000,15 +2047,16 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
   embedded_web_preparing_identity_ = EmbeddedWebRequestIdentity{};
 
   const QString absolute_output_path = QDir(embedded_web_repo_root_).filePath(output_path);
-  const bool output_is_fresh = QFileInfo::exists(QDir(embedded_web_repo_root_).filePath(output_path));  // Contract validation supersedes mtime freshness.
-  Q_UNUSED(output_is_fresh);
+  // Contract validation below supersedes mtime freshness; existence is checked when opening the expected output.
   auto reject_prepare = [&](const QString & reason) {
+    const QString detail = QStringLiteral("%1; %2").arg(reason, summarize_prepare_process_failure(
+      process->program(), process->arguments(), process->workingDirectory(), exit_status, exit_code, QString(), diagnostic.stderr_tail));
     emit studio_issue_requested(
-      QStringLiteral("Embedded Product View scene preparation failed: %1").arg(reason),
+      QStringLiteral("Embedded Product View scene preparation failed: %1").arg(detail),
       QStringLiteral("Error"), QStringLiteral("embedded_product_view_scene_preparation"));
-    show_embedded_web_preparation_failure(identity, reason);
+    show_embedded_web_preparation_failure(identity, detail);
     record_embedded_web_prepare_terminal(identity, process, QStringLiteral("command_failure"), exit_status, exit_code,
-      QStringLiteral("%1; command=%2").arg(reason, command));
+      QStringLiteral("%1; command=%2").arg(detail, command));
     maybe_start_next_embedded_web_prepare();
   };
 
