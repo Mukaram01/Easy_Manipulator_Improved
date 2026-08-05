@@ -1,6 +1,7 @@
+import './canonical_selection_state.js';
 import './canonical_helper_pick_proxies.js';
 
-const VERSION = 2;
+const VERSION = 3;
 
 const MODULES = Object.freeze([
   Object.freeze({
@@ -38,6 +39,12 @@ const MODULES = Object.freeze([
     file: 'contextual_placement_actions.js',
     global: '__WORKCELL_CONTEXTUAL_PLACEMENT_ACTIONS_V1__',
     purpose: 'one-click placement actions',
+  }),
+  Object.freeze({
+    id: 'canonical-selection-state',
+    file: 'canonical_selection_state.js',
+    global: '__WORKCELL_CANONICAL_SELECTION_STATE_V1__',
+    purpose: 'one selected owner and one transform state for inspector, gizmo and edit patches',
   }),
   Object.freeze({
     id: 'canonical-helper-pick-proxies',
@@ -88,6 +95,8 @@ function getStatus() {
     ready: missing.length === 0,
     sceneId: String(state?.sceneId || ''),
     selectedItemId: String(state?.selectedItemId || ''),
+    canonicalSelectedOwnerId: String(state?.canonicalSelectedOwnerId || ''),
+    canonicalTransform: state?.canonicalTransform || null,
     dirty: Boolean(state?.dirty),
     modules: Object.freeze(modules),
     missing: Object.freeze(missing),
@@ -133,6 +142,8 @@ function announceStatus() {
   const signature = JSON.stringify({
     ready: status.ready,
     sceneId: status.sceneId,
+    canonicalSelectedOwnerId: status.canonicalSelectedOwnerId,
+    canonicalTransform: status.canonicalTransform,
     missing: status.missing,
   });
   if (signature === lastAnnouncement) return status;
@@ -142,6 +153,8 @@ function announceStatus() {
     type: 'workcell_post_bundle_viewer_status',
     ready: status.ready,
     scene_id: status.sceneId,
+    canonical_selected_owner_id: status.canonicalSelectedOwnerId,
+    canonical_transform: status.canonicalTransform,
     missing: [...status.missing],
   }, '*');
   return status;
@@ -168,6 +181,7 @@ for (const eventName of [
   'workcell:gizmo-task-mode',
   'workcell:collision-placement',
   'workcell:contextual-placement-action',
+  'workcell:canonical_selection_state',
   'workcell:editor-state',
   'workcell:scene-loaded',
 ]) {
