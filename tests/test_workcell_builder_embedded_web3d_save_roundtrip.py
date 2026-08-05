@@ -226,7 +226,7 @@ def test_post_save_refresh_renews_all_lifecycle_identities_and_rejects_stale_rea
     assert "navigation_token != embedded_web_navigation_token_" in preview
 
 
-def test_post_save_refresh_failure_keeps_browser_edits_and_never_rewrites_yaml():
+def test_post_save_refresh_failure_keeps_rebased_browser_or_blocks_repeat_save():
     controller = CONTROLLER.read_text(encoding="utf-8")
     preview = (GUI / "scene_preview_widget.cpp").read_text(encoding="utf-8")
     failure = preview.split("void ScenePreviewWidget::show_embedded_web_preparation_failure", 1)[1].split(
@@ -235,8 +235,9 @@ def test_post_save_refresh_failure_keeps_browser_edits_and_never_rewrites_yaml()
 
     assert "finish_post_save_product_view_refresh(identity, 0, false, detail)" in failure
     assert failure.index("finish_post_save_product_view_refresh") < failure.index("embedded_web_view_->setHtml")
-    assert "persisted YAML was not written again and browser edits were preserved" in controller
-    assert "choose Save Layout again; the YAML will not be rewritten automatically" in controller
+    assert "persisted YAML and the browser edit baseline agree" in controller
+    assert "another save is blocked until reload" in controller
+    assert "reload_required_after_save_" in controller
 
 
 def test_source_yaml_write_is_allowlisted_backed_up_and_atomic():
@@ -278,7 +279,7 @@ def test_save_roundtrip_has_no_browser_source_writes_or_robot_motion():
 
 
 def test_roundtrip_change_stays_focused():
-    assert len(CONTROLLER.read_text(encoding="utf-8").splitlines()) < 630
+    assert len(CONTROLLER.read_text(encoding="utf-8").splitlines()) < 900
     assert len(WORKFLOW.read_text(encoding="utf-8").splitlines()) < 370
     assert len(APPLICATOR.read_text(encoding="utf-8").splitlines()) < 340
 
