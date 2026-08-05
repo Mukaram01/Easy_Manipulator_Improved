@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   apply:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -42,9 +43,9 @@ jobs:
           }
           for old, new in replacements.items():
               count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"expected one patch token {old!r}, found {count}")
-              text = text.replace(old, new, 1)
+              if count < 1:
+                  raise SystemExit(f"expected patch token {old!r}, found {count}")
+              text = text.replace(old, new)
 
           path.write_text(text, encoding="utf-8")
           PY
