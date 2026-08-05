@@ -24,8 +24,58 @@ jobs:
       - name: Correct temporary patch quoting
         run: python3 scripts/pr7_fix_applicator.py
 
-      - name: Apply focused C++ warning repairs
+      - name: Align patch with current sources and preserve workflow
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/pr7_apply_patch.py")
+          text = path.read_text(encoding="utf-8")
+
+          replacements = {
+              "QVector<CanonicalAssetEditorLayoutItemSnapshot> preview_items;":
+                  "QVector<ScenePreviewWidget::PreviewItem> preview_items;",
+              "QVector<CanonicalAssetEditorLayoutItemSnapshot> preview_items{};":
+                  "QVector<ScenePreviewWidget::PreviewItem> preview_items{};",
+              "    WORKFLOW_PATH.unlink(missing_ok=False)\n": "",
+          }
+          for old, new in replacements.items():
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one patch token {old!r}, found {count}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Apply focused C++ command repairs
         run: python3 scripts/pr7_apply_patch.py
+
+      - name: Remove unused scene binding and extend regression test
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path("workcell_builder/workcell_builder/gui/mainwindow.cpp")
+          source = source_path.read_text(encoding="utf-8")
+          unused = "  const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_state_.index)];\n"
+          if source.count(unused) != 1:
+              raise SystemExit(f"expected one unused scene binding, found {source.count(unused)}")
+          source_path.write_text(source.replace(unused, "", 1), encoding="utf-8")
+
+          test_path = Path("tests/test_workcell_builder_cpp_warning_repairs.py")
+          test = test_path.read_text(encoding="utf-8")
+          test = test.replace(
+              'SOURCE = ROOT / "workcell_builder/workcell_builder/gui/scene_select.cpp"\n',
+              'SOURCE = ROOT / "workcell_builder/workcell_builder/gui/scene_select.cpp"\n'
+              'MAINWINDOW_SOURCE = ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp"\n',
+              1,
+          )
+          test += '''\n\ndef test_scene_builder_refresh_has_no_unused_scene_binding():\n    source = MAINWINDOW_SOURCE.read_text(encoding="utf-8")\n    assert "const auto & s = scene_browser_result_.scenes" not in source\n'''
+          test_path.write_text(test, encoding="utf-8")
+          PY
 
       - name: Run focused regression tests
         run: >-
@@ -41,4 +91,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "Repair C++ command and process warnings"
-          git push --force origin HEAD:codex/repair-cpp-command-process-warnings
+          git push origin HEAD:codex/repair-cpp-command-process-warnings
