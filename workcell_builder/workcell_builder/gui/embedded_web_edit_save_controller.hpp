@@ -95,21 +95,34 @@ public:
     connect(preview_, &ScenePreviewWidget::post_save_product_view_refresh_finished,
       this, [this](int revision, quint64, quint64, bool success, const QString & detail) {
         if (!saved_reload_pending_ || revision != saved_reload_revision_) return;
-        if (!success) {
-          saved_reload_pending_ = false;
-          saved_reload_revision_ = 0;
-          busy_ = false;
-          setStatus(QStringLiteral("Saved; Product View refresh failed—edits retained"), QStringLiteral("error"));
-          logPhase(QStringLiteral("reload failed: %1; persisted YAML was not written again and browser edits were preserved").arg(detail));
-          QMessageBox::critical(preview_, QStringLiteral("Save Product View Layout"),
-            QStringLiteral("The authored YAML was saved and verified, but the canonical Product View could not be regenerated or loaded. "
-              "The current browser edits were retained. Correct the Product View preparation error, then choose Save Layout again; the YAML will not be rewritten automatically.\n\n%1").arg(detail));
-          pollEditorState();
-          return;
-        }
         saved_reload_pending_ = false;
         saved_reload_revision_ = 0;
         busy_ = false;
+        if (!success) {
+          const bool baseline_rebased = browser_rebase_succeeded_;
+          reload_required_after_save_ = !baseline_rebased;
+          setStatus(
+            baseline_rebased ?
+              QStringLiteral("Saved; Product View refresh failed—saved baseline retained") :
+              QStringLiteral("Saved; Product View refresh failed—reopen required"),
+            QStringLiteral("error"));
+          logPhase(baseline_rebased ?
+            QStringLiteral("reload failed: %1; persisted YAML and the browser edit baseline agree").arg(detail) :
+            QStringLiteral("reload failed: %1; browser rebase was unavailable, so another save is blocked until reload").arg(detail));
+          QMessageBox::critical(preview_, QStringLiteral("Save Product View Layout"),
+            baseline_rebased ?
+              QStringLiteral("The authored YAML was saved and verified, and the current browser edit baseline was updated. "
+                "The canonical Product View could not be regenerated or loaded. Use Refresh Preview before relying on generated visuals.\n\n%1").arg(detail) :
+              QStringLiteral("The authored YAML was saved and verified, but neither the browser baseline nor the canonical Product View could be refreshed. "
+                "Reopen the scene before saving another edit; this prevents a stale patch from being written.\n\n%1").arg(detail));
+          active_patch_ = QJsonObject{};
+          browser_rebase_succeeded_ = false;
+          pollEditorState();
+          return;
+        }
+        reload_required_after_save_ = false;
+        active_patch_ = QJsonObject{};
+        browser_rebase_succeeded_ = false;
         setStatus(QStringLiteral("Saved and reloaded"), QStringLiteral("success"));
         logPhase(QStringLiteral("reload complete: matching regenerated Product View scene_ready"));
         restoreSelectionAfterReload();
@@ -159,6 +172,114 @@ private:
     constexpr int kLimit = 8000;
     if (output.size() <= kLimit) return output;
     return output.left(kLimit) + QStringLiteral("\n… subprocess output truncated …");
+  }
+
+  static QString persistedPatchRebaseScript(const QJsonObject & patch)
+  {
+    const QString patch_json = QString::fromUtf8(
+      QJsonDocument(patch).toJson(QJsonDocument::Compact));
+    return QString::fromUtf8(R"JS(
+(() => {
+  const patch = %1;
+  const api = window.__WORKCELL_EDITOR_API_V1__;
+  const required = [
+    typeof state === 'object',
+    typeof renderedById === 'function',
+    typeof canonicalTransformOwner === 'function',
+    typeof canEditItem === 'function',
+    typeof cloneTransform === 'function',
+    typeof sameTransform === 'function',
+    typeof isFiniteTransform === 'function',
+    typeof transformFromObject === 'function',
+    typeof applyTransformToObject === 'function',
+    typeof updateDirtyState === 'function',
+    typeof updateLabels === 'function',
+    typeof emitDirtyChanged === 'function'
+  ];
+  if (!api || required.some(value => !value)) {
+    return {ok:false,error:'editor_rebase_api_unavailable'};
+  }
+  const editorState = api.getState();
+  if (!patch || patch.schema_version !== 'workcell_studio_web_scene_edit_patch/v1') {
+    return {ok:false,error:'invalid_patch_schema'};
+  }
+  if (String(patch.scene_id || '') !== String(editorState?.sceneId || '')) {
+    return {ok:false,error:'scene_mismatch'};
+  }
+  const edits = Array.isArray(patch.edits) ? patch.edits : [];
+  let clearedCount = 0;
+  let preservedCount = 0;
+  const rebasedItemIds = [];
+  for (const edit of edits) {
+    const itemId = String(edit?.item_id || '');
+    if (!itemId || edit?.operation !== 'update_transform' ||
+        !isFiniteTransform(edit?.old_transform) || !isFiniteTransform(edit?.new_transform)) {
+      return {ok:false,error:'invalid_persisted_edit',itemId};
+    }
+    let rendered = renderedById(itemId);
+    rendered = canonicalTransformOwner(rendered) || rendered;
+    if (!rendered || String(rendered.item?.id || '') !== itemId || !canEditItem(rendered.item)) {
+      return {ok:false,error:'persisted_owner_unavailable',itemId};
+    }
+    const persisted = cloneTransform(edit.new_transform);
+    const dirty = state.dirtyTransforms.get(itemId);
+    const current = cloneTransform(dirty?.newTransform || transformFromObject(rendered.object3d));
+    rendered.originalTransform = cloneTransform(persisted);
+    const poseBlock = {
+      xyz: [persisted.pose.xyz.x, persisted.pose.xyz.y, persisted.pose.xyz.z],
+      rpy: [persisted.pose.rpy.x, persisted.pose.rpy.y, persisted.pose.rpy.z]
+    };
+    rendered.item.pose = {xyz: poseBlock.xyz.slice(), rpy: poseBlock.rpy.slice()};
+    rendered.item.pose_xyz = poseBlock.xyz.slice();
+    for (const field of ['final_transform', 'world_from_visual', 'baked_world_visual_pose', 'world_pose']) {
+      if (Object.prototype.hasOwnProperty.call(rendered.item, field)) {
+        rendered.item[field] = {xyz: poseBlock.xyz.slice(), rpy: poseBlock.rpy.slice()};
+      }
+    }
+    rendered.item.scale = [persisted.scale.x, persisted.scale.y, persisted.scale.z];
+    if (dirty && !sameTransform(current, persisted)) {
+      state.dirtyTransforms.set(itemId, {
+        oldTransform: cloneTransform(persisted),
+        newTransform: cloneTransform(current)
+      });
+      applyTransformToObject(rendered.object3d, current);
+      preservedCount += 1;
+    } else {
+      state.dirtyTransforms.delete(itemId);
+      applyTransformToObject(rendered.object3d, persisted);
+      clearedCount += 1;
+    }
+    rebasedItemIds.push(itemId);
+    if (typeof syncInspectorTransformFields === 'function') syncInspectorTransformFields(rendered);
+  }
+  state.undoStack = [];
+  state.redoStack = [];
+  updateDirtyState();
+  updateLabels();
+  const selected = renderedById(String(state.selected || ''));
+  if (selected && typeof populateInspector === 'function') {
+    populateInspector(canonicalTransformOwner(selected) || selected);
+  }
+  emitDirtyChanged();
+  if (typeof pushEditorEvent === 'function') {
+    pushEditorEvent('persisted_patch_rebased', {
+      itemIds: rebasedItemIds,
+      clearedCount,
+      preservedCount
+    });
+  }
+  const finalState = api.getState();
+  return {
+    ok:true,
+    rebasedCount:rebasedItemIds.length,
+    clearedCount,
+    preservedCount,
+    dirty:Boolean(finalState?.dirty),
+    dirtyCount:Number(finalState?.dirtyCount || 0),
+    patch:api.getEditPatch()
+  };
+})()
+)JS").arg(patch_json);
   }
 
   void logPatchSummary(const QJsonObject & patch)
@@ -230,8 +351,16 @@ private:
       canonicalPath(current.absolute_scene_dir.trimmed()) == scene_dir_;
   }
 
+  void clearActiveSaveTransaction()
+  {
+    active_patch_ = QJsonObject{};
+    browser_rebase_pending_ = false;
+    browser_rebase_succeeded_ = false;
+  }
+
   void reportSceneChanged()
   {
+    clearActiveSaveTransaction();
     busy_ = false;
     if (save_button_) save_button_->setEnabled(false);
     setStatus(QStringLiteral("Scene changed—reload required; Web3D edits preserved"), QStringLiteral("warning"));
@@ -240,6 +369,7 @@ private:
 
   void reportSavedButSceneChanged()
   {
+    clearActiveSaveTransaction();
     saved_reload_pending_ = false;
     saved_reload_revision_ = 0;
     busy_ = false;
@@ -249,6 +379,82 @@ private:
     QMessageBox::information(preview_, QStringLiteral("Save Product View Layout"),
       QStringLiteral("The authored YAML was saved and verified, but the active Product View changed before the post-save refresh could start. "
         "Reopen the saved scene to load the canonical result."));
+  }
+
+  void requestPostSaveProductViewRefresh()
+  {
+    if (!saveTargetContextIsActive()) {
+      reportSavedButSceneChanged();
+      return;
+    }
+    setStatus(QStringLiteral("Saved; refreshing Product View…"), QStringLiteral("success"));
+    saved_reload_pending_ = true;
+    saved_reload_revision_ = preview_->request_post_save_product_view_refresh();
+    if (saved_reload_revision_ <= 0) {
+      saved_reload_pending_ = false;
+      busy_ = false;
+      reload_required_after_save_ = !browser_rebase_succeeded_;
+      setStatus(
+        browser_rebase_succeeded_ ?
+          QStringLiteral("Saved; Product View refresh could not start—saved baseline retained") :
+          QStringLiteral("Saved; Product View refresh could not start—reopen required"),
+        QStringLiteral("error"));
+      logPhase(browser_rebase_succeeded_ ?
+        QStringLiteral("reload failed: lifecycle context unavailable; browser baseline already rebased") :
+        QStringLiteral("reload failed: lifecycle context unavailable and browser rebase unavailable; another save is blocked"));
+      active_patch_ = QJsonObject{};
+      browser_rebase_succeeded_ = false;
+      pollEditorState();
+      return;
+    }
+    logPhase(QStringLiteral("reload: forced canonical Product View regeneration requested for payload_revision=%1")
+      .arg(saved_reload_revision_));
+  }
+
+  void rebaseBrowserAfterPersistedWrite()
+  {
+    if (active_patch_.isEmpty() || !view_) {
+      browser_rebase_succeeded_ = false;
+      reload_required_after_save_ = true;
+      logPhase(QStringLiteral("browser rebase failed: persisted patch transaction is unavailable; canonical refresh required"));
+      requestPostSaveProductViewRefresh();
+      return;
+    }
+    const quint64 transaction = active_save_transaction_;
+    browser_rebase_pending_ = true;
+    setStatus(QStringLiteral("Saved; rebasing editor…"), QStringLiteral("success"));
+    view_->page()->runJavaScript(persistedPatchRebaseScript(active_patch_),
+      [this, transaction](const QVariant & value) {
+        if (!browser_rebase_pending_ || transaction != active_save_transaction_) return;
+        browser_rebase_pending_ = false;
+        if (!saveTargetContextIsActive()) {
+          reportSavedButSceneChanged();
+          return;
+        }
+        const QVariantMap result = value.toMap();
+        browser_rebase_succeeded_ = result.value(QStringLiteral("ok")).toBool();
+        reload_required_after_save_ = !browser_rebase_succeeded_;
+        if (browser_rebase_succeeded_) {
+          logPhase(QStringLiteral("browser rebase complete: rebased=%1 cleared=%2 preserved_newer=%3 dirty_count=%4")
+            .arg(result.value(QStringLiteral("rebasedCount")).toInt())
+            .arg(result.value(QStringLiteral("clearedCount")).toInt())
+            .arg(result.value(QStringLiteral("preservedCount")).toInt())
+            .arg(result.value(QStringLiteral("dirtyCount")).toInt()));
+        } else {
+          logPhase(QStringLiteral("browser rebase failed: %1; canonical refresh required before another save")
+            .arg(result.value(QStringLiteral("error")).toString().isEmpty() ?
+              QStringLiteral("no result from editor") : result.value(QStringLiteral("error")).toString()));
+        }
+        requestPostSaveProductViewRefresh();
+      });
+    QTimer::singleShot(2500, this, [this, transaction]() {
+      if (!browser_rebase_pending_ || transaction != active_save_transaction_) return;
+      browser_rebase_pending_ = false;
+      browser_rebase_succeeded_ = false;
+      reload_required_after_save_ = true;
+      logPhase(QStringLiteral("browser rebase timed out; canonical refresh required before another save"));
+      requestPostSaveProductViewRefresh();
+    });
   }
 
   bool resolveSaveContext(QString * error)
@@ -340,6 +546,13 @@ private:
   void requestSave()
   {
     if (busy_ || !view_) return;
+    if (reload_required_after_save_) {
+      setStatus(QStringLiteral("Reload required before another save"), QStringLiteral("warning"));
+      QMessageBox::warning(preview_, QStringLiteral("Save Product View Layout"),
+        QStringLiteral("The previous save reached the authoritative YAML, but the browser baseline could not be refreshed. "
+          "Reopen or refresh the scene before saving another edit."));
+      return;
+    }
     logPhase(QStringLiteral("save requested"));
     QString context_error;
     if (!resolveSaveContext(&context_error)) {
@@ -367,6 +580,7 @@ private:
       }
       const QVariantMap payload = value.toMap();
       if (!payload.value(QStringLiteral("ok")).toBool()) {
+        clearActiveSaveTransaction();
         busy_ = false;
         setStatus(QStringLiteral("Validation failed"), QStringLiteral("error"));
         QMessageBox::warning(preview_, QStringLiteral("Save Product View Layout"),
@@ -377,6 +591,7 @@ private:
 
       const QJsonDocument patch_doc = QJsonDocument::fromVariant(payload.value(QStringLiteral("patch")));
       if (!patch_doc.isObject()) {
+        clearActiveSaveTransaction();
         busy_ = false;
         setStatus(QStringLiteral("Validation failed"), QStringLiteral("error"));
         logPhase(QStringLiteral("validation failed: patch is not an object; Web3D edits preserved"));
@@ -389,6 +604,7 @@ private:
           patch.value(QStringLiteral("created_by")).toString() != QString::fromUtf8(kPatchCreator) ||
           patch.value(QStringLiteral("scene_id")).toString() != scene_id_ ||
           !patch.value(QStringLiteral("edits")).isArray()) {
+        clearActiveSaveTransaction();
         busy_ = false;
         setStatus(QStringLiteral("Validation failed"), QStringLiteral("error"));
         QMessageBox::warning(preview_, QStringLiteral("Save Product View Layout"),
@@ -397,17 +613,23 @@ private:
         return;
       }
       if (edits.isEmpty()) {
+        clearActiveSaveTransaction();
         busy_ = false;
         setStatus(QStringLiteral("No changes"), QStringLiteral("info"));
         pollEditorState();
         return;
       }
       selected_item_id_before_save_ = editor_state.value(QStringLiteral("selectedItemId")).toString();
+      active_patch_ = patch;
+      ++active_save_transaction_;
+      browser_rebase_succeeded_ = false;
+      browser_rebase_pending_ = false;
 
       logPatchSummary(patch);
 
       QString write_error;
       if (!writePatchAtomically(patch, &write_error)) {
+        clearActiveSaveTransaction();
         busy_ = false;
         setStatus(QStringLiteral("Validation failed"), QStringLiteral("error"));
         QMessageBox::critical(preview_, QStringLiteral("Save Product View Layout"), write_error);
@@ -447,6 +669,7 @@ private:
     QProcess * const process = process_;
     connect(process, &QProcess::errorOccurred, this, [this, process](QProcess::ProcessError) {
       if (process != process_) return;
+      clearActiveSaveTransaction();
       busy_ = false;
       setStatus(QStringLiteral("Validation failed"), QStringLiteral("error"));
       QMessageBox::critical(preview_, QStringLiteral("Save Product View Layout"),
@@ -466,6 +689,7 @@ private:
           return;
         }
         if (!ok) {
+          clearActiveSaveTransaction();
           busy_ = false;
           setStatus(phase == WorkflowPhase::DryRun ? QStringLiteral("Validation failed") : QStringLiteral("Save failed"),
             QStringLiteral("error"));
@@ -488,6 +712,7 @@ private:
             "This does not launch controllers, execute MoveIt plans, or move real hardware.").arg(scene_id_);
           if (QMessageBox::question(preview_, QStringLiteral("Confirm Save Product View Layout"), confirmation,
               QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
+            clearActiveSaveTransaction();
             busy_ = false;
             setStatus(QStringLiteral("Save cancelled"), QStringLiteral("warning"));
             pollEditorState();
@@ -501,20 +726,8 @@ private:
           reportSavedButSceneChanged();
           return;
         }
-        setStatus(QStringLiteral("Saved; refreshing Product View…"), QStringLiteral("success"));
         logPhase(QStringLiteral("saved"));
-        saved_reload_pending_ = true;
-        saved_reload_revision_ = preview_->request_post_save_product_view_refresh();
-        if (saved_reload_revision_ <= 0) {
-          saved_reload_pending_ = false;
-          busy_ = false;
-          setStatus(QStringLiteral("Saved; Product View refresh could not start"), QStringLiteral("error"));
-          logPhase(QStringLiteral("reload failed: Product View lifecycle context unavailable; browser edits preserved"));
-          pollEditorState();
-          return;
-        }
-        logPhase(QStringLiteral("reload: forced canonical Product View regeneration requested for payload_revision=%1")
-          .arg(saved_reload_revision_));
+        rebaseBrowserAfterPersistedWrite();
       });
     process_->start();
   }
@@ -523,7 +736,7 @@ private:
   {
     if (!installed_ || !view_ || busy_ || state_poll_pending_) return;
     if (!preview_->embedded_web_authoring_active()) {
-      if (save_button_) save_button_->setEnabled(true);
+      if (save_button_) save_button_->setEnabled(!reload_required_after_save_);
       return;
     }
     const QUrl poll_url = view_->url();
@@ -561,10 +774,24 @@ private:
       const QString url_scene = sceneIdFromViewerUrl(poll_url);
       const bool matching_scene = !url_scene.isEmpty() && reported_scene == url_scene;
       const bool diagnostic_preview = preview_ && preview_->property("diagnostic_preview_active").toBool();
+      if (reload_required_after_save_ && ready && !dirty && matching_scene) {
+        reload_required_after_save_ = false;
+        setStatus(QStringLiteral("Product View refreshed; save baseline ready"), QStringLiteral("success"));
+      }
       if (save_button_) {
-        save_button_->setEnabled(ready && dirty && valid_dirty_transforms && matching_scene && !diagnostic_preview);
-        if (diagnostic_preview) save_button_->setToolTip(QStringLiteral(
-          "Save Layout is disabled for a diagnostic preview. Fix scene authoring blockers first."));
+        save_button_->setEnabled(
+          ready && dirty && valid_dirty_transforms && matching_scene &&
+          !diagnostic_preview && !reload_required_after_save_);
+        if (diagnostic_preview) {
+          save_button_->setToolTip(QStringLiteral(
+            "Save Layout is disabled for a diagnostic preview. Fix scene authoring blockers first."));
+        } else if (reload_required_after_save_) {
+          save_button_->setToolTip(QStringLiteral(
+            "Save Layout is disabled until Product View is refreshed because the last saved browser baseline could not be verified."));
+        } else {
+          save_button_->setToolTip(QStringLiteral(
+            "Validate the current Web3D edit patch, create source-YAML backups, apply it atomically, regenerate and reload Product View. No robot motion is started."));
+        }
       }
       if (dirty_label_) {
         const int dirty_count = state.value(QStringLiteral("dirtyCount")).toInt();
@@ -590,12 +817,17 @@ private:
   QString scene_dir_;
   QString patch_path_;
   QString last_logged_context_key_;
+  QJsonObject active_patch_;
   bool installed_{false};
   bool busy_{false};
   bool state_poll_pending_{false};
   bool saved_reload_pending_{false};
   int saved_reload_revision_{0};
   bool using_environment_fallback_{false};
+  bool browser_rebase_pending_{false};
+  bool browser_rebase_succeeded_{false};
+  bool reload_required_after_save_{false};
+  quint64 active_save_transaction_{0};
   QString selected_item_id_before_save_;
 };
 }  // namespace embedded_web_edit_save_detail
