@@ -89,6 +89,7 @@
 #include <QMetaObject>
 #include <QPointer>
 #include <QProgressDialog>
+#include <QProcess>
 #include <QProcessEnvironment>
 #include <QSettings>
 #include <QSizePolicy>
@@ -167,6 +168,81 @@ namespace {
   "Layout: environment_asset primitive_fallback pick_zone place_zone camera_pose camera_fov conveyor_placeholder spawn_line | "
   "Task intent: task_intent grasp_strategy top_grasp_2f suction_top approach_distance retract_distance | "
   "Generate/Validate/Plan: generated_package_path validation_output plan_simulate_handoff fake_hardware_first";
+
+
+struct WorkcellCommandResult {
+  bool started{false};
+  bool timed_out{false};
+  QProcess::ExitStatus exit_status{QProcess::NormalExit};
+  int exit_code{-1};
+  QString error_string;
+  QString stdout_text;
+  QString stderr_text;
+};
+
+static QString workcell_command_arguments_for_log(const QStringList & arguments)
+{
+  QStringList rendered;
+  for (const QString & argument : arguments) {
+    rendered << QStringLiteral("'%1'").arg(argument.left(180).replace(QStringLiteral("'"), QStringLiteral("'\\''")));
+  }
+  return rendered.join(QStringLiteral(" "));
+}
+
+static WorkcellCommandResult run_workcell_command_checked(
+  const QString & executable, const QStringList & arguments, const QString & working_directory,
+  int timeout_ms = 120000)
+{
+  WorkcellCommandResult result;
+  QProcess process;
+  process.setProgram(executable);
+  process.setArguments(arguments);
+  process.setWorkingDirectory(working_directory);
+  process.setProcessEnvironment(QProcessEnvironment::systemEnvironment());
+  process.setProcessChannelMode(QProcess::SeparateChannels);
+  process.start();
+  if (!process.waitForStarted(10000)) {
+    result.error_string = process.errorString();
+    result.stderr_text = QString::fromUtf8(process.readAllStandardError()).trimmed();
+    result.stdout_text = QString::fromUtf8(process.readAllStandardOutput()).trimmed();
+    return result;
+  }
+  result.started = true;
+  if (!process.waitForFinished(timeout_ms)) {
+    result.timed_out = true;
+    process.kill();
+    process.waitForFinished(2000);
+  }
+  result.exit_status = process.exitStatus();
+  result.exit_code = process.exitCode();
+  result.error_string = process.errorString();
+  result.stdout_text = QString::fromUtf8(process.readAllStandardOutput()).trimmed();
+  result.stderr_text = QString::fromUtf8(process.readAllStandardError()).trimmed();
+  return result;
+}
+
+static bool workcell_command_succeeded(const WorkcellCommandResult & result)
+{
+  return result.started && !result.timed_out && result.exit_status == QProcess::NormalExit && result.exit_code == 0;
+}
+
+static QString workcell_command_failure_summary(
+  const QString & executable, const QStringList & arguments, const QString & working_directory,
+  const WorkcellCommandResult & result)
+{
+  QString detail = QStringLiteral("executable=%1 arguments=%2 working_directory=%3 started=%4 timed_out=%5 exit_status=%6 exit_code=%7")
+    .arg(executable,
+         workcell_command_arguments_for_log(arguments),
+         working_directory.isEmpty() ? QStringLiteral("<unset>") : working_directory,
+         result.started ? QStringLiteral("true") : QStringLiteral("false"),
+         result.timed_out ? QStringLiteral("true") : QStringLiteral("false"),
+         result.exit_status == QProcess::NormalExit ? QStringLiteral("normal") : QStringLiteral("crash"))
+    .arg(result.exit_code);
+  if (!result.error_string.trimmed().isEmpty()) detail += QStringLiteral(" error=%1").arg(result.error_string.trimmed().left(400));
+  if (!result.stderr_text.trimmed().isEmpty()) detail += QStringLiteral(" stderr=%1").arg(result.stderr_text.trimmed().left(1200));
+  if (!result.stdout_text.trimmed().isEmpty()) detail += QStringLiteral(" stdout=%1").arg(result.stdout_text.trimmed().left(800));
+  return detail;
+}
 
 static QString scene3d_user_preview_status_summary(
   const ScenePreviewWidget::RenderDebugCounters & counters,
@@ -4615,8 +4691,13 @@ void MainWindow::open_selected_scene_artifact(const QString & artifact)
       append_studio_log("Acceptance: running safe offline layout merge first");
       workcell_builder::merge_workcell_studio_layout(s.scene_dir);
     }
-    const QString cmd = QString("python3 scripts/validate_workcell_studio_generated_scene.py '%1' --json").arg(QString::fromStdString(s.scene_dir.string()));
-    const int rc = std::system(cmd.toStdString().c_str()); append_studio_log(rc==0?"Acceptance completed":"Acceptance blocked"); refresh_scene_browser_ui(); return;
+    const QString executable = QStringLiteral("python3");
+    const QStringList arguments{QStringLiteral("scripts/validate_workcell_studio_generated_scene.py"), QString::fromStdString(s.scene_dir.string()), QStringLiteral("--json")};
+    const QString working_directory = QString::fromStdString(workcell_path.string());
+    const WorkcellCommandResult result = run_workcell_command_checked(executable, arguments, working_directory);
+    append_studio_log(workcell_command_succeeded(result) ? QStringLiteral("Acceptance completed") :
+      QStringLiteral("Acceptance blocked: %1").arg(workcell_command_failure_summary(executable, arguments, working_directory, result)));
+    refresh_scene_browser_ui(); return;
   } else if (artifact=="run_smoke") {
     QMessageBox::information(this,"Workcell Studio","Offline smoke check runner is report-only in Demo Mode. Missing artifact will be reported in demo summary."); return;
   } else if (artifact=="run_preview") {
@@ -4702,15 +4783,17 @@ void MainWindow::export_scene_bundle_for_selected_scene()
   fs::create_directories(export_root);
   const fs::path zip_out = export_root / (s.scene_name + "_workcell_studio_bundle.zip");
   const QString script = "scripts/export_workcell_scene_bundle.py";
-  const QString cmd = QString("python3 '%1' --scene-dir '%2' --output '%3' --validate --include-assets")
-    .arg(script, QString::fromStdString(s.scene_dir.string()), QString::fromStdString(zip_out.string()));
-  append_studio_log("Export Scene Bundle: running " + cmd);
-  const int rc = std::system(cmd.toStdString().c_str());
-  if (rc == 0) {
+  const QString executable = QStringLiteral("python3");
+  const QStringList arguments{script, QStringLiteral("--scene-dir"), QString::fromStdString(s.scene_dir.string()),
+    QStringLiteral("--output"), QString::fromStdString(zip_out.string()), QStringLiteral("--validate"), QStringLiteral("--include-assets")};
+  const QString working_directory = QString::fromStdString(workcell_path.string());
+  append_studio_log(QStringLiteral("Export Scene Bundle: running %1 %2").arg(executable, workcell_command_arguments_for_log(arguments)));
+  const WorkcellCommandResult result = run_workcell_command_checked(executable, arguments, working_directory);
+  if (workcell_command_succeeded(result)) {
     append_studio_log("Export Scene Bundle: completed -> " + QString::fromStdString(zip_out.string()));
     last_scene_bundle_export_folder_ = QString::fromStdString(export_root.string());
   } else {
-    append_studio_log("Export Scene Bundle: failed.");
+    append_studio_log(QStringLiteral("Export Scene Bundle: failed: %1").arg(workcell_command_failure_summary(executable, arguments, working_directory, result)));
   }
   refresh_scene_bundle_export_panel();
 }
@@ -4723,17 +4806,14 @@ void MainWindow::import_scene_bundle_into_scenes_root()
   fs::path scenes_root = scene_browser_result_.scene_root.empty() ? (workcell_path / "src" / "scenes") : scene_browser_result_.scene_root;
   fs::create_directories(scenes_root);
   const QString script = "scripts/import_workcell_scene_bundle.py";
-  QString cmd;
-  if (QFileInfo(selected).isDir()) {
-    cmd = QString("python3 '%1' --bundle '%2' --target-scenes-dir '%3' --validate --print-summary")
-      .arg(script, selected, QString::fromStdString(scenes_root.string()));
-  } else {
-    cmd = QString("python3 '%1' --bundle '%2' --target-scenes-dir '%3' --validate --print-summary")
-      .arg(script, selected, QString::fromStdString(scenes_root.string()));
-  }
-  append_studio_log("Import Scene Bundle: running " + cmd);
-  const int rc = std::system(cmd.toStdString().c_str());
-  append_studio_log(rc == 0 ? "Import Scene Bundle: completed. Imported Scene Ready." : "Import Scene Bundle: failed.");
+  const QString executable = QStringLiteral("python3");
+  const QStringList arguments{script, QStringLiteral("--bundle"), selected, QStringLiteral("--target-scenes-dir"),
+    QString::fromStdString(scenes_root.string()), QStringLiteral("--validate"), QStringLiteral("--print-summary")};
+  const QString working_directory = QString::fromStdString(workcell_path.string());
+  append_studio_log(QStringLiteral("Import Scene Bundle: running %1 %2").arg(executable, workcell_command_arguments_for_log(arguments)));
+  const WorkcellCommandResult result = run_workcell_command_checked(executable, arguments, working_directory);
+  append_studio_log(workcell_command_succeeded(result) ? QStringLiteral("Import Scene Bundle: completed. Imported Scene Ready.") :
+    QStringLiteral("Import Scene Bundle: failed: %1").arg(workcell_command_failure_summary(executable, arguments, working_directory, result)));
   refresh_scene_browser_ui();
 }
 
@@ -5180,9 +5260,13 @@ void MainWindow::copy_validation_summary() { QApplication::clipboard()->setText(
 void MainWindow::generate_readiness_pack() {
   if (!has_selected_scene()) return;
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
-  const QString cmd = QString("python3 scripts/generate_workcell_studio_readiness_pack.py '%1'").arg(QString::fromStdString(s.scene_dir.string()));
-  append_studio_log("Generate Readiness Pack: " + cmd);
-  std::system(cmd.toStdString().c_str());
+  const QString executable = QStringLiteral("python3");
+  const QStringList arguments{QStringLiteral("scripts/generate_workcell_studio_readiness_pack.py"), QString::fromStdString(s.scene_dir.string())};
+  const QString working_directory = QString::fromStdString(workcell_path.string());
+  append_studio_log(QStringLiteral("Generate Readiness Pack: %1 %2").arg(executable, workcell_command_arguments_for_log(arguments)));
+  const WorkcellCommandResult result = run_workcell_command_checked(executable, arguments, working_directory);
+  append_studio_log(workcell_command_succeeded(result) ? QStringLiteral("Generate Readiness Pack: completed.") :
+    QStringLiteral("Generate Readiness Pack: failed: %1").arg(workcell_command_failure_summary(executable, arguments, working_directory, result)));
 }
 void MainWindow::open_readiness_dashboard() { open_selected_scene_artifact("demo_dashboard"); }
 QString MainWindow::canvas_generated_parity_state_text(CanvasGeneratedParityState state) const
