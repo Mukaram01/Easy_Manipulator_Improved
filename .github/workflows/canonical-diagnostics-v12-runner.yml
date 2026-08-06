@@ -1,0 +1,43 @@
+name: Temporary canonical diagnostics v12 independent runner
+
+on:
+  push:
+    branches:
+      - automation/canonical-diagnostics-v12-runner
+
+permissions:
+  contents: write
+
+concurrency:
+  group: canonical-diagnostics-v12-independent
+  cancel-in-progress: true
+
+jobs:
+  run-builder:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: automation/canonical-snake-case-viewer-diagnostics-v10
+          fetch-depth: 0
+
+      - name: Execute embedded v12 builder
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/canonical-diagnostics-recovery-v3.yml').read_text().splitlines()
+          run_index = next(
+              index for index, line in enumerate(workflow)
+              if line == '        run: |'
+          )
+          body = []
+          for line in workflow[run_index + 1:]:
+              if line and not line.startswith('          '):
+                  break
+              body.append(line[10:] if line.startswith('          ') else '')
+          Path('/tmp/canonical-diagnostics-v12.sh').write_text('\n'.join(body) + '\n')
+          PY
+          bash /tmp/canonical-diagnostics-v12.sh
