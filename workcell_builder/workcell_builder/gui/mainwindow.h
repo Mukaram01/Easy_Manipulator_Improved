@@ -671,7 +671,34 @@ private:
   SelectedSceneState selected_scene_state_;
   SelectedSceneItemState selected_item_state_;
   QString current_selected_scene_item_id_;
-  struct CanvasEditCommand { QString kind; QString item_id; QPointF old_pos; QPointF new_pos; bool created{false}; bool deleted{false}; QVector<ScenePreviewWidget::PreviewItem> preview_items; };
+  struct CanvasEditCommand
+  {
+    CanvasEditCommand(
+      const QString & kind,
+      const QString & item_id,
+      const QPointF & old_pos,
+      const QPointF & new_pos,
+      bool created,
+      bool deleted,
+      const QVector<ScenePreviewWidget::PreviewItem> & preview_items)
+    : kind(kind),
+      item_id(item_id),
+      old_pos(old_pos),
+      new_pos(new_pos),
+      created(created),
+      deleted(deleted),
+      preview_items(preview_items)
+    {
+    }
+
+    QString kind;
+    QString item_id;
+    QPointF old_pos;
+    QPointF new_pos;
+    bool created;
+    bool deleted;
+    QVector<ScenePreviewWidget::PreviewItem> preview_items;
+  };
   QSet<QString> deleted_layout_item_ids_;
   std::vector<CanvasEditCommand> undo_stack_;
   std::vector<CanvasEditCommand> redo_stack_;

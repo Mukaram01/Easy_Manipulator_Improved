@@ -7777,7 +7777,7 @@ void MainWindow::apply_inspector_pose_to_item()
   refreshed_state.linked_to_editable_layout_state = true;
   selected_item_state_ = refreshed_state;
 
-  undo_stack_.push_back({"pose_edit", item_id, old, updated, false, false});
+  undo_stack_.push_back({"pose_edit", item_id, old, updated, false, false, {}});
   redo_stack_.clear();
   mark_layout_dirty("Inspector Pose/Dimensions Edit");
   if (metadata_changed) {
@@ -8018,8 +8018,11 @@ void MainWindow::duplicate_selected_item()
   item->position_filter = [this](const QPointF & p){ return snap_canvas_position(p); };
   digital_twin_scene_->addItem(item);
   all_scene_preview_items_.push_back(copy);
-  CanvasEditCommand command{"duplicate", new_id, QPointF(copy.x * 100.0, copy.y * 100.0), QPointF(copy.x * 100.0, copy.y * 100.0), true, false};
-  command.preview_items.push_back(copy);
+  CanvasEditCommand command{
+    "duplicate", new_id,
+    QPointF(copy.x * 100.0, copy.y * 100.0),
+    QPointF(copy.x * 100.0, copy.y * 100.0),
+    true, false, {copy}};
   undo_stack_.push_back(command); redo_stack_.clear();
   apply_scene3d_preview_layer_filters(false);
   refresh_scene_builder_left_explorer();
@@ -8048,14 +8051,17 @@ void MainWindow::delete_selected_item(){
     return;
   }
   const QString id = target.state.id.trimmed();
-  CanvasEditCommand command{"delete", id, target.fallback_item ? target.fallback_item->pos() : QPointF(), target.fallback_item ? target.fallback_item->pos() : QPointF(), false, true};
-  for (const auto & p : all_scene_preview_items_) if (p.id == id) command.preview_items.push_back(p);
-  if (command.preview_items.isEmpty()) {
+  QVector<ScenePreviewWidget::PreviewItem> deleted_preview_items;
+  for (const auto & p : all_scene_preview_items_) if (p.id == id) deleted_preview_items.push_back(p);
+  if (deleted_preview_items.isEmpty()) {
     append_studio_log("Selected item cannot be deleted");
     statusBar()->showMessage("Selected item cannot be deleted", 4000);
     refresh_delete_selected_action();
     return;
   }
+  const QPointF item_position = target.fallback_item ? target.fallback_item->pos() : QPointF();
+  CanvasEditCommand command{
+    "delete", id, item_position, item_position, false, true, deleted_preview_items};
   deleted_layout_item_ids_.insert(id);
   for (int i = all_scene_preview_items_.size() - 1; i >= 0; --i) if (all_scene_preview_items_[i].id == id) all_scene_preview_items_.removeAt(i);
   if (target.fallback_item) delete target.fallback_item;
@@ -8119,7 +8125,7 @@ void MainWindow::keyPressEvent(QKeyEvent * event)
   item->setPos(snap_canvas_position(old_pos + delta));
   item->setData(RolePoseZ, item->data(RolePoseZ).toDouble() + dz);
   if (snap_step_label_) snap_step_label_->setText(QString("Nudge step: %1 m").arg(step_m, 0, 'f', 3));
-  undo_stack_.push_back({"nudge", item->data(RoleId).toString(), old_pos, item->pos(), false, false});
+  undo_stack_.push_back({"nudge", item->data(RoleId).toString(), old_pos, item->pos(), false, false, {}});
   redo_stack_.clear();
   mark_layout_dirty("Nudge Move");
   rebuild_canvas_inspector();
@@ -8382,7 +8388,7 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   digital_twin_scene_->clearSelection();
   item->setSelected(true);
   select_canvas_item(item);
-  undo_stack_.push_back({"add", new_id, item->pos(), item->pos(), true, false});
+  undo_stack_.push_back({"add", new_id, item->pos(), item->pos(), true, false, {}});
   redo_stack_.clear();
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
   mark_layout_dirty("Place Asset Mode: Add to 3D Canvas");

@@ -137,10 +137,21 @@ TEST(LayoutSerializationContractTest, DuplicateSelectedUsesSharedEditableSelecti
   EXPECT_NE(src.find("selected_item_can_be_duplicated()"), std::string::npos);
   EXPECT_NE(src.find("resolve_selected_editable_layout_target()"), std::string::npos);
   EXPECT_NE(src.find("Selected item cannot be duplicated"), std::string::npos);
-  EXPECT_NE(src.find("CanvasEditCommand command{\"duplicate\""), std::string::npos);
+  EXPECT_NE(src.find("true, false, {copy}}"), std::string::npos);
   EXPECT_NE(src.find("undo_stack_.push_back(command); redo_stack_.clear();"), std::string::npos);
   EXPECT_NE(src.find("Removed duplicate %1"), std::string::npos);
   EXPECT_NE(hdr.find("refresh_duplicate_selected_action"), std::string::npos);
+}
+
+TEST(LayoutSerializationContractTest, CanvasEditCommandsInitializePreviewItemsExplicitly)
+{
+  const std::string src = load_file("gui/mainwindow.cpp");
+  const std::string hdr = load_file("gui/mainwindow.h");
+  EXPECT_NE(hdr.find("CanvasEditCommand("), std::string::npos);
+  EXPECT_NE(hdr.find("preview_items(preview_items)"), std::string::npos);
+  EXPECT_NE(src.find("true, false, {copy}}"), std::string::npos);
+  EXPECT_NE(src.find("false, true, deleted_preview_items}"), std::string::npos);
+  EXPECT_NE(src.find("false, false, {}}"), std::string::npos);
 }
 
 TEST(LayoutSerializationContractTest, DuplicateSelectedCopiesAuthoredRecordWithStableOffsetIdentity)
