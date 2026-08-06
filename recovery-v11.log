@@ -1,0 +1,708 @@
+From https://github.com/Mukaram01/Easy_Manipulator_Improved
+ * branch              chore/remove-temporary-diagnostics-artifacts -> FETCH_HEAD
+Preparing worktree (detached HEAD 43acccb6)
+HEAD is now at 43acccb6 Remove temporary diagnostics automation artifacts
+Checking patch tests/test_workcell_web3d_diagnostic_naming_contract.py...
+Checking patch workcell_builder/workcell_builder/gui/scene_preview_widget.cpp...
+Checking patch workcell_studio_web/viewer/urdf_robot_renderer.js...
+Checking patch workcell_studio_web/viewer/viewer.js...
+== scope ==
+tests/test_workcell_web3d_diagnostic_naming_contract.py
+workcell_builder/workcell_builder/gui/scene_preview_widget.cpp
+workcell_studio_web/viewer/urdf_robot_renderer.js
+workcell_studio_web/viewer/viewer.js
+== install viewer dependencies ==
+
+added 4 packages, and audited 5 packages in 6s
+
+1 moderate severity vulnerability
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+Collecting pytest
+  Downloading pytest-9.1.1-py3-none-any.whl.metadata (7.6 kB)
+Collecting iniconfig>=1.0.1 (from pytest)
+  Downloading iniconfig-2.3.0-py3-none-any.whl.metadata (2.5 kB)
+Requirement already satisfied: packaging>=22 in /usr/lib/python3/dist-packages (from pytest) (24.0)
+Collecting pluggy<2,>=1.5 (from pytest)
+  Downloading pluggy-1.6.0-py3-none-any.whl.metadata (4.8 kB)
+Requirement already satisfied: pygments>=2.7.2 in /usr/lib/python3/dist-packages (from pytest) (2.17.2)
+Downloading pytest-9.1.1-py3-none-any.whl (386 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 386.5/386.5 kB 34.1 MB/s eta 0:00:00
+Downloading iniconfig-2.3.0-py3-none-any.whl (7.5 kB)
+Downloading pluggy-1.6.0-py3-none-any.whl (20 kB)
+Installing collected packages: pluggy, iniconfig, pytest
+Successfully installed iniconfig-2.3.0 pluggy-1.6.0 pytest-9.1.1
+== focused tests ==
+...............................................................F....F.F. [ 56%]
+................F..............F.F.....................                  [100%]
+=================================== FAILURES ===================================
+___ test_raycast_registry_ancestry_distance_overlays_reload_and_empty_select ___
+
+    def test_raycast_registry_ancestry_distance_overlays_reload_and_empty_select():
+        js_path = VIEWER / "viewer.js"
+        harness = r"""
+    const fs = require('fs'); const vm = require('vm'); const assert = require('assert');
+    let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+    const element = () => ({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100};}});
+    const context={console,assert,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element();},querySelectorAll(){return[];},createElement(){return element();}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+    vm.createContext(context);
+    vm.runInContext(source + `
+    updateLabels=()=>{}; populateInspector=()=>{}; attachTransformGizmo=()=>{}; detachTransformGizmo=()=>{}; refreshSelectionHighlight=()=>{}; removeSelectionHighlight=()=>{};
+    const node = (name='', parent=null) => ({name,parent,visible:true,userData:{},children:[],traverse(fn){fn(this); this.children.forEach(child=>child.traverse(fn));}});
+    const rendered = item => { const object3d=node(item.id); object3d.userData.item=item; return {item,object3d}; };
+    const bin=rendered({id:'target_bin_default',editable:true,locked:false,render_policy:'primary',mesh_load_required:true,mesh_contract_category:'object',category:'place_zone',source_layer:'editable_layout',transform_group:'default_drop_destination'});
+    const zone=rendered({id:'place_zone_default',editable:true,locked:false,render_policy:'overlay',role:'place_zone',source_layer:'editable_layout',transform_group:'default_drop_destination'});
+    const marker=rendered({id:'commissioning_object',editable:false,locked:true,render_policy:'primary',role:'task_marker',source_layer:'task_preview'});
+    state.sceneJson={scene:{id:'ur5_2f_test'}}; state.objects=[bin,zone,marker]; state.editorEvents=[]; state.debugOverlaysVisible=false;
+    const table=rendered({id:'support_surface_table',role:'table',render_policy:'primary'});
+    const camera=rendered({id:'realsense_overhead',role:'sensor',render_policy:'primary'});
+    const ur5={id:'ur5_generated',role:'robot',source_layer:'locked_generated_urdf_visual'};
+    const tool={id:'robotiq_generated',role:'tool',source_layer:'locked_generated_urdf_visual'};
+    state.objects.push(table,camera);
+    const colladaChild=node('nested-collada',table.object3d); table.object3d.children.push(colladaChild);
+    assert.strictEqual(itemFromRaycastHit({object:colladaChild}).item.id,'support_surface_table');
+    const urdfRoot=node('urdf-root'), urdfLink=node('shoulder_link',urdfRoot), urdfMesh=node('mesh',urdfLink); urdfRoot.children=[urdfLink]; urdfLink.children=[urdfMesh];
+    registerPickRecord(ur5,urdfLink,urdfRoot); assert.strictEqual(itemFromRaycastHit({object:urdfMesh}).item.id,'ur5_generated'); assert.strictEqual(state.objects.some(record=>record.item.id==='ur5_generated'),false); assert.strictEqual(selectionIsEditable(renderedById('ur5_generated')),false);
+    const toolLink=node('robotiq_link',urdfRoot), toolMesh=node('tool-mesh',toolLink); toolLink.children=[toolMesh]; urdfRoot.children.push(toolLink);
+    registerPickRecord(tool,toolLink,urdfRoot); assert.strictEqual(itemFromRaycastHit({object:toolMesh}).item.id,'robotiq_generated');
+    const hits=[{object:table.object3d,distance:1},{object:bin.object3d,distance:3}];
+    assert.strictEqual(rankedPickingCandidates(hits)[0].rendered.item.id,'support_surface_table');
+    state.three.pointer={}; state.three.camera={}; state.three.raycaster={setFromCamera(){},intersectObjects(){return hits;}};
+    assert.strictEqual(pickObject({clientX:10,clientY:10}),'support_surface_table');
+    for (const candidate of [table,camera,{object3d:urdfMesh},{object3d:toolMesh}]) {
+      hits.splice(0,hits.length,{object:candidate.object3d,distance:1},{object:bin.object3d,distance:2});
+      assert.notStrictEqual(pickObject({clientX:10,clientY:10}),'target_bin_default');
+    }
+    assert.strictEqual(isNormalSelectableRendered(marker),false);
+    hits.splice(0,hits.length,{object:zone.object3d,distance:1},{object:bin.object3d,distance:2});
+    state.debugOverlaysVisible=false; assert.strictEqual(pickObject({clientX:10,clientY:10}),'target_bin_default');
+    state.debugOverlaysVisible=true; assert.strictEqual(pickObject({clientX:10,clientY:10}),'place_zone_default'); assert.strictEqual(pickingPriority(marker),4);
+    const pickZone=rendered({id:'pick_zone_commissioning',role:'pick_zone',render_policy:'overlay'}); state.objects.push(pickZone);
+    for (const overlay of [pickZone,zone]) { hits.splice(0,hits.length,{object:overlay.object3d,distance:1},{object:bin.object3d,distance:2}); assert.notStrictEqual(pickObject({clientX:10,clientY:10}),'target_bin_default'); }
+    assert.strictEqual(isNormalSelectableRendered(renderedById('ur5_generated')),true); assert.strictEqual(pickingPriority(renderedById('ur5_generated')),3);
+    assert.strictEqual(editableTransformGroupMembers(bin).map(r=>r.item.id).sort().join(','),'place_zone_default,target_bin_default');
+    const staleIdentity=state.pickIdentityByObject; resetSceneLifecycleState(); assert.strictEqual(state.pickRecords.length,0); assert.notStrictEqual(state.pickIdentityByObject,staleIdentity); assert.strictEqual(renderedById('ur5_generated'),undefined);
+    const warnings=[]; console.warn=(...args)=>{warnings.push(args);};
+    state.editorMode='select'; state.selected='target_bin_default'; state.three.raycaster={setFromCamera(){},intersectObjects(){return[];}}; pickObject({clientX:10,clientY:10}); assert.strictEqual(state.selected,''); assert.strictEqual(state.lastCanvasPickReason,'empty_select_click'); assert.strictEqual(warnings.length,0,'empty-space clicks do not warn');
+    const rejected=node('unregistered-mesh'); const knownLink=node('known_link'); rejected.parent=knownLink; knownLink.children=[rejected];
+    state.robotPreviewResult={links:new Map([['known_link',knownLink]])};
+    state.three.raycaster={setFromCamera(){},intersectObjects(){return[{object:rejected,distance:1}];}};
+    pickObject({clientX:10,clientY:10}); pickObject({clientX:10,clientY:10});
+    assert.strictEqual(warnings.length,1);
+    assert.strictEqual(warnings[0].length,1);
+    assert.ok(warnings[0][0].startsWith('Product View canvas pick rejected: '));
+    assert.ok(!warnings[0][0].includes('[object Object]'));
+    assert.strictEqual(JSON.parse(warnings[0][0].slice('Product View canvas pick rejected: '.length)).nearest_known_urdf_link_ancestor,'known_link');
+    assert.strictEqual(state.lastFailedCanvasPickDiagnostic.raw_hit_count,1);
+    assert.strictEqual(state.lastFailedCanvasPickDiagnostic.hit_object_names[0],'unregistered-mesh');
+    assert.strictEqual(state.lastFailedCanvasPickDiagnostic.traversed_registered_identity,false);
+    assert.strictEqual(state.lastFailedCanvasPickDiagnostic.first_actionable_rejection_reason,'no_registered_or_rendered_identity');
+    assert.strictEqual(state.lastFailedCanvasPickDiagnostic.nearest_known_urdf_link_ancestor,'known_link');
+    assert.strictEqual(editorState().lastFailedCanvasPickDiagnostic.rawHitCount,1);
+    `, context);
+    """
+>       subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, capture_output=True, text=True)
+
+tests/test_workcell_studio_web_viewer_static.py:1888: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = True, timeout = None, check = True
+popenargs = (['node', '-e', "\nconst fs = require('fs'); const vm = require('vm'); const assert = require('assert');\nlet source =...ckDiagnostic.rawHitCount,1);\n`, context);\n", '/tmp/canonical-diagnostics-v11/workcell_studio_web/viewer/viewer.js'],)
+kwargs = {'cwd': PosixPath('/tmp/canonical-diagnostics-v11'), 'text': True, 'stdout': -1, 'stderr': -1}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+    
+        If timeout is given, and the process takes too long, a TimeoutExpired
+        exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['node', '-e', "\nconst fs = require('fs'); const vm = require('vm'); const assert = require('assert');\nlet source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\\(\\);\\s*$/, '');\nconst element = () => ({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100};}});\nconst context={console,assert,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element();},querySelectorAll(){return[];},createElement(){return element();}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};\nvm.createContext(context);\nvm.runInContext(source + `\nupdateLabels=()=>{}; populateInspector=()=>{}; attachTransformGizmo=()=>{}; detachTransformGizmo=()=>{}; refreshSelectionHighlight=()=>{}; removeSelectionHighlight=()=>{};\nconst node = (name='', parent=null) => ({name,parent,visible:true,userData:{},children:[],traverse(fn){fn(this); this.children.forEach(child=>child.traverse(fn));}});\nconst rendered = item => { const object3d=node(item.id); object3d.userData.item=item; return {item,object3d}; };\nconst bin=rendered({id:'target_bin_default',editable:true,locked:false,render_policy:'primary',mesh_load_required:true,mesh_contract_category:'object',category:'place_zone',source_layer:'editable_layout',transform_group:'default_drop_destination'});\nconst zone=rendered({id:'place_zone_default',editable:true,locked:false,render_policy:'overlay',role:'place_zone',source_layer:'editable_layout',transform_group:'default_drop_destination'});\nconst marker=rendered({id:'commissioning_object',editable:false,locked:true,render_policy:'primary',role:'task_marker',source_layer:'task_preview'});\nstate.sceneJson={scene:{id:'ur5_2f_test'}}; state.objects=[bin,zone,marker]; state.editorEvents=[]; state.debugOverlaysVisible=false;\nconst table=rendered({id:'support_surface_table',role:'table',render_policy:'primary'});\nconst camera=rendered({id:'realsense_overhead',role:'sensor',render_policy:'primary'});\nconst ur5={id:'ur5_generated',role:'robot',source_layer:'locked_generated_urdf_visual'};\nconst tool={id:'robotiq_generated',role:'tool',source_layer:'locked_generated_urdf_visual'};\nstate.objects.push(table,camera);\nconst colladaChild=node('nested-collada',table.object3d); table.object3d.children.push(colladaChild);\nassert.strictEqual(itemFromRaycastHit({object:colladaChild}).item.id,'support_surface_table');\nconst urdfRoot=node('urdf-root'), urdfLink=node('shoulder_link',urdfRoot), urdfMesh=node('mesh',urdfLink); urdfRoot.children=[urdfLink]; urdfLink.children=[urdfMesh];\nregisterPickRecord(ur5,urdfLink,urdfRoot); assert.strictEqual(itemFromRaycastHit({object:urdfMesh}).item.id,'ur5_generated'); assert.strictEqual(state.objects.some(record=>record.item.id==='ur5_generated'),false); assert.strictEqual(selectionIsEditable(renderedById('ur5_generated')),false);\nconst toolLink=node('robotiq_link',urdfRoot), toolMesh=node('tool-mesh',toolLink); toolLink.children=[toolMesh]; urdfRoot.children.push(toolLink);\nregisterPickRecord(tool,toolLink,urdfRoot); assert.strictEqual(itemFromRaycastHit({object:toolMesh}).item.id,'robotiq_generated');\nconst hits=[{object:table.object3d,distance:1},{object:bin.object3d,distance:3}];\nassert.strictEqual(rankedPickingCandidates(hits)[0].rendered.item.id,'support_surface_table');\nstate.three.pointer={}; state.three.camera={}; state.three.raycaster={setFromCamera(){},intersectObjects(){return hits;}};\nassert.strictEqual(pickObject({clientX:10,clientY:10}),'support_surface_table');\nfor (const candidate of [table,camera,{object3d:urdfMesh},{object3d:toolMesh}]) {\n  hits.splice(0,hits.length,{object:candidate.object3d,distance:1},{object:bin.object3d,distance:2});\n  assert.notStrictEqual(pickObject({clientX:10,clientY:10}),'target_bin_default');\n}\nassert.strictEqual(isNormalSelectableRendered(marker),false);\nhits.splice(0,hits.length,{object:zone.object3d,distance:1},{object:bin.object3d,distance:2});\nstate.debugOverlaysVisible=false; assert.strictEqual(pickObject({clientX:10,clientY:10}),'target_bin_default');\nstate.debugOverlaysVisible=true; assert.strictEqual(pickObject({clientX:10,clientY:10}),'place_zone_default'); assert.strictEqual(pickingPriority(marker),4);\nconst pickZone=rendered({id:'pick_zone_commissioning',role:'pick_zone',render_policy:'overlay'}); state.objects.push(pickZone);\nfor (const overlay of [pickZone,zone]) { hits.splice(0,hits.length,{object:overlay.object3d,distance:1},{object:bin.object3d,distance:2}); assert.notStrictEqual(pickObject({clientX:10,clientY:10}),'target_bin_default'); }\nassert.strictEqual(isNormalSelectableRendered(renderedById('ur5_generated')),true); assert.strictEqual(pickingPriority(renderedById('ur5_generated')),3);\nassert.strictEqual(editableTransformGroupMembers(bin).map(r=>r.item.id).sort().join(','),'place_zone_default,target_bin_default');\nconst staleIdentity=state.pickIdentityByObject; resetSceneLifecycleState(); assert.strictEqual(state.pickRecords.length,0); assert.notStrictEqual(state.pickIdentityByObject,staleIdentity); assert.strictEqual(renderedById('ur5_generated'),undefined);\nconst warnings=[]; console.warn=(...args)=>{warnings.push(args);};\nstate.editorMode='select'; state.selected='target_bin_default'; state.three.raycaster={setFromCamera(){},intersectObjects(){return[];}}; pickObject({clientX:10,clientY:10}); assert.strictEqual(state.selected,''); assert.strictEqual(state.lastCanvasPickReason,'empty_select_click'); assert.strictEqual(warnings.length,0,'empty-space clicks do not warn');\nconst rejected=node('unregistered-mesh'); const knownLink=node('known_link'); rejected.parent=knownLink; knownLink.children=[rejected];\nstate.robotPreviewResult={links:new Map([['known_link',knownLink]])};\nstate.three.raycaster={setFromCamera(){},intersectObjects(){return[{object:rejected,distance:1}];}};\npickObject({clientX:10,clientY:10}); pickObject({clientX:10,clientY:10});\nassert.strictEqual(warnings.length,1);\nassert.strictEqual(warnings[0].length,1);\nassert.ok(warnings[0][0].startsWith('Product View canvas pick rejected: '));\nassert.ok(!warnings[0][0].includes('[object Object]'));\nassert.strictEqual(JSON.parse(warnings[0][0].slice('Product View canvas pick rejected: '.length)).nearest_known_urdf_link_ancestor,'known_link');\nassert.strictEqual(state.lastFailedCanvasPickDiagnostic.raw_hit_count,1);\nassert.strictEqual(state.lastFailedCanvasPickDiagnostic.hit_object_names[0],'unregistered-mesh');\nassert.strictEqual(state.lastFailedCanvasPickDiagnostic.traversed_registered_identity,false);\nassert.strictEqual(state.lastFailedCanvasPickDiagnostic.first_actionable_rejection_reason,'no_registered_or_rendered_identity');\nassert.strictEqual(state.lastFailedCanvasPickDiagnostic.nearest_known_urdf_link_ancestor,'known_link');\nassert.strictEqual(editorState().lastFailedCanvasPickDiagnostic.rawHitCount,1);\n`, context);\n", '/tmp/canonical-diagnostics-v11/workcell_studio_web/viewer/viewer.js']' returned non-zero exit status 1.
+
+/usr/lib/python3.12/subprocess.py:571: CalledProcessError
+_____ test_viewer_status_reporting_ignores_hidden_helper_overlay_counters ______
+
+tmp_path = PosixPath('/tmp/pytest-of-runner/pytest-0/test_viewer_status_reporting_i0')
+
+    def test_viewer_status_reporting_ignores_hidden_helper_overlay_counters(tmp_path):
+        js_path = VIEWER / "viewer.js"
+        harness = r"""
+    const fs = require('fs');
+    const vm = require('vm');
+    const assert = require('assert');
+    let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+    const element = () => ({
+      hidden: false,
+      checked: false,
+      disabled: false,
+      textContent: '',
+      className: '',
+      innerHTML: '',
+      classList: { toggle() {} },
+      setAttribute() {},
+      querySelector() { return { textContent: '' }; },
+      appendChild() {},
+      addEventListener() {},
+      getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; },
+    });
+    const context = {
+      console,
+      assert,
+      window: { location: { search: '' } },
+      document: { getElementById() { return element(); }, createElement() { return element(); } },
+      URLSearchParams,
+      requestAnimationFrame() { return 0; },
+    };
+    vm.createContext(context);
+    vm.runInContext(source + `
+    populateObjectList = () => {};
+    updateLabels = () => {};
+    resetView = () => {};
+    renderSceneSummary = () => updateViewerStatus();
+    state.sceneJson = { scene: { id: 'status_test' }, frames: [{ name: 'tool0', link: 'tool0', parent_link: 'wrist_3_link', role: 'transform_anchor', type: 'frame', source_layer: 'generated_urdf', provenance: { source: 'payload.frames' }, world_pose: { xyz: [0.10, 0, 0], rpy: [0, 0, 0] } }] };
+    state.frameLookup = parseSceneFrames(state.sceneJson);
+    state.runtimeWarnings = [{ code: 'camera_framing_blocker_excluded', reason: 'hidden helper excluded' }];
+    class MockVector3 {
+      constructor(x = 0, y = 0, z = 0) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+      }
+    }
+    THREE = { Vector3: MockVector3 };
+    state.resolvedFramePoses.set('wrist_3_link', { xyz: new MockVector3(0, 0, 0), rpy: new MockVector3(0, 0, 0) });
+    state.resolvedFramePoses.set('tool0', { xyz: new MockVector3(0.10, 0, 0), rpy: new MockVector3(0, 0, 0) });
+    state.resolvedFramePoses.set('gripper_base_link', { xyz: new MockVector3(0.10, 0.20, 0), rpy: new MockVector3(0, 0, 0) });
+    state.objects = [
+      { item: { id: 'robot_link', role: 'robot' }, renderInfo: { render_status: 'mesh_loaded' }, object3d: { visible: true } },
+      { item: { id: 'workbench', category: 'environment' }, renderInfo: { render_status: 'mesh_loaded' }, object3d: { visible: true } },
+      { item: { id: 'camera_fov_helper', role: 'camera_fov', category: 'overlay' }, renderInfo: { render_status: 'mesh_loaded' }, object3d: { visible: false } },
+      { item: { id: 'pick_zone_bounds', role: 'pick_zone', category: 'safety_zone', renderInfo: { render_status: 'required_mesh_failed_debug_fallback' } }, renderInfo: { render_status: 'required_mesh_failed_debug_fallback' }, object3d: { visible: false } },
+    ];
+    let status = updateViewerStatus();
+    assert.strictEqual(status.meshLoadedCount, 2);
+    assert.strictEqual(status.mesh_loaded_count, 2);
+    assert.strictEqual(status.requiredMeshFailedCount, 0);
+    assert.strictEqual(status.required_mesh_failed_count, 0);
+    assert.deepStrictEqual(status.resolvedFramePositions.wrist_3_link, [0, 0, 0]);
+    assert.deepStrictEqual(status.resolvedFramePositions.tool0, [0.10, 0, 0]);
+    assert.deepStrictEqual(status.resolvedFramePositions.gripper_base_link, [0.10, 0.20, 0]);
+    assert.deepStrictEqual(status.resolved_frame_positions, status.resolvedFramePositions);
+    assert.strictEqual(typeof status.viewer_resolved_distances_m['wrist_3_link -> tool0'], 'number');
+    assert.strictEqual(typeof status.viewer_resolved_distances_m['tool0 -> gripper_base_link'], 'number');
+    assert.strictEqual(typeof status.viewer_resolved_distances_m['wrist_3_link -> gripper_base_link'], 'number');
+    assert.strictEqual(status.viewer_resolved_distances_m['wrist_3_link -> tool0'], 0.10);
+    assert.strictEqual(status.viewer_resolved_distances_m['tool0 -> gripper_base_link'], 0.20);
+    assert.strictEqual(status.viewer_resolved_distances_m['wrist_3_link -> gripper_base_link'], Math.hypot(0.10, 0.20, 0));
+    assert.strictEqual(status.runtimeWarnings.length, 1);
+    assert.strictEqual(status.runtimeWarnings[0].code, 'camera_framing_blocker_excluded');
+    assert.strictEqual(isUserFacingWarning(status.runtimeWarnings[0]), false);
+    assert.deepStrictEqual(status.renderedMeshDiagnostics, []);
+    assert.deepStrictEqual(status.rendered_mesh_diagnostics, []);
+    assert.strictEqual(status.frameDiagnostics, status.frame_diagnostics);
+    const toolFrameDiagnostic = status.frameDiagnostics.find(entry => entry.name === 'tool0');
+    assert.ok(toolFrameDiagnostic, 'expected tool0 frame diagnostic even without rendered object');
+    assert.strictEqual(toolFrameDiagnostic.link, 'tool0');
+    assert.strictEqual(toolFrameDiagnostic.parent_link, 'wrist_3_link');
+    assert.strictEqual(toolFrameDiagnostic.role, 'transform_anchor');
+    assert.strictEqual(toolFrameDiagnostic.render_expected, false);
+    assert.strictEqual(toolFrameDiagnostic.mesh_available, false);
+    assert.deepStrictEqual(toolFrameDiagnostic.resolved_world_position, [0.10, 0, 0]);
+    setDebugOverlaysVisible(true);
+    assert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.meshLoadedCount, 2);
+    assert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.requiredMeshFailedCount, 0);
+    setDebugOverlaysVisible(false);
+    assert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.meshLoadedCount, 2);
+    assert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.requiredMeshFailedCount, 0);
+    `, context);
+    """
+>       result = subprocess.run(
+            ["node", "-e", harness, str(js_path)],
+            cwd=ROOT,
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+tests/test_workcell_studio_web_viewer_static.py:2094: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = False, timeout = None, check = True
+popenargs = (['node', '-e', "\nconst fs = require('fs');\nconst vm = require('vm');\nconst assert = require('assert');\nlet source...requiredMeshFailedCount, 0);\n`, context);\n", '/tmp/canonical-diagnostics-v11/workcell_studio_web/viewer/viewer.js'],)
+kwargs = {'cwd': PosixPath('/tmp/canonical-diagnostics-v11'), 'text': True, 'stdout': -1, 'stderr': -1}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+    
+        If timeout is given, and the process takes too long, a TimeoutExpired
+        exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['node', '-e', "\nconst fs = require('fs');\nconst vm = require('vm');\nconst assert = require('assert');\nlet source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\\(\\);\\s*$/, '');\nconst element = () => ({\n  hidden: false,\n  checked: false,\n  disabled: false,\n  textContent: '',\n  className: '',\n  innerHTML: '',\n  classList: { toggle() {} },\n  setAttribute() {},\n  querySelector() { return { textContent: '' }; },\n  appendChild() {},\n  addEventListener() {},\n  getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; },\n});\nconst context = {\n  console,\n  assert,\n  window: { location: { search: '' } },\n  document: { getElementById() { return element(); }, createElement() { return element(); } },\n  URLSearchParams,\n  requestAnimationFrame() { return 0; },\n};\nvm.createContext(context);\nvm.runInContext(source + `\npopulateObjectList = () => {};\nupdateLabels = () => {};\nresetView = () => {};\nrenderSceneSummary = () => updateViewerStatus();\nstate.sceneJson = { scene: { id: 'status_test' }, frames: [{ name: 'tool0', link: 'tool0', parent_link: 'wrist_3_link', role: 'transform_anchor', type: 'frame', source_layer: 'generated_urdf', provenance: { source: 'payload.frames' }, world_pose: { xyz: [0.10, 0, 0], rpy: [0, 0, 0] } }] };\nstate.frameLookup = parseSceneFrames(state.sceneJson);\nstate.runtimeWarnings = [{ code: 'camera_framing_blocker_excluded', reason: 'hidden helper excluded' }];\nclass MockVector3 {\n  constructor(x = 0, y = 0, z = 0) {\n    this.x = x;\n    this.y = y;\n    this.z = z;\n  }\n}\nTHREE = { Vector3: MockVector3 };\nstate.resolvedFramePoses.set('wrist_3_link', { xyz: new MockVector3(0, 0, 0), rpy: new MockVector3(0, 0, 0) });\nstate.resolvedFramePoses.set('tool0', { xyz: new MockVector3(0.10, 0, 0), rpy: new MockVector3(0, 0, 0) });\nstate.resolvedFramePoses.set('gripper_base_link', { xyz: new MockVector3(0.10, 0.20, 0), rpy: new MockVector3(0, 0, 0) });\nstate.objects = [\n  { item: { id: 'robot_link', role: 'robot' }, renderInfo: { render_status: 'mesh_loaded' }, object3d: { visible: true } },\n  { item: { id: 'workbench', category: 'environment' }, renderInfo: { render_status: 'mesh_loaded' }, object3d: { visible: true } },\n  { item: { id: 'camera_fov_helper', role: 'camera_fov', category: 'overlay' }, renderInfo: { render_status: 'mesh_loaded' }, object3d: { visible: false } },\n  { item: { id: 'pick_zone_bounds', role: 'pick_zone', category: 'safety_zone', renderInfo: { render_status: 'required_mesh_failed_debug_fallback' } }, renderInfo: { render_status: 'required_mesh_failed_debug_fallback' }, object3d: { visible: false } },\n];\nlet status = updateViewerStatus();\nassert.strictEqual(status.meshLoadedCount, 2);\nassert.strictEqual(status.mesh_loaded_count, 2);\nassert.strictEqual(status.requiredMeshFailedCount, 0);\nassert.strictEqual(status.required_mesh_failed_count, 0);\nassert.deepStrictEqual(status.resolvedFramePositions.wrist_3_link, [0, 0, 0]);\nassert.deepStrictEqual(status.resolvedFramePositions.tool0, [0.10, 0, 0]);\nassert.deepStrictEqual(status.resolvedFramePositions.gripper_base_link, [0.10, 0.20, 0]);\nassert.deepStrictEqual(status.resolved_frame_positions, status.resolvedFramePositions);\nassert.strictEqual(typeof status.viewer_resolved_distances_m['wrist_3_link -> tool0'], 'number');\nassert.strictEqual(typeof status.viewer_resolved_distances_m['tool0 -> gripper_base_link'], 'number');\nassert.strictEqual(typeof status.viewer_resolved_distances_m['wrist_3_link -> gripper_base_link'], 'number');\nassert.strictEqual(status.viewer_resolved_distances_m['wrist_3_link -> tool0'], 0.10);\nassert.strictEqual(status.viewer_resolved_distances_m['tool0 -> gripper_base_link'], 0.20);\nassert.strictEqual(status.viewer_resolved_distances_m['wrist_3_link -> gripper_base_link'], Math.hypot(0.10, 0.20, 0));\nassert.strictEqual(status.runtimeWarnings.length, 1);\nassert.strictEqual(status.runtimeWarnings[0].code, 'camera_framing_blocker_excluded');\nassert.strictEqual(isUserFacingWarning(status.runtimeWarnings[0]), false);\nassert.deepStrictEqual(status.renderedMeshDiagnostics, []);\nassert.deepStrictEqual(status.rendered_mesh_diagnostics, []);\nassert.strictEqual(status.frameDiagnostics, status.frame_diagnostics);\nconst toolFrameDiagnostic = status.frameDiagnostics.find(entry => entry.name === 'tool0');\nassert.ok(toolFrameDiagnostic, 'expected tool0 frame diagnostic even without rendered object');\nassert.strictEqual(toolFrameDiagnostic.link, 'tool0');\nassert.strictEqual(toolFrameDiagnostic.parent_link, 'wrist_3_link');\nassert.strictEqual(toolFrameDiagnostic.role, 'transform_anchor');\nassert.strictEqual(toolFrameDiagnostic.render_expected, false);\nassert.strictEqual(toolFrameDiagnostic.mesh_available, false);\nassert.deepStrictEqual(toolFrameDiagnostic.resolved_world_position, [0.10, 0, 0]);\nsetDebugOverlaysVisible(true);\nassert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.meshLoadedCount, 2);\nassert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.requiredMeshFailedCount, 0);\nsetDebugOverlaysVisible(false);\nassert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.meshLoadedCount, 2);\nassert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.requiredMeshFailedCount, 0);\n`, context);\n", '/tmp/canonical-diagnostics-v11/workcell_studio_web/viewer/viewer.js']' returned non-zero exit status 1.
+
+/usr/lib/python3.12/subprocess.py:571: CalledProcessError
+__________ test_viewer_status_exports_generated_urdf_mesh_diagnostics __________
+
+    def test_viewer_status_exports_generated_urdf_mesh_diagnostics():
+        js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+        diagnostics_body = _viewer_function_body(js, "function collectRenderedMeshDiagnostics()", "function updateViewerStatus")
+        status_body = _viewer_function_body(js, "function updateViewerStatus()", "function renderSceneSummary")
+    
+>       assert "state.three?.scene?.updateMatrixWorld?.(true);" in diagnostics_body
+E       AssertionError: assert 'state.three?.scene?.updateMatrixWorld?.(true);' in ' {\n  return canonicalDiagnosticValue(collectRenderedMeshDiagnosticsRaw());\n}\n\n'
+
+tests/test_workcell_studio_web_viewer_static.py:2127: AssertionError
+_ test_urdf_renderer_collada_root_normalization_is_diagnostic_only_with_matrix_parity _
+
+tmp_path = PosixPath('/tmp/pytest-of-runner/pytest-0/test_urdf_renderer_collada_roo0')
+
+    def test_urdf_renderer_collada_root_normalization_is_diagnostic_only_with_matrix_parity(tmp_path):
+        script = tmp_path / "collada_root_boundary.mjs"
+        script.write_text(
+            f"""
+    import assert from 'node:assert/strict';
+    import * as THREE from {str((VIEWER / 'node_modules/three/build/three.module.js')).__repr__()};
+    import {{ normalizeRosColladaScene, ROS_TO_THREE_CONVERSION_BOUNDARY }} from {str((VIEWER / 'urdf_robot_renderer.js')).__repr__()};
+    
+    const diagnostics = {{
+      robot_collada_root_normalization_count: 0,
+      robotColladaRootNormalizationCount: 0,
+      robot_collada_mesh_diagnostics: [],
+    }};
+    const scene = new THREE.Group();
+    scene.rotation.x = -Math.PI / 2;
+    scene.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial()));
+    const normalized = normalizeRosColladaScene({{ scene, asset: {{ upAxis: 'Z_UP', unit: 1 }} }}, 'base.dae', diagnostics);
+    assert.equal(normalized, scene);
+    assert.equal(diagnostics.robot_collada_root_normalization_count, 1);
+    assert.equal(diagnostics.robotColladaRootNormalizationCount, 1);
+    assert.equal(diagnostics.robot_collada_mesh_diagnostics[0].root_transform_normalized, true);
+    assert.equal(scene.rotation.x, 0);
+    assert.equal(scene.quaternion.x, 0);
+    
+    const visualWrapper = new THREE.Group();
+    visualWrapper.position.set(1, 2, 3);
+    visualWrapper.add(scene);
+    visualWrapper.updateMatrixWorld(true);
+    const expectedWrapper = new THREE.Matrix4().makeTranslation(1, 2, 3).elements;
+    assert.deepEqual(Array.from(visualWrapper.matrixWorld.elements), Array.from(expectedWrapper));
+    assert.equal(ROS_TO_THREE_CONVERSION_BOUNDARY.includes('DAE, STL, assembled URDF, and flattened fallback'), true);
+    
+    const authoredYUp = new THREE.Group();
+    authoredYUp.rotation.x = -Math.PI / 2;
+    normalizeRosColladaScene({{ scene: authoredYUp, asset: {{ upAxis: 'Y_UP', unit: 1 }} }}, 'authored-y-up.dae', diagnostics);
+    assert.equal(diagnostics.robot_collada_root_normalization_count, 1);
+    assert.equal(authoredYUp.rotation.x, -Math.PI / 2);
+    """,
+            encoding="utf-8",
+        )
+>       subprocess.run(["node", str(script)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+tests/test_workcell_studio_web_viewer_static.py:2502: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = False, timeout = None, check = True
+popenargs = (['node', '/tmp/pytest-of-runner/pytest-0/test_urdf_renderer_collada_roo0/collada_root_boundary.mjs'],)
+kwargs = {'cwd': PosixPath('/tmp/canonical-diagnostics-v11'), 'text': True, 'stdout': -1, 'stderr': -1}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+    
+        If timeout is given, and the process takes too long, a TimeoutExpired
+        exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['node', '/tmp/pytest-of-runner/pytest-0/test_urdf_renderer_collada_roo0/collada_root_boundary.mjs']' returned non-zero exit status 1.
+
+/usr/lib/python3.12/subprocess.py:571: CalledProcessError
+_ test_expanded_urdf_tool_mesh_failure_keeps_status_scene_failed_not_shell_ready _
+
+    def test_expanded_urdf_tool_mesh_failure_keeps_status_scene_failed_not_shell_ready():
+        js_path = VIEWER / "viewer.js"
+        harness = r"""
+    const fs = require('fs');
+    const vm = require('vm');
+    const assert = require('assert');
+    let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+    const element = () => ({
+      hidden: false,
+      checked: false,
+      disabled: false,
+      textContent: '',
+      className: '',
+      innerHTML: '',
+      classList: { toggle() {} },
+      setAttribute() {},
+      querySelector() { return { textContent: '' }; },
+      appendChild() {},
+      addEventListener() {},
+      getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; },
+    });
+    const context = {
+      console,
+      assert,
+      window: { location: { search: '' }, dispatchEvent() {}, parent: { postMessage() {} } },
+      document: { getElementById() { return element(); }, createElement() { return element(); } },
+      CustomEvent: function CustomEvent(type, init) { return { type, ...init }; },
+      URLSearchParams,
+      requestAnimationFrame() { return 0; },
+    };
+    vm.createContext(context);
+    vm.runInContext(source + `
+    populateObjectList = () => {};
+    updateLabels = () => {};
+    resetView = () => {};
+    renderSceneSummary = () => updateViewerStatus();
+    state.sourceWebSceneFile = 'build/workcell_studio_web_scene/ur5_2f_test.web_scene.json';
+    state.sceneJson = {
+      scene: { id: 'ur5_2f_test' },
+      robot_preview: { mode: 'expanded_urdf_loader', urdf_url: 'assets/ur5_2f_test/scene.urdf' },
+      robots: [{ id: 'ur5', role: 'robot', category: 'robot', mesh_contract_category: 'robot' }],
+      tools: [{ id: 'robotiq_2f', role: 'end_effector', category: 'tool', display_name: 'Robotiq 2F', mesh_contract_category: 'tool', mesh_load_required: true, mesh_uri: 'assets/ur5_2f_test/robotiq/robotiq_85_gripper_visual.dae' }],
+      assets: [{ id: 'workbench', category: 'environment', mesh_contract_category: 'table', mesh_uri: 'assets/ur5_2f_test/table.stl' }],
+      sensors: [{ id: 'camera', category: 'camera', mesh_contract_category: 'camera', mesh_uri: 'assets/ur5_2f_test/realsense.stl' }],
+    };
+    const items = collectItems(state.sceneJson);
+    beginWeb3dSceneReadiness(items);
+    const expandedOperation = registerReadinessOperation(['robot_arm:expanded_urdf_loader', 'attached_tool_gripper:expanded_urdf_loader'], { robotPreviewLoadToken });
+    failExpandedUrdfReadiness(expandedOperation, new Error('HTTP 404 loading required Robotiq tool mesh'), {
+      robot_urdf_url: 'assets/ur5_2f_test/scene.urdf',
+      robot_missing_meshes: ['build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq/robotiq_85_gripper_visual.dae: HTTP 404'],
+      robot_failed_visual_count: 1,
+      robotFailedVisualCount: 1,
+    }, {
+      required_category: 'attached_tool_gripper',
+      link: 'gripper_base_link',
+      url: 'build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq/robotiq_85_gripper_visual.dae',
+      uri: 'package://robotiq_85_description/meshes/visual/robotiq_85_gripper_visual.dae',
+      path: 'package://robotiq_85_description/meshes/visual/robotiq_85_gripper_visual.dae',
+    });
+    let status = updateViewerStatus();
+    assert.strictEqual(status.web3d_readiness_state, 'scene_failed');
+    assert.strictEqual(status.web3dReadinessState, 'scene_failed');
+    assert.strictEqual(status.viewer_boot_state, 'scene_failed');
+    assert.strictEqual(status.final_lifecycle_state, 'scene_failed');
+    assert.strictEqual(status.tool_status, 'failed');
+    assert.strictEqual(status.failed_required_item_count > 0, true);
+    assert.strictEqual(status.final_failed_url, 'build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq/robotiq_85_gripper_visual.dae');
+    assert.strictEqual(status.finalFailedUrl, status.final_failed_url);
+    assert.strictEqual(status.final_failed_link, 'gripper_base_link');
+    assert.strictEqual(status.readiness_failure.link, 'gripper_base_link');
+    assert.strictEqual(status.readiness_failure.url, status.final_failed_url);
+    assert.ok(status.readiness_failure.robot_missing_meshes[0].includes('robotiq_85_gripper_visual.dae'));
+    assert.ok(status.readiness_failure.reason.includes('Robotiq tool mesh'));
+    emitWeb3dReadinessState('server_ready', { http_status: 200 });
+    status = updateViewerStatus();
+    assert.strictEqual(status.web3d_readiness_state, 'scene_failed');
+    assert.strictEqual(status.web3dReadinessState, 'scene_failed');
+    assert.notStrictEqual(status.web3d_readiness_state, 'scene_ready');
+    assert.notStrictEqual(status.web3dReadinessState, 'scene_ready');
+    assert.strictEqual(status.readiness_failure.url, status.final_failed_url);
+    `, context);
+    """
+>       result = subprocess.run(
+            ["node", "-e", harness, str(js_path)],
+            cwd=ROOT,
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+tests/test_workcell_studio_web_viewer_static.py:3074: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = False, timeout = None, check = True
+popenargs = (['node', '-e', "\nconst fs = require('fs');\nconst vm = require('vm');\nconst assert = require('assert');\nlet source...l, status.final_failed_url);\n`, context);\n", '/tmp/canonical-diagnostics-v11/workcell_studio_web/viewer/viewer.js'],)
+kwargs = {'cwd': PosixPath('/tmp/canonical-diagnostics-v11'), 'text': True, 'stdout': -1, 'stderr': -1}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+    
+        If timeout is given, and the process takes too long, a TimeoutExpired
+        exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['node', '-e', "\nconst fs = require('fs');\nconst vm = require('vm');\nconst assert = require('assert');\nlet source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\\(\\);\\s*$/, '');\nconst element = () => ({\n  hidden: false,\n  checked: false,\n  disabled: false,\n  textContent: '',\n  className: '',\n  innerHTML: '',\n  classList: { toggle() {} },\n  setAttribute() {},\n  querySelector() { return { textContent: '' }; },\n  appendChild() {},\n  addEventListener() {},\n  getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; },\n});\nconst context = {\n  console,\n  assert,\n  window: { location: { search: '' }, dispatchEvent() {}, parent: { postMessage() {} } },\n  document: { getElementById() { return element(); }, createElement() { return element(); } },\n  CustomEvent: function CustomEvent(type, init) { return { type, ...init }; },\n  URLSearchParams,\n  requestAnimationFrame() { return 0; },\n};\nvm.createContext(context);\nvm.runInContext(source + `\npopulateObjectList = () => {};\nupdateLabels = () => {};\nresetView = () => {};\nrenderSceneSummary = () => updateViewerStatus();\nstate.sourceWebSceneFile = 'build/workcell_studio_web_scene/ur5_2f_test.web_scene.json';\nstate.sceneJson = {\n  scene: { id: 'ur5_2f_test' },\n  robot_preview: { mode: 'expanded_urdf_loader', urdf_url: 'assets/ur5_2f_test/scene.urdf' },\n  robots: [{ id: 'ur5', role: 'robot', category: 'robot', mesh_contract_category: 'robot' }],\n  tools: [{ id: 'robotiq_2f', role: 'end_effector', category: 'tool', display_name: 'Robotiq 2F', mesh_contract_category: 'tool', mesh_load_required: true, mesh_uri: 'assets/ur5_2f_test/robotiq/robotiq_85_gripper_visual.dae' }],\n  assets: [{ id: 'workbench', category: 'environment', mesh_contract_category: 'table', mesh_uri: 'assets/ur5_2f_test/table.stl' }],\n  sensors: [{ id: 'camera', category: 'camera', mesh_contract_category: 'camera', mesh_uri: 'assets/ur5_2f_test/realsense.stl' }],\n};\nconst items = collectItems(state.sceneJson);\nbeginWeb3dSceneReadiness(items);\nconst expandedOperation = registerReadinessOperation(['robot_arm:expanded_urdf_loader', 'attached_tool_gripper:expanded_urdf_loader'], { robotPreviewLoadToken });\nfailExpandedUrdfReadiness(expandedOperation, new Error('HTTP 404 loading required Robotiq tool mesh'), {\n  robot_urdf_url: 'assets/ur5_2f_test/scene.urdf',\n  robot_missing_meshes: ['build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq/robotiq_85_gripper_visual.dae: HTTP 404'],\n  robot_failed_visual_count: 1,\n  robotFailedVisualCount: 1,\n}, {\n  required_category: 'attached_tool_gripper',\n  link: 'gripper_base_link',\n  url: 'build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq/robotiq_85_gripper_visual.dae',\n  uri: 'package://robotiq_85_description/meshes/visual/robotiq_85_gripper_visual.dae',\n  path: 'package://robotiq_85_description/meshes/visual/robotiq_85_gripper_visual.dae',\n});\nlet status = updateViewerStatus();\nassert.strictEqual(status.web3d_readiness_state, 'scene_failed');\nassert.strictEqual(status.web3dReadinessState, 'scene_failed');\nassert.strictEqual(status.viewer_boot_state, 'scene_failed');\nassert.strictEqual(status.final_lifecycle_state, 'scene_failed');\nassert.strictEqual(status.tool_status, 'failed');\nassert.strictEqual(status.failed_required_item_count > 0, true);\nassert.strictEqual(status.final_failed_url, 'build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq/robotiq_85_gripper_visual.dae');\nassert.strictEqual(status.finalFailedUrl, status.final_failed_url);\nassert.strictEqual(status.final_failed_link, 'gripper_base_link');\nassert.strictEqual(status.readiness_failure.link, 'gripper_base_link');\nassert.strictEqual(status.readiness_failure.url, status.final_failed_url);\nassert.ok(status.readiness_failure.robot_missing_meshes[0].includes('robotiq_85_gripper_visual.dae'));\nassert.ok(status.readiness_failure.reason.includes('Robotiq tool mesh'));\nemitWeb3dReadinessState('server_ready', { http_status: 200 });\nstatus = updateViewerStatus();\nassert.strictEqual(status.web3d_readiness_state, 'scene_failed');\nassert.strictEqual(status.web3dReadinessState, 'scene_failed');\nassert.notStrictEqual(status.web3d_readiness_state, 'scene_ready');\nassert.notStrictEqual(status.web3dReadinessState, 'scene_ready');\nassert.strictEqual(status.readiness_failure.url, status.final_failed_url);\n`, context);\n", '/tmp/canonical-diagnostics-v11/workcell_studio_web/viewer/viewer.js']' returned non-zero exit status 1.
+
+/usr/lib/python3.12/subprocess.py:571: CalledProcessError
+_ test_required_gripper_mesh_failures_transition_scene_failed_with_url_and_link_details _
+
+    def test_required_gripper_mesh_failures_transition_scene_failed_with_url_and_link_details():
+        viewer = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+        renderer = (VIEWER / "urdf_robot_renderer.js").read_text(encoding="utf-8")
+        assert "function failWeb3dSceneReadiness(item, url, reason" in viewer
+        assert "emitWeb3dReadinessState('scene_failed'" in viewer
+        assert "url: url || displayMeshUri(item)" in viewer
+        assert "link: item?.link || item?.link_name || item?.object_name || ''" in viewer
+>       assert "const eventDetail = { ...structured, ...detail, final_lifecycle_state: readinessState" in viewer
+E       AssertionError: assert 'const eventDetail = { ...structured, ...detail, final_lifecycle_state: readinessState' in 'let THREE;\nlet OrbitControls;\nlet STLLoader;\nlet ColladaLoader;\nlet OBJLoader;\nlet TransformControls;\nlet loadR...n  } catch (err) {\n    showError(`Bundled Three.js module load failure: ${err.message || err}`);\n  }\n}\n\nboot();\n'
+
+tests/test_workcell_studio_web_viewer_static.py:3119: AssertionError
+=============================== warnings summary ===============================
+tests/test_workcell_studio_web_viewer_static.py:3460
+  /tmp/canonical-diagnostics-v11/tests/test_workcell_studio_web_viewer_static.py:3460: SyntaxWarning: invalid escape sequence '\('
+    harness = """
+
+tests/test_workcell_studio_web_viewer_static.py:3495
+  /tmp/canonical-diagnostics-v11/tests/test_workcell_studio_web_viewer_static.py:3495: SyntaxWarning: invalid escape sequence '\/'
+    """
+
+tests/test_workcell_studio_web_viewer_static.py:3581
+  /tmp/canonical-diagnostics-v11/tests/test_workcell_studio_web_viewer_static.py:3581: SyntaxWarning: invalid escape sequence '\/'
+    """,
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_workcell_studio_web_viewer_static.py::test_raycast_registry_ancestry_distance_overlays_reload_and_empty_select - subprocess.CalledProcessError: Command '['node', '-e', "\nconst fs = require('fs'); const vm = require('vm'); const assert = require('assert');\nlet source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\\(\\);\\s*$/, '');\nconst element = () => ({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100};}});\nconst context={console,assert,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element();},querySelectorAll(){return[];},createElement(){return element();}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};\nvm.createContext(context);\nvm.runInContext(source + `\nupdateLabels=()=>{}; populateInspector=()=>{}; attachTransformGizmo=()=>{}; detachTransformGizmo=()=>{}; refreshSelectionHighlight=()=>{}; removeSelectionHighlight=()=>{};\nconst node = (name='', parent=null) => ({name,parent,visible:true,userData:{},children:[],traverse(fn){fn(this); this.children.forEach(child=>child.traverse(fn));}});\nconst rendered = item => { const object3d=node(item.id); object3d.userData.item=item; return {item,object3d}; };\nconst bin=rendered({id:'target_bin_default',editable:true,locked:false,render_policy:'primary',mesh_load_required:true,mesh_contract_category:'object',category:'place_zone',source_layer:'editable_layout',transform_group:'default_drop_destination'});\nconst zone=rendered({id:'place_zone_default',editable:true,locked:false,render_policy:'overlay',role:'place_zone',source_layer:'editable_layout',transform_group:'default_drop_destination'});\nconst marker=rendered({id:'commissioning_object',editable:false,locked:true,render_policy:'primary',role:'task_marker',source_layer:'task_preview'});\nstate.sceneJson={scene:{id:'ur5_2f_test'}}; state.objects=[bin,zone,marker]; state.editorEvents=[]; state.debugOverlaysVisible=false;\nconst table=rendered({id:'support_surface_table',role:'table',render_policy:'primary'});\nconst camera=rendered({id:'realsense_overhead',role:'sensor',render_policy:'primary'});\nconst ur5={id:'ur5_generated',role:'robot',source_layer:'locked_generated_urdf_visual'};\nconst tool={id:'robotiq_generated',role:'tool',source_layer:'locked_generated_urdf_visual'};\nstate.objects.push(table,camera);\nconst colladaChild=node('nested-collada',table.object3d); table.object3d.children.push(colladaChild);\nassert.strictEqual(itemFromRaycastHit({object:colladaChild}).item.id,'support_surface_table');\nconst urdfRoot=node('urdf-root'), urdfLink=node('shoulder_link',urdfRoot), urdfMesh=node('mesh',urdfLink); urdfRoot.children=[urdfLink]; urdfLink.children=[urdfMesh];\nregisterPickRecord(ur5,urdfLink,urdfRoot); assert.strictEqual(itemFromRaycastHit({object:urdfMesh}).item.id,'ur5_generated'); assert.strictEqual(state.objects.some(record=>record.item.id==='ur5_generated'),false); assert.strictEqual(selectionIsEditable(renderedById('ur5_generated')),false);\nconst toolLink=node('robotiq_link',urdfRoot), toolMesh=node('tool-mesh',toolLink); toolLink.children=[toolMesh]; urdfRoot.children.push(toolLink);\nregisterPickRecord(tool,toolLink,urdfRoot); assert.strictEqual(itemFromRaycastHit({object:toolMesh}).item.id,'robotiq_generated');\nconst hits=[{object:table.object3d,distance:1},{object:bin.object3d,distance:3}];\nassert.strictEqual(rankedPickingCandidates(hits)[0].rendered.item.id,'support_surface_table');\nstate.three.pointer={}; state.three.camera={}; state.three.raycaster={setFromCamera(){},intersectObjects(){return hits;}};\nassert.strictEqual(pickObject({clientX:10,clientY:10}),'support_surface_table');\nfor (const candidate of [table,camera,{object3d:urdfMesh},{object3d:toolMesh}]) {\n  hits.splice(0,hits.length,{object:candidate.object3d,distance:1},{object:bin.object3d,distance:2});\n  assert.notStrictEqual(pickObject({clientX:10,clientY:10}),'target_bin_default');\n}\nassert.strictEqual(isNormalSelectableRendered(marker),false);\nhits.splice(0,hits.length,{object:zone.object3d,distance:1},{object:bin.object3d,distance:2});\nstate.debugOverlaysVisible=false; assert.strictEqual(pickObject({clientX:10,clientY:10}),'target_bin_default');\nstate.debugOverlaysVisible=true; assert.strictEqual(pickObject({clientX:10,clientY:10}),'place_zone_default'); assert.strictEqual(pickingPriority(marker),4);\nconst pickZone=rendered({id:'pick_zone_commissioning',role:'pick_zone',render_policy:'overlay'}); state.objects.push(pickZone);\nfor (const overlay of [pickZone,zone]) { hits.splice(0,hits.length,{object:overlay.object3d,distance:1},{object:bin.object3d,distance:2}); assert.notStrictEqual(pickObject({clientX:10,clientY:10}),'target_bin_default'); }\nassert.strictEqual(isNormalSelectableRendered(renderedById('ur5_generated')),true); assert.strictEqual(pickingPriority(renderedById('ur5_generated')),3);\nassert.strictEqual(editableTransformGroupMembers(bin).map(r=>r.item.id).sort().join(','),'place_zone_default,target_bin_default');\nconst staleIdentity=state.pickIdentityByObject; resetSceneLifecycleState(); assert.strictEqual(state.pickRecords.length,0); assert.notStrictEqual(state.pickIdentityByObject,staleIdentity); assert.strictEqual(renderedById('ur5_generated'),undefined);\nconst warnings=[]; console.warn=(...args)=>{warnings.push(args);};\nstate.editorMode='select'; state.selected='target_bin_default'; state.three.raycaster={setFromCamera(){},intersectObjects(){return[];}}; pickObject({clientX:10,clientY:10}); assert.strictEqual(state.selected,''); assert.strictEqual(state.lastCanvasPickReason,'empty_select_click'); assert.strictEqual(warnings.length,0,'empty-space clicks do not warn');\nconst rejected=node('unregistered-mesh'); const knownLink=node('known_link'); rejected.parent=knownLink; knownLink.children=[rejected];\nstate.robotPreviewResult={links:new Map([['known_link',knownLink]])};\nstate.three.raycaster={setFromCamera(){},intersectObjects(){return[{object:rejected,distance:1}];}};\npickObject({clientX:10,clientY:10}); pickObject({clientX:10,clientY:10});\nassert.strictEqual(warnings.length,1);\nassert.strictEqual(warnings[0].length,1);\nassert.ok(warnings[0][0].startsWith('Product View canvas pick rejected: '));\nassert.ok(!warnings[0][0].includes('[object Object]'));\nassert.strictEqual(JSON.parse(warnings[0][0].slice('Product View canvas pick rejected: '.length)).nearest_known_urdf_link_ancestor,'known_link');\nassert.strictEqual(state.lastFailedCanvasPickDiagnostic.raw_hit_count,1);\nassert.strictEqual(state.lastFailedCanvasPickDiagnostic.hit_object_names[0],'unregistered-mesh');\nassert.strictEqual(state.lastFailedCanvasPickDiagnostic.traversed_registered_identity,false);\nassert.strictEqual(state.lastFailedCanvasPickDiagnostic.first_actionable_rejection_reason,'no_registered_or_rendered_identity');\nassert.strictEqual(state.lastFailedCanvasPickDiagnostic.nearest_known_urdf_link_ancestor,'known_link');\nassert.strictEqual(editorState().lastFailedCanvasPickDiagnostic.rawHitCount,1);\n`, context);\n", '/tmp/canonical-diagnostics-v11/workcell_studio_web/viewer/viewer.js']' returned non-zero exit status 1.
+FAILED tests/test_workcell_studio_web_viewer_static.py::test_viewer_status_reporting_ignores_hidden_helper_overlay_counters - subprocess.CalledProcessError: Command '['node', '-e', "\nconst fs = require('fs');\nconst vm = require('vm');\nconst assert = require('assert');\nlet source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\\(\\);\\s*$/, '');\nconst element = () => ({\n  hidden: false,\n  checked: false,\n  disabled: false,\n  textContent: '',\n  className: '',\n  innerHTML: '',\n  classList: { toggle() {} },\n  setAttribute() {},\n  querySelector() { return { textContent: '' }; },\n  appendChild() {},\n  addEventListener() {},\n  getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; },\n});\nconst context = {\n  console,\n  assert,\n  window: { location: { search: '' } },\n  document: { getElementById() { return element(); }, createElement() { return element(); } },\n  URLSearchParams,\n  requestAnimationFrame() { return 0; },\n};\nvm.createContext(context);\nvm.runInContext(source + `\npopulateObjectList = () => {};\nupdateLabels = () => {};\nresetView = () => {};\nrenderSceneSummary = () => updateViewerStatus();\nstate.sceneJson = { scene: { id: 'status_test' }, frames: [{ name: 'tool0', link: 'tool0', parent_link: 'wrist_3_link', role: 'transform_anchor', type: 'frame', source_layer: 'generated_urdf', provenance: { source: 'payload.frames' }, world_pose: { xyz: [0.10, 0, 0], rpy: [0, 0, 0] } }] };\nstate.frameLookup = parseSceneFrames(state.sceneJson);\nstate.runtimeWarnings = [{ code: 'camera_framing_blocker_excluded', reason: 'hidden helper excluded' }];\nclass MockVector3 {\n  constructor(x = 0, y = 0, z = 0) {\n    this.x = x;\n    this.y = y;\n    this.z = z;\n  }\n}\nTHREE = { Vector3: MockVector3 };\nstate.resolvedFramePoses.set('wrist_3_link', { xyz: new MockVector3(0, 0, 0), rpy: new MockVector3(0, 0, 0) });\nstate.resolvedFramePoses.set('tool0', { xyz: new MockVector3(0.10, 0, 0), rpy: new MockVector3(0, 0, 0) });\nstate.resolvedFramePoses.set('gripper_base_link', { xyz: new MockVector3(0.10, 0.20, 0), rpy: new MockVector3(0, 0, 0) });\nstate.objects = [\n  { item: { id: 'robot_link', role: 'robot' }, renderInfo: { render_status: 'mesh_loaded' }, object3d: { visible: true } },\n  { item: { id: 'workbench', category: 'environment' }, renderInfo: { render_status: 'mesh_loaded' }, object3d: { visible: true } },\n  { item: { id: 'camera_fov_helper', role: 'camera_fov', category: 'overlay' }, renderInfo: { render_status: 'mesh_loaded' }, object3d: { visible: false } },\n  { item: { id: 'pick_zone_bounds', role: 'pick_zone', category: 'safety_zone', renderInfo: { render_status: 'required_mesh_failed_debug_fallback' } }, renderInfo: { render_status: 'required_mesh_failed_debug_fallback' }, object3d: { visible: false } },\n];\nlet status = updateViewerStatus();\nassert.strictEqual(status.meshLoadedCount, 2);\nassert.strictEqual(status.mesh_loaded_count, 2);\nassert.strictEqual(status.requiredMeshFailedCount, 0);\nassert.strictEqual(status.required_mesh_failed_count, 0);\nassert.deepStrictEqual(status.resolvedFramePositions.wrist_3_link, [0, 0, 0]);\nassert.deepStrictEqual(status.resolvedFramePositions.tool0, [0.10, 0, 0]);\nassert.deepStrictEqual(status.resolvedFramePositions.gripper_base_link, [0.10, 0.20, 0]);\nassert.deepStrictEqual(status.resolved_frame_positions, status.resolvedFramePositions);\nassert.strictEqual(typeof status.viewer_resolved_distances_m['wrist_3_link -> tool0'], 'number');\nassert.strictEqual(typeof status.viewer_resolved_distances_m['tool0 -> gripper_base_link'], 'number');\nassert.strictEqual(typeof status.viewer_resolved_distances_m['wrist_3_link -> gripper_base_link'], 'number');\nassert.strictEqual(status.viewer_resolved_distances_m['wrist_3_link -> tool0'], 0.10);\nassert.strictEqual(status.viewer_resolved_distances_m['tool0 -> gripper_base_link'], 0.20);\nassert.strictEqual(status.viewer_resolved_distances_m['wrist_3_link -> gripper_base_link'], Math.hypot(0.10, 0.20, 0));\nassert.strictEqual(status.runtimeWarnings.length, 1);\nassert.strictEqual(status.runtimeWarnings[0].code, 'camera_framing_blocker_excluded');\nassert.strictEqual(isUserFacingWarning(status.runtimeWarnings[0]), false);\nassert.deepStrictEqual(status.renderedMeshDiagnostics, []);\nassert.deepStrictEqual(status.rendered_mesh_diagnostics, []);\nassert.strictEqual(status.frameDiagnostics, status.frame_diagnostics);\nconst toolFrameDiagnostic = status.frameDiagnostics.find(entry => entry.name === 'tool0');\nassert.ok(toolFrameDiagnostic, 'expected tool0 frame diagnostic even without rendered object');\nassert.strictEqual(toolFrameDiagnostic.link, 'tool0');\nassert.strictEqual(toolFrameDiagnostic.parent_link, 'wrist_3_link');\nassert.strictEqual(toolFrameDiagnostic.role, 'transform_anchor');\nassert.strictEqual(toolFrameDiagnostic.render_expected, false);\nassert.strictEqual(toolFrameDiagnostic.mesh_available, false);\nassert.deepStrictEqual(toolFrameDiagnostic.resolved_world_position, [0.10, 0, 0]);\nsetDebugOverlaysVisible(true);\nassert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.meshLoadedCount, 2);\nassert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.requiredMeshFailedCount, 0);\nsetDebugOverlaysVisible(false);\nassert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.meshLoadedCount, 2);\nassert.strictEqual(window.__WORKCELL_VIEWER_STATUS__.requiredMeshFailedCount, 0);\n`, context);\n", '/tmp/canonical-diagnostics-v11/workcell_studio_web/viewer/viewer.js']' returned non-zero exit status 1.
+FAILED tests/test_workcell_studio_web_viewer_static.py::test_viewer_status_exports_generated_urdf_mesh_diagnostics - AssertionError: assert 'state.three?.scene?.updateMatrixWorld?.(true);' in ' {\n  return canonicalDiagnosticValue(collectRenderedMeshDiagnosticsRaw());\n}\n\n'
+FAILED tests/test_workcell_studio_web_viewer_static.py::test_urdf_renderer_collada_root_normalization_is_diagnostic_only_with_matrix_parity - subprocess.CalledProcessError: Command '['node', '/tmp/pytest-of-runner/pytest-0/test_urdf_renderer_collada_roo0/collada_root_boundary.mjs']' returned non-zero exit status 1.
+FAILED tests/test_workcell_studio_web_viewer_static.py::test_expanded_urdf_tool_mesh_failure_keeps_status_scene_failed_not_shell_ready - subprocess.CalledProcessError: Command '['node', '-e', "\nconst fs = require('fs');\nconst vm = require('vm');\nconst assert = require('assert');\nlet source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\\(\\);\\s*$/, '');\nconst element = () => ({\n  hidden: false,\n  checked: false,\n  disabled: false,\n  textContent: '',\n  className: '',\n  innerHTML: '',\n  classList: { toggle() {} },\n  setAttribute() {},\n  querySelector() { return { textContent: '' }; },\n  appendChild() {},\n  addEventListener() {},\n  getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; },\n});\nconst context = {\n  console,\n  assert,\n  window: { location: { search: '' }, dispatchEvent() {}, parent: { postMessage() {} } },\n  document: { getElementById() { return element(); }, createElement() { return element(); } },\n  CustomEvent: function CustomEvent(type, init) { return { type, ...init }; },\n  URLSearchParams,\n  requestAnimationFrame() { return 0; },\n};\nvm.createContext(context);\nvm.runInContext(source + `\npopulateObjectList = () => {};\nupdateLabels = () => {};\nresetView = () => {};\nrenderSceneSummary = () => updateViewerStatus();\nstate.sourceWebSceneFile = 'build/workcell_studio_web_scene/ur5_2f_test.web_scene.json';\nstate.sceneJson = {\n  scene: { id: 'ur5_2f_test' },\n  robot_preview: { mode: 'expanded_urdf_loader', urdf_url: 'assets/ur5_2f_test/scene.urdf' },\n  robots: [{ id: 'ur5', role: 'robot', category: 'robot', mesh_contract_category: 'robot' }],\n  tools: [{ id: 'robotiq_2f', role: 'end_effector', category: 'tool', display_name: 'Robotiq 2F', mesh_contract_category: 'tool', mesh_load_required: true, mesh_uri: 'assets/ur5_2f_test/robotiq/robotiq_85_gripper_visual.dae' }],\n  assets: [{ id: 'workbench', category: 'environment', mesh_contract_category: 'table', mesh_uri: 'assets/ur5_2f_test/table.stl' }],\n  sensors: [{ id: 'camera', category: 'camera', mesh_contract_category: 'camera', mesh_uri: 'assets/ur5_2f_test/realsense.stl' }],\n};\nconst items = collectItems(state.sceneJson);\nbeginWeb3dSceneReadiness(items);\nconst expandedOperation = registerReadinessOperation(['robot_arm:expanded_urdf_loader', 'attached_tool_gripper:expanded_urdf_loader'], { robotPreviewLoadToken });\nfailExpandedUrdfReadiness(expandedOperation, new Error('HTTP 404 loading required Robotiq tool mesh'), {\n  robot_urdf_url: 'assets/ur5_2f_test/scene.urdf',\n  robot_missing_meshes: ['build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq/robotiq_85_gripper_visual.dae: HTTP 404'],\n  robot_failed_visual_count: 1,\n  robotFailedVisualCount: 1,\n}, {\n  required_category: 'attached_tool_gripper',\n  link: 'gripper_base_link',\n  url: 'build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq/robotiq_85_gripper_visual.dae',\n  uri: 'package://robotiq_85_description/meshes/visual/robotiq_85_gripper_visual.dae',\n  path: 'package://robotiq_85_description/meshes/visual/robotiq_85_gripper_visual.dae',\n});\nlet status = updateViewerStatus();\nassert.strictEqual(status.web3d_readiness_state, 'scene_failed');\nassert.strictEqual(status.web3dReadinessState, 'scene_failed');\nassert.strictEqual(status.viewer_boot_state, 'scene_failed');\nassert.strictEqual(status.final_lifecycle_state, 'scene_failed');\nassert.strictEqual(status.tool_status, 'failed');\nassert.strictEqual(status.failed_required_item_count > 0, true);\nassert.strictEqual(status.final_failed_url, 'build/workcell_studio_web_scene/assets/ur5_2f_test/robotiq/robotiq_85_gripper_visual.dae');\nassert.strictEqual(status.finalFailedUrl, status.final_failed_url);\nassert.strictEqual(status.final_failed_link, 'gripper_base_link');\nassert.strictEqual(status.readiness_failure.link, 'gripper_base_link');\nassert.strictEqual(status.readiness_failure.url, status.final_failed_url);\nassert.ok(status.readiness_failure.robot_missing_meshes[0].includes('robotiq_85_gripper_visual.dae'));\nassert.ok(status.readiness_failure.reason.includes('Robotiq tool mesh'));\nemitWeb3dReadinessState('server_ready', { http_status: 200 });\nstatus = updateViewerStatus();\nassert.strictEqual(status.web3d_readiness_state, 'scene_failed');\nassert.strictEqual(status.web3dReadinessState, 'scene_failed');\nassert.notStrictEqual(status.web3d_readiness_state, 'scene_ready');\nassert.notStrictEqual(status.web3dReadinessState, 'scene_ready');\nassert.strictEqual(status.readiness_failure.url, status.final_failed_url);\n`, context);\n", '/tmp/canonical-diagnostics-v11/workcell_studio_web/viewer/viewer.js']' returned non-zero exit status 1.
+FAILED tests/test_workcell_studio_web_viewer_static.py::test_required_gripper_mesh_failures_transition_scene_failed_with_url_and_link_details - AssertionError: assert 'const eventDetail = { ...structured, ...detail, final_lifecycle_state: readinessState' in 'let THREE;\nlet OrbitControls;\nlet STLLoader;\nlet ColladaLoader;\nlet OBJLoader;\nlet TransformControls;\nlet loadR...n  } catch (err) {\n    showError(`Bundled Three.js module load failure: ${err.message || err}`);\n  }\n}\n\nboot();\n'
+6 failed, 121 passed, 3 warnings in 3.92s
+status=1
