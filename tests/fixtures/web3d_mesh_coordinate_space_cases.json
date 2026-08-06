@@ -1,0 +1,112 @@
+{
+  "schema_version": "workcell_web3d_mesh_coordinate_space_fixture/v1",
+  "cases": [
+    {
+      "id": "ur5_2f_test_realsense_overhead_rotated_visual",
+      "description": "Canonical failing ur5_2f_test camera visual: local body dimensions are valid but a 90-degree visual rotation swaps world AABB axes.",
+      "item": {
+        "id": "generated_urdf::camera_link::visual_17::17",
+        "canonical_owner_id": "realsense_overhead",
+        "category": "camera",
+        "render_policy": "primary",
+        "mesh_load_required": true,
+        "expected_dimensions_m": [
+          0.09,
+          0.025,
+          0.025
+        ]
+      },
+      "geometry_dimensions": [
+        0.09,
+        0.025,
+        0.025
+      ],
+      "visual_rotation_rpy": [
+        0.0,
+        1.5707963267948966,
+        0.0
+      ],
+      "expected_outcome": "valid"
+    },
+    {
+      "id": "rotated_authored_object",
+      "description": "Rotation may enlarge or permute world-axis AABB dimensions but must not alter authored-local validation dimensions.",
+      "item": {
+        "id": "rotated_fixture",
+        "category": "object",
+        "render_policy": "primary",
+        "mesh_load_required": true,
+        "expected_dimensions_m": [
+          2.0,
+          1.0,
+          0.5
+        ]
+      },
+      "geometry_dimensions": [
+        2.0,
+        1.0,
+        0.5
+      ],
+      "visual_rotation_rpy": [
+        0.0,
+        0.0,
+        0.7853981633974483
+      ],
+      "expected_outcome": "valid"
+    },
+    {
+      "id": "millimetre_authored_object",
+      "description": "A clear uniform 1000x mesh-unit mismatch is corrected exactly once at the loaded mesh node.",
+      "item": {
+        "id": "millimetre_fixture",
+        "category": "object",
+        "render_policy": "primary",
+        "mesh_load_required": true,
+        "allow_mesh_unit_autoscale": true,
+        "expected_dimensions_m": [
+          0.9,
+          0.25,
+          0.25
+        ]
+      },
+      "geometry_dimensions": [
+        900.0,
+        250.0,
+        250.0
+      ],
+      "visual_rotation_rpy": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "expected_unit_scale": 0.001,
+      "expected_outcome": "valid"
+    },
+    {
+      "id": "genuine_oversized_object",
+      "description": "A genuinely greater-than-3x authored-local mismatch remains a strict terminal failure.",
+      "item": {
+        "id": "oversized_fixture",
+        "category": "object",
+        "render_policy": "primary",
+        "mesh_load_required": true,
+        "expected_dimensions_m": [
+          0.1,
+          0.1,
+          0.1
+        ]
+      },
+      "geometry_dimensions": [
+        0.31,
+        0.1,
+        0.1
+      ],
+      "visual_rotation_rpy": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "expected_outcome": "scene_failed"
+    }
+  ]
+}
