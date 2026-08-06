@@ -1,0 +1,1039 @@
+diff --git a/workcell_builder/workcell_builder/gui/scene_preview_widget.cpp b/workcell_builder/workcell_builder/gui/scene_preview_widget.cpp
+index 97c9eae8..7eeb7d74 100644
+--- a/workcell_builder/workcell_builder/gui/scene_preview_widget.cpp
++++ b/workcell_builder/workcell_builder/gui/scene_preview_widget.cpp
+@@ -2191,31 +2191,46 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
+   static const char kStatusScript[] = R"JS(
+ (() => {
+   const s = window.__WORKCELL_VIEWER_STATUS__ || {};
++  // External compatibility boundary: read the canonical snake_case key
++  // first and permit exactly one legacy camelCase fallback per field.
++  const readStatus = (canonicalKey, legacyKey, fallbackValue) => {
++    const canonicalValue = s[canonicalKey];
++    if (canonicalValue !== undefined && canonicalValue !== null) return canonicalValue;
++    const legacyValue = s[legacyKey];
++    return legacyValue !== undefined && legacyValue !== null ? legacyValue : fallbackValue;
++  };
++  const lifecycleState = String(readStatus('lifecycle_state', 'lifecycleState', ''));
++  const pendingLoads = readStatus('pending_required_loads', 'pendingRequiredLoads', []);
+   return {
+-    readiness_contract_version: Number(s.readiness_contract_version ?? s.readinessContractVersion ?? 0),
+-    lifecycle_state: s.lifecycle_state || s.lifecycleState || '',
++    readiness_contract_version: Number(readStatus('readiness_contract_version', 'readinessContractVersion', 0)),
++    lifecycle_state: lifecycleState,
+     terminal: Boolean(s.terminal),
+-    status_sequence: Number(s.status_sequence ?? s.statusSequence ?? 0),
+-    builder_revision: String(s.builder_revision ?? s.builderRevision ?? ''),
+-    viewer_boot_state: s.web3d_readiness_state || s.web3dReadinessState || s.viewer_boot_state || s.viewerBootState || '',
+-    scene_name: s.scene_name || s.sceneName || '',
+-    source_web_scene_file: s.source_web_scene_file || s.sourceWebSceneFile || '',
+-    scene_json_loaded: Boolean(s.scene_json_loaded || s.sceneJsonLoaded),
+-    robot_preview_lifecycle_state: s.robot_preview_lifecycle_state || s.robotPreviewLifecycleState || '',
+-    scene_id: s.scene_id || s.sceneId || '',
+-    expected_physical_item_count: Number(s.expected_physical_item_count ?? s.expectedPhysicalItemCount ?? 0),
+-    rendered_physical_item_count: Number(s.rendered_physical_item_count ?? s.renderedPhysicalItemCount ?? 0),
+-    failed_required_item_count: Number(s.failed_required_item_count ?? s.failedRequiredItemCount ?? s.required_mesh_failed_count ?? s.requiredMeshFailedCount ?? 0),
+-    robot_status: s.robot_status || s.robotStatus || '',
+-    tool_status: s.tool_status || s.toolStatus || s.end_effector_status || s.endEffectorStatus || '',
+-    environment_status: s.environment_status || s.environmentStatus || '',
+-    camera_status: s.camera_status || s.cameraStatus || '',
+-    pending_required_loads: Array.isArray(s.pending_required_loads || s.pendingRequiredLoads) ? (s.pending_required_loads || s.pendingRequiredLoads) : [],
+-    final_lifecycle_state: s.final_lifecycle_state || s.finalLifecycleState || s.lifecycle_state || s.lifecycleState || '',
+-    readiness_failure: s.readiness_failure || s.readinessFailure || null,
+-    failed_stage: s.failed_stage || s.failedStage || '',
+-    fatal_error: s.fatal_error || s.fatalError || '',
+-    fatal_stack: String(s.fatal_stack || s.fatalStack || '').split('\n').slice(0, 6).join('\n')
++    status_sequence: Number(readStatus('status_sequence', 'statusSequence', 0)),
++    builder_revision: String(readStatus('builder_revision', 'builderRevision', '')),
++    viewer_boot_state: String(readStatus('viewer_boot_state', 'viewerBootState', '')),
++    scene_json_loaded: Boolean(readStatus('scene_json_loaded', 'sceneJsonLoaded', false)),
++    failed_required_item_count: Number(readStatus('failed_required_item_count', 'failedRequiredItemCount', 0)),
++    required_mesh_failed_count: Number(readStatus('required_mesh_failed_count', 'requiredMeshFailedCount', 0)),
++    expected_physical_item_count: Number(readStatus('expected_physical_item_count', 'expectedPhysicalItemCount', 0)),
++    rendered_physical_item_count: Number(readStatus('rendered_physical_item_count', 'renderedPhysicalItemCount', 0)),
++    expected_robot_visual_count: Number(readStatus('expected_robot_visual_count', 'expectedRobotVisualCount', 0)),
++    rendered_robot_visual_count: Number(readStatus('rendered_robot_visual_count', 'renderedRobotVisualCount', 0)),
++    failed_robot_visual_count: Number(readStatus('failed_robot_visual_count', 'failedRobotVisualCount', 0)),
++    expected_robot_link_count: Number(readStatus('expected_robot_link_count', 'expectedRobotLinkCount', 0)),
++    rendered_robot_link_count: Number(readStatus('rendered_robot_link_count', 'renderedRobotLinkCount', 0)),
++    missing_robot_link_count: Number(readStatus('missing_robot_link_count', 'missingRobotLinkCount', 0)),
++    robot_status: String(readStatus('robot_status', 'robotStatus', '')),
++    tool_status: String(readStatus('tool_status', 'toolStatus', '')),
++    environment_status: String(readStatus('environment_status', 'environmentStatus', '')),
++    camera_status: String(readStatus('camera_status', 'cameraStatus', '')),
++    pending_required_loads: Array.isArray(pendingLoads) ? pendingLoads : [],
++    final_lifecycle_state: String(readStatus('final_lifecycle_state', 'finalLifecycleState', lifecycleState)),
++    readiness_failure: readStatus('readiness_failure', 'readinessFailure', null),
++    readiness_failure_code: String(readStatus('readiness_failure_code', 'readinessFailureCode', '')),
++    readiness_failure_reason: String(readStatus('readiness_failure_reason', 'readinessFailureReason', '')),
++    failed_stage: String(readStatus('failed_stage', 'failedStage', '')),
++    fatal_error: String(readStatus('fatal_error', 'fatalError', '')),
++    fatal_stack: String(readStatus('fatal_stack', 'fatalStack', '')).split('\n').slice(0, 6).join('\n')
+   };
+ })()
+ )JS";
+diff --git a/workcell_studio_web/viewer/urdf_robot_renderer.js b/workcell_studio_web/viewer/urdf_robot_renderer.js
+index 27f78df4..5dd3bdd1 100644
+--- a/workcell_studio_web/viewer/urdf_robot_renderer.js
++++ b/workcell_studio_web/viewer/urdf_robot_renderer.js
+@@ -6,6 +6,30 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+ 
+ const ROBOT_RENDER_MODE = 'expanded_urdf_loader';
+ 
++
++function diagnosticSnakeCaseKey(key) {
++  return String(key || '')
++    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
++    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
++    .replace(/-/g, '_')
++    .toLowerCase();
++}
++function canonicalDiagnosticValue(value) {
++  if (Array.isArray(value)) return value.map(canonicalDiagnosticValue);
++  if (!value || typeof value !== 'object') return value;
++  const prototype = Object.getPrototypeOf(value);
++  if (prototype !== Object.prototype && prototype !== null) return value;
++  const output = {};
++  const entries = Object.entries(value).sort(([left], [right]) =>
++    Number(left !== diagnosticSnakeCaseKey(left)) - Number(right !== diagnosticSnakeCaseKey(right)));
++  for (const [key, item] of entries) {
++    const canonicalKey = diagnosticSnakeCaseKey(key);
++    if (Object.prototype.hasOwnProperty.call(output, canonicalKey)) continue;
++    output[canonicalKey] = canonicalDiagnosticValue(item);
++  }
++  return output;
++}
++
+ const COLLADA_Z_UP_CONSOLE_MESSAGE = 'THREE.ColladaLoader: You are loading an asset with a Z-UP coordinate system. The loader just rotates the asset to transform it into Y-UP. The vertex data are not converted, see #24289.';
+ 
+ function loadColladaWithSceneScopedZUpDiagnostic(loader, url, onLoad, onProgress, onError, diagnostics) {
+@@ -13,7 +37,6 @@ function loadColladaWithSceneScopedZUpDiagnostic(loader, url, onLoad, onProgress
+   console.warn = (...args) => {
+     if (String(args?.[0] || '') === COLLADA_Z_UP_CONSOLE_MESSAGE) {
+       diagnostics.collada_z_up_console_message_count = (diagnostics.collada_z_up_console_message_count || 0) + 1;
+-      diagnostics.colladaZUpConsoleMessageCount = diagnostics.collada_z_up_console_message_count;
+       if (!diagnostics.collada_z_up_console_message_emitted) {
+         diagnostics.collada_z_up_console_message_emitted = true;
+         console.info(`Collada Z-UP loader notice collapsed for scene load: ${COLLADA_Z_UP_CONSOLE_MESSAGE}`);
+@@ -52,7 +75,7 @@ function rejectPackageMeshUri(reason, diagnostics, sourceUrl = '') {
+   const detail = sourceUrl ? `${sourceUrl}: ${reason}` : reason;
+   diagnostics.robot_missing_meshes.push(`URDF package mesh rejected: ${detail}`);
+   diagnostics.robot_package_mesh_rejections = diagnostics.robot_package_mesh_rejections || [];
+-  diagnostics.robot_package_mesh_rejections.push({ source_url: sourceUrl || '', sourceUrl: sourceUrl || '', policy_reason: reason, policyReason: reason });
++  diagnostics.robot_package_mesh_rejections.push({ source_url: sourceUrl || '', policy_reason: reason });
+   return '';
+ }
+ 
+@@ -206,7 +229,6 @@ function applyFallbackMaterial(object, material) {
+ 
+ function setLifecycleState(diagnostics, state) {
+   diagnostics.robot_preview_lifecycle_state = state;
+-  diagnostics.robotPreviewLifecycleState = state;
+ }
+ 
+ function isIdentityTransform(object, eps = 1e-9) {
+@@ -293,7 +315,7 @@ function normalizeRosColladaScene(dae, uri, diagnostics) {
+   scene.updateMatrix();
+   scene.updateMatrixWorld(true);
+   diagnostics.robot_collada_root_normalization_count += 1;
+-  diagnostics.robotColladaRootNormalizationCount = diagnostics.robot_collada_root_normalization_count;
++  diagnostics.robot_collada_root_normalization_count = diagnostics.robot_collada_root_normalization_count;
+   const detail = {
+     uri,
+     up_axis: upAxis || null,
+@@ -311,10 +333,10 @@ function normalizeRosColladaScene(dae, uri, diagnostics) {
+ function loadMesh(path, manager, material, done, context, diagnostics) {
+   const uri = normalizeMeshUri(path, context, diagnostics);
+   diagnostics.robot_expected_visual_count += 1;
+-  diagnostics.robotExpectedVisualCount = diagnostics.robot_expected_visual_count;
++  diagnostics.robot_expected_visual_count = diagnostics.robot_expected_visual_count;
+   if (!uri) {
+     diagnostics.robot_failed_visual_count += 1;
+-    diagnostics.robotFailedVisualCount = diagnostics.robot_failed_visual_count;
++    diagnostics.robot_failed_visual_count = diagnostics.robot_failed_visual_count;
+     const policy = canonicalStagedMeshUrl(path, context, diagnostics);
+     const reason = policy.reason || `unloadable URDF mesh URI: ${path}`;
+     const err = new Error(`unloadable URDF mesh URI: link=${inferMeshLinkDetail(path).link || '<unknown>'} source_url=${path} policy_reason=${reason}`);
+@@ -327,13 +349,12 @@ function loadMesh(path, manager, material, done, context, diagnostics) {
+   const onDone = object => {
+     diagnostics.robot_loaded_visual_count += 1;
+     diagnostics.robot_completed_visual_count = diagnostics.robot_loaded_visual_count;
+-    diagnostics.robotCompletedVisualCount = diagnostics.robot_completed_visual_count;
+     done(applyFallbackMaterial(object, material));
+     context?.onRobotMeshLoaded?.();
+   };
+   const onError = err => {
+     diagnostics.robot_failed_visual_count += 1;
+-    diagnostics.robotFailedVisualCount = diagnostics.robot_failed_visual_count;
++    diagnostics.robot_failed_visual_count = diagnostics.robot_failed_visual_count;
+     diagnostics.robot_missing_meshes.push(`${url}: ${err?.message || err || 'load failed'}`);
+     done(null, err);
+     context?.onRobotMeshLoadError?.(err, uri, { url, uri, path, source_url: path, sourceUrl: path, policy_reason: err?.message || 'loader failure', policyReason: err?.message || 'loader failure', ...inferMeshLinkDetail(path) });
+@@ -357,12 +378,10 @@ function meshCompletionPromise(diagnostics, manager) {
+   const timeoutMs = 30000;
+   const waitTick = callback => (typeof window !== 'undefined' && window.setTimeout ? window.setTimeout(callback, 0) : setTimeout(callback, 0));
+   diagnostics.robot_loading_manager_complete = false;
+-  diagnostics.robotLoadingManagerComplete = false;
+   const previousOnLoad = manager.onLoad;
+   manager.onLoad = () => {
+     managerComplete = true;
+     diagnostics.robot_loading_manager_complete = true;
+-    diagnostics.robotLoadingManagerComplete = true;
+     previousOnLoad?.();
+   };
+   const countsSettled = () => diagnostics.robot_expected_visual_count === (diagnostics.robot_loaded_visual_count + diagnostics.robot_failed_visual_count);
+@@ -469,19 +488,18 @@ function collectMatrixParityDiagnostics(previewConfig, diagnostics) {
+     previewConfig?.expected_robot_link_world_matrices,
+     previewConfig?.expectedRobotLinkWorldMatrices,
+     previewConfig?.robot_link_world_matrices_expected,
+-    previewConfig?.robotLinkWorldMatricesExpected
++    previewConfig?.robot_link_world_matricesExpected
+   );
+   const visualExpected = expectedMatrixMap(
+     previewConfig?.expected_robot_visual_wrapper_world_matrices,
+     previewConfig?.expectedRobotVisualWrapperWorldMatrices,
+     previewConfig?.robot_visual_wrapper_world_matrices_expected,
+-    previewConfig?.robotVisualWrapperWorldMatricesExpected
++    previewConfig?.robot_visual_wrapper_world_matricesExpected
+   );
+   const linkParity = compareMatrixDiagnostics(diagnostics.robot_link_world_matrices || {}, linkExpected, tolerance);
+   const visualActual = new Map((diagnostics.robot_visual_wrapper_world_matrices || []).map(entry => [String(entry?.link_name || entry?.linkName || '').trim(), entry]).filter(([key]) => key));
+   const visualParity = compareMatrixDiagnostics(visualActual, visualExpected, tolerance);
+   diagnostics.robot_matrix_world_parity = { tolerance, link: linkParity, visual_wrapper: visualParity, pass: linkParity.pass && visualParity.pass };
+-  diagnostics.robotMatrixWorldParity = diagnostics.robot_matrix_world_parity;
+   return diagnostics.robot_matrix_world_parity;
+ }
+ 
+@@ -702,13 +720,10 @@ export function applyRobotJointPreview(result, jointValues = {}) {
+   const links = Object.fromEntries(result.links || []);
+   result.diagnostics.robot_joint_values_applied = { ...jointValues };
+   result.diagnostics.robot_link_world_matrices = collectLinkMatrixDiagnostics(robot, links);
+-  result.diagnostics.robotLinkWorldMatrices = result.diagnostics.robot_link_world_matrices;
+   result.diagnostics.robot_visual_wrapper_world_matrices = collectVisualWrapperMatrixDiagnostics(links);
+-  result.diagnostics.robotVisualWrapperWorldMatrices = result.diagnostics.robot_visual_wrapper_world_matrices;
+   result.diagnostics.robot_descendant_render_mesh_diagnostics = collectDescendantRenderMeshDiagnostics(links);
+-  result.diagnostics.robotDescendantRenderMeshDiagnostics = result.diagnostics.robot_descendant_render_mesh_diagnostics;
+   collectMatrixParityDiagnostics(result?.previewConfig || {}, result.diagnostics);
+-  return result.diagnostics;
++  return canonicalDiagnosticValue(result.diagnostics);
+ }
+ 
+ function jointTypeCounts(joints) {
+@@ -736,33 +751,20 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
+     robot_joint_values_applied: previewConfig?.joint_values || {},
+     robot_joint_type_counts: {},
+     robot_expected_visual_count: 0,
+-    robotExpectedVisualCount: 0,
+     robot_completed_visual_count: 0,
+-    robotCompletedVisualCount: 0,
+     robot_failed_visual_count: 0,
+-    robotFailedVisualCount: 0,
+     robot_root_link_count: 0,
+-    robotRootLinkCount: 0,
+     robot_root_links: [],
+-    robotRootLinks: [],
+     robot_disconnected_links: [],
+-    robotDisconnectedLinks: [],
+     robot_duplicate_links: [],
+-    robotDuplicateLinks: [],
+     robot_preview_lifecycle_state: 'idle',
+-    robotPreviewLifecycleState: 'idle',
+     robot_preview_canonical_fallback_used: false,
+-    robotPreviewCanonicalFallbackUsed: false,
+     robot_collada_root_normalization_count: 0,
+-    robotColladaRootNormalizationCount: 0,
+     robot_collada_mesh_diagnostics: [],
+-    robotColladaMeshDiagnostics: [],
+     robot_collada_summary: [],
+-    robotColladaSummary: [],
+     robot_package_mesh_resolutions: [],
+     robot_package_mesh_rejections: [],
+     robot_descendant_render_mesh_diagnostics: [],
+-    robotDescendantRenderMeshDiagnostics: [],
+     skipped_legacy_generated_urdf_visual_count: rendererContext?.skippedLegacyGeneratedUrdfVisualCount || 0,
+   };
+   const result = { root: null, links: new Map(), joints: new Map(), diagnostics, ready: null, previewConfig };
+@@ -805,25 +807,16 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
+     diagnostics.robot_joint_type_counts = jointTypeCounts(robot.joints);
+     diagnostics.robot_hierarchy_links = Array.from(result.links.keys());
+     diagnostics.robot_link_world_matrices = collectLinkMatrixDiagnostics(robot, robot.links);
+-    diagnostics.robotLinkWorldMatrices = diagnostics.robot_link_world_matrices;
+     diagnostics.robot_visual_wrapper_world_matrices = collectVisualWrapperMatrixDiagnostics(robot.links);
+-    diagnostics.robotVisualWrapperWorldMatrices = diagnostics.robot_visual_wrapper_world_matrices;
+     diagnostics.robot_descendant_render_mesh_diagnostics = collectDescendantRenderMeshDiagnostics(robot.links);
+-    diagnostics.robotDescendantRenderMeshDiagnostics = diagnostics.robot_descendant_render_mesh_diagnostics;
+     collectMatrixParityDiagnostics(previewConfig, diagnostics);
+     diagnostics.robot_collada_mesh_diagnostics = diagnostics.robot_collada_mesh_diagnostics || [];
+-    diagnostics.robotColladaMeshDiagnostics = diagnostics.robot_collada_mesh_diagnostics;
+     diagnostics.robot_collada_summary = diagnostics.robot_collada_summary || [];
+-    diagnostics.robotColladaSummary = diagnostics.robot_collada_summary;
+     const rootDiagnostics = linkRootDiagnostics(robot, robot.links);
+     diagnostics.robot_root_links = rootDiagnostics.roots;
+-    diagnostics.robotRootLinks = rootDiagnostics.roots;
+     diagnostics.robot_root_link_count = rootDiagnostics.roots.length;
+-    diagnostics.robotRootLinkCount = rootDiagnostics.roots.length;
+     diagnostics.robot_disconnected_links = rootDiagnostics.disconnected;
+-    diagnostics.robotDisconnectedLinks = rootDiagnostics.disconnected;
+     diagnostics.robot_duplicate_links = rootDiagnostics.duplicateLinks;
+-    diagnostics.robotDuplicateLinks = rootDiagnostics.duplicateLinks;
+     const loadedVisualLinks = new Set((diagnostics.robot_visual_wrapper_world_matrices || [])
+       .map(visual => String(visual?.link_name || visual?.linkName || '').trim())
+       .filter(Boolean));
+@@ -832,32 +825,25 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
+     const expectedToolVisualLinks = Array.isArray(previewConfig?.expected_tool_visual_links) ? previewConfig.expected_tool_visual_links : [];
+     diagnostics.robot_hierarchy_missing_links = expectedLinks.filter(link => !result.links.has(link));
+     diagnostics.robot_missing_required_robot_visual_links = expectedRobotVisualLinks.filter(link => !loadedVisualLinks.has(link));
+-    diagnostics.robotMissingRequiredRobotVisualLinks = diagnostics.robot_missing_required_robot_visual_links;
+     diagnostics.robot_missing_required_tool_visual_links = expectedToolVisualLinks.filter(link => !loadedVisualLinks.has(link));
+-    diagnostics.robotMissingRequiredToolVisualLinks = diagnostics.robot_missing_required_tool_visual_links;
+     diagnostics.robot_expected_robot_visual_links = expectedRobotVisualLinks;
+-    diagnostics.robotExpectedRobotVisualLinks = expectedRobotVisualLinks;
+     diagnostics.robot_expected_tool_visual_links = expectedToolVisualLinks;
+-    diagnostics.robotExpectedToolVisualLinks = expectedToolVisualLinks;
+     diagnostics.robot_link_world_matrices = collectLinkMatrixDiagnostics(robot, robot.links);
+-    diagnostics.robotLinkWorldMatrices = diagnostics.robot_link_world_matrices;
+     diagnostics.robot_visual_wrapper_world_matrices = collectVisualWrapperMatrixDiagnostics(robot.links);
+-    diagnostics.robotVisualWrapperWorldMatrices = diagnostics.robot_visual_wrapper_world_matrices;
+     diagnostics.robot_descendant_render_mesh_diagnostics = collectDescendantRenderMeshDiagnostics(robot.links);
+-    diagnostics.robotDescendantRenderMeshDiagnostics = diagnostics.robot_descendant_render_mesh_diagnostics;
+     diagnostics.robot_mesh_callbacks_complete = diagnostics.robot_expected_visual_count === (diagnostics.robot_loaded_visual_count + diagnostics.robot_failed_visual_count);
+-    diagnostics.robotMeshCallbacksComplete = diagnostics.robot_mesh_callbacks_complete;
+     diagnostics.robot_preview_loaded = diagnostics.robot_failed_visual_count === 0 && diagnostics.robot_hierarchy_missing_links.length === 0 && diagnostics.robot_missing_required_robot_visual_links.length === 0 && diagnostics.robot_missing_required_tool_visual_links.length === 0 && diagnostics.robot_mesh_callbacks_complete;
+     setLifecycleState(diagnostics, diagnostics.robot_preview_loaded ? 'ready' : 'failed');
+     rendererContext?.scene?.add?.(robot);
+     rendererContext?.assemblyRoots?.push?.(robot);
++    result.diagnostics = canonicalDiagnosticValue(result.diagnostics);
+     rendererContext?.onRobotLoaded?.(result);
+     return result;
+   })().catch(err => {
+     diagnostics.robot_preview_loaded = false;
+     setLifecycleState(diagnostics, 'failed');
+     diagnostics.robot_missing_meshes.push(err?.message || String(err));
+-    rendererContext?.onRobotError?.(err, diagnostics);
++    rendererContext?.onRobotError?.(err, canonicalDiagnosticValue(diagnostics));
+     return result;
+   });
+ 
+diff --git a/workcell_studio_web/viewer/viewer.js b/workcell_studio_web/viewer/viewer.js
+index 0122e2e6..d999fcf6 100644
+--- a/workcell_studio_web/viewer/viewer.js
++++ b/workcell_studio_web/viewer/viewer.js
+@@ -52,11 +52,69 @@ const STAGED_MESH_ROOTS = [
+ const EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS = Object.freeze([]);
+ 
+ const WEB3D_REQUIRED_CATEGORIES = ['robot_arm', 'attached_tool_gripper', 'workbench_support_surface', 'configured_camera'];
++// Diagnostic payloads are emitted in canonical snake_case. Legacy camelCase
++// reads are restricted to the documented Qt status-script boundary.
++const DIAGNOSTIC_NAMING_CONTRACT = Object.freeze({
++  canonical_case: 'snake_case',
++  compatibility_boundary: 'qt_status_script',
++});
++function diagnosticSnakeCaseKey(key) {
++  return String(key || '')
++    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
++    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
++    .replace(/-/g, '_')
++    .toLowerCase();
++}
++function canonicalDiagnosticValue(value) {
++  if (Array.isArray(value)) return value.map(canonicalDiagnosticValue);
++  if (!value || typeof value !== 'object') return value;
++  const prototype = Object.getPrototypeOf(value);
++  if (prototype !== Object.prototype && prototype !== null) return value;
++  const output = {};
++  const entries = Object.entries(value).sort(([left], [right]) => {
++    const leftCanonical = left === diagnosticSnakeCaseKey(left) ? 0 : 1;
++    const rightCanonical = right === diagnosticSnakeCaseKey(right) ? 0 : 1;
++    return leftCanonical - rightCanonical;
++  });
++  for (const [key, item] of entries) {
++    const canonicalKey = diagnosticSnakeCaseKey(key);
++    if (Object.prototype.hasOwnProperty.call(output, canonicalKey)) continue;
++    output[canonicalKey] = canonicalDiagnosticValue(item);
++  }
++  return output;
++}
++function stableDiagnosticValue(value) {
++  const canonical = canonicalDiagnosticValue(value);
++  if (Array.isArray(canonical)) return canonical.map(stableDiagnosticValue);
++  if (!canonical || typeof canonical !== 'object') return canonical;
++  return Object.fromEntries(Object.keys(canonical).sort().map(key => [key, stableDiagnosticValue(canonical[key])]));
++}
++function stableDiagnosticSignature(kind, payload) {
++  return `${String(kind || 'diagnostic')}\n${JSON.stringify(stableDiagnosticValue(payload))}`;
++}
++function recordNormalDiagnosticOnce(kind, payload) {
++  const diagnostic = canonicalDiagnosticValue(payload);
++  const signature = stableDiagnosticSignature(kind, diagnostic);
++  state.normalDiagnosticRecords = state.normalDiagnosticRecords || new Map();
++  if (state.normalDiagnosticRecords.has(signature)) {
++    return { diagnostic: state.normalDiagnosticRecords.get(signature), is_new: false, signature };
++  }
++  state.normalDiagnosticRecords.set(signature, diagnostic);
++  state.diagnosticKeys.add(signature);
++  return { diagnostic, is_new: true, signature };
++}
++function warnNormalDiagnosticOnce(kind, payload, message) {
++  const recorded = recordNormalDiagnosticOnce(kind, payload);
++  if (recorded.is_new) console.warn?.(`${message}: ${JSON.stringify(recorded.diagnostic)}`);
++  return recorded.diagnostic;
++}
+ function web3dNavigationKey() { return `${state.sourceWebSceneFile || ''}#${state.builderRevision || ''}`; }
++
+ function emitWeb3dReadinessState(readinessState, detail = {}) {
+   state.web3dReadiness = state.web3dReadiness || { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null };
+   if (!VALID_SCENE_LIFECYCLE_STATES.includes(readinessState)) readinessState = 'scene_loading';
+-  const navigationKey = detail.navigation_key || detail.navigationKey || web3dNavigationKey();
++  const canonicalDetail = canonicalDiagnosticValue(detail);
++  const navigationKey = canonicalDetail.navigation_key || web3dNavigationKey();
+   if (state.web3dReadiness.terminal) {
+     if (state.web3dReadiness.terminalNavigationKey && navigationKey && navigationKey !== state.web3dReadiness.terminalNavigationKey) return window.__WORKCELL_VIEWER_STATUS__;
+     if (readinessState !== state.web3dReadiness.terminalState) return updateViewerStatus();
+@@ -71,16 +129,21 @@ function emitWeb3dReadinessState(readinessState, detail = {}) {
+     state.web3dReadiness.terminalNavigationKey = navigationKey;
+     state.web3dReadiness.terminalEmissionCount = Number(state.web3dReadiness.terminalEmissionCount || 0) + 1;
+   }
+-  const structured = structuredWeb3dReadinessFields(readinessState);
+-  const eventDetail = { ...structured, ...detail, final_lifecycle_state: readinessState, finalLifecycleState: readinessState, pending_required_loads: pendingRequiredLoads() };
++  const eventDetail = canonicalDiagnosticValue({
++    ...structuredWeb3dReadinessFields(readinessState),
++    ...canonicalDetail,
++    final_lifecycle_state: readinessState,
++    pending_required_loads: pendingRequiredLoads(),
++  });
+   if (readinessState === 'scene_failed') {
+     state.web3dReadiness.failed = true;
+     state.web3dReadiness.failure = eventDetail;
+   }
+   const status = updateViewerStatus();
+   if (readinessState === 'scene_ready') triggerInitialCameraFitAfterSceneReady();
+-  window.dispatchEvent?.(new CustomEvent('workcell:web3d_readiness', { detail: { state: readinessState, ...eventDetail, status } }));
+-  window.parent?.postMessage?.({ type: 'workcell_web3d_readiness', state: readinessState, ...eventDetail, status }, '*');
++  const readinessMessage = canonicalDiagnosticValue({ type: 'workcell_web3d_readiness', state: readinessState, ...eventDetail, status });
++  window.dispatchEvent?.(new CustomEvent('workcell:web3d_readiness', { detail: readinessMessage }));
++  window.parent?.postMessage?.(readinessMessage, '*');
+   return status;
+ }
+ function itemRenderPolicy(item) { return String(item?.render_policy || item?.renderPolicy || 'legacy_primary').toLowerCase(); }
+@@ -187,43 +250,27 @@ function readinessCategoryStatus(category) {
+   if (pending) return 'pending';
+   return readiness.state === 'scene_ready' ? 'ready' : 'loading';
+ }
++
+ function structuredWeb3dReadinessFields(lifecycleState) {
+   const finalState = lifecycleState || state.web3dReadiness?.state || 'booting';
+-  const pendingLoads = pendingRequiredLoads();
+   return {
+     scene_id: sceneId(),
+-    sceneId: sceneId(),
+     expected_physical_item_count: expectedPhysicalItemCount(),
+-    expectedPhysicalItemCount: expectedPhysicalItemCount(),
+     rendered_physical_item_count: renderedPhysicalItemCount(),
+-    renderedPhysicalItemCount: renderedPhysicalItemCount(),
+     failed_required_item_count: failedRequiredItemCount(),
+-    failedRequiredItemCount: failedRequiredItemCount(),
+     robot_status: readinessCategoryStatus('robot_arm'),
+-    robotStatus: readinessCategoryStatus('robot_arm'),
+     tool_status: readinessCategoryStatus('attached_tool_gripper'),
+-    toolStatus: readinessCategoryStatus('attached_tool_gripper'),
+     end_effector_status: readinessCategoryStatus('attached_tool_gripper'),
+-    endEffectorStatus: readinessCategoryStatus('attached_tool_gripper'),
+     environment_status: readinessCategoryStatus('workbench_support_surface'),
+-    environmentStatus: readinessCategoryStatus('workbench_support_surface'),
+     camera_status: readinessCategoryStatus('configured_camera'),
+-    cameraStatus: readinessCategoryStatus('configured_camera'),
+-    pending_required_loads: pendingLoads,
+-    pendingRequiredLoads: pendingLoads,
++    pending_required_loads: pendingRequiredLoads(),
+     readiness_contract_version: READINESS_CONTRACT_VERSION,
+-    readinessContractVersion: READINESS_CONTRACT_VERSION,
+     lifecycle_state: finalState,
+-    lifecycleState: finalState,
+     terminal: Boolean(state.web3dReadiness?.terminal),
+     status_sequence: Number(state.web3dReadiness?.statusSequence || 0),
+-    statusSequence: Number(state.web3dReadiness?.statusSequence || 0),
+     source_web_scene_file: state.sourceWebSceneFile || '',
+-    sourceWebSceneFile: state.sourceWebSceneFile || '',
+     builder_revision: state.builderRevision || '',
+-    builderRevision: state.builderRevision || '',
+     final_lifecycle_state: finalState,
+-    finalLifecycleState: finalState,
+   };
+ }
+ function beginWeb3dSceneReadiness(items) {
+@@ -369,10 +416,10 @@ function failExpandedUrdfReadiness(operation, err, diagnostics = {}, detail = {}
+     link,
+     url: detail.url || detail.uri || diagnostics.robot_urdf_url || '',
+     reason: err?.message || String(err || 'expanded URDF required mesh failed'),
+-    robot_preview_lifecycle_state: diagnostics.robot_preview_lifecycle_state || diagnostics.robotPreviewLifecycleState || '',
+-    robot_loaded_visual_count: Number(diagnostics.robot_loaded_visual_count ?? diagnostics.robotLoadedVisualCount ?? 0) || 0,
+-    robot_expected_visual_count: Number(diagnostics.robot_expected_visual_count ?? diagnostics.robotExpectedVisualCount ?? 0) || 0,
+-    robot_failed_visual_count: Number(diagnostics.robot_failed_visual_count ?? diagnostics.robotFailedVisualCount ?? 0) || 0,
++    robot_preview_lifecycle_state: diagnostics.robot_preview_lifecycle_state || diagnostics.robot_preview_lifecycle_state || '',
++    robot_loaded_visual_count: Number(diagnostics.robot_loaded_visual_count ?? diagnostics.robot_loaded_visual_count ?? 0) || 0,
++    robot_expected_visual_count: Number(diagnostics.robot_expected_visual_count ?? diagnostics.robot_expected_visual_count ?? 0) || 0,
++    robot_failed_visual_count: Number(diagnostics.robot_failed_visual_count ?? diagnostics.robot_failed_visual_count ?? 0) || 0,
+     robot_missing_meshes: diagnostics.robot_missing_meshes || [],
+     ...detail,
+     pending_required_loads: pendingRequiredLoads(),
+@@ -382,20 +429,20 @@ function failExpandedUrdfReadiness(operation, err, diagnostics = {}, detail = {}
+ function expandedUrdfTerminalFailure(rendererDiagnostics = {}) {
+   const list = (snakeName, camelName) => asArray(rendererDiagnostics[snakeName] || rendererDiagnostics[camelName])
+     .map(value => String(value || '').trim()).filter(Boolean);
+-  const lifecycle = String(rendererDiagnostics.robot_preview_lifecycle_state || rendererDiagnostics.robotPreviewLifecycleState || '').trim();
+-  const previewLoaded = rendererDiagnostics.robot_preview_loaded === true || rendererDiagnostics.robotPreviewLoaded === true;
+-  const previewExplicitlyNotLoaded = rendererDiagnostics.robot_preview_loaded === false || rendererDiagnostics.robotPreviewLoaded === false;
+-  const expectedVisualCount = Number(rendererDiagnostics.robot_expected_visual_count ?? rendererDiagnostics.robotExpectedVisualCount ?? 0) || 0;
+-  const loadedVisualCount = Number(rendererDiagnostics.robot_loaded_visual_count ?? rendererDiagnostics.robotLoadedVisualCount ?? 0) || 0;
+-  const completedVisualCount = Number(rendererDiagnostics.robot_completed_visual_count ?? rendererDiagnostics.robotCompletedVisualCount ?? 0) || 0;
+-  const failedVisualCount = Number(rendererDiagnostics.robot_failed_visual_count ?? rendererDiagnostics.robotFailedVisualCount ?? 0) || 0;
++  const lifecycle = String(rendererDiagnostics.robot_preview_lifecycle_state || rendererDiagnostics.robot_preview_lifecycle_state || '').trim();
++  const previewLoaded = rendererDiagnostics.robot_preview_loaded === true || rendererDiagnostics.robot_preview_loaded === true;
++  const previewExplicitlyNotLoaded = rendererDiagnostics.robot_preview_loaded === false || rendererDiagnostics.robot_preview_loaded === false;
++  const expectedVisualCount = Number(rendererDiagnostics.robot_expected_visual_count ?? rendererDiagnostics.robot_expected_visual_count ?? 0) || 0;
++  const loadedVisualCount = Number(rendererDiagnostics.robot_loaded_visual_count ?? rendererDiagnostics.robot_loaded_visual_count ?? 0) || 0;
++  const completedVisualCount = Number(rendererDiagnostics.robot_completed_visual_count ?? rendererDiagnostics.robot_completed_visual_count ?? 0) || 0;
++  const failedVisualCount = Number(rendererDiagnostics.robot_failed_visual_count ?? rendererDiagnostics.robot_failed_visual_count ?? 0) || 0;
+   const missingToolLinks = list('robot_missing_required_tool_visual_links', 'robotMissingRequiredToolVisualLinks');
+   const missingRobotLinks = list('robot_missing_required_robot_visual_links', 'robotMissingRequiredRobotVisualLinks');
+   const missingHierarchyLinks = list('robot_hierarchy_missing_links', 'robotHierarchyMissingLinks');
+-  const loadingManagerComplete = rendererDiagnostics.robot_loading_manager_complete === true || rendererDiagnostics.robotLoadingManagerComplete === true;
+-  const loadingManagerExplicitlyIncomplete = rendererDiagnostics.robot_loading_manager_complete === false || rendererDiagnostics.robotLoadingManagerComplete === false;
+-  const meshCallbacksComplete = rendererDiagnostics.robot_mesh_callbacks_complete === true || rendererDiagnostics.robotMeshCallbacksComplete === true;
+-  const meshCallbacksExplicitlyIncomplete = rendererDiagnostics.robot_mesh_callbacks_complete === false || rendererDiagnostics.robotMeshCallbacksComplete === false;
++  const loadingManagerComplete = rendererDiagnostics.robot_loading_manager_complete === true || rendererDiagnostics.robot_loading_manager_complete === true;
++  const loadingManagerExplicitlyIncomplete = rendererDiagnostics.robot_loading_manager_complete === false || rendererDiagnostics.robot_loading_manager_complete === false;
++  const meshCallbacksComplete = rendererDiagnostics.robot_mesh_callbacks_complete === true || rendererDiagnostics.robot_mesh_callbacks_complete === true;
++  const meshCallbacksExplicitlyIncomplete = rendererDiagnostics.robot_mesh_callbacks_complete === false || rendererDiagnostics.robot_mesh_callbacks_complete === false;
+ 
+   let requiredCategory = '';
+   let reason = '';
+@@ -413,7 +460,7 @@ function expandedUrdfTerminalFailure(rendererDiagnostics = {}) {
+     reason = `Expanded URDF mesh callbacks did not complete (${completedVisualCount}/${expectedVisualCount} completed). Check failed mesh requests and the browser console, then regenerate or reload the scene.`;
+   } else if (lifecycle === 'failed' && previewExplicitlyNotLoaded) {
+     requiredCategory = 'robot_arm';
+-    reason = String(rendererDiagnostics.robot_preview_failure_reason || rendererDiagnostics.robotPreviewFailureReason || '').trim()
++    reason = String(rendererDiagnostics.robot_preview_failure_reason || rendererDiagnostics.robot_preview_failure_reason || '').trim()
+       || 'Expanded URDF preview entered the failed lifecycle without loading. Check the URDF and mesh request diagnostics, then regenerate or reload the scene.';
+   } else {
+     return null;
+@@ -441,16 +488,16 @@ function expandedUrdfTerminalFailure(rendererDiagnostics = {}) {
+ function maybeEmitSceneReady() {
+   if (isExpandedUrdfRobotPreview(state.sceneJson?.robot_preview)) {
+     const diagnostics = state.robotUrdfPreviewDiagnostics || {};
+-    const lifecycle = String(diagnostics.robot_preview_lifecycle_state || diagnostics.robotPreviewLifecycleState || '');
++    const lifecycle = String(diagnostics.robot_preview_lifecycle_state || diagnostics.robot_preview_lifecycle_state || '');
+     const terminalFailure = expandedUrdfTerminalFailure(diagnostics);
+     if (terminalFailure) {
+       emitWeb3dReadinessState('scene_failed', terminalFailure);
+       return;
+     }
+     if (lifecycle === 'failed') {
+-      const failureReason = String(diagnostics.robot_preview_failure_reason || diagnostics.robotPreviewFailureReason || '').trim();
+-      const missingMeshes = asArray(diagnostics.robot_missing_meshes || diagnostics.robotMissingMeshes);
+-      const failedVisualCount = Number(diagnostics.robot_failed_visual_count ?? diagnostics.robotFailedVisualCount ?? 0) || 0;
++      const failureReason = String(diagnostics.robot_preview_failure_reason || diagnostics.robot_preview_failure_reason || '').trim();
++      const missingMeshes = asArray(diagnostics.robot_missing_meshes || diagnostics.robot_missing_meshes);
++      const failedVisualCount = Number(diagnostics.robot_failed_visual_count ?? diagnostics.robot_failed_visual_count ?? 0) || 0;
+       if (!failureReason && missingMeshes.length === 0 && failedVisualCount === 0) return;
+       return;
+     }
+@@ -632,32 +679,18 @@ function collectAssemblyRenderDiagnostics() {
+   }).filter(value => typeof value === 'number' && Number.isFinite(value));
+   return {
+     skipped_flattened_urdf_visual_count: Number(diagnostics.skipped_flattened_urdf_visual_count || 0),
+-    skippedFlattenedUrdfVisualCount: Number(diagnostics.skipped_flattened_urdf_visual_count || 0),
+     assembled_hierarchy_rendered_mesh_count: Number(diagnostics.assembled_hierarchy_rendered_mesh_count || 0),
+-    assembledHierarchyRenderedMeshCount: Number(diagnostics.assembled_hierarchy_rendered_mesh_count || 0),
+     rendered_fk_visual_count: Number(diagnostics.rendered_fk_visual_count || 0),
+-    renderedFkVisualCount: Number(diagnostics.rendered_fk_visual_count || 0),
+     skipped_legacy_generated_urdf_count: Number(diagnostics.skipped_legacy_generated_urdf_count || 0),
+-    skippedLegacyGeneratedUrdfCount: Number(diagnostics.skipped_legacy_generated_urdf_count || 0),
+     physical_assembly_root_count: assemblyBounds.count,
+-    physicalAssemblyRootCount: assemblyBounds.count,
+     physical_assembly_bounds: assemblyBounds.bounds_json,
+-    physicalAssemblyBounds: assemblyBounds.bounds_json,
+     physical_fit_included_robot_preview: Boolean(assemblyBounds.count && assemblyBounds.bounds_json),
+-    physicalFitIncludedRobotPreview: Boolean(assemblyBounds.count && assemblyBounds.bounds_json),
+     final_physical_fit_bounds: finalFitBounds,
+-    finalPhysicalFitBounds: finalFitBounds,
+     physical_renderable_count: rendered.length + assemblyBounds.count,
+-    physicalRenderableCount: rendered.length + assemblyBounds.count,
+     visible_duplicate_generated_urdf_count: independentGenerated.length,
+-    visibleDuplicateGeneratedUrdfCount: independentGenerated.length,
+     visible_tool0_fallback_count: visibleTool0Fallback.length,
+-    visibleTool0FallbackCount: visibleTool0Fallback.length,
+     detached_robot_mesh_clusters: Number(diagnostics.detached_robot_mesh_clusters || 0),
+-    detached_robot_mesh_clusters_count: Number(diagnostics.detached_robot_mesh_clusters || 0),
+-    detachedRobotMeshClusters: Number(diagnostics.detached_robot_mesh_clusters || 0),
+     max_wrist_tool0_to_gripper_base_distance_m: distances.length ? Math.max(...distances) : null,
+-    maxWristTool0ToGripperBaseDistanceM: distances.length ? Math.max(...distances) : null,
+   };
+ }
+ function isUserFacingWarning(w) {
+@@ -754,7 +787,7 @@ function renderedPhysicalVisualIdentity(sceneId, entry) {
+   const visualKey = visualIndex !== undefined && visualIndex !== null && String(visualIndex).trim() !== ''
+     ? `index:${String(visualIndex).trim()}`
+     : `name:${visualName || 'physical'}`;
+-  return [sceneId || '<scene>', String(entry?.robot_instance_id || entry?.robotInstanceId || entry?.source_instance || entry?.sourceInstance || 'physical').trim() || 'physical', link, visualKey].join('|');
++  return [sceneId || '<scene>', String(entry?.robot_instance_id || entry?.robot_instanceId || entry?.source_instance || entry?.sourceInstance || 'physical').trim() || 'physical', link, visualKey].join('|');
+ }
+ function dedupeByStableIdentity(records, identityFn) {
+   const byIdentity = new Map();
+@@ -782,7 +815,7 @@ function expandedUrdfVisualReadinessDiagnostics() {
+   const rendererDiagnostics = state.robotUrdfPreviewDiagnostics || {};
+   const sceneId = required.scene_id || required.sceneId || '';
+   const preview = state.sceneJson?.robot_preview || {};
+-  const robotInstanceId = String(preview.robot_instance_id || preview.robotInstanceId || preview.instance_id || preview.instanceId || preview.id || 'expanded_urdf_robot').trim();
++  const robotInstanceId = String(preview.robot_instance_id || preview.robot_instanceId || preview.instance_id || preview.instanceId || preview.id || 'expanded_urdf_robot').trim();
+   const rawUrdfVisuals = asArray(rendererDiagnostics.robot_visual_wrapper_world_matrices);
+   const urdfDedupe = dedupeByStableIdentity(rawUrdfVisuals, visual => expandedUrdfVisualIdentity(sceneId, robotInstanceId, visual));
+   const urdfVisuals = urdfDedupe.records;
+@@ -790,14 +823,14 @@ function expandedUrdfVisualReadinessDiagnostics() {
+   const sceneDiagnostics = collectRenderedMeshDiagnostics();
+   const physicalDiagnostics = dedupeByStableIdentity(sceneDiagnostics.filter(isSuccessfulPhysicalVisualDiagnostic), entry => renderedPhysicalVisualIdentity(sceneId, entry));
+   const categoryCounts = countBy(physicalDiagnostics.records.map(item => readinessCategoryForItem(item)).filter(Boolean));
+-  const rendererLifecycle = String(rendererDiagnostics.robot_preview_lifecycle_state || rendererDiagnostics.robotPreviewLifecycleState || '');
+-  const rendererLoaded = rendererDiagnostics.robot_preview_loaded === true || rendererDiagnostics.robotPreviewLoaded === true;
+-  const rendererExpectedVisualCount = Number(rendererDiagnostics.robot_expected_visual_count ?? rendererDiagnostics.robotExpectedVisualCount ?? 0) || 0;
+-  const rendererCompletedVisualCount = Number(rendererDiagnostics.robot_completed_visual_count ?? rendererDiagnostics.robotCompletedVisualCount ?? 0) || 0;
+-  const rendererLoadedVisualCount = Number(rendererDiagnostics.robot_loaded_visual_count ?? rendererDiagnostics.robotLoadedVisualCount ?? 0) || 0;
+-  const rendererFailedVisualCount = Number(rendererDiagnostics.robot_failed_visual_count ?? rendererDiagnostics.robotFailedVisualCount ?? 0) || 0;
+-  const rendererMissingMeshes = asArray(rendererDiagnostics.robot_missing_meshes || rendererDiagnostics.robotMissingMeshes);
+-  const rendererMeshCallbacksComplete = rendererDiagnostics.robot_mesh_callbacks_complete === true || rendererDiagnostics.robotMeshCallbacksComplete === true;
++  const rendererLifecycle = String(rendererDiagnostics.robot_preview_lifecycle_state || rendererDiagnostics.robot_preview_lifecycle_state || '');
++  const rendererLoaded = rendererDiagnostics.robot_preview_loaded === true || rendererDiagnostics.robot_preview_loaded === true;
++  const rendererExpectedVisualCount = Number(rendererDiagnostics.robot_expected_visual_count ?? rendererDiagnostics.robot_expected_visual_count ?? 0) || 0;
++  const rendererCompletedVisualCount = Number(rendererDiagnostics.robot_completed_visual_count ?? rendererDiagnostics.robot_completed_visual_count ?? 0) || 0;
++  const rendererLoadedVisualCount = Number(rendererDiagnostics.robot_loaded_visual_count ?? rendererDiagnostics.robot_loaded_visual_count ?? 0) || 0;
++  const rendererFailedVisualCount = Number(rendererDiagnostics.robot_failed_visual_count ?? rendererDiagnostics.robot_failed_visual_count ?? 0) || 0;
++  const rendererMissingMeshes = asArray(rendererDiagnostics.robot_missing_meshes || rendererDiagnostics.robot_missing_meshes);
++  const rendererMeshCallbacksComplete = rendererDiagnostics.robot_mesh_callbacks_complete === true || rendererDiagnostics.robot_mesh_callbacks_complete === true;
+   const rendererSuccessfulCallbackAccounting = rendererMeshCallbacksComplete
+     && rendererExpectedVisualCount > 0
+     && rendererCompletedVisualCount === rendererExpectedVisualCount
+@@ -808,10 +841,10 @@ function expandedUrdfVisualReadinessDiagnostics() {
+     || rendererSuccessfulCallbackAccounting;
+   const missingRobot = rendererReady
+     ? []
+-    : asArray(rendererDiagnostics.robot_missing_required_robot_visual_links || rendererDiagnostics.robotMissingRequiredRobotVisualLinks).map(value => String(value || '').trim()).filter(Boolean);
++    : asArray(rendererDiagnostics.robot_missing_required_robot_visual_links || rendererDiagnostics.robot_missing_required_robot_visual_links).map(value => String(value || '').trim()).filter(Boolean);
+   const missingTool = rendererReady
+     ? []
+-    : asArray(rendererDiagnostics.robot_missing_required_tool_visual_links || rendererDiagnostics.robotMissingRequiredToolVisualLinks).map(value => String(value || '').trim()).filter(Boolean);
++    : asArray(rendererDiagnostics.robot_missing_required_tool_visual_links || rendererDiagnostics.robot_missing_required_tool_visual_links).map(value => String(value || '').trim()).filter(Boolean);
+   if (!rendererReady && missingRobot.length === 0 && missingTool.length === 0 && !rendererLoaded) {
+     for (const link of required.robot_visuals) {
+       if (!urdfLinksWithLoadedVisuals.has(link)) missingRobot.push(link);
+@@ -833,55 +866,32 @@ function expandedUrdfVisualReadinessDiagnostics() {
+   const requiredVisualReady = rendererReady || (missing.length === 0 && failed.length === 0);
+   return {
+     expanded_urdf_expected_visual_set: required,
+-    expandedUrdfExpectedVisualSet: required,
+     expanded_urdf_required_visual_counts: { ...categoryCounts },
+-    expandedUrdfRequiredVisualCounts: { ...categoryCounts },
+     expanded_urdf_loaded_visual_link_counts: countBy(urdfVisuals.map(visual => String(visual?.link_name || visual?.linkName || '').trim()).filter(Boolean)),
+-    expandedUrdfLoadedVisualLinkCounts: countBy(urdfVisuals.map(visual => String(visual?.link_name || visual?.linkName || '').trim()).filter(Boolean)),
+     robot_preview_lifecycle_state: rendererLifecycle,
+-    robotPreviewLifecycleState: rendererLifecycle,
+     robot_preview_loaded: rendererLoaded,
+-    robotPreviewLoaded: rendererLoaded,
+     robot_expected_visual_count: rendererExpectedVisualCount,
+-    robotExpectedVisualCount: rendererExpectedVisualCount,
+     robot_completed_visual_count: rendererCompletedVisualCount,
+-    robotCompletedVisualCount: rendererCompletedVisualCount,
+     robot_loaded_visual_count: rendererLoadedVisualCount,
+-    robotLoadedVisualCount: rendererLoadedVisualCount,
+     robot_failed_visual_count: rendererFailedVisualCount,
+-    robotFailedVisualCount: rendererFailedVisualCount,
+     robot_mesh_callbacks_complete: rendererMeshCallbacksComplete,
+-    robotMeshCallbacksComplete: rendererMeshCallbacksComplete,
+     robot_successful_callback_accounting: rendererSuccessfulCallbackAccounting,
+-    robotSuccessfulCallbackAccounting: rendererSuccessfulCallbackAccounting,
+     robot_missing_meshes: rendererMissingMeshes,
+-    robotMissingMeshes: rendererMissingMeshes,
+     robot_missing_required_robot_visual_links: missingRobot,
+-    robotMissingRequiredRobotVisualLinks: missingRobot,
+     robot_missing_required_tool_visual_links: missingTool,
+-    robotMissingRequiredToolVisualLinks: missingTool,
+     missing_required_robot_visuals: missingRobot,
+-    missingRequiredRobotVisuals: missingRobot,
+     missing_required_tool_visuals: missingTool,
+-    missingRequiredToolVisuals: missingTool,
+     missing_required_visuals: missing,
+-    missingRequiredVisuals: missing,
+     duplicate_required_visuals: duplicatePhysicalIdentities,
+-    duplicateRequiredVisuals: duplicatePhysicalIdentities,
+     duplicate_physical_visual_identities: duplicatePhysicalIdentities,
+-    duplicatePhysicalVisualIdentities: duplicatePhysicalIdentities,
+     failed_required_visuals: failed,
+-    failedRequiredVisuals: failed,
+     failed_required_links: failed,
+-    failedRequiredLinks: failed,
+     failed_mesh_urls: Array.from(new Set(failedMeshUrls)),
+-    failedMeshUrls: Array.from(new Set(failedMeshUrls)),
+     required_visual_ready: requiredVisualReady,
+-    requiredVisualReady: requiredVisualReady,
+   };
+ }
+ function failIfExpandedUrdfExpectedVisualSetInvalid() {
+-  const lifecycle = String(state.robotUrdfPreviewDiagnostics?.robot_preview_lifecycle_state || state.robotUrdfPreviewDiagnostics?.robotPreviewLifecycleState || '');
++  const lifecycle = String(state.robotUrdfPreviewDiagnostics?.robot_preview_lifecycle_state || state.robotUrdfPreviewDiagnostics?.robot_preview_lifecycle_state || '');
+   if (expandedUrdfExpectedVisualSet() && lifecycle !== 'ready' && lifecycle !== 'failed') return false;
+   const diagnostics = expandedUrdfVisualReadinessDiagnostics();
+   if (!diagnostics || diagnostics.required_visual_ready) return false;
+@@ -946,63 +956,35 @@ function collectRenderedMeshDiagnostics() {
+       role: item.role || '',
+       status: item.status || '',
+       support_surface_display_type: supportSurfaceDisplayType(item),
+-      supportSurfaceDisplayType: supportSurfaceDisplayType(item),
+       ...supportSurfaceMetadata(item),
+       render_status: renderStatus,
+-      renderStatus,
+       mesh_loaded: renderStatus === 'mesh_loaded',
+-      meshLoaded: renderStatus === 'mesh_loaded',
+       fallback_visible: Boolean(rendered.fallback?.visible),
+-      fallbackVisible: Boolean(rendered.fallback?.visible),
+       exclude_from_fit_bounds: Boolean(item.exclude_from_fit_bounds || rendered.object3d.userData?.exclude_from_fit_bounds),
+-      excludeFromFitBounds: Boolean(item.exclude_from_fit_bounds || rendered.object3d.userData?.exclude_from_fit_bounds),
+       debug_overlay: Boolean(isDebugOverlayItem(item)),
+-      debugOverlay: Boolean(isDebugOverlayItem(item)),
+       visual_bounds_status: item.visual_bounds_status || '',
+-      visualBoundsStatus: item.visual_bounds_status || '',
+       workcell_web_render_pose_mode: effectiveWorkcellWebRenderPoseMode(item),
+-      workcellWebRenderPoseMode: effectiveWorkcellWebRenderPoseMode(item),
+       exported_workcell_web_render_pose_mode: item.workcell_web_render_pose_mode || '',
+-      exportedWorkcellWebRenderPoseMode: item.workcell_web_render_pose_mode || '',
+       baked_world_visual_pose: item.baked_world_visual_pose || null,
+-      bakedWorldVisualPose: item.baked_world_visual_pose || null,
+       expected_visual_pose: item.expected_visual_pose || null,
+-      expectedVisualPose: item.expected_visual_pose || null,
+       final_transform: item.final_transform || null,
+-      finalTransform: item.final_transform || null,
+       world_from_visual: item.world_from_visual || null,
+-      worldFromVisual: item.world_from_visual || null,
+       mesh_unit_correction: item.mesh_unit_correction || null,
+-      meshUnitCorrection: item.mesh_unit_correction || null,
+       expected_dimensions_m: expectedDimensions ? vector3ToDiagnostics(expectedDimensions) : null,
+-      expectedDimensionsM: expectedDimensions ? vector3ToDiagnostics(expectedDimensions) : null,
+       mesh_local_scale: vector3ToDiagnostics(meshLocal.scale),
+-      meshLocalScale: vector3ToDiagnostics(meshLocal.scale),
+       mesh_uri: rendered.renderInfo?.mesh_uri || displayMeshUri(item),
+       fallback_reason: rendered.renderInfo?.fallback_reason || '',
+-      linkFrameWorldPosition: vector3ToDiagnostics(linkFrameWorldPosition),
+       link_frame_world_position: vector3ToDiagnostics(linkFrameWorldPosition),
+-      visualWrapperWorldPosition,
+       visual_wrapper_world_position: visualWrapperWorldPosition,
+-      loadedMeshBoundingBoxCenter: bounds.center,
+       loaded_mesh_bounding_box_center: bounds.center,
+-      loadedMeshBoundingBoxSize: bounds.size,
+       loaded_mesh_bounding_box_size: bounds.size,
+-      boundingBoxCenter: bounds.center,
+       bounding_box_center: bounds.center,
+-      boundingBoxSize: bounds.size,
+       bounding_box_size: bounds.size,
+-      itemBoundingBoxCenter: itemBounds.center,
+       item_bounding_box_center: itemBounds.center,
+-      itemBoundingBoxSize: itemBounds.size,
+       item_bounding_box_size: itemBounds.size,
+-      worldQuaternion: quaternionToDiagnostics(worldQuaternion),
+       world_quaternion: quaternionToDiagnostics(worldQuaternion),
+-      worldEuler: eulerToDiagnostics(worldEuler),
+       world_euler: eulerToDiagnostics(worldEuler),
+-      inferredUpAxis: inferredUpAxis,
+       inferred_up_axis: inferredUpAxis,
+-      inferredNormal: inferredUpAxis,
+       inferred_normal: inferredUpAxis,
+     });
+   }
+@@ -1033,102 +1015,66 @@ function updateViewerStatus() {
+       display_name: item.display_name || item.label || item.name || item.object_name || item.link || item.id || '',
+       category: meshContractCategoryOf(item),
+       render_status: renderStatus,
+-      renderStatus,
+       mesh_loaded: renderStatus === 'mesh_loaded',
+-      meshLoaded: renderStatus === 'mesh_loaded',
+       fallback_visible: Boolean(obj?.fallback?.visible),
+-      fallbackVisible: Boolean(obj?.fallback?.visible),
+       mesh_uri: obj?.renderInfo?.mesh_uri || displayMeshUri(item),
+       fallback_reason: obj?.renderInfo?.fallback_reason || '',
+       visual_bounds_status: item.visual_bounds_status || '',
+-      visualBoundsStatus: item.visual_bounds_status || '',
+       support_surface_kind: item.support_surface_kind || '',
+-      supportSurfaceKind: item.supportSurfaceKind || item.support_surface_kind || '',
+       support_surface_display_type: supportSurfaceDisplayType(item),
+-      supportSurfaceDisplayType: supportSurfaceDisplayType(item),
+       top_surface_z_m: item.top_surface_z_m ?? null,
+-      topSurfaceZM: item.topSurfaceZM ?? item.top_surface_z_m ?? null,
++      top_surface_zm: item.topSurfaceZM ?? item.top_surface_z_m ?? null,
+       support_surface_height_m: item.support_surface_height_m ?? null,
+-      supportSurfaceHeightM: item.supportSurfaceHeightM ?? item.support_surface_height_m ?? null,
+       expected_support_footprint_m: item.expected_support_footprint_m || null,
+-      expectedSupportFootprintM: item.expectedSupportFootprintM || item.expected_support_footprint_m || null,
+     };
+   });
+   const assemblyRenderDiagnostics = collectAssemblyRenderDiagnostics();
+   const expandedUrdfVisualDiagnostics = expandedUrdfVisualReadinessDiagnostics() || {};
+-  window.__WORKCELL_VIEWER_STATUS__ = {
++  window.__WORKCELL_VIEWER_STATUS__ = canonicalDiagnosticValue({
+     viewer_boot_state: state.web3dReadiness?.state || 'booting',
+-    viewerBootState: state.web3dReadiness?.state || 'booting',
+     web3d_readiness_state: state.web3dReadiness?.state || 'booting',
+-    web3dReadinessState: state.web3dReadiness?.state || 'booting',
+     failed_stage: state.web3dReadiness?.state === 'scene_failed' ? 'scene_failed' : '',
+-    failedStage: state.web3dReadiness?.state === 'scene_failed' ? 'scene_failed' : '',
+     fatal_error: state.web3dReadiness?.failure?.reason || '',
+-    fatalError: state.web3dReadiness?.failure?.reason || '',
+     fatal_stack: '',
+-    fatalStack: '',
+     source_web_scene_file: state.sourceWebSceneFile || '',
+-    sourceWebSceneFile: state.sourceWebSceneFile || '',
+     scene_json_loaded: Boolean(state.sceneJsonLoaded),
+-    sceneJsonLoaded: Boolean(state.sceneJsonLoaded),
+     scene_name: summary.sceneName,
+-    sceneName: summary.sceneName,
+-    selectionOwnerRegistryCount: selectionDiagnostics.selectionOwnerRegistryCount,
+-    selectionOwnerIds: selectionDiagnostics.selectionOwnerIds,
+-    selectedItemId: selectionDiagnostics.selectedItemId,
+-    uiSelectionItemId: selectionDiagnostics.uiSelectionItemId,
+-    selectedLinkName: selectionDiagnostics.selectedLinkName,
+-    uiSelectionResolution: selectionDiagnostics.uiSelectionResolution,
+-    pickRecordSource: selectionDiagnostics.pickRecordSource,
++    selection_owner_registry_count: selectionDiagnostics.selectionOwnerRegistryCount,
++    selection_owner_ids: selectionDiagnostics.selectionOwnerIds,
++    selected_item_id: selectionDiagnostics.selectedItemId,
++    ui_selection_item_id: selectionDiagnostics.uiSelectionItemId,
++    selected_link_name: selectionDiagnostics.selectedLinkName,
++    ui_selection_resolution: selectionDiagnostics.uiSelectionResolution,
++    pick_record_source: selectionDiagnostics.pickRecordSource,
+     last_failed_canvas_pick_diagnostic: state.lastFailedCanvasPickDiagnostic,
+-    lastFailedCanvasPickDiagnostic: state.lastFailedCanvasPickDiagnostic,
+     renderable_count: summary.renderableCount,
+-    renderableCount: summary.renderableCount,
+     mesh_loaded_count: summary.meshLoadedCount,
+-    meshLoadedCount: summary.meshLoadedCount,
+     required_mesh_failed_count: statusCountedRenderables().filter(isRequiredMeshFailureStatus).length,
+-    requiredMeshFailedCount: statusCountedRenderables().filter(isRequiredMeshFailureStatus).length,
+     fallback_count: summary.fallbackCount,
+-    fallbackCount: summary.fallbackCount,
+     runtime_warnings: warnings,
+-    runtimeWarnings: warnings,
+-    resolvedFramePositions: resolvedFrameStatus.resolvedFramePositions,
+     resolved_frame_positions: resolvedFrameStatus.resolved_frame_positions,
+     viewer_resolved_distances_m: resolvedFrameStatus.viewer_resolved_distances_m,
+-    resolvedFrameDistancesM: resolvedFrameStatus.resolvedFrameDistancesM,
+-    renderedMeshDiagnostics,
++    resolved_frame_distances_m: resolvedFrameStatus.resolvedFrameDistancesM,
+     rendered_mesh_diagnostics: renderedMeshDiagnostics,
+-    frameDiagnostics,
+     frame_diagnostics: frameDiagnostics,
+-    renderedObjectStatuses,
+     rendered_object_statuses: renderedObjectStatuses,
+     robot_transform_source: state.robotAssemblyDiagnostics?.some(d => d.robot_transform_source === 'ros_tf_verified_urdf_fk') ? 'ros_tf_verified_urdf_fk' : (state.robotAssemblyDiagnostics?.some(d => d.robot_transform_source === 'expanded_urdf_joint_tree') ? 'expanded_urdf_joint_tree' : ''),
+-    robotTransformSource: state.robotAssemblyDiagnostics?.some(d => d.robot_transform_source === 'ros_tf_verified_urdf_fk') ? 'ros_tf_verified_urdf_fk' : (state.robotAssemblyDiagnostics?.some(d => d.robot_transform_source === 'expanded_urdf_joint_tree') ? 'expanded_urdf_joint_tree' : ''),
+     robot_render_mode: state.robotUrdfPreviewDiagnostics?.robot_render_mode || (state.robotAssemblyDiagnostics?.some(d => d.robot_render_mode === 'verified_urdf_fk_visual_world_pose') ? 'verified_urdf_fk_visual_world_pose' : (state.robotAssemblyDiagnostics?.some(d => d.robot_render_mode === 'urdf_fk_visual_world_pose') ? 'urdf_fk_visual_world_pose' : (state.robotAssemblyDiagnostics?.length ? 'assembled_urdf_hierarchy' : ''))),
+-    robotRenderMode: state.robotUrdfPreviewDiagnostics?.robot_render_mode || (state.robotAssemblyDiagnostics?.some(d => d.robot_render_mode === 'verified_urdf_fk_visual_world_pose') ? 'verified_urdf_fk_visual_world_pose' : (state.robotAssemblyDiagnostics?.some(d => d.robot_render_mode === 'urdf_fk_visual_world_pose') ? 'urdf_fk_visual_world_pose' : (state.robotAssemblyDiagnostics?.length ? 'assembled_urdf_hierarchy' : ''))),
+     ...state.robotUrdfPreviewDiagnostics,
+     robot_hierarchy_diagnostics: state.robotAssemblyDiagnostics || [],
+-    robotHierarchyDiagnostics: state.robotAssemblyDiagnostics || [],
+     robot_hierarchy_links: state.robotUrdfPreviewDiagnostics?.robot_hierarchy_links || Array.from(new Set((state.robotAssemblyDiagnostics || []).flatMap(d => d.robot_hierarchy_links || []))),
+-    robotHierarchyLinks: state.robotUrdfPreviewDiagnostics?.robot_hierarchy_links || Array.from(new Set((state.robotAssemblyDiagnostics || []).flatMap(d => d.robot_hierarchy_links || []))),
+     robot_hierarchy_missing_links: state.robotUrdfPreviewDiagnostics?.robot_hierarchy_missing_links || Array.from(new Set((state.robotAssemblyDiagnostics || []).flatMap(d => d.robot_hierarchy_missing_links || []))),
+     robot_hierarchy_missing_parents: Array.from(new Set((state.robotAssemblyDiagnostics || []).flatMap(d => d.robot_hierarchy_missing_parents || []))),
+     robot_hierarchy_mesh_count: (state.robotAssemblyDiagnostics || []).reduce((total, d) => total + Number(d.robot_hierarchy_mesh_count || 0), 0),
+-    robotHierarchyMeshCount: (state.robotAssemblyDiagnostics || []).reduce((total, d) => total + Number(d.robot_hierarchy_mesh_count || 0), 0),
+     ...assemblyRenderDiagnostics,
+     ...expandedUrdfVisualDiagnostics,
+     required_physical_categories: state.web3dReadiness?.required || {},
+-    requiredPhysicalCategories: state.web3dReadiness?.required || {},
+     pending_required_loads: pendingRequiredLoads(),
+-    pendingRequiredLoads: pendingRequiredLoads(),
+     ...structuredWeb3dReadinessFields(state.web3dReadiness?.state || 'booting'),
+     final_failed_url: state.web3dReadiness?.failure?.url || state.web3dReadiness?.failure?.final_failed_url || '',
+-    finalFailedUrl: state.web3dReadiness?.failure?.url || state.web3dReadiness?.failure?.finalFailedUrl || '',
+     final_failed_link: state.web3dReadiness?.failure?.link || state.web3dReadiness?.failure?.link_name || '',
+-    finalFailedLink: state.web3dReadiness?.failure?.link || state.web3dReadiness?.failure?.linkName || '',
+     readiness_failure: state.web3dReadiness?.failure || null,
+-    readinessFailure: state.web3dReadiness?.failure || null,
+-  };
++  });
+   return window.__WORKCELL_VIEWER_STATUS__;
+ }
+ function renderSceneSummary() {
+@@ -1306,24 +1252,17 @@ function showError(message) {
+   pushEditorEvent('editor_error', { message: text });
+   el.error.textContent = text;
+   el.error.hidden = false;
+-  window.__WORKCELL_VIEWER_STATUS__ = {
++  window.__WORKCELL_VIEWER_STATUS__ = canonicalDiagnosticValue({
+     ...(window.__WORKCELL_VIEWER_STATUS__ || {}),
+     readiness_contract_version: READINESS_CONTRACT_VERSION,
+-    readinessContractVersion: READINESS_CONTRACT_VERSION,
+     lifecycle_state: 'scene_failed',
+-    lifecycleState: 'scene_failed',
+     terminal: true,
+     viewer_boot_state: 'scene_failed',
+-    viewerBootState: 'scene_failed',
+     web3d_readiness_state: 'scene_failed',
+-    web3dReadinessState: 'scene_failed',
+     failed_stage: 'viewer_runtime',
+-    failedStage: 'viewer_runtime',
+     fatal_error: text,
+-    fatalError: text,
+     fatal_stack: (new Error(text).stack || '').split('\n').slice(0, 6).join('\n'),
+-    fatalStack: (new Error(text).stack || '').split('\n').slice(0, 6).join('\n'),
+-  };
++  });
+ }
+ function clearError() { state.editorError = ''; el.error.hidden = true; el.error.textContent = ''; }
+ function valueOrDash(value) { return value === undefined || value === null || value === '' ? '—' : value; }
+@@ -3835,23 +3774,23 @@ function loadExpandedUrdfRobotPreview(preview) {
+     robot_missing_meshes: [],
+     robot_joint_values_applied: preview?.joint_values || {},
+     robot_expected_visual_count: 0,
+-    robotExpectedVisualCount: 0,
++    robot_expected_visual_count: 0,
+     robot_completed_visual_count: 0,
+-    robotCompletedVisualCount: 0,
++    robot_completed_visual_count: 0,
++    robot_failed_visual_count: 0,
+     robot_failed_visual_count: 0,
+-    robotFailedVisualCount: 0,
+     robot_root_link_count: 0,
+-    robotRootLinkCount: 0,
++    robot_root_link_count: 0,
+     robot_root_links: [],
+-    robotRootLinks: [],
++    robot_root_links: [],
++    robot_disconnected_links: [],
+     robot_disconnected_links: [],
+-    robotDisconnectedLinks: [],
+     robot_duplicate_links: [],
+-    robotDuplicateLinks: [],
++    robot_duplicate_links: [],
++    robot_preview_lifecycle_state: 'idle',
+     robot_preview_lifecycle_state: 'idle',
+-    robotPreviewLifecycleState: 'idle',
+     robot_preview_canonical_fallback_used: false,
+-    robotPreviewCanonicalFallbackUsed: false,
++    robot_preview_canonical_fallback_used: false,
+     skipped_legacy_generated_urdf_visual_count: state.robotAssemblyRenderDiagnostics?.skipped_legacy_generated_urdf_visual_count || state.robotAssemblyRenderDiagnostics?.skipped_legacy_generated_urdf_count || 0,
+   };
+   const mergeMissingDiagnosticsInPlace = (target, additions) => {
+@@ -3862,15 +3801,15 @@ function loadExpandedUrdfRobotPreview(preview) {
+     return target;
+   };
+   const rendererReady = rendererDiagnostics => {
+-    const lifecycle = String(rendererDiagnostics?.robot_preview_lifecycle_state || rendererDiagnostics?.robotPreviewLifecycleState || '');
+-    const loaded = rendererDiagnostics?.robot_preview_loaded === true || rendererDiagnostics?.robotPreviewLoaded === true;
++    const lifecycle = String(rendererDiagnostics?.robot_preview_lifecycle_state || rendererDiagnostics?.robot_preview_lifecycle_state || '');
++    const loaded = rendererDiagnostics?.robot_preview_loaded === true || rendererDiagnostics?.robot_preview_loaded === true;
+     return lifecycle === 'ready' && loaded;
+   };
+   if (typeof loadRobotPreview !== 'function') {
+     diagnostics.robot_preview_lifecycle_state = 'failed';
+-    diagnostics.robotPreviewLifecycleState = 'failed';
++    diagnostics.robot_preview_lifecycle_state = 'failed';
++    diagnostics.robot_failed_visual_count = 1;
+     diagnostics.robot_failed_visual_count = 1;
+-    diagnostics.robotFailedVisualCount = 1;
+     diagnostics.robot_missing_meshes.push('urdf_robot_renderer module was not loaded');
+     appendRuntimeWarning({}, preview?.urdf_url || '', 'expanded_urdf_loader failed: urdf_robot_renderer module was not loaded', 'expanded_urdf_loader_failed');
+     finalizeRequiredLoad('failure', { completion_source: 'module_preflight', reason: 'expanded_urdf_loader failed: urdf_robot_renderer module was not loaded' });
+@@ -3905,7 +3844,7 @@ function loadExpandedUrdfRobotPreview(preview) {
+       };
+       const robotOwnerId = ownerFromExplicitContract(['selection_robot_owner_id', 'selectionRobotOwnerId', 'robot_instance_id', 'robotInstanceId', 'robot_id', 'robotId']);
+       const toolOwnerId = ownerFromExplicitContract(['selection_tool_owner_id', 'selectionToolOwnerId', 'tool_instance_id', 'toolInstanceId', 'tool_id', 'toolId', 'end_effector_id', 'endEffectorId']);
+-      const robotInstance = String(preview?.robot_instance_id || preview?.robotInstanceId || preview?.robot_id || preview?.robotId || 'robot').trim();
++      const robotInstance = String(preview?.robot_instance_id || preview?.robot_instanceId || preview?.robot_id || preview?.robot_id || 'robot').trim();
+       const urdfLinkRoots = new Set(result.links.values());
+       const loadedPickRecords = [];
+       let boundNodeCount = 0;
+@@ -3935,7 +3874,7 @@ function loadExpandedUrdfRobotPreview(preview) {
+       const toolPickRecords = loadedPickRecords.filter(record => toolLinks.has(exactSelectionLinkName(record.item)));
+       const localDiagnostics = {
+         robot_pick_record_count: loadedPickRecords.length,
+-        robotPickRecordCount: loadedPickRecords.length,
++        robot_pick_record_count: loadedPickRecords.length,
+         expanded_urdf_pick_record_count: loadedPickRecords.length,
+         expandedUrdfPickRecordCount: loadedPickRecords.length,
+         expanded_urdf_unique_link_record_count: new Set(loadedPickRecords.map(record => exactSelectionLinkName(record.item)).filter(Boolean)).size,
+@@ -3943,15 +3882,15 @@ function loadExpandedUrdfRobotPreview(preview) {
+         expanded_urdf_bound_node_count: boundNodeCount,
+         expandedUrdfBoundNodeCount: boundNodeCount,
+         robot_pick_bound_descendant_node_count: boundNodeCount,
+-        robotPickBoundDescendantNodeCount: boundNodeCount,
++        robot_pick_bound_descendant_node_count: boundNodeCount,
+         expanded_urdf_robot_pick_record_count: robotPickRecords.length,
+         expandedUrdfRobotPickRecordCount: robotPickRecords.length,
+         robot_pick_robot_record_count: robotPickRecords.length,
+-        robotPickRobotRecordCount: robotPickRecords.length,
++        robot_pick_robot_record_count: robotPickRecords.length,
+         expanded_urdf_tool_pick_record_count: toolPickRecords.length,
+         expandedUrdfToolPickRecordCount: toolPickRecords.length,
+         robot_pick_tool_record_count: toolPickRecords.length,
+-        robotPickToolRecordCount: toolPickRecords.length,
++        robot_pick_tool_record_count: toolPickRecords.length,
+         expanded_urdf_robot_pick_record_links: robotPickRecords.map(record => exactSelectionLinkName(record.item)),
+         expandedUrdfRobotPickRecordLinks: robotPickRecords.map(record => exactSelectionLinkName(record.item)),
+         expanded_urdf_tool_pick_record_links: toolPickRecords.map(record => exactSelectionLinkName(record.item)),
+@@ -3982,9 +3921,9 @@ function loadExpandedUrdfRobotPreview(preview) {
+       mergeMissingDiagnosticsInPlace(authoritativeDiagnostics, state.robotUrdfPreviewDiagnostics);
+       state.robotUrdfPreviewDiagnostics = authoritativeDiagnostics;
+       state.robotUrdfPreviewDiagnostics.robot_preview_lifecycle_state = 'failed';
+-      state.robotUrdfPreviewDiagnostics.robotPreviewLifecycleState = 'failed';
++      state.robotUrdfPreviewDiagnostics.robot_preview_lifecycle_state = 'failed';
+       state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason = err?.message || String(err || 'expanded URDF preview failed');
+-      state.robotUrdfPreviewDiagnostics.robotPreviewFailureReason = state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason;
++      state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason = state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason;
+       finalizeRequiredLoad('failure', { error: err, completion_source: 'onRobotError' });
+       maybeEmitSceneReady();
+       appendRuntimeWarning({}, preview?.urdf_url || '', `expanded_urdf_loader failed: ${err?.message || err}`, 'expanded_urdf_loader_failed');
+@@ -4016,7 +3955,7 @@ function loadExpandedUrdfRobotPreview(preview) {
+       } else {
+         finalizeRequiredLoad('failure', {
+           completion_source: 'previewResult.ready',
+-          reason: String(state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason || state.robotUrdfPreviewDiagnostics.robotPreviewFailureReason || 'Expanded URDF previewResult.ready resolved without a ready preview. Check required robot/tool visual diagnostics.'),
++          reason: String(state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason || state.robotUrdfPreviewDiagnostics.robot_preview_failure_reason || 'Expanded URDF previewResult.ready resolved without a ready preview. Check required robot/tool visual diagnostics.'),
+         });
+       }
+       renderSceneSummary();
+@@ -4559,6 +4498,7 @@ function rankedPickingCandidates(hits) {
+     return Math.abs(distanceDelta) <= PICK_COINCIDENCE_TOLERANCE_M ? a.priority - b.priority || distanceDelta : distanceDelta;
+   });
+ }
++
+ function failedCanvasPickDiagnostic(hits) {
+   const objectNames = [];
+   let traversedRegisteredIdentity = false;
+@@ -4596,17 +4536,11 @@ function failedCanvasPickDiagnostic(hits) {
+   if (!firstActionableRejectionReason) firstActionableRejectionReason = traversedRegisteredIdentity ? 'registered_identity_rejected_by_selection_policy' : 'no_registered_identity_in_hit_ancestry';
+   return {
+     raw_hit_count: (hits || []).length,
+-    rawHitCount: (hits || []).length,
+     hit_object_names: objectNames,
+-    hitObjectNames: objectNames,
+     traversed_registered_identity: traversedRegisteredIdentity,
+-    traversedRegisteredIdentity,
+     first_actionable_rejection_reason: firstActionableRejectionReason,
+-    firstActionableRejectionReason,
+     nearest_known_urdf_link_ancestor: nearestKnownUrdfLinkAncestor,
+-    nearestKnownUrdfLinkAncestor,
+     hit_resolutions: hitResolutions,
+-    hitResolutions,
+   };
+ }
+ function selectObject(id) { return selectObjectFromRender(id, null); }
+@@ -4674,11 +4608,7 @@ function pickObject(event) {
+     state.lastFailedCanvasPickDiagnostic = hits.length ? failedCanvasPickDiagnostic(hits) : null;
+     if (state.lastFailedCanvasPickDiagnostic) {
+       const diagnostic = state.lastFailedCanvasPickDiagnostic;
+-      const signature = ['failed_canvas_pick', sceneId(), diagnostic.raw_hit_count, diagnostic.hit_object_names.join('|'), diagnostic.first_actionable_rejection_reason, diagnostic.nearest_known_urdf_link_ancestor].join('\n');
+-      if (!state.diagnosticKeys.has(signature)) {
+-        state.diagnosticKeys.add(signature);
+-        console.warn?.(`Product View canvas pick rejected: ${JSON.stringify(diagnostic)}`);
+-      }
++      warnNormalDiagnosticOnce('failed_canvas_pick', { scene_id: sceneId(), ...diagnostic }, 'Product View canvas pick rejected');
+     }
+     if (state.editorMode === 'select') clearSelection();
+     return '';

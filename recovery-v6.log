@@ -1,0 +1,14 @@
+From https://github.com/Mukaram01/Easy_Manipulator_Improved
+ * branch              chore/remove-temporary-diagnostics-artifacts -> FETCH_HEAD
+Preparing worktree (detached HEAD 43acccb6)
+HEAD is now at 43acccb6 Remove temporary diagnostics automation artifacts
+source transformations completed
+== changed files ==
+workcell_builder/workcell_builder/gui/scene_preview_widget.cpp
+workcell_studio_web/viewer/urdf_robot_renderer.js
+workcell_studio_web/viewer/viewer.js
+changed-file mismatch: expected=['tests/test_workcell_web3d_diagnostic_naming_contract.py', 'workcell_builder/workcell_builder/gui/scene_preview_widget.cpp', 'workcell_studio_web/viewer/urdf_robot_renderer.js', 'workcell_studio_web/viewer/viewer.js'] actual=['workcell_builder/workcell_builder/gui/scene_preview_widget.cpp', 'workcell_studio_web/viewer/urdf_robot_renderer.js', 'workcell_studio_web/viewer/viewer.js']
+
+status=1
+source_branch=codex/canonical-snake-case-viewer-diagnostics-clean-v3
+source_sha=
