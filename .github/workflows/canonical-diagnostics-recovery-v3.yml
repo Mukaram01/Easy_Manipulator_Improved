@@ -1,4 +1,4 @@
-name: Temporary canonical diagnostics inspection v4
+name: Temporary canonical diagnostics patch inspection v5
 
 on:
   push:
@@ -18,168 +18,47 @@ jobs:
           ref: automation/canonical-diagnostics-recovery-v3
           fetch-depth: 0
 
-      - name: Extract exact source contexts
+      - name: Recover and inspect partial patch
         shell: bash
         run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
+          set -u
+          REPORT=partial-patch-report.txt
+          PATCH=partial-canonical-diagnostics.patch
+          : > "$REPORT"
 
-          def extract_js_function(text: str, name: str) -> str:
-              marker = f"function {name}("
-              start = text.index(marker)
-              brace = text.index("{", start)
-              depth = 0
-              quote = None
-              escape = False
-              line_comment = False
-              block_comment = False
-              i = brace
-              while i < len(text):
-                  ch = text[i]
-                  nxt = text[i + 1] if i + 1 < len(text) else ""
-                  if line_comment:
-                      if ch == "\n":
-                          line_comment = False
-                      i += 1
-                      continue
-                  if block_comment:
-                      if ch == "*" and nxt == "/":
-                          block_comment = False
-                          i += 2
-                      else:
-                          i += 1
-                      continue
-                  if quote:
-                      if escape:
-                          escape = False
-                      elif ch == "\\":
-                          escape = True
-                      elif ch == quote:
-                          quote = None
-                      i += 1
-                      continue
-                  if ch == "/" and nxt == "/":
-                      line_comment = True
-                      i += 2
-                      continue
-                  if ch == "/" and nxt == "*":
-                      block_comment = True
-                      i += 2
-                      continue
-                  if ch in ("'", '"', "`"):
-                      quote = ch
-                      i += 1
-                      continue
-                  if ch == "{":
-                      depth += 1
-                  elif ch == "}":
-                      depth -= 1
-                      if depth == 0:
-                          return text[start:i + 1]
-                  i += 1
-              raise RuntimeError(f"unterminated function {name}")
+          echo "== chunk inventory ==" >> "$REPORT"
+          ls -l .github/temporary/canonical-diagnostics-2980/chunk_* >> "$REPORT" 2>&1
+          wc -c .github/temporary/canonical-diagnostics-2980/chunk_* >> "$REPORT" 2>&1
+          echo >> "$REPORT"
 
-          viewer_path = Path("workcell_studio_web/viewer/viewer.js")
-          renderer_path = Path("workcell_studio_web/viewer/urdf_robot_renderer.js")
-          qt_path = Path("workcell_builder/workcell_builder/gui/scene_preview_widget.cpp")
-          test_path = Path("tests/test_workcell_studio_web_viewer_static.py")
-          viewer = viewer_path.read_text()
-          renderer = renderer_path.read_text()
-          qt = qt_path.read_text()
-          existing_test = test_path.read_text()
+          cat .github/temporary/canonical-diagnostics-2980/chunk_* | base64 -d > /tmp/canonical-diagnostics.gz 2>> "$REPORT"
+          echo "compressed_bytes=$(wc -c < /tmp/canonical-diagnostics.gz)" >> "$REPORT"
+          gzip -dc /tmp/canonical-diagnostics.gz > "$PATCH" 2>> "$REPORT" || true
+          echo "patch_bytes=$(wc -c < "$PATCH")" >> "$REPORT"
+          echo "patch_lines=$(wc -l < "$PATCH")" >> "$REPORT"
 
-          viewer_functions = [
-              "emitWeb3dReadinessState",
-              "structuredWeb3dReadinessFields",
-              "failedCanvasPickDiagnostic",
-              "collectRenderedMeshDiagnostics",
-              "collectAssemblyRenderDiagnostics",
-              "expandedUrdfVisualReadinessDiagnostics",
-              "updateViewerStatus",
-              "showError",
-          ]
-          renderer_aliases = [
-              "colladaZUpConsoleMessageCount",
-              "robotColladaRootNormalizationCount",
-              "robotVisualWrapperWorldMatrices",
-              "robotVisualMeshWorldBounds",
-              "robotBaseAnchorPrePosition",
-              "robotBaseAnchorPostPosition",
-              "robotBaseAnchorExpectedPosition",
-              "robotBaseAnchorWorldPosition",
-              "robotAnchorDeltaPosition",
-              "robotLinkWorldMatrices",
-              "robotPreviewLifecycleState",
-              "robotPreviewFailureReason",
-              "sourceUrl",
-              "policyReason",
-          ]
-          viewer_aliases = [
-              "rawHitCount", "traversedObjectCount", "visibleMeshCount",
-              "selectableOwnerCount", "registeredRenderRootCount",
-              "selectionResolutionMapSize", "ownerRenderRootMapSize",
-              "hoverRenderRootMapSize", "reasonCode", "nearestObjectName",
-              "nearestObjectType", "nearestOwnerId", "nearestDiagnosticReason",
-              "hitResolutions", "finalLifecycleState", "pendingRequiredLoads",
-              "robotPreviewLifecycleState", "robotPreviewFailureReason",
-          ]
+          echo >> "$REPORT"
+          echo "== diff headers ==" >> "$REPORT"
+          grep -n '^diff --git ' "$PATCH" >> "$REPORT" || true
+          echo >> "$REPORT"
+          echo "== hunk headers ==" >> "$REPORT"
+          grep -n '^@@ ' "$PATCH" >> "$REPORT" || true
+          echo >> "$REPORT"
+          echo "== patch tail ==" >> "$REPORT"
+          tail -n 160 "$PATCH" >> "$REPORT" || true
 
-          out = []
-          out.append("# Viewer target functions\n")
-          for name in viewer_functions:
-              out.append(f"\n## {name}\n```js\n{extract_js_function(viewer, name)}\n```\n")
-
-          def contexts(text: str, needles: list[str], radius: int = 5) -> str:
-              lines = text.splitlines()
-              windows = []
-              seen = set()
-              for index, line in enumerate(lines):
-                  if any(needle in line for needle in needles):
-                      lo = max(0, index - radius)
-                      hi = min(len(lines), index + radius + 1)
-                      key = (lo, hi)
-                      if key in seen:
-                          continue
-                      seen.add(key)
-                      windows.append(
-                          "\n".join(f"{i + 1}: {lines[i]}" for i in range(lo, hi))
-                      )
-              return "\n\n---\n\n".join(windows)
-
-          out.append("\n# Viewer alias contexts\n```text\n")
-          out.append(contexts(viewer, viewer_aliases, 7))
-          out.append("\n```\n")
-          out.append("\n# Renderer alias contexts\n```text\n")
-          out.append(contexts(renderer, renderer_aliases, 9))
-          out.append("\n```\n")
-          out.append("\n# Qt status-script compatibility contexts\n```text\n")
-          out.append(contexts(qt, [
-              "readinessContractVersion", "lifecycleState", "statusSequence",
-              "builderRevision", "web3dReadinessState", "viewerBootState",
-              "sceneJsonLoaded", "failedRequiredItemCount",
-              "requiredMeshFailedCount", "expectedPhysicalItemCount",
-              "renderedPhysicalItemCount", "expectedRobotVisualCount",
-              "renderedRobotVisualCount", "failedRobotVisualCount",
-              "expectedRobotLinkCount", "renderedRobotLinkCount",
-              "missingRobotLinkCount", "robotStatus", "toolStatus",
-              "environmentStatus", "cameraStatus", "pendingRequiredLoads",
-              "finalLifecycleState", "readinessFailureCode",
-              "readinessFailureReason", "failedStage", "fatalError", "fatalStack",
-          ], 12))
-          out.append("\n```\n")
-          out.append("\n# Existing static-test contexts\n```text\n")
-          out.append(contexts(existing_test, [
-              "readiness", "failedCanvasPickDiagnostic", "pendingRequiredLoads",
-              "robotPreviewLifecycleState", "readinessContractVersion",
-          ], 6))
-          out.append("\n```\n")
-
-          Path("recovery-context.md").write_text("".join(out))
-          PY
+          echo >> "$REPORT"
+          echo "== apply check against cleanup commit ==" >> "$REPORT"
+          git fetch origin chore/remove-temporary-diagnostics-artifacts >> "$REPORT" 2>&1
+          rm -rf /tmp/recovery-check
+          git worktree add --detach /tmp/recovery-check 43acccb6470a9de6fdf69a6b6ce68d18368b1898 >> "$REPORT" 2>&1
+          (
+            cd /tmp/recovery-check
+            git apply --check --verbose "$GITHUB_WORKSPACE/$PATCH"
+          ) >> "$REPORT" 2>&1 || true
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add recovery-context.md
-          git commit -m "[recovery-output] Capture canonical diagnostics source contexts"
+          git add "$REPORT" "$PATCH"
+          git commit -m "[recovery-output] Capture partial canonical diagnostics patch"
           git push origin HEAD:automation/canonical-diagnostics-recovery-v3
