@@ -5861,7 +5861,6 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
     refresh_create_starter_layout_action();
     return;
   }
-  const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_state_.index)];
   if (scene_builder_title_) scene_builder_title_->setText(QString("<h2>Scene Builder: %1</h2>").arg(selected_scene_state_.name));
   update_scene_builder_path_header(selected_scene_state_.name, selected_scene_path());
   refresh_scene_builder_view_chips();
