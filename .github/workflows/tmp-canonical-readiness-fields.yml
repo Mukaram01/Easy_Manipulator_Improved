@@ -1,0 +1,157 @@
+name: Temporary canonical readiness diagnostics patch
+
+on:
+  push:
+    branches:
+      - codex/canonical-snake-case-viewer-diagnostics-clean
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/canonical-snake-case-viewer-diagnostics-clean
+          fetch-depth: 0
+
+      - name: Canonicalize readiness fields
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("workcell_studio_web/viewer/viewer.js")
+          text = path.read_text()
+
+          def function_block(source: str, name: str, next_name: str) -> tuple[int, int, str]:
+              start_marker = f"function {name}("
+              end_marker = f"function {next_name}("
+              start = source.index(start_marker)
+              end = source.index(end_marker, start)
+              return start, end, source[start:end]
+
+          def replace_once(block: str, old: str, new: str, label: str) -> str:
+              count = block.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one match, found {count}")
+              return block.replace(old, new, 1)
+
+          start, end, block = function_block(
+              text,
+              "handOffFromLoadingScreen",
+              "terminalLifecycleState",
+          )
+          removals = {
+              "navigationKey alias": '''    navigationKey: String(
+              detail.navigation_key
+                ?? detail.navigationKey
+                ?? status.navigation_key
+                ?? status.navigationKey
+                ?? viewerNavigationKey(),
+            ),
+          ''',
+              "sceneId alias": '''    sceneId: String(
+              detail.scene_id
+                ?? detail.sceneId
+                ?? status.scene_id
+                ?? status.sceneId
+                ?? sceneId,
+            ),
+          ''',
+              "readinessContractVersion alias": "    readinessContractVersion,\n",
+              "viewerState alias": "    viewerState: lifecycleState,\n",
+              "lifecycleState alias": "    lifecycleState,\n",
+              "statusSequence alias": (
+                  "    statusSequence: Number.isFinite(statusSequence) ? statusSequence : 0,\n"
+              ),
+          }
+          for label, old in removals.items():
+              block = replace_once(block, old, "", label)
+          text = text[:start] + block + text[end:]
+
+          start, end, block = function_block(
+              text,
+              "structuredWeb3dReadinessFields",
+              "emitWeb3dReadinessState",
+          )
+          alias_lines = [
+              "    readinessContractVersion,\n",
+              "    sceneId: sceneIdentity,\n",
+              "    navigationKey,\n",
+              "    loadAttemptId,\n",
+              "    lifecycleState: normalizedLifecycleState,\n",
+              "    previousLifecycleState: normalizedPreviousLifecycleState,\n",
+              "    statusSequence,\n",
+              "    requiredItemCount,\n",
+              "    requiredItemFailedCount,\n",
+              "    requiredMeshFailedCount,\n",
+              "    expectedPhysicalItemCount,\n",
+              "    renderedPhysicalItemCount,\n",
+              "    expectedRobotVisualCount,\n",
+              "    renderedRobotVisualCount,\n",
+              "    failedRobotVisualCount,\n",
+              "    missingRobotVisualCount: missingRobotVisualCount,\n",
+          ]
+          for line in alias_lines:
+              block = replace_once(block, line, "", line.strip())
+          text = text[:start] + block + text[end:]
+
+          start, end, block = function_block(
+              text,
+              "emitWeb3dReadinessState",
+              "web3dReadinessTransition",
+          )
+          block = replace_once(
+              block,
+              '''    finalLifecycleState: terminalLifecycleState(normalizedLifecycleState)
+              ? normalizedLifecycleState
+              : "",
+          ''',
+              "",
+              "finalLifecycleState alias",
+          )
+          block = replace_once(
+              block,
+              "    pendingRequiredLoads,\n",
+              "",
+              "pendingRequiredLoads alias",
+          )
+          text = text[:start] + block + text[end:]
+
+          path.write_text(text)
+          PY
+
+          node --check workcell_studio_web/viewer/viewer.js
+          git diff --check
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          text = Path("workcell_studio_web/viewer/viewer.js").read_text()
+          checks = {
+              "readinessContractVersion output": "    readinessContractVersion,",
+              "finalLifecycleState output": "    finalLifecycleState:",
+              "pendingRequiredLoads output": "    pendingRequiredLoads,",
+              "requiredItemCount output": "    requiredItemCount,",
+              "requiredMeshFailedCount output": "    requiredMeshFailedCount,",
+          }
+          failures = [label for label, token in checks.items() if token in text]
+          if failures:
+              raise SystemExit("Remaining readiness aliases: " + ", ".join(failures))
+          PY
+
+      - name: Commit focused source change
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-canonical-readiness-fields.yml
+          test "$(git diff --name-only | sort)" = $'.github/workflows/tmp-canonical-readiness-fields.yml\nworkcell_studio_web/viewer/viewer.js'
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Canonicalize Web3D readiness field names"
+          git push origin HEAD:codex/canonical-snake-case-viewer-diagnostics-clean
