@@ -1,0 +1,11 @@
+status=1
+source_branch=codex/canonical-snake-case-viewer-diagnostics-clean-v3
+source_sha=
+
+Canonical diagnostics recovery v3
+base cleanup commit: 43acccb6470a9de6fdf69a6b6ce68d18368b1898
+
+== Reconstruct patch ==
+
+gzip: stdin: unexpected end of file
+FAIL: patch reconstruction
