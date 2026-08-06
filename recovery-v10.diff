@@ -1,0 +1,766 @@
+diff --git a/tests/test_workcell_web3d_diagnostic_naming_contract.py b/tests/test_workcell_web3d_diagnostic_naming_contract.py
+new file mode 100644
+index 00000000..61d26d0e
+--- /dev/null
++++ b/tests/test_workcell_web3d_diagnostic_naming_contract.py
+@@ -0,0 +1,120 @@
++from pathlib import Path
++import re
++
++ROOT = Path(__file__).resolve().parents[1]
++VIEWER = (ROOT / "workcell_studio_web/viewer/viewer.js").read_text()
++RENDERER = (ROOT / "workcell_studio_web/viewer/urdf_robot_renderer.js").read_text()
++QT = (ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp").read_text()
++
++
++def function_source(source: str, name: str) -> str:
++    start = source.index(f"function {name}(")
++    next_function = source.find("\nfunction ", start + 1)
++    return source[start:] if next_function < 0 else source[start:next_function]
++
++
++def declared_keys(source: str) -> list[str]:
++    return re.findall(r"^\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*[:,]", source, re.MULTILINE)
++
++
++def test_viewer_declares_canonical_diagnostic_contract():
++    assert "const DIAGNOSTIC_NAMING_CONTRACT" in VIEWER
++    assert "canonical_case: 'snake_case'" in VIEWER
++    assert "compatibility_boundary: 'qt_status_script'" in VIEWER
++    assert "function canonicalDiagnosticValue(value)" in VIEWER
++
++
++def test_readiness_payload_is_canonical_only():
++    source = function_source(VIEWER, "structuredWeb3dReadinessFields")
++    keys = declared_keys(source)
++    assert keys
++    assert not [key for key in keys if re.search(r"[A-Z]", key)]
++    assert keys.count("pending_required_loads") == 1
++    assert keys.count("final_lifecycle_state") == 1
++    emit = function_source(VIEWER, "emitWeb3dReadinessState")
++    assert "const canonicalDetail = canonicalDiagnosticValue(detail);" in emit
++    assert "const readinessMessage = canonicalDiagnosticValue" in emit
++    assert "finalLifecycleState" not in emit
++
++
++def test_failed_canvas_pick_emits_one_canonical_copy_per_field():
++    source = function_source(VIEWER, "failedCanvasPickDiagnostic")
++    keys = declared_keys(source)
++    expected = {
++        "hit_node_name", "registered_record_id", "pick_source",
++        "authoritative_physical_pick", "selection_owner_id",
++        "selection_owner_source", "edit_owner_id", "rejection_stage_reason",
++        "exclusion_ancestor_node", "exclusion_flag", "candidate_priority",
++        "raw_hit_count", "hit_object_names", "traversed_registered_identity",
++        "first_actionable_rejection_reason", "nearest_known_urdf_link_ancestor",
++        "hit_resolutions",
++    }
++    assert set(keys) == expected
++    assert all(keys.count(key) == 1 for key in expected)
++    assert not [key for key in keys if re.search(r"[A-Z]", key)]
++
++
++def test_rejected_pick_records_and_warnings_are_deduplicated():
++    assert "function stableDiagnosticSignature(kind, payload)" in VIEWER
++    assert "state.normalDiagnosticRecords" in VIEWER
++    assert "warnNormalDiagnosticOnce('failed_canvas_pick'" in VIEWER
++    assert "const signature = ['failed_canvas_pick'" not in VIEWER
++
++
++def test_diagnostic_producers_have_canonical_output_wrappers():
++    for name in (
++        "collectRenderedMeshDiagnostics", "collectAssemblyRenderDiagnostics",
++        "expandedUrdfVisualReadinessDiagnostics",
++    ):
++        assert f"function {name}Raw(" in VIEWER
++        wrapper = function_source(VIEWER, name)
++        assert f"canonicalDiagnosticValue({name}Raw())" in wrapper
++    assert "function updateViewerStatusRaw(" in VIEWER
++    assert "window.__WORKCELL_VIEWER_STATUS__ = status;" in function_source(VIEWER, "updateViewerStatus")
++    assert "function showErrorRaw(" in VIEWER
++    assert "canonicalDiagnosticValue(window.__WORKCELL_VIEWER_STATUS__)" in function_source(VIEWER, "showError")
++
++
++def test_renderer_emits_canonical_diagnostics_without_known_aliases():
++    aliases = (
++        "colladaZUpConsoleMessageCount", "robotPreviewLifecycleState",
++        "robotColladaRootNormalizationCount", "robotExpectedVisualCount",
++        "robotFailedVisualCount", "robotCompletedVisualCount",
++        "robotLoadingManagerComplete", "robotMatrixWorldParity",
++        "robotLinkWorldMatrices", "robotVisualWrapperWorldMatrices",
++        "robotDescendantRenderMeshDiagnostics", "robotRootLinkCount",
++        "robotRootLinks", "robotDisconnectedLinks", "robotDuplicateLinks",
++        "robotPreviewCanonicalFallbackUsed", "robotColladaMeshDiagnostics",
++        "robotColladaSummary", "robotMissingRequiredRobotVisualLinks",
++        "robotMissingRequiredToolVisualLinks", "robotExpectedRobotVisualLinks",
++        "robotExpectedToolVisualLinks", "robotMeshCallbacksComplete",
++    )
++    for alias in aliases:
++        assert re.search(rf"diagnostics\.{alias}\s*=", RENDERER) is None
++        assert re.search(rf"^\s*{alias}\s*:", RENDERER, re.MULTILINE) is None
++    assert "result.diagnostics = canonicalDiagnosticValue(result.diagnostics);" in RENDERER
++    assert "onRobotError?.(err, result.diagnostics)" in RENDERER
++    assert "source_url: sourceUrl || '', policy_reason: reason" in RENDERER
++
++
++def test_qt_status_script_is_narrow_and_preserves_status_fields():
++    start = QT.index('static const char kStatusScript[]')
++    end = QT.index(')JS";', start)
++    script = QT[start:end]
++    assert "External compatibility boundary" in script
++    assert "const readStatus = (canonicalKey, legacyKey, fallbackValue)" in script
++    pairs = re.findall(r"readStatus\('([a-z0-9_]+)', '([A-Za-z0-9]+)'", script)
++    assert pairs
++    assert len({canonical for canonical, _ in pairs}) == len(pairs)
++    required = {
++        "readiness_contract_version", "lifecycle_state", "status_sequence",
++        "builder_revision", "viewer_boot_state", "scene_name",
++        "source_web_scene_file", "scene_json_loaded",
++        "robot_preview_lifecycle_state", "scene_id",
++        "expected_physical_item_count", "rendered_physical_item_count",
++        "failed_required_item_count", "robot_status", "tool_status",
++        "environment_status", "camera_status", "pending_required_loads",
++        "final_lifecycle_state", "readiness_failure", "failed_stage",
++        "fatal_error", "fatal_stack",
++    }
++    assert required.issubset({canonical for canonical, _ in pairs} | {"lifecycle_state", "pending_required_loads"})
+diff --git a/workcell_builder/workcell_builder/gui/scene_preview_widget.cpp b/workcell_builder/workcell_builder/gui/scene_preview_widget.cpp
+index 97c9eae8..11ec5dd4 100644
+--- a/workcell_builder/workcell_builder/gui/scene_preview_widget.cpp
++++ b/workcell_builder/workcell_builder/gui/scene_preview_widget.cpp
+@@ -2191,31 +2191,41 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
+   static const char kStatusScript[] = R"JS(
+ (() => {
+   const s = window.__WORKCELL_VIEWER_STATUS__ || {};
++  // External compatibility boundary: canonical snake_case first, with
++  // exactly one narrowly scoped legacy camelCase fallback per field.
++  const readStatus = (canonicalKey, legacyKey, fallbackValue) => {
++    const canonicalValue = s[canonicalKey];
++    if (canonicalValue !== undefined && canonicalValue !== null) return canonicalValue;
++    const legacyValue = s[legacyKey];
++    return legacyValue !== undefined && legacyValue !== null ? legacyValue : fallbackValue;
++  };
++  const lifecycleState = String(readStatus('lifecycle_state', 'lifecycleState', ''));
++  const pendingLoads = readStatus('pending_required_loads', 'pendingRequiredLoads', []);
+   return {
+-    readiness_contract_version: Number(s.readiness_contract_version ?? s.readinessContractVersion ?? 0),
+-    lifecycle_state: s.lifecycle_state || s.lifecycleState || '',
++    readiness_contract_version: Number(readStatus('readiness_contract_version', 'readinessContractVersion', 0)),
++    lifecycle_state: lifecycleState,
+     terminal: Boolean(s.terminal),
+-    status_sequence: Number(s.status_sequence ?? s.statusSequence ?? 0),
+-    builder_revision: String(s.builder_revision ?? s.builderRevision ?? ''),
+-    viewer_boot_state: s.web3d_readiness_state || s.web3dReadinessState || s.viewer_boot_state || s.viewerBootState || '',
+-    scene_name: s.scene_name || s.sceneName || '',
+-    source_web_scene_file: s.source_web_scene_file || s.sourceWebSceneFile || '',
+-    scene_json_loaded: Boolean(s.scene_json_loaded || s.sceneJsonLoaded),
+-    robot_preview_lifecycle_state: s.robot_preview_lifecycle_state || s.robotPreviewLifecycleState || '',
+-    scene_id: s.scene_id || s.sceneId || '',
+-    expected_physical_item_count: Number(s.expected_physical_item_count ?? s.expectedPhysicalItemCount ?? 0),
+-    rendered_physical_item_count: Number(s.rendered_physical_item_count ?? s.renderedPhysicalItemCount ?? 0),
+-    failed_required_item_count: Number(s.failed_required_item_count ?? s.failedRequiredItemCount ?? s.required_mesh_failed_count ?? s.requiredMeshFailedCount ?? 0),
+-    robot_status: s.robot_status || s.robotStatus || '',
+-    tool_status: s.tool_status || s.toolStatus || s.end_effector_status || s.endEffectorStatus || '',
+-    environment_status: s.environment_status || s.environmentStatus || '',
+-    camera_status: s.camera_status || s.cameraStatus || '',
+-    pending_required_loads: Array.isArray(s.pending_required_loads || s.pendingRequiredLoads) ? (s.pending_required_loads || s.pendingRequiredLoads) : [],
+-    final_lifecycle_state: s.final_lifecycle_state || s.finalLifecycleState || s.lifecycle_state || s.lifecycleState || '',
+-    readiness_failure: s.readiness_failure || s.readinessFailure || null,
+-    failed_stage: s.failed_stage || s.failedStage || '',
+-    fatal_error: s.fatal_error || s.fatalError || '',
+-    fatal_stack: String(s.fatal_stack || s.fatalStack || '').split('\n').slice(0, 6).join('\n')
++    status_sequence: Number(readStatus('status_sequence', 'statusSequence', 0)),
++    builder_revision: String(readStatus('builder_revision', 'builderRevision', '')),
++    viewer_boot_state: String(readStatus('viewer_boot_state', 'viewerBootState', '')),
++    scene_name: String(readStatus('scene_name', 'sceneName', '')),
++    source_web_scene_file: String(readStatus('source_web_scene_file', 'sourceWebSceneFile', '')),
++    scene_json_loaded: Boolean(readStatus('scene_json_loaded', 'sceneJsonLoaded', false)),
++    robot_preview_lifecycle_state: String(readStatus('robot_preview_lifecycle_state', 'robotPreviewLifecycleState', '')),
++    scene_id: String(readStatus('scene_id', 'sceneId', '')),
++    expected_physical_item_count: Number(readStatus('expected_physical_item_count', 'expectedPhysicalItemCount', 0)),
++    rendered_physical_item_count: Number(readStatus('rendered_physical_item_count', 'renderedPhysicalItemCount', 0)),
++    failed_required_item_count: Number(readStatus('failed_required_item_count', 'failedRequiredItemCount', 0)),
++    robot_status: String(readStatus('robot_status', 'robotStatus', '')),
++    tool_status: String(readStatus('tool_status', 'toolStatus', '')),
++    environment_status: String(readStatus('environment_status', 'environmentStatus', '')),
++    camera_status: String(readStatus('camera_status', 'cameraStatus', '')),
++    pending_required_loads: Array.isArray(pendingLoads) ? pendingLoads : [],
++    final_lifecycle_state: String(readStatus('final_lifecycle_state', 'finalLifecycleState', lifecycleState)),
++    readiness_failure: readStatus('readiness_failure', 'readinessFailure', null),
++    failed_stage: String(readStatus('failed_stage', 'failedStage', '')),
++    fatal_error: String(readStatus('fatal_error', 'fatalError', '')),
++    fatal_stack: String(readStatus('fatal_stack', 'fatalStack', '')).split('\n').slice(0, 6).join('\n')
+   };
+ })()
+ )JS";
+diff --git a/workcell_studio_web/viewer/urdf_robot_renderer.js b/workcell_studio_web/viewer/urdf_robot_renderer.js
+index 27f78df4..ecf5fc18 100644
+--- a/workcell_studio_web/viewer/urdf_robot_renderer.js
++++ b/workcell_studio_web/viewer/urdf_robot_renderer.js
+@@ -6,6 +6,30 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+ 
+ const ROBOT_RENDER_MODE = 'expanded_urdf_loader';
+ 
++
++function diagnosticSnakeCaseKey(key) {
++  return String(key || '')
++    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
++    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
++    .replace(/-/g, '_')
++    .toLowerCase();
++}
++function canonicalDiagnosticValue(value) {
++  if (Array.isArray(value)) return value.map(canonicalDiagnosticValue);
++  if (!value || typeof value !== 'object') return value;
++  const prototype = Object.getPrototypeOf(value);
++  if (prototype !== Object.prototype && prototype !== null) return value;
++  const output = {};
++  const entries = Object.entries(value).sort(([left], [right]) =>
++    Number(left !== diagnosticSnakeCaseKey(left)) - Number(right !== diagnosticSnakeCaseKey(right)));
++  for (const [key, item] of entries) {
++    const canonicalKey = diagnosticSnakeCaseKey(key);
++    if (Object.prototype.hasOwnProperty.call(output, canonicalKey)) continue;
++    output[canonicalKey] = canonicalDiagnosticValue(item);
++  }
++  return output;
++}
++
+ const COLLADA_Z_UP_CONSOLE_MESSAGE = 'THREE.ColladaLoader: You are loading an asset with a Z-UP coordinate system. The loader just rotates the asset to transform it into Y-UP. The vertex data are not converted, see #24289.';
+ 
+ function loadColladaWithSceneScopedZUpDiagnostic(loader, url, onLoad, onProgress, onError, diagnostics) {
+@@ -13,7 +37,6 @@ function loadColladaWithSceneScopedZUpDiagnostic(loader, url, onLoad, onProgress
+   console.warn = (...args) => {
+     if (String(args?.[0] || '') === COLLADA_Z_UP_CONSOLE_MESSAGE) {
+       diagnostics.collada_z_up_console_message_count = (diagnostics.collada_z_up_console_message_count || 0) + 1;
+-      diagnostics.colladaZUpConsoleMessageCount = diagnostics.collada_z_up_console_message_count;
+       if (!diagnostics.collada_z_up_console_message_emitted) {
+         diagnostics.collada_z_up_console_message_emitted = true;
+         console.info(`Collada Z-UP loader notice collapsed for scene load: ${COLLADA_Z_UP_CONSOLE_MESSAGE}`);
+@@ -52,7 +75,7 @@ function rejectPackageMeshUri(reason, diagnostics, sourceUrl = '') {
+   const detail = sourceUrl ? `${sourceUrl}: ${reason}` : reason;
+   diagnostics.robot_missing_meshes.push(`URDF package mesh rejected: ${detail}`);
+   diagnostics.robot_package_mesh_rejections = diagnostics.robot_package_mesh_rejections || [];
+-  diagnostics.robot_package_mesh_rejections.push({ source_url: sourceUrl || '', sourceUrl: sourceUrl || '', policy_reason: reason, policyReason: reason });
++  diagnostics.robot_package_mesh_rejections.push({ source_url: sourceUrl || '', policy_reason: reason });
+   return '';
+ }
+ 
+@@ -206,7 +229,6 @@ function applyFallbackMaterial(object, material) {
+ 
+ function setLifecycleState(diagnostics, state) {
+   diagnostics.robot_preview_lifecycle_state = state;
+-  diagnostics.robotPreviewLifecycleState = state;
+ }
+ 
+ function isIdentityTransform(object, eps = 1e-9) {
+@@ -293,7 +315,6 @@ function normalizeRosColladaScene(dae, uri, diagnostics) {
+   scene.updateMatrix();
+   scene.updateMatrixWorld(true);
+   diagnostics.robot_collada_root_normalization_count += 1;
+-  diagnostics.robotColladaRootNormalizationCount = diagnostics.robot_collada_root_normalization_count;
+   const detail = {
+     uri,
+     up_axis: upAxis || null,
+@@ -311,15 +332,13 @@ function normalizeRosColladaScene(dae, uri, diagnostics) {
+ function loadMesh(path, manager, material, done, context, diagnostics) {
+   const uri = normalizeMeshUri(path, context, diagnostics);
+   diagnostics.robot_expected_visual_count += 1;
+-  diagnostics.robotExpectedVisualCount = diagnostics.robot_expected_visual_count;
+   if (!uri) {
+     diagnostics.robot_failed_visual_count += 1;
+-    diagnostics.robotFailedVisualCount = diagnostics.robot_failed_visual_count;
+     const policy = canonicalStagedMeshUrl(path, context, diagnostics);
+     const reason = policy.reason || `unloadable URDF mesh URI: ${path}`;
+     const err = new Error(`unloadable URDF mesh URI: link=${inferMeshLinkDetail(path).link || '<unknown>'} source_url=${path} policy_reason=${reason}`);
+     done(null, err);
+-    context?.onRobotMeshLoadError?.(err, '', { path, source_url: path, sourceUrl: path, policy_reason: reason, policyReason: reason, ...inferMeshLinkDetail(path) });
++    context?.onRobotMeshLoadError?.(err, '', { path, source_url: path, policy_reason: reason, ...inferMeshLinkDetail(path) });
+     return;
+   }
+   const url = repoUrl(context, uri);
+@@ -327,16 +346,14 @@ function loadMesh(path, manager, material, done, context, diagnostics) {
+   const onDone = object => {
+     diagnostics.robot_loaded_visual_count += 1;
+     diagnostics.robot_completed_visual_count = diagnostics.robot_loaded_visual_count;
+-    diagnostics.robotCompletedVisualCount = diagnostics.robot_completed_visual_count;
+     done(applyFallbackMaterial(object, material));
+     context?.onRobotMeshLoaded?.();
+   };
+   const onError = err => {
+     diagnostics.robot_failed_visual_count += 1;
+-    diagnostics.robotFailedVisualCount = diagnostics.robot_failed_visual_count;
+     diagnostics.robot_missing_meshes.push(`${url}: ${err?.message || err || 'load failed'}`);
+     done(null, err);
+-    context?.onRobotMeshLoadError?.(err, uri, { url, uri, path, source_url: path, sourceUrl: path, policy_reason: err?.message || 'loader failure', policyReason: err?.message || 'loader failure', ...inferMeshLinkDetail(path) });
++    context?.onRobotMeshLoadError?.(err, uri, { url, uri, path, source_url: path, policy_reason: err?.message || 'loader failure', ...inferMeshLinkDetail(path) });
+   };
+   if (ext === 'stl') new STLLoader(manager).load(url, geom => onDone(new THREE.Mesh(geom, material || new THREE.MeshPhongMaterial())), undefined, onError);
+   else if (ext === 'dae') loadColladaWithSceneScopedZUpDiagnostic(new ColladaLoader(manager), url, dae => onDone(normalizeRosColladaScene(dae, uri, diagnostics)), undefined, onError, diagnostics);
+@@ -357,12 +374,10 @@ function meshCompletionPromise(diagnostics, manager) {
+   const timeoutMs = 30000;
+   const waitTick = callback => (typeof window !== 'undefined' && window.setTimeout ? window.setTimeout(callback, 0) : setTimeout(callback, 0));
+   diagnostics.robot_loading_manager_complete = false;
+-  diagnostics.robotLoadingManagerComplete = false;
+   const previousOnLoad = manager.onLoad;
+   manager.onLoad = () => {
+     managerComplete = true;
+     diagnostics.robot_loading_manager_complete = true;
+-    diagnostics.robotLoadingManagerComplete = true;
+     previousOnLoad?.();
+   };
+   const countsSettled = () => diagnostics.robot_expected_visual_count === (diagnostics.robot_loaded_visual_count + diagnostics.robot_failed_visual_count);
+@@ -449,15 +464,11 @@ function compareMatrixDiagnostics(actualByLink, expectedByLink, tolerance = 1e-5
+     pass = pass && ok;
+     comparisons.push({
+       link_name: linkName,
+-      linkName,
+       max_abs_delta: maxAbsDelta,
+-      maxAbsDelta,
+       tolerance,
+       pass: ok,
+       expected_matrix_world: expectedMatrix,
+-      expectedMatrixWorld: expectedMatrix,
+       actual_matrix_world: actualMatrix,
+-      actualMatrixWorld: actualMatrix,
+     });
+   }
+   return { pass, tolerance, compared_count: comparisons.length, comparedCount: comparisons.length, comparisons };
+@@ -481,7 +492,6 @@ function collectMatrixParityDiagnostics(previewConfig, diagnostics) {
+   const visualActual = new Map((diagnostics.robot_visual_wrapper_world_matrices || []).map(entry => [String(entry?.link_name || entry?.linkName || '').trim(), entry]).filter(([key]) => key));
+   const visualParity = compareMatrixDiagnostics(visualActual, visualExpected, tolerance);
+   diagnostics.robot_matrix_world_parity = { tolerance, link: linkParity, visual_wrapper: visualParity, pass: linkParity.pass && visualParity.pass };
+-  diagnostics.robotMatrixWorldParity = diagnostics.robot_matrix_world_parity;
+   return diagnostics.robot_matrix_world_parity;
+ }
+ 
+@@ -587,21 +597,13 @@ function collectVisualWrapperMatrixDiagnostics(links) {
+       child.matrixWorld.decompose(position, quaternion, scale);
+       out.push({
+         link_name: linkName,
+-        linkName,
+         visual_index: visualIndex,
+-        visualIndex,
+         object_name: child.name || `visual_${visualIndex}`,
+-        objectName: child.name || `visual_${visualIndex}`,
+         parent_name: child.parent?.name || '',
+-        parentName: child.parent?.name || '',
+         matrix_world: matrix4ToDiagnostics(child),
+-        matrixWorld: matrix4ToDiagnostics(child),
+         world_position: vector3ToDiagnostics(position),
+-        worldPosition: vector3ToDiagnostics(position),
+         world_quaternion: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w },
+-        worldQuaternion: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w },
+         world_scale: vector3ToDiagnostics(scale),
+-        worldScale: vector3ToDiagnostics(scale),
+       });
+       visualIndex += 1;
+     }
+@@ -635,29 +637,17 @@ function collectDescendantRenderMeshDiagnostics(links) {
+         }
+         out.push({
+           link_name: linkName,
+-          linkName,
+           visual_index: visualIndex,
+-          visualIndex,
+           mesh_index: meshIndex,
+-          meshIndex,
+           object_name: mesh.name || `mesh_${meshIndex}`,
+-          objectName: mesh.name || `mesh_${meshIndex}`,
+           parent_name: mesh.parent?.name || '',
+-          parentName: mesh.parent?.name || '',
+           matrix_world: matrix4ToDiagnostics(mesh),
+-          matrixWorld: matrix4ToDiagnostics(mesh),
+           world_position: vector3ToDiagnostics(position),
+-          worldPosition: vector3ToDiagnostics(position),
+           world_quaternion: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w },
+-          worldQuaternion: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w },
+           world_scale: vector3ToDiagnostics(scale),
+-          worldScale: vector3ToDiagnostics(scale),
+           bounds_center: validBox ? vector3ToDiagnostics(center) : null,
+-          boundsCenter: validBox ? vector3ToDiagnostics(center) : null,
+           bounds_size: validBox ? vector3ToDiagnostics(size) : null,
+-          boundsSize: validBox ? vector3ToDiagnostics(size) : null,
+           bounds_valid: validBox,
+-          boundsValid: validBox,
+         });
+         meshIndex += 1;
+       });
+@@ -702,12 +692,10 @@ export function applyRobotJointPreview(result, jointValues = {}) {
+   const links = Object.fromEntries(result.links || []);
+   result.diagnostics.robot_joint_values_applied = { ...jointValues };
+   result.diagnostics.robot_link_world_matrices = collectLinkMatrixDiagnostics(robot, links);
+-  result.diagnostics.robotLinkWorldMatrices = result.diagnostics.robot_link_world_matrices;
+   result.diagnostics.robot_visual_wrapper_world_matrices = collectVisualWrapperMatrixDiagnostics(links);
+-  result.diagnostics.robotVisualWrapperWorldMatrices = result.diagnostics.robot_visual_wrapper_world_matrices;
+   result.diagnostics.robot_descendant_render_mesh_diagnostics = collectDescendantRenderMeshDiagnostics(links);
+-  result.diagnostics.robotDescendantRenderMeshDiagnostics = result.diagnostics.robot_descendant_render_mesh_diagnostics;
+   collectMatrixParityDiagnostics(result?.previewConfig || {}, result.diagnostics);
++  result.diagnostics = canonicalDiagnosticValue(result.diagnostics);
+   return result.diagnostics;
+ }
+ 
+@@ -736,33 +724,20 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
+     robot_joint_values_applied: previewConfig?.joint_values || {},
+     robot_joint_type_counts: {},
+     robot_expected_visual_count: 0,
+-    robotExpectedVisualCount: 0,
+     robot_completed_visual_count: 0,
+-    robotCompletedVisualCount: 0,
+     robot_failed_visual_count: 0,
+-    robotFailedVisualCount: 0,
+     robot_root_link_count: 0,
+-    robotRootLinkCount: 0,
+     robot_root_links: [],
+-    robotRootLinks: [],
+     robot_disconnected_links: [],
+-    robotDisconnectedLinks: [],
+     robot_duplicate_links: [],
+-    robotDuplicateLinks: [],
+     robot_preview_lifecycle_state: 'idle',
+-    robotPreviewLifecycleState: 'idle',
+     robot_preview_canonical_fallback_used: false,
+-    robotPreviewCanonicalFallbackUsed: false,
+     robot_collada_root_normalization_count: 0,
+-    robotColladaRootNormalizationCount: 0,
+     robot_collada_mesh_diagnostics: [],
+-    robotColladaMeshDiagnostics: [],
+     robot_collada_summary: [],
+-    robotColladaSummary: [],
+     robot_package_mesh_resolutions: [],
+     robot_package_mesh_rejections: [],
+     robot_descendant_render_mesh_diagnostics: [],
+-    robotDescendantRenderMeshDiagnostics: [],
+     skipped_legacy_generated_urdf_visual_count: rendererContext?.skippedLegacyGeneratedUrdfVisualCount || 0,
+   };
+   const result = { root: null, links: new Map(), joints: new Map(), diagnostics, ready: null, previewConfig };
+@@ -805,25 +780,16 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
+     diagnostics.robot_joint_type_counts = jointTypeCounts(robot.joints);
+     diagnostics.robot_hierarchy_links = Array.from(result.links.keys());
+     diagnostics.robot_link_world_matrices = collectLinkMatrixDiagnostics(robot, robot.links);
+-    diagnostics.robotLinkWorldMatrices = diagnostics.robot_link_world_matrices;
+     diagnostics.robot_visual_wrapper_world_matrices = collectVisualWrapperMatrixDiagnostics(robot.links);
+-    diagnostics.robotVisualWrapperWorldMatrices = diagnostics.robot_visual_wrapper_world_matrices;
+     diagnostics.robot_descendant_render_mesh_diagnostics = collectDescendantRenderMeshDiagnostics(robot.links);
+-    diagnostics.robotDescendantRenderMeshDiagnostics = diagnostics.robot_descendant_render_mesh_diagnostics;
+     collectMatrixParityDiagnostics(previewConfig, diagnostics);
+     diagnostics.robot_collada_mesh_diagnostics = diagnostics.robot_collada_mesh_diagnostics || [];
+-    diagnostics.robotColladaMeshDiagnostics = diagnostics.robot_collada_mesh_diagnostics;
+     diagnostics.robot_collada_summary = diagnostics.robot_collada_summary || [];
+-    diagnostics.robotColladaSummary = diagnostics.robot_collada_summary;
+     const rootDiagnostics = linkRootDiagnostics(robot, robot.links);
+     diagnostics.robot_root_links = rootDiagnostics.roots;
+-    diagnostics.robotRootLinks = rootDiagnostics.roots;
+     diagnostics.robot_root_link_count = rootDiagnostics.roots.length;
+-    diagnostics.robotRootLinkCount = rootDiagnostics.roots.length;
+     diagnostics.robot_disconnected_links = rootDiagnostics.disconnected;
+-    diagnostics.robotDisconnectedLinks = rootDiagnostics.disconnected;
+     diagnostics.robot_duplicate_links = rootDiagnostics.duplicateLinks;
+-    diagnostics.robotDuplicateLinks = rootDiagnostics.duplicateLinks;
+     const loadedVisualLinks = new Set((diagnostics.robot_visual_wrapper_world_matrices || [])
+       .map(visual => String(visual?.link_name || visual?.linkName || '').trim())
+       .filter(Boolean));
+@@ -832,32 +798,26 @@ export function loadRobotPreview(previewConfig, rendererContext = {}) {
+     const expectedToolVisualLinks = Array.isArray(previewConfig?.expected_tool_visual_links) ? previewConfig.expected_tool_visual_links : [];
+     diagnostics.robot_hierarchy_missing_links = expectedLinks.filter(link => !result.links.has(link));
+     diagnostics.robot_missing_required_robot_visual_links = expectedRobotVisualLinks.filter(link => !loadedVisualLinks.has(link));
+-    diagnostics.robotMissingRequiredRobotVisualLinks = diagnostics.robot_missing_required_robot_visual_links;
+     diagnostics.robot_missing_required_tool_visual_links = expectedToolVisualLinks.filter(link => !loadedVisualLinks.has(link));
+-    diagnostics.robotMissingRequiredToolVisualLinks = diagnostics.robot_missing_required_tool_visual_links;
+     diagnostics.robot_expected_robot_visual_links = expectedRobotVisualLinks;
+-    diagnostics.robotExpectedRobotVisualLinks = expectedRobotVisualLinks;
+     diagnostics.robot_expected_tool_visual_links = expectedToolVisualLinks;
+-    diagnostics.robotExpectedToolVisualLinks = expectedToolVisualLinks;
+     diagnostics.robot_link_world_matrices = collectLinkMatrixDiagnostics(robot, robot.links);
+-    diagnostics.robotLinkWorldMatrices = diagnostics.robot_link_world_matrices;
+     diagnostics.robot_visual_wrapper_world_matrices = collectVisualWrapperMatrixDiagnostics(robot.links);
+-    diagnostics.robotVisualWrapperWorldMatrices = diagnostics.robot_visual_wrapper_world_matrices;
+     diagnostics.robot_descendant_render_mesh_diagnostics = collectDescendantRenderMeshDiagnostics(robot.links);
+-    diagnostics.robotDescendantRenderMeshDiagnostics = diagnostics.robot_descendant_render_mesh_diagnostics;
+     diagnostics.robot_mesh_callbacks_complete = diagnostics.robot_expected_visual_count === (diagnostics.robot_loaded_visual_count + diagnostics.robot_failed_visual_count);
+-    diagnostics.robotMeshCallbacksComplete = diagnostics.robot_mesh_callbacks_complete;
+     diagnostics.robot_preview_loaded = diagnostics.robot_failed_visual_count === 0 && diagnostics.robot_hierarchy_missing_links.length === 0 && diagnostics.robot_missing_required_robot_visual_links.length === 0 && diagnostics.robot_missing_required_tool_visual_links.length === 0 && diagnostics.robot_mesh_callbacks_complete;
+     setLifecycleState(diagnostics, diagnostics.robot_preview_loaded ? 'ready' : 'failed');
+     rendererContext?.scene?.add?.(robot);
+     rendererContext?.assemblyRoots?.push?.(robot);
++    result.diagnostics = canonicalDiagnosticValue(result.diagnostics);
+     rendererContext?.onRobotLoaded?.(result);
+     return result;
+   })().catch(err => {
+     diagnostics.robot_preview_loaded = false;
+     setLifecycleState(diagnostics, 'failed');
+     diagnostics.robot_missing_meshes.push(err?.message || String(err));
+-    rendererContext?.onRobotError?.(err, diagnostics);
++    result.diagnostics = canonicalDiagnosticValue(diagnostics);
++    rendererContext?.onRobotError?.(err, result.diagnostics);
+     return result;
+   });
+ 
+diff --git a/workcell_studio_web/viewer/viewer.js b/workcell_studio_web/viewer/viewer.js
+index 0122e2e6..2886f90e 100644
+--- a/workcell_studio_web/viewer/viewer.js
++++ b/workcell_studio_web/viewer/viewer.js
+@@ -52,11 +52,66 @@ const STAGED_MESH_ROOTS = [
+ const EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS = Object.freeze([]);
+ 
+ const WEB3D_REQUIRED_CATEGORIES = ['robot_arm', 'attached_tool_gripper', 'workbench_support_surface', 'configured_camera'];
++// Diagnostic payload contract: emitted/status/readiness objects use
++// canonical snake_case. Legacy camelCase reads live only in the Qt
++// status-script compatibility boundary.
++const DIAGNOSTIC_NAMING_CONTRACT = Object.freeze({
++  canonical_case: 'snake_case',
++  compatibility_boundary: 'qt_status_script',
++});
++function diagnosticSnakeCaseKey(key) {
++  return String(key || '')
++    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
++    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
++    .replace(/-/g, '_')
++    .toLowerCase();
++}
++function canonicalDiagnosticValue(value) {
++  if (Array.isArray(value)) return value.map(canonicalDiagnosticValue);
++  if (!value || typeof value !== 'object') return value;
++  const prototype = Object.getPrototypeOf(value);
++  if (prototype !== Object.prototype && prototype !== null) return value;
++  const output = {};
++  const entries = Object.entries(value).sort(([left], [right]) =>
++    Number(left !== diagnosticSnakeCaseKey(left)) - Number(right !== diagnosticSnakeCaseKey(right)));
++  for (const [key, item] of entries) {
++    const canonicalKey = diagnosticSnakeCaseKey(key);
++    if (Object.prototype.hasOwnProperty.call(output, canonicalKey)) continue;
++    output[canonicalKey] = canonicalDiagnosticValue(item);
++  }
++  return output;
++}
++function stableDiagnosticValue(value) {
++  const canonical = canonicalDiagnosticValue(value);
++  if (Array.isArray(canonical)) return canonical.map(stableDiagnosticValue);
++  if (!canonical || typeof canonical !== 'object') return canonical;
++  return Object.fromEntries(Object.keys(canonical).sort().map(key => [key, stableDiagnosticValue(canonical[key])]));
++}
++function stableDiagnosticSignature(kind, payload) {
++  return `${String(kind || 'diagnostic')}\n${JSON.stringify(stableDiagnosticValue(payload))}`;
++}
++function recordNormalDiagnosticOnce(kind, payload) {
++  const diagnostic = canonicalDiagnosticValue(payload);
++  const signature = stableDiagnosticSignature(kind, diagnostic);
++  state.normalDiagnosticRecords = state.normalDiagnosticRecords || new Map();
++  if (state.normalDiagnosticRecords.has(signature)) {
++    return { diagnostic: state.normalDiagnosticRecords.get(signature), is_new: false, signature };
++  }
++  state.normalDiagnosticRecords.set(signature, diagnostic);
++  state.diagnosticKeys.add(signature);
++  return { diagnostic, is_new: true, signature };
++}
++function warnNormalDiagnosticOnce(kind, payload, message) {
++  const recorded = recordNormalDiagnosticOnce(kind, payload);
++  if (recorded.is_new) console.warn?.(`${message}: ${JSON.stringify(recorded.diagnostic)}`);
++  return recorded.diagnostic;
++}
+ function web3dNavigationKey() { return `${state.sourceWebSceneFile || ''}#${state.builderRevision || ''}`; }
+ function emitWeb3dReadinessState(readinessState, detail = {}) {
+   state.web3dReadiness = state.web3dReadiness || { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null };
+   if (!VALID_SCENE_LIFECYCLE_STATES.includes(readinessState)) readinessState = 'scene_loading';
+-  const navigationKey = detail.navigation_key || detail.navigationKey || web3dNavigationKey();
++  const canonicalDetail = canonicalDiagnosticValue(detail);
++  const navigationKey = canonicalDetail.navigation_key || web3dNavigationKey();
+   if (state.web3dReadiness.terminal) {
+     if (state.web3dReadiness.terminalNavigationKey && navigationKey && navigationKey !== state.web3dReadiness.terminalNavigationKey) return window.__WORKCELL_VIEWER_STATUS__;
+     if (readinessState !== state.web3dReadiness.terminalState) return updateViewerStatus();
+@@ -71,16 +126,21 @@ function emitWeb3dReadinessState(readinessState, detail = {}) {
+     state.web3dReadiness.terminalNavigationKey = navigationKey;
+     state.web3dReadiness.terminalEmissionCount = Number(state.web3dReadiness.terminalEmissionCount || 0) + 1;
+   }
+-  const structured = structuredWeb3dReadinessFields(readinessState);
+-  const eventDetail = { ...structured, ...detail, final_lifecycle_state: readinessState, finalLifecycleState: readinessState, pending_required_loads: pendingRequiredLoads() };
++  const eventDetail = canonicalDiagnosticValue({
++    ...structuredWeb3dReadinessFields(readinessState),
++    ...canonicalDetail,
++    final_lifecycle_state: readinessState,
++    pending_required_loads: pendingRequiredLoads(),
++  });
+   if (readinessState === 'scene_failed') {
+     state.web3dReadiness.failed = true;
+     state.web3dReadiness.failure = eventDetail;
+   }
+-  const status = updateViewerStatus();
++  const status = canonicalDiagnosticValue(updateViewerStatus());
+   if (readinessState === 'scene_ready') triggerInitialCameraFitAfterSceneReady();
+-  window.dispatchEvent?.(new CustomEvent('workcell:web3d_readiness', { detail: { state: readinessState, ...eventDetail, status } }));
+-  window.parent?.postMessage?.({ type: 'workcell_web3d_readiness', state: readinessState, ...eventDetail, status }, '*');
++  const readinessMessage = canonicalDiagnosticValue({ type: 'workcell_web3d_readiness', state: readinessState, ...eventDetail, status });
++  window.dispatchEvent?.(new CustomEvent('workcell:web3d_readiness', { detail: readinessMessage }));
++  window.parent?.postMessage?.(readinessMessage, '*');
+   return status;
+ }
+ function itemRenderPolicy(item) { return String(item?.render_policy || item?.renderPolicy || 'legacy_primary').toLowerCase(); }
+@@ -189,41 +249,24 @@ function readinessCategoryStatus(category) {
+ }
+ function structuredWeb3dReadinessFields(lifecycleState) {
+   const finalState = lifecycleState || state.web3dReadiness?.state || 'booting';
+-  const pendingLoads = pendingRequiredLoads();
+   return {
+     scene_id: sceneId(),
+-    sceneId: sceneId(),
+     expected_physical_item_count: expectedPhysicalItemCount(),
+-    expectedPhysicalItemCount: expectedPhysicalItemCount(),
+     rendered_physical_item_count: renderedPhysicalItemCount(),
+-    renderedPhysicalItemCount: renderedPhysicalItemCount(),
+     failed_required_item_count: failedRequiredItemCount(),
+-    failedRequiredItemCount: failedRequiredItemCount(),
+     robot_status: readinessCategoryStatus('robot_arm'),
+-    robotStatus: readinessCategoryStatus('robot_arm'),
+     tool_status: readinessCategoryStatus('attached_tool_gripper'),
+-    toolStatus: readinessCategoryStatus('attached_tool_gripper'),
+     end_effector_status: readinessCategoryStatus('attached_tool_gripper'),
+-    endEffectorStatus: readinessCategoryStatus('attached_tool_gripper'),
+     environment_status: readinessCategoryStatus('workbench_support_surface'),
+-    environmentStatus: readinessCategoryStatus('workbench_support_surface'),
+     camera_status: readinessCategoryStatus('configured_camera'),
+-    cameraStatus: readinessCategoryStatus('configured_camera'),
+-    pending_required_loads: pendingLoads,
+-    pendingRequiredLoads: pendingLoads,
++    pending_required_loads: pendingRequiredLoads(),
+     readiness_contract_version: READINESS_CONTRACT_VERSION,
+-    readinessContractVersion: READINESS_CONTRACT_VERSION,
+     lifecycle_state: finalState,
+-    lifecycleState: finalState,
+     terminal: Boolean(state.web3dReadiness?.terminal),
+     status_sequence: Number(state.web3dReadiness?.statusSequence || 0),
+-    statusSequence: Number(state.web3dReadiness?.statusSequence || 0),
+     source_web_scene_file: state.sourceWebSceneFile || '',
+-    sourceWebSceneFile: state.sourceWebSceneFile || '',
+     builder_revision: state.builderRevision || '',
+-    builderRevision: state.builderRevision || '',
+     final_lifecycle_state: finalState,
+-    finalLifecycleState: finalState,
+   };
+ }
+ function beginWeb3dSceneReadiness(items) {
+@@ -606,7 +649,7 @@ function isExpectedMeshlessTool0Frame(item) {
+   const geometry = String(item?.geometry_type || item?.primitive_geometry_type || item?.type || '').toLowerCase();
+   return !geometry || ['frame', 'anchor', 'none', 'link_frame', 'meshless_frame'].includes(geometry) || item?.render_expected === false;
+ }
+-function collectAssemblyRenderDiagnostics() {
++function collectAssemblyRenderDiagnosticsRaw() {
+   const diagnostics = state.robotAssemblyRenderDiagnostics || {};
+   const assemblyBounds = collectPhysicalAssemblyBounds();
+   let effectiveFinalFitBox = state.finalPhysicalFitBounds ? state.finalPhysicalFitBounds.clone() : null;
+@@ -660,6 +703,9 @@ function collectAssemblyRenderDiagnostics() {
+     maxWristTool0ToGripperBaseDistanceM: distances.length ? Math.max(...distances) : null,
+   };
+ }
++function collectAssemblyRenderDiagnostics() {
++  return canonicalDiagnosticValue(collectAssemblyRenderDiagnosticsRaw());
++}
+ function isUserFacingWarning(w) {
+   if (!w) return false;
+   if (w.code === 'camera_framing_blocker_excluded') return false;
+@@ -776,7 +822,7 @@ function failedRequiredMeshUrlFromEntry(entry) {
+   const url = entry?.mesh_uri || entry?.meshUri || entry?.url || entry?.source_url || entry?.sourceUrl || '';
+   return String(url || '').trim();
+ }
+-function expandedUrdfVisualReadinessDiagnostics() {
++function expandedUrdfVisualReadinessDiagnosticsRaw() {
+   const required = expandedUrdfExpectedVisualSet();
+   if (!required) return null;
+   const rendererDiagnostics = state.robotUrdfPreviewDiagnostics || {};
+@@ -880,6 +926,9 @@ function expandedUrdfVisualReadinessDiagnostics() {
+     requiredVisualReady: requiredVisualReady,
+   };
+ }
++function expandedUrdfVisualReadinessDiagnostics() {
++  return canonicalDiagnosticValue(expandedUrdfVisualReadinessDiagnosticsRaw());
++}
+ function failIfExpandedUrdfExpectedVisualSetInvalid() {
+   const lifecycle = String(state.robotUrdfPreviewDiagnostics?.robot_preview_lifecycle_state || state.robotUrdfPreviewDiagnostics?.robotPreviewLifecycleState || '');
+   if (expandedUrdfExpectedVisualSet() && lifecycle !== 'ready' && lifecycle !== 'failed') return false;
+@@ -897,7 +946,7 @@ function failIfExpandedUrdfExpectedVisualSetInvalid() {
+   return true;
+ }
+ 
+-function collectRenderedMeshDiagnostics() {
++function collectRenderedMeshDiagnosticsRaw() {
+   if (!THREE?.Vector3) return [];
+   state.three?.scene?.updateMatrixWorld?.(true);
+   const diagnostics = [];
+@@ -1017,8 +1066,11 @@ function collectRenderedMeshDiagnostics() {
+   });
+   return diagnostics;
+ }
++function collectRenderedMeshDiagnostics() {
++  return canonicalDiagnosticValue(collectRenderedMeshDiagnosticsRaw());
++}
+ 
+-function updateViewerStatus() {
++function updateViewerStatusRaw() {
+   const summary = computeSceneSummary();
+   const selectionDiagnostics = currentSelectionDiagnostics();
+   const warnings = asArray(state.sceneJson?.warnings).concat(asArray(state.sceneJson?.notes_warnings), asArray(state.runtimeWarnings));
+@@ -1131,6 +1183,12 @@ function updateViewerStatus() {
+   };
+   return window.__WORKCELL_VIEWER_STATUS__;
+ }
++function updateViewerStatus() {
++  const rawStatus = updateViewerStatusRaw();
++  const status = canonicalDiagnosticValue(rawStatus || window.__WORKCELL_VIEWER_STATUS__ || {});
++  window.__WORKCELL_VIEWER_STATUS__ = status;
++  return status;
++}
+ function renderSceneSummary() {
+   const summary = updateViewerStatus();
+   if (!el.summary) return;
+@@ -1300,7 +1358,7 @@ function editorState() {
+   return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || '', uiSelectionItemId: state.selected || '', editOwnerItemId: editOwner?.item?.id || '', selectedItemType: rendered ? itemType(rendered.item) : '', selectedEditable: selectionIsEditable(rendered) || (hasExplicitTransformOwner && selectionIsEditable(editOwner)), selectionDiagnostics: currentSelectionDiagnostics(), lastRaycastHitCount: state.lastRaycastHitCount, lastRaycastCandidateIds: [...state.lastRaycastCandidateIds], lastCanvasSelectedItemId: state.lastCanvasSelectedItemId, lastCanvasPickReason: state.lastCanvasPickReason, lastFailedCanvasPickDiagnostic: state.lastFailedCanvasPickDiagnostic, dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, error: state.editorError || '' };
+ }
+ function emitDirtyChanged() { pushEditorEvent('dirty_changed', { dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0 }); }
+-function showError(message) {
++function showErrorRaw(message) {
+   const text = message || 'Unknown viewer error';
+   state.editorError = text;
+   pushEditorEvent('editor_error', { message: text });
+@@ -1325,6 +1383,13 @@ function showError(message) {
+     fatalStack: (new Error(text).stack || '').split('\n').slice(0, 6).join('\n'),
+   };
+ }
++function showError(message) {
++  const result = showErrorRaw(message);
++  if (window.__WORKCELL_VIEWER_STATUS__) {
++    window.__WORKCELL_VIEWER_STATUS__ = canonicalDiagnosticValue(window.__WORKCELL_VIEWER_STATUS__);
++  }
++  return result;
++}
+ function clearError() { state.editorError = ''; el.error.hidden = true; el.error.textContent = ''; }
+ function valueOrDash(value) { return value === undefined || value === null || value === '' ? '—' : value; }
+ function asArray(value) { return Array.isArray(value) ? value : []; }
+@@ -4596,17 +4661,11 @@ function failedCanvasPickDiagnostic(hits) {
+   if (!firstActionableRejectionReason) firstActionableRejectionReason = traversedRegisteredIdentity ? 'registered_identity_rejected_by_selection_policy' : 'no_registered_identity_in_hit_ancestry';
+   return {
+     raw_hit_count: (hits || []).length,
+-    rawHitCount: (hits || []).length,
+     hit_object_names: objectNames,
+-    hitObjectNames: objectNames,
+     traversed_registered_identity: traversedRegisteredIdentity,
+-    traversedRegisteredIdentity,
+     first_actionable_rejection_reason: firstActionableRejectionReason,
+-    firstActionableRejectionReason,
+     nearest_known_urdf_link_ancestor: nearestKnownUrdfLinkAncestor,
+-    nearestKnownUrdfLinkAncestor,
+     hit_resolutions: hitResolutions,
+-    hitResolutions,
+   };
+ }
+ function selectObject(id) { return selectObjectFromRender(id, null); }
+@@ -4674,11 +4733,7 @@ function pickObject(event) {
+     state.lastFailedCanvasPickDiagnostic = hits.length ? failedCanvasPickDiagnostic(hits) : null;
+     if (state.lastFailedCanvasPickDiagnostic) {
+       const diagnostic = state.lastFailedCanvasPickDiagnostic;
+-      const signature = ['failed_canvas_pick', sceneId(), diagnostic.raw_hit_count, diagnostic.hit_object_names.join('|'), diagnostic.first_actionable_rejection_reason, diagnostic.nearest_known_urdf_link_ancestor].join('\n');
+-      if (!state.diagnosticKeys.has(signature)) {
+-        state.diagnosticKeys.add(signature);
+-        console.warn?.(`Product View canvas pick rejected: ${JSON.stringify(diagnostic)}`);
+-      }
++      warnNormalDiagnosticOnce('failed_canvas_pick', { scene_id: sceneId(), ...diagnostic }, 'Product View canvas pick rejected');
+     }
+     if (state.editorMode === 'select') clearSelection();
+     return '';
