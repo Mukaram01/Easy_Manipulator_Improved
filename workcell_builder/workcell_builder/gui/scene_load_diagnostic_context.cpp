@@ -49,11 +49,11 @@ SceneLoadDiagnosticContext::Result SceneLoadDiagnosticContext::observe(
   QString terminal_state;
   if (terminal && content.isObject()) terminal_state = content.toObject().value(QStringLiteral("state")).toString();
   const bool terminal_transition = terminal && last_terminal_state_by_load_.value(load_key) != terminal_state;
-  const bool emit = debug_enabled_ || changed || terminal_transition;
+  const bool should_emit = debug_enabled_ || changed || terminal_transition;
   last_hash_by_report_.insert(report_key, hash);
   if (terminal) last_terminal_state_by_load_.insert(load_key, terminal_state);
 
-  return {emit,
+  return {should_emit,
     QStringLiteral("Scene load: scene=%1 source=%2 navigation=%3 type=%4 hash=%5")
       .arg(scene, source).arg(identity.navigation_token).arg(type, hash.left(12)),
     hash};

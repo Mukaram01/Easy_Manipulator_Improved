@@ -1328,7 +1328,7 @@ void ScenePreviewWidget::handle_embedded_web_runtime_failure(
     {QStringLiteral("detail"), detail}};
   const auto failure_report = scene_load_diagnostics_.observe(
     diagnostic_identity, QStringLiteral("terminal_readiness"), failure_content, true);
-  if (!failure_report.emit) return;
+  if (!failure_report.should_emit) return;
   emit studio_log_requested(failure_report.summary + QStringLiteral(" content=%1")
     .arg(QString::fromUtf8(QJsonDocument(failure_content).toJson(QJsonDocument::Compact))));
   if (finish_post_save_product_view_refresh(identity, navigation_token, false, detail)) return;
@@ -2286,7 +2286,7 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
     if (boot_state != QStringLiteral("scene_failed") && boot_state != QStringLiteral("failed")) {
       const auto readiness_report = scene_load_diagnostics_.observe(
         diagnostic_identity, QStringLiteral("terminal_readiness"), readiness_content, terminal_report);
-      if (readiness_report.emit) emit studio_log_requested(readiness_report.summary + QStringLiteral(" content=%1")
+      if (readiness_report.should_emit) emit studio_log_requested(readiness_report.summary + QStringLiteral(" content=%1")
         .arg(QString::fromUtf8(QJsonDocument(readiness_content).toJson(QJsonDocument::Compact))));
     }
 
@@ -2878,7 +2878,7 @@ void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items)
   }
   const auto report = [this, &diagnostic_identity](const QString & type, const QJsonObject & content) {
     const auto result = scene_load_diagnostics_.observe(diagnostic_identity, type, content);
-    if (result.emit) emit studio_log_requested(result.summary + QStringLiteral(" content=%1")
+    if (result.should_emit) emit studio_log_requested(result.summary + QStringLiteral(" content=%1")
       .arg(QString::fromUtf8(QJsonDocument(content).toJson(QJsonDocument::Compact))));
   };
   report(QStringLiteral("asset_discovery"), QJsonObject{{QStringLiteral("items"), preview_items_.size()}});

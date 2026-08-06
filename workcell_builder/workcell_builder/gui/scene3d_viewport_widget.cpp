@@ -1961,7 +1961,7 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
       {QStringLiteral("warnings"), QJsonArray::fromStringList(scene_load_warning_tokens)}};
     const auto report = scene_load_diagnostics_->observe(
       scene_load_identity_, QStringLiteral("canvas_ingestion"), content);
-    if (report.emit) qInfo().noquote() << report.summary
+    if (report.should_emit) qInfo().noquote() << report.summary
       << QStringLiteral("content=%1").arg(QString::fromUtf8(QJsonDocument(content).toJson(QJsonDocument::Compact)));
   }
   const bool should_emit_scene_load_summary =
