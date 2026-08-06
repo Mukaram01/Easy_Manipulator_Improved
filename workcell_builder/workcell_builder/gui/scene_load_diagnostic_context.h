@@ -19,7 +19,7 @@ public:
 
   struct Result
   {
-    bool emit{false};
+    bool should_emit{false};
     QString summary;
     QString content_hash;
   };
