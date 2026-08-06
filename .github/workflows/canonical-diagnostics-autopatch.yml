@@ -22,7 +22,7 @@ jobs:
           ref: codex/canonical-snake-case-viewer-diagnostics
           fetch-depth: 0
 
-      - name: Recover and repair focused patch script
+      - name: Recover and apply focused source patch
         shell: bash
         run: |
           python3 - <<'PY'
@@ -33,12 +33,16 @@ jobs:
 
           workflow_path = '.github/workflows/canonical-diagnostics-autopatch.yml'
           previous = subprocess.check_output(
-              ['git', 'show', f'b649906eff706b6d8eeedecd280ee98fdeb10c12:{workflow_path}'], text=True
+              ['git', 'show', f'b649906eff706b6d8eeedecd280ee98fdeb10c12:{workflow_path}'],
+              text=True,
           )
-          marker = "          cat > /tmp/apply_canonical_diagnostics.py <<'PY'\n"
-          start = previous.index(marker) + len(marker)
-          end = previous.index("\n          PY\n", start)
-          script = textwrap.dedent(previous[start:end])
+          match = re.search(
+              r"(?ms)^\s*cat > /tmp/apply_canonical_diagnostics\.py <<'PY'\n(.*?)^\s*PY\n",
+              previous,
+          )
+          if not match:
+              raise SystemExit('could not recover original focused patch script')
+          script = textwrap.dedent(match.group(1))
 
           block = re.compile(
               r"failed_start, failed_end, _, _ = function_span\(viewer, 'failedCanvasPickDiagnostic'\)\n"
@@ -73,12 +77,22 @@ jobs:
           PY
           python3 /tmp/apply_canonical_diagnostics.py
 
-      - name: Print transformed syntax area
-        if: always()
-        shell: bash
-        run: |
-          nl -ba workcell_studio_web/viewer/viewer.js | sed -n '1080,1140p'
-          grep -n "cameraHeightMeters" workcell_studio_web/viewer/viewer.js || true
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('workcell_studio_web/viewer/viewer.js')
+          source = path.read_text(encoding='utf-8')
+          block = '''  const cameraHeightMeters = finitePositive(
+            item?.camera_height_m ?? item?.cameraHeightM ?? item?.mount_height_m ?? item?.mountHeightM,
+            NaN
+          );
+          '''
+          first = source.find(block)
+          second = source.find(block, first + len(block)) if first >= 0 else -1
+          if second >= 0:
+              source = source[:second] + source[second + len(block):]
+          path.write_text(source, encoding='utf-8')
+          PY
 
       - name: Run focused validation
         shell: bash
@@ -89,3 +103,17 @@ jobs:
             tests/test_workcell_web3d_diagnostic_naming_contract.py \
             tests/test_workcell_studio_web_viewer_static.py \
             tests/test_embedded_web3d_editor_bridge_static.py
+
+      - name: Commit final focused changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add workcell_studio_web/viewer/viewer.js
+          git add workcell_studio_web/viewer/urdf_robot_renderer.js
+          git add workcell_builder/workcell_builder/gui/scene_preview_widget.cpp
+          git add tests/test_workcell_web3d_diagnostic_naming_contract.py
+          git add -u .github/workflows/canonical-diagnostics-autopatch.yml
+          git diff --cached --check
+          git commit -m "Canonicalize Web3D diagnostics as snake case"
+          git push origin HEAD:codex/canonical-snake-case-viewer-diagnostics
