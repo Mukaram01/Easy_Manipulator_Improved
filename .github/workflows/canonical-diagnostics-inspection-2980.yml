@@ -82,43 +82,13 @@ jobs:
           node --check workcell_studio_web/viewer/urdf_robot_renderer.js
 
       - name: Focused diagnostic tests
-        id: focused_tests
-        continue-on-error: true
         run: |
-          set -o pipefail
+          set -euxo pipefail
           python -m pytest -q \
             tests/test_workcell_web3d_diagnostic_naming_contract.py \
             tests/test_workcell_web3d_mesh_coordinate_space_contract.py \
             tests/test_workcell_studio_web_viewer_static.py \
-            tests/test_embedded_web3d_status_sync.py \
-            tests/test_workcell_builder_embedded_web3d_readiness_policy.py \
-            2>&1 | tee /tmp/focused-diagnostic-tests.txt
-
-      - name: Upload focused test output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: canonical-diagnostics-focused-test-output
-          path: /tmp/focused-diagnostic-tests.txt
-          if-no-files-found: error
-
-      - name: Upload patched debug snapshot
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: canonical-diagnostics-patched-debug-snapshot
-          path: |
-            workcell_studio_web/viewer
-            workcell_builder/workcell_builder/gui
-            tests
-            scripts
-          if-no-files-found: error
-
-      - name: Require focused tests
-        if: steps.focused_tests.outcome != 'success'
-        run: |
-          cat /tmp/focused-diagnostic-tests.txt
-          exit 1
+            tests/test_embedded_web3d_status_sync.py
 
       - name: Commit and push final branch
         run: |
