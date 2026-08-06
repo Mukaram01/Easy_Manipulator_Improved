@@ -1,4 +1,4 @@
-name: Temporary canonical diagnostics source builder v7
+name: Temporary canonical diagnostics source builder v8
 
 on:
   push:
@@ -18,19 +18,18 @@ jobs:
           ref: automation/canonical-diagnostics-recovery-v3
           fetch-depth: 0
 
-      - name: Apply, validate, and publish clean source branch
+      - name: Apply, test, and publish source-only branch
         shell: bash
         run: |
           set -u
           ROOT="$PWD"
-          WORKTREE=/tmp/canonical-diagnostics-source-v7
-          LOG="$ROOT/recovery-v7.log"
-          FINAL_DIFF="$ROOT/recovery-v7.diff"
+          WORKTREE=/tmp/canonical-diagnostics-source-v8
+          PATCH="$ROOT/recovery-v7.diff"
+          LOG="$ROOT/recovery-v8.log"
           SOURCE_BRANCH=codex/canonical-snake-case-viewer-diagnostics-clean-v3
           STATUS=0
           SOURCE_SHA=""
           : > "$LOG"
-          : > "$FINAL_DIFF"
 
           git fetch origin chore/remove-temporary-diagnostics-artifacts >> "$LOG" 2>&1 || STATUS=1
           rm -rf "$WORKTREE"
@@ -40,125 +39,16 @@ jobs:
 
           if [ "$STATUS" -eq 0 ]; then
             cd "$WORKTREE"
-            echo "== apply recovered source diff ==" >> "$LOG"
-            git apply --check --verbose "$ROOT/recovery-v6.diff" >> "$LOG" 2>&1 || STATUS=1
+            echo "== apply four-file patch ==" >> "$LOG"
+            git apply --check --verbose "$PATCH" >> "$LOG" 2>&1 || STATUS=1
             if [ "$STATUS" -eq 0 ]; then
-              git apply --whitespace=fix "$ROOT/recovery-v6.diff" >> "$LOG" 2>&1 || STATUS=1
+              git apply --whitespace=fix "$PATCH" >> "$LOG" 2>&1 || STATUS=1
             fi
           fi
 
           if [ "$STATUS" -eq 0 ]; then
-            cat > tests/test_workcell_web3d_diagnostic_naming_contract.py <<'PY'
-          from pathlib import Path
-          import re
-
-          ROOT = Path(__file__).resolve().parents[1]
-          VIEWER = (ROOT / "workcell_studio_web/viewer/viewer.js").read_text()
-          RENDERER = (ROOT / "workcell_studio_web/viewer/urdf_robot_renderer.js").read_text()
-          QT = (ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp").read_text()
-
-
-          def function_source(source: str, name: str) -> str:
-              start = source.index(f"function {name}(")
-              next_function = source.find("\nfunction ", start + 1)
-              return source[start:] if next_function < 0 else source[start:next_function]
-
-
-          def test_viewer_declares_canonical_diagnostic_contract():
-              assert "const DIAGNOSTIC_NAMING_CONTRACT" in VIEWER
-              assert "canonical_case: 'snake_case'" in VIEWER
-              assert "compatibility_boundary: 'qt_status_script'" in VIEWER
-              assert "function canonicalDiagnosticValue(value)" in VIEWER
-
-
-          def test_readiness_payloads_are_canonical_snake_case_only():
-              readiness = function_source(VIEWER, "structuredWeb3dReadinessFields")
-              for key in (
-                  "scene_id", "expected_physical_item_count", "rendered_physical_item_count",
-                  "failed_required_item_count", "pending_required_loads",
-                  "readiness_contract_version", "lifecycle_state", "status_sequence",
-                  "source_web_scene_file", "builder_revision", "final_lifecycle_state",
-              ):
-                  assert readiness.count(f"{key}:") == 1
-              for legacy in (
-                  "sceneId:", "expectedPhysicalItemCount:", "renderedPhysicalItemCount:",
-                  "failedRequiredItemCount:", "pendingRequiredLoads:",
-                  "readinessContractVersion:", "lifecycleState:", "statusSequence:",
-                  "sourceWebSceneFile:", "builderRevision:", "finalLifecycleState:",
-              ):
-                  assert legacy not in readiness
-
-
-          def test_failed_canvas_pick_has_one_copy_of_each_field():
-              source = function_source(VIEWER, "failedCanvasPickDiagnostic")
-              canonical = (
-                  "raw_hit_count", "hit_object_names", "traversed_registered_identity",
-                  "first_actionable_rejection_reason", "nearest_known_urdf_link_ancestor",
-                  "hit_resolutions",
-              )
-              for key in canonical:
-                  assert source.count(f"{key}:") == 1
-              for legacy in (
-                  "rawHitCount", "hitObjectNames", "traversedRegisteredIdentity",
-                  "firstActionableRejectionReason", "nearestKnownUrdfLinkAncestor",
-                  "hitResolutions",
-              ):
-                  assert re.search(rf"\b{legacy}\s*[:,]", source) is None
-
-
-          def test_rejected_pick_signatures_and_warnings_are_deduplicated():
-              assert "function stableDiagnosticSignature(kind, payload)" in VIEWER
-              assert "function recordNormalDiagnosticOnce(kind, payload)" in VIEWER
-              assert "state.normalDiagnosticRecords" in VIEWER
-              assert "warnNormalDiagnosticOnce('failed_canvas_pick'" in VIEWER
-              assert "const signature = ['failed_canvas_pick'" not in VIEWER
-
-
-          def test_mesh_assembly_and_status_outputs_do_not_declare_camel_aliases():
-              for name in (
-                  "collectRenderedMeshDiagnostics", "collectAssemblyRenderDiagnostics",
-                  "expandedUrdfVisualReadinessDiagnostics", "updateViewerStatus", "showError",
-              ):
-                  source = function_source(VIEWER, name)
-                  declarations = re.findall(r"^\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*[:,]", source, re.MULTILINE)
-                  assert not [key for key in declarations if re.search(r"[A-Z]", key)], (name, declarations)
-              assert "detached_robot_mesh_clusters_count:" not in VIEWER
-
-
-          def test_renderer_diagnostic_aliases_are_removed_at_output_boundary():
-              for legacy in (
-                  "colladaZUpConsoleMessageCount", "robotColladaRootNormalizationCount",
-                  "robotVisualWrapperWorldMatrices", "robotVisualMeshWorldBounds",
-                  "robotBaseAnchorPrePosition", "robotBaseAnchorPostPosition",
-                  "robotBaseAnchorExpectedPosition", "robotBaseAnchorWorldPosition",
-                  "robotAnchorDeltaPosition", "robotLinkWorldMatrices",
-                  "robotPreviewLifecycleState", "robotPreviewFailureReason",
-                  "robotDescendantRenderMeshDiagnostics", "robotColladaMeshDiagnostics",
-                  "robotColladaSummary", "sourceUrl:", "policyReason:",
-              ):
-                  assert legacy not in RENDERER
-              assert "canonicalDiagnosticValue(result.diagnostics)" in RENDERER
-              assert "onRobotError?.(err, canonicalDiagnosticValue(diagnostics))" in RENDERER
-
-
-          def test_qt_status_script_is_the_only_narrow_legacy_boundary():
-              assert "External compatibility boundary" in QT
-              assert "const readStatus = (canonicalKey, legacyKey, fallbackValue)" in QT
-              pairs = re.findall(r"readStatus\('([a-z0-9_]+)', '([A-Za-z0-9]+)'", QT)
-              assert pairs
-              assert len({canonical for canonical, _ in pairs}) == len(pairs)
-              for canonical, legacy in pairs:
-                  assert re.search(r"[A-Z]", legacy)
-          PY
-            sed -i 's/^          //' tests/test_workcell_web3d_diagnostic_naming_contract.py
-          fi
-
-          if [ "$STATUS" -eq 0 ]; then
             echo "== changed-file scope ==" >> "$LOG"
-            {
-              git diff --name-only
-              git ls-files --others --exclude-standard
-            } | sort -u | tee /tmp/canonical-files >> "$LOG"
+            git diff --name-only | sort | tee /tmp/canonical-files-v8 >> "$LOG"
             python3 - <<'PY' >> "$LOG" 2>&1 || STATUS=1
           from pathlib import Path
           expected = {
@@ -167,7 +57,7 @@ jobs:
               "workcell_studio_web/viewer/urdf_robot_renderer.js",
               "workcell_studio_web/viewer/viewer.js",
           }
-          actual = set(Path("/tmp/canonical-files").read_text().splitlines())
+          actual = set(Path("/tmp/canonical-files-v8").read_text().splitlines())
           if actual != expected:
               raise SystemExit(f"changed-file mismatch: expected={sorted(expected)} actual={sorted(actual)}")
           print("PASS: exact four-file source/test scope")
@@ -185,20 +75,19 @@ jobs:
           fi
 
           if [ "$STATUS" -eq 0 ]; then
+            echo "== install pytest ==" >> "$LOG"
+            python3 -m pip install --user --disable-pip-version-check pytest >> "$LOG" 2>&1 || STATUS=1
+          fi
+
+          if [ "$STATUS" -eq 0 ]; then
             echo "== focused tests ==" >> "$LOG"
-            pytest -q \
+            python3 -m pytest -q \
               tests/test_workcell_web3d_diagnostic_naming_contract.py \
               tests/test_workcell_studio_web_viewer_static.py \
               >> "$LOG" 2>&1 || STATUS=1
             if [ "$STATUS" -eq 0 ]; then
               echo "PASS: focused pytest suite" >> "$LOG"
             fi
-          fi
-
-          if [ -d "$WORKTREE" ]; then
-            cd "$WORKTREE"
-            git add -N tests/test_workcell_web3d_diagnostic_naming_contract.py 2>/dev/null || true
-            git diff > "$FINAL_DIFF" || true
           fi
 
           if [ "$STATUS" -eq 0 ]; then
@@ -213,7 +102,7 @@ jobs:
             git commit -m "Canonicalize Web3D diagnostic field names" >> "$LOG" 2>&1 || STATUS=1
             if [ "$STATUS" -eq 0 ]; then
               SOURCE_SHA="$(git rev-parse HEAD)"
-              git push --force origin "HEAD:$SOURCE_BRANCH" >> "$LOG" 2>&1 || STATUS=1
+              git push origin "HEAD:$SOURCE_BRANCH" >> "$LOG" 2>&1 || STATUS=1
             fi
           fi
 
@@ -226,8 +115,8 @@ jobs:
           } >> "$LOG"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add recovery-v7.log recovery-v7.diff
-          git commit -m "[recovery-output] Capture canonical diagnostics v7 result"
+          git add recovery-v8.log
+          git commit -m "[recovery-output] Capture canonical diagnostics v8 result"
           git push origin HEAD:automation/canonical-diagnostics-recovery-v3
 
           exit "$STATUS"
