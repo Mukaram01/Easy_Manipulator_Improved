@@ -1,0 +1,45 @@
+name: Temporary canonical diagnostics v13 independent macOS
+
+on:
+  push:
+    branches:
+      - automation/canonical-diagnostics-v13-macos
+
+permissions:
+  contents: write
+
+jobs:
+  run-builder:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: automation/canonical-snake-case-viewer-diagnostics-v10
+          fetch-depth: 0
+
+      - name: Execute corrected embedded builder
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/canonical-diagnostics-recovery-v3.yml').read_text().splitlines()
+          run_index = next(index for index, line in enumerate(workflow) if line == '        run: |')
+          body = []
+          for line in workflow[run_index + 1:]:
+              if line and not line.startswith('          '):
+                  break
+              body.append(line[10:] if line.startswith('          ') else '')
+          script = '\n'.join(body) + '\n'
+          old = '          opening = block.index("{") + 1\n'
+          new = (
+              '          function_paren = block.index("(")\n'
+              '          function_paren_end = matching(block, function_paren, "(", ")")\n'
+              '          opening = block.index("{", function_paren_end) + 1\n'
+          )
+          if script.count(old) != 1:
+              raise SystemExit(f'expected one readiness insertion match, found {script.count(old)}')
+          Path('/tmp/canonical-diagnostics-v13.sh').write_text(script.replace(old, new, 1))
+          PY
+          bash /tmp/canonical-diagnostics-v13.sh
