@@ -315,6 +315,31 @@ function failPhysicalMeshAttempt(attempt, item, url, reason, extra = {}) {
   });
   return true;
 }
+function physicalMeshBoundsFailurePayload(item, loadUrl, loader) {
+  const expected = expectedDimensionsOf(item);
+  const localBounds = item?.loaded_mesh_bounds || null;
+  const worldBounds = item?.loaded_mesh_world_bounds || null;
+  return {
+    scene_id: sceneId(),
+    item_id: item?.id || '',
+    item_display_name: item?.display_name || item?.label || item?.name || item?.object_name || item?.link || item?.id || '',
+    category: meshContractCategoryOf(item),
+    mesh_uri: displayMeshUri(item),
+    mesh_load_url: loadUrl || '',
+    loader: loader || '',
+    expected_dimensions: expected ? { x: expected.x, y: expected.y, z: expected.z } : null,
+    loaded_local_dimensions: localBounds?.dimensions || null,
+    loaded_local_bounds: localBounds,
+    loaded_world_dimensions: worldBounds?.dimensions || null,
+    loaded_world_bounds: worldBounds,
+    axis_ratios: item?.loaded_mesh_axis_ratios || null,
+    maximum_ratio: item?.loaded_mesh_maximum_ratio ?? null,
+    uniform_ratio: item?.loaded_mesh_uniform_ratio ?? null,
+    applied_mesh_scale: item?.mesh_unit_correction?.scale ?? 1.0,
+    unit_correction_decision: item?.mesh_unit_correction?.confidence || 'not_requested_or_not_applicable',
+    bounds_reason_code: item?.loaded_mesh_bounds_reason_code || 'loaded_mesh_bounds_invalid',
+  };
+}
 function failWeb3dSceneReadiness(item, url, reason, extra = {}) {
   const category = readinessCategoryForItem(item) || extra.category || 'required_physical_item';
   const readinessIdentity = readinessIdentityForItem(category, item);
@@ -2510,7 +2535,10 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
     refreshMeshLoadUi(rendered);
     if (!boundsValid && itemRequiresMeshBackedVisual(item)) {
       detachTransientPivotForFailedPhysicalVisual(rendered);
-      failPhysicalMeshAttempt(attempt, item, loadUrl, `loaded mesh bounds validation failed (${item.visual_bounds_status || 'invalid'})`, { mesh_status: item.mesh_status, loader: loaderName });
+      failPhysicalMeshAttempt(attempt, item, loadUrl, `loaded mesh bounds validation failed (${item.visual_bounds_status || 'invalid'})`, {
+        mesh_status: item.mesh_status,
+        ...physicalMeshBoundsFailurePayload(item, loadUrl, loaderName),
+      });
       return;
     }
     completePhysicalMeshAttempt(attempt);
@@ -3281,6 +3309,7 @@ function isCoreMeshContractItem(item) {
 }
 function warnLoadedMeshBounds(item, code, reason, extra = {}) {
   item.visual_bounds_status = code === 'loaded_mesh_oversized' ? 'oversized' : code === 'loaded_mesh_collapsed' ? 'collapsed' : 'invalid';
+  item.loaded_mesh_bounds_reason_code = code;
   appendViewerDiagnosticWarning(item, code, reason, {
     mesh_uri: displayMeshUri(item),
     loaded_mesh_bounds: item.loaded_mesh_bounds,
@@ -3317,6 +3346,9 @@ function diagnoseLoadedMeshBounds(item, meshObject, rendered, nativeBounds = nul
   const maxRatio = Math.max(...Object.values(axisRatios));
   const minRatio = Math.min(...Object.values(axisRatios));
   const uniformRatio = minRatio > 0 ? maxRatio / minRatio : Infinity;
+  item.loaded_mesh_axis_ratios = axisRatios;
+  item.loaded_mesh_maximum_ratio = maxRatio;
+  item.loaded_mesh_uniform_ratio = uniformRatio;
   const category = meshContractCategoryOf(item);
   if (maxRatio > 3 || uniformRatio > 3) {
     if (['table', 'camera', 'object'].includes(category)) warnLoadedMeshBounds(item, 'loaded_mesh_oversized', `loaded mesh dimensions exceed expected_dimensions_m by more than 3x (max_axis_ratio=${maxRatio.toFixed(3)}, uniform_ratio=${uniformRatio.toFixed(3)})`, {

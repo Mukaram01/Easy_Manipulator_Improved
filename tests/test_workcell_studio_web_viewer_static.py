@@ -3142,6 +3142,60 @@ def test_gripper_mesh_404_scene_failed_payload_includes_structured_url_and_link_
     assert "scene_id: sceneId()" in viewer
 
 
+def test_oversized_required_mesh_terminal_payload_preserves_identity_and_numerical_bounds():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({ hidden: false, checked: false, disabled: false, textContent: '', className: '', innerHTML: '', classList: { toggle() {} }, setAttribute() {}, querySelector() { return null; }, appendChild() {}, addEventListener() {} });
+const events = [];
+const context = { console, assert, window: { events, location: { search: '' }, dispatchEvent(event) { this.events.push(event.detail); }, parent: { postMessage() {} } }, document: { getElementById() { return element(); }, createElement() { return element(); } }, URLSearchParams, CustomEvent: function CustomEvent(type, init) { return { type, detail: init?.detail || {} }; }, requestAnimationFrame() { return 0; }, setTimeout() { return 1; }, clearTimeout() {} };
+vm.createContext(context);
+vm.runInContext(source + `
+THREE = { Vector3: class Vector3 { constructor(x, y, z) { this.x = x; this.y = y; this.z = z; } } };
+state.sceneJson = { scene: { id: 'ur5_2f_test' } };
+state.sourceWebSceneFile = 'ur5_2f_test/web_scene.json';
+state.sceneJsonLoaded = true;
+state.web3dReadiness = { state: 'scene_loading', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: { workbench_support_surface: true }, pending: new Set(['workbench_support_surface:oversized_table']), failed: false, failure: null };
+const item = {
+  id: 'oversized_table', display_name: 'Oversized Workbench', category: 'table', mesh_uri: 'package://cell/meshes/table.stl', expected_dimensions_m: [1, 0.5, 0.2],
+  loaded_mesh_bounds: { min: {x:0,y:0,z:0}, max: {x:4,y:1,z:0.4}, center: {x:2,y:0.5,z:0.2}, dimensions: {x:4,y:1,z:0.4} },
+  loaded_mesh_world_bounds: { min: {x:10,y:20,z:0}, max: {x:14,y:21,z:0.4}, center: {x:12,y:20.5,z:0.2}, dimensions: {x:4,y:1,z:0.4} },
+  loaded_mesh_axis_ratios: {x:4,y:2,z:2}, loaded_mesh_maximum_ratio: 4, loaded_mesh_uniform_ratio: 2,
+  loaded_mesh_bounds_reason_code: 'loaded_mesh_oversized', mesh_unit_correction: { scale: 1, confidence: 'rejected_non_uniform_or_unclear_ratio' }
+};
+const attempt = { token: physicalLoadToken, navigationKey: web3dNavigationKey(), category: 'workbench_support_surface', identity: item.id, readinessKey: 'workbench_support_surface:oversized_table', operation: registerReadinessOperation(['workbench_support_surface:oversized_table']) };
+const extra = physicalMeshBoundsFailurePayload(item, '/assets/table.stl', 'STLLoader');
+assert.strictEqual(failPhysicalMeshAttempt(attempt, item, '/assets/table.stl', 'loaded mesh bounds validation failed (oversized)', extra), true);
+const failure = window.events.at(-1);
+assert.strictEqual(failure.state, 'scene_failed');
+assert.strictEqual(failure.scene_id, 'ur5_2f_test');
+assert.strictEqual(failure.item_id, 'oversized_table');
+assert.strictEqual(failure.item_display_name, 'Oversized Workbench');
+assert.strictEqual(failure.category, 'table');
+assert.strictEqual(failure.mesh_uri, 'package://cell/meshes/table.stl');
+assert.strictEqual(failure.mesh_load_url, '/assets/table.stl');
+assert.strictEqual(failure.loader, 'STLLoader');
+assert.deepStrictEqual(failure.expected_dimensions, {x:1,y:0.5,z:0.2});
+assert.deepStrictEqual(failure.loaded_local_dimensions, {x:4,y:1,z:0.4});
+assert.deepStrictEqual(failure.loaded_world_bounds.max, {x:14,y:21,z:0.4});
+assert.deepStrictEqual(failure.axis_ratios, {x:4,y:2,z:2});
+assert.strictEqual(failure.maximum_ratio, 4);
+assert.strictEqual(failure.uniform_ratio, 2);
+assert.strictEqual(failure.applied_mesh_scale, 1);
+assert.strictEqual(failure.unit_correction_decision, 'rejected_non_uniform_or_unclear_ratio');
+assert.strictEqual(failure.bounds_reason_code, 'loaded_mesh_oversized');
+const statusFailure = window.__WORKCELL_VIEWER_STATUS__.readiness_failure;
+for (const field of ['scene_id', 'item_id', 'item_display_name', 'category', 'mesh_uri', 'mesh_load_url', 'loader', 'expected_dimensions', 'loaded_local_dimensions', 'loaded_local_bounds', 'loaded_world_dimensions', 'loaded_world_bounds', 'axis_ratios', 'maximum_ratio', 'uniform_ratio', 'applied_mesh_scale', 'unit_correction_decision', 'bounds_reason_code']) {
+  assert.deepStrictEqual(statusFailure[field], failure[field], field + ' must survive viewer status normalization');
+}
+`, context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, capture_output=True, text=True)
+
+
 def test_successful_required_loads_emit_scene_ready_exactly_once_after_completion():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     body = _viewer_function_body(js, "function emitWeb3dReadinessState", "function readinessCategoryForItem")
