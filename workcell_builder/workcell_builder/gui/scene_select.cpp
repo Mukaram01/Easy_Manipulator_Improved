@@ -54,6 +54,7 @@
 #include <QDir>
 #include <QMessageBox>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QPushButton>
 #include <QToolButton>
 #include <QDoubleSpinBox>
@@ -128,6 +129,92 @@ namespace fs = boost::filesystem;
 
 namespace {
 std::set<std::string> g_perception_contract_warned_scene_paths;
+
+struct CheckedProcessResult
+{
+  bool started{false};
+  bool timed_out{false};
+  QProcess::ExitStatus exit_status{QProcess::NormalExit};
+  int exit_code{-1};
+  QString error_string;
+  QString stdout_text;
+  QString stderr_text;
+};
+
+QString process_arguments_for_log(const QStringList & arguments)
+{
+  QStringList rendered;
+  for (const QString & argument : arguments) {
+    rendered << QStringLiteral("'%1'").arg(
+      QString(argument).left(180).replace(QStringLiteral("'"), QStringLiteral("'\\''")));
+  }
+  return rendered.join(QStringLiteral(" "));
+}
+
+CheckedProcessResult run_process_checked(
+  const QString & executable, const QStringList & arguments,
+  const QString & working_directory, int timeout_ms = 120000)
+{
+  CheckedProcessResult result;
+  QProcess process;
+  process.setProgram(executable);
+  process.setArguments(arguments);
+  process.setWorkingDirectory(working_directory);
+  process.setProcessEnvironment(QProcessEnvironment::systemEnvironment());
+  process.setProcessChannelMode(QProcess::SeparateChannels);
+  process.start();
+  if (!process.waitForStarted(10000)) {
+    result.error_string = process.errorString();
+    result.stdout_text = QString::fromUtf8(process.readAllStandardOutput()).trimmed();
+    result.stderr_text = QString::fromUtf8(process.readAllStandardError()).trimmed();
+    return result;
+  }
+  result.started = true;
+  if (!process.waitForFinished(timeout_ms)) {
+    result.timed_out = true;
+    process.kill();
+    process.waitForFinished(2000);
+  }
+  result.exit_status = process.exitStatus();
+  result.exit_code = process.exitCode();
+  result.error_string = process.errorString();
+  result.stdout_text = QString::fromUtf8(process.readAllStandardOutput()).trimmed();
+  result.stderr_text = QString::fromUtf8(process.readAllStandardError()).trimmed();
+  return result;
+}
+
+bool process_succeeded(const CheckedProcessResult & result)
+{
+  return result.started && !result.timed_out &&
+         result.exit_status == QProcess::NormalExit && result.exit_code == 0;
+}
+
+QString process_failure_message(
+  const QString & operation, const QString & executable, const QStringList & arguments,
+  const QString & working_directory, const QString & next_step,
+  const CheckedProcessResult & result)
+{
+  QString message = QStringLiteral(
+    "%1 failed: executable=%2 arguments=%3 working_directory=%4 started=%5 "
+    "timed_out=%6 exit_status=%7 exit_code=%8")
+    .arg(operation, executable, process_arguments_for_log(arguments),
+      working_directory.isEmpty() ? QStringLiteral("<unset>") : working_directory,
+      result.started ? QStringLiteral("true") : QStringLiteral("false"),
+      result.timed_out ? QStringLiteral("true") : QStringLiteral("false"),
+      result.exit_status == QProcess::NormalExit ? QStringLiteral("normal") : QStringLiteral("crash"))
+    .arg(result.exit_code);
+  if (!result.error_string.isEmpty()) {
+    message += QStringLiteral(" error=%1").arg(result.error_string.left(400));
+  }
+  if (!result.stderr_text.isEmpty()) {
+    message += QStringLiteral(" stderr=%1").arg(result.stderr_text.left(1200));
+  }
+  if (!result.stdout_text.isEmpty()) {
+    message += QStringLiteral(" stdout=%1").arg(result.stdout_text.left(800));
+  }
+  message += QStringLiteral(". Next step: %1").arg(next_step);
+  return message;
+}
 
 bool emit_perception_contract_warning_once(const fs::path & scene_dir, const std::string & warning)
 {
@@ -2058,13 +2145,22 @@ void SceneSelect::generate_scene_files(Scene scene)
     append_warning("Could not locate render_workcell_builder_metadata.py. Set WORKCELL_STUDIO_REPO_ROOT=/path/to/easy_manipulation_deployment.");
   } else {
     const fs::path metadata_script = tool_root / "scripts" / "render_workcell_builder_metadata.py";
-    const std::string cmd =
-      "python3 \"" + metadata_script.string() + "\" --robot \"" + robot_name +
-      "\" --end-effector \"" + ee_name + "\" --scene-path \"" + scene_dir.string() +
-      "\" --output \"" + metadata_path.string() + "\"";
-    const int metadata_rc = std::system(cmd.c_str());
-    if (metadata_rc != 0) {
-      append_warning("Workcell Studio metadata generation command failed with exit code " + std::to_string(metadata_rc) + ".");
+    const QString executable = QStringLiteral("python3");
+    const QStringList arguments{
+      QString::fromStdString(metadata_script.string()), QStringLiteral("--robot"),
+      QString::fromStdString(robot_name), QStringLiteral("--end-effector"),
+      QString::fromStdString(ee_name), QStringLiteral("--scene-path"),
+      QString::fromStdString(scene_dir.string()), QStringLiteral("--output"),
+      QString::fromStdString(metadata_path.string())};
+    const QString working_directory = QString::fromStdString(tool_root.string());
+    const CheckedProcessResult result =
+      run_process_checked(executable, arguments, working_directory);
+    if (!process_succeeded(result)) {
+      append_warning(process_failure_message(
+        QStringLiteral("Workcell Studio metadata generation"), executable, arguments,
+        working_directory,
+        QStringLiteral("verify Python 3 is installed, the metadata renderer exists, and the scene output is writable, then generate the scene again"),
+        result).toStdString());
     }
   }
   write_builder_validation_helper(scene_dir);
@@ -4877,10 +4973,26 @@ void SceneSelect::on_repair_scene_yaml_clicked()
 void SceneSelect::on_run_all_scenes_readiness_clicked()
 {
   const fs::path workspace_root = derive_ros_workspace_root(workcell_path);
-  const std::string cmd = "python3 scripts/validate_supported_scenes_readiness.py --repo-root "" + workcell_path.string() + "" --workspace-root "" + workspace_root.string() + "" --json --skip-build --skip-launch-smoke";
-  append_info("Run All-Scenes Readiness: " + cmd);
-  const int rc = std::system(cmd.c_str());
-  if (rc != 0) { append_error("Run All-Scenes Readiness failed with exit code " + std::to_string(rc)); return; }
+  const QString executable = QStringLiteral("python3");
+  const QStringList arguments{
+    QStringLiteral("scripts/validate_supported_scenes_readiness.py"),
+    QStringLiteral("--repo-root"), QString::fromStdString(workcell_path.string()),
+    QStringLiteral("--workspace-root"), QString::fromStdString(workspace_root.string()),
+    QStringLiteral("--json"), QStringLiteral("--skip-build"),
+    QStringLiteral("--skip-launch-smoke")};
+  const QString working_directory = QString::fromStdString(workcell_path.string());
+  append_info(QStringLiteral("Run All-Scenes Readiness: %1 %2")
+    .arg(executable, process_arguments_for_log(arguments)).toStdString());
+  const CheckedProcessResult result =
+    run_process_checked(executable, arguments, working_directory);
+  if (!process_succeeded(result)) {
+    append_error(process_failure_message(
+      QStringLiteral("Run All-Scenes Readiness"), executable, arguments,
+      working_directory,
+      QStringLiteral("verify Python 3 and the readiness validator are available from the selected Workcell Studio root, then retry"),
+      result).toStdString());
+    return;
+  }
   append_success("Run All-Scenes Readiness completed.");
   std::string readiness_err;
   all_scenes_readiness_ = workcell_builder::load_latest_all_scenes_readiness_report(workcell_path, &readiness_err);
