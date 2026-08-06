@@ -1,9 +1,9 @@
-name: Temporary canonical diagnostics source builder v9
+name: Temporary canonical diagnostics source builder v10
 
 on:
   push:
     branches:
-      - automation/canonical-diagnostics-recovery-v3
+      - automation/canonical-snake-case-viewer-diagnostics-v10
 
 permissions:
   contents: write
@@ -15,21 +15,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: automation/canonical-diagnostics-recovery-v3
+          ref: automation/canonical-snake-case-viewer-diagnostics-v10
           fetch-depth: 0
 
-      - name: Apply, test, and publish source-only branch
+      - name: Build, validate, and publish targeted source patch
         shell: bash
         run: |
           set -u
           ROOT="$PWD"
-          WORKTREE=/tmp/canonical-diagnostics-source-v9
-          PATCH="$ROOT/recovery-v7.diff"
-          LOG="$ROOT/recovery-v9.log"
+          WORKTREE=/tmp/canonical-diagnostics-v10
+          LOG="$ROOT/recovery-v10.log"
+          DIFF="$ROOT/recovery-v10.diff"
           SOURCE_BRANCH=codex/canonical-snake-case-viewer-diagnostics-clean-v3
           STATUS=0
           SOURCE_SHA=""
           : > "$LOG"
+          : > "$DIFF"
 
           git fetch origin chore/remove-temporary-diagnostics-artifacts >> "$LOG" 2>&1 || STATUS=1
           rm -rf "$WORKTREE"
@@ -39,11 +40,581 @@ jobs:
 
           if [ "$STATUS" -eq 0 ]; then
             cd "$WORKTREE"
-            echo "== apply four-file patch ==" >> "$LOG"
-            git apply --check --verbose "$PATCH" >> "$LOG" 2>&1 || STATUS=1
-            if [ "$STATUS" -eq 0 ]; then
-              git apply --whitespace=fix "$PATCH" >> "$LOG" 2>&1 || STATUS=1
-            fi
+            python3 - <<'PY' >> "$LOG" 2>&1 || STATUS=1
+          from pathlib import Path
+          import re
+
+          VIEWER = Path("workcell_studio_web/viewer/viewer.js")
+          RENDERER = Path("workcell_studio_web/viewer/urdf_robot_renderer.js")
+          QT = Path("workcell_builder/workcell_builder/gui/scene_preview_widget.cpp")
+          TEST = Path("tests/test_workcell_web3d_diagnostic_naming_contract.py")
+
+
+          def matching(text: str, start: int, opening: str, closing: str) -> int:
+              depth = 0
+              quote = None
+              escaped = False
+              line_comment = False
+              block_comment = False
+              index = start
+              while index < len(text):
+                  char = text[index]
+                  following = text[index + 1] if index + 1 < len(text) else ""
+                  if line_comment:
+                      if char == "\n":
+                          line_comment = False
+                      index += 1
+                      continue
+                  if block_comment:
+                      if char == "*" and following == "/":
+                          block_comment = False
+                          index += 2
+                      else:
+                          index += 1
+                      continue
+                  if quote:
+                      if escaped:
+                          escaped = False
+                      elif char == "\\":
+                          escaped = True
+                      elif char == quote:
+                          quote = None
+                      index += 1
+                      continue
+                  if char == "/" and following == "/":
+                      line_comment = True
+                      index += 2
+                      continue
+                  if char == "/" and following == "*":
+                      block_comment = True
+                      index += 2
+                      continue
+                  if char in ("'", '"', "`"):
+                      quote = char
+                      index += 1
+                      continue
+                  if char == opening:
+                      depth += 1
+                  elif char == closing:
+                      depth -= 1
+                      if depth == 0:
+                          return index
+                  index += 1
+              raise RuntimeError(f"unterminated {opening}{closing} block")
+
+
+          def function_span(text: str, name: str) -> tuple[int, int]:
+              match = re.search(rf"\bfunction\s+{re.escape(name)}\s*\(", text)
+              if not match:
+                  raise RuntimeError(f"function not found: {name}")
+              paren = text.index("(", match.start())
+              paren_end = matching(text, paren, "(", ")")
+              brace = text.index("{", paren_end)
+              brace_end = matching(text, brace, "{", "}")
+              return match.start(), brace_end + 1
+
+
+          def replace_function(text: str, name: str, replacement: str) -> str:
+              start, end = function_span(text, name)
+              return text[:start] + replacement.strip() + text[end:]
+
+
+          def rename_with_wrapper(text: str, name: str, wrapper: str) -> str:
+              start, end = function_span(text, name)
+              block = text[start:end]
+              renamed = block.replace(f"function {name}(", f"function {name}Raw(", 1)
+              return text[:start] + renamed + "\n" + wrapper.strip() + text[end:]
+
+
+          viewer = VIEWER.read_text()
+          anchor = "const WEB3D_REQUIRED_CATEGORIES = ['robot_arm', 'attached_tool_gripper', 'workbench_support_surface', 'configured_camera'];\n"
+          helper = r'''
+          // Diagnostic payload contract: emitted/status/readiness objects use
+          // canonical snake_case. Legacy camelCase reads live only in the Qt
+          // status-script compatibility boundary.
+          const DIAGNOSTIC_NAMING_CONTRACT = Object.freeze({
+            canonical_case: 'snake_case',
+            compatibility_boundary: 'qt_status_script',
+          });
+          function diagnosticSnakeCaseKey(key) {
+            return String(key || '')
+              .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+              .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+              .replace(/-/g, '_')
+              .toLowerCase();
+          }
+          function canonicalDiagnosticValue(value) {
+            if (Array.isArray(value)) return value.map(canonicalDiagnosticValue);
+            if (!value || typeof value !== 'object') return value;
+            const prototype = Object.getPrototypeOf(value);
+            if (prototype !== Object.prototype && prototype !== null) return value;
+            const output = {};
+            const entries = Object.entries(value).sort(([left], [right]) =>
+              Number(left !== diagnosticSnakeCaseKey(left)) - Number(right !== diagnosticSnakeCaseKey(right)));
+            for (const [key, item] of entries) {
+              const canonicalKey = diagnosticSnakeCaseKey(key);
+              if (Object.prototype.hasOwnProperty.call(output, canonicalKey)) continue;
+              output[canonicalKey] = canonicalDiagnosticValue(item);
+            }
+            return output;
+          }
+          function stableDiagnosticValue(value) {
+            const canonical = canonicalDiagnosticValue(value);
+            if (Array.isArray(canonical)) return canonical.map(stableDiagnosticValue);
+            if (!canonical || typeof canonical !== 'object') return canonical;
+            return Object.fromEntries(Object.keys(canonical).sort().map(key => [key, stableDiagnosticValue(canonical[key])]));
+          }
+          function stableDiagnosticSignature(kind, payload) {
+            return `${String(kind || 'diagnostic')}\n${JSON.stringify(stableDiagnosticValue(payload))}`;
+          }
+          function recordNormalDiagnosticOnce(kind, payload) {
+            const diagnostic = canonicalDiagnosticValue(payload);
+            const signature = stableDiagnosticSignature(kind, diagnostic);
+            state.normalDiagnosticRecords = state.normalDiagnosticRecords || new Map();
+            if (state.normalDiagnosticRecords.has(signature)) {
+              return { diagnostic: state.normalDiagnosticRecords.get(signature), is_new: false, signature };
+            }
+            state.normalDiagnosticRecords.set(signature, diagnostic);
+            state.diagnosticKeys.add(signature);
+            return { diagnostic, is_new: true, signature };
+          }
+          function warnNormalDiagnosticOnce(kind, payload, message) {
+            const recorded = recordNormalDiagnosticOnce(kind, payload);
+            if (recorded.is_new) console.warn?.(`${message}: ${JSON.stringify(recorded.diagnostic)}`);
+            return recorded.diagnostic;
+          }
+          '''.strip() + "\n"
+          if "const DIAGNOSTIC_NAMING_CONTRACT" in viewer:
+              raise RuntimeError("viewer already contains diagnostic contract")
+          viewer = viewer.replace(anchor, anchor + helper, 1)
+
+          viewer = replace_function(viewer, "emitWeb3dReadinessState", r'''
+          function emitWeb3dReadinessState(readinessState, detail = {}) {
+            state.web3dReadiness = state.web3dReadiness || { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null };
+            if (!VALID_SCENE_LIFECYCLE_STATES.includes(readinessState)) readinessState = 'scene_loading';
+            const canonicalDetail = canonicalDiagnosticValue(detail);
+            const navigationKey = canonicalDetail.navigation_key || web3dNavigationKey();
+            if (state.web3dReadiness.terminal) {
+              if (state.web3dReadiness.terminalNavigationKey && navigationKey && navigationKey !== state.web3dReadiness.terminalNavigationKey) return window.__WORKCELL_VIEWER_STATUS__;
+              if (readinessState !== state.web3dReadiness.terminalState) return updateViewerStatus();
+              return window.__WORKCELL_VIEWER_STATUS__;
+            }
+            const terminalTransition = readinessState === 'scene_ready' || readinessState === 'scene_failed';
+            state.web3dReadiness.state = readinessState;
+            state.web3dReadiness.statusSequence = Number(state.web3dReadiness.statusSequence || 0) + 1;
+            if (terminalTransition) {
+              state.web3dReadiness.terminal = true;
+              state.web3dReadiness.terminalState = readinessState;
+              state.web3dReadiness.terminalNavigationKey = navigationKey;
+              state.web3dReadiness.terminalEmissionCount = Number(state.web3dReadiness.terminalEmissionCount || 0) + 1;
+            }
+            const eventDetail = canonicalDiagnosticValue({
+              ...structuredWeb3dReadinessFields(readinessState),
+              ...canonicalDetail,
+              final_lifecycle_state: readinessState,
+              pending_required_loads: pendingRequiredLoads(),
+            });
+            if (readinessState === 'scene_failed') {
+              state.web3dReadiness.failed = true;
+              state.web3dReadiness.failure = eventDetail;
+            }
+            const status = canonicalDiagnosticValue(updateViewerStatus());
+            if (readinessState === 'scene_ready') triggerInitialCameraFitAfterSceneReady();
+            const readinessMessage = canonicalDiagnosticValue({ type: 'workcell_web3d_readiness', state: readinessState, ...eventDetail, status });
+            window.dispatchEvent?.(new CustomEvent('workcell:web3d_readiness', { detail: readinessMessage }));
+            window.parent?.postMessage?.(readinessMessage, '*');
+            return status;
+          }
+          ''')
+
+          viewer = replace_function(viewer, "structuredWeb3dReadinessFields", r'''
+          function structuredWeb3dReadinessFields(lifecycleState) {
+            const finalState = lifecycleState || state.web3dReadiness?.state || 'booting';
+            return {
+              scene_id: sceneId(),
+              expected_physical_item_count: expectedPhysicalItemCount(),
+              rendered_physical_item_count: renderedPhysicalItemCount(),
+              failed_required_item_count: failedRequiredItemCount(),
+              robot_status: readinessCategoryStatus('robot_arm'),
+              tool_status: readinessCategoryStatus('attached_tool_gripper'),
+              end_effector_status: readinessCategoryStatus('attached_tool_gripper'),
+              environment_status: readinessCategoryStatus('workbench_support_surface'),
+              camera_status: readinessCategoryStatus('configured_camera'),
+              pending_required_loads: pendingRequiredLoads(),
+              readiness_contract_version: READINESS_CONTRACT_VERSION,
+              lifecycle_state: finalState,
+              terminal: Boolean(state.web3dReadiness?.terminal),
+              status_sequence: Number(state.web3dReadiness?.statusSequence || 0),
+              source_web_scene_file: state.sourceWebSceneFile || '',
+              builder_revision: state.builderRevision || '',
+              final_lifecycle_state: finalState,
+            };
+          }
+          ''')
+
+          viewer = replace_function(viewer, "failedCanvasPickDiagnostic", r'''
+          function failedCanvasPickDiagnostic(hits) {
+            const objectNames = [];
+            let traversedRegisteredIdentity = false;
+            let firstActionableRejectionReason = '';
+            const hitResolutions = [];
+            let nearestKnownUrdfLinkAncestor = '';
+            const knownLinks = state.robotPreviewResult?.links instanceof Map ? state.robotPreviewResult.links : new Map();
+            const knownLinkByNode = new Map(Array.from(knownLinks.entries()).map(([name, node]) => [node, String(name || '')]));
+            for (const hit of hits || []) {
+              const resolution = resolveCanvasPickHit(hit);
+              const rawName = String(hit?.object?.name || '').trim();
+              if (rawName && !objectNames.includes(rawName) && objectNames.length < 12) objectNames.push(rawName);
+              let node = hit?.object || null;
+              while (node) {
+                const registered = state.pickIdentityByObject.get(node);
+                if (registered) traversedRegisteredIdentity = true;
+                if (!nearestKnownUrdfLinkAncestor) nearestKnownUrdfLinkAncestor = knownLinkByNode.get(node) || String(registered?.item?.link_name || registered?.item?.link || '').trim();
+                node = node.parent;
+              }
+              if (!firstActionableRejectionReason && resolution.rejectionReason) firstActionableRejectionReason = resolution.rejectionReason;
+              hitResolutions.push({
+                hit_node_name: rawName,
+                registered_record_id: resolution.registeredRecord?.item?.id || '',
+                pick_source: resolution.registeredRecord?.pickRecordSource || '',
+                authoritative_physical_pick: resolution.registeredRecord?.authoritativePhysicalPick === true,
+                selection_owner_id: resolution.selectionOwner?.item?.id || '',
+                selection_owner_source: resolution.selectionOwnerSource || '',
+                edit_owner_id: resolution.editOwner?.item?.id || '',
+                rejection_stage_reason: resolution.rejectionReason || '',
+                exclusion_ancestor_node: resolution.exclusionNode?.name || '',
+                exclusion_flag: resolution.exclusionFlag || '',
+                candidate_priority: Number.isFinite(pickingPriority(resolution.editOwner || resolution.selectionOwner || resolution.renderIdentity)) ? pickingPriority(resolution.editOwner || resolution.selectionOwner || resolution.renderIdentity) : 'Infinity',
+              });
+            }
+            if (!firstActionableRejectionReason) firstActionableRejectionReason = traversedRegisteredIdentity ? 'registered_identity_rejected_by_selection_policy' : 'no_registered_identity_in_hit_ancestry';
+            return {
+              raw_hit_count: (hits || []).length,
+              hit_object_names: objectNames,
+              traversed_registered_identity: traversedRegisteredIdentity,
+              first_actionable_rejection_reason: firstActionableRejectionReason,
+              nearest_known_urdf_link_ancestor: nearestKnownUrdfLinkAncestor,
+              hit_resolutions: hitResolutions,
+            };
+          }
+          ''')
+
+          signature_start = viewer.index("      const signature = ['failed_canvas_pick'")
+          signature_if = viewer.index("      if (!state.diagnosticKeys.has(signature)) {", signature_start)
+          signature_brace = viewer.index("{", signature_if)
+          signature_end = matching(viewer, signature_brace, "{", "}") + 1
+          viewer = viewer[:signature_start] + "      warnNormalDiagnosticOnce('failed_canvas_pick', { scene_id: sceneId(), ...diagnostic }, 'Product View canvas pick rejected');" + viewer[signature_end:]
+
+          viewer = rename_with_wrapper(viewer, "collectRenderedMeshDiagnostics", r'''
+          function collectRenderedMeshDiagnostics() {
+            return canonicalDiagnosticValue(collectRenderedMeshDiagnosticsRaw());
+          }
+          ''')
+          viewer = rename_with_wrapper(viewer, "collectAssemblyRenderDiagnostics", r'''
+          function collectAssemblyRenderDiagnostics() {
+            return canonicalDiagnosticValue(collectAssemblyRenderDiagnosticsRaw());
+          }
+          ''')
+          viewer = rename_with_wrapper(viewer, "expandedUrdfVisualReadinessDiagnostics", r'''
+          function expandedUrdfVisualReadinessDiagnostics() {
+            return canonicalDiagnosticValue(expandedUrdfVisualReadinessDiagnosticsRaw());
+          }
+          ''')
+          viewer = rename_with_wrapper(viewer, "updateViewerStatus", r'''
+          function updateViewerStatus() {
+            const rawStatus = updateViewerStatusRaw();
+            const status = canonicalDiagnosticValue(rawStatus || window.__WORKCELL_VIEWER_STATUS__ || {});
+            window.__WORKCELL_VIEWER_STATUS__ = status;
+            return status;
+          }
+          ''')
+          viewer = rename_with_wrapper(viewer, "showError", r'''
+          function showError(message) {
+            const result = showErrorRaw(message);
+            if (window.__WORKCELL_VIEWER_STATUS__) {
+              window.__WORKCELL_VIEWER_STATUS__ = canonicalDiagnosticValue(window.__WORKCELL_VIEWER_STATUS__);
+            }
+            return result;
+          }
+          ''')
+          VIEWER.write_text(viewer)
+
+          renderer = RENDERER.read_text()
+          renderer_anchor = "const ROBOT_RENDER_MODE = 'expanded_urdf_loader';\n"
+          renderer_helper = r'''
+
+          function diagnosticSnakeCaseKey(key) {
+            return String(key || '')
+              .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+              .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+              .replace(/-/g, '_')
+              .toLowerCase();
+          }
+          function canonicalDiagnosticValue(value) {
+            if (Array.isArray(value)) return value.map(canonicalDiagnosticValue);
+            if (!value || typeof value !== 'object') return value;
+            const prototype = Object.getPrototypeOf(value);
+            if (prototype !== Object.prototype && prototype !== null) return value;
+            const output = {};
+            const entries = Object.entries(value).sort(([left], [right]) =>
+              Number(left !== diagnosticSnakeCaseKey(left)) - Number(right !== diagnosticSnakeCaseKey(right)));
+            for (const [key, item] of entries) {
+              const canonicalKey = diagnosticSnakeCaseKey(key);
+              if (Object.prototype.hasOwnProperty.call(output, canonicalKey)) continue;
+              output[canonicalKey] = canonicalDiagnosticValue(item);
+            }
+            return output;
+          }
+          '''
+          renderer = renderer.replace(renderer_anchor, renderer_anchor + renderer_helper, 1)
+          renderer = renderer.replace(
+              "diagnostics.robot_package_mesh_rejections.push({ source_url: sourceUrl || '', sourceUrl: sourceUrl || '', policy_reason: reason, policyReason: reason });",
+              "diagnostics.robot_package_mesh_rejections.push({ source_url: sourceUrl || '', policy_reason: reason });",
+          )
+          renderer = renderer.replace(
+              "{ path, source_url: path, sourceUrl: path, policy_reason: reason, policyReason: reason, ...inferMeshLinkDetail(path) }",
+              "{ path, source_url: path, policy_reason: reason, ...inferMeshLinkDetail(path) }",
+          )
+          renderer = renderer.replace(
+              "{ url, uri, path, source_url: path, sourceUrl: path, policy_reason: err?.message || 'loader failure', policyReason: err?.message || 'loader failure', ...inferMeshLinkDetail(path) }",
+              "{ url, uri, path, source_url: path, policy_reason: err?.message || 'loader failure', ...inferMeshLinkDetail(path) }",
+          )
+
+          diagnostic_aliases = {
+              "colladaZUpConsoleMessageCount",
+              "robotPreviewLifecycleState",
+              "robotColladaRootNormalizationCount",
+              "robotExpectedVisualCount",
+              "robotFailedVisualCount",
+              "robotCompletedVisualCount",
+              "robotLoadingManagerComplete",
+              "robotMatrixWorldParity",
+              "robotLinkWorldMatrices",
+              "robotVisualWrapperWorldMatrices",
+              "robotDescendantRenderMeshDiagnostics",
+              "robotRootLinkCount",
+              "robotRootLinks",
+              "robotDisconnectedLinks",
+              "robotDuplicateLinks",
+              "robotPreviewCanonicalFallbackUsed",
+              "robotColladaMeshDiagnostics",
+              "robotColladaSummary",
+              "robotMissingRequiredRobotVisualLinks",
+              "robotMissingRequiredToolVisualLinks",
+              "robotExpectedRobotVisualLinks",
+              "robotExpectedToolVisualLinks",
+              "robotMeshCallbacksComplete",
+          }
+          for alias in diagnostic_aliases:
+              renderer = re.sub(
+                  rf"^\s*(?:result\.)?diagnostics\.{re.escape(alias)}\s*=.*\n",
+                  "",
+                  renderer,
+                  flags=re.MULTILINE,
+              )
+              renderer = re.sub(
+                  rf"^\s*{re.escape(alias)}\s*:\s*.*\n",
+                  "",
+                  renderer,
+                  flags=re.MULTILINE,
+              )
+
+          nested_aliases = {
+              "linkName", "visualIndex", "meshIndex", "objectName", "parentName",
+              "matrixWorld", "worldPosition", "worldQuaternion", "worldScale",
+              "boundsCenter", "boundsSize", "boundsValid", "maxAbsDelta",
+              "expectedMatrixWorld", "actualMatrixWorld",
+          }
+          for alias in nested_aliases:
+              renderer = re.sub(rf"^\s*{re.escape(alias)},\s*\n", "", renderer, flags=re.MULTILINE)
+              renderer = re.sub(rf"^\s*{re.escape(alias)}\s*:\s*.*\n", "", renderer, flags=re.MULTILINE)
+          renderer = re.sub(r"^\s*comparedCount\s*:\s*.*\n", "", renderer, flags=re.MULTILINE)
+
+          renderer = renderer.replace(
+              "  collectMatrixParityDiagnostics(result?.previewConfig || {}, result.diagnostics);\n  return result.diagnostics;",
+              "  collectMatrixParityDiagnostics(result?.previewConfig || {}, result.diagnostics);\n  result.diagnostics = canonicalDiagnosticValue(result.diagnostics);\n  return result.diagnostics;",
+          )
+          renderer = renderer.replace(
+              "    rendererContext?.onRobotLoaded?.(result);",
+              "    result.diagnostics = canonicalDiagnosticValue(result.diagnostics);\n    rendererContext?.onRobotLoaded?.(result);",
+          )
+          renderer = renderer.replace(
+              "    rendererContext?.onRobotError?.(err, diagnostics);",
+              "    result.diagnostics = canonicalDiagnosticValue(diagnostics);\n    rendererContext?.onRobotError?.(err, result.diagnostics);",
+          )
+          RENDERER.write_text(renderer)
+
+          qt = QT.read_text()
+          script_start = qt.index('  static const char kStatusScript[] = R"JS(')
+          script_end = qt.index(')JS";', script_start) + len(')JS";')
+          status_script = r'''  static const char kStatusScript[] = R"JS(
+          (() => {
+            const s = window.__WORKCELL_VIEWER_STATUS__ || {};
+            // External compatibility boundary: canonical snake_case first, with
+            // exactly one narrowly scoped legacy camelCase fallback per field.
+            const readStatus = (canonicalKey, legacyKey, fallbackValue) => {
+              const canonicalValue = s[canonicalKey];
+              if (canonicalValue !== undefined && canonicalValue !== null) return canonicalValue;
+              const legacyValue = s[legacyKey];
+              return legacyValue !== undefined && legacyValue !== null ? legacyValue : fallbackValue;
+            };
+            const lifecycleState = String(readStatus('lifecycle_state', 'lifecycleState', ''));
+            const pendingLoads = readStatus('pending_required_loads', 'pendingRequiredLoads', []);
+            return {
+              readiness_contract_version: Number(readStatus('readiness_contract_version', 'readinessContractVersion', 0)),
+              lifecycle_state: lifecycleState,
+              terminal: Boolean(s.terminal),
+              status_sequence: Number(readStatus('status_sequence', 'statusSequence', 0)),
+              builder_revision: String(readStatus('builder_revision', 'builderRevision', '')),
+              viewer_boot_state: String(readStatus('viewer_boot_state', 'viewerBootState', '')),
+              scene_name: String(readStatus('scene_name', 'sceneName', '')),
+              source_web_scene_file: String(readStatus('source_web_scene_file', 'sourceWebSceneFile', '')),
+              scene_json_loaded: Boolean(readStatus('scene_json_loaded', 'sceneJsonLoaded', false)),
+              robot_preview_lifecycle_state: String(readStatus('robot_preview_lifecycle_state', 'robotPreviewLifecycleState', '')),
+              scene_id: String(readStatus('scene_id', 'sceneId', '')),
+              expected_physical_item_count: Number(readStatus('expected_physical_item_count', 'expectedPhysicalItemCount', 0)),
+              rendered_physical_item_count: Number(readStatus('rendered_physical_item_count', 'renderedPhysicalItemCount', 0)),
+              failed_required_item_count: Number(readStatus('failed_required_item_count', 'failedRequiredItemCount', 0)),
+              robot_status: String(readStatus('robot_status', 'robotStatus', '')),
+              tool_status: String(readStatus('tool_status', 'toolStatus', '')),
+              environment_status: String(readStatus('environment_status', 'environmentStatus', '')),
+              camera_status: String(readStatus('camera_status', 'cameraStatus', '')),
+              pending_required_loads: Array.isArray(pendingLoads) ? pendingLoads : [],
+              final_lifecycle_state: String(readStatus('final_lifecycle_state', 'finalLifecycleState', lifecycleState)),
+              readiness_failure: readStatus('readiness_failure', 'readinessFailure', null),
+              failed_stage: String(readStatus('failed_stage', 'failedStage', '')),
+              fatal_error: String(readStatus('fatal_error', 'fatalError', '')),
+              fatal_stack: String(readStatus('fatal_stack', 'fatalStack', '')).split('\n').slice(0, 6).join('\n')
+            };
+          })()
+          )JS";'''
+          qt = qt[:script_start] + status_script + qt[script_end:]
+          QT.write_text(qt)
+
+          test = r'''from pathlib import Path
+          import re
+
+          ROOT = Path(__file__).resolve().parents[1]
+          VIEWER = (ROOT / "workcell_studio_web/viewer/viewer.js").read_text()
+          RENDERER = (ROOT / "workcell_studio_web/viewer/urdf_robot_renderer.js").read_text()
+          QT = (ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp").read_text()
+
+
+          def function_source(source: str, name: str) -> str:
+              start = source.index(f"function {name}(")
+              next_function = source.find("\nfunction ", start + 1)
+              return source[start:] if next_function < 0 else source[start:next_function]
+
+
+          def declared_keys(source: str) -> list[str]:
+              return re.findall(r"^\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*[:,]", source, re.MULTILINE)
+
+
+          def test_viewer_declares_canonical_diagnostic_contract():
+              assert "const DIAGNOSTIC_NAMING_CONTRACT" in VIEWER
+              assert "canonical_case: 'snake_case'" in VIEWER
+              assert "compatibility_boundary: 'qt_status_script'" in VIEWER
+              assert "function canonicalDiagnosticValue(value)" in VIEWER
+
+
+          def test_readiness_payload_is_canonical_only():
+              source = function_source(VIEWER, "structuredWeb3dReadinessFields")
+              keys = declared_keys(source)
+              assert keys
+              assert not [key for key in keys if re.search(r"[A-Z]", key)]
+              assert keys.count("pending_required_loads") == 1
+              assert keys.count("final_lifecycle_state") == 1
+              emit = function_source(VIEWER, "emitWeb3dReadinessState")
+              assert "const canonicalDetail = canonicalDiagnosticValue(detail);" in emit
+              assert "const readinessMessage = canonicalDiagnosticValue" in emit
+              assert "finalLifecycleState" not in emit
+
+
+          def test_failed_canvas_pick_emits_one_canonical_copy_per_field():
+              source = function_source(VIEWER, "failedCanvasPickDiagnostic")
+              keys = declared_keys(source)
+              expected = {
+                  "hit_node_name", "registered_record_id", "pick_source",
+                  "authoritative_physical_pick", "selection_owner_id",
+                  "selection_owner_source", "edit_owner_id", "rejection_stage_reason",
+                  "exclusion_ancestor_node", "exclusion_flag", "candidate_priority",
+                  "raw_hit_count", "hit_object_names", "traversed_registered_identity",
+                  "first_actionable_rejection_reason", "nearest_known_urdf_link_ancestor",
+                  "hit_resolutions",
+              }
+              assert set(keys) == expected
+              assert all(keys.count(key) == 1 for key in expected)
+              assert not [key for key in keys if re.search(r"[A-Z]", key)]
+
+
+          def test_rejected_pick_records_and_warnings_are_deduplicated():
+              assert "function stableDiagnosticSignature(kind, payload)" in VIEWER
+              assert "state.normalDiagnosticRecords" in VIEWER
+              assert "warnNormalDiagnosticOnce('failed_canvas_pick'" in VIEWER
+              assert "const signature = ['failed_canvas_pick'" not in VIEWER
+
+
+          def test_diagnostic_producers_have_canonical_output_wrappers():
+              for name in (
+                  "collectRenderedMeshDiagnostics", "collectAssemblyRenderDiagnostics",
+                  "expandedUrdfVisualReadinessDiagnostics",
+              ):
+                  assert f"function {name}Raw(" in VIEWER
+                  wrapper = function_source(VIEWER, name)
+                  assert f"canonicalDiagnosticValue({name}Raw())" in wrapper
+              assert "function updateViewerStatusRaw(" in VIEWER
+              assert "window.__WORKCELL_VIEWER_STATUS__ = status;" in function_source(VIEWER, "updateViewerStatus")
+              assert "function showErrorRaw(" in VIEWER
+              assert "canonicalDiagnosticValue(window.__WORKCELL_VIEWER_STATUS__)" in function_source(VIEWER, "showError")
+
+
+          def test_renderer_emits_canonical_diagnostics_without_known_aliases():
+              aliases = (
+                  "colladaZUpConsoleMessageCount", "robotPreviewLifecycleState",
+                  "robotColladaRootNormalizationCount", "robotExpectedVisualCount",
+                  "robotFailedVisualCount", "robotCompletedVisualCount",
+                  "robotLoadingManagerComplete", "robotMatrixWorldParity",
+                  "robotLinkWorldMatrices", "robotVisualWrapperWorldMatrices",
+                  "robotDescendantRenderMeshDiagnostics", "robotRootLinkCount",
+                  "robotRootLinks", "robotDisconnectedLinks", "robotDuplicateLinks",
+                  "robotPreviewCanonicalFallbackUsed", "robotColladaMeshDiagnostics",
+                  "robotColladaSummary", "robotMissingRequiredRobotVisualLinks",
+                  "robotMissingRequiredToolVisualLinks", "robotExpectedRobotVisualLinks",
+                  "robotExpectedToolVisualLinks", "robotMeshCallbacksComplete",
+              )
+              for alias in aliases:
+                  assert re.search(rf"diagnostics\.{alias}\s*=", RENDERER) is None
+                  assert re.search(rf"^\s*{alias}\s*:", RENDERER, re.MULTILINE) is None
+              assert "result.diagnostics = canonicalDiagnosticValue(result.diagnostics);" in RENDERER
+              assert "onRobotError?.(err, result.diagnostics)" in RENDERER
+              assert "source_url: sourceUrl || '', policy_reason: reason" in RENDERER
+
+
+          def test_qt_status_script_is_narrow_and_preserves_status_fields():
+              start = QT.index('static const char kStatusScript[]')
+              end = QT.index(')JS";', start)
+              script = QT[start:end]
+              assert "External compatibility boundary" in script
+              assert "const readStatus = (canonicalKey, legacyKey, fallbackValue)" in script
+              pairs = re.findall(r"readStatus\('([a-z0-9_]+)', '([A-Za-z0-9]+)'", script)
+              assert pairs
+              assert len({canonical for canonical, _ in pairs}) == len(pairs)
+              required = {
+                  "readiness_contract_version", "lifecycle_state", "status_sequence",
+                  "builder_revision", "viewer_boot_state", "scene_name",
+                  "source_web_scene_file", "scene_json_loaded",
+                  "robot_preview_lifecycle_state", "scene_id",
+                  "expected_physical_item_count", "rendered_physical_item_count",
+                  "failed_required_item_count", "robot_status", "tool_status",
+                  "environment_status", "camera_status", "pending_required_loads",
+                  "final_lifecycle_state", "readiness_failure", "failed_stage",
+                  "fatal_error", "fatal_stack",
+              }
+              assert required.issubset({canonical for canonical, _ in pairs} | {"lifecycle_state", "pending_required_loads"})
+          '''
+          TEST.write_text(re.sub(r"^          ", "", test, flags=re.MULTILINE))
+          print("targeted transformations completed")
+          PY
           fi
 
           if [ "$STATUS" -eq 0 ]; then
@@ -51,7 +622,7 @@ jobs:
             {
               git diff --name-only
               git ls-files --others --exclude-standard
-            } | sort -u | tee /tmp/canonical-files-v9 >> "$LOG"
+            } | sort -u | tee /tmp/canonical-v10-files >> "$LOG"
             python3 - <<'PY' >> "$LOG" 2>&1 || STATUS=1
           from pathlib import Path
           expected = {
@@ -60,7 +631,7 @@ jobs:
               "workcell_studio_web/viewer/urdf_robot_renderer.js",
               "workcell_studio_web/viewer/viewer.js",
           }
-          actual = set(Path("/tmp/canonical-files-v9").read_text().splitlines())
+          actual = set(Path("/tmp/canonical-v10-files").read_text().splitlines())
           if actual != expected:
               raise SystemExit(f"changed-file mismatch: expected={sorted(expected)} actual={sorted(actual)}")
           print("PASS: exact four-file source/test scope")
@@ -93,6 +664,12 @@ jobs:
             fi
           fi
 
+          if [ -d "$WORKTREE" ]; then
+            cd "$WORKTREE"
+            git add -N tests/test_workcell_web3d_diagnostic_naming_contract.py 2>/dev/null || true
+            git diff > "$DIFF" || true
+          fi
+
           if [ "$STATUS" -eq 0 ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -105,7 +682,7 @@ jobs:
             git commit -m "Canonicalize Web3D diagnostic field names" >> "$LOG" 2>&1 || STATUS=1
             if [ "$STATUS" -eq 0 ]; then
               SOURCE_SHA="$(git rev-parse HEAD)"
-              git push origin "HEAD:$SOURCE_BRANCH" >> "$LOG" 2>&1 || STATUS=1
+              git push --force origin "HEAD:$SOURCE_BRANCH" >> "$LOG" 2>&1 || STATUS=1
             fi
           fi
 
@@ -118,8 +695,8 @@ jobs:
           } >> "$LOG"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add recovery-v9.log
-          git commit -m "[recovery-output] Capture canonical diagnostics v9 result"
-          git push origin HEAD:automation/canonical-diagnostics-recovery-v3
+          git add recovery-v10.log recovery-v10.diff
+          git commit -m "[recovery-output] Capture canonical diagnostics v10 result"
+          git push origin HEAD:automation/canonical-snake-case-viewer-diagnostics-v10
 
           exit "$STATUS"
