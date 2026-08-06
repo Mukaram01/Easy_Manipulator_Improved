@@ -1,4 +1,4 @@
-name: Temporary canonical diagnostics v12 macOS runner
+name: Temporary canonical diagnostics v13 macOS runner
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
           ref: automation/canonical-snake-case-viewer-diagnostics-v10
           fetch-depth: 0
 
-      - name: Execute embedded v12 builder
+      - name: Execute corrected embedded builder
         shell: bash
         run: |
           set -euo pipefail
@@ -38,6 +38,15 @@ jobs:
               if line and not line.startswith('          '):
                   break
               body.append(line[10:] if line.startswith('          ') else '')
-          Path('/tmp/canonical-diagnostics-v12.sh').write_text('\n'.join(body) + '\n')
+          script = '\n'.join(body) + '\n'
+          old = '          opening = block.index("{") + 1\n'
+          new = (
+              '          function_paren = block.index("(")\n'
+              '          function_paren_end = matching(block, function_paren, "(", ")")\n'
+              '          opening = block.index("{", function_paren_end) + 1\n'
+          )
+          if script.count(old) != 1:
+              raise SystemExit(f'expected one readiness insertion match, found {script.count(old)}')
+          Path('/tmp/canonical-diagnostics-v13.sh').write_text(script.replace(old, new, 1))
           PY
-          bash /tmp/canonical-diagnostics-v12.sh
+          bash /tmp/canonical-diagnostics-v13.sh
