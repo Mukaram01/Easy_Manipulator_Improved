@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QWidget>
+#include "scene_load_diagnostic_context.h"
 #include <QByteArray>
 #include <QVector>
 #include <QStringList>
@@ -618,5 +619,6 @@ private:
   int post_save_refresh_payload_revision_{ 0 };
   QByteArray preview_payload_fingerprint_;
   int last_visual_quality_revision_logged_{ -1 };
+  SceneLoadDiagnosticContext scene_load_diagnostics_;
   QSet<QString> emitted_scene_diagnostic_keys_;
 };

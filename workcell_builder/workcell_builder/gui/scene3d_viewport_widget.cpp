@@ -1953,6 +1953,17 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
   scene_load_warning_tokens.removeDuplicates();
   scene_load_warning_tokens.sort();
   const QString warning_signature = scene_load_warning_tokens.join(QLatin1Char('|'));
+  if (scene_load_diagnostics_) {
+    const QJsonObject content{
+      {QStringLiteral("received"), static_cast<int>(items.size())},
+      {QStringLiteral("visible"), visible_item_count},
+      {QStringLiteral("mesh_sources"), mesh_source_count},
+      {QStringLiteral("warnings"), QJsonArray::fromStringList(scene_load_warning_tokens)}};
+    const auto report = scene_load_diagnostics_->observe(
+      scene_load_identity_, QStringLiteral("canvas_ingestion"), content);
+    if (report.emit) qInfo().noquote() << report.summary
+      << QStringLiteral("content=%1").arg(QString::fromUtf8(QJsonDocument(content).toJson(QJsonDocument::Compact)));
+  }
   const bool should_emit_scene_load_summary =
     debug_logs ||
     last_scene_load_summary_item_count_ != items.size() ||

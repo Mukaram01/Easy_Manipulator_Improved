@@ -1320,13 +1320,17 @@ void ScenePreviewWidget::handle_embedded_web_runtime_failure(
       .arg(identity.scene_id).arg(identity.generation).arg(navigation_token).arg(detail));
     return;
   }
-  const QString terminal_key = QStringLiteral("%1|%2|%3|%4").arg(identity.scene_id).arg(identity.generated_web_scene_path).arg(identity.payload_revision).arg(navigation_token);
-  if (embedded_web_terminal_runtime_failures_.contains(terminal_key)) {
-    emit studio_log_requested(QStringLiteral("Suppressed duplicate Embedded Product View terminal failure for scene %1 revision %2 navigation %3: %4")
-      .arg(identity.scene_id).arg(identity.generation).arg(navigation_token).arg(detail));
-    return;
-  }
-  embedded_web_terminal_runtime_failures_.insert(terminal_key);
+  scene_load_diagnostics_.set_debug_enabled(diagnostic_debug_logging_enabled());
+  const SceneLoadDiagnosticContext::Identity diagnostic_identity{
+    identity.scene_id, QStringLiteral("builder_revision:%1").arg(identity.payload_revision), navigation_token};
+  const QJsonObject failure_content{
+    {QStringLiteral("state"), QStringLiteral("scene_failed")},
+    {QStringLiteral("detail"), detail}};
+  const auto failure_report = scene_load_diagnostics_.observe(
+    diagnostic_identity, QStringLiteral("terminal_readiness"), failure_content, true);
+  if (!failure_report.emit) return;
+  emit studio_log_requested(failure_report.summary + QStringLiteral(" content=%1")
+    .arg(QString::fromUtf8(QJsonDocument(failure_content).toJson(QJsonDocument::Compact))));
   if (finish_post_save_product_view_refresh(identity, navigation_token, false, detail)) return;
   native_compatibility_fallback_active_ = false;
   embedded_web_last_error_ = detail;
@@ -1341,7 +1345,8 @@ void ScenePreviewWidget::handle_embedded_web_runtime_failure(
   refresh_mode_and_state();
 
   ++embedded_web_terminal_results_accepted_;
-  emit studio_log_requested(QStringLiteral("Embedded Product View terminal failure accepted; leaving Web3D selected with Retry available. %1").arg(detail));
+  if (diagnostic_debug_logging_enabled()) emit studio_log_requested(
+    QStringLiteral("Embedded Product View terminal failure accepted; leaving Web3D selected with Retry available. %1").arg(detail));
 #endif
 }
 
@@ -2262,17 +2267,35 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
       .arg(builder_revision.isEmpty() ? QStringLiteral("unknown") : builder_revision)
       .arg(QStringLiteral("[%1]").arg(pending_required_loads.join(QStringLiteral(", "))));
 
+    scene_load_diagnostics_.set_debug_enabled(diagnostic_debug_logging_enabled());
+    const SceneLoadDiagnosticContext::Identity diagnostic_identity{
+      identity.scene_id,
+      !builder_revision.isEmpty() ? QStringLiteral("builder_revision:%1").arg(builder_revision) : source_json,
+      navigation_token};
+    const QJsonObject readiness_content{
+      {QStringLiteral("state"), boot_state == QStringLiteral("scene_failed") ? boot_state :
+        (lifecycle_state.isEmpty() ? boot_state : lifecycle_state)},
+      {QStringLiteral("terminal"), terminal},
+      {QStringLiteral("failed_stage"), failed_stage},
+      {QStringLiteral("fatal_error"), fatal_error},
+      {QStringLiteral("failed_required_item_count"), failed_required_count},
+      {QStringLiteral("rendered_physical_item_count"), rendered_physical_count},
+      {QStringLiteral("pending_required_loads"), QJsonArray::fromStringList(pending_required_loads)}};
+    const bool terminal_report = terminal || lifecycle_state == QStringLiteral("scene_ready") ||
+      lifecycle_state == QStringLiteral("scene_failed") || boot_state == QStringLiteral("scene_failed");
+    if (boot_state != QStringLiteral("scene_failed") && boot_state != QStringLiteral("failed")) {
+      const auto readiness_report = scene_load_diagnostics_.observe(
+        diagnostic_identity, QStringLiteral("terminal_readiness"), readiness_content, terminal_report);
+      if (readiness_report.emit) emit studio_log_requested(readiness_report.summary + QStringLiteral(" content=%1")
+        .arg(QString::fromUtf8(QJsonDocument(readiness_content).toJson(QJsonDocument::Compact))));
+    }
+
     if (boot_state == QStringLiteral("scene_failed") || boot_state == QStringLiteral("failed")) {
       const QString detail = QStringLiteral("viewer JavaScript failed at %1: %2%3")
         .arg(failed_stage.isEmpty() ? QStringLiteral("unknown_stage") : failed_stage,
              fatal_error.isEmpty() ? QStringLiteral("unknown error") : fatal_error,
              fatal_stack.isEmpty() ? QString() : QStringLiteral("; stack: %1").arg(fatal_stack.left(500)));
       handle_embedded_web_runtime_failure(identity, navigation_token, detail);
-      emit studio_log_requested(QStringLiteral("Embedded Product View JavaScript failure for scene %1.\nStage: %2\nFatal error: %3\nStack excerpt:\n%4")
-        .arg(identity.scene_id,
-             failed_stage.isEmpty() ? QStringLiteral("unknown_stage") : failed_stage,
-             fatal_error.isEmpty() ? QStringLiteral("unknown error") : fatal_error,
-             fatal_stack.left(500)));
       return;
     }
 
@@ -2297,8 +2320,9 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
       set_embedded_product_view_state(EmbeddedProductViewState::Ready, QStringLiteral("viewer ready"));
       show_embedded_web_product_view();
       poll_embedded_editor_events();
-      emit studio_log_requested(QStringLiteral("Embedded Product View ready after terminal scene_ready: scene=%1 json=%2 builder_revision=%3 robot_preview_lifecycle_state=%4 failed_required_item_count=0")
-        .arg(identity.scene_id, expected_json_path, expected_builder_revision, robot_state.isEmpty() ? QStringLiteral("not_required") : robot_state));
+      if (diagnostic_debug_logging_enabled()) emit studio_log_requested(
+        QStringLiteral("Embedded Product View ready after terminal scene_ready: scene=%1 json=%2 builder_revision=%3 robot_preview_lifecycle_state=%4 failed_required_item_count=0")
+          .arg(identity.scene_id, expected_json_path, expected_builder_revision, robot_state.isEmpty() ? QStringLiteral("not_required") : robot_state));
       finish_post_save_product_view_refresh(identity, navigation_token, true, QStringLiteral("matching terminal scene_ready accepted"));
       return;
     }
@@ -2840,8 +2864,31 @@ void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items)
     ++preview_payload_revision_;
     ++preview_payload_generation_;
   }
+  scene_load_diagnostics_.set_debug_enabled(diagnostic_debug_logging_enabled());
+  SceneLoadDiagnosticContext::Identity diagnostic_identity{
+    preview_scene_name_, QStringLiteral("builder_revision:%1").arg(preview_payload_revision_),
+    embedded_web_navigation_token_};
+  int mesh_items = 0;
+  int unresolved_packages = 0;
+  int warning_count = 0;
+  for (const PreviewItem & item : preview_items_) {
+    if (item.mesh_available || !item.mesh_path.trimmed().isEmpty()) ++mesh_items;
+    if (!item.package_uri.trimmed().isEmpty() && item.source_path_resolution_outcome.contains(QStringLiteral("unresolved"), Qt::CaseInsensitive)) ++unresolved_packages;
+    warning_count += item.warnings.size() + (!item.mesh_load_warning.trimmed().isEmpty() ? 1 : 0);
+  }
+  const auto report = [this, &diagnostic_identity](const QString & type, const QJsonObject & content) {
+    const auto result = scene_load_diagnostics_.observe(diagnostic_identity, type, content);
+    if (result.emit) emit studio_log_requested(result.summary + QStringLiteral(" content=%1")
+      .arg(QString::fromUtf8(QJsonDocument(content).toJson(QJsonDocument::Compact))));
+  };
+  report(QStringLiteral("asset_discovery"), QJsonObject{{QStringLiteral("items"), preview_items_.size()}});
+  report(QStringLiteral("visual_mesh_index"), QJsonObject{{QStringLiteral("mesh_items"), mesh_items}, {QStringLiteral("warnings"), warning_count}});
+  report(QStringLiteral("package_resolution"), QJsonObject{{QStringLiteral("unresolved_packages"), unresolved_packages}});
   auto * viewport = active_native_viewport();
-  if (viewport) viewport->ingest_preview_items(preview_items_);
+  if (viewport) {
+    viewport->set_scene_load_diagnostic_context(&scene_load_diagnostics_, diagnostic_identity);
+    viewport->ingest_preview_items(preview_items_);
+  }
   const bool has_selected = std::any_of(preview_items_.cbegin(), preview_items_.cend(), [this](const PreviewItem & it){ return it.id == selected_preview_item_id_; });
   if (!selected_preview_item_id_.isEmpty() && !has_selected) {
     const QString missing_id = selected_preview_item_id_;

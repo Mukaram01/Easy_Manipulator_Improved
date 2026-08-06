@@ -69,6 +69,7 @@ add_executable(workcell_builder
     gui/mainwindow.ui
     gui/scene_preview_widget.cpp
     gui/scene_preview_widget.h
+    gui/scene_load_diagnostic_context.cpp
     gui/robot_home_yaml_io.cpp
     gui/robot_home_yaml_io.hpp
     gui/scene3d_viewport_widget.cpp
@@ -382,16 +383,19 @@ if(BUILD_TESTING)
 
   ament_add_gtest(workcell_scene3d_stl_parser_test
     test/scene3d_stl_parser_test.cpp
+    gui/scene_load_diagnostic_context.cpp
     gui/scene3d_viewport_widget.cpp
     gui/scene3d_visual_classification.cpp)
   ament_add_gtest(workcell_scene3d_render_role_classifier_test
     test/scene3d_render_role_classifier_test.cpp
+    gui/scene_load_diagnostic_context.cpp
     gui/scene3d_viewport_widget.cpp
     gui/scene3d_visual_classification.cpp
     gui/object_placement_yaml_io.cpp
     src_object_placement_model.cpp)
   ament_add_gtest(workcell_scene3d_ur5_baked_transform_test
     test/scene3d_ur5_baked_transform_test.cpp
+    gui/scene_load_diagnostic_context.cpp
     gui/scene3d_viewport_widget.cpp
     gui/scene3d_visual_classification.cpp)
 
@@ -408,12 +412,19 @@ if(BUILD_TESTING)
 
   ament_add_gtest(workcell_scene_preview_widget_ui_test
     test/scene_preview_widget_ui_test.cpp
+    gui/scene_load_diagnostic_context.cpp
     gui/scene_preview_widget.cpp
     gui/robot_home_yaml_io.cpp
     gui/scene3d_viewport_widget.cpp
     gui/scene3d_visual_classification.cpp
     gui/object_placement_yaml_io.cpp
     src_object_placement_model.cpp)
+  ament_add_gtest(workcell_scene_load_diagnostic_context_test
+    test/scene_load_diagnostic_context_test.cpp
+    gui/scene_load_diagnostic_context.cpp)
+  if(TARGET workcell_scene_load_diagnostic_context_test)
+    target_link_libraries(workcell_scene_load_diagnostic_context_test Qt5::Core)
+  endif()
   ament_add_gtest(workcell_studio_canvas_model_mesh_test
     test/workcell_studio_canvas_model_mesh_test.cpp
     src_workcell_studio_canvas_model.cpp
