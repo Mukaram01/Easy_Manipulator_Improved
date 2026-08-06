@@ -1,0 +1,177 @@
+name: Temporary canonical diagnostics recovery v3
+
+on:
+  push:
+    branches:
+      - automation/canonical-diagnostics-recovery-v3
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    if: ${{ !contains(github.event.head_commit.message, '[recovery-output]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: automation/canonical-diagnostics-recovery-v3
+          fetch-depth: 0
+
+      - name: Reconstruct, validate, and publish clean source branch
+        shell: bash
+        run: |
+          set -u
+          REPO_ROOT="$PWD"
+          PATCH=/tmp/canonical-diagnostics.patch
+          WORKTREE=/tmp/canonical-diagnostics-worktree
+          SOURCE_BRANCH=codex/canonical-snake-case-viewer-diagnostics-clean-v3
+          OUTPUT="$REPO_ROOT/recovery-output.txt"
+          LOG=/tmp/recovery.log
+          STATUS=0
+          SOURCE_SHA=""
+
+          : > "$LOG"
+          {
+            echo "Canonical diagnostics recovery v3"
+            echo "base cleanup commit: 43acccb6470a9de6fdf69a6b6ce68d18368b1898"
+            echo
+          } >> "$LOG"
+
+          echo "== Reconstruct patch ==" >> "$LOG"
+          if cat .github/temporary/canonical-diagnostics-2980/chunk_* \
+              | base64 -d \
+              | gzip -dc \
+              > "$PATCH" 2>> "$LOG"; then
+            echo "PASS: patch reconstructed" >> "$LOG"
+            echo "Patch files:" >> "$LOG"
+            grep '^diff --git ' "$PATCH" >> "$LOG" || true
+          else
+            echo "FAIL: patch reconstruction" >> "$LOG"
+            STATUS=1
+          fi
+
+          if [ "$STATUS" -eq 0 ]; then
+            echo >> "$LOG"
+            echo "== Prepare clean worktree ==" >> "$LOG"
+            git fetch origin chore/remove-temporary-diagnostics-artifacts >> "$LOG" 2>&1 || STATUS=1
+            rm -rf "$WORKTREE"
+            if [ "$STATUS" -eq 0 ]; then
+              git worktree add --detach "$WORKTREE" 43acccb6470a9de6fdf69a6b6ce68d18368b1898 >> "$LOG" 2>&1 || STATUS=1
+            fi
+          fi
+
+          if [ "$STATUS" -eq 0 ]; then
+            cd "$WORKTREE"
+            echo >> "$LOG"
+            echo "== Patch applicability ==" >> "$LOG"
+            if git apply --check --verbose "$PATCH" >> "$LOG" 2>&1; then
+              echo "PASS: git apply --check" >> "$LOG"
+            else
+              echo "FAIL: git apply --check" >> "$LOG"
+              STATUS=1
+            fi
+          fi
+
+          if [ "$STATUS" -eq 0 ]; then
+            if git apply --whitespace=fix "$PATCH" >> "$LOG" 2>&1; then
+              echo "PASS: patch applied" >> "$LOG"
+            else
+              echo "FAIL: patch apply" >> "$LOG"
+              STATUS=1
+            fi
+          fi
+
+          if [ "$STATUS" -eq 0 ]; then
+            echo >> "$LOG"
+            echo "== Changed-file scope ==" >> "$LOG"
+            git diff --name-only | sort >> "$LOG"
+            python3 - <<'PY' >> "$LOG" 2>&1 || STATUS=1
+          import subprocess
+
+          expected = {
+              "tests/test_workcell_web3d_diagnostic_naming_contract.py",
+              "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp",
+              "workcell_studio_web/viewer/urdf_robot_renderer.js",
+              "workcell_studio_web/viewer/viewer.js",
+          }
+          actual = set(
+              subprocess.check_output(["git", "diff", "--name-only"], text=True).splitlines()
+          )
+          if actual != expected:
+              raise SystemExit(
+                  "FAIL: changed files differ from expected\n"
+                  f"expected={sorted(expected)}\nactual={sorted(actual)}"
+              )
+          print("PASS: exact four-file source/test scope")
+          PY
+          fi
+
+          if [ "$STATUS" -eq 0 ]; then
+            echo >> "$LOG"
+            echo "== Syntax and whitespace checks ==" >> "$LOG"
+            node --check workcell_studio_web/viewer/viewer.js >> "$LOG" 2>&1 || STATUS=1
+            node --check workcell_studio_web/viewer/urdf_robot_renderer.js >> "$LOG" 2>&1 || STATUS=1
+            git diff --check >> "$LOG" 2>&1 || STATUS=1
+            if [ "$STATUS" -eq 0 ]; then
+              echo "PASS: node syntax checks and git diff --check" >> "$LOG"
+            else
+              echo "FAIL: syntax or whitespace check" >> "$LOG"
+            fi
+          fi
+
+          if [ "$STATUS" -eq 0 ]; then
+            echo >> "$LOG"
+            echo "== Focused tests ==" >> "$LOG"
+            if pytest -q \
+                tests/test_workcell_web3d_diagnostic_naming_contract.py \
+                tests/test_workcell_studio_web_viewer_static.py \
+                >> "$LOG" 2>&1; then
+              echo "PASS: focused pytest suite" >> "$LOG"
+            else
+              echo "FAIL: focused pytest suite" >> "$LOG"
+              STATUS=1
+            fi
+          fi
+
+          if [ "$STATUS" -eq 0 ]; then
+            echo >> "$LOG"
+            echo "== Publish source branch ==" >> "$LOG"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git switch -c "$SOURCE_BRANCH" >> "$LOG" 2>&1 || STATUS=1
+            if [ "$STATUS" -eq 0 ]; then
+              git add \
+                tests/test_workcell_web3d_diagnostic_naming_contract.py \
+                workcell_builder/workcell_builder/gui/scene_preview_widget.cpp \
+                workcell_studio_web/viewer/urdf_robot_renderer.js \
+                workcell_studio_web/viewer/viewer.js
+              git commit -m "Canonicalize Web3D diagnostic field names" >> "$LOG" 2>&1 || STATUS=1
+            fi
+            if [ "$STATUS" -eq 0 ]; then
+              SOURCE_SHA="$(git rev-parse HEAD)"
+              git push --force origin "HEAD:$SOURCE_BRANCH" >> "$LOG" 2>&1 || STATUS=1
+            fi
+            if [ "$STATUS" -eq 0 ]; then
+              echo "PASS: source branch published at $SOURCE_SHA" >> "$LOG"
+            else
+              echo "FAIL: source branch publication" >> "$LOG"
+            fi
+          fi
+
+          cd "$REPO_ROOT"
+          {
+            echo "status=$STATUS"
+            echo "source_branch=$SOURCE_BRANCH"
+            echo "source_sha=$SOURCE_SHA"
+            echo
+            cat "$LOG"
+          } > "$OUTPUT"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add recovery-output.txt
+          git commit -m "[recovery-output] Capture canonical diagnostics recovery result"
+          git push origin HEAD:automation/canonical-diagnostics-recovery-v3
+
+          exit "$STATUS"
