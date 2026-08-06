@@ -1,6 +1,7 @@
 #pragma once
 
 #include "scene_preview_widget.h"
+#include "scene_load_diagnostic_context.h"
 
 #include <QOpenGLFunctions>
 #include <QOpenGLWidget>
@@ -81,6 +82,9 @@ public:
   void set_isometric_view();
   void invalidate_mesh_cache();
   void ingest_preview_items(const QVector<ScenePreviewWidget::PreviewItem> & preview_items);
+  void set_scene_load_diagnostic_context(SceneLoadDiagnosticContext * context,
+    const SceneLoadDiagnosticContext::Identity & identity)
+  { scene_load_diagnostics_ = context; scene_load_identity_ = identity; }
 
   struct RenderDebugCounters
   {
@@ -188,6 +192,8 @@ protected:
   void dropEvent(QDropEvent * event) override;
 
 private:
+  SceneLoadDiagnosticContext * scene_load_diagnostics_{nullptr};
+  SceneLoadDiagnosticContext::Identity scene_load_identity_;
   struct ItemBounds { double x, y, z, sx, sy, sz; };
   QPointF project_to_screen(double x, double y, double z) const;
   bool pick_item_at_screen(const QPoint & pos, QString & out_id, QString & out_role, QString * out_tooltip = nullptr) const;
