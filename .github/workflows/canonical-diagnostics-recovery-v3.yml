@@ -1,4 +1,4 @@
-name: Temporary canonical diagnostics recovery v3
+name: Temporary canonical diagnostics inspection v4
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  recover:
+  inspect:
     if: ${{ !contains(github.event.head_commit.message, '[recovery-output]') }}
     runs-on: ubuntu-latest
     steps:
@@ -18,160 +18,168 @@ jobs:
           ref: automation/canonical-diagnostics-recovery-v3
           fetch-depth: 0
 
-      - name: Reconstruct, validate, and publish clean source branch
+      - name: Extract exact source contexts
         shell: bash
         run: |
-          set -u
-          REPO_ROOT="$PWD"
-          PATCH=/tmp/canonical-diagnostics.patch
-          WORKTREE=/tmp/canonical-diagnostics-worktree
-          SOURCE_BRANCH=codex/canonical-snake-case-viewer-diagnostics-clean-v3
-          OUTPUT="$REPO_ROOT/recovery-output.txt"
-          LOG=/tmp/recovery.log
-          STATUS=0
-          SOURCE_SHA=""
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
 
-          : > "$LOG"
-          {
-            echo "Canonical diagnostics recovery v3"
-            echo "base cleanup commit: 43acccb6470a9de6fdf69a6b6ce68d18368b1898"
-            echo
-          } >> "$LOG"
+          def extract_js_function(text: str, name: str) -> str:
+              marker = f"function {name}("
+              start = text.index(marker)
+              brace = text.index("{", start)
+              depth = 0
+              quote = None
+              escape = False
+              line_comment = False
+              block_comment = False
+              i = brace
+              while i < len(text):
+                  ch = text[i]
+                  nxt = text[i + 1] if i + 1 < len(text) else ""
+                  if line_comment:
+                      if ch == "\n":
+                          line_comment = False
+                      i += 1
+                      continue
+                  if block_comment:
+                      if ch == "*" and nxt == "/":
+                          block_comment = False
+                          i += 2
+                      else:
+                          i += 1
+                      continue
+                  if quote:
+                      if escape:
+                          escape = False
+                      elif ch == "\\":
+                          escape = True
+                      elif ch == quote:
+                          quote = None
+                      i += 1
+                      continue
+                  if ch == "/" and nxt == "/":
+                      line_comment = True
+                      i += 2
+                      continue
+                  if ch == "/" and nxt == "*":
+                      block_comment = True
+                      i += 2
+                      continue
+                  if ch in ("'", '"', "`"):
+                      quote = ch
+                      i += 1
+                      continue
+                  if ch == "{":
+                      depth += 1
+                  elif ch == "}":
+                      depth -= 1
+                      if depth == 0:
+                          return text[start:i + 1]
+                  i += 1
+              raise RuntimeError(f"unterminated function {name}")
 
-          echo "== Reconstruct patch ==" >> "$LOG"
-          if cat .github/temporary/canonical-diagnostics-2980/chunk_* \
-              | base64 -d \
-              | gzip -dc \
-              > "$PATCH" 2>> "$LOG"; then
-            echo "PASS: patch reconstructed" >> "$LOG"
-            echo "Patch files:" >> "$LOG"
-            grep '^diff --git ' "$PATCH" >> "$LOG" || true
-          else
-            echo "FAIL: patch reconstruction" >> "$LOG"
-            STATUS=1
-          fi
+          viewer_path = Path("workcell_studio_web/viewer/viewer.js")
+          renderer_path = Path("workcell_studio_web/viewer/urdf_robot_renderer.js")
+          qt_path = Path("workcell_builder/workcell_builder/gui/scene_preview_widget.cpp")
+          test_path = Path("tests/test_workcell_studio_web_viewer_static.py")
+          viewer = viewer_path.read_text()
+          renderer = renderer_path.read_text()
+          qt = qt_path.read_text()
+          existing_test = test_path.read_text()
 
-          if [ "$STATUS" -eq 0 ]; then
-            echo >> "$LOG"
-            echo "== Prepare clean worktree ==" >> "$LOG"
-            git fetch origin chore/remove-temporary-diagnostics-artifacts >> "$LOG" 2>&1 || STATUS=1
-            rm -rf "$WORKTREE"
-            if [ "$STATUS" -eq 0 ]; then
-              git worktree add --detach "$WORKTREE" 43acccb6470a9de6fdf69a6b6ce68d18368b1898 >> "$LOG" 2>&1 || STATUS=1
-            fi
-          fi
+          viewer_functions = [
+              "emitWeb3dReadinessState",
+              "structuredWeb3dReadinessFields",
+              "failedCanvasPickDiagnostic",
+              "collectRenderedMeshDiagnostics",
+              "collectAssemblyRenderDiagnostics",
+              "expandedUrdfVisualReadinessDiagnostics",
+              "updateViewerStatus",
+              "showError",
+          ]
+          renderer_aliases = [
+              "colladaZUpConsoleMessageCount",
+              "robotColladaRootNormalizationCount",
+              "robotVisualWrapperWorldMatrices",
+              "robotVisualMeshWorldBounds",
+              "robotBaseAnchorPrePosition",
+              "robotBaseAnchorPostPosition",
+              "robotBaseAnchorExpectedPosition",
+              "robotBaseAnchorWorldPosition",
+              "robotAnchorDeltaPosition",
+              "robotLinkWorldMatrices",
+              "robotPreviewLifecycleState",
+              "robotPreviewFailureReason",
+              "sourceUrl",
+              "policyReason",
+          ]
+          viewer_aliases = [
+              "rawHitCount", "traversedObjectCount", "visibleMeshCount",
+              "selectableOwnerCount", "registeredRenderRootCount",
+              "selectionResolutionMapSize", "ownerRenderRootMapSize",
+              "hoverRenderRootMapSize", "reasonCode", "nearestObjectName",
+              "nearestObjectType", "nearestOwnerId", "nearestDiagnosticReason",
+              "hitResolutions", "finalLifecycleState", "pendingRequiredLoads",
+              "robotPreviewLifecycleState", "robotPreviewFailureReason",
+          ]
 
-          if [ "$STATUS" -eq 0 ]; then
-            cd "$WORKTREE"
-            echo >> "$LOG"
-            echo "== Patch applicability ==" >> "$LOG"
-            if git apply --check --verbose "$PATCH" >> "$LOG" 2>&1; then
-              echo "PASS: git apply --check" >> "$LOG"
-            else
-              echo "FAIL: git apply --check" >> "$LOG"
-              STATUS=1
-            fi
-          fi
+          out = []
+          out.append("# Viewer target functions\n")
+          for name in viewer_functions:
+              out.append(f"\n## {name}\n```js\n{extract_js_function(viewer, name)}\n```\n")
 
-          if [ "$STATUS" -eq 0 ]; then
-            if git apply --whitespace=fix "$PATCH" >> "$LOG" 2>&1; then
-              echo "PASS: patch applied" >> "$LOG"
-            else
-              echo "FAIL: patch apply" >> "$LOG"
-              STATUS=1
-            fi
-          fi
+          def contexts(text: str, needles: list[str], radius: int = 5) -> str:
+              lines = text.splitlines()
+              windows = []
+              seen = set()
+              for index, line in enumerate(lines):
+                  if any(needle in line for needle in needles):
+                      lo = max(0, index - radius)
+                      hi = min(len(lines), index + radius + 1)
+                      key = (lo, hi)
+                      if key in seen:
+                          continue
+                      seen.add(key)
+                      windows.append(
+                          "\n".join(f"{i + 1}: {lines[i]}" for i in range(lo, hi))
+                      )
+              return "\n\n---\n\n".join(windows)
 
-          if [ "$STATUS" -eq 0 ]; then
-            echo >> "$LOG"
-            echo "== Changed-file scope ==" >> "$LOG"
-            git diff --name-only | sort >> "$LOG"
-            python3 - <<'PY' >> "$LOG" 2>&1 || STATUS=1
-          import subprocess
+          out.append("\n# Viewer alias contexts\n```text\n")
+          out.append(contexts(viewer, viewer_aliases, 7))
+          out.append("\n```\n")
+          out.append("\n# Renderer alias contexts\n```text\n")
+          out.append(contexts(renderer, renderer_aliases, 9))
+          out.append("\n```\n")
+          out.append("\n# Qt status-script compatibility contexts\n```text\n")
+          out.append(contexts(qt, [
+              "readinessContractVersion", "lifecycleState", "statusSequence",
+              "builderRevision", "web3dReadinessState", "viewerBootState",
+              "sceneJsonLoaded", "failedRequiredItemCount",
+              "requiredMeshFailedCount", "expectedPhysicalItemCount",
+              "renderedPhysicalItemCount", "expectedRobotVisualCount",
+              "renderedRobotVisualCount", "failedRobotVisualCount",
+              "expectedRobotLinkCount", "renderedRobotLinkCount",
+              "missingRobotLinkCount", "robotStatus", "toolStatus",
+              "environmentStatus", "cameraStatus", "pendingRequiredLoads",
+              "finalLifecycleState", "readinessFailureCode",
+              "readinessFailureReason", "failedStage", "fatalError", "fatalStack",
+          ], 12))
+          out.append("\n```\n")
+          out.append("\n# Existing static-test contexts\n```text\n")
+          out.append(contexts(existing_test, [
+              "readiness", "failedCanvasPickDiagnostic", "pendingRequiredLoads",
+              "robotPreviewLifecycleState", "readinessContractVersion",
+          ], 6))
+          out.append("\n```\n")
 
-          expected = {
-              "tests/test_workcell_web3d_diagnostic_naming_contract.py",
-              "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp",
-              "workcell_studio_web/viewer/urdf_robot_renderer.js",
-              "workcell_studio_web/viewer/viewer.js",
-          }
-          actual = set(
-              subprocess.check_output(["git", "diff", "--name-only"], text=True).splitlines()
-          )
-          if actual != expected:
-              raise SystemExit(
-                  "FAIL: changed files differ from expected\n"
-                  f"expected={sorted(expected)}\nactual={sorted(actual)}"
-              )
-          print("PASS: exact four-file source/test scope")
+          Path("recovery-context.md").write_text("".join(out))
           PY
-          fi
-
-          if [ "$STATUS" -eq 0 ]; then
-            echo >> "$LOG"
-            echo "== Syntax and whitespace checks ==" >> "$LOG"
-            node --check workcell_studio_web/viewer/viewer.js >> "$LOG" 2>&1 || STATUS=1
-            node --check workcell_studio_web/viewer/urdf_robot_renderer.js >> "$LOG" 2>&1 || STATUS=1
-            git diff --check >> "$LOG" 2>&1 || STATUS=1
-            if [ "$STATUS" -eq 0 ]; then
-              echo "PASS: node syntax checks and git diff --check" >> "$LOG"
-            else
-              echo "FAIL: syntax or whitespace check" >> "$LOG"
-            fi
-          fi
-
-          if [ "$STATUS" -eq 0 ]; then
-            echo >> "$LOG"
-            echo "== Focused tests ==" >> "$LOG"
-            if pytest -q \
-                tests/test_workcell_web3d_diagnostic_naming_contract.py \
-                tests/test_workcell_studio_web_viewer_static.py \
-                >> "$LOG" 2>&1; then
-              echo "PASS: focused pytest suite" >> "$LOG"
-            else
-              echo "FAIL: focused pytest suite" >> "$LOG"
-              STATUS=1
-            fi
-          fi
-
-          if [ "$STATUS" -eq 0 ]; then
-            echo >> "$LOG"
-            echo "== Publish source branch ==" >> "$LOG"
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git switch -c "$SOURCE_BRANCH" >> "$LOG" 2>&1 || STATUS=1
-            if [ "$STATUS" -eq 0 ]; then
-              git add \
-                tests/test_workcell_web3d_diagnostic_naming_contract.py \
-                workcell_builder/workcell_builder/gui/scene_preview_widget.cpp \
-                workcell_studio_web/viewer/urdf_robot_renderer.js \
-                workcell_studio_web/viewer/viewer.js
-              git commit -m "Canonicalize Web3D diagnostic field names" >> "$LOG" 2>&1 || STATUS=1
-            fi
-            if [ "$STATUS" -eq 0 ]; then
-              SOURCE_SHA="$(git rev-parse HEAD)"
-              git push --force origin "HEAD:$SOURCE_BRANCH" >> "$LOG" 2>&1 || STATUS=1
-            fi
-            if [ "$STATUS" -eq 0 ]; then
-              echo "PASS: source branch published at $SOURCE_SHA" >> "$LOG"
-            else
-              echo "FAIL: source branch publication" >> "$LOG"
-            fi
-          fi
-
-          cd "$REPO_ROOT"
-          {
-            echo "status=$STATUS"
-            echo "source_branch=$SOURCE_BRANCH"
-            echo "source_sha=$SOURCE_SHA"
-            echo
-            cat "$LOG"
-          } > "$OUTPUT"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add recovery-output.txt
-          git commit -m "[recovery-output] Capture canonical diagnostics recovery result"
+          git add recovery-context.md
+          git commit -m "[recovery-output] Capture canonical diagnostics source contexts"
           git push origin HEAD:automation/canonical-diagnostics-recovery-v3
-
-          exit "$STATUS"
