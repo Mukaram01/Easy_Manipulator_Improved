@@ -251,6 +251,7 @@ def test_acceptance_script_supports_playwright_browser_status_path():
     assert "window.__WORKCELL_ROBOT_PREVIEW_READY__" in text
     assert "robot_preview_lifecycle_state" in text
     assert "validate_browser_status(status)" in text
+    assert '!= "scene_ready": rc = 1' in text
     assert "EXPECTED_MESH_LOADED_COUNT = 18" in text
     assert "EXPECTED_REQUIRED_MESH_FAILED_COUNT = 0" in text
     assert "viewer_url:" in text
