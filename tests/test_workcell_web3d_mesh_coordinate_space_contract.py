@@ -96,6 +96,10 @@ appendRuntimeWarning = (...args) => warnings.push(args);
 updateViewerStatus = () => ({ readiness_failure: state.web3dReadiness?.failure || null });
 
 const close = (actual, expected, tolerance = 1e-8) => Math.abs(actual - expected) <= tolerance;
+const d435Comparison = meshDimensionComparison({ x: 0.08, y: 0.08, z: 0.06 }, { x: 0.08991429954767227, y: 0.025054700672626502, z: 0.025000000372529037 });
+assert(d435Comparison.uniformRatio > MESH_OVERSIZED_RATIO_THRESHOLD);
+assert(d435Comparison.maxRatio < MESH_OVERSIZED_RATIO_THRESHOLD);
+assert.strictEqual(d435Comparison.oversized, false);
 const dimensions = box => {
   const size = new THREE.Vector3();
   box.getSize(size);
