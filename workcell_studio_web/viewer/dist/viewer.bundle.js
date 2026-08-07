@@ -38635,6 +38635,34 @@ function failPhysicalMeshAttempt(attempt, item, url, reason, extra = {}) {
   });
   return true;
 }
+function physicalMeshBoundsFailurePayload(item, loadUrl, loader) {
+  const expected = expectedDimensionsOf(item);
+  const localBounds = item?.loaded_mesh_local_bounds || item?.loaded_mesh_bounds || null;
+  const worldBounds = item?.loaded_mesh_world_bounds || null;
+  return {
+    scene_id: sceneId(),
+    item_id: item?.id || "",
+    item_display_name: item?.display_name || item?.label || item?.name || item?.object_name || item?.link || item?.id || "",
+    category: meshContractCategoryOf(item),
+    mesh_uri: displayMeshUri(item),
+    mesh_load_url: loadUrl || "",
+    loader: loader || "",
+    expected_dimensions: expected ? { x: expected.x, y: expected.y, z: expected.z } : null,
+    loaded_local_dimensions: localBounds?.dimensions || null,
+    loaded_local_bounds: localBounds,
+    loaded_local_bounds_coordinate_space: item?.loaded_mesh_bounds_coordinate_space?.validation_bounds || "authored_visual_local_after_unit_correction",
+    loaded_world_dimensions: worldBounds?.dimensions || null,
+    loaded_world_bounds: worldBounds,
+    loaded_world_bounds_coordinate_space: item?.loaded_mesh_bounds_coordinate_space?.diagnostic_world_bounds || "scene_world_after_visual_origin_and_item_pose",
+    mesh_bounds_coordinate_space_contract: item?.loaded_mesh_bounds_coordinate_space || MESH_BOUNDS_COORDINATE_SPACE_CONTRACT,
+    axis_ratios: item?.loaded_mesh_axis_ratios || null,
+    maximum_ratio: item?.loaded_mesh_maximum_ratio ?? null,
+    uniform_ratio: item?.loaded_mesh_uniform_ratio ?? null,
+    applied_mesh_scale: item?.mesh_unit_correction?.scale ?? 1,
+    unit_correction_decision: item?.mesh_unit_correction?.confidence || "not_requested_or_not_applicable",
+    bounds_reason_code: item?.loaded_mesh_bounds_reason_code || "loaded_mesh_bounds_invalid"
+  };
+}
 function failWeb3dSceneReadiness(item, url, reason, extra = {}) {
   const category = readinessCategoryForItem(item) || extra.category || "required_physical_item";
   const readinessIdentity = readinessIdentityForItem(category, item);
@@ -41005,10 +41033,9 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
       return;
     const meshObject = materializeLoadedMesh(item, uri, loaded);
     const visualRoot = makeMeshVisualRoot(item, meshObject);
-    visualRoot.updateMatrixWorld(true);
-    const nativeBounds = new THREE.Box3().setFromObject(visualRoot);
-    const autoscaled = maybeApplyMeshUnitAutoscale(item, meshObject, nativeBounds, uri);
-    const validationBounds = autoscaled ? new THREE.Box3().setFromObject(visualRoot) : nativeBounds;
+    const rawAuthoredLocalBounds = measureLoadedMeshBoundsInAuthoredLocalSpace(visualRoot);
+    maybeApplyMeshUnitAutoscale(item, meshObject, visualRoot, rawAuthoredLocalBounds, uri);
+    const validationLocalBounds = measureLoadedMeshBoundsInAuthoredLocalSpace(visualRoot);
     if (fallback)
       fallback.visible = false;
     rendered.object3d.add(visualRoot);
@@ -41019,11 +41046,14 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
     item.mesh_load_error = "";
     trackMeshLoadAttempt(item, "loaded", loadUrl, "");
     setRenderInfo(rendered, "mesh_loaded", uri, "");
-    const boundsValid = diagnoseLoadedMeshBounds(item, visualRoot, rendered, validationBounds);
+    const boundsValid = diagnoseLoadedMeshBounds(item, visualRoot, rendered, validationLocalBounds);
     refreshMeshLoadUi(rendered);
     if (!boundsValid && itemRequiresMeshBackedVisual(item)) {
       detachTransientPivotForFailedPhysicalVisual(rendered);
-      failPhysicalMeshAttempt(attempt, item, loadUrl, `loaded mesh bounds validation failed (${item.visual_bounds_status || "invalid"})`, { mesh_status: item.mesh_status, loader: loaderName });
+      failPhysicalMeshAttempt(attempt, item, loadUrl, `loaded mesh bounds validation failed (${item.visual_bounds_status || "invalid"})`, {
+        mesh_status: item.mesh_status,
+        ...physicalMeshBoundsFailurePayload(item, loadUrl, loaderName)
+      });
       return;
     }
     completePhysicalMeshAttempt(attempt);
@@ -41723,45 +41753,149 @@ function meshUnitAutoscaleAllowed(item) {
   ].map((value) => String(value || "").toLowerCase()).join(" ");
   return !/\b(robot|arm|manipulator|ur3|ur5|ur10|ur_|universal_robot|robotiq|gripper|suction|airpick|tool|eef|end_effector)\b/.test(identity);
 }
-function meshUnitCorrectionPayload(source, confidence, nativeBounds, correctedBounds, scale, axisRatios, targetRatio) {
+var MESH_BOUNDS_COORDINATE_SPACE_CONTRACT = Object.freeze({
+  version: 1,
+  raw_mesh_geometry: "mesh_local_before_visual_origin_or_world_transform",
+  unit_correction: "uniform_scale_applied_once_at_loaded_mesh_object",
+  validation_bounds: "authored_visual_local_after_unit_correction",
+  diagnostic_world_bounds: "scene_world_after_visual_origin_and_item_pose"
+});
+var MESH_OVERSIZED_RATIO_THRESHOLD = 3;
+function measureLoadedMeshBoundsInAuthoredLocalSpace(visualRoot) {
+  if (!visualRoot || !THREE?.Box3 || !THREE?.Matrix4)
+    return null;
+  visualRoot.updateWorldMatrix(true, true);
+  const inverseVisualRootWorld = visualRoot.matrixWorld.clone().invert();
+  const visualScale = new THREE.Matrix4().makeScale(
+    Number(visualRoot.scale?.x ?? 1),
+    Number(visualRoot.scale?.y ?? 1),
+    Number(visualRoot.scale?.z ?? 1)
+  );
+  const bounds = new THREE.Box3();
+  let foundGeometry = false;
+  visualRoot.traverse((node) => {
+    const geometry = node?.geometry;
+    if (!geometry)
+      return;
+    if (!geometry.boundingBox)
+      geometry.computeBoundingBox?.();
+    const geometryBounds = finiteBox3(geometry.boundingBox?.clone?.());
+    if (!geometryBounds)
+      return;
+    const relativeToVisualRoot = inverseVisualRootWorld.clone().multiply(node.matrixWorld);
+    const authoredLocalMatrix = visualScale.clone().multiply(relativeToVisualRoot);
+    const transformed = geometryBounds.clone().applyMatrix4(authoredLocalMatrix);
+    if (!finiteBox3(transformed))
+      return;
+    bounds.union(transformed);
+    foundGeometry = true;
+  });
+  return foundGeometry ? finiteBox3(bounds) : null;
+}
+function measureLoadedMeshBoundsInWorldSpace(visualRoot) {
+  if (!visualRoot || !THREE?.Box3)
+    return null;
+  visualRoot.updateWorldMatrix(true, true);
+  return finiteBox3(new THREE.Box3().setFromObject(visualRoot));
+}
+function meshDimensionComparison(expected, dimensions) {
+  if (!expected || !dimensions)
+    return null;
+  const axes = ["x", "y", "z"];
+  if (axes.some((axis) => !Number.isFinite(dimensions[axis]) || dimensions[axis] <= 1e-9 || !Number.isFinite(expected[axis]) || expected[axis] <= 1e-9))
+    return null;
+  const axisRatios = Object.fromEntries(axes.map((axis) => [axis, dimensions[axis] / expected[axis]]));
+  const ratios = Object.values(axisRatios);
+  const maxRatio = Math.max(...ratios);
+  const minRatio = Math.min(...ratios);
+  const uniformRatio = minRatio > 0 ? maxRatio / minRatio : Infinity;
+  return {
+    axisRatios,
+    maxRatio,
+    minRatio,
+    uniformRatio,
+    oversized: maxRatio > MESH_OVERSIZED_RATIO_THRESHOLD || uniformRatio > MESH_OVERSIZED_RATIO_THRESHOLD
+  };
+}
+function meshUnitCorrectionPayload(source, confidence, rawLocalBounds, correctedLocalBounds, scale, axisRatios, targetRatio, applied = false) {
   return {
     source,
     confidence,
-    native_bounds: box3ToJson(nativeBounds),
-    corrected_bounds: box3ToJson(correctedBounds),
+    coordinate_space_contract: MESH_BOUNDS_COORDINATE_SPACE_CONTRACT,
+    raw_mesh_local_bounds: box3ToJson(rawLocalBounds),
+    corrected_mesh_local_bounds: box3ToJson(correctedLocalBounds),
+    // Compatibility aliases retained for existing status consumers.
+    native_bounds: box3ToJson(rawLocalBounds),
+    corrected_bounds: box3ToJson(correctedLocalBounds),
     scale,
     axis_ratios: axisRatios,
-    target_ratio: targetRatio
+    target_ratio: targetRatio,
+    applied,
+    applied_once_at: applied ? "loaded_mesh_object.scale" : null
   };
 }
-function maybeApplyMeshUnitAutoscale(item, meshObject, nativeBounds, meshUri) {
+function maybeApplyMeshUnitAutoscale(item, meshLocalNode, visualRootOrRawBounds, rawLocalBoundsOrMeshUri, meshUriMaybe) {
+  const legacyAuthoredLocalBoundsCall = meshUriMaybe === void 0 && typeof rawLocalBoundsOrMeshUri === "string";
+  const meshObject = meshLocalNode;
+  const visualRoot = legacyAuthoredLocalBoundsCall ? meshObject : visualRootOrRawBounds;
+  const rawLocalBounds = legacyAuthoredLocalBoundsCall ? visualRootOrRawBounds : rawLocalBoundsOrMeshUri;
+  const meshUri = legacyAuthoredLocalBoundsCall ? rawLocalBoundsOrMeshUri : meshUriMaybe;
   if (!meshUnitAutoscaleAllowed(item))
     return false;
-  const expected = expectedDimensionsOf(item);
-  const finiteNative = finiteBox3(nativeBounds);
-  const dims = finiteNative ? box3Dimensions(finiteNative) : null;
-  const axes = ["x", "y", "z"];
-  if (!expected || !dims || axes.some((axis) => dims[axis] <= 1e-9 || expected[axis] <= 1e-9))
+  if (item.mesh_unit_correction?.applied === true)
     return false;
-  const axisRatios = Object.fromEntries(axes.map((axis) => [axis, dims[axis] / expected[axis]]));
-  const ratioValues = Object.values(axisRatios);
-  const maxRatio = Math.max(...ratioValues);
-  const minRatio = Math.min(...ratioValues);
-  const uniformRatio = minRatio > 0 ? maxRatio / minRatio : Infinity;
+  const expected = expectedDimensionsOf(item);
+  const finiteRaw = finiteBox3(rawLocalBounds || measureLoadedMeshBoundsInAuthoredLocalSpace(visualRoot));
+  const dims = finiteRaw ? box3Dimensions(finiteRaw) : null;
+  const comparison = meshDimensionComparison(expected, dims);
+  if (!comparison)
+    return false;
+  const { axisRatios, maxRatio, minRatio, uniformRatio } = comparison;
   const targetRatio = [1e3, 100].find((target) => Math.abs(maxRatio - target) / target <= 0.2 && Math.abs(minRatio - target) / target <= 0.2 && uniformRatio <= 1.25);
   if (!targetRatio) {
-    item.mesh_unit_correction = meshUnitCorrectionPayload("viewer_expected_dimensions_m", "rejected_non_uniform_or_unclear_ratio", finiteNative, finiteNative, 1, axisRatios, null);
-    appendRuntimeWarning(item, meshUri, `mesh unit autoscale rejected: native bounds do not have a clear uniform 100x or 1000x ratio to expected_dimensions_m (uniform_ratio=${uniformRatio.toFixed(3)})`, "mesh_unit_autoscale_rejected", item.mesh_unit_correction);
+    item.mesh_unit_correction = meshUnitCorrectionPayload(
+      "viewer_expected_dimensions_m",
+      "rejected_non_uniform_or_unclear_ratio",
+      finiteRaw,
+      finiteRaw,
+      1,
+      axisRatios,
+      null,
+      false
+    );
+    appendRuntimeWarning(item, meshUri, `mesh unit autoscale rejected: authored-local bounds do not have a clear uniform 100x or 1000x ratio to expected_dimensions_m (uniform_ratio=${uniformRatio.toFixed(3)})`, "mesh_unit_autoscale_rejected", item.mesh_unit_correction);
     return false;
   }
   const scale = targetRatio === 1e3 ? 1e-3 : 0.01;
   meshObject.scale.multiplyScalar(scale);
-  meshObject.updateMatrixWorld(true);
-  const correctedBounds = finiteBox3(new THREE.Box3().setFromObject(meshObject));
+  meshObject.updateMatrix?.();
+  visualRoot.updateWorldMatrix?.(true, true);
+  visualRoot.updateMatrixWorld?.(true);
+  let correctedLocalBounds;
+  if (legacyAuthoredLocalBoundsCall) {
+    correctedLocalBounds = new THREE.Box3();
+    correctedLocalBounds.min.x = finiteRaw.min.x * scale;
+    correctedLocalBounds.min.y = finiteRaw.min.y * scale;
+    correctedLocalBounds.min.z = finiteRaw.min.z * scale;
+    correctedLocalBounds.max.x = finiteRaw.max.x * scale;
+    correctedLocalBounds.max.y = finiteRaw.max.y * scale;
+    correctedLocalBounds.max.z = finiteRaw.max.z * scale;
+  } else {
+    correctedLocalBounds = measureLoadedMeshBoundsInAuthoredLocalSpace(visualRoot);
+  }
   const confidence = targetRatio === 1e3 ? "auto_detected_mm_to_m" : "auto_detected_cm_to_m";
-  item.mesh_unit_correction = meshUnitCorrectionPayload("viewer_expected_dimensions_m", confidence, finiteNative, correctedBounds, scale, axisRatios, targetRatio);
+  item.mesh_unit_correction = meshUnitCorrectionPayload(
+    "viewer_expected_dimensions_m",
+    confidence,
+    finiteRaw,
+    correctedLocalBounds,
+    scale,
+    axisRatios,
+    targetRatio,
+    true
+  );
   item.visual_bounds_status = "corrected_by_local_unit_scale";
-  appendRuntimeWarning(item, meshUri, `mesh unit autoscale applied: native bounds matched a clear ${targetRatio}x ratio to expected_dimensions_m`, "mesh_unit_autoscale_applied", item.mesh_unit_correction);
+  appendRuntimeWarning(item, meshUri, `mesh unit autoscale applied once at the loaded mesh node: authored-local bounds matched a clear ${targetRatio}x ratio to expected_dimensions_m`, "mesh_unit_autoscale_applied", item.mesh_unit_correction);
   return true;
 }
 function isCoreMeshContractItem(item) {
@@ -41769,21 +41903,26 @@ function isCoreMeshContractItem(item) {
 }
 function warnLoadedMeshBounds(item, code, reason, extra = {}) {
   item.visual_bounds_status = code === "loaded_mesh_oversized" ? "oversized" : code === "loaded_mesh_collapsed" ? "collapsed" : "invalid";
+  item.loaded_mesh_bounds_reason_code = code;
   appendViewerDiagnosticWarning(item, code, reason, {
     mesh_uri: displayMeshUri(item),
+    loaded_mesh_local_bounds: item.loaded_mesh_local_bounds,
     loaded_mesh_bounds: item.loaded_mesh_bounds,
     loaded_mesh_world_bounds: item.loaded_mesh_world_bounds,
+    loaded_mesh_bounds_coordinate_space: item.loaded_mesh_bounds_coordinate_space,
     expected_dimensions_m: item.expected_dimensions_m,
     mesh_contract_category: meshContractCategoryOf(item),
     ...extra
   });
 }
-function diagnoseLoadedMeshBounds(item, meshObject, rendered, nativeBounds = null) {
-  const localBounds = finiteBox3(nativeBounds || new THREE.Box3().setFromObject(meshObject));
+function diagnoseLoadedMeshBounds(item, visualRoot, rendered, authoredLocalBounds = null) {
+  const localBounds = finiteBox3(authoredLocalBounds || measureLoadedMeshBoundsInAuthoredLocalSpace(visualRoot));
   rendered.object3d.updateWorldMatrix(true, true);
-  const worldBounds = finiteBox3(new THREE.Box3().setFromObject(meshObject));
-  item.loaded_mesh_bounds = box3ToJson(localBounds);
+  const worldBounds = measureLoadedMeshBoundsInWorldSpace(visualRoot);
+  item.loaded_mesh_local_bounds = box3ToJson(localBounds);
+  item.loaded_mesh_bounds = item.loaded_mesh_local_bounds;
   item.loaded_mesh_world_bounds = box3ToJson(worldBounds);
+  item.loaded_mesh_bounds_coordinate_space = MESH_BOUNDS_COORDINATE_SPACE_CONTRACT;
   item.visual_bounds_status = item.mesh_unit_correction?.scale && item.mesh_unit_correction.scale !== 1 ? "corrected_by_local_unit_scale" : "valid";
   const expected = expectedDimensionsOf(item);
   const dims = localBounds ? box3Dimensions(localBounds) : null;
@@ -41803,20 +41942,24 @@ function diagnoseLoadedMeshBounds(item, meshObject, rendered, nativeBounds = nul
   }
   if (!expected)
     return true;
-  const axes = ["x", "y", "z"];
-  const axisRatios = Object.fromEntries(axes.map((axis) => [axis, dims[axis] / expected[axis]]));
-  const maxRatio = Math.max(...Object.values(axisRatios));
-  const minRatio = Math.min(...Object.values(axisRatios));
-  const uniformRatio = minRatio > 0 ? maxRatio / minRatio : Infinity;
+  const comparison = meshDimensionComparison(expected, dims);
+  if (!comparison)
+    return true;
+  const { axisRatios, maxRatio, uniformRatio, oversized } = comparison;
+  item.loaded_mesh_axis_ratios = axisRatios;
+  item.loaded_mesh_maximum_ratio = maxRatio;
+  item.loaded_mesh_uniform_ratio = uniformRatio;
   const category = meshContractCategoryOf(item);
-  if (maxRatio > 3 || uniformRatio > 3) {
-    if (["table", "camera", "object"].includes(category))
-      warnLoadedMeshBounds(item, "loaded_mesh_oversized", `loaded mesh dimensions exceed expected_dimensions_m by more than 3x (max_axis_ratio=${maxRatio.toFixed(3)}, uniform_ratio=${uniformRatio.toFixed(3)})`, {
+  if (oversized) {
+    if (["table", "camera", "object", "environment"].includes(category))
+      warnLoadedMeshBounds(item, "loaded_mesh_oversized", `loaded mesh authored-local dimensions exceed expected_dimensions_m by the strict ${MESH_OVERSIZED_RATIO_THRESHOLD}x contract (max_axis_ratio=${maxRatio.toFixed(3)}, uniform_ratio=${uniformRatio.toFixed(3)})`, {
         expected_dimensions: { x: expected.x, y: expected.y, z: expected.z },
-        loaded_dimensions: { x: dims.x, y: dims.y, z: dims.z },
+        loaded_local_dimensions: { x: dims.x, y: dims.y, z: dims.z },
+        loaded_world_dimensions: { x: worldDims.x, y: worldDims.y, z: worldDims.z },
         axis_ratios: axisRatios,
         max_axis_ratio: maxRatio,
-        uniform_ratio: uniformRatio
+        uniform_ratio: uniformRatio,
+        oversized_threshold: MESH_OVERSIZED_RATIO_THRESHOLD
       });
     else if (Math.abs(maxRatio - 1e3) < 100 || Math.abs(maxRatio - 1e-3) < 1e-3)
       item.visual_bounds_status = "corrected_by_local_unit_scale";
