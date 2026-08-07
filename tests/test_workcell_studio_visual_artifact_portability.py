@@ -184,3 +184,43 @@ def test_canonical_scene_direct_export_has_zero_portability_unknowns():
         for item in payload.get(section, [])
         if isinstance(item, dict)
     )
+
+def test_editable_authored_object_is_not_inferred_as_table(tmp_path):
+    portability = _load(
+        "workcell_studio_visual_artifact_portability_editable_object_test",
+        PORTABILITY_PATH,
+    )
+    _repo, scene, output = _repo_layout(tmp_path)
+    payload = {
+        "schema_version": "workcell_studio_web_scene/v1",
+        "scene_id": "portable_scene",
+        "metadata": {},
+        "viewer_summary": {},
+        "robots": [],
+        "tools": [],
+        "assets": [
+            {
+                "id": "commissioning_object",
+                "source_kind": "user_authored",
+                "source_layer": "editable_authored_physical",
+                "active_visual_source": "declared_primitive",
+                "dimensions": [0.05, 0.05, 0.05],
+            }
+        ],
+        "sensors": [],
+        "zones": [],
+        "frames": [],
+    }
+
+    portability.normalize_web_scene_payload(
+        payload,
+        scene_dir=scene,
+        output_path=output,
+        stage_assets=False,
+    )
+
+    item = payload["assets"][0]
+    assert item["role"] == "physical_asset"
+    assert item["category"] == "asset"
+    assert item["semantic_role"] == "physical_object"
+    assert item["visual_artifact_classification"] == "portable_physical_visual"

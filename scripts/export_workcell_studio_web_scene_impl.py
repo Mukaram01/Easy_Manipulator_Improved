@@ -2248,12 +2248,37 @@ def _is_mesh_item(item: Mapping[str, Any]) -> bool:
     return geometry == "mesh" or _has_mesh_reference(item)
 
 
+def _physical_classification_text(item: Mapping[str, Any]) -> str:
+    """Return only fields that describe physical identity.
+
+    Provenance/lifecycle fields such as source_layer and active_visual_source
+    must not determine whether an item is a table, camera, robot, or tool.
+    In particular, "editable_authored_physical" contains "table" inside
+    "editable" and must not classify an ordinary object as a workbench.
+    """
+    fields = (
+        "id",
+        "type",
+        "role",
+        "category",
+        "display_name",
+        "link",
+        "link_name",
+        "object_name",
+        "frame",
+        "model",
+        "profile",
+        "semantic_type",
+    ) + MESH_URI_FIELDS
+    return " ".join(str(item.get(field) or "") for field in fields).lower()
+
+
 def _core_mesh_category(item: Mapping[str, Any], section: str) -> Optional[str]:
     if _is_helper(item) or section == "zones":
         return None
     if section == "assets" and _is_tangible_target_bin(item):
         return "authored_asset_object"
-    text = _identity_text(item)
+    text = _physical_classification_text(item)
     role = str(item.get("role", "")).lower()
     category = str(item.get("category", "")).lower()
     # Generated URDF preview items can include table/camera links in the same
@@ -2296,7 +2321,7 @@ def _bounds_dimensions(bounds: Tuple[List[float], List[float], str]) -> List[flo
 
 
 def _visual_contract_category(item: Mapping[str, Any], section: str) -> str:
-    text = _identity_text(item)
+    text = _physical_classification_text(item)
     role = str(item.get("role", "")).lower()
     category = str(item.get("category", "")).lower()
     if section == "zones" or _is_helper(item):
