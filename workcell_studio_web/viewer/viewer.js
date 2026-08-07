@@ -3326,7 +3326,7 @@ function meshDimensionComparison(expected, dimensions) {
     maxRatio,
     minRatio,
     uniformRatio,
-    oversized: maxRatio > MESH_OVERSIZED_RATIO_THRESHOLD || uniformRatio > MESH_OVERSIZED_RATIO_THRESHOLD,
+    oversized: maxRatio > MESH_OVERSIZED_RATIO_THRESHOLD,
   };
 }
 function meshUnitCorrectionPayload(source, confidence, rawLocalBounds, correctedLocalBounds, scale, axisRatios, targetRatio, applied = false) {
