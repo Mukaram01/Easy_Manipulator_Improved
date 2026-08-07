@@ -147,13 +147,40 @@ def _identity(item: Mapping[str, Any], section: str) -> str:
     return " ".join(str(item.get(field) or "").lower().replace("-", "_") for field in fields) + " " + section.lower()
 
 
+def _physical_role_identity(item: Mapping[str, Any], section: str) -> str:
+    """Identity fields that are allowed to determine physical semantic type.
+
+    Provenance/ownership fields such as source_layer and active_visual_source
+    must not participate here: for example, "editable_authored_physical"
+    contains the substring "table" inside "editable".
+    """
+    fields = (
+        "id",
+        "type",
+        "role",
+        "category",
+        "link",
+        "object_name",
+        "frame",
+        "semantic_role",
+    )
+    return (
+        " ".join(
+            str(item.get(field) or "").lower().replace("-", "_")
+            for field in fields
+        )
+        + " "
+        + section.lower()
+    )
+
+
 def _set_if_blank(item: MutableMapping[str, Any], field: str, value: str) -> None:
     if not str(item.get(field) or "").strip():
         item[field] = value
 
 
 def _infer_physical_role(item: MutableMapping[str, Any], section: str, package_uri: str) -> None:
-    identity = (_identity(item, section) + " " + package_uri.lower()).replace("-", "_")
+    identity = (_physical_role_identity(item, section) + " " + package_uri.lower()).replace("-", "_")
     if "ur_description/meshes/" in identity or section == "robots":
         role, category, semantic = "robot", "robot_static_mesh_visual", "robot_visual"
     elif "robotiq" in identity or "gripper" in identity or section == "tools":
