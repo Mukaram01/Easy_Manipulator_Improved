@@ -1356,6 +1356,7 @@ def run_one_scene(scene_dir: Path, *, output_path: Path | None, scene_id: str | 
     if any(step["returncode"] != 0 for step in steps): rc = 1
     if require_browser and require_browser_artifact_errors(browser, server_status, screenshot_path, browser_status_path): rc = 1
     status = browser.get("status") if isinstance(browser, Mapping) else None
+    if require_browser and isinstance(status, Mapping) and str(_status_value(status, "web3d_readiness_state", "web3dReadinessState", "viewer_boot_state", "viewerBootState") or "") != "scene_ready": rc = 1
     legacy_strict_scene = not expected or (expected.get("robot") == "ur5" and expected.get("tool") == "robotiq_2f")
     if isinstance(status, Mapping) and legacy_strict_scene and validate_browser_status(status): rc = 1
     elif require_browser and not isinstance(status, Mapping): rc = 1
