@@ -248,6 +248,10 @@ public:
   void set_authoring_mode(const QString & mode);
   void undo_authoring_edit();
   void redo_authoring_edit();
+  void set_authoring_item_pose(
+    const QString & id,
+    double x, double y, double z,
+    double roll, double pitch, double yaw);
   void request_authoring_save();
   void reload_meshes();
   void apply_product_view_defaults();
@@ -315,6 +319,10 @@ signals:
   void studio_log_requested(const QString & message);
   void studio_issue_requested(const QString & message, const QString & severity, const QString & issue_key);
   void preview_item_selected(const QString & id, const QString & role);
+  void preview_item_transform_changed(
+    const QString & id,
+    double x, double y, double z,
+    double roll, double pitch, double yaw);
   void embedded_product_view_runtime_state_changed(const QString & state, bool has_usable_content);
   void authoring_mode_changed(const QString & mode);
   void embedded_authoring_save_requested();

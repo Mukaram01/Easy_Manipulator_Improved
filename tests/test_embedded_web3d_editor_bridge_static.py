@@ -433,3 +433,55 @@ def test_qt_exact_ur5_and_robotiq_owner_ids_remain_selectable_in_preview_invento
     for owner_id in ("ur5", "robotiq_85_gripper"):
         assert f"id: {owner_id}" in environment
     assert "preview_item_by_id(browser_ui_selected_id) != nullptr" in poll
+
+
+def test_qt_web3d_selected_transform_inspector_round_trip_contract():
+    main = (
+        ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp"
+    ).read_text(encoding="utf-8")
+
+    # Web3D -> Qt: the live selected transform is exported through getState().
+    get_state = VIEWER.split(
+        "window.__WORKCELL_EDITOR_API_V1__ = {", 1
+    )[1].split("selectItem:", 1)[0]
+    assert "selectedTransform" in get_state
+    assert "canonicalTransformOwner" in get_state
+    assert "dirtyTransforms.get(transformOwner.item.id)" in get_state
+
+    assert "preview_item_transform_changed" in HDR
+    assert "preview_item_transform_changed" in CPP
+    assert "selectedTransform" in CPP
+    assert "embeddedSelectedTransformSignature" in CPP
+    assert "refresh_selection_transform_editor_from_state(refreshed)" in main
+
+    # Qt -> Web3D: inspector Apply uses the live editor instead of reloading.
+    bridge = VIEWER.split(
+        "function setItemPoseFromBridge", 1
+    )[1].split("window.__WORKCELL_EDITOR_API_V1__", 1)[0]
+    assert "canonicalEditOwnerRendered" in bridge
+    assert "selectionIsEditable(rendered)" in bridge
+    assert "markDirtyTransform(rendered, next" in bridge
+    assert "emitTransformCommitted(rendered)" in bridge
+
+    assert "setItemPose:" in VIEWER
+    assert "set_authoring_item_pose" in HDR
+    assert "set_authoring_item_pose" in CPP
+    assert ".setItemPose(" in CPP
+
+    inspector = main.split(
+        "void MainWindow::apply_inspector_pose_to_item()", 1
+    )[1].split(
+        "void MainWindow::revert_selection_transform_editor()", 1
+    )[0]
+
+    assert "embedded_web_authoring_active()" in inspector
+    assert "set_authoring_item_pose(" in inspector
+
+    embedded_section = inspector.split(
+        "scene_preview_widget_->embedded_web_authoring_active()", 1
+    )[1]
+    direct_part, fallback_part = embedded_section.split("} else {", 1)
+
+    assert "set_authoring_item_pose(" in direct_part
+    assert "apply_scene3d_preview_layer_filters(false);" not in direct_part
+    assert "apply_scene3d_preview_layer_filters(false);" in fallback_part

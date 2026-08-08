@@ -2379,6 +2379,81 @@ void MainWindow::setup_studio_shell()
   connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_selected, this, [this](const QString &id, const QString &role){
     apply_scene_selection(id, role, id.trimmed().isEmpty(), false);
   });
+  connect(
+    scene_preview_widget_,
+    &ScenePreviewWidget::preview_item_transform_changed,
+    this,
+    [this](
+      const QString & id,
+      double x, double y, double z,
+      double roll, double pitch, double yaw)
+    {
+      const QString stable_id = id.trimmed();
+      if (stable_id.isEmpty()) return;
+
+      for (auto & item : all_scene_preview_items_) {
+        if (item.id.trimmed() != stable_id) continue;
+        item.x = x;
+        item.y = y;
+        item.z = z;
+        item.roll = roll;
+        item.pitch = pitch;
+        item.yaw = yaw;
+        break;
+      }
+
+      if (auto * canvas_item = find_canvas_item_by_stable_id(stable_id)) {
+        canvas_item->setPos(x * 100.0, y * 100.0);
+        canvas_item->setData(RolePoseZ, z);
+        canvas_item->setData(RoleRoll, roll);
+        canvas_item->setData(RolePitch, pitch);
+        canvas_item->setData(RoleYaw, yaw);
+      }
+
+      if (scene_hierarchy_tree_) {
+        for (int row = 0; row < scene_hierarchy_tree_->topLevelItemCount(); ++row) {
+          auto * top = scene_hierarchy_tree_->topLevelItem(row);
+          if (!top) continue;
+
+          auto update_pose = [&](QTreeWidgetItem * tree_item) {
+            if (!tree_item ||
+                tree_item->data(0, TreeRoleId).toString().trimmed() != stable_id) {
+              return false;
+            }
+
+            tree_item->setData(0, TreeRolePoseAvailable, true);
+            tree_item->setData(0, TreeRolePoseX, x);
+            tree_item->setData(0, TreeRolePoseY, y);
+            tree_item->setData(0, TreeRolePoseZ, z);
+            tree_item->setData(0, TreeRoleRoll, roll);
+            tree_item->setData(0, TreeRolePitch, pitch);
+            tree_item->setData(0, TreeRoleYaw, yaw);
+            return true;
+          };
+
+          if (update_pose(top)) break;
+
+          bool found = false;
+          for (int child = 0; child < top->childCount(); ++child) {
+            if (update_pose(top->child(child))) {
+              found = true;
+              break;
+            }
+          }
+          if (found) break;
+        }
+      }
+
+      if (current_selected_scene_item_id_.trimmed() == stable_id) {
+        SelectedSceneItemState refreshed = current_selected_scene_item();
+        if (refreshed.valid) {
+          selected_item_state_ = refreshed;
+          refresh_selection_transform_editor_from_state(refreshed);
+          refresh_selected_scene_item_labels(refreshed);
+          refresh_selected_item_card();
+        }
+      }
+    });
   connect(scene_preview_widget_, &ScenePreviewWidget::embedded_product_view_runtime_state_changed, this, [this](const QString &, bool){
     refresh_scene_builder_view_chips();
     refresh_scene_workflow_rail();
@@ -7816,7 +7891,20 @@ void MainWindow::apply_inspector_pose_to_item()
     if (!refreshed_state.display_name.isEmpty()) p.display_name = refreshed_state.display_name;
     break;
   }
-  apply_scene3d_preview_layer_filters(false);
+  if (scene_preview_widget_ &&
+      scene_preview_widget_->embedded_web_authoring_active()) {
+    scene_preview_widget_->set_authoring_item_pose(
+      item_id,
+      refreshed_state.pose_x,
+      refreshed_state.pose_y,
+      refreshed_state.pose_z,
+      refreshed_state.roll,
+      refreshed_state.pitch,
+      refreshed_state.yaw);
+  } else {
+    apply_scene3d_preview_layer_filters(false);
+  }
+
   refresh_selection_transform_editor_from_state(refreshed_state);
   refresh_selected_scene_item_labels(refreshed_state);
   if (scene_preview_widget_) scene_preview_widget_->update();
