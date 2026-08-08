@@ -2450,6 +2450,49 @@ void ScenePreviewWidget::apply_embedded_editor_state(const QVariantMap & state)
     }
     emit authoring_mode_changed(mode);
   }
+
+  QString selected_id = state.value(QStringLiteral("uiSelectionItemId")).toString().trimmed();
+  if (selected_id.isEmpty()) {
+    selected_id = state.value(QStringLiteral("selectedItemId")).toString().trimmed();
+  }
+
+  const QVariantMap selected_transform =
+    state.value(QStringLiteral("selectedTransform")).toMap();
+  const QVariantMap pose = selected_transform.value(QStringLiteral("pose")).toMap();
+  const QVariantMap xyz = pose.value(QStringLiteral("xyz")).toMap();
+  const QVariantMap rpy = pose.value(QStringLiteral("rpy")).toMap();
+
+  bool x_ok = false, y_ok = false, z_ok = false;
+  bool roll_ok = false, pitch_ok = false, yaw_ok = false;
+
+  const double x = xyz.value(QStringLiteral("x")).toDouble(&x_ok);
+  const double y = xyz.value(QStringLiteral("y")).toDouble(&y_ok);
+  const double z = xyz.value(QStringLiteral("z")).toDouble(&z_ok);
+  const double roll = rpy.value(QStringLiteral("x")).toDouble(&roll_ok);
+  const double pitch = rpy.value(QStringLiteral("y")).toDouble(&pitch_ok);
+  const double yaw = rpy.value(QStringLiteral("z")).toDouble(&yaw_ok);
+
+  if (!selected_id.isEmpty() &&
+      x_ok && y_ok && z_ok && roll_ok && pitch_ok && yaw_ok) {
+    const QString signature =
+      QStringLiteral("%1|%2|%3|%4|%5|%6|%7")
+        .arg(selected_id)
+        .arg(x, 0, 'g', 17)
+        .arg(y, 0, 'g', 17)
+        .arg(z, 0, 'g', 17)
+        .arg(roll, 0, 'g', 17)
+        .arg(pitch, 0, 'g', 17)
+        .arg(yaw, 0, 'g', 17);
+
+    if (property("embeddedSelectedTransformSignature").toString() != signature) {
+      setProperty("embeddedSelectedTransformSignature", signature);
+      emit preview_item_transform_changed(
+        selected_id, x, y, z, roll, pitch, yaw);
+    }
+  } else {
+    setProperty("embeddedSelectedTransformSignature", QString());
+  }
+
   // Selection and dirty-state detail remains available through the embedded
   // editor and Studio Log. The header chip always reports runtime state.
   refresh_toolbar_status_chip();
@@ -2584,6 +2627,34 @@ void ScenePreviewWidget::redo_authoring_edit()
 {
   if (embedded_web_authoring_active())
     run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.redo()"));
+}
+
+void ScenePreviewWidget::set_authoring_item_pose(
+  const QString & id,
+  double x, double y, double z,
+  double roll, double pitch, double yaw)
+{
+  if (!embedded_web_authoring_active()) return;
+
+  const QString encoded_id =
+    QString::fromUtf8(
+      QJsonDocument(QJsonArray{id})
+        .toJson(QJsonDocument::Compact))
+      .mid(1).chopped(1);
+
+  const QString script = QStringLiteral(
+    "window.__WORKCELL_EDITOR_API_V1__&&"
+    "window.__WORKCELL_EDITOR_API_V1__.setItemPose("
+    "%1,%2,%3,%4,%5,%6,%7)")
+      .arg(encoded_id)
+      .arg(x, 0, 'g', 17)
+      .arg(y, 0, 'g', 17)
+      .arg(z, 0, 'g', 17)
+      .arg(roll, 0, 'g', 17)
+      .arg(pitch, 0, 'g', 17)
+      .arg(yaw, 0, 'g', 17);
+
+  run_embedded_editor_command(script);
 }
 
 void ScenePreviewWidget::request_authoring_save()

@@ -5262,9 +5262,67 @@ function setEditorSnap(enabled, translationMeters, rotationDegrees) {
   if (el.rotationSnap && Number.isFinite(Number(rotationDegrees))) el.rotationSnap.value = String(Number(rotationDegrees));
   refreshGizmoSnap();
 }
+function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw) {
+  const requested = renderedById(String(id || ''));
+  const rendered = requested
+    ? (canonicalEditOwnerRendered(requested) || requested)
+    : null;
+
+  if (!rendered || !selectionIsEditable(rendered)) return editorState();
+
+  const values = [x, y, z, roll, pitch, yaw].map(Number);
+  if (!values.every(Number.isFinite)) {
+    showError(`Invalid transform received for ${String(id || '')}`);
+    return editorState();
+  }
+
+  const before = cloneTransform(
+    state.dirtyTransforms.get(rendered.item.id)?.newTransform ||
+    transformFromObject(rendered.object3d)
+  );
+  const next = cloneTransform(before);
+
+  next.pose.xyz.x = values[0];
+  next.pose.xyz.y = values[1];
+  next.pose.xyz.z = values[2];
+  next.pose.rpy.x = values[3];
+  next.pose.rpy.y = values[4];
+  next.pose.rpy.z = values[5];
+
+  const committed = markDirtyTransform(rendered, next, {
+    pushHistory: true,
+    oldTransform: before,
+    snapOptions: { translationAxes: [], rotationAxes: [] },
+  });
+
+  if (!committed) return editorState();
+
+  if (state.selected === rendered.item.id) {
+    populateInspector(rendered);
+  }
+  emitTransformCommitted(rendered);
+  updateLabels();
+  return editorState();
+}
+
 window.__WORKCELL_EDITOR_API_V1__ = {
-  getState: () => editorState(),
+  getState: () => {
+    const base = editorState();
+    const selectedRendered = state.selected ? renderedById(state.selected) : null;
+    const transformOwner = selectedRendered
+      ? (canonicalTransformOwner(selectedRendered) || selectedRendered)
+      : null;
+    const selectedTransform = transformOwner
+      ? cloneTransform(
+          state.dirtyTransforms.get(transformOwner.item.id)?.newTransform ||
+          transformFromObject(transformOwner.object3d)
+        )
+      : null;
+    return { ...base, selectedTransform };
+  },
   selectItem: id => { selectObject(String(id || '')); return editorState(); },
+  setItemPose: (id, x, y, z, roll, pitch, yaw) =>
+    setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw),
   selectionDiagnostics: () => currentSelectionDiagnostics(),
   clearSelection: () => { clearSelection(); return editorState(); },
   setMode: mode => { setEditorMode(mode); return editorState(); },
