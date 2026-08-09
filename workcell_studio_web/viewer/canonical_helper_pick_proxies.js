@@ -4,7 +4,6 @@ const MAX_INSTALL_ATTEMPTS = 200;
 const INSTALL_RETRY_MS = 50;
 
 const OWNER_SUFFIXES = Object.freeze([
-  '_fallback_sensor_frustum',
   '_fallback_edges',
   '_selection_outline',
   '_visual_outline',
