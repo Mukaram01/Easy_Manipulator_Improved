@@ -133,10 +133,16 @@ for (let i = 0; i < 20; ++i) {{
 }}
 
 const cameraVisual = 'urdf_visual_17_camera_link_visual_17_package_realsense2_description_meshes_d435_dae';
+assert.equal(proxy.isCanonicalOwnerHelperName(`${{cameraVisual}}_fallback_sensor_frustum`), false);
 for (let i = 0; i < 20; ++i) {{
-  const selected = i % 2 === 0
-    ? clickHelper(`${{cameraVisual}}_fallback_sensor_frustum`)
-    : clickNormal('realsense_overhead', true);
+  const forwardedBeforeFrustum = forwarded.length;
+  let selected = clickHelper(`${{cameraVisual}}_fallback_sensor_frustum`, 'realsense_overhead');
+  assert.equal(forwarded.length, forwardedBeforeFrustum);
+  assert.equal(selected.selectedItemId, '');
+  assert.equal(selected.selectedEditable, false);
+  assert.equal(selected.selectionDiagnostics.gizmoAttachedTargetId, '');
+
+  selected = clickNormal('realsense_overhead', true);
   assert.equal(selected.selectedItemId, 'realsense_overhead');
   assert.equal(selected.selectedEditable, true);
   assert.notEqual(selected.selectionDiagnostics.gizmoAttachedTargetId, `${{cameraVisual}}_fallback_sensor_frustum`);
@@ -173,7 +179,7 @@ const forwardedBeforeOrdinaryFailure = forwarded.length;
 clickHelper('unrelated_debug_helper');
 assert.equal(forwarded.length, forwardedBeforeOrdinaryFailure);
 assert.ok(forwarded.every(id => !proxy.isCanonicalOwnerHelperName(id)));
-assert.ok(dispatched.length >= 34);
+assert.equal(dispatched.length, 24);
 assert.ok(dispatched.every(event => event.detail.gizmo_attached_to_helper === false));
 console.log(JSON.stringify({{ forwardedCount: forwarded.length, dispatchedCount: dispatched.length }}));
 """
@@ -186,4 +192,4 @@ console.log(JSON.stringify({{ forwardedCount: forwarded.length, dispatchedCount:
     )
     assert result.returncode == 0, result.stderr or result.stdout
     payload = json.loads(result.stdout.strip().splitlines()[-1])
-    assert payload["forwardedCount"] >= 34
+    assert payload["forwardedCount"] == 24
