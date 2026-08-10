@@ -1251,14 +1251,23 @@ function currentSelectionDiagnostics() {
   const item = rendered?.item || null;
   const selectionIdentity = uiSelectionIdentity(rendered);
   const selectionOwners = state.selectionIdentityIndex?.selectionOwners || [];
+  const attachedObject = state.three?.transformControls?.object || null;
+  const canonicalOwnerId = editOwner?.item?.id || '';
+  const hasCanonicalGizmoAttachment = Boolean(
+    canonicalOwnerId && state.selected === canonicalOwnerId && selectionIsEditable(editOwner) &&
+    (attachedObject === editOwner.object3d ||
+      (attachedObject === state.gizmoPivot?.group && state.gizmoPivot?.owner === editOwner))
+  );
   return {
     sceneId: sceneId(),
     selectedItemId: id,
     uiSelectionItemId: selectionIdentity.id,
-    editOwnerItemId: editOwner?.item?.id || '',
+    editOwnerItemId: canonicalOwnerId,
+    canonicalOwnerId,
     canonicalSelectedId: id,
     editAuthoritySource: editAuthoritySource(editOwner?.item),
-    gizmoAttachedTargetId: state.three?.transformControls?.object === editOwner?.object3d ? (editOwner?.item?.id || '') : (state.gizmoAttachmentDiagnostic?.targetId || ''),
+    gizmoAttachedTargetId: hasCanonicalGizmoAttachment ? canonicalOwnerId : '',
+    gizmoAttachedObjectName: attachedObject?.name || '',
     gizmoVisible: Boolean(state.three?.transformControls?.visible),
     gizmoEnabled: Boolean(state.three?.transformControls?.enabled),
     gizmoAttachmentReason: state.gizmoAttachmentDiagnostic?.reason || 'not_evaluated',
