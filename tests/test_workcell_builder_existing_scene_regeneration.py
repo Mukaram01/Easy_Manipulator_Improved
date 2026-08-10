@@ -49,6 +49,7 @@ def test_existing_scene_regeneration_uses_saved_layout_without_rewriting_authore
     shutil.copytree(SCENE, scene)
     layout_path = scene / "layout" / "workcell_studio_layout.yaml"
     environment_path = scene / "environment.yaml"
+    environment_layout_path = scene / "environment_layout.yaml"
     task_intent_path = scene / "config" / "workcell_builder_task_intent.yaml"
 
     layout = yaml.safe_load(layout_path.read_text(encoding="utf-8"))
@@ -60,6 +61,7 @@ def test_existing_scene_regeneration_uses_saved_layout_without_rewriting_authore
 
     authored_before = {
         environment_path: environment_path.read_bytes(),
+        environment_layout_path: environment_layout_path.read_bytes(),
         layout_path: layout_path.read_bytes(),
         task_intent_path: task_intent_path.read_bytes(),
     }
@@ -122,6 +124,7 @@ def test_scene_package_generation_refreshes_selected_package_in_place_without_du
         scene / "layout" / "workcell_studio_layout.yaml",
         scene / "config" / "workcell_builder_task_intent.yaml",
         scene / "environment.yaml",
+        scene / "environment_layout.yaml",
         scene / "cell_definition.yaml",
         scene / "scene_manifest.yaml",
     ]
@@ -152,6 +155,53 @@ def test_scene_package_generation_refreshes_selected_package_in_place_without_du
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert {path: path.read_bytes() for path in authored} == before
+    generated_layout_path = scene / "generated" / "environment_layout.yaml"
+    generated_layout = yaml.safe_load(generated_layout_path.read_text(encoding="utf-8"))
+    assert generated_layout["schema_version"] == "environment_layout/v1"
+    assert "commissioning_pick_pose" in {
+        zone["id"] for zone in generated_layout["zones"]
+    }
+    assert "default_drop_zone" in {
+        target["id"] for target in generated_layout["targets"]
+    }
+
+    environment_validation = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "validate_environment_layout.py"),
+            str(generated_layout_path),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert environment_validation.returncode == 0, (
+        environment_validation.stdout + environment_validation.stderr
+    )
+
+    scene_validation = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "validate_builder_generated_scene.py"),
+            str(scene),
+            "--require-generated",
+            "--json",
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    scene_validation_output = scene_validation.stdout + scene_validation.stderr
+    assert scene_validation.returncode == 0, scene_validation_output
+    for previous_error in (
+        "schema_version must be exactly 'environment_layout/v1'",
+        "Routing target does not exist",
+        "commissioning_pick_pose does not exist",
+        "default_drop_zone does not exist",
+    ):
+        assert previous_error not in scene_validation_output
     assert generated_xacro.read_text(encoding="utf-8") != "stale generated artifact\n"
     assert (scene / "generated" / "scene_package_readiness.json").is_file()
     assert not workspace_duplicate.exists()
