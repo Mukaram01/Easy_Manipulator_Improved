@@ -3763,6 +3763,9 @@ void MainWindow::generate_yaml_draft_for_selected_scene()
 
 void MainWindow::generate_scene_package_for_selected_scene() {
   if (selected_scene_index_ < 0) return;
+  // Generation and the YAML refresh must not change which same-named package is authoritative.
+  const fs::path selected_scene_dir = scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_dir;
+  const std::string selected_scene_name = scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_name;
   QString parity_warning;
   bool severe_parity_mismatch = false;
   const bool pre_parity_ran = run_canvas_generated_parity_check(
@@ -3774,18 +3777,25 @@ void MainWindow::generate_scene_package_for_selected_scene() {
     }
   }
   generate_yaml_draft_for_selected_scene();
-  const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_];
-  const QString scene_dir = QString::fromStdString(sc.scene_dir.string());
-  const QString scene_name = QString::fromStdString(sc.scene_name);
-  const QString cell_definition_path = QString::fromStdString((sc.scene_dir / "cell_definition.yaml").string());
-  const QString output_dir = QString::fromStdString(sc.scene_dir.parent_path().string());
+  auto selected_after_refresh = std::find_if(scene_browser_result_.scenes.begin(), scene_browser_result_.scenes.end(),
+    [&](const workcell_builder::WorkcellStudioSceneInfo & candidate) { return candidate.scene_dir == selected_scene_dir; });
+  if (selected_after_refresh == scene_browser_result_.scenes.end()) {
+    append_studio_log("Generate ROS Scene Package blocked: the selected canonical scene path disappeared during YAML refresh: " +
+      QString::fromStdString(selected_scene_dir.string()));
+    return;
+  }
+  selected_scene_index_ = static_cast<int>(std::distance(scene_browser_result_.scenes.begin(), selected_after_refresh));
+  const QString scene_dir = QString::fromStdString(selected_scene_dir.string());
+  const QString scene_name = QString::fromStdString(selected_scene_name);
+  const QString cell_definition_path = QString::fromStdString((selected_scene_dir / "cell_definition.yaml").string());
+  const QString output_dir = QString::fromStdString(selected_scene_dir.parent_path().string());
   if (!QFileInfo::exists(cell_definition_path)) {
     append_studio_log("Generate ROS Scene Package: Generate YAML first.");
     return;
   }
   bool severe_preflight_failure = false;
   const QStringList preflight_warnings = generation_asset_support_preflight(
-    sc.scene_dir / "environment_layout.yaml", &severe_preflight_failure);
+    selected_scene_dir / "environment_layout.yaml", &severe_preflight_failure);
   for (const QString & warning : preflight_warnings) {
     append_studio_log(warning);
     readiness_warning_details_.append(warning);
@@ -3856,7 +3866,7 @@ void MainWindow::generate_scene_package_for_selected_scene() {
   append_studio_log(QString("Next: colcon build --symlink-install --packages-select %1").arg(scene_name));
   append_studio_log("Next: source install/setup.bash");
   append_studio_log(QString("Next: ros2 launch %1 demo.launch.py use_fake_hardware:=true launch_rviz:=true").arg(scene_name));
-  workcell_builder::invalidate_workcell_studio_scene_metadata_snapshot(sc.scene_dir, "generation");
+  workcell_builder::invalidate_workcell_studio_scene_metadata_snapshot(selected_scene_dir, "generation");
   if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400));
   QString post_warning;
   bool post_blocked = false;
@@ -3875,6 +3885,12 @@ void MainWindow::generate_scene_package_for_selected_scene() {
     }
   }
   refresh_scene_browser_ui();
+  auto refreshed_selection = std::find_if(scene_browser_result_.scenes.begin(), scene_browser_result_.scenes.end(),
+    [&](const workcell_builder::WorkcellStudioSceneInfo & candidate) { return candidate.scene_dir == selected_scene_dir; });
+  if (refreshed_selection != scene_browser_result_.scenes.end()) {
+    selected_scene_index_ = static_cast<int>(std::distance(scene_browser_result_.scenes.begin(), refreshed_selection));
+    sync_selected_scene_state();
+  }
   refresh_scene_builder_selected_scene_ui();
   refresh_new_cell_checklist();
 }
