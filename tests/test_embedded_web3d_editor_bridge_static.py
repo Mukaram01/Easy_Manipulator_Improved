@@ -68,13 +68,71 @@ def test_authoring_mode_round_trip_cleanup_and_selection_preservation():
     mode_body = VIEWER.split("function setEditorMode", 1)[1].split("function setEditorSnap", 1)[0]
     for mode in ["'move'", "'rotate'", "'select'"]:
         assert mode in mode_body
-    assert "cancelDirectMoveDrag('Move cancelled')" in mode_body
-    assert "cancelDirectRotateDrag('Rotation cancelled')" in mode_body
+    assert "cancelActiveTransformOperation('Mode changed')" in mode_body
     assert "gizmo.reset?.()" in mode_body
     assert "gizmo.detach()" in mode_body
     assert "syncOrbitControlsForEditorMode()" in mode_body
     assert "state.selected =" not in mode_body
     assert "return state.editorMode" in mode_body
+
+
+def test_transform_controls_cancellation_restores_canonical_state_without_commit_side_effects():
+    import subprocess
+
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',dataset:{},classList:{add(){},remove(){},toggle(){}},querySelector(){return null},querySelectorAll(){return[]},addEventListener(){},setAttribute(){},appendChild(){},remove(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100}}});
+const context={console,assert,process,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}},addEventListener(){}},document:{getElementById(){return element()},querySelectorAll(){return[]},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context);
+vm.runInContext(source+`
+const copy=value=>JSON.parse(JSON.stringify(value));
+const transform=(x,r=0)=>({pose:{xyz:{x,y:0,z:0},rpy:{x:0,y:0,z:r}},scale:{x:1,y:1,z:1}});
+const owner={item:{id:'old',editable:true,locked:false,display_name:'Old'},object3d:{t:transform(1)}};
+const member={item:{id:'member',editable:true,locked:false},object3d:{t:transform(2)}};
+const next={item:{id:'next',editable:true,locked:false,display_name:'Next'},object3d:{t:transform(3)}};
+state.objects=[owner,member,next]; state.selected='old'; state.editorMode='move';
+let committed=0,dirtyChanged=0;
+state.three={controls:{enabled:false},scene:{add(){}},transformControls:{object:owner.object3d,axis:'Z',rotationAngle:.5,setMode(){},setSpace(){},setTranslationSnap(){},setRotationSnap(){},attach(object){this.object=object},detach(){this.object=null},reset(){ if(state.cancellingTransformOperation){ /* models synchronous TransformControls re-entry */ } }}};
+renderedById=id=>state.objects.find(value=>value.item.id===id)||null;
+canonicalTransformOwner=value=>typeof value==='string'?renderedById(value):value;
+selectionIsEditable=value=>Boolean(value?.item?.editable);
+canEditItem=item=>Boolean(item?.editable);
+cloneTransform=copy; transformFromObject=object=>copy(object.t); applyTransformToObject=(object,value)=>{object.t=copy(value)};
+applyTransformChanges=changes=>changes.forEach(change=>{if(change.rendered)change.rendered.object3d.t=copy(change.after)});
+syncInspectorTransformFields=()=>{}; updateLabels=()=>{}; pushEditorEvent=(type)=>{if(type==='dirty_changed')dirtyChanged++};
+emitTransformCommitted=()=>committed++; refreshTransientGizmoPivot=()=>true; resolveCanonicalPhysicalEditBinding=()=>null;
+populateInspector=()=>{}; attachTransformGizmo=()=>{}; refreshSelectionHighlight=()=>{}; removeSelectionHighlight=()=>{};
+inspectionSelectionRendered=value=>value; explicitUiSelectionItemId=value=>value?.item?.id||''; isCanvasSelectableRendered=()=>true;
+resolveSelectionOwner=id=>({record:renderedById(id)}); itemType=()=>''; sceneId=()=> 'scene';
+const startOwner=transform(1),startMember=transform(2),previewOwner=transform(9,.7),previewMember=transform(8,.4);
+function arm(kind,{pivot=false}={}){
+  owner.object3d.t=copy(previewOwner); member.object3d.t=copy(previewMember); state.selected='old';
+  state.editorMode=kind; state.gizmoDragStart=copy(startOwner); state.gizmoDragGroupStart=new Map([['old',copy(startOwner)],['member',copy(startMember)]]);
+  state.gizmoPivotDragStart=pivot?{axis:'Z'}:null; state.directMoveDrag=null; state.directRotateDrag=null;
+  if(kind==='rotate'&&!pivot)state.directRotateDrag={itemId:'old',start:copy(startOwner),groupStart:state.gizmoDragGroupStart,last:copy(previewOwner)};
+  if(pivot)state.gizmoPivot={owner,group:{}}; else state.gizmoPivot=null;
+}
+function verify(label,undo,redo,dirty){
+  assert.deepStrictEqual(owner.object3d.t,startOwner,label+' owner'); assert.deepStrictEqual(member.object3d.t,startMember,label+' member');
+  assert.strictEqual(state.undoStack.length,undo);assert.strictEqual(state.redoStack.length,redo);assert.strictEqual(JSON.stringify([...state.dirtyTransforms]),dirty);
+  assert.strictEqual(committed,0);assert.strictEqual(dirtyChanged,0);
+}
+state.undoStack=[{kept:true}];state.redoStack=[{kept:true}];state.dirtyTransforms=new Map([['existing',{kept:true}]]);
+const undo=state.undoStack.length,redo=state.redoStack.length,dirty=JSON.stringify([...state.dirtyTransforms]);
+for(const kind of ['move','rotate']){
+  arm(kind);onEditorKeyDown({key:'Escape'});verify(kind+' Escape',undo,redo,dirty);
+  arm(kind);onCanvasPointerCancel();verify(kind+' pointercancel',undo,redo,dirty);
+  arm(kind);setEditorMode(kind==='move'?'rotate':'select');verify(kind+' mode',undo,redo,dirty);assert.strictEqual(state.selected,'old');
+}
+arm('move');selectObject('next');verify('selection',undo,redo,dirty);assert.strictEqual(state.selected,'next');
+arm('rotate',{pivot:true});onEditorKeyDown({key:'Escape'});verify('transient pivot',undo,redo,dirty);
+`,context);
+"""
+    subprocess.run(
+        ["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js")],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    )
 
 
 def test_orbit_controls_follow_editor_mode_across_drags_and_scene_replacement():
