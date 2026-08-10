@@ -10,10 +10,10 @@
  <xacro:arg name="gripper_profile" default="robotiq_85_gripper"/>
  <xacro:arg name="grasp_frame" default="ee_palm"/>
  <xacro:arg name="use_fake_hardware" default="true"/>
- <xacro:arg name="table_world_xyz"/>
- <xacro:arg name="table_world_rpy"/>
- <xacro:arg name="camera_world_xyz"/>
- <xacro:arg name="camera_world_rpy"/>
+ <xacro:arg name="table_world_xyz" default=""/>
+ <xacro:arg name="table_world_rpy" default=""/>
+ <xacro:arg name="camera_world_xyz" default=""/>
+ <xacro:arg name="camera_world_rpy" default=""/>
 
  <!-- Contract: world_frame is the scene/world frame; UR creates base_link as the robot base. -->
  <!-- Contract: tool_mount_link is tool0; gripper_profile is robotiq_85_gripper; grasp_frame is ee_palm. -->
