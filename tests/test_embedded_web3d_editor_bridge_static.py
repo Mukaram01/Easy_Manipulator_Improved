@@ -135,6 +135,64 @@ arm('rotate',{pivot:true});onEditorKeyDown({key:'Escape'});verify('transient piv
     )
 
 
+def test_transform_controls_zero_delta_completion_is_an_exact_no_op():
+    import subprocess
+
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',dataset:{},classList:{add(){},remove(){},toggle(){}},querySelector(){return null},querySelectorAll(){return[]},addEventListener(){},setAttribute(){},appendChild(){},remove(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100}}});
+const context={console,assert,process,source,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}},addEventListener(){}},document:{getElementById(){return element()},querySelectorAll(){return[]},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context);
+vm.runInContext(source+`
+const copy=value=>JSON.parse(JSON.stringify(value));
+const transform=(x,y,z,rx,ry,rz)=>({pose:{xyz:{x,y,z},rpy:{x:rx,y:ry,z:rz}},scale:{x:1,y:1,z:1}});
+const ownerStart=transform(.4,-.2,.8,.1,-.3,.5),memberStart=transform(1.4,.7,.2,-.2,.4,-.6);
+const owner={item:{id:'owner',editable:true,locked:false,transform_group:'group',display_name:'Owner'},object3d:{t:copy(ownerStart)}};
+const member={item:{id:'member',editable:true,locked:false,transform_group:'group'},object3d:{t:copy(memberStart)}};
+state.objects=[owner,member];state.selected='owner';
+const transformControls={object:owner.object3d,axis:'X',rotationAngle:0};
+state.three={controls:{enabled:false},transformControls};
+let marked=0,committed=0,dirtyChanged=0;
+renderedById=id=>state.objects.find(value=>value.item.id===id)||null;
+canonicalTransformOwner=()=>owner;canEditItem=item=>Boolean(item?.editable);selectionIsEditable=value=>value===owner;
+cloneTransform=copy;transformFromObject=object=>copy(object.t);applyTransformToObject=(object,value)=>{object.t=copy(value)};
+captureTransformGroup=()=>new Map([['owner',copy(owner.object3d.t)],['member',copy(member.object3d.t)]]);
+linkedTransformChanges=(rendered,before,after,starts)=>[{rendered:owner,before:copy(before),after:copy(after)},{rendered:member,before:copy(starts.get('member')),after:copy(starts.get('member'))}];
+applyTransformChanges=changes=>{for(const change of changes)change.rendered.object3d.t=copy(change.after);return true};
+syncInspectorTransformFields=()=>{};updateLabels=()=>{};syncOrbitControlsForEditorMode=()=>{};isFiniteTransform=()=>true;
+markDirtyTransform=()=>{marked++;return true};emitTransformCommitted=()=>{committed++};pushEditorEvent=type=>{if(type==='dirty_changed')dirtyChanged++};
+const listenerSource=source.split("transformControls.addEventListener('dragging-changed', event => {",2)[1].split("    });\\n    transformControls.addEventListener('objectChange'",1)[0];
+const completeTransformControlsDrag=eval('(event)=>{'+listenerSource+'}');
+state.undoStack=[{kept:'undo'}];state.redoStack=[{kept:'redo'}];state.dirtyTransforms=new Map([['existing',{kept:true}]]);
+const baseline={undo:JSON.stringify(state.undoStack),redo:JSON.stringify(state.redoStack),dirty:JSON.stringify([...state.dirtyTransforms])};
+function resetPose(){owner.object3d.t=copy(ownerStart);member.object3d.t=copy(memberStart)}
+function verify(label){
+  assert.deepStrictEqual(owner.object3d.t,ownerStart,label+' owner pose');assert.deepStrictEqual(member.object3d.t,memberStart,label+' linked pose');
+  assert.strictEqual(JSON.stringify(state.undoStack),baseline.undo,label+' undo');assert.strictEqual(JSON.stringify(state.redoStack),baseline.redo,label+' redo');assert.strictEqual(JSON.stringify([...state.dirtyTransforms]),baseline.dirty,label+' dirty transforms');
+  assert.strictEqual(marked,0,label+' markDirtyTransform');assert.strictEqual(committed,0,label+' transform_committed');assert.strictEqual(dirtyChanged,0,label+' dirty transition');
+}
+for(const axis of ['X','Y','Z']){
+  resetPose();state.editorMode='move';state.gizmoPivot=null;transformControls.object=owner.object3d;transformControls.axis=axis;
+  completeTransformControlsDrag({value:true});completeTransformControlsDrag({value:false});verify('Move '+axis);
+}
+for(const axis of ['X','Y','Z']){
+  resetPose();state.editorMode='rotate';state.gizmoPivot=null;transformControls.object=owner.object3d;transformControls.axis=axis;transformControls.rotationAngle=0;
+  completeTransformControlsDrag({value:true});completeTransformControlsDrag({value:false});verify('Rotate '+axis);
+}
+resetPose();state.editorMode='rotate';transformControls.axis='Y';transformControls.rotationAngle=0;
+const identityMatrix={clone(){return this},invert(){return this},multiply(){return this}};
+owner.object3d.updateWorldMatrix=()=>{};owner.object3d.matrixWorld=identityMatrix;
+const pivotGroup={updateWorldMatrix(){},matrixWorld:identityMatrix};state.gizmoPivot={owner,group:pivotGroup};transformControls.object=pivotGroup;
+completeTransformControlsDrag({value:true});completeTransformControlsDrag({value:false});verify('transient pivot Rotate Y');
+`,context);
+"""
+    subprocess.run(
+        ["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js")],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    )
+
+
 def test_orbit_controls_follow_editor_mode_across_drags_and_scene_replacement():
     import subprocess
 
