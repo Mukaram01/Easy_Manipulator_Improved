@@ -2884,6 +2884,10 @@ function initThree() {
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.object.up.copy(ROS_Z_UP);
     controls.enableDamping = true;
+    controls.enableZoom = true;
+    controls.mouseButtons.LEFT = null;
+    controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
+    controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
     const grid = new THREE.GridHelper(5, 20, PRODUCT_VIEW_LIGHT_PALETTE.gridMajor, PRODUCT_VIEW_LIGHT_PALETTE.gridMinor);
     grid.name = 'ros_xy_ground_grid';
     for (const material of Array.isArray(grid.material) ? grid.material : [grid.material]) {
@@ -2943,6 +2947,7 @@ function initThree() {
     el.canvas.addEventListener('pointermove', onCanvasPointerMove);
     el.canvas.addEventListener('pointerup', onCanvasPointerUp);
     el.canvas.addEventListener('pointercancel', onCanvasPointerCancel);
+    el.canvas.addEventListener('contextmenu', onCanvasContextMenu);
     window.addEventListener('keydown', onEditorKeyDown);
     animate();
   } catch (err) {
@@ -4716,7 +4721,7 @@ function pickObject(event) {
 
 function pointerToWorldPlane(event, z) { const rect = el.canvas.getBoundingClientRect(); if (!rect.width || !rect.height) return null; state.three.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1; state.three.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1; state.three.raycaster.setFromCamera(state.three.pointer, state.three.camera); const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -z); const hit = new THREE.Vector3(); if (!state.three.raycaster.ray.intersectPlane(plane, hit)) return null; return Number.isFinite(hit.x) && Number.isFinite(hit.y) && Number.isFinite(hit.z) ? hit : null; }
 function snapHorizontalPreview(transform) { const snapped = snapTransform(transform, { translationAxes: ['x', 'y'], rotationAxes: [] }); snapped.pose.xyz.z = transform.pose.xyz.z; return snapped; }
-function syncOrbitControlsForEditorMode() { if (state.three.controls) state.three.controls.enabled = state.editorMode === 'select'; }
+function syncOrbitControlsForEditorMode() { if (state.three.controls) state.three.controls.enabled = !Boolean(state.three.transformControls?.dragging); }
 function beginDirectMoveDrag(event, rendered) { if (state.editorMode !== 'move' || !selectionIsEditable(rendered)) return false; const start = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d)); const hit = pointerToWorldPlane(event, start.pose.xyz.z); if (!hit) return false; state.directMoveDrag = { itemId: rendered.item.id, start, groupStart: captureTransformGroup(rendered), last: cloneTransform(start), offset: { x: start.pose.xyz.x - hit.x, y: start.pose.xyz.y - hit.y } }; syncOrbitControlsForEditorMode(); el.canvas.setPointerCapture?.(event.pointerId); el.canvas.classList.add('direct-move-dragging'); event.preventDefault(); event.stopPropagation(); return true; }
 function updateDirectMoveDrag(event) { const drag = state.directMoveDrag; if (!drag) return false; const rendered = renderedById(drag.itemId); if (!rendered || state.selected !== drag.itemId || !selectionIsEditable(rendered)) return cancelDirectMoveDrag('Move cancelled'), true; const hit = pointerToWorldPlane(event, drag.start.pose.xyz.z); if (!hit) return true; const next = cloneTransform(drag.start); next.pose.xyz.x = hit.x + drag.offset.x; next.pose.xyz.y = hit.y + drag.offset.y; next.pose.xyz.z = drag.start.pose.xyz.z; const preview = snapHorizontalPreview(next); if (!isFiniteTransform(preview)) return true; drag.last = cloneTransform(preview); applyTransformChanges(linkedTransformChanges(rendered, drag.start, preview, drag.groupStart)); syncInspectorTransformFields(rendered); event.preventDefault(); event.stopPropagation(); return true; }
 function finishDirectMoveDrag(event) { const drag = state.directMoveDrag; if (!drag) return false; const rendered = renderedById(drag.itemId); const finalTransform = cloneTransform(drag.last); endDirectMoveDrag(event); if (!selectionIsEditable(rendered) || !isFiniteTransform(finalTransform)) return false; if (sameTransform(drag.start, finalTransform)) { applyTransformChanges([...drag.groupStart].map(([itemId, after]) => ({ rendered: renderedById(itemId), after }))); syncInspectorTransformFields(rendered); return true; } const committed = markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start, memberStarts: drag.groupStart }); if (!committed) { applyTransformChanges([...drag.groupStart].map(([itemId, after]) => ({ rendered: renderedById(itemId), after }))); showError(`Move failed for ${itemLabel(rendered.item)}: final transform was rejected by the editor bridge.`); return true; } emitTransformCommitted(rendered); pushEditorEvent('status', { message: `Moved ${itemLabel(rendered.item)}` }); return true; }
@@ -4753,10 +4758,11 @@ function cancelActiveTransformOperation(reason = 'Transform cancelled') {
   return true;
 }
 function cancelDirectMoveDrag(message) { return cancelActiveTransformOperation(message || 'Move cancelled'); }
-function onCanvasPointerDown(event) { pickObject(event); }
+function onCanvasPointerDown(event) { if (event.button === 0) pickObject(event); }
 function onCanvasPointerMove(event) {}
 function onCanvasPointerUp(event) {}
 function onCanvasPointerCancel() { cancelActiveTransformOperation('Pointer cancelled'); }
+function onCanvasContextMenu(event) { event.preventDefault(); }
 function keyboardEventTargetsEditorControl(event) {
   const target = event?.target;
   if (!target) return false;

@@ -43,6 +43,25 @@ def test_transform_gizmo_hook_is_loaded_without_build_system():
     assert "transformControls.object === state.gizmoPivot.group" in viewer
 
 
+def test_cad_mouse_navigation_mapping_and_canvas_input_gates():
+    viewer = _viewer_text()
+    assert "controls.enableZoom = true" in viewer
+    assert "controls.mouseButtons.LEFT = null" in viewer
+    assert "controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN" in viewer
+    assert "controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE" in viewer
+    assert "controls.enabled = !Boolean(state.three.transformControls?.dragging)" in viewer
+
+    pointer_down = viewer.split("function onCanvasPointerDown", 1)[1].split("function onCanvasPointerMove", 1)[0]
+    assert "event.button === 0" in pointer_down
+    assert pointer_down.count("pickObject(event)") == 1
+    for protected_state in ["selected", "dirtyTransforms", "undoStack", "redoStack", "web3dReadiness"]:
+        assert protected_state not in pointer_down
+
+    assert "el.canvas.addEventListener('contextmenu', onCanvasContextMenu)" in viewer
+    context_menu = viewer.split("function onCanvasContextMenu", 1)[1].split("function keyboardEventTargetsEditorControl", 1)[0]
+    assert "event.preventDefault()" in context_menu
+
+
 def test_transform_controls_lifecycle_regression_harness():
     """Execute the production TransformControls callbacks without a browser.
 
