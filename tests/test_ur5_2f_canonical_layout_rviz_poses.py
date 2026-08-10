@@ -1,6 +1,7 @@
 import ast
 import math
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
 import pytest
 import yaml
@@ -11,6 +12,12 @@ SCENE = ROOT / "scenes" / "ur5_2f_test"
 LAUNCH = SCENE / "launch" / "demo.launch.py"
 XACRO = SCENE / "urdf" / "scene.urdf.xacro"
 LAYOUT = SCENE / "layout" / "workcell_studio_layout.yaml"
+CANONICAL_POSE_ARGS = {
+    "table_world_xyz",
+    "table_world_rpy",
+    "camera_world_xyz",
+    "camera_world_rpy",
+}
 
 
 def _layout_helpers():
@@ -63,6 +70,20 @@ def test_launch_maps_required_canonical_layout_world_poses_to_xacro():
     assert '<origin xyz="$(arg camera_world_xyz)" rpy="$(arg camera_world_rpy)"/>' in xacro
     assert 'parent="table_"' not in xacro
     assert 'xyz="-0.58 0.12 0.655"' not in xacro
+
+
+def test_canonical_pose_xacro_args_have_empty_humble_compatible_defaults():
+    root = ET.parse(XACRO).getroot()
+    xacro_namespace = "http://www.ros.org/wiki/xacro"
+    declarations = {
+        element.get("name"): element
+        for element in root.findall(f"{{{xacro_namespace}}}arg")
+    }
+
+    assert CANONICAL_POSE_ARGS <= declarations.keys()
+    for name in CANONICAL_POSE_ARGS:
+        # Humble Xacro requires the attribute, but launch must supply the pose.
+        assert declarations[name].get("default") == ""
 
 
 def test_changed_temp_layout_changes_xacro_pose_mappings_without_rewriting_yaml(tmp_path):
