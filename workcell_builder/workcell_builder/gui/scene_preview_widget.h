@@ -487,6 +487,9 @@ private:
   bool emit_scene_diagnostic_once(const QString & event, int payload_count, const QString & message);
   void emit_visual_quality_assessment_once();
   bool task_is_ready() const;
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+  void focus_embedded_product_view_for_authoring();
+#endif
 
   QComboBox * mode_selector_{ nullptr };
   QWidget * product_view_destination_row_{ nullptr };
