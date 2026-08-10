@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import math
 import os
 import tempfile
 import yaml
@@ -23,6 +24,96 @@ tool_mount_link = "tool0"
 gripper_profile = "robotiq_85_gripper"
 grasp_frame = "ee_palm"
 robot_moveit_pkg = "ur5_moveit_config"
+
+CANONICAL_LAYOUT_REL_PATH = "layout/workcell_studio_layout.yaml"
+CANONICAL_LAYOUT_SCHEMA = "workcell_studio_layout/v1"
+REQUIRED_AUTHORED_POSE_IDS = (
+    "support_surface_table",
+    "realsense_overhead",
+)
+REQUIRED_CANONICAL_XACRO_MAPPINGS = {
+    "table_world_xyz",
+    "table_world_rpy",
+    "camera_world_xyz",
+    "camera_world_rpy",
+}
+
+
+def _format_xacro_vector(values):
+    return " ".join(format(value, ".17g") for value in values)
+
+
+def load_canonical_layout_poses(package_name=scene_pkg, layout_path=None):
+    """Load required world poses from Workcell Studio's authored layout."""
+    if layout_path is None:
+        layout_path = os.path.join(
+            get_package_share_directory(package_name),
+            CANONICAL_LAYOUT_REL_PATH,
+        )
+
+    try:
+        with open(layout_path, "r", encoding="utf-8") as file:
+            layout = yaml.safe_load(file)
+    except (OSError, yaml.YAMLError) as exc:
+        raise RuntimeError(
+            f"Cannot load canonical Workcell Studio layout '{layout_path}': {exc}. "
+            "Save the scene layout in Workcell Studio and relaunch."
+        ) from exc
+
+    if not isinstance(layout, dict) or layout.get("schema_version") != CANONICAL_LAYOUT_SCHEMA:
+        actual_schema = layout.get("schema_version") if isinstance(layout, dict) else None
+        raise RuntimeError(
+            f"Canonical Workcell Studio layout '{layout_path}' must use schema_version "
+            f"'{CANONICAL_LAYOUT_SCHEMA}', got {actual_schema!r}."
+        )
+
+    items = layout.get("items")
+    if not isinstance(items, list):
+        raise RuntimeError(
+            f"Canonical Workcell Studio layout '{layout_path}' must contain an 'items' list."
+        )
+
+    poses = {}
+    for required_id in REQUIRED_AUTHORED_POSE_IDS:
+        matches = [
+            item
+            for item in items
+            if isinstance(item, dict) and item.get("id") == required_id
+        ]
+        if len(matches) != 1:
+            raise RuntimeError(
+                f"Canonical Workcell Studio layout '{layout_path}' must contain exactly one "
+                f"physical authored item with id '{required_id}'; found {len(matches)}."
+            )
+
+        pose = matches[0].get("pose")
+        if not isinstance(pose, dict):
+            raise RuntimeError(
+                f"Canonical Workcell Studio layout item '{required_id}' in '{layout_path}' "
+                "must contain a pose with xyz and rpy vectors."
+            )
+
+        validated_pose = {}
+        for vector_name in ("xyz", "rpy"):
+            vector = pose.get(vector_name)
+            if (
+                not isinstance(vector, (list, tuple))
+                or len(vector) != 3
+                or any(
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(value)
+                    for value in vector
+                )
+            ):
+                raise RuntimeError(
+                    f"Canonical Workcell Studio layout item '{required_id}' pose.{vector_name} "
+                    f"in '{layout_path}' must contain exactly 3 finite numbers."
+                )
+            validated_pose[vector_name] = tuple(float(value) for value in vector)
+        poses[required_id] = validated_pose
+
+    return poses
 
 
 def load_xacro(package_name, rel_path, mappings=None):
@@ -53,6 +144,12 @@ def load_xacro(package_name, rel_path, mappings=None):
             invalid_param = match.group(1)
             if invalid_param not in effective_mappings:
                 raise RuntimeError(f"Failed to expand xacro file '{abs_path}':\n{stderr}") from exc
+            if invalid_param in REQUIRED_CANONICAL_XACRO_MAPPINGS:
+                raise RuntimeError(
+                    f"Scene xacro '{abs_path}' rejected required canonical Workcell Studio "
+                    f"pose mapping '{invalid_param}'. Rebuild/install {package_name} so the "
+                    "launch file and scene xacro use the same version; no pose fallback was used."
+                ) from exc
             effective_mappings.pop(invalid_param)
 
 
@@ -166,6 +263,10 @@ def _launch_setup(context):
     launch_rviz = LaunchConfiguration("launch_rviz")
     joint_states_topic = f"/{scene_pkg}/joint_states"
 
+    canonical_poses = load_canonical_layout_poses()
+    table_pose = canonical_poses["support_surface_table"]
+    camera_pose = canonical_poses["realsense_overhead"]
+
     robot_description_config = load_xacro(
         scene_pkg,
         "urdf/scene.urdf.xacro",
@@ -178,6 +279,10 @@ def _launch_setup(context):
             "gripper_profile": gripper_profile,
             "grasp_frame": grasp_frame,
             "use_fake_hardware": use_fake_hardware.perform(context),
+            "table_world_xyz": _format_xacro_vector(table_pose["xyz"]),
+            "table_world_rpy": _format_xacro_vector(table_pose["rpy"]),
+            "camera_world_xyz": _format_xacro_vector(camera_pose["xyz"]),
+            "camera_world_rpy": _format_xacro_vector(camera_pose["rpy"]),
         },
     )
     robot_description = {"robot_description": robot_description_config}

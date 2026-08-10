@@ -10,6 +10,10 @@
  <xacro:arg name="gripper_profile" default="robotiq_85_gripper"/>
  <xacro:arg name="grasp_frame" default="ee_palm"/>
  <xacro:arg name="use_fake_hardware" default="true"/>
+ <xacro:arg name="table_world_xyz"/>
+ <xacro:arg name="table_world_rpy"/>
+ <xacro:arg name="camera_world_xyz"/>
+ <xacro:arg name="camera_world_rpy"/>
 
  <!-- Contract: world_frame is the scene/world frame; UR creates base_link as the robot base. -->
  <!-- Contract: tool_mount_link is tool0; gripper_profile is robotiq_85_gripper; grasp_frame is ee_palm. -->
@@ -54,13 +58,13 @@
 
  <xacro:include filename="$(find workbench_description)/urdf/table.urdf.xacro"/>
  <xacro:table prefix="" parent="$(arg world_frame)">
-	<origin xyz="0 0 0" rpy="0 0 0"/>
+	<origin xyz="$(arg table_world_xyz)" rpy="$(arg table_world_rpy)"/>
  </xacro:table>
  
  <xacro:include filename="$(find realsense2_description)/urdf/_d435i.urdf.xacro"/>
  <xacro:arg name="use_nominal_extrinsics" default="true" />
- <xacro:sensor_d435i parent="table_" use_nominal_extrinsics="$(arg use_nominal_extrinsics)">
-    <origin xyz="-0.58 0.12 0.655" rpy="0 1.57079506 0"/>
+ <xacro:sensor_d435i parent="$(arg world_frame)" use_nominal_extrinsics="$(arg use_nominal_extrinsics)">
+    <origin xyz="$(arg camera_world_xyz)" rpy="$(arg camera_world_rpy)"/>
  </xacro:sensor_d435i>
 
 
