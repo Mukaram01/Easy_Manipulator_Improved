@@ -132,12 +132,30 @@ def test_browser_mode_state_synchronizes_all_qt_controls_without_stale_callbacks
         assert f"QSignalBlocker {control.removesuffix('_mode_button')}_blocker({control})" in main
 
 
-def test_move_mode_first_click_selects_and_starts_drag_without_bypassing_locks():
+def test_move_mode_body_click_only_selects_without_starting_direct_drag():
     handler = VIEWER.split("function onCanvasPointerDown", 1)[1].split("function onCanvasPointerMove", 1)[0]
-    assert "const rendered = hitId ? renderedById(hitId) : null" in handler
-    assert "hitId === state.selected" not in handler
-    assert "beginDirectMoveDrag(event, rendered)" in handler
-    assert "!selectionIsEditable(rendered)" in VIEWER.split("function beginDirectMoveDrag", 1)[1].split("function updateDirectMoveDrag", 1)[0]
+    assert "pickObject(event)" in handler
+    assert "beginDirectMoveDrag" not in handler
+    assert "updateDirectMoveDrag" not in VIEWER.split("function onCanvasPointerMove", 1)[1].split("function onCanvasPointerUp", 1)[0]
+    assert "finishDirectMoveDrag" not in VIEWER.split("function onCanvasPointerUp", 1)[1].split("function onCanvasPointerCancel", 1)[0]
+    for helper in ["beginDirectMoveDrag", "updateDirectMoveDrag", "finishDirectMoveDrag"]:
+        assert f"function {helper}" in VIEWER
+
+
+def test_move_transform_controls_use_world_axes_and_commit_once_after_preview():
+    listeners = VIEWER.split("transformControls.addEventListener('dragging-changed'", 1)[1].split("controls.addEventListener('start'", 1)[0]
+    object_change = listeners.split("transformControls.addEventListener('objectChange'", 1)[1]
+    assert "transformControls.setSpace('world')" in VIEWER
+    assert "transformControls.object === rendered?.object3d" in listeners
+    assert "state.gizmoDragStart = cloneTransform" in listeners
+    assert "state.gizmoDragGroupStart = captureTransformGroup(rendered)" in listeners
+    assert "!sameTransform(state.gizmoDragStart, finalTransform)" in listeners
+    assert listeners.count("markDirtyTransform(rendered, finalTransform") == 1
+    assert listeners.count("emitTransformCommitted(rendered)") == 1
+    assert "applyTransformChanges(linkedTransformChanges" in object_change
+    assert "syncInspectorTransformFields(rendered)" in object_change
+    assert "markDirtyTransform" not in object_change
+    assert "emitTransformCommitted" not in object_change
 
 
 def test_qt_compact_toolbar_for_embedded_web3d():

@@ -2896,7 +2896,8 @@ function initThree() {
     transformControls.addEventListener('dragging-changed', event => {
       syncOrbitControlsForEditorMode();
       const rendered = canonicalTransformOwner(state.selected);
-      if (!rendered || !canEditItem(rendered.item)) return;
+      const attachedToOwner = transformControls.object === rendered?.object3d || (state.gizmoPivot?.owner === rendered && transformControls.object === state.gizmoPivot.group);
+      if (!rendered || !canEditItem(rendered.item) || !attachedToOwner) return;
       if (state.gizmoPivot?.owner === rendered && transformControls.object === state.gizmoPivot.group) {
         if (event.value) beginTransientPivotDrag(rendered);
         else finishTransientPivotDrag(rendered);
@@ -2908,13 +2909,14 @@ function initThree() {
         return;
       }
       if (event.value) { state.gizmoDragStart = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d)); state.gizmoDragGroupStart = captureTransformGroup(rendered); }
-      else { const committed = markDirtyTransform(rendered, transformFromObject(rendered.object3d), { pushHistory: true, oldTransform: state.gizmoDragStart, memberStarts: state.gizmoDragGroupStart }); if (committed) emitTransformCommitted(rendered); state.gizmoDragStart = null; state.gizmoDragGroupStart = null; }
+      else { const finalTransform = transformFromObject(rendered.object3d); if (state.gizmoDragStart && !sameTransform(state.gizmoDragStart, finalTransform)) { const committed = markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: state.gizmoDragStart, memberStarts: state.gizmoDragGroupStart }); if (committed) emitTransformCommitted(rendered); } state.gizmoDragStart = null; state.gizmoDragGroupStart = null; }
     });
     transformControls.addEventListener('objectChange', () => {
       const rendered = canonicalTransformOwner(state.selected);
       if (!rendered || !canEditItem(rendered.item)) return;
       if (state.gizmoPivot?.owner === rendered && transformControls.object === state.gizmoPivot.group) { previewTransientPivotDrag(rendered); return; }
       if (state.editorMode === 'rotate') { previewDirectRotateDrag(rendered); return; }
+      if (!state.gizmoDragStart || transformControls.object !== rendered.object3d) return;
       const snapped = snapTransform(transformFromObject(rendered.object3d));
       applyTransformChanges(linkedTransformChanges(rendered, state.gizmoDragStart || transformFromObject(rendered.object3d), snapped, state.gizmoDragGroupStart));
       syncInspectorTransformFields(rendered);
@@ -4710,9 +4712,9 @@ function updateDirectMoveDrag(event) { const drag = state.directMoveDrag; if (!d
 function finishDirectMoveDrag(event) { const drag = state.directMoveDrag; if (!drag) return false; const rendered = renderedById(drag.itemId); const finalTransform = cloneTransform(drag.last); endDirectMoveDrag(event); if (!selectionIsEditable(rendered) || !isFiniteTransform(finalTransform)) return false; if (sameTransform(drag.start, finalTransform)) { applyTransformChanges([...drag.groupStart].map(([itemId, after]) => ({ rendered: renderedById(itemId), after }))); syncInspectorTransformFields(rendered); return true; } const committed = markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start, memberStarts: drag.groupStart }); if (!committed) { applyTransformChanges([...drag.groupStart].map(([itemId, after]) => ({ rendered: renderedById(itemId), after }))); showError(`Move failed for ${itemLabel(rendered.item)}: final transform was rejected by the editor bridge.`); return true; } emitTransformCommitted(rendered); pushEditorEvent('status', { message: `Moved ${itemLabel(rendered.item)}` }); return true; }
 function endDirectMoveDrag(event) { state.directMoveDrag = null; syncOrbitControlsForEditorMode(); el.canvas.classList.remove('direct-move-dragging'); if (event?.pointerId !== undefined) el.canvas.releasePointerCapture?.(event.pointerId); }
 function cancelDirectMoveDrag(message) { const drag = state.directMoveDrag; if (!drag) return false; const rendered = renderedById(drag.itemId); if (rendered) { applyTransformChanges([...drag.groupStart].map(([itemId, after]) => ({ rendered: renderedById(itemId), after }))); syncInspectorTransformFields(rendered); } endDirectMoveDrag(); pushEditorEvent('status', { message: message || 'Move cancelled' }); return true; }
-function onCanvasPointerDown(event) { const hitId = pickObject(event); const rendered = hitId ? renderedById(hitId) : null; if (beginDirectMoveDrag(event, rendered)) return; }
-function onCanvasPointerMove(event) { updateDirectMoveDrag(event); }
-function onCanvasPointerUp(event) { finishDirectMoveDrag(event); }
+function onCanvasPointerDown(event) { pickObject(event); }
+function onCanvasPointerMove(event) {}
+function onCanvasPointerUp(event) {}
 function onCanvasPointerCancel() { cancelDirectMoveDrag('Move cancelled'); cancelDirectRotateDrag('Rotation cancelled'); syncOrbitControlsForEditorMode(); }
 function onEditorKeyDown(event) { if (event.key !== 'Escape') return; cancelDirectMoveDrag('Move cancelled'); cancelDirectRotateDrag('Rotation cancelled'); syncOrbitControlsForEditorMode(); }
 
@@ -4853,7 +4855,8 @@ function previewTransientPivotDrag(owner) {
 function finishTransientPivotDrag(owner) {
   if (!state.gizmoPivotDragStart) return false;
   previewTransientPivotDrag(owner);
-  const committed = markDirtyTransform(owner, transformFromObject(owner.object3d), { pushHistory: true, oldTransform: state.gizmoDragStart, memberStarts: state.gizmoDragGroupStart });
+  const finalTransform = transformFromObject(owner.object3d);
+  const committed = !sameTransform(state.gizmoDragStart, finalTransform) && markDirtyTransform(owner, finalTransform, { pushHistory: true, oldTransform: state.gizmoDragStart, memberStarts: state.gizmoDragGroupStart });
   if (committed) emitTransformCommitted(owner);
   state.gizmoDragStart = null;
   state.gizmoDragGroupStart = null;
