@@ -148,10 +148,11 @@ task:
   type: pick_place
   mode: simulation_preview
   source_object: commissioning_object
+  object_source: self_test
   pick:
     source_ref: commissioning_pick_pose
     object_ref: commissioning_object
-    object_source: commissioning_object
+    object_source: self_test
   place:
     target_ref: default_drop_zone
     release_strategy: tool_release
@@ -234,7 +235,6 @@ task_zones:
   - 0.2
   - 0.2
   - 0.1
-  object_ref: commissioning_object
   support_surface_ref: support_surface_table
   layout_item_ref: pick_zone_commissioning
 - id: default_drop_zone

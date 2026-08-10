@@ -4,6 +4,9 @@ task:
   type: pick_place
   mode: simulation_preview
   source_object: commissioning_object
+  object_source: self_test
+  inputs:
+    perception_mode: "off"
   destinations:
   - id: default_drop_zone
     frame: world

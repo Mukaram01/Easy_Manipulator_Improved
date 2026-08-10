@@ -402,6 +402,7 @@ def validate_cell_definition(
     end_effector = defn.get("end_effector") if isinstance(defn.get("end_effector"), dict) else {}
     environment = defn.get("environment") if isinstance(defn.get("environment"), dict) else {}
     objects = defn.get("objects") if isinstance(defn.get("objects"), list) else []
+    self_test = defn.get("self_test") if isinstance(defn.get("self_test"), dict) else {}
     task = defn.get("task") if isinstance(defn.get("task"), dict) else {}
     grasp = defn.get("grasp") if isinstance(defn.get("grasp"), dict) else None
 
@@ -472,6 +473,17 @@ def validate_cell_definition(
         _validate_dimensions(result, f"objects[{idx}]", obj.get("dimensions"))
     _check_duplicate_ids(result, "objects", objects)
     _check_duplicate_ids(result, "environment.support_surfaces", support_surfaces)
+
+    self_test_object = self_test.get("object")
+    if self_test_object is not None:
+        if not isinstance(self_test_object, dict):
+            result.errors.append("self_test.object must be a mapping when provided.")
+        else:
+            object_id = self_test_object.get("id")
+            if not isinstance(object_id, str) or not object_id.strip():
+                result.errors.append("self_test.object.id must be a non-empty string.")
+            _validate_pose(result, "self_test.object", self_test_object)
+            _validate_dimensions(result, "self_test.object", self_test_object.get("dimensions"))
 
     task_type = task.get("type")
     if not isinstance(task_type, str):

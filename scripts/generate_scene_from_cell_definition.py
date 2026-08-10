@@ -141,7 +141,12 @@ def build_scene_manifest(cell_def: dict[str, Any], capability_summary: dict[str,
     task = cell_def.get("task", {})
     commissioning = cell_def.get("commissioning", {})
 
-    self_test_object = objects[0] if objects else {}
+    self_test = cell_def.get("self_test", {}) if isinstance(cell_def.get("self_test"), dict) else {}
+    self_test_object = self_test.get("object", {}) if isinstance(self_test.get("object"), dict) else {}
+    # Backwards compatibility for definitions created before self-test fixtures
+    # had their own source layer.
+    if not self_test_object:
+        self_test_object = objects[0] if objects else {}
 
     ee_type = str(end_effector.get("type", "unknown")).strip().lower()
     is_suction = ee_type in {"suction", "vacuum", "vacuum_array"}
