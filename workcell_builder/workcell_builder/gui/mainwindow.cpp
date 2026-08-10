@@ -91,6 +91,7 @@
 #include <QProgressDialog>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QCloseEvent>
 #include <QSettings>
 #include <QSizePolicy>
 #include <QLineEdit>
@@ -3110,9 +3111,9 @@ void MainWindow::setup_studio_shell()
   preview_commands_ = new QTextEdit(preview); preview_commands_->setReadOnly(true); preview_commands_->setObjectName("studioCard"); pl->addWidget(preview_commands_);
   preview_log_ = new QPlainTextEdit(preview); preview_log_->setReadOnly(true); preview_log_->setPlaceholderText("Live Log: command started / command output / command finished or failed / transcript path"); preview_log_->setObjectName("studioCard"); pl->addWidget(preview_log_);
   pl->addWidget(new QLabel("<b>Preview Process</b><br/>Open RViz Truth Preview | Run Fake-Hardware Simulation | Stop Simulation | Copy commands"));
-  run_build_button_ = new QPushButton("Open RViz Truth Preview", preview); pl->addWidget(run_build_button_);
+  run_build_button_ = new QPushButton("Build & Run RViz", preview); run_build_button_->setProperty("role","primary"); pl->addWidget(run_build_button_);
   run_preview_button_ = new QPushButton("Run Fake-Hardware Simulation", preview); run_preview_button_->setProperty("role","primary"); pl->addWidget(run_preview_button_);
-  stop_preview_button_ = new QPushButton("Stop Simulation", preview); pl->addWidget(stop_preview_button_);
+  stop_preview_button_ = new QPushButton("Stop Simulation", preview); stop_preview_button_->hide(); pl->addWidget(stop_preview_button_);
   copy_launch_button_ = new QPushButton("Copy Launch Command", preview); pl->addWidget(copy_launch_button_);
   preview_more_actions_button_ = new QToolButton(preview);
   preview_more_actions_button_->setText("More Actions");
@@ -4922,8 +4923,18 @@ void MainWindow::open_scene_bundle_export_folder()
 
 MainWindow::~MainWindow()
 {
-  stop_preview_process();
   delete ui;
+}
+
+void MainWindow::closeEvent(QCloseEvent * event)
+{
+  if (preview_process_ && preview_process_->state() != QProcess::NotRunning) {
+    close_after_preview_stop_ = true;
+    stop_preview_process();
+    event->ignore();
+    return;
+  }
+  event->accept();
 }
 
 void MainWindow::on_load_workcell_clicked()
@@ -5226,6 +5237,13 @@ bool MainWindow::is_good_scene(boost::filesystem::path original_path, std::strin
 
 QString MainWindow::detect_workspace_root() const
 {
+  if (selected_scene_index_ >= 0 && selected_scene_index_ < static_cast<int>(scene_browser_result_.scenes.size())) {
+    fs::path cursor = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_dir;
+    while (!cursor.empty() && cursor != cursor.root_path()) {
+      if (cursor.filename() == "src") return QString::fromStdString(cursor.parent_path().string());
+      cursor = cursor.parent_path();
+    }
+  }
   const QString startup_workspace = startup_workspace_.trimmed();
   if (!startup_workspace.isEmpty() && QDir(startup_workspace).exists()) return startup_workspace;
 
@@ -5242,7 +5260,7 @@ QString MainWindow::detect_workspace_root() const
   return QDir::homePath();
 }
 
-QString MainWindow::selected_scene_build_command() const { if (selected_scene_index_ < 0) return ""; const auto & scene = scene_browser_result_.scenes[(size_t)selected_scene_index_]; return QString("cd %1 && source /opt/ros/humble/setup.bash && colcon build --symlink-install --packages-select %2").arg(detect_workspace_root(), QString::fromStdString(scene.launch_package.empty() ? scene.scene_name : scene.launch_package)); }
+QString MainWindow::selected_scene_build_command() const { if (selected_scene_index_ < 0) return ""; return workcell_builder::build_selected_package_command(scene_browser_result_.scenes[(size_t)selected_scene_index_], detect_workspace_root().toStdString()); }
 QString MainWindow::selected_scene_source_command() const { return QString("cd %1 && source install/setup.bash").arg(detect_workspace_root()); }
 QString MainWindow::selected_scene_preview_command_block() const { return selected_scene_build_command()+"\n"+selected_scene_source_command()+"\ncd "+detect_workspace_root()+" && "+selected_scene_launch_command(); }
 
@@ -5257,6 +5275,13 @@ bool MainWindow::selected_scene_preview_ready(QStringList * blockers) const
     scene3d_load_transform_parity_readiness(scene.scene_dir, QString::fromStdString(scene.scene_name));
   if (transform_parity.failed) {
     if (blockers) blockers->append(transform_parity.warning);
+    return false;
+  }
+  const fs::path layout_file = scene.scene_dir / "layout" / "workcell_studio_layout.yaml";
+  const fs::path merge_report = scene.scene_dir / "generated" / "workcell_studio_layout_merge_report.json";
+  if (fs::exists(layout_file) &&
+    (!fs::exists(merge_report) || fs::last_write_time(layout_file) > fs::last_write_time(merge_report))) {
+    if (blockers) blockers->append("Generated scene package is stale. Run Generate Scene Package before Build & Run RViz.");
     return false;
   }
   const auto status = workcell_builder::validate_readiness(scene, detect_workspace_root().toStdString());
@@ -5311,8 +5336,12 @@ void MainWindow::refresh_preview_launch_ui()
   if (preview_commands_) preview_commands_->append(QString("\n# Safe Commands (Fake Hardware / Offline / No Robot Motion)\n# build selected scene package\n%1\n# source workspace\n%2\n# fake-hardware launch command\n%3\n# optional offline validation command\npython3 scripts/validate_builder_generated_scene.py '%4' --json")
     .arg(selected_scene_build_command(), selected_scene_source_command(), selected_scene_launch_command(), has_scene ? QString::fromStdString(scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_dir.string()) : QString("")));
   if (validation_next_fix_label_) validation_next_fix_label_->setText(QString("<b>Next Fix Suggestions</b><br/>%1").arg(blockers.isEmpty() ? "No blockers. You can run Fake-Hardware Preview." : blockers.join("<br/>")));
-  if (run_build_button_) run_build_button_->setEnabled(has_scene && has_ws && (preview_state_=="IDLE"||preview_state_=="BUILD_FAILED"||preview_state_=="BUILD_PASSED"||preview_state_=="PREVIEW_STOPPED"||preview_state_=="PREVIEW_FAILED"||preview_state_=="PREVIEW_EXITED"));
-  if (run_preview_button_) run_preview_button_->setEnabled(has_scene && has_ws && (preview_state_=="BUILD_PASSED"||preview_state_=="PREVIEW_STOPPED"||preview_state_=="PREVIEW_EXITED"));
+  if (run_build_button_) {
+    const bool active = preview_state_=="PREVIEW_RUNNING" || preview_state_=="PREVIEW_STOPPING";
+    run_build_button_->setText(active ? "Stop RViz" : "Build & Run RViz");
+    run_build_button_->setEnabled(active || (has_scene && has_ws && preview_state_!="BUILD_RUNNING" && preview_state_!="PACKAGE_CHECK_RUNNING" && preview_state_!="PREVIEW_LAUNCHING"));
+  }
+  if (run_preview_button_) run_preview_button_->hide();
   if (stop_preview_button_) stop_preview_button_->setEnabled(preview_state_=="PREVIEW_RUNNING"||preview_state_=="PREVIEW_STOPPING");
 }
 
@@ -5483,78 +5512,45 @@ bool MainWindow::run_canvas_generated_parity_check(CanvasGeneratedParityMode mod
   return true;
 }
 
-void MainWindow::run_preview_build(){ QStringList blockers; if(!selected_scene_preview_ready(&blockers)){ QMessageBox::warning(this,"Plan & Simulate",blockers.join("\n")); return; } if(detect_workspace_root().isEmpty()){ QMessageBox::warning(this,"Preview Launch","Workspace root not detected. Copy commands and run manually."); return;} if (preview_process_ && preview_process_->state() != QProcess::NotRunning) { append_studio_log("WARN Plan & Simulate build start ignored: another preview/build process is already running."); return; } active_preview_command_=selected_scene_build_command(); preview_running_scene_key_ = selected_scene_name(); if(preview_log_) preview_log_->appendPlainText("$ "+active_preview_command_); set_preview_state("BUILD_RUNNING"); write_preview_launch_transcript(true, active_preview_command_, "build_started"); preview_process_->start("/bin/bash", {"-lc", active_preview_command_}); }
-void MainWindow::run_fake_hardware_preview(){
-  if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) {
-    const QString reason = "selected scene missing";
-    QMessageBox::warning(this, "Plan & Simulate", reason);
-    append_studio_log("Plan & Simulate launch blocked: " + reason);
-    return;
-  }
-
-  const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
-  const std::string workspace_root = detect_workspace_root().toStdString();
-  append_studio_log(QString("RViz Truth Preview selection: scene=%1 workspace_root=%2")
-      .arg(QString::fromStdString(scene.scene_name), QString::fromStdString(workspace_root)));
-  append_studio_log(QString("RViz Truth Preview package: %1").arg(QString::fromStdString(scene.scene_name)));
-  const boost::filesystem::path layout_file = scene.scene_dir / "layout" / "workcell_studio_layout.yaml";
-  const boost::filesystem::path merge_report = scene.scene_dir / "generated" / "workcell_studio_layout_merge_report.json";
-  if (boost::filesystem::exists(layout_file) &&
-    (!boost::filesystem::exists(merge_report) || boost::filesystem::last_write_time(layout_file) > boost::filesystem::last_write_time(merge_report))) {
-    append_studio_log("RViz Truth Preview readiness: WARN stale layout detected; continuing with generated package.");
-  }
-  const auto readiness = workcell_builder::validate_readiness(scene, workspace_root);
-  if (!readiness.ready) {
-    QMessageBox::warning(this, "RViz Truth Preview", readiness.blocker_reason);
-    append_studio_log("RViz Truth Preview readiness: BLOCKED - " + readiness.blocker_reason);
-    return;
-  }
-  append_studio_log("RViz Truth Preview readiness: PASS");
-
-  QString command;
-  const auto dry_run_status = workcell_builder::dry_run(scene, workspace_root, &command);
-  if (!dry_run_status.ready) {
-    QMessageBox::warning(this, "RViz Truth Preview", dry_run_status.blocker_reason);
-    append_studio_log("RViz Truth Preview dry-run blocked: " + dry_run_status.blocker_reason);
-    return;
-  }
-  append_studio_log("RViz Truth Preview fake-hardware safety: PASS");
-  append_studio_log("RViz Truth Preview dry run: " + command);
-  auto rc = QMessageBox::question(
-    this, "Confirm Fake-Hardware Preview",
-    "Command:\n" + command + "\n\nFake hardware only. No real hardware. No runtime execution. No robot motion commanded.");
-  if (rc != QMessageBox::Yes) return;
-
-  const QString selected_scene_key = QString::fromStdString(scene.scene_name);
-  if (preview_process_ && preview_process_->state() != QProcess::NotRunning) {
-    if (preview_running_scene_key_ == selected_scene_key) {
-      append_studio_log("WARN RViz Truth Preview launch ignored: preview already running for selected scene.");
-    } else {
-      append_studio_log(QString("WARN RViz Truth Preview launch ignored: another preview is running for scene '%1'.").arg(preview_running_scene_key_));
-    }
-    return;
-  }
-
-  active_preview_command_ = command;
-  preview_running_scene_key_ = selected_scene_key;
-  if (preview_log_) preview_log_->appendPlainText("$ " + command);
-  append_studio_log("RViz Truth Preview launch started");
-  set_preview_state("PREVIEW_RUNNING");
-  write_preview_launch_transcript(true, command, "preview_started");
-  append_studio_log(QString("RViz Truth Preview launch command: scene=%1 package=%2 fake_hardware=true launch_path=%3 command=%4")
-    .arg(QString::fromStdString(scene.scene_name),
-      QString::fromStdString(scene.scene_name),
-      QString::fromStdString((scene.scene_dir / "launch" / "demo.launch.py").string()),
-      command));
-  preview_process_->start("bash", {"-lc", command});
-  refresh_new_cell_checklist();
+void MainWindow::run_preview_build(){
+  if (preview_state_=="PREVIEW_RUNNING" || preview_state_=="PREVIEW_STOPPING") { stop_preview_process(); return; }
+  append_studio_log("Checking scene...");
+  QStringList blockers; if(!selected_scene_preview_ready(&blockers)){ QMessageBox::warning(this,"Build & Run RViz",blockers.join("\n")); return; }
+  if (preview_process_ && preview_process_->state() != QProcess::NotRunning) { append_studio_log("WARN Build & Run RViz ignored: a Workcell Studio-owned process is already active."); return; }
+  active_preview_scene_=scene_browser_result_.scenes[(size_t)selected_scene_index_]; active_preview_workspace_root_=detect_workspace_root();
+  active_preview_command_=workcell_builder::build_selected_package_command(active_preview_scene_,active_preview_workspace_root_.toStdString()); preview_running_scene_key_=QString::fromStdString(active_preview_scene_.scene_name); preview_stop_requested_=false; preview_output_tail_.clear();
+  append_studio_log("Building " + preview_running_scene_key_ + "..."); if(preview_log_) preview_log_->appendPlainText("$ "+active_preview_command_);
+  set_preview_state("BUILD_RUNNING"); write_preview_launch_transcript(true, active_preview_command_, "build_started");
+  preview_process_->start("/bin/bash", {"-lc", active_preview_command_});
 }
-void MainWindow::stop_preview_process(){ if(!preview_process_ || preview_process_->state()==QProcess::NotRunning) return; set_preview_state("PREVIEW_STOPPING"); if(preview_log_) preview_log_->appendPlainText("Stopping preview process..."); preview_process_->terminate(); QTimer::singleShot(2000, this, [this]() { if(preview_process_ && preview_process_->state()!=QProcess::NotRunning){ if(preview_log_) preview_log_->appendPlainText("Terminate timeout, forcing kill."); preview_process_->kill(); } }); refresh_new_cell_checklist(); }
-void MainWindow::handle_preview_stdout(){ if(!preview_process_) return; const QString out = QString::fromUtf8(preview_process_->readAllStandardOutput()); if(preview_log_) preview_log_->appendPlainText(out); if(!out.trimmed().isEmpty()) append_studio_log("[preview stdout] " + out.trimmed()); }
-void MainWindow::handle_preview_stderr(){ if(!preview_process_) return; const QString err = QString::fromUtf8(preview_process_->readAllStandardError()); if(preview_log_) preview_log_->appendPlainText(err); if(!err.trimmed().isEmpty()) append_studio_log("[preview stderr] " + err.trimmed()); }
-void MainWindow::handle_preview_started(){ if(!preview_process_) return; const qint64 pid = preview_process_->processId(); const QString state = QString::number(static_cast<int>(preview_process_->state())); append_studio_log(QString("Plan & Simulate process started: pid=%1 state=%2").arg(pid).arg(state)); }
-void MainWindow::handle_preview_error(QProcess::ProcessError error){ const QString msg = preview_process_ ? preview_process_->errorString() : QStringLiteral("unknown error"); append_studio_log(QString("ERROR RViz Truth Preview process error: code=%1 message=%2").arg(static_cast<int>(error)).arg(msg)); append_studio_log("RViz Truth Preview launch blocked: ros2 launch failed"); if(preview_state_=="PREVIEW_RUNNING" || preview_state_=="BUILD_RUNNING") set_preview_state("PREVIEW_FAILED"); }
-void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exit_status){ if(preview_state_=="BUILD_RUNNING") set_preview_state(exit_code==0?"BUILD_PASSED":"BUILD_FAILED"); else if(preview_state_=="PREVIEW_STOPPING") set_preview_state("PREVIEW_STOPPED"); else set_preview_state(exit_code==0?"PREVIEW_EXITED":"PREVIEW_FAILED"); if (preview_state_ == "PREVIEW_FAILED") append_studio_log("RViz Truth Preview launch blocked: ros2 launch failed"); append_studio_log(QString("RViz Truth Preview launch exit: exit_code=%1 exit_status=%2 state=%3").arg(exit_code).arg(static_cast<int>(exit_status)).arg(preview_state_)); preview_running_scene_key_.clear(); write_preview_launch_transcript(true, active_preview_command_, "process_finished", exit_code); refresh_new_cell_checklist(); }
+void MainWindow::run_fake_hardware_preview()
+{
+  // Compatibility entry point: all previews use the guarded build/discover/launch pipeline.
+  run_preview_build();
+}
+void MainWindow::stop_preview_process(){ if(!preview_process_ || preview_process_->state()==QProcess::NotRunning) return; preview_stop_requested_=true; set_preview_state("PREVIEW_STOPPING"); append_studio_log("Stopping RViz..."); preview_process_->terminate(); QTimer::singleShot(3000, this, [this]() { if(preview_process_ && preview_process_->state()!=QProcess::NotRunning){ append_studio_log("RViz graceful shutdown timed out; killing only the Workcell Studio-owned preview process."); preview_process_->kill(); } }); }
+void MainWindow::handle_preview_stdout(){ if(!preview_process_) return; const QString out=QString::fromUtf8(preview_process_->readAllStandardOutput()); preview_output_tail_=(preview_output_tail_+out).right(4000); if(preview_log_) preview_log_->appendPlainText(out); if(!out.trimmed().isEmpty()) append_studio_log("[process stdout] "+out.trimmed()); }
+void MainWindow::handle_preview_stderr(){ if(!preview_process_) return; const QString err=QString::fromUtf8(preview_process_->readAllStandardError()); preview_output_tail_=(preview_output_tail_+err).right(4000); if(preview_log_) preview_log_->appendPlainText(err); if(!err.trimmed().isEmpty()) append_studio_log("[process stderr] "+err.trimmed()); }
+void MainWindow::handle_preview_started(){ append_studio_log(preview_state_=="PREVIEW_LAUNCHING" ? "Launching RViz..." : QString("Process started: stage=%1 pid=%2").arg(preview_state_).arg(preview_process_->processId())); if(preview_state_=="PREVIEW_LAUNCHING"){ set_preview_state("PREVIEW_RUNNING"); append_studio_log("RViz running"); } }
+void MainWindow::handle_preview_error(QProcess::ProcessError error){ const QString msg=preview_process_?preview_process_->errorString():"unknown error"; append_studio_log(QString("ERROR stage=%1 QProcess error=%2 message=%3 output_tail=%4").arg(preview_state_).arg(static_cast<int>(error)).arg(msg,preview_output_tail_)); if(preview_state_=="BUILD_RUNNING") set_preview_state("BUILD_FAILED"); else set_preview_state("PREVIEW_FAILED"); }
+void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exit_status){
+  const QString completed_stage=preview_state_;
+  if(preview_stop_requested_ || completed_stage=="PREVIEW_STOPPING"){ set_preview_state("PREVIEW_STOPPED"); append_studio_log("RViz stopped"); preview_running_scene_key_.clear(); if(close_after_preview_stop_) QTimer::singleShot(0,this,&QWidget::close); return; }
+  const bool ok=exit_status==QProcess::NormalExit && exit_code==0;
+  if(completed_stage=="BUILD_RUNNING"){
+    if(!ok){ set_preview_state("BUILD_FAILED"); append_studio_log(QString("Build failed: exit_code=%1 exit_status=%2 output_tail=%3").arg(exit_code).arg(static_cast<int>(exit_status)).arg(preview_output_tail_)); return; }
+    append_studio_log("Build succeeded"); const fs::path setup=fs::path(active_preview_workspace_root_.toStdString())/"install"/"setup.bash";
+    if(!fs::exists(setup)){ set_preview_state("BUILD_FAILED"); append_studio_log("Build succeeded but install/setup.bash is missing: "+QString::fromStdString(setup.string())); return; }
+    active_preview_command_=workcell_builder::package_prefix_check_command(active_preview_scene_,active_preview_workspace_root_.toStdString()); set_preview_state("PACKAGE_CHECK_RUNNING"); preview_process_->start("/bin/bash",{"-lc",active_preview_command_}); return;
+  }
+  if(completed_stage=="PACKAGE_CHECK_RUNNING"){
+    const QString package=QString::fromStdString(active_preview_scene_.launch_package.empty()?active_preview_scene_.scene_name:active_preview_scene_.launch_package);
+    if(!ok){ set_preview_state("PREVIEW_FAILED"); append_studio_log(QString("Build succeeded but ROS package '%1' is not discoverable from install/setup.bash.").arg(package)); return; }
+    active_preview_command_=workcell_builder::build_launch_shell_command(active_preview_scene_,active_preview_workspace_root_.toStdString()); QString reason; if(!workcell_builder::launch_command_is_safe(active_preview_command_,&reason)){ set_preview_state("PREVIEW_FAILED"); append_studio_log("RViz launch failed: "+reason); return; }
+    preview_output_tail_.clear(); set_preview_state("PREVIEW_LAUNCHING"); preview_process_->start("/bin/bash",{"-lc",active_preview_command_}); return;
+  }
+  set_preview_state(ok?"PREVIEW_STOPPED":"PREVIEW_FAILED"); append_studio_log(ok?"RViz stopped":QString("RViz crashed: stage=launch exit_code=%1 exit_status=%2 output_tail=%3").arg(exit_code).arg(static_cast<int>(exit_status)).arg(preview_output_tail_)); preview_running_scene_key_.clear();
+}
 
 void MainWindow::write_preview_launch_transcript(bool ran_process, const QString & command, const QString & event, int exit_code)
 {

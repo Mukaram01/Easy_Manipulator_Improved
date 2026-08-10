@@ -103,3 +103,40 @@ TEST(RvizPreviewMetadataCommandTest, FakeHardwareAndRvizRemainDefaultWithoutReal
   EXPECT_EQ(command.indexOf("real_hardware:=true"), -1);
   EXPECT_EQ(command.indexOf("runtime_execution_enabled:=true"), -1);
 }
+
+TEST(RvizPreviewMetadataCommandTest, BuildsOnlySelectedPackageInDerivedWorkspace)
+{
+  auto scene = runnable_scene();
+  const QString command = workcell_builder::build_selected_package_command(scene, "/home/user/workcell_ws");
+
+  EXPECT_EQ(
+    command,
+    "source /opt/ros/humble/setup.bash && cd '/home/user/workcell_ws' && "
+    "colcon build --symlink-install --packages-select 'ur5_2f_test'");
+  EXPECT_EQ(command.indexOf("--allow-overriding"), -1);
+}
+
+TEST(RvizPreviewMetadataCommandTest, DiscoveryAndLaunchSourceBuiltOverlay)
+{
+  const auto scene = runnable_scene();
+
+  EXPECT_EQ(
+    workcell_builder::package_prefix_check_command(scene, "/home/user/workcell_ws"),
+    "source /opt/ros/humble/setup.bash && source '/home/user/workcell_ws/install/setup.bash' && "
+    "ros2 pkg prefix 'ur5_2f_test'");
+  const QString launch = workcell_builder::build_launch_shell_command(scene, "/home/user/workcell_ws");
+  EXPECT_NE(launch.indexOf("source /opt/ros/humble/setup.bash"), -1);
+  EXPECT_NE(launch.indexOf("source '/home/user/workcell_ws/install/setup.bash'"), -1);
+  EXPECT_NE(launch.indexOf("exec ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true"), -1);
+  EXPECT_TRUE(workcell_builder::launch_command_is_safe(launch));
+}
+
+TEST(RvizPreviewMetadataCommandTest, RejectsRealHardwareLaunchTokens)
+{
+  QString reason;
+  EXPECT_FALSE(workcell_builder::launch_command_is_safe(
+    "ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=false launch_rviz:=true", &reason));
+  EXPECT_FALSE(workcell_builder::launch_command_is_safe(
+    "ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true ur_robot_driver:=true",
+    &reason));
+}
