@@ -565,6 +565,8 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     product_view_backend_ = ProductViewBackend::EmbeddedWeb3D;
     embedded_web_view_ = new QWebEngineView(view3d_container_);
     embedded_web_view_->setObjectName("embeddedWeb3dProductView");
+    embedded_web_view_->setFocusPolicy(Qt::StrongFocus);
+    view3d_container_->setFocusProxy(embedded_web_view_);
     connect(embedded_web_view_, &QWebEngineView::loadFinished, this, [this](bool ok) {
       const EmbeddedWebRequestIdentity identity = embedded_web_loading_identity_;
       const quint64 navigation_token = embedded_web_loading_navigation_token_;
@@ -663,7 +665,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   });
   connect(gizmo_mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     auto * v = active_native_viewport();
-    if (!v) { const QString choice = gizmo_mode_selector_->currentText(); run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.setMode(%1)").arg(QString(QJsonDocument(QJsonArray{choice == "Move" ? "move" : (choice == "Rotate" ? "rotate" : "select")}).toJson(QJsonDocument::Compact)).mid(1).chopped(1))); refresh_info_chip(); return; }
+    if (!v) { set_authoring_mode(gizmo_mode_selector_->currentText()); refresh_info_chip(); return; }
     const QString choice = gizmo_mode_selector_->currentText();
     if (choice == "Move") v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Move;
     else if (choice == "Rotate") v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Rotate;
@@ -2597,6 +2599,14 @@ bool ScenePreviewWidget::embedded_web_authoring_active() const
     !native_compatibility_fallback_active_ && stack_ && stack_->currentWidget() == view3d_container_;
 }
 
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+void ScenePreviewWidget::focus_embedded_product_view_for_authoring()
+{
+  if (!embedded_web_authoring_active() || !embedded_web_view_) return;
+  embedded_web_view_->setFocus(Qt::OtherFocusReason);
+}
+#endif
+
 void ScenePreviewWidget::set_authoring_mode(const QString & requested_mode)
 {
   const QString mode = requested_mode.trimmed().toLower();
@@ -2607,6 +2617,10 @@ void ScenePreviewWidget::set_authoring_mode(const QString & requested_mode)
       "window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.setMode(%1)")
       .arg(QString(QJsonDocument(QJsonArray{mode}).toJson(QJsonDocument::Compact)).mid(1).chopped(1));
     run_embedded_editor_command(script);
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+    if (mode == QStringLiteral("move") || mode == QStringLiteral("rotate"))
+      focus_embedded_product_view_for_authoring();
+#endif
     return;
   }
   auto * viewport = active_native_viewport();

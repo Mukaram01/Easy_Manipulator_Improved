@@ -60,6 +60,35 @@ def test_web3d_is_default_widget_and_native_ingest_is_skipped_when_active():
     assert 'if (viewport) viewport->ingest_preview_items(preview_items_);' in CPP
 
 
+def test_embedded_product_view_owns_keyboard_focus_for_authoring_modes_only():
+    creation = CPP.split('embedded_web_view_ = new QWebEngineView(view3d_container_)', 1)[1].split(
+        'simple_3d_view_ = embedded_web_view_', 1
+    )[0]
+    authoring = CPP.split('void ScenePreviewWidget::set_authoring_mode', 1)[1].split(
+        'void ScenePreviewWidget::undo_authoring_edit', 1
+    )[0]
+
+    assert 'embedded_web_view_->setFocusPolicy(Qt::StrongFocus);' in creation
+    assert 'view3d_container_->setFocusProxy(embedded_web_view_);' in creation
+    assert 'focus_embedded_product_view_for_authoring();' in authoring
+    assert 'mode == QStringLiteral("move") || mode == QStringLiteral("rotate")' in authoring
+    assert 'QShortcut' not in CPP
+    assert 'Ctrl+Z' not in CPP
+    assert 'qApp->installEventFilter' not in CPP
+    assert 'QApplication::instance()->installEventFilter' not in CPP
+
+
+def test_native_product_view_mode_switch_remains_focus_independent():
+    authoring = CPP.split('void ScenePreviewWidget::set_authoring_mode', 1)[1].split(
+        'void ScenePreviewWidget::undo_authoring_edit', 1
+    )[0]
+    native_path = authoring.split('auto * viewport = active_native_viewport();', 1)[1]
+
+    assert 'focus_embedded_product_view_for_authoring' not in native_path
+    assert 'viewport->gizmo_mode = Scene3DViewportWidget::GizmoMode::Move' in native_path
+    assert 'viewport->gizmo_mode = Scene3DViewportWidget::GizmoMode::Rotate' in native_path
+
+
 def test_backend_diagnostics_are_deterministic_and_concise():
     assert 'emit_backend_startup_diagnostic_once' in HDR
     assert 'backend_startup_diagnostic_emitted_' in HDR
