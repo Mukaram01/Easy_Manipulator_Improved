@@ -43353,7 +43353,7 @@ function keyboardRotationStepRadians(event) {
 function keyboardTransformCommand(event) {
   if (event.ctrlKey || event.metaKey || event.altKey)
     return null;
-  const translations = { KeyW: ["y", 1], KeyS: ["y", -1], KeyA: ["x", -1], KeyD: ["x", 1], PageUp: ["z", 1], PageDown: ["z", -1] };
+  const translations = { KeyW: ["y", 1], KeyS: ["y", -1], KeyA: ["x", 1], KeyD: ["x", -1], PageUp: ["z", 1], PageDown: ["z", -1] };
   const rotations = { KeyQ: ["z", -1], KeyE: ["z", 1], KeyR: ["y", 1], KeyF: ["y", -1], KeyZ: ["x", -1], KeyC: ["x", 1] };
   if (translations[event.code])
     return { kind: "translation", component: translations[event.code][0], direction: translations[event.code][1] };
