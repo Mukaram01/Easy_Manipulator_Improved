@@ -1710,6 +1710,7 @@ def generate_package(
             Path("layout/workcell_studio_layout.yaml"),
             Path("config/workcell_builder_task_intent.yaml"),
             Path("environment.yaml"),
+            Path("environment_layout.yaml"),
             Path("cell_definition.yaml"),
             Path("scene_manifest.yaml"),
         }
