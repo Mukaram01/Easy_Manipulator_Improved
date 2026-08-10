@@ -43333,9 +43333,81 @@ function onCanvasPointerUp(event) {
 function onCanvasPointerCancel() {
   cancelActiveTransformOperation("Pointer cancelled");
 }
+function keyboardEventTargetsEditorControl(event) {
+  const target = event?.target;
+  if (!target)
+    return false;
+  const tagName = String(target.tagName || "").toLowerCase();
+  return Boolean(target.isContentEditable || ["input", "textarea", "select", "button"].includes(tagName) || target.closest?.('input, textarea, select, button, [contenteditable="true"], [contenteditable=""]'));
+}
+function keyboardTranslationStep(event) {
+  if (event.shiftKey)
+    return 1e-3;
+  return el.snapToggle?.checked && translationSnapValue() ? translationSnapValue() : 0.01;
+}
+function keyboardRotationStepRadians(event) {
+  if (event.shiftKey)
+    return THREE.MathUtils.degToRad(1);
+  return el.snapToggle?.checked && rotationSnapRadians() ? rotationSnapRadians() : THREE.MathUtils.degToRad(5);
+}
+function keyboardTransformCommand(event) {
+  if (event.ctrlKey || event.metaKey || event.altKey)
+    return null;
+  const translations = { KeyW: ["y", 1], KeyS: ["y", -1], KeyA: ["x", -1], KeyD: ["x", 1], PageUp: ["z", 1], PageDown: ["z", -1] };
+  const rotations = { KeyQ: ["z", -1], KeyE: ["z", 1], KeyR: ["y", 1], KeyF: ["y", -1], KeyZ: ["x", -1], KeyC: ["x", 1] };
+  if (translations[event.code])
+    return { kind: "translation", component: translations[event.code][0], direction: translations[event.code][1] };
+  if (rotations[event.code])
+    return { kind: "rotation", component: rotations[event.code][0], direction: rotations[event.code][1] };
+  return null;
+}
+function applyKeyboardTransformStep(event, command) {
+  if (!command || event.repeat || state.directMoveDrag || state.directRotateDrag || state.gizmoDragStart || state.gizmoDragGroupStart || state.gizmoPivotDragStart)
+    return false;
+  const owner = canonicalTransformOwner(state.selected);
+  if (!selectionIsEditable(owner))
+    return false;
+  const start = cloneTransform(state.dirtyTransforms.get(owner.item.id)?.newTransform || transformFromObject(owner.object3d));
+  const next = cloneTransform(start);
+  const step = command.kind === "translation" ? keyboardTranslationStep(event) : keyboardRotationStepRadians(event);
+  if (!Number.isFinite(step) || step <= 0)
+    return false;
+  if (command.kind === "translation")
+    next.pose.xyz[command.component] += command.direction * step;
+  else
+    next.pose.rpy[command.component] += command.direction * step;
+  const committed = markDirtyTransform(owner, next, { pushHistory: true, oldTransform: start, snapOptions: null, memberStarts: captureTransformGroup(owner) });
+  if (!committed)
+    return false;
+  emitTransformCommitted(owner);
+  syncInspectorTransformFields(owner);
+  updateLabels();
+  if (state.gizmoPivot?.owner === owner)
+    refreshTransientGizmoPivot(owner, "keyboard_transform_committed");
+  return true;
+}
 function onEditorKeyDown(event) {
-  if (event.key === "Escape")
-    cancelActiveTransformOperation("Escape");
+  if (keyboardEventTargetsEditorControl(event))
+    return;
+  if (event.key === "Escape") {
+    if (cancelActiveTransformOperation("Escape"))
+      event.preventDefault?.();
+    return;
+  }
+  const undoShortcut = (event.ctrlKey || event.metaKey) && !event.altKey && event.code === "KeyZ" && !event.shiftKey;
+  const redoShortcut = (event.ctrlKey || event.metaKey) && !event.altKey && (event.code === "KeyY" || event.code === "KeyZ" && event.shiftKey);
+  if (undoShortcut && state.undoStack.length) {
+    undoPreviewEdit();
+    event.preventDefault?.();
+    return;
+  }
+  if (redoShortcut && state.redoStack.length) {
+    redoPreviewEdit();
+    event.preventDefault?.();
+    return;
+  }
+  if (applyKeyboardTransformStep(event, keyboardTransformCommand(event)))
+    event.preventDefault?.();
 }
 function canonicalRotatePreviewTransform(start, axis, rotationAngle) {
   if (!["X", "Y", "Z"].includes(axis) || !Number.isFinite(rotationAngle))
