@@ -41,7 +41,9 @@ TEST(CommandBuildersTest, command_text_contains_expected_flags)
   EXPECT_NE(cmd.indexOf("--output-dir"), -1);
   EXPECT_NE(cmd.indexOf("--package-name"), -1);
   EXPECT_NE(cmd.indexOf("scene_a"), -1);
-  EXPECT_NE(cmd.indexOf("--force"), -1);
+  EXPECT_NE(cmd.indexOf("--existing-package-dir"), -1);
+  EXPECT_NE(cmd.indexOf("/tmp/scene"), -1);
+  EXPECT_EQ(cmd.indexOf("--force"), -1);
 }
 
 TEST(CommandBuildersTest, task_intent_command_contains_required_flags)

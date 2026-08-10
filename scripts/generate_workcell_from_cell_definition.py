@@ -1475,6 +1475,7 @@ def generate_package(
     force: bool,
     dry_run: bool,
     workspace_root: Path | str | None = None,
+    existing_package_dir: Path | None = None,
 ) -> int:
     if not VALIDATOR_PATH.is_file():
         print(f"FAIL: Missing required validation tool: {VALIDATOR_PATH}")
@@ -1518,8 +1519,23 @@ def generate_package(
     }
 
     final_package_dir = output_dir / package_name
+    if existing_package_dir is not None:
+        existing_package_dir = existing_package_dir.resolve()
+        source_scene_dir = cell_definition_path.parent.resolve()
+        if existing_package_dir != source_scene_dir:
+            print("FAIL: --existing-package-dir must exactly match the cell definition's scene directory")
+            return 2
+        if existing_package_dir.name != package_name:
+            print("FAIL: --package-name must match the existing package directory name")
+            return 2
+        if not (existing_package_dir / "package.xml").is_file() or not (
+            existing_package_dir / "CMakeLists.txt"
+        ).is_file():
+            print("FAIL: --existing-package-dir requires an existing ROS package (package.xml and CMakeLists.txt)")
+            return 2
+        final_package_dir = existing_package_dir
     source_snapshot = _snapshot_scene_package_inputs(cell_definition_path, final_package_dir, loaded, warnings)
-    if final_package_dir.exists() and not force:
+    if final_package_dir.exists() and not force and existing_package_dir is None:
         print(f"FAIL: Output package already exists: {final_package_dir} (use --force to overwrite)")
         return 1
 
@@ -1687,22 +1703,41 @@ def generate_package(
     if bool(commissioning.get("export_bundle", False)):
         _run_optional_bundle_export(bundle_exporter, package_name, scene_manifest_path, package_dir / "generated", warnings)
 
-    backup_dir = output_dir / f"{package_name}.previous-generation"
-    if backup_dir.exists():
-        shutil.rmtree(backup_dir)
-    try:
-        if final_package_dir.exists():
-            final_package_dir.rename(backup_dir)
-        package_dir.rename(final_package_dir)
-    except Exception:
-        if final_package_dir.exists():
-            shutil.rmtree(final_package_dir)
-        if backup_dir.exists():
-            backup_dir.rename(final_package_dir)
-        raise
+    if existing_package_dir is not None:
+        # Authored inputs stay in the selected package.  Only derived/runtime artifacts
+        # from staging are merged back; never replace the package directory itself.
+        authored_paths = {
+            Path("layout/workcell_studio_layout.yaml"),
+            Path("config/workcell_builder_task_intent.yaml"),
+            Path("environment.yaml"),
+            Path("cell_definition.yaml"),
+            Path("scene_manifest.yaml"),
+        }
+        for staged_path in sorted(package_dir.rglob("*")):
+            relative = staged_path.relative_to(package_dir)
+            if relative in authored_paths or staged_path.is_dir():
+                continue
+            destination = final_package_dir / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(staged_path, destination)
+        shutil.rmtree(package_dir)
     else:
+        backup_dir = output_dir / f"{package_name}.previous-generation"
         if backup_dir.exists():
             shutil.rmtree(backup_dir)
+        try:
+            if final_package_dir.exists():
+                final_package_dir.rename(backup_dir)
+            package_dir.rename(final_package_dir)
+        except Exception:
+            if final_package_dir.exists():
+                shutil.rmtree(final_package_dir)
+            if backup_dir.exists():
+                backup_dir.rename(final_package_dir)
+            raise
+        else:
+            if backup_dir.exists():
+                shutil.rmtree(backup_dir)
 
     final_contract_files = [final_package_dir / path.relative_to(staging_dir) for path in required_contract_files]
     missing_contract_files = [path for path in final_contract_files if not path.is_file()]
@@ -1725,6 +1760,12 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True, help="Directory where package folder is generated")
     parser.add_argument("--package-name", type=str, required=True, help="Output ROS package name")
     parser.add_argument("--force", action="store_true", help="Overwrite existing generated package directory")
+    parser.add_argument(
+        "--existing-package-dir",
+        type=Path,
+        default=None,
+        help="Refresh derived artifacts inside this existing source package without replacing authored inputs",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Validate and preview actions without writing files")
     parser.add_argument(
         "--workspace-root",
@@ -1741,6 +1782,7 @@ def main() -> int:
         force=args.force,
         dry_run=args.dry_run,
         workspace_root=args.workspace_root.resolve() if args.workspace_root else None,
+        existing_package_dir=args.existing_package_dir.resolve() if args.existing_package_dir else None,
     )
 
 

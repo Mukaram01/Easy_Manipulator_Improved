@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,16 @@ from scripts.workcell_builder_gui_workflow import generate_files_from_yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCENE = REPO_ROOT / "scenes" / "ur5_2f_test"
+PACKAGE_GENERATOR = REPO_ROOT / "scripts" / "generate_workcell_from_cell_definition.py"
+MAINWINDOW_CPP = (
+    REPO_ROOT / "workcell_builder" / "workcell_builder" / "gui" / "mainwindow.cpp"
+).read_text(encoding="utf-8")
+COMMAND_BUILDERS_CPP = (
+    REPO_ROOT
+    / "workcell_builder"
+    / "workcell_builder"
+    / "src_workcell_builder_command_builders.cpp"
+).read_text(encoding="utf-8")
 
 
 def _without_nondeterministic_fields(path: Path):
@@ -99,6 +111,59 @@ def test_existing_scene_regeneration_uses_saved_layout_without_rewriting_authore
     }
     assert second_generation == first_generation
     assert {path: path.read_bytes() for path in authored_before} == authored_before
+
+
+def test_scene_package_generation_refreshes_selected_package_in_place_without_duplicate(tmp_path):
+    repo_root = tmp_path / "easy_manipulation_deployment"
+    scene = repo_root / "scenes" / "ur5_2f_test"
+    shutil.copytree(SCENE, scene)
+    workspace_duplicate = tmp_path / "scenes" / scene.name
+    authored = [
+        scene / "layout" / "workcell_studio_layout.yaml",
+        scene / "config" / "workcell_builder_task_intent.yaml",
+        scene / "environment.yaml",
+        scene / "cell_definition.yaml",
+        scene / "scene_manifest.yaml",
+    ]
+    before = {path: path.read_bytes() for path in authored}
+    yaml_result = generate_files_from_yaml(scene)
+    assert yaml_result["ok"], yaml_result
+    assert {path: path.read_bytes() for path in authored} == before
+    generated_xacro = scene / "urdf" / "scene.urdf.xacro"
+    generated_xacro.write_text("stale generated artifact\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(PACKAGE_GENERATOR),
+            str(scene / "cell_definition.yaml"),
+            "--output-dir",
+            str(scene.parent),
+            "--package-name",
+            scene.name,
+            "--existing-package-dir",
+            str(scene),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert {path: path.read_bytes() for path in authored} == before
+    assert generated_xacro.read_text(encoding="utf-8") != "stale generated artifact\n"
+    assert (scene / "generated" / "scene_package_readiness.json").is_file()
+    assert not workspace_duplicate.exists()
+    assert not (scene.parent / f"{scene.name}.tmp-generation").exists()
+
+
+def test_workcell_builder_keeps_exact_scene_identity_through_package_refresh():
+    assert '<< "--existing-package-dir" << scene_dir' in COMMAND_BUILDERS_CPP
+    assert '<< "--force"' not in COMMAND_BUILDERS_CPP
+    assert "const fs::path selected_scene_dir" in MAINWINDOW_CPP
+    assert "candidate.scene_dir == selected_scene_dir" in MAINWINDOW_CPP
+    assert "invalidate_workcell_studio_scene_metadata_snapshot(selected_scene_dir" in MAINWINDOW_CPP
 
 
 @pytest.mark.parametrize(

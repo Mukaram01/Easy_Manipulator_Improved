@@ -142,7 +142,7 @@ ScriptCommandPlan build_generate_workcell_command_plan(
     plan.arguments << (scene_dir + "/cell_definition.yaml")
                    << "--output-dir" << output_dir
                    << "--package-name" << scene_name
-                   << "--force";
+                   << "--existing-package-dir" << scene_dir;
   }
   return plan;
 }
