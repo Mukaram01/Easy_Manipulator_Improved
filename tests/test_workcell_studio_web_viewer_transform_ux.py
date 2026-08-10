@@ -35,7 +35,116 @@ def test_transform_gizmo_hook_is_loaded_without_build_system():
     assert "TransformControls" in viewer
     assert "three/addons/controls/TransformControls.js" in viewer
     assert "attachTransformGizmo" in viewer
+    # The editable owner may be attached directly or through the permitted
+    # transient visual pivot.  In either case the authored item remains the
+    # canonical edit/history/persistence identity.
     assert "gizmo.attach(rendered.object3d)" in viewer
+    assert "state.gizmoPivot?.owner === rendered" in viewer
+    assert "transformControls.object === state.gizmoPivot.group" in viewer
+
+
+def test_transform_controls_lifecycle_regression_harness():
+    """Execute the production TransformControls callbacks without a browser.
+
+    This is callback-level Node/VM evidence, not proof of the complete Product
+    View runtime.  The test double records the TransformControls contract while
+    the assertions exercise the viewer's actual lifecycle callback bodies.
+    """
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const element=()=>({hidden:false,checked:false,disabled:false,value:'0',textContent:'',className:'',innerHTML:'',dataset:{},classList:{add(){},remove(){},toggle(){}},querySelector(){return null},querySelectorAll(){return[]},addEventListener(){},setAttribute(){},appendChild(){},remove(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100}}});
+const context={console,assert,process,source,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}},addEventListener(){}},document:{getElementById(){return element()},querySelectorAll(){return[]},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context);vm.runInContext(source+`
+const copy=value=>JSON.parse(JSON.stringify(value));
+const pose=(x=0,y=0,z=0,rx=.11,ry=-.22,rz=.33)=>({pose:{xyz:{x,y,z},rpy:{x:rx,y:ry,z:rz}},scale:{x:1,y:1,z:1}});
+class TransformControlsDouble {
+  constructor(){this.object=null;this.axis=null;this.rotationAngle=0;this.listeners={};this.translationSnap=undefined;this.rotationSnap=undefined;}
+  addEventListener(type,listener){this.listeners[type]=listener}
+  emit(type,event={}){assert(this.listeners[type],type+' listener missing');this.listeners[type](event)}
+  attach(object){this.object=object} detach(){this.object=null} reset(){} setMode(){} setSpace(){}
+  setTranslationSnap(value){this.translationSnap=value} setRotationSnap(value){this.rotationSnap=value}
+}
+const gizmo=new TransformControlsDouble();
+const transformControls=gizmo;
+const makeOwner=(id,start=pose())=>({item:{id,display_name:id,editable:true,locked:false,persistence_source:'layout/workcell_studio_layout.yaml'},object3d:{name:id,t:copy(start)}});
+const bin=makeOwner('target_bin_default',pose(.4,-.2,.8));
+const table=makeOwner('support_surface_table',pose(.55,0,.06));
+const camera=makeOwner('realsense_overhead',pose(.35,0,.85,0,1.5708,0));
+const lockedRobot={item:{id:'ur5_generated',editable:false,locked:true},object3d:{name:'ur5_generated',t:pose()}};
+const lockedTool={item:{id:'robotiq_generated',editable:false,locked:true},object3d:{name:'robotiq_generated',t:pose()}};
+const helpers=['fallback_edges','camera_frustum','selection_outline','urdf_descendant','transient_pivot'].map(id=>({item:{id,editable:false,locked:true,helper:true},object3d:{name:id,t:pose()}}));
+state.objects=[bin,table,camera,lockedRobot,lockedTool,...helpers];state.selected=bin.item.id;state.editorMode='move';
+state.web3dReadiness={state:'scene_ready',terminal:true,pending:new Set(),required:{},failed:false};
+state.three={transformControls:gizmo,controls:{enabled:false},scene:{add(){}}};
+let inspector=[],commits=[];
+renderedById=id=>state.objects.find(record=>record.item.id===id)||null;
+canonicalTransformOwner=value=>typeof value==='string'?renderedById(value):value;
+selectionIsEditable=record=>Boolean(record?.item?.editable&&!record?.item?.locked);
+canEditItem=item=>Boolean(item?.editable&&!item?.locked);
+cloneTransform=copy;transformFromObject=object=>copy(object.t);applyTransformToObject=(object,value)=>{object.t=copy(value)};
+captureTransformGroup=record=>new Map([[record.item.id,copy(record.object3d.t)]]);
+linkedTransformChanges=(record,before,after)=>[{rendered:record,before:copy(before),after:copy(after)}];
+applyTransformChanges=changes=>{for(const change of changes)change.rendered.object3d.t=copy(change.after);return true};
+syncInspectorTransformFields=record=>inspector.push({id:record.item.id,value:copy(record.object3d.t)});updateLabels=()=>{};syncOrbitControlsForEditorMode=()=>{};
+emitTransformCommitted=record=>commits.push(record.item.id);pushEditorEvent=()=>{};populateInspector=record=>inspector.push({id:record.item.id,value:copy(record.object3d.t)});refreshSelectionHighlight=()=>{};removeSelectionHighlight=()=>{};
+resolveCanonicalPhysicalEditBinding=()=>null;refreshTransientGizmoPivot=()=>true;attachTransformGizmo=()=>{};
+inspectionSelectionRendered=value=>value;explicitUiSelectionItemId=value=>value?.item?.id||'';isCanvasSelectableRendered=()=>true;resolveSelectionOwner=id=>({record:renderedById(id)});itemType=()=>'';sceneId=()=> 'harness';
+snapTransform=value=>copy(value);isFiniteTransform=()=>true;
+const callbackBlock=source.split("transformControls.addEventListener('dragging-changed', event => {",2)[1];
+const listenerBoundary="    });"+String.fromCharCode(10)+"    transformControls.addEventListener('objectChange'";
+const draggingBody=callbackBlock.split(listenerBoundary,1)[0];
+const objectBody=callbackBlock.split("transformControls.addEventListener('objectChange', () => {",2)[1].split("    });"+String.fromCharCode(10)+"    controls.addEventListener('start'",1)[0];
+gizmo.addEventListener('dragging-changed',eval('(event)=>{'+draggingBody+'}'));
+gizmo.addEventListener('objectChange',eval('()=>{'+objectBody+'}'));
+
+const ready=()=>assert.strictEqual(state.web3dReadiness.state,'scene_ready');
+const exact=(actual,expected,label)=>assert.deepStrictEqual(actual,expected,label);
+const begin=(owner,mode,axis)=>{state.selected=owner.item.id;state.editorMode=mode;gizmo.object=owner.object3d;gizmo.axis=axis;gizmo.rotationAngle=0;gizmo.emit('dragging-changed',{value:true})};
+const end=()=>gizmo.emit('dragging-changed',{value:false});
+const assertIdentity=owner=>{assert.strictEqual(state.selected,owner.item.id);assert.strictEqual(gizmo.object,owner.object3d);assert(!state.dirtyTransforms.has('transient_pivot'));for(const entry of state.undoStack)assert(entry.changes.every(change=>change.itemId===owner.item.id));};
+
+// Move X/Y/Z: preview through objectChange, commit exactly once at drag end.
+for(const [axis,key] of [['X','x'],['Y','y'],['Z','z']]){
+  state.undoStack=[];state.redoStack=[];state.dirtyTransforms.clear();commits=[];inspector=[];bin.object3d.t=pose(.4,-.2,.8);
+  const start=copy(bin.object3d.t);begin(bin,'move',axis);bin.object3d.t.pose.xyz[key]+=.10;gizmo.emit('objectChange');
+  assert.strictEqual(bin.object3d.t.pose.xyz[key],start.pose.xyz[key]+.10);for(const other of ['x','y','z'].filter(v=>v!==key))assert.strictEqual(bin.object3d.t.pose.xyz[other],start.pose.xyz[other]);exact(bin.object3d.t.pose.rpy,start.pose.rpy,axis+' RPY');
+  assert(inspector.length>0);assert.strictEqual(commits.length,0);assert.strictEqual(state.undoStack.length,0);end();assert.strictEqual(commits.length,1);assert.strictEqual(state.undoStack.length,1);assertIdentity(bin);ready();
+}
+
+// Roll/pitch/yaw isolation for both signs, with XYZ fixed.
+for(const [axis,key] of [['X','x'],['Y','y'],['Z','z']])for(const angle of [.27,-.31]){
+  state.undoStack=[];state.redoStack=[];state.dirtyTransforms.clear();commits=[];inspector=[];bin.object3d.t=pose(.4,-.2,.8);const start=copy(bin.object3d.t);
+  begin(bin,'rotate',axis);gizmo.rotationAngle=angle;gizmo.emit('objectChange');const preview=copy(bin.object3d.t);assert.strictEqual(preview.pose.rpy[key],start.pose.rpy[key]+angle);for(const other of ['x','y','z'].filter(v=>v!==key))assert.strictEqual(preview.pose.rpy[other],start.pose.rpy[other]);exact(preview.pose.xyz,start.pose.xyz,axis+' XYZ');assert.strictEqual(commits.length,0);end();assert.strictEqual(commits.length,1);assert.strictEqual(state.undoStack.length,1);ready();
+}
+
+// Existing snap choices, including Off, are forwarded without adding UI values.
+for(const value of [null,.01,.05,.10]){gizmo.setTranslationSnap(value);assert.strictEqual(gizmo.translationSnap,value)}
+for(const value of [null,5*Math.PI/180,15*Math.PI/180]){gizmo.setRotationSnap(value);assert.strictEqual(gizmo.rotationSnap,value)}
+
+// One transform is one history entry; undo/redo restore exact poses and inspector.
+state.undoStack=[];state.redoStack=[];state.dirtyTransforms.clear();commits=[];inspector=[];bin.object3d.t=pose(.4,-.2,.8);const historyStart=copy(bin.object3d.t);begin(bin,'move','X');bin.object3d.t.pose.xyz.x+=.10;gizmo.emit('objectChange');const historyFinal=copy(bin.object3d.t);end();assert.strictEqual(state.undoStack.length,1);undoPreviewEdit();exact(bin.object3d.t,historyStart,'undo');exact(inspector.at(-1).value,historyStart,'undo inspector');redoPreviewEdit();exact(bin.object3d.t,historyFinal,'redo');exact(inspector.at(-1).value,historyFinal,'redo inspector');ready();
+
+// Escape, pointercancel, and mode switch restore previews and commit nothing.
+for(const [label,cancel] of [['Escape',()=>onEditorKeyDown({key:'Escape'})],['pointercancel',()=>onCanvasPointerCancel()],['mode',()=>setEditorMode('rotate')]]){
+  state.undoStack=[];state.redoStack=[];state.dirtyTransforms.clear();commits=[];bin.object3d.t=pose(.4,-.2,.8);const start=copy(bin.object3d.t);begin(bin,'move','X');bin.object3d.t.pose.xyz.x+=.10;gizmo.emit('objectChange');cancel();exact(bin.object3d.t,start,label);assert.strictEqual(commits.length,0);assert.strictEqual(state.undoStack.length,0);ready();
+}
+
+// Canonical identity is stable for direct attachment or a transient visual pivot.
+for(const owner of [bin,table,camera]){state.selected=owner.item.id;state.undoStack=[];state.dirtyTransforms.clear();const pivot={name:owner.item.id+'_transient_gizmo_pivot'};state.gizmoPivot=owner===bin?null:{owner,group:pivot};gizmo.object=state.gizmoPivot?.group||owner.object3d;const attachedOwner=gizmo.object===owner.object3d?owner:state.gizmoPivot.owner;assert.strictEqual(attachedOwner.item.id,owner.item.id);assert.strictEqual(state.selected,owner.item.id);assert.strictEqual(state.dirtyTransforms.has(pivot.name),false);ready();}
+state.gizmoPivot=null;
+
+// Locked/generated and helper visuals remain inspectable but never editable owners.
+for(const record of [lockedRobot,lockedTool,...helpers]){state.selected=record.item.id;assert.strictEqual(renderedById(record.item.id),record);assert.strictEqual(selectionIsEditable(record),false);const before=copy(record.object3d.t);state.undoStack=[];state.dirtyTransforms.clear();commits=[];gizmo.object=record.object3d;gizmo.emit('dragging-changed',{value:true});gizmo.emit('objectChange');gizmo.emit('dragging-changed',{value:false});exact(record.object3d.t,before,record.item.id);assert.strictEqual(state.dirtyTransforms.size,0);assert.strictEqual(state.undoStack.length,0);assert.strictEqual(commits.length,0);ready();}
+`,context);
+"""
+    subprocess.run(
+        ["node", "-e", harness, str(VIEWER)],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_snap_controls_exist():
