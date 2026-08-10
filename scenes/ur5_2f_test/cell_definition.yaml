@@ -40,25 +40,33 @@ environment:
     - 1.2
     - 0.8
     - 0.08
-objects:
-- id: commissioning_object
-  frame: world
-  pose_xyz:
-  - 0.45
-  - 0.25
-  - 0.1
-  pose_rpy:
-  - 0.0
-  - 0.0
-  - 0.0
-  dimensions:
-  - 0.05
-  - 0.05
-  - 0.05
+objects: []
+self_test:
+  enabled: true
+  object:
+    id: commissioning_object
+    shape: box
+    class: part
+    color: red
+    material: plastic
+    frame: world
+    pose_xyz:
+    - 0.45
+    - 0.25
+    - 0.1
+    pose_rpy:
+    - 0.0
+    - 0.0
+    - 0.0
+    dimensions:
+    - 0.05
+    - 0.05
+    - 0.05
 task:
   id: default_task
   type: pick_place
   source_object: commissioning_object
+  object_source: self_test
   destinations:
   - id: default_drop_zone
     frame: world

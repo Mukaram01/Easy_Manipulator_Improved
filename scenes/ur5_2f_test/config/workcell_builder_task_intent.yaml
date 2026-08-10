@@ -6,6 +6,7 @@ task:
   family: pick_place
   mode: simulation_preview
 pick:
+  object_source: self_test
   source:
     type: pick_zone
     id: commissioning_pick_pose

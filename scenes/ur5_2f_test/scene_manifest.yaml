@@ -72,9 +72,11 @@ task_recipe:
   type: pick_place
   enabled: true
   mode: simulation_preview
-  source_object: commissioning_object
+  inputs:
+    perception_mode: "off"
   pick:
-    object_source: commissioning_object
+    object_source: self_test
+    source_object: commissioning_object
     grasp_strategy: finger_pinch_basic
     allowed_grasp_methods:
     - finger

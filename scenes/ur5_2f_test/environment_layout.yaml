@@ -21,15 +21,6 @@ targets:
       rpy: [0.0, 0.0, 0.0]
     dimensions: [0.22, 0.22, 0.14]
 objects:
-  - id: commissioning_object
-    class: box
-    label: Commissioning Object
-    color: red
-    frame: world
-    pose:
-      xyz: [0.45, 0.25, 0.1]
-      rpy: [0.0, 0.0, 0.0]
-    dimensions: [0.05, 0.05, 0.05]
   - id: table_surface
     class: support_surface
     label: Table Support Surface
