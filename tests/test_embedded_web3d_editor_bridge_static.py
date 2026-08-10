@@ -193,7 +193,7 @@ completeTransformControlsDrag({value:true});completeTransformControlsDrag({value
     )
 
 
-def test_orbit_controls_follow_editor_mode_across_drags_and_scene_replacement():
+def test_orbit_controls_remain_available_across_modes_except_during_gizmo_drags():
     import subprocess
 
     harness = r"""
@@ -207,27 +207,20 @@ vm.runInContext(source+`
 const copy=value=>JSON.parse(JSON.stringify(value));
 const start={pose:{xyz:{x:0,y:0,z:0},rpy:{r:0,p:0,y:0}},scale:{x:1,y:1,z:1}};
 const rendered={item:{id:'editable',editable:true,locked:false,display_name:'Editable'},object3d:{}};
-state.objects=[rendered]; state.selected='editable'; state.three={controls:{enabled:true},transformControls:{axis:'Z',rotationAngle:0,setMode(){},setSpace(){},attach(){},detach(){},reset(){}},pointer:{},raycaster:{}};
-cloneTransform=copy; transformFromObject=()=>copy(start); pointerToWorldPlane=()=>({x:0,y:0,z:0}); selectionIsEditable=value=>value===rendered; renderedById=id=>id==='editable'?rendered:null; captureTransformGroup=()=>new Map([['editable',copy(start)]]); applyTransformChanges=()=>{}; syncInspectorTransformFields=()=>{}; linkedTransformChanges=()=>[]; markDirtyTransform=()=>true; emitTransformCommitted=()=>{}; pushEditorEvent=()=>{}; showError=message=>{throw new Error(message)}; updateLabels=()=>{}; attachTransformGizmo=()=>{}; canonicalTransformOwner=()=>rendered; detachTransformGizmo=()=>{}; applyTransformToObject=()=>{}; sameTransform=()=>false; snapTransform=value=>copy(value); isFiniteTransform=()=>true;
-const pointer={pointerId:7,clientX:5,clientY:5,preventDefault(){},stopPropagation(){}};
+state.objects=[rendered]; state.selected='editable'; state.three={controls:{enabled:true},transformControls:{axis:'Z',rotationAngle:0,dragging:false,setMode(){},setSpace(){},attach(){},detach(){},reset(){this.dragging=false}},pointer:{},raycaster:{}};
+cloneTransform=copy; transformFromObject=()=>copy(start); selectionIsEditable=value=>value===rendered; renderedById=id=>id==='editable'?rendered:null; captureTransformGroup=()=>new Map([['editable',copy(start)]]); applyTransformChanges=()=>{}; syncInspectorTransformFields=()=>{}; linkedTransformChanges=()=>[]; markDirtyTransform=()=>true; emitTransformCommitted=()=>{}; pushEditorEvent=()=>{}; showError=message=>{throw new Error(message)}; updateLabels=()=>{}; attachTransformGizmo=()=>{}; canonicalTransformOwner=()=>rendered; detachTransformGizmo=()=>{}; applyTransformToObject=()=>{}; sameTransform=()=>false; snapTransform=value=>copy(value); isFiniteTransform=()=>true;
 
-setEditorMode('move'); assert.strictEqual(state.three.controls.enabled,false,'Move must disable orbit before translation');
-assert(beginDirectMoveDrag(pointer,rendered)); assert.strictEqual(state.three.controls.enabled,false,'Move must disable orbit during translation');
-finishDirectMoveDrag(pointer); assert.strictEqual(state.three.controls.enabled,false,'translation completion must preserve Move orbit state');
-beginDirectMoveDrag(pointer,rendered); cancelDirectMoveDrag(); assert.strictEqual(state.three.controls.enabled,false,'translation cancellation must preserve Move orbit state');
-beginDirectMoveDrag(pointer,rendered); onCanvasPointerCancel(); assert.strictEqual(state.three.controls.enabled,false,'pointercancel must preserve Move orbit state');
-beginDirectMoveDrag(pointer,rendered); onEditorKeyDown({key:'Escape'}); assert.strictEqual(state.three.controls.enabled,false,'Escape must preserve Move orbit state');
-
-setEditorMode('rotate'); assert.strictEqual(state.three.controls.enabled,false,'Rotate must disable orbit before rotation');
-assert(beginDirectRotateDrag(rendered)); assert.strictEqual(state.three.controls.enabled,false,'Rotate must disable orbit during rotation');
-finishDirectRotateDrag(rendered); assert.strictEqual(state.three.controls.enabled,false,'rotation completion must preserve Rotate orbit state');
-beginDirectRotateDrag(rendered); cancelDirectRotateDrag(); assert.strictEqual(state.three.controls.enabled,false,'rotation cancellation must preserve Rotate orbit state');
+for(const mode of ['select','move','rotate']){setEditorMode(mode);assert.strictEqual(state.three.controls.enabled,true,mode+' must allow CAD camera navigation while idle')}
+for(const mode of ['move','rotate']){
+  setEditorMode(mode);state.three.transformControls.dragging=true;syncOrbitControlsForEditorMode();assert.strictEqual(state.three.controls.enabled,false,mode+' gizmo drag must own the pointer exclusively');
+  state.three.transformControls.dragging=false;syncOrbitControlsForEditorMode();assert.strictEqual(state.three.controls.enabled,true,mode+' drag completion must restore camera navigation');
+  state.three.transformControls.dragging=true;state.gizmoDragStart=copy(start);state.gizmoDragGroupStart=new Map([['editable',copy(start)]]);onCanvasPointerCancel();assert.strictEqual(state.three.controls.enabled,true,mode+' pointercancel must restore camera navigation');
+  state.three.transformControls.dragging=true;state.gizmoDragStart=copy(start);state.gizmoDragGroupStart=new Map([['editable',copy(start)]]);onEditorKeyDown({key:'Escape'});assert.strictEqual(state.three.controls.enabled,true,mode+' Escape must restore camera navigation');
+}
 
 validateSceneJson=()=>[]; renderScene=()=>{}; refreshWarnings=()=>{}; renderSceneSummary=()=>{}; beginInitialCameraFitForCurrentScene=()=>{}; emitWeb3dReadinessState=()=>{}; clearError=()=>{};
-state.three.controls={enabled:true}; await loadFile({name:'replacement.json',text:async()=>'{"scene_id":"replacement"}'}); assert.strictEqual(state.three.controls.enabled,false,'scene replacement must preserve Rotate orbit state');
-setEditorMode('move'); state.three.controls={enabled:true}; syncOrbitControlsForEditorMode(); assert.strictEqual(state.three.controls.enabled,false,'new OrbitControls must inherit Move mode');
-setEditorMode('rotate'); state.three.controls={enabled:true}; syncOrbitControlsForEditorMode(); assert.strictEqual(state.three.controls.enabled,false,'new OrbitControls must inherit Rotate mode');
-setEditorMode('select'); assert.strictEqual(state.three.controls.enabled,true,'Select must restore orbit controls');
+state.three.controls={enabled:false}; await loadFile({name:'replacement.json',text:async()=>'{"scene_id":"replacement"}'}); assert.strictEqual(state.three.controls.enabled,true,'scene replacement must restore idle OrbitControls');
+for(const mode of ['select','move','rotate']){setEditorMode(mode);state.three.controls={enabled:false};syncOrbitControlsForEditorMode();assert.strictEqual(state.three.controls.enabled,true,'new OrbitControls must be available in '+mode)}
 })().catch(error=>{console.error(error);process.exitCode=1});
 `,context);
 """
@@ -235,7 +228,6 @@ setEditorMode('select'); assert.strictEqual(state.three.controls.enabled,true,'S
         ["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js")],
         cwd=ROOT, check=True, capture_output=True, text=True,
     )
-
 
 def test_browser_mode_state_synchronizes_all_qt_controls_without_stale_callbacks():
     apply_body = CPP.split("void ScenePreviewWidget::apply_embedded_editor_state", 1)[1].split("void ScenePreviewWidget::poll_embedded_editor_events", 1)[0]
@@ -251,6 +243,7 @@ def test_browser_mode_state_synchronizes_all_qt_controls_without_stale_callbacks
 def test_move_mode_body_click_only_selects_without_starting_direct_drag():
     handler = VIEWER.split("function onCanvasPointerDown", 1)[1].split("function onCanvasPointerMove", 1)[0]
     assert "pickObject(event)" in handler
+    assert "event.button === 0" in handler
     assert "beginDirectMoveDrag" not in handler
     assert "updateDirectMoveDrag" not in VIEWER.split("function onCanvasPointerMove", 1)[1].split("function onCanvasPointerUp", 1)[0]
     assert "finishDirectMoveDrag" not in VIEWER.split("function onCanvasPointerUp", 1)[1].split("function onCanvasPointerCancel", 1)[0]
