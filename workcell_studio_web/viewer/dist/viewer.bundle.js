@@ -38309,7 +38309,7 @@ var CAMERA_PRESET_DIRECTIONS = Object.freeze({
   top: [0, -1e-3, 1],
   robot: [1.1, -1.25, 0.72]
 });
-var state = { sceneJson: null, sourceWebSceneFile: "", diagnosticKeys: /* @__PURE__ */ new Set(), frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], pickRecords: [], pickIdentityByObject: /* @__PURE__ */ new WeakMap(), selectionIdentityIndex: null, physicalEditBindings: /* @__PURE__ */ new Map(), assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: "", three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: "", done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, gizmoPivot: null, gizmoPivotDragStart: null, gizmoAttachmentDiagnostic: { targetId: "", reason: "not_evaluated" }, directMoveDrag: null, directRotateDrag: null, editorMode: "select", editorEvents: [], editorError: "", robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: "", lastCanvasPickReason: "", lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: "", sceneKey: "" }, web3dReadiness: { state: "booting", terminal: false, terminalState: "", terminalNavigationKey: "", terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null }, builderRevision: "", sceneJsonLoaded: false, activeNavigationKey: "" };
+var state = { sceneJson: null, sourceWebSceneFile: "", diagnosticKeys: /* @__PURE__ */ new Set(), frameLookup: /* @__PURE__ */ new Map(), resolvedFramePoses: /* @__PURE__ */ new Map(), objects: [], pickRecords: [], pickIdentityByObject: /* @__PURE__ */ new WeakMap(), selectionIdentityIndex: null, physicalEditBindings: /* @__PURE__ */ new Map(), assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: "", three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: "", done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: /* @__PURE__ */ new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, gizmoPivot: null, gizmoPivotDragStart: null, cancellingTransformOperation: false, gizmoAttachmentDiagnostic: { targetId: "", reason: "not_evaluated" }, directMoveDrag: null, directRotateDrag: null, editorMode: "select", editorEvents: [], editorError: "", robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: "", lastCanvasPickReason: "", lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: "", sceneKey: "" }, web3dReadiness: { state: "booting", terminal: false, terminalState: "", terminalNavigationKey: "", terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: /* @__PURE__ */ new Set(), failed: false, failure: null }, builderRevision: "", sceneJsonLoaded: false, activeNavigationKey: "" };
 var robotPreviewLoadToken = 0;
 var physicalLoadToken = 0;
 var RESET_VIEW_TITLE = "Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.";
@@ -39658,14 +39658,21 @@ function currentSelectionDiagnostics() {
   const item = rendered?.item || null;
   const selectionIdentity = uiSelectionIdentity(rendered);
   const selectionOwners = state.selectionIdentityIndex?.selectionOwners || [];
+  const attachedObject = state.three?.transformControls?.object || null;
+  const canonicalOwnerId = editOwner?.item?.id || "";
+  const hasCanonicalGizmoAttachment = Boolean(
+    canonicalOwnerId && state.selected === canonicalOwnerId && selectionIsEditable(editOwner) && (attachedObject === editOwner.object3d || attachedObject === state.gizmoPivot?.group && state.gizmoPivot?.owner === editOwner)
+  );
   return {
     sceneId: sceneId(),
     selectedItemId: id,
     uiSelectionItemId: selectionIdentity.id,
-    editOwnerItemId: editOwner?.item?.id || "",
+    editOwnerItemId: canonicalOwnerId,
+    canonicalOwnerId,
     canonicalSelectedId: id,
     editAuthoritySource: editAuthoritySource(editOwner?.item),
-    gizmoAttachedTargetId: state.three?.transformControls?.object === editOwner?.object3d ? editOwner?.item?.id || "" : state.gizmoAttachmentDiagnostic?.targetId || "",
+    gizmoAttachedTargetId: hasCanonicalGizmoAttachment ? canonicalOwnerId : "",
+    gizmoAttachedObjectName: attachedObject?.name || "",
     gizmoVisible: Boolean(state.three?.transformControls?.visible),
     gizmoEnabled: Boolean(state.three?.transformControls?.enabled),
     gizmoAttachmentReason: state.gizmoAttachmentDiagnostic?.reason || "not_evaluated",
@@ -41444,8 +41451,11 @@ function initThree() {
     transformControls.setSpace("world");
     transformControls.addEventListener("dragging-changed", (event) => {
       syncOrbitControlsForEditorMode();
+      if (state.cancellingTransformOperation)
+        return;
       const rendered = canonicalTransformOwner(state.selected);
-      if (!rendered || !canEditItem(rendered.item))
+      const attachedToOwner = transformControls.object === rendered?.object3d || state.gizmoPivot?.owner === rendered && transformControls.object === state.gizmoPivot.group;
+      if (!rendered || !canEditItem(rendered.item) || !attachedToOwner)
         return;
       if (state.gizmoPivot?.owner === rendered && transformControls.object === state.gizmoPivot.group) {
         if (event.value)
@@ -41465,14 +41475,19 @@ function initThree() {
         state.gizmoDragStart = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d));
         state.gizmoDragGroupStart = captureTransformGroup(rendered);
       } else {
-        const committed = markDirtyTransform(rendered, transformFromObject(rendered.object3d), { pushHistory: true, oldTransform: state.gizmoDragStart, memberStarts: state.gizmoDragGroupStart });
-        if (committed)
-          emitTransformCommitted(rendered);
+        const finalTransform = transformFromObject(rendered.object3d);
+        if (state.gizmoDragStart && !sameTransform(state.gizmoDragStart, finalTransform)) {
+          const committed = markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: state.gizmoDragStart, memberStarts: state.gizmoDragGroupStart });
+          if (committed)
+            emitTransformCommitted(rendered);
+        }
         state.gizmoDragStart = null;
         state.gizmoDragGroupStart = null;
       }
     });
     transformControls.addEventListener("objectChange", () => {
+      if (state.cancellingTransformOperation)
+        return;
       const rendered = canonicalTransformOwner(state.selected);
       if (!rendered || !canEditItem(rendered.item))
         return;
@@ -41484,6 +41499,8 @@ function initThree() {
         previewDirectRotateDrag(rendered);
         return;
       }
+      if (!state.gizmoDragStart || transformControls.object !== rendered.object3d)
+        return;
       const snapped = snapTransform(transformFromObject(rendered.object3d));
       applyTransformChanges(linkedTransformChanges(rendered, state.gizmoDragStart || transformFromObject(rendered.object3d), snapped, state.gizmoDragGroupStart));
       syncInspectorTransformFields(rendered);
@@ -43177,10 +43194,8 @@ function selectObjectFromRender(id, renderIdentity = null) {
     return "";
   }
   const wasInitialPreviewActive = state.initialPosePreview.active;
-  if (state.directMoveDrag && state.directMoveDrag.itemId !== selectionId)
-    cancelDirectMoveDrag("Move cancelled");
-  if (state.directRotateDrag && state.directRotateDrag.itemId !== selectionId)
-    cancelDirectRotateDrag("Rotation cancelled");
+  if (selectionId !== state.selected)
+    cancelActiveTransformOperation("Selection changed");
   id = selectionId;
   const previous = state.selected || "";
   state.selected = id;
@@ -43264,148 +43279,86 @@ function pickObject(event) {
   state.lastFailedCanvasPickDiagnostic = null;
   return canonicalId;
 }
-function pointerToWorldPlane(event, z) {
-  const rect = el.canvas.getBoundingClientRect();
-  if (!rect.width || !rect.height)
-    return null;
-  state.three.pointer.x = (event.clientX - rect.left) / rect.width * 2 - 1;
-  state.three.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  state.three.raycaster.setFromCamera(state.three.pointer, state.three.camera);
-  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -z);
-  const hit = new THREE.Vector3();
-  if (!state.three.raycaster.ray.intersectPlane(plane, hit))
-    return null;
-  return Number.isFinite(hit.x) && Number.isFinite(hit.y) && Number.isFinite(hit.z) ? hit : null;
-}
-function snapHorizontalPreview(transform) {
-  const snapped = snapTransform(transform, { translationAxes: ["x", "y"], rotationAxes: [] });
-  snapped.pose.xyz.z = transform.pose.xyz.z;
-  return snapped;
-}
 function syncOrbitControlsForEditorMode() {
   if (state.three.controls)
     state.three.controls.enabled = state.editorMode === "select";
 }
-function beginDirectMoveDrag(event, rendered) {
-  if (state.editorMode !== "move" || !selectionIsEditable(rendered))
+function cancelActiveTransformOperation(reason = "Transform cancelled") {
+  if (state.cancellingTransformOperation)
     return false;
-  const start = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d));
-  const hit = pointerToWorldPlane(event, start.pose.xyz.z);
-  if (!hit)
+  const drag = state.directMoveDrag || state.directRotateDrag;
+  const groupStart = drag?.groupStart || state.gizmoDragGroupStart;
+  const owner = renderedById(drag?.itemId || "") || canonicalTransformOwner(state.selected) || state.gizmoPivot?.owner;
+  const ownerStart = drag?.start || state.gizmoDragStart;
+  const active = Boolean(drag || state.gizmoDragStart || state.gizmoDragGroupStart || state.gizmoPivotDragStart);
+  if (!active) {
+    syncOrbitControlsForEditorMode();
     return false;
-  state.directMoveDrag = { itemId: rendered.item.id, start, groupStart: captureTransformGroup(rendered), last: cloneTransform(start), offset: { x: start.pose.xyz.x - hit.x, y: start.pose.xyz.y - hit.y } };
-  syncOrbitControlsForEditorMode();
-  el.canvas.setPointerCapture?.(event.pointerId);
-  el.canvas.classList.add("direct-move-dragging");
-  event.preventDefault();
-  event.stopPropagation();
-  return true;
-}
-function updateDirectMoveDrag(event) {
-  const drag = state.directMoveDrag;
-  if (!drag)
-    return false;
-  const rendered = renderedById(drag.itemId);
-  if (!rendered || state.selected !== drag.itemId || !selectionIsEditable(rendered))
-    return cancelDirectMoveDrag("Move cancelled"), true;
-  const hit = pointerToWorldPlane(event, drag.start.pose.xyz.z);
-  if (!hit)
-    return true;
-  const next = cloneTransform(drag.start);
-  next.pose.xyz.x = hit.x + drag.offset.x;
-  next.pose.xyz.y = hit.y + drag.offset.y;
-  next.pose.xyz.z = drag.start.pose.xyz.z;
-  const preview = snapHorizontalPreview(next);
-  if (!isFiniteTransform(preview))
-    return true;
-  drag.last = cloneTransform(preview);
-  applyTransformChanges(linkedTransformChanges(rendered, drag.start, preview, drag.groupStart));
-  syncInspectorTransformFields(rendered);
-  event.preventDefault();
-  event.stopPropagation();
-  return true;
-}
-function finishDirectMoveDrag(event) {
-  const drag = state.directMoveDrag;
-  if (!drag)
-    return false;
-  const rendered = renderedById(drag.itemId);
-  const finalTransform = cloneTransform(drag.last);
-  endDirectMoveDrag(event);
-  if (!selectionIsEditable(rendered) || !isFiniteTransform(finalTransform))
-    return false;
-  if (sameTransform(drag.start, finalTransform)) {
-    applyTransformChanges([...drag.groupStart].map(([itemId, after]) => ({ rendered: renderedById(itemId), after })));
-    syncInspectorTransformFields(rendered);
-    return true;
   }
-  const committed = markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start, memberStarts: drag.groupStart });
-  if (!committed) {
-    applyTransformChanges([...drag.groupStart].map(([itemId, after]) => ({ rendered: renderedById(itemId), after })));
-    showError(`Move failed for ${itemLabel(rendered.item)}: final transform was rejected by the editor bridge.`);
-    return true;
+  state.cancellingTransformOperation = true;
+  try {
+    state.three.transformControls?.reset?.();
+    if (groupStart)
+      applyTransformChanges([...groupStart].map(([itemId, after]) => ({ rendered: renderedById(itemId), after })));
+    if (owner && ownerStart)
+      applyTransformToObject(owner.object3d, ownerStart);
+    state.gizmoDragStart = null;
+    state.gizmoDragGroupStart = null;
+    state.gizmoPivotDragStart = null;
+    state.directMoveDrag = null;
+    state.directRotateDrag = null;
+    el.canvas.classList.remove("direct-move-dragging");
+    if (owner && state.gizmoPivot?.owner === owner)
+      refreshTransientGizmoPivot(owner, "cancelled_transform_restored");
+    updateLabels();
+    if (owner)
+      syncInspectorTransformFields(owner);
+    pushEditorEvent("status", { message: reason || "Transform cancelled" });
+  } finally {
+    state.cancellingTransformOperation = false;
+    syncOrbitControlsForEditorMode();
   }
-  emitTransformCommitted(rendered);
-  pushEditorEvent("status", { message: `Moved ${itemLabel(rendered.item)}` });
   return true;
-}
-function endDirectMoveDrag(event) {
-  state.directMoveDrag = null;
-  syncOrbitControlsForEditorMode();
-  el.canvas.classList.remove("direct-move-dragging");
-  if (event?.pointerId !== void 0)
-    el.canvas.releasePointerCapture?.(event.pointerId);
 }
 function cancelDirectMoveDrag(message) {
-  const drag = state.directMoveDrag;
-  if (!drag)
-    return false;
-  const rendered = renderedById(drag.itemId);
-  if (rendered) {
-    applyTransformChanges([...drag.groupStart].map(([itemId, after]) => ({ rendered: renderedById(itemId), after })));
-    syncInspectorTransformFields(rendered);
-  }
-  endDirectMoveDrag();
-  pushEditorEvent("status", { message: message || "Move cancelled" });
-  return true;
+  return cancelActiveTransformOperation(message || "Move cancelled");
 }
 function onCanvasPointerDown(event) {
-  const hitId = pickObject(event);
-  const rendered = hitId ? renderedById(hitId) : null;
-  if (beginDirectMoveDrag(event, rendered))
-    return;
+  pickObject(event);
 }
 function onCanvasPointerMove(event) {
-  updateDirectMoveDrag(event);
 }
 function onCanvasPointerUp(event) {
-  finishDirectMoveDrag(event);
 }
 function onCanvasPointerCancel() {
-  cancelDirectMoveDrag("Move cancelled");
-  cancelDirectRotateDrag("Rotation cancelled");
-  syncOrbitControlsForEditorMode();
+  cancelActiveTransformOperation("Pointer cancelled");
 }
 function onEditorKeyDown(event) {
-  if (event.key !== "Escape")
-    return;
-  cancelDirectMoveDrag("Move cancelled");
-  cancelDirectRotateDrag("Rotation cancelled");
-  syncOrbitControlsForEditorMode();
+  if (event.key === "Escape")
+    cancelActiveTransformOperation("Escape");
+}
+function canonicalRotatePreviewTransform(start, axis, rotationAngle) {
+  if (!["X", "Y", "Z"].includes(axis) || !Number.isFinite(rotationAngle))
+    return null;
+  const next = cloneTransform(start);
+  const component = axis === "X" ? "x" : axis === "Y" ? "y" : "z";
+  next.pose.rpy[component] = start.pose.rpy[component] + rotationAngle;
+  return next;
 }
 function directRotatePreviewTransform(rendered) {
   const drag = state.directRotateDrag;
   if (!drag || !rendered || rendered.item.id !== drag.itemId)
     return null;
-  const next = cloneTransform(drag.start);
-  next.pose.rpy.z = transformFromObject(rendered.object3d).pose.rpy.z;
-  return snapTransform(next, { translationAxes: [], rotationAxes: ["z"] });
+  return canonicalRotatePreviewTransform(drag.start, drag.axis, state.three.transformControls?.rotationAngle);
 }
 function beginDirectRotateDrag(rendered) {
   if (state.editorMode !== "rotate" || !selectionIsEditable(rendered))
     return false;
+  const axis = state.three.transformControls?.axis;
+  if (!["X", "Y", "Z"].includes(axis))
+    return false;
   const start = cloneTransform(state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d));
-  state.directRotateDrag = { itemId: rendered.item.id, start, groupStart: captureTransformGroup(rendered), last: cloneTransform(start) };
+  state.directRotateDrag = { itemId: rendered.item.id, axis, start, groupStart: captureTransformGroup(rendered), last: cloneTransform(start) };
   syncOrbitControlsForEditorMode();
   return true;
 }
@@ -43433,7 +43386,7 @@ function finishDirectRotateDrag(rendered) {
     syncInspectorTransformFields(rendered);
     return true;
   }
-  const committed = markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start, snapOptions: { translationAxes: [], rotationAxes: ["z"] }, memberStarts: drag.groupStart });
+  const committed = markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start, snapOptions: null, memberStarts: drag.groupStart });
   if (!committed) {
     applyTransformToObject(rendered.object3d, drag.start);
     showError(`Rotation failed for ${itemLabel(rendered.item)}: final transform was rejected by the editor bridge.`);
@@ -43448,17 +43401,7 @@ function endDirectRotateDrag() {
   syncOrbitControlsForEditorMode();
 }
 function cancelDirectRotateDrag(message) {
-  const drag = state.directRotateDrag;
-  if (!drag)
-    return false;
-  const rendered = renderedById(drag.itemId);
-  if (rendered) {
-    applyTransformChanges([...drag.groupStart].map(([itemId, after]) => ({ rendered: renderedById(itemId), after })));
-    syncInspectorTransformFields(rendered);
-  }
-  endDirectRotateDrag();
-  pushEditorEvent("status", { message: message || "Rotation cancelled" });
-  return true;
+  return cancelActiveTransformOperation(message || "Rotation cancelled");
 }
 function authoritativePhysicalMeshCentre(owner) {
   const visual = resolveCanonicalPhysicalEditBinding(owner)?.visual;
@@ -43539,11 +43482,14 @@ function beginTransientPivotDrag(owner) {
   const pivot = state.gizmoPivot;
   if (!pivot || pivot.owner !== owner)
     return false;
+  const axis = state.editorMode === "rotate" ? state.three.transformControls?.axis : null;
+  if (state.editorMode === "rotate" && !["X", "Y", "Z"].includes(axis))
+    return false;
   owner.object3d.updateWorldMatrix(true, false);
   pivot.group.updateWorldMatrix(true, false);
   state.gizmoDragStart = cloneTransform(state.dirtyTransforms.get(owner.item.id)?.newTransform || transformFromObject(owner.object3d));
   state.gizmoDragGroupStart = captureTransformGroup(owner);
-  state.gizmoPivotDragStart = { ownerWorld: owner.object3d.matrixWorld.clone(), pivotWorld: pivot.group.matrixWorld.clone() };
+  state.gizmoPivotDragStart = { ownerWorld: owner.object3d.matrixWorld.clone(), pivotWorld: pivot.group.matrixWorld.clone(), axis };
   return true;
 }
 function previewTransientPivotDrag(owner) {
@@ -43551,6 +43497,15 @@ function previewTransientPivotDrag(owner) {
   const pivot = state.gizmoPivot;
   if (!start || !pivot || pivot.owner !== owner)
     return false;
+  if (state.editorMode === "rotate") {
+    const next2 = canonicalRotatePreviewTransform(state.gizmoDragStart, start.axis, state.three.transformControls?.rotationAngle);
+    if (!next2 || !isFiniteTransform(next2))
+      return false;
+    applyTransformChanges(linkedTransformChanges(owner, state.gizmoDragStart, next2, state.gizmoDragGroupStart));
+    syncInspectorTransformFields(owner);
+    updateLabels();
+    return true;
+  }
   pivot.group.updateWorldMatrix(true, false);
   const delta = pivot.group.matrixWorld.clone().multiply(start.pivotWorld.clone().invert());
   const ownerWorld = delta.multiply(start.ownerWorld);
@@ -43568,7 +43523,8 @@ function finishTransientPivotDrag(owner) {
   if (!state.gizmoPivotDragStart)
     return false;
   previewTransientPivotDrag(owner);
-  const committed = markDirtyTransform(owner, transformFromObject(owner.object3d), { pushHistory: true, oldTransform: state.gizmoDragStart, memberStarts: state.gizmoDragGroupStart });
+  const finalTransform = state.editorMode === "rotate" ? canonicalRotatePreviewTransform(state.gizmoDragStart, state.gizmoPivotDragStart.axis, state.three.transformControls?.rotationAngle) : transformFromObject(owner.object3d);
+  const committed = finalTransform && !sameTransform(state.gizmoDragStart, finalTransform) && markDirtyTransform(owner, finalTransform, { pushHistory: true, oldTransform: state.gizmoDragStart, snapOptions: state.editorMode === "rotate" ? null : void 0, memberStarts: state.gizmoDragGroupStart });
   if (committed)
     emitTransformCommitted(owner);
   state.gizmoDragStart = null;
@@ -43602,8 +43558,8 @@ function attachTransformGizmo(rendered, attachmentReason = "mode_or_selection") 
     if (state.editorMode === "rotate") {
       gizmo.setMode("rotate");
       gizmo.setSpace("world");
-      gizmo.showX = false;
-      gizmo.showY = false;
+      gizmo.showX = true;
+      gizmo.showY = true;
       gizmo.showZ = true;
     } else {
       gizmo.setMode("translate");
@@ -43623,7 +43579,9 @@ function attachTransformGizmo(rendered, attachmentReason = "mode_or_selection") 
     detachTransformGizmo(refusal);
   }
 }
-function detachTransformGizmo(reason = "detached") {
+function detachTransformGizmo(reason = "detached", { skipCancel = false } = {}) {
+  if (!skipCancel)
+    cancelActiveTransformOperation(reason);
   const gizmo = state.three.transformControls;
   state.gizmoAttachmentDiagnostic = { targetId: "", reason };
   if (!gizmo)
@@ -44043,13 +44001,8 @@ if (el.exportEditPatch)
   el.exportEditPatch.addEventListener("click", exportEditPatch);
 function setEditorMode(mode) {
   const normalized = mode === "move" ? "move" : mode === "rotate" ? "rotate" : "select";
-  if (state.editorMode !== normalized) {
-    cancelDirectMoveDrag("Move cancelled");
-    cancelDirectRotateDrag("Rotation cancelled");
-  } else if (normalized === "select") {
-    cancelDirectMoveDrag("Move cancelled");
-    cancelDirectRotateDrag("Rotation cancelled");
-  }
+  if (state.editorMode !== normalized || normalized === "select")
+    cancelActiveTransformOperation("Mode changed");
   state.editorMode = normalized;
   syncOrbitControlsForEditorMode();
   const gizmo = state.three.transformControls;
@@ -44064,8 +44017,8 @@ function setEditorMode(mode) {
     } else if (normalized === "rotate") {
       gizmo.setMode("rotate");
       gizmo.setSpace("world");
-      gizmo.showX = false;
-      gizmo.showY = false;
+      gizmo.showX = true;
+      gizmo.showY = true;
       gizmo.showZ = true;
       gizmo.enabled = true;
     } else {
