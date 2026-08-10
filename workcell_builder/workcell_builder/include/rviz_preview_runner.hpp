@@ -5,7 +5,6 @@
 
 #include <boost/filesystem.hpp>
 
-#include <functional>
 #include <string>
 
 #include "workcell_studio_scene_browser.hpp"
@@ -21,15 +20,21 @@ struct PreviewReadinessStatus
 
 QString build_command(const QString & scene_pkg);
 QString build_command(const WorkcellStudioSceneInfo & scene_info);
+QString build_selected_package_command(
+  const WorkcellStudioSceneInfo & scene_info,
+  const boost::filesystem::path & workspace_root);
+QString package_prefix_check_command(
+  const WorkcellStudioSceneInfo & scene_info,
+  const boost::filesystem::path & workspace_root);
+QString build_launch_shell_command(
+  const WorkcellStudioSceneInfo & scene_info,
+  const boost::filesystem::path & workspace_root);
+bool launch_command_is_safe(const QString & command, QString * reason = nullptr);
 QString build_shell_command(const QString & scene_pkg, const boost::filesystem::path & workspace_root);
 QString build_shell_command(const WorkcellStudioSceneInfo & scene_info, const boost::filesystem::path & workspace_root);
 PreviewReadinessStatus validate_readiness(
   const WorkcellStudioSceneInfo & scene_info,
   const boost::filesystem::path & workspace_root);
-PreviewReadinessStatus run(
-  const QString & command,
-  const std::function<void(const QString &)> & stdout_callback,
-  const std::function<void(const QString &)> & stderr_callback);
 PreviewReadinessStatus dry_run(
   const WorkcellStudioSceneInfo & scene_info,
   const boost::filesystem::path & workspace_root,

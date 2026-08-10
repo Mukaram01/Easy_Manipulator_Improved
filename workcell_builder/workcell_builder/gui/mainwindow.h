@@ -72,6 +72,7 @@ class QFrame;
 class QDialog;
 class QGridLayout;
 class QMessageBox;
+class QCloseEvent;
 
 class MainWindow: public QMainWindow
 {
@@ -112,6 +113,7 @@ private slots:
 
 private:
   bool eventFilter(QObject * watched, QEvent * event) override;
+  void closeEvent(QCloseEvent * event) override;
   enum class StudioPage : int {
     DashboardPage = 0,
     SceneBuilderPage,
@@ -765,6 +767,11 @@ private:
   QString preview_state_{ "IDLE" };
   QString active_preview_command_;
   QString preview_running_scene_key_;
+  workcell_builder::WorkcellStudioSceneInfo active_preview_scene_;
+  QString active_preview_workspace_root_;
+  QString preview_output_tail_;
+  bool preview_stop_requested_{ false };
+  bool close_after_preview_stop_{ false };
   workcell_builder::WorkcellStudioSceneBrowserResult scene_browser_result_;
   int selected_scene_index_{ -1 };
   struct WorkcellLoadResult
