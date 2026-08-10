@@ -42,6 +42,17 @@ SUPPORTED_TASK_TYPES = {
 SUPPORTED_LAYOUT_ASSET_TYPES = {"table", "support_surface", "robot_base", "sensor", "camera", "conveyor", "bin", "fixture"}
 
 
+def _is_existing_package_generator_owned_output(relative_path: Path) -> bool:
+    """Return whether an in-place regeneration may replace ``relative_path``.
+
+    Existing scene packages can contain curated ROS runtime and authored source
+    files.  The package generator owns only its derived ``generated/`` outputs
+    when refreshing such a package; complete new-package generation continues
+    to write the full staged package.
+    """
+    return len(relative_path.parts) > 1 and relative_path.parts[0] == "generated"
+
+
 def _load_module(module_name: str, module_path: Path):
     if not module_path.is_file():
         raise FileNotFoundError(f"Required helper script not found: {module_path}")
@@ -1704,19 +1715,11 @@ def generate_package(
         _run_optional_bundle_export(bundle_exporter, package_name, scene_manifest_path, package_dir / "generated", warnings)
 
     if existing_package_dir is not None:
-        # Authored inputs stay in the selected package.  Only derived/runtime artifacts
-        # from staging are merged back; never replace the package directory itself.
-        authored_paths = {
-            Path("layout/workcell_studio_layout.yaml"),
-            Path("config/workcell_builder_task_intent.yaml"),
-            Path("environment.yaml"),
-            Path("environment_layout.yaml"),
-            Path("cell_definition.yaml"),
-            Path("scene_manifest.yaml"),
-        }
+        # In-place refresh is deliberately allowlisted: curated authored and ROS
+        # runtime files in the selected package never inherit generic staged files.
         for staged_path in sorted(package_dir.rglob("*")):
             relative = staged_path.relative_to(package_dir)
-            if relative in authored_paths or staged_path.is_dir():
+            if staged_path.is_dir() or not _is_existing_package_generator_owned_output(relative):
                 continue
             destination = final_package_dir / relative
             destination.parent.mkdir(parents=True, exist_ok=True)

@@ -120,20 +120,26 @@ def test_scene_package_generation_refreshes_selected_package_in_place_without_du
     scene = repo_root / "scenes" / "ur5_2f_test"
     shutil.copytree(SCENE, scene)
     workspace_duplicate = tmp_path / "scenes" / scene.name
-    authored = [
-        scene / "layout" / "workcell_studio_layout.yaml",
-        scene / "config" / "workcell_builder_task_intent.yaml",
-        scene / "environment.yaml",
-        scene / "environment_layout.yaml",
-        scene / "cell_definition.yaml",
-        scene / "scene_manifest.yaml",
+    preserved_relative_paths = [
+        "package.xml",
+        "CMakeLists.txt",
+        "launch/demo.launch.py",
+        "urdf/scene.urdf.xacro",
+        "config/task_recipe.yaml",
+        "config/workcell_builder_task_intent.yaml",
+        "layout/workcell_studio_layout.yaml",
+        "environment.yaml",
+        "environment_layout.yaml",
+        "cell_definition.yaml",
+        "scene_manifest.yaml",
     ]
-    before = {path: path.read_bytes() for path in authored}
+    preserved = [scene / relative for relative in preserved_relative_paths]
+    before = {path: path.read_bytes() for path in preserved}
     yaml_result = generate_files_from_yaml(scene)
     assert yaml_result["ok"], yaml_result
-    assert {path: path.read_bytes() for path in authored} == before
-    generated_xacro = scene / "urdf" / "scene.urdf.xacro"
-    generated_xacro.write_text("stale generated artifact\n", encoding="utf-8")
+    assert {path: path.read_bytes() for path in preserved} == before
+    readiness_path = scene / "generated" / "scene_package_readiness.json"
+    readiness_path.write_text("stale generated artifact\n", encoding="utf-8")
 
     result = subprocess.run(
         [
@@ -154,7 +160,9 @@ def test_scene_package_generation_refreshes_selected_package_in_place_without_du
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert {path: path.read_bytes() for path in authored} == before
+    assert {path: path.read_bytes() for path in preserved} == before
+    assert readiness_path.is_file()
+    assert readiness_path.read_text(encoding="utf-8") != "stale generated artifact\n"
     generated_layout_path = scene / "generated" / "environment_layout.yaml"
     generated_layout = yaml.safe_load(generated_layout_path.read_text(encoding="utf-8"))
     assert generated_layout["schema_version"] == "environment_layout/v1"
@@ -202,8 +210,24 @@ def test_scene_package_generation_refreshes_selected_package_in_place_without_du
         "default_drop_zone does not exist",
     ):
         assert previous_error not in scene_validation_output
-    assert generated_xacro.read_text(encoding="utf-8") != "stale generated artifact\n"
-    assert (scene / "generated" / "scene_package_readiness.json").is_file()
+    assert {path: path.read_bytes() for path in preserved} == before
+
+    xacro = (scene / "urdf" / "scene.urdf.xacro").read_text(encoding="utf-8")
+    for runtime_marker in (
+        "xacro:ur_robot",
+        "robotiq_85_gripper",
+        "table_world_xyz",
+        "camera_world_xyz",
+    ):
+        assert runtime_marker in xacro
+
+    launch = (scene / "launch" / "demo.launch.py").read_text(encoding="utf-8")
+    for runtime_marker in (
+        "load_canonical_layout_poses",
+        "allow_trajectory_execution",
+        "use_fake_hardware",
+    ):
+        assert runtime_marker in launch
     assert not workspace_duplicate.exists()
     assert not (scene.parent / f"{scene.name}.tmp-generation").exists()
 
