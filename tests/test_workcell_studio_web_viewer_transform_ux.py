@@ -136,6 +136,30 @@ state.gizmoPivot=null;
 
 // Locked/generated and helper visuals remain inspectable but never editable owners.
 for(const record of [lockedRobot,lockedTool,...helpers]){state.selected=record.item.id;assert.strictEqual(renderedById(record.item.id),record);assert.strictEqual(selectionIsEditable(record),false);const before=copy(record.object3d.t);state.undoStack=[];state.dirtyTransforms.clear();commits=[];gizmo.object=record.object3d;gizmo.emit('dragging-changed',{value:true});gizmo.emit('objectChange');gizmo.emit('dragging-changed',{value:false});exact(record.object3d.t,before,record.item.id);assert.strictEqual(state.dirtyTransforms.size,0);assert.strictEqual(state.undoStack.length,0);assert.strictEqual(commits.length,0);ready();}
+
+// CAD-style keyboard transforms use the same canonical commit/history path.
+THREE={MathUtils:{degToRad:value=>value*Math.PI/180}};
+const keyEvent=(code,options={})=>({code,key:code==='Escape'?'Escape':'',repeat:false,shiftKey:false,ctrlKey:false,metaKey:false,altKey:false,target:null,prevented:0,preventDefault(){this.prevented++},...options});
+const keyboardStart=pose(.41,-.23,.87,.17,-.29,.38);
+const resetKeyboard=()=>{state.selected=bin.item.id;state.undoStack=[];state.redoStack=[];state.dirtyTransforms.clear();state.gizmoDragStart=null;state.gizmoDragGroupStart=null;state.gizmoPivotDragStart=null;state.directMoveDrag=null;state.directRotateDrag=null;bin.object3d.t=copy(keyboardStart);commits=[];inspector=[];el.snapToggle.checked=false;el.translationSnap.value='0';el.rotationSnap.value='0'};
+for(const [code,kind,component,direction] of [['KeyW','xyz','y',1],['KeyS','xyz','y',-1],['KeyA','xyz','x',-1],['KeyD','xyz','x',1],['PageUp','xyz','z',1],['PageDown','xyz','z',-1],['KeyQ','rpy','z',-1],['KeyE','rpy','z',1],['KeyR','rpy','y',1],['KeyF','rpy','y',-1],['KeyZ','rpy','x',-1],['KeyC','rpy','x',1]]){
+  resetKeyboard();const event=keyEvent(code);onEditorKeyDown(event);const result=bin.object3d.t;const expected=copy(keyboardStart);expected.pose[kind][component]+=direction*(kind==='xyz'?.01:5*Math.PI/180);exact(result,expected,code+' isolated transform');assert.strictEqual(state.undoStack.length,1);assert.strictEqual(commits.length,1);assert.strictEqual(inspector.length,1);assert.strictEqual(state.selected,bin.item.id);assert.strictEqual(event.prevented,1);
+}
+resetKeyboard();el.snapToggle.checked=true;el.translationSnap.value='.05';onEditorKeyDown(keyEvent('KeyD'));assert.strictEqual(bin.object3d.t.pose.xyz.x,keyboardStart.pose.xyz.x+.05);
+resetKeyboard();el.snapToggle.checked=true;el.rotationSnap.value='15';onEditorKeyDown(keyEvent('KeyE'));assert.strictEqual(bin.object3d.t.pose.rpy.z,keyboardStart.pose.rpy.z+15*Math.PI/180);
+resetKeyboard();el.snapToggle.checked=true;el.translationSnap.value='.10';onEditorKeyDown(keyEvent('KeyW',{shiftKey:true}));assert.strictEqual(bin.object3d.t.pose.xyz.y,keyboardStart.pose.xyz.y+.001);assert.strictEqual(el.translationSnap.value,'.10');
+resetKeyboard();el.snapToggle.checked=true;el.rotationSnap.value='15';onEditorKeyDown(keyEvent('KeyR',{shiftKey:true}));assert.strictEqual(bin.object3d.t.pose.rpy.y,keyboardStart.pose.rpy.y+Math.PI/180);assert.strictEqual(el.rotationSnap.value,'15');
+
+// One key transaction is exactly undoable/redoable through every scene shortcut.
+resetKeyboard();onEditorKeyDown(keyEvent('KeyD'));const keyboardFinal=copy(bin.object3d.t);const undoEvent=keyEvent('KeyZ',{ctrlKey:true});onEditorKeyDown(undoEvent);exact(bin.object3d.t,keyboardStart,'keyboard undo');assert.strictEqual(undoEvent.prevented,1);const redoY=keyEvent('KeyY',{ctrlKey:true});onEditorKeyDown(redoY);exact(bin.object3d.t,keyboardFinal,'keyboard Ctrl+Y redo');assert.strictEqual(redoY.prevented,1);onEditorKeyDown(keyEvent('KeyZ',{ctrlKey:true}));const redoShiftZ=keyEvent('KeyZ',{ctrlKey:true,shiftKey:true});onEditorKeyDown(redoShiftZ);exact(bin.object3d.t,keyboardFinal,'keyboard Ctrl+Shift+Z redo');assert.strictEqual(redoShiftZ.prevented,1);
+
+// Repeats, active mouse transactions, locked/helpers, and editable controls are inert.
+const assertKeyboardIgnored=(label,event,record=bin,armDrag=false)=>{resetKeyboard();state.selected=record.item.id;record.object3d.t=copy(keyboardStart);if(armDrag)state.gizmoDragStart=copy(keyboardStart);onEditorKeyDown(event);exact(record.object3d.t,keyboardStart,label);assert.strictEqual(state.undoStack.length,0);assert.strictEqual(commits.length,0);assert.strictEqual(event.prevented,0)};
+assertKeyboardIgnored('repeat',keyEvent('KeyD',{repeat:true}));
+assertKeyboardIgnored('active TransformControls drag',keyEvent('KeyD'),bin,true);
+for(const record of [lockedRobot,lockedTool,helpers[0]])assertKeyboardIgnored(record.item.id,keyEvent('KeyD'),record);
+for(const target of [{tagName:'INPUT'},{tagName:'TEXTAREA'},{tagName:'DIV',isContentEditable:true}])assertKeyboardIgnored(target.tagName+' focus',keyEvent('KeyD',{target}));
+resetKeyboard();state.undoStack.push({changes:[]});const inputUndo=keyEvent('KeyZ',{ctrlKey:true,target:{tagName:'INPUT'}});onEditorKeyDown(inputUndo);assert.strictEqual(state.undoStack.length,1);assert.strictEqual(inputUndo.prevented,0);
 `,context);
 """
     subprocess.run(
