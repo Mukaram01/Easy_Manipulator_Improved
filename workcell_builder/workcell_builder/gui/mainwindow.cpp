@@ -3390,8 +3390,6 @@ void MainWindow::setup_studio_shell()
     }
   }
   auto * save_sc = new QShortcut(QKeySequence::Save, scene_builder); connect(save_sc,&QShortcut::activated,this,&MainWindow::save_layout_changes);
-  auto * undo_sc = new QShortcut(QKeySequence::Undo, scene_builder); connect(undo_sc, &QShortcut::activated, this, &MainWindow::undo_layout_edit);
-  auto * redo_sc = new QShortcut(QKeySequence::Redo, scene_builder); connect(redo_sc, &QShortcut::activated, this, &MainWindow::redo_layout_edit);
   auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder); connect(esc_sc,&QShortcut::activated,this,[this](){ set_canvas_interaction_mode(CanvasInteractionMode::Select); if(digital_twin_scene_) digital_twin_scene_->clearSelection(); ghost_preview_item_=nullptr; rebuild_digital_twin_canvas(); });
   auto * fit_sc = new QShortcut(QKeySequence(Qt::Key_F), scene_builder); connect(fit_sc,&QShortcut::activated,fit_button,&QAction::trigger);
   connect(scene_hierarchy_tree_, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int column){ Q_UNUSED(column); on_hierarchy_item_selected(item); });
