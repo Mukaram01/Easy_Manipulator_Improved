@@ -91,7 +91,7 @@ vm.runInContext(source+`
 const copy=value=>JSON.parse(JSON.stringify(value));
 const start={pose:{xyz:{x:0,y:0,z:0},rpy:{r:0,p:0,y:0}},scale:{x:1,y:1,z:1}};
 const rendered={item:{id:'editable',editable:true,locked:false,display_name:'Editable'},object3d:{}};
-state.objects=[rendered]; state.selected='editable'; state.three={controls:{enabled:true},transformControls:null,pointer:{},raycaster:{}};
+state.objects=[rendered]; state.selected='editable'; state.three={controls:{enabled:true},transformControls:{axis:'Z',rotationAngle:0,setMode(){},setSpace(){},attach(){},detach(){},reset(){}},pointer:{},raycaster:{}};
 cloneTransform=copy; transformFromObject=()=>copy(start); pointerToWorldPlane=()=>({x:0,y:0,z:0}); selectionIsEditable=value=>value===rendered; renderedById=id=>id==='editable'?rendered:null; captureTransformGroup=()=>new Map([['editable',copy(start)]]); applyTransformChanges=()=>{}; syncInspectorTransformFields=()=>{}; linkedTransformChanges=()=>[]; markDirtyTransform=()=>true; emitTransformCommitted=()=>{}; pushEditorEvent=()=>{}; showError=message=>{throw new Error(message)}; updateLabels=()=>{}; attachTransformGizmo=()=>{}; canonicalTransformOwner=()=>rendered; detachTransformGizmo=()=>{}; applyTransformToObject=()=>{}; sameTransform=()=>false; snapTransform=value=>copy(value); isFiniteTransform=()=>true;
 const pointer={pointerId:7,clientX:5,clientY:5,preventDefault(){},stopPropagation(){}};
 
@@ -156,6 +156,70 @@ def test_move_transform_controls_use_world_axes_and_commit_once_after_preview():
     assert "syncInspectorTransformFields(rendered)" in object_change
     assert "markDirtyTransform" not in object_change
     assert "emitTransformCommitted" not in object_change
+
+
+def test_rotate_transform_controls_preserve_canonical_components_and_commit_once():
+    import subprocess
+
+    harness = r"""
+const fs=require('fs'),assert=require('assert');const source=fs.readFileSync(process.argv[1],'utf8');
+const helper=source.slice(source.indexOf('function canonicalRotatePreviewTransform'),source.indexOf('function directRotatePreviewTransform'));
+const cloneTransform=value=>JSON.parse(JSON.stringify(value));eval(helper);
+const start={pose:{xyz:{x:.45,y:-.28,z:.19},rpy:{x:.10,y:-.20,z:.30}},scale:{x:1,y:1,z:1}};
+for(const [axis,component] of [['X','x'],['Y','y'],['Z','z']])for(const angle of [.37,-.41]){
+  const next=canonicalRotatePreviewTransform(start,axis,angle);assert(next);assert.strictEqual(next.pose.rpy[component],start.pose.rpy[component]+angle);
+  for(const other of ['x','y','z'].filter(value=>value!==component))assert.strictEqual(next.pose.rpy[other],start.pose.rpy[other]);
+  assert.deepStrictEqual(next.pose.xyz,start.pose.xyz);assert.deepStrictEqual(next.scale,start.scale);
+}
+for(const axis of ['E','XYZE','XYZ',null])assert.strictEqual(canonicalRotatePreviewTransform(start,axis,.2),null);
+assert.strictEqual(canonicalRotatePreviewTransform(start,'X',NaN),null);
+"""
+    subprocess.run(
+        ["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js")],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    )
+
+    attach = VIEWER.split("function attachTransformGizmo", 1)[1].split("function detachTransformGizmo", 1)[0]
+    mode = VIEWER.split("function setEditorMode", 1)[1].split("function setEditorSnap", 1)[0]
+    for body in [attach, mode]:
+        rotate = body.split("setMode('rotate')", 1)[1].split("}", 1)[0]
+        for axis in "XYZ":
+            assert f"show{axis} = true" in rotate
+
+    direct = VIEWER.split("function directRotatePreviewTransform", 1)[1].split("function beginDirectRotateDrag", 1)[0]
+    transient = VIEWER.split("function previewTransientPivotDrag", 1)[1].split("function finishTransientPivotDrag", 1)[0]
+    assert "canonicalRotatePreviewTransform(drag.start, drag.axis" in direct
+    assert "canonicalRotatePreviewTransform(state.gizmoDragStart, start.axis" in transient
+    assert "if (state.editorMode === 'rotate')" in transient
+    move_branch = transient.split("if (state.editorMode === 'rotate')", 1)[1].split("pivot.group.updateWorldMatrix", 1)[1]
+    assert "matrixWorld.clone().multiply" in move_branch
+    assert "ownerLocal.decompose" in move_branch
+
+    listeners = VIEWER.split("transformControls.addEventListener('dragging-changed'", 1)[1].split("controls.addEventListener('start'", 1)[0]
+    object_change = listeners.split("transformControls.addEventListener('objectChange'", 1)[1]
+    assert "markDirtyTransform" not in object_change
+    assert "emitTransformCommitted" not in object_change
+    direct_finish = VIEWER.split("function finishDirectRotateDrag", 1)[1].split("function endDirectRotateDrag", 1)[0]
+    pivot_finish = VIEWER.split("function finishTransientPivotDrag", 1)[1].split("function attachTransformGizmo", 1)[0]
+    assert direct_finish.count("markDirtyTransform(") == 1
+    assert direct_finish.count("emitTransformCommitted(") == 1
+    assert pivot_finish.count("markDirtyTransform(") == 1
+    assert pivot_finish.count("emitTransformCommitted(") == 1
+    assert "snapOptions: null" in direct_finish
+    assert "snapOptions: state.editorMode === 'rotate' ? null : undefined" in pivot_finish
+
+
+def test_rotation_snap_radians_converts_arbitrary_degree_values():
+    import subprocess
+
+    script = r"""
+const fs=require('fs'),assert=require('assert');const source=fs.readFileSync(process.argv[1],'utf8');
+const body=source.match(/function rotationSnapRadians\(\) \{([^}]*)\}/)[1];
+const THREE={MathUtils:{degToRad:value=>value*Math.PI/180}};let el={rotationSnap:{value:'5'}};
+const rotationSnapRadians=new Function('el','THREE',`return function(){${body}}`)(el,THREE);
+assert(Math.abs(rotationSnapRadians()-5*Math.PI/180)<1e-12);el.rotationSnap.value='15';assert(Math.abs(rotationSnapRadians()-15*Math.PI/180)<1e-12);
+"""
+    subprocess.run(["node", "-e", script, str(ROOT / "workcell_studio_web/viewer/viewer.js")], cwd=ROOT, check=True)
 
 
 def test_qt_compact_toolbar_for_embedded_web3d():
@@ -303,7 +367,7 @@ assert.deepStrictEqual(transformFromObject(camera.object3d).pose.xyz,{x:.35,y:0,
 assert.deepStrictEqual(transformFromObject(table.object3d).pose.xyz,{x:.55,y:0,z:.06});
 assert.strictEqual(cameraVisual.object3d.parent,camera.object3d);assert.strictEqual(tableVisual.object3d.parent,table.object3d);
 const worldPose=o=>{o.updateWorldMatrix(true,true);return {p:new THREE.Vector3().setFromMatrixPosition(o.matrixWorld),q:new THREE.Quaternion().setFromRotationMatrix(o.matrixWorld)}};
-const gizmo={object:null,visible:false,enabled:false,showX:false,showY:false,showZ:false,attach(o){this.object=o},detach(){this.object=null},setMode(){},setSpace(){},setTranslationSnap(){},setRotationSnap(){},reset(){}};
+const gizmo={object:null,visible:false,enabled:false,showX:false,showY:false,showZ:false,axis:'Z',rotationAngle:0,attach(o){this.object=o},detach(){this.object=null},setMode(){},setSpace(){},setTranslationSnap(){},setRotationSnap(){},reset(){}};
 let hits=[];state.three={transformControls:gizmo,pointer:{},camera:{},controls:{enabled:true},raycaster:{setFromCamera(){},intersectObjects(){return hits}}};state.editorMode='move';
 // Match the production ordering that exposed PR #2957: same-ID authored-looking
 // records precede the exact physical edit owners after the binding pass.
@@ -325,9 +389,9 @@ hits=[{object:bin.object3d,distance:1}];assert.strictEqual(pickObject({clientX:5
 assert.strictEqual(byId('ur5'),undefined);assert.strictEqual(byId('robotiq_85_gripper'),undefined);for(const record of state.objects.filter(record=>record!==cameraVisual&&record!==tableVisual&&record.item.locked===true)){assert.strictEqual(record.object3d.parent.type,'Scene');assert.strictEqual(selectionIsEditable(record),false);attachTransformGizmo(record);assert.strictEqual(gizmo.object,null,'robot and gripper generated records must remain read-only');}
 setEditorMode('move');hits=[{object:cameraVisual.object3d,distance:1}];pickObject({clientX:5,clientY:5});assert.strictEqual(gizmo.object,state.gizmoPivot.group);
 const before=cloneTransform(transformFromObject(camera.object3d)),meshBefore=worldPose(cameraVisual.meshObject).p;beginTransientPivotDrag(camera);state.gizmoPivot.group.position.x+=.04;previewTransientPivotDrag(camera);assert(Math.abs(transformFromObject(camera.object3d).pose.xyz.x-before.pose.xyz.x-.04)<1e-10);assert(Math.abs(worldPose(cameraVisual.meshObject).p.x-meshBefore.x-.04)<1e-10);finishTransientPivotDrag(camera);undoPreviewEdit();redoPreviewEdit();
-setEditorMode('rotate');assert.strictEqual(gizmo.object,state.gizmoPivot.group);const ownerBeforeRotation=worldPose(camera.object3d).p,meshCentreBeforeRotation=cameraMeshCentre();beginTransientPivotDrag(camera);state.gizmoPivot.group.rotation.z+=.2;previewTransientPivotDrag(camera);const ownerAfterRotation=worldPose(camera.object3d).p,meshCentreAfterRotation=cameraMeshCentre();assert(meshCentreAfterRotation.distanceTo(meshCentreBeforeRotation)<1e-9,'rotation centre must remain fixed');assert(Math.abs(transformFromObject(camera.object3d).pose.rpy.z-before.pose.rpy.z)>.1,'canonical owner rotation must change');finishTransientPivotDrag(camera);
+setEditorMode('rotate');assert.strictEqual(gizmo.object,state.gizmoPivot.group);const ownerBeforeRotation=worldPose(camera.object3d).p;gizmo.axis='Z';beginTransientPivotDrag(camera);gizmo.rotationAngle=.2;previewTransientPivotDrag(camera);const ownerAfterRotation=worldPose(camera.object3d).p;assert(ownerAfterRotation.distanceTo(ownerBeforeRotation)<1e-12,'canonical XYZ must not drift during pivot rotation');assert(Math.abs(transformFromObject(camera.object3d).pose.rpy.z-before.pose.rpy.z)>.1,'canonical owner rotation must change');finishTransientPivotDrag(camera);
 setEditorMode('select');assert.strictEqual(gizmo.object,null);setEditorMode('rotate');assert.strictEqual(state.gizmoPivot.owner,camera);assert(state.gizmoPivot.group.getWorldPosition(new THREE.Vector3()).distanceTo(cameraMeshCentre())<1e-6,'mode switching must not revert to competing authored origin');
-hits=[{object:tableVisual.object3d,distance:1}];pickObject({clientX:5,clientY:5});const tableBefore=cloneTransform(transformFromObject(table.object3d)),tableMeshBefore=worldPose(tableVisual.meshObject).p;beginTransientPivotDrag(table);state.gizmoPivot.group.rotation.z-=.61086524;previewTransientPivotDrag(table);assert(worldPose(tableVisual.meshObject).p.distanceTo(tableMeshBefore)<1e-9);finishTransientPivotDrag(table);undoPreviewEdit();redoPreviewEdit();
+hits=[{object:tableVisual.object3d,distance:1}];pickObject({clientX:5,clientY:5});const tableBefore=cloneTransform(transformFromObject(table.object3d));gizmo.axis='Z';beginTransientPivotDrag(table);gizmo.rotationAngle=-.61086524;previewTransientPivotDrag(table);assert.deepStrictEqual(transformFromObject(table.object3d).pose.xyz,tableBefore.pose.xyz);finishTransientPivotDrag(table);undoPreviewEdit();redoPreviewEdit();
 assert.strictEqual(state.dirtyTransforms.has(cameraVisual.item.id),false);assert.strictEqual(state.dirtyTransforms.has(tableVisual.item.id),false);
 const patch=window.__WORKCELL_EDITOR_API_V1__.getEditPatch(),edits=new Map(patch.edits.map(edit=>[edit.item_id,edit]));
 assert.deepStrictEqual([...edits.keys()].sort(),['realsense_overhead','support_surface_table']);
