@@ -33,7 +33,8 @@ def test_source_requirements_block_but_install_overlay_is_created_by_build():
 
 
 def test_build_then_discovery_then_safe_launch_contract():
-    assert "colcon build --symlink-install --packages-select '%2'" in RUNNER_CPP
+    assert "colcon build --symlink-install --packages-up-to '%2'" in RUNNER_CPP
+    assert "colcon build --symlink-install --packages-select '%2'" not in RUNNER_CPP
     assert "ros2 pkg prefix '%2'" in RUNNER_CPP
     assert "source /opt/ros/humble/setup.bash && source '%1' && exec %2" in RUNNER_CPP
     assert MAIN_CPP.index('set_preview_state("BUILD_RUNNING")') < MAIN_CPP.index('set_preview_state("PACKAGE_CHECK_RUNNING")')

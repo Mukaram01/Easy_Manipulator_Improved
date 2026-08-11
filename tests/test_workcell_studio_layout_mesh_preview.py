@@ -93,3 +93,38 @@ def test_non_mesh_items_and_non_mapping_mesh_overlays_are_ignored():
         mesh_item("physical_fixture"),
     ]
     assert [item.item_id for item in preview.parse_layout_meshes({"items": items})] == ["physical_fixture"]
+
+
+def remove_test_ros_args(*, args):
+    """Small rclpy.remove_ros_args stand-in for ROS-independent unit tests."""
+    ros_args_index = args.index("--ros-args") if "--ros-args" in args else len(args)
+    return args[:ros_args_index]
+
+
+def test_ros_launch_arguments_are_separated_and_preserved_for_rclpy():
+    argv = [
+        "workcell_studio_layout_mesh_preview_node.py",
+        "layout/workcell_studio_layout.yaml",
+        "--frame-id", "world",
+        "--topic", "/some_scene/canonical_mesh_markers",
+        "--ros-args", "-r", "__node:=some_scene_canonical_mesh_preview",
+    ]
+
+    args, ros_args = preview.parse_runtime_arguments(argv, remove_test_ros_args)
+
+    assert args.layout == "layout/workcell_studio_layout.yaml"
+    assert args.frame_id == "world"
+    assert args.topic == "/some_scene/canonical_mesh_markers"
+    assert ros_args == argv
+
+
+def test_unknown_non_ros_application_argument_still_fails():
+    argv = [
+        "workcell_studio_layout_mesh_preview_node.py",
+        "layout/workcell_studio_layout.yaml",
+        "--frame-idd", "world",
+        "--ros-args", "-r", "__node:=some_scene_canonical_mesh_preview",
+    ]
+
+    with pytest.raises(SystemExit):
+        preview.parse_runtime_arguments(argv, remove_test_ros_args)

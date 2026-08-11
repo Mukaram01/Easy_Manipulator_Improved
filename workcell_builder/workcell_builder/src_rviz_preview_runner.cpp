@@ -86,7 +86,7 @@ QString build_selected_package_command(
   const QString package = QString::fromStdString(
     scene_info.launch_package.empty() ? scene_info.scene_name : scene_info.launch_package);
   return QString("source /opt/ros/humble/setup.bash && cd '%1' && "
-                 "colcon build --symlink-install --packages-select '%2'")
+                 "colcon build --symlink-install --packages-up-to '%2'")
     .arg(QString::fromStdString(workspace_root.string()), package);
 }
 

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import math
 from pathlib import Path, PurePosixPath
 import re
+import sys
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit
 
@@ -35,6 +36,24 @@ class MeshMarkerSpec:
     position: tuple[float, float, float]
     orientation: tuple[float, float, float, float]
     scale: tuple[float, float, float]
+
+
+def parse_runtime_arguments(
+    argv: Sequence[str], remove_ros_args,
+) -> tuple[argparse.Namespace, list[str]]:
+    """Parse application arguments while preserving the complete ROS argv.
+
+    ``remove_ros_args`` is injected so importing this module (and exercising
+    its layout helpers) does not require a ROS installation.  At runtime the
+    caller supplies :func:`rclpy.utilities.remove_ros_args`.
+    """
+    ros_argv = list(argv)
+    application_argv = remove_ros_args(args=ros_argv)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("layout", help="canonical workcell_studio_layout.yaml")
+    parser.add_argument("--frame-id", default="world")
+    parser.add_argument("--topic", default="workcell_studio/layout_mesh_markers")
+    return parser.parse_args(application_argv[1:]), ros_argv
 
 
 def _vector3(value: Any, field: str, default: Sequence[float] | None = None) -> tuple[float, float, float]:
@@ -217,14 +236,16 @@ def build_marker_array(specs: Sequence[MeshMarkerSpec], frame_id: str):
     return result
 
 
-def run_ros_node(layout_path: str, frame_id: str, topic: str) -> None:
+def run_ros_node(layout_path: str, frame_id: str, topic: str, ros_args: Sequence[str]) -> None:
     import rclpy
     from rclpy.node import Node
     from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
     from visualization_msgs.msg import MarkerArray
 
     specs = load_layout_meshes(layout_path)
-    rclpy.init()
+    # Pass the untouched launch argv to rclpy so remaps such as ``__node`` are
+    # applied rather than merely tolerated by application parsing.
+    rclpy.init(args=list(ros_args))
     node = Node("workcell_studio_layout_mesh_preview")
     qos = QoSProfile(depth=1)
     qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
@@ -239,12 +260,10 @@ def run_ros_node(layout_path: str, frame_id: str, topic: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("layout", help="canonical workcell_studio_layout.yaml")
-    parser.add_argument("--frame-id", default="world")
-    parser.add_argument("--topic", default="workcell_studio/layout_mesh_markers")
-    args = parser.parse_args()
-    run_ros_node(args.layout, args.frame_id, args.topic)
+    from rclpy.utilities import remove_ros_args
+
+    args, ros_args = parse_runtime_arguments(sys.argv, remove_ros_args)
+    run_ros_node(args.layout, args.frame_id, args.topic, ros_args)
 
 
 if __name__ == "__main__":
