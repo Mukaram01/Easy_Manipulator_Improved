@@ -1067,3 +1067,22 @@ def test_non_robotiq_tools_are_not_modified():
     )
     assert repaired == xml
     assert applied is False
+
+def test_launch_xacro_request_resolves_canonical_layout_pose_mappings():
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    scene = ROOT / "scenes" / "ur5_2f_test"
+    request = mesh_index._extract_scene_launch_xacro_request(scene, {})
+    assert request is not None
+
+    layout = yaml.safe_load((scene / "layout" / "workcell_studio_layout.yaml").read_text(encoding="utf-8"))
+    items = {item["id"]: item for item in layout["items"]}
+
+    def fmt(values):
+        return " ".join(format(float(value), ".17g") for value in values)
+
+    mappings = request["mappings"]
+    assert mappings["table_world_xyz"] == fmt(items["support_surface_table"]["pose"]["xyz"])
+    assert mappings["table_world_rpy"] == fmt(items["support_surface_table"]["pose"]["rpy"])
+    assert mappings["camera_world_xyz"] == fmt(items["realsense_overhead"]["pose"]["xyz"])
+    assert mappings["camera_world_rpy"] == fmt(items["realsense_overhead"]["pose"]["rpy"])
