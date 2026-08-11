@@ -41430,6 +41430,10 @@ function initThree() {
     const controls = new OrbitControls2(camera, renderer.domElement);
     controls.object.up.copy(ROS_Z_UP);
     controls.enableDamping = true;
+    controls.enableZoom = true;
+    controls.mouseButtons.LEFT = null;
+    controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
+    controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
     const grid = new THREE.GridHelper(5, 20, PRODUCT_VIEW_LIGHT_PALETTE.gridMajor, PRODUCT_VIEW_LIGHT_PALETTE.gridMinor);
     grid.name = "ros_xy_ground_grid";
     for (const material of Array.isArray(grid.material) ? grid.material : [grid.material]) {
@@ -41516,6 +41520,7 @@ function initThree() {
     el.canvas.addEventListener("pointermove", onCanvasPointerMove);
     el.canvas.addEventListener("pointerup", onCanvasPointerUp);
     el.canvas.addEventListener("pointercancel", onCanvasPointerCancel);
+    el.canvas.addEventListener("contextmenu", onCanvasContextMenu);
     window.addEventListener("keydown", onEditorKeyDown);
     animate();
   } catch (err) {
@@ -43281,7 +43286,7 @@ function pickObject(event) {
 }
 function syncOrbitControlsForEditorMode() {
   if (state.three.controls)
-    state.three.controls.enabled = state.editorMode === "select";
+    state.three.controls.enabled = !Boolean(state.three.transformControls?.dragging);
 }
 function cancelActiveTransformOperation(reason = "Transform cancelled") {
   if (state.cancellingTransformOperation)
@@ -43324,7 +43329,8 @@ function cancelDirectMoveDrag(message) {
   return cancelActiveTransformOperation(message || "Move cancelled");
 }
 function onCanvasPointerDown(event) {
-  pickObject(event);
+  if (event.button === 0)
+    pickObject(event);
 }
 function onCanvasPointerMove(event) {
 }
@@ -43332,6 +43338,9 @@ function onCanvasPointerUp(event) {
 }
 function onCanvasPointerCancel() {
   cancelActiveTransformOperation("Pointer cancelled");
+}
+function onCanvasContextMenu(event) {
+  event.preventDefault();
 }
 function keyboardEventTargetsEditorControl(event) {
   const target = event?.target;
