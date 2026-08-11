@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import yaml
@@ -247,6 +248,132 @@ def test_generate_package_preserves_authoring_contract_files(tmp_path: Path) -> 
         )
     )
     assert layout["test_sentinel"] == "source workcell studio layout preserved"
+
+
+def _set_mesh_layout(
+    scene_dir: Path, mesh_package: str | None, *, planning_frame: str
+) -> None:
+    cell_path = scene_dir / "cell_definition.yaml"
+    cell = yaml.safe_load(cell_path.read_text(encoding="utf-8"))
+    cell["cell"]["planning_frame"] = planning_frame
+    cell_path.write_text(yaml.safe_dump(cell, sort_keys=False), encoding="utf-8")
+
+    items = []
+    if mesh_package is not None:
+        mesh_item = {
+            "id": "fixture_mesh",
+            "geometry_type": "mesh",
+            "pose": {"xyz": [0.1, 0.2, 0.3], "rpy": [0.0, 0.0, 0.0]},
+            "mesh": {"path": f"package://{mesh_package}/meshes/fixture.stl"},
+        }
+        items = [mesh_item, {**mesh_item, "id": "fixture_mesh_duplicate_package"}]
+    (scene_dir / "layout" / "workcell_studio_layout.yaml").write_text(
+        yaml.safe_dump(
+            {"schema_version": "workcell_studio_layout/v1", "items": items},
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _exec_dependencies(package_dir: Path) -> list[str]:
+    root = ET.parse(package_dir / "package.xml").getroot()
+    return [element.text or "" for element in root.findall("exec_depend")]
+
+
+def test_generated_mesh_runtime_contract_is_scene_and_resource_driven(
+    tmp_path: Path,
+) -> None:
+    from scripts import generate_workcell_from_cell_definition as generator
+
+    out_dir = tmp_path / "generated"
+    cases = [
+        ("generated_mesh_scene_a", "fixture_alpha_description", "map"),
+        ("generated_mesh_scene_b", "fixture_beta_description", "cell_world"),
+    ]
+
+    outputs: dict[str, tuple[str, str]] = {}
+    for package_name, mesh_package, frame in cases:
+        source = tmp_path / f"source_{package_name}"
+        cell_path = _write_minimal_scene(source)
+        _set_mesh_layout(source, mesh_package, planning_frame=frame)
+        assert generate_package(cell_path, out_dir, package_name, force=True, dry_run=False) == 0
+
+        package_dir = out_dir / package_name
+        launch = (package_dir / "launch" / "demo.launch.py").read_text(encoding="utf-8")
+        package_xml = (package_dir / "package.xml").read_text(encoding="utf-8")
+        outputs[package_name] = (launch, package_xml)
+
+        assert f"package_name = '{package_name}'" in launch
+        assert 'name=f"{package_name}_canonical_mesh_preview"' in launch
+        assert 'f"/{package_name}/canonical_mesh_markers"' in launch
+        assert 'package="workcell_builder"' in launch
+        assert 'executable="workcell_studio_layout_mesh_preview_node.py"' in launch
+        assert "get_package_share_directory(package_name)" in launch
+        assert '"layout",\n        "workcell_studio_layout.yaml"' in launch
+        assert launch.index("canonical_layout_path,\n") < launch.index('"--frame-id"')
+        assert f"            '{frame}'," in launch
+        dependencies = _exec_dependencies(package_dir)
+        assert dependencies.count("workcell_builder") == 1
+        assert dependencies.count(mesh_package) == 1
+        assert generator._canonical_mesh_rviz_contract(package_name) == {
+            "name": "Workcell Imported Meshes",
+            "topic": f"/{package_name}/canonical_mesh_markers",
+            "qos": {
+                "reliability": "Reliable",
+                "durability": "Transient Local",
+                "history": "Keep Last",
+            },
+        }
+
+    assert outputs[cases[0][0]] != outputs[cases[1][0]]
+    assert "ur5_2f_test" not in outputs[cases[0][0]][0]
+    generator_source = SCRIPT.read_text(encoding="utf-8")
+    assert "sorting_bin_description" not in generator_source
+
+
+def test_generated_mesh_runtime_contract_handles_empty_and_invalid_layouts(
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "generated"
+    source = tmp_path / "source_empty"
+    cell_path = _write_minimal_scene(source)
+    _set_mesh_layout(source, None, planning_frame="world")
+    invalid_items = [
+        {
+            "id": "web_mesh",
+            "geometry_type": "mesh",
+            "mesh": {"path": "https://example.com/fixture.stl"},
+        },
+        {
+            "id": "absolute_mesh",
+            "geometry_type": "mesh",
+            "mesh": {"path": "/tmp/fixture.stl"},
+        },
+        {
+            "id": "not_a_mesh",
+            "geometry_type": "box",
+            "mesh": {"path": "package://must_not_be_added/meshes/fixture.stl"},
+        },
+    ]
+    from scripts import generate_workcell_from_cell_definition as generator
+
+    dependency_warnings: list[str] = []
+    assert generator._canonical_mesh_package_dependencies(
+        {"items": invalid_items}, dependency_warnings
+    ) == []
+    assert len(dependency_warnings) == 2
+
+    assert generate_package(cell_path, out_dir, "generated_empty_scene", force=True, dry_run=False) == 0
+    package_dir = out_dir / "generated_empty_scene"
+    launch_before = (package_dir / "launch" / "demo.launch.py").read_text(encoding="utf-8")
+    package_before = (package_dir / "package.xml").read_text(encoding="utf-8")
+    assert _exec_dependencies(package_dir).count("workcell_builder") == 1
+
+    # Repeating generation proves the runtime/package contract is deterministic.
+    assert generate_package(cell_path, out_dir, "generated_empty_scene", force=True, dry_run=False) == 0
+    assert (package_dir / "launch" / "demo.launch.py").read_text(encoding="utf-8") == launch_before
+    assert (package_dir / "package.xml").read_text(encoding="utf-8") == package_before
 
 
 def test_cli_force_in_place_regeneration_keeps_source_layout_and_environment(
