@@ -2462,6 +2462,10 @@ void MainWindow::setup_studio_shell()
     refresh_preview_launch_ui();
     refresh_new_cell_checklist();
   });
+  connect(scene_preview_widget_, &ScenePreviewWidget::asset_placement_requested, this,
+    [this](const QString & asset_id, double x, double y, double z, bool configure_transform) {
+      place_catalog_asset_at_world_position(asset_id, x, y, z, configure_transform);
+    });
   auto * scene3d_viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
   if (scene3d_viewport) {
     scene3d_viewport->setObjectName("scene3dViewportWidget");
@@ -2488,28 +2492,9 @@ void MainWindow::setup_studio_shell()
         break;
       }
     };
-    scene3d_viewport->asset_drop_cb = [this](const QJsonObject & payload, double x, double y, double, bool shift_drop) {
-        const QString asset_id = payload.value("asset_id").toString().trimmed();
-        const auto match = std::find_if(asset_catalog_entries_.cbegin(), asset_catalog_entries_.cend(),
-          [&asset_id](const AssetCatalogEntry & e) { return e.asset_id == asset_id; });
-        if (asset_id.isEmpty() || match == asset_catalog_entries_.cend()) {
-          append_studio_log("Asset is no longer available");
-          return;
-        }
-        if (!match->disabled_reason.trimmed().isEmpty() || !match->editable) {
-          append_studio_log(QString("Cannot place asset '%1': %2").arg(asset_id, match->disabled_reason));
-          return;
-        }
-        const QString category = match->category;
-        const QString display_name = match->display_name;
-        const QString source_path = match->source_path;
-        if (shift_drop && !configure_asset_placement_transform(category, display_name)) return;
-        armed_asset_use_clicked_xy_ = true;
-        armed_asset_x_m_ = x;
-        armed_asset_y_m_ = y;
-        armed_asset_z_m_ = default_asset_pose_z(category, display_name);
-        arm_place_asset_mode(category, display_name, source_path);
-        commit_armed_asset_placement(QPointF(x * 100.0, y * 100.0));
+    scene3d_viewport->asset_drop_cb = [this](const QJsonObject & payload, double x, double y, double z, bool shift_drop) {
+        place_catalog_asset_at_world_position(
+          payload.value("asset_id").toString(), x, y, z, shift_drop);
       };
   }
   scene_builder_top_controls_host_ = new QWidget(scene_builder);
@@ -8314,6 +8299,57 @@ bool MainWindow::validate_armed_asset_transform(QString * error_message)
 }
 
 void MainWindow::update_arm_transform_validation_ui() {}
+
+bool MainWindow::place_catalog_asset_at_world_position(
+  const QString & requested_asset_id, double world_x_m, double world_y_m, double world_z_m,
+  bool configure_transform)
+{
+  const QString asset_id = requested_asset_id.trimmed();
+  if (asset_id.isEmpty()) {
+    append_studio_log(QStringLiteral("Cannot place asset: empty catalog asset_id."));
+    return false;
+  }
+  if (!std::isfinite(world_x_m) || !std::isfinite(world_y_m) || !std::isfinite(world_z_m)) {
+    append_studio_log(QStringLiteral("Cannot place asset '%1': authored world position is not finite.").arg(asset_id));
+    return false;
+  }
+  const auto match = std::find_if(asset_catalog_entries_.cbegin(), asset_catalog_entries_.cend(),
+    [&asset_id](const AssetCatalogEntry & entry) { return entry.asset_id == asset_id; });
+  if (match == asset_catalog_entries_.cend()) {
+    append_studio_log(QStringLiteral("Cannot place asset '%1': stale catalog identity is no longer available.").arg(asset_id));
+    return false;
+  }
+  if (!match->disabled_reason.trimmed().isEmpty() || !match->editable) {
+    const QString reason = !match->disabled_reason.trimmed().isEmpty()
+      ? match->disabled_reason.trimmed() : QStringLiteral("catalog entry is non-editable");
+    append_studio_log(QStringLiteral("Cannot place asset '%1': %2").arg(asset_id, reason));
+    return false;
+  }
+
+  armed_asset_category_ = match->category;
+  armed_asset_display_name_ = match->display_name;
+  armed_asset_source_path_ = match->source_path;
+  reset_armed_asset_transform_to_defaults();
+  armed_asset_use_clicked_xy_ = true;
+  armed_asset_x_m_ = world_x_m;
+  armed_asset_y_m_ = world_y_m;
+  armed_asset_z_m_ = world_z_m;
+  if (configure_transform &&
+      !configure_asset_placement_transform(match->category, match->display_name)) return false;
+  // The dialog initializes defaults; a clicked request still owns XYZ unless
+  // the operator explicitly chose configured coordinates.
+  if (!configure_transform) {
+    armed_asset_x_m_ = world_x_m;
+    armed_asset_y_m_ = world_y_m;
+    armed_asset_z_m_ = world_z_m;
+  }
+  arm_place_asset_mode(match->category, match->display_name, match->source_path);
+  const int item_count_before = digital_twin_scene_ ? digital_twin_scene_->items().size() : 0;
+  commit_armed_asset_placement(QPointF(world_x_m * 100.0, world_y_m * 100.0));
+  const bool committed = digital_twin_scene_ && digital_twin_scene_->items().size() == item_count_before + 1;
+  if (committed) refresh_scene_builder_left_explorer();
+  return committed;
+}
 
 bool MainWindow::configure_asset_placement_transform(const QString & category, const QString & display_name)
 {

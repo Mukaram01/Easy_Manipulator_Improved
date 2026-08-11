@@ -680,3 +680,22 @@ def test_qt_web3d_selected_transform_inspector_round_trip_contract():
     assert "set_authoring_item_pose(" in direct_part
     assert "apply_scene3d_preview_layer_filters(false);" not in direct_part
     assert "apply_scene3d_preview_layer_filters(false);" in fallback_part
+
+
+def test_embedded_asset_drop_is_identity_only_and_uses_typed_shared_request():
+    header = (ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.h").read_text(encoding="utf-8")
+    drop_view = CPP.split("class AssetDropWebEngineView", 1)[1].split("#endif", 1)[0]
+    assert 'application/x-workcell-studio-asset' in drop_view
+    assert 'mime->formats() != QStringList{kMimeType}' in drop_view
+    assert 'payload.size() != 1' in drop_view
+    assert 'payload.contains(QStringLiteral("asset_id"))' in drop_view
+    assert 'source_path' not in drop_view and 'text/uri-list' not in drop_view
+    assert drop_view.count('placement_requested(asset_id, x, y, z, configure_transform)') == 1
+    assert 'pointerToWorldPlane' in drop_view
+    assert 'void asset_placement_requested(' in header
+
+
+def test_embedded_and_native_frontends_connect_to_same_mainwindow_backend():
+    main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    assert 'ScenePreviewWidget::asset_placement_requested' in main
+    assert main.count('place_catalog_asset_at_world_position(') >= 3  # definition plus both frontends
