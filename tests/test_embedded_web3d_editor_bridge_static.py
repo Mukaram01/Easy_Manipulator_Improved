@@ -21,6 +21,69 @@ def test_browser_editor_api_v1_contract_and_bounded_events():
     assert "splice(0, state.editorEvents.length - 100)" in VIEWER
 
 
+def test_browser_placement_api_raycast_state_and_single_request_contract():
+    import subprocess
+
+    for method in ["placementPointFromViewport", "armPlacement", "cancelPlacement", "getPlacementState"]:
+        assert f"{method}:" in VIEWER
+
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const canvas={style:{},classList:{add(){},remove(){}},setAttribute(){},getBoundingClientRect(){return {left:10,top:20,width:100,height:80}}};
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',dataset:{},style:{},classList:{add(){},remove(){},toggle(){}},querySelector(){return null},querySelectorAll(){return[]},addEventListener(){},setAttribute(){},appendChild(){},remove(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100}}});
+const document={getElementById(id){return id==='scene-canvas'?canvas:element()},querySelectorAll(){return[]},createElement(){return element()}};
+const context={console,assert,process,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}},addEventListener(){}},document,URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context);
+vm.runInContext(source+`
+class Vector3 { constructor(x=0,y=0,z=0){this.x=x;this.y=y;this.z=z} }
+class Plane { constructor(normal,constant){this.normal=normal;this.constant=constant} }
+THREE={Vector3,Plane};
+const ray={intersectPlane(plane,out){out.x=1.25;out.y=-.5;out.z=0;return out}};
+const raycaster={ray,hits:[],setFromCamera(pointer,camera){this.last={x:pointer.x,y:pointer.y,camera}},intersectObjects(){return this.hits}};
+state.three={pointer:{x:0,y:0},camera:{id:'camera'},raycaster};
+const helperItem={id:'warning',role:'warning_marker',source_layer:'debug_overlay',debug_overlay:true};
+const helperNode={name:'warning_helper',userData:{item:helperItem},material:{},visible:true,parent:null};
+const helper={item:helperItem,object3d:helperNode};
+state.objects=[helper];
+
+assert.strictEqual(placementPointFromViewport(null),null);
+assert.strictEqual(placementPointFromViewport({clientX:NaN,clientY:30}),null);
+assert.strictEqual(placementPointFromViewport({clientX:Infinity,clientY:30}),null);
+assert.strictEqual(placementPointFromViewport({clientX:9,clientY:30}),null);
+assert.strictEqual(placementPointFromViewport({clientX:110,clientY:30}),null);
+raycaster.hits=[];
+assert.deepStrictEqual(placementPointFromViewport({clientX:60,clientY:60}),{x:1.25,y:-.5,z:0});
+raycaster.hits=[{object:helperNode,point:new Vector3(9,9,9)}];
+assert.deepStrictEqual(placementPointFromViewport({clientX:60,clientY:60}),{x:1.25,y:-.5,z:0},'helper hit must be transparent to ground fallback');
+
+const tableItem={id:'table',role:'support_surface',category:'table'};
+const tableNode={name:'tabletop',userData:{item:tableItem},material:{wireframe:false},visible:true,parent:null};
+state.objects.push({item:tableItem,object3d:tableNode});
+raycaster.hits=[{object:helperNode,point:new Vector3(9,9,9)},{object:tableNode,point:new Vector3(.2,.3,.7)}];
+assert.deepStrictEqual(placementPointFromViewport({clientX:60,clientY:60}),{x:.2,y:.3,z:.7});
+
+assert.deepStrictEqual(armPlacement(),{armed:true,persistent:false});
+assert.deepStrictEqual(getPlacementState(),{armed:true,persistent:false});
+onEditorKeyDown({key:'Escape',preventDefault(){}});
+assert.deepStrictEqual(getPlacementState(),{armed:false,persistent:false});
+assert.strictEqual(state.editorEvents.filter(event=>event.type==='placement_requested').length,0);
+
+armPlacement();
+onCanvasPointerDown({button:0,clientX:60,clientY:60,preventDefault(){},stopPropagation(){}});
+assert.strictEqual(state.editorEvents.filter(event=>event.type==='placement_requested').length,1);
+const request=state.editorEvents.find(event=>event.type==='placement_requested');
+assert.deepStrictEqual({x:request.x,y:request.y,z:request.z},{x:.2,y:.3,z:.7});
+assert.deepStrictEqual(getPlacementState(),{armed:false,persistent:false});
+`,context);
+"""
+    # Avoid depending on a browser runner while still executing viewer.js itself.
+    subprocess.run(
+        ["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js")],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    )
+
+
 def test_browser_api_reuses_existing_editor_functions_and_preserves_locks():
     for token in ["selectObject(String(id || ''))", "refreshGizmoSnap()", "undoPreviewEdit()", "redoPreviewEdit()", "resetView()", "buildEditPatch()"]:
         assert token in VIEWER

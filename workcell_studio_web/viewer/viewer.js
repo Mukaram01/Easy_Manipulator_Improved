@@ -40,7 +40,7 @@ const CAMERA_PRESET_DIRECTIONS = Object.freeze({
   top: [0, -0.001, 1],
   robot: [1.1, -1.25, 0.72],
 });
-const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], pickRecords: [], pickIdentityByObject: new WeakMap(), selectionIdentityIndex: null, physicalEditBindings: new Map(), assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: '', three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, gizmoPivot: null, gizmoPivotDragStart: null, cancellingTransformOperation: false, gizmoAttachmentDiagnostic: { targetId: '', reason: 'not_evaluated' }, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: '', lastCanvasPickReason: '', lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
+const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], pickRecords: [], pickIdentityByObject: new WeakMap(), selectionIdentityIndex: null, physicalEditBindings: new Map(), assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: '', three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, gizmoPivot: null, gizmoPivotDragStart: null, cancellingTransformOperation: false, gizmoAttachmentDiagnostic: { targetId: '', reason: 'not_evaluated' }, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', placement: { armed: false, persistent: false }, robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: '', lastCanvasPickReason: '', lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
 let robotPreviewLoadToken = 0;
 let physicalLoadToken = 0;
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
@@ -4668,6 +4668,67 @@ function selectObjectFromRender(id, renderIdentity = null) {
   if (previous !== (id || '')) pushEditorEvent('selection_changed', { itemId: id || '', uiItemId: explicitUiSelectionItemId(rendered), itemType: (editOwner || selectionOwner || rendered) ? itemType((editOwner || selectionOwner || rendered).item) : '', editable: Boolean(editOwner && selectionIsEditable(editOwner)) });
 }
 function clearSelection() { selectObject(''); el.inspector.className = 'state empty'; el.inspector.textContent = state.objects.length ? 'Select an object from the list or canvas.' : EMPTY_SCENE_MESSAGE; }
+
+function placementHitRendered(hit) {
+  for (let node = hit?.object || null; node; node = node.parent) {
+    if (intrinsicallyExcludedPickNode(node) || passThroughPickNode(node) || node.material?.wireframe === true) return null;
+    const rendered = state.pickIdentityByObject.get(node);
+    const item = node.userData?.item || rendered?.item;
+    if (item?.id) return renderedById(item.id) || rendered || null;
+  }
+  return null;
+}
+function isEligiblePlacementSurfaceHit(hit) {
+  const rendered = placementHitRendered(hit);
+  const item = rendered?.item;
+  return Boolean(item && rendered.object3d?.visible !== false && isPhysicalSemanticItem(item) &&
+    !isZone(item) && !isTaskOnlyHelperItem(item) && !isOverlayPolicyItem(item) && !isDebugOverlayItem(item));
+}
+function finitePlacementPoint(point) {
+  return point && [point.x, point.y, point.z].every(Number.isFinite)
+    ? { x: Number(point.x), y: Number(point.y), z: Number(point.z) }
+    : null;
+}
+// Typed input contract: {clientX, clientY}, in browser client pixels. The point
+// must lie inside the current canvas bounds; malformed and out-of-range input fails.
+function placementPointFromViewport(position) {
+  const clientX = position?.clientX;
+  const clientY = position?.clientY;
+  const rect = el.canvas?.getBoundingClientRect?.();
+  const { raycaster, pointer, camera } = state.three;
+  if (!Number.isFinite(clientX) || !Number.isFinite(clientY) || !rect || !Number.isFinite(rect.left) ||
+      !Number.isFinite(rect.top) || !Number.isFinite(rect.width) || !Number.isFinite(rect.height) ||
+      rect.width <= 0 || rect.height <= 0 || clientX < rect.left || clientY < rect.top ||
+      clientX >= rect.left + rect.width || clientY >= rect.top + rect.height || !raycaster || !pointer || !camera) return null;
+  pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const roots = [...state.objects.map(record => record.object3d), ...state.pickRecords.map(record => record.pickRoot || record.object3d)]
+    .filter((root, index, all) => root?.visible !== false && all.indexOf(root) === index);
+  for (const hit of raycaster.intersectObjects(roots, true) || []) {
+    if (isEligiblePlacementSurfaceHit(hit)) return finitePlacementPoint(hit.point);
+  }
+  if (!THREE?.Plane || !THREE?.Vector3 || !raycaster.ray?.intersectPlane) return null;
+  const fallback = new THREE.Vector3();
+  return raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), fallback)
+    ? finitePlacementPoint(fallback) : null;
+}
+function getPlacementState() { return { armed: state.placement.armed, persistent: state.placement.persistent }; }
+function armPlacement(options = {}) {
+  if (options === null || typeof options !== 'object' || Array.isArray(options)) return null;
+  state.placement = { armed: true, persistent: options.persistent === true };
+  el.canvas?.classList?.add('placement-armed');
+  if (el.canvas?.style) el.canvas.style.cursor = 'crosshair';
+  el.canvas?.setAttribute?.('aria-label', 'Drop to place');
+  return getPlacementState();
+}
+function cancelPlacement() {
+  state.placement = { armed: false, persistent: false };
+  el.canvas?.classList?.remove('placement-armed');
+  if (el.canvas?.style) el.canvas.style.cursor = '';
+  el.canvas?.setAttribute?.('aria-label', 'Workcell 3D canvas');
+  return getPlacementState();
+}
 function pickObject(event) {
   const rect = el.canvas.getBoundingClientRect();
   state.three.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -4758,7 +4819,20 @@ function cancelActiveTransformOperation(reason = 'Transform cancelled') {
   return true;
 }
 function cancelDirectMoveDrag(message) { return cancelActiveTransformOperation(message || 'Move cancelled'); }
-function onCanvasPointerDown(event) { if (event.button === 0) pickObject(event); }
+function onCanvasPointerDown(event) {
+  if (event.button === 0) {
+    if (state.placement.armed) {
+      const point = placementPointFromViewport({ clientX: event.clientX, clientY: event.clientY });
+      if (!point) return;
+      pushEditorEvent('placement_requested', point);
+      if (!state.placement.persistent) cancelPlacement();
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      return;
+    }
+    pickObject(event);
+  }
+}
 function onCanvasPointerMove(event) {}
 function onCanvasPointerUp(event) {}
 function onCanvasPointerCancel() { cancelActiveTransformOperation('Pointer cancelled'); }
@@ -4806,6 +4880,7 @@ function applyKeyboardTransformStep(event, command) {
 function onEditorKeyDown(event) {
   if (keyboardEventTargetsEditorControl(event)) return;
   if (event.key === 'Escape') {
+    if (state.placement.armed) { cancelPlacement(); event.preventDefault?.(); return; }
     if (cancelActiveTransformOperation('Escape')) event.preventDefault?.();
     return;
   }
@@ -5442,6 +5517,10 @@ window.__WORKCELL_EDITOR_API_V1__ = {
   fitScene: () => { resetView(); return editorState(); },
   applyCameraPreset: preset => { applyCameraPreset(preset); return editorState(); },
   fitSelection: () => { fitSelection(); return editorState(); },
+  placementPointFromViewport: position => placementPointFromViewport(position),
+  armPlacement: options => armPlacement(options),
+  cancelPlacement: () => cancelPlacement(),
+  getPlacementState: () => getPlacementState(),
   getEditPatch: () => buildEditPatch(),
   drainEvents: () => { const events = state.editorEvents.slice(); state.editorEvents.length = 0; return events; },
 };
