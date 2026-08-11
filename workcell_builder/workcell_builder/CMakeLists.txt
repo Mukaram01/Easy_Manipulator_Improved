@@ -455,6 +455,16 @@ if(BUILD_TESTING)
     src_workcell_studio_layout_editor.cpp)
   ament_add_gtest(workcell_mainwindow_rviz_preview_compile_test
     test/mainwindow_rviz_preview_compile_test.cpp)
+  ament_add_gtest(workcell_scene_identity_test
+    test/workcell_scene_identity_test.cpp
+    src_workcell_studio_scene_browser.cpp
+    src_workcell_warning_once.cpp
+    src_workcell_yaml_utils.cpp)
+  ament_add_gtest(workcell_preview_process_state_test
+    test/preview_process_state_test.cpp)
+  if(TARGET workcell_scene_identity_test)
+    target_link_libraries(workcell_scene_identity_test yaml-cpp ${Boost_LIBRARIES})
+  endif()
   if(TARGET workcell_scene_preview_widget_ui_test)
     target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Core Qt5::Widgets Qt5::OpenGL Qt5::Network OpenGL::GL yaml-cpp)
     if(Qt5WebEngineWidgets_FOUND)

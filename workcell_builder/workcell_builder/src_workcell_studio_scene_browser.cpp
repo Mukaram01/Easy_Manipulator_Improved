@@ -144,6 +144,38 @@ void try_parse_env(WorkcellStudioSceneInfo * s)
 }
 }
 
+fs::path canonical_scene_identity(const fs::path & scene_dir)
+{
+  return canonical_or_absolute(scene_dir);
+}
+
+bool same_scene_identity(const WorkcellStudioSceneInfo & scene, const fs::path & scene_dir)
+{
+  const fs::path candidate_identity = scene.canonical_scene_dir.empty() ?
+    canonical_scene_identity(scene.scene_dir) : canonical_scene_identity(scene.canonical_scene_dir);
+  return candidate_identity == canonical_scene_identity(scene_dir);
+}
+
+int find_scene_by_identity(
+  const WorkcellStudioSceneBrowserResult & scenes,
+  const fs::path & scene_dir,
+  const std::string & stable_scene_name)
+{
+  for (std::size_t i = 0; i < scenes.scenes.size(); ++i) {
+    if (same_scene_identity(scenes.scenes[i], scene_dir)) return static_cast<int>(i);
+  }
+  if (!stable_scene_name.empty()) {
+    int unique_match = -1;
+    for (std::size_t i = 0; i < scenes.scenes.size(); ++i) {
+      if (scenes.scenes[i].scene_name != stable_scene_name) continue;
+      if (unique_match >= 0) return -1;  // Display/package names are not safe when ambiguous.
+      unique_match = static_cast<int>(i);
+    }
+    return unique_match;
+  }
+  return -1;
+}
+
 WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const fs::path & workspace_root)
 {
   WorkcellStudioSceneBrowserResult out;
@@ -166,7 +198,7 @@ WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const fs::path 
       if (!fs::is_directory(it->path(), ec) || ec) continue;
       WorkcellStudioSceneInfo s;
       s.scene_dir = it->path();
-      s.canonical_scene_dir = canonical_or_absolute(s.scene_dir);
+      s.canonical_scene_dir = canonical_scene_identity(s.scene_dir);
       const std::string scene_key = s.canonical_scene_dir.string();
       if (!discovered_scene_dirs.insert(scene_key).second) {
         continue;
