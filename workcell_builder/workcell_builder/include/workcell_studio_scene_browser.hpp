@@ -46,6 +46,15 @@ struct WorkcellStudioSceneBrowserResult
 
 WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const boost::filesystem::path & workspace_root);
 
+// Scene identity is the resolved physical source directory, not the spelling by
+// which a workspace happened to discover it (for example src/scenes symlinks).
+boost::filesystem::path canonical_scene_identity(const boost::filesystem::path & scene_dir);
+bool same_scene_identity(const WorkcellStudioSceneInfo & scene, const boost::filesystem::path & scene_dir);
+int find_scene_by_identity(
+  const WorkcellStudioSceneBrowserResult & scenes,
+  const boost::filesystem::path & scene_dir,
+  const std::string & stable_scene_name = "");
+
 }  // namespace workcell_builder
 
 #endif

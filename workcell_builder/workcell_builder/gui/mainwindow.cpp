@@ -91,6 +91,7 @@
 #include <QProgressDialog>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include "preview_process_state.hpp"
 #include <QCloseEvent>
 #include <QSettings>
 #include <QSizePolicy>
@@ -3765,7 +3766,9 @@ void MainWindow::generate_yaml_draft_for_selected_scene()
 void MainWindow::generate_scene_package_for_selected_scene() {
   if (selected_scene_index_ < 0) return;
   // Generation and the YAML refresh must not change which same-named package is authoritative.
-  const fs::path selected_scene_dir = scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_dir;
+  const auto selected_scene = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  const fs::path selected_scene_dir = workcell_builder::canonical_scene_identity(
+    selected_scene.canonical_scene_dir.empty() ? selected_scene.scene_dir : selected_scene.canonical_scene_dir);
   const std::string selected_scene_name = scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_name;
   QString parity_warning;
   bool severe_parity_mismatch = false;
@@ -3778,14 +3781,14 @@ void MainWindow::generate_scene_package_for_selected_scene() {
     }
   }
   generate_yaml_draft_for_selected_scene();
-  auto selected_after_refresh = std::find_if(scene_browser_result_.scenes.begin(), scene_browser_result_.scenes.end(),
-    [&](const workcell_builder::WorkcellStudioSceneInfo & candidate) { return candidate.scene_dir == selected_scene_dir; });
-  if (selected_after_refresh == scene_browser_result_.scenes.end()) {
+  const int selected_after_refresh = workcell_builder::find_scene_by_identity(
+    scene_browser_result_, selected_scene_dir, selected_scene_name);
+  if (selected_after_refresh < 0 || !fs::exists(selected_scene_dir) || !fs::is_directory(selected_scene_dir)) {
     append_studio_log("Generate ROS Scene Package blocked: the selected canonical scene path disappeared during YAML refresh: " +
       QString::fromStdString(selected_scene_dir.string()));
     return;
   }
-  selected_scene_index_ = static_cast<int>(std::distance(scene_browser_result_.scenes.begin(), selected_after_refresh));
+  selected_scene_index_ = selected_after_refresh;
   const QString scene_dir = QString::fromStdString(selected_scene_dir.string());
   const QString scene_name = QString::fromStdString(selected_scene_name);
   const QString cell_definition_path = QString::fromStdString((selected_scene_dir / "cell_definition.yaml").string());
@@ -3886,10 +3889,10 @@ void MainWindow::generate_scene_package_for_selected_scene() {
     }
   }
   refresh_scene_browser_ui();
-  auto refreshed_selection = std::find_if(scene_browser_result_.scenes.begin(), scene_browser_result_.scenes.end(),
-    [&](const workcell_builder::WorkcellStudioSceneInfo & candidate) { return candidate.scene_dir == selected_scene_dir; });
-  if (refreshed_selection != scene_browser_result_.scenes.end()) {
-    selected_scene_index_ = static_cast<int>(std::distance(scene_browser_result_.scenes.begin(), refreshed_selection));
+  const int refreshed_selection = workcell_builder::find_scene_by_identity(
+    scene_browser_result_, selected_scene_dir, selected_scene_name);
+  if (refreshed_selection >= 0) {
+    selected_scene_index_ = refreshed_selection;
     sync_selected_scene_state();
   }
   refresh_scene_builder_selected_scene_ui();
@@ -4513,8 +4516,19 @@ void MainWindow::bind_selected_item_as_camera()
 }
 void MainWindow::refresh_scene_browser_ui()
 {
+  fs::path selected_identity;
+  std::string selected_name;
+  if (selected_scene_index_ >= 0 && selected_scene_index_ < static_cast<int>(scene_browser_result_.scenes.size())) {
+    const auto & selected = scene_browser_result_.scenes[static_cast<std::size_t>(selected_scene_index_)];
+    selected_identity = selected.canonical_scene_dir.empty() ? selected.scene_dir : selected.canonical_scene_dir;
+    selected_name = selected.scene_name;
+  }
   const fs::path workspace_root = workcell_path.empty() ? fs::path(QDir::homePath().toStdString()) / "workcell_ws" : workcell_path;
   scene_browser_result_ = workcell_builder::discover_workcell_studio_scenes(workspace_root);
+  if (!selected_identity.empty()) {
+    selected_scene_index_ = workcell_builder::find_scene_by_identity(
+      scene_browser_result_, selected_identity, selected_name);
+  }
   int ready=0,warn=0,blocked=0; for (const auto & s : scene_browser_result_.scenes){ if(s.status=="READY") ++ready; else if(s.status=="WARNINGS") ++warn; else ++blocked; }
   const QString root_used = QString::fromStdString(scene_browser_result_.scene_root.string());
   const QStringList searched = [&](){ QStringList out; for (const auto & p : scene_browser_result_.searched_roots) out << QString::fromStdString(p.string()); return out; }();
@@ -5532,7 +5546,11 @@ void MainWindow::stop_preview_process(){ if(!preview_process_ || preview_process
 void MainWindow::handle_preview_stdout(){ if(!preview_process_) return; const QString out=QString::fromUtf8(preview_process_->readAllStandardOutput()); preview_output_tail_=(preview_output_tail_+out).right(4000); if(preview_log_) preview_log_->appendPlainText(out); if(!out.trimmed().isEmpty()) append_studio_log("[process stdout] "+out.trimmed()); }
 void MainWindow::handle_preview_stderr(){ if(!preview_process_) return; const QString err=QString::fromUtf8(preview_process_->readAllStandardError()); preview_output_tail_=(preview_output_tail_+err).right(4000); if(preview_log_) preview_log_->appendPlainText(err); if(!err.trimmed().isEmpty()) append_studio_log("[process stderr] "+err.trimmed()); }
 void MainWindow::handle_preview_started(){ append_studio_log(preview_state_=="PREVIEW_LAUNCHING" ? "Launching RViz..." : QString("Process started: stage=%1 pid=%2").arg(preview_state_).arg(preview_process_->processId())); if(preview_state_=="PREVIEW_LAUNCHING"){ set_preview_state("PREVIEW_RUNNING"); append_studio_log("RViz running"); } }
-void MainWindow::handle_preview_error(QProcess::ProcessError error){ const QString msg=preview_process_?preview_process_->errorString():"unknown error"; append_studio_log(QString("ERROR stage=%1 QProcess error=%2 message=%3 output_tail=%4").arg(preview_state_).arg(static_cast<int>(error)).arg(msg,preview_output_tail_)); if(preview_state_=="BUILD_RUNNING") set_preview_state("BUILD_FAILED"); else set_preview_state("PREVIEW_FAILED"); }
+void MainWindow::handle_preview_error(QProcess::ProcessError error){
+  if (workcell_builder::preview_process_error_is_expected(preview_stop_requested_, preview_state_=="PREVIEW_STOPPING")) {
+    return;  // terminate()/kill() commonly emits QProcess::Crashed; finished() completes STOPPED.
+  }
+  const QString msg=preview_process_?preview_process_->errorString():"unknown error"; append_studio_log(QString("ERROR stage=%1 QProcess error=%2 message=%3 output_tail=%4").arg(preview_state_).arg(static_cast<int>(error)).arg(msg,preview_output_tail_)); if(preview_state_=="BUILD_RUNNING") set_preview_state("BUILD_FAILED"); else set_preview_state("PREVIEW_FAILED"); }
 void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exit_status){
   const QString completed_stage=preview_state_;
   if(preview_stop_requested_ || completed_stage=="PREVIEW_STOPPING"){ set_preview_state("PREVIEW_STOPPED"); append_studio_log("RViz stopped"); preview_running_scene_key_.clear(); if(close_after_preview_stop_) QTimer::singleShot(0,this,&QWidget::close); return; }
