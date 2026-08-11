@@ -1302,3 +1302,14 @@ def test_unknown_physical_record_fails_export(tmp_path):
         assert "mystery_mesh" in str(exc)
     else:
         raise AssertionError("expected unknown physical ownership to fail export")
+
+def test_generated_table_relative_transform_uses_canonical_owner_not_stale_environment():
+    generated = {"assets": [{"id": "urdf_visual_table", "source_kind": "generated_preview", "support_surface_ref": "support_surface_table", "pose": {"xyz": [0.65, 0.0, 0.06], "rpy": [0.0, 0.0, 0.0]}, "transform_source": "urdf_fk_link_world_times_visual_origin"}]}
+    owners = [{"id": "support_surface_table", "type": "support_surface", "editable": True, "locked": False, "pose": {"xyz": [0.65, 0.0, 0.06], "rpy": [0.0, 0.0, 0.0]}, "provenance": {"pose": "layout/workcell_studio_layout.yaml"}}]
+    stale_environment_owner = {"id": "support_surface_table", "pose": {"xyz": [0.55, 0.0, 0.06], "rpy": [0.0, 0.0, 0.0]}, "provenance": {"pose": "environment.yaml"}}
+    source_data = {"environment": {"environment": {"support_surfaces": [{"id": "support_surface_table", "pose_xyz": [0.55, 0.0, 0.06], "pose_rpy": [0.0, 0.0, 0.0]}]}}}
+    exporter._annotate_owner_relative_physical_visual_transforms(generated, owners, [], [stale_environment_owner], source_data)
+    table = generated["assets"][0]
+    assert table["owner_relative_visual_transform"]["xyz"] == pytest.approx([0.0, 0.0, 0.0])
+    provenance = table["provenance"]["owner_relative_visual_transform"]
+    assert provenance["source_owner_pose"]["xyz"] == pytest.approx([0.65, 0.0, 0.06])

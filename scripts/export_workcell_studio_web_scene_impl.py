@@ -1530,7 +1530,7 @@ def _annotate_owner_relative_physical_visual_transforms(
             ):
                 continue
             visual_world_pose = item.get("final_transform") or item.get("world_from_visual") or item.get("pose")
-            source_owner = generated_source_owners.get(owner_id, owner)
+            source_owner = owner
             owner_world_pose = source_owner.get("pose") or source_owner.get("world_pose") or source_owner.get("final_transform")
             relative_pose = _parent_to_child_pose(owner_world_pose, visual_world_pose)
             if relative_pose is None:

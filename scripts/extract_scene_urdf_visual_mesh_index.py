@@ -814,6 +814,31 @@ def _extract_scene_launch_xacro_request(scene_dir, cli_xacro_args):
                     key = _literal_or_name_value(key_node, constants, launch_config_vars, cli_xacro_args)
                     if key:
                         mappings[key] = _literal_or_name_value(value_node, constants, launch_config_vars, cli_xacro_args)
+        canonical_layout = Path(scene_dir) / "layout" / "workcell_studio_layout.yaml"
+        if canonical_layout.exists():
+            try:
+                layout_data = yaml.safe_load(canonical_layout.read_text()) or {}
+                layout_items = {
+                    str(item.get("id") or ""): item
+                    for item in layout_data.get("items", [])
+                    if isinstance(item, dict)
+                } if isinstance(layout_data, dict) else {}
+                for mapping_key, owner_id, vector_name in (
+                    ("table_world_xyz", "support_surface_table", "xyz"),
+                    ("table_world_rpy", "support_surface_table", "rpy"),
+                    ("camera_world_xyz", "realsense_overhead", "xyz"),
+                    ("camera_world_rpy", "realsense_overhead", "rpy"),
+                ):
+                    if str(mappings.get(mapping_key) or "").strip():
+                        continue
+                    pose = layout_items.get(owner_id, {}).get("pose", {})
+                    vector = pose.get(vector_name) if isinstance(pose, dict) else None
+                    if isinstance(vector, (list, tuple)) and len(vector) == 3:
+                        mappings[mapping_key] = " ".join(
+                            format(float(value), ".17g") for value in vector
+                        )
+            except (OSError, ValueError, TypeError, yaml.YAMLError):
+                pass
         return {
             "launch_path": _repo_relative_path(launch_path),
             "package_name": package_name or Path(scene_dir).name,
