@@ -104,15 +104,18 @@ TEST(RvizPreviewMetadataCommandTest, FakeHardwareAndRvizRemainDefaultWithoutReal
   EXPECT_EQ(command.indexOf("runtime_execution_enabled:=true"), -1);
 }
 
-TEST(RvizPreviewMetadataCommandTest, BuildsOnlySelectedPackageInDerivedWorkspace)
+TEST(RvizPreviewMetadataCommandTest, BuildsMetadataSelectedPackageDependencyClosureInDerivedWorkspace)
 {
   auto scene = runnable_scene();
+  scene.launch_package = "metadata_selected_scene";
   const QString command = workcell_builder::build_selected_package_command(scene, "/home/user/workcell_ws");
 
   EXPECT_EQ(
     command,
     "source /opt/ros/humble/setup.bash && cd '/home/user/workcell_ws' && "
-    "colcon build --symlink-install --packages-select 'ur5_2f_test'");
+    "colcon build --symlink-install --packages-up-to 'metadata_selected_scene'");
+  EXPECT_EQ(command.indexOf("--packages-select"), -1);
+  EXPECT_EQ(command.indexOf("ur5_2f_test"), -1);
   EXPECT_EQ(command.indexOf("--allow-overriding"), -1);
 }
 
