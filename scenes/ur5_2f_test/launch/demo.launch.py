@@ -262,6 +262,10 @@ def _launch_setup(context):
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
     launch_rviz = LaunchConfiguration("launch_rviz")
     joint_states_topic = f"/{scene_pkg}/joint_states"
+    canonical_layout_path = os.path.join(
+        get_package_share_directory(scene_pkg),
+        CANONICAL_LAYOUT_REL_PATH,
+    )
 
     canonical_poses = load_canonical_layout_poses()
     table_pose = canonical_poses["support_surface_table"]
@@ -481,11 +485,26 @@ def _launch_setup(context):
         ],
     )
 
+    canonical_mesh_preview = Node(
+        package="workcell_builder",
+        executable="workcell_studio_layout_mesh_preview_node.py",
+        name=f"{scene_pkg}_canonical_mesh_preview",
+        output="screen",
+        arguments=[
+            canonical_layout_path,
+            "--frame-id",
+            world_frame,
+            "--topic",
+            f"/{scene_pkg}/canonical_mesh_markers",
+        ],
+    )
+
     return [
         static_tf,
         robot_state_publisher,
         joint_state_publisher,
         move_group,
+        canonical_mesh_preview,
         rviz_node,
     ]
 
