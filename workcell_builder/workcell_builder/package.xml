@@ -26,6 +26,9 @@
   <depend>ament_index_cpp</depend>
   <depend>yaml-cpp</depend>
   <depend>boost</depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
 
   <build_depend>qtbase5-dev</build_depend>
   <build_depend>libqt5svg5-dev</build_depend>

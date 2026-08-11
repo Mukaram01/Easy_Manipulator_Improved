@@ -781,6 +781,7 @@ install(PROGRAMS
   scripts/publish_sample_epd_snapshot.py
   scripts/epd_to_workcell_snapshot_node.py
   ../../scripts/workcell_builder_task_zone_preview_node.py
+  ../../scripts/workcell_studio_layout_mesh_preview_node.py
   DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS
