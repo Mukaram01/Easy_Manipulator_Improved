@@ -33,3 +33,11 @@ def test_scene3d_asset_drag_drop_tokens_exist():
     assert "package_uri" in main_cpp
     assert "missing_mesh_source_path" in main_cpp
     assert "non_mesh_geometry_added" in main_cpp
+
+
+def test_native_drop_delegates_identity_and_world_position_to_shared_backend_once():
+    main_cpp = Path("workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    callback = main_cpp.split("scene3d_viewport->asset_drop_cb =", 1)[1].split("};", 1)[0]
+    assert callback.count("place_catalog_asset_at_world_position(") == 1
+    assert 'payload.value("asset_id").toString()' in callback
+    assert "source_path" not in callback

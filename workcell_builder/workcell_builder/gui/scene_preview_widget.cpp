@@ -266,6 +266,10 @@ void maybe_warn_overlay_fit_dominance(ScenePreviewWidget * self, const QRectF & 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 #include <QWebEngineView>
 #include <QWebEnginePage>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
+#include <QMimeData>
 #endif
 #include "scene3d_viewport_widget.h"
 #include <QPainter>
@@ -291,6 +295,81 @@ QString scene_preview_mouse_help_tooltip(const QString & unavailable_reason)
   }
   return tooltip;
 }
+
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+class AssetDropWebEngineView final : public QWebEngineView
+{
+public:
+  using PlacementHandler = std::function<void(const QString &, double, double, double, bool)>;
+
+  explicit AssetDropWebEngineView(QWidget * parent = nullptr) : QWebEngineView(parent)
+  {
+    setAcceptDrops(true);
+  }
+
+  PlacementHandler placement_requested;
+
+protected:
+  void dragEnterEvent(QDragEnterEvent * event) override
+  {
+    if (has_supported_asset_payload(event->mimeData())) event->acceptProposedAction();
+    else event->ignore();
+  }
+
+  void dragMoveEvent(QDragMoveEvent * event) override
+  {
+    if (has_supported_asset_payload(event->mimeData())) event->acceptProposedAction();
+    else event->ignore();
+  }
+
+  void dropEvent(QDropEvent * event) override
+  {
+    const QString asset_id = parse_asset_id(event->mimeData());
+    if (asset_id.isEmpty()) { event->ignore(); return; }
+    const QPoint point = event->pos();
+    const bool configure_transform = event->keyboardModifiers().testFlag(Qt::ShiftModifier);
+    event->acceptProposedAction();
+
+    // The browser owns its camera and canvas geometry. Ask it for the authored
+    // world coordinate; never infer a position or accept a filesystem payload
+    // in the Qt host. The callback emits at most one typed request per drop.
+    const QString script = QStringLiteral(
+      "(() => { const hit = (typeof pointerToWorldPlane === 'function') ? "
+      "pointerToWorldPlane({clientX:%1,clientY:%2}, 0) : null; "
+      "return hit && [hit.x,hit.y,hit.z].every(Number.isFinite) ? "
+      "{x:hit.x,y:hit.y,z:hit.z} : null; })()")
+      .arg(point.x()).arg(point.y());
+    page()->runJavaScript(script, [this, asset_id, configure_transform](const QVariant & result) {
+      const QVariantMap world = result.toMap();
+      bool ok_x = false, ok_y = false, ok_z = false;
+      const double x = world.value(QStringLiteral("x")).toDouble(&ok_x);
+      const double y = world.value(QStringLiteral("y")).toDouble(&ok_y);
+      const double z = world.value(QStringLiteral("z")).toDouble(&ok_z);
+      if (!ok_x || !ok_y || !ok_z || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) return;
+      if (placement_requested) placement_requested(asset_id, x, y, z, configure_transform);
+    });
+  }
+
+private:
+  static QString parse_asset_id(const QMimeData * mime)
+  {
+    static const QString kMimeType = QStringLiteral("application/x-workcell-studio-asset");
+    if (!mime || mime->formats() != QStringList{kMimeType}) return {};
+    QJsonParseError error;
+    const QJsonDocument document = QJsonDocument::fromJson(mime->data(kMimeType), &error);
+    if (error.error != QJsonParseError::NoError || !document.isObject()) return {};
+    const QJsonObject payload = document.object();
+    if (payload.size() != 1 || !payload.contains(QStringLiteral("asset_id")) ||
+        !payload.value(QStringLiteral("asset_id")).isString()) return {};
+    return payload.value(QStringLiteral("asset_id")).toString().trimmed();
+  }
+
+  static bool has_supported_asset_payload(const QMimeData * mime)
+  {
+    return !parse_asset_id(mime).isEmpty();
+  }
+};
+#endif
 }  // namespace
 
 ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
@@ -563,7 +642,12 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     requested_product_view_backend == QStringLiteral("scene3d");
   if (!native_scene3d_explicitly_requested) {
     product_view_backend_ = ProductViewBackend::EmbeddedWeb3D;
-    embedded_web_view_ = new QWebEngineView(view3d_container_);
+    auto * asset_drop_web_view = new AssetDropWebEngineView(view3d_container_);
+    embedded_web_view_ = asset_drop_web_view;
+    asset_drop_web_view->placement_requested = [this](
+      const QString & asset_id, double x, double y, double z, bool configure_transform) {
+        emit asset_placement_requested(asset_id, x, y, z, configure_transform);
+      };
     embedded_web_view_->setObjectName("embeddedWeb3dProductView");
     embedded_web_view_->setFocusPolicy(Qt::StrongFocus);
     view3d_container_->setFocusProxy(embedded_web_view_);

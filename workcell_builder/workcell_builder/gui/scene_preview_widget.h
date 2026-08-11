@@ -323,6 +323,11 @@ signals:
     const QString & id,
     double x, double y, double z,
     double roll, double pitch, double yaw);
+  // A placement request is identity based: catalog metadata and filesystem
+  // paths are deliberately resolved only by MainWindow's canonical backend.
+  void asset_placement_requested(
+    const QString & asset_id, double world_x_m, double world_y_m, double world_z_m,
+    bool configure_transform);
   void embedded_product_view_runtime_state_changed(const QString & state, bool has_usable_content);
   void authoring_mode_changed(const QString & mode);
   void embedded_authoring_save_requested();

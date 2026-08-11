@@ -347,6 +347,9 @@ private:
   void refresh_delete_selected_action();
   void delete_selected_item();
   void add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path);
+  bool place_catalog_asset_at_world_position(
+    const QString & asset_id, double world_x_m, double world_y_m, double world_z_m,
+    bool configure_transform);
   QPointF compute_default_canvas_pose(const QString & category, const QString & display_name) const;
   void arm_place_asset_mode(const QString & category, const QString & display_name, const QString & source_path);
   void commit_armed_asset_placement(const QPointF & canvas_pos_px);

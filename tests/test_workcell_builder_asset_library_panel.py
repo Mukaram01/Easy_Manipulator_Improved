@@ -63,3 +63,14 @@ def test_asset_library_add_button_requires_scene_and_placeable_asset():
     assert 'setToolTip' in validate
     assert 'Start existing Place Asset mode' in validate
     assert 'ScenePreviewWidget * asset_library_preview_' in HDR
+
+
+def test_shared_placement_backend_rejects_stale_disabled_and_noneditable_catalog_entries():
+    body = _between('bool MainWindow::place_catalog_asset_at_world_position', 'bool MainWindow::configure_asset_placement_transform')
+    assert 'asset_id.isEmpty()' in body
+    assert 'asset_catalog_entries_.cend()' in body
+    assert 'stale catalog identity' in body
+    assert '!match->disabled_reason.trimmed().isEmpty()' in body
+    assert '!match->editable' in body
+    assert body.count('arm_place_asset_mode(') == 1
+    assert body.count('commit_armed_asset_placement(') == 1
