@@ -28,6 +28,7 @@ DRY_RUN_PATH = SCRIPTS_DIR / "dry_run_task_recipe.py"
 PLAN_PATH = SCRIPTS_DIR / "generate_task_execution_plan.py"
 BUNDLE_EXPORT_PATH = SCRIPTS_DIR / "export_workcell_bundle.py"
 MESH_INDEX_EXTRACTOR_PATH = SCRIPTS_DIR / "extract_scene_urdf_visual_mesh_index.py"
+LAYOUT_MESH_PREVIEW_PATH = SCRIPTS_DIR / "workcell_studio_layout_mesh_preview_node.py"
 TEMPLATE_DIR = REPO_ROOT / "workcell_builder" / "workcell_builder" / "templates" / "ros2" / "humble"
 
 SUPPORTED_TASK_TYPES = {
@@ -205,11 +206,46 @@ def _augment_scene_manifest(cell_def: dict[str, Any], scene_manifest: dict[str, 
     return out
 
 
-def _render_package_xml(package_name: str) -> str:
+def _canonical_mesh_package_dependencies(layout: Any, warnings: list[str]) -> list[str]:
+    """Derive stable runtime dependencies using the publisher's URI rules."""
+    try:
+        mesh_preview = _load_module("generated_layout_mesh_preview_contract", LAYOUT_MESH_PREVIEW_PATH)
+    except Exception as exc:
+        raise RuntimeError(f"Unable to load canonical mesh resource rules: {exc}") from exc
+
+    if not isinstance(layout, dict):
+        return []
+    items = layout.get("items", [])
+    if not isinstance(items, list):
+        warnings.append("Canonical layout items is not a list; no mesh package dependencies were derived.")
+        return []
+
+    dependencies: set[str] = set()
+    for index, item in enumerate(items):
+        if not isinstance(item, dict) or item.get("geometry_type") != "mesh":
+            continue
+        mesh = item.get("mesh")
+        if not isinstance(mesh, dict):
+            continue
+        resource = mesh.get("path") if mesh.get("path") is not None else mesh.get("uri")
+        try:
+            dependencies.add(mesh_preview.resolve_mesh_package_name(resource))
+        except mesh_preview.LayoutMeshError as exc:
+            warnings.append(f"Canonical layout mesh items[{index}] has no package dependency: {exc}")
+    return sorted(dependencies)
+
+
+def _render_package_xml(package_name: str, mesh_package_dependencies: list[str] | None = None) -> str:
+    dependencies = sorted(
+        set(mesh_package_dependencies or []) - {package_name, "workcell_builder"}
+    )
     template_path = TEMPLATE_DIR / "package_example.xml"
     if template_path.is_file():
         text = template_path.read_text(encoding="utf-8")
-        return text.replace("workcellexample", package_name)
+        text = text.replace("workcellexample", package_name)
+        dependency_lines = "".join(f"  <exec_depend>{escape(name)}</exec_depend>\n" for name in dependencies)
+        return text.replace("  <exec_depend>workcell_builder</exec_depend>\n", f"  <exec_depend>workcell_builder</exec_depend>\n{dependency_lines}")
+    dependency_lines = "".join(f"  <exec_depend>{escape(name)}</exec_depend>\n" for name in dependencies)
     return f"""<?xml version=\"1.0\"?>
 <package format=\"3\">
   <name>{package_name}</name>
@@ -219,7 +255,8 @@ def _render_package_xml(package_name: str) -> str:
   <license>Apache-2.0</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
   <exec_depend>python3-yaml</exec_depend>
-  <export><build_type>ament_cmake</build_type></export>
+  <exec_depend>workcell_builder</exec_depend>
+{dependency_lines}  <export><build_type>ament_cmake</build_type></export>
 </package>
 """
 
@@ -452,20 +489,51 @@ def _iter_scene_urdf_placeholders(cell_def: dict[str, Any]) -> list[dict[str, An
     return placeholders
 
 
-def _render_demo_launch(package_name: str, source_path: Path) -> str:
+def _canonical_mesh_rviz_contract(package_name: str) -> dict[str, Any]:
+    """Expose the generic RViz display seam until this generator owns a config."""
+    return {
+        "name": "Workcell Imported Meshes",
+        "topic": f"/{package_name}/canonical_mesh_markers",
+        "qos": {"reliability": "Reliable", "durability": "Transient Local", "history": "Keep Last"},
+    }
+
+
+def _render_demo_launch(package_name: str, source_path: Path, world_frame: str = "world") -> str:
     return (
         "#!/usr/bin/env python3\n"
         f"\"\"\"Offline-safe generated launch entrypoint for {package_name}.\"\"\"\n\n"
+        "import os\n\n"
+        "from ament_index_python.packages import get_package_share_directory\n"
         "from launch import LaunchDescription\n"
         "from launch.actions import DeclareLaunchArgument, LogInfo\n"
-        "from launch.substitutions import LaunchConfiguration\n\n\n"
+        "from launch.substitutions import LaunchConfiguration\n"
+        "from launch_ros.actions import Node\n\n\n"
         "def generate_launch_description() -> LaunchDescription:\n"
         "    \"\"\"Generated offline review launch.\n\n"
         "    This launch intentionally avoids runtime robot drivers and physical motion execution.\n"
         "    It is a review-safe placeholder to satisfy generated package audit checks.\n"
         "    \"\"\"\n"
         "    use_fake_hardware = LaunchConfiguration(\"use_fake_hardware\")\n"
-        "    launch_rviz = LaunchConfiguration(\"launch_rviz\")\n\n"
+        "    launch_rviz = LaunchConfiguration(\"launch_rviz\")\n"
+        f"    package_name = {package_name!r}\n"
+        "    canonical_layout_path = os.path.join(\n"
+        "        get_package_share_directory(package_name),\n"
+        "        \"layout\",\n"
+        "        \"workcell_studio_layout.yaml\",\n"
+        "    )\n"
+        "    canonical_mesh_preview = Node(\n"
+        "        package=\"workcell_builder\",\n"
+        "        executable=\"workcell_studio_layout_mesh_preview_node.py\",\n"
+        "        name=f\"{package_name}_canonical_mesh_preview\",\n"
+        "        output=\"screen\",\n"
+        "        arguments=[\n"
+        "            canonical_layout_path,\n"
+        "            \"--frame-id\",\n"
+        f"            {world_frame!r},\n"
+        "            \"--topic\",\n"
+        "            f\"/{package_name}/canonical_mesh_markers\",\n"
+        "        ],\n"
+        "    )\n\n"
         "    return LaunchDescription([\n"
         "        DeclareLaunchArgument(\n"
         "            \"use_fake_hardware\",\n"
@@ -482,6 +550,7 @@ def _render_demo_launch(package_name: str, source_path: Path) -> str:
         "        LogInfo(msg=[\"[generated scene] placeholder scene xacro is visual-review metadata only; no execution readiness is implied.\"]),\n"
         "        LogInfo(msg=[\"[generated scene] use_fake_hardware:=\", use_fake_hardware]),\n"
         "        LogInfo(msg=[\"[generated scene] launch_rviz:=\", launch_rviz]),\n"
+        "        canonical_mesh_preview,\n"
         "    ])\n"
     )
 
@@ -1371,7 +1440,11 @@ def write_scene_package_contract(
     scene_manifest_text = _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, scene_manifest)
     task_recipe_text = _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, task_recipe)
 
-    (package_dir / "package.xml").write_text(_render_package_xml(package_name), encoding="utf-8")
+    canonical_layout = _build_contract_layout(package_name, loaded, source_snapshot)
+    mesh_dependencies = _canonical_mesh_package_dependencies(canonical_layout, warnings)
+    (package_dir / "package.xml").write_text(
+        _render_package_xml(package_name, mesh_dependencies), encoding="utf-8"
+    )
     (package_dir / "CMakeLists.txt").write_text(_render_cmakelists(package_name), encoding="utf-8")
     environment_text = source_snapshot.get("environment_text")
     if isinstance(environment_text, str):
@@ -1394,10 +1467,14 @@ def write_scene_package_contract(
         (package_dir / "layout" / "workcell_studio_layout.yaml").write_text(canonical_layout_text, encoding="utf-8")
     else:
         (package_dir / "layout" / "workcell_studio_layout.yaml").write_text(
-            yaml.safe_dump(_build_contract_layout(package_name, loaded, source_snapshot), sort_keys=False),
+            yaml.safe_dump(canonical_layout, sort_keys=False),
             encoding="utf-8",
         )
-    (package_dir / "launch" / "demo.launch.py").write_text(_render_demo_launch(package_name, cell_definition_path), encoding="utf-8")
+    cell = loaded.get("cell", {}) if isinstance(loaded.get("cell"), dict) else {}
+    world_frame = str(cell.get("planning_frame") or "world")
+    (package_dir / "launch" / "demo.launch.py").write_text(
+        _render_demo_launch(package_name, cell_definition_path, world_frame), encoding="utf-8"
+    )
     env_objects = _build_environment_objects(loaded)
     env_objects["tracked_assets"] = asset_tracking["tracked"]
     env_objects["unsupported_assets"] = asset_tracking["unsupported"]

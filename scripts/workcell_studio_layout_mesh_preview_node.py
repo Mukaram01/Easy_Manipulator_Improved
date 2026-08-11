@@ -132,6 +132,17 @@ def resolve_mesh_resource(value: Any) -> str:
     raise LayoutMeshError(f"mesh path cannot be mapped to a ROS package URI: {value!r}")
 
 
+def resolve_mesh_package_name(value: Any) -> str:
+    """Return the validated ROS package owning a canonical mesh resource.
+
+    This deliberately builds on :func:`resolve_mesh_resource` so offline
+    generators and the runtime publisher cannot drift into interpreting mesh
+    paths differently.
+    """
+    resource = resolve_mesh_resource(value)
+    return urlsplit(resource).netloc
+
+
 def parse_layout_meshes(layout: Mapping[str, Any]) -> list[MeshMarkerSpec]:
     """Normalize mesh-backed physical layout items into ROS-independent specs."""
     if not isinstance(layout, Mapping):
