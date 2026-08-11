@@ -740,6 +740,8 @@ if(BUILD_TESTING)
     layout_serialization_contract_test.cpp
     workcell_studio_layout_editor_test.cpp
     mainwindow_rviz_preview_compile_test.cpp
+    workcell_scene_identity_test.cpp
+    preview_process_state_test.cpp
     rviz_preview_metadata_command_test.cpp
     visual_mesh_source_resolver_test.cpp
     studio_log_issue_tracker_test.cpp
