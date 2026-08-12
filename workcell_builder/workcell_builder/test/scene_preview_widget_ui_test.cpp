@@ -4,6 +4,9 @@
 #include <QComboBox>
 #include <QDir>
 #include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QProcess>
 #include <QTemporaryDir>
 #include <QUrlQuery>
 
@@ -25,6 +28,71 @@ QApplication * ensure_app()
   static QApplication app(argc, argv);
   return &app;
 }
+
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+ScenePreviewWidget::EmbeddedWebRequestIdentity publication_identity(
+  const QString & root, const QString & scene, quint64 revision, quint64 generation,
+  const QByteArray & fingerprint)
+{
+  ScenePreviewWidget::EmbeddedWebRequestIdentity identity;
+  identity.scene_id = scene;
+  identity.absolute_scene_dir = QDir(root).filePath(QStringLiteral("scenes/%1").arg(scene));
+  identity.absolute_repo_root = root;
+  identity.selected_server_port = 18765;
+  identity.product_view_backend = QStringLiteral("embedded_web3d");
+  identity.request_owned_output_path = QStringLiteral("build/workcell_studio_web_scene/requests/%1-r%2-g%3-%4.web_scene.json")
+    .arg(scene).arg(revision).arg(generation).arg(QString::fromLatin1(fingerprint.toHex()));
+  identity.generated_web_scene_path = QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(scene);
+  identity.payload_revision = revision;
+  identity.generation = generation;
+  identity.payload_fingerprint = fingerprint;
+  return identity;
+}
+
+QProcess * completed_preparation(
+  ScenePreviewWidget & widget, const ScenePreviewWidget::EmbeddedWebRequestIdentity & identity,
+  const QString & marker)
+{
+  const QString absolute_output = QDir(identity.absolute_repo_root).filePath(identity.request_owned_output_path);
+  EXPECT_TRUE(QDir().mkpath(QFileInfo(absolute_output).absolutePath()));
+  QFile output(absolute_output);
+  EXPECT_TRUE(output.open(QIODevice::WriteOnly));
+  output.write(QJsonDocument(QJsonObject{
+    {QStringLiteral("schema_version"), QStringLiteral("workcell_studio_web_scene/v1")},
+    {QStringLiteral("scene_id"), identity.scene_id},
+    {QStringLiteral("marker"), marker}
+  }).toJson(QJsonDocument::Compact));
+  output.close();
+
+  auto * process = new QProcess(&widget);
+  ScenePreviewWidget::EmbeddedWebPreparationDiagnostic diagnostic;
+  diagnostic.identity = identity;
+  diagnostic.expected_output_path = identity.request_owned_output_path;
+  diagnostic.expected_output_absolute_path = absolute_output;
+  diagnostic.started = true;
+  diagnostic.stdout_tail = QJsonDocument(QJsonObject{
+    {QStringLiteral("schema_version"), QStringLiteral("workcell_studio_web_scene_freshener/v1")},
+    {QStringLiteral("status"), QStringLiteral("rebuilt")},
+    {QStringLiteral("scene_id"), identity.scene_id},
+    {QStringLiteral("output"), identity.request_owned_output_path}
+  }).toJson(QJsonDocument::Compact);
+  const QString key = widget.embedded_web_preparation_diagnostic_key(identity);
+  widget.embedded_web_preparation_diagnostics_.insert(key, diagnostic);
+  widget.embedded_web_preparation_process_keys_.insert(process, key);
+  return process;
+}
+
+void select_identity(ScenePreviewWidget & widget, const ScenePreviewWidget::EmbeddedWebRequestIdentity & identity)
+{
+  widget.preview_scene_name_ = identity.scene_id;
+  widget.preview_context_.scene_id = identity.scene_id;
+  widget.preview_context_.absolute_scene_dir = identity.absolute_scene_dir;
+  widget.preview_context_.absolute_repo_root = identity.absolute_repo_root;
+  widget.embedded_web_active_identity_ = identity;
+  widget.embedded_web_has_active_identity_ = true;
+  widget.embedded_web_repo_root_ = identity.absolute_repo_root;
+}
+#endif
 }
 
 TEST(ScenePreviewWidgetUi, MeshPreviewControlDefaultsToAuto)
@@ -194,6 +262,102 @@ TEST(ScenePreviewWidgetUi, EquivalentPreviewContextsPrepareProductViewOnlyOnce)
 }
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+TEST(ScenePreviewWidgetUi, CurrentPreparationPublishesAtomicallyToCanonicalBrowserPath)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+  QTemporaryDir root;
+  ASSERT_TRUE(root.isValid());
+  const QString scene = QStringLiteral("publication_scene");
+  ASSERT_TRUE(QDir().mkpath(QDir(root.path()).filePath(QStringLiteral("scenes/%1").arg(scene))));
+
+  ScenePreviewWidget widget;
+  const auto identity = publication_identity(root.path(), scene, 7, 11, QByteArrayLiteral("single"));
+  select_identity(widget, identity);
+  auto * process = completed_preparation(widget, identity, QStringLiteral("CURRENT_MARKER"));
+  widget.embedded_web_prepare_process_ = process;
+  widget.embedded_web_server_process_ = new QProcess(&widget);
+  widget.embedded_web_server_process_->start(
+    QStringLiteral("/bin/sh"), QStringList{QStringLiteral("-c"), QStringLiteral("sleep 30")});
+  ASSERT_TRUE(widget.embedded_web_server_process_->waitForStarted());
+  widget.embedded_web_server_is_owned_ = true;
+  widget.embedded_web_server_session_repo_root_ = root.path();
+  widget.embedded_web_server_session_port_ = identity.selected_server_port;
+  widget.on_embedded_web_prepare_finished(identity, process, 0, QProcess::NormalExit);
+
+  QFile canonical(QDir(root.path()).filePath(identity.generated_web_scene_path));
+  ASSERT_TRUE(canonical.open(QIODevice::ReadOnly));
+  EXPECT_TRUE(canonical.readAll().contains("CURRENT_MARKER"));
+  EXPECT_EQ(widget.embedded_web_canonical_publications_, 1u);
+  EXPECT_EQ(widget.embedded_web_prepared_identity_, identity);
+  EXPECT_EQ(widget.embedded_web_loading_identity_, identity);
+  EXPECT_EQ(QUrlQuery(widget.embedded_web_expected_viewer_url_).queryItemValue(QStringLiteral("scene")),
+    identity.generated_web_scene_path);
+  EXPECT_EQ(widget.embedded_web_preparation_diagnostics_.value(
+    widget.embedded_web_preparation_diagnostic_key(identity)).terminal_outcome, QStringLiteral("success"));
+}
+
+TEST(ScenePreviewWidgetUi, LateSupersededCompletionCannotPublishOrNavigate)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+  QTemporaryDir root;
+  ASSERT_TRUE(root.isValid());
+  const QString scene = QStringLiteral("publication_scene");
+  ASSERT_TRUE(QDir().mkpath(QDir(root.path()).filePath(QStringLiteral("scenes/%1").arg(scene))));
+
+  ScenePreviewWidget widget;
+  const auto identity_a = publication_identity(root.path(), scene, 21, 31, QByteArrayLiteral("fingerprint-a"));
+  const auto identity_b = publication_identity(root.path(), scene, 22, 32, QByteArrayLiteral("fingerprint-b"));
+  EXPECT_NE(identity_a.request_owned_output_path, identity_b.request_owned_output_path);
+
+  select_identity(widget, identity_a);
+  auto * process_a = completed_preparation(widget, identity_a, QStringLiteral("MARKER_A"));
+  widget.embedded_web_prepare_process_ = process_a;  // A starts.
+
+  select_identity(widget, identity_b);  // B supersedes A.
+  auto * process_b = completed_preparation(widget, identity_b, QStringLiteral("MARKER_B"));
+  widget.embedded_web_prepare_process_ = process_b;
+
+  // Reuse a verified owned server so successful B publication immediately
+  // reaches the canonical browser-loading lifecycle without network probes.
+  widget.embedded_web_server_process_ = new QProcess(&widget);
+  widget.embedded_web_server_process_->start(
+    QStringLiteral("/bin/sh"), QStringList{QStringLiteral("-c"), QStringLiteral("sleep 30")});
+  ASSERT_TRUE(widget.embedded_web_server_process_->waitForStarted());
+  widget.embedded_web_server_is_owned_ = true;
+  widget.embedded_web_server_session_repo_root_ = root.path();
+  widget.embedded_web_server_session_port_ = identity_b.selected_server_port;
+
+  widget.on_embedded_web_prepare_finished(identity_b, process_b, 0, QProcess::NormalExit);
+  QApplication::processEvents();
+  const auto prepared_b = widget.embedded_web_prepared_identity_;
+  const auto loading_b = widget.embedded_web_loading_identity_;
+  const auto readiness_state_b = widget.embedded_product_view_state_;
+  const QUrl browser_url_b = widget.embedded_web_expected_viewer_url_;
+  const quint64 publications_after_b = widget.embedded_web_canonical_publications_;
+  const quint64 navigations_after_b = widget.embedded_web_browser_navigations_started_;
+
+  widget.on_embedded_web_prepare_finished(identity_a, process_a, 0, QProcess::NormalExit);  // A completes late.
+
+  QFile canonical(QDir(root.path()).filePath(identity_b.generated_web_scene_path));
+  ASSERT_TRUE(canonical.open(QIODevice::ReadOnly));
+  const QByteArray canonical_payload = canonical.readAll();
+  EXPECT_TRUE(canonical_payload.contains("MARKER_B"));
+  EXPECT_FALSE(canonical_payload.contains("MARKER_A"));
+  EXPECT_EQ(widget.embedded_web_preparation_diagnostics_.value(
+    widget.embedded_web_preparation_diagnostic_key(identity_a)).terminal_outcome, QStringLiteral("stale_discarded"));
+  EXPECT_EQ(widget.embedded_web_prepared_identity_, prepared_b);
+  EXPECT_EQ(widget.embedded_web_loading_identity_, loading_b);
+  EXPECT_EQ(widget.embedded_web_prepared_identity_, identity_b);
+  EXPECT_EQ(widget.embedded_web_loading_identity_, identity_b);
+  EXPECT_EQ(widget.embedded_product_view_state_, readiness_state_b);
+  EXPECT_EQ(widget.embedded_web_expected_viewer_url_, browser_url_b);
+  EXPECT_EQ(widget.embedded_web_active_identity_, identity_b);
+  EXPECT_EQ(widget.embedded_web_canonical_publications_, publications_after_b);
+  EXPECT_EQ(publications_after_b, 1u);
+  EXPECT_EQ(widget.embedded_web_browser_navigations_started_, navigations_after_b);
+  EXPECT_EQ(navigations_after_b, 1u);
+}
+
 TEST(ScenePreviewWidgetUi, EmbeddedWebNavigationRequiresVerifiedServerReadiness)
 {
   ASSERT_NE(ensure_app(), nullptr);

@@ -2357,6 +2357,7 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
       .arg(canonical_output_path));
     return;
   }
+  ++embedded_web_canonical_publications_;
 
   const bool was_diagnostic_preview = property("diagnostic_preview_active").toBool();
   const bool diagnostic_preview = output.value(QStringLiteral("preview_mode")).toString() == QStringLiteral("diagnostic") &&

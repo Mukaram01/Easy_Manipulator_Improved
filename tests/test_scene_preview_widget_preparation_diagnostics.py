@@ -56,6 +56,11 @@ def test_cpp_records_bounded_tails_and_all_qprocess_terminal_signals():
         assert token in terminal
     assert "terminal_recorded" in terminal
 
+    prepare = CPP[start:end]
+    assert "diagnostic.expected_output_path = request_output_path" in prepare
+    assert "diagnostic.expected_output_absolute_path = QDir(repo_root).filePath(diagnostic.expected_output_path)" in prepare
+    assert "identity.generated_web_scene_path" not in prepare.split("EmbeddedWebPreparationDiagnostic diagnostic;", 1)[1].split("embedded_web_preparation_diagnostics_.insert", 1)[0]
+
 
 def test_cancellation_and_stale_completion_record_without_mutating_current_ui():
     cancel = CPP[CPP.index("void ScenePreviewWidget::cancel_embedded_web_lifecycle"):CPP.index("void ScenePreviewWidget::request_embedded_web_product_view_refresh")]
