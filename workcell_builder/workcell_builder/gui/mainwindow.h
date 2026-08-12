@@ -320,6 +320,7 @@ private:
   QPointF snap_canvas_position(const QPointF & pos) const;
   double current_nudge_step_m(Qt::KeyboardModifiers modifiers) const;
   void refresh_minimap_card();
+  void update_minimap_backend_presentation();
   void select_canvas_item(QGraphicsItem * item);
   void apply_scene_selection(const QString & id, const QString & role, bool intentional_clear = false, bool center_canvas = true);
   void mark_layout_dirty(const QString & reason);
