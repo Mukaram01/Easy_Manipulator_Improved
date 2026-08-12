@@ -608,6 +608,10 @@ private:
   quint64 embedded_web_duplicate_requests_coalesced_{ 0 };
   quint64 embedded_web_preparations_started_{ 0 };
   quint64 embedded_web_preparations_cancelled_superseded_{ 0 };
+  // Counts validated request-owned files promoted to the canonical browser
+  // handoff. Kept separately from successful process completions so lifecycle
+  // tests (and diagnostics) can prove stale callbacks never publish.
+  quint64 embedded_web_canonical_publications_{ 0 };
   quint64 embedded_web_browser_navigations_started_{ 0 };
   quint64 embedded_web_terminal_results_accepted_{ 0 };
   QSet<QString> embedded_web_automatic_recovery_attempts_;
