@@ -206,7 +206,9 @@ def _augment_scene_manifest(cell_def: dict[str, Any], scene_manifest: dict[str, 
     return out
 
 
-def _canonical_mesh_package_dependencies(layout: Any, warnings: list[str]) -> list[str]:
+def _canonical_mesh_package_dependencies(
+    layout: Any, warnings: list[str], owning_package: str | None = None,
+) -> list[str]:
     """Derive stable runtime dependencies using the publisher's URI rules."""
     try:
         mesh_preview = _load_module("generated_layout_mesh_preview_contract", LAYOUT_MESH_PREVIEW_PATH)
@@ -229,7 +231,7 @@ def _canonical_mesh_package_dependencies(layout: Any, warnings: list[str]) -> li
             continue
         resource = mesh.get("path") if mesh.get("path") is not None else mesh.get("uri")
         try:
-            dependencies.add(mesh_preview.resolve_mesh_package_name(resource))
+            dependencies.add(mesh_preview.resolve_mesh_package_name(resource, owning_package))
         except mesh_preview.LayoutMeshError as exc:
             warnings.append(f"Canonical layout mesh items[{index}] has no package dependency: {exc}")
     return sorted(dependencies)
@@ -528,6 +530,8 @@ def _render_demo_launch(package_name: str, source_path: Path, world_frame: str =
         "        output=\"screen\",\n"
         "        arguments=[\n"
         "            canonical_layout_path,\n"
+        "            \"--owning-package\",\n"
+        "            package_name,\n"
         "            \"--frame-id\",\n"
         f"            {world_frame!r},\n"
         "            \"--topic\",\n"
@@ -1441,7 +1445,9 @@ def write_scene_package_contract(
     task_recipe_text = _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, task_recipe)
 
     canonical_layout = _build_contract_layout(package_name, loaded, source_snapshot)
-    mesh_dependencies = _canonical_mesh_package_dependencies(canonical_layout, warnings)
+    mesh_dependencies = _canonical_mesh_package_dependencies(
+        canonical_layout, warnings, owning_package=package_name
+    )
     (package_dir / "package.xml").write_text(
         _render_package_xml(package_name, mesh_dependencies), encoding="utf-8"
     )

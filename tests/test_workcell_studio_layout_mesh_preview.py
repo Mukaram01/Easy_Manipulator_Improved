@@ -35,6 +35,42 @@ def test_workcell_builder_imported_asset_uri_conversion():
     )
 
 
+def test_owning_package_maps_generated_imported_asset():
+    resource = "assets/imported/nested/example.stl"
+    assert preview.resolve_mesh_resource(resource, "example_scene") == (
+        "package://example_scene/assets/imported/nested/example.stl"
+    )
+    assert preview.resolve_mesh_package_name(resource, "example_scene") == "example_scene"
+    marker = preview.parse_layout_meshes(
+        {"items": [mesh_item(path=resource)]}, owning_package="example_scene"
+    )[0]
+    assert marker.mesh_resource == "package://example_scene/assets/imported/nested/example.stl"
+
+
+def test_imported_asset_requires_an_explicit_valid_owning_package():
+    with pytest.raises(preview.LayoutMeshError, match="cannot be mapped"):
+        preview.resolve_mesh_resource("assets/imported/example.stl")
+    for invalid_name in ("", "../example_scene", "example.scene"):
+        with pytest.raises(preview.LayoutMeshError, match="invalid owning package"):
+            preview.resolve_mesh_resource("assets/imported/example.stl", invalid_name)
+
+
+@pytest.mark.parametrize("suffix", ["../secret.stl", "mesh.stl?raw=true", "mesh.stl#part"])
+def test_generated_imported_asset_rejects_traversal_queries_and_fragments(suffix):
+    with pytest.raises(preview.LayoutMeshError):
+        preview.resolve_mesh_resource(f"assets/imported/{suffix}", "example_scene")
+
+
+def test_load_layout_meshes_substitutes_owning_package(tmp_path):
+    layout_path = tmp_path / "workcell_studio_layout.yaml"
+    layout_path.write_text(
+        "items:\n- id: fixture\n  geometry_type: mesh\n  mesh:\n    path: assets/imported/example.stl\n",
+        encoding="utf-8",
+    )
+    load_resource = preview.load_layout_meshes(layout_path, "example_scene")[0].mesh_resource
+    assert load_resource == "package://example_scene/assets/imported/example.stl"
+
+
 def test_existing_package_uri_is_preserved():
     uri = "package://fixture_description/meshes/foo.stl"
     assert preview.resolve_mesh_resource(uri) == uri
@@ -107,6 +143,7 @@ def test_ros_launch_arguments_are_separated_and_preserved_for_rclpy():
         "layout/workcell_studio_layout.yaml",
         "--frame-id", "world",
         "--topic", "/some_scene/canonical_mesh_markers",
+        "--owning-package", "example_scene",
         "--ros-args", "-r", "__node:=some_scene_canonical_mesh_preview",
     ]
 
@@ -115,6 +152,7 @@ def test_ros_launch_arguments_are_separated_and_preserved_for_rclpy():
     assert args.layout == "layout/workcell_studio_layout.yaml"
     assert args.frame_id == "world"
     assert args.topic == "/some_scene/canonical_mesh_markers"
+    assert args.owning_package == "example_scene"
     assert ros_args == argv
 
 
