@@ -30,7 +30,8 @@ def test_embedded_prepare_requires_a_matching_absolute_scene_context_and_safe_sc
     assert 'selected_scene_info.exists()' in body
     assert 'selected_scene_info.isDir()' in body
     assert 'scene_directory_matches_id(selected_scene_dir, scene_id)' in body
-    assert 'embedded_web_prepare_output_path_ = QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(scene_id)' in body
+    assert 'embedded_web_prepare_output_path_ = identity.generated_web_scene_path' in body
+    assert 'const QString request_output_path = identity.request_owned_output_path' in body
 
 
 def test_repo_root_resolution_prefers_scene_walk_then_secondary_fallbacks():

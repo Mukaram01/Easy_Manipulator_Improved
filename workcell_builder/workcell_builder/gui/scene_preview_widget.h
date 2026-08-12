@@ -393,6 +393,10 @@ private:
     QString absolute_repo_root;
     int selected_server_port{ 0 };
     QString product_view_backend;
+    // Preparation writes to this immutable request-owned path.  Only a
+    // validated, still-current request may publish it to the browser-facing
+    // generated_web_scene_path below.
+    QString request_owned_output_path;
     QString generated_web_scene_path;
     QByteArray payload_fingerprint;
     quint64 payload_revision{ 0 };
@@ -402,6 +406,7 @@ private:
     {
       return scene_id == other.scene_id && absolute_scene_dir == other.absolute_scene_dir &&
         absolute_repo_root == other.absolute_repo_root && product_view_backend == other.product_view_backend &&
+        request_owned_output_path == other.request_owned_output_path &&
         generated_web_scene_path == other.generated_web_scene_path &&
         payload_fingerprint == other.payload_fingerprint && payload_revision == other.payload_revision;
     }
