@@ -319,6 +319,9 @@ private:
   void select_canvas_item(QGraphicsItem * item);
   void apply_scene_selection(const QString & id, const QString & role, bool intentional_clear = false, bool center_canvas = true);
   void mark_layout_dirty(const QString & reason);
+  void capture_active_editable_layout_session();
+  void merge_active_editable_layout_session(
+    workcell_builder::WorkcellStudioCanvasModel * model) const;
   void save_layout_changes();
   void create_starter_layout_from_preview();
   void refresh_create_starter_layout_action();
@@ -620,6 +623,10 @@ private:
   QCheckBox * preview_layer_overlays_helpers_box_{ nullptr };
   QCheckBox * preview_layer_warnings_missing_assets_box_{ nullptr };
   QVector<ScenePreviewWidget::PreviewItem> all_scene_preview_items_;
+  // Canonical authored state for the active, unsaved editing session. Preview
+  // rebuilds consume this snapshot; only Save Layout persists it to YAML.
+  QVector<ScenePreviewWidget::PreviewItem> editable_layout_session_items_;
+  QString editable_layout_session_scene_name_;
   QJsonObject scene3d_filter_diagnostics_;
   QJsonObject scene3d_visual_ingestion_diagnostics_;
   QLabel * layout_state_label_{ nullptr };

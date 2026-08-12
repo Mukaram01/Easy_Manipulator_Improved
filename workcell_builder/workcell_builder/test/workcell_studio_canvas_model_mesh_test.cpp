@@ -1434,3 +1434,75 @@ TEST(WorkcellStudioCanvasMesh, BootstrapEditableLayoutFallsBackThroughSourcesAnd
 
   fs::remove_all(root);
 }
+
+TEST(WorkcellStudioCanvasModelMeshTest, DirtyAuthoringSessionSurvivesRepeatedRefreshUndoRedoAndInstances)
+{
+  using workcell_builder::WorkcellStudioCanvasItem;
+  using workcell_builder::WorkcellStudioCanvasModel;
+  using workcell_builder::WorkcellStudioItemProvenance;
+
+  WorkcellStudioCanvasItem authored;
+  authored.id = "table_01";
+  authored.provenance = WorkcellStudioItemProvenance::EditableLayout;
+  WorkcellStudioCanvasItem generated;
+  generated.id = "robot_preview";
+  generated.provenance = WorkcellStudioItemProvenance::GeneratedOrLegacyPreview;
+  WorkcellStudioCanvasModel stale_disk_model;
+  stale_disk_model.scene_name = "scene";
+
+  auto stale_refresh = [&]() {
+    WorkcellStudioCanvasModel model = stale_disk_model;
+    model.items = {authored, generated};
+    return model;
+  };
+  auto imported_instance = [](const std::string & id, double x) {
+    WorkcellStudioCanvasItem item;
+    item.id = id;
+    item.label = "2068_001_24 (Imported)";
+    item.source_file = "assets/imported/2068_001_24.stl";
+    item.mesh_path = item.source_file;
+    item.x = x;
+    item.roll = 0.1;
+    item.width = item.depth = item.height = 1.0;
+    item.provenance = WorkcellStudioItemProvenance::EditableLayout;
+    item.editable = true;
+    item.locked = false;
+    return item;
+  };
+
+  const auto object_01 = imported_instance("object_01", 0.25);
+  std::vector<WorkcellStudioCanvasItem> session{authored, object_01};
+  auto refreshed = stale_refresh();
+  workcell_builder::merge_dirty_editable_layout_session(refreshed, session, {});
+  ASSERT_EQ(refreshed.items.size(), 3U);
+  auto find_id = [&](const WorkcellStudioCanvasModel & model, const std::string & id) {
+    return std::find_if(model.items.begin(), model.items.end(), [&](const auto & item) { return item.id == id; });
+  };
+  auto placed = find_id(refreshed, "object_01");
+  ASSERT_NE(placed, refreshed.items.end());
+  EXPECT_EQ(placed->source_file, object_01.source_file);
+  EXPECT_TRUE(placed->editable);
+  EXPECT_FALSE(placed->locked);
+  EXPECT_DOUBLE_EQ(placed->x, 0.25);
+  EXPECT_DOUBLE_EQ(placed->roll, 0.1);
+
+  // Undo removes the created instance from the canonical session; another
+  // stale disk refresh cannot resurrect it. Redo restores the same identity.
+  session = {authored};
+  refreshed = stale_refresh();
+  workcell_builder::merge_dirty_editable_layout_session(refreshed, session, {});
+  EXPECT_EQ(find_id(refreshed, "object_01"), refreshed.items.end());
+  session.push_back(object_01);
+  refreshed = stale_refresh();
+  workcell_builder::merge_dirty_editable_layout_session(refreshed, session, {});
+  EXPECT_NE(find_id(refreshed, "object_01"), refreshed.items.end());
+
+  // Catalog identity is deliberately not a reconciliation key: two scene
+  // instance IDs backed by the same imported mesh remain independent.
+  session.push_back(imported_instance("object_02", 0.50));
+  refreshed = stale_refresh();
+  workcell_builder::merge_dirty_editable_layout_session(refreshed, session, {});
+  EXPECT_NE(find_id(refreshed, "object_01"), refreshed.items.end());
+  EXPECT_NE(find_id(refreshed, "object_02"), refreshed.items.end());
+  EXPECT_EQ(refreshed.items.size(), 4U);
+}

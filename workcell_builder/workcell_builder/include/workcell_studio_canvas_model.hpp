@@ -105,6 +105,12 @@ struct WorkcellStudioEnvironmentLayoutBootstrapResult
 };
 
 WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const boost::filesystem::path & scene_dir, const std::string & scene_name);
+// Reconcile a disk-derived preview with the authoritative unsaved authoring
+// session. Editable disk rows are replaced; generated/runtime rows remain.
+void merge_dirty_editable_layout_session(
+  WorkcellStudioCanvasModel & model,
+  const std::vector<WorkcellStudioCanvasItem> & session_items,
+  const std::vector<std::string> & deleted_item_ids);
 void invalidate_workcell_studio_scene_metadata_snapshot(const boost::filesystem::path & scene_dir, const std::string & reason);
 WorkcellStudioEditableLayoutInspection inspect_editable_layout_entries(const boost::filesystem::path & scene_dir);
 std::size_t count_editable_layout_entries(const boost::filesystem::path & scene_dir);

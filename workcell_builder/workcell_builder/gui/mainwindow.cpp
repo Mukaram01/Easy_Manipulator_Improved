@@ -6191,6 +6191,7 @@ void MainWindow::rebuild_digital_twin_canvas()
   }
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
+  merge_active_editable_layout_session(&model);
   const QString layout_load_message = QString::fromStdString(model.layout_load_message).trimmed();
   if (!layout_load_message.isEmpty() && layout_load_message != last_layout_load_message_log_) {
     append_studio_log(layout_load_message);
@@ -6853,6 +6854,7 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
 
 void MainWindow::mark_layout_dirty(const QString & reason)
 {
+  capture_active_editable_layout_session();
   layout_dirty_ = true;
   layout_saved_ = false;
   validation_stale_ = true;
@@ -6860,6 +6862,73 @@ void MainWindow::mark_layout_dirty(const QString & reason)
   if (layout_state_label_) {
     layout_state_label_->setText(QString("Unsaved Layout Edits: %1").arg(reason));
   }
+}
+
+void MainWindow::capture_active_editable_layout_session()
+{
+  const QString scene_name = selected_scene_name().trimmed();
+  if (scene_name.isEmpty()) return;
+  if (editable_layout_session_scene_name_ != scene_name) {
+    editable_layout_session_items_.clear();
+    editable_layout_session_scene_name_ = scene_name;
+  }
+
+  editable_layout_session_items_.clear();
+  for (auto preview_item : all_scene_preview_items_) {
+    if (preview_item.source_layer != QStringLiteral("editable_layout") ||
+        !preview_item.editable || preview_item.locked ||
+        deleted_layout_item_ids_.contains(preview_item.id)) continue;
+    if (auto * canvas_item = find_canvas_item_by_stable_id(preview_item.id)) {
+      preview_item.x = canvas_item->pos().x() / 100.0;
+      preview_item.y = canvas_item->pos().y() / 100.0;
+      preview_item.z = canvas_item->data(RolePoseZ).toDouble();
+      preview_item.roll = canvas_item->data(RoleRoll).toDouble();
+      preview_item.pitch = canvas_item->data(RolePitch).toDouble();
+      preview_item.yaw = canvas_item->data(RoleYaw).toDouble();
+      preview_item.sx = canvas_item->data(RoleWidth).toDouble();
+      preview_item.sy = canvas_item->data(RoleDepth).toDouble();
+      preview_item.sz = canvas_item->data(RoleHeight).toDouble();
+      preview_item.source_path = canvas_item->data(RoleSource).toString();
+    }
+    editable_layout_session_items_.push_back(preview_item);
+  }
+}
+
+void MainWindow::merge_active_editable_layout_session(
+  workcell_builder::WorkcellStudioCanvasModel * model) const
+{
+  if (!model || !layout_dirty_ ||
+      editable_layout_session_scene_name_ != selected_scene_name().trimmed()) return;
+  std::vector<workcell_builder::WorkcellStudioCanvasItem> session_items;
+  for (const auto & item : editable_layout_session_items_) {
+    if (deleted_layout_item_ids_.contains(item.id)) continue;
+    workcell_builder::WorkcellStudioCanvasItem canvas_item;
+    canvas_item.id = item.id.toStdString();
+    canvas_item.label = item.display_name.toStdString();
+    canvas_item.type = item.category.toStdString();
+    canvas_item.category = item.category.toStdString();
+    canvas_item.role = item.role.toStdString();
+    canvas_item.source_file = item.source_path.toStdString();
+    canvas_item.mesh_path = item.mesh_path.toStdString();
+    canvas_item.mesh_type = item.mesh_type.toStdString();
+    canvas_item.x = item.x; canvas_item.y = item.y; canvas_item.z = item.z;
+    canvas_item.roll = item.roll; canvas_item.pitch = item.pitch; canvas_item.yaw = item.yaw;
+    canvas_item.width = item.sx; canvas_item.depth = item.sy; canvas_item.height = item.sz;
+    canvas_item.mesh_scale_x = item.mesh_scale_x;
+    canvas_item.mesh_scale_y = item.mesh_scale_y;
+    canvas_item.mesh_scale_z = item.mesh_scale_z;
+    canvas_item.has_mesh_metadata = item.has_mesh_metadata;
+    canvas_item.mesh_available = item.mesh_available;
+    canvas_item.mesh_load_warning = item.mesh_load_warning.toStdString();
+    canvas_item.provenance = workcell_builder::WorkcellStudioItemProvenance::EditableLayout;
+    canvas_item.editable = true;
+    canvas_item.locked = false;
+    session_items.push_back(canvas_item);
+  }
+  std::vector<std::string> deleted_item_ids;
+  deleted_item_ids.reserve(deleted_layout_item_ids_.size());
+  for (const auto & id : deleted_layout_item_ids_) deleted_item_ids.push_back(id.toStdString());
+  workcell_builder::merge_dirty_editable_layout_session(*model, session_items, deleted_item_ids);
 }
 
 using workcell_builder::resolve_visual_mesh_source_path;
@@ -8005,13 +8074,17 @@ void MainWindow::undo_layout_edit(){
     selected_item_state_ = current_selected_scene_item();
     refresh_selected_scene_item_labels(selected_item_state_);
     append_studio_log(QString("Restored %1").arg(selected_item_state_.display_name.isEmpty() ? c.item_id : selected_item_state_.display_name));
-  } else if (c.kind == QStringLiteral("duplicate")) {
+  } else if (c.kind == QStringLiteral("duplicate") || c.kind == QStringLiteral("add")) {
     for (int i = all_scene_preview_items_.size() - 1; i >= 0; --i) if (all_scene_preview_items_[i].id == c.item_id) all_scene_preview_items_.removeAt(i);
     for (auto * item : digital_twin_scene_->items()) if (item->data(RoleId).toString() == c.item_id) { delete item; break; }
     current_selected_scene_item_id_.clear(); selected_item_state_ = {};
     apply_scene3d_preview_layer_filters(false);
     refresh_selected_scene_item_labels(selected_item_state_);
-    if (c.kind == QStringLiteral("duplicate") && !c.preview_items.isEmpty()) append_studio_log(QString("Removed duplicate %1").arg(c.preview_items.front().display_name));
+    if (!c.preview_items.isEmpty()) {
+      append_studio_log(c.kind == QStringLiteral("duplicate")
+        ? QString("Removed duplicate %1").arg(c.preview_items.front().display_name)
+        : QString("Removed %1").arg(c.preview_items.front().display_name));
+    }
   } else {
     for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;}
   }
@@ -8031,7 +8104,7 @@ void MainWindow::redo_layout_edit(){
     current_selected_scene_item_id_.clear(); selected_item_state_ = {};
     apply_scene3d_preview_layer_filters(false);
     refresh_selected_scene_item_labels(selected_item_state_);
-  } else if ((c.kind == QStringLiteral("duplicate")) && !c.preview_items.isEmpty()) {
+  } else if ((c.kind == QStringLiteral("duplicate") || c.kind == QStringLiteral("add")) && !c.preview_items.isEmpty()) {
     const auto p = c.preview_items.front();
     bool exists = false;
     for (const auto & existing : all_scene_preview_items_) if (existing.id == p.id) { exists = true; break; }
@@ -8606,7 +8679,7 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   digital_twin_scene_->clearSelection();
   item->setSelected(true);
   select_canvas_item(item);
-  undo_stack_.push_back({"add", new_id, item->pos(), item->pos(), true, false, {}});
+  undo_stack_.push_back({"add", new_id, item->pos(), item->pos(), true, false, {preview_item}});
   redo_stack_.clear();
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
   mark_layout_dirty("Place Asset Mode: Add to 3D Canvas");
@@ -9223,7 +9296,8 @@ void MainWindow::populate_scene_hierarchy()
   }
   const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_state_.index)];
   const fs::path d = s.scene_dir;
-  const auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
+  auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
+  merge_active_editable_layout_session(&model);
   const QString layout_load_message = QString::fromStdString(model.layout_load_message).trimmed();
   if (!layout_load_message.isEmpty() && layout_load_message != last_layout_load_message_log_) {
     append_studio_log(layout_load_message);
