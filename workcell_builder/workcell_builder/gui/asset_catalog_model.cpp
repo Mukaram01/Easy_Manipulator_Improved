@@ -1,4 +1,5 @@
 #include "include/asset_catalog_model.h"
+#include "gui/asset_catalog_discovery.h"
 
 #include <boost/filesystem.hpp>
 
@@ -253,7 +254,10 @@ AssetCatalogEntry make_seed(
 
 }  // namespace
 
-AssetCatalogModel discover_asset_catalog(const std::string & workspace_root, const std::string & repo_root)
+AssetCatalogModel discover_asset_catalog(
+  const std::string & workspace_root,
+  const std::string & repo_root,
+  const std::string & scene_catalog_root)
 {
   AssetCatalogModel model;
   std::vector<RankedAsset> candidates;
@@ -299,6 +303,42 @@ AssetCatalogModel discover_asset_catalog(const std::string & workspace_root, con
     }
   }
 
+  // Feed scene-local authored imports through the same model as every other
+  // catalog source. Re-running discovery reads the manifest from disk, so an
+  // import written immediately before a refresh is visible in this call.
+  if (!scene_catalog_root.empty()) {
+    boost::system::error_code root_ec;
+    const fs::path requested_scene_root(scene_catalog_root);
+    const fs::path normalized_scene_root =
+      fs::exists(requested_scene_root, root_ec) && !root_ec ?
+      fs::canonical(requested_scene_root, root_ec) : requested_scene_root.lexically_normal();
+    model.discovered_roots.push_back(normalized_scene_root.string());
+    const auto discovered = workcell_builder::discover_asset_catalog_entries(
+      fs::path(repo_root), fs::path(workspace_root), normalized_scene_root);
+    for (const auto & imported : discovered) {
+      if (imported.source_kind != "manifest" ||
+          fs::path(imported.source_path).parent_path() != normalized_scene_root)
+      {
+        continue;
+      }
+      RankedAsset candidate;
+      candidate.rank = -100;
+      candidate.entry.id = imported.asset_id;
+      candidate.entry.display_name = imported.display_name;
+      candidate.entry.category = imported.category;
+      candidate.entry.path = imported.source_path;
+      candidate.entry.source = "scene_imported_asset";
+      candidate.entry.role_hints = {imported.role_hint};
+      candidate.entry.readiness = imported.availability == "ready" ? "PREVIEW_ONLY" : "INCOMPLETE";
+      candidate.entry.icon_key = "🧱";
+      candidate.entry.scale = imported.scale;
+      candidate.entry.can_add_to_scene = imported.availability == "ready";
+      if (!imported.reason.empty()) candidate.entry.blockers.push_back(imported.reason);
+      candidate.entry.discovered_files = {imported.source_path};
+      candidates.push_back(candidate);
+    }
+  }
+
   std::sort(
     candidates.begin(), candidates.end(),
     [](const RankedAsset & lhs, const RankedAsset & rhs) {
@@ -307,8 +347,14 @@ AssetCatalogModel discover_asset_catalog(const std::string & workspace_root, con
     });
 
   std::set<std::string> emitted_packages;
+  std::set<std::string> emitted_id_paths;
   for (const auto & candidate : candidates) {
     if (!candidate.package_key.empty() && !emitted_packages.insert(candidate.package_key).second) continue;
+    boost::system::error_code ec;
+    const fs::path path = fs::path(candidate.entry.path);
+    const fs::path canonical = fs::exists(path, ec) && !ec ? fs::canonical(path, ec) : path.lexically_normal();
+    const std::string identity = candidate.entry.id + "|" + canonical.generic_string();
+    if (!emitted_id_paths.insert(identity).second) continue;
     model.assets.push_back(candidate.entry);
   }
 

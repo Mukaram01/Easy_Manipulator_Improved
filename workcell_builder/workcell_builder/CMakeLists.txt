@@ -432,6 +432,7 @@ if(BUILD_TESTING)
     src_workcell_yaml_utils.cpp)
   ament_add_gtest(workcell_asset_catalog_discovery_test
     test/asset_catalog_discovery_test.cpp
+    gui/asset_catalog_model.cpp
     gui/asset_catalog_discovery.cpp
     src_workcell_warning_once.cpp
     src_workcell_yaml_utils.cpp)

@@ -44,7 +44,6 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QDir>
-#include <QDirIterator>
 #include <QUrl>
 #include <QDateTime>
 #include <QIODevice>
@@ -12378,7 +12377,12 @@ void MainWindow::populate_asset_catalog()
   asset_catalog_tree_->clear();
   asset_catalog_entries_.clear();
   const fs::path repo_root = fs::current_path();
-  const auto model = discover_asset_catalog(QString::fromLocal8Bit(qgetenv("WORKCELL_WORKSPACE_ROOT")).toStdString(), repo_root.string());
+  const std::string scene_catalog_root = has_selected_scene()
+    ? (fs::path(selected_scene_path().toStdString()) / "assets" / "imported").string()
+    : std::string();
+  const auto model = discover_asset_catalog(
+    QString::fromLocal8Bit(qgetenv("WORKCELL_WORKSPACE_ROOT")).toStdString(),
+    repo_root.string(), scene_catalog_root);
 
   QSet<QString> categories;
   auto append_catalog_entry = [this, &categories](const ::AssetCatalogEntry & source_entry) {
@@ -12400,25 +12404,6 @@ void MainWindow::populate_asset_catalog()
   };
 
   for (const auto & source_entry : model.assets) append_catalog_entry(source_entry);
-  if (has_selected_scene()) {
-    QDirIterator it(selected_scene_path() + "/assets/imported", QStringList() << "*.stl" << "*.STL", QDir::Files, QDirIterator::Subdirectories);
-    while (it.hasNext()) {
-      const QString file = it.next();
-      ::AssetCatalogEntry e;
-      e.id = scene_imported_asset_id(fs::path(file.toStdString())).toStdString();
-      e.display_name = QFileInfo(file).completeBaseName().toStdString();
-      e.category = "Imported";
-      e.path = file.toStdString();
-      e.source = "scene_imported_asset";
-      e.role_hints = {"object"};
-      e.readiness = "PREVIEW_ONLY";
-      e.icon_key = "🧱";
-      e.can_add_to_scene = true;
-      append_catalog_entry(e);
-    }
-  }
-
-
   std::sort(asset_catalog_entries_.begin(), asset_catalog_entries_.end(), [](const AssetCatalogEntry & a, const AssetCatalogEntry & b) {
     if (a.category != b.category) return a.category < b.category;
     return a.display_name < b.display_name;
