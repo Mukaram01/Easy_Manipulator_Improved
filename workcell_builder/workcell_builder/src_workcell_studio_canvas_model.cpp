@@ -19,6 +19,39 @@
 namespace fs = boost::filesystem;
 namespace workcell_builder {
 
+void merge_dirty_editable_layout_session(
+  WorkcellStudioCanvasModel & model,
+  const std::vector<WorkcellStudioCanvasItem> & session_items,
+  const std::vector<std::string> & deleted_item_ids)
+{
+  const std::set<std::string> deleted(deleted_item_ids.begin(), deleted_item_ids.end());
+  model.items.erase(
+    std::remove_if(model.items.begin(), model.items.end(), [&deleted](const auto & item) {
+      return item.provenance == WorkcellStudioItemProvenance::EditableLayout ||
+             deleted.count(item.id) != 0U;
+    }), model.items.end());
+  for (const auto & item : session_items) {
+    if (deleted.count(item.id) == 0U) model.items.push_back(item);
+  }
+  model.provenance_status.editable_layout_count = 0;
+  model.provenance_status.generated_or_legacy_preview_count = 0;
+  model.provenance_status.static_fallback_preview_count = 0;
+  for (const auto & item : model.items) {
+    switch (item.provenance) {
+      case WorkcellStudioItemProvenance::EditableLayout:
+        ++model.provenance_status.editable_layout_count;
+        break;
+      case WorkcellStudioItemProvenance::StaticFallbackPreview:
+        ++model.provenance_status.static_fallback_preview_count;
+        break;
+      case WorkcellStudioItemProvenance::GeneratedOrLegacyPreview:
+      default:
+        ++model.provenance_status.generated_or_legacy_preview_count;
+        break;
+    }
+  }
+}
+
 
 static bool log_task_metadata_loader_warning_once(const fs::path & p, const std::string & reason)
 {
