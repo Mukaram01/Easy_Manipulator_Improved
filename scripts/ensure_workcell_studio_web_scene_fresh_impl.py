@@ -464,6 +464,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--stage-assets", action="store_true", help="Require and regenerate staged browser assets.")
     parser.add_argument("--force", action="store_true", help="Regenerate even when freshness checks pass.")
     parser.add_argument("--allow-incomplete-preview", action="store_true", help="Allow the exporter to produce a read-only diagnostic preview for authoring blockers.")
+    parser.add_argument("--authoring-session-overlay", help="Request-scoped PreviewItem overlay JSON to merge only into this export.")
     args = parser.parse_args(argv)
 
     try:
@@ -511,7 +512,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             assets_stale = True
             assets_reason = "mesh index UR5 preview rows were normalized for web export"
 
-    if args.force or args.allow_incomplete_preview or web_stale or assets_stale:
+    if args.force or args.allow_incomplete_preview or args.authoring_session_overlay or web_stale or assets_stale:
         reasons = []
         if args.force:
             reasons.append("forced")
@@ -525,6 +526,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             command.append("--stage-assets")
         if args.allow_incomplete_preview:
             command.append("--allow-incomplete-preview")
+        if args.authoring_session_overlay:
+            overlay = Path(args.authoring_session_overlay).expanduser().resolve()
+            if not overlay.is_file():
+                print(f"error: authoring-session overlay does not exist: {overlay}", file=sys.stderr)
+                return 2
+            command.extend(["--authoring-session-overlay", str(overlay)])
         atomic_export_web_scene(command, output_path)
         status = "rebuilt"
     else:
