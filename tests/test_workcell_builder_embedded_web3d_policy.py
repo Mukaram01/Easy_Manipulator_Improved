@@ -119,8 +119,8 @@ def test_product_view_lifecycle_prepares_before_loading_and_rejects_stale_output
     load_idx = CPP.index('set_embedded_product_view_state(EmbeddedProductViewState::Loading)', server_idx)
     assert prepare_idx < server_idx < load_idx
     assert 'scripts/ensure_workcell_studio_web_scene_fresh.py' in CPP
-    assert '"--scene", selected_scene_dir, "--output", embedded_web_prepare_output_path_, "--stage-assets"' in CPP
-    assert 'embedded_web_prepare_command_for_log(selected_scene_dir, embedded_web_prepare_output_path_, force)' in CPP
+    assert '"--scene", selected_scene_dir, "--output", request_output_path, "--stage-assets"' in CPP
+    assert 'embedded_web_prepare_command_for_log(selected_scene_dir, request_output_path, force)' in CPP
     assert 'QStringLiteral("scenes/%1").arg(scene)' not in CPP
     assert 'build/workcell_studio_web_scene/%1.web_scene.json' in CPP
     assert 'output_is_fresh' in CPP

@@ -137,6 +137,25 @@ bool is_safe_embedded_web_scene_id(const QString & scene_id)
   return kSafeSceneId.match(scene_id).hasMatch();
 }
 
+QString embedded_web_request_owned_output_path(
+  const QString & safe_scene_id, quint64 payload_revision, quint64 generation,
+  const QByteArray & payload_fingerprint)
+{
+  if (!is_safe_embedded_web_scene_id(safe_scene_id) || payload_fingerprint.isEmpty()) return QString();
+  const QString filename = QStringLiteral("%1-r%2-g%3-%4.web_scene.json")
+    .arg(safe_scene_id).arg(payload_revision).arg(generation)
+    .arg(QString::fromLatin1(payload_fingerprint.toHex()));
+  return QStringLiteral("build/workcell_studio_web_scene/preparations/%1").arg(filename);
+}
+
+void remove_embedded_web_request_output_if_safe(const QString & repo_root, const QString & relative_path)
+{
+  const QString preparation_root = QDir::cleanPath(
+    QDir(repo_root).absoluteFilePath(QStringLiteral("build/workcell_studio_web_scene/preparations")));
+  const QString candidate = QDir::cleanPath(QDir(repo_root).absoluteFilePath(relative_path));
+  if (candidate.startsWith(preparation_root + QDir::separator())) QFile::remove(candidate);
+}
+
 bool scene_directory_matches_id(const QString & scene_dir, const QString & scene_id)
 {
   const QFileInfo scene_info(scene_dir);
@@ -1866,6 +1885,8 @@ ScenePreviewWidget::EmbeddedWebRequestIdentity ScenePreviewWidget::embedded_web_
   identity.payload_fingerprint = preview_payload_fingerprint_;
   identity.payload_revision = static_cast<quint64>(preview_payload_revision_);
   identity.generation = generation;
+  identity.request_owned_output_path = embedded_web_request_owned_output_path(
+    identity.scene_id, identity.payload_revision, identity.generation, identity.payload_fingerprint);
   return identity;
 }
 
@@ -1888,9 +1909,10 @@ QString ScenePreviewWidget::embedded_web_preparation_diagnostic_key(const Embedd
 
 QString ScenePreviewWidget::embedded_web_effective_request_key(const EmbeddedWebRequestIdentity & identity) const
 {
-  return QStringLiteral("%1|%2|%3|%4|%5|%6|%7")
+  return QStringLiteral("%1|%2|%3|%4|%5|%6|%7|%8")
     .arg(identity.scene_id, identity.absolute_scene_dir, identity.absolute_repo_root,
-         identity.product_view_backend, identity.generated_web_scene_path,
+         identity.product_view_backend, identity.request_owned_output_path,
+         identity.generated_web_scene_path,
          QString::fromLatin1(identity.payload_fingerprint.toHex()))
     .arg(identity.payload_revision);
 }
@@ -2013,11 +2035,16 @@ void ScenePreviewWidget::start_embedded_web_prepare(const EmbeddedWebRequestIden
   embedded_web_repo_root_ = repo_root;
   embedded_web_prepare_scene_ = scene_id;
   embedded_web_prepare_scene_dir_ = selected_scene_dir;
-  embedded_web_prepare_output_path_ = QStringLiteral("build/workcell_studio_web_scene/%1.web_scene.json").arg(scene_id);
+  embedded_web_prepare_output_path_ = identity.generated_web_scene_path;
+  const QString request_output_path = identity.request_owned_output_path;
+  if (request_output_path.isEmpty()) {
+    show_embedded_web_preparation_failure(identity, QStringLiteral("could not construct immutable request-owned Product View output path"));
+    return;
+  }
   if (embedded_web_prepare_process_) embedded_web_prepare_process_->deleteLater();
   embedded_web_prepare_process_ = new QProcess(this);
   embedded_web_prepare_process_->setProgram(QStringLiteral("python3"));
-  QStringList args{"scripts/ensure_workcell_studio_web_scene_fresh.py", "--scene", selected_scene_dir, "--output", embedded_web_prepare_output_path_, "--stage-assets"};
+  QStringList args{"scripts/ensure_workcell_studio_web_scene_fresh.py", "--scene", selected_scene_dir, "--output", request_output_path, "--stage-assets"};
   // This request-local overlay lets Web3D see unsaved editable layout records.
   // It is derived UI state, deliberately stored under build/ and never merged
   // back into environment/layout YAML.
@@ -2101,7 +2128,7 @@ void ScenePreviewWidget::start_embedded_web_prepare(const EmbeddedWebRequestIden
   const QString diagnostic_key = embedded_web_preparation_diagnostic_key(identity);
   EmbeddedWebPreparationDiagnostic diagnostic;
   diagnostic.identity = identity;
-  diagnostic.expected_output_path = embedded_web_prepare_output_path_;
+  diagnostic.expected_output_path = request_output_path;
   diagnostic.expected_output_absolute_path = QDir(repo_root).filePath(diagnostic.expected_output_path);
   diagnostic.diagnostic_preview = diagnostic_preview;
   embedded_web_preparation_diagnostics_.insert(diagnostic_key, diagnostic);
@@ -2150,7 +2177,7 @@ void ScenePreviewWidget::start_embedded_web_prepare(const EmbeddedWebRequestIden
   });
   set_embedded_product_view_state(EmbeddedProductViewState::Preparing, scene_id);
   emit studio_log_requested(QStringLiteral("Preparing embedded Product View: scene=%1 generation=%2 payload_revision=%3 origin=%4 repo_root=%5 command=%6").arg(identity.scene_id).arg(identity.generation).arg(identity.payload_revision)
-    .arg(force ? QStringLiteral("user_retry") : QStringLiteral("automatic"), repo_root, embedded_web_prepare_command_for_log(selected_scene_dir, embedded_web_prepare_output_path_, force)));
+    .arg(force ? QStringLiteral("user_retry") : QStringLiteral("automatic"), repo_root, embedded_web_prepare_command_for_log(selected_scene_dir, request_output_path, force)));
   embedded_web_prepare_process_->start();
 #endif
 }
@@ -2169,6 +2196,9 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
   if (process != embedded_web_prepare_process_) {
     record_embedded_web_prepare_terminal(identity, process, QStringLiteral("stale_discarded"), exit_status, exit_code,
       QStringLiteral("process no longer owns the active preparation slot"));
+    const EmbeddedWebPreparationDiagnostic diagnostic = embedded_web_preparation_diagnostics_.value(
+      embedded_web_preparation_process_keys_.value(process));
+    remove_embedded_web_request_output_if_safe(identity.absolute_repo_root, diagnostic.expected_output_path);
     embedded_web_preparation_process_keys_.remove(process);
     process->deleteLater();
     return;
@@ -2180,6 +2210,9 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
   if (!embedded_web_identity_is_current(identity)) {
     record_embedded_web_prepare_terminal(identity, process, QStringLiteral("stale_discarded"), exit_status, exit_code,
       QStringLiteral("request identity retired before completion"));
+    const EmbeddedWebPreparationDiagnostic diagnostic = embedded_web_preparation_diagnostics_.value(
+      embedded_web_preparation_process_keys_.value(process));
+    remove_embedded_web_request_output_if_safe(identity.absolute_repo_root, diagnostic.expected_output_path);
     process->deleteLater();
     embedded_web_preparation_process_keys_.remove(process);
     embedded_web_prepare_process_ = nullptr;
@@ -2203,9 +2236,9 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
     return;
   }
   const QString scene = identity.scene_id;
-  const QString output_path = embedded_web_prepare_output_path_;
   const EmbeddedWebPreparationDiagnostic diagnostic = embedded_web_preparation_diagnostics_.value(
     embedded_web_preparation_diagnostic_key(identity));
+  const QString output_path = diagnostic.expected_output_path;
   const QString stdout_text = QString::fromUtf8(diagnostic.stdout_tail).trimmed();
   const QString command = embedded_web_prepare_command_for_log(embedded_web_prepare_scene_dir_, output_path, false);
   process->deleteLater();
@@ -2213,7 +2246,7 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
   embedded_web_prepare_process_ = nullptr;
   embedded_web_preparing_identity_ = EmbeddedWebRequestIdentity{};
 
-  const QString absolute_output_path = QDir(embedded_web_repo_root_).filePath(output_path);
+  const QString absolute_output_path = diagnostic.expected_output_absolute_path;
   // Contract validation below supersedes mtime freshness; existence is checked when opening the expected output.
   auto reject_prepare = [&](const QString & reason) {
     const QString detail = QStringLiteral("%1; %2").arg(reason, summarize_prepare_process_failure(
@@ -2272,7 +2305,8 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
     return;
   }
   QJsonParseError output_parse_error;
-  const QJsonDocument output_doc = QJsonDocument::fromJson(output_file.readAll(), &output_parse_error);
+  const QByteArray prepared_json = output_file.readAll();
+  const QJsonDocument output_doc = QJsonDocument::fromJson(prepared_json, &output_parse_error);
   if (output_parse_error.error != QJsonParseError::NoError || !output_doc.isObject()) {
     reject_prepare(QStringLiteral("prepared output JSON validation failed: %1").arg(output_parse_error.errorString()));
     return;
@@ -2282,6 +2316,45 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
   const QString output_scene = output.value(QStringLiteral("scene_id")).toString(output.value(QStringLiteral("scene_name")).toString());
   if (web_schema != QStringLiteral("workcell_studio_web_scene/v1") || output_scene != scene) {
     reject_prepare(QStringLiteral("prepared output semantic validation failed for scene %1").arg(scene));
+    return;
+  }
+
+  // Cancellation is only an optimization: the immutable identity gates both
+  // entry to publication and the atomic replacement boundary.  A stale
+  // request may delete only its private preparation file and must leave the
+  // canonical browser handoff and all readiness/navigation state untouched.
+  auto discard_stale_before_publication = [&](const QString & detail) {
+    record_embedded_web_prepare_terminal(identity, process, QStringLiteral("stale_discarded"), exit_status, exit_code, detail);
+    remove_embedded_web_request_output_if_safe(identity.absolute_repo_root, output_path);
+    maybe_start_next_embedded_web_prepare();
+  };
+  if (!embedded_web_identity_is_current(identity)) {
+    discard_stale_before_publication(QStringLiteral("request identity retired after validation and before publication"));
+    return;
+  }
+
+  const QString canonical_output_path = QDir(identity.absolute_repo_root).filePath(identity.generated_web_scene_path);
+  if (!QDir().mkpath(QFileInfo(canonical_output_path).absolutePath())) {
+    reject_prepare(QStringLiteral("could not create canonical Product View output directory: %1")
+      .arg(QFileInfo(canonical_output_path).absolutePath()));
+    return;
+  }
+  QSaveFile published_file(canonical_output_path);
+  published_file.setDirectWriteFallback(false);
+  if (!published_file.open(QIODevice::WriteOnly) || published_file.write(prepared_json) != prepared_json.size()) {
+    published_file.cancelWriting();
+    reject_prepare(QStringLiteral("could not stage validated Product View output for atomic publication: %1")
+      .arg(canonical_output_path));
+    return;
+  }
+  if (!embedded_web_identity_is_current(identity)) {
+    published_file.cancelWriting();
+    discard_stale_before_publication(QStringLiteral("request identity retired at the atomic publication boundary"));
+    return;
+  }
+  if (!published_file.commit()) {
+    reject_prepare(QStringLiteral("could not atomically publish validated Product View output: %1")
+      .arg(canonical_output_path));
     return;
   }
 

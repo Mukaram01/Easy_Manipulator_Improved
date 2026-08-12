@@ -66,3 +66,26 @@ def test_cancellation_and_stale_completion_record_without_mutating_current_ui():
     stale = finished.index("if (!embedded_web_identity_is_current(identity))")
     assert 'QStringLiteral("stale_discarded")' in finished[stale:]
     assert finished.index("record_embedded_web_prepare_terminal", stale) < finished.index("maybe_start_next_embedded_web_prepare();", stale)
+
+
+def test_request_owned_output_is_validated_then_atomically_published_only_for_current_identity():
+    identity = CPP[CPP.index("ScenePreviewWidget::EmbeddedWebRequestIdentity ScenePreviewWidget::embedded_web_request_identity"):CPP.index("bool ScenePreviewWidget::embedded_web_identity_is_current")]
+    assert "embedded_web_request_owned_output_path" in identity
+    assert "payload_revision" in identity
+    assert "generation" in identity
+    assert "payload_fingerprint" in identity
+
+    prepare = CPP[CPP.index("void ScenePreviewWidget::start_embedded_web_prepare"):CPP.index("void ScenePreviewWidget::on_embedded_web_prepare_finished")]
+    assert '"--output", request_output_path' in prepare
+    assert "diagnostic.expected_output_path = request_output_path" in prepare
+
+    finished = CPP[CPP.index("void ScenePreviewWidget::on_embedded_web_prepare_finished"):CPP.index("void ScenePreviewWidget::start_embedded_web_readiness_polling")]
+    validation = finished.index("prepared output semantic validation failed")
+    current_gate = finished.index("if (!embedded_web_identity_is_current(identity))", validation)
+    publication = finished.index("QSaveFile published_file", current_gate)
+    boundary_gate = finished.index("if (!embedded_web_identity_is_current(identity))", publication)
+    commit = finished.index("published_file.commit()", boundary_gate)
+    server = finished.index("ensure_embedded_web_server_started", commit)
+    assert validation < current_gate < publication < boundary_gate < commit < server
+    assert "identity.generated_web_scene_path" in finished[current_gate:publication]
+    assert 'QStringLiteral("stale_discarded")' in finished[validation:publication]
