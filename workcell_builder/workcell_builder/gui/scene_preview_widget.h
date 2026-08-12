@@ -253,6 +253,8 @@ public:
     double x, double y, double z,
     double roll, double pitch, double yaw);
   void request_authoring_save();
+  void arm_embedded_asset_placement(bool persistent = false);
+  void cancel_embedded_asset_placement();
   void reload_meshes();
   void apply_product_view_defaults();
   struct RenderDebugCounters
@@ -328,6 +330,9 @@ signals:
   void asset_placement_requested(
     const QString & asset_id, double world_x_m, double world_y_m, double world_z_m,
     bool configure_transform);
+  // Browser placement events carry spatial data only. MainWindow remains the
+  // authority for the catalog asset currently armed for placement.
+  void embedded_asset_placement_requested(double world_x_m, double world_y_m, double world_z_m);
   void embedded_product_view_runtime_state_changed(const QString & state, bool has_usable_content);
   void authoring_mode_changed(const QString & mode);
   void embedded_authoring_save_requested();

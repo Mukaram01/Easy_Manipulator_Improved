@@ -2466,6 +2466,14 @@ void MainWindow::setup_studio_shell()
     [this](const QString & asset_id, double x, double y, double z, bool configure_transform) {
       place_catalog_asset_at_world_position(asset_id, x, y, z, configure_transform);
     });
+  connect(scene_preview_widget_, &ScenePreviewWidget::embedded_asset_placement_requested, this,
+    [this](double x, double y, double z) {
+      if (!place_asset_armed_ || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) return;
+      armed_asset_x_m_ = x;
+      armed_asset_y_m_ = y;
+      armed_asset_z_m_ = z;
+      commit_armed_asset_placement(QPointF(x * 100.0, y * 100.0));
+    });
   auto * scene3d_viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
   if (scene3d_viewport) {
     scene3d_viewport->setObjectName("scene3dViewportWidget");
@@ -4678,6 +4686,7 @@ void MainWindow::select_scene_by_row(int row)
   if (dashboard_scene_table_ && dashboard_scene_table_->item(row, 0) && dashboard_scene_table_->item(row, 0)->data(Qt::UserRole).isValid()) row = dashboard_scene_table_->item(row, 0)->data(Qt::UserRole).toInt();
   if (row < 0 || row >= (int)scene_browser_result_.scenes.size()) return;
   const QString previous_scene_path = selected_scene_path();
+  if (place_asset_armed_) set_canvas_interaction_mode(CanvasInteractionMode::Select);
   selected_scene_index_ = row;
   sync_selected_scene_state();
   refresh_selected_scene_metadata_panel();
@@ -6450,6 +6459,13 @@ void MainWindow::refresh_scene_builder_view_chips()
 
 void MainWindow::set_canvas_interaction_mode(CanvasInteractionMode mode)
 {
+  if (mode != CanvasInteractionMode::Place && place_asset_armed_) {
+    place_asset_armed_ = false;
+    armed_asset_category_.clear();
+    armed_asset_display_name_.clear();
+    armed_asset_source_path_.clear();
+    if (scene_preview_widget_) scene_preview_widget_->cancel_embedded_asset_placement();
+  }
   canvas_mode_ = mode;
   QString n = "Select";
   if (mode == CanvasInteractionMode::Place) n = "Place";
@@ -8427,6 +8443,11 @@ void MainWindow::arm_place_asset_mode(const QString & category, const QString & 
   armed_asset_source_path_ = source_path;
   armed_asset_default_xy_px_ = compute_default_canvas_pose(category, display_name);
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
+  if (scene_preview_widget_ &&
+      scene_preview_widget_->active_product_view_backend() == ScenePreviewWidget::ProductViewBackend::EmbeddedWeb3D) {
+    scene_preview_widget_->arm_embedded_asset_placement(
+      place_mode_persistent_box_ && place_mode_persistent_box_->isChecked());
+  }
   append_studio_log(QString("Place Asset Mode armed: %1 (%2). Click canvas to commit. Use clicked XY: %3 | xyzrpy=[%4, %5, %6, %7, %8, %9].")
     .arg(display_name, category)
     .arg(armed_asset_use_clicked_xy_ ? "on" : "off")

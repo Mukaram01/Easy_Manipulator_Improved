@@ -762,3 +762,52 @@ def test_embedded_and_native_frontends_connect_to_same_mainwindow_backend():
     main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
     assert 'ScenePreviewWidget::asset_placement_requested' in main
     assert main.count('place_catalog_asset_at_world_position(') >= 3  # definition plus both frontends
+
+
+def test_qt_arms_and_cancels_existing_browser_placement_api():
+    main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    arm = main.split("void MainWindow::arm_place_asset_mode", 1)[1].split(
+        "void MainWindow::commit_armed_asset_placement", 1
+    )[0]
+    handoff = CPP.split("void ScenePreviewWidget::clear_embedded_editor_state_for_scene_handoff", 1)[1].split(
+        "void ScenePreviewWidget::show_embedded_web_loading_document", 1
+    )[0]
+    assert "arm_embedded_asset_placement" in HDR
+    assert "cancel_embedded_asset_placement" in HDR
+    assert "ScenePreviewWidget::ProductViewBackend::EmbeddedWeb3D" in arm
+    assert "scene_preview_widget_->arm_embedded_asset_placement(" in arm
+    assert "__WORKCELL_EDITOR_API_V1__.armPlacement({persistent:%1})" in CPP
+    assert "__WORKCELL_EDITOR_API_V1__.cancelPlacement()" in CPP
+    assert "cancel_embedded_asset_placement();" in handoff
+
+
+def test_polled_browser_placement_is_typed_finite_and_identity_free():
+    main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    poll = CPP.split("void ScenePreviewWidget::poll_embedded_editor_events()", 1)[1].split("#else", 1)[0]
+    connection = main.split(
+        "ScenePreviewWidget::embedded_asset_placement_requested", 1
+    )[1].split("auto * scene3d_viewport", 1)[0]
+    assert 'event_type == QStringLiteral("placement_requested")' in poll
+    assert "std::isfinite(x) && std::isfinite(y) && std::isfinite(z)" in poll
+    assert "emit embedded_asset_placement_requested(x, y, z);" in poll
+    assert "asset_id" not in poll.split('event_type == QStringLiteral("placement_requested")', 1)[1].split(
+        '} else if (event_type == QStringLiteral("selection_changed"))', 1
+    )[0]
+    assert "place_asset_armed_" in connection
+    assert "armed_asset_x_m_ = x;" in connection
+    assert "armed_asset_y_m_ = y;" in connection
+    assert "armed_asset_z_m_ = z;" in connection
+    assert connection.count("commit_armed_asset_placement(") == 1
+    assert "place_catalog_asset_at_world_position" not in connection
+
+
+def test_qt_cancellation_does_not_commit_and_native_placement_remains_wired():
+    main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    mode = main.split("void MainWindow::set_canvas_interaction_mode", 1)[1].split(
+        "bool MainWindow::eventFilter", 1
+    )[0]
+    assert "scene_preview_widget_->cancel_embedded_asset_placement();" in mode
+    assert "commit_armed_asset_placement" not in mode
+    assert "place_asset_armed_ = false;" in mode
+    assert "scene3d_viewport->asset_drop_cb" in main
+    assert "digital_twin_canvas_" in main and "commit_armed_asset_placement(scene_pos);" in main

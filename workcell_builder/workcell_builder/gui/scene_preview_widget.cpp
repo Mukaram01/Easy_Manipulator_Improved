@@ -1583,6 +1583,7 @@ void ScenePreviewWidget::retire_embedded_web_navigation_for_handoff()
 
 void ScenePreviewWidget::clear_embedded_editor_state_for_scene_handoff()
 {
+  cancel_embedded_asset_placement();
   ++embedded_editor_state_request_token_;
   embedded_editor_polling_ = false;
   selected_preview_item_id_.clear();
@@ -2610,7 +2611,19 @@ void ScenePreviewWidget::poll_embedded_editor_events()
     QString matching_item_type;
     for (const QVariant & event_value : payload.value(QStringLiteral("events")).toList()) {
       const QVariantMap event = event_value.toMap();
-      if (event.value(QStringLiteral("type")).toString() == QStringLiteral("selection_changed")) {
+      const QString event_type = event.value(QStringLiteral("type")).toString();
+      if (event_type == QStringLiteral("placement_requested")) {
+        bool x_ok = false, y_ok = false, z_ok = false;
+        const double x = event.value(QStringLiteral("x")).toDouble(&x_ok);
+        const double y = event.value(QStringLiteral("y")).toDouble(&y_ok);
+        const double z = event.value(QStringLiteral("z")).toDouble(&z_ok);
+        if (x_ok && y_ok && z_ok && std::isfinite(x) && std::isfinite(y) && std::isfinite(z)) {
+          emit embedded_asset_placement_requested(x, y, z);
+        } else {
+          emit studio_log_requested(QStringLiteral(
+            "Embedded Product View placement rejected: placement_requested requires finite x/y/z."));
+        }
+      } else if (event_type == QStringLiteral("selection_changed")) {
         QString id = event.value(QStringLiteral("uiItemId")).toString();
         if (id.isEmpty()) id = event.value(QStringLiteral("itemId")).toString();
         if (!id.isEmpty() && id == browser_ui_selected_id) {
@@ -2666,6 +2679,19 @@ QString ScenePreviewWidget::embedded_snap_command(const QString & choice) const 
 void ScenePreviewWidget::apply_embedded_editor_state(const QVariantMap & state) { Q_UNUSED(state); }
 void ScenePreviewWidget::poll_embedded_editor_events() {}
 #endif
+
+void ScenePreviewWidget::arm_embedded_asset_placement(bool persistent)
+{
+  if (product_view_backend_ != ProductViewBackend::EmbeddedWeb3D) return;
+  run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__.armPlacement({persistent:%1})")
+    .arg(persistent ? QStringLiteral("true") : QStringLiteral("false")));
+}
+
+void ScenePreviewWidget::cancel_embedded_asset_placement()
+{
+  if (product_view_backend_ != ProductViewBackend::EmbeddedWeb3D) return;
+  run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__.cancelPlacement()"));
+}
 
 ScenePreviewWidget::ProductViewBackend ScenePreviewWidget::active_product_view_backend() const
 {
