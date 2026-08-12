@@ -49,8 +49,9 @@ def test_asset_library_uses_one_live_preview_and_explicit_failures():
 
 
 def test_asset_library_add_delegates_to_place_asset_without_direct_yaml_write():
-    add = _between('void MainWindow::add_asset_to_canvas_from_catalog', 'QPointF MainWindow::compute_default_canvas_pose')
-    assert 'arm_place_asset_mode(category, display_name, source_path);' in add
+    add = MAIN[MAIN.index('connect_button(add_to_canvas_button_'):MAIN.index('connect_button(add_asset_button_')]
+    assert 'data(0, CatalogRoleAssetId).toString().trimmed()' in add
+    assert add.count('place_catalog_asset_at_world_position(') == 1
     assert 'commit_armed_asset_placement' not in add
     assert 'mark_layout_dirty' not in add
     assert '.yaml' not in add.lower()
@@ -74,3 +75,76 @@ def test_shared_placement_backend_rejects_stale_disabled_and_noneditable_catalog
     assert '!match->editable' in body
     assert body.count('arm_place_asset_mode(') == 1
     assert body.count('commit_armed_asset_placement(') == 1
+
+
+def test_fresh_import_replaces_stale_selection_by_canonical_asset_id():
+    """A1 steps 1-5: refresh must resolve B, never keep previously armed A."""
+    helper = _between(
+        'QTreeWidgetItem * find_asset_catalog_item_by_id',
+        'QString canonical_skip_reason_key',
+    )
+    imported = _between(
+        'void MainWindow::import_stl_to_asset_library()',
+        'void MainWindow::open_add_asset_dialog()',
+    )
+
+    # Stable-ID lookup walks the refreshed tree and compares the dedicated role,
+    # rather than relying on a stale row index, label, or source filename.
+    assert 'requested_asset_id.trimmed()' in helper
+    assert 'CatalogRoleAssetId' in helper
+    assert 'root->child(child_index)' in helper
+    assert 'find_asset_catalog_item_by_id(asset_catalog_tree_, asset_id)' in imported
+
+    refresh = imported.index('populate_asset_catalog();')
+    lookup = imported.index('find_asset_catalog_item_by_id(asset_catalog_tree_, asset_id)')
+    selection = imported.index('asset_catalog_tree_->setCurrentItem(imported_item);')
+    identity_check = imported.index(
+        'imported_item->data(0, CatalogRoleAssetId).toString().trimmed() != asset_id'
+    )
+    assert refresh < lookup < selection < identity_check
+    assert imported[:refresh].count('clear_armed_asset_placement();') >= 1
+    assert 'asset_catalog_tree_->currentItem() != imported_item' in imported
+
+    failure = imported[imported.index('auto block_imported_asset_placement'):lookup]
+    assert 'clear_armed_asset_placement();' in failure
+    assert 'set_canvas_interaction_mode(CanvasInteractionMode::Select);' in failure
+    assert 'asset_catalog_tree_->setCurrentItem(nullptr);' in failure
+    assert 'not found after Asset Library refresh' in failure
+
+
+def test_catalog_identity_b_flows_to_one_editable_layout_item_and_refreshes_product_view():
+    """A1 steps 6 and 9-11: B is the only identity consumed by placement."""
+    place = _between(
+        'bool MainWindow::place_catalog_asset_at_world_position',
+        'bool MainWindow::configure_asset_placement_transform',
+    )
+    commit = _between(
+        'void MainWindow::commit_armed_asset_placement',
+        'void MainWindow::validate_asset_catalog_selection',
+    )
+
+    assert 'arm_place_asset_mode(asset_id)' in place
+    assert place.count('commit_armed_asset_placement(') == 1
+    assert 'items().size() == item_count_before + 1' in place
+
+    assert 'workcell_studio_next_id' in commit
+    assert 'item->setData(RoleSource, source_path);' in commit
+    assert 'QStringLiteral("editable_layout")' in commit
+    assert 'item->setData(RoleLocked, false);' in commit
+    assert commit.count('digital_twin_scene_->addItem(item);') == 1
+    assert 'preview_item.mesh_path = source_path;' in commit
+    assert 'preview_item.editable = true;' in commit
+    assert 'preview_item.locked = false;' in commit
+    assert 'undo_stack_.push_back({"add", new_id' in commit
+    assert 'redo_stack_.clear();' in commit
+    assert 'mark_layout_dirty("Place Asset Mode: Add to 3D Canvas")' in commit
+    assert 'select_canvas_item(item);' in commit
+    assert 'apply_scene3d_preview_layer_filters(false);' in commit
+    assert 'scene_preview_widget_->select_preview_item(new_id);' in commit
+
+    imported = _between(
+        'void MainWindow::import_stl_to_asset_library()',
+        'void MainWindow::open_add_asset_dialog()',
+    )
+    assert 'scene_dir / "assets" / "imported"' in imported
+    assert 'stem.toStdString() + ".stl"' in imported

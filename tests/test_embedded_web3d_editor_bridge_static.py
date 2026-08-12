@@ -766,7 +766,7 @@ def test_embedded_and_native_frontends_connect_to_same_mainwindow_backend():
 
 def test_qt_arms_and_cancels_existing_browser_placement_api():
     main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
-    arm = main.split("void MainWindow::arm_place_asset_mode", 1)[1].split(
+    arm = main.split("bool MainWindow::arm_place_asset_mode", 1)[1].split(
         "void MainWindow::commit_armed_asset_placement", 1
     )[0]
     handoff = CPP.split("void ScenePreviewWidget::clear_embedded_editor_state_for_scene_handoff", 1)[1].split(
@@ -806,8 +806,35 @@ def test_qt_cancellation_does_not_commit_and_native_placement_remains_wired():
     mode = main.split("void MainWindow::set_canvas_interaction_mode", 1)[1].split(
         "bool MainWindow::eventFilter", 1
     )[0]
-    assert "scene_preview_widget_->cancel_embedded_asset_placement();" in mode
+    clear = main.split("void MainWindow::clear_armed_asset_placement", 1)[1].split(
+        "void MainWindow::reset_armed_asset_transform_to_defaults", 1
+    )[0]
+    assert "clear_armed_asset_placement();" in mode
+    assert "scene_preview_widget_->cancel_embedded_asset_placement();" in clear
     assert "commit_armed_asset_placement" not in mode
-    assert "place_asset_armed_ = false;" in mode
+    assert "place_asset_armed_ = false;" in clear
     assert "scene3d_viewport->asset_drop_cb" in main
     assert "digital_twin_canvas_" in main and "commit_armed_asset_placement(scene_pos);" in main
+
+
+def test_click_and_embedded_drop_share_canonical_b_placement_backend():
+    """A1 steps 6 and 8: both frontends converge before arm/commit."""
+    main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    click = main.split("connect_button(add_to_canvas_button_", 1)[1].split(
+        "connect_button(add_asset_button_", 1
+    )[0]
+    embedded_drop = main.split("ScenePreviewWidget::asset_placement_requested", 1)[1].split(
+        "ScenePreviewWidget::embedded_asset_placement_requested", 1
+    )[0]
+    backend = main.split("bool MainWindow::place_catalog_asset_at_world_position", 1)[1].split(
+        "bool MainWindow::configure_asset_placement_transform", 1
+    )[0]
+
+    assert 'data(0, CatalogRoleAssetId).toString().trimmed()' in click
+    assert click.count("place_catalog_asset_at_world_position(") == 1
+    assert embedded_drop.count("place_catalog_asset_at_world_position(") == 1
+    for frontend in (click, embedded_drop):
+        assert "arm_place_asset_mode(" not in frontend
+        assert "commit_armed_asset_placement(" not in frontend
+    assert backend.count("arm_place_asset_mode(asset_id)") == 1
+    assert backend.count("commit_armed_asset_placement(") == 1
