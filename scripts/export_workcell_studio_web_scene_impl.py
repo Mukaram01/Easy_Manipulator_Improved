@@ -2278,6 +2278,8 @@ def _physical_classification_text(item: Mapping[str, Any]) -> str:
 def _core_mesh_category(item: Mapping[str, Any], section: str) -> Optional[str]:
     if _is_helper(item) or section == "zones":
         return None
+    if section == "assets" and item.get("authoring_session_overlay") is True:
+        return "authored_asset_object"
     if section == "assets" and _is_tangible_target_bin(item):
         return "authored_asset_object"
     text = _physical_classification_text(item)
@@ -2290,7 +2292,7 @@ def _core_mesh_category(item: Mapping[str, Any], section: str) -> Optional[str]:
         return "camera_realsense"
     if any(token in text for token in ("table", "workbench", "support_surface")):
         return "table_workbench"
-    if section == "robots" or role == "robot" or category in {"robot", "robot_static_mesh_visual"} or _robot_family_from_item(item):
+    if section == "robots" or role == "robot" or category in {"robot", "robot_static_mesh_visual"} or (item.get("source_kind") == "generated_preview" and _robot_family_from_item(item)):
         return "robot_arm_link"
     if section == "tools" or category in {"tool", "gripper", "end_effector"} or role in {"tool", "gripper", "end_effector"} or any(token in text for token in ("gripper", "robotiq", "suction", "end_effector")):
         return "gripper_link"
@@ -2328,13 +2330,15 @@ def _visual_contract_category(item: Mapping[str, Any], section: str) -> str:
     category = str(item.get("category", "")).lower()
     if section == "zones" or _is_helper(item):
         return "zone"
+    if section == "assets" and item.get("authoring_session_overlay") is True:
+        return "object"
     if section == "assets" and _is_tangible_target_bin(item):
         return "object"
     if section == "sensors" or any(token in text for token in ("camera", "realsense")):
         return "camera"
     if any(token in text for token in ("table", "workbench", "support_surface")):
         return "table"
-    if section == "robots" or role == "robot" or category in {"robot", "robot_static_mesh_visual"} or _robot_family_from_item(item):
+    if section == "robots" or role == "robot" or category in {"robot", "robot_static_mesh_visual"} or (item.get("source_kind") == "generated_preview" and _robot_family_from_item(item)):
         return "robot_link"
     if section == "tools" or category in {"tool", "gripper", "end_effector"} or role in {"tool", "gripper", "end_effector"} or any(token in text for token in ("gripper", "robotiq", "suction", "end_effector")):
         return "gripper"
@@ -3124,6 +3128,26 @@ def _load_authoring_session_overlay(path: Optional[Path], scene_dir: Path) -> Li
     return result
 
 
+def _merge_authoring_session_assets(canonical: List[Json], transient: List[Json]) -> List[Json]:
+    """Apply dirty poses without replacing canonical authored asset records."""
+    transient_by_id = {str(item["id"]): item for item in transient}
+    merged: List[Json] = []
+    canonical_ids: set[str] = set()
+    for item in canonical:
+        item_id = str(item.get("id") or "")
+        canonical_ids.add(item_id)
+        overlay = transient_by_id.get(item_id)
+        if overlay is None:
+            merged.append(item)
+            continue
+        canonical_item = copy.deepcopy(item)
+        canonical_item["pose"] = copy.deepcopy(overlay["pose"])
+        canonical_item["authoring_session_overlay"] = True
+        merged.append(canonical_item)
+    merged.extend(item for item in transient if str(item["id"]) not in canonical_ids)
+    return merged
+
+
 def build_web_scene(
     scene_dir: Path,
     *,
@@ -3184,8 +3208,9 @@ def build_web_scene(
     sensors = _drop_shadowed_metadata_primitives(top_sensors + authored["sensors"] + generated["sensors"], generated["sensors"], ("camera", "realsense", "sensor"))
     transient_assets = _load_authoring_session_overlay(authoring_session_overlay, scene_dir)
     transient_ids = {str(item["id"]) for item in transient_assets}
-    normal_assets = [item for item in authored["assets"] + generated["assets"] if str(item.get("id") or "") not in transient_ids]
-    assets = _drop_shadowed_metadata_primitives(normal_assets + transient_assets, generated["assets"], ("table", "workbench", "support_surface"))
+    session_assets = _merge_authoring_session_assets(authored["assets"], transient_assets)
+    normal_generated_assets = [item for item in generated["assets"] if str(item.get("id") or "") not in transient_ids]
+    assets = _drop_shadowed_metadata_primitives(session_assets + normal_generated_assets, generated["assets"], ("table", "workbench", "support_surface"))
     zones = authored["zones"] + generated["zones"]
 
     output: Json = {
