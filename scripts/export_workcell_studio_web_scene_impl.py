@@ -969,6 +969,8 @@ def _is_tangible_target_bin(item: Mapping[str, Any]) -> bool:
 
 
 def _is_helper(item: Mapping[str, Any]) -> bool:
+    if item.get("authoring_session_overlay") is True:
+        return False
     # A target bin is tangible product geometry even when its task-facing
     # category also associates it with a place zone.  Keep the separate,
     # meshless zone declaration as an overlay, but never demote the authored
@@ -3067,12 +3069,68 @@ def _destination_blocker(exc: BlockingExportError) -> Json:
     }
 
 
+def _load_authoring_session_overlay(path: Optional[Path], scene_dir: Path) -> List[Json]:
+    """Read a request-scoped UI overlay; it is never an authored scene input."""
+    if path is None:
+        return []
+    overlay_path = Path(path).expanduser().resolve()
+    try:
+        document = json.loads(overlay_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise BlockingExportError(f"authoring-session overlay could not be read: {overlay_path}: {exc}") from exc
+    if not isinstance(document, dict) or document.get("schema_version") != "workcell_studio.authoring_session_overlay.v1":
+        raise BlockingExportError(f"authoring-session overlay has an unsupported contract: {overlay_path}")
+    expected_scene = scene_dir.resolve().name
+    request = _as_map(document.get("request_identity"))
+    if str(document.get("scene_id") or "") != expected_scene or str(request.get("scene_id") or "") != expected_scene:
+        raise BlockingExportError(f"authoring-session overlay belongs to another scene (expected {expected_scene}): {overlay_path}")
+    for field in ("payload_fingerprint", "payload_revision", "generation"):
+        if field not in request:
+            raise BlockingExportError(f"authoring-session overlay request identity is missing {field}: {overlay_path}")
+    result: List[Json] = []
+    seen: set[str] = set()
+    for raw in _as_list(document.get("items")):
+        if not isinstance(raw, Mapping):
+            continue
+        item_id = str(raw.get("id") or "").strip()
+        source_path = str(raw.get("source_mesh_path") or raw.get("mesh_path") or "").strip()
+        if not item_id or item_id in seen:
+            raise BlockingExportError(f"authoring-session overlay contains an empty or duplicate item ID: {item_id or '<empty>'}")
+        seen.add(item_id)
+        resolved, _source_root, _dest_rel, warning = _resolve_local_mesh_uri(source_path, scene_dir, _repo_root(scene_dir, None))
+        if not source_path or resolved is None:
+            raise BlockingExportError(
+                f"authoring-session overlay item {item_id!r} has missing/unresolvable imported mesh source {source_path!r}: "
+                f"{warning or 'no source path was supplied'}"
+            )
+        pose = _as_map(raw.get("world_pose"))
+        catalog_asset_id = str(raw.get("asset_id") or raw.get("category") or raw.get("type") or "")
+        result.append({
+            "id": item_id, "display_name": raw.get("display_name") or item_id,
+            "asset_id": catalog_asset_id, "catalog_asset_id": catalog_asset_id,
+            "type": raw.get("type") or raw.get("category") or "asset",
+            "category": "authored_asset_object", "catalog_category": raw.get("category") or raw.get("type") or "asset",
+            "role": raw.get("role") or "asset", "source_layer": raw.get("source_layer") or "editable_layout",
+            "source_kind": "user_authored", "editable": bool(raw.get("editable", True)),
+            "locked": bool(raw.get("locked", False)), "selectable": bool(raw.get("selectable", True)),
+            "mesh_uri": source_path, "source_path": source_path,
+            "mesh_type": raw.get("mesh_type") or Path(source_path).suffix.lstrip(".").lower(),
+            "mesh_scale": list(raw.get("mesh_scale") or [1.0, 1.0, 1.0]),
+            "pose": {"xyz": list(pose.get("xyz") or [0.0, 0.0, 0.0]), "rpy": list(pose.get("rpy") or [0.0, 0.0, 0.0])},
+            "render_owner": raw.get("render_owner") or "editable_layout",
+            "render_policy": raw.get("render_policy") or "primary",
+            "render_policy_reason": "temporary_authoring_session_overlay", "authoring_session_overlay": True,
+        })
+    return result
+
+
 def build_web_scene(
     scene_dir: Path,
     *,
     stage_assets: bool = False,
     output_path: Optional[Path] = None,
     allow_incomplete_preview: bool = False,
+    authoring_session_overlay: Optional[Path] = None,
 ) -> Json:
     scene_dir = scene_dir.resolve()
     warnings: List[Json] = []
@@ -3124,7 +3182,10 @@ def build_web_scene(
     robots = _drop_shadowed_metadata_primitives(top_robots + generated["robots"], generated["robots"], ("robot", "ur5", "ur3", "ur10"))
     tools = _drop_shadowed_metadata_primitives(top_tools + generated["tools"], generated["tools"], ("tool", "gripper", "robotiq", "end_effector"))
     sensors = _drop_shadowed_metadata_primitives(top_sensors + authored["sensors"] + generated["sensors"], generated["sensors"], ("camera", "realsense", "sensor"))
-    assets = _drop_shadowed_metadata_primitives(authored["assets"] + generated["assets"], generated["assets"], ("table", "workbench", "support_surface"))
+    transient_assets = _load_authoring_session_overlay(authoring_session_overlay, scene_dir)
+    transient_ids = {str(item["id"]) for item in transient_assets}
+    normal_assets = [item for item in authored["assets"] + generated["assets"] if str(item.get("id") or "") not in transient_ids]
+    assets = _drop_shadowed_metadata_primitives(normal_assets + transient_assets, generated["assets"], ("table", "workbench", "support_surface"))
     zones = authored["zones"] + generated["zones"]
 
     output: Json = {
@@ -3237,6 +3298,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--stage-assets", dest="stage_assets", action="store_true", default=True, help="Copy resolvable mesh assets into build/workcell_studio_web_scene/assets/<scene_id> and rewrite mesh_uri for browser loading. Enabled by default.")
     parser.add_argument("--no-stage-assets", dest="stage_assets", action="store_false", help="Disable mesh asset staging and leave mesh URI fields unchanged.")
     parser.add_argument("--allow-incomplete-preview", action="store_true", help="Export a read-only diagnostic preview when the authored destination chain is unresolved.")
+    parser.add_argument("--authoring-session-overlay", help="Request-scoped PreviewItem overlay JSON; never persisted to authored YAML.")
     args = parser.parse_args(argv)
 
     scene_dir = Path(args.scene)
@@ -3247,7 +3309,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     try:
         payload = build_web_scene(scene_dir, stage_assets=args.stage_assets, output_path=output_path,
-                                  allow_incomplete_preview=args.allow_incomplete_preview)
+                                  allow_incomplete_preview=args.allow_incomplete_preview,
+                                  authoring_session_overlay=Path(args.authoring_session_overlay) if args.authoring_session_overlay else None)
     except BlockingExportError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 3

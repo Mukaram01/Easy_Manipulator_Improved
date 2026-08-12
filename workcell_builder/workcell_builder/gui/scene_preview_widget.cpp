@@ -8,6 +8,7 @@
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QFile>
+#include <QSaveFile>
 #include <QFileInfo>
 #include <QDir>
 #include <QIODevice>
@@ -2016,6 +2017,58 @@ void ScenePreviewWidget::start_embedded_web_prepare(const EmbeddedWebRequestIden
   embedded_web_prepare_process_ = new QProcess(this);
   embedded_web_prepare_process_->setProgram(QStringLiteral("python3"));
   QStringList args{"scripts/ensure_workcell_studio_web_scene_fresh.py", "--scene", selected_scene_dir, "--output", embedded_web_prepare_output_path_, "--stage-assets"};
+  // This request-local overlay lets Web3D see unsaved editable layout records.
+  // It is derived UI state, deliberately stored under build/ and never merged
+  // back into environment/layout YAML.
+  QJsonArray overlay_items;
+  for (const PreviewItem & item : preview_items_) {
+    if (item.source_layer != QStringLiteral("editable_layout") || !item.editable || item.locked) continue;
+    const QString mesh_source = item.mesh_path.trimmed().isEmpty() ? item.source_path.trimmed() : item.mesh_path.trimmed();
+    if (mesh_source.isEmpty() && !item.has_mesh_metadata) continue;
+    overlay_items.append(QJsonObject{
+      {QStringLiteral("id"), item.id}, {QStringLiteral("display_name"), item.display_name},
+      {QStringLiteral("asset_id"), item.category}, {QStringLiteral("type"), item.category},
+      {QStringLiteral("category"), item.category}, {QStringLiteral("role"), item.role},
+      {QStringLiteral("source_layer"), item.source_layer}, {QStringLiteral("editable"), item.editable},
+      {QStringLiteral("locked"), item.locked}, {QStringLiteral("selectable"), item.selectable},
+      {QStringLiteral("source_mesh_path"), mesh_source}, {QStringLiteral("mesh_type"), item.mesh_type},
+      {QStringLiteral("mesh_scale"), QJsonArray{item.mesh_scale_x, item.mesh_scale_y, item.mesh_scale_z}},
+      {QStringLiteral("world_pose"), QJsonObject{
+        {QStringLiteral("xyz"), QJsonArray{item.x, item.y, item.z}},
+        {QStringLiteral("rpy"), QJsonArray{item.roll, item.pitch, item.yaw}}}},
+      {QStringLiteral("render_owner"), QStringLiteral("editable_layout")},
+      {QStringLiteral("render_policy"), QStringLiteral("primary")}
+    });
+  }
+  if (!overlay_items.isEmpty()) {
+    const QString overlay_dir = QDir(repo_root).filePath(QStringLiteral("build/workcell_studio_web_scene/authoring_session_overlays"));
+    QDir().mkpath(overlay_dir);
+    const QString overlay_name = QStringLiteral("%1-r%2-g%3-%4.json")
+      .arg(scene_id).arg(identity.payload_revision).arg(identity.generation)
+      .arg(QString::fromLatin1(identity.payload_fingerprint.toHex()));
+    const QString overlay_path = QDir(overlay_dir).filePath(overlay_name);
+    QSaveFile overlay_file(overlay_path);
+    if (!overlay_file.open(QIODevice::WriteOnly)) {
+      show_embedded_web_preparation_failure(identity, QStringLiteral("could not write temporary authoring-session overlay: %1").arg(overlay_path));
+      return;
+    }
+    const QJsonObject overlay{
+      {QStringLiteral("schema_version"), QStringLiteral("workcell_studio.authoring_session_overlay.v1")},
+      {QStringLiteral("scene_id"), scene_id},
+      {QStringLiteral("request_identity"), QJsonObject{
+        {QStringLiteral("scene_id"), scene_id},
+        {QStringLiteral("payload_fingerprint"), QString::fromLatin1(identity.payload_fingerprint.toHex())},
+        {QStringLiteral("payload_revision"), static_cast<qint64>(identity.payload_revision)},
+        {QStringLiteral("generation"), static_cast<qint64>(identity.generation)}}},
+      {QStringLiteral("items"), overlay_items}
+    };
+    overlay_file.write(QJsonDocument(overlay).toJson(QJsonDocument::Compact));
+    if (!overlay_file.commit()) {
+      show_embedded_web_preparation_failure(identity, QStringLiteral("could not commit temporary authoring-session overlay: %1").arg(overlay_path));
+      return;
+    }
+    args << QStringLiteral("--authoring-session-overlay") << overlay_path;
+  }
   if (force) args << "--force";
   if (diagnostic_preview) args << "--allow-incomplete-preview";
   embedded_web_prepare_process_->setArguments(args);

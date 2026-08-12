@@ -42,6 +42,7 @@ def build_web_scene(
     stage_assets: bool = False,
     output_path: Optional[Path] = None,
     allow_incomplete_preview: bool = False,
+    authoring_session_overlay: Optional[Path] = None,
 ):
     _sync_impl_globals()
     payload = _ORIGINAL_BUILD_WEB_SCENE(
@@ -49,6 +50,7 @@ def build_web_scene(
         stage_assets=stage_assets,
         output_path=output_path,
         allow_incomplete_preview=allow_incomplete_preview,
+        authoring_session_overlay=authoring_session_overlay,
     )
     _portability.normalize_web_scene_payload(
         payload,
