@@ -355,6 +355,7 @@ private:
   void commit_armed_asset_placement(const QPointF & canvas_pos_px);
   bool configure_asset_placement_transform(const QString & category, const QString & display_name);
   bool validate_armed_asset_transform(QString * error_message = nullptr);
+  void clear_armed_asset_placement();
   void reset_armed_asset_transform_to_defaults();
   void update_arm_transform_validation_ui();
   void update_scene_builder_top_controls_overflow();

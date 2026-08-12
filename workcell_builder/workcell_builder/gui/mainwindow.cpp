@@ -6478,14 +6478,7 @@ void MainWindow::refresh_scene_builder_view_chips()
 
 void MainWindow::set_canvas_interaction_mode(CanvasInteractionMode mode)
 {
-  if (mode != CanvasInteractionMode::Place && place_asset_armed_) {
-    place_asset_armed_ = false;
-    armed_asset_id_.clear();
-    armed_asset_category_.clear();
-    armed_asset_display_name_.clear();
-    armed_asset_source_path_.clear();
-    if (scene_preview_widget_) scene_preview_widget_->cancel_embedded_asset_placement();
-  }
+  if (mode != CanvasInteractionMode::Place) clear_armed_asset_placement();
   canvas_mode_ = mode;
   QString n = "Select";
   if (mode == CanvasInteractionMode::Place) n = "Place";
@@ -8315,6 +8308,26 @@ double MainWindow::default_asset_pose_z(const QString & category, const QString 
   return lower.contains("camera") ? 1.2 : 0.0;
 }
 
+void MainWindow::clear_armed_asset_placement()
+{
+  place_asset_armed_ = false;
+  armed_asset_id_.clear();
+  armed_asset_category_.clear();
+  armed_asset_display_name_.clear();
+  armed_asset_source_path_.clear();
+  armed_asset_use_clicked_xy_ = true;
+  armed_asset_default_xy_px_ = QPointF(0.0, 0.0);
+  armed_asset_transform_valid_ = true;
+  armed_asset_transform_error_.clear();
+  armed_asset_x_m_ = 0.0;
+  armed_asset_y_m_ = 0.0;
+  armed_asset_z_m_ = 0.0;
+  armed_asset_roll_rad_ = 0.0;
+  armed_asset_pitch_rad_ = 0.0;
+  armed_asset_yaw_rad_ = 0.0;
+  if (scene_preview_widget_) scene_preview_widget_->cancel_embedded_asset_placement();
+}
+
 void MainWindow::reset_armed_asset_transform_to_defaults()
 {
   armed_asset_default_xy_px_ = compute_default_canvas_pose(armed_asset_category_, armed_asset_display_name_);
@@ -8470,7 +8483,8 @@ bool MainWindow::arm_place_asset_mode(const QString & requested_asset_id)
   armed_asset_category_ = match->category;
   armed_asset_display_name_ = match->display_name;
   armed_asset_source_path_ = match->source_path;
-  armed_asset_default_xy_px_ = compute_default_canvas_pose(match->category, match->display_name);
+  reset_armed_asset_transform_to_defaults();
+  armed_asset_use_clicked_xy_ = true;
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
   if (scene_preview_widget_ &&
       scene_preview_widget_->active_product_view_backend() == ScenePreviewWidget::ProductViewBackend::EmbeddedWeb3D) {
@@ -8608,10 +8622,6 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   const bool persist = place_mode_persistent_box_ && place_mode_persistent_box_->isChecked();
   place_asset_armed_ = persist;
   if (!persist) {
-    armed_asset_id_.clear();
-    armed_asset_category_.clear();
-    armed_asset_display_name_.clear();
-    armed_asset_source_path_.clear();
     set_canvas_interaction_mode(CanvasInteractionMode::Select);
   }
 }
@@ -12524,15 +12534,14 @@ void MainWindow::import_stl_to_asset_library()
     QMessageBox::warning(this, "Import STL", QString("Catalog write failed; copied file was rolled back: %1").arg(e.what()));
     return;
   }
+  // Catalog entries are about to be replaced. Invalidate every placement identity
+  // derived from the old catalog first so a delayed canvas/Web3D event cannot place it.
+  clear_armed_asset_placement();
+  set_canvas_interaction_mode(CanvasInteractionMode::Select);
   populate_asset_catalog();
 
   auto block_imported_asset_placement = [this, &asset_id]() {
-    place_asset_armed_ = false;
-    armed_asset_id_.clear();
-    armed_asset_category_.clear();
-    armed_asset_display_name_.clear();
-    armed_asset_source_path_.clear();
-    if (scene_preview_widget_) scene_preview_widget_->cancel_embedded_asset_placement();
+    clear_armed_asset_placement();
     set_canvas_interaction_mode(CanvasInteractionMode::Select);
     if (asset_catalog_tree_) asset_catalog_tree_->setCurrentItem(nullptr);
     validate_asset_catalog_selection();
