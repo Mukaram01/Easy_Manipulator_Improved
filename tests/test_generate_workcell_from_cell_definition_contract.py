@@ -312,6 +312,7 @@ def test_generated_mesh_runtime_contract_is_scene_and_resource_driven(
         assert "get_package_share_directory(package_name)" in launch
         assert '"layout",\n        "workcell_studio_layout.yaml"' in launch
         assert launch.index("canonical_layout_path,\n") < launch.index('"--frame-id"')
+        assert '"--owning-package",\n            package_name,' in launch
         assert f"            '{frame}'," in launch
         dependencies = _exec_dependencies(package_dir)
         assert dependencies.count("workcell_builder") == 1
@@ -330,6 +331,35 @@ def test_generated_mesh_runtime_contract_is_scene_and_resource_driven(
     assert "ur5_2f_test" not in outputs[cases[0][0]][0]
     generator_source = SCRIPT.read_text(encoding="utf-8")
     assert "sorting_bin_description" not in generator_source
+
+
+def test_generated_imported_mesh_uses_dynamic_owner_without_self_dependency(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source_example_scene"
+    cell_path = _write_minimal_scene(source)
+    _set_mesh_layout(source, None, planning_frame="world")
+    layout_path = source / "layout" / "workcell_studio_layout.yaml"
+    layout_path.write_text(
+        yaml.safe_dump({"items": [{
+            "id": "imported_fixture",
+            "geometry_type": "mesh",
+            "mesh": {"path": "assets/imported/fixture.stl"},
+        }]}, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    out_dir = tmp_path / "generated"
+    assert generate_package(cell_path, out_dir, "example_scene", force=True, dry_run=False) == 0
+    package_dir = out_dir / "example_scene"
+    launch = (package_dir / "launch" / "demo.launch.py").read_text(encoding="utf-8")
+    dependencies = _exec_dependencies(package_dir)
+
+    assert "package_name = 'example_scene'" in launch
+    assert '"--owning-package",\n            package_name,' in launch
+    assert "ur5_2f_test" not in launch
+    assert "example_scene" not in dependencies
+    assert dependencies.count("workcell_builder") == 1
 
 
 def test_generated_mesh_runtime_contract_handles_empty_and_invalid_layouts(

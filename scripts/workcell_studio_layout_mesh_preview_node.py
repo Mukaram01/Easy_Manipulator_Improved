@@ -53,6 +53,7 @@ def parse_runtime_arguments(
     parser.add_argument("layout", help="canonical workcell_studio_layout.yaml")
     parser.add_argument("--frame-id", default="world")
     parser.add_argument("--topic", default="workcell_studio/layout_mesh_markers")
+    parser.add_argument("--owning-package")
     return parser.parse_args(application_argv[1:]), ros_argv
 
 
@@ -119,14 +120,25 @@ def compose_mesh_pose(
     return position, _quaternion_multiply(owner_q, local_q)
 
 
-def resolve_mesh_resource(value: Any) -> str:
+def _validate_owning_package(owning_package: str | None) -> str | None:
+    if owning_package is None:
+        return None
+    if not isinstance(owning_package, str) or not _PACKAGE_NAME.fullmatch(owning_package):
+        raise LayoutMeshError(f"invalid owning package name: {owning_package!r}")
+    return owning_package
+
+
+def resolve_mesh_resource(value: Any, owning_package: str | None = None) -> str:
     """Resolve a safe canonical repository mesh reference to a package URI."""
+    owning_package = _validate_owning_package(owning_package)
     if not isinstance(value, str) or not value.strip():
         raise LayoutMeshError("mesh.path or mesh.uri must be a non-empty string")
     resource = value.strip().replace("\\", "/")
     parsed = urlsplit(resource)
+    if parsed.query or parsed.fragment:
+        raise LayoutMeshError(f"mesh URI query strings and fragments are not allowed: {value!r}")
     if parsed.scheme:
-        if parsed.scheme != "package" or parsed.query or parsed.fragment:
+        if parsed.scheme != "package":
             raise LayoutMeshError(f"unsafe or unsupported mesh URI: {value!r}")
         package = parsed.netloc
         asset_path = parsed.path.lstrip("/")
@@ -145,25 +157,30 @@ def resolve_mesh_resource(value: Any) -> str:
         remainder = parts[3:]
         if _PACKAGE_NAME.fullmatch(package) and remainder:
             return f"package://{package}/{'/'.join(remainder)}"
+    if owning_package is not None and len(parts) > 2 and parts[:2] == ("assets", "imported"):
+        return f"package://{owning_package}/assets/imported/{'/'.join(parts[2:])}"
     imported_prefix = ("workcell_builder", "workcell_builder", "assets", "imported")
     if len(parts) > len(imported_prefix) and parts[: len(imported_prefix)] == imported_prefix:
         return f"package://workcell_builder/assets/imported/{'/'.join(parts[len(imported_prefix):])}"
     raise LayoutMeshError(f"mesh path cannot be mapped to a ROS package URI: {value!r}")
 
 
-def resolve_mesh_package_name(value: Any) -> str:
+def resolve_mesh_package_name(value: Any, owning_package: str | None = None) -> str:
     """Return the validated ROS package owning a canonical mesh resource.
 
     This deliberately builds on :func:`resolve_mesh_resource` so offline
     generators and the runtime publisher cannot drift into interpreting mesh
     paths differently.
     """
-    resource = resolve_mesh_resource(value)
+    resource = resolve_mesh_resource(value, owning_package)
     return urlsplit(resource).netloc
 
 
-def parse_layout_meshes(layout: Mapping[str, Any]) -> list[MeshMarkerSpec]:
+def parse_layout_meshes(
+    layout: Mapping[str, Any], owning_package: str | None = None,
+) -> list[MeshMarkerSpec]:
     """Normalize mesh-backed physical layout items into ROS-independent specs."""
+    owning_package = _validate_owning_package(owning_package)
     if not isinstance(layout, Mapping):
         raise LayoutMeshError("layout root must be a mapping")
     items = layout.get("items", [])
@@ -185,7 +202,7 @@ def parse_layout_meshes(layout: Mapping[str, Any]) -> list[MeshMarkerSpec]:
             raise LayoutMeshError(f"duplicate mesh item id: {item_id!r}")
         seen_ids.add(item_id)
         raw_resource = mesh.get("path") if mesh.get("path") is not None else mesh.get("uri")
-        resource = resolve_mesh_resource(raw_resource)
+        resource = resolve_mesh_resource(raw_resource, owning_package)
         pose = item.get("pose", {})
         if not isinstance(pose, Mapping):
             raise LayoutMeshError(f"item {item_id!r} pose must be a mapping")
@@ -204,13 +221,16 @@ def parse_layout_meshes(layout: Mapping[str, Any]) -> list[MeshMarkerSpec]:
             for item_id, resource, position, orientation, scale in pending]
 
 
-def load_layout_meshes(layout_path: str | Path) -> list[MeshMarkerSpec]:
+def load_layout_meshes(
+    layout_path: str | Path, owning_package: str | None = None,
+) -> list[MeshMarkerSpec]:
+    owning_package = _validate_owning_package(owning_package)
     path = Path(layout_path)
     try:
         layout = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as error:
         raise LayoutMeshError(f"could not read canonical layout {path}: {error}") from error
-    return parse_layout_meshes(layout)
+    return parse_layout_meshes(layout, owning_package)
 
 
 def build_marker_array(specs: Sequence[MeshMarkerSpec], frame_id: str):
@@ -236,13 +256,16 @@ def build_marker_array(specs: Sequence[MeshMarkerSpec], frame_id: str):
     return result
 
 
-def run_ros_node(layout_path: str, frame_id: str, topic: str, ros_args: Sequence[str]) -> None:
+def run_ros_node(
+    layout_path: str, frame_id: str, topic: str, ros_args: Sequence[str],
+    owning_package: str | None = None,
+) -> None:
     import rclpy
     from rclpy.node import Node
     from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
     from visualization_msgs.msg import MarkerArray
 
-    specs = load_layout_meshes(layout_path)
+    specs = load_layout_meshes(layout_path, owning_package)
     # Pass the untouched launch argv to rclpy so remaps such as ``__node`` are
     # applied rather than merely tolerated by application parsing.
     rclpy.init(args=list(ros_args))
@@ -263,7 +286,7 @@ def main() -> None:
     from rclpy.utilities import remove_ros_args
 
     args, ros_args = parse_runtime_arguments(sys.argv, remove_ros_args)
-    run_ros_node(args.layout, args.frame_id, args.topic, ros_args)
+    run_ros_node(args.layout, args.frame_id, args.topic, ros_args, args.owning_package)
 
 
 if __name__ == "__main__":
