@@ -43,6 +43,10 @@
 
 namespace fs = boost::filesystem;
 
+namespace workcell_builder {
+struct WorkcellStudioCanvasModel;
+}
+
 QT_BEGIN_NAMESPACE
 namespace Ui {class MainWindow;}
 QT_END_NAMESPACE
