@@ -502,6 +502,26 @@ enum SceneTreeRoles {
 enum AssetCatalogRoles { CatalogRoleIndex = Qt::UserRole, CatalogRolePlaceable = Qt::UserRole + 10, CatalogRoleSourcePath = Qt::UserRole + 11, CatalogRoleAssetId = Qt::UserRole + 12 };
 static constexpr const char * kWorkcellStudioAssetMime = "application/x-workcell-studio-asset";
 
+QTreeWidgetItem * find_asset_catalog_item_by_id(QTreeWidget * tree, const QString & requested_asset_id)
+{
+  const QString asset_id = requested_asset_id.trimmed();
+  if (!tree || asset_id.isEmpty()) return nullptr;
+
+  const auto find_in_subtree = [&asset_id](QTreeWidgetItem * root, const auto & self) -> QTreeWidgetItem * {
+    if (!root) return nullptr;
+    if (root->data(0, CatalogRoleAssetId).toString().trimmed() == asset_id) return root;
+    for (int child_index = 0; child_index < root->childCount(); ++child_index) {
+      if (auto * match = self(root->child(child_index), self)) return match;
+    }
+    return nullptr;
+  };
+
+  for (int index = 0; index < tree->topLevelItemCount(); ++index) {
+    if (auto * match = find_in_subtree(tree->topLevelItem(index), find_in_subtree)) return match;
+  }
+  return nullptr;
+}
+
 
 
 QString canonical_skip_reason_key(const QString & reason)
@@ -12520,17 +12540,45 @@ void MainWindow::import_stl_to_asset_library()
     return;
   }
   populate_asset_catalog();
-  for (int i = 0; asset_catalog_tree_ && i < asset_catalog_tree_->topLevelItemCount(); ++i) {
-    auto * parent = asset_catalog_tree_->topLevelItem(i);
-    for (int j = 0; parent && j < parent->childCount(); ++j) {
-      auto * child = parent->child(j);
-      if (child->data(0, CatalogRoleAssetId).toString() == asset_id) {
-        asset_catalog_tree_->setCurrentItem(child);
-        break;
-      }
-    }
+
+  auto block_imported_asset_placement = [this, &asset_id]() {
+    place_asset_armed_ = false;
+    armed_asset_id_.clear();
+    armed_asset_category_.clear();
+    armed_asset_display_name_.clear();
+    armed_asset_source_path_.clear();
+    if (scene_preview_widget_) scene_preview_widget_->cancel_embedded_asset_placement();
+    set_canvas_interaction_mode(CanvasInteractionMode::Select);
+    if (asset_catalog_tree_) asset_catalog_tree_->setCurrentItem(nullptr);
+    validate_asset_catalog_selection();
+    append_studio_log(QString("Imported asset placement blocked: id=%1 not found after Asset Library refresh").arg(asset_id));
+  };
+
+  auto * imported_item = find_asset_catalog_item_by_id(asset_catalog_tree_, asset_id);
+  if (!imported_item) {
+    block_imported_asset_placement();
+    return;
   }
-  append_studio_log(QString("Import STL: registered asset_id=%1 at %2; press Add to Scene to place it.").arg(asset_id, rel));
+
+  append_studio_log(QString("Imported asset available in catalog: id=%1").arg(asset_id));
+  {
+    const QSignalBlocker filter_blocker(asset_filter_combo_);
+    const QSignalBlocker search_blocker(asset_library_search_);
+    if (asset_filter_combo_) asset_filter_combo_->setCurrentIndex(0);
+    if (asset_library_search_) asset_library_search_->clear();
+  }
+  on_asset_filter_changed(asset_filter_combo_ ? asset_filter_combo_->currentIndex() : 0);
+  if (imported_item->parent()) imported_item->parent()->setExpanded(true);
+  asset_catalog_tree_->setCurrentItem(imported_item);
+  asset_catalog_tree_->scrollToItem(imported_item, QAbstractItemView::PositionAtCenter);
+  if (asset_catalog_tree_->currentItem() != imported_item ||
+    imported_item->data(0, CatalogRoleAssetId).toString().trimmed() != asset_id)
+  {
+    block_imported_asset_placement();
+    return;
+  }
+  validate_asset_catalog_selection();
+  append_studio_log(QString("Imported asset selected: id=%1; press Add to Scene to place it.").arg(asset_id));
 }
 
 void MainWindow::open_add_asset_dialog()
