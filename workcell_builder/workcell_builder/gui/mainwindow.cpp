@@ -3392,12 +3392,12 @@ void MainWindow::setup_studio_shell()
   connect(asset_library_search_, &QLineEdit::textChanged, this, [this](const QString &){ on_asset_filter_changed(asset_filter_combo_ ? asset_filter_combo_->currentIndex() : 0); });
   connect_action(open_asset_folder_action, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).isDir() ? p : QFileInfo(p).absolutePath())); });
   connect_action(copy_asset_path_action, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QApplication::clipboard()->setText(p); append_studio_log("Copy Asset Path: " + p); });
-  connect_button(add_to_canvas_button_, [this](){ if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) { QMessageBox::information(this, "Asset Catalog", "Select an asset to add to canvas."); return; } auto *it = asset_catalog_tree_->currentItem(); const int idx = it->data(0, CatalogRoleIndex).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) { QMessageBox::information(this, "Asset Catalog", e.disabled_reason); return; } add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path); });
+  connect_button(add_to_canvas_button_, [this](){ if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) { QMessageBox::information(this, "Asset Catalog", "Select an asset to add to canvas."); return; } auto *it = asset_catalog_tree_->currentItem(); const QString asset_id = it->data(0, CatalogRoleAssetId).toString().trimmed(); const int idx = it->data(0, CatalogRoleIndex).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) { QMessageBox::information(this, "Asset Catalog", e.disabled_reason); return; } const QPointF pose = compute_default_canvas_pose(e.category, e.display_name); place_catalog_asset_at_world_position(asset_id, pose.x() / 100.0, pose.y() / 100.0, default_asset_pose_z(e.category, e.display_name), false); });
   connect_button(add_asset_button_, &MainWindow::open_add_asset_dialog);
   connect_if(scene_workflow_recommendation_button_, this, &QPushButton::clicked, [this]() {
     trigger_recommended_workflow_action(resolve_recommended_workflow_action().handler);
   });
-  connect(asset_catalog_tree_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *it, int){ if (!it) return; const int idx = it->data(0, CatalogRoleIndex).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) return; add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path); });
+  connect(asset_catalog_tree_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *it, int){ if (!it) return; const QString asset_id = it->data(0, CatalogRoleAssetId).toString().trimmed(); const int idx = it->data(0, CatalogRoleIndex).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) return; const QPointF pose = compute_default_canvas_pose(e.category, e.display_name); place_catalog_asset_at_world_position(asset_id, pose.x() / 100.0, pose.y() / 100.0, default_asset_pose_z(e.category, e.display_name), false); });
   connect(asset_catalog_tree_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *, QTreeWidgetItem *){ validate_asset_catalog_selection(); update_asset_library_preview(); });
   connect_action(import_asset_action, [this](){ import_stl_to_asset_library(); });
   connect_action(add_existing_stl_action, [this](){ QMessageBox::information(this, "Asset Catalog", "Add Existing STL to Canvas keeps existing behavior for scene assets."); });
@@ -6461,6 +6461,7 @@ void MainWindow::set_canvas_interaction_mode(CanvasInteractionMode mode)
 {
   if (mode != CanvasInteractionMode::Place && place_asset_armed_) {
     place_asset_armed_ = false;
+    armed_asset_id_.clear();
     armed_asset_category_.clear();
     armed_asset_display_name_.clear();
     armed_asset_source_path_.clear();
@@ -8257,7 +8258,11 @@ void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, cons
   armed_asset_source_path_ = source_path;
   reset_armed_asset_transform_to_defaults();
   armed_asset_use_clicked_xy_ = true;
-  arm_place_asset_mode(category, display_name, source_path);
+  // Compatibility-only placeholder path. Catalog-backed placement always arms by asset_id.
+  place_asset_armed_ = true;
+  armed_asset_id_.clear();
+  armed_asset_default_xy_px_ = compute_default_canvas_pose(category, display_name);
+  set_canvas_interaction_mode(CanvasInteractionMode::Place);
 }
 
 QPointF MainWindow::compute_default_canvas_pose(const QString & category, const QString & display_name) const
@@ -8342,9 +8347,7 @@ bool MainWindow::place_catalog_asset_at_world_position(
     return false;
   }
 
-  armed_asset_category_ = match->category;
-  armed_asset_display_name_ = match->display_name;
-  armed_asset_source_path_ = match->source_path;
+  if (!arm_place_asset_mode(asset_id)) return false;
   reset_armed_asset_transform_to_defaults();
   armed_asset_use_clicked_xy_ = true;
   armed_asset_x_m_ = world_x_m;
@@ -8359,7 +8362,6 @@ bool MainWindow::place_catalog_asset_at_world_position(
     armed_asset_y_m_ = world_y_m;
     armed_asset_z_m_ = world_z_m;
   }
-  arm_place_asset_mode(match->category, match->display_name, match->source_path);
   const int item_count_before = digital_twin_scene_ ? digital_twin_scene_->items().size() : 0;
   commit_armed_asset_placement(QPointF(world_x_m * 100.0, world_y_m * 100.0));
   const bool committed = digital_twin_scene_ && digital_twin_scene_->items().size() == item_count_before + 1;
@@ -8433,26 +8435,35 @@ bool MainWindow::configure_asset_placement_transform(const QString & category, c
   return dialog.exec() == QDialog::Accepted;
 }
 
-void MainWindow::arm_place_asset_mode(const QString & category, const QString & display_name, const QString & source_path)
+bool MainWindow::arm_place_asset_mode(const QString & requested_asset_id)
 {
+  const QString asset_id = requested_asset_id.trimmed();
+  const auto match = std::find_if(asset_catalog_entries_.cbegin(), asset_catalog_entries_.cend(),
+    [&asset_id](const AssetCatalogEntry & entry) { return entry.asset_id == asset_id; });
+  if (asset_id.isEmpty() || match == asset_catalog_entries_.cend()) {
+    append_studio_log(QStringLiteral("Cannot arm asset placement: catalog asset_id '%1' is unavailable.").arg(asset_id));
+    return false;
+  }
   if (!digital_twin_scene_) { rebuild_digital_twin_canvas(); }
-  if (!digital_twin_scene_) return;
+  if (!digital_twin_scene_) return false;
   place_asset_armed_ = true;
-  armed_asset_category_ = category;
-  armed_asset_display_name_ = display_name;
-  armed_asset_source_path_ = source_path;
-  armed_asset_default_xy_px_ = compute_default_canvas_pose(category, display_name);
+  armed_asset_id_ = match->asset_id;
+  armed_asset_category_ = match->category;
+  armed_asset_display_name_ = match->display_name;
+  armed_asset_source_path_ = match->source_path;
+  armed_asset_default_xy_px_ = compute_default_canvas_pose(match->category, match->display_name);
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
   if (scene_preview_widget_ &&
       scene_preview_widget_->active_product_view_backend() == ScenePreviewWidget::ProductViewBackend::EmbeddedWeb3D) {
     scene_preview_widget_->arm_embedded_asset_placement(
       place_mode_persistent_box_ && place_mode_persistent_box_->isChecked());
   }
-  append_studio_log(QString("Place Asset Mode armed: %1 (%2). Click canvas to commit. Use clicked XY: %3 | xyzrpy=[%4, %5, %6, %7, %8, %9].")
-    .arg(display_name, category)
+  append_studio_log(QString("Place Asset Mode armed: %1 (%2) asset_id=%3. Click canvas to commit. Use clicked XY: %4 | xyzrpy=[%5, %6, %7, %8, %9, %10].")
+    .arg(match->display_name, match->category, armed_asset_id_)
     .arg(armed_asset_use_clicked_xy_ ? "on" : "off")
     .arg(armed_asset_x_m_, 0, 'f', 3).arg(armed_asset_y_m_, 0, 'f', 3).arg(armed_asset_z_m_, 0, 'f', 3)
     .arg(armed_asset_roll_rad_, 0, 'f', 3).arg(armed_asset_pitch_rad_, 0, 'f', 3).arg(armed_asset_yaw_rad_, 0, 'f', 3));
+  return true;
 }
 
 void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
@@ -8461,6 +8472,7 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   const QString category = armed_asset_category_;
   const QString display_name = armed_asset_display_name_;
   const QString source_path = armed_asset_source_path_;
+  const QString asset_id = armed_asset_id_;
   std::set<std::string> reserved_ids;
   for (auto * gi : digital_twin_scene_->items()) {
     const QString existing_id = gi->data(RoleId).toString().trimmed();
@@ -8565,8 +8577,8 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   redo_stack_.clear();
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
   mark_layout_dirty("Place Asset Mode: Add to 3D Canvas");
-  append_studio_log(QString("Add to Canvas success: %1 (%2) id=%3 from %4 | xyzrpy=[%5, %6, %7, %8, %9, %10] use_clicked_xy=%11")
-    .arg(display_name, category, new_id, source_path)
+  append_studio_log(QString("Add to Canvas success: %1 (%2) asset_id=%3 layout_id=%4 from %5 | xyzrpy=[%6, %7, %8, %9, %10, %11] use_clicked_xy=%12")
+    .arg(display_name, category, asset_id, new_id, source_path)
     .arg(item->pos().x() / 100.0, 0, 'f', 3).arg(item->pos().y() / 100.0, 0, 'f', 3).arg(armed_asset_z_m_, 0, 'f', 3)
     .arg(armed_asset_roll_rad_, 0, 'f', 3).arg(armed_asset_pitch_rad_, 0, 'f', 3).arg(armed_asset_yaw_rad_, 0, 'f', 3)
     .arg(armed_asset_use_clicked_xy_ ? "true" : "false"));
@@ -8577,6 +8589,7 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   const bool persist = place_mode_persistent_box_ && place_mode_persistent_box_->isChecked();
   place_asset_armed_ = persist;
   if (!persist) {
+    armed_asset_id_.clear();
     armed_asset_category_.clear();
     armed_asset_display_name_.clear();
     armed_asset_source_path_.clear();
@@ -12324,6 +12337,12 @@ QString safe_import_stl_stem(const QString & name)
   return stem;
 }
 
+QString scene_imported_asset_id(const fs::path & asset_path)
+{
+  return QStringLiteral("imported_%1").arg(
+    QString::fromStdString(asset_path.stem().string()));
+}
+
 bool same_file_bytes(const QString & a, const QString & b)
 {
   QFile fa(a), fb(b);
@@ -12366,7 +12385,7 @@ void MainWindow::populate_asset_catalog()
     while (it.hasNext()) {
       const QString file = it.next();
       ::AssetCatalogEntry e;
-      e.id = ("imported_" + QFileInfo(file).completeBaseName()).toStdString();
+      e.id = scene_imported_asset_id(fs::path(file.toStdString())).toStdString();
       e.display_name = QFileInfo(file).completeBaseName().toStdString();
       e.category = "Imported";
       e.path = file.toStdString();
@@ -12471,6 +12490,7 @@ void MainWindow::import_stl_to_asset_library()
   if (QMessageBox::question(this, "Confirm STL Import", summary) != QMessageBox::Yes) return;
 
   const bool preexisting = fs::exists(dest, ec);
+  const QString asset_id = scene_imported_asset_id(dest);
   if (!preexisting) {
     const fs::path tmp = dest.string() + ".tmp";
     fs::copy_file(source_canon, tmp, fs::copy_option::fail_if_exists, ec);
@@ -12484,8 +12504,8 @@ void MainWindow::import_stl_to_asset_library()
     if (fs::exists(manifest)) root = YAML::LoadFile(manifest.string());
     if (!root["assets"] || !root["assets"].IsSequence()) root["assets"] = YAML::Node(YAML::NodeType::Sequence);
     YAML::Node asset;
-    asset["id"] = ("imported_" + stem).toStdString();
-    asset["display_name"] = stem.toStdString();
+    asset["id"] = asset_id.toStdString();
+    asset["display_name"] = QString::fromStdString(dest.stem().string()).toStdString();
     asset["path"] = fs::relative(dest, asset_root, ec).string();
     asset["category"] = "Imported";
     asset["visual_type"] = "stl";
@@ -12504,13 +12524,13 @@ void MainWindow::import_stl_to_asset_library()
     auto * parent = asset_catalog_tree_->topLevelItem(i);
     for (int j = 0; parent && j < parent->childCount(); ++j) {
       auto * child = parent->child(j);
-      if (child->data(0, CatalogRoleSourcePath).toString() == QString::fromStdString(dest.string())) {
+      if (child->data(0, CatalogRoleAssetId).toString() == asset_id) {
         asset_catalog_tree_->setCurrentItem(child);
         break;
       }
     }
   }
-  append_studio_log(QString("Import STL: registered %1 at %2; press Add to Scene to place it.").arg(stem, rel));
+  append_studio_log(QString("Import STL: registered asset_id=%1 at %2; press Add to Scene to place it.").arg(asset_id, rel));
 }
 
 void MainWindow::open_add_asset_dialog()
@@ -12548,6 +12568,7 @@ void MainWindow::open_add_asset_dialog()
     for (int col = 0; col < cols.size(); ++col) {
       auto * cell = new QTableWidgetItem(cols[col]);
       cell->setData(CatalogRoleIndex, row);
+      cell->setData(CatalogRoleAssetId, e.asset_id);
       add_asset_dialog_table_->setItem(row, col, cell);
     }
   }
@@ -12582,11 +12603,15 @@ void MainWindow::place_selected_asset_from_dialog()
   if (!add_asset_dialog_table_) return;
   auto * current_item = add_asset_dialog_table_->currentItem();
   if (!current_item) return;
+  const QString asset_id = current_item->data(CatalogRoleAssetId).toString().trimmed();
   const int entry_index = current_item->data(CatalogRoleIndex).toInt();
   if (entry_index < 0 || entry_index >= asset_catalog_entries_.size()) return;
   const auto & e = asset_catalog_entries_[entry_index];
   if (!e.disabled_reason.trimmed().isEmpty()) return;
-  add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path);
+  const QPointF pose = compute_default_canvas_pose(e.category, e.display_name);
+  place_catalog_asset_at_world_position(
+    asset_id, pose.x() / 100.0, pose.y() / 100.0,
+    default_asset_pose_z(e.category, e.display_name), false);
 }
 
 void MainWindow::refresh_new_cell_checklist()

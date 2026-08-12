@@ -351,7 +351,7 @@ private:
     const QString & asset_id, double world_x_m, double world_y_m, double world_z_m,
     bool configure_transform);
   QPointF compute_default_canvas_pose(const QString & category, const QString & display_name) const;
-  void arm_place_asset_mode(const QString & category, const QString & display_name, const QString & source_path);
+  bool arm_place_asset_mode(const QString & asset_id);
   void commit_armed_asset_placement(const QPointF & canvas_pos_px);
   bool configure_asset_placement_transform(const QString & category, const QString & display_name);
   bool validate_armed_asset_transform(QString * error_message = nullptr);
@@ -639,6 +639,7 @@ private:
   QGraphicsRectItem * ghost_preview_item_{ nullptr };
   CanvasInteractionMode canvas_mode_{ CanvasInteractionMode::Select };
   bool place_asset_armed_{ false };
+  QString armed_asset_id_;
   QString armed_asset_category_;
   QString armed_asset_display_name_;
   QString armed_asset_source_path_;
