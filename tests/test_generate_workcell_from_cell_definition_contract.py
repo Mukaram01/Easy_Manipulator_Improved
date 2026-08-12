@@ -344,22 +344,50 @@ def test_generated_imported_mesh_uses_dynamic_owner_without_self_dependency(
         yaml.safe_dump({"items": [{
             "id": "imported_fixture",
             "geometry_type": "mesh",
-            "mesh": {"path": "assets/imported/fixture.stl"},
+            "mesh": {"path": "assets/imported/custom_fixture_mesh.dae"},
         }]}, sort_keys=False),
         encoding="utf-8",
     )
+    imported_asset = source / "assets" / "imported" / "custom_fixture_mesh.dae"
+    imported_asset.parent.mkdir(parents=True)
+    imported_asset.write_text("authoritative scene-local mesh sentinel\n", encoding="utf-8")
 
     out_dir = tmp_path / "generated"
-    assert generate_package(cell_path, out_dir, "example_scene", force=True, dry_run=False) == 0
-    package_dir = out_dir / "example_scene"
+    package_name = "arbitrary_imported_asset_package"
+    assert generate_package(cell_path, out_dir, package_name, force=True, dry_run=False) == 0
+    package_dir = out_dir / package_name
     launch = (package_dir / "launch" / "demo.launch.py").read_text(encoding="utf-8")
+    cmake = (package_dir / "CMakeLists.txt").read_text(encoding="utf-8")
     dependencies = _exec_dependencies(package_dir)
 
-    assert "package_name = 'example_scene'" in launch
+    assert f"package_name = '{package_name}'" in launch
     assert '"--owning-package",\n            package_name,' in launch
     assert "ur5_2f_test" not in launch
-    assert "example_scene" not in dependencies
+    assert package_name not in dependencies
     assert dependencies.count("workcell_builder") == 1
+    assert (package_dir / "assets" / "imported" / imported_asset.name).read_text(
+        encoding="utf-8"
+    ) == imported_asset.read_text(encoding="utf-8")
+    assert "install_scene_directory_if_present(assets)" in cmake
+    assert "DESTINATION share/${PROJECT_NAME}" in cmake
+    assert package_name not in cmake.replace(f"project({package_name})", "")
+    assert "ur5_2f_test" not in cmake
+    assert imported_asset.name not in cmake
+    assert ".stl" not in cmake.lower()
+
+
+def test_generated_package_assets_install_is_optional(tmp_path: Path) -> None:
+    source = tmp_path / "source_without_assets"
+    cell_path = _write_minimal_scene(source)
+    out_dir = tmp_path / "generated"
+
+    assert generate_package(cell_path, out_dir, "asset_free_package", force=True, dry_run=False) == 0
+
+    package_dir = out_dir / "asset_free_package"
+    cmake = (package_dir / "CMakeLists.txt").read_text(encoding="utf-8")
+    assert not (package_dir / "assets").exists()
+    assert 'if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${directory_name}")' in cmake
+    assert "install_scene_directory_if_present(assets)" in cmake
 
 
 def test_generated_mesh_runtime_contract_handles_empty_and_invalid_layouts(

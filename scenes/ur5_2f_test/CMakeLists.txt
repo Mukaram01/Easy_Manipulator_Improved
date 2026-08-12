@@ -32,6 +32,7 @@ install(DIRECTORY urdf
 install_scene_directory_if_present(config)
 install_scene_directory_if_present(generated)
 install_scene_directory_if_present(layout)
+install_scene_directory_if_present(assets)
 
 install(FILES
   cell_definition.yaml
