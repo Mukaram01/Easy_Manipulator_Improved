@@ -364,9 +364,18 @@ def _build_perception_adapter_config(cell_def: dict[str, Any], task_recipe: dict
 def _render_cmakelists(package_name: str) -> str:
     template_path = TEMPLATE_DIR / "CMakeLists_example.txt"
     contract_installs = """
-install(DIRECTORY config generated layout launch urdf
-  DESTINATION share/${PROJECT_NAME}
-)
+function(install_scene_directory_if_present directory_name)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${directory_name}")
+    install(DIRECTORY ${directory_name}
+      DESTINATION share/${PROJECT_NAME}
+    )
+  endif()
+endfunction()
+
+install_scene_directory_if_present(config)
+install_scene_directory_if_present(generated)
+install_scene_directory_if_present(layout)
+install_scene_directory_if_present(assets)
 install(FILES environment.yaml cell_definition.yaml scene_manifest.yaml
   DESTINATION share/${PROJECT_NAME}
 )
@@ -380,7 +389,16 @@ install(FILES environment.yaml cell_definition.yaml scene_manifest.yaml
     return f"""cmake_minimum_required(VERSION 3.5)
 project({package_name})
 find_package(ament_cmake REQUIRED)
-install(DIRECTORY launch config layout urdf generated DESTINATION share/${{PROJECT_NAME}})
+function(install_scene_directory_if_present directory_name)
+  if(EXISTS "${{CMAKE_CURRENT_SOURCE_DIR}}/${{directory_name}}")
+    install(DIRECTORY ${{directory_name}} DESTINATION share/${{PROJECT_NAME}})
+  endif()
+endfunction()
+install(DIRECTORY launch urdf DESTINATION share/${{PROJECT_NAME}})
+install_scene_directory_if_present(config)
+install_scene_directory_if_present(generated)
+install_scene_directory_if_present(layout)
+install_scene_directory_if_present(assets)
 install(FILES environment.yaml cell_definition.yaml scene_manifest.yaml DESTINATION share/${{PROJECT_NAME}})
 ament_package()
 """
@@ -1236,6 +1254,7 @@ def _snapshot_scene_package_inputs(
         "canonical_layout_data": None,
         "canonical_layout_text": None,
         "existing_scene_manifest": None,
+        "source_assets_dir": None,
     }
 
     environment_path = scene_dir / "environment.yaml"
@@ -1274,6 +1293,10 @@ def _snapshot_scene_package_inputs(
             snapshot["existing_scene_manifest"] = _safe_load_yaml_file(manifest_path) or {}
         except Exception as exc:
             warnings.append(f"Existing scene_manifest.yaml metadata was not reusable: {exc}")
+
+    assets_dir = scene_dir / "assets"
+    if assets_dir.is_dir():
+        snapshot["source_assets_dir"] = assets_dir
 
     if package_dir == scene_dir:
         warnings.append("Output package directory matches source scene directory; source inputs were snapshotted before overwrite.")
@@ -1664,6 +1687,10 @@ def generate_package(
     (package_dir / "layout").mkdir(parents=True, exist_ok=True)
     (package_dir / "urdf").mkdir(parents=True, exist_ok=True)
     (package_dir / "generated").mkdir(parents=True, exist_ok=True)
+
+    source_assets_dir = source_snapshot.get("source_assets_dir")
+    if isinstance(source_assets_dir, Path):
+        shutil.copytree(source_assets_dir, package_dir / "assets", symlinks=True)
 
     if source_environment_layout_snapshot is not None:
         _write_snapshot(source_environment_layout_snapshot, package_dir / "environment_layout.yaml")
