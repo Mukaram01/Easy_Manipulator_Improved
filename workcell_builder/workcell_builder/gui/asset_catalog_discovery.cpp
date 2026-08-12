@@ -53,9 +53,10 @@ void add_entry(
 
 void parse_manifest_file(
   const fs::path & manifest,
-  const std::string & category,
+  const std::string & default_category,
   std::vector<DiscoveredAssetCatalogEntry> & out,
-  std::set<std::string> & dedupe)
+  std::set<std::string> & dedupe,
+  bool require_declared_id = false)
 {
   YAML::Node root;
   try { root = YAML::LoadFile(manifest.string()); } catch (const std::exception & e) {
@@ -69,13 +70,15 @@ void parse_manifest_file(
   for (const auto & asset : assets) {
     if (!asset.IsMap()) continue;
     const std::string id = workcell_builder::yaml_map_value_or_empty(asset, "id");
+    if (require_declared_id && id.empty()) continue;
     const std::string name = workcell_builder::yaml_map_value_or_empty(asset, "display_name");
     const std::string rel_path = workcell_builder::yaml_map_value_or_empty(asset, "path");
+    const std::string declared_category = workcell_builder::yaml_map_value_or_empty(asset, "category");
     const fs::path resolved_path = rel_path.empty() ? manifest.parent_path() : (manifest.parent_path() / rel_path);
     DiscoveredAssetCatalogEntry entry;
     entry.asset_id = id.empty() ? resolved_path.filename().string() : id;
     entry.display_name = name.empty() ? entry.asset_id : name;
-    entry.category = category;
+    entry.category = declared_category.empty() ? default_category : declared_category;
     boost::system::error_code source_ec;
     const fs::path canonical_path = fs::exists(resolved_path, source_ec) ? fs::canonical(resolved_path, source_ec) : resolved_path;
     entry.source_path = canonical_path.string();
@@ -84,6 +87,10 @@ void parse_manifest_file(
     const bool ready = fs::exists(resolved_path) && (fs::is_regular_file(resolved_path) || has_supported_geometry(resolved_path));
     entry.availability = ready ? "ready" : "incomplete";
     entry.reason = ready ? std::string() : "manifest path missing or lacks supported geometry";
+    const YAML::Node scale = workcell_builder::yaml_map_key(asset, "scale");
+    if (scale && scale.IsScalar()) {
+      try { entry.scale = scale.as<double>(); } catch (const YAML::Exception &) {}
+    }
     add_entry(out, dedupe, entry);
   }
 }
@@ -160,7 +167,8 @@ void add_template_asset_refs(const fs::path & repo_root, std::vector<DiscoveredA
 
 std::vector<DiscoveredAssetCatalogEntry> discover_asset_catalog_entries(
   const fs::path & repo_root,
-  const fs::path & workspace_root)
+  const fs::path & workspace_root,
+  const fs::path & scene_catalog_root)
 {
   std::vector<DiscoveredAssetCatalogEntry> out;
   std::set<std::string> dedupe;
@@ -173,6 +181,16 @@ std::vector<DiscoveredAssetCatalogEntry> discover_asset_catalog_entries(
   discover_from_root(workspace_assets / "environment_objects", out, dedupe);
   discover_from_root(workspace_assets / "robots", out, dedupe);
   discover_from_root(workspace_assets / "end_effectors", out, dedupe);
+
+  // Scene imports are authored by their manifest. Do not infer identities from
+  // filenames here: the declared ID is the stable catalog/placement identity.
+  if (!scene_catalog_root.empty()) {
+    const fs::path manifest = scene_catalog_root / "asset_manifest.yaml";
+    boost::system::error_code ec;
+    if (fs::exists(manifest, ec) && !ec) {
+      parse_manifest_file(manifest, "Imported", out, dedupe, true);
+    }
+  }
 
   add_template_asset_refs(repo_root, out, dedupe);
   return out;
