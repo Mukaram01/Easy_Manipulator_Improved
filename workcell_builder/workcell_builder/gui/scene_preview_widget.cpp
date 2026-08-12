@@ -2024,8 +2024,29 @@ void ScenePreviewWidget::start_embedded_web_prepare(const EmbeddedWebRequestIden
   QJsonArray overlay_items;
   for (const PreviewItem & item : preview_items_) {
     if (item.source_layer != QStringLiteral("editable_layout") || !item.editable || item.locked) continue;
-    const QString mesh_source = item.mesh_path.trimmed().isEmpty() ? item.source_path.trimmed() : item.mesh_path.trimmed();
-    if (mesh_source.isEmpty() && !item.has_mesh_metadata) continue;
+    QString mesh_source = item.mesh_path.trimmed().isEmpty() ? item.source_path.trimmed() : item.mesh_path.trimmed();
+
+    // Some persisted repo assets reach PreviewItem as a stale absolute path
+    // rooted under the scene directory. Recover the original portable
+    // repo-relative path when that exact repo asset exists. Genuine scene-local
+    // imports already exist at their absolute path and are left unchanged.
+    const QFileInfo mesh_info(mesh_source);
+    if (mesh_info.isAbsolute() && !mesh_info.isFile()) {
+      const QString scene_relative = QDir(selected_scene_dir).relativeFilePath(mesh_source);
+      if (!scene_relative.startsWith(QStringLiteral("../"))) {
+        const QString repo_candidate = QDir(repo_root).filePath(scene_relative);
+        if (QFileInfo(repo_candidate).isFile()) {
+          mesh_source = scene_relative;
+        }
+      }
+    }
+
+    const QString mesh_suffix = QFileInfo(mesh_source).suffix().toLower();
+    if (mesh_suffix != QStringLiteral("stl") &&
+        mesh_suffix != QStringLiteral("dae") &&
+        mesh_suffix != QStringLiteral("obj")) {
+      continue;
+    }
     overlay_items.append(QJsonObject{
       {QStringLiteral("id"), item.id}, {QStringLiteral("display_name"), item.display_name},
       {QStringLiteral("asset_id"), item.category}, {QStringLiteral("type"), item.category},
