@@ -388,6 +388,31 @@ TEST(SceneBuilderWorkspaceSource, ResizablePanelActionsAndFocusAreWired)
   EXPECT_TRUE(text.contains(QStringLiteral("scene_builder/main_splitter_sizes")));
 }
 
+TEST(SceneBuilderWorkspaceSource, MinimapPresentationTracksProductViewBackendWithoutRemovingFallback)
+{
+  QFile source(QStringLiteral("workcell_builder/workcell_builder/gui/mainwindow.cpp"));
+  if (!source.exists()) source.setFileName(QStringLiteral("../workcell_builder/gui/mainwindow.cpp"));
+  ASSERT_TRUE(source.open(QIODevice::ReadOnly | QIODevice::Text));
+  const QString text = QString::fromUtf8(source.readAll());
+
+  EXPECT_TRUE(text.contains(QStringLiteral("setObjectName(\"digital_twin_minimap\")")));
+  EXPECT_TRUE(text.contains(QStringLiteral("void MainWindow::update_minimap_backend_presentation()")));
+  EXPECT_TRUE(text.contains(QStringLiteral("ProductViewBackend::EmbeddedWeb3D")));
+  EXPECT_TRUE(text.contains(QStringLiteral("embedded_web_authoring_active()")));
+  EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMinimumHeight(0)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMaximumHeight(0)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMinimumHeight(140)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMaximumHeight(140)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("&ScenePreviewWidget::embedded_product_view_runtime_state_changed")));
+  EXPECT_GE(text.count(QStringLiteral("update_minimap_backend_presentation();")), 3);
+
+  // The hidden minimap is presentation-only. The authoritative Qt authoring
+  // scene and its 2D fallback view must still be built and wired to Product View.
+  EXPECT_TRUE(text.contains(QStringLiteral("digital_twin_canvas_ = new QGraphicsView(scene_builder)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("scene_preview_widget_->set_fallback_2d_view(digital_twin_canvas_)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("digital_twin_scene_ = new QGraphicsScene(digital_twin_canvas_)")));
+}
+
 TEST(SceneBuilderWorkspaceSource, FocusModeHidesPanelsWithoutReloadingProductView)
 {
   QFile source(QStringLiteral("workcell_builder/workcell_builder/gui/mainwindow.cpp"));
