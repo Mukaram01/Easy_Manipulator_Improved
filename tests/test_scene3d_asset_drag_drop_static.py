@@ -41,3 +41,30 @@ def test_native_drop_delegates_identity_and_world_position_to_shared_backend_onc
     assert callback.count("place_catalog_asset_at_world_position(") == 1
     assert 'payload.value("asset_id").toString()' in callback
     assert "source_path" not in callback
+
+
+def test_drag_payload_contains_exactly_canonical_identity_b():
+    """A1 step 7: no stale A metadata can hitchhike beside B's asset_id."""
+    main_cpp = Path("workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    drag = main_cpp.split("auto * drag = new QDrag(asset_catalog_tree_);", 1)[0].rsplit(
+        "QJsonObject payload;", 1
+    )[1]
+    assert drag.count('payload["asset_id"] = e.asset_id;') == 1
+    assert 'mime->setData(kWorkcellStudioAssetMime' in drag
+    assert 'QJsonDocument(payload).toJson(QJsonDocument::Compact)' in drag
+    for forbidden in ["source_path", "display_name", "category", "CatalogRoleIndex"]:
+        assert forbidden not in drag
+
+
+def test_native_drag_drop_reaches_arm_and_commit_through_shared_backend():
+    """A1 step 8: native drop has no placement implementation of its own."""
+    main_cpp = Path("workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    callback = main_cpp.split("scene3d_viewport->asset_drop_cb =", 1)[1].split("};", 1)[0]
+    backend = main_cpp.split("bool MainWindow::place_catalog_asset_at_world_position", 1)[1].split(
+        "bool MainWindow::configure_asset_placement_transform", 1
+    )[0]
+    assert callback.count("place_catalog_asset_at_world_position(") == 1
+    assert "arm_place_asset_mode(" not in callback
+    assert "commit_armed_asset_placement(" not in callback
+    assert backend.count("arm_place_asset_mode(asset_id)") == 1
+    assert backend.count("commit_armed_asset_placement(") == 1
