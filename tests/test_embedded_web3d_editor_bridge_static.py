@@ -60,8 +60,8 @@ assert.deepStrictEqual(placementPointFromViewport({clientX:60,clientY:60}),{x:1.
 const tableItem={id:'table',role:'support_surface',category:'table'};
 const tableNode={name:'tabletop',userData:{item:tableItem},material:{wireframe:false},visible:true,parent:null};
 state.objects.push({item:tableItem,object3d:tableNode});
-raycaster.hits=[{object:helperNode,point:new Vector3(9,9,9)},{object:tableNode,point:new Vector3(.2,.3,.7)}];
-assert.deepStrictEqual(placementPointFromViewport({clientX:60,clientY:60}),{x:.2,y:.3,z:.7});
+raycaster.hits=[{object:helperNode,point:new Vector3(9,9,9)},{object:tableNode,point:new Vector3(.55,.10,.42)}];
+assert.deepStrictEqual(placementPointFromViewport({clientX:60,clientY:60}),{x:.55,y:.10,z:.42});
 
 assert.deepStrictEqual(armPlacement(),{armed:true,persistent:false});
 assert.deepStrictEqual(getPlacementState(),{armed:true,persistent:false});
@@ -73,7 +73,7 @@ armPlacement();
 onCanvasPointerDown({button:0,clientX:60,clientY:60,preventDefault(){},stopPropagation(){}});
 assert.strictEqual(state.editorEvents.filter(event=>event.type==='placement_requested').length,1);
 const request=state.editorEvents.find(event=>event.type==='placement_requested');
-assert.deepStrictEqual({x:request.x,y:request.y,z:request.z},{x:.2,y:.3,z:.7});
+assert.deepStrictEqual({x:request.x,y:request.y,z:request.z},{x:.55,y:.10,z:.42});
 assert.deepStrictEqual(getPlacementState(),{armed:false,persistent:false});
 `,context);
 """
@@ -82,6 +82,29 @@ assert.deepStrictEqual(getPlacementState(),{armed:false,persistent:false});
         ["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js")],
         cwd=ROOT, check=True, capture_output=True, text=True,
     )
+
+
+def test_webengine_asset_drop_uses_browser_placement_contract_and_typed_xyz_path():
+    drop_handler = CPP.split("class AssetDropWebEngineView", 1)[1].split("private:", 1)[0]
+
+    assert "window.__WORKCELL_EDITOR_API_V1__" in drop_handler
+    assert "api.placementPointFromViewport({clientX:%1,clientY:%2})" in drop_handler
+    assert "pointerToWorldPlane" not in drop_handler
+    assert "[hit.x,hit.y,hit.z].every(Number.isFinite)" in drop_handler
+    assert "std::isfinite(x)" in drop_handler
+    assert "std::isfinite(y)" in drop_handler
+    assert "std::isfinite(z)" in drop_handler
+    assert "placement_requested(asset_id, x, y, z, configure_transform)" in drop_handler
+
+    forwarding = CPP.split("asset_drop_web_view->placement_requested", 1)[1].split("embedded_web_view_->setObjectName", 1)[0]
+    assert "emit asset_placement_requested(asset_id, x, y, z, configure_transform)" in forwarding
+
+    main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    placement = main.split("bool MainWindow::place_catalog_asset_at_world_position", 1)[1].split("bool MainWindow::configure_asset_placement_transform", 1)[0]
+    assert "armed_asset_x_m_ = world_x_m" in placement
+    assert "armed_asset_y_m_ = world_y_m" in placement
+    assert "armed_asset_z_m_ = world_z_m" in placement
+    assert "commit_armed_asset_placement(QPointF(world_x_m * 100.0, world_y_m * 100.0))" in placement
 
 
 def test_browser_api_reuses_existing_editor_functions_and_preserves_locks():
@@ -754,7 +777,8 @@ def test_embedded_asset_drop_is_identity_only_and_uses_typed_shared_request():
     assert 'payload.contains(QStringLiteral("asset_id"))' in drop_view
     assert 'source_path' not in drop_view and 'text/uri-list' not in drop_view
     assert drop_view.count('placement_requested(asset_id, x, y, z, configure_transform)') == 1
-    assert 'pointerToWorldPlane' in drop_view
+    assert 'api.placementPointFromViewport({clientX:%1,clientY:%2})' in drop_view
+    assert 'pointerToWorldPlane' not in drop_view
     assert 'void asset_placement_requested(' in header
 
 

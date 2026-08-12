@@ -335,8 +335,9 @@ protected:
     // world coordinate; never infer a position or accept a filesystem payload
     // in the Qt host. The callback emits at most one typed request per drop.
     const QString script = QStringLiteral(
-      "(() => { const hit = (typeof pointerToWorldPlane === 'function') ? "
-      "pointerToWorldPlane({clientX:%1,clientY:%2}, 0) : null; "
+      "(() => { const api = window.__WORKCELL_EDITOR_API_V1__; "
+      "const hit = (api && typeof api.placementPointFromViewport === 'function') ? "
+      "api.placementPointFromViewport({clientX:%1,clientY:%2}) : null; "
       "return hit && [hit.x,hit.y,hit.z].every(Number.isFinite) ? "
       "{x:hit.x,y:hit.y,z:hit.z} : null; })()")
       .arg(point.x()).arg(point.y());
