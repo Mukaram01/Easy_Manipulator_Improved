@@ -388,6 +388,7 @@ private:
     QString availability_status;
     QString disabled_reason;
     QString category;
+    double scale{ 1.0 };
   };
 
   void run_layout_merge_for_selected_scene(bool from_generate_scene = false);
@@ -656,6 +657,7 @@ private:
   QString armed_asset_category_;
   QString armed_asset_display_name_;
   QString armed_asset_source_path_;
+  double armed_asset_scale_{ 1.0 };
   bool armed_asset_use_clicked_xy_{ true };
   QPointF armed_asset_default_xy_px_{ 0.0, 0.0 };
   bool armed_asset_transform_valid_{ true };

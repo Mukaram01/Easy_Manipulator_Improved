@@ -11,6 +11,7 @@
 #include <QHash>
 #include <QDateTime>
 #include <QUrl>
+#include <QJsonObject>
 #include "robot_home_yaml_io.hpp"
 
 class QNetworkAccessManager;
@@ -41,6 +42,7 @@ public:
     QString id;
     QString display_name;
     QString category;
+    QString catalog_asset_id;
     double x{ 0.0 }, y{ 0.0 }, z{ 0.0 };
     double roll{ 0.0 }, pitch{ 0.0 }, yaw{ 0.0 };
     double sx{ 0.3 }, sy{ 0.3 }, sz{ 0.3 };
@@ -115,6 +117,8 @@ public:
     QString visual_index_package_uri;
     QString visual_index_source;
   };
+  static QJsonObject authoring_overlay_item(
+    const PreviewItem & item, const QString & mesh_source);
   // Hashes all PreviewItem fields in a fixed field and item order.  This makes
   // payload refreshes depend on rendered/editable content rather than QVector
   // identity or the order in which producers happened to assemble it.

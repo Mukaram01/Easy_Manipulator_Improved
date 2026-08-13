@@ -8579,6 +8579,7 @@ bool MainWindow::arm_place_asset_mode(const QString & requested_asset_id)
   armed_asset_category_ = match->category;
   armed_asset_display_name_ = match->display_name;
   armed_asset_source_path_ = match->source_path;
+  armed_asset_scale_ = match->scale;
   reset_armed_asset_transform_to_defaults();
   armed_asset_use_clicked_xy_ = true;
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
@@ -8668,6 +8669,7 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   preview_item.id = new_id;
   preview_item.display_name = display_name;
   preview_item.category = category;
+  preview_item.catalog_asset_id = asset_id;
   preview_item.role = QStringLiteral("asset");
   preview_item.status = QStringLiteral("ready");
   preview_item.source_path = source_path;
@@ -8687,7 +8689,9 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   preview_item.pitch = armed_asset_pitch_rad_;
   preview_item.yaw = armed_asset_yaw_rad_;
   preview_item.sx = 1.0; preview_item.sy = 1.0; preview_item.sz = 1.0;
-  preview_item.mesh_scale_x = 1.0; preview_item.mesh_scale_y = 1.0; preview_item.mesh_scale_z = 1.0;
+  preview_item.mesh_scale_x = armed_asset_scale_;
+  preview_item.mesh_scale_y = armed_asset_scale_;
+  preview_item.mesh_scale_z = armed_asset_scale_;
   preview_item.has_mesh_metadata = true;
   preview_item.mesh_available = QFileInfo(source_path).isFile();
   if (!preview_item.mesh_available) {
@@ -12506,6 +12510,7 @@ void MainWindow::populate_asset_catalog()
     ui_entry.editable = source_entry.can_add_to_scene;
     ui_entry.availability_status = QString::fromStdString(source_entry.readiness.empty() ? "unknown" : source_entry.readiness);
     ui_entry.disabled_reason = source_entry.can_add_to_scene ? QString() : QString::fromStdString(source_entry.blockers.empty() ? source_entry.suggested_action : source_entry.blockers.front());
+    ui_entry.scale = source_entry.scale;
     asset_catalog_entries_.push_back(ui_entry);
     categories.insert(ui_entry.category);
   };

@@ -29,7 +29,7 @@ def _item(item_id: str, x: float, mesh: Path = MESH) -> dict:
         "id": item_id, "display_name": item_id, "asset_id": "imported_test_asset",
         "type": "imported_test_asset", "category": "imported_test_asset", "role": "asset",
         "source_layer": "editable_layout", "editable": True, "locked": False, "selectable": True,
-        "source_mesh_path": str(mesh), "mesh_type": "stl", "mesh_scale": [1, 1, 1],
+        "source_mesh_path": str(mesh), "mesh_type": "stl", "mesh_scale": [0.001, 0.001, 0.001],
         "world_pose": {"xyz": [x, 0.2, 0.3], "rpy": [0, 0, 0]},
         "render_owner": "editable_layout", "render_policy": "primary",
     }
@@ -65,6 +65,7 @@ def test_mixed_overlay_merges_canonical_asset_and_stages_distinct_imported_objec
         first = objects["object_01"]
         assert first["pose"]["xyz"] == [0.1, 0.2, 0.3]
         assert first["catalog_asset_id"] == "imported_test_asset"
+        assert first["mesh_scale"] == [0.001, 0.001, 0.001]
         assert first["category"] == "authored_asset_object"
         assert first["mesh_contract_category"] == "object"
         assert first["readiness_category"] != "robot_arm"
@@ -76,6 +77,8 @@ def test_mixed_overlay_merges_canonical_asset_and_stages_distinct_imported_objec
             assert (ROOT / row["mesh_uri"]).is_file()
         assert objects["object_02"]["mesh_contract_category"] == "object"
         assert objects["object_02"]["readiness_category"] != "robot_arm"
+        assert objects["object_02"]["catalog_asset_id"] == "imported_test_asset"
+        assert objects["object_02"]["mesh_scale"] == [0.001, 0.001, 0.001]
         assert first["render_identity"] != objects["object_02"]["render_identity"]
 
         exported_bin = objects[canonical_bin["id"]]

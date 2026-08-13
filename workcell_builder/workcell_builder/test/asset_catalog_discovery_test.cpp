@@ -90,7 +90,7 @@ TEST(AssetCatalogDiscovery, SceneImportedManifestUsesStableIdResolvedPathAndScal
   write_text(imported / "part.stl", "solid part\nendsolid\n");
   write_text(imported / "asset_manifest.yaml",
     "assets:\n"
-    "  - id: stable_part_id\n"
+    "  - id: imported_test_asset\n"
     "    display_name: Imported Part\n"
     "    path: part.stl\n"
     "    category: Imported\n"
@@ -98,7 +98,7 @@ TEST(AssetCatalogDiscovery, SceneImportedManifestUsesStableIdResolvedPathAndScal
 
   const auto entries = workcell_builder::discover_asset_catalog_entries(repo, ws, imported);
   const auto match = std::find_if(entries.begin(), entries.end(), [](const auto & entry) {
-    return entry.asset_id == "stable_part_id";
+    return entry.asset_id == "imported_test_asset";
   });
   ASSERT_NE(match, entries.end());
   EXPECT_EQ(match->source_path, fs::canonical(imported / "part.stl").string());
@@ -107,7 +107,7 @@ TEST(AssetCatalogDiscovery, SceneImportedManifestUsesStableIdResolvedPathAndScal
 
   const AssetCatalogModel model = discover_asset_catalog(ws.string(), repo.string(), imported.string());
   const auto model_match = std::find_if(model.assets.begin(), model.assets.end(), [](const auto & entry) {
-    return entry.id == "stable_part_id";
+    return entry.id == "imported_test_asset";
   });
   ASSERT_NE(model_match, model.assets.end());
   EXPECT_EQ(model_match->path, fs::canonical(imported / "part.stl").string());
