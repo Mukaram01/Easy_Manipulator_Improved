@@ -862,3 +862,26 @@ def test_click_and_embedded_drop_share_canonical_b_placement_backend():
         assert "commit_armed_asset_placement(" not in frontend
     assert backend.count("arm_place_asset_mode(asset_id)") == 1
     assert backend.count("commit_armed_asset_placement(") == 1
+
+
+def test_inspector_pose_edit_preserves_authored_mesh_scale():
+    main = (
+        ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp"
+    ).read_text(encoding="utf-8")
+
+    inspector = main.split(
+        "void MainWindow::apply_inspector_pose_to_item()", 1
+    )[1].split(
+        "void MainWindow::revert_selection_transform_editor()", 1
+    )[0]
+
+    # Inspector dimensions remain dimensions.
+    assert "p.sx = refreshed_state.dim_x;" in inspector
+    assert "p.sy = refreshed_state.dim_y;" in inspector
+    assert "p.sz = refreshed_state.dim_z;" in inspector
+
+    # Pose/dimension editing must never overwrite the authored/imported
+    # mesh scale, e.g. 0.001 from asset_manifest.yaml.
+    assert "p.mesh_scale_x = refreshed_state.dim_x;" not in inspector
+    assert "p.mesh_scale_y = refreshed_state.dim_y;" not in inspector
+    assert "p.mesh_scale_z = refreshed_state.dim_z;" not in inspector

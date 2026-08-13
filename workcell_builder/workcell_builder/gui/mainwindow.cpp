@@ -8020,9 +8020,6 @@ void MainWindow::apply_inspector_pose_to_item()
     p.sx = refreshed_state.dim_x;
     p.sy = refreshed_state.dim_y;
     p.sz = refreshed_state.dim_z;
-    p.mesh_scale_x = refreshed_state.dim_x;
-    p.mesh_scale_y = refreshed_state.dim_y;
-    p.mesh_scale_z = refreshed_state.dim_z;
     if (!refreshed_state.display_name.isEmpty()) p.display_name = refreshed_state.display_name;
     break;
   }
