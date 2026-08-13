@@ -4813,15 +4813,32 @@ function placementPointFromViewport(position) {
   for (const hit of raycaster.intersectObjects(roots, true) || []) {
     if (!isEligiblePlacementSurfaceHit(hit)) continue;
     const rendered = placementHitRendered(hit);
-    return placementPointForPhysicalSurfaceItem(rendered?.item, hit.point);
+    const resolvedPoint = placementPointForPhysicalSurfaceItem(rendered?.item, hit.point);
+    console.warn?.(`PLACEMENT_DIAG physical_hit ${JSON.stringify({
+      item_id: rendered?.item?.id || '',
+      role: rendered?.item?.role || '',
+      category: rendered?.item?.category || '',
+      support_surface_ref: rendered?.item?.support_surface_ref || '',
+      raw_point: finitePlacementPoint(hit.point),
+      resolved_point: resolvedPoint
+    })}`);
+    return resolvedPoint;
   }
+
   const supportSurfacePoint = placementPointOnAuthoredSupportSurface(raycaster);
-  if (supportSurfacePoint) return supportSurfacePoint;
+  if (supportSurfacePoint) {
+    console.warn?.(`PLACEMENT_DIAG semantic_support ${JSON.stringify(supportSurfacePoint)}`);
+    return supportSurfacePoint;
+  }
 
   if (!THREE?.Plane || !THREE?.Vector3 || !raycaster.ray?.intersectPlane) return null;
   const fallback = new THREE.Vector3();
-  return raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), fallback)
-    ? finitePlacementPoint(fallback) : null;
+  const groundPoint = raycaster.ray.intersectPlane(
+    new THREE.Plane(new THREE.Vector3(0, 0, 1), 0),
+    fallback
+  ) ? finitePlacementPoint(fallback) : null;
+  console.warn?.(`PLACEMENT_DIAG ground_fallback ${JSON.stringify(groundPoint)}`);
+  return groundPoint;
 }
 function getPlacementState() { return { armed: state.placement.armed, persistent: state.placement.persistent }; }
 function armPlacement(options = {}) {
