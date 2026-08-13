@@ -62,6 +62,52 @@ TEST(ScenePreviewWidgetUi, AuthoringOverlayPreservesCatalogIdentityScaleAndDisti
     QStringLiteral("/tmp/imported_test_asset.stl"));
 }
 
+TEST(ScenePreviewWidgetUi, DirtySessionRefreshPreservesImportedCatalogMetadataThroughOverlay)
+{
+  using workcell_builder::WorkcellStudioCanvasItem;
+  using workcell_builder::WorkcellStudioCanvasModel;
+  using workcell_builder::WorkcellStudioItemProvenance;
+
+  auto imported_instance = [](const std::string & id) {
+    WorkcellStudioCanvasItem item;
+    item.id = id;
+    item.label = "Imported test asset";
+    item.category = "Imported";
+    item.catalog_asset_id = "imported_test_asset";
+    item.source_file = "/tmp/imported_test_asset.stl";
+    item.mesh_path = item.source_file;
+    item.mesh_type = "stl";
+    item.mesh_scale_x = item.mesh_scale_y = item.mesh_scale_z = 0.001;
+    item.provenance = WorkcellStudioItemProvenance::EditableLayout;
+    item.editable = true;
+    return item;
+  };
+
+  const WorkcellStudioCanvasItem object_01 = imported_instance("object_01");
+  const WorkcellStudioCanvasItem object_02 = imported_instance("object_02");
+  WorkcellStudioCanvasModel rebuilt_disk_model;
+  workcell_builder::merge_dirty_editable_layout_session(
+    rebuilt_disk_model, {object_01, object_02}, {});
+  ASSERT_EQ(rebuilt_disk_model.items.size(), 2U);
+
+  for (const auto & rebuilt : rebuilt_disk_model.items) {
+    const auto preview = ScenePreviewWidget::preview_item_from_canvas_item(rebuilt);
+    const auto overlay = ScenePreviewWidget::authoring_overlay_item(preview, preview.mesh_path);
+    EXPECT_EQ(preview.id, QString::fromStdString(rebuilt.id));
+    EXPECT_EQ(preview.catalog_asset_id, QStringLiteral("imported_test_asset"));
+    EXPECT_DOUBLE_EQ(preview.mesh_scale_x, 0.001);
+    EXPECT_DOUBLE_EQ(preview.mesh_scale_y, 0.001);
+    EXPECT_DOUBLE_EQ(preview.mesh_scale_z, 0.001);
+    EXPECT_EQ(overlay.value(QStringLiteral("id")).toString(), preview.id);
+    EXPECT_EQ(overlay.value(QStringLiteral("asset_id")).toString(),
+      QStringLiteral("imported_test_asset"));
+    EXPECT_NE(overlay.value(QStringLiteral("asset_id")).toString(), QStringLiteral("Imported"));
+  }
+  EXPECT_NE(rebuilt_disk_model.items[0].id, rebuilt_disk_model.items[1].id);
+  EXPECT_EQ(rebuilt_disk_model.items[0].catalog_asset_id,
+    rebuilt_disk_model.items[1].catalog_asset_id);
+}
+
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 ScenePreviewWidget::EmbeddedWebRequestIdentity publication_identity(
   const QString & root, const QString & scene, quint64 revision, quint64 generation,

@@ -418,7 +418,10 @@ if(BUILD_TESTING)
     gui/scene3d_viewport_widget.cpp
     gui/scene3d_visual_classification.cpp
     gui/object_placement_yaml_io.cpp
-    src_object_placement_model.cpp)
+    src_object_placement_model.cpp
+    src_workcell_studio_canvas_model.cpp
+    src_workcell_warning_once.cpp
+    src_workcell_yaml_utils.cpp)
   ament_add_gtest(workcell_scene_load_diagnostic_context_test
     test/scene_load_diagnostic_context_test.cpp
     gui/scene_load_diagnostic_context.cpp)
@@ -467,7 +470,9 @@ if(BUILD_TESTING)
     target_link_libraries(workcell_scene_identity_test yaml-cpp ${Boost_LIBRARIES})
   endif()
   if(TARGET workcell_scene_preview_widget_ui_test)
-    target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Core Qt5::Widgets Qt5::OpenGL Qt5::Network OpenGL::GL yaml-cpp)
+    target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Core Qt5::Widgets Qt5::OpenGL Qt5::Network OpenGL::GL yaml-cpp ${Boost_LIBRARIES})
+    target_compile_definitions(workcell_scene_preview_widget_ui_test PRIVATE
+      WORKCELL_BUILDER_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
     if(Qt5WebEngineWidgets_FOUND)
       target_compile_definitions(workcell_scene_preview_widget_ui_test PRIVATE WORKCELL_BUILDER_HAS_WEBENGINE=1)
       target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::WebEngineWidgets)

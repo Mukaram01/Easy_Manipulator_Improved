@@ -1770,6 +1770,26 @@ QJsonObject ScenePreviewWidget::authoring_overlay_item(
   };
 }
 
+ScenePreviewWidget::PreviewItem ScenePreviewWidget::preview_item_from_canvas_item(
+  const workcell_builder::WorkcellStudioCanvasItem & item)
+{
+  PreviewItem preview;
+  preview.id = QString::fromStdString(item.id);
+  preview.display_name = QString::fromStdString(item.label);
+  preview.category = QString::fromStdString(item.category.empty() ? item.type : item.category);
+  preview.catalog_asset_id = QString::fromStdString(item.catalog_asset_id);
+  preview.source_path = QString::fromStdString(item.source_file);
+  preview.mesh_path = QString::fromStdString(item.mesh_path);
+  preview.mesh_type = QString::fromStdString(item.mesh_type);
+  preview.x = item.x; preview.y = item.y; preview.z = item.z;
+  preview.roll = item.roll; preview.pitch = item.pitch; preview.yaw = item.yaw;
+  preview.sx = item.width; preview.sy = item.depth; preview.sz = item.height;
+  preview.mesh_scale_x = item.mesh_scale_x;
+  preview.mesh_scale_y = item.mesh_scale_y;
+  preview.mesh_scale_z = item.mesh_scale_z;
+  return preview;
+}
+
 void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force, const QString & origin)
 {
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
