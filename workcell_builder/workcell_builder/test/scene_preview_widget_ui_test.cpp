@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QProcess>
 #include <QTemporaryDir>
@@ -27,6 +28,38 @@ QApplication * ensure_app()
   static char * argv[] = { nullptr };
   static QApplication app(argc, argv);
   return &app;
+}
+
+TEST(ScenePreviewWidgetUi, AuthoringOverlayPreservesCatalogIdentityScaleAndDistinctInstances)
+{
+  ScenePreviewWidget::PreviewItem first;
+  first.id = QStringLiteral("object_01");
+  first.display_name = QStringLiteral("Imported test asset");
+  first.category = QStringLiteral("Imported");
+  first.catalog_asset_id = QStringLiteral("imported_test_asset");
+  first.mesh_type = QStringLiteral("stl");
+  first.mesh_scale_x = first.mesh_scale_y = first.mesh_scale_z = 0.001;
+
+  ScenePreviewWidget::PreviewItem second = first;
+  second.id = QStringLiteral("object_02");
+
+  const QJsonObject first_overlay = ScenePreviewWidget::authoring_overlay_item(
+    first, QStringLiteral("/tmp/imported_test_asset.stl"));
+  const QJsonObject second_overlay = ScenePreviewWidget::authoring_overlay_item(
+    second, QStringLiteral("/tmp/imported_test_asset.stl"));
+
+  EXPECT_EQ(first_overlay.value(QStringLiteral("id")).toString(), QStringLiteral("object_01"));
+  EXPECT_EQ(second_overlay.value(QStringLiteral("id")).toString(), QStringLiteral("object_02"));
+  EXPECT_NE(first_overlay.value(QStringLiteral("id")), second_overlay.value(QStringLiteral("id")));
+  EXPECT_EQ(first_overlay.value(QStringLiteral("asset_id")).toString(), QStringLiteral("imported_test_asset"));
+  EXPECT_EQ(second_overlay.value(QStringLiteral("asset_id")).toString(), QStringLiteral("imported_test_asset"));
+  const QJsonArray scale = first_overlay.value(QStringLiteral("mesh_scale")).toArray();
+  ASSERT_EQ(scale.size(), 3);
+  EXPECT_DOUBLE_EQ(scale.at(0).toDouble(), 0.001);
+  EXPECT_DOUBLE_EQ(scale.at(1).toDouble(), 0.001);
+  EXPECT_DOUBLE_EQ(scale.at(2).toDouble(), 0.001);
+  EXPECT_EQ(first_overlay.value(QStringLiteral("source_mesh_path")).toString(),
+    QStringLiteral("/tmp/imported_test_asset.stl"));
 }
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
@@ -472,6 +505,22 @@ TEST(ScenePreviewWidgetUi, PreparationFailureUsesPopulatedCompatibilityViewport)
 }
 #endif
 
+
+TEST(SceneBuilderWorkspaceSource, ImportedPlacementPropagatesCatalogIdentityAndAuthoredScale)
+{
+  QFile source(QStringLiteral("workcell_builder/workcell_builder/gui/mainwindow.cpp"));
+  if (!source.exists()) source.setFileName(QStringLiteral("../workcell_builder/gui/mainwindow.cpp"));
+  ASSERT_TRUE(source.open(QIODevice::ReadOnly | QIODevice::Text));
+  const QString text = QString::fromUtf8(source.readAll());
+
+  EXPECT_TRUE(text.contains(QStringLiteral("ui_entry.scale = source_entry.scale")));
+  EXPECT_TRUE(text.contains(QStringLiteral("armed_asset_scale_ = match->scale")));
+  EXPECT_TRUE(text.contains(QStringLiteral("preview_item.catalog_asset_id = asset_id")));
+  EXPECT_TRUE(text.contains(QStringLiteral("preview_item.mesh_scale_x = armed_asset_scale_")));
+  EXPECT_TRUE(text.contains(QStringLiteral("preview_item.mesh_scale_y = armed_asset_scale_")));
+  EXPECT_TRUE(text.contains(QStringLiteral("preview_item.mesh_scale_z = armed_asset_scale_")));
+  EXPECT_FALSE(text.contains(QStringLiteral("preview_item.mesh_scale_x = 1.0; preview_item.mesh_scale_y = 1.0")));
+}
 
 TEST(SceneBuilderWorkspaceSource, CompactTopCommandRowKeepsActionsAndPathAccess)
 {

@@ -58,7 +58,7 @@ QByteArray serialized_preview_item(const ScenePreviewWidget::PreviewItem & item)
 
   // Keep this order aligned with PreviewItem.  These values are consumed by
   // the native Scene3D and embedded Web3D handoff, including diagnostic labels.
-  stream << item.id << item.display_name << item.category;
+  stream << item.id << item.display_name << item.category << item.catalog_asset_id;
   stream << item.x << item.y << item.z << item.roll << item.pitch << item.yaw;
   stream << item.sx << item.sy << item.sz << item.status << item.source_path << item.role;
   stream << item.mesh_path << item.mesh_type << item.primitive_geometry_type << item.primitive_radius << item.primitive_length;
@@ -1750,6 +1750,26 @@ void ScenePreviewWidget::cancel_embedded_web_lifecycle(bool stop_owned_server)
   }
 }
 
+QJsonObject ScenePreviewWidget::authoring_overlay_item(
+  const PreviewItem & item, const QString & mesh_source)
+{
+  return QJsonObject{
+    {QStringLiteral("id"), item.id}, {QStringLiteral("display_name"), item.display_name},
+    {QStringLiteral("asset_id"), item.catalog_asset_id.trimmed().isEmpty() ? item.category : item.catalog_asset_id},
+    {QStringLiteral("type"), item.category}, {QStringLiteral("category"), item.category},
+    {QStringLiteral("role"), item.role}, {QStringLiteral("source_layer"), item.source_layer},
+    {QStringLiteral("editable"), item.editable}, {QStringLiteral("locked"), item.locked},
+    {QStringLiteral("selectable"), item.selectable}, {QStringLiteral("source_mesh_path"), mesh_source},
+    {QStringLiteral("mesh_type"), item.mesh_type},
+    {QStringLiteral("mesh_scale"), QJsonArray{item.mesh_scale_x, item.mesh_scale_y, item.mesh_scale_z}},
+    {QStringLiteral("world_pose"), QJsonObject{
+      {QStringLiteral("xyz"), QJsonArray{item.x, item.y, item.z}},
+      {QStringLiteral("rpy"), QJsonArray{item.roll, item.pitch, item.yaw}}}},
+    {QStringLiteral("render_owner"), QStringLiteral("editable_layout")},
+    {QStringLiteral("render_policy"), QStringLiteral("primary")}
+  };
+}
+
 void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force, const QString & origin)
 {
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
@@ -2074,20 +2094,7 @@ void ScenePreviewWidget::start_embedded_web_prepare(const EmbeddedWebRequestIden
         mesh_suffix != QStringLiteral("obj")) {
       continue;
     }
-    overlay_items.append(QJsonObject{
-      {QStringLiteral("id"), item.id}, {QStringLiteral("display_name"), item.display_name},
-      {QStringLiteral("asset_id"), item.category}, {QStringLiteral("type"), item.category},
-      {QStringLiteral("category"), item.category}, {QStringLiteral("role"), item.role},
-      {QStringLiteral("source_layer"), item.source_layer}, {QStringLiteral("editable"), item.editable},
-      {QStringLiteral("locked"), item.locked}, {QStringLiteral("selectable"), item.selectable},
-      {QStringLiteral("source_mesh_path"), mesh_source}, {QStringLiteral("mesh_type"), item.mesh_type},
-      {QStringLiteral("mesh_scale"), QJsonArray{item.mesh_scale_x, item.mesh_scale_y, item.mesh_scale_z}},
-      {QStringLiteral("world_pose"), QJsonObject{
-        {QStringLiteral("xyz"), QJsonArray{item.x, item.y, item.z}},
-        {QStringLiteral("rpy"), QJsonArray{item.roll, item.pitch, item.yaw}}}},
-      {QStringLiteral("render_owner"), QStringLiteral("editable_layout")},
-      {QStringLiteral("render_policy"), QStringLiteral("primary")}
-    });
+    overlay_items.append(authoring_overlay_item(item, mesh_source));
   }
   if (!overlay_items.isEmpty()) {
     const QString overlay_dir = QDir(repo_root).filePath(QStringLiteral("build/workcell_studio_web_scene/authoring_session_overlays"));
