@@ -3896,3 +3896,129 @@ assert.notStrictEqual(state.web3dReadiness?.state, 'scene_failed');
 `, context);
 """
     subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+def test_authored_support_surface_fallback_returns_tabletop_z():
+    viewer_js = VIEWER / "viewer.js"
+
+    harness = r"""
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+
+const element = () => ({
+  hidden:false,
+  checked:false,
+  disabled:false,
+  textContent:'',
+  className:'',
+  innerHTML:'',
+  classList:{toggle(){}},
+  querySelector(){ return {textContent:''}; },
+  appendChild(){},
+  addEventListener(){},
+  setAttribute(){}
+});
+
+const context = {
+  console,
+  assert,
+  window:{
+    location:{search:''},
+    dispatchEvent(){},
+    parent:{postMessage(){}}
+  },
+  document:{
+    getElementById(){ return element(); },
+    createElement(){ return element(); }
+  },
+  URLSearchParams,
+  CustomEvent:function(){},
+  requestAnimationFrame(){ return 0; },
+  setTimeout(){ return 0; },
+  clearTimeout(){}
+};
+
+vm.createContext(context);
+
+vm.runInContext(source + `
+class TestVector3 {
+  constructor(x=0, y=0, z=0) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+  }
+}
+
+class TestPlane {
+  constructor(normal, constant) {
+    this.normal = normal;
+    this.constant = constant;
+  }
+}
+
+THREE = {
+  Vector3: TestVector3,
+  Plane: TestPlane
+};
+
+state.sceneJson = {
+  ui_selection_owners: [{
+    id: 'support_surface_table',
+    role: 'support_surface',
+    type: 'support_surface',
+    category: 'work_surface',
+    pose: {
+      xyz: [0.65, 0.0, 0.06],
+      rpy: [0.0, 0.0, 0.0]
+    },
+    dimensions: [1.2, 0.8, 0.08]
+  }]
+};
+
+const insideRaycaster = {
+  ray: {
+    origin: {x: 0.65, y: 0.0, z: 2.0},
+    intersectPlane(plane, hit) {
+      hit.x = 0.65;
+      hit.y = 0.0;
+      hit.z = -plane.constant;
+      return hit;
+    }
+  }
+};
+
+const inside = placementPointOnAuthoredSupportSurface(insideRaycaster);
+assert(inside);
+assert(Math.abs(inside.x - 0.65) < 1e-12);
+assert(Math.abs(inside.y - 0.0) < 1e-12);
+assert(Math.abs(inside.z - 0.10) < 1e-12);
+
+const outsideRaycaster = {
+  ray: {
+    origin: {x: 1.50, y: 0.0, z: 2.0},
+    intersectPlane(plane, hit) {
+      hit.x = 1.50;
+      hit.y = 0.0;
+      hit.z = -plane.constant;
+      return hit;
+    }
+  }
+};
+
+assert.strictEqual(
+  placementPointOnAuthoredSupportSurface(outsideRaycaster),
+  null
+);
+`, context);
+"""
+
+    result = subprocess.run(
+        ["node", "-e", harness, str(viewer_js)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr or result.stdout

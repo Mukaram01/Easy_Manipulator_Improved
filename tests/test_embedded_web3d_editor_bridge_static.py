@@ -885,3 +885,35 @@ def test_inspector_pose_edit_preserves_authored_mesh_scale():
     assert "p.mesh_scale_x = refreshed_state.dim_x;" not in inspector
     assert "p.mesh_scale_y = refreshed_state.dim_y;" not in inspector
     assert "p.mesh_scale_z = refreshed_state.dim_z;" not in inspector
+
+
+def test_browser_placement_prefers_authored_support_surface_before_ground_plane():
+    viewer = (
+        ROOT / "workcell_studio_web/viewer/viewer.js"
+    ).read_text(encoding="utf-8")
+
+    helper = viewer.split(
+        "function placementPointOnAuthoredSupportSurface", 1
+    )[1].split(
+        "function placementPointFromViewport", 1
+    )[0]
+
+    placement = viewer.split(
+        "function placementPointFromViewport", 1
+    )[1].split(
+        "function getPlacementState", 1
+    )[0]
+
+    assert "state.sceneJson?.ui_selection_owners" in helper
+    assert "dimensions[2] / 2" in helper
+    assert "role !== 'support surface'" in helper
+    assert "category !== 'work surface'" in helper
+
+    support_fallback = placement.index(
+        "placementPointOnAuthoredSupportSurface(raycaster)"
+    )
+    ground_fallback = placement.index(
+        "new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)"
+    )
+
+    assert support_fallback < ground_fallback
