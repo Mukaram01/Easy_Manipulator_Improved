@@ -6927,6 +6927,7 @@ void MainWindow::merge_active_editable_layout_session(
     if (deleted_layout_item_ids_.contains(item.id)) continue;
     workcell_builder::WorkcellStudioCanvasItem canvas_item;
     canvas_item.id = item.id.toStdString();
+    canvas_item.catalog_asset_id = item.catalog_asset_id.toStdString();
     canvas_item.label = item.display_name.toStdString();
     canvas_item.type = item.category.toStdString();
     canvas_item.category = item.category.toStdString();
@@ -9540,26 +9541,11 @@ void MainWindow::populate_scene_hierarchy()
   };
 
   for (const auto & item : model.items) {
-    ScenePreviewWidget::PreviewItem p;
-    p.id = QString::fromStdString(item.id);
-    p.display_name = QString::fromStdString(item.label);
-    p.category = QString::fromStdString(item.category.empty() ? item.type : item.category);
+    ScenePreviewWidget::PreviewItem p = ScenePreviewWidget::preview_item_from_canvas_item(item);
     p.role = normalize_role(QString::fromStdString(item.role), p.category + " " + p.display_name);
     p.status = status_for_item(item);
-    p.source_path = QString::fromStdString(item.source_file);
     p.metadata_complete = item.warnings.empty();
     for (const auto & warning : item.warnings) p.warnings << QString::fromStdString(warning);
-    p.x = item.x;
-    p.y = item.y;
-    p.z = item.z;
-    p.roll = item.roll;
-    p.pitch = item.pitch;
-    p.yaw = item.yaw;
-    p.sx = item.width;
-    p.sy = item.depth;
-    p.sz = item.height;
-    p.mesh_path = QString::fromStdString(item.mesh_path);
-    p.mesh_type = QString::fromStdString(item.mesh_type);
     p.primitive_geometry_type = QString::fromStdString(item.primitive_geometry_type);
     p.primitive_radius = item.primitive_radius;
     p.primitive_length = item.primitive_length;
@@ -9569,9 +9555,6 @@ void MainWindow::populate_scene_hierarchy()
     p.material_b = item.material_b;
     p.material_a = item.material_a;
     p.material_name = QString::fromStdString(item.material_name);
-    p.mesh_scale_x = item.mesh_scale_x;
-    p.mesh_scale_y = item.mesh_scale_y;
-    p.mesh_scale_z = item.mesh_scale_z;
     p.mesh_roll = item.mesh_r;
     p.mesh_pitch = item.mesh_p;
     p.mesh_yaw = item.mesh_y;

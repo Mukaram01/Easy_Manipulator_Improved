@@ -13,6 +13,7 @@
 #include <QUrl>
 #include <QJsonObject>
 #include "robot_home_yaml_io.hpp"
+#include "workcell_studio_canvas_model.hpp"
 
 class QNetworkAccessManager;
 
@@ -119,6 +120,8 @@ public:
   };
   static QJsonObject authoring_overlay_item(
     const PreviewItem & item, const QString & mesh_source);
+  static PreviewItem preview_item_from_canvas_item(
+    const workcell_builder::WorkcellStudioCanvasItem & item);
   // Hashes all PreviewItem fields in a fixed field and item order.  This makes
   // payload refreshes depend on rendered/editable content rather than QVector
   // identity or the order in which producers happened to assemble it.
