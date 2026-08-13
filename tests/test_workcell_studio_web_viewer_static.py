@@ -4022,3 +4022,108 @@ assert.strictEqual(
     )
 
     assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_physical_support_surface_hit_normalizes_to_authored_tabletop_z():
+    viewer_js = VIEWER / "viewer.js"
+
+    harness = r"""
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+
+const element = () => ({
+  hidden:false,
+  checked:false,
+  disabled:false,
+  textContent:'',
+  className:'',
+  innerHTML:'',
+  classList:{toggle(){}},
+  querySelector(){ return {textContent:''}; },
+  appendChild(){},
+  addEventListener(){},
+  setAttribute(){}
+});
+
+const context = {
+  console,
+  assert,
+  window:{
+    location:{search:''},
+    dispatchEvent(){},
+    parent:{postMessage(){}}
+  },
+  document:{
+    getElementById(){ return element(); },
+    createElement(){ return element(); }
+  },
+  URLSearchParams,
+  CustomEvent:function(){},
+  requestAnimationFrame(){ return 0; },
+  setTimeout(){ return 0; },
+  clearTimeout(){}
+};
+
+vm.createContext(context);
+
+vm.runInContext(source + `
+state.sceneJson = {
+  ui_selection_owners: [{
+    id: 'support_surface_table',
+    role: 'support_surface',
+    type: 'support_surface',
+    category: 'work_surface',
+    pose: {
+      xyz: [0.65, 0.0, 0.06],
+      rpy: [0.0, 0.0, 0.0]
+    },
+    dimensions: [1.2, 0.8, 0.08]
+  }]
+};
+
+const generatedTable = {
+  id: 'urdf_visual_16_table',
+  role: 'support_surface',
+  category: 'table',
+  support_surface_ref: 'support_surface_table'
+};
+
+const tablePoint = placementPointForPhysicalSurfaceItem(
+  generatedTable,
+  {x: 0.40, y: 0.00, z: 0.06}
+);
+
+assert(tablePoint);
+assert(Math.abs(tablePoint.x - 0.40) < 1e-12);
+assert(Math.abs(tablePoint.y - 0.00) < 1e-12);
+assert(Math.abs(tablePoint.z - 0.10) < 1e-12);
+
+// A bin may reference the same support surface but is not itself the
+// support surface. Preserve the actual physical mesh hit.
+const bin = {
+  id: 'target_bin_default',
+  role: 'target_bin',
+  category: 'place_zone',
+  support_surface_ref: 'support_surface_table'
+};
+
+const binPoint = placementPointForPhysicalSurfaceItem(
+  bin,
+  {x: 0.70, y: 0.45, z: 0.30}
+);
+
+assert(binPoint);
+assert(Math.abs(binPoint.z - 0.30) < 1e-12);
+`, context);
+"""
+
+    result = subprocess.run(
+        ["node", "-e", harness, str(viewer_js)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr or result.stdout
