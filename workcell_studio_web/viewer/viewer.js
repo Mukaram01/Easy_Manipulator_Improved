@@ -4690,6 +4690,47 @@ function finitePlacementPoint(point) {
     : null;
 }
 
+function placementPointForPhysicalSurfaceItem(item, point) {
+  const finitePoint = finitePlacementPoint(point);
+  if (!finitePoint || !item) return finitePoint;
+
+  const role = String(item?.role || '').toLowerCase().replace(/[_-]+/g, ' ');
+
+  // Only normalize the actual support-surface physical visual. Other physical
+  // items may reference a support surface but must keep their real mesh hit.
+  if (role !== 'support surface') return finitePoint;
+
+  const ownerId = String(item?.support_surface_ref || item?.id || '').trim();
+  if (!ownerId) return finitePoint;
+
+  const owners = Array.isArray(state.sceneJson?.ui_selection_owners)
+    ? state.sceneJson.ui_selection_owners
+    : [];
+
+  const owner = owners.find(candidate =>
+    String(candidate?.id || '').trim() === ownerId
+  );
+  if (!owner) return finitePoint;
+
+  const xyz = owner?.pose?.xyz;
+  const rpy = owner?.pose?.rpy;
+  const dimensions = owner?.dimensions;
+
+  if (!Array.isArray(xyz) || xyz.length < 3 ||
+      !Array.isArray(rpy) || rpy.length < 3 ||
+      !Array.isArray(dimensions) || dimensions.length < 3 ||
+      ![...xyz.slice(0, 3), ...rpy.slice(0, 3), ...dimensions.slice(0, 3)].every(Number.isFinite) ||
+      dimensions[2] <= 0) return finitePoint;
+
+  // Tilted support surfaces keep the real physical raycast hit.
+  if (Math.abs(rpy[0]) > 1e-6 || Math.abs(rpy[1]) > 1e-6) return finitePoint;
+
+  return {
+    ...finitePoint,
+    z: Number(xyz[2] + dimensions[2] / 2),
+  };
+}
+
 function placementPointOnAuthoredSupportSurface(raycaster) {
   if (!THREE?.Plane || !THREE?.Vector3 || !raycaster?.ray?.intersectPlane) return null;
 
@@ -4770,7 +4811,9 @@ function placementPointFromViewport(position) {
   const roots = [...state.objects.map(record => record.object3d), ...state.pickRecords.map(record => record.pickRoot || record.object3d)]
     .filter((root, index, all) => root?.visible !== false && all.indexOf(root) === index);
   for (const hit of raycaster.intersectObjects(roots, true) || []) {
-    if (isEligiblePlacementSurfaceHit(hit)) return finitePlacementPoint(hit.point);
+    if (!isEligiblePlacementSurfaceHit(hit)) continue;
+    const rendered = placementHitRendered(hit);
+    return placementPointForPhysicalSurfaceItem(rendered?.item, hit.point);
   }
   const supportSurfacePoint = placementPointOnAuthoredSupportSurface(raycaster);
   if (supportSurfacePoint) return supportSurfacePoint;
