@@ -4689,6 +4689,70 @@ function finitePlacementPoint(point) {
     ? { x: Number(point.x), y: Number(point.y), z: Number(point.z) }
     : null;
 }
+
+function placementPointOnAuthoredSupportSurface(raycaster) {
+  if (!THREE?.Plane || !THREE?.Vector3 || !raycaster?.ray?.intersectPlane) return null;
+
+  const owners = Array.isArray(state.sceneJson?.ui_selection_owners)
+    ? state.sceneJson.ui_selection_owners
+    : [];
+
+  let bestPoint = null;
+  let bestDistance = Infinity;
+
+  for (const item of owners) {
+    const role = String(item?.role || '').toLowerCase().replace(/[_-]+/g, ' ');
+    const type = String(item?.type || '').toLowerCase().replace(/[_-]+/g, ' ');
+    const category = String(item?.category || '').toLowerCase().replace(/[_-]+/g, ' ');
+
+    if (role !== 'support surface' &&
+        type !== 'support surface' &&
+        category !== 'work surface') continue;
+
+    const xyz = item?.pose?.xyz;
+    const rpy = item?.pose?.rpy;
+    const dimensions = item?.dimensions;
+
+    if (!Array.isArray(xyz) || xyz.length < 3 ||
+        !Array.isArray(rpy) || rpy.length < 3 ||
+        !Array.isArray(dimensions) || dimensions.length < 3 ||
+        ![...xyz.slice(0, 3), ...rpy.slice(0, 3), ...dimensions.slice(0, 3)].every(Number.isFinite) ||
+        dimensions[0] <= 0 || dimensions[1] <= 0 || dimensions[2] <= 0) continue;
+
+    // Semantic support-surface fallback is intentionally limited to horizontal
+    // authored surfaces. Tilted physical surfaces must be resolved by raycast.
+    if (Math.abs(rpy[0]) > 1e-6 || Math.abs(rpy[1]) > 1e-6) continue;
+
+    const topZ = xyz[2] + dimensions[2] / 2;
+    const hit = new THREE.Vector3();
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -topZ);
+    if (!raycaster.ray.intersectPlane(plane, hit)) continue;
+
+    // Respect the authored rectangular footprint, including yaw.
+    const dx = hit.x - xyz[0];
+    const dy = hit.y - xyz[1];
+    const cosYaw = Math.cos(rpy[2]);
+    const sinYaw = Math.sin(rpy[2]);
+    const localX = cosYaw * dx + sinYaw * dy;
+    const localY = -sinYaw * dx + cosYaw * dy;
+
+    if (Math.abs(localX) > dimensions[0] / 2 + 1e-6 ||
+        Math.abs(localY) > dimensions[1] / 2 + 1e-6) continue;
+
+    const origin = raycaster.ray.origin;
+    const distance = origin &&
+      [origin.x, origin.y, origin.z].every(Number.isFinite)
+      ? Math.hypot(hit.x - origin.x, hit.y - origin.y, hit.z - origin.z)
+      : 0;
+
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestPoint = finitePlacementPoint(hit);
+    }
+  }
+
+  return bestPoint;
+}
 // Typed input contract: {clientX, clientY}, in browser client pixels. The point
 // must lie inside the current canvas bounds; malformed and out-of-range input fails.
 function placementPointFromViewport(position) {
@@ -4708,6 +4772,9 @@ function placementPointFromViewport(position) {
   for (const hit of raycaster.intersectObjects(roots, true) || []) {
     if (isEligiblePlacementSurfaceHit(hit)) return finitePlacementPoint(hit.point);
   }
+  const supportSurfacePoint = placementPointOnAuthoredSupportSurface(raycaster);
+  if (supportSurfacePoint) return supportSurfacePoint;
+
   if (!THREE?.Plane || !THREE?.Vector3 || !raycaster.ray?.intersectPlane) return null;
   const fallback = new THREE.Vector3();
   return raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), fallback)
