@@ -4,6 +4,8 @@
 #include <sstream>
 #include <string>
 
+#include "gui/layout_item_serializer.hpp"
+
 namespace {
 std::string load_file(const std::string & path)
 {
@@ -18,15 +20,8 @@ TEST(LayoutSerializationContractTest, SaveLayoutWritesCanonicalFields)
 {
   const std::string src = load_file("gui/mainwindow.cpp");
   EXPECT_NE(src.find("item[\"id\"]"), std::string::npos);
-  EXPECT_NE(src.find("item[\"display_name\"]"), std::string::npos);
-  EXPECT_NE(src.find("item[\"category\"]"), std::string::npos);
-  EXPECT_NE(src.find("item[\"type\"]"), std::string::npos);
-  EXPECT_NE(src.find("pose[\"xyz\"]"), std::string::npos);
-  EXPECT_NE(src.find("pose[\"rpy\"]"), std::string::npos);
-  EXPECT_NE(src.find("item[\"dimensions\"]"), std::string::npos);
-  EXPECT_NE(src.find("item[\"editable\"]"), std::string::npos);
-  EXPECT_NE(src.find("item[\"locked\"]"), std::string::npos);
-  EXPECT_NE(src.find("ensure_map_node(item, \"mesh\")"), std::string::npos);
+  EXPECT_NE(src.find("serialize_layout_item("), std::string::npos);
+  EXPECT_NE(src.find("emitter.SetStringFormat(YAML::DoubleQuoted)"), std::string::npos);
 }
 
 TEST(LayoutSerializationContractTest, EmbeddedStructuralSaveUsesNativeSessionAuthority)
@@ -54,10 +49,11 @@ TEST(LayoutSerializationContractTest, SessionAddedTransformsBypassStaleDiskPatch
 TEST(LayoutSerializationContractTest, InstanceIdentityAndMeshScaleRemainIndependent)
 {
   const std::string src = load_file("gui/mainwindow.cpp");
-  EXPECT_NE(src.find("item[\"catalog_asset_id\"]"), std::string::npos);
+  const std::string serializer = load_file("gui/layout_item_serializer.hpp");
+  EXPECT_NE(serializer.find("item[\"catalog_asset_id\"]"), std::string::npos);
   EXPECT_NE(src.find("RoleCatalogAssetId"), std::string::npos);
   EXPECT_NE(src.find("RoleMeshScaleX"), std::string::npos);
-  EXPECT_NE(src.find("scale.push_back(mesh_scale_x)"), std::string::npos);
+  EXPECT_NE(serializer.find("mesh[\"scale\"] = layout_sequence3(state.mesh_scale)"), std::string::npos);
   EXPECT_NE(src.find("saved_ids.contains(id)"), std::string::npos);
   EXPECT_NE(src.find("editable_by_id.insert"), std::string::npos);
 }
@@ -76,9 +72,96 @@ TEST(LayoutSerializationContractTest, MixedUnsafeValidationRejectsBeforeAnyWrite
 
 TEST(LayoutSerializationContractTest, SaveLayoutPreservesUnknownFieldsViaCloneMerge)
 {
-  const std::string src = load_file("gui/mainwindow.cpp");
+  const std::string src = load_file("gui/layout_item_serializer.hpp");
   EXPECT_NE(src.find("YAML::Clone(existing)"), std::string::npos);
   EXPECT_NE(src.find("existing_by_id"), std::string::npos);
+}
+
+TEST(LayoutSerializationContractTest, ExistingAuthoredSemanticsAndMeshProvenanceArePreserved)
+{
+  const YAML::Node existing = YAML::Load(R"(
+id: target_bin_default
+display_name: Target Bin
+type: target_bin
+category: place_zone
+role: target_bin
+source: layout/workcell_studio_layout.yaml
+arbitrary: authored
+mesh:
+  path: assets/environment/sorting_bin_description/meshes/sorting_bin.stl
+  source_package: sorting_bin_description
+  scale: [0.001, 0.001, 0.001]
+  rpy: [1, 2, 3]
+  origin_offset: [4, 5, 6]
+)");
+  workcell_builder::LayoutItemSaveState runtime;
+  runtime.id = "wrong"; runtime.type = "place_zone"; runtime.category = "normalized";
+  runtime.role = "place target/bin"; runtime.mesh_path = "editable_layout";
+  runtime.source_package = "editable_layout"; runtime.xyz = {{7, 8, 9}};
+  runtime.rpy = {{0.1, 0.2, 0.3}}; runtime.dimensions = {{1, 2, 3}};
+  runtime.mesh_scale = {{1, 1, 1}};
+  const YAML::Node saved = workcell_builder::serialize_layout_item(runtime, existing);
+  EXPECT_EQ(saved["id"].as<std::string>(), "target_bin_default");
+  EXPECT_EQ(saved["type"].as<std::string>(), "target_bin");
+  EXPECT_EQ(saved["category"].as<std::string>(), "place_zone");
+  EXPECT_EQ(saved["role"].as<std::string>(), "target_bin");
+  EXPECT_EQ(saved["source"].as<std::string>(), "layout/workcell_studio_layout.yaml");
+  EXPECT_EQ(saved["arbitrary"].as<std::string>(), "authored");
+  EXPECT_EQ(saved["mesh"]["path"].as<std::string>(), "assets/environment/sorting_bin_description/meshes/sorting_bin.stl");
+  EXPECT_DOUBLE_EQ(saved["mesh"]["scale"][0].as<double>(), 0.001);
+  EXPECT_EQ(saved["mesh"]["rpy"][2].as<int>(), 3);
+  EXPECT_EQ(saved["mesh"]["origin_offset"][0].as<int>(), 4);
+  EXPECT_DOUBLE_EQ(saved["pose"]["xyz"][0].as<double>(), 7.0);
+}
+
+TEST(LayoutSerializationContractTest, ExistingNonMeshRecordsNeverGainLayerTokenPaths)
+{
+  for (const auto & yaml : {
+      "id: support_surface_table\ntype: support_surface\ncategory: work_surface\nrole: support_surface\nsource: layout/workcell_studio_layout.yaml\n",
+      "id: realsense_overhead\ntype: realsense\ncategory: camera\nrole: camera\nsource: layout/workcell_studio_layout.yaml\n",
+      "id: safety_zone_keepout\ntype: safety_zone\ncategory: safety_zone\nrole: keepout\nsource: layout/workcell_studio_layout.yaml\n"}) {
+    const YAML::Node existing = YAML::Load(yaml);
+    workcell_builder::LayoutItemSaveState runtime;
+    runtime.mesh_path = "editable_layout"; runtime.role = "robot";
+    const YAML::Node saved = workcell_builder::serialize_layout_item(runtime, existing);
+    EXPECT_FALSE(saved["mesh"]);
+    EXPECT_FALSE(saved["mesh_path"]);
+    EXPECT_NE(saved["role"].as<std::string>(), "robot");
+  }
+}
+
+TEST(LayoutSerializationContractTest, NewImportedInstancesKeepIdentityScaleAndQuotedDisplayName)
+{
+  for (const std::string id : {"object_01", "object_02"}) {
+    workcell_builder::LayoutItemSaveState imported;
+    imported.id = id; imported.display_name = "2068_001_24";
+    imported.catalog_asset_id = "imported_2068_001_24";
+    imported.type = "mesh"; imported.category = "imported"; imported.role = "object";
+    imported.mesh_path = "assets/imported/2068_001_24.stl";
+    imported.xyz = id == "object_01" ? std::array<double, 3>{{1, 2, 3}} : std::array<double, 3>{{4, 5, 6}};
+    imported.rpy = {{0.1, 0.2, 0.3}}; imported.dimensions = {{1, 1, 1}};
+    imported.mesh_scale = {{0.001, 0.001, 0.001}};
+    const YAML::Node saved = workcell_builder::serialize_layout_item(imported, YAML::Node());
+    EXPECT_EQ(saved["id"].as<std::string>(), id);
+    EXPECT_EQ(saved["catalog_asset_id"].as<std::string>(), "imported_2068_001_24");
+    EXPECT_DOUBLE_EQ(saved["mesh"]["scale"][0].as<double>(), 0.001);
+    EXPECT_DOUBLE_EQ(saved["pose"]["xyz"][0].as<double>(), id == "object_01" ? 1.0 : 4.0);
+    YAML::Emitter emitter; emitter.SetStringFormat(YAML::DoubleQuoted); emitter << saved;
+    const YAML::Node roundtrip = YAML::Load(emitter.c_str());
+    EXPECT_TRUE(roundtrip["display_name"].IsScalar());
+    EXPECT_EQ(roundtrip["display_name"].as<std::string>(), "2068_001_24");
+    EXPECT_NE(std::string(emitter.c_str()).find("\"2068_001_24\""), std::string::npos);
+  }
+}
+
+TEST(LayoutSerializationContractTest, LayerTokensAreNeverSerializedAsNewMeshPaths)
+{
+  for (const std::string token : {"editable_layout", "mesh_preview", "locked_generated_urdf_visual"}) {
+    workcell_builder::LayoutItemSaveState state; state.id = "object_01";
+    state.mesh_path = token; state.source_package = token;
+    const YAML::Node saved = workcell_builder::serialize_layout_item(state, YAML::Node());
+    EXPECT_FALSE(saved["mesh"]); EXPECT_FALSE(saved["mesh_path"]); EXPECT_FALSE(saved["source_path"]);
+  }
 }
 
 TEST(LayoutSerializationContractTest, SaveLayoutKeepsLockedCanonicalItemsOnRoundTrip)

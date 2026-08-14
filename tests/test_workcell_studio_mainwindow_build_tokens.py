@@ -158,8 +158,11 @@ def test_serialized_editable_canvas_item_preserves_existing_editable_locked_flag
     )
     assert serializer_match is not None
     serializer = serializer_match.group("body")
-    assert "YAML::Clone(existing)" in serializer
-    assert 'if (!item["editable"]) item["editable"] = true;' in serializer
-    assert 'if (!item["locked"]) item["locked"] = false;' in serializer
-    assert 'item["editable"] = true;' not in serializer.replace('if (!item["editable"]) item["editable"] = true;', '')
-    assert 'item["locked"] = false;' not in serializer.replace('if (!item["locked"]) item["locked"] = false;', '')
+    assert "serialize_layout_item(" in serializer
+    authority = Path("workcell_builder/workcell_builder/gui/layout_item_serializer.hpp").read_text(encoding="utf-8")
+    assert "existing_record ? YAML::Clone(existing)" in authority
+    new_record_branch = authority.split("if (!existing_record) {", 1)[1].split(
+        "update_layout_item_pose", 1
+    )[0]
+    assert 'item["editable"] = true;' in new_record_branch
+    assert 'item["locked"] = false;' in new_record_branch

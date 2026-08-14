@@ -454,6 +454,7 @@ if(BUILD_TESTING)
     gui/scene3d_visual_classification.cpp)
   ament_add_gtest(workcell_layout_serialization_contract_test
     test/layout_serialization_contract_test.cpp)
+  target_link_libraries(workcell_layout_serialization_contract_test yaml-cpp)
   ament_add_gtest(workcell_studio_layout_editor_test
     test/workcell_studio_layout_editor_test.cpp
     src_workcell_studio_layout_editor.cpp)

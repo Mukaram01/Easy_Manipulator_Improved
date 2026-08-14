@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #include "gui/mainwindow.h"
+#include "gui/layout_item_serializer.hpp"
 #include "gui/scene3d_viewport_widget.h"
 #include "gui/preview_item_suppression.h"
 #include "visual_mesh_source_resolver.hpp"
@@ -493,7 +494,7 @@ bool is_good_scene_path(const fs::path & scene_path)
     has_file("package.xml");
 }
 
-enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked, RoleWarning, RolePoseText, RoleSourceLayer, RoleCatalogAssetId, RoleMeshScaleX, RoleMeshScaleY, RoleMeshScaleZ };
+enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked, RoleWarning, RolePoseText, RoleSourceLayer, RoleCatalogAssetId, RoleMeshScaleX, RoleMeshScaleY, RoleMeshScaleZ, RoleDisplayNameExplicitlyEdited };
 enum SceneTreeRoles {
   TreeRoleId = Qt::UserRole + 1, TreeRoleCategory, TreeRolePoseText, TreeRoleSource, TreeRolePoseX, TreeRolePoseY, TreeRolePoseZ, TreeRoleRoll, TreeRolePitch, TreeRoleYaw, TreeRolePoseAvailable, TreeRoleRole,
   TreeRoleSourceLayer, TreeRoleActiveVisualSource, TreeRoleEditable, TreeRoleLocked, TreeRoleLinkedEditableLayout, TreeRoleVisualBackingStatus, TreeRoleGeneratedVisual, TreeRoleItemTypeClass,
@@ -7160,49 +7161,6 @@ static YAML::Node ensure_map_node(YAML::Node parent, const char * key)
 }
 
 
-static YAML::Node yaml_sequence_from3(double a, double b, double c)
-{
-  YAML::Node seq(YAML::NodeType::Sequence);
-  seq.push_back(a);
-  seq.push_back(b);
-  seq.push_back(c);
-  return seq;
-}
-
-static void write_pose_preserving_existing_shape(YAML::Node item, double x, double y, double z, double roll, double pitch, double yaw)
-{
-  YAML::Node pose = ensure_map_node(item, "pose");
-  const bool scalar_xyz = pose["x"] || pose["y"] || pose["z"];
-  const bool scalar_rpy = pose["roll"] || pose["pitch"] || pose["yaw"];
-  if (scalar_xyz && !pose["xyz"]) {
-    pose["x"] = x;
-    pose["y"] = y;
-    pose["z"] = z;
-  } else {
-    pose["xyz"] = yaml_sequence_from3(x, y, z);
-  }
-  if (scalar_rpy && !pose["rpy"]) {
-    pose["roll"] = roll;
-    pose["pitch"] = pitch;
-    pose["yaw"] = yaw;
-  } else {
-    pose["rpy"] = yaml_sequence_from3(roll, pitch, yaw);
-  }
-}
-
-static void write_dimensions_preserving_existing_shape(YAML::Node item, double width, double depth, double height)
-{
-  YAML::Node size = item["size"];
-  if (size && size.IsMap() && !item["dimensions"]) {
-    size["width"] = width;
-    size["depth"] = depth;
-    size["height"] = height;
-    return;
-  }
-  item["dimensions"] = yaml_sequence_from3(width, depth, height);
-}
-
-
 static YAML::Node normalize_imported_layout_to_canonical_items(const YAML::Node & imported_root, const std::string & scene_name, const fs::path & scene_dir)
 {
   YAML::Node root = (imported_root && imported_root.IsMap()) ? YAML::Clone(imported_root) : YAML::Node(YAML::NodeType::Map);
@@ -7248,45 +7206,24 @@ static YAML::Node normalize_imported_layout_to_canonical_items(const YAML::Node 
 
 static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML::Node & existing)
 {
-  YAML::Node item = (existing && existing.IsMap()) ? YAML::Clone(existing) : YAML::Node(YAML::NodeType::Map);
-  item["id"] = gi->data(RoleId).toString().toStdString();
-  if (!gi->data(RoleDisplayName).toString().trimmed().isEmpty()) item["display_name"] = gi->data(RoleDisplayName).toString().toStdString();
-  if (!gi->data(RoleCategory).toString().trimmed().isEmpty()) item["category"] = gi->data(RoleCategory).toString().toStdString();
-  if (!gi->data(RoleType).toString().trimmed().isEmpty()) item["type"] = gi->data(RoleType).toString().toStdString();
-  if (!gi->data(RoleRole).toString().trimmed().isEmpty()) item["role"] = gi->data(RoleRole).toString().toStdString();
-  if (!gi->data(RoleCatalogAssetId).toString().trimmed().isEmpty())
-    item["catalog_asset_id"] = gi->data(RoleCatalogAssetId).toString().toStdString();
-  if (!gi->data(RoleSource).toString().trimmed().isEmpty()) {
-    item["source_path"] = gi->data(RoleSource).toString().toStdString();
-    item["mesh_path"] = gi->data(RoleSource).toString().toStdString();
-    item["asset_id"] = QFileInfo(gi->data(RoleSource).toString()).completeBaseName().toStdString();
-  }
-  if (!gi->data(RoleSourcePackage).toString().trimmed().isEmpty()) item["source_package"] = gi->data(RoleSourcePackage).toString().toStdString();
-  item["source"] = gi->data(RoleSourcePackage).toString().trimmed().isEmpty() ? "layout_editor" : gi->data(RoleSourcePackage).toString().toStdString();
-  if (!item["editable"]) item["editable"] = true;
-  if (!item["locked"]) item["locked"] = false;
-  write_pose_preserving_existing_shape(item,
-    gi->pos().x() / 100.0, gi->pos().y() / 100.0, gi->data(RolePoseZ).toDouble(),
-    gi->data(RoleRoll).toDouble(), gi->data(RolePitch).toDouble(), gi->data(RoleYaw).toDouble());
-  write_dimensions_preserving_existing_shape(
-    item, gi->data(RoleWidth).toDouble(), gi->data(RoleDepth).toDouble(), gi->data(RoleHeight).toDouble());
-  YAML::Node scale(YAML::NodeType::Sequence);
-  const double mesh_scale_x = gi->data(RoleMeshScaleX).isValid() ? gi->data(RoleMeshScaleX).toDouble() : gi->data(RoleWidth).toDouble();
-  const double mesh_scale_y = gi->data(RoleMeshScaleY).isValid() ? gi->data(RoleMeshScaleY).toDouble() : gi->data(RoleDepth).toDouble();
-  const double mesh_scale_z = gi->data(RoleMeshScaleZ).isValid() ? gi->data(RoleMeshScaleZ).toDouble() : gi->data(RoleHeight).toDouble();
-  scale.push_back(mesh_scale_x);
-  scale.push_back(mesh_scale_y);
-  scale.push_back(mesh_scale_z);
-  item["scale"] = scale;
-  if (!gi->data(RoleSource).toString().trimmed().isEmpty() || !gi->data(RoleSourcePackage).toString().trimmed().isEmpty()) {
-    YAML::Node mesh = ensure_map_node(item, "mesh");
-    if (!gi->data(RoleSource).toString().trimmed().isEmpty()) mesh["path"] = gi->data(RoleSource).toString().toStdString();
-    if (!gi->data(RoleSourcePackage).toString().trimmed().isEmpty()) mesh["source_package"] = gi->data(RoleSourcePackage).toString().toStdString();
-  }
-  YAML::Node meta = ensure_map_node(item, "metadata");
-  meta["serialization_contract"] =
-    "editable layout item only; locked/generated preview items are not written by inspector save";
-  return item;
+  workcell_builder::LayoutItemSaveState state;
+  state.id = gi->data(RoleId).toString().toStdString();
+  state.display_name = gi->data(RoleDisplayName).toString().toStdString();
+  state.type = gi->data(RoleType).toString().toStdString();
+  state.category = gi->data(RoleCategory).toString().toStdString();
+  state.role = gi->data(RoleRole).toString().toStdString();
+  state.catalog_asset_id = gi->data(RoleCatalogAssetId).toString().toStdString();
+  state.mesh_path = gi->data(RoleSource).toString().toStdString();
+  state.source_package = gi->data(RoleSourcePackage).toString().toStdString();
+  state.xyz = {{gi->pos().x() / 100.0, gi->pos().y() / 100.0, gi->data(RolePoseZ).toDouble()}};
+  state.rpy = {{gi->data(RoleRoll).toDouble(), gi->data(RolePitch).toDouble(), gi->data(RoleYaw).toDouble()}};
+  state.dimensions = {{gi->data(RoleWidth).toDouble(), gi->data(RoleDepth).toDouble(), gi->data(RoleHeight).toDouble()}};
+  state.mesh_scale = {{
+    gi->data(RoleMeshScaleX).isValid() ? gi->data(RoleMeshScaleX).toDouble() : 1.0,
+    gi->data(RoleMeshScaleY).isValid() ? gi->data(RoleMeshScaleY).toDouble() : 1.0,
+    gi->data(RoleMeshScaleZ).isValid() ? gi->data(RoleMeshScaleZ).toDouble() : 1.0}};
+  return workcell_builder::serialize_layout_item(
+    state, existing, gi->data(RoleDisplayNameExplicitlyEdited).toBool());
 }
 
 void MainWindow::save_layout_changes(){
@@ -7327,13 +7264,11 @@ bool MainWindow::apply_web_transforms_to_editable_layout_session(
     const QJsonObject pose = transform.value(QStringLiteral("pose")).toObject();
     const QJsonObject xyz = pose.value(QStringLiteral("xyz")).toObject();
     const QJsonObject rpy = pose.value(QStringLiteral("rpy")).toObject();
-    const QJsonObject scale = transform.value(QStringLiteral("scale")).toObject();
     const auto finite = [](const QJsonObject & object, const char * key) {
       return object.value(QString::fromUtf8(key)).isDouble() && std::isfinite(object.value(QString::fromUtf8(key)).toDouble());
     };
     if (!finite(xyz, "x") || !finite(xyz, "y") || !finite(xyz, "z") ||
-        !finite(rpy, "x") || !finite(rpy, "y") || !finite(rpy, "z") ||
-        !finite(scale, "x") || !finite(scale, "y") || !finite(scale, "z")) {
+        !finite(rpy, "x") || !finite(rpy, "y") || !finite(rpy, "z")) {
       if (error) *error = QStringLiteral("Browser transform for '%1' is incomplete or non-finite. No file was written; edits remain unsaved.").arg(id);
       return false;
     }
@@ -7347,9 +7282,6 @@ bool MainWindow::apply_web_transforms_to_editable_layout_session(
     canvas->setData(RoleRoll, rpy.value("x").toDouble());
     canvas->setData(RolePitch, rpy.value("y").toDouble());
     canvas->setData(RoleYaw, rpy.value("z").toDouble());
-    canvas->setData(RoleMeshScaleX, scale.value("x").toDouble());
-    canvas->setData(RoleMeshScaleY, scale.value("y").toDouble());
-    canvas->setData(RoleMeshScaleZ, scale.value("z").toDouble());
   }
   capture_active_editable_layout_session();
   return true;
@@ -7671,6 +7603,7 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
   }
 
   YAML::Emitter emitter;
+  emitter.SetStringFormat(YAML::DoubleQuoted);
   emitter << root;
   QSaveFile out(QString::fromStdString(effective_layout_path.string()));
   if (!out.open(QIODevice::WriteOnly) ||
@@ -8112,7 +8045,10 @@ void MainWindow::apply_inspector_pose_to_item()
       updated_display_name = inspector_display_name_->text().trimmed();
       if (!updated_display_name.isEmpty()) {
         metadata_changed = updated_display_name != i->data(RoleDisplayName).toString().trimmed();
-        if (metadata_changed) i->setData(RoleDisplayName, updated_display_name);
+        if (metadata_changed) {
+          i->setData(RoleDisplayName, updated_display_name);
+          i->setData(RoleDisplayNameExplicitlyEdited, true);
+        }
       }
     }
   }
