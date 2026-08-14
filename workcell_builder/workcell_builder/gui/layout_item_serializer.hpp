@@ -21,6 +21,13 @@ inline bool is_scene_layer_token(const std::string & value)
          value == "locked_generated_urdf_visual";
 }
 
+inline YAML::Node layout_string_scalar(const std::string & value)
+{
+  YAML::Node node(value);
+  node.SetTag("tag:yaml.org,2002:str");
+  return node;
+}
+
 inline YAML::Node layout_sequence3(const std::array<double, 3> & values)
 {
   YAML::Node sequence(YAML::NodeType::Sequence);
@@ -59,12 +66,12 @@ inline YAML::Node serialize_layout_item(
   const bool existing_record = existing && existing.IsMap();
   YAML::Node item = existing_record ? YAML::Clone(existing) : YAML::Node(YAML::NodeType::Map);
   if (!existing_record) {
-    item["id"] = state.id;
-    if (!state.display_name.empty()) item["display_name"] = state.display_name;
+    item["id"] = layout_string_scalar(state.id);
+    if (!state.display_name.empty()) item["display_name"] = layout_string_scalar(state.display_name);
     if (!state.type.empty()) item["type"] = state.type;
     if (!state.category.empty()) item["category"] = state.category;
     if (!state.role.empty()) item["role"] = state.role;
-    if (!state.catalog_asset_id.empty()) item["catalog_asset_id"] = state.catalog_asset_id;
+    if (!state.catalog_asset_id.empty()) item["catalog_asset_id"] = layout_string_scalar(state.catalog_asset_id);
     item["source"] = "layout/workcell_studio_layout.yaml";
     item["editable"] = true; item["locked"] = false;
     if (!state.mesh_path.empty() && !is_scene_layer_token(state.mesh_path)) {
@@ -76,7 +83,7 @@ inline YAML::Node serialize_layout_item(
     }
     item["scale"] = layout_sequence3(state.mesh_scale);
   } else if (display_name_explicitly_edited && !state.display_name.empty()) {
-    item["display_name"] = state.display_name;
+    item["display_name"] = layout_string_scalar(state.display_name);
   }
   update_layout_item_pose(item, state);
   update_layout_item_dimensions(item, state);

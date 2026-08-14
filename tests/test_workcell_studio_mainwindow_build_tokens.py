@@ -166,3 +166,17 @@ def test_serialized_editable_canvas_item_preserves_existing_editable_locked_flag
     )[0]
     assert 'item["editable"] = true;' in new_record_branch
     assert 'item["locked"] = false;' in new_record_branch
+
+def test_save_layout_does_not_stringify_numeric_yaml_scalars_globally():
+    mainwindow = Path(
+        "workcell_builder/workcell_builder/gui/mainwindow.cpp"
+    ).read_text(encoding="utf-8")
+
+    serializer = Path(
+        "workcell_builder/workcell_builder/gui/layout_item_serializer.hpp"
+    ).read_text(encoding="utf-8")
+
+    assert "SetStringFormat(YAML::DoubleQuoted)" not in mainwindow
+    assert 'SetTag("tag:yaml.org,2002:str")' in serializer
+    assert "layout_string_scalar(state.display_name)" in serializer
+    assert "layout_sequence3(state.mesh_scale)" in serializer

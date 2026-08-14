@@ -21,7 +21,9 @@ TEST(LayoutSerializationContractTest, SaveLayoutWritesCanonicalFields)
   const std::string src = load_file("gui/mainwindow.cpp");
   EXPECT_NE(src.find("item[\"id\"]"), std::string::npos);
   EXPECT_NE(src.find("serialize_layout_item("), std::string::npos);
-  EXPECT_NE(src.find("emitter.SetStringFormat(YAML::DoubleQuoted)"), std::string::npos);
+  EXPECT_EQ(src.find("emitter.SetStringFormat(YAML::DoubleQuoted)"), std::string::npos);
+  const std::string serializer = load_file("gui/layout_item_serializer.hpp");
+  EXPECT_NE(serializer.find("SetTag(\"tag:yaml.org,2002:str\")"), std::string::npos);
 }
 
 TEST(LayoutSerializationContractTest, EmbeddedStructuralSaveUsesNativeSessionAuthority)
@@ -146,11 +148,16 @@ TEST(LayoutSerializationContractTest, NewImportedInstancesKeepIdentityScaleAndQu
     EXPECT_EQ(saved["catalog_asset_id"].as<std::string>(), "imported_2068_001_24");
     EXPECT_DOUBLE_EQ(saved["mesh"]["scale"][0].as<double>(), 0.001);
     EXPECT_DOUBLE_EQ(saved["pose"]["xyz"][0].as<double>(), id == "object_01" ? 1.0 : 4.0);
-    YAML::Emitter emitter; emitter.SetStringFormat(YAML::DoubleQuoted); emitter << saved;
+    YAML::Emitter emitter; emitter << saved;
     const YAML::Node roundtrip = YAML::Load(emitter.c_str());
     EXPECT_TRUE(roundtrip["display_name"].IsScalar());
     EXPECT_EQ(roundtrip["display_name"].as<std::string>(), "2068_001_24");
-    EXPECT_NE(std::string(emitter.c_str()).find("\"2068_001_24\""), std::string::npos);
+    EXPECT_NE(
+      std::string(emitter.c_str()).find("tag:yaml.org,2002:str"),
+      std::string::npos);
+    EXPECT_EQ(
+      std::string(emitter.c_str()).find("\"0.001\""),
+      std::string::npos);
   }
 }
 
