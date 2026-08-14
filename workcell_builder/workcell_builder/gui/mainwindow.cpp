@@ -583,6 +583,10 @@ bool is_user_facing_scene_hierarchy_item(const ScenePreviewWidget::PreviewItem &
   const QString metadata = canonical_scene3d_token(item.metadata_tags);
   const QString source_file = canonical_scene3d_token(QFileInfo(item.source_path).fileName());
 
+  // Source provenance outranks a generic renderer role. Generated visual rows
+  // stay in the preview payload for rendering/diagnostics, never as owners.
+  if (source_layer == QStringLiteral("locked_generated_urdf_visual")) return false;
+
   const bool generated_visual_identity =
     id.startsWith(QStringLiteral("generated_urdf")) ||
     !item.visual_index_link.trimmed().isEmpty() ||
@@ -616,7 +620,7 @@ bool is_user_facing_scene_hierarchy_item(const ScenePreviewWidget::PreviewItem &
 
   const bool canonical_robot_or_tool =
     (role == QStringLiteral("robot") || role == QStringLiteral("end_effector_tool")) &&
-    !generated_visual_identity;
+    source_layer == QStringLiteral("selection_owner_registry") && !generated_visual_identity;
   if (canonical_robot_or_tool) return true;
 
   const bool authored_physical_role =
@@ -8195,7 +8199,7 @@ void MainWindow::undo_layout_edit(){
   } else {
     for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;}
   }
-  redo_stack_.push_back(c); mark_layout_dirty("Undo"); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
+  redo_stack_.push_back(c); mark_layout_dirty("Undo"); populate_scene_hierarchy(); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
 }
 void MainWindow::redo_layout_edit(){
   if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
@@ -8232,7 +8236,7 @@ void MainWindow::redo_layout_edit(){
   } else {
     for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.new_pos); break;}
   }
-  undo_stack_.push_back(c); mark_layout_dirty("Redo"); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
+  undo_stack_.push_back(c); mark_layout_dirty("Redo"); populate_scene_hierarchy(); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
 }
 bool MainWindow::selected_item_can_be_duplicated() const
 {
@@ -8337,6 +8341,7 @@ void MainWindow::duplicate_selected_item()
     true, false, {copy}};
   undo_stack_.push_back(command); redo_stack_.clear();
   apply_scene3d_preview_layer_filters(false);
+  populate_scene_hierarchy();
   refresh_scene_builder_left_explorer();
   apply_scene_selection(new_id, copy.role, false, false);
   mark_layout_dirty("Duplicate Selected");
@@ -8382,6 +8387,7 @@ void MainWindow::delete_selected_item(){
   current_selected_scene_item_id_.clear(); selected_item_state_ = {};
   undo_stack_.push_back(command); redo_stack_.clear();
   apply_scene3d_preview_layer_filters(false);
+  populate_scene_hierarchy();
   refresh_selected_scene_item_labels(selected_item_state_);
   refresh_scene_builder_left_explorer();
   mark_layout_dirty("Delete Selected");
@@ -8791,6 +8797,7 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   }
   all_scene_preview_items_.push_back(preview_item);
   apply_scene3d_preview_layer_filters(false);
+  populate_scene_hierarchy();
   digital_twin_scene_->clearSelection();
   item->setSelected(true);
   select_canvas_item(item);
@@ -9419,8 +9426,28 @@ void MainWindow::populate_scene_hierarchy()
     last_layout_load_message_log_ = layout_load_message;
   }
 
-  auto normalize_role = [](const QString & raw_role, const QString & fallback_text) {
-    const QString lower = (raw_role + " " + fallback_text).toLower();
+  auto normalize_role = [](const QString & raw_role, const QString & raw_category, const QString & fallback_text) {
+    auto classify = [](const QString & structured_text) {
+      const QString lower = structured_text.trimmed().toLower();
+      if (lower.isEmpty() || lower == QStringLiteral("unknown")) return QString();
+      if (lower.contains("keepout") || lower.contains("exclusion") || lower.contains("safety_zone") || lower == QStringLiteral("safety")) return QString("safety zone");
+      if (lower.contains("home") || lower.contains("safe_joint_state") || lower.contains("safety_pose")) return QString("home/safety pose");
+      if (lower.contains("end_effector") || lower.contains("gripper") || lower.contains("tool")) return QString("end_effector/tool");
+      if (lower.contains("support_surface") || lower.contains("table") || lower.contains("workbench")) return QString("support_surface/table");
+      if (lower.contains("pick_source") || lower.contains("pick_zone")) return QString("pick source/zone");
+      if (lower.contains("place_target") || lower.contains("place_zone") || lower.contains("bin")) return QString("place target/bin");
+      if (lower.contains("camera") || lower.contains("sensor")) return QString("camera");
+      if (lower.contains("conveyor")) return QString("conveyor");
+      if (lower.contains("robot")) return QString("robot");
+      if (lower.contains("object") || lower.contains("fixture") || lower.contains("asset")) return QString("object");
+      return QString();
+    };
+    // Role and category are the structured semantic record. Classify them
+    // together so a specific category (for example safety_zone) outranks a
+    // generic role (for example asset), without consulting the display label.
+    const QString structured = classify(raw_role + QStringLiteral(" ") + raw_category);
+    if (!structured.isEmpty()) return structured;
+    const QString lower = fallback_text.toLower();
     if (lower.contains("robot")) return QString("robot");
     if (lower.contains("end_effector") || lower.contains("gripper") || lower.contains("tool")) return QString("end_effector/tool");
     if (lower.contains("camera") || lower.contains("sensor")) return QString("camera");
@@ -9519,7 +9546,13 @@ void MainWindow::populate_scene_hierarchy()
     return QString("ready");
   };
 
+  // Hierarchy identity is the exact scene-instance/owner ID. Catalog identity,
+  // labels, mesh paths, and renderer layer state are intentionally irrelevant.
+  QSet<QString> hierarchy_instance_ids;
   auto add_tree_node = [&](const ScenePreviewWidget::PreviewItem & p) {
+    const QString instance_id = p.id.trimmed();
+    if (instance_id.isEmpty() || hierarchy_instance_ids.contains(instance_id)) return;
+    hierarchy_instance_ids.insert(instance_id);
     const QString visual_status = p.mesh_path.trimmed().isEmpty()
       ? (p.active_visual_source.contains("primitive") ? QStringLiteral("primitive") : QStringLiteral("missing"))
       : QStringLiteral("mesh");
@@ -9592,7 +9625,7 @@ void MainWindow::populate_scene_hierarchy()
     p.id = id;
     p.display_name = display_name;
     p.category = category;
-    p.role = normalize_role(role_hint, category + " " + display_name);
+    p.role = normalize_role(role_hint, category, display_name);
     p.status = status;
     p.source_path = source_path;
     p.source_layer = QStringLiteral("overlay");
@@ -9618,7 +9651,7 @@ void MainWindow::populate_scene_hierarchy()
 
   for (const auto & item : model.items) {
     ScenePreviewWidget::PreviewItem p = ScenePreviewWidget::preview_item_from_canvas_item(item);
-    p.role = normalize_role(QString::fromStdString(item.role), p.category + " " + p.display_name);
+    p.role = normalize_role(QString::fromStdString(item.role), p.category, p.display_name);
     p.status = status_for_item(item);
     p.metadata_complete = item.warnings.empty();
     for (const auto & warning : item.warnings) p.warnings << QString::fromStdString(warning);
@@ -9862,7 +9895,7 @@ void MainWindow::populate_scene_hierarchy()
     p.id = normalized_id;
     p.display_name = raw_label.trimmed().isEmpty() ? normalized_id : raw_label.trimmed();
     apply_semantic_defaults(concept, &p);
-    p.role = normalize_role(concept, p.category + " " + p.display_name + " " + p.id);
+    p.role = normalize_role(concept, p.category, p.display_name + " " + p.id);
     if (concept == QStringLiteral("home_safety_pose")) p.role = QStringLiteral("home/safety pose");
     p.status = workcell_builder::get_bool_like(node, "enabled").value_or(true) ? QStringLiteral("ready") : QStringLiteral("disabled");
     p.source_path = source_file;
