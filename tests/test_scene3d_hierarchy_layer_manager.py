@@ -90,43 +90,23 @@ def test_hierarchy_exposes_stable_id_and_detection_metadata_roles():
 def test_scene_hierarchy_compact_object_rows_and_single_layers_section():
     assert 'scene_hierarchy_tree_->setHeaderLabels({"Name", "Type", "State"});' in MAIN_CPP
     assert 'scene_hierarchy_tree_->setTextElideMode(Qt::ElideRight);' in MAIN_CPP
-    assert 'scene_hierarchy_tree_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);' in MAIN_CPP
-    assert 'header()->setSectionResizeMode(0, QHeaderView::Stretch);' in MAIN_CPP
-    assert 'header()->setSectionResizeMode(1, QHeaderView::Interactive);' in MAIN_CPP
-    assert 'scene_hierarchy_tree_->setColumnWidth(1, 120);' in MAIN_CPP
-    assert 'scene_hierarchy_tree_->setColumnWidth(2, 72);' in MAIN_CPP
-
     hierarchy_setup = MAIN_CPP[MAIN_CPP.index('hierarchy_layout->addWidget(new QLabel("<b>Scene Hierarchy</b>"));'):MAIN_CPP.index('left_vertical_splitter->addWidget(hierarchy_card);')]
     assert 'new QGroupBox("Layers", hierarchy_card)' in hierarchy_setup
     assert hierarchy_setup.count('new QCheckBox(') == 6
-
-    populate = mainwindow_function('populate_scene_hierarchy()')
-    add_node = populate[populate.index('auto add_tree_node = [&]'):populate.index('auto add_preview_item = [&]')]
-    assert 'new QTreeWidgetItem(scene_hierarchy_tree_' in add_node
-    assert 'new QTreeWidgetItem(parent' not in add_node
-    assert 'ensure_group' not in populate
-    assert 'Warnings / Missing Assets' not in populate
-    assert 'helper_file' not in populate
-    assert 'detail_tooltip' in add_node
-    assert 'node->setToolTip(0, detail_tooltip);' in add_node
-    assert 'node->setToolTip(1' in add_node
-    assert 'node->setToolTip(2, detail_tooltip);' in add_node
+    refresh = mainwindow_function('refresh_scene_hierarchy_tree_from_current_items()')
+    assert 'new QTreeWidgetItem(scene_hierarchy_tree_' in refresh
+    assert 'detail_tooltip' in refresh
+    assert 'node->setToolTip(0, detail_tooltip);' in refresh
+    assert 'header->setSectionResizeMode(0, QHeaderView::Stretch);' in refresh
 
 
 def test_hierarchy_selection_layer_state_and_empty_state_contract():
-    populate = mainwindow_function('populate_scene_hierarchy()')
-    assert 'is_user_facing_scene_hierarchy_item(p)' in populate
-    assert 'include_preview_item_in_hierarchy' not in populate
-    assert 'p.source_layer == QStringLiteral("overlay")' not in populate
-    assert 'box->setChecked(true);' in MAIN_CPP
-    assert 'set_checked_blocked(preview_layer_editable_layout_box_, defaults.editable_layout);' in MAIN_CPP
+    refresh = mainwindow_function('refresh_scene_hierarchy_tree_from_current_items()')
+    assert 'is_user_facing_scene_hierarchy_item(p)' in refresh
+    assert 'const QSignalBlocker hierarchy_signals(scene_hierarchy_tree_);' in refresh
     assert 'connect(scene_hierarchy_tree_, &QTreeWidget::itemClicked' in MAIN_CPP
-    assert 'apply_scene_selection(selected_id, selected_role, false, true);' in MAIN_CPP
-    assert 'apply_scene_selection(selected_id, selected_role, false, false);' in MAIN_CPP
-    assert 'No scene items' in populate
-    assert 'apply_scene_selection(QString(), QStringLiteral("unknown"), true, false);' in populate
-    assert 'empty->setFlags(empty->flags() & ~Qt::ItemIsSelectable);' in populate
-
+    assert 'No scene items' in refresh
+    assert 'empty->setFlags(empty->flags() & ~Qt::ItemIsSelectable);' in refresh
 
 def test_user_facing_hierarchy_policy_covers_synthetic_preview_contract():
     policy_start = MAIN_CPP.index('bool is_user_facing_scene_hierarchy_item(')

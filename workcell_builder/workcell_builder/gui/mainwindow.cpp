@@ -576,7 +576,7 @@ QString scene3d_viewport_link_token(const ScenePreviewWidget::PreviewItem & item
 bool is_user_facing_scene_hierarchy_item(const ScenePreviewWidget::PreviewItem & item)
 {
   const QString id = canonical_scene3d_token(item.id);
-  const QString role = canonical_scene3d_token(item.role);
+  const QString role = QString(canonical_scene3d_token(item.role)).replace('/', '_');
   const QString category = canonical_scene3d_token(item.category);
   const QString source_layer = canonical_scene3d_token(item.source_layer);
   const QString visual_source = canonical_scene3d_token(item.active_visual_source);
@@ -619,7 +619,8 @@ bool is_user_facing_scene_hierarchy_item(const ScenePreviewWidget::PreviewItem &
   if (task_only_semantic || (semantic_primitive && !authored_source)) return false;
 
   const bool canonical_robot_or_tool =
-    (role == QStringLiteral("robot") || role == QStringLiteral("end_effector_tool")) &&
+    (role == QStringLiteral("robot") || role == QStringLiteral("end_effector") ||
+     role == QStringLiteral("end_effector_tool")) &&
     source_layer == QStringLiteral("selection_owner_registry") && !generated_visual_identity;
   if (canonical_robot_or_tool) return true;
 
@@ -8199,7 +8200,7 @@ void MainWindow::undo_layout_edit(){
   } else {
     for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;}
   }
-  redo_stack_.push_back(c); mark_layout_dirty("Undo"); populate_scene_hierarchy(); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
+  redo_stack_.push_back(c); mark_layout_dirty("Undo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
 }
 void MainWindow::redo_layout_edit(){
   if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
@@ -8236,7 +8237,7 @@ void MainWindow::redo_layout_edit(){
   } else {
     for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.new_pos); break;}
   }
-  undo_stack_.push_back(c); mark_layout_dirty("Redo"); populate_scene_hierarchy(); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
+  undo_stack_.push_back(c); mark_layout_dirty("Redo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
 }
 bool MainWindow::selected_item_can_be_duplicated() const
 {
@@ -8341,7 +8342,7 @@ void MainWindow::duplicate_selected_item()
     true, false, {copy}};
   undo_stack_.push_back(command); redo_stack_.clear();
   apply_scene3d_preview_layer_filters(false);
-  populate_scene_hierarchy();
+  refresh_scene_hierarchy_tree_from_current_items();
   refresh_scene_builder_left_explorer();
   apply_scene_selection(new_id, copy.role, false, false);
   mark_layout_dirty("Duplicate Selected");
@@ -8387,7 +8388,7 @@ void MainWindow::delete_selected_item(){
   current_selected_scene_item_id_.clear(); selected_item_state_ = {};
   undo_stack_.push_back(command); redo_stack_.clear();
   apply_scene3d_preview_layer_filters(false);
-  populate_scene_hierarchy();
+  refresh_scene_hierarchy_tree_from_current_items();
   refresh_selected_scene_item_labels(selected_item_state_);
   refresh_scene_builder_left_explorer();
   mark_layout_dirty("Delete Selected");
@@ -8797,7 +8798,7 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   }
   all_scene_preview_items_.push_back(preview_item);
   apply_scene3d_preview_layer_filters(false);
-  populate_scene_hierarchy();
+  refresh_scene_hierarchy_tree_from_current_items();
   digital_twin_scene_->clearSelection();
   item->setSelected(true);
   select_canvas_item(item);
@@ -9401,6 +9402,72 @@ void MainWindow::refresh_scene3d_product_view_status_and_audit()
       transform_parity.failed));
 }
 
+
+void MainWindow::refresh_scene_hierarchy_tree_from_current_items()
+{
+  if (!scene_hierarchy_tree_) return;
+
+  const QString selected_id = current_selected_scene_item_id_.trimmed();
+  const QSignalBlocker hierarchy_signals(scene_hierarchy_tree_);
+  scene_hierarchy_tree_->clear();
+
+  // The dedupe set belongs to this one authoritative render pass. Exact scene
+  // instance IDs are row identity; labels and catalog asset IDs are not.
+  QSet<QString> hierarchy_instance_ids;
+  QTreeWidgetItem * selected_node = nullptr;
+  for (const auto & p : all_scene_preview_items_) {
+    const QString instance_id = p.id.trimmed();
+    if (instance_id.isEmpty() || hierarchy_instance_ids.contains(instance_id) ||
+        !is_user_facing_scene_hierarchy_item(p)) continue;
+    hierarchy_instance_ids.insert(instance_id);
+
+    const QString visual_status = p.mesh_path.trimmed().isEmpty()
+      ? (p.active_visual_source.contains("primitive") ? QStringLiteral("primitive") : QStringLiteral("missing"))
+      : QStringLiteral("mesh");
+    const QString display_name = QStringLiteral("%1 [%2]").arg(p.display_name.trimmed(), instance_id);
+    const QString type_text = p.role.trimmed().isEmpty() ? p.category.trimmed() : p.role.trimmed();
+    const QString state_text = p.status.trimmed().isEmpty() ? QStringLiteral("ready") : p.status.trimmed();
+    const QString detail_tooltip = QStringLiteral("%1\nType: %2\nState: %3\nLayer: %4\nVisual: %5\nBacking: %6")
+      .arg(display_name, type_text.isEmpty() ? QStringLiteral("object") : type_text, state_text,
+           p.source_layer.trimmed().isEmpty() ? QStringLiteral("unknown") : p.source_layer.trimmed(),
+           p.active_visual_source.trimmed().isEmpty() ? QStringLiteral("unknown") : p.active_visual_source.trimmed(),
+           visual_status);
+    auto * node = new QTreeWidgetItem(scene_hierarchy_tree_, {
+      display_name, type_text.isEmpty() ? QStringLiteral("object") : type_text, state_text});
+    node->setToolTip(0, detail_tooltip); node->setToolTip(1, type_text); node->setToolTip(2, detail_tooltip);
+    node->setData(0, TreeRoleId, p.id); node->setData(0, TreeRoleCategory, p.category);
+    node->setData(0, TreeRolePoseText, QString("xyz=(%1,%2,%3) rpy=(%4,%5,%6)").arg(p.x).arg(p.y).arg(p.z).arg(p.roll).arg(p.pitch).arg(p.yaw));
+    node->setData(0, TreeRoleSource, p.source_path);
+    node->setData(0, TreeRolePoseX, p.x); node->setData(0, TreeRolePoseY, p.y); node->setData(0, TreeRolePoseZ, p.z);
+    node->setData(0, TreeRoleRoll, p.roll); node->setData(0, TreeRolePitch, p.pitch); node->setData(0, TreeRoleYaw, p.yaw);
+    node->setData(0, TreeRolePoseAvailable, true); node->setData(0, TreeRoleRole, p.role);
+    node->setData(0, TreeRoleSourceLayer, p.source_layer); node->setData(0, TreeRoleActiveVisualSource, p.active_visual_source);
+    node->setData(0, TreeRoleEditable, p.editable); node->setData(0, TreeRoleLocked, p.locked);
+    node->setData(0, TreeRoleLinkedEditableLayout, p.linked_to_editable_layout_state);
+    node->setData(0, TreeRoleVisualBackingStatus, visual_status);
+    node->setData(0, TreeRoleGeneratedVisual, p.source_layer != QStringLiteral("editable_layout"));
+    node->setData(0, TreeRoleItemTypeClass, p.category); node->setData(0, TreeRoleStableId, p.id);
+    node->setData(0, TreeRoleCameraId, p.camera_id); node->setData(0, TreeRoleFrameId, p.frame_id);
+    node->setData(0, TreeRoleDetectionLabel, p.detection_label); node->setData(0, TreeRoleConfidence, p.confidence);
+    node->setData(0, TreeRoleTrackingId, p.tracking_id); node->setData(0, TreeRoleSnapshotSourceFile, p.snapshot_source_file);
+    node->setData(0, TreeRoleAlignmentWarning, p.alignment_warning);
+    if (instance_id == selected_id) selected_node = node;
+  }
+
+  if (scene_hierarchy_tree_->topLevelItemCount() == 0) {
+    auto * empty = new QTreeWidgetItem(scene_hierarchy_tree_, {QStringLiteral("No scene items"), QString(), QString()});
+    empty->setFlags(empty->flags() & ~Qt::ItemIsSelectable);
+  } else if (selected_node) {
+    scene_hierarchy_tree_->setCurrentItem(selected_node);
+  }
+  auto * header = scene_hierarchy_tree_->header();
+  if (header) {
+    header->setSectionResizeMode(0, QHeaderView::Stretch); header->setSectionResizeMode(1, QHeaderView::Interactive);
+    header->setSectionResizeMode(2, QHeaderView::Fixed); scene_hierarchy_tree_->setColumnWidth(1, 120);
+    scene_hierarchy_tree_->setColumnWidth(2, 72); header->setStretchLastSection(false);
+  }
+}
+
 void MainWindow::populate_scene_hierarchy()
 {
   if (!scene_hierarchy_tree_) return;
@@ -9430,12 +9497,12 @@ void MainWindow::populate_scene_hierarchy()
     auto classify = [](const QString & structured_text) {
       const QString lower = structured_text.trimmed().toLower();
       if (lower.isEmpty() || lower == QStringLiteral("unknown")) return QString();
-      if (lower.contains("keepout") || lower.contains("exclusion") || lower.contains("safety_zone") || lower == QStringLiteral("safety")) return QString("safety zone");
-      if (lower.contains("home") || lower.contains("safe_joint_state") || lower.contains("safety_pose")) return QString("home/safety pose");
-      if (lower.contains("end_effector") || lower.contains("gripper") || lower.contains("tool")) return QString("end_effector/tool");
-      if (lower.contains("support_surface") || lower.contains("table") || lower.contains("workbench")) return QString("support_surface/table");
-      if (lower.contains("pick_source") || lower.contains("pick_zone")) return QString("pick source/zone");
-      if (lower.contains("place_target") || lower.contains("place_zone") || lower.contains("bin")) return QString("place target/bin");
+      if (lower.contains("keepout") || lower.contains("exclusion") || lower.contains("safety_zone") || lower == QStringLiteral("safety")) return QString("safety_zone");
+      if (lower.contains("home") || lower.contains("safe_joint_state") || lower.contains("safety_pose")) return QString("home_safety_pose");
+      if (lower.contains("end_effector") || lower.contains("gripper") || lower.contains("tool")) return QString("end_effector_tool");
+      if (lower.contains("support_surface") || lower.contains("table") || lower.contains("workbench")) return QString("support_surface_table");
+      if (lower.contains("pick_source") || lower.contains("pick_zone")) return QString("pick_source_zone");
+      if (lower.contains("place_target") || lower.contains("place_zone") || lower.contains("bin")) return QString("place_target_bin");
       if (lower.contains("camera") || lower.contains("sensor")) return QString("camera");
       if (lower.contains("conveyor")) return QString("conveyor");
       if (lower.contains("robot")) return QString("robot");
@@ -9449,28 +9516,16 @@ void MainWindow::populate_scene_hierarchy()
     if (!structured.isEmpty()) return structured;
     const QString lower = fallback_text.toLower();
     if (lower.contains("robot")) return QString("robot");
-    if (lower.contains("end_effector") || lower.contains("gripper") || lower.contains("tool")) return QString("end_effector/tool");
+    if (lower.contains("end_effector") || lower.contains("gripper") || lower.contains("tool")) return QString("end_effector_tool");
     if (lower.contains("camera") || lower.contains("sensor")) return QString("camera");
-    if (lower.contains("support_surface") || lower.contains("table") || lower.contains("workbench")) return QString("support_surface/table");
+    if (lower.contains("support_surface") || lower.contains("table") || lower.contains("workbench")) return QString("support_surface_table");
     if (lower.contains("conveyor")) return QString("conveyor");
-    if (lower.contains("pick_source") || lower.contains("pick zone") || lower.contains("pick_zone")) return QString("pick source/zone");
-    if (lower.contains("place_target") || lower.contains("place zone") || lower.contains("place_zone") || lower.contains("bin")) return QString("place target/bin");
-    if (lower.contains("home") || lower.contains("safe_joint_state") || lower.contains("safe joint") || lower.contains("safety pose")) return QString("home/safety pose");
-    if (lower.contains("safety")) return QString("safety zone");
+    if (lower.contains("pick_source") || lower.contains("pick zone") || lower.contains("pick_zone")) return QString("pick_source_zone");
+    if (lower.contains("place_target") || lower.contains("place zone") || lower.contains("place_zone") || lower.contains("bin")) return QString("place_target_bin");
+    if (lower.contains("home") || lower.contains("safe_joint_state") || lower.contains("safe joint") || lower.contains("safety pose")) return QString("home_safety_pose");
+    if (lower.contains("safety")) return QString("safety_zone");
     if (lower.contains("object") || lower.contains("fixture") || lower.contains("asset")) return QString("object");
     return QString("object");
-  };
-  const QSet<QString> allowed_scene_roles = {
-    "robot",
-    "end_effector/tool",
-    "support_surface/table",
-    "conveyor",
-    "camera",
-    "pick source/zone",
-    "place target/bin",
-    "object",
-    "safety zone",
-    "home/safety pose"
   };
   QMap<QString, QString> yaml_status_by_id;
   auto ingest_status_file = [&](const fs::path & path, const QString & source_tag) {
@@ -9546,74 +9601,6 @@ void MainWindow::populate_scene_hierarchy()
     return QString("ready");
   };
 
-  // Hierarchy identity is the exact scene-instance/owner ID. Catalog identity,
-  // labels, mesh paths, and renderer layer state are intentionally irrelevant.
-  QSet<QString> hierarchy_instance_ids;
-  auto add_tree_node = [&](const ScenePreviewWidget::PreviewItem & p) {
-    const QString instance_id = p.id.trimmed();
-    if (instance_id.isEmpty() || hierarchy_instance_ids.contains(instance_id)) return;
-    hierarchy_instance_ids.insert(instance_id);
-    const QString visual_status = p.mesh_path.trimmed().isEmpty()
-      ? (p.active_visual_source.contains("primitive") ? QStringLiteral("primitive") : QStringLiteral("missing"))
-      : QStringLiteral("mesh");
-    const QString display_name = p.id.trimmed().isEmpty()
-      ? p.display_name.trimmed()
-      : QStringLiteral("%1 [%2]").arg(p.display_name.trimmed(), p.id.trimmed());
-    const QString type_text = p.role.trimmed().isEmpty() ? p.category.trimmed() : p.role.trimmed();
-    const QString state_text = p.status.trimmed().isEmpty() ? QStringLiteral("ready") : p.status.trimmed();
-    const QString detail_tooltip = QStringLiteral("%1\nType: %2\nState: %3\nLayer: %4\nVisual: %5\nBacking: %6")
-      .arg(display_name,
-           type_text.isEmpty() ? QStringLiteral("object") : type_text,
-           state_text,
-           p.source_layer.trimmed().isEmpty() ? QStringLiteral("unknown") : p.source_layer.trimmed(),
-           p.active_visual_source.trimmed().isEmpty() ? QStringLiteral("unknown") : p.active_visual_source.trimmed(),
-           visual_status);
-    auto * node = new QTreeWidgetItem(scene_hierarchy_tree_, {
-      display_name,
-      type_text.isEmpty() ? QStringLiteral("object") : type_text,
-      state_text
-    });
-    node->setToolTip(0, detail_tooltip);
-    node->setToolTip(1, type_text.isEmpty() ? QStringLiteral("object") : type_text);
-    node->setToolTip(2, detail_tooltip);
-    node->setData(0, TreeRoleId, p.id);
-    node->setData(0, TreeRoleCategory, p.category);
-    node->setData(
-      0,
-      TreeRolePoseText,
-      QString("xyz=(%1,%2,%3) rpy=(%4,%5,%6)")
-        .arg(p.x)
-        .arg(p.y)
-        .arg(p.z)
-        .arg(p.roll)
-        .arg(p.pitch)
-        .arg(p.yaw));
-    node->setData(0, TreeRoleSource, p.source_path);
-    node->setData(0, TreeRolePoseX, p.x);
-    node->setData(0, TreeRolePoseY, p.y);
-    node->setData(0, TreeRolePoseZ, p.z);
-    node->setData(0, TreeRoleRoll, p.roll);
-    node->setData(0, TreeRolePitch, p.pitch);
-    node->setData(0, TreeRoleYaw, p.yaw);
-    node->setData(0, TreeRolePoseAvailable, true);
-    node->setData(0, TreeRoleRole, p.role);
-    node->setData(0, TreeRoleSourceLayer, p.source_layer);
-    node->setData(0, TreeRoleActiveVisualSource, p.active_visual_source);
-    node->setData(0, TreeRoleEditable, p.editable);
-    node->setData(0, TreeRoleLocked, p.locked);
-    node->setData(0, TreeRoleLinkedEditableLayout, p.linked_to_editable_layout_state);
-    node->setData(0, TreeRoleVisualBackingStatus, visual_status);
-    node->setData(0, TreeRoleGeneratedVisual, p.source_layer != QStringLiteral("editable_layout"));
-    node->setData(0, TreeRoleItemTypeClass, p.category);
-    node->setData(0, TreeRoleStableId, p.id);
-    node->setData(0, TreeRoleCameraId, p.camera_id);
-    node->setData(0, TreeRoleFrameId, p.frame_id);
-    node->setData(0, TreeRoleDetectionLabel, p.detection_label);
-    node->setData(0, TreeRoleConfidence, p.confidence);
-    node->setData(0, TreeRoleTrackingId, p.tracking_id);
-    node->setData(0, TreeRoleSnapshotSourceFile, p.snapshot_source_file);
-    node->setData(0, TreeRoleAlignmentWarning, p.alignment_warning);
-  };
   auto add_preview_item = [&](const QString & id,
                               const QString & display_name,
                               const QString & category,
@@ -9639,9 +9626,6 @@ void MainWindow::populate_scene_hierarchy()
       preview_warning_details << QString("%1 (%2): metadata incomplete").arg(p.id, p.role);
     }
     preview_items.push_back(p);
-    if (allowed_scene_roles.contains(p.role) && is_user_facing_scene_hierarchy_item(p)) {
-      add_tree_node(p);
-    }
 
     if (!metadata_complete) {
       ++preview_warning_count;
@@ -9715,9 +9699,6 @@ void MainWindow::populate_scene_hierarchy()
       p.warnings << QStringLiteral("Locked: %1").arg(base_reason);
     }
     preview_items.push_back(p);
-    if (allowed_scene_roles.contains(p.role) && is_user_facing_scene_hierarchy_item(p)) {
-      add_tree_node(p);
-    }
 
     if (!item.warnings.empty()) {
       const QString warning_text = QString::fromStdString(item.warnings.front());
@@ -9912,7 +9893,6 @@ void MainWindow::populate_scene_hierarchy()
     read_semantic_pose(node, &p);
     read_semantic_dimensions(node, &p);
     preview_items.push_back(p);
-    if (allowed_scene_roles.contains(p.role) && is_user_facing_scene_hierarchy_item(p)) add_tree_node(p);
     return true;
   };
 
@@ -11619,7 +11599,6 @@ void MainWindow::populate_scene_hierarchy()
             true,
             p.mesh_path.trimmed().isEmpty() ? p.source_path : p.mesh_path);
           append_visual_ingestion_diagnostic(v, raw_id, p.id, QString(), p.source_layer);
-          if (is_user_facing_scene_hierarchy_item(p)) add_tree_node(p);
         }
       }
       int visual_skipped_total = 0;
@@ -12171,31 +12150,6 @@ void MainWindow::populate_scene_hierarchy()
     }
   }
 
-  scene_hierarchy_tree_->clear();
-  for (const auto & p : preview_items) {
-    if (allowed_scene_roles.contains(p.role) && is_user_facing_scene_hierarchy_item(p)) {
-      add_tree_node(p);
-    }
-  }
-
-  if (scene_hierarchy_tree_->topLevelItemCount() == 0) {
-    apply_scene_selection(QString(), QStringLiteral("unknown"), true, false);
-    auto * empty = new QTreeWidgetItem(scene_hierarchy_tree_, {QStringLiteral("No scene items"), QString(), QString()});
-    empty->setFlags(empty->flags() & ~Qt::ItemIsSelectable);
-  }
-
-
-
-  auto * header = scene_hierarchy_tree_->header();
-  if (header) {
-    header->setSectionResizeMode(0, QHeaderView::Stretch);
-    header->setSectionResizeMode(1, QHeaderView::Interactive);
-    header->setSectionResizeMode(2, QHeaderView::Fixed);
-    scene_hierarchy_tree_->setColumnWidth(1, 120);
-    scene_hierarchy_tree_->setColumnWidth(2, 72);
-    header->setStretchLastSection(false);
-  }
-
   const SceneTaskIntentSummary task_summary = load_scene_task_intent_summary(d);
   const QString active_pick_id = normalize_bound_id(task_summary.pick_source);
   const QString active_place_id = normalize_bound_id(task_summary.place_target);
@@ -12361,7 +12315,6 @@ void MainWindow::populate_scene_hierarchy()
         owner.primitive_geometry_type.clear();
         owner.sx = owner.sy = owner.sz = 0.0;
         all_scene_preview_items_.push_back(owner);
-        add_tree_node(owner);
       }
     } else {
       append_scene_diagnostic_log_once(
@@ -12369,6 +12322,7 @@ void MainWindow::populate_scene_hierarchy()
         QStringLiteral("Scene3D diagnostic: selection-owner registry unavailable or malformed; retained usable preview state (%1).")
           .arg(selection_owner_contract_path));
     }
+    refresh_scene_hierarchy_tree_from_current_items();
     apply_scene3d_product_view_layer_defaults_and_commit();
 
     const auto scene3d_full_payload_counters = scene_preview_widget_->render_debug_counters();

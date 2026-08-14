@@ -408,6 +408,7 @@ private:
   void refresh_scene_builder_left_explorer();
   void refresh_scene_builder_view_chips();
   void populate_scene_hierarchy();
+  void refresh_scene_hierarchy_tree_from_current_items();
   void apply_scene3d_product_view_layer_defaults_and_commit();
   void apply_scene3d_preview_layer_filters(bool log_change = false);
   void refresh_scene3d_product_view_status_and_audit();
