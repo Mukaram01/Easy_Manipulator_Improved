@@ -43481,6 +43481,10 @@ function onCanvasPointerDown(event) {
       event.stopPropagation?.();
       return;
     }
+    const transformControls = state.three.transformControls;
+    const gizmoOwnsPointer = state.editorMode !== "select" && Boolean(transformControls?.dragging || transformControls?.axis);
+    if (gizmoOwnsPointer)
+      return;
     pickObject(event);
   }
 }

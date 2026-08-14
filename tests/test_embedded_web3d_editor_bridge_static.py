@@ -930,3 +930,16 @@ def test_browser_placement_prefers_authored_support_surface_before_ground_plane(
     )
 
     assert support_fallback < ground_fallback
+
+def test_transform_gizmo_pointerdown_cannot_repick_object_behind_handle():
+    """Starting a gizmo drag must preserve the already selected authored owner."""
+    body = VIEWER.split("function onCanvasPointerDown", 1)[1].split(
+        "function onCanvasPointerMove", 1
+    )[0]
+
+    assert "transformControls?.dragging || transformControls?.axis" in body
+    assert "gizmoOwnsPointer" in body
+
+    guard = body.index("if (gizmoOwnsPointer) return;")
+    repick = body.index("pickObject(event);")
+    assert guard < repick
