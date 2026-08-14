@@ -7603,7 +7603,6 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
   }
 
   YAML::Emitter emitter;
-  emitter.SetStringFormat(YAML::DoubleQuoted);
   emitter << root;
   QSaveFile out(QString::fromStdString(effective_layout_path.string()));
   if (!out.open(QIODevice::WriteOnly) ||
