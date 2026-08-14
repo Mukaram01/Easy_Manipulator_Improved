@@ -2448,17 +2448,21 @@ def _authored_support_surface_defaults(data: Mapping[str, Any]) -> Dict[str, Any
     return defaults
 
 
-def _stl_mesh_bounds_m(item: Mapping[str, Any]) -> Optional[Dict[str, List[float]]]:
-    uri = str(item.get("original_mesh_uri") or item.get("original_source_path") or item.get("mesh_uri") or "")
-    if "workbench_description/meshes/visual/table.stl" not in uri:
-        return None
+def _stl_mesh_local_bounds(item: Mapping[str, Any]) -> Optional[Tuple[List[float], List[float], str]]:
+    """Read trustworthy mesh-local bounds from a resolved STL.
+
+    Canvas ``dimensions`` are editor geometry metadata and may be the generic
+    ``[1, 1, 1]`` used when a mesh is first imported.  They therefore cannot
+    describe an STL's physical bounds.  Keep this reader generic so imported
+    assets and the existing workbench path use the same geometry authority.
+    """
     resolved = item.get("resolved_source_path")
     if not isinstance(resolved, str) or not resolved:
         return None
     path = Path(resolved)
     if not path.is_absolute():
         path = Path.cwd() / path
-    if not path.is_file():
+    if path.suffix.lower() != ".stl" or not path.is_file():
         return None
     try:
         raw = path.read_bytes()
@@ -2488,20 +2492,24 @@ def _stl_mesh_bounds_m(item: Mapping[str, Any]) -> Optional[Dict[str, List[float
             return None
     if not vertices:
         return None
-    scale = _finite_num3(item.get("scale") or item.get("mesh_scale")) or [1.0, 1.0, 1.0]
     minimum: List[float] = []
     maximum: List[float] = []
-    size: List[float] = []
     for axis in range(3):
-        values = [vertex[axis] * scale[axis] for vertex in vertices]
-        axis_min = min(values)
-        axis_max = max(values)
-        minimum.append(axis_min)
-        maximum.append(axis_max)
-        size.append(abs(axis_max - axis_min))
+        values = [vertex[axis] for vertex in vertices]
+        minimum.append(min(values))
+        maximum.append(max(values))
+    size = [abs(maximum[axis] - minimum[axis]) for axis in range(3)]
     if all(v > 0.0 for v in size):
-        return {"min": minimum, "max": maximum, "size": size}
+        return minimum, maximum, "resolved_stl_bounds"
     return None
+
+
+def _stl_mesh_bounds_m(item: Mapping[str, Any]) -> Optional[Dict[str, List[float]]]:
+    local = _stl_mesh_local_bounds(item)
+    if local is None:
+        return None
+    minimum, maximum, _source = _scaled_bounds(local, item)
+    return {"min": minimum, "max": maximum, "size": _bounds_dimensions((minimum, maximum, "resolved_stl_bounds"))}
 
 
 def _stl_mesh_dimensions_m(item: Mapping[str, Any]) -> Optional[List[float]]:
@@ -2544,8 +2552,15 @@ def _populate_visual_bounds_item_fields(payload: Json, data: Mapping[str, Any]) 
         if not _is_mesh_item(item):
             continue
         had_explicit_expected_dimensions = _finite_num3(item.get("expected_dimensions_m")) is not None
+        # An explicit expected size is authored physical metadata.  Otherwise a
+        # resolved STL is the authority ahead of generic canvas dimensions.
+        # This also ensures persisted and in-session imported assets use the
+        # same physical geometry contract.
         local = _item_local_bounds(item)
-        if local is not None:
+        mesh_dimensions = _stl_mesh_dimensions_m(item)
+        if not had_explicit_expected_dimensions and mesh_dimensions is not None:
+            item["expected_dimensions_m"] = mesh_dimensions
+        elif not had_explicit_expected_dimensions and local is not None:
             item["expected_dimensions_m"] = _bounds_dimensions(_scaled_bounds(local, item))
         xyz = _item_pose_xyz(item)
         if xyz is not None:
@@ -2560,9 +2575,17 @@ def _populate_visual_bounds_item_fields(payload: Json, data: Mapping[str, Any]) 
         _populate_support_surface_fields(item, category, support_defaults)
         item.setdefault("mesh_load_required", category in {"robot_link", "gripper", "table", "camera", "object"})
         # Unit autoscale is a browser-side asset convenience only.  Generated URDF
-        # previews and robot links must keep authored units exactly as exported.
+        # previews, robot links, and authored imported objects must keep authored
+        # units exactly as exported.  A trustworthy explicit size on an imported
+        # object is a validation contract, not permission to resize its mesh.
+        authored_imported_object = (
+            category == "object"
+            and item.get("source_kind") == "user_authored"
+            and item.get("source_layer") == "editable_layout"
+        )
         item["allow_mesh_unit_autoscale"] = bool(
             had_explicit_expected_dimensions
+            and not authored_imported_object
             and item.get("source_kind") != "generated_preview"
             and section in {"assets", "sensors"}
             and category in {"table", "camera", "object"}
@@ -2724,6 +2747,9 @@ def _item_local_bounds(item: Mapping[str, Any]) -> Optional[Tuple[List[float], L
     mx = _finite_num3(item.get("local_bounds_max") or item.get("mesh_bounds_max"))
     if mn is not None and mx is not None:
         return mn, mx, "local_bounds_min/max"
+    stl_bounds = _stl_mesh_local_bounds(item)
+    if stl_bounds is not None:
+        return stl_bounds
     dims = _finite_num3(item.get("dimensions") or item.get("size") or item.get("primitive_dimensions"))
     if dims is not None:
         half = [abs(v) / 2.0 for v in dims]
