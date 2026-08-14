@@ -31,7 +31,9 @@ def test_minimal_environment_layout_has_no_backup_or_studio_log_calls():
 
 def test_save_layout_changes_contains_backup_before_write_tokens():
     cpp = MAINWINDOW_CPP.read_text(encoding="utf-8")
-    body = _extract_function_body(cpp, "void MainWindow::save_layout_changes()")
+    wrapper = _extract_function_body(cpp, "void MainWindow::save_layout_changes()")
+    assert "save_native_layout_changes(QJsonObject{})" in wrapper
+    body = _extract_function_body(cpp, "bool MainWindow::save_native_layout_changes")
     assert 'layout_backup' in body
     assert '".bak.yaml"' in body
     assert "append_studio_log" in body
@@ -46,7 +48,7 @@ def test_no_preview_regressions_for_known_tokens():
 
 def test_save_layout_failure_feedback_contract_tokens():
     cpp = MAINWINDOW_CPP.read_text(encoding="utf-8")
-    body = _extract_function_body(cpp, "void MainWindow::save_layout_changes()")
+    body = _extract_function_body(cpp, "bool MainWindow::save_native_layout_changes")
 
     required_tokens = [
         "Save Layout failed: Scene3D canvas is not initialized; no file was written.",

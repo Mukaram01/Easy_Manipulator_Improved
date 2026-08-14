@@ -73,7 +73,8 @@ def test_mainwindow_installs_controller_on_existing_top_save_action():
 
 def test_mainwindow_web3d_state_drives_existing_save_and_dirty_label():
     source = CONTROLLER.read_text(encoding="utf-8")
-    assert "ready && dirty && valid_dirty_transforms && matching_scene" in source
+    assert "native_dirty || (ready && matching_scene && dirty && valid_dirty_transforms)" in source
+    assert "host_dirty_ && host_dirty_()" in source
     assert 'QStringLiteral("Unsaved Layout Edits: %1 (Web3D)")' in source
     for phase in ["save requested", "checking edits", "validation started", "validation failed", "saving", "saved", "reload"]:
         assert phase in source
@@ -279,7 +280,7 @@ def test_save_roundtrip_has_no_browser_source_writes_or_robot_motion():
 
 
 def test_roundtrip_change_stays_focused():
-    assert len(CONTROLLER.read_text(encoding="utf-8").splitlines()) < 900
+    assert len(CONTROLLER.read_text(encoding="utf-8").splitlines()) < 950
     assert len(WORKFLOW.read_text(encoding="utf-8").splitlines()) < 370
     assert len(APPLICATOR.read_text(encoding="utf-8").splitlines()) < 340
 

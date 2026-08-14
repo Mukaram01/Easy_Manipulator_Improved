@@ -24,6 +24,7 @@
 #include <QWidgetAction>
 #include <QCoreApplication>
 #include <QFile>
+#include <QSaveFile>
 #include <QFileInfo>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -492,7 +493,7 @@ bool is_good_scene_path(const fs::path & scene_path)
     has_file("package.xml");
 }
 
-enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked, RoleWarning, RolePoseText, RoleSourceLayer };
+enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked, RoleWarning, RolePoseText, RoleSourceLayer, RoleCatalogAssetId, RoleMeshScaleX, RoleMeshScaleY, RoleMeshScaleZ };
 enum SceneTreeRoles {
   TreeRoleId = Qt::UserRole + 1, TreeRoleCategory, TreeRolePoseText, TreeRoleSource, TreeRolePoseX, TreeRolePoseY, TreeRolePoseZ, TreeRoleRoll, TreeRolePitch, TreeRoleYaw, TreeRolePoseAvailable, TreeRoleRole,
   TreeRoleSourceLayer, TreeRoleActiveVisualSource, TreeRoleEditable, TreeRoleLocked, TreeRoleLinkedEditableLayout, TreeRoleVisualBackingStatus, TreeRoleGeneratedVisual, TreeRoleItemTypeClass,
@@ -3366,7 +3367,13 @@ void MainWindow::setup_studio_shell()
   // Save Layout/dirty-state controls exist. The button continues through
   // save_layout_changes() so Web3D and native authoring share one action.
   workcell_builder::installEmbeddedWebEditSaveController(
-    scene_preview_widget_, save_layout_button_, layout_state_label_);
+    scene_preview_widget_, save_layout_button_, layout_state_label_,
+    [this]() { return layout_dirty_; },
+    [this]() { return layout_state_label_ ? layout_state_label_->text() : QString(); },
+    [this]() { return active_editable_layout_item_ids(); },
+    [this](const QJsonObject & patch, QString * error) {
+      return save_native_layout_changes(patch, error);
+    });
   connect_button(create_starter_layout_button_, &MainWindow::create_starter_layout_from_preview);
   connect_button(select_mode_button, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Select); });
   connect_button(place_mode_button, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Place); });
@@ -6250,6 +6257,8 @@ void MainWindow::rebuild_digital_twin_canvas()
     item->setData(RoleSource, QString::fromStdString(entry.source_file));
     item->setData(RoleSourcePackage, QString(""));
     item->setData(RoleWidth, entry.width); item->setData(RoleDepth, entry.depth); item->setData(RoleHeight, entry.height);
+    item->setData(RoleCatalogAssetId, QString::fromStdString(entry.catalog_asset_id));
+    item->setData(RoleMeshScaleX, entry.mesh_scale_x); item->setData(RoleMeshScaleY, entry.mesh_scale_y); item->setData(RoleMeshScaleZ, entry.mesh_scale_z);
     const bool is_preview_placeholder = category.contains("placeholder", Qt::CaseInsensitive) || category == "warning";
     item->setData(RoleImported, false); item->setData(RoleGeneratedPlaceholder, is_preview_placeholder);
     item->setData(RoleWarning, QString::fromStdString(entry.warnings.empty() ? std::string() : entry.warnings.front()));
@@ -6882,6 +6891,9 @@ void MainWindow::mark_layout_dirty(const QString & reason)
   layout_saved_ = false;
   validation_stale_ = true;
   launch_artifacts_ready_ = false;
+  // Structural edits are native-session authority even when Web3D owns the
+  // visible editor. Do not wait for (or let) browser polling hide this state.
+  if (save_layout_button_) save_layout_button_->setEnabled(true);
   if (layout_state_label_) {
     layout_state_label_->setText(QString("Unsaved Layout Edits: %1").arg(reason));
   }
@@ -7180,6 +7192,8 @@ static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML
   if (!gi->data(RoleCategory).toString().trimmed().isEmpty()) item["category"] = gi->data(RoleCategory).toString().toStdString();
   if (!gi->data(RoleType).toString().trimmed().isEmpty()) item["type"] = gi->data(RoleType).toString().toStdString();
   if (!gi->data(RoleRole).toString().trimmed().isEmpty()) item["role"] = gi->data(RoleRole).toString().toStdString();
+  if (!gi->data(RoleCatalogAssetId).toString().trimmed().isEmpty())
+    item["catalog_asset_id"] = gi->data(RoleCatalogAssetId).toString().toStdString();
   if (!gi->data(RoleSource).toString().trimmed().isEmpty()) {
     item["source_path"] = gi->data(RoleSource).toString().toStdString();
     item["mesh_path"] = gi->data(RoleSource).toString().toStdString();
@@ -7195,9 +7209,12 @@ static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML
   write_dimensions_preserving_existing_shape(
     item, gi->data(RoleWidth).toDouble(), gi->data(RoleDepth).toDouble(), gi->data(RoleHeight).toDouble());
   YAML::Node scale(YAML::NodeType::Sequence);
-  scale.push_back(gi->data(RoleWidth).toDouble());
-  scale.push_back(gi->data(RoleDepth).toDouble());
-  scale.push_back(gi->data(RoleHeight).toDouble());
+  const double mesh_scale_x = gi->data(RoleMeshScaleX).isValid() ? gi->data(RoleMeshScaleX).toDouble() : gi->data(RoleWidth).toDouble();
+  const double mesh_scale_y = gi->data(RoleMeshScaleY).isValid() ? gi->data(RoleMeshScaleY).toDouble() : gi->data(RoleDepth).toDouble();
+  const double mesh_scale_z = gi->data(RoleMeshScaleZ).isValid() ? gi->data(RoleMeshScaleZ).toDouble() : gi->data(RoleHeight).toDouble();
+  scale.push_back(mesh_scale_x);
+  scale.push_back(mesh_scale_y);
+  scale.push_back(mesh_scale_z);
   item["scale"] = scale;
   if (!gi->data(RoleSource).toString().trimmed().isEmpty() || !gi->data(RoleSourcePackage).toString().trimmed().isEmpty()) {
     YAML::Node mesh = ensure_map_node(item, "mesh");
@@ -7215,6 +7232,69 @@ void MainWindow::save_layout_changes(){
     scene_preview_widget_->request_authoring_save();
     return;
   }
+  save_native_layout_changes(QJsonObject{});
+}
+
+QSet<QString> MainWindow::active_editable_layout_item_ids() const
+{
+  QSet<QString> ids;
+  // Only records created in this session are absent from the disk-only web_scene.
+  // Existing editable items must keep using guarded patch validation.
+  for (const auto & command : undo_stack_) {
+    if ((command.kind == QStringLiteral("add") || command.kind == QStringLiteral("duplicate")) &&
+        !deleted_layout_item_ids_.contains(command.item_id)) {
+      ids.insert(command.item_id);
+    }
+  }
+  return ids;
+}
+
+bool MainWindow::apply_web_transforms_to_editable_layout_session(
+  const QJsonObject & web_patch, QString * error)
+{
+  const QSet<QString> native_ids = active_editable_layout_item_ids();
+  for (const auto & value : web_patch.value(QStringLiteral("edits")).toArray()) {
+    const QJsonObject edit = value.toObject();
+    const QString id = edit.value(QStringLiteral("item_id")).toString();
+    if (edit.value(QStringLiteral("operation")).toString() != QStringLiteral("update_transform") ||
+        !native_ids.contains(id)) {
+      if (error) *error = QStringLiteral("Browser edit for '%1' cannot be represented by the native editable-layout transaction. No file was written; native and Web3D edits remain unsaved.").arg(id);
+      return false;
+    }
+    const QJsonObject transform = edit.value(QStringLiteral("new_transform")).toObject();
+    const QJsonObject pose = transform.value(QStringLiteral("pose")).toObject();
+    const QJsonObject xyz = pose.value(QStringLiteral("xyz")).toObject();
+    const QJsonObject rpy = pose.value(QStringLiteral("rpy")).toObject();
+    const QJsonObject scale = transform.value(QStringLiteral("scale")).toObject();
+    const auto finite = [](const QJsonObject & object, const char * key) {
+      return object.value(QString::fromUtf8(key)).isDouble() && std::isfinite(object.value(QString::fromUtf8(key)).toDouble());
+    };
+    if (!finite(xyz, "x") || !finite(xyz, "y") || !finite(xyz, "z") ||
+        !finite(rpy, "x") || !finite(rpy, "y") || !finite(rpy, "z") ||
+        !finite(scale, "x") || !finite(scale, "y") || !finite(scale, "z")) {
+      if (error) *error = QStringLiteral("Browser transform for '%1' is incomplete or non-finite. No file was written; edits remain unsaved.").arg(id);
+      return false;
+    }
+    auto * canvas = find_canvas_item_by_stable_id(id);
+    if (!canvas) {
+      if (error) *error = QStringLiteral("Session item '%1' is no longer available in the native editable layout. Refresh Product View and retry; no file was written.").arg(id);
+      return false;
+    }
+    canvas->setPos(xyz.value("x").toDouble() * 100.0, xyz.value("y").toDouble() * 100.0);
+    canvas->setData(RolePoseZ, xyz.value("z").toDouble());
+    canvas->setData(RoleRoll, rpy.value("x").toDouble());
+    canvas->setData(RolePitch, rpy.value("y").toDouble());
+    canvas->setData(RoleYaw, rpy.value("z").toDouble());
+    canvas->setData(RoleMeshScaleX, scale.value("x").toDouble());
+    canvas->setData(RoleMeshScaleY, scale.value("y").toDouble());
+    canvas->setData(RoleMeshScaleZ, scale.value("z").toDouble());
+  }
+  capture_active_editable_layout_session();
+  return true;
+}
+
+bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QString * error){
+  if (!web_patch.isEmpty() && !apply_web_transforms_to_editable_layout_session(web_patch, error)) return false;
   const auto scene_name_for_save_log = [this]() {
     if (selected_scene_state_.valid && !selected_scene_state_.name.trimmed().isEmpty()) {
       return selected_scene_state_.name.trimmed();
@@ -7260,7 +7340,7 @@ void MainWindow::save_layout_changes(){
       QString(),
       QStringLiteral("Save Layout failed: Scene3D canvas is not initialized; no file was written."));
     statusBar()->showMessage("Save Layout blocked: Scene3D canvas is not initialized; no file was written.", 6000);
-    return;
+    return false;
   }
   if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) {
     emit_save_layout_failure(
@@ -7268,7 +7348,7 @@ void MainWindow::save_layout_changes(){
       QString(),
       QStringLiteral("Save Layout failed: no scene selected; no file was written."));
     statusBar()->showMessage("Save Layout blocked: no scene selected; no file was written.", 6000);
-    return;
+    return false;
   }
   const fs::path scene_dir = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_dir;
   const fs::path layout_path = scene_dir / "layout" / "workcell_studio_layout.yaml";
@@ -7278,7 +7358,7 @@ void MainWindow::save_layout_changes(){
       .arg(selected_scene_index_);
     emit_save_layout_failure(reason);
     statusBar()->showMessage("Save Layout blocked: canonical layout path could not be computed; no file was written.", 6000);
-    return;
+    return false;
   }
   const std::array<const char *, 1> required_dirs = {"layout"};
   for (const char * dir_name : required_dirs) {
@@ -7290,7 +7370,7 @@ void MainWindow::save_layout_changes(){
           .arg(dir_name, QString::fromStdString(mk_ec.message())),
         QString::fromStdString((scene_dir / dir_name).string()));
       QMessageBox::warning(this, "Save Layout", QString("Save Layout blocked: cannot create %1/. No file was written.").arg(dir_name));
-      return;
+      return false;
     }
   }
   const std::string scene_name = (selected_scene_index_ >= 0 && selected_scene_index_ < static_cast<int>(scene_browser_result_.scenes.size())) ?
@@ -7340,7 +7420,7 @@ void MainWindow::save_layout_changes(){
           .arg(QString::fromStdString(layout_path.string()), QString::fromStdString(ec.message())),
         QString::fromStdString(layout_path.string()));
       QMessageBox::warning(this, "Save Layout", "Malformed layout YAML backup failed. Not overwriting. No file was written.");
-      return;
+      return false;
     }
     append_studio_log(QString("Malformed layout YAML backed up to %1").arg(QString::fromStdString(backup.string())));
     root = YAML::Node();
@@ -7382,7 +7462,7 @@ void MainWindow::save_layout_changes(){
       emit_save_layout_failure(
         QString("invalid id '%1' for YAML/package compatibility").arg(item_id),
         QString::fromStdString(layout_path.string()));
-      return;
+      return false;
     }
     editable_canvas_items.push_back(gi);
   }
@@ -7528,9 +7608,17 @@ void MainWindow::save_layout_changes(){
     }
   }
 
-  std::ofstream out(effective_layout_path.string());
-  out << root;
-  out.close();
+  YAML::Emitter emitter;
+  emitter << root;
+  QSaveFile out(QString::fromStdString(effective_layout_path.string()));
+  if (!out.open(QIODevice::WriteOnly) ||
+      out.write(QByteArray(emitter.c_str(), static_cast<int>(emitter.size()))) < 0 || !out.commit()) {
+    if (error) *error = QStringLiteral("Could not atomically write canonical editable layout '%1': %2. Dirty state was retained.")
+      .arg(QString::fromStdString(effective_layout_path.string()), out.errorString());
+    emit_save_layout_failure(error ? *error : QStringLiteral("atomic layout write failed"),
+      QString::fromStdString(effective_layout_path.string()));
+    return false;
+  }
   deleted_layout_item_ids_.clear();
   layout_dirty_ = false;
   layout_saved_ = true;
@@ -7562,6 +7650,7 @@ void MainWindow::save_layout_changes(){
   refresh_scene_browser_ui();
   refresh_scene_workflow_rail();
   refresh_scene_builder_view_chips();
+  return true;
 }
 
 void MainWindow::create_starter_layout_from_preview()
@@ -8236,6 +8325,8 @@ void MainWindow::duplicate_selected_item()
   item->setData(RoleSource, copy.source_path); item->setData(RoleSourcePackage, QStringLiteral("asset_folder"));
   item->setData(RolePoseZ, copy.z); item->setData(RoleRoll, copy.roll); item->setData(RolePitch, copy.pitch); item->setData(RoleYaw, copy.yaw);
   item->setData(RoleWidth, copy.sx); item->setData(RoleDepth, copy.sy); item->setData(RoleHeight, copy.sz);
+  item->setData(RoleCatalogAssetId, copy.catalog_asset_id);
+  item->setData(RoleMeshScaleX, copy.mesh_scale_x); item->setData(RoleMeshScaleY, copy.mesh_scale_y); item->setData(RoleMeshScaleZ, copy.mesh_scale_z);
   item->setData(RoleImported, copy.mesh_type.compare(QStringLiteral("stl"), Qt::CaseInsensitive) == 0);
   item->setData(RoleGeneratedPlaceholder, false); item->setData(RoleSourceLayer, QStringLiteral("editable_layout")); item->setData(RoleLocked, false);
   item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | QGraphicsItem::ItemIsMovable);
@@ -8646,6 +8737,8 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   item->setData(RolePoseZ, armed_asset_z_m_);
   item->setData(RoleRoll, armed_asset_roll_rad_); item->setData(RolePitch, armed_asset_pitch_rad_); item->setData(RoleYaw, armed_asset_yaw_rad_);
   item->setData(RoleWidth, 1.0); item->setData(RoleDepth, 1.0); item->setData(RoleHeight, 1.0);
+  item->setData(RoleCatalogAssetId, asset_id);
+  item->setData(RoleMeshScaleX, armed_asset_scale_); item->setData(RoleMeshScaleY, armed_asset_scale_); item->setData(RoleMeshScaleZ, armed_asset_scale_);
   item->setData(RoleImported, source_path.endsWith(".stl", Qt::CaseInsensitive) || source_path.endsWith(".urdf", Qt::CaseInsensitive));
   item->setData(RoleGeneratedPlaceholder, category.contains("placeholder", Qt::CaseInsensitive));
   item->setData(RoleSourceLayer, QStringLiteral("editable_layout"));

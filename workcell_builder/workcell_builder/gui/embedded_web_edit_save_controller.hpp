@@ -2,7 +2,10 @@
 
 #include "scene_preview_widget.h"
 
+#include <QJsonObject>
+#include <QSet>
 #include <QWidget>
+#include <functional>
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 
@@ -83,8 +86,13 @@ class EmbeddedWebEditSaveController : public QObject
 public:
   EmbeddedWebEditSaveController(
     ScenePreviewWidget * preview, QWebEngineView * view, QPushButton * save_button,
-    QLabel * dirty_label)
-  : QObject(preview), preview_(preview), view_(view), save_button_(save_button), dirty_label_(dirty_label)
+    QLabel * dirty_label, std::function<bool()> host_dirty,
+    std::function<QString()> host_dirty_label,
+    std::function<QSet<QString>()> session_added_ids,
+    std::function<bool(const QJsonObject &, QString *)> native_save)
+  : QObject(preview), preview_(preview), view_(view), save_button_(save_button), dirty_label_(dirty_label),
+    host_dirty_(std::move(host_dirty)), host_dirty_label_(std::move(host_dirty_label)),
+    session_added_ids_(std::move(session_added_ids)), native_save_(std::move(native_save))
   {
     installed_ = preview_ && view_ && save_button_;
     if (!installed_) return;
@@ -612,7 +620,8 @@ private:
         logPhase(QStringLiteral("validation failed: invalid or stale patch; Web3D edits preserved"));
         return;
       }
-      if (edits.isEmpty()) {
+      const bool native_dirty = host_dirty_ && host_dirty_();
+      if (edits.isEmpty() && !native_dirty) {
         clearActiveSaveTransaction();
         busy_ = false;
         setStatus(QStringLiteral("No changes"), QStringLiteral("info"));
@@ -626,6 +635,47 @@ private:
       browser_rebase_pending_ = false;
 
       logPatchSummary(patch);
+
+      if (native_dirty) {
+        const QSet<QString> session_ids = session_added_ids_ ? session_added_ids_() : QSet<QString>{};
+        QStringList unsafe_ids;
+        for (const auto & edit_value : edits) {
+          const QString id = edit_value.toObject().value(QStringLiteral("item_id")).toString();
+          if (!session_ids.contains(id)) unsafe_ids.push_back(id);
+        }
+        if (!unsafe_ids.isEmpty()) {
+          clearActiveSaveTransaction();
+          busy_ = false;
+          setStatus(QStringLiteral("Composed save rejected"), QStringLiteral("error"));
+          const QString message = QStringLiteral(
+            "Save Layout cannot safely compose native structural edits with browser edits for persisted item(s): %1. "
+            "No file was written. Save or revert one edit source first; both dirty states were retained.")
+            .arg(unsafe_ids.join(QStringLiteral(", ")));
+          QMessageBox::warning(preview_, QStringLiteral("Save Product View Layout"), message);
+          logPhase(QStringLiteral("validation rejected before write: %1").arg(message));
+          pollEditorState();
+          return;
+        }
+        QString native_error;
+        if (!native_save_ || !native_save_(patch, &native_error)) {
+          clearActiveSaveTransaction();
+          busy_ = false;
+          setStatus(QStringLiteral("Structural save failed"), QStringLiteral("error"));
+          QMessageBox::critical(preview_, QStringLiteral("Save Product View Layout"), native_error);
+          logPhase(QStringLiteral("native structural save failed before patch workflow: %1").arg(native_error));
+          pollEditorState();
+          return;
+        }
+        logPhase(QStringLiteral("native structural save complete; session-added Web3D transforms serialized without stale web_scene validation"));
+        if (!edits.isEmpty()) {
+          rebaseBrowserAfterPersistedWrite();
+        } else {
+          busy_ = false;
+          active_patch_ = QJsonObject{};
+          requestPostSaveProductViewRefresh();
+        }
+        return;
+      }
 
       QString write_error;
       if (!writePatchAtomically(patch, &write_error)) {
@@ -736,12 +786,18 @@ private:
   {
     if (!installed_ || !view_ || busy_ || state_poll_pending_) return;
     if (!preview_->embedded_web_authoring_active()) {
-      if (save_button_) save_button_->setEnabled(!reload_required_after_save_);
+      if (save_button_) save_button_->setEnabled((host_dirty_ && host_dirty_()) || !reload_required_after_save_);
       return;
     }
     const QUrl poll_url = view_->url();
     if (sceneIdFromViewerUrl(poll_url).isEmpty()) {
-      if (save_button_) save_button_->setEnabled(false);
+      const bool native_dirty = host_dirty_ && host_dirty_();
+      if (save_button_) save_button_->setEnabled(native_dirty && !reload_required_after_save_);
+      if (dirty_label_ && native_dirty) {
+        const QString native_label = host_dirty_label_ ? host_dirty_label_() : QString();
+        dirty_label_->setText(native_label.isEmpty() ?
+          QStringLiteral("Unsaved Layout Edits: native structural changes") : native_label);
+      }
       return;
     }
     state_poll_pending_ = true;
@@ -778,9 +834,10 @@ private:
         reload_required_after_save_ = false;
         setStatus(QStringLiteral("Product View refreshed; save baseline ready"), QStringLiteral("success"));
       }
+      const bool native_dirty = host_dirty_ && host_dirty_();
       if (save_button_) {
         save_button_->setEnabled(
-          ready && dirty && valid_dirty_transforms && matching_scene &&
+          (native_dirty || (ready && matching_scene && dirty && valid_dirty_transforms)) &&
           !diagnostic_preview && !reload_required_after_save_);
         if (diagnostic_preview) {
           save_button_->setToolTip(QStringLiteral(
@@ -795,9 +852,16 @@ private:
       }
       if (dirty_label_) {
         const int dirty_count = state.value(QStringLiteral("dirtyCount")).toInt();
-        dirty_label_->setText(dirty && matching_scene ?
-          QStringLiteral("Unsaved Layout Edits: %1 (Web3D)").arg(dirty_count) :
-          QStringLiteral("Unsaved Layout Edits: none"));
+        if (native_dirty) {
+          const QString native_label = host_dirty_label_ ? host_dirty_label_() : QString();
+          dirty_label_->setText(dirty && matching_scene ?
+            QStringLiteral("%1 + %2 Web3D transform(s)").arg(native_label).arg(dirty_count) :
+            (native_label.isEmpty() ? QStringLiteral("Unsaved Layout Edits: native structural changes") : native_label));
+        } else {
+          dirty_label_->setText(dirty && matching_scene ?
+            QStringLiteral("Unsaved Layout Edits: %1 (Web3D)").arg(dirty_count) :
+            QStringLiteral("Unsaved Layout Edits: none"));
+        }
       }
       last_polled_url_ = poll_url;
     });
@@ -829,17 +893,25 @@ private:
   bool reload_required_after_save_{false};
   quint64 active_save_transaction_{0};
   QString selected_item_id_before_save_;
+  std::function<bool()> host_dirty_;
+  std::function<QString()> host_dirty_label_;
+  std::function<QSet<QString>()> session_added_ids_;
+  std::function<bool(const QJsonObject &, QString *)> native_save_;
 };
 }  // namespace embedded_web_edit_save_detail
 
 inline void installEmbeddedWebEditSaveController(
-  ScenePreviewWidget * preview, QPushButton * save_button, QLabel * dirty_label)
+  ScenePreviewWidget * preview, QPushButton * save_button, QLabel * dirty_label,
+  std::function<bool()> host_dirty = {}, std::function<QString()> host_dirty_label = {},
+  std::function<QSet<QString>()> session_added_ids = {},
+  std::function<bool(const QJsonObject &, QString *)> native_save = {})
 {
   if (!preview || preview->property("workcell_embedded_save_controller").toBool()) return;
   QWebEngineView * view = preview->findChild<QWebEngineView *>(QStringLiteral("embeddedWeb3dProductView"));
   if (!view) return;
   auto * controller = new embedded_web_edit_save_detail::EmbeddedWebEditSaveController(
-    preview, view, save_button, dirty_label);
+    preview, view, save_button, dirty_label, std::move(host_dirty),
+    std::move(host_dirty_label), std::move(session_added_ids), std::move(native_save));
   if (controller->installed()) preview->setProperty("workcell_embedded_save_controller", true);
   else controller->deleteLater();
 }
@@ -849,7 +921,10 @@ inline void installEmbeddedWebEditSaveController(
 
 namespace workcell_builder
 {
-inline void installEmbeddedWebEditSaveController(ScenePreviewWidget *, QPushButton *, QLabel *) {}
+inline void installEmbeddedWebEditSaveController(
+  ScenePreviewWidget *, QPushButton *, QLabel *, std::function<bool()> = {},
+  std::function<QString()> = {}, std::function<QSet<QString>()> = {},
+  std::function<bool(const QJsonObject &, QString *)> = {}) {}
 }  // namespace workcell_builder
 
 #endif

@@ -328,6 +328,10 @@ private:
   void merge_active_editable_layout_session(
     workcell_builder::WorkcellStudioCanvasModel * model) const;
   void save_layout_changes();
+  bool save_native_layout_changes(const QJsonObject & web_patch, QString * error = nullptr);
+  bool apply_web_transforms_to_editable_layout_session(
+    const QJsonObject & web_patch, QString * error = nullptr);
+  QSet<QString> active_editable_layout_item_ids() const;
   void create_starter_layout_from_preview();
   void refresh_create_starter_layout_action();
   void revert_layout_changes();
