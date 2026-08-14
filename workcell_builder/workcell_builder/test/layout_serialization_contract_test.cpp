@@ -29,6 +29,51 @@ TEST(LayoutSerializationContractTest, SaveLayoutWritesCanonicalFields)
   EXPECT_NE(src.find("ensure_map_node(item, \"mesh\")"), std::string::npos);
 }
 
+TEST(LayoutSerializationContractTest, EmbeddedStructuralSaveUsesNativeSessionAuthority)
+{
+  const std::string src = load_file("gui/mainwindow.cpp");
+  const std::string controller = load_file("gui/embedded_web_edit_save_controller.hpp");
+  EXPECT_NE(src.find("save_native_layout_changes(const QJsonObject & web_patch"), std::string::npos);
+  EXPECT_NE(src.find("if (save_layout_button_) save_layout_button_->setEnabled(true)"), std::string::npos);
+  EXPECT_NE(controller.find("host_dirty_ && host_dirty_()"), std::string::npos);
+  EXPECT_NE(controller.find("native structural changes"), std::string::npos);
+  EXPECT_NE(controller.find("native_label"), std::string::npos);
+}
+
+TEST(LayoutSerializationContractTest, SessionAddedTransformsBypassStaleDiskPatchValidation)
+{
+  const std::string src = load_file("gui/mainwindow.cpp");
+  const std::string controller = load_file("gui/embedded_web_edit_save_controller.hpp");
+  EXPECT_NE(src.find("command.kind == QStringLiteral(\"add\")"), std::string::npos);
+  EXPECT_NE(src.find("command.kind == QStringLiteral(\"duplicate\")"), std::string::npos);
+  EXPECT_NE(src.find("apply_web_transforms_to_editable_layout_session"), std::string::npos);
+  EXPECT_NE(src.find("canvas->setData(RolePoseZ"), std::string::npos);
+  EXPECT_NE(controller.find("session-added Web3D transforms serialized without stale web_scene validation"), std::string::npos);
+}
+
+TEST(LayoutSerializationContractTest, InstanceIdentityAndMeshScaleRemainIndependent)
+{
+  const std::string src = load_file("gui/mainwindow.cpp");
+  EXPECT_NE(src.find("item[\"catalog_asset_id\"]"), std::string::npos);
+  EXPECT_NE(src.find("RoleCatalogAssetId"), std::string::npos);
+  EXPECT_NE(src.find("RoleMeshScaleX"), std::string::npos);
+  EXPECT_NE(src.find("scale.push_back(mesh_scale_x)"), std::string::npos);
+  EXPECT_NE(src.find("saved_ids.contains(id)"), std::string::npos);
+  EXPECT_NE(src.find("editable_by_id.insert"), std::string::npos);
+}
+
+TEST(LayoutSerializationContractTest, MixedUnsafeValidationRejectsBeforeAnyWrite)
+{
+  const std::string controller = load_file("gui/embedded_web_edit_save_controller.hpp");
+  const auto reject = controller.find("Save Layout cannot safely compose native structural edits");
+  const auto stage = controller.find("writePatchAtomically(patch");
+  ASSERT_NE(reject, std::string::npos);
+  ASSERT_NE(stage, std::string::npos);
+  EXPECT_LT(reject, stage);
+  EXPECT_NE(controller.find("both dirty states were retained"), std::string::npos);
+  EXPECT_NE(controller.find("Existing editable items must keep using guarded patch validation"), std::string::npos);
+}
+
 TEST(LayoutSerializationContractTest, SaveLayoutPreservesUnknownFieldsViaCloneMerge)
 {
   const std::string src = load_file("gui/mainwindow.cpp");
@@ -101,7 +146,7 @@ TEST(LayoutSerializationContractTest, SaveLayoutForSceneWithNonCanonicalManifest
   EXPECT_NE(src.find("const fs::path layout_path = selected_scene_canonical_layout_save_path(scene_browser_result_, selected_scene_index_);"), std::string::npos);
   EXPECT_NE(src.find("for (const auto & candidate : selected_scene_layout_import_candidates(scene_dir))"), std::string::npos);
   EXPECT_NE(src.find("root = YAML::LoadFile(candidate.string())"), std::string::npos);
-  EXPECT_NE(src.find("std::ofstream out(layout_path.string())"), std::string::npos);
+  EXPECT_NE(src.find("QSaveFile out(QString::fromStdString(effective_layout_path.string()))"), std::string::npos);
 }
 
 TEST(LayoutSerializationContractTest, DeleteSelectedUsesEditableSelectionAndUndoRedo)

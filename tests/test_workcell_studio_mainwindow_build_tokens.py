@@ -76,7 +76,7 @@ def test_save_layout_success_refreshes_workflow_rail_and_scene_chips_after_write
     source = Path("workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
 
     save_match = re.search(
-        r"void MainWindow::save_layout_changes\(\)\s*\{(?P<body>.*?)\n\}\n\nvoid MainWindow::create_starter_layout_from_preview",
+        r"bool MainWindow::save_native_layout_changes\([^)]*\)\s*\{(?P<body>.*?)\n\}\n\nvoid MainWindow::create_starter_layout_from_preview",
         source,
         re.DOTALL,
     )
@@ -84,7 +84,7 @@ def test_save_layout_success_refreshes_workflow_rail_and_scene_chips_after_write
     body = save_match.group("body")
 
     write_layout_pos = body.find('"layout" / "workcell_studio_layout.yaml"')
-    close_layout_pos = body.find("out.close();", write_layout_pos)
+    close_layout_pos = body.find("out.commit()", write_layout_pos)
     write_environment_pos = body.find("refresh_scene_builder_left_explorer();")
     close_environment_pos = write_environment_pos
     refresh_browser_pos = body.find("refresh_scene_browser_ui();")
@@ -113,7 +113,8 @@ def test_save_layout_empty_canvas_preserves_existing_canonical_items():
     body = save_match.group("body")
 
     assert 'scene_dir / "layout" / "workcell_studio_layout.yaml"' in body
-    assert "std::ofstream out(effective_layout_path.string());" in body
+    assert "QSaveFile out(QString::fromStdString(effective_layout_path.string()));" in body
+    assert "out.commit()" in body
     assert "Save Layout: no editable items; saved canonical layout metadata to %1." in body
     assert "Use Create editable layout from preview or add an item to persist editable objects." in body
     assert "gi->data(RoleLocked).toBool()" in body
