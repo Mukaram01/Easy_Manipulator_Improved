@@ -841,27 +841,40 @@ def test_qt_cancellation_does_not_commit_and_native_placement_remains_wired():
     assert "digital_twin_canvas_" in main and "commit_armed_asset_placement(scene_pos);" in main
 
 
-def test_click_and_embedded_drop_share_canonical_b_placement_backend():
-    """A1 steps 6 and 8: both frontends converge before arm/commit."""
+def test_catalog_click_arms_placement_while_embedded_drop_uses_world_backend():
+    """Catalog click waits for a canvas position; drag/drop already owns XYZ."""
     main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+
     click = main.split("connect_button(add_to_canvas_button_", 1)[1].split(
         "connect_button(add_asset_button_", 1
     )[0]
     embedded_drop = main.split("ScenePreviewWidget::asset_placement_requested", 1)[1].split(
         "ScenePreviewWidget::embedded_asset_placement_requested", 1
     )[0]
-    backend = main.split("bool MainWindow::place_catalog_asset_at_world_position", 1)[1].split(
+    arm_backend = main.split("bool MainWindow::arm_place_asset_mode", 1)[1].split(
+        "bool MainWindow::place_catalog_asset_at_world_position", 1
+    )[0]
+    world_backend = main.split("bool MainWindow::place_catalog_asset_at_world_position", 1)[1].split(
         "bool MainWindow::configure_asset_placement_transform", 1
     )[0]
 
     assert 'data(0, CatalogRoleAssetId).toString().trimmed()' in click
-    assert click.count("place_catalog_asset_at_world_position(") == 1
+    assert click.count("arm_place_asset_mode(asset_id)") == 1
+    assert "place_catalog_asset_at_world_position(" not in click
+    assert "commit_armed_asset_placement(" not in click
+
+    # Arming a catalog click also arms the embedded Web3D browser so the
+    # eventual canvas click supplies the world-space placement point.
+    assert "arm_embedded_asset_placement(" in arm_backend
+
+    # Drag/drop already has browser-derived XYZ, so it may commit through the
+    # canonical explicit-world-position backend immediately.
     assert embedded_drop.count("place_catalog_asset_at_world_position(") == 1
-    for frontend in (click, embedded_drop):
-        assert "arm_place_asset_mode(" not in frontend
-        assert "commit_armed_asset_placement(" not in frontend
-    assert backend.count("arm_place_asset_mode(asset_id)") == 1
-    assert backend.count("commit_armed_asset_placement(") == 1
+    assert "arm_place_asset_mode(" not in embedded_drop
+    assert "commit_armed_asset_placement(" not in embedded_drop
+
+    assert world_backend.count("arm_place_asset_mode(asset_id)") == 1
+    assert world_backend.count("commit_armed_asset_placement(") == 1
 
 
 def test_inspector_pose_edit_preserves_authored_mesh_scale():

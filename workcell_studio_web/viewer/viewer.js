@@ -4814,20 +4814,11 @@ function placementPointFromViewport(position) {
     if (!isEligiblePlacementSurfaceHit(hit)) continue;
     const rendered = placementHitRendered(hit);
     const resolvedPoint = placementPointForPhysicalSurfaceItem(rendered?.item, hit.point);
-    console.warn?.(`PLACEMENT_DIAG physical_hit ${JSON.stringify({
-      item_id: rendered?.item?.id || '',
-      role: rendered?.item?.role || '',
-      category: rendered?.item?.category || '',
-      support_surface_ref: rendered?.item?.support_surface_ref || '',
-      raw_point: finitePlacementPoint(hit.point),
-      resolved_point: resolvedPoint
-    })}`);
     return resolvedPoint;
   }
 
   const supportSurfacePoint = placementPointOnAuthoredSupportSurface(raycaster);
   if (supportSurfacePoint) {
-    console.warn?.(`PLACEMENT_DIAG semantic_support ${JSON.stringify(supportSurfacePoint)}`);
     return supportSurfacePoint;
   }
 
@@ -4837,7 +4828,6 @@ function placementPointFromViewport(position) {
     new THREE.Plane(new THREE.Vector3(0, 0, 1), 0),
     fallback
   ) ? finitePlacementPoint(fallback) : null;
-  console.warn?.(`PLACEMENT_DIAG ground_fallback ${JSON.stringify(groundPoint)}`);
   return groundPoint;
 }
 function getPlacementState() { return { armed: state.placement.armed, persistent: state.placement.persistent }; }

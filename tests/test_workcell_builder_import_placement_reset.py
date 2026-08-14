@@ -53,7 +53,18 @@ def test_catalog_add_action_is_the_explicit_rearm_path() -> None:
         line for line in MAIN.splitlines()
         if "connect_button(add_to_canvas_button_" in line
     )
-    assert "place_catalog_asset_at_world_position(asset_id" in connection
+    assert "arm_place_asset_mode(asset_id)" in connection
+    assert "place_catalog_asset_at_world_position(asset_id" not in connection
+
+    double_click = next(
+        line for line in MAIN.splitlines()
+        if "itemDoubleClicked" in line and "asset_catalog_tree_" in line
+    )
+    assert "arm_place_asset_mode(asset_id)" in double_click
+    assert "place_catalog_asset_at_world_position(asset_id" not in double_click
+
+    # Explicit XYZ routes such as Web3D drag/drop still use the canonical
+    # world-position backend, which arms before committing the supplied XYZ.
     placement = _between(
         "bool MainWindow::place_catalog_asset_at_world_position",
         "bool MainWindow::configure_asset_placement_transform",
