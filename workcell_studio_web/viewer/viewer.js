@@ -4947,6 +4947,14 @@ function onCanvasPointerDown(event) {
       event.stopPropagation?.();
       return;
     }
+    // TransformControls owns pointer-down while a gizmo handle is active.
+    // Do not raycast through the gizmo and accidentally replace the active
+    // authored owner with another physical object behind the handle.
+    const transformControls = state.three.transformControls;
+    const gizmoOwnsPointer = state.editorMode !== 'select' &&
+      Boolean(transformControls?.dragging || transformControls?.axis);
+    if (gizmoOwnsPointer) return;
+
     pickObject(event);
   }
 }
