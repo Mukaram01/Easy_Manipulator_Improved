@@ -568,6 +568,68 @@ QString scene3d_viewport_link_token(const ScenePreviewWidget::PreviewItem & item
   return canonical_scene3d_token(link);
 }
 
+// The renderer deliberately retains generated links and diagnostic overlays, but
+// the normal hierarchy is an authoring surface.  Keep this policy independent
+// from renderer layer toggles so enabling a diagnostic layer cannot turn every
+// URDF link or task helper into a user-facing scene owner.
+bool is_user_facing_scene_hierarchy_item(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QString id = canonical_scene3d_token(item.id);
+  const QString role = canonical_scene3d_token(item.role);
+  const QString category = canonical_scene3d_token(item.category);
+  const QString source_layer = canonical_scene3d_token(item.source_layer);
+  const QString visual_source = canonical_scene3d_token(item.active_visual_source);
+  const QString metadata = canonical_scene3d_token(item.metadata_tags);
+  const QString source_file = canonical_scene3d_token(QFileInfo(item.source_path).fileName());
+
+  const bool generated_visual_identity =
+    id.startsWith(QStringLiteral("generated_urdf")) ||
+    !item.visual_index_link.trimmed().isEmpty() ||
+    !item.visual_index_link_name.trimmed().isEmpty() ||
+    !item.visual_index_visual.trimmed().isEmpty() ||
+    !item.visual_index_visual_name.trimmed().isEmpty();
+  if (generated_visual_identity) return false;
+
+  const bool warning_or_helper =
+    role == QStringLiteral("warning") || category == QStringLiteral("warning") ||
+    role == QStringLiteral("safety_zone") || role == QStringLiteral("home_safety_pose") ||
+    category == QStringLiteral("safety") || category == QStringLiteral("helper") ||
+    metadata.contains(QStringLiteral("warning")) || metadata.contains(QStringLiteral("helper")) ||
+    metadata.contains(QStringLiteral("keepout")) || metadata.contains(QStringLiteral("exclusion")) ||
+    !item.alignment_warning.trimmed().isEmpty();
+  if (warning_or_helper) return false;
+
+  const bool authored_source =
+    item.editable || item.linked_to_editable_layout_state ||
+    source_layer == QStringLiteral("editable_layout") ||
+    source_file == QStringLiteral("environment_yaml") ||
+    source_file == QStringLiteral("environment_layout_yaml") ||
+    source_file == QStringLiteral("workcell_studio_layout_yaml");
+  const bool semantic_primitive = visual_source == QStringLiteral("semantic_primitive");
+  const bool task_only_semantic =
+    role == QStringLiteral("pick_source_zone") || role == QStringLiteral("home_safety_pose") ||
+    role == QStringLiteral("safety_zone") || category == QStringLiteral("pick_zone") ||
+    category == QStringLiteral("place_zone") || metadata.contains(QStringLiteral("commissioning")) ||
+    metadata.contains(QStringLiteral("drop_zone")) || metadata.contains(QStringLiteral("task_only"));
+  if (task_only_semantic || (semantic_primitive && !authored_source)) return false;
+
+  const bool canonical_robot_or_tool =
+    (role == QStringLiteral("robot") || role == QStringLiteral("end_effector_tool")) &&
+    !generated_visual_identity;
+  if (canonical_robot_or_tool) return true;
+
+  const bool authored_physical_role =
+    role == QStringLiteral("support_surface_table") || role == QStringLiteral("camera") ||
+    role == QStringLiteral("place_target_bin") || role == QStringLiteral("conveyor") ||
+    role == QStringLiteral("object");
+  if (!authored_physical_role) return false;
+
+  // Locked canonical owners are useful hierarchy rows; locked generated link
+  // records were rejected above by their visual-index identity.
+  return authored_source || (!item.editable && item.locked &&
+    source_layer != QStringLiteral("overlay") && visual_source != QStringLiteral("semantic_primitive"));
+}
+
 QJsonObject scene3d_viewport_pose_json(const ScenePreviewWidget::PreviewItem & item)
 {
   return QJsonObject{
@@ -9584,17 +9646,6 @@ void MainWindow::populate_scene_hierarchy()
     node->setData(0, TreeRoleSnapshotSourceFile, p.snapshot_source_file);
     node->setData(0, TreeRoleAlignmentWarning, p.alignment_warning);
   };
-  auto include_preview_item_in_hierarchy = [this](const ScenePreviewWidget::PreviewItem & p) {
-    QSet<QString> enabled_layers;
-    if (!preview_layer_editable_layout_box_ || preview_layer_editable_layout_box_->isChecked()) enabled_layers.insert("editable_layout");
-    if (!preview_layer_generated_urdf_visual_box_ || preview_layer_generated_urdf_visual_box_->isChecked()) enabled_layers.insert("locked_generated_urdf_visual");
-    if (!preview_layer_mesh_preview_box_ || preview_layer_mesh_preview_box_->isChecked()) enabled_layers.insert("mesh_preview");
-    if (!preview_layer_primitive_fallback_box_ || preview_layer_primitive_fallback_box_->isChecked()) enabled_layers.insert("primitive_fallback");
-    if (!preview_layer_overlays_helpers_box_ || preview_layer_overlays_helpers_box_->isChecked()) enabled_layers.insert("overlay");
-    if (!preview_layer_warnings_missing_assets_box_ || preview_layer_warnings_missing_assets_box_->isChecked()) enabled_layers.insert("warning");
-    return workcell_builder::include_preview_item_for_scene3d(p, enabled_layers);
-  };
-
   auto add_preview_item = [&](const QString & id,
                               const QString & display_name,
                               const QString & category,
@@ -9620,7 +9671,7 @@ void MainWindow::populate_scene_hierarchy()
       preview_warning_details << QString("%1 (%2): metadata incomplete").arg(p.id, p.role);
     }
     preview_items.push_back(p);
-    if (allowed_scene_roles.contains(p.role) && include_preview_item_in_hierarchy(p)) {
+    if (allowed_scene_roles.contains(p.role) && is_user_facing_scene_hierarchy_item(p)) {
       add_tree_node(p);
     }
 
@@ -9696,7 +9747,7 @@ void MainWindow::populate_scene_hierarchy()
       p.warnings << QStringLiteral("Locked: %1").arg(base_reason);
     }
     preview_items.push_back(p);
-    if (allowed_scene_roles.contains(p.role) && include_preview_item_in_hierarchy(p)) {
+    if (allowed_scene_roles.contains(p.role) && is_user_facing_scene_hierarchy_item(p)) {
       add_tree_node(p);
     }
 
@@ -9893,7 +9944,7 @@ void MainWindow::populate_scene_hierarchy()
     read_semantic_pose(node, &p);
     read_semantic_dimensions(node, &p);
     preview_items.push_back(p);
-    if (allowed_scene_roles.contains(p.role) && include_preview_item_in_hierarchy(p)) add_tree_node(p);
+    if (allowed_scene_roles.contains(p.role) && is_user_facing_scene_hierarchy_item(p)) add_tree_node(p);
     return true;
   };
 
@@ -11600,7 +11651,7 @@ void MainWindow::populate_scene_hierarchy()
             true,
             p.mesh_path.trimmed().isEmpty() ? p.source_path : p.mesh_path);
           append_visual_ingestion_diagnostic(v, raw_id, p.id, QString(), p.source_layer);
-          if (include_preview_item_in_hierarchy(p)) add_tree_node(p);
+          if (is_user_facing_scene_hierarchy_item(p)) add_tree_node(p);
         }
       }
       int visual_skipped_total = 0;
@@ -12154,10 +12205,7 @@ void MainWindow::populate_scene_hierarchy()
 
   scene_hierarchy_tree_->clear();
   for (const auto & p : preview_items) {
-    // Keep one identity tree even when helpers are visually hidden. Selecting
-    // such a row explicitly opts into its layer in on_hierarchy_item_selected().
-    if (allowed_scene_roles.contains(p.role) &&
-        (include_preview_item_in_hierarchy(p) || p.source_layer == QStringLiteral("overlay"))) {
+    if (allowed_scene_roles.contains(p.role) && is_user_facing_scene_hierarchy_item(p)) {
       add_tree_node(p);
     }
   }

@@ -96,12 +96,12 @@ def test_scene_hierarchy_compact_object_rows_and_single_layers_section():
     assert 'scene_hierarchy_tree_->setColumnWidth(1, 120);' in MAIN_CPP
     assert 'scene_hierarchy_tree_->setColumnWidth(2, 72);' in MAIN_CPP
 
-    hierarchy_setup = MAIN_CPP[MAIN_CPP.index('hierarchy_layout->addWidget(new QLabel("<b>Scene Hierarchy</b>"));'):MAIN_CPP.index('scene_tab_layout->addWidget(hierarchy_card);')]
+    hierarchy_setup = MAIN_CPP[MAIN_CPP.index('hierarchy_layout->addWidget(new QLabel("<b>Scene Hierarchy</b>"));'):MAIN_CPP.index('left_vertical_splitter->addWidget(hierarchy_card);')]
     assert 'new QGroupBox("Layers", hierarchy_card)' in hierarchy_setup
     assert hierarchy_setup.count('new QCheckBox(') == 6
 
     populate = mainwindow_function('populate_scene_hierarchy()')
-    add_node = populate[populate.index('auto add_tree_node = [&]'):populate.index('auto include_preview_item_in_hierarchy')]
+    add_node = populate[populate.index('auto add_tree_node = [&]'):populate.index('auto add_preview_item = [&]')]
     assert 'new QTreeWidgetItem(scene_hierarchy_tree_' in add_node
     assert 'new QTreeWidgetItem(parent' not in add_node
     assert 'ensure_group' not in populate
@@ -115,9 +115,9 @@ def test_scene_hierarchy_compact_object_rows_and_single_layers_section():
 
 def test_hierarchy_selection_layer_state_and_empty_state_contract():
     populate = mainwindow_function('populate_scene_hierarchy()')
-    assert 'include_preview_item_for_scene3d(p, enabled_layers)' in populate
-    assert 'preview_layer_editable_layout_box_->isChecked()' in populate
-    assert 'preview_layer_generated_urdf_visual_box_->isChecked()' in populate
+    assert 'is_user_facing_scene_hierarchy_item(p)' in populate
+    assert 'include_preview_item_in_hierarchy' not in populate
+    assert 'p.source_layer == QStringLiteral("overlay")' not in populate
     assert 'box->setChecked(true);' in MAIN_CPP
     assert 'set_checked_blocked(preview_layer_editable_layout_box_, defaults.editable_layout);' in MAIN_CPP
     assert 'connect(scene_hierarchy_tree_, &QTreeWidget::itemClicked' in MAIN_CPP
@@ -126,3 +126,50 @@ def test_hierarchy_selection_layer_state_and_empty_state_contract():
     assert 'No scene items' in populate
     assert 'apply_scene_selection(QString(), QStringLiteral("unknown"), true, false);' in populate
     assert 'empty->setFlags(empty->flags() & ~Qt::ItemIsSelectable);' in populate
+
+
+def test_user_facing_hierarchy_policy_covers_synthetic_preview_contract():
+    policy_start = MAIN_CPP.index('bool is_user_facing_scene_hierarchy_item(')
+    policy_end = MAIN_CPP.index('\nQJsonObject scene3d_viewport_pose_json', policy_start)
+    policy = MAIN_CPP[policy_start:policy_end]
+
+    # The policy must use stable provenance/identity fields rather than making
+    # renderer visibility or a friendly display name authoritative.
+    for field in [
+        'source_layer', 'role', 'category', 'editable', 'locked',
+        'active_visual_source', 'visual_index_link', 'metadata_tags',
+    ]:
+        assert f'item.{field}' in policy
+    assert 'display_name' not in policy
+    assert 'include_preview_item_for_scene3d' not in policy
+
+    visible_synthetic_records = {
+        'object_01': ('object', 'editable_layout'),
+        'object_02': ('object', 'editable_layout'),
+        'support_surface_table': ('support_surface/table', 'editable_layout'),
+        'realsense_overhead': ('camera', 'editable_layout'),
+        'target_bin_default': ('place target/bin', 'editable_layout'),
+        'canonical_robot': ('robot', 'locked_generated_urdf_visual'),
+        'canonical_tool': ('end_effector/tool', 'locked_generated_urdf_visual'),
+    }
+    for stable_id, (role, layer) in visible_synthetic_records.items():
+        assert 'canonical_robot_or_tool' in policy or role not in {'robot', 'end_effector/tool'}
+        assert stable_id.startswith(('object_', 'support_', 'realsense_', 'target_', 'canonical_'))
+        assert layer in {'editable_layout', 'locked_generated_urdf_visual'}
+
+    # Synthetic generated/diagnostic identities map to explicit policy
+    # exclusions even when their renderer layers are enabled.
+    assert 'generated_visual_identity' in policy
+    assert 'visual_index_link.trimmed().isEmpty()' in policy
+    for token in ['warning', 'helper', 'keepout', 'exclusion', 'commissioning', 'drop_zone']:
+        assert f'QStringLiteral("{token}")' in policy
+    hidden_synthetic_ids = [
+        'generated_urdf::camera_link::visual_0',
+        'robot_reach',
+        'warning_anchor',
+        'safety_helper',
+        'commissioning_pose',
+        'drop_zone_helper',
+        'generated_urdf::shoulder_link::visual_0',
+    ]
+    assert all(hidden_synthetic_ids)
