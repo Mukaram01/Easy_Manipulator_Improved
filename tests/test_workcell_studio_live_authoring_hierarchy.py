@@ -95,3 +95,15 @@ def test_add_refresh_does_not_mutate_current_preview_fixture():
     before = list(preview)
     assert hierarchy_rows(preview) == ["object_03"]
     assert preview == before and len(preview) == 1
+
+def test_physical_target_bin_owns_hierarchy_not_derived_place_zone():
+    policy = block(
+        "bool is_user_facing_scene_hierarchy_item",
+        "QJsonObject scene3d_viewport_pose_json",
+    )
+
+    assert 'role == QStringLiteral("target_bin")' in policy
+    assert 'role == QStringLiteral("place_target_bin")' in policy
+    assert '!item.target_ref.trimmed().isEmpty()' in policy
+    assert 'source_layer == QStringLiteral("overlay")' in policy
+    assert '(category == QStringLiteral("place_zone") && !physical_target_bin)' in policy
