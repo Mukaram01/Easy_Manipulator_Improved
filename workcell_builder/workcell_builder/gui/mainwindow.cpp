@@ -611,10 +611,18 @@ bool is_user_facing_scene_hierarchy_item(const ScenePreviewWidget::PreviewItem &
     source_file == QStringLiteral("environment_layout_yaml") ||
     source_file == QStringLiteral("workcell_studio_layout_yaml");
   const bool semantic_primitive = visual_source == QStringLiteral("semantic_primitive");
+  const bool physical_target_bin =
+    role == QStringLiteral("target_bin") || role == QStringLiteral("place_target_bin");
+
+  // A derived destination/place-zone overlay follows its physical target and
+  // must not become the hierarchy owner.
+  if (source_layer == QStringLiteral("overlay") && !item.target_ref.trimmed().isEmpty()) return false;
+
   const bool task_only_semantic =
     role == QStringLiteral("pick_source_zone") || role == QStringLiteral("home_safety_pose") ||
     role == QStringLiteral("safety_zone") || category == QStringLiteral("pick_zone") ||
-    category == QStringLiteral("place_zone") || metadata.contains(QStringLiteral("commissioning")) ||
+    (category == QStringLiteral("place_zone") && !physical_target_bin) ||
+    metadata.contains(QStringLiteral("commissioning")) ||
     metadata.contains(QStringLiteral("drop_zone")) || metadata.contains(QStringLiteral("task_only"));
   if (task_only_semantic || (semantic_primitive && !authored_source)) return false;
 
@@ -626,8 +634,8 @@ bool is_user_facing_scene_hierarchy_item(const ScenePreviewWidget::PreviewItem &
 
   const bool authored_physical_role =
     role == QStringLiteral("support_surface_table") || role == QStringLiteral("camera") ||
-    role == QStringLiteral("place_target_bin") || role == QStringLiteral("conveyor") ||
-    role == QStringLiteral("object");
+    role == QStringLiteral("target_bin") || role == QStringLiteral("place_target_bin") ||
+    role == QStringLiteral("conveyor") || role == QStringLiteral("object");
   if (!authored_physical_role) return false;
 
   // Locked canonical owners are useful hierarchy rows; locked generated link
