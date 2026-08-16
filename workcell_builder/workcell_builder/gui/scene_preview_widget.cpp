@@ -1705,6 +1705,7 @@ void ScenePreviewWidget::cancel_embedded_web_lifecycle(bool stop_owned_server)
   pending_embedded_web_identity_ = EmbeddedWebRequestIdentity{};
   pending_embedded_web_request_ = false;
   pending_embedded_web_force_ = false;
+  pending_embedded_web_source_policy_ = EmbeddedWebSourcePolicy::AuthoringSession;
   embedded_web_last_suppressed_duplicate_key_.clear();
   embedded_web_server_lifecycle_ = EmbeddedWebServerLifecycle::ServerNotStarted;
   embedded_web_server_probe_ = EmbeddedWebServerProbe{};
@@ -1790,10 +1791,11 @@ ScenePreviewWidget::PreviewItem ScenePreviewWidget::preview_item_from_canvas_ite
   return preview;
 }
 
-void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force, const QString & origin)
+void ScenePreviewWidget::request_embedded_web_product_view_refresh(
+  bool force, const QString & origin, EmbeddedWebSourcePolicy source_policy)
 {
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
-  Q_UNUSED(force); Q_UNUSED(origin);
+  Q_UNUSED(force); Q_UNUSED(origin); Q_UNUSED(source_policy);
   return;
 #else
   if (!embedded_web_view_) return;
@@ -1883,6 +1885,7 @@ void ScenePreviewWidget::request_embedded_web_product_view_refresh(bool force, c
   pending_embedded_web_identity_ = identity;
   pending_embedded_web_request_ = true;
   pending_embedded_web_force_ = force;
+  pending_embedded_web_source_policy_ = source_policy;
   emit studio_log_requested(QStringLiteral("Product View lifecycle requested: scene=%1 generation=%2 payload_revision=%3 origin=%4 force=%5.")
     .arg(identity.scene_id).arg(identity.generation).arg(identity.payload_revision).arg(request_origin)
     .arg(force ? QStringLiteral("true") : QStringLiteral("false")));
@@ -2010,15 +2013,17 @@ void ScenePreviewWidget::maybe_start_next_embedded_web_prepare()
   if (!pending_embedded_web_request_) return;
   const EmbeddedWebRequestIdentity identity = pending_embedded_web_identity_;
   const bool force = pending_embedded_web_force_;
+  const EmbeddedWebSourcePolicy source_policy = pending_embedded_web_source_policy_;
   pending_embedded_web_request_ = false;
   pending_embedded_web_force_ = false;
+  pending_embedded_web_source_policy_ = EmbeddedWebSourcePolicy::AuthoringSession;
   // A newer forced request can retire the pending identity while the previous
   // process is finishing.  Do not revive that stale work.
   if (!embedded_web_identity_is_current(identity)) {
     maybe_start_next_embedded_web_prepare();
     return;
   }
-  start_embedded_web_prepare(identity, force);
+  start_embedded_web_prepare(identity, force, source_policy);
 #endif
 }
 
@@ -2037,10 +2042,12 @@ void ScenePreviewWidget::emit_backend_startup_diagnostic_once()
 #endif
 }
 
-void ScenePreviewWidget::start_embedded_web_prepare(const EmbeddedWebRequestIdentity & identity, bool force, bool diagnostic_preview)
+void ScenePreviewWidget::start_embedded_web_prepare(
+  const EmbeddedWebRequestIdentity & identity, bool force,
+  EmbeddedWebSourcePolicy source_policy, bool diagnostic_preview)
 {
 #ifndef WORKCELL_BUILDER_HAS_WEBENGINE
-  Q_UNUSED(identity); Q_UNUSED(force);
+  Q_UNUSED(identity); Q_UNUSED(force); Q_UNUSED(source_policy); Q_UNUSED(diagnostic_preview);
 #else
   const QString scene_id = identity.scene_id;
   const QFileInfo selected_scene_info(identity.absolute_scene_dir);
@@ -2085,36 +2092,38 @@ void ScenePreviewWidget::start_embedded_web_prepare(const EmbeddedWebRequestIden
   embedded_web_prepare_process_ = new QProcess(this);
   embedded_web_prepare_process_->setProgram(QStringLiteral("python3"));
   QStringList args{"scripts/ensure_workcell_studio_web_scene_fresh.py", "--scene", selected_scene_dir, "--output", request_output_path, "--stage-assets"};
-  // This request-local overlay lets Web3D see unsaved editable layout records.
-  // It is derived UI state, deliberately stored under build/ and never merged
-  // back into environment/layout YAML.
+  // Normal authoring requests use derived UI state so Web3D can show unsaved
+  // edits. A post-save canonical request intentionally skips that state: disk
+  // has become the sole transform authority for its forced regeneration.
   QJsonArray overlay_items;
-  for (const PreviewItem & item : preview_items_) {
-    if (item.source_layer != QStringLiteral("editable_layout") || !item.editable || item.locked) continue;
-    QString mesh_source = item.mesh_path.trimmed().isEmpty() ? item.source_path.trimmed() : item.mesh_path.trimmed();
+  if (source_policy == EmbeddedWebSourcePolicy::AuthoringSession) {
+    for (const PreviewItem & item : preview_items_) {
+      if (item.source_layer != QStringLiteral("editable_layout") || !item.editable || item.locked) continue;
+      QString mesh_source = item.mesh_path.trimmed().isEmpty() ? item.source_path.trimmed() : item.mesh_path.trimmed();
 
-    // Some persisted repo assets reach PreviewItem as a stale absolute path
-    // rooted under the scene directory. Recover the original portable
-    // repo-relative path when that exact repo asset exists. Genuine scene-local
-    // imports already exist at their absolute path and are left unchanged.
-    const QFileInfo mesh_info(mesh_source);
-    if (mesh_info.isAbsolute() && !mesh_info.isFile()) {
-      const QString scene_relative = QDir(selected_scene_dir).relativeFilePath(mesh_source);
-      if (!scene_relative.startsWith(QStringLiteral("../"))) {
-        const QString repo_candidate = QDir(repo_root).filePath(scene_relative);
-        if (QFileInfo(repo_candidate).isFile()) {
-          mesh_source = scene_relative;
+      // Some persisted repo assets reach PreviewItem as a stale absolute path
+      // rooted under the scene directory. Recover the original portable
+      // repo-relative path when that exact repo asset exists. Genuine scene-local
+      // imports already exist at their absolute path and are left unchanged.
+      const QFileInfo mesh_info(mesh_source);
+      if (mesh_info.isAbsolute() && !mesh_info.isFile()) {
+        const QString scene_relative = QDir(selected_scene_dir).relativeFilePath(mesh_source);
+        if (!scene_relative.startsWith(QStringLiteral("../"))) {
+          const QString repo_candidate = QDir(repo_root).filePath(scene_relative);
+          if (QFileInfo(repo_candidate).isFile()) {
+            mesh_source = scene_relative;
+          }
         }
       }
-    }
 
-    const QString mesh_suffix = QFileInfo(mesh_source).suffix().toLower();
-    if (mesh_suffix != QStringLiteral("stl") &&
-        mesh_suffix != QStringLiteral("dae") &&
-        mesh_suffix != QStringLiteral("obj")) {
-      continue;
+      const QString mesh_suffix = QFileInfo(mesh_source).suffix().toLower();
+      if (mesh_suffix != QStringLiteral("stl") &&
+          mesh_suffix != QStringLiteral("dae") &&
+          mesh_suffix != QStringLiteral("obj")) {
+        continue;
+      }
+      overlay_items.append(authoring_overlay_item(item, mesh_source));
     }
-    overlay_items.append(authoring_overlay_item(item, mesh_source));
   }
   if (!overlay_items.isEmpty()) {
     const QString overlay_dir = QDir(repo_root).filePath(QStringLiteral("build/workcell_studio_web_scene/authoring_session_overlays"));
@@ -2296,7 +2305,8 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
       record_embedded_web_prepare_terminal(identity, process, QStringLiteral("strict_authoring_blocked"), exit_status, exit_code,
         QStringLiteral("strict preparation rejected an unresolved destination chain; starting diagnostic preview"));
       emit studio_log_requested(QStringLiteral("Strict Product View preparation blocked by scene authoring for %1; retrying read-only diagnostic preview.").arg(scene));
-      start_embedded_web_prepare(identity, true, true);
+      start_embedded_web_prepare(
+        identity, true, EmbeddedWebSourcePolicy::AuthoringSession, true);
       return;
     }
     reject_prepare(QStringLiteral("prepare command failed with exit code %1; old output is rejected even if present").arg(exit_code));
@@ -3308,7 +3318,8 @@ int ScenePreviewWidget::request_post_save_product_view_refresh()
   // earlier load completion or scene_ready can never complete this refresh.
   ++preview_payload_revision_;
   ++preview_payload_generation_;
-  request_embedded_web_product_view_refresh(true, QStringLiteral("post_save"));
+  request_embedded_web_product_view_refresh(
+    true, QStringLiteral("post_save"), EmbeddedWebSourcePolicy::PersistedCanonical);
   post_save_refresh_generation_ = embedded_web_request_generation_;
   post_save_refresh_payload_revision_ = preview_payload_revision_;
   return post_save_refresh_payload_revision_;

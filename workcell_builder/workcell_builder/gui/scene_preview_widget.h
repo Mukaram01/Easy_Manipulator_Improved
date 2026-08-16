@@ -459,7 +459,13 @@ private:
     QString failure_detail;
   };
   void refresh_embedded_web_product_view();
-  void request_embedded_web_product_view_refresh(bool force = false, const QString & origin = QStringLiteral("automatic"));
+  enum class EmbeddedWebSourcePolicy {
+    AuthoringSession,
+    PersistedCanonical
+  };
+  void request_embedded_web_product_view_refresh(
+    bool force = false, const QString & origin = QStringLiteral("automatic"),
+    EmbeddedWebSourcePolicy source_policy = EmbeddedWebSourcePolicy::AuthoringSession);
   void cancel_embedded_web_lifecycle(bool stop_owned_server);
   void invalidate_embedded_web_scene_handoff(const QString & scene_id);
   void show_embedded_web_loading_document(const QString & scene_id);
@@ -469,7 +475,10 @@ private:
   void maybe_start_next_embedded_web_prepare();
   EmbeddedWebRequestIdentity embedded_web_request_identity(quint64 generation) const;
   bool embedded_web_identity_is_current(const EmbeddedWebRequestIdentity & identity) const;
-  void start_embedded_web_prepare(const EmbeddedWebRequestIdentity & identity, bool force, bool diagnostic_preview = false);
+  void start_embedded_web_prepare(
+    const EmbeddedWebRequestIdentity & identity, bool force,
+    EmbeddedWebSourcePolicy source_policy = EmbeddedWebSourcePolicy::AuthoringSession,
+    bool diagnostic_preview = false);
   void on_embedded_web_prepare_finished(const EmbeddedWebRequestIdentity & identity, QProcess * process, int exit_code, QProcess::ExitStatus exit_status);
   void append_embedded_web_prepare_output(QProcess * process, bool standard_error);
   void record_embedded_web_prepare_terminal(const EmbeddedWebRequestIdentity & identity, QProcess * process,
@@ -608,6 +617,7 @@ private:
   bool pending_embedded_web_request_{ false };
   quint64 embedded_web_request_generation_{ 0 };
   bool pending_embedded_web_force_{ false };
+  EmbeddedWebSourcePolicy pending_embedded_web_source_policy_{ EmbeddedWebSourcePolicy::AuthoringSession };
   QString embedded_web_last_suppressed_duplicate_key_;
   QString embedded_web_server_session_repo_root_;
   int embedded_web_server_session_port_{ 0 };
