@@ -2696,6 +2696,65 @@ for (const section of ['min', 'max', 'center', 'dimensions']) for (const value o
     assert result.stderr == ""
 
 
+def test_selection_highlight_uses_only_visible_physical_bounds():
+    js_path = VIEWER / "viewer.js"
+    harness = r'''
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+class MockVector3 { constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; } }
+class MockBox3 {
+  constructor() { this.min = { x: Infinity, y: Infinity, z: Infinity }; this.max = { x: -Infinity, y: -Infinity, z: -Infinity }; }
+  isEmpty() { return this.min.x > this.max.x || this.min.y > this.max.y || this.min.z > this.max.z; }
+  union(box) { for (const k of ['x', 'y', 'z']) { this.min[k] = Math.min(this.min[k], box.min[k]); this.max[k] = Math.max(this.max[k], box.max[k]); } return this; }
+  setFromObject(object) { this.min = { ...object.mockBounds.min }; this.max = { ...object.mockBounds.max }; return this; }
+  getSize(target) { for (const k of ['x', 'y', 'z']) target[k] = this.max[k] - this.min[k]; return target; }
+  getCenter(target) { for (const k of ['x', 'y', 'z']) target[k] = (this.min[k] + this.max[k]) / 2; return target; }
+  clone() { const copy = new MockBox3(); copy.min = { ...this.min }; copy.max = { ...this.max }; return copy; }
+}
+class MockBox3Helper {
+  constructor(box, color) { this.box = box; this.color = color; this.userData = {}; this.material = {}; this.isLineSegments = true; this.visible = true; this.children = []; }
+}
+const element = () => ({ hidden: false, checked: false, disabled: false, textContent: '', className: '', innerHTML: '', classList: { toggle() {} }, setAttribute() {}, querySelector() { return { textContent: '' }; }, appendChild() {}, addEventListener() {}, getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; } });
+const sandbox = { console, assert, MockVector3, MockBox3, MockBox3Helper, window: { location: { search: '' } }, document: { getElementById() { return element(); }, createElement() { return element(); } }, URLSearchParams, requestAnimationFrame() { return 0; } };
+vm.createContext(sandbox);
+vm.runInContext(source + `
+THREE = { Vector3: MockVector3, Box3: MockBox3, Box3Helper: MockBox3Helper };
+function root(children = []) { return { visible: true, children, userData: {}, updateWorldMatrix() {} }; }
+function mesh(id, min, max, userData = {}) { return { isMesh: true, visible: true, children: [], name: id, mockBounds: { min, max }, userData }; }
+const visibleMesh = mesh('imported_stl', { x: 1, y: 2, z: 3 }, { x: 2, y: 4, z: 6 }, { item: { id: 'fixture', category: 'object', source_layer: 'editable_layout' } });
+const hiddenFallback = mesh('fallback', { x: -100, y: -100, z: -100 }, { x: 100, y: 100, z: 100 }, { item: { id: 'fixture_fallback', category: 'object' } });
+hiddenFallback.visible = false;
+const selectedRoot = root([visibleMesh, hiddenFallback]);
+state.three.scene = root();
+state.three.scene.add = object => state.three.scene.children.push(object);
+state.three.scene.remove = () => {};
+refreshSelectionHighlight({ object3d: selectedRoot });
+const helper = state.three.selectionHighlight;
+assert.ok(helper);
+assert.strictEqual(JSON.stringify(helper.box.min), JSON.stringify({ x: 1, y: 2, z: 3 }));
+assert.strictEqual(JSON.stringify(helper.box.max), JSON.stringify({ x: 2, y: 4, z: 6 }));
+assert.strictEqual(helper.name, 'selection_subtle_bounds_highlight');
+assert.strictEqual(helper.userData.selection_outline, true);
+assert.strictEqual(helper.userData.selection_highlight, true);
+assert.strictEqual(helper.userData.exclude_from_physical_bounds, true);
+const physicalWithHelper = collectPhysicalVisibleBounds(root([visibleMesh, helper]));
+assert.strictEqual(physicalWithHelper.count, 1);
+assert.strictEqual(JSON.stringify(physicalWithHelper.bounds_json.max), JSON.stringify({ x: 2, y: 4, z: 6 }));
+`, sandbox);
+'''
+    result = subprocess.run(
+        ["node", "-e", harness, str(js_path)],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert result.stderr == ""
+
+
 def test_fit_cell_uses_physical_visible_bounds_and_preserves_camera_on_empty():
     js_path = VIEWER / "viewer.js"
     harness = r'''

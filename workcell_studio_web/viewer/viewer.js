@@ -4429,9 +4429,9 @@ function removeSelectionHighlight() {
 function refreshSelectionHighlight(rendered) {
   removeSelectionHighlight();
   if (!rendered?.object3d || !state.three.scene || !THREE?.Box3Helper) return;
-  const box = new THREE.Box3().setFromObject(rendered.object3d);
-  if (box.isEmpty()) return;
-  const helper = new THREE.Box3Helper(box, 0x0078a8);
+  const physical = collectPhysicalVisibleBounds(rendered.object3d);
+  if (!physical.bounds) return;
+  const helper = new THREE.Box3Helper(physical.bounds, 0x0078a8);
   helper.name = 'selection_subtle_bounds_highlight';
   helper.userData.selection_outline = true;
   helper.userData.selection_highlight = true;
