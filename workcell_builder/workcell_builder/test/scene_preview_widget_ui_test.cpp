@@ -109,6 +109,28 @@ TEST(ScenePreviewWidgetUi, DirtySessionRefreshPreservesImportedCatalogMetadataTh
 }
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+ScenePreviewWidget::PreviewItem stale_editable_item(const QString & id, double x, double y, double z)
+{
+  ScenePreviewWidget::PreviewItem item;
+  item.id = id;
+  item.catalog_asset_id = QStringLiteral("shared_catalog_asset");
+  item.source_layer = QStringLiteral("editable_layout");
+  item.mesh_path = QStringLiteral("/tmp/shared_catalog_asset.stl");
+  item.editable = true;
+  item.locked = false;
+  item.x = x;
+  item.y = y;
+  item.z = z;
+  return item;
+}
+
+void stop_preparation(ScenePreviewWidget & widget)
+{
+  if (!widget.embedded_web_prepare_process_) return;
+  widget.embedded_web_prepare_process_->kill();
+  widget.embedded_web_prepare_process_->waitForFinished();
+}
+
 ScenePreviewWidget::EmbeddedWebRequestIdentity publication_identity(
   const QString & root, const QString & scene, quint64 revision, quint64 generation,
   const QByteArray & fingerprint)
@@ -341,6 +363,65 @@ TEST(ScenePreviewWidgetUi, EquivalentPreviewContextsPrepareProductViewOnlyOnce)
 }
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+TEST(ScenePreviewWidgetUi, NormalPreparationIncludesAuthoringSessionOverlay)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+  const QString root = QDir(QStringLiteral(WORKCELL_BUILDER_REPO_ROOT)).absolutePath();
+  const QString scene = QStringLiteral("ur5_2f_test");
+
+  ScenePreviewWidget widget;
+  widget.preview_items_ = {stale_editable_item(QStringLiteral("object_01"), 0.1, 0.45, 0.1)};
+  const auto identity = publication_identity(root, scene, 4, 8, QByteArrayLiteral("normal-overlay"));
+  select_identity(widget, identity);
+  widget.start_embedded_web_prepare(
+    identity, true, ScenePreviewWidget::EmbeddedWebSourcePolicy::AuthoringSession);
+
+  ASSERT_NE(widget.embedded_web_prepare_process_, nullptr);
+  const QStringList arguments = widget.embedded_web_prepare_process_->arguments();
+  EXPECT_TRUE(arguments.contains(QStringLiteral("--authoring-session-overlay")));
+  EXPECT_TRUE(arguments.contains(QStringLiteral("--force")));
+  stop_preparation(widget);
+}
+
+TEST(ScenePreviewWidgetUi, PostSaveRefreshUsesPersistedCanonicalSourcesWithoutStaleOverlay)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+  const QString root = QDir(QStringLiteral(WORKCELL_BUILDER_REPO_ROOT)).absolutePath();
+  const QString scene = QStringLiteral("ur5_2f_test");
+
+  ScenePreviewWidget widget;
+  stop_preparation(widget);
+  widget.preview_scene_name_ = scene;
+  widget.preview_context_.scene_id = scene;
+  widget.preview_context_.absolute_scene_dir = QDir(root).filePath(QStringLiteral("scenes/%1").arg(scene));
+  widget.preview_context_.absolute_repo_root = root;
+  // These deliberately stale transforms represent A/B while disk contains the
+  // just-saved A'/B'. Both instances share one catalog asset identity, so only
+  // their scene-instance IDs may distinguish them.
+  widget.preview_items_ = {
+    stale_editable_item(QStringLiteral("object_01"), 0.1, 0.45, 0.1),
+    stale_editable_item(QStringLiteral("object_02"), 1.1, -0.15, 0.1)};
+  const int prior_revision = widget.preview_payload_revision_;
+  const quint64 prior_generation = widget.preview_payload_generation_;
+
+  const int requested_revision = widget.request_post_save_product_view_refresh();
+
+  ASSERT_GT(requested_revision, 0);
+  ASSERT_NE(widget.embedded_web_prepare_process_, nullptr);
+  const QStringList arguments = widget.embedded_web_prepare_process_->arguments();
+  EXPECT_FALSE(arguments.contains(QStringLiteral("--authoring-session-overlay")));
+  EXPECT_TRUE(arguments.contains(QStringLiteral("--force")));
+  EXPECT_EQ(widget.preview_payload_revision_, prior_revision + 1);
+  EXPECT_EQ(widget.preview_payload_generation_, prior_generation + 1);
+  EXPECT_EQ(widget.post_save_refresh_payload_revision_, requested_revision);
+  EXPECT_EQ(widget.post_save_refresh_generation_, widget.embedded_web_request_generation_);
+  EXPECT_EQ(widget.preview_items_.at(0).x, 0.1);
+  EXPECT_EQ(widget.preview_items_.at(1).y, -0.15);
+  EXPECT_EQ(widget.preview_items_.at(0).catalog_asset_id,
+    widget.preview_items_.at(1).catalog_asset_id);
+  stop_preparation(widget);
+}
+
 TEST(ScenePreviewWidgetUi, CurrentPreparationPublishesAtomicallyToCanonicalBrowserPath)
 {
   ASSERT_NE(ensure_app(), nullptr);
