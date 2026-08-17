@@ -4454,6 +4454,8 @@ const asset={id:'2068_001_24',mesh_scale:[.001,.001,.001]};
 armPlacement({asset});const ghost=state.placement.previewRoot;assert(ghost);assert.strictEqual(state.placement.yaw,0);assert.strictEqual(added.length,1);assert.strictEqual(state.objects.length,0);assert.strictEqual(state.editorEvents.length,0);
 assert.strictEqual(ghost.userData.placement_preview,true);assert.strictEqual(ghost.userData.exclude_from_physical_bounds,true);assert.strictEqual(ghost.userData.exclude_from_fit_bounds,true);assert.strictEqual(ghost.userData.selectable,false);
 const effective=meshLocalTransformOf(state.placement.asset).scale;assert.deepStrictEqual([effective.x,effective.y,effective.z],[.001,.001,.001]);
+contactCorrectPlacementPoint=point=>point;
+evaluatePlacementCollision=()=>state.placement.valid=state.placement.supportValid&&Boolean(state.placement.proposedPoint);
 let prevented=0;const key=(code,target=null)=>onEditorKeyDown({code,key:code==='KeyQ'?'q':'e',target,preventDefault(){prevented++}});
 key('KeyE');key('KeyE');key('KeyQ');assert.strictEqual(state.placement.previewRoot,ghost,'rotation keeps ghost identity');assert.strictEqual(state.placement.yaw,Math.PI/12);assert.strictEqual(ghost.rotation.z,Math.PI/12);assert.strictEqual(prevented,3);
 for(const target of [{tagName:'INPUT'},{tagName:'textarea'},{tagName:'SELECT'},{isContentEditable:true}])key('KeyE',target);
@@ -4484,6 +4486,8 @@ vm.runInContext(source+`
 const copy=value=>value&&JSON.parse(JSON.stringify(value));
 const root={visible:false,position:{x:0,y:0,z:0,set(x,y,z){Object.assign(this,{x,y,z})}},rotation:{z:0}};
 state.placement={armed:true,persistent:true,previewRoot:root,asset:{},yaw:Math.PI/6,rawPoint:null,proposedPoint:null,valid:false};
+contactCorrectPlacementPoint=point=>point;
+evaluatePlacementCollision=()=>state.placement.valid=state.placement.supportValid&&Boolean(state.placement.proposedPoint);
 el.snapToggle.checked=false;el.translationSnap.value='.05';
 let proposed=setPlacementPoint({x:.823,y:-.117,z:.745});
 assert.deepStrictEqual(proposed,{x:.823,y:-.117,z:.745});assert.strictEqual(state.placement.valid,true);assert.strictEqual(root.visible,true);assert.deepStrictEqual([root.position.x,root.position.y,root.position.z],[.823,-.117,.745]);
@@ -4514,7 +4518,7 @@ vm.runInContext(source+`
 THREE=ThreeLib;
 state.three.scene=new THREE.Scene();state.objects=[];state.pickRecords=[];state.pickIdentityByObject=new WeakMap();
 const owner=(id,x,size=[1,1,1],item={})=>{const root=new THREE.Group();root.name=id;const mesh=new THREE.Mesh(new THREE.BoxGeometry(...size),new THREE.MeshBasicMaterial());mesh.name=id+'_visual_mesh_2';const payload={id,category:'object',role:'object',...item};mesh.userData.item=payload;root.userData.item=payload;root.add(mesh);root.position.set(x,0,.5);state.three.scene.add(root);const record={item:payload,object3d:root};state.objects.push(record);state.pickIdentityByObject.set(root,record);state.pickIdentityByObject.set(mesh,record);return record};
-const ghost=new THREE.Group();const ghostMesh=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshBasicMaterial({color:0x8aa38d}));ghost.add(ghostMesh);markPlacementPreviewHelper(ghost);stylePlacementPreview(ghost);state.three.scene.add(ghost);
+const ghost=new THREE.Group();const ghostGeometry=new THREE.BoxGeometry(1,1,1);ghostGeometry.translate(0,0,.5);const ghostMesh=new THREE.Mesh(ghostGeometry,new THREE.MeshBasicMaterial({color:0x8aa38d}));ghost.add(ghostMesh);markPlacementPreviewHelper(ghost);markPlacementPreviewPhysicalVisual(ghostMesh);stylePlacementPreview(ghost);state.three.scene.add(ghost);
 state.placement={armed:true,persistent:true,previewRoot:ghost,asset:{},yaw:0,rawPoint:null,proposedPoint:null,supportOwnerId:'table',supportValid:false,collision:false,collidingOwnerIds:[],valid:false};
 const object01=owner('object_01',2);setPlacementPoint({x:0,y:0,z:.5});assert.strictEqual(state.placement.supportValid,true);assert.strictEqual(state.placement.collision,false);assert.strictEqual(state.placement.valid,true,'separated AABBs are valid');
 setPlacementPoint({x:1,y:0,z:.5});assert.strictEqual(state.placement.collision,false,'touching faces are not penetration');
@@ -4529,6 +4533,36 @@ bin.object3d.position.x=4;placementPointFromViewport=()=>({x:0,y:0,z:.5});onCanv
 const repeated=owner('asset_01',0);setPlacementPoint({x:0,y:0,z:.5});assert(state.placement.collidingOwnerIds.includes('asset_01'),'new live repeat instance immediately blocks the same pose');
 repeated.object3d.position.x=3;evaluatePlacementCollision();assert(!state.placement.collidingOwnerIds.includes('asset_01'),'candidate bounds use current live transform');
 cancelPlacement();assert.strictEqual(state.placement.collision,false);assert.deepStrictEqual(state.placement.collidingOwnerIds,[]);assert.strictEqual(state.placement.previewRoot,null);assert.strictEqual(ghost.parent,null,'cancel removes ghost');
+`,sandbox);
+'''
+    result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_placement_contact_uses_transformed_physical_bounds_for_final_pose_and_commit():
+    js_path = VIEWER / "viewer.js"
+    harness = r'''
+const fs=require('fs'),vm=require('vm'),assert=require('assert');let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const ThreeLib=require('./workcell_studio_web/viewer/node_modules/three/build/three.cjs');
+const elements={};const e=id=>elements[id]??={id,style:{},hidden:false,checked:false,value:'0',textContent:'',innerHTML:'',className:'',title:'',classList:{add(){},remove(){},toggle(){}},setAttribute(){},addEventListener(){},querySelector(){return null},appendChild(){},getBoundingClientRect(){return{left:0,top:0,width:100,height:100}}};
+const sandbox={console,assert,ThreeLib,window:{location:{search:''}},document:{getElementById:e,createElement(){return e('created')}},URLSearchParams,requestAnimationFrame(){return 0}};vm.createContext(sandbox);
+vm.runInContext(source+`
+THREE=ThreeLib;state.three.scene=new THREE.Scene();state.objects=[];state.pickRecords=[];state.pickIdentityByObject=new WeakMap();
+const near=(a,b,m='')=>assert(Math.abs(a-b)<=1e-8,m+' '+a+' != '+b);
+function ghostFromGeometry(geometry,{offset=0,scale=1,yaw=0}={}){const root=new THREE.Group();const visual=new THREE.Group();visual.position.z=offset;visual.scale.setScalar(scale);const mesh=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({color:0x8aa38d}));visual.add(mesh);root.add(visual);markPlacementPreviewHelper(root);markPlacementPreviewPhysicalVisual(visual);root.rotation.z=yaw;state.three.scene.add(root);state.placement={armed:true,persistent:true,previewRoot:root,asset:{},yaw,rawPoint:null,supportPoint:null,proposedPoint:null,supportOwnerId:'table',supportValid:false,collision:false,collidingOwnerIds:[],valid:false};return root;}
+function box(minZ,maxZ,options={}){const g=new THREE.BoxGeometry(.2,.4,maxZ-minZ);g.translate(0,0,(minZ+maxZ)/2);return ghostFromGeometry(g,options);}
+let root=box(0,.2);let p=setPlacementPoint({x:0,y:0,z:.7});near(p.z,.7,'bottom origin');near(collectPlacementPreviewPhysicalBounds(root).bounds.min.z,.7);
+root=box(-.1,.1);p=setPlacementPoint({x:0,y:0,z:.7});near(p.z,.8,'centered origin');near(collectPlacementPreviewPhysicalBounds(root).bounds.min.z,.7);
+root=box(0,.2,{offset:.12});p=setPlacementPoint({x:0,y:0,z:.7});near(p.z,.58,'positive visual offset');
+root=box(0,.2,{offset:-.05});p=setPlacementPoint({x:0,y:0,z:.7});near(p.z,.75,'negative visual offset');
+root=box(-100,100,{scale:.001});p=setPlacementPoint({x:0,y:0,z:.5});near(p.z,.6,'millimetre mesh scale applied once');
+root=box(-.05,.15,{yaw:Math.PI/4});p=setPlacementPoint({x:.2,y:.3,z:.7});near(p.z,.75,'yaw contact');near(root.rotation.z,Math.PI/4,'yaw retained');near(getPlacementState().proposedPoint.z,p.z,'display state is corrected root');
+placementPointFromViewport=()=>({x:.2,y:.3,z:.7});onCanvasPointerDown({button:0,shiftKey:true,clientX:1,clientY:1,preventDefault(){},stopPropagation(){}});let request=state.editorEvents.find(event=>event.type==='placement_requested');near(request.z,p.z,'commit z equals proposed z');near(request.x,root.position.x);near(request.y,root.position.y);near(request.yaw,root.rotation.z,'no pose jump');
+const blockerRoot=new THREE.Group();const blockerMesh=new THREE.Mesh(new THREE.BoxGeometry(.2,.2,.2),new THREE.MeshBasicMaterial());blockerRoot.add(blockerMesh);blockerRoot.position.set(1,0,.8);const blocker={item:{id:'blocker',category:'object',role:'object'},object3d:blockerRoot};blockerMesh.userData.item=blocker.item;blockerRoot.userData.item=blocker.item;state.objects=[blocker];state.pickIdentityByObject.set(blockerRoot,blocker);state.pickIdentityByObject.set(blockerMesh,blocker);state.three.scene.add(blockerRoot);
+root=box(-.1,.1);setPlacementPoint({x:1,y:0,z:.7});near(root.position.z,.8);assert.strictEqual(state.placement.collision,true,'collision runs after contact correction');assert.deepStrictEqual(state.placement.collidingOwnerIds,['blocker']);
+const tableRoot=new THREE.Group();const tableMesh=new THREE.Mesh(new THREE.BoxGeometry(4,4,.2),new THREE.MeshBasicMaterial());tableRoot.add(tableMesh);tableRoot.position.z=.6;const table={item:{id:'table',category:'table',role:'support_surface'},object3d:tableRoot};tableMesh.userData.item=table.item;tableRoot.userData.item=table.item;state.objects.push(table);state.pickIdentityByObject.set(tableRoot,table);state.pickIdentityByObject.set(tableMesh,table);state.three.scene.add(tableRoot);blockerRoot.position.x=4;setPlacementPoint({x:0,y:0,z:.7});assert.strictEqual(state.placement.valid,true);assert(!state.placement.collidingOwnerIds.includes('table'),'support owner excluded');
+placementPointFromViewport=()=>({x:0,y:0,z:.5});onCanvasPointerDown({button:0,shiftKey:true,clientX:1,clientY:1,preventDefault(){},stopPropagation(){}});placementPointFromViewport=()=>({x:0,y:0,z:.75});onCanvasPointerDown({button:0,shiftKey:true,clientX:1,clientY:1,preventDefault(){},stopPropagation(){}});const requests=state.editorEvents.filter(event=>event.type==='placement_requested');near(requests.at(-2).z,.6,'first repeat height');near(requests.at(-1).z,.85,'second repeat height');
+const empty=new THREE.Group();markPlacementPreviewHelper(empty);state.three.scene.add(empty);state.placement={armed:true,persistent:true,previewRoot:empty,asset:{},yaw:0,rawPoint:null,supportPoint:null,proposedPoint:null,supportOwnerId:'table',supportValid:false,collision:false,collidingOwnerIds:[],valid:false};setPlacementPoint({x:0,y:0,z:.7});assert.strictEqual(state.placement.proposedPoint,null);assert.strictEqual(state.placement.valid,false);const before=state.editorEvents.length;placementPointFromViewport=()=>({x:0,y:0,z:.7});onCanvasPointerDown({button:0,shiftKey:false,clientX:1,clientY:1});assert.strictEqual(state.editorEvents.length,before,'missing finite physical bounds blocks commit');
 `,sandbox);
 '''
     result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, text=True, capture_output=True)
