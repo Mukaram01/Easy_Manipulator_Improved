@@ -1103,6 +1103,106 @@ def test_viewer_applies_mesh_local_transform_only_below_object_roots():
     assert "visual_origin" not in apply_pose_body
 
 
+def test_persisted_authored_mesh_scale_has_one_visual_origin_authority(tmp_path):
+    payload_path = tmp_path / "persisted-imported-items.json"
+    payload_path.write_text(json.dumps({
+        "items": [{
+            "id": "persisted_imported_part",
+            "display_name": "Persisted imported part",
+            "type": "imported_test_asset",
+            "role": "asset",
+            "category": "authored_asset_object",
+            "source_kind": "user_authored",
+            "source_layer": "editable_layout",
+            "editable": True,
+            "locked": False,
+            "selectable": True,
+            "render_owner": "editable_layout",
+            "render_policy": "primary",
+            "mesh_contract_category": "object",
+            "mesh_load_required": True,
+            "mesh_uri": "build/workcell_studio_web_scene/assets/test/imported-part.stl",
+            # Persisted compatibility payloads mirror the mesh-unit value at
+            # root level as well as in the mesh-local fields.
+            "scale": [0.001, 0.001, 0.001],
+            "mesh_scale": [0.001, 0.001, 0.001],
+            "mesh_local_transform": {
+                "xyz": [0.0, 0.0, 0.0],
+                "rpy": [0.0, 0.0, 0.0],
+                "scale": [0.001, 0.001, 0.001],
+            },
+            "pose": {"xyz": [0.4, 0.2, 0.3], "rpy": [0.0, 0.0, 0.0]},
+        }, {
+            "id": "target_bin_default",
+            "type": "target_bin",
+            "role": "target_bin",
+            "category": "place_zone",
+            "source_kind": "user_authored",
+            "source_layer": "editable_layout",
+            "render_owner": "editable_layout",
+            "render_policy": "primary",
+            "mesh_contract_category": "object",
+            "mesh_load_required": True,
+            "mesh_uri": "build/workcell_studio_web_scene/assets/test/sorting-bin.stl",
+            "mesh_scale": [0.001, 0.001, 0.001],
+            "mesh_local_transform": {
+                "xyz": [0.0, 0.0, 0.0],
+                "rpy": [0.0, 0.0, 0.0],
+                "scale": [0.001, 0.001, 0.001],
+            },
+            "pose": {"xyz": [0.55, -0.28, 0.2], "rpy": [0.0, 0.0, 0.0]},
+        }],
+    }), encoding="utf-8")
+
+    harness = r"""
+const fs = require('fs'); const vm = require('vm'); const assert = require('assert');
+const THREE = require(process.argv[3]);
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},setAttribute(){},querySelector(){return null;},querySelectorAll(){return[];},appendChild(){},addEventListener(){},getBoundingClientRect(){return{width:800,height:600,left:0,top:0}}});
+const context = {console, assert, require, process, window:{location:{search:''}}, document:{getElementById(){return element()},createElement(){return element()}}, URLSearchParams, requestAnimationFrame(){return 0}};
+vm.createContext(context);
+const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+context.payload = payload; context.ImportedTHREE = THREE;
+vm.runInContext(source + `
+THREE = ImportedTHREE;
+function productionTree(item, dimensionsMm) {
+  const objectRoot = new THREE.Group(); objectRoot.name = item.id + '_object_root';
+  assert.strictEqual(applyPose(objectRoot, item), true);
+  const geometry = new THREE.BoxGeometry(...dimensionsMm);
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial());
+  const visualRoot = makeMeshVisualRoot(item, mesh);
+  objectRoot.add(visualRoot); objectRoot.updateMatrixWorld(true);
+  return {objectRoot, visualRoot, bounds: new THREE.Box3().setFromObject(objectRoot)};
+}
+const imported = payload.items[0];
+const localScale = meshLocalTransformOf(imported).scale;
+assert.deepStrictEqual([localScale.x, localScale.y, localScale.z], [.001, .001, .001]);
+const importedTree = productionTree(imported, [100, 75, 160]);
+assert.strictEqual(importedTree.objectRoot.scale.toArray().join(','), '1,1,1');
+assert.strictEqual(importedTree.visualRoot.scale.toArray().join(','), '0.001,0.001,0.001');
+const worldScale = new THREE.Vector3(); importedTree.visualRoot.getWorldScale(worldScale);
+assert.strictEqual(worldScale.toArray().join(','), '0.001,0.001,0.001');
+assert.notStrictEqual(worldScale.toArray().join(','), '0.000001,0.000001,0.000001');
+const size = importedTree.bounds.getSize(new THREE.Vector3());
+assert(Math.abs(size.x - .10) < 1e-6); assert(Math.abs(size.y - .075) < 1e-6); assert(Math.abs(size.z - .16) < 1e-6);
+const binTree = productionTree(payload.items[1], [352.2011268, 213.3871002, 200]);
+const binSize = binTree.bounds.getSize(new THREE.Vector3());
+assert(binSize.toArray().every(Number.isFinite));
+assert(Math.abs(binSize.x - .3522011268) < 1e-6); assert(Math.abs(binSize.y - .2133871002) < 1e-6); assert(Math.abs(binSize.z - .2) < 1e-6);
+const objectScaled = {...imported, id: 'object_scaled_fixture', scale: [2, 3, 4]};
+delete objectScaled.mesh_scale; delete objectScaled.mesh_local_transform;
+const objectScaledRoot = new THREE.Group();
+assert.strictEqual(applyPose(objectScaledRoot, objectScaled), true);
+assert.strictEqual(objectScaledRoot.scale.toArray().join(','), '2,3,4');
+`, context);
+"""
+    subprocess.run(
+        ["node", "-e", harness, str(VIEWER / "viewer.js"), str(payload_path),
+         str(VIEWER / "node_modules/three/build/three.cjs")],
+        cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+
+
 def test_viewer_generated_urdf_baked_pose_mode_prefers_baked_visual_pose_chain():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
 
