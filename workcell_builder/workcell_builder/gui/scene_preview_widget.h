@@ -260,7 +260,9 @@ public:
     double x, double y, double z,
     double roll, double pitch, double yaw);
   void request_authoring_save();
-  void arm_embedded_asset_placement(bool persistent = false);
+  void arm_embedded_asset_placement(
+    const QString & asset_id, const QString & mesh_uri, double mesh_scale,
+    bool persistent = false);
   void cancel_embedded_asset_placement();
   void reload_meshes();
   void apply_product_view_defaults();

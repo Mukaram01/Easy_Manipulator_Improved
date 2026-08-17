@@ -2881,11 +2881,24 @@ void ScenePreviewWidget::apply_embedded_editor_state(const QVariantMap & state) 
 void ScenePreviewWidget::poll_embedded_editor_events() {}
 #endif
 
-void ScenePreviewWidget::arm_embedded_asset_placement(bool persistent)
+void ScenePreviewWidget::arm_embedded_asset_placement(
+  const QString & asset_id, const QString & mesh_uri, double mesh_scale, bool persistent)
 {
   if (product_view_backend_ != ProductViewBackend::EmbeddedWeb3D) return;
-  run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__.armPlacement({persistent:%1})")
-    .arg(persistent ? QStringLiteral("true") : QStringLiteral("false")));
+  const QJsonObject options{
+    {QStringLiteral("persistent"), persistent},
+    {QStringLiteral("asset"), QJsonObject{
+      {QStringLiteral("id"), asset_id},
+      {QStringLiteral("display_name"), asset_id},
+      {QStringLiteral("category"), QStringLiteral("authored_asset_object")},
+      {QStringLiteral("source_kind"), QStringLiteral("user_authored")},
+      {QStringLiteral("source_layer"), QStringLiteral("placement_preview")},
+      {QStringLiteral("mesh_uri"), mesh_uri},
+      {QStringLiteral("mesh_scale"), QJsonArray{mesh_scale, mesh_scale, mesh_scale}},
+    }},
+  };
+  run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__.armPlacement(%1)")
+    .arg(QString::fromUtf8(QJsonDocument(options).toJson(QJsonDocument::Compact))));
 }
 
 void ScenePreviewWidget::cancel_embedded_asset_placement()

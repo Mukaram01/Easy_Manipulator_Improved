@@ -8796,7 +8796,10 @@ bool MainWindow::arm_place_asset_mode(const QString & requested_asset_id)
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
   if (scene_preview_widget_ &&
       scene_preview_widget_->active_product_view_backend() == ScenePreviewWidget::ProductViewBackend::EmbeddedWeb3D) {
+    QString mesh_uri = QDir::current().relativeFilePath(match->source_path);
+    if (mesh_uri.startsWith(QStringLiteral("../"))) mesh_uri.clear();
     scene_preview_widget_->arm_embedded_asset_placement(
+      match->asset_id, mesh_uri, match->scale,
       place_mode_persistent_box_ && place_mode_persistent_box_->isChecked());
   }
   append_studio_log(QString("Place Asset Mode armed: %1 (%2) asset_id=%3. Click canvas to commit. Use clicked XY: %4 | xyzrpy=[%5, %6, %7, %8, %9, %10].")
