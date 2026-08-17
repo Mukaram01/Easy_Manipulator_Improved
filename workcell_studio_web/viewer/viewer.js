@@ -1448,7 +1448,15 @@ function poseOf(item) {
 function scaleOf(item) {
   // Generated URDF item roots are link/frame nodes. URDF mesh scale is
   // applied only to the loaded mesh/local wrapper, never to the link root.
-  const scale = isGeneratedUrdfItem(item) ? [1, 1, 1] : (item.scale || [1, 1, 1]);
+  // Authored mesh conversion metadata has the same ownership rule: its
+  // scale belongs to the visual-origin child, even when a compatibility
+  // payload also mirrors that value into item.scale. An item with only an
+  // object-level scale keeps the ordinary authored root-scale contract.
+  const meshLocalScale = item?.mesh_local_transform?.scale || item?.mesh_scale;
+  const meshScaleOwnedByVisual = Boolean(
+    !isGeneratedUrdfItem(item) && hasMeshBackedVisualContract(item) && Array.isArray(meshLocalScale)
+  );
+  const scale = isGeneratedUrdfItem(item) || meshScaleOwnedByVisual ? [1, 1, 1] : (item.scale || [1, 1, 1]);
   return vector3(scale, [1, 1, 1]);
 }
 function transformOf(item) {
