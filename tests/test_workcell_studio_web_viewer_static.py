@@ -4210,6 +4210,7 @@ const toolLink=root([toolMesh]),robotLink=root([robotMesh,toolLink]);
 const robotRecord=registerPickRecord({id:'forearm_visual',link_name:'forearm_link',role:'robot',active_visual_source:'mesh_preview',warnings:['diagnostic overlay warning from loader']},robotLink,robotLink,{authoritativePhysicalPick:true,uiSelectionOwnerId:'ur5'});
 const toolRecord=registerPickRecord({id:'finger_visual',link_name:'finger_link',role:'tool',active_visual_source:'mesh_preview',warnings:['debug helper warning from loader']},toolLink,robotLink,{authoritativePhysicalPick:true,uiSelectionOwnerId:'robotiq_85_gripper'});
 bindExpandedUrdfPickRecordToSubtree(robotLink,robotRecord,new Set([robotLink,toolLink]));bindExpandedUrdfPickRecordToSubtree(toolLink,toolRecord,new Set([robotLink,toolLink]));
+assert.strictEqual(robotLink.userData.expanded_urdf_physical_owner_id,'ur5');assert.strictEqual(toolLink.userData.expanded_urdf_physical_owner_id,'robotiq_85_gripper');
 state.objects=[{item:ur5,object3d:null},{item:tool,object3d:null},{item:bin,object3d:root()}];
 let result=collectSelectionPhysicalBounds(state.objects[0]);assert.deepStrictEqual(result.bounds_json.max,{x:2,y:1,z:3});
 result=collectSelectionPhysicalBounds(state.objects[1]);assert.deepStrictEqual(result.bounds_json.min,{x:5,y:0,z:0});
@@ -4226,7 +4227,9 @@ assert.strictEqual(materialFor(persisted).side,THREE.DoubleSide);
 `,sandbox);
 '''
     result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    assert result.stderr == ""
+    diagnostic_lines = [line for line in result.stderr.splitlines() if line]
+    assert diagnostic_lines
+    assert all(line.startswith("Product View selection_bounds: ") for line in diagnostic_lines)
 
 
 def test_empty_pick_clears_every_editor_mode_but_transform_controls_retains_pointer():

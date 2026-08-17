@@ -1552,6 +1552,14 @@ function bindExpandedUrdfPickRecordToSubtree(linkRoot, record, urdfLinkRoots) {
     const node = pending.pop();
     if (node !== linkRoot && urdfLinkRoots?.has(node)) continue;
     state.pickIdentityByObject.set(node, record);
+    // Keep the canonical record as the authority, but mirror the two fields
+    // needed to recover ownership while inspecting a real URDFLoader subtree.
+    // WeakMap is intentionally not iterable, so without this marker a link
+    // whose record shape differs from the flattened payload cannot be found
+    // from its mesh descendants when building selection bounds.
+    node.userData = node.userData || {};
+    node.userData.expanded_urdf_physical_owner_id = String(record.uiSelectionOwnerId || '');
+    node.userData.expanded_urdf_authoritative_physical_pick = record.authoritativePhysicalPick === true;
     if (node !== linkRoot) boundNodeCount += 1;
     for (const child of node.children || []) pending.push(child);
   }
@@ -2473,6 +2481,28 @@ function loadMeshWithDeadline(loader, url, timeoutMs = PHYSICAL_MESH_LOAD_TIMEOU
     else reject(new Error('mesh loader provides neither loadAsync() nor load()'));
   }, timeoutMs);
 }
+function emitAuthoredMeshDiagnosticOnce(item, detail = {}) {
+  if (!isPrimaryAuthoredPhysicalMesh(item) || item.__authoredMeshDiagnosticEmitted) return;
+  item.__authoredMeshDiagnosticEmitted = true;
+  // QWebEngine forwards warning output to the Workcell Studio terminal. Keep
+  // this one-shot: it is acceptance evidence, not a per-frame trace.
+  console.warn?.(`Product View authored_mesh: ${JSON.stringify({ id: String(item?.id || ''), ...detail })}`);
+}
+function sceneAttachedThroughVisibleParents(object, expectedParent) {
+  if (!object || object.parent !== expectedParent) return false;
+  let node = object;
+  while (node) {
+    if (node.visible === false) return false;
+    if (node === state.three?.scene) return true;
+    node = node.parent;
+  }
+  return false;
+}
+function renderableDescendantCount(object) {
+  let count = 0;
+  object?.traverse?.(node => { if (node?.isMesh || node?.isLine || node?.isLineSegments || node?.isPoints || node?.isSprite) count += 1; });
+  return count;
+}
 async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
   const attempt = physicalMeshAttempt(item, readinessOperation);
   const diagnostic = meshUriDiagnostic(item);
@@ -2492,6 +2522,7 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
       if (requestedUri) appendRuntimeWarning(item, requestedUri, diagnostic.reason);
     }
     refreshMeshLoadUi(rendered);
+    emitAuthoredMeshDiagnosticOnce(item, { requested_mesh_uri: requestedUri, resolved_url: '', loader: '', http_load_success: false, load_failure: diagnostic.reason, mesh_object_created: false, visual_root_attached: false, render_status: rendered?.renderInfo?.render_status || '' });
     detachTransientPivotForFailedPhysicalVisual(rendered);
     if (required) failWeb3dSceneReadiness(item, requestedUri, diagnostic.reason, { mesh_status: diagnostic.status });
     else requiredReadinessCompleteForItem(item);
@@ -2528,6 +2559,7 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
       appendRuntimeWarning(item, uri, item.mesh_load_error, preflight.code || 'mesh_url_not_served', { mesh_url: preflight.url || loadUrl, http_status: preflight.http_status || null });
     }
     refreshMeshLoadUi(rendered);
+    emitAuthoredMeshDiagnosticOnce(item, { requested_mesh_uri: requestedUri, resolved_url: preflight.url || loadUrl, loader: loaderName, http_load_success: false, load_failure: item.mesh_load_error, mesh_object_created: false, visual_root_attached: false, render_status: rendered?.renderInfo?.render_status || '' });
     detachTransientPivotForFailedPhysicalVisual(rendered);
     if (required) failPhysicalMeshAttempt(attempt, item, preflight.url || loadUrl, item.mesh_load_error, { http_status: preflight.http_status || null, mesh_status: item.mesh_status, loader: loaderName, ...(preflight.timeout_ms ? { timeout_ms: preflight.timeout_ms } : {}) });
     else requiredReadinessCompleteForItem(item);
@@ -2557,22 +2589,37 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
     setRenderInfo(rendered, 'mesh_loaded', uri, '');
     const boundsValid = diagnoseLoadedMeshBounds(item, visualRoot, rendered, validationLocalBounds);
     if (isPrimaryAuthoredPhysicalMesh(item)) {
-      visualRoot.updateWorldMatrix?.(true, true);
+      rendered.object3d.updateWorldMatrix?.(true, true);
       const authoredBounds = finiteBox3(new THREE.Box3().setFromObject(visualRoot));
       const worldScale = new THREE.Vector3();
+      const worldPosition = new THREE.Vector3();
       visualRoot.getWorldScale?.(worldScale);
-      console.info?.(`Product View authored_mesh: ${JSON.stringify({
-        id: String(item.id || ''), mesh_uri: requestedUri, resolved_url: loadUrl, loader: loaderName,
-        load_requested: true, load_success: true, object3d_created: Boolean(meshObject),
+      visualRoot.getWorldPosition?.(worldPosition);
+      const attachedVisible = sceneAttachedThroughVisibleParents(visualRoot, rendered.object3d);
+      emitAuthoredMeshDiagnosticOnce(item, {
+        requested_mesh_uri: requestedUri, resolved_url: loadUrl, loader: loaderName,
+        http_load_success: true, load_failure: '', mesh_object_created: Boolean(meshObject),
+        visual_root_attached: attachedVisible, parent_name: String(visualRoot.parent?.name || ''),
         object_visible: visualRoot.visible !== false, parent_visible: rendered.object3d.visible !== false,
+        local_position: [visualRoot.position.x, visualRoot.position.y, visualRoot.position.z],
+        local_quaternion: [visualRoot.quaternion.x, visualRoot.quaternion.y, visualRoot.quaternion.z, visualRoot.quaternion.w],
         local_scale: [visualRoot.scale.x, visualRoot.scale.y, visualRoot.scale.z],
+        world_position: [worldPosition.x, worldPosition.y, worldPosition.z],
         world_scale: [worldScale.x, worldScale.y, worldScale.z], finite_world_bounds: Boolean(authoredBounds),
         bounds_min: authoredBounds ? [authoredBounds.min.x, authoredBounds.min.y, authoredBounds.min.z] : null,
         bounds_max: authoredBounds ? [authoredBounds.max.x, authoredBounds.max.y, authoredBounds.max.z] : null,
-      })}`);
+        material_side: meshObject?.material?.side ?? null,
+        child_renderable_count: renderableDescendantCount(visualRoot),
+        render_status: rendered?.renderInfo?.render_status || '',
+      });
+      if (!attachedVisible || !renderableDescendantCount(visualRoot)) {
+        item.visual_bounds_status = !attachedVisible ? 'detached_or_hidden' : 'no_renderable_descendants';
+      }
     }
     refreshMeshLoadUi(rendered);
-    if (!boundsValid && itemRequiresMeshBackedVisual(item)) {
+    const usableAttachedVisual = !isPrimaryAuthoredPhysicalMesh(item) ||
+      (sceneAttachedThroughVisibleParents(visualRoot, rendered.object3d) && renderableDescendantCount(visualRoot) > 0);
+    if ((!boundsValid || !usableAttachedVisual) && itemRequiresMeshBackedVisual(item)) {
       detachTransientPivotForFailedPhysicalVisual(rendered);
       failPhysicalMeshAttempt(attempt, item, loadUrl, `loaded mesh bounds validation failed (${item.visual_bounds_status || 'invalid'})`, {
         mesh_status: item.mesh_status,
@@ -2599,6 +2646,7 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
       appendRuntimeWarning(item, uri, reason, 'mesh_loader_failure', { extension: ext, loader: loaderName, mesh_url: loadUrl });
     }
     refreshMeshLoadUi(rendered);
+    emitAuthoredMeshDiagnosticOnce(item, { requested_mesh_uri: requestedUri, resolved_url: loadUrl, loader: loaderName, http_load_success: true, load_failure: reason, mesh_object_created: false, visual_root_attached: false, render_status: rendered?.renderInfo?.render_status || '' });
     detachTransientPivotForFailedPhysicalVisual(rendered);
     if (required) failPhysicalMeshAttempt(attempt, item, loadUrl, reason, { extension: ext, loader: loaderName, mesh_status: item.mesh_status, ...(err?.code === 'mesh_load_timeout' ? { timeout_ms: PHYSICAL_MESH_LOAD_TIMEOUT_MS } : {}) });
     else requiredReadinessCompleteForItem(item);
@@ -3120,9 +3168,15 @@ function collectPhysicalVisibleBounds(root, options = {}) {
 function selectionPhysicalBoundsRecords(rendered) {
   const ownerId = String(explicitUiSelectionItemId(rendered) || rendered?.item?.id || '').trim();
   if (!ownerId) return rendered ? [rendered] : [];
-  const records = [...state.objects, ...state.pickRecords].filter(record =>
-    record?.object3d && explicitUiSelectionItemId(record) === ownerId
-  );
+  const records = [...state.objects, ...state.pickRecords].filter(record => {
+    if (!record?.object3d) return false;
+    // Expanded URDF records already carry the canonical owner assigned from
+    // robot_preview.  Compare it directly before attempting payload-derived
+    // identity resolution; production inspection records do not necessarily
+    // have the same item fields as flattened/generated rows.
+    const directOwner = String(record.uiSelectionOwnerId || record.object3d?.userData?.expanded_urdf_physical_owner_id || '').trim();
+    return directOwner === ownerId || explicitUiSelectionItemId(record) === ownerId;
+  });
   const binding = resolveCanonicalPhysicalEditBinding(ownerId);
   for (const record of [rendered, binding?.owner, binding?.visual]) {
     if (record?.object3d && !records.includes(record)) records.push(record);
@@ -3142,11 +3196,31 @@ function collectSelectionPhysicalBounds(rendered) {
     candidate_record_count: records.length,
     authoritative_pick_record_count: records.filter(record => record.authoritativePhysicalPick === true).length,
     candidate_root_names: records.map(record => String(record.object3d?.name || '')).filter(Boolean),
+    candidate_root_visible_states: records.map(record => record.object3d?.visible !== false),
+    state_objects_matching_owner_count: state.objects.filter(record => String(record?.uiSelectionOwnerId || '') === ownerId || explicitUiSelectionItemId(record) === ownerId).length,
+    state_pick_records_matching_owner_count: state.pickRecords.filter(record => String(record?.uiSelectionOwnerId || '') === ownerId || explicitUiSelectionItemId(record) === ownerId).length,
+    descendant_registered_identity_count: 0,
     visible_renderable_count: 0,
     accepted_renderable_count: 0,
     excluded_renderable_count: 0,
     exclusion_reasons: [],
   };
+  diagnostic.records = records.map(record => {
+    let childMeshCount = 0;
+    let registeredIdentityCount = 0;
+    record.object3d?.traverse?.(node => {
+      if (node?.isMesh) childMeshCount += 1;
+      if (state.pickIdentityByObject?.has?.(node)) registeredIdentityCount += 1;
+    });
+    diagnostic.descendant_registered_identity_count += registeredIdentityCount;
+    return {
+      record_id: String(record.item?.id || ''), link_name: exactSelectionLinkName(record.item),
+      authoritativePhysicalPick: record.authoritativePhysicalPick === true,
+      uiSelectionOwnerId: String(record.uiSelectionOwnerId || ''),
+      object3d_name: String(record.object3d?.name || ''), object3d_visible: record.object3d?.visible !== false,
+      child_mesh_count: childMeshCount,
+    };
+  });
   for (const record of records) {
     const physical = collectPhysicalVisibleBounds(record.object3d, { selectionOwnerId: ownerId, visitedNodes, selectionBounds: true, diagnostics: diagnostic });
     if (!physical.bounds) continue;
@@ -3158,7 +3232,12 @@ function collectSelectionPhysicalBounds(rendered) {
   diagnostic.finite_bounds = Boolean(finite);
   diagnostic.bounds_min = finite ? [finite.min.x, finite.min.y, finite.min.z] : null;
   diagnostic.bounds_max = finite ? [finite.max.x, finite.max.y, finite.max.z] : null;
-  console.info?.(`Product View selection_bounds: ${JSON.stringify(diagnostic)}`);
+  const diagnosticKey = JSON.stringify(diagnostic);
+  state.selectionBoundsDiagnosticKeys = state.selectionBoundsDiagnosticKeys || new Map();
+  if (ownerId && state.selectionBoundsDiagnosticKeys.get(ownerId) !== diagnosticKey) {
+    state.selectionBoundsDiagnosticKeys.set(ownerId, diagnosticKey);
+    console.warn?.(`Product View selection_bounds: ${diagnosticKey}`);
+  }
   return { count: finite ? count : 0, bounds: finite, bounds_json: box3ToJson(finite) };
 }
 
