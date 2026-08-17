@@ -327,6 +327,30 @@ export function installCanonicalSelectionState({
     restoreSelection(0, restoreGeneration);
   }
 
+  function clearAuthoritativeSelection() {
+    const sceneId = stringValue(rawState().sceneId);
+    restorePending = false;
+    restoreGeneration += 1;
+    clearStoredSelection(storage, sceneId);
+    canonicalRecord = {
+      sceneId,
+      ownerId: '',
+      editable: false,
+      transform: null,
+      transformSource: 'none',
+      sequence: canonicalRecord.sequence + 1,
+    };
+    lastStateSignature = JSON.stringify({
+      sceneId,
+      ownerId: '',
+      editable: false,
+      transform: null,
+      source: 'none',
+    });
+    lastDrainedSelectionOwner = '';
+    return canonicalRecord;
+  }
+
   api.getState = () => publicState();
   api.selectItem = id => {
     const selected = original.selectItem(stringValue(id)) || rawState();
@@ -354,12 +378,8 @@ export function installCanonicalSelectionState({
   };
   if (original.clearSelection) {
     api.clearSelection = () => {
-      const sceneId = stringValue(rawState().sceneId);
-      restorePending = false;
-      clearStoredSelection(storage, sceneId);
+      clearAuthoritativeSelection();
       const result = original.clearSelection();
-      canonicalRecord = { sceneId, ownerId: '', editable: false, transform: null, transformSource: 'none', sequence: canonicalRecord.sequence + 1 };
-      lastStateSignature = '';
       return result;
     };
   }
@@ -392,12 +412,24 @@ export function installCanonicalSelectionState({
   if (original.drainEvents) {
     api.drainEvents = () => {
       const events = original.drainEvents() || [];
+      const hasExplicitBlankSelection = events.some(event => {
+        if (event?.type !== 'selection_changed') return false;
+        const hasItemId = Object.prototype.hasOwnProperty.call(event, 'itemId');
+        const hasUiItemId = Object.prototype.hasOwnProperty.call(event, 'uiItemId');
+        return (hasItemId || hasUiItemId) && !stringValue(event.itemId) && !stringValue(event.uiItemId);
+      });
+      if (hasExplicitBlankSelection) clearAuthoritativeSelection();
       const record = synchronize('drain_events');
       const normalized = [];
+      let explicitBlankNormalized = false;
       for (const event of events) {
         if (event?.type === 'selection_changed') {
           const eventOwner = stringValue(event.uiItemId || event.itemId);
-          if (eventOwner === lastDrainedSelectionOwner) continue;
+          const eventIsExplicitBlank = (Object.prototype.hasOwnProperty.call(event, 'itemId') || Object.prototype.hasOwnProperty.call(event, 'uiItemId'))
+            && !stringValue(event.itemId) && !stringValue(event.uiItemId);
+          if (eventIsExplicitBlank && explicitBlankNormalized) continue;
+          if (eventIsExplicitBlank) explicitBlankNormalized = true;
+          if (!eventIsExplicitBlank && eventOwner === lastDrainedSelectionOwner) continue;
           lastDrainedSelectionOwner = eventOwner;
           normalized.push({
             ...event,
@@ -423,7 +455,7 @@ export function installCanonicalSelectionState({
           savedRpy: clone(transform?.pose?.rpy),
         });
       }
-      if (record.ownerId !== lastDrainedSelectionOwner) {
+      if (!explicitBlankNormalized && record.ownerId !== lastDrainedSelectionOwner) {
         lastDrainedSelectionOwner = record.ownerId;
         normalized.push({
           type: 'selection_changed',

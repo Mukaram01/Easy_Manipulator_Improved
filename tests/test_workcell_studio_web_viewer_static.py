@@ -1988,6 +1988,55 @@ assert.strictEqual(editorState().lastFailedCanvasPickDiagnostic.rawHitCount,1);
     subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, capture_output=True, text=True)
 
 
+def test_empty_canvas_pick_events_remain_blank_through_canonical_selection() -> None:
+    module_uri = (VIEWER / "canonical_selection_state.js").resolve().as_uri()
+    harness = rf"""
+import fs from 'node:fs'; import vm from 'node:vm'; import assert from 'node:assert/strict';
+const canonical = await import({json.dumps(module_uri)});
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const element=()=>({{hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{{toggle(){{}}}},querySelector(){{return null;}},querySelectorAll(){{return[];}},addEventListener(){{}},setAttribute(){{}},appendChild(){{}},getBoundingClientRect(){{return{{left:0,top:0,width:100,height:100}};}}}});
+const listeners=new Map(), timers=[];
+const windowRef={{location:{{search:''}},parent:{{postMessage(){{}}}},sessionStorage:(()=>{{const m=new Map();return{{getItem:k=>m.get(k)??null,setItem:(k,v)=>m.set(k,String(v)),removeItem:k=>m.delete(k),m}};}})(),addEventListener(t,cb){{(listeners.get(t)||(listeners.set(t,[]),listeners.get(t))).push(cb);}},dispatchEvent(){{}},setTimeout:cb=>timers.push(cb)}};
+const context={{console,assert,window:windowRef,document:{{getElementById(){{return element();}},querySelectorAll(){{return[];}},createElement(){{return element();}}}},URLSearchParams,CustomEvent:function(){{}},requestAnimationFrame(){{}},setTimeout(){{}},clearTimeout(){{}}}};
+vm.createContext(context); vm.runInContext(source+`
+updateLabels=()=>{{}};populateInspector=()=>{{}};attachTransformGizmo=()=>{{}};detachTransformGizmo=()=>{{}};refreshSelectionHighlight=()=>{{}};removeSelectionHighlight=()=>{{}};
+const physical={{item:{{id:'object_01',editable:true,source_layer:'editable_layout',render_policy:'primary'}},object3d:{{visible:true,userData:{{}},children:[]}}}};
+state.sceneJson={{scene:{{id:'ur5_2f_test'}},objects:[physical.item]}};state.objects=[physical];state.editorEvents=[];state.ready=true;
+selectObject('object_01');
+state.three.pointer={{}};state.three.camera={{}};state.three.raycaster={{setFromCamera(){{}},intersectObjects(){{return[];}}}};
+globalThis.testState=state;globalThis.testEditorState=editorState;globalThis.testSelectObject=selectObject;globalThis.testClearSelection=clearSelection;globalThis.testBuildEditPatch=buildEditPatch;globalThis.testPickObject=pickObject;
+`,context);
+const raw={{
+ getState:()=>context.testEditorState(), selectItem:id=>context.testSelectObject(id), clearSelection:()=>context.testClearSelection(), getEditPatch:()=>context.testBuildEditPatch(),
+ drainEvents:()=>context.testState.editorEvents.splice(0),
+}};
+windowRef.__WORKCELL_EDITOR_API_V1__=raw;
+canonical.installCanonicalSelectionState({{windowRef,documentRef:context.document,storage:windowRef.sessionStorage,scheduleMicrotask:cb=>cb(),scheduleTimeout:cb=>timers.push(cb)}});
+raw.getState();
+for(const mode of ['select','move','rotate']){{
+  context.testState.editorMode=mode; context.testSelectObject('object_01'); raw.drainEvents();
+  context.testPickObject({{clientX:50,clientY:50}});
+  const events=raw.drainEvents().filter(e=>e.type==='selection_changed');
+  assert.deepEqual(events.map(e=>[e.itemId,e.uiItemId]),[['','']],mode+' empty pick');
+  assert.equal(raw.getState().canonicalSelectedOwnerId,'');
+  assert.ok(!events.some(e=>e.itemId==='object_01'));
+}}
+const rejected={{name:'fallback_helper',visible:true,userData:{{diagnostic_only:true}},children:[]}};
+context.testSelectObject('object_01');raw.drainEvents();context.testState.three.raycaster.intersectObjects=()=>[{{object:rejected,distance:1}}];
+context.testPickObject({{clientX:50,clientY:50}});
+const rejectedEvents=raw.drainEvents().filter(e=>e.type==='selection_changed');
+assert.deepEqual(rejectedEvents.map(e=>e.itemId),['']);
+assert.ok(!rejectedEvents.some(e=>e.itemId==='object_01'));
+"""
+    subprocess.run(
+        ["node", "--input-type=module", "-e", harness, str(VIEWER / "viewer.js")],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_selection_rejects_late_helper_without_clearing_valid_physical_item():
     js_path = VIEWER / "viewer.js"
     harness = r"""
