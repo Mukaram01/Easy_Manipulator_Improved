@@ -36,7 +36,9 @@ def test_canonical_selection_module_uses_only_the_public_editor_contract() -> No
     assert "canonicalSelectedOwnerId" in source
     assert "canonicalTransform" in source
     assert "retainedSelectionPending" in source
-    assert "event?.type !== 'selection_changed'" in source
+    assert "event?.type === 'selection_changed'" in source
+    assert "itemId: eventOwner" in source
+    assert "uiItemId: eventOwner" in source
 
 
 def test_ur5_2f_editable_six_vs_layout_seven_is_intentional() -> None:
@@ -175,7 +177,7 @@ const apiOne = {{
   drainEvents() {{ const drained = events; events = []; return drained; }},
 }};
 windowOne.__WORKCELL_EDITOR_API_V1__ = apiOne;
-const documentOne = {{getElementById(id) {{ return id === 'inspector' ? inspectorOne : null; }}};
+const documentOne = {{getElementById(id) {{ return id === 'inspector' ? inspectorOne : null; }}}};
 assert.equal(canonical.installCanonicalSelectionState({{windowRef:windowOne, documentRef:documentOne, storage:sharedStorage, scheduleMicrotask:callback=>callback(), scheduleTimeout:callback=>windowOne.setTimeout(callback)}}), true);
 
 let state = apiOne.getState();
@@ -193,7 +195,7 @@ assert.equal(diagnostics.gizmoAttachedTargetId, 'realsense_overhead');
 assert.equal(diagnostics.gizmoOwnerMatchesSelection, true);
 assert.deepEqual(diagnostics.canonicalTransform, second);
 assert.deepEqual(diagnostics.gizmoTransform, second);
-assert.deepEqual(diagnostics.inspectorTransform, second);
+assert.deepEqual(diagnostics.inspectorTransform, {{...second, pose:{{...second.pose, rpy:{{...second.pose.rpy, z:-2.443461}}}}}});
 assert.deepEqual(diagnostics.patchTransform, second);
 assert.deepEqual(apiOne.getEditPatch().edits[0].new_transform, second);
 
@@ -211,8 +213,8 @@ assert.equal(inspectorOne.fields.x.value, '-0.220000');
 
 const drained = apiOne.drainEvents();
 const selectionEvents = drained.filter(event => event.type === 'selection_changed');
-assert.deepEqual(selectionEvents.map(event => event.itemId), ['realsense_overhead']);
-assert.equal(drained.some(event => event.type === 'selection_changed' && !event.itemId), false);
+assert.deepEqual(selectionEvents.map(event => event.itemId), ['realsense_overhead', '', 'realsense_overhead']);
+assert.equal(selectionEvents[1].uiItemId, '');
 const committed = drained.find(event => event.type === 'transform_committed');
 assert.equal(committed.canonicalOwnerItemId, 'realsense_overhead');
 assert.deepEqual(committed.canonicalTransform, second);
@@ -259,7 +261,7 @@ const apiTwo = {{
   drainEvents() {{ return [{{type:'selection_changed', itemId:''}}]; }},
 }};
 windowTwo.__WORKCELL_EDITOR_API_V1__ = apiTwo;
-const documentTwo = {{getElementById(id) {{ return id === 'inspector' ? inspectorTwo : null; }}};
+const documentTwo = {{getElementById(id) {{ return id === 'inspector' ? inspectorTwo : null; }}}};
 assert.equal(canonical.installCanonicalSelectionState({{windowRef:windowTwo, documentRef:documentTwo, storage:sharedStorage, scheduleMicrotask:callback=>callback(), scheduleTimeout:callback=>windowTwo.setTimeout(callback)}}), true);
 state = apiTwo.getState();
 assert.equal(state.selectedItemId, 'realsense_overhead');
@@ -272,7 +274,8 @@ assert.deepEqual(restoreCalls, ['realsense_overhead']);
 state = apiTwo.getState();
 assert.equal(state.selectedItemId, 'realsense_overhead');
 assert.equal(state.retainedSelectionPending, false);
-assert.equal(apiTwo.drainEvents().some(event => event.type === 'selection_changed' && !event.itemId), false);
+const reloadEvents = apiTwo.drainEvents().filter(event => event.type === 'selection_changed');
+assert.deepEqual(reloadEvents.map(event => [event.itemId, event.uiItemId]), [['realsense_overhead', 'realsense_overhead']]);
 
 console.log(JSON.stringify({{
   owner: state.canonicalSelectedOwnerId,

@@ -5181,6 +5181,35 @@ function cancelActiveTransformOperation(reason = 'Transform cancelled') {
   return true;
 }
 function cancelDirectMoveDrag(message) { return cancelActiveTransformOperation(message || 'Move cancelled'); }
+function transformControlsOwnsPointerDown(event, transformControls = state.three.transformControls) {
+  if (!transformControls || state.editorMode === 'select') return false;
+  // Once TransformControls has begun a drag it owns the pointer until release,
+  // even if the pointer has left the handle or the active axis is reset.
+  if (transformControls.dragging) return true;
+
+  const clientX = event?.clientX;
+  const clientY = event?.clientY;
+  const rect = el.canvas?.getBoundingClientRect?.();
+  const camera = state.three.camera;
+  if (!Number.isFinite(clientX) || !Number.isFinite(clientY) || !rect ||
+      !Number.isFinite(rect.left) || !Number.isFinite(rect.top) ||
+      !Number.isFinite(rect.width) || !Number.isFinite(rect.height) ||
+      rect.width <= 0 || rect.height <= 0 || !camera) return false;
+
+  // TransformControls deliberately keeps its picker geometry separate from the
+  // visible gizmo. Raycast that picker at this event's coordinates instead of
+  // trusting `axis`, which is hover state from an earlier pointer position.
+  const mode = transformControls.mode || (state.editorMode === 'rotate' ? 'rotate' : 'translate');
+  const helper = transformControls.getHelper?.() || transformControls._gizmo;
+  const picker = transformControls._gizmo?.picker?.[mode] || helper?.picker?.[mode];
+  const raycaster = transformControls.getRaycaster?.() || transformControls._raycaster || state.three.raycaster;
+  if (!picker || !raycaster?.setFromCamera || !raycaster?.intersectObject) return false;
+
+  const pointer = { x: ((clientX - rect.left) / rect.width) * 2 - 1,
+    y: -((clientY - rect.top) / rect.height) * 2 + 1 };
+  raycaster.setFromCamera(pointer, camera);
+  return (raycaster.intersectObject(picker, true) || []).some(hit => hit?.object);
+}
 function onCanvasPointerDown(event) {
   if (event.button === 0) {
     if (state.placement.armed) {
@@ -5192,12 +5221,11 @@ function onCanvasPointerDown(event) {
       event.stopPropagation?.();
       return;
     }
-    // TransformControls owns pointer-down while a gizmo handle is active.
+    // TransformControls owns pointer-down while dragging or when the current
+    // pointer position actually intersects its picker geometry.
     // Do not raycast through the gizmo and accidentally replace the active
     // authored owner with another physical object behind the handle.
-    const transformControls = state.three.transformControls;
-    const gizmoOwnsPointer = state.editorMode !== 'select' &&
-      Boolean(transformControls?.dragging || transformControls?.axis);
+    const gizmoOwnsPointer = transformControlsOwnsPointerDown(event);
     if (gizmoOwnsPointer) return;
 
     pickObject(event);
