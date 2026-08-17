@@ -52,7 +52,16 @@
 namespace {
 constexpr int kMeshTriangleLimit = 1000000;
 constexpr double kWorkspaceLimitMeters = 1000.0;
-constexpr const char * kWorkcellStudioAssetMime = "application/x-workcell-studio-asset";
+constexpr const char * kWorkcellStudioAssetMime = "application/x-workcell-studio-catalog-asset";
+
+QJsonObject catalog_asset_drag_payload(const QMimeData * mime)
+{
+  QJsonObject payload;
+  if (!mime || mime->formats() != QStringList{QString::fromUtf8(kWorkcellStudioAssetMime)}) return payload;
+  const QString asset_id = QString::fromUtf8(mime->data(kWorkcellStudioAssetMime)).trimmed();
+  if (!asset_id.isEmpty()) payload.insert(QStringLiteral("asset_id"), asset_id);
+  return payload;
+}
 
 [[maybe_unused]] QString snap_mode_label(Scene3DViewportWidget::SnapMode mode)
 {
@@ -4846,7 +4855,7 @@ void Scene3DViewportWidget::keyPressEvent(QKeyEvent * e)
 void Scene3DViewportWidget::dragEnterEvent(QDragEnterEvent * event)
 {
   if (!event->mimeData() || !event->mimeData()->hasFormat(kWorkcellStudioAssetMime)) return;
-  const QJsonObject payload = QJsonDocument::fromJson(event->mimeData()->data(kWorkcellStudioAssetMime)).object();
+  const QJsonObject payload = catalog_asset_drag_payload(event->mimeData());
   if (payload.value("asset_id").toString().trimmed().isEmpty()) return;
   event->acceptProposedAction();
 }
@@ -4854,8 +4863,7 @@ void Scene3DViewportWidget::dragEnterEvent(QDragEnterEvent * event)
 void Scene3DViewportWidget::dragMoveEvent(QDragMoveEvent * event)
 {
   if (!event->mimeData() || !event->mimeData()->hasFormat(kWorkcellStudioAssetMime)) return;
-  const QByteArray payload = event->mimeData()->data(kWorkcellStudioAssetMime);
-  drag_asset_payload_ = QJsonDocument::fromJson(payload).object();
+  drag_asset_payload_ = catalog_asset_drag_payload(event->mimeData());
   const QString asset_id = drag_asset_payload_.value("asset_id").toString().trimmed();
   if (asset_id.isEmpty()) return;
   double x = 0.0, y = 0.0;
@@ -4883,7 +4891,7 @@ void Scene3DViewportWidget::dragLeaveEvent(QDragLeaveEvent *)
 void Scene3DViewportWidget::dropEvent(QDropEvent * event)
 {
   if (!event->mimeData() || !event->mimeData()->hasFormat(kWorkcellStudioAssetMime)) return;
-  const QJsonObject payload = QJsonDocument::fromJson(event->mimeData()->data(kWorkcellStudioAssetMime)).object();
+  const QJsonObject payload = catalog_asset_drag_payload(event->mimeData());
   double x = 0.0, y = 0.0;
   if (payload.value("asset_id").toString().trimmed().isEmpty() || !drag_position_to_world_xy(event->pos(), 0.0, x, y)) {
     drag_asset_preview_visible_ = false;
