@@ -254,6 +254,67 @@ AssetCatalogEntry make_seed(
 
 }  // namespace
 
+std::string asset_provenance(const AssetCatalogEntry & entry)
+{
+  return entry.source == "scene_imported_asset" ? "imported" : "built_in";
+}
+
+std::string normalize_asset_category(const AssetCatalogEntry & entry)
+{
+  const std::string key = lower_copy(entry.category + " " +
+    (entry.role_hints.empty() ? std::string() : entry.role_hints.front()));
+  if (key.find("robot") != std::string::npos) return "robot";
+  if (key.find("gripper") != std::string::npos || key.find("end_effector") != std::string::npos ||
+    key.find("end effector") != std::string::npos || key.find("suction") != std::string::npos) return "gripper";
+  if (key.find("table") != std::string::npos || key.find("support_surface") != std::string::npos) return "table";
+  if (key.find("camera") != std::string::npos || key.find("sensor") != std::string::npos) return "camera";
+  if (key.find("environment") != std::string::npos || key.find("conveyor") != std::string::npos ||
+    key.find("bin") != std::string::npos || key.find("fixture") != std::string::npos) return "environment";
+  if (asset_provenance(entry) == "imported" || key.find("object") != std::string::npos) return "object";
+  return "other";
+}
+
+std::string asset_package_hint(const AssetCatalogEntry & entry)
+{
+  if (!entry.model.empty()) return entry.model;
+  fs::path path(entry.path);
+  fs::path current = path.parent_path();
+  while (!current.empty()) {
+    if (fs::exists(current / "package.xml")) return current.filename().string();
+    const fs::path parent = current.parent_path();
+    if (parent == current) break;
+    current = parent;
+  }
+  return path.filename().string();
+}
+
+bool asset_library_matches(
+  const AssetCatalogEntry & entry, const std::string & query,
+  const std::string & normalized_filter)
+{
+  const std::string filter = lower_copy(normalized_filter);
+  const bool filter_match = filter.empty() || filter == "all" ||
+    (filter == "imported" ? asset_provenance(entry) == "imported" : normalize_asset_category(entry) == filter);
+  if (!filter_match) return false;
+  const std::string needle = lower_copy(query);
+  if (needle.empty()) return true;
+  const std::string haystack = lower_copy(entry.display_name + " " + entry.id + " " +
+    entry.category + " " + entry.vendor + " " + entry.model + " " + entry.path + " " +
+    asset_package_hint(entry));
+  return haystack.find(needle) != std::string::npos;
+}
+
+std::vector<size_t> filter_asset_catalog(
+  const std::vector<AssetCatalogEntry> & assets, const std::string & query,
+  const std::string & normalized_filter)
+{
+  std::vector<size_t> matches;
+  for (size_t i = 0; i < assets.size(); ++i) {
+    if (asset_library_matches(assets[i], query, normalized_filter)) matches.push_back(i);
+  }
+  return matches;
+}
+
 AssetCatalogModel discover_asset_catalog(
   const std::string & workspace_root,
   const std::string & repo_root,
