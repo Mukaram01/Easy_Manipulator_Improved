@@ -114,3 +114,84 @@ TEST(AssetCatalogDiscovery, SceneImportedManifestUsesStableIdResolvedPathAndScal
   EXPECT_DOUBLE_EQ(model_match->scale, 0.001);
   EXPECT_TRUE(model_match->can_add_to_scene);
 }
+
+TEST(AssetLibraryModel, SearchCategoriesProvenanceAndCompositionUseCatalogMetadata)
+{
+  AssetCatalogEntry robot;
+  robot.id = "ur_description";
+  robot.display_name = "Universal Robot UR5";
+  robot.category = "robot";
+  robot.path = "/opt/ros/share/ur_description/urdf/ur.urdf.xacro";
+  robot.source = "canonical_asset";
+  robot.role_hints = {"robot_base"};
+  robot.can_add_to_scene = true;
+
+  AssetCatalogEntry camera;
+  camera.id = "d435_visual";
+  camera.display_name = "RealSense D435i";
+  camera.category = "camera_sensor";
+  camera.path = "/catalog/realsense_description/meshes/d435.dae";
+  camera.source = "canonical_asset";
+  camera.role_hints = {"camera"};
+
+  AssetCatalogEntry imported;
+  imported.id = "imported_2068_001_24";
+  imported.display_name = "2068_001_24";
+  imported.category = "Imported";
+  imported.path = "/scene/assets/imported/2068_001_24.stl";
+  imported.source = "scene_imported_asset";
+  imported.role_hints = {"object"};
+
+  const std::vector<AssetCatalogEntry> catalog{robot, camera, imported};
+  EXPECT_EQ(normalize_asset_category(robot), "robot");
+  EXPECT_EQ(normalize_asset_category(camera), "camera");
+  EXPECT_EQ(normalize_asset_category(imported), "object");
+  EXPECT_EQ(asset_provenance(robot), "built_in");
+  EXPECT_EQ(asset_provenance(imported), "imported");
+
+  EXPECT_EQ(filter_asset_catalog(catalog, "UNIVERSAL", "all"), (std::vector<size_t>{0}));
+  EXPECT_EQ(filter_asset_catalog(catalog, "ur_description", "robot"), (std::vector<size_t>{0}));
+  EXPECT_EQ(filter_asset_catalog(catalog, "real", "camera"), (std::vector<size_t>{1}));
+  EXPECT_EQ(filter_asset_catalog(catalog, "d435.dae", "camera"), (std::vector<size_t>{1}));
+  EXPECT_TRUE(filter_asset_catalog(catalog, "real", "robot").empty());
+  EXPECT_EQ(filter_asset_catalog(catalog, "", "imported"), (std::vector<size_t>{2}));
+}
+
+TEST(AssetLibraryModel, MissingOptionalMetadataAndRefreshRemainStable)
+{
+  AssetCatalogEntry minimal;
+  minimal.id = "minimal";
+  minimal.path = "part.stl";
+  minimal.source = "scene_imported_asset";
+  EXPECT_NO_THROW({
+    EXPECT_EQ(normalize_asset_category(minimal), "object");
+    EXPECT_EQ(asset_package_hint(minimal), "part.stl");
+    EXPECT_TRUE(asset_library_matches(minimal, "PART.STL", "imported"));
+  });
+
+  const std::vector<AssetCatalogEntry> catalog{minimal};
+  EXPECT_EQ(filter_asset_catalog(catalog, "", "all").size(), 1u);
+  EXPECT_EQ(filter_asset_catalog(catalog, "", "all").size(), 1u);
+}
+
+TEST(AssetLibraryModel, DiscoveryRefreshDoesNotDuplicateImportedManifestEntry)
+{
+  const fs::path repo = make_tmp_dir("refresh_repo");
+  const fs::path ws = make_tmp_dir("refresh_ws");
+  const fs::path imported = repo / "scene" / "assets" / "imported";
+  write_text(imported / "part.stl", "solid part\nendsolid\n");
+  write_text(imported / "asset_manifest.yaml",
+    "assets:\n"
+    "  - id: imported_part\n    display_name: Imported Part\n    path: part.stl\n    category: Imported\n"
+    "  - id: imported_part\n    display_name: Imported Part\n    path: part.stl\n    category: Imported\n");
+
+  const auto first = discover_asset_catalog(ws.string(), repo.string(), imported.string());
+  const auto second = discover_asset_catalog(ws.string(), repo.string(), imported.string());
+  const auto count_id = [](const AssetCatalogModel & model) {
+    return std::count_if(model.assets.begin(), model.assets.end(), [](const auto & entry) {
+      return entry.id == "imported_part";
+    });
+  };
+  EXPECT_EQ(count_id(first), 1);
+  EXPECT_EQ(count_id(second), 1);
+}

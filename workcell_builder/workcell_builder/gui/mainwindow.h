@@ -240,6 +240,9 @@ private:
     QString role_or_category;
     QString role;
     QString category;
+    QString normalized_category;
+    QString provenance;
+    QString package_hint;
     QString type;
     QString source_path;
     QString asset_id;
@@ -564,6 +567,8 @@ private:
   QLineEdit * asset_library_search_{ nullptr };
   ScenePreviewWidget * asset_library_preview_{ nullptr };
   QLabel * asset_library_preview_status_{ nullptr };
+  QLabel * asset_library_result_count_{ nullptr };
+  QLabel * asset_library_details_{ nullptr };
   QPushButton * add_to_canvas_button_{ nullptr };
   QPushButton * add_asset_button_{ nullptr };
   QPushButton * pick_source_button_{ nullptr };

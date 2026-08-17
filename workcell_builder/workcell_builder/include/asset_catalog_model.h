@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,18 @@ struct AssetCatalogEntry
   double scale{1.0};
   bool can_add_to_scene = false;
 };
+
+// Presentation semantics for the Asset Library. These deliberately operate on
+// the already-discovered catalog; filtering never re-scans the filesystem.
+std::string normalize_asset_category(const AssetCatalogEntry & entry);
+std::string asset_provenance(const AssetCatalogEntry & entry);
+std::string asset_package_hint(const AssetCatalogEntry & entry);
+bool asset_library_matches(
+  const AssetCatalogEntry & entry, const std::string & query,
+  const std::string & normalized_filter);
+std::vector<size_t> filter_asset_catalog(
+  const std::vector<AssetCatalogEntry> & assets, const std::string & query,
+  const std::string & normalized_filter);
 
 struct AssetCatalogModel
 {
