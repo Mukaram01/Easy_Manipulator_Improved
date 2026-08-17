@@ -4305,15 +4305,28 @@ const mesh=(name,min,max,data={})=>({name,isMesh:true,visible:true,children:[],u
 const owner=id=>({id,category:id==='ur5'?'robot':id.includes('gripper')?'tool':'object',source_layer:'selection_owner_registry'});
 const ur5=owner('ur5'),tool=owner('robotiq_85_gripper'),bin=owner('target_bin_default');bin.source_layer='editable_layout';
 state.sceneJson={ui_selection_owners:[ur5,tool,bin]};state.selectionIdentityIndex={itemById:new Map([[ur5.id,ur5],[tool.id,tool],[bin.id,bin]]),recordsByLink:new Map(),explicitUiIdByLink:new Map(),selectionOwners:[ur5,tool,bin]};
-const robotMesh=mesh('forearm',{x:0,y:0,z:0},{x:2,y:1,z:3});const toolMesh=mesh('finger',{x:5,y:0,z:0},{x:6,y:1,z:1});
-const toolLink=root([toolMesh]),robotLink=root([robotMesh,toolLink]);
-const robotRecord=registerPickRecord({id:'forearm_visual',link_name:'forearm_link',role:'robot',active_visual_source:'mesh_preview',warnings:['diagnostic overlay warning from loader']},robotLink,robotLink,{authoritativePhysicalPick:true,uiSelectionOwnerId:'ur5'});
-const toolRecord=registerPickRecord({id:'finger_visual',link_name:'finger_link',role:'tool',active_visual_source:'mesh_preview',warnings:['debug helper warning from loader']},toolLink,robotLink,{authoritativePhysicalPick:true,uiSelectionOwnerId:'robotiq_85_gripper'});
+const robotMesh=mesh('forearm_link_visual_dae',{x:0,y:0,z:0},{x:2,y:1,z:3});const toolMesh=mesh('robotiq_finger_visual_dae',{x:5,y:0,z:0},{x:6,y:1,z:1});
+const helperMesh=(name,data={})=>mesh(name,{x:-100,y:-100,z:-100},{x:100,y:100,z:100},data);
+const outline=helperMesh('selection_outline',{selection_outline:true});
+const highlight=helperMesh('selection_highlight',{selection_highlight:true});
+const frustum=helperMesh('sensor_frustum',{fallback_sensor_frustum:true});
+const fallbackGeom=helperMesh('fallback_geometry',{fallback_geometry:true});
+const nodePhysicalExcluded=helperMesh('node_physical_excluded',{exclude_from_physical_bounds:true});
+const nodeFitExcluded=helperMesh('node_fit_excluded',{exclude_from_fit_bounds:true});
+const grid=helperMesh('grid');grid.isGridHelper=true;
+const axes=helperMesh('axes');axes.isAxesHelper=true;
+const transformControls=helperMesh('TransformControls_gizmo');
+const debug=helperMesh('collision_debug_helper');
+const toolLink=root([toolMesh]),robotLink=root([robotMesh,outline,highlight,frustum,fallbackGeom,nodePhysicalExcluded,nodeFitExcluded,grid,axes,transformControls,debug,toolLink]);
+// These are expanded-URDF-style link records: the record item owns selection,
+// while registered DAE-like descendants own the finite visible geometry.
+const robotRecord=registerPickRecord({id:'forearm_visual',link_name:'forearm_link',role:'robot',active_visual_source:'mesh_preview',exclude_from_fit_bounds:true,warnings:['diagnostic overlay warning from loader']},robotLink,robotLink,{authoritativePhysicalPick:true,uiSelectionOwnerId:'ur5'});
+const toolRecord=registerPickRecord({id:'finger_visual',link_name:'finger_link',role:'tool',active_visual_source:'mesh_preview',exclude_from_physical_bounds:true,warnings:['debug helper warning from loader']},toolLink,robotLink,{authoritativePhysicalPick:true,uiSelectionOwnerId:'robotiq_85_gripper'});
 bindExpandedUrdfPickRecordToSubtree(robotLink,robotRecord,new Set([robotLink,toolLink]));bindExpandedUrdfPickRecordToSubtree(toolLink,toolRecord,new Set([robotLink,toolLink]));
 assert.strictEqual(robotLink.userData.expanded_urdf_physical_owner_id,'ur5');assert.strictEqual(toolLink.userData.expanded_urdf_physical_owner_id,'robotiq_85_gripper');
 state.objects=[{item:ur5,object3d:null},{item:tool,object3d:null},{item:bin,object3d:root()}];
-let result=collectSelectionPhysicalBounds(state.objects[0]);assert.deepStrictEqual(result.bounds_json.max,{x:2,y:1,z:3});
-result=collectSelectionPhysicalBounds(state.objects[1]);assert.deepStrictEqual(result.bounds_json.min,{x:5,y:0,z:0});
+let result=collectSelectionPhysicalBounds(state.objects[0]);assert.deepStrictEqual(result.bounds_json.min,{x:0,y:0,z:0});assert.deepStrictEqual(result.bounds_json.max,{x:2,y:1,z:3});assert.strictEqual(result.count,1);
+result=collectSelectionPhysicalBounds(state.objects[1]);assert.deepStrictEqual(result.bounds_json.min,{x:5,y:0,z:0});assert.deepStrictEqual(result.bounds_json.max,{x:6,y:1,z:1});assert.strictEqual(result.count,1);
 const binReal=mesh('bin_stl',{x:7,y:1,z:0},{x:8,y:3,z:2});const binFallback=mesh('bin_fallback',{x:-9,y:-9,z:-9},{x:9,y:9,z:9},{render_status:'primitive_fallback'});
 const binItem={id:'bin_mesh',category:'object',canonical_scene_item_id:'target_bin_default',render_policy:'primary',mesh_contract_category:'object',mesh_load_required:true};
 binReal.userData.render_status='mesh_loaded';binReal.userData.item=binItem;
@@ -4321,6 +4334,11 @@ const binVisual={item:binItem,object3d:root([binFallback,binReal],binItem)};stat
 result=collectSelectionPhysicalBounds(state.objects[2]);assert.deepStrictEqual(result.bounds_json.min,{x:7,y:1,z:0});
 const imported={id:'object_01',category:'object',source_layer:'editable_layout'};const stl=mesh('real_stl',{x:.1,y:.2,z:.3},{x:.2,y:.4,z:.5});const hidden=mesh('hidden',{x:-50,y:-50,z:-50},{x:50,y:50,z:50});hidden.visible=false;const helper=mesh('selection',{x:-20,y:-20,z:-20},{x:20,y:20,z:20},{selection_highlight:true});const fallback=mesh('fallback',{x:-10,y:-10,z:-10},{x:10,y:10,z:10},{render_status:'primitive_fallback'});const importedRecord={item:imported,object3d:root([stl,hidden,helper,fallback],imported)};state.objects.push(importedRecord);
 result=collectSelectionPhysicalBounds(importedRecord);assert.deepStrictEqual(result.bounds_json.max,{x:.2,y:.4,z:.5});assert.strictEqual(result.count,1);
+const itemReasonDiagnostic={visible_renderable_count:0,accepted_renderable_count:0,excluded_renderable_count:0,exclusion_reasons:[],explicit_helper_reasons:{}};
+const itemPhysicalExcluded=mesh('item_physical_excluded',{x:-3,y:-3,z:-3},{x:3,y:3,z:3},{item:{id:'excluded_physical',category:'object',exclude_from_physical_bounds:true}});
+const itemFitExcluded=mesh('item_fit_excluded',{x:-4,y:-4,z:-4},{x:4,y:4,z:4},{item:{id:'excluded_fit',category:'object',exclude_from_fit_bounds:true}});
+result=collectPhysicalVisibleBounds(root([itemPhysicalExcluded,itemFitExcluded]),{diagnostics:itemReasonDiagnostic});assert.strictEqual(result.count,0);
+assert.deepStrictEqual(itemReasonDiagnostic.explicit_helper_reasons,{item_exclude_from_physical_bounds:1,item_exclude_from_fit_bounds:1});
 const persisted={id:'object_02',display_name:'2068_001_24',category:'authored_asset_object',source_kind:'user_authored',source_layer:'editable_layout',render_owner:'editable_layout',render_policy:'primary',mesh_contract_category:'object',mesh_load_required:true,mesh_uri:'build/workcell_studio_web_scene/assets/ur5_2f_test/assets/imported/2068_001_24.stl',mesh_scale:[.001,.001,.001]};
 assert.strictEqual(isPrimaryAuthoredPhysicalMesh(persisted),true);assert.strictEqual(isDebugOverlayItem(persisted),false);const persistedScale=meshLocalTransformOf(persisted).scale;assert.deepStrictEqual([persistedScale.x,persistedScale.y,persistedScale.z],[.001,.001,.001]);
 assert.strictEqual(materialFor(persisted).side,THREE.DoubleSide);
@@ -4330,6 +4348,20 @@ assert.strictEqual(materialFor(persisted).side,THREE.DoubleSide);
     diagnostic_lines = [line for line in result.stderr.splitlines() if line]
     assert diagnostic_lines
     assert all(line.startswith("Product View selection_bounds: ") for line in diagnostic_lines)
+    diagnostics = [json.loads(line.split(": ", 1)[1]) for line in diagnostic_lines]
+    robot_diagnostic = next(item for item in diagnostics if item["owner_id"] == "ur5")
+    assert robot_diagnostic["explicit_helper_reasons"] == {
+        "selection_outline": 1,
+        "selection_highlight": 1,
+        "fallback_sensor_frustum": 1,
+        "fallback_geometry": 1,
+        "node_exclude_from_physical_bounds": 1,
+        "node_exclude_from_fit_bounds": 1,
+        "grid_helper": 1,
+        "axes_helper": 1,
+        "transform_controls": 1,
+        "debug_helper": 1,
+    }
 
 
 def test_empty_pick_clears_every_editor_mode_but_transform_controls_retains_pointer():

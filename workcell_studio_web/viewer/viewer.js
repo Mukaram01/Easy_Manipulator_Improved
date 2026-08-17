@@ -3098,6 +3098,33 @@ function isPhysicalBoundsHelperObject(object, item, identity) {
   if (DEBUG_OVERLAY_TOKEN_RE.test(identity)) return true;
   return !isInitialFitPhysicalGeometryItem(item, identity);
 }
+function physicalBoundsHelperReasons(object, item, identity, options = {}) {
+  if (!object) return [];
+  const reasons = [];
+  const add = reason => { if (!reasons.includes(reason)) reasons.push(reason); };
+  const data = object.userData || {};
+  if (data.selection_outline === true) add('selection_outline');
+  if (data.selection_highlight === true) add('selection_highlight');
+  if (data.fallback_sensor_frustum === true) add('fallback_sensor_frustum');
+  if (data.exclude_from_physical_bounds === true) add('node_exclude_from_physical_bounds');
+  if (data.exclude_from_fit_bounds === true) add('node_exclude_from_fit_bounds');
+  // An expanded-URDF pick record describes ownership, not the nature of each
+  // descendant. Its broad item exclusions must not hide real link meshes.
+  if (options.authoritativePhysical !== true) {
+    if (item?.exclude_from_physical_bounds === true) add('item_exclude_from_physical_bounds');
+    if (item?.exclude_from_fit_bounds === true) add('item_exclude_from_fit_bounds');
+  }
+  if (object.isGridHelper) add('grid_helper');
+  if (object.isAxesHelper) add('axes_helper');
+  const localIdentity = `${String(object.name || '')} ${String(object.type || '')} ${physicalBoundsIdentityFor(object)}`
+    .toLowerCase().replace(/[_-]+/g, ' ');
+  if (/\btransform\s*controls?\b/.test(localIdentity)) add('transform_controls');
+  if (DEBUG_OVERLAY_TOKEN_RE.test(localIdentity)) add('debug_helper');
+  const renderStatus = String(data.render_status || data.renderInfo?.render_status || '').toLowerCase();
+  const localFallbackIdentity = `${renderStatus} ${String(data.active_visual_source || '')} ${String(data.source_layer || '')} ${physicalBoundsIdentityFor(object)}`;
+  if (data.fallback_geometry === true || data.isFallback === true || /fallback/.test(localFallbackIdentity)) add('fallback_geometry');
+  return reasons;
+}
 function isRobotPrimitiveFallbackObject(object, item, identity) {
   const visualSource = String(item?.active_visual_source || object?.userData?.active_visual_source || '').toLowerCase();
   const sourceLayer = String(item?.source_layer || object?.userData?.source_layer || '').toLowerCase();
@@ -3134,18 +3161,14 @@ function collectPhysicalVisibleBounds(root, options = {}) {
     const isRenderable = node.isMesh || node.isLine || node.isLineSegments || node.isPoints || node.isSprite;
     if (isRenderable && diagnostics) diagnostics.visible_renderable_count += 1;
     const renderStatus = String(node?.userData?.render_status || node?.userData?.renderInfo?.render_status || '').toLowerCase();
-    const selectionFallback = options.selectionBounds === true && /fallback/.test(`${renderStatus} ${identity}`);
     // Authoritative expanded-URDF records and successfully loaded authored
     // meshes are physical by construction.  Do not run their descriptive
     // payload (which may contain diagnostic warning text) through the broad
     // helper-token classifier.  Explicit helper/fallback flags still win.
-    const explicitHelper = node.userData?.selection_outline === true || node.userData?.selection_highlight === true ||
-      node.userData?.fallback_sensor_frustum === true || node.userData?.exclude_from_physical_bounds === true ||
-      node.userData?.exclude_from_fit_bounds === true || item?.exclude_from_physical_bounds === true ||
-      item?.exclude_from_fit_bounds === true || node.isGridHelper || node.isAxesHelper;
     const authoritativePhysical = identityRecord?.authoritativePhysicalPick === true;
+    const helperReasons = physicalBoundsHelperReasons(node, item, identity, { authoritativePhysical });
     const loadedAuthoredPhysical = renderStatus === 'mesh_loaded' && isPrimaryAuthoredPhysicalMesh(item);
-    const rejected = selectionFallback || explicitHelper ||
+    const rejected = helperReasons.length > 0 ||
       (!authoritativePhysical && !loadedAuthoredPhysical && isPhysicalBoundsHelperObject(node, item, identity));
     if (isRenderable && !rejected) {
       const visualSource = String(item?.active_visual_source || node?.userData?.active_visual_source || '').toLowerCase();
@@ -3156,7 +3179,10 @@ function collectPhysicalVisibleBounds(root, options = {}) {
       if (diagnostics) diagnostics.accepted_renderable_count += 1;
     } else if (isRenderable && diagnostics) {
       diagnostics.excluded_renderable_count += 1;
-      diagnostics.exclusion_reasons.push(selectionFallback ? 'fallback_geometry' : explicitHelper ? 'explicit_helper' : 'non_physical_identity');
+      const reasons = helperReasons.length ? helperReasons : ['non_physical_identity'];
+      diagnostics.exclusion_reasons.push(...reasons);
+      diagnostics.explicit_helper_reasons = diagnostics.explicit_helper_reasons || {};
+      for (const reason of helperReasons) diagnostics.explicit_helper_reasons[reason] = (diagnostics.explicit_helper_reasons[reason] || 0) + 1;
     }
     for (const child of node.children || []) visit(child, nextNearestItem);
   };
@@ -3212,6 +3238,7 @@ function collectSelectionPhysicalBounds(rendered) {
     accepted_renderable_count: 0,
     excluded_renderable_count: 0,
     exclusion_reasons: [],
+    explicit_helper_reasons: {},
   };
   diagnostic.records = records.map(record => {
     let childMeshCount = 0;
