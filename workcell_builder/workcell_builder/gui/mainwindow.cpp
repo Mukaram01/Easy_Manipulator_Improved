@@ -561,6 +561,43 @@ QString canonical_scene3d_token(const QString & value)
   return normalized;
 }
 
+// Use the same semantic normalization for loaded layout records and newly
+// placed catalog instances.  In particular, "asset" is an input/catalog role;
+// the canonical physical scene role is "object".
+QString canonical_scene_hierarchy_role(
+  const QString & raw_role, const QString & raw_category, const QString & fallback_text)
+{
+  auto classify = [](const QString & structured_text) {
+    const QString lower = structured_text.trimmed().toLower();
+    if (lower.isEmpty() || lower == QStringLiteral("unknown")) return QString();
+    if (lower.contains("keepout") || lower.contains("exclusion") || lower.contains("safety_zone") || lower == QStringLiteral("safety")) return QString("safety_zone");
+    if (lower.contains("home") || lower.contains("safe_joint_state") || lower.contains("safety_pose")) return QString("home_safety_pose");
+    if (lower.contains("end_effector") || lower.contains("gripper") || lower.contains("tool")) return QString("end_effector_tool");
+    if (lower.contains("support_surface") || lower.contains("table") || lower.contains("workbench")) return QString("support_surface_table");
+    if (lower.contains("pick_source") || lower.contains("pick_zone")) return QString("pick_source_zone");
+    if (lower.contains("place_target") || lower.contains("place_zone") || lower.contains("bin")) return QString("place_target_bin");
+    if (lower.contains("camera") || lower.contains("sensor")) return QString("camera");
+    if (lower.contains("conveyor")) return QString("conveyor");
+    if (lower.contains("robot")) return QString("robot");
+    if (lower.contains("object") || lower.contains("fixture") || lower.contains("asset")) return QString("object");
+    return QString();
+  };
+  const QString structured = classify(raw_role + QStringLiteral(" ") + raw_category);
+  if (!structured.isEmpty()) return structured;
+  const QString lower = fallback_text.toLower();
+  if (lower.contains("robot")) return QString("robot");
+  if (lower.contains("end_effector") || lower.contains("gripper") || lower.contains("tool")) return QString("end_effector_tool");
+  if (lower.contains("camera") || lower.contains("sensor")) return QString("camera");
+  if (lower.contains("support_surface") || lower.contains("table") || lower.contains("workbench")) return QString("support_surface_table");
+  if (lower.contains("conveyor")) return QString("conveyor");
+  if (lower.contains("pick_source") || lower.contains("pick zone") || lower.contains("pick_zone")) return QString("pick_source_zone");
+  if (lower.contains("place_target") || lower.contains("place zone") || lower.contains("place_zone") || lower.contains("bin")) return QString("place_target_bin");
+  if (lower.contains("home") || lower.contains("safe_joint_state") || lower.contains("safe joint") || lower.contains("safety pose")) return QString("home_safety_pose");
+  if (lower.contains("safety")) return QString("safety_zone");
+  if (lower.contains("object") || lower.contains("fixture") || lower.contains("asset")) return QString("object");
+  return QString("object");
+}
+
 QString scene3d_viewport_link_token(const ScenePreviewWidget::PreviewItem & item)
 {
   const QString link =
@@ -576,7 +613,10 @@ QString scene3d_viewport_link_token(const ScenePreviewWidget::PreviewItem & item
 bool is_user_facing_scene_hierarchy_item(const ScenePreviewWidget::PreviewItem & item)
 {
   const QString id = canonical_scene3d_token(item.id);
-  const QString role = QString(canonical_scene3d_token(item.role)).replace('/', '_');
+  // Hierarchy admission is based on structured identity only. The shared
+  // normalizer's label fallback remains available while ingesting legacy data,
+  // but a friendly renderer label must not manufacture an authoring row.
+  const QString role = canonical_scene_hierarchy_role(item.role, item.category, QString());
   const QString category = canonical_scene3d_token(item.category);
   const QString source_layer = canonical_scene3d_token(item.source_layer);
   const QString visual_source = canonical_scene3d_token(item.active_visual_source);
@@ -637,6 +677,15 @@ bool is_user_facing_scene_hierarchy_item(const ScenePreviewWidget::PreviewItem &
     role == QStringLiteral("target_bin") || role == QStringLiteral("place_target_bin") ||
     role == QStringLiteral("conveyor") || role == QStringLiteral("object");
   if (!authored_physical_role) return false;
+
+  // Catalog instances are authored physical objects only when the complete
+  // live-layout provenance contract agrees. Catalog metadata, staged mesh
+  // previews, generated visuals, and fallback records must never become
+  // additional rows merely because their semantic role normalizes to object.
+  if (role == QStringLiteral("object")) {
+    return source_layer == QStringLiteral("editable_layout") && item.editable &&
+      !item.locked && item.linked_to_editable_layout_state;
+  }
 
   // Locked canonical owners are useful hierarchy rows; locked generated link
   // records were rejected above by their visual-index identity.
@@ -8773,7 +8822,8 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   preview_item.display_name = display_name;
   preview_item.category = category;
   preview_item.catalog_asset_id = asset_id;
-  preview_item.role = QStringLiteral("asset");
+  preview_item.role = canonical_scene_hierarchy_role(
+    QStringLiteral("asset"), category, display_name);
   preview_item.status = QStringLiteral("ready");
   preview_item.source_path = source_path;
   preview_item.mesh_path = source_path;
@@ -8807,13 +8857,15 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   all_scene_preview_items_.push_back(preview_item);
   apply_scene3d_preview_layer_filters(false);
   refresh_scene_hierarchy_tree_from_current_items();
+  mark_layout_dirty("Place Asset Mode: Add to 3D Canvas");
+  append_studio_log(QStringLiteral("Asset placement: scene=%1 instance_id=%2 catalog_asset=%3 hierarchy_updated=true layout_dirty=true persisted=false")
+    .arg(selected_scene_name().trimmed(), new_id, asset_id));
   digital_twin_scene_->clearSelection();
   item->setSelected(true);
   select_canvas_item(item);
   undo_stack_.push_back({"add", new_id, item->pos(), item->pos(), true, false, {preview_item}});
   redo_stack_.clear();
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
-  mark_layout_dirty("Place Asset Mode: Add to 3D Canvas");
   append_studio_log(QString("Add to Canvas success: %1 (%2) asset_id=%3 layout_id=%4 from %5 | xyzrpy=[%6, %7, %8, %9, %10, %11] use_clicked_xy=%12")
     .arg(display_name, category, asset_id, new_id, source_path)
     .arg(item->pos().x() / 100.0, 0, 'f', 3).arg(item->pos().y() / 100.0, 0, 'f', 3).arg(armed_asset_z_m_, 0, 'f', 3)
@@ -9501,40 +9553,6 @@ void MainWindow::populate_scene_hierarchy()
     last_layout_load_message_log_ = layout_load_message;
   }
 
-  auto normalize_role = [](const QString & raw_role, const QString & raw_category, const QString & fallback_text) {
-    auto classify = [](const QString & structured_text) {
-      const QString lower = structured_text.trimmed().toLower();
-      if (lower.isEmpty() || lower == QStringLiteral("unknown")) return QString();
-      if (lower.contains("keepout") || lower.contains("exclusion") || lower.contains("safety_zone") || lower == QStringLiteral("safety")) return QString("safety_zone");
-      if (lower.contains("home") || lower.contains("safe_joint_state") || lower.contains("safety_pose")) return QString("home_safety_pose");
-      if (lower.contains("end_effector") || lower.contains("gripper") || lower.contains("tool")) return QString("end_effector_tool");
-      if (lower.contains("support_surface") || lower.contains("table") || lower.contains("workbench")) return QString("support_surface_table");
-      if (lower.contains("pick_source") || lower.contains("pick_zone")) return QString("pick_source_zone");
-      if (lower.contains("place_target") || lower.contains("place_zone") || lower.contains("bin")) return QString("place_target_bin");
-      if (lower.contains("camera") || lower.contains("sensor")) return QString("camera");
-      if (lower.contains("conveyor")) return QString("conveyor");
-      if (lower.contains("robot")) return QString("robot");
-      if (lower.contains("object") || lower.contains("fixture") || lower.contains("asset")) return QString("object");
-      return QString();
-    };
-    // Role and category are the structured semantic record. Classify them
-    // together so a specific category (for example safety_zone) outranks a
-    // generic role (for example asset), without consulting the display label.
-    const QString structured = classify(raw_role + QStringLiteral(" ") + raw_category);
-    if (!structured.isEmpty()) return structured;
-    const QString lower = fallback_text.toLower();
-    if (lower.contains("robot")) return QString("robot");
-    if (lower.contains("end_effector") || lower.contains("gripper") || lower.contains("tool")) return QString("end_effector_tool");
-    if (lower.contains("camera") || lower.contains("sensor")) return QString("camera");
-    if (lower.contains("support_surface") || lower.contains("table") || lower.contains("workbench")) return QString("support_surface_table");
-    if (lower.contains("conveyor")) return QString("conveyor");
-    if (lower.contains("pick_source") || lower.contains("pick zone") || lower.contains("pick_zone")) return QString("pick_source_zone");
-    if (lower.contains("place_target") || lower.contains("place zone") || lower.contains("place_zone") || lower.contains("bin")) return QString("place_target_bin");
-    if (lower.contains("home") || lower.contains("safe_joint_state") || lower.contains("safe joint") || lower.contains("safety pose")) return QString("home_safety_pose");
-    if (lower.contains("safety")) return QString("safety_zone");
-    if (lower.contains("object") || lower.contains("fixture") || lower.contains("asset")) return QString("object");
-    return QString("object");
-  };
   QMap<QString, QString> yaml_status_by_id;
   auto ingest_status_file = [&](const fs::path & path, const QString & source_tag) {
     YAML::Node root;
@@ -9620,7 +9638,7 @@ void MainWindow::populate_scene_hierarchy()
     p.id = id;
     p.display_name = display_name;
     p.category = category;
-    p.role = normalize_role(role_hint, category, display_name);
+    p.role = canonical_scene_hierarchy_role(role_hint, category, display_name);
     p.status = status;
     p.source_path = source_path;
     p.source_layer = QStringLiteral("overlay");
@@ -9643,7 +9661,7 @@ void MainWindow::populate_scene_hierarchy()
 
   for (const auto & item : model.items) {
     ScenePreviewWidget::PreviewItem p = ScenePreviewWidget::preview_item_from_canvas_item(item);
-    p.role = normalize_role(QString::fromStdString(item.role), p.category, p.display_name);
+    p.role = canonical_scene_hierarchy_role(QString::fromStdString(item.role), p.category, p.display_name);
     p.status = status_for_item(item);
     p.metadata_complete = item.warnings.empty();
     for (const auto & warning : item.warnings) p.warnings << QString::fromStdString(warning);
@@ -9884,7 +9902,7 @@ void MainWindow::populate_scene_hierarchy()
     p.id = normalized_id;
     p.display_name = raw_label.trimmed().isEmpty() ? normalized_id : raw_label.trimmed();
     apply_semantic_defaults(concept, &p);
-    p.role = normalize_role(concept, p.category, p.display_name + " " + p.id);
+    p.role = canonical_scene_hierarchy_role(concept, p.category, p.display_name + " " + p.id);
     if (concept == QStringLiteral("home_safety_pose")) p.role = QStringLiteral("home/safety pose");
     p.status = workcell_builder::get_bool_like(node, "enabled").value_or(true) ? QStringLiteral("ready") : QStringLiteral("disabled");
     p.source_path = source_file;
