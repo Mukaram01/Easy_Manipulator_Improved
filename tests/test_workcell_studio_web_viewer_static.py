@@ -4311,13 +4311,14 @@ const outline=helperMesh('selection_outline',{selection_outline:true});
 const highlight=helperMesh('selection_highlight',{selection_highlight:true});
 const frustum=helperMesh('sensor_frustum',{fallback_sensor_frustum:true});
 const fallbackGeom=helperMesh('fallback_geometry',{fallback_geometry:true});
+const isFallbackGeom=helperMesh('ordinary_mesh',{isFallback:true});
 const nodePhysicalExcluded=helperMesh('node_physical_excluded',{exclude_from_physical_bounds:true});
 const nodeFitExcluded=helperMesh('node_fit_excluded',{exclude_from_fit_bounds:true});
 const grid=helperMesh('grid');grid.isGridHelper=true;
 const axes=helperMesh('axes');axes.isAxesHelper=true;
 const transformControls=helperMesh('TransformControls_gizmo');
 const debug=helperMesh('collision_debug_helper');
-const toolLink=root([toolMesh]),robotLink=root([robotMesh,outline,highlight,frustum,fallbackGeom,nodePhysicalExcluded,nodeFitExcluded,grid,axes,transformControls,debug,toolLink]);
+const toolLink=root([toolMesh]),robotLink=root([robotMesh,outline,highlight,frustum,fallbackGeom,isFallbackGeom,nodePhysicalExcluded,nodeFitExcluded,grid,axes,transformControls,debug,toolLink]);
 // These are expanded-URDF-style link records: the record item owns selection,
 // while registered DAE-like descendants own the finite visible geometry.
 const robotRecord=registerPickRecord({id:'forearm_visual',link_name:'forearm_link',role:'robot',active_visual_source:'mesh_preview',exclude_from_fit_bounds:true,warnings:['diagnostic overlay warning from loader']},robotLink,robotLink,{authoritativePhysicalPick:true,uiSelectionOwnerId:'ur5'});
@@ -4328,12 +4329,13 @@ state.objects=[{item:ur5,object3d:null},{item:tool,object3d:null},{item:bin,obje
 let result=collectSelectionPhysicalBounds(state.objects[0]);assert.deepStrictEqual(result.bounds_json.min,{x:0,y:0,z:0});assert.deepStrictEqual(result.bounds_json.max,{x:2,y:1,z:3});assert.strictEqual(result.count,1);
 result=collectSelectionPhysicalBounds(state.objects[1]);assert.deepStrictEqual(result.bounds_json.min,{x:5,y:0,z:0});assert.deepStrictEqual(result.bounds_json.max,{x:6,y:1,z:1});assert.strictEqual(result.count,1);
 const binReal=mesh('bin_stl',{x:7,y:1,z:0},{x:8,y:3,z:2});const binFallback=mesh('bin_fallback',{x:-9,y:-9,z:-9},{x:9,y:9,z:9},{render_status:'primitive_fallback'});
-const binItem={id:'bin_mesh',category:'object',canonical_scene_item_id:'target_bin_default',render_policy:'primary',mesh_contract_category:'object',mesh_load_required:true};
+const binItem={id:'bin_mesh',display_name:'Target bin (collision warning)',category:'object',canonical_scene_item_id:'target_bin_default',role:'target_bin',source_kind:'user_authored',source_layer:'editable_layout',render_policy:'primary',mesh_contract_category:'object',mesh_load_required:true,status:'diagnostic review',mesh_load_warning:'debug loader note',warnings:['collision warning']};
 binReal.userData.render_status='mesh_loaded';binReal.userData.item=binItem;
 const binVisual={item:binItem,object3d:root([binFallback,binReal],binItem)};state.objects.push(binVisual);
-result=collectSelectionPhysicalBounds(state.objects[2]);assert.deepStrictEqual(result.bounds_json.min,{x:7,y:1,z:0});
-const imported={id:'object_01',category:'object',source_layer:'editable_layout'};const stl=mesh('real_stl',{x:.1,y:.2,z:.3},{x:.2,y:.4,z:.5});const hidden=mesh('hidden',{x:-50,y:-50,z:-50},{x:50,y:50,z:50});hidden.visible=false;const helper=mesh('selection',{x:-20,y:-20,z:-20},{x:20,y:20,z:20},{selection_highlight:true});const fallback=mesh('fallback',{x:-10,y:-10,z:-10},{x:10,y:10,z:10},{render_status:'primitive_fallback'});const importedRecord={item:imported,object3d:root([stl,hidden,helper,fallback],imported)};state.objects.push(importedRecord);
-result=collectSelectionPhysicalBounds(importedRecord);assert.deepStrictEqual(result.bounds_json.max,{x:.2,y:.4,z:.5});assert.strictEqual(result.count,1);
+const binDiagnostic={visible_renderable_count:0,accepted_renderable_count:0,excluded_renderable_count:0,exclusion_reasons:[],explicit_helper_reasons:{}};
+result=collectPhysicalVisibleBounds(binVisual.object3d,{diagnostics:binDiagnostic});assert.deepStrictEqual(result.bounds_json.min,{x:7,y:1,z:0});assert.deepStrictEqual(result.bounds_json.max,{x:8,y:3,z:2});assert.strictEqual(result.count,1);assert.strictEqual(binDiagnostic.accepted_renderable_count,1);assert(!binDiagnostic.exclusion_reasons.includes('debug_helper'));
+const imported={id:'object_01',display_name:'object_01 imported STL',category:'authored_asset_object',source_kind:'user_authored',source_layer:'editable_layout',render_owner:'editable_layout',render_policy:'primary',mesh_contract_category:'object',mesh_load_required:true,mesh_uri:'build/workcell_studio_web_scene/assets/ur5_2f_test/assets/imported/object_01.stl',mesh_scale:[.001,.001,.001]};const stl=mesh('object_01_stl',{x:.1,y:.2,z:.3},{x:.2,y:.4,z:.5},{render_status:'mesh_loaded'});stl.userData.item=imported;const hidden=mesh('hidden',{x:-50,y:-50,z:-50},{x:50,y:50,z:50});hidden.visible=false;const helper=mesh('selection',{x:-20,y:-20,z:-20},{x:20,y:20,z:20},{selection_highlight:true});const fallback=mesh('fallback',{x:-10,y:-10,z:-10},{x:10,y:10,z:10},{render_status:'primitive_fallback'});const importedRecord={item:imported,object3d:root([stl,hidden,helper,fallback],imported)};state.objects.push(importedRecord);
+result=collectSelectionPhysicalBounds(importedRecord);assert.deepStrictEqual(result.bounds_json.max,{x:.2,y:.4,z:.5});assert.strictEqual(result.count,1);const importedScale=meshLocalTransformOf(imported).scale;assert.deepStrictEqual([importedScale.x,importedScale.y,importedScale.z],[.001,.001,.001]);
 const itemReasonDiagnostic={visible_renderable_count:0,accepted_renderable_count:0,excluded_renderable_count:0,exclusion_reasons:[],explicit_helper_reasons:{}};
 const itemPhysicalExcluded=mesh('item_physical_excluded',{x:-3,y:-3,z:-3},{x:3,y:3,z:3},{item:{id:'excluded_physical',category:'object',exclude_from_physical_bounds:true}});
 const itemFitExcluded=mesh('item_fit_excluded',{x:-4,y:-4,z:-4},{x:4,y:4,z:4},{item:{id:'excluded_fit',category:'object',exclude_from_fit_bounds:true}});
@@ -4354,7 +4356,7 @@ assert.strictEqual(materialFor(persisted).side,THREE.DoubleSide);
         "selection_outline": 1,
         "selection_highlight": 1,
         "fallback_sensor_frustum": 1,
-        "fallback_geometry": 1,
+        "fallback_geometry": 2,
         "node_exclude_from_physical_bounds": 1,
         "node_exclude_from_fit_bounds": 1,
         "grid_helper": 1,

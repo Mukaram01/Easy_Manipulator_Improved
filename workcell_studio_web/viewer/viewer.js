@@ -3080,6 +3080,26 @@ function physicalBoundsIdentityFor(object) {
     itemLabel(item || {}),
   ].map(value => String(value || '').toLowerCase().replace(/[_-]+/g, ' ')).join(' ');
 }
+function physicalBoundsNodeIdentityFor(object) {
+  const data = object?.userData || {};
+  return [
+    object?.name,
+    object?.type,
+    data.source_layer,
+    data.active_visual_source,
+    data.role,
+    data.category,
+    data.type,
+    data.id,
+    data.display_name,
+    data.object_name,
+    data.link_name,
+    data.visual_name,
+    data.render_owner,
+    data.renderer_owner,
+    data.render_policy,
+  ].map(value => String(value || '').toLowerCase().replace(/[_-]+/g, ' ')).join(' ');
+}
 function physicalBoundsItemFor(object, nearestItem = null) {
   return object?.userData?.item || nearestItem || object?.userData || {};
 }
@@ -3116,12 +3136,14 @@ function physicalBoundsHelperReasons(object, item, identity, options = {}) {
   }
   if (object.isGridHelper) add('grid_helper');
   if (object.isAxesHelper) add('axes_helper');
-  const localIdentity = `${String(object.name || '')} ${String(object.type || '')} ${physicalBoundsIdentityFor(object)}`
-    .toLowerCase().replace(/[_-]+/g, ' ');
+  // Helper classification is node-local. The owning item can legitimately
+  // carry loader diagnostics and warning text without making its loaded mesh
+  // a helper render node.
+  const localIdentity = physicalBoundsNodeIdentityFor(object);
   if (/\btransform\s*controls?\b/.test(localIdentity)) add('transform_controls');
   if (DEBUG_OVERLAY_TOKEN_RE.test(localIdentity)) add('debug_helper');
   const renderStatus = String(data.render_status || data.renderInfo?.render_status || '').toLowerCase();
-  const localFallbackIdentity = `${renderStatus} ${String(data.active_visual_source || '')} ${String(data.source_layer || '')} ${physicalBoundsIdentityFor(object)}`;
+  const localFallbackIdentity = `${renderStatus} ${localIdentity}`;
   if (data.fallback_geometry === true || data.isFallback === true || /fallback/.test(localFallbackIdentity)) add('fallback_geometry');
   return reasons;
 }
