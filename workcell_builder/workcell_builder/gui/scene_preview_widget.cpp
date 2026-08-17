@@ -2801,15 +2801,18 @@ void ScenePreviewWidget::poll_embedded_editor_events()
       const QVariantMap event = event_value.toMap();
       const QString event_type = event.value(QStringLiteral("type")).toString();
       if (event_type == QStringLiteral("placement_requested")) {
-        bool x_ok = false, y_ok = false, z_ok = false;
+        bool x_ok = false, y_ok = false, z_ok = false, yaw_ok = false;
         const double x = event.value(QStringLiteral("x")).toDouble(&x_ok);
         const double y = event.value(QStringLiteral("y")).toDouble(&y_ok);
         const double z = event.value(QStringLiteral("z")).toDouble(&z_ok);
-        if (x_ok && y_ok && z_ok && std::isfinite(x) && std::isfinite(y) && std::isfinite(z)) {
-          emit embedded_asset_placement_requested(x, y, z);
+        const double yaw = event.value(QStringLiteral("yaw")).toDouble(&yaw_ok);
+        const bool repeat_commit = event.value(QStringLiteral("repeat")).toBool();
+        if (x_ok && y_ok && z_ok && yaw_ok && std::isfinite(x) && std::isfinite(y) &&
+            std::isfinite(z) && std::isfinite(yaw)) {
+          emit embedded_asset_placement_requested(x, y, z, yaw, repeat_commit);
         } else {
           emit studio_log_requested(QStringLiteral(
-            "Embedded Product View placement rejected: placement_requested requires finite x/y/z."));
+            "Embedded Product View placement rejected: placement_requested requires finite x/y/z/yaw."));
         }
       } else if (event_type == QStringLiteral("selection_changed")) {
         QString id = event.value(QStringLiteral("uiItemId")).toString();

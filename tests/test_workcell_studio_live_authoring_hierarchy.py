@@ -122,12 +122,12 @@ def test_physical_target_bin_owns_hierarchy_not_derived_place_zone():
     assert '(category == QStringLiteral("place_zone") && !physical_target_bin)' in policy
 
 
-def production_placement(instance_id, catalog_asset_id="shared_catalog_asset"):
+def production_placement(instance_id, catalog_asset_id="shared_catalog_asset", yaw=0.0):
     """Exact semantic/provenance fields written by commit_armed_asset_placement."""
     return {"id": instance_id, "role": "object", "catalog_asset_id": catalog_asset_id,
             "source_layer": "editable_layout", "active_visual_source": "mesh_preview",
             "editable": True, "locked": False, "linked_to_editable_layout_state": True,
-            "selectable": True}
+            "selectable": True, "yaw": yaw}
 
 
 def test_one_and_two_unsaved_placements_have_instance_identity_and_selection_parity():
@@ -145,6 +145,15 @@ def test_exact_id_dedupe_does_not_collapse_shared_catalog_instances():
     duplicate_payload = dict(first, active_visual_source="staged_mesh")
     second = production_placement("object_02")
     assert hierarchy_rows([first, duplicate_payload, second]) == ["object_01", "object_02"]
+
+
+def test_three_repeat_commits_keep_unique_ids_shared_provenance_and_exact_yaw():
+    yaw = 3.141592653589793 / 12
+    records = [production_placement(f"object_0{index}", yaw=yaw) for index in range(1, 4)]
+    assert hierarchy_rows(records) == ["object_01", "object_02", "object_03"]
+    assert len({record["id"] for record in records}) == 3
+    assert {record["catalog_asset_id"] for record in records} == {"shared_catalog_asset"}
+    assert all(record["yaw"] == yaw for record in records)
 
 
 def test_catalog_generated_staged_and_fallback_records_are_not_rows():
@@ -177,12 +186,14 @@ def test_placement_updates_live_session_without_persisting():
         assert forbidden not in placement
 
 
-def test_save_and_reload_fixture_retains_one_row_per_instance(tmp_path):
+def test_save_and_reload_fixture_retains_one_row_per_instance_and_orientation(tmp_path):
     import json
-    records = [production_placement("object_01"), production_placement("object_02")]
+    yaw = 3.141592653589793 / 12
+    records = [production_placement("object_01", yaw=yaw), production_placement("object_02", yaw=yaw)]
     layout = tmp_path / "workcell_studio_layout.json"
     assert not layout.exists()  # placement itself performs no write
     layout.write_text(json.dumps(records), encoding="utf-8")  # explicit Save
     reloaded = json.loads(layout.read_text(encoding="utf-8"))
     assert [row["id"] for row in reloaded] == ["object_01", "object_02"]
     assert hierarchy_rows(reloaded) == ["object_01", "object_02"]
+    assert [row["yaw"] for row in reloaded] == [yaw, yaw]

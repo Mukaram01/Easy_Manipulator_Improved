@@ -2673,12 +2673,14 @@ void MainWindow::setup_studio_shell()
       place_catalog_asset_at_world_position(asset_id, x, y, z, configure_transform);
     });
   connect(scene_preview_widget_, &ScenePreviewWidget::embedded_asset_placement_requested, this,
-    [this](double x, double y, double z) {
-      if (!place_asset_armed_ || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) return;
+    [this](double x, double y, double z, double yaw, bool repeat_commit) {
+      if (!place_asset_armed_ || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
+          !std::isfinite(yaw)) return;
       armed_asset_x_m_ = x;
       armed_asset_y_m_ = y;
       armed_asset_z_m_ = z;
-      commit_armed_asset_placement(QPointF(x * 100.0, y * 100.0));
+      armed_asset_yaw_rad_ = yaw;
+      commit_armed_asset_placement(QPointF(x * 100.0, y * 100.0), repeat_commit, false);
     });
   auto * scene3d_viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
   if (scene3d_viewport) {
@@ -6680,7 +6682,7 @@ void MainWindow::set_canvas_interaction_mode(CanvasInteractionMode mode)
   if (mode != CanvasInteractionMode::Place) clear_armed_asset_placement();
   canvas_mode_ = mode;
   QString n = "Select";
-  if (mode == CanvasInteractionMode::Place) n = "Place";
+  if (mode == CanvasInteractionMode::Place) n = "Place · Q/E rotate · Esc cancel";
   if (mode == CanvasInteractionMode::Move) n = "Move";
   if (mode == CanvasInteractionMode::Inspect) n = "Inspect";
   if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
@@ -8810,7 +8812,8 @@ bool MainWindow::arm_place_asset_mode(const QString & requested_asset_id)
   return true;
 }
 
-void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
+void MainWindow::commit_armed_asset_placement(
+  const QPointF & canvas_pos_px, bool preserve_placement_session, bool use_configured_persistence)
 {
   if (!digital_twin_scene_ || !place_asset_armed_) return;
   const QString category = armed_asset_category_;
@@ -8939,7 +8942,8 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   if (scene_preview_widget_) scene_preview_widget_->select_preview_item(new_id);
   if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->setCurrentIndex(0);
   refresh_diagnostics_quick_status();
-  const bool persist = place_mode_persistent_box_ && place_mode_persistent_box_->isChecked();
+  const bool persist = preserve_placement_session ||
+    (use_configured_persistence && place_mode_persistent_box_ && place_mode_persistent_box_->isChecked());
   place_asset_armed_ = persist;
   if (!persist) {
     set_canvas_interaction_mode(CanvasInteractionMode::Select);

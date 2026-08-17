@@ -341,7 +341,8 @@ signals:
     bool configure_transform);
   // Browser placement events carry spatial data only. MainWindow remains the
   // authority for the catalog asset currently armed for placement.
-  void embedded_asset_placement_requested(double world_x_m, double world_y_m, double world_z_m);
+  void embedded_asset_placement_requested(
+    double world_x_m, double world_y_m, double world_z_m, double yaw_rad, bool repeat_commit);
   void embedded_product_view_runtime_state_changed(const QString & state, bool has_usable_content);
   void authoring_mode_changed(const QString & mode);
   void embedded_authoring_save_requested();
