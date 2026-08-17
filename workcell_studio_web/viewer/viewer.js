@@ -2238,7 +2238,18 @@ function materialFor(item) {
   if (isSensor(item)) return new THREE.MeshStandardMaterial({ color: 0x5f7485, roughness: 0.62, metalness: 0.08 });
   if (item.locked || item.source_kind === 'generated_preview') return new THREE.MeshStandardMaterial({ color: 0x8b96a6, roughness: 0.76, metalness: 0.04 });
   const authoredColor = item?.material?.color || item?.material?.rgba || item?.material_color || item?.color;
-  const material = new THREE.MeshStandardMaterial({ color: 0x8aa38d, roughness: 0.72, metalness: 0.02 });
+  // Imported STL files do not carry a material and a number of catalog STLs
+  // have inconsistent triangle winding.  Fresh-placement previews used a
+  // two-sided material, while the persisted mesh-loader path used Three's
+  // front-side default and could therefore load successfully but render no
+  // surface.  Keep this scoped to authored physical meshes; generated URDF
+  // visuals retain their authored material/culling contract.
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x8aa38d,
+    roughness: 0.72,
+    metalness: 0.02,
+    side: isPrimaryAuthoredPhysicalMesh(item) ? THREE.DoubleSide : THREE.FrontSide,
+  });
   if (Array.isArray(authoredColor) && authoredColor.length >= 3) {
     material.color.setRGB(Number(authoredColor[0]), Number(authoredColor[1]), Number(authoredColor[2]));
     if (authoredColor.length > 3) {
@@ -2545,6 +2556,21 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
     trackMeshLoadAttempt(item, 'loaded', loadUrl, '');
     setRenderInfo(rendered, 'mesh_loaded', uri, '');
     const boundsValid = diagnoseLoadedMeshBounds(item, visualRoot, rendered, validationLocalBounds);
+    if (isPrimaryAuthoredPhysicalMesh(item)) {
+      visualRoot.updateWorldMatrix?.(true, true);
+      const authoredBounds = finiteBox3(new THREE.Box3().setFromObject(visualRoot));
+      const worldScale = new THREE.Vector3();
+      visualRoot.getWorldScale?.(worldScale);
+      console.info?.(`Product View authored_mesh: ${JSON.stringify({
+        id: String(item.id || ''), mesh_uri: requestedUri, resolved_url: loadUrl, loader: loaderName,
+        load_requested: true, load_success: true, object3d_created: Boolean(meshObject),
+        object_visible: visualRoot.visible !== false, parent_visible: rendered.object3d.visible !== false,
+        local_scale: [visualRoot.scale.x, visualRoot.scale.y, visualRoot.scale.z],
+        world_scale: [worldScale.x, worldScale.y, worldScale.z], finite_world_bounds: Boolean(authoredBounds),
+        bounds_min: authoredBounds ? [authoredBounds.min.x, authoredBounds.min.y, authoredBounds.min.z] : null,
+        bounds_max: authoredBounds ? [authoredBounds.max.x, authoredBounds.max.y, authoredBounds.max.z] : null,
+      })}`);
+    }
     refreshMeshLoadUi(rendered);
     if (!boundsValid && itemRequiresMeshBackedVisual(item)) {
       detachTransientPivotForFailedPhysicalVisual(rendered);
@@ -3027,14 +3053,22 @@ function collectPhysicalVisibleBounds(root, options = {}) {
   root.updateWorldMatrix?.(true, true);
   const bounds = new THREE.Box3();
   const candidates = [];
+  const diagnostics = options.diagnostics || null;
   const visitedNodes = options.visitedNodes || new Set();
   const selectionOwnerId = String(options.selectionOwnerId || '').trim();
   let hasGeneratedRobotMesh = false;
   const visit = (node, nearestItem = null) => {
-    if (!node || node.visible === false || visitedNodes.has(node)) return;
+    if (!node || visitedNodes.has(node)) return;
+    if (node.visible === false) {
+      if (diagnostics) diagnostics.exclusion_reasons.push('hidden_renderable_or_subtree');
+      return;
+    }
     const identityRecord = state.pickIdentityByObject?.get?.(node);
     if (selectionOwnerId && identityRecord?.authoritativePhysicalPick === true &&
-        explicitUiSelectionItemId(identityRecord) !== selectionOwnerId) return;
+        explicitUiSelectionItemId(identityRecord) !== selectionOwnerId) {
+      if (diagnostics) diagnostics.exclusion_reasons.push('different_authoritative_owner');
+      return;
+    }
     visitedNodes.add(node);
     const item = identityRecord?.item || physicalBoundsItemFor(node, nearestItem);
     const identity = identityRecord?.item
@@ -3042,14 +3076,31 @@ function collectPhysicalVisibleBounds(root, options = {}) {
       : physicalBoundsIdentityFor(node);
     const nextNearestItem = identityRecord?.item || node?.userData?.item || nearestItem;
     const isRenderable = node.isMesh || node.isLine || node.isLineSegments || node.isPoints || node.isSprite;
+    if (isRenderable && diagnostics) diagnostics.visible_renderable_count += 1;
     const renderStatus = String(node?.userData?.render_status || node?.userData?.renderInfo?.render_status || '').toLowerCase();
     const selectionFallback = options.selectionBounds === true && /fallback/.test(`${renderStatus} ${identity}`);
-    if (isRenderable && !selectionFallback && !isPhysicalBoundsHelperObject(node, item, identity)) {
+    // Authoritative expanded-URDF records and successfully loaded authored
+    // meshes are physical by construction.  Do not run their descriptive
+    // payload (which may contain diagnostic warning text) through the broad
+    // helper-token classifier.  Explicit helper/fallback flags still win.
+    const explicitHelper = node.userData?.selection_outline === true || node.userData?.selection_highlight === true ||
+      node.userData?.fallback_sensor_frustum === true || node.userData?.exclude_from_physical_bounds === true ||
+      node.userData?.exclude_from_fit_bounds === true || item?.exclude_from_physical_bounds === true ||
+      item?.exclude_from_fit_bounds === true || node.isGridHelper || node.isAxesHelper;
+    const authoritativePhysical = identityRecord?.authoritativePhysicalPick === true;
+    const loadedAuthoredPhysical = renderStatus === 'mesh_loaded' && isPrimaryAuthoredPhysicalMesh(item);
+    const rejected = selectionFallback || explicitHelper ||
+      (!authoritativePhysical && !loadedAuthoredPhysical && isPhysicalBoundsHelperObject(node, item, identity));
+    if (isRenderable && !rejected) {
       const visualSource = String(item?.active_visual_source || node?.userData?.active_visual_source || '').toLowerCase();
       const isGenerated = /generated|urdf/.test(identity);
       const isRobot = /robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|wrist/.test(identity);
       if (isGenerated && isRobot && /mesh|generated urdf visual|mesh preview/.test(visualSource.replace(/_/g, ' '))) hasGeneratedRobotMesh = true;
       candidates.push({ node, item, identity });
+      if (diagnostics) diagnostics.accepted_renderable_count += 1;
+    } else if (isRenderable && diagnostics) {
+      diagnostics.excluded_renderable_count += 1;
+      diagnostics.exclusion_reasons.push(selectionFallback ? 'fallback_geometry' : explicitHelper ? 'explicit_helper' : 'non_physical_identity');
     }
     for (const child of node.children || []) visit(child, nextNearestItem);
   };
@@ -3084,13 +3135,30 @@ function collectSelectionPhysicalBounds(rendered) {
   const bounds = new THREE.Box3();
   const visitedNodes = new Set();
   let count = 0;
-  for (const record of selectionPhysicalBoundsRecords(rendered)) {
-    const physical = collectPhysicalVisibleBounds(record.object3d, { selectionOwnerId: ownerId, visitedNodes, selectionBounds: true });
+  const records = selectionPhysicalBoundsRecords(rendered);
+  const diagnostic = {
+    owner_id: ownerId,
+    selected_record_id: String(rendered?.item?.id || ''),
+    candidate_record_count: records.length,
+    authoritative_pick_record_count: records.filter(record => record.authoritativePhysicalPick === true).length,
+    candidate_root_names: records.map(record => String(record.object3d?.name || '')).filter(Boolean),
+    visible_renderable_count: 0,
+    accepted_renderable_count: 0,
+    excluded_renderable_count: 0,
+    exclusion_reasons: [],
+  };
+  for (const record of records) {
+    const physical = collectPhysicalVisibleBounds(record.object3d, { selectionOwnerId: ownerId, visitedNodes, selectionBounds: true, diagnostics: diagnostic });
     if (!physical.bounds) continue;
     bounds.union(physical.bounds);
     count += physical.count;
   }
   const finite = count ? finiteBox3(bounds) : null;
+  diagnostic.exclusion_reasons = [...new Set(diagnostic.exclusion_reasons)];
+  diagnostic.finite_bounds = Boolean(finite);
+  diagnostic.bounds_min = finite ? [finite.min.x, finite.min.y, finite.min.z] : null;
+  diagnostic.bounds_max = finite ? [finite.max.x, finite.max.y, finite.max.z] : null;
+  console.info?.(`Product View selection_bounds: ${JSON.stringify(diagnostic)}`);
   return { count: finite ? count : 0, bounds: finite, bounds_json: box3ToJson(finite) };
 }
 
