@@ -371,7 +371,9 @@ private:
     bool configure_transform);
   QPointF compute_default_canvas_pose(const QString & category, const QString & display_name) const;
   bool arm_place_asset_mode(const QString & asset_id);
-  void commit_armed_asset_placement(const QPointF & canvas_pos_px);
+  void commit_armed_asset_placement(
+    const QPointF & canvas_pos_px, bool preserve_placement_session = false,
+    bool use_configured_persistence = true);
   bool configure_asset_placement_transform(const QString & category, const QString & display_name);
   bool validate_armed_asset_transform(QString * error_message = nullptr);
   void clear_armed_asset_placement();

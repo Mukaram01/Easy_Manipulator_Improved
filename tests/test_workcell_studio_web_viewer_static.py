@@ -4443,7 +4443,7 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert');let source=fs.r
 const e=()=>({style:{},classList:{add(){},remove(){},toggle(){}},setAttribute(){},addEventListener(){},getBoundingClientRect(){return{left:0,top:0,width:100,height:100}},appendChild(){},querySelector(){return{textContent:''}},hidden:false,checked:false,disabled:false,textContent:'',innerHTML:''});
 const sandbox={console,assert,window:{location:{search:'',origin:'http://localhost'}},document:{getElementById(){return e()},createElement(){return e()}},URLSearchParams,requestAnimationFrame(){return 0}};vm.createContext(sandbox);
 vm.runInContext(source+`
-class Node {constructor(){this.children=[];this.userData={};this.visible=true;this.position={x:0,y:0,z:0,set:(x,y,z)=>Object.assign(this.position,{x,y,z})};}add(o){this.children.push(o);o.parent=this;}remove(o){this.children=this.children.filter(x=>x!==o);o.parent=null;}traverse(fn){fn(this);for(const c of this.children)c.traverse?c.traverse(fn):fn(c);}}
+class Node {constructor(){this.children=[];this.userData={};this.visible=true;this.rotation={x:0,y:0,z:0};this.position={x:0,y:0,z:0,set:(x,y,z)=>Object.assign(this.position,{x,y,z})};}add(o){this.children.push(o);o.parent=this;}remove(o){this.children=this.children.filter(x=>x!==o);o.parent=null;}traverse(fn){fn(this);for(const c of this.children)c.traverse?c.traverse(fn):fn(c);}}
 class Group extends Node {}
 class Mesh extends Node {constructor(geometry,material){super();this.geometry=geometry;this.material=material;this.isMesh=true;}}
 class Material {constructor(options){Object.assign(this,options)}clone(){return new Material({...this})}dispose(){}}
@@ -4451,16 +4451,23 @@ class Geometry {dispose(){}}
 THREE={Group,Mesh,BoxGeometry:Geometry,MeshStandardMaterial:Material,Vector3:class{constructor(x=0,y=0,z=0){Object.assign(this,{x,y,z})}},Object3D:{DEFAULT_UP:{}},DoubleSide:2,FrontSide:0};
 const added=[];state.three.scene={add(o){added.push(o)},remove(o){const i=added.indexOf(o);if(i>=0)added.splice(i,1)}};
 const asset={id:'2068_001_24',mesh_scale:[.001,.001,.001]};
-armPlacement({asset});const ghost=state.placement.previewRoot;assert(ghost);assert.strictEqual(added.length,1);assert.strictEqual(state.objects.length,0);assert.strictEqual(state.editorEvents.length,0);
+armPlacement({asset});const ghost=state.placement.previewRoot;assert(ghost);assert.strictEqual(state.placement.yaw,0);assert.strictEqual(added.length,1);assert.strictEqual(state.objects.length,0);assert.strictEqual(state.editorEvents.length,0);
 assert.strictEqual(ghost.userData.placement_preview,true);assert.strictEqual(ghost.userData.exclude_from_physical_bounds,true);assert.strictEqual(ghost.userData.exclude_from_fit_bounds,true);assert.strictEqual(ghost.userData.selectable,false);
 const effective=meshLocalTransformOf(state.placement.asset).scale;assert.deepStrictEqual([effective.x,effective.y,effective.z],[.001,.001,.001]);
+let prevented=0;const key=(code,target=null)=>onEditorKeyDown({code,key:code==='KeyQ'?'q':'e',target,preventDefault(){prevented++}});
+key('KeyE');key('KeyE');key('KeyQ');assert.strictEqual(state.placement.previewRoot,ghost,'rotation keeps ghost identity');assert.strictEqual(state.placement.yaw,Math.PI/12);assert.strictEqual(ghost.rotation.z,Math.PI/12);assert.strictEqual(prevented,3);
+for(const target of [{tagName:'INPUT'},{tagName:'textarea'},{tagName:'SELECT'},{isContentEditable:true}])key('KeyE',target);
+assert.strictEqual(state.placement.yaw,Math.PI/12,'form controls reserve their keyboard input');
 let points=[{x:1,y:2,z:3},{x:4,y:5,z:6},null];placementPointFromViewport=()=>points.shift();
 onCanvasPointerMove({clientX:10,clientY:10});assert.deepStrictEqual([ghost.position.x,ghost.position.y,ghost.position.z],[1,2,3]);
 onCanvasPointerMove({clientX:20,clientY:20});assert.strictEqual(state.placement.previewRoot,ghost);assert.deepStrictEqual([ghost.position.x,ghost.position.y,ghost.position.z],[4,5,6]);assert.strictEqual(state.editorEvents.length,0);
 onCanvasPointerMove({clientX:30,clientY:30});assert.strictEqual(ghost.visible,false);
-onCanvasPointerDown({button:0,clientX:30,clientY:30});assert.strictEqual(state.editorEvents.length,0);assert.strictEqual(state.placement.armed,true);
-placementPointFromViewport=()=>({x:7,y:8,z:9});onCanvasPointerMove({clientX:40,clientY:40});onCanvasPointerDown({button:0,clientX:40,clientY:40,preventDefault(){},stopPropagation(){}});assert.strictEqual(state.editorEvents.filter(e=>e.type==='placement_requested').length,1);assert.strictEqual(state.placement.previewRoot,null);assert.strictEqual(state.placement.armed,false);
-armPlacement({asset});const cancelled=state.placement.previewRoot;cancelled.visible=true;onEditorKeyDown({key:'Escape',target:null,preventDefault(){}});assert.strictEqual(state.placement.armed,false);assert.strictEqual(state.placement.previewRoot,null);assert.strictEqual(state.editorEvents.filter(e=>e.type==='placement_requested').length,1);
+onCanvasPointerDown({button:0,shiftKey:true,clientX:30,clientY:30});assert.strictEqual(state.editorEvents.length,0);assert.strictEqual(state.placement.armed,true);assert.strictEqual(state.placement.previewRoot,ghost);assert.strictEqual(state.placement.yaw,Math.PI/12);
+placementPointFromViewport=()=>({x:7,y:8,z:9});onCanvasPointerMove({clientX:40,clientY:40});onCanvasPointerDown({button:0,shiftKey:true,clientX:40,clientY:40,preventDefault(){},stopPropagation(){}});
+let requests=state.editorEvents.filter(e=>e.type==='placement_requested');assert.strictEqual(requests.length,1);assert.deepStrictEqual([requests[0].x,requests[0].y,requests[0].z,requests[0].yaw,requests[0].repeat],[7,8,9,Math.PI/12,true]);assert.strictEqual(state.placement.previewRoot,ghost);assert.strictEqual(state.placement.armed,true);assert.strictEqual(state.placement.yaw,Math.PI/12);
+placementPointFromViewport=()=>({x:10,y:11,z:12});onCanvasPointerDown({button:0,shiftKey:true,clientX:45,clientY:45,preventDefault(){},stopPropagation(){}});requests=state.editorEvents.filter(e=>e.type==='placement_requested');assert.strictEqual(requests.length,2);assert.strictEqual(requests[1].yaw,Math.PI/12);assert.strictEqual(state.placement.previewRoot,ghost);
+onEditorKeyDown({key:'Escape',code:'Escape',target:null,preventDefault(){}});assert.strictEqual(state.placement.armed,false);assert.strictEqual(state.placement.previewRoot,null);assert.strictEqual(state.placement.yaw,0);assert.strictEqual(requests.length,2);
+armPlacement({asset});key('KeyQ');placementPointFromViewport=()=>({x:13,y:14,z:15});onCanvasPointerDown({button:0,shiftKey:false,clientX:50,clientY:50,preventDefault(){},stopPropagation(){}});requests=state.editorEvents.filter(e=>e.type==='placement_requested');assert.strictEqual(requests.length,3);assert.strictEqual(requests[2].yaw,-Math.PI/12);assert.strictEqual(requests[2].repeat,false);assert.strictEqual(state.placement.previewRoot,null);assert.strictEqual(state.placement.armed,false);assert.strictEqual(state.placement.yaw,0);
 `,sandbox);
 '''
     result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, text=True, capture_output=True)
