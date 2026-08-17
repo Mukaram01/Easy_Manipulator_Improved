@@ -804,3 +804,4 @@ body.embedded-mode #dirty-state::after {
 
 .placement-status.valid strong { color: #8fe0a9; }
 .placement-status.invalid strong { color: #ffd08a; }
+.placement-status.collision strong { color: #ff8f82; }
