@@ -180,6 +180,8 @@ add_executable(workcell_builder
     gui/startup_dialog.cpp
     gui/asset_catalog_model.cpp
     gui/asset_catalog_discovery.cpp
+    gui/asset_thumbnail_service.cpp
+    gui/asset_thumbnail_service.h
     gui/conveyor_sorting_scenario_wizard.cpp
     gui/conveyor_sorting_scenario_wizard.h
     gui/conveyor_sorting_scenario_wizard.ui
@@ -439,6 +441,9 @@ if(BUILD_TESTING)
     gui/asset_catalog_discovery.cpp
     src_workcell_warning_once.cpp
     src_workcell_yaml_utils.cpp)
+  ament_add_gtest(workcell_asset_thumbnail_service_test
+    test/asset_thumbnail_service_test.cpp
+    gui/asset_thumbnail_service.cpp)
   ament_add_gtest(workcell_visual_mesh_source_resolver_test
     test/visual_mesh_source_resolver_test.cpp
     src_visual_mesh_source_resolver.cpp)
@@ -525,6 +530,20 @@ if(BUILD_TESTING)
   if(TARGET workcell_asset_catalog_discovery_test)
     target_link_libraries(workcell_asset_catalog_discovery_test yaml-cpp ${Boost_LIBRARIES})
     target_include_directories(workcell_asset_catalog_discovery_test PRIVATE gui)
+  endif()
+  if(TARGET workcell_asset_thumbnail_service_test)
+    target_link_libraries(workcell_asset_thumbnail_service_test Qt5::Core Qt5::Gui Qt5::Concurrent)
+    target_include_directories(workcell_asset_thumbnail_service_test PRIVATE gui)
+    if(assimp_FOUND)
+      target_compile_definitions(workcell_asset_thumbnail_service_test PRIVATE WORKCELL_BUILDER_HAS_ASSIMP=1)
+      if(TARGET assimp::assimp)
+        target_link_libraries(workcell_asset_thumbnail_service_test assimp::assimp)
+      elseif(TARGET Assimp::assimp)
+        target_link_libraries(workcell_asset_thumbnail_service_test Assimp::assimp)
+      else()
+        target_link_libraries(workcell_asset_thumbnail_service_test ${ASSIMP_LIBRARIES} ${assimp_LIBRARIES})
+      endif()
+    endif()
   endif()
   if(TARGET workcell_visual_mesh_source_resolver_test)
     target_link_libraries(workcell_visual_mesh_source_resolver_test Qt5::Core ${Boost_LIBRARIES})
@@ -742,6 +761,7 @@ if(BUILD_TESTING)
     scene_preview_widget_ui_test.cpp
     workcell_studio_canvas_model_mesh_test.cpp
     asset_catalog_discovery_test.cpp
+    asset_thumbnail_service_test.cpp
     transform_clipboard_utils_test.cpp
     preview_item_suppression_test.cpp
     layout_serialization_contract_test.cpp

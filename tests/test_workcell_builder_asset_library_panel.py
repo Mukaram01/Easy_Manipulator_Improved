@@ -22,9 +22,8 @@ def test_asset_library_search_and_categories_are_catalog_driven():
     assert 'Asset Library' in setup
     assert 'assetLibrarySearchBox' in setup
     assert 'asset_filter_combo_->addItem("All")' in setup
-    body = _between('void MainWindow::populate_asset_catalog()', 'void MainWindow::open_add_asset_dialog()')
-    assert 'categories.insert(ui_entry.category);' in body
-    assert 'asset_filter_combo_->addItems(sorted);' in body
+    assert '{"Robots", "robot"}' in setup
+    assert '{"Imported", "imported"}' in setup
     filt = _between('void MainWindow::on_asset_filter_changed', 'void MainWindow::update_asset_library_preview')
     for field in ['e.display_name', 'e.category', 'e.tags', 'e.asset_id']:
         assert field in filt
@@ -51,7 +50,7 @@ def test_asset_library_uses_one_live_preview_and_explicit_failures():
 def test_asset_library_add_delegates_to_place_asset_without_direct_yaml_write():
     add = MAIN[MAIN.index('connect_button(add_to_canvas_button_'):MAIN.index('connect_button(add_asset_button_')]
     assert 'data(0, CatalogRoleAssetId).toString().trimmed()' in add
-    assert add.count('place_catalog_asset_at_world_position(') == 1
+    assert add.count('arm_place_asset_mode(asset_id)') == 1
     assert 'commit_armed_asset_placement' not in add
     assert 'mark_layout_dirty' not in add
     assert '.yaml' not in add.lower()

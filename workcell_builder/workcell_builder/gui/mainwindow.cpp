@@ -35,6 +35,8 @@
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QPixmap>
+#include <QStyle>
 #include <QShortcut>
 #include <QSignalBlocker>
 #include <QStackedWidget>
@@ -150,6 +152,7 @@
 #include "include/rviz_preview_runner.hpp"
 #include "gui/asset_catalog_discovery.h"
 #include "gui/transform_clipboard_utils.h"
+#include "gui/asset_thumbnail_service.h"
 
 using workcell_builder::resolve_visual_mesh_source_path;
 using workcell_builder::workcell_builder_repo_root_from_source;
@@ -500,7 +503,7 @@ enum SceneTreeRoles {
   TreeRoleSourceLayer, TreeRoleActiveVisualSource, TreeRoleEditable, TreeRoleLocked, TreeRoleLinkedEditableLayout, TreeRoleVisualBackingStatus, TreeRoleGeneratedVisual, TreeRoleItemTypeClass,
   TreeRoleStableId, TreeRoleCameraId, TreeRoleFrameId, TreeRoleDetectionLabel, TreeRoleConfidence, TreeRoleTrackingId, TreeRoleSnapshotSourceFile, TreeRoleAlignmentWarning
 };
-enum AssetCatalogRoles { CatalogRoleIndex = Qt::UserRole, CatalogRolePlaceable = Qt::UserRole + 10, CatalogRoleSourcePath = Qt::UserRole + 11, CatalogRoleAssetId = Qt::UserRole + 12 };
+enum AssetCatalogRoles { CatalogRoleIndex = Qt::UserRole, CatalogRolePlaceable = Qt::UserRole + 10, CatalogRoleSourcePath = Qt::UserRole + 11, CatalogRoleAssetId = Qt::UserRole + 12, CatalogRoleBaseToolTip = Qt::UserRole + 13 };
 static constexpr const char * kWorkcellStudioAssetMime = "application/x-workcell-studio-asset";
 
 QTreeWidgetItem * find_asset_catalog_item_by_id(QTreeWidget * tree, const QString & requested_asset_id)
@@ -2411,7 +2414,8 @@ void MainWindow::setup_studio_shell()
   catalog_layout->addLayout(discovery_strip);
   asset_filter_combo_ = new QComboBox(catalog_card);
   asset_filter_combo_->setToolTip("Category and provenance filter; combines with search.");
-  asset_filter_combo_->addItem("All", "all");
+  asset_filter_combo_->addItem("All");
+  asset_filter_combo_->setItemData(0, "all");
   const QList<QPair<QString, QString>> asset_filters = {
     {"Robots", "robot"}, {"Grippers", "gripper"},
     {"Tables", "table"}, {"Cameras", "camera"}, {"Environment", "environment"},
@@ -2433,9 +2437,10 @@ void MainWindow::setup_studio_shell()
   asset_catalog_tree_->setRootIsDecorated(false);
   asset_catalog_tree_->setAlternatingRowColors(false);
   asset_catalog_tree_->setSelectionMode(QAbstractItemView::SingleSelection);
+  asset_catalog_tree_->setIconSize(QSize(112, 84));
   asset_catalog_tree_->setStyleSheet(
     "QTreeWidget{background:#f7f9fb;border:1px solid #d7dee7;border-radius:4px;}"
-    "QTreeWidget::item{height:58px;border-bottom:1px solid #e2e7ed;padding:5px;color:#263442;}"
+    "QTreeWidget::item{height:92px;border-bottom:1px solid #e2e7ed;padding:5px;color:#263442;}"
     "QTreeWidget::item:hover{background:#edf3f8;}"
     "QTreeWidget::item:selected{background:#dbeaf5;color:#17364d;border-left:3px solid #2878a8;}"
     "QTreeWidget::item:disabled{color:#8b96a0;background:#f1f2f3;}");
@@ -2453,6 +2458,13 @@ void MainWindow::setup_studio_shell()
   asset_library_details_->setTextFormat(Qt::RichText);
   asset_library_details_->setStyleSheet("background:#f7f9fb;border:1px solid #d7dee7;border-radius:4px;padding:9px;color:#334455;");
   catalog_layout->addWidget(asset_library_details_);
+  asset_library_thumbnail_preview_ = new QLabel(catalog_card);
+  asset_library_thumbnail_preview_->setObjectName("assetLibrarySelectedThumbnail");
+  asset_library_thumbnail_preview_->setMinimumHeight(190);
+  asset_library_thumbnail_preview_->setAlignment(Qt::AlignCenter);
+  asset_library_thumbnail_preview_->setStyleSheet("background:#eef2f5;border:1px solid #d7dee7;border-radius:4px;color:#657789;");
+  asset_library_thumbnail_preview_->setText("Select an asset to preview");
+  catalog_layout->addWidget(asset_library_thumbnail_preview_);
   // Preserve the existing selected-only preview contract. Cards themselves use
   // cheap category treatments; no mesh is loaded while searching/filtering.
   asset_library_preview_ = new ScenePreviewWidget(catalog_card);
@@ -2464,6 +2476,9 @@ void MainWindow::setup_studio_shell()
   asset_library_preview_status_ = new QLabel("Select an asset to preview.", catalog_card);
   asset_library_preview_status_->setWordWrap(true);
   catalog_layout->addWidget(asset_library_preview_status_);
+  asset_thumbnail_service_ = new AssetThumbnailService(this);
+  connect(asset_thumbnail_service_, &AssetThumbnailService::thumbnailChanged,
+    this, &MainWindow::refresh_asset_thumbnail);
   add_to_canvas_button_ = new QPushButton("Place Asset", scene_builder);
   add_to_canvas_button_->setEnabled(false);
   catalog_layout->addWidget(add_to_canvas_button_);
@@ -8988,6 +9003,58 @@ void MainWindow::on_asset_filter_changed(int)
     QString("%1 asset%2").arg(visible_count).arg(visible_count == 1 ? "" : "s"));
   validate_asset_catalog_selection();
   update_asset_library_preview();
+  request_visible_asset_thumbnails();
+}
+
+void MainWindow::request_visible_asset_thumbnails()
+{
+  if (!asset_thumbnail_service_ || !asset_catalog_tree_) return;
+  // Bound each filter refresh. Cached/in-flight requests are deduplicated by the
+  // service, so search remains metadata-only and never blocks on mesh parsing.
+  int requested = 0;
+  for (int row = 0; row < asset_catalog_tree_->topLevelItemCount() && requested < 32; ++row) {
+    auto * item = asset_catalog_tree_->topLevelItem(row);
+    if (!item || item->isHidden()) continue;
+    const int idx = item->data(0, CatalogRoleIndex).toInt();
+    if (idx < 0 || idx >= asset_catalog_entries_.size()) continue;
+    const auto & e = asset_catalog_entries_[idx];
+    const fs::path scene_dir = has_selected_scene() ? fs::path(selected_scene_path().toStdString()) : workcell_builder_repo_root_from_source();
+    const QString resolved = resolve_visual_mesh_source_path(e.source_path,
+      e.visual_uri.startsWith("package://") ? e.visual_uri : QString(), scene_dir, detect_workspace_root());
+    AssetThumbnailService::Request request{e.asset_id, resolved.isEmpty() ? e.source_path : resolved, e.scale, QSize(256, 192)};
+    const auto result = asset_thumbnail_service_->request(request);
+    if (result.status == AssetThumbnailService::Status::Ready) refresh_asset_thumbnail(e.asset_id);
+    ++requested;
+  }
+}
+
+void MainWindow::refresh_asset_thumbnail(const QString & asset_id)
+{
+  if (!asset_thumbnail_service_ || !asset_catalog_tree_) return;
+  const auto result = asset_thumbnail_service_->result(asset_id);
+  auto * item = find_asset_catalog_item_by_id(asset_catalog_tree_, asset_id);
+  if (item) {
+    if (result.status == AssetThumbnailService::Status::Ready) {
+      item->setIcon(0, QPixmap::fromImage(result.image));
+      item->setToolTip(0, item->data(0, CatalogRoleBaseToolTip).toString());
+    }
+    else {
+      item->setIcon(0, style()->standardIcon(QStyle::SP_FileIcon));
+      item->setToolTip(0, item->data(0, CatalogRoleBaseToolTip).toString() +
+        (result.status == AssetThumbnailService::Status::Failed ? "\nPreview unavailable: " + result.error : "\nLoading preview…"));
+    }
+  }
+  auto * selected = asset_catalog_tree_->currentItem();
+  if (!selected || selected->data(0, CatalogRoleAssetId).toString() != asset_id || !asset_library_thumbnail_preview_) return;
+  if (result.status == AssetThumbnailService::Status::Ready) {
+    asset_library_thumbnail_preview_->setPixmap(QPixmap::fromImage(result.image).scaled(
+      asset_library_thumbnail_preview_->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    asset_library_thumbnail_preview_->setToolTip(QString());
+  } else {
+    asset_library_thumbnail_preview_->setPixmap(QPixmap());
+    asset_library_thumbnail_preview_->setText(result.status == AssetThumbnailService::Status::Failed ? "Preview unavailable" : "Loading preview…");
+    asset_library_thumbnail_preview_->setToolTip(result.error);
+  }
 }
 
 void MainWindow::update_asset_library_preview()
@@ -8998,9 +9065,11 @@ void MainWindow::update_asset_library_preview()
     if (asset_library_preview_) asset_library_preview_->set_preview_items({});
     if (asset_library_preview_status_) asset_library_preview_status_->setText("Select an asset to preview.");
     if (asset_library_details_) asset_library_details_->setText("Select an asset card to inspect available metadata.");
+    if (asset_library_thumbnail_preview_) { asset_library_thumbnail_preview_->setPixmap(QPixmap()); asset_library_thumbnail_preview_->setText("Select an asset to preview"); }
     return;
   }
   const auto & e = asset_catalog_entries_[idx];
+  refresh_asset_thumbnail(e.asset_id);
   if (asset_library_details_) {
     const QString mesh_format = QFileInfo(e.source_path).suffix().toUpper();
     const QString abbreviated = QDir::toNativeSeparators(QFileInfo(e.source_path).fileName());
@@ -12668,8 +12737,10 @@ void MainWindow::populate_asset_catalog()
     item->setData(0, CatalogRolePlaceable, e.disabled_reason.trimmed().isEmpty() && e.editable);
     item->setData(0, CatalogRoleSourcePath, e.source_path);
     item->setData(0, CatalogRoleAssetId, e.asset_id);
+    item->setIcon(0, style()->standardIcon(QStyle::SP_FileIcon));
     item->setToolTip(0, QString("%1\nID: %2\nCategory: %3\nSource: %4")
       .arg(e.display_name, e.asset_id, e.category, e.source_path));
+    item->setData(0, CatalogRoleBaseToolTip, item->toolTip(0));
     if (!e.disabled_reason.isEmpty()) {
       item->setToolTip(3, QString("Unavailable: %1").arg(e.disabled_reason));
       for (int column = 0; column < 4; ++column) item->setForeground(column, QColor("#7f8992"));

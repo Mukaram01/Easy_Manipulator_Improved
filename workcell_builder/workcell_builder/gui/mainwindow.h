@@ -40,6 +40,7 @@
 #include "workcell_studio_layout_merge.hpp"
 #include "studio_log_issue_tracker.hpp"
 #include "gui/scene_preview_widget.h"
+#include "gui/asset_thumbnail_service.h"
 
 namespace fs = boost::filesystem;
 
@@ -243,6 +244,9 @@ private:
     QString normalized_category;
     QString provenance;
     QString package_hint;
+    QString normalized_category;
+    QString provenance;
+    QString package_hint;
     QString type;
     QString source_path;
     QString asset_id;
@@ -426,6 +430,8 @@ private:
   void place_selected_asset_from_dialog();
   void validate_asset_catalog_selection();
   void update_asset_library_preview();
+  void request_visible_asset_thumbnails();
+  void refresh_asset_thumbnail(const QString & asset_id);
   QString selected_catalog_item_path() const;
   void run_diagnostics_self_test();
   void run_diagnostics_golden_flow_dry_run();
@@ -566,6 +572,8 @@ private:
   QComboBox * asset_filter_combo_{ nullptr };
   QLineEdit * asset_library_search_{ nullptr };
   ScenePreviewWidget * asset_library_preview_{ nullptr };
+  QLabel * asset_library_thumbnail_preview_{ nullptr };
+  AssetThumbnailService * asset_thumbnail_service_{ nullptr };
   QLabel * asset_library_preview_status_{ nullptr };
   QLabel * asset_library_result_count_{ nullptr };
   QLabel * asset_library_details_{ nullptr };
