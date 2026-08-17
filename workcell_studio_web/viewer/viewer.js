@@ -40,7 +40,7 @@ const CAMERA_PRESET_DIRECTIONS = Object.freeze({
   top: [0, -0.001, 1],
   robot: [1.1, -1.25, 0.72],
 });
-const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], pickRecords: [], pickIdentityByObject: new WeakMap(), selectionIdentityIndex: null, physicalEditBindings: new Map(), assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: '', three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, gizmoPivot: null, gizmoPivotDragStart: null, cancellingTransformOperation: false, gizmoAttachmentDiagnostic: { targetId: '', reason: 'not_evaluated' }, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', placement: { armed: false, persistent: false }, robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: '', lastCanvasPickReason: '', lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
+const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], pickRecords: [], pickIdentityByObject: new WeakMap(), selectionIdentityIndex: null, physicalEditBindings: new Map(), assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: '', three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, gizmoPivot: null, gizmoPivotDragStart: null, cancellingTransformOperation: false, gizmoAttachmentDiagnostic: { targetId: '', reason: 'not_evaluated' }, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', placement: { armed: false, persistent: false, previewRoot: null, asset: null }, robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: '', lastCanvasPickReason: '', lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
 let robotPreviewLoadToken = 0;
 let physicalLoadToken = 0;
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
@@ -48,6 +48,7 @@ const STAGED_MESH_ROOTS = [
   'build/workcell_studio_web_scene/assets/',
   'workcell_studio_web/',
   'assets/',
+  'scenes/',
 ];
 const EXPECTED_GENERATED_URDF_DIAGNOSTIC_LINKS = Object.freeze([]);
 
@@ -5041,7 +5042,7 @@ function placementPointOnAuthoredSupportSurface(raycaster) {
 }
 // Typed input contract: {clientX, clientY}, in browser client pixels. The point
 // must lie inside the current canvas bounds; malformed and out-of-range input fails.
-function placementPointFromViewport(position) {
+function placementPointFromViewport(position, options = {}) {
   const clientX = position?.clientX;
   const clientY = position?.clientY;
   const rect = el.canvas?.getBoundingClientRect?.();
@@ -5067,6 +5068,7 @@ function placementPointFromViewport(position) {
     return supportSurfacePoint;
   }
 
+  if (options.allowGround === false) return null;
   if (!THREE?.Plane || !THREE?.Vector3 || !raycaster.ray?.intersectPlane) return null;
   const fallback = new THREE.Vector3();
   const groundPoint = raycaster.ray.intersectPlane(
@@ -5075,17 +5077,93 @@ function placementPointFromViewport(position) {
   ) ? finitePlacementPoint(fallback) : null;
   return groundPoint;
 }
+function markPlacementPreviewHelper(root) {
+  root.name = 'placement_preview_helper';
+  root.traverse?.(node => {
+    node.userData.placement_preview = true;
+    node.userData.exclude_from_physical_bounds = true;
+    node.userData.exclude_from_fit_bounds = true;
+    node.userData.selectable = false;
+  });
+  return root;
+}
+function stylePlacementPreview(root) {
+  root?.traverse?.(node => {
+    if (!node?.isMesh || !node.material) return;
+    const originals = Array.isArray(node.material) ? node.material : [node.material];
+    const previews = originals.map(material => {
+      const preview = material.clone?.() || material;
+      preview.transparent = true;
+      preview.opacity = 0.5;
+      preview.depthWrite = false;
+      return preview;
+    });
+    node.material = Array.isArray(node.material) ? previews : previews[0];
+  });
+}
+function removePlacementPreview() {
+  const root = state.placement.previewRoot;
+  if (!root) return;
+  state.three.scene?.remove?.(root);
+  disposeOwnedObject3d(root);
+  state.placement.previewRoot = null;
+}
+async function createPlacementPreview(asset) {
+  removePlacementPreview();
+  if (!state.placement.armed || !state.three.scene || !THREE?.Group) return null;
+  const root = markPlacementPreviewHelper(new THREE.Group());
+  root.visible = false;
+  state.placement.previewRoot = root;
+  state.three.scene.add(root);
+
+  const placeholder = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.08, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0x8aa38d, transparent: true, opacity: 0.5, depthWrite: false })
+  );
+  root.add(placeholder);
+  markPlacementPreviewHelper(placeholder);
+
+  const uri = safeMeshUri(asset);
+  if (!uri) return root;
+  try {
+    const ext = meshExtensionFromUri(uri);
+    const loader = ext === 'stl' ? new STLLoader() : (ext === 'dae' ? new ColladaLoader() : new OBJLoader());
+    const loaded = await loadMeshWithDeadline(loader, repoRootRelativeUrl(uri));
+    if (state.placement.previewRoot !== root || !state.placement.armed) return root;
+    const mesh = materializeLoadedMesh(asset, uri, loaded);
+    const visual = makeMeshVisualRoot(asset, mesh);
+    stylePlacementPreview(visual);
+    markPlacementPreviewHelper(visual);
+    root.remove(placeholder);
+    disposeOwnedObject3d(placeholder);
+    root.add(visual);
+  } catch (_) {
+    // Keep the temporary bounds placeholder; a visual load failure cannot block placement.
+  }
+  return root;
+}
+function updatePlacementPreview(position) {
+  const root = state.placement.previewRoot;
+  if (!state.placement.armed || !root) return null;
+  const point = placementPointFromViewport(position, { allowGround: false });
+  root.visible = Boolean(point);
+  if (point) root.position.set(point.x, point.y, point.z);
+  return point;
+}
 function getPlacementState() { return { armed: state.placement.armed, persistent: state.placement.persistent }; }
 function armPlacement(options = {}) {
   if (options === null || typeof options !== 'object' || Array.isArray(options)) return null;
-  state.placement = { armed: true, persistent: options.persistent === true };
+  const asset = options.asset && typeof options.asset === 'object' && !Array.isArray(options.asset) ? { ...options.asset } : {};
+  state.placement = { armed: true, persistent: options.persistent === true, previewRoot: null, asset };
+  createPlacementPreview(asset);
   el.canvas?.classList?.add('placement-armed');
   if (el.canvas?.style) el.canvas.style.cursor = 'crosshair';
   el.canvas?.setAttribute?.('aria-label', 'Drop to place');
   return getPlacementState();
 }
 function cancelPlacement() {
-  state.placement = { armed: false, persistent: false };
+  removePlacementPreview();
+  state.placement = { armed: false, persistent: false, previewRoot: null, asset: null };
   el.canvas?.classList?.remove('placement-armed');
   if (el.canvas?.style) el.canvas.style.cursor = '';
   el.canvas?.setAttribute?.('aria-label', 'Workcell 3D canvas');
@@ -5213,10 +5291,12 @@ function transformControlsOwnsPointerDown(event, transformControls = state.three
 function onCanvasPointerDown(event) {
   if (event.button === 0) {
     if (state.placement.armed) {
-      const point = placementPointFromViewport({ clientX: event.clientX, clientY: event.clientY });
+      const point = placementPointFromViewport({ clientX: event.clientX, clientY: event.clientY }, { allowGround: false });
       if (!point) return;
+      removePlacementPreview();
       pushEditorEvent('placement_requested', point);
       if (!state.placement.persistent) cancelPlacement();
+      else createPlacementPreview(state.placement.asset);
       event.preventDefault?.();
       event.stopPropagation?.();
       return;
@@ -5231,7 +5311,9 @@ function onCanvasPointerDown(event) {
     pickObject(event);
   }
 }
-function onCanvasPointerMove(event) {}
+function onCanvasPointerMove(event) {
+  if (state.placement.armed) updatePlacementPreview({ clientX: event.clientX, clientY: event.clientY });
+}
 function onCanvasPointerUp(event) {}
 function onCanvasPointerCancel() { cancelActiveTransformOperation('Pointer cancelled'); }
 function onCanvasContextMenu(event) { event.preventDefault(); }

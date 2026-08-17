@@ -804,7 +804,9 @@ def test_qt_arms_and_cancels_existing_browser_placement_api():
     assert "cancel_embedded_asset_placement" in HDR
     assert "ScenePreviewWidget::ProductViewBackend::EmbeddedWeb3D" in arm
     assert "scene_preview_widget_->arm_embedded_asset_placement(" in arm
-    assert "__WORKCELL_EDITOR_API_V1__.armPlacement({persistent:%1})" in CPP
+    assert "__WORKCELL_EDITOR_API_V1__.armPlacement(%1)" in CPP
+    assert 'QStringLiteral("mesh_uri")' in CPP
+    assert 'QStringLiteral("mesh_scale")' in CPP
     assert "__WORKCELL_EDITOR_API_V1__.cancelPlacement()" in CPP
     assert "cancel_embedded_asset_placement();" in handoff
 
