@@ -174,6 +174,36 @@ TEST(AssetLibraryModel, MissingOptionalMetadataAndRefreshRemainStable)
   EXPECT_EQ(filter_asset_catalog(catalog, "", "all").size(), 1u);
 }
 
+TEST(AssetLibraryModel, RecentIdsAreDeduplicatedOrderedAndBoundedAfterCommit)
+{
+  std::vector<std::string> recent;
+  recent = record_recent_asset_id(recent, "asset_a", 3);
+  recent = record_recent_asset_id(recent, "asset_b", 3);
+  recent = record_recent_asset_id(recent, "asset_a", 3);
+  EXPECT_EQ(recent, (std::vector<std::string>{"asset_a", "asset_b"}));
+  recent = record_recent_asset_id(recent, "asset_c", 3);
+  recent = record_recent_asset_id(recent, "asset_d", 3);
+  EXPECT_EQ(recent, (std::vector<std::string>{"asset_d", "asset_c", "asset_a"}));
+}
+
+TEST(AssetLibraryModel, RecentFilterPreservesUseOrderComposesWithSearchAndSkipsStaleIds)
+{
+  AssetCatalogEntry robot;
+  robot.id = "robot";
+  robot.display_name = "Robotiq 2F-85";
+  AssetCatalogEntry camera;
+  camera.id = "camera";
+  camera.display_name = "RealSense Camera";
+  AssetCatalogEntry table;
+  table.id = "table";
+  table.display_name = "Workbench";
+  const std::vector<AssetCatalogEntry> catalog{robot, camera, table};
+  const std::vector<std::string> recent{"camera", "stale_removed_asset", "robot"};
+
+  EXPECT_EQ(filter_recent_asset_catalog(catalog, recent, ""), (std::vector<size_t>{1, 0}));
+  EXPECT_EQ(filter_recent_asset_catalog(catalog, recent, "rob"), (std::vector<size_t>{0}));
+}
+
 TEST(AssetLibraryModel, DiscoveryRefreshDoesNotDuplicateImportedManifestEntry)
 {
   const fs::path repo = make_tmp_dir("refresh_repo");

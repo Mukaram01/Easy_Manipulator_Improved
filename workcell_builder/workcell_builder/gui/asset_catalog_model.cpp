@@ -315,6 +315,35 @@ std::vector<size_t> filter_asset_catalog(
   return matches;
 }
 
+std::vector<std::string> record_recent_asset_id(
+  const std::vector<std::string> & recent_ids, const std::string & asset_id,
+  size_t maximum)
+{
+  std::vector<std::string> updated;
+  if (!asset_id.empty() && maximum > 0) updated.push_back(asset_id);
+  for (const auto & id : recent_ids) {
+    if (id.empty() || id == asset_id || updated.size() >= maximum) continue;
+    updated.push_back(id);
+  }
+  return updated;
+}
+
+std::vector<size_t> filter_recent_asset_catalog(
+  const std::vector<AssetCatalogEntry> & assets,
+  const std::vector<std::string> & recent_ids, const std::string & query)
+{
+  std::vector<size_t> matches;
+  for (const auto & id : recent_ids) {
+    const auto match = std::find_if(assets.cbegin(), assets.cend(), [&id](const auto & entry) {
+      return entry.id == id;
+    });
+    if (match != assets.cend() && asset_library_matches(*match, query, "all")) {
+      matches.push_back(static_cast<size_t>(std::distance(assets.cbegin(), match)));
+    }
+  }
+  return matches;
+}
+
 AssetCatalogModel discover_asset_catalog(
   const std::string & workspace_root,
   const std::string & repo_root,

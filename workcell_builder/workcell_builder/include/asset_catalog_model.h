@@ -36,6 +36,12 @@ bool asset_library_matches(
 std::vector<size_t> filter_asset_catalog(
   const std::vector<AssetCatalogEntry> & assets, const std::string & query,
   const std::string & normalized_filter);
+std::vector<std::string> record_recent_asset_id(
+  const std::vector<std::string> & recent_ids, const std::string & asset_id,
+  size_t maximum = 8);
+std::vector<size_t> filter_recent_asset_catalog(
+  const std::vector<AssetCatalogEntry> & assets,
+  const std::vector<std::string> & recent_ids, const std::string & query);
 
 struct AssetCatalogModel
 {

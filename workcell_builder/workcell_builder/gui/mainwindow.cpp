@@ -2417,6 +2417,7 @@ void MainWindow::setup_studio_shell()
   asset_filter_combo_->addItem("All");
   asset_filter_combo_->setItemData(0, "all");
   const QList<QPair<QString, QString>> asset_filters = {
+    {"Recent", "recent"},
     {"Robots", "robot"}, {"Grippers", "gripper"},
     {"Tables", "table"}, {"Cameras", "camera"}, {"Environment", "environment"},
     {"Imported", "imported"}, {"Other", "other"}};
@@ -2481,7 +2482,24 @@ void MainWindow::setup_studio_shell()
     this, &MainWindow::refresh_asset_thumbnail);
   add_to_canvas_button_ = new QPushButton("Place Asset", scene_builder);
   add_to_canvas_button_->setEnabled(false);
-  catalog_layout->addWidget(add_to_canvas_button_);
+  place_again_button_ = new QPushButton("Place Again", scene_builder);
+  place_again_button_->setEnabled(false);
+  place_again_button_->setToolTip("Place an asset successfully before using Place Again.");
+  recent_asset_ids_ = QSettings().value(
+    QStringLiteral("asset_library/recent_catalog_ids")).toStringList();
+  {
+    QStringList normalized;
+    for (const auto & id : recent_asset_ids_) {
+      const QString stable_id = id.trimmed();
+      if (!stable_id.isEmpty() && !normalized.contains(stable_id)) normalized.append(stable_id);
+      if (normalized.size() == 8) break;
+    }
+    recent_asset_ids_ = normalized;
+  }
+  auto * placement_actions = new QHBoxLayout();
+  placement_actions->addWidget(add_to_canvas_button_, 1);
+  placement_actions->addWidget(place_again_button_);
+  catalog_layout->addLayout(placement_actions);
   add_asset_button_ = new QPushButton("Browse Details", scene_builder);
   catalog_layout->addWidget(add_asset_button_);
   auto * asset_more_actions = new QToolButton(scene_builder);
@@ -3610,6 +3628,7 @@ void MainWindow::setup_studio_shell()
   connect_action(open_asset_folder_action, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).isDir() ? p : QFileInfo(p).absolutePath())); });
   connect_action(copy_asset_path_action, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QApplication::clipboard()->setText(p); append_studio_log("Copy Asset Path: " + p); });
   connect_button(add_to_canvas_button_, [this](){ if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) { QMessageBox::information(this, "Asset Catalog", "Select an asset to add to canvas."); return; } auto *it = asset_catalog_tree_->currentItem(); const QString asset_id = it->data(0, CatalogRoleAssetId).toString().trimmed(); const int idx = it->data(0, CatalogRoleIndex).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) { QMessageBox::information(this, "Asset Catalog", e.disabled_reason); return; } arm_place_asset_mode(asset_id); });
+  connect_button(place_again_button_, [this](){ place_last_asset_again(); });
   connect_button(add_asset_button_, &MainWindow::open_add_asset_dialog);
   connect_if(scene_workflow_recommendation_button_, this, &QPushButton::clicked, [this]() {
     trigger_recommended_workflow_action(resolve_recommended_workflow_action().handler);
@@ -8939,6 +8958,7 @@ void MainWindow::commit_armed_asset_placement(
     .arg(armed_asset_roll_rad_, 0, 'f', 3).arg(armed_asset_pitch_rad_, 0, 'f', 3).arg(armed_asset_yaw_rad_, 0, 'f', 3)
     .arg(armed_asset_use_clicked_xy_ ? "true" : "false"));
   append_studio_log("ghost placement preview committed");
+  record_recent_asset(asset_id);
   if (scene_preview_widget_) scene_preview_widget_->select_preview_item(new_id);
   if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->setCurrentIndex(0);
   refresh_diagnostics_quick_status();
@@ -8969,6 +8989,55 @@ void MainWindow::validate_asset_catalog_selection()
   }
   add_to_canvas_button_->setEnabled(can_add);
   add_to_canvas_button_->setToolTip(can_add ? "Start existing Place Asset mode for the selected catalog asset." : disabled_reason);
+  update_place_again_action();
+}
+
+void MainWindow::record_recent_asset(const QString & asset_id)
+{
+  std::vector<std::string> current;
+  current.reserve(static_cast<size_t>(recent_asset_ids_.size()));
+  for (const auto & id : recent_asset_ids_) current.push_back(id.toStdString());
+  const auto updated = record_recent_asset_id(current, asset_id.trimmed().toStdString(), 8);
+  recent_asset_ids_.clear();
+  for (const auto & id : updated) recent_asset_ids_.append(QString::fromStdString(id));
+  QSettings().setValue(QStringLiteral("asset_library/recent_catalog_ids"), recent_asset_ids_);
+  if (asset_filter_combo_ && asset_filter_combo_->currentData().toString() == QStringLiteral("recent")) {
+    on_asset_filter_changed(asset_filter_combo_->currentIndex());
+  } else {
+    update_place_again_action();
+  }
+}
+
+void MainWindow::update_place_again_action()
+{
+  if (!place_again_button_) return;
+  if (recent_asset_ids_.isEmpty()) {
+    place_again_button_->setEnabled(false);
+    place_again_button_->setToolTip("Place an asset successfully before using Place Again.");
+    return;
+  }
+  const QString last_id = recent_asset_ids_.front();
+  const auto match = std::find_if(asset_catalog_entries_.cbegin(), asset_catalog_entries_.cend(),
+    [&last_id](const AssetCatalogEntry & entry) { return entry.asset_id == last_id; });
+  const bool available = match != asset_catalog_entries_.cend() && match->editable &&
+    match->disabled_reason.trimmed().isEmpty() && digital_twin_scene_;
+  place_again_button_->setEnabled(available);
+  if (available) {
+    place_again_button_->setToolTip(QStringLiteral("Arm normal placement for %1 with default yaw 0.")
+      .arg(match->display_name));
+  } else {
+    place_again_button_->setToolTip(QStringLiteral(
+      "Last placed catalog asset '%1' is unavailable or not placeable in the current scene.").arg(last_id));
+  }
+}
+
+void MainWindow::place_last_asset_again()
+{
+  update_place_again_action();
+  if (!place_again_button_ || !place_again_button_->isEnabled() || recent_asset_ids_.isEmpty()) return;
+  // Deliberately use the same catalog arming pipeline as Place Asset. It creates
+  // no scene instance until the existing native placement commit succeeds.
+  arm_place_asset_mode(recent_asset_ids_.front());
 }
 
 
@@ -8990,6 +9059,27 @@ void MainWindow::on_asset_filter_changed(int)
   const QString selected = asset_filter_combo_ ? asset_filter_combo_->currentData().toString() : "all";
   const QString query = asset_library_search_ ? asset_library_search_->text().trimmed().toLower() : QString();
   if (!asset_catalog_tree_) return;
+  QSet<int> recent_indices;
+  QVector<int> display_order;
+  if (selected == QStringLiteral("recent")) {
+    std::vector<::AssetCatalogEntry> model_entries;
+    model_entries.reserve(static_cast<size_t>(asset_catalog_entries_.size()));
+    for (const auto & e : asset_catalog_entries_) {
+      ::AssetCatalogEntry entry;
+      entry.id = e.asset_id.toStdString();
+      entry.display_name = e.display_name.toStdString();
+      entry.category = e.category.toStdString();
+      entry.path = e.source_path.toStdString();
+      entry.model = e.tags.toStdString();
+      model_entries.push_back(entry);
+    }
+    std::vector<std::string> ids;
+    for (const auto & id : recent_asset_ids_) ids.push_back(id.toStdString());
+    for (const size_t idx : filter_recent_asset_catalog(model_entries, ids, query.toStdString())) {
+      recent_indices.insert(static_cast<int>(idx));
+      display_order.push_back(static_cast<int>(idx));
+    }
+  }
   int visible_count = 0;
   for (int i = 0; i < asset_catalog_tree_->topLevelItemCount(); ++i) {
     auto * item = asset_catalog_tree_->topLevelItem(i);
@@ -8998,6 +9088,7 @@ void MainWindow::on_asset_filter_changed(int)
     if (idx >= 0 && idx < asset_catalog_entries_.size()) {
       const auto & e = asset_catalog_entries_[idx];
       const bool category_match = selected == "all" ||
+        (selected == "recent" && recent_indices.contains(idx)) ||
         (selected == "imported" ? e.provenance == "imported" : e.normalized_category == selected);
       const QString haystack = QString("%1 %2 %3 %4 %5 %6")
         .arg(e.display_name, e.category, e.tags, e.asset_id, e.source_path, e.package_hint).toLower();
@@ -9006,11 +9097,32 @@ void MainWindow::on_asset_filter_changed(int)
     item->setHidden(!visible);
     if (visible) ++visible_count;
   }
+  if (selected == QStringLiteral("recent")) {
+    QVector<QTreeWidgetItem *> rows;
+    while (asset_catalog_tree_->topLevelItemCount() > 0)
+      rows.push_back(asset_catalog_tree_->takeTopLevelItem(0));
+    for (const int wanted : display_order) {
+      const auto found = std::find_if(rows.cbegin(), rows.cend(), [wanted](const auto * row) {
+        return row->data(0, CatalogRoleIndex).toInt() == wanted;
+      });
+      if (found != rows.cend()) asset_catalog_tree_->addTopLevelItem(*found);
+    }
+    for (auto * row : rows) if (row->treeWidget() != asset_catalog_tree_) asset_catalog_tree_->addTopLevelItem(row);
+  } else {
+    QVector<QTreeWidgetItem *> rows;
+    while (asset_catalog_tree_->topLevelItemCount() > 0)
+      rows.push_back(asset_catalog_tree_->takeTopLevelItem(0));
+    std::sort(rows.begin(), rows.end(), [](const auto * a, const auto * b) {
+      return a->data(0, CatalogRoleIndex).toInt() < b->data(0, CatalogRoleIndex).toInt();
+    });
+    for (auto * row : rows) asset_catalog_tree_->addTopLevelItem(row);
+  }
   if (asset_library_result_count_) asset_library_result_count_->setText(
     QString("%1 asset%2").arg(visible_count).arg(visible_count == 1 ? "" : "s"));
   validate_asset_catalog_selection();
   update_asset_library_preview();
   request_visible_asset_thumbnails();
+  update_place_again_action();
 }
 
 void MainWindow::request_visible_asset_thumbnails()

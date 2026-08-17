@@ -427,6 +427,9 @@ private:
   void on_hierarchy_item_selected(QTreeWidgetItem * item);
   void refresh_selected_item_card();
   void on_asset_filter_changed(int index);
+  void record_recent_asset(const QString & asset_id);
+  void update_place_again_action();
+  void place_last_asset_again();
   void open_add_asset_dialog();
   void refresh_add_asset_dialog_details();
   void place_selected_asset_from_dialog();
@@ -580,6 +583,7 @@ private:
   QLabel * asset_library_result_count_{ nullptr };
   QLabel * asset_library_details_{ nullptr };
   QPushButton * add_to_canvas_button_{ nullptr };
+  QPushButton * place_again_button_{ nullptr };
   QPushButton * add_asset_button_{ nullptr };
   QPushButton * pick_source_button_{ nullptr };
   QPushButton * place_target_button_{ nullptr };
@@ -665,6 +669,7 @@ private:
   QGraphicsView * minimap_view_{ nullptr };
   bool minimap_requested_visible_{ true };
   QVector<AssetCatalogEntry> asset_catalog_entries_;
+  QStringList recent_asset_ids_;
   QPoint catalog_drag_start_;
   QDialog * add_asset_dialog_{ nullptr };
   QTableWidget * add_asset_dialog_table_{ nullptr };
