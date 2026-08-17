@@ -12,6 +12,7 @@
 #include <QDateTime>
 #include <QUrl>
 #include <QJsonObject>
+#include <functional>
 #include "robot_home_yaml_io.hpp"
 #include "workcell_studio_canvas_model.hpp"
 
@@ -264,6 +265,10 @@ public:
     const QString & asset_id, const QString & mesh_uri, double mesh_scale,
     bool persistent = false);
   void cancel_embedded_asset_placement();
+  // Native drag/drop is only a lifecycle adapter. MainWindow resolves the
+  // catalog identity and arms/cancels the same placement session as the button.
+  std::function<bool(const QString &)> catalog_asset_drag_enter_cb;
+  std::function<void()> catalog_asset_drag_cancel_cb;
   void reload_meshes();
   void apply_product_view_defaults();
   struct RenderDebugCounters

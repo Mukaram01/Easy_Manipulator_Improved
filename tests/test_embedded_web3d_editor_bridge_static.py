@@ -85,19 +85,13 @@ assert.deepStrictEqual(getPlacementState(),{armed:false,persistent:false,valid:n
 
 
 def test_webengine_asset_drop_uses_browser_placement_contract_and_typed_xyz_path():
-    drop_handler = CPP.split("class AssetDropWebEngineView", 1)[1].split("private:", 1)[0]
+    drop_handler = CPP.split("class AssetDropWebEngineView", 1)[1].split("#endif", 1)[0]
 
     assert "window.__WORKCELL_EDITOR_API_V1__" in drop_handler
-    assert "api.placementPointFromViewport({clientX:%1,clientY:%2})" in drop_handler
+    assert "updatePlacementPointer?.(%1,%2)" in drop_handler
+    assert "commitPlacementPointer?.(%1,%2)" in drop_handler
     assert "pointerToWorldPlane" not in drop_handler
-    assert "[hit.x,hit.y,hit.z].every(Number.isFinite)" in drop_handler
-    assert "std::isfinite(x)" in drop_handler
-    assert "std::isfinite(y)" in drop_handler
-    assert "std::isfinite(z)" in drop_handler
-    assert "placement_requested(asset_id, x, y, z, configure_transform)" in drop_handler
-
-    forwarding = CPP.split("asset_drop_web_view->placement_requested", 1)[1].split("embedded_web_view_->setObjectName", 1)[0]
-    assert "emit asset_placement_requested(asset_id, x, y, z, configure_transform)" in forwarding
+    assert "placement_requested(" not in drop_handler
 
     main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
     placement = main.split("bool MainWindow::place_catalog_asset_at_world_position", 1)[1].split("bool MainWindow::configure_asset_placement_transform", 1)[0]
@@ -775,15 +769,14 @@ def test_qt_web3d_selected_transform_inspector_round_trip_contract():
 def test_embedded_asset_drop_is_identity_only_and_uses_typed_shared_request():
     header = (ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.h").read_text(encoding="utf-8")
     drop_view = CPP.split("class AssetDropWebEngineView", 1)[1].split("#endif", 1)[0]
-    assert 'application/x-workcell-studio-asset' in drop_view
+    assert 'application/x-workcell-studio-catalog-asset' in drop_view
     assert 'mime->formats() != QStringList{kMimeType}' in drop_view
-    assert 'payload.size() != 1' in drop_view
-    assert 'payload.contains(QStringLiteral("asset_id"))' in drop_view
+    assert 'QString::fromUtf8(mime->data(kMimeType)).trimmed()' in drop_view
     assert 'source_path' not in drop_view and 'text/uri-list' not in drop_view
-    assert drop_view.count('placement_requested(asset_id, x, y, z, configure_transform)') == 1
-    assert 'api.placementPointFromViewport({clientX:%1,clientY:%2})' in drop_view
+    assert 'placement_requested(' not in drop_view
+    assert 'commitPlacementPointer?.(%1,%2)' in drop_view
     assert 'pointerToWorldPlane' not in drop_view
-    assert 'void asset_placement_requested(' in header
+    assert 'catalog_asset_drag_enter_cb' in header
 
 
 def test_embedded_and_native_frontends_connect_to_same_mainwindow_backend():

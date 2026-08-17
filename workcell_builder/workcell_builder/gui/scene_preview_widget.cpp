@@ -288,6 +288,7 @@ void maybe_warn_overlay_fit_dominance(ScenePreviewWidget * self, const QRectF & 
 #include <QWebEnginePage>
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
+#include <QDragLeaveEvent>
 #include <QDropEvent>
 #include <QMimeData>
 #endif
@@ -320,75 +321,91 @@ QString scene_preview_mouse_help_tooltip(const QString & unavailable_reason)
 class AssetDropWebEngineView final : public QWebEngineView
 {
 public:
-  using PlacementHandler = std::function<void(const QString &, double, double, double, bool)>;
+  using DragEnterHandler = std::function<bool(const QString &)>;
+  using CancelHandler = std::function<void()>;
 
   explicit AssetDropWebEngineView(QWidget * parent = nullptr) : QWebEngineView(parent)
   {
     setAcceptDrops(true);
   }
 
-  PlacementHandler placement_requested;
+  DragEnterHandler drag_entered;
+  CancelHandler drag_cancelled;
 
 protected:
   void dragEnterEvent(QDragEnterEvent * event) override
   {
-    if (has_supported_asset_payload(event->mimeData())) event->acceptProposedAction();
-    else event->ignore();
+    const QString asset_id = parse_asset_id(event->mimeData());
+    drag_active_ = !asset_id.isEmpty() && drag_entered && drag_entered(asset_id);
+    if (drag_active_) {
+      drag_asset_id_ = asset_id;
+      update_pointer(event->pos());
+      event->acceptProposedAction();
+    } else event->ignore();
   }
 
   void dragMoveEvent(QDragMoveEvent * event) override
   {
-    if (has_supported_asset_payload(event->mimeData())) event->acceptProposedAction();
-    else event->ignore();
+    if (drag_active_ && parse_asset_id(event->mimeData()) == drag_asset_id_) {
+      update_pointer(event->pos());
+      event->acceptProposedAction();
+    } else event->ignore();
+  }
+
+  void dragLeaveEvent(QDragLeaveEvent * event) override
+  {
+    cancel_drag();
+    event->accept();
   }
 
   void dropEvent(QDropEvent * event) override
   {
-    const QString asset_id = parse_asset_id(event->mimeData());
-    if (asset_id.isEmpty()) { event->ignore(); return; }
-    const QPoint point = event->pos();
-    const bool configure_transform = event->keyboardModifiers().testFlag(Qt::ShiftModifier);
+    if (!drag_active_ || parse_asset_id(event->mimeData()) != drag_asset_id_) {
+      event->ignore();
+      cancel_drag();
+      return;
+    }
+    const QPoint point = event->pos(); // QWebEngineView-local == browser client coordinates.
+    drag_active_ = false;
+    drag_asset_id_.clear();
     event->acceptProposedAction();
-
-    // The browser owns its camera and canvas geometry. Ask it for the authored
-    // world coordinate; never infer a position or accept a filesystem payload
-    // in the Qt host. The callback emits at most one typed request per drop.
     const QString script = QStringLiteral(
-      "(() => { const api = window.__WORKCELL_EDITOR_API_V1__; "
-      "const hit = (api && typeof api.placementPointFromViewport === 'function') ? "
-      "api.placementPointFromViewport({clientX:%1,clientY:%2}) : null; "
-      "return hit && [hit.x,hit.y,hit.z].every(Number.isFinite) ? "
-      "{x:hit.x,y:hit.y,z:hit.z} : null; })()")
+      "window.__WORKCELL_EDITOR_API_V1__?.commitPlacementPointer?.(%1,%2)")
       .arg(point.x()).arg(point.y());
-    page()->runJavaScript(script, [this, asset_id, configure_transform](const QVariant & result) {
-      const QVariantMap world = result.toMap();
-      bool ok_x = false, ok_y = false, ok_z = false;
-      const double x = world.value(QStringLiteral("x")).toDouble(&ok_x);
-      const double y = world.value(QStringLiteral("y")).toDouble(&ok_y);
-      const double z = world.value(QStringLiteral("z")).toDouble(&ok_z);
-      if (!ok_x || !ok_y || !ok_z || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) return;
-      if (placement_requested) placement_requested(asset_id, x, y, z, configure_transform);
+    page()->runJavaScript(script, [this](const QVariant & result) {
+      // A rejected support/collision/bounds result ends the native session too.
+      // A valid result stays armed only until the existing editor-event poll
+      // delivers its single placement_requested event to MainWindow.
+      if (!result.toBool() && drag_cancelled) drag_cancelled();
     });
   }
 
 private:
   static QString parse_asset_id(const QMimeData * mime)
   {
-    static const QString kMimeType = QStringLiteral("application/x-workcell-studio-asset");
+    static const QString kMimeType = QStringLiteral("application/x-workcell-studio-catalog-asset");
     if (!mime || mime->formats() != QStringList{kMimeType}) return {};
-    QJsonParseError error;
-    const QJsonDocument document = QJsonDocument::fromJson(mime->data(kMimeType), &error);
-    if (error.error != QJsonParseError::NoError || !document.isObject()) return {};
-    const QJsonObject payload = document.object();
-    if (payload.size() != 1 || !payload.contains(QStringLiteral("asset_id")) ||
-        !payload.value(QStringLiteral("asset_id")).isString()) return {};
-    return payload.value(QStringLiteral("asset_id")).toString().trimmed();
+    return QString::fromUtf8(mime->data(kMimeType)).trimmed();
   }
 
-  static bool has_supported_asset_payload(const QMimeData * mime)
+  void update_pointer(const QPoint & point)
   {
-    return !parse_asset_id(mime).isEmpty();
+    page()->runJavaScript(QStringLiteral(
+      "window.__WORKCELL_EDITOR_API_V1__?.updatePlacementPointer?.(%1,%2)")
+      .arg(point.x()).arg(point.y()));
   }
+
+  void cancel_drag()
+  {
+    if (!drag_active_) return;
+    drag_active_ = false;
+    drag_asset_id_.clear();
+    page()->runJavaScript(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__?.cancelPlacement?.()"));
+    if (drag_cancelled) drag_cancelled();
+  }
+
+  bool drag_active_{false};
+  QString drag_asset_id_;
 };
 #endif
 }  // namespace
@@ -665,10 +682,12 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     product_view_backend_ = ProductViewBackend::EmbeddedWeb3D;
     auto * asset_drop_web_view = new AssetDropWebEngineView(view3d_container_);
     embedded_web_view_ = asset_drop_web_view;
-    asset_drop_web_view->placement_requested = [this](
-      const QString & asset_id, double x, double y, double z, bool configure_transform) {
-        emit asset_placement_requested(asset_id, x, y, z, configure_transform);
-      };
+    asset_drop_web_view->drag_entered = [this](const QString & asset_id) {
+      return catalog_asset_drag_enter_cb && catalog_asset_drag_enter_cb(asset_id);
+    };
+    asset_drop_web_view->drag_cancelled = [this]() {
+      if (catalog_asset_drag_cancel_cb) catalog_asset_drag_cancel_cb();
+    };
     embedded_web_view_->setObjectName("embeddedWeb3dProductView");
     embedded_web_view_->setFocusPolicy(Qt::StrongFocus);
     view3d_container_->setFocusProxy(embedded_web_view_);

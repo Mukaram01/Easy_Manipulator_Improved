@@ -504,7 +504,7 @@ enum SceneTreeRoles {
   TreeRoleStableId, TreeRoleCameraId, TreeRoleFrameId, TreeRoleDetectionLabel, TreeRoleConfidence, TreeRoleTrackingId, TreeRoleSnapshotSourceFile, TreeRoleAlignmentWarning
 };
 enum AssetCatalogRoles { CatalogRoleIndex = Qt::UserRole, CatalogRolePlaceable = Qt::UserRole + 10, CatalogRoleSourcePath = Qt::UserRole + 11, CatalogRoleAssetId = Qt::UserRole + 12, CatalogRoleBaseToolTip = Qt::UserRole + 13 };
-static constexpr const char * kWorkcellStudioAssetMime = "application/x-workcell-studio-asset";
+static constexpr const char * kWorkcellStudioAssetMime = "application/x-workcell-studio-catalog-asset";
 
 QTreeWidgetItem * find_asset_catalog_item_by_id(QTreeWidget * tree, const QString & requested_asset_id)
 {
@@ -2707,6 +2707,17 @@ void MainWindow::setup_studio_shell()
       armed_asset_yaw_rad_ = yaw;
       commit_armed_asset_placement(QPointF(x * 100.0, y * 100.0), repeat_commit, false);
     });
+  scene_preview_widget_->catalog_asset_drag_enter_cb = [this](const QString & asset_id) {
+    const auto match = std::find_if(asset_catalog_entries_.cbegin(), asset_catalog_entries_.cend(),
+      [&asset_id](const AssetCatalogEntry & entry) { return entry.asset_id == asset_id; });
+    if (match == asset_catalog_entries_.cend() || !match->editable ||
+        !match->disabled_reason.trimmed().isEmpty()) return false;
+    return arm_place_asset_mode(asset_id);
+  };
+  scene_preview_widget_->catalog_asset_drag_cancel_cb = [this]() {
+    clear_armed_asset_placement();
+    set_canvas_interaction_mode(CanvasInteractionMode::Select);
+  };
   auto * scene3d_viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
   if (scene3d_viewport) {
     scene3d_viewport->setObjectName("scene3dViewportWidget");
@@ -6742,17 +6753,22 @@ bool MainWindow::eventFilter(QObject * watched, QEvent * event)
       const int idx = item->data(0, CatalogRoleIndex).toInt();
       if (idx < 0 || idx >= asset_catalog_entries_.size()) return QMainWindow::eventFilter(watched, event);
       const auto & e = asset_catalog_entries_[idx];
-      if (!e.disabled_reason.trimmed().isEmpty()) {
-        QToolTip::showText(QCursor::pos(), QString("Cannot place here: %1").arg(e.disabled_reason), asset_catalog_tree_);
+      if (!item->data(0, CatalogRolePlaceable).toBool() || !e.editable ||
+          !e.disabled_reason.trimmed().isEmpty()) {
+        const QString reason = !e.disabled_reason.trimmed().isEmpty()
+          ? e.disabled_reason : QStringLiteral("asset is not currently placeable");
+        QToolTip::showText(QCursor::pos(), QString("Cannot place here: %1").arg(reason), asset_catalog_tree_);
         return true;
       }
-      QJsonObject payload;
-      payload["asset_id"] = e.asset_id;
       auto * mime = new QMimeData();
-      mime->setData(kWorkcellStudioAssetMime, QJsonDocument(payload).toJson(QJsonDocument::Compact));
+      mime->setData(kWorkcellStudioAssetMime, e.asset_id.toUtf8());
       auto * drag = new QDrag(asset_catalog_tree_);
       drag->setMimeData(mime);
-      drag->exec(Qt::CopyAction);
+      const Qt::DropAction result = drag->exec(Qt::CopyAction);
+      if (result == Qt::IgnoreAction && place_asset_armed_ && armed_asset_id_ == e.asset_id) {
+        clear_armed_asset_placement();
+        set_canvas_interaction_mode(CanvasInteractionMode::Select);
+      }
       return true;
     }
   }

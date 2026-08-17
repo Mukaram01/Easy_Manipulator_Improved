@@ -5302,6 +5302,17 @@ function updatePlacementPreview(position) {
   if (!state.placement.armed) return null;
   return setPlacementPoint(placementPointFromViewport(position, { allowGround: false }));
 }
+function updatePlacementPointer(clientX, clientY) {
+  if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return null;
+  return updatePlacementPreview({ clientX, clientY });
+}
+function commitPlacementPointer(clientX, clientY) {
+  const point = updatePlacementPointer(clientX, clientY);
+  const valid = Boolean(point && state.placement.valid);
+  if (valid) pushEditorEvent('placement_requested', { ...point, yaw: state.placement.yaw, repeat: false });
+  cancelPlacement();
+  return valid;
+}
 function getPlacementState() { return { armed: state.placement.armed, persistent: state.placement.persistent, supportValid: state.placement.supportValid, collision: state.placement.collision, collidingOwnerIds: [...(state.placement.collidingOwnerIds || [])], valid: state.placement.valid, proposedPoint: state.placement.proposedPoint ? { ...state.placement.proposedPoint } : null }; }
 function armPlacement(options = {}) {
   if (options === null || typeof options !== 'object' || Array.isArray(options)) return null;
@@ -6166,6 +6177,8 @@ window.__WORKCELL_EDITOR_API_V1__ = {
   applyCameraPreset: preset => { applyCameraPreset(preset); return editorState(); },
   fitSelection: () => { fitSelection(); return editorState(); },
   placementPointFromViewport: position => placementPointFromViewport(position),
+  updatePlacementPointer: (clientX, clientY) => updatePlacementPointer(clientX, clientY),
+  commitPlacementPointer: (clientX, clientY) => commitPlacementPointer(clientX, clientY),
   armPlacement: options => armPlacement(options),
   cancelPlacement: () => cancelPlacement(),
   getPlacementState: () => getPlacementState(),

@@ -6,12 +6,12 @@ def test_scene3d_asset_drag_drop_tokens_exist():
     viewport_h = Path("workcell_builder/workcell_builder/gui/scene3d_viewport_widget.h").read_text(encoding="utf-8")
     viewport_cpp = Path("workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(encoding="utf-8")
 
-    assert "application/x-workcell-studio-asset" in main_cpp
-    assert "application/x-workcell-studio-asset" in viewport_cpp
+    assert "application/x-workcell-studio-catalog-asset" in main_cpp
+    assert "application/x-workcell-studio-catalog-asset" in viewport_cpp
     assert "QDrag" in main_cpp and "QMimeData" in main_cpp
     assert "disabled_reason" in main_cpp and "Cannot place here" in main_cpp
-    drag_payload = main_cpp[main_cpp.index('payload["asset_id"] = e.asset_id'):main_cpp.index("auto * mime = new QMimeData()", main_cpp.index('payload["asset_id"] = e.asset_id'))]
-    assert 'payload["asset_id"] = e.asset_id' in drag_payload
+    drag_payload = main_cpp[main_cpp.index("auto * mime = new QMimeData()"):main_cpp.index("auto * drag = new QDrag(asset_catalog_tree_)")]
+    assert 'e.asset_id.toUtf8()' in drag_payload
     assert "source_path" not in drag_payload
     assert "CatalogRoleAssetId" in main_cpp
     assert "asset_drop_cb" in viewport_h
@@ -47,11 +47,10 @@ def test_drag_payload_contains_exactly_canonical_identity_b():
     """A1 step 7: no stale A metadata can hitchhike beside B's asset_id."""
     main_cpp = Path("workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
     drag = main_cpp.split("auto * drag = new QDrag(asset_catalog_tree_);", 1)[0].rsplit(
-        "QJsonObject payload;", 1
+        "auto * mime = new QMimeData();", 1
     )[1]
-    assert drag.count('payload["asset_id"] = e.asset_id;') == 1
     assert 'mime->setData(kWorkcellStudioAssetMime' in drag
-    assert 'QJsonDocument(payload).toJson(QJsonDocument::Compact)' in drag
+    assert 'e.asset_id.toUtf8()' in drag
     for forbidden in ["source_path", "display_name", "category", "CatalogRoleIndex"]:
         assert forbidden not in drag
 
