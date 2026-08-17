@@ -655,6 +655,7 @@ private:
   CameraOverlayModel camera_overlay_model_;
   QVector<EpdDetectionOverlayModel> epd_detections_;
   QString selected_preview_item_id_;
+  QString embedded_browser_selected_item_id_;
   QString preview_status_summary_;
   bool clean_product_view_{ false };
   int clean_product_visual_count_{ 0 };

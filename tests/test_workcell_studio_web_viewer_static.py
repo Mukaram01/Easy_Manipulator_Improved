@@ -4375,8 +4375,12 @@ vm.runInContext(source+`
 let clears=0;clearSelection=()=>{clears++;state.selected=''};state.objects=[];state.pickRecords=[];state.three.pointer={};state.three.camera={};state.three.raycaster={setFromCamera(){},intersectObjects(){return[]}};state.diagnosticKeys=new Set();state.selected='old';
 for(const mode of ['select','move','rotate']){state.editorMode=mode;state.selected='old';assert.strictEqual(pickObject({clientX:50,clientY:50}),'');assert.strictEqual(state.selected,'');}
 assert.strictEqual(clears,3);
-let picks=0;pickObject=()=>{picks++};state.editorMode='move';state.three.transformControls={axis:'X',dragging:false};onCanvasPointerDown({button:0});state.three.transformControls={axis:null,dragging:true};onCanvasPointerDown({button:0});assert.strictEqual(picks,0);
-state.three.transformControls={axis:null,dragging:false};onCanvasPointerDown({button:0});assert.strictEqual(picks,1);
+let picks=0;pickObject=()=>{picks++};const picker={};let handleHit=false;const pickerRaycaster={setFromCamera(pointer){handleHit=pointer.x<0},intersectObject(object){assert.strictEqual(object,picker);return handleHit?[{object:{name:'X'}}]:[]}};
+state.editorMode='move';state.three.camera={};state.three.transformControls={axis:'X',dragging:false,mode:'translate',_gizmo:{picker:{translate:picker}},getRaycaster(){return pickerRaycaster}};
+onCanvasPointerDown({button:0,clientX:75,clientY:50});assert.strictEqual(picks,1,'stale axis without current picker hit must not own pointer');
+onCanvasPointerDown({button:0,clientX:25,clientY:50});assert.strictEqual(picks,1,'current TransformControls handle hit must preserve selection');
+state.editorMode='rotate';state.three.transformControls.mode='rotate';state.three.transformControls._gizmo.picker.rotate=picker;onCanvasPointerDown({button:0,clientX:75,clientY:50});assert.strictEqual(picks,2,'Rotate empty canvas must still pick/clear');
+state.three.transformControls={axis:null,dragging:true};onCanvasPointerDown({button:0,clientX:75,clientY:50});assert.strictEqual(picks,2,'active drag unconditionally owns pointer');
 `,sandbox);
 '''
     result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

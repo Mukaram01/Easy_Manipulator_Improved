@@ -623,6 +623,10 @@ def test_qt_poll_accepts_only_final_valid_browser_selection_and_explicit_clear()
     assert "selected_preview_item_id_ = browser_ui_selected_id" in poll
     assert "browser_selected_id.isEmpty()" in poll
     assert "selected_preview_item_id_.clear();" in poll
+    assert "explicit_blank_selection_event" in poll
+    assert "browser_transitioned_to_empty" in poll
+    assert "viewport->selected_id.clear();" in poll
+    assert "emit preview_item_selected(QString(), QString());" in poll
 
 
 def test_qt_poll_treats_current_browser_state_as_authoritative_without_same_cycle_event():
@@ -632,7 +636,7 @@ def test_qt_poll_treats_current_browser_state_as_authoritative_without_same_cycl
     assert 'editor_state.value(QStringLiteral("selectedItemType"))' in poll
     assert "browser_ui_selected_id != selected_preview_item_id_" in poll
     assert "emit preview_item_selected(browser_ui_selected_id, matching_item_type);" in poll
-    assert "browser_selected_id.isEmpty() && scene_identity_matches" in poll
+    assert "scene_identity_matches && browser_selected_id.isEmpty()" in poll
     assert "state_request_token != embedded_editor_state_request_token_" in poll
     assert "preview_item_by_id(browser_ui_selected_id) != nullptr" in poll
     assert "Embedded Product View selection rejected:" in poll
@@ -937,7 +941,13 @@ def test_transform_gizmo_pointerdown_cannot_repick_object_behind_handle():
         "function onCanvasPointerMove", 1
     )[0]
 
-    assert "transformControls?.dragging || transformControls?.axis" in body
+    helper = VIEWER.split("function transformControlsOwnsPointerDown", 1)[1].split(
+        "function onCanvasPointerDown", 1
+    )[0]
+    assert "if (transformControls.dragging) return true" in helper
+    assert "picker?.[mode]" in helper
+    assert "intersectObject(picker, true)" in helper
+    assert "transformControls?.axis" not in helper
     assert "gizmoOwnsPointer" in body
 
     guard = body.index("if (gizmoOwnsPointer) return;")

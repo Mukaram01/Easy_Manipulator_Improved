@@ -393,19 +393,36 @@ export function installCanonicalSelectionState({
     api.drainEvents = () => {
       const events = original.drainEvents() || [];
       const record = synchronize('drain_events');
-      const normalized = events.filter(event => event?.type !== 'selection_changed').map(event => {
-        if (event?.type !== 'transform_committed') return event;
+      const normalized = [];
+      for (const event of events) {
+        if (event?.type === 'selection_changed') {
+          const eventOwner = stringValue(event.uiItemId || event.itemId);
+          if (eventOwner === lastDrainedSelectionOwner) continue;
+          lastDrainedSelectionOwner = eventOwner;
+          normalized.push({
+            ...event,
+            itemId: eventOwner,
+            uiItemId: eventOwner,
+            canonicalOwnerItemId: eventOwner,
+            canonicalTransform: eventOwner === record.ownerId ? clone(record.transform) : null,
+          });
+          continue;
+        }
+        if (event?.type !== 'transform_committed') {
+          normalized.push(event);
+          continue;
+        }
         const transform = isFiniteCanonicalTransform(event?.patchEntry?.new_transform)
           ? clone(event.patchEntry.new_transform)
           : clone(record.transform);
-        return {
+        normalized.push({
           ...event,
           canonicalOwnerItemId: record.ownerId,
           canonicalTransform: transform,
           savedXyz: clone(transform?.pose?.xyz),
           savedRpy: clone(transform?.pose?.rpy),
-        };
-      });
+        });
+      }
       if (record.ownerId !== lastDrainedSelectionOwner) {
         lastDrainedSelectionOwner = record.ownerId;
         normalized.push({
