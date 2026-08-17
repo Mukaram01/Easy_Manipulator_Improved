@@ -4198,7 +4198,8 @@ class B { constructor(){this.min={x:Infinity,y:Infinity,z:Infinity};this.max={x:
 const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},setAttribute(){},querySelector(){return{textContent:''}},appendChild(){},addEventListener(){},getBoundingClientRect(){return{width:100,height:100,left:0,top:0}}});
 const sandbox={console,assert,V,B,window:{location:{search:''}},document:{getElementById(){return element()},createElement(){return element()}},URLSearchParams,requestAnimationFrame(){return 0}};vm.createContext(sandbox);
 vm.runInContext(source+`
-THREE={Vector3:V,Box3:B};
+class Material { constructor(options){Object.assign(this,options);} }
+THREE={Vector3:V,Box3:B,MeshStandardMaterial:Material,DoubleSide:'double',FrontSide:'front'};
 const root=(children=[],item=null)=>({visible:true,children,userData:item?{item}:{},updateWorldMatrix(){}});
 const mesh=(name,min,max,data={})=>({name,isMesh:true,visible:true,children:[],userData:data,mockBounds:{min,max}});
 const owner=id=>({id,category:id==='ur5'?'robot':id.includes('gripper')?'tool':'object',source_layer:'selection_owner_registry'});
@@ -4206,19 +4207,22 @@ const ur5=owner('ur5'),tool=owner('robotiq_85_gripper'),bin=owner('target_bin_de
 state.sceneJson={ui_selection_owners:[ur5,tool,bin]};state.selectionIdentityIndex={itemById:new Map([[ur5.id,ur5],[tool.id,tool],[bin.id,bin]]),recordsByLink:new Map(),explicitUiIdByLink:new Map(),selectionOwners:[ur5,tool,bin]};
 const robotMesh=mesh('forearm',{x:0,y:0,z:0},{x:2,y:1,z:3});const toolMesh=mesh('finger',{x:5,y:0,z:0},{x:6,y:1,z:1});
 const toolLink=root([toolMesh]),robotLink=root([robotMesh,toolLink]);
-const robotRecord=registerPickRecord({id:'forearm_visual',link_name:'forearm_link',role:'robot',active_visual_source:'mesh_preview'},robotLink,robotLink,{authoritativePhysicalPick:true,uiSelectionOwnerId:'ur5'});
-const toolRecord=registerPickRecord({id:'finger_visual',link_name:'finger_link',role:'tool',active_visual_source:'mesh_preview'},toolLink,robotLink,{authoritativePhysicalPick:true,uiSelectionOwnerId:'robotiq_85_gripper'});
+const robotRecord=registerPickRecord({id:'forearm_visual',link_name:'forearm_link',role:'robot',active_visual_source:'mesh_preview',warnings:['diagnostic overlay warning from loader']},robotLink,robotLink,{authoritativePhysicalPick:true,uiSelectionOwnerId:'ur5'});
+const toolRecord=registerPickRecord({id:'finger_visual',link_name:'finger_link',role:'tool',active_visual_source:'mesh_preview',warnings:['debug helper warning from loader']},toolLink,robotLink,{authoritativePhysicalPick:true,uiSelectionOwnerId:'robotiq_85_gripper'});
 bindExpandedUrdfPickRecordToSubtree(robotLink,robotRecord,new Set([robotLink,toolLink]));bindExpandedUrdfPickRecordToSubtree(toolLink,toolRecord,new Set([robotLink,toolLink]));
 state.objects=[{item:ur5,object3d:null},{item:tool,object3d:null},{item:bin,object3d:root()}];
 let result=collectSelectionPhysicalBounds(state.objects[0]);assert.deepStrictEqual(result.bounds_json.max,{x:2,y:1,z:3});
 result=collectSelectionPhysicalBounds(state.objects[1]);assert.deepStrictEqual(result.bounds_json.min,{x:5,y:0,z:0});
 const binReal=mesh('bin_stl',{x:7,y:1,z:0},{x:8,y:3,z:2});const binFallback=mesh('bin_fallback',{x:-9,y:-9,z:-9},{x:9,y:9,z:9},{render_status:'primitive_fallback'});
-const binVisual={item:{id:'bin_mesh',category:'object',canonical_scene_item_id:'target_bin_default'},object3d:root([binFallback,binReal],{id:'bin_mesh',category:'object',canonical_scene_item_id:'target_bin_default'})};state.objects.push(binVisual);
+const binItem={id:'bin_mesh',category:'object',canonical_scene_item_id:'target_bin_default',render_policy:'primary',mesh_contract_category:'object',mesh_load_required:true};
+binReal.userData.render_status='mesh_loaded';binReal.userData.item=binItem;
+const binVisual={item:binItem,object3d:root([binFallback,binReal],binItem)};state.objects.push(binVisual);
 result=collectSelectionPhysicalBounds(state.objects[2]);assert.deepStrictEqual(result.bounds_json.min,{x:7,y:1,z:0});
 const imported={id:'object_01',category:'object',source_layer:'editable_layout'};const stl=mesh('real_stl',{x:.1,y:.2,z:.3},{x:.2,y:.4,z:.5});const hidden=mesh('hidden',{x:-50,y:-50,z:-50},{x:50,y:50,z:50});hidden.visible=false;const helper=mesh('selection',{x:-20,y:-20,z:-20},{x:20,y:20,z:20},{selection_highlight:true});const fallback=mesh('fallback',{x:-10,y:-10,z:-10},{x:10,y:10,z:10},{render_status:'primitive_fallback'});const importedRecord={item:imported,object3d:root([stl,hidden,helper,fallback],imported)};state.objects.push(importedRecord);
 result=collectSelectionPhysicalBounds(importedRecord);assert.deepStrictEqual(result.bounds_json.max,{x:.2,y:.4,z:.5});assert.strictEqual(result.count,1);
-const persisted={id:'object_02',source_layer:'editable_layout',render_policy:'primary',mesh_contract_category:'object',mesh_uri:'build/assets/imported/collision/object_02.stl',mesh_scale:[.001,.001,.001]};
+const persisted={id:'object_02',display_name:'2068_001_24',category:'authored_asset_object',source_kind:'user_authored',source_layer:'editable_layout',render_owner:'editable_layout',render_policy:'primary',mesh_contract_category:'object',mesh_load_required:true,mesh_uri:'build/workcell_studio_web_scene/assets/ur5_2f_test/assets/imported/2068_001_24.stl',mesh_scale:[.001,.001,.001]};
 assert.strictEqual(isPrimaryAuthoredPhysicalMesh(persisted),true);assert.strictEqual(isDebugOverlayItem(persisted),false);const persistedScale=meshLocalTransformOf(persisted).scale;assert.deepStrictEqual([persistedScale.x,persistedScale.y,persistedScale.z],[.001,.001,.001]);
+assert.strictEqual(materialFor(persisted).side,THREE.DoubleSide);
 `,sandbox);
 '''
     result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
