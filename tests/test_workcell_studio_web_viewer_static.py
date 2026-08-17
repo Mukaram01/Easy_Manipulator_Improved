@@ -4472,3 +4472,42 @@ armPlacement({asset});key('KeyQ');placementPointFromViewport=()=>({x:13,y:14,z:1
 '''
     result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, text=True, capture_output=True)
     assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_placement_feedback_uses_one_snapped_proposed_point_for_preview_display_and_commit():
+    js_path = VIEWER / "viewer.js"
+    harness = r'''
+const fs=require('fs'),vm=require('vm'),assert=require('assert');let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const elements={};const e=id=>elements[id]??=( {id,style:{},hidden:false,checked:false,value:'0',textContent:'',innerHTML:'',className:'',classList:{add(){},remove(){},toggle(){}},setAttribute(){},addEventListener(){},querySelector(){return null},appendChild(){},getBoundingClientRect(){return{left:0,top:0,width:100,height:100}}} );
+const sandbox={console,assert,window:{location:{search:''}},document:{getElementById:e,createElement(){return e('created')}},URLSearchParams,requestAnimationFrame(){return 0}};vm.createContext(sandbox);
+vm.runInContext(source+`
+const copy=value=>value&&JSON.parse(JSON.stringify(value));
+const root={visible:false,position:{x:0,y:0,z:0,set(x,y,z){Object.assign(this,{x,y,z})}},rotation:{z:0}};
+state.placement={armed:true,persistent:true,previewRoot:root,asset:{},yaw:Math.PI/6,rawPoint:null,proposedPoint:null,valid:false};
+el.snapToggle.checked=false;el.translationSnap.value='.05';
+let proposed=setPlacementPoint({x:.823,y:-.117,z:.745});
+assert.deepStrictEqual(proposed,{x:.823,y:-.117,z:.745});assert.strictEqual(state.placement.valid,true);assert.strictEqual(root.visible,true);assert.deepStrictEqual([root.position.x,root.position.y,root.position.z],[.823,-.117,.745]);
+assert(el.placementStatus.innerHTML.includes('X 0.823'));assert(el.placementStatus.innerHTML.includes('SNAP OFF'));
+el.snapToggle.checked=true;refreshPlacementSnap();proposed=copy(state.placement.proposedPoint);
+assert(Math.abs(proposed.x-.8)<1e-12);assert(Math.abs(proposed.y+.1)<1e-12);assert.strictEqual(proposed.z,.745,'physical surface owns Z');
+assert.deepStrictEqual([root.position.x,root.position.y,root.position.z],[proposed.x,proposed.y,proposed.z]);assert.strictEqual(state.placement.yaw,Math.PI/6,'position snap does not change yaw');assert(el.placementStatus.innerHTML.includes('SNAP 0.050 m'));
+placementPointFromViewport=()=>copy(state.placement.rawPoint);onCanvasPointerDown({button:0,shiftKey:true,clientX:50,clientY:50,preventDefault(){},stopPropagation(){}});
+let requests=state.editorEvents.filter(event=>event.type==='placement_requested');assert.strictEqual(requests.length,1);assert.deepStrictEqual([requests[0].x,requests[0].y,requests[0].z],[proposed.x,proposed.y,proposed.z]);assert.strictEqual(requests[0].yaw,Math.PI/6);assert.deepStrictEqual(copy(state.placement.proposedPoint),proposed,'display state and commit share proposed point');
+placementPointFromViewport=()=>({x:.877,y:-.133,z:.745});onCanvasPointerDown({button:0,shiftKey:true,clientX:55,clientY:55,preventDefault(){},stopPropagation(){}});requests=state.editorEvents.filter(event=>event.type==='placement_requested');assert.strictEqual(requests.length,2);for(const request of requests){assert(Math.abs(request.x/.05-Math.round(request.x/.05))<1e-10);assert(Math.abs(request.y/.05-Math.round(request.y/.05))<1e-10)}
+placementPointFromViewport=()=>null;onCanvasPointerMove({clientX:70,clientY:70});assert.strictEqual(state.placement.valid,false);assert.strictEqual(state.placement.proposedPoint,null);assert.strictEqual(root.visible,false);const before=requests.length;onCanvasPointerDown({button:0,shiftKey:false,clientX:70,clientY:70});assert.strictEqual(state.editorEvents.filter(event=>event.type==='placement_requested').length,before);assert.strictEqual(state.placement.armed,true);assert(el.placementStatus.innerHTML.includes('No valid placement surface'));
+setPlacementPoint({x:.823,y:-.117,z:.745});cancelPlacement();assert.deepStrictEqual(getPlacementState(),{armed:false,persistent:false,valid:null,proposedPoint:null});assert.strictEqual(el.placementStatus.hidden,true);assert.strictEqual(el.placementStatus.textContent,'');
+state.placement={armed:true,persistent:false,previewRoot:root,asset:{},yaw:0,rawPoint:{x:1,y:2,z:3},proposedPoint:{x:1,y:2,z:3},valid:true};cancelPlacement();assert.strictEqual(root.visible,true);assert.strictEqual(state.placement.proposedPoint,null);assert.strictEqual(state.placement.valid,null);
+`,sandbox);
+'''
+    result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_scene_load_paths_clear_stale_placement_feedback():
+    viewer = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    reset_lifecycle = viewer.split("function resetSceneLifecycleState()", 1)[1].split("function renderScene", 1)[0]
+    load_file = viewer.split("async function loadFile(file)", 1)[1].split("function safeRelativeSceneUrl", 1)[0]
+    load_url = viewer.split("async function loadSceneUrl(rawUrl)", 1)[1].split("if (el.resetView)", 1)[0]
+    assert "cancelPlacement();" in reset_lifecycle
+    assert "cancelPlacement();" in load_file
+    assert "cancelPlacement();" in load_url

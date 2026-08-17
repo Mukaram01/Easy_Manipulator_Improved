@@ -783,3 +783,24 @@ body.embedded-mode #scene-canvas {
 body.embedded-mode #dirty-state::after {
   content: " Preview edits are not saved yet.";
 }
+
+.placement-status {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: 0.75rem;
+  transform: translateX(-50%);
+  max-width: calc(100% - 1.5rem);
+  padding: 0.45rem 0.7rem;
+  border-radius: 0.4rem;
+  background: rgba(18, 25, 22, 0.9);
+  color: #f1f5f2;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.placement-status.valid strong { color: #8fe0a9; }
+.placement-status.invalid strong { color: #ffd08a; }

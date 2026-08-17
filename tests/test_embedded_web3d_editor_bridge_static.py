@@ -63,10 +63,10 @@ state.objects.push({item:tableItem,object3d:tableNode});
 raycaster.hits=[{object:helperNode,point:new Vector3(9,9,9)},{object:tableNode,point:new Vector3(.55,.10,.42)}];
 assert.deepStrictEqual(placementPointFromViewport({clientX:60,clientY:60}),{x:.55,y:.10,z:.42});
 
-assert.deepStrictEqual(armPlacement(),{armed:true,persistent:false});
-assert.deepStrictEqual(getPlacementState(),{armed:true,persistent:false});
+assert.deepStrictEqual(armPlacement(),{armed:true,persistent:false,valid:false,proposedPoint:null});
+assert.deepStrictEqual(getPlacementState(),{armed:true,persistent:false,valid:false,proposedPoint:null});
 onEditorKeyDown({key:'Escape',preventDefault(){}});
-assert.deepStrictEqual(getPlacementState(),{armed:false,persistent:false});
+assert.deepStrictEqual(getPlacementState(),{armed:false,persistent:false,valid:null,proposedPoint:null});
 assert.strictEqual(state.editorEvents.filter(event=>event.type==='placement_requested').length,0);
 
 armPlacement();
@@ -74,7 +74,7 @@ onCanvasPointerDown({button:0,clientX:60,clientY:60,preventDefault(){},stopPropa
 assert.strictEqual(state.editorEvents.filter(event=>event.type==='placement_requested').length,1);
 const request=state.editorEvents.find(event=>event.type==='placement_requested');
 assert.deepStrictEqual({x:request.x,y:request.y,z:request.z},{x:.55,y:.10,z:.42});
-assert.deepStrictEqual(getPlacementState(),{armed:false,persistent:false});
+assert.deepStrictEqual(getPlacementState(),{armed:false,persistent:false,valid:null,proposedPoint:null});
 `,context);
 """
     # Avoid depending on a browser runner while still executing viewer.js itself.
