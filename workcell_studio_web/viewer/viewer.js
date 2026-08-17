@@ -42,6 +42,7 @@ const CAMERA_PRESET_DIRECTIONS = Object.freeze({
 });
 const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], pickRecords: [], pickIdentityByObject: new WeakMap(), selectionIdentityIndex: null, physicalEditBindings: new Map(), assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: '', three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, gizmoPivot: null, gizmoPivotDragStart: null, cancellingTransformOperation: false, gizmoAttachmentDiagnostic: { targetId: '', reason: 'not_evaluated' }, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', placement: { armed: false, persistent: false, previewRoot: null, asset: null, yaw: 0, rawPoint: null, proposedPoint: null, supportOwnerId: '', supportValid: false, collision: false, collidingOwnerIds: [], valid: null }, robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: '', lastCanvasPickReason: '', lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
 const PLACEMENT_COLLISION_EPSILON = 1e-5;
+const PLACEMENT_CONTACT_EPSILON = 1e-5;
 let robotPreviewLoadToken = 0;
 let physicalLoadToken = 0;
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
@@ -5095,6 +5096,36 @@ function markPlacementPreviewHelper(root) {
   });
   return root;
 }
+function markPlacementPreviewPhysicalVisual(root) {
+  root?.traverse?.(node => {
+    node.userData.placement_preview = true;
+    node.userData.placement_preview_physical = true;
+    node.userData.exclude_from_physical_bounds = false;
+    node.userData.exclude_from_fit_bounds = true;
+    node.userData.selectable = false;
+  });
+  return root;
+}
+function collectPlacementPreviewPhysicalBounds(root) {
+  if (!root || !THREE?.Box3) return { count: 0, bounds: null, bounds_json: null };
+  root.updateWorldMatrix?.(true, true);
+  const bounds = new THREE.Box3();
+  let count = 0;
+  root.traverse?.(node => {
+    if (node?.visible === false || node?.userData?.placement_preview_physical !== true) return;
+    if (!node.isMesh) return;
+    const helperReasons = physicalBoundsHelperReasons(
+      node, node.userData?.item || {}, physicalBoundsNodeIdentityFor(node), { authoritativePhysical: true }
+    ).filter(reason => reason !== 'node_exclude_from_fit_bounds');
+    if (helperReasons.length) return;
+    const nodeBounds = finiteBox3(new THREE.Box3().setFromObject(node));
+    if (!nodeBounds) return;
+    bounds.union(nodeBounds);
+    count += 1;
+  });
+  const finite = count ? finiteBox3(bounds) : null;
+  return { count: finite ? count : 0, bounds: finite, bounds_json: box3ToJson(finite) };
+}
 function stylePlacementPreview(root) {
   root?.traverse?.(node => {
     if (!node?.isMesh || !node.material) return;
@@ -5144,12 +5175,12 @@ function evaluatePlacementCollision() {
   placement.collision = false;
   placement.collidingOwnerIds = [];
   if (!placement.supportValid || !placement.previewRoot || !THREE?.Box3) {
-    placement.valid = placement.supportValid;
+    placement.valid = false;
     setPlacementCollisionStyle(false);
     return placement.valid;
   }
   placement.previewRoot.updateWorldMatrix?.(true, true);
-  const ghostBounds = finiteBox3(new THREE.Box3().setFromObject(placement.previewRoot));
+  const ghostBounds = collectPlacementPreviewPhysicalBounds(placement.previewRoot).bounds;
   if (ghostBounds) {
     for (const [ownerId, record] of placementPhysicalOwnerRecords()) {
       if (ownerId === placement.supportOwnerId) continue;
@@ -5159,7 +5190,7 @@ function evaluatePlacementCollision() {
   }
   placement.collidingOwnerIds.sort();
   placement.collision = placement.collidingOwnerIds.length > 0;
-  placement.valid = placement.supportValid && !placement.collision;
+  placement.valid = placement.supportValid && Boolean(ghostBounds) && !placement.collision;
   setPlacementCollisionStyle(placement.collision);
   return placement.valid;
 }
@@ -5179,6 +5210,25 @@ function proposedPlacementPoint(rawPoint) {
   const snap = placementSnapValue();
   return snap ? { x: Math.round(point.x / snap) * snap, y: Math.round(point.y / snap) * snap, z: point.z } : point;
 }
+function contactCorrectPlacementPoint(supportPoint) {
+  const placement = state.placement;
+  const root = placement.previewRoot;
+  if (!supportPoint || !root) return null;
+  root.rotation.z = placement.yaw;
+  root.position.set(supportPoint.x, supportPoint.y, supportPoint.z);
+  const initialBounds = collectPlacementPreviewPhysicalBounds(root).bounds;
+  if (!initialBounds) {
+    placement.invalidReason = 'placement preview has no finite physical bounds';
+    return null;
+  }
+  root.position.z += supportPoint.z - initialBounds.min.z;
+  const correctedBounds = collectPlacementPreviewPhysicalBounds(root).bounds;
+  if (!correctedBounds || Math.abs(supportPoint.z - correctedBounds.min.z) > PLACEMENT_CONTACT_EPSILON) {
+    placement.invalidReason = 'placement preview physical contact correction failed';
+    return null;
+  }
+  return { x: root.position.x, y: root.position.y, z: root.position.z };
+}
 function updatePlacementStatus() {
   const status = el.placementStatus;
   if (!status) return;
@@ -5193,15 +5243,17 @@ function updatePlacementStatus() {
     ? state.placement.collision
       ? `<strong>COLLISION</strong> · ${collisions[0]}${collisions.length > 1 ? ` + ${collisions.length - 1} more` : ''}<br>Move clear · Q/E rotate · Esc cancel`
       : `<strong>VALID</strong> · X ${point.x.toFixed(3)} · Y ${point.y.toFixed(3)} · Z ${point.z.toFixed(3)} m${snap ? ` · SNAP ${snap.toFixed(3)} m` : ' · SNAP OFF'}<br>Q/E rotate · Esc cancel`
-    : `<strong>INVALID</strong> · No valid placement surface${snap ? ` · SNAP ${snap.toFixed(3)} m` : ' · SNAP OFF'}<br>Move over a physical support surface · Esc cancel`;
+    : `<strong>INVALID</strong> · ${state.placement.supportValid ? (state.placement.invalidReason || 'Placement preview unavailable') : 'No valid placement surface'}${snap ? ` · SNAP ${snap.toFixed(3)} m` : ' · SNAP OFF'}<br>${state.placement.supportValid ? 'Wait for physical geometry · Esc cancel' : 'Move over a physical support surface · Esc cancel'}`;
 }
 function setPlacementPoint(rawPoint) {
+  state.placement.invalidReason = '';
   state.placement.rawPoint = finitePlacementPoint(rawPoint);
-  state.placement.proposedPoint = proposedPlacementPoint(state.placement.rawPoint);
-  state.placement.supportValid = Boolean(state.placement.proposedPoint);
+  state.placement.supportPoint = proposedPlacementPoint(state.placement.rawPoint);
+  state.placement.proposedPoint = contactCorrectPlacementPoint(state.placement.supportPoint);
+  state.placement.supportValid = Boolean(state.placement.supportPoint);
   const root = state.placement.previewRoot;
   if (root) {
-    root.visible = state.placement.supportValid;
+    root.visible = Boolean(state.placement.proposedPoint);
     const point = state.placement.proposedPoint;
     if (point) root.position.set(point.x, point.y, point.z);
   }
@@ -5236,13 +5288,13 @@ async function createPlacementPreview(asset) {
     const visual = makeMeshVisualRoot(asset, mesh);
     stylePlacementPreview(visual);
     markPlacementPreviewHelper(visual);
+    markPlacementPreviewPhysicalVisual(visual);
     root.remove(placeholder);
     disposeOwnedObject3d(placeholder);
     root.add(visual);
-    evaluatePlacementCollision();
-    updatePlacementStatus();
+    setPlacementPoint(state.placement.rawPoint);
   } catch (_) {
-    // Keep the temporary bounds placeholder; a visual load failure cannot block placement.
+    // Keep placement armed, but the non-physical loading placeholder cannot be committed.
   }
   return root;
 }
@@ -5255,7 +5307,7 @@ function armPlacement(options = {}) {
   if (options === null || typeof options !== 'object' || Array.isArray(options)) return null;
   cancelPlacement();
   const asset = options.asset && typeof options.asset === 'object' && !Array.isArray(options.asset) ? { ...options.asset } : {};
-  state.placement = { armed: true, persistent: options.persistent === true, previewRoot: null, asset, yaw: 0, rawPoint: null, proposedPoint: null, supportOwnerId: '', supportValid: false, collision: false, collidingOwnerIds: [], valid: false };
+  state.placement = { armed: true, persistent: options.persistent === true, previewRoot: null, asset, yaw: 0, rawPoint: null, supportPoint: null, proposedPoint: null, supportOwnerId: '', supportValid: false, collision: false, collidingOwnerIds: [], valid: false };
   createPlacementPreview(asset);
   el.canvas?.classList?.add?.('placement-armed');
   if (el.canvas?.style) el.canvas.style.cursor = 'crosshair';
@@ -5265,7 +5317,7 @@ function armPlacement(options = {}) {
 }
 function cancelPlacement() {
   removePlacementPreview();
-  state.placement = { armed: false, persistent: false, previewRoot: null, asset: null, yaw: 0, rawPoint: null, proposedPoint: null, supportOwnerId: '', supportValid: false, collision: false, collidingOwnerIds: [], valid: null };
+  state.placement = { armed: false, persistent: false, previewRoot: null, asset: null, yaw: 0, rawPoint: null, supportPoint: null, proposedPoint: null, supportOwnerId: '', supportValid: false, collision: false, collidingOwnerIds: [], valid: null };
   el.canvas?.classList?.remove?.('placement-armed');
   if (el.canvas?.style) el.canvas.style.cursor = '';
   el.canvas?.setAttribute?.('aria-label', 'Workcell 3D canvas');
@@ -5470,8 +5522,7 @@ function onEditorKeyDown(event) {
     const direction = event.code === 'KeyQ' ? -1 : 1;
     state.placement.yaw += direction * (Math.PI / 12);
     if (state.placement.previewRoot) state.placement.previewRoot.rotation.z = state.placement.yaw;
-    evaluatePlacementCollision();
-    updatePlacementStatus();
+    setPlacementPoint(state.placement.rawPoint);
     event.preventDefault?.();
     return;
   }
