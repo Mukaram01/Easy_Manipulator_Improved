@@ -213,8 +213,8 @@ assert.equal(inspectorOne.fields.x.value, '-0.220000');
 
 const drained = apiOne.drainEvents();
 const selectionEvents = drained.filter(event => event.type === 'selection_changed');
-assert.deepEqual(selectionEvents.map(event => event.itemId), ['realsense_overhead', '', 'realsense_overhead']);
-assert.equal(selectionEvents[1].uiItemId, '');
+assert.deepEqual(selectionEvents.map(event => event.itemId), ['', 'realsense_overhead']);
+assert.equal(selectionEvents[0].uiItemId, '');
 const committed = drained.find(event => event.type === 'transform_committed');
 assert.equal(committed.canonicalOwnerItemId, 'realsense_overhead');
 assert.deepEqual(committed.canonicalTransform, second);
@@ -258,7 +258,7 @@ const apiTwo = {{
   undo() {{ return clone(reloadState); }},
   redo() {{ return clone(reloadState); }},
   getEditPatch() {{ return {{edits:[]}}; }},
-  drainEvents() {{ return [{{type:'selection_changed', itemId:''}}]; }},
+  drainEvents() {{ return []; }},
 }};
 windowTwo.__WORKCELL_EDITOR_API_V1__ = apiTwo;
 const documentTwo = {{getElementById(id) {{ return id === 'inspector' ? inspectorTwo : null; }}}};
@@ -296,3 +296,65 @@ console.log(JSON.stringify({{
     assert payload["owner"] == "realsense_overhead"
     assert payload["restoreCalls"] == ["realsense_overhead"]
     assert payload["audit"]["canonicalEditableOwnerCount"] == 6
+
+
+def test_explicit_blank_selection_cancels_retention_and_stale_restore_callbacks() -> None:
+    module_uri = MODULE.resolve().as_uri()
+    script = f"""
+import assert from 'node:assert/strict';
+const canonical = await import({json.dumps(module_uri)});
+const key = 'workcell_studio.canonical_selection.ur5_2f_test';
+const retained = JSON.stringify({{sceneId:'ur5_2f_test', ownerId:'object_01', editable:true, transform:null}});
+
+function makeHarness({{clearEvent=false}}={{}}) {{
+  const values = new Map([[key, retained]]);
+  const storage = {{getItem:k=>values.get(k) ?? null, setItem:(k,v)=>values.set(k,String(v)), removeItem:k=>values.delete(k)}};
+  const timers = [];
+  const listeners = new Map();
+  const windowRef = {{sessionStorage:storage, setTimeout:cb=>timers.push(cb), addEventListener(type,cb){{(listeners.get(type) || (listeners.set(type,[]), listeners.get(type))).push(cb);}}, dispatchEvent(event){{for(const cb of listeners.get(event.type)||[]) cb(event);}}, CustomEvent:class {{constructor(type,init){{this.type=type;this.detail=init?.detail||{{}};}}}}}};
+  let state = {{ready:false,sceneId:'ur5_2f_test',selectedItemId:'',uiSelectionItemId:'',editOwnerItemId:'',selectedEditable:false}};
+  let events = clearEvent ? [{{type:'selection_changed',itemId:'',uiItemId:''}}] : [];
+  const selected = [];
+  const api = {{
+    getState:()=>({{...state}}),
+    selectItem(id){{selected.push(id);state={{...state,selectedItemId:id,uiSelectionItemId:id,editOwnerItemId:id,selectedEditable:true}};return {{...state}};}},
+    clearSelection(){{state={{...state,selectedItemId:'',uiSelectionItemId:'',editOwnerItemId:'',selectedEditable:false}};return {{...state}};}},
+    getEditPatch:()=>({{edits:[]}}),
+    drainEvents(){{const result=events;events=[];return result;}},
+  }};
+  windowRef.__WORKCELL_EDITOR_API_V1__=api;
+  canonical.installCanonicalSelectionState({{windowRef,documentRef:{{getElementById:()=>null}},storage,scheduleMicrotask:cb=>cb(),scheduleTimeout:cb=>timers.push(cb)}});
+  return {{api,windowRef,values,timers,selected,setReady(){{state={{...state,ready:true}};}}}};
+}}
+
+const explicit = makeHarness({{clearEvent:true}});
+assert.equal(explicit.api.getState().retainedSelectionPending,true);
+const staleExplicit = explicit.timers.shift();
+const drained = explicit.api.drainEvents();
+assert.deepEqual(drained.filter(e=>e.type==='selection_changed').map(e=>[e.itemId,e.uiItemId]),[['','']]);
+assert.equal(explicit.api.getState().canonicalSelectedOwnerId,'');
+assert.equal(explicit.api.getState().selectedItemId,'');
+assert.equal(explicit.api.getState().retainedSelectionPending,false);
+assert.equal(explicit.values.has(key),false);
+explicit.setReady(); staleExplicit();
+assert.deepEqual(explicit.selected,[]);
+assert.equal(explicit.api.drainEvents().some(e=>e.itemId==='object_01'),false);
+
+const publicClear = makeHarness();
+const stalePublic = publicClear.timers.shift();
+publicClear.api.clearSelection(); publicClear.setReady(); stalePublic();
+assert.deepEqual(publicClear.selected,[]);
+assert.equal(publicClear.values.has(key),false);
+assert.equal(publicClear.api.getState().retainedSelectionPending,false);
+
+for (const lifecycle of ['scene_ready','pageshow']) {{
+  const reload = makeHarness(); reload.setReady();
+  if (lifecycle === 'scene_ready') reload.windowRef.dispatchEvent(new reload.windowRef.CustomEvent('workcell:web3d_readiness',{{detail:{{state:'scene_ready'}}}}));
+  else reload.windowRef.dispatchEvent(new reload.windowRef.CustomEvent('pageshow'));
+  while(reload.timers.length) reload.timers.shift()();
+  assert.deepEqual(reload.selected,['object_01']);
+  assert.equal(reload.api.getState().canonicalSelectedOwnerId,'object_01');
+}}
+"""
+    result = subprocess.run(["node", "--input-type=module", "-e", script], cwd=REPO_ROOT, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr or result.stdout
