@@ -3,6 +3,7 @@
 #include <boost/filesystem.hpp>
 #include <algorithm>
 #include <fstream>
+#include <utility>
 
 #include "gui/asset_catalog_discovery.h"
 #include "include/asset_catalog_model.h"
@@ -155,6 +156,45 @@ TEST(AssetLibraryModel, SearchCategoriesProvenanceAndCompositionUseCatalogMetada
   EXPECT_EQ(filter_asset_catalog(catalog, "d435.dae", "camera"), (std::vector<size_t>{1}));
   EXPECT_TRUE(filter_asset_catalog(catalog, "real", "robot").empty());
   EXPECT_EQ(filter_asset_catalog(catalog, "", "imported"), (std::vector<size_t>{2}));
+}
+
+TEST(AssetLibraryPresentation, NamesCategoriesFormatsAndIdentityRemainSeparate)
+{
+  AssetCatalogEntry explicit_name;
+  explicit_name.id = "robotiq_2f_85_description/internal";
+  explicit_name.display_name = "Robotiq 2F-85";
+  explicit_name.category = "end_effector";
+  explicit_name.path = "/repo/robotiq_2f_85_description/mesh.dae";
+  EXPECT_EQ(asset_display_name(explicit_name), "Robotiq 2F-85");
+  EXPECT_EQ(asset_category_label(explicit_name), "Gripper");
+  EXPECT_EQ(asset_format_label(explicit_name), "COLLADA");
+  EXPECT_EQ(explicit_name.id, "robotiq_2f_85_description/internal");
+  EXPECT_TRUE(asset_library_matches(explicit_name, "2f_85", "all"));
+  EXPECT_TRUE(asset_library_matches(explicit_name, "Robotiq", "all"));
+
+  AssetCatalogEntry package_fallback;
+  package_fallback.id = "sorting_bin_description";
+  EXPECT_EQ(asset_display_name(package_fallback), "Sorting Bin");
+
+  AssetCatalogEntry filename_fallback;
+  filename_fallback.id = "canonical-import-id";
+  filename_fallback.path = "/scene/imported/2068_001_24.stl";
+  EXPECT_EQ(asset_display_name(filename_fallback), "2068 001 24");
+  EXPECT_EQ(asset_format_label(filename_fallback), "STL");
+  EXPECT_EQ(filename_fallback.id, "canonical-import-id");
+
+  for (const auto & expected : std::vector<std::pair<std::string, std::string>>{
+      {"part.obj", "OBJ"}, {"part.glb", "GLB"}, {"part.gltf", "glTF"}})
+  {
+    filename_fallback.path = expected.first;
+    EXPECT_EQ(asset_format_label(filename_fallback), expected.second);
+  }
+
+  AssetCatalogEntry missing;
+  EXPECT_EQ(asset_display_name(missing), "—");
+  EXPECT_EQ(asset_category_label(missing), "Other");
+  EXPECT_TRUE(asset_format_label(missing).empty());
+  EXPECT_TRUE(asset_source_hint(missing).empty());
 }
 
 TEST(AssetLibraryModel, MissingOptionalMetadataAndRefreshRemainStable)

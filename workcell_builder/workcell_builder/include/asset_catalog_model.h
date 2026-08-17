@@ -28,8 +28,13 @@ struct AssetCatalogEntry
 // Presentation semantics for the Asset Library. These deliberately operate on
 // the already-discovered catalog; filtering never re-scans the filesystem.
 std::string normalize_asset_category(const AssetCatalogEntry & entry);
+std::string asset_display_name(const AssetCatalogEntry & entry);
+std::string asset_category_label(const AssetCatalogEntry & entry);
+std::string asset_format_label(const AssetCatalogEntry & entry);
 std::string asset_provenance(const AssetCatalogEntry & entry);
+std::string asset_provenance_label(const AssetCatalogEntry & entry);
 std::string asset_package_hint(const AssetCatalogEntry & entry);
+std::string asset_source_hint(const AssetCatalogEntry & entry);
 bool asset_library_matches(
   const AssetCatalogEntry & entry, const std::string & query,
   const std::string & normalized_filter);

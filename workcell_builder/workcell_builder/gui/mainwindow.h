@@ -241,12 +241,6 @@ private:
     QString role_or_category;
     QString role;
     QString category;
-    QString normalized_category;
-    QString provenance;
-    QString package_hint;
-    QString normalized_category;
-    QString provenance;
-    QString package_hint;
     QString type;
     QString source_path;
     QString asset_id;
@@ -401,6 +395,12 @@ private:
     QString availability_status;
     QString disabled_reason;
     QString category;
+    QString category_label;
+    QString normalized_category;
+    QString provenance;
+    QString provenance_label;
+    QString package_hint;
+    QString format_label;
     double scale{ 1.0 };
   };
 
@@ -581,6 +581,7 @@ private:
   AssetThumbnailService * asset_thumbnail_service_{ nullptr };
   QLabel * asset_library_preview_status_{ nullptr };
   QLabel * asset_library_result_count_{ nullptr };
+  QLabel * asset_library_empty_state_{ nullptr };
   QLabel * asset_library_details_{ nullptr };
   QPushButton * add_to_canvas_button_{ nullptr };
   QPushButton * place_again_button_{ nullptr };

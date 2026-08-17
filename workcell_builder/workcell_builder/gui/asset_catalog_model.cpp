@@ -99,15 +99,34 @@ fs::path package_directory_for(const fs::path & file, const fs::path & root)
   return fs::path();
 }
 
-std::string display_name_from_id(std::string id)
+std::string humanize_asset_identifier(std::string value)
 {
-  const std::string suffix = "_description";
-  if (id.size() > suffix.size() && id.compare(id.size() - suffix.size(), suffix.size(), suffix) == 0) {
-    id.erase(id.size() - suffix.size());
+  value = fs::path(value).filename().string();
+  const std::string extension = fs::path(value).extension().string();
+  if (!extension.empty()) value.erase(value.size() - extension.size());
+  for (const std::string suffix : {"_moveit_config", "_description"}) {
+    if (value.size() > suffix.size() &&
+      value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0)
+    {
+      value.erase(value.size() - suffix.size());
+      break;
+    }
   }
-  std::replace(id.begin(), id.end(), '_', ' ');
+  std::replace(value.begin(), value.end(), '_', ' ');
+  std::string collapsed;
+  bool previous_space = true;
+  for (const unsigned char c : value) {
+    if (std::isspace(c)) {
+      if (!previous_space) collapsed.push_back(' ');
+      previous_space = true;
+    } else {
+      collapsed.push_back(static_cast<char>(c));
+      previous_space = false;
+    }
+  }
+  if (!collapsed.empty() && collapsed.back() == ' ') collapsed.pop_back();
   bool upper_next = true;
-  for (char & c : id) {
+  for (char & c : collapsed) {
     if (c == ' ') {
       upper_next = true;
     } else if (upper_next) {
@@ -115,7 +134,7 @@ std::string display_name_from_id(std::string id)
       upper_next = false;
     }
   }
-  return id;
+  return collapsed;
 }
 
 int root_rank(const fs::path & root, const std::string & workspace_root, const std::string & repo_root)
@@ -259,6 +278,30 @@ std::string asset_provenance(const AssetCatalogEntry & entry)
   return entry.source == "scene_imported_asset" ? "imported" : "built_in";
 }
 
+std::string asset_display_name(const AssetCatalogEntry & entry)
+{
+  if (!entry.display_name.empty()) {
+    // Catalog manifests sometimes populate display_name with a filename or ROS
+    // package identifier. Preserve genuine authored product names verbatim,
+    // while treating identifier-shaped values as fallback metadata.
+    if (entry.display_name.find('_') == std::string::npos &&
+      fs::path(entry.display_name).extension().empty())
+    {
+      return entry.display_name;
+    }
+    return humanize_asset_identifier(entry.display_name);
+  }
+  if (!entry.model.empty()) return entry.model;
+  const std::string fallback = !entry.path.empty() ? fs::path(entry.path).filename().string() : entry.id;
+  const std::string humanized = humanize_asset_identifier(fallback);
+  return humanized.empty() ? std::string("—") : humanized;
+}
+
+std::string asset_provenance_label(const AssetCatalogEntry & entry)
+{
+  return asset_provenance(entry) == "imported" ? "IMPORTED" : "BUILT-IN";
+}
+
 std::string normalize_asset_category(const AssetCatalogEntry & entry)
 {
   const std::string key = lower_copy(entry.category + " " +
@@ -274,9 +317,31 @@ std::string normalize_asset_category(const AssetCatalogEntry & entry)
   return "other";
 }
 
+std::string asset_category_label(const AssetCatalogEntry & entry)
+{
+  const std::string category = normalize_asset_category(entry);
+  if (category == "robot") return "Robot";
+  if (category == "gripper") return "Gripper";
+  if (category == "table") return "Table";
+  if (category == "camera") return "Camera";
+  if (category == "environment") return "Environment";
+  if (category == "object") return "Object";
+  return "Other";
+}
+
+std::string asset_format_label(const AssetCatalogEntry & entry)
+{
+  const std::string extension = lower_copy(fs::path(entry.path).extension().string());
+  if (extension == ".stl") return "STL";
+  if (extension == ".dae") return "COLLADA";
+  if (extension == ".obj") return "OBJ";
+  if (extension == ".glb") return "GLB";
+  if (extension == ".gltf") return "glTF";
+  return std::string();
+}
+
 std::string asset_package_hint(const AssetCatalogEntry & entry)
 {
-  if (!entry.model.empty()) return entry.model;
   fs::path path(entry.path);
   fs::path current = path.parent_path();
   while (!current.empty()) {
@@ -286,6 +351,13 @@ std::string asset_package_hint(const AssetCatalogEntry & entry)
     current = parent;
   }
   return path.filename().string();
+}
+
+std::string asset_source_hint(const AssetCatalogEntry & entry)
+{
+  const std::string package = asset_package_hint(entry);
+  if (!package.empty()) return package;
+  return entry.path.empty() ? std::string() : fs::path(entry.path).filename().string();
 }
 
 bool asset_library_matches(
@@ -298,7 +370,7 @@ bool asset_library_matches(
   if (!filter_match) return false;
   const std::string needle = lower_copy(query);
   if (needle.empty()) return true;
-  const std::string haystack = lower_copy(entry.display_name + " " + entry.id + " " +
+  const std::string haystack = lower_copy(asset_display_name(entry) + " " + entry.display_name + " " + entry.id + " " +
     entry.category + " " + entry.vendor + " " + entry.model + " " + entry.path + " " +
     asset_package_hint(entry));
   return haystack.find(needle) != std::string::npos;
@@ -381,7 +453,6 @@ AssetCatalogModel discover_asset_catalog(
       candidate.package_key = package_dir.empty() ? std::string() : package_dir.generic_string();
       candidate.rank = file_rank(path, root, workspace_root, repo_root);
       candidate.entry.id = package_name.empty() ? path.stem().string() : package_name;
-      candidate.entry.display_name = display_name_from_id(candidate.entry.id);
       candidate.entry.path = path.string();
       candidate.entry.discovered_files = {candidate.entry.path};
       classify_entry(
@@ -389,6 +460,7 @@ AssetCatalogModel discover_asset_catalog(
         path,
         path_is_internal_placeholder(path),
         path_is_canonical_asset(path) && !path_is_internal_placeholder(path));
+      candidate.entry.display_name = asset_display_name(candidate.entry);
       candidates.push_back(candidate);
     }
   }

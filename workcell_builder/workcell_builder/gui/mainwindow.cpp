@@ -2453,6 +2453,13 @@ void MainWindow::setup_studio_shell()
   asset_catalog_tree_->setDragEnabled(true);
   asset_catalog_tree_->viewport()->installEventFilter(this);
   catalog_layout->addWidget(asset_catalog_tree_, 1);
+  asset_library_empty_state_ = new QLabel(catalog_card);
+  asset_library_empty_state_->setObjectName("assetLibraryEmptyState");
+  asset_library_empty_state_->setAlignment(Qt::AlignCenter);
+  asset_library_empty_state_->setWordWrap(true);
+  asset_library_empty_state_->setStyleSheet("color:#657789;padding:10px;");
+  asset_library_empty_state_->hide();
+  catalog_layout->addWidget(asset_library_empty_state_);
   asset_library_details_ = new QLabel("Select an asset card to inspect available metadata.", catalog_card);
   asset_library_details_->setObjectName("assetLibraryDetails");
   asset_library_details_->setWordWrap(true);
@@ -9119,6 +9126,17 @@ void MainWindow::on_asset_filter_changed(int)
   }
   if (asset_library_result_count_) asset_library_result_count_->setText(
     QString("%1 asset%2").arg(visible_count).arg(visible_count == 1 ? "" : "s"));
+  if (asset_library_empty_state_) {
+    QString empty_text;
+    if (visible_count == 0 && !query.isEmpty())
+      empty_text = QStringLiteral("No assets match this search.");
+    else if (visible_count == 0 && selected == QStringLiteral("recent"))
+      empty_text = QStringLiteral("No recently placed assets yet.");
+    else if (visible_count == 0 && selected == QStringLiteral("imported"))
+      empty_text = QStringLiteral("No imported assets yet.<br/>Import an asset to add one.");
+    asset_library_empty_state_->setText(empty_text);
+    asset_library_empty_state_->setVisible(!empty_text.isEmpty());
+  }
   validate_asset_catalog_selection();
   update_asset_library_preview();
   request_visible_asset_thumbnails();
@@ -9190,20 +9208,18 @@ void MainWindow::update_asset_library_preview()
   const auto & e = asset_catalog_entries_[idx];
   refresh_asset_thumbnail(e.asset_id);
   if (asset_library_details_) {
-    const QString mesh_format = QFileInfo(e.source_path).suffix().toUpper();
-    const QString abbreviated = QDir::toNativeSeparators(QFileInfo(e.source_path).fileName());
     const bool ready = e.disabled_reason.trimmed().isEmpty() && e.editable;
     asset_library_details_->setToolTip(e.source_path);
     asset_library_details_->setText(QString(
-      "<b>%1</b><br/>%2 &nbsp; <b>%3</b><br/>"
-      "Package/source: %4<br/>Mesh format: %5 &nbsp; Dimensions: %6<br/>"
-      "Source file: %7<br/>State: <b>%8</b>%9")
-      .arg(e.display_name.toHtmlEscaped(), e.category.toHtmlEscaped(),
-        (e.provenance == "imported" ? "IMPORTED" : "BUILT-IN"),
+      "<b>Name</b> &nbsp; %1<br/><b>Category</b> &nbsp; %2<br/>"
+      "<b>Source</b> &nbsp; %3<br/><b>Format</b> &nbsp; %4<br/>"
+      "<b>Dimensions</b> &nbsp; %5<br/><b>Provenance</b> &nbsp; %6<br/>"
+      "<b>Status</b> &nbsp; %7%8")
+      .arg(e.display_name.toHtmlEscaped(), e.category_label.toHtmlEscaped(),
         (e.package_hint.isEmpty() ? QStringLiteral("—") : e.package_hint.toHtmlEscaped()),
-        (mesh_format.isEmpty() ? QStringLiteral("—") : mesh_format),
+        (e.format_label.isEmpty() ? QStringLiteral("—") : e.format_label),
         (e.dimensions.isEmpty() ? QStringLiteral("—") : e.dimensions.toHtmlEscaped()),
-        (abbreviated.isEmpty() ? QStringLiteral("—") : abbreviated.toHtmlEscaped()),
+        e.provenance_label,
         (ready ? QStringLiteral("Ready") : QStringLiteral("Unavailable")),
         (e.disabled_reason.isEmpty() ? QString() : QString(" — %1").arg(e.disabled_reason.toHtmlEscaped()))));
   }
@@ -12820,11 +12836,14 @@ void MainWindow::populate_asset_catalog()
   auto append_catalog_entry = [this](const ::AssetCatalogEntry & source_entry) {
     MainWindow::AssetCatalogEntry ui_entry;
     ui_entry.asset_id = QString::fromStdString(source_entry.id);
-    ui_entry.display_name = QString::fromStdString(source_entry.display_name.empty() ? source_entry.id : source_entry.display_name);
+    ui_entry.display_name = QString::fromStdString(asset_display_name(source_entry));
     ui_entry.category = QString::fromStdString(source_entry.category.empty() ? "other" : source_entry.category);
+    ui_entry.category_label = QString::fromStdString(asset_category_label(source_entry));
     ui_entry.normalized_category = QString::fromStdString(normalize_asset_category(source_entry));
     ui_entry.provenance = QString::fromStdString(asset_provenance(source_entry));
-    ui_entry.package_hint = QString::fromStdString(asset_package_hint(source_entry));
+    ui_entry.provenance_label = QString::fromStdString(asset_provenance_label(source_entry));
+    ui_entry.package_hint = QString::fromStdString(asset_source_hint(source_entry));
+    ui_entry.format_label = QString::fromStdString(asset_format_label(source_entry));
     ui_entry.asset_type = QString::fromStdString(source_entry.icon_key.empty() ? source_entry.source : source_entry.icon_key);
     ui_entry.role = QString::fromStdString(source_entry.role_hints.empty() ? "asset_catalog" : source_entry.role_hints.front());
     ui_entry.source_path = QString::fromStdString(source_entry.path);
@@ -12849,8 +12868,8 @@ void MainWindow::populate_asset_catalog()
       e.normalized_category == "gripper" ? "TOOL" : e.normalized_category == "camera" ? "CAM" :
       e.normalized_category == "table" ? "TABLE" : e.normalized_category == "environment" ? "ENV" : "OBJECT";
     auto * item = new QTreeWidgetItem(asset_catalog_tree_, {
-      QString("[%1]  %2").arg(category_symbol, e.display_name), e.category,
-      e.provenance == "imported" ? "IMPORTED" : "BUILT-IN",
+      QString("[%1]  %2").arg(category_symbol, e.display_name), e.category_label,
+      e.provenance_label,
       e.package_hint.isEmpty() ? QFileInfo(e.source_path).fileName() : e.package_hint});
     item->setData(0, CatalogRoleIndex, idx);
     item->setData(0, CatalogRolePlaceable, e.disabled_reason.trimmed().isEmpty() && e.editable);
