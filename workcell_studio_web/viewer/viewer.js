@@ -106,10 +106,12 @@ function isTaskOnlyHelperItem(item) {
     /\b(task helper|task marker|source helper|commissioning object)\b/.test(identity);
 }
 function isPrimaryAuthoredPhysicalMesh(item) {
-  if (itemRenderPolicy(item) !== 'primary' || !truthyFlag(item?.mesh_load_required)) return false;
+  if (itemRenderPolicy(item) !== 'primary') return false;
   const contractCategory = String(item?.mesh_contract_category || item?.meshContractCategory || '').toLowerCase();
   const identity = viewerGroupIdentity(item);
-  return contractCategory === 'object' || /\b(target bin|target container|destination bin)\b/.test(identity);
+  const authoredMesh = Boolean(displayMeshUri(item)) && /\b(authored|editable|layout|imported)\b/.test(identity);
+  return (contractCategory === 'object' && (truthyFlag(item?.mesh_load_required) || authoredMesh)) ||
+    /\b(target bin|target container|destination bin)\b/.test(identity);
 }
 function readinessCategoryForItem(item) {
   if (!item || !isPrimaryRenderableItem(item) || isDebugOverlayItem(item)) return '';
@@ -3008,6 +3010,7 @@ function isPhysicalBoundsHelperObject(object, item, identity) {
   if (!object || object.visible === false) return true;
   if (object.isGridHelper || object.isAxesHelper) return true;
   if (object.userData?.selection_outline === true || object.userData?.selection_highlight === true) return true;
+  if (object.userData?.fallback_sensor_frustum === true) return true;
   if (object.userData?.exclude_from_physical_bounds === true || object.userData?.exclude_from_fit_bounds === true) return true;
   if (item?.exclude_from_physical_bounds === true || item?.exclude_from_fit_bounds === true) return true;
   if (DEBUG_OVERLAY_TOKEN_RE.test(identity)) return true;
@@ -3024,14 +3027,24 @@ function collectPhysicalVisibleBounds(root, options = {}) {
   root.updateWorldMatrix?.(true, true);
   const bounds = new THREE.Box3();
   const candidates = [];
+  const visitedNodes = options.visitedNodes || new Set();
+  const selectionOwnerId = String(options.selectionOwnerId || '').trim();
   let hasGeneratedRobotMesh = false;
   const visit = (node, nearestItem = null) => {
-    if (!node || node.visible === false) return;
-    const item = physicalBoundsItemFor(node, nearestItem);
-    const identity = physicalBoundsIdentityFor(node);
-    const nextNearestItem = node?.userData?.item || nearestItem;
+    if (!node || node.visible === false || visitedNodes.has(node)) return;
+    const identityRecord = state.pickIdentityByObject?.get?.(node);
+    if (selectionOwnerId && identityRecord?.authoritativePhysicalPick === true &&
+        explicitUiSelectionItemId(identityRecord) !== selectionOwnerId) return;
+    visitedNodes.add(node);
+    const item = identityRecord?.item || physicalBoundsItemFor(node, nearestItem);
+    const identity = identityRecord?.item
+      ? `${physicalBoundsIdentityFor(node)} ${viewerGroupIdentity(identityRecord.item)}`
+      : physicalBoundsIdentityFor(node);
+    const nextNearestItem = identityRecord?.item || node?.userData?.item || nearestItem;
     const isRenderable = node.isMesh || node.isLine || node.isLineSegments || node.isPoints || node.isSprite;
-    if (isRenderable && !isPhysicalBoundsHelperObject(node, item, identity)) {
+    const renderStatus = String(node?.userData?.render_status || node?.userData?.renderInfo?.render_status || '').toLowerCase();
+    const selectionFallback = options.selectionBounds === true && /fallback/.test(`${renderStatus} ${identity}`);
+    if (isRenderable && !selectionFallback && !isPhysicalBoundsHelperObject(node, item, identity)) {
       const visualSource = String(item?.active_visual_source || node?.userData?.active_visual_source || '').toLowerCase();
       const isGenerated = /generated|urdf/.test(identity);
       const isRobot = /robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|wrist/.test(identity);
@@ -3048,6 +3061,34 @@ function collectPhysicalVisibleBounds(root, options = {}) {
     if (!nodeBounds) continue;
     bounds.union(nodeBounds);
     count += 1;
+  }
+  const finite = count ? finiteBox3(bounds) : null;
+  return { count: finite ? count : 0, bounds: finite, bounds_json: box3ToJson(finite) };
+}
+
+function selectionPhysicalBoundsRecords(rendered) {
+  const ownerId = String(explicitUiSelectionItemId(rendered) || rendered?.item?.id || '').trim();
+  if (!ownerId) return rendered ? [rendered] : [];
+  const records = [...state.objects, ...state.pickRecords].filter(record =>
+    record?.object3d && explicitUiSelectionItemId(record) === ownerId
+  );
+  const binding = resolveCanonicalPhysicalEditBinding(ownerId);
+  for (const record of [rendered, binding?.owner, binding?.visual]) {
+    if (record?.object3d && !records.includes(record)) records.push(record);
+  }
+  return records;
+}
+function collectSelectionPhysicalBounds(rendered) {
+  if (!rendered) return { count: 0, bounds: null, bounds_json: null };
+  const ownerId = String(explicitUiSelectionItemId(rendered) || rendered?.item?.id || '').trim();
+  const bounds = new THREE.Box3();
+  const visitedNodes = new Set();
+  let count = 0;
+  for (const record of selectionPhysicalBoundsRecords(rendered)) {
+    const physical = collectPhysicalVisibleBounds(record.object3d, { selectionOwnerId: ownerId, visitedNodes, selectionBounds: true });
+    if (!physical.bounds) continue;
+    bounds.union(physical.bounds);
+    count += physical.count;
   }
   const finite = count ? finiteBox3(bounds) : null;
   return { count: finite ? count : 0, bounds: finite, bounds_json: box3ToJson(finite) };
@@ -4428,8 +4469,8 @@ function removeSelectionHighlight() {
 }
 function refreshSelectionHighlight(rendered) {
   removeSelectionHighlight();
-  if (!rendered?.object3d || !state.three.scene || !THREE?.Box3Helper) return;
-  const physical = collectPhysicalVisibleBounds(rendered.object3d);
+  if (!rendered || !state.three.scene || !THREE?.Box3Helper) return;
+  const physical = collectSelectionPhysicalBounds(rendered);
   if (!physical.bounds) return;
   const helper = new THREE.Box3Helper(physical.bounds, 0x0078a8);
   helper.name = 'selection_subtle_bounds_highlight';
@@ -4875,7 +4916,7 @@ function pickObject(event) {
         console.warn?.(`Product View canvas pick rejected: ${JSON.stringify(diagnostic)}`);
       }
     }
-    if (state.editorMode === 'select') clearSelection();
+    clearSelection();
     return '';
   }
   const skippedHelper = candidates.find(candidate => candidate !== selectedCandidate && candidate.priority > selectedCandidate.priority && (isTaskOnlyHelperItem(candidate.rendered.item) || isDebugOverlayItem(candidate.rendered.item)));

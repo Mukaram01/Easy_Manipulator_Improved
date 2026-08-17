@@ -4186,3 +4186,57 @@ assert(Math.abs(binPoint.z - 0.30) < 1e-12);
     )
 
     assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_selection_bounds_follow_authoritative_physical_pick_topology_and_exclude_tool_subtree():
+    js_path = VIEWER / "viewer.js"
+    harness = r'''
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+class V { constructor(x=0,y=0,z=0){this.x=x;this.y=y;this.z=z;} }
+class B { constructor(){this.min={x:Infinity,y:Infinity,z:Infinity};this.max={x:-Infinity,y:-Infinity,z:-Infinity};} isEmpty(){return this.min.x>this.max.x;} union(b){for(const k of ['x','y','z']){this.min[k]=Math.min(this.min[k],b.min[k]);this.max[k]=Math.max(this.max[k],b.max[k]);}return this;} setFromObject(o){this.min={...o.mockBounds.min};this.max={...o.mockBounds.max};return this;} getSize(v){for(const k of ['x','y','z'])v[k]=this.max[k]-this.min[k];return v;} getCenter(v){for(const k of ['x','y','z'])v[k]=(this.min[k]+this.max[k])/2;return v;} clone(){const b=new B();b.min={...this.min};b.max={...this.max};return b;} }
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},setAttribute(){},querySelector(){return{textContent:''}},appendChild(){},addEventListener(){},getBoundingClientRect(){return{width:100,height:100,left:0,top:0}}});
+const sandbox={console,assert,V,B,window:{location:{search:''}},document:{getElementById(){return element()},createElement(){return element()}},URLSearchParams,requestAnimationFrame(){return 0}};vm.createContext(sandbox);
+vm.runInContext(source+`
+THREE={Vector3:V,Box3:B};
+const root=(children=[],item=null)=>({visible:true,children,userData:item?{item}:{},updateWorldMatrix(){}});
+const mesh=(name,min,max,data={})=>({name,isMesh:true,visible:true,children:[],userData:data,mockBounds:{min,max}});
+const owner=id=>({id,category:id==='ur5'?'robot':id.includes('gripper')?'tool':'object',source_layer:'selection_owner_registry'});
+const ur5=owner('ur5'),tool=owner('robotiq_85_gripper'),bin=owner('target_bin_default');bin.source_layer='editable_layout';
+state.sceneJson={ui_selection_owners:[ur5,tool,bin]};state.selectionIdentityIndex={itemById:new Map([[ur5.id,ur5],[tool.id,tool],[bin.id,bin]]),recordsByLink:new Map(),explicitUiIdByLink:new Map(),selectionOwners:[ur5,tool,bin]};
+const robotMesh=mesh('forearm',{x:0,y:0,z:0},{x:2,y:1,z:3});const toolMesh=mesh('finger',{x:5,y:0,z:0},{x:6,y:1,z:1});
+const toolLink=root([toolMesh]),robotLink=root([robotMesh,toolLink]);
+const robotRecord=registerPickRecord({id:'forearm_visual',link_name:'forearm_link',role:'robot',active_visual_source:'mesh_preview'},robotLink,robotLink,{authoritativePhysicalPick:true,uiSelectionOwnerId:'ur5'});
+const toolRecord=registerPickRecord({id:'finger_visual',link_name:'finger_link',role:'tool',active_visual_source:'mesh_preview'},toolLink,robotLink,{authoritativePhysicalPick:true,uiSelectionOwnerId:'robotiq_85_gripper'});
+bindExpandedUrdfPickRecordToSubtree(robotLink,robotRecord,new Set([robotLink,toolLink]));bindExpandedUrdfPickRecordToSubtree(toolLink,toolRecord,new Set([robotLink,toolLink]));
+state.objects=[{item:ur5,object3d:null},{item:tool,object3d:null},{item:bin,object3d:root()}];
+let result=collectSelectionPhysicalBounds(state.objects[0]);assert.deepStrictEqual(result.bounds_json.max,{x:2,y:1,z:3});
+result=collectSelectionPhysicalBounds(state.objects[1]);assert.deepStrictEqual(result.bounds_json.min,{x:5,y:0,z:0});
+const binReal=mesh('bin_stl',{x:7,y:1,z:0},{x:8,y:3,z:2});const binFallback=mesh('bin_fallback',{x:-9,y:-9,z:-9},{x:9,y:9,z:9},{render_status:'primitive_fallback'});
+const binVisual={item:{id:'bin_mesh',category:'object',canonical_scene_item_id:'target_bin_default'},object3d:root([binFallback,binReal],{id:'bin_mesh',category:'object',canonical_scene_item_id:'target_bin_default'})};state.objects.push(binVisual);
+result=collectSelectionPhysicalBounds(state.objects[2]);assert.deepStrictEqual(result.bounds_json.min,{x:7,y:1,z:0});
+const imported={id:'object_01',category:'object',source_layer:'editable_layout'};const stl=mesh('real_stl',{x:.1,y:.2,z:.3},{x:.2,y:.4,z:.5});const hidden=mesh('hidden',{x:-50,y:-50,z:-50},{x:50,y:50,z:50});hidden.visible=false;const helper=mesh('selection',{x:-20,y:-20,z:-20},{x:20,y:20,z:20},{selection_highlight:true});const fallback=mesh('fallback',{x:-10,y:-10,z:-10},{x:10,y:10,z:10},{render_status:'primitive_fallback'});const importedRecord={item:imported,object3d:root([stl,hidden,helper,fallback],imported)};state.objects.push(importedRecord);
+result=collectSelectionPhysicalBounds(importedRecord);assert.deepStrictEqual(result.bounds_json.max,{x:.2,y:.4,z:.5});assert.strictEqual(result.count,1);
+const persisted={id:'object_02',source_layer:'editable_layout',render_policy:'primary',mesh_contract_category:'object',mesh_uri:'build/assets/imported/collision/object_02.stl',mesh_scale:[.001,.001,.001]};
+assert.strictEqual(isPrimaryAuthoredPhysicalMesh(persisted),true);assert.strictEqual(isDebugOverlayItem(persisted),false);const persistedScale=meshLocalTransformOf(persisted).scale;assert.deepStrictEqual([persistedScale.x,persistedScale.y,persistedScale.z],[.001,.001,.001]);
+`,sandbox);
+'''
+    result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert result.stderr == ""
+
+
+def test_empty_pick_clears_every_editor_mode_but_transform_controls_retains_pointer():
+    js_path = VIEWER / "viewer.js"
+    harness = r'''
+const fs=require('fs'),vm=require('vm'),assert=require('assert');let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const e=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){},add(){},remove(){}},setAttribute(){},querySelector(){return{textContent:''}},appendChild(){},addEventListener(){},getBoundingClientRect(){return{width:100,height:100,left:0,top:0}}});const sandbox={console,assert,window:{location:{search:''}},document:{getElementById(){return e()},createElement(){return e()}},URLSearchParams,requestAnimationFrame(){return 0}};vm.createContext(sandbox);
+vm.runInContext(source+`
+let clears=0;clearSelection=()=>{clears++;state.selected=''};state.objects=[];state.pickRecords=[];state.three.pointer={};state.three.camera={};state.three.raycaster={setFromCamera(){},intersectObjects(){return[]}};state.diagnosticKeys=new Set();state.selected='old';
+for(const mode of ['select','move','rotate']){state.editorMode=mode;state.selected='old';assert.strictEqual(pickObject({clientX:50,clientY:50}),'');assert.strictEqual(state.selected,'');}
+assert.strictEqual(clears,3);
+let picks=0;pickObject=()=>{picks++};state.editorMode='move';state.three.transformControls={axis:'X',dragging:false};onCanvasPointerDown({button:0});state.three.transformControls={axis:null,dragging:true};onCanvasPointerDown({button:0});assert.strictEqual(picks,0);
+state.three.transformControls={axis:null,dragging:false};onCanvasPointerDown({button:0});assert.strictEqual(picks,1);
+`,sandbox);
+'''
+    result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert result.stderr == ""
