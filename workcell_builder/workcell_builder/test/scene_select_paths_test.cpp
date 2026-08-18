@@ -60,6 +60,29 @@ TEST(SceneSelectPaths, UsesLoadedWorkcellPathInsteadOfCurrentDirectory)
   EXPECT_NE(resolution.paths.scenes_path, cwd_root / "scenes");
 }
 
+TEST(SceneSelectPaths, WorkspaceSrcShadowScenesResolveToCanonicalRepo)
+{
+  ScopedTestDirectory temp_dir;
+  const fs::path workspace_root = temp_dir.path() / "workcell_ws";
+  const fs::path src_root = workspace_root / "src";
+  const fs::path repo_root = src_root / "easy_manipulation_deployment";
+
+  ASSERT_TRUE(fs::create_directories(src_root / "scenes"));
+  ASSERT_TRUE(fs::create_directories(repo_root / "scenes"));
+  ASSERT_TRUE(fs::create_directories(repo_root / "assets"));
+
+  Workcell workcell;
+  workcell.workcell_filepath = src_root.string();
+
+  const auto resolution = workcell_builder::resolve_scene_select_paths(workcell, src_root);
+
+  ASSERT_TRUE(resolution.success) << resolution.error;
+  EXPECT_EQ(resolution.paths.workcell_path, repo_root);
+  EXPECT_EQ(resolution.paths.scenes_path, repo_root / "scenes");
+  EXPECT_EQ(resolution.paths.assets_path, repo_root / "assets");
+  EXPECT_NE(resolution.paths.scenes_path, src_root / "scenes");
+}
+
 TEST(SceneSelectPaths, EmptyWorkcellPathIsRejected)
 {
   Workcell workcell;
