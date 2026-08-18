@@ -812,8 +812,8 @@ def test_polled_browser_placement_is_typed_finite_and_identity_free():
     )[1].split("auto * scene3d_viewport", 1)[0]
     assert 'event_type == QStringLiteral("placement_requested")' in poll
     assert "std::isfinite(x) && std::isfinite(y)" in poll
-    assert "std::isfinite(z) && std::isfinite(yaw)" in poll
-    assert "emit embedded_asset_placement_requested(x, y, z, yaw, repeat_commit);" in poll
+    assert "std::isfinite(roll) && std::isfinite(pitch) && std::isfinite(yaw)" in poll
+    assert "emit embedded_asset_placement_requested(x, y, z, roll, pitch, yaw, repeat_commit);" in poll
     assert "asset_id" not in poll.split('event_type == QStringLiteral("placement_requested")', 1)[1].split(
         '} else if (event_type == QStringLiteral("selection_changed"))', 1
     )[0]
@@ -821,6 +821,8 @@ def test_polled_browser_placement_is_typed_finite_and_identity_free():
     assert "armed_asset_x_m_ = x;" in connection
     assert "armed_asset_y_m_ = y;" in connection
     assert "armed_asset_z_m_ = z;" in connection
+    assert "armed_asset_roll_rad_ = roll;" in connection
+    assert "armed_asset_pitch_rad_ = pitch;" in connection
     assert "armed_asset_yaw_rad_ = yaw;" in connection
     assert "commit_armed_asset_placement(QPointF(x * 100.0, y * 100.0), repeat_commit, false);" in connection
     assert connection.count("commit_armed_asset_placement(") == 1

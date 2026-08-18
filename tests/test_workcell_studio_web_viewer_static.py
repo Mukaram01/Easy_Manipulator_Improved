@@ -4577,3 +4577,29 @@ def test_scene_load_paths_clear_stale_placement_feedback():
     assert "cancelPlacement();" in reset_lifecycle
     assert "cancelPlacement();" in load_file
     assert "cancelPlacement();" in load_url
+
+
+def test_placement_orientation_presets_world_yaw_contact_and_full_rpy_commit():
+    js_path = VIEWER / "viewer.js"
+    harness = r'''
+const fs=require('fs'),vm=require('vm'),assert=require('assert');let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const ThreeLib=require('./workcell_studio_web/viewer/node_modules/three/build/three.cjs');
+const elements={};const e=id=>elements[id]??={id,style:{},hidden:false,checked:false,value:'0',textContent:'',innerHTML:'',className:'',title:'',classList:{add(){},remove(){},toggle(){}},setAttribute(){},addEventListener(){},querySelector(){return null},appendChild(){},getBoundingClientRect(){return{left:0,top:0,width:100,height:100}}};
+const sandbox={console,assert,ThreeLib,window:{location:{search:''}},document:{getElementById:e,createElement(){return e('created')}},URLSearchParams,requestAnimationFrame(){return 0}};vm.createContext(sandbox);
+vm.runInContext(source+`
+THREE=ThreeLib;state.three.scene=new THREE.Scene();state.objects=[];state.pickRecords=[];state.pickIdentityByObject=new WeakMap();
+createPlacementPreview=async()=>{const root=markPlacementPreviewHelper(new THREE.Group());const mesh=new THREE.Mesh(new THREE.BoxGeometry(.1,.2,.4),new THREE.MeshBasicMaterial());root.add(mesh);markPlacementPreviewPhysicalVisual(mesh);state.placement.previewRoot=root;state.three.scene.add(root);composePlacementOrientation();return root;};
+const sameQ=(a,b,m='')=>assert(Math.abs(a.dot(b))>1-1e-10,m);
+armPlacement({asset:{}});const ghost=state.placement.previewRoot;assert.strictEqual(state.placement.orientationPreset,'upright');assert.strictEqual(state.placement.yaw,0);
+setPlacementPoint({x:0,y:0,z:.7});const uprightZ=state.placement.proposedPoint.z;assert(Math.abs(collectPlacementPreviewPhysicalBounds(ghost).bounds.min.z-.7)<1e-9);
+const expected={Digit1:[0,0],Digit2:[Math.PI/2,0],Digit3:[-Math.PI/2,0],Digit4:[0,Math.PI/2],Digit5:[0,-Math.PI/2],Digit6:[Math.PI,0]};
+for(const [code,rp] of Object.entries(expected)){onEditorKeyDown({code,target:null,preventDefault(){}});sameQ(ghost.quaternion,new THREE.Quaternion().setFromEuler(new THREE.Euler(rp[0],rp[1],0,'XYZ')),code);assert.strictEqual(state.placement.previewRoot,ghost);assert(Math.abs(collectPlacementPreviewPhysicalBounds(ghost).bounds.min.z-.7)<1e-9);}
+onEditorKeyDown({code:'Digit2',target:null,preventDefault(){}});const sideZ=state.placement.proposedPoint.z;assert(Math.abs(sideZ-uprightZ)>.05,'contact-corrected root Z changes for a non-cube');
+onEditorKeyDown({code:'KeyE',target:null,preventDefault(){}});onEditorKeyDown({code:'KeyE',target:null,preventDefault(){}});const presetQ=new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI/2,0,0,'XYZ'));const expectedQ=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),Math.PI/6).multiply(presetQ);sameQ(ghost.quaternion,expectedQ,'world Z yaw multiplies preset on the left');
+const before=ghost.quaternion.clone();for(const code of ['Digit1','KeyQ'])onEditorKeyDown({code,target:{tagName:'INPUT'},preventDefault(){throw Error('must not intercept')}});sameQ(ghost.quaternion,before,'form input safety');
+placementPointFromViewport=()=>({x:0,y:0,z:.7});onCanvasPointerDown({button:0,shiftKey:true,clientX:1,clientY:1,preventDefault(){},stopPropagation(){}});const request=state.editorEvents.find(e=>e.type==='placement_requested');for(const key of ['roll','pitch','yaw'])assert(Number.isFinite(request[key]),key);const persistedQ=new THREE.Quaternion().setFromEuler(new THREE.Euler(request.roll,request.pitch,request.yaw,'XYZ'));sameQ(persistedQ,ghost.quaternion,'canonical RPY reconstructs ghost orientation');assert.strictEqual(request.z,state.placement.proposedPoint.z);assert(el.placementStatus.innerHTML.includes('Orientation: +X side'));
+onEditorKeyDown({key:'Escape',code:'Escape',target:null,preventDefault(){}});armPlacement({asset:{}});assert.strictEqual(state.placement.orientationPreset,'upright');assert.strictEqual(state.placement.yaw,0);
+`,sandbox);
+'''
+    result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr or result.stdout

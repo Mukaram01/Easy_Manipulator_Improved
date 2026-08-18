@@ -40,9 +40,17 @@ const CAMERA_PRESET_DIRECTIONS = Object.freeze({
   top: [0, -0.001, 1],
   robot: [1.1, -1.25, 0.72],
 });
-const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], pickRecords: [], pickIdentityByObject: new WeakMap(), selectionIdentityIndex: null, physicalEditBindings: new Map(), assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: '', three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, gizmoPivot: null, gizmoPivotDragStart: null, cancellingTransformOperation: false, gizmoAttachmentDiagnostic: { targetId: '', reason: 'not_evaluated' }, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', placement: { armed: false, persistent: false, previewRoot: null, asset: null, yaw: 0, rawPoint: null, proposedPoint: null, supportOwnerId: '', supportValid: false, collision: false, collidingOwnerIds: [], valid: null }, robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: '', lastCanvasPickReason: '', lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
+const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], pickRecords: [], pickIdentityByObject: new WeakMap(), selectionIdentityIndex: null, physicalEditBindings: new Map(), assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: '', three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, gizmoPivot: null, gizmoPivotDragStart: null, cancellingTransformOperation: false, gizmoAttachmentDiagnostic: { targetId: '', reason: 'not_evaluated' }, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', editorEvents: [], editorError: '', placement: { armed: false, persistent: false, previewRoot: null, asset: null, orientationPreset: 'upright', orientationQuaternion: null, yaw: 0, rawPoint: null, proposedPoint: null, supportOwnerId: '', supportValid: false, collision: false, collidingOwnerIds: [], valid: null }, robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: '', lastCanvasPickReason: '', lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
 const PLACEMENT_COLLISION_EPSILON = 1e-5;
 const PLACEMENT_CONTACT_EPSILON = 1e-5;
+const PLACEMENT_ORIENTATION_PRESETS = Object.freeze({
+  Digit1: Object.freeze({ id: 'upright', label: 'Upright', roll: 0, pitch: 0 }),
+  Digit2: Object.freeze({ id: 'positive_x_side', label: '+X side', roll: Math.PI / 2, pitch: 0 }),
+  Digit3: Object.freeze({ id: 'negative_x_side', label: '-X side', roll: -Math.PI / 2, pitch: 0 }),
+  Digit4: Object.freeze({ id: 'positive_y_side', label: '+Y side', roll: 0, pitch: Math.PI / 2 }),
+  Digit5: Object.freeze({ id: 'negative_y_side', label: '-Y side', roll: 0, pitch: -Math.PI / 2 }),
+  Digit6: Object.freeze({ id: 'upside_down', label: 'Upside-down', roll: Math.PI, pitch: 0 }),
+});
 let robotPreviewLoadToken = 0;
 let physicalLoadToken = 0;
 const RESET_VIEW_TITLE = 'Fit Scene / Reset View: recomputes and reapplies the fitted workcell overview from renderable bounds.';
@@ -5210,11 +5218,35 @@ function proposedPlacementPoint(rawPoint) {
   const snap = placementSnapValue();
   return snap ? { x: Math.round(point.x / snap) * snap, y: Math.round(point.y / snap) * snap, z: point.z } : point;
 }
+function placementPresetDefinition(id = state.placement.orientationPreset) {
+  return Object.values(PLACEMENT_ORIENTATION_PRESETS).find(preset => preset.id === id) || PLACEMENT_ORIENTATION_PRESETS.Digit1;
+}
+function composePlacementOrientation() {
+  const preset = placementPresetDefinition();
+  if (!THREE?.Quaternion || !THREE?.Euler || !THREE?.Vector3) {
+    if (state.placement.previewRoot?.rotation) state.placement.previewRoot.rotation.z = state.placement.yaw;
+    return null;
+  }
+  const presetQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(preset.roll, preset.pitch, 0, 'XYZ'));
+  const yawQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), state.placement.yaw);
+  state.placement.orientationQuaternion = yawQuaternion.multiply(presetQuaternion);
+  state.placement.previewRoot?.quaternion?.copy?.(state.placement.orientationQuaternion);
+  return state.placement.orientationQuaternion;
+}
+function placementCanonicalRpy() {
+  const quaternion = state.placement.orientationQuaternion || composePlacementOrientation();
+  if (!quaternion || !THREE?.Euler) return { roll: 0, pitch: 0, yaw: state.placement.yaw };
+  const euler = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
+  return { roll: euler.x, pitch: euler.y, yaw: euler.z };
+}
+function placementRequest(point, repeat) {
+  return { ...point, ...placementCanonicalRpy(), repeat };
+}
 function contactCorrectPlacementPoint(supportPoint) {
   const placement = state.placement;
   const root = placement.previewRoot;
   if (!supportPoint || !root) return null;
-  root.rotation.z = placement.yaw;
+  composePlacementOrientation();
   root.position.set(supportPoint.x, supportPoint.y, supportPoint.z);
   const initialBounds = collectPlacementPreviewPhysicalBounds(root).bounds;
   if (!initialBounds) {
@@ -5238,11 +5270,12 @@ function updatePlacementStatus() {
   const point = state.placement.proposedPoint;
   const snap = placementSnapValue();
   const collisions = state.placement.collidingOwnerIds || [];
+  const orientation = placementPresetDefinition().label;
   status.title = collisions.join(', ');
   status.innerHTML = point
     ? state.placement.collision
-      ? `<strong>COLLISION</strong> · ${collisions[0]}${collisions.length > 1 ? ` + ${collisions.length - 1} more` : ''}<br>Move clear · Q/E rotate · Esc cancel`
-      : `<strong>VALID</strong> · X ${point.x.toFixed(3)} · Y ${point.y.toFixed(3)} · Z ${point.z.toFixed(3)} m${snap ? ` · SNAP ${snap.toFixed(3)} m` : ' · SNAP OFF'}<br>Q/E rotate · Esc cancel`
+      ? `<strong>COLLISION</strong> · ${collisions[0]}${collisions.length > 1 ? ` + ${collisions.length - 1} more` : ''}<br>Orientation: ${orientation} · Q/E yaw · 1–6 preset · Esc cancel`
+      : `<strong>VALID</strong> · X ${point.x.toFixed(3)} · Y ${point.y.toFixed(3)} · Z ${point.z.toFixed(3)} m${snap ? ` · SNAP ${snap.toFixed(3)} m` : ' · SNAP OFF'}<br>Orientation: ${orientation} · Q/E yaw · 1–6 preset · Esc cancel`
     : `<strong>INVALID</strong> · ${state.placement.supportValid ? (state.placement.invalidReason || 'Placement preview unavailable') : 'No valid placement surface'}${snap ? ` · SNAP ${snap.toFixed(3)} m` : ' · SNAP OFF'}<br>${state.placement.supportValid ? 'Wait for physical geometry · Esc cancel' : 'Move over a physical support surface · Esc cancel'}`;
 }
 function setPlacementPoint(rawPoint) {
@@ -5265,9 +5298,9 @@ async function createPlacementPreview(asset) {
   removePlacementPreview();
   if (!state.placement.armed || !state.three.scene || !THREE?.Group) return null;
   const root = markPlacementPreviewHelper(new THREE.Group());
-  root.rotation.z = state.placement.yaw;
   root.visible = false;
   state.placement.previewRoot = root;
+  composePlacementOrientation();
   state.three.scene.add(root);
 
   const placeholder = new THREE.Mesh(
@@ -5309,7 +5342,7 @@ function updatePlacementPointer(clientX, clientY) {
 function commitPlacementPointer(clientX, clientY) {
   const point = updatePlacementPointer(clientX, clientY);
   const valid = Boolean(point && state.placement.valid);
-  if (valid) pushEditorEvent('placement_requested', { ...point, yaw: state.placement.yaw, repeat: false });
+  if (valid) pushEditorEvent('placement_requested', placementRequest(point, false)); // repeat: false for drag/drop
   cancelPlacement();
   return valid;
 }
@@ -5318,7 +5351,7 @@ function armPlacement(options = {}) {
   if (options === null || typeof options !== 'object' || Array.isArray(options)) return null;
   cancelPlacement();
   const asset = options.asset && typeof options.asset === 'object' && !Array.isArray(options.asset) ? { ...options.asset } : {};
-  state.placement = { armed: true, persistent: options.persistent === true, previewRoot: null, asset, yaw: 0, rawPoint: null, supportPoint: null, proposedPoint: null, supportOwnerId: '', supportValid: false, collision: false, collidingOwnerIds: [], valid: false };
+  state.placement = { armed: true, persistent: options.persistent === true, previewRoot: null, asset, orientationPreset: 'upright', orientationQuaternion: null, yaw: 0, rawPoint: null, supportPoint: null, proposedPoint: null, supportOwnerId: '', supportValid: false, collision: false, collidingOwnerIds: [], valid: false };
   createPlacementPreview(asset);
   el.canvas?.classList?.add?.('placement-armed');
   if (el.canvas?.style) el.canvas.style.cursor = 'crosshair';
@@ -5328,7 +5361,7 @@ function armPlacement(options = {}) {
 }
 function cancelPlacement() {
   removePlacementPreview();
-  state.placement = { armed: false, persistent: false, previewRoot: null, asset: null, yaw: 0, rawPoint: null, supportPoint: null, proposedPoint: null, supportOwnerId: '', supportValid: false, collision: false, collidingOwnerIds: [], valid: null };
+  state.placement = { armed: false, persistent: false, previewRoot: null, asset: null, orientationPreset: 'upright', orientationQuaternion: null, yaw: 0, rawPoint: null, supportPoint: null, proposedPoint: null, supportOwnerId: '', supportValid: false, collision: false, collidingOwnerIds: [], valid: null };
   el.canvas?.classList?.remove?.('placement-armed');
   if (el.canvas?.style) el.canvas.style.cursor = '';
   el.canvas?.setAttribute?.('aria-label', 'Workcell 3D canvas');
@@ -5459,7 +5492,7 @@ function onCanvasPointerDown(event) {
     if (state.placement.armed) {
       const point = updatePlacementPreview({ clientX: event.clientX, clientY: event.clientY });
       if (!point || !state.placement.valid) return;
-      pushEditorEvent('placement_requested', { ...point, yaw: state.placement.yaw, repeat: event.shiftKey === true });
+      pushEditorEvent('placement_requested', placementRequest(point, event.shiftKey === true));
       if (event.shiftKey !== true) cancelPlacement();
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -5528,11 +5561,20 @@ function onEditorKeyDown(event) {
     if (cancelActiveTransformOperation('Escape')) event.preventDefault?.();
     return;
   }
+  const placementPreset = state.placement.armed && !event.ctrlKey && !event.metaKey && !event.altKey
+    ? PLACEMENT_ORIENTATION_PRESETS[event.code] : null;
+  if (placementPreset) {
+    state.placement.orientationPreset = placementPreset.id;
+    composePlacementOrientation();
+    setPlacementPoint(state.placement.rawPoint);
+    event.preventDefault?.();
+    return;
+  }
   if (state.placement.armed && !event.ctrlKey && !event.metaKey && !event.altKey &&
       (event.code === 'KeyQ' || event.code === 'KeyE')) {
     const direction = event.code === 'KeyQ' ? -1 : 1;
     state.placement.yaw += direction * (Math.PI / 12);
-    if (state.placement.previewRoot) state.placement.previewRoot.rotation.z = state.placement.yaw;
+    composePlacementOrientation();
     setPlacementPoint(state.placement.rawPoint);
     event.preventDefault?.();
     return;

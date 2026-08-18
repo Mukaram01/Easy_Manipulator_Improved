@@ -2820,18 +2820,21 @@ void ScenePreviewWidget::poll_embedded_editor_events()
       const QVariantMap event = event_value.toMap();
       const QString event_type = event.value(QStringLiteral("type")).toString();
       if (event_type == QStringLiteral("placement_requested")) {
-        bool x_ok = false, y_ok = false, z_ok = false, yaw_ok = false;
+        bool x_ok = false, y_ok = false, z_ok = false, roll_ok = false, pitch_ok = false, yaw_ok = false;
         const double x = event.value(QStringLiteral("x")).toDouble(&x_ok);
         const double y = event.value(QStringLiteral("y")).toDouble(&y_ok);
         const double z = event.value(QStringLiteral("z")).toDouble(&z_ok);
+        const double roll = event.value(QStringLiteral("roll")).toDouble(&roll_ok);
+        const double pitch = event.value(QStringLiteral("pitch")).toDouble(&pitch_ok);
         const double yaw = event.value(QStringLiteral("yaw")).toDouble(&yaw_ok);
         const bool repeat_commit = event.value(QStringLiteral("repeat")).toBool();
-        if (x_ok && y_ok && z_ok && yaw_ok && std::isfinite(x) && std::isfinite(y) &&
-            std::isfinite(z) && std::isfinite(yaw)) {
-          emit embedded_asset_placement_requested(x, y, z, yaw, repeat_commit);
+        if (x_ok && y_ok && z_ok && roll_ok && pitch_ok && yaw_ok &&
+            std::isfinite(x) && std::isfinite(y) && std::isfinite(z) &&
+            std::isfinite(roll) && std::isfinite(pitch) && std::isfinite(yaw)) {
+          emit embedded_asset_placement_requested(x, y, z, roll, pitch, yaw, repeat_commit);
         } else {
           emit studio_log_requested(QStringLiteral(
-            "Embedded Product View placement rejected: placement_requested requires finite x/y/z/yaw."));
+            "Embedded Product View placement rejected: placement_requested requires finite x/y/z/roll/pitch/yaw."));
         }
       } else if (event_type == QStringLiteral("selection_changed")) {
         QString id = event.value(QStringLiteral("uiItemId")).toString();
