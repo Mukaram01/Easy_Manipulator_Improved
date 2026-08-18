@@ -128,6 +128,28 @@ def _validate_owning_package(owning_package: str | None) -> str | None:
     return owning_package
 
 
+def infer_owning_package_from_layout_path(layout_path: str | Path) -> str | None:
+    """Infer a scene package only from a canonical installed share path.
+
+    Canonical runtime launches resolve layouts through ament to
+    ``<prefix>/share/<package>/layout/workcell_studio_layout.yaml``.  Imported
+    assets are package-relative, so this path is authoritative enough to recover
+    the package when an older launch file does not pass ``--owning-package``.
+    Source-tree or otherwise ambiguous paths intentionally return ``None``.
+    """
+    parts = Path(layout_path).parts
+    if len(parts) < 4 or tuple(parts[-2:]) != ("layout", "workcell_studio_layout.yaml"):
+        return None
+
+    for index, part in enumerate(parts[:-2]):
+        if part != "share" or index + 1 >= len(parts) - 2:
+            continue
+        candidate = parts[index + 1]
+        if _PACKAGE_NAME.fullmatch(candidate):
+            return candidate
+    return None
+
+
 def resolve_mesh_resource(value: Any, owning_package: str | None = None) -> str:
     """Resolve a safe canonical repository mesh reference to a package URI."""
     owning_package = _validate_owning_package(owning_package)
@@ -272,7 +294,8 @@ def run_ros_node(
     from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
     from visualization_msgs.msg import MarkerArray
 
-    specs = load_layout_meshes(layout_path, owning_package)
+    effective_owning_package = owning_package or infer_owning_package_from_layout_path(layout_path)
+    specs = load_layout_meshes(layout_path, effective_owning_package)
     # Pass the untouched launch argv to rclpy so remaps such as ``__node`` are
     # applied rather than merely tolerated by application parsing.
     rclpy.init(args=list(ros_args))
