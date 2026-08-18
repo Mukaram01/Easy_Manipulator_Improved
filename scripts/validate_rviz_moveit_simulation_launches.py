@@ -184,16 +184,15 @@ def _wait_for_ros_check(
     args: list[str],
     timeout_sec: int,
     predicate: Callable[[str], bool] | None = None,
-    attempt_timeout_cap: int = 3,
 ) -> tuple[int, str, str]:
-    """Poll a ROS CLI check so launch startup races do not become false failures."""
+    """Poll a short ROS CLI check so launch startup races do not become false failures."""
     deadline = time.monotonic() + max(1, timeout_sec)
     last: tuple[int, str, str] = (124, "", "")
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return last
-        attempt_timeout = max(1, min(attempt_timeout_cap, int(remaining + 0.999)))
+        attempt_timeout = max(1, min(3, int(remaining + 0.999)))
         last = _run_ros(args, attempt_timeout)
         rc, out, _ = last
         if rc == 0 and (predicate is None or predicate(out)):
@@ -203,16 +202,71 @@ def _wait_for_ros_check(
         time.sleep(0.25)
 
 
-def _controller_is_active(output: str, controller_name: str) -> bool:
-    for line in output.splitlines():
-        stripped = line.strip()
-        if stripped.startswith(controller_name) and re.search(r"\bactive\b", stripped):
-            return True
-    return False
+def _query_controller_states(
+    timeout_sec: int,
+    manager: str = "/controller_manager",
+) -> tuple[int, dict[str, str], str]:
+    """Read controller states directly from controller_manager's ListControllers service."""
+    try:
+        import rclpy
+        from controller_manager_msgs.srv import ListControllers
+        from rclpy.context import Context
+    except ImportError as exc:
+        return 127, {}, f"direct controller service dependencies unavailable: {exc}"
+
+    context = Context()
+    node = None
+    service_name = manager.rstrip("/") + "/list_controllers"
+    deadline = time.monotonic() + max(1, timeout_sec)
+    try:
+        rclpy.init(args=None, context=context)
+        node = rclpy.create_node(
+            f"workcell_fake_hardware_validator_{os.getpid()}",
+            context=context,
+        )
+        client = node.create_client(ListControllers, service_name)
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return 124, {}, f"{service_name} did not become ready before timeout"
+            if client.wait_for_service(timeout_sec=min(0.5, remaining)):
+                break
+
+        future = client.call_async(ListControllers.Request())
+        remaining = max(0.0, deadline - time.monotonic())
+        rclpy.spin_until_future_complete(node, future, timeout_sec=remaining)
+        if not future.done():
+            return 124, {}, f"{service_name} call did not complete before timeout"
+        exception = future.exception()
+        if exception is not None:
+            return 1, {}, f"{service_name} call failed: {exception}"
+        response = future.result()
+        if response is None:
+            return 1, {}, f"{service_name} returned no response"
+        states = {str(controller.name): str(controller.state) for controller in response.controller}
+        return 0, states, ""
+    except Exception as exc:
+        return 1, {}, f"{service_name} direct service check failed: {exc}"
+    finally:
+        if node is not None:
+            try:
+                node.destroy_node()
+            except Exception:
+                pass
+        try:
+            if context.ok():
+                context.shutdown()
+        except Exception:
+            pass
 
 
 def _expected_controllers(scene_name: str) -> tuple[str, ...]:
     return CANONICAL_UR5_2F_CONTROLLERS if scene_name == "ur5_2f_test" else ()
+
+
+def _inactive_controllers(states: dict[str, str], expected: tuple[str, ...]) -> list[str]:
+    return [name for name in expected if states.get(name) != "active"]
 
 
 def run_headless_smoke(scene_name: str, command: str, timeout_sec: int) -> tuple[str, list[str], list[str], dict[str, Any]]:
@@ -255,20 +309,18 @@ def run_headless_smoke(scene_name: str, command: str, timeout_sec: int) -> tuple
 
         expected_controllers = _expected_controllers(scene_name)
         controller_budget = max(5, min(12, timeout_sec // 3 or 5))
-        controller_predicate = None
-        if expected_controllers:
-            controller_predicate = lambda out: all(_controller_is_active(out, name) for name in expected_controllers)
-        controllers = _wait_for_ros_check(
-            ["ros2", "control", "list_controllers", "-c", "/controller_manager", "--spin-time", "1"],
-            controller_budget,
-            controller_predicate,
-            attempt_timeout_cap=controller_budget,
+        controller_rc, controller_states, controller_error = _query_controller_states(controller_budget)
+        controller_summary = "\n".join(
+            f"{name} {state}" for name, state in sorted(controller_states.items())
         )
         diagnostics["checks"]["controllers"] = {
-            "returncode": controllers[0],
-            "stdout_tail": controllers[1][-1000:],
-            "stderr_tail": controllers[2][-1000:],
+            "returncode": controller_rc,
+            "stdout_tail": controller_summary[-1000:],
+            "stderr_tail": controller_error[-1000:],
+            "states": controller_states,
             "expected_active": list(expected_controllers),
+            "transport": "rclpy_service",
+            "service": "/controller_manager/list_controllers",
         }
 
         nodes_out = diagnostics["checks"]["nodes"]["stdout_tail"]
@@ -298,11 +350,9 @@ def run_headless_smoke(scene_name: str, command: str, timeout_sec: int) -> tuple
         else:
             blockers.append("TF did not provide a base/tool transform sample")
 
-        controller_rc = diagnostics["checks"]["controllers"]["returncode"]
-        controller_out = diagnostics["checks"]["controllers"]["stdout_tail"]
         if controller_rc == 0:
             if expected_controllers:
-                inactive = [name for name in expected_controllers if not _controller_is_active(controller_out, name)]
+                inactive = _inactive_controllers(controller_states, expected_controllers)
                 if inactive:
                     blockers.append("required fake controllers are not active: " + ", ".join(inactive))
                 else:
@@ -312,8 +362,10 @@ def run_headless_smoke(scene_name: str, command: str, timeout_sec: int) -> tuple
                 evidence.append("fake_controllers_listed")
         elif controller_rc == 124:
             blockers.append("controller_manager/list_controllers did not become ready before timeout")
+        elif controller_rc == 127:
+            blockers.append("direct controller service check is unavailable")
         else:
-            blockers.append("fake controllers could not be listed")
+            blockers.append("fake controllers could not be listed through controller_manager service")
 
         return (FAIL if blockers else PASS), blockers, evidence, diagnostics
     except (FileNotFoundError, PermissionError, OSError) as exc:

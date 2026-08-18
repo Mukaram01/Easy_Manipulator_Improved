@@ -87,15 +87,14 @@ def test_unavailable_ros_environment_reports_blocked(monkeypatch: pytest.MonkeyP
     assert diagnostics["terminated"] is True
 
 
-def test_controller_status_parser_requires_active_state() -> None:
-    output = """
-joint_state_broadcaster[joint_state_broadcaster/JointStateBroadcaster] active
-ur5_arm_controller[joint_trajectory_controller/JointTrajectoryController] active
-ur5_gripper_controller[joint_trajectory_controller/JointTrajectoryController] inactive
-"""
-    assert v._controller_is_active(output, "joint_state_broadcaster") is True
-    assert v._controller_is_active(output, "ur5_arm_controller") is True
-    assert v._controller_is_active(output, "ur5_gripper_controller") is False
+def test_controller_state_check_requires_active_state() -> None:
+    states = {
+        "joint_state_broadcaster": "active",
+        "ur5_arm_controller": "active",
+        "ur5_gripper_controller": "inactive",
+    }
+    inactive = v._inactive_controllers(states, v.CANONICAL_UR5_2F_CONTROLLERS)
+    assert inactive == ["ur5_gripper_controller"]
 
 
 def test_launched_process_accepts_ready_canonical_fake_runtime_and_always_terminates(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -115,14 +114,6 @@ def test_launched_process_accepts_ready_canonical_fake_runtime_and_always_termin
     killed = []
     monkeypatch.setattr(v.os, "killpg", lambda pgid, sig: killed.append((pgid, sig)))
 
-    controllers = "\n".join(
-        [
-            "joint_state_broadcaster[joint_state_broadcaster/JointStateBroadcaster] active",
-            "ur5_arm_controller[joint_trajectory_controller/JointTrajectoryController] active",
-            "ur5_gripper_controller[joint_trajectory_controller/JointTrajectoryController] active",
-        ]
-    )
-
     def fake_run(args, capture_output, text, timeout):
         if args[:3] == ["ros2", "node", "list"]:
             out = "/move_group\n/ur5_2f_test_robot_state_publisher\n/controller_manager\n"
@@ -132,13 +123,24 @@ def test_launched_process_accepts_ready_canonical_fake_runtime_and_always_termin
             out = "/joint_states\n/tf\n/tf_static\n"
         elif args[:4] == ["ros2", "topic", "echo", "/tf_static"]:
             out = "transforms:\n- header:\n    frame_id: world\n  child_frame_id: base_link\n"
-        elif args[:3] == ["ros2", "control", "list_controllers"]:
-            out = controllers
         else:
             out = ""
         return subprocess.CompletedProcess(args, 0, out, "")
 
     monkeypatch.setattr(v.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        v,
+        "_query_controller_states",
+        lambda timeout_sec: (
+            0,
+            {
+                "joint_state_broadcaster": "active",
+                "ur5_arm_controller": "active",
+                "ur5_gripper_controller": "active",
+            },
+            "",
+        ),
+    )
     status, blockers, evidence, diagnostics = v.run_headless_smoke(
         "ur5_2f_test",
         "ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true",
@@ -149,6 +151,7 @@ def test_launched_process_accepts_ready_canonical_fake_runtime_and_always_termin
     assert "joint_state_broadcaster_active" in evidence
     assert "ur5_arm_controller_active" in evidence
     assert "ur5_gripper_controller_active" in evidence
+    assert diagnostics["checks"]["controllers"]["transport"] == "rclpy_service"
     assert diagnostics["terminated"] is True
     assert killed
 
