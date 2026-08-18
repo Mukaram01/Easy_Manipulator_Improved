@@ -10,7 +10,7 @@ import subprocess
 from launch import LaunchDescription
 from launch.actions import OpaqueFunction
 from launch.actions import DeclareLaunchArgument
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -27,6 +27,7 @@ robot_moveit_pkg = "ur5_moveit_config"
 
 CANONICAL_LAYOUT_REL_PATH = "layout/workcell_studio_layout.yaml"
 COLLISION_MANIFEST_REL_PATH = "config/moveit_collision_objects.yaml"
+CONTROLLERS_REL_PATH = "config/ros2_controllers.yaml"
 CANONICAL_LAYOUT_SCHEMA = "workcell_studio_layout/v1"
 REQUIRED_AUTHORED_POSE_IDS = (
     "support_surface_table",
@@ -163,10 +164,6 @@ def load_yaml(package_name, rel_path):
         return yaml.safe_load(file) or {}
 
 
-
-
-
-
 def _normalize_ros_param_types(value):
     if isinstance(value, dict):
         return {str(key): _normalize_ros_param_types(item) for key, item in value.items()}
@@ -246,8 +243,6 @@ def _validate_ros_param_types(value, path="root"):
     raise TypeError(f"Invalid ROS param type at {path}: {type(value).__name__} -> {value!r}")
 
 
-
-
 def _write_robot_description_file(scene_name, robot_description_config):
     path = os.path.join(
         tempfile.gettempdir(),
@@ -262,7 +257,7 @@ def _launch_setup(context):
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
     launch_rviz = LaunchConfiguration("launch_rviz")
-    joint_states_topic = f"/{scene_pkg}/joint_states"
+    joint_states_topic = "/joint_states"
     canonical_layout_path = os.path.join(
         get_package_share_directory(scene_pkg),
         CANONICAL_LAYOUT_REL_PATH,
@@ -271,6 +266,15 @@ def _launch_setup(context):
         get_package_share_directory(scene_pkg),
         COLLISION_MANIFEST_REL_PATH,
     )
+    controllers_config_path = os.path.join(
+        get_package_share_directory(scene_pkg),
+        CONTROLLERS_REL_PATH,
+    )
+    if not os.path.isfile(controllers_config_path):
+        raise RuntimeError(
+            f"Missing fake-hardware controller configuration: {controllers_config_path}. "
+            f"Rebuild/install {scene_pkg} before launching."
+        )
 
     canonical_poses = load_canonical_layout_poses()
     table_pose = canonical_poses["support_surface_table"]
@@ -433,11 +437,14 @@ def _launch_setup(context):
         ],
     )
 
+    # Preserve the previous visualization-only state publisher for the explicit
+    # non-fake path, but fake-hardware acceptance must use ros2_control state.
     joint_state_publisher = Node(
         package="joint_state_publisher",
         executable="joint_state_publisher",
         name=f"{scene_pkg}_joint_state_publisher",
         output="screen",
+        condition=UnlessCondition(use_fake_hardware),
         arguments=[robot_description_file],
         parameters=_param_list(
             validated_use_sim_time,
@@ -446,6 +453,46 @@ def _launch_setup(context):
             ("joint_states", joint_states_topic),
             ("/joint_states", joint_states_topic),
         ],
+    )
+
+    # Canonical M1 fake-hardware runtime.  The controller manager exists only
+    # when use_fake_hardware is true, so this launch never starts ros2_control
+    # against a physical UR driver.  robot_description comes from the local
+    # robot_state_publisher topic and contains mock_components/GenericSystem.
+    control_node = Node(
+        package="controller_manager",
+        executable="ros2_control_node",
+        name="controller_manager",
+        output="screen",
+        condition=IfCondition(use_fake_hardware),
+        parameters=_param_list(validated_use_sim_time, controllers_config_path),
+        remappings=[
+            ("~/robot_description", "/robot_description"),
+        ],
+    )
+
+    joint_state_broadcaster_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        output="screen",
+        condition=IfCondition(use_fake_hardware),
+        arguments=["joint_state_broadcaster", "--controller-manager", "/controller_manager"],
+    )
+
+    arm_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        output="screen",
+        condition=IfCondition(use_fake_hardware),
+        arguments=["ur5_arm_controller", "--controller-manager", "/controller_manager"],
+    )
+
+    gripper_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        output="screen",
+        condition=IfCondition(use_fake_hardware),
+        arguments=["ur5_gripper_controller", "--controller-manager", "/controller_manager"],
     )
 
     move_group = Node(
@@ -527,6 +574,10 @@ def _launch_setup(context):
         static_tf,
         robot_state_publisher,
         joint_state_publisher,
+        control_node,
+        joint_state_broadcaster_spawner,
+        arm_controller_spawner,
+        gripper_controller_spawner,
         move_group,
         canonical_mesh_preview,
         planning_scene_loader,
