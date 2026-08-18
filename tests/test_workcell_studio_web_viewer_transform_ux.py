@@ -305,3 +305,64 @@ def test_camera_fit_constants_cover_ur5_2f_sized_workcell_without_clipping():
     assert far >= 100.0
     assert far > distance + scene_radius
     assert far / near >= 5000
+
+
+def test_exact_numeric_inspector_and_reset_pose_contract():
+    viewer = _viewer_text()
+    assert "const TRANSFORM_FIELD_SPECS" in viewer
+    assert set(re.findall(r"^  (x|y|z|roll|pitch|yaw): ", viewer, re.MULTILINE)) == {
+        "x", "y", "z", "roll", "pitch", "yaw"
+    }
+    assert "Position (m)" in viewer
+    assert "Rotation (deg)" in viewer
+    assert "numeric * Math.PI / 180" in viewer
+    assert "function commitCanonicalTransformEdit" in viewer
+    assert "snapOptions: null" in viewer
+    assert "emitTransformCommitted(owner)" in viewer
+    assert ">Reset Pose</button>" in viewer
+    assert "rendered.authoredBaselineTransform || rendered.originalTransform" in viewer
+    assert "state.placement.armed" in viewer
+    numeric_editor = viewer.split("function wireTransformInputs", 1)[1].split("function updateDirtyState", 1)[0]
+    assert "addEventListener('input'" in numeric_editor
+    assert "addEventListener('blur'" in numeric_editor
+    assert "event.key === 'Enter'" in numeric_editor
+    assert "event.key === 'Escape'" in numeric_editor
+    assert "event.stopPropagation()" in numeric_editor
+    assert "input.dataset.transformDirty !== 'true'" in viewer
+    sync = viewer.split("function syncInspectorTransformFields", 1)[1].split("function commitTransformField", 1)[0]
+    assert "input.dataset.transformDirty === 'true'" in sync
+    assert "document.activeElement === input" in sync
+    assert "scale_x" not in numeric_editor
+
+
+def test_programmatic_canonical_transform_commit_and_baseline_harness():
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const element=()=>({hidden:false,checked:false,disabled:false,value:'0',textContent:'',className:'',innerHTML:'',dataset:{},classList:{add(){},remove(){},toggle(){}},querySelector(){return null},querySelectorAll(){return[]},addEventListener(){},setAttribute(){},appendChild(){},remove(){}});
+const context={console,assert,process,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}},addEventListener(){}},document:{activeElement:null,getElementById(){return element()},querySelectorAll(){return[]},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context);vm.runInContext(source+`
+THREE={MathUtils:{degToRad:value=>value*Math.PI/180,radToDeg:value=>value*180/Math.PI}};
+const copy=value=>JSON.parse(JSON.stringify(value));
+const pose=(x,y,z,roll,pitch,yaw)=>({pose:{xyz:{x,y,z},rpy:{x:roll,y:pitch,z:yaw}},scale:{x:.001,y:.001,z:.001}});
+const baseline=pose(.4,-.2,.8,.1,-.2,.3);
+const owner={item:{id:'imported_mm_stl',editable:true,locked:false},object3d:{t:copy(baseline),updateMatrixWorld(){this.updated=true}},originalTransform:copy(baseline),authoredBaselineTransform:copy(baseline)};
+state.objects=[owner];state.selected=owner.item.id;state.placement={armed:false};state.undoStack=[];state.redoStack=[];state.dirtyTransforms=new Map();state.gizmoPivot=null;state.three={transformControls:{object:owner.object3d}};
+selectionIsEditable=value=>value===owner;canonicalTransformOwner=value=>value;transformFromObject=object=>copy(object.t);isFiniteTransform=value=>Object.values(value.pose.xyz).concat(Object.values(value.pose.rpy),Object.values(value.scale)).every(Number.isFinite);captureTransformGroup=()=>new Map([[owner.item.id,copy(owner.object3d.t)]]);syncInspectorTransformFields=()=>{};updateLabels=()=>{};
+let commits=0;
+markDirtyTransform=(record,next,options)=>{assert.strictEqual(options.snapOptions,null);state.undoStack.push({changes:[{itemId:record.item.id,before:copy(options.oldTransform),after:copy(next)}]});state.redoStack=[];record.object3d.t=copy(next);state.dirtyTransforms.set(record.item.id,{oldTransform:copy(record.originalTransform),newTransform:copy(next)});return true};
+emitTransformCommitted=()=>{commits++};
+let next=copy(owner.object3d.t);next.pose.xyz.x=.825;assert(commitCanonicalTransformEdit(owner,next,'numeric_x'));assert.strictEqual(owner.object3d.t.pose.xyz.x,.825);assert.deepStrictEqual(owner.object3d.t.pose.xyz,{x:.825,y:-.2,z:.8});assert.deepStrictEqual(owner.object3d.t.pose.rpy,baseline.pose.rpy);assert.deepStrictEqual(owner.object3d.t.scale,baseline.scale);assert.strictEqual(state.undoStack.length,1);assert.strictEqual(commits,1);
+next=copy(owner.object3d.t);next.pose.rpy.z=THREE.MathUtils.degToRad(90);assert(commitCanonicalTransformEdit(owner,next,'numeric_yaw'));assert(Math.abs(owner.object3d.t.pose.rpy.z-Math.PI/2)<1e-15);assert.strictEqual(owner.object3d.t.pose.rpy.x,.1);assert.strictEqual(owner.object3d.t.pose.rpy.y,-.2);assert.strictEqual(state.undoStack.length,2);assert.strictEqual(commits,2);
+state.transformSpace='local';const scaleBefore=copy(owner.object3d.t.scale);assert(resetSelectedTransform(owner.item.id));assert.deepStrictEqual(owner.object3d.t,baseline);assert.deepStrictEqual(owner.authoredBaselineTransform,baseline);assert.deepStrictEqual(owner.object3d.t.scale,scaleBefore);assert.strictEqual(state.transformSpace,'local');assert.strictEqual(state.undoStack.length,3);assert.strictEqual(commits,3);
+assert.strictEqual(resetSelectedTransform(owner.item.id),false);assert.strictEqual(state.undoStack.length,3);assert.strictEqual(commits,3);
+assert.strictEqual(strictFiniteDecimal(''),null);assert.strictEqual(strictFiniteDecimal('NaN'),null);assert.strictEqual(strictFiniteDecimal('Infinity'),null);assert.strictEqual(strictFiniteDecimal('-Infinity'),null);assert.strictEqual(strictFiniteDecimal('1.2.3'),null);assert.strictEqual(strictFiniteDecimal('-0.125'),-.125);
+`,context);
+"""
+    subprocess.run(
+        ["node", "-e", harness, str(VIEWER)],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
