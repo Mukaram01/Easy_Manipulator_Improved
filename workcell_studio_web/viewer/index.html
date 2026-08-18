@@ -30,6 +30,13 @@
       </select>
       <button id="undo-edit" class="toolbar-button" type="button" disabled>Undo</button>
       <button id="redo-edit" class="toolbar-button" type="button" disabled>Redo</button>
+      <label class="toolbar-number" title="Choose whether Move and Rotate axes follow the workcell or the selected object">
+        Space
+        <select id="transform-space" aria-label="Transform space">
+          <option value="world" selected>World</option>
+          <option value="local">Local</option>
+        </select>
+      </label>
       <button id="export-edit-patch" class="toolbar-button primary-action" type="button" disabled title="Export preview changes as an edit patch">Export edits</button>
       <span id="task-gizmo-slot" class="task-gizmo-slot" aria-live="polite"></span>
       <details id="more-tools" class="toolbar-more">
