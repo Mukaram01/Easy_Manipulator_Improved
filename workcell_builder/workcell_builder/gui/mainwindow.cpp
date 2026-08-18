@@ -2698,12 +2698,14 @@ void MainWindow::setup_studio_shell()
       place_catalog_asset_at_world_position(asset_id, x, y, z, configure_transform);
     });
   connect(scene_preview_widget_, &ScenePreviewWidget::embedded_asset_placement_requested, this,
-    [this](double x, double y, double z, double yaw, bool repeat_commit) {
+    [this](double x, double y, double z, double roll, double pitch, double yaw, bool repeat_commit) {
       if (!place_asset_armed_ || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
-          !std::isfinite(yaw)) return;
+          !std::isfinite(roll) || !std::isfinite(pitch) || !std::isfinite(yaw)) return;
       armed_asset_x_m_ = x;
       armed_asset_y_m_ = y;
       armed_asset_z_m_ = z;
+      armed_asset_roll_rad_ = roll;
+      armed_asset_pitch_rad_ = pitch;
       armed_asset_yaw_rad_ = yaw;
       commit_armed_asset_placement(QPointF(x * 100.0, y * 100.0), repeat_commit, false);
     });
