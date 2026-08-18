@@ -47,6 +47,37 @@ def test_owning_package_maps_generated_imported_asset():
     assert marker.mesh_resource == "package://example_scene/assets/imported/nested/example.stl"
 
 
+def test_mesh_resource_infers_mesh_geometry_when_type_is_missing():
+    item = {
+        "id": "imported_part",
+        "type": "object",
+        "role": "asset",
+        "pose": {"xyz": [0.67, 0.56, 0.1], "rpy": [0.0, 0.0, 0.0]},
+        "mesh": {
+            "path": "assets/imported/example.stl",
+            "scale": [0.001, 0.001, 0.001],
+        },
+    }
+    marker = preview.parse_layout_meshes(
+        {"items": [item]}, owning_package="example_scene"
+    )[0]
+    assert marker.item_id == "imported_part"
+    assert marker.mesh_resource == "package://example_scene/assets/imported/example.stl"
+    assert marker.position == pytest.approx((0.67, 0.56, 0.1))
+    assert marker.scale == pytest.approx((0.001, 0.001, 0.001))
+
+
+def test_explicit_non_mesh_geometry_remains_authoritative():
+    item = {
+        "id": "semantic_overlay",
+        "geometry_type": "zone",
+        "mesh": {"path": "assets/imported/example.stl"},
+    }
+    assert preview.parse_layout_meshes(
+        {"items": [item]}, owning_package="example_scene"
+    ) == []
+
+
 def test_imported_asset_requires_an_explicit_valid_owning_package():
     with pytest.raises(preview.LayoutMeshError, match="cannot be mapped"):
         preview.resolve_mesh_resource("assets/imported/example.stl")
