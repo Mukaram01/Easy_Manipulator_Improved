@@ -36,6 +36,23 @@
   background: #c4e5f3;
 }
 
+.file-picker {
+  position: relative;
+  min-width: auto;
+}
+
+.file-picker input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .task-gizmo-slot {
   display: contents;
 }
@@ -105,6 +122,10 @@
 
 .toolbar-more-panel .toolbar-button {
   text-align: left;
+}
+
+.toolbar-more-panel > .toolbar-number {
+  min-height: 2.25rem;
 }
 
 .panel-disclosure {

@@ -555,6 +555,13 @@ if(BUILD_TESTING)
   if(TARGET workcell_transform_clipboard_utils_test)
     target_link_libraries(workcell_transform_clipboard_utils_test Qt5::Core)
     target_include_directories(workcell_transform_clipboard_utils_test PRIVATE gui)
+    set_tests_properties(workcell_transform_clipboard_utils_test PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+  endif()
+
+  if(TARGET workcell_layout_serialization_contract_test)
+    set_tests_properties(workcell_layout_serialization_contract_test PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
   endif()
 
   if(TARGET workcell_preview_item_suppression_test)
@@ -821,6 +828,8 @@ install(PROGRAMS
   scripts/epd_to_workcell_snapshot_node.py
   ../../scripts/workcell_builder_task_zone_preview_node.py
   ../../scripts/workcell_studio_layout_mesh_preview_node.py
+  ../../scripts/generate_moveit_collision_manifest.py
+  ../../scripts/workcell_studio_planning_scene_node.py
   DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS

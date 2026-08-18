@@ -99,6 +99,26 @@
       <div id="dirty-state" class="state dirty" hidden>Unsaved preview edits</div>
       <div id="initial-pose-status" class="state preview-status" hidden>Initial pose preview</div>
       <div id="placement-status" class="placement-status" role="status" aria-live="polite" hidden></div>
+      <details id="scene-health" class="scene-health health-loading">
+        <summary aria-label="Scene health details">
+          <span class="health-dot" aria-hidden="true"></span>
+          <span class="health-copy" role="status" aria-live="polite">
+            <strong id="scene-health-title">Preparing Product View</strong>
+            <small id="scene-health-summary">Waiting for scene data.</small>
+          </span>
+          <span id="scene-health-count" class="health-count" hidden>0</span>
+          <span class="health-review">Review</span>
+        </summary>
+        <div class="scene-health-body">
+          <div class="scene-health-heading">
+            <strong>Scene health</strong>
+            <span>What happened and what to do next</span>
+          </div>
+          <div id="scene-health-items" class="scene-health-items">
+            <div class="health-empty">No scene has been loaded yet.</div>
+          </div>
+        </div>
+      </details>
       <canvas id="scene-canvas"></canvas>
       <div id="label-layer" class="label-layer" aria-hidden="true"></div>
     </section>

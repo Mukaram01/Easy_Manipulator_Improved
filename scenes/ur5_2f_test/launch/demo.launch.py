@@ -26,6 +26,7 @@ grasp_frame = "ee_palm"
 robot_moveit_pkg = "ur5_moveit_config"
 
 CANONICAL_LAYOUT_REL_PATH = "layout/workcell_studio_layout.yaml"
+COLLISION_MANIFEST_REL_PATH = "config/moveit_collision_objects.yaml"
 CANONICAL_LAYOUT_SCHEMA = "workcell_studio_layout/v1"
 REQUIRED_AUTHORED_POSE_IDS = (
     "support_surface_table",
@@ -266,6 +267,10 @@ def _launch_setup(context):
         get_package_share_directory(scene_pkg),
         CANONICAL_LAYOUT_REL_PATH,
     )
+    collision_manifest_path = os.path.join(
+        get_package_share_directory(scene_pkg),
+        COLLISION_MANIFEST_REL_PATH,
+    )
 
     canonical_poses = load_canonical_layout_poses()
     table_pose = canonical_poses["support_surface_table"]
@@ -499,12 +504,32 @@ def _launch_setup(context):
         ],
     )
 
+    # Web3D remains the authoring visualization.  This guarded loader applies
+    # the reviewed, deterministic collision manifest to MoveIt, which is the
+    # collision and planning source of truth.
+    planning_scene_loader = Node(
+        package="workcell_builder",
+        executable="workcell_studio_planning_scene_node.py",
+        name=f"{scene_pkg}_planning_scene_loader",
+        output="screen",
+        arguments=[
+            collision_manifest_path,
+            "--service",
+            "/apply_planning_scene",
+            "--verify-service",
+            "/get_planning_scene",
+            "--timeout-seconds",
+            "45",
+        ],
+    )
+
     return [
         static_tf,
         robot_state_publisher,
         joint_state_publisher,
         move_group,
         canonical_mesh_preview,
+        planning_scene_loader,
         rviz_node,
     ]
 

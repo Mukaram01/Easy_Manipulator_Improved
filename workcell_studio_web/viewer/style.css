@@ -333,6 +333,185 @@ h2 {
   color: #0b5f80;
 }
 
+.scene-health {
+  position: absolute;
+  z-index: 5;
+  top: 0.75rem;
+  left: 0.75rem;
+  width: min(29rem, calc(100% - 1.5rem));
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.scene-health summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 0.55rem;
+  align-items: center;
+  min-height: 3.2rem;
+  padding: 0.52rem 0.65rem;
+  border: 1px solid rgba(82, 97, 115, 0.38);
+  border-radius: 0.62rem;
+  background: rgba(248, 250, 252, 0.96);
+  box-shadow: 0 0.28rem 1rem rgba(23, 32, 42, 0.18);
+  cursor: pointer;
+  list-style: none;
+}
+
+.scene-health summary::-webkit-details-marker {
+  display: none;
+}
+
+.scene-health summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.health-dot {
+  width: 0.68rem;
+  height: 0.68rem;
+  border-radius: 50%;
+  background: #778596;
+  box-shadow: 0 0 0 0.23rem rgba(119, 133, 150, 0.16);
+}
+
+.health-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  overflow: hidden;
+}
+
+.health-copy strong,
+.health-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.health-copy strong {
+  font-size: 0.82rem;
+}
+
+.health-copy small {
+  color: var(--muted);
+  font-size: 0.71rem;
+}
+
+.health-count {
+  min-width: 1.5rem;
+  padding: 0.1rem 0.38rem;
+  border-radius: 999px;
+  background: rgba(196, 52, 52, 0.12);
+  color: #8b1f2b;
+  font-weight: 700;
+  text-align: center;
+}
+
+.health-review {
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.scene-health[open] .health-review::after {
+  content: " less";
+}
+
+.scene-health-body {
+  max-height: min(23rem, calc(100vh - 5rem));
+  margin-top: 0.35rem;
+  overflow: auto;
+  border: 1px solid rgba(82, 97, 115, 0.32);
+  border-radius: 0.62rem;
+  background: rgba(248, 250, 252, 0.98);
+  box-shadow: 0 0.35rem 1.2rem rgba(23, 32, 42, 0.2);
+}
+
+.scene-health-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0.65rem 0.72rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.scene-health-heading span {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.scene-health-items {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.55rem;
+}
+
+.health-item,
+.health-empty {
+  padding: 0.55rem 0.62rem;
+  border-left: 3px solid #778596;
+  border-radius: 0.38rem;
+  background: var(--panel-2);
+  line-height: 1.35;
+}
+
+.health-item strong,
+.health-item span,
+.health-item small {
+  display: block;
+}
+
+.health-item span {
+  margin-top: 0.12rem;
+  color: #344354;
+}
+
+.health-item small {
+  margin-top: 0.28rem;
+  color: var(--muted);
+}
+
+.health-item-error {
+  border-left-color: var(--error);
+  background: var(--error-surface);
+}
+
+.health-item-warning {
+  border-left-color: var(--warn);
+  background: var(--overlay-surface);
+}
+
+.health-loading .health-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 0.23rem rgba(0, 120, 168, 0.16);
+  animation: health-pulse 1.2s ease-in-out infinite;
+}
+
+.health-ready .health-dot {
+  background: #23864b;
+  box-shadow: 0 0 0 0.23rem rgba(35, 134, 75, 0.16);
+}
+
+.health-warning .health-dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 0.23rem rgba(178, 107, 0, 0.16);
+}
+
+.health-failed .health-dot {
+  background: var(--error);
+  box-shadow: 0 0 0 0.23rem rgba(196, 52, 52, 0.16);
+}
+
+@keyframes health-pulse {
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .health-loading .health-dot { animation: none; }
+}
+
 .warning-item {
   margin: 0 0 0.5rem;
   padding: 0.52rem;
@@ -617,6 +796,20 @@ code {
 .editor-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.transform-clipboard-actions button {
+  flex-basis: 5.7rem;
+}
+
+.transform-clipboard-status {
+  margin: 0.5rem 0 0;
+  padding: 0.42rem 0.5rem;
+  border-radius: 0.38rem;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 0.74rem;
+  line-height: 1.35;
 }
 
 .object-panel::-webkit-scrollbar,

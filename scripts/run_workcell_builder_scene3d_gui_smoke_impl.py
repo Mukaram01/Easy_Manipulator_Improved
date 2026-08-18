@@ -125,6 +125,11 @@ def _resolve_executable_candidates(workspace_root: Path | None) -> list[Path]:
 
 def build_cmd(exe: Path | str, args: argparse.Namespace) -> list[str]:
     cmd = [str(exe), "--scene3d-smoke"]
+    # The smoke-mode MainWindow does not show StartupDialog, so it must receive
+    # the same workspace explicitly. Without this, the executable starts with
+    # an empty scene catalog and can never honor --scene/--scene-path.
+    if args.workspace_root:
+        cmd += ["--workspace", str(args.workspace_root)]
     if args.new_cell_recommended_layout_smoke:
         cmd.append("--new-cell-recommended-layout-smoke")
     elif args.scene:
@@ -2725,7 +2730,14 @@ def main() -> int:
         if args.scene_path:
             expected_scene_path = str(args.scene_path.resolve())
             counters = payload.get("counters") if isinstance(payload.get("counters"), dict) else {}
-            actual_scene_path = str(counters.get("inspector_scene_path") or counters.get("selected_scene_path") or "").strip()
+            load_diagnostics = payload.get("scene_load_diagnostics") if isinstance(payload.get("scene_load_diagnostics"), dict) else {}
+            actual_scene_path = str(
+                counters.get("inspector_scene_path")
+                or counters.get("selected_scene_path")
+                or load_diagnostics.get("resolved_scene_path")
+                or load_diagnostics.get("source_path_root")
+                or ""
+            ).strip()
             if Path(actual_scene_path).as_posix() != Path(expected_scene_path).as_posix():
                 scene_path_blockers = list(payload.get("blockers") or [])
                 scene_path_blockers.append("explicit_scene_path_not_loaded")

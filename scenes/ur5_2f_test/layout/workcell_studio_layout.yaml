@@ -1,4 +1,10 @@
 schema_version: workcell_studio_layout/v1
+schema: workcell_studio_layout/v1
+scene_name: ur5_2f_test
+scene_path: .
+metadata:
+  canonical_layout_path: layout/workcell_studio_layout.yaml
+  legacy_import_normalized_keys: items,assets,placed_assets,objects,zones,targets,camera
 items:
   - id: support_surface_table
     type: support_surface
@@ -10,13 +16,28 @@ items:
     source_layer: editable_layout
     source: layout/workcell_studio_layout.yaml
     pose:
-      xyz: [0.55, 0.0, 0.06]
-      rpy: [0.0, 0.0, 0.0]
-    dimensions: [1.2, 0.8, 0.08]
+      xyz:
+        - 0.65000000000000002
+        - 0
+        - 0.059999999999999998
+      rpy:
+        - 0
+        - 0
+        - 0
+    dimensions:
+      - 1.2
+      - 0.80000000000000004
+      - 0.080000000000000002
     geometry_type: box
     primitive_geometry_type: box
     material:
-      color: [0.55, 0.58, 0.62, 1.0]
+      color:
+        - 0.55
+        - 0.58
+        - 0.62
+        - 1.0
+    scene_name: ur5_2f_test
+    scene_path: .
   - id: pick_zone_commissioning
     type: pick_zone
     role: pick_zone
@@ -27,13 +48,28 @@ items:
     source_layer: editable_layout
     source: layout/workcell_studio_layout.yaml
     pose:
-      xyz: [0.45, 0.25, 0.105]
-      rpy: [0.0, 0.0, 0.0]
-    dimensions: [0.35, 0.30, 0.01]
+      xyz:
+        - 0.45000000000000001
+        - 0.25
+        - 0.105
+      rpy:
+        - 0
+        - 0
+        - 0
+    dimensions:
+      - 0.34999999999999998
+      - 0.29999999999999999
+      - 0.01
     geometry_type: box
     primitive_geometry_type: box
     material:
-      color: [0.12, 0.55, 1.0, 0.45]
+      color:
+        - 0.12
+        - 0.55
+        - 1.0
+        - 0.45
+    scene_name: ur5_2f_test
+    scene_path: .
   - id: place_zone_default
     transform_group: default_drop_destination
     type: place_zone
@@ -46,13 +82,28 @@ items:
     source_layer: editable_layout
     source: layout/workcell_studio_layout.yaml
     pose:
-      xyz: [0.55, -0.28, 0.20]
-      rpy: [0.0, 0.0, 0.0]
-    dimensions: [0.3522011268, 0.2133871002, 0.01]
+      xyz:
+        - 0.25
+        - 0.45000000000000001
+        - 0.20000000000000001
+      rpy:
+        - 0
+        - 0
+        - 0
+    dimensions:
+      - 0.35220112679999999
+      - 0.21338710020000001
+      - 0.01
     geometry_type: box
     primitive_geometry_type: box
     material:
-      color: [0.10, 0.75, 0.35, 0.45]
+      color:
+        - 0.1
+        - 0.75
+        - 0.35
+        - 0.45
+    scene_name: ur5_2f_test
+    scene_path: .
   - id: target_bin_default
     transform_group: default_drop_destination
     type: target_bin
@@ -64,17 +115,41 @@ items:
     source_layer: editable_layout
     source: layout/workcell_studio_layout.yaml
     pose:
-      xyz: [0.55, -0.28, 0.20]
-      rpy: [0.0, 0.0, 0.0]
-    dimensions: [0.3522011268, 0.2133871002, 0.20]
+      xyz:
+        - 0.25
+        - 0.45000000000000001
+        - 0.20000000000000001
+      rpy:
+        - 0
+        - 0
+        - 0
+    dimensions:
+      - 0.35220112679999999
+      - 0.21338710020000001
+      - 0.20000000000000001
     geometry_type: mesh
     mesh:
       path: assets/environment/sorting_bin_description/meshes/sorting_bin.stl
-      scale: [0.001, 0.001, 0.001]
-      rpy: [1.57079632679, 0.0, 1.57079632679]
-      origin_offset: [-0.1738994366, 0.0, -0.10]
+      scale:
+        - 0.001
+        - 0.001
+        - 0.001
+      rpy:
+        - 1.57079632679
+        - 0.0
+        - 1.57079632679
+      origin_offset:
+        - -0.1738994366
+        - 0.0
+        - -0.1
     material:
-      color: [0.05, 0.35, 0.80, 1.0]
+      color:
+        - 0.05
+        - 0.35
+        - 0.8
+        - 1.0
+    scene_name: ur5_2f_test
+    scene_path: .
   - id: realsense_overhead
     type: realsense
     role: camera
@@ -85,13 +160,28 @@ items:
     source_layer: editable_layout
     source: layout/workcell_studio_layout.yaml
     pose:
-      xyz: [0.35, 0.0, 0.85]
-      rpy: [0.0, 1.5708, 0.0]
-    dimensions: [0.08, 0.08, 0.06]
+      xyz:
+        - 0.34999999999999998
+        - 0.10000000000000001
+        - 0.84999999999999998
+      rpy:
+        - 0
+        - 1.5700000000000001
+        - 0
+    dimensions:
+      - 0.080000000000000002
+      - 0.080000000000000002
+      - 0.059999999999999998
     geometry_type: box
     primitive_geometry_type: box
     material:
-      color: [0.08, 0.09, 0.10, 1.0]
+      color:
+        - 0.08
+        - 0.09
+        - 0.1
+        - 1.0
+    scene_name: ur5_2f_test
+    scene_path: .
   - id: safety_zone_keepout
     type: safety_zone
     role: keepout
@@ -102,13 +192,28 @@ items:
     source_layer: editable_layout
     source: layout/workcell_studio_layout.yaml
     pose:
-      xyz: [0.35, 0.0, 0.102]
-      rpy: [0.0, 0.0, 0.0]
-    dimensions: [2.0, 1.6, 0.01]
+      xyz:
+        - 0.34999999999999998
+        - 0
+        - 0.10199999999999999
+      rpy:
+        - 0
+        - 0
+        - 0
+    dimensions:
+      - 2
+      - 1.6000000000000001
+      - 0.01
     geometry_type: box
     primitive_geometry_type: box
     material:
-      color: [1.0, 0.15, 0.12, 0.18]
+      color:
+        - 1.0
+        - 0.15
+        - 0.12
+        - 0.18
+    scene_name: ur5_2f_test
+    scene_path: .
   - id: home_pose_safe
     type: home_pose
     role: home_pose
@@ -119,10 +224,131 @@ items:
     source_layer: editable_layout
     source: layout/workcell_studio_layout.yaml
     pose:
-      xyz: [0.25, 0.0, 0.45]
-      rpy: [0.0, 0.0, 0.0]
-    dimensions: [0.08, 0.08, 0.08]
+      xyz:
+        - 0.25
+        - 0
+        - 0.45000000000000001
+      rpy:
+        - 0
+        - 0
+        - 0
+    dimensions:
+      - 0.080000000000000002
+      - 0.080000000000000002
+      - 0.080000000000000002
     geometry_type: sphere
     primitive_geometry_type: sphere
     material:
-      color: [0.55, 0.25, 1.0, 0.85]
+      color:
+        - 0.55
+        - 0.25
+        - 1.0
+        - 0.85
+    scene_name: ur5_2f_test
+    scene_path: .
+  - id: !<tag:yaml.org,2002:str> object_02
+    display_name: !<tag:yaml.org,2002:str> 2068_001_24
+    type: object
+    category: Imported
+    role: asset
+    catalog_asset_id: !<tag:yaml.org,2002:str> imported_2068_001_24
+    source: layout/workcell_studio_layout.yaml
+    editable: true
+    locked: false
+    source_path: assets/imported/2068_001_24.stl
+    mesh_path: assets/imported/2068_001_24.stl
+    mesh:
+      path: assets/imported/2068_001_24.stl
+      scale:
+        - 0.001
+        - 0.001
+        - 0.001
+    scale:
+      - 0.001
+      - 0.001
+      - 0.001
+    pose:
+      xyz:
+        - 0.90000000000000002
+        - 0.45000000000000001
+        - 0.16
+      rpy:
+        - 0
+        - 1.48352986419518
+        - 0
+    dimensions:
+      - 1
+      - 1
+      - 1
+    scene_name: ur5_2f_test
+    scene_path: .
+  - id: !<tag:yaml.org,2002:str> object_01
+    display_name: !<tag:yaml.org,2002:str> 2068_001_24
+    type: object
+    category: Imported
+    role: asset
+    catalog_asset_id: !<tag:yaml.org,2002:str> imported_2068_001_24
+    source: layout/workcell_studio_layout.yaml
+    editable: true
+    locked: false
+    source_path: assets/imported/2068_001_24.stl
+    mesh_path: assets/imported/2068_001_24.stl
+    mesh:
+      path: assets/imported/2068_001_24.stl
+      scale:
+        - 0.001
+        - 0.001
+        - 0.001
+    scale:
+      - 0.001
+      - 0.001
+      - 0.001
+    pose:
+      xyz:
+        - 0.94999999999999996
+        - -0.14999999999999999
+        - 0.10000000000000001
+      rpy:
+        - 0
+        - 0
+        - 0
+    dimensions:
+      - 1
+      - 1
+      - 1
+    scene_name: ur5_2f_test
+    scene_path: .
+  - id: !<tag:yaml.org,2002:str> object_03
+    display_name: !<tag:yaml.org,2002:str> 2068_001_24
+    type: object
+    category: Imported
+    role: asset
+    catalog_asset_id: !<tag:yaml.org,2002:str> imported_2068_001_24
+    source: layout/workcell_studio_layout.yaml
+    editable: true
+    locked: false
+    source_path: assets/imported/2068_001_24.stl
+    mesh_path: assets/imported/2068_001_24.stl
+    mesh:
+      path: assets/imported/2068_001_24.stl
+      scale:
+        - 0.001
+        - 0.001
+        - 0.001
+    scale:
+      - 0.001
+      - 0.001
+      - 0.001
+    pose:
+      xyz:
+        - 0.65000000000000002
+        - 0.29999999999999999
+        - 0.20000000000000001
+      rpy:
+        - 0
+        - 0
+        - 0
+    dimensions:
+      - 1
+      - 1
+      - 1

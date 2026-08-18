@@ -3510,12 +3510,12 @@ void ScenePreviewWidget::reload_meshes()
 }
 void ScenePreviewWidget::apply_product_view_defaults()
 {
-  auto * v = active_native_viewport();
-  if (!v) return;
   if (view_actions_selector_) {
     const QSignalBlocker blocker(view_actions_selector_);
     view_actions_selector_->setCurrentText("Isometric");
   }
+  auto * v = active_native_viewport();
+  if (!v) return;
   // Product previews should open in the same camera path users get from the
   // normal canvas controls: an isometric view followed by product-fit bounds
   // that keep robot/tool/environment meshes and editable layout items legible
@@ -3564,7 +3564,7 @@ void ScenePreviewWidget::refresh_toolbar_visibility()
     view_actions_selector_->clear();
     view_actions_selector_->addItems({"Top", "Front", "Side", "Isometric", "Fit View"});
     const int previous_index = view_actions_selector_->findText(previous);
-    view_actions_selector_->setCurrentIndex(previous_index >= 0 ? previous_index : 0);
+    view_actions_selector_->setCurrentText(previous_index >= 0 ? previous : QStringLiteral("Isometric"));
   }
 
   const auto set_visible = [](QWidget * widget, bool visible) {

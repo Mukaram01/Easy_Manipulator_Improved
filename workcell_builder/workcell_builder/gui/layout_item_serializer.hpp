@@ -21,6 +21,11 @@ inline bool is_scene_layer_token(const std::string & value)
          value == "locked_generated_urdf_visual";
 }
 
+inline bool is_scene_relative_asset_path(const std::string & value)
+{
+  return value.rfind("assets/", 0) == 0 || value.rfind("./assets/", 0) == 0;
+}
+
 inline YAML::Node layout_string_scalar(const std::string & value)
 {
   YAML::Node node(value);
@@ -77,13 +82,30 @@ inline YAML::Node serialize_layout_item(
     if (!state.mesh_path.empty() && !is_scene_layer_token(state.mesh_path)) {
       item["source_path"] = state.mesh_path; item["mesh_path"] = state.mesh_path;
       YAML::Node mesh(YAML::NodeType::Map); mesh["path"] = state.mesh_path;
-      if (!state.source_package.empty() && !is_scene_layer_token(state.source_package))
+      if (!is_scene_relative_asset_path(state.mesh_path) &&
+        !state.source_package.empty() && !is_scene_layer_token(state.source_package))
         mesh["source_package"] = state.source_package;
       mesh["scale"] = layout_sequence3(state.mesh_scale); item["mesh"] = mesh;
     }
     item["scale"] = layout_sequence3(state.mesh_scale);
   } else if (display_name_explicitly_edited && !state.display_name.empty()) {
     item["display_name"] = layout_string_scalar(state.display_name);
+  }
+  if (existing_record && !state.catalog_asset_id.empty() && !state.mesh_path.empty() &&
+    !is_scene_layer_token(state.mesh_path))
+  {
+    item["source_path"] = state.mesh_path;
+    item["mesh_path"] = state.mesh_path;
+    YAML::Node mesh = item["mesh"];
+    if (!mesh || !mesh.IsMap()) mesh = YAML::Node(YAML::NodeType::Map);
+    mesh["path"] = state.mesh_path;
+    if (is_scene_relative_asset_path(state.mesh_path)) {
+      mesh.remove("source_package");
+    } else if (!state.source_package.empty() && !is_scene_layer_token(state.source_package)) {
+      mesh["source_package"] = state.source_package;
+    }
+    mesh["scale"] = layout_sequence3(state.mesh_scale);
+    item["mesh"] = mesh;
   }
   update_layout_item_pose(item, state);
   update_layout_item_dimensions(item, state);

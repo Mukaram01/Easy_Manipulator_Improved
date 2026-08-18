@@ -25,6 +25,7 @@
 #include <QWidgetAction>
 #include <QCoreApplication>
 #include <QFile>
+#include <QCryptographicHash>
 #include <QSaveFile>
 #include <QFileInfo>
 #include <QFrame>
@@ -131,7 +132,14 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <limits>
 #include "workcell_builder_ui_utils.hpp"
+
+#ifdef WORKCELL_BUILDER_HAS_ASSIMP
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
+#endif
 
 
 #include "gui/ui_mainwindow.h"
@@ -1894,7 +1902,27 @@ void MainWindow::apply_studio_theme()
     "QPushButton#studioHomeSecondaryButton { background: #FFFFFF; color: #1F2933; border: 1px solid #D0D7DE; border-radius: 6px; padding: 6px 10px; }"
     "QPushButton#studioHomeDangerButton { background: #FFFFFF; color: #B91C1C; border: 1px solid #FCA5A5; border-radius: 6px; padding: 6px 10px; }"
     "QLabel#studioHomeSafetyPill { background: #EFF6FF; color: #1E40AF; border: 1px solid #BFDBFE; border-radius: 10px; padding: 2px 8px; }"
-    "QTextEdit#studioHomeLog { background: #FFFFFF; color: #1F2933; border: 1px solid #D0D7DE; }");
+    "QTextEdit#studioHomeLog { background: #FFFFFF; color: #1F2933; border: 1px solid #D0D7DE; }"
+    "QWidget#workcellStudioSceneBuilderPage { background: #F4F7FA; color: #17212B; }"
+    "QWidget#sceneBuilderWorkspace { background: #E8EEF4; border: 1px solid #CAD4DF; border-radius: 10px; }"
+    "QFrame#sceneBuilderLeftPanel, QFrame#sceneBuilderRightPanel { background: #F8FAFC; border: 0; }"
+    "QFrame#sceneBuilderProductViewPanel { background: #EEF2F6; border: 0; }"
+    "QFrame#sceneBuilderBottomStatusBar { background: #FFFFFF; border: 1px solid #D8E0E8; border-radius: 7px; }"
+    "QLabel#sceneBuilderCompactSceneIdentity { color: #5B6775; font-size: 12px; }"
+    "QLabel#sceneBuilderInspectorLabel { color: #17212B; font-size: 15px; font-weight: 650; }"
+    "QLabel#sceneBuilderIssueCount { background: #FFF1F2; color: #B42332; border: 1px solid #FECDD3; border-radius: 9px; padding: 2px 7px; }"
+    "QTabWidget::pane { border: 1px solid #D8E0E8; border-radius: 8px; background: #FFFFFF; top: -1px; }"
+    "QTabBar::tab { background: transparent; color: #617083; padding: 7px 11px; border: 0; border-bottom: 2px solid transparent; }"
+    "QTabBar::tab:selected { color: #155EEF; border-bottom: 2px solid #155EEF; font-weight: 650; }"
+    "QPushButton, QToolButton { min-height: 28px; border: 1px solid #C9D3DE; border-radius: 7px; padding: 3px 9px; background: #FFFFFF; color: #243447; }"
+    "QPushButton:hover, QToolButton:hover { border-color: #84ADFF; background: #F1F6FF; }"
+    "QPushButton:checked, QToolButton:checked { border-color: #155EEF; background: #EAF1FF; color: #0B4CC1; font-weight: 650; }"
+    "QPushButton[role=\"primary\"] { background: #155EEF; color: #FFFFFF; border-color: #155EEF; font-weight: 650; min-height: 32px; }"
+    "QPushButton[role=\"primary\"]:hover { background: #0B4CC1; border-color: #0B4CC1; }"
+    "QLineEdit, QComboBox, QDoubleSpinBox { min-height: 27px; border: 1px solid #C9D3DE; border-radius: 6px; background: #FFFFFF; padding: 2px 6px; selection-background-color: #DCE8FF; }"
+    "QGroupBox { border: 1px solid #D8E0E8; border-radius: 8px; margin-top: 8px; padding-top: 8px; font-weight: 600; }"
+    "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; color: #344054; }"
+    "QScrollArea { border: 0; background: transparent; }");
   append_studio_log("Loaded Workcell Studio light theme.");
   statusBar()->showMessage("Workcell Studio light theme loaded.");
 }
@@ -2247,7 +2275,7 @@ void MainWindow::setup_studio_shell()
   dashboard_middle_split->setSizes({280, 820, 360});
   dl->addWidget(dashboard_middle_split, 1);
   
-  auto * scene_builder = new QWidget(studio_pages_); auto * sl=new QVBoxLayout(scene_builder);
+  auto * scene_builder = new QWidget(studio_pages_); scene_builder->setObjectName("workcellStudioSceneBuilderPage"); auto * sl=new QVBoxLayout(scene_builder);
   sl->setContentsMargins(6, 4, 6, 4);
   scene_builder_title_=new QLabel("Scene Builder", scene_builder);
   scene_builder_title_->setWordWrap(false);
@@ -2409,7 +2437,7 @@ void MainWindow::setup_studio_shell()
   auto * discovery_strip = new QHBoxLayout();
   discovery_strip->addWidget(asset_library_search_, 1);
   auto * import_asset_button = new QPushButton("+ Import Asset", catalog_card);
-  import_asset_button->setToolTip("Import an STL into the active scene's authored Asset Library.");
+  import_asset_button->setToolTip("Import an STL, OBJ, or DAE mesh into the active scene's authored Asset Library.");
   discovery_strip->addWidget(import_asset_button);
   catalog_layout->addLayout(discovery_strip);
   asset_filter_combo_ = new QComboBox(catalog_card);
@@ -2515,7 +2543,7 @@ void MainWindow::setup_studio_shell()
   auto * asset_more_menu = new QMenu(asset_more_actions);
   auto * open_asset_folder_action = asset_more_menu->addAction("Open Asset Folder");
   auto * copy_asset_path_action = asset_more_menu->addAction("Copy Asset Path");
-  auto * import_asset_action = asset_more_menu->addAction("Import STL");
+  auto * import_asset_action = asset_more_menu->addAction("Import Mesh");
   auto * add_existing_stl_action = asset_more_menu->addAction("Add Existing STL to Canvas");
   auto * placeholder_action = asset_more_menu->addAction("Generate Simple Box/Cylinder Placeholder");
   asset_more_actions->setMenu(asset_more_menu);
@@ -2766,14 +2794,6 @@ void MainWindow::setup_studio_shell()
     QObject::connect(action, &QAction::triggered, this, [handler]() { handler(); });
     register_scene_builder_action(key, action);
     return action;
-  };
-  auto create_action_button = [&](QVBoxLayout * layout, const QString & key) {
-    auto * action = scene_builder_action(key);
-    if (!action) return static_cast<QPushButton *>(nullptr);
-    auto * button = new QPushButton(action->text(), scene_builder);
-    QObject::connect(button, &QPushButton::clicked, action, &QAction::trigger);
-    layout->addWidget(button);
-    return button;
   };
   register_scene_action("layout.save", "Save Layout", [this]() { if (save_layout_button_) save_layout_button_->click(); });
   register_scene_action("layout.undo", "Undo Layout Edit", [this]() { undo_layout_edit(); });
@@ -3093,16 +3113,16 @@ void MainWindow::setup_studio_shell()
   scene_workflow_recommendation_menu_ = new QMenu(scene_workflow_recommendation_button_);
   scene_workflow_recommendation_button_->setMenu(scene_workflow_recommendation_menu_);
   workflow_card_layout->addWidget(scene_workflow_recommendation_button_);
-  right_layout->addWidget(workflow_card);
   auto * inspector_scroll = new QScrollArea(right_panel);
   inspector_scroll->setWidgetResizable(true);
+  inspector_scroll->setMinimumWidth(320);
   auto * inspector_scroll_contents = new QWidget(inspector_scroll);
   auto * inspector_scroll_layout = new QVBoxLayout(inspector_scroll_contents);
   scene_builder_inspector_tabs_ = new QTabWidget(inspector_scroll_contents);
-  scene_builder_inspector_tabs_->setUsesScrollButtons(false);
+  scene_builder_inspector_tabs_->setUsesScrollButtons(true);
+  scene_builder_inspector_tabs_->setDocumentMode(true);
   auto * selection_tab = new QWidget(scene_builder_inspector_tabs_); auto * selection_tab_layout = new QVBoxLayout(selection_tab);
   auto * workflow_tab = new QWidget(scene_builder_inspector_tabs_); auto * workflow_tab_layout = new QVBoxLayout(workflow_tab);
-  auto * actions_tab = new QWidget(scene_builder_inspector_tabs_); auto * actions_tab_layout = new QVBoxLayout(actions_tab);
   auto * readiness_tab = new QWidget(scene_builder_inspector_tabs_); auto * readiness_tab_layout = new QVBoxLayout(readiness_tab);
   auto make_card = [&](QVBoxLayout *parent_layout, const QString &title) {
     auto *card = new QFrame(right_panel); card->setObjectName("studioCard");
@@ -3124,8 +3144,8 @@ void MainWindow::setup_studio_shell()
   auto * scene_card_layout = make_card(selection_tab_layout, "Scene");
   auto * selected_item_card_layout = make_card(selection_tab_layout, "Selected Item");
   auto * readiness_card_layout = make_card(readiness_tab_layout, "Readiness");
-  make_card(actions_tab_layout, "Actions");
   selection_scene_name_label_ = make_row(scene_card_layout, "Name", "No scene selected", false);
+  selection_scene_name_label_->setObjectName("sceneBuilderSelectedSceneName");
   selection_scene_status_label_ = make_row(scene_card_layout, "Status", "unknown", false);
   selection_scene_robot_label_ = make_row(scene_card_layout, "Robot", "unknown", false);
   selection_scene_end_effector_label_ = make_row(scene_card_layout, "End Effector", "unknown", false);
@@ -3135,7 +3155,16 @@ void MainWindow::setup_studio_shell()
   task_intent_layout->addWidget(new QLabel("<b>Task Intent</b>"));
   task_flow_label_ = new QLabel("Pick Source → Grasp Strategy → Place Target → Release"); task_flow_label_->setWordWrap(true); task_intent_layout->addWidget(task_flow_label_);
   task_intent_details_label_ = new QLabel("No scene selected"); task_intent_details_label_->setWordWrap(true); task_intent_layout->addWidget(task_intent_details_label_);
+  workflow_tab_layout->addWidget(workflow_card);
   workflow_tab_layout->addWidget(task_intent);
+  auto * setup_checklist_group = new QGroupBox("Setup checklist", readiness_tab);
+  setup_checklist_group->setCheckable(true);
+  setup_checklist_group->setChecked(false);
+  setup_checklist_group->setToolTip("Expand to review every setup gate. The recommended next action remains the primary workflow.");
+  auto * setup_checklist_layout = new QVBoxLayout(setup_checklist_group);
+  auto * setup_checklist_contents = new QWidget(setup_checklist_group);
+  auto * setup_checklist_contents_layout = new QVBoxLayout(setup_checklist_contents);
+  setup_checklist_contents_layout->setContentsMargins(0, 0, 0, 0);
   new_cell_checklist_label_ = new QLabel(
     "<b>New Cell Checklist</b><br/>"
     "pending: Workspace selected → choose workspace<br/>"
@@ -3150,9 +3179,12 @@ void MainWindow::setup_studio_shell()
     "hint: Smoke report: smoke_report.json<br/>"
     "pending: Validation passed → click Run Offline Validation<br/>"
     "pending: Ready for Plan / Simulate → Open RViz2 / MoveIt or Run Fake-Hardware Simulation");
-  new_cell_checklist_label_->setObjectName("studioCard");
   new_cell_checklist_label_->setWordWrap(true);
-  readiness_card_layout->addWidget(new_cell_checklist_label_);
+  setup_checklist_contents_layout->addWidget(new_cell_checklist_label_);
+  setup_checklist_layout->addWidget(setup_checklist_contents);
+  setup_checklist_contents->setVisible(false);
+  QObject::connect(setup_checklist_group, &QGroupBox::toggled, setup_checklist_contents, &QWidget::setVisible);
+  readiness_card_layout->addWidget(setup_checklist_group);
   scene_builder_command_preview_card_ = new QFrame(right_panel);
   scene_builder_command_preview_card_->setObjectName("studioCard");
   auto * command_preview_layout = new QVBoxLayout(scene_builder_command_preview_card_);
@@ -3176,12 +3208,17 @@ void MainWindow::setup_studio_shell()
   scene_builder_command_preview_card_->setVisible(false);
   readiness_card_layout->addWidget(scene_builder_command_preview_card_);
   auto * pick_place = new QGroupBox("Pick-Place Configuration", right_panel); pick_place->setObjectName("studioCard"); pick_place->setCheckable(true); pick_place->setChecked(false); auto * pick_place_layout = new QVBoxLayout(pick_place);
-  auto * task_binding_actions = new QHBoxLayout();
-  pick_source_button_ = new QPushButton("Use Selected as Pick Source", scene_builder); task_binding_actions->addWidget(pick_source_button_);
-  place_target_button_ = new QPushButton("Use Selected as Place Target", scene_builder); task_binding_actions->addWidget(place_target_button_);
-  camera_button_ = new QPushButton("Use Selected as Camera", scene_builder);
-  task_binding_actions->addWidget(camera_button_);
-  pick_place_layout->addLayout(task_binding_actions);
+  pick_source_button_ = new QPushButton("Bind selected as...", scene_builder);
+  auto * task_binding_menu = new QMenu(pick_source_button_);
+  auto * bind_pick_source_action = task_binding_menu->addAction("Use Selected as Pick Source");
+  auto * bind_place_target_action = task_binding_menu->addAction("Use Selected as Place Target");
+  auto * bind_camera_action = task_binding_menu->addAction("Use Selected as Camera");
+  pick_source_button_->setMenu(task_binding_menu);
+  pick_source_button_->setToolTip("Assign the selected scene item to one task role.");
+  pick_place_layout->addWidget(pick_source_button_);
+  QObject::connect(bind_pick_source_action, &QAction::triggered, this, &MainWindow::bind_selected_item_as_pick_zone);
+  QObject::connect(bind_place_target_action, &QAction::triggered, this, &MainWindow::bind_selected_item_as_place_zone);
+  QObject::connect(bind_camera_action, &QAction::triggered, this, &MainWindow::bind_selected_item_as_camera);
   pick_place_details_label_ = new QLabel("Pick source: unknown\nPlace target: unknown\nReject target: unknown\nLinked hierarchy item: unknown"); pick_place_details_label_->setWordWrap(true); pick_place_layout->addWidget(pick_place_details_label_);
   workflow_tab_layout->addWidget(pick_place);
   auto * grasp_card = new QFrame(right_panel); grasp_card->setObjectName("studioCard"); auto * grasp_layout = new QVBoxLayout(grasp_card);
@@ -3196,36 +3233,6 @@ void MainWindow::setup_studio_shell()
   auto * open_epd_docs_button = new QPushButton("Open EPD Pipeline Docs", scene_builder); ar_layout->addWidget(open_epd_docs_button);
   auto * refresh_snapshot_button = new QPushButton("Refresh Snapshot", scene_builder); ar_layout->addWidget(refresh_snapshot_button);
   readiness_card_layout->addWidget(ar_card);
-  auto make_action_section = [&](const QString & section_title) {
-    auto * section = new QGroupBox(section_title, actions_tab);
-    section->setObjectName("studioCard");
-    auto * section_layout = new QVBoxLayout(section);
-    actions_tab_layout->addWidget(section);
-    return section_layout;
-  };
-
-  auto * layout_actions = make_action_section("Layout");
-  auto * generate_actions = make_action_section("Generate");
-  auto * validate_actions = make_action_section("Validate");
-  auto * simulate_actions = make_action_section("Simulate");
-  make_action_section("Export");
-  auto * diagnostics_actions = make_action_section("Diagnostics");
-
-  create_action_button(layout_actions, "layout.save");
-  create_action_button(layout_actions, "layout.undo");
-  create_action_button(layout_actions, "layout.redo");
-  create_action_button(layout_actions, "layout.duplicate");
-  create_action_button(layout_actions, "layout.remove");
-  create_action_button(generate_actions, "generate.scene_package");
-  create_action_button(generate_actions, "generate.yaml");
-  create_action_button(generate_actions, "generate.task");
-  create_action_button(validate_actions, "validate.generated_scene");
-  create_action_button(validate_actions, "validate.offline");
-  create_action_button(simulate_actions, "simulate.open_rviz");
-  create_action_button(simulate_actions, "simulate.run_fake");
-  create_action_button(simulate_actions, "simulate.stop");
-  create_action_button(diagnostics_actions, "diagnostics.self_test");
-  create_action_button(diagnostics_actions, "diagnostics.golden_flow");
   inspector_label_=new QLabel("No item selected"); inspector_label_->setObjectName("sceneBuilderInspectorLabel"); inspector_label_->setWordWrap(true); selected_item_card_layout->addWidget(inspector_label_);
   live_coordinate_label_ = new QLabel("Selected: none", scene_builder); selected_item_card_layout->addWidget(live_coordinate_label_);
   auto * metadata_form = new QFormLayout();
@@ -3233,6 +3240,23 @@ void MainWindow::setup_studio_shell()
   inspector_display_name_ = new QLineEdit(scene_builder);
   inspector_display_name_->setPlaceholderText("Display name");
   metadata_form->addRow("Name", inspector_display_name_);
+  inspector_semantic_role_ = new QComboBox(scene_builder);
+  inspector_semantic_role_->setObjectName("sceneBuilderSemanticRoleCombo");
+  const std::vector<std::pair<const char *, const char *>> semantic_roles = {
+    {"Generic asset", "asset"}, {"Pick object", "pick_object"},
+    {"Target bin", "target_bin"}, {"Fixture", "fixture"},
+    {"Support surface", "support_surface"}, {"Camera", "camera"},
+    {"Sensor", "sensor"}, {"Machine", "machine"}, {"Conveyor", "conveyor"},
+    {"Pick zone", "pick_zone"}, {"Place zone", "place_zone"},
+    {"Safety guard", "safety_guard"}, {"Keepout marker", "keepout"},
+    {"Home pose marker", "home_pose"}, {"Environment object", "environment_object"},
+  };
+  for (const auto & role : semantic_roles) {
+    inspector_semantic_role_->addItem(role.first, role.second);
+  }
+  inspector_semantic_role_->setToolTip(
+    "Assign an intentional role to this scene instance. Filenames never infer pick/task semantics.");
+  metadata_form->addRow("Semantic role", inspector_semantic_role_);
   inspector_type_ = new QLineEdit(scene_builder);
   inspector_type_->setReadOnly(true);
   metadata_form->addRow("Type", inspector_type_);
@@ -3250,11 +3274,11 @@ void MainWindow::setup_studio_shell()
   inspector_pitch_ = new QDoubleSpinBox(scene_builder); inspector_pitch_->setPrefix("Pitch "); configure_spin(inspector_pitch_); pose_grid->addWidget(inspector_pitch_, 1, 1);
   inspector_yaw_ = new QDoubleSpinBox(scene_builder); inspector_yaw_->setPrefix("Yaw "); configure_spin(inspector_yaw_); pose_grid->addWidget(inspector_yaw_, 1, 2);
   selected_item_card_layout->addLayout(pose_grid);
-  auto * transform_actions = new QHBoxLayout();
-  inspector_apply_button_ = new QPushButton("Apply", scene_builder); transform_actions->addWidget(inspector_apply_button_);
-  inspector_revert_button_ = new QPushButton("Revert", scene_builder); transform_actions->addWidget(inspector_revert_button_);
-  inspector_copy_transform_button_ = new QPushButton("Copy Transform", scene_builder); transform_actions->addWidget(inspector_copy_transform_button_);
-  inspector_paste_transform_button_ = new QPushButton("Paste Transform", scene_builder); transform_actions->addWidget(inspector_paste_transform_button_);
+  auto * transform_actions = new QGridLayout();
+  inspector_apply_button_ = new QPushButton("Apply", scene_builder); transform_actions->addWidget(inspector_apply_button_, 0, 0);
+  inspector_revert_button_ = new QPushButton("Revert", scene_builder); transform_actions->addWidget(inspector_revert_button_, 0, 1);
+  inspector_copy_transform_button_ = new QPushButton("Copy Transform", scene_builder); transform_actions->addWidget(inspector_copy_transform_button_, 1, 0);
+  inspector_paste_transform_button_ = new QPushButton("Paste Transform", scene_builder); transform_actions->addWidget(inspector_paste_transform_button_, 1, 1);
   selected_item_card_layout->addLayout(transform_actions);
   inspector_live_update_box_ = new QCheckBox("Live update", scene_builder); inspector_live_update_box_->setChecked(false); selected_item_card_layout->addWidget(inspector_live_update_box_);
   auto * dim_grid = new QGridLayout();
@@ -3308,7 +3332,6 @@ void MainWindow::setup_studio_shell()
   inspector_warning_label_ = new QLabel("Warnings: none | Reachability: unknown | Collision: unknown | Safety zone: unknown | Pick reach: unknown | Place reach: unknown | Warning count: 0 | Preview-only", scene_builder); inspector_warning_label_->setWordWrap(true); readiness_card_layout->addWidget(inspector_warning_label_);
   scene_builder_inspector_tabs_->addTab(selection_tab, "Selection");
   scene_builder_inspector_tabs_->addTab(workflow_tab, "Workflow");
-  scene_builder_inspector_tabs_->addTab(actions_tab, "Actions");
   scene_builder_inspector_tabs_->addTab(readiness_tab, "Readiness");
   inspector_scroll_layout->addWidget(scene_builder_inspector_tabs_);
   inspector_scroll->setWidget(inspector_scroll_contents);
@@ -3488,12 +3511,9 @@ void MainWindow::setup_studio_shell()
   connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){open_scene_builder_for_selected_scene("Existing Scenes Open in Scene Builder");} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
   connect_action(open_asset_folder_action, [this](){ open_selected_scene_artifact("asset_folder"); });
   connect_action(copy_asset_path_action, [this](){ QApplication::clipboard()->setText(selected_catalog_item_path()); });
-  connect_action(import_asset_action, [this](){ append_studio_log("Import STL / URDF: choose asset import flow from Asset Browser."); });
+  connect_action(import_asset_action, [this](){ append_studio_log("Import STL / OBJ / DAE: choose asset import flow from Asset Browser."); });
   connect_action(add_existing_stl_action, [this](){ append_studio_log("Add Existing STL to Canvas: choose STL in Asset Browser and click Add to Canvas."); });
   connect_action(placeholder_action, [this](){ append_studio_log("Generate Simple Box/Cylinder Placeholder: use quick-add placeholders in catalog."); });
-  connect_button(pick_source_button_, &MainWindow::bind_selected_item_as_pick_zone);
-  connect_button(place_target_button_, &MainWindow::bind_selected_item_as_place_zone);
-  connect_button(camera_button_, &MainWindow::bind_selected_item_as_camera);
   connect_button(run_demo, [this](){ append_studio_log("Demo readiness completed"); });
   connect_button(open_dash, [this](){ open_selected_scene_artifact("demo_dashboard"); });
   connect_button(copy_summary, [this](){ open_selected_scene_artifact("demo_summary_copy"); });
@@ -7330,7 +7350,7 @@ static YAML::Node ensure_map_node(YAML::Node parent, const char * key)
 }
 
 
-static YAML::Node normalize_imported_layout_to_canonical_items(const YAML::Node & imported_root, const std::string & scene_name, const fs::path & scene_dir)
+static YAML::Node normalize_imported_layout_to_canonical_items(const YAML::Node & imported_root, const std::string & scene_name)
 {
   YAML::Node root = (imported_root && imported_root.IsMap()) ? YAML::Clone(imported_root) : YAML::Node(YAML::NodeType::Map);
   YAML::Node canonical_items(YAML::NodeType::Sequence);
@@ -7345,7 +7365,7 @@ static YAML::Node normalize_imported_layout_to_canonical_items(const YAML::Node 
       seen_ids.insert(id);
     }
     if (!item["scene_name"] || !item["scene_name"].IsScalar()) item["scene_name"] = scene_name;
-    if (!item["scene_path"] || !item["scene_path"].IsScalar()) item["scene_path"] = scene_dir.string();
+    item["scene_path"] = ".";
     canonical_items.push_back(item);
   };
 
@@ -7365,7 +7385,7 @@ static YAML::Node normalize_imported_layout_to_canonical_items(const YAML::Node 
   root["schema_version"] = "workcell_studio_layout/v1";
   root["schema"] = "workcell_studio_layout/v1";
   root["scene_name"] = scene_name;
-  root["scene_path"] = scene_dir.string();
+  root["scene_path"] = ".";
   root["items"] = canonical_items;
   YAML::Node meta = ensure_map_node(root, "metadata");
   meta["canonical_layout_path"] = "layout/workcell_studio_layout.yaml";
@@ -7382,7 +7402,11 @@ static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML
   state.category = gi->data(RoleCategory).toString().toStdString();
   state.role = gi->data(RoleRole).toString().toStdString();
   state.catalog_asset_id = gi->data(RoleCatalogAssetId).toString().toStdString();
-  state.mesh_path = gi->data(RoleSource).toString().toStdString();
+  QString portable_mesh_path = QDir::fromNativeSeparators(gi->data(RoleSource).toString().trimmed());
+  const int scenes_marker = portable_mesh_path.indexOf(QStringLiteral("/scenes/"));
+  const int assets_marker = scenes_marker >= 0 ? portable_mesh_path.indexOf(QStringLiteral("/assets/"), scenes_marker + 8) : -1;
+  if (assets_marker >= 0) portable_mesh_path = portable_mesh_path.mid(assets_marker + 1);
+  state.mesh_path = portable_mesh_path.toStdString();
   state.source_package = gi->data(RoleSourcePackage).toString().toStdString();
   state.xyz = {{gi->pos().x() / 100.0, gi->pos().y() / 100.0, gi->data(RolePoseZ).toDouble()}};
   state.rpy = {{gi->data(RoleRoll).toDouble(), gi->data(RolePitch).toDouble(), gi->data(RoleYaw).toDouble()}};
@@ -7560,7 +7584,7 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
     for (const auto & candidate : import_candidates) {
       if (candidate.empty() || candidate == layout_path || !fs::exists(candidate)) continue;
       try {
-        root = normalize_imported_layout_to_canonical_items(YAML::LoadFile(candidate.string()), scene_name, scene_dir);
+        root = normalize_imported_layout_to_canonical_items(YAML::LoadFile(candidate.string()), scene_name);
         imported_layout_path = candidate;
         break;
       } catch (const YAML::Exception & exc) {
@@ -7592,12 +7616,12 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
     root = YAML::Node(YAML::NodeType::Map);
     root["items"] = YAML::Node(YAML::NodeType::Sequence);
   } else {
-    root = normalize_imported_layout_to_canonical_items(root, scene_name, scene_dir);
+    root = normalize_imported_layout_to_canonical_items(root, scene_name);
   }
   root["schema_version"] = "workcell_studio_layout/v1";
   root["schema"] = "workcell_studio_layout/v1";
   if (!root["scene_name"] || !root["scene_name"].IsScalar()) root["scene_name"] = scene_name;
-  if (!root["scene_path"] || !root["scene_path"].IsScalar()) root["scene_path"] = scene_dir.string();
+  root["scene_path"] = ".";
 
   const QString backup_stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
   const fs::path layout_backup = layout_path.parent_path() /
@@ -7781,6 +7805,30 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
     emit_save_layout_failure(error ? *error : QStringLiteral("atomic layout write failed"),
       QString::fromStdString(effective_layout_path.string()));
     return false;
+  }
+  if (saving_workcell_layout) {
+    QString collision_script;
+    if (helper_script_exists("generate_moveit_collision_manifest.py", &collision_script)) {
+      boost::system::error_code generated_dir_ec;
+      fs::create_directories(scene_dir / "config", generated_dir_ec);
+      QProcess collision_process;
+      collision_process.start(
+        "python3",
+        QStringList()
+          << collision_script
+          << "--layout" << QString::fromStdString(effective_layout_path.string())
+          << "--output" << QString::fromStdString((scene_dir / "config" / "moveit_collision_objects.yaml").string())
+          << "--scene-name" << QString::fromStdString(scene_name));
+      if (!generated_dir_ec && collision_process.waitForFinished(120000) && collision_process.exitCode() == 0) {
+        append_studio_log("MoveIt collision truth refreshed from the saved canonical layout; Web3D AABB remains advisory.");
+      } else {
+        const QString detail = QString::fromUtf8(collision_process.readAllStandardError()).trimmed();
+        append_studio_log("MoveIt collision truth is stale or unavailable after Save Layout. Generate/validate before planning." +
+          (detail.isEmpty() ? QString() : " Detail: " + detail.left(400)));
+      }
+    } else {
+      append_studio_log("MoveIt collision manifest generator is unavailable; planning collision truth remains unproven.");
+    }
   }
   deleted_layout_item_ids_.clear();
   layout_dirty_ = false;
@@ -8063,6 +8111,7 @@ void MainWindow::refresh_selection_transform_editor_from_state(const SelectedSce
       if (sb) { sb->clear(); sb->setEnabled(false); sb->setReadOnly(true); }
     }
     if (inspector_display_name_) { inspector_display_name_->clear(); inspector_display_name_->setPlaceholderText("Display name"); inspector_display_name_->setEnabled(false); }
+    if (inspector_semantic_role_) { inspector_semantic_role_->setCurrentIndex(0); inspector_semantic_role_->setEnabled(false); }
     for (auto * le : {inspector_role_, inspector_category_, inspector_type_}) {
       if (le) { le->clear(); le->setEnabled(false); le->setReadOnly(true); }
     }
@@ -8088,6 +8137,14 @@ void MainWindow::refresh_selection_transform_editor_from_state(const SelectedSce
     inspector_display_name_->setText(state.display_name);
     inspector_display_name_->setPlaceholderText(state.id.isEmpty() ? QStringLiteral("Display name") : state.id);
   }
+  if (inspector_semantic_role_) {
+    int role_index = inspector_semantic_role_->findData(state.role);
+    if (role_index < 0) {
+      inspector_semantic_role_->addItem(QString("Existing role: %1").arg(state.role), state.role);
+      role_index = inspector_semantic_role_->count() - 1;
+    }
+    inspector_semantic_role_->setCurrentIndex(role_index);
+  }
   if (inspector_role_) inspector_role_->setText(state.role);
   if (inspector_category_) inspector_category_->setText(state.category);
   if (inspector_type_) inspector_type_->setText(state.type);
@@ -8101,6 +8158,7 @@ void MainWindow::refresh_selection_transform_editor_from_state(const SelectedSce
   if (inspector_revert_button_) inspector_revert_button_->setEnabled(!locked);
   if (inspector_live_update_box_) inspector_live_update_box_->setEnabled(!locked);
   if (inspector_display_name_) { inspector_display_name_->setEnabled(true); inspector_display_name_->setReadOnly(locked); }
+  if (inspector_semantic_role_) inspector_semantic_role_->setEnabled(!locked);
   for (auto * le : {inspector_role_, inspector_category_, inspector_type_}) {
     if (le) { le->setEnabled(true); le->setReadOnly(true); }
   }
@@ -8199,6 +8257,7 @@ void MainWindow::apply_inspector_pose_to_item()
   const QPointF updated(inspector_x_->value() * 100.0, inspector_y_->value() * 100.0);
 
   QString updated_display_name;
+  QString updated_semantic_role = target.state.role;
   bool metadata_changed = false;
   if (i) {
     i->setPos(updated);
@@ -8219,6 +8278,14 @@ void MainWindow::apply_inspector_pose_to_item()
         }
       }
     }
+    if (inspector_semantic_role_) {
+      const QString chosen_role = inspector_semantic_role_->currentData().toString().trimmed();
+      if (!chosen_role.isEmpty() && chosen_role != i->data(RoleRole).toString().trimmed()) {
+        updated_semantic_role = chosen_role;
+        i->setData(RoleRole, updated_semantic_role);
+        metadata_changed = true;
+      }
+    }
   }
 
   SelectedSceneItemState refreshed_state = target.state;
@@ -8233,10 +8300,10 @@ void MainWindow::apply_inspector_pose_to_item()
   refreshed_state.dim_y = inspector_dim_y_->value();
   refreshed_state.dim_z = inspector_dim_z_->value();
   if (!updated_display_name.isEmpty()) refreshed_state.display_name = updated_display_name;
-  refreshed_state.role = target.state.role;
+  refreshed_state.role = updated_semantic_role;
   refreshed_state.category = target.state.category;
   refreshed_state.type = target.state.type;
-  refreshed_state.role_or_category = target.state.role_or_category;
+  refreshed_state.role_or_category = updated_semantic_role.isEmpty() ? target.state.role_or_category : updated_semantic_role;
   refreshed_state.editable = true;
   refreshed_state.locked = false;
   refreshed_state.linked_to_editable_layout_state = true;
@@ -8259,8 +8326,8 @@ void MainWindow::apply_inspector_pose_to_item()
     .arg(inspector_pitch_->value(), 0, 'g', 17)
     .arg(inspector_yaw_->value(), 0, 'g', 17));
   if (metadata_changed) {
-    append_studio_log(QString("Inspector metadata edited: scene=%1 id=%2 display_name=%3 dirty=true")
-      .arg(selected_scene_name_for_log, item_id, updated_display_name));
+    append_studio_log(QString("Inspector metadata edited: scene=%1 id=%2 display_name=%3 semantic_role=%4 dirty=true")
+      .arg(selected_scene_name_for_log, item_id, updated_display_name, updated_semantic_role));
   }
   append_studio_log(QString("item updated: %1 source=%2 editable=true locked=false fallback_view_refreshed=%3")
     .arg(item_id, target.source_path, i ? QStringLiteral("true") : QStringLiteral("false")));
@@ -8276,6 +8343,7 @@ void MainWindow::apply_inspector_pose_to_item()
     p.sy = refreshed_state.dim_y;
     p.sz = refreshed_state.dim_z;
     if (!refreshed_state.display_name.isEmpty()) p.display_name = refreshed_state.display_name;
+    p.role = refreshed_state.role;
     break;
   }
   if (scene_preview_widget_ &&
@@ -8911,7 +8979,11 @@ void MainWindow::commit_armed_asset_placement(
   item->setData(RoleWidth, 1.0); item->setData(RoleDepth, 1.0); item->setData(RoleHeight, 1.0);
   item->setData(RoleCatalogAssetId, asset_id);
   item->setData(RoleMeshScaleX, armed_asset_scale_); item->setData(RoleMeshScaleY, armed_asset_scale_); item->setData(RoleMeshScaleZ, armed_asset_scale_);
-  item->setData(RoleImported, source_path.endsWith(".stl", Qt::CaseInsensitive) || source_path.endsWith(".urdf", Qt::CaseInsensitive));
+  item->setData(RoleImported,
+    source_path.endsWith(".stl", Qt::CaseInsensitive) ||
+    source_path.endsWith(".obj", Qt::CaseInsensitive) ||
+    source_path.endsWith(".dae", Qt::CaseInsensitive) ||
+    source_path.endsWith(".urdf", Qt::CaseInsensitive));
   item->setData(RoleGeneratedPlaceholder, category.contains("placeholder", Qt::CaseInsensitive));
   item->setData(RoleSourceLayer, QStringLiteral("editable_layout"));
   item->setData(RoleLocked, false);
@@ -12778,6 +12850,7 @@ void MainWindow::populate_scene_hierarchy()
   if (camera_line != last_camera_summary_log_) { append_studio_log(camera_line); last_camera_summary_log_ = camera_line; }
   if (preview_line != last_preview_summary_log_) { append_studio_log(preview_line); last_preview_summary_log_ = preview_line; }
   if (scene3d_debug_logging_enabled()) append_studio_log(scene3d_boundary_diag);
+  if (!all_scene_preview_items_.isEmpty()) refresh_scene_hierarchy_tree_from_current_items();
 }
 
 
@@ -12789,25 +12862,54 @@ QString import_unit_label(double scale)
   return QStringLiteral("metres");
 }
 
-bool looks_like_stl_file(const QString & path, QString * error)
+QString import_mesh_format_label(const QString & path)
 {
-  QFile f(path);
-  if (QFileInfo(path).suffix().compare("stl", Qt::CaseInsensitive) != 0) { if (error) *error = "unsupported extension; choose one .stl file"; return false; }
-  if (!f.open(QIODevice::ReadOnly)) { if (error) *error = "source file is unreadable"; return false; }
-  const QByteArray head = f.read(512);
-  if (head.isEmpty()) { if (error) *error = "STL file is empty"; return false; }
-  const QByteArray lower = head.toLower();
-  if (lower.startsWith("solid") && (lower.contains("facet") || lower.contains("endsolid"))) return true;
-  if (f.size() >= 84) {
-    f.seek(80);
-    const QByteArray count = f.read(4);
-    if (count.size() == 4) return true;
+  const QString extension = QFileInfo(path).suffix().toLower();
+  if (extension == QStringLiteral("stl")) return QStringLiteral("STL");
+  if (extension == QStringLiteral("obj")) return QStringLiteral("OBJ");
+  if (extension == QStringLiteral("dae")) return QStringLiteral("COLLADA/DAE");
+  return extension.toUpper();
+}
+
+bool looks_like_import_mesh_file(const QString & path, QString * error)
+{
+  const QFileInfo info(path);
+  const QString extension = info.suffix().toLower();
+  if (!QStringList{QStringLiteral("stl"), QStringLiteral("obj"), QStringLiteral("dae")}.contains(extension)) {
+    if (error) *error = "unsupported extension; choose one .stl, .obj, or .dae file";
+    return false;
   }
-  if (error) *error = "file does not look like ASCII or binary STL";
+  if (info.isSymLink()) { if (error) *error = "symbolic-link sources are not allowed"; return false; }
+  if (info.size() > 250LL * 1024LL * 1024LL) { if (error) *error = "mesh exceeds the 250 MB import limit"; return false; }
+  QFile f(path);
+  if (!f.open(QIODevice::ReadOnly)) { if (error) *error = "source file is unreadable"; return false; }
+  const QByteArray head = f.read(65536);
+  if (head.isEmpty()) { if (error) *error = "mesh file is empty"; return false; }
+  const QByteArray lower = head.toLower();
+  if (extension == QStringLiteral("stl")) {
+    if (lower.startsWith("solid") && (lower.contains("facet") || lower.contains("endsolid"))) return true;
+    if (f.size() >= 84) {
+      f.seek(80);
+      const QByteArray count = f.read(4);
+      if (count.size() == 4) return true;
+    }
+    if (error) *error = "file does not look like ASCII or binary STL";
+    return false;
+  }
+  if (extension == QStringLiteral("obj")) {
+    const QString text = QString::fromUtf8(head);
+    const QRegularExpression vertex(QStringLiteral("(?:^|[\\r\\n])\\s*v\\s+[-+0-9.]"));
+    const QRegularExpression face(QStringLiteral("(?:^|[\\r\\n])\\s*f\\s+[0-9]"));
+    if (vertex.match(text).hasMatch() && face.match(text).hasMatch()) return true;
+    if (error) *error = "OBJ must contain both vertex and face records";
+    return false;
+  }
+  if (lower.contains("<collada") || lower.contains("<collada:")) return true;
+  if (error) *error = "DAE file does not contain a COLLADA document root";
   return false;
 }
 
-QString safe_import_stl_stem(const QString & name)
+QString safe_import_mesh_stem(const QString & name)
 {
   QString stem = QFileInfo(name).completeBaseName().toLower();
   stem.replace(QRegularExpression("[^a-z0-9_-]+"), "_");
@@ -12821,6 +12923,110 @@ QString safe_import_stl_stem(const QString & name)
   }
   if (stem.isEmpty() || stem == "." || stem == "..") return QString();
   return stem;
+}
+
+QString imported_mesh_sha256(const QString & path)
+{
+  QFile source(path);
+  if (!source.open(QIODevice::ReadOnly)) return QString();
+  QCryptographicHash hash(QCryptographicHash::Sha256);
+  while (!source.atEnd()) hash.addData(source.read(1024 * 1024));
+  return QString::fromLatin1(hash.result().toHex());
+}
+
+struct ImportedMeshInspection
+{
+  bool available{ false };
+  bool valid{ false };
+  quint64 vertex_count{ 0 };
+  quint64 face_count{ 0 };
+  std::array<double, 3> minimum{{0.0, 0.0, 0.0}};
+  std::array<double, 3> maximum{{0.0, 0.0, 0.0}};
+  QString error;
+};
+
+ImportedMeshInspection inspect_import_mesh_geometry(const QString & path)
+{
+  ImportedMeshInspection out;
+#ifdef WORKCELL_BUILDER_HAS_ASSIMP
+  out.available = true;
+  Assimp::Importer importer;
+  const aiScene * scene = importer.ReadFile(
+    path.toStdString(),
+    aiProcess_JoinIdenticalVertices | aiProcess_Triangulate |
+    aiProcess_ValidateDataStructure | aiProcess_SortByPType);
+  if (!scene || !scene->mRootNode) {
+    out.error = QStringLiteral("geometry parser rejected the file: %1")
+      .arg(QString::fromUtf8(importer.GetErrorString()));
+    return out;
+  }
+  std::array<double, 3> minimum{{
+    std::numeric_limits<double>::infinity(),
+    std::numeric_limits<double>::infinity(),
+    std::numeric_limits<double>::infinity()}};
+  std::array<double, 3> maximum{{
+    -std::numeric_limits<double>::infinity(),
+    -std::numeric_limits<double>::infinity(),
+    -std::numeric_limits<double>::infinity()}};
+  std::function<void(const aiNode *, const aiMatrix4x4 &)> visit =
+    [&](const aiNode * node, const aiMatrix4x4 & parent_transform) {
+      if (!node) return;
+      const aiMatrix4x4 world_transform = parent_transform * node->mTransformation;
+      for (unsigned int mesh_index = 0; mesh_index < node->mNumMeshes; ++mesh_index) {
+        const unsigned int scene_mesh_index = node->mMeshes[mesh_index];
+        if (scene_mesh_index >= scene->mNumMeshes || !scene->mMeshes[scene_mesh_index]) continue;
+        const aiMesh * mesh = scene->mMeshes[scene_mesh_index];
+        out.face_count += mesh->mNumFaces;
+        for (unsigned int vertex_index = 0; vertex_index < mesh->mNumVertices; ++vertex_index) {
+          const aiVector3D point = world_transform * mesh->mVertices[vertex_index];
+          const std::array<double, 3> values{{point.x, point.y, point.z}};
+          if (!std::all_of(values.cbegin(), values.cend(), [](double value) { return std::isfinite(value); })) {
+            out.error = QStringLiteral("geometry contains a non-finite transformed vertex");
+            return;
+          }
+          ++out.vertex_count;
+          for (std::size_t axis = 0; axis < values.size(); ++axis) {
+            minimum[axis] = std::min(minimum[axis], values[axis]);
+            maximum[axis] = std::max(maximum[axis], values[axis]);
+          }
+        }
+      }
+      if (!out.error.isEmpty()) return;
+      for (unsigned int child = 0; child < node->mNumChildren; ++child) visit(node->mChildren[child], world_transform);
+    };
+  visit(scene->mRootNode, aiMatrix4x4());
+  if (!out.error.isEmpty()) return out;
+  if (out.vertex_count < 3 || out.face_count < 1) {
+    out.error = QStringLiteral("geometry has no usable triangle surface");
+    return out;
+  }
+  int nonzero_axes = 0;
+  for (std::size_t axis = 0; axis < minimum.size(); ++axis) {
+    if (!std::isfinite(minimum[axis]) || !std::isfinite(maximum[axis])) {
+      out.error = QStringLiteral("geometry bounds are not finite");
+      return out;
+    }
+    if ((maximum[axis] - minimum[axis]) > 1e-12) ++nonzero_axes;
+  }
+  if (nonzero_axes < 2) {
+    out.error = QStringLiteral("geometry bounds are collapsed on two or more axes");
+    return out;
+  }
+  out.minimum = minimum;
+  out.maximum = maximum;
+  out.valid = true;
+#else
+  Q_UNUSED(path);
+  out.error = QStringLiteral("geometry bounds parser is unavailable in this build");
+#endif
+  return out;
+}
+
+YAML::Node mesh_import_vector_node(const std::array<double, 3> & values)
+{
+  YAML::Node node(YAML::NodeType::Sequence);
+  for (const double value : values) node.push_back(value);
+  return node;
 }
 
 QString scene_imported_asset_id(const fs::path & asset_path)
@@ -12918,54 +13124,97 @@ void MainWindow::populate_asset_catalog()
 void MainWindow::import_stl_to_asset_library()
 {
   if (!has_selected_scene()) {
-    QMessageBox::warning(this, "Import STL", "Open an editable scene before importing an STL asset.");
+    QMessageBox::warning(this, "Import Mesh", "Open an editable scene before importing a mesh asset.");
     return;
   }
-  const QString source = QFileDialog::getOpenFileName(this, "Import STL", QDir::homePath(), "STL meshes (*.stl *.STL)");
+  const QString source = QFileDialog::getOpenFileName(
+    this, "Import Mesh", QDir::homePath(),
+    "Supported meshes (*.stl *.STL *.obj *.OBJ *.dae *.DAE);;STL (*.stl *.STL);;OBJ (*.obj *.OBJ);;COLLADA (*.dae *.DAE)");
   if (source.isEmpty()) return;
   QString error;
-  if (!looks_like_stl_file(source, &error)) {
-    QMessageBox::warning(this, "Import STL", QString("Cannot import %1: %2.").arg(source, error));
+  if (!looks_like_import_mesh_file(source, &error)) {
+    QMessageBox::warning(this, "Import Mesh", QString("Cannot import %1: %2.").arg(source, error));
     return;
   }
   const QStringList labels{QStringLiteral("millimetres"), QStringLiteral("centimetres"), QStringLiteral("metres")};
   bool ok = false;
-  const QString units = QInputDialog::getItem(this, "Import STL Units", "Source STL units:", labels, 0, false, &ok);
+  const QString units = QInputDialog::getItem(this, "Import Mesh Units", "Source geometry units:", labels, 0, false, &ok);
   if (!ok || units.isEmpty()) return;
   const double scale = units == "millimetres" ? 0.001 : (units == "centimetres" ? 0.01 : 1.0);
-  const QString stem = safe_import_stl_stem(source);
-  if (stem.isEmpty()) { QMessageBox::warning(this, "Import STL", "Cannot import STL: safe destination filename would be empty."); return; }
+  const QString stem = safe_import_mesh_stem(source);
+  if (stem.isEmpty()) { QMessageBox::warning(this, "Import Mesh", "Cannot import mesh: safe destination filename would be empty."); return; }
+  const QString extension = QFileInfo(source).suffix().toLower();
+  const QString format = import_mesh_format_label(source);
+  const QString source_hash = imported_mesh_sha256(source);
+  if (source_hash.isEmpty()) { QMessageBox::warning(this, "Import Mesh", "Cannot hash the selected source file."); return; }
+  const ImportedMeshInspection inspection = inspect_import_mesh_geometry(source);
+  if (inspection.available && !inspection.valid) {
+    QMessageBox::warning(this, "Import Mesh", QString("Cannot import %1: %2.").arg(source, inspection.error));
+    return;
+  }
+  std::array<double, 3> raw_dimensions{{0.0, 0.0, 0.0}};
+  std::array<double, 3> dimensions_metres{{0.0, 0.0, 0.0}};
+  std::array<double, 3> origin_to_bounds_center_metres{{0.0, 0.0, 0.0}};
+  if (inspection.valid) {
+    for (std::size_t axis = 0; axis < raw_dimensions.size(); ++axis) {
+      raw_dimensions[axis] = inspection.maximum[axis] - inspection.minimum[axis];
+      dimensions_metres[axis] = raw_dimensions[axis] * scale;
+      origin_to_bounds_center_metres[axis] =
+        (inspection.minimum[axis] + inspection.maximum[axis]) * 0.5 * scale;
+    }
+    const double maximum_dimension = *std::max_element(dimensions_metres.cbegin(), dimensions_metres.cend());
+    if (!std::isfinite(maximum_dimension) || maximum_dimension < 1e-6 || maximum_dimension > 1000.0) {
+      QMessageBox::warning(
+        this, "Import Mesh",
+        QString("The selected %1 unit conversion produces implausible bounds (%2 × %3 × %4 m). Choose the correct source units.")
+          .arg(format)
+          .arg(dimensions_metres[0], 0, 'g', 6)
+          .arg(dimensions_metres[1], 0, 'g', 6)
+          .arg(dimensions_metres[2], 0, 'g', 6));
+      return;
+    }
+  }
 
   const fs::path scene_dir = fs::path(selected_scene_path().toStdString());
   const fs::path asset_root = scene_dir / "assets" / "imported";
   boost::system::error_code ec;
   fs::create_directories(asset_root, ec);
-  if (ec) { QMessageBox::warning(this, "Import STL", QString("Cannot create scene asset directory %1: %2").arg(QString::fromStdString(asset_root.string()), QString::fromStdString(ec.message()))); return; }
+  if (ec) { QMessageBox::warning(this, "Import Mesh", QString("Cannot create scene asset directory %1: %2").arg(QString::fromStdString(asset_root.string()), QString::fromStdString(ec.message()))); return; }
   const fs::path root_canon = fs::canonical(asset_root, ec);
-  if (ec) { QMessageBox::warning(this, "Import STL", "Cannot validate scene asset directory safety."); return; }
-  fs::path dest = root_canon / (stem.toStdString() + ".stl");
+  if (ec) { QMessageBox::warning(this, "Import Mesh", "Cannot validate scene asset directory safety."); return; }
+  fs::path dest = root_canon / (stem.toStdString() + "." + extension.toStdString());
   const fs::path source_canon = fs::canonical(fs::path(source.toStdString()), ec);
-  if (ec || !fs::is_regular_file(source_canon, ec)) { QMessageBox::warning(this, "Import STL", "Source is not a readable regular file."); return; }
+  if (ec || !fs::is_regular_file(source_canon, ec)) { QMessageBox::warning(this, "Import Mesh", "Source is not a readable regular file."); return; }
   const std::string root_str = root_canon.string() + fs::path::preferred_separator;
   auto inside_root = [&](const fs::path & p){ const std::string v = p.string(); return v == root_canon.string() || v.rfind(root_str, 0) == 0; };
   for (int suffix = 0; fs::exists(dest, ec); ++suffix) {
     if (same_file_bytes(QString::fromStdString(source_canon.string()), QString::fromStdString(dest.string()))) break;
-    dest = root_canon / QString("%1_%2.stl").arg(stem).arg(suffix + 1).toStdString();
+    dest = root_canon / QString("%1_%2.%3").arg(stem).arg(suffix + 1).arg(extension).toStdString();
   }
-  if (!inside_root(dest)) { QMessageBox::warning(this, "Import STL", "Unsafe destination escaped the scene asset directory."); return; }
+  if (!inside_root(dest)) { QMessageBox::warning(this, "Import Mesh", "Unsafe destination escaped the scene asset directory."); return; }
   const QString rel = QDir(QString::fromStdString(scene_dir.string())).relativeFilePath(QString::fromStdString(dest.string()));
-  const QString summary = QString("Display name: %1\nFilename: %2\nSource units: %3\nResulting scale: %4\nDestination: %5")
-    .arg(stem, QFileInfo(source).fileName(), import_unit_label(scale), QString::number(scale, 'g', 6), rel);
-  if (QMessageBox::question(this, "Confirm STL Import", summary) != QMessageBox::Yes) return;
+  const QString geometry_summary = inspection.valid
+    ? QString("Geometry: %1 vertices / %2 faces\nBounds after unit conversion: %3 × %4 × %5 m\nOrigin to bounds centre: [%6, %7, %8] m\n")
+      .arg(inspection.vertex_count).arg(inspection.face_count)
+      .arg(dimensions_metres[0], 0, 'g', 6).arg(dimensions_metres[1], 0, 'g', 6)
+      .arg(dimensions_metres[2], 0, 'g', 6).arg(origin_to_bounds_center_metres[0], 0, 'g', 6)
+      .arg(origin_to_bounds_center_metres[1], 0, 'g', 6).arg(origin_to_bounds_center_metres[2], 0, 'g', 6)
+    : QString("Geometry bounds: deferred (%1)\n").arg(inspection.error);
+  const QString summary = QString(
+    "Display name: %1\nFormat: %2\nFilename: %3\nSource units: %4\nScale to metres: %5\n"
+    "%6Origin policy: preserve mesh-local origin\nBounds check: %7\nDestination: %8")
+    .arg(stem, format, QFileInfo(source).fileName(), import_unit_label(scale), QString::number(scale, 'g', 6),
+      geometry_summary, inspection.valid ? QStringLiteral("validated before import") : QStringLiteral("required when Product View loads"), rel);
+  if (QMessageBox::question(this, "Confirm Mesh Import", summary) != QMessageBox::Yes) return;
 
   const bool preexisting = fs::exists(dest, ec);
   const QString asset_id = scene_imported_asset_id(dest);
   if (!preexisting) {
     const fs::path tmp = dest.string() + ".tmp";
     fs::copy_file(source_canon, tmp, fs::copy_option::fail_if_exists, ec);
-    if (ec) { QMessageBox::warning(this, "Import STL", QString("Copy failed: %1").arg(QString::fromStdString(ec.message()))); return; }
+    if (ec) { QMessageBox::warning(this, "Import Mesh", QString("Copy failed: %1").arg(QString::fromStdString(ec.message()))); return; }
     fs::rename(tmp, dest, ec);
-    if (ec) { fs::remove(tmp); QMessageBox::warning(this, "Import STL", QString("Copy finalize failed: %1").arg(QString::fromStdString(ec.message()))); return; }
+    if (ec) { fs::remove(tmp); QMessageBox::warning(this, "Import Mesh", QString("Copy finalize failed: %1").arg(QString::fromStdString(ec.message()))); return; }
   }
   try {
     const fs::path manifest = asset_root / "asset_manifest.yaml";
@@ -12976,16 +13225,44 @@ void MainWindow::import_stl_to_asset_library()
     asset["id"] = asset_id.toStdString();
     asset["display_name"] = QString::fromStdString(dest.stem().string()).toStdString();
     asset["path"] = fs::relative(dest, asset_root, ec).string();
+    asset["staged_relative_path"] = fs::relative(dest, asset_root, ec).string();
+    asset["catalog_id"] = asset_id.toStdString();
     asset["category"] = "Imported";
-    asset["visual_type"] = "stl";
+    asset["visual_type"] = extension.toStdString();
     asset["scale"] = scale;
-    root["assets"].push_back(asset);
+    asset["source_units"] = units.toStdString();
+    asset["unit_scale_to_m"] = scale;
+    asset["mesh_origin_policy"] = "preserve_file_origin";
+    asset["bounds_validation"] = inspection.valid ? "validated_at_import" : "required_on_product_view_load";
+    asset["geometry_inspection_backend"] = inspection.available ? "assimp" : "unavailable";
+    asset["geometry_vertex_count"] = static_cast<unsigned long long>(inspection.vertex_count);
+    asset["geometry_face_count"] = static_cast<unsigned long long>(inspection.face_count);
+    if (inspection.valid) {
+      YAML::Node raw_bounds;
+      raw_bounds["minimum"] = mesh_import_vector_node(inspection.minimum);
+      raw_bounds["maximum"] = mesh_import_vector_node(inspection.maximum);
+      raw_bounds["dimensions"] = mesh_import_vector_node(raw_dimensions);
+      asset["source_bounds"] = raw_bounds;
+      asset["dimensions_m"] = mesh_import_vector_node(dimensions_metres);
+      asset["origin_to_bounds_center_m"] = mesh_import_vector_node(origin_to_bounds_center_metres);
+    }
+    asset["original_filename"] = QFileInfo(source).fileName().toStdString();
+    asset["source_sha256"] = source_hash.toStdString();
+    asset["imported_at_utc"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString();
+    asset["import_contract_version"] = "workcell_studio_mesh_import/v2";
+    YAML::Node updated_assets(YAML::NodeType::Sequence);
+    for (const auto & existing : root["assets"]) {
+      if (!existing.IsMap() || !existing["id"] || existing["id"].as<std::string>() != asset_id.toStdString())
+        updated_assets.push_back(existing);
+    }
+    updated_assets.push_back(asset);
+    root["assets"] = updated_assets;
     std::ofstream out(manifest.string());
     if (!out) throw std::runtime_error("failed opening asset manifest for write");
     out << root;
   } catch (const std::exception & e) {
     if (!preexisting) fs::remove(dest);
-    QMessageBox::warning(this, "Import STL", QString("Catalog write failed; copied file was rolled back: %1").arg(e.what()));
+    QMessageBox::warning(this, "Import Mesh", QString("Catalog write failed; copied file was rolled back: %1").arg(e.what()));
     return;
   }
   // Catalog entries are about to be replaced. Invalidate every placement identity

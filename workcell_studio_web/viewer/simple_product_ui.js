@@ -26,6 +26,19 @@ function moveTaskGizmoControl() {
   if (slot && label && label.parentElement !== slot) slot.appendChild(label);
 }
 
+function consolidateToolbar() {
+  const panel = document.querySelector('#more-tools .toolbar-more-panel');
+  const clearEdits = document.getElementById('clear-edits');
+  if (!panel) return;
+  for (const control of [
+    document.getElementById('undo-edit'),
+    document.getElementById('redo-edit'),
+    document.getElementById('transform-space')?.closest('label'),
+  ]) {
+    if (control && control.parentElement !== panel) panel.insertBefore(control, clearEdits || panel.firstChild);
+  }
+}
+
 function firstTextNode(label) {
   return Array.from(label?.childNodes || []).find(node => node.nodeType === Node.TEXT_NODE) || null;
 }
@@ -160,6 +173,7 @@ function install() {
   runtime.installed = true;
   document.body.classList.add('simple-product-ui');
   installObservers();
+  consolidateToolbar();
   moveTaskGizmoControl();
   simplifyInspector();
   updateWarningDisclosure();
@@ -175,6 +189,7 @@ function install() {
     version: SIMPLE_UI_VERSION,
     refresh: () => {
       moveTaskGizmoControl();
+      consolidateToolbar();
       simplifyInspector();
       updateWarningDisclosure();
     },

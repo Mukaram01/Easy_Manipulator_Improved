@@ -761,7 +761,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
         effective_layout["schema_version"] = "workcell_studio_layout/v1";
         effective_layout["schema"] = "workcell_studio_layout/v1";
         effective_layout["scene_name"] = scene_name;
-        effective_layout["scene_path"] = scene_dir.string();
+        effective_layout["scene_path"] = ".";
         effective_layout["items"] = legacy_items;
         layout_ok = true;
         m.layout_source_path = legacy_layout_path.string();

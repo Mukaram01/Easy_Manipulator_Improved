@@ -1,0 +1,50 @@
+schema_version: workcell_studio_asset_manifest/v2
+assets:
+  - id: imported_02030397
+    catalog_id: imported_02030397
+    display_name: 02030397
+    original_filename: 02030397.stl
+    path: 02030397.stl
+    staged_relative_path: 02030397.stl
+    category: Imported
+    visual_type: stl
+    scale: 0.001
+    source_units: mm
+    unit_scale_to_m: 0.001
+    mesh_origin_policy: preserve_file_origin
+    bounds_validation: validated_at_import
+    geometry_inspection_backend: recovered_from_staged_stl
+    source_bounds:
+      minimum: [-280.5, -220.5, -522.0]
+      maximum: [410.0, 78.0, 504.5]
+      dimensions: [690.5, 298.5, 1026.5]
+    dimensions_m: [0.6905, 0.2985, 1.0265]
+    origin_to_bounds_center_m: [0.06475, -0.07125, -0.00875]
+    source_sha256: a1c598b7f5c7bbf1d2b8d6aca538809c8bef0f81a810fde8c10a096079238dc5
+    imported_at_utc: '2026-08-11T13:58:54.227429Z'
+    imported_at_source: staged_file_mtime
+    import_contract_version: workcell_studio_mesh_import/v2
+  - id: imported_2068_001_24
+    catalog_id: imported_2068_001_24
+    display_name: 2068_001_24
+    original_filename: 2068_001_24.stl
+    path: 2068_001_24.stl
+    staged_relative_path: 2068_001_24.stl
+    category: Imported
+    visual_type: stl
+    scale: 0.001
+    source_units: mm
+    unit_scale_to_m: 0.001
+    mesh_origin_policy: preserve_file_origin
+    bounds_validation: validated_at_import
+    geometry_inspection_backend: recovered_from_staged_stl
+    source_bounds:
+      minimum: [-50.80644989013672, -2.6020852139652106e-16, -1.0062294006347656]
+      maximum: [50.80644989013672, 75.0, 160.0]
+      dimensions: [101.61289978027344, 75.0, 161.00622940063477]
+    dimensions_m: [0.10161289978027344, 0.075, 0.16100622940063478]
+    origin_to_bounds_center_m: [0.0, 0.0375, 0.07949688529968262]
+    source_sha256: 13b3b2affe341d107692930b2442c08792c4993c77bc4305cd38215dccfc41a6
+    imported_at_utc: '2026-08-12T07:58:57.288862Z'
+    imported_at_source: staged_file_mtime
+    import_contract_version: workcell_studio_mesh_import/v2

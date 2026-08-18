@@ -277,9 +277,19 @@ def run_ros_node(
     publisher.publish(build_marker_array(specs, frame_id))
     try:
         rclpy.spin(node)
+    except KeyboardInterrupt:
+        # Normal ros2 launch shutdown must not surface as a node failure.
+        pass
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        try:
+            node.destroy_node()
+        except KeyboardInterrupt:
+            pass
+        if rclpy.ok():
+            try:
+                rclpy.shutdown()
+            except KeyboardInterrupt:
+                pass
 
 
 def main() -> None:

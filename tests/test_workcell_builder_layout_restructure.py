@@ -17,8 +17,9 @@ def test_scene_builder_uses_main_splitter_layout():
 def test_left_and_right_tabs_exist():
     for token in ['addTab(scene_tab, "Scene")', 'addTab(assets_tab, "Assets")', 'addTab(files_tab, "Files")']:
         assert token in MAIN
-    for token in ['addTab(selection_tab, "Selection")', 'addTab(task_tab, "Task")', 'addTab(readiness_tab, "Readiness")', 'addTab(actions_tab, "Actions")']:
+    for token in ['addTab(selection_tab, "Selection")', 'addTab(workflow_tab, "Workflow")', 'addTab(readiness_tab, "Readiness")']:
         assert token in MAIN
+    assert 'addTab(actions_tab, "Actions")' not in MAIN
 
 
 def test_scene_tree_headers_include_name_role_status():

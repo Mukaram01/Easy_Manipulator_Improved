@@ -473,16 +473,24 @@ private:
     QJsonObject markers;
     auto * tree = window_->findChild<QTreeWidget *>("studioSceneHierarchyTree");
     auto * inspector = window_->findChild<QLabel *>("sceneBuilderInspectorLabel");
+    auto * selected_scene_label = window_->findChild<QLabel *>("sceneBuilderSelectedSceneName");
     auto * log = window_->findChild<QTextEdit *>("studioHomeLog");
     const auto preview_resolution = resolve_active_scene_preview_widget(window_);
     ScenePreviewWidget * active_preview_widget = preview_resolution.selected;
     const auto viewport_resolution = resolve_active_scene3d_viewport(window_, active_preview_widget);
     auto * viewport = viewport_resolution.selected;
     int hierarchy_child_rows = 0;
+    int hierarchy_item_rows = 0;
     if (tree) {
       for (int i = 0; i < tree->topLevelItemCount(); ++i) {
         auto * top = tree->topLevelItem(i);
-        if (top) hierarchy_child_rows += top->childCount();
+        if (!top) continue;
+        hierarchy_child_rows += top->childCount();
+        if (!top->data(0, Qt::UserRole + 1).toString().trimmed().isEmpty()) ++hierarchy_item_rows;
+        for (int child = 0; child < top->childCount(); ++child) {
+          auto * item = top->child(child);
+          if (item && !item->data(0, Qt::UserRole + 1).toString().trimmed().isEmpty()) ++hierarchy_item_rows;
+        }
       }
     }
     QString selected_scene_name = "(none)";
@@ -495,7 +503,10 @@ private:
         if (line.startsWith("Scene: ")) selected_scene_name = line.mid(QString("Scene: ").size()).trimmed();
       }
     }
-    const bool hierarchy_ready = (tree != nullptr && hierarchy_child_rows > 0);
+    if ((selected_scene_name == "(none)" || selected_scene_name == "none") && selected_scene_label) {
+      selected_scene_name = selected_scene_label->text().trimmed();
+    }
+    const bool hierarchy_ready = (tree != nullptr && hierarchy_item_rows > 0);
     const bool selected_scene_ready = !selected_scene_name.trimmed().isEmpty() && selected_scene_name != "(none)" && selected_scene_name != "none";
     const bool inspector_ready = (inspector != nullptr && !inspector_no_scene_selected && selected_scene_ready);
     const QJsonObject parsed_runtime_diagnostics =
@@ -622,16 +633,23 @@ private:
     };
     counters["hierarchy_top_level_count"] = tree ? tree->topLevelItemCount() : 0;
     int hierarchy_child_rows = 0;
+    int hierarchy_item_rows = 0;
     bool hierarchy_has_only_headings = false;
     if (tree) {
       for (int i = 0; i < tree->topLevelItemCount(); ++i) {
         auto * top = tree->topLevelItem(i);
-        if (top) hierarchy_child_rows += top->childCount();
+        if (!top) continue;
+        hierarchy_child_rows += top->childCount();
+        if (!top->data(0, Qt::UserRole + 1).toString().trimmed().isEmpty()) ++hierarchy_item_rows;
+        for (int child = 0; child < top->childCount(); ++child) {
+          auto * item = top->child(child);
+          if (item && !item->data(0, Qt::UserRole + 1).toString().trimmed().isEmpty()) ++hierarchy_item_rows;
+        }
       }
-      hierarchy_has_only_headings = (tree->topLevelItemCount() > 0 && hierarchy_child_rows == 0);
+      hierarchy_has_only_headings = (tree->topLevelItemCount() > 0 && hierarchy_item_rows == 0);
     }
     counters["hierarchy_child_row_count"] = hierarchy_child_rows;
-    counters["hierarchy_rows_count"] = hierarchy_child_rows;
+    counters["hierarchy_rows_count"] = hierarchy_item_rows;
     counters["hierarchy_has_only_headings"] = hierarchy_has_only_headings;
     counters["log_line_count"] = log_text.split('\n', Qt::SkipEmptyParts).size();
     counters["log_has_scene3d_diagnostics"] =
@@ -662,6 +680,7 @@ private:
     copy_filter_counter("camera_fit_target");
     copy_filter_counter("robot_pose_source");
     auto * inspector = window_->findChild<QLabel *>("sceneBuilderInspectorLabel");
+    auto * selected_scene_label = window_->findChild<QLabel *>("sceneBuilderSelectedSceneName");
     QString selected_scene_name = "(none)";
     QString selected_item_id = "(none)";
     QString inspector_scene_display_name = "";
@@ -679,6 +698,10 @@ private:
         if (line.startsWith("Scene status: ")) inspector_scene_status = line.mid(QString("Scene status: ").size()).trimmed();
         if (line.startsWith("Selected item ID: ")) selected_item_id = line.mid(QString("Selected item ID: ").size()).trimmed();
       }
+    }
+    if ((selected_scene_name == "(none)" || selected_scene_name == "none") && selected_scene_label) {
+      selected_scene_name = selected_scene_label->text().trimmed();
+      inspector_scene_display_name = selected_scene_name;
     }
     counters["selected_scene_name"] = selected_scene_name;
     counters["selected_item_id"] = selected_item_id;

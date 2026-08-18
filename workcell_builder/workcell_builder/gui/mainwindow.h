@@ -526,6 +526,7 @@ private:
   QDoubleSpinBox * inspector_dim_y_{ nullptr };
   QDoubleSpinBox * inspector_dim_z_{ nullptr };
   QLineEdit * inspector_display_name_{ nullptr };
+  QComboBox * inspector_semantic_role_{ nullptr };
   QLineEdit * inspector_role_{ nullptr };
   QLineEdit * inspector_category_{ nullptr };
   QLineEdit * inspector_type_{ nullptr };
