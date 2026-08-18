@@ -76,6 +76,7 @@ def _output_path_from_argv(argv: list[str]) -> Path | None:
 
 
 def _healthy_native_runtime_evidence(payload: dict[str, object]) -> bool:
+    """Recognize the schema actually emitted by the native smoke implementation."""
     counters = payload.get("counters")
     if not isinstance(counters, dict):
         return False
@@ -86,10 +87,17 @@ def _healthy_native_runtime_evidence(payload: dict[str, object]) -> bool:
         except (TypeError, ValueError):
             return False
 
+    try:
+        child_returncode = int(payload.get("child_returncode") or 0)
+    except (TypeError, ValueError):
+        return False
+
     return (
         str(payload.get("scene") or "") == "ur5_2f_test"
-        and str(payload.get("app_status") or "").upper() == "PASS"
-        and int(payload.get("returncode") or 0) == 0
+        and payload.get("runtime_available") is True
+        and child_returncode == 0
+        and payload.get("timed_out") is not True
+        and payload.get("screenshot_available") is True
         and counters.get("scene3d_viewport_widget_found") is True
         and positive_int("viewport_received_count")
         and positive_int("visible_count")

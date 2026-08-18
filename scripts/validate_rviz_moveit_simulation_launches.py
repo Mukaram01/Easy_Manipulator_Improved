@@ -10,8 +10,9 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml  # type: ignore
 
@@ -41,6 +42,11 @@ REAL_HARDWARE_TOKENS = [
 ]
 MOVEIT_REQUIRED_CAPABILITY = "fake_hardware_launch"
 REQUIRED_SCENES = {"ur5_2f_test", "ur5_3f_test", "suction_test", "ur10_2f_test", "ur3_suction_test"}
+CANONICAL_UR5_2F_CONTROLLERS = (
+    "joint_state_broadcaster",
+    "ur5_arm_controller",
+    "ur5_gripper_controller",
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -103,7 +109,7 @@ def validate_launch_contract(entry: SupportedSceneEntry, scene_dir: Path, launch
         failures.append("catalog launch command contains real-hardware token")
     if re.search(r"allow_trajectory_execution[\"']?\s*[:=]\s*True", text):
         failures.append("launch enables trajectory execution; acceptance must not permit motion")
-    if re.search(r"ExecuteTrajectory|FollowJointTrajectory", text) and "allow_trajectory_execution":
+    if "allow_trajectory_execution" in text and re.search(r"FollowJointTrajectory|joint_trajectory_controller", text):
         evidence.append("trajectory_execution_disabled_checked")
     if launch_rviz and "launch_rviz" not in args:
         failures.append("--launch-rviz requested but launch file does not declare launch_rviz")
@@ -157,9 +163,54 @@ def validate_scene_model(entry: SupportedSceneEntry, scene_dir: Path, launch_fil
     return failures, evidence, {"planning_group": planning_group, "base_link": base_link, "tool_root": tool_root, "controller_joints": sorted(set(joints))}
 
 
+def _text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
 def _run_ros(args: list[str], timeout: int) -> tuple[int, str, str]:
-    proc = subprocess.run(args, capture_output=True, text=True, timeout=max(1, timeout))
-    return proc.returncode, proc.stdout, proc.stderr
+    try:
+        proc = subprocess.run(args, capture_output=True, text=True, timeout=max(1, timeout))
+        return proc.returncode, proc.stdout or "", proc.stderr or ""
+    except subprocess.TimeoutExpired as exc:
+        return 124, _text(exc.stdout), _text(exc.stderr)
+
+
+def _wait_for_ros_check(
+    args: list[str],
+    timeout_sec: int,
+    predicate: Callable[[str], bool] | None = None,
+) -> tuple[int, str, str]:
+    """Poll a ROS CLI check so launch startup races do not become false failures."""
+    deadline = time.monotonic() + max(1, timeout_sec)
+    last: tuple[int, str, str] = (124, "", "")
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return last
+        attempt_timeout = max(1, min(3, int(remaining + 0.999)))
+        last = _run_ros(args, attempt_timeout)
+        rc, out, _ = last
+        if rc == 0 and (predicate is None or predicate(out)):
+            return last
+        if time.monotonic() >= deadline:
+            return last
+        time.sleep(0.25)
+
+
+def _controller_is_active(output: str, controller_name: str) -> bool:
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(controller_name) and re.search(r"\bactive\b", stripped):
+            return True
+    return False
+
+
+def _expected_controllers(scene_name: str) -> tuple[str, ...]:
+    return CANONICAL_UR5_2F_CONTROLLERS if scene_name == "ur5_2f_test" else ()
 
 
 def run_headless_smoke(scene_name: str, command: str, timeout_sec: int) -> tuple[str, list[str], list[str], dict[str, Any]]:
@@ -172,24 +223,46 @@ def run_headless_smoke(scene_name: str, command: str, timeout_sec: int) -> tuple
     try:
         proc = subprocess.Popen(shlex.split(command), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, preexec_fn=os.setsid)
         diagnostics["launched"] = True
-        per_check = max(2, min(8, timeout_sec // 5 or 2))
-        checks = {
-            "nodes": ["ros2", "node", "list"],
+
+        startup_budget = max(4, min(12, timeout_sec // 3 or 4))
+        node_predicate = lambda out: "robot_state_publisher" in out and "move_group" in out
+        nodes = _wait_for_ros_check(["ros2", "node", "list"], startup_budget, node_predicate)
+        diagnostics["checks"]["nodes"] = {"returncode": nodes[0], "stdout_tail": nodes[1][-1000:], "stderr_tail": nodes[2][-1000:]}
+
+        per_check = max(2, min(6, timeout_sec // 7 or 2))
+        ordinary_checks = {
             "robot_description": ["ros2", "param", "get", "/move_group", "robot_description"],
             "robot_description_semantic": ["ros2", "param", "get", "/move_group", "robot_description_semantic"],
             "joint_states": ["ros2", "topic", "list"],
             "tf": ["ros2", "topic", "echo", "/tf_static", "--once"],
-            "controllers": ["ros2", "control", "list_controllers"],
         }
-        for key, cmd in checks.items():
-            rc, out, err = _run_ros(cmd, per_check)
+        for key, cmd in ordinary_checks.items():
+            rc, out, err = _wait_for_ros_check(cmd, per_check)
             diagnostics["checks"][key] = {"returncode": rc, "stdout_tail": out[-1000:], "stderr_tail": err[-1000:]}
-        nodes = diagnostics["checks"]["nodes"]["stdout_tail"]
-        if "robot_state_publisher" in nodes:
+
+        expected_controllers = _expected_controllers(scene_name)
+        controller_budget = max(5, min(12, timeout_sec // 3 or 5))
+        controller_predicate = None
+        if expected_controllers:
+            controller_predicate = lambda out: all(_controller_is_active(out, name) for name in expected_controllers)
+        controllers = _wait_for_ros_check(
+            ["ros2", "control", "list_controllers", "-c", "/controller_manager", "--spin-time", "1"],
+            controller_budget,
+            controller_predicate,
+        )
+        diagnostics["checks"]["controllers"] = {
+            "returncode": controllers[0],
+            "stdout_tail": controllers[1][-1000:],
+            "stderr_tail": controllers[2][-1000:],
+            "expected_active": list(expected_controllers),
+        }
+
+        nodes_out = diagnostics["checks"]["nodes"]["stdout_tail"]
+        if "robot_state_publisher" in nodes_out:
             evidence.append("robot_state_publisher_available")
         else:
             blockers.append("robot_state_publisher node did not become available")
-        if "move_group" in nodes:
+        if "move_group" in nodes_out:
             evidence.append("move_group_available")
         else:
             blockers.append("move_group node did not become available")
@@ -201,7 +274,8 @@ def run_headless_smoke(scene_name: str, command: str, timeout_sec: int) -> tuple
             evidence.append("robot_description_semantic_loaded")
         else:
             blockers.append("robot_description_semantic parameter not available on /move_group")
-        if "/joint_states" in diagnostics["checks"]["joint_states"]["stdout_tail"] or f"/{scene_name}/joint_states" in diagnostics["checks"]["joint_states"]["stdout_tail"]:
+        joint_topics = diagnostics["checks"]["joint_states"]["stdout_tail"]
+        if "/joint_states" in joint_topics or f"/{scene_name}/joint_states" in joint_topics:
             evidence.append("joint_states_topic_available")
         else:
             blockers.append("/joint_states topic did not appear")
@@ -209,13 +283,27 @@ def run_headless_smoke(scene_name: str, command: str, timeout_sec: int) -> tuple
             evidence.append("tf_available")
         else:
             blockers.append("TF did not provide a base/tool transform sample")
-        if diagnostics["checks"]["controllers"]["returncode"] == 0:
-            evidence.append("fake_controllers_listed")
+
+        controller_rc = diagnostics["checks"]["controllers"]["returncode"]
+        controller_out = diagnostics["checks"]["controllers"]["stdout_tail"]
+        if controller_rc == 0:
+            if expected_controllers:
+                inactive = [name for name in expected_controllers if not _controller_is_active(controller_out, name)]
+                if inactive:
+                    blockers.append("required fake controllers are not active: " + ", ".join(inactive))
+                else:
+                    evidence.append("fake_controllers_listed")
+                    evidence.extend(f"{name}_active" for name in expected_controllers)
+            else:
+                evidence.append("fake_controllers_listed")
+        elif controller_rc == 124:
+            blockers.append("controller_manager/list_controllers did not become ready before timeout")
         else:
             blockers.append("fake controllers could not be listed")
+
         return (FAIL if blockers else PASS), blockers, evidence, diagnostics
-    except subprocess.TimeoutExpired as exc:
-        return BLOCKED, [f"ROS CLI check timed out: {exc}"], evidence, diagnostics
+    except (FileNotFoundError, PermissionError, OSError) as exc:
+        return BLOCKED, [f"fake-hardware launch could not start: {exc}"], evidence, diagnostics
     finally:
         if proc is not None:
             try:
@@ -298,7 +386,7 @@ def main() -> int:
     for r in results:
         reason = "; ".join(r.get("blockers") or r.get("warnings") or ["ok"])
         print(f"{r['scene']}: {r['status']} - {reason}")
-    return 1 if any(r["status"] == FAIL for r in results) else 0
+    return 1 if any(r["status"] != PASS for r in results) else 0
 
 
 if __name__ == "__main__":
