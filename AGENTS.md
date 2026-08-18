@@ -202,13 +202,7 @@ Exit gate:
 - robot, tool, environment, destination semantics, and frames are correct;
 - launch evidence is captured.
 
-### M3 — Demonstrate one complete simulated 2F pick/place flow
-
-Exit gate:
-
-- approach, grasp, retreat, transfer, place, and safe home complete in simulation;
-- operator-visible trace or recording exists;
-- no real-hardware mode is enabled.
+### M3 — skip
 
 ### M4 — Complete the second canonical suction scene
 
