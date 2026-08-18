@@ -190,10 +190,18 @@ def parse_layout_meshes(
     pending: list[tuple[str, str, tuple[float, float, float], tuple[float, float, float, float], tuple[float, float, float]]] = []
     seen_ids: set[str] = set()
     for index, item in enumerate(items):
-        if not isinstance(item, Mapping) or item.get("geometry_type") != "mesh":
+        if not isinstance(item, Mapping):
             continue
         mesh = item.get("mesh")
         if not isinstance(mesh, Mapping):
+            continue
+        raw_resource = mesh.get("path") if mesh.get("path") is not None else mesh.get("uri")
+        geometry_type = str(
+            item.get("geometry_type")
+            or item.get("primitive_geometry_type")
+            or ("mesh" if raw_resource else "")
+        ).lower()
+        if geometry_type != "mesh":
             continue
         item_id = item.get("id")
         if not isinstance(item_id, str) or not item_id.strip():
@@ -201,7 +209,6 @@ def parse_layout_meshes(
         if item_id in seen_ids:
             raise LayoutMeshError(f"duplicate mesh item id: {item_id!r}")
         seen_ids.add(item_id)
-        raw_resource = mesh.get("path") if mesh.get("path") is not None else mesh.get("uri")
         resource = resolve_mesh_resource(raw_resource, owning_package)
         pose = item.get("pose", {})
         if not isinstance(pose, Mapping):
