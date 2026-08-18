@@ -95,6 +95,27 @@ quote_cmd() {
   printf '%q ' "$@"
 }
 
+source_setup_safely() {
+  local setup_path="$1"
+  local restore_nounset=0
+  local source_rc=0
+  case "$-" in
+    *u*)
+      restore_nounset=1
+      set +u
+      ;;
+  esac
+  # ROS/ament setup files may legitimately inspect variables that are unset in
+  # the caller. Temporarily disable nounset while sourcing, then restore the
+  # runner's strict setting immediately afterwards.
+  # shellcheck disable=SC1090
+  source "${setup_path}" || source_rc=$?
+  if [[ ${restore_nounset} -eq 1 ]]; then
+    set -u
+  fi
+  return "${source_rc}"
+}
+
 write_blocked_smoke_json() {
   local blocker="$1"
   local message="$2"
@@ -255,8 +276,13 @@ fi
 
 if [[ -f "${ROS_SETUP}" ]]; then
   echo "Sourcing ${ROS_SETUP}" | tee -a "${BUILD_LOG}"
-  # shellcheck source=/opt/ros/humble/setup.bash
-  source "${ROS_SETUP}"
+  if ! source_setup_safely "${ROS_SETUP}"; then
+    STATUS="BLOCKED"
+    REASON="ROS Humble setup failed while sourcing ${ROS_SETUP}"
+    echo "BLOCKED: ${REASON}" | tee -a "${BUILD_LOG}" >&2
+    write_blocked_smoke_json "ros_humble_setup_failed" "${REASON}"
+    finish
+  fi
 elif [[ "${ROS_DISTRO:-}" == "humble" ]]; then
   echo "ROS_DISTRO=humble already present; ${ROS_SETUP} not sourced" | tee -a "${BUILD_LOG}"
 else
@@ -291,8 +317,13 @@ fi
 INSTALL_SETUP="${WORKSPACE_ROOT}/install/setup.bash"
 if [[ -f "${INSTALL_SETUP}" ]]; then
   echo "Sourcing ${INSTALL_SETUP}" >> "${BUILD_LOG}"
-  # shellcheck source=/dev/null
-  source "${INSTALL_SETUP}"
+  if ! source_setup_safely "${INSTALL_SETUP}"; then
+    STATUS="BLOCKED"
+    REASON="workspace install setup failed while sourcing ${INSTALL_SETUP}"
+    echo "BLOCKED: ${REASON}" | tee -a "${BUILD_LOG}" >&2
+    write_blocked_smoke_json "workspace_install_setup_failed" "${REASON}"
+    finish
+  fi
 else
   STATUS="BLOCKED"
   REASON="workspace install setup is missing after build: ${INSTALL_SETUP}"
