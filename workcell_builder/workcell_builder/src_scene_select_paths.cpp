@@ -23,6 +23,25 @@ bool is_repo_root(const fs::path & root)
   return has_dir(root / "scenes") && has_dir(root / "assets");
 }
 
+fs::path repo_root_from_candidate(const fs::path & candidate)
+{
+  if (candidate.empty()) {
+    return fs::path();
+  }
+
+  const std::vector<fs::path> possible_roots{
+    candidate,
+    candidate / "easy_manipulation_deployment",
+    candidate / "src" / "easy_manipulation_deployment"};
+
+  for (const auto & root : possible_roots) {
+    if (is_repo_root(root)) {
+      return root;
+    }
+  }
+  return fs::path();
+}
+
 fs::path find_repo_from_cwd(fs::path cwd)
 {
   while (!cwd.empty()) {
@@ -75,8 +94,9 @@ SceneSelectPathResolution resolve_scene_select_paths(
 
   fs::path workcell_path;
   for (const auto & c : candidates) {
-    if (has_dir(c / "scenes")) {
-      workcell_path = c;
+    const fs::path repo_root = repo_root_from_candidate(c);
+    if (!repo_root.empty()) {
+      workcell_path = repo_root;
       break;
     }
   }
