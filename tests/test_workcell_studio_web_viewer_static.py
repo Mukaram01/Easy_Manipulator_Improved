@@ -3132,21 +3132,14 @@ assert.strictEqual(state.editorError, 'No visible physical geometry available fo
     assert result.stderr == ""
 
 
-def test_viewer_world_z_rotate_gizmo_transaction_contract():
+def test_viewer_transform_controls_rotation_transaction_contract():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
-    assert "directRotateDrag: null" in js
-    assert "beginDirectRotateDrag(rendered)" in js
-    assert "finishDirectRotateDrag(rendered)" in js
     assert "cancelDirectRotateDrag('Rotation cancelled')" in js
-    assert "pushEditorEvent('status', { message: `Rotated ${itemLabel(rendered.item)}` })" in js
-    assert "pushEditorEvent('status', { message: message || 'Rotation cancelled' })" in js
-    assert "gizmo.setSpace('world')" in js
-    assert "gizmo.showX = false; gizmo.showY = false; gizmo.showZ = true" in js
-    assert "const next = cloneTransform(drag.start);" in js
-    assert "next.pose.rpy.z = transformFromObject(rendered.object3d).pose.rpy.z" in js
-    assert "snapTransform(next, { translationAxes: [], rotationAxes: ['z'] })" in js
-    assert "markDirtyTransform(rendered, finalTransform, { pushHistory: true, oldTransform: drag.start, snapOptions: { translationAxes: [], rotationAxes: ['z'] }, memberStarts: drag.groupStart })" in js
-    assert "if (sameTransform(drag.start, finalTransform))" in js
+    assert "gizmo.setSpace(state.transformSpace)" in js
+    assert "gizmo.showX = true; gizmo.showY = true; gizmo.showZ = true" in js
+    assert "const preview = transformFromObject(rendered.object3d)" in js
+    assert "snapOptions: null" in js
+    assert "canonicalRotatePreviewTransform" not in js
 
 
 def test_linked_transform_group_moves_rotates_and_records_atomic_two_edit_patch():
@@ -3183,13 +3176,12 @@ def test_viewer_rotate_cancels_on_selection_mode_and_scene_change_without_yaml_w
     load_file_body = _viewer_function_body(js, "async function loadFile(file)", "function safeRelativeSceneUrl")
     load_url_body = _viewer_function_body(js, "async function loadSceneUrl(rawUrl)", "if (el.resetView)")
     object_change_body = js.split("transformControls.addEventListener('objectChange'", 1)[1].split("controls.addEventListener('start'", 1)[0]
-    assert "state.directRotateDrag && state.directRotateDrag.itemId !== selectionId" in select_body
-    assert "cancelDirectRotateDrag('Rotation cancelled')" in select_body
-    assert "if (state.editorMode !== normalized)" in mode_body
-    assert "cancelDirectRotateDrag('Rotation cancelled')" in mode_body
-    assert "cancelDirectRotateDrag('Rotation cancelled')" in load_file_body
-    assert "cancelDirectRotateDrag('Rotation cancelled')" in load_url_body
-    assert "previewDirectRotateDrag(rendered); return;" in object_change_body
+    assert "cancelActiveTransformOperation('Selection changed')" in select_body
+    assert "state.editorMode !== normalized || normalized === 'select'" in mode_body
+    assert "cancelActiveTransformOperation('Mode changed')" in mode_body
+    assert "renderScene(items)" in load_file_body
+    assert "renderScene(items)" in load_url_body
+    assert "transformFromObject(rendered.object3d)" in object_change_body
     assert "state.undoStack.push" not in object_change_body
     assert "yaml" not in object_change_body.lower()
     assert "metadata" not in object_change_body.lower()

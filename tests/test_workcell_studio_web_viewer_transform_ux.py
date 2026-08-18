@@ -78,10 +78,10 @@ vm.createContext(context);vm.runInContext(source+`
 const copy=value=>JSON.parse(JSON.stringify(value));
 const pose=(x=0,y=0,z=0,rx=.11,ry=-.22,rz=.33)=>({pose:{xyz:{x,y,z},rpy:{x:rx,y:ry,z:rz}},scale:{x:1,y:1,z:1}});
 class TransformControlsDouble {
-  constructor(){this.object=null;this.axis=null;this.rotationAngle=0;this.listeners={};this.translationSnap=undefined;this.rotationSnap=undefined;}
+  constructor(){this.object=null;this.axis=null;this.rotationAngle=0;this.listeners={};this.translationSnap=undefined;this.rotationSnap=undefined;this.space='world';}
   addEventListener(type,listener){this.listeners[type]=listener}
   emit(type,event={}){assert(this.listeners[type],type+' listener missing');this.listeners[type](event)}
-  attach(object){this.object=object} detach(){this.object=null} reset(){} setMode(){} setSpace(){}
+  attach(object){this.object=object} detach(){this.object=null} reset(){} setMode(mode){this.mode=mode} setSpace(space){this.space=space}
   setTranslationSnap(value){this.translationSnap=value} setRotationSnap(value){this.rotationSnap=value}
 }
 const gizmo=new TransformControlsDouble();
@@ -123,6 +123,14 @@ const begin=(owner,mode,axis)=>{state.selected=owner.item.id;state.editorMode=mo
 const end=()=>gizmo.emit('dragging-changed',{value:false});
 const assertIdentity=owner=>{assert.strictEqual(state.selected,owner.item.id);assert.strictEqual(gizmo.object,owner.object3d);assert(!state.dirtyTransforms.has('transient_pivot'));for(const entry of state.undoStack)assert(entry.changes.every(change=>change.itemId===owner.item.id));};
 
+
+// Transform-space interaction state defaults to World and never authors a pose.
+assert.strictEqual(state.transformSpace,'world');assert.strictEqual(normalizeTransformSpace('LOCAL'),'local');assert.strictEqual(normalizeTransformSpace('invalid'),'world');
+const spaceStart=copy(bin.object3d.t);state.undoStack=[];commits=[];setTransformSpace('local');assert.strictEqual(state.transformSpace,'local');assert.strictEqual(gizmo.space,'local');exact(bin.object3d.t,spaceStart,'space switch pose');assert.strictEqual(state.selected,bin.item.id);assert.strictEqual(state.undoStack.length,0);assert.strictEqual(commits.length,0);
+setEditorMode('rotate');assert.strictEqual(state.transformSpace,'local');assert.strictEqual(gizmo.space,'local');setEditorMode('move');assert.strictEqual(gizmo.space,'local');
+state.selected=table.item.id;setEditorMode('rotate');assert.strictEqual(state.transformSpace,'local');state.selected=bin.item.id;setEditorMode('move');assert.strictEqual(gizmo.space,'local');
+setTransformSpace('world');assert.strictEqual(gizmo.space,'world');
+
 // Move X/Y/Z: preview through objectChange, commit exactly once at drag end.
 for(const [axis,key] of [['X','x'],['Y','y'],['Z','z']]){
   state.undoStack=[];state.redoStack=[];state.dirtyTransforms.clear();commits=[];inspector=[];bin.object3d.t=pose(.4,-.2,.8);
@@ -134,7 +142,7 @@ for(const [axis,key] of [['X','x'],['Y','y'],['Z','z']]){
 // Roll/pitch/yaw isolation for both signs, with XYZ fixed.
 for(const [axis,key] of [['X','x'],['Y','y'],['Z','z']])for(const angle of [.27,-.31]){
   state.undoStack=[];state.redoStack=[];state.dirtyTransforms.clear();commits=[];inspector=[];bin.object3d.t=pose(.4,-.2,.8);const start=copy(bin.object3d.t);
-  begin(bin,'rotate',axis);gizmo.rotationAngle=angle;gizmo.emit('objectChange');const preview=copy(bin.object3d.t);assert.strictEqual(preview.pose.rpy[key],start.pose.rpy[key]+angle);for(const other of ['x','y','z'].filter(v=>v!==key))assert.strictEqual(preview.pose.rpy[other],start.pose.rpy[other]);exact(preview.pose.xyz,start.pose.xyz,axis+' XYZ');assert.strictEqual(commits.length,0);end();assert.strictEqual(commits.length,1);assert.strictEqual(state.undoStack.length,1);ready();
+  begin(bin,'rotate',axis);gizmo.rotationAngle=angle;bin.object3d.t.pose.rpy[key]+=angle;gizmo.emit('objectChange');const preview=copy(bin.object3d.t);assert.strictEqual(preview.pose.rpy[key],start.pose.rpy[key]+angle);for(const other of ['x','y','z'].filter(v=>v!==key))assert.strictEqual(preview.pose.rpy[other],start.pose.rpy[other]);exact(preview.pose.xyz,start.pose.xyz,axis+' XYZ');assert.strictEqual(commits.length,0);end();assert.strictEqual(commits.length,1);assert.strictEqual(state.undoStack.length,1);ready();
 }
 
 // Existing snap choices, including Off, are forwarded without adding UI values.
@@ -201,12 +209,29 @@ def test_snap_controls_exist():
     assert "snapTransform" in viewer
 
 
+def test_transform_space_control_and_authority_contract():
+    index = _index_text()
+    viewer = _viewer_text()
+    assert 'id="transform-space"' in index
+    assert '<option value="world" selected>World</option>' in index
+    assert '<option value="local">Local</option>' in index
+    assert "transformSpace: 'world'" in viewer
+    assert "function normalizeTransformSpace" in viewer
+    assert "function setTransformSpace" in viewer
+    assert "cancelActiveTransformOperation('Transform space changed')" in viewer
+    assert "gizmo.setSpace(state.transformSpace)" in viewer
+    assert "const preview = transformFromObject(rendered.object3d)" in viewer
+    assert "const finalTransform = transformFromObject(owner.object3d)" in viewer
+    assert "canonicalRotatePreviewTransform" not in viewer
+    assert "setSpace('world')" not in viewer
+
+
 def test_undo_redo_clear_preview_edit_controls_exist():
     index = _index_text()
     viewer = _viewer_text()
     assert "Undo" in index
     assert "Redo" in index
-    assert "Clear Preview Edits" in index
+    assert "Clear edits" in index
     assert "undoPreviewEdit" in viewer
     assert "redoPreviewEdit" in viewer
     assert "clearPreviewEdits" in viewer
@@ -217,7 +242,7 @@ def test_undo_redo_clear_preview_edit_controls_exist():
 def test_patch_export_still_exists_and_remains_preview_only():
     index = _index_text()
     viewer = _viewer_text()
-    assert "Export Edit Patch" in index
+    assert "Export edits" in index
     assert "buildEditPatch" in viewer
     assert "schema_version: EDIT_PATCH_SCHEMA_VERSION" in viewer
     assert "Preview-only browser transform edit. Source scene files were not modified." in viewer
@@ -262,8 +287,8 @@ def test_camera_fit_constants_cover_ur5_2f_sized_workcell_without_clipping():
     viewer = _viewer_text()
     min_radius = float(re.search(r"const MIN_FRAME_RADIUS = ([0-9.]+);", viewer).group(1))
     distance_multiplier = float(re.search(r"const FRAME_DISTANCE_MULTIPLIER = ([0-9.]+);", viewer).group(1))
-    near_formula = re.search(r"camera\.near = Math\.max\(0\.01, radius / ([0-9.]+)\);", viewer)
-    far_formula = re.search(r"camera\.far = Math\.max\(100, distance \+ radius \* ([0-9.]+)\);", viewer)
+    near_formula = re.search(r"camera\.near = Math\.max\(0\.001, Math\.min\(safeRadius / ([0-9.]+), safeDistance / ([0-9.]+)\)\);", viewer)
+    far_formula = re.search(r"camera\.far = Math\.max\(camera\.near \+ 1, safeDistance \+ safeRadius \* ([0-9.]+), safeRadius \* ([0-9.]+), 100\);", viewer)
     assert near_formula
     assert far_formula
 
@@ -273,8 +298,8 @@ def test_camera_fit_constants_cover_ur5_2f_sized_workcell_without_clipping():
     span = (2.0, 1.6, 0.85)
     scene_radius = max((sum((axis / 2.0) ** 2 for axis in span)) ** 0.5, min_radius)
     distance = max(scene_radius * distance_multiplier, min_radius * distance_multiplier)
-    near = max(0.01, scene_radius / float(near_formula.group(1)))
-    far = max(100.0, distance + scene_radius * float(far_formula.group(1)))
+    near = max(0.001, min(scene_radius / float(near_formula.group(1)), distance / float(near_formula.group(2))))
+    far = max(near + 1, distance + scene_radius * float(far_formula.group(1)), scene_radius * float(far_formula.group(2)), 100.0)
 
     assert near <= 0.02
     assert far >= 100.0
