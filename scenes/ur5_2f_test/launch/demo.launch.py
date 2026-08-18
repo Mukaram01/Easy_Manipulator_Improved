@@ -476,7 +476,13 @@ def _launch_setup(context):
         executable="spawner",
         output="screen",
         condition=IfCondition(use_fake_hardware),
-        arguments=["joint_state_broadcaster", "--controller-manager", "/controller_manager"],
+        arguments=[
+            "joint_state_broadcaster",
+            "--controller-manager",
+            "/controller_manager",
+            "--param-file",
+            controllers_config_path,
+        ],
     )
 
     arm_controller_spawner = Node(
@@ -484,7 +490,13 @@ def _launch_setup(context):
         executable="spawner",
         output="screen",
         condition=IfCondition(use_fake_hardware),
-        arguments=["ur5_arm_controller", "--controller-manager", "/controller_manager"],
+        arguments=[
+            "ur5_arm_controller",
+            "--controller-manager",
+            "/controller_manager",
+            "--param-file",
+            controllers_config_path,
+        ],
     )
 
     gripper_controller_spawner = Node(
@@ -492,7 +504,13 @@ def _launch_setup(context):
         executable="spawner",
         output="screen",
         condition=IfCondition(use_fake_hardware),
-        arguments=["ur5_gripper_controller", "--controller-manager", "/controller_manager"],
+        arguments=[
+            "ur5_gripper_controller",
+            "--controller-manager",
+            "/controller_manager",
+            "--param-file",
+            controllers_config_path,
+        ],
     )
 
     move_group = Node(
