@@ -102,6 +102,43 @@ def test_load_layout_meshes_substitutes_owning_package(tmp_path):
     assert load_resource == "package://example_scene/assets/imported/example.stl"
 
 
+def test_installed_canonical_layout_path_infers_scene_package():
+    layout_path = Path(
+        "/home/ubuntu/workcell_ws/install/ur5_2f_test/share/ur5_2f_test/"
+        "layout/workcell_studio_layout.yaml"
+    )
+    assert preview.infer_owning_package_from_layout_path(layout_path) == "ur5_2f_test"
+
+
+def test_source_tree_or_noncanonical_layout_path_does_not_guess_package():
+    assert preview.infer_owning_package_from_layout_path(
+        "scenes/ur5_2f_test/layout/workcell_studio_layout.yaml"
+    ) is None
+    assert preview.infer_owning_package_from_layout_path(
+        "/tmp/share/example_scene/layout/other.yaml"
+    ) is None
+
+
+def test_inferred_installed_package_resolves_imported_mesh(tmp_path):
+    layout_path = (
+        tmp_path / "install" / "example_scene" / "share" / "example_scene" /
+        "layout" / "workcell_studio_layout.yaml"
+    )
+    layout_path.parent.mkdir(parents=True)
+    layout_path.write_text(
+        "items:\n"
+        "- id: imported_part\n"
+        "  type: object\n"
+        "  mesh:\n"
+        "    path: assets/imported/example.stl\n",
+        encoding="utf-8",
+    )
+    owning_package = preview.infer_owning_package_from_layout_path(layout_path)
+    assert owning_package == "example_scene"
+    marker = preview.load_layout_meshes(layout_path, owning_package)[0]
+    assert marker.mesh_resource == "package://example_scene/assets/imported/example.stl"
+
+
 def test_existing_package_uri_is_preserved():
     uri = "package://fixture_description/meshes/foo.stl"
     assert preview.resolve_mesh_resource(uri) == uri
