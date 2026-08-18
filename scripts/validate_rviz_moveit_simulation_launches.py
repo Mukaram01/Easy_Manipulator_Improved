@@ -211,11 +211,13 @@ def _query_controller_states(
         import rclpy
         from controller_manager_msgs.srv import ListControllers
         from rclpy.context import Context
+        from rclpy.executors import SingleThreadedExecutor
     except ImportError as exc:
         return 127, {}, f"direct controller service dependencies unavailable: {exc}"
 
     context = Context()
     node = None
+    executor = None
     service_name = manager.rstrip("/") + "/list_controllers"
     deadline = time.monotonic() + max(1, timeout_sec)
     try:
@@ -224,6 +226,8 @@ def _query_controller_states(
             f"workcell_fake_hardware_validator_{os.getpid()}",
             context=context,
         )
+        executor = SingleThreadedExecutor(context=context)
+        executor.add_node(node)
         client = node.create_client(ListControllers, service_name)
 
         while True:
@@ -235,7 +239,7 @@ def _query_controller_states(
 
         future = client.call_async(ListControllers.Request())
         remaining = max(0.0, deadline - time.monotonic())
-        rclpy.spin_until_future_complete(node, future, timeout_sec=remaining)
+        executor.spin_until_future_complete(future, timeout_sec=remaining)
         if not future.done():
             return 124, {}, f"{service_name} call did not complete before timeout"
         exception = future.exception()
@@ -249,6 +253,16 @@ def _query_controller_states(
     except Exception as exc:
         return 1, {}, f"{service_name} direct service check failed: {exc}"
     finally:
+        if executor is not None:
+            if node is not None:
+                try:
+                    executor.remove_node(node)
+                except Exception:
+                    pass
+            try:
+                executor.shutdown(timeout_sec=0.0)
+            except Exception:
+                pass
         if node is not None:
             try:
                 node.destroy_node()
