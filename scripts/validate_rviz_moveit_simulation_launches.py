@@ -10,6 +10,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -220,8 +221,19 @@ def run_headless_smoke(scene_name: str, command: str, timeout_sec: int) -> tuple
     diagnostics: dict[str, Any] = {"launched": False, "terminated": False, "checks": {}}
     blockers: list[str] = []
     evidence: list[str] = []
+    launch_stdout = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
+    launch_stderr = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
     try:
-        proc = subprocess.Popen(shlex.split(command), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, preexec_fn=os.setsid)
+        # Do not use PIPE here. A ROS launch can emit enough output to fill an
+        # undrained pipe and stall the launch while acceptance checks are still
+        # running. Temporary files keep launch output bounded by disk instead.
+        proc = subprocess.Popen(
+            shlex.split(command),
+            stdout=launch_stdout,
+            stderr=launch_stderr,
+            text=True,
+            preexec_fn=os.setsid,
+        )
         diagnostics["launched"] = True
 
         startup_budget = max(4, min(12, timeout_sec // 3 or 4))
@@ -319,6 +331,19 @@ def run_headless_smoke(scene_name: str, command: str, timeout_sec: int) -> tuple
                 except Exception:
                     pass
             diagnostics["terminated"] = True
+
+        for key, stream in (
+            ("launch_stdout_tail", launch_stdout),
+            ("launch_stderr_tail", launch_stderr),
+        ):
+            try:
+                stream.flush()
+                stream.seek(0)
+                diagnostics[key] = stream.read()[-TAIL_CHARS:]
+            except Exception:
+                diagnostics[key] = ""
+            finally:
+                stream.close()
 
 
 def command_for_scene(entry: SupportedSceneEntry, launch_rviz: bool) -> str:
