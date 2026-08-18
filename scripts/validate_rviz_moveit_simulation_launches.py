@@ -184,6 +184,7 @@ def _wait_for_ros_check(
     args: list[str],
     timeout_sec: int,
     predicate: Callable[[str], bool] | None = None,
+    attempt_timeout_cap: int = 3,
 ) -> tuple[int, str, str]:
     """Poll a ROS CLI check so launch startup races do not become false failures."""
     deadline = time.monotonic() + max(1, timeout_sec)
@@ -192,7 +193,7 @@ def _wait_for_ros_check(
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return last
-        attempt_timeout = max(1, min(3, int(remaining + 0.999)))
+        attempt_timeout = max(1, min(attempt_timeout_cap, int(remaining + 0.999)))
         last = _run_ros(args, attempt_timeout)
         rc, out, _ = last
         if rc == 0 and (predicate is None or predicate(out)):
@@ -261,6 +262,7 @@ def run_headless_smoke(scene_name: str, command: str, timeout_sec: int) -> tuple
             ["ros2", "control", "list_controllers", "-c", "/controller_manager", "--spin-time", "1"],
             controller_budget,
             controller_predicate,
+            attempt_timeout_cap=controller_budget,
         )
         diagnostics["checks"]["controllers"] = {
             "returncode": controllers[0],
