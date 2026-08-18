@@ -32,8 +32,10 @@ rebuildSelectionIdentityIndex();
 const owners = state.sceneJson.ui_selection_owners;
 assert(owners.some(owner => owner.id === 'realsense_overhead'));
 assert(owners.some(owner => owner.id === 'support_surface_table'));
-const cameraClicked = state.sceneJson.sensors.find(item => item.camera_id === 'realsense_overhead' || item.canonical_scene_item_id === 'realsense_overhead');
-const tableClicked = state.sceneJson.assets.find(item => item.support_surface_ref === 'support_surface_table' || item.canonical_scene_item_id === 'support_surface_table');
+const cameraClicked = state.sceneJson.sensors.find(item => item.camera_id === 'realsense_overhead' || item.canonical_scene_item_id === 'realsense_overhead')
+  || state.sceneJson.sensors.find(item => item.id === 'realsense_overhead');
+const tableClicked = state.sceneJson.assets.find(item => item.support_surface_ref === 'support_surface_table' || item.canonical_scene_item_id === 'support_surface_table')
+  || state.sceneJson.assets.find(item => item.id === 'support_surface_table');
 assert(cameraClicked);
 assert(tableClicked);
 assert.strictEqual(uiSelectionIdentity({item:cameraClicked, pickRecordSource:'payload_item'}).id, 'realsense_overhead');
