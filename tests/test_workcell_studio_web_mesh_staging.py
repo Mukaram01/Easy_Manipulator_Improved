@@ -162,7 +162,11 @@ def test_ur5_target_bin_calibrated_mesh_transform_and_bounds_survive_export():
     assert target_bin["transform_group"] == "default_drop_destination"
     assert place_zone["transform_group"] == "default_drop_destination"
 
-    world_pose = {"xyz": [0.55, -0.28, 0.20], "rpy": [0.0, 0.0, 0.0]}
+    # The north-star layout is an authored/editable fixture. Validate the
+    # calibrated local mesh contract at its current saved world pose instead
+    # of freezing this test to one historical bin placement.
+    world_pose = target_bin["pose"]
+    assert world_pose["rpy"] == [0.0, 0.0, 0.0]
     mesh_transform = {
         "xyz": [-0.1738994366, 0.0, -0.10],
         "rpy": [1.57079632679, 0.0, 1.57079632679],
@@ -199,12 +203,17 @@ def test_ur5_target_bin_calibrated_mesh_transform_and_bounds_survive_export():
                 )
     bounds = tuple((min(point[axis] for point in transformed), max(point[axis] for point in transformed)) for axis in range(3))
 
-    expected = ((0.3738994366, 0.7261005634), (-0.38669355, -0.17330645), (0.10, 0.30))
+    wx, wy, wz = world_pose["xyz"]
+    expected = (
+        (wx - 0.1761005634, wx + 0.1761005634),
+        (wy - 0.10669355, wy + 0.10669355),
+        (wz - 0.10, wz + 0.10),
+    )
     for actual_axis, expected_axis in zip(bounds, expected):
         assert all(math.isclose(actual, wanted, abs_tol=1e-9) for actual, wanted in zip(actual_axis, expected_axis))
-    assert math.isclose(sum(bounds[0]) / 2, 0.55, abs_tol=1e-9)
-    assert math.isclose(sum(bounds[1]) / 2, -0.28, abs_tol=1e-9)
-    assert math.isclose(bounds[2][0], 0.10, abs_tol=1e-9)
+    assert math.isclose(sum(bounds[0]) / 2, wx, abs_tol=1e-9)
+    assert math.isclose(sum(bounds[1]) / 2, wy, abs_tol=1e-9)
+    assert math.isclose(bounds[2][0], wz - 0.10, abs_tol=1e-9)
 
 
 def test_package_mesh_uri_is_staged_and_preserves_original_uri(monkeypatch, tmp_path):
@@ -370,7 +379,14 @@ def test_required_core_mesh_contract_records_full_staging_fields(monkeypatch, tm
     assert item["original_mesh_uri"] == mesh_uri
     assert item["original_package_uri"] == mesh_uri
     assert item["original_source_path"] == mesh_uri
-    assert item["resolved_source_path"].endswith("share/demo_robot/meshes/visual/base.dae") or item["resolved_source_path"].endswith("demo_robot/meshes/visual/base.dae")
+    # The exported artifact must not retain machine-specific absolute paths.
+    # Package URI + repository-relative staged path are the portable authorities.
+    assert "resolved_source_path" not in item
+    assert item["resolved_source_path_stale"] is False
+    assert item["authoritative_mesh_reference"] == mesh_uri
+    assert item["mesh_reference_authority"] == "package_uri"
+    assert item["repo_relative_staged_path"] == item["mesh_uri"]
+    assert "unportable_resolved_source_path_removed" in item["source_path_resolution_outcome"]
     assert item["mesh_staged_path"] == item["mesh_uri"]
     assert item["mesh_url"] == item["mesh_uri"]
     assert item["mesh_format"] == "dae"

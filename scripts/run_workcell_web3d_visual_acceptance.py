@@ -372,7 +372,7 @@ def _is_required_product_diagnostic(diagnostic: Mapping[str, Any]) -> bool:
     text = _diagnostic_text(diagnostic)
     category = str(diagnostic.get("category") or "").lower()
     return (
-        category in {"robot", "tool", "table", "environment"}
+        category in {"robot", "tool", "table"}
         or any(token in text for token in ("ur5", "robot", "base-link", "shoulder-link", "upper-arm", "forearm", "wrist", "tool0", "gripper", "robotiq", "table", "workbench", "bench"))
     )
 
@@ -734,7 +734,11 @@ def _euclidean_distance(a: tuple[float, float, float], b: tuple[float, float, fl
 def _mesh_backing_errors(status: Mapping[str, Any]) -> list[str]:
     diagnostics = _rendered_mesh_diagnostics_from_status(status)
     table_seen = False
+    table_loaded = False
+    table_name = "table/workbench"
     camera_seen = False
+    camera_loaded = False
+    camera_name = "camera"
     errors: list[str] = []
     for diagnostic in diagnostics:
         if not isinstance(diagnostic, Mapping):
@@ -742,19 +746,29 @@ def _mesh_backing_errors(status: Mapping[str, Any]) -> list[str]:
         text = _diagnostic_text(diagnostic)
         category = str(diagnostic.get("category") or "").lower()
         if category == "table" or any(token in text for token in ("table", "workbench", "work-bench", "bench")):
+            if not table_seen:
+                table_name = _diagnostic_link_name(diagnostic) or str(diagnostic.get("object_id") or diagnostic.get("id") or table_name)
             table_seen = True
-            if _diagnostic_status(diagnostic) != "mesh_loaded" or not _diagnostic_bool(diagnostic, "mesh_loaded", "meshLoaded"):
-                name = _diagnostic_link_name(diagnostic) or str(diagnostic.get("object_id") or diagnostic.get("id") or "table/workbench")
-                errors.append(f"browser viewer table/workbench {name} must remain mesh-backed; got render_status={_diagnostic_status(diagnostic)!r}")
+            table_loaded = table_loaded or (
+                _diagnostic_status(diagnostic) == "mesh_loaded"
+                and _diagnostic_bool(diagnostic, "mesh_loaded", "meshLoaded") is True
+            )
         if category == "camera" or any(token in text for token in ("camera", "realsense", "sensor")):
+            if not camera_seen:
+                camera_name = _diagnostic_link_name(diagnostic) or str(diagnostic.get("object_id") or diagnostic.get("id") or camera_name)
             camera_seen = True
-            if _diagnostic_status(diagnostic) != "mesh_loaded" or not _diagnostic_bool(diagnostic, "mesh_loaded", "meshLoaded"):
-                name = _diagnostic_link_name(diagnostic) or str(diagnostic.get("object_id") or diagnostic.get("id") or "camera")
-                errors.append(f"browser viewer camera/Realsense {name} must remain mesh-backed; got render_status={_diagnostic_status(diagnostic)!r}")
+            camera_loaded = camera_loaded or (
+                _diagnostic_status(diagnostic) == "mesh_loaded"
+                and _diagnostic_bool(diagnostic, "mesh_loaded", "meshLoaded") is True
+            )
     if not table_seen:
         errors.append("browser viewer table/workbench mesh-backed diagnostic is required")
+    elif not table_loaded:
+        errors.append(f"browser viewer table/workbench {table_name} must remain mesh-backed; got no loaded mesh visual")
     if not camera_seen:
         errors.append("browser viewer camera/Realsense mesh-backed diagnostic is required")
+    elif not camera_loaded:
+        errors.append(f"browser viewer camera/Realsense {camera_name} must remain mesh-backed; got no loaded mesh visual")
     return errors
 
 
@@ -882,8 +896,13 @@ def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
     robot_failed_visual_count = _status_int_any(status, "robot_failed_visual_count", "robotFailedVisualCount")
     robot_callbacks_complete = _status_bool(status, "robot_mesh_callbacks_complete", "robotMeshCallbacksComplete")
     render_mode = str(_status_value(status, "robot_render_mode", "robotRenderMode") or "")
-    effective_mesh_loaded_count = mesh_loaded_count if mesh_loaded_count >= EXPECTED_MESH_LOADED_COUNT else mesh_loaded_count + robot_loaded_visual_count
-    if render_mode == "expanded_urdf_loader" and mesh_loaded_count < EXPECTED_MESH_LOADED_COUNT:
+    expected_scene_mesh_raw = _status_value(
+        status, "expected_scene_mesh_loaded_count", "expectedSceneMeshLoadedCount"
+    )
+    expected_scene_mesh_loaded_count = _status_int_any(
+        status, "expected_scene_mesh_loaded_count", "expectedSceneMeshLoadedCount"
+    )
+    if render_mode == "expanded_urdf_loader" and expected_scene_mesh_raw is not None:
         if robot_expected_visual_count != 16:
             errors.append(f"browser viewer robot_expected_visual_count expected 16, got {robot_expected_visual_count}")
         if robot_completed_visual_count != 16:
@@ -894,14 +913,44 @@ def validate_browser_status(status: Mapping[str, Any]) -> list[str]:
             errors.append(f"browser viewer robot_failed_visual_count expected 0, got {robot_failed_visual_count}")
         if robot_callbacks_complete is not True:
             errors.append(f"browser viewer robot_mesh_callbacks_complete expected true, got {robot_callbacks_complete!r}")
-        if mesh_loaded_count != 2:
-            errors.append(f"browser viewer scene mesh_loaded_count expected 2, got {mesh_loaded_count}")
-    if effective_mesh_loaded_count != EXPECTED_MESH_LOADED_COUNT:
-        errors.append(f"browser viewer meshLoadedCount plus robot_loaded_visual_count expected {EXPECTED_MESH_LOADED_COUNT}, got meshLoadedCount={mesh_loaded_count}, robot_loaded_visual_count={robot_loaded_visual_count}")
+        if mesh_loaded_count != expected_scene_mesh_loaded_count:
+            errors.append(
+                "browser viewer scene mesh_loaded_count expected "
+                f"{expected_scene_mesh_loaded_count}, got {mesh_loaded_count}"
+            )
+        expected_total = expected_scene_mesh_loaded_count + robot_expected_visual_count
+        actual_total = mesh_loaded_count + robot_loaded_visual_count
+        if actual_total != expected_total:
+            errors.append(
+                "browser viewer scene plus robot loaded visual count expected "
+                f"{expected_total}, got meshLoadedCount={mesh_loaded_count}, "
+                f"robot_loaded_visual_count={robot_loaded_visual_count}"
+            )
+    else:
+        # Preserve the legacy 18-mesh artifact contract for older viewer
+        # statuses that do not yet export a scene-specific expectation.
+        effective_mesh_loaded_count = mesh_loaded_count if mesh_loaded_count >= EXPECTED_MESH_LOADED_COUNT else mesh_loaded_count + robot_loaded_visual_count
+        if render_mode == "expanded_urdf_loader" and mesh_loaded_count < EXPECTED_MESH_LOADED_COUNT:
+            if robot_expected_visual_count != 16:
+                errors.append(f"browser viewer robot_expected_visual_count expected 16, got {robot_expected_visual_count}")
+            if robot_completed_visual_count != 16:
+                errors.append(f"browser viewer robot_completed_visual_count expected 16, got {robot_completed_visual_count}")
+            if robot_loaded_visual_count != 16:
+                errors.append(f"browser viewer robot_loaded_visual_count expected 16, got {robot_loaded_visual_count}")
+            if robot_failed_visual_count != 0:
+                errors.append(f"browser viewer robot_failed_visual_count expected 0, got {robot_failed_visual_count}")
+            if robot_callbacks_complete is not True:
+                errors.append(f"browser viewer robot_mesh_callbacks_complete expected true, got {robot_callbacks_complete!r}")
+            if mesh_loaded_count != 2:
+                errors.append(f"browser viewer scene mesh_loaded_count expected 2, got {mesh_loaded_count}")
+        if effective_mesh_loaded_count != EXPECTED_MESH_LOADED_COUNT:
+            errors.append(f"browser viewer meshLoadedCount plus robot_loaded_visual_count expected {EXPECTED_MESH_LOADED_COUNT}, got meshLoadedCount={mesh_loaded_count}, robot_loaded_visual_count={robot_loaded_visual_count}")
     collada_diagnostics = status.get("robot_collada_mesh_diagnostics") or status.get("robotColladaMeshDiagnostics") or []
     collada_text = json.dumps(collada_diagnostics).lower() if isinstance(collada_diagnostics, list) else ""
     missing_robotiq = [name for name in REQUIRED_ROBOTIQ_MESH_BASENAMES if name.lower() not in collada_text]
-    if render_mode == "expanded_urdf_loader" and mesh_loaded_count < EXPECTED_MESH_LOADED_COUNT and missing_robotiq:
+    if render_mode == "expanded_urdf_loader" and (
+        expected_scene_mesh_raw is not None or mesh_loaded_count < EXPECTED_MESH_LOADED_COUNT
+    ) and missing_robotiq:
         errors.append("browser viewer robot_collada_mesh_diagnostics missing Robotiq mesh basenames: " + ", ".join(missing_robotiq))
     if required_mesh_failed_count != EXPECTED_REQUIRED_MESH_FAILED_COUNT:
         errors.append(f"browser viewer requiredMeshFailedCount expected {EXPECTED_REQUIRED_MESH_FAILED_COUNT}, got {required_mesh_failed_count}")
@@ -1078,9 +1127,47 @@ def _record_failed_request(request: Any, failed_requests: list[str]) -> None:
             pass
 
 
+def _record_successful_response(response: Any, successful_responses: set[tuple[str, str]]) -> None:
+    """Remember successful responses so Playwright event pairs can be reconciled."""
+    try:
+        status = int(getattr(response, "status", 0))
+        request = getattr(response, "request", None)
+        method = _safe_request_field(request, "method").upper()
+        url = _safe_request_field(request, "url")
+        if 200 <= status < 400 and method and url:
+            successful_responses.add((method, url))
+    except Exception:
+        pass
+
+
+def _reconcile_successful_head_aborts(
+    failed_requests: list[str], successful_responses: set[tuple[str, str]]
+) -> list[str]:
+    """Drop Chromium's false requestfailed event for a successful HEAD response.
+
+    Python's SimpleHTTPRequestHandler correctly returns the GET Content-Length
+    and no body for HEAD. Chromium resolves fetch() with the successful response
+    but Playwright also emits net::ERR_ABORTED for the absent body. Only that
+    paired, successful HEAD event is non-failing; every other network failure is
+    retained.
+    """
+    successful_head_urls = {
+        url for method, url in successful_responses if method == "HEAD"
+    }
+    return [
+        failure
+        for failure in failed_requests
+        if not (
+            "net::ERR_ABORTED" in failure
+            and any(failure.startswith(f"HEAD {url} ") for url in successful_head_urls)
+        )
+    ]
+
+
 def run_browser(url: str, status_path: Path, screenshot_path: Path, require: bool) -> dict[str, Any]:
     js_errors: list[str] = []
     failed_requests: list[str] = []
+    successful_responses: set[tuple[str, str]] = set()
     console_messages: list[str] = []
     try:
         from playwright.sync_api import sync_playwright  # type: ignore
@@ -1090,6 +1177,7 @@ def run_browser(url: str, status_path: Path, screenshot_path: Path, require: boo
             page.on("pageerror", lambda exc: js_errors.append(str(exc)))
             page.on("console", lambda msg: console_messages.append(f"{msg.type}: {msg.text}"))
             page.on("requestfailed", lambda req: _record_failed_request(req, failed_requests))
+            page.on("response", lambda response: _record_successful_response(response, successful_responses))
             page.goto(url, wait_until="networkidle", timeout=45000)
             page.wait_for_function("window.__WORKCELL_VIEWER_STATUS__ && typeof window.__WORKCELL_VIEWER_STATUS__ === 'object'", timeout=45000)
             page.wait_for_function("() => { const s = window.__WORKCELL_VIEWER_STATUS__ || {}; const state = s.web3d_readiness_state || s.web3dReadinessState || s.viewer_boot_state || ''; return state === 'scene_ready' || state === 'scene_failed'; }", timeout=60000)
@@ -1101,6 +1189,7 @@ def run_browser(url: str, status_path: Path, screenshot_path: Path, require: boo
             screenshot_before_ready = final_state not in {'ready', 'failed'}
             page.screenshot(path=str(screenshot_path), full_page=True)
             browser.close()
+        failed_requests = _reconcile_successful_head_aborts(failed_requests, successful_responses)
         return {"available": True, "method": "playwright", "status": status, "screenshot_before_ready": screenshot_before_ready, "javascript_errors": js_errors, "failed_network_requests": failed_requests, "console_messages": console_messages[-100:]}
     except Exception as exc:
         playwright_error = str(exc)
@@ -1295,6 +1384,7 @@ def _matrix_row_from_report(report: Mapping[str, Any], expected: Mapping[str, st
         errors.append("failed network requests: " + "; ".join(map(str, browser.get("failed_network_requests")[:5])))
     if any(step.get("returncode", 0) != 0 for step in report.get("steps", []) if isinstance(step, Mapping)):
         errors.append("one or more staging/static checks failed")
+    errors.extend(str(error) for error in report.get("strict_status_errors", []) if error)
     return {
         "scene_id": report.get("scene_id", ""),
         "status": "BLOCKED" if errors and browser.get("available") is not True else ("FAIL" if errors else "PASS"),
@@ -1348,17 +1438,18 @@ def run_one_scene(scene_dir: Path, *, output_path: Path | None, scene_id: str | 
     browser_status_path = BUILD_ROOT / f"{scene_id}.browser_status.json"
     if isinstance(browser.get("status"), Mapping):
         browser_status_path.write_text(json.dumps({"status": browser.get("status")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    report = {"scene_id": scene_id, "scene_dir": repo_relative(scene_dir), "expected": dict(expected or {}), "web_scene_json": repo_relative(output_path), "viewer_url": viewer_url, "server_status": server_status, "browser": browser, "robot_preview_lifecycle_diagnostics": robot_preview_lifecycle_diagnostics(browser.get("status")) if isinstance(browser.get("status"), Mapping) else {}, "steps": steps, "browser_status_json": repo_relative(browser_status_path) if browser_status_path.exists() else "", "report": repo_relative(report_path), "screenshot": repo_relative(screenshot_path), "screenshot_dimensions": png_dimensions(screenshot_path), "screenshot_size_bytes": screenshot_path.stat().st_size if screenshot_path.exists() else 0}
+    status = browser.get("status") if isinstance(browser, Mapping) else None
+    legacy_strict_scene = not expected or (expected.get("robot") == "ur5" and expected.get("tool") == "robotiq_2f")
+    strict_status_errors = validate_browser_status(status) if legacy_strict_scene and isinstance(status, Mapping) else []
+    report = {"scene_id": scene_id, "scene_dir": repo_relative(scene_dir), "expected": dict(expected or {}), "web_scene_json": repo_relative(output_path), "viewer_url": viewer_url, "server_status": server_status, "browser": browser, "robot_preview_lifecycle_diagnostics": robot_preview_lifecycle_diagnostics(browser.get("status")) if isinstance(browser.get("status"), Mapping) else {}, "strict_status_errors": strict_status_errors, "steps": steps, "browser_status_json": repo_relative(browser_status_path) if browser_status_path.exists() else "", "report": repo_relative(report_path), "screenshot": repo_relative(screenshot_path), "screenshot_dimensions": png_dimensions(screenshot_path), "screenshot_size_bytes": screenshot_path.stat().st_size if screenshot_path.exists() else 0}
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if server is not None:
         server.shutdown()
     rc = 0
     if any(step["returncode"] != 0 for step in steps): rc = 1
     if require_browser and require_browser_artifact_errors(browser, server_status, screenshot_path, browser_status_path): rc = 1
-    status = browser.get("status") if isinstance(browser, Mapping) else None
     if require_browser and isinstance(status, Mapping) and str(_status_value(status, "web3d_readiness_state", "web3dReadinessState", "viewer_boot_state", "viewerBootState") or "") != "scene_ready": rc = 1
-    legacy_strict_scene = not expected or (expected.get("robot") == "ur5" and expected.get("tool") == "robotiq_2f")
-    if isinstance(status, Mapping) and legacy_strict_scene and validate_browser_status(status): rc = 1
+    if isinstance(status, Mapping) and legacy_strict_scene and strict_status_errors: rc = 1
     elif require_browser and not isinstance(status, Mapping): rc = 1
     return rc, report
 

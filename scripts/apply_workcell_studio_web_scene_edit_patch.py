@@ -2,11 +2,10 @@
 """Safely apply validated Workcell Studio Web 3D edit patches.
 
 Dry-run is the default. Source YAML is mutated only with --write, and only for
-clear editable layout/environment provenance. Generated files, manifests, and
-cell definitions are intentionally out of scope for this first persistence step.
+clear editable layout/environment provenance. The derived MoveIt collision
+manifest is refreshed after a canonical layout write.
 """
 from __future__ import annotations
-
 import argparse
 import datetime as _dt
 import json
@@ -17,12 +16,10 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
-
 try:
     import yaml  # type: ignore
 except ImportError:  # pragma: no cover
     yaml = None  # type: ignore
-
 from validate_workcell_studio_web_scene_edit_patch import _derived_transform_target, _items_by_id, _load_json, _scene_id, validate
 from verify_workcell_studio_web_scene_edit_persistence import _item_transform, _numbers_close
 
@@ -315,6 +312,21 @@ def main(argv: list[str] | None = None) -> int:
                     _write_bytes_atomic(path, payload)
                     print(f"ROLLBACK: atomically restored exact pre-write bytes: {path}", file=sys.stderr)
             raise
+        canonical_layout = scene_dir / "layout" / "workcell_studio_layout.yaml"
+        if canonical_layout in by_file:
+            try:
+                from generate_moveit_collision_manifest import load_and_build
+                collision_manifest = load_and_build(canonical_layout, scene_name=_scene_id(web_scene))
+                collision_output = scene_dir / "config" / "moveit_collision_objects.yaml"
+                collision_output.parent.mkdir(parents=True, exist_ok=True)
+                _write_yaml(collision_output, collision_manifest)
+                print(f"updated MoveIt collision truth: {collision_output}")
+            except Exception as exc:
+                print(
+                    "WARNING: canonical layout was saved, but MoveIt collision truth is stale or unavailable: "
+                    f"{exc}",
+                    file=sys.stderr,
+                )
         print("skipped/rejected edits: none")
         print(f"next suggested command: python3 scripts/export_workcell_studio_web_scene.py --scene {args.scene} --output {args.web_scene}")
         return 0

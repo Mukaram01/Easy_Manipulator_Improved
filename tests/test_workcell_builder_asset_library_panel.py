@@ -146,4 +146,55 @@ def test_catalog_identity_b_flows_to_one_editable_layout_item_and_refreshes_prod
         'void MainWindow::open_add_asset_dialog()',
     )
     assert 'scene_dir / "assets" / "imported"' in imported
-    assert 'stem.toStdString() + ".stl"' in imported
+    assert 'stem.toStdString() + "." + extension.toStdString()' in imported
+
+
+def test_a7_mesh_import_has_explicit_units_format_preflight_and_portable_metadata():
+    imported = _between(
+        'void MainWindow::import_stl_to_asset_library()',
+        'void MainWindow::open_add_asset_dialog()',
+    )
+    helpers = _between('QString import_mesh_format_label', 'void MainWindow::populate_asset_catalog()')
+
+    for extension in ['stl', 'obj', 'dae']:
+        assert f'QStringLiteral("{extension}")' in helpers
+    for contract in [
+        'mesh exceeds the 250 MB import limit',
+        'OBJ must contain both vertex and face records',
+        'DAE file does not contain a COLLADA document root',
+        'symbolic-link sources are not allowed',
+    ]:
+        assert contract in helpers
+
+    assert 'Source geometry units:' in imported
+    assert 'millimetres' in imported and 'centimetres' in imported and 'metres' in imported
+    assert 'Scale to metres:' in imported
+    assert 'Origin policy: preserve mesh-local origin' in imported
+    assert 'Bounds check: %7' in imported
+    assert 'required when Product View loads' in imported
+    assert 'validated before import' in imported
+    assert 'inspect_import_mesh_geometry(source)' in imported
+    assert 'geometry has no usable triangle surface' in helpers
+    assert 'geometry contains a non-finite transformed vertex' in helpers
+    assert 'geometry bounds are collapsed on two or more axes' in helpers
+    assert 'Bounds after unit conversion:' in imported
+    assert 'Origin to bounds centre:' in imported
+    assert 'maximum_dimension < 1e-6 || maximum_dimension > 1000.0' in imported
+    for metadata in [
+        'source_units',
+        'unit_scale_to_m',
+        'mesh_origin_policy',
+        'bounds_validation',
+        'geometry_inspection_backend',
+        'geometry_vertex_count',
+        'geometry_face_count',
+        'source_bounds',
+        'dimensions_m',
+        'origin_to_bounds_center_m',
+        'original_filename',
+        'source_sha256',
+        'workcell_studio_mesh_import/v2',
+    ]:
+        assert metadata in imported
+    assert 'updated_assets' in imported
+    assert 'existing["id"].as<std::string>() != asset_id.toStdString()' in imported

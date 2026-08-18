@@ -25,6 +25,7 @@ const PRODUCT_VIEW_LIGHT_PALETTE = Object.freeze({
 
 const SUPPORTED_SCHEMA_VERSION = 'workcell_studio_web_scene/v1';
 const EDIT_PATCH_SCHEMA_VERSION = 'workcell_studio_web_scene_edit_patch/v1';
+const TRANSFORM_CLIPBOARD_SCHEMA_VERSION = 'workcell_studio_transform/v1';
 const VIEWER_VERSION = 'static_web_viewer_edit_patch_v1';
 const READINESS_CONTRACT_VERSION = 1;
 const PHYSICAL_MESH_LOAD_TIMEOUT_MS = 30000;
@@ -40,7 +41,7 @@ const CAMERA_PRESET_DIRECTIONS = Object.freeze({
   top: [0, -0.001, 1],
   robot: [1.1, -1.25, 0.72],
 });
-const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], pickRecords: [], pickIdentityByObject: new WeakMap(), selectionIdentityIndex: null, physicalEditBindings: new Map(), assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: '', three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], gizmoDragStart: null, gizmoPivot: null, gizmoPivotDragStart: null, cancellingTransformOperation: false, gizmoAttachmentDiagnostic: { targetId: '', reason: 'not_evaluated' }, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', transformSpace: 'world', editorEvents: [], editorError: '', placement: { armed: false, persistent: false, previewRoot: null, asset: null, orientationPreset: 'upright', orientationQuaternion: null, yaw: 0, rawPoint: null, proposedPoint: null, supportOwnerId: '', supportValid: false, collision: false, collidingOwnerIds: [], valid: null }, robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: '', lastCanvasPickReason: '', lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
+const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], pickRecords: [], pickIdentityByObject: new WeakMap(), selectionIdentityIndex: null, physicalEditBindings: new Map(), assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: '', three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], transformClipboard: null, transformClipboardStatus: '', gizmoDragStart: null, gizmoPivot: null, gizmoPivotDragStart: null, cancellingTransformOperation: false, gizmoAttachmentDiagnostic: { targetId: '', reason: 'not_evaluated' }, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', transformSpace: 'world', editorEvents: [], editorError: '', healthAutoOpenedNavigationKey: '', placement: { armed: false, persistent: false, previewRoot: null, asset: null, orientationPreset: 'upright', orientationQuaternion: null, yaw: 0, rawPoint: null, proposedPoint: null, supportOwnerId: '', supportValid: false, collision: false, collidingOwnerIds: [], valid: null }, robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: '', lastCanvasPickReason: '', lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
 const PLACEMENT_COLLISION_EPSILON = 1e-5;
 const PLACEMENT_CONTACT_EPSILON = 1e-5;
 const PLACEMENT_ORIENTATION_PRESETS = Object.freeze({
@@ -507,6 +508,13 @@ const el = {
   inspector: document.getElementById('inspector'),
   warnings: document.getElementById('warnings'),
   summary: document.getElementById('scene-summary'),
+  sceneHealth: document.getElementById('scene-health'),
+  sceneHealthTitle: document.getElementById('scene-health-title'),
+  sceneHealthSummary: document.getElementById('scene-health-summary'),
+  sceneHealthCount: document.getElementById('scene-health-count'),
+  sceneHealthItems: document.getElementById('scene-health-items'),
+  warningsDetails: document.getElementById('warnings-details'),
+  warningCount: document.getElementById('warning-count'),
 };
 
 
@@ -605,6 +613,7 @@ function computeSceneSummary() {
     sceneName: sceneDisplayName(),
     renderableCount: rendered.length,
     meshLoadedCount: statusRendered.filter(obj => obj.renderInfo?.render_status === 'mesh_loaded').length,
+    expectedMeshLoadedCount: statusRendered.filter(obj => itemRequiresMeshBackedVisual(obj.item)).length,
     meshVisuallyInvalidCount: statusRendered.filter(obj => obj.item?.visual_bounds_status && !['valid', 'corrected_by_local_unit_scale'].includes(obj.item.visual_bounds_status)).length,
     meshUnitScaleCorrectedCount: statusRendered.filter(obj => obj.item?.visual_bounds_status === 'corrected_by_local_unit_scale').length,
     fallbackCount: statusRendered.filter(obj => isRuntimeFallbackStatus(obj.renderInfo?.render_status || obj.item?.renderInfo?.render_status)).length,
@@ -698,6 +707,157 @@ function isUserFacingWarning(w) {
     'url_not_served', 'file_access_blocked', 'unresolved_package_uri',
   ];
   return realFailureTokens.some(token => text.includes(token));
+}
+
+const PRODUCT_DIAGNOSTIC_DEFINITIONS = Object.freeze({
+  scene_failed: Object.freeze({ severity: 'error', title: 'Scene could not finish loading', action: 'Repair the first failed component, then reload Product View.' }),
+  missing_mesh: Object.freeze({ severity: 'error', title: 'Mesh file is missing', action: 'Reimport the asset or restore its staged mesh file, then reload Product View.' }),
+  unsupported_format: Object.freeze({ severity: 'error', title: 'Mesh format is not supported', action: 'Convert the model to STL, OBJ, or DAE, then import it again.' }),
+  unresolved_package_uri: Object.freeze({ severity: 'error', title: 'ROS mesh path was not staged', action: 'Generate or refresh the scene so the package:// mesh is copied into the portable web assets.' }),
+  invalid_scale: Object.freeze({ severity: 'error', title: 'Mesh scale or bounds are invalid', action: 'Check the asset units and authored scale. Use a positive finite scale, then reload the scene.' }),
+  mesh_load_failed: Object.freeze({ severity: 'error', title: 'Physical asset failed to load', action: 'Check the staged file and loader details, then reimport or regenerate the asset.' }),
+  collision: Object.freeze({ severity: 'warning', title: 'Placement collides with another object', action: 'Move the preview until it turns green before placing the asset.' }),
+  generated_stale: Object.freeze({ severity: 'warning', title: 'Generated scene is out of date', action: 'Save the authored layout, then use Generate/Refresh Product View.' }),
+});
+
+function diagnosticSearchText(raw = {}) {
+  return [
+    raw.code, raw.status, raw.source, raw.reason, raw.message, raw.mesh_status,
+    raw.mesh_load_status, raw.render_status, raw.visual_bounds_status,
+    raw.fallback_reason, raw.fallback_or_skip_reason,
+  ].map(value => Array.isArray(value) ? value.join(' ') : String(value || '')).join(' ').toLowerCase();
+}
+function productDiagnosticKind(raw = {}) {
+  const code = String(raw.code || '').toLowerCase();
+  const text = diagnosticSearchText(raw);
+  if (code === 'optional_file_missing' || text.includes('optional input file is missing')) return '';
+  if (/\bcollision\b/.test(text)) return 'collision';
+  if (/generated.{0,30}(stale|out of date)|stale.{0,30}generated/.test(text)) return 'generated_stale';
+  if (/unsupported[_ ]format|unsupported mesh format/.test(text)) return 'unsupported_format';
+  if (/unresolved[_ ]package[_ ]uri|package uri (was not staged|must be resolved)|package:\/\//.test(text)) return 'unresolved_package_uri';
+  if (/loaded[_ ]mesh[_ ](bounds[_ ])?(invalid|collapsed|oversized)|invalid[_ ](dimension|dimensions|scale|mesh[_ ]local[_ ]transform|renderable[_ ]transform)|visual[_ ]bounds/.test(text)) return 'invalid_scale';
+  if (/missing[_ ]file|mesh file.{0,20}(missing|not found)|missing mesh/.test(text)) return 'missing_mesh';
+  if (/required[_ ]mesh[_ ]failed|loader[_ ]failure|mesh[_ ]loader[_ ]failure|load[_ ]error|url[_ ]not[_ ]served|file[_ ]access[_ ]blocked|physical asset failed to load/.test(text)) return 'mesh_load_failed';
+  if (/scene[_ ]failed|failed to load scene/.test(text)) return 'scene_failed';
+  return '';
+}
+function productDiagnosticDetail(raw = {}, definition = {}) {
+  const detail = String(raw.message || raw.reason || raw.mesh_load_error || raw.fallback_reason || definition.title || '').trim();
+  return detail || definition.title || 'Product View reported a scene issue.';
+}
+function normalizeProductDiagnostic(raw = {}, overrideKind = '') {
+  const kind = overrideKind || productDiagnosticKind(raw);
+  const definition = PRODUCT_DIAGNOSTIC_DEFINITIONS[kind];
+  if (!definition) return null;
+  const itemId = String(raw.object_id || raw.item_id || raw.id || raw.link || raw.object_name || '').trim();
+  const meshUri = String(raw.mesh_uri || raw.original_mesh_uri || raw.url || raw.mesh_load_url || '').trim();
+  return {
+    kind,
+    severity: definition.severity,
+    title: definition.title,
+    detail: productDiagnosticDetail(raw, definition),
+    action: definition.action,
+    itemId,
+    meshUri,
+    code: String(raw.code || raw.status || raw.mesh_status || kind),
+  };
+}
+function invalidAuthoredScale(item = {}) {
+  const scale = item?.mesh_local_transform?.scale || item?.mesh_scale || item?.scale;
+  return Array.isArray(scale) && (scale.length !== 3 || scale.some(value => !Number.isFinite(Number(value)) || Number(value) <= 0));
+}
+function collectProductDiagnostics() {
+  const diagnostics = [];
+  const add = diagnostic => { if (diagnostic) diagnostics.push(diagnostic); };
+  const readinessFailure = state.web3dReadiness?.failure;
+  if (state.web3dReadiness?.state === 'scene_failed' || state.editorError) {
+    add(normalizeProductDiagnostic({
+      code: 'scene_failed',
+      reason: state.editorError || readinessFailure?.reason || 'A required scene component did not load.',
+      item_id: readinessFailure?.item_id,
+      url: readinessFailure?.url,
+    }, 'scene_failed'));
+  }
+  const rawWarnings = asArray(state.sceneJson?.warnings).concat(asArray(state.sceneJson?.notes_warnings), asArray(state.runtimeWarnings));
+  for (const warning of rawWarnings) {
+    const kind = productDiagnosticKind(warning);
+    if (kind && (isUserFacingWarning(warning) || kind === 'collision' || kind === 'generated_stale')) add(normalizeProductDiagnostic(warning, kind));
+  }
+  for (const rendered of statusCountedRenderables()) {
+    const item = rendered?.item || {};
+    const renderInfo = rendered?.renderInfo || item.renderInfo || {};
+    const raw = {
+      code: item.mesh_status || renderInfo.render_status,
+      status: item.mesh_status || renderInfo.render_status,
+      render_status: renderInfo.render_status,
+      reason: item.mesh_load_error || renderInfo.fallback_reason,
+      object_id: item.id,
+      mesh_uri: renderInfo.mesh_uri || displayMeshUri(item),
+      visual_bounds_status: item.visual_bounds_status,
+    };
+    if (isRequiredMeshFailureStatus(rendered) || isMissingOrFailedMeshStatus(item.mesh_status)) add(normalizeProductDiagnostic(raw));
+    if ((item.visual_bounds_status && !['valid', 'corrected_by_local_unit_scale'].includes(item.visual_bounds_status)) || invalidAuthoredScale(item)) {
+      add(normalizeProductDiagnostic({ ...raw, code: 'invalid_scale', reason: item.mesh_load_error || `Invalid visual bounds or scale (${item.visual_bounds_status || 'non-positive/non-finite scale'}).` }, 'invalid_scale'));
+    }
+  }
+  if (state.placement?.armed && state.placement?.collision) {
+    const colliders = asArray(state.placement.collidingOwnerIds);
+    add(normalizeProductDiagnostic({
+      code: 'collision',
+      object_id: state.placement.asset?.id || state.placement.asset?.catalog_id || 'placement preview',
+      reason: `Placement overlaps ${colliders.length ? colliders.join(', ') : 'another physical object'}.`,
+    }, 'collision'));
+  }
+  const deduped = [];
+  const keys = new Set();
+  for (const diagnostic of diagnostics) {
+    const key = [diagnostic.kind, diagnostic.itemId || diagnostic.meshUri || diagnostic.detail].join('|');
+    if (keys.has(key)) continue;
+    keys.add(key);
+    deduped.push(diagnostic);
+  }
+  return deduped;
+}
+function sceneHealthModel() {
+  const diagnostics = collectProductDiagnostics();
+  const lifecycle = state.editorError ? 'scene_failed' : (state.web3dReadiness?.state || 'booting');
+  const pending = pendingRequiredLoads();
+  const errorCount = diagnostics.filter(item => item.severity === 'error').length;
+  const warningCount = diagnostics.filter(item => item.severity === 'warning').length;
+  if (lifecycle === 'scene_failed' || errorCount) {
+    return { state: 'failed', title: 'Scene needs attention', summary: `${errorCount || 1} blocking issue${(errorCount || 1) === 1 ? '' : 's'} · open for the fix`, diagnostics, errorCount, warningCount };
+  }
+  if (lifecycle === 'booting' || lifecycle === 'scene_loading') {
+    const waiting = pending.length ? `${pending.length} required component${pending.length === 1 ? '' : 's'} remaining` : 'Checking robot, tool, environment, and camera';
+    return { state: 'loading', title: state.sceneJsonLoaded ? 'Loading physical scene' : 'Opening scene', summary: waiting, diagnostics, errorCount, warningCount };
+  }
+  if (warningCount) return { state: 'warning', title: 'Scene ready with warnings', summary: `${warningCount} item${warningCount === 1 ? '' : 's'} to review`, diagnostics, errorCount, warningCount };
+  const physicalCount = renderedPhysicalItemCount();
+  return { state: 'ready', title: 'Scene ready', summary: `${physicalCount} physical item${physicalCount === 1 ? '' : 's'} loaded · safe to edit`, diagnostics, errorCount, warningCount };
+}
+function renderSceneHealth(model = sceneHealthModel()) {
+  if (!el.sceneHealth) return model;
+  el.sceneHealth.classList?.remove?.('health-loading', 'health-ready', 'health-warning', 'health-failed');
+  el.sceneHealth.classList?.add?.(`health-${model.state}`);
+  if (el.sceneHealthTitle) el.sceneHealthTitle.textContent = model.title;
+  if (el.sceneHealthSummary) el.sceneHealthSummary.textContent = model.summary;
+  const issueCount = model.diagnostics.length;
+  if (el.sceneHealthCount) {
+    el.sceneHealthCount.hidden = issueCount === 0;
+    el.sceneHealthCount.textContent = String(issueCount);
+  }
+  if (el.sceneHealthItems) {
+    el.sceneHealthItems.innerHTML = issueCount ? model.diagnostics.map(diagnostic => {
+      const context = [diagnostic.itemId ? `Item: ${diagnostic.itemId}` : '', diagnostic.meshUri ? `Mesh: ${diagnostic.meshUri}` : ''].filter(Boolean).join(' · ');
+      return `<article class="health-item health-item-${escapeHtml(diagnostic.severity)}"><strong>${escapeHtml(diagnostic.title)}</strong><span>${escapeHtml(diagnostic.detail)}</span><small>${context ? `${escapeHtml(context)}<br>` : ''}<b>Next:</b> ${escapeHtml(diagnostic.action)}</small></article>`;
+    }).join('') : `<div class="health-empty">${model.state === 'ready' ? 'All required physical components loaded. No action is needed.' : 'Product View is checking required physical components.'}</div>`;
+  }
+  const navigationKey = web3dNavigationKey();
+  if (model.state === 'failed' && state.healthAutoOpenedNavigationKey !== navigationKey) {
+    el.sceneHealth.open = true;
+    state.healthAutoOpenedNavigationKey = navigationKey;
+  }
+  return model;
 }
 
 function vector3ToDiagnostics(value) {
@@ -1035,6 +1195,7 @@ function collectRenderedMeshDiagnostics() {
 
 function updateViewerStatus() {
   const summary = computeSceneSummary();
+  const productHealth = sceneHealthModel();
   const selectionDiagnostics = currentSelectionDiagnostics();
   const warnings = asArray(state.sceneJson?.warnings).concat(asArray(state.sceneJson?.notes_warnings), asArray(state.runtimeWarnings));
   const resolvedFrameStatus = buildResolvedFrameStatus();
@@ -1101,12 +1262,22 @@ function updateViewerStatus() {
     renderableCount: summary.renderableCount,
     mesh_loaded_count: summary.meshLoadedCount,
     meshLoadedCount: summary.meshLoadedCount,
+    expected_scene_mesh_loaded_count: summary.expectedMeshLoadedCount,
+    expectedSceneMeshLoadedCount: summary.expectedMeshLoadedCount,
     required_mesh_failed_count: statusCountedRenderables().filter(isRequiredMeshFailureStatus).length,
     requiredMeshFailedCount: statusCountedRenderables().filter(isRequiredMeshFailureStatus).length,
     fallback_count: summary.fallbackCount,
     fallbackCount: summary.fallbackCount,
     runtime_warnings: warnings,
     runtimeWarnings: warnings,
+    scene_health_state: productHealth.state,
+    sceneHealthState: productHealth.state,
+    product_diagnostics: productHealth.diagnostics,
+    productDiagnostics: productHealth.diagnostics,
+    product_diagnostic_error_count: productHealth.errorCount,
+    productDiagnosticErrorCount: productHealth.errorCount,
+    product_diagnostic_warning_count: productHealth.warningCount,
+    productDiagnosticWarningCount: productHealth.warningCount,
     resolvedFramePositions: resolvedFrameStatus.resolvedFramePositions,
     resolved_frame_positions: resolvedFrameStatus.resolved_frame_positions,
     viewer_resolved_distances_m: resolvedFrameStatus.viewer_resolved_distances_m,
@@ -1144,6 +1315,7 @@ function updateViewerStatus() {
     readiness_failure: state.web3dReadiness?.failure || null,
     readinessFailure: state.web3dReadiness?.failure || null,
   };
+  renderSceneHealth(productHealth);
   return window.__WORKCELL_VIEWER_STATUS__;
 }
 function renderSceneSummary() {
@@ -1348,6 +1520,7 @@ function showError(message) {
     fatal_stack: (new Error(text).stack || '').split('\n').slice(0, 6).join('\n'),
     fatalStack: (new Error(text).stack || '').split('\n').slice(0, 6).join('\n'),
   };
+  renderSceneHealth();
 }
 function clearError() { state.editorError = ''; el.error.hidden = true; el.error.textContent = ''; }
 function valueOrDash(value) { return value === undefined || value === null || value === '' ? '—' : value; }
@@ -5261,7 +5434,14 @@ function updatePlacementStatus() {
   if (!status) return;
   status.hidden = !state.placement.armed;
   status.className = `placement-status ${state.placement.collision ? 'collision' : (state.placement.valid === true ? 'valid' : 'invalid')}`;
-  if (!state.placement.armed) { status.textContent = ''; return; }
+  if (!state.placement.armed) {
+    status.textContent = '';
+    if (state.lastPlacementHealthSignature !== 'false|false|') {
+      state.lastPlacementHealthSignature = 'false|false|';
+      renderSceneHealth();
+    }
+    return;
+  }
   const point = state.placement.proposedPoint;
   const snap = placementSnapValue();
   const collisions = state.placement.collidingOwnerIds || [];
@@ -5272,6 +5452,11 @@ function updatePlacementStatus() {
       ? `<strong>COLLISION</strong> · ${collisions[0]}${collisions.length > 1 ? ` + ${collisions.length - 1} more` : ''}<br>Orientation: ${orientation} · Q/E yaw · 1–6 preset · Esc cancel`
       : `<strong>VALID</strong> · X ${point.x.toFixed(3)} · Y ${point.y.toFixed(3)} · Z ${point.z.toFixed(3)} m${snap ? ` · SNAP ${snap.toFixed(3)} m` : ' · SNAP OFF'}<br>Orientation: ${orientation} · Q/E yaw · 1–6 preset · Esc cancel`
     : `<strong>INVALID</strong> · ${state.placement.supportValid ? (state.placement.invalidReason || 'Placement preview unavailable') : 'No valid placement surface'}${snap ? ` · SNAP ${snap.toFixed(3)} m` : ' · SNAP OFF'}<br>${state.placement.supportValid ? 'Wait for physical geometry · Esc cancel' : 'Move over a physical support surface · Esc cancel'}`;
+  const healthSignature = `${Boolean(state.placement.armed)}|${Boolean(state.placement.collision)}|${asArray(state.placement.collidingOwnerIds).join('|')}`;
+  if (state.lastPlacementHealthSignature !== healthSignature) {
+    state.lastPlacementHealthSignature = healthSignature;
+    renderSceneHealth();
+  }
 }
 function setPlacementPoint(rawPoint) {
   state.placement.invalidReason = '';
@@ -5576,6 +5761,10 @@ function onEditorKeyDown(event) {
   }
   const undoShortcut = (event.ctrlKey || event.metaKey) && !event.altKey && event.code === 'KeyZ' && !event.shiftKey;
   const redoShortcut = (event.ctrlKey || event.metaKey) && !event.altKey && (event.code === 'KeyY' || (event.code === 'KeyZ' && event.shiftKey));
+  const copyShortcut = (event.ctrlKey || event.metaKey) && !event.altKey && event.code === 'KeyC';
+  const pasteShortcut = (event.ctrlKey || event.metaKey) && !event.altKey && event.code === 'KeyV';
+  if (copyShortcut && selectionIsEditable(canonicalTransformOwner(state.selected))) { copySelectedTransformToClipboard(); event.preventDefault?.(); return; }
+  if (pasteShortcut && selectionIsEditable(canonicalTransformOwner(state.selected))) { pasteSelectedTransformFromClipboard(); event.preventDefault?.(); return; }
   if (undoShortcut && state.undoStack.length) { undoPreviewEdit(); event.preventDefault?.(); return; }
   if (redoShortcut && state.redoStack.length) { redoPreviewEdit(); event.preventDefault?.(); return; }
   if (applyKeyboardTransformStep(event, keyboardTransformCommand(event))) event.preventDefault?.();
@@ -5795,6 +5984,92 @@ function commitCanonicalTransformEdit(rendered, nextTransform, reason = 'numeric
   emitTransformCommitted(owner);
   return true;
 }
+function transformClipboardPayload(rendered) {
+  if (!selectionIsEditable(rendered)) return null;
+  const transform = canonicalTransformForRendered(rendered);
+  return {
+    schema_version: TRANSFORM_CLIPBOARD_SCHEMA_VERSION,
+    units: { position: 'metres', rotation: 'degrees' },
+    source_item_id: String(rendered.item.id || ''),
+    source_item_label: itemLabel(rendered.item),
+    pose: {
+      xyz: [transform.pose.xyz.x, transform.pose.xyz.y, transform.pose.xyz.z],
+      rpy_deg: [transform.pose.rpy.x, transform.pose.rpy.y, transform.pose.rpy.z].map(value => value * 180 / Math.PI),
+    },
+  };
+}
+function parseTransformClipboardPayload(value) {
+  let payload = value;
+  if (typeof payload === 'string') {
+    try { payload = JSON.parse(payload); } catch (_) { return null; }
+  }
+  if (!payload || payload.schema_version !== TRANSFORM_CLIPBOARD_SCHEMA_VERSION ||
+      payload.units?.position !== 'metres' || payload.units?.rotation !== 'degrees') return null;
+  const xyz = payload.pose?.xyz;
+  const rpyDeg = payload.pose?.rpy_deg;
+  if (!Array.isArray(xyz) || xyz.length !== 3 || !Array.isArray(rpyDeg) || rpyDeg.length !== 3) return null;
+  const values = [...xyz, ...rpyDeg].map(Number);
+  if (!values.every(Number.isFinite)) return null;
+  return {
+    schema_version: TRANSFORM_CLIPBOARD_SCHEMA_VERSION,
+    units: { position: 'metres', rotation: 'degrees' },
+    source_item_id: String(payload.source_item_id || ''),
+    source_item_label: String(payload.source_item_label || payload.source_item_id || 'object'),
+    pose: { xyz: values.slice(0, 3), rpy_deg: values.slice(3, 6) },
+  };
+}
+function setTransformClipboardStatus(message) {
+  state.transformClipboardStatus = String(message || '');
+  const status = el.inspector?.querySelector?.('#transform-clipboard-status');
+  if (status) { status.textContent = state.transformClipboardStatus; status.hidden = !state.transformClipboardStatus; }
+  if (message) pushEditorEvent('status', { message: state.transformClipboardStatus });
+}
+async function copySelectedTransformToClipboard(rendered = canonicalTransformOwner(state.selected)) {
+  const payload = transformClipboardPayload(rendered);
+  if (!payload) { setTransformClipboardStatus('Select an editable object to copy its pose.'); return false; }
+  state.transformClipboard = payload;
+  let systemClipboard = false;
+  try {
+    if (globalThis.navigator?.clipboard?.writeText) {
+      await globalThis.navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      systemClipboard = true;
+    }
+  } catch (_) { /* The in-app clipboard remains authoritative for this session. */ }
+  setTransformClipboardStatus(`Copied pose from ${payload.source_item_label}${systemClipboard ? '' : ' (in-app clipboard)'}.`);
+  return true;
+}
+function pasteTransformPayload(rendered, value) {
+  if (!selectionIsEditable(rendered)) { setTransformClipboardStatus('Select an editable target object before pasting.'); return false; }
+  const payload = parseTransformClipboardPayload(value);
+  if (!payload) { setTransformClipboardStatus('Clipboard does not contain a valid Workcell Studio pose.'); return false; }
+  const before = canonicalTransformForRendered(rendered);
+  const next = cloneTransform(before);
+  [next.pose.xyz.x, next.pose.xyz.y, next.pose.xyz.z] = payload.pose.xyz;
+  [next.pose.rpy.x, next.pose.rpy.y, next.pose.rpy.z] = payload.pose.rpy_deg.map(value => value * Math.PI / 180);
+  if (sameTransform(before, next)) {
+    setTransformClipboardStatus(`${itemLabel(rendered.item)} already has this pose.`);
+    syncInspectorTransformFields(rendered, { force: true });
+    return false;
+  }
+  if (!commitCanonicalTransformEdit(rendered, next, 'paste_transform')) {
+    setTransformClipboardStatus(`Could not paste the pose onto ${itemLabel(rendered.item)}.`);
+    return false;
+  }
+  setTransformClipboardStatus(`Pasted pose from ${payload.source_item_label} onto ${itemLabel(rendered.item)}.`);
+  return true;
+}
+async function pasteSelectedTransformFromClipboard(rendered = canonicalTransformOwner(state.selected)) {
+  if (!selectionIsEditable(rendered)) { setTransformClipboardStatus('Select an editable target object before pasting.'); return false; }
+  let payload = state.transformClipboard;
+  try {
+    if (globalThis.navigator?.clipboard?.readText) {
+      const systemText = await globalThis.navigator.clipboard.readText();
+      if (String(systemText || '').trim()) payload = systemText;
+    }
+  } catch (_) { /* Fall back to the in-app clipboard. */ }
+  if (!payload) { setTransformClipboardStatus('Copy a pose first, then select the target object and paste.'); return false; }
+  return pasteTransformPayload(rendered, payload);
+}
 function renderTransformInputs(rendered) {
   const editable = selectionIsEditable(rendered);
   const transform = canonicalTransformForRendered(rendered);
@@ -5803,7 +6078,7 @@ function renderTransformInputs(rendered) {
     const spec = TRANSFORM_FIELD_SPECS[name];
     return `<label>${spec.label}<input type="number" inputmode="decimal" step="${spec.step}" data-transform-field="${name}" value="${formatTransformField(transform, name)}" ${disabled}></label>`;
   }).join('');
-  return `<section class="transform-editor"><h3>Preview transform editing</h3>${editable ? '<p class="edit-note edit-mode-active">Edit mode active for editable/unlocked item. Exact authored pose editing. Position is in metres; rotation is in degrees. Changes use the same preview history and Save Layout path as the gizmo.</p>' : `<p class="edit-lock-reason">${LOCKED_EDIT_REASON}</p>`}<h4>Position (m)</h4><div class="transform-grid">${inputs(['x', 'y', 'z'])}</div><h4>Rotation (deg)</h4><div class="transform-grid">${inputs(['roll', 'pitch', 'yaw'])}</div><div class="editor-actions"><button id="reset-selected" type="button" ${editable ? '' : 'disabled'}>Reset Pose</button></div></section>`;
+  return `<section class="transform-editor"><h3>Transform</h3>${editable ? '<p class="edit-note edit-mode-active">Edit mode active for editable/unlocked item. Edit the exact authored pose: position is in metres and rotation is in degrees. Every change uses the same undo, redo, and Save Layout path as the gizmo.</p>' : `<p class="edit-lock-reason">${LOCKED_EDIT_REASON}</p>`}<h4>Position (m)</h4><div class="transform-grid">${inputs(['x', 'y', 'z'])}</div><h4>Rotation (deg)</h4><div class="transform-grid">${inputs(['roll', 'pitch', 'yaw'])}</div><div class="editor-actions transform-clipboard-actions"><button id="copy-transform" type="button" ${editable ? '' : 'disabled'} title="Copy XYZ in metres and RPY in degrees (Ctrl/Cmd+C)">Copy Pose</button><button id="paste-transform" type="button" ${editable ? '' : 'disabled'} title="Paste pose and preserve this object's scale (Ctrl/Cmd+V)">Paste Pose</button><button id="reset-selected" type="button" ${editable ? '' : 'disabled'}>Reset Pose</button></div><p id="transform-clipboard-status" class="transform-clipboard-status" role="status" aria-live="polite" ${state.transformClipboardStatus ? '' : 'hidden'}>${escapeHtml(state.transformClipboardStatus)}</p></section>`;
 }
 function syncInspectorTransformFields(rendered, { force = false } = {}) {
   if (state.selected !== rendered?.item?.id) return;
@@ -5848,6 +6123,10 @@ function wireTransformInputs(rendered) {
   });
   const reset = el.inspector.querySelector('#reset-selected');
   if (reset) reset.addEventListener('click', () => resetSelectedTransform(rendered.item.id));
+  const copy = el.inspector.querySelector('#copy-transform');
+  if (copy) copy.addEventListener('click', () => copySelectedTransformToClipboard(rendered));
+  const paste = el.inspector.querySelector('#paste-transform');
+  if (paste) paste.addEventListener('click', () => pasteSelectedTransformFromClipboard(rendered));
 }
 function resetSelectedTransform(id = state.selected) {
   const rendered = state.objects.find(obj => obj.item.id === id);
@@ -5980,6 +6259,8 @@ function refreshWarnings(sceneJson = state.sceneJson) {
   const warnings = asArray(sceneJson?.warnings).concat(asArray(sceneJson?.notes_warnings), asArray(state.runtimeWarnings));
   const userFacingWarnings = warnings.filter(isUserFacingWarning);
   updateViewerStatus();
+  if (el.warningsDetails) el.warningsDetails.hidden = userFacingWarnings.length === 0;
+  if (el.warningCount) el.warningCount.textContent = String(userFacingWarnings.length);
   if (!userFacingWarnings.length) { el.warnings.className = 'warnings state empty'; el.warnings.textContent = 'No user-facing JSON or runtime mesh warnings.'; return; }
   el.warnings.className = 'warnings';
   el.warnings.innerHTML = userFacingWarnings.map(w => {

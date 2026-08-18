@@ -424,8 +424,16 @@ def _repo_root(scene_dir: Optional[Path] = None, output_path: Optional[Path] = N
     cwd = Path.cwd().resolve()
     if scene_dir is not None:
         try:
-            scene_dir.resolve().relative_to(cwd)
-            if (cwd / "assets").exists() or (cwd / "scenes").exists():
+            resolved_scene_dir = scene_dir.resolve()
+            resolved_scene_dir.relative_to(cwd)
+            # A scene commonly owns an ``assets`` directory, so that directory
+            # alone is not evidence that cwd is the repository root.  Returning
+            # the scene here breaks package resolution whenever Builder/export
+            # is launched from inside the scene directory.
+            cwd_is_parent_workspace = resolved_scene_dir != cwd and (
+                (cwd / "assets").is_dir() or (cwd / "scenes").is_dir()
+            )
+            if _looks_like_repo_root(cwd) or cwd_is_parent_workspace:
                 return cwd
         except ValueError:
             pass
@@ -1838,11 +1846,13 @@ def _rpy_xyz_matrix(rpy: Sequence[float]) -> List[List[float]]:
     cr, sr = math.cos(r), math.sin(r)
     cp, sp = math.cos(p), math.sin(p)
     cy, sy = math.cos(y), math.sin(y)
-    # Match THREE.Euler(..., 'XYZ') composition used by the browser: Rz * Ry * Rx.
+    # Match THREE.Euler(..., 'XYZ') exactly. Three.js uses intrinsic XYZ
+    # composition here (Rx * Ry * Rz), which is not the same matrix as the
+    # common URDF fixed-axis RPY expression once more than one angle is nonzero.
     return [
-        [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
-        [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
-        [-sp, cp * sr, cp * cr],
+        [cp * cy, -cp * sy, sp],
+        [cr * sy + sr * sp * cy, cr * cy - sr * sp * sy, -sr * cp],
+        [sr * sy - cr * sp * cy, sr * cy + cr * sp * sy, cr * cp],
     ]
 
 
@@ -1860,15 +1870,16 @@ def _matrix_vec_multiply(m: Sequence[Sequence[float]], v: Sequence[float]) -> Li
 
 def _rpy_from_xyz_matrix(m: Sequence[Sequence[float]]) -> List[float]:
     import math
-    # Inverse of the Rz * Ry * Rx matrix above for THREE Euler order XYZ.
-    sy = -float(m[2][0])
+    # Inverse of the Three.js intrinsic XYZ matrix above. These branches mirror
+    # Euler.setFromRotationMatrix(..., 'XYZ'), including its gimbal-lock case.
+    sy = float(m[0][2])
     if abs(sy) < 0.999999:
         pitch = math.asin(sy)
-        roll = math.atan2(float(m[2][1]), float(m[2][2]))
-        yaw = math.atan2(float(m[1][0]), float(m[0][0]))
+        roll = math.atan2(-float(m[1][2]), float(m[2][2]))
+        yaw = math.atan2(-float(m[0][1]), float(m[0][0]))
     else:
         pitch = math.copysign(math.pi / 2.0, sy)
-        roll = math.atan2(-float(m[1][2]), float(m[1][1]))
+        roll = math.atan2(float(m[2][1]), float(m[1][1]))
         yaw = 0.0
     return [roll, pitch, yaw]
 

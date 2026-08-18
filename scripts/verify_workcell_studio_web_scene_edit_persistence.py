@@ -75,6 +75,25 @@ def _strip_allowed_metadata(value: Any) -> Any:
     return value
 
 
+def _linked_generated_physical_owner(item: dict[str, Any]) -> str:
+    """Return the authored owner for a generated camera/table visual.
+
+    These locked rows are renderer artifacts, not independent authoring state.
+    Re-exporting immediately after an owner edit can update their world/local
+    transform metadata before the fresh generated cache is installed.
+    """
+    if item.get("locked") is not True or str(item.get("source_kind", "")) != "generated_preview":
+        return ""
+    identity = " ".join(str(item.get(key, "")).lower() for key in ("category", "role", "type", "id"))
+    if not any(token in identity for token in ("camera", "realsense", "table", "workbench", "support_surface")):
+        return ""
+    for key in ("camera_id", "support_surface_ref", "canonical_scene_item_id", "ui_selection_item_id", "selection_owner_id"):
+        owner_id = str(item.get(key, "")).strip()
+        if owner_id:
+            return owner_id
+    return ""
+
+
 def verify(before: dict[str, Any], patch: dict[str, Any], after: dict[str, Any]) -> tuple[bool, list[str], list[str]]:
     details: list[str] = []
     errors: list[str] = []
@@ -147,6 +166,18 @@ def verify(before: dict[str, Any], patch: dict[str, Any], after: dict[str, Any])
                 details.append(f"PASS linked place-zone record {item_id}: remained exporter-consistent with destination {derived_dependents[item_id]}")
             else:
                 details.append(f"PASS derived place-zone overlay {item_id}: regenerated from destination {derived_dependents[item_id]}")
+            continue
+        linked_owner = _linked_generated_physical_owner(before_item)
+        if linked_owner in edited_ids:
+            after_owner = _linked_generated_physical_owner(after_item)
+            if after_owner != linked_owner:
+                errors.append(
+                    f"item {item_id!r}: generated physical visual changed owner from {linked_owner!r} to {after_owner!r}"
+                )
+            else:
+                details.append(
+                    f"PASS generated physical visual {item_id}: remained linked to edited owner {linked_owner}"
+                )
             continue
         if before_item.get("locked") is True or _is_generated_robot_or_tool(before_item):
             label = "locked/generated"

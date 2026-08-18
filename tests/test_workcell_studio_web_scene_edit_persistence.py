@@ -111,6 +111,31 @@ def test_unrelated_editable_and_locked_generated_items_remain_unchanged(tmp_path
     assert next(i for i in before["robots"] if i["id"] == "ur5_visual") == next(i for i in after["robots"] if i["id"] == "ur5_visual")
 
 
+def test_generated_physical_visual_may_refresh_with_edited_owner(tmp_path):
+    scene, before, after, _, before_path, patch_path, after_path = _full_loop(tmp_path, _patch(new_x=0.8))
+    generated_visual = {
+        "id": "generated_camera_visual",
+        "type": "camera_realsense",
+        "role": "camera",
+        "camera_id": "layout_bin",
+        "canonical_scene_item_id": "layout_bin",
+        "source_kind": "generated_preview",
+        "locked": True,
+        "editable": False,
+        "pose": {"xyz": [0.0, 0.1, 0.2], "rpy": [0.0, 0.0, 0.3]},
+        "owner_relative_visual_transform": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0]},
+    }
+    before.setdefault("sensors", []).append(generated_visual)
+    refreshed_visual = json.loads(json.dumps(generated_visual))
+    refreshed_visual["owner_relative_visual_transform"]["xyz"][0] = -0.8
+    after.setdefault("sensors", []).append(refreshed_visual)
+    _write_json(before_path, before)
+    _write_json(after_path, after)
+    result = _run([VERIFIER, "--scene", scene, "--web-scene-before", before_path, "--patch", patch_path, "--web-scene-after", after_path])
+    assert result.returncode == 0, result.stderr
+    assert "remained linked to edited owner layout_bin" in result.stdout
+
+
 def test_dry_run_still_writes_nothing(tmp_path):
     scene = _scene(tmp_path)
     before_path = tmp_path / "before.json"

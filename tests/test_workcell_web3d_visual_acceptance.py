@@ -52,6 +52,32 @@ def test_record_failed_request_records_string_object_and_dict_failures_without_t
     assert any("unreadable method" in item and "unreadable url" in item for item in failures)
 
 
+def test_successful_head_response_reconciles_only_chromium_head_abort():
+    url = "http://viewer/asset.dae"
+    successful = set()
+    request = type("Request", (), {"method": "HEAD", "url": url})()
+    response = type("Response", (), {"status": 200, "request": request})()
+    module._record_successful_response(response, successful)
+
+    failures = [
+        f"HEAD {url} net::ERR_ABORTED",
+        f"GET {url} net::ERR_ABORTED",
+        "HEAD http://viewer/missing.dae net::ERR_ABORTED",
+        f"HEAD {url} net::ERR_CONNECTION_RESET",
+    ]
+    assert module._reconcile_successful_head_aborts(failures, successful) == failures[1:]
+
+
+def test_unsuccessful_head_response_does_not_hide_request_failure():
+    url = "http://viewer/missing.dae"
+    successful = set()
+    request = type("Request", (), {"method": "HEAD", "url": url})()
+    response = type("Response", (), {"status": 404, "request": request})()
+    module._record_successful_response(response, successful)
+    failure = f"HEAD {url} net::ERR_ABORTED"
+    assert module._reconcile_successful_head_aborts([failure], successful) == [failure]
+
+
 def test_playwright_requestfailed_callback_does_not_abort_collection_and_reports_playwright(monkeypatch, tmp_path):
     class FakePage:
         def __init__(self):

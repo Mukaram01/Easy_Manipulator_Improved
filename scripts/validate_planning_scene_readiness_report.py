@@ -20,6 +20,12 @@ def main()->int:
         task=checks.get('task') or {}
         if not task.get('offline_plan_preview_request_present'): errs.append('PASS requires offline plan preview request present')
         if task.get('waypoint_count') is None: errs.append('PASS requires waypoint_count')
+        scene_objects=checks.get('scene_objects') or {}
+        if 'collision_manifest_schema_valid' in scene_objects:
+            if scene_objects.get('collision_objects_detected') is not True: errs.append('PASS requires collision objects detected')
+            if scene_objects.get('collision_manifest_fresh') is not True: errs.append('PASS requires fresh collision manifest')
+            if scene_objects.get('collision_geometry_valid') is not True: errs.append('PASS requires valid collision geometry')
+            if not isinstance(scene_objects.get('collision_object_count'), int) or scene_objects.get('collision_object_count') < 1: errs.append('PASS requires collision_object_count >= 1')
     out={'status':'FAIL' if errs else 'PASS','errors':errs}
     print(json.dumps(out, indent=2) if a.json else out['status'])
     return 1 if errs else 0

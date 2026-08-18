@@ -1,0 +1,256 @@
+schema_version: moveit_planning_scene_manifest/v1
+scene_name: ur5_2f_test
+planning_frame: world
+source:
+  canonical_layout: layout/workcell_studio_layout.yaml
+  canonical_layout_sha256: 583c68172d0b5bc4a9acb90472975baad63e45f3e4faebee1e539093d9b4acdd
+truth_boundary:
+  authoring_visualization: Workcell Studio Web3D
+  viewer_aabb_feedback: advisory_only
+  collision_and_planning_truth: MoveIt PlanningScene
+objects:
+- id: workcell::object_01
+  source_item_id: object_01
+  frame_id: world
+  semantic_role: asset
+  operation: ADD
+  pose:
+    xyz:
+    - 0.95
+    - -0.11249999999999999
+    - 0.1794968852996826
+    rpy:
+    - 0.0
+    - 0.0
+    - 0.0
+    quaternion_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+  source_geometry:
+    type: mesh
+    mesh_reference: assets/imported/2068_001_24.stl
+    mesh_scale:
+    - 0.001
+    - 0.001
+    - 0.001
+    source_bounds:
+      min:
+      - -50.80644989013672
+      - -2.6020852139652106e-16
+      - -1.0062294006347656
+      max:
+      - 50.80644989013672
+      - 75.0
+      - 160.0
+  collision_geometry:
+    type: box
+    dimensions_m:
+    - 0.10161289978027344
+    - 0.075
+    - 0.16100622940063478
+    fidelity: box_proxy
+    review_required: true
+    bounds_source: mesh_vertices
+- id: workcell::object_02
+  source_item_id: object_02
+  frame_id: world
+  semantic_role: asset
+  operation: ADD
+  pose:
+    xyz:
+    - 0.9791943756503515
+    - 0.4875
+    - 0.16692861008441925
+    rpy:
+    - 0.0
+    - 1.48352986419518
+    - 0.0
+    quaternion_xyzw:
+    - 0.0
+    - 0.6755902076156601
+    - 0.0
+    - 0.7372773368101241
+  source_geometry:
+    type: mesh
+    mesh_reference: assets/imported/2068_001_24.stl
+    mesh_scale:
+    - 0.001
+    - 0.001
+    - 0.001
+    source_bounds:
+      min:
+      - -50.80644989013672
+      - -2.6020852139652106e-16
+      - -1.0062294006347656
+      max:
+      - 50.80644989013672
+      - 75.0
+      - 160.0
+  collision_geometry:
+    type: box
+    dimensions_m:
+    - 0.10161289978027344
+    - 0.075
+    - 0.16100622940063478
+    fidelity: box_proxy
+    review_required: true
+    bounds_source: mesh_vertices
+- id: workcell::object_03
+  source_item_id: object_03
+  frame_id: world
+  semantic_role: asset
+  operation: ADD
+  pose:
+    xyz:
+    - 0.65
+    - 0.33749999999999997
+    - 0.27949688529968264
+    rpy:
+    - 0.0
+    - 0.0
+    - 0.0
+    quaternion_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+  source_geometry:
+    type: mesh
+    mesh_reference: assets/imported/2068_001_24.stl
+    mesh_scale:
+    - 0.001
+    - 0.001
+    - 0.001
+    source_bounds:
+      min:
+      - -50.80644989013672
+      - -2.6020852139652106e-16
+      - -1.0062294006347656
+      max:
+      - 50.80644989013672
+      - 75.0
+      - 160.0
+  collision_geometry:
+    type: box
+    dimensions_m:
+    - 0.10161289978027344
+    - 0.075
+    - 0.16100622940063478
+    fidelity: box_proxy
+    review_required: true
+    bounds_source: mesh_vertices
+- id: workcell::realsense_overhead
+  source_item_id: realsense_overhead
+  frame_id: world
+  semantic_role: camera
+  operation: ADD
+  pose:
+    xyz:
+    - 0.35
+    - 0.1
+    - 0.85
+    rpy:
+    - 0.0
+    - 1.57
+    - 0.0
+    quaternion_xyzw:
+    - 0.0
+    - 0.706825181105366
+    - 0.0
+    - 0.7073882691671998
+  source_geometry:
+    type: box
+  collision_geometry:
+    type: box
+    dimensions_m:
+    - 0.08
+    - 0.08
+    - 0.06
+    fidelity: primitive_box
+    review_required: false
+    bounds_source: authored_dimensions
+- id: workcell::support_surface_table
+  source_item_id: support_surface_table
+  frame_id: world
+  semantic_role: support_surface
+  operation: ADD
+  pose:
+    xyz:
+    - 0.65
+    - 0.0
+    - 0.06
+    rpy:
+    - 0.0
+    - 0.0
+    - 0.0
+    quaternion_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+  source_geometry:
+    type: box
+  collision_geometry:
+    type: box
+    dimensions_m:
+    - 1.2
+    - 0.8
+    - 0.08
+    fidelity: primitive_box
+    review_required: false
+    bounds_source: authored_dimensions
+- id: workcell::target_bin_default
+  source_item_id: target_bin_default
+  frame_id: world
+  semantic_role: target_bin
+  operation: ADD
+  pose:
+    xyz:
+    - 0.25
+    - 0.45
+    - 0.2
+    rpy:
+    - 0.0
+    - 0.0
+    - 0.0
+    quaternion_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+  source_geometry:
+    type: mesh
+    mesh_reference: assets/environment/sorting_bin_description/meshes/sorting_bin.stl
+    mesh_scale:
+    - 0.001
+    - 0.001
+    - 0.001
+  collision_geometry:
+    type: box
+    dimensions_m:
+    - 0.3522011268
+    - 0.2133871002
+    - 0.2
+    fidelity: box_proxy
+    review_required: true
+    bounds_source: authored_dimensions
+excluded_items:
+- id: home_pose_safe
+  reason: semantic authoring marker; not physical collision geometry
+- id: pick_zone_commissioning
+  reason: semantic authoring marker; not physical collision geometry
+- id: place_zone_default
+  reason: semantic authoring marker; not physical collision geometry
+- id: safety_zone_keepout
+  reason: semantic authoring marker; not physical collision geometry
+summary:
+  collision_object_count: 6
+  excluded_item_count: 4
+  box_proxy_count: 4
+  exact_mesh_collision_count: 0
+safety:
+  publishes_robot_motion: false
+  commands_hardware: false
+  planning_scene_diff_only: true

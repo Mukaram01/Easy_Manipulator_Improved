@@ -366,3 +366,56 @@ assert.strictEqual(strictFiniteDecimal(''),null);assert.strictEqual(strictFinite
         capture_output=True,
         text=True,
     )
+
+
+def test_copy_paste_transform_contract_and_harness():
+    viewer = _viewer_text()
+    assert "const TRANSFORM_CLIPBOARD_SCHEMA_VERSION = 'workcell_studio_transform/v1'" in viewer
+    assert 'id="copy-transform"' in viewer
+    assert 'id="paste-transform"' in viewer
+    assert ">Copy Pose</button>" in viewer
+    assert ">Paste Pose</button>" in viewer
+    assert "position: 'metres', rotation: 'degrees'" in viewer
+    assert "pasteTransformPayload" in viewer
+    assert "commitCanonicalTransformEdit(rendered, next, 'paste_transform')" in viewer
+    assert "const next = cloneTransform(before)" in viewer
+    assert "next.scale" not in viewer.split("function pasteTransformPayload", 1)[1].split("async function pasteSelectedTransformFromClipboard", 1)[0]
+    assert "globalThis.navigator?.clipboard?.writeText" in viewer
+    assert "globalThis.navigator?.clipboard?.readText" in viewer
+    assert "event.code === 'KeyC'" in viewer
+    assert "event.code === 'KeyV'" in viewer
+
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const element=()=>({hidden:false,textContent:'',querySelector(){return null},querySelectorAll(){return[]},addEventListener(){},setAttribute(){}});
+const context={console,assert,process,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{activeElement:null,getElementById(){return element()},querySelectorAll(){return[]},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context);vm.runInContext(source+`
+const copy=value=>JSON.parse(JSON.stringify(value));
+const pose=(x,y,z,roll,pitch,yaw,scale)=>({pose:{xyz:{x,y,z},rpy:{x:roll,y:pitch,z:yaw}},scale:{x:scale,y:scale,z:scale}});
+const sourceOwner={item:{id:'fixture_a',display_name:'Fixture A',editable:true,locked:false},object3d:{t:pose(.4,-.2,.8,.1,-.2,.3,.001)}};
+const targetOwner={item:{id:'fixture_b',display_name:'Fixture B',editable:true,locked:false},object3d:{t:pose(1,2,3,0,0,0,2),updateMatrixWorld(){}}};
+const lockedOwner={item:{id:'robot',display_name:'Robot',editable:false,locked:true},object3d:{t:pose(9,9,9,0,0,0,1)}};
+state.objects=[sourceOwner,targetOwner,lockedOwner];state.selected=targetOwner.item.id;state.placement={armed:false};state.undoStack=[];state.redoStack=[];state.dirtyTransforms=new Map();state.gizmoPivot=null;state.three={transformControls:{object:targetOwner.object3d}};
+selectionIsEditable=value=>Boolean(value?.item?.editable&&!value?.item?.locked);
+canonicalTransformOwner=value=>typeof value==='string'?state.objects.find(record=>record.item.id===value):value;
+canonicalTransformForRendered=value=>copy(value.object3d.t);
+cloneTransform=copy;captureTransformGroup=record=>new Map([[record.item.id,copy(record.object3d.t)]]);
+syncInspectorTransformFields=()=>{};updateLabels=()=>{};let commits=0,statuses=[];
+markDirtyTransform=(record,next,options)=>{assert.strictEqual(options.snapOptions,null);state.undoStack.push({changes:[{itemId:record.item.id,before:copy(options.oldTransform),after:copy(next)}]});record.object3d.t=copy(next);state.dirtyTransforms.set(record.item.id,{oldTransform:copy(options.oldTransform),newTransform:copy(next)});return true};
+emitTransformCommitted=()=>{commits++};setTransformClipboardStatus=message=>statuses.push(message);
+const payload=transformClipboardPayload(sourceOwner);
+assert.strictEqual(payload.schema_version,'workcell_studio_transform/v1');assert.deepStrictEqual(payload.units,{position:'metres',rotation:'degrees'});assert.deepStrictEqual(payload.pose.xyz,[.4,-.2,.8]);
+assert(Math.abs(payload.pose.rpy_deg[2]-.3*180/Math.PI)<1e-12);
+assert(pasteTransformPayload(targetOwner,JSON.stringify(payload)));assert.deepStrictEqual(targetOwner.object3d.t.pose.xyz,sourceOwner.object3d.t.pose.xyz);for(const axis of ['x','y','z'])assert(Math.abs(targetOwner.object3d.t.pose.rpy[axis]-sourceOwner.object3d.t.pose.rpy[axis])<1e-12);assert.deepStrictEqual(targetOwner.object3d.t.scale,{x:2,y:2,z:2});assert.strictEqual(state.undoStack.length,1);assert.strictEqual(commits,1);
+assert.strictEqual(pasteTransformPayload(targetOwner,payload),false);assert.strictEqual(state.undoStack.length,1);assert.strictEqual(commits,1);
+assert.strictEqual(pasteTransformPayload(targetOwner,'not json'),false);assert.strictEqual(pasteTransformPayload(lockedOwner,payload),false);assert.deepStrictEqual(lockedOwner.object3d.t.pose.xyz,{x:9,y:9,z:9});assert(statuses.length>=3);
+`,context);
+"""
+    subprocess.run(
+        ["node", "-e", harness, str(VIEWER)],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
