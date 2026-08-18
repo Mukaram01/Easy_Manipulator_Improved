@@ -459,10 +459,11 @@ def _launch_setup(context):
     # when use_fake_hardware is true, so this launch never starts ros2_control
     # against a physical UR driver.  robot_description comes from the local
     # robot_state_publisher topic and contains mock_components/GenericSystem.
+    # Do not set Node(name=...) here: on ROS 2 Humble that becomes a process-wide
+    # __node remap and also renames controller nodes created inside ros2_control_node.
     control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
-        name="controller_manager",
         output="screen",
         condition=IfCondition(use_fake_hardware),
         parameters=_param_list(validated_use_sim_time, controllers_config_path),
