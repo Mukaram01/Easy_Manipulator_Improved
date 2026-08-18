@@ -536,6 +536,12 @@ code {
   font-size: 0.86rem;
 }
 
+.transform-editor h4 {
+  margin: 0.56rem 0 0.28rem;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
 .edit-mode-active {
   padding-left: 0.5rem;
   border-left: 3px solid var(--accent);

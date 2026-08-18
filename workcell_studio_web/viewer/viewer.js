@@ -1643,7 +1643,7 @@ function bindExportedPhysicalTransformOwnership() {
       const item = { ...exportedOwner, id: ownerId, editable: true, locked: false, source_layer: 'editable_authored_physical', render_policy: 'primary' };
       assignItemUserData(object3d, item);
       state.three.scene.add(object3d);
-      owner = { item, object3d, fallback: null, labelEl: createLabelElement(item), originalTransform: cloneTransform(authoredTransform), physicalEditRoot: true };
+      owner = { item, object3d, fallback: null, labelEl: createLabelElement(item), originalTransform: cloneTransform(authoredTransform), authoredBaselineTransform: cloneTransform(authoredTransform), physicalEditRoot: true };
       state.objects.push(owner);
     }
     if (!owner?.object3d || owner === rendered) continue;
@@ -4031,7 +4031,7 @@ function renderScene(items) {
     assignItemUserData(object3d, item);
     object3d.visible = state.debugOverlaysVisible || !isDebugOverlayItem(item);
     scene.add(object3d);
-    const rendered = { item, object3d, fallback, labelEl: createLabelElement(item), originalTransform: transformOf(item) };
+    const rendered = { item, object3d, fallback, labelEl: createLabelElement(item), originalTransform: transformOf(item), authoredBaselineTransform: cloneTransform(transformOf(item)) };
     const requiredMesh = itemRequiresMeshBackedVisual(item);
     const fallbackStatus = requiredMesh ? 'mesh_loading_required' : (fallback ? 'primitive_fallback' : 'no_physical_dimensions');
     const fallbackReason = requiredMesh ? 'required mesh is loading; primitive fallback hidden unless mesh load fails as debug geometry' : (fallback ? 'primitive geometry rendered while mesh loads or is unavailable' : 'no mesh or physical primitive dimensions were provided; Product View box fallback suppressed');
@@ -4374,7 +4374,7 @@ function buildRobotAssemblies(items) {
       const meshlessTool0Frame = isExpectedMeshlessTool0Frame(item);
       const fallback = meshlessTool0Frame ? null : (isSensor(item) ? makeSensorMarker(item) : makePrimitiveMesh(item));
       if (fallback) { fallback.name = `${item.id || itemLabel(item)}_fallback`; assignItemUserData(fallback, item); fallback.visible = false; object3d.add(fallback); }
-      const rendered = { item, object3d, fallback, labelEl: createLabelElement(item), originalTransform: transformOf(item) };
+      const rendered = { item, object3d, fallback, labelEl: createLabelElement(item), originalTransform: transformOf(item), authoredBaselineTransform: cloneTransform(transformOf(item)) };
       setRenderInfo(rendered, meshlessTool0Frame ? 'meshless_frame' : (itemRequiresMeshBackedVisual(item) ? 'mesh_loading_required' : (primitive ? 'primitive_fallback' : 'box_fallback')), displayMeshUri(item), meshlessTool0Frame ? 'tool0 is an expected meshless frame; no visible fallback is rendered' : 'rendered from ROS TF verified URDF FK visual world pose');
       state.objects.push(rendered);
       handled.add(item);
@@ -4460,7 +4460,7 @@ function buildRobotAssemblies(items) {
         node.add(fallback);
       }
       assignItemUserData(node, item);
-      const rendered = { item, object3d: node, fallback, labelEl: createLabelElement(item), originalTransform: transformOf(item) };
+      const rendered = { item, object3d: node, fallback, labelEl: createLabelElement(item), originalTransform: transformOf(item), authoredBaselineTransform: cloneTransform(transformOf(item)) };
       const requiredMesh = itemRequiresMeshBackedVisual(item);
       setRenderInfo(rendered, meshlessTool0Frame ? 'meshless_frame' : (requiredMesh ? 'mesh_loading_required' : (primitive ? 'primitive_fallback' : 'box_fallback')), displayMeshUri(item), meshlessTool0Frame ? 'tool0 is an expected meshless frame; no visible fallback is rendered' : (requiredMesh ? 'required mesh is loading under assembled URDF hierarchy' : 'assembled URDF hierarchy fallback'));
       state.objects.push(rendered);
@@ -5750,48 +5750,111 @@ function editAuthorityForItem(item) {
 function canEditItem(item) {
   return editAuthorityForItem(item).eligible;
 }
-function currentTransformFromInputs(container) {
-  const get = name => Number(container.querySelector(`[data-transform-field="${name}"]`)?.value);
-  return { pose: { xyz: { x: get('x'), y: get('y'), z: get('z') }, rpy: { x: get('roll'), y: get('pitch'), z: get('yaw') } }, scale: { x: get('scale_x'), y: get('scale_y'), z: get('scale_z') } };
+const TRANSFORM_FIELD_SPECS = {
+  x: { group: 'xyz', component: 'x', label: 'X', decimals: 4, step: '0.0001' },
+  y: { group: 'xyz', component: 'y', label: 'Y', decimals: 4, step: '0.0001' },
+  z: { group: 'xyz', component: 'z', label: 'Z', decimals: 4, step: '0.0001' },
+  roll: { group: 'rpy', component: 'x', label: 'Roll', decimals: 2, step: '0.01' },
+  pitch: { group: 'rpy', component: 'y', label: 'Pitch', decimals: 2, step: '0.01' },
+  yaw: { group: 'rpy', component: 'z', label: 'Yaw', decimals: 2, step: '0.01' },
+};
+function canonicalTransformForRendered(rendered) {
+  const dirty = state.dirtyTransforms.get(rendered.item.id)?.newTransform;
+  if (dirty) return dirty;
+  const object = rendered.object3d;
+  return (object?.position && object?.rotation && object?.scale) || object?.t ? transformFromObject(object) : transformOf(rendered.item);
+}
+function transformFieldCanonicalValue(transform, name) {
+  const spec = TRANSFORM_FIELD_SPECS[name];
+  const value = transform.pose[spec.group][spec.component];
+  return spec.group === 'rpy' ? value * 180 / Math.PI : value;
+}
+function formatTransformField(transform, name) {
+  const spec = TRANSFORM_FIELD_SPECS[name];
+  return Number(transformFieldCanonicalValue(transform, name)).toFixed(spec.decimals);
+}
+function strictFiniteDecimal(text) {
+  const value = String(text ?? '').trim();
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value)) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+function commitCanonicalTransformEdit(rendered, nextTransform, reason = 'numeric_inspector') {
+  const owner = canonicalTransformOwner(rendered);
+  if (!owner || owner !== rendered || !selectionIsEditable(owner) || state.placement.armed) return false;
+  const before = cloneTransform(canonicalTransformForRendered(owner));
+  const after = cloneTransform(nextTransform);
+  if (!isFiniteTransform(after) || sameTransform(before, after)) { syncInspectorTransformFields(owner, { force: true }); return false; }
+  const committed = markDirtyTransform(owner, after, { pushHistory: true, oldTransform: before, snapOptions: null, memberStarts: captureTransformGroup(owner) });
+  if (!committed) { syncInspectorTransformFields(owner, { force: true }); return false; }
+  owner.object3d.updateMatrixWorld?.(true);
+  syncInspectorTransformFields(owner, { force: true });
+  updateLabels();
+  if (state.gizmoPivot?.owner === owner) refreshTransientGizmoPivot(owner, `${reason}_committed`);
+  else state.three.transformControls?.object?.updateMatrixWorld?.(true);
+  emitTransformCommitted(owner);
+  return true;
 }
 function renderTransformInputs(rendered) {
-  const item = rendered.item;
   const editable = selectionIsEditable(rendered);
-  const transform = state.dirtyTransforms.get(item.id)?.newTransform || transformOf(item);
-  const fields = [
-    ['x', 'X', transform.pose.xyz.x], ['y', 'Y', transform.pose.xyz.y], ['z', 'Z', transform.pose.xyz.z],
-    ['roll', 'Roll', transform.pose.rpy.x], ['pitch', 'Pitch', transform.pose.rpy.y], ['yaw', 'Yaw', transform.pose.rpy.z],
-    ['scale_x', 'Scale X', transform.scale.x], ['scale_y', 'Scale Y', transform.scale.y], ['scale_z', 'Scale Z', transform.scale.z],
-  ];
+  const transform = canonicalTransformForRendered(rendered);
   const disabled = editable ? '' : 'disabled';
-  return `<section class="transform-editor"><h3>Preview transform editing</h3>${editable ? '<p class="edit-note edit-mode-active">Edit mode active for editable/unlocked item. Drag the translation gizmo or use numeric XYZ/RPY/scale fields; browser preview only. Export Edit Patch to save a JSON patch; source YAML is not modified.</p>' : `<p class="edit-lock-reason">${LOCKED_EDIT_REASON}</p>`}<div class="transform-grid">${fields.map(([name, label, value]) => `<label>${label}<input type="number" step="0.001" data-transform-field="${name}" value="${Number(value).toFixed(6)}" ${disabled}></label>`).join('')}</div><div class="editor-actions"><button id="reset-selected" type="button" ${editable ? '' : 'disabled'}>Reset Selected</button></div></section>`;
+  const inputs = names => names.map(name => {
+    const spec = TRANSFORM_FIELD_SPECS[name];
+    return `<label>${spec.label}<input type="number" inputmode="decimal" step="${spec.step}" data-transform-field="${name}" value="${formatTransformField(transform, name)}" ${disabled}></label>`;
+  }).join('');
+  return `<section class="transform-editor"><h3>Preview transform editing</h3>${editable ? '<p class="edit-note edit-mode-active">Edit mode active for editable/unlocked item. Exact authored pose editing. Position is in metres; rotation is in degrees. Changes use the same preview history and Save Layout path as the gizmo.</p>' : `<p class="edit-lock-reason">${LOCKED_EDIT_REASON}</p>`}<h4>Position (m)</h4><div class="transform-grid">${inputs(['x', 'y', 'z'])}</div><h4>Rotation (deg)</h4><div class="transform-grid">${inputs(['roll', 'pitch', 'yaw'])}</div><div class="editor-actions"><button id="reset-selected" type="button" ${editable ? '' : 'disabled'}>Reset Pose</button></div></section>`;
 }
-function syncInspectorTransformFields(rendered) {
+function syncInspectorTransformFields(rendered, { force = false } = {}) {
   if (state.selected !== rendered?.item?.id) return;
   const editor = el.inspector.querySelector('.transform-editor');
   if (!editor) return;
-  const transform = state.dirtyTransforms.get(rendered.item.id)?.newTransform || transformFromObject(rendered.object3d);
-  const values = { x: transform.pose.xyz.x, y: transform.pose.xyz.y, z: transform.pose.xyz.z, roll: transform.pose.rpy.x, pitch: transform.pose.rpy.y, yaw: transform.pose.rpy.z, scale_x: transform.scale.x, scale_y: transform.scale.y, scale_z: transform.scale.z };
-  for (const [name, value] of Object.entries(values)) { const input = editor.querySelector(`[data-transform-field="${name}"]`); if (input) input.value = Number(value).toFixed(6); }
+  const transform = canonicalTransformForRendered(rendered);
+  for (const name of Object.keys(TRANSFORM_FIELD_SPECS)) {
+    const input = editor.querySelector(`[data-transform-field="${name}"]`);
+    if (!input || (!force && (input.dataset.transformDirty === 'true' || document.activeElement === input))) continue;
+    input.value = formatTransformField(transform, name);
+    input.dataset.transformDirty = 'false';
+    input.setAttribute?.('aria-invalid', 'false');
+  }
+}
+function commitTransformField(rendered, input) {
+  if (!selectionIsEditable(rendered) || input.dataset.transformDirty !== 'true') return false;
+  const name = input.dataset.transformField;
+  const spec = TRANSFORM_FIELD_SPECS[name];
+  const numeric = strictFiniteDecimal(input.value);
+  input.dataset.transformDirty = 'false';
+  if (!spec || numeric === null) { syncInspectorTransformFields(rendered, { force: true }); return false; }
+  const next = cloneTransform(canonicalTransformForRendered(rendered));
+  next.pose[spec.group][spec.component] = spec.group === 'rpy' ? numeric * Math.PI / 180 : numeric;
+  const committed = commitCanonicalTransformEdit(rendered, next, `numeric_${name}`);
+  syncInspectorTransformFields(rendered, { force: true });
+  return committed;
+}
+function cancelTransformFieldEdit(rendered, input) {
+  input.dataset.transformDirty = 'false';
+  syncInspectorTransformFields(rendered, { force: true });
 }
 function wireTransformInputs(rendered) {
   const editor = el.inspector.querySelector('.transform-editor');
   if (!editor) return;
-  editor.querySelectorAll('[data-transform-field]').forEach(input => input.addEventListener('input', () => {
-    if (!selectionIsEditable(rendered)) return;
-    const next = currentTransformFromInputs(editor);
-    if (Object.values(next.pose.xyz).concat(Object.values(next.pose.rpy), Object.values(next.scale)).some(v => !Number.isFinite(v))) return;
-    markDirtyTransform(rendered, next);
-  }));
+  editor.querySelectorAll('[data-transform-field]').forEach(input => {
+    input.addEventListener('input', () => { if (selectionIsEditable(rendered)) input.dataset.transformDirty = 'true'; });
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Enter') { commitTransformField(rendered, input); event.preventDefault(); event.stopPropagation(); }
+      else if (event.key === 'Escape') { cancelTransformFieldEdit(rendered, input); event.preventDefault(); event.stopPropagation(); input.blur?.(); }
+    });
+    input.addEventListener('blur', () => commitTransformField(rendered, input));
+  });
   const reset = el.inspector.querySelector('#reset-selected');
   if (reset) reset.addEventListener('click', () => resetSelectedTransform(rendered.item.id));
 }
 function resetSelectedTransform(id = state.selected) {
   const rendered = state.objects.find(obj => obj.item.id === id);
-  if (!selectionIsEditable(rendered)) return;
-  markDirtyTransform(rendered, rendered.originalTransform);
-  populateInspector(rendered);
-  updateLabels();
+  if (!selectionIsEditable(rendered)) return false;
+  const baseline = rendered.authoredBaselineTransform || rendered.originalTransform;
+  if (!baseline) return false;
+  return commitCanonicalTransformEdit(rendered, cloneTransform(baseline), 'reset_pose');
 }
 function updateDirtyState() {
   const dirty = state.dirtyTransforms.size > 0;
