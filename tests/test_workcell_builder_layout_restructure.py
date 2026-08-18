@@ -7,45 +7,63 @@ VIEW3D = (ROOT / 'workcell_builder/workcell_builder/gui/scene3d_viewport_widget.
 
 def test_scene_builder_uses_main_splitter_layout():
     for token in [
-        'sceneBuilderMainSplitter',
-        'new QSplitter(Qt::Horizontal, scene_shell)',
-        'setSizes({300, 1180, 360})',
+        'scene_splitter->setObjectName("sceneBuilderMainSplitter")',
+        'left_panel->setObjectName("sceneBuilderLeftPanel")',
+        'center_panel->setObjectName("sceneBuilderProductViewPanel")',
+        'right_panel->setObjectName("sceneBuilderRightPanel")',
+        'scene_splitter->addWidget(left_panel);',
+        'scene_splitter->addWidget(center_panel);',
+        'scene_splitter->addWidget(right_panel);',
+        'scene_splitter->setStretchFactor(1, 8);',
     ]:
         assert token in MAIN
 
 
 def test_left_and_right_tabs_exist():
-    for token in ['addTab(scene_tab, "Scene")', 'addTab(assets_tab, "Assets")', 'addTab(files_tab, "Files")']:
+    for token in [
+        'scene_builder_left_tabs_->addTab(scene_tab, "Scene")',
+        'scene_builder_left_tabs_->addTab(assets_tab, "Assets")',
+        'scene_builder_left_tabs_->addTab(files_tab, "Workflow")',
+        'assets_tab_layout->addWidget(catalog_card, 1)',
+    ]:
         assert token in MAIN
     for token in ['addTab(selection_tab, "Selection")', 'addTab(workflow_tab, "Workflow")', 'addTab(readiness_tab, "Readiness")']:
         assert token in MAIN
     assert 'addTab(actions_tab, "Actions")' not in MAIN
 
 
-def test_scene_tree_headers_include_name_role_status():
+def test_scene_tree_headers_reflect_current_name_type_state_contract():
     for token in [
-        'scene_hierarchy_tree_->setHeaderLabels({"Name", "Role", "Status"})',
-        'header->setSectionResizeMode(0, QHeaderView::Interactive);',
-        'header->setSectionResizeMode(1, QHeaderView::Interactive);',
-        'header->setSectionResizeMode(2, QHeaderView::Interactive);',
-        'header->setStretchLastSection(false);',
-        'scene_hierarchy_tree_->setColumnWidth(0, 200);',
+        'scene_hierarchy_tree_->setHeaderLabels({"Name", "Type", "State"})',
+        'scene_hierarchy_tree_->header()->setSectionResizeMode(0, QHeaderView::Stretch);',
+        'scene_hierarchy_tree_->header()->setSectionResizeMode(1, QHeaderView::Interactive);',
+        'scene_hierarchy_tree_->header()->setSectionResizeMode(2, QHeaderView::Fixed);',
         'scene_hierarchy_tree_->setColumnWidth(1, 120);',
+        'scene_hierarchy_tree_->setColumnWidth(2, 72);',
     ]:
         assert token in MAIN
 
 
-def test_scene_population_role_taxonomy_tokens_present():
+def test_scene_semantic_role_selector_exposes_canonical_a9_roles():
     for token in [
-        'return QString("robot")',
-        'return QString("end_effector/tool")',
-        'return QString("camera")',
-        'return QString("support_surface/table")',
-        'return QString("pick source/zone")',
-        'return QString("place target/bin")',
-        'return QString("safety zone")',
+        '{"Generic asset", "asset"}',
+        '{"Pick object", "pick_object"}',
+        '{"Target bin", "target_bin"}',
+        '{"Fixture", "fixture"}',
+        '{"Support surface", "support_surface"}',
+        '{"Camera", "camera"}',
+        '{"Sensor", "sensor"}',
+        '{"Machine", "machine"}',
+        '{"Conveyor", "conveyor"}',
+        '{"Pick zone", "pick_zone"}',
+        '{"Place zone", "place_zone"}',
+        '{"Safety guard", "safety_guard"}',
+        '{"Keepout marker", "keepout"}',
+        '{"Home pose marker", "home_pose"}',
+        '{"Environment object", "environment_object"}',
     ]:
         assert token in MAIN
+    assert 'Filenames never infer pick/task semantics.' in MAIN
 
 
 def test_inspector_scroll_and_activity_log_drawer_exist():
@@ -68,23 +86,15 @@ def test_scene_preview_selected_state_updates_and_compact_inspector_pose_grid_pr
         assert token in MAIN
 
 
-def test_scene_tree_excludes_file_artifact_rows_but_files_tab_keeps_required_artifacts():
+def test_workflow_tab_keeps_scene_artifact_access_without_polluting_hierarchy():
     for token in [
-        'const QSet<QString> excluded_scene_file_artifacts = {',
-        '"package.xml",',
-        '"CMakeLists.txt",',
-        '"launch/demo.launch.py",',
-        '"environment.yaml",',
-        '"scene_manifest.yaml"',
-    ]:
-        assert token in MAIN
-
-    for token in [
-        '{"ROS Package File", "package.xml"}',
-        '{"CMake File", "CMakeLists.txt"}',
-        '{"Demo Launch", "launch/demo.launch.py"}',
-        '{"Environment YAML", "environment.yaml"}',
-        '{"Scene Manifest", "scene_manifest.yaml"}',
+        'scene_files_tree_->setObjectName("studioSceneFilesTree")',
+        'scene_files_tree_->setHeaderLabels({"Artifact", "Relative Path", "Status"})',
+        'new QPushButton("Open Scene Folder", files_card)',
+        'new QPushButton("Copy Scene Path", files_card)',
+        'new QPushButton("Refresh Files", files_card)',
+        'populate_scene_files_tab();',
+        'scene_builder_left_tabs_->addTab(files_tab, "Workflow")',
     ]:
         assert token in MAIN
 
@@ -97,9 +107,7 @@ def test_selection_sync_invokes_apply_scene_selection_from_preview_signal():
         assert token in MAIN
 
 
-def test_selection_callback_path_and_log_format_tokens_preserved():
-    for token in [
-        'if (pick_item_at_screen(e->pos(), best_id, best_role) && !best_id.isEmpty() && select_cb) select_cb(best_id, best_role);',
-        'append_studio_log(QString("Selected item: %1 (%2)").arg(selected_id, selected_role));',
-    ]:
-        assert token in VIEW3D or token in MAIN
+def test_selection_callback_path_preserved_without_requiring_log_wording():
+    assert 'if (pick_item_at_screen(e->pos(), best_id, best_role) && !best_id.isEmpty() && select_cb) select_cb(best_id, best_role);' in VIEW3D
+    assert 'connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_selected' in MAIN
+    assert 'apply_scene_selection(id, role, id.trimmed().isEmpty(), false);' in MAIN

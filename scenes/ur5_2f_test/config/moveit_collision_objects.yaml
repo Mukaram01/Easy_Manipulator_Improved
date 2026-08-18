@@ -3,7 +3,7 @@ scene_name: ur5_2f_test
 planning_frame: world
 source:
   canonical_layout: layout/workcell_studio_layout.yaml
-  canonical_layout_sha256: 583c68172d0b5bc4a9acb90472975baad63e45f3e4faebee1e539093d9b4acdd
+  canonical_layout_sha256: 57338e63a81e15ad700cd54d4da47f9ce4b071aa34e8ddf6b28dd65311e1834d
 truth_boundary:
   authoring_visualization: Workcell Studio Web3D
   viewer_aabb_feedback: advisory_only
