@@ -9,6 +9,7 @@ without touching callers.
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -25,6 +26,16 @@ from scripts import scene3d_smoke_payload as _payload_helpers
 
 _IMPL_PATH = Path(__file__).with_name("run_workcell_builder_scene3d_gui_smoke_impl.py")
 _IMPL_MODULE_NAME = "scripts.run_workcell_builder_scene3d_gui_smoke_impl"
+_NATIVE_PRODUCT_VIEW_BACKEND_ENV = "WORKCELL_BUILDER_PRODUCT_VIEW_BACKEND"
+_NATIVE_PRODUCT_VIEW_BACKEND = "native_scene3d"
+
+
+def _configure_scene3d_smoke_environment() -> None:
+    """Force the native viewport whose counters and paint evidence this CLI validates."""
+    # Normal Workcell Studio remains free to use its default embedded Web3D Product
+    # View.  This diagnostic CLI specifically searches for Scene3DViewportWidget,
+    # so an inherited Web3D backend selection must not make the smoke self-invalid.
+    os.environ[_NATIVE_PRODUCT_VIEW_BACKEND_ENV] = _NATIVE_PRODUCT_VIEW_BACKEND
 
 
 def _wire_payload_helpers(module: ModuleType) -> None:
@@ -60,4 +71,5 @@ for _name in __all__:
 
 
 if __name__ == "__main__":
+    _configure_scene3d_smoke_environment()
     raise SystemExit(_IMPL.main())
