@@ -69,11 +69,25 @@ std::string compute_status(const WorkcellStudioSceneInfo & s)
   return "BLOCKED";
 }
 
-
 std::string scalar_string(const YAML::Node & node)
 {
   if (!node || !node.IsScalar()) return "";
   return node.as<std::string>("");
+}
+
+// Scene schemas in the repository intentionally use stable ids/models rather
+// than requiring a presentation-only `name` key.  Home metadata must therefore
+// accept the canonical component identity fields in a deterministic order.
+std::string scene_component_summary(const YAML::Node & node)
+{
+  if (!node) return "";
+  if (node.IsScalar()) return scalar_string(node);
+  if (!node.IsMap()) return "";
+  for (const char * key : {"name", "model", "id", "profile"}) {
+    const std::string value = scalar_string(node[key]);
+    if (!value.empty()) return value;
+  }
+  return "";
 }
 
 void try_parse_manifest_launch_metadata(WorkcellStudioSceneInfo * s)
@@ -117,12 +131,16 @@ void try_parse_env(WorkcellStudioSceneInfo * s)
   try {
     YAML::Node n = YAML::LoadFile(environment_yaml.string());
 
-    const std::string robot = yaml_name_from_node(n["robot"]);
+    const std::string robot = scene_component_summary(n["robot"]);
 
-    std::string gripper = yaml_name_from_node(n["end_effector"]);
+    std::string gripper = scene_component_summary(n["end_effector"]);
+    if (gripper.empty()) {
+      // Current scene schema also exposes the same component as `tool`.
+      gripper = scene_component_summary(n["tool"]);
+    }
     if (gripper.empty()) {
       // Legacy alias support.
-      gripper = yaml_name_from_node(n["gripper"]);
+      gripper = scene_component_summary(n["gripper"]);
     }
 
     std::size_t object_count = 0U;
