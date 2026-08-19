@@ -14,7 +14,7 @@
 // limitations under the License.
 
 // Keep the existing application entrypoint byte-for-byte in main_legacy.inc and
-// make the Home workcell-library composition explicit at MainWindow construction.
+// make the Home shell composition explicit at MainWindow construction.
 // This avoids the startup event filters/timers that caused the v2-v5 regressions.
 
 #include <QHBoxLayout>
@@ -28,7 +28,7 @@
 #include "gui/scene_select.h"
 #include "gui/startup_dialog.h"
 #include "workcell_builder_ui_utils.hpp"
-#include "home_workcells_panel.hpp"
+#include "home_workcells_target_shell.hpp"
 
 class WorkcellStudioHomeMainWindow final : public MainWindow
 {
@@ -42,7 +42,7 @@ public:
     const QString workspace = startup_workspace.trimmed().isEmpty()
       ? QString::fromLocal8Bit(qgetenv("WORKCELL_WORKSPACE_ROOT"))
       : startup_workspace;
-    workcell_builder::home_workcells::configure(this, workspace);
+    workcell_builder::home_workcells::configure_target_shell(this, workspace);
   }
 };
 
