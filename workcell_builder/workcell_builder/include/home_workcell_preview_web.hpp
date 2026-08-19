@@ -16,6 +16,7 @@
 
 #include <QApplication>
 #include <QByteArray>
+#include <QColor>
 #include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
@@ -28,6 +29,7 @@
 #include <QStandardPaths>
 #include <QTableWidget>
 #include <QVariant>
+#include <QtGlobal>
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 #include <QWebEnginePage>
@@ -64,7 +66,9 @@ inline QString safe_preview_cache_component(QString value)
 inline QString home_preview_cache_root()
 {
   QString root = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
-  if (root.trimmed().isEmpty()) root = QDir::temp().filePath(QStringLiteral("workcell_studio"));
+  if (root.trimmed().isEmpty()) {
+    root = QDir(QDir::tempPath()).filePath(QStringLiteral("workcell_studio"));
+  }
   root = QDir(root).filePath(QStringLiteral("home_previews"));
   QDir().mkpath(root);
   return QDir::cleanPath(root);
