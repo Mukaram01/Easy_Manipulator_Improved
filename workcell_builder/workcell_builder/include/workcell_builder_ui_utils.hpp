@@ -47,6 +47,6 @@ void applyStatusLabelStyle(QLabel * label, StatusType status);
 void applyPrimarySecondaryButtonStyle(QWidget * widget);
 }  // namespace workcell_builder
 
-// Home stays a scene/workcell library.  The v3 composition builds on the proven
-// v2 shell without touching Scene Builder, generation, simulation, or safety logic.
-#include "workcell_home_polish_v3.hpp"
+// Keep shared UI utilities link-safe for helper/test binaries.  The Home v3
+// composition depends on ScenePreviewWidget and is activated from a translation
+// unit that belongs only to the full workcell_builder executable.
