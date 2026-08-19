@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFrame>
@@ -10,17 +12,21 @@
 #include <QPushButton>
 #include <QSettings>
 #include <QSplitter>
+#include <QStringList>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <QtGlobal>
 
 #include "gui/mainwindow.h"
 #include "scene_preview_widget.h"
 
-namespace workcell_builder::scene_builder_product_layout
+namespace workcell_builder
+{
+namespace scene_builder_product_layout
 {
 
 inline QPushButton * button_with_text(QWidget * root, const QString & text)
@@ -96,7 +102,7 @@ inline void hide_duplicate_scene_identity(QWidget * scene_page)
     identity->hide();
   }
   for (auto * label : scene_page->findChildren<QLabel *>()) {
-    if (!label || !label->isVisible()) continue;
+    if (!label) continue;
     const QString text = label->text().trimmed();
     if (text == QStringLiteral("Scene Builder") || text.startsWith(QStringLiteral("Scene Builder:"))) {
       label->hide();
@@ -104,12 +110,38 @@ inline void hide_duplicate_scene_identity(QWidget * scene_page)
   }
 }
 
+inline void promote_major_tabs(QWidget * scene_page)
+{
+  if (!scene_page || scene_page->findChild<QTabBar *>(QStringLiteral("sceneBuilderMajorTabs"))) return;
+  auto * source_tabs = tab_widget_with_labels(scene_page, {
+    QStringLiteral("Scene"), QStringLiteral("Assets"), QStringLiteral("Workflow")});
+  auto * page_layout = qobject_cast<QVBoxLayout *>(scene_page->layout());
+  if (!source_tabs || !page_layout) return;
+
+  auto * major_tabs = new QTabBar(scene_page);
+  major_tabs->setObjectName(QStringLiteral("sceneBuilderMajorTabs"));
+  major_tabs->setDocumentMode(true);
+  major_tabs->setExpanding(false);
+  major_tabs->addTab(QStringLiteral("Scene"));
+  major_tabs->addTab(QStringLiteral("Assets"));
+  major_tabs->addTab(QStringLiteral("Workflow"));
+  major_tabs->setCurrentIndex(source_tabs->currentIndex());
+
+  source_tabs->tabBar()->hide();
+  QObject::connect(major_tabs, &QTabBar::currentChanged, source_tabs, &QTabWidget::setCurrentIndex);
+  QObject::connect(source_tabs, &QTabWidget::currentChanged, major_tabs, &QTabBar::setCurrentIndex);
+
+  QWidget * workspace = scene_page->findChild<QWidget *>(QStringLiteral("sceneBuilderWorkspace"));
+  const int workspace_index = workspace ? page_layout->indexOf(workspace) : 0;
+  page_layout->insertWidget(qMax(0, workspace_index), major_tabs, 0);
+}
+
 inline void hide_embedded_preview_chrome(ScenePreviewWidget * preview)
 {
   if (!preview) return;
-  // ScenePreviewWidget owns its backend controls.  Home/Scene Builder already
-  // expose the authoring commands in the main toolbar, so showing both rows is
-  // redundant.  Hiding this host does not change the renderer or its state.
+  // ScenePreviewWidget remains the sole renderer/editor owner.  Scene Builder
+  // exposes the same authoring commands in one toolbar, so its internal control
+  // header is hidden rather than duplicated above the viewport.
   if (auto * chip = preview->findChild<QLabel *>(QStringLiteral("previewToolbarChip"))) {
     if (auto * controls_host = chip->parentWidget()) {
       controls_host->setObjectName(QStringLiteral("sceneBuilderEmbeddedPreviewChrome"));
@@ -125,10 +157,10 @@ inline QPushButton * make_proxy_button(
   auto * button = new QPushButton(text, parent);
   if (!object_name.isEmpty()) button->setObjectName(object_name);
   button->setMinimumHeight(32);
-  button->setEnabled(target ? target->isEnabled() : false);
+  button->setEnabled(target != nullptr);
   if (target) {
     QObject::connect(button, &QPushButton::clicked, target, &QPushButton::click);
-    QObject::connect(target, &QPushButton::destroyed, button, [button]() { button->setEnabled(false); });
+    QObject::connect(target, &QObject::destroyed, button, [button]() { button->setEnabled(false); });
   }
   return button;
 }
@@ -159,8 +191,8 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
   QToolButton * overflow = scene_page->findChild<QToolButton *>(QStringLiteral("scene_builder_secondary_overflow_button"));
   if (overflow) overflow->setText(QStringLiteral("View"));
 
-  // Rebuild only this existing production toolbar.  Widgets keep their owners;
-  // no ScenePreviewWidget/WebEngine widget is reparented or recreated.
+  // Rebuild only the existing production toolbar. Widgets keep their existing
+  // owners; ScenePreviewWidget/WebEngine is never reparented or recreated.
   while (layout->count() > 0) {
     QLayoutItem * item = layout->takeAt(0);
     if (!item) continue;
@@ -186,7 +218,7 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
   add_existing(save);
   add_existing(overflow);
 
-  // The duplicate textual mode label sits beside this host in the outer row.
+  // The outer row also contains a textual copy of the current authoring mode.
   for (auto * label : scene_page->findChildren<QLabel *>()) {
     if (label && label->text().startsWith(QStringLiteral("Mode:"))) label->hide();
   }
@@ -237,7 +269,7 @@ inline void simplify_inspector(QWidget * scene_page)
   tabs->setTabText(2, QStringLiteral("Checks"));
   tabs->setCurrentIndex(0);
 
-  // The top context banner already identifies the workcell.  Do not repeat the
+  // The top context banner already identifies the workcell. Do not repeat the
   // same scene metadata card inside the contextual item inspector.
   QWidget * selection_page = tabs->widget(0);
   if (selection_page) {
@@ -261,6 +293,7 @@ inline void simplify_inspector(QWidget * scene_page)
 inline void simplify_status_area(QWidget * scene_page)
 {
   if (!scene_page) return;
+  if (auto * status = scene_page->findChild<QLabel *>(QStringLiteral("sceneBuilderLatestStatus"))) status->hide();
   for (auto * label : scene_page->findChildren<QLabel *>()) {
     if (!label) continue;
     const QString text = label->text().trimmed();
@@ -281,6 +314,7 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
   scene_page->setProperty("sceneBuilderProductLayoutApplied", true);
 
   hide_duplicate_scene_identity(scene_page);
+  promote_major_tabs(scene_page);
 
   auto * left = scene_page->findChild<QFrame *>(QStringLiteral("sceneBuilderLeftPanel"));
   auto * center = scene_page->findChild<QFrame *>(QStringLiteral("sceneBuilderProductViewPanel"));
@@ -294,6 +328,7 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
   if (right) {
     right->setMinimumWidth(300);
     right->setMaximumWidth(360);
+    right->show();
   }
   if (splitter) {
     splitter->setStretchFactor(0, 1);
@@ -305,6 +340,7 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
   QSettings settings;
   settings.setValue(QStringLiteral("scene_builder/preferred_left_width"), 270);
   settings.setValue(QStringLiteral("scene_builder/preferred_right_width"), 320);
+  settings.setValue(QStringLiteral("scene_builder/right_panel_visible"), true);
 
   simplify_hierarchy(scene_page);
   simplify_inspector(scene_page);
@@ -316,6 +352,9 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
 
   scene_page->setStyleSheet(scene_page->styleSheet() + QStringLiteral(R"QSS(
     QWidget#workcellStudioSceneBuilderPage { background:#F7F9FC; color:#172B3F; }
+    QTabBar#sceneBuilderMajorTabs { background:#FFFFFF; border-bottom:1px solid #DDE5EE; }
+    QTabBar#sceneBuilderMajorTabs::tab { min-width:74px; padding:10px 16px; color:#5C6F82; border:0; border-bottom:2px solid transparent; font-weight:600; }
+    QTabBar#sceneBuilderMajorTabs::tab:selected { color:#125FC3; border-bottom:2px solid #246FE5; }
     QWidget#sceneBuilderWorkspace { background:#FFFFFF; border:1px solid #DDE5EE; border-radius:0px; }
     QFrame#sceneBuilderLeftPanel, QFrame#sceneBuilderRightPanel { background:#FFFFFF; border:0px; }
     QFrame#sceneBuilderProductViewPanel { background:#F8FAFC; border:0px; }
@@ -333,4 +372,5 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
   )QSS"));
 }
 
-}  // namespace workcell_builder::scene_builder_product_layout
+}  // namespace scene_builder_product_layout
+}  // namespace workcell_builder
