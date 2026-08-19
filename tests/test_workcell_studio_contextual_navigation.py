@@ -15,37 +15,43 @@ def test_context_navigation_is_installed_after_home_shell_and_preview():
     assert "install_contextual_navigation(this)" in MAIN
 
 
-def test_home_uses_sidebar_only_and_non_home_pages_use_compact_topbar():
+def test_home_is_strictly_sidebar_only_and_hides_every_toolbar_recursively():
     for token in [
         'page_index == 0',
         'studioTargetSidebar',
         'sidebar->setVisible(home_page)',
         'studioTargetTopbar',
         'old_topbar->hide()',
+        'old_topbar->setMaximumHeight(0)',
         'studioContextTopbar',
         'context->setVisible(!home_page)',
-        'legacy_studio_toolbar',
-        'legacy->hide()',
+        'hide_all_legacy_studio_toolbars(window)',
+        'window->findChildren<QToolBar *>()',
+        'toolbar->setMaximumHeight(0)',
     ]:
         assert token in NAV
 
 
-def test_scene_topbar_shows_context_not_duplicate_navigation():
+def test_scene_topbar_is_minimal_context_not_another_navigation_system():
     for token in [
-        '←  Home',
+        'context->setFixedHeight(40)',
+        '← Workcells',
         'studioContextSceneTitle',
-        'studioContextSceneId',
         'studioContextPage',
         'studioContextStatus',
-        'studioContextRobotTool',
         '●  FAKE HARDWARE',
-        '▣  REAL HARDWARE LOCKED',
-        'Needs Attention',
+        '▣  REAL LOCKED',
         'Plan & Simulate',
         'Validation',
         'Export',
     ]:
         assert token in NAV
+
+    # Canonical id and robot/tool detail belong in inspectors/tooltips, not in
+    # the compact navigation bar.
+    assert 'studioContextSceneId' not in NAV
+    assert 'studioContextRobotTool' not in NAV
+    assert 'REAL HARDWARE LOCKED' not in NAV
 
 
 def test_home_inspector_does_not_repeat_sidebar_workflow_actions():
