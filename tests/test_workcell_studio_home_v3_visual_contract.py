@@ -9,10 +9,15 @@ HOME_V3 = Path(
 MAINWINDOW = Path(
     "workcell_builder/workcell_builder/gui/mainwindow.cpp"
 ).read_text(encoding="utf-8")
+STARTUP_DIALOG = Path(
+    "workcell_builder/workcell_builder/gui/startup_dialog.cpp"
+).read_text(encoding="utf-8")
 
 
 def test_home_v3_is_the_active_composition_and_keeps_home_as_workcell_library():
-    assert '#include "workcell_home_polish_v3.hpp"' in UI_HEADER
+    assert '#include "workcell_home_polish_v3.hpp"' in STARTUP_DIALOG
+    assert '#include "workcell_home_polish_v3.hpp"' not in UI_HEADER
+    assert "Keep shared UI utilities link-safe" in UI_HEADER
     for token in [
         'Your workcells',
         'Select a workcell or start a new robotic cell.',
