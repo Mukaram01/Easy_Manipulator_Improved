@@ -11,8 +11,10 @@ UI_HEADER = Path(
 ).read_text(encoding="utf-8")
 
 
-def test_home_v4_is_active_without_reintroducing_shared_helper_linkage():
-    assert '#include "workcell_home_polish_v4.hpp"' in STARTUP_DIALOG
+def test_home_v4_is_quarantined_from_startup_after_workstation_crash():
+    assert '#include "workcell_home_polish_v3.hpp"' in STARTUP_DIALOG
+    assert '#include "workcell_home_polish_v4.hpp"' not in STARTUP_DIALOG
+    assert '#include "workcell_home_polish_v5.hpp"' not in STARTUP_DIALOG
     assert 'workcell_home_polish_v4.hpp' not in UI_HEADER
     assert '#include "workcell_home_polish_v3.hpp"' in HOME_V4
 
