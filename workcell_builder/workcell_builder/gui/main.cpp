@@ -5,7 +5,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,6 +29,7 @@
 #include "gui/startup_dialog.h"
 #include "workcell_builder_ui_utils.hpp"
 #include "home_workcells_target_shell.hpp"
+#include "home_workcell_preview_web.hpp"
 
 class WorkcellStudioHomeMainWindow final : public MainWindow
 {
@@ -43,11 +44,12 @@ public:
       ? QString::fromLocal8Bit(qgetenv("WORKCELL_WORKSPACE_ROOT"))
       : startup_workspace;
     workcell_builder::home_workcells::configure_target_shell(this, workspace);
+    workcell_builder::home_workcells::install_home_web_preview(this, workspace);
   }
 };
 
 // main_legacy.inc includes the same headers again, but they are protected by
-// pragma-once/include guards.  Only MainWindow references in the implementation
+// pragma-once/include guards. Only MainWindow references in the implementation
 // below are redirected to the construction wrapper above.
 #define MainWindow WorkcellStudioHomeMainWindow
 #include "main_legacy.inc"
