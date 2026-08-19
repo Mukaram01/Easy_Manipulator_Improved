@@ -27,7 +27,6 @@ def test_home_v3_is_the_active_stable_startup_composition():
         'Total Workcells',
         'Needs Attention',
         'homeV3KpiBlocked',
-        'homeV3SceneThumb',
         'homeV3InspectorContent',
     ]:
         assert token in HOME_V3
@@ -36,40 +35,77 @@ def test_home_v3_is_the_active_stable_startup_composition():
 def test_home_v3_removes_redundant_primary_navigation_entries_without_reindexing_stack():
     assert 'nav->item(2)->setHidden(true)' in HOME_V3
     assert 'nav->item(3)->setHidden(true)' in HOME_V3
-    assert 'Home already is the workcell library' in HOME_V3
-    assert 'Demo Mode is secondary' in HOME_V3
 
 
-def test_home_v3_keeps_canonical_product_view_snapshot_fallback_available():
+def test_home_v3_table_has_one_visible_presentation_path():
+    # v2 remains the canonical table owner. v3 must not lay a second scene/status/
+    # robot/tool/date QWidget presentation over the same QTableWidgetItem text.
+    assert 'home_polish_v2::polishTable(window)' in HOME_V3
+    assert 'setCellWidget(row, kSceneColumn' not in HOME_V3
+    assert 'setCellWidget(row, kStatusColumn' not in HOME_V3
+    assert 'setCellWidget(row, kRobotColumn' not in HOME_V3
+    assert 'setCellWidget(row, kToolColumn' not in HOME_V3
+    assert 'setCellWidget(row, kUpdatedColumn' not in HOME_V3
+    assert 'table->setRowHeight(row, 46)' in HOME_V3
+    assert 'QStringLiteral("Pinned")' in HOME_V3
+
+
+def test_home_v3_restores_a_useful_selection_without_synthetic_clicks():
     for token in [
-        'runtime_preview_has_usable_content',
-        'embeddedWeb3dProductView',
-        'scene3dViewportWidget',
-        'embedded_product_view_runtime_state_changed',
-        'post_save_product_view_refresh_finished',
-        'Live read-only preview from the canonical Product View renderer.',
-        'PREVIEW PREPARING',
+        'studio_home/last_selected_scene',
+        'pinnedScenes()',
+        'firstVisibleRow',
+        'table->setCurrentCell(row, kSceneColumn)',
+        'table->selectRow(row)',
+    ]:
+        assert token in HOME_V3
+    # Startup selection is visual/inspector state only. MainWindow's canonical
+    # scene owner is updated by the real cellClicked connection when the user acts.
+    assert 'QMetaObject::invokeMethod(table, "cellClicked"' not in HOME_V3
+
+
+def test_home_v3_preview_uses_workspace_scene_roots_and_explicit_fallback():
+    for token in [
+        'sceneRootCandidates',
+        'startup/last_workspace',
+        'src/easy_manipulation_deployment/scenes',
+        'QDir::homePath()',
         'smoke/scene3d_gui_smoke.png',
         'acceptance/scene3d_gui_smoke.png',
+        'NO PREVIEW IMAGE',
+        'Open Product View once to render this workcell',
+        'source->isVisible()',
+    ]:
+        assert token in HOME_V3
+    assert 'PREVIEW PREPARING' not in HOME_V3
+
+
+def test_home_v3_details_panel_has_no_duplicate_workflow_controls():
+    # Home is for choosing a workcell. Operational workflow actions remain on
+    # their dedicated pages/navigation instead of being repeated in the details card.
+    for token in [
+        'homeV3InspectorMore',
+        'homeV3ViewDetails',
+        'Open in Scene Builder',
+        'Generate Package',
+        'Simulate · Fake Hardware',
+    ]:
+        assert token not in HOME_V3
+    assert 'homeV3InspectorPin' in HOME_V3
+
+
+def test_home_v3_normalizes_common_robot_tool_labels():
+    for token in [
+        'robotiq_85_gripper',
+        'robotiq_2f_85_gripper',
+        'Robotiq 2F-85',
+        'OnRobot AirPick4',
+        'Single Suction',
     ]:
         assert token in HOME_V3
 
 
-def test_home_v3_hides_redundant_visible_action_strip_behind_overflow():
-    assert 'homeV3InspectorMore' in HOME_V3
-    assert 'Open in Scene Builder' in HOME_V3
-    assert 'Open Product View' in HOME_V3
-    assert 'Simulate · Fake Hardware' in HOME_V3
-    for visible_button_object in [
-        'homeV3OpenButton',
-        'homeV3ValidateButton',
-        'homeV3GenerateButton',
-        'homeV3SimulateButton',
-    ]:
-        assert visible_button_object not in HOME_V3
-
-
-def test_home_v3_preserves_canonical_scene_table_columns_and_fake_hardware_safety():
+def test_home_v3_preserves_canonical_scene_columns_and_fake_hardware_safety():
     for token in [
         'constexpr int kSceneColumn = 0;',
         'constexpr int kStatusColumn = 1;',
@@ -82,7 +118,6 @@ def test_home_v3_preserves_canonical_scene_table_columns_and_fake_hardware_safet
     ]:
         assert token in HOME_V3
 
-    # Existing production safety wording/guards remain untouched by Home polish.
     for safety_token in [
         'Fake hardware default / Real robot locked',
         'Plan / Simulate',
