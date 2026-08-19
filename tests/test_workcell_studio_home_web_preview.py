@@ -45,8 +45,8 @@ def test_preview_uses_local_read_only_webengine_and_never_displays_error_panel()
 def test_preview_generation_is_visual_only_and_does_not_launch_robot_runtime():
     assert 'process.start(QStringLiteral("python3"), arguments)' in PREVIEW
     assert "ros2 launch" not in PREVIEW
-    assert "MoveIt" not in PREVIEW
     assert "fake_hardware:=false" not in PREVIEW
+    assert "ros2_control" not in PREVIEW
     assert "Q_COREAPP_STARTUP_FUNCTION" not in PREVIEW
     assert "installEventFilter" not in PREVIEW
     assert "QTimer::singleShot" not in PREVIEW
