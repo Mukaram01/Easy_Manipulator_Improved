@@ -6,6 +6,9 @@ UI_HEADER = Path(
 HOME_V3 = Path(
     "workcell_builder/workcell_builder/include/workcell_home_polish_v3.hpp"
 ).read_text(encoding="utf-8")
+HOME_V4 = Path(
+    "workcell_builder/workcell_builder/include/workcell_home_polish_v4.hpp"
+).read_text(encoding="utf-8")
 MAINWINDOW = Path(
     "workcell_builder/workcell_builder/gui/mainwindow.cpp"
 ).read_text(encoding="utf-8")
@@ -14,8 +17,9 @@ STARTUP_DIALOG = Path(
 ).read_text(encoding="utf-8")
 
 
-def test_home_v3_is_the_active_composition_and_keeps_home_as_workcell_library():
-    assert '#include "workcell_home_polish_v3.hpp"' in STARTUP_DIALOG
+def test_home_v3_remains_the_base_composition_under_active_v4_polish():
+    assert '#include "workcell_home_polish_v4.hpp"' in STARTUP_DIALOG
+    assert '#include "workcell_home_polish_v3.hpp"' in HOME_V4
     assert '#include "workcell_home_polish_v3.hpp"' not in UI_HEADER
     assert "Keep shared UI utilities link-safe" in UI_HEADER
     for token in [
@@ -38,7 +42,7 @@ def test_home_v3_removes_redundant_primary_navigation_entries_without_reindexing
     assert 'Demo Mode is secondary' in HOME_V3
 
 
-def test_home_v3_uses_canonical_product_view_for_preview_with_cached_fallback():
+def test_home_v3_keeps_canonical_product_view_snapshot_fallback_available():
     for token in [
         'runtime_preview_has_usable_content',
         'embeddedWeb3dProductView',
@@ -80,7 +84,7 @@ def test_home_v3_preserves_canonical_scene_table_columns_and_fake_hardware_safet
     ]:
         assert token in HOME_V3
 
-    # Existing production safety wording/guards remain untouched by this Home-only pass.
+    # Existing production safety wording/guards remain untouched by Home polish.
     for safety_token in [
         'Fake hardware default / Real robot locked',
         'Plan / Simulate',
