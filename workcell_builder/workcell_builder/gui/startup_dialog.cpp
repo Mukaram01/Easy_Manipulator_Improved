@@ -4,6 +4,7 @@
 #include <QComboBox>
 #include <QDir>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -88,6 +89,19 @@ void StartupDialog::on_open_studio_clicked()
     update_status("Selected folder is not a valid Workcell Studio workspace. Expected a ROS workspace containing src/ and easy_manipulation_deployment, scenes, or assets.", true);
     return;
   }
+
+  // MainWindow's asset catalog resolves product meshes through
+  // WORKCELL_WORKSPACE_ROOT. Interactive startup previously persisted the
+  // workspace in QSettings but never exported it, so launching `workcell_builder`
+  // from ~/workcell_ws made the catalog scan the wrong roots and fall back to
+  // pathless seed assets (UR5, Robotiq 2F, simple_conveyor, RealSense D435i).
+  // Export the validated workspace before MainWindow is constructed. Both
+  // <workspace>/src/easy_manipulation_deployment/assets and the supported
+  // <workspace>/src/assets symlink are then discovered by the existing catalog.
+  const QFileInfo workspace_info(path);
+  const QString canonical_workspace = workspace_info.canonicalFilePath();
+  const QString workspace_root = canonical_workspace.isEmpty() ? QDir::cleanPath(path) : canonical_workspace;
+  qputenv("WORKCELL_WORKSPACE_ROOT", workspace_root.toUtf8());
 
   QSettings settings("easy_manipulation_deployment", "workcell_builder");
   settings.setValue("startup/last_workspace", path);
