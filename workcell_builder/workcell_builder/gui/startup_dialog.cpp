@@ -1,6 +1,6 @@
 #include "gui/startup_dialog.h"
 #include "include/workspace_validation.hpp"
-#include "workcell_home_polish_v3.hpp"
+#include "workcell_home_polish_v4.hpp"
 
 #include <QComboBox>
 #include <QDir>
