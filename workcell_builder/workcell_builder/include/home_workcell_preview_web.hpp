@@ -1,35 +1,38 @@
 #pragma once
 
-// Read-only visual preview for the Home inspector.
+// Fast read-only Home preview.
 //
-// Home does not generate its own scene renderer.  The selected scene is already
-// prepared by the canonical ScenePreviewWidget/Product View lifecycle, even while
-// the Home page is visible.  Once that Product View reports usable content, Home
-// mirrors the exact prepared loopback viewer URL into a small viewport-only
-// QWebEngineView.  This keeps Home visually truthful without introducing another
-// scene export contract, another HTTP server, or another source-of-truth path.
+// Home is a library/selection surface, not a second Product View.  It therefore
+// never creates another QWebEngineView and never reloads the Three.js scene.
+// Instead it shows a persistent raster snapshot immediately.  When the canonical
+// ScenePreviewWidget/Product View finishes rendering the selected scene, Home
+// captures the existing #scene-canvas once and refreshes the cache.
 //
-// Before Product View is ready, Home may show an existing PNG snapshot.  If no
-// snapshot exists, it shows a neutral graphical "preparing" card.  It never
-// generates files under scenes/, never displays the old static SVG schematic,
-// and never presents a blank/error panel as the normal preview state.
+// Cache files live under QStandardPaths::CacheLocation, never under scenes/.
+// They are keyed by scene id + current scene modification stamp so edits naturally
+// invalidate the exact cache entry.  The most recent older Product View snapshot
+// may be shown while the canonical renderer refreshes, which keeps Home instant
+// without creating a second renderer/server/scene export path.
 
 #include <QApplication>
-#include <QBoxLayout>
+#include <QByteArray>
 #include <QColor>
+#include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
+#include <QImage>
 #include <QLabel>
-#include <QLayout>
 #include <QMainWindow>
+#include <QPixmap>
 #include <QPointer>
-#include <QSizePolicy>
+#include <QSize>
+#include <QStandardPaths>
 #include <QTableWidget>
-#include <QUrl>
+#include <QVariant>
+#include <QtGlobal>
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 #include <QWebEnginePage>
-#include <QWebEngineSettings>
 #include <QWebEngineView>
 #endif
 
@@ -41,50 +44,6 @@ namespace workcell_builder
 namespace home_workcells
 {
 
-inline QString local_visual_html(const QString & file_path)
-{
-  const QString url = QUrl::fromLocalFile(file_path).toString(QUrl::FullyEncoded);
-  return QStringLiteral(
-    "<!doctype html><html><head><meta charset='utf-8'>"
-    "<style>html,body{margin:0;width:100%%;height:100%%;overflow:hidden;background:#111b25;}"
-    "body{display:flex;align-items:center;justify-content:center;}"
-    "img{display:block;max-width:100%%;max-height:100%%;width:auto;height:auto;object-fit:contain;}"
-    "</style></head><body><img src='%1'></body></html>").arg(url);
-}
-
-inline QString preparing_product_view_html(
-  const QString & scene_id, const QString & robot, const QString & tool)
-{
-  const QString title = friendly_workcell_name(scene_id).toHtmlEscaped();
-  const QString robot_text = robot.toHtmlEscaped();
-  const QString tool_text = tool.toHtmlEscaped();
-  return QStringLiteral(
-    "<!doctype html><html><head><meta charset='utf-8'>"
-    "<style>html,body{margin:0;width:100%%;height:100%%;overflow:hidden;background:#111b25;color:#dbe8f4;font-family:sans-serif;}"
-    ".scene{position:relative;width:100%%;height:100%%;background:radial-gradient(circle at 52%% 32%%,#263746,#111b25 67%%);}"
-    ".grid{position:absolute;left:7%%;right:7%%;bottom:10%%;height:43%%;transform:perspective(420px) rotateX(58deg);transform-origin:center bottom;border:1px solid #405463;background:repeating-linear-gradient(0deg,transparent,transparent 21px,#263846 22px),repeating-linear-gradient(90deg,transparent,transparent 29px,#263846 30px);}"
-    ".base{position:absolute;left:34%%;bottom:25%%;width:45px;height:22px;border-radius:50%%;background:#6f8291;}"
-    ".robot{position:absolute;left:36%%;bottom:28%%;width:26px;height:77px;border-radius:14px;background:linear-gradient(#bdc8d1,#6c7e8c);}"
-    ".arm{position:absolute;left:38%%;bottom:55%%;width:86px;height:15px;border-radius:9px;background:#9dacb8;transform:rotate(17deg);transform-origin:left center;}"
-    ".bin{position:absolute;right:22%%;bottom:25%%;width:62px;height:42px;border:3px solid #2864f0;background:#0c3198;border-radius:4px;transform:skewY(-6deg);}"
-    ".badge{position:absolute;right:12px;top:12px;padding:5px 8px;border-radius:999px;background:#18334a;color:#9fd5ff;font-size:9px;font-weight:700;letter-spacing:.04em;}"
-    ".caption{position:absolute;left:14px;top:13px;font-size:12px;font-weight:700;color:#eef6ff;}"
-    ".meta{position:absolute;left:14px;bottom:10px;font-size:9px;color:#9fb2c5;}"
-    "</style></head><body><div class='scene'><div class='caption'>%1</div><div class='badge'>PREPARING LIVE 3D</div>"
-    "<div class='grid'></div><div class='base'></div><div class='robot'></div><div class='arm'></div><div class='bin'></div>"
-    "<div class='meta'>%2 · %3</div></div></body></html>")
-    .arg(title, robot_text, tool_text);
-}
-
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
-inline bool is_canonical_product_view_url(const QUrl & url)
-{
-  if (!url.isValid() || url.scheme().compare(QStringLiteral("http"), Qt::CaseInsensitive) != 0) return false;
-  const QString host = url.host().toLower();
-  if (host != QStringLiteral("127.0.0.1") && host != QStringLiteral("localhost")) return false;
-  return url.path() == QStringLiteral("/workcell_studio_web/viewer/index.html");
-}
-
 inline QString selected_home_scene_id(QTableWidget * table)
 {
   if (!table) return QString();
@@ -93,6 +52,142 @@ inline QString selected_home_scene_id(QTableWidget * table)
   return scene_id_at(table, row);
 }
 
+inline QString safe_preview_cache_component(QString value)
+{
+  value = value.trimmed();
+  if (value.isEmpty()) return QStringLiteral("workcell");
+  for (int i = 0; i < value.size(); ++i) {
+    const QChar c = value.at(i);
+    if (!c.isLetterOrNumber() && c != QLatin1Char('_') && c != QLatin1Char('-')) value[i] = QLatin1Char('_');
+  }
+  return value;
+}
+
+inline QString home_preview_cache_root()
+{
+  QString root = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+  if (root.trimmed().isEmpty()) {
+    root = QDir(QDir::tempPath()).filePath(QStringLiteral("workcell_studio"));
+  }
+  root = QDir(root).filePath(QStringLiteral("home_previews"));
+  QDir().mkpath(root);
+  return QDir::cleanPath(root);
+}
+
+inline qint64 home_preview_scene_stamp(const QString & workspace_root, const QString & scene_id)
+{
+  const QDateTime updated = scene_last_updated(workspace_root, scene_id);
+  return updated.isValid() ? updated.toMSecsSinceEpoch() : 0;
+}
+
+inline QString exact_home_preview_cache_path(const QString & workspace_root, const QString & scene_id)
+{
+  const QString safe_scene = safe_preview_cache_component(scene_id);
+  return QDir(home_preview_cache_root()).filePath(
+    QStringLiteral("%1-%2.png").arg(safe_scene).arg(home_preview_scene_stamp(workspace_root, scene_id)));
+}
+
+inline QString newest_home_preview_cache_path(const QString & scene_id)
+{
+  QDir cache(home_preview_cache_root());
+  const QString prefix = safe_preview_cache_component(scene_id) + QLatin1Char('-');
+  const QStringList matches = cache.entryList(
+    QStringList{prefix + QStringLiteral("*.png")}, QDir::Files, QDir::Time);
+  return matches.isEmpty() ? QString() : cache.filePath(matches.first());
+}
+
+inline void prune_old_home_preview_cache(const QString & scene_id, const QString & keep_path)
+{
+  QDir cache(home_preview_cache_root());
+  const QString prefix = safe_preview_cache_component(scene_id) + QLatin1Char('-');
+  const QString keep_name = QFileInfo(keep_path).fileName();
+  const QStringList matches = cache.entryList(
+    QStringList{prefix + QStringLiteral("*.png")}, QDir::Files, QDir::Time);
+  int retained_old = 0;
+  for (const QString & name : matches) {
+    if (name == keep_name) continue;
+    // Keep one previous real Product View snapshot as a useful stale-while-refreshing fallback.
+    if (retained_old++ == 0) continue;
+    cache.remove(name);
+  }
+}
+
+inline bool preview_pixmap_has_useful_variation(const QPixmap & pixmap)
+{
+  if (pixmap.isNull() || pixmap.width() < 64 || pixmap.height() < 48) return false;
+  const QImage image = pixmap.toImage().convertToFormat(QImage::Format_RGB32);
+  if (image.isNull()) return false;
+  QColor first;
+  bool have_first = false;
+  int varied = 0;
+  const int step_x = qMax(1, image.width() / 12);
+  const int step_y = qMax(1, image.height() / 8);
+  for (int y = 0; y < image.height(); y += step_y) {
+    for (int x = 0; x < image.width(); x += step_x) {
+      const QColor color(image.pixel(x, y));
+      if (!have_first) {
+        first = color;
+        have_first = true;
+        continue;
+      }
+      if (qAbs(color.red() - first.red()) + qAbs(color.green() - first.green()) +
+          qAbs(color.blue() - first.blue()) > 36) {
+        if (++varied >= 4) return true;
+      }
+    }
+  }
+  return false;
+}
+
+inline void show_preview_pixmap(QLabel * label, const QPixmap & pixmap, const QString & tooltip)
+{
+  if (!label || pixmap.isNull()) return;
+  QSize target = label->contentsRect().size();
+  if (target.width() < 120 || target.height() < 90) target = QSize(360, 220);
+  label->setText(QString());
+  label->setPixmap(pixmap.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+  label->setToolTip(tooltip);
+}
+
+inline bool show_preview_file(QLabel * label, const QString & path, const QString & tooltip)
+{
+  if (!label || path.trimmed().isEmpty() || !QFileInfo(path).isFile()) return false;
+  QPixmap pixmap(path);
+  if (!preview_pixmap_has_useful_variation(pixmap)) return false;
+  show_preview_pixmap(label, pixmap, tooltip);
+  return true;
+}
+
+inline void show_fast_home_preview(
+  QTableWidget * table, QLabel * label, const QString & workspace_root)
+{
+  if (!table || !label) return;
+  const QString scene_id = selected_home_scene_id(table);
+  label->setPixmap(QPixmap());
+
+  if (scene_id.isEmpty()) {
+    label->setText(QStringLiteral("Select a workcell\nto preview its scene"));
+    label->setToolTip(QString());
+    return;
+  }
+
+  const QString exact = exact_home_preview_cache_path(workspace_root, scene_id);
+  if (show_preview_file(label, exact, QStringLiteral("Cached Product View snapshot · current scene"))) return;
+
+  const QString previous = newest_home_preview_cache_path(scene_id);
+  if (show_preview_file(label, previous,
+      QStringLiteral("Cached Product View snapshot · refreshing in background"))) return;
+
+  // Existing smoke/acceptance/Product View PNG evidence is also instant and truthful.
+  const QString stored = find_preview_path(workspace_root, scene_id);
+  if (show_preview_file(label, stored, QStringLiteral("Stored scene snapshot · %1").arg(stored))) return;
+
+  label->setText(QStringLiteral("Preparing first preview…\nThis workcell will open instantly next time."));
+  label->setToolTip(QStringLiteral(
+    "The canonical Product View is rendering once in the background. Home will cache the resulting scene image."));
+}
+
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 inline ScenePreviewWidget * canonical_product_view(QMainWindow * window)
 {
   return window ? window->findChild<ScenePreviewWidget *>() : nullptr;
@@ -103,179 +198,113 @@ inline QWebEngineView * canonical_product_view_web(ScenePreviewWidget * preview)
   return preview ? preview->findChild<QWebEngineView *>(QStringLiteral("embeddedWeb3dProductView")) : nullptr;
 }
 
-inline void apply_home_viewport_only_chrome(QWebEngineView * web)
+inline void capture_canonical_product_view_snapshot(
+  QMainWindow * window, QTableWidget * table, QLabel * label, const QString & workspace_root)
 {
-  if (!web || !is_canonical_product_view_url(web->url())) return;
-  // The mirrored page is the real Product View, but Home only needs the rendered
-  // scene.  Hide authoring/review chrome and make the canvas fill the inspector.
-  // Pointer interaction is disabled at the QWidget level as a second read-only
-  // boundary, so this page cannot mutate preview transforms from Home.
-  static const char kViewportOnlyScript[] = R"JS(
+  if (!window || !table || !label) return;
+  const QString scene_id = selected_home_scene_id(table);
+  if (scene_id.isEmpty()) return;
+
+  ScenePreviewWidget * source_preview = canonical_product_view(window);
+  if (!source_preview || !source_preview->runtime_preview_has_usable_content()) return;
+  const ScenePreviewWidget::PreviewContext context = source_preview->preview_context();
+  if (context.scene_id.trimmed() != scene_id) return;
+
+  QWebEngineView * source_web = canonical_product_view_web(source_preview);
+  if (!source_web || !source_web->page()) return;
+
+  const QString cache_path = exact_home_preview_cache_path(workspace_root, scene_id);
+  if (show_preview_file(label, cache_path, QStringLiteral("Cached Product View snapshot · current scene"))) return;
+
+  const QString request_key = scene_id + QLatin1Char('|') + cache_path;
+  if (label->property("homeSnapshotCaptureInFlight").toString() == request_key) return;
+  label->setProperty("homeSnapshotCaptureInFlight", request_key);
+
+  // Capture the already-rendered canonical canvas.  This is deliberately not a
+  // second WebEngine navigation: no duplicate Three.js scene, mesh fetch, GL
+  // compositor surface, HTTP server, or scene preparation is created for Home.
+  static const char kCaptureCanvasScript[] = R"JS(
 (() => {
-  const id = 'workcell-home-preview-style';
-  let style = document.getElementById(id);
-  if (!style) {
-    style = document.createElement('style');
-    style.id = id;
-    document.head.appendChild(style);
-  }
-  style.textContent = `
-    html, body { margin:0 !important; width:100% !important; height:100% !important; overflow:hidden !important; background:#111b25 !important; }
-    .topbar, .object-panel, .details-panel, #scene-health, #dirty-state,
-    #initial-pose-status, #placement-status, #error-state, .label-layer { display:none !important; }
-    .app-shell { display:block !important; width:100% !important; height:100vh !important; min-height:0 !important; margin:0 !important; padding:0 !important; }
-    .viewport-panel { position:relative !important; display:block !important; width:100% !important; height:100vh !important; min-width:0 !important; min-height:0 !important; margin:0 !important; padding:0 !important; border:0 !important; overflow:hidden !important; background:#111b25 !important; }
-    #scene-canvas { position:absolute !important; inset:0 !important; display:block !important; width:100% !important; height:100% !important; margin:0 !important; }
-  `;
-  document.documentElement.style.background = '#111b25';
-  document.body.style.background = '#111b25';
-  window.dispatchEvent(new Event('resize'));
-  return true;
+  const canvas = document.getElementById('scene-canvas');
+  if (!canvas || canvas.width < 64 || canvas.height < 48) return '';
+  try { return canvas.toDataURL('image/png'); } catch (_) { return ''; }
 })()
 )JS";
-  web->page()->runJavaScript(QString::fromUtf8(kViewportOnlyScript));
-}
 
-inline bool mirror_canonical_product_view_if_ready(
-  QMainWindow * window, QTableWidget * table, QWebEngineView * home_web)
-{
-  if (!window || !table || !home_web) return false;
-  const QString scene_id = selected_home_scene_id(table);
-  if (scene_id.isEmpty()) return false;
+  const QPointer<QLabel> safe_label(label);
+  const QPointer<QTableWidget> safe_table(table);
+  source_web->page()->runJavaScript(QString::fromUtf8(kCaptureCanvasScript),
+    [safe_label, safe_table, workspace_root, scene_id, cache_path, request_key](const QVariant & value) {
+      if (!safe_label) return;
+      if (safe_label->property("homeSnapshotCaptureInFlight").toString() == request_key)
+        safe_label->setProperty("homeSnapshotCaptureInFlight", QString());
 
-  ScenePreviewWidget * preview = canonical_product_view(window);
-  if (!preview || !preview->runtime_preview_has_usable_content()) return false;
-  const ScenePreviewWidget::PreviewContext context = preview->preview_context();
-  if (context.scene_id.trimmed() != scene_id) return false;
+      const QString data_url = value.toString();
+      static const QString prefix = QStringLiteral("data:image/png;base64,");
+      if (!data_url.startsWith(prefix)) return;
+      const QByteArray bytes = QByteArray::fromBase64(data_url.mid(prefix.size()).toLatin1());
+      QPixmap pixmap;
+      if (!pixmap.loadFromData(bytes, "PNG") || !preview_pixmap_has_useful_variation(pixmap)) return;
 
-  QWebEngineView * source_web = canonical_product_view_web(preview);
-  if (!source_web) return false;
-  const QUrl viewer_url = source_web->url();
-  if (!is_canonical_product_view_url(viewer_url)) return false;
+      QDir().mkpath(QFileInfo(cache_path).absolutePath());
+      if (!pixmap.save(cache_path, "PNG")) return;
+      prune_old_home_preview_cache(scene_id, cache_path);
 
-  const QString active = home_web->property("homeMirroredProductViewUrl").toString();
-  if (active == viewer_url.toString() && home_web->url() == viewer_url) {
-    apply_home_viewport_only_chrome(home_web);
-    return true;
-  }
-
-  home_web->setProperty("homeMirroredProductViewUrl", viewer_url.toString());
-  home_web->setProperty("homeMirroredSceneId", scene_id);
-  home_web->setToolTip(QStringLiteral("Live read-only Product View · %1").arg(scene_id));
-  home_web->setZoomFactor(1.0);
-  home_web->setUrl(viewer_url);
-  return true;
-}
-
-inline void show_home_preview_fallback(
-  QTableWidget * table, QWebEngineView * web, const QString & workspace_root)
-{
-  if (!table || !web) return;
-  const int row = table->currentRow();
-  const bool selected = row >= 0 && row < table->rowCount() && table->item(row, 0);
-  const QString scene_id = selected ? scene_id_at(table, row) : QStringLiteral("workcell");
-  const QString robot = selected && table->item(row, 2)
-    ? clean_robot(table->item(row, 2)->text()) : QStringLiteral("Robot");
-  const QString tool = selected && table->item(row, 3)
-    ? clean_tool(table->item(row, 3)->text()) : QStringLiteral("Tool");
-
-  web->setProperty("homeMirroredProductViewUrl", QString());
-  web->setProperty("homeMirroredSceneId", scene_id);
-
-  // A real stored raster snapshot is still useful while the live viewer starts.
-  // Deliberately ignore generated static SVG/HTML previews: they are schematic,
-  // not Product View evidence, and were visually misleading in Home.
-  const QString image = selected ? find_preview_path(workspace_root, scene_id) : QString();
-  if (!image.isEmpty() && QFileInfo(image).isFile()) {
-    const QString suffix = QFileInfo(image).suffix().toLower();
-    if (suffix == QStringLiteral("png") || suffix == QStringLiteral("jpg") ||
-        suffix == QStringLiteral("jpeg") || suffix == QStringLiteral("webp")) {
-      web->setZoomFactor(1.0);
-      web->setHtml(local_visual_html(image),
-        QUrl::fromLocalFile(QFileInfo(image).absolutePath() + QDir::separator()));
-      web->setToolTip(QStringLiteral("Stored scene snapshot · %1").arg(image));
-      return;
-    }
-  }
-
-  web->setZoomFactor(1.0);
-  web->setHtml(preparing_product_view_html(scene_id, robot, tool));
-  web->setToolTip(QStringLiteral("Preparing the live read-only Product View."));
-}
-
-inline void refresh_home_web_preview(
-  QMainWindow * window, QTableWidget * table, const QString & workspace_root)
-{
-  auto * web = window ? window->findChild<QWebEngineView *>(QStringLiteral("studioTargetWebPreview")) : nullptr;
-  if (!web || !table) return;
-  if (mirror_canonical_product_view_if_ready(window, table, web)) return;
-  show_home_preview_fallback(table, web, workspace_root);
+      if (!safe_table || selected_home_scene_id(safe_table) != scene_id) return;
+      show_preview_pixmap(safe_label, pixmap, QStringLiteral("Cached Product View snapshot · current scene"));
+    });
 }
 #endif
 
-inline void install_home_web_preview(
+inline void install_home_snapshot_preview(
   QMainWindow * window, const QString & workspace_root)
 {
   if (!window || QApplication::arguments().contains(QStringLiteral("--scene3d-smoke"))) return;
-  if (window->property("studioHomeWebPreviewInstalled").toBool()) return;
+  if (window->property("studioHomeSnapshotPreviewInstalled").toBool()) return;
 
   QTableWidget * table = scene_table(window);
-  QLabel * legacy_preview = window->findChild<QLabel *>(QStringLiteral("studioTargetPreview"));
-  if (!table || !legacy_preview || !legacy_preview->parentWidget() || !legacy_preview->parentWidget()->layout()) return;
-  window->setProperty("studioHomeWebPreviewInstalled", true);
+  QLabel * preview_label = window->findChild<QLabel *>(QStringLiteral("studioTargetPreview"));
+  if (!table || !preview_label) return;
+  window->setProperty("studioHomeSnapshotPreviewInstalled", true);
 
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
-  auto * web = new QWebEngineView(legacy_preview->parentWidget());
-  web->setObjectName(QStringLiteral("studioTargetWebPreview"));
-  web->setMinimumHeight(220);
-  web->setMaximumHeight(250);
-  web->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-  web->setContextMenuPolicy(Qt::NoContextMenu);
-  web->setAcceptDrops(false);
-  web->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-  web->settings()->setAttribute(QWebEngineSettings::JavascriptEnabled, true);
-  web->settings()->setAttribute(QWebEngineSettings::LocalContentCanAccessFileUrls, true);
-  web->settings()->setAttribute(QWebEngineSettings::LocalContentCanAccessRemoteUrls, false);
-  web->page()->setBackgroundColor(QColor(QStringLiteral("#111B25")));
-
-  QLayout * layout = legacy_preview->parentWidget()->layout();
-  const int index = layout->indexOf(legacy_preview);
-  if (auto * box = qobject_cast<QBoxLayout *>(layout)) box->insertWidget(qMax(0, index), web);
-  else layout->addWidget(web);
-  legacy_preview->hide();
+  // Keep the target shell's existing lightweight QLabel.  A Home-page preview
+  // should cost roughly the same as displaying an image, not another browser.
+  preview_label->show();
+  preview_label->setAlignment(Qt::AlignCenter);
+  preview_label->setMinimumHeight(220);
+  preview_label->setMaximumHeight(250);
+  preview_label->setScaledContents(false);
 
   const QPointer<QMainWindow> safe_window(window);
-  QObject::connect(table, &QTableWidget::cellClicked, web,
-    [safe_window, table, workspace_root](int, int) {
-      if (safe_window) refresh_home_web_preview(safe_window, table, workspace_root);
+  const QPointer<QLabel> safe_label(preview_label);
+  QObject::connect(table, &QTableWidget::itemSelectionChanged, preview_label,
+    [safe_window, safe_label, table, workspace_root]() {
+      if (!safe_window || !safe_label) return;
+      show_fast_home_preview(table, safe_label, workspace_root);
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+      capture_canonical_product_view_snapshot(safe_window, table, safe_label, workspace_root);
+#endif
     });
-  QObject::connect(table, &QTableWidget::itemSelectionChanged, web,
-    [safe_window, table, workspace_root]() {
-      if (safe_window) refresh_home_web_preview(safe_window, table, workspace_root);
-    });
-  QObject::connect(web, &QWebEngineView::loadFinished, web, [web](bool ok) {
-    if (ok) apply_home_viewport_only_chrome(web);
-  });
 
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
   if (ScenePreviewWidget * source_preview = canonical_product_view(window)) {
     QObject::connect(source_preview, &ScenePreviewWidget::embedded_product_view_runtime_state_changed,
-      web, [safe_window, table, workspace_root](const QString &, bool usable) {
-        if (usable && safe_window) refresh_home_web_preview(safe_window, table, workspace_root);
+      preview_label, [safe_window, safe_label, table, workspace_root](const QString &, bool usable) {
+        if (!usable || !safe_window || !safe_label) return;
+        capture_canonical_product_view_snapshot(safe_window, table, safe_label, workspace_root);
       });
-    if (QWebEngineView * source_web = canonical_product_view_web(source_preview)) {
-      QObject::connect(source_web, &QWebEngineView::urlChanged, web,
-        [safe_window, table, workspace_root](const QUrl &) {
-          if (safe_window) refresh_home_web_preview(safe_window, table, workspace_root);
-        });
-    }
+    QObject::connect(source_preview, &ScenePreviewWidget::post_save_product_view_refresh_finished,
+      preview_label,
+      [safe_window, safe_label, table, workspace_root](int, quint64, quint64, bool success, const QString &) {
+        if (!success || !safe_window || !safe_label) return;
+        capture_canonical_product_view_snapshot(safe_window, table, safe_label, workspace_root);
+      });
   }
+#endif
 
-  refresh_home_web_preview(window, table, workspace_root);
-#else
-  // Non-WebEngine builds retain the existing QLabel. Product View remains the
-  // authoritative visual surface and Home does not fabricate a scene image.
-  legacy_preview->setText(QStringLiteral("Open Product View for the live 3D scene"));
-  legacy_preview->setToolTip(QStringLiteral("This build does not include Qt WebEngine."));
+  show_fast_home_preview(table, preview_label, workspace_root);
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+  capture_canonical_product_view_snapshot(window, table, preview_label, workspace_root);
 #endif
 }
 

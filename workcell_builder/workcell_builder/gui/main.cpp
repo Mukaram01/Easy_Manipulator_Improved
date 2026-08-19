@@ -44,7 +44,7 @@ public:
       ? QString::fromLocal8Bit(qgetenv("WORKCELL_WORKSPACE_ROOT"))
       : startup_workspace;
     workcell_builder::home_workcells::configure_target_shell(this, workspace);
-    workcell_builder::home_workcells::install_home_web_preview(this, workspace);
+    workcell_builder::home_workcells::install_home_snapshot_preview(this, workspace);
   }
 };
 

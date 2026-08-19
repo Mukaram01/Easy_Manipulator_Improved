@@ -8,59 +8,72 @@ MAIN = Path(
 ).read_text(encoding="utf-8")
 
 
-def test_home_installs_preview_after_target_shell():
+def test_home_installs_snapshot_preview_after_target_shell():
     assert '#include "home_workcell_preview_web.hpp"' in MAIN
     assert "configure_target_shell(this, workspace)" in MAIN
-    assert "install_home_web_preview(this, workspace)" in MAIN
+    assert "install_home_snapshot_preview(this, workspace)" in MAIN
+    assert "install_home_web_preview(this, workspace)" not in MAIN
 
 
-def test_home_preview_mirrors_the_canonical_product_view_instead_of_generating_svg():
+def test_home_does_not_create_a_second_webengine_product_view():
+    # Home is image-cheap. The only QWebEngineView reference is the canonical
+    # ScenePreviewWidget surface used as a snapshot source.
+    assert 'embeddedWeb3dProductView' in PREVIEW
+    assert 'new QWebEngineView' not in PREVIEW
+    assert 'studioTargetWebPreview' not in PREVIEW
+    assert 'setUrl(viewer_url)' not in PREVIEW
+    assert 'homeMirroredProductViewUrl' not in PREVIEW
+    assert 'workcell-home-preview-style' not in PREVIEW
+
+
+def test_home_snapshot_cache_is_outside_scene_source_and_revision_aware():
     for token in [
-        '#include "scene_preview_widget.h"',
-        'embeddedWeb3dProductView',
-        'runtime_preview_has_usable_content()',
-        'preview_context()',
-        'source_web->url()',
-        'is_canonical_product_view_url',
-        'homeMirroredProductViewUrl',
-        'web->setUrl(viewer_url)',
-        'embedded_product_view_runtime_state_changed',
+        "QStandardPaths::CacheLocation",
+        'home_previews',
+        'scene_last_updated(workspace_root, scene_id)',
+        'exact_home_preview_cache_path',
+        'newest_home_preview_cache_path',
+        'prune_old_home_preview_cache',
+        'refreshing in background',
     ]:
         assert token in PREVIEW
 
-    # Home must not mutate scene directories just to obtain a picture.
+    # Selecting Home must never generate or write scene-owned preview artifacts.
     assert "generate_workcell_static_preview.py" not in PREVIEW
     assert "preview/static_preview.svg" not in PREVIEW
     assert "preview/static_preview.html" not in PREVIEW
     assert "QProcess" not in PREVIEW
 
 
-def test_mirrored_product_view_is_viewport_only_and_read_only():
+def test_home_captures_only_the_existing_canonical_canvas_after_product_view_is_ready():
     for token in [
-        "JavascriptEnabled, true",
-        "studioTargetWebPreview",
-        "workcell-home-preview-style",
-        ".topbar, .object-panel, .details-panel",
-        "#scene-canvas",
-        "WA_TransparentForMouseEvents",
-        "LocalContentCanAccessRemoteUrls, false",
-        "127.0.0.1",
-        "/workcell_studio_web/viewer/index.html",
+        '#include "scene_preview_widget.h"',
+        'runtime_preview_has_usable_content()',
+        'preview_context()',
+        'embedded_product_view_runtime_state_changed',
+        'post_save_product_view_refresh_finished',
+        "document.getElementById('scene-canvas')",
+        "canvas.toDataURL('image/png')",
+        'QByteArray::fromBase64',
+        'pixmap.save(cache_path, "PNG")',
     ]:
         assert token in PREVIEW
 
 
-def test_home_preview_has_non_error_fallback_while_real_viewer_prepares():
+def test_home_preview_is_instant_when_cache_or_existing_snapshot_is_available():
     for token in [
-        "find_preview_path(workspace_root, scene_id)",
-        "Stored scene snapshot",
-        "PREPARING LIVE 3D",
-        "preparing_product_view_html",
+        'show_fast_home_preview',
+        'Cached Product View snapshot · current scene',
+        'Cached Product View snapshot · refreshing in background',
+        'find_preview_path(workspace_root, scene_id)',
+        'Stored scene snapshot',
+        'Preparing first preview…',
+        'This workcell will open instantly next time.',
     ]:
         assert token in PREVIEW
     assert "NO PREVIEW IMAGE" not in PREVIEW
     assert "PREVIEW ERROR" not in PREVIEW
-    assert "static_preview.svg" not in PREVIEW
+    assert "PREPARING LIVE 3D" not in PREVIEW
 
 
 def test_home_preview_does_not_add_runtime_or_startup_mutation_paths():
