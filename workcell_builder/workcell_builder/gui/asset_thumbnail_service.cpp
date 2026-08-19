@@ -68,7 +68,8 @@ AssetThumbnailService::Result AssetThumbnailService::request(const Request & req
   if (!cached.isNull()) {
     Result hit{id, Status::Ready, cached, source_fingerprint(request), QFileInfo(cache_path(key)).lastModified(), {}, key};
     results_[id] = hit;
-    qInfo("Asset thumbnail cache hit: asset=%s key=%s", qPrintable(id), qPrintable(key));
+    // Cache hits are normal UI housekeeping. Keep successful thumbnail work quiet
+    // during interactive startup; failures remain warnings below.
     return hit;
   }
   Result queued{id, Status::Queued, {}, source_fingerprint(request), {}, {}, key};
@@ -106,9 +107,10 @@ void AssetThumbnailService::start_next()
         }
       }
       results_[id] = rendered;
-      if (rendered.status == Status::Ready)
-        qInfo("Asset thumbnail generated: asset=%s size=%dx%d", qPrintable(id), rendered.image.width(), rendered.image.height());
-      else qWarning("Asset thumbnail failed: asset=%s reason=%s", qPrintable(id), qPrintable(rendered.error));
+      // Successful generation is expected background work and should not flood
+      // the terminal. Preserve actionable failures at warning level.
+      if (rendered.status != Status::Ready)
+        qWarning("Asset thumbnail failed: asset=%s reason=%s", qPrintable(id), qPrintable(rendered.error));
       emit thumbnailChanged(id);
     }
     worker_active_ = false;
