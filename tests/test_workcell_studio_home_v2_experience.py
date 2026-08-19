@@ -56,11 +56,11 @@ def test_home_v2_has_direct_selected_scene_actions_without_weakening_safety():
     ]:
         assert token in UI_UTILS
 
-    # Existing guarded runtime contract remains in the production MainWindow path.
+    # The existing fake-hardware-first language remains in the production MainWindow path.
     for safety_token in [
-        'use_fake_hardware',
-        'allow_real_hardware_motion',
-        'real_robot_locked',
+        'Fake hardware default / Real robot locked',
+        'Plan / Simulate',
+        'RViz / MoveIt Preview',
     ]:
         assert safety_token in MAINWINDOW
 
