@@ -55,14 +55,18 @@ QString AssetThumbnailService::cache_path(const QString & key) const { return QD
 
 AssetThumbnailService::Result AssetThumbnailService::result(const QString & id) const
 {
-  return results_.value(thumbnail_identity(id), Result{id, Status::Missing});
+  return results_.value(
+    thumbnail_identity(id),
+    Result{id, Status::Missing, QImage(), QString(), QDateTime(), QString(), QString()});
 }
 
 AssetThumbnailService::Result AssetThumbnailService::request(const Request & request)
 {
   const QString id = thumbnail_identity(request.asset_id);
   const QString key = cache_key(request);
-  auto current = results_.value(id, Result{id, Status::Missing});
+  auto current = results_.value(
+    id,
+    Result{id, Status::Missing, QImage(), QString(), QDateTime(), QString(), QString()});
   if (current.cache_key == key && (current.status == Status::Ready || current.status == Status::Queued || current.status == Status::Rendering)) return current;
   QImage cached(cache_path(key));
   if (!cached.isNull()) {
