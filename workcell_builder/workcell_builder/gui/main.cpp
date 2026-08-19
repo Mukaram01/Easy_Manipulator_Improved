@@ -31,6 +31,7 @@
 #include "home_workcells_target_shell.hpp"
 #include "home_workcell_preview_web.hpp"
 #include "home_contextual_navigation.hpp"
+#include "gui/scene_builder_product_layout.hpp"
 
 class WorkcellStudioHomeMainWindow final : public MainWindow
 {
@@ -47,6 +48,7 @@ public:
     workcell_builder::home_workcells::configure_target_shell(this, workspace);
     workcell_builder::home_workcells::install_home_snapshot_preview(this, workspace);
     workcell_builder::home_workcells::install_contextual_navigation(this);
+    workcell_builder::scene_builder_product_layout::configure_scene_builder_product_layout(this);
   }
 };
 
