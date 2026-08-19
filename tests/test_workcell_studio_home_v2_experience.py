@@ -3,6 +3,12 @@ from pathlib import Path
 UI_UTILS = Path(
     "workcell_builder/workcell_builder/gui/workcell_builder_ui_utils.cpp"
 ).read_text(encoding="utf-8")
+UI_HEADER = Path(
+    "workcell_builder/workcell_builder/include/workcell_builder_ui_utils.hpp"
+).read_text(encoding="utf-8")
+POLISH = Path(
+    "workcell_builder/workcell_builder/include/workcell_home_polish_v2.hpp"
+).read_text(encoding="utf-8")
 MAINWINDOW = Path(
     "workcell_builder/workcell_builder/gui/mainwindow.cpp"
 ).read_text(encoding="utf-8")
@@ -71,3 +77,32 @@ def test_home_v2_extends_the_existing_scene_table_without_shifting_canonical_col
     assert 'constexpr int kHomeUpdatedColumn = 6;' in UI_UTILS
     assert 'constexpr int kHomePinColumn = 7;' in UI_UTILS
     assert 'setColumnCount(kHomeColumnCount)' in UI_UTILS
+
+
+def test_home_v2_screenshot_polish_is_enabled_from_the_ui_header():
+    assert '#include "workcell_home_polish_v2.hpp"' in UI_HEADER
+    assert 'Q_COREAPP_STARTUP_FUNCTION(workcellHomePolishV2Startup)' in POLISH
+    assert '--scene3d-smoke' in POLISH
+
+
+def test_home_v2_screenshot_polish_fixes_visible_dashboard_problems():
+    for token in [
+        'homeV2KpiBlocked',
+        'homeV2UnifiedFilterBar',
+        'homeV2InspectorPreview',
+        'homeV2InspectorReadiness',
+        'homeV2OpenButton',
+        'homeV2SimulateButton',
+        'setColumnHidden(kTaskColumn, true)',
+        'setColumnHidden(kLaunchColumn, true)',
+        'brand->hide()',
+        'bar->setVisible(stack->currentWidget() != dashboard)',
+        'nav->viewport()->setStyleSheet',
+    ]:
+        assert token in POLISH
+
+
+def test_home_v2_screenshot_polish_keeps_simulation_explicitly_fake_hardware():
+    assert 'Simulate · Fake Hardware' in POLISH
+    assert 'Real hardware remains locked' in POLISH
+    assert 'Open RViz Truth Preview' in POLISH

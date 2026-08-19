@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QAction>
+#include <QColor>
 #include <QWidget>
 #include <QLabel>
 #include <QPushButton>
@@ -34,7 +36,6 @@ enum class ButtonRole
   disabled_placeholder
 };
 
-
 QString workcellStudioStyleSheet();
 void applyWorkcellStudioTheme(QWidget * widget);
 void applyStatusBadgeStyle(QLabel * label, StatusType status);
@@ -45,3 +46,7 @@ void makeTextWidgetsWrap(QWidget * widget);
 void applyStatusLabelStyle(QLabel * label, StatusType status);
 void applyPrimarySecondaryButtonStyle(QWidget * widget);
 }  // namespace workcell_builder
+
+// Home-page screenshot polish is header-only so it can refine the existing dynamic
+// shell without touching Scene Builder, generation, simulation, or safety logic.
+#include "workcell_home_polish_v2.hpp"
