@@ -27,6 +27,43 @@ for _name in _EXPORTED_NAMES:
 
 _ORIGINAL_BUILD_WEB_SCENE = _impl.build_web_scene
 _ORIGINAL_MAIN = _impl.main
+_ORIGINAL_RESOLVE_LOCAL_MESH_URI = _impl._resolve_local_mesh_uri
+
+
+def _resolve_local_mesh_uri(uri: str, scene_dir: Path, repo_root: Path):
+    """Resolve mesh paths while tolerating the workspace ``src/scenes`` alias.
+
+    Workcell Studio's editable layout can legitimately reference repository
+    assets such as ``assets/environment/...``.  After a generate/simulate
+    refresh, an unsaved authoring-session item may carry the same asset as a
+    stale absolute path rooted below the workspace scene alias, for example::
+
+        <workspace>/src/scenes/ur5_2f_test/assets/environment/...
+
+    That absolute leaf does not exist because repository assets live at
+    ``<repo>/assets``.  Re-run the canonical resolver with the portable
+    ``assets/...`` suffix before declaring the authoring overlay invalid.  The
+    canonical resolver still enforces allowed roots and supported mesh types.
+    """
+    resolved = _ORIGINAL_RESOLVE_LOCAL_MESH_URI(uri, Path(scene_dir), Path(repo_root))
+    if resolved[0] is not None:
+        return resolved
+
+    raw = Path(str(uri))
+    if not raw.is_absolute():
+        return resolved
+
+    parts = raw.parts
+    asset_indexes = [index for index, part in enumerate(parts) if part == "assets"]
+    for index in reversed(asset_indexes):
+        portable = Path(*parts[index:]).as_posix()
+        recovered = _ORIGINAL_RESOLVE_LOCAL_MESH_URI(
+            portable, Path(scene_dir), Path(repo_root)
+        )
+        if recovered[0] is not None:
+            return recovered
+
+    return resolved
 
 
 def _sync_impl_globals() -> None:
