@@ -1,30 +1,37 @@
 #pragma once
 
-// Home v4 is a surgical runtime polish pass over v3.  It fixes the two issues
-// exposed by workstation screenshot acceptance: transparent custom table cells
-// were painting on top of the original QTableWidgetItem text, and the Home
-// preview attempted to grab a hidden Product View widget instead of owning a
-// visible read-only viewport.
+// Home v4 structural repair.
+//
+// The earlier Home polish used transparent QWidget cell overlays on top of a
+// QTableWidget.  That was visually fragile: model refreshes could remove some
+// overlays while leaving the backing QTableWidgetItem text transparent, which
+// produced either double-painted rows or apparently missing columns.  This pass
+// keeps the canonical table model untouched and renders the presentation with a
+// single QStyledItemDelegate instead.  The Home preview is also deterministic:
+// it prefers an existing scene smoke/acceptance image, then a genuinely usable
+// canonical live preview, and otherwise shows an explicit "not generated" state
+// rather than an endless PREVIEW PREPARING placeholder.
 #include "workcell_home_polish_v3.hpp"
-#include "gui/mainwindow.h"
-#include "gui/scene3d_viewport_widget.h"
 
 #include <QAbstractItemModel>
 #include <QApplication>
-#include <QBrush>
+#include <QDateTime>
+#include <QDir>
 #include <QEvent>
 #include <QFileInfo>
 #include <QHeaderView>
 #include <QLabel>
 #include <QMainWindow>
 #include <QMetaObject>
+#include <QPainter>
+#include <QPixmap>
 #include <QSettings>
-#include <QSizePolicy>
+#include <QStyledItemDelegate>
+#include <QStyleOptionViewItem>
 #include <QTableWidget>
 #include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
-#include <QVBoxLayout>
 
 namespace workcell_builder
 {
@@ -63,45 +70,138 @@ inline QString friendlyTool(QString tool)
   return tool;
 }
 
-inline void hideBackingItemText(QTableWidget * table)
+inline QString displayStatus(const QString & raw)
 {
-  if (!table) return;
-  // v3 deliberately keeps the canonical QTableWidgetItems because filtering,
-  // sorting and MainWindow row identity read their text/UserRole data.  The
-  // custom presentation widgets are transparent, so the item text must be made
-  // paint-transparent instead of cleared.
-  const int presentation_columns[] = {
-    kSceneColumn, kStatusColumn, kRobotColumn, kToolColumn, kUpdatedColumn};
-  for (int row = 0; row < table->rowCount(); ++row) {
-    for (const int column : presentation_columns) {
-      if (QTableWidgetItem * item = table->item(row, column)) {
-        item->setForeground(QBrush(Qt::transparent));
-        item->setBackground(QBrush(Qt::transparent));
-      }
-    }
+  const QString status = home_polish_v2::cleanStatusText(raw).trimmed().toUpper();
+  if (status.contains(QStringLiteral("READY"))) return QStringLiteral("Ready");
+  if (status.contains(QStringLiteral("WARN")) || status.contains(QStringLiteral("ATTENTION"))) {
+    return QStringLiteral("Needs attention");
   }
+  return QStringLiteral("Blocked");
 }
 
-inline void repairPresentationLabels(QTableWidget * table)
+inline QString rowSceneId(const QModelIndex & index)
+{
+  const QModelIndex scene_index = index.sibling(index.row(), kSceneColumn);
+  const QString tooltip = scene_index.data(Qt::ToolTipRole).toString().trimmed();
+  return tooltip.isEmpty() ? scene_index.data(Qt::DisplayRole).toString().trimmed() : tooltip;
+}
+
+class HomeTableDelegate final : public QStyledItemDelegate
+{
+public:
+  explicit HomeTableDelegate(QObject * parent = nullptr) : QStyledItemDelegate(parent) {}
+
+  QSize sizeHint(const QStyleOptionViewItem & option, const QModelIndex & index) const override
+  {
+    QSize size = QStyledItemDelegate::sizeHint(option, index);
+    size.setHeight(58);
+    return size;
+  }
+
+  void paint(QPainter * painter, const QStyleOptionViewItem & option, const QModelIndex & index) const override
+  {
+    if (!painter || !index.isValid()) return;
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing, true);
+
+    const bool selected = option.state.testFlag(QStyle::State_Selected);
+    const bool hovered = option.state.testFlag(QStyle::State_MouseOver);
+    const QColor background = selected
+      ? QColor(QStringLiteral("#EAF3FC"))
+      : (hovered ? QColor(QStringLiteral("#F7FAFD")) : QColor(QStringLiteral("#FFFFFF")));
+    painter->fillRect(option.rect, background);
+    painter->setPen(QColor(QStringLiteral("#EDF2F7")));
+    painter->drawLine(option.rect.bottomLeft(), option.rect.bottomRight());
+
+    QRect content = option.rect.adjusted(12, 0, -10, 0);
+    const QString raw = index.data(Qt::DisplayRole).toString().trimmed();
+    const int column = index.column();
+
+    if (column == kSceneColumn) {
+      const QString scene_id = rowSceneId(index);
+      const QString title = home_polish_v3::friendlySceneName(scene_id);
+      QFont title_font = option.font;
+      title_font.setBold(true);
+      title_font.setPointSizeF(qMax(9.0, title_font.pointSizeF()));
+      painter->setFont(title_font);
+      painter->setPen(QColor(QStringLiteral("#143A5B")));
+      const QFontMetrics title_metrics(title_font);
+      painter->drawText(
+        QRect(content.left(), content.top() + 8, content.width(), 21),
+        Qt::AlignLeft | Qt::AlignVCenter,
+        title_metrics.elidedText(title, Qt::ElideRight, content.width()));
+
+      QFont id_font = option.font;
+      id_font.setPointSizeF(qMax(8.0, option.font.pointSizeF() - 1.0));
+      painter->setFont(id_font);
+      painter->setPen(QColor(QStringLiteral("#7890A6")));
+      const QFontMetrics id_metrics(id_font);
+      painter->drawText(
+        QRect(content.left(), content.top() + 31, content.width(), 18),
+        Qt::AlignLeft | Qt::AlignVCenter,
+        id_metrics.elidedText(scene_id, Qt::ElideRight, content.width()));
+    } else if (column == kStatusColumn) {
+      const QString display = displayStatus(raw);
+      QColor fill(QStringLiteral("#FDECEC"));
+      QColor text(QStringLiteral("#B42318"));
+      if (display == QStringLiteral("Ready")) {
+        fill = QColor(QStringLiteral("#EAF7F0"));
+        text = QColor(QStringLiteral("#147A47"));
+      } else if (display == QStringLiteral("Needs attention")) {
+        fill = QColor(QStringLiteral("#FFF4E5"));
+        text = QColor(QStringLiteral("#B65A00"));
+      }
+      const int pill_width = qMin(content.width(), display == QStringLiteral("Needs attention") ? 124 : 82);
+      const QRect pill(content.left(), option.rect.center().y() - 13, pill_width, 26);
+      painter->setPen(Qt::NoPen);
+      painter->setBrush(fill);
+      painter->drawRoundedRect(pill, 13, 13);
+      QFont font = option.font;
+      font.setBold(true);
+      painter->setFont(font);
+      painter->setPen(text);
+      painter->drawText(pill.adjusted(8, 0, -8, 0), Qt::AlignCenter, display);
+    } else if (column == kRobotColumn) {
+      const QString display = home_polish_v3::displayRobot(raw);
+      painter->setPen(raw.compare(QStringLiteral("unknown"), Qt::CaseInsensitive) == 0
+        ? QColor(QStringLiteral("#94A3B8")) : QColor(QStringLiteral("#2D4358")));
+      painter->drawText(content, Qt::AlignLeft | Qt::AlignVCenter, display);
+    } else if (column == kToolColumn) {
+      const QString display = friendlyTool(raw);
+      painter->setPen(raw.compare(QStringLiteral("unknown"), Qt::CaseInsensitive) == 0
+        ? QColor(QStringLiteral("#94A3B8")) : QColor(QStringLiteral("#2D4358")));
+      const QFontMetrics metrics(option.font);
+      painter->drawText(content, Qt::AlignLeft | Qt::AlignVCenter,
+        metrics.elidedText(display, Qt::ElideRight, content.width()));
+    } else if (column == kUpdatedColumn) {
+      painter->setPen(QColor(QStringLiteral("#536B82")));
+      painter->drawText(content, Qt::AlignLeft | Qt::AlignVCenter,
+        home_polish_v3::relativeUpdatedText(raw));
+    } else if (column == kPinColumn) {
+      const QString scene = rowSceneId(index);
+      const bool pinned = home_polish_v3::pinnedScenes().contains(scene);
+      QFont font = option.font;
+      font.setPointSizeF(qMax(12.0, option.font.pointSizeF() + 2.0));
+      painter->setFont(font);
+      painter->setPen(pinned ? QColor(QStringLiteral("#155B91")) : QColor(QStringLiteral("#A8B7C6")));
+      painter->drawText(option.rect, Qt::AlignCenter, pinned ? QStringLiteral("★") : QStringLiteral("☆"));
+    } else {
+      QStyledItemDelegate::paint(painter, option, index);
+    }
+
+    painter->restore();
+  }
+};
+
+inline void deleteLegacyCellWidgets(QTableWidget * table)
 {
   if (!table) return;
   for (int row = 0; row < table->rowCount(); ++row) {
-    if (QWidget * robot_cell = table->cellWidget(row, kRobotColumn)) {
-      if (QLabel * label = robot_cell->findChild<QLabel *>(QStringLiteral("homeV3ValueLabel"))) {
-        const QString raw = table->item(row, kRobotColumn) ? table->item(row, kRobotColumn)->text() : QString();
-        label->setText(home_polish_v3::displayRobot(raw));
-      }
-    }
-    if (QWidget * tool_cell = table->cellWidget(row, kToolColumn)) {
-      if (QLabel * label = tool_cell->findChild<QLabel *>(QStringLiteral("homeV3ValueLabel"))) {
-        const QString raw = table->item(row, kToolColumn) ? table->item(row, kToolColumn)->text() : QString();
-        label->setText(friendlyTool(raw));
-      }
-    }
-    if (QWidget * updated_cell = table->cellWidget(row, kUpdatedColumn)) {
-      if (QLabel * label = updated_cell->findChild<QLabel *>(QStringLiteral("homeV3ValueLabel"))) {
-        const QString raw = table->item(row, kUpdatedColumn) ? table->item(row, kUpdatedColumn)->text() : QString();
-        label->setText(home_polish_v3::relativeUpdatedText(raw));
+    for (const int column : {kSceneColumn, kStatusColumn, kRobotColumn, kToolColumn, kUpdatedColumn}) {
+      if (QWidget * widget = table->cellWidget(row, column)) {
+        table->removeCellWidget(row, column);
+        widget->deleteLater();
       }
     }
   }
@@ -112,147 +212,133 @@ inline void repairTable(QMainWindow * window)
   auto * table = window ? window->findChild<QTableWidget *>(QStringLiteral("studioHomeSceneTable")) : nullptr;
   if (!table) return;
 
+  deleteLegacyCellWidgets(table);
+  if (!table->property("homeV4DelegateInstalled").toBool()) {
+    table->setItemDelegate(new HomeTableDelegate(table));
+    table->setProperty("homeV4DelegateInstalled", true);
+  }
+
+  table->setShowGrid(false);
   table->setAlternatingRowColors(false);
   table->setWordWrap(false);
+  table->setMouseTracking(true);
   table->setTextElideMode(Qt::ElideRight);
+  table->setSelectionBehavior(QAbstractItemView::SelectRows);
+  table->setSelectionMode(QAbstractItemView::SingleSelection);
+  table->setEditTriggers(QAbstractItemView::NoEditTriggers);
   table->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-  table->verticalHeader()->setDefaultSectionSize(62);
-  table->horizontalHeader()->setMinimumHeight(40);
+  table->verticalHeader()->hide();
+  table->verticalHeader()->setDefaultSectionSize(58);
+  table->horizontalHeader()->setMinimumHeight(42);
+  table->horizontalHeader()->setStretchLastSection(false);
+
+  table->setColumnHidden(kSceneColumn, false);
+  table->setColumnHidden(kStatusColumn, false);
+  table->setColumnHidden(kRobotColumn, false);
+  table->setColumnHidden(kToolColumn, false);
+  table->setColumnHidden(kTaskColumn, true);
+  table->setColumnHidden(kLaunchColumn, true);
+  table->setColumnHidden(kUpdatedColumn, false);
+  table->setColumnHidden(kPinColumn, false);
+
   table->horizontalHeader()->setSectionResizeMode(kSceneColumn, QHeaderView::Stretch);
   table->horizontalHeader()->setSectionResizeMode(kStatusColumn, QHeaderView::Fixed);
   table->horizontalHeader()->setSectionResizeMode(kRobotColumn, QHeaderView::Fixed);
   table->horizontalHeader()->setSectionResizeMode(kToolColumn, QHeaderView::Fixed);
   table->horizontalHeader()->setSectionResizeMode(kUpdatedColumn, QHeaderView::Fixed);
   table->horizontalHeader()->setSectionResizeMode(kPinColumn, QHeaderView::Fixed);
-  table->setColumnWidth(kStatusColumn, 188);
-  table->setColumnWidth(kRobotColumn, 92);
-  table->setColumnWidth(kToolColumn, 158);
-  table->setColumnWidth(kUpdatedColumn, 112);
-  table->setColumnWidth(kPinColumn, 74);
+  table->setColumnWidth(kStatusColumn, 150);
+  table->setColumnWidth(kRobotColumn, 88);
+  table->setColumnWidth(kToolColumn, 156);
+  table->setColumnWidth(kUpdatedColumn, 104);
+  table->setColumnWidth(kPinColumn, 62);
   table->setHorizontalHeaderLabels({QStringLiteral("Workcell"), QStringLiteral("Status"), QStringLiteral("Robot"),
     QStringLiteral("Tool / Gripper"), QStringLiteral("Task"), QStringLiteral("Launch"),
     QStringLiteral("Updated"), QStringLiteral("Pinned")});
-
-  repairPresentationLabels(table);
-  hideBackingItemText(table);
+  table->viewport()->update();
 }
 
 inline void repairShell(QMainWindow * window)
 {
   if (!window) return;
-  // The sidebar is the product identity.  Keep the top bar for the persistent
-  // safety contract only, not a third copy of the product name or generic Ready.
-  for (QLabel * brand : window->findChildren<QLabel *>(QStringLiteral("studioTopBrand"))) {
-    if (brand) brand->hide();
-  }
-  for (QLabel * status : window->findChildren<QLabel *>(QStringLiteral("studioTopStatusChip"))) {
-    if (status) status->hide();
-  }
   if (QToolBar * top_bar = window->findChild<QToolBar *>(QStringLiteral("studioTopBar"))) {
-    top_bar->setMinimumHeight(50);
-    top_bar->setMaximumHeight(50);
+    // Do not depend on object names here.  The screenshot regression proved the
+    // top brand/status can be rebuilt by earlier shell polish under different
+    // object identities.  Hide only duplicate/generic labels that live inside
+    // the top bar; the sidebar brand is outside this subtree and remains intact.
+    for (QLabel * label : top_bar->findChildren<QLabel *>()) {
+      if (!label) continue;
+      const QString text = label->text().simplified();
+      if (text.compare(QStringLiteral("WORKCELL STUDIO"), Qt::CaseInsensitive) == 0 ||
+          text.compare(QStringLiteral("Ready"), Qt::CaseInsensitive) == 0 ||
+          text.compare(QStringLiteral("Studio ready"), Qt::CaseInsensitive) == 0) {
+        label->hide();
+      }
+    }
+    top_bar->setMinimumHeight(48);
+    top_bar->setMaximumHeight(48);
   }
 
-  // Home itself is the workcell library, so use one vocabulary everywhere.
   if (QWidget * dashboard = window->findChild<QWidget *>(QStringLiteral("workcellStudioDashboardPage"))) {
     for (QLabel * label : dashboard->findChildren<QLabel *>()) {
       if (label && label->text().trimmed() == QStringLiteral("Scenes")) label->setText(QStringLiteral("Workcells"));
     }
   }
-
-  // The right inspector no longer repeats actions already available through
-  // navigation or row interaction.
   if (QToolButton * more = window->findChild<QToolButton *>(QStringLiteral("homeV3InspectorMore"))) more->hide();
   if (QToolButton * details = window->findChild<QToolButton *>(QStringLiteral("homeV3ViewDetails"))) details->hide();
 }
 
-inline Scene3DViewportWidget * ensureHomeViewport(QMainWindow * window)
+inline QStringList sceneRootCandidates(QMainWindow * window)
 {
-  if (!window) return nullptr;
-  if (auto * existing = window->findChild<Scene3DViewportWidget *>(QStringLiteral("homeV4InspectorViewport"))) {
-    return existing;
+  QStringList roots;
+  const auto add_root = [&roots](const QString & root) {
+    const QString cleaned = QDir::cleanPath(root.trimmed());
+    if (!cleaned.isEmpty() && QDir(cleaned).exists() && !roots.contains(cleaned)) roots.append(cleaned);
+  };
+
+  add_root(home_polish_v3::sceneRoot(window));
+
+  QSettings explicit_settings(QStringLiteral("easy_manipulation_deployment"), QStringLiteral("workcell_builder"));
+  const QString workspace = explicit_settings.value(QStringLiteral("startup/last_workspace")).toString().trimmed();
+  if (!workspace.isEmpty()) {
+    add_root(QDir(workspace).filePath(QStringLiteral("src/easy_manipulation_deployment/scenes")));
+    add_root(QDir(workspace).filePath(QStringLiteral("src/Easy_Manipulator_Improved/scenes")));
+    add_root(QDir(workspace).filePath(QStringLiteral("src/scenes")));
   }
 
-  auto * placeholder = window->findChild<QLabel *>(QStringLiteral("homeV3InspectorPreview"));
-  if (!placeholder || !placeholder->parentWidget()) return nullptr;
-  auto * layout = qobject_cast<QVBoxLayout *>(placeholder->parentWidget()->layout());
-  if (!layout) return nullptr;
-
-  auto * viewport = new Scene3DViewportWidget(placeholder->parentWidget());
-  viewport->setObjectName(QStringLiteral("homeV4InspectorViewport"));
-  viewport->setMinimumHeight(218);
-  viewport->setMaximumHeight(242);
-  viewport->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-  viewport->label_mode = ScenePreviewWidget::LabelMode::Off;
-  viewport->mesh_preview_mode = ScenePreviewWidget::MeshPreviewMode::Auto;
-  viewport->show_warnings = false;
-  viewport->show_safety = false;
-  viewport->show_pick_place = false;
-  viewport->show_reachability_heatmap = false;
-  viewport->show_collision_warnings = false;
-  viewport->show_work_envelope = false;
-  viewport->show_warning_labels = false;
-  viewport->show_task_route = false;
-  viewport->show_approach_retreat = false;
-  viewport->show_camera_fov = false;
-  viewport->show_pick_coverage = false;
-  viewport->show_epd_detections = false;
-  viewport->show_detection_labels = false;
-  viewport->debug_overlays_mode = false;
-  viewport->diagnostic_transparency_mode = false;
-  viewport->gizmo_mode = Scene3DViewportWidget::GizmoMode::Select;
-  viewport->setToolTip(QStringLiteral("Read-only Home preview. Open Product View for the full interactive scene."));
-
-  const int index = layout->indexOf(placeholder);
-  layout->insertWidget(index >= 0 ? index : 4, viewport);
-  viewport->hide();
-  return viewport;
+  // Launching `workcell_builder` from the workspace root is common during local
+  // development.  These candidates keep Home preview discovery working even if
+  // the startup settings were never persisted on this machine.
+  const QString cwd = QDir::currentPath();
+  add_root(QDir(cwd).filePath(QStringLiteral("src/easy_manipulation_deployment/scenes")));
+  add_root(QDir(cwd).filePath(QStringLiteral("scenes")));
+  return roots;
 }
 
-inline bool contextMatchesScene(const ScenePreviewWidget::PreviewContext & context, const QString & scene)
+inline QString reliableCachedPreviewPath(QMainWindow * window, const QString & scene)
 {
-  if (scene.isEmpty()) return false;
-  if (context.scene_id.trimmed().compare(scene, Qt::CaseInsensitive) == 0) return true;
-  if (!context.absolute_scene_dir.trimmed().isEmpty() &&
-      QFileInfo(context.absolute_scene_dir).fileName().compare(scene, Qt::CaseInsensitive) == 0) return true;
-  return false;
-}
+  if (scene.trimmed().isEmpty()) return QString();
+  const QStringList relative_candidates = {
+    QStringLiteral("smoke/scene3d_gui_smoke.png"),
+    QStringLiteral("acceptance/scene3d_gui_smoke.png"),
+    QStringLiteral("smoke/scene3d_smoke.png"),
+    QStringLiteral("acceptance/scene3d_smoke.png"),
+    QStringLiteral("preview/workcell_studio_canvas_snapshot.png"),
+    QStringLiteral("preview/scene3d_preview.png"),
+    QStringLiteral("preview/static_preview.png"),
+    QStringLiteral("preview_launch/scene3d_preview.png"),
+    QStringLiteral("preview_launch/product_view.png"),
+    QStringLiteral("generated/scene3d_preview.png")};
 
-inline bool loadNativeHomePreview(QMainWindow * window, const QString & scene)
-{
-  if (!window || scene.isEmpty()) return false;
-  auto * home_viewport = ensureHomeViewport(window);
-  auto * placeholder = window->findChild<QLabel *>(QStringLiteral("homeV3InspectorPreview"));
-  if (!home_viewport || !placeholder) return false;
-
-  auto * main_window = qobject_cast<MainWindow *>(window);
-  ScenePreviewWidget * source_preview = main_window
-    ? main_window->active_scene_preview_widget()
-    : window->findChild<ScenePreviewWidget *>(QStringLiteral("scenePreviewWidget"));
-  if (!source_preview || !contextMatchesScene(source_preview->preview_context(), scene)) return false;
-
-  auto * source_viewport = source_preview->findChild<Scene3DViewportWidget *>(QStringLiteral("scene3dViewportWidget"));
-  if (!source_viewport || source_viewport->items.isEmpty()) return false;
-
-  home_viewport->scene_name = scene;
-  home_viewport->selected_id.clear();
-  home_viewport->label_mode = ScenePreviewWidget::LabelMode::Off;
-  home_viewport->mesh_preview_mode = ScenePreviewWidget::MeshPreviewMode::Auto;
-  home_viewport->ingest_preview_items(source_viewport->items);
-  placeholder->hide();
-  home_viewport->show();
-  home_viewport->raise();
-
-  QTimer::singleShot(0, home_viewport, [home_viewport]() {
-    home_viewport->set_isometric_view();
-    home_viewport->fit_product_view();
-    home_viewport->update();
-  });
-  QTimer::singleShot(180, home_viewport, [home_viewport]() {
-    home_viewport->fit_product_view();
-    home_viewport->update();
-  });
-  return true;
+  for (const QString & root : sceneRootCandidates(window)) {
+    const QDir scene_dir(QDir(root).filePath(scene));
+    if (!scene_dir.exists()) continue;
+    for (const QString & relative : relative_candidates) {
+      const QString candidate = scene_dir.filePath(relative);
+      if (QFileInfo::exists(candidate)) return candidate;
+    }
+  }
+  return QString();
 }
 
 inline QString selectedScene(QMainWindow * window)
@@ -262,45 +348,62 @@ inline QString selectedScene(QMainWindow * window)
   return sceneNameAt(table, table->currentRow());
 }
 
+inline void repairInspectorText(QMainWindow * window)
+{
+  auto * table = window ? window->findChild<QTableWidget *>(QStringLiteral("studioHomeSceneTable")) : nullptr;
+  if (!table || table->currentRow() < 0 || table->currentRow() >= table->rowCount()) return;
+  const int row = table->currentRow();
+  const QString tool_raw = table->item(row, kToolColumn) ? table->item(row, kToolColumn)->text() : QString();
+  if (QLabel * tool = window->findChild<QLabel *>(QStringLiteral("homeV3MetaTool"))) {
+    tool->setText(friendlyTool(tool_raw));
+  }
+}
+
+inline void refreshHomePreview(QMainWindow * window, const QString & requested_scene = QString())
+{
+  if (!window) return;
+  auto * preview = window->findChild<QLabel *>(QStringLiteral("homeV3InspectorPreview"));
+  if (!preview) return;
+  const QString scene = requested_scene.trimmed().isEmpty() ? selectedScene(window) : requested_scene.trimmed();
+
+  preview->setPixmap(QPixmap());
+  const QSize target(qMax(300, preview->width() - 4), qMax(204, preview->height() - 4));
+  const QString cached_path = reliableCachedPreviewPath(window, scene);
+  const QPixmap cached(cached_path);
+  if (!cached.isNull()) {
+    preview->setText(QString());
+    preview->setPixmap(cached.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    preview->setToolTip(QStringLiteral("Read-only scene preview: %1").arg(cached_path));
+    return;
+  }
+
+  // If Product View is already loaded for this exact scene, use it.  We never
+  // force-load hidden 3D UI from Home; that was the source of the previous
+  // PREVIEW PREPARING dead state.
+  const QPixmap live = home_polish_v3::liveCanonicalPreview(window, scene, target);
+  if (!live.isNull()) {
+    preview->setText(QString());
+    preview->setPixmap(live);
+    preview->setToolTip(QStringLiteral("Live read-only preview from Product View."));
+    return;
+  }
+
+  preview->setText(scene.isEmpty()
+    ? QStringLiteral("SELECT A WORKCELL\nPreview and readiness appear here")
+    : QStringLiteral("NO PREVIEW GENERATED\nOpen Product View to render this workcell"));
+  preview->setToolTip(QStringLiteral("No smoke, acceptance, preview, or active Product View image is available for this workcell."));
+}
+
 inline void scheduleHomePreview(QMainWindow * window, const QString & scene)
 {
   if (!window) return;
   const qulonglong generation = window->property("homeV4PreviewGeneration").toULongLong() + 1;
   window->setProperty("homeV4PreviewGeneration", generation);
-
-  if (scene.isEmpty()) {
-    if (auto * viewport = ensureHomeViewport(window)) viewport->hide();
-    if (auto * placeholder = window->findChild<QLabel *>(QStringLiteral("homeV3InspectorPreview"))) {
-      placeholder->setPixmap(QPixmap());
-      placeholder->setText(QStringLiteral("SELECT A WORKCELL\nPreview and readiness appear here"));
-      placeholder->show();
-    }
-    return;
-  }
-
-  if (auto * main_window = qobject_cast<MainWindow *>(window)) {
-    // Selecting on Home updates MainWindow's canonical selected-scene state;
-    // this refresh populates the same ScenePreviewWidget payload used by the
-    // Scene Builder/Product View, without opening another page.
-    main_window->refresh_scene_builder_state_from_active_scene();
-  }
-
-  if (auto * viewport = ensureHomeViewport(window)) viewport->hide();
-  if (auto * placeholder = window->findChild<QLabel *>(QStringLiteral("homeV3InspectorPreview"))) {
-    placeholder->setPixmap(QPixmap());
-    placeholder->setText(QStringLiteral("LOADING 3D PREVIEW…"));
-    placeholder->show();
-  }
-
-  for (const int delay : {40, 180, 450, 900, 1700, 2800}) {
-    QTimer::singleShot(delay, window, [window, scene, generation, delay]() {
+  for (const int delay : {0, 120, 600, 1600, 3300}) {
+    QTimer::singleShot(delay, window, [window, scene, generation]() {
       if (window->property("homeV4PreviewGeneration").toULongLong() != generation) return;
-      if (loadNativeHomePreview(window, scene)) return;
-      if (delay == 2800) {
-        // Keep v3's canonical/cached snapshot path as the final fallback, but
-        // do not replace a successfully loaded visible native viewport.
-        home_polish_v3::refreshInspectorPreview(window, scene);
-      }
+      repairInspectorText(window);
+      refreshHomePreview(window, scene);
     });
   }
 }
@@ -344,14 +447,23 @@ inline void ensureUsefulSelection(QMainWindow * window)
 
   table->setCurrentCell(row, kSceneColumn);
   table->selectRow(row);
-  settings.setValue(QStringLiteral("studio_home/last_selected_scene"), sceneNameAt(table, row));
-
-  // MainWindow owns canonical scene selection and is connected to cellClicked.
-  // Invoke that signal once for programmatic startup selection so Home and the
-  // hidden Scene Builder preview payload stay on the same selected scene.
+  const QString scene = sceneNameAt(table, row);
+  settings.setValue(QStringLiteral("studio_home/last_selected_scene"), scene);
   QMetaObject::invokeMethod(table, "cellClicked", Qt::DirectConnection,
     Q_ARG(int, row), Q_ARG(int, kSceneColumn));
-  scheduleHomePreview(window, sceneNameAt(table, row));
+  scheduleHomePreview(window, scene);
+}
+
+inline void togglePinned(QTableWidget * table, int row)
+{
+  if (!table || row < 0 || row >= table->rowCount()) return;
+  const QString scene = sceneNameAt(table, row);
+  if (scene.isEmpty()) return;
+  QStringList pinned = home_polish_v3::pinnedScenes();
+  if (pinned.contains(scene)) pinned.removeAll(scene);
+  else pinned.prepend(scene);
+  home_polish_v3::savePinnedScenes(pinned);
+  table->viewport()->update();
 }
 
 inline void connectRuntimeRepairHooks(QMainWindow * window)
@@ -361,18 +473,32 @@ inline void connectRuntimeRepairHooks(QMainWindow * window)
   if (!table) return;
   window->setProperty("homeV4RepairHooksConnected", true);
 
-  QObject::connect(table, &QTableWidget::cellClicked, window, [window, table](int row, int) {
+  QObject::connect(table, &QTableWidget::cellClicked, window, [window, table](int row, int column) {
     if (row < 0 || row >= table->rowCount()) return;
     const QString scene = sceneNameAt(table, row);
+    if (column == kPinColumn) togglePinned(table, row);
     QSettings settings;
     settings.setValue(QStringLiteral("studio_home/last_selected_scene"), scene);
-    QTimer::singleShot(20, window, [window]() { repairTable(window); repairShell(window); });
+    for (const int delay : {20, 140}) {
+      QTimer::singleShot(delay, window, [window]() {
+        repairTable(window);
+        repairShell(window);
+        repairInspectorText(window);
+      });
+    }
     scheduleHomePreview(window, scene);
+  });
+
+  QObject::connect(table, &QTableWidget::itemSelectionChanged, window, [window]() {
+    QTimer::singleShot(40, window, [window]() {
+      repairInspectorText(window);
+      refreshHomePreview(window);
+    });
   });
 
   if (table->model()) {
     const auto repair_after_model_change = [window]() {
-      for (const int delay : {30, 120}) {
+      for (const int delay : {30, 150, 420}) {
         QTimer::singleShot(delay, window, [window]() {
           repairTable(window);
           repairShell(window);
@@ -388,19 +514,33 @@ inline void connectRuntimeRepairHooks(QMainWindow * window)
 
 inline void appendV4Style(QMainWindow * window)
 {
-  if (!window || window->property("homeV4StyleApplied").toBool()) return;
-  window->setProperty("homeV4StyleApplied", true);
+  if (!window || window->property("homeV4StyleApplied2").toBool()) return;
+  window->setProperty("homeV4StyleApplied2", true);
   window->setStyleSheet(window->styleSheet() + QStringLiteral(R"QSS(
-QWidget#homeV4InspectorViewport {
-  background:#121D28;
-  border:1px solid #243747;
+QTableWidget#studioHomeSceneTable {
+  background:#FFFFFF;
+  border:0;
+  outline:0;
+  selection-background-color:transparent;
+  selection-color:#143A5B;
+}
+QTableWidget#studioHomeSceneTable::item { padding:0px; border:0; }
+QHeaderView::section {
+  background:#F8FAFC;
+  color:#415A70;
+  border:0;
+  border-bottom:1px solid #DCE5EF;
+  padding:0 10px;
+  font-size:11px;
+  font-weight:800;
+}
+QLabel#homeV3InspectorPreview {
+  background:#111D28;
+  color:#D6E2ED;
+  border:1px solid #26394A;
   border-radius:8px;
-}
-QTableWidget#studioHomeSceneTable::item {
-  padding:0px;
-}
-QTableWidget#studioHomeSceneTable::item:selected {
-  background:#EAF2FB;
+  font-size:11px;
+  font-weight:700;
 }
 )QSS"));
 }
@@ -412,9 +552,10 @@ inline void applyFixes(QMainWindow * window)
   appendV4Style(window);
   repairShell(window);
   repairTable(window);
-  ensureHomeViewport(window);
   connectRuntimeRepairHooks(window);
   ensureUsefulSelection(window);
+  repairInspectorText(window);
+  refreshHomePreview(window);
 }
 
 class HomePolishV4Guard : public QObject
@@ -430,14 +571,18 @@ protected:
       return QObject::eventFilter(watched, event);
     }
     if (event->type() == QEvent::Show) {
-      // v2/v3 both install delayed polish passes.  v4 intentionally runs after
-      // those passes so screenshot acceptance cannot regress back to duplicate
-      // item painting or placeholder-only preview.
-      for (const int delay : {1480, 1900, 2600}) {
+      // v2/v3 still own the underlying data/model setup.  Run after their
+      // delayed passes and once more after v3's longest preview timer so this
+      // structural presentation remains the final visible state.
+      for (const int delay : {1480, 2100, 3400}) {
         QTimer::singleShot(delay, window, [window]() { applyFixes(window); });
       }
     } else if (event->type() == QEvent::Resize) {
-      QTimer::singleShot(0, window, [window]() { repairShell(window); repairTable(window); });
+      QTimer::singleShot(0, window, [window]() {
+        repairShell(window);
+        repairTable(window);
+        refreshHomePreview(window);
+      });
     }
     return QObject::eventFilter(watched, event);
   }
