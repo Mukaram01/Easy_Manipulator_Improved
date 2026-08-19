@@ -11,12 +11,18 @@
 // The WebEngine view is read-only and local-file backed. It does not create a
 // second authoring surface and it never launches ROS, MoveIt, or real hardware.
 
+#include <QApplication>
+#include <QBoxLayout>
+#include <QColor>
 #include <QDir>
 #include <QFileInfo>
 #include <QLabel>
 #include <QLayout>
 #include <QMainWindow>
+#include <QPixmap>
+#include <QPointer>
 #include <QProcess>
+#include <QSizePolicy>
 #include <QTableWidget>
 #include <QUrl>
 
