@@ -47,6 +47,6 @@ void applyStatusLabelStyle(QLabel * label, StatusType status);
 void applyPrimarySecondaryButtonStyle(QWidget * widget);
 }  // namespace workcell_builder
 
-// Home-page screenshot polish is header-only so it can refine the existing dynamic
-// shell without touching Scene Builder, generation, simulation, or safety logic.
-#include "workcell_home_polish_v2.hpp"
+// Home stays a scene/workcell library.  The v3 composition builds on the proven
+// v2 shell without touching Scene Builder, generation, simulation, or safety logic.
+#include "workcell_home_polish_v3.hpp"
