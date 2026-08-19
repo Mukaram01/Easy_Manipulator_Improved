@@ -1,7 +1,5 @@
 #pragma once
 
-#include <QAction>
-#include <QColor>
 #include <QWidget>
 #include <QLabel>
 #include <QPushButton>
@@ -36,6 +34,7 @@ enum class ButtonRole
   disabled_placeholder
 };
 
+
 QString workcellStudioStyleSheet();
 void applyWorkcellStudioTheme(QWidget * widget);
 void applyStatusBadgeStyle(QLabel * label, StatusType status);
@@ -46,7 +45,3 @@ void makeTextWidgetsWrap(QWidget * widget);
 void applyStatusLabelStyle(QLabel * label, StatusType status);
 void applyPrimarySecondaryButtonStyle(QWidget * widget);
 }  // namespace workcell_builder
-
-// Keep shared UI utilities link-safe for helper/test binaries.  The Home v3
-// composition depends on ScenePreviewWidget and is activated from a translation
-// unit that belongs only to the full workcell_builder executable.
