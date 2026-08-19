@@ -6,9 +6,6 @@ UI_HEADER = Path(
 HOME_V3 = Path(
     "workcell_builder/workcell_builder/include/workcell_home_polish_v3.hpp"
 ).read_text(encoding="utf-8")
-HOME_V4 = Path(
-    "workcell_builder/workcell_builder/include/workcell_home_polish_v4.hpp"
-).read_text(encoding="utf-8")
 MAINWINDOW = Path(
     "workcell_builder/workcell_builder/gui/mainwindow.cpp"
 ).read_text(encoding="utf-8")
@@ -17,9 +14,10 @@ STARTUP_DIALOG = Path(
 ).read_text(encoding="utf-8")
 
 
-def test_home_v3_remains_the_base_composition_under_active_v4_polish():
-    assert '#include "workcell_home_polish_v4.hpp"' in STARTUP_DIALOG
-    assert '#include "workcell_home_polish_v3.hpp"' in HOME_V4
+def test_home_v3_is_the_active_stable_startup_composition():
+    assert '#include "workcell_home_polish_v3.hpp"' in STARTUP_DIALOG
+    assert '#include "workcell_home_polish_v4.hpp"' not in STARTUP_DIALOG
+    assert '#include "workcell_home_polish_v5.hpp"' not in STARTUP_DIALOG
     assert '#include "workcell_home_polish_v3.hpp"' not in UI_HEADER
     assert "Keep shared UI utilities link-safe" in UI_HEADER
     for token in [

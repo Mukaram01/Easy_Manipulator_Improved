@@ -8,9 +8,10 @@ STARTUP = Path(
 ).read_text(encoding="utf-8")
 
 
-def test_v5_is_active_and_v4_crash_layer_is_not_bootstrapped():
-    assert '#include "workcell_home_polish_v5.hpp"' in STARTUP
+def test_v5_is_quarantined_from_startup_after_workstation_bus_error():
+    assert '#include "workcell_home_polish_v3.hpp"' in STARTUP
     assert '#include "workcell_home_polish_v4.hpp"' not in STARTUP
+    assert '#include "workcell_home_polish_v5.hpp"' not in STARTUP
     assert '#include "workcell_home_polish_v3.hpp"' in HOME_V5
 
 
