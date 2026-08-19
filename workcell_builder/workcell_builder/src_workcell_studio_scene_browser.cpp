@@ -30,6 +30,43 @@ fs::path canonical_or_absolute(const fs::path & p)
   return fs::absolute(p);
 }
 
+bool is_directory(const fs::path & p)
+{
+  boost::system::error_code ec;
+  return fs::exists(p, ec) && !ec && fs::is_directory(p, ec) && !ec;
+}
+
+fs::path normalize_workspace_root(const fs::path & input)
+{
+  const fs::path absolute = canonical_or_absolute(input);
+
+  const auto looks_like_workspace = [](const fs::path & root) {
+    return is_directory(root / "src" / "easy_manipulation_deployment" / "scenes");
+  };
+
+  if (looks_like_workspace(absolute)) return absolute;
+
+  // Some call sites historically handed discovery either <workspace>/src or
+  // the repository checkout itself.  Normalize both forms back to the workspace
+  // before generating candidate roots so a refresh cannot drift onto src/scenes.
+  if (absolute.filename() == "src" && looks_like_workspace(absolute.parent_path())) {
+    return absolute.parent_path();
+  }
+  if (absolute.filename() == "easy_manipulation_deployment" &&
+      absolute.parent_path().filename() == "src" &&
+      looks_like_workspace(absolute.parent_path().parent_path())) {
+    return absolute.parent_path().parent_path();
+  }
+
+  fs::path cursor = absolute;
+  for (int depth = 0; depth < 4 && !cursor.empty(); ++depth) {
+    if (looks_like_workspace(cursor)) return cursor;
+    if (cursor == cursor.parent_path()) break;
+    cursor = cursor.parent_path();
+  }
+  return absolute;
+}
+
 bool is_valid_scene_package(const WorkcellStudioSceneInfo & s)
 {
   return s.has_environment_yaml || s.has_scene_manifest_yaml ||
@@ -38,21 +75,28 @@ bool is_valid_scene_package(const WorkcellStudioSceneInfo & s)
 
 std::vector<fs::path> candidate_scene_roots(const fs::path & workspace_root)
 {
+  const fs::path normalized_workspace = normalize_workspace_root(workspace_root);
+  const fs::path canonical_repo_scenes =
+    normalized_workspace / "src" / "easy_manipulation_deployment" / "scenes";
+
+  // The repository scene tree is the authoring source of truth.  If it exists,
+  // do not allow the compatibility alias at <workspace>/src/scenes to become a
+  // competing root after Generate/Validate/Plan refreshes.
+  if (is_directory(canonical_repo_scenes)) {
+    return {canonical_or_absolute(canonical_repo_scenes)};
+  }
+
   std::vector<fs::path> roots;
-  roots.push_back(workspace_root / "src" / "easy_manipulation_deployment" / "scenes");
-  roots.push_back(workspace_root / "src" / "scenes");
-  boost::system::error_code ec;
-  const fs::path emd = workspace_root / "src" / "easy_manipulation_deployment" / "scenes";
-  const fs::path emd_canonical = fs::weakly_canonical(emd, ec);
-  if (!ec) roots.push_back(emd_canonical);
+  roots.push_back(normalized_workspace / "src" / "scenes");
   roots.push_back(fs::current_path() / "scenes");
-  roots.push_back(workspace_root / "scenes");
+  roots.push_back(normalized_workspace / "scenes");
   roots.push_back(fs::path(getenv("HOME") ? getenv("HOME") : "") / "scenes");
+
   std::set<std::string> seen;
   std::vector<fs::path> uniq;
   for (const auto & r : roots) {
-    std::string k = canonical_or_absolute(r).string();
-    if (seen.insert(k).second) uniq.push_back(r);
+    const fs::path canonical = canonical_or_absolute(r);
+    if (seen.insert(canonical.string()).second) uniq.push_back(canonical);
   }
   return uniq;
 }
@@ -68,7 +112,6 @@ std::string compute_status(const WorkcellStudioSceneInfo & s)
   if (!s.parse_warning.empty() || !s.has_task_recipe || !s.has_smoke_report_json) return "WARNINGS";
   return "BLOCKED";
 }
-
 
 std::string scalar_string(const YAML::Node & node)
 {
@@ -179,13 +222,14 @@ int find_scene_by_identity(
 WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const fs::path & workspace_root)
 {
   WorkcellStudioSceneBrowserResult out;
-  out.scene_root = workspace_root;
+  out.scene_root = normalize_workspace_root(workspace_root);
   const auto roots = candidate_scene_roots(workspace_root);
   out.searched_roots = roots;
 
   boost::system::error_code ec;
   std::set<std::string> discovered_scene_dirs;
-  for (const auto & scene_root : roots) {
+  for (const auto & candidate_root : roots) {
+    const fs::path scene_root = canonical_or_absolute(candidate_root);
     const bool exists = fs::exists(scene_root, ec) && !ec && fs::is_directory(scene_root, ec) && !ec;
     if (!exists) {
       ec.clear();
@@ -197,8 +241,8 @@ WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const fs::path 
     for (fs::directory_iterator it(scene_root, ec), end; it != end && !ec; it.increment(ec)) {
       if (!fs::is_directory(it->path(), ec) || ec) continue;
       WorkcellStudioSceneInfo s;
-      s.scene_dir = it->path();
-      s.canonical_scene_dir = canonical_scene_identity(s.scene_dir);
+      s.scene_dir = canonical_scene_identity(it->path());
+      s.canonical_scene_dir = s.scene_dir;
       const std::string scene_key = s.canonical_scene_dir.string();
       if (!discovered_scene_dirs.insert(scene_key).second) {
         continue;
