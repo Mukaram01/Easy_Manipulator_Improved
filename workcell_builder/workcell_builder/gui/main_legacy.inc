@@ -992,6 +992,17 @@ private:
       }
       root["screenshot_path"] = opts_.screenshot_path;
       root["screenshot_saved"] = screenshot_ok;
+      // Keep the renderer-only image for geometry diagnostics and capture the
+      // complete authoring workspace beside it for product/UI acceptance.
+      const QFileInfo screenshot_info(opts_.screenshot_path);
+      const QString workspace_screenshot_path = screenshot_info.dir().filePath(
+        screenshot_info.completeBaseName() + QStringLiteral(".workspace.png"));
+      const bool workspace_screenshot_saved = window_ &&
+        window_->grab().toImage().save(workspace_screenshot_path);
+      root["workspace_screenshot_path"] = workspace_screenshot_path;
+      root["workspace_screenshot_saved"] = workspace_screenshot_saved;
+      if (!workspace_screenshot_saved)
+        warnings_.append(QString("Failed to capture workspace screenshot to: %1").arg(workspace_screenshot_path));
       counters["paint_cycle_completed"] =
         counters.value("last_paint_completed").toBool(false) ||
         counters.value("rendered_count").toInt() > 0 ||
@@ -1168,6 +1179,7 @@ int main(int argc, char * argv[])
     const QString workspace = cli_value(args, "--workspace");
     const QString ros_distro = cli_value(args, "--ros-distro");
     MainWindow w(workspace, ros_distro);
+    w.resize(1440, 900);
     w.show();
     auto * runner = new Scene3DSmokeRunner(&a, &w, smoke_opts);
     runner->start();

@@ -127,7 +127,7 @@ inline void refresh_context_header(QMainWindow * window, QStackedWidget * pages,
 
 inline void install_contextual_navigation(QMainWindow * window)
 {
-  if (!window || QApplication::arguments().contains(QStringLiteral("--scene3d-smoke"))) return;
+  if (!window) return;
   if (window->property("studioContextNavigationInstalled").toBool()) return;
 
   QStackedWidget * pages = contextual_pages(window);

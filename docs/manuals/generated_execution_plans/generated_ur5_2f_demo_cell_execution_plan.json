@@ -21,8 +21,6 @@
   "matched_rule_id": "default_place",
   "moveit_link": "tool0",
   "notes": [
-    "PyYAML not available: using built-in fallback parser.",
-    "PyYAML not available: using built-in fallback parser.",
     "Dry-run resolved a matching rule, destination, and action."
   ],
   "object_attributes": {

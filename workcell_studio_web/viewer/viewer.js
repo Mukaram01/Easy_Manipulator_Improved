@@ -4922,6 +4922,24 @@ function resolveCanvasPickHit(hit) {
     const directlyHitPhysicalCamera = node === hit?.object && Boolean(nodeItem && isSensor(nodeItem) &&
       (node.userData?.fallback_sensor_body === true || (!/(?:edges?|frustum|helper|overlay|highlight|gizmo)/.test(nodeName) && (node.isMesh || node.type === 'Mesh'))));
     if (intrinsicallyExcludedPickNode(node)) {
+      // Primitive fallback edge/solid helpers are not selectable identities,
+      // but they are part of the visible body of their authored parent.  Walk
+      // through that helper to the canonical physical record instead of
+      // rejecting the only raycast hit under the pointer.  Frustums, gizmos,
+      // diagnostics, and unattached helpers remain legitimate rejections.
+      if (/(?:^|[_-])fallback_(?:edges?|solid)(?:$|[_-])/.test(nodeName)) {
+        for (let ownerNode = node.parent; ownerNode; ownerNode = ownerNode.parent) {
+          const ownerRegistered = state.pickIdentityByObject.get(ownerNode);
+          const ownerItem = ownerNode.userData?.item || ownerRegistered?.item;
+          const ownerRendered = ownerRegistered || (ownerItem?.id ? renderedById(ownerItem.id) : null);
+          if (ownerRendered && isPhysicalSemanticItem(ownerRendered.item) &&
+              isCanvasSelectableRendered(ownerRendered)) {
+            candidate = ownerRendered;
+            break;
+          }
+        }
+        if (candidate) break;
+      }
       rejectionReason = 'hit_node_intrinsically_excluded';
       return { renderIdentity: null, selectionOwner: null, selectionOwnerSource: '', editOwner: null, eligible: false, rejectionReason, exclusionNode: node, exclusionFlag: 'intrinsic_node_identity', registeredRecord, hit };
     }
@@ -4937,6 +4955,19 @@ function resolveCanvasPickHit(hit) {
     // let the caller evaluate the next raycast hit (for example the camera
     // body behind its frustum).
     if (passThroughPickNode(node) && !directlyHitPhysicalCamera) {
+      if (/(?:^|[_-])fallback_(?:edges?|solid)(?:$|[_-])/.test(nodeName)) {
+        for (let ownerNode = node.parent; ownerNode; ownerNode = ownerNode.parent) {
+          const ownerRegistered = state.pickIdentityByObject.get(ownerNode);
+          const ownerItem = ownerNode.userData?.item || ownerRegistered?.item;
+          const ownerRendered = ownerRegistered || (ownerItem?.id ? renderedById(ownerItem.id) : null);
+          if (ownerRendered && isPhysicalSemanticItem(ownerRendered.item) &&
+              isCanvasSelectableRendered(ownerRendered)) {
+            candidate = ownerRendered;
+            break;
+          }
+        }
+        if (candidate) break;
+      }
       rejectionReason = 'hit_node_non_selectable_metadata';
       const flag = node.userData?.diagnostic_only ? 'diagnostic_only' : (node.userData?.non_selectable ? 'non_selectable' : 'selectable=false');
       return { renderIdentity: null, selectionOwner: null, selectionOwnerSource: '', editOwner: null, eligible: false, rejectionReason, exclusionNode: node, exclusionFlag: flag, registeredRecord, hit };
@@ -6443,7 +6474,7 @@ function setEditorSnap(enabled, translationMeters, rotationDegrees) {
   refreshGizmoSnap();
   refreshPlacementSnap();
 }
-function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw) {
+function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, pushHistory = true) {
   const requested = renderedById(String(id || ''));
   const rendered = requested
     ? (canonicalEditOwnerRendered(requested) || requested)
@@ -6471,7 +6502,7 @@ function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw) {
   next.pose.rpy.z = values[5];
 
   const committed = markDirtyTransform(rendered, next, {
-    pushHistory: true,
+    pushHistory: Boolean(pushHistory),
     oldTransform: before,
     snapOptions: { translationAxes: [], rotationAxes: [] },
   });
@@ -6486,7 +6517,156 @@ function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw) {
   return editorState();
 }
 
+function setItemMetadataFromBridge(id, displayName, semanticRole) {
+  const requested = renderedById(String(id || ''));
+  const rendered = requested
+    ? (canonicalEditOwnerRendered(requested) || requested)
+    : null;
+  if (!rendered || !selectionIsEditable(rendered)) return editorState();
+  const name = String(displayName || '').trim();
+  const role = String(semanticRole || '').trim();
+  if (name) rendered.item.display_name = name;
+  if (role) rendered.item.role = role;
+  if (rendered.labelEl) rendered.labelEl.textContent = itemLabel(rendered.item);
+  populateObjectList();
+  updateLabels();
+  if (state.selected === rendered.item.id) populateInspector(rendered);
+  if (typeof pushEditorEvent === 'function') {
+    pushEditorEvent('metadata_preview_updated', {
+      itemId: rendered.item.id,
+      displayName: rendered.item.display_name || '',
+      semanticRole: rendered.item.role || ''
+    });
+  }
+  return editorState();
+}
+
+function normalizedLiveAuthoringItem(value) {
+  if (!value || typeof value !== 'object') return null;
+  const item = { ...value };
+  item.id = String(item.id || '').trim();
+  if (!item.id || renderedById(item.id)) return null;
+  item.display_name = String(item.display_name || item.id).trim() || item.id;
+  item.role = String(item.role || 'object').trim() || 'object';
+  item.category = String(item.category || item.type || 'object').trim() || 'object';
+  item.type = String(item.type || item.category).trim() || 'object';
+  item.source_layer = 'editable_layout';
+  item.editable = true;
+  item.locked = false;
+  item.selectable = true;
+  item.render_owner = 'editable_layout';
+  item.render_policy = 'primary';
+  return item;
+}
+
+function finishLiveAuthoringCrud(itemId, eventType) {
+  state.selectionIdentityIndex = null;
+  bindExportedPhysicalTransformOwnership();
+  populateObjectList();
+  updateLabels();
+  renderSceneSummary();
+  if (typeof pushEditorEvent === 'function') {
+    pushEditorEvent(eventType, { itemId, liveSession: true });
+  }
+  return editorState();
+}
+
+function addItemFromBridge(value) {
+  const item = normalizedLiveAuthoringItem(value);
+  if (!item || !state.three?.scene) return editorState();
+  const object3d = new THREE.Group();
+  object3d.name = `${item.id}_object_root`;
+  object3d.up.copy(THREE.Object3D.DEFAULT_UP);
+  const fallback = isSensor(item) ? makeSensorMarker(item) : makePrimitiveMesh(item);
+  if (fallback) {
+    fallback.name = `${item.id}_fallback`;
+    assignItemUserData(fallback, item);
+    object3d.add(fallback);
+  }
+  if (!applyPose(object3d, item)) return editorState();
+  assignItemUserData(object3d, item);
+  state.three.scene.add(object3d);
+  const rendered = {
+    item,
+    object3d,
+    fallback,
+    labelEl: createLabelElement(item),
+    originalTransform: transformOf(item),
+    authoredBaselineTransform: cloneTransform(transformOf(item)),
+  };
+  setRenderInfo(rendered, fallback ? 'primitive_fallback' : 'no_physical_dimensions',
+    displayMeshUri(item), 'live authored-session item');
+  state.objects.push(rendered);
+  tryLoadMesh(item, rendered, fallback);
+  selectObject(item.id);
+  return finishLiveAuthoringCrud(item.id, 'item_added');
+}
+
+function duplicateItemFromBridge(sourceId, value) {
+  const source = renderedById(String(sourceId || ''));
+  const item = normalizedLiveAuthoringItem(value);
+  if (!source || !item || !state.three?.scene || !selectionIsEditable(source)) {
+    return editorState();
+  }
+  const object3d = source.object3d.clone(true);
+  object3d.name = `${item.id}_object_root`;
+  if (!applyPose(object3d, item)) return editorState();
+  object3d.traverse?.(child => assignItemUserData(child, item));
+  state.three.scene.add(object3d);
+  const rendered = {
+    item,
+    object3d,
+    fallback: null,
+    labelEl: createLabelElement(item),
+    originalTransform: transformOf(item),
+    authoredBaselineTransform: cloneTransform(transformOf(item)),
+    renderInfo: { ...(source.renderInfo || {}), render_status: 'live_duplicate' },
+  };
+  state.objects.push(rendered);
+  selectObject(item.id);
+  return finishLiveAuthoringCrud(item.id, 'item_duplicated');
+}
+
+function removeItemFromBridge(id) {
+  const stableId = String(id || '').trim();
+  const rendered = renderedById(stableId);
+  if (!rendered || !selectionIsEditable(rendered)) return editorState();
+  if (state.selected === stableId) clearSelection();
+  detachTransformGizmo();
+  state.three.scene?.remove(rendered.object3d);
+  rendered.labelEl?.remove?.();
+  state.objects = state.objects.filter(record => record !== rendered);
+  state.pickRecords = state.pickRecords.filter(record => record !== rendered && record.item?.id !== stableId);
+  state.dirtyTransforms.delete(stableId);
+  state.undoStack = state.undoStack.filter(entry => !(entry.changes || [entry]).some(change => change.itemId === stableId));
+  state.redoStack = state.redoStack.filter(entry => !(entry.changes || [entry]).some(change => change.itemId === stableId));
+  updateDirtyState();
+  return finishLiveAuthoringCrud(stableId, 'item_removed');
+}
+
+function setVisibleItemIdsFromBridge(ids) {
+  const visible = new Set(Array.isArray(ids) ? ids.map(id => String(id || '').trim()).filter(Boolean) : []);
+  for (const rendered of [...state.objects, ...state.pickRecords]) {
+    const id = String(rendered?.item?.id || '').trim();
+    if (id && rendered?.object3d) rendered.object3d.visible = visible.has(id);
+    if (rendered?.labelEl) rendered.labelEl.hidden = !visible.has(id);
+  }
+  updateLabels();
+  renderSceneSummary();
+  return editorState();
+}
+
 window.__WORKCELL_EDITOR_API_V1__ = {
+  apiVersion: '1.1.0',
+  getCapabilities: () => Object.freeze({
+    schemaVersion: 'workcell_studio_live_authoring_capabilities/v1',
+    apiVersion: '1.1.0',
+    operations: Object.freeze([
+      'getState', 'selectItem', 'setItemMetadata', 'setItemTransform',
+      'addItem', 'duplicateItem', 'removeItem', 'setVisibleItemIds', 'undo', 'redo',
+      'getEditPatch', 'drainEvents',
+    ]),
+  }),
   getState: () => {
     const base = editorState();
     const selectedRendered = state.selected ? renderedById(state.selected) : null;
@@ -6504,6 +6684,16 @@ window.__WORKCELL_EDITOR_API_V1__ = {
   selectItem: id => { selectObject(String(id || '')); return editorState(); },
   setItemPose: (id, x, y, z, roll, pitch, yaw) =>
     setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw),
+  setItemTransform: (id, x, y, z, roll, pitch, yaw) =>
+    setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw),
+  syncItemTransform: (id, x, y, z, roll, pitch, yaw) =>
+    setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, false),
+  setItemMetadata: (id, displayName, semanticRole) =>
+    setItemMetadataFromBridge(id, displayName, semanticRole),
+  addItem: item => addItemFromBridge(item),
+  removeItem: id => removeItemFromBridge(id),
+  duplicateItem: (id, item) => duplicateItemFromBridge(id, item),
+  setVisibleItemIds: ids => setVisibleItemIdsFromBridge(ids),
   selectionDiagnostics: () => currentSelectionDiagnostics(),
   clearSelection: () => { clearSelection(); return editorState(); },
   setMode: mode => { setEditorMode(mode); return editorState(); },
@@ -6523,6 +6713,27 @@ window.__WORKCELL_EDITOR_API_V1__ = {
   getEditPatch: () => buildEditPatch(),
   drainEvents: () => { const events = state.editorEvents.slice(); state.editorEvents.length = 0; return events; },
 };
+
+const editorApiInstalledAt = new Date().toISOString();
+const editorRuntimeViewerBuild = new URLSearchParams(window.location.search).get('viewerBuild') || '';
+Object.defineProperty(window, '__WORKCELL_EDITOR_RUNTIME_V1__', {
+  configurable: false,
+  enumerable: false,
+  writable: false,
+  value: Object.freeze({
+    schemaVersion: 'workcell_studio_editor_runtime/v1',
+    buildId: 'workcell-editor-api-1.1.0-20260820',
+    viewerBuild: editorRuntimeViewerBuild,
+    apiVersion: window.__WORKCELL_EDITOR_API_V1__.apiVersion,
+    installedAt: editorApiInstalledAt,
+    locationHref: String(window.location.href || ''),
+  }),
+});
+if (typeof window.CustomEvent === 'function' && typeof window.dispatchEvent === 'function') {
+  window.dispatchEvent(new window.CustomEvent('workcell:editor-api-ready', {
+    detail: window.__WORKCELL_EDITOR_RUNTIME_V1__,
+  }));
+}
 
 el.file.addEventListener('change', event => {
   const file = event.target.files?.[0];

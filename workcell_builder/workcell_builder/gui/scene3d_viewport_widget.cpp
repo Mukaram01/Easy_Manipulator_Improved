@@ -2105,12 +2105,15 @@ void Scene3DViewportWidget::fit_product_view()
   const double product_radius = qMax(0.25, 0.5 * qSqrt(product_ext.x() * product_ext.x() + product_ext.y() * product_ext.y() + product_ext.z() * product_ext.z()));
   scene_radius_ = product_radius;
   const double base_fit_distance = product_radius / qTan(fov * 0.5);
-  const double fit_distance = qMax(qMax(base_fit_distance * 2.4, product_radius * 5.0), 4.0);
+  // Studio framing target: physical workcell occupies roughly 70% of the
+  // viewport. The previous 5x-radius / 4 m floor made compact cells read as a
+  // tiny model floating in an empty grid.
+  const double fit_distance = qMax(qMax(base_fit_distance * 1.30, product_radius * 2.80), 1.80);
   distance_ = qBound(min_distance_, fit_distance, max_distance_);
   last_camera_fit_bounds_min_ = bmin;
   last_camera_fit_bounds_max_ = bmax;
   last_camera_fit_bounds_span_ = product_ext;
-  last_camera_fit_margin_ = QStringLiteral("product: max(base_fit_distance * 2.4, product_radius * 5.0, 4.0)");
+  last_camera_fit_margin_ = QStringLiteral("product: 70pct framing, max(base_fit_distance * 1.30, product_radius * 2.80, 1.80)");
   last_camera_fit_margin_value_ = fit_distance;
   yaw_ = -0.86;
   pitch_ = -0.60;
@@ -2159,7 +2162,7 @@ void Scene3DViewportWidget::focus_selected() {
     const ItemBounds b = item_bounds_for_role(it);
     orbit_offset_ = QVector3D(static_cast<float>(b.x + b.sx * 0.5), static_cast<float>(b.y + b.sy * 0.5), static_cast<float>(b.z + b.sz * 0.5));
     scene_radius_ = qMax(0.2, 0.5 * qSqrt(b.sx * b.sx + b.sy * b.sy + b.sz * b.sz));
-    distance_ = qBound(min_distance_, scene_radius_ * 4.0, max_distance_);
+    distance_ = qBound(min_distance_, scene_radius_ * 2.8, max_distance_);
     update();
     return;
   }

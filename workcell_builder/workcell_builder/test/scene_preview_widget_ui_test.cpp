@@ -1,14 +1,18 @@
 #include <gtest/gtest.h>
 
+#include <functional>
+
 #include <QApplication>
 #include <QComboBox>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QProcess>
 #include <QTemporaryDir>
+#include <QThread>
 #include <QUrlQuery>
 
 #define private public
@@ -24,10 +28,41 @@ namespace {
 QApplication * ensure_app()
 {
   if (QApplication::instance()) return qobject_cast<QApplication *>(QApplication::instance());
-  static int argc = 0;
-  static char * argv[] = { nullptr };
-  static QApplication app(argc, argv);
-  return &app;
+  static int argc = 1;
+  static char app_name[] = "workcell_scene_preview_widget_ui_test";
+  static char * argv[] = { app_name, nullptr };
+  // QWebEngine owns process-global state whose teardown order is outside this
+  // test binary's control. Keep the one QApplication process-owned so its
+  // destructor cannot run after Chromium's globals and corrupt the heap.
+  static QApplication * app = new QApplication(argc, argv);
+  return app;
+}
+
+bool process_events_until(const std::function<bool()> & predicate, int timeout_ms)
+{
+  QElapsedTimer timer;
+  timer.start();
+  while (!predicate() && timer.elapsed() < timeout_ms) {
+    QApplication::processEvents(QEventLoop::AllEvents, 20);
+    QThread::msleep(10);
+  }
+  QApplication::processEvents(QEventLoop::AllEvents, 20);
+  return predicate();
+}
+
+void process_events_for(int duration_ms)
+{
+  QElapsedTimer timer;
+  timer.start();
+  while (timer.elapsed() < duration_ms) {
+    QApplication::processEvents(QEventLoop::AllEvents, 20);
+    QThread::msleep(10);
+  }
+}
+
+QString test_repo_root()
+{
+  return QFileInfo(QStringLiteral(WORKCELL_BUILDER_REPO_ROOT)).canonicalFilePath();
 }
 
 TEST(ScenePreviewWidgetUi, AuthoringOverlayPreservesCatalogIdentityScaleAndDistinctInstances)
@@ -557,7 +592,7 @@ TEST(ScenePreviewWidgetUi, EmbeddedWebViewerUrlPreservesScenePathAndPayloadRevis
 
     ScenePreviewWidget::EmbeddedWebRequestIdentity identity;
     identity.scene_id = QStringLiteral("ur5_2f_test");
-    identity.absolute_repo_root = QDir::currentPath();
+    identity.absolute_repo_root = test_repo_root();
     identity.selected_server_port = 8765;
     identity.payload_revision = revision;
     identity.generation = widget.embedded_web_request_generation_;
@@ -582,9 +617,12 @@ TEST(ScenePreviewWidgetUi, EmbeddedWebViewerUrlPreservesScenePathAndPayloadRevis
     EXPECT_EQ(query.queryItemValue(QStringLiteral("scene"), QUrl::FullyDecoded), logical_scene_path);
     EXPECT_EQ(query.queryItemValue(QStringLiteral("builderRevision"), QUrl::FullyDecoded), expected_revision);
     EXPECT_EQ(query.queryItemValue(QStringLiteral("embedded"), QUrl::FullyDecoded), QStringLiteral("1"));
+    EXPECT_TRUE(QRegularExpression(QStringLiteral("^[a-f0-9]{64}$")).match(
+      query.queryItemValue(QStringLiteral("viewerBuild"), QUrl::FullyDecoded)).hasMatch());
     EXPECT_EQ(query_item_count(QStringLiteral("scene")), 1);
     EXPECT_EQ(query_item_count(QStringLiteral("builderRevision")), 1);
     EXPECT_EQ(query_item_count(QStringLiteral("embedded")), 1);
+    EXPECT_EQ(query_item_count(QStringLiteral("viewerBuild")), 1);
 
     const QString encoded_url = viewer_url.toString(QUrl::FullyEncoded);
     EXPECT_EQ(encoded_url.indexOf(QStringLiteral("build1F")), -1);
@@ -629,6 +667,153 @@ TEST(ScenePreviewWidgetUi, PreparationFailureUsesPopulatedCompatibilityViewport)
   EXPECT_GT(compatibility_viewport->render_debug_counters().viewport_received_count, 0);
   EXPECT_EQ(widget.runtime_preview_status_text(), QStringLiteral("Preview available in compatibility mode"));
   EXPECT_NE(widget.runtime_preview_status_text(), QStringLiteral("Preview failed"));
+}
+
+TEST(ScenePreviewWidgetUi, DeferredEmbeddedRequestResumesWhenPayloadBecomesReady)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+  ScenePreviewWidget widget;
+  ScenePreviewWidget::PreviewContext context;
+  context.scene_id = QStringLiteral("ur5_2f_test");
+  context.absolute_repo_root = test_repo_root();
+  context.absolute_scene_dir = QFileInfo(QDir(context.absolute_repo_root).filePath(
+    QStringLiteral("scenes/ur5_2f_test"))).canonicalFilePath();
+  ASSERT_FALSE(context.absolute_scene_dir.isEmpty());
+  ASSERT_FALSE(context.absolute_repo_root.isEmpty());
+
+  widget.set_preview_context(context);
+  EXPECT_TRUE(widget.deferred_embedded_web_request_);
+  EXPECT_FALSE(widget.pending_embedded_web_request_);
+
+  // Repeating an idempotent context update must retain the deferred request;
+  // it must not require a dashboard click to wake the lifecycle.
+  widget.set_preview_context(context);
+  EXPECT_TRUE(widget.deferred_embedded_web_request_);
+
+  ScenePreviewWidget::PreviewItem item;
+  item.id = QStringLiteral("object_01");
+  item.display_name = QStringLiteral("Fixture Plate");
+  item.source_layer = QStringLiteral("editable_layout");
+  item.editable = true;
+  item.selectable = true;
+  widget.set_preview_items({item});
+
+  EXPECT_FALSE(widget.deferred_embedded_web_request_);
+  EXPECT_TRUE(widget.embedded_web_has_active_identity_);
+  EXPECT_EQ(widget.embedded_web_active_identity_.scene_id, QStringLiteral("ur5_2f_test"));
+  EXPECT_GT(widget.embedded_web_effective_refresh_requests_received_, 0U);
+  widget.cancel_embedded_web_lifecycle(false);
+}
+
+TEST(ScenePreviewWidgetUi, EditorContractTransientAbsenceBecomesAcceptedInSameNavigation)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+  ScenePreviewWidget widget;
+  auto * web_view = widget.findChild<QWebEngineView *>(QStringLiteral("embeddedWeb3dProductView"));
+  ASSERT_NE(web_view, nullptr);
+  bool loaded = false;
+  QObject::connect(web_view, &QWebEngineView::loadFinished, [&loaded](bool ok) { loaded = ok; });
+  web_view->setHtml(QStringLiteral("<!doctype html><title>contract</title>"), QUrl(QStringLiteral("about:blank")));
+  ASSERT_TRUE(process_events_until([&loaded]() { return loaded; }, 5000));
+
+  ScenePreviewWidget::EmbeddedWebRequestIdentity identity;
+  identity.scene_id = QStringLiteral("ur5_2f_test");
+  identity.absolute_repo_root = test_repo_root();
+  identity.absolute_scene_dir = QFileInfo(QDir(identity.absolute_repo_root).filePath(
+    QStringLiteral("scenes/ur5_2f_test"))).canonicalFilePath();
+  identity.generated_web_scene_path = QStringLiteral("build/workcell_studio_web_scene/ur5_2f_test.web_scene.json");
+  identity.payload_fingerprint = QByteArrayLiteral("contract-test");
+  identity.payload_revision = 1;
+  identity.generation = 1;
+  identity.selected_server_port = 8765;
+  widget.preview_context_.scene_id = identity.scene_id;
+  widget.embedded_web_active_identity_ = identity;
+  widget.embedded_web_has_active_identity_ = true;
+  widget.embedded_web_loading_identity_ = identity;
+  widget.embedded_web_navigation_token_ = 4;
+  widget.embedded_web_loading_navigation_token_ = 4;
+  widget.embedded_web_browser_load_token_ = 7;
+  widget.embedded_web_loading_browser_load_token_ = 7;
+  widget.embedded_web_readiness_token_ = 9;
+  widget.embedded_web_expected_viewer_url_ = web_view->url();
+  widget.embedded_product_view_state_ = ScenePreviewWidget::EmbeddedProductViewState::Ready;
+
+  web_view->page()->runJavaScript(QStringLiteral(R"JS(
+    setTimeout(() => {
+      const state = () => ({sceneId:'ur5_2f_test',events:[]});
+      window.__WORKCELL_EDITOR_API_V1__ = {
+        apiVersion:'1.1.0',
+        getCapabilities:()=>({schemaVersion:'workcell_studio_live_authoring_capabilities/v1',apiVersion:'1.1.0'}),
+        getState:state,selectItem:state,setItemMetadata:state,setItemTransform:state,
+        addItem:state,duplicateItem:state,removeItem:state,setVisibleItemIds:state,
+        undo:state,redo:state,getEditPatch:state,drainEvents:()=>[]
+      };
+    }, 100);
+  )JS"));
+  widget.verify_embedded_editor_contract(identity);
+  EXPECT_EQ(widget.embedded_editor_contract_state_, ScenePreviewWidget::EmbeddedEditorContractState::Pending);
+  EXPECT_TRUE(process_events_until([&widget]() {
+    return widget.embedded_editor_contract_state_ == ScenePreviewWidget::EmbeddedEditorContractState::Accepted;
+  }, 3000));
+  EXPECT_TRUE(widget.embedded_web_authoring_active());
+  widget.embedded_editor_polling_ = false;
+  ++widget.embedded_editor_state_request_token_;
+  process_events_for(300);
+  widget.cancel_embedded_web_lifecycle(false);
+  process_events_for(100);
+}
+
+TEST(ScenePreviewWidgetUi, EditorContractWrongVersionFailsClosedWithoutRetryFallback)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+  ScenePreviewWidget widget;
+  auto * web_view = widget.findChild<QWebEngineView *>(QStringLiteral("embeddedWeb3dProductView"));
+  ASSERT_NE(web_view, nullptr);
+  bool loaded = false;
+  QObject::connect(web_view, &QWebEngineView::loadFinished, [&loaded](bool ok) { loaded = ok; });
+  web_view->setHtml(QStringLiteral(R"HTML(<!doctype html><script>
+    const state = () => ({});
+    window.__WORKCELL_EDITOR_API_V1__ = {
+      apiVersion:'0.9.0',
+      getCapabilities:()=>({schemaVersion:'workcell_studio_live_authoring_capabilities/v1',apiVersion:'0.9.0'}),
+      getState:state,selectItem:state,setItemMetadata:state,setItemTransform:state,
+      addItem:state,duplicateItem:state,removeItem:state,setVisibleItemIds:state,
+      undo:state,redo:state,getEditPatch:state,drainEvents:()=>[]
+    };
+  </script>)HTML"), QUrl(QStringLiteral("about:blank")));
+  ASSERT_TRUE(process_events_until([&loaded]() { return loaded; }, 5000));
+
+  ScenePreviewWidget::EmbeddedWebRequestIdentity identity;
+  identity.scene_id = QStringLiteral("ur5_2f_test");
+  identity.absolute_repo_root = test_repo_root();
+  identity.absolute_scene_dir = QFileInfo(QDir(identity.absolute_repo_root).filePath(
+    QStringLiteral("scenes/ur5_2f_test"))).canonicalFilePath();
+  identity.generated_web_scene_path = QStringLiteral("build/workcell_studio_web_scene/ur5_2f_test.web_scene.json");
+  identity.payload_fingerprint = QByteArrayLiteral("wrong-version");
+  identity.payload_revision = 1;
+  identity.generation = 1;
+  identity.selected_server_port = 8765;
+  widget.preview_context_.scene_id = identity.scene_id;
+  widget.embedded_web_active_identity_ = identity;
+  widget.embedded_web_has_active_identity_ = true;
+  widget.embedded_web_loading_identity_ = identity;
+  widget.embedded_web_navigation_token_ = 4;
+  widget.embedded_web_loading_navigation_token_ = 4;
+  widget.embedded_web_browser_load_token_ = 7;
+  widget.embedded_web_loading_browser_load_token_ = 7;
+  widget.embedded_web_readiness_token_ = 9;
+  widget.embedded_web_expected_viewer_url_ = web_view->url();
+  widget.embedded_product_view_state_ = ScenePreviewWidget::EmbeddedProductViewState::Ready;
+
+  widget.verify_embedded_editor_contract(identity);
+  EXPECT_TRUE(process_events_until([&widget]() {
+    return widget.embedded_editor_contract_state_ == ScenePreviewWidget::EmbeddedEditorContractState::Rejected;
+  }, 2000));
+  EXPECT_FALSE(widget.embedded_web_authoring_active());
+  EXPECT_EQ(widget.embedded_editor_contract_error_, QStringLiteral("unsupported live-authoring API version"));
+  EXPECT_EQ(widget.embedded_web_preparation_request_count_, 0);
+  widget.cancel_embedded_web_lifecycle(false);
+  process_events_for(100);
 }
 #endif
 

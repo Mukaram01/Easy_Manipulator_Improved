@@ -31645,10 +31645,10 @@ var init_OrbitControls = __esm({
         }();
         this.dispose = function() {
           scope.domElement.removeEventListener("contextmenu", onContextMenu);
-          scope.domElement.removeEventListener("pointerdown", onPointerDown2);
+          scope.domElement.removeEventListener("pointerdown", onPointerDown3);
           scope.domElement.removeEventListener("pointercancel", onPointerUp2);
           scope.domElement.removeEventListener("wheel", onMouseWheel);
-          scope.domElement.removeEventListener("pointermove", onPointerMove2);
+          scope.domElement.removeEventListener("pointermove", onPointerMove3);
           scope.domElement.removeEventListener("pointerup", onPointerUp2);
           if (scope._domElementKeyEvents !== null) {
             scope._domElementKeyEvents.removeEventListener("keydown", onKeyDown);
@@ -31956,12 +31956,12 @@ var init_OrbitControls = __esm({
           if (scope.enableRotate)
             handleTouchMoveRotate(event);
         }
-        function onPointerDown2(event) {
+        function onPointerDown3(event) {
           if (scope.enabled === false)
             return;
           if (pointers.length === 0) {
             scope.domElement.setPointerCapture(event.pointerId);
-            scope.domElement.addEventListener("pointermove", onPointerMove2);
+            scope.domElement.addEventListener("pointermove", onPointerMove3);
             scope.domElement.addEventListener("pointerup", onPointerUp2);
           }
           addPointer(event);
@@ -31971,7 +31971,7 @@ var init_OrbitControls = __esm({
             onMouseDown(event);
           }
         }
-        function onPointerMove2(event) {
+        function onPointerMove3(event) {
           if (scope.enabled === false)
             return;
           if (event.pointerType === "touch") {
@@ -31984,7 +31984,7 @@ var init_OrbitControls = __esm({
           removePointer(event);
           if (pointers.length === 0) {
             scope.domElement.releasePointerCapture(event.pointerId);
-            scope.domElement.removeEventListener("pointermove", onPointerMove2);
+            scope.domElement.removeEventListener("pointermove", onPointerMove3);
             scope.domElement.removeEventListener("pointerup", onPointerUp2);
           }
           scope.dispatchEvent(_endEvent);
@@ -32184,7 +32184,7 @@ var init_OrbitControls = __esm({
           return pointerPositions[pointerId];
         }
         scope.domElement.addEventListener("contextmenu", onContextMenu);
-        scope.domElement.addEventListener("pointerdown", onPointerDown2);
+        scope.domElement.addEventListener("pointerdown", onPointerDown3);
         scope.domElement.addEventListener("pointercancel", onPointerUp2);
         scope.domElement.addEventListener("wheel", onMouseWheel, { passive: false });
         this.update();
@@ -38383,7 +38383,7 @@ function isOverlayPolicyItem(item) {
   return itemRenderPolicy(item) === "overlay";
 }
 function isTaskOnlyHelperItem(item) {
-  const identity = [
+  const identity2 = [
     item?.source_layer,
     item?.active_visual_source,
     item?.render_owner,
@@ -38393,15 +38393,15 @@ function isTaskOnlyHelperItem(item) {
     item?.id,
     item?.display_name
   ].map((value) => String(value || "").toLowerCase().replace(/[_-]+/g, " ")).join(" ");
-  return item?.task_only === true || item?.non_blocking_pick === true || /\b(task helper|task marker|source helper|commissioning object)\b/.test(identity);
+  return item?.task_only === true || item?.non_blocking_pick === true || /\b(task helper|task marker|source helper|commissioning object)\b/.test(identity2);
 }
 function isPrimaryAuthoredPhysicalMesh(item) {
   if (itemRenderPolicy(item) !== "primary")
     return false;
   const contractCategory = String(item?.mesh_contract_category || item?.meshContractCategory || "").toLowerCase();
-  const identity = viewerGroupIdentity(item);
-  const authoredMesh = Boolean(displayMeshUri(item)) && /\b(authored|editable|layout|imported)\b/.test(identity);
-  return contractCategory === "object" && (truthyFlag(item?.mesh_load_required) || authoredMesh) || /\b(target bin|target container|destination bin)\b/.test(identity);
+  const identity2 = viewerGroupIdentity(item);
+  const authoredMesh = Boolean(displayMeshUri(item)) && /\b(authored|editable|layout|imported)\b/.test(identity2);
+  return contractCategory === "object" && (truthyFlag(item?.mesh_load_required) || authoredMesh) || /\b(target bin|target container|destination bin)\b/.test(identity2);
 }
 function readinessCategoryForItem(item) {
   if (!item || !isPrimaryRenderableItem(item) || isDebugOverlayItem(item))
@@ -38411,10 +38411,10 @@ function readinessCategoryForItem(item) {
   if (isPrimaryAuthoredPhysicalMesh(item))
     return "authored_physical_mesh";
   const category = meshContractCategoryOf(item);
-  const identity = viewerGroupIdentity(item);
+  const identity2 = viewerGroupIdentity(item);
   if (category === "camera" || isSensor(item))
     return "configured_camera";
-  if (category === "table" || supportSurfaceDisplayType(item) || /\b(workbench|support surface|tabletop|table)\b/.test(identity))
+  if (category === "table" || supportSurfaceDisplayType(item) || /\b(workbench|support surface|tabletop|table)\b/.test(identity2))
     return "workbench_support_surface";
   if (isGeneratedToolOrGripperItem(item) || category === "tool")
     return "attached_tool_gripper";
@@ -38611,14 +38611,14 @@ function requiredReadinessCompleteForItem(item) {
 }
 function physicalMeshAttempt(item, operation) {
   const category = readinessCategoryForItem(item);
-  const identity = category ? readinessIdentityForItem(category, item) : "";
+  const identity2 = category ? readinessIdentityForItem(category, item) : "";
   return {
-    operation: operation || registerReadinessOperation(category ? [`${category}:${identity}`] : []),
+    operation: operation || registerReadinessOperation(category ? [`${category}:${identity2}`] : []),
     token: physicalLoadToken,
     navigationKey: web3dNavigationKey(),
     category,
-    identity,
-    readinessKey: category ? `${category}:${identity}` : "",
+    identity: identity2,
+    readinessKey: category ? `${category}:${identity2}` : "",
     deadlineAt: Date.now() + PHYSICAL_MESH_LOAD_TIMEOUT_MS
   };
 }
@@ -39150,7 +39150,7 @@ function normalizeProductDiagnostic(raw = {}, overrideKind = "") {
   const definition = PRODUCT_DIAGNOSTIC_DEFINITIONS[kind];
   if (!definition)
     return null;
-  const itemId = String(raw.object_id || raw.item_id || raw.id || raw.link || raw.object_name || "").trim();
+  const itemId3 = String(raw.object_id || raw.item_id || raw.id || raw.link || raw.object_name || "").trim();
   const meshUri = String(raw.mesh_uri || raw.original_mesh_uri || raw.url || raw.mesh_load_url || "").trim();
   return {
     kind,
@@ -39158,7 +39158,7 @@ function normalizeProductDiagnostic(raw = {}, overrideKind = "") {
     title: definition.title,
     detail: productDiagnosticDetail(raw, definition),
     action: definition.action,
-    itemId,
+    itemId: itemId3,
     meshUri,
     code: String(raw.code || raw.status || raw.mesh_status || kind)
   };
@@ -39351,13 +39351,13 @@ function dedupeByStableIdentity(records, identityFn) {
   const byIdentity = /* @__PURE__ */ new Map();
   const duplicates = [];
   for (const record of records || []) {
-    const identity = identityFn(record);
-    if (!identity)
+    const identity2 = identityFn(record);
+    if (!identity2)
       continue;
-    if (byIdentity.has(identity))
-      duplicates.push(identity);
+    if (byIdentity.has(identity2))
+      duplicates.push(identity2);
     else
-      byIdentity.set(identity, record);
+      byIdentity.set(identity2, record);
   }
   return { records: Array.from(byIdentity.values()), duplicateIdentities: Array.from(new Set(duplicates)) };
 }
@@ -39973,10 +39973,10 @@ function vector3(value, fallback = [0, 0, 0]) {
   return new THREE.Vector3(Number(arr[0] || 0), Number(arr[1] || 0), Number(arr[2] || 0));
 }
 function isGeneratedUrdfItem(item) {
-  const identity = viewerGroupIdentity(item);
+  const identity2 = viewerGroupIdentity(item);
   const source = String(item?.source || item?.source_kind || item?.source_layer || item?.active_visual_source || "").toLowerCase();
   return Boolean(
-    item?.source === "urdf_flattened" || source.includes("urdf") || isGeneratedPreviewIdentity(item) && /\b(link|visual|robot|tool|gripper|urdf|moveit)\b/.test(identity) || String(item?.baked_world_visual_transform_source || item?.transform_source || "").toLowerCase().includes("urdf")
+    item?.source === "urdf_flattened" || source.includes("urdf") || isGeneratedPreviewIdentity(item) && /\b(link|visual|robot|tool|gripper|urdf|moveit)\b/.test(identity2) || String(item?.baked_world_visual_transform_source || item?.transform_source || "").toLowerCase().includes("urdf")
   );
 }
 function poseBlockOf(source, fallback = {}) {
@@ -40009,9 +40009,9 @@ function isGeneratedUrdfMeshVisualItem(item) {
     return false;
   if (!hasMeshBackedVisualContract(item))
     return false;
-  const identity = viewerGroupIdentity(item);
+  const identity2 = viewerGroupIdentity(item);
   return Boolean(
-    item?.visual !== void 0 || item?.visual_name !== void 0 || item?.visual_index !== void 0 || item?.mesh_uri || item?.package_uri || item?.mesh_path || item?.source_path || /\b(mesh|visual|link|robot|tool|gripper|camera|table|workbench)\b/.test(identity)
+    item?.visual !== void 0 || item?.visual_name !== void 0 || item?.visual_index !== void 0 || item?.mesh_uri || item?.package_uri || item?.mesh_path || item?.source_path || /\b(mesh|visual|link|robot|tool|gripper|camera|table|workbench)\b/.test(identity2)
   );
 }
 function isRobotToolGeneratedUrdfMeshVisualItem(item) {
@@ -40209,8 +40209,8 @@ function bindExpandedUrdfPickRecordToSubtree(linkRoot, record, urdfLinkRoots) {
 }
 function derivedTransformTargetId(item) {
   const targetId = String(item?.target_ref || "").trim();
-  const identity = [item?.role, item?.semantic_role, item?.type, item?.category, item?.id].map((value) => String(value || "").toLowerCase().replaceAll("_", " ")).join(" ");
-  return targetId && /\bplace zone\b/.test(identity) ? targetId : "";
+  const identity2 = [item?.role, item?.semantic_role, item?.type, item?.category, item?.id].map((value) => String(value || "").toLowerCase().replaceAll("_", " ")).join(" ");
+  return targetId && /\bplace zone\b/.test(identity2) ? targetId : "";
 }
 function isDerivedTransformDependent(item) {
   return Boolean(derivedTransformTargetId(item));
@@ -40533,9 +40533,9 @@ function itemRequiresMeshBackedVisual(item) {
 }
 function warnRequiredMeshFallback(item, meshUri, reason, extra = {}) {
   const transform = transformOf(item);
-  const itemId = item?.id || itemLabel(item || {});
+  const itemId3 = item?.id || itemLabel(item || {});
   const url = meshUri || displayMeshUri(item);
-  appendViewerDiagnosticWarning(item, "required_mesh_failed", `Required mesh failed: ${itemId} ${url}`, {
+  appendViewerDiagnosticWarning(item, "required_mesh_failed", `Required mesh failed: ${itemId3} ${url}`, {
     mesh_uri: url,
     original_mesh_uri: item?.original_mesh_uri || item?.package_uri || item?.source_path || item?.mesh_path || "",
     final_pose: transform.pose,
@@ -40543,7 +40543,7 @@ function warnRequiredMeshFallback(item, meshUri, reason, extra = {}) {
     raw_pose_fields: rawPoseDiagnostics(item),
     fallback_or_skip_reason: reason || "required mesh failed; normal primitive fallback suppressed",
     mesh_load_error: reason || "",
-    message: `Required mesh failed: ${itemId} ${url}`,
+    message: `Required mesh failed: ${itemId3} ${url}`,
     ...extra
   });
 }
@@ -40856,36 +40856,36 @@ function viewerGroupIdentity(item) {
   ].map((value) => String(value || "").toLowerCase().replace(/[_-]+/g, " ")).join(" ");
 }
 function isGeneratedPreviewIdentity(item) {
-  const identity = viewerGroupIdentity(item);
-  return Boolean(item?.locked || /\b(generated|generated preview|urdf|moveit)\b/.test(identity));
+  const identity2 = viewerGroupIdentity(item);
+  return Boolean(item?.locked || /\b(generated|generated preview|urdf|moveit)\b/.test(identity2));
 }
 function isGeneratedToolOrGripperItem(item) {
-  const identity = viewerGroupIdentity(item);
+  const identity2 = viewerGroupIdentity(item);
   if (!isGeneratedPreviewIdentity(item))
     return false;
-  return /\b(tool|gripper|end effector|eef|suction|vacuum|robotiq|airpick|finger|coupler|flange|tcp|tool0)\b/.test(identity);
+  return /\b(tool|gripper|end effector|eef|suction|vacuum|robotiq|airpick|finger|coupler|flange|tcp|tool0)\b/.test(identity2);
 }
 function isGeneratedRobotItem(item) {
-  const identity = viewerGroupIdentity(item);
+  const identity2 = viewerGroupIdentity(item);
   if (!isGeneratedPreviewIdentity(item) || isGeneratedToolOrGripperItem(item))
     return false;
-  return /\b(robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|upper arm|forearm|wrist|elbow|base)\b/.test(identity);
+  return /\b(robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|upper arm|forearm|wrist|elbow|base)\b/.test(identity2);
 }
 function viewerGroupFor(item) {
-  const identity = viewerGroupIdentity(item);
+  const identity2 = viewerGroupIdentity(item);
   if (isPrimaryAuthoredPhysicalMesh(item))
     return "environment/layout";
-  if (/\b(zone|pick zone|place zone|observation zone|spawn zone|safety zone|work envelope|reachability|collision)\b/.test(identity))
+  if (/\b(zone|pick zone|place zone|observation zone|spawn zone|safety zone|work envelope|reachability|collision)\b/.test(identity2))
     return "zones";
-  if (/\b(camera|sensor|realsense|depth camera|rgbd|lidar|vision)\b/.test(identity))
+  if (/\b(camera|sensor|realsense|depth camera|rgbd|lidar|vision)\b/.test(identity2))
     return "sensors";
   if (isGeneratedToolOrGripperItem(item))
     return "tool/gripper";
   if (isGeneratedRobotItem(item))
     return "robot";
-  if (/\b(environment|layout|asset|object|item|table|workbench|fixture|bin|tray|conveyor|shelf|rack|pallet|floor|wall|part|product)\b/.test(identity))
+  if (/\b(environment|layout|asset|object|item|table|workbench|fixture|bin|tray|conveyor|shelf|rack|pallet|floor|wall|part|product)\b/.test(identity2))
     return "environment/layout";
-  if (/\b(robot|arm|manipulator|ur3|ur5|ur10|tool|gripper|end effector|eef|suction|vacuum|robotiq|airpick|generated|generated preview|urdf|moveit)\b/.test(identity))
+  if (/\b(robot|arm|manipulator|ur3|ur5|ur10|tool|gripper|end effector|eef|suction|vacuum|robotiq|airpick|generated|generated preview|urdf|moveit)\b/.test(identity2))
     return "robot/tool/generated";
   return "unknown";
 }
@@ -40897,8 +40897,8 @@ function isZone(item) {
 function isPhysicalSemanticItem(item) {
   if (isGeneratedToolOrGripperItem(item) || isGeneratedRobotItem(item) || supportSurfaceDisplayType(item) || isSensor(item))
     return true;
-  const identity = viewerGroupIdentity(item);
-  return PHYSICAL_SEMANTIC_TOKEN_RE.test(identity);
+  const identity2 = viewerGroupIdentity(item);
+  return PHYSICAL_SEMANTIC_TOKEN_RE.test(identity2);
 }
 function isDebugOverlayItem(item) {
   if (isOverlayPolicyItem(item))
@@ -40907,7 +40907,7 @@ function isDebugOverlayItem(item) {
     return true;
   if (isPrimaryAuthoredPhysicalMesh(item))
     return false;
-  const identity = [
+  const identity2 = [
     item?.source_layer,
     item?.active_visual_source,
     item?.role,
@@ -40923,11 +40923,11 @@ function isDebugOverlayItem(item) {
     ...Array.isArray(item?.warnings) ? item.warnings : [],
     itemLabel(item || {})
   ].map((value) => String(value || "").toLowerCase().replace(/[_-]+/g, " ")).join(" ");
-  if (isPhysicalSemanticItem(item) && !/\b(safety zone|pick zone|place zone|observation zone|spawn zone|work envelope|robot reach|camera fov|fov|home pose|transform anchor|warning marker|warning anchor|warning badge)\b/.test(identity))
+  if (isPhysicalSemanticItem(item) && !/\b(safety zone|pick zone|place zone|observation zone|spawn zone|work envelope|robot reach|camera fov|fov|home pose|transform anchor|warning marker|warning anchor|warning badge)\b/.test(identity2))
     return false;
   if (viewerGroupFor(item) === "zones")
     return true;
-  return DEBUG_OVERLAY_TOKEN_RE.test(identity);
+  return DEBUG_OVERLAY_TOKEN_RE.test(identity2);
 }
 function isSensor(item) {
   return viewerGroupFor(item) === "sensors";
@@ -41875,13 +41875,13 @@ function physicalBoundsNodeIdentityFor(object) {
 function physicalBoundsItemFor(object, nearestItem = null) {
   return object?.userData?.item || nearestItem || object?.userData || {};
 }
-function isInitialFitPhysicalGeometryItem(item, identity = "") {
+function isInitialFitPhysicalGeometryItem(item, identity2 = "") {
   const category = meshContractCategoryOf(item);
   if (["robot", "tool", "table", "camera", "object"].includes(category))
     return true;
-  return /\b(robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|wrist|tool|gripper|end effector|eef|suction|robotiq|airpick|camera body|configured camera|sensor body|conveyor|object|workpiece|part|product|bin|tray|support surface|table|tabletop|workbench|fixture|pallet)\b/.test(identity);
+  return /\b(robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|wrist|tool|gripper|end effector|eef|suction|robotiq|airpick|camera body|configured camera|sensor body|conveyor|object|workpiece|part|product|bin|tray|support surface|table|tabletop|workbench|fixture|pallet)\b/.test(identity2);
 }
-function isPhysicalBoundsHelperObject(object, item, identity) {
+function isPhysicalBoundsHelperObject(object, item, identity2) {
   if (!object || object.visible === false)
     return true;
   if (object.isGridHelper || object.isAxesHelper)
@@ -41894,11 +41894,11 @@ function isPhysicalBoundsHelperObject(object, item, identity) {
     return true;
   if (item?.exclude_from_physical_bounds === true || item?.exclude_from_fit_bounds === true)
     return true;
-  if (DEBUG_OVERLAY_TOKEN_RE.test(identity))
+  if (DEBUG_OVERLAY_TOKEN_RE.test(identity2))
     return true;
-  return !isInitialFitPhysicalGeometryItem(item, identity);
+  return !isInitialFitPhysicalGeometryItem(item, identity2);
 }
-function physicalBoundsHelperReasons(object, item, identity, options = {}) {
+function physicalBoundsHelperReasons(object, item, identity2, options = {}) {
   if (!object)
     return [];
   const reasons = [];
@@ -41938,10 +41938,10 @@ function physicalBoundsHelperReasons(object, item, identity, options = {}) {
     add("fallback_geometry");
   return reasons;
 }
-function isRobotPrimitiveFallbackObject(object, item, identity) {
+function isRobotPrimitiveFallbackObject(object, item, identity2) {
   const visualSource = String(item?.active_visual_source || object?.userData?.active_visual_source || "").toLowerCase();
   const sourceLayer = String(item?.source_layer || object?.userData?.source_layer || "").toLowerCase();
-  return /primitive fallback|fallback/.test(identity) && /robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|wrist/.test(identity) && (visualSource.includes("primitive_fallback") || visualSource.includes("fallback") || sourceLayer.includes("primitive_fallback"));
+  return /primitive fallback|fallback/.test(identity2) && /robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|wrist/.test(identity2) && (visualSource.includes("primitive_fallback") || visualSource.includes("fallback") || sourceLayer.includes("primitive_fallback"));
 }
 function collectPhysicalVisibleBounds(root, options = {}) {
   if (!root || !THREE?.Box3)
@@ -41969,23 +41969,23 @@ function collectPhysicalVisibleBounds(root, options = {}) {
     }
     visitedNodes.add(node);
     const item = identityRecord?.item || physicalBoundsItemFor(node, nearestItem);
-    const identity = identityRecord?.item ? `${physicalBoundsIdentityFor(node)} ${viewerGroupIdentity(identityRecord.item)}` : physicalBoundsIdentityFor(node);
+    const identity2 = identityRecord?.item ? `${physicalBoundsIdentityFor(node)} ${viewerGroupIdentity(identityRecord.item)}` : physicalBoundsIdentityFor(node);
     const nextNearestItem = identityRecord?.item || node?.userData?.item || nearestItem;
     const isRenderable = node.isMesh || node.isLine || node.isLineSegments || node.isPoints || node.isSprite;
     if (isRenderable && diagnostics)
       diagnostics.visible_renderable_count += 1;
     const renderStatus = String(node?.userData?.render_status || node?.userData?.renderInfo?.render_status || "").toLowerCase();
     const authoritativePhysical = identityRecord?.authoritativePhysicalPick === true;
-    const helperReasons = physicalBoundsHelperReasons(node, item, identity, { authoritativePhysical });
+    const helperReasons = physicalBoundsHelperReasons(node, item, identity2, { authoritativePhysical });
     const loadedAuthoredPhysical = renderStatus === "mesh_loaded" && isPrimaryAuthoredPhysicalMesh(item);
-    const rejected = helperReasons.length > 0 || !authoritativePhysical && !loadedAuthoredPhysical && isPhysicalBoundsHelperObject(node, item, identity);
+    const rejected = helperReasons.length > 0 || !authoritativePhysical && !loadedAuthoredPhysical && isPhysicalBoundsHelperObject(node, item, identity2);
     if (isRenderable && !rejected) {
       const visualSource = String(item?.active_visual_source || node?.userData?.active_visual_source || "").toLowerCase();
-      const isGenerated = /generated|urdf/.test(identity);
-      const isRobot = /robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|wrist/.test(identity);
+      const isGenerated = /generated|urdf/.test(identity2);
+      const isRobot = /robot|arm|manipulator|ur3|ur5|ur10|universal robot|base link|shoulder|wrist/.test(identity2);
       if (isGenerated && isRobot && /mesh|generated urdf visual|mesh preview/.test(visualSource.replace(/_/g, " ")))
         hasGeneratedRobotMesh = true;
-      candidates.push({ node, item, identity });
+      candidates.push({ node, item, identity: identity2 });
       if (diagnostics)
         diagnostics.accepted_renderable_count += 1;
     } else if (isRenderable && diagnostics) {
@@ -42181,7 +42181,7 @@ function expectedDimensionsOf(item) {
   return dimensionsVectorFrom(item?.expected_dimensions_m || item?.expected_dimensions || item?.dimensions_m || primitiveOf(item));
 }
 function meshContractCategoryOf(item) {
-  const identity = [
+  const identity2 = [
     item?.source_layer,
     item?.active_visual_source,
     item?.role,
@@ -42190,19 +42190,19 @@ function meshContractCategoryOf(item) {
     item?.id,
     itemLabel(item || {})
   ].map((value) => String(value || "").toLowerCase()).join(" ");
-  if (/\b(table|workbench|bench)\b/.test(identity))
+  if (/\b(table|workbench|bench)\b/.test(identity2))
     return "table";
-  if (/\b(camera|sensor|realsense|rgbd|vision)\b/.test(identity))
+  if (/\b(camera|sensor|realsense|rgbd|vision)\b/.test(identity2))
     return "camera";
-  if (/\b(object|part|product|item)\b/.test(identity))
+  if (/\b(object|part|product|item)\b/.test(identity2))
     return "object";
-  if (/\b(environment|asset|fixture)\b/.test(identity))
+  if (/\b(environment|asset|fixture)\b/.test(identity2))
     return "environment";
-  if (/\b(robot|arm|manipulator|ur3|ur5|ur10|ur_|universal_robot)\b/.test(identity))
+  if (/\b(robot|arm|manipulator|ur3|ur5|ur10|ur_|universal_robot)\b/.test(identity2))
     return "robot";
-  if (/\b(tool|gripper|eef|suction|robotiq|airpick)\b/.test(identity))
+  if (/\b(tool|gripper|eef|suction|robotiq|airpick)\b/.test(identity2))
     return "tool";
-  if (/\b(zone|overlay|helper|diagnostic|fov|bounds|reachability|collision)\b/.test(identity))
+  if (/\b(zone|overlay|helper|diagnostic|fov|bounds|reachability|collision)\b/.test(identity2))
     return "helper";
   return "core";
 }
@@ -42214,7 +42214,7 @@ function meshUnitAutoscaleAllowed(item) {
   const category = meshContractCategoryOf(item);
   if (!["table", "camera", "object", "environment"].includes(category))
     return false;
-  const identity = [
+  const identity2 = [
     item.source_layer,
     item.active_visual_source,
     item.role,
@@ -42230,7 +42230,7 @@ function meshUnitAutoscaleAllowed(item) {
     item.original_mesh_uri,
     itemLabel(item || {})
   ].map((value) => String(value || "").toLowerCase()).join(" ");
-  return !/\b(robot|arm|manipulator|ur3|ur5|ur10|ur_|universal_robot|robotiq|gripper|suction|airpick|tool|eef|end_effector)\b/.test(identity);
+  return !/\b(robot|arm|manipulator|ur3|ur5|ur10|ur_|universal_robot|robotiq|gripper|suction|airpick|tool|eef|end_effector)\b/.test(identity2);
 }
 var MESH_BOUNDS_COORDINATE_SPACE_CONTRACT = Object.freeze({
   version: 1,
@@ -42458,13 +42458,13 @@ function applyCameraClipping(camera, radius, distance) {
 }
 function frameScene(bounds, { preset = "isometric" } = {}) {
   const { camera, controls } = state.three;
-  const finiteBounds = finiteBox3(bounds);
-  if (!camera || !controls || !finiteBounds)
+  const finiteBounds3 = finiteBox3(bounds);
+  if (!camera || !controls || !finiteBounds3)
     return false;
   const center = new THREE.Vector3();
   const sphere = new THREE.Sphere();
-  finiteBounds.getCenter(center);
-  finiteBounds.getBoundingSphere(sphere);
+  finiteBounds3.getCenter(center);
+  finiteBounds3.getBoundingSphere(sphere);
   if (![center.x, center.y, center.z, sphere.radius].every(Number.isFinite))
     return false;
   const radius = Math.max(sphere.radius, MIN_FRAME_RADIUS);
@@ -42477,7 +42477,7 @@ function frameScene(bounds, { preset = "isometric" } = {}) {
     return false;
   controls.target.copy(center);
   controls.update();
-  state.lastFrameBounds = finiteBounds.clone();
+  state.lastFrameBounds = finiteBounds3.clone();
   if (el.resetView)
     el.resetView.disabled = false;
   if (el.cameraPreset)
@@ -43489,8 +43489,8 @@ function excludedPickNode(node) {
 }
 function intrinsicallyExcludedPickItem(item) {
   const sourceLayer = String(item?.source_layer || "").toLowerCase();
-  const identity = [item?.role, item?.category, item?.id].map((value) => String(value || "").toLowerCase()).join(" ");
-  const explicitDebug = isDebugOverlayItem(item) && (item?.diagnostic_only === true || /debug|diagnostic/.test(`${sourceLayer} ${identity}`));
+  const identity2 = [item?.role, item?.category, item?.id].map((value) => String(value || "").toLowerCase()).join(" ");
+  const explicitDebug = isDebugOverlayItem(item) && (item?.diagnostic_only === true || /debug|diagnostic/.test(`${sourceLayer} ${identity2}`));
   return explicitDebug || isTaskOnlyHelperItem(item) && /task|debug/.test(sourceLayer);
 }
 function resolveCanvasPickHit(hit) {
@@ -43504,6 +43504,19 @@ function resolveCanvasPickHit(hit) {
     const nodeName = String(node?.name || "").toLowerCase();
     const directlyHitPhysicalCamera = node === hit?.object && Boolean(nodeItem && isSensor(nodeItem) && (node.userData?.fallback_sensor_body === true || !/(?:edges?|frustum|helper|overlay|highlight|gizmo)/.test(nodeName) && (node.isMesh || node.type === "Mesh")));
     if (intrinsicallyExcludedPickNode(node)) {
+      if (/(?:^|[_-])fallback_(?:edges?|solid)(?:$|[_-])/.test(nodeName)) {
+        for (let ownerNode = node.parent; ownerNode; ownerNode = ownerNode.parent) {
+          const ownerRegistered = state.pickIdentityByObject.get(ownerNode);
+          const ownerItem = ownerNode.userData?.item || ownerRegistered?.item;
+          const ownerRendered = ownerRegistered || (ownerItem?.id ? renderedById(ownerItem.id) : null);
+          if (ownerRendered && isPhysicalSemanticItem(ownerRendered.item) && isCanvasSelectableRendered(ownerRendered)) {
+            candidate = ownerRendered;
+            break;
+          }
+        }
+        if (candidate)
+          break;
+      }
       rejectionReason = "hit_node_intrinsically_excluded";
       return { renderIdentity: null, selectionOwner: null, selectionOwnerSource: "", editOwner: null, eligible: false, rejectionReason, exclusionNode: node, exclusionFlag: "intrinsic_node_identity", registeredRecord, hit };
     }
@@ -43515,6 +43528,19 @@ function resolveCanvasPickHit(hit) {
     if (candidate && registered && registered !== candidate)
       break;
     if (passThroughPickNode(node) && !directlyHitPhysicalCamera) {
+      if (/(?:^|[_-])fallback_(?:edges?|solid)(?:$|[_-])/.test(nodeName)) {
+        for (let ownerNode = node.parent; ownerNode; ownerNode = ownerNode.parent) {
+          const ownerRegistered = state.pickIdentityByObject.get(ownerNode);
+          const ownerItem = ownerNode.userData?.item || ownerRegistered?.item;
+          const ownerRendered = ownerRegistered || (ownerItem?.id ? renderedById(ownerItem.id) : null);
+          if (ownerRendered && isPhysicalSemanticItem(ownerRendered.item) && isCanvasSelectableRendered(ownerRendered)) {
+            candidate = ownerRendered;
+            break;
+          }
+        }
+        if (candidate)
+          break;
+      }
       rejectionReason = "hit_node_non_selectable_metadata";
       const flag = node.userData?.diagnostic_only ? "diagnostic_only" : node.userData?.non_selectable ? "non_selectable" : "selectable=false";
       return { renderIdentity: null, selectionOwner: null, selectionOwnerSource: "", editOwner: null, eligible: false, rejectionReason, exclusionNode: node, exclusionFlag: flag, registeredRecord, hit };
@@ -44201,7 +44227,7 @@ function cancelActiveTransformOperation(reason = "Transform cancelled") {
   try {
     state.three.transformControls?.reset?.();
     if (groupStart)
-      applyTransformChanges([...groupStart].map(([itemId, after]) => ({ rendered: renderedById(itemId), after })));
+      applyTransformChanges([...groupStart].map(([itemId3, after]) => ({ rendered: renderedById(itemId3), after })));
     if (owner && ownerStart)
       applyTransformToObject(owner.object3d, ownerStart);
     state.gizmoDragStart = null;
@@ -44401,8 +44427,8 @@ function authoritativePhysicalMeshCentre(owner) {
   visual.meshObject.traverse((node) => {
     if (!node.visible || node.isMesh !== true || !node.geometry)
       return;
-    const identity = `${node.name || ""} ${node.userData?.role || ""} ${node.userData?.category || ""}`.toLowerCase();
-    if (node.userData?.fallback_geometry === true || node.userData?.isFallback === true || node.userData?.selection_highlight === true || node.userData?.exclude_from_physical_bounds === true || /helper|frustum|label|highlight|fallback/.test(identity))
+    const identity2 = `${node.name || ""} ${node.userData?.role || ""} ${node.userData?.category || ""}`.toLowerCase();
+    if (node.userData?.fallback_geometry === true || node.userData?.isFallback === true || node.userData?.selection_highlight === true || node.userData?.exclude_from_physical_bounds === true || /helper|frustum|label|highlight|fallback/.test(identity2))
       return;
     node.updateWorldMatrix(true, false);
     if (!node.geometry.boundingBox)
@@ -45258,7 +45284,7 @@ function setEditorSnap(enabled, translationMeters, rotationDegrees) {
   refreshGizmoSnap();
   refreshPlacementSnap();
 }
-function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw) {
+function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, pushHistory = true) {
   const requested = renderedById(String(id || ""));
   const rendered = requested ? canonicalEditOwnerRendered(requested) || requested : null;
   if (!rendered || !selectionIsEditable(rendered))
@@ -45279,7 +45305,7 @@ function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw) {
   next.pose.rpy.y = values[4];
   next.pose.rpy.z = values[5];
   const committed = markDirtyTransform(rendered, next, {
-    pushHistory: true,
+    pushHistory: Boolean(pushHistory),
     oldTransform: before,
     snapOptions: { translationAxes: [], rotationAxes: [] }
   });
@@ -45292,7 +45318,174 @@ function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw) {
   updateLabels();
   return editorState();
 }
+function setItemMetadataFromBridge(id, displayName, semanticRole) {
+  const requested = renderedById(String(id || ""));
+  const rendered = requested ? canonicalEditOwnerRendered(requested) || requested : null;
+  if (!rendered || !selectionIsEditable(rendered))
+    return editorState();
+  const name = String(displayName || "").trim();
+  const role = String(semanticRole || "").trim();
+  if (name)
+    rendered.item.display_name = name;
+  if (role)
+    rendered.item.role = role;
+  if (rendered.labelEl)
+    rendered.labelEl.textContent = itemLabel(rendered.item);
+  populateObjectList();
+  updateLabels();
+  if (state.selected === rendered.item.id)
+    populateInspector(rendered);
+  if (typeof pushEditorEvent === "function") {
+    pushEditorEvent("metadata_preview_updated", {
+      itemId: rendered.item.id,
+      displayName: rendered.item.display_name || "",
+      semanticRole: rendered.item.role || ""
+    });
+  }
+  return editorState();
+}
+function normalizedLiveAuthoringItem(value) {
+  if (!value || typeof value !== "object")
+    return null;
+  const item = { ...value };
+  item.id = String(item.id || "").trim();
+  if (!item.id || renderedById(item.id))
+    return null;
+  item.display_name = String(item.display_name || item.id).trim() || item.id;
+  item.role = String(item.role || "object").trim() || "object";
+  item.category = String(item.category || item.type || "object").trim() || "object";
+  item.type = String(item.type || item.category).trim() || "object";
+  item.source_layer = "editable_layout";
+  item.editable = true;
+  item.locked = false;
+  item.selectable = true;
+  item.render_owner = "editable_layout";
+  item.render_policy = "primary";
+  return item;
+}
+function finishLiveAuthoringCrud(itemId3, eventType) {
+  state.selectionIdentityIndex = null;
+  bindExportedPhysicalTransformOwnership();
+  populateObjectList();
+  updateLabels();
+  renderSceneSummary();
+  if (typeof pushEditorEvent === "function") {
+    pushEditorEvent(eventType, { itemId: itemId3, liveSession: true });
+  }
+  return editorState();
+}
+function addItemFromBridge(value) {
+  const item = normalizedLiveAuthoringItem(value);
+  if (!item || !state.three?.scene)
+    return editorState();
+  const object3d = new THREE.Group();
+  object3d.name = `${item.id}_object_root`;
+  object3d.up.copy(THREE.Object3D.DEFAULT_UP);
+  const fallback = isSensor(item) ? makeSensorMarker(item) : makePrimitiveMesh(item);
+  if (fallback) {
+    fallback.name = `${item.id}_fallback`;
+    assignItemUserData(fallback, item);
+    object3d.add(fallback);
+  }
+  if (!applyPose(object3d, item))
+    return editorState();
+  assignItemUserData(object3d, item);
+  state.three.scene.add(object3d);
+  const rendered = {
+    item,
+    object3d,
+    fallback,
+    labelEl: createLabelElement(item),
+    originalTransform: transformOf(item),
+    authoredBaselineTransform: cloneTransform(transformOf(item))
+  };
+  setRenderInfo(
+    rendered,
+    fallback ? "primitive_fallback" : "no_physical_dimensions",
+    displayMeshUri(item),
+    "live authored-session item"
+  );
+  state.objects.push(rendered);
+  tryLoadMesh(item, rendered, fallback);
+  selectObject(item.id);
+  return finishLiveAuthoringCrud(item.id, "item_added");
+}
+function duplicateItemFromBridge(sourceId, value) {
+  const source = renderedById(String(sourceId || ""));
+  const item = normalizedLiveAuthoringItem(value);
+  if (!source || !item || !state.three?.scene || !selectionIsEditable(source)) {
+    return editorState();
+  }
+  const object3d = source.object3d.clone(true);
+  object3d.name = `${item.id}_object_root`;
+  if (!applyPose(object3d, item))
+    return editorState();
+  object3d.traverse?.((child) => assignItemUserData(child, item));
+  state.three.scene.add(object3d);
+  const rendered = {
+    item,
+    object3d,
+    fallback: null,
+    labelEl: createLabelElement(item),
+    originalTransform: transformOf(item),
+    authoredBaselineTransform: cloneTransform(transformOf(item)),
+    renderInfo: { ...source.renderInfo || {}, render_status: "live_duplicate" }
+  };
+  state.objects.push(rendered);
+  selectObject(item.id);
+  return finishLiveAuthoringCrud(item.id, "item_duplicated");
+}
+function removeItemFromBridge(id) {
+  const stableId = String(id || "").trim();
+  const rendered = renderedById(stableId);
+  if (!rendered || !selectionIsEditable(rendered))
+    return editorState();
+  if (state.selected === stableId)
+    clearSelection();
+  detachTransformGizmo();
+  state.three.scene?.remove(rendered.object3d);
+  rendered.labelEl?.remove?.();
+  state.objects = state.objects.filter((record) => record !== rendered);
+  state.pickRecords = state.pickRecords.filter((record) => record !== rendered && record.item?.id !== stableId);
+  state.dirtyTransforms.delete(stableId);
+  state.undoStack = state.undoStack.filter((entry) => !(entry.changes || [entry]).some((change) => change.itemId === stableId));
+  state.redoStack = state.redoStack.filter((entry) => !(entry.changes || [entry]).some((change) => change.itemId === stableId));
+  updateDirtyState();
+  return finishLiveAuthoringCrud(stableId, "item_removed");
+}
+function setVisibleItemIdsFromBridge(ids) {
+  const visible = new Set(Array.isArray(ids) ? ids.map((id) => String(id || "").trim()).filter(Boolean) : []);
+  for (const rendered of [...state.objects, ...state.pickRecords]) {
+    const id = String(rendered?.item?.id || "").trim();
+    if (id && rendered?.object3d)
+      rendered.object3d.visible = visible.has(id);
+    if (rendered?.labelEl)
+      rendered.labelEl.hidden = !visible.has(id);
+  }
+  updateLabels();
+  renderSceneSummary();
+  return editorState();
+}
 window.__WORKCELL_EDITOR_API_V1__ = {
+  apiVersion: "1.1.0",
+  getCapabilities: () => Object.freeze({
+    schemaVersion: "workcell_studio_live_authoring_capabilities/v1",
+    apiVersion: "1.1.0",
+    operations: Object.freeze([
+      "getState",
+      "selectItem",
+      "setItemMetadata",
+      "setItemTransform",
+      "addItem",
+      "duplicateItem",
+      "removeItem",
+      "setVisibleItemIds",
+      "undo",
+      "redo",
+      "getEditPatch",
+      "drainEvents"
+    ])
+  }),
   getState: () => {
     const base = editorState();
     const selectedRendered = state.selected ? renderedById(state.selected) : null;
@@ -45307,6 +45500,13 @@ window.__WORKCELL_EDITOR_API_V1__ = {
     return editorState();
   },
   setItemPose: (id, x, y, z, roll, pitch, yaw) => setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw),
+  setItemTransform: (id, x, y, z, roll, pitch, yaw) => setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw),
+  syncItemTransform: (id, x, y, z, roll, pitch, yaw) => setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, false),
+  setItemMetadata: (id, displayName, semanticRole) => setItemMetadataFromBridge(id, displayName, semanticRole),
+  addItem: (item) => addItemFromBridge(item),
+  removeItem: (id) => removeItemFromBridge(id),
+  duplicateItem: (id, item) => duplicateItemFromBridge(id, item),
+  setVisibleItemIds: (ids) => setVisibleItemIdsFromBridge(ids),
   selectionDiagnostics: () => currentSelectionDiagnostics(),
   clearSelection: () => {
     clearSelection();
@@ -45357,6 +45557,26 @@ window.__WORKCELL_EDITOR_API_V1__ = {
     return events;
   }
 };
+var editorApiInstalledAt = (/* @__PURE__ */ new Date()).toISOString();
+var editorRuntimeViewerBuild = new URLSearchParams(window.location.search).get("viewerBuild") || "";
+Object.defineProperty(window, "__WORKCELL_EDITOR_RUNTIME_V1__", {
+  configurable: false,
+  enumerable: false,
+  writable: false,
+  value: Object.freeze({
+    schemaVersion: "workcell_studio_editor_runtime/v1",
+    buildId: "workcell-editor-api-1.1.0-20260820",
+    viewerBuild: editorRuntimeViewerBuild,
+    apiVersion: window.__WORKCELL_EDITOR_API_V1__.apiVersion,
+    installedAt: editorApiInstalledAt,
+    locationHref: String(window.location.href || "")
+  })
+});
+if (typeof window.CustomEvent === "function" && typeof window.dispatchEvent === "function") {
+  window.dispatchEvent(new window.CustomEvent("workcell:editor-api-ready", {
+    detail: window.__WORKCELL_EDITOR_RUNTIME_V1__
+  }));
+}
 el.file.addEventListener("change", (event) => {
   const file = event.target.files?.[0];
   if (file)
@@ -45400,6 +45620,2742 @@ async function boot() {
   }
 }
 boot();
+
+// rviz_light_baseline.js
+init_three_module();
+var BASELINE = Object.freeze({
+  background: 15659508,
+  sky: 16777215,
+  groundBounce: 13358044,
+  gridMajor: 9016995,
+  gridMinor: 11976906,
+  exposure: 1.08
+});
+var PATCH_FLAG = Symbol.for("workcell-studio.rviz-light-baseline.v1");
+var configuredRenderers = /* @__PURE__ */ new WeakSet();
+var configuredScenes = /* @__PURE__ */ new WeakSet();
+var configuredMeshes = /* @__PURE__ */ new WeakSet();
+function isHelper(node) {
+  const data = node?.userData || {};
+  const identity2 = [
+    node?.name,
+    data?.source_layer,
+    data?.role,
+    data?.category,
+    data?.item?.source_layer,
+    data?.item?.role,
+    data?.item?.category
+  ].map((value) => String(value || "").toLowerCase().replace(/[_-]+/g, " ")).join(" ");
+  return Boolean(
+    node?.isGridHelper || node?.isAxesHelper || data?.exclude_from_fit_bounds === true || /\b(debug|diagnostic|overlay|helper|zone|reach|fov|warning)\b/.test(identity2)
+  );
+}
+function isTranslucent(material) {
+  const materials = Array.isArray(material) ? material : [material];
+  return materials.some((entry) => entry?.transparent && Number(entry.opacity ?? 1) < 0.9);
+}
+function configureRenderer(renderer) {
+  if (configuredRenderers.has(renderer))
+    return;
+  configuredRenderers.add(renderer);
+  renderer.outputColorSpace = SRGBColorSpace;
+  renderer.toneMapping = ACESFilmicToneMapping;
+  renderer.toneMappingExposure = BASELINE.exposure;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = PCFSoftShadowMap;
+  renderer.setClearColor(BASELINE.background, 1);
+}
+function configureScene(scene) {
+  if (configuredScenes.has(scene))
+    return;
+  configuredScenes.add(scene);
+  if (!scene.background?.isColor)
+    scene.background = new Color();
+  scene.background.setHex(BASELINE.background);
+  scene.fog = null;
+  for (const child of scene.children) {
+    if (child?.isHemisphereLight) {
+      child.name = "rviz_light_hemisphere";
+      child.color.setHex(BASELINE.sky);
+      child.groundColor.setHex(BASELINE.groundBounce);
+      child.intensity = 1.45;
+    } else if (child?.isDirectionalLight) {
+      child.name = "rviz_light_key";
+      child.color.setHex(16777215);
+      child.intensity = 1.6;
+      child.position.set(3.5, -4.5, 6.5);
+      child.castShadow = true;
+      child.shadow.mapSize.set(2048, 2048);
+      Object.assign(child.shadow.camera, {
+        near: 0.1,
+        far: 20,
+        left: -5,
+        right: 5,
+        top: 5,
+        bottom: -5
+      });
+      child.shadow.camera.updateProjectionMatrix();
+      child.shadow.bias = -25e-5;
+      child.shadow.normalBias = 0.018;
+    } else if (child?.isGridHelper) {
+      child.position.z = 2e-3;
+      child.renderOrder = -5;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.forEach((material, index) => {
+        if (!material)
+          return;
+        material.color?.setHex(index === 0 ? BASELINE.gridMajor : BASELINE.gridMinor);
+        material.transparent = true;
+        material.opacity = index === 0 ? 0.82 : 0.62;
+        material.depthWrite = false;
+      });
+    }
+  }
+}
+function configureNewMeshShadows(scene) {
+  scene.traverse((node) => {
+    if (!node?.isMesh || configuredMeshes.has(node))
+      return;
+    configuredMeshes.add(node);
+    const shadows = !isHelper(node) && !isTranslucent(node.material);
+    node.castShadow = shadows;
+    node.receiveShadow = shadows;
+  });
+}
+function install() {
+  const prototype = WebGLRenderer?.prototype;
+  if (!prototype || prototype[PATCH_FLAG])
+    return;
+  const originalRender = prototype.render;
+  prototype.render = function renderWithRvizLightBaseline(scene, camera) {
+    configureRenderer(this);
+    configureScene(scene);
+    const frame = (scene.userData.rvizLightMeshScanFrame || 0) + 1;
+    scene.userData.rvizLightMeshScanFrame = frame % 20;
+    if (frame === 1 || frame % 20 === 0)
+      configureNewMeshShadows(scene);
+    return originalRender.call(this, scene, camera);
+  };
+  prototype[PATCH_FLAG] = true;
+  window.__WORKCELL_RVIZ_LIGHT_BASELINE__ = Object.freeze({
+    enabled: true,
+    version: 1,
+    background: "#eef1f4",
+    shadows: "pcf_soft",
+    tone_mapping: "aces_filmic"
+  });
+}
+install();
+
+// support_surface_placement.js
+init_three_module();
+var SUPPORT_KINDS = /* @__PURE__ */ new Set(["workbench_body", "table_surface", "tabletop"]);
+var PATCH_FLAG2 = Symbol.for("workcell-studio.support-surface-placement.v1");
+var EDGE_MARGIN_M = 0.01;
+var MAX_ACQUIRE_DISTANCE_M = 0.15;
+var VALID_COLOR = 3116891;
+var INVALID_COLOR = 12858420;
+var EPSILON = 1e-5;
+var runtime = {
+  scene: null,
+  camera: null,
+  renderer: null,
+  canvas: null,
+  active: null,
+  helpers: /* @__PURE__ */ new Map(),
+  statusNode: null,
+  feedbackTimer: null,
+  listenersInstalled: false,
+  lastResult: null
+};
+function editorState2() {
+  try {
+    return window.__WORKCELL_EDITOR_API_V1__?.getState?.() || null;
+  } catch (_) {
+    return null;
+  }
+}
+function itemOf(node) {
+  return node?.userData?.item || null;
+}
+function supportKind(item) {
+  return String(item?.support_surface_kind || item?.supportSurfaceKind || "").trim().toLowerCase();
+}
+function itemLabel2(item) {
+  return item?.label || item?.display_name || item?.object_name || item?.name || item?.id || "support surface";
+}
+function rootForItemId(itemId3) {
+  if (!runtime.scene || !itemId3)
+    return null;
+  let found = null;
+  runtime.scene.traverse((node) => {
+    if (!found && String(itemOf(node)?.id || "") === String(itemId3))
+      found = node;
+  });
+  if (!found)
+    return null;
+  while (found.parent && found.parent !== runtime.scene && String(itemOf(found.parent)?.id || "") === String(itemId3)) {
+    found = found.parent;
+  }
+  return found;
+}
+function finiteBounds(object) {
+  if (!object)
+    return null;
+  object.updateWorldMatrix?.(true, true);
+  const box = new Box3().setFromObject(object);
+  return [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z].every(Number.isFinite) && !box.isEmpty() ? box : null;
+}
+function topSurfaceZ(item, box) {
+  const explicit = Number(item?.top_surface_z_m ?? item?.topSurfaceZM);
+  return Number.isFinite(explicit) ? explicit : box.max.z;
+}
+function supportEntries(selectedId) {
+  if (!runtime.scene)
+    return [];
+  const entries = [];
+  const seen = /* @__PURE__ */ new Set();
+  runtime.scene.traverse((node) => {
+    const item = itemOf(node);
+    if (!item || !SUPPORT_KINDS.has(supportKind(item)))
+      return;
+    if (String(item.id || "") === String(selectedId || ""))
+      return;
+    let root = node;
+    while (root.parent && root.parent !== runtime.scene && String(itemOf(root.parent)?.id || "") === String(item.id || "")) {
+      root = root.parent;
+    }
+    const key = root.uuid || item.id;
+    if (!key || seen.has(key))
+      return;
+    seen.add(key);
+    const box = finiteBounds(root);
+    if (!box)
+      return;
+    entries.push({ root, item, box, top: topSurfaceZ(item, box) });
+  });
+  return entries;
+}
+function outsideDistance(value, min, max) {
+  if (value < min)
+    return min - value;
+  if (value > max)
+    return value - max;
+  return 0;
+}
+function nearestSupport(object, selectedId, maxDistance = MAX_ACQUIRE_DISTANCE_M) {
+  const objectBox = finiteBounds(object);
+  if (!objectBox)
+    return null;
+  const center = objectBox.getCenter(new Vector3());
+  let best = null;
+  for (const support of supportEntries(selectedId)) {
+    const dx = outsideDistance(center.x, support.box.min.x, support.box.max.x);
+    const dy = outsideDistance(center.y, support.box.min.y, support.box.max.y);
+    const horizontalDistance = Math.hypot(dx, dy);
+    if (horizontalDistance > maxDistance)
+      continue;
+    const verticalDistance = Math.abs(objectBox.min.z - support.top);
+    const score = horizontalDistance * 10 + verticalDistance;
+    if (!best || score < best.score)
+      best = { ...support, score };
+  }
+  return best;
+}
+function moveObjectInWorld(object, delta) {
+  if (!object || !delta)
+    return;
+  const target = object.getWorldPosition(new Vector3()).add(delta);
+  if (object.parent)
+    object.parent.worldToLocal(target);
+  object.position.copy(target);
+  object.updateWorldMatrix?.(true, true);
+}
+function helperFor(name, box, color) {
+  let helper = runtime.helpers.get(name);
+  if (!helper) {
+    helper = new Box3Helper(box.clone(), color);
+    helper.name = `support_placement_${name}`;
+    helper.renderOrder = 1e3;
+    helper.userData.exclude_from_fit_bounds = true;
+    helper.userData.exclude_from_physical_bounds = true;
+    helper.userData.helper_overlay = true;
+    helper.material.depthTest = false;
+    helper.material.transparent = true;
+    helper.material.opacity = 0.95;
+    runtime.scene?.add(helper);
+    runtime.helpers.set(name, helper);
+  }
+  helper.box.copy(box);
+  helper.material.color.setHex(color);
+  helper.visible = true;
+  helper.updateMatrixWorld(true);
+  return helper;
+}
+function ensureStatusNode() {
+  if (runtime.statusNode?.isConnected)
+    return runtime.statusNode;
+  const host = document.querySelector(".viewport-panel");
+  if (!host)
+    return null;
+  const node = document.createElement("div");
+  node.id = "support-placement-status";
+  node.setAttribute("role", "status");
+  node.setAttribute("aria-live", "polite");
+  node.hidden = true;
+  node.style.cssText = [
+    "position:absolute",
+    "left:50%",
+    "bottom:0.85rem",
+    "transform:translateX(-50%)",
+    "z-index:5",
+    "max-width:min(34rem,calc(100% - 2rem))",
+    "padding:0.48rem 0.72rem",
+    "border:1px solid currentColor",
+    "border-radius:0.45rem",
+    "box-shadow:0 0.15rem 0.55rem rgba(23,32,42,0.18)",
+    "font:600 0.82rem/1.3 Inter,ui-sans-serif,system-ui,sans-serif",
+    "text-align:center",
+    "pointer-events:none"
+  ].join(";");
+  host.appendChild(node);
+  runtime.statusNode = node;
+  return node;
+}
+function showStatus(valid, message) {
+  const node = ensureStatusNode();
+  if (!node)
+    return;
+  node.hidden = false;
+  node.textContent = message;
+  node.style.color = valid ? "#14532d" : "#8b1e1e";
+  node.style.background = valid ? "rgba(236,253,245,0.96)" : "rgba(255,238,240,0.96)";
+}
+function clearPlacementFeedback(delayMs = 0) {
+  window.clearTimeout(runtime.feedbackTimer);
+  const clear = () => {
+    for (const helper of runtime.helpers.values()) {
+      helper.parent?.remove(helper);
+      helper.geometry?.dispose?.();
+      helper.material?.dispose?.();
+    }
+    runtime.helpers.clear();
+    if (runtime.statusNode)
+      runtime.statusNode.hidden = true;
+  };
+  if (delayMs > 0)
+    runtime.feedbackTimer = window.setTimeout(clear, delayMs);
+  else
+    clear();
+}
+function publishResult(result) {
+  runtime.lastResult = result;
+  window.dispatchEvent?.(new CustomEvent("workcell:support-placement", { detail: result }));
+  window.parent?.postMessage?.({ type: "workcell_support_placement", ...result }, "*");
+}
+function applySupportPlacement(active) {
+  const { object, itemId: itemId3 } = active;
+  let support = active.support;
+  if (!support)
+    support = nearestSupport(object, itemId3);
+  if (!support) {
+    const objectBox2 = finiteBounds(object);
+    if (objectBox2)
+      helperFor("object", objectBox2, INVALID_COLOR);
+    const result2 = {
+      valid: false,
+      item_id: itemId3,
+      support_surface_id: "",
+      reason: "No table or workbench under the object"
+    };
+    showStatus(false, result2.reason);
+    publishResult(result2);
+    return result2;
+  }
+  support.box = finiteBounds(support.root) || support.box;
+  support.top = topSurfaceZ(support.item, support.box);
+  active.support = support;
+  let objectBox = finiteBounds(object);
+  if (!objectBox)
+    return null;
+  const objectSize = objectBox.getSize(new Vector3());
+  const innerMinX = support.box.min.x + EDGE_MARGIN_M;
+  const innerMaxX = support.box.max.x - EDGE_MARGIN_M;
+  const innerMinY = support.box.min.y + EDGE_MARGIN_M;
+  const innerMaxY = support.box.max.y - EDGE_MARGIN_M;
+  const availableX = innerMaxX - innerMinX;
+  const availableY = innerMaxY - innerMinY;
+  if (objectSize.x > availableX + EPSILON || objectSize.y > availableY + EPSILON) {
+    helperFor("support", support.box, INVALID_COLOR);
+    helperFor("object", objectBox, INVALID_COLOR);
+    const result2 = {
+      valid: false,
+      item_id: itemId3,
+      support_surface_id: support.item.id || "",
+      reason: `${itemLabel2(active.item)} is larger than ${itemLabel2(support.item)}`
+    };
+    showStatus(false, result2.reason);
+    publishResult(result2);
+    return result2;
+  }
+  let correctionX = 0;
+  let correctionY = 0;
+  if (objectBox.min.x < innerMinX)
+    correctionX = innerMinX - objectBox.min.x;
+  else if (objectBox.max.x > innerMaxX)
+    correctionX = innerMaxX - objectBox.max.x;
+  if (objectBox.min.y < innerMinY)
+    correctionY = innerMinY - objectBox.min.y;
+  else if (objectBox.max.y > innerMaxY)
+    correctionY = innerMaxY - objectBox.max.y;
+  if (correctionX || correctionY) {
+    moveObjectInWorld(object, new Vector3(correctionX, correctionY, 0));
+    objectBox = finiteBounds(object);
+  }
+  const correctionZ = support.top - objectBox.min.z;
+  if (Math.abs(correctionZ) > EPSILON) {
+    moveObjectInWorld(object, new Vector3(0, 0, correctionZ));
+    objectBox = finiteBounds(object);
+  }
+  const valid = Boolean(
+    objectBox && objectBox.min.x >= innerMinX - EPSILON && objectBox.max.x <= innerMaxX + EPSILON && objectBox.min.y >= innerMinY - EPSILON && objectBox.max.y <= innerMaxY + EPSILON && Math.abs(objectBox.min.z - support.top) <= EPSILON * 5
+  );
+  const color = valid ? VALID_COLOR : INVALID_COLOR;
+  helperFor("support", support.box, color);
+  helperFor("object", objectBox, color);
+  object.userData.preview_support_surface_id = support.item.id || "";
+  const result = {
+    valid,
+    item_id: itemId3,
+    support_surface_id: support.item.id || "",
+    support_surface_label: itemLabel2(support.item),
+    top_surface_z_m: support.top,
+    clamped_to_footprint: Boolean(correctionX || correctionY),
+    reason: valid ? `Valid placement on ${itemLabel2(support.item)}` : "Placement remains outside the support surface"
+  };
+  showStatus(valid, result.reason);
+  publishResult(result);
+  return result;
+}
+function positionChanged(object, previous) {
+  return previous && object.position.distanceToSquared(previous) > 1e-12;
+}
+function onPointerDown2(event) {
+  const state2 = editorState2();
+  if (!state2 || state2.mode !== "move" || state2.selectedEditable !== true || !state2.selectedItemId)
+    return;
+  const object = rootForItemId(state2.selectedItemId);
+  if (!object)
+    return;
+  clearPlacementFeedback();
+  runtime.active = {
+    pointerId: event.pointerId,
+    itemId: state2.selectedItemId,
+    item: itemOf(object),
+    object,
+    lastPosition: object.position.clone(),
+    support: nearestSupport(object, state2.selectedItemId, 0.04),
+    moved: false
+  };
+}
+function onPointerMove2(event) {
+  const active = runtime.active;
+  if (!active || active.pointerId !== event.pointerId)
+    return;
+  const state2 = editorState2();
+  if (!state2 || state2.mode !== "move" || state2.selectedItemId !== active.itemId)
+    return;
+  if (!positionChanged(active.object, active.lastPosition))
+    return;
+  active.moved = true;
+  applySupportPlacement(active);
+  active.lastPosition.copy(active.object.position);
+}
+function finishPlacement(event) {
+  const active = runtime.active;
+  if (!active || event?.pointerId !== void 0 && active.pointerId !== event.pointerId)
+    return;
+  runtime.active = null;
+  if (active.moved)
+    clearPlacementFeedback(900);
+  else
+    clearPlacementFeedback();
+}
+function installCanvasListeners() {
+  if (runtime.listenersInstalled || !runtime.scene)
+    return;
+  const canvas = document.getElementById("scene-canvas");
+  if (!canvas)
+    return;
+  runtime.canvas = canvas;
+  runtime.listenersInstalled = true;
+  canvas.addEventListener("pointerdown", onPointerDown2);
+  canvas.addEventListener("pointermove", onPointerMove2);
+  canvas.addEventListener("pointerup", finishPlacement);
+  canvas.addEventListener("pointercancel", finishPlacement);
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      runtime.active = null;
+      clearPlacementFeedback();
+    }
+  });
+}
+function install2() {
+  const prototype = WebGLRenderer?.prototype;
+  if (!prototype || prototype[PATCH_FLAG2])
+    return;
+  const originalRender = prototype.render;
+  prototype.render = function renderWithSupportPlacement(scene, camera) {
+    if (runtime.scene && runtime.scene !== scene) {
+      runtime.active = null;
+      clearPlacementFeedback();
+    }
+    runtime.scene = scene;
+    runtime.camera = camera;
+    runtime.renderer = this;
+    installCanvasListeners();
+    return originalRender.call(this, scene, camera);
+  };
+  prototype[PATCH_FLAG2] = true;
+  window.__WORKCELL_SUPPORT_PLACEMENT_V1__ = Object.freeze({
+    enabled: true,
+    version: 1,
+    scope: "Preview-only placement helper; final poses remain committed by the existing edit-patch workflow.",
+    getState: () => ({ active: Boolean(runtime.active), lastResult: runtime.lastResult }),
+    clear: () => {
+      runtime.active = null;
+      clearPlacementFeedback();
+    }
+  });
+}
+install2();
+
+// workcell_task_gizmo.js
+init_three_module();
+init_TransformControls();
+var PATCH_FLAG3 = Symbol.for("workcell-studio.task-gizmo.v1");
+var FINE_TRANSLATION_M = 1e-3;
+var FINE_ROTATION_DEG = 1;
+var runtime2 = {
+  gizmo: null,
+  freeHeight: false,
+  fineMode: false,
+  selectedItemId: "",
+  toggle: null,
+  labelText: null,
+  listenersInstalled: false,
+  savedTranslationValue: null,
+  savedRotationValue: null
+};
+function editorState3() {
+  try {
+    return window.__WORKCELL_EDITOR_API_V1__?.getState?.() || null;
+  } catch (_) {
+    return null;
+  }
+}
+function isTypingTarget(target) {
+  const tag = String(target?.tagName || "").toLowerCase();
+  return tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable === true;
+}
+function numericInputValue(id, fallback) {
+  const value = Number(document.getElementById(id)?.value);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+function snapEnabled() {
+  return Boolean(document.getElementById("snap-toggle")?.checked);
+}
+function findGizmo(scene) {
+  let found = null;
+  scene?.traverse?.((node) => {
+    if (!found && node instanceof TransformControls)
+      found = node;
+  });
+  return found;
+}
+function clearSupportPlacement() {
+  window.__WORKCELL_SUPPORT_PLACEMENT_V1__?.clear?.();
+}
+function publishMode() {
+  const detail = {
+    free_height: runtime2.freeHeight,
+    fine_mode: runtime2.fineMode,
+    move_axes: runtime2.freeHeight ? ["x", "y", "z"] : ["x", "y"],
+    rotation_axes: ["z"]
+  };
+  window.dispatchEvent?.(new CustomEvent("workcell:gizmo-task-mode", { detail }));
+  window.parent?.postMessage?.({ type: "workcell_gizmo_task_mode", ...detail }, "*");
+}
+function updateLabel() {
+  if (!runtime2.toggle || !runtime2.labelText)
+    return;
+  runtime2.toggle.checked = runtime2.freeHeight;
+  runtime2.labelText.textContent = runtime2.freeHeight ? "Free height (XYZ)" : "Surface move (XY)";
+  runtime2.toggle.parentElement.title = runtime2.freeHeight ? "Z translation is enabled and table-surface snapping is paused. Turn this off to return to safe XY placement." : "Default workcell placement: move in XY while support-surface placement controls Z. Hold Shift for 1 mm fine snap.";
+}
+function setFreeHeight(enabled, announce = true) {
+  runtime2.freeHeight = Boolean(enabled);
+  clearSupportPlacement();
+  updateLabel();
+  applyTaskGizmo();
+  if (announce)
+    publishMode();
+}
+function ensureToolbarControl() {
+  if (runtime2.toggle?.isConnected)
+    return;
+  const toolbar = document.querySelector(".toolbar");
+  if (!toolbar)
+    return;
+  const label = document.createElement("label");
+  label.className = "toolbar-toggle";
+  label.title = "Default workcell placement: move in XY while support-surface placement controls Z. Hold Shift for 1 mm fine snap.";
+  const input = document.createElement("input");
+  input.id = "free-height-toggle";
+  input.type = "checkbox";
+  input.disabled = true;
+  input.addEventListener("change", () => setFreeHeight(input.checked));
+  const text = document.createElement("span");
+  text.id = "workcell-gizmo-mode-label";
+  text.textContent = "Surface move (XY)";
+  label.append(input, text);
+  toolbar.appendChild(label);
+  runtime2.toggle = input;
+  runtime2.labelText = text;
+}
+function snapDiffers(current, desired) {
+  if (current === desired)
+    return false;
+  if (current == null || desired == null)
+    return true;
+  return Math.abs(Number(current) - Number(desired)) > 1e-12;
+}
+function applySnap(gizmo, mode) {
+  const enabled = snapEnabled();
+  const translation = enabled ? numericInputValue("translation-snap", 0.01) : null;
+  const rotation = enabled ? MathUtils.degToRad(numericInputValue("rotation-snap", 5)) : null;
+  const desiredTranslation = mode === "move" ? translation : enabled ? numericInputValue("translation-snap", 0.01) : null;
+  if (snapDiffers(gizmo.translationSnap, desiredTranslation))
+    gizmo.setTranslationSnap(desiredTranslation);
+  if (snapDiffers(gizmo.rotationSnap, rotation))
+    gizmo.setRotationSnap(rotation);
+}
+function configureAxes(gizmo, mode, showX, showY, showZ) {
+  if (gizmo.mode !== mode)
+    gizmo.setMode(mode);
+  if (gizmo.space !== "world")
+    gizmo.setSpace("world");
+  if (gizmo.showX !== showX)
+    gizmo.showX = showX;
+  if (gizmo.showY !== showY)
+    gizmo.showY = showY;
+  if (gizmo.showZ !== showZ)
+    gizmo.showZ = showZ;
+}
+function applyTaskGizmo() {
+  const state2 = editorState3();
+  const gizmo = runtime2.gizmo;
+  if (!state2 || !gizmo)
+    return;
+  const editableMove = state2.mode === "move" && state2.selectedEditable === true && Boolean(state2.selectedItemId);
+  if (runtime2.toggle)
+    runtime2.toggle.disabled = !editableMove;
+  if (runtime2.selectedItemId && runtime2.selectedItemId !== state2.selectedItemId && runtime2.freeHeight) {
+    runtime2.freeHeight = false;
+    clearSupportPlacement();
+    updateLabel();
+  }
+  runtime2.selectedItemId = state2.selectedItemId || "";
+  if (state2.mode !== "move" && runtime2.freeHeight) {
+    runtime2.freeHeight = false;
+    clearSupportPlacement();
+    updateLabel();
+  }
+  if (state2.mode === "move") {
+    configureAxes(gizmo, "translate", true, true, runtime2.freeHeight);
+    applySnap(gizmo, "move");
+  } else if (state2.mode === "rotate") {
+    configureAxes(gizmo, "rotate", false, false, true);
+    applySnap(gizmo, "rotate");
+  }
+}
+function applyFineInputOverride(enabled) {
+  const translation = document.getElementById("translation-snap");
+  const rotation = document.getElementById("rotation-snap");
+  if (enabled) {
+    if (translation && runtime2.savedTranslationValue == null)
+      runtime2.savedTranslationValue = translation.value;
+    if (rotation && runtime2.savedRotationValue == null)
+      runtime2.savedRotationValue = rotation.value;
+    if (translation)
+      translation.value = String(FINE_TRANSLATION_M);
+    if (rotation)
+      rotation.value = String(FINE_ROTATION_DEG);
+    return;
+  }
+  if (translation && runtime2.savedTranslationValue != null)
+    translation.value = runtime2.savedTranslationValue;
+  if (rotation && runtime2.savedRotationValue != null)
+    rotation.value = runtime2.savedRotationValue;
+  runtime2.savedTranslationValue = null;
+  runtime2.savedRotationValue = null;
+}
+function setFineMode(enabled) {
+  const next = Boolean(enabled);
+  if (runtime2.fineMode === next)
+    return;
+  runtime2.fineMode = next;
+  applyFineInputOverride(next);
+  applyTaskGizmo();
+  publishMode();
+}
+function installInputListeners() {
+  if (runtime2.listenersInstalled)
+    return;
+  runtime2.listenersInstalled = true;
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Shift" && !isTypingTarget(event.target))
+      setFineMode(true);
+    if (event.key === "Escape")
+      setFineMode(false);
+  });
+  window.addEventListener("keyup", (event) => {
+    if (event.key === "Shift")
+      setFineMode(false);
+  });
+  window.addEventListener("blur", () => setFineMode(false));
+  const canvas = document.getElementById("scene-canvas");
+  canvas?.addEventListener("pointerdown", () => {
+    if (runtime2.freeHeight)
+      queueMicrotask(clearSupportPlacement);
+  });
+}
+function install3() {
+  const prototype = WebGLRenderer?.prototype;
+  if (!prototype || prototype[PATCH_FLAG3])
+    return;
+  const originalRender = prototype.render;
+  prototype.render = function renderWithTaskGizmo(scene, camera) {
+    runtime2.gizmo = runtime2.gizmo && runtime2.gizmo.parent ? runtime2.gizmo : findGizmo(scene);
+    ensureToolbarControl();
+    applyTaskGizmo();
+    const result = originalRender.call(this, scene, camera);
+    installInputListeners();
+    return result;
+  };
+  prototype[PATCH_FLAG3] = true;
+  window.__WORKCELL_TASK_GIZMO_V1__ = Object.freeze({
+    enabled: true,
+    version: 1,
+    fine_translation_m: FINE_TRANSLATION_M,
+    fine_rotation_deg: FINE_ROTATION_DEG,
+    getState: () => ({
+      freeHeight: runtime2.freeHeight,
+      fineMode: runtime2.fineMode,
+      selectedItemId: runtime2.selectedItemId
+    }),
+    setFreeHeight: (enabled) => setFreeHeight(enabled)
+  });
+}
+install3();
+
+// collision_placement_validation.js
+init_three_module();
+init_TransformControls();
+var PATCH_FLAG4 = Symbol.for("workcell-studio.collision-placement-validation.v1");
+var CLEARANCE_M = 0.01;
+var OVERLAP_EPSILON_M = 1e-5;
+var VALID_COLOR2 = 3116891;
+var NEAR_COLOR = 11692800;
+var INVALID_COLOR2 = 12858420;
+var SUPPORT_KINDS2 = /* @__PURE__ */ new Set(["workbench_body", "table_surface", "tabletop"]);
+var runtime3 = {
+  scene: null,
+  canvas: null,
+  gizmo: null,
+  active: null,
+  helpers: /* @__PURE__ */ new Map(),
+  statusNode: null,
+  feedbackTimer: null,
+  listenersInstalled: false,
+  gizmosInstalled: /* @__PURE__ */ new WeakSet(),
+  replayingObjectChange: false,
+  numericBefore: null,
+  lastResult: null
+};
+function editorApi() {
+  return window.__WORKCELL_EDITOR_API_V1__ || null;
+}
+function editorState4() {
+  try {
+    return editorApi()?.getState?.() || null;
+  } catch (_) {
+    return null;
+  }
+}
+function itemOf2(node) {
+  return node?.userData?.item || null;
+}
+function itemId(item) {
+  return String(item?.id || "").trim();
+}
+function itemLabel3(item, fallback = "object") {
+  return item?.label || item?.display_name || item?.object_name || item?.name || item?.id || fallback;
+}
+function supportKind2(item) {
+  return String(item?.support_surface_kind || item?.supportSurfaceKind || "").trim().toLowerCase();
+}
+function rootForItemId2(id) {
+  if (!runtime3.scene || !id)
+    return null;
+  let found = null;
+  runtime3.scene.traverse((node) => {
+    if (!found && itemId(itemOf2(node)) === String(id))
+      found = node;
+  });
+  if (!found)
+    return null;
+  while (found.parent && found.parent !== runtime3.scene && itemId(itemOf2(found.parent)) === String(id)) {
+    found = found.parent;
+  }
+  return found;
+}
+function worldVisible(node) {
+  for (let current = node; current; current = current.parent) {
+    if (current.visible === false)
+      return false;
+  }
+  return true;
+}
+function identityFor(node) {
+  const item = itemOf2(node);
+  return [
+    node?.name,
+    node?.userData?.role,
+    node?.userData?.category,
+    node?.userData?.source_layer,
+    node?.userData?.render_status,
+    item?.role,
+    item?.category,
+    item?.type,
+    item?.source_layer,
+    item?.active_visual_source
+  ].map((value) => String(value || "").toLowerCase().replace(/[_-]+/g, " ")).join(" ");
+}
+function excludedNode(node) {
+  for (let current = node; current && current !== runtime3.scene; current = current.parent) {
+    const data = current.userData || {};
+    const item = itemOf2(current);
+    if (current instanceof TransformControls || current.isGridHelper || current.isAxesHelper || data.exclude_from_fit_bounds === true || data.exclude_from_physical_bounds === true || data.helper_overlay === true || data.debug_only === true || data.diagnostic_only === true || item?.exclude_from_fit_bounds === true || item?.exclude_from_physical_bounds === true || item?.debug_overlay === true || /\b(debug|diagnostic|overlay|helper|zone|reachability|field of view|fov|warning|gizmo)\b/.test(identityFor(current)))
+      return true;
+  }
+  return false;
+}
+function visibleBounds(root) {
+  if (!root)
+    return null;
+  root.updateWorldMatrix?.(true, true);
+  const box = new Box3();
+  let count = 0;
+  root.traverse((node) => {
+    if (!node?.isMesh || !worldVisible(node) || excludedNode(node) || !node.geometry)
+      return;
+    if (!node.geometry.boundingBox)
+      node.geometry.computeBoundingBox?.();
+    const local = node.geometry.boundingBox;
+    if (!local || local.isEmpty())
+      return;
+    const world = local.clone().applyMatrix4(node.matrixWorld);
+    const values = [world.min.x, world.min.y, world.min.z, world.max.x, world.max.y, world.max.z];
+    if (!values.every(Number.isFinite))
+      return;
+    box.union(world);
+    count += 1;
+  });
+  return count && !box.isEmpty() ? box : null;
+}
+function ancestorItemNode(node) {
+  for (let current = node; current && current !== runtime3.scene; current = current.parent) {
+    if (itemOf2(current))
+      return current;
+  }
+  return null;
+}
+function isDescendantOf(node, root) {
+  for (let current = node; current; current = current.parent) {
+    if (current === root)
+      return true;
+  }
+  return false;
+}
+function collisionCandidates(selectedRoot, selectedId) {
+  if (!runtime3.scene)
+    return [];
+  const candidates = [];
+  const seenRoots = /* @__PURE__ */ new Set();
+  runtime3.scene.traverse((node) => {
+    const item = itemOf2(node);
+    const id = itemId(item);
+    if (!id || id === String(selectedId) || SUPPORT_KINDS2.has(supportKind2(item)) || excludedNode(node))
+      return;
+    const root = rootForItemId2(id);
+    if (!root || root === selectedRoot || seenRoots.has(root.uuid))
+      return;
+    seenRoots.add(root.uuid);
+    const box = visibleBounds(root);
+    if (box)
+      candidates.push({ root, item, box, label: itemLabel3(item) });
+  });
+  runtime3.scene.traverse((node) => {
+    if (!node?.isMesh || !worldVisible(node) || excludedNode(node) || isDescendantOf(node, selectedRoot))
+      return;
+    if (ancestorItemNode(node))
+      return;
+    const box = visibleBounds(node);
+    if (!box)
+      return;
+    candidates.push({ root: node, item: null, box, label: node.name || node.parent?.name || "fixed geometry" });
+  });
+  return candidates;
+}
+function penetrationDepth(a, b) {
+  return {
+    x: Math.min(a.max.x, b.max.x) - Math.max(a.min.x, b.min.x),
+    y: Math.min(a.max.y, b.max.y) - Math.max(a.min.y, b.min.y),
+    z: Math.min(a.max.z, b.max.z) - Math.max(a.min.z, b.min.z)
+  };
+}
+function boxesOverlap(a, b) {
+  const depth = penetrationDepth(a, b);
+  return depth.x > OVERLAP_EPSILON_M && depth.y > OVERLAP_EPSILON_M && depth.z > OVERLAP_EPSILON_M;
+}
+function validateRoot(root, id, { feedback = false } = {}) {
+  const objectBox = visibleBounds(root);
+  if (!objectBox)
+    return { valid: true, severity: "valid", item_id: id, objectBox: null, collisions: [], nearby: [] };
+  const collisions = [];
+  const nearby = [];
+  const clearanceBox = objectBox.clone().expandByScalar(CLEARANCE_M);
+  for (const candidate of collisionCandidates(root, id)) {
+    if (boxesOverlap(objectBox, candidate.box))
+      collisions.push(candidate);
+    else if (clearanceBox.intersectsBox(candidate.box))
+      nearby.push(candidate);
+  }
+  const severity = collisions.length ? "invalid" : nearby.length ? "warning" : "valid";
+  const result = {
+    valid: collisions.length === 0,
+    severity,
+    item_id: String(id || ""),
+    clearance_m: CLEARANCE_M,
+    objectBox,
+    collisions,
+    nearby,
+    reason: collisions.length ? `Invalid: overlaps ${collisions.slice(0, 3).map((entry) => entry.label).join(", ")}` : nearby.length ? `Close to ${nearby.slice(0, 3).map((entry) => entry.label).join(", ")} \xB7 less than 10 mm clearance` : "Valid placement \xB7 10 mm clearance"
+  };
+  runtime3.lastResult = result;
+  root.userData.collision_validation = {
+    valid: result.valid,
+    severity: result.severity,
+    collisions: collisions.map((entry) => entry.label),
+    nearby: nearby.map((entry) => entry.label),
+    clearance_m: CLEARANCE_M
+  };
+  if (feedback)
+    showFeedback(result);
+  publishResult2(result);
+  return result;
+}
+function snapshot(root) {
+  return {
+    position: root.position.clone(),
+    quaternion: root.quaternion.clone(),
+    scale: root.scale.clone()
+  };
+}
+function restore(root, saved) {
+  if (!root || !saved)
+    return;
+  root.position.copy(saved.position);
+  root.quaternion.copy(saved.quaternion);
+  root.scale.copy(saved.scale);
+  root.updateWorldMatrix?.(true, true);
+}
+function snapshotChanged(root, saved) {
+  return Boolean(saved && (root.position.distanceToSquared(saved.position) > 1e-12 || 1 - Math.abs(root.quaternion.dot(saved.quaternion)) > 1e-10 || root.scale.distanceToSquared(saved.scale) > 1e-12));
+}
+function helperFor2(name, box, color) {
+  let helper = runtime3.helpers.get(name);
+  if (!helper) {
+    helper = new Box3Helper(box.clone(), color);
+    helper.name = `collision_validation_${name}`;
+    helper.renderOrder = 1001;
+    helper.userData.exclude_from_fit_bounds = true;
+    helper.userData.exclude_from_physical_bounds = true;
+    helper.userData.helper_overlay = true;
+    helper.material.depthTest = false;
+    helper.material.transparent = true;
+    helper.material.opacity = 0.95;
+    runtime3.scene?.add(helper);
+    runtime3.helpers.set(name, helper);
+  }
+  helper.box.copy(box);
+  helper.material.color.setHex(color);
+  helper.visible = true;
+  helper.updateMatrixWorld(true);
+  return helper;
+}
+function ensureStatusNode2() {
+  if (runtime3.statusNode?.isConnected)
+    return runtime3.statusNode;
+  const host = document.querySelector(".viewport-panel");
+  if (!host)
+    return null;
+  const node = document.createElement("div");
+  node.id = "collision-validation-status";
+  node.setAttribute("role", "status");
+  node.setAttribute("aria-live", "polite");
+  node.hidden = true;
+  node.style.cssText = "position:absolute;left:50%;bottom:3.35rem;transform:translateX(-50%);z-index:6;max-width:min(38rem,calc(100% - 2rem));padding:.48rem .72rem;border:1px solid currentColor;border-radius:.45rem;box-shadow:0 .15rem .55rem rgba(23,32,42,.18);font:600 .82rem/1.3 Inter,ui-sans-serif,system-ui,sans-serif;text-align:center;pointer-events:none";
+  host.appendChild(node);
+  runtime3.statusNode = node;
+  return node;
+}
+function showFeedback(result) {
+  for (const helper of runtime3.helpers.values())
+    helper.visible = false;
+  const color = result.severity === "invalid" ? INVALID_COLOR2 : result.severity === "warning" ? NEAR_COLOR : VALID_COLOR2;
+  if (result.objectBox)
+    helperFor2("selected", result.objectBox, color);
+  const other = result.collisions[0] || result.nearby[0];
+  if (other?.box)
+    helperFor2("other", other.box, color);
+  const node = ensureStatusNode2();
+  if (!node)
+    return;
+  node.hidden = false;
+  node.textContent = result.reason;
+  node.style.color = result.severity === "invalid" ? "#8b1e1e" : result.severity === "warning" ? "#7a4600" : "#14532d";
+  node.style.background = result.severity === "invalid" ? "rgba(255,238,240,.97)" : result.severity === "warning" ? "rgba(255,246,221,.97)" : "rgba(236,253,245,.97)";
+}
+function clearFeedback(delayMs = 0) {
+  window.clearTimeout(runtime3.feedbackTimer);
+  const clear = () => {
+    for (const helper of runtime3.helpers.values()) {
+      helper.parent?.remove(helper);
+      helper.geometry?.dispose?.();
+      helper.material?.dispose?.();
+    }
+    runtime3.helpers.clear();
+    if (runtime3.statusNode)
+      runtime3.statusNode.hidden = true;
+  };
+  if (delayMs > 0)
+    runtime3.feedbackTimer = window.setTimeout(clear, delayMs);
+  else
+    clear();
+}
+function publishResult2(result) {
+  const detail = {
+    valid: result.valid,
+    severity: result.severity,
+    item_id: result.item_id,
+    clearance_m: CLEARANCE_M,
+    collisions: result.collisions?.map((entry) => entry.label) || [],
+    nearby: result.nearby?.map((entry) => entry.label) || [],
+    reason: result.reason
+  };
+  window.dispatchEvent?.(new CustomEvent("workcell:collision-placement", { detail }));
+  window.parent?.postMessage?.({ type: "workcell_collision_placement", ...detail }, "*");
+}
+function beginActive(source, pointerId = null) {
+  const state2 = editorState4();
+  if (!state2 || !["move", "rotate"].includes(state2.mode) || state2.selectedEditable !== true || !state2.selectedItemId)
+    return null;
+  const root = rootForItemId2(state2.selectedItemId);
+  if (!root)
+    return null;
+  const start = snapshot(root);
+  runtime3.active = {
+    source,
+    pointerId,
+    mode: state2.mode,
+    itemId: state2.selectedItemId,
+    root,
+    start,
+    lastValid: start,
+    invalid: false
+  };
+  validateRoot(root, state2.selectedItemId, { feedback: false });
+  return runtime3.active;
+}
+function evaluateActive({ blockGizmo = false } = {}) {
+  const active = runtime3.active;
+  if (!active)
+    return null;
+  const attempted = validateRoot(active.root, active.itemId, { feedback: true });
+  active.invalid = !attempted.valid;
+  if (attempted.valid) {
+    active.lastValid = snapshot(active.root);
+    return attempted;
+  }
+  if (blockGizmo && active.lastValid) {
+    restore(active.root, active.lastValid);
+    if (runtime3.gizmo && !runtime3.replayingObjectChange) {
+      runtime3.replayingObjectChange = true;
+      runtime3.gizmo.dispatchEvent({ type: "objectChange" });
+      runtime3.replayingObjectChange = false;
+    }
+    active.invalid = false;
+  }
+  return attempted;
+}
+function cancelEditorDrag(active, message = "Invalid placement restored") {
+  const api2 = editorApi();
+  const mode = active?.mode || editorState4()?.mode || "move";
+  api2?.setMode?.("select");
+  restore(active?.root, active?.start);
+  api2?.setMode?.(mode);
+  const result = validateRoot(active?.root, active?.itemId, { feedback: false });
+  showFeedback({ ...result, severity: "invalid", valid: false, reason: message });
+}
+function onCanvasPointerDown2(event) {
+  beginActive("canvas", event.pointerId);
+}
+function onCanvasPointerMove2(event) {
+  const active = runtime3.active;
+  if (!active || active.source !== "canvas" || active.pointerId !== event.pointerId)
+    return;
+  if (!snapshotChanged(active.root, active.lastValid))
+    return;
+  evaluateActive();
+}
+function onCanvasPointerFinishCapture(event) {
+  const active = runtime3.active;
+  if (!active || active.source !== "canvas" || event.pointerId !== void 0 && active.pointerId !== event.pointerId)
+    return;
+  const result = evaluateActive();
+  if (result && !result.valid)
+    cancelEditorDrag(active, `${result.reason} \xB7 previous pose restored`);
+  runtime3.active = null;
+  clearFeedback(1e3);
+}
+function installGizmoListeners(gizmo) {
+  if (!gizmo || runtime3.gizmosInstalled.has(gizmo))
+    return;
+  runtime3.gizmosInstalled.add(gizmo);
+  gizmo.addEventListener("dragging-changed", (event) => {
+    if (event.value)
+      beginActive("gizmo");
+    else {
+      if (runtime3.active?.source === "gizmo")
+        evaluateActive({ blockGizmo: true });
+      runtime3.active = null;
+      clearFeedback(1e3);
+    }
+  });
+  gizmo.addEventListener("objectChange", () => {
+    if (runtime3.replayingObjectChange || runtime3.active?.source !== "gizmo")
+      return;
+    evaluateActive({ blockGizmo: true });
+  });
+}
+function validateNumericEdit() {
+  const before = runtime3.numericBefore;
+  runtime3.numericBefore = null;
+  if (!before?.root || !snapshotChanged(before.root, before.saved))
+    return;
+  const result = validateRoot(before.root, before.itemId, { feedback: true });
+  if (!result.valid) {
+    editorApi()?.undo?.();
+    showFeedback({ ...result, reason: `${result.reason} \xB7 numeric edit rejected` });
+  }
+  clearFeedback(1200);
+}
+function validatePatchBeforeExport(event) {
+  const edits = editorApi()?.getEditPatch?.()?.edits || [];
+  for (const edit of edits) {
+    const root = rootForItemId2(edit.item_id);
+    if (!root)
+      continue;
+    const result = validateRoot(root, edit.item_id, { feedback: false });
+    if (result.valid)
+      continue;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    editorApi()?.selectItem?.(edit.item_id);
+    showFeedback({ ...result, reason: `${result.reason} \xB7 export blocked` });
+    clearFeedback(1800);
+    return false;
+  }
+  return true;
+}
+function installCanvasListeners2() {
+  if (runtime3.listenersInstalled)
+    return;
+  const canvas = document.getElementById("scene-canvas");
+  if (!canvas)
+    return;
+  runtime3.canvas = canvas;
+  runtime3.listenersInstalled = true;
+  canvas.addEventListener("pointerdown", onCanvasPointerDown2);
+  canvas.addEventListener("pointermove", onCanvasPointerMove2);
+  canvas.addEventListener("pointerup", onCanvasPointerFinishCapture, true);
+  canvas.addEventListener("pointercancel", onCanvasPointerFinishCapture, true);
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !runtime3.active)
+      return;
+    const active = runtime3.active;
+    cancelEditorDrag(active, "Placement cancelled \xB7 previous pose restored");
+    runtime3.active = null;
+    clearFeedback(900);
+  });
+  document.addEventListener("beforeinput", (event) => {
+    if (!event.target?.matches?.("[data-transform-field]"))
+      return;
+    const state2 = editorState4();
+    const root = rootForItemId2(state2?.selectedItemId);
+    if (root)
+      runtime3.numericBefore = { root, itemId: state2.selectedItemId, saved: snapshot(root) };
+  }, true);
+  document.addEventListener("input", (event) => {
+    if (event.target?.matches?.("[data-transform-field]"))
+      queueMicrotask(validateNumericEdit);
+  });
+  document.getElementById("export-edit-patch")?.addEventListener("click", validatePatchBeforeExport, true);
+}
+function findGizmo2(scene) {
+  let found = null;
+  scene?.traverse?.((node) => {
+    if (!found && node instanceof TransformControls)
+      found = node;
+  });
+  return found;
+}
+function install4() {
+  const prototype = WebGLRenderer?.prototype;
+  if (!prototype || prototype[PATCH_FLAG4])
+    return;
+  const originalRender = prototype.render;
+  prototype.render = function renderWithCollisionPlacementValidation(scene, camera) {
+    if (runtime3.scene && runtime3.scene !== scene) {
+      runtime3.active = null;
+      clearFeedback();
+    }
+    runtime3.scene = scene;
+    runtime3.gizmo = runtime3.gizmo?.parent ? runtime3.gizmo : findGizmo2(scene);
+    installGizmoListeners(runtime3.gizmo);
+    installCanvasListeners2();
+    return originalRender.call(this, scene, camera);
+  };
+  prototype[PATCH_FLAG4] = true;
+  window.__WORKCELL_COLLISION_PLACEMENT_V1__ = Object.freeze({
+    enabled: true,
+    version: 1,
+    clearance_m: CLEARANCE_M,
+    getState: () => ({ active: Boolean(runtime3.active), lastResult: runtime3.lastResult }),
+    validateItem: (id) => {
+      const root = rootForItemId2(String(id || ""));
+      return root ? validateRoot(root, String(id || ""), { feedback: false }) : null;
+    },
+    clear: () => {
+      runtime3.active = null;
+      clearFeedback();
+    }
+  });
+}
+install4();
+
+// simple_product_ui.js
+var SIMPLE_UI_VERSION = 1;
+var PRIMARY_INSPECTOR_ROWS = /* @__PURE__ */ new Map([
+  ["label", "Name"],
+  ["type", "Type"],
+  ["details", "Surface"],
+  ["pose xyz", "Position"],
+  ["pose rpy", "Rotation"],
+  ["editable", "Editable"],
+  ["locked", "Locked"],
+  ["support_surface_kind", "Support"],
+  ["top_surface_z_m", "Surface height"],
+  ["render_status", "Visual"]
+]);
+var runtime4 = {
+  inspectorObserver: null,
+  warningObserver: null,
+  toolbarObserver: null,
+  installed: false
+};
+function moveTaskGizmoControl() {
+  const slot = document.getElementById("task-gizmo-slot");
+  const input = document.getElementById("free-height-toggle");
+  const label = input?.closest("label");
+  if (slot && label && label.parentElement !== slot)
+    slot.appendChild(label);
+}
+function consolidateToolbar() {
+  const panel = document.querySelector("#more-tools .toolbar-more-panel");
+  const clearEdits = document.getElementById("clear-edits");
+  if (!panel)
+    return;
+  for (const control of [
+    document.getElementById("undo-edit"),
+    document.getElementById("redo-edit"),
+    document.getElementById("transform-space")?.closest("label")
+  ]) {
+    if (control && control.parentElement !== panel)
+      panel.insertBefore(control, clearEdits || panel.firstChild);
+  }
+}
+function firstTextNode(label) {
+  return Array.from(label?.childNodes || []).find((node) => node.nodeType === Node.TEXT_NODE) || null;
+}
+function renameTransformField(name, labelText) {
+  const input = document.querySelector(`#inspector [data-transform-field="${name}"]`);
+  const label = input?.closest("label");
+  const text = firstTextNode(label);
+  if (text)
+    text.textContent = labelText;
+}
+function setTransformFieldVisible(name, visible) {
+  const input = document.querySelector(`#inspector [data-transform-field="${name}"]`);
+  input?.closest("label")?.classList.toggle("simple-ui-hidden-field", !visible);
+}
+function syncTaskTransformFields() {
+  const freeHeight = Boolean(document.getElementById("free-height-toggle")?.checked);
+  setTransformFieldVisible("x", true);
+  setTransformFieldVisible("y", true);
+  setTransformFieldVisible("z", freeHeight);
+  setTransformFieldVisible("roll", false);
+  setTransformFieldVisible("pitch", false);
+  setTransformFieldVisible("yaw", true);
+  setTransformFieldVisible("scale_x", false);
+  setTransformFieldVisible("scale_y", false);
+  setTransformFieldVisible("scale_z", false);
+}
+function simplifyTransformEditor(editor) {
+  if (!editor)
+    return;
+  const title = editor.querySelector("h3");
+  if (title)
+    title.textContent = "Place item";
+  const note = editor.querySelector(".edit-note");
+  if (note) {
+    note.textContent = "Move on the surface, turn around Z and hold Shift for fine adjustment. Export edits when finished.";
+  }
+  renameTransformField("x", "Left / right (X)");
+  renameTransformField("y", "Forward / back (Y)");
+  renameTransformField("z", "Height (Z)");
+  renameTransformField("yaw", "Turn (Yaw)");
+  syncTaskTransformFields();
+}
+function buildTechnicalDetails(rows) {
+  if (!rows.length)
+    return null;
+  const details = document.createElement("details");
+  details.className = "technical-details";
+  const summary = document.createElement("summary");
+  summary.textContent = `Technical details (${rows.length})`;
+  const table = document.createElement("table");
+  table.className = "inspector-table";
+  const body = document.createElement("tbody");
+  rows.forEach((row) => body.appendChild(row));
+  table.appendChild(body);
+  details.append(summary, table);
+  return details;
+}
+function simplifyInspector() {
+  const inspector = document.getElementById("inspector");
+  if (!inspector)
+    return;
+  const table = inspector.querySelector(":scope > .inspector-table");
+  if (!table || table.dataset.simpleProductUi === String(SIMPLE_UI_VERSION)) {
+    simplifyTransformEditor(inspector.querySelector(".transform-editor"));
+    return;
+  }
+  const technicalRows = [];
+  table.querySelectorAll("tbody > tr").forEach((row) => {
+    const heading = row.querySelector("th");
+    const key = String(heading?.textContent || "").trim().toLowerCase();
+    const friendly = PRIMARY_INSPECTOR_ROWS.get(key);
+    if (friendly)
+      heading.textContent = friendly;
+    else
+      technicalRows.push(row);
+  });
+  table.dataset.simpleProductUi = String(SIMPLE_UI_VERSION);
+  const transformEditor = inspector.querySelector(".transform-editor");
+  const technical = buildTechnicalDetails(technicalRows);
+  if (technical)
+    inspector.insertBefore(technical, transformEditor || null);
+  simplifyTransformEditor(transformEditor);
+}
+function updateWarningDisclosure() {
+  const details = document.getElementById("warnings-details");
+  const warnings = document.getElementById("warnings");
+  const countNode = document.getElementById("warning-count");
+  if (!details || !warnings || !countNode)
+    return;
+  const items = warnings.querySelectorAll(".warning-item").length;
+  const count = items || (warnings.classList.contains("empty") ? 0 : 1);
+  countNode.textContent = String(count);
+  details.hidden = count === 0;
+  if (count > 0)
+    details.open = true;
+}
+function closeMoreTools(event) {
+  const more = document.getElementById("more-tools");
+  if (!more?.open)
+    return;
+  if (event.type === "keydown" && event.key === "Escape") {
+    more.open = false;
+    return;
+  }
+  if (event.type === "pointerdown" && !more.contains(event.target))
+    more.open = false;
+}
+function installObservers() {
+  const inspector = document.getElementById("inspector");
+  if (inspector && !runtime4.inspectorObserver) {
+    runtime4.inspectorObserver = new MutationObserver(simplifyInspector);
+    runtime4.inspectorObserver.observe(inspector, { childList: true, subtree: true });
+  }
+  const warnings = document.getElementById("warnings");
+  if (warnings && !runtime4.warningObserver) {
+    runtime4.warningObserver = new MutationObserver(updateWarningDisclosure);
+    runtime4.warningObserver.observe(warnings, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+  }
+  const toolbar = document.querySelector(".toolbar");
+  if (toolbar && !runtime4.toolbarObserver) {
+    runtime4.toolbarObserver = new MutationObserver(moveTaskGizmoControl);
+    runtime4.toolbarObserver.observe(toolbar, { childList: true, subtree: true });
+  }
+}
+function install5() {
+  if (runtime4.installed)
+    return;
+  runtime4.installed = true;
+  document.body.classList.add("simple-product-ui");
+  installObservers();
+  consolidateToolbar();
+  moveTaskGizmoControl();
+  simplifyInspector();
+  updateWarningDisclosure();
+  document.addEventListener("change", (event) => {
+    if (event.target?.id === "free-height-toggle")
+      syncTaskTransformFields();
+  });
+  document.addEventListener("pointerdown", closeMoreTools);
+  document.addEventListener("keydown", closeMoreTools);
+  window.__WORKCELL_SIMPLE_PRODUCT_UI_V1__ = Object.freeze({
+    enabled: true,
+    version: SIMPLE_UI_VERSION,
+    refresh: () => {
+      moveTaskGizmoControl();
+      consolidateToolbar();
+      simplifyInspector();
+      updateWarningDisclosure();
+    }
+  });
+}
+install5();
+
+// contextual_placement_actions.js
+init_three_module();
+var PATCH_FLAG5 = Symbol.for("workcell-studio.contextual-placement-actions.v1");
+var SUPPORT_KINDS3 = /* @__PURE__ */ new Set(["workbench_body", "table_surface", "tabletop"]);
+var EDGE_MARGIN_M2 = 0.01;
+var EPSILON2 = 1e-6;
+var ACTIONS = Object.freeze([
+  ["place-nearest", "Place on nearest surface"],
+  ["center", "Centre on surface"],
+  ["align-left", "Align left"],
+  ["align-right", "Align right"],
+  ["align-front", "Align front"],
+  ["align-back", "Align back"],
+  ["move-pick", "Move to pick area"],
+  ["move-place", "Move to place area"]
+]);
+var runtime5 = {
+  scene: null,
+  observer: null,
+  installed: false,
+  frame: 0,
+  message: "",
+  severity: "neutral",
+  messageTimer: null
+};
+function editorApi2() {
+  return window.__WORKCELL_EDITOR_API_V1__ || null;
+}
+function editorState5() {
+  try {
+    return editorApi2()?.getState?.() || null;
+  } catch (_) {
+    return null;
+  }
+}
+function itemOf3(node) {
+  return node?.userData?.item || null;
+}
+function itemId2(item) {
+  return String(item?.id || "").trim();
+}
+function itemLabel4(item, fallback = "item") {
+  return item?.label || item?.display_name || item?.object_name || item?.name || item?.id || fallback;
+}
+function supportKind3(item) {
+  return String(item?.support_surface_kind || item?.supportSurfaceKind || "").trim().toLowerCase();
+}
+function identity(item, node = null) {
+  return [
+    item?.id,
+    item?.label,
+    item?.display_name,
+    item?.object_name,
+    item?.name,
+    item?.role,
+    item?.type,
+    item?.category,
+    item?.zone_kind,
+    item?.zone_type,
+    item?.task_zone,
+    item?.task_zone_name,
+    item?.source_layer,
+    node?.name
+  ].map((value) => String(value || "").toLowerCase().replace(/[_-]+/g, " ")).join(" ");
+}
+function rootForItemId3(id) {
+  if (!runtime5.scene || !id)
+    return null;
+  let found = null;
+  runtime5.scene.traverse((node) => {
+    if (!found && itemId2(itemOf3(node)) === String(id))
+      found = node;
+  });
+  if (!found)
+    return null;
+  while (found.parent && found.parent !== runtime5.scene && itemId2(itemOf3(found.parent)) === String(id)) {
+    found = found.parent;
+  }
+  return found;
+}
+function finiteBounds2(root) {
+  if (!root)
+    return null;
+  root.updateWorldMatrix?.(true, true);
+  const box = new Box3().setFromObject(root);
+  const values = [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z];
+  return values.every(Number.isFinite) && !box.isEmpty() ? box : null;
+}
+function topSurfaceZ2(item, box) {
+  const explicit = Number(item?.top_surface_z_m ?? item?.topSurfaceZM);
+  return Number.isFinite(explicit) ? explicit : box.max.z;
+}
+function uniqueSceneEntries(predicate) {
+  if (!runtime5.scene)
+    return [];
+  const entries = [];
+  const seen = /* @__PURE__ */ new Set();
+  runtime5.scene.traverse((node) => {
+    const item = itemOf3(node);
+    if (!item || !predicate(item, node))
+      return;
+    const id = itemId2(item);
+    const root = id ? rootForItemId3(id) : node;
+    const key = root?.uuid || id;
+    if (!root || !key || seen.has(key))
+      return;
+    seen.add(key);
+    const box = finiteBounds2(root);
+    if (box)
+      entries.push({ root, item, box });
+  });
+  return entries;
+}
+function supportEntries2() {
+  return uniqueSceneEntries((item) => SUPPORT_KINDS3.has(supportKind3(item))).map((entry) => ({
+    ...entry,
+    top: topSurfaceZ2(entry.item, entry.box)
+  }));
+}
+function zoneKind(item, node) {
+  const text = identity(item, node);
+  const zoneLike = /\b(zone|area|region|task)\b/.test(text) || item?.task_zone || item?.zone_kind || item?.zone_type;
+  if (!zoneLike)
+    return "";
+  if (/\bpick(?:ing)?\b/.test(text))
+    return "pick";
+  if (/\bplace(?:ment)?\b/.test(text))
+    return "place";
+  return "";
+}
+function zoneEntries(kind) {
+  return uniqueSceneEntries((item, node) => zoneKind(item, node) === kind);
+}
+function boxCenter(box) {
+  return box.getCenter(new Vector3());
+}
+function outsideDistance2(value, min, max) {
+  if (value < min)
+    return min - value;
+  if (value > max)
+    return value - max;
+  return 0;
+}
+function supportDistanceToPoint(support, point) {
+  return Math.hypot(
+    outsideDistance2(point.x, support.box.min.x, support.box.max.x),
+    outsideDistance2(point.y, support.box.min.y, support.box.max.y)
+  );
+}
+function nearestSupport2(point) {
+  let best = null;
+  for (const support of supportEntries2()) {
+    const distance = supportDistanceToPoint(support, point);
+    if (!best || distance < best.distance)
+      best = { ...support, distance };
+  }
+  return best;
+}
+function containingOrNearestSupport(point) {
+  const supports = supportEntries2();
+  const containing = supports.find((support) => point.x >= support.box.min.x - EPSILON2 && point.x <= support.box.max.x + EPSILON2 && point.y >= support.box.min.y - EPSILON2 && point.y <= support.box.max.y + EPSILON2);
+  return containing ? { ...containing, distance: 0 } : nearestSupport2(point);
+}
+function availableInnerBounds(support, objectBox) {
+  const size = objectBox.getSize(new Vector3());
+  const inner = {
+    minX: support.box.min.x + EDGE_MARGIN_M2,
+    maxX: support.box.max.x - EDGE_MARGIN_M2,
+    minY: support.box.min.y + EDGE_MARGIN_M2,
+    maxY: support.box.max.y - EDGE_MARGIN_M2,
+    size
+  };
+  if (size.x > inner.maxX - inner.minX + EPSILON2 || size.y > inner.maxY - inner.minY + EPSILON2)
+    return null;
+  return inner;
+}
+function clampCenterToSupport(center, inner) {
+  return new Vector3(
+    MathUtils.clamp(center.x, inner.minX + inner.size.x / 2, inner.maxX - inner.size.x / 2),
+    MathUtils.clamp(center.y, inner.minY + inner.size.y / 2, inner.maxY - inner.size.y / 2),
+    center.z
+  );
+}
+function targetDelta(action, objectBox, support, zone = null) {
+  const inner = availableInnerBounds(support, objectBox);
+  if (!inner)
+    return { error: `Selected item is too large for ${itemLabel4(support.item, "the surface")}` };
+  const current = boxCenter(objectBox);
+  let target = current.clone();
+  if (action === "center") {
+    target.x = (inner.minX + inner.maxX) / 2;
+    target.y = (inner.minY + inner.maxY) / 2;
+  } else if (action === "align-left") {
+    target.x = inner.minX + inner.size.x / 2;
+    target.y = clampCenterToSupport(target, inner).y;
+  } else if (action === "align-right") {
+    target.x = inner.maxX - inner.size.x / 2;
+    target.y = clampCenterToSupport(target, inner).y;
+  } else if (action === "align-front") {
+    target.y = inner.minY + inner.size.y / 2;
+    target.x = clampCenterToSupport(target, inner).x;
+  } else if (action === "align-back") {
+    target.y = inner.maxY - inner.size.y / 2;
+    target.x = clampCenterToSupport(target, inner).x;
+  } else if ((action === "move-pick" || action === "move-place") && zone) {
+    target.copy(clampCenterToSupport(boxCenter(zone.box), inner));
+  } else {
+    target.copy(clampCenterToSupport(target, inner));
+  }
+  return {
+    delta: new Vector3(
+      target.x - current.x,
+      target.y - current.y,
+      support.top - objectBox.min.z
+    )
+  };
+}
+function localPositionAfterWorldDelta(root, delta) {
+  const world = root.getWorldPosition(new Vector3()).add(delta);
+  if (root.parent)
+    root.parent.worldToLocal(world);
+  return world;
+}
+function transformInputs() {
+  const inspector = document.getElementById("inspector");
+  if (!inspector)
+    return null;
+  const input = (name) => inspector.querySelector(`[data-transform-field="${name}"]`);
+  const fields = { x: input("x"), y: input("y"), z: input("z") };
+  return fields.x && fields.y && fields.z ? fields : null;
+}
+function commitLocalPosition(position) {
+  const fields = transformInputs();
+  if (!fields)
+    return false;
+  fields.x.value = Number(position.x).toFixed(6);
+  fields.y.value = Number(position.y).toFixed(6);
+  fields.z.value = Number(position.z).toFixed(6);
+  fields.x.dispatchEvent(new Event("input", { bubbles: true }));
+  return true;
+}
+function collisionResult(id) {
+  return window.__WORKCELL_COLLISION_PLACEMENT_V1__?.validateItem?.(id) || null;
+}
+function publish(action, state2, extra = {}) {
+  const detail = { action, item_id: state2?.selectedItemId || "", ...extra };
+  window.dispatchEvent?.(new CustomEvent("workcell:contextual-placement-action", { detail }));
+  window.parent?.postMessage?.({ type: "workcell_contextual_placement_action", ...detail }, "*");
+}
+function showMessage(message, severity = "neutral", timeoutMs = 1800) {
+  runtime5.message = message;
+  runtime5.severity = severity;
+  window.clearTimeout(runtime5.messageTimer);
+  refreshActions();
+  if (timeoutMs > 0) {
+    runtime5.messageTimer = window.setTimeout(() => {
+      runtime5.message = "";
+      runtime5.severity = "neutral";
+      refreshActions();
+    }, timeoutMs);
+  }
+}
+function runAction(action) {
+  const state2 = editorState5();
+  if (!state2?.selectedItemId || state2.selectedEditable !== true)
+    return false;
+  const root = rootForItemId3(state2.selectedItemId);
+  const objectBox = finiteBounds2(root);
+  if (!root || !objectBox) {
+    showMessage("Selected item has no usable rendered bounds.", "error");
+    return false;
+  }
+  let zone = null;
+  let support = null;
+  if (action === "move-pick" || action === "move-place") {
+    const kind = action === "move-pick" ? "pick" : "place";
+    zone = zoneEntries(kind)[0] || null;
+    if (!zone) {
+      showMessage(`No ${kind} area is defined in this scene.`, "error");
+      return false;
+    }
+    support = containingOrNearestSupport(boxCenter(zone.box));
+  } else {
+    support = containingOrNearestSupport(boxCenter(objectBox));
+  }
+  if (!support) {
+    showMessage("No table or workbench is available.", "error");
+    return false;
+  }
+  const target = targetDelta(action, objectBox, support, zone);
+  if (target.error) {
+    showMessage(target.error, "error");
+    return false;
+  }
+  const local = localPositionAfterWorldDelta(root, target.delta);
+  if (!commitLocalPosition(local)) {
+    showMessage("Placement controls are unavailable for this item.", "error");
+    return false;
+  }
+  const collision = collisionResult(state2.selectedItemId);
+  if (collision && !collision.valid) {
+    editorApi2()?.undo?.();
+    showMessage(`${collision.reason || "Placement overlaps another object"} \xB7 action reverted`, "error", 2400);
+    publish(action, state2, { valid: false, reverted: true, reason: collision.reason || "collision" });
+    return false;
+  }
+  const label = ACTIONS.find(([name]) => name === action)?.[1] || action;
+  const severity = collision?.severity === "warning" ? "warning" : "success";
+  showMessage(`${label} \xB7 ${itemLabel4(support.item, "surface")}`, severity);
+  publish(action, state2, {
+    valid: true,
+    support_surface_id: itemId2(support.item),
+    zone_id: itemId2(zone?.item),
+    collision_severity: collision?.severity || "valid"
+  });
+  return true;
+}
+function actionAvailability(state2) {
+  const editable = Boolean(state2?.selectedItemId && state2.selectedEditable === true);
+  if (!editable)
+    return Object.fromEntries(ACTIONS.map(([name]) => [name, false]));
+  const root = rootForItemId3(state2.selectedItemId);
+  const bounds = finiteBounds2(root);
+  const hasSurface = Boolean(bounds && containingOrNearestSupport(boxCenter(bounds)));
+  return {
+    "place-nearest": hasSurface,
+    center: hasSurface,
+    "align-left": hasSurface,
+    "align-right": hasSurface,
+    "align-front": hasSurface,
+    "align-back": hasSurface,
+    "move-pick": hasSurface && zoneEntries("pick").length > 0,
+    "move-place": hasSurface && zoneEntries("place").length > 0
+  };
+}
+function sectionSignature(state2, availability) {
+  return JSON.stringify({
+    item: state2.selectedItemId,
+    availability,
+    message: runtime5.message,
+    severity: runtime5.severity
+  });
+}
+function createActionsSection(state2, availability = actionAvailability(state2)) {
+  const section = document.createElement("section");
+  section.className = "contextual-placement-actions";
+  section.dataset.itemId = state2.selectedItemId;
+  section.dataset.signature = sectionSignature(state2, availability);
+  const title = document.createElement("h3");
+  title.textContent = "Quick placement";
+  const note = document.createElement("p");
+  note.className = "contextual-placement-note";
+  note.textContent = "Use the current surface, edge or task area. Collision validation still applies.";
+  const grid = document.createElement("div");
+  grid.className = "contextual-placement-grid";
+  for (const [name, label] of ACTIONS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.placementAction = name;
+    button.textContent = label;
+    button.disabled = !availability[name];
+    if ((name === "move-pick" || name === "move-place") && !availability[name]) {
+      button.title = `${name === "move-pick" ? "Pick" : "Place"} area is not available in this scene`;
+    }
+    button.addEventListener("click", () => runAction(name));
+    grid.appendChild(button);
+  }
+  const status = document.createElement("p");
+  status.className = `contextual-placement-message ${runtime5.severity}`;
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  status.hidden = !runtime5.message;
+  status.textContent = runtime5.message;
+  section.append(title, note, grid, status);
+  return section;
+}
+function refreshActions() {
+  const inspector = document.getElementById("inspector");
+  if (!inspector)
+    return;
+  const state2 = editorState5();
+  const existing = inspector.querySelector(":scope > .contextual-placement-actions");
+  const editable = Boolean(state2?.selectedItemId && state2.selectedEditable === true && rootForItemId3(state2.selectedItemId));
+  if (!editable) {
+    existing?.remove();
+    return;
+  }
+  const availability = actionAvailability(state2);
+  const signature = sectionSignature(state2, availability);
+  if (existing?.dataset.signature === signature)
+    return;
+  const replacement = createActionsSection(state2, availability);
+  if (existing)
+    existing.replaceWith(replacement);
+  else {
+    const editor = inspector.querySelector(":scope > .transform-editor");
+    inspector.insertBefore(replacement, editor || null);
+  }
+}
+function installObserver() {
+  if (runtime5.observer)
+    return;
+  const inspector = document.getElementById("inspector");
+  if (!inspector)
+    return;
+  runtime5.observer = new MutationObserver(() => queueMicrotask(refreshActions));
+  runtime5.observer.observe(inspector, { childList: true, subtree: true });
+}
+function install6() {
+  if (runtime5.installed)
+    return;
+  runtime5.installed = true;
+  installObserver();
+  const prototype = WebGLRenderer?.prototype;
+  if (!prototype || prototype[PATCH_FLAG5])
+    return;
+  const originalRender = prototype.render;
+  prototype.render = function renderWithContextualPlacementActions(scene, camera) {
+    runtime5.scene = scene;
+    runtime5.frame = (runtime5.frame + 1) % 30;
+    if (runtime5.frame === 1)
+      refreshActions();
+    return originalRender.call(this, scene, camera);
+  };
+  prototype[PATCH_FLAG5] = true;
+  window.__WORKCELL_CONTEXTUAL_PLACEMENT_ACTIONS_V1__ = Object.freeze({
+    enabled: true,
+    version: 1,
+    structural_actions: "deferred_until_persistent_add_remove_patch_support",
+    availableActions: () => actionAvailability(editorState5()),
+    run: (action) => runAction(String(action || "")),
+    refresh: refreshActions
+  });
+}
+install6();
+
+// canonical_selection_state.js
+var VERSION = 1;
+var INSTALL_FLAG = "__WORKCELL_CANONICAL_SELECTION_STATE_INSTALLED__";
+var STORAGE_PREFIX = "workcell_studio.canonical_selection.";
+var MAX_INSTALL_ATTEMPTS = 200;
+var INSTALL_RETRY_MS = 50;
+var MAX_RESTORE_ATTEMPTS = 80;
+var RESTORE_RETRY_MS = 50;
+function stringValue(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+function clone(value) {
+  if (value === void 0)
+    return void 0;
+  return JSON.parse(JSON.stringify(value));
+}
+function finiteNumber2(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+function isFiniteCanonicalTransform(transform) {
+  return Boolean(transform) && [
+    transform?.pose?.xyz?.x,
+    transform?.pose?.xyz?.y,
+    transform?.pose?.xyz?.z,
+    transform?.pose?.rpy?.x,
+    transform?.pose?.rpy?.y,
+    transform?.pose?.rpy?.z,
+    transform?.scale?.x,
+    transform?.scale?.y,
+    transform?.scale?.z
+  ].every(finiteNumber2);
+}
+function canonicalOwnerIdFromState(state2) {
+  return stringValue(
+    state2?.editOwnerItemId || state2?.canonicalSelectedOwnerId || state2?.uiSelectionItemId || state2?.selectedItemId
+  );
+}
+function patchEditForOwner(patch, ownerId) {
+  const edits = Array.isArray(patch?.edits) ? patch.edits : [];
+  return edits.find((edit) => stringValue(edit?.item_id) === ownerId) || null;
+}
+function transformFromPatch(patch, ownerId) {
+  const edit = patchEditForOwner(patch, ownerId);
+  return isFiniteCanonicalTransform(edit?.new_transform) ? clone(edit.new_transform) : null;
+}
+function transformFromInspector(documentRef) {
+  const inspector = documentRef?.getElementById?.("inspector");
+  if (!inspector?.querySelector)
+    return null;
+  const read = (field) => Number(inspector.querySelector(`[data-transform-field="${field}"]`)?.value);
+  const transform = {
+    pose: {
+      xyz: { x: read("x"), y: read("y"), z: read("z") },
+      rpy: { x: read("roll"), y: read("pitch"), z: read("yaw") }
+    },
+    scale: { x: read("scale_x"), y: read("scale_y"), z: read("scale_z") }
+  };
+  return isFiniteCanonicalTransform(transform) ? transform : null;
+}
+function writeInspectorSummary(inspector, label, value) {
+  for (const key of inspector?.querySelectorAll?.("dt") || []) {
+    if (stringValue(key.textContent).toLowerCase() !== label)
+      continue;
+    if (key.nextElementSibling)
+      key.nextElementSibling.textContent = value;
+  }
+}
+function writeInspectorTransform(documentRef, transform) {
+  if (!isFiniteCanonicalTransform(transform))
+    return false;
+  const inspector = documentRef?.getElementById?.("inspector");
+  if (!inspector?.querySelector)
+    return false;
+  const values = {
+    x: transform.pose.xyz.x,
+    y: transform.pose.xyz.y,
+    z: transform.pose.xyz.z,
+    roll: transform.pose.rpy.x,
+    pitch: transform.pose.rpy.y,
+    yaw: transform.pose.rpy.z,
+    scale_x: transform.scale.x,
+    scale_y: transform.scale.y,
+    scale_z: transform.scale.z
+  };
+  for (const [field, value] of Object.entries(values)) {
+    const input = inspector.querySelector(`[data-transform-field="${field}"]`);
+    if (input)
+      input.value = Number(value).toFixed(6);
+  }
+  writeInspectorSummary(inspector, "pose xyz", [transform.pose.xyz.x, transform.pose.xyz.y, transform.pose.xyz.z].map((value) => Number(value).toFixed(3)).join(", "));
+  writeInspectorSummary(inspector, "pose rpy", [transform.pose.rpy.x, transform.pose.rpy.y, transform.pose.rpy.z].map((value) => Number(value).toFixed(3)).join(", "));
+  writeInspectorSummary(inspector, "scale", JSON.stringify([transform.scale.x, transform.scale.y, transform.scale.z]));
+  return true;
+}
+function storageKey(sceneId2) {
+  return `${STORAGE_PREFIX}${sceneId2}`;
+}
+function readStoredSelection(storage, sceneId2) {
+  if (!storage || !sceneId2)
+    return null;
+  try {
+    const parsed = JSON.parse(storage.getItem(storageKey(sceneId2)) || "null");
+    if (!parsed || stringValue(parsed.sceneId) !== sceneId2 || !stringValue(parsed.ownerId))
+      return null;
+    return {
+      sceneId: sceneId2,
+      ownerId: stringValue(parsed.ownerId),
+      editable: Boolean(parsed.editable),
+      transform: isFiniteCanonicalTransform(parsed.transform) ? clone(parsed.transform) : null
+    };
+  } catch (_) {
+    return null;
+  }
+}
+function writeStoredSelection(storage, record) {
+  if (!storage || !record?.sceneId || !record?.ownerId)
+    return;
+  try {
+    storage.setItem(storageKey(record.sceneId), JSON.stringify({
+      sceneId: record.sceneId,
+      ownerId: record.ownerId,
+      editable: Boolean(record.editable),
+      transform: isFiniteCanonicalTransform(record.transform) ? record.transform : null
+    }));
+  } catch (_) {
+  }
+}
+function clearStoredSelection(storage, sceneId2) {
+  if (!storage || !sceneId2)
+    return;
+  try {
+    storage.removeItem(storageKey(sceneId2));
+  } catch (_) {
+  }
+}
+function auditEditableLayoutOwners(items) {
+  const editable = (Array.isArray(items) ? items : []).filter((item) => item?.editable === true && item?.locked !== true);
+  const derived = editable.filter((item) => {
+    const role = stringValue(item?.role || item?.type).toLowerCase();
+    return Boolean(item?.transform_group && item?.target_ref && role === "place_zone");
+  });
+  const derivedIds = new Set(derived.map((item) => stringValue(item?.id)).filter(Boolean));
+  const canonical = editable.filter((item) => !derivedIds.has(stringValue(item?.id)));
+  return Object.freeze({
+    layoutEditableCount: editable.length,
+    canonicalEditableOwnerCount: canonical.length,
+    derivedEditableCount: derived.length,
+    layoutEditableIds: Object.freeze(editable.map((item) => stringValue(item?.id)).filter(Boolean)),
+    canonicalEditableOwnerIds: Object.freeze(canonical.map((item) => stringValue(item?.id)).filter(Boolean)),
+    derivedEditableIds: Object.freeze([...derivedIds])
+  });
+}
+function dispatchState(windowRef, detail) {
+  try {
+    if (typeof windowRef?.CustomEvent === "function" && typeof windowRef?.dispatchEvent === "function") {
+      windowRef.dispatchEvent(new windowRef.CustomEvent("workcell:canonical_selection_state", { detail }));
+    }
+  } catch (_) {
+  }
+}
+function installCanonicalSelectionState({
+  windowRef = globalThis.window,
+  documentRef = globalThis.document,
+  storage = windowRef?.sessionStorage,
+  scheduleMicrotask = globalThis.queueMicrotask || ((callback) => Promise.resolve().then(callback)),
+  scheduleTimeout = (callback, delay) => windowRef?.setTimeout?.(callback, delay)
+} = {}) {
+  const api2 = windowRef?.__WORKCELL_EDITOR_API_V1__;
+  if (!api2?.getState || !api2?.selectItem || !api2?.getEditPatch)
+    return false;
+  if (api2[INSTALL_FLAG])
+    return true;
+  api2[INSTALL_FLAG] = true;
+  const original = {
+    getState: api2.getState.bind(api2),
+    selectItem: api2.selectItem.bind(api2),
+    selectionDiagnostics: api2.selectionDiagnostics?.bind(api2),
+    clearSelection: api2.clearSelection?.bind(api2),
+    setMode: api2.setMode?.bind(api2),
+    undo: api2.undo?.bind(api2),
+    redo: api2.redo?.bind(api2),
+    getEditPatch: api2.getEditPatch.bind(api2),
+    drainEvents: api2.drainEvents?.bind(api2)
+  };
+  let canonicalRecord = {
+    sceneId: "",
+    ownerId: "",
+    editable: false,
+    transform: null,
+    transformSource: "none",
+    sequence: 0
+  };
+  let restorePending = false;
+  let restoreGeneration = 0;
+  let lastStateSignature = "";
+  let lastDrainedSelectionOwner = "";
+  const rawState = () => original.getState() || {};
+  const rawPatch = () => original.getEditPatch() || { edits: [] };
+  function retainedRecordFor(state2) {
+    return readStoredSelection(storage, stringValue(state2?.sceneId));
+  }
+  function resolveCanonicalTransform(state2, ownerId) {
+    const patchTransform = transformFromPatch(rawPatch(), ownerId);
+    if (patchTransform)
+      return { transform: patchTransform, source: "edit_patch" };
+    const inspectorTransform = transformFromInspector(documentRef);
+    if (inspectorTransform)
+      return { transform: inspectorTransform, source: "inspector" };
+    if (canonicalRecord.ownerId === ownerId && isFiniteCanonicalTransform(canonicalRecord.transform)) {
+      return { transform: clone(canonicalRecord.transform), source: canonicalRecord.transformSource || "retained" };
+    }
+    const retained = retainedRecordFor(state2);
+    if (retained?.ownerId === ownerId && isFiniteCanonicalTransform(retained.transform)) {
+      return { transform: clone(retained.transform), source: "session_retained" };
+    }
+    return { transform: null, source: "none" };
+  }
+  function synchronize(reason = "poll") {
+    const state2 = rawState();
+    const sceneId2 = stringValue(state2.sceneId);
+    let ownerId = canonicalOwnerIdFromState(state2);
+    const retained = retainedRecordFor(state2);
+    if (!ownerId && restorePending && retained?.ownerId)
+      ownerId = retained.ownerId;
+    const resolved = ownerId ? resolveCanonicalTransform(state2, ownerId) : { transform: null, source: "none" };
+    const next = {
+      sceneId: sceneId2,
+      ownerId,
+      editable: ownerId === canonicalOwnerIdFromState(state2) ? Boolean(state2.selectedEditable) : Boolean(retained?.editable),
+      transform: resolved.transform,
+      transformSource: resolved.source,
+      sequence: canonicalRecord.sequence
+    };
+    const signature = JSON.stringify({
+      sceneId: next.sceneId,
+      ownerId: next.ownerId,
+      editable: next.editable,
+      transform: next.transform,
+      source: next.transformSource
+    });
+    if (signature !== lastStateSignature) {
+      next.sequence += 1;
+      lastStateSignature = signature;
+      canonicalRecord = next;
+      dispatchState(windowRef, {
+        reason,
+        scene_id: next.sceneId,
+        sceneId: next.sceneId,
+        canonical_selected_owner_id: next.ownerId,
+        canonicalSelectedOwnerId: next.ownerId,
+        canonical_transform: clone(next.transform),
+        canonicalTransform: clone(next.transform),
+        transform_source: next.transformSource,
+        transformSource: next.transformSource,
+        sequence: next.sequence
+      });
+    } else {
+      canonicalRecord = { ...next, sequence: canonicalRecord.sequence };
+    }
+    if (canonicalRecord.ownerId) {
+      writeStoredSelection(storage, canonicalRecord);
+      writeInspectorTransform(documentRef, canonicalRecord.transform);
+    }
+    return canonicalRecord;
+  }
+  function publicState() {
+    const state2 = rawState();
+    const record = synchronize("get_state");
+    const retained = !canonicalOwnerIdFromState(state2) && record.ownerId;
+    return {
+      ...state2,
+      selectedItemId: retained ? record.ownerId : state2.selectedItemId,
+      uiSelectionItemId: retained ? record.ownerId : state2.uiSelectionItemId,
+      editOwnerItemId: retained ? record.ownerId : state2.editOwnerItemId,
+      selectedEditable: retained ? record.editable : state2.selectedEditable,
+      canonicalSelectedOwnerId: record.ownerId,
+      canonicalTransform: clone(record.transform),
+      canonicalTransformSource: record.transformSource,
+      canonicalSelectionSequence: record.sequence,
+      retainedSelectionPending: Boolean(retained && restorePending)
+    };
+  }
+  function restoreSelection(attempt = 0, generation = restoreGeneration) {
+    if (generation !== restoreGeneration)
+      return false;
+    const state2 = rawState();
+    const sceneId2 = stringValue(state2.sceneId);
+    const currentOwner = canonicalOwnerIdFromState(state2);
+    if (currentOwner) {
+      restorePending = false;
+      synchronize("selection_already_current");
+      return true;
+    }
+    const retained = readStoredSelection(storage, sceneId2);
+    if (state2.ready && retained?.ownerId) {
+      const restored = original.selectItem(retained.ownerId) || rawState();
+      if (canonicalOwnerIdFromState(restored) === retained.ownerId) {
+        restorePending = false;
+        synchronize("selection_restored");
+        return true;
+      }
+    }
+    if (attempt >= MAX_RESTORE_ATTEMPTS) {
+      restorePending = false;
+      return false;
+    }
+    scheduleTimeout?.(() => restoreSelection(attempt + 1, generation), RESTORE_RETRY_MS);
+    return false;
+  }
+  function beginRestore() {
+    restorePending = true;
+    restoreGeneration += 1;
+    restoreSelection(0, restoreGeneration);
+  }
+  function clearAuthoritativeSelection() {
+    const sceneId2 = stringValue(rawState().sceneId);
+    restorePending = false;
+    restoreGeneration += 1;
+    clearStoredSelection(storage, sceneId2);
+    canonicalRecord = {
+      sceneId: sceneId2,
+      ownerId: "",
+      editable: false,
+      transform: null,
+      transformSource: "none",
+      sequence: canonicalRecord.sequence + 1
+    };
+    lastStateSignature = JSON.stringify({
+      sceneId: sceneId2,
+      ownerId: "",
+      editable: false,
+      transform: null,
+      source: "none"
+    });
+    lastDrainedSelectionOwner = "";
+    return canonicalRecord;
+  }
+  api2.getState = () => publicState();
+  api2.selectItem = (id) => {
+    const selected = original.selectItem(stringValue(id)) || rawState();
+    const ownerId = canonicalOwnerIdFromState(selected);
+    if (ownerId && stringValue(selected.selectedItemId) !== ownerId)
+      original.selectItem(ownerId);
+    restorePending = false;
+    synchronize("select_item");
+    return publicState();
+  };
+  api2.selectionDiagnostics = () => {
+    const diagnostics = original.selectionDiagnostics?.() || {};
+    const record = synchronize("selection_diagnostics");
+    const patchTransform = record.ownerId ? transformFromPatch(rawPatch(), record.ownerId) : null;
+    const inspectorTransform = transformFromInspector(documentRef);
+    return {
+      ...diagnostics,
+      canonicalSelectedOwnerId: record.ownerId,
+      canonicalTransform: clone(record.transform),
+      canonicalTransformSource: record.transformSource,
+      inspectorTransform: clone(inspectorTransform),
+      patchTransform: clone(patchTransform),
+      gizmoTransform: clone(record.transform),
+      gizmoOwnerMatchesSelection: !stringValue(diagnostics.gizmoAttachedTargetId) || stringValue(diagnostics.gizmoAttachedTargetId) === record.ownerId
+    };
+  };
+  if (original.clearSelection) {
+    api2.clearSelection = () => {
+      clearAuthoritativeSelection();
+      const result = original.clearSelection();
+      return result;
+    };
+  }
+  if (original.setMode) {
+    api2.setMode = (mode) => {
+      const record = synchronize("before_mode_change");
+      if (record.ownerId && canonicalOwnerIdFromState(rawState()) !== record.ownerId)
+        original.selectItem(record.ownerId);
+      original.setMode(mode);
+      synchronize("mode_change");
+      return publicState();
+    };
+  }
+  if (original.undo) {
+    api2.undo = () => {
+      original.undo();
+      synchronize("undo");
+      scheduleMicrotask(() => synchronize("undo_settled"));
+      return publicState();
+    };
+  }
+  if (original.redo) {
+    api2.redo = () => {
+      original.redo();
+      synchronize("redo");
+      scheduleMicrotask(() => synchronize("redo_settled"));
+      return publicState();
+    };
+  }
+  api2.getEditPatch = () => original.getEditPatch();
+  if (original.drainEvents) {
+    api2.drainEvents = () => {
+      const events = original.drainEvents() || [];
+      const hasExplicitBlankSelection = events.some((event) => {
+        if (event?.type !== "selection_changed")
+          return false;
+        const hasItemId = Object.prototype.hasOwnProperty.call(event, "itemId");
+        const hasUiItemId = Object.prototype.hasOwnProperty.call(event, "uiItemId");
+        return (hasItemId || hasUiItemId) && !stringValue(event.itemId) && !stringValue(event.uiItemId);
+      });
+      if (hasExplicitBlankSelection)
+        clearAuthoritativeSelection();
+      const record = synchronize("drain_events");
+      const normalized = [];
+      let explicitBlankNormalized = false;
+      for (const event of events) {
+        if (event?.type === "selection_changed") {
+          const eventOwner = stringValue(event.uiItemId || event.itemId);
+          const eventIsExplicitBlank = (Object.prototype.hasOwnProperty.call(event, "itemId") || Object.prototype.hasOwnProperty.call(event, "uiItemId")) && !stringValue(event.itemId) && !stringValue(event.uiItemId);
+          if (eventIsExplicitBlank && explicitBlankNormalized)
+            continue;
+          if (eventIsExplicitBlank)
+            explicitBlankNormalized = true;
+          if (!eventIsExplicitBlank && eventOwner === lastDrainedSelectionOwner)
+            continue;
+          lastDrainedSelectionOwner = eventOwner;
+          normalized.push({
+            ...event,
+            itemId: eventOwner,
+            uiItemId: eventOwner,
+            canonicalOwnerItemId: eventOwner,
+            canonicalTransform: eventOwner === record.ownerId ? clone(record.transform) : null
+          });
+          continue;
+        }
+        if (event?.type !== "transform_committed") {
+          normalized.push(event);
+          continue;
+        }
+        const transform = isFiniteCanonicalTransform(event?.patchEntry?.new_transform) ? clone(event.patchEntry.new_transform) : clone(record.transform);
+        normalized.push({
+          ...event,
+          canonicalOwnerItemId: record.ownerId,
+          canonicalTransform: transform,
+          savedXyz: clone(transform?.pose?.xyz),
+          savedRpy: clone(transform?.pose?.rpy)
+        });
+      }
+      if (!explicitBlankNormalized && record.ownerId !== lastDrainedSelectionOwner) {
+        lastDrainedSelectionOwner = record.ownerId;
+        normalized.push({
+          type: "selection_changed",
+          itemId: record.ownerId,
+          uiItemId: record.ownerId,
+          editable: record.editable,
+          canonicalOwnerItemId: record.ownerId,
+          canonicalTransform: clone(record.transform)
+        });
+      }
+      if (!record.ownerId && !restorePending)
+        clearStoredSelection(storage, record.sceneId);
+      return normalized;
+    };
+  }
+  const onReadiness = (event) => {
+    const readiness = stringValue(event?.detail?.state || event?.detail?.lifecycle_state || event?.detail?.lifecycleState);
+    if (readiness === "scene_ready")
+      beginRestore();
+  };
+  windowRef?.addEventListener?.("workcell:web3d_readiness", onReadiness);
+  windowRef?.addEventListener?.("workcell:scene-loaded", beginRestore);
+  windowRef?.addEventListener?.("pageshow", beginRestore);
+  if (typeof windowRef?.MutationObserver === "function") {
+    const inspector = documentRef?.getElementById?.("inspector");
+    if (inspector) {
+      const observer = new windowRef.MutationObserver(() => scheduleMicrotask(() => synchronize("inspector_rebuilt")));
+      observer.observe(inspector, { childList: true, subtree: true });
+    }
+  }
+  synchronize("install");
+  beginRestore();
+  return true;
+}
+var publicApi = Object.freeze({
+  enabled: true,
+  version: VERSION,
+  install: installCanonicalSelectionState,
+  auditEditableLayoutOwners,
+  isFiniteCanonicalTransform
+});
+if (typeof window !== "undefined") {
+  window.__WORKCELL_CANONICAL_SELECTION_STATE_V1__ = publicApi;
+}
+function installWhenReady(attempt = 0) {
+  if (typeof window === "undefined" || typeof document === "undefined")
+    return;
+  if (installCanonicalSelectionState())
+    return;
+  if (attempt >= MAX_INSTALL_ATTEMPTS) {
+    console.warn?.("Canonical selection state was not installed because the Product View editor API did not become ready.");
+    return;
+  }
+  window.setTimeout?.(() => installWhenReady(attempt + 1), INSTALL_RETRY_MS);
+}
+installWhenReady();
+
+// canonical_helper_pick_proxies.js
+var VERSION2 = 1;
+var INSTALL_FLAG2 = "__WORKCELL_CANONICAL_HELPER_PICK_PROXIES_V1__";
+var MAX_INSTALL_ATTEMPTS2 = 200;
+var INSTALL_RETRY_MS2 = 50;
+var OWNER_SUFFIXES = Object.freeze([
+  "_fallback_edges",
+  "_selection_outline",
+  "_visual_outline",
+  "_owner_outline",
+  "_bounds_highlight"
+]);
+var OWNERLESS_SELECTION_HELPERS = Object.freeze(/* @__PURE__ */ new Set([
+  "selection_subtle_bounds_highlight",
+  "selection_bounds_highlight",
+  "selection_outline"
+]));
+function stringValue2(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+function isCanonicalOwnerHelperName(value) {
+  const name = stringValue2(value).toLowerCase();
+  if (!name || /transformcontrols|transform_controls|gizmo|transient_gizmo/.test(name))
+    return false;
+  if (OWNERLESS_SELECTION_HELPERS.has(name))
+    return true;
+  return OWNER_SUFFIXES.some((suffix) => name.endsWith(suffix));
+}
+function ownerIdFromHelperName(value, previousSelectedItemId = "") {
+  const originalName = stringValue2(value);
+  const name = originalName.toLowerCase();
+  if (!isCanonicalOwnerHelperName(name))
+    return "";
+  if (OWNERLESS_SELECTION_HELPERS.has(name))
+    return stringValue2(previousSelectedItemId);
+  const suffix = OWNER_SUFFIXES.find((candidate) => name.endsWith(candidate));
+  return suffix ? originalName.slice(0, originalName.length - suffix.length) : "";
+}
+function diagnosticHitResolutions(diagnostic) {
+  const values = diagnostic?.hit_resolutions || diagnostic?.hitResolutions;
+  return Array.isArray(values) ? values : [];
+}
+function diagnosticHitObjectNames(diagnostic) {
+  const values = diagnostic?.hit_object_names || diagnostic?.hitObjectNames;
+  return Array.isArray(values) ? values.map(stringValue2).filter(Boolean) : [];
+}
+function resolutionNodeName(resolution) {
+  return stringValue2(resolution?.hit_node_name || resolution?.hitNodeName);
+}
+function resolutionSelectionOwnerId(resolution) {
+  return stringValue2(
+    resolution?.selection_owner_id || resolution?.selectionOwnerId || resolution?.edit_owner_id || resolution?.editOwnerId
+  );
+}
+function resolutionRegisteredRecordId(resolution) {
+  return stringValue2(resolution?.registered_record_id || resolution?.registeredRecordId);
+}
+function helperProxyOwnerCandidate(diagnostic, previousSelectedItemId = "") {
+  if (!diagnostic || typeof diagnostic !== "object")
+    return "";
+  for (const resolution of diagnosticHitResolutions(diagnostic)) {
+    const nodeName = resolutionNodeName(resolution);
+    if (!isCanonicalOwnerHelperName(nodeName))
+      continue;
+    const explicitOwner = resolutionSelectionOwnerId(resolution);
+    if (explicitOwner)
+      return explicitOwner;
+    const registeredOwner = resolutionRegisteredRecordId(resolution);
+    if (registeredOwner)
+      return registeredOwner;
+    const inferredOwner = ownerIdFromHelperName(nodeName, previousSelectedItemId);
+    if (inferredOwner)
+      return inferredOwner;
+  }
+  for (const nodeName of diagnosticHitObjectNames(diagnostic)) {
+    const inferredOwner = ownerIdFromHelperName(nodeName, previousSelectedItemId);
+    if (inferredOwner)
+      return inferredOwner;
+  }
+  return "";
+}
+function shouldForwardCanonicalHelperPick(editorState7) {
+  return Boolean(
+    editorState7 && editorState7.lastCanvasPickReason === "no_eligible_candidate" && editorState7.lastFailedCanvasPickDiagnostic
+  );
+}
+function dispatchForwardedEvent(windowRef, detail) {
+  try {
+    const EventConstructor = windowRef?.CustomEvent;
+    if (typeof EventConstructor === "function" && typeof windowRef.dispatchEvent === "function") {
+      windowRef.dispatchEvent(new EventConstructor("workcell:canonical_helper_pick_forwarded", { detail }));
+    }
+  } catch (_) {
+  }
+}
+function installCanonicalHelperPickProxies({
+  windowRef = globalThis.window,
+  documentRef = globalThis.document,
+  scheduleMicrotask = globalThis.queueMicrotask || ((callback) => Promise.resolve().then(callback))
+} = {}) {
+  const canvas = documentRef?.getElementById?.("scene-canvas");
+  const api2 = windowRef?.__WORKCELL_EDITOR_API_V1__;
+  if (!canvas || typeof canvas.addEventListener !== "function" || !api2?.getState || !api2?.selectItem)
+    return false;
+  if (canvas[INSTALL_FLAG2])
+    return true;
+  canvas[INSTALL_FLAG2] = true;
+  let pointerContext = { previousSelectedItemId: "" };
+  canvas.addEventListener("pointerdown", () => {
+    const before = api2.getState?.() || {};
+    pointerContext = { previousSelectedItemId: stringValue2(before.selectedItemId) };
+  }, true);
+  canvas.addEventListener("pointerdown", () => {
+    const context = pointerContext;
+    scheduleMicrotask(() => {
+      const afterPick = api2.getState?.() || {};
+      if (!shouldForwardCanonicalHelperPick(afterPick))
+        return;
+      const ownerCandidate = helperProxyOwnerCandidate(
+        afterPick.lastFailedCanvasPickDiagnostic,
+        context.previousSelectedItemId
+      );
+      if (!ownerCandidate)
+        return;
+      const forwardedState = api2.selectItem(ownerCandidate) || api2.getState?.() || {};
+      const selectedItemId = stringValue2(forwardedState.selectedItemId);
+      if (!selectedItemId)
+        return;
+      const selectionDiagnostics = api2.selectionDiagnostics?.() || forwardedState.selectionDiagnostics || {};
+      const gizmoTargetId = stringValue2(selectionDiagnostics.gizmoAttachedTargetId);
+      const helperNodeNames = diagnosticHitObjectNames(afterPick.lastFailedCanvasPickDiagnostic);
+      dispatchForwardedEvent(windowRef, {
+        helper_node_names: helperNodeNames,
+        helperNodeNames,
+        forwarded_candidate_id: ownerCandidate,
+        forwardedCandidateId: ownerCandidate,
+        selected_item_id: selectedItemId,
+        selectedItemId,
+        selected_editable: Boolean(forwardedState.selectedEditable),
+        selectedEditable: Boolean(forwardedState.selectedEditable),
+        gizmo_attached_target_id: gizmoTargetId,
+        gizmoAttachedTargetId: gizmoTargetId,
+        gizmo_attached_to_helper: isCanonicalOwnerHelperName(gizmoTargetId),
+        gizmoAttachedToHelper: isCanonicalOwnerHelperName(gizmoTargetId)
+      });
+    });
+  });
+  return true;
+}
+var publicApi2 = Object.freeze({
+  enabled: true,
+  version: VERSION2,
+  install: installCanonicalHelperPickProxies,
+  isCanonicalOwnerHelperName,
+  ownerIdFromHelperName,
+  helperProxyOwnerCandidate
+});
+if (typeof window !== "undefined") {
+  window.__WORKCELL_CANONICAL_HELPER_PICK_PROXIES_V1__ = publicApi2;
+}
+function installWhenReady2(attempt = 0) {
+  if (typeof window === "undefined" || typeof document === "undefined")
+    return;
+  if (installCanonicalHelperPickProxies())
+    return;
+  if (attempt >= MAX_INSTALL_ATTEMPTS2) {
+    console.warn?.("Canonical helper pick proxies were not installed because the Product View editor API did not become ready.");
+    return;
+  }
+  window.setTimeout?.(() => installWhenReady2(attempt + 1), INSTALL_RETRY_MS2);
+}
+installWhenReady2();
+
+// post_bundle_viewer_modules.js
+var VERSION3 = 3;
+var MODULES = Object.freeze([
+  Object.freeze({
+    id: "rviz-light-baseline",
+    file: "rviz_light_baseline.js",
+    global: "__WORKCELL_RVIZ_LIGHT_BASELINE__",
+    purpose: "rendering baseline"
+  }),
+  Object.freeze({
+    id: "support-surface-placement",
+    file: "support_surface_placement.js",
+    global: "__WORKCELL_SUPPORT_PLACEMENT_V1__",
+    purpose: "support-aware dragging"
+  }),
+  Object.freeze({
+    id: "task-gizmo",
+    file: "workcell_task_gizmo.js",
+    global: "__WORKCELL_TASK_GIZMO_V1__",
+    purpose: "task-focused transform controls"
+  }),
+  Object.freeze({
+    id: "collision-placement-validation",
+    file: "collision_placement_validation.js",
+    global: "__WORKCELL_COLLISION_PLACEMENT_V1__",
+    purpose: "layout collision feedback"
+  }),
+  Object.freeze({
+    id: "simple-product-ui",
+    file: "simple_product_ui.js",
+    global: "__WORKCELL_SIMPLE_PRODUCT_UI_V1__",
+    purpose: "progressive disclosure"
+  }),
+  Object.freeze({
+    id: "contextual-placement-actions",
+    file: "contextual_placement_actions.js",
+    global: "__WORKCELL_CONTEXTUAL_PLACEMENT_ACTIONS_V1__",
+    purpose: "one-click placement actions"
+  }),
+  Object.freeze({
+    id: "canonical-selection-state",
+    file: "canonical_selection_state.js",
+    global: "__WORKCELL_CANONICAL_SELECTION_STATE_V1__",
+    purpose: "one selected owner and one transform state for inspector, gizmo and edit patches"
+  }),
+  Object.freeze({
+    id: "canonical-helper-pick-proxies",
+    file: "canonical_helper_pick_proxies.js",
+    global: "__WORKCELL_CANONICAL_HELPER_PICK_PROXIES_V1__",
+    purpose: "canonical owner forwarding for helper-only canvas hits"
+  })
+]);
+var lastSceneId = "";
+var lastAnnouncement = "";
+function editorApi3() {
+  return window.__WORKCELL_EDITOR_API_V1__ || null;
+}
+function editorState6() {
+  try {
+    return editorApi3()?.getState?.() || null;
+  } catch (_) {
+    return null;
+  }
+}
+function moduleApi(module) {
+  return window[module.global] || null;
+}
+function moduleStatus(module) {
+  const api2 = moduleApi(module);
+  return Object.freeze({
+    id: module.id,
+    file: module.file,
+    purpose: module.purpose,
+    global: module.global,
+    ready: Boolean(api2?.enabled),
+    version: Number(api2?.version || 0)
+  });
+}
+function getStatus() {
+  const modules = MODULES.map(moduleStatus);
+  const missing = modules.filter((module) => !module.ready).map((module) => module.id);
+  const state2 = editorState6();
+  return Object.freeze({
+    enabled: true,
+    version: VERSION3,
+    ready: missing.length === 0,
+    sceneId: String(state2?.sceneId || ""),
+    selectedItemId: String(state2?.selectedItemId || ""),
+    canonicalSelectedOwnerId: String(state2?.canonicalSelectedOwnerId || ""),
+    canonicalTransform: state2?.canonicalTransform || null,
+    dirty: Boolean(state2?.dirty),
+    modules: Object.freeze(modules),
+    missing: Object.freeze(missing)
+  });
+}
+function clearTransientFeedback() {
+  window.__WORKCELL_SUPPORT_PLACEMENT_V1__?.clear?.();
+  window.__WORKCELL_COLLISION_PLACEMENT_V1__?.clear?.();
+}
+function refreshUi() {
+  window.__WORKCELL_SIMPLE_PRODUCT_UI_V1__?.refresh?.();
+  window.__WORKCELL_CONTEXTUAL_PLACEMENT_ACTIONS_V1__?.refresh?.();
+  return getStatus();
+}
+function validateSelected() {
+  const id = String(editorState6()?.selectedItemId || "");
+  if (!id)
+    return null;
+  return window.__WORKCELL_COLLISION_PLACEMENT_V1__?.validateItem?.(id) || null;
+}
+function setFreeHeight2(enabled) {
+  window.__WORKCELL_TASK_GIZMO_V1__?.setFreeHeight?.(Boolean(enabled));
+  return window.__WORKCELL_TASK_GIZMO_V1__?.getState?.() || null;
+}
+function runPlacementAction(action) {
+  return Boolean(window.__WORKCELL_CONTEXTUAL_PLACEMENT_ACTIONS_V1__?.run?.(String(action || "")));
+}
+function syncSceneIdentity() {
+  const sceneId2 = String(editorState6()?.sceneId || "");
+  if (lastSceneId && sceneId2 && sceneId2 !== lastSceneId)
+    clearTransientFeedback();
+  if (sceneId2)
+    lastSceneId = sceneId2;
+  return sceneId2;
+}
+function announceStatus() {
+  syncSceneIdentity();
+  const status = getStatus();
+  const signature = JSON.stringify({
+    ready: status.ready,
+    sceneId: status.sceneId,
+    canonicalSelectedOwnerId: status.canonicalSelectedOwnerId,
+    canonicalTransform: status.canonicalTransform,
+    missing: status.missing
+  });
+  if (signature === lastAnnouncement)
+    return status;
+  lastAnnouncement = signature;
+  window.dispatchEvent?.(new CustomEvent("workcell:post-bundle-viewer-status", { detail: status }));
+  window.parent?.postMessage?.({
+    type: "workcell_post_bundle_viewer_status",
+    ready: status.ready,
+    scene_id: status.sceneId,
+    canonical_selected_owner_id: status.canonicalSelectedOwnerId,
+    canonical_transform: status.canonicalTransform,
+    missing: [...status.missing]
+  }, "*");
+  return status;
+}
+var api = Object.freeze({
+  enabled: true,
+  version: VERSION3,
+  modules: MODULES,
+  getStatus,
+  getEditorState: editorState6,
+  clearTransientFeedback,
+  refreshUi,
+  validateSelected,
+  setFreeHeight: setFreeHeight2,
+  runPlacementAction,
+  syncSceneIdentity
+});
+window.__WORKCELL_POST_BUNDLE_VIEWER_V1__ = api;
+for (const eventName of [
+  "workcell:support-placement",
+  "workcell:gizmo-task-mode",
+  "workcell:collision-placement",
+  "workcell:contextual-placement-action",
+  "workcell:canonical_selection_state",
+  "workcell:editor-state",
+  "workcell:scene-loaded"
+]) {
+  window.addEventListener(eventName, announceStatus);
+}
+window.addEventListener("pageshow", announceStatus);
+window.addEventListener("beforeunload", clearTransientFeedback, { once: true });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden)
+    announceStatus();
+});
+queueMicrotask(() => {
+  refreshUi();
+  announceStatus();
+});
 export {
   ColladaLoader,
   OBJLoader,

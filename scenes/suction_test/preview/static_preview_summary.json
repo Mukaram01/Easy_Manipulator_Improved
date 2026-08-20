@@ -1,0 +1,63 @@
+{
+  "title": "Suction Test",
+  "robot": "ur5",
+  "end_effector": "suction",
+  "task": "pick_place",
+  "runtime_mode": "unknown",
+  "safety_status": {
+    "fake_hardware_default": true,
+    "require_operator_review": false
+  },
+  "preview_only": false,
+  "runtime_blocked": false,
+  "safety_banner_present": true,
+  "warnings": [],
+  "approximate_placements": 0,
+  "task_flow_summary": {
+    "status": "PASS",
+    "readiness_classification": "task_intent_ready_offline",
+    "task_id": "default_task",
+    "task_type": "pick_place",
+    "pick_source_id": "pick_zone_main",
+    "pick_source_type": "zone",
+    "place_target_id": "default_drop_zone",
+    "grasp_strategy": "suction_top_basic",
+    "release_strategy": "tool_release",
+    "approach_axis": null,
+    "approach_distance_m": null,
+    "retreat_axis": null,
+    "retreat_distance_m": null,
+    "routing_rules": [
+      {
+        "id": "default_place",
+        "when": {
+          "always": true
+        },
+        "destination": "default_drop_zone"
+      }
+    ],
+    "routing_rule_count": 1,
+    "missing_required_fields": [],
+    "suggested_next_actions": [
+      "",
+      "",
+      "",
+      "Generate task recipe from task intent."
+    ],
+    "warnings": [],
+    "errors": [],
+    "safety": {
+      "metadata_only": true,
+      "runtime_io_applied": false,
+      "motion_started": false,
+      "ros_launch_started": false
+    },
+    "visual_resolution": {
+      "pick_coordinates_resolved": true,
+      "place_coordinates_resolved": true,
+      "approximate_coordinates_used": false,
+      "notes": []
+    }
+  },
+  "builder_task_intent": {}
+}

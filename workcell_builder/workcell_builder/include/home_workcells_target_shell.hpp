@@ -754,7 +754,9 @@ inline void build_home_page(QMainWindow * window, QWidget * dashboard, QTableWid
 
 inline void configure_target_shell(QMainWindow * window, const QString & workspace_root)
 {
-  if (!window || QApplication::arguments().contains(QStringLiteral("--scene3d-smoke"))) return;
+  // --scene3d-smoke deliberately exercises this same production shell so its
+  // acceptance screenshot cannot pass against a legacy-only layout.
+  if (!window) return;
   if (window->property("studioTargetShellApplied").toBool()) return;
   QTableWidget * table = scene_table(window);
   QWidget * dashboard = window->findChild<QWidget *>(QStringLiteral("workcellStudioDashboardPage"));

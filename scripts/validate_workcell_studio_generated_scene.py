@@ -127,7 +127,15 @@ def validate(scene:Path)->dict[str,Any]:
     }
     out_dir=scene/"acceptance"; out_dir.mkdir(exist_ok=True)
     (out_dir/"generated_scene_acceptance.json").write_text(json.dumps(acceptance,indent=2)+"\n",encoding='utf-8')
-    html=f"<html><body><h1>Generated Scene Acceptance</h1><p>scene={scene.name}</p><p>status={status}</p><p>no robot motion commanded</p><h2>blockers</h2><pre>{json.dumps(blockers,indent=2)}</pre><h2>warnings</h2><pre>{json.dumps(warnings,indent=2)}</pre><h2>next commands</h2><pre>{'\\n'.join(acceptance['next_commands'])}</pre></body></html>"
+    next_commands_html = "\n".join(acceptance["next_commands"])
+    html = (
+        f"<html><body><h1>Generated Scene Acceptance</h1>"
+        f"<p>scene={scene.name}</p><p>status={status}</p>"
+        f"<p>no robot motion commanded</p><h2>blockers</h2>"
+        f"<pre>{json.dumps(blockers,indent=2)}</pre>"
+        f"<h2>warnings</h2><pre>{json.dumps(warnings,indent=2)}</pre>"
+        f"<h2>next commands</h2><pre>{next_commands_html}</pre></body></html>"
+    )
     (out_dir/"generated_scene_acceptance.html").write_text(html,encoding='utf-8')
     summary='\n'.join([f"scene={scene.name}",f"status={status}","no_robot_motion_commanded=true",f"launch_command={cmd}"])
     (out_dir/"generated_scene_acceptance_summary.txt").write_text(summary+"\n",encoding='utf-8')

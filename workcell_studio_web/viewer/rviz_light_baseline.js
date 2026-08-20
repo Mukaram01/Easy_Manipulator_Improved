@@ -1,4 +1,4 @@
-import { THREE } from './dist/viewer.bundle.js';
+import * as THREE from 'three';
 
 const BASELINE = Object.freeze({
   background: 0xeef1f4,

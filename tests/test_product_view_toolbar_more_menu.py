@@ -15,9 +15,10 @@ def test_product_view_primary_toolbar_keeps_only_core_controls_visible():
         'scene_builder_camera_view_button_ = new QToolButton(scene_builder);',
     )
 
-    for text in ["Select", "Place Asset", "Move", "Save Layout"]:
+    for text in ["Select", "Place", "Move", "Rotate", "Save"]:
         assert text in primary
-    assert 'scene_builder_secondary_overflow_button_->setText("Panels & Tools")' in CPP
+    assert 'scene_builder_secondary_overflow_button_->setText(QStringLiteral("⋯"))' in CPP
+    assert 'scene_builder_secondary_overflow_button_->setToolTip(QStringLiteral("Panels & Tools"))' in CPP
     assert 'primary_controls->addWidget(scene_builder_secondary_overflow_button_)' in CPP
 
     assert 'primary_controls->addWidget(place_mode_persistent_box_)' not in primary

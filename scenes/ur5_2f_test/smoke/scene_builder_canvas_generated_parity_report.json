@@ -1,0 +1,132 @@
+{
+  "mode": "post_generation",
+  "status": "WARN",
+  "summary": {
+    "warning_count": 2,
+    "mismatch_count": 1,
+    "blocker_count": 0
+  },
+  "source_layout_path": "/home/ubuntu/workcell_ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml",
+  "generated_package_path": "/home/ubuntu/workcell_ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated",
+  "scene_builder_parity_action_present": true,
+  "parity_status_labels_present": true,
+  "parity_report_filename_contract": true,
+  "parity_report_required_fields": [
+    "status",
+    "source_layout_path",
+    "generated_package_path",
+    "scene_builder_parity_action_present",
+    "parity_status_labels_present",
+    "parity_report_filename_contract",
+    "parity_report_required_fields",
+    "layout_asset_ids",
+    "generated_asset_ids",
+    "layout_asset_id_set",
+    "generated_asset_id_set",
+    "assets_missing_from_generated_output",
+    "generated_assets_not_in_layout",
+    "transform_mismatches",
+    "mesh_reference_mismatches",
+    "unsupported_assets",
+    "warning_count",
+    "mismatch_count",
+    "blocker_count",
+    "fake_hardware_default",
+    "fake_hardware_token_preserved",
+    "unsupported_asset_warning_contract",
+    "transform_mismatch_section",
+    "mesh_reference_mismatch_section",
+    "warnings",
+    "errors"
+  ],
+  "layout_asset_ids": [
+    "home_pose_safe",
+    "object_01",
+    "object_02",
+    "object_03",
+    "pick_zone_commissioning",
+    "place_zone_default",
+    "realsense_overhead",
+    "safety_zone_keepout",
+    "support_surface_table",
+    "target_bin_default"
+  ],
+  "generated_asset_ids": [
+    "support_surface_table"
+  ],
+  "layout_asset_id_set": [
+    "home_pose_safe",
+    "object_01",
+    "object_02",
+    "object_03",
+    "pick_zone_commissioning",
+    "place_zone_default",
+    "realsense_overhead",
+    "safety_zone_keepout",
+    "support_surface_table",
+    "target_bin_default"
+  ],
+  "generated_asset_id_set": [
+    "support_surface_table"
+  ],
+  "assets_missing_from_generated_output": [
+    "home_pose_safe",
+    "object_01",
+    "object_02",
+    "object_03",
+    "pick_zone_commissioning",
+    "place_zone_default",
+    "realsense_overhead",
+    "safety_zone_keepout",
+    "target_bin_default"
+  ],
+  "generated_assets_not_in_layout": [],
+  "transform_mismatches": [
+    {
+      "asset_id": "support_surface_table",
+      "layout_poses": [
+        {
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "xyz": [
+            0.65,
+            0.0,
+            0.06
+          ]
+        }
+      ],
+      "generated_poses": [
+        {
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "xyz": [
+            0.55,
+            0.0,
+            0.06
+          ]
+        }
+      ]
+    }
+  ],
+  "mesh_reference_mismatches": [],
+  "unsupported_assets": [],
+  "warning_count": 2,
+  "mismatch_count": 1,
+  "blocker_count": 0,
+  "fake_hardware_default": true,
+  "fake_hardware_token_preserved": true,
+  "unsupported_asset_warning_contract": true,
+  "transform_mismatch_section": true,
+  "mesh_reference_mismatch_section": true,
+  "warnings": [
+    "both layout sources exist; using preferred layout file /home/ubuntu/workcell_ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml and treating legacy /home/ubuntu/workcell_ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/environment_layout.yaml as secondary",
+    "optional scene artifact missing: /home/ubuntu/workcell_ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/urdf/generated_asset_metadata.yaml"
+  ],
+  "errors": []
+}

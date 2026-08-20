@@ -31,6 +31,4 @@
 
 ## Notes
 
-- PyYAML not available: using built-in fallback parser.
-- PyYAML not available: using built-in fallback parser.
 - Dry-run resolved a matching rule, destination, and action.

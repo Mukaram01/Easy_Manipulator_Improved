@@ -29,13 +29,13 @@ def test_scene_builder_builds_center_first_readable_workspace_natively():
         'left_panel->setObjectName("sceneBuilderLeftPanel")',
         'center_panel->setObjectName("sceneBuilderProductViewPanel")',
         'right_panel->setObjectName("sceneBuilderRightPanel")',
-        'left_panel->setMinimumWidth(320)',
-        'center_panel->setMinimumWidth(720)',
-        'right_panel->setMinimumWidth(360)',
-        'scene_splitter->setStretchFactor(1, 8)',
-        'scene_splitter->setSizes({320, 1000, 0})',
+        'left_panel->setMinimumWidth(240)',
+        'center_panel->setMinimumWidth(520)',
+        'right_panel->setMinimumWidth(260)',
+        'scene_splitter->setStretchFactor(1, 9)',
+        'scene_splitter->setSizes({260, 700, 300})',
         'scene_builder/native_layout_version',
-        'settings.setValue(QStringLiteral("scene_builder/right_panel_visible"), false)',
+        'settings.value(QStringLiteral("scene_builder/right_panel_visible"), true)',
     ):
         assert token in source
 
@@ -64,12 +64,12 @@ def test_duplicate_scene_header_actions_are_removed_but_actions_remain_accessibl
     assert 'register_scene_action("layout.save", "Save Layout"' in source
 
 
-def test_inspector_is_closed_by_default_and_opens_on_selection():
+def test_inspector_is_visible_by_default_and_selection_keeps_it_synchronized():
     source = read_main()
 
-    assert 'right_panel->setVisible(false)' in source
-    assert 'scene_builder_right_panel_->setVisible(true)' in source
-    assert 'scene_builder_show_right_panel_action_->setChecked(true)' in source
+    assert 'settings.value(QStringLiteral("scene_builder/right_panel_visible"), true)' in source
+    assert 'apply_scene_builder_panel_visibility(' in source
+    assert 'scene_builder_show_right_panel_action_->setChecked(!scene_builder_right_panel_->isHidden())' in source
     assert 'scene_builder_inspector_tabs_->setCurrentIndex(selection_tab)' in source
     assert 'connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_selected' in source
     assert 'connect(scene_hierarchy_tree_, &QTreeWidget::itemClicked' in source
@@ -88,7 +88,7 @@ def test_no_repeating_layout_timer_or_runtime_reparenting():
 
 def test_panels_tools_label_is_well_formed():
     source = read_main()
-    assert 'scene_builder_secondary_overflow_button_->setText("Panels & Tools")' in source
+    assert 'scene_builder_secondary_overflow_button_->setText(QStringLiteral("⋯"))' in source
     assert 'Panels_tools' not in source
     assert 'Panels & tools' not in source
 

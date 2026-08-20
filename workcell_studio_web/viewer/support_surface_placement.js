@@ -1,4 +1,4 @@
-import { THREE } from './dist/viewer.bundle.js';
+import * as THREE from 'three';
 
 const SUPPORT_KINDS = new Set(['workbench_body', 'table_surface', 'tabletop']);
 const PATCH_FLAG = Symbol.for('workcell-studio.support-surface-placement.v1');

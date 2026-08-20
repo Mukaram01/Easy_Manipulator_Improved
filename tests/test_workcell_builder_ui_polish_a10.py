@@ -21,7 +21,7 @@ def test_workflow_guidance_lives_in_workflow_tab_instead_of_crowding_every_tab()
 
 
 def test_narrow_inspector_uses_scrollable_tabs_and_progressive_disclosure():
-    assert "inspector_scroll->setMinimumWidth(320)" in CPP
+    assert "inspector_scroll->setMinimumWidth(250)" in CPP
     assert "scene_builder_inspector_tabs_->setUsesScrollButtons(true)" in CPP
     assert "scene_builder_inspector_tabs_->setDocumentMode(true)" in CPP
     assert 'new QPushButton("Bind selected as..."' in CPP

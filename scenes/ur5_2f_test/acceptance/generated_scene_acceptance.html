@@ -1,0 +1,12 @@
+<html><body><h1>Generated Scene Acceptance</h1><p>scene=ur5_2f_test</p><p>status=BLOCKED</p><p>no robot motion commanded</p><h2>blockers</h2><pre>[
+  "Safety flag fake_hardware_first expected True got None",
+  "Safety flag runtime_execution_enabled expected False got None",
+  "Safety flag motion_command_sent expected False got None"
+]</pre><h2>warnings</h2><pre>[
+  "Preview artifact missing",
+  "Offline smoke summary missing",
+  "Generated summary missing",
+  "Expected gripper mount RPY not found"
+]</pre><h2>next commands</h2><pre>colcon build --symlink-install --packages-select ur5_2f_test
+source install/setup.bash
+ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true</pre></body></html>

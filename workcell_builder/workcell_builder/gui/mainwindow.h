@@ -148,6 +148,7 @@ private:
   QString selected_scene_name() const;
   QString selected_scene_path() const;
   bool has_selected_scene() const;
+  bool ensure_live_authoring_mutation_available(const QString & action);
   QString compact_scene_path_context(const QString & scene_name, const QString & full_path) const;
   void update_scene_builder_path_header(const QString & scene_name, const QString & full_path);
   struct SelectedSceneState
@@ -332,7 +333,6 @@ private:
   bool save_native_layout_changes(const QJsonObject & web_patch, QString * error = nullptr);
   bool apply_web_transforms_to_editable_layout_session(
     const QJsonObject & web_patch, QString * error = nullptr);
-  QSet<QString> active_editable_layout_item_ids() const;
   void create_starter_layout_from_preview();
   void refresh_create_starter_layout_action();
   void revert_layout_changes();
@@ -418,6 +418,14 @@ private:
   void refresh_scene_builder_view_chips();
   void populate_scene_hierarchy();
   void refresh_scene_hierarchy_tree_from_current_items();
+  void filter_scene_hierarchy(const QString & query);
+  void show_scene_hierarchy_context_menu(const QPoint & position);
+  void show_canvas_context_menu(const QPoint & global_position);
+  void rename_selected_item();
+  void toggle_selected_item_preview_visibility();
+  void show_scene_builder_command_palette();
+  void reset_scene_builder_workspace_layout();
+  void refresh_contextual_scene_toolbar();
   void apply_scene3d_product_view_layer_defaults_and_commit();
   void apply_scene3d_preview_layer_filters(bool log_change = false);
   void refresh_scene3d_product_view_status_and_audit();
@@ -516,6 +524,7 @@ private:
   QLabel * selection_scene_end_effector_label_{ nullptr };
   QLabel * selection_scene_launch_label_{ nullptr };
   QLabel * inspector_label_{ nullptr };
+  QWidget * inspector_selection_editor_{ nullptr };
   QDoubleSpinBox * inspector_x_{ nullptr };
   QDoubleSpinBox * inspector_y_{ nullptr };
   QDoubleSpinBox * inspector_z_{ nullptr };
@@ -531,6 +540,9 @@ private:
   QLineEdit * inspector_category_{ nullptr };
   QLineEdit * inspector_type_{ nullptr };
   QCheckBox * inspector_live_update_box_{ nullptr };
+  QCheckBox * inspector_visible_box_{ nullptr };
+  QLabel * inspector_collision_label_{ nullptr };
+  QLabel * inspector_source_label_{ nullptr };
   QPushButton * inspector_apply_button_{ nullptr };
   QPushButton * inspector_revert_button_{ nullptr };
   QPushButton * inspector_copy_transform_button_{ nullptr };
@@ -567,12 +579,14 @@ private:
   QPushButton * scene_workflow_recommendation_button_{ nullptr };
   QMenu * scene_workflow_recommendation_menu_{ nullptr };
   QTreeWidget * scene_hierarchy_tree_{ nullptr };
+  QLineEdit * scene_hierarchy_search_{ nullptr };
   QLabel * selected_item_name_label_{ nullptr };
   QLabel * selected_item_summary_label_{ nullptr };
   QLabel * selected_item_id_label_{ nullptr };
   QLabel * selected_item_reason_label_{ nullptr };
   QPushButton * scene_move_mode_button_{ nullptr };
   QPushButton * scene_rotate_mode_button_{ nullptr };
+  QPushButton * scene_duplicate_context_button_{ nullptr };
   QTreeWidget * asset_catalog_tree_{ nullptr };
   QTreeWidget * scene_files_tree_{ nullptr };
   QComboBox * asset_filter_combo_{ nullptr };
@@ -601,6 +615,7 @@ private:
   QToolButton * scene_builder_secondary_overflow_button_{ nullptr };
   QMenu * scene_builder_secondary_overflow_menu_{ nullptr };
   QMap<QString, QAction *> scene_builder_action_registry_;
+  QSet<QString> preview_hidden_item_ids_;
   // Unified action registry (header menus + side-panel buttons share these actions).
   // Workspace
   QAction * action_workspace_studio_home_{ nullptr };
@@ -659,6 +674,11 @@ private:
   // rebuilds consume this snapshot; only Save Layout persists it to YAML.
   QVector<ScenePreviewWidget::PreviewItem> editable_layout_session_items_;
   QString editable_layout_session_scene_name_;
+  // Immutable source-of-truth path for the lifetime of the open authoring
+  // session. Scene discovery may see compatibility aliases, but they never
+  // replace this physical directory until the user selects another scene.
+  QString authoring_session_scene_name_;
+  QString authoring_session_scene_dir_;
   QJsonObject scene3d_filter_diagnostics_;
   QJsonObject scene3d_visual_ingestion_diagnostics_;
   QLabel * layout_state_label_{ nullptr };
@@ -669,7 +689,7 @@ private:
   QPushButton * save_layout_button_{ nullptr };
   QPushButton * create_starter_layout_button_{ nullptr };
   QGraphicsView * minimap_view_{ nullptr };
-  bool minimap_requested_visible_{ true };
+  bool minimap_requested_visible_{ false };
   QVector<AssetCatalogEntry> asset_catalog_entries_;
   QStringList recent_asset_ids_;
   QPoint catalog_drag_start_;
@@ -728,14 +748,18 @@ private:
       const QPointF & new_pos,
       bool created,
       bool deleted,
-      const QVector<ScenePreviewWidget::PreviewItem> & preview_items)
+      const QVector<ScenePreviewWidget::PreviewItem> & preview_items,
+      const ScenePreviewWidget::PreviewItem & before_item = {},
+      const ScenePreviewWidget::PreviewItem & after_item = {})
     : kind(kind),
       item_id(item_id),
       old_pos(old_pos),
       new_pos(new_pos),
       created(created),
       deleted(deleted),
-      preview_items(preview_items)
+      preview_items(preview_items),
+      before_item(before_item),
+      after_item(after_item)
     {
     }
 
@@ -746,10 +770,13 @@ private:
     bool created;
     bool deleted;
     QVector<ScenePreviewWidget::PreviewItem> preview_items;
+    ScenePreviewWidget::PreviewItem before_item;
+    ScenePreviewWidget::PreviewItem after_item;
   };
   QSet<QString> deleted_layout_item_ids_;
   std::vector<CanvasEditCommand> undo_stack_;
   std::vector<CanvasEditCommand> redo_stack_;
+  QSet<QString> pending_native_web_pose_signatures_;
   QLabel * preview_scene_label_{ nullptr };
   QTableWidget * diagnostics_table_{ nullptr };
   QLabel * diagnostics_status_label_{ nullptr };

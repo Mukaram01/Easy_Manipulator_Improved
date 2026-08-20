@@ -1,0 +1,247 @@
+{
+  "schema": "workcell_visual_markers/v1",
+  "markers": [
+    {
+      "name": "robot_base",
+      "marker_type": "sphere",
+      "frame": "world",
+      "pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "dimensions": {
+        "x": 0.1,
+        "y": 0.1,
+        "z": 0.1
+      },
+      "label": "Robot Base",
+      "category": "layout"
+    },
+    {
+      "name": "place_zone_default_drop_zone",
+      "marker_type": "cube",
+      "frame": "world",
+      "pose": {
+        "xyz": [
+          0.5,
+          -0.3,
+          0.05
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "dimensions": {
+        "x": 0.2,
+        "y": 0.2,
+        "z": 0.1
+      },
+      "label": "Place Zone default_drop_zone",
+      "category": "task-flow"
+    },
+    {
+      "name": "camera_pose",
+      "marker_type": "arrow",
+      "frame": "world",
+      "pose": {
+        "xyz": [
+          -0.55,
+          0.55,
+          0.4
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "dimensions": {
+        "x": 0.15,
+        "y": 0.03,
+        "z": 0.03
+      },
+      "label": "Camera Pose",
+      "category": "layout"
+    },
+    {
+      "name": "pick_zone_source",
+      "marker_type": "cube",
+      "frame": "world",
+      "pose": {
+        "xyz": [
+          0.35,
+          -0.2,
+          0.08
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "dimensions": {
+        "x": 0.2,
+        "y": 0.2,
+        "z": 0.1
+      },
+      "label": "Pick Zone pick_zone_main",
+      "category": "task-flow"
+    },
+    {
+      "name": "grasp_point",
+      "marker_type": "sphere",
+      "frame": "world",
+      "pose": {
+        "xyz": [
+          0.35,
+          -0.2,
+          0.08
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "dimensions": {
+        "x": 0.04,
+        "y": 0.04,
+        "z": 0.04
+      },
+      "label": "Grasp suction_top_basic",
+      "category": "task-flow"
+    },
+    {
+      "name": "place_zone_target",
+      "marker_type": "cube",
+      "frame": "world",
+      "pose": {
+        "xyz": [
+          0.35,
+          0.35,
+          0.1
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "dimensions": {
+        "x": 0.2,
+        "y": 0.2,
+        "z": 0.1
+      },
+      "label": "Place Zone default_drop_zone",
+      "category": "task-flow"
+    },
+    {
+      "name": "release_point",
+      "marker_type": "sphere",
+      "frame": "world",
+      "pose": {
+        "xyz": [
+          0.35,
+          0.35,
+          0.1
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "dimensions": {
+        "x": 0.04,
+        "y": 0.04,
+        "z": 0.04
+      },
+      "label": "Release tool_release",
+      "category": "task-flow"
+    },
+    {
+      "name": "approach_vector",
+      "marker_type": "arrow",
+      "frame": "world",
+      "pose": {
+        "xyz": [
+          0.35,
+          -0.2,
+          0.2
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "dimensions": {
+        "x": 0.12,
+        "y": 0.02,
+        "z": 0.02
+      },
+      "label": "Approach Nonem",
+      "category": "task-flow"
+    },
+    {
+      "name": "retreat_vector",
+      "marker_type": "arrow",
+      "frame": "world",
+      "pose": {
+        "xyz": [
+          0.35,
+          -0.2,
+          0.1
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "dimensions": {
+        "x": 0.1,
+        "y": 0.02,
+        "z": 0.02
+      },
+      "label": "Retreat Nonem",
+      "category": "task-flow"
+    },
+    {
+      "name": "task_flow_pick_to_place",
+      "marker_type": "arrow",
+      "frame": "world",
+      "pose": {
+        "xyz": [
+          0.35,
+          -0.2,
+          0.08
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "dimensions": {
+        "x": 0.05,
+        "y": 0.02,
+        "z": 0.02
+      },
+      "label": "Pick \u2192 Grasp \u2192 Place \u2192 Release",
+      "category": "task-flow"
+    }
+  ],
+  "marker_count": 10,
+  "task_flow_marker_count": 8
+}

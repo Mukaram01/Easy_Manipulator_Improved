@@ -41,7 +41,7 @@ def test_canonical_selection_module_uses_only_the_public_editor_contract() -> No
     assert "uiItemId: eventOwner" in source
 
 
-def test_ur5_2f_editable_six_vs_layout_seven_is_intentional() -> None:
+def test_ur5_2f_canonical_selection_excludes_only_the_derived_destination_area() -> None:
     payload = yaml.safe_load(LAYOUT.read_text(encoding="utf-8"))
     editable = [item for item in payload["items"] if item.get("editable") is True and item.get("locked") is not True]
     derived = [
@@ -51,9 +51,16 @@ def test_ur5_2f_editable_six_vs_layout_seven_is_intentional() -> None:
     ]
     canonical = [item for item in editable if item not in derived]
 
-    assert len(editable) == 7
+    # Six canonical workcell records, the two surviving authored imports, and
+    # one derived destination area remain after object_02 was explicitly
+    # deleted and persisted by the authoring acceptance workflow.
+    assert len(editable) == 9
     assert [item["id"] for item in derived] == ["place_zone_default"]
-    assert len(canonical) == 6
+    assert len(canonical) == 8
+    assert {"object_01", "object_03"}.issubset(
+        {item["id"] for item in canonical}
+    )
+    assert "object_02" not in {item["id"] for item in canonical}
     assert "target_bin_default" in {item["id"] for item in canonical}
     assert derived[0]["target_ref"] == "target_bin_default"
     assert derived[0]["transform_group"] == "default_drop_destination"

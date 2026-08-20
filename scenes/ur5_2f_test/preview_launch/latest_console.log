@@ -1,0 +1,1 @@
+$ source /opt/ros/humble/setup.bash && cd '/home/ubuntu/workcell_ws' && colcon build --symlink-install --packages-up-to 'ur5_2f_test'

@@ -90,11 +90,15 @@ def test_hierarchy_exposes_stable_id_and_detection_metadata_roles():
 def test_scene_hierarchy_compact_object_rows_and_single_layers_section():
     assert 'scene_hierarchy_tree_->setHeaderLabels({"Name", "Type", "State"});' in MAIN_CPP
     assert 'scene_hierarchy_tree_->setTextElideMode(Qt::ElideRight);' in MAIN_CPP
-    hierarchy_setup = MAIN_CPP[MAIN_CPP.index('hierarchy_layout->addWidget(new QLabel("<b>Scene Hierarchy</b>"));'):MAIN_CPP.index('left_vertical_splitter->addWidget(hierarchy_card);')]
+    hierarchy_setup = MAIN_CPP[MAIN_CPP.index('auto * hierarchy_title = new QLabel("<b>Scene Hierarchy</b>"'):MAIN_CPP.index('left_vertical_splitter->addWidget(hierarchy_card);')]
     assert 'new QGroupBox("Layers", hierarchy_card)' in hierarchy_setup
     assert hierarchy_setup.count('new QCheckBox(') == 6
+    assert 'sceneHierarchySearch' in hierarchy_setup
+    assert 'setContextMenuPolicy(Qt::CustomContextMenu)' in hierarchy_setup
     refresh = mainwindow_function('refresh_scene_hierarchy_tree_from_current_items()')
     assert 'new QTreeWidgetItem(scene_hierarchy_tree_' in refresh
+    for group in ['Robot', 'Tool', 'Environment', 'Perception', 'Task']:
+        assert group in refresh
     assert 'detail_tooltip' in refresh
     assert 'node->setToolTip(0, detail_tooltip);' in refresh
     assert 'header->setSectionResizeMode(0, QHeaderView::Stretch);' in refresh

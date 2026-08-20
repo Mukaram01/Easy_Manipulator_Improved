@@ -82,6 +82,59 @@ TEST(WorkcellStudioCanvasModelLayoutStatus, ReportsCanonicalLayoutSource)
   EXPECT_EQ(model.layout_load_message, "Loaded canonical layout from " + (root / "layout" / "workcell_studio_layout.yaml").string());
 }
 
+TEST(WorkcellStudioCanvasModelLayoutStatus, ExplicitFriendlyNameWinsAfterDiskReloadAndSecondSave)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_canvas_friendly_name_fresh_reload";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  write_file(root / "environment.yaml", "robot: ur5\n");
+  write_file(root / "scene_manifest.yaml", "template_name: demo\n");
+  write_file(root / "config" / "task_recipe.yaml", "pick_source: object_01\nplace_target: table\n");
+  const fs::path layout_path = root / "layout" / "workcell_studio_layout.yaml";
+  write_file(layout_path,
+    "schema_version: workcell_studio_layout/v1\n"
+    "items:\n"
+    "  - id: table\n"
+    "    display_name: Fixture Plate\n"
+    "    type: support_surface\n"
+    "    category: work_surface\n"
+    "    role: fixture\n"
+    "    editable: true\n"
+    "    locked: false\n"
+    "    pose: {xyz: [0.1, 0.2, 0.3], rpy: [0.0, 0.0, 0.4]}\n"
+    "    dimensions: [1.0, 0.6, 0.2]\n"
+    "  - id: object_01\n"
+    "    display_name: Inspection Fixture\n"
+    "    type: object\n"
+    "    category: imported\n"
+    "    role: asset\n"
+    "    editable: true\n"
+    "    locked: false\n"
+    "    pose: {xyz: [0.9, -0.4, 0.2], rpy: [0.1, 0.2, 0.3]}\n"
+    "    dimensions: [0.2, 0.3, 0.4]\n");
+
+  auto assert_loaded = [&](const double expected_x) {
+    workcell_builder::invalidate_workcell_studio_scene_metadata_snapshot(root, "fresh-process-equivalent-test");
+    const auto model = workcell_builder::build_workcell_studio_canvas_model(root, "demo");
+    std::map<std::string, workcell_builder::WorkcellStudioCanvasItem> by_id;
+    for (const auto & item : model.items) by_id[item.id] = item;
+    ASSERT_EQ(by_id.count("table"), 1u);
+    EXPECT_EQ(by_id.at("table").label, "Fixture Plate");
+    EXPECT_EQ(by_id.at("table").role, "fixture");
+    ASSERT_EQ(by_id.count("object_01"), 1u);
+    EXPECT_EQ(by_id.at("object_01").label, "Inspection Fixture");
+    EXPECT_EQ(by_id.at("object_01").id, "object_01");
+    EXPECT_DOUBLE_EQ(by_id.at("object_01").x, expected_x);
+  };
+  assert_loaded(0.9);
+
+  YAML::Node second_save = load_yaml_file(layout_path);
+  second_save["items"][1]["pose"]["xyz"][0] = 1.1;
+  write_yaml_file(layout_path, second_save);
+  assert_loaded(1.1);
+  EXPECT_EQ(load_yaml_file(layout_path)["items"][1]["display_name"].as<std::string>(), "Inspection Fixture");
+}
+
 TEST(WorkcellStudioCanvasModelLayoutStatus, ReportsEmptyCanonicalLayoutMetadata)
 {
   const fs::path root = fs::temp_directory_path() / "wc_canvas_layout_status_empty_canonical";

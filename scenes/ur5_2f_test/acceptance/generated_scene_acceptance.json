@@ -1,0 +1,130 @@
+{
+  "scene_name": "ur5_2f_test",
+  "scene_path": "scenes/ur5_2f_test",
+  "status": "BLOCKED",
+  "checks": [
+    {
+      "name": "package.xml exists",
+      "ok": true
+    },
+    {
+      "name": "CMakeLists.txt exists",
+      "ok": true
+    },
+    {
+      "name": "environment.yaml exists",
+      "ok": true
+    },
+    {
+      "name": "scene_manifest.yaml exists",
+      "ok": true
+    },
+    {
+      "name": "config/task_recipe.yaml exists",
+      "ok": true
+    },
+    {
+      "name": "config/workcell_builder_task_intent.yaml exists",
+      "ok": true
+    },
+    {
+      "name": "preview/static_preview.html or static_preview.svg exists",
+      "ok": false
+    },
+    {
+      "name": "smoke/offline_smoke_summary.txt exists",
+      "ok": false
+    },
+    {
+      "name": "generated summary exists",
+      "ok": false
+    },
+    {
+      "name": "scene name is valid ROS package name",
+      "ok": true
+    },
+    {
+      "name": "fake_hardware_first == True",
+      "ok": false
+    },
+    {
+      "name": "runtime_execution_enabled == False",
+      "ok": false
+    },
+    {
+      "name": "motion_command_sent == False",
+      "ok": false
+    },
+    {
+      "name": "launch/demo.launch.py exists for launch-ready scene",
+      "ok": true,
+      "optional": true
+    },
+    {
+      "name": "launch file contains use_fake_hardware argument",
+      "ok": true
+    },
+    {
+      "name": "launch file does not default to real hardware",
+      "ok": true
+    },
+    {
+      "name": "launch file does not enable runtime execution by default",
+      "ok": true
+    },
+    {
+      "name": "scene.urdf.xacro or environment.urdf.xacro exists",
+      "ok": true,
+      "optional": true
+    },
+    {
+      "name": "arm_hand.srdf.xacro exists",
+      "ok": true,
+      "optional": true
+    },
+    {
+      "name": "generated gripper mount RPY is -1.5708 -1.5708 0",
+      "ok": false
+    },
+    {
+      "name": "generated/workcell_studio_layout_merge_report.json exists",
+      "ok": true,
+      "optional": true
+    },
+    {
+      "name": "launch command contains use_fake_hardware:=true",
+      "ok": true
+    }
+  ],
+  "blockers": [
+    "Safety flag fake_hardware_first expected True got None",
+    "Safety flag runtime_execution_enabled expected False got None",
+    "Safety flag motion_command_sent expected False got None"
+  ],
+  "warnings": [
+    "Preview artifact missing",
+    "Offline smoke summary missing",
+    "Generated summary missing",
+    "Expected gripper mount RPY not found"
+  ],
+  "safety_flags": {
+    "fake_hardware_first": null,
+    "runtime_execution_enabled": null,
+    "motion_command_sent": null
+  },
+  "next_commands": [
+    "colcon build --symlink-install --packages-select ur5_2f_test",
+    "source install/setup.bash",
+    "ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true"
+  ],
+  "notes": [
+    "Command not executed by validator",
+    "No robot motion commanded"
+  ],
+  "layout_applied": true,
+  "generated_from_saved_layout": true,
+  "merge_report_path": "scenes/ur5_2f_test/generated/workcell_studio_layout_merge_report.json",
+  "layout_stale": false,
+  "merge_warnings": [],
+  "merge_blockers": []
+}

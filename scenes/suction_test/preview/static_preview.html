@@ -1,0 +1,108 @@
+<!doctype html><html><body><h1>Suction Test</h1><p>Offline static preview approximation (not collision/safety validation).</p><h2>Task Flow</h2><pre>{
+  &quot;status&quot;: &quot;PASS&quot;,
+  &quot;readiness_classification&quot;: &quot;task_intent_ready_offline&quot;,
+  &quot;task_id&quot;: &quot;default_task&quot;,
+  &quot;task_type&quot;: &quot;pick_place&quot;,
+  &quot;pick_source_id&quot;: &quot;pick_zone_main&quot;,
+  &quot;pick_source_type&quot;: &quot;zone&quot;,
+  &quot;place_target_id&quot;: &quot;default_drop_zone&quot;,
+  &quot;grasp_strategy&quot;: &quot;suction_top_basic&quot;,
+  &quot;release_strategy&quot;: &quot;tool_release&quot;,
+  &quot;approach_axis&quot;: null,
+  &quot;approach_distance_m&quot;: null,
+  &quot;retreat_axis&quot;: null,
+  &quot;retreat_distance_m&quot;: null,
+  &quot;routing_rules&quot;: [
+    {
+      &quot;id&quot;: &quot;default_place&quot;,
+      &quot;when&quot;: {
+        &quot;always&quot;: true
+      },
+      &quot;destination&quot;: &quot;default_drop_zone&quot;
+    }
+  ],
+  &quot;routing_rule_count&quot;: 1,
+  &quot;missing_required_fields&quot;: [],
+  &quot;suggested_next_actions&quot;: [
+    &quot;&quot;,
+    &quot;&quot;,
+    &quot;&quot;,
+    &quot;Generate task recipe from task intent.&quot;
+  ],
+  &quot;warnings&quot;: [],
+  &quot;errors&quot;: [],
+  &quot;safety&quot;: {
+    &quot;metadata_only&quot;: true,
+    &quot;runtime_io_applied&quot;: false,
+    &quot;motion_started&quot;: false,
+    &quot;ros_launch_started&quot;: false
+  },
+  &quot;visual_resolution&quot;: {
+    &quot;pick_coordinates_resolved&quot;: true,
+    &quot;place_coordinates_resolved&quot;: true,
+    &quot;approximate_coordinates_used&quot;: false,
+    &quot;notes&quot;: []
+  }
+}</pre><svg xmlns='http://www.w3.org/2000/svg' width='900' height='640'><rect width='100%' height='100%' fill='#f8fafc'/><text x='20' y='30' font-size='20'>Suction Test</text><text x='20' y='55'>robot=ur5, ee=suction, task=pick_place</text><circle cx='450.0' cy='320.0' r='26' fill='#0f766e'/><text x='450.0' y='325.0' text-anchor='middle' fill='white'>Robot</text><rect x='526.0' y='366.0' width='68' height='40' fill='#bfdbfe' stroke='#1d4ed8'/><text x='560.0' y='390.0' text-anchor='middle'>Bin:default_drop_zone</text><polygon points='329.0,181.0 315.0,211.0 343.0,211.0' fill='#a855f7'/><text x='329.0' y='227.0' text-anchor='middle'>Camera</text><text x='296.0' y='441.0' fill='#111827'>Task Flow</text><text x='296.0' y='459.0' fill='#1f2937'>Pick: pick_zone_main</text><text x='296.0' y='477.0' fill='#1f2937'>Place: default_drop_zone</text><text x='296.0' y='495.0' fill='#1f2937'>Grasp: suction_top_basic</text><text x='296.0' y='513.0' fill='#1f2937'>Release: tool_release</text><text x='296.0' y='531.0' fill='#1f2937'>Routes: 1</text></svg><pre>{
+  &quot;title&quot;: &quot;Suction Test&quot;,
+  &quot;robot&quot;: &quot;ur5&quot;,
+  &quot;end_effector&quot;: &quot;suction&quot;,
+  &quot;task&quot;: &quot;pick_place&quot;,
+  &quot;runtime_mode&quot;: &quot;unknown&quot;,
+  &quot;safety_status&quot;: {
+    &quot;fake_hardware_default&quot;: true,
+    &quot;require_operator_review&quot;: false
+  },
+  &quot;preview_only&quot;: false,
+  &quot;runtime_blocked&quot;: false,
+  &quot;safety_banner_present&quot;: true,
+  &quot;warnings&quot;: [],
+  &quot;approximate_placements&quot;: 0,
+  &quot;task_flow_summary&quot;: {
+    &quot;status&quot;: &quot;PASS&quot;,
+    &quot;readiness_classification&quot;: &quot;task_intent_ready_offline&quot;,
+    &quot;task_id&quot;: &quot;default_task&quot;,
+    &quot;task_type&quot;: &quot;pick_place&quot;,
+    &quot;pick_source_id&quot;: &quot;pick_zone_main&quot;,
+    &quot;pick_source_type&quot;: &quot;zone&quot;,
+    &quot;place_target_id&quot;: &quot;default_drop_zone&quot;,
+    &quot;grasp_strategy&quot;: &quot;suction_top_basic&quot;,
+    &quot;release_strategy&quot;: &quot;tool_release&quot;,
+    &quot;approach_axis&quot;: null,
+    &quot;approach_distance_m&quot;: null,
+    &quot;retreat_axis&quot;: null,
+    &quot;retreat_distance_m&quot;: null,
+    &quot;routing_rules&quot;: [
+      {
+        &quot;id&quot;: &quot;default_place&quot;,
+        &quot;when&quot;: {
+          &quot;always&quot;: true
+        },
+        &quot;destination&quot;: &quot;default_drop_zone&quot;
+      }
+    ],
+    &quot;routing_rule_count&quot;: 1,
+    &quot;missing_required_fields&quot;: [],
+    &quot;suggested_next_actions&quot;: [
+      &quot;&quot;,
+      &quot;&quot;,
+      &quot;&quot;,
+      &quot;Generate task recipe from task intent.&quot;
+    ],
+    &quot;warnings&quot;: [],
+    &quot;errors&quot;: [],
+    &quot;safety&quot;: {
+      &quot;metadata_only&quot;: true,
+      &quot;runtime_io_applied&quot;: false,
+      &quot;motion_started&quot;: false,
+      &quot;ros_launch_started&quot;: false
+    },
+    &quot;visual_resolution&quot;: {
+      &quot;pick_coordinates_resolved&quot;: true,
+      &quot;place_coordinates_resolved&quot;: true,
+      &quot;approximate_coordinates_used&quot;: false,
+      &quot;notes&quot;: []
+    }
+  },
+  &quot;builder_task_intent&quot;: {}
+}</pre></body></html>

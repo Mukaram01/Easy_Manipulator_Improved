@@ -174,7 +174,7 @@ const physicalRoot=node('editable_fixture'); physicalRoot.userData.item=physical
 const physicalRecord={item:physicalItem,object3d:physicalRoot}; state.objects.push(physicalRecord);
 const edge=node('fixture_fallback_edges'); edge.userData.selectable=false; edge.parent=physicalRoot;
 const frustum=node('camera_fallback_sensor_frustum'); frustum.userData.non_selectable=true; frustum.parent=physicalRoot;
-assert.strictEqual(itemFromRaycastHit({object:edge}),null,'fallback edges do not alias their physical parent');
+assert.strictEqual(itemFromRaycastHit({object:edge}),physicalRecord,'fallback edges resolve through to their canonical physical parent without becoming selectable');
 assert.strictEqual(itemFromRaycastHit({object:frustum}),null,'sensor frustums do not alias their physical parent');
 const hiddenFallback=node('hidden_fallback_edges'); hiddenFallback.visible=false; hiddenFallback.parent=physicalRoot;
 assert.strictEqual(rankedPickingCandidates([{object:hiddenFallback,distance:1},{object:physicalRoot,distance:2}])[0].rendered,physicalRecord,'a hidden fallback hit does not suppress a later physical hit');
@@ -493,7 +493,8 @@ vm.runInContext(source + `
 def test_index_references_static_assets():
     index = (VIEWER / "index.html").read_text(encoding="utf-8")
     assert 'href="style.css"' in index
-    assert 'src="./dist/viewer.bundle.js"' in index or 'src="dist/viewer.bundle.js"' in index
+    assert "import(`./dist/viewer.bundle.js?v=${viewerBuild}`).catch" in index
+    assert "^[a-f0-9]{64}$" in index
     assert 'id="scene-file"' in index
     assert 'scene-file' in index
 

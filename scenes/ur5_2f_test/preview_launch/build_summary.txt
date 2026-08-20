@@ -1,0 +1,4 @@
+scene_name=ur5_2f_test
+command=source /opt/ros/humble/setup.bash && cd '/home/ubuntu/workcell_ws' && colcon build --symlink-install --packages-up-to 'ur5_2f_test'
+status=BUILD_RUNNING
+no_robot_motion_commanded=true

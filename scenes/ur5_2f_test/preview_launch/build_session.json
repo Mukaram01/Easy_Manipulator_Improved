@@ -1,0 +1,14 @@
+{
+    "command": "source /opt/ros/humble/setup.bash && cd '/home/ubuntu/workcell_ws' && colcon build --symlink-install --packages-up-to 'ur5_2f_test'",
+    "event": "build_started",
+    "exit_code": -1,
+    "finished_at": "2026-08-19T16:04:04Z",
+    "no_robot_motion_commanded": true,
+    "safety_flags": {
+        "fake_hardware_only": true,
+        "runtime_execution_enabled": false
+    },
+    "scene_name": "ur5_2f_test",
+    "started_at": "2026-08-19T16:04:04Z",
+    "status": "BUILD_RUNNING"
+}
