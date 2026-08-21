@@ -22,6 +22,9 @@ ROUNDTRIP_IDS = [
     "realsense_overhead",
     "safety_zone_keepout",
     "home_pose_safe",
+    "object_02",
+    "object_01",
+    "object_03",
 ]
 ROUNDTRIP_FIELDS = [
     "type",
@@ -95,6 +98,10 @@ def _simulate_canvas_load(scene_dir: Path) -> list[dict[str, Any]]:
     """Load editable layout items and generated preview items like the builder canvas model."""
     layout = _load_yaml(scene_dir / LAYOUT_RELATIVE_PATH)
     editable_items = [copy.deepcopy(item) for item in layout.get("items") or [] if isinstance(item, dict)]
+    # Raw authored YAML may omit the runtime provenance field. The builder
+    # canonicalizes every record loaded from this file to editable_layout.
+    for item in editable_items:
+        item.setdefault("source_layer", "editable_layout")
     return editable_items + _locked_preview_items_from_mesh_index(scene_dir)
 
 
@@ -125,6 +132,9 @@ def _assert_roundtrip_fields_match(source: dict[str, Any], actual: dict[str, Any
 
 def test_ur5_2f_workcell_studio_layout_roundtrip_preserves_canonical_items_without_preview_duplication(tmp_path: Path) -> None:
     source_layout = _load_yaml(SOURCE_SCENE / LAYOUT_RELATIVE_PATH)
+    for item in source_layout.get("items") or []:
+        if isinstance(item, dict):
+            item.setdefault("source_layer", "editable_layout")
     source_by_id = _items_by_id(source_layout)
     for expected_id in ROUNDTRIP_IDS:
         assert _item_ids(source_layout).count(expected_id) == 1

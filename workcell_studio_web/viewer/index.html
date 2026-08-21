@@ -135,13 +135,21 @@
     </aside>
   </main>
 
-  <script type="module" src="./dist/viewer.bundle.js"></script>
-  <script type="module" src="./rviz_light_baseline.js"></script>
-  <script type="module" src="./support_surface_placement.js"></script>
-  <script type="module" src="./workcell_task_gizmo.js"></script>
-  <script type="module" src="./collision_placement_validation.js"></script>
-  <script type="module" src="./simple_product_ui.js"></script>
-  <script type="module" src="./contextual_placement_actions.js"></script>
-  <script type="module" src="./post_bundle_viewer_modules.js"></script>
+  <script type="module">
+    const viewerBuild = new URLSearchParams(window.location.search).get('viewerBuild') || '';
+    if (!/^[a-f0-9]{64}$/.test(viewerBuild)) {
+      throw new Error('Missing or invalid viewerBuild contract; refusing to load an unversioned Product View bundle.');
+    }
+    import(`./dist/viewer.bundle.js?v=${viewerBuild}`).catch(error => {
+      window.__WORKCELL_VIEWER_STATUS__ = {
+        readiness_contract_version: 1,
+        lifecycle_state: 'scene_failed',
+        terminal: true,
+        failed_stage: 'versioned_bundle_import',
+        fatal_error: String(error?.message || error),
+      };
+      console.error('Versioned Product View bundle import failed:', error);
+    });
+  </script>
 </body>
 </html>

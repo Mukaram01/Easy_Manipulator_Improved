@@ -85,8 +85,143 @@ def test_mainwindow_web3d_state_drives_existing_save_and_dirty_label():
     assert "native_dirty || (ready && matching_scene && dirty && valid_dirty_transforms)" in source
     assert "host_dirty_ && host_dirty_()" in source
     assert 'QStringLiteral("Unsaved Layout Edits: %1 (Web3D)")' in source
-    for phase in ["save requested", "checking edits", "validation started", "validation failed", "saving", "saved", "reload"]:
+    for phase in ["save requested", "checking edits", "validation failed", "saved", "failed closed without regeneration"]:
         assert phase in source
+
+
+def test_native_metadata_and_web_transforms_use_one_stable_id_transaction():
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    mainwindow = MAINWINDOW.read_text(encoding="utf-8")
+    serializer = (GUI / "layout_item_serializer.hpp").read_text(encoding="utf-8")
+
+    assert "cannot safely compose native structural edits" not in controller
+    assert "native_save_(patch, &native_error)" in controller
+    assert "unified authored transaction complete" in controller
+    assert "Validation is deliberately complete before mutating the native session" in mainwindow
+    assert "Browser position/rotation wins; native state supplies metadata and structure" in mainwindow
+    assert "RoleMetadataExplicitlyEdited" in mainwindow
+    assert 'item["display_name"] = layout_string_scalar(state.display_name)' in serializer
+    assert 'item["role"] = state.role' in serializer
+    assert 'item["id"] = layout_string_scalar(state.id)' in serializer  # new records only
+    assert "stable ID missing after write" in mainwindow
+    assert "Save Layout persistence verified" in mainwindow
+
+
+def test_qt_metadata_preview_updates_user_surfaces_without_renaming_canonical_id():
+    mainwindow = MAINWINDOW.read_text(encoding="utf-8")
+    preview = (GUI / "scene_preview_widget.cpp").read_text(encoding="utf-8")
+    viewer = (ROOT / "workcell_studio_web/viewer/viewer.js").read_text(encoding="utf-8")
+
+    assert "refresh_scene_hierarchy_tree_from_current_items();" in mainwindow
+    assert "set_authoring_item_metadata(" in mainwindow
+    assert "setItemMetadata(" in preview
+    assert "function setItemMetadataFromBridge(id, displayName, semanticRole)" in viewer
+    metadata_bridge = viewer.split(
+        "function setItemMetadataFromBridge(id, displayName, semanticRole)", 1
+    )[1].split("window.__WORKCELL_EDITOR_API_V1__", 1)[0]
+    assert "rendered.item.display_name = name" in metadata_bridge
+    assert "rendered.item.role = role" in metadata_bridge
+    assert "rendered.item.id =" not in metadata_bridge
+    assert "populateObjectList();" in metadata_bridge
+    assert "populateInspector(rendered);" in metadata_bridge
+
+
+def test_live_authoring_crud_api_updates_product_view_without_scene_regeneration():
+    mainwindow = MAINWINDOW.read_text(encoding="utf-8")
+    preview_header = (GUI / "scene_preview_widget.h").read_text(encoding="utf-8")
+    preview = (GUI / "scene_preview_widget.cpp").read_text(encoding="utf-8")
+    viewer = (ROOT / "workcell_studio_web/viewer/viewer.js").read_text(encoding="utf-8")
+
+    assert "schemaVersion: 'workcell_studio_live_authoring_capabilities/v1'" in viewer
+    assert "apiVersion: '1.1.0'" in viewer
+    assert "getCapabilities: ()" in viewer
+    assert "addItem: item => addItemFromBridge(item)" in viewer
+    assert "removeItem: id => removeItemFromBridge(id)" in viewer
+    assert "duplicateItem: (id, item) => duplicateItemFromBridge(id, item)" in viewer
+    assert "state.three.scene?.remove(rendered.object3d)" in viewer
+    assert "state.objects = state.objects.filter(record => record !== rendered)" in viewer
+    assert "state.three.scene.add(object3d)" in viewer
+
+    for method in ("add_authoring_item", "duplicate_authoring_item", "remove_authoring_item"):
+        assert method in preview_header
+        assert f"ScenePreviewWidget::{method}" in preview
+        assert method in mainwindow
+    assert 'live_item.insert(QStringLiteral("mesh_uri"), mesh_source)' in preview
+    assert 'mesh_source.startsWith(QStringLiteral("scenes/"))' in preview
+
+    delete_body = mainwindow.split("void MainWindow::delete_selected_item()", 1)[1].split(
+        "double MainWindow::current_nudge_step_m", 1
+    )[0]
+    assert "remove_authoring_item(id)" in delete_body
+    assert "request_embedded_web_product_view_refresh" not in delete_body
+
+
+def test_executable_live_crud_mutates_three_scene_in_place():
+    viewer = ROOT / "workcell_studio_web/viewer/viewer.js"
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const THREE_IMPL=require('./workcell_studio_web/viewer/node_modules/three/build/three.cjs');
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',innerHTML:'',value:'',dataset:{},classList:{toggle(){},add(){},remove(){}},querySelector(){return null},querySelectorAll(){return[]},addEventListener(){},setAttribute(){},appendChild(){},remove(){}});
+const context={console,assert,THREE_IMPL,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element()},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context);vm.runInContext(source+`
+THREE=THREE_IMPL;state.sceneJson={scene:{id:'ur5_2f_test'}};state.three.scene=new THREE.Scene();state.objects=[];state.pickRecords=[];state.dirtyTransforms=new Map();state.undoStack=[];state.redoStack=[];
+createLabelElement=()=>null;populateObjectList=()=>{};updateLabels=()=>{};renderSceneSummary=()=>{};bindExportedPhysicalTransformOwnership=()=>[];tryLoadMesh=()=>{};selectObject=id=>{state.selected=String(id||'')};clearSelection=()=>{state.selected=''};detachTransformGizmo=()=>{};updateDirtyState=()=>{};
+const item={id:'object_02',display_name:'Fixture Plate',role:'fixture',category:'object',editable:true,locked:false,source_layer:'editable_layout',world_pose:{xyz:[.95,.45,.16],rpy:[0,1.48352986419518,0]},dimensions:[.2,.2,.2],primitive:{type:'box',dimensions:[.2,.2,.2]}};
+let result=window.__WORKCELL_EDITOR_API_V1__.addItem(item);assert.strictEqual(state.objects.length,1);assert.strictEqual(state.three.scene.children.length,1);assert.strictEqual(result.selectedItemId,'object_02');
+result=window.__WORKCELL_EDITOR_API_V1__.setItemMetadata('object_02','Fixture Plate','fixture');assert.strictEqual(state.objects[0].item.display_name,'Fixture Plate');assert.strictEqual(state.objects[0].item.id,'object_02');
+result=window.__WORKCELL_EDITOR_API_V1__.duplicateItem('object_02',{...item,id:'object_02_copy',display_name:'Fixture Plate copy',world_pose:{xyz:[1.05,.55,.16],rpy:[0,1.48352986419518,0]}});assert.strictEqual(state.objects.length,2);assert.strictEqual(state.three.scene.children.length,2);assert.strictEqual(result.selectedItemId,'object_02_copy');
+result=window.__WORKCELL_EDITOR_API_V1__.setItemMetadata('object_02_copy','Inspection Fixture','fixture');assert.strictEqual(state.objects.find(x=>x.item.id==='object_02_copy').item.display_name,'Inspection Fixture');
+result=window.__WORKCELL_EDITOR_API_V1__.removeItem('object_02');assert.strictEqual(state.objects.length,1);assert.strictEqual(state.three.scene.children.length,1);assert.strictEqual(state.objects[0].item.id,'object_02_copy');
+result=window.__WORKCELL_EDITOR_API_V1__.addItem(item);assert.strictEqual(state.objects.length,2,'native undo restores exactly one item');
+result=window.__WORKCELL_EDITOR_API_V1__.removeItem('object_02');assert.strictEqual(state.objects.length,1,'native redo removes it again');
+result=window.__WORKCELL_EDITOR_API_V1__.addItem({...item,display_name:'Fixture Plate'});assert.strictEqual(state.objects.length,2,'second undo restores the same stable ID');
+assert.strictEqual(window.__WORKCELL_EDITOR_API_V1__.apiVersion,'1.1.0');
+const capabilities=window.__WORKCELL_EDITOR_API_V1__.getCapabilities();assert.strictEqual(capabilities.schemaVersion,'workcell_studio_live_authoring_capabilities/v1');assert.ok(capabilities.operations.includes('duplicateItem'));
+`,context);
+"""
+    result = subprocess.run(
+        ["node", "-e", harness, str(viewer)], cwd=ROOT, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_versioned_capability_handshake_fails_closed_for_stale_bundle():
+    preview = (GUI / "scene_preview_widget.cpp").read_text(encoding="utf-8")
+    viewer = (ROOT / "workcell_studio_web/viewer/viewer.js").read_text(encoding="utf-8")
+    assert "verify_embedded_editor_contract(identity)" in preview
+    assert "typeof api.getCapabilities !== 'function'" in preview
+    assert "capabilities?.apiVersion !== '1.1.0'" in preview
+    assert "Live authoring disabled" in preview
+    assert "no scene regeneration was attempted" in preview
+    assert "getCapabilities: ()" in viewer
+    assert "schemaVersion: 'workcell_studio_live_authoring_capabilities/v1'" in viewer
+
+
+def test_successful_live_save_rebases_in_place_without_product_view_regeneration():
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    mainwindow = MAINWINDOW.read_text(encoding="utf-8")
+
+    request_save = controller.split("void requestSave()", 1)[1].split("void startWorkflow", 1)[0]
+    assert "live authored session retained; no Product View regeneration required" in request_save
+    assert "native_save_(patch, &native_error)" in request_save
+    assert "startWorkflow(" not in request_save
+    assert "requestPostSaveProductViewRefresh" not in request_save
+    rebase_success = controller.split("if (browser_rebase_succeeded_)", 1)[1].split(
+        "} else {", 1
+    )[0]
+    assert "browser baseline rebased in place; no Product View regeneration required" in rebase_success
+    assert "requestPostSaveProductViewRefresh" not in rebase_success
+    assert "live authored session retained without Product View regeneration" in mainwindow
+    assert "Save Layout persisted authored YAML only" in mainwindow
+
+
+def test_open_authoring_session_pins_one_canonical_scene_directory():
+    mainwindow = MAINWINDOW.read_text(encoding="utf-8")
+
+    assert "selected_scene_state_.path" in mainwindow
+    assert "selected_scene_path()" in mainwindow
+    assert "const fs::path scene_dir = fs::path(selected_scene_path().toStdString())" in mainwindow
 
 
 def test_qt_reads_patch_from_existing_browser_editor_api_and_checks_identity():
@@ -166,55 +301,34 @@ def test_save_rejects_url_mismatch_stale_context_and_scene_path_escape():
     assert "QFileInfo(scene_dir_).absolutePath()) != scenes_root" in source
 
 
-def test_qt_writes_patch_atomically_then_runs_dry_run_before_confirmation_and_write():
+def test_qt_save_uses_native_authored_session_without_legacy_patch_workflow():
     source = CONTROLLER.read_text(encoding="utf-8")
-    assert "QSaveFile output(patch_path_)" in source
-    assert "output.commit()" in source
-    assert 'QStringLiteral("--dry-run-apply")' in source
-    assert 'arguments << QStringLiteral("--write");' in source
-    assert "WorkflowPhase::DryRun" in source
-    assert "WorkflowPhase::Write" in source
-    assert "Confirm Save Product View Layout" in source
-    assert source.index("startWorkflow(WorkflowPhase::DryRun)") < source.index("Confirm Save Product View Layout")
-    assert source.index("Confirm Save Product View Layout") < source.index("startWorkflow(WorkflowPhase::Write)")
-    assert "QProcess::MergedChannels" in source
-    assert "waitForFinished" not in source
+    request_save = source.split("void requestSave()", 1)[1].split("void startWorkflow", 1)[0]
+    assert "native_save_(patch, &native_error)" in request_save
+    assert "startWorkflow(" not in request_save
+    assert "writePatchAtomically(" not in request_save
+    assert "run_workcell_studio_web_edit_workflow.py" not in request_save
 
 
-def test_qt_logs_bounded_patch_summary_and_failed_subprocess_details():
+def test_qt_logs_patch_summary_before_unified_native_save():
     source = CONTROLLER.read_text(encoding="utf-8")
     for token in [
         "patch summary: scene_id=%1 dirty_edit_count=%2",
         "patch edit: item_id=%1 operation=%2",
         "persistence_source=%5",
-        "exit_code=%2 subprocess_output=%3; Web3D edits preserved",
-        "subprocess output truncated",
-        "QProcess::MergedChannels",
     ]:
         assert token in source
-    assert source.index("logPatchSummary(patch)") < source.index("validation started")
+    request_save = source.split("void requestSave()", 1)[1].split("void startWorkflow", 1)[0]
+    assert request_save.index("logPatchSummary(patch)") < request_save.index("native_save_(patch, &native_error)")
 
 
-def test_successful_qt_save_reuses_backend_refreshes_and_reloads_product_view():
+def test_successful_qt_save_does_not_invoke_legacy_workflow_or_refresh():
     controller = CONTROLLER.read_text(encoding="utf-8")
-    workflow = WORKFLOW.read_text(encoding="utf-8")
-
-    assert "scripts/run_workcell_studio_web_edit_workflow.py" in controller
-    assert "scripts/apply_workcell_studio_web_scene_edit_patch.py" not in controller
-    assert "scripts/validate_workcell_studio_web_scene_edit_patch.py" not in controller
-    assert "request_post_save_product_view_refresh()" in controller
-    assert "view_->reload()" not in controller
-    assert "post_save_product_view_refresh_finished" in controller
-    assert "matching regenerated Product View scene_ready" in controller
-
-    assert 'write_cmd = [*dry_cmd, "--write", "--backup"]' in workflow
-    assert "persistence verification" in workflow
-    assert "_product_view_refresh_cmd" in workflow
-    refresh = workflow.split("def _product_view_refresh_cmd", 1)[1].split("def _generated_summary_paths", 1)[0]
-    assert "ensure_workcell_studio_web_scene_fresh.py" in refresh
-    assert '"--stage-assets"' in refresh
-    assert '"--force"' in refresh
-    assert "Product View refresh result" in workflow
+    request_save = controller.split("void requestSave()", 1)[1].split("void startWorkflow", 1)[0]
+    assert "scripts/run_workcell_studio_web_edit_workflow.py" not in request_save
+    assert "request_post_save_product_view_refresh" not in request_save
+    assert "requestPostSaveProductViewRefresh" not in request_save
+    assert "native_save_(patch, &native_error)" in request_save
 
 
 def test_post_save_refresh_renews_all_lifecycle_identities_and_rejects_stale_ready():

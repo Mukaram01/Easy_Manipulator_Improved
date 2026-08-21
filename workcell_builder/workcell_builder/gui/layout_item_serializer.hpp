@@ -66,7 +66,7 @@ inline void update_layout_item_dimensions(YAML::Node item, const LayoutItemSaveS
 // Existing YAML is authored authority; Scene3D semantics/provenance are display-normalized.
 inline YAML::Node serialize_layout_item(
   const LayoutItemSaveState & state, const YAML::Node & existing,
-  const bool display_name_explicitly_edited = false)
+  const bool metadata_explicitly_edited = false)
 {
   const bool existing_record = existing && existing.IsMap();
   YAML::Node item = existing_record ? YAML::Clone(existing) : YAML::Node(YAML::NodeType::Map);
@@ -78,6 +78,7 @@ inline YAML::Node serialize_layout_item(
     if (!state.role.empty()) item["role"] = state.role;
     if (!state.catalog_asset_id.empty()) item["catalog_asset_id"] = layout_string_scalar(state.catalog_asset_id);
     item["source"] = "layout/workcell_studio_layout.yaml";
+    item["source_layer"] = "editable_layout";
     item["editable"] = true; item["locked"] = false;
     if (!state.mesh_path.empty() && !is_scene_layer_token(state.mesh_path)) {
       item["source_path"] = state.mesh_path; item["mesh_path"] = state.mesh_path;
@@ -88,8 +89,9 @@ inline YAML::Node serialize_layout_item(
       mesh["scale"] = layout_sequence3(state.mesh_scale); item["mesh"] = mesh;
     }
     item["scale"] = layout_sequence3(state.mesh_scale);
-  } else if (display_name_explicitly_edited && !state.display_name.empty()) {
-    item["display_name"] = layout_string_scalar(state.display_name);
+  } else if (metadata_explicitly_edited) {
+    if (!state.display_name.empty()) item["display_name"] = layout_string_scalar(state.display_name);
+    if (!state.role.empty()) item["role"] = state.role;
   }
   if (existing_record && !state.catalog_asset_id.empty() && !state.mesh_path.empty() &&
     !is_scene_layer_token(state.mesh_path))

@@ -21,6 +21,34 @@ def test_browser_editor_api_v1_contract_and_bounded_events():
     assert "splice(0, state.editorEvents.length - 100)" in VIEWER
 
 
+def test_browser_editor_api_publishes_immutable_runtime_marker_and_ready_event():
+    import subprocess
+
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',dataset:{},style:{},classList:{add(){},remove(){},toggle(){}},querySelector(){return null},querySelectorAll(){return[]},addEventListener(){},setAttribute(){},appendChild(){},remove(){}});
+const events=[];
+const window={location:{href:'http://127.0.0.1:8765/workcell_studio_web/viewer/index.html?scene=test',search:''},dispatchEvent(event){events.push(event)},parent:{postMessage(){}},addEventListener(){}};
+const CustomEvent=class{constructor(type,init){this.type=type;this.detail=init?.detail||{}}}; window.CustomEvent=CustomEvent;
+const context={console,window,document:{getElementById(){return element()},querySelectorAll(){return[]},createElement(){return element()}},URLSearchParams,CustomEvent,requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context); vm.runInContext(source,context);
+assert.strictEqual(window.__WORKCELL_EDITOR_API_V1__.apiVersion,'1.1.0');
+assert.strictEqual(window.__WORKCELL_EDITOR_RUNTIME_V1__.schemaVersion,'workcell_studio_editor_runtime/v1');
+assert.strictEqual(window.__WORKCELL_EDITOR_RUNTIME_V1__.apiVersion,'1.1.0');
+assert.strictEqual(window.__WORKCELL_EDITOR_RUNTIME_V1__.locationHref,window.location.href);
+assert.ok(Object.isFrozen(window.__WORKCELL_EDITOR_RUNTIME_V1__));
+assert.strictEqual(events.filter(event=>event.type==='workcell:editor-api-ready').length,1);
+assert.strictEqual(events.find(event=>event.type==='workcell:editor-api-ready').detail,window.__WORKCELL_EDITOR_RUNTIME_V1__);
+const descriptor=Object.getOwnPropertyDescriptor(window,'__WORKCELL_EDITOR_RUNTIME_V1__');
+assert.strictEqual(descriptor.writable,false); assert.strictEqual(descriptor.configurable,false);
+"""
+    subprocess.run(
+        ["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js")],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    )
+
+
 def test_browser_placement_api_raycast_state_and_single_request_contract():
     import subprocess
 
@@ -745,7 +773,8 @@ def test_qt_web3d_selected_transform_inspector_round_trip_contract():
     assert "setItemPose:" in VIEWER
     assert "set_authoring_item_pose" in HDR
     assert "set_authoring_item_pose" in CPP
-    assert ".setItemPose(" in CPP
+    assert "syncItemTransform" in CPP
+    assert "a.setItemPose" in CPP
 
     inspector = main.split(
         "void MainWindow::apply_inspector_pose_to_item()", 1

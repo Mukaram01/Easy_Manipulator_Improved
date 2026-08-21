@@ -3,7 +3,6 @@
 #include "scene_preview_widget.h"
 
 #include <QJsonObject>
-#include <QSet>
 #include <QWidget>
 #include <functional>
 
@@ -88,11 +87,10 @@ public:
     ScenePreviewWidget * preview, QWebEngineView * view, QPushButton * save_button,
     QLabel * dirty_label, std::function<bool()> host_dirty,
     std::function<QString()> host_dirty_label,
-    std::function<QSet<QString>()> session_added_ids,
     std::function<bool(const QJsonObject &, QString *)> native_save)
   : QObject(preview), preview_(preview), view_(view), save_button_(save_button), dirty_label_(dirty_label),
     host_dirty_(std::move(host_dirty)), host_dirty_label_(std::move(host_dirty_label)),
-    session_added_ids_(std::move(session_added_ids)), native_save_(std::move(native_save))
+    native_save_(std::move(native_save))
   {
     installed_ = preview_ && view_ && save_button_;
     if (!installed_) return;
@@ -168,7 +166,7 @@ private:
   void configureControls()
   {
     save_button_->setToolTip(QStringLiteral(
-      "Validate the current Web3D edit patch, create source-YAML backups, apply it atomically, regenerate and reload Product View. No robot motion is started."));
+      "Persist the live authored session with a backup and atomic YAML write. Product View remains live; no robot motion is started."));
     save_button_->setEnabled(false);
   }
 
@@ -424,8 +422,9 @@ private:
     if (active_patch_.isEmpty() || !view_) {
       browser_rebase_succeeded_ = false;
       reload_required_after_save_ = true;
-      logPhase(QStringLiteral("browser rebase failed: persisted patch transaction is unavailable; canonical refresh required"));
-      requestPostSaveProductViewRefresh();
+      busy_ = false;
+      logPhase(QStringLiteral("browser rebase failed closed: persisted patch transaction is unavailable; no Product View regeneration was requested"));
+      setStatus(QStringLiteral("Saved; editor contract lost—reopen required"), QStringLiteral("error"));
       return;
     }
     const quint64 transaction = active_save_transaction_;
@@ -448,20 +447,34 @@ private:
             .arg(result.value(QStringLiteral("clearedCount")).toInt())
             .arg(result.value(QStringLiteral("preservedCount")).toInt())
             .arg(result.value(QStringLiteral("dirtyCount")).toInt()));
+          busy_ = false;
+          active_patch_ = QJsonObject{};
+          setStatus(QStringLiteral("Saved"), QStringLiteral("success"));
+          logPhase(QStringLiteral(
+            "saved: browser baseline rebased in place; no Product View regeneration required"));
+          browser_rebase_succeeded_ = false;
+          pollEditorState();
+          return;
         } else {
-          logPhase(QStringLiteral("browser rebase failed: %1; canonical refresh required before another save")
+          logPhase(QStringLiteral("browser rebase failed closed: %1; reopen before another save; no Product View regeneration was requested")
             .arg(result.value(QStringLiteral("error")).toString().isEmpty() ?
               QStringLiteral("no result from editor") : result.value(QStringLiteral("error")).toString()));
         }
-        requestPostSaveProductViewRefresh();
+        busy_ = false;
+        active_patch_ = QJsonObject{};
+        setStatus(QStringLiteral("Saved; editor contract lost—reopen required"), QStringLiteral("error"));
+        pollEditorState();
       });
     QTimer::singleShot(2500, this, [this, transaction]() {
       if (!browser_rebase_pending_ || transaction != active_save_transaction_) return;
       browser_rebase_pending_ = false;
       browser_rebase_succeeded_ = false;
       reload_required_after_save_ = true;
-      logPhase(QStringLiteral("browser rebase timed out; canonical refresh required before another save"));
-      requestPostSaveProductViewRefresh();
+      busy_ = false;
+      active_patch_ = QJsonObject{};
+      logPhase(QStringLiteral("browser rebase timed out; failed closed without Product View regeneration"));
+      setStatus(QStringLiteral("Saved; editor rebase timed out—reopen required"), QStringLiteral("error"));
+      pollEditorState();
     });
   }
 
@@ -554,6 +567,15 @@ private:
   void requestSave()
   {
     if (busy_ || !view_) return;
+    if (!preview_ || !preview_->embedded_web_authoring_active()) {
+      setStatus(QStringLiteral("Live-authoring contract unavailable"), QStringLiteral("error"));
+      logPhase(QStringLiteral("save blocked: capability handshake unavailable; failed closed without regeneration"));
+      QMessageBox::warning(preview_, QStringLiteral("Save Product View Layout"),
+        QStringLiteral("Save is disabled because the embedded viewer did not provide the required live-authoring API contract. "
+          "Rebuild the viewer bundle and reopen the scene. No Product View regeneration was attempted.\n\n%1")
+          .arg(preview_ ? preview_->embedded_web_authoring_contract_error() : QStringLiteral("preview unavailable")));
+      return;
+    }
     if (reload_required_after_save_) {
       setStatus(QStringLiteral("Reload required before another save"), QStringLiteral("warning"));
       QMessageBox::warning(preview_, QStringLiteral("Save Product View Layout"),
@@ -636,58 +658,33 @@ private:
 
       logPatchSummary(patch);
 
-      if (native_dirty) {
-        const QSet<QString> session_ids = session_added_ids_ ? session_added_ids_() : QSet<QString>{};
-        QStringList unsafe_ids;
-        for (const auto & edit_value : edits) {
-          const QString id = edit_value.toObject().value(QStringLiteral("item_id")).toString();
-          if (!session_ids.contains(id)) unsafe_ids.push_back(id);
-        }
-        if (!unsafe_ids.isEmpty()) {
-          clearActiveSaveTransaction();
-          busy_ = false;
-          setStatus(QStringLiteral("Composed save rejected"), QStringLiteral("error"));
-          const QString message = QStringLiteral(
-            "Save Layout cannot safely compose native structural edits with browser edits for persisted item(s): %1. "
-            "No file was written. Save or revert one edit source first; both dirty states were retained.")
-            .arg(unsafe_ids.join(QStringLiteral(", ")));
-          QMessageBox::warning(preview_, QStringLiteral("Save Product View Layout"), message);
-          logPhase(QStringLiteral("validation rejected before write: %1").arg(message));
-          pollEditorState();
-          return;
-        }
-        QString native_error;
-        if (!native_save_ || !native_save_(patch, &native_error)) {
-          clearActiveSaveTransaction();
-          busy_ = false;
-          setStatus(QStringLiteral("Structural save failed"), QStringLiteral("error"));
-          QMessageBox::critical(preview_, QStringLiteral("Save Product View Layout"), native_error);
-          logPhase(QStringLiteral("native structural save failed before patch workflow: %1").arg(native_error));
-          pollEditorState();
-          return;
-        }
-        logPhase(QStringLiteral("native structural save complete; session-added Web3D transforms serialized without stale web_scene validation"));
-        if (!edits.isEmpty()) {
-          rebaseBrowserAfterPersistedWrite();
-        } else {
-          busy_ = false;
-          active_patch_ = QJsonObject{};
-          requestPostSaveProductViewRefresh();
-        }
-        return;
-      }
-
-      QString write_error;
-      if (!writePatchAtomically(patch, &write_error)) {
+      // The Qt SceneAuthoringSession is the sole persistence authority.  Even
+      // when the browser event poll has not yet raised host_dirty_, its patch
+      // is composed into that session and serialized by stable ID.  Never
+      // fall back to the legacy exporter/generator save workflow.
+      QString native_error;
+      if (!native_save_ || !native_save_(patch, &native_error)) {
         clearActiveSaveTransaction();
         busy_ = false;
-        setStatus(QStringLiteral("Validation failed"), QStringLiteral("error"));
-        QMessageBox::critical(preview_, QStringLiteral("Save Product View Layout"), write_error);
-        logPhase(QStringLiteral("validation failed: patch staging write failed; Web3D edits preserved"));
+        setStatus(QStringLiteral("Authored-session save failed"), QStringLiteral("error"));
+        QMessageBox::critical(preview_, QStringLiteral("Save Product View Layout"), native_error);
+        logPhase(QStringLiteral("unified authored transaction failed before write: %1").arg(native_error));
+        pollEditorState();
         return;
       }
-      logPhase(QStringLiteral("validation started"));
-      startWorkflow(WorkflowPhase::DryRun);
+      logPhase(QStringLiteral(
+        "unified authored transaction complete: metadata, structure, and validated Web3D transforms serialized by stable item ID"));
+      if (!edits.isEmpty()) {
+        rebaseBrowserAfterPersistedWrite();
+      } else {
+        busy_ = false;
+        active_patch_ = QJsonObject{};
+        reload_required_after_save_ = false;
+        setStatus(QStringLiteral("Saved"), QStringLiteral("success"));
+        logPhase(QStringLiteral(
+          "saved: live authored session retained; no Product View regeneration required"));
+        pollEditorState();
+      }
     });
   }
 
@@ -786,7 +783,7 @@ private:
   {
     if (!installed_ || !view_ || busy_ || state_poll_pending_) return;
     if (!preview_->embedded_web_authoring_active()) {
-      if (save_button_) save_button_->setEnabled((host_dirty_ && host_dirty_()) || !reload_required_after_save_);
+      if (save_button_) save_button_->setEnabled(false);
       return;
     }
     const QUrl poll_url = view_->url();
@@ -837,6 +834,7 @@ private:
       const bool native_dirty = host_dirty_ && host_dirty_();
       if (save_button_) {
         save_button_->setEnabled(
+          preview_ && preview_->embedded_web_authoring_active() &&
           (native_dirty || (ready && matching_scene && dirty && valid_dirty_transforms)) &&
           !diagnostic_preview && !reload_required_after_save_);
         if (diagnostic_preview) {
@@ -847,7 +845,7 @@ private:
             "Save Layout is disabled until Product View is refreshed because the last saved browser baseline could not be verified."));
         } else {
           save_button_->setToolTip(QStringLiteral(
-            "Validate the current Web3D edit patch, create source-YAML backups, apply it atomically, regenerate and reload Product View. No robot motion is started."));
+            "Persist the live authored session with a backup and atomic YAML write. Product View remains live; no robot motion is started."));
         }
       }
       if (dirty_label_) {
@@ -895,7 +893,6 @@ private:
   QString selected_item_id_before_save_;
   std::function<bool()> host_dirty_;
   std::function<QString()> host_dirty_label_;
-  std::function<QSet<QString>()> session_added_ids_;
   std::function<bool(const QJsonObject &, QString *)> native_save_;
 };
 }  // namespace embedded_web_edit_save_detail
@@ -903,7 +900,6 @@ private:
 inline void installEmbeddedWebEditSaveController(
   ScenePreviewWidget * preview, QPushButton * save_button, QLabel * dirty_label,
   std::function<bool()> host_dirty = {}, std::function<QString()> host_dirty_label = {},
-  std::function<QSet<QString>()> session_added_ids = {},
   std::function<bool(const QJsonObject &, QString *)> native_save = {})
 {
   if (!preview || preview->property("workcell_embedded_save_controller").toBool()) return;
@@ -911,7 +907,7 @@ inline void installEmbeddedWebEditSaveController(
   if (!view) return;
   auto * controller = new embedded_web_edit_save_detail::EmbeddedWebEditSaveController(
     preview, view, save_button, dirty_label, std::move(host_dirty),
-    std::move(host_dirty_label), std::move(session_added_ids), std::move(native_save));
+    std::move(host_dirty_label), std::move(native_save));
   if (controller->installed()) preview->setProperty("workcell_embedded_save_controller", true);
   else controller->deleteLater();
 }
@@ -923,7 +919,7 @@ namespace workcell_builder
 {
 inline void installEmbeddedWebEditSaveController(
   ScenePreviewWidget *, QPushButton *, QLabel *, std::function<bool()> = {},
-  std::function<QString()> = {}, std::function<QSet<QString>()> = {},
+  std::function<QString()> = {},
   std::function<bool(const QJsonObject &, QString *)> = {}) {}
 }  // namespace workcell_builder
 

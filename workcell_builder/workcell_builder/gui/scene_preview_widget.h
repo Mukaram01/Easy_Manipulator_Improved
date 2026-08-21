@@ -253,6 +253,7 @@ public:
   ProductViewBackend active_product_view_backend() const;
   bool is_native_product_view_backend() const;
   bool embedded_web_authoring_active() const;
+  QString embedded_web_authoring_contract_error() const;
   void set_authoring_mode(const QString & mode);
   void undo_authoring_edit();
   void redo_authoring_edit();
@@ -260,6 +261,12 @@ public:
     const QString & id,
     double x, double y, double z,
     double roll, double pitch, double yaw);
+  void set_authoring_item_metadata(
+    const QString & id, const QString & display_name, const QString & semantic_role);
+  void add_authoring_item(const PreviewItem & item);
+  void duplicate_authoring_item(const QString & source_id, const PreviewItem & item);
+  void remove_authoring_item(const QString & id);
+  void set_live_visible_item_ids(const QSet<QString> & ids);
   void request_authoring_save();
   void arm_embedded_asset_placement(
     const QString & asset_id, const QString & mesh_uri, double mesh_scale,
@@ -517,6 +524,10 @@ private:
   Scene3DViewportWidget * active_native_viewport() const;
   void show_embedded_web_product_view();
   void run_embedded_editor_command(const QString & script);
+  void verify_embedded_editor_contract(const EmbeddedWebRequestIdentity & identity);
+  void poll_embedded_editor_contract(
+    const EmbeddedWebRequestIdentity & identity, quint64 navigation_token,
+    quint64 browser_load_token, quint64 readiness_token, const QUrl & expected_url);
   void poll_embedded_editor_events();
   void apply_embedded_editor_state(const QVariantMap & state);
   QString embedded_snap_command(const QString & choice) const;
@@ -607,7 +618,13 @@ private:
   QDateTime embedded_web_readiness_deadline_;
   EmbeddedWebServerLifecycle embedded_web_server_lifecycle_{ EmbeddedWebServerLifecycle::ServerNotStarted };
   EmbeddedWebServerProbe embedded_web_server_probe_;
+  enum class EmbeddedEditorContractState { NotStarted, Pending, Accepted, Rejected };
+  EmbeddedEditorContractState embedded_editor_contract_state_{ EmbeddedEditorContractState::NotStarted };
   bool embedded_editor_polling_{ false };
+  bool embedded_editor_contract_ready_{ false };
+  QString embedded_editor_contract_error_;
+  QDateTime embedded_editor_contract_deadline_;
+  int embedded_editor_contract_attempt_{ 0 };
   quint64 embedded_editor_state_request_token_{ 0 };
   EmbeddedWebRequestIdentity embedded_web_active_identity_;
   EmbeddedWebRequestIdentity pending_embedded_web_identity_;
@@ -624,6 +641,10 @@ private:
   bool embedded_web_has_active_identity_{ false };
   bool embedded_web_has_committed_surface_{ false };
   bool pending_embedded_web_request_{ false };
+  bool deferred_embedded_web_request_{ false };
+  bool deferred_embedded_web_force_{ false };
+  QString deferred_embedded_web_origin_;
+  EmbeddedWebSourcePolicy deferred_embedded_web_source_policy_{ EmbeddedWebSourcePolicy::AuthoringSession };
   quint64 embedded_web_request_generation_{ 0 };
   bool pending_embedded_web_force_{ false };
   EmbeddedWebSourcePolicy pending_embedded_web_source_policy_{ EmbeddedWebSourcePolicy::AuthoringSession };

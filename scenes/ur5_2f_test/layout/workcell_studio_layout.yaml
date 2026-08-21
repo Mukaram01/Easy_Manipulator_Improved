@@ -253,6 +253,7 @@ items:
     role: asset
     catalog_asset_id: !<tag:yaml.org,2002:str> imported_2068_001_24
     source: layout/workcell_studio_layout.yaml
+    source_layer: editable_layout
     editable: true
     locked: false
     source_path: assets/imported/2068_001_24.stl
@@ -289,6 +290,7 @@ items:
     role: asset
     catalog_asset_id: !<tag:yaml.org,2002:str> imported_2068_001_24
     source: layout/workcell_studio_layout.yaml
+    source_layer: editable_layout
     editable: true
     locked: false
     source_path: assets/imported/2068_001_24.stl
@@ -325,6 +327,7 @@ items:
     role: asset
     catalog_asset_id: !<tag:yaml.org,2002:str> imported_2068_001_24
     source: layout/workcell_studio_layout.yaml
+    source_layer: editable_layout
     editable: true
     locked: false
     source_path: assets/imported/2068_001_24.stl

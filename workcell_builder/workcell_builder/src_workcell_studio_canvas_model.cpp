@@ -804,6 +804,22 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
           if (item.id != id) continue;
           matched_existing = true;
           item.provenance = WorkcellStudioItemProvenance::EditableLayout;
+          // A canonical authored record wins over every bootstrap/source-stem
+          // label.  This is deliberately applied even when the item matched a
+          // default preview record: display_name is user-authored identity and
+          // must survive a completely fresh loader process.
+          const std::string explicit_display_name =
+            read_string_or_warn(yaml_map_key(node, "display_name"), "items[].display_name", "");
+          if (!explicit_display_name.empty()) item.label = explicit_display_name;
+          const std::string explicit_type =
+            read_string_or_warn(yaml_map_key(node, "type"), "items[].type", "");
+          const std::string explicit_category =
+            read_string_or_warn(yaml_map_key(node, "category"), "items[].category", "");
+          const std::string explicit_role =
+            read_string_or_warn(yaml_map_key(node, "role"), "items[].role", "");
+          if (!explicit_type.empty()) item.type = explicit_type;
+          if (!explicit_category.empty()) item.category = explicit_category;
+          if (!explicit_role.empty()) item.role = explicit_role;
           if (layout_source_is_environment_layout) {
             item.source_file = "environment_layout.yaml";
             bool locked = false;

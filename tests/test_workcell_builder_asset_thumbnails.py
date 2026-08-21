@@ -23,7 +23,7 @@ def test_cache_is_derived_and_source_fingerprinted():
 
 
 def test_cards_and_selected_asset_have_thumbnail_states_without_affecting_placement():
-    assert 'setIconSize(QSize(112, 84))' in MAIN
+    assert 'setIconSize(QSize(64, 48))' in MAIN
     assert 'assetLibrarySelectedThumbnail' in MAIN
     assert 'Loading preview…' in MAIN
     assert 'Preview unavailable' in MAIN
