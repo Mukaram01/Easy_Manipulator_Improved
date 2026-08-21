@@ -140,16 +140,18 @@
     if (!/^[a-f0-9]{64}$/.test(viewerBuild)) {
       throw new Error('Missing or invalid viewerBuild contract; refusing to load an unversioned Product View bundle.');
     }
-    import(`./dist/viewer.bundle.js?v=${viewerBuild}`).catch(error => {
-      window.__WORKCELL_VIEWER_STATUS__ = {
-        readiness_contract_version: 1,
-        lifecycle_state: 'scene_failed',
-        terminal: true,
-        failed_stage: 'versioned_bundle_import',
-        fatal_error: String(error?.message || error),
-      };
-      console.error('Versioned Product View bundle import failed:', error);
-    });
+    import(`./dist/viewer.bundle.js?v=${viewerBuild}`)
+      .then(() => import('./live_duplicate_visibility_guard.js'))
+      .catch(error => {
+        window.__WORKCELL_VIEWER_STATUS__ = {
+          readiness_contract_version: 1,
+          lifecycle_state: 'scene_failed',
+          terminal: true,
+          failed_stage: 'versioned_bundle_import',
+          fatal_error: String(error?.message || error),
+        };
+        console.error('Versioned Product View bundle import failed:', error);
+      });
   </script>
 </body>
 </html>
