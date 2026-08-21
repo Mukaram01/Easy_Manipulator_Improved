@@ -3014,6 +3014,8 @@ void ScenePreviewWidget::poll_embedded_editor_events()
     const bool scene_identity_matches = !browser_scene_id.isEmpty() && browser_scene_id == identity.scene_id;
     bool explicit_blank_selection_event = false;
     QString matching_item_type;
+    bool context_menu_requested = false;
+    QPoint context_menu_global_position;
     for (const QVariant & event_value : payload.value(QStringLiteral("events")).toList()) {
       const QVariantMap event = event_value.toMap();
       const QString event_type = event.value(QStringLiteral("type")).toString();
@@ -3033,6 +3035,14 @@ void ScenePreviewWidget::poll_embedded_editor_events()
         } else {
           emit studio_log_requested(QStringLiteral(
             "Embedded Product View placement rejected: placement_requested requires finite x/y/z/roll/pitch/yaw."));
+        }
+      } else if (event_type == QStringLiteral("context_menu_requested")) {
+        bool x_ok = false, y_ok = false;
+        const double x = event.value(QStringLiteral("clientX")).toDouble(&x_ok);
+        const double y = event.value(QStringLiteral("clientY")).toDouble(&y_ok);
+        if (x_ok && y_ok && std::isfinite(x) && std::isfinite(y) && embedded_web_view_) {
+          context_menu_requested = true;
+          context_menu_global_position = embedded_web_view_->mapToGlobal(QPoint(qRound(x), qRound(y)));
         }
       } else if (event_type == QStringLiteral("selection_changed")) {
         QString id = event.value(QStringLiteral("uiItemId")).toString();
@@ -3092,6 +3102,9 @@ void ScenePreviewWidget::poll_embedded_editor_events()
       if (simple_3d_view_) simple_3d_view_->update();
       emit preview_item_selected(QString(), QString());
     }
+    if (context_menu_requested) {
+      emit embedded_authoring_context_menu_requested(context_menu_global_position);
+    }
     if (embedded_editor_polling_) QTimer::singleShot(200, this, [this, identity]() {
       if (embedded_web_identity_is_current(identity)) poll_embedded_editor_events();
     });
@@ -3108,6 +3121,14 @@ void ScenePreviewWidget::arm_embedded_asset_placement(
   const QString & asset_id, const QString & mesh_uri, double mesh_scale, bool persistent)
 {
   if (product_view_backend_ != ProductViewBackend::EmbeddedWeb3D) return;
+  QString browser_mesh_uri = mesh_uri.trimmed();
+  const QFileInfo mesh_info(browser_mesh_uri);
+  const QString repo_root = preview_context_.absolute_repo_root.trimmed();
+  if (mesh_info.isAbsolute() && !repo_root.isEmpty()) {
+    const QString relative = QDir(repo_root).relativeFilePath(mesh_info.absoluteFilePath());
+    browser_mesh_uri = relative.startsWith(QStringLiteral("../"))
+      ? QString() : QDir::cleanPath(relative);
+  }
   const QJsonObject options{
     {QStringLiteral("persistent"), persistent},
     {QStringLiteral("asset"), QJsonObject{
@@ -3116,7 +3137,7 @@ void ScenePreviewWidget::arm_embedded_asset_placement(
       {QStringLiteral("category"), QStringLiteral("authored_asset_object")},
       {QStringLiteral("source_kind"), QStringLiteral("user_authored")},
       {QStringLiteral("source_layer"), QStringLiteral("placement_preview")},
-      {QStringLiteral("mesh_uri"), mesh_uri},
+      {QStringLiteral("mesh_uri"), browser_mesh_uri},
       {QStringLiteral("mesh_scale"), QJsonArray{mesh_scale, mesh_scale, mesh_scale}},
     }},
   };

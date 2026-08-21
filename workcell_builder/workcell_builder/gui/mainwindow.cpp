@@ -103,6 +103,7 @@
 #include <QFormLayout>
 #include <QEvent>
 #include <QMouseEvent>
+#include <QContextMenuEvent>
 #include <QDrag>
 #include <QMimeData>
 #include <QSet>
@@ -2383,6 +2384,7 @@ void MainWindow::setup_studio_shell()
   hierarchy_layout->addWidget(new QLabel("<b>Scene Hierarchy</b>"));
   scene_hierarchy_tree_ = new QTreeWidget(hierarchy_card);
   scene_hierarchy_tree_->setObjectName("studioSceneHierarchyTree");
+  scene_hierarchy_tree_->setContextMenuPolicy(Qt::CustomContextMenu);
   scene_hierarchy_tree_->setHeaderLabels({"Name", "Type", "State"});
   scene_hierarchy_tree_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   scene_hierarchy_tree_->setTextElideMode(Qt::ElideRight);
@@ -2787,6 +2789,8 @@ void MainWindow::setup_studio_shell()
       armed_asset_yaw_rad_ = yaw;
       commit_armed_asset_placement(QPointF(x * 100.0, y * 100.0), repeat_commit, false);
     });
+  connect(scene_preview_widget_, &ScenePreviewWidget::embedded_authoring_context_menu_requested,
+    this, &MainWindow::show_canvas_context_menu);
   scene_preview_widget_->catalog_asset_drag_enter_cb = [this](const QString & asset_id) {
     const auto match = std::find_if(asset_catalog_entries_.cbegin(), asset_catalog_entries_.cend(),
       [&asset_id](const AssetCatalogEntry & entry) { return entry.asset_id == asset_id; });
@@ -2872,7 +2876,7 @@ void MainWindow::setup_studio_shell()
   auto * rotate_mode_button = make_primary_button("Rotate"); primary_controls->addWidget(rotate_mode_button);
   scene_duplicate_context_button_ = make_primary_button("Duplicate");
   scene_duplicate_context_button_->setToolTip(QStringLiteral("Duplicate selected editable item  Ctrl+D"));
-  scene_duplicate_context_button_->hide();
+  scene_duplicate_context_button_->setEnabled(false);
   primary_controls->addWidget(scene_duplicate_context_button_);
   auto * place_mode_button = make_primary_button("Place"); primary_controls->addWidget(place_mode_button);
   scene_move_mode_button_ = move_mode_button;
@@ -3013,7 +3017,10 @@ void MainWindow::setup_studio_shell()
     duplicate_action->setShortcutContext(Qt::ApplicationShortcut);
     duplicate_action->setEnabled(false);
   }
-  if (delete_action) delete_action->setShortcut(QKeySequence(Qt::Key_Delete));
+  if (delete_action) {
+    delete_action->setShortcut(QKeySequence(Qt::Key_Delete));
+    delete_action->setShortcutContext(Qt::ApplicationShortcut);
+  }
   // These persistent View actions outlive responsive QMenu::clear()/rebuild cycles.
   scene_builder_show_left_panel_action_ = new QAction("Show Left Panel", this);
   scene_builder_show_left_panel_action_->setObjectName("sceneBuilderShowLeftPanelAction");
@@ -3720,7 +3727,17 @@ void MainWindow::setup_studio_shell()
   auto * save_sc = new QShortcut(QKeySequence::Save, scene_builder); connect(save_sc,&QShortcut::activated,this,&MainWindow::save_layout_changes);
   auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder); connect(esc_sc,&QShortcut::activated,this,[this](){ set_canvas_interaction_mode(CanvasInteractionMode::Select); if(digital_twin_scene_) digital_twin_scene_->clearSelection(); ghost_preview_item_=nullptr; rebuild_digital_twin_canvas(); });
   auto * fit_sc = new QShortcut(QKeySequence(Qt::Key_F), scene_builder); connect(fit_sc,&QShortcut::activated,fit_button,&QAction::trigger);
+  auto * rename_sc = new QShortcut(QKeySequence(Qt::Key_F2), scene_builder);
+  rename_sc->setContext(Qt::ApplicationShortcut);
+  connect(rename_sc, &QShortcut::activated, this, &MainWindow::rename_selected_item);
   connect(scene_hierarchy_tree_, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int column){ Q_UNUSED(column); on_hierarchy_item_selected(item); });
+  connect(scene_hierarchy_tree_, &QTreeWidget::customContextMenuRequested,
+    this, &MainWindow::show_scene_hierarchy_context_menu);
+  scene_preview_widget_->setContextMenuPolicy(Qt::CustomContextMenu);
+  connect(scene_preview_widget_, &QWidget::customContextMenuRequested, this,
+    [this](const QPoint & position) {
+      show_canvas_context_menu(scene_preview_widget_->mapToGlobal(position));
+    });
   connect(asset_filter_combo_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::on_asset_filter_changed);
   connect(asset_library_search_, &QLineEdit::textChanged, this, [this](const QString &){ on_asset_filter_changed(asset_filter_combo_ ? asset_filter_combo_->currentIndex() : 0); });
   connect_action(open_asset_folder_action, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).isDir() ? p : QFileInfo(p).absolutePath())); });
@@ -6869,6 +6886,13 @@ bool MainWindow::eventFilter(QObject * watched, QEvent * event)
     }
   }
   if (digital_twin_canvas_ && watched == digital_twin_canvas_->viewport() &&
+    event && event->type() == QEvent::ContextMenu)
+  {
+    auto * context_event = static_cast<QContextMenuEvent *>(event);
+    show_canvas_context_menu(context_event->globalPos());
+    return true;
+  }
+  if (digital_twin_canvas_ && watched == digital_twin_canvas_->viewport() &&
     event && event->type() == QEvent::MouseButtonPress && place_asset_armed_)
   {
     auto * mouse_event = static_cast<QMouseEvent *>(event);
@@ -7083,6 +7107,8 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
     sync_selected_item_state();
     refresh_selected_scene_item_labels(selected_item_state_);
     refresh_selected_item_card();
+    refresh_delete_selected_action();
+    refresh_duplicate_selected_action();
     append_studio_log("Selected item: <none> (unknown)");
     return;
   }
@@ -7208,6 +7234,8 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
   append_studio_log(QString("Selected item: %1 (%2) type=%3 source=%4 editable=%5 locked=%6")
     .arg(selected_id, selected_role, selected_state.role_or_category, selected_state.source_path,
       selected_state.editable ? "true" : "false", selected_state.locked ? "true" : "false"));
+  refresh_delete_selected_action();
+  refresh_duplicate_selected_action();
 }
 
 void MainWindow::mark_layout_dirty(const QString & reason)
@@ -8741,7 +8769,7 @@ void MainWindow::refresh_duplicate_selected_action()
   const bool can_duplicate = selected_item_can_be_duplicated();
   if (auto * action = scene_builder_action(QStringLiteral("layout.duplicate"))) action->setEnabled(can_duplicate);
   if (scene_duplicate_context_button_) {
-    scene_duplicate_context_button_->setVisible(can_duplicate);
+    scene_duplicate_context_button_->setVisible(true);
     scene_duplicate_context_button_->setEnabled(can_duplicate);
   }
 }
@@ -9182,10 +9210,8 @@ bool MainWindow::arm_place_asset_mode(const QString & requested_asset_id)
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
   if (scene_preview_widget_ &&
       scene_preview_widget_->active_product_view_backend() == ScenePreviewWidget::ProductViewBackend::EmbeddedWeb3D) {
-    QString mesh_uri = QDir::current().relativeFilePath(match->source_path);
-    if (mesh_uri.startsWith(QStringLiteral("../"))) mesh_uri.clear();
     scene_preview_widget_->arm_embedded_asset_placement(
-      match->asset_id, mesh_uri, match->scale,
+      match->asset_id, match->source_path, match->scale,
       place_mode_persistent_box_ && place_mode_persistent_box_->isChecked());
   }
   append_studio_log(QString("Place Asset Mode armed: %1 (%2) asset_id=%3. Click canvas to commit. Use clicked XY: %4 | xyzrpy=[%5, %6, %7, %8, %9, %10].")
@@ -9633,6 +9659,96 @@ void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
     preview_layer_overlays_helpers_box_->setChecked(true);
   }
   apply_scene_selection(selected_id, selected_role, false, true);
+}
+
+void MainWindow::rename_selected_item()
+{
+  const auto target = resolve_selected_editable_layout_target();
+  if (!target.ok) {
+    statusBar()->showMessage(QStringLiteral("Rename is available for editable scene items."), 3500);
+    return;
+  }
+  const QString current_name = target.state.display_name.trimmed().isEmpty()
+    ? target.state.id : target.state.display_name.trimmed();
+  bool accepted = false;
+  const QString updated = QInputDialog::getText(
+    this, QStringLiteral("Rename Scene Item"), QStringLiteral("Name"),
+    QLineEdit::Normal, current_name, &accepted).trimmed();
+  if (!accepted || updated.isEmpty() || updated == current_name) return;
+  if (inspector_display_name_) inspector_display_name_->setText(updated);
+  apply_inspector_pose_to_item();
+  statusBar()->showMessage(QStringLiteral("Renamed %1 to %2").arg(current_name, updated), 4000);
+}
+
+void MainWindow::show_scene_hierarchy_context_menu(const QPoint & position)
+{
+  if (!scene_hierarchy_tree_) return;
+  QTreeWidgetItem * item = scene_hierarchy_tree_->itemAt(position);
+  if (!item || item->data(0, TreeRoleIsGroup).toBool()) return;
+  on_hierarchy_item_selected(item);
+
+  const auto state = current_selected_scene_item();
+  const bool editable = state.valid && state.editable && !state.locked &&
+    state.linked_to_editable_layout_state;
+  QMenu menu(this);
+  auto * rename = menu.addAction(QStringLiteral("Rename"));
+  rename->setShortcut(QKeySequence(Qt::Key_F2));
+  rename->setEnabled(editable);
+  auto * duplicate = menu.addAction(QStringLiteral("Duplicate"));
+  duplicate->setShortcut(QKeySequence(QStringLiteral("Ctrl+D")));
+  duplicate->setEnabled(editable);
+  menu.addSeparator();
+  auto * remove = menu.addAction(QStringLiteral("Remove from Scene"));
+  remove->setShortcut(QKeySequence(Qt::Key_Delete));
+  remove->setEnabled(editable);
+  menu.addSeparator();
+  auto * focus = menu.addAction(QStringLiteral("Focus"));
+  auto * properties = menu.addAction(QStringLiteral("Properties"));
+
+  QAction * chosen = menu.exec(scene_hierarchy_tree_->viewport()->mapToGlobal(position));
+  if (chosen == rename) rename_selected_item();
+  else if (chosen == duplicate) duplicate_selected_item();
+  else if (chosen == remove) delete_selected_item();
+  else if (chosen == focus) {
+    if (auto * viewport = scene_preview_widget_ ?
+      scene_preview_widget_->findChild<Scene3DViewportWidget *>() : nullptr) viewport->focus_selected();
+  } else if (chosen == properties) {
+    apply_scene_builder_panel_visibility(true, true);
+    if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->setCurrentIndex(0);
+  }
+}
+
+void MainWindow::show_canvas_context_menu(const QPoint & global_position)
+{
+  const auto state = current_selected_scene_item();
+  if (!state.valid) return;
+  const bool editable = state.editable && !state.locked && state.linked_to_editable_layout_state;
+  QMenu menu(this);
+  auto * rename = menu.addAction(QStringLiteral("Rename"));
+  rename->setShortcut(QKeySequence(Qt::Key_F2));
+  rename->setEnabled(editable);
+  auto * duplicate = menu.addAction(QStringLiteral("Duplicate"));
+  duplicate->setShortcut(QKeySequence(QStringLiteral("Ctrl+D")));
+  duplicate->setEnabled(editable);
+  menu.addSeparator();
+  auto * remove = menu.addAction(QStringLiteral("Remove from Scene"));
+  remove->setShortcut(QKeySequence(Qt::Key_Delete));
+  remove->setEnabled(editable);
+  menu.addSeparator();
+  auto * focus = menu.addAction(QStringLiteral("Focus"));
+  auto * properties = menu.addAction(QStringLiteral("Properties"));
+
+  QAction * chosen = menu.exec(global_position);
+  if (chosen == rename) rename_selected_item();
+  else if (chosen == duplicate) duplicate_selected_item();
+  else if (chosen == remove) delete_selected_item();
+  else if (chosen == focus) {
+    if (auto * viewport = scene_preview_widget_ ?
+      scene_preview_widget_->findChild<Scene3DViewportWidget *>() : nullptr) viewport->focus_selected();
+  } else if (chosen == properties) {
+    apply_scene_builder_panel_visibility(true, true);
+    if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->setCurrentIndex(0);
+  }
 }
 
 void MainWindow::refresh_selected_item_card()

@@ -5042,6 +5042,7 @@ function rankedPickingCandidates(hits) {
   const candidates = [];
   const seen = new Set();
   for (const hit of hits || []) {
+    if (hiddenPickSubtree(hit?.object)) continue;
     const resolved = resolveCanvasPickHit(hit);
     const rendered = resolved.renderIdentity;
     const identityKey = `${rendered?.item?.id || ''}|${resolved.selectionOwner?.item?.id || ''}`;
@@ -5614,7 +5615,8 @@ function pickObject(event) {
     for (let ancestor = root.parent; ancestor; ancestor = ancestor.parent) if (candidateSet.has(ancestor)) return false;
     return true;
   });
-  const hits = state.three.raycaster.intersectObjects(roots, true);
+  const rawHits = state.three.raycaster.intersectObjects(roots, true);
+  const hits = rawHits.filter(hit => !hiddenPickSubtree(hit?.object));
   const candidates = rankedPickingCandidates(hits);
   state.lastRaycastHitCount = hits.length;
   state.lastRaycastCandidateIds = candidates.map(candidate => candidate.rendered.item.id);
@@ -5765,7 +5767,16 @@ function onCanvasPointerMove(event) {
 }
 function onCanvasPointerUp(event) {}
 function onCanvasPointerCancel() { cancelActiveTransformOperation('Pointer cancelled'); }
-function onCanvasContextMenu(event) { event.preventDefault(); }
+function onCanvasContextMenu(event) {
+  event.preventDefault();
+  if (state.placement.armed) return;
+  pickObject(event);
+  pushEditorEvent('context_menu_requested', {
+    clientX: Number(event.clientX),
+    clientY: Number(event.clientY),
+    itemId: state.selected || '',
+  });
+}
 function keyboardEventTargetsEditorControl(event) {
   const target = event?.target;
   if (!target) return false;

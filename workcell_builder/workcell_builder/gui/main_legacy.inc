@@ -1041,7 +1041,7 @@ private:
     }
     out.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     out.close();
-    app_->exit(pass ? 0 : 1);
+    if (opts_.exit_after_smoke) app_->exit(pass ? 0 : 1);
   }
 };
 
