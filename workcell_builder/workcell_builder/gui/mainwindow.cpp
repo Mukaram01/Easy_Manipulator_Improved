@@ -103,6 +103,7 @@
 #include <QFormLayout>
 #include <QEvent>
 #include <QMouseEvent>
+#include <QContextMenuEvent>
 #include <QDrag>
 #include <QMimeData>
 #include <QSet>
@@ -505,11 +506,12 @@ bool is_good_scene_path(const fs::path & scene_path)
     has_file("package.xml");
 }
 
-enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked, RoleWarning, RolePoseText, RoleSourceLayer, RoleCatalogAssetId, RoleMeshScaleX, RoleMeshScaleY, RoleMeshScaleZ, RoleDisplayNameExplicitlyEdited };
+enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked, RoleWarning, RolePoseText, RoleSourceLayer, RoleCatalogAssetId, RoleMeshScaleX, RoleMeshScaleY, RoleMeshScaleZ, RoleMetadataExplicitlyEdited };
 enum SceneTreeRoles {
   TreeRoleId = Qt::UserRole + 1, TreeRoleCategory, TreeRolePoseText, TreeRoleSource, TreeRolePoseX, TreeRolePoseY, TreeRolePoseZ, TreeRoleRoll, TreeRolePitch, TreeRoleYaw, TreeRolePoseAvailable, TreeRoleRole,
   TreeRoleSourceLayer, TreeRoleActiveVisualSource, TreeRoleEditable, TreeRoleLocked, TreeRoleLinkedEditableLayout, TreeRoleVisualBackingStatus, TreeRoleGeneratedVisual, TreeRoleItemTypeClass,
-  TreeRoleStableId, TreeRoleCameraId, TreeRoleFrameId, TreeRoleDetectionLabel, TreeRoleConfidence, TreeRoleTrackingId, TreeRoleSnapshotSourceFile, TreeRoleAlignmentWarning
+  TreeRoleStableId, TreeRoleCameraId, TreeRoleFrameId, TreeRoleDetectionLabel, TreeRoleConfidence, TreeRoleTrackingId, TreeRoleSnapshotSourceFile, TreeRoleAlignmentWarning,
+  TreeRoleIsGroup, TreeRoleDisplayName
 };
 enum AssetCatalogRoles { CatalogRoleIndex = Qt::UserRole, CatalogRolePlaceable = Qt::UserRole + 10, CatalogRoleSourcePath = Qt::UserRole + 11, CatalogRoleAssetId = Qt::UserRole + 12, CatalogRoleBaseToolTip = Qt::UserRole + 13 };
 static constexpr const char * kWorkcellStudioAssetMime = "application/x-workcell-studio-catalog-asset";
@@ -570,6 +572,16 @@ QString canonical_scene3d_token(const QString & value)
   if (normalized == QStringLiteral("legacy_static_fallback")) return QStringLiteral("primitive_fallback");
   if (normalized == QStringLiteral("overlays") || normalized == QStringLiteral("helper_overlay")) return QStringLiteral("overlay");
   return normalized;
+}
+
+QString authored_pose_signature(
+  const QString & id, double x, double y, double z,
+  double roll, double pitch, double yaw)
+{
+  return QStringLiteral("%1|%2|%3|%4|%5|%6|%7")
+    .arg(id.trimmed())
+    .arg(x, 0, 'g', 17).arg(y, 0, 'g', 17).arg(z, 0, 'g', 17)
+    .arg(roll, 0, 'g', 17).arg(pitch, 0, 'g', 17).arg(yaw, 0, 'g', 17);
 }
 
 // Use the same semantic normalization for loaded layout records and newly
@@ -2372,6 +2384,7 @@ void MainWindow::setup_studio_shell()
   hierarchy_layout->addWidget(new QLabel("<b>Scene Hierarchy</b>"));
   scene_hierarchy_tree_ = new QTreeWidget(hierarchy_card);
   scene_hierarchy_tree_->setObjectName("studioSceneHierarchyTree");
+  scene_hierarchy_tree_->setContextMenuPolicy(Qt::CustomContextMenu);
   scene_hierarchy_tree_->setHeaderLabels({"Name", "Type", "State"});
   scene_hierarchy_tree_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   scene_hierarchy_tree_->setTextElideMode(Qt::ElideRight);
@@ -2421,22 +2434,24 @@ void MainWindow::setup_studio_shell()
     preview_layers_layout->addWidget(box);
   }
   hierarchy_layout->addWidget(preview_layers_group);
+  preview_layers_group->setVisible(false);
   auto * left_vertical_splitter = new QSplitter(Qt::Vertical, scene_tab);
   left_vertical_splitter->setObjectName("sceneBuilderLeftVerticalSplitter");
   left_vertical_splitter->addWidget(hierarchy_card);
   auto * catalog_card = new QFrame(scene_tab); catalog_card->setObjectName("studioCard");
   auto * catalog_layout = new QVBoxLayout(catalog_card);
-  catalog_layout->addWidget(new QLabel("<span style=\"font-size:16px;font-weight:600\">Asset Library</span>"));
+  auto * asset_library_heading = new QLabel("<span style=\"font-size:16px;font-weight:600\">Asset Library</span>", catalog_card);
+  catalog_layout->addWidget(asset_library_heading);
   // Asset Catalog compatibility tokens: Robots End Effectors Cameras Tables Conveyors Bins Fixtures Objects / STLs Pick/Place Zones Custom / Imported
-  auto * asset_browser_hint = new QLabel("Discover reusable workcell components, inspect their source, then place a new scene instance.", catalog_card);
-  asset_browser_hint->setWordWrap(true);
-  catalog_layout->addWidget(asset_browser_hint);
   asset_library_search_ = new QLineEdit(catalog_card);
   asset_library_search_->setObjectName("assetLibrarySearchBox");
   asset_library_search_->setPlaceholderText("Search assets...");
   auto * discovery_strip = new QHBoxLayout();
   discovery_strip->addWidget(asset_library_search_, 1);
   auto * import_asset_button = new QPushButton("+ Import Asset", catalog_card);
+  import_asset_button->setText(QStringLiteral("+"));
+  import_asset_button->setAccessibleName(QStringLiteral("Import Asset"));
+  import_asset_button->setFixedWidth(34);
   import_asset_button->setToolTip("Import an STL, OBJ, or DAE mesh into the active scene's authored Asset Library.");
   discovery_strip->addWidget(import_asset_button);
   catalog_layout->addLayout(discovery_strip);
@@ -2445,9 +2460,10 @@ void MainWindow::setup_studio_shell()
   asset_filter_combo_->addItem("All");
   asset_filter_combo_->setItemData(0, "all");
   const QList<QPair<QString, QString>> asset_filters = {
-    {"Recent", "recent"},
-    {"Robots", "robot"}, {"Grippers", "gripper"},
-    {"Tables", "table"}, {"Cameras", "camera"}, {"Environment", "environment"},
+    {"★ Favorites", "favorites"}, {"↻ Recent", "recent"},
+    {"Robots", "robot"}, {"Grippers", "gripper"}, {"Suction", "suction"},
+    {"Cameras", "camera"}, {"Conveyors", "conveyor"}, {"Tables", "table"},
+    {"Fixtures", "fixture"}, {"Machines", "machine"}, {"Bins", "bin"},
     {"Imported", "imported"}, {"Other", "other"}};
   for (const auto & filter : asset_filters) asset_filter_combo_->addItem(filter.first, filter.second);
   auto * filter_strip = new QHBoxLayout();
@@ -2466,19 +2482,21 @@ void MainWindow::setup_studio_shell()
   asset_catalog_tree_->setRootIsDecorated(false);
   asset_catalog_tree_->setAlternatingRowColors(false);
   asset_catalog_tree_->setSelectionMode(QAbstractItemView::SingleSelection);
-  asset_catalog_tree_->setIconSize(QSize(112, 84));
+  asset_catalog_tree_->setIconSize(QSize(64, 48));
   asset_catalog_tree_->setStyleSheet(
     "QTreeWidget{background:#f7f9fb;border:1px solid #d7dee7;border-radius:4px;}"
-    "QTreeWidget::item{height:92px;border-bottom:1px solid #e2e7ed;padding:5px;color:#263442;}"
+    "QTreeWidget::item{height:58px;border-bottom:1px solid #e2e7ed;padding:4px;color:#263442;}"
     "QTreeWidget::item:hover{background:#edf3f8;}"
     "QTreeWidget::item:selected{background:#dbeaf5;color:#17364d;border-left:3px solid #2878a8;}"
     "QTreeWidget::item:disabled{color:#8b96a0;background:#f1f2f3;}");
   asset_catalog_tree_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-  asset_catalog_tree_->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-  asset_catalog_tree_->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-  asset_catalog_tree_->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+  asset_catalog_tree_->setColumnHidden(1, true);
+  asset_catalog_tree_->setColumnHidden(2, true);
+  asset_catalog_tree_->setColumnHidden(3, true);
+  asset_catalog_tree_->header()->hide();
   asset_catalog_tree_->viewport()->setAcceptDrops(false);
   asset_catalog_tree_->setDragEnabled(true);
+  asset_catalog_tree_->setContextMenuPolicy(Qt::CustomContextMenu);
   asset_catalog_tree_->viewport()->installEventFilter(this);
   catalog_layout->addWidget(asset_catalog_tree_, 1);
   asset_library_empty_state_ = new QLabel(catalog_card);
@@ -2493,24 +2511,30 @@ void MainWindow::setup_studio_shell()
   asset_library_details_->setWordWrap(true);
   asset_library_details_->setTextFormat(Qt::RichText);
   asset_library_details_->setStyleSheet("background:#f7f9fb;border:1px solid #d7dee7;border-radius:4px;padding:9px;color:#334455;");
+  asset_library_details_->setMaximumHeight(88);
   catalog_layout->addWidget(asset_library_details_);
   asset_library_thumbnail_preview_ = new QLabel(catalog_card);
   asset_library_thumbnail_preview_->setObjectName("assetLibrarySelectedThumbnail");
-  asset_library_thumbnail_preview_->setMinimumHeight(190);
+  asset_library_thumbnail_preview_->setMinimumHeight(0);
   asset_library_thumbnail_preview_->setAlignment(Qt::AlignCenter);
   asset_library_thumbnail_preview_->setStyleSheet("background:#eef2f5;border:1px solid #d7dee7;border-radius:4px;color:#657789;");
   asset_library_thumbnail_preview_->setText("Select an asset to preview");
-  catalog_layout->addWidget(asset_library_thumbnail_preview_);
+  // Catalog rows already carry cached thumbnails. A second large thumbnail
+  // made the narrow Assets panel scroll-heavy, so retain the object for the
+  // thumbnail-service contract but keep one selected-asset preview surface.
+  asset_library_thumbnail_preview_->hide();
   // Preserve the existing selected-only preview contract. Cards themselves use
   // cheap category treatments; no mesh is loaded while searching/filtering.
   asset_library_preview_ = new ScenePreviewWidget(catalog_card);
   asset_library_preview_->setObjectName("assetLibraryLivePreview");
-  asset_library_preview_->setMinimumHeight(120);
+  asset_library_preview_->setMinimumHeight(150);
+  asset_library_preview_->setMaximumHeight(190);
   asset_library_preview_->set_scene_selected(true);
   asset_library_preview_->set_3d_available(true);
   catalog_layout->addWidget(asset_library_preview_);
   asset_library_preview_status_ = new QLabel("Select an asset to preview.", catalog_card);
   asset_library_preview_status_->setWordWrap(true);
+  asset_library_preview_status_->setMaximumHeight(38);
   catalog_layout->addWidget(asset_library_preview_status_);
   asset_thumbnail_service_ = new AssetThumbnailService(this);
   connect(asset_thumbnail_service_, &AssetThumbnailService::thumbnailChanged,
@@ -2536,7 +2560,6 @@ void MainWindow::setup_studio_shell()
   placement_actions->addWidget(place_again_button_);
   catalog_layout->addLayout(placement_actions);
   add_asset_button_ = new QPushButton("Browse Details", scene_builder);
-  catalog_layout->addWidget(add_asset_button_);
   auto * asset_more_actions = new QToolButton(scene_builder);
   asset_more_actions->setText("More Actions");
   asset_more_actions->setPopupMode(QToolButton::InstantPopup);
@@ -2547,7 +2570,10 @@ void MainWindow::setup_studio_shell()
   auto * add_existing_stl_action = asset_more_menu->addAction("Add Existing STL to Canvas");
   auto * placeholder_action = asset_more_menu->addAction("Generate Simple Box/Cylinder Placeholder");
   asset_more_actions->setMenu(asset_more_menu);
-  catalog_layout->addWidget(asset_more_actions);
+  auto * secondary_asset_actions = new QHBoxLayout();
+  secondary_asset_actions->addWidget(add_asset_button_);
+  secondary_asset_actions->addWidget(asset_more_actions);
+  catalog_layout->addLayout(secondary_asset_actions);
   connect(import_asset_button, &QPushButton::clicked, this, &MainWindow::import_stl_to_asset_library);
   connect(clear_asset_filters, &QPushButton::clicked, this, [this]() {
     if (asset_library_search_) asset_library_search_->clear();
@@ -2652,8 +2678,13 @@ void MainWindow::setup_studio_shell()
       const QString stable_id = id.trimmed();
       if (stable_id.isEmpty()) return;
 
+      ScenePreviewWidget::PreviewItem before_item;
+      bool found_authored_item = false;
       for (auto & item : all_scene_preview_items_) {
         if (item.id.trimmed() != stable_id) continue;
+        before_item = item;
+        found_authored_item = item.editable && !item.locked &&
+          item.source_layer.trimmed() == QStringLiteral("editable_layout");
         item.x = x;
         item.y = y;
         item.z = z;
@@ -2664,11 +2695,32 @@ void MainWindow::setup_studio_shell()
       }
 
       if (auto * canvas_item = find_canvas_item_by_stable_id(stable_id)) {
+        const bool authored_transform_changed =
+          std::abs(canvas_item->pos().x() / 100.0 - x) > 1e-12 ||
+          std::abs(canvas_item->pos().y() / 100.0 - y) > 1e-12 ||
+          std::abs(canvas_item->data(RolePoseZ).toDouble() - z) > 1e-12 ||
+          std::abs(canvas_item->data(RoleRoll).toDouble() - roll) > 1e-12 ||
+          std::abs(canvas_item->data(RolePitch).toDouble() - pitch) > 1e-12 ||
+          std::abs(canvas_item->data(RoleYaw).toDouble() - yaw) > 1e-12;
         canvas_item->setPos(x * 100.0, y * 100.0);
         canvas_item->setData(RolePoseZ, z);
         canvas_item->setData(RoleRoll, roll);
         canvas_item->setData(RolePitch, pitch);
         canvas_item->setData(RoleYaw, yaw);
+        const QString signature = authored_pose_signature(stable_id, x, y, z, roll, pitch, yaw);
+        const bool native_bridge_echo = pending_native_web_pose_signatures_.remove(signature) > 0;
+        if (authored_transform_changed && found_authored_item && !native_bridge_echo &&
+            !canvas_item->data(RoleLocked).toBool() &&
+            canvas_item->data(RoleSourceLayer).toString().trimmed() == QStringLiteral("editable_layout")) {
+          ScenePreviewWidget::PreviewItem after_item = before_item;
+          after_item.x = x; after_item.y = y; after_item.z = z;
+          after_item.roll = roll; after_item.pitch = pitch; after_item.yaw = yaw;
+          undo_stack_.push_back({QStringLiteral("live_transform"), stable_id,
+            QPointF(before_item.x * 100.0, before_item.y * 100.0),
+            QPointF(x * 100.0, y * 100.0), false, false, {}, before_item, after_item});
+          redo_stack_.clear();
+          mark_layout_dirty(QStringLiteral("Product View Transform"));
+        }
       }
 
       if (scene_hierarchy_tree_) {
@@ -2737,6 +2789,8 @@ void MainWindow::setup_studio_shell()
       armed_asset_yaw_rad_ = yaw;
       commit_armed_asset_placement(QPointF(x * 100.0, y * 100.0), repeat_commit, false);
     });
+  connect(scene_preview_widget_, &ScenePreviewWidget::embedded_authoring_context_menu_requested,
+    this, &MainWindow::show_canvas_context_menu);
   scene_preview_widget_->catalog_asset_drag_enter_cb = [this](const QString & asset_id) {
     const auto match = std::find_if(asset_catalog_entries_.cbegin(), asset_catalog_entries_.cend(),
       [&asset_id](const AssetCatalogEntry & entry) { return entry.asset_id == asset_id; });
@@ -2818,9 +2872,13 @@ void MainWindow::setup_studio_shell()
       return button;
     };
   auto * select_mode_button = make_primary_button("Select"); primary_controls->addWidget(select_mode_button);
-  auto * place_mode_button = make_primary_button("Place Asset"); primary_controls->addWidget(place_mode_button);
   auto * move_mode_button = make_primary_button("Move"); primary_controls->addWidget(move_mode_button);
   auto * rotate_mode_button = make_primary_button("Rotate"); primary_controls->addWidget(rotate_mode_button);
+  scene_duplicate_context_button_ = make_primary_button("Duplicate");
+  scene_duplicate_context_button_->setToolTip(QStringLiteral("Duplicate selected editable item  Ctrl+D"));
+  scene_duplicate_context_button_->setEnabled(false);
+  primary_controls->addWidget(scene_duplicate_context_button_);
+  auto * place_mode_button = make_primary_button("Place"); primary_controls->addWidget(place_mode_button);
   scene_move_mode_button_ = move_mode_button;
   scene_rotate_mode_button_ = rotate_mode_button;
   for (auto * button : {select_mode_button, move_mode_button, rotate_mode_button}) button->setCheckable(true);
@@ -2954,8 +3012,15 @@ void MainWindow::setup_studio_shell()
   auto * delete_action = scene_builder_action("layout.remove");
   if (undo_action) undo_action->setShortcut(QKeySequence::Undo);
   if (redo_action) redo_action->setShortcut(QKeySequence::Redo);
-  if (duplicate_action) { duplicate_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+D"))); duplicate_action->setEnabled(false); }
-  if (delete_action) delete_action->setShortcut(QKeySequence(Qt::Key_Delete));
+  if (duplicate_action) {
+    duplicate_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+D")));
+    duplicate_action->setShortcutContext(Qt::ApplicationShortcut);
+    duplicate_action->setEnabled(false);
+  }
+  if (delete_action) {
+    delete_action->setShortcut(QKeySequence(Qt::Key_Delete));
+    delete_action->setShortcutContext(Qt::ApplicationShortcut);
+  }
   // These persistent View actions outlive responsive QMenu::clear()/rebuild cycles.
   scene_builder_show_left_panel_action_ = new QAction("Show Left Panel", this);
   scene_builder_show_left_panel_action_->setObjectName("sceneBuilderShowLeftPanelAction");
@@ -3596,6 +3661,7 @@ void MainWindow::setup_studio_shell()
   }
   connect_button(duplicate_layout_button_, &MainWindow::duplicate_selected_item);
   connect_button(delete_layout_button_, &MainWindow::delete_selected_item);
+  connect_button(scene_duplicate_context_button_, &MainWindow::duplicate_selected_item);
   for (auto *sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_}) connect(sb, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double){ if (inspector_live_update_box_ && inspector_live_update_box_->isChecked()) apply_selection_transform_from_editor(); });
   for (auto *sb : {inspector_dim_x_, inspector_dim_y_, inspector_dim_z_}) connect(sb, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double){ if (inspector_live_update_box_ && inspector_live_update_box_->isChecked()) apply_selection_transform_from_editor(); });
   connect_button(inspector_apply_button_, &MainWindow::apply_selection_transform_from_editor);
@@ -3605,7 +3671,7 @@ void MainWindow::setup_studio_shell()
   connect_button(robot_base_apply_button_, &MainWindow::apply_robot_base_pose_from_inspector);
   connect_button(robot_base_reset_button_, &MainWindow::reset_robot_base_pose_from_snapshot);
   inspector_x_->setToolTip("X position in metres"); inspector_y_->setToolTip("Y position in metres"); inspector_z_->setToolTip("Z position in metres");
-  inspector_roll_->setToolTip("Roll in radians"); inspector_pitch_->setToolTip("Pitch in radians"); inspector_yaw_->setToolTip("Yaw in radians");
+  inspector_roll_->setToolTip("Roll in degrees"); inspector_pitch_->setToolTip("Pitch in degrees"); inspector_yaw_->setToolTip("Yaw in degrees");
   inspector_dim_x_->setToolTip("Scale X (uniform Scale control for simple mesh assets)"); inspector_dim_y_->setToolTip("Scale Y"); inspector_dim_z_->setToolTip("Scale Z");
   refresh_robot_base_pose_inspector();
   connect_button(save_layout_button_, &MainWindow::save_layout_changes);
@@ -3616,7 +3682,6 @@ void MainWindow::setup_studio_shell()
     scene_preview_widget_, save_layout_button_, layout_state_label_,
     [this]() { return layout_dirty_; },
     [this]() { return layout_state_label_ ? layout_state_label_->text() : QString(); },
-    [this]() { return active_editable_layout_item_ids(); },
     [this](const QJsonObject & patch, QString * error) {
       return save_native_layout_changes(patch, error);
     });
@@ -3662,7 +3727,17 @@ void MainWindow::setup_studio_shell()
   auto * save_sc = new QShortcut(QKeySequence::Save, scene_builder); connect(save_sc,&QShortcut::activated,this,&MainWindow::save_layout_changes);
   auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder); connect(esc_sc,&QShortcut::activated,this,[this](){ set_canvas_interaction_mode(CanvasInteractionMode::Select); if(digital_twin_scene_) digital_twin_scene_->clearSelection(); ghost_preview_item_=nullptr; rebuild_digital_twin_canvas(); });
   auto * fit_sc = new QShortcut(QKeySequence(Qt::Key_F), scene_builder); connect(fit_sc,&QShortcut::activated,fit_button,&QAction::trigger);
+  auto * rename_sc = new QShortcut(QKeySequence(Qt::Key_F2), scene_builder);
+  rename_sc->setContext(Qt::ApplicationShortcut);
+  connect(rename_sc, &QShortcut::activated, this, &MainWindow::rename_selected_item);
   connect(scene_hierarchy_tree_, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int column){ Q_UNUSED(column); on_hierarchy_item_selected(item); });
+  connect(scene_hierarchy_tree_, &QTreeWidget::customContextMenuRequested,
+    this, &MainWindow::show_scene_hierarchy_context_menu);
+  scene_preview_widget_->setContextMenuPolicy(Qt::CustomContextMenu);
+  connect(scene_preview_widget_, &QWidget::customContextMenuRequested, this,
+    [this](const QPoint & position) {
+      show_canvas_context_menu(scene_preview_widget_->mapToGlobal(position));
+    });
   connect(asset_filter_combo_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::on_asset_filter_changed);
   connect(asset_library_search_, &QLineEdit::textChanged, this, [this](const QString &){ on_asset_filter_changed(asset_filter_combo_ ? asset_filter_combo_->currentIndex() : 0); });
   connect_action(open_asset_folder_action, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).isDir() ? p : QFileInfo(p).absolutePath())); });
@@ -3702,6 +3777,9 @@ void MainWindow::register_scene_builder_action(const QString & key, QAction * ac
 {
   if (!action) return;
   scene_builder_action_registry_.insert(key, action);
+  // Registered commands must remain reachable while QWebEngineView owns
+  // keyboard focus. Menus alone do not install their shortcuts on MainWindow.
+  addAction(action);
 }
 
 
@@ -6063,6 +6141,19 @@ bool MainWindow::has_selected_scene() const
   return selected_scene_state_.valid;
 }
 
+bool MainWindow::ensure_live_authoring_mutation_available(const QString & action)
+{
+  if (!scene_preview_widget_ || scene_preview_widget_->is_native_product_view_backend()) return true;
+  if (scene_preview_widget_->embedded_web_authoring_active()) return true;
+  const QString reason = scene_preview_widget_->embedded_web_authoring_contract_error();
+  append_studio_log(QStringLiteral(
+    "%1 blocked: Product View live-authoring contract is unavailable (%2). The operation failed closed; no Product View regeneration was requested.")
+      .arg(action, reason), workcell_builder::StudioLogSeverity::Error,
+      QStringLiteral("live_authoring_contract_blocked"));
+  statusBar()->showMessage(QStringLiteral("%1 blocked: Product View editor bundle is stale or not ready.").arg(action), 6000);
+  return false;
+}
+
 QString MainWindow::compact_scene_path_context(const QString & scene_name, const QString & full_path) const
 {
   const QString cleaned_path = full_path.trimmed();
@@ -6795,6 +6886,13 @@ bool MainWindow::eventFilter(QObject * watched, QEvent * event)
     }
   }
   if (digital_twin_canvas_ && watched == digital_twin_canvas_->viewport() &&
+    event && event->type() == QEvent::ContextMenu)
+  {
+    auto * context_event = static_cast<QContextMenuEvent *>(event);
+    show_canvas_context_menu(context_event->globalPos());
+    return true;
+  }
+  if (digital_twin_canvas_ && watched == digital_twin_canvas_->viewport() &&
     event && event->type() == QEvent::MouseButtonPress && place_asset_armed_)
   {
     auto * mouse_event = static_cast<QMouseEvent *>(event);
@@ -7009,6 +7107,8 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
     sync_selected_item_state();
     refresh_selected_scene_item_labels(selected_item_state_);
     refresh_selected_item_card();
+    refresh_delete_selected_action();
+    refresh_duplicate_selected_action();
     append_studio_log("Selected item: <none> (unknown)");
     return;
   }
@@ -7134,6 +7234,8 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
   append_studio_log(QString("Selected item: %1 (%2) type=%3 source=%4 editable=%5 locked=%6")
     .arg(selected_id, selected_role, selected_state.role_or_category, selected_state.source_path,
       selected_state.editable ? "true" : "false", selected_state.locked ? "true" : "false"));
+  refresh_delete_selected_action();
+  refresh_duplicate_selected_action();
 }
 
 void MainWindow::mark_layout_dirty(const QString & reason)
@@ -7416,7 +7518,7 @@ static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML
     gi->data(RoleMeshScaleY).isValid() ? gi->data(RoleMeshScaleY).toDouble() : 1.0,
     gi->data(RoleMeshScaleZ).isValid() ? gi->data(RoleMeshScaleZ).toDouble() : 1.0}};
   return workcell_builder::serialize_layout_item(
-    state, existing, gi->data(RoleDisplayNameExplicitlyEdited).toBool());
+    state, existing, gi->data(RoleMetadataExplicitlyEdited).toBool());
 }
 
 void MainWindow::save_layout_changes(){
@@ -7427,56 +7529,79 @@ void MainWindow::save_layout_changes(){
   save_native_layout_changes(QJsonObject{});
 }
 
-QSet<QString> MainWindow::active_editable_layout_item_ids() const
-{
-  QSet<QString> ids;
-  // Only records created in this session are absent from the disk-only web_scene.
-  // Existing editable items must keep using guarded patch validation.
-  for (const auto & command : undo_stack_) {
-    if ((command.kind == QStringLiteral("add") || command.kind == QStringLiteral("duplicate")) &&
-        !deleted_layout_item_ids_.contains(command.item_id)) {
-      ids.insert(command.item_id);
-    }
-  }
-  return ids;
-}
-
 bool MainWindow::apply_web_transforms_to_editable_layout_session(
   const QJsonObject & web_patch, QString * error)
 {
-  const QSet<QString> native_ids = active_editable_layout_item_ids();
-  for (const auto & value : web_patch.value(QStringLiteral("edits")).toArray()) {
+  struct ValidatedTransform
+  {
+    QGraphicsItem * canvas{nullptr};
+    QString id;
+    double x{0.0}, y{0.0}, z{0.0}, roll{0.0}, pitch{0.0}, yaw{0.0};
+  };
+  QVector<ValidatedTransform> validated;
+  QSet<QString> seen_ids;
+  const QJsonArray edits = web_patch.value(QStringLiteral("edits")).toArray();
+  for (const auto & value : edits) {
     const QJsonObject edit = value.toObject();
-    const QString id = edit.value(QStringLiteral("item_id")).toString();
-    if (edit.value(QStringLiteral("operation")).toString() != QStringLiteral("update_transform") ||
-        !native_ids.contains(id)) {
-      if (error) *error = QStringLiteral("Browser edit for '%1' cannot be represented by the native editable-layout transaction. No file was written; native and Web3D edits remain unsaved.").arg(id);
+    const QString id = edit.value(QStringLiteral("item_id")).toString().trimmed();
+    if (id.isEmpty() || seen_ids.contains(id) ||
+        edit.value(QStringLiteral("operation")).toString() != QStringLiteral("update_transform")) {
+      if (error) *error = QStringLiteral(
+        "Browser edit '%1' is missing, duplicated, or unsupported. No file was written; the unified authored session remains dirty.")
+        .arg(id.isEmpty() ? QStringLiteral("<missing ID>") : id);
       return false;
     }
+    seen_ids.insert(id);
     const QJsonObject transform = edit.value(QStringLiteral("new_transform")).toObject();
+    const QJsonObject old_transform = edit.value(QStringLiteral("old_transform")).toObject();
     const QJsonObject pose = transform.value(QStringLiteral("pose")).toObject();
     const QJsonObject xyz = pose.value(QStringLiteral("xyz")).toObject();
     const QJsonObject rpy = pose.value(QStringLiteral("rpy")).toObject();
+    const QJsonObject scale = transform.value(QStringLiteral("scale")).toObject();
+    const QJsonObject old_scale = old_transform.value(QStringLiteral("scale")).toObject();
     const auto finite = [](const QJsonObject & object, const char * key) {
       return object.value(QString::fromUtf8(key)).isDouble() && std::isfinite(object.value(QString::fromUtf8(key)).toDouble());
     };
     if (!finite(xyz, "x") || !finite(xyz, "y") || !finite(xyz, "z") ||
-        !finite(rpy, "x") || !finite(rpy, "y") || !finite(rpy, "z")) {
+        !finite(rpy, "x") || !finite(rpy, "y") || !finite(rpy, "z") ||
+        !finite(scale, "x") || !finite(scale, "y") || !finite(scale, "z") ||
+        !finite(old_scale, "x") || !finite(old_scale, "y") || !finite(old_scale, "z")) {
       if (error) *error = QStringLiteral("Browser transform for '%1' is incomplete or non-finite. No file was written; edits remain unsaved.").arg(id);
       return false;
     }
+    for (const char * axis : {"x", "y", "z"}) {
+      if (std::abs(scale.value(QString::fromUtf8(axis)).toDouble() -
+          old_scale.value(QString::fromUtf8(axis)).toDouble()) > 1e-12) {
+        if (error) *error = QStringLiteral(
+          "Browser scale edit for '%1' is unsupported by the authored layout transaction. No file was written.").arg(id);
+        return false;
+      }
+    }
     auto * canvas = find_canvas_item_by_stable_id(id);
-    if (!canvas) {
-      if (error) *error = QStringLiteral("Session item '%1' is no longer available in the native editable layout. Refresh Product View and retry; no file was written.").arg(id);
+    if (!canvas || canvas->data(RoleLocked).toBool() ||
+        canvas->data(RoleSourceLayer).toString().trimmed() != QStringLiteral("editable_layout") ||
+        deleted_layout_item_ids_.contains(id)) {
+      if (error) *error = QStringLiteral(
+        "Persisted item '%1' is missing, locked, deleted, or outside editable_layout. No file was written; the unified authored session remains dirty.").arg(id);
       return false;
     }
-    canvas->setPos(xyz.value("x").toDouble() * 100.0, xyz.value("y").toDouble() * 100.0);
-    canvas->setData(RolePoseZ, xyz.value("z").toDouble());
-    canvas->setData(RoleRoll, rpy.value("x").toDouble());
-    canvas->setData(RolePitch, rpy.value("y").toDouble());
-    canvas->setData(RoleYaw, rpy.value("z").toDouble());
+    validated.push_back({canvas, id, xyz.value("x").toDouble(), xyz.value("y").toDouble(),
+      xyz.value("z").toDouble(), rpy.value("x").toDouble(), rpy.value("y").toDouble(),
+      rpy.value("z").toDouble()});
+  }
+  // Validation is deliberately complete before mutating the native session.
+  // Browser position/rotation wins; native state supplies metadata and structure.
+  for (const auto & update : validated) {
+    update.canvas->setPos(update.x * 100.0, update.y * 100.0);
+    update.canvas->setData(RolePoseZ, update.z);
+    update.canvas->setData(RoleRoll, update.roll);
+    update.canvas->setData(RolePitch, update.pitch);
+    update.canvas->setData(RoleYaw, update.yaw);
   }
   capture_active_editable_layout_session();
+  append_studio_log(QStringLiteral(
+    "Save Layout composition validated: %1 Web3D transform edit(s) merged with native authored metadata/structure by stable canonical ID.")
+    .arg(validated.size()));
   return true;
 }
 
@@ -7492,10 +7617,8 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
     return QStringLiteral("<none>");
   };
   const auto scene_root_for_save_log = [this]() {
-    if (selected_scene_index_ >= 0 && selected_scene_index_ < static_cast<int>(scene_browser_result_.scenes.size())) {
-      return QString::fromStdString(scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_dir.string());
-    }
-    return QStringLiteral("<none>");
+    const QString pinned = selected_scene_path().trimmed();
+    return pinned.isEmpty() ? QStringLiteral("<none>") : pinned;
   };
   const auto emit_save_layout_failure = [this, scene_name_for_save_log, scene_root_for_save_log](
       const QString & blocker, const QString & target_path = QString(), const QString & exact_message = QString()) {
@@ -7537,7 +7660,7 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
     statusBar()->showMessage("Save Layout blocked: no scene selected; no file was written.", 6000);
     return false;
   }
-  const fs::path scene_dir = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_dir;
+  const fs::path scene_dir = fs::path(selected_scene_path().toStdString());
   const fs::path layout_path = scene_dir / "layout" / "workcell_studio_layout.yaml";
   if (layout_path.empty()) {
     const QString reason = QString("canonical layout path could not be computed for scene_root=%1 selected_scene_index=%2")
@@ -7632,8 +7755,12 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
     if (!ec) {
       append_studio_log(QString("Backup before write created: %1").arg(QString::fromStdString(layout_backup.string())));
     } else {
-      append_studio_log(QString("Warning: backup before write failed (%1). Continuing save without backup.")
-        .arg(QString::fromStdString(ec.message())));
+      const QString backup_error = QStringLiteral(
+        "Backup before write failed for '%1' (%2). No file was written; the authored session remains dirty.")
+        .arg(QString::fromStdString(layout_path.string()), QString::fromStdString(ec.message()));
+      if (error) *error = backup_error;
+      emit_save_layout_failure(backup_error, QString::fromStdString(layout_path.string()));
+      return false;
     }
   }
   std::vector<QGraphicsItem *> editable_canvas_items;
@@ -7797,6 +7924,17 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
 
   YAML::Emitter emitter;
   emitter << root;
+  try {
+    const YAML::Node staged = YAML::Load(std::string(emitter.c_str(), emitter.size()));
+    if (!staged || !staged.IsMap()) throw std::runtime_error("serialized root is not a map");
+  } catch (const std::exception & exc) {
+    if (error) *error = QStringLiteral(
+      "Serialized authored transaction failed YAML validation before write: %1. No file was written.")
+      .arg(QString::fromStdString(exc.what()));
+    emit_save_layout_failure(error ? *error : QStringLiteral("staged YAML validation failed"),
+      QString::fromStdString(effective_layout_path.string()));
+    return false;
+  }
   QSaveFile out(QString::fromStdString(effective_layout_path.string()));
   if (!out.open(QIODevice::WriteOnly) ||
       out.write(QByteArray(emitter.c_str(), static_cast<int>(emitter.size()))) < 0 || !out.commit()) {
@@ -7807,30 +7945,94 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
     return false;
   }
   if (saving_workcell_layout) {
-    QString collision_script;
-    if (helper_script_exists("generate_moveit_collision_manifest.py", &collision_script)) {
-      boost::system::error_code generated_dir_ec;
-      fs::create_directories(scene_dir / "config", generated_dir_ec);
-      QProcess collision_process;
-      collision_process.start(
-        "python3",
-        QStringList()
-          << collision_script
-          << "--layout" << QString::fromStdString(effective_layout_path.string())
-          << "--output" << QString::fromStdString((scene_dir / "config" / "moveit_collision_objects.yaml").string())
-          << "--scene-name" << QString::fromStdString(scene_name));
-      if (!generated_dir_ec && collision_process.waitForFinished(120000) && collision_process.exitCode() == 0) {
-        append_studio_log("MoveIt collision truth refreshed from the saved canonical layout; Web3D AABB remains advisory.");
-      } else {
-        const QString detail = QString::fromUtf8(collision_process.readAllStandardError()).trimmed();
-        append_studio_log("MoveIt collision truth is stale or unavailable after Save Layout. Generate/validate before planning." +
-          (detail.isEmpty() ? QString() : " Detail: " + detail.left(400)));
+    try {
+      const YAML::Node persisted_root = YAML::LoadFile(effective_layout_path.string());
+      const YAML::Node persisted_items = persisted_root["items"];
+      if (!persisted_items || !persisted_items.IsSequence()) {
+        throw std::runtime_error("persisted items sequence is missing");
       }
-    } else {
-      append_studio_log("MoveIt collision manifest generator is unavailable; planning collision truth remains unproven.");
+      QMap<QString, YAML::Node> persisted_by_id;
+      for (std::size_t index = 0; index < persisted_items.size(); ++index) {
+        const YAML::Node item = persisted_items[index];
+        if (!item || !item.IsMap()) continue;
+        const QString id = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(item, "id")).trimmed();
+        if (!id.isEmpty()) persisted_by_id.insert(id, item);
+      }
+      const auto close_enough = [](double left, double right) {
+        return std::isfinite(left) && std::isfinite(right) && std::abs(left - right) <= 1e-10;
+      };
+      const auto pose_value = [](const YAML::Node & pose, const char * sequence_key,
+          const char * scalar_key, std::size_t index, double * output) {
+        if (!pose || !pose.IsMap() || !output) return false;
+        const YAML::Node sequence = pose[sequence_key];
+        try {
+          if (sequence && sequence.IsSequence() && sequence.size() == 3) {
+            *output = sequence[index].as<double>();
+            return std::isfinite(*output);
+          }
+          const YAML::Node scalar = pose[scalar_key];
+          if (scalar && scalar.IsScalar()) {
+            *output = scalar.as<double>();
+            return std::isfinite(*output);
+          }
+        } catch (const std::exception &) {
+          return false;
+        }
+        return false;
+      };
+      for (auto * canvas : editable_canvas_items) {
+        const QString id = canvas->data(RoleId).toString().trimmed();
+        if (!persisted_by_id.contains(id)) {
+          throw std::runtime_error(QStringLiteral("stable ID missing after write: %1").arg(id).toStdString());
+        }
+        const YAML::Node item = persisted_by_id.value(id);
+        const YAML::Node pose = item["pose"];
+        double x = 0.0, y = 0.0, z = 0.0, roll = 0.0, pitch = 0.0, yaw = 0.0;
+        if (!pose_value(pose, "xyz", "x", 0, &x) ||
+            !pose_value(pose, "xyz", "y", 1, &y) ||
+            !pose_value(pose, "xyz", "z", 2, &z) ||
+            !pose_value(pose, "rpy", "roll", 0, &roll) ||
+            !pose_value(pose, "rpy", "pitch", 1, &pitch) ||
+            !pose_value(pose, "rpy", "yaw", 2, &yaw) ||
+            !close_enough(x, canvas->pos().x() / 100.0) ||
+            !close_enough(y, canvas->pos().y() / 100.0) ||
+            !close_enough(z, canvas->data(RolePoseZ).toDouble()) ||
+            !close_enough(roll, canvas->data(RoleRoll).toDouble()) ||
+            !close_enough(pitch, canvas->data(RolePitch).toDouble()) ||
+            !close_enough(yaw, canvas->data(RoleYaw).toDouble())) {
+          throw std::runtime_error(QStringLiteral("transform mismatch after write: %1").arg(id).toStdString());
+        }
+        if (canvas->data(RoleMetadataExplicitlyEdited).toBool()) {
+          const QString persisted_name = QString::fromStdString(
+            workcell_builder::yaml_map_value_or_empty(item, "display_name")).trimmed();
+          const QString persisted_role = QString::fromStdString(
+            workcell_builder::yaml_map_value_or_empty(item, "role")).trimmed();
+          if (persisted_name != canvas->data(RoleDisplayName).toString().trimmed() ||
+              persisted_role != canvas->data(RoleRole).toString().trimmed()) {
+            throw std::runtime_error(QStringLiteral("metadata mismatch after write: %1").arg(id).toStdString());
+          }
+        }
+      }
+      append_studio_log(QStringLiteral(
+        "Save Layout persistence verified: %1 editable item(s), stable IDs, metadata, and transforms match the atomic YAML write.")
+        .arg(editable_canvas_items.size()));
+    } catch (const std::exception & exc) {
+      if (error) *error = QStringLiteral(
+        "Authored YAML was written atomically but persistence verification failed: %1. Dirty state was retained; backup: %2")
+        .arg(QString::fromStdString(exc.what()), QString::fromStdString(layout_backup.string()));
+      emit_save_layout_failure(error ? *error : QStringLiteral("post-write persistence verification failed"),
+        QString::fromStdString(effective_layout_path.string()));
+      return false;
     }
   }
+  if (saving_workcell_layout) {
+    append_studio_log(QStringLiteral(
+      "Save Layout persisted authored YAML only; generated collision/scene artifacts remain stale until explicit Generate/Validate."));
+  }
   deleted_layout_item_ids_.clear();
+  for (auto * canvas : editable_canvas_items) {
+    canvas->setData(RoleMetadataExplicitlyEdited, false);
+  }
   layout_dirty_ = false;
   layout_saved_ = true;
   validation_stale_ = true;
@@ -7849,10 +8051,12 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
 
   append_studio_log(QString("Save Layout: serialized %1 editable layout item(s) to canonical layout only; no task/generated/plan_preview directories or runtime/ROS artifacts were bootstrapped.")
     .arg(static_cast<int>(editable_saved_count)));
-  append_studio_log(QString("Save Layout: rebuilding Scene3D data after save (selection id snapshot='%1').")
+  append_studio_log(QString("Save Layout: live authored session retained without Product View regeneration (selection id='%1').")
     .arg(stable_selected_id_before_refresh.isEmpty() ? "<none>" : stable_selected_id_before_refresh));
   workcell_builder::invalidate_workcell_studio_scene_metadata_snapshot(scene_dir, "save_layout");
-  refresh_scene_builder_left_explorer();
+  capture_active_editable_layout_session();
+  refresh_scene_hierarchy_tree_from_current_items();
+  populate_scene_files_tab();
   if (!stable_selected_id_before_refresh.isEmpty()) {
     apply_scene_selection(stable_selected_id_before_refresh, QStringLiteral("unknown"), false, false);
   } else {
@@ -8250,11 +8454,19 @@ void MainWindow::apply_inspector_pose_to_item()
     append_studio_log(QString("Inspector transform edit blocked: %1").arg(target.blocker));
     return;
   }
+  if (!ensure_live_authoring_mutation_available(QStringLiteral("Inspector edit"))) return;
 
   QGraphicsItem * i = target.fallback_item;
   const QString item_id = target.state.id.trimmed();
   const QPointF old(target.state.pose_x * 100.0, target.state.pose_y * 100.0);
   const QPointF updated(inspector_x_->value() * 100.0, inspector_y_->value() * 100.0);
+  const double updated_roll = qDegreesToRadians(inspector_roll_->value());
+  const double updated_pitch = qDegreesToRadians(inspector_pitch_->value());
+  const double updated_yaw = qDegreesToRadians(inspector_yaw_->value());
+  ScenePreviewWidget::PreviewItem before_item;
+  for (const auto & preview_item : all_scene_preview_items_) {
+    if (preview_item.id.trimmed() == item_id) { before_item = preview_item; break; }
+  }
 
   QString updated_display_name;
   QString updated_semantic_role = target.state.role;
@@ -8262,9 +8474,9 @@ void MainWindow::apply_inspector_pose_to_item()
   if (i) {
     i->setPos(updated);
     i->setData(RolePoseZ, inspector_z_->value());
-    i->setData(RoleRoll, inspector_roll_->value());
-    i->setData(RolePitch, inspector_pitch_->value());
-    i->setData(RoleYaw, inspector_yaw_->value());
+    i->setData(RoleRoll, updated_roll);
+    i->setData(RolePitch, updated_pitch);
+    i->setData(RoleYaw, updated_yaw);
     i->setData(RoleWidth, inspector_dim_x_->value());
     i->setData(RoleDepth, inspector_dim_y_->value());
     i->setData(RoleHeight, inspector_dim_z_->value());
@@ -8274,7 +8486,6 @@ void MainWindow::apply_inspector_pose_to_item()
         metadata_changed = updated_display_name != i->data(RoleDisplayName).toString().trimmed();
         if (metadata_changed) {
           i->setData(RoleDisplayName, updated_display_name);
-          i->setData(RoleDisplayNameExplicitlyEdited, true);
         }
       }
     }
@@ -8286,6 +8497,7 @@ void MainWindow::apply_inspector_pose_to_item()
         metadata_changed = true;
       }
     }
+    if (metadata_changed) i->setData(RoleMetadataExplicitlyEdited, true);
   }
 
   SelectedSceneItemState refreshed_state = target.state;
@@ -8293,9 +8505,9 @@ void MainWindow::apply_inspector_pose_to_item()
   refreshed_state.pose_x = inspector_x_->value();
   refreshed_state.pose_y = inspector_y_->value();
   refreshed_state.pose_z = inspector_z_->value();
-  refreshed_state.roll = inspector_roll_->value();
-  refreshed_state.pitch = inspector_pitch_->value();
-  refreshed_state.yaw = inspector_yaw_->value();
+  refreshed_state.roll = updated_roll;
+  refreshed_state.pitch = updated_pitch;
+  refreshed_state.yaw = updated_yaw;
   refreshed_state.dim_x = inspector_dim_x_->value();
   refreshed_state.dim_y = inspector_dim_y_->value();
   refreshed_state.dim_z = inspector_dim_z_->value();
@@ -8309,22 +8521,15 @@ void MainWindow::apply_inspector_pose_to_item()
   refreshed_state.linked_to_editable_layout_state = true;
   selected_item_state_ = refreshed_state;
 
-  undo_stack_.push_back({"pose_edit", item_id, old, updated, false, false, {}});
-  redo_stack_.clear();
-  mark_layout_dirty("Inspector Pose/Dimensions Edit");
-  if (metadata_changed) {
-    mark_layout_dirty("Inspector Metadata Edit");
-  }
-
   const QString selected_scene_name_for_log = selected_scene_state_.valid ? selected_scene_state_.name : QStringLiteral("unknown");
   append_studio_log(QString("Inspector transform edited: scene=%1 id=%2 source=%3 xyz=[%4,%5,%6] rpy=[%7,%8,%9] dirty=true")
     .arg(selected_scene_name_for_log, item_id, target.source_path)
     .arg(inspector_x_->value(), 0, 'g', 17)
     .arg(inspector_y_->value(), 0, 'g', 17)
     .arg(inspector_z_->value(), 0, 'g', 17)
-    .arg(inspector_roll_->value(), 0, 'g', 17)
-    .arg(inspector_pitch_->value(), 0, 'g', 17)
-    .arg(inspector_yaw_->value(), 0, 'g', 17));
+    .arg(updated_roll, 0, 'g', 17)
+    .arg(updated_pitch, 0, 'g', 17)
+    .arg(updated_yaw, 0, 'g', 17));
   if (metadata_changed) {
     append_studio_log(QString("Inspector metadata edited: scene=%1 id=%2 display_name=%3 semantic_role=%4 dirty=true")
       .arg(selected_scene_name_for_log, item_id, updated_display_name, updated_semantic_role));
@@ -8346,8 +8551,25 @@ void MainWindow::apply_inspector_pose_to_item()
     p.role = refreshed_state.role;
     break;
   }
+  ScenePreviewWidget::PreviewItem after_item = before_item;
+  for (const auto & preview_item : all_scene_preview_items_) {
+    if (preview_item.id.trimmed() == item_id) { after_item = preview_item; break; }
+  }
+  undo_stack_.push_back({"pose_edit", item_id, old, updated, false, false, {}, before_item, after_item});
+  redo_stack_.clear();
+  mark_layout_dirty(metadata_changed ? "Inspector Metadata/Transform Edit" : "Inspector Pose/Dimensions Edit");
+  if (metadata_changed) {
+    refresh_scene_hierarchy_tree_from_current_items();
+    if (scene_preview_widget_) {
+      scene_preview_widget_->set_authoring_item_metadata(
+        item_id, refreshed_state.display_name, refreshed_state.role);
+    }
+  }
   if (scene_preview_widget_ &&
       scene_preview_widget_->embedded_web_authoring_active()) {
+    pending_native_web_pose_signatures_.insert(authored_pose_signature(
+      item_id, refreshed_state.pose_x, refreshed_state.pose_y, refreshed_state.pose_z,
+      refreshed_state.roll, refreshed_state.pitch, refreshed_state.yaw));
     scene_preview_widget_->set_authoring_item_pose(
       item_id,
       refreshed_state.pose_x,
@@ -8394,17 +8616,41 @@ void MainWindow::paste_selection_transform_from_clipboard()
   }
   inspector_update_guard_ = true;
   inspector_x_->setValue(x); inspector_y_->setValue(y); inspector_z_->setValue(z);
-  inspector_roll_->setValue(r); inspector_pitch_->setValue(p); inspector_yaw_->setValue(yaw);
+  inspector_roll_->setValue(qRadiansToDegrees(r)); inspector_pitch_->setValue(qRadiansToDegrees(p)); inspector_yaw_->setValue(qRadiansToDegrees(yaw));
   inspector_update_guard_ = false;
   apply_selection_transform_from_editor();
 }
 void MainWindow::undo_layout_edit(){
-  if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
+  if (!ensure_live_authoring_mutation_available(QStringLiteral("Undo"))) return;
+  if (undo_stack_.empty() && scene_preview_widget_ &&
+      scene_preview_widget_->embedded_web_authoring_active()) {
     scene_preview_widget_->undo_authoring_edit();
     return;
   }
   if(undo_stack_.empty() || !digital_twin_scene_) return;
   auto c=undo_stack_.back(); undo_stack_.pop_back();
+  const auto apply_snapshot = [this](const ScenePreviewWidget::PreviewItem & snapshot) {
+    if (snapshot.id.trimmed().isEmpty()) return;
+    for (auto & preview : all_scene_preview_items_) {
+      if (preview.id.trimmed() == snapshot.id.trimmed()) { preview = snapshot; break; }
+    }
+    if (auto * canvas = find_canvas_item_by_stable_id(snapshot.id)) {
+      canvas->setPos(snapshot.x * 100.0, snapshot.y * 100.0);
+      canvas->setData(RolePoseZ, snapshot.z); canvas->setData(RoleRoll, snapshot.roll);
+      canvas->setData(RolePitch, snapshot.pitch); canvas->setData(RoleYaw, snapshot.yaw);
+      canvas->setData(RoleWidth, snapshot.sx); canvas->setData(RoleDepth, snapshot.sy); canvas->setData(RoleHeight, snapshot.sz);
+      canvas->setData(RoleDisplayName, snapshot.display_name); canvas->setData(RoleRole, snapshot.role);
+      canvas->setData(RoleMetadataExplicitlyEdited, true);
+    }
+    if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
+      pending_native_web_pose_signatures_.insert(authored_pose_signature(
+        snapshot.id, snapshot.x, snapshot.y, snapshot.z,
+        snapshot.roll, snapshot.pitch, snapshot.yaw));
+      scene_preview_widget_->set_authoring_item_metadata(snapshot.id, snapshot.display_name, snapshot.role);
+      scene_preview_widget_->set_authoring_item_pose(snapshot.id, snapshot.x, snapshot.y, snapshot.z,
+        snapshot.roll, snapshot.pitch, snapshot.yaw);
+    }
+  };
   if (c.kind == QStringLiteral("delete")) {
     deleted_layout_item_ids_.remove(c.item_id);
     for (const auto & p : c.preview_items) {
@@ -8412,8 +8658,13 @@ void MainWindow::undo_layout_edit(){
       for (const auto & existing : all_scene_preview_items_) if (existing.id == p.id) { exists = true; break; }
       if (!exists) all_scene_preview_items_.push_back(p);
     }
-    apply_scene3d_preview_layer_filters(false);
-    if (scene_preview_widget_) scene_preview_widget_->select_preview_item(c.item_id);
+    if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active() &&
+        !c.preview_items.isEmpty()) {
+      scene_preview_widget_->add_authoring_item(c.preview_items.front());
+      scene_preview_widget_->select_preview_item(c.item_id);
+    } else {
+      apply_scene3d_preview_layer_filters(false);
+    }
     current_selected_scene_item_id_ = c.item_id;
     selected_item_state_ = current_selected_scene_item();
     refresh_selected_scene_item_labels(selected_item_state_);
@@ -8422,31 +8673,61 @@ void MainWindow::undo_layout_edit(){
     for (int i = all_scene_preview_items_.size() - 1; i >= 0; --i) if (all_scene_preview_items_[i].id == c.item_id) all_scene_preview_items_.removeAt(i);
     for (auto * item : digital_twin_scene_->items()) if (item->data(RoleId).toString() == c.item_id) { delete item; break; }
     current_selected_scene_item_id_.clear(); selected_item_state_ = {};
-    apply_scene3d_preview_layer_filters(false);
+    if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active())
+      scene_preview_widget_->remove_authoring_item(c.item_id);
+    else apply_scene3d_preview_layer_filters(false);
     refresh_selected_scene_item_labels(selected_item_state_);
     if (!c.preview_items.isEmpty()) {
       append_studio_log(c.kind == QStringLiteral("duplicate")
         ? QString("Removed duplicate %1").arg(c.preview_items.front().display_name)
         : QString("Removed %1").arg(c.preview_items.front().display_name));
     }
+  } else if (!c.before_item.id.trimmed().isEmpty()) {
+    apply_snapshot(c.before_item);
   } else {
     for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;}
   }
   redo_stack_.push_back(c); mark_layout_dirty("Undo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
 }
 void MainWindow::redo_layout_edit(){
-  if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
+  if (!ensure_live_authoring_mutation_available(QStringLiteral("Redo"))) return;
+  if (redo_stack_.empty() && scene_preview_widget_ &&
+      scene_preview_widget_->embedded_web_authoring_active()) {
     scene_preview_widget_->redo_authoring_edit();
     return;
   }
   if(redo_stack_.empty() || !digital_twin_scene_) return;
   auto c=redo_stack_.back(); redo_stack_.pop_back();
+  const auto apply_snapshot = [this](const ScenePreviewWidget::PreviewItem & snapshot) {
+    if (snapshot.id.trimmed().isEmpty()) return;
+    for (auto & preview : all_scene_preview_items_) {
+      if (preview.id.trimmed() == snapshot.id.trimmed()) { preview = snapshot; break; }
+    }
+    if (auto * canvas = find_canvas_item_by_stable_id(snapshot.id)) {
+      canvas->setPos(snapshot.x * 100.0, snapshot.y * 100.0);
+      canvas->setData(RolePoseZ, snapshot.z); canvas->setData(RoleRoll, snapshot.roll);
+      canvas->setData(RolePitch, snapshot.pitch); canvas->setData(RoleYaw, snapshot.yaw);
+      canvas->setData(RoleWidth, snapshot.sx); canvas->setData(RoleDepth, snapshot.sy); canvas->setData(RoleHeight, snapshot.sz);
+      canvas->setData(RoleDisplayName, snapshot.display_name); canvas->setData(RoleRole, snapshot.role);
+      canvas->setData(RoleMetadataExplicitlyEdited, true);
+    }
+    if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
+      pending_native_web_pose_signatures_.insert(authored_pose_signature(
+        snapshot.id, snapshot.x, snapshot.y, snapshot.z,
+        snapshot.roll, snapshot.pitch, snapshot.yaw));
+      scene_preview_widget_->set_authoring_item_metadata(snapshot.id, snapshot.display_name, snapshot.role);
+      scene_preview_widget_->set_authoring_item_pose(snapshot.id, snapshot.x, snapshot.y, snapshot.z,
+        snapshot.roll, snapshot.pitch, snapshot.yaw);
+    }
+  };
   if (c.kind == QStringLiteral("delete")) {
     deleted_layout_item_ids_.insert(c.item_id);
     for (int i = all_scene_preview_items_.size() - 1; i >= 0; --i) if (all_scene_preview_items_[i].id == c.item_id) all_scene_preview_items_.removeAt(i);
     if (digital_twin_scene_) for (auto * item : digital_twin_scene_->items()) if (item->data(RoleId).toString() == c.item_id) { delete item; break; }
     current_selected_scene_item_id_.clear(); selected_item_state_ = {};
-    apply_scene3d_preview_layer_filters(false);
+    if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active())
+      scene_preview_widget_->remove_authoring_item(c.item_id);
+    else apply_scene3d_preview_layer_filters(false);
     refresh_selected_scene_item_labels(selected_item_state_);
   } else if ((c.kind == QStringLiteral("duplicate") || c.kind == QStringLiteral("add")) && !c.preview_items.isEmpty()) {
     const auto p = c.preview_items.front();
@@ -8464,8 +8745,12 @@ void MainWindow::redo_layout_edit(){
       item->position_filter = [this](const QPointF & pos){ return snap_canvas_position(pos); };
       digital_twin_scene_->addItem(item);
     }
-    apply_scene3d_preview_layer_filters(false);
+    if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active())
+      scene_preview_widget_->add_authoring_item(p);
+    else apply_scene3d_preview_layer_filters(false);
     apply_scene_selection(p.id, p.role, false, false);
+  } else if (!c.after_item.id.trimmed().isEmpty()) {
+    apply_snapshot(c.after_item);
   } else {
     for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.new_pos); break;}
   }
@@ -8474,12 +8759,19 @@ void MainWindow::redo_layout_edit(){
 bool MainWindow::selected_item_can_be_duplicated() const
 {
   if (!selected_scene_state_.valid || place_asset_armed_) return false;
+  if (scene_preview_widget_ && !scene_preview_widget_->is_native_product_view_backend() &&
+      !scene_preview_widget_->embedded_web_authoring_active()) return false;
   return resolve_selected_editable_layout_target().ok;
 }
 
 void MainWindow::refresh_duplicate_selected_action()
 {
-  if (auto * action = scene_builder_action(QStringLiteral("layout.duplicate"))) action->setEnabled(selected_item_can_be_duplicated());
+  const bool can_duplicate = selected_item_can_be_duplicated();
+  if (auto * action = scene_builder_action(QStringLiteral("layout.duplicate"))) action->setEnabled(can_duplicate);
+  if (scene_duplicate_context_button_) {
+    scene_duplicate_context_button_->setVisible(true);
+    scene_duplicate_context_button_->setEnabled(can_duplicate);
+  }
 }
 
 void MainWindow::duplicate_selected_item()
@@ -8491,6 +8783,7 @@ void MainWindow::duplicate_selected_item()
     refresh_duplicate_selected_action();
     return;
   }
+  if (!ensure_live_authoring_mutation_available(QStringLiteral("Duplicate"))) return;
 
   ScenePreviewWidget::PreviewItem copy;
   bool found_preview = false;
@@ -8510,9 +8803,6 @@ void MainWindow::duplicate_selected_item()
     if (!id.isEmpty()) reserved_ids.insert(id.toStdString());
     if (!p.display_name.trimmed().isEmpty()) reserved_names.insert(p.display_name.trimmed().toLower());
   }
-  for (const auto & c : undo_stack_) if (!c.item_id.trimmed().isEmpty()) reserved_ids.insert(c.item_id.trimmed().toStdString());
-  for (const auto & c : redo_stack_) if (!c.item_id.trimmed().isEmpty()) reserved_ids.insert(c.item_id.trimmed().toStdString());
-
   auto normalize_id = [](QString text) {
     text = text.trimmed().toLower();
     QString out;
@@ -8573,7 +8863,11 @@ void MainWindow::duplicate_selected_item()
     QPointF(copy.x * 100.0, copy.y * 100.0),
     true, false, {copy}};
   undo_stack_.push_back(command); redo_stack_.clear();
-  apply_scene3d_preview_layer_filters(false);
+  if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
+    scene_preview_widget_->duplicate_authoring_item(target.state.id, copy);
+  } else {
+    apply_scene3d_preview_layer_filters(false);
+  }
   refresh_scene_hierarchy_tree_from_current_items();
   refresh_scene_builder_left_explorer();
   apply_scene_selection(new_id, copy.role, false, false);
@@ -8584,6 +8878,8 @@ void MainWindow::duplicate_selected_item()
 bool MainWindow::selected_item_can_be_deleted() const
 {
   if (!selected_scene_state_.valid || place_asset_armed_) return false;
+  if (scene_preview_widget_ && !scene_preview_widget_->is_native_product_view_backend() &&
+      !scene_preview_widget_->embedded_web_authoring_active()) return false;
   return resolve_selected_editable_layout_target().ok;
 }
 
@@ -8600,6 +8896,7 @@ void MainWindow::delete_selected_item(){
     refresh_delete_selected_action();
     return;
   }
+  if (!ensure_live_authoring_mutation_available(QStringLiteral("Delete"))) return;
   const QString id = target.state.id.trimmed();
   QVector<ScenePreviewWidget::PreviewItem> deleted_preview_items;
   for (const auto & p : all_scene_preview_items_) if (p.id == id) deleted_preview_items.push_back(p);
@@ -8619,13 +8916,16 @@ void MainWindow::delete_selected_item(){
   if (scene_hierarchy_tree_) scene_hierarchy_tree_->clearSelection();
   current_selected_scene_item_id_.clear(); selected_item_state_ = {};
   undo_stack_.push_back(command); redo_stack_.clear();
-  apply_scene3d_preview_layer_filters(false);
+  if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active())
+    scene_preview_widget_->remove_authoring_item(id);
+  else apply_scene3d_preview_layer_filters(false);
   refresh_scene_hierarchy_tree_from_current_items();
   refresh_selected_scene_item_labels(selected_item_state_);
   refresh_scene_builder_left_explorer();
   mark_layout_dirty("Delete Selected");
   append_studio_log(QString("Deleted %1").arg(target.state.display_name.isEmpty() ? id : target.state.display_name));
   refresh_delete_selected_action();
+  refresh_duplicate_selected_action();
   refresh_duplicate_selected_action();
 }
 
@@ -8910,10 +9210,8 @@ bool MainWindow::arm_place_asset_mode(const QString & requested_asset_id)
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
   if (scene_preview_widget_ &&
       scene_preview_widget_->active_product_view_backend() == ScenePreviewWidget::ProductViewBackend::EmbeddedWeb3D) {
-    QString mesh_uri = QDir::current().relativeFilePath(match->source_path);
-    if (mesh_uri.startsWith(QStringLiteral("../"))) mesh_uri.clear();
     scene_preview_widget_->arm_embedded_asset_placement(
-      match->asset_id, mesh_uri, match->scale,
+      match->asset_id, match->source_path, match->scale,
       place_mode_persistent_box_ && place_mode_persistent_box_->isChecked());
   }
   append_studio_log(QString("Place Asset Mode armed: %1 (%2) asset_id=%3. Click canvas to commit. Use clicked XY: %4 | xyzrpy=[%5, %6, %7, %8, %9, %10].")
@@ -8928,6 +9226,7 @@ void MainWindow::commit_armed_asset_placement(
   const QPointF & canvas_pos_px, bool preserve_placement_session, bool use_configured_persistence)
 {
   if (!digital_twin_scene_ || !place_asset_armed_) return;
+  if (!ensure_live_authoring_mutation_available(QStringLiteral("Asset placement"))) return;
   const QString category = armed_asset_category_;
   const QString display_name = armed_asset_display_name_;
   const QString source_path = armed_asset_source_path_;
@@ -9038,7 +9337,9 @@ void MainWindow::commit_armed_asset_placement(
     if (all_scene_preview_items_[i].id == new_id) { all_scene_preview_items_.removeAt(i); break; }
   }
   all_scene_preview_items_.push_back(preview_item);
-  apply_scene3d_preview_layer_filters(false);
+  if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active())
+    scene_preview_widget_->add_authoring_item(preview_item);
+  else apply_scene3d_preview_layer_filters(false);
   refresh_scene_hierarchy_tree_from_current_items();
   mark_layout_dirty("Place Asset Mode: Add to 3D Canvas");
   append_studio_log(QStringLiteral("Asset placement: scene=%1 instance_id=%2 catalog_asset=%3 hierarchy_updated=true layout_dirty=true persisted=false")
@@ -9358,6 +9659,96 @@ void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
     preview_layer_overlays_helpers_box_->setChecked(true);
   }
   apply_scene_selection(selected_id, selected_role, false, true);
+}
+
+void MainWindow::rename_selected_item()
+{
+  const auto target = resolve_selected_editable_layout_target();
+  if (!target.ok) {
+    statusBar()->showMessage(QStringLiteral("Rename is available for editable scene items."), 3500);
+    return;
+  }
+  const QString current_name = target.state.display_name.trimmed().isEmpty()
+    ? target.state.id : target.state.display_name.trimmed();
+  bool accepted = false;
+  const QString updated = QInputDialog::getText(
+    this, QStringLiteral("Rename Scene Item"), QStringLiteral("Name"),
+    QLineEdit::Normal, current_name, &accepted).trimmed();
+  if (!accepted || updated.isEmpty() || updated == current_name) return;
+  if (inspector_display_name_) inspector_display_name_->setText(updated);
+  apply_inspector_pose_to_item();
+  statusBar()->showMessage(QStringLiteral("Renamed %1 to %2").arg(current_name, updated), 4000);
+}
+
+void MainWindow::show_scene_hierarchy_context_menu(const QPoint & position)
+{
+  if (!scene_hierarchy_tree_) return;
+  QTreeWidgetItem * item = scene_hierarchy_tree_->itemAt(position);
+  if (!item || item->data(0, TreeRoleIsGroup).toBool()) return;
+  on_hierarchy_item_selected(item);
+
+  const auto state = current_selected_scene_item();
+  const bool editable = state.valid && state.editable && !state.locked &&
+    state.linked_to_editable_layout_state;
+  QMenu menu(this);
+  auto * rename = menu.addAction(QStringLiteral("Rename"));
+  rename->setShortcut(QKeySequence(Qt::Key_F2));
+  rename->setEnabled(editable);
+  auto * duplicate = menu.addAction(QStringLiteral("Duplicate"));
+  duplicate->setShortcut(QKeySequence(QStringLiteral("Ctrl+D")));
+  duplicate->setEnabled(editable);
+  menu.addSeparator();
+  auto * remove = menu.addAction(QStringLiteral("Remove from Scene"));
+  remove->setShortcut(QKeySequence(Qt::Key_Delete));
+  remove->setEnabled(editable);
+  menu.addSeparator();
+  auto * focus = menu.addAction(QStringLiteral("Focus"));
+  auto * properties = menu.addAction(QStringLiteral("Properties"));
+
+  QAction * chosen = menu.exec(scene_hierarchy_tree_->viewport()->mapToGlobal(position));
+  if (chosen == rename) rename_selected_item();
+  else if (chosen == duplicate) duplicate_selected_item();
+  else if (chosen == remove) delete_selected_item();
+  else if (chosen == focus) {
+    if (auto * viewport = scene_preview_widget_ ?
+      scene_preview_widget_->findChild<Scene3DViewportWidget *>() : nullptr) viewport->focus_selected();
+  } else if (chosen == properties) {
+    apply_scene_builder_panel_visibility(true, true);
+    if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->setCurrentIndex(0);
+  }
+}
+
+void MainWindow::show_canvas_context_menu(const QPoint & global_position)
+{
+  const auto state = current_selected_scene_item();
+  if (!state.valid) return;
+  const bool editable = state.editable && !state.locked && state.linked_to_editable_layout_state;
+  QMenu menu(this);
+  auto * rename = menu.addAction(QStringLiteral("Rename"));
+  rename->setShortcut(QKeySequence(Qt::Key_F2));
+  rename->setEnabled(editable);
+  auto * duplicate = menu.addAction(QStringLiteral("Duplicate"));
+  duplicate->setShortcut(QKeySequence(QStringLiteral("Ctrl+D")));
+  duplicate->setEnabled(editable);
+  menu.addSeparator();
+  auto * remove = menu.addAction(QStringLiteral("Remove from Scene"));
+  remove->setShortcut(QKeySequence(Qt::Key_Delete));
+  remove->setEnabled(editable);
+  menu.addSeparator();
+  auto * focus = menu.addAction(QStringLiteral("Focus"));
+  auto * properties = menu.addAction(QStringLiteral("Properties"));
+
+  QAction * chosen = menu.exec(global_position);
+  if (chosen == rename) rename_selected_item();
+  else if (chosen == duplicate) duplicate_selected_item();
+  else if (chosen == remove) delete_selected_item();
+  else if (chosen == focus) {
+    if (auto * viewport = scene_preview_widget_ ?
+      scene_preview_widget_->findChild<Scene3DViewportWidget *>() : nullptr) viewport->focus_selected();
+  } else if (chosen == properties) {
+    apply_scene_builder_panel_visibility(true, true);
+    if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->setCurrentIndex(0);
+  }
 }
 
 void MainWindow::refresh_selected_item_card()
@@ -9738,7 +10129,11 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
       .arg(owner_contract_path));
   }
   const bool filtered_payload_changed = !scene_preview_widget_->preview_payload_matches(filtered_items);
-  if (filtered_payload_changed) {
+  if (scene_preview_widget_->embedded_web_authoring_active()) {
+    QSet<QString> visible_ids;
+    for (const auto & item : filtered_items) visible_ids.insert(item.id.trimmed());
+    scene_preview_widget_->set_live_visible_item_ids(visible_ids);
+  } else if (filtered_payload_changed) {
     scene_preview_widget_->set_preview_items(filtered_items);
   } else if (scene3d_debug_logging_enabled()) {
     append_studio_log(QStringLiteral(

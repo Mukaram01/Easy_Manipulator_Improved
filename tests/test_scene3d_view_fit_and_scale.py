@@ -69,7 +69,7 @@ def test_product_fit_uses_generous_distance_guards_and_exports_camera_diagnostic
     assert 'last_initial_fit_physical_anchor_count_ = anchor_count;' in fit_product
     assert '* 1.22' not in fit_product
     assert 'const double base_fit_distance = product_radius / qTan(fov * 0.5);' in fit_product
-    assert 'qMax(qMax(base_fit_distance * 2.4, product_radius * 5.0), 4.0)' in fit_product
+    assert 'qMax(qMax(base_fit_distance * 1.30, product_radius * 2.80), 1.80)' in fit_product
     assert 'distance_ = qBound(min_distance_, fit_distance, max_distance_);' in fit_product
     assert 'orbit_offset_ = (bmin + bmax) * 0.5f;' in fit_product
     assert 'qMax(0.06, product_radius * 0.035)' in fit_product

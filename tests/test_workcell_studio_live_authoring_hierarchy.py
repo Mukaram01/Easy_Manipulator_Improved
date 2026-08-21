@@ -63,6 +63,23 @@ def test_structural_edits_use_only_tree_refresh():
         assert "populate_scene_hierarchy();" not in body, operation
 
 
+def test_duplicate_is_visible_for_every_editable_authored_selection_and_shortcut_reaches_web_focus():
+    toolbar = block(
+        "void MainWindow::refresh_duplicate_selected_action()",
+        "void MainWindow::duplicate_selected_item()",
+    )
+    assert "selected_item_can_be_duplicated()" in toolbar
+    assert "fixture_like" not in toolbar
+    assert "setVisible(can_duplicate)" in toolbar
+    assert "setEnabled(can_duplicate)" in toolbar
+    assert "duplicate_action->setShortcutContext(Qt::ApplicationShortcut);" in CPP
+    registry = block(
+        "void MainWindow::register_scene_builder_action",
+        "void MainWindow::export_canvas_snapshot",
+    )
+    assert "addAction(action);" in registry
+
+
 def test_distinct_instances_and_canonical_authored_rows_survive():
     authored = {"source_layer": "editable_layout", "editable": True, "locked": False,
                 "linked_to_editable_layout_state": True}

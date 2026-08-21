@@ -29,6 +29,22 @@ def test_asset_library_search_and_categories_are_catalog_driven():
         assert field in filt
 
 
+def test_asset_library_is_compact_for_the_narrow_scene_builder_side_panel():
+    setup = _between('auto * hierarchy_card = new QFrame', 'auto * files_card = new QFrame')
+    for contract in [
+        'setIconSize(QSize(64, 48))',
+        'QTreeWidget::item{height:58px',
+        'asset_catalog_tree_->setColumnHidden(1, true);',
+        'asset_catalog_tree_->setColumnHidden(2, true);',
+        'asset_catalog_tree_->setColumnHidden(3, true);',
+        'asset_catalog_tree_->header()->hide();',
+        'import_asset_button->setFixedWidth(34);',
+        'asset_library_thumbnail_preview_->hide();',
+        'asset_library_preview_status_->setMaximumHeight(38);',
+    ]:
+        assert contract in setup
+
+
 def test_asset_library_selection_is_separate_from_scene_selection():
     preview = _between('void MainWindow::update_asset_library_preview()', 'void MainWindow::on_hierarchy_item_selected')
     forbidden = ['apply_scene_selection(', 'select_canvas_item(', 'clearSelection()', 'select_preview_item(']

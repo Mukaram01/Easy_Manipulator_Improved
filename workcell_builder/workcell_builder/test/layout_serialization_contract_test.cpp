@@ -19,10 +19,10 @@ std::string load_file(const std::string & path)
 TEST(LayoutSerializationContractTest, SaveLayoutWritesCanonicalFields)
 {
   const std::string src = load_file("gui/mainwindow.cpp");
-  EXPECT_NE(src.find("item[\"id\"]"), std::string::npos);
+  const std::string serializer = load_file("gui/layout_item_serializer.hpp");
+  EXPECT_NE(serializer.find("item[\"id\"]"), std::string::npos);
   EXPECT_NE(src.find("serialize_layout_item("), std::string::npos);
   EXPECT_EQ(src.find("emitter.SetStringFormat(YAML::DoubleQuoted)"), std::string::npos);
-  const std::string serializer = load_file("gui/layout_item_serializer.hpp");
   EXPECT_NE(serializer.find("SetTag(\"tag:yaml.org,2002:str\")"), std::string::npos);
 }
 
@@ -41,11 +41,11 @@ TEST(LayoutSerializationContractTest, SessionAddedTransformsBypassStaleDiskPatch
 {
   const std::string src = load_file("gui/mainwindow.cpp");
   const std::string controller = load_file("gui/embedded_web_edit_save_controller.hpp");
-  EXPECT_NE(src.find("command.kind == QStringLiteral(\"add\")"), std::string::npos);
-  EXPECT_NE(src.find("command.kind == QStringLiteral(\"duplicate\")"), std::string::npos);
+  EXPECT_NE(src.find("c.kind == QStringLiteral(\"add\")"), std::string::npos);
+  EXPECT_NE(src.find("c.kind == QStringLiteral(\"duplicate\")"), std::string::npos);
   EXPECT_NE(src.find("apply_web_transforms_to_editable_layout_session"), std::string::npos);
   EXPECT_NE(src.find("canvas->setData(RolePoseZ"), std::string::npos);
-  EXPECT_NE(controller.find("session-added Web3D transforms serialized without stale web_scene validation"), std::string::npos);
+  EXPECT_NE(controller.find("unified authored transaction complete"), std::string::npos);
 }
 
 TEST(LayoutSerializationContractTest, InstanceIdentityAndMeshScaleRemainIndependent)
@@ -60,23 +60,24 @@ TEST(LayoutSerializationContractTest, InstanceIdentityAndMeshScaleRemainIndepend
   EXPECT_NE(src.find("editable_by_id.insert"), std::string::npos);
 }
 
-TEST(LayoutSerializationContractTest, MixedUnsafeValidationRejectsBeforeAnyWrite)
+TEST(LayoutSerializationContractTest, UnifiedValidationCompletesBeforeNativeWrite)
 {
   const std::string controller = load_file("gui/embedded_web_edit_save_controller.hpp");
-  const auto reject = controller.find("Save Layout cannot safely compose native structural edits");
-  const auto stage = controller.find("writePatchAtomically(patch");
-  ASSERT_NE(reject, std::string::npos);
-  ASSERT_NE(stage, std::string::npos);
-  EXPECT_LT(reject, stage);
-  EXPECT_NE(controller.find("both dirty states were retained"), std::string::npos);
-  EXPECT_NE(controller.find("Existing editable items must keep using guarded patch validation"), std::string::npos);
+  const auto validate = controller.find("invalid or stale edit-patch contract");
+  const auto save = controller.find("native_save_(patch, &native_error)");
+  ASSERT_NE(validate, std::string::npos);
+  ASSERT_NE(save, std::string::npos);
+  EXPECT_LT(validate, save);
+  EXPECT_EQ(controller.find("writePatchAtomically(patch"), std::string::npos);
+  EXPECT_NE(controller.find("unified authored transaction failed before write"), std::string::npos);
 }
 
 TEST(LayoutSerializationContractTest, SaveLayoutPreservesUnknownFieldsViaCloneMerge)
 {
-  const std::string src = load_file("gui/layout_item_serializer.hpp");
-  EXPECT_NE(src.find("YAML::Clone(existing)"), std::string::npos);
-  EXPECT_NE(src.find("existing_by_id"), std::string::npos);
+  const std::string serializer = load_file("gui/layout_item_serializer.hpp");
+  const std::string mainwindow = load_file("gui/mainwindow.cpp");
+  EXPECT_NE(serializer.find("YAML::Clone(existing)"), std::string::npos);
+  EXPECT_NE(mainwindow.find("existing_by_id"), std::string::npos);
 }
 
 TEST(LayoutSerializationContractTest, ExistingAuthoredSemanticsAndMeshProvenanceArePreserved)
@@ -185,7 +186,7 @@ TEST(LayoutSerializationContractTest, MalformedLayoutBackupBehaviorStillPresent)
 {
   const std::string src = load_file("gui/mainwindow.cpp");
   EXPECT_NE(src.find(".malformed_backup_"), std::string::npos);
-  EXPECT_NE(src.find("Malformed layout YAML detected"), std::string::npos);
+  EXPECT_NE(src.find("Malformed layout YAML backed up to"), std::string::npos);
 }
 
 TEST(LayoutSerializationContractTest, InspectorEditsResolveStableEditableLayoutTarget)
@@ -233,9 +234,10 @@ TEST(LayoutSerializationContractTest, SaveLayoutForSceneWithOnlyLegacyEnvironmen
 TEST(LayoutSerializationContractTest, SaveLayoutForSceneWithNonCanonicalManifestLayoutWritesCanonicalOnly)
 {
   const std::string src = load_file("gui/mainwindow.cpp");
-  EXPECT_NE(src.find("const fs::path layout_path = selected_scene_canonical_layout_save_path(scene_browser_result_, selected_scene_index_);"), std::string::npos);
-  EXPECT_NE(src.find("for (const auto & candidate : selected_scene_layout_import_candidates(scene_dir))"), std::string::npos);
-  EXPECT_NE(src.find("root = YAML::LoadFile(candidate.string())"), std::string::npos);
+  EXPECT_NE(src.find("const fs::path scene_dir = fs::path(selected_scene_path().toStdString())"), std::string::npos);
+  EXPECT_NE(src.find("const fs::path layout_path = scene_dir / \"layout\" / \"workcell_studio_layout.yaml\""), std::string::npos);
+  EXPECT_NE(src.find("const fs::path manifest_layout = manifest_declared_layout_path(scene_dir)"), std::string::npos);
+  EXPECT_NE(src.find("normalize_imported_layout_to_canonical_items(YAML::LoadFile(candidate.string())"), std::string::npos);
   EXPECT_NE(src.find("QSaveFile out(QString::fromStdString(effective_layout_path.string()))"), std::string::npos);
 }
 
@@ -293,7 +295,7 @@ TEST(LayoutSerializationContractTest, DuplicateSelectedCopiesAuthoredRecordWithS
 {
   const std::string src = load_file("gui/mainwindow.cpp");
   EXPECT_NE(src.find("copy = p; found_preview = true"), std::string::npos);
-  EXPECT_NE(src.find("reserved_ids.insert(c.item_id.trimmed().toStdString())"), std::string::npos);
+  EXPECT_NE(src.find("reserved_ids.insert(id.toStdString())"), std::string::npos);
   EXPECT_NE(src.find("const QString copy_base = base_id + QStringLiteral(\"_copy\")"), std::string::npos);
   EXPECT_NE(src.find("base_name.replace(copy_suffix, QString())"), std::string::npos);
   EXPECT_NE(src.find("new_name = QStringLiteral(\"%1 copy %2\")"), std::string::npos);

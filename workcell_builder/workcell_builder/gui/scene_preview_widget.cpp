@@ -415,6 +415,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   setObjectName("scenePreviewWidget");
   auto * root = new QVBoxLayout(this);
   auto * controls_header = new QWidget(this);
+  controls_header->setObjectName(QStringLiteral("scenePreviewControlsHeader"));
   auto * controls = new QVBoxLayout(controls_header);
   controls->setContentsMargins(0, 0, 0, 0);
   controls->setSpacing(4);
@@ -996,10 +997,19 @@ QString ScenePreviewWidget::embedded_web_prepare_command_for_log(const QString &
 void ScenePreviewWidget::set_embedded_product_view_state(EmbeddedProductViewState state, const QString & detail)
 {
   embedded_product_view_state_ = state;
+  if (state != EmbeddedProductViewState::Ready) {
+    embedded_editor_contract_state_ = EmbeddedEditorContractState::NotStarted;
+    embedded_editor_contract_ready_ = false;
+    embedded_editor_contract_error_.clear();
+    embedded_editor_contract_deadline_ = QDateTime();
+    embedded_editor_contract_attempt_ = 0;
+  }
   refresh_product_view_destination_control();
   refresh_product_view_tool_orientation_control();
   refresh_product_view_robot_home_control();
-  embedded_editor_polling_ = (state == EmbeddedProductViewState::Ready);
+  embedded_editor_polling_ =
+    state == EmbeddedProductViewState::Ready &&
+    embedded_editor_contract_state_ == EmbeddedEditorContractState::Accepted;
   if (state == EmbeddedProductViewState::Failed) embedded_web_last_error_ = detail;
   if (embedded_fit_button_ && state != EmbeddedProductViewState::Failed) {
     embedded_fit_button_->setText(QStringLiteral("Fit"));
@@ -1726,6 +1736,10 @@ void ScenePreviewWidget::cancel_embedded_web_lifecycle(bool stop_owned_server)
   pending_embedded_web_request_ = false;
   pending_embedded_web_force_ = false;
   pending_embedded_web_source_policy_ = EmbeddedWebSourcePolicy::AuthoringSession;
+  deferred_embedded_web_request_ = false;
+  deferred_embedded_web_force_ = false;
+  deferred_embedded_web_origin_.clear();
+  deferred_embedded_web_source_policy_ = EmbeddedWebSourcePolicy::AuthoringSession;
   embedded_web_last_suppressed_duplicate_key_.clear();
   embedded_web_server_lifecycle_ = EmbeddedWebServerLifecycle::ServerNotStarted;
   embedded_web_server_probe_ = EmbeddedWebServerProbe{};
@@ -1783,6 +1797,13 @@ QJsonObject ScenePreviewWidget::authoring_overlay_item(
     {QStringLiteral("selectable"), item.selectable}, {QStringLiteral("source_mesh_path"), mesh_source},
     {QStringLiteral("mesh_type"), item.mesh_type},
     {QStringLiteral("mesh_scale"), QJsonArray{item.mesh_scale_x, item.mesh_scale_y, item.mesh_scale_z}},
+    {QStringLiteral("dimensions"), QJsonArray{item.sx, item.sy, item.sz}},
+    {QStringLiteral("primitive"), QJsonObject{
+      {QStringLiteral("type"), item.primitive_geometry_type.trimmed().isEmpty()
+        ? QStringLiteral("box") : item.primitive_geometry_type},
+      {QStringLiteral("dimensions"), QJsonArray{item.sx, item.sy, item.sz}},
+      {QStringLiteral("radius"), item.primitive_radius},
+      {QStringLiteral("length"), item.primitive_length}}},
     {QStringLiteral("world_pose"), QJsonObject{
       {QStringLiteral("xyz"), QJsonArray{item.x, item.y, item.z}},
       {QStringLiteral("rpy"), QJsonArray{item.roll, item.pitch, item.yaw}}}},
@@ -1828,6 +1849,10 @@ void ScenePreviewWidget::request_embedded_web_product_view_refresh(
     !request_key.generated_web_scene_path.isEmpty() &&
     request_key.payload_revision > 0 && !request_key.payload_fingerprint.isEmpty();
   if (!context_ready) {
+    deferred_embedded_web_request_ = true;
+    deferred_embedded_web_force_ = deferred_embedded_web_force_ || force;
+    deferred_embedded_web_origin_ = request_origin;
+    deferred_embedded_web_source_policy_ = source_policy;
     emit studio_log_requested(QStringLiteral("Product View lifecycle deferred: scene=%1 generation=%2 payload_revision=%3 origin=%4 scene_dir=%5 repo_root=%6.")
       .arg(request_key.scene_id.isEmpty() ? QStringLiteral("<unset>") : request_key.scene_id)
       .arg(embedded_web_request_generation_)
@@ -1837,6 +1862,20 @@ void ScenePreviewWidget::request_embedded_web_product_view_refresh(
       .arg(request_key.absolute_repo_root.isEmpty() ? QStringLiteral("<unset>") : request_key.absolute_repo_root));
     set_embedded_product_view_state(EmbeddedProductViewState::Idle);
     return;
+  }
+  if (deferred_embedded_web_request_) {
+    emit studio_log_requested(QStringLiteral(
+      "Product View deferred lifecycle resumed autonomously: scene=%1 payload_revision=%2 deferred_origin=%3 resume_origin=%4.")
+        .arg(request_key.scene_id).arg(request_key.payload_revision)
+        .arg(deferred_embedded_web_origin_.isEmpty() ? QStringLiteral("unknown") : deferred_embedded_web_origin_, request_origin));
+    force = force || deferred_embedded_web_force_;
+    if (deferred_embedded_web_source_policy_ == EmbeddedWebSourcePolicy::PersistedCanonical) {
+      source_policy = EmbeddedWebSourcePolicy::PersistedCanonical;
+    }
+    deferred_embedded_web_request_ = false;
+    deferred_embedded_web_force_ = false;
+    deferred_embedded_web_origin_.clear();
+    deferred_embedded_web_source_policy_ = EmbeddedWebSourcePolicy::AuthoringSession;
   }
   ++embedded_web_effective_refresh_requests_received_;
 
@@ -2612,7 +2651,7 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
       embedded_web_has_committed_surface_ = true;
       set_embedded_product_view_state(EmbeddedProductViewState::Ready, QStringLiteral("viewer ready"));
       show_embedded_web_product_view();
-      poll_embedded_editor_events();
+      verify_embedded_editor_contract(identity);
       if (diagnostic_debug_logging_enabled()) emit studio_log_requested(
         QStringLiteral("Embedded Product View ready after terminal scene_ready: scene=%1 json=%2 builder_revision=%3 robot_preview_lifecycle_state=%4 failed_required_item_count=0")
           .arg(identity.scene_id, expected_json_path, expected_builder_revision, robot_state.isEmpty() ? QStringLiteral("not_required") : robot_state));
@@ -2653,16 +2692,31 @@ void ScenePreviewWidget::load_prepared_embedded_web_scene(const EmbeddedWebReque
   viewer_query.addQueryItem(QStringLiteral("scene"), web_scene_url_path);
   viewer_query.addQueryItem(QStringLiteral("builderRevision"), builder_revision);
   viewer_query.addQueryItem(QStringLiteral("embedded"), QStringLiteral("1"));
+  QFile viewer_bundle(QDir(identity.absolute_repo_root).filePath(
+    QStringLiteral("workcell_studio_web/viewer/dist/viewer.bundle.js")));
+  if (!viewer_bundle.open(QIODevice::ReadOnly)) {
+    const QString detail = QStringLiteral("Embedded Product View bundle is missing or unreadable: %1")
+      .arg(viewer_bundle.fileName());
+    handle_embedded_web_runtime_failure(identity, embedded_web_navigation_token_, detail);
+    return;
+  }
+  const QString viewer_build = QString::fromLatin1(
+    QCryptographicHash::hash(viewer_bundle.readAll(), QCryptographicHash::Sha256).toHex());
+  viewer_query.addQueryItem(QStringLiteral("viewerBuild"), viewer_build);
   viewer_url.setQuery(viewer_query);
 
   const QUrlQuery decoded_viewer_query(viewer_url);
   const QString decoded_scene_path = decoded_viewer_query.queryItemValue(QStringLiteral("scene"), QUrl::FullyDecoded);
   const QString decoded_builder_revision = decoded_viewer_query.queryItemValue(
     QStringLiteral("builderRevision"), QUrl::FullyDecoded);
+  const QString decoded_viewer_build = decoded_viewer_query.queryItemValue(
+    QStringLiteral("viewerBuild"), QUrl::FullyDecoded);
   const bool valid_scene_path = decoded_scene_path == web_scene_url_path;
   const bool valid_builder_revision = QRegularExpression(QStringLiteral("^[0-9]+$"))
     .match(decoded_builder_revision).hasMatch();
-  if (!valid_scene_path || !valid_builder_revision) {
+  const bool valid_viewer_build = QRegularExpression(QStringLiteral("^[a-f0-9]{64}$"))
+    .match(decoded_viewer_build).hasMatch();
+  if (!valid_scene_path || !valid_builder_revision || !valid_viewer_build) {
     const QString detail = QStringLiteral("Embedded Product View URL validation failed; using native compatibility preview.");
     emit studio_log_requested(detail);
     activate_native_compatibility_preview(detail);
@@ -2703,9 +2757,153 @@ void ScenePreviewWidget::load_prepared_embedded_web_scene(const EmbeddedWebReque
 
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
-void ScenePreviewWidget::run_embedded_editor_command(const QString & script)
+void ScenePreviewWidget::verify_embedded_editor_contract(const EmbeddedWebRequestIdentity & identity)
 {
   if (!embedded_web_view_ || embedded_product_view_state_ != EmbeddedProductViewState::Ready) return;
+  embedded_editor_contract_state_ = EmbeddedEditorContractState::Pending;
+  embedded_editor_contract_ready_ = false;
+  embedded_editor_contract_error_ = QStringLiteral("capability handshake pending");
+  embedded_editor_polling_ = false;
+  embedded_editor_contract_deadline_ = QDateTime::currentDateTimeUtc().addSecs(3);
+  embedded_editor_contract_attempt_ = 0;
+  poll_embedded_editor_contract(
+    identity, embedded_web_loading_navigation_token_, embedded_web_loading_browser_load_token_,
+    embedded_web_readiness_token_, embedded_web_expected_viewer_url_);
+}
+
+void ScenePreviewWidget::poll_embedded_editor_contract(
+  const EmbeddedWebRequestIdentity & identity, quint64 navigation_token,
+  quint64 browser_load_token, quint64 readiness_token, const QUrl & expected_url)
+{
+  if (!embedded_web_view_ || embedded_product_view_state_ != EmbeddedProductViewState::Ready ||
+      embedded_editor_contract_state_ != EmbeddedEditorContractState::Pending ||
+      !embedded_web_identity_is_current(identity) ||
+      navigation_token == 0 || navigation_token != embedded_web_navigation_token_ ||
+      navigation_token != embedded_web_loading_navigation_token_ ||
+      browser_load_token == 0 || browser_load_token != embedded_web_browser_load_token_ ||
+      browser_load_token != embedded_web_loading_browser_load_token_ ||
+      readiness_token == 0 || readiness_token != embedded_web_readiness_token_ ||
+      expected_url.isEmpty() || embedded_web_view_->url() != expected_url) return;
+  const int attempt = ++embedded_editor_contract_attempt_;
+  static const char kContractProbe[] = R"JS(
+(() => {
+  const api = window.__WORKCELL_EDITOR_API_V1__;
+  const marker = window.__WORKCELL_EDITOR_RUNTIME_V1__ || null;
+  const diagnostics = {
+    documentUrl: String(document.location.href || ''),
+    documentReadyState: String(document.readyState || ''),
+    apiType: typeof api,
+    apiKeys: api ? Object.keys(api).sort() : [],
+    getCapabilitiesType: typeof api?.getCapabilities,
+    apiVersion: String(api?.apiVersion || ''),
+    runtimeMarker: marker,
+    viewerSceneId: String(window.__WORKCELL_VIEWER_STATUS__?.scene_id || ''),
+    viewerLifecycleState: String(window.__WORKCELL_VIEWER_STATUS__?.lifecycle_state || ''),
+    viewerTerminal: Boolean(window.__WORKCELL_VIEWER_STATUS__?.terminal),
+  };
+  if (!api) {
+    return {ok:false,pending:true,error:'editor API not installed',diagnostics};
+  }
+  if (typeof api.getCapabilities !== 'function') {
+    return {ok:false,pending:false,error:'missing getCapabilities()',diagnostics};
+  }
+  let capabilities;
+  try { capabilities = api.getCapabilities(); }
+  catch (error) {
+    return {ok:false,pending:false,error:`getCapabilities() threw: ${error?.message || error}`,diagnostics};
+  }
+  const required = ['getState','selectItem','setItemMetadata','setItemTransform',
+    'addItem','duplicateItem','removeItem','setVisibleItemIds','undo','redo','getEditPatch','drainEvents'];
+  const missing = required.filter(name => typeof api[name] !== 'function');
+  if (capabilities?.schemaVersion !== 'workcell_studio_live_authoring_capabilities/v1') {
+    return {ok:false,pending:false,error:'unsupported capability schema',capabilities,diagnostics};
+  }
+  if (capabilities?.apiVersion !== '1.1.0') {
+    return {ok:false,pending:false,error:'unsupported live-authoring API version',capabilities,diagnostics};
+  }
+  if (missing.length) return {ok:false,pending:false,error:`missing callable operation(s): ${missing.join(', ')}`,capabilities,diagnostics};
+  return {ok:true,pending:false,capabilities,diagnostics};
+})()
+)JS";
+  embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kContractProbe),
+    [this, identity, navigation_token, browser_load_token, readiness_token, expected_url, attempt](const QVariant & value) {
+      if (!embedded_web_view_ || !embedded_web_identity_is_current(identity) ||
+          embedded_product_view_state_ != EmbeddedProductViewState::Ready ||
+          embedded_editor_contract_state_ != EmbeddedEditorContractState::Pending ||
+          navigation_token != embedded_web_navigation_token_ ||
+          navigation_token != embedded_web_loading_navigation_token_ ||
+          browser_load_token != embedded_web_browser_load_token_ ||
+          browser_load_token != embedded_web_loading_browser_load_token_ ||
+          readiness_token != embedded_web_readiness_token_ ||
+          embedded_web_view_->url() != expected_url) {
+        emit studio_log_requested(QStringLiteral(
+          "Ignored stale Embedded Product View editor-contract result: scene=%1 navigation=%2 browser_load=%3 readiness=%4 attempt=%5.")
+            .arg(identity.scene_id).arg(navigation_token).arg(browser_load_token).arg(readiness_token).arg(attempt));
+        return;
+      }
+      const QVariantMap result = value.toMap();
+      const QVariantMap diagnostics = result.value(QStringLiteral("diagnostics")).toMap();
+      const QString diagnostic_line = QStringLiteral(
+        "scene=%1 navigation=%2 browser_load=%3 readiness=%4 attempt=%5 view_url=%6 page_url=%7 document_url=%8 ready_state=%9 api_type=%10 api_keys=[%11] getCapabilities_type=%12 api_version=%13 viewer_scene=%14 viewer_lifecycle=%15 viewer_terminal=%16 marker=%17")
+          .arg(identity.scene_id).arg(navigation_token).arg(browser_load_token).arg(readiness_token).arg(attempt)
+          .arg(embedded_web_view_->url().toString())
+          .arg(embedded_web_view_->page()->url().toString())
+          .arg(diagnostics.value(QStringLiteral("documentUrl")).toString())
+          .arg(diagnostics.value(QStringLiteral("documentReadyState")).toString())
+          .arg(diagnostics.value(QStringLiteral("apiType")).toString())
+          .arg(diagnostics.value(QStringLiteral("apiKeys")).toStringList().join(QStringLiteral(",")))
+          .arg(diagnostics.value(QStringLiteral("getCapabilitiesType")).toString())
+          .arg(diagnostics.value(QStringLiteral("apiVersion")).toString())
+          .arg(diagnostics.value(QStringLiteral("viewerSceneId")).toString())
+          .arg(diagnostics.value(QStringLiteral("viewerLifecycleState")).toString())
+          .arg(diagnostics.value(QStringLiteral("viewerTerminal")).toBool() ? QStringLiteral("true") : QStringLiteral("false"))
+          .arg(QString::fromUtf8(QJsonDocument::fromVariant(
+            diagnostics.value(QStringLiteral("runtimeMarker"))).toJson(QJsonDocument::Compact)));
+      if (!result.value(QStringLiteral("ok")).toBool()) {
+        const QString error = result.value(QStringLiteral("error")).toString().isEmpty()
+          ? QStringLiteral("invalid handshake response") : result.value(QStringLiteral("error")).toString();
+        const bool pending = result.value(QStringLiteral("pending")).toBool();
+        if (pending && QDateTime::currentDateTimeUtc() <= embedded_editor_contract_deadline_) {
+          if (attempt == 1) emit studio_log_requested(QStringLiteral(
+            "Embedded Product View live-authoring capability handshake pending: %1; %2")
+              .arg(error, diagnostic_line));
+          QTimer::singleShot(50, this, [this, identity, navigation_token, browser_load_token, readiness_token, expected_url]() {
+            poll_embedded_editor_contract(identity, navigation_token, browser_load_token, readiness_token, expected_url);
+          });
+          return;
+        }
+        embedded_editor_contract_state_ = EmbeddedEditorContractState::Rejected;
+        embedded_editor_contract_ready_ = false;
+        embedded_editor_contract_error_ = pending
+          ? QStringLiteral("editor API installation timed out") : error;
+        embedded_editor_polling_ = false;
+        emit studio_issue_requested(
+          QStringLiteral("Live authoring disabled: embedded Product View contract failed closed (%1). Rebuild viewer.bundle.js and reopen the scene; no scene regeneration was attempted.")
+            .arg(embedded_editor_contract_error_),
+          QStringLiteral("Error"), QStringLiteral("embedded_editor_contract"));
+        emit studio_log_requested(QStringLiteral(
+          "Embedded Product View live-authoring capability handshake rejected: %1; %2")
+            .arg(embedded_editor_contract_error_, diagnostic_line));
+        return;
+      }
+      embedded_editor_contract_state_ = EmbeddedEditorContractState::Accepted;
+      embedded_editor_contract_ready_ = true;
+      embedded_editor_contract_error_.clear();
+      embedded_editor_polling_ = true;
+      emit studio_log_requested(QStringLiteral(
+        "Embedded Product View live-authoring capability handshake accepted: schema=workcell_studio_live_authoring_capabilities/v1 api=1.1.0; %1")
+          .arg(diagnostic_line));
+      poll_embedded_editor_events();
+    });
+}
+
+void ScenePreviewWidget::run_embedded_editor_command(const QString & script)
+{
+  if (!embedded_web_view_ || !embedded_web_authoring_active()) {
+    if (!embedded_editor_contract_error_.isEmpty()) emit studio_log_requested(QStringLiteral(
+      "Live authoring command blocked: %1").arg(embedded_editor_contract_error_));
+    return;
+  }
   const EmbeddedWebRequestIdentity identity = embedded_web_active_identity_;
   const quint64 state_request_token = ++embedded_editor_state_request_token_;
   embedded_web_view_->page()->runJavaScript(script, [this, identity, state_request_token](const QVariant & value){
@@ -2816,6 +3014,8 @@ void ScenePreviewWidget::poll_embedded_editor_events()
     const bool scene_identity_matches = !browser_scene_id.isEmpty() && browser_scene_id == identity.scene_id;
     bool explicit_blank_selection_event = false;
     QString matching_item_type;
+    bool context_menu_requested = false;
+    QPoint context_menu_global_position;
     for (const QVariant & event_value : payload.value(QStringLiteral("events")).toList()) {
       const QVariantMap event = event_value.toMap();
       const QString event_type = event.value(QStringLiteral("type")).toString();
@@ -2835,6 +3035,14 @@ void ScenePreviewWidget::poll_embedded_editor_events()
         } else {
           emit studio_log_requested(QStringLiteral(
             "Embedded Product View placement rejected: placement_requested requires finite x/y/z/roll/pitch/yaw."));
+        }
+      } else if (event_type == QStringLiteral("context_menu_requested")) {
+        bool x_ok = false, y_ok = false;
+        const double x = event.value(QStringLiteral("clientX")).toDouble(&x_ok);
+        const double y = event.value(QStringLiteral("clientY")).toDouble(&y_ok);
+        if (x_ok && y_ok && std::isfinite(x) && std::isfinite(y) && embedded_web_view_) {
+          context_menu_requested = true;
+          context_menu_global_position = embedded_web_view_->mapToGlobal(QPoint(qRound(x), qRound(y)));
         }
       } else if (event_type == QStringLiteral("selection_changed")) {
         QString id = event.value(QStringLiteral("uiItemId")).toString();
@@ -2894,6 +3102,9 @@ void ScenePreviewWidget::poll_embedded_editor_events()
       if (simple_3d_view_) simple_3d_view_->update();
       emit preview_item_selected(QString(), QString());
     }
+    if (context_menu_requested) {
+      emit embedded_authoring_context_menu_requested(context_menu_global_position);
+    }
     if (embedded_editor_polling_) QTimer::singleShot(200, this, [this, identity]() {
       if (embedded_web_identity_is_current(identity)) poll_embedded_editor_events();
     });
@@ -2910,6 +3121,14 @@ void ScenePreviewWidget::arm_embedded_asset_placement(
   const QString & asset_id, const QString & mesh_uri, double mesh_scale, bool persistent)
 {
   if (product_view_backend_ != ProductViewBackend::EmbeddedWeb3D) return;
+  QString browser_mesh_uri = mesh_uri.trimmed();
+  const QFileInfo mesh_info(browser_mesh_uri);
+  const QString repo_root = preview_context_.absolute_repo_root.trimmed();
+  if (mesh_info.isAbsolute() && !repo_root.isEmpty()) {
+    const QString relative = QDir(repo_root).relativeFilePath(mesh_info.absoluteFilePath());
+    browser_mesh_uri = relative.startsWith(QStringLiteral("../"))
+      ? QString() : QDir::cleanPath(relative);
+  }
   const QJsonObject options{
     {QStringLiteral("persistent"), persistent},
     {QStringLiteral("asset"), QJsonObject{
@@ -2918,7 +3137,7 @@ void ScenePreviewWidget::arm_embedded_asset_placement(
       {QStringLiteral("category"), QStringLiteral("authored_asset_object")},
       {QStringLiteral("source_kind"), QStringLiteral("user_authored")},
       {QStringLiteral("source_layer"), QStringLiteral("placement_preview")},
-      {QStringLiteral("mesh_uri"), mesh_uri},
+      {QStringLiteral("mesh_uri"), browser_mesh_uri},
       {QStringLiteral("mesh_scale"), QJsonArray{mesh_scale, mesh_scale, mesh_scale}},
     }},
   };
@@ -2945,7 +3164,15 @@ bool ScenePreviewWidget::is_native_product_view_backend() const
 bool ScenePreviewWidget::embedded_web_authoring_active() const
 {
   return product_view_backend_ == ProductViewBackend::EmbeddedWeb3D &&
-    !native_compatibility_fallback_active_ && stack_ && stack_->currentWidget() == view3d_container_;
+    !native_compatibility_fallback_active_ && stack_ && stack_->currentWidget() == view3d_container_ &&
+    embedded_product_view_state_ == EmbeddedProductViewState::Ready && embedded_editor_contract_ready_;
+}
+
+QString ScenePreviewWidget::embedded_web_authoring_contract_error() const
+{
+  if (embedded_web_authoring_active()) return {};
+  return embedded_editor_contract_error_.isEmpty() ?
+    QStringLiteral("live-authoring capability handshake has not completed") : embedded_editor_contract_error_;
 }
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
@@ -3006,9 +3233,9 @@ void ScenePreviewWidget::set_authoring_item_pose(
       .mid(1).chopped(1);
 
   const QString script = QStringLiteral(
-    "window.__WORKCELL_EDITOR_API_V1__&&"
-    "window.__WORKCELL_EDITOR_API_V1__.setItemPose("
-    "%1,%2,%3,%4,%5,%6,%7)")
+    "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
+    "const f=a&&(typeof a.syncItemTransform==='function'?a.syncItemTransform:a.setItemPose);"
+    "return typeof f==='function'?f.call(a,%1,%2,%3,%4,%5,%6,%7):{error:'missing_transform_api'};})()")
       .arg(encoded_id)
       .arg(x, 0, 'g', 17)
       .arg(y, 0, 'g', 17)
@@ -3018,6 +3245,135 @@ void ScenePreviewWidget::set_authoring_item_pose(
       .arg(yaw, 0, 'g', 17);
 
   run_embedded_editor_command(script);
+}
+
+void ScenePreviewWidget::set_authoring_item_metadata(
+  const QString & id, const QString & display_name, const QString & semantic_role)
+{
+  const QString stable_id = id.trimmed();
+  if (stable_id.isEmpty()) return;
+  for (auto & item : preview_items_) {
+    if (item.id.trimmed() != stable_id) continue;
+    if (!display_name.trimmed().isEmpty()) item.display_name = display_name.trimmed();
+    if (!semantic_role.trimmed().isEmpty()) item.role = semantic_role.trimmed();
+    break;
+  }
+  if (!embedded_web_authoring_active()) return;
+  const auto encode = [](const QString & value) {
+    return QString::fromUtf8(QJsonDocument(QJsonArray{value}).toJson(QJsonDocument::Compact))
+      .mid(1).chopped(1);
+  };
+  const QString script = QStringLiteral(
+    "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
+    "return a&&typeof a.setItemMetadata==='function'"
+    "?a.setItemMetadata(%1,%2,%3):{error:'missing_setItemMetadata'};})()")
+      .arg(encode(id), encode(display_name), encode(semantic_role));
+  run_embedded_editor_command(script);
+}
+
+void ScenePreviewWidget::add_authoring_item(const PreviewItem & item)
+{
+  const QString stable_id = item.id.trimmed();
+  if (stable_id.isEmpty()) return;
+  bool replaced = false;
+  for (auto & existing : preview_items_) {
+    if (existing.id.trimmed() != stable_id) continue;
+    existing = item;
+    replaced = true;
+    break;
+  }
+  if (!replaced) preview_items_.push_back(item);
+  if (!embedded_web_authoring_active()) return;
+  QString mesh_source = item.mesh_path.trimmed();
+  if (mesh_source.isEmpty()) mesh_source = item.source_path.trimmed();
+  const QFileInfo mesh_info(mesh_source);
+  if (mesh_info.isAbsolute() && mesh_info.isFile() && !preview_context_.absolute_repo_root.isEmpty()) {
+    const QString relative = QDir(preview_context_.absolute_repo_root).relativeFilePath(mesh_info.absoluteFilePath());
+    if (!relative.startsWith(QStringLiteral("../"))) mesh_source = QDir::cleanPath(relative);
+  }
+  QJsonObject live_item = authoring_overlay_item(item, mesh_source);
+  if (mesh_source.startsWith(QStringLiteral("assets/")) ||
+      mesh_source.startsWith(QStringLiteral("scenes/")) ||
+      mesh_source.startsWith(QStringLiteral("workcell_studio_web/")) ||
+      mesh_source.startsWith(QStringLiteral("build/workcell_studio_web_scene/assets/"))) {
+    live_item.insert(QStringLiteral("mesh_uri"), mesh_source);
+  }
+  const QString payload = QString::fromUtf8(
+    QJsonDocument(live_item).toJson(QJsonDocument::Compact));
+  run_embedded_editor_command(QStringLiteral(
+    "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
+    "return a&&typeof a.addItem==='function'?a.addItem(%1):{error:'missing_addItem'};})()")
+    .arg(payload));
+}
+
+void ScenePreviewWidget::duplicate_authoring_item(
+  const QString & source_id, const PreviewItem & item)
+{
+  const QString stable_id = item.id.trimmed();
+  if (stable_id.isEmpty()) return;
+  bool replaced = false;
+  for (auto & existing : preview_items_) {
+    if (existing.id.trimmed() != stable_id) continue;
+    existing = item;
+    replaced = true;
+    break;
+  }
+  if (!replaced) preview_items_.push_back(item);
+  if (!embedded_web_authoring_active()) return;
+  QString mesh_source = item.mesh_path.trimmed();
+  if (mesh_source.isEmpty()) mesh_source = item.source_path.trimmed();
+  const QFileInfo mesh_info(mesh_source);
+  if (mesh_info.isAbsolute() && mesh_info.isFile() && !preview_context_.absolute_repo_root.isEmpty()) {
+    const QString relative = QDir(preview_context_.absolute_repo_root).relativeFilePath(mesh_info.absoluteFilePath());
+    if (!relative.startsWith(QStringLiteral("../"))) mesh_source = QDir::cleanPath(relative);
+  }
+  QJsonObject live_item = authoring_overlay_item(item, mesh_source);
+  if (mesh_source.startsWith(QStringLiteral("assets/")) ||
+      mesh_source.startsWith(QStringLiteral("scenes/")) ||
+      mesh_source.startsWith(QStringLiteral("workcell_studio_web/")) ||
+      mesh_source.startsWith(QStringLiteral("build/workcell_studio_web_scene/assets/"))) {
+    live_item.insert(QStringLiteral("mesh_uri"), mesh_source);
+  }
+  const QString payload = QString::fromUtf8(
+    QJsonDocument(live_item).toJson(QJsonDocument::Compact));
+  const QString encoded_source = QString::fromUtf8(
+    QJsonDocument(QJsonArray{source_id}).toJson(QJsonDocument::Compact)).mid(1).chopped(1);
+  run_embedded_editor_command(QStringLiteral(
+    "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
+    "return a&&typeof a.duplicateItem==='function'"
+    "?a.duplicateItem(%1,%2):{error:'missing_duplicateItem'};})()")
+    .arg(encoded_source, payload));
+}
+
+void ScenePreviewWidget::remove_authoring_item(const QString & id)
+{
+  const QString stable_id = id.trimmed();
+  if (stable_id.isEmpty()) return;
+  for (int i = preview_items_.size() - 1; i >= 0; --i) {
+    if (preview_items_[i].id.trimmed() == stable_id) preview_items_.removeAt(i);
+  }
+  if (selected_preview_item_id_.trimmed() == stable_id) selected_preview_item_id_.clear();
+  if (!embedded_web_authoring_active()) return;
+  const QString encoded_id = QString::fromUtf8(
+    QJsonDocument(QJsonArray{stable_id}).toJson(QJsonDocument::Compact)).mid(1).chopped(1);
+  run_embedded_editor_command(QStringLiteral(
+    "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
+    "return a&&typeof a.removeItem==='function'"
+    "?a.removeItem(%1):{error:'missing_removeItem'};})()")
+    .arg(encoded_id));
+}
+
+void ScenePreviewWidget::set_live_visible_item_ids(const QSet<QString> & ids)
+{
+  if (!embedded_web_authoring_active()) return;
+  QJsonArray values;
+  for (const QString & id : ids) values.push_back(id);
+  const QString payload = QString::fromUtf8(QJsonDocument(values).toJson(QJsonDocument::Compact));
+  run_embedded_editor_command(QStringLiteral(
+    "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
+    "return a&&typeof a.setVisibleItemIds==='function'"
+    "?a.setVisibleItemIds(%1):{error:'missing_setVisibleItemIds'};})()")
+    .arg(payload));
 }
 
 void ScenePreviewWidget::request_authoring_save()
@@ -3054,7 +3410,11 @@ void ScenePreviewWidget::set_preview_context(const PreviewContext & context)
 {
   const PreviewContext normalized = normalized_preview_context(context);
   const bool context_changed = !preview_contexts_equal(preview_context_, normalized);
-  if (!context_changed) return;
+  if (!context_changed) {
+    if (deferred_embedded_web_request_) request_embedded_web_product_view_refresh(
+      deferred_embedded_web_force_, QStringLiteral("deferred_context_recheck"), deferred_embedded_web_source_policy_);
+    return;
+  }
 
   const QString previous_scene_id = normalized_preview_context(preview_context_).scene_id;
   const bool scene_identity_changed = previous_scene_id != normalized.scene_id;
@@ -3339,7 +3699,7 @@ void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items)
   }
   if (viewport) viewport->fit_include_overlays = false;
   apply_product_view_defaults();
-  if (payload_changed) refresh_embedded_web_product_view();
+  if (payload_changed || deferred_embedded_web_request_) refresh_embedded_web_product_view();
   if (is_native_product_view_backend()) {
     emit_scene_diagnostic_once(
       QStringLiteral("payload_commit"),

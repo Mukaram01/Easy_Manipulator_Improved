@@ -148,6 +148,7 @@ private:
   QString selected_scene_name() const;
   QString selected_scene_path() const;
   bool has_selected_scene() const;
+  bool ensure_live_authoring_mutation_available(const QString & action);
   QString compact_scene_path_context(const QString & scene_name, const QString & full_path) const;
   void update_scene_builder_path_header(const QString & scene_name, const QString & full_path);
   struct SelectedSceneState
@@ -332,7 +333,6 @@ private:
   bool save_native_layout_changes(const QJsonObject & web_patch, QString * error = nullptr);
   bool apply_web_transforms_to_editable_layout_session(
     const QJsonObject & web_patch, QString * error = nullptr);
-  QSet<QString> active_editable_layout_item_ids() const;
   void create_starter_layout_from_preview();
   void refresh_create_starter_layout_action();
   void revert_layout_changes();
@@ -418,6 +418,9 @@ private:
   void refresh_scene_builder_view_chips();
   void populate_scene_hierarchy();
   void refresh_scene_hierarchy_tree_from_current_items();
+  void show_scene_hierarchy_context_menu(const QPoint & position);
+  void show_canvas_context_menu(const QPoint & global_position);
+  void rename_selected_item();
   void apply_scene3d_product_view_layer_defaults_and_commit();
   void apply_scene3d_preview_layer_filters(bool log_change = false);
   void refresh_scene3d_product_view_status_and_audit();
@@ -573,6 +576,7 @@ private:
   QLabel * selected_item_reason_label_{ nullptr };
   QPushButton * scene_move_mode_button_{ nullptr };
   QPushButton * scene_rotate_mode_button_{ nullptr };
+  QPushButton * scene_duplicate_context_button_{ nullptr };
   QTreeWidget * asset_catalog_tree_{ nullptr };
   QTreeWidget * scene_files_tree_{ nullptr };
   QComboBox * asset_filter_combo_{ nullptr };
@@ -728,14 +732,18 @@ private:
       const QPointF & new_pos,
       bool created,
       bool deleted,
-      const QVector<ScenePreviewWidget::PreviewItem> & preview_items)
+      const QVector<ScenePreviewWidget::PreviewItem> & preview_items,
+      const ScenePreviewWidget::PreviewItem & before_item = {},
+      const ScenePreviewWidget::PreviewItem & after_item = {})
     : kind(kind),
       item_id(item_id),
       old_pos(old_pos),
       new_pos(new_pos),
       created(created),
       deleted(deleted),
-      preview_items(preview_items)
+      preview_items(preview_items),
+      before_item(before_item),
+      after_item(after_item)
     {
     }
 
@@ -746,10 +754,13 @@ private:
     bool created;
     bool deleted;
     QVector<ScenePreviewWidget::PreviewItem> preview_items;
+    ScenePreviewWidget::PreviewItem before_item;
+    ScenePreviewWidget::PreviewItem after_item;
   };
   QSet<QString> deleted_layout_item_ids_;
   std::vector<CanvasEditCommand> undo_stack_;
   std::vector<CanvasEditCommand> redo_stack_;
+  QSet<QString> pending_native_web_pose_signatures_;
   QLabel * preview_scene_label_{ nullptr };
   QTableWidget * diagnostics_table_{ nullptr };
   QLabel * diagnostics_status_label_{ nullptr };

@@ -57,6 +57,8 @@ scenes/*/generated/
 # Workcell Studio local authoring backups
 scenes/**/*.yaml.bak
 scenes/**/*.yml.bak
+scenes/**/*.bak.yaml
+scenes/**/*.malformed_backup_*
 
 # Workcell Studio Web 3D exports
 *.web_scene.json

@@ -5,6 +5,7 @@ MAIN_CPP = (ROOT / 'workcell_builder/workcell_builder/gui/mainwindow.cpp').read_
 MAIN_H = (ROOT / 'workcell_builder/workcell_builder/gui/mainwindow.h').read_text(encoding='utf-8')
 PREVIEW_H = (ROOT / 'workcell_builder/workcell_builder/gui/scene_preview_widget.h').read_text(encoding='utf-8')
 CANVAS_MODEL_CPP = (ROOT / 'workcell_builder/workcell_builder/src_workcell_studio_canvas_model.cpp').read_text(encoding='utf-8')
+LAYOUT_SERIALIZER = (ROOT / 'workcell_builder/workcell_builder/gui/layout_item_serializer.hpp').read_text(encoding='utf-8')
 
 
 def test_layout_item_model_supports_required_types():
@@ -40,6 +41,7 @@ def test_transform_and_dimensions_update_selected_item_only_contract_present():
 
 
 def test_save_roundtrip_preserves_metadata_and_updates_task_zones_contract_present():
+    save_contract = MAIN_CPP + '\n' + LAYOUT_SERIALIZER
     for token in [
         'workcell_studio_layout.yaml',
         'item["id"]',
@@ -52,13 +54,13 @@ def test_save_roundtrip_preserves_metadata_and_updates_task_zones_contract_prese
         'item["dimensions"]',
         'root["task_zones"]',
     ]:
-        assert token in MAIN_CPP
+        assert token in save_contract
 
 
 def test_save_roundtrip_reselects_by_stable_id_and_preserves_selection_when_missing():
     for token in [
         'stable_selected_id_before_refresh',
-        'Save Layout: rebuilding Scene3D data after save',
+        'Save Layout: live authored session retained without Product View regeneration',
         'apply_scene_selection(stable_selected_id_before_refresh',
         'Ignored selection id absent from active scene payload; existing selection preserved',
     ]:

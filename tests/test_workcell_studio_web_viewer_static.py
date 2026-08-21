@@ -172,19 +172,29 @@ assert.strictEqual(isCanvasSelectableRendered(ordinaryDiagnostic),false);
 const physicalItem={id:'editable_fixture',role:'table',editable:true,locked:false,render_policy:'primary',source_layer:'editable_layout'};
 const physicalRoot=node('editable_fixture'); physicalRoot.userData.item=physicalItem;
 const physicalRecord={item:physicalItem,object3d:physicalRoot}; state.objects.push(physicalRecord);
+const physicalPickRecord=registerCanonicalPhysicalPick(physicalRecord,'loaded_physical_mesh');
+assert.notStrictEqual(physicalPickRecord,physicalRecord,'physical raycast identity stays separate from authored edit authority');
+assert.strictEqual(physicalPickRecord.readOnlyPick,true);
+assert.strictEqual(state.pickIdentityByObject.get(physicalRoot),physicalPickRecord);
+selectObjectFromRender('editable_fixture',physicalPickRecord);
+assert.strictEqual(editorState().selectedItemId,'editable_fixture');
+assert.strictEqual(editorState().editOwnerItemId,'editable_fixture');
+assert.strictEqual(editorState().selectedEditable,true,'canonical physical picks keep Duplicate and other native authoring commands enabled');
+assert.strictEqual(currentSelectionDiagnostics().editable,true);
 const edge=node('fixture_fallback_edges'); edge.userData.selectable=false; edge.parent=physicalRoot;
 const frustum=node('camera_fallback_sensor_frustum'); frustum.userData.non_selectable=true; frustum.parent=physicalRoot;
-assert.strictEqual(itemFromRaycastHit({object:edge}),null,'fallback edges do not alias their physical parent');
+assert.strictEqual(itemFromRaycastHit({object:edge}),null,'fallback edges remain non-selectable and do not impersonate their physical parent');
+assert.strictEqual(rankedPickingCandidates([{object:edge,distance:1},{object:physicalRoot,distance:2}])[0].rendered,physicalPickRecord,'fallback edge rejection continues to the registered physical body hit');
 assert.strictEqual(itemFromRaycastHit({object:frustum}),null,'sensor frustums do not alias their physical parent');
 const hiddenFallback=node('hidden_fallback_edges'); hiddenFallback.visible=false; hiddenFallback.parent=physicalRoot;
-assert.strictEqual(rankedPickingCandidates([{object:hiddenFallback,distance:1},{object:physicalRoot,distance:2}])[0].rendered,physicalRecord,'a hidden fallback hit does not suppress a later physical hit');
+assert.strictEqual(rankedPickingCandidates([{object:hiddenFallback,distance:1},{object:physicalRoot,distance:2}])[0].rendered,physicalPickRecord,'a hidden fallback hit does not suppress a later physical hit');
 const taskOverlay=node('task-overlay'); taskOverlay.userData.item={id:'task_overlay',role:'task_marker',source_layer:'task_preview'};
 const debugOverlay=node('debug-overlay'); debugOverlay.userData.item={id:'debug_overlay',diagnostic_only:true,role:'debug_overlay'};
 const gizmo=node('TransformControls_gizmo');
 const highlight=node('selection_subtle_bounds_highlight'); highlight.userData.selection_highlight=true;
 const hiddenHelper=node('hidden-helper'); hiddenHelper.userData.helper_hidden=true;
 for (const excluded of [taskOverlay,debugOverlay,gizmo,highlight,hiddenHelper]) assert.strictEqual(itemFromRaycastHit({object:excluded}),null,excluded.name+' remains intrinsically excluded');
-assert.strictEqual(rankedPickingCandidates([{object:mesh,distance:1},{object:physicalRoot,distance:1}])[0].rendered,physicalRecord,'editable primary physical items retain priority over generated inspection records');
+assert.strictEqual(rankedPickingCandidates([{object:mesh,distance:1},{object:physicalRoot,distance:1}])[0].rendered,physicalPickRecord,'editable primary physical items retain priority over generated inspection records');
 assert.strictEqual(pickingPriority(physicalRecord),1);
 state.objects=[];
 
@@ -493,7 +503,8 @@ vm.runInContext(source + `
 def test_index_references_static_assets():
     index = (VIEWER / "index.html").read_text(encoding="utf-8")
     assert 'href="style.css"' in index
-    assert 'src="./dist/viewer.bundle.js"' in index or 'src="dist/viewer.bundle.js"' in index
+    assert "import(`./dist/viewer.bundle.js?v=${viewerBuild}`).catch" in index
+    assert "^[a-f0-9]{64}$" in index
     assert 'id="scene-file"' in index
     assert 'scene-file' in index
 

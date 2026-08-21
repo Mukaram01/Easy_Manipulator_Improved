@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import math
 import os
@@ -1423,7 +1424,14 @@ def run_one_scene(scene_dir: Path, *, output_path: Path | None, scene_id: str | 
         steps.append(run_step([sys.executable, "scripts/check_workcell_web_scene_visual_bounds.py", repo_relative(output_path), "--json"]))
     server_status = "not_started"; server = None
     browser = {"available": False, "method": "not_run", "status": None}
-    viewer_url = f"http://localhost:{port}/workcell_studio_web/viewer/index.html?scene={quote(repo_relative(output_path))}&force_refresh={int(time.time() * 1000)}"
+    viewer_bundle = REPO_ROOT / "workcell_studio_web" / "viewer" / "dist" / "viewer.bundle.js"
+    viewer_build = hashlib.sha256(viewer_bundle.read_bytes()).hexdigest()
+    viewer_url = (
+        f"http://localhost:{port}/workcell_studio_web/viewer/index.html"
+        f"?scene={quote(repo_relative(output_path))}"
+        f"&force_refresh={int(time.time() * 1000)}"
+        f"&viewerBuild={viewer_build}"
+    )
     if all(step["returncode"] == 0 for step in steps):
         server_status, server = start_or_reuse_server(port)
         if server_status != "failed":

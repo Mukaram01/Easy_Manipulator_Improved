@@ -1009,3 +1009,10 @@ def test_supported_scene_reproducibility_gate_reports_pass(monkeypatch, tmp_path
     report = module.run_supported_scene_reproducibility_gate(output=tmp_path / "report.json")
     assert report["counts"]["PASS"] == 1
     assert report["status"] == "PASS"
+
+
+def test_visual_acceptance_versions_the_exact_viewer_bundle() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert 'viewer_bundle = REPO_ROOT / "workcell_studio_web" / "viewer" / "dist" / "viewer.bundle.js"' in source
+    assert "hashlib.sha256(viewer_bundle.read_bytes()).hexdigest()" in source
+    assert 'f"&viewerBuild={viewer_build}"' in source

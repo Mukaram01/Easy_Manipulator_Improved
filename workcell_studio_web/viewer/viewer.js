@@ -41,7 +41,7 @@ const CAMERA_PRESET_DIRECTIONS = Object.freeze({
   top: [0, -0.001, 1],
   robot: [1.1, -1.25, 0.72],
 });
-const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], pickRecords: [], pickIdentityByObject: new WeakMap(), selectionIdentityIndex: null, physicalEditBindings: new Map(), assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: '', three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], transformClipboard: null, transformClipboardStatus: '', gizmoDragStart: null, gizmoPivot: null, gizmoPivotDragStart: null, cancellingTransformOperation: false, gizmoAttachmentDiagnostic: { targetId: '', reason: 'not_evaluated' }, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', transformSpace: 'world', editorEvents: [], editorError: '', healthAutoOpenedNavigationKey: '', placement: { armed: false, persistent: false, previewRoot: null, asset: null, orientationPreset: 'upright', orientationQuaternion: null, yaw: 0, rawPoint: null, proposedPoint: null, supportOwnerId: '', supportValid: false, collision: false, collidingOwnerIds: [], valid: null }, robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: '', lastCanvasPickReason: '', lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
+const state = { sceneJson: null, sourceWebSceneFile: '', diagnosticKeys: new Set(), frameLookup: new Map(), resolvedFramePoses: new Map(), objects: [], pickRecords: [], pickIdentityByObject: new WeakMap(), selectionIdentityIndex: null, physicalEditBindings: new Map(), assemblyRoots: [], robotAssemblyDiagnostics: [], robotAssemblyRenderDiagnostics: {}, robotUrdfPreviewDiagnostics: {}, physicalAssemblyBounds: null, finalPhysicalFitBounds: null, selected: null, selectedRenderIdentityId: '', three: {}, animationId: null, lastFrameBounds: null, initialCameraFit: { sceneKey: '', done: false, attempts: 0, pendingRetry: null, userControlled: false }, runtimeWarnings: [], labelsVisible: false, debugOverlaysVisible: false, dirtyTransforms: new Map(), undoStack: [], redoStack: [], transformClipboard: null, transformClipboardStatus: '', gizmoDragStart: null, gizmoPivot: null, gizmoPivotDragStart: null, cancellingTransformOperation: false, gizmoAttachmentDiagnostic: { targetId: '', reason: 'not_evaluated' }, directMoveDrag: null, directRotateDrag: null, editorMode: 'select', transformSpace: 'world', editorEvents: [], editorError: '', healthAutoOpenedNavigationKey: '', placement: { armed: false, persistent: false, previewRoot: null, asset: null, orientationPreset: 'upright', orientationQuaternion: null, yaw: 0, rawPoint: null, proposedPoint: null, supportOwnerId: '', supportValid: false, collision: false, collidingOwnerIds: [], valid: null }, robotPreviewResult: null, lastRaycastHitCount: 0, lastRaycastCandidateIds: [], lastCanvasSelectedItemId: '', lastCanvasPickReason: '', lastCanvasPickDiagnostic: null, lastFailedCanvasPickDiagnostic: null, initialPosePreview: { active: false, robotId: '', sceneKey: '' }, web3dReadiness: { state: 'booting', terminal: false, terminalState: '', terminalNavigationKey: '', terminalEmissionCount: 0, statusSequence: 0, required: {}, pending: new Set(), failed: false, failure: null }, builderRevision: '', sceneJsonLoaded: false, activeNavigationKey: '' };
 const PLACEMENT_COLLISION_EPSILON = 1e-5;
 const PLACEMENT_CONTACT_EPSILON = 1e-5;
 const PLACEMENT_ORIENTATION_PRESETS = Object.freeze({
@@ -1434,6 +1434,7 @@ function currentSelectionDiagnostics() {
   const id = String(state.selected || '');
   const rendered = selectedRenderIdentity();
   const editOwner = canonicalTransformOwner(rendered);
+  const hasExplicitTransformOwner = explicitUiSelectionItemId(rendered) !== rendered?.item?.id;
   const binding = resolveCanonicalPhysicalEditBinding(rendered || id);
   const item = rendered?.item || null;
   const selectionIdentity = uiSelectionIdentity(rendered);
@@ -1470,7 +1471,8 @@ function currentSelectionDiagnostics() {
     renderIdentity: rendered?.item?.id || '',
     selectedItemType: rendered ? itemType(item) : '',
     selectable: Boolean(rendered && isCanvasSelectableRendered(rendered)),
-    editable: Boolean(item && editOwner === rendered && !rendered?.readOnlyPick && canEditItem(item)),
+    editable: Boolean(selectionIsEditable(rendered) ||
+      ((hasExplicitTransformOwner || rendered?.authoritativePhysicalPick === true) && selectionIsEditable(editOwner))),
     locked: Boolean(item?.locked),
     sourceLayer: String(item?.source_layer || ''),
     activeVisualSource: String(item?.active_visual_source || ''),
@@ -1486,6 +1488,7 @@ function currentSelectionDiagnostics() {
     lastRaycastCandidateIds: [...state.lastRaycastCandidateIds],
     lastCanvasSelectedItemId: state.lastCanvasSelectedItemId,
     lastCanvasPickReason: state.lastCanvasPickReason,
+    lastCanvasPickDiagnostic: state.lastCanvasPickDiagnostic,
     lastFailedCanvasPickDiagnostic: state.lastFailedCanvasPickDiagnostic,
   };
 }
@@ -1493,7 +1496,7 @@ function editorState() {
   const rendered = selectedRenderIdentity();
   const editOwner = canonicalTransformOwner(rendered);
   const hasExplicitTransformOwner = explicitUiSelectionItemId(rendered) !== rendered?.item?.id;
-  return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || '', uiSelectionItemId: state.selected || '', editOwnerItemId: editOwner?.item?.id || '', selectedItemType: rendered ? itemType(rendered.item) : '', selectedEditable: selectionIsEditable(rendered) || (hasExplicitTransformOwner && selectionIsEditable(editOwner)), selectionDiagnostics: currentSelectionDiagnostics(), lastRaycastHitCount: state.lastRaycastHitCount, lastRaycastCandidateIds: [...state.lastRaycastCandidateIds], lastCanvasSelectedItemId: state.lastCanvasSelectedItemId, lastCanvasPickReason: state.lastCanvasPickReason, lastFailedCanvasPickDiagnostic: state.lastFailedCanvasPickDiagnostic, dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, transformSpace: state.transformSpace, error: state.editorError || '' };
+  return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || '', uiSelectionItemId: state.selected || '', editOwnerItemId: editOwner?.item?.id || '', selectedItemType: rendered ? itemType(rendered.item) : '', selectedEditable: selectionIsEditable(rendered) || ((hasExplicitTransformOwner || rendered?.authoritativePhysicalPick === true) && selectionIsEditable(editOwner)), selectionDiagnostics: currentSelectionDiagnostics(), lastRaycastHitCount: state.lastRaycastHitCount, lastRaycastCandidateIds: [...state.lastRaycastCandidateIds], lastCanvasSelectedItemId: state.lastCanvasSelectedItemId, lastCanvasPickReason: state.lastCanvasPickReason, lastCanvasPickDiagnostic: state.lastCanvasPickDiagnostic, lastFailedCanvasPickDiagnostic: state.lastFailedCanvasPickDiagnostic, dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, transformSpace: state.transformSpace, error: state.editorError || '' };
 }
 function emitDirtyChanged() { pushEditorEvent('dirty_changed', { dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0 }); }
 function showError(message) {
@@ -1736,6 +1739,42 @@ function registerPickRecord(item, object3d, root = object3d, options = {}) {
   const record = { item, object3d, pickRoot: root, readOnlyPick: true, ...options };
   state.pickRecords.push(record);
   state.pickIdentityByObject.set(object3d, record);
+  return record;
+}
+function registerCanonicalPhysicalPick(rendered, source = 'rendered_physical') {
+  if (!rendered?.item?.id || !rendered.object3d ||
+      !isPhysicalSemanticItem(rendered.item) || !isNormalSelectableRendered(rendered)) return null;
+  const ownerId = String(explicitUiSelectionItemId(rendered) || rendered.item.id).trim();
+  if (!ownerId) return null;
+  let record = rendered.canonicalPickRecord;
+  if (!record || !state.pickRecords.includes(record)) {
+    record = registerPickRecord(rendered.item, rendered.object3d, rendered.object3d, {
+      // The pick record describes the physical hit identity; edit authority
+      // remains with the one authored state.objects record for this stable ID.
+      readOnlyPick: true,
+      pickRecordSource: source,
+      authoritativePhysicalPick: true,
+      uiSelectionOwnerId: ownerId,
+      uiSelectionResolution: ownerId === rendered.item.id ? 'authored_stable_id' : 'explicit_selection_owner',
+      canonicalRenderedRecord: rendered,
+    });
+    rendered.canonicalPickRecord = record;
+  } else {
+    record.item = rendered.item;
+    record.object3d = rendered.object3d;
+    record.pickRoot = rendered.object3d;
+    record.pickRecordSource = source;
+    record.uiSelectionOwnerId = ownerId;
+  }
+  let boundNodeCount = 0;
+  rendered.object3d.traverse?.(node => {
+    state.pickIdentityByObject.set(node, record);
+    node.userData = node.userData || {};
+    node.userData.canonical_physical_owner_id = ownerId;
+    node.userData.authoritative_physical_pick = true;
+    boundNodeCount += 1;
+  });
+  record.canonicalPickBoundNodeCount = boundNodeCount;
   return record;
 }
 function bindExpandedUrdfPickRecordToSubtree(linkRoot, record, urdfLinkRoots) {
@@ -2776,6 +2815,7 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
     rendered.object3d.add(visualRoot);
     rendered.meshObject = visualRoot;
     rendered.loadedMeshObject = meshObject;
+    registerCanonicalPhysicalPick(rendered, 'loaded_physical_mesh');
     item.mesh_status = 'loaded';
     suppressOwnedAuthoredFallback(rendered);
     item.mesh_load_error = '';
@@ -4103,6 +4143,7 @@ function resetSceneLifecycleState() {
   state.lastRaycastCandidateIds = [];
   state.lastCanvasSelectedItemId = '';
   state.lastCanvasPickReason = '';
+  state.lastCanvasPickDiagnostic = null;
   state.lastFailedCanvasPickDiagnostic = null;
   state.assemblyRoots = [];
   state.robotAssemblyDiagnostics = [];
@@ -4211,6 +4252,7 @@ function renderScene(items) {
     if (fallback) fallback.visible = !requiredMesh;
     setRenderInfo(rendered, fallbackStatus, displayMeshUri(item), fallbackReason);
     state.objects.push(rendered);
+    registerCanonicalPhysicalPick(rendered, fallback ? 'initial_physical_fallback' : 'initial_physical_root');
     maybeWarnSupportSurfaceSemantics(item);
     const category = readinessCategoryForItem(item);
     const operation = registerReadinessOperation(category ? [readinessKey(category, item)] : []);
@@ -4901,6 +4943,12 @@ function passThroughPickNode(node) {
 function excludedPickNode(node) {
   return intrinsicallyExcludedPickNode(node) || passThroughPickNode(node);
 }
+function hiddenPickSubtree(node) {
+  for (let current = node; current; current = current.parent) {
+    if (current.visible === false) return current;
+  }
+  return null;
+}
 function intrinsicallyExcludedPickItem(item) {
   const sourceLayer = String(item?.source_layer || '').toLowerCase();
   const identity = [item?.role, item?.category, item?.id].map(value => String(value || '').toLowerCase()).join(' ');
@@ -4912,6 +4960,12 @@ function resolveCanvasPickHit(hit) {
   let candidate = null;
   let registeredRecord = null;
   let rejectionReason = 'no_registered_or_rendered_identity';
+  const hiddenAncestor = hiddenPickSubtree(node);
+  if (hiddenAncestor) {
+    return { renderIdentity: null, selectionOwner: null, selectionOwnerSource: '', editOwner: null,
+      eligible: false, rejectionReason: 'hit_hidden_subtree', exclusionNode: hiddenAncestor,
+      exclusionFlag: 'visible=false', registeredRecord: null, hit };
+  }
   while (node) {
     // Registration is authoritative for expanded-URDF inspection descendants.
     // Loader-provided Collada/URDF userData can contain stale diagnostic flags,
@@ -4988,6 +5042,7 @@ function rankedPickingCandidates(hits) {
   const candidates = [];
   const seen = new Set();
   for (const hit of hits || []) {
+    if (hiddenPickSubtree(hit?.object)) continue;
     const resolved = resolveCanvasPickHit(hit);
     const rendered = resolved.renderIdentity;
     const identityKey = `${rendered?.item?.id || ''}|${resolved.selectionOwner?.item?.id || ''}`;
@@ -5560,7 +5615,8 @@ function pickObject(event) {
     for (let ancestor = root.parent; ancestor; ancestor = ancestor.parent) if (candidateSet.has(ancestor)) return false;
     return true;
   });
-  const hits = state.three.raycaster.intersectObjects(roots, true);
+  const rawHits = state.three.raycaster.intersectObjects(roots, true);
+  const hits = rawHits.filter(hit => !hiddenPickSubtree(hit?.object));
   const candidates = rankedPickingCandidates(hits);
   state.lastRaycastHitCount = hits.length;
   state.lastRaycastCandidateIds = candidates.map(candidate => candidate.rendered.item.id);
@@ -5568,6 +5624,7 @@ function pickObject(event) {
   if (!selectedCandidate) {
     state.lastCanvasSelectedItemId = '';
     state.lastCanvasPickReason = hits.length ? 'no_eligible_candidate' : 'empty_select_click';
+    state.lastCanvasPickDiagnostic = null;
     state.lastFailedCanvasPickDiagnostic = hits.length ? failedCanvasPickDiagnostic(hits) : null;
     if (state.lastFailedCanvasPickDiagnostic) {
       const diagnostic = state.lastFailedCanvasPickDiagnostic;
@@ -5593,6 +5650,23 @@ function pickObject(event) {
   selectObjectFromRender(canonicalId, selectedCandidate.rendered);
   state.lastCanvasSelectedItemId = canonicalId;
   state.lastCanvasPickReason = 'eligible_candidate';
+  state.lastCanvasPickDiagnostic = {
+    pointer: { clientX: event.clientX, clientY: event.clientY },
+    canvasRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+    ndc: { x: state.three.pointer.x, y: state.three.pointer.y },
+    rawHitCount: hits.length,
+    selectedItemId: canonicalId,
+    selectedRenderIdentityId: selectedCandidate.rendered?.item?.id || '',
+    candidates: candidates.slice(0, 16).map(candidate => ({
+      renderIdentityId: candidate.rendered?.item?.id || '',
+      selectionOwnerId: candidate.selectionOwner?.item?.id || '',
+      hitNodeName: candidate.hit?.object?.name || '',
+      distance: Number(candidate.hit?.distance),
+      priority: candidate.priority,
+      authoritativePhysicalPick: candidate.rendered?.authoritativePhysicalPick === true,
+      pickRecordSource: candidate.rendered?.pickRecordSource || '',
+    })),
+  };
   state.lastFailedCanvasPickDiagnostic = null;
   return canonicalId;
 }
@@ -5693,7 +5767,16 @@ function onCanvasPointerMove(event) {
 }
 function onCanvasPointerUp(event) {}
 function onCanvasPointerCancel() { cancelActiveTransformOperation('Pointer cancelled'); }
-function onCanvasContextMenu(event) { event.preventDefault(); }
+function onCanvasContextMenu(event) {
+  event.preventDefault();
+  if (state.placement.armed) return;
+  pickObject(event);
+  pushEditorEvent('context_menu_requested', {
+    clientX: Number(event.clientX),
+    clientY: Number(event.clientY),
+    itemId: state.selected || '',
+  });
+}
 function keyboardEventTargetsEditorControl(event) {
   const target = event?.target;
   if (!target) return false;
@@ -6443,7 +6526,7 @@ function setEditorSnap(enabled, translationMeters, rotationDegrees) {
   refreshGizmoSnap();
   refreshPlacementSnap();
 }
-function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw) {
+function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, pushHistory = true) {
   const requested = renderedById(String(id || ''));
   const rendered = requested
     ? (canonicalEditOwnerRendered(requested) || requested)
@@ -6471,7 +6554,7 @@ function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw) {
   next.pose.rpy.z = values[5];
 
   const committed = markDirtyTransform(rendered, next, {
-    pushHistory: true,
+    pushHistory: Boolean(pushHistory),
     oldTransform: before,
     snapOptions: { translationAxes: [], rotationAxes: [] },
   });
@@ -6486,7 +6569,158 @@ function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw) {
   return editorState();
 }
 
+function setItemMetadataFromBridge(id, displayName, semanticRole) {
+  const requested = renderedById(String(id || ''));
+  const rendered = requested
+    ? (canonicalEditOwnerRendered(requested) || requested)
+    : null;
+  if (!rendered || !selectionIsEditable(rendered)) return editorState();
+  const name = String(displayName || '').trim();
+  const role = String(semanticRole || '').trim();
+  if (name) rendered.item.display_name = name;
+  if (role) rendered.item.role = role;
+  if (rendered.labelEl) rendered.labelEl.textContent = itemLabel(rendered.item);
+  populateObjectList();
+  updateLabels();
+  if (state.selected === rendered.item.id) populateInspector(rendered);
+  if (typeof pushEditorEvent === 'function') {
+    pushEditorEvent('metadata_preview_updated', {
+      itemId: rendered.item.id,
+      displayName: rendered.item.display_name || '',
+      semanticRole: rendered.item.role || ''
+    });
+  }
+  return editorState();
+}
+
+function normalizedLiveAuthoringItem(value) {
+  if (!value || typeof value !== 'object') return null;
+  const item = { ...value };
+  item.id = String(item.id || '').trim();
+  if (!item.id || renderedById(item.id)) return null;
+  item.display_name = String(item.display_name || item.id).trim() || item.id;
+  item.role = String(item.role || 'object').trim() || 'object';
+  item.category = String(item.category || item.type || 'object').trim() || 'object';
+  item.type = String(item.type || item.category).trim() || 'object';
+  item.source_layer = 'editable_layout';
+  item.editable = true;
+  item.locked = false;
+  item.selectable = true;
+  item.render_owner = 'editable_layout';
+  item.render_policy = 'primary';
+  return item;
+}
+
+function finishLiveAuthoringCrud(itemId, eventType) {
+  state.selectionIdentityIndex = null;
+  bindExportedPhysicalTransformOwnership();
+  populateObjectList();
+  updateLabels();
+  renderSceneSummary();
+  if (typeof pushEditorEvent === 'function') {
+    pushEditorEvent(eventType, { itemId, liveSession: true });
+  }
+  return editorState();
+}
+
+function addItemFromBridge(value) {
+  const item = normalizedLiveAuthoringItem(value);
+  if (!item || !state.three?.scene) return editorState();
+  const object3d = new THREE.Group();
+  object3d.name = `${item.id}_object_root`;
+  object3d.up.copy(THREE.Object3D.DEFAULT_UP);
+  const fallback = isSensor(item) ? makeSensorMarker(item) : makePrimitiveMesh(item);
+  if (fallback) {
+    fallback.name = `${item.id}_fallback`;
+    assignItemUserData(fallback, item);
+    object3d.add(fallback);
+  }
+  if (!applyPose(object3d, item)) return editorState();
+  assignItemUserData(object3d, item);
+  state.three.scene.add(object3d);
+  const rendered = {
+    item,
+    object3d,
+    fallback,
+    labelEl: createLabelElement(item),
+    originalTransform: transformOf(item),
+    authoredBaselineTransform: cloneTransform(transformOf(item)),
+  };
+  setRenderInfo(rendered, fallback ? 'primitive_fallback' : 'no_physical_dimensions',
+    displayMeshUri(item), 'live authored-session item');
+  state.objects.push(rendered);
+  registerCanonicalPhysicalPick(rendered, 'live_item_added');
+  tryLoadMesh(item, rendered, fallback);
+  selectObject(item.id);
+  return finishLiveAuthoringCrud(item.id, 'item_added');
+}
+
+function duplicateItemFromBridge(sourceId, value) {
+  const source = renderedById(String(sourceId || ''));
+  const item = normalizedLiveAuthoringItem(value);
+  if (!source || !item || !state.three?.scene || !selectionIsEditable(source)) {
+    return editorState();
+  }
+  const object3d = source.object3d.clone(true);
+  object3d.name = `${item.id}_object_root`;
+  if (!applyPose(object3d, item)) return editorState();
+  object3d.traverse?.(child => assignItemUserData(child, item));
+  state.three.scene.add(object3d);
+  const rendered = {
+    item,
+    object3d,
+    fallback: null,
+    labelEl: createLabelElement(item),
+    originalTransform: transformOf(item),
+    authoredBaselineTransform: cloneTransform(transformOf(item)),
+    renderInfo: { ...(source.renderInfo || {}), render_status: 'live_duplicate' },
+  };
+  state.objects.push(rendered);
+  registerCanonicalPhysicalPick(rendered, 'live_item_duplicated');
+  selectObject(item.id);
+  return finishLiveAuthoringCrud(item.id, 'item_duplicated');
+}
+
+function removeItemFromBridge(id) {
+  const stableId = String(id || '').trim();
+  const rendered = renderedById(stableId);
+  if (!rendered || !selectionIsEditable(rendered)) return editorState();
+  if (state.selected === stableId) clearSelection();
+  detachTransformGizmo();
+  state.three.scene?.remove(rendered.object3d);
+  rendered.labelEl?.remove?.();
+  state.objects = state.objects.filter(record => record !== rendered);
+  state.pickRecords = state.pickRecords.filter(record => record !== rendered && record.item?.id !== stableId);
+  state.dirtyTransforms.delete(stableId);
+  state.undoStack = state.undoStack.filter(entry => !(entry.changes || [entry]).some(change => change.itemId === stableId));
+  state.redoStack = state.redoStack.filter(entry => !(entry.changes || [entry]).some(change => change.itemId === stableId));
+  updateDirtyState();
+  return finishLiveAuthoringCrud(stableId, 'item_removed');
+}
+
+function setVisibleItemIdsFromBridge(ids) {
+  const visible = new Set(Array.isArray(ids) ? ids.map(id => String(id || '').trim()).filter(Boolean) : []);
+  for (const rendered of [...state.objects, ...state.pickRecords]) {
+    const id = String(rendered?.item?.id || '').trim();
+    if (id && rendered?.object3d) rendered.object3d.visible = visible.has(id);
+    if (rendered?.labelEl) rendered.labelEl.hidden = !visible.has(id);
+  }
+  updateLabels();
+  renderSceneSummary();
+  return editorState();
+}
+
 window.__WORKCELL_EDITOR_API_V1__ = {
+  apiVersion: '1.1.0',
+  getCapabilities: () => Object.freeze({
+    schemaVersion: 'workcell_studio_live_authoring_capabilities/v1',
+    apiVersion: '1.1.0',
+    operations: Object.freeze([
+      'getState', 'selectItem', 'setItemMetadata', 'setItemTransform',
+      'addItem', 'duplicateItem', 'removeItem', 'setVisibleItemIds', 'undo', 'redo',
+      'getEditPatch', 'drainEvents',
+    ]),
+  }),
   getState: () => {
     const base = editorState();
     const selectedRendered = state.selected ? renderedById(state.selected) : null;
@@ -6504,6 +6738,16 @@ window.__WORKCELL_EDITOR_API_V1__ = {
   selectItem: id => { selectObject(String(id || '')); return editorState(); },
   setItemPose: (id, x, y, z, roll, pitch, yaw) =>
     setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw),
+  setItemTransform: (id, x, y, z, roll, pitch, yaw) =>
+    setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw),
+  syncItemTransform: (id, x, y, z, roll, pitch, yaw) =>
+    setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, false),
+  setItemMetadata: (id, displayName, semanticRole) =>
+    setItemMetadataFromBridge(id, displayName, semanticRole),
+  addItem: item => addItemFromBridge(item),
+  removeItem: id => removeItemFromBridge(id),
+  duplicateItem: (id, item) => duplicateItemFromBridge(id, item),
+  setVisibleItemIds: ids => setVisibleItemIdsFromBridge(ids),
   selectionDiagnostics: () => currentSelectionDiagnostics(),
   clearSelection: () => { clearSelection(); return editorState(); },
   setMode: mode => { setEditorMode(mode); return editorState(); },
@@ -6523,6 +6767,27 @@ window.__WORKCELL_EDITOR_API_V1__ = {
   getEditPatch: () => buildEditPatch(),
   drainEvents: () => { const events = state.editorEvents.slice(); state.editorEvents.length = 0; return events; },
 };
+
+const editorApiInstalledAt = new Date().toISOString();
+const editorRuntimeViewerBuild = new URLSearchParams(window.location.search).get('viewerBuild') || '';
+Object.defineProperty(window, '__WORKCELL_EDITOR_RUNTIME_V1__', {
+  configurable: false,
+  enumerable: false,
+  writable: false,
+  value: Object.freeze({
+    schemaVersion: 'workcell_studio_editor_runtime/v1',
+    buildId: 'workcell-editor-api-1.1.0-20260820',
+    viewerBuild: editorRuntimeViewerBuild,
+    apiVersion: window.__WORKCELL_EDITOR_API_V1__.apiVersion,
+    installedAt: editorApiInstalledAt,
+    locationHref: String(window.location.href || ''),
+  }),
+});
+if (typeof window.CustomEvent === 'function' && typeof window.dispatchEvent === 'function') {
+  window.dispatchEvent(new window.CustomEvent('workcell:editor-api-ready', {
+    detail: window.__WORKCELL_EDITOR_RUNTIME_V1__,
+  }));
+}
 
 el.file.addEventListener('change', event => {
   const file = event.target.files?.[0];

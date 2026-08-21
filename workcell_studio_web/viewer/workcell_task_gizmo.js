@@ -1,4 +1,5 @@
-import { THREE, TransformControls } from './dist/viewer.bundle.js';
+import * as THREE from 'three';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
 const PATCH_FLAG = Symbol.for('workcell-studio.task-gizmo.v1');
 const FINE_TRANSLATION_M = 0.001;
