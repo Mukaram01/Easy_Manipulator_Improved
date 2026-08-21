@@ -1,0 +1,116 @@
+name: Temporary live authoring refresh patch
+
+on:
+  push:
+    branches:
+      - fix/live-authoring-no-full-refresh
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/live-authoring-no-full-refresh
+          fetch-depth: 0
+
+      - name: Patch live CRUD to stay incremental
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('workcell_builder/workcell_builder/gui/mainwindow.cpp')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  'redo_stack_.push_back(c); mark_layout_dirty("Undo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();',
+                  'redo_stack_.push_back(c); mark_layout_dirty("Undo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_delete_selected_action(); refresh_duplicate_selected_action();',
+              ),
+              (
+                  'undo_stack_.push_back(c); mark_layout_dirty("Redo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();',
+                  'undo_stack_.push_back(c); mark_layout_dirty("Redo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_delete_selected_action(); refresh_duplicate_selected_action();',
+              ),
+              (
+                  '  refresh_scene_hierarchy_tree_from_current_items();\n  refresh_scene_builder_left_explorer();\n  apply_scene_selection(new_id, copy.role, false, false);',
+                  '  // Live duplicate already updated the native authored session and Web3D.\n  // Do not rebuild the whole Scene Builder from disk here: that discards the\n  // unsaved duplicate and races the browser into an inconsistent scene.\n  apply_scene_selection(new_id, copy.role, false, false);\n  refresh_scene_hierarchy_tree_from_current_items();',
+              ),
+              (
+                  '  refresh_scene_hierarchy_tree_from_current_items();\n  refresh_selected_scene_item_labels(selected_item_state_);\n  refresh_scene_builder_left_explorer();\n  mark_layout_dirty("Delete Selected");',
+                  '  refresh_scene_hierarchy_tree_from_current_items();\n  refresh_selected_scene_item_labels(selected_item_state_);\n  // Delete is also a live authored-session mutation; keep the Product View and\n  // hierarchy incremental instead of reconstructing them from the saved scene.\n  mark_layout_dirty("Delete Selected");',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one match, got {count}: {old[:100]}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8')
+
+          test = Path('tests/test_live_authoring_incremental_refresh.py')
+          test.write_text(r'''from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+MAIN = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+
+
+def function_body(name: str, next_name: str) -> str:
+    return MAIN.split(name, 1)[1].split(next_name, 1)[0]
+
+
+def test_duplicate_updates_live_selection_and_hierarchy_without_full_scene_rebuild():
+    body = function_body("void MainWindow::duplicate_selected_item()", "bool MainWindow::selected_item_can_be_deleted()")
+    assert "duplicate_authoring_item(target.state.id, copy)" in body
+    assert "apply_scene_selection(new_id, copy.role, false, false);" in body
+    assert "refresh_scene_hierarchy_tree_from_current_items();" in body
+    assert "refresh_scene_builder_left_explorer();" not in body
+    assert body.index("apply_scene_selection(new_id, copy.role, false, false);") < body.index("refresh_scene_hierarchy_tree_from_current_items();")
+
+
+def test_delete_stays_incremental_in_live_authored_session():
+    body = function_body("void MainWindow::delete_selected_item()", "void MainWindow::add_asset_to_canvas_from_catalog")
+    assert "remove_authoring_item(id)" in body
+    assert "refresh_scene_hierarchy_tree_from_current_items();" in body
+    assert "refresh_scene_builder_left_explorer();" not in body
+
+
+def test_undo_redo_do_not_rebuild_scene_from_saved_state():
+    undo = function_body("void MainWindow::undo_layout_edit()", "void MainWindow::redo_layout_edit()")
+    redo = function_body("void MainWindow::redo_layout_edit()", "bool MainWindow::selected_item_can_be_duplicated()")
+    assert "refresh_scene_builder_left_explorer();" not in undo
+    assert "refresh_scene_builder_left_explorer();" not in redo
+    assert "refresh_scene_hierarchy_tree_from_current_items();" in undo
+    assert "refresh_scene_hierarchy_tree_from_current_items();" in redo
+
+
+def test_full_left_explorer_refresh_still_exists_for_explicit_scene_refreshes():
+    assert "void MainWindow::refresh_scene_builder_left_explorer()" in MAIN
+    assert "rebuild_digital_twin_canvas();" in MAIN.split("void MainWindow::refresh_scene_builder_left_explorer()", 1)[1]
+''', encoding='utf-8')
+          PY
+
+      - name: Run focused contract tests
+        shell: bash
+        run: |
+          python3 -m pytest -q \
+            tests/test_live_authoring_incremental_refresh.py \
+            tests/test_live_duplicate_visibility_guard.py \
+            tests/test_scene_builder_product_layout.py
+
+      - name: Commit product fix and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/_temp_live_authoring_patch.yml
+          git add workcell_builder/workcell_builder/gui/mainwindow.cpp tests/test_live_authoring_incremental_refresh.py
+          git diff --cached --check
+          git commit -m "Keep live authoring mutations incremental"
+          git push origin HEAD:fix/live-authoring-no-full-refresh
