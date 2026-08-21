@@ -1,1 +1,1 @@
-Temporary trigger for the live-authoring patch workflow. The workflow removes itself; this trigger will be removed before the PR is merge-ready.
+Temporary trigger for the live-authoring patch workflow. Triggered again on 2026-08-21 to apply the real incremental Scene Builder fix.
