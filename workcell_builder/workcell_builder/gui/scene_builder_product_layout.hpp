@@ -4,13 +4,17 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QEvent>
 #include <QFrame>
+#include <QGraphicsView>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QObject>
 #include <QPushButton>
 #include <QSettings>
+#include <QSizePolicy>
 #include <QSplitter>
 #include <QStringList>
 #include <QTabBar>
@@ -28,6 +32,22 @@ namespace workcell_builder
 {
 namespace scene_builder_product_layout
 {
+
+class HierarchyOnlyContextMenuFilter final : public QObject
+{
+public:
+  explicit HierarchyOnlyContextMenuFilter(QObject * parent = nullptr)
+  : QObject(parent)
+  {
+  }
+
+protected:
+  bool eventFilter(QObject * watched, QEvent * event) override
+  {
+    Q_UNUSED(watched);
+    return event && event->type() == QEvent::ContextMenu;
+  }
+};
 
 inline QPushButton * button_with_text(QWidget * root, const QString & text)
 {
@@ -150,6 +170,36 @@ inline void hide_embedded_preview_chrome(ScenePreviewWidget * preview)
   }
 }
 
+inline void keep_authoring_context_menu_in_hierarchy(
+  MainWindow * window, QWidget * scene_page, ScenePreviewWidget * preview)
+{
+  if (!window || !scene_page) return;
+
+  // Scene-item authoring commands belong to the Scene Hierarchy.  Keep the
+  // Product View focused on selection/camera/gizmo interaction and disconnect
+  // the two 3D-menu paths installed by the compatibility shell.
+  if (preview) {
+    QObject::disconnect(
+      preview, SIGNAL(embedded_authoring_context_menu_requested(QPoint)), window, nullptr);
+    QObject::disconnect(
+      preview, SIGNAL(customContextMenuRequested(QPoint)), window, nullptr);
+    preview->setContextMenuPolicy(Qt::NoContextMenu);
+  }
+
+  // The native compatibility canvas has a MainWindow event filter that also
+  // opens the authoring menu. Install a later, narrowly scoped filter that only
+  // consumes context-menu events; placement and normal mouse events continue to
+  // the existing MainWindow filter unchanged.
+  if (auto * canvas = scene_page->findChild<QGraphicsView *>(QStringLiteral("digital_twin_canvas_"))) {
+    QWidget * viewport = canvas->viewport();
+    if (viewport && !viewport->findChild<QObject *>(QStringLiteral("sceneBuilderHierarchyOnlyContextMenuFilter"))) {
+      auto * filter = new HierarchyOnlyContextMenuFilter(viewport);
+      filter->setObjectName(QStringLiteral("sceneBuilderHierarchyOnlyContextMenuFilter"));
+      viewport->installEventFilter(filter);
+    }
+  }
+}
+
 inline QPushButton * make_proxy_button(
   QWidget * parent, const QString & text, QPushButton * target,
   const QString & object_name = QString())
@@ -176,6 +226,7 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
   QPushButton * place = button_with_text(host, QStringLiteral("Place Asset"));
   QPushButton * move = button_with_text(host, QStringLiteral("Move"));
   QPushButton * rotate = button_with_text(host, QStringLiteral("Rotate"));
+  QPushButton * duplicate = button_with_text(host, QStringLiteral("Duplicate"));
   QPushButton * save = button_with_text(host, QStringLiteral("Save Layout"));
 
   QPushButton * embedded_add = button_with_text(preview, QStringLiteral("Add object"));
@@ -198,6 +249,18 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
     if (!item) continue;
     if (item->widget()) item->widget()->hide();
     delete item;
+  }
+
+  // Duplicate is intentionally contextual (Scene Hierarchy / Ctrl+D). The
+  // compatibility shell still owns this button and can toggle its visibility,
+  // so collapse its geometry after removing it from the product toolbar. This
+  // prevents the orphaned button from reappearing over the 3D canvas while the
+  // underlying QAction remains fully functional.
+  if (duplicate) {
+    duplicate->hide();
+    duplicate->setFixedSize(0, 0);
+    duplicate->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    duplicate->setFocusPolicy(Qt::NoFocus);
   }
 
   const auto add_existing = [layout](QWidget * widget) {
@@ -347,6 +410,7 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
   simplify_status_area(scene_page);
 
   auto * preview = scene_page->findChild<ScenePreviewWidget *>(QStringLiteral("scenePreviewWidget"));
+  keep_authoring_context_menu_in_hierarchy(window, scene_page, preview);
   rebuild_single_toolbar(scene_page, preview);
   hide_embedded_preview_chrome(preview);
 
