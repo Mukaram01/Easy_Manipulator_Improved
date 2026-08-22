@@ -1,0 +1,396 @@
+name: Apply Scene Builder live-authoring polish
+
+on:
+  push:
+    branches:
+      - fix/scene-builder-live-authoring-polish
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/scene-builder-live-authoring-polish
+          fetch-depth: 0
+
+      - name: Apply focused product fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+          main = root / 'workcell_builder/workcell_builder/gui/mainwindow.cpp'
+          layout = root / 'workcell_builder/workcell_builder/gui/scene_builder_product_layout.hpp'
+          css = root / 'workcell_studio_web/viewer/style.css'
+          product_test = root / 'tests/test_scene_builder_product_layout.py'
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              return text.replace(old, new, 1)
+
+          # ------------------------------------------------------------------
+          # Live-authoring mutations: never rebuild Scene Builder from disk.
+          # ------------------------------------------------------------------
+          s = main.read_text(encoding='utf-8')
+          s = replace_once(s,
+          '''  refresh_scene_hierarchy_tree_from_current_items();
+            refresh_scene_builder_left_explorer();
+            apply_scene_selection(new_id, copy.role, false, false);''',
+          '''  // Live duplicate already updated the authored session and Product View.
+            // Keep the mutation incremental so unsaved state, hierarchy and camera survive.
+            apply_scene_selection(new_id, copy.role, false, false);
+            refresh_scene_hierarchy_tree_from_current_items();
+            refresh_minimap_card();''',
+          'duplicate incremental refresh')
+
+          s = replace_once(s,
+          '''  refresh_scene_hierarchy_tree_from_current_items();
+            refresh_selected_scene_item_labels(selected_item_state_);
+            refresh_scene_builder_left_explorer();
+            mark_layout_dirty("Delete Selected");''',
+          '''  refresh_scene_hierarchy_tree_from_current_items();
+            refresh_selected_scene_item_labels(selected_item_state_);
+            refresh_minimap_card();
+            mark_layout_dirty("Delete Selected");''',
+          'delete incremental refresh')
+
+          s = replace_once(s,
+          '''  refresh_delete_selected_action();
+            refresh_duplicate_selected_action();
+            refresh_duplicate_selected_action();''',
+          '''  refresh_delete_selected_action();
+            refresh_duplicate_selected_action();''',
+          'delete duplicate action refresh')
+
+          s = replace_once(s,
+          '''  redo_stack_.push_back(c); mark_layout_dirty("Undo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();''',
+          '''  redo_stack_.push_back(c); mark_layout_dirty("Undo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_minimap_card(); refresh_delete_selected_action(); refresh_duplicate_selected_action();''',
+          'undo incremental refresh')
+
+          s = replace_once(s,
+          '''  undo_stack_.push_back(c); mark_layout_dirty("Redo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();''',
+          '''  undo_stack_.push_back(c); mark_layout_dirty("Redo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_minimap_card(); refresh_delete_selected_action(); refresh_duplicate_selected_action();''',
+          'redo incremental refresh')
+
+          old_minimap = '''void MainWindow::update_minimap_backend_presentation()
+          {
+            if (!minimap_view_ || !scene_preview_widget_) return;
+            const bool embedded_web3d_presented =
+              scene_preview_widget_->active_product_view_backend() ==
+                ScenePreviewWidget::ProductViewBackend::EmbeddedWeb3D &&
+              scene_preview_widget_->embedded_web_authoring_active();
+            if (embedded_web3d_presented) {
+              minimap_view_->setVisible(false);
+              minimap_view_->setMinimumHeight(0);
+              minimap_view_->setMaximumHeight(0);
+              return;
+            }
+
+            minimap_view_->setMinimumHeight(140);
+            minimap_view_->setMaximumHeight(140);
+            minimap_view_->setVisible(minimap_requested_visible_);
+          }'''
+          new_minimap = '''void MainWindow::update_minimap_backend_presentation()
+          {
+            if (!minimap_view_) return;
+            // The minimap is an authoring aid, not a fallback-backend indicator. Keep it
+            // available when embedded Web3D reaches ready state and during live edits.
+            minimap_view_->setMinimumHeight(90);
+            minimap_view_->setMaximumHeight(90);
+            minimap_view_->setVisible(minimap_requested_visible_);
+          }'''
+          s = replace_once(s, old_minimap, new_minimap, 'persistent minimap backend presentation')
+
+          s = replace_once(s,
+          '''    live_coordinate_label_->setText("No item selected");''',
+          '''    live_coordinate_label_->clear();
+              live_coordinate_label_->setVisible(false);''',
+          'single inspector empty state')
+
+          s = replace_once(s,
+          '''  live_coordinate_label_->setText(QString("Transform: %1").arg(pose));''',
+          '''  live_coordinate_label_->setVisible(true);
+            live_coordinate_label_->setText(QString("Transform: %1").arg(pose));''',
+          'restore transform label on selection')
+
+          main.write_text(s, encoding='utf-8')
+
+          # ------------------------------------------------------------------
+          # Product layout: hierarchy/inspector sizing and compact secondary UI.
+          # ------------------------------------------------------------------
+          s = layout.read_text(encoding='utf-8')
+          s = replace_once(s,
+          '''#include <QPushButton>
+          #include <QSettings>''',
+          '''#include <QPushButton>
+          #include <QScrollArea>
+          #include <QDoubleSpinBox>
+          #include <QSettings>''',
+          'layout includes')
+
+          s = replace_once(s,
+          '''    if (text == QStringLiteral("Scene Builder") || text.startsWith(QStringLiteral("Scene Builder:"))) {
+                label->hide();
+              }''',
+          '''    if (text == QStringLiteral("Scene Builder") ||
+                text.startsWith(QStringLiteral("Scene Builder:")) ||
+                text.contains(QStringLiteral(">Scene Builder"))) {
+                label->hide();
+              }''',
+          'html scene title hiding')
+
+          old_inspector_tail = '''      if (scene_card) {
+                  card->hide();
+                  break;
+                }
+              }
+            }
+          }
+          
+          inline void simplify_status_area(QWidget * scene_page)'''
+          new_inspector_tail = '''      if (scene_card) {
+                  card->hide();
+                  break;
+                }
+              }
+
+              // The contextual inspector must fit its panel without a horizontal
+              // scrollbar. Give transform fields useful width and let them shrink
+              // together with the panel.
+              for (auto * spin : selection_page->findChildren<QDoubleSpinBox *>()) {
+                if (!spin) continue;
+                spin->setMinimumWidth(76);
+                spin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+              }
+
+              if (auto * advanced = selection_page->findChild<QGroupBox *>(QStringLiteral("sceneBuilderInspectorAdvancedDetails"))) {
+                advanced->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
+                const auto sync_advanced_height = [advanced](bool expanded) {
+                  advanced->setMaximumHeight(expanded ? QWIDGETSIZE_MAX : 32);
+                };
+                sync_advanced_height(advanced->isChecked());
+                QObject::connect(advanced, &QGroupBox::toggled, advanced, sync_advanced_height);
+              }
+
+              // Robot-base authoring is secondary and is often unavailable for a
+              // selected physical object. Keep the section compact until requested.
+              for (auto * group : selection_page->findChildren<QGroupBox *>()) {
+                if (!group || group->title().trimmed() != QStringLiteral("Robot Base Pose")) continue;
+                group->setObjectName(QStringLiteral("sceneBuilderRobotBasePoseGroup"));
+                group->setCheckable(true);
+                group->setChecked(false);
+                group->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
+                const auto children = group->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly);
+                const auto sync_robot_group = [group, children](bool expanded) {
+                  for (auto * child : children) if (child) child->setVisible(expanded);
+                  group->setMaximumHeight(expanded ? QWIDGETSIZE_MAX : 32);
+                };
+                sync_robot_group(false);
+                QObject::connect(group, &QGroupBox::toggled, group, sync_robot_group);
+                break;
+              }
+            }
+
+            if (auto * right_panel = scene_page->findChild<QFrame *>(QStringLiteral("sceneBuilderRightPanel"))) {
+              for (auto * scroll : right_panel->findChildren<QScrollArea *>()) {
+                if (!scroll) continue;
+                scroll->setWidgetResizable(true);
+                scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+              }
+            }
+          }
+          
+          inline void simplify_status_area(QWidget * scene_page)'''
+          s = replace_once(s, old_inspector_tail, new_inspector_tail, 'compact inspector')
+
+          s = replace_once(s,
+          '''  if (auto * minimap = scene_page->findChild<QWidget *>(QStringLiteral("digital_twin_minimap"))) minimap->hide();''',
+          '''  if (auto * minimap = scene_page->findChild<QWidget *>(QStringLiteral("digital_twin_minimap"))) {
+              minimap->setFixedSize(150, 90);
+              minimap->setVisible(true);
+            }''',
+          'keep minimap visible')
+
+          s = replace_once(s,
+          '''    left->setMinimumWidth(245);
+              left->setMaximumWidth(300);''',
+          '''    left->setMinimumWidth(300);
+              left->setMaximumWidth(380);''',
+          'hierarchy width')
+
+          s = replace_once(s,
+          '''    right->setMinimumWidth(300);
+              right->setMaximumWidth(360);''',
+          '''    right->setMinimumWidth(350);
+              right->setMaximumWidth(440);''',
+          'inspector width')
+
+          s = replace_once(s,
+          '''    splitter->setSizes({270, 1120, 320});''',
+          '''    splitter->setSizes({325, 1040, 370});''',
+          'splitter sizes')
+
+          s = replace_once(s,
+          '''  settings.setValue(QStringLiteral("scene_builder/preferred_left_width"), 270);
+            settings.setValue(QStringLiteral("scene_builder/preferred_right_width"), 320);''',
+          '''  settings.setValue(QStringLiteral("scene_builder/preferred_left_width"), 325);
+            settings.setValue(QStringLiteral("scene_builder/preferred_right_width"), 370);''',
+          'preferred panel widths')
+
+          qss_anchor = '''    QTabWidget#sceneBuilderInspectorTabs QTabBar::tab { padding:7px 10px; }
+          '''
+          qss_extra = '''    QTabWidget#sceneBuilderInspectorTabs QTabBar::tab { padding:7px 10px; }
+              QGraphicsView#digital_twin_minimap { background:#F8FAFC; border:1px solid #CBD7E3; border-radius:6px; }
+              QPushButton#sceneBuilderLogsButton { min-height:26px; padding:2px 9px; border:1px solid #CBD7E3; border-radius:5px; background:#F8FAFC; }
+              QGroupBox#sceneBuilderInspectorAdvancedDetails, QGroupBox#sceneBuilderRobotBasePoseGroup { margin-top:4px; padding-top:8px; }
+          '''
+          s = replace_once(s, qss_anchor, qss_extra, 'product polish qss')
+          layout.write_text(s, encoding='utf-8')
+
+          # ------------------------------------------------------------------
+          # Embedded Web3D health: preserve diagnostics, but make ready state
+          # compact enough not to dominate the engineering viewport.
+          # ------------------------------------------------------------------
+          s = css.read_text(encoding='utf-8')
+          compact_css = r'''
+
+          /* Workcell Studio embedded Product View: diagnostics remain available,
+             but the ready card stays compact and out of the working area. */
+          body.embedded-mode .scene-health {
+            top: 0.5rem;
+            left: 0.5rem;
+            width: min(24rem, calc(100% - 1rem));
+            font-size: 0.72rem;
+          }
+          body.embedded-mode .scene-health summary {
+            min-height: 2.45rem;
+            padding: 0.34rem 0.5rem;
+            gap: 0.4rem;
+            border-radius: 0.5rem;
+          }
+          body.embedded-mode .health-dot {
+            width: 0.56rem;
+            height: 0.56rem;
+          }
+          body.embedded-mode .health-copy strong { font-size: 0.76rem; }
+          body.embedded-mode .health-copy small { font-size: 0.65rem; }
+          body.embedded-mode .health-review { font-size: 0.65rem; }
+          body.embedded-mode .scene-health:not([open]) .health-count:empty { display: none; }
+          '''
+          if 'Workcell Studio embedded Product View: diagnostics remain available' not in s:
+              s += compact_css
+          css.write_text(s, encoding='utf-8')
+
+          # ------------------------------------------------------------------
+          # Executable/static coverage for the exact regressions seen manually.
+          # ------------------------------------------------------------------
+          live_test = root / 'tests/test_live_authoring_incremental_refresh.py'
+          live_test.write_text(r'''from pathlib import Path
+
+          ROOT = Path(__file__).resolve().parents[1]
+          MAIN = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+          LAYOUT = (ROOT / "workcell_builder/workcell_builder/gui/scene_builder_product_layout.hpp").read_text(encoding="utf-8")
+          CSS = (ROOT / "workcell_studio_web/viewer/style.css").read_text(encoding="utf-8")
+
+
+def body(start: str, end: str) -> str:
+    return MAIN.split(start, 1)[1].split(end, 1)[0]
+
+
+def test_duplicate_delete_undo_redo_never_reload_scene_builder_from_disk():
+    duplicate = body("void MainWindow::duplicate_selected_item()", "bool MainWindow::selected_item_can_be_deleted()")
+    delete = body("void MainWindow::delete_selected_item()", "double MainWindow::current_nudge_step_m")
+    undo = body("void MainWindow::undo_layout_edit()", "void MainWindow::redo_layout_edit()")
+    redo = body("void MainWindow::redo_layout_edit()", "bool MainWindow::selected_item_can_be_duplicated()")
+    for section in (duplicate, delete, undo, redo):
+        assert "refresh_scene_builder_left_explorer();" not in section
+        assert "refresh_scene_hierarchy_tree_from_current_items();" in section
+        assert "refresh_minimap_card();" in section
+    assert duplicate.index("apply_scene_selection(new_id") < duplicate.index("refresh_scene_hierarchy_tree_from_current_items();")
+
+
+def test_minimap_survives_embedded_web3d_ready_state():
+    presentation = body("void MainWindow::update_minimap_backend_presentation()", "void MainWindow::select_canvas_item")
+    assert "embedded_web3d_presented" not in presentation
+    assert "setVisible(false)" not in presentation
+    assert "setVisible(minimap_requested_visible_)" in presentation
+    assert 'minimap->setVisible(true)' in LAYOUT
+
+
+def test_inspector_empty_state_is_not_duplicated():
+    labels = body("void MainWindow::refresh_selected_scene_item_labels", "bool MainWindow::is_pick_source_candidate")
+    assert 'live_coordinate_label_->clear();' in labels
+    assert 'live_coordinate_label_->setVisible(false);' in labels
+    assert 'live_coordinate_label_->setVisible(true);' in labels
+
+
+def test_product_layout_addresses_screenshot_overflow_and_density():
+    for token in (
+        'text.contains(QStringLiteral(">Scene Builder"))',
+        'left->setMinimumWidth(300)',
+        'left->setMaximumWidth(380)',
+        'right->setMinimumWidth(350)',
+        'right->setMaximumWidth(440)',
+        'setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff)',
+        'spin->setMinimumWidth(76)',
+        'sceneBuilderRobotBasePoseGroup',
+        'advanced->setMaximumHeight(expanded ? QWIDGETSIZE_MAX : 32)',
+        'minimap->setFixedSize(150, 90)',
+    ):
+        assert token in LAYOUT
+
+
+def test_embedded_scene_health_stays_visible_but_compact():
+    assert 'body.embedded-mode .scene-health {' in CSS
+    assert 'body.embedded-mode #scene-health' not in CSS
+    assert 'min-height: 2.45rem' in CSS
+''', encoding='utf-8')
+
+          # Update existing product-layout width expectations to the new product sizing.
+          t = product_test.read_text(encoding='utf-8')
+          width_replacements = {
+              "'left->setMinimumWidth(245)'": "'left->setMinimumWidth(300)'",
+              "'left->setMaximumWidth(300)'": "'left->setMaximumWidth(380)'",
+              "'right->setMinimumWidth(300)'": "'right->setMinimumWidth(350)'",
+              "'right->setMaximumWidth(360)'": "'right->setMaximumWidth(440)'",
+              "'splitter->setSizes({270, 1120, 320})'": "'splitter->setSizes({325, 1040, 370})'",
+          }
+          for old, new in width_replacements.items():
+              if old not in t:
+                  raise SystemExit(f'product test width token missing: {old}')
+              t = t.replace(old, new, 1)
+          product_test.write_text(t, encoding='utf-8')
+          PY
+
+      - name: Run focused regression tests
+        shell: bash
+        run: |
+          python3 -m pytest -q \
+            tests/test_live_authoring_incremental_refresh.py \
+            tests/test_live_duplicate_visibility_guard.py \
+            tests/test_scene_builder_product_layout.py \
+            tests/test_workcell_studio_web_viewer_product_diagnostics.py
+
+      - name: Commit clean product patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/_scene_builder_live_authoring_polish.yml
+          git add \
+            workcell_builder/workcell_builder/gui/mainwindow.cpp \
+            workcell_builder/workcell_builder/gui/scene_builder_product_layout.hpp \
+            workcell_studio_web/viewer/style.css \
+            tests/test_scene_builder_product_layout.py \
+            tests/test_live_authoring_incremental_refresh.py
+          git diff --cached --check
+          git commit -m "Stabilize Scene Builder live authoring and layout"
+          git push origin HEAD:fix/scene-builder-live-authoring-polish
