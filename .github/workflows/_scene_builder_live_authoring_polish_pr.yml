@@ -19,11 +19,9 @@ jobs:
           ref: fix/scene-builder-live-authoring-polish
           fetch-depth: 0
 
-      - name: Apply product patch
+      - name: Apply focused product patch
         shell: bash
         run: |
-          sed -i 's/)nreplacements = {/)/' scripts/_apply_scene_builder_polish.py
-          sed -i '/^t = PRODUCT_TEST.read_text/a replacements = {' scripts/_apply_scene_builder_polish.py
           python3 scripts/_apply_scene_builder_polish.py
           git diff --check
 
@@ -36,16 +34,11 @@ jobs:
             tests/test_scene_builder_product_layout.py \
             tests/test_workcell_studio_web_viewer_product_diagnostics.py
 
-      - name: Commit clean product changes
+      - name: Commit product changes
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm -f \
-            .github/workflows/_scene_builder_live_authoring_polish.yml \
-            .github/workflows/_scene_builder_live_authoring_polish_pr.yml \
-            SCENE_BUILDER_POLISH_TRIGGER.tmp \
-            scripts/_apply_scene_builder_polish.py
           git add \
             workcell_builder/workcell_builder/gui/mainwindow.cpp \
             workcell_builder/workcell_builder/gui/scene_builder_product_layout.hpp \
@@ -53,5 +46,6 @@ jobs:
             tests/test_scene_builder_product_layout.py \
             tests/test_live_authoring_incremental_refresh.py
           git diff --cached --check
+          git diff --cached --quiet && exit 0
           git commit -m "Stabilize Scene Builder live authoring and layout"
           git push origin HEAD:fix/scene-builder-live-authoring-polish
