@@ -45,15 +45,8 @@ def patch_duplicate(body: str) -> str:
     selection = "  apply_scene_selection(new_id, copy.role, false, false);\n"
     if body.count(hierarchy) != 1 or body.count(selection) != 1:
         raise SystemExit("duplicate: expected one hierarchy refresh and one copy selection")
-
-    # Selection must be authoritative before rebuilding the hierarchy rows so the
-    # newly-created row is immediately selected. Remove the stale workaround
-    # comment that described the old full-refresh ordering.
-    stale_comment = "  // Prevent refresh-time browser state from overriding the live duplicate selection.\n"
-    body = body.replace(stale_comment, "")
     body = body.replace(hierarchy, "", 1)
     body = body.replace(selection, "", 1)
-
     anchor = "  mark_layout_dirty(\"Duplicate Selected\");\n"
     if body.count(anchor) != 1:
         raise SystemExit("duplicate: dirty-state anchor not found exactly once")
@@ -67,8 +60,19 @@ def patch_duplicate(body: str) -> str:
     return body.replace(anchor, replacement, 1)
 
 
+def patch_delete(body: str) -> str:
+    body = remove_full_refresh(body, "delete")
+    duplicate_refresh = (
+        "  refresh_duplicate_selected_action();\n"
+        "  refresh_duplicate_selected_action();\n"
+    )
+    if body.count(duplicate_refresh) != 1:
+        raise SystemExit("delete: expected duplicated action refresh exactly once")
+    return body.replace(duplicate_refresh, "  refresh_duplicate_selected_action();\n", 1)
+
+
 source = patch_function(source, "void MainWindow::duplicate_selected_item()", patch_duplicate)
-source = patch_function(source, "void MainWindow::delete_selected_item()", lambda b: remove_full_refresh(b, "delete"))
+source = patch_function(source, "void MainWindow::delete_selected_item()", patch_delete)
 source = patch_function(source, "void MainWindow::undo_layout_edit()", lambda b: remove_full_refresh(b, "undo"))
 source = patch_function(source, "void MainWindow::redo_layout_edit()", lambda b: remove_full_refresh(b, "redo"))
 MAIN.write_text(source, encoding="utf-8")
@@ -104,11 +108,12 @@ def test_duplicate_keeps_live_session_and_hierarchy_in_sync():
     )
 
 
-def test_delete_stays_incremental():
+def test_delete_stays_incremental_and_refreshes_actions_once():
     body = function_body("void MainWindow::delete_selected_item()")
     assert "remove_authoring_item(id)" in body
     assert "refresh_scene_hierarchy_tree_from_current_items();" in body
     assert "refresh_scene_builder_left_explorer();" not in body
+    assert body.count("refresh_duplicate_selected_action();") == 1
 
 
 def test_undo_and_redo_stay_incremental():
