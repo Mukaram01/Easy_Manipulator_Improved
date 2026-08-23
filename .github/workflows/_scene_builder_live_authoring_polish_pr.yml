@@ -11,41 +11,7 @@ permissions:
 
 jobs:
   finalize:
-    if: github.head_ref == 'fix/scene-builder-live-authoring-polish' && github.actor != 'github-actions[bot]'
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: fix/scene-builder-live-authoring-polish
-          fetch-depth: 0
-
-      - name: Apply focused live-authoring fix
-        run: python3 scripts/_apply_scene_builder_polish.py
-
-      - name: Run focused regression tests
-        run: |
-          git diff --check
-          python3 -m pytest -q \
-            tests/test_live_authoring_incremental_refresh.py \
-            tests/test_live_duplicate_visibility_guard.py
-
-      - name: Commit production changes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            workcell_builder/workcell_builder/gui/mainwindow.cpp \
-            tests/test_live_authoring_incremental_refresh.py
-          git diff --cached --check
-          git diff --cached --quiet && { echo "No production changes were staged"; exit 1; }
-          git commit -m "Keep live Scene Builder mutations incremental"
-
-      - name: Remove temporary patch scaffolding
-        run: |
-          git rm \
-            .github/workflows/_scene_builder_live_authoring_polish.yml \
-            .github/workflows/_scene_builder_live_authoring_polish_pr.yml \
-            SCENE_BUILDER_POLISH_TRIGGER.tmp \
-            scripts/_apply_scene_builder_polish.py
-          git commit -m "Remove temporary Scene Builder patch scaffolding"
-          git push origin HEAD:fix/scene-builder-live-authoring-polish
+      - run: echo "Temporarily disabled while the final patch is prepared"
