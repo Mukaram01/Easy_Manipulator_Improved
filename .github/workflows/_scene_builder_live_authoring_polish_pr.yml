@@ -1,4 +1,4 @@
-name: Finalize Scene Builder stabilization PR
+name: Finalize live Scene Builder CRUD PR
 
 on:
   pull_request:
@@ -19,48 +19,28 @@ jobs:
           ref: fix/scene-builder-live-authoring-polish
           fetch-depth: 0
 
-      - name: Apply complete Scene Builder product patch
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import textwrap
-
-          workflow = Path('.github/workflows/_scene_builder_live_authoring_polish.yml').read_text(encoding='utf-8')
-          marker = "          python3 - <<'PY'\n"
-          start = workflow.index(marker) + len(marker)
-          end = workflow.index("\n          PY\n", start)
-          patch_script = textwrap.dedent(workflow[start:end])
-          exec(compile(patch_script, '_scene_builder_live_authoring_polish.py', 'exec'))
-          PY
-          git diff --check
+      - name: Apply focused live-authoring fix
+        run: python3 scripts/_apply_scene_builder_polish.py
 
       - name: Run focused regression tests
-        shell: bash
         run: |
+          git diff --check
           python3 -m pytest -q \
-            tests/test_scene_builder_product_layout.py \
             tests/test_live_authoring_incremental_refresh.py \
-            tests/test_live_duplicate_visibility_guard.py \
-            tests/test_workcell_studio_web_viewer_product_diagnostics.py
+            tests/test_live_duplicate_visibility_guard.py
 
       - name: Commit production changes
-        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
             workcell_builder/workcell_builder/gui/mainwindow.cpp \
-            workcell_builder/workcell_builder/gui/scene_builder_product_layout.hpp \
-            workcell_studio_web/viewer/style.css \
-            tests/test_scene_builder_product_layout.py \
             tests/test_live_authoring_incremental_refresh.py
           git diff --cached --check
           git diff --cached --quiet && { echo "No production changes were staged"; exit 1; }
-          git commit -m "Stabilize Scene Builder live authoring and layout"
+          git commit -m "Keep live Scene Builder mutations incremental"
 
       - name: Remove temporary patch scaffolding
-        shell: bash
         run: |
           git rm \
             .github/workflows/_scene_builder_live_authoring_polish.yml \
