@@ -1,0 +1,59 @@
+name: Finalize Scene Builder live authoring polish
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.head_ref == 'fix/scene-builder-live-authoring-polish' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/scene-builder-live-authoring-polish
+          fetch-depth: 0
+
+      - name: Validate patch helper
+        run: python3 -m py_compile scripts/_apply_scene_builder_polish.py
+
+      - name: Apply product patch
+        run: python3 scripts/_apply_scene_builder_polish.py
+
+      - name: Run focused regression tests
+        run: |
+          git diff --check
+          python3 -m pytest -q \
+            tests/test_live_authoring_incremental_refresh.py \
+            tests/test_live_duplicate_visibility_guard.py \
+            tests/test_scene_builder_product_layout.py \
+            tests/test_workcell_studio_web_viewer_product_diagnostics.py
+
+      - name: Commit clean product changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            workcell_builder/workcell_builder/gui/mainwindow.cpp \
+            workcell_builder/workcell_builder/gui/scene_builder_product_layout.hpp \
+            workcell_studio_web/viewer/style.css \
+            tests/test_scene_builder_product_layout.py \
+            tests/test_live_authoring_incremental_refresh.py
+          git diff --cached --check
+          git diff --cached --quiet && { echo "No production changes were staged"; exit 1; }
+          git commit -m "Stabilize Scene Builder live authoring and layout"
+
+      - name: Remove temporary patch scaffolding
+        run: |
+          git rm \
+            .github/workflows/_scene_builder_live_authoring_polish.yml \
+            .github/workflows/_scene_builder_live_authoring_polish_pr.yml \
+            SCENE_BUILDER_POLISH_TRIGGER.tmp \
+            scripts/_apply_scene_builder_polish.py
+          git commit -m "Remove temporary Scene Builder patch scaffolding"
+          git push origin HEAD:fix/scene-builder-live-authoring-polish
