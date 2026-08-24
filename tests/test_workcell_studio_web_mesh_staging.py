@@ -791,6 +791,29 @@ def test_package_resolver_augments_incomplete_map_and_waits_for_existing_mesh(tm
     assert checked[0] == repo_mesh.parents[2].resolve()
 
 
+def test_package_resolver_deduplicates_symlink_equivalent_package_roots(tmp_path):
+    mesh = _repo_discovered_package(
+        tmp_path, "alias_pkg", "meshes/visual/asset.dae", "<COLLADA>alias</COLLADA>\n"
+    )
+    package_root = mesh.parents[2]
+    alias_root = tmp_path / "package_alias"
+    alias_root.symlink_to(package_root, target_is_directory=True)
+
+    resolved, package, dest_rel, warning, checked = exporter.resolve_package_mesh_uri(
+        "package://alias_pkg/meshes/visual/asset.dae",
+        repo_root=tmp_path,
+        package_map={"alias_pkg": alias_root},
+        extra_roots=[package_root, alias_root],
+        supported_suffixes=exporter.SUPPORTED_MESH_SUFFIXES,
+    )
+
+    assert resolved == mesh.resolve()
+    assert package == "alias_pkg"
+    assert dest_rel == Path("alias_pkg/meshes/visual/asset.dae")
+    assert warning is None
+    assert checked == [package_root.resolve()]
+
+
 def test_expanded_urdf_staging_uses_repository_root_when_cwd_is_scene(monkeypatch):
     scene = REPO_ROOT / "scenes" / "ur5_2f_test"
     source = scene / "expanded_root_regression.urdf"

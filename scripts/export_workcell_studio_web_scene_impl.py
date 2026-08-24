@@ -41,6 +41,7 @@ except ImportError:  # pragma: no cover - direct script execution fallback
     from workcell_visual_asset_resolver import resolve_package_mesh_uri
 
 SCHEMA_VERSION = "workcell_studio_web_scene/v1"
+VISUAL_ASSET_CATALOG = "config/workcell_studio_visual_asset_catalog.yaml"
 INPUTS = {
     "scene_manifest": "scene_manifest.yaml",
     "cell_definition": "cell_definition.yaml",
@@ -1194,6 +1195,7 @@ def _generated_preview_items(index: Mapping[str, Any], scene_dir: Path, warnings
         "primitive_geometry_type", "package_uri", "mesh_uri", "source_path", "mesh_path",
         "resolved_source_path", "scale", "mesh_scale", "source_layer", "active_visual_source",
         "mesh_bounds", "local_bounds", "bounds", "dimensions", "size",
+        "layout_item_ref", "support_surface_ref",
         "support_surface_kind", "support_kind", "semantic_type", "top_surface_z_m", "topSurfaceZM", "support_surface_height_m", "supportSurfaceHeightM",
         "expected_support_footprint_m", "support_footprint_m", "footprint_m", "footprint",
         "render_expected", "mesh_available", "resolved", "warning",
@@ -2051,7 +2053,55 @@ def _authored_item(raw: Mapping[str, Any], source: str, index: int, scene_dir: P
     return item
 
 
-def _authored_sections(data: Dict[str, Any], scene_dir: Path, warnings: List[Json]) -> Dict[str, List[Json]]:
+def _load_visual_asset_catalog(scene_dir: Path, warnings: List[Json]) -> Mapping[str, Any]:
+    catalog_path = _repo_root(scene_dir) / VISUAL_ASSET_CATALOG
+    if not catalog_path.is_file():
+        _warn(warnings, "visual_asset_catalog_missing", "Visual asset catalog is unavailable; semantic items retain their primitive fallback.", VISUAL_ASSET_CATALOG)
+        return {}
+    return _as_map(_as_map(_load_yaml(catalog_path, VISUAL_ASSET_CATALOG, warnings)).get("categories"))
+
+
+def _semantic_visual_catalog_category(item: Mapping[str, Any], section: str) -> Optional[str]:
+    category = _core_mesh_category(item, section)
+    if category == "camera_realsense":
+        return "camera_realsense"
+    if category != "table_workbench":
+        return None
+    identity = _physical_classification_text(item)
+    return "workbench" if "workbench" in identity else "table"
+
+
+def _apply_catalog_visual(item: Json, section: str, catalog: Mapping[str, Any]) -> None:
+    """Enrich an authored semantic item without replacing its authored identity."""
+    if _has_mesh_reference(item):
+        return
+    catalog_category = _semantic_visual_catalog_category(item, section)
+    entry = _as_map(catalog.get(catalog_category)) if catalog_category else {}
+    preferred = _as_list(entry.get("preferred_mesh_uris"))
+    mesh_uri = next((value for value in preferred if isinstance(value, str) and value.strip()), None)
+    if mesh_uri is None:
+        return
+
+    item["mesh_uri"] = mesh_uri
+    item["geometry_type"] = "mesh"
+    item["active_visual_source"] = "catalog_semantic_mesh"
+    item["visual_asset_catalog_category"] = catalog_category
+    for field in ("mesh_scale", "mesh_local_transform"):
+        if field in entry and field not in item:
+            item[field] = copy.deepcopy(entry[field])
+    transform = _as_map(item.get("mesh_local_transform"))
+    if transform and "visual_origin" not in item:
+        item["visual_origin"] = {
+            "xyz": copy.deepcopy(transform.get("xyz", [0.0, 0.0, 0.0])),
+            "rpy": copy.deepcopy(transform.get("rpy", [0.0, 0.0, 0.0])),
+        }
+    provenance = item.setdefault("provenance", {})
+    for field in ("mesh_uri", "geometry_type", "active_visual_source", "visual_asset_catalog_category", "mesh_scale", "mesh_local_transform", "visual_origin"):
+        if field in item:
+            provenance[field] = VISUAL_ASSET_CATALOG
+
+
+def _authored_sections(data: Dict[str, Any], scene_dir: Path, warnings: List[Json], catalog: Mapping[str, Any]) -> Dict[str, List[Json]]:
     sections = {"assets": [], "sensors": [], "zones": []}
     physical_layout_items: Dict[str, Json] = {}
     if data.get("layout") is not None and "items" not in _as_map(data.get("layout")):
@@ -2059,11 +2109,10 @@ def _authored_sections(data: Dict[str, Any], scene_dir: Path, warnings: List[Jso
     for counter, (source_section, raw, source) in enumerate(_iter_declared_physical_entries(data)):
         layout_ref = str(_first_present(raw.get("layout_item_ref"), raw.get("id"), ""))
         existing_layout_item = physical_layout_items.get(layout_ref)
-        if source == INPUTS["environment"] and existing_layout_item is not None:
-            # environment.yaml describes semantic/task relationships for the
-            # same editable layout object.  Enrich that authoritative physical
-            # record instead of exporting a second meshless marker with the
-            # same target-bin identity.
+        if source != INPUTS["layout"] and existing_layout_item is not None:
+            # Semantic environment/cell declarations can mirror the same
+            # editable layout object. Enrich the authoritative authored record
+            # instead of exporting another physical visual for that identity.
             for field in ("frame", "layout_item_ref", "support_surface_ref", "task_zone_ref", "perception_mode", "runtime_enforced", "runtime_commanded"):
                 if field in raw and field not in existing_layout_item:
                     existing_layout_item[field] = raw[field]
@@ -2075,6 +2124,7 @@ def _authored_sections(data: Dict[str, Any], scene_dir: Path, warnings: List[Jso
         item.setdefault("source_layer", "editable_authored_physical")
         item["provenance"].update({"source_section": source, "active_visual_source": source, "source_layer": source})
         section = _section_from_item(item)
+        _apply_catalog_visual(item, section, catalog)
         if source_section == "sensors" or section == "sensors":
             sections["sensors"].append(item)
         elif source_section in {"zones", "task_zones"} or _is_helper(item):
@@ -2987,8 +3037,28 @@ def _apply_render_ownership_contract(payload: Json, *, expanded_urdf_active: boo
     authored_physical_keys: set[str] = set()
     for section in RENDERABLE_OUTPUT_SECTIONS:
         for item in _as_list(payload.get(section)):
-            if isinstance(item, Mapping) and item.get("source_kind") == "user_authored" and _core_mesh_category(item, section) in {"table_workbench", "camera_realsense"}:
-                authored_physical_keys.add(_render_identity_part(_first_present(item.get("id"), item.get("object_name"), item.get("link"), item.get("display_name"))))
+            if (
+                isinstance(item, Mapping)
+                and item.get("source_kind") == "user_authored"
+                and _core_mesh_category(item, section) in {"table_workbench", "camera_realsense"}
+                and _has_supported_mesh_reference(item)
+                and _item_pose_xyz(item) is not None
+                and item.get("mesh_staging_status") not in {
+                    "resolve_failed", "missing_file", "unsupported_format",
+                    "unsupported_scheme", "unsafe_path", "unsafe_destination",
+                }
+            ):
+                authored_physical_keys.update(
+                    _render_identity_part(value)
+                    for value in (
+                        item.get("id"), item.get("object_name"), item.get("link"),
+                        item.get("display_name"), item.get("layout_item_ref"),
+                        item.get("support_surface_ref"), item.get("canonical_scene_item_id"),
+                        item.get("canonical_item_id"), item.get("authored_item_id"),
+                        item.get("scene_item_id"), item.get("object_ref"), item.get("camera_id"),
+                    )
+                    if value not in (None, "")
+                )
     counters = {"total_scene_records": 0, "primary_physical_records": 0, "expanded_assembly_owned_physical_visuals": 0, "diagnostic_only_records": 0, "overlay_records": 0}
 
     for section in RENDERABLE_OUTPUT_SECTIONS:
@@ -3027,8 +3097,18 @@ def _apply_render_ownership_contract(payload: Json, *, expanded_urdf_active: boo
                 continue
 
             if item.get("source_kind") == "generated_preview" and category in {"table_workbench", "camera_realsense"}:
-                logical_key = _render_identity_part(_first_present(item.get("id"), item.get("object_name"), item.get("link"), item.get("display_name")))
-                if logical_key in authored_physical_keys:
+                logical_keys = {
+                    _render_identity_part(value)
+                    for value in (
+                        item.get("id"), item.get("object_name"), item.get("link"),
+                        item.get("display_name"), item.get("layout_item_ref"),
+                        item.get("support_surface_ref"), item.get("canonical_scene_item_id"),
+                        item.get("canonical_item_id"), item.get("authored_item_id"),
+                        item.get("scene_item_id"), item.get("object_ref"), item.get("camera_id"),
+                    )
+                    if value not in (None, "")
+                }
+                if logical_keys & authored_physical_keys:
                     item["render_policy"] = "diagnostic_only"
                     item["render_owner"] = "environment_mesh"
                     item["render_identity"] = _generated_render_identity(scene_id, "environment_mesh", item, index)
@@ -3219,7 +3299,7 @@ def build_web_scene(
     _apply_web_scene_transform_parity_fallbacks(data, generated, warnings)
     _annotate_parent_to_child_poses(generated)
     _suppress_unresolved_placeholder_robot_visuals(generated, warnings)
-    authored = _authored_sections(data, scene_dir, warnings)
+    authored = _authored_sections(data, scene_dir, warnings, _load_visual_asset_catalog(scene_dir, warnings))
     top_robots, top_tools, top_sensors = _top_level_entities(data, warnings)
     _annotate_generated_ui_selection_refs(
         generated,
