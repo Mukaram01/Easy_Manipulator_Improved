@@ -48,15 +48,16 @@ def test_delete_updates_duplicate_action_once_after_mutation():
     assert body.count("refresh_duplicate_selected_action();") == 1
 
 
-def test_minimap_survives_embedded_web3d_ready_state():
+def test_minimap_collapses_for_embedded_web3d_and_remains_available_for_fallback():
     body = function_body(MAIN, "void MainWindow::update_minimap_backend_presentation()")
-    assert "embedded_web3d_presented" not in body
-    assert "setVisible(false)" not in body
+    assert "embedded_web3d_presented" in body
+    assert "setVisible(false)" in body
+    assert "setMinimumHeight(0)" in body
+    assert "setMaximumHeight(0)" in body
     assert "setMinimumHeight(90)" in body
     assert "setMaximumHeight(90)" in body
     assert "setVisible(minimap_requested_visible_)" in body
-    assert 'minimap->setFixedSize(150, 90)' in LAYOUT
-    assert "minimap->show()" in LAYOUT
+    assert 'minimap->show()' not in LAYOUT
 
 
 def test_inspector_has_one_empty_selection_message_and_no_horizontal_overflow():
@@ -117,3 +118,14 @@ def test_hierarchy_keeps_presentation_labels_out_of_canonical_display_names():
     assert fallback in current
     assert current.index(canonical) < current.index(fallback)
     assert "node->setData(0, TreeRoleDisplayName, p.display_name.trimmed())" in hierarchy
+
+
+def test_live_web3d_transform_refreshes_hierarchy_pose_text_for_inspector():
+    connection = MAIN.index("&ScenePreviewWidget::preview_item_transform_changed")
+    callback = MAIN[connection : MAIN.index(
+        "&ScenePreviewWidget::embedded_product_view_runtime_state_changed", connection
+    )]
+    assert "tree_item->setData(0, TreeRolePoseX, x);" in callback
+    assert "tree_item->setData(0, TreeRolePoseY, y);" in callback
+    assert "tree_item->setData(0, TreeRolePoseZ, z);" in callback
+    assert "tree_item->setData(0, TreeRolePoseText" in callback

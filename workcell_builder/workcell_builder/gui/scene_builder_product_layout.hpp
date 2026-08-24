@@ -411,10 +411,6 @@ inline void simplify_status_area(QWidget * scene_page)
       label->hide();
     }
   }
-  if (auto * minimap = scene_page->findChild<QWidget *>(QStringLiteral("digital_twin_minimap"))) {
-    minimap->setFixedSize(150, 90);
-    minimap->show();
-  }
   if (auto * bottom = scene_page->findChild<QFrame *>(QStringLiteral("sceneBuilderBottomStatusBar"))) bottom->hide();
 }
 
@@ -482,7 +478,7 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
     QFrame#sceneBuilderBottomStatusBar { background:#FFFFFF; border-top:1px solid #DDE5EE; border-left:0; border-right:0; border-bottom:0; border-radius:0; }
     QTabWidget#sceneBuilderInspectorTabs::pane { border:0px; background:#FFFFFF; }
     QTabWidget#sceneBuilderInspectorTabs QTabBar::tab { padding:7px 10px; }
-    QGraphicsView#digital_twin_minimap { min-width:150px; max-width:150px; min-height:90px; max-height:90px; border:1px solid #D8E2EC; border-radius:6px; background:#F8FAFC; }
+    QGraphicsView#digital_twin_minimap { border:1px solid #D8E2EC; border-radius:6px; background:#F8FAFC; }
     QGroupBox#sceneBuilderInspectorAdvancedDetails { margin-top:6px; padding:5px; }
     QFrame#sceneBuilderRightPanel QDoubleSpinBox { min-width:76px; }
   )QSS"));

@@ -6526,7 +6526,7 @@ function setEditorSnap(enabled, translationMeters, rotationDegrees) {
   refreshGizmoSnap();
   refreshPlacementSnap();
 }
-function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, pushHistory = true) {
+function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, pushHistory = true, resetHistory = false) {
   const requested = renderedById(String(id || ''));
   const rendered = requested
     ? (canonicalEditOwnerRendered(requested) || requested)
@@ -6552,6 +6552,16 @@ function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, pushHistory = true
   next.pose.rpy.x = values[3];
   next.pose.rpy.y = values[4];
   next.pose.rpy.z = values[5];
+
+  // syncItemTransform is the native editor taking history authority after a
+  // Qt edit or a Qt-driven undo/redo. Retire browser history at that boundary
+  // so an old Web3D redo cannot survive and replay against the new timeline.
+  if (resetHistory) {
+    state.undoStack = [];
+    state.redoStack = [];
+    updateDirtyState();
+    emitDirtyChanged();
+  }
 
   const committed = markDirtyTransform(rendered, next, {
     pushHistory: Boolean(pushHistory),
@@ -6741,7 +6751,7 @@ window.__WORKCELL_EDITOR_API_V1__ = {
   setItemTransform: (id, x, y, z, roll, pitch, yaw) =>
     setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw),
   syncItemTransform: (id, x, y, z, roll, pitch, yaw) =>
-    setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, false),
+    setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, false, true),
   setItemMetadata: (id, displayName, semanticRole) =>
     setItemMetadataFromBridge(id, displayName, semanticRole),
   addItem: item => addItemFromBridge(item),

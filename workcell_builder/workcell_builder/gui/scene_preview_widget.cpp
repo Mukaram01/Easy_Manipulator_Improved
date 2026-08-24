@@ -831,8 +831,8 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     else if (choice == "Diagnostics / Overlays" && overlays_selector_) overlays_selector_->showPopup();
     refresh_info_chip();
   });
-  connect(embedded_undo_button_, &QPushButton::clicked, this, [this](){ run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.undo()")); });
-  connect(embedded_redo_button_, &QPushButton::clicked, this, [this](){ run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.redo()")); });
+  connect(embedded_undo_button_, &QPushButton::clicked, this, &ScenePreviewWidget::authoring_undo_requested);
+  connect(embedded_redo_button_, &QPushButton::clicked, this, &ScenePreviewWidget::authoring_redo_requested);
   connect(embedded_fit_button_, &QPushButton::clicked, this, [this](){
     if (embedded_product_view_state_ == EmbeddedProductViewState::Failed) {
       request_embedded_web_product_view_refresh(true, QStringLiteral("user_retry"));
@@ -1638,6 +1638,10 @@ void ScenePreviewWidget::clear_embedded_editor_state_for_scene_handoff()
   embedded_editor_polling_ = false;
   selected_preview_item_id_.clear();
   embedded_browser_selected_item_id_.clear();
+  native_authoring_can_undo_ = false;
+  native_authoring_can_redo_ = false;
+  embedded_authoring_can_undo_ = false;
+  embedded_authoring_can_redo_ = false;
   if (embedded_undo_button_) embedded_undo_button_->setEnabled(false);
   if (embedded_redo_button_) embedded_redo_button_->setEnabled(false);
   if (gizmo_mode_selector_) {
@@ -2925,8 +2929,12 @@ QString ScenePreviewWidget::embedded_snap_command(const QString & choice) const
 void ScenePreviewWidget::apply_embedded_editor_state(const QVariantMap & state)
 {
   if (state.isEmpty()) return;
-  if (embedded_undo_button_) embedded_undo_button_->setEnabled(state.value(QStringLiteral("canUndo")).toBool());
-  if (embedded_redo_button_) embedded_redo_button_->setEnabled(state.value(QStringLiteral("canRedo")).toBool());
+  embedded_authoring_can_undo_ = state.value(QStringLiteral("canUndo")).toBool();
+  embedded_authoring_can_redo_ = state.value(QStringLiteral("canRedo")).toBool();
+  if (embedded_undo_button_)
+    embedded_undo_button_->setEnabled(native_authoring_can_undo_ || embedded_authoring_can_undo_);
+  if (embedded_redo_button_)
+    embedded_redo_button_->setEnabled(native_authoring_can_redo_ || embedded_authoring_can_redo_);
   const QString mode = state.value(QStringLiteral("mode")).toString().trimmed().toLower();
   if ((mode == QStringLiteral("select") || mode == QStringLiteral("move") || mode == QStringLiteral("rotate")) &&
       gizmo_mode_selector_) {
@@ -2977,6 +2985,16 @@ void ScenePreviewWidget::apply_embedded_editor_state(const QVariantMap & state)
 
     if (property("embeddedSelectedTransformSignature").toString() != signature) {
       setProperty("embeddedSelectedTransformSignature", signature);
+      for (auto & item : preview_items_) {
+        if (item.id.trimmed() != selected_id) continue;
+        item.x = x;
+        item.y = y;
+        item.z = z;
+        item.roll = roll;
+        item.pitch = pitch;
+        item.yaw = yaw;
+        break;
+      }
       emit preview_item_transform_changed(
         selected_id, x, y, z, roll, pitch, yaw);
     }
@@ -3219,11 +3237,33 @@ void ScenePreviewWidget::redo_authoring_edit()
     run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.redo()"));
 }
 
+void ScenePreviewWidget::set_native_authoring_history_available(bool can_undo, bool can_redo)
+{
+  native_authoring_can_undo_ = can_undo;
+  native_authoring_can_redo_ = can_redo;
+  if (embedded_undo_button_)
+    embedded_undo_button_->setEnabled(native_authoring_can_undo_ || embedded_authoring_can_undo_);
+  if (embedded_redo_button_)
+    embedded_redo_button_->setEnabled(native_authoring_can_redo_ || embedded_authoring_can_redo_);
+}
+
 void ScenePreviewWidget::set_authoring_item_pose(
   const QString & id,
   double x, double y, double z,
   double roll, double pitch, double yaw)
 {
+  const QString stable_id = id.trimmed();
+  if (stable_id.isEmpty()) return;
+  for (auto & item : preview_items_) {
+    if (item.id.trimmed() != stable_id) continue;
+    item.x = x;
+    item.y = y;
+    item.z = z;
+    item.roll = roll;
+    item.pitch = pitch;
+    item.yaw = yaw;
+    break;
+  }
   if (!embedded_web_authoring_active()) return;
 
   const QString encoded_id =

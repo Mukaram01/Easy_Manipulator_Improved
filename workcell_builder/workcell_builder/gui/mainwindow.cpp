@@ -2666,6 +2666,10 @@ void MainWindow::setup_studio_shell()
   connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_selected, this, [this](const QString &id, const QString &role){
     apply_scene_selection(id, role, id.trimmed().isEmpty(), false);
   });
+  connect(scene_preview_widget_, &ScenePreviewWidget::authoring_undo_requested,
+    this, &MainWindow::undo_layout_edit);
+  connect(scene_preview_widget_, &ScenePreviewWidget::authoring_redo_requested,
+    this, &MainWindow::redo_layout_edit);
   connect(
     scene_preview_widget_,
     &ScenePreviewWidget::preview_item_transform_changed,
@@ -2719,6 +2723,7 @@ void MainWindow::setup_studio_shell()
             QPointF(before_item.x * 100.0, before_item.y * 100.0),
             QPointF(x * 100.0, y * 100.0), false, false, {}, before_item, after_item});
           redo_stack_.clear();
+          scene_preview_widget_->set_native_authoring_history_available(true, false);
           mark_layout_dirty(QStringLiteral("Product View Transform"));
         }
       }
@@ -2741,6 +2746,9 @@ void MainWindow::setup_studio_shell()
             tree_item->setData(0, TreeRoleRoll, roll);
             tree_item->setData(0, TreeRolePitch, pitch);
             tree_item->setData(0, TreeRoleYaw, yaw);
+            tree_item->setData(0, TreeRolePoseText,
+              QStringLiteral("xyz=(%1,%2,%3) rpy=(%4,%5,%6)")
+                .arg(x).arg(y).arg(z).arg(roll).arg(pitch).arg(yaw));
             return true;
           };
 
@@ -7064,7 +7072,19 @@ void MainWindow::refresh_minimap_card()
 
 void MainWindow::update_minimap_backend_presentation()
 {
-  if (!minimap_view_) return;
+  if (!minimap_view_ || !scene_preview_widget_) return;
+
+  const bool embedded_web3d_presented =
+    scene_preview_widget_->active_product_view_backend() ==
+      ScenePreviewWidget::ProductViewBackend::EmbeddedWeb3D &&
+    scene_preview_widget_->embedded_web_authoring_active();
+  if (embedded_web3d_presented) {
+    minimap_view_->setVisible(false);
+    minimap_view_->setMinimumHeight(0);
+    minimap_view_->setMaximumHeight(0);
+    return;
+  }
+
   minimap_view_->setMinimumHeight(90);
   minimap_view_->setMaximumHeight(90);
   minimap_view_->setVisible(minimap_requested_visible_);
@@ -8551,6 +8571,7 @@ void MainWindow::apply_inspector_pose_to_item()
   }
   undo_stack_.push_back({"pose_edit", item_id, old, updated, false, false, {}, before_item, after_item});
   redo_stack_.clear();
+  scene_preview_widget_->set_native_authoring_history_available(true, false);
   mark_layout_dirty(metadata_changed ? "Inspector Metadata/Transform Edit" : "Inspector Pose/Dimensions Edit");
   if (metadata_changed) {
     refresh_scene_hierarchy_tree_from_current_items();
@@ -8578,6 +8599,7 @@ void MainWindow::apply_inspector_pose_to_item()
 
   refresh_selection_transform_editor_from_state(refreshed_state);
   refresh_selected_scene_item_labels(refreshed_state);
+  refresh_selected_item_card();
   if (scene_preview_widget_) scene_preview_widget_->update();
 }
 
@@ -8681,7 +8703,9 @@ void MainWindow::undo_layout_edit(){
   } else {
     for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;}
   }
-  redo_stack_.push_back(c); mark_layout_dirty("Undo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_minimap_card(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
+  redo_stack_.push_back(c);
+  scene_preview_widget_->set_native_authoring_history_available(!undo_stack_.empty(), true);
+  mark_layout_dirty("Undo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_minimap_card(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
 }
 void MainWindow::redo_layout_edit(){
   if (!ensure_live_authoring_mutation_available(QStringLiteral("Redo"))) return;
@@ -8748,7 +8772,9 @@ void MainWindow::redo_layout_edit(){
   } else {
     for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.new_pos); break;}
   }
-  undo_stack_.push_back(c); mark_layout_dirty("Redo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_minimap_card(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
+  undo_stack_.push_back(c);
+  scene_preview_widget_->set_native_authoring_history_available(true, !redo_stack_.empty());
+  mark_layout_dirty("Redo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_minimap_card(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
 }
 bool MainWindow::selected_item_can_be_duplicated() const
 {
@@ -8857,6 +8883,7 @@ void MainWindow::duplicate_selected_item()
     QPointF(copy.x * 100.0, copy.y * 100.0),
     true, false, {copy}};
   undo_stack_.push_back(command); redo_stack_.clear();
+  scene_preview_widget_->set_native_authoring_history_available(true, false);
   if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
     scene_preview_widget_->duplicate_authoring_item(target.state.id, copy);
   } else {
@@ -8910,6 +8937,7 @@ void MainWindow::delete_selected_item(){
   if (scene_hierarchy_tree_) scene_hierarchy_tree_->clearSelection();
   current_selected_scene_item_id_.clear(); selected_item_state_ = {};
   undo_stack_.push_back(command); redo_stack_.clear();
+  scene_preview_widget_->set_native_authoring_history_available(true, false);
   if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active())
     scene_preview_widget_->remove_authoring_item(id);
   else apply_scene3d_preview_layer_filters(false);
@@ -8971,6 +8999,7 @@ void MainWindow::keyPressEvent(QKeyEvent * event)
   if (snap_step_label_) snap_step_label_->setText(QString("Nudge step: %1 m").arg(step_m, 0, 'f', 3));
   undo_stack_.push_back({"nudge", item->data(RoleId).toString(), old_pos, item->pos(), false, false, {}});
   redo_stack_.clear();
+  scene_preview_widget_->set_native_authoring_history_available(true, false);
   mark_layout_dirty("Nudge Move");
   rebuild_canvas_inspector();
   event->accept();
@@ -9342,6 +9371,7 @@ void MainWindow::commit_armed_asset_placement(
   select_canvas_item(item);
   undo_stack_.push_back({"add", new_id, item->pos(), item->pos(), true, false, {preview_item}});
   redo_stack_.clear();
+  scene_preview_widget_->set_native_authoring_history_available(true, false);
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
   append_studio_log(QString("Add to Canvas success: %1 (%2) asset_id=%3 layout_id=%4 from %5 | xyzrpy=[%6, %7, %8, %9, %10, %11] use_clicked_xy=%12")
     .arg(display_name, category, asset_id, new_id, source_path)

@@ -257,6 +257,7 @@ public:
   void set_authoring_mode(const QString & mode);
   void undo_authoring_edit();
   void redo_authoring_edit();
+  void set_native_authoring_history_available(bool can_undo, bool can_redo);
   void set_authoring_item_pose(
     const QString & id,
     double x, double y, double z,
@@ -346,6 +347,8 @@ signals:
     const QString & id,
     double x, double y, double z,
     double roll, double pitch, double yaw);
+  void authoring_undo_requested();
+  void authoring_redo_requested();
   // A placement request is identity based: catalog metadata and filesystem
   // paths are deliberately resolved only by MainWindow's canonical backend.
   void asset_placement_requested(
@@ -584,6 +587,10 @@ private:
   QLabel * toolbar_feedback_label_{ nullptr };
   QPushButton * embedded_undo_button_{ nullptr };
   QPushButton * embedded_redo_button_{ nullptr };
+  bool native_authoring_can_undo_{ false };
+  bool native_authoring_can_redo_{ false };
+  bool embedded_authoring_can_undo_{ false };
+  bool embedded_authoring_can_redo_{ false };
   QPushButton * embedded_fit_button_{ nullptr };
   QComboBox * overlays_selector_{ nullptr };
   QComboBox * labels_selector_{ nullptr };

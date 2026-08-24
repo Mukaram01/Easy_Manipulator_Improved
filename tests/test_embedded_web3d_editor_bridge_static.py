@@ -757,8 +757,22 @@ def test_qt_web3d_selected_transform_inspector_round_trip_contract():
 
     assert "preview_item_transform_changed" in HDR
     assert "preview_item_transform_changed" in CPP
+    assert "authoring_undo_requested" in HDR
+    assert "authoring_redo_requested" in HDR
+    assert "&ScenePreviewWidget::authoring_undo_requested" in CPP
+    assert "&ScenePreviewWidget::authoring_redo_requested" in CPP
+    assert "this, &MainWindow::undo_layout_edit" in main
+    assert "this, &MainWindow::redo_layout_edit" in main
+    assert "set_native_authoring_history_available" in HDR
+    assert "native_authoring_can_undo_ || embedded_authoring_can_undo_" in CPP
+    assert "set_native_authoring_history_available(true, false)" in main
     assert "selectedTransform" in CPP
     assert "embeddedSelectedTransformSignature" in CPP
+    state_sync = CPP.split(
+        'if (property("embeddedSelectedTransformSignature").toString() != signature)', 1
+    )[1].split("emit preview_item_transform_changed", 1)[0]
+    assert "for (auto & item : preview_items_)" in state_sync
+    assert "item.x = x;" in state_sync
     assert "refresh_selection_transform_editor_from_state(refreshed)" in main
 
     # Qt -> Web3D: inspector Apply uses the live editor instead of reloading.
@@ -769,12 +783,22 @@ def test_qt_web3d_selected_transform_inspector_round_trip_contract():
     assert "selectionIsEditable(rendered)" in bridge
     assert "markDirtyTransform(rendered, next" in bridge
     assert "emitTransformCommitted(rendered)" in bridge
+    assert "if (resetHistory)" in bridge
+    assert "state.undoStack = []" in bridge
+    assert "state.redoStack = []" in bridge
 
     assert "setItemPose:" in VIEWER
     assert "set_authoring_item_pose" in HDR
     assert "set_authoring_item_pose" in CPP
     assert "syncItemTransform" in CPP
     assert "a.setItemPose" in CPP
+    assert "setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, false, true)" in VIEWER
+
+    pose_sync = CPP.split("void ScenePreviewWidget::set_authoring_item_pose", 1)[1].split(
+        "void ScenePreviewWidget::set_authoring_item_metadata", 1
+    )[0]
+    assert "for (auto & item : preview_items_)" in pose_sync
+    assert "item.x = x;" in pose_sync
 
     inspector = main.split(
         "void MainWindow::apply_inspector_pose_to_item()", 1
@@ -784,6 +808,7 @@ def test_qt_web3d_selected_transform_inspector_round_trip_contract():
 
     assert "embedded_web_authoring_active()" in inspector
     assert "set_authoring_item_pose(" in inspector
+    assert "refresh_selected_item_card();" in inspector
 
     embedded_section = inspector.split(
         "scene_preview_widget_->embedded_web_authoring_active()", 1

@@ -741,8 +741,8 @@ TEST(SceneBuilderWorkspaceSource, MinimapPresentationTracksProductViewBackendWit
   EXPECT_TRUE(text.contains(QStringLiteral("embedded_web_authoring_active()")));
   EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMinimumHeight(0)")));
   EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMaximumHeight(0)")));
-  EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMinimumHeight(140)")));
-  EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMaximumHeight(140)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMinimumHeight(90)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMaximumHeight(90)")));
   EXPECT_TRUE(text.contains(QStringLiteral("&ScenePreviewWidget::embedded_product_view_runtime_state_changed")));
   EXPECT_GE(text.count(QStringLiteral("update_minimap_backend_presentation();")), 3);
 

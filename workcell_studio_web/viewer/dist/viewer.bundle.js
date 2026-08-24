@@ -45351,7 +45351,7 @@ function setEditorSnap(enabled, translationMeters, rotationDegrees) {
   refreshGizmoSnap();
   refreshPlacementSnap();
 }
-function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, pushHistory = true) {
+function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, pushHistory = true, resetHistory = false) {
   const requested = renderedById(String(id || ""));
   const rendered = requested ? canonicalEditOwnerRendered(requested) || requested : null;
   if (!rendered || !selectionIsEditable(rendered))
@@ -45371,6 +45371,12 @@ function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, pushHistory = true
   next.pose.rpy.x = values[3];
   next.pose.rpy.y = values[4];
   next.pose.rpy.z = values[5];
+  if (resetHistory) {
+    state.undoStack = [];
+    state.redoStack = [];
+    updateDirtyState();
+    emitDirtyChanged();
+  }
   const committed = markDirtyTransform(rendered, next, {
     pushHistory: Boolean(pushHistory),
     oldTransform: before,
@@ -45570,7 +45576,7 @@ window.__WORKCELL_EDITOR_API_V1__ = {
   },
   setItemPose: (id, x, y, z, roll, pitch, yaw) => setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw),
   setItemTransform: (id, x, y, z, roll, pitch, yaw) => setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw),
-  syncItemTransform: (id, x, y, z, roll, pitch, yaw) => setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, false),
+  syncItemTransform: (id, x, y, z, roll, pitch, yaw) => setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, false, true),
   setItemMetadata: (id, displayName, semanticRole) => setItemMetadataFromBridge(id, displayName, semanticRole),
   addItem: (item) => addItemFromBridge(item),
   removeItem: (id) => removeItemFromBridge(id),
