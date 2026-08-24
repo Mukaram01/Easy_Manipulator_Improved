@@ -3093,7 +3093,7 @@ void MainWindow::setup_studio_shell()
   digital_twin_canvas_->viewport()->installEventFilter(this);
   scene_preview_widget_->set_fallback_2d_view(digital_twin_canvas_);
   center_panel_layout->addWidget(scene_preview_widget_, 1);
-  minimap_view_ = new QGraphicsView(scene_builder); minimap_view_->setObjectName("digital_twin_minimap"); minimap_view_->setFixedSize(210, 140); center_panel_layout->addWidget(minimap_view_, 0, Qt::AlignRight);
+  minimap_view_ = new QGraphicsView(scene_builder); minimap_view_->setObjectName("digital_twin_minimap"); minimap_view_->setFixedSize(150, 90); center_panel_layout->addWidget(minimap_view_, 0, Qt::AlignRight);
   connect(scene_preview_widget_, &ScenePreviewWidget::embedded_product_view_runtime_state_changed,
     this, [this](const QString &, bool) { update_minimap_backend_presentation(); });
   update_minimap_backend_presentation();
@@ -3299,7 +3299,7 @@ void MainWindow::setup_studio_shell()
   auto * refresh_snapshot_button = new QPushButton("Refresh Snapshot", scene_builder); ar_layout->addWidget(refresh_snapshot_button);
   readiness_card_layout->addWidget(ar_card);
   inspector_label_=new QLabel("No item selected"); inspector_label_->setObjectName("sceneBuilderInspectorLabel"); inspector_label_->setWordWrap(true); selected_item_card_layout->addWidget(inspector_label_);
-  live_coordinate_label_ = new QLabel("Selected: none", scene_builder); selected_item_card_layout->addWidget(live_coordinate_label_);
+  live_coordinate_label_ = new QLabel("", scene_builder); live_coordinate_label_->hide(); selected_item_card_layout->addWidget(live_coordinate_label_);
   auto * metadata_form = new QFormLayout();
   metadata_form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
   inspector_display_name_ = new QLineEdit(scene_builder);
@@ -4309,7 +4309,11 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     if (!item) return false;
     state.id = item->data(0, TreeRoleId).toString().trimmed();
     if (state.id.isEmpty()) state.id = item->text(0).trimmed();
-    state.display_name = item->text(0).trimmed();
+    // Column zero is a presentation label ("Name [instance_id]"). Keep that
+    // decoration out of the authored model so duplicate/undo cycles cannot
+    // progressively append instance IDs to the canonical display name.
+    state.display_name = item->data(0, TreeRoleDisplayName).toString().trimmed();
+    if (state.display_name.isEmpty()) state.display_name = item->text(0).trimmed();
     state.role = item->data(0, TreeRoleRole).toString().trimmed();
     state.category = item->data(0, TreeRoleCategory).toString().trimmed();
     state.type = item->data(0, TreeRoleItemTypeClass).toString().trimmed();
@@ -4583,7 +4587,8 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   if (!state.valid) {
     inspector_label_->setText("No item selected");
     inspector_label_->setToolTip(selected_scene_state_.valid ? selected_scene_state_.path : QString());
-    live_coordinate_label_->setText("No item selected");
+    live_coordinate_label_->clear();
+    live_coordinate_label_->setVisible(false);
     if (inspector_advanced_details_label_) {
       inspector_advanced_details_label_->setText(QString());
       inspector_advanced_details_label_->setToolTip(QString());
@@ -4647,6 +4652,7 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
     inspector_advanced_details_label_->setText(advanced_text);
     inspector_advanced_details_label_->setToolTip(advanced_text);
   }
+  live_coordinate_label_->setVisible(true);
   live_coordinate_label_->setText(QString("Transform: %1").arg(pose));
 }
 
@@ -7058,21 +7064,9 @@ void MainWindow::refresh_minimap_card()
 
 void MainWindow::update_minimap_backend_presentation()
 {
-  if (!minimap_view_ || !scene_preview_widget_) return;
-
-  const bool embedded_web3d_presented =
-    scene_preview_widget_->active_product_view_backend() ==
-      ScenePreviewWidget::ProductViewBackend::EmbeddedWeb3D &&
-    scene_preview_widget_->embedded_web_authoring_active();
-  if (embedded_web3d_presented) {
-    minimap_view_->setVisible(false);
-    minimap_view_->setMinimumHeight(0);
-    minimap_view_->setMaximumHeight(0);
-    return;
-  }
-
-  minimap_view_->setMinimumHeight(140);
-  minimap_view_->setMaximumHeight(140);
+  if (!minimap_view_) return;
+  minimap_view_->setMinimumHeight(90);
+  minimap_view_->setMaximumHeight(90);
   minimap_view_->setVisible(minimap_requested_visible_);
 }
 
@@ -8687,7 +8681,7 @@ void MainWindow::undo_layout_edit(){
   } else {
     for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;}
   }
-  redo_stack_.push_back(c); mark_layout_dirty("Undo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
+  redo_stack_.push_back(c); mark_layout_dirty("Undo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_minimap_card(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
 }
 void MainWindow::redo_layout_edit(){
   if (!ensure_live_authoring_mutation_available(QStringLiteral("Redo"))) return;
@@ -8754,7 +8748,7 @@ void MainWindow::redo_layout_edit(){
   } else {
     for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.new_pos); break;}
   }
-  undo_stack_.push_back(c); mark_layout_dirty("Redo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
+  undo_stack_.push_back(c); mark_layout_dirty("Redo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_minimap_card(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
 }
 bool MainWindow::selected_item_can_be_duplicated() const
 {
@@ -8868,9 +8862,9 @@ void MainWindow::duplicate_selected_item()
   } else {
     apply_scene3d_preview_layer_filters(false);
   }
-  refresh_scene_hierarchy_tree_from_current_items();
-  refresh_scene_builder_left_explorer();
   apply_scene_selection(new_id, copy.role, false, false);
+  refresh_scene_hierarchy_tree_from_current_items();
+  refresh_minimap_card();
   mark_layout_dirty("Duplicate Selected");
   append_studio_log(QString("Duplicated %1 as %2").arg(base_name, new_name));
   refresh_duplicate_selected_action(); refresh_delete_selected_action();
@@ -8921,11 +8915,10 @@ void MainWindow::delete_selected_item(){
   else apply_scene3d_preview_layer_filters(false);
   refresh_scene_hierarchy_tree_from_current_items();
   refresh_selected_scene_item_labels(selected_item_state_);
-  refresh_scene_builder_left_explorer();
+  refresh_minimap_card();
   mark_layout_dirty("Delete Selected");
   append_studio_log(QString("Deleted %1").arg(target.state.display_name.isEmpty() ? id : target.state.display_name));
   refresh_delete_selected_action();
-  refresh_duplicate_selected_action();
   refresh_duplicate_selected_action();
 }
 
@@ -10249,7 +10242,8 @@ void MainWindow::refresh_scene_hierarchy_tree_from_current_items()
     auto * node = new QTreeWidgetItem(scene_hierarchy_tree_, {
       display_name, type_text.isEmpty() ? QStringLiteral("object") : type_text, state_text});
     node->setToolTip(0, detail_tooltip); node->setToolTip(1, type_text); node->setToolTip(2, detail_tooltip);
-    node->setData(0, TreeRoleId, p.id); node->setData(0, TreeRoleCategory, p.category);
+    node->setData(0, TreeRoleId, p.id); node->setData(0, TreeRoleDisplayName, p.display_name.trimmed());
+    node->setData(0, TreeRoleCategory, p.category);
     node->setData(0, TreeRolePoseText, QString("xyz=(%1,%2,%3) rpy=(%4,%5,%6)").arg(p.x).arg(p.y).arg(p.z).arg(p.roll).arg(p.pitch).arg(p.yaw));
     node->setData(0, TreeRoleSource, p.source_path);
     node->setData(0, TreeRolePoseX, p.x); node->setData(0, TreeRolePoseY, p.y); node->setData(0, TreeRolePoseZ, p.z);

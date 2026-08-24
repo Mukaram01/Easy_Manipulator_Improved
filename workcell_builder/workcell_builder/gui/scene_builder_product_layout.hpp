@@ -4,6 +4,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QEvent>
 #include <QFrame>
 #include <QGraphicsView>
@@ -13,6 +14,7 @@
 #include <QLineEdit>
 #include <QObject>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSettings>
 #include <QSizePolicy>
 #include <QSplitter>
@@ -124,7 +126,8 @@ inline void hide_duplicate_scene_identity(QWidget * scene_page)
   for (auto * label : scene_page->findChildren<QLabel *>()) {
     if (!label) continue;
     const QString text = label->text().trimmed();
-    if (text == QStringLiteral("Scene Builder") || text.startsWith(QStringLiteral("Scene Builder:"))) {
+    if (text == QStringLiteral("Scene Builder") || text.startsWith(QStringLiteral("Scene Builder:")) ||
+        text.contains(QStringLiteral(">Scene Builder"))) {
       label->hide();
     }
   }
@@ -350,6 +353,48 @@ inline void simplify_inspector(QWidget * scene_page)
         break;
       }
     }
+    if (auto * inspector = selection_page->findChild<QLabel *>(QStringLiteral("sceneBuilderInspectorLabel"))) {
+      QWidget * card = inspector->parentWidget();
+      while (card && card != selection_page && card->objectName() != QStringLiteral("studioCard")) {
+        card = card->parentWidget();
+      }
+      if (card && card != selection_page) {
+        card->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
+        if (card->layout()) card->layout()->setAlignment(Qt::AlignTop);
+        card->setMaximumHeight(520);
+        for (auto * label : card->findChildren<QLabel *>()) {
+          if (label) label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+        }
+      }
+    }
+    for (auto * spin : selection_page->findChildren<QDoubleSpinBox *>()) {
+      if (spin) spin->setMinimumWidth(76);
+    }
+    for (auto * scroll : selection_page->findChildren<QScrollArea *>()) {
+      if (scroll) scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    }
+    for (auto * group : selection_page->findChildren<QGroupBox *>()) {
+      if (!group) continue;
+      const QString title = group->title().trimmed();
+      if (title != QStringLiteral("Advanced details") && title != QStringLiteral("Robot Base Pose")) continue;
+      group->setCheckable(true);
+      group->setChecked(false);
+      group->setMaximumHeight(34);
+      const auto direct_children = group->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly);
+      for (auto * child : direct_children) if (child) child->hide();
+      QObject::connect(group, &QGroupBox::toggled, group, [group, direct_children](bool expanded) {
+        group->setMaximumHeight(expanded ? QWIDGETSIZE_MAX : 34);
+        for (auto * child : direct_children) if (child) child->setVisible(expanded);
+      });
+    }
+    // Anchor the inspector stack below the primary transform card; otherwise
+    // QVBoxLayout distributes spare height between collapsed sections.
+    if (!selection_page->property("sceneBuilderTrailingStretchAdded").toBool()) {
+      if (auto * layout = qobject_cast<QVBoxLayout *>(selection_page->layout())) {
+        layout->addStretch(1);
+        selection_page->setProperty("sceneBuilderTrailingStretchAdded", true);
+      }
+    }
   }
 }
 
@@ -366,7 +411,11 @@ inline void simplify_status_area(QWidget * scene_page)
       label->hide();
     }
   }
-  if (auto * minimap = scene_page->findChild<QWidget *>(QStringLiteral("digital_twin_minimap"))) minimap->hide();
+  if (auto * minimap = scene_page->findChild<QWidget *>(QStringLiteral("digital_twin_minimap"))) {
+    minimap->setFixedSize(150, 90);
+    minimap->show();
+  }
+  if (auto * bottom = scene_page->findChild<QFrame *>(QStringLiteral("sceneBuilderBottomStatusBar"))) bottom->hide();
 }
 
 inline void configure_scene_builder_product_layout(MainWindow * window)
@@ -384,25 +433,25 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
   auto * right = scene_page->findChild<QFrame *>(QStringLiteral("sceneBuilderRightPanel"));
   auto * splitter = scene_page->findChild<QSplitter *>(QStringLiteral("sceneBuilderMainSplitter"));
   if (left) {
-    left->setMinimumWidth(245);
-    left->setMaximumWidth(300);
+    left->setMinimumWidth(300);
+    left->setMaximumWidth(380);
   }
   if (center) center->setMinimumWidth(760);
   if (right) {
-    right->setMinimumWidth(300);
-    right->setMaximumWidth(360);
+    right->setMinimumWidth(350);
+    right->setMaximumWidth(440);
     right->show();
   }
   if (splitter) {
     splitter->setStretchFactor(0, 1);
     splitter->setStretchFactor(1, 10);
     splitter->setStretchFactor(2, 1);
-    splitter->setSizes({270, 1120, 320});
+    splitter->setSizes({325, 1040, 370});
   }
 
   QSettings settings;
-  settings.setValue(QStringLiteral("scene_builder/preferred_left_width"), 270);
-  settings.setValue(QStringLiteral("scene_builder/preferred_right_width"), 320);
+  settings.setValue(QStringLiteral("scene_builder/preferred_left_width"), 325);
+  settings.setValue(QStringLiteral("scene_builder/preferred_right_width"), 370);
   settings.setValue(QStringLiteral("scene_builder/right_panel_visible"), true);
 
   simplify_hierarchy(scene_page);
@@ -433,6 +482,9 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
     QFrame#sceneBuilderBottomStatusBar { background:#FFFFFF; border-top:1px solid #DDE5EE; border-left:0; border-right:0; border-bottom:0; border-radius:0; }
     QTabWidget#sceneBuilderInspectorTabs::pane { border:0px; background:#FFFFFF; }
     QTabWidget#sceneBuilderInspectorTabs QTabBar::tab { padding:7px 10px; }
+    QGraphicsView#digital_twin_minimap { min-width:150px; max-width:150px; min-height:90px; max-height:90px; border:1px solid #D8E2EC; border-radius:6px; background:#F8FAFC; }
+    QGroupBox#sceneBuilderInspectorAdvancedDetails { margin-top:6px; padding:5px; }
+    QFrame#sceneBuilderRightPanel QDoubleSpinBox { min-width:76px; }
   )QSS"));
 }
 

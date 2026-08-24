@@ -1004,3 +1004,34 @@ body.embedded-mode #dirty-state::after {
 .placement-status.valid strong { color: #8fe0a9; }
 .placement-status.invalid strong { color: #ffd08a; }
 .placement-status.collision strong { color: #ff8f82; }
+
+/* Workcell Studio embedded product diagnostics: compact, still visible. */
+body.embedded-mode .scene-health {
+  top: 0.5rem;
+  left: 0.5rem;
+  width: min(19rem, calc(100% - 1rem));
+  font-size: 0.72rem;
+}
+
+body.embedded-mode .scene-health summary {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 0.38rem;
+  min-height: 2.25rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: 0.48rem;
+  box-shadow: 0 0.18rem 0.55rem rgba(23, 32, 42, 0.13);
+}
+
+body.embedded-mode .health-dot {
+  width: 0.52rem;
+  height: 0.52rem;
+}
+
+body.embedded-mode .health-copy strong { font-size: 0.75rem; }
+body.embedded-mode .health-copy small { font-size: 0.64rem; }
+body.embedded-mode .health-count,
+body.embedded-mode .health-review { font-size: 0.64rem; }
+
+body.embedded-mode .scene-health-body {
+  max-height: min(18rem, calc(100vh - 4rem));
+}

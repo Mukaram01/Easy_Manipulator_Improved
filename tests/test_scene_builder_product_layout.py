@@ -105,13 +105,13 @@ def test_product_layout_promotes_major_tabs_and_simplifies_hierarchy():
 def test_product_layout_prioritizes_the_3d_viewport():
     source = text(LAYOUT)
     for token in (
-        'left->setMinimumWidth(245)',
-        'left->setMaximumWidth(300)',
+        'left->setMinimumWidth(300)',
+        'left->setMaximumWidth(380)',
         'center->setMinimumWidth(760)',
-        'right->setMinimumWidth(300)',
-        'right->setMaximumWidth(360)',
+        'right->setMinimumWidth(350)',
+        'right->setMaximumWidth(440)',
         'splitter->setStretchFactor(1, 10)',
-        'splitter->setSizes({270, 1120, 320})',
+        'splitter->setSizes({325, 1040, 370})',
     ):
         assert token in source
 
