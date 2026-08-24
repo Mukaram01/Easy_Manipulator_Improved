@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MAIN = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
 LAYOUT = (ROOT / "workcell_builder/workcell_builder/gui/scene_builder_product_layout.hpp").read_text(encoding="utf-8")
+PREVIEW = (ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp").read_text(encoding="utf-8")
 CSS = (ROOT / "workcell_studio_web/viewer/style.css").read_text(encoding="utf-8")
 
 
@@ -50,14 +51,24 @@ def test_delete_updates_duplicate_action_once_after_mutation():
 
 def test_minimap_collapses_for_embedded_web3d_and_remains_available_for_fallback():
     body = function_body(MAIN, "void MainWindow::update_minimap_backend_presentation()")
+    presented = function_body(
+        PREVIEW, "bool ScenePreviewWidget::embedded_web_product_view_presented() const"
+    )
     assert "embedded_web3d_presented" in body
+    assert "embedded_web_product_view_presented()" in body
+    assert "embedded_web_authoring_active()" not in body
     assert "setVisible(false)" in body
-    assert "setMinimumHeight(0)" in body
-    assert "setMaximumHeight(0)" in body
-    assert "setMinimumHeight(90)" in body
-    assert "setMaximumHeight(90)" in body
+    assert "setMinimumSize(0, 0)" in body
+    assert "setMaximumSize(0, 0)" in body
+    assert "setMinimumSize(150, 90)" in body
+    assert "setMaximumSize(150, 90)" in body
     assert "setVisible(minimap_requested_visible_)" in body
+    assert "minimap_view_->setFixedSize(150, 90)" not in MAIN
     assert 'minimap->show()' not in LAYOUT
+    assert "ProductViewBackend::EmbeddedWeb3D" in presented
+    assert "!native_compatibility_fallback_active_" in presented
+    assert "stack_->currentWidget() == view3d_container_" in presented
+    assert "embedded_editor_contract_ready_" not in presented
 
 
 def test_inspector_has_one_empty_selection_message_and_no_horizontal_overflow():
@@ -85,8 +96,19 @@ def test_product_layout_compacts_secondary_inspector_and_status_chrome():
     assert 'QStringLiteral("Advanced details")' in LAYOUT
     assert 'QStringLiteral("Robot Base Pose")' in LAYOUT
     assert "group->setMaximumHeight(34)" in LAYOUT
-    assert 'QStringLiteral("sceneBuilderBottomStatusBar"))) bottom->hide()' in LAYOUT
+    assert 'QStringLiteral("sceneBuilderBottomStatusBar"))) bottom->hide()' not in LAYOUT
     assert "splitter->setSizes({325, 1040, 370})" in LAYOUT
+
+
+def test_product_layout_preserves_bottom_logs_control_and_collapsible_drawer():
+    assert 'setObjectName("sceneBuilderBottomStatusBar")' in MAIN
+    assert 'setObjectName("sceneBuilderLogsButton")' in MAIN
+    assert 'setObjectName("sceneBuilderLogDrawer")' in MAIN
+    assert "scene_builder_log_panel_->setVisible(show);" in MAIN
+    assert "studio_log_->setVisible(show);" in MAIN
+    assert "scene_builder_log_toggle_button_->setChecked(show);" in MAIN
+    assert 'sceneBuilderLatestStatus' in LAYOUT
+    assert 'status->hide()' in LAYOUT
 
 
 def test_embedded_scene_health_remains_visible_but_compact():

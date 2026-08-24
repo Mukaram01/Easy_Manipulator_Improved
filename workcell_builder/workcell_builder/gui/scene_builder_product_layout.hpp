@@ -411,7 +411,6 @@ inline void simplify_status_area(QWidget * scene_page)
       label->hide();
     }
   }
-  if (auto * bottom = scene_page->findChild<QFrame *>(QStringLiteral("sceneBuilderBottomStatusBar"))) bottom->hide();
 }
 
 inline void configure_scene_builder_product_layout(MainWindow * window)

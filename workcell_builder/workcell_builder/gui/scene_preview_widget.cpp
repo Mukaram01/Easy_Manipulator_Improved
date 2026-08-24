@@ -3179,10 +3179,16 @@ bool ScenePreviewWidget::is_native_product_view_backend() const
   return product_view_backend_ == ProductViewBackend::NativeScene3D;
 }
 
-bool ScenePreviewWidget::embedded_web_authoring_active() const
+bool ScenePreviewWidget::embedded_web_product_view_presented() const
 {
   return product_view_backend_ == ProductViewBackend::EmbeddedWeb3D &&
-    !native_compatibility_fallback_active_ && stack_ && stack_->currentWidget() == view3d_container_ &&
+    !native_compatibility_fallback_active_ && stack_ &&
+    stack_->currentWidget() == view3d_container_;
+}
+
+bool ScenePreviewWidget::embedded_web_authoring_active() const
+{
+  return embedded_web_product_view_presented() &&
     embedded_product_view_state_ == EmbeddedProductViewState::Ready && embedded_editor_contract_ready_;
 }
 

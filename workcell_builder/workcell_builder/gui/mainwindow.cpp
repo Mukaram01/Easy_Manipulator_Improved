@@ -3101,7 +3101,10 @@ void MainWindow::setup_studio_shell()
   digital_twin_canvas_->viewport()->installEventFilter(this);
   scene_preview_widget_->set_fallback_2d_view(digital_twin_canvas_);
   center_panel_layout->addWidget(scene_preview_widget_, 1);
-  minimap_view_ = new QGraphicsView(scene_builder); minimap_view_->setObjectName("digital_twin_minimap"); minimap_view_->setFixedSize(150, 90); center_panel_layout->addWidget(minimap_view_, 0, Qt::AlignRight);
+  minimap_view_ = new QGraphicsView(scene_builder);
+  minimap_view_->setObjectName("digital_twin_minimap");
+  minimap_view_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+  center_panel_layout->addWidget(minimap_view_, 0, Qt::AlignRight);
   connect(scene_preview_widget_, &ScenePreviewWidget::embedded_product_view_runtime_state_changed,
     this, [this](const QString &, bool) { update_minimap_backend_presentation(); });
   update_minimap_backend_presentation();
@@ -7075,18 +7078,16 @@ void MainWindow::update_minimap_backend_presentation()
   if (!minimap_view_ || !scene_preview_widget_) return;
 
   const bool embedded_web3d_presented =
-    scene_preview_widget_->active_product_view_backend() ==
-      ScenePreviewWidget::ProductViewBackend::EmbeddedWeb3D &&
-    scene_preview_widget_->embedded_web_authoring_active();
+    scene_preview_widget_->embedded_web_product_view_presented();
   if (embedded_web3d_presented) {
     minimap_view_->setVisible(false);
-    minimap_view_->setMinimumHeight(0);
-    minimap_view_->setMaximumHeight(0);
+    minimap_view_->setMinimumSize(0, 0);
+    minimap_view_->setMaximumSize(0, 0);
     return;
   }
 
-  minimap_view_->setMinimumHeight(90);
-  minimap_view_->setMaximumHeight(90);
+  minimap_view_->setMinimumSize(150, 90);
+  minimap_view_->setMaximumSize(150, 90);
   minimap_view_->setVisible(minimap_requested_visible_);
 }
 

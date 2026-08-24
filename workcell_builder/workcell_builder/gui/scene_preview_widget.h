@@ -252,6 +252,7 @@ public:
   MeshPreviewMode mesh_preview_mode() const;
   ProductViewBackend active_product_view_backend() const;
   bool is_native_product_view_backend() const;
+  bool embedded_web_product_view_presented() const;
   bool embedded_web_authoring_active() const;
   QString embedded_web_authoring_contract_error() const;
   void set_authoring_mode(const QString & mode);

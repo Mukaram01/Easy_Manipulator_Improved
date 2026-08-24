@@ -130,6 +130,20 @@ def test_product_layout_removes_redundant_scene_and_debug_chrome():
         assert token in source
 
 
+def test_product_layout_keeps_compact_logs_entry_point_and_existing_drawer():
+    layout = text(LAYOUT)
+    mainwindow = text(MAINWINDOW)
+    assert 'sceneBuilderBottomStatusBar' in layout
+    assert 'bottom->hide()' not in layout
+    for token in (
+        'sceneBuilderLogsButton',
+        'sceneBuilderLogDrawer',
+        'scene_builder_log_panel_->setVisible(show)',
+        'studio_log_->setVisible(show)',
+    ):
+        assert token in mainwindow
+
+
 def test_product_layout_keeps_one_contextual_inspector_surface():
     source = text(LAYOUT)
     for token in (

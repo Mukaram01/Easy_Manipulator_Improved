@@ -738,11 +738,11 @@ TEST(SceneBuilderWorkspaceSource, MinimapPresentationTracksProductViewBackendWit
   EXPECT_TRUE(text.contains(QStringLiteral("setObjectName(\"digital_twin_minimap\")")));
   EXPECT_TRUE(text.contains(QStringLiteral("void MainWindow::update_minimap_backend_presentation()")));
   EXPECT_TRUE(text.contains(QStringLiteral("ProductViewBackend::EmbeddedWeb3D")));
-  EXPECT_TRUE(text.contains(QStringLiteral("embedded_web_authoring_active()")));
-  EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMinimumHeight(0)")));
-  EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMaximumHeight(0)")));
-  EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMinimumHeight(90)")));
-  EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMaximumHeight(90)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("embedded_web_product_view_presented()")));
+  EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMinimumSize(0, 0)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMaximumSize(0, 0)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMinimumSize(150, 90)")));
+  EXPECT_TRUE(text.contains(QStringLiteral("minimap_view_->setMaximumSize(150, 90)")));
   EXPECT_TRUE(text.contains(QStringLiteral("&ScenePreviewWidget::embedded_product_view_runtime_state_changed")));
   EXPECT_GE(text.count(QStringLiteral("update_minimap_backend_presentation();")), 3);
 
@@ -816,10 +816,12 @@ TEST(SceneBuilderWorkspaceSource, CompactBottomStatusBarUsesSingleRowAndExisting
   ASSERT_TRUE(source.open(QIODevice::ReadOnly | QIODevice::Text));
   const QString text = QString::fromUtf8(source.readAll());
 
-  const int bar_index = text.indexOf(QStringLiteral("sceneBuilderBottomStatusBar"));
+  const int bar_index = text.indexOf(QStringLiteral(
+    "bottom_status_bar->setObjectName(\"sceneBuilderBottomStatusBar\")"));
   ASSERT_GE(bar_index, 0);
   const QString bar_block = text.mid(bar_index, 1900);
-  EXPECT_EQ(text.count(QStringLiteral("sceneBuilderBottomStatusBar")), 1);
+  EXPECT_EQ(text.count(QStringLiteral(
+    "bottom_status_bar->setObjectName(\"sceneBuilderBottomStatusBar\")")), 1);
   EXPECT_EQ(text.count(QStringLiteral("sceneBuilderLatestStatus")), 1);
   EXPECT_EQ(text.count(QStringLiteral("sceneBuilderLogDrawer")), 1);
   EXPECT_FALSE(text.contains(QStringLiteral("sceneBuilderSelectionSummary")));
