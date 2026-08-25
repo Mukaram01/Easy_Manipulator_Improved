@@ -97,6 +97,7 @@ public:
   ScenePreviewWidget * active_scene_preview_widget() const;
   bool load_scene_for_scene3d_smoke(const QString & scene_name, const QString & explicit_scene_path = QString(), QStringList * blockers = nullptr, QJsonObject * diagnostics = nullptr);
   void refresh_scene_builder_state_from_active_scene();
+  void bind_home_target_shell_actions();
   QJsonObject scene3d_filter_diagnostics() const;
   static bool parse_transform_clipboard_text(
     const QString & text, double * x, double * y, double * z, double * r, double * p, double * yaw, QString * error = nullptr);
@@ -130,6 +131,8 @@ private:
     ExportPage
   };
   void show_studio_page(StudioPage page);
+  bool open_scene_builder_for_scene_index(int scene_index, const QString & source_action);
+  bool open_home_scene_in_builder(const QString & scene_id, const QString & canonical_scene_path);
   bool open_scene_builder_for_selected_scene(const QString & source_action);
   void open_new_scene_creation_flow();
   bool has_selected_ros_distro() const;
@@ -174,6 +177,8 @@ private:
   void refresh_scene_browser_ui();
   void populate_scene_files_tab();
   void refresh_studio_home_scene_table();
+  QString home_scene_id_at_row(int row) const;
+  QString home_scene_path_at_row(int row) const;
   void refresh_selected_scene_details_card();
   void select_scene_by_row(int row);
   void open_selected_scene_artifact(const QString & artifact);
@@ -485,6 +490,8 @@ private:
   QPushButton * full_screen_button_{ nullptr };
   QTextEdit * studio_log_{ nullptr };
   QTableWidget * dashboard_scene_table_{ nullptr };
+  QString home_selected_scene_id_;
+  QString home_selected_scene_path_;
   QListWidget * dashboard_library_list_{ nullptr };
   QLineEdit * dashboard_library_search_{ nullptr };
   QComboBox * dashboard_library_status_filter_{ nullptr };

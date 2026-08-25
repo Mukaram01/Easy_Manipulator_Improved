@@ -73,9 +73,14 @@ inline QString clean_tool(QString tool)
   const QString lower = tool.trimmed().toLower();
   if (lower.isEmpty() || lower == QStringLiteral("unknown")) return QStringLiteral("—");
   if (lower == QStringLiteral("robotiq_85") || lower == QStringLiteral("robotiq_85_gripper") ||
-      lower == QStringLiteral("robotiq_2f_85") || lower == QStringLiteral("robotiq_2f_85_gripper"))
+      lower == QStringLiteral("robotiq_2f_85") || lower == QStringLiteral("robotiq_2f_85_gripper") ||
+      lower == QStringLiteral("robotiq_2f") || lower == QStringLiteral("robotiq 2f") ||
+      lower == QStringLiteral("robotiq 2f-85"))
     return QStringLiteral("Robotiq 2F-85");
-  if (lower == QStringLiteral("single_suction")) return QStringLiteral("Single Suction");
+  if (lower == QStringLiteral("robotiq_3f") || lower == QStringLiteral("robotiq 3f") ||
+      lower == QStringLiteral("robotiq_3f_gripper")) return QStringLiteral("Robotiq 3F");
+  if (lower == QStringLiteral("single_suction") || lower == QStringLiteral("suction"))
+    return QStringLiteral("Single Suction");
   if (lower == QStringLiteral("airpick4") || lower == QStringLiteral("onrobot_airpick4"))
     return QStringLiteral("OnRobot AirPick4");
   tool = tool.trimmed();
@@ -100,6 +105,8 @@ inline QString clean_task(const QString & raw)
   const QString value = raw.trimmed().toLower();
   if (value == QStringLiteral("present") || value == QStringLiteral("ready")) return QStringLiteral("Configured");
   if (value == QStringLiteral("missing")) return QStringLiteral("Missing");
+  if (value == QStringLiteral("pick_place") || value == QStringLiteral("pick-and-place") ||
+      value == QStringLiteral("pick and place")) return QStringLiteral("Pick & Place");
   return raw.trimmed().isEmpty() ? QStringLiteral("—") : raw.trimmed();
 }
 

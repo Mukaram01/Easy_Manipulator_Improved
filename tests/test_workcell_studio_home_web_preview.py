@@ -32,9 +32,8 @@ def test_home_snapshot_cache_is_outside_scene_source_and_revision_aware():
         'home_previews',
         'scene_last_updated(workspace_root, scene_id)',
         'exact_home_preview_cache_path',
-        'newest_home_preview_cache_path',
         'prune_old_home_preview_cache',
-        'refreshing in background',
+        'cache_path + QStringLiteral(".json")',
     ]:
         assert token in PREVIEW
 
@@ -56,21 +55,30 @@ def test_home_captures_only_the_existing_canonical_canvas_after_product_view_is_
         "canvas.toDataURL('image/png')",
         'QByteArray::fromBase64',
         'pixmap.save(cache_path, "PNG")',
+        'lifecycle_state != QStringLiteral("scene_ready")',
+        '!terminal',
+        'rendered_physical_count <= 0',
+        'reported_scene_id != scene_id',
+        'completed_home_preview_contract',
     ]:
         assert token in PREVIEW
 
 
-def test_home_preview_is_instant_when_cache_or_existing_snapshot_is_available():
+def test_home_preview_accepts_only_current_completed_cache():
     for token in [
         'show_fast_home_preview',
-        'Cached Product View snapshot · current scene',
-        'Cached Product View snapshot · refreshing in background',
-        'find_preview_path(workspace_root, scene_id)',
-        'Stored scene snapshot',
-        'Preparing first preview…',
-        'This workcell will open instantly next time.',
+        'Completed Product View snapshot',
+        'Preview unavailable',
+        'No cached or stored workcell preview is available yet.',
     ]:
         assert token in PREVIEW
+    for forbidden in [
+        'newest_home_preview_cache_path',
+        'Cached Product View snapshot · refreshing in background',
+        'Stored scene snapshot',
+        'find_preview_path(workspace_root, scene_id)',
+    ]:
+        assert forbidden not in PREVIEW
     assert "NO PREVIEW IMAGE" not in PREVIEW
     assert "PREVIEW ERROR" not in PREVIEW
     assert "PREPARING LIVE 3D" not in PREVIEW

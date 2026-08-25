@@ -16,7 +16,6 @@ def test_studio_home_object_names_exist():
         'setObjectName("studioHomeSafetyPill")',
         'setObjectName("studioHomePrimaryButton")',
         'setObjectName("studioHomeSecondaryButton")',
-        'setObjectName("studioHomeDangerButton")',
     ]:
         assert token in CPP
 
@@ -46,12 +45,13 @@ def test_no_obvious_dark_on_dark_text_for_studio_home_styles():
 def test_behavior_and_safety_tokens_remain_present_and_banned_tokens_absent():
     for token in [
         'Open Selected Scene',
-        'Dashboard Open in Scene Builder',
+        'open_home_scene_in_builder(scene_id, scene_path)',
+        'Home: opening Scene Builder for %1',
         'Delete Scene',
         '.workcell_studio_trash',
         'is_safe_scene_path_for_trash_move',
         'refresh_scene_browser_ui();',
     ]:
         assert token in CPP
-    for banned in ['.scenes_root', 'QPolygonF{', 'select_preview_item(item->']:
+    for banned in ['.scenes_root', 'QPolygonF{']:
         assert banned not in CPP

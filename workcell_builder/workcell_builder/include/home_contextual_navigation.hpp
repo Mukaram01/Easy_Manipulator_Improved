@@ -72,15 +72,11 @@ inline void set_context_status_kind(QLabel * label, const QString & status)
 inline void simplify_home_inspector(QMainWindow * window)
 {
   if (!window) return;
-  for (QPushButton * button : window->findChildren<QPushButton *>(QStringLiteral("studioTargetPrimaryAction"))) button->hide();
-  for (QPushButton * button : window->findChildren<QPushButton *>(QStringLiteral("studioTargetSecondaryAction"))) button->hide();
-  for (QPushButton * button : window->findChildren<QPushButton *>(QStringLiteral("studioTargetSimulateAction"))) button->hide();
-  if (auto * more = window->findChild<QToolButton *>(QStringLiteral("studioTargetInspectorMore"))) more->hide();
-  if (auto * readiness = window->findChild<QLabel *>(QStringLiteral("studioTargetReadiness"))) {
-    QString text = readiness->text();
-    text.replace(QStringLiteral("\nView details →"), QString());
-    readiness->setText(text);
-  }
+  // Home owns its visible action hierarchy. Contextual navigation must not
+  // hide or rewrite those controls when the dashboard becomes active.
+  if (auto * button = window->findChild<QPushButton *>(QStringLiteral("studioTargetPrimaryAction")))
+    button->show();
+  if (auto * more = window->findChild<QToolButton *>(QStringLiteral("studioTargetInspectorMore"))) more->show();
 }
 
 inline void refresh_context_header(QMainWindow * window, QStackedWidget * pages, QTableWidget * table)

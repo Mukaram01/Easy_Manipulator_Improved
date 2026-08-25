@@ -1,0 +1,4 @@
+scene=ur5_2f_test
+status=PASS
+no_robot_motion_commanded=true
+launch_command=ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true

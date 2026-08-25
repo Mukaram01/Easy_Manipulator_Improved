@@ -720,13 +720,6 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
         QStringLiteral("browser loaded; waiting for viewer readiness"));
       start_embedded_web_readiness_polling(identity, navigation_token, embedded_web_prepare_output_path_, expected_viewer_url.toString());
     });
-    connect(embedded_web_view_, &QWebEngineView::urlChanged, this, [this](const QUrl & url) {
-      if (url.scheme() != QStringLiteral("workcell-retry")) return;
-      const QString requested_scene = url.host();
-      if (requested_scene != normalized_preview_context(preview_context_).scene_id) return;
-      show_embedded_web_loading_document(requested_scene);
-      request_embedded_web_product_view_refresh(true, QStringLiteral("preparation_failure_retry"));
-    });
     connect(embedded_web_view_->page(), &QWebEnginePage::renderProcessTerminated, this,
       [this](QWebEnginePage::RenderProcessTerminationStatus status, int exit_code) {
         const EmbeddedWebRequestIdentity identity = embedded_web_loading_identity_;
@@ -1687,14 +1680,13 @@ void ScenePreviewWidget::show_embedded_web_preparation_failure(
   native_compatibility_fallback_active_ = false;
   const QString concise_error = detail.trimmed().left(320).toHtmlEscaped();
   const QString scene = identity.scene_id.toHtmlEscaped();
-  const QString retry_url = QStringLiteral("workcell-retry://%1").arg(identity.scene_id);
   const QString html = QStringLiteral(R"HTML(<!doctype html><html><head><meta charset="utf-8"><style>
 body{margin:0;background:#0f172a;color:#e2e8f0;font:15px sans-serif;display:grid;place-items:center;height:100vh}
 main{max-width:46rem;padding:2rem}h1{color:#fca5a5}code{color:#93c5fd}.error{background:#1e293b;padding:1rem;border-radius:.5rem}
-a{display:inline-block;margin-top:1rem;padding:.65rem 1rem;background:#2563eb;color:white;text-decoration:none;border-radius:.4rem}</style></head>
+</style></head>
 <body><main><h1>Product View preparation failed</h1><p>Scene: <code>%1</code></p><p class="error">%2</p>
-<p>Correct the scene-authoring blockers (required scene files, metadata, and referenced assets), then retry preparation.</p>
-<a href="%3">Retry</a></main></body></html>)HTML").arg(scene, concise_error, retry_url.toHtmlEscaped());
+<p>Correct the scene-authoring blockers (required scene files, metadata, and referenced assets), then use Retry in the Product View toolbar.</p>
+</main></body></html>)HTML").arg(scene, concise_error);
   set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail);
   embedded_web_view_->setVisible(true);
   if (compatibility_scene3d_viewport_) compatibility_scene3d_viewport_->setVisible(false);

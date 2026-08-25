@@ -142,7 +142,7 @@ def test_studio_home_landing_page_tokens_present():
     for token in [
         'Workcell Studio',
         'Design, validate, and preview robotic workcells.',
-        'Design mode • Fake hardware by default • Real robot locked',
+        'Fake hardware default / Real robot locked',
         'Total Scenes',
         'Ready / Validated',
         'Warnings / Blocked',
