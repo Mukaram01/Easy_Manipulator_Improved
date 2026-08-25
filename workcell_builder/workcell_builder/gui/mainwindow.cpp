@@ -2440,8 +2440,15 @@ void MainWindow::setup_studio_shell()
   left_vertical_splitter->addWidget(hierarchy_card);
   auto * catalog_card = new QFrame(scene_tab); catalog_card->setObjectName("studioCard");
   auto * catalog_layout = new QVBoxLayout(catalog_card);
+  auto * asset_header = new QHBoxLayout();
   auto * asset_library_heading = new QLabel("<span style=\"font-size:16px;font-weight:600\">Asset Library</span>", catalog_card);
-  catalog_layout->addWidget(asset_library_heading);
+  asset_header->addWidget(asset_library_heading);
+  asset_header->addStretch(1);
+  asset_library_result_count_ = new QLabel("0", catalog_card);
+  asset_library_result_count_->setObjectName("assetLibraryResultCount");
+  asset_library_result_count_->setStyleSheet("color:#7a8998;font-size:12px;");
+  asset_header->addWidget(asset_library_result_count_);
+  catalog_layout->addLayout(asset_header);
   // Asset Catalog compatibility tokens: Robots End Effectors Cameras Tables Conveyors Bins Fixtures Objects / STLs Pick/Place Zones Custom / Imported
   asset_library_search_ = new QLineEdit(catalog_card);
   asset_library_search_->setObjectName("assetLibrarySearchBox");
@@ -2457,7 +2464,7 @@ void MainWindow::setup_studio_shell()
   catalog_layout->addLayout(discovery_strip);
   asset_filter_combo_ = new QComboBox(catalog_card);
   asset_filter_combo_->setToolTip("Category and provenance filter; combines with search.");
-  asset_filter_combo_->addItem("All");
+  asset_filter_combo_->addItem("All assets");
   asset_filter_combo_->setItemData(0, "all");
   const QList<QPair<QString, QString>> asset_filters = {
     {"★ Favorites", "favorites"}, {"↻ Recent", "recent"},
@@ -2467,14 +2474,15 @@ void MainWindow::setup_studio_shell()
     {"Imported", "imported"}, {"Other", "other"}};
   for (const auto & filter : asset_filters) asset_filter_combo_->addItem(filter.first, filter.second);
   auto * filter_strip = new QHBoxLayout();
-  filter_strip->addWidget(asset_filter_combo_);
-  auto * clear_asset_filters = new QPushButton("Clear", catalog_card);
+  filter_strip->addWidget(asset_filter_combo_, 1);
+  auto * clear_asset_filters = new QPushButton(QString::fromUtf8("×"), catalog_card);
+  clear_asset_filters->setObjectName("assetLibraryResetFilters");
+  clear_asset_filters->setAccessibleName("Clear asset filters");
+  clear_asset_filters->setFlat(true);
+  clear_asset_filters->setFixedWidth(26);
+  clear_asset_filters->hide();
   clear_asset_filters->setToolTip("Clear search and show all asset categories.");
   filter_strip->addWidget(clear_asset_filters);
-  filter_strip->addStretch(1);
-  asset_library_result_count_ = new QLabel("0 assets", catalog_card);
-  asset_library_result_count_->setObjectName("assetLibraryResultCount");
-  filter_strip->addWidget(asset_library_result_count_);
   catalog_layout->addLayout(filter_strip);
   asset_catalog_tree_ = new QTreeWidget(catalog_card);
   asset_catalog_tree_->setObjectName("studioAssetCatalogTree");
@@ -2506,40 +2514,40 @@ void MainWindow::setup_studio_shell()
   asset_library_empty_state_->setStyleSheet("color:#657789;padding:10px;");
   asset_library_empty_state_->hide();
   catalog_layout->addWidget(asset_library_empty_state_);
-  asset_library_details_ = new QLabel("Select an asset card to inspect available metadata.", catalog_card);
+  auto * selected_asset_summary = new QFrame(catalog_card);
+  selected_asset_summary->setObjectName("assetLibrarySelectedSummary");
+  auto * selected_asset_summary_layout = new QHBoxLayout(selected_asset_summary);
+  selected_asset_summary_layout->setContentsMargins(0, 4, 0, 4);
+  selected_asset_summary_layout->setSpacing(8);
+  asset_library_thumbnail_preview_ = new QLabel(selected_asset_summary);
+  asset_library_thumbnail_preview_->setObjectName("assetLibrarySelectedThumbnail");
+  asset_library_thumbnail_preview_->setFixedSize(64, 54);
+  asset_library_thumbnail_preview_->setAlignment(Qt::AlignCenter);
+  asset_library_thumbnail_preview_->setStyleSheet("background:#eef2f5;border:1px solid #d7dee7;border-radius:4px;color:#657789;");
+  selected_asset_summary_layout->addWidget(asset_library_thumbnail_preview_);
+  asset_library_details_ = new QLabel(catalog_card);
   asset_library_details_->setObjectName("assetLibraryDetails");
   asset_library_details_->setWordWrap(true);
   asset_library_details_->setTextFormat(Qt::RichText);
-  asset_library_details_->setStyleSheet("background:#f7f9fb;border:1px solid #d7dee7;border-radius:4px;padding:9px;color:#334455;");
-  asset_library_details_->setMaximumHeight(88);
-  catalog_layout->addWidget(asset_library_details_);
-  asset_library_thumbnail_preview_ = new QLabel(catalog_card);
-  asset_library_thumbnail_preview_->setObjectName("assetLibrarySelectedThumbnail");
-  asset_library_thumbnail_preview_->setMinimumHeight(0);
-  asset_library_thumbnail_preview_->setAlignment(Qt::AlignCenter);
-  asset_library_thumbnail_preview_->setStyleSheet("background:#eef2f5;border:1px solid #d7dee7;border-radius:4px;color:#657789;");
-  asset_library_thumbnail_preview_->setText("Select an asset to preview");
-  // Catalog rows already carry cached thumbnails. A second large thumbnail
-  // made the narrow Assets panel scroll-heavy, so retain the object for the
-  // thumbnail-service contract but keep one selected-asset preview surface.
-  asset_library_thumbnail_preview_->hide();
-  // Preserve the existing selected-only preview contract. Cards themselves use
-  // cheap category treatments; no mesh is loaded while searching/filtering.
-  asset_library_preview_ = new ScenePreviewWidget(catalog_card);
-  asset_library_preview_->setObjectName("assetLibraryLivePreview");
-  asset_library_preview_->setMinimumHeight(150);
-  asset_library_preview_->setMaximumHeight(190);
-  asset_library_preview_->set_scene_selected(true);
-  asset_library_preview_->set_3d_available(true);
-  catalog_layout->addWidget(asset_library_preview_);
-  asset_library_preview_status_ = new QLabel("Select an asset to preview.", catalog_card);
-  asset_library_preview_status_->setWordWrap(true);
-  asset_library_preview_status_->setMaximumHeight(38);
-  catalog_layout->addWidget(asset_library_preview_status_);
+  asset_library_details_->setStyleSheet("color:#334455;");
+  selected_asset_summary_layout->addWidget(asset_library_details_, 1);
+  selected_asset_summary->hide();
+  catalog_layout->addWidget(selected_asset_summary);
+  asset_library_selected_preview_ = new QLabel(catalog_card);
+  asset_library_selected_preview_->setObjectName("assetLibrarySelectedPreview");
+  asset_library_selected_preview_->setMinimumHeight(240);
+  asset_library_selected_preview_->setMaximumHeight(280);
+  asset_library_selected_preview_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+  asset_library_selected_preview_->setAlignment(Qt::AlignCenter);
+  asset_library_selected_preview_->setStyleSheet(
+    "background:#eef2f5;border:1px solid #d7dee7;border-radius:4px;color:#657789;");
+  asset_library_selected_preview_->hide();
+  catalog_layout->addWidget(asset_library_selected_preview_);
   asset_thumbnail_service_ = new AssetThumbnailService(this);
   connect(asset_thumbnail_service_, &AssetThumbnailService::thumbnailChanged,
     this, &MainWindow::refresh_asset_thumbnail);
   add_to_canvas_button_ = new QPushButton("Place Asset", scene_builder);
+  add_to_canvas_button_->setObjectName("sceneBuilderPlaceAsset");
   add_to_canvas_button_->setEnabled(false);
   place_again_button_ = new QPushButton("Place Again", scene_builder);
   place_again_button_->setEnabled(false);
@@ -2555,15 +2563,18 @@ void MainWindow::setup_studio_shell()
     }
     recent_asset_ids_ = normalized;
   }
-  auto * placement_actions = new QHBoxLayout();
-  placement_actions->addWidget(add_to_canvas_button_, 1);
-  placement_actions->addWidget(place_again_button_);
-  catalog_layout->addLayout(placement_actions);
-  add_asset_button_ = new QPushButton("Browse Details", scene_builder);
+  place_again_button_->hide();
+  catalog_layout->addWidget(add_to_canvas_button_);
+  add_asset_button_ = new QPushButton("Details", scene_builder);
+  add_asset_button_->setObjectName("sceneBuilderAssetDetails");
   auto * asset_more_actions = new QToolButton(scene_builder);
-  asset_more_actions->setText("More Actions");
+  asset_more_actions->setText(QString::fromUtf8("More ▾"));
   asset_more_actions->setPopupMode(QToolButton::InstantPopup);
   auto * asset_more_menu = new QMenu(asset_more_actions);
+  auto * place_again_action = asset_more_menu->addAction("Place Again");
+  place_again_action->setObjectName("assetLibraryPlaceAgainAction");
+  place_again_action->setEnabled(false);
+  asset_more_menu->addSeparator();
   auto * open_asset_folder_action = asset_more_menu->addAction("Open Asset Folder");
   auto * copy_asset_path_action = asset_more_menu->addAction("Copy Asset Path");
   auto * import_asset_action = asset_more_menu->addAction("Import Mesh");
@@ -2574,11 +2585,19 @@ void MainWindow::setup_studio_shell()
   secondary_asset_actions->addWidget(add_asset_button_);
   secondary_asset_actions->addWidget(asset_more_actions);
   catalog_layout->addLayout(secondary_asset_actions);
+  connect(place_again_action, &QAction::triggered, this, &MainWindow::place_last_asset_again);
   connect(import_asset_button, &QPushButton::clicked, this, &MainWindow::import_stl_to_asset_library);
   connect(clear_asset_filters, &QPushButton::clicked, this, [this]() {
     if (asset_library_search_) asset_library_search_->clear();
     if (asset_filter_combo_) asset_filter_combo_->setCurrentIndex(0);
   });
+  const auto update_filter_reset = [this, clear_asset_filters]() {
+    const bool active = (asset_library_search_ && !asset_library_search_->text().trimmed().isEmpty()) ||
+      (asset_filter_combo_ && asset_filter_combo_->currentIndex() != 0);
+    clear_asset_filters->setVisible(active);
+  };
+  connect(asset_library_search_, &QLineEdit::textChanged, this, [update_filter_reset](const QString &) { update_filter_reset(); });
+  connect(asset_filter_combo_, qOverload<int>(&QComboBox::currentIndexChanged), this, [update_filter_reset](int) { update_filter_reset(); });
   left_vertical_splitter->setSizes({420, 260});
   scene_tab_layout->addWidget(left_vertical_splitter, 1);
   assets_tab_layout->addWidget(catalog_card, 1);
@@ -2666,6 +2685,10 @@ void MainWindow::setup_studio_shell()
   connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_selected, this, [this](const QString &id, const QString &role){
     apply_scene_selection(id, role, id.trimmed().isEmpty(), false);
   });
+  connect(scene_preview_widget_, &ScenePreviewWidget::authoring_undo_requested,
+    this, &MainWindow::undo_layout_edit);
+  connect(scene_preview_widget_, &ScenePreviewWidget::authoring_redo_requested,
+    this, &MainWindow::redo_layout_edit);
   connect(
     scene_preview_widget_,
     &ScenePreviewWidget::preview_item_transform_changed,
@@ -2719,6 +2742,7 @@ void MainWindow::setup_studio_shell()
             QPointF(before_item.x * 100.0, before_item.y * 100.0),
             QPointF(x * 100.0, y * 100.0), false, false, {}, before_item, after_item});
           redo_stack_.clear();
+          scene_preview_widget_->set_native_authoring_history_available(true, false);
           mark_layout_dirty(QStringLiteral("Product View Transform"));
         }
       }
@@ -2741,6 +2765,9 @@ void MainWindow::setup_studio_shell()
             tree_item->setData(0, TreeRoleRoll, roll);
             tree_item->setData(0, TreeRolePitch, pitch);
             tree_item->setData(0, TreeRoleYaw, yaw);
+            tree_item->setData(0, TreeRolePoseText,
+              QStringLiteral("xyz=(%1,%2,%3) rpy=(%4,%5,%6)")
+                .arg(x).arg(y).arg(z).arg(roll).arg(pitch).arg(yaw));
             return true;
           };
 
@@ -3093,7 +3120,10 @@ void MainWindow::setup_studio_shell()
   digital_twin_canvas_->viewport()->installEventFilter(this);
   scene_preview_widget_->set_fallback_2d_view(digital_twin_canvas_);
   center_panel_layout->addWidget(scene_preview_widget_, 1);
-  minimap_view_ = new QGraphicsView(scene_builder); minimap_view_->setObjectName("digital_twin_minimap"); minimap_view_->setFixedSize(210, 140); center_panel_layout->addWidget(minimap_view_, 0, Qt::AlignRight);
+  minimap_view_ = new QGraphicsView(scene_builder);
+  minimap_view_->setObjectName("digital_twin_minimap");
+  minimap_view_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+  center_panel_layout->addWidget(minimap_view_, 0, Qt::AlignRight);
   connect(scene_preview_widget_, &ScenePreviewWidget::embedded_product_view_runtime_state_changed,
     this, [this](const QString &, bool) { update_minimap_backend_presentation(); });
   update_minimap_backend_presentation();
@@ -3138,24 +3168,21 @@ void MainWindow::setup_studio_shell()
   auto * bottom_status_bar = new QFrame(scene_builder);
   bottom_status_bar->setObjectName("sceneBuilderBottomStatusBar");
   auto * bottom_status_layout = new QHBoxLayout(bottom_status_bar);
-  bottom_status_layout->setContentsMargins(8, 2, 8, 2);
-  bottom_status_layout->setSpacing(8);
-  scene_builder_status_message_label_ = new QLabel("Ready", bottom_status_bar);
-  scene_builder_status_message_label_->setObjectName("sceneBuilderLatestStatus");
-  scene_builder_status_message_label_->setWordWrap(false);
+  bottom_status_layout->setContentsMargins(0, 0, 0, 0);
+  bottom_status_layout->setSpacing(4);
+  scene_builder_status_message_label_ = new QPushButton("Ready", bottom_status_bar);
+  scene_builder_status_message_label_->setObjectName("sceneBuilderActivityStrip");
+  scene_builder_status_message_label_->setAccessibleName("Activity and logs");
+  scene_builder_status_message_label_->setCheckable(true);
+  scene_builder_status_message_label_->setFlat(true);
+  scene_builder_status_message_label_->setFixedHeight(32);
   scene_builder_status_message_label_->setToolTip("Ready");
-  scene_builder_status_message_label_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+  scene_builder_status_message_label_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
   scene_builder_issue_count_label_ = new QLabel(bottom_status_bar);
   scene_builder_issue_count_label_->setObjectName("sceneBuilderIssueCount");
   scene_builder_issue_count_label_->setVisible(false);
   scene_builder_issue_count_label_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-  scene_builder_log_toggle_button_ = new QPushButton("Logs", bottom_status_bar);
-  scene_builder_log_toggle_button_->setObjectName("sceneBuilderLogsButton");
-  scene_builder_log_toggle_button_->setCheckable(true);
-  scene_builder_log_toggle_button_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
   bottom_status_layout->addWidget(scene_builder_status_message_label_, 1);
-  bottom_status_layout->addWidget(scene_builder_issue_count_label_);
-  bottom_status_layout->addWidget(scene_builder_log_toggle_button_);
   center_panel_layout->addWidget(bottom_status_bar, 0);
 
   auto * right_layout = new QVBoxLayout(right_panel);
@@ -3180,9 +3207,12 @@ void MainWindow::setup_studio_shell()
   workflow_card_layout->addWidget(scene_workflow_recommendation_button_);
   auto * inspector_scroll = new QScrollArea(right_panel);
   inspector_scroll->setWidgetResizable(true);
-  inspector_scroll->setMinimumWidth(320);
+  inspector_scroll->setMinimumWidth(0);
+  inspector_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   auto * inspector_scroll_contents = new QWidget(inspector_scroll);
   auto * inspector_scroll_layout = new QVBoxLayout(inspector_scroll_contents);
+  inspector_scroll_layout->setContentsMargins(6, 6, 6, 6);
+  inspector_scroll_layout->setSpacing(4);
   scene_builder_inspector_tabs_ = new QTabWidget(inspector_scroll_contents);
   scene_builder_inspector_tabs_->setUsesScrollButtons(true);
   scene_builder_inspector_tabs_->setDocumentMode(true);
@@ -3299,7 +3329,7 @@ void MainWindow::setup_studio_shell()
   auto * refresh_snapshot_button = new QPushButton("Refresh Snapshot", scene_builder); ar_layout->addWidget(refresh_snapshot_button);
   readiness_card_layout->addWidget(ar_card);
   inspector_label_=new QLabel("No item selected"); inspector_label_->setObjectName("sceneBuilderInspectorLabel"); inspector_label_->setWordWrap(true); selected_item_card_layout->addWidget(inspector_label_);
-  live_coordinate_label_ = new QLabel("Selected: none", scene_builder); selected_item_card_layout->addWidget(live_coordinate_label_);
+  live_coordinate_label_ = new QLabel("", scene_builder); live_coordinate_label_->hide(); selected_item_card_layout->addWidget(live_coordinate_label_);
   auto * metadata_form = new QFormLayout();
   metadata_form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
   inspector_display_name_ = new QLineEdit(scene_builder);
@@ -3331,26 +3361,32 @@ void MainWindow::setup_studio_shell()
   selected_item_card_layout->addWidget(transform_title);
   auto * pose_grid = new QGridLayout();
   pose_grid->setHorizontalSpacing(6);
-  auto configure_spin = [](QDoubleSpinBox *sb) { sb->setMinimumWidth(86); sb->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed); };
+  auto configure_spin = [](QDoubleSpinBox *sb) { sb->setMinimumWidth(76); sb->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed); };
   inspector_x_ = new QDoubleSpinBox(scene_builder); inspector_x_->setPrefix("X "); configure_spin(inspector_x_); pose_grid->addWidget(inspector_x_, 0, 0);
   inspector_y_ = new QDoubleSpinBox(scene_builder); inspector_y_->setPrefix("Y "); configure_spin(inspector_y_); pose_grid->addWidget(inspector_y_, 0, 1);
   inspector_z_ = new QDoubleSpinBox(scene_builder); inspector_z_->setPrefix("Z "); configure_spin(inspector_z_); pose_grid->addWidget(inspector_z_, 0, 2);
+  for (auto * position_spin : {inspector_x_, inspector_y_, inspector_z_}) position_spin->setRange(-1000.0, 1000.0);
   inspector_roll_ = new QDoubleSpinBox(scene_builder); inspector_roll_->setPrefix("Roll "); configure_spin(inspector_roll_); pose_grid->addWidget(inspector_roll_, 1, 0);
   inspector_pitch_ = new QDoubleSpinBox(scene_builder); inspector_pitch_->setPrefix("Pitch "); configure_spin(inspector_pitch_); pose_grid->addWidget(inspector_pitch_, 1, 1);
   inspector_yaw_ = new QDoubleSpinBox(scene_builder); inspector_yaw_->setPrefix("Yaw "); configure_spin(inspector_yaw_); pose_grid->addWidget(inspector_yaw_, 1, 2);
   selected_item_card_layout->addLayout(pose_grid);
   auto * transform_actions = new QGridLayout();
   inspector_apply_button_ = new QPushButton("Apply", scene_builder); transform_actions->addWidget(inspector_apply_button_, 0, 0);
+  inspector_apply_button_->setObjectName("sceneBuilderInspectorApply");
   inspector_revert_button_ = new QPushButton("Revert", scene_builder); transform_actions->addWidget(inspector_revert_button_, 0, 1);
+  inspector_revert_button_->setObjectName("sceneBuilderInspectorRevert");
   inspector_copy_transform_button_ = new QPushButton("Copy Transform", scene_builder); transform_actions->addWidget(inspector_copy_transform_button_, 1, 0);
+  inspector_copy_transform_button_->setObjectName("sceneBuilderInspectorCopyTransform");
+  inspector_copy_transform_button_->setMaximumHeight(28);
   inspector_paste_transform_button_ = new QPushButton("Paste Transform", scene_builder); transform_actions->addWidget(inspector_paste_transform_button_, 1, 1);
+  inspector_paste_transform_button_->setObjectName("sceneBuilderInspectorPasteTransform");
+  inspector_paste_transform_button_->setMaximumHeight(28);
   selected_item_card_layout->addLayout(transform_actions);
   inspector_live_update_box_ = new QCheckBox("Live update", scene_builder); inspector_live_update_box_->setChecked(false); selected_item_card_layout->addWidget(inspector_live_update_box_);
   auto * dim_grid = new QGridLayout();
   inspector_dim_x_ = new QDoubleSpinBox(scene_builder); inspector_dim_x_->setPrefix("Scale X "); configure_spin(inspector_dim_x_); dim_grid->addWidget(inspector_dim_x_, 0, 0);
   inspector_dim_y_ = new QDoubleSpinBox(scene_builder); inspector_dim_y_->setPrefix("Y "); configure_spin(inspector_dim_y_); dim_grid->addWidget(inspector_dim_y_, 0, 1);
   inspector_dim_z_ = new QDoubleSpinBox(scene_builder); inspector_dim_z_->setPrefix("Z "); configure_spin(inspector_dim_z_); dim_grid->addWidget(inspector_dim_z_, 0, 2);
-  selected_item_card_layout->addLayout(dim_grid);
   auto * advanced_details_group = new QGroupBox("Advanced details", scene_builder);
   advanced_details_group->setObjectName("sceneBuilderInspectorAdvancedDetails");
   advanced_details_group->setCheckable(true);
@@ -3364,6 +3400,9 @@ void MainWindow::setup_studio_shell()
   inspector_category_ = new QLineEdit(advanced_details_contents);
   inspector_category_->setReadOnly(true);
   advanced_details_layout->addRow("Category", inspector_category_);
+  auto * scale_controls = new QWidget(advanced_details_contents);
+  scale_controls->setLayout(dim_grid);
+  advanced_details_layout->addRow("Scale", scale_controls);
   inspector_advanced_details_label_ = new QLabel("No item selected", advanced_details_contents);
   inspector_advanced_details_label_->setObjectName("sceneBuilderInspectorAdvancedDetailsText");
   inspector_advanced_details_label_->setWordWrap(true);
@@ -3515,12 +3554,15 @@ void MainWindow::setup_studio_shell()
   auto * log_card = new QFrame(content); log_card->setObjectName("sceneBuilderLogDrawer");
   auto * log_layout = new QVBoxLayout(log_card);
   auto * log_head = new QHBoxLayout();
-  log_head->addWidget(new QLabel("Activity Log", log_card));
+  auto * log_header_toggle = new QPushButton(QString::fromUtf8("Logs  ▼"), log_card);
+  log_header_toggle->setObjectName("sceneBuilderLogDrawerHeader");
+  log_header_toggle->setFlat(true);
+  log_header_toggle->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+  log_head->addWidget(log_header_toggle, 1);
   auto * copy_log = new QPushButton("Copy", log_card);
   copy_log->setObjectName("sceneBuilderLogCopyButton");
   auto * clear_log = new QPushButton("Clear", log_card);
   clear_log->setObjectName("sceneBuilderLogClearButton");
-  log_head->addStretch(1);
   log_head->addWidget(copy_log, 0, Qt::AlignRight);
   log_head->addWidget(clear_log, 0, Qt::AlignRight);
   log_layout->addLayout(log_head);
@@ -3557,14 +3599,17 @@ void MainWindow::setup_studio_shell()
   });
   connect_button(clear_log, [this](){ if (studio_log_) studio_log_->clear(); });
   connect_button(copy_log, [this](){ if (studio_log_) QApplication::clipboard()->setText(studio_log_->toPlainText()); });
-  connect_button(scene_builder_log_toggle_button_, [this]() {
-    if (!studio_log_ || !scene_builder_log_toggle_button_ || !scene_builder_log_panel_) return;
+  const auto toggle_log_drawer = [this, log_header_toggle]() {
+    if (!studio_log_ || !scene_builder_status_message_label_ || !scene_builder_log_panel_) return;
     const bool show = !scene_builder_log_panel_->isVisible();
     scene_builder_log_panel_->setVisible(show);
     studio_log_->setVisible(show);
-    scene_builder_log_toggle_button_->setChecked(show);
-    scene_builder_log_toggle_button_->setText("Logs");
-  });
+    scene_builder_status_message_label_->setChecked(show);
+    scene_builder_status_message_label_->setToolTip(show ? "Hide logs" : "Show logs");
+    log_header_toggle->setText(QString::fromUtf8(show ? "Logs  ▼" : "Logs  ▲"));
+  };
+  connect_button(scene_builder_status_message_label_, toggle_log_drawer);
+  connect_button(log_header_toggle, toggle_log_drawer);
   connect_button(empty_new_cell, &MainWindow::open_new_scene_creation_flow);
   connect_button(dash_new_cell, &MainWindow::open_new_scene_creation_flow);
   connect_button(dash_open_selected_scene, [this](){ open_scene_builder_for_selected_scene("Dashboard Open Selected Scene"); });
@@ -4309,7 +4354,11 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     if (!item) return false;
     state.id = item->data(0, TreeRoleId).toString().trimmed();
     if (state.id.isEmpty()) state.id = item->text(0).trimmed();
-    state.display_name = item->text(0).trimmed();
+    // Column zero is a presentation label ("Name [instance_id]"). Keep that
+    // decoration out of the authored model so duplicate/undo cycles cannot
+    // progressively append instance IDs to the canonical display name.
+    state.display_name = item->data(0, TreeRoleDisplayName).toString().trimmed();
+    if (state.display_name.isEmpty()) state.display_name = item->text(0).trimmed();
     state.role = item->data(0, TreeRoleRole).toString().trimmed();
     state.category = item->data(0, TreeRoleCategory).toString().trimmed();
     state.type = item->data(0, TreeRoleItemTypeClass).toString().trimmed();
@@ -4583,7 +4632,8 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   if (!state.valid) {
     inspector_label_->setText("No item selected");
     inspector_label_->setToolTip(selected_scene_state_.valid ? selected_scene_state_.path : QString());
-    live_coordinate_label_->setText("No item selected");
+    live_coordinate_label_->clear();
+    live_coordinate_label_->setVisible(false);
     if (inspector_advanced_details_label_) {
       inspector_advanced_details_label_->setText(QString());
       inspector_advanced_details_label_->setToolTip(QString());
@@ -4600,7 +4650,6 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   const QString active_visual_source = state.active_visual_source.isEmpty() ? "unknown" : state.active_visual_source;
   const QString visual_backing = state.visual_backing_status.isEmpty() ? "unknown" : state.visual_backing_status;
   const QString type_class = state.item_type_classification.isEmpty() ? "unknown" : state.item_type_classification;
-  const QString pose = state.pose_available ? (state.pose_text.isEmpty() ? QString("x=%1 y=%2 z=%3").arg(state.pose_x).arg(state.pose_y).arg(state.pose_z) : state.pose_text) : "pose unknown";
   const bool editable_layout_contract = state.editable && state.linked_to_editable_layout_state && !state.locked;
   const bool generated_or_preview_contract = state.generated_visual ||
     source_layer.compare(QStringLiteral("locked_generated_urdf_visual"), Qt::CaseInsensitive) == 0 ||
@@ -4647,7 +4696,8 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
     inspector_advanced_details_label_->setText(advanced_text);
     inspector_advanced_details_label_->setToolTip(advanced_text);
   }
-  live_coordinate_label_->setText(QString("Transform: %1").arg(pose));
+  live_coordinate_label_->clear();
+  live_coordinate_label_->setVisible(false);
 }
 
 bool MainWindow::is_pick_source_candidate(const SelectedSceneItemState & state) const
@@ -5050,8 +5100,10 @@ void MainWindow::select_scene_by_row(int row)
       scene_builder_issue_count_label_->clear();
       scene_builder_issue_count_label_->setVisible(false);
     }
-    if (scene_builder_log_toggle_button_) {
-      scene_builder_log_toggle_button_->setProperty("hasIssues", false);
+    if (scene_builder_status_message_label_) {
+      scene_builder_status_message_label_->setProperty("hasIssues", false);
+      scene_builder_status_message_label_->style()->unpolish(scene_builder_status_message_label_);
+      scene_builder_status_message_label_->style()->polish(scene_builder_status_message_label_);
     }
     visual_index_script_missing_reported_scene_key_.clear();
     visual_index_regen_failure_reported_scene_key_.clear();
@@ -5163,17 +5215,60 @@ void MainWindow::open_selected_scene_artifact(const QString & artifact)
   QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(target.string())));
 }
 
+QString MainWindow::scene_builder_activity_summary(
+  const QString & message, workcell_builder::StudioLogSeverity severity) const
+{
+  const QString text = message.simplified();
+  const QString lower = text.toLower();
+  const bool is_error = severity == workcell_builder::StudioLogSeverity::Error ||
+    lower.startsWith(QStringLiteral("error")) || lower.contains(QStringLiteral(" failed")) ||
+    lower.contains(QStringLiteral("blocker")) || lower.contains(QStringLiteral("blocked:"));
+  const bool is_warning = severity == workcell_builder::StudioLogSeverity::Warning ||
+    lower.startsWith(QStringLiteral("warn")) || lower.contains(QStringLiteral(" warning:"));
+  if (is_error) return QStringLiteral("Error · click for logs");
+  if (is_warning) return QStringLiteral("Warning · click for logs");
+
+  if (lower.startsWith(QStringLiteral("selected item:"))) {
+    if (lower.contains(QStringLiteral("<none>"))) return QStringLiteral("Selection cleared");
+    const QString display_name = selected_item_state_.display_name.simplified();
+    if (!display_name.isEmpty()) return QStringLiteral("Selected %1").arg(display_name);
+    const QRegularExpressionMatch match = QRegularExpression(
+      QStringLiteral("^Selected item:\\s*([^ (]+)"), QRegularExpression::CaseInsensitiveOption).match(text);
+    if (match.hasMatch()) return QStringLiteral("Selected %1").arg(match.captured(1).replace('_', ' '));
+  }
+  if (lower.contains(QStringLiteral("scene_ready")) && lower.contains(QStringLiteral("terminal"))) {
+    const QRegularExpressionMatch count = QRegularExpression(
+      QStringLiteral("rendered_physical_item_count[\\\"=: ]+(\\d+)"), QRegularExpression::CaseInsensitiveOption).match(text);
+    return count.hasMatch()
+      ? QStringLiteral("Product View ready · %1 physical items").arg(count.captured(1))
+      : QStringLiteral("Product View ready");
+  }
+  if (lower.startsWith(QStringLiteral("saved scene layout metadata")) ||
+      lower.startsWith(QStringLiteral("save layout: serialized")) ||
+      lower.startsWith(QStringLiteral("save layout: no editable items; saved")))
+    return QStringLiteral("Layout saved");
+  if (lower.startsWith(QStringLiteral("add to canvas success:"))) {
+    QString asset_name = text.mid(text.indexOf(':') + 1).section(QStringLiteral(" ("), 0, 0).trimmed();
+    return asset_name.isEmpty() ? QStringLiteral("Asset placed") : QStringLiteral("Asset placed · %1").arg(asset_name);
+  }
+
+  // The drawer retains these full diagnostics; routine runtime chatter must
+  // not displace the last useful product-level activity in the collapsed strip.
+  const QStringList routine_tokens{
+    QStringLiteral("diagnostic"), QStringLiteral("lifecycle"), QStringLiteral("handshake"),
+    QStringLiteral("readiness"), QStringLiteral("backend="), QStringLiteral("payload_revision"),
+    QStringLiteral("source_layer="), QStringLiteral("editable="), QStringLiteral("locked="),
+    QStringLiteral("visual mesh index"), QStringLiteral("scene3d"), QStringLiteral("stdout:"),
+    QStringLiteral("stderr:"), QStringLiteral("content=")};
+  for (const QString & token : routine_tokens) if (lower.contains(token)) return QString();
+  return QString();
+}
+
 void MainWindow::append_studio_log(
   const QString & message, workcell_builder::StudioLogSeverity severity, const QString & issue_key)
 {
   if (studio_log_) {
     studio_log_->append(message);
-  }
-  if (scene_builder_status_message_label_) {
-    const QString concise = message.trimmed().isEmpty() ? QStringLiteral("Ready") : message.simplified();
-    scene_builder_status_message_label_->setToolTip(concise);
-    const int elide_width = qMax(220, scene_builder_status_message_label_->width());
-    scene_builder_status_message_label_->setText(scene_builder_status_message_label_->fontMetrics().elidedText(concise, Qt::ElideRight, elide_width));
   }
   const QString stable_key = issue_key.isEmpty() ? message : issue_key;
   studio_log_issue_tracker_.report(severity, stable_key.toStdString());
@@ -5189,8 +5284,20 @@ void MainWindow::append_studio_log(
     scene_builder_issue_count_label_->setText(visible_parts.join(QStringLiteral(" · ")));
     scene_builder_issue_count_label_->setVisible(!visible_parts.isEmpty());
   }
-  if (scene_builder_log_toggle_button_) {
-    scene_builder_log_toggle_button_->setProperty("hasIssues", scene_builder_warning_count > 0 || scene_builder_error_count > 0);
+  if (scene_builder_status_message_label_) {
+    QString activity = scene_builder_activity_summary(message, severity);
+    if (activity == QStringLiteral("Warning · click for logs") && scene_builder_warning_count > 0)
+      activity = QStringLiteral("%1 %2 · click for logs").arg(scene_builder_warning_count)
+        .arg(scene_builder_warning_count == 1 ? QStringLiteral("warning") : QStringLiteral("warnings"));
+    if (!activity.isEmpty()) {
+      scene_builder_status_message_label_->setToolTip(activity);
+      const int elide_width = qMax(220, scene_builder_status_message_label_->width());
+      scene_builder_status_message_label_->setText(
+        scene_builder_status_message_label_->fontMetrics().elidedText(activity, Qt::ElideRight, elide_width));
+    }
+    scene_builder_status_message_label_->setProperty("hasIssues", scene_builder_warning_count > 0 || scene_builder_error_count > 0);
+    scene_builder_status_message_label_->style()->unpolish(scene_builder_status_message_label_);
+    scene_builder_status_message_label_->style()->polish(scene_builder_status_message_label_);
   }
   statusBar()->showMessage(message);
 }
@@ -7061,18 +7168,16 @@ void MainWindow::update_minimap_backend_presentation()
   if (!minimap_view_ || !scene_preview_widget_) return;
 
   const bool embedded_web3d_presented =
-    scene_preview_widget_->active_product_view_backend() ==
-      ScenePreviewWidget::ProductViewBackend::EmbeddedWeb3D &&
-    scene_preview_widget_->embedded_web_authoring_active();
+    scene_preview_widget_->embedded_web_product_view_presented();
   if (embedded_web3d_presented) {
     minimap_view_->setVisible(false);
-    minimap_view_->setMinimumHeight(0);
-    minimap_view_->setMaximumHeight(0);
+    minimap_view_->setMinimumSize(0, 0);
+    minimap_view_->setMaximumSize(0, 0);
     return;
   }
 
-  minimap_view_->setMinimumHeight(140);
-  minimap_view_->setMaximumHeight(140);
+  minimap_view_->setMinimumSize(150, 90);
+  minimap_view_->setMaximumSize(150, 90);
   minimap_view_->setVisible(minimap_requested_visible_);
 }
 
@@ -7248,6 +7353,11 @@ void MainWindow::mark_layout_dirty(const QString & reason)
   // Structural edits are native-session authority even when Web3D owns the
   // visible editor. Do not wait for (or let) browser polling hide this state.
   if (save_layout_button_) save_layout_button_->setEnabled(true);
+  if (save_layout_button_) {
+    save_layout_button_->setProperty("layoutDirty", true);
+    save_layout_button_->style()->unpolish(save_layout_button_);
+    save_layout_button_->style()->polish(save_layout_button_);
+  }
   if (layout_state_label_) {
     layout_state_label_->setText(QString("Unsaved Layout Edits: %1").arg(reason));
   }
@@ -8034,6 +8144,11 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
     canvas->setData(RoleMetadataExplicitlyEdited, false);
   }
   layout_dirty_ = false;
+  if (save_layout_button_) {
+    save_layout_button_->setProperty("layoutDirty", false);
+    save_layout_button_->style()->unpolish(save_layout_button_);
+    save_layout_button_->style()->polish(save_layout_button_);
+  }
   layout_saved_ = true;
   validation_stale_ = true;
   launch_artifacts_ready_ = false;
@@ -8249,6 +8364,11 @@ void MainWindow::revert_layout_changes()
 {
   rebuild_digital_twin_canvas();
   layout_dirty_ = false;
+  if (save_layout_button_) {
+    save_layout_button_->setProperty("layoutDirty", false);
+    save_layout_button_->style()->unpolish(save_layout_button_);
+    save_layout_button_->style()->polish(save_layout_button_);
+  }
   validation_stale_ = true;
   launch_artifacts_ready_ = false;
   if (layout_state_label_) layout_state_label_->setText("Unsaved Layout Edits: none");
@@ -8557,6 +8677,7 @@ void MainWindow::apply_inspector_pose_to_item()
   }
   undo_stack_.push_back({"pose_edit", item_id, old, updated, false, false, {}, before_item, after_item});
   redo_stack_.clear();
+  scene_preview_widget_->set_native_authoring_history_available(true, false);
   mark_layout_dirty(metadata_changed ? "Inspector Metadata/Transform Edit" : "Inspector Pose/Dimensions Edit");
   if (metadata_changed) {
     refresh_scene_hierarchy_tree_from_current_items();
@@ -8584,6 +8705,7 @@ void MainWindow::apply_inspector_pose_to_item()
 
   refresh_selection_transform_editor_from_state(refreshed_state);
   refresh_selected_scene_item_labels(refreshed_state);
+  refresh_selected_item_card();
   if (scene_preview_widget_) scene_preview_widget_->update();
 }
 
@@ -8687,7 +8809,9 @@ void MainWindow::undo_layout_edit(){
   } else {
     for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;}
   }
-  redo_stack_.push_back(c); mark_layout_dirty("Undo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
+  redo_stack_.push_back(c);
+  scene_preview_widget_->set_native_authoring_history_available(!undo_stack_.empty(), true);
+  mark_layout_dirty("Undo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_minimap_card(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
 }
 void MainWindow::redo_layout_edit(){
   if (!ensure_live_authoring_mutation_available(QStringLiteral("Redo"))) return;
@@ -8754,7 +8878,9 @@ void MainWindow::redo_layout_edit(){
   } else {
     for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.new_pos); break;}
   }
-  undo_stack_.push_back(c); mark_layout_dirty("Redo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_scene_builder_left_explorer(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
+  undo_stack_.push_back(c);
+  scene_preview_widget_->set_native_authoring_history_available(true, !redo_stack_.empty());
+  mark_layout_dirty("Redo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_minimap_card(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
 }
 bool MainWindow::selected_item_can_be_duplicated() const
 {
@@ -8863,14 +8989,15 @@ void MainWindow::duplicate_selected_item()
     QPointF(copy.x * 100.0, copy.y * 100.0),
     true, false, {copy}};
   undo_stack_.push_back(command); redo_stack_.clear();
+  scene_preview_widget_->set_native_authoring_history_available(true, false);
   if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
     scene_preview_widget_->duplicate_authoring_item(target.state.id, copy);
   } else {
     apply_scene3d_preview_layer_filters(false);
   }
-  refresh_scene_hierarchy_tree_from_current_items();
-  refresh_scene_builder_left_explorer();
   apply_scene_selection(new_id, copy.role, false, false);
+  refresh_scene_hierarchy_tree_from_current_items();
+  refresh_minimap_card();
   mark_layout_dirty("Duplicate Selected");
   append_studio_log(QString("Duplicated %1 as %2").arg(base_name, new_name));
   refresh_duplicate_selected_action(); refresh_delete_selected_action();
@@ -8916,16 +9043,16 @@ void MainWindow::delete_selected_item(){
   if (scene_hierarchy_tree_) scene_hierarchy_tree_->clearSelection();
   current_selected_scene_item_id_.clear(); selected_item_state_ = {};
   undo_stack_.push_back(command); redo_stack_.clear();
+  scene_preview_widget_->set_native_authoring_history_available(true, false);
   if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active())
     scene_preview_widget_->remove_authoring_item(id);
   else apply_scene3d_preview_layer_filters(false);
   refresh_scene_hierarchy_tree_from_current_items();
   refresh_selected_scene_item_labels(selected_item_state_);
-  refresh_scene_builder_left_explorer();
+  refresh_minimap_card();
   mark_layout_dirty("Delete Selected");
   append_studio_log(QString("Deleted %1").arg(target.state.display_name.isEmpty() ? id : target.state.display_name));
   refresh_delete_selected_action();
-  refresh_duplicate_selected_action();
   refresh_duplicate_selected_action();
 }
 
@@ -8978,6 +9105,7 @@ void MainWindow::keyPressEvent(QKeyEvent * event)
   if (snap_step_label_) snap_step_label_->setText(QString("Nudge step: %1 m").arg(step_m, 0, 'f', 3));
   undo_stack_.push_back({"nudge", item->data(RoleId).toString(), old_pos, item->pos(), false, false, {}});
   redo_stack_.clear();
+  scene_preview_widget_->set_native_authoring_history_available(true, false);
   mark_layout_dirty("Nudge Move");
   rebuild_canvas_inspector();
   event->accept();
@@ -9349,6 +9477,7 @@ void MainWindow::commit_armed_asset_placement(
   select_canvas_item(item);
   undo_stack_.push_back({"add", new_id, item->pos(), item->pos(), true, false, {preview_item}});
   redo_stack_.clear();
+  scene_preview_widget_->set_native_authoring_history_available(true, false);
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
   append_studio_log(QString("Add to Canvas success: %1 (%2) asset_id=%3 layout_id=%4 from %5 | xyzrpy=[%6, %7, %8, %9, %10, %11] use_clicked_xy=%12")
     .arg(display_name, category, asset_id, new_id, source_path)
@@ -9409,8 +9538,10 @@ void MainWindow::record_recent_asset(const QString & asset_id)
 void MainWindow::update_place_again_action()
 {
   if (!place_again_button_) return;
+  auto * menu_action = findChild<QAction *>(QStringLiteral("assetLibraryPlaceAgainAction"));
   if (recent_asset_ids_.isEmpty()) {
     place_again_button_->setEnabled(false);
+    if (menu_action) menu_action->setEnabled(false);
     place_again_button_->setToolTip("Place an asset successfully before using Place Again.");
     return;
   }
@@ -9420,6 +9551,7 @@ void MainWindow::update_place_again_action()
   const bool available = match != asset_catalog_entries_.cend() && match->editable &&
     match->disabled_reason.trimmed().isEmpty() && digital_twin_scene_;
   place_again_button_->setEnabled(available);
+  if (menu_action) menu_action->setEnabled(available);
   if (available) {
     place_again_button_->setToolTip(QStringLiteral("Arm normal placement for %1 with default yaw 0.")
       .arg(match->display_name));
@@ -9515,8 +9647,11 @@ void MainWindow::on_asset_filter_changed(int)
     });
     for (auto * row : rows) asset_catalog_tree_->addTopLevelItem(row);
   }
-  if (asset_library_result_count_) asset_library_result_count_->setText(
-    QString("%1 asset%2").arg(visible_count).arg(visible_count == 1 ? "" : "s"));
+  if (asset_library_result_count_) {
+    asset_library_result_count_->setText(QString::number(visible_count));
+    asset_library_result_count_->setToolTip(
+      QString("%1 asset%2 shown").arg(visible_count).arg(visible_count == 1 ? "" : "s"));
+  }
   if (asset_library_empty_state_) {
     QString empty_text;
     if (visible_count == 0 && !query.isEmpty())
@@ -9573,15 +9708,30 @@ void MainWindow::refresh_asset_thumbnail(const QString & asset_id)
     }
   }
   auto * selected = asset_catalog_tree_->currentItem();
-  if (!selected || selected->data(0, CatalogRoleAssetId).toString() != asset_id || !asset_library_thumbnail_preview_) return;
+  if (!selected || selected->data(0, CatalogRoleAssetId).toString() != asset_id) return;
   if (result.status == AssetThumbnailService::Status::Ready) {
-    asset_library_thumbnail_preview_->setPixmap(QPixmap::fromImage(result.image).scaled(
-      asset_library_thumbnail_preview_->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
-    asset_library_thumbnail_preview_->setToolTip(QString());
+    const QPixmap preview_pixmap = QPixmap::fromImage(result.image);
+    if (asset_library_thumbnail_preview_) {
+      asset_library_thumbnail_preview_->setPixmap(preview_pixmap.scaled(
+        asset_library_thumbnail_preview_->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+      asset_library_thumbnail_preview_->setToolTip(QString());
+    }
+    if (asset_library_selected_preview_) {
+      const int preview_width = qMax(240,
+        asset_catalog_tree_ ? asset_catalog_tree_->viewport()->width() : asset_library_selected_preview_->width());
+      asset_library_selected_preview_->setPixmap(preview_pixmap.scaled(
+        QSize(preview_width, 280), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+      asset_library_selected_preview_->setToolTip(QString());
+    }
   } else {
-    asset_library_thumbnail_preview_->setPixmap(QPixmap());
-    asset_library_thumbnail_preview_->setText(result.status == AssetThumbnailService::Status::Failed ? "Preview unavailable" : "Loading preview…");
-    asset_library_thumbnail_preview_->setToolTip(result.error);
+    const QString status_text = result.status == AssetThumbnailService::Status::Failed
+      ? QStringLiteral("Preview unavailable") : QStringLiteral("Loading preview…");
+    for (QLabel * preview_label : {asset_library_thumbnail_preview_, asset_library_selected_preview_}) {
+      if (!preview_label) continue;
+      preview_label->setPixmap(QPixmap());
+      preview_label->setText(status_text);
+      preview_label->setToolTip(result.status == AssetThumbnailService::Status::Failed ? result.error : QString());
+    }
   }
 }
 
@@ -9590,60 +9740,41 @@ void MainWindow::update_asset_library_preview()
   auto * item = asset_catalog_tree_ ? asset_catalog_tree_->currentItem() : nullptr;
   const int idx = item ? item->data(0, CatalogRoleIndex).toInt() : -1;
   if (!item || item->isHidden() || idx < 0 || idx >= asset_catalog_entries_.size()) {
-    if (asset_library_preview_) asset_library_preview_->set_preview_items({});
-    if (asset_library_preview_status_) asset_library_preview_status_->setText("Select an asset to preview.");
-    if (asset_library_details_) asset_library_details_->setText("Select an asset card to inspect available metadata.");
-    if (asset_library_thumbnail_preview_) { asset_library_thumbnail_preview_->setPixmap(QPixmap()); asset_library_thumbnail_preview_->setText("Select an asset to preview"); }
+    if (asset_library_details_) asset_library_details_->parentWidget()->hide();
+    if (asset_library_thumbnail_preview_) { asset_library_thumbnail_preview_->setPixmap(QPixmap()); asset_library_thumbnail_preview_->clear(); }
+    if (asset_library_selected_preview_) {
+      asset_library_selected_preview_->setPixmap(QPixmap());
+      asset_library_selected_preview_->clear();
+      asset_library_selected_preview_->hide();
+    }
     return;
   }
   const auto & e = asset_catalog_entries_[idx];
-  refresh_asset_thumbnail(e.asset_id);
   if (asset_library_details_) {
     const bool ready = e.disabled_reason.trimmed().isEmpty() && e.editable;
+    asset_library_details_->parentWidget()->show();
     asset_library_details_->setToolTip(e.source_path);
     asset_library_details_->setText(QString(
-      "<b>Name</b> &nbsp; %1<br/><b>Category</b> &nbsp; %2<br/>"
-      "<b>Source</b> &nbsp; %3<br/><b>Format</b> &nbsp; %4<br/>"
-      "<b>Dimensions</b> &nbsp; %5<br/><b>Provenance</b> &nbsp; %6<br/>"
-      "<b>Status</b> &nbsp; %7%8")
+      "<span style='color:#7a8998;font-size:11px'>Selected asset</span><br/>"
+      "<b>%1</b><br/><span style='color:#607284'>%2%3</span>%4")
       .arg(e.display_name.toHtmlEscaped(), e.category_label.toHtmlEscaped(),
-        (e.package_hint.isEmpty() ? QStringLiteral("—") : e.package_hint.toHtmlEscaped()),
-        (e.format_label.isEmpty() ? QStringLiteral("—") : e.format_label),
-        (e.dimensions.isEmpty() ? QStringLiteral("—") : e.dimensions.toHtmlEscaped()),
-        e.provenance_label,
-        (ready ? QStringLiteral("Ready") : QStringLiteral("Unavailable")),
-        (e.disabled_reason.isEmpty() ? QString() : QString(" — %1").arg(e.disabled_reason.toHtmlEscaped()))));
+        (e.format_label.isEmpty() ? QString() : QStringLiteral(" · ") + e.format_label.toHtmlEscaped()),
+        (ready || e.disabled_reason.isEmpty() ? QString() : QString("<br/><span style='color:#a13b32'>%1</span>").arg(e.disabled_reason.toHtmlEscaped()))));
   }
-  if (!asset_library_preview_) return;
-  ScenePreviewWidget::PreviewItem preview;
-  preview.id = QString("asset_library_%1").arg(e.asset_id.isEmpty() ? QString::number(idx) : e.asset_id);
-  preview.display_name = e.display_name;
-  preview.category = e.category;
-  preview.role = e.role.isEmpty() ? QStringLiteral("asset_catalog_preview") : e.role;
-  preview.source_layer = "asset_catalog";
-  preview.active_visual_source = "asset_catalog_live_preview";
-  preview.source_path = e.source_path;
-  const fs::path scene_dir = (selected_scene_index_ >= 0 && selected_scene_index_ < static_cast<int>(scene_browser_result_.scenes.size()))
-    ? scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_dir : workcell_builder_repo_root_from_source();
-  QStringList tried_candidates;
-  const QString resolved_visual = resolve_visual_mesh_source_path(
-    e.source_path, e.visual_uri.startsWith("package://") ? e.visual_uri : QString(), scene_dir, detect_workspace_root(), &tried_candidates);
-  preview.mesh_path = resolved_visual.isEmpty() ? e.visual_uri : resolved_visual;
-  preview.mesh_type = QFileInfo(preview.mesh_path).suffix().toLower();
-  preview.mesh_available = QFileInfo(preview.mesh_path).isFile();
-  preview.selectable = false;
-  preview.editable = false;
-  preview.locked = true;
-  preview.lock_reason = "Asset Library preview is inspect-only; use Add to Scene to place.";
-  preview.status = preview.mesh_available ? "preview" : "preview_failed";
-  preview.source_path_resolution_outcome = preview.mesh_available ? "resolved" : "missing_file";
-  if (!preview.mesh_available) preview.mesh_load_warning = QString("missing_file: %1; tried=%2").arg(e.visual_uri.isEmpty() ? e.source_path : e.visual_uri, tried_candidates.join(", "));
-  if (preview.mesh_type.isEmpty()) { preview.primitive_geometry_type = "box"; preview.sx = preview.sy = preview.sz = 0.25; }
-  asset_library_preview_->set_preview_items({preview});
-  if (asset_library_preview_status_) {
-    asset_library_preview_status_->setToolTip(QString("Source URI: %1").arg(e.visual_uri));
-    asset_library_preview_status_->setText(preview.mesh_available ? QString("Previewing %1 from existing resolver/loader path.").arg(e.display_name) : preview.mesh_load_warning);
+  if (asset_library_selected_preview_) {
+    asset_library_selected_preview_->show();
+    asset_library_selected_preview_->setPixmap(QPixmap());
+    asset_library_selected_preview_->setText(QStringLiteral("Loading preview…"));
   }
+  if (!asset_thumbnail_service_) return;
+  const fs::path scene_dir = has_selected_scene()
+    ? fs::path(selected_scene_path().toStdString()) : workcell_builder_repo_root_from_source();
+  const QString resolved = resolve_visual_mesh_source_path(e.source_path,
+    e.visual_uri.startsWith("package://") ? e.visual_uri : QString(), scene_dir, detect_workspace_root());
+  const AssetThumbnailService::Request request{
+    e.asset_id, resolved.isEmpty() ? e.source_path : resolved, e.scale, QSize(256, 192)};
+  asset_thumbnail_service_->request(request);
+  refresh_asset_thumbnail(e.asset_id);
 }
 
 void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
@@ -10249,7 +10380,8 @@ void MainWindow::refresh_scene_hierarchy_tree_from_current_items()
     auto * node = new QTreeWidgetItem(scene_hierarchy_tree_, {
       display_name, type_text.isEmpty() ? QStringLiteral("object") : type_text, state_text});
     node->setToolTip(0, detail_tooltip); node->setToolTip(1, type_text); node->setToolTip(2, detail_tooltip);
-    node->setData(0, TreeRoleId, p.id); node->setData(0, TreeRoleCategory, p.category);
+    node->setData(0, TreeRoleId, p.id); node->setData(0, TreeRoleDisplayName, p.display_name.trimmed());
+    node->setData(0, TreeRoleCategory, p.category);
     node->setData(0, TreeRolePoseText, QString("xyz=(%1,%2,%3) rpy=(%4,%5,%6)").arg(p.x).arg(p.y).arg(p.z).arg(p.roll).arg(p.pitch).arg(p.yaw));
     node->setData(0, TreeRoleSource, p.source_path);
     node->setData(0, TreeRolePoseX, p.x); node->setData(0, TreeRolePoseY, p.y); node->setData(0, TreeRolePoseZ, p.z);

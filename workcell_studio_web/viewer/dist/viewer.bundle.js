@@ -38363,8 +38363,10 @@ function emitWeb3dReadinessState(readinessState, detail = {}) {
     state.web3dReadiness.failure = eventDetail;
   }
   const status = updateViewerStatus();
-  if (readinessState === "scene_ready")
+  if (readinessState === "scene_ready") {
     triggerInitialCameraFitAfterSceneReady();
+    refreshViewportAfterSceneReady(navigationKey);
+  }
   window.dispatchEvent?.(new CustomEvent("workcell:web3d_readiness", { detail: { state: readinessState, ...eventDetail, status } }));
   window.parent?.postMessage?.({ type: "workcell_web3d_readiness", state: readinessState, ...eventDetail, status }, "*");
   return status;
@@ -42624,6 +42626,20 @@ function attemptInitialCameraFit({ allowRetry = true } = {}) {
 function triggerInitialCameraFitAfterSceneReady() {
   return attemptInitialCameraFit({ allowRetry: false });
 }
+function refreshViewportAfterSceneReady(navigationKey) {
+  requestAnimationFrame(() => {
+    const readiness = state.web3dReadiness;
+    if (!readiness?.terminal || readiness.terminalState !== "scene_ready" || readiness.terminalNavigationKey !== navigationKey || web3dNavigationKey() !== navigationKey)
+      return;
+    resize();
+    const { renderer, scene, camera, controls } = state.three;
+    if (!renderer || !scene || !camera)
+      return;
+    controls?.update();
+    renderer.render(scene, camera);
+    updateLabels();
+  });
+}
 function applyCameraPreset(preset) {
   const selectedPreset = String(preset || "").toLowerCase();
   if (!CAMERA_PRESET_DIRECTIONS[selectedPreset])
@@ -44486,26 +44502,13 @@ function cancelDirectRotateDrag(message) {
   return cancelActiveTransformOperation(message || "Rotation cancelled");
 }
 function authoritativePhysicalMeshCentre(owner) {
-  const visual = resolveCanonicalPhysicalEditBinding(owner)?.visual;
-  if (!visual?.meshObject || visual.item?.mesh_status !== "loaded")
+  const binding = resolveCanonicalPhysicalEditBinding(owner);
+  if (binding && (!binding.visual?.meshObject || binding.visual.item?.mesh_status !== "loaded"))
     return null;
-  visual.meshObject.updateWorldMatrix(true, true);
-  const bounds = new THREE.Box3();
-  visual.meshObject.traverse((node) => {
-    if (!node.visible || node.isMesh !== true || !node.geometry)
-      return;
-    const identity2 = `${node.name || ""} ${node.userData?.role || ""} ${node.userData?.category || ""}`.toLowerCase();
-    if (node.userData?.fallback_geometry === true || node.userData?.isFallback === true || node.userData?.selection_highlight === true || node.userData?.exclude_from_physical_bounds === true || /helper|frustum|label|highlight|fallback/.test(identity2))
-      return;
-    node.updateWorldMatrix(true, false);
-    if (!node.geometry.boundingBox)
-      node.geometry.computeBoundingBox();
-    if (node.geometry.boundingBox && !node.geometry.boundingBox.isEmpty())
-      bounds.union(node.geometry.boundingBox.clone().applyMatrix4(node.matrixWorld));
-  });
-  if (bounds.isEmpty())
+  const physical = collectSelectionPhysicalBounds(binding?.owner || owner);
+  const centre = physical.bounds?.getCenter(new THREE.Vector3()) || null;
+  if (!centre)
     return null;
-  const centre = bounds.getCenter(new THREE.Vector3());
   return Number.isFinite(centre.x) && Number.isFinite(centre.y) && Number.isFinite(centre.z) ? centre : null;
 }
 function removeTransientGizmoPivot() {
@@ -44515,12 +44518,12 @@ function removeTransientGizmoPivot() {
   state.gizmoPivot = null;
   state.gizmoPivotDragStart = null;
 }
-function refreshTransientGizmoPivot(owner, attachmentReason = "physical_binding") {
+function refreshTransientGizmoPivot(owner, attachmentReason = "physical_bounds", physicalCentre = null) {
   const binding = resolveCanonicalPhysicalEditBinding(owner);
   owner = binding?.owner || owner;
   if (!owner || state.selected !== owner.item?.id)
     return false;
-  const centre = authoritativePhysicalMeshCentre(owner);
+  const centre = physicalCentre || authoritativePhysicalMeshCentre(owner);
   if (!centre) {
     detachTransformGizmo("authoritative_physical_mesh_unavailable");
     return false;
@@ -44576,19 +44579,34 @@ function beginTransientPivotDrag(owner) {
   state.gizmoPivotDragStart = { ownerWorld: owner.object3d.matrixWorld.clone(), pivotWorld: pivot.group.matrixWorld.clone(), axis };
   return true;
 }
+function canonicalRotatePreviewTransform(start, axis, angle) {
+  if (!start || !["X", "Y", "Z"].includes(axis) || !Number.isFinite(angle))
+    return null;
+  const next = cloneTransform(start);
+  const component = axis.toLowerCase();
+  next.pose.rpy[component] = start.pose.rpy[component] + angle;
+  return next;
+}
 function previewTransientPivotDrag(owner) {
   const start = state.gizmoPivotDragStart;
   const pivot = state.gizmoPivot;
   if (!start || !pivot || pivot.owner !== owner)
     return false;
-  pivot.group.updateWorldMatrix(true, false);
-  const delta = pivot.group.matrixWorld.clone().multiply(start.pivotWorld.clone().invert());
-  const ownerWorld = delta.multiply(start.ownerWorld);
-  const ownerLocal = owner.object3d.parent ? owner.object3d.parent.matrixWorld.clone().invert().multiply(ownerWorld) : ownerWorld;
-  ownerLocal.decompose(owner.object3d.position, owner.object3d.quaternion, owner.object3d.scale);
-  owner.object3d.scale.set(state.gizmoDragStart.scale.x, state.gizmoDragStart.scale.y, state.gizmoDragStart.scale.z);
-  owner.object3d.updateMatrixWorld(true);
-  const next = transformFromObject(owner.object3d);
+  let next = null;
+  if (state.editorMode === "rotate") {
+    next = canonicalRotatePreviewTransform(state.gizmoDragStart, start.axis, state.three.transformControls?.rotationAngle);
+  } else {
+    pivot.group.updateWorldMatrix(true, false);
+    const delta = pivot.group.matrixWorld.clone().multiply(start.pivotWorld.clone().invert());
+    const ownerWorld = delta.multiply(start.ownerWorld);
+    const ownerLocal = owner.object3d.parent ? owner.object3d.parent.matrixWorld.clone().invert().multiply(ownerWorld) : ownerWorld;
+    ownerLocal.decompose(owner.object3d.position, owner.object3d.quaternion, owner.object3d.scale);
+    owner.object3d.scale.set(state.gizmoDragStart.scale.x, state.gizmoDragStart.scale.y, state.gizmoDragStart.scale.z);
+    owner.object3d.updateMatrixWorld(true);
+    next = transformFromObject(owner.object3d);
+  }
+  if (!next)
+    return false;
   applyTransformChanges(linkedTransformChanges(owner, state.gizmoDragStart, next, state.gizmoDragGroupStart));
   syncInspectorTransformFields(owner);
   updateLabels();
@@ -44621,8 +44639,9 @@ function attachTransformGizmo(rendered, attachmentReason = "mode_or_selection") 
   if (binding)
     rendered = binding.owner;
   if (selectionIsEditable(rendered)) {
-    const usesPhysicalPivot = Boolean(binding);
-    if (!usesPhysicalPivot || !refreshTransientGizmoPivot(rendered, attachmentReason === "asynchronous_physical_mesh_completion" ? attachmentReason : "attached_to_authoritative_physical_centre")) {
+    const physicalCentre = authoritativePhysicalMeshCentre(rendered);
+    const usesPhysicalPivot = Boolean(binding || physicalCentre);
+    if (!usesPhysicalPivot || !refreshTransientGizmoPivot(rendered, attachmentReason === "asynchronous_physical_mesh_completion" ? attachmentReason : "attached_to_physical_bounds_centre", physicalCentre)) {
       if (usesPhysicalPivot)
         return;
       removeTransientGizmoPivot();
@@ -45351,7 +45370,7 @@ function setEditorSnap(enabled, translationMeters, rotationDegrees) {
   refreshGizmoSnap();
   refreshPlacementSnap();
 }
-function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, pushHistory = true) {
+function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, pushHistory = true, resetHistory = false) {
   const requested = renderedById(String(id || ""));
   const rendered = requested ? canonicalEditOwnerRendered(requested) || requested : null;
   if (!rendered || !selectionIsEditable(rendered))
@@ -45371,6 +45390,12 @@ function setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, pushHistory = true
   next.pose.rpy.x = values[3];
   next.pose.rpy.y = values[4];
   next.pose.rpy.z = values[5];
+  if (resetHistory) {
+    state.undoStack = [];
+    state.redoStack = [];
+    updateDirtyState();
+    emitDirtyChanged();
+  }
   const committed = markDirtyTransform(rendered, next, {
     pushHistory: Boolean(pushHistory),
     oldTransform: before,
@@ -45570,7 +45595,7 @@ window.__WORKCELL_EDITOR_API_V1__ = {
   },
   setItemPose: (id, x, y, z, roll, pitch, yaw) => setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw),
   setItemTransform: (id, x, y, z, roll, pitch, yaw) => setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw),
-  syncItemTransform: (id, x, y, z, roll, pitch, yaw) => setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, false),
+  syncItemTransform: (id, x, y, z, roll, pitch, yaw) => setItemPoseFromBridge(id, x, y, z, roll, pitch, yaw, false, true),
   setItemMetadata: (id, displayName, semanticRole) => setItemMetadataFromBridge(id, displayName, semanticRole),
   addItem: (item) => addItemFromBridge(item),
   removeItem: (id) => removeItemFromBridge(id),

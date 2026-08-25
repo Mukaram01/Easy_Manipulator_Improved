@@ -21,7 +21,7 @@ def test_asset_library_search_and_categories_are_catalog_driven():
     setup = _between('auto * hierarchy_card = new QFrame', 'auto * files_card = new QFrame')
     assert 'Asset Library' in setup
     assert 'assetLibrarySearchBox' in setup
-    assert 'asset_filter_combo_->addItem("All")' in setup
+    assert 'asset_filter_combo_->addItem("All assets")' in setup
     assert '{"Robots", "robot"}' in setup
     assert '{"Imported", "imported"}' in setup
     filt = _between('void MainWindow::on_asset_filter_changed', 'void MainWindow::update_asset_library_preview')
@@ -39,8 +39,9 @@ def test_asset_library_is_compact_for_the_narrow_scene_builder_side_panel():
         'asset_catalog_tree_->setColumnHidden(3, true);',
         'asset_catalog_tree_->header()->hide();',
         'import_asset_button->setFixedWidth(34);',
-        'asset_library_thumbnail_preview_->hide();',
-        'asset_library_preview_status_->setMaximumHeight(38);',
+        'selected_asset_summary->hide();',
+        'asset_library_selected_preview_->setMinimumHeight(240);',
+        'asset_library_selected_preview_->setMaximumHeight(280);',
     ]:
         assert contract in setup
 
@@ -49,18 +50,18 @@ def test_asset_library_selection_is_separate_from_scene_selection():
     preview = _between('void MainWindow::update_asset_library_preview()', 'void MainWindow::on_hierarchy_item_selected')
     forbidden = ['apply_scene_selection(', 'select_canvas_item(', 'clearSelection()', 'select_preview_item(']
     assert not any(token in preview for token in forbidden)
-    assert 'preview.selectable = false;' in preview
-    assert 'preview.editable = false;' in preview
+    assert 'AssetThumbnailService::Request' in preview
 
 
-def test_asset_library_uses_one_live_preview_and_explicit_failures():
+def test_asset_library_uses_cached_selected_preview_and_simple_states():
     setup = _between('auto * hierarchy_card = new QFrame', 'auto * files_card = new QFrame')
-    assert setup.count('new ScenePreviewWidget(catalog_card)') == 1
+    assert 'new ScenePreviewWidget(catalog_card' not in setup
+    assert 'assetLibrarySelectedPreview' in setup
     preview = _between('void MainWindow::update_asset_library_preview()', 'void MainWindow::on_hierarchy_item_selected')
-    assert 'asset_library_preview_->set_preview_items({preview});' in preview
-    assert 'missing_file' in preview
-    assert 'mesh_load_warning' in preview
-    assert 'Source URI:' in preview
+    assert 'asset_thumbnail_service_->request(request);' in preview
+    assert 'Loading preview…' in preview
+    assert 'asset_library_selected_preview_->hide();' in preview
+    assert 'asset_library_preview_' not in preview
 
 
 def test_asset_library_add_delegates_to_place_asset_without_direct_yaml_write():
@@ -78,7 +79,8 @@ def test_asset_library_add_button_requires_scene_and_placeable_asset():
     assert 'CatalogRolePlaceable' in validate
     assert 'setToolTip' in validate
     assert 'Start existing Place Asset mode' in validate
-    assert 'ScenePreviewWidget * asset_library_preview_' in HDR
+    assert 'QLabel * asset_library_selected_preview_' in HDR
+    assert 'ScenePreviewWidget * asset_library_preview_' not in HDR
 
 
 def test_shared_placement_backend_rejects_stale_disabled_and_noneditable_catalog_entries():

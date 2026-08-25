@@ -54,6 +54,23 @@ GENERATOR_INPUT_RELS = (
     "assets/robots/universal_robot/ur5_moveit_config/config/initial_positions.yaml",
 )
 
+# The mesh index is generated evidence for locked robot/tool visuals. Authored
+# environment and layout files still invalidate the Web3D export, but they do
+# not require strict xacro re-extraction of otherwise-valid robot visuals.
+MESH_INDEX_SCENE_INPUT_RELS = (
+    "scene_manifest.yaml",
+    "urdf/scene.urdf.xacro",
+    "launch/demo.launch.py",
+)
+
+MESH_INDEX_GENERATOR_INPUT_RELS = (
+    "scripts/extract_scene_urdf_visual_mesh_index.py",
+    "assets/robots/universal_robot/ur_description/config/ur5/default_kinematics.yaml",
+    "assets/robots/universal_robot/ur_description/config/ur5/visual_parameters.yaml",
+    "assets/robots/universal_robot/ur_description/config/ur5/physical_parameters.yaml",
+    "assets/robots/universal_robot/ur5_moveit_config/config/initial_positions.yaml",
+)
+
 UR5_VISUAL_MESH_URI_TOKEN = "ur_description/meshes/ur5/visual/"
 UR5_REQUIRED_LINKS = {
     "base_link_inertia",
@@ -113,6 +130,19 @@ def existing_inputs(scene_dir: Path) -> List[Path]:
         if path.exists():
             inputs.append(path)
     for rel in GENERATOR_INPUT_RELS:
+        path = REPO_ROOT / rel
+        if path.exists():
+            inputs.append(path)
+    return inputs
+
+
+def existing_mesh_index_inputs(scene_dir: Path) -> List[Path]:
+    inputs: List[Path] = []
+    for rel in MESH_INDEX_SCENE_INPUT_RELS:
+        path = scene_dir / rel
+        if path.exists():
+            inputs.append(path)
+    for rel in MESH_INDEX_GENERATOR_INPUT_RELS:
         path = REPO_ROOT / rel
         if path.exists():
             inputs.append(path)
@@ -480,7 +510,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     exporter_script = REPO_ROOT / "scripts/export_workcell_studio_web_scene.py"
     inputs = existing_inputs(scene_dir)
 
-    mesh_stale, mesh_reason = is_output_stale(mesh_index, inputs)
+    mesh_inputs = existing_mesh_index_inputs(scene_dir)
+    mesh_stale, mesh_reason = is_output_stale(mesh_index, mesh_inputs)
     expected_version = read_extractor_version(extractor_script)
     actual_version = read_mesh_index_version(mesh_index) if mesh_index.exists() else None
     if actual_version != expected_version:

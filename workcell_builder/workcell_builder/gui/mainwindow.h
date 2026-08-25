@@ -142,6 +142,8 @@ private:
     const QString & message,
     workcell_builder::StudioLogSeverity severity = workcell_builder::StudioLogSeverity::Info,
     const QString & issue_key = QString());
+  QString scene_builder_activity_summary(
+    const QString & message, workcell_builder::StudioLogSeverity severity) const;
   bool append_scene_diagnostic_log_once(const QString & event, int payload_revision, int payload_count, const QString & message);
   bool scene3d_debug_logging_enabled() const;
   void show_not_wired_message(const QString & action_label);
@@ -581,10 +583,9 @@ private:
   QTreeWidget * scene_files_tree_{ nullptr };
   QComboBox * asset_filter_combo_{ nullptr };
   QLineEdit * asset_library_search_{ nullptr };
-  ScenePreviewWidget * asset_library_preview_{ nullptr };
   QLabel * asset_library_thumbnail_preview_{ nullptr };
+  QLabel * asset_library_selected_preview_{ nullptr };
   AssetThumbnailService * asset_thumbnail_service_{ nullptr };
-  QLabel * asset_library_preview_status_{ nullptr };
   QLabel * asset_library_result_count_{ nullptr };
   QLabel * asset_library_empty_state_{ nullptr };
   QLabel * asset_library_details_{ nullptr };
@@ -800,9 +801,8 @@ private:
   bool scene_builder_focus_restore_right_visible_{ true };
   QTabWidget * scene_builder_left_tabs_{ nullptr };
   QTabWidget * scene_builder_inspector_tabs_{ nullptr };
-  QPushButton * scene_builder_log_toggle_button_{ nullptr };
   QFrame * scene_builder_log_panel_{ nullptr };
-  QLabel * scene_builder_status_message_label_{ nullptr };
+  QPushButton * scene_builder_status_message_label_{ nullptr };
   QLabel * scene_builder_issue_count_label_{ nullptr };
   workcell_builder::StudioLogIssueTracker studio_log_issue_tracker_;
   bool scene_builder_log_collapsed_{ false };

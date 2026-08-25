@@ -35,6 +35,25 @@ def test_product_layout_has_one_primary_scene_toolbar():
         assert token in source
 
 
+def test_toolbar_groups_edit_modes_and_makes_save_primary_only_when_dirty():
+    layout = text(LAYOUT)
+    mainwindow = text(MAINWINDOW)
+    for token in (
+        'sceneBuilderEditModeGroup',
+        'sceneBuilderModeSelect',
+        'sceneBuilderModeMove',
+        'sceneBuilderModeRotate',
+        'layout->addSpacing(10)',
+        'sceneBuilderToolbarUndo',
+        'sceneBuilderToolbarRedo',
+        'sceneBuilderToolbarSave[layoutDirty="true"]',
+        'sceneBuilderToolbarSave[layoutDirty="false"]',
+    ):
+        assert token in layout
+    assert 'save_layout_button_->setProperty("layoutDirty", true)' in mainwindow
+    assert 'save_layout_button_->setProperty("layoutDirty", false)' in mainwindow
+
+
 def test_product_layout_keeps_duplicate_contextual_without_orphan_button_overlap():
     source = text(LAYOUT)
     for token in (
@@ -105,15 +124,22 @@ def test_product_layout_promotes_major_tabs_and_simplifies_hierarchy():
 def test_product_layout_prioritizes_the_3d_viewport():
     source = text(LAYOUT)
     for token in (
-        'left->setMinimumWidth(245)',
-        'left->setMaximumWidth(300)',
+        'left->setMinimumWidth(240)',
+        'left->setMaximumWidth(340)',
         'center->setMinimumWidth(760)',
         'right->setMinimumWidth(300)',
-        'right->setMaximumWidth(360)',
+        'right->setMaximumWidth(400)',
         'splitter->setStretchFactor(1, 10)',
-        'splitter->setSizes({270, 1120, 320})',
+        'splitter->setSizes({280, 1040, 340})',
     ):
         assert token in source
+
+
+def test_inspector_position_controls_accept_negative_world_coordinates_only():
+    source = text(MAINWINDOW)
+    assert "for (auto * position_spin : {inspector_x_, inspector_y_, inspector_z_})" in source
+    assert "position_spin->setRange(-1000.0, 1000.0)" in source
+    assert "inspector_dim_x_->setRange(-1000.0, 1000.0)" not in source
 
 
 def test_product_layout_removes_redundant_scene_and_debug_chrome():
@@ -124,10 +150,65 @@ def test_product_layout_removes_redundant_scene_and_debug_chrome():
         'text.startsWith(QStringLiteral("Unsaved Layout Edits:"))',
         'text.startsWith(QStringLiteral("Legend:"))',
         'text.startsWith(QStringLiteral("Scene load:"))',
-        'sceneBuilderLatestStatus',
+        'sceneBuilderActivityStrip',
         'digital_twin_minimap',
     ):
         assert token in source
+
+
+def test_product_layout_uses_clickable_activity_strip_and_existing_drawer():
+    layout = text(LAYOUT)
+    mainwindow = text(MAINWINDOW)
+    assert 'sceneBuilderBottomStatusBar' in layout
+    assert 'bottom->hide()' not in layout
+    for token in (
+        'sceneBuilderActivityStrip',
+        'sceneBuilderLogDrawerHeader',
+        'sceneBuilderLogDrawer',
+        'scene_builder_log_panel_->setVisible(show)',
+        'studio_log_->setVisible(show)',
+    ):
+        assert token in mainwindow
+    assert 'sceneBuilderLogsButton' not in mainwindow
+
+
+def test_asset_library_keeps_primary_workflow_and_large_cached_preview():
+    source = text(MAINWINDOW)
+    for token in (
+        'asset_library_result_count_->setText(QString::number(visible_count))',
+        'asset_filter_combo_->addItem("All assets")',
+        'setObjectName("assetLibraryResetFilters")',
+        'setObjectName("sceneBuilderPlaceAsset")',
+        'new QPushButton("Details"',
+        'setText(QString::fromUtf8("More ▾"))',
+        'setObjectName("assetLibrarySelectedPreview")',
+        'asset_library_selected_preview_->setMinimumHeight(240)',
+        'asset_library_selected_preview_->setMaximumHeight(280)',
+        'asset_library_selected_preview_->hide()',
+        'asset_thumbnail_service_->request(request)',
+        'setObjectName("assetLibraryPlaceAgainAction")',
+    ):
+        assert token in source
+    assert 'new ScenePreviewWidget(catalog_card' not in source
+    assert 'addAction("Preview settings")' not in source
+    assert 'new QPushButton("Clear", catalog_card)' not in source
+    assert 'Select an asset card to inspect available metadata.' not in source
+    assert 'Select an asset to preview.' not in source
+
+
+def test_selected_asset_preview_restores_thumbnail_service_contract():
+    source = text(MAINWINDOW)
+    update = source.split("void MainWindow::update_asset_library_preview()", 1)[1].split(
+        "void MainWindow::on_hierarchy_item_selected", 1
+    )[0]
+    assert "resolve_visual_mesh_source_path(" in update
+    assert "AssetThumbnailService::Request request" in update
+    assert "e.scale, QSize(256, 192)" in update
+    assert "asset_thumbnail_service_->request(request);" in update
+    assert "refresh_asset_thumbnail(e.asset_id);" in update
+    assert "asset_library_selected_preview_->show();" in update
+    assert "asset_library_selected_preview_->hide();" in update
+    assert "ScenePreviewWidget::PreviewItem" not in update
 
 
 def test_product_layout_keeps_one_contextual_inspector_surface():

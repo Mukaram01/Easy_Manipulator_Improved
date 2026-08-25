@@ -26,6 +26,12 @@ categories:
   table:
     package_candidates: [table_description]
     preferred_mesh_uris: [package://table_description/meshes/visual/table.stl]
+    mesh_scale: [0.001, 0.001, 0.001]
+    mesh_local_transform:
+      # Centre XY and place the tabletop (the mesh's highest Z) at local Z=0.
+      xyz: [0.2006668243, -0.2022999573, -0.0008999995]
+      rpy: [0.0, 0.0, 0.0]
+      scale: [0.001, 0.001, 0.001]
     primitive_fallback_dimensions: [1.2,0.8,0.2]
     preview_label: Table
     required_for_new_cell_preview: true
@@ -34,6 +40,12 @@ categories:
   workbench:
     package_candidates: [workbench_description]
     preferred_mesh_uris: [package://workbench_description/meshes/visual/table.stl]
+    mesh_scale: [0.001, 0.001, 0.001]
+    mesh_local_transform:
+      # The workbench package currently shares the canonical table geometry.
+      xyz: [0.2006668243, -0.2022999573, -0.0008999995]
+      rpy: [0.0, 0.0, 0.0]
+      scale: [0.001, 0.001, 0.001]
     primitive_fallback_dimensions: [1.4,0.8,0.25]
     preview_label: Workbench
     required_for_new_cell_preview: false
@@ -51,6 +63,12 @@ categories:
   camera_realsense:
     package_candidates: [realsense2_description]
     preferred_mesh_uris: [package://realsense2_description/meshes/d435.dae]
+    mesh_scale: [1.0, 1.0, 1.0]
+    mesh_local_transform:
+      # D435 bottom-screw frame to the DAE visual, composed from _d435.urdf.xacro.
+      xyz: [0.0149, 0.0, 0.0125]
+      rpy: [1.5707963267948966, 0.0, 1.5707963267948966]
+      scale: [1.0, 1.0, 1.0]
     primitive_fallback_dimensions: [0.08,0.08,0.08]
     preview_label: Camera
     required_for_new_cell_preview: false

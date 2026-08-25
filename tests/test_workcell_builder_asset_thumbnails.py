@@ -25,6 +25,10 @@ def test_cache_is_derived_and_source_fingerprinted():
 def test_cards_and_selected_asset_have_thumbnail_states_without_affecting_placement():
     assert 'setIconSize(QSize(64, 48))' in MAIN
     assert 'assetLibrarySelectedThumbnail' in MAIN
+    assert 'assetLibrarySelectedPreview' in MAIN
+    assert 'asset_library_selected_preview_->setMinimumHeight(240)' in MAIN
+    assert 'asset_library_selected_preview_->setMaximumHeight(280)' in MAIN
+    assert 'QSize(preview_width, 280), Qt::KeepAspectRatio, Qt::SmoothTransformation' in MAIN
     assert 'Loading preview…' in MAIN
     assert 'Preview unavailable' in MAIN
     validate = MAIN.split("void MainWindow::validate_asset_catalog_selection()", 1)[1].split("QString MainWindow::selected_catalog_item_path", 1)[0]
@@ -41,5 +45,9 @@ def test_filtering_remains_metadata_only_and_requests_after_filter():
 
 def test_existing_resolver_and_single_mesh_scale_are_used():
     assert "resolve_visual_mesh_source_path" in MAIN
+    selected = MAIN.split("void MainWindow::update_asset_library_preview()", 1)[1].split(
+        "void MainWindow::on_hierarchy_item_selected", 1
+    )[0]
+    assert "e.scale, QSize(256, 192)" in selected
     assert "QVector3D(p.x,p.y,p.z)*request.mesh_scale" in SERVICE
     assert SERVICE.count("*request.mesh_scale") == 1

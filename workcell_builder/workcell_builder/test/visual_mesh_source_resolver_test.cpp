@@ -46,8 +46,12 @@ TEST(VisualMeshSourceResolver, ResolvesKnownPackageUrisToRepoAssets)
       repo_root / "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae"},
     {QStringLiteral("package://workbench_description/meshes/visual/table.stl"),
       repo_root / "assets/environment/workbench_description/meshes/visual/table.stl"},
+    {QStringLiteral("package://table_description/meshes/visual/table.stl"),
+      repo_root / "assets/environment/table_description/meshes/visual/table.stl"},
     {QStringLiteral("package://realsense2_description/meshes/d415.stl"),
       repo_root / "assets/environment/realsense2_description/meshes/d415.stl"},
+    {QStringLiteral("package://realsense2_description/meshes/d435.dae"),
+      repo_root / "assets/environment/realsense2_description/meshes/d435.dae"},
   };
 
   for (const auto & test_case : cases) {
