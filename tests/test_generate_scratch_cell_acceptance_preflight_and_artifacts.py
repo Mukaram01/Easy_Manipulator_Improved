@@ -277,7 +277,8 @@ def test_required_contract_files_remain_strict_for_scratch_generation():
     assert "package.xml" in required
     assert "CMakeLists.txt" in required
     assert "scene_manifest.yaml" in required
-    assert "environment_layout.yaml" in required
+    assert "layout/workcell_studio_layout.yaml" in required
+    assert "environment_layout.yaml" not in required
     assert "launch/demo.launch.py" in required
     assert "cell_definition.yaml" in required
 

@@ -69,7 +69,7 @@ def main()->int:
     scene_dir=build_golden_scene(args.scene_name, Path(args.scenes_root).expanduser(), Path(args.assets_root).expanduser())
     checks=[]
     checks.append(('scene creation', scene_dir.exists(), []))
-    yaml_ok=all((scene_dir/f).exists() for f in ['environment.yaml','scene_manifest.yaml','generated/cell_definition.yaml','generated/environment_layout.yaml'])
+    yaml_ok=all((scene_dir/f).exists() for f in ['environment.yaml','scene_manifest.yaml','layout/workcell_studio_layout.yaml','generated/cell_definition.yaml'])
     checks.append(('YAML generation', yaml_ok, [] if yaml_ok else ['missing yaml outputs']))
     pc_ok,pc_err=package_consistency(scene_dir); checks.append(('package consistency',pc_ok,pc_err))
     sm_ok,sm_err=launch_smoke(scene_dir); checks.append(('SRDF/controller joints',sm_ok,sm_err))

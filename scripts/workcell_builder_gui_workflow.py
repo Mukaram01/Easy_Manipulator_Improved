@@ -861,6 +861,12 @@ def create_new_cell(cell_name:str, output_folder:str|Path|None=None)->dict[str,A
         return {"ok":False,"error":f"Output folder is not writable: {root}"}
     scene_dir=root/valid["cell_name"]
     scene_dir.mkdir(parents=True, exist_ok=True)
+    canonical_layout=scene_dir/"layout"/"workcell_studio_layout.yaml"
+    if not canonical_layout.exists():
+        canonical_layout.parent.mkdir(parents=True, exist_ok=True)
+        canonical_layout.write_text(
+            yaml.safe_dump({"schema_version":"workcell_studio_layout/v1","scene_name":valid["cell_name"],"items":[]}, sort_keys=False),
+            encoding="utf-8")
     (scene_dir/"environment.yaml").write_text(_scene_stub(valid["cell_name"]), encoding="utf-8")
     (scene_dir/"scene_manifest.yaml").write_text(json.dumps({"scene":valid["cell_name"],"fake_hardware_default":True}, indent=2)+"\n", encoding="utf-8")
     (scene_dir/"package.xml").write_text(f"<package><name>{valid['cell_name']}</name><version>0.0.1</version><description>Generated scene</description><maintainer email='builder@example.com'>builder</maintainer><license>Apache-2.0</license></package>\n", encoding="utf-8")

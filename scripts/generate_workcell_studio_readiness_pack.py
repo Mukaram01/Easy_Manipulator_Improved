@@ -5,6 +5,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+from workcell_studio_layout_source import resolve_saved_layout_path
 
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
@@ -152,6 +155,9 @@ def main()->int:
     for f in ['cell_definition.yaml','environment_layout.yaml','builder_export_summary.json']:
         src=paths['exported']/f
         art[{'cell_definition.yaml':'cell_definition','environment_layout.yaml':'environment_layout','builder_export_summary.json':'builder_export_summary'}[f]]=str(src)
+    saved_layout_path = resolve_saved_layout_path(scene)
+    readiness_layout_path = saved_layout_path or (paths['exported'] / 'environment_layout.yaml')
+    art['saved_layout'] = str(readiness_layout_path)
     ti=gen/'workcell_builder_task_intent.yaml'
     recipe=paths['task']/'task_recipe_from_builder_intent.yaml'
     if ti.exists():
@@ -162,13 +168,13 @@ def main()->int:
         if recipe.exists(): art['task_recipe']=str(recipe); results['task_recipe_status']='PASS' if rc==0 else 'WARN'
     else:
         results['task_intent_status']='WARN'; summary['warnings'].append('Missing task intent (physical scene only)')
-    if ti.exists() and (paths['exported'] / 'environment_layout.yaml').exists():
+    if ti.exists() and readiness_layout_path.exists():
         rc, pb = step('perception_bridge_preview', [
             sys.executable, str(SCRIPT_DIR / 'generate_perception_bridge_preview.py'),
             '--perception-profile', str(perception_profile_path),
             '--detected-objects', str(snapshot_path),
             '--task-intent', str(ti),
-            '--environment-layout', str(paths['exported'] / 'environment_layout.yaml'),
+            '--environment-layout', str(readiness_layout_path),
             '--output-payload', str(bridge_payload),
             '--output-report', str(bridge_report),
             '--json',
@@ -182,9 +188,9 @@ def main()->int:
     tf=paths['task']/'task_flow_summary.json'
     task_flow_cmd=None
     if recipe.exists():
-        task_flow_cmd=[sys.executable,str(SCRIPT_DIR/'summarize_task_flow.py'),'--task-recipe',str(recipe),'--environment-layout',str(paths['exported']/'environment_layout.yaml'),'--output',str(tf),'--json']
+        task_flow_cmd=[sys.executable,str(SCRIPT_DIR/'summarize_task_flow.py'),'--task-recipe',str(recipe),'--environment-layout',str(readiness_layout_path),'--output',str(tf),'--json']
     elif (paths['task']/ti.name).exists():
-        task_flow_cmd=[sys.executable,str(SCRIPT_DIR/'summarize_task_flow.py'),'--task-intent',str(paths['task']/ti.name),'--environment-layout',str(paths['exported']/'environment_layout.yaml'),'--output',str(tf),'--json']
+        task_flow_cmd=[sys.executable,str(SCRIPT_DIR/'summarize_task_flow.py'),'--task-intent',str(paths['task']/ti.name),'--environment-layout',str(readiness_layout_path),'--output',str(tf),'--json']
     if task_flow_cmd:
         rc,tfp=step('task_flow',task_flow_cmd)
         if tf.exists():
@@ -193,9 +199,8 @@ def main()->int:
     else:
         results['task_flow_status']='WARN'
     static_preview_cmd=[sys.executable,str(SCRIPT_DIR/'generate_workcell_static_preview.py'),'--cell-definition',str(paths['exported']/'cell_definition.yaml'),'--output-dir',str(paths['preview']),'--title',a.project_name,'--json']
-    env_layout_path = paths['exported']/'environment_layout.yaml'
-    if env_layout_path.exists():
-        static_preview_cmd += ['--environment-layout', str(env_layout_path)]
+    if readiness_layout_path.exists():
+        static_preview_cmd += ['--environment-layout', str(readiness_layout_path)]
     copied_ti = paths['task']/ti.name
     if copied_ti.exists():
         static_preview_cmd += ['--task-intent', str(copied_ti)]

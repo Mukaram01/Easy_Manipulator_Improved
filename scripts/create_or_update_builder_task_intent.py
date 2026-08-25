@@ -37,7 +37,7 @@ def _readable_label(identifier: str) -> str:
 
 def _extract_label_map(payload: dict[str, Any]) -> dict[str, str]:
     label_map: dict[str, str] = {}
-    for key in ("zones", "targets", "objects", "assets"):
+    for key in ("items", "zones", "targets", "objects", "assets"):
         items = payload.get(key)
         if not isinstance(items, list):
             continue
@@ -45,7 +45,7 @@ def _extract_label_map(payload: dict[str, Any]) -> dict[str, str]:
             if not isinstance(item, dict):
                 continue
             item_id = item.get("id")
-            label = item.get("label") or item.get("name")
+            label = item.get("display_name") or item.get("label") or item.get("name")
             if item_id and isinstance(label, str) and label.strip():
                 label_map[str(item_id)] = label.strip()
     meta = payload.get("metadata")
@@ -59,6 +59,7 @@ def _extract_label_map(payload: dict[str, Any]) -> dict[str, str]:
 
 def _resolve_scene_label(scene_package: Path, target_id: str) -> tuple[str, bool]:
     candidates = [
+        scene_package / "layout" / "workcell_studio_layout.yaml",
         scene_package / "generated" / "environment_layout.yaml",
         scene_package / "exported" / "environment_layout.yaml",
         scene_package / "workcell_builder_metadata.yaml",

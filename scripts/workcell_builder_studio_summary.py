@@ -24,7 +24,7 @@ def _read_task_intent(scene_package: Path) -> dict[str, Any]:
 
 
 def _read_layout(scene_package: Path) -> dict[str, Any]:
-    for rel in ("generated/environment_layout.yaml", "environment_layout.yaml"):
+    for rel in ("layout/workcell_studio_layout.yaml", "generated/environment_layout.yaml", "environment_layout.yaml"):
         p = scene_package / rel
         if p.is_file():
             return _load_yaml_like(p)
@@ -46,8 +46,13 @@ def summarize_builder_scene(scene_package: Path, *, source_project_path: Path | 
     layout = _read_layout(scene_package)
     intent = _read_task_intent(scene_package)
 
-    assets = layout.get("assets", []) if isinstance(layout.get("assets"), list) else []
-    zones = layout.get("zones", []) if isinstance(layout.get("zones"), list) else []
+    canonical_items = layout.get("items", []) if isinstance(layout.get("items"), list) else []
+    assets = layout.get("assets", []) if isinstance(layout.get("assets"), list) else [
+        item for item in canonical_items if isinstance(item, dict) and item.get("role") not in {"pick_zone", "place_zone", "keepout"}
+    ]
+    zones = layout.get("zones", []) if isinstance(layout.get("zones"), list) else [
+        item for item in canonical_items if isinstance(item, dict) and item.get("role") in {"pick_zone", "place_zone", "keepout"}
+    ]
     asset_types = {str(a.get("type")) for a in assets if isinstance(a, dict) and a.get("type")}
     zone_types = {str(z.get("type")) for z in zones if isinstance(z, dict) and z.get("type")}
 

@@ -49,7 +49,6 @@ def test_existing_scene_regeneration_uses_saved_layout_without_rewriting_authore
     shutil.copytree(SCENE, scene)
     layout_path = scene / "layout" / "workcell_studio_layout.yaml"
     environment_path = scene / "environment.yaml"
-    environment_layout_path = scene / "environment_layout.yaml"
     task_intent_path = scene / "config" / "workcell_builder_task_intent.yaml"
 
     layout = yaml.safe_load(layout_path.read_text(encoding="utf-8"))
@@ -61,7 +60,6 @@ def test_existing_scene_regeneration_uses_saved_layout_without_rewriting_authore
 
     authored_before = {
         environment_path: environment_path.read_bytes(),
-        environment_layout_path: environment_layout_path.read_bytes(),
         layout_path: layout_path.read_bytes(),
         task_intent_path: task_intent_path.read_bytes(),
     }
@@ -129,7 +127,6 @@ def test_scene_package_generation_refreshes_selected_package_in_place_without_du
         "config/workcell_builder_task_intent.yaml",
         "layout/workcell_studio_layout.yaml",
         "environment.yaml",
-        "environment_layout.yaml",
         "cell_definition.yaml",
         "scene_manifest.yaml",
     ]
@@ -165,28 +162,13 @@ def test_scene_package_generation_refreshes_selected_package_in_place_without_du
     assert readiness_path.read_text(encoding="utf-8") != "stale generated artifact\n"
     generated_layout_path = scene / "generated" / "environment_layout.yaml"
     generated_layout = yaml.safe_load(generated_layout_path.read_text(encoding="utf-8"))
-    assert generated_layout["schema_version"] == "environment_layout/v1"
-    assert "commissioning_pick_pose" in {
-        zone["id"] for zone in generated_layout["zones"]
+    assert generated_layout["schema_version"] == "workcell_studio_layout/v1"
+    assert "pick_zone_commissioning" in {
+        item["id"] for item in generated_layout["items"]
     }
-    assert "default_drop_zone" in {
-        target["id"] for target in generated_layout["targets"]
+    assert "place_zone_default" in {
+        item["id"] for item in generated_layout["items"]
     }
-
-    environment_validation = subprocess.run(
-        [
-            sys.executable,
-            str(REPO_ROOT / "scripts" / "validate_environment_layout.py"),
-            str(generated_layout_path),
-        ],
-        cwd=REPO_ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert environment_validation.returncode == 0, (
-        environment_validation.stdout + environment_validation.stderr
-    )
 
     scene_validation = subprocess.run(
         [
