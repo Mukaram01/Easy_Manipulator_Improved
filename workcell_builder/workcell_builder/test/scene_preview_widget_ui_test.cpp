@@ -829,7 +829,7 @@ TEST(SceneBuilderWorkspaceSource, CompactBottomStatusBarUsesSingleRowAndExisting
   EXPECT_FALSE(bar_block.contains(QStringLiteral("Warnings: 0 | Errors: 0")));
   EXPECT_FALSE(bar_block.contains(QStringLiteral("Product View preview-only; fake hardware remains default")));
   EXPECT_TRUE(bar_block.contains(QStringLiteral("new QHBoxLayout")));
-  EXPECT_TRUE(bar_block.contains(QStringLiteral("setContentsMargins(8, 2, 8, 2)")));
+  EXPECT_TRUE(bar_block.contains(QStringLiteral("setContentsMargins(0, 0, 0, 0)")));
   EXPECT_TRUE(bar_block.contains(QStringLiteral("setWordWrap(false)")));
   EXPECT_TRUE(bar_block.contains(QStringLiteral("setVisible(false)")));
   EXPECT_TRUE(bar_block.contains(QStringLiteral("setCheckable(true)")));
@@ -853,7 +853,8 @@ TEST(SceneBuilderWorkspaceSource, CompactBottomStatusBarUsesSingleRowAndExisting
   EXPECT_TRUE(toggle_block.contains(QStringLiteral("scene_builder_log_panel_->setVisible(show)")));
   EXPECT_TRUE(toggle_block.contains(QStringLiteral("studio_log_->setVisible(show)")));
   EXPECT_TRUE(toggle_block.contains(QStringLiteral("setChecked(show)")));
-  EXPECT_TRUE(toggle_block.contains(QStringLiteral("setText(\"Logs\")")));
+  EXPECT_TRUE(toggle_block.contains(QStringLiteral("show ? \"▼\" : \"▲\"")));
+  EXPECT_TRUE(toggle_block.contains(QStringLiteral("show ? \"Hide logs\" : \"Show logs\"")));
   EXPECT_FALSE(toggle_block.contains(QStringLiteral("new QTextEdit")));
   EXPECT_FALSE(toggle_block.contains(QStringLiteral("clear()")));
 

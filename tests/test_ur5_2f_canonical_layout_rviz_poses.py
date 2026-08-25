@@ -86,6 +86,13 @@ def test_canonical_pose_xacro_args_have_empty_humble_compatible_defaults():
         assert declarations[name].get("default") == ""
 
 
+def test_canonical_support_surface_uses_tabletop_world_z_convention():
+    document = yaml.safe_load(LAYOUT.read_text(encoding="utf-8"))
+    table = next(item for item in document["items"] if item["id"] == "support_surface_table")
+
+    assert table["pose"]["xyz"][2] == pytest.approx(0.0)
+
+
 def test_changed_temp_layout_changes_xacro_pose_mappings_without_rewriting_yaml(tmp_path):
     helpers = _layout_helpers()
     copied_layout = tmp_path / "layout.yaml"
@@ -105,8 +112,12 @@ def test_changed_temp_layout_changes_xacro_pose_mappings_without_rewriting_yaml(
         "camera_world_rpy": helpers["_format_xacro_vector"](poses["realsense_overhead"]["rpy"]),
     }
 
-    assert mappings["table_world_xyz"] == "0.75 0 0.059999999999999998"
-    assert mappings["camera_world_xyz"] == "0.34999999999999998 0.14999999999999999 0.84999999999999998"
+    assert [float(value) for value in mappings["table_world_xyz"].split()] == pytest.approx(
+        by_id["support_surface_table"]["pose"]["xyz"]
+    )
+    assert [float(value) for value in mappings["camera_world_xyz"].split()] == pytest.approx(
+        by_id["realsense_overhead"]["pose"]["xyz"]
+    )
     assert copied_layout.read_bytes() == before
     assert LAYOUT.read_bytes() == canonical_before
 

@@ -39,7 +39,7 @@ environment:
     pose_xyz:
     - 0.55
     - 0.0
-    - 0.06
+    - 0.0
     pose_rpy:
     - 0.0
     - 0.0
@@ -268,7 +268,7 @@ support_surfaces:
   pose_xyz:
   - 0.55
   - 0.0
-  - 0.06
+  - 0.0
   pose_rpy:
   - 0.0
   - 0.0

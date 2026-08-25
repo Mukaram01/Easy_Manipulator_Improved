@@ -141,7 +141,7 @@ def test_canonical_table_and_camera_stage_as_mesh_backed_web_assets(tmp_path):
         assert camera["mesh_uri"].endswith("realsense2_description/meshes/d435.dae")
         assert table["mesh_scale"] == [0.001, 0.001, 0.001]
         assert table["mesh_local_transform"] == {
-            "xyz": [0.2006668243, -0.2022999573, 0.9053377075],
+            "xyz": [0.2006668243, -0.2022999573, -0.0008999995],
             "rpy": [0.0, 0.0, 0.0],
             "scale": [0.001, 0.001, 0.001],
         }
@@ -149,7 +149,7 @@ def test_canonical_table_and_camera_stage_as_mesh_backed_web_assets(tmp_path):
         local = table["mesh_local_transform"]
         normalized_min = [raw_min[i] * local["scale"][i] + local["xyz"][i] for i in range(3)]
         normalized_max = [raw_max[i] * local["scale"][i] + local["xyz"][i] for i in range(3)]
-        assert normalized_min[2] == pytest.approx(0.0, abs=1e-9)
+        assert normalized_max[2] == pytest.approx(0.0, abs=1e-9)
         assert (normalized_min[0] + normalized_max[0]) / 2.0 == pytest.approx(0.0, abs=1e-9)
         assert (normalized_min[1] + normalized_max[1]) / 2.0 == pytest.approx(0.0, abs=1e-9)
         assert camera["mesh_local_transform"] == {
@@ -301,7 +301,7 @@ def test_imported_pallet_obj_manifest_and_web_staging(tmp_path):
             "workcell_builder/assets/environment/pallet_description/meshes/visual/pallet.obj"
         )
         assert pallet["mesh_scale"] == [1.2, 0.96, 0.8]
-        staged_mesh = ROOT / "build/workcell_studio_web_scene" / pallet["mesh_uri"]
+        staged_mesh = ROOT / pallet["mesh_uri"]
         assert staged_mesh.is_file()
         assert staged_mesh.read_text(encoding="utf-8").count("\nf ") == 84
     finally:

@@ -42,6 +42,7 @@ def _minimal_repo(tmp_path, monkeypatch):
     monkeypatch.setattr(ensure, "WEB_BUILD_ROOT", build)
     monkeypatch.setattr(ensure, "ASSET_BUILD_ROOT", build / "assets")
     monkeypatch.setattr(ensure, "SCENE_INPUT_RELS", ("scene_manifest.yaml",))
+    monkeypatch.setattr(ensure, "MESH_INDEX_SCENE_INPUT_RELS", ("scene_manifest.yaml",))
     monkeypatch.setattr(
         ensure,
         "GENERATOR_INPUT_RELS",
@@ -49,6 +50,11 @@ def _minimal_repo(tmp_path, monkeypatch):
             "scripts/extract_scene_urdf_visual_mesh_index.py",
             "scripts/export_workcell_studio_web_scene.py",
         ),
+    )
+    monkeypatch.setattr(
+        ensure,
+        "MESH_INDEX_GENERATOR_INPUT_RELS",
+        ("scripts/extract_scene_urdf_visual_mesh_index.py",),
     )
     monkeypatch.setattr(ensure, "real_xacro_is_discoverable", lambda: False)
     return repo, scene, source, extractor, exporter, build
@@ -86,7 +92,7 @@ def test_missing_mesh_index_runs_extractor_then_exporter(tmp_path, monkeypatch):
     ]
 
 
-def test_older_mesh_index_than_source_or_generator_input_triggers_regeneration(tmp_path, monkeypatch):
+def test_robot_visual_source_newer_than_mesh_index_triggers_regeneration(tmp_path, monkeypatch):
     _repo, scene, source, _extractor, _exporter, build = _minimal_repo(tmp_path, monkeypatch)
     mesh_index = _write(
         scene / "generated" / "scene_visual_mesh_index.json",
@@ -112,6 +118,50 @@ def test_older_mesh_index_than_source_or_generator_input_triggers_regeneration(t
         "extract_scene_urdf_visual_mesh_index.py",
         "export_workcell_studio_web_scene.py",
     ]
+
+
+def test_layout_newer_than_mesh_index_reuses_index_and_exports_updated_layout(tmp_path, monkeypatch):
+    _repo, scene, source, extractor, exporter, build = _minimal_repo(tmp_path, monkeypatch)
+    layout = _write(scene / "layout" / "workcell_studio_layout.yaml", "table_z: 0.0\n")
+    monkeypatch.setattr(
+        ensure,
+        "SCENE_INPUT_RELS",
+        ("scene_manifest.yaml", "layout/workcell_studio_layout.yaml"),
+    )
+    mesh_index = _write(
+        scene / "generated" / "scene_visual_mesh_index.json",
+        json.dumps({"extractor_version": "expected-v1", "visual_items": []}),
+    )
+    output = _write(
+        build / "demo_scene.web_scene.json",
+        json.dumps({"schema_version": "workcell_studio_web_scene/v1", "scene_id": "demo_scene", "table_z": 0.06}),
+    )
+    for path in (source, extractor, exporter, mesh_index, output):
+        _touch(path, 100)
+    _touch(layout, 200)
+    calls = []
+
+    def fake_run(command):
+        calls.append(Path(command[1]).name)
+        assert command[1].endswith("export_workcell_studio_web_scene.py")
+        exported_layout = (scene / "layout" / "workcell_studio_layout.yaml").read_text(encoding="utf-8")
+        out = Path(command[command.index("--output") + 1])
+        if not out.is_absolute():
+            out = ensure.REPO_ROOT / out
+        _write(
+            out,
+            json.dumps({
+                "schema_version": "workcell_studio_web_scene/v1",
+                "scene_id": "demo_scene",
+                "table_z": float(exported_layout.split(":", 1)[1]),
+            }),
+        )
+
+    monkeypatch.setattr(ensure, "run_checked", fake_run)
+
+    assert ensure.main(["--scene", "demo_scene", "--output", str(output)]) == 0
+    assert calls == ["export_workcell_studio_web_scene.py"]
+    assert json.loads(output.read_text(encoding="utf-8"))["table_z"] == 0.0
 
 
 def test_older_web_scene_than_mesh_index_or_source_input_triggers_export_only(tmp_path, monkeypatch):

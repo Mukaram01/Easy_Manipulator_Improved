@@ -80,15 +80,15 @@ def test_inspector_has_one_empty_selection_message_and_no_horizontal_overflow():
     assert 'live_coordinate_label_->setText("No item selected")' not in body
     assert "live_coordinate_label_->clear();" in body
     assert "live_coordinate_label_->setVisible(false);" in body
-    assert "live_coordinate_label_->setVisible(true);" in body
+    assert "live_coordinate_label_->setVisible(true);" not in body
+    assert 'QString("Transform: %1")' not in body
     assert "setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff)" in LAYOUT
     assert "spin->setMinimumWidth(76)" in LAYOUT
     assert "card->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum)" in LAYOUT
     assert "card->setMaximumHeight(520)" in LAYOUT
     assert "card->layout()->setAlignment(Qt::AlignTop)" in LAYOUT
     assert "label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed)" in LAYOUT
-    assert 'layout->addStretch(1)' in LAYOUT
-    assert 'sceneBuilderTrailingStretchAdded' in LAYOUT
+    assert "layout->setAlignment(Qt::AlignTop)" in LAYOUT
 
 
 def test_product_layout_compacts_secondary_inspector_and_status_chrome():
@@ -97,23 +97,56 @@ def test_product_layout_compacts_secondary_inspector_and_status_chrome():
     assert 'QStringLiteral("Robot Base Pose")' in LAYOUT
     assert "group->setMaximumHeight(34)" in LAYOUT
     assert 'QStringLiteral("sceneBuilderBottomStatusBar"))) bottom->hide()' not in LAYOUT
-    assert "splitter->setSizes({325, 1040, 370})" in LAYOUT
+    assert "splitter->setSizes({280, 1040, 340})" in LAYOUT
+    assert 'advanced_details_layout->addRow("Scale", scale_controls)' in MAIN
+    assert "selected_item_card_layout->addLayout(dim_grid)" not in MAIN
+    assert 'setObjectName("sceneBuilderInspectorCopyTransform")' in MAIN
+    assert 'setObjectName("sceneBuilderInspectorPasteTransform")' in MAIN
 
 
-def test_product_layout_preserves_bottom_logs_control_and_collapsible_drawer():
+def test_product_layout_preserves_activity_strip_and_collapsible_drawer():
     assert 'setObjectName("sceneBuilderBottomStatusBar")' in MAIN
-    assert 'setObjectName("sceneBuilderLogsButton")' in MAIN
+    assert 'setObjectName("sceneBuilderActivityStrip")' in MAIN
+    assert 'setObjectName("sceneBuilderLogDrawerHeader")' in MAIN
+    assert 'setObjectName("sceneBuilderLogsButton")' not in MAIN
     assert 'setObjectName("sceneBuilderLogDrawer")' in MAIN
     assert "scene_builder_log_panel_->setVisible(show);" in MAIN
     assert "studio_log_->setVisible(show);" in MAIN
-    assert "scene_builder_log_toggle_button_->setChecked(show);" in MAIN
-    assert 'sceneBuilderLatestStatus' in LAYOUT
-    assert 'status->hide()' in LAYOUT
+    assert "scene_builder_status_message_label_->setChecked(show);" in MAIN
+    assert 'show ? "Hide logs" : "Show logs"' in MAIN
+    assert 'sceneBuilderActivityStrip' in LAYOUT
+
+
+def test_collapsed_activity_uses_product_summaries_without_changing_raw_drawer_logs():
+    body = function_body(MAIN, "void MainWindow::append_studio_log(")
+    summary = function_body(MAIN, "QString MainWindow::scene_builder_activity_summary(")
+    assert "studio_log_->append(message);" in body
+    assert "scene_builder_activity_summary(message, severity)" in body
+    assert "message.simplified()" not in body
+    for product_text in (
+        "Selected %1",
+        "Product View ready · %1 physical items",
+        "Layout saved",
+        "Asset placed · %1",
+        "Warning · click for logs",
+        "Error · click for logs",
+    ):
+        assert product_text in summary
+    for diagnostic_token in (
+        'QStringLiteral("diagnostic")',
+        'QStringLiteral("handshake")',
+        'QStringLiteral("source_layer=")',
+        'QStringLiteral("visual mesh index")',
+    ):
+        assert diagnostic_token in summary
+    assert "return QString();" in summary
 
 
 def test_embedded_scene_health_remains_visible_but_compact():
     assert "body.embedded-mode .scene-health" in CSS
-    assert "width: min(19rem, calc(100% - 1rem));" in CSS
+    assert "max-width: min(19rem, calc(100% - 1rem));" in CSS
+    assert "border-radius: 999px;" in CSS
+    assert ".scene-health.health-ready .health-review { display: none; }" in CSS
     assert "body.embedded-mode #scene-health" not in CSS
 
 

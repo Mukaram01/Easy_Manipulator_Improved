@@ -1009,17 +1009,18 @@ body.embedded-mode #dirty-state::after {
 body.embedded-mode .scene-health {
   top: 0.5rem;
   left: 0.5rem;
-  width: min(19rem, calc(100% - 1rem));
+  width: fit-content;
+  max-width: min(19rem, calc(100% - 1rem));
   font-size: 0.72rem;
 }
 
 body.embedded-mode .scene-health summary {
   grid-template-columns: auto minmax(0, 1fr) auto auto;
-  gap: 0.38rem;
-  min-height: 2.25rem;
-  padding: 0.3rem 0.45rem;
-  border-radius: 0.48rem;
-  box-shadow: 0 0.18rem 0.55rem rgba(23, 32, 42, 0.13);
+  gap: 0.32rem;
+  min-height: 1.8rem;
+  padding: 0.18rem 0.42rem;
+  border-radius: 999px;
+  box-shadow: 0 0.12rem 0.38rem rgba(23, 32, 42, 0.11);
 }
 
 body.embedded-mode .health-dot {
@@ -1027,10 +1028,16 @@ body.embedded-mode .health-dot {
   height: 0.52rem;
 }
 
-body.embedded-mode .health-copy strong { font-size: 0.75rem; }
-body.embedded-mode .health-copy small { font-size: 0.64rem; }
+body.embedded-mode .health-copy {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+body.embedded-mode .health-copy strong { font-size: 0.72rem; }
+body.embedded-mode .health-copy small { font-size: 0.62rem; }
 body.embedded-mode .health-count,
 body.embedded-mode .health-review { font-size: 0.64rem; }
+body.embedded-mode .scene-health.health-ready .health-review { display: none; }
 
 body.embedded-mode .scene-health-body {
   max-height: min(18rem, calc(100vh - 4rem));
