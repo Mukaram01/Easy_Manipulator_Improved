@@ -16,7 +16,7 @@ def _load_yaml_like(path: Path) -> dict[str, Any]:
 
 
 def _read_task_intent(scene_package: Path) -> dict[str, Any]:
-    for rel in ("generated/workcell_builder_task_intent.yaml", "workcell_builder_task_intent.yaml"):
+    for rel in ("config/workcell_builder_task_intent.yaml", "generated/workcell_builder_task_intent.yaml", "workcell_builder_task_intent.yaml"):
         p = scene_package / rel
         if p.is_file():
             return _load_yaml_like(p)

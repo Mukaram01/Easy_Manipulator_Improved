@@ -17,7 +17,7 @@ def _read_yaml_like(path: Path) -> dict[str, Any]:
 
 
 def _find_intent(scene_package: Path) -> Path | None:
-    for rel in ("generated/workcell_builder_task_intent.yaml", "workcell_builder_task_intent.yaml"):
+    for rel in ("config/workcell_builder_task_intent.yaml", "generated/workcell_builder_task_intent.yaml", "workcell_builder_task_intent.yaml"):
         p = scene_package / rel
         if p.is_file():
             return p

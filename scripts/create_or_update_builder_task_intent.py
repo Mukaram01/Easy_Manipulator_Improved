@@ -122,7 +122,7 @@ def _first_enabled_task_zone(scene_package: Path, zone_type: str) -> str | None:
 
 def _seed(scene_package: Path, output: Path | None) -> tuple[dict[str, Any], Path | None]:
     cands = [output] if output else []
-    cands += [scene_package/"workcell_builder_task_intent.yaml", scene_package/"generated"/"workcell_builder_task_intent.yaml", REPO_ROOT/"workcell_builder/workcell_builder/templates/workcell_builder_task_intent_template.yaml"]
+    cands += [scene_package/"config"/"workcell_builder_task_intent.yaml", scene_package/"generated"/"workcell_builder_task_intent.yaml", scene_package/"workcell_builder_task_intent.yaml", REPO_ROOT/"workcell_builder/workcell_builder/templates/workcell_builder_task_intent_template.yaml"]
     for c in cands:
         if c and c.is_file():
             return _load(c), c

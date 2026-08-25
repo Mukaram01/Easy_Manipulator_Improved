@@ -24,7 +24,7 @@ def main()->int:
     if not a.scene_package.is_dir():
         print(json.dumps({'result':'FAIL','error':f'invalid scene package: {a.scene_package}'},indent=2)); return 2
     data={}; warnings=[]
-    for rel in ['generated/environment_layout.yaml','generated/cell_definition.yaml','environment_layout.yaml','cell_definition.yaml','environment.yaml','generated/workcell_builder_task_intent.yaml','workcell_builder_task_intent.yaml']:
+    for rel in ['generated/environment_layout.yaml','generated/cell_definition.yaml','environment_layout.yaml','cell_definition.yaml','environment.yaml','config/workcell_builder_task_intent.yaml','generated/workcell_builder_task_intent.yaml','workcell_builder_task_intent.yaml']:
         d=_load(a.scene_package/rel)
         if d: data[rel]=d
     zones=[]; bins=[]; objs=[]; surfaces=[]; cams=[]; zone_details=[]
