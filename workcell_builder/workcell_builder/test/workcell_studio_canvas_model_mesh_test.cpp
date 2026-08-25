@@ -1316,6 +1316,54 @@ TEST(WorkcellStudioCanvasMesh, SavedLayoutDetectionKeepsCanonicalPrecedence)
   fs::remove_all(root);
 }
 
+TEST(WorkcellStudioCanvasMesh, SavedLayoutDetectionBlocksMalformedCanonicalWithValidLegacy)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_saved_layout_invalid_canonical_valid_legacy";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  write_file(root / "layout" / "workcell_studio_layout.yaml", "items: [\n");
+  write_file(root / "environment_layout.yaml",
+    "schema_version: environment_layout/v1\nplaced_assets: [{id: legacy_table}]\n");
+
+  const auto saved = workcell_builder::inspect_saved_workcell_studio_layout(root);
+  EXPECT_FALSE(saved.saved);
+  EXPECT_EQ(saved.source, workcell_builder::WorkcellStudioSavedLayoutSource::None);
+  EXPECT_EQ(saved.blocker, "Invalid layout/workcell_studio_layout.yaml");
+
+  fs::remove_all(root);
+}
+
+TEST(WorkcellStudioCanvasMesh, SavedLayoutDetectionBlocksMalformedCanonicalWithoutLegacy)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_saved_layout_invalid_canonical_only";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  write_file(root / "layout" / "workcell_studio_layout.yaml",
+    "schema_version: wrong\nitems: []\n");
+
+  const auto saved = workcell_builder::inspect_saved_workcell_studio_layout(root);
+  EXPECT_FALSE(saved.saved);
+  EXPECT_EQ(saved.source, workcell_builder::WorkcellStudioSavedLayoutSource::None);
+  EXPECT_EQ(saved.blocker, "Invalid layout/workcell_studio_layout.yaml");
+
+  fs::remove_all(root);
+}
+
+TEST(WorkcellStudioCanvasMesh, SavedLayoutDetectionBlocksMalformedLegacyWithoutCanonical)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_saved_layout_invalid_legacy_only";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  write_file(root / "environment_layout.yaml", "assets: [\n");
+
+  const auto saved = workcell_builder::inspect_saved_workcell_studio_layout(root);
+  EXPECT_FALSE(saved.saved);
+  EXPECT_EQ(saved.source, workcell_builder::WorkcellStudioSavedLayoutSource::None);
+  EXPECT_EQ(saved.blocker, "Invalid legacy environment_layout.yaml");
+
+  fs::remove_all(root);
+}
+
 TEST(WorkcellStudioCanvasMesh, BootstrapEditableLayoutUsesSceneSourcePriority)
 {
   const fs::path root = fs::temp_directory_path() / "wc_bootstrap_priority";

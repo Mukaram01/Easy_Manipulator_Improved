@@ -30,15 +30,21 @@ def inspect_saved_layout(scene_dir: Path) -> dict[str, Any]:
         and isinstance(canonical_payload.get("items"), list)
     ):
         return {"saved": True, "source": "canonical", "path": canonical, "legacy_fallback": False}
+    if canonical.exists():
+        return {
+            "saved": False,
+            "source": "none",
+            "path": canonical,
+            "legacy_fallback": False,
+            "blocker": "Invalid layout/workcell_studio_layout.yaml",
+        }
 
     legacy = scene_dir / LEGACY_LAYOUT_REL
     legacy_payload = _load_mapping(legacy)
     if legacy_payload is not None and legacy_payload.get("schema_version") == "environment_layout/v1":
         return {"saved": True, "source": "legacy_fallback", "path": legacy, "legacy_fallback": True}
 
-    if canonical.exists():
-        blocker = "Invalid layout/workcell_studio_layout.yaml"
-    elif legacy.exists():
+    if legacy.exists():
         blocker = "Invalid legacy environment_layout.yaml"
     else:
         blocker = "Missing saved layout/workcell_studio_layout.yaml"

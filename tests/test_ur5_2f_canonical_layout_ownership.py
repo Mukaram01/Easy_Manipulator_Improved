@@ -56,6 +56,52 @@ def test_legacy_only_layout_remains_an_explicit_compatibility_fallback(tmp_path:
     assert result["legacy_fallback"] is True
 
 
+def test_valid_canonical_wins_when_valid_legacy_also_exists(tmp_path: Path) -> None:
+    canonical = tmp_path / "layout" / "workcell_studio_layout.yaml"
+    canonical.parent.mkdir(parents=True)
+    canonical.write_text(
+        "schema_version: workcell_studio_layout/v1\nitems: []\n", encoding="utf-8"
+    )
+    (tmp_path / "environment_layout.yaml").write_text(
+        "schema_version: environment_layout/v1\nassets: []\n", encoding="utf-8"
+    )
+    result = inspect_saved_layout(tmp_path)
+    assert result["saved"] is True
+    assert result["source"] == "canonical"
+    assert result["legacy_fallback"] is False
+
+
+def test_malformed_canonical_blocks_valid_legacy_fallback(tmp_path: Path) -> None:
+    canonical = tmp_path / "layout" / "workcell_studio_layout.yaml"
+    canonical.parent.mkdir(parents=True)
+    canonical.write_text("items: [\n", encoding="utf-8")
+    (tmp_path / "environment_layout.yaml").write_text(
+        "schema_version: environment_layout/v1\nassets: []\n", encoding="utf-8"
+    )
+    result = inspect_saved_layout(tmp_path)
+    assert result["saved"] is False
+    assert result["source"] == "none"
+    assert result["blocker"] == "Invalid layout/workcell_studio_layout.yaml"
+
+
+def test_malformed_canonical_without_legacy_is_blocked(tmp_path: Path) -> None:
+    canonical = tmp_path / "layout" / "workcell_studio_layout.yaml"
+    canonical.parent.mkdir(parents=True)
+    canonical.write_text("schema_version: wrong\nitems: []\n", encoding="utf-8")
+    result = inspect_saved_layout(tmp_path)
+    assert result["saved"] is False
+    assert result["source"] == "none"
+    assert result["blocker"] == "Invalid layout/workcell_studio_layout.yaml"
+
+
+def test_malformed_legacy_without_canonical_is_blocked(tmp_path: Path) -> None:
+    (tmp_path / "environment_layout.yaml").write_text("assets: [\n", encoding="utf-8")
+    result = inspect_saved_layout(tmp_path)
+    assert result["saved"] is False
+    assert result["source"] == "none"
+    assert result["blocker"] == "Invalid legacy environment_layout.yaml"
+
+
 def test_modern_validation_does_not_recreate_legacy_authored_layout(tmp_path: Path) -> None:
     scene_copy = tmp_path / "ur5_2f_test"
     shutil.copytree(SCENE, scene_copy)

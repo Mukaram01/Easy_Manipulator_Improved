@@ -1279,6 +1279,10 @@ WorkcellStudioSavedLayoutInspection inspect_saved_workcell_studio_layout(const f
     out.relative_path = "layout/workcell_studio_layout.yaml";
     return out;
   }
+  if (canonical.exists) {
+    out.blocker = "Invalid layout/workcell_studio_layout.yaml";
+    return out;
+  }
 
   YAML::Node legacy;
   const YamlLoadStatus legacy_status = read_yaml(scene_dir / "environment_layout.yaml", &legacy);
@@ -1289,9 +1293,7 @@ WorkcellStudioSavedLayoutInspection inspect_saved_workcell_studio_layout(const f
     return out;
   }
 
-  if (canonical.exists) {
-    out.blocker = "Invalid layout/workcell_studio_layout.yaml";
-  } else if (legacy_status.exists) {
+  if (legacy_status.exists) {
     out.blocker = "Invalid legacy environment_layout.yaml";
   } else {
     out.blocker = "Missing saved layout/workcell_studio_layout.yaml";
