@@ -2,14 +2,20 @@ schema_version: workcell_studio_layout_preview/v1
 status: inferred
 summary:
   editable_layout_source: layout/workcell_studio_layout.yaml
-  editable_items_count: 2
+  editable_items_count: 4
   preview_readiness: ready
 preview_items:
-- id: robot_base
-  type: robot
-  status: ready
 - id: table_main
   type: table
+  status: ready
+- id: pick_zone_main
+  type: pick_zone
+  status: ready
+- id: place_zone_main
+  type: place_zone
+  status: ready
+- id: suction_target_default
+  type: target_bin
   status: ready
 locked_urdf_preview_entities: []
 notes:

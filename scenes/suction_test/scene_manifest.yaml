@@ -20,6 +20,7 @@ robot:
   home_named_target: home
 
 end_effector:
+  id: single_suction
   type: suction
   brand: single_suction_gripper
   grasp_frame: wrist_fixture

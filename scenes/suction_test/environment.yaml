@@ -53,15 +53,15 @@ compatibility:
     - Suction behavior is capability metadata only; no runtime IO or real-hardware command path is enabled.
 placed_objects: []
 camera:
-  enabled: false
-  camera_id: UNKNOWN_CAMERA
-  frame_id: UNKNOWN_FRAME
+  enabled: true
+  camera_id: realsense_suction_overhead
+  frame_id: camera_color_optical_frame
   pose:
-    - -0.55
-    - 0.55
-    - 0.4
-    - 0.0
-    - 0.0
+    - -0.58
+    - 0.225
+    - 0.65
+    - 3.14159
+    - 1.57079506
     - 0.0
   rgb_topic:
   depth_topic:
@@ -212,9 +212,54 @@ metadata:
     - cell_definition.yaml
     - config/task_recipe.yaml
     - config/workcell_builder_task_intent.yaml
-  scene_schema_warnings:
-    - camera disabled: no camera selection
+  scene_schema_warnings: []
   scene_schema_blockers: []
+task_zones:
+  - id: pick_zone_main
+    type: pick_zone
+    role: pick
+    frame: world
+    shape: box
+    pose_xyz: [0.43, 0.04, 0.08]
+    pose_rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.18, 0.18, 0.08]
+    support_surface_ref: table_main
+    layout_item_ref: pick_zone_main
+  - id: default_drop_zone
+    type: place_zone
+    role: place
+    legacy_type: place_target
+    frame: world
+    shape: box
+    pose_xyz: [0.5, -0.3, 0.1]
+    pose_rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.22, 0.22, 0.01]
+    target_ref: suction_target_default
+    support_surface_ref: table_main
+    layout_item_ref: place_zone_main
+    compatible_destination_id: default_drop_zone
+support_surfaces:
+  - id: table_main
+    type: table
+    role: support_surface
+    category: work_surface
+    frame: world
+    pose_xyz: [0.5, 0.0, 0.0]
+    pose_rpy: [0.0, 0.0, 0.0]
+    dimensions: [1.2, 0.8, 0.08]
+    layout_item_ref: table_main
+assets:
+  - id: suction_target_default
+    type: target_bin
+    role: target_bin
+    category: target_bin
+    frame: world
+    pose_xyz: [0.5, -0.3, 0.1]
+    pose_rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.22, 0.22, 0.12]
+    support_surface_ref: table_main
+    task_zone_ref: default_drop_zone
+    layout_item_ref: suction_target_default
 end_effector:
   name: single_suction
   brand: single_suction_gripper
@@ -237,6 +282,15 @@ end_effector:
     - suction_cup_link
 objects:
   table:
+    id: table_main
+    type: table
+    role: support_surface
+    category: work_surface
+    frame: world
+    pose_xyz: [0.5, 0.0, 0.0]
+    pose_rpy: [0.0, 0.0, 0.0]
+    dimensions: [1.2, 0.8, 0.08]
+    layout_item_ref: table_main
     child_link: table
     links:
       table:

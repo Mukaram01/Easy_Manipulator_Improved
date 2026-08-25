@@ -16,7 +16,7 @@ exporter = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(exporter)
 
 
-@pytest.mark.parametrize("scene_id", ["suction_test", "ur5_3f_test"])
+@pytest.mark.parametrize("scene_id", ["ur5_3f_test"])
 def test_incomplete_destination_scenes_are_strictly_rejected_but_have_read_only_diagnostic_previews(tmp_path, scene_id):
     scene = ROOT / "scenes" / scene_id
     strict_output = tmp_path / f"{scene_id}.strict.json"
@@ -54,6 +54,37 @@ def test_valid_scene_remains_strict_and_editable_without_diagnostic_metadata():
     assert "preview_mode" not in payload
     assert any(item.get("editable") for item in payload["assets"])
 
+
+def test_suction_scene_uses_canonical_editable_environment_and_one_tool_identity():
+    scene = ROOT / "scenes" / "suction_test"
+    assert (scene / "layout" / "workcell_studio_layout.yaml").is_file()
+    assert (scene / "config" / "workcell_builder_task_intent.yaml").is_file()
+    assert not (scene / "environment_layout.yaml").exists()
+    assert not (scene / "workcell_builder_task_intent.yaml").exists()
+
+    payload = exporter.build_web_scene(scene)
+    assert "authoring_status" not in payload
+    assert payload.get("authoring_blockers") in (None, [])
+    assert payload["robots"] and all(item.get("locked") is True for item in payload["robots"])
+    metadata_tools = [item for item in payload["tools"] if item.get("role") == "metadata"]
+    generated_tools = [item for item in payload["tools"] if item.get("source_kind") == "generated_preview"]
+    assert {item["id"] for item in metadata_tools} == {"single_suction"}
+    assert generated_tools and all(item.get("locked") is True for item in generated_tools)
+    assert "wrist_fixture" in {item.get("link") for item in generated_tools}
+
+    primary = [
+        item
+        for section in exporter.RENDERABLE_OUTPUT_SECTIONS
+        for item in payload.get(section, [])
+        if item.get("render_policy") == "primary"
+    ]
+    primary_ids = [item["id"] for item in primary]
+    assert {"table_main", "suction_target_default"} <= set(primary_ids)
+    assert len(primary_ids) == len(set(primary_ids))
+    assert any(item.get("editable") is True for item in primary if item["id"] == "table_main")
+    camera_visuals = [item for item in primary if item.get("link") == "camera_link"]
+    assert len(camera_visuals) == 1
+    assert camera_visuals[0].get("locked") is True
 
 def test_robot_preview_extraction_keeps_robot_subtree_and_excludes_scene_siblings(tmp_path):
     source = tmp_path / "expanded_scene_preview.urdf"

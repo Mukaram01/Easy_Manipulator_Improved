@@ -42,4 +42,4 @@ provenance:
   sources:
     - cell_definition.yaml
     - config/task_recipe.yaml
-    - environment_layout.yaml
+    - layout/workcell_studio_layout.yaml

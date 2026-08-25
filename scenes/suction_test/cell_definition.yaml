@@ -10,7 +10,7 @@ robot:
   home_named_target: home
   safe_joint_state: []
 end_effector:
-  id: suction
+  id: single_suction
   type: suction
   brand: generic
   grasp_frame: tool0
