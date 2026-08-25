@@ -4,6 +4,7 @@
 #include <fstream>
 #include <map>
 #include <set>
+#include <sstream>
 
 #include "workcell_studio_canvas_model.hpp"
 
@@ -1043,7 +1044,7 @@ TEST(WorkcellStudioCanvasMesh, BootstrapEnvironmentLayoutFromEditableLayoutCreat
   write_yaml_file(root / "layout" / "workcell_studio_layout.yaml", editable);
   write_file(root / "environment.yaml", "environment: {}\n");
 
-  EXPECT_FALSE(workcell_builder::is_save_layout_workflow_ready(root));
+  EXPECT_TRUE(workcell_builder::is_save_layout_workflow_ready(root));
   const auto result = workcell_builder::bootstrap_environment_layout_from_editable_layout(root, "bootstrap_scene", editable);
   EXPECT_TRUE(result.ok) << result.error;
   EXPECT_TRUE(result.created);
@@ -1176,7 +1177,7 @@ TEST(WorkcellStudioCanvasMesh, SaveLayoutReadinessRejectsLockedOnlyAndFallbackOn
   EXPECT_FALSE(workcell_builder::is_save_layout_workflow_ready(root));
 }
 
-TEST(WorkcellStudioCanvasMesh, SaveLayoutReadinessRejectsEditableLayoutWithMissingEnvironmentFiles)
+TEST(WorkcellStudioCanvasMesh, ModernSavedLayoutDoesNotRequireLegacyOrEnvironmentFile)
 {
   const fs::path root = fs::temp_directory_path() / "wc_save_layout_missing_env_ready";
   fs::remove_all(root);
@@ -1190,7 +1191,14 @@ TEST(WorkcellStudioCanvasMesh, SaveLayoutReadinessRejectsEditableLayoutWithMissi
 
   const auto inspection = workcell_builder::inspect_editable_layout_entries(root);
   EXPECT_EQ(inspection.editable_item_count, 1u);
-  EXPECT_FALSE(workcell_builder::is_save_layout_workflow_ready(root));
+  EXPECT_TRUE(workcell_builder::is_save_layout_workflow_ready(root));
+
+  const auto saved = workcell_builder::inspect_saved_workcell_studio_layout(root);
+  EXPECT_TRUE(saved.saved);
+  EXPECT_EQ(saved.source, workcell_builder::WorkcellStudioSavedLayoutSource::Canonical);
+  EXPECT_EQ(saved.relative_path, "layout/workcell_studio_layout.yaml");
+  EXPECT_TRUE(saved.blocker.empty());
+  EXPECT_FALSE(fs::exists(root / "environment_layout.yaml"));
 }
 
 TEST(WorkcellStudioCanvasMesh, SaveLayoutReadinessAcceptsEditableLayoutWithRequiredEnvironmentFiles)
@@ -1215,6 +1223,97 @@ TEST(WorkcellStudioCanvasMesh, SaveLayoutReadinessAcceptsEditableLayoutWithRequi
   EXPECT_EQ(inspection.total_item_entries, 3u);
   EXPECT_EQ(inspection.editable_item_count, 3u);
   EXPECT_TRUE(workcell_builder::is_save_layout_workflow_ready(root));
+}
+
+TEST(WorkcellStudioCanvasMesh, EnsureCanonicalLayoutCreatesSchemaRootWithoutLegacyFile)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_ensure_canonical_layout";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  const auto result = workcell_builder::ensure_canonical_workcell_studio_layout(root, "modern_scene");
+  EXPECT_TRUE(result.ok) << result.error;
+  EXPECT_TRUE(result.created);
+  EXPECT_FALSE(result.preserved_existing);
+  EXPECT_EQ(result.path, root / "layout" / "workcell_studio_layout.yaml");
+  EXPECT_FALSE(fs::exists(root / "environment_layout.yaml"));
+
+  const YAML::Node layout = load_yaml_file(result.path);
+  EXPECT_EQ(layout["schema_version"].as<std::string>(), "workcell_studio_layout/v1");
+  EXPECT_EQ(layout["scene_name"].as<std::string>(), "modern_scene");
+  ASSERT_TRUE(layout["items"] && layout["items"].IsSequence());
+  EXPECT_EQ(layout["items"].size(), 0u);
+
+  const auto saved = workcell_builder::inspect_saved_workcell_studio_layout(root);
+  EXPECT_TRUE(saved.saved);
+  EXPECT_EQ(saved.source, workcell_builder::WorkcellStudioSavedLayoutSource::Canonical);
+
+  fs::remove_all(root);
+}
+
+TEST(WorkcellStudioCanvasMesh, EnsureCanonicalLayoutNeverOverwritesExistingContent)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_preserve_canonical_layout";
+  fs::remove_all(root);
+  fs::create_directories(root / "layout");
+  const fs::path layout_path = root / "layout" / "workcell_studio_layout.yaml";
+  const std::string authored =
+    "schema_version: workcell_studio_layout/v1\n"
+    "scene_name: authored_scene\n"
+    "authored_marker: preserve_me\n"
+    "items: [{id: authored_table, editable: true}]\n";
+  write_file(layout_path, authored);
+
+  const auto result = workcell_builder::ensure_canonical_workcell_studio_layout(root, "different_scene");
+  EXPECT_TRUE(result.ok) << result.error;
+  EXPECT_FALSE(result.created);
+  EXPECT_TRUE(result.preserved_existing);
+
+  std::ifstream input(layout_path.string());
+  std::stringstream contents;
+  contents << input.rdbuf();
+  EXPECT_EQ(contents.str(), authored);
+  EXPECT_FALSE(fs::exists(root / "environment_layout.yaml"));
+
+  fs::remove_all(root);
+}
+
+TEST(WorkcellStudioCanvasMesh, LegacyLayoutRemainsAcceptedAsSavedFallback)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_saved_layout_legacy_fallback";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  write_file(root / "environment_layout.yaml",
+    "schema_version: environment_layout/v1\n"
+    "placed_assets: [{id: legacy_table, type: table}]\n");
+
+  const auto saved = workcell_builder::inspect_saved_workcell_studio_layout(root);
+  EXPECT_TRUE(saved.saved);
+  EXPECT_EQ(saved.source, workcell_builder::WorkcellStudioSavedLayoutSource::LegacyFallback);
+  EXPECT_EQ(saved.relative_path, "environment_layout.yaml");
+  EXPECT_TRUE(saved.blocker.empty());
+
+  fs::remove_all(root);
+}
+
+TEST(WorkcellStudioCanvasMesh, SavedLayoutDetectionKeepsCanonicalPrecedence)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_saved_layout_canonical_precedence";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  write_file(root / "layout" / "workcell_studio_layout.yaml",
+    "schema_version: workcell_studio_layout/v1\nitems: [{id: canonical_table}]\n");
+  write_file(root / "environment_layout.yaml",
+    "schema_version: environment_layout/v1\nplaced_assets: [{id: legacy_table}]\n");
+  write_file(root / "environment.yaml", "placed_objects: [{id: environment_table}]\n");
+
+  const auto saved = workcell_builder::inspect_saved_workcell_studio_layout(root);
+  EXPECT_EQ(saved.source, workcell_builder::WorkcellStudioSavedLayoutSource::Canonical);
+  const auto model = workcell_builder::build_workcell_studio_canvas_model(root, "precedence_scene");
+  EXPECT_EQ(model.layout_source_kind, "canonical");
+  EXPECT_EQ(model.layout_source_path, (root / "layout" / "workcell_studio_layout.yaml").string());
+
+  fs::remove_all(root);
 }
 
 TEST(WorkcellStudioCanvasMesh, BootstrapEditableLayoutUsesSceneSourcePriority)
