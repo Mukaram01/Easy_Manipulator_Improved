@@ -24,11 +24,18 @@ def main()->int:
     if not a.scene_package.is_dir():
         print(json.dumps({'result':'FAIL','error':f'invalid scene package: {a.scene_package}'},indent=2)); return 2
     data={}; warnings=[]
-    for rel in ['generated/environment_layout.yaml','generated/cell_definition.yaml','environment_layout.yaml','cell_definition.yaml','environment.yaml','generated/workcell_builder_task_intent.yaml','workcell_builder_task_intent.yaml']:
+    for rel in ['layout/workcell_studio_layout.yaml','generated/environment_layout.yaml','generated/cell_definition.yaml','environment_layout.yaml','cell_definition.yaml','environment.yaml','config/workcell_builder_task_intent.yaml','generated/workcell_builder_task_intent.yaml','workcell_builder_task_intent.yaml']:
         d=_load(a.scene_package/rel)
         if d: data[rel]=d
     zones=[]; bins=[]; objs=[]; surfaces=[]; cams=[]; zone_details=[]
     for d in data.values():
+        for item in (d.get('items') or []):
+            if not isinstance(item,dict) or not item.get('id'): continue
+            role=str(item.get('role') or item.get('type') or '').lower()
+            if role in {'pick','pick_zone'}:
+                zones.append(item.get('id')); zone_details.append(item)
+            elif role in {'place','place_zone','place_target','target_bin'}:
+                zones.append(item.get('id')); zone_details.append(item)
         for z in (d.get('zones') or []):
             if isinstance(z,dict) and z.get('id'):
                 zones.append(z.get('id')); zone_details.append(z)

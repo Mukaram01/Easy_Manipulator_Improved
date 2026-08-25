@@ -28,6 +28,11 @@ def _write_required_scene_files(scene_root: Path) -> None:
         "robot: {name: ur5}\nend_effector: {name: robotiq}\nobjects: {}\n",
         encoding="utf-8",
     )
+    (scene_root / "layout").mkdir(exist_ok=True)
+    (scene_root / "layout" / "workcell_studio_layout.yaml").write_text(
+        "schema_version: workcell_studio_layout/v1\nitems: []\n",
+        encoding="utf-8",
+    )
 
 
 def test_before_export_artifacts_are_warn_not_fail(tmp_path: Path) -> None:
@@ -39,40 +44,29 @@ def test_before_export_artifacts_are_warn_not_fail(tmp_path: Path) -> None:
     assert report["ok"] is True
     assert report["readiness_classification"] == "physical_scene_only"
     assert any("generated/cell_definition.yaml missing; run ./generated/export_workcell_studio_sources.sh" in w for w in report["warnings"])
-    assert any("generated/environment_layout.yaml missing; run ./generated/export_workcell_studio_sources.sh" in w for w in report["warnings"])
     assert all("cell_definition.yaml" not in e for e in report["errors"])
     assert all("environment_layout.yaml" not in e for e in report["errors"])
 
 
-@pytest.mark.parametrize(
-    ("present_filename", "missing_filename"),
-    [
-        ("cell_definition.yaml", "environment_layout.yaml"),
-        ("environment_layout.yaml", "cell_definition.yaml"),
-    ],
-)
-def test_require_generated_fails_when_either_canonical_handoff_is_missing(
-    tmp_path: Path, present_filename: str, missing_filename: str
-) -> None:
+def test_require_generated_fails_when_cell_definition_handoff_is_missing(tmp_path: Path) -> None:
     _write_required_scene_files(tmp_path)
     generated = tmp_path / "generated"
     generated.mkdir()
-    schema = "cell_definition/v1" if present_filename == "cell_definition.yaml" else "environment_layout/v1"
-    (generated / present_filename).write_text(f"schema_version: {schema}\n", encoding="utf-8")
 
     report = validator.validate_scene(tmp_path, require_generated=True)
 
     assert report["ok"] is False
-    assert any(f"generated/{missing_filename} missing" in error for error in report["errors"])
+    assert any("generated/cell_definition.yaml missing" in error for error in report["errors"])
     checks = {check["check"]: check for check in report["checks"]}
-    assert checks[f"generated/{missing_filename} present"].get("optional") is False
+    assert checks["generated/cell_definition.yaml present"].get("optional") is False
+    assert checks["generated/environment_layout.yaml legacy export present"].get("optional") is True
 
 
 @pytest.mark.parametrize(
     ("filename", "invalid_content", "expected_error"),
     [
         ("cell_definition.yaml", "schema_version: wrong\n", "generated/cell_definition.yaml validation failed"),
-        ("environment_layout.yaml", "schema_version: wrong\n", "generated/environment_layout.yaml validation failed"),
+        ("canonical_layout", "schema_version: wrong\nitems: []\n", "Invalid layout/workcell_studio_layout.yaml"),
     ],
 )
 def test_require_generated_fails_when_canonical_handoff_is_invalid(
@@ -82,8 +76,10 @@ def test_require_generated_fails_when_canonical_handoff_is_invalid(
     generated = tmp_path / "generated"
     generated.mkdir()
     (generated / "cell_definition.yaml").write_text("schema_version: cell_definition/v1\n", encoding="utf-8")
-    (generated / "environment_layout.yaml").write_text("schema_version: environment_layout/v1\n", encoding="utf-8")
-    (generated / filename).write_text(invalid_content, encoding="utf-8")
+    if filename == "canonical_layout":
+        (tmp_path / "layout" / "workcell_studio_layout.yaml").write_text(invalid_content, encoding="utf-8")
+    else:
+        (generated / filename).write_text(invalid_content, encoding="utf-8")
 
     report = validator.validate_scene(tmp_path, require_generated=True)
 
@@ -91,19 +87,15 @@ def test_require_generated_fails_when_canonical_handoff_is_invalid(
     assert any(expected_error in error for error in report["errors"])
 
 
-def test_after_export_artifacts_present_are_pass(tmp_path: Path) -> None:
+def test_missing_legacy_export_does_not_fail_modern_scene(tmp_path: Path) -> None:
     _write_required_scene_files(tmp_path)
     (tmp_path / "workcell_builder_metadata.yaml").write_text("{}", encoding="utf-8")
-    generated = tmp_path / "generated"
-    generated.mkdir()
-    (generated / "cell_definition.yaml").write_text("schema_version: cell_definition/v1\n", encoding="utf-8")
-    (generated / "environment_layout.yaml").write_text("schema_version: environment_layout/v1\n", encoding="utf-8")
-
     report = validator.validate_scene(tmp_path)
 
     checks = {c["check"]: c for c in report["checks"]}
-    assert checks["generated/cell_definition.yaml present"]["ok"] is True
-    assert checks["generated/environment_layout.yaml present"]["ok"] is True
+    assert checks["generated/cell_definition.yaml present"]["ok"] is False
+    assert checks["generated/environment_layout.yaml legacy export present"]["ok"] is False
+    assert report["ok"] is True
 
 
 def test_missing_required_package_xml_fails(tmp_path: Path) -> None:

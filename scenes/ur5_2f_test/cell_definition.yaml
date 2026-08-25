@@ -23,7 +23,7 @@ camera:
   frame_id: UNKNOWN_FRAME
 environment:
   frame: world
-  layout: environment_layout.yaml
+  layout: layout/workcell_studio_layout.yaml
   support_surfaces:
   - id: support_surface_table
     type: table

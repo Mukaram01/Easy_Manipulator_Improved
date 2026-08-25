@@ -1603,7 +1603,8 @@ static NewCellStateAudit audit_new_cell_state(
   const auto & scene = browser.scenes[static_cast<size_t>(selected_scene_index)];
   const fs::path scene_dir = scene.scene_dir;
   const auto exists = [&](const char * rel) { return fs::exists(scene_dir / rel); };
-  const bool has_layout = exists("environment_layout.yaml");
+  const auto saved_layout = workcell_builder::inspect_saved_workcell_studio_layout(scene_dir);
+  const bool has_layout = saved_layout.saved;
   const bool has_task_intent = exists("config/workcell_builder_task_intent.yaml");
   const bool has_package = exists("package.xml") && exists("CMakeLists.txt") && exists("launch/demo.launch.py");
   const bool has_file_output_audit = exists("file_output_audit.json");
@@ -1619,7 +1620,8 @@ static NewCellStateAudit audit_new_cell_state(
   if (preview_process && preview_process->state() != QProcess::NotRunning) { out.completed_states << "SIMULATION_RUNNING"; out.current_state = "SIMULATION_RUNNING"; out.next_recommended_action = "Stop Simulation"; }
   else if (preview_state == "PREVIEW_STOPPED" || preview_state == "PREVIEW_EXITED") { out.completed_states << "SIMULATION_STOPPED"; out.current_state = "SIMULATION_STOPPED"; out.next_recommended_action = "Open Plan & Simulate"; }
   for (const auto & state : all_states) if (!out.completed_states.contains(state) && state != "NO_WORKSPACE") out.pending_states << state;
-  if (!has_layout) out.blockers << "Missing environment_layout.yaml|Open Scene Builder and click Save Layout.|Scene Builder|python3 scripts/validate_environment_layout.py <scene>/environment_layout.yaml --json";
+  if (!has_layout) out.blockers << QString::fromStdString(saved_layout.blocker) +
+    "|Open Scene Builder and click Save Layout to create layout/workcell_studio_layout.yaml.|Scene Builder|";
   if (!has_task_intent) out.blockers << "Missing task intent|Click Generate/Update Task Intent to create config/workcell_builder_task_intent.yaml.|Task Intent|python3 scripts/create_or_update_builder_task_intent.py --scene-dir <scene>";
   if (!has_package) out.blockers << "Missing scene package outputs|Generate Scene Package before opening Plan & Simulate.|Generate Scene Package|python3 scripts/audit_new_cell_file_outputs.py --scene-dir <scene> --scene-name <scene> --json-out <scene>/file_output_audit.json";
   if (!out.blockers.isEmpty()) out.blocked_states << out.current_state;
@@ -4057,7 +4059,7 @@ void MainWindow::refresh_scene_bundle_export_panel()
   const fs::path zip_out = out_dir / (s.scene_name + "_workcell_studio_bundle.zip");
   scene_bundle_selected_scene_label_->setText(QString("Selected scene: %1\nPath: %2").arg(QString::fromStdString(s.scene_name), QString::fromStdString(s.scene_dir.string())));
   scene_bundle_destination_label_->setText(QString("Export destination: %1").arg(QString::fromStdString(zip_out.string())));
-  scene_bundle_contents_label_->setText("Bundle contents summary:\n- environment.yaml\n- scene_manifest.yaml\n- cell_definition.yaml\n- environment_layout.yaml\n- task_recipe.yaml\n- config/workcell_builder_task_intent.yaml\n- preview/ artifacts\n- validation/readiness reports\n- launch command notes\n- manifest.json");
+  scene_bundle_contents_label_->setText("Bundle contents summary:\n- layout/workcell_studio_layout.yaml (authored layout)\n- environment.yaml\n- scene_manifest.yaml\n- cell_definition.yaml\n- task_recipe.yaml\n- config/workcell_builder_task_intent.yaml\n- preview/ artifacts\n- validation/readiness reports\n- launch command notes\n- manifest.json\nLegacy imports may also retain environment_layout.yaml.");
 }
 
 void MainWindow::refresh_task_intent_panel()
@@ -4148,7 +4150,6 @@ void MainWindow::generate_yaml_draft_for_selected_scene()
   const fs::path env = scene_dir / "environment.yaml";
   const fs::path cell = scene_dir / "cell_definition.yaml";
   const fs::path manifest = scene_dir / "scene_manifest.yaml";
-  const fs::path layout = scene_dir / "environment_layout.yaml";
 
   if (!fs::exists(env)) {
     std::ofstream out(env.string());
@@ -4167,7 +4168,7 @@ void MainWindow::generate_yaml_draft_for_selected_scene()
     out << "robot:\n  id: ur5_preview\n  model: ur5\n  planning_group: manipulator\n  base_frame: world\n  tool_link: tool0\n  home_named_target: home\n  safe_joint_state: []\n";
     out << "end_effector:\n  id: robotiq_2f_preview\n  type: finger\n  brand: robotiq\n  grasp_frame: tool0\n  allowed_touch_links: [robotiq_2f_85_left_finger_tip_link, robotiq_2f_85_right_finger_tip_link]\n";
     out << "camera:\n  id: camera_main\n  type: depth_camera\n  frame: camera_depth_optical_frame\n";
-    out << "environment:\n  frame: world\n  layout: environment_layout.yaml\n  support_surfaces:\n    - {id: table_main, type: table, frame: world, pose_xyz: [0.0, 0.0, 0.0], pose_rpy: [0.0, 0.0, 0.0], dimensions: [1.2, 0.8, 0.05]}\n";
+    out << "environment:\n  frame: world\n  layout: layout/workcell_studio_layout.yaml\n  support_surfaces:\n    - {id: table_main, type: table, frame: world, pose_xyz: [0.0, 0.0, 0.0], pose_rpy: [0.0, 0.0, 0.0], dimensions: [1.2, 0.8, 0.05]}\n";
     out << "objects:\n  - {id: preview_object, class: unknown, shape: box, color: unknown, material: unknown, frame: world, dimensions: [0.05, 0.05, 0.05], pose_xyz: [0.55, 0.0, 0.1], pose_rpy: [0.0, 0.0, 0.0]}\n";
     out << "task:\n  id: " << task_id << "\n  type: pick_place\n  source_object: preview_object\n  destinations:\n    - {id: place_bin, frame: world, pose_xyz: [0.35, -0.25, 0.1], pose_rpy: [0.0, 0.0, 0.0]}\n  rules:\n    - {id: default_place, when: {always: true}, destination: place_bin}\n";
     out << "commissioning:\n  self_test_enabled: true\n  export_bundle: true\n  require_operator_review: true\n  fake_hardware_default: true\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n";
@@ -4208,11 +4209,22 @@ void MainWindow::generate_yaml_draft_for_selected_scene()
     out << "schema_version: workcell_scene_manifest/v1\nscene_name: " << sc.scene_name << "\n";
     out << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n";
   }
-  if (!fs::exists(layout)) {
-    std::ofstream out(layout.string());
-    out << "layout:\n  items: []\n";
+  const auto layout_result = workcell_builder::ensure_canonical_workcell_studio_layout(scene_dir, sc.scene_name);
+  if (!layout_result.ok) {
+    append_studio_log(QString("Generate YAML: failed to ensure layout/workcell_studio_layout.yaml (%1).")
+      .arg(QString::fromStdString(layout_result.error)));
+  } else if (layout_result.created) {
+    append_studio_log("Generate YAML: created empty canonical layout/workcell_studio_layout.yaml.");
+  } else {
+    append_studio_log("Generate YAML: existing canonical layout/workcell_studio_layout.yaml preserved.");
   }
-  append_studio_log(QString("Generate YAML: ensured environment.yaml, cell_definition.yaml, scene_manifest.yaml, environment_layout.yaml for '%1'.").arg(QString::fromStdString(sc.scene_name)));
+  if (layout_result.ok) {
+    append_studio_log(QString("Generate YAML: ensured environment.yaml, cell_definition.yaml, scene_manifest.yaml, and canonical layout for '%1'.")
+      .arg(QString::fromStdString(sc.scene_name)));
+  } else {
+    append_studio_log(QString("Generate YAML: environment.yaml, cell_definition.yaml, and scene_manifest.yaml were processed for '%1', but canonical layout creation failed.")
+      .arg(QString::fromStdString(sc.scene_name)));
+  }
   workcell_builder::invalidate_workcell_studio_scene_metadata_snapshot(sc.scene_dir, "generation");
   refresh_scene_browser_ui();
   refresh_scene_builder_selected_scene_ui();
@@ -4254,8 +4266,10 @@ void MainWindow::generate_scene_package_for_selected_scene() {
     return;
   }
   bool severe_preflight_failure = false;
+  const fs::path canonical_layout = selected_scene_dir / "layout" / "workcell_studio_layout.yaml";
+  const fs::path legacy_layout = selected_scene_dir / "environment_layout.yaml";
   const QStringList preflight_warnings = generation_asset_support_preflight(
-    selected_scene_dir / "environment_layout.yaml", &severe_preflight_failure);
+    fs::exists(canonical_layout) ? canonical_layout : legacy_layout, &severe_preflight_failure);
   for (const QString & warning : preflight_warnings) {
     append_studio_log(warning);
     readiness_warning_details_.append(warning);
@@ -7546,17 +7560,18 @@ static QStringList generation_asset_support_preflight(const fs::path & layout_pa
   if (severe_failure) *severe_failure = false;
   QStringList warnings;
   if (layout_path.empty() || !fs::exists(layout_path)) {
-    warnings << "Asset support preflight: environment_layout.yaml not found; generation may proceed with defaults.";
+    warnings << "Asset support preflight: no saved layout found; generation may proceed with defaults.";
     return warnings;
   }
   YAML::Node root;
   try { root = YAML::LoadFile(layout_path.string()); }
   catch (const std::exception & exc) {
-    warnings << QString("Asset support preflight warning: malformed environment_layout.yaml at '%1' (%2); generation proceeds with defaults.")
+    warnings << QString("Asset support preflight warning: malformed saved layout at '%1' (%2); generation proceeds with defaults.")
       .arg(QString::fromStdString(layout_path.string()), QString::fromStdString(exc.what()));
     return warnings;
   }
-  const YAML::Node placed = workcell_builder::yaml_map_key(root, "placed_assets");
+  YAML::Node placed = workcell_builder::yaml_map_key(root, "items");
+  if (!placed || !placed.IsSequence()) placed = workcell_builder::yaml_map_key(root, "placed_assets");
   if (!placed || !placed.IsSequence()) return warnings;
   const QSet<QString> supported_types = {"asset","object","fixture","support_surface","table","conveyor","camera","sensor","safety_zone","bin","pick_zone","place_zone"};
   for (const auto & item : placed) {
@@ -14204,7 +14219,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     scene_selected, "A scene is selected.", "Select or create a scene first.", {}, gates));
   const bool canonical_path_match = (canonical_scene_path_string(dir) == canonical_scene_path_string(fs::path(selected_scene_path().toStdString())));
   const LayoutStateModel layout_state = derive_layout_state_model(dir, canvas_model, canonical_path_match);
-  QString layout_ready_detail = "Saved: environment_layout.yaml, layout/workcell_studio_layout.yaml, environment.yaml are present.";
+  QString layout_ready_detail = "Saved: valid layout/workcell_studio_layout.yaml is the authored layout.";
   QString layout_missing_detail = "Create/edit and save layout to persist edits before YAML generation.";
   SceneWorkflowStepStatus layout_status = SceneWorkflowStepStatus::NeedsAction;
   bool layout_ready = false;

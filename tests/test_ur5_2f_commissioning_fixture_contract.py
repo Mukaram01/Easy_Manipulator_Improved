@@ -45,7 +45,7 @@ def test_commissioning_object_is_a_deterministic_self_test_fixture() -> None:
 
 def test_physical_and_task_layers_remain_separate_and_safe() -> None:
     environment = _load("environment.yaml")
-    layout = _load("environment_layout.yaml")
+    layout = _load("layout/workcell_studio_layout.yaml")
     manifest = _load("scene_manifest.yaml")
     recipe = _load("config/task_recipe.yaml")
 
@@ -56,7 +56,7 @@ def test_physical_and_task_layers_remain_separate_and_safe() -> None:
     }
     assert {"support_surface_table", "target_bin_default", "realsense_overhead"} <= physical_ids
     assert "commissioning_object" not in physical_ids
-    assert "commissioning_object" not in {item["id"] for item in layout["objects"]}
+    assert "commissioning_object" not in {item["id"] for item in layout["items"]}
     assert "default_drop_zone" in {zone["id"] for zone in environment["task_zones"]}
     assert "default_drop_zone" not in physical_ids
     assert manifest["task_recipe"]["inputs"]["perception_mode"] == "off"

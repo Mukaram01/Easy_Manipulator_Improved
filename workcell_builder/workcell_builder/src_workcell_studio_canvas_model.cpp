@@ -1269,6 +1269,38 @@ WorkcellStudioEditableLayoutInspection inspect_editable_layout_entries(const fs:
   return out;
 }
 
+WorkcellStudioSavedLayoutInspection inspect_saved_workcell_studio_layout(const fs::path & scene_dir)
+{
+  WorkcellStudioSavedLayoutInspection out;
+  const WorkcellStudioEditableLayoutInspection canonical = inspect_editable_layout_entries(scene_dir);
+  if (canonical.exists && canonical.valid && canonical.has_items_sequence) {
+    out.saved = true;
+    out.source = WorkcellStudioSavedLayoutSource::Canonical;
+    out.relative_path = "layout/workcell_studio_layout.yaml";
+    return out;
+  }
+  if (canonical.exists) {
+    out.blocker = "Invalid layout/workcell_studio_layout.yaml";
+    return out;
+  }
+
+  YAML::Node legacy;
+  const YamlLoadStatus legacy_status = read_yaml(scene_dir / "environment_layout.yaml", &legacy);
+  if (legacy_status.loaded && legacy.IsMap()) {
+    out.saved = true;
+    out.source = WorkcellStudioSavedLayoutSource::LegacyFallback;
+    out.relative_path = "environment_layout.yaml";
+    return out;
+  }
+
+  if (legacy_status.exists) {
+    out.blocker = "Invalid legacy environment_layout.yaml";
+  } else {
+    out.blocker = "Missing saved layout/workcell_studio_layout.yaml";
+  }
+  return out;
+}
+
 std::size_t count_editable_layout_entries(const fs::path & scene_dir)
 {
   return inspect_editable_layout_entries(scene_dir).editable_item_count;
@@ -1277,9 +1309,7 @@ std::size_t count_editable_layout_entries(const fs::path & scene_dir)
 bool is_save_layout_workflow_ready(const fs::path & scene_dir)
 {
   const WorkcellStudioEditableLayoutInspection layout = inspect_editable_layout_entries(scene_dir);
-  return layout.exists && layout.valid && layout.editable_item_count > 0 &&
-    fs::exists(scene_dir / "environment_layout.yaml") &&
-    fs::exists(scene_dir / "environment.yaml");
+  return layout.exists && layout.valid && layout.has_items_sequence && layout.editable_item_count > 0;
 }
 
 
@@ -1607,6 +1637,40 @@ static YAML::Node new_workcell_studio_layout_root(const std::string & scene_name
   root["scene_name"] = scene_name;
   root["items"] = YAML::Node(YAML::NodeType::Sequence);
   return root;
+}
+
+WorkcellStudioCanonicalLayoutEnsureResult ensure_canonical_workcell_studio_layout(
+  const fs::path & scene_dir, const std::string & scene_name)
+{
+  WorkcellStudioCanonicalLayoutEnsureResult result;
+  result.path = scene_dir / "layout" / "workcell_studio_layout.yaml";
+  if (fs::exists(result.path)) {
+    result.ok = true;
+    result.preserved_existing = true;
+    return result;
+  }
+
+  boost::system::error_code ec;
+  fs::create_directories(result.path.parent_path(), ec);
+  if (ec) {
+    result.error = "failed to create canonical layout directory: " + ec.message();
+    return result;
+  }
+
+  std::ofstream out(result.path.string());
+  if (!out.is_open()) {
+    result.error = "failed to open canonical layout for write";
+    return result;
+  }
+  out << new_workcell_studio_layout_root(scene_name) << '\n';
+  out.close();
+  if (!out) {
+    result.error = "failed to write canonical layout";
+    return result;
+  }
+  result.ok = true;
+  result.created = true;
+  return result;
 }
 
 static bool read_sequence3(const YAML::Node & node, double * a, double * b, double * c)

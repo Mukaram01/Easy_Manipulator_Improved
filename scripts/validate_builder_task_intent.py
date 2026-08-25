@@ -8,6 +8,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 from capability_registry import load_structured_data
+from workcell_studio_layout_source import CANONICAL_LAYOUT_REL
 try:
     import yaml
 except Exception:
@@ -24,7 +25,7 @@ def _load(path: Path)->dict[str,Any]:
     return data if isinstance(data,dict) else {}
 
 def _exists_in_scene(scene: Path, token: str)->bool:
-    for rel in ["environment.yaml","workcell_builder_metadata.yaml","generated/environment_layout.yaml","generated/cell_definition.yaml"]:
+    for rel in [CANONICAL_LAYOUT_REL, "environment.yaml", "workcell_builder_metadata.yaml", "generated/environment_layout.yaml", "generated/cell_definition.yaml"]:
         p=scene/rel
         if p.is_file() and token in p.read_text(encoding='utf-8', errors='ignore'):
             return True
@@ -32,17 +33,22 @@ def _exists_in_scene(scene: Path, token: str)->bool:
 
 def _load_scene_layout_ids(scene: Path) -> set[str]:
     ids: set[str] = set()
-    for rel in ["generated/environment_layout.yaml", "environment_layout.yaml", "workcell_builder_metadata.yaml"]:
+    def collect(value: Any) -> None:
+        if isinstance(value, dict):
+            if value.get("id"):
+                ids.add(str(value["id"]))
+            for child in value.values():
+                collect(child)
+        elif isinstance(value, list):
+            for child in value:
+                collect(child)
+
+    for rel in [CANONICAL_LAYOUT_REL, "environment.yaml", "workcell_builder_metadata.yaml", "generated/environment_layout.yaml", "environment_layout.yaml"]:
         p = scene / rel
         if not p.is_file():
             continue
         payload = _load(p)
-        for key in ("zones", "targets", "objects", "assets"):
-            items = payload.get(key)
-            if isinstance(items, list):
-                for item in items:
-                    if isinstance(item, dict) and item.get("id"):
-                        ids.add(str(item.get("id")))
+        collect(payload)
     return ids
 
 def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=None)->dict[str,Any]:

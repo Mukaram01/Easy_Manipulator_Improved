@@ -14,6 +14,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from capability_registry import load_structured_data
+from workcell_studio_layout_source import inspect_saved_layout, resolve_saved_layout_path
 import subprocess
 
 
@@ -23,7 +24,7 @@ def _load_yaml_like(path: Path) -> dict[str, Any]:
 
 
 def _find_task_intent(scene_path: Path) -> Path | None:
-    for rel in ["generated/workcell_builder_task_intent.yaml", "workcell_builder_task_intent.yaml"]:
+    for rel in ["config/workcell_builder_task_intent.yaml", "generated/workcell_builder_task_intent.yaml", "workcell_builder_task_intent.yaml"]:
         cand = scene_path / rel
         if cand.is_file():
             return cand
@@ -56,6 +57,11 @@ def validate_scene(scene_path: Path, *, require_generated: bool = False) -> dict
     checks: list[dict[str, Any]] = []
     warnings: list[str] = []
     errors: list[str] = []
+
+    saved_layout = inspect_saved_layout(scene_path)
+    checks.append({"check": "saved authored layout present", "ok": saved_layout["saved"], "source": saved_layout["source"]})
+    if not saved_layout["saved"]:
+        errors.append(saved_layout.get("blocker", "Missing saved authored layout"))
 
     for required in ("package.xml", "CMakeLists.txt", "environment.yaml"):
         exists = (scene_path / required).is_file()
@@ -91,7 +97,7 @@ def validate_scene(scene_path: Path, *, require_generated: bool = False) -> dict
     exported_cell = scene_path / "generated" / "cell_definition.yaml"
     exported_layout = scene_path / "generated" / "environment_layout.yaml"
     checks.append({"check": "generated/cell_definition.yaml present", "ok": exported_cell.is_file(), "optional": not require_generated})
-    checks.append({"check": "generated/environment_layout.yaml present", "ok": exported_layout.is_file(), "optional": not require_generated})
+    checks.append({"check": "generated/environment_layout.yaml legacy export present", "ok": exported_layout.is_file(), "optional": True})
     export_validation = {}
     if exported_cell.is_file():
         export_validation["cell_definition"], failure = _run_generated_validator(
@@ -103,14 +109,13 @@ def validate_scene(scene_path: Path, *, require_generated: bool = False) -> dict
         message = "generated/cell_definition.yaml missing; run ./generated/export_workcell_studio_sources.sh"
         (errors if require_generated else warnings).append(message)
     if exported_layout.is_file():
-        export_validation["environment_layout"], failure = _run_generated_validator(
-            exported_layout, "validate_environment_layout.py"
-        )
-        if failure:
-            errors.append(failure)
-    else:
-        message = "generated/environment_layout.yaml missing; run ./generated/export_workcell_studio_sources.sh"
-        (errors if require_generated else warnings).append(message)
+        exported_layout_payload = _load_yaml_like(exported_layout)
+        if exported_layout_payload.get("schema_version") == "environment_layout/v1":
+            export_validation["environment_layout"], failure = _run_generated_validator(
+                exported_layout, "validate_environment_layout.py"
+            )
+            if failure:
+                warnings.append(f"Optional legacy export: {failure}")
 
     task_intent_report = {}
     task_flow_summary: dict[str, Any] = {}
@@ -138,7 +143,13 @@ def validate_scene(scene_path: Path, *, require_generated: bool = False) -> dict
                 errors.extend(task_intent_report.get("errors", []))
         elif task_intent_report.get("status") == "WARN":
             warnings.extend(task_intent_report.get("warnings", []))
-        flow_cmd = ["python3", str(SCRIPT_DIR / "summarize_task_flow.py"), "--task-intent", str(task_intent_path), "--environment-layout", str(exported_layout if exported_layout.is_file() else (scene_path / "environment_layout.yaml")), "--json"]
+        flow_layout = resolve_saved_layout_path(scene_path)
+        if flow_layout is None and exported_layout.is_file():
+            flow_layout = exported_layout
+        flow_cmd = ["python3", str(SCRIPT_DIR / "summarize_task_flow.py"), "--task-intent", str(task_intent_path)]
+        if flow_layout is not None:
+            flow_cmd.extend(["--environment-layout", str(flow_layout)])
+        flow_cmd.append("--json")
         flow_run = subprocess.run(flow_cmd, capture_output=True, text=True, check=False)
         task_flow_summary = json.loads(flow_run.stdout) if flow_run.stdout.strip() else {}
         vr = task_flow_summary.get("visual_resolution", {}) if isinstance(task_flow_summary, dict) else {}
@@ -209,7 +220,7 @@ def main() -> int:
     ap.add_argument(
         "--require-generated",
         action="store_true",
-        help="Require both canonical generated handoffs and fail when either is missing or invalid.",
+        help="Require the generated cell-definition handoff and a valid saved authored layout.",
     )
     args = ap.parse_args()
 

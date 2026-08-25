@@ -71,7 +71,6 @@ LayoutMergeResult merge_workcell_studio_layout(const fs::path& scene_dir)
   if (!fs::exists(script_path)) {
     const std::vector<std::pair<fs::path, std::string>> required_authoring_files{
       {scene_dir / "environment.yaml", "Missing required authoring file: environment.yaml. Next action: click Save Layout."},
-      {scene_dir / "environment_layout.yaml", "Missing required authoring file: environment_layout.yaml. Next action: click Save Layout."},
       {scene_dir / "layout" / "workcell_studio_layout.yaml", "Missing required authoring file: layout/workcell_studio_layout.yaml. Next action: click Save Layout."},
       {scene_dir / "cell_definition.yaml", "Missing required authoring file: cell_definition.yaml. Next action: click Generate YAML."}
     };

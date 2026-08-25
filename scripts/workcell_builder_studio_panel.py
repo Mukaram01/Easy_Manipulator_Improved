@@ -17,7 +17,7 @@ def _read_yaml_like(path: Path) -> dict[str, Any]:
 
 
 def _find_intent(scene_package: Path) -> Path | None:
-    for rel in ("generated/workcell_builder_task_intent.yaml", "workcell_builder_task_intent.yaml"):
+    for rel in ("config/workcell_builder_task_intent.yaml", "generated/workcell_builder_task_intent.yaml", "workcell_builder_task_intent.yaml"):
         p = scene_package / rel
         if p.is_file():
             return p
@@ -28,7 +28,11 @@ def detect_scene_context(scene_package: Path) -> dict[str, str]:
     scene_package = Path(scene_package)
     intent = _read_yaml_like(_find_intent(scene_package) or scene_package / "missing.yaml")
     env = _read_yaml_like(scene_package / "environment.yaml")
-    layout = _read_yaml_like(scene_package / "generated" / "environment_layout.yaml") or _read_yaml_like(scene_package / "environment_layout.yaml")
+    layout = (
+        _read_yaml_like(scene_package / "layout" / "workcell_studio_layout.yaml")
+        or _read_yaml_like(scene_package / "generated" / "environment_layout.yaml")
+        or _read_yaml_like(scene_package / "environment_layout.yaml")
+    )
 
     pick = intent.get("pick", {}) if isinstance(intent.get("pick"), dict) else {}
     place = intent.get("place", {}) if isinstance(intent.get("place"), dict) else {}
@@ -36,9 +40,13 @@ def detect_scene_context(scene_package: Path) -> dict[str, str]:
     routing = intent.get("routing", {}) if isinstance(intent.get("routing"), dict) else {}
     rules = routing.get("rules", []) if isinstance(routing.get("rules"), list) else []
 
-    zones = layout.get("zones", []) if isinstance(layout.get("zones"), list) else []
-    camera = next((a for a in (layout.get("assets") or []) if isinstance(a, dict) and a.get("type") == "camera"), {})
-    table = next((a for a in (layout.get("assets") or []) if isinstance(a, dict) and a.get("type") in {"table", "support_surface"}), {})
+    items = layout.get("items", []) if isinstance(layout.get("items"), list) else []
+    zones = layout.get("zones", []) if isinstance(layout.get("zones"), list) else [
+        item for item in items if isinstance(item, dict) and item.get("role") in {"pick_zone", "place_zone", "keepout"}
+    ]
+    assets = layout.get("assets", []) if isinstance(layout.get("assets"), list) else items
+    camera = next((a for a in assets if isinstance(a, dict) and a.get("role") == "camera"), {})
+    table = next((a for a in assets if isinstance(a, dict) and a.get("type") in {"table", "support_surface"}), {})
 
     return {
         "scene_package_path": str(scene_package),

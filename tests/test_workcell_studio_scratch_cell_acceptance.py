@@ -13,7 +13,7 @@ def test_script_exists_and_defaults_present():
 
 def test_required_output_filenames_checked_and_report_fields_present():
     for token in [
-        'environment.yaml', 'environment_layout.yaml', 'config/workcell_builder_task_intent.yaml',
+        'environment.yaml', 'layout/workcell_studio_layout.yaml', 'config/workcell_builder_task_intent.yaml',
         'cell_definition.yaml', 'scene_manifest.yaml', 'package.xml', 'CMakeLists.txt', 'launch/demo.launch.py',
         'scene_name', 'scene_dir', 'generated_files', 'missing_files', 'validation_status', 'blockers',
         'warnings', 'build_command', 'source_command', 'launch_command', 'ready_for_plan_simulate'

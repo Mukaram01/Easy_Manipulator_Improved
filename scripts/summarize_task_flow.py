@@ -73,7 +73,7 @@ def summarize(task_intent:Path|None=None, task_recipe:Path|None=None, scene_pack
         return None
 
     resolver: dict[str, list[float]] = {}
-    for container in (layout.get('zones') or [], layout.get('targets') or []):
+    for container in (layout.get('items') or [], layout.get('zones') or [], layout.get('targets') or []):
         if not isinstance(container, list):
             continue
         for entry in container:

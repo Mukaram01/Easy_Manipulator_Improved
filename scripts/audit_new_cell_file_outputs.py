@@ -4,8 +4,9 @@ import argparse, json, re
 from pathlib import Path
 from typing import Any
 from workcell_studio_error_messages import get_message
+from workcell_studio_layout_source import CANONICAL_LAYOUT_REL, inspect_saved_layout
 
-REQUIRED_FILES=['environment.yaml','environment_layout.yaml','config/workcell_builder_task_intent.yaml','cell_definition.yaml','scene_manifest.yaml','package.xml','CMakeLists.txt','launch/demo.launch.py']
+REQUIRED_FILES=['environment.yaml',CANONICAL_LAYOUT_REL,'config/workcell_builder_task_intent.yaml','cell_definition.yaml','scene_manifest.yaml','package.xml','CMakeLists.txt','launch/demo.launch.py']
 OPTIONAL_FILES=['urdf/environment.urdf.xacro','README.md']
 
 def _text(p:Path)->str: return p.read_text(encoding='utf-8') if p.is_file() else ''
@@ -13,10 +14,13 @@ def _text(p:Path)->str: return p.read_text(encoding='utf-8') if p.is_file() else
 def main()->int:
     ap=argparse.ArgumentParser(); ap.add_argument('--scene-dir',required=True,type=Path); ap.add_argument('--scene-name',required=True); ap.add_argument('--json-out',required=True,type=Path); a=ap.parse_args()
     s=a.scene_dir
+    saved_layout=inspect_saved_layout(s)
     report:dict[str,Any]={'scene_name':a.scene_name,'scene_dir':str(s),'required_files':REQUIRED_FILES,'optional_files':OPTIONAL_FILES,'present_files':[],'missing_files':[],'malformed_files':[],'content_checks':[],'cross_reference_checks':[],'blockers':[],'warnings':[],'file_output_status':'PASS'}
     for rel in REQUIRED_FILES:
-        (report['present_files'] if (s/rel).exists() else report['missing_files']).append(rel)
-    for rel,code in [('package.xml','MISSING_PACKAGE_XML'),('CMakeLists.txt','MISSING_CMAKELISTS'),('launch/demo.launch.py','MISSING_DEMO_LAUNCH'),('environment_layout.yaml','MISSING_ENVIRONMENT_LAYOUT'),('config/workcell_builder_task_intent.yaml','MISSING_TASK_INTENT')]:
+        present=(saved_layout['saved'] if rel == CANONICAL_LAYOUT_REL else (s/rel).exists())
+        (report['present_files'] if present else report['missing_files']).append(rel)
+    report['saved_layout']={'source':saved_layout['source'],'path':str(saved_layout['path']),'legacy_fallback':saved_layout['legacy_fallback']}
+    for rel,code in [('package.xml','MISSING_PACKAGE_XML'),('CMakeLists.txt','MISSING_CMAKELISTS'),('launch/demo.launch.py','MISSING_DEMO_LAUNCH'),(CANONICAL_LAYOUT_REL,'MISSING_SAVED_LAYOUT'),('config/workcell_builder_task_intent.yaml','MISSING_TASK_INTENT')]:
         if rel in report['missing_files']: report['blockers'].append(get_message(code))
     cell=_text(s/'cell_definition.yaml'); task=_text(s/'config'/'workcell_builder_task_intent.yaml');
     report['content_checks'].append({'check':'ur5 token','pass':'ur5' in cell.lower()})

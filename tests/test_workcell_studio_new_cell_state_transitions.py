@@ -15,7 +15,7 @@ def test_state_names_exist_in_ui_and_script():
 
 
 def test_state_conditions_reference_real_files():
-    for token in ['environment_layout.yaml','config/workcell_builder_task_intent.yaml','package.xml','CMakeLists.txt','launch/demo.launch.py']:
+    for token in ['layout/workcell_studio_layout.yaml','config/workcell_builder_task_intent.yaml','package.xml','CMakeLists.txt','launch/demo.launch.py']:
         assert token in MAIN_CPP
         assert token in SCRIPT
 

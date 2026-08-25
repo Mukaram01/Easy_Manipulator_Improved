@@ -6,7 +6,7 @@ from pathlib import Path
 import yaml
 from workcell_studio_error_messages import get_message
 REPO_ROOT=Path(__file__).resolve().parents[1]; SCRIPTS=REPO_ROOT/'scripts'; DEFAULT_SCENE='scratch_ur5_2f_acceptance'
-REQUIRED=['environment.yaml','environment_layout.yaml','config/workcell_builder_task_intent.yaml','cell_definition.yaml','scene_manifest.yaml','package.xml','CMakeLists.txt','launch/demo.launch.py']
+REQUIRED=['environment.yaml','layout/workcell_studio_layout.yaml','config/workcell_builder_task_intent.yaml','cell_definition.yaml','scene_manifest.yaml','package.xml','CMakeLists.txt','launch/demo.launch.py']
 
 def _safe_scene_dir(root:Path,name:str)->Path:
  d=root/name; i=1
@@ -40,7 +40,7 @@ camera:
   capability: sensor/depth_camera/realsense_d435i
 environment:
   frame: world
-  layout: environment_layout.yaml
+  layout: layout/workcell_studio_layout.yaml
   support_surfaces:
     - id: table_main
       type: table
@@ -154,7 +154,7 @@ def main():
   r['failure_summary']=f'generation failed (rc={rc}): {summary}'
   r['generator']['failure_summary']=r['failure_summary']
   r['blockers'].append(get_message('VALIDATION_BLOCKED',title='Generate Scene Package failed',detail=f"{summary} (see JSON: generator.returncode/stdout_tail/stderr_tail/failure_summary)"))
- for rel,txt in [('environment_layout.yaml','schema_version: environment_layout/v1\nassets: []\n'),('config/workcell_builder_task_intent.yaml','task:\n  type: pick_place\n'),('environment.yaml',f'scene_name: {sd.name}\n')]:
+ for rel,txt in [('layout/workcell_studio_layout.yaml',f'schema_version: workcell_studio_layout/v1\nscene_name: {sd.name}\nitems: []\n'),('config/workcell_builder_task_intent.yaml','task:\n  type: pick_place\n'),('environment.yaml',f'scene_name: {sd.name}\n')]:
   p=sd/rel; p.parent.mkdir(parents=True,exist_ok=True)
   if not p.exists(): p.write_text(txt,encoding='utf-8')
  r['launch_command']=f'ros2 launch {sd.name} demo.launch.py use_fake_hardware:=true launch_rviz:=true'; r['build_command']=f'colcon build --symlink-install --packages-select {sd.name}'

@@ -109,6 +109,30 @@ struct WorkcellStudioEditableLayoutInspection
   std::size_t editable_item_count{0};
 };
 
+enum class WorkcellStudioSavedLayoutSource
+{
+  None,
+  Canonical,
+  LegacyFallback
+};
+
+struct WorkcellStudioSavedLayoutInspection
+{
+  bool saved{false};
+  WorkcellStudioSavedLayoutSource source{WorkcellStudioSavedLayoutSource::None};
+  std::string relative_path;
+  std::string blocker;
+};
+
+struct WorkcellStudioCanonicalLayoutEnsureResult
+{
+  bool ok{false};
+  bool created{false};
+  bool preserved_existing{false};
+  boost::filesystem::path path;
+  std::string error;
+};
+
 struct WorkcellStudioEnvironmentLayoutBootstrapResult
 {
   bool ok{false};
@@ -129,6 +153,9 @@ void merge_dirty_editable_layout_session(
   const std::vector<std::string> & deleted_item_ids);
 void invalidate_workcell_studio_scene_metadata_snapshot(const boost::filesystem::path & scene_dir, const std::string & reason);
 WorkcellStudioEditableLayoutInspection inspect_editable_layout_entries(const boost::filesystem::path & scene_dir);
+WorkcellStudioSavedLayoutInspection inspect_saved_workcell_studio_layout(const boost::filesystem::path & scene_dir);
+WorkcellStudioCanonicalLayoutEnsureResult ensure_canonical_workcell_studio_layout(
+  const boost::filesystem::path & scene_dir, const std::string & scene_name);
 std::size_t count_editable_layout_entries(const boost::filesystem::path & scene_dir);
 bool is_save_layout_workflow_ready(const boost::filesystem::path & scene_dir);
 WorkcellStudioStarterLayoutSummary bootstrap_editable_layout_from_trusted_canonical_yaml(const boost::filesystem::path & scene_dir, const std::string & scene_name);
