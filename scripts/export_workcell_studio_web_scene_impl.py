@@ -3035,6 +3035,16 @@ def _apply_render_ownership_contract(payload: Json, *, expanded_urdf_active: boo
     scene_id = str(payload.get("scene_id") or _as_map(payload.get("scene")).get("id") or "scene")
     primary_identities: Dict[str, Tuple[str, str]] = {}
     authored_physical_keys: set[str] = set()
+    canonical_layout_physical_ids = {
+        str(item.get("id"))
+        for section in RENDERABLE_OUTPUT_SECTIONS
+        for item in _as_list(payload.get(section))
+        if isinstance(item, Mapping)
+        and item.get("source_kind") == "user_authored"
+        and item.get("source_section") == "items"
+        and item.get("id")
+        and (_has_mesh_reference(item) or _item_local_bounds(item) is not None)
+    }
     for section in RENDERABLE_OUTPUT_SECTIONS:
         for item in _as_list(payload.get(section)):
             if (
@@ -3078,6 +3088,24 @@ def _apply_render_ownership_contract(payload: Json, *, expanded_urdf_active: boo
                 item["render_identity"] = _source_identity_for_item(scene_id, section, item, index)
                 item["readiness_category"] = ""
                 counters["overlay_records"] += 1
+                continue
+
+            item_id = str(item.get("id") or "")
+            if (
+                item.get("source_kind") == "user_authored"
+                and item.get("source_section") != "items"
+                and item_id in canonical_layout_physical_ids
+                and str(item.get("layout_item_ref") or "") == item_id
+            ):
+                item["render_policy"] = "diagnostic_only"
+                item["render_owner"] = "editable_layout"
+                item["render_identity"] = _source_identity_for_item(scene_id, section, item, index)
+                item["render_policy_reason"] = "canonical_layout_record_is_authoritative_for_mirrored_environment_asset"
+                item["render_expected"] = False
+                item["mesh_load_required"] = False
+                item["selectable"] = False
+                item["exclude_from_fit_bounds"] = True
+                counters["diagnostic_only_records"] += 1
                 continue
 
             category = _core_mesh_category(item, section)

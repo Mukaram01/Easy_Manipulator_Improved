@@ -1,12 +1,75 @@
 schema_version: workcell_studio_layout/v1
+schema: workcell_studio_layout/v1
+scene_name: suction_test
+scene_path: .
 items:
-  - id: robot_base
-    type: robot
-    pose:
-      xyz: [0.0, 0.0, 0.0]
-      rpy: [0.0, 0.0, 0.0]
   - id: table_main
     type: table
+    role: support_surface
+    category: work_surface
+    display_name: Suction Work Surface
+    editable: true
+    locked: false
+    source_layer: editable_layout
+    source: layout/workcell_studio_layout.yaml
     pose:
       xyz: [0.5, 0.0, 0.0]
       rpy: [0.0, 0.0, 0.0]
+    dimensions: [1.2, 0.8, 0.08]
+    geometry_type: mesh
+    mesh:
+      path: assets/environment/table_description/meshes/visual/table.stl
+      scale: [0.001, 0.001, 0.001]
+    material:
+      color: [0.549, 0.557, 0.529, 1.0]
+  - id: pick_zone_main
+    type: pick_zone
+    role: pick_zone
+    category: work_surface
+    display_name: Main Pick Zone
+    editable: true
+    locked: false
+    source_layer: editable_layout
+    source: layout/workcell_studio_layout.yaml
+    pose:
+      xyz: [0.43, 0.04, 0.08]
+      rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.18, 0.18, 0.08]
+    geometry_type: box
+    material:
+      color: [0.12, 0.55, 1.0, 0.45]
+  - id: place_zone_main
+    transform_group: default_drop_destination
+    type: place_zone
+    role: place_zone
+    category: work_surface
+    display_name: Default Drop Zone
+    target_ref: suction_target_default
+    editable: true
+    locked: false
+    source_layer: editable_layout
+    source: layout/workcell_studio_layout.yaml
+    pose:
+      xyz: [0.5, -0.3, 0.1]
+      rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.22, 0.22, 0.01]
+    geometry_type: box
+    material:
+      color: [0.1, 0.75, 0.35, 0.45]
+  - id: suction_target_default
+    transform_group: default_drop_destination
+    type: target_bin
+    role: target_bin
+    category: target_bin
+    display_name: Suction Placement Fixture
+    editable: true
+    locked: false
+    source_layer: editable_layout
+    source: layout/workcell_studio_layout.yaml
+    pose:
+      xyz: [0.5, -0.3, 0.1]
+      rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.22, 0.22, 0.12]
+    geometry_type: box
+    material:
+      color: [0.2, 0.55, 0.8, 1.0]
