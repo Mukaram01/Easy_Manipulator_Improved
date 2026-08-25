@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <boost/filesystem.hpp>
+#include <algorithm>
 #include <fstream>
 
 #include "workcell_studio_scene_browser.hpp"
@@ -45,4 +46,79 @@ TEST(WorkcellSceneIdentity, DeletedSceneDoesNotMatchAfterRefresh)
 {
   workcell_builder::WorkcellStudioSceneBrowserResult refreshed;
   EXPECT_EQ(workcell_builder::find_scene_by_identity(refreshed, "/missing/test_scene", "test_scene"), -1);
+}
+
+TEST(WorkcellSceneIdentity, HomeMetadataUsesCanonicalSceneSnapshotSources)
+{
+  const fs::path workspace = fs::temp_directory_path() / fs::unique_path("workcell_home_metadata_%%%%-%%%%");
+  const fs::path scene = workspace / "src/easy_manipulation_deployment/scenes/ur5_2f_test";
+  fs::create_directories(scene / "config");
+  std::ofstream(scene / "environment.yaml")
+    << "scene:\n  name: UR5 2F Test\nrobot:\n  model: ur5\n";
+  std::ofstream(scene / "cell_definition.yaml")
+    << "end_effector:\n  id: robotiq_85_gripper\n";
+  std::ofstream(scene / "config/task_recipe.yaml")
+    << "task:\n  type: pick_place\n";
+
+  const auto result = workcell_builder::discover_workcell_studio_scenes(workspace);
+  ASSERT_EQ(result.scenes.size(), 1U);
+  const auto & metadata = result.scenes.front();
+  EXPECT_EQ(metadata.display_name, "UR5 2F Test");
+  EXPECT_EQ(metadata.robot_summary, "ur5");
+  EXPECT_EQ(metadata.gripper_summary, "robotiq_85_gripper");
+  EXPECT_EQ(metadata.task_summary, "pick_place");
+  fs::remove_all(workspace);
+}
+
+TEST(WorkcellSceneIdentity, GenericTaskConfigurationIsNotInventedAsPickPlace)
+{
+  const fs::path workspace = fs::temp_directory_path() / fs::unique_path("workcell_home_task_%%%%-%%%%");
+  const fs::path scene = workspace / "src/easy_manipulation_deployment/scenes/generic_cell";
+  fs::create_directories(scene / "config");
+  std::ofstream(scene / "environment.yaml") << "robot:\n  model: demo_robot\n";
+  std::ofstream(scene / "config/task_recipe.yaml") << "task:\n  id: configured_task\n";
+
+  const auto result = workcell_builder::discover_workcell_studio_scenes(workspace);
+  ASSERT_EQ(result.scenes.size(), 1U);
+  EXPECT_EQ(result.scenes.front().task_summary, "Configured");
+  fs::remove_all(workspace);
+}
+
+TEST(WorkcellSceneIdentity, HomeReadinessUsesCurrentCanonicalAcceptanceNotLegacySmokeExistence)
+{
+  const fs::path workspace = fs::temp_directory_path() / fs::unique_path("workcell_home_ready_%%%%-%%%%");
+  const fs::path scene = workspace / "src/easy_manipulation_deployment/scenes/reference_cell";
+  fs::create_directories(scene / "config");
+  fs::create_directories(scene / "launch");
+  fs::create_directories(scene / "urdf");
+  fs::create_directories(scene / "acceptance");
+  fs::create_directories(scene / "smoke");
+  std::ofstream(scene / "package.xml") << "<package/>\n";
+  std::ofstream(scene / "CMakeLists.txt") << "cmake_minimum_required(VERSION 3.8)\n";
+  std::ofstream(scene / "environment.yaml") << "robot: {model: ur5}\n";
+  std::ofstream(scene / "config/task_recipe.yaml") << "task: {type: pick_place}\n";
+  std::ofstream(scene / "config/workcell_builder_task_intent.yaml") << "task: {type: pick_place}\n";
+  std::ofstream(scene / "launch/demo.launch.py") << "use_fake_hardware\n";
+  std::ofstream(scene / "urdf/scene.urdf.xacro") << "<robot/>\n";
+  std::ofstream(scene / "urdf/arm_hand.srdf.xacro") << "<robot/>\n";
+  std::ofstream(scene / "smoke/offline_smoke_report.json") << "{\"status\":\"PASS\"}\n";
+  const fs::path acceptance = scene / "acceptance/generated_scene_acceptance.json";
+  std::ofstream(acceptance) <<
+    "{\"scene_name\":\"reference_cell\",\"status\":\"PASS\",\"safety_flags\":"
+    "{\"fake_hardware_first\":true,\"runtime_execution_enabled\":false,\"motion_command_sent\":false}}\n";
+
+  auto result = workcell_builder::discover_workcell_studio_scenes(workspace);
+  ASSERT_EQ(result.scenes.size(), 1U);
+  EXPECT_EQ(result.scenes.front().status, "READY");
+  EXPECT_TRUE(result.scenes.front().fake_hardware_ready);
+
+  fs::last_write_time(scene / "environment.yaml", fs::last_write_time(acceptance) + 2);
+  result = workcell_builder::discover_workcell_studio_scenes(workspace);
+  ASSERT_EQ(result.scenes.size(), 1U);
+  EXPECT_EQ(result.scenes.front().status, "WARNINGS");
+  EXPECT_FALSE(result.scenes.front().fake_hardware_ready);
+  EXPECT_NE(std::find(result.scenes.front().readiness_reasons.begin(),
+    result.scenes.front().readiness_reasons.end(), "Scene changed since validation; run validation again"),
+    result.scenes.front().readiness_reasons.end());
+  fs::remove_all(workspace);
 }

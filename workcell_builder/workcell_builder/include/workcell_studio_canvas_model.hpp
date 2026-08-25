@@ -62,6 +62,19 @@ struct WorkcellStudioCanvasModel {
   std::vector<std::string> warnings; std::vector<WorkcellStudioCanvasItem> items;
 };
 
+// Lightweight, read-only projection of the same revision-aware metadata
+// snapshot used to prepare Product View. Home consumes this instead of
+// maintaining a second YAML interpretation path.
+struct WorkcellStudioSceneMetadataSummary
+{
+  std::string display_name;
+  std::string robot;
+  std::string tool;
+  std::string task;
+  std::string revision;
+  bool has_parse_warning{false};
+};
+
 struct WorkcellStudioStarterLayoutSummary
 {
   std::size_t total_preview_items{0};
@@ -106,6 +119,8 @@ struct WorkcellStudioEnvironmentLayoutBootstrapResult
 };
 
 WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const boost::filesystem::path & scene_dir, const std::string & scene_name);
+WorkcellStudioSceneMetadataSummary load_workcell_studio_scene_metadata_summary(
+  const boost::filesystem::path & scene_dir, const std::string & scene_name);
 // Reconcile a disk-derived preview with the authoritative unsaved authoring
 // session. Editable disk rows are replaced; generated/runtime rows remain.
 void merge_dirty_editable_layout_session(

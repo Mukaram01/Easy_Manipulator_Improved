@@ -1961,16 +1961,19 @@ void MainWindow::show_studio_page(StudioPage page)
   }
 }
 
-bool MainWindow::open_scene_builder_for_selected_scene(const QString & source_action)
+bool MainWindow::open_scene_builder_for_scene_index(
+  int scene_index, const QString & source_action)
 {
-  if (selected_scene_index_ < 0 && dashboard_scene_table_ && dashboard_scene_table_->currentRow() >= 0) {
-    select_scene_by_row(dashboard_scene_table_->currentRow());
-  }
-  if (selected_scene_index_ < 0) {
+  if (scene_index < 0 || scene_index >= static_cast<int>(scene_browser_result_.scenes.size())) {
     QMessageBox::information(this, "Workcell Studio", "Select a scene first.");
     append_studio_log(source_action + ": no scene selected.");
     return false;
   }
+
+  // Navigation happens before editor ownership changes. Home callbacks are
+  // therefore inactive before the canonical editor refresh begins.
+  show_studio_page(StudioPage::SceneBuilderPage);
+  selected_scene_index_ = scene_index;
   try {
     refresh_scene_builder_selection_state_ui();
   } catch (const YAML::Exception & error) {
@@ -1984,7 +1987,6 @@ bool MainWindow::open_scene_builder_for_selected_scene(const QString & source_ac
       workcell_builder::StudioLogSeverity::Warning, QStringLiteral("scene_metadata_parse"));
     QMessageBox::warning(this, "Workcell Studio", "Scene metadata could not be fully parsed. Opened with warnings.");
   }
-  show_studio_page(StudioPage::SceneBuilderPage);
   visual_index_script_missing_reported_scene_key_.clear();
   visual_index_regen_failure_reported_scene_key_.clear();
   visual_index_regen_throttle_session_active_ = false;
@@ -1996,6 +1998,54 @@ bool MainWindow::open_scene_builder_for_selected_scene(const QString & source_ac
     0,
     QString("%1: loaded scene '%2' at %3.").arg(source_action, selected_scene_name(), selected_scene_path()));
   return true;
+}
+
+bool MainWindow::open_home_scene_in_builder(
+  const QString & scene_id, const QString & canonical_scene_path)
+{
+  if (!studio_pages_ ||
+    studio_pages_->currentIndex() != static_cast<int>(StudioPage::DashboardPage))
+  {
+    return false;
+  }
+
+  const QString stable_scene_id = scene_id.trimmed();
+  if (stable_scene_id.isEmpty()) return false;
+  int scene_index = -1;
+  if (!canonical_scene_path.trimmed().isEmpty()) {
+    scene_index = workcell_builder::find_scene_by_identity(
+      scene_browser_result_, fs::path(canonical_scene_path.toStdString()), stable_scene_id.toStdString());
+  }
+  if (scene_index < 0) {
+    for (int i = 0; i < static_cast<int>(scene_browser_result_.scenes.size()); ++i) {
+      if (scene_browser_result_.scenes[static_cast<size_t>(i)].scene_name == stable_scene_id.toStdString()) {
+        scene_index = i;
+        break;
+      }
+    }
+  }
+  if (scene_index < 0) return false;
+
+  append_studio_log(QString("Home: opening Scene Builder for %1").arg(stable_scene_id));
+  return open_scene_builder_for_scene_index(scene_index, QStringLiteral("Home"));
+}
+
+bool MainWindow::open_scene_builder_for_selected_scene(const QString & source_action)
+{
+  return open_scene_builder_for_scene_index(selected_scene_index_, source_action);
+}
+
+void MainWindow::bind_home_target_shell_actions()
+{
+  auto * open_button = findChild<QPushButton *>(QStringLiteral("studioTargetPrimaryAction"));
+  if (!open_button || open_button->property("homeOpenHandlerBound").toBool()) return;
+  open_button->setProperty("homeOpenHandlerBound", true);
+  connect(open_button, &QPushButton::clicked, this, [this]() {
+    const int row = dashboard_scene_table_ ? dashboard_scene_table_->currentRow() : -1;
+    const QString scene_id = home_scene_id_at_row(row);
+    const QString scene_path = home_scene_path_at_row(row);
+    open_home_scene_in_builder(scene_id, scene_path);
+  });
 }
 
 bool MainWindow::load_scene_for_scene3d_smoke(const QString & scene_name, const QString & explicit_scene_path, QStringList * blockers, QJsonObject * diagnostics)
@@ -3584,19 +3634,28 @@ void MainWindow::setup_studio_shell()
   };
 
   connect(studio_nav_, &QListWidget::currentRowChanged, this, [this](int idx){ if(idx>=0 && idx<studio_pages_->count()) studio_pages_->setCurrentIndex(idx);});
+  connect(studio_pages_, &QStackedWidget::currentChanged, this, [this](int idx) {
+    if (idx == static_cast<int>(StudioPage::DashboardPage)) refresh_scene_browser_ui();
+  });
   show_studio_page(StudioPage::DashboardPage);
-  connect(dashboard_scene_table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int){ select_scene_by_row(row); open_scene_builder_for_selected_scene("Dashboard double-click"); });
-  connect(dashboard_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int){ select_scene_by_row(row); });
-  connect(dashboard_scene_search_, &QLineEdit::textChanged, this, [this](const QString &){ refresh_studio_home_scene_table(); });
-  connect(dashboard_scene_status_filter_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){ refresh_studio_home_scene_table(); });
+  connect(dashboard_scene_table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int) {
+    const QString scene_id = home_scene_id_at_row(row);
+    const QString scene_path = home_scene_path_at_row(row);
+    open_home_scene_in_builder(scene_id, scene_path);
+  });
+  connect(dashboard_scene_table_, &QTableWidget::itemSelectionChanged, this, [this]() {
+    if (!studio_pages_ ||
+      studio_pages_->currentIndex() != static_cast<int>(StudioPage::DashboardPage)) return;
+    const int row = dashboard_scene_table_ ? dashboard_scene_table_->currentRow() : -1;
+    home_selected_scene_id_ = home_scene_id_at_row(row);
+    home_selected_scene_path_ = home_scene_path_at_row(row);
+    const bool selected = !home_selected_scene_id_.isEmpty();
+    if (dashboard_open_scene_action_) dashboard_open_scene_action_->setEnabled(selected);
+  });
+  // The production Home shell filters the existing rows in place with one
+  // composed predicate; typing must not rebuild the table model.
   connect(dashboard_library_search_, &QLineEdit::textChanged, this, [this](const QString &){ refresh_studio_home_scene_table(); });
   connect(dashboard_library_status_filter_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){ refresh_studio_home_scene_table(); });
-  connect(dashboard_library_list_, &QListWidget::currentRowChanged, this, [this](int row){
-    if (row < 0) return;
-    auto * item = dashboard_library_list_->item(row);
-    if (!item) return;
-    select_scene_by_row(item->data(Qt::UserRole).toInt());
-  });
   connect_button(clear_log, [this](){ if (studio_log_) studio_log_->clear(); });
   connect_button(copy_log, [this](){ if (studio_log_) QApplication::clipboard()->setText(studio_log_->toPlainText()); });
   const auto toggle_log_drawer = [this, log_header_toggle]() {
@@ -3612,8 +3671,14 @@ void MainWindow::setup_studio_shell()
   connect_button(log_header_toggle, toggle_log_drawer);
   connect_button(empty_new_cell, &MainWindow::open_new_scene_creation_flow);
   connect_button(dash_new_cell, &MainWindow::open_new_scene_creation_flow);
-  connect_button(dash_open_selected_scene, [this](){ open_scene_builder_for_selected_scene("Dashboard Open Selected Scene"); });
-  connect_action(dashboard_open_scene_action_, [this](){ open_scene_builder_for_selected_scene("Dashboard Open in Scene Builder"); });
+  connect_button(dash_open_selected_scene, [this](){
+    const int row = dashboard_scene_table_ ? dashboard_scene_table_->currentRow() : -1;
+    open_home_scene_in_builder(home_scene_id_at_row(row), home_scene_path_at_row(row));
+  });
+  connect_action(dashboard_open_scene_action_, [this](){
+    const int row = dashboard_scene_table_ ? dashboard_scene_table_->currentRow() : -1;
+    open_home_scene_in_builder(home_scene_id_at_row(row), home_scene_path_at_row(row));
+  });
   connect_action(dashboard_validate_action_, [this](){ if (action_validate_offline_) action_validate_offline_->trigger(); });
   connect_action(dashboard_plan_action_, [this](){ if (action_simulate_plan_preview_) action_simulate_plan_preview_->trigger(); });
   connect_action(dashboard_export_action_, [this](){ if (action_export_open_page_) action_export_open_page_->trigger(); });
@@ -3808,7 +3873,6 @@ void MainWindow::setup_studio_shell()
   refresh_new_cell_checklist();
   append_studio_log("New Cell Action Map: Workspace -> New Cell -> Layout -> Task Intent -> Generate Scene Package -> Validate -> Plan & Simulate");
   refresh_diagnostics_quick_status();
-  refresh_scene_builder_left_explorer();
   refresh_task_intent_panel();
   refresh_scene_bundle_export_panel();
 }
@@ -4952,14 +5016,13 @@ void MainWindow::refresh_scene_browser_ui()
   refresh_studio_home_scene_table();
   auto fill_existing=[&](QTableWidget* t){ t->setRowCount((int)scene_browser_result_.scenes.size()); for(int i=0;i<t->rowCount();++i){const auto &sc=scene_browser_result_.scenes[(size_t)i]; auto scene_name = QString::fromStdString(sc.scene_name); t->setItem(i,0,new QTableWidgetItem(scene_name)); t->setItem(i,1,new QTableWidgetItem(QString::fromStdString(sc.status))); t->setItem(i,2,new QTableWidgetItem(QString::fromStdString(sc.robot_summary))); t->setItem(i,3,new QTableWidgetItem(QString::fromStdString(sc.gripper_summary))); t->setItem(i,4,new QTableWidgetItem(sc.has_task_recipe?"present":"missing")); t->setItem(i,5,new QTableWidgetItem(sc.has_launch_demo?"ready":"blocked")); }};
   fill_existing(existing_scene_table_);
-  populate_scene_files_tab();
 }
 
 void MainWindow::refresh_studio_home_scene_table()
 {
   if (!dashboard_scene_table_) return;
-  const QString q = dashboard_scene_search_ ? dashboard_scene_search_->text().trimmed().toLower() : "";
-  const QString status_filter = dashboard_scene_status_filter_ ? dashboard_scene_status_filter_->currentText() : "All";
+  const QSignalBlocker table_blocker(dashboard_scene_table_);
+  const QSignalBlocker library_blocker(dashboard_library_list_);
   const QString lq = dashboard_library_search_ ? dashboard_library_search_->text().trimmed().toLower() : "";
   const QString lstatus = dashboard_library_status_filter_ ? dashboard_library_status_filter_->currentText() : "All";
   dashboard_scene_table_->setRowCount(0);
@@ -4968,21 +5031,29 @@ void MainWindow::refresh_studio_home_scene_table()
     const auto & sc = scene_browser_result_.scenes[i];
     const QString scene_name = QString::fromStdString(sc.scene_name);
     const QString status = QString::fromStdString(sc.status);
-    if (!q.isEmpty() && !scene_name.toLower().contains(q)) continue;
-    if (status_filter == "Ready" && status != "READY") continue;
-    if (status_filter == "Warning" && status != "WARNINGS") continue;
-    if (status_filter == "Blocked" && (status == "READY" || status == "WARNINGS")) continue;
     const int row = dashboard_scene_table_->rowCount(); dashboard_scene_table_->insertRow(row);
     auto *scene_item = new QTableWidgetItem(QFontMetrics(dashboard_scene_table_->font()).elidedText(scene_name, Qt::ElideRight, 320)); scene_item->setToolTip(scene_name); scene_item->setData(Qt::UserRole, (int)i);
+    scene_item->setData(Qt::UserRole + 38, QString::fromStdString(sc.display_name));
+    scene_item->setData(Qt::UserRole + 39, QString::fromStdString(sc.task_summary));
+    QStringList readiness_reasons;
+    for (const std::string & reason : sc.readiness_reasons) readiness_reasons << QString::fromStdString(reason);
+    scene_item->setData(Qt::UserRole + 40, readiness_reasons);
+    scene_item->setData(Qt::UserRole + 41, sc.fake_hardware_ready);
+    const fs::path stable_scene_path = sc.canonical_scene_dir.empty() ? sc.scene_dir : sc.canonical_scene_dir;
+    scene_item->setData(Qt::UserRole + 42, QString::fromStdString(stable_scene_path.string()));
     dashboard_scene_table_->setItem(row,0,scene_item);
     auto * status_item = new QTableWidgetItem(status);
-    if (status == "READY") { status_item->setBackground(QColor("#DCFCE7")); status_item->setForeground(QBrush(QColor("#15803D"))); }
-    else if (status == "WARNINGS") { status_item->setBackground(QColor("#FEF3C7")); status_item->setForeground(QBrush(QColor("#B45309"))); }
-    else { status_item->setBackground(QColor("#FEE2E2")); status_item->setForeground(QBrush(QColor("#B91C1C"))); }
     dashboard_scene_table_->setItem(row,1,status_item);
-    dashboard_scene_table_->setItem(row,2,new QTableWidgetItem(QString::fromStdString(sc.robot_summary))); dashboard_scene_table_->setItem(row,3,new QTableWidgetItem(QString::fromStdString(sc.gripper_summary))); dashboard_scene_table_->setItem(row,4,new QTableWidgetItem(sc.has_task_recipe?"present":"missing")); dashboard_scene_table_->setItem(row,5,new QTableWidgetItem(sc.has_launch_demo?"ready":"blocked"));
+    dashboard_scene_table_->setItem(row,2,new QTableWidgetItem(QString::fromStdString(sc.robot_summary)));
+    dashboard_scene_table_->setItem(row,3,new QTableWidgetItem(QString::fromStdString(sc.gripper_summary)));
+    dashboard_scene_table_->setItem(row,4,new QTableWidgetItem(QString::fromStdString(
+      sc.task_summary.empty() ? (sc.has_task_recipe || sc.has_task_intent ? "Configured" : "Missing") : sc.task_summary)));
+    dashboard_scene_table_->setItem(row,5,new QTableWidgetItem(sc.fake_hardware_ready?"ready":"blocked"));
     if (dashboard_library_list_) {
-      const bool lmatch_q = lq.isEmpty() || scene_name.toLower().contains(lq);
+      const QString searchable = QStringLiteral("%1 %2 %3 %4")
+        .arg(scene_name, QString::fromStdString(sc.display_name),
+          QString::fromStdString(sc.robot_summary), QString::fromStdString(sc.gripper_summary)).toLower();
+      const bool lmatch_q = lq.isEmpty() || searchable.contains(lq);
       const bool lmatch_status = (lstatus == "All") || (lstatus == "Ready" && status == "READY") || (lstatus == "Warning" && status == "WARNINGS") || (lstatus == "Blocked" && (status != "READY" && status != "WARNINGS"));
       if (lmatch_q && lmatch_status) {
         auto * item = new QListWidgetItem(scene_name);
@@ -4991,7 +5062,43 @@ void MainWindow::refresh_studio_home_scene_table()
       }
     }
   }
+  bool restored_home_selection = false;
+  for (int row = 0; row < dashboard_scene_table_->rowCount(); ++row) {
+    const QString row_id = home_scene_id_at_row(row);
+    const QString row_path = home_scene_path_at_row(row);
+    if (!home_selected_scene_id_.isEmpty() && row_id == home_selected_scene_id_ &&
+      (home_selected_scene_path_.isEmpty() || row_path == home_selected_scene_path_))
+    {
+      dashboard_scene_table_->setCurrentCell(row, 0);
+      restored_home_selection = true;
+      break;
+    }
+  }
+  if (!restored_home_selection && !home_selected_scene_id_.isEmpty()) {
+    home_selected_scene_id_.clear();
+    home_selected_scene_path_.clear();
+  }
   if (dashboard_empty_state_card_) dashboard_empty_state_card_->setVisible(dashboard_scene_table_->rowCount() == 0);
+  if (dashboard_open_scene_action_) dashboard_open_scene_action_->setEnabled(restored_home_selection);
+  if (auto * open_button = findChild<QPushButton *>(QStringLiteral("studioTargetPrimaryAction"))) {
+    open_button->setEnabled(restored_home_selection);
+  }
+}
+
+QString MainWindow::home_scene_id_at_row(int row) const
+{
+  if (!dashboard_scene_table_ || row < 0 || row >= dashboard_scene_table_->rowCount()) return QString();
+  const QTableWidgetItem * item = dashboard_scene_table_->item(row, 0);
+  if (!item) return QString();
+  return item->toolTip().trimmed().isEmpty() ? item->text().trimmed() : item->toolTip().trimmed();
+}
+
+QString MainWindow::home_scene_path_at_row(int row) const
+{
+  if (!dashboard_scene_table_ || row < 0 || row >= dashboard_scene_table_->rowCount()) return QString();
+  const QTableWidgetItem * item = dashboard_scene_table_->item(row, 0);
+  const QString path = item ? item->data(Qt::UserRole + 42).toString().trimmed() : QString();
+  return path.isEmpty() ? QString() : QDir::cleanPath(path);
 }
 
 bool MainWindow::is_safe_scene_path_for_trash_move(const fs::path & scene_path, QString * reason) const

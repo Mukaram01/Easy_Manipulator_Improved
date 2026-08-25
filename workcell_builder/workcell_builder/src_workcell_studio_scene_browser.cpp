@@ -1,11 +1,14 @@
 #include "workcell_studio_scene_browser.hpp"
+#include "workcell_studio_canvas_model.hpp"
 #include "workcell_yaml_utils.hpp"
 #include "workcell_warning_once.hpp"
 
 #include <yaml-cpp/yaml.h>
 
 #include <set>
+#include <algorithm>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 
 namespace fs = boost::filesystem;
@@ -14,6 +17,54 @@ namespace workcell_builder {
 
 namespace {
 bool exists_file(const fs::path & p){ boost::system::error_code ec; return fs::exists(p, ec) && !ec; }
+
+std::filesystem::file_time_type latest_authored_input_time(const fs::path & scene_dir)
+{
+  auto latest = std::filesystem::file_time_type::min();
+  const auto include_file = [&](const fs::path & path) {
+    std::error_code ec;
+    const std::filesystem::path std_path(path.string());
+    if (std::filesystem::is_regular_file(std_path, ec) && !ec)
+      latest = std::max(latest, std::filesystem::last_write_time(std_path, ec));
+  };
+  for (const char * relative : {
+      "package.xml", "CMakeLists.txt", "environment.yaml", "environment_layout.yaml",
+      "cell_definition.yaml", "scene_manifest.yaml", "layout/workcell_studio_layout.yaml"})
+    include_file(scene_dir / relative);
+  for (const char * relative : {"config", "launch", "urdf", "assets"}) {
+    const fs::path root = scene_dir / relative;
+    boost::system::error_code ec;
+    if (!fs::is_directory(root, ec) || ec) continue;
+    for (fs::recursive_directory_iterator it(root, ec), end; it != end && !ec; it.increment(ec))
+      include_file(it->path());
+  }
+  return latest;
+}
+
+void inspect_acceptance_report(WorkcellStudioSceneInfo * s)
+{
+  const fs::path report = s->scene_dir / "acceptance/generated_scene_acceptance.json";
+  s->has_acceptance_report_json = exists_file(report);
+  if (!s->has_acceptance_report_json) return;
+  try {
+    const YAML::Node root = YAML::LoadFile(report.string());
+    s->acceptance_status = root["status"].as<std::string>("");
+    const std::string report_scene = root["scene_name"].as<std::string>("");
+    const YAML::Node safety = root["safety_flags"];
+    const bool safe = safety && safety.IsMap() &&
+      safety["fake_hardware_first"].as<bool>(false) &&
+      !safety["runtime_execution_enabled"].as<bool>(true) &&
+      !safety["motion_command_sent"].as<bool>(true);
+    std::error_code ec;
+    const auto report_time = std::filesystem::last_write_time(
+      std::filesystem::path(report.string()), ec);
+    s->acceptance_report_current = !ec && report_time >= latest_authored_input_time(s->scene_dir);
+    s->acceptance_report_passed = s->acceptance_status == "PASS" &&
+      (report_scene.empty() || report_scene == s->scene_name) && safe;
+  } catch (const std::exception &) {
+    s->acceptance_status = "INVALID";
+  }
+}
 
 fs::path canonical_or_absolute(const fs::path & p)
 {
@@ -64,9 +115,29 @@ std::string compute_status(const WorkcellStudioSceneInfo & s)
   if (!s.has_launch_demo) return "MISSING_LAUNCH";
   const bool scaffold = s.has_environment_yaml && !s.has_package_xml && !s.has_scene_urdf_xacro && !s.has_arm_hand_srdf_xacro;
   if (scaffold) return "SCAFFOLD_ONLY";
-  if (s.parse_warning.empty() && s.has_package_xml && s.has_scene_urdf_xacro && s.has_arm_hand_srdf_xacro && s.has_task_recipe && s.has_smoke_report_json) return "READY";
-  if (!s.parse_warning.empty() || !s.has_task_recipe || !s.has_smoke_report_json) return "WARNINGS";
+  if (s.parse_warning.empty() && s.has_package_xml && s.has_scene_urdf_xacro && s.has_arm_hand_srdf_xacro && s.has_task_recipe && s.acceptance_report_current && s.acceptance_report_passed) return "READY";
+  if (s.acceptance_status == "BLOCKED") return "BLOCKED";
+  if (!s.parse_warning.empty() || !s.has_task_recipe || !s.acceptance_report_current || !s.acceptance_report_passed) return "WARNINGS";
   return "BLOCKED";
+}
+
+void populate_readiness(WorkcellStudioSceneInfo * s)
+{
+  if (s == nullptr) return;
+  s->readiness_reasons.clear();
+  if (!s->has_environment_yaml) s->readiness_reasons.push_back("Missing environment.yaml");
+  if (!s->has_launch_demo) s->readiness_reasons.push_back("Generate the scene package to create launch/demo.launch.py");
+  if (!s->has_package_xml || !s->has_scene_urdf_xacro)
+    s->readiness_reasons.push_back("Scene package outputs are incomplete");
+  if (s->status == "WARNINGS") {
+    if (!s->has_task_recipe && !s->has_task_intent) s->readiness_reasons.push_back("Task intent is not configured");
+    if (!s->has_acceptance_report_json) s->readiness_reasons.push_back("Run validation to create a current offline report");
+    else if (!s->acceptance_report_current) s->readiness_reasons.push_back("Scene changed since validation; run validation again");
+    else if (!s->acceptance_report_passed) s->readiness_reasons.push_back("Offline validation did not pass");
+    if (!s->parse_warning.empty()) s->readiness_reasons.push_back("Scene metadata contains a parse warning");
+  }
+  if (s->readiness_reasons.size() > 3U) s->readiness_reasons.resize(3U);
+  s->fake_hardware_ready = s->status == "READY" && s->has_launch_demo && s->acceptance_report_passed;
 }
 
 
@@ -213,6 +284,7 @@ WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const fs::path 
       s.has_task_intent = exists_file(s.scene_dir / "config" / "workcell_builder_task_intent.yaml");
       s.has_smoke_report_json = exists_file(s.scene_dir / "smoke" / "offline_smoke_report.json");
       s.has_smoke_report_html = exists_file(s.scene_dir / "smoke" / "offline_smoke_report.html");
+      inspect_acceptance_report(&s);
       s.has_static_preview_svg = exists_file(s.scene_dir / "preview" / "static_preview.svg");
       s.has_static_preview_html = exists_file(s.scene_dir / "preview" / "static_preview.html");
       s.has_scene_manifest_yaml = exists_file(s.scene_dir / "scene_manifest.yaml");
@@ -221,7 +293,17 @@ WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const fs::path 
         continue;
       }
       if (s.has_environment_yaml) try_parse_env(&s);
+      const WorkcellStudioSceneMetadataSummary metadata =
+        load_workcell_studio_scene_metadata_summary(s.scene_dir, s.scene_name);
+      s.display_name = metadata.display_name;
+      if (!metadata.robot.empty()) s.robot_summary = metadata.robot;
+      if (!metadata.tool.empty()) s.gripper_summary = metadata.tool;
+      s.task_summary = metadata.task;
+      s.metadata_revision = metadata.revision;
+      if (metadata.has_parse_warning && s.parse_warning.empty())
+        s.parse_warning = "Canonical scene metadata contains invalid YAML";
       s.status = compute_status(s);
+      populate_readiness(&s);
       out.scenes.push_back(s);
     }
     break;

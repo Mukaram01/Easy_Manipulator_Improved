@@ -21,6 +21,10 @@ struct WorkcellStudioSceneInfo
   bool has_task_intent{false};
   bool has_smoke_report_json{false};
   bool has_smoke_report_html{false};
+  bool has_acceptance_report_json{false};
+  bool acceptance_report_current{false};
+  bool acceptance_report_passed{false};
+  std::string acceptance_status;
   bool has_static_preview_svg{false};
   bool has_static_preview_html{false};
   bool has_scene_manifest_yaml{false};
@@ -30,8 +34,13 @@ struct WorkcellStudioSceneInfo
   bool launch_metadata_file_exists{false};
   std::string launch_metadata_warning;
   std::string status{"BLOCKED"};
+  std::string display_name;
   std::string robot_summary{"unknown"};
   std::string gripper_summary{"unknown"};
+  std::string task_summary;
+  std::string metadata_revision;
+  std::vector<std::string> readiness_reasons;
+  bool fake_hardware_ready{false};
   std::size_t object_count{0U};
   std::string parse_warning;
 };

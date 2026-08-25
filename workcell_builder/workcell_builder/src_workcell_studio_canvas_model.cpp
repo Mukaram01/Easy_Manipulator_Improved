@@ -237,6 +237,83 @@ static YamlLoadStatus snapshot_yaml(const SceneMetadataSnapshot & snapshot, cons
   return status_it->second;
 }
 
+static std::string snapshot_scalar_at_path(
+  const YAML::Node & node, const std::vector<const char *> & path, std::size_t index)
+{
+  if (!node) return "";
+  if (index == path.size()) {
+    if (!node.IsScalar()) return "";
+    const std::string value = node.as<std::string>("");
+    return value == "unknown" ? "" : value;
+  }
+  if (!node.IsMap()) return "";
+  const YAML::Node child = node[path[index]];
+  return snapshot_scalar_at_path(child, path, index + 1U);
+}
+
+static std::string first_snapshot_scalar(
+  const YAML::Node & root,
+  const std::vector<std::vector<const char *>> & paths)
+{
+  for (const auto & path : paths) {
+    const std::string value = snapshot_scalar_at_path(root, path, 0U);
+    if (!value.empty()) return value;
+  }
+  return "";
+}
+
+WorkcellStudioSceneMetadataSummary load_workcell_studio_scene_metadata_summary(
+  const fs::path & scene_dir, const std::string & scene_name)
+{
+  const SceneMetadataSnapshot snapshot = load_scene_metadata_snapshot(scene_dir, scene_name);
+  WorkcellStudioSceneMetadataSummary out;
+  out.revision = snapshot.revision;
+
+  YAML::Node environment, cell, manifest, task_recipe, task_intent;
+  (void)snapshot_yaml(snapshot, "environment.yaml", &environment);
+  (void)snapshot_yaml(snapshot, "cell_definition.yaml", &cell);
+  (void)snapshot_yaml(snapshot, "scene_manifest.yaml", &manifest);
+  (void)snapshot_yaml(snapshot, "config/task_recipe.yaml", &task_recipe);
+  (void)snapshot_yaml(snapshot, "config/workcell_builder_task_intent.yaml", &task_intent);
+  for (const auto & entry : snapshot.statuses)
+    if (entry.second.parse_warning) out.has_parse_warning = true;
+
+  out.display_name = first_snapshot_scalar(environment, {{"scene", "display_name"}, {"scene", "name"}});
+  if (out.display_name.empty()) out.display_name = first_snapshot_scalar(cell, {{"cell", "display_name"}, {"cell", "name"}});
+  if (out.display_name.empty()) out.display_name = first_snapshot_scalar(manifest, {{"scene", "display_name"}, {"scene", "name"}});
+  if (out.display_name.empty()) out.display_name = scene_name;
+
+  out.robot = first_snapshot_scalar(environment, {
+    {"robot", "model"}, {"robot", "id"}, {"robot", "name"}, {"compatibility", "robot"}});
+  if (out.robot.empty()) out.robot = first_snapshot_scalar(cell, {
+    {"robot", "model"}, {"robot", "id"}, {"robot", "name"}, {"cell", "robot"}});
+  if (out.robot.empty()) out.robot = first_snapshot_scalar(manifest, {
+    {"robot", "model"}, {"robot", "id"}, {"robot", "name"}});
+
+  out.tool = first_snapshot_scalar(environment, {
+    {"end_effector", "id"}, {"end_effector", "model"}, {"end_effector", "profile"},
+    {"tool", "id"}, {"tool", "model"}, {"tool", "profile"}, {"compatibility", "tool"}});
+  if (out.tool.empty()) out.tool = first_snapshot_scalar(cell, {
+    {"end_effector", "id"}, {"end_effector", "model"}, {"end_effector", "profile"},
+    {"tool", "id"}, {"tool", "model"}});
+  if (out.tool.empty()) out.tool = first_snapshot_scalar(manifest, {
+    {"end_effector", "id"}, {"end_effector", "model"}, {"end_effector", "profile"},
+    {"tool", "id"}, {"tool", "model"}});
+
+  out.task = first_snapshot_scalar(task_recipe, {
+    {"task", "type"}, {"task", "template"}, {"task", "family"}, {"type"}, {"template"}, {"family"}});
+  if (out.task.empty()) out.task = first_snapshot_scalar(task_intent, {
+    {"task", "type"}, {"task", "template"}, {"task", "family"}, {"type"}, {"template"}, {"family"}});
+  if (out.task.empty()) out.task = first_snapshot_scalar(environment, {
+    {"task", "type"}, {"task", "template"}, {"task", "family"}});
+  if (out.task.empty()) out.task = first_snapshot_scalar(cell, {
+    {"task", "type"}, {"task", "template"}, {"task", "family"}});
+  if (out.task.empty()) out.task = first_snapshot_scalar(manifest, {
+    {"task_recipe", "type"}, {"task_recipe", "template"}, {"task_recipe", "family"}});
+  if (out.task.empty() && (task_recipe || task_intent)) out.task = "Configured";
+  return out;
+}
+
 static void add_mesh_candidate(const YAML::Node & node, std::vector<std::string> * out)
 {
   try {

@@ -324,6 +324,7 @@ if(BUILD_TESTING)
     src_workcell_scene_status.cpp
     src_supported_scene_readiness_loader.cpp
     src_workcell_studio_scene_browser.cpp
+    src_workcell_studio_canvas_model.cpp
     src_workcell_warning_once.cpp
     src_conveyor_pick_preview.cpp
     src_workcell_perception_snapshot.cpp
@@ -409,6 +410,7 @@ if(BUILD_TESTING)
     test/rviz_preview_metadata_command_test.cpp
     src_rviz_preview_runner.cpp
     src_workcell_studio_scene_browser.cpp
+    src_workcell_studio_canvas_model.cpp
     src_workcell_warning_once.cpp
     src_workcell_yaml_utils.cpp)
 
@@ -468,6 +470,7 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_scene_identity_test
     test/workcell_scene_identity_test.cpp
     src_workcell_studio_scene_browser.cpp
+    src_workcell_studio_canvas_model.cpp
     src_workcell_warning_once.cpp
     src_workcell_yaml_utils.cpp)
   ament_add_gtest(workcell_preview_process_state_test
