@@ -87,7 +87,7 @@
     },
     {
       "name": "legacy generated gripper mount RPY marker is present",
-      "ok": true,
+      "ok": false,
       "optional": true
     },
     {
@@ -122,5 +122,5 @@
   "layout_stale": false,
   "merge_warnings": [],
   "merge_blockers": [],
-  "authored_input_fingerprint": "66bb8d645e843c02"
+  "authored_input_fingerprint": "8396c1af43bb1f3c"
 }

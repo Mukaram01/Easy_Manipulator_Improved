@@ -11,7 +11,7 @@
  <xacro:arg name="table_world_rpy" default=""/>
  <xacro:arg name="camera_world_xyz" default=""/>
  <xacro:arg name="camera_world_rpy" default=""/>
- <xacro:arg name="suction_mount_rpy" default="-1.5708 -1.5708 0"/>
+ <xacro:arg name="suction_mount_rpy" default="1.5707 -1.5707 0"/>
 
  <link name="$(arg world_frame)"/>
 
@@ -32,7 +32,6 @@
  
 <xacro:include filename="$(find single_suction_description)/urdf/single_suction_gripper.urdf.xacro"/>
 <xacro:single_suction_gripper prefix="" parent="tool0">
- <!-- virtual_ee_joint rotates cup +Z onto fixture +X; this mount maps it to world -Z at preview home. -->
  <origin xyz="0 0 0" rpy="$(arg suction_mount_rpy)"/>
  </xacro:single_suction_gripper>
 

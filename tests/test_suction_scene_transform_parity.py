@@ -39,26 +39,6 @@ def _launch_helpers():
     return namespace
 
 
-def _rotation_xyz(rpy):
-    roll, pitch, yaw = rpy
-    cr, sr = math.cos(roll), math.sin(roll)
-    cp, sp = math.cos(pitch), math.sin(pitch)
-    cy, sy = math.cos(yaw), math.sin(yaw)
-    return (
-        (cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr),
-        (sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr),
-        (-sp, cp * sr, cp * cr),
-    )
-
-
-def _matmul(lhs, rhs):
-    return tuple(tuple(sum(lhs[row][k] * rhs[k][col] for k in range(3)) for col in range(3)) for row in range(3))
-
-
-def _matvec(matrix, vector):
-    return tuple(sum(matrix[row][col] * vector[col] for col in range(3)) for row in range(3))
-
-
 def test_suction_launch_and_extractor_resolve_differently_named_canonical_owners():
     items = _layout_items()
     poses = _launch_helpers()["load_canonical_layout_poses"](layout_path=LAYOUT)
@@ -127,15 +107,46 @@ def test_generated_table_and_camera_mount_match_authored_world_poses():
     assert table_row["world_pose"]["xyz"] == pytest.approx(items["table_main"]["pose"]["xyz"])
 
 
-def test_suction_mount_maps_cup_approach_axis_downward():
+def test_suction_mount_exactly_matches_ur5_2f_reference_mount():
+    suction = ET.parse(XACRO).getroot()
+    reference = ET.parse(ROOT / "scenes/ur5_2f_test/urdf/scene.urdf.xacro").getroot()
+    namespace = "http://www.ros.org/wiki/xacro"
+    suction_arg = next(
+        item for item in suction.findall(f"{{{namespace}}}arg") if item.get("name") == "suction_mount_rpy"
+    )
+    reference_macro = next(
+        item for item in reference.findall(f"{{{namespace}}}robotiq_85_gripper")
+    )
+    reference_origin = reference_macro.find("origin")
+    assert suction_arg.get("default") == "1.5707 -1.5707 0"
+    assert reference_origin.get("xyz") == "0 0 0"
+    assert reference_origin.get("rpy") == suction_arg.get("default")
+
+
+def test_suction_cup_link_uses_real_visual_and_collision_mesh():
+    asset = ET.parse(
+        ROOT / "assets/end_effectors/single_suction_gripper/single_suction_description/urdf/single_suction_gripper.urdf.xacro"
+    ).getroot()
+    macro = next(item for item in asset if item.tag == "macro" or item.tag.endswith("}macro"))
+    cup = next(item for item in macro.findall("link") if item.get("name") == "suction_cup_link")
+    expected = "package://single_suction_description/meshes/suction_cup_link.STL"
+    assert cup.find("visual/geometry/mesh").get("filename") == expected
+    assert cup.find("collision/geometry/mesh").get("filename") == expected
+    assert cup.find("visual/origin").get("xyz") == "0 0 0"
+    assert cup.find("collision/origin").get("xyz") == "0 0 0"
+
+
+def test_generated_index_contains_complete_locked_suction_tool():
     index = json.loads((SCENE / "generated" / "scene_visual_mesh_index.json").read_text(encoding="utf-8"))
-    tool0 = next(item for item in index["visual_items"] if item.get("link") == "tool0")
-    tool_rotation = _rotation_xyz(tool0["world_pose"]["rpy"])
-    mount_rotation = _rotation_xyz((-1.5708, -1.5708, 0.0))
-    cup_rotation = _rotation_xyz((0.0, math.pi / 2.0, 0.0))
-    cup_z_world = _matvec(_matmul(_matmul(tool_rotation, mount_rotation), cup_rotation), (0.0, 0.0, 1.0))
-    assert cup_z_world == pytest.approx((0.0, 0.0, -1.0), abs=1e-4)
-    assert 'rpy="$(arg suction_mount_rpy)"' in XACRO.read_text(encoding="utf-8")
+    tool_rows = [item for item in index["visual_items"] if item.get("link") in {"wrist_fixture", "suction_cup_link"}]
+    assert {item.get("link") for item in tool_rows} == {"wrist_fixture", "suction_cup_link"}
+    assert any(str(item.get("mesh_uri") or "").endswith("/suction_cup_link.STL") for item in tool_rows)
+    assert all(item.get("resolved") is True for item in tool_rows)
+    assert all(
+        math.isfinite(value)
+        for item in tool_rows
+        for value in (*item["world_pose"]["xyz"], *item["world_pose"]["rpy"])
+    )
 
 
 def test_suction_export_has_one_primary_support_and_camera_owner():

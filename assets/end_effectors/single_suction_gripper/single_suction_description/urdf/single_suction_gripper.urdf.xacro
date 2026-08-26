@@ -41,7 +41,21 @@
       </link>
 
       <link name="suction_cup_link">
-        <origin xyz= "-0.22836 0.053 0"/>
+        <visual>
+          <origin xyz="0 0 0" rpy="0 0 0" />
+          <geometry>
+            <mesh filename="package://single_suction_description/meshes/suction_cup_link.STL" />
+          </geometry>
+          <material name="">
+            <color rgba="0.15 0.15 0.15 1" />
+          </material>
+        </visual>
+        <collision>
+          <origin xyz="0 0 0" rpy="0 0 0" />
+          <geometry>
+            <mesh filename="package://single_suction_description/meshes/suction_cup_link.STL" />
+          </geometry>
+        </collision>
       </link>
 
       <joint name="virtual_ee_joint" type="fixed">
