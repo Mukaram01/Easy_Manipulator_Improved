@@ -6,9 +6,19 @@ task:
   family: pick_place
   mode: simulation_preview
 pick:
+  object_source: perception
   source:
-    type: zone
+    type: perception
+    id: detected_objects/v1
+  zone:
+    type: pick_zone
     id: pick_zone_main
+  object_filter:
+    class_id: part
+perception:
+  source_contract: detected_objects/v1
+  camera:
+    id: realsense_suction_overhead
 place:
   target:
     type: destination

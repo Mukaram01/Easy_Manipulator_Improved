@@ -6,12 +6,19 @@ task:
   family: pick_place
   mode: simulation_preview
 pick:
-  object_source: self_test
+  object_source: perception
   source:
+    type: perception
+    id: detected_objects/v1
+  zone:
     type: pick_zone
-    id: commissioning_pick_pose
+    id: pick_zone_main
   object_filter:
-    object_id: commissioning_object
+    class_id: any
+perception:
+  source_contract: detected_objects/v1
+  camera:
+    id: realsense_overhead
 place:
   target:
     type: destination

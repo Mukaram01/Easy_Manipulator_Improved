@@ -20,6 +20,9 @@ import validate_task_recipe as task_validator
 
 def _to_v1_task(cell_def: dict[str, Any]) -> dict[str, Any]:
     task = cell_def.get("task", {}) if isinstance(cell_def.get("task"), dict) else {}
+    perception = cell_def.get("perception", {}) if isinstance(cell_def.get("perception"), dict) else {}
+    perception_backed = str(task.get("object_source", "")).lower() == "perception" or bool(perception.get("enabled", False))
+    source = task.get("perception_source") if perception_backed else task.get("source_object")
     task_id = str(task.get("id", "generated_task_recipe"))
 
     destinations = []
@@ -65,8 +68,10 @@ def _to_v1_task(cell_def: dict[str, Any]) -> dict[str, Any]:
         "task": {
             "id": task_id,
             "type": task.get("type", "custom"),
-            "source": task.get("source_object", "detected_object"),
-            "perception_source": "cell_definition",
+            "source": source or ("detected_objects/v1" if perception_backed else "detected_object"),
+            "perception_source": perception.get("normalized_output_contract", "detected_objects/v1") if perception_backed else "cell_definition",
+            "object_source": "perception" if perception_backed else task.get("object_source", "fixed_object"),
+            **({"pick_zone": task.get("pick_zone")} if task.get("pick_zone") else {}),
             "object_attributes": ["colour", "shape", "class", "material", "confidence", "inspection_result"],
             "destinations": destinations,
             "decision_rules": decision_rules,

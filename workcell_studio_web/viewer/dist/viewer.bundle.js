@@ -39202,8 +39202,9 @@ function collectProductDiagnostics() {
       mesh_uri: renderInfo.mesh_uri || displayMeshUri(item),
       visual_bounds_status: item.visual_bounds_status
     };
-    if (isRequiredMeshFailureStatus(rendered) || isMissingOrFailedMeshStatus(item.mesh_status))
+    if (isRequiredMeshFailureStatus(rendered) || itemRequiresMeshBackedVisual(item) && isMissingOrFailedMeshStatus(item.mesh_status)) {
       add(normalizeProductDiagnostic(raw));
+    }
     if (item.visual_bounds_status && !["valid", "corrected_by_local_unit_scale"].includes(item.visual_bounds_status) || invalidAuthoredScale(item)) {
       add(normalizeProductDiagnostic({ ...raw, code: "invalid_scale", reason: item.mesh_load_error || `Invalid visual bounds or scale (${item.visual_bounds_status || "non-positive/non-finite scale"}).` }, "invalid_scale"));
     }
@@ -40567,10 +40568,16 @@ function itemRequiresMeshBackedVisual(item) {
   const explicit = item?.mesh_load_required || item?.requires_mesh || item?.mesh_required || item?.required_mesh || item?.mesh_backed_required || item?.requires_mesh_backed_visual;
   if (truthyFlag(explicit))
     return true;
+  if (isTaskOnlyHelperItem(item) || isDebugOverlayItem(item))
+    return false;
   const source = String(item?.source_kind || item?.source_layer || item?.active_visual_source || "").toLowerCase();
-  const role = String(item?.role || item?.category || item?.type || "").toLowerCase();
+  const geometry = String(item?.geometry_type || item?.geometryType || item?.primitive_geometry_type || item?.primitiveGeometryType || "").trim().toLowerCase();
+  const category = String(item?.mesh_contract_category || item?.meshContractCategory || meshContractCategoryOf(item)).toLowerCase();
   const hasMeshContract = Boolean(displayMeshUri(item) || item?.original_mesh_uri || item?.mesh_path || item?.source_path || item?.package_uri);
-  return hasMeshContract && (source.includes("generated") || role.includes("robot") || role.includes("tool") || role.includes("gripper"));
+  const physicalCategory = ["robot", "tool", "table", "camera", "object"].includes(category);
+  if (geometry === "mesh" && physicalCategory)
+    return true;
+  return hasMeshContract && (physicalCategory || source.includes("generated"));
 }
 function warnRequiredMeshFallback(item, meshUri, reason, extra = {}) {
   const transform = transformOf(item);
@@ -41267,10 +41274,10 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
   const diagnostic = meshUriDiagnostic(item);
   const uri = diagnostic.uri;
   const requestedUri = displayMeshUri(item);
-  item.mesh_status = uri ? "loading" : diagnostic.status;
+  const required = itemRequiresMeshBackedVisual(item);
+  item.mesh_status = uri ? "loading" : !required && !requestedUri ? fallback ? "primitive" : "not_applicable" : diagnostic.status;
   if (!uri) {
-    const required = itemRequiresMeshBackedVisual(item);
-    trackMeshLoadAttempt(item, diagnostic.status, requestedUri, diagnostic.reason);
+    trackMeshLoadAttempt(item, item.mesh_status, requestedUri, required || requestedUri ? diagnostic.reason : "mesh is not part of this item contract");
     if (required) {
       logRequiredMeshFailure(item, requestedUri, diagnostic.reason);
       styleFailedMeshDebugFallback(fallback, item, diagnostic.reason);
@@ -41307,11 +41314,11 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
   if (!physicalMeshAttemptIsCurrent(attempt))
     return;
   if (!preflight.ok) {
-    const required = itemRequiresMeshBackedVisual(item);
+    const required2 = itemRequiresMeshBackedVisual(item);
     item.mesh_status = preflight.status || "url_not_served";
     item.mesh_load_error = `${preflight.reason}; url=${preflight.url || loadUrl}`;
     trackMeshLoadAttempt(item, item.mesh_status, preflight.url || loadUrl, item.mesh_load_error);
-    if (required) {
+    if (required2) {
       logRequiredMeshFailure(item, preflight.url || loadUrl, item.mesh_load_error);
       styleFailedMeshDebugFallback(fallback, item, item.mesh_load_error);
       setRenderInfo(rendered, "required_mesh_failed_debug_fallback", uri, item.mesh_load_error);
@@ -41325,7 +41332,7 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
     refreshMeshLoadUi(rendered);
     emitAuthoredMeshDiagnosticOnce(item, { requested_mesh_uri: requestedUri, resolved_url: preflight.url || loadUrl, loader: loaderName, http_load_success: false, load_failure: item.mesh_load_error, mesh_object_created: false, visual_root_attached: false, render_status: rendered?.renderInfo?.render_status || "" });
     detachTransientPivotForFailedPhysicalVisual(rendered);
-    if (required)
+    if (required2)
       failPhysicalMeshAttempt(attempt, item, preflight.url || loadUrl, item.mesh_load_error, { http_status: preflight.http_status || null, mesh_status: item.mesh_status, loader: loaderName, ...preflight.timeout_ms ? { timeout_ms: preflight.timeout_ms } : {} });
     else
       requiredReadinessCompleteForItem(item);
@@ -41402,12 +41409,12 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
   } catch (err) {
     if (!physicalMeshAttemptIsCurrent(attempt))
       return;
-    const required = itemRequiresMeshBackedVisual(item);
+    const required2 = itemRequiresMeshBackedVisual(item);
     item.mesh_status = "loader_failure";
     item.mesh_load_error = err?.message || String(err);
     const reason = `loader_failure: ${loaderName} failed for .${ext || "unknown"} after fetchable URL ${loadUrl}: ${item.mesh_load_error}`;
     trackMeshLoadAttempt(item, "loader_failure", loadUrl, reason);
-    if (required) {
+    if (required2) {
       logRequiredMeshFailure(item, loadUrl, reason);
       styleFailedMeshDebugFallback(fallback, item, reason);
       setRenderInfo(rendered, "required_mesh_failed_debug_fallback", uri, reason);
@@ -41421,7 +41428,7 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
     refreshMeshLoadUi(rendered);
     emitAuthoredMeshDiagnosticOnce(item, { requested_mesh_uri: requestedUri, resolved_url: loadUrl, loader: loaderName, http_load_success: true, load_failure: reason, mesh_object_created: false, visual_root_attached: false, render_status: rendered?.renderInfo?.render_status || "" });
     detachTransientPivotForFailedPhysicalVisual(rendered);
-    if (required)
+    if (required2)
       failPhysicalMeshAttempt(attempt, item, loadUrl, reason, { extension: ext, loader: loaderName, mesh_status: item.mesh_status, ...err?.code === "mesh_load_timeout" ? { timeout_ms: PHYSICAL_MESH_LOAD_TIMEOUT_MS } : {} });
     else
       requiredReadinessCompleteForItem(item);

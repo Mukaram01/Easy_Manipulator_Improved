@@ -16,7 +16,7 @@ MESH_INDEX_RELATIVE_PATH = Path("generated") / "scene_visual_mesh_index.json"
 
 ROUNDTRIP_IDS = [
     "support_surface_table",
-    "pick_zone_commissioning",
+    "pick_zone_main",
     "place_zone_default",
     "target_bin_default",
     "realsense_overhead",
@@ -24,7 +24,7 @@ ROUNDTRIP_IDS = [
     "home_pose_safe",
     "object_02",
     "object_01",
-    "object_03",
+    "object_04",
 ]
 ROUNDTRIP_FIELDS = [
     "type",

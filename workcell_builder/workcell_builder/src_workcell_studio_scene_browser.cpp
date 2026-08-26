@@ -7,9 +7,13 @@
 
 #include <set>
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 
 namespace fs = boost::filesystem;
 
@@ -17,6 +21,49 @@ namespace workcell_builder {
 
 namespace {
 bool exists_file(const fs::path & p){ boost::system::error_code ec; return fs::exists(p, ec) && !ec; }
+
+std::string authored_input_fingerprint(const fs::path & scene_dir)
+{
+  std::vector<fs::path> relative_paths;
+  for (const char * relative : {
+      "package.xml", "CMakeLists.txt", "environment.yaml", "environment_layout.yaml",
+      "cell_definition.yaml", "scene_manifest.yaml", "layout/workcell_studio_layout.yaml"})
+    relative_paths.emplace_back(relative);
+  for (const char * relative : {"config", "launch", "urdf", "assets"}) {
+    const fs::path root = scene_dir / relative;
+    boost::system::error_code ec;
+    if (!fs::is_directory(root, ec) || ec) continue;
+    for (fs::recursive_directory_iterator it(root, ec), end; it != end && !ec; it.increment(ec)) {
+      if (fs::is_regular_file(it->path(), ec) && !ec)
+        relative_paths.push_back(fs::relative(it->path(), scene_dir));
+    }
+  }
+  std::sort(relative_paths.begin(), relative_paths.end(),
+    [](const fs::path & lhs, const fs::path & rhs) { return lhs.generic_string() < rhs.generic_string(); });
+  relative_paths.erase(std::unique(relative_paths.begin(), relative_paths.end()), relative_paths.end());
+  std::uint64_t digest = 0xcbf29ce484222325ULL;
+  const auto update = [&digest](const char * data, std::size_t size) {
+    for (std::size_t index = 0; index < size; ++index) {
+      digest ^= static_cast<unsigned char>(data[index]);
+      digest *= 0x100000001b3ULL;
+    }
+  };
+  for (const auto & relative : relative_paths) {
+    const fs::path path = scene_dir / relative;
+    if (!exists_file(path)) continue;
+    const std::string relative_bytes = relative.generic_string();
+    update(relative_bytes.data(), relative_bytes.size());
+    update("\0", 1);
+    std::ifstream file(path.string(), std::ios::binary);
+    char buffer[8192];
+    while (file.read(buffer, sizeof(buffer)) || file.gcount() > 0)
+      update(buffer, static_cast<std::size_t>(file.gcount()));
+    update("\0", 1);
+  }
+  std::ostringstream encoded;
+  encoded << std::hex << std::setfill('0') << std::setw(16) << digest;
+  return encoded.str();
+}
 
 std::filesystem::file_time_type latest_authored_input_time(const fs::path & scene_dir)
 {
@@ -55,10 +102,15 @@ void inspect_acceptance_report(WorkcellStudioSceneInfo * s)
       safety["fake_hardware_first"].as<bool>(false) &&
       !safety["runtime_execution_enabled"].as<bool>(true) &&
       !safety["motion_command_sent"].as<bool>(true);
-    std::error_code ec;
-    const auto report_time = std::filesystem::last_write_time(
-      std::filesystem::path(report.string()), ec);
-    s->acceptance_report_current = !ec && report_time >= latest_authored_input_time(s->scene_dir);
+    const std::string accepted_fingerprint = root["authored_input_fingerprint"].as<std::string>("");
+    if (!accepted_fingerprint.empty()) {
+      s->acceptance_report_current = accepted_fingerprint == authored_input_fingerprint(s->scene_dir);
+    } else {
+      std::error_code ec;
+      const auto report_time = std::filesystem::last_write_time(
+        std::filesystem::path(report.string()), ec);
+      s->acceptance_report_current = !ec && report_time >= latest_authored_input_time(s->scene_dir);
+    }
     s->acceptance_report_passed = s->acceptance_status == "PASS" &&
       (report_scene.empty() || report_scene == s->scene_name) && safe;
   } catch (const std::exception &) {

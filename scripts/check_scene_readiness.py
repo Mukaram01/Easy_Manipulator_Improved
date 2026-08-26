@@ -250,10 +250,16 @@ def _analyze_scene_package(scene_pkg: Path, repo_root: Path) -> dict[str, Any]:
         )
 
     task_intent = _load_optional_yaml(scene_pkg / "config" / "workcell_builder_task_intent.yaml")
-    ti_pick = (((task_intent.get("pick") or {}).get("source") or {}).get("id")) if isinstance(task_intent, dict) else None
+    ti_pick_block = (task_intent.get("pick") or {}) if isinstance(task_intent, dict) else {}
+    ti_pick_source = (ti_pick_block.get("source") or {}) if isinstance(ti_pick_block, dict) else {}
+    ti_pick = ti_pick_source.get("id") if isinstance(ti_pick_source, dict) else None
+    ti_pick_type = str(ti_pick_source.get("type") or "zone").lower() if isinstance(ti_pick_source, dict) else "zone"
+    ti_pick_zone = ((ti_pick_block.get("zone") or {}).get("id")) if isinstance(ti_pick_block.get("zone"), dict) else None
     ti_place = (((task_intent.get("place") or {}).get("target") or {}).get("id")) if isinstance(task_intent, dict) else None
-    if ti_pick and ti_pick not in zone_ids:
+    if ti_pick and ti_pick_type in {"zone", "pick_zone"} and ti_pick not in zone_ids:
         warnings.append(f"Task intent pick.source.id not found in task_zones: {ti_pick}")
+    if ti_pick_zone and ti_pick_zone not in zone_ids:
+        warnings.append(f"Task intent pick.zone.id not found in task_zones: {ti_pick_zone}")
     if ti_place and ti_place not in zone_ids:
         warnings.append(f"Task intent place.target.id not found in task_zones: {ti_place}")
 

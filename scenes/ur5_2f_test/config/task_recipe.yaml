@@ -3,10 +3,11 @@ task:
   id: default_task
   type: pick_place
   mode: simulation_preview
-  source_object: commissioning_object
-  object_source: self_test
+  perception_source: detected_objects/v1
+  object_source: perception
+  pick_zone: pick_zone_main
   inputs:
-    perception_mode: "off"
+    perception_mode: epd_snapshot
   destinations:
   - id: default_drop_zone
     frame: world
@@ -23,7 +24,7 @@ task:
     when:
       always: true
     destination: default_drop_zone
-  notes: Commissioning canary pick/place task for offline validation. Preview-safe.
+  notes: Perception-backed pick/place task. Live EPD is required only for live execution.
 provenance:
   mode: generated_readiness_metadata
   sources:

@@ -71,11 +71,12 @@ task:
   template: pick_place
   type: pick_place
   mode: simulation_preview
-  source_object: commissioning_object
+  object_source: perception
+  perception_source: detected_objects/v1
   pick:
     source_ref: pick_zone_main
-    object_ref: commissioning_object
-    object_source: commissioning_object
+    object_source: perception
+    perception_source: detected_objects/v1
   place:
     target_ref: default_drop_zone
     intent_target_ref: place_zone_main
@@ -163,7 +164,6 @@ workspace:
         - 0.2
         - 0.2
         - 0.1
-      object_ref: commissioning_object
     - id: default_drop_zone
       type: place_target
       aliases:

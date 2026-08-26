@@ -27,3 +27,21 @@ def test_missing_environment_blocked(tmp_path: Path):
     p,out=_run(scene)
     assert out['status'] in {'MISSING_ENVIRONMENT_YAML','BLOCKED'}
     assert p.returncode==1
+
+
+def test_acceptance_fingerprint_tracks_authored_inputs_not_checkout_timestamps(tmp_path: Path):
+    scene = tmp_path / 'fingerprint_scene'
+    (scene / 'config').mkdir(parents=True)
+    (scene / 'environment.yaml').write_text('scene: {name: Fingerprint}\n', encoding='utf-8')
+    (scene / 'config/task_recipe.yaml').write_text('task: {type: pick_place}\n', encoding='utf-8')
+    _, first = _run(scene)
+    fingerprint = first['authored_input_fingerprint']
+    assert len(fingerprint) == 16
+
+    _, unchanged = _run(scene)
+    assert unchanged['authored_input_fingerprint'] == fingerprint
+
+    with (scene / 'config/task_recipe.yaml').open('a', encoding='utf-8') as stream:
+        stream.write('notes: changed\n')
+    _, changed = _run(scene)
+    assert changed['authored_input_fingerprint'] != fingerprint

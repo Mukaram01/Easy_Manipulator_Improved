@@ -1,6 +1,6 @@
 {
-  "scene_name": "ur5_2f_test",
-  "scene_path": "scenes/ur5_2f_test",
+  "scene_name": "suction_test",
+  "scene_path": "scenes/suction_test",
   "status": "PASS",
   "checks": [
     {
@@ -108,9 +108,9 @@
     "motion_command_sent": false
   },
   "next_commands": [
-    "colcon build --symlink-install --packages-select ur5_2f_test",
+    "colcon build --symlink-install --packages-select suction_test",
     "source install/setup.bash",
-    "ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true"
+    "ros2 launch suction_test demo.launch.py use_fake_hardware:=true"
   ],
   "notes": [
     "Command not executed by validator",
@@ -118,9 +118,9 @@
   ],
   "layout_applied": true,
   "generated_from_saved_layout": true,
-  "merge_report_path": "scenes/ur5_2f_test/generated/workcell_studio_layout_merge_report.json",
+  "merge_report_path": "scenes/suction_test/generated/workcell_studio_layout_merge_report.json",
   "layout_stale": false,
   "merge_warnings": [],
   "merge_blockers": [],
-  "authored_input_fingerprint": "148a257aed1fa1a8"
+  "authored_input_fingerprint": "863436db0db0d8b5"
 }

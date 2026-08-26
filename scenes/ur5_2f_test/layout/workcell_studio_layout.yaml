@@ -10,7 +10,7 @@ items:
     type: support_surface
     role: support_surface
     category: work_surface
-    display_name: Commissioning Work Surface
+    display_name: Work Surface
     editable: true
     locked: false
     source_layer: editable_layout
@@ -38,11 +38,11 @@ items:
         - 1.0
     scene_name: ur5_2f_test
     scene_path: .
-  - id: pick_zone_commissioning
+  - id: pick_zone_main
     type: pick_zone
     role: pick_zone
     category: work_surface
-    display_name: Commissioning Pick Zone
+    display_name: Pick Zone
     editable: true
     locked: false
     source_layer: editable_layout
