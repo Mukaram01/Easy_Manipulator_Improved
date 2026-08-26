@@ -97,7 +97,6 @@ public:
   ScenePreviewWidget * active_scene_preview_widget() const;
   bool load_scene_for_scene3d_smoke(const QString & scene_name, const QString & explicit_scene_path = QString(), QStringList * blockers = nullptr, QJsonObject * diagnostics = nullptr);
   void refresh_scene_builder_state_from_active_scene();
-  void bind_home_target_shell_actions();
   QJsonObject scene3d_filter_diagnostics() const;
   static bool parse_transform_clipboard_text(
     const QString & text, double * x, double * y, double * z, double * r, double * p, double * yaw, QString * error = nullptr);

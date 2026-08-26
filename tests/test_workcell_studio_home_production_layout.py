@@ -46,7 +46,6 @@ def test_target_shell_matches_reference_information_architecture():
         'Tool: All',
         'Pinned',
         'Selected Workcell',
-        'Open Scene Builder',
         'Generate Package',
         'Ready for fake-hardware simulation',
     ]:
@@ -80,19 +79,15 @@ def test_selected_workcell_panel_reuses_real_scene_actions_and_file_backed_previ
     assert "scene3dViewportWidget" not in TARGET
 
 
-def test_only_backed_primary_scene_builder_cta_is_visible():
-    assert 'new QPushButton(QStringLiteral("▣  Open Scene Builder")' in TARGET
+def test_inspector_has_only_backed_secondary_actions_and_no_open_cta():
+    assert 'Open Scene Builder' not in TARGET
+    assert 'studioTargetPrimaryAction' not in TARGET
     for forbidden in [
         'new QPushButton(QStringLiteral("◇  Product View")',
         'new QPushButton(QStringLiteral("♢  Validate")',
         'new QPushButton(QStringLiteral("▷  Simulate")',
     ]:
         assert forbidden not in TARGET
-    assert "MainWindow binds this visible button directly" in TARGET
-    primary = TARGET.split('new QPushButton(QStringLiteral("▣  Open Scene Builder")', 1)[1].split(
-        "const auto add_backed_more_action", 1
-    )[0]
-    assert "QAction::trigger" not in primary
     assert "add_backed_more_action" in TARGET
     assert "proxy->setVisible(backing->isEnabled())" in TARGET
     assert "if (more_menu->actions().isEmpty()) more->hide()" in TARGET

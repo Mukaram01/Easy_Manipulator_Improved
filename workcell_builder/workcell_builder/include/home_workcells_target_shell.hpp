@@ -673,8 +673,6 @@ inline void refresh_target_details(QMainWindow * window, QTableWidget * table, c
 
   const bool fake_ready = selected && table->item(row, 0)->data(kFakeHardwareReadyRole).toBool();
   Q_UNUSED(fake_ready);
-  if (auto * open = window->findChild<QPushButton *>(QStringLiteral("studioTargetPrimaryAction")))
-    open->setEnabled(selected);
   if (auto * validation = window->findChild<QPushButton *>(QStringLiteral("studioTargetViewValidation")))
     validation->setVisible(selected && status != QStringLiteral("Ready"));
 
@@ -751,8 +749,6 @@ inline QFrame * build_inspector(QMainWindow * window, QTableWidget * table, cons
   readiness_layout->addWidget(view_validation, 0, Qt::AlignLeft);
   layout->addWidget(readiness_card);
 
-  auto * open = new QPushButton(QStringLiteral("▣  Open Scene Builder"), inspector); open->setObjectName(QStringLiteral("studioTargetPrimaryAction"));
-  layout->addWidget(open);
   auto * action_row = new QHBoxLayout();
   action_row->addStretch(1); action_row->addWidget(more); layout->addLayout(action_row);
 
@@ -762,8 +758,6 @@ inline QFrame * build_inspector(QMainWindow * window, QTableWidget * table, cons
       if (action && action->text().contains(text, Qt::CaseInsensitive)) return action;
     return nullptr;
   };
-  // MainWindow binds this visible button directly to the stable-ID Home open
-  // helper after the target shell has been constructed.
   const auto add_backed_more_action = [more, more_menu](QAction * backing, const QString & label) {
     if (!backing) return;
     QAction * proxy = more_menu->addAction(label);
@@ -875,7 +869,7 @@ inline void build_home_page(QMainWindow * window, QWidget * dashboard, QTableWid
   table->setProperty("studioTargetWorkspaceRoot", workspace_root);
   table->setItemDelegate(new TargetWorkcellDelegate(workspace_root, table));
   table->setHorizontalHeaderLabels({QStringLiteral("Workcell"), QStringLiteral("Status"), QStringLiteral("Robot"), QStringLiteral("Tool / Gripper"), QStringLiteral("Modified"), QStringLiteral("★")});
-  table->setShowGrid(false); table->setAlternatingRowColors(false); table->setWordWrap(false); table->setSelectionBehavior(QAbstractItemView::SelectRows); table->setSelectionMode(QAbstractItemView::SingleSelection); table->verticalHeader()->hide(); table->verticalHeader()->setDefaultSectionSize(62); table->horizontalHeader()->setMinimumHeight(38); table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch); table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Fixed); table->setColumnWidth(1, 145); table->setColumnWidth(2, 82); table->setColumnWidth(3, 135); table->setColumnWidth(4, 105); table->setColumnWidth(5, 46);
+  table->setShowGrid(false); table->setAlternatingRowColors(false); table->setWordWrap(false); table->setSelectionBehavior(QAbstractItemView::SelectRows); table->setSelectionMode(QAbstractItemView::SingleSelection); table->setEditTriggers(QAbstractItemView::NoEditTriggers); table->verticalHeader()->hide(); table->verticalHeader()->setDefaultSectionSize(62); table->horizontalHeader()->setMinimumHeight(38); table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch); table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Fixed); table->setColumnWidth(1, 145); table->setColumnWidth(2, 82); table->setColumnWidth(3, 135); table->setColumnWidth(4, 105); table->setColumnWidth(5, 46);
   table_layout->addWidget(table, 1);
   auto * footer = new QLabel(QStringLiteral("Showing %1 of %1 workcells").arg(total), table_card); footer->setObjectName(QStringLiteral("studioTargetTableFooter")); footer->setContentsMargins(12, 6, 12, 6); table_layout->addWidget(footer);
   main->addWidget(table_card, 1);
@@ -958,8 +952,6 @@ inline void build_home_page(QMainWindow * window, QWidget * dashboard, QTableWid
     "QLabel#studioTargetMetaRobot,QLabel#studioTargetMetaTool,QLabel#studioTargetMetaTask,QLabel#studioTargetMetaLaunch,QLabel#studioTargetMetaUpdated{color:#173656;font-size:10px;font-weight:700;}"
     "QFrame#studioTargetReadinessCard{background:#FFF8EE;border:1px solid #F0DFC6;border-radius:7px;}"
     "QLabel#studioTargetReadiness{color:#364E66;font-size:10px;font-weight:600;}"
-    "QPushButton#studioTargetPrimaryAction{background:#0B4698;color:#FFFFFF;border:1px solid #0B4698;border-radius:5px;min-height:38px;font-weight:800;}"
-    "QPushButton#studioTargetPrimaryAction:hover{background:#0C55B8;}"
     "QPushButton#studioTargetViewValidation{background:transparent;color:#124A9D;border:0;padding:0;font-size:9px;font-weight:750;}"));
 
   refresh_home();
