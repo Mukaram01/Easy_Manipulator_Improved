@@ -1072,14 +1072,16 @@ def _section_from_item(item: Mapping[str, Any]) -> str:
         return "zones"
     if category == "robot" or role == "robot":
         return "robots"
+    # Camera IDs may contain task/tool vocabulary (for example
+    # realsense_suction_overhead); explicit camera semantics own classification.
+    if category == "camera" or role == "camera" or "camera" in text or "realsense" in text:
+        return "sensors"
     if (
         category in {"tool", "gripper", "end_effector"}
         or role in {"tool", "gripper", "end_effector"}
         or any(token in text for token in ("tool", "gripper", "end_effector", "robotiq", "suction"))
     ):
         return "tools"
-    if "camera" in text or "realsense" in text:
-        return "sensors"
     return "assets"
 
 

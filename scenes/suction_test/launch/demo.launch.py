@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import math
 import os
 import tempfile
 import yaml
@@ -15,6 +16,81 @@ from ament_index_python.packages import get_package_share_directory
 scene_pkg = "suction_test"
 robot_base_link = "base_link"
 robot_moveit_pkg = "ur5_moveit_config"
+
+CANONICAL_LAYOUT_REL_PATH = "layout/workcell_studio_layout.yaml"
+CANONICAL_LAYOUT_SCHEMA = "workcell_studio_layout/v1"
+REQUIRED_CANONICAL_XACRO_MAPPINGS = {
+    "table_world_xyz",
+    "table_world_rpy",
+    "camera_world_xyz",
+    "camera_world_rpy",
+}
+
+
+def _format_xacro_vector(values):
+    return " ".join(format(value, ".17g") for value in values)
+
+
+def _canonical_physical_role(item):
+    role = str(item.get("role") or "").strip().lower()
+    category = str(item.get("category") or "").strip().lower()
+    item_type = str(item.get("type") or "").strip().lower()
+    if role == "support_surface" or item_type in {"table", "workbench"}:
+        return "support_surface"
+    if role == "camera" or category == "camera" or item_type in {"camera", "realsense", "rgbd"}:
+        return "camera"
+    return ""
+
+
+def load_canonical_layout_poses(package_name=scene_pkg, layout_path=None):
+    """Resolve unique physical owners by semantics, independent of scene-specific ids."""
+    if layout_path is None:
+        layout_path = os.path.join(
+            get_package_share_directory(package_name),
+            CANONICAL_LAYOUT_REL_PATH,
+        )
+    try:
+        with open(layout_path, "r", encoding="utf-8") as file:
+            layout = yaml.safe_load(file)
+    except (OSError, yaml.YAMLError) as exc:
+        raise RuntimeError(f"Cannot load canonical Workcell Studio layout '{layout_path}': {exc}") from exc
+    if not isinstance(layout, dict) or layout.get("schema_version") != CANONICAL_LAYOUT_SCHEMA:
+        raise RuntimeError(
+            f"Canonical Workcell Studio layout '{layout_path}' must use "
+            f"schema_version '{CANONICAL_LAYOUT_SCHEMA}'."
+        )
+    items = layout.get("items")
+    if not isinstance(items, list):
+        raise RuntimeError(f"Canonical Workcell Studio layout '{layout_path}' must contain an items list.")
+
+    resolved = {}
+    for required_role in ("support_surface", "camera"):
+        matches = [item for item in items if isinstance(item, dict) and _canonical_physical_role(item) == required_role]
+        if len(matches) != 1:
+            ids = [str(item.get("id") or "<missing-id>") for item in matches]
+            raise RuntimeError(
+                f"Canonical Workcell Studio layout '{layout_path}' must contain exactly one "
+                f"physical {required_role} owner; found {len(matches)}: {ids}."
+            )
+        item = matches[0]
+        pose = item.get("pose")
+        if not isinstance(pose, dict):
+            raise RuntimeError(f"Canonical {required_role} owner '{item.get('id')}' must contain pose.xyz and pose.rpy.")
+        validated = {"id": str(item.get("id") or "")}
+        for vector_name in ("xyz", "rpy"):
+            vector = pose.get(vector_name)
+            if (
+                not isinstance(vector, (list, tuple))
+                or len(vector) != 3
+                or any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) for value in vector)
+            ):
+                raise RuntimeError(
+                    f"Canonical {required_role} owner '{item.get('id')}' pose.{vector_name} "
+                    "must contain exactly 3 finite numbers."
+                )
+            validated[vector_name] = tuple(float(value) for value in vector)
+        resolved[required_role] = validated
+    return resolved
 
 
 def load_xacro(package_name, rel_path, mappings=None):
@@ -45,6 +121,11 @@ def load_xacro(package_name, rel_path, mappings=None):
             invalid_param = match.group(1)
             if invalid_param not in effective_mappings:
                 raise RuntimeError(f"Failed to expand xacro file '{abs_path}':\n{stderr}") from exc
+            if invalid_param in REQUIRED_CANONICAL_XACRO_MAPPINGS:
+                raise RuntimeError(
+                    f"Scene xacro '{abs_path}' rejected required canonical pose mapping "
+                    f"'{invalid_param}'; no pose fallback was used."
+                ) from exc
             effective_mappings.pop(invalid_param)
 
 
@@ -156,6 +237,9 @@ def _launch_setup(context):
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
     joint_states_topic = f"/{scene_pkg}/joint_states"
+    canonical_poses = load_canonical_layout_poses()
+    table_pose = canonical_poses["support_surface"]
+    camera_pose = canonical_poses["camera"]
 
     # --- Robot descriptions ---
     robot_description_config = load_xacro(
@@ -165,7 +249,12 @@ def _launch_setup(context):
             "ur_type": "ur5",
             "name": "ur5",
             "tf_prefix": "",
+            "world_frame": "world",
             "use_fake_hardware": use_fake_hardware.perform(context),
+            "table_world_xyz": _format_xacro_vector(table_pose["xyz"]),
+            "table_world_rpy": _format_xacro_vector(table_pose["rpy"]),
+            "camera_world_xyz": _format_xacro_vector(camera_pose["xyz"]),
+            "camera_world_rpy": _format_xacro_vector(camera_pose["rpy"]),
         },
     )
     robot_description = {"robot_description": robot_description_config}
@@ -385,4 +474,3 @@ def generate_launch_description():
         ),
         OpaqueFunction(function=_launch_setup),
     ])
-
