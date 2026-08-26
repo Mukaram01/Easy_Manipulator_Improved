@@ -5050,6 +5050,10 @@ void MainWindow::refresh_studio_home_scene_table()
     dashboard_scene_table_->setItem(row,4,new QTableWidgetItem(QString::fromStdString(
       sc.task_summary.empty() ? (sc.has_task_recipe || sc.has_task_intent ? "Configured" : "Missing") : sc.task_summary)));
     dashboard_scene_table_->setItem(row,5,new QTableWidgetItem(sc.fake_hardware_ready?"ready":"blocked"));
+    for (int column = 0; column < dashboard_scene_table_->columnCount(); ++column) {
+      if (QTableWidgetItem * item = dashboard_scene_table_->item(row, column))
+        item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+    }
     if (dashboard_library_list_) {
       const QString searchable = QStringLiteral("%1 %2 %3 %4")
         .arg(scene_name, QString::fromStdString(sc.display_name),

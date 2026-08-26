@@ -77,6 +77,8 @@ def test_selected_workcell_panel_reuses_real_scene_actions_and_file_backed_previ
         assert token in TARGET
     assert "embeddedWeb3dProductView" not in TARGET
     assert "scene3dViewportWidget" not in TARGET
+    assert "preview->setMinimumHeight(220)" in TARGET
+    assert "preview->setMaximumHeight(250)" in TARGET
 
 
 def test_inspector_has_only_backed_secondary_actions_and_no_open_cta():
@@ -144,7 +146,7 @@ def test_home_uses_canonical_metadata_and_one_composed_filter_sort_pipeline():
 
 def test_modified_time_excludes_generated_and_visual_activity_evidence():
     authored_section = TARGET.split("inline QDateTime scene_last_updated", 1)[1].split(
-        "inline QString relative_time", 1
+        "inline QString scene_content_fingerprint", 1
     )[0]
     for token in [
         'environment.yaml',

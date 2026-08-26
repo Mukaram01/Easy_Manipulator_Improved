@@ -19,6 +19,7 @@
 #include <QColor>
 #include <QDateTime>
 #include <QDir>
+#include <QDebug>
 #include <QFileInfo>
 #include <QImage>
 #include <QJsonDocument>
@@ -77,17 +78,23 @@ inline QString home_preview_cache_root()
   return QDir::cleanPath(root);
 }
 
-inline qint64 home_preview_scene_stamp(const QString & workspace_root, const QString & scene_id)
-{
-  const QDateTime updated = scene_last_updated(workspace_root, scene_id);
-  return updated.isValid() ? updated.toMSecsSinceEpoch() : 0;
-}
-
 inline QString exact_home_preview_cache_path(const QString & workspace_root, const QString & scene_id)
 {
   const QString safe_scene = safe_preview_cache_component(scene_id);
   return QDir(home_preview_cache_root()).filePath(
-    QStringLiteral("%1-%2.png").arg(safe_scene).arg(home_preview_scene_stamp(workspace_root, scene_id)));
+    QStringLiteral("%1-%2.png").arg(safe_scene, scene_content_fingerprint(workspace_root, scene_id)));
+}
+
+inline QString newest_home_preview_cache_path(const QString & scene_id)
+{
+  const QString prefix = safe_preview_cache_component(scene_id) + QLatin1Char('-');
+  const QStringList matches = QDir(home_preview_cache_root()).entryList(
+    QStringList{prefix + QStringLiteral("*.png")}, QDir::Files, QDir::Time);
+  for (const QString & name : matches) {
+    const QString path = QDir(home_preview_cache_root()).filePath(name);
+    if (completed_home_preview_contract(path, scene_id)) return path;
+  }
+  return QString();
 }
 
 inline void prune_old_home_preview_cache(const QString & scene_id, const QString & keep_path)
@@ -140,7 +147,8 @@ inline void show_preview_pixmap(QLabel * label, const QPixmap & pixmap, const QS
   QSize target = label->contentsRect().size();
   if (target.width() < 120 || target.height() < 90) target = QSize(360, 220);
   label->setText(QString());
-  label->setPixmap(pixmap.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+  const QSize rendered = target.boundedTo(pixmap.size());
+  label->setPixmap(pixmap.scaled(rendered, Qt::KeepAspectRatio, Qt::SmoothTransformation));
   label->setToolTip(tooltip);
 }
 
@@ -163,15 +171,34 @@ inline void show_fast_home_preview(
   if (scene_id.isEmpty()) {
     label->setText(QStringLiteral("Select a workcell\nto preview its scene"));
     label->setToolTip(QString());
+    label->setProperty("homeSnapshotState", QStringLiteral("empty"));
     return;
   }
 
   const QString exact = exact_home_preview_cache_path(workspace_root, scene_id);
-  if (completed_home_preview_contract(exact, scene_id) &&
-      show_preview_file(label, exact, QStringLiteral("Completed Product View snapshot"))) return;
+  const QString fingerprint = scene_content_fingerprint(workspace_root, scene_id);
+  if (completed_home_preview_contract(exact, scene_id, fingerprint) &&
+      show_preview_file(label, exact, QStringLiteral("Current Product View snapshot"))) {
+    label->setProperty("homeSnapshotState", QStringLiteral("current"));
+    qInfo().noquote() << QStringLiteral("Home preview: scene=%1 source=%2 cache=hit revision=%3 state=current")
+      .arg(scene_id, exact, fingerprint);
+    return;
+  }
 
-  label->setText(QStringLiteral("Preview unavailable"));
-  label->setToolTip(QStringLiteral("No cached or stored workcell preview is available yet."));
+  const QString stale = newest_home_preview_cache_path(scene_id);
+  if (!stale.isEmpty() && show_preview_file(
+      label, stale, QStringLiteral("Cached Product View snapshot · refreshing in background"))) {
+    label->setProperty("homeSnapshotState", QStringLiteral("stale"));
+    qInfo().noquote() << QStringLiteral("Home preview: scene=%1 source=%2 cache=stale revision=%3 state=stale")
+      .arg(scene_id, stale, fingerprint);
+    return;
+  }
+
+  label->setText(QStringLiteral("Preparing scene preview…"));
+  label->setToolTip(QStringLiteral("A canonical Product View snapshot is not cached yet."));
+  label->setProperty("homeSnapshotState", QStringLiteral("generating"));
+  qInfo().noquote() << QStringLiteral("Home preview: scene=%1 source=canonical-product-view cache=miss revision=%2 state=generating")
+    .arg(scene_id, fingerprint);
 }
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
@@ -201,8 +228,9 @@ inline void capture_canonical_product_view_snapshot(
   if (!source_web || !source_web->page()) return;
 
   const QString cache_path = exact_home_preview_cache_path(workspace_root, scene_id);
-  if (completed_home_preview_contract(cache_path, scene_id) &&
-      show_preview_file(label, cache_path, QStringLiteral("Completed Product View snapshot"))) return;
+  const QString scene_fingerprint = scene_content_fingerprint(workspace_root, scene_id);
+  if (completed_home_preview_contract(cache_path, scene_id, scene_fingerprint) &&
+      show_preview_file(label, cache_path, QStringLiteral("Current Product View snapshot"))) return;
 
   const QString request_key = scene_id + QLatin1Char('|') + cache_path;
   if (label->property("homeSnapshotCaptureInFlight").toString() == request_key) return;
@@ -229,10 +257,12 @@ inline void capture_canonical_product_view_snapshot(
 })()
 )JS";
 
+  const quint64 selection_generation = label->property("homePreviewSelectionGeneration").toULongLong();
   const QPointer<QLabel> safe_label(label);
   const QPointer<QTableWidget> safe_table(table);
   source_web->page()->runJavaScript(QString::fromUtf8(kCaptureCanvasScript),
-    [safe_label, safe_table, workspace_root, scene_id, cache_path, request_key](const QVariant & value) {
+    [safe_label, safe_table, workspace_root, scene_id, scene_fingerprint, cache_path, request_key,
+      selection_generation](const QVariant & value) {
       if (!safe_label) return;
       if (safe_label->property("homeSnapshotCaptureInFlight").toString() == request_key)
         safe_label->setProperty("homeSnapshotCaptureInFlight", QString());
@@ -244,6 +274,7 @@ inline void capture_canonical_product_view_snapshot(
       const QString reported_scene_id = result.value(QStringLiteral("scene_id")).toString();
       if (lifecycle_state != QStringLiteral("scene_ready") || !terminal || rendered_physical_count <= 0 ||
           reported_scene_id != scene_id) return;
+      if (scene_content_fingerprint(workspace_root, scene_id) != scene_fingerprint) return;
 
       const QString data_url = result.value(QStringLiteral("data_url")).toString();
       static const QString prefix = QStringLiteral("data:image/png;base64,");
@@ -261,6 +292,7 @@ inline void capture_canonical_product_view_snapshot(
       }
       const QJsonObject contract{
         {QStringLiteral("scene_id"), scene_id},
+        {QStringLiteral("scene_fingerprint"), scene_fingerprint},
         {QStringLiteral("lifecycle_state"), lifecycle_state},
         {QStringLiteral("terminal"), terminal},
         {QStringLiteral("rendered_physical_item_count"), rendered_physical_count}};
@@ -271,8 +303,10 @@ inline void capture_canonical_product_view_snapshot(
       }
       prune_old_home_preview_cache(scene_id, cache_path);
 
-      if (!safe_table || selected_home_scene_id(safe_table) != scene_id) return;
-      show_preview_pixmap(safe_label, pixmap, QStringLiteral("Completed Product View snapshot"));
+      if (!safe_table || selected_home_scene_id(safe_table) != scene_id ||
+          safe_label->property("homePreviewSelectionGeneration").toULongLong() != selection_generation) return;
+      safe_label->setProperty("homeSnapshotState", QStringLiteral("current"));
+      show_preview_pixmap(safe_label, pixmap, QStringLiteral("Current Product View snapshot"));
     });
 }
 #endif
@@ -292,8 +326,8 @@ inline void install_home_snapshot_preview(
   // should cost roughly the same as displaying an image, not another browser.
   preview_label->show();
   preview_label->setAlignment(Qt::AlignCenter);
-  preview_label->setMinimumHeight(175);
-  preview_label->setMaximumHeight(190);
+  preview_label->setMinimumHeight(220);
+  preview_label->setMaximumHeight(250);
   preview_label->setScaledContents(false);
 
   const QPointer<QMainWindow> safe_window(window);
@@ -301,7 +335,12 @@ inline void install_home_snapshot_preview(
   QObject::connect(table, &QTableWidget::itemSelectionChanged, preview_label,
     [safe_window, safe_label, table, workspace_root]() {
       if (!safe_window || !safe_label) return;
+      safe_label->setProperty("homePreviewSelectionGeneration",
+        safe_label->property("homePreviewSelectionGeneration").toULongLong() + 1);
       show_fast_home_preview(table, safe_label, workspace_root);
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+      capture_canonical_product_view_snapshot(safe_window, table, safe_label, workspace_root);
+#endif
     });
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
