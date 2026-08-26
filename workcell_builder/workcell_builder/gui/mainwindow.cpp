@@ -2037,19 +2037,6 @@ bool MainWindow::open_scene_builder_for_selected_scene(const QString & source_ac
   return open_scene_builder_for_scene_index(selected_scene_index_, source_action);
 }
 
-void MainWindow::bind_home_target_shell_actions()
-{
-  auto * open_button = findChild<QPushButton *>(QStringLiteral("studioTargetPrimaryAction"));
-  if (!open_button || open_button->property("homeOpenHandlerBound").toBool()) return;
-  open_button->setProperty("homeOpenHandlerBound", true);
-  connect(open_button, &QPushButton::clicked, this, [this]() {
-    const int row = dashboard_scene_table_ ? dashboard_scene_table_->currentRow() : -1;
-    const QString scene_id = home_scene_id_at_row(row);
-    const QString scene_path = home_scene_path_at_row(row);
-    open_home_scene_in_builder(scene_id, scene_path);
-  });
-}
-
 bool MainWindow::load_scene_for_scene3d_smoke(const QString & scene_name, const QString & explicit_scene_path, QStringList * blockers, QJsonObject * diagnostics)
 {
   auto add_blocker = [&](const QString & b) {
@@ -5063,6 +5050,10 @@ void MainWindow::refresh_studio_home_scene_table()
     dashboard_scene_table_->setItem(row,4,new QTableWidgetItem(QString::fromStdString(
       sc.task_summary.empty() ? (sc.has_task_recipe || sc.has_task_intent ? "Configured" : "Missing") : sc.task_summary)));
     dashboard_scene_table_->setItem(row,5,new QTableWidgetItem(sc.fake_hardware_ready?"ready":"blocked"));
+    for (int column = 0; column < dashboard_scene_table_->columnCount(); ++column) {
+      if (QTableWidgetItem * item = dashboard_scene_table_->item(row, column))
+        item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+    }
     if (dashboard_library_list_) {
       const QString searchable = QStringLiteral("%1 %2 %3 %4")
         .arg(scene_name, QString::fromStdString(sc.display_name),
@@ -5094,9 +5085,6 @@ void MainWindow::refresh_studio_home_scene_table()
   }
   if (dashboard_empty_state_card_) dashboard_empty_state_card_->setVisible(dashboard_scene_table_->rowCount() == 0);
   if (dashboard_open_scene_action_) dashboard_open_scene_action_->setEnabled(restored_home_selection);
-  if (auto * open_button = findChild<QPushButton *>(QStringLiteral("studioTargetPrimaryAction"))) {
-    open_button->setEnabled(restored_home_selection);
-  }
 }
 
 QString MainWindow::home_scene_id_at_row(int row) const

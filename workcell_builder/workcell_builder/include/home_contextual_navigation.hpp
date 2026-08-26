@@ -74,8 +74,6 @@ inline void simplify_home_inspector(QMainWindow * window)
   if (!window) return;
   // Home owns its visible action hierarchy. Contextual navigation must not
   // hide or rewrite those controls when the dashboard becomes active.
-  if (auto * button = window->findChild<QPushButton *>(QStringLiteral("studioTargetPrimaryAction")))
-    button->show();
   if (auto * more = window->findChild<QToolButton *>(QStringLiteral("studioTargetInspectorMore"))) more->show();
 }
 

@@ -30,10 +30,11 @@ def test_home_snapshot_cache_is_outside_scene_source_and_revision_aware():
     for token in [
         "QStandardPaths::CacheLocation",
         'home_previews',
-        'scene_last_updated(workspace_root, scene_id)',
+        'scene_content_fingerprint(workspace_root, scene_id)',
         'exact_home_preview_cache_path',
         'prune_old_home_preview_cache',
         'cache_path + QStringLiteral(".json")',
+        'scene_fingerprint',
     ]:
         assert token in PREVIEW
 
@@ -64,17 +65,16 @@ def test_home_captures_only_the_existing_canonical_canvas_after_product_view_is_
         assert token in PREVIEW
 
 
-def test_home_preview_accepts_only_current_completed_cache():
+def test_home_preview_uses_current_cache_then_scene_specific_stale_fallback():
     for token in [
         'show_fast_home_preview',
-        'Completed Product View snapshot',
-        'Preview unavailable',
-        'No cached or stored workcell preview is available yet.',
+        'Current Product View snapshot',
+        'newest_home_preview_cache_path',
+        'Cached Product View snapshot · refreshing in background',
+        'Preparing scene preview…',
     ]:
         assert token in PREVIEW
     for forbidden in [
-        'newest_home_preview_cache_path',
-        'Cached Product View snapshot · refreshing in background',
         'Stored scene snapshot',
         'find_preview_path(workspace_root, scene_id)',
     ]:
@@ -82,6 +82,22 @@ def test_home_preview_accepts_only_current_completed_cache():
     assert "NO PREVIEW IMAGE" not in PREVIEW
     assert "PREVIEW ERROR" not in PREVIEW
     assert "PREPARING LIVE 3D" not in PREVIEW
+
+
+def test_late_snapshot_cannot_replace_newer_selection_or_revision():
+    for token in [
+        'homePreviewSelectionGeneration',
+        'selection_generation',
+        'selected_home_scene_id(safe_table) != scene_id',
+        'scene_content_fingerprint(workspace_root, scene_id) != scene_fingerprint',
+    ]:
+        assert token in PREVIEW
+
+
+def test_selected_preview_preserves_aspect_ratio_and_does_not_upscale():
+    assert 'target.boundedTo(pixmap.size())' in PREVIEW
+    assert 'Qt::KeepAspectRatio' in PREVIEW
+    assert 'setScaledContents(false)' in PREVIEW
 
 
 def test_home_preview_does_not_add_runtime_or_startup_mutation_paths():

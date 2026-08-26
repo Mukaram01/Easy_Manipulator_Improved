@@ -32,11 +32,6 @@ HOME_OPEN = section(
     "bool MainWindow::open_home_scene_in_builder",
     "bool MainWindow::open_scene_builder_for_selected_scene",
 )
-BIND_HOME = section(
-    MAINWINDOW,
-    "void MainWindow::bind_home_target_shell_actions()",
-    "bool MainWindow::load_scene_for_scene3d_smoke",
-)
 SETUP = section(
     MAINWINDOW,
     "void MainWindow::setup_studio_shell()",
@@ -79,8 +74,6 @@ def test_home_population_restores_stable_identity_with_signals_blocked():
         "home_selected_scene_id_",
         "home_selected_scene_path_",
         "Qt::UserRole + 42",
-        'findChild<QPushButton *>(QStringLiteral("studioTargetPrimaryAction"))',
-        "open_button->setEnabled(restored_home_selection)",
     ]:
         assert required in HOME_POPULATION
     for forbidden in [
@@ -116,7 +109,7 @@ def test_filter_sort_pin_and_inspector_refresh_are_home_ui_only():
     assert 'QMetaObject::invokeMethod(table, "itemSelectionChanged"' not in TARGET
 
 
-def test_double_click_and_primary_button_call_same_helper_directly_once():
+def test_double_click_calls_canonical_helper_directly_once_without_inline_editing():
     double_click = section(
         SETUP,
         "connect(dashboard_scene_table_, &QTableWidget::cellDoubleClicked",
@@ -124,15 +117,23 @@ def test_double_click_and_primary_button_call_same_helper_directly_once():
     )
     assert double_click.count("open_home_scene_in_builder(scene_id, scene_path);") == 1
     assert "dashboard_open_scene_action_->trigger" not in double_click
-    assert BIND_HOME.count("open_home_scene_in_builder(scene_id, scene_path);") == 1
-    assert "QAction::trigger" not in BIND_HOME
-    assert "bind_home_target_shell_actions();" in MAIN
-    primary = section(
-        TARGET,
-        'new QPushButton(QStringLiteral("▣  Open Scene Builder")',
-        "const auto add_backed_more_action",
-    )
-    assert "QAction::trigger" not in primary
+    assert "setEditTriggers(QAbstractItemView::NoEditTriggers)" in TARGET
+    assert "item->setFlags(item->flags() & ~Qt::ItemIsEditable)" in TARGET
+    assert "item->setFlags(item->flags() & ~Qt::ItemIsEditable)" in HOME_POPULATION
+    assert "studioTargetPrimaryAction" not in TARGET
+    assert "Open Scene Builder" not in TARGET
+    assert "bind_home_target_shell_actions" not in MAIN
+
+
+def test_filtering_clears_a_selected_row_that_becomes_hidden():
+    assert "table->isRowHidden(selected_row)" in TARGET
+    assert "table->clearSelection();" in TARGET
+    assert "table->setCurrentCell(-1, -1);" in TARGET
+
+
+def test_modified_sort_role_does_not_overwrite_canonical_scene_path_role():
+    assert "constexpr int kModifiedRole = Qt::UserRole + 43;" in TARGET
+    assert "Qt::UserRole + 42" in MAINWINDOW
 
 
 def test_explicit_home_open_uses_captured_id_and_cannot_run_after_navigation():

@@ -11,6 +11,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QComboBox>
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -58,7 +59,8 @@ constexpr int kDisplayNameRole = Qt::UserRole + 38;
 constexpr int kTaskRole = Qt::UserRole + 39;
 constexpr int kReadinessReasonsRole = Qt::UserRole + 40;
 constexpr int kFakeHardwareReadyRole = Qt::UserRole + 41;
-constexpr int kModifiedRole = Qt::UserRole + 42;
+// MainWindow owns UserRole + 42 for the canonical scene path.
+constexpr int kModifiedRole = Qt::UserRole + 43;
 
 inline QString scene_id_at(QTableWidget * table, int row)
 {
@@ -104,6 +106,27 @@ inline QDateTime scene_last_updated(const QString & workspace_root, const QStrin
   return latest;
 }
 
+inline QString scene_content_fingerprint(const QString & workspace_root, const QString & scene_id)
+{
+  const QString scene_dir = scene_dir_for_id(workspace_root, scene_id);
+  if (scene_dir.isEmpty()) return QStringLiteral("missing");
+  const QStringList evidence = {
+    QStringLiteral("environment.yaml"), QStringLiteral("cell_definition.yaml"),
+    QStringLiteral("scene_manifest.yaml"), QStringLiteral("environment_layout.yaml"),
+    QStringLiteral("layout/workcell_studio_layout.yaml"),
+    QStringLiteral("config/workcell_builder_task_intent.yaml"),
+    QStringLiteral("config/task_recipe.yaml"), QStringLiteral("task/task_intent.yaml"),
+    QStringLiteral("task/task_recipe.yaml"),
+    QStringLiteral("generated/scene_visual_mesh_index.json")};
+  QCryptographicHash hash(QCryptographicHash::Sha256);
+  for (const QString & relative : evidence) {
+    QFile file(QDir(scene_dir).filePath(relative));
+    hash.addData(relative.toUtf8());
+    if (file.open(QIODevice::ReadOnly)) hash.addData(file.readAll());
+  }
+  return QString::fromLatin1(hash.result().toHex().left(16));
+}
+
 inline QString home_preview_cache_directory()
 {
   QString root = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
@@ -120,7 +143,8 @@ inline QString safe_home_preview_component(QString value)
   return value.isEmpty() ? QStringLiteral("workcell") : value;
 }
 
-inline bool completed_home_preview_contract(const QString & image_path, const QString & scene_id)
+inline bool completed_home_preview_contract(
+  const QString & image_path, const QString & scene_id, const QString & fingerprint = QString())
 {
   QFile contract_file(image_path + QStringLiteral(".json"));
   if (!QFileInfo(image_path).isFile() || !contract_file.open(QIODevice::ReadOnly)) return false;
@@ -129,6 +153,7 @@ inline bool completed_home_preview_contract(const QString & image_path, const QS
   if (error.error != QJsonParseError::NoError || !document.isObject()) return false;
   const QJsonObject contract = document.object();
   return contract.value(QStringLiteral("scene_id")).toString() == scene_id &&
+    (fingerprint.isEmpty() || contract.value(QStringLiteral("scene_fingerprint")).toString() == fingerprint) &&
     contract.value(QStringLiteral("lifecycle_state")).toString() == QStringLiteral("scene_ready") &&
     contract.value(QStringLiteral("terminal")).toBool() &&
     contract.value(QStringLiteral("rendered_physical_item_count")).toInt() > 0;
@@ -136,10 +161,10 @@ inline bool completed_home_preview_contract(const QString & image_path, const QS
 
 inline QString current_valid_home_preview_path(const QString & workspace_root, const QString & scene_id)
 {
-  const QDateTime modified = scene_last_updated(workspace_root, scene_id);
+  const QString fingerprint = scene_content_fingerprint(workspace_root, scene_id);
   const QString path = QDir(home_preview_cache_directory()).filePath(QStringLiteral("%1-%2.png")
-    .arg(safe_home_preview_component(scene_id)).arg(modified.isValid() ? modified.toMSecsSinceEpoch() : 0));
-  return completed_home_preview_contract(path, scene_id) ? path : QString();
+    .arg(safe_home_preview_component(scene_id), fingerprint));
+  return completed_home_preview_contract(path, scene_id, fingerprint) ? path : QString();
 }
 
 inline QString relative_time(const QDateTime & timestamp)
@@ -508,6 +533,11 @@ inline void apply_composed_filters(QTableWidget * table, QLineEdit * search, QCo
     table->setRowHidden(row, !show);
     if (show) ++visible;
   }
+  const int selected_row = table->currentRow();
+  if (selected_row >= 0 && table->isRowHidden(selected_row)) {
+    table->clearSelection();
+    table->setCurrentCell(-1, -1);
+  }
   if (footer) {
     const int total = table->property("studioTargetTotalWorkcells").toInt();
     footer->setText(QStringLiteral("Showing %1 of %2 workcells").arg(visible).arg(total > 0 ? total : table->rowCount()));
@@ -673,8 +703,6 @@ inline void refresh_target_details(QMainWindow * window, QTableWidget * table, c
 
   const bool fake_ready = selected && table->item(row, 0)->data(kFakeHardwareReadyRole).toBool();
   Q_UNUSED(fake_ready);
-  if (auto * open = window->findChild<QPushButton *>(QStringLiteral("studioTargetPrimaryAction")))
-    open->setEnabled(selected);
   if (auto * validation = window->findChild<QPushButton *>(QStringLiteral("studioTargetViewValidation")))
     validation->setVisible(selected && status != QStringLiteral("Ready"));
 
@@ -694,8 +722,8 @@ inline QFrame * build_inspector(QMainWindow * window, QTableWidget * table, cons
 {
   auto * inspector = new QFrame(parent);
   inspector->setObjectName(QStringLiteral("studioTargetInspector"));
-  inspector->setMinimumWidth(355);
-  inspector->setMaximumWidth(405);
+  inspector->setMinimumWidth(380);
+  inspector->setMaximumWidth(440);
   auto * layout = new QVBoxLayout(inspector);
   layout->setContentsMargins(16, 14, 16, 16);
   layout->setSpacing(8);
@@ -726,8 +754,8 @@ inline QFrame * build_inspector(QMainWindow * window, QTableWidget * table, cons
   auto * preview = new QLabel(QStringLiteral("SELECT A WORKCELL\nPreview and readiness appear here"), inspector);
   preview->setObjectName(QStringLiteral("studioTargetPreview"));
   preview->setAlignment(Qt::AlignCenter);
-  preview->setMinimumHeight(175);
-  preview->setMaximumHeight(190);
+  preview->setMinimumHeight(220);
+  preview->setMaximumHeight(250);
   preview->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
   layout->addWidget(preview);
 
@@ -751,8 +779,6 @@ inline QFrame * build_inspector(QMainWindow * window, QTableWidget * table, cons
   readiness_layout->addWidget(view_validation, 0, Qt::AlignLeft);
   layout->addWidget(readiness_card);
 
-  auto * open = new QPushButton(QStringLiteral("▣  Open Scene Builder"), inspector); open->setObjectName(QStringLiteral("studioTargetPrimaryAction"));
-  layout->addWidget(open);
   auto * action_row = new QHBoxLayout();
   action_row->addStretch(1); action_row->addWidget(more); layout->addLayout(action_row);
 
@@ -762,8 +788,6 @@ inline QFrame * build_inspector(QMainWindow * window, QTableWidget * table, cons
       if (action && action->text().contains(text, Qt::CaseInsensitive)) return action;
     return nullptr;
   };
-  // MainWindow binds this visible button directly to the stable-ID Home open
-  // helper after the target shell has been constructed.
   const auto add_backed_more_action = [more, more_menu](QAction * backing, const QString & label) {
     if (!backing) return;
     QAction * proxy = more_menu->addAction(label);
@@ -875,7 +899,12 @@ inline void build_home_page(QMainWindow * window, QWidget * dashboard, QTableWid
   table->setProperty("studioTargetWorkspaceRoot", workspace_root);
   table->setItemDelegate(new TargetWorkcellDelegate(workspace_root, table));
   table->setHorizontalHeaderLabels({QStringLiteral("Workcell"), QStringLiteral("Status"), QStringLiteral("Robot"), QStringLiteral("Tool / Gripper"), QStringLiteral("Modified"), QStringLiteral("★")});
-  table->setShowGrid(false); table->setAlternatingRowColors(false); table->setWordWrap(false); table->setSelectionBehavior(QAbstractItemView::SelectRows); table->setSelectionMode(QAbstractItemView::SingleSelection); table->verticalHeader()->hide(); table->verticalHeader()->setDefaultSectionSize(62); table->horizontalHeader()->setMinimumHeight(38); table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch); table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Fixed); table->setColumnWidth(1, 145); table->setColumnWidth(2, 82); table->setColumnWidth(3, 135); table->setColumnWidth(4, 105); table->setColumnWidth(5, 46);
+  for (int row = 0; row < table->rowCount(); ++row) {
+    for (int column = 0; column < table->columnCount(); ++column) {
+      if (QTableWidgetItem * item = table->item(row, column)) item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+    }
+  }
+  table->setShowGrid(false); table->setAlternatingRowColors(false); table->setWordWrap(false); table->setSelectionBehavior(QAbstractItemView::SelectRows); table->setSelectionMode(QAbstractItemView::SingleSelection); table->setEditTriggers(QAbstractItemView::NoEditTriggers); table->verticalHeader()->hide(); table->verticalHeader()->setDefaultSectionSize(62); table->horizontalHeader()->setMinimumHeight(38); table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch); table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Fixed); table->setColumnWidth(1, 145); table->setColumnWidth(2, 82); table->setColumnWidth(3, 135); table->setColumnWidth(4, 105); table->setColumnWidth(5, 46);
   table_layout->addWidget(table, 1);
   auto * footer = new QLabel(QStringLiteral("Showing %1 of %1 workcells").arg(total), table_card); footer->setObjectName(QStringLiteral("studioTargetTableFooter")); footer->setContentsMargins(12, 6, 12, 6); table_layout->addWidget(footer);
   main->addWidget(table_card, 1);
@@ -958,8 +987,6 @@ inline void build_home_page(QMainWindow * window, QWidget * dashboard, QTableWid
     "QLabel#studioTargetMetaRobot,QLabel#studioTargetMetaTool,QLabel#studioTargetMetaTask,QLabel#studioTargetMetaLaunch,QLabel#studioTargetMetaUpdated{color:#173656;font-size:10px;font-weight:700;}"
     "QFrame#studioTargetReadinessCard{background:#FFF8EE;border:1px solid #F0DFC6;border-radius:7px;}"
     "QLabel#studioTargetReadiness{color:#364E66;font-size:10px;font-weight:600;}"
-    "QPushButton#studioTargetPrimaryAction{background:#0B4698;color:#FFFFFF;border:1px solid #0B4698;border-radius:5px;min-height:38px;font-weight:800;}"
-    "QPushButton#studioTargetPrimaryAction:hover{background:#0C55B8;}"
     "QPushButton#studioTargetViewValidation{background:transparent;color:#124A9D;border:0;padding:0;font-size:9px;font-weight:750;}"));
 
   refresh_home();
