@@ -95,6 +95,7 @@ public:
   explicit MainWindow(const QString & startup_workspace = QString(), const QString & startup_ros_distro = QString(), QWidget * parent = nullptr);
   ~MainWindow();
   ScenePreviewWidget * active_scene_preview_widget() const;
+  void show_workcells_home();
   bool load_scene_for_scene3d_smoke(const QString & scene_name, const QString & explicit_scene_path = QString(), QStringList * blockers = nullptr, QJsonObject * diagnostics = nullptr);
   void refresh_scene_builder_state_from_active_scene();
   QJsonObject scene3d_filter_diagnostics() const;

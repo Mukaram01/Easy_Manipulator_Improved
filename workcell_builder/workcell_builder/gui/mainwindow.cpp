@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #include "gui/mainwindow.h"
+#include "studio_page_navigation.hpp"
 #include "gui/layout_item_serializer.hpp"
 #include "gui/scene3d_viewport_widget.h"
 #include "gui/preview_item_suppression.h"
@@ -1958,9 +1959,22 @@ void MainWindow::toggle_full_screen()
 
 void MainWindow::show_studio_page(StudioPage page)
 {
-  if (studio_nav_) {
-    studio_nav_->setCurrentRow(static_cast<int>(page));
-  }
+  const int requested_page = static_cast<int>(page);
+  // Do not depend on currentRowChanged: contextual navigation may have changed
+  // the stack while the nav row retained its previous value.
+  const bool synchronized = workcell_builder::synchronize_studio_page(
+    studio_nav_, studio_pages_, requested_page);
+  append_studio_log(QStringLiteral("Studio navigation settled: requested_page=%1 nav_row=%2 page_index=%3 scene_id=%4")
+    .arg(requested_page)
+    .arg(studio_nav_ ? studio_nav_->currentRow() : -1)
+    .arg(studio_pages_ ? studio_pages_->currentIndex() : -1)
+    .arg(selected_scene_name().isEmpty() ? QStringLiteral("(none)") : selected_scene_name()));
+  if (!synchronized) append_studio_log(QStringLiteral("Studio navigation synchronization failed."));
+}
+
+void MainWindow::show_workcells_home()
+{
+  show_studio_page(StudioPage::DashboardPage);
 }
 
 bool MainWindow::open_scene_builder_for_scene_index(

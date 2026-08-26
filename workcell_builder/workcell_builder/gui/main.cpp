@@ -47,7 +47,8 @@ public:
       : startup_workspace;
     workcell_builder::home_workcells::configure_target_shell(this, workspace);
     workcell_builder::home_workcells::install_home_snapshot_preview(this, workspace);
-    workcell_builder::home_workcells::install_contextual_navigation(this);
+    workcell_builder::home_workcells::install_contextual_navigation(
+      this, [this]() { show_workcells_home(); });
     workcell_builder::scene_builder_product_layout::configure_scene_builder_product_layout(this);
   }
 };

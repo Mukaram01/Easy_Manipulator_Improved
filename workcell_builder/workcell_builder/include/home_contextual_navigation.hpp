@@ -14,6 +14,8 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <functional>
+
 #include "home_workcells_target_shell.hpp"
 
 namespace workcell_builder
@@ -119,7 +121,8 @@ inline void refresh_context_header(QMainWindow * window, QStackedWidget * pages,
   }
 }
 
-inline void install_contextual_navigation(QMainWindow * window)
+inline void install_contextual_navigation(
+  QMainWindow * window, const std::function<void()> & navigate_home)
 {
   if (!window || QApplication::arguments().contains(QStringLiteral("--scene3d-smoke"))) return;
   if (window->property("studioContextNavigationInstalled").toBool()) return;
@@ -186,7 +189,9 @@ inline void install_contextual_navigation(QMainWindow * window)
   const int pages_index = right_layout->indexOf(pages);
   right_layout->insertWidget(qMax(0, pages_index), context);
 
-  QObject::connect(home, &QToolButton::clicked, pages, [pages]() { pages->setCurrentIndex(0); });
+  QObject::connect(home, &QToolButton::clicked, window, [navigate_home]() {
+    if (navigate_home) navigate_home();
+  });
   QObject::connect(pages, &QStackedWidget::currentChanged, context,
     [window, pages, table](int) { refresh_context_header(window, pages, table); });
   QObject::connect(table, &QTableWidget::itemSelectionChanged, context,

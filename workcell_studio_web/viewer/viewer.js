@@ -4147,10 +4147,18 @@ function disposeOwnedObject3d(object3d, seen = new Set()) {
   object3d.geometry?.dispose?.();
   const material = object3d.material;
   if (Array.isArray(material)) {
-    for (const entry of material) entry?.dispose?.();
+    for (const entry of material) disposeOwnedMaterial(entry);
   } else {
-    material?.dispose?.();
+    disposeOwnedMaterial(material);
   }
+  object3d.shadow?.map?.dispose?.();
+}
+function disposeOwnedMaterial(material) {
+  if (!material) return;
+  for (const value of Object.values(material)) {
+    if (value?.isTexture) value.dispose?.();
+  }
+  material.dispose?.();
 }
 function resetSceneLifecycleState() {
   cancelPlacement();
@@ -4210,6 +4218,37 @@ function clearSceneObjects() {
   if (el.resetView) el.resetView.disabled = true;
   renderSceneSummary();
 }
+
+let viewerLifecycleDisposed = false;
+function disposeViewerLifecycle(reason = 'host_navigation') {
+  if (viewerLifecycleDisposed) return { disposed: true, already_disposed: true, reason };
+  viewerLifecycleDisposed = true;
+  if (state.animationId) cancelAnimationFrame(state.animationId);
+  state.animationId = 0;
+  cancelInitialCameraFitRetry();
+  clearSceneObjects();
+  window.removeEventListener('resize', resize);
+  window.removeEventListener('keydown', onEditorKeyDown);
+  el.canvas?.removeEventListener('pointerdown', onCanvasPointerDown);
+  el.canvas?.removeEventListener('pointermove', onCanvasPointerMove);
+  el.canvas?.removeEventListener('pointerup', onCanvasPointerUp);
+  el.canvas?.removeEventListener('pointercancel', onCanvasPointerCancel);
+  el.canvas?.removeEventListener('contextmenu', onCanvasContextMenu);
+  const { renderer, controls, transformControls } = state.three || {};
+  transformControls?.detach?.();
+  transformControls?.dispose?.();
+  controls?.dispose?.();
+  renderer?.renderLists?.dispose?.();
+  renderer?.dispose?.();
+  state.three = {};
+  return { disposed: true, already_disposed: false, reason };
+}
+window.__WORKCELL_VIEWER_LIFECYCLE__ = Object.freeze({
+  api: '1.0.0',
+  disposeScene: reason => disposeViewerLifecycle(String(reason || 'host_navigation')),
+});
+window.addEventListener('pagehide', () => disposeViewerLifecycle('pagehide'), { once: true });
+window.addEventListener('beforeunload', () => disposeViewerLifecycle('beforeunload'), { once: true });
 function renderScene(items) {
   clearSceneObjects();
   const selectionIndex = rebuildSelectionIdentityIndex(state.sceneJson || {});

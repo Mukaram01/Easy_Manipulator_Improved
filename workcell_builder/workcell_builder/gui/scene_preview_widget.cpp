@@ -1661,7 +1661,21 @@ void ScenePreviewWidget::show_embedded_web_loading_document(const QString & scen
 body{margin:0;background:#0f172a;color:#e2e8f0;font:15px sans-serif;display:grid;place-items:center;height:100vh}
 main{max-width:42rem;padding:2rem}h1{font-size:1.3rem}code{color:#93c5fd}</style></head>
 <body><main><h1>Loading Product View</h1><p>Preparing scene <code>%1</code>…</p></main></body></html>)HTML").arg(safe_scene);
-  embedded_web_view_->setHtml(html, QUrl(QStringLiteral("about:blank")));
+  const quint64 teardown_navigation_token = embedded_web_navigation_token_;
+  embedded_web_view_->page()->runJavaScript(QStringLiteral(
+    "window.__WORKCELL_VIEWER_LIFECYCLE__?.disposeScene?.('qt_loading_handoff') || "
+    "({disposed:false,reason:'lifecycle_api_unavailable'})"),
+    [this, html, scene_id, teardown_navigation_token](const QVariant & result) {
+      if (!embedded_web_view_ || teardown_navigation_token != embedded_web_navigation_token_) return;
+      const QVariantMap details = result.toMap();
+      emit studio_log_requested(QStringLiteral(
+        "Embedded Product View teardown before loading document: scene=%1 navigation=%2 disposed=%3 already_disposed=%4 reason=%5")
+        .arg(scene_id).arg(teardown_navigation_token)
+        .arg(details.value(QStringLiteral("disposed")).toBool() ? QStringLiteral("true") : QStringLiteral("false"))
+        .arg(details.value(QStringLiteral("already_disposed")).toBool() ? QStringLiteral("true") : QStringLiteral("false"))
+        .arg(details.value(QStringLiteral("reason")).toString()));
+      embedded_web_view_->setHtml(html, QUrl(QStringLiteral("about:blank")));
+    });
 #else
   Q_UNUSED(scene_id);
 #endif
@@ -2745,8 +2759,24 @@ void ScenePreviewWidget::load_prepared_embedded_web_scene(const EmbeddedWebReque
         .arg(identity.scene_id).arg(identity.payload_revision).arg(queued_navigation_token));
       return;
     }
-    ++embedded_web_browser_navigations_started_;
-    embedded_web_view_->load(viewer_url);
+    embedded_web_view_->page()->runJavaScript(QStringLiteral(
+      "window.__WORKCELL_VIEWER_LIFECYCLE__?.disposeScene?.('qt_scene_navigation') || "
+      "({disposed:false,reason:'lifecycle_api_unavailable'})"),
+      [this, identity, queued_navigation_token, viewer_url](const QVariant & result) {
+        if (!embedded_web_view_ || !embedded_web_identity_is_current(identity) ||
+            queued_navigation_token != embedded_web_navigation_token_ ||
+            embedded_web_loading_navigation_token_ != queued_navigation_token ||
+            embedded_web_loading_identity_ != identity || embedded_web_expected_viewer_url_ != viewer_url) return;
+        const QVariantMap details = result.toMap();
+        emit studio_log_requested(QStringLiteral(
+          "Embedded Product View teardown before scene navigation: scene=%1 navigation=%2 disposed=%3 already_disposed=%4 reason=%5")
+          .arg(identity.scene_id).arg(queued_navigation_token)
+          .arg(details.value(QStringLiteral("disposed")).toBool() ? QStringLiteral("true") : QStringLiteral("false"))
+          .arg(details.value(QStringLiteral("already_disposed")).toBool() ? QStringLiteral("true") : QStringLiteral("false"))
+          .arg(details.value(QStringLiteral("reason")).toString()));
+        ++embedded_web_browser_navigations_started_;
+        embedded_web_view_->load(viewer_url);
+      });
   });
 #endif
 }
