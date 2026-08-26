@@ -82,9 +82,14 @@ def test_suction_scene_uses_canonical_editable_environment_and_one_tool_identity
     assert {"table_main", "suction_target_default"} <= set(primary_ids)
     assert len(primary_ids) == len(set(primary_ids))
     assert any(item.get("editable") is True for item in primary if item["id"] == "table_main")
-    camera_visuals = [item for item in primary if item.get("link") == "camera_link"]
+    camera_visuals = [item for item in primary if item.get("id") == "realsense_suction_overhead"]
     assert len(camera_visuals) == 1
-    assert camera_visuals[0].get("locked") is True
+    generated_camera = [item for item in payload["sensors"] if item.get("link") == "camera_link"]
+    assert len(generated_camera) == 1
+    assert generated_camera[0].get("render_policy") == "diagnostic_only"
+    assert generated_camera[0].get("canonical_scene_item_id") == "realsense_suction_overhead"
+    assert camera_visuals[0].get("locked") is False
+    assert camera_visuals[0].get("editable") is True
 
 def test_robot_preview_extraction_keeps_robot_subtree_and_excludes_scene_siblings(tmp_path):
     source = tmp_path / "expanded_scene_preview.urdf"

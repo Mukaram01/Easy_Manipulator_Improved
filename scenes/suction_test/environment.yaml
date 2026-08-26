@@ -55,6 +55,7 @@ placed_objects: []
 camera:
   enabled: true
   camera_id: realsense_suction_overhead
+  layout_item_ref: realsense_suction_overhead
   frame_id: camera_color_optical_frame
   pose:
     - -0.58

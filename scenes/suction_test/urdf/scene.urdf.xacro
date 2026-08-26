@@ -5,16 +5,22 @@
  <xacro:arg name="ur_type" default="ur5"/>
  <xacro:arg name="name" default="$(arg ur_type)"/>
  <xacro:arg name="tf_prefix" default=""/>
+ <xacro:arg name="world_frame" default="world"/>
  <xacro:arg name="use_fake_hardware" default="true"/>
+ <xacro:arg name="table_world_xyz" default=""/>
+ <xacro:arg name="table_world_rpy" default=""/>
+ <xacro:arg name="camera_world_xyz" default=""/>
+ <xacro:arg name="camera_world_rpy" default=""/>
+ <xacro:arg name="suction_mount_rpy" default="-1.5708 -1.5708 0"/>
 
- <link name="world"/>
+ <link name="$(arg world_frame)"/>
 
 <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
 
 <xacro:ur_robot
   name="$(arg name)"
   tf_prefix="$(arg tf_prefix)"
-  parent="world"
+  parent="$(arg world_frame)"
   safety_limits="true"
   joint_limits_parameters_file="$(find ur_description)/config/$(arg ur_type)/joint_limits.yaml"
   kinematics_parameters_file="$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml"
@@ -26,19 +32,19 @@
  
 <xacro:include filename="$(find single_suction_description)/urdf/single_suction_gripper.urdf.xacro"/>
 <xacro:single_suction_gripper prefix="" parent="tool0">
- <origin xyz="0 0 0" rpy="0 0 -1.5707"/>
+ <!-- virtual_ee_joint rotates cup +Z onto fixture +X; this mount maps it to world -Z at preview home. -->
+ <origin xyz="0 0 0" rpy="$(arg suction_mount_rpy)"/>
  </xacro:single_suction_gripper>
 
 <xacro:include filename="$(find table_description)/urdf/table.urdf.xacro"/>
- <xacro:table prefix="" parent="world">
-	<origin xyz="0 0 0" rpy="0 0 0"/>
+ <xacro:table prefix="" parent="$(arg world_frame)">
+	<origin xyz="$(arg table_world_xyz)" rpy="$(arg table_world_rpy)"/>
  </xacro:table>
  
 <xacro:include filename="$(find realsense2_description)/urdf/_d435i.urdf.xacro"/>
 <xacro:arg name="use_nominal_extrinsics" default="true" />
-<xacro:sensor_d435i parent="table_" use_nominal_extrinsics="$(arg use_nominal_extrinsics)">
-    <!--origin xyz="-0.5 0.2 0.46" rpy="0 1.57079506 0"/-->
-    <origin xyz="-0.58 0.225 0.65" rpy="3.14159 1.57079506 0"/>
+<xacro:sensor_d435i parent="$(arg world_frame)" use_nominal_extrinsics="$(arg use_nominal_extrinsics)">
+    <origin xyz="$(arg camera_world_xyz)" rpy="$(arg camera_world_rpy)"/>
 </xacro:sensor_d435i>
 
 <link name="ee_palm" />

@@ -770,6 +770,54 @@ def _literal_or_name_value(node, constants, launch_config_vars, cli_xacro_args):
     return ""
 
 
+def _canonical_layout_physical_pose_owners(layout_data, layout_path, required_roles):
+    """Resolve unique authored physical owners without relying on scene-specific ids."""
+    items = layout_data.get("items") if isinstance(layout_data, dict) else None
+    if not isinstance(items, list):
+        raise RuntimeError(f"Canonical layout '{layout_path}' must contain an items list")
+
+    def physical_role(item):
+        role = str(item.get("role") or "").strip().lower()
+        category = str(item.get("category") or "").strip().lower()
+        item_type = str(item.get("type") or "").strip().lower()
+        if role == "support_surface" or item_type in {"table", "workbench"}:
+            return "support_surface"
+        if role == "camera" or category == "camera" or item_type in {"camera", "realsense", "rgbd"}:
+            return "camera"
+        return ""
+
+    owners = {}
+    for required_role in required_roles:
+        matches = [item for item in items if isinstance(item, dict) and physical_role(item) == required_role]
+        if len(matches) != 1:
+            ids = [str(item.get("id") or "<missing-id>") for item in matches]
+            raise RuntimeError(
+                f"Canonical layout '{layout_path}' requires exactly one physical {required_role} "
+                f"owner for xacro pose resolution; found {len(matches)}: {ids}"
+            )
+        pose = matches[0].get("pose")
+        if not isinstance(pose, dict):
+            raise RuntimeError(
+                f"Canonical {required_role} owner '{matches[0].get('id')}' in '{layout_path}' has no pose"
+            )
+        for vector_name in ("xyz", "rpy"):
+            vector = pose.get(vector_name)
+            if not isinstance(vector, (list, tuple)) or len(vector) != 3:
+                raise RuntimeError(
+                    f"Canonical {required_role} owner '{matches[0].get('id')}' pose.{vector_name} "
+                    "must contain exactly 3 values"
+                )
+            try:
+                pose[vector_name] = [float(value) for value in vector]
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    f"Canonical {required_role} owner '{matches[0].get('id')}' pose.{vector_name} "
+                    "must contain numeric values"
+                ) from exc
+        owners[required_role] = matches[0]
+    return owners
+
+
 def _extract_scene_launch_xacro_request(scene_dir, cli_xacro_args):
     """Return the xacro path/mappings selected by launch/demo.launch.py when possible.
 
@@ -818,27 +866,31 @@ def _extract_scene_launch_xacro_request(scene_dir, cli_xacro_args):
         if canonical_layout.exists():
             try:
                 layout_data = yaml.safe_load(canonical_layout.read_text()) or {}
-                layout_items = {
-                    str(item.get("id") or ""): item
-                    for item in layout_data.get("items", [])
-                    if isinstance(item, dict)
-                } if isinstance(layout_data, dict) else {}
-                for mapping_key, owner_id, vector_name in (
-                    ("table_world_xyz", "support_surface_table", "xyz"),
-                    ("table_world_rpy", "support_surface_table", "rpy"),
-                    ("camera_world_xyz", "realsense_overhead", "xyz"),
-                    ("camera_world_rpy", "realsense_overhead", "rpy"),
-                ):
+                mapping_contract = {
+                    "table_world_xyz": ("support_surface", "xyz"),
+                    "table_world_rpy": ("support_surface", "rpy"),
+                    "camera_world_xyz": ("camera", "xyz"),
+                    "camera_world_rpy": ("camera", "rpy"),
+                }
+                required_roles = {
+                    role for mapping_key, (role, _) in mapping_contract.items()
+                    if mapping_key in mappings and not str(mappings.get(mapping_key) or "").strip()
+                }
+                owners = _canonical_layout_physical_pose_owners(
+                    layout_data, canonical_layout, required_roles
+                ) if required_roles else {}
+                for mapping_key, (owner_role, vector_name) in mapping_contract.items():
+                    if mapping_key not in mappings:
+                        continue
                     if str(mappings.get(mapping_key) or "").strip():
                         continue
-                    pose = layout_items.get(owner_id, {}).get("pose", {})
+                    pose = owners[owner_role].get("pose", {})
                     vector = pose.get(vector_name) if isinstance(pose, dict) else None
-                    if isinstance(vector, (list, tuple)) and len(vector) == 3:
-                        mappings[mapping_key] = " ".join(
-                            format(float(value), ".17g") for value in vector
-                        )
-            except (OSError, ValueError, TypeError, yaml.YAMLError):
-                pass
+                    mappings[mapping_key] = " ".join(
+                        format(float(value), ".17g") for value in vector
+                    )
+            except (OSError, yaml.YAMLError) as exc:
+                raise RuntimeError(f"Cannot resolve canonical xacro poses from '{canonical_layout}': {exc}") from exc
         return {
             "launch_path": _repo_relative_path(launch_path),
             "package_name": package_name or Path(scene_dir).name,
