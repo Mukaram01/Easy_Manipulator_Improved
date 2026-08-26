@@ -2,7 +2,9 @@ schema_version: task_recipe/v1
 task:
   id: default_task
   type: pick_place
-  source_object: commissioning_object
+  object_source: perception
+  perception_source: detected_objects/v1
+  pick_zone: pick_zone_main
   destinations:
   - id: default_drop_zone
     frame: world
@@ -19,7 +21,7 @@ task:
     when:
       always: true
     destination: default_drop_zone
-  notes: Generated from existing scene metadata. Preview-safe.
+  notes: Perception-backed pick/place task. Live EPD is required only for live execution.
 provenance:
   mode: generated_readiness_metadata
   sources:

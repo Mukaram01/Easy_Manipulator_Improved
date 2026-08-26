@@ -477,6 +477,8 @@ if(BUILD_TESTING)
     test/preview_process_state_test.cpp)
   if(TARGET workcell_scene_identity_test)
     target_link_libraries(workcell_scene_identity_test yaml-cpp ${Boost_LIBRARIES})
+    target_compile_definitions(workcell_scene_identity_test PRIVATE
+      WORKCELL_BUILDER_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
   endif()
   if(TARGET workcell_scene_preview_widget_ui_test)
     target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Core Qt5::Widgets Qt5::OpenGL Qt5::Network OpenGL::GL yaml-cpp ${Boost_LIBRARIES})

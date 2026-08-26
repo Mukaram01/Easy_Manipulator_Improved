@@ -18,9 +18,24 @@ end_effector:
   mount_link: tool0
   grasp_frame: ee_palm
 camera:
-  enabled: false
-  camera_id: UNKNOWN_CAMERA
-  frame_id: UNKNOWN_FRAME
+  enabled: true
+  camera_id: realsense_overhead
+  frame_id: realsense_overhead_frame
+perception:
+  enabled: true
+  mode: epd_snapshot
+  camera_id: realsense_overhead
+  frame_id: realsense_overhead_frame
+  expected_frames:
+  - realsense_overhead_frame
+  - world
+  epd_input:
+    topic: /easy_perception_deployment/epd_localize_output
+    message_type: std_msgs/msg/String
+  required_object_classes:
+  - part
+  confidence_threshold: 0.6
+  normalized_output_contract: detected_objects/v1
 environment:
   frame: world
   layout: layout/workcell_studio_layout.yaml
@@ -41,32 +56,12 @@ environment:
     - 0.8
     - 0.08
 objects: []
-self_test:
-  enabled: true
-  object:
-    id: commissioning_object
-    shape: box
-    class: part
-    color: red
-    material: plastic
-    frame: world
-    pose_xyz:
-    - 0.45
-    - 0.25
-    - 0.1
-    pose_rpy:
-    - 0.0
-    - 0.0
-    - 0.0
-    dimensions:
-    - 0.05
-    - 0.05
-    - 0.05
 task:
   id: default_task
   type: pick_place
-  source_object: commissioning_object
-  object_source: self_test
+  object_source: perception
+  perception_source: detected_objects/v1
+  pick_zone: pick_zone_main
   destinations:
   - id: default_drop_zone
     frame: world
@@ -84,5 +79,5 @@ task:
       always: true
     destination: default_drop_zone
 commissioning:
-  self_test_enabled: true
+  self_test_enabled: false
   export_bundle: false

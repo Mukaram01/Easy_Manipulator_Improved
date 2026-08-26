@@ -122,3 +122,20 @@ TEST(WorkcellSceneIdentity, HomeReadinessUsesCurrentCanonicalAcceptanceNotLegacy
     result.scenes.front().readiness_reasons.end());
   fs::remove_all(workspace);
 }
+
+TEST(WorkcellSceneIdentity, CanonicalScenesUseTheSameReadyContractAsHome)
+{
+  const fs::path repo_root(WORKCELL_BUILDER_REPO_ROOT);
+  const auto result = workcell_builder::discover_workcell_studio_scenes(repo_root);
+  for (const std::string scene_name : {"ur5_2f_test", "suction_test"}) {
+    const auto found = std::find_if(result.scenes.begin(), result.scenes.end(),
+      [&scene_name](const workcell_builder::WorkcellStudioSceneInfo & scene) {
+        return scene.scene_name == scene_name;
+      });
+    ASSERT_NE(found, result.scenes.end()) << scene_name;
+    EXPECT_EQ(found->status, "READY") << scene_name;
+    EXPECT_TRUE(found->acceptance_report_current) << scene_name;
+    EXPECT_TRUE(found->acceptance_report_passed) << scene_name;
+    EXPECT_TRUE(found->fake_hardware_ready) << scene_name;
+  }
+}

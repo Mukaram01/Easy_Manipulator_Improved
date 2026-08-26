@@ -239,7 +239,7 @@ objects:
 excluded_items:
 - id: home_pose_safe
   reason: semantic authoring marker; not physical collision geometry
-- id: pick_zone_commissioning
+- id: pick_zone_main
   reason: semantic authoring marker; not physical collision geometry
 - id: place_zone_default
   reason: semantic authoring marker; not physical collision geometry

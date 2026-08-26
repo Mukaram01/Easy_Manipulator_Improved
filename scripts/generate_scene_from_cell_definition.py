@@ -140,9 +140,11 @@ def build_scene_manifest(cell_def: dict[str, Any], capability_summary: dict[str,
     objects = cell_def.get("objects", [])
     task = cell_def.get("task", {})
     commissioning = cell_def.get("commissioning", {})
+    perception = cell_def.get("perception", {}) if isinstance(cell_def.get("perception"), dict) else {}
 
     self_test = cell_def.get("self_test", {}) if isinstance(cell_def.get("self_test"), dict) else {}
     self_test_object = self_test.get("object", {}) if isinstance(self_test.get("object"), dict) else {}
+    self_test_enabled = bool(self_test.get("enabled", commissioning.get("self_test_enabled", True)))
     # Backwards compatibility for definitions created before self-test fixtures
     # had their own source layer.
     if not self_test_object:
@@ -208,8 +210,24 @@ def build_scene_manifest(cell_def: dict[str, Any], capability_summary: dict[str,
             "support_surfaces": environment.get("support_surfaces", []),
             "objects": objects,
         },
-        "self_test": {
-            "enabled": bool(commissioning.get("self_test_enabled", True)),
+        "perception": {
+            "enabled": bool(perception.get("enabled", False)),
+            "mode": perception.get("mode", "disabled"),
+            "camera_id": perception.get("camera_id"),
+            "frame_id": perception.get("frame_id"),
+            "normalized_output_contract": perception.get("normalized_output_contract", "detected_objects/v1"),
+        },
+        "task_recipe": build_task_recipe(cell_def),
+        "home_return": {
+            "enabled": True,
+            "strategy": "named_target_or_safe_joint_state",
+            "named_target": robot.get("home_named_target", "home"),
+            "safe_joint_state": robot.get("safe_joint_state", []),
+        },
+    }
+    if self_test_enabled and self_test_object:
+        manifest["self_test"] = {
+            "enabled": True,
             "object": {
                 "id": self_test_object.get("id", "commissioning_box"),
                 "shape": self_test_object.get("shape", "box"),
@@ -225,15 +243,7 @@ def build_scene_manifest(cell_def: dict[str, Any], capability_summary: dict[str,
                 },
             },
             "expected": {"min_grasp_candidates": 1, "allow_simulated_execution": True},
-        },
-        "task_recipe": build_task_recipe(cell_def),
-        "home_return": {
-            "enabled": True,
-            "strategy": "named_target_or_safe_joint_state",
-            "named_target": robot.get("home_named_target", "home"),
-            "safe_joint_state": robot.get("safe_joint_state", []),
-        },
-    }
+        }
     grasp_strategy = extract_grasp_strategy_metadata(cell_def)
     if grasp_strategy:
         manifest["grasp_strategy"] = grasp_strategy
@@ -306,6 +316,14 @@ def _map_rule(rule: dict[str, Any]) -> dict[str, Any]:
 
 def build_task_recipe(cell_def: dict[str, Any]) -> dict[str, Any]:
     task = cell_def.get("task", {})
+    perception = cell_def.get("perception", {}) if isinstance(cell_def.get("perception"), dict) else {}
+    commissioning = cell_def.get("commissioning", {}) if isinstance(cell_def.get("commissioning"), dict) else {}
+    self_test = cell_def.get("self_test", {}) if isinstance(cell_def.get("self_test"), dict) else {}
+    perception_backed = str(task.get("object_source", "")).lower() == "perception" or bool(perception.get("enabled", False))
+    self_test_enabled = bool(self_test.get("enabled", commissioning.get("self_test_enabled", True)))
+    object_source = task.get("object_source") or ("perception" if perception_backed else ("self_test" if self_test_enabled else "fixed_object"))
+    source = task.get("perception_source") if object_source == "perception" else task.get("source_object")
+    source = source or ("detected_objects/v1" if object_source == "perception" else "detected_object")
     task_type = str(task.get("type", "custom"))
     grasp_strategy = extract_grasp_strategy_metadata(cell_def)
     strategy_type = str((grasp_strategy or {}).get("strategy", "")).lower()
@@ -329,8 +347,9 @@ def build_task_recipe(cell_def: dict[str, Any]) -> dict[str, Any]:
         "name": task.get("id", "Generated Task"),
         "description": f"Preview generated from cell definition task type '{task_type}'.",
         "pick": {
-            "source": task.get("source_object", "detected_object"),
-            "object_source": "self_test",
+            "source": source,
+            "object_source": object_source,
+            **({"pick_zone": task.get("pick_zone")} if task.get("pick_zone") else {}),
             "allowed_grasp_methods": default_methods,
             "runtime_note": "Suction/vacuum grasp is metadata only; runtime IO application is disabled.",
             "runtime_io_applied": False,

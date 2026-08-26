@@ -32,42 +32,36 @@ environment:
   support_surface_link: table
 
 perception:
+  enabled: true
+  mode: epd_snapshot
+  camera_id: realsense_suction_overhead
+  frame_id: camera_color_optical_frame
+  expected_frames:
+  - camera_color_optical_frame
+  - world
+  epd_input:
+    topic: /easy_perception_deployment/epd_localize_output
+    message_type: std_msgs/msg/String
+  required_object_classes:
+  - part
+  confidence_threshold: 0.6
+  normalized_output_contract: detected_objects/v1
   input_frame_options:
     - world
     - base_link
 
-self_test:
-  # Commissioning defaults for deterministic offline checks.
-  # Tune these values for each physical workcell before production.
-  enabled: true
-  object:
-    id: commissioning_object
-    shape: box
-    dimensions: [0.05, 0.05, 0.05]
-    frame_id: world
-    pose_xyz: [0.43, 0.04, 0.08]
-    pose_rpy: [0.0, 0.0, 0.0]
-    attributes:
-      class: "part"
-      colour: "unknown"
-      shape: "box"
-      material: "plastic"
-  expected:
-    min_grasp_candidates: 1
-    allow_simulated_execution: true
-
 task_recipe:
-  # Mirrors cell_definition.yaml and config/task_recipe.yaml for offline commissioning preview.
-  # Metadata-only in this release: no runtime, GUI, replay, live EPD, or perception-backed routing readiness is claimed here.
+  # Mirrors cell_definition.yaml and config/task_recipe.yaml for authoring preview.
   id: default_task
-  name: Default Pick Place Commissioning Task
+  name: Perception Pick Place
   type: pick_place
   enabled: true
   inputs:
-    perception_mode: off
+    perception_mode: epd_snapshot
   pick:
-    object_source: self_test
-    source_object: commissioning_object
+    object_source: perception
+    perception_source: detected_objects/v1
+    pick_zone: pick_zone_main
     grasp_strategy: suction_only
     allowed_grasp_methods: [suction]
   decision_rules:

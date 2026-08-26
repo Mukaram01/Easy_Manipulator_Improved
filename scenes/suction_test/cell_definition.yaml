@@ -35,16 +35,13 @@ perception:
 environment:
   frame: world
   layout: layout/workcell_studio_layout.yaml
-objects:
-  - id: commissioning_object
-    frame: world
-    pose_xyz: [0.43, 0.04, 0.08]
-    pose_rpy: [0.0, 0.0, 0.0]
-    dimensions: [0.05, 0.05, 0.05]
+objects: []
 task:
   id: default_task
   type: pick_place
-  source_object: commissioning_object
+  object_source: perception
+  perception_source: detected_objects/v1
+  pick_zone: pick_zone_main
   destinations:
     - id: default_drop_zone
       frame: world
@@ -56,5 +53,5 @@ task:
         always: true
       destination: default_drop_zone
 commissioning:
-  self_test_enabled: true
+  self_test_enabled: false
   export_bundle: false

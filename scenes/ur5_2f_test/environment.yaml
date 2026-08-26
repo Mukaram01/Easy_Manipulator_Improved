@@ -129,7 +129,7 @@ environment:
     runtime_commanded: false
 placed_objects: null
 camera:
-  enabled: false
+  enabled: true
   camera_id: realsense_overhead
   frame_id: realsense_overhead_frame
   pose:
@@ -147,12 +147,12 @@ task:
   template: pick_place
   type: pick_place
   mode: simulation_preview
-  source_object: commissioning_object
-  object_source: self_test
+  object_source: perception
+  perception_source: detected_objects/v1
   pick:
-    source_ref: commissioning_pick_pose
-    object_ref: commissioning_object
-    object_source: self_test
+    source_ref: pick_zone_main
+    object_source: perception
+    perception_source: detected_objects/v1
   place:
     target_ref: default_drop_zone
     release_strategy: tool_release
@@ -214,11 +214,10 @@ safety:
 metadata:
   generated_by: workcell_builder
   scene_schema_version: workcell_scene/v1
-  scene_schema_warnings:
-  - camera disabled: no camera selection
+  scene_schema_warnings: []
   scene_schema_blockers: []
 task_zones:
-- id: commissioning_pick_pose
+- id: pick_zone_main
   type: pick_zone
   role: pick
   frame: world
@@ -236,7 +235,7 @@ task_zones:
   - 0.2
   - 0.1
   support_surface_ref: support_surface_table
-  layout_item_ref: pick_zone_commissioning
+  layout_item_ref: pick_zone_main
 - id: default_drop_zone
   type: place_zone
   role: place

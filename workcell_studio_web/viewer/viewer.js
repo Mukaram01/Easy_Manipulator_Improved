@@ -798,7 +798,10 @@ function collectProductDiagnostics() {
       mesh_uri: renderInfo.mesh_uri || displayMeshUri(item),
       visual_bounds_status: item.visual_bounds_status,
     };
-    if (isRequiredMeshFailureStatus(rendered) || isMissingOrFailedMeshStatus(item.mesh_status)) add(normalizeProductDiagnostic(raw));
+    if (isRequiredMeshFailureStatus(rendered) ||
+        (itemRequiresMeshBackedVisual(item) && isMissingOrFailedMeshStatus(item.mesh_status))) {
+      add(normalizeProductDiagnostic(raw));
+    }
     if ((item.visual_bounds_status && !['valid', 'corrected_by_local_unit_scale'].includes(item.visual_bounds_status)) || invalidAuthoredScale(item)) {
       add(normalizeProductDiagnostic({ ...raw, code: 'invalid_scale', reason: item.mesh_load_error || `Invalid visual bounds or scale (${item.visual_bounds_status || 'non-positive/non-finite scale'}).` }, 'invalid_scale'));
     }
@@ -2090,10 +2093,14 @@ function truthyFlag(value) { return value === true || String(value).toLowerCase(
 function itemRequiresMeshBackedVisual(item) {
   const explicit = item?.mesh_load_required || item?.requires_mesh || item?.mesh_required || item?.required_mesh || item?.mesh_backed_required || item?.requires_mesh_backed_visual;
   if (truthyFlag(explicit)) return true;
+  if (isTaskOnlyHelperItem(item) || isDebugOverlayItem(item)) return false;
   const source = String(item?.source_kind || item?.source_layer || item?.active_visual_source || '').toLowerCase();
-  const role = String(item?.role || item?.category || item?.type || '').toLowerCase();
+  const geometry = String(item?.geometry_type || item?.geometryType || item?.primitive_geometry_type || item?.primitiveGeometryType || '').trim().toLowerCase();
+  const category = String(item?.mesh_contract_category || item?.meshContractCategory || meshContractCategoryOf(item)).toLowerCase();
   const hasMeshContract = Boolean(displayMeshUri(item) || item?.original_mesh_uri || item?.mesh_path || item?.source_path || item?.package_uri);
-  return hasMeshContract && (source.includes('generated') || role.includes('robot') || role.includes('tool') || role.includes('gripper'));
+  const physicalCategory = ['robot', 'tool', 'table', 'camera', 'object'].includes(category);
+  if (geometry === 'mesh' && physicalCategory) return true;
+  return hasMeshContract && (physicalCategory || source.includes('generated'));
 }
 function warnRequiredMeshFallback(item, meshUri, reason, extra = {}) {
   const transform = transformOf(item);
@@ -2744,10 +2751,10 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
   const diagnostic = meshUriDiagnostic(item);
   const uri = diagnostic.uri;
   const requestedUri = displayMeshUri(item);
-  item.mesh_status = uri ? 'loading' : diagnostic.status;
+  const required = itemRequiresMeshBackedVisual(item);
+  item.mesh_status = uri ? 'loading' : (!required && !requestedUri ? (fallback ? 'primitive' : 'not_applicable') : diagnostic.status);
   if (!uri) {
-    const required = itemRequiresMeshBackedVisual(item);
-    trackMeshLoadAttempt(item, diagnostic.status, requestedUri, diagnostic.reason);
+    trackMeshLoadAttempt(item, item.mesh_status, requestedUri, required || requestedUri ? diagnostic.reason : 'mesh is not part of this item contract');
     if (required) {
       logRequiredMeshFailure(item, requestedUri, diagnostic.reason);
       styleFailedMeshDebugFallback(fallback, item, diagnostic.reason);

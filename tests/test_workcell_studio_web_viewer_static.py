@@ -1522,6 +1522,37 @@ def test_viewer_validates_renderable_transforms_and_required_mesh_fallbacks():
     assert "warnRequiredMeshFallback(item," in js
 
 
+def test_mesh_health_classification_requires_only_mesh_backed_physical_items():
+    js_path = VIEWER / "viewer.js"
+    harness = r"""
+const fs = require('fs'); const vm = require('vm'); const assert = require('assert');
+let source = fs.readFileSync(process.argv[1], 'utf8').replace(/boot\(\);\s*$/, '');
+const element = () => ({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){}});
+const context={console,assert,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element();},querySelectorAll(){return[];},createElement(){return element();}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context);
+vm.runInContext(source + `
+const perception={id:'detected_objects/v1',type:'perception',role:'runtime_input',source_layer:'task_preview'};
+const zone={id:'pick_zone_main',type:'pick_zone',role:'pick_zone',geometry_type:'box',dimensions:[0.2,0.2,0.1],render_policy:'overlay'};
+const primitive={id:'table_main',type:'table',role:'support_surface',geometry_type:'box',dimensions:[1.2,0.8,0.08]};
+const missingMesh={id:'fixture_main',type:'fixture',role:'fixture',mesh_contract_category:'object',geometry_type:'mesh'};
+const validMesh={...missingMesh,mesh_uri:'assets/fixture.stl'};
+assert.strictEqual(itemRequiresMeshBackedVisual(perception),false);
+assert.strictEqual(itemRequiresMeshBackedVisual(zone),false);
+assert.strictEqual(itemRequiresMeshBackedVisual(primitive),false);
+assert.strictEqual(itemRequiresMeshBackedVisual(missingMesh),true);
+assert.strictEqual(itemRequiresMeshBackedVisual(validMesh),true);
+assert.strictEqual(meshUriDiagnostic(perception).status,'missing_file');
+const semanticRendered={item:{...perception,mesh_status:'missing_file'},renderInfo:{render_status:'no_physical_dimensions'}};
+state.objects=[semanticRendered]; state.runtimeWarnings=[];
+assert.strictEqual(collectProductDiagnostics().length,0);
+const physicalRendered={item:{...missingMesh,mesh_status:'missing_file'},renderInfo:{render_status:'required_mesh_failed_debug_fallback'}};
+state.objects=[physicalRendered];
+assert.strictEqual(collectProductDiagnostics()[0].kind,'missing_mesh');
+`, context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, check=True, capture_output=True, text=True)
+
+
 def test_viewer_mesh_preflight_surfaces_distinct_failure_reasons():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     for token in [

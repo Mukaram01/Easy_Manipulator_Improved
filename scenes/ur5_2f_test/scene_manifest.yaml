@@ -36,47 +36,40 @@ end_effector:
   - gripper_finger2_finger_tip_link
 environment:
   support_surface_link: table
+camera:
+  enabled: true
+  camera_id: realsense_overhead
+  frame_id: realsense_overhead_frame
 perception:
+  enabled: true
+  mode: epd_snapshot
+  camera_id: realsense_overhead
+  frame_id: realsense_overhead_frame
+  expected_frames:
+  - realsense_overhead_frame
+  - world
+  epd_input:
+    topic: /easy_perception_deployment/epd_localize_output
+    message_type: std_msgs/msg/String
+  required_object_classes:
+  - part
+  confidence_threshold: 0.6
+  normalized_output_contract: detected_objects/v1
   input_frame_options:
   - world
   - base_link
-self_test:
-  enabled: true
-  object:
-    id: commissioning_object
-    shape: box
-    dimensions:
-    - 0.05
-    - 0.05
-    - 0.05
-    frame_id: world
-    pose_xyz:
-    - 0.45
-    - 0.25
-    - 0.1
-    pose_rpy:
-    - 0.0
-    - 0.0
-    - 0.0
-    attributes:
-      class: part
-      colour: red
-      shape: box
-      material: plastic
-  expected:
-    min_grasp_candidates: 1
-    allow_simulated_execution: true
 task_recipe:
   id: default_task
-  name: Commissioning Pick Place
+  name: Perception Pick Place
   type: pick_place
   enabled: true
   mode: simulation_preview
   inputs:
-    perception_mode: "off"
+    perception_mode: epd_snapshot
   pick:
-    object_source: self_test
-    source_object: commissioning_object
+    object_source: perception
+    perception_source: detected_objects/v1
+    pick_zone: pick_zone_main
     grasp_strategy: finger_pinch_basic
     allowed_grasp_methods:
     - finger

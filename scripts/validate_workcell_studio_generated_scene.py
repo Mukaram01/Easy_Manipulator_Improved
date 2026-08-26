@@ -23,6 +23,35 @@ def _load_yaml(path: Path)->dict[str, Any]:
 
 def _has(scene:Path, rel:str)->bool: return (scene/rel).is_file()
 
+
+def authored_input_fingerprint(scene: Path) -> str:
+    """Hash the authored inputs used by Home's acceptance freshness contract."""
+    relative_paths = [
+        Path(value) for value in (
+            "package.xml", "CMakeLists.txt", "environment.yaml", "environment_layout.yaml",
+            "cell_definition.yaml", "scene_manifest.yaml", "layout/workcell_studio_layout.yaml",
+        )
+    ]
+    for root_name in ("config", "launch", "urdf", "assets"):
+        root = scene / root_name
+        if root.is_dir():
+            relative_paths.extend(path.relative_to(scene) for path in root.rglob("*") if path.is_file())
+    digest = 0xcbf29ce484222325
+    def update(data: bytes) -> None:
+        nonlocal digest
+        for value in data:
+            digest ^= value
+            digest = (digest * 0x100000001b3) & 0xffffffffffffffff
+    for relative in sorted(set(relative_paths), key=lambda value: value.as_posix()):
+        path = scene / relative
+        if not path.is_file():
+            continue
+        update(relative.as_posix().encode("utf-8"))
+        update(b"\0")
+        update(path.read_bytes())
+        update(b"\0")
+    return f"{digest:016x}"
+
 def validate(scene:Path)->dict[str,Any]:
     checks=[]; blockers=[]; warnings=[]
     req=["package.xml","CMakeLists.txt","environment.yaml","scene_manifest.yaml","config/task_recipe.yaml","config/workcell_builder_task_intent.yaml"]
@@ -122,6 +151,7 @@ def validate(scene:Path)->dict[str,Any]:
         "layout_stale": acceptance_layout_stale,
         "merge_warnings": merge_report.get("warnings", []),
         "merge_blockers": merge_report.get("blockers", []),
+        "authored_input_fingerprint": authored_input_fingerprint(scene),
     }
     out_dir=scene/"acceptance"; out_dir.mkdir(exist_ok=True)
     (out_dir/"generated_scene_acceptance.json").write_text(json.dumps(acceptance,indent=2)+"\n",encoding='utf-8')

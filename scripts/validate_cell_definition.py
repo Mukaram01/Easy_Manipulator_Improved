@@ -404,6 +404,7 @@ def validate_cell_definition(
     objects = defn.get("objects") if isinstance(defn.get("objects"), list) else []
     self_test = defn.get("self_test") if isinstance(defn.get("self_test"), dict) else {}
     task = defn.get("task") if isinstance(defn.get("task"), dict) else {}
+    perception = defn.get("perception") if isinstance(defn.get("perception"), dict) else {}
     grasp = defn.get("grasp") if isinstance(defn.get("grasp"), dict) else None
 
     if not isinstance(robot.get("model"), str) or not robot.get("model", "").strip():
@@ -549,6 +550,26 @@ def validate_cell_definition(
     if task_type in SORTING_TASK_TYPES and not fallback_present:
         result.warnings.append("Sorting task has no explicit fallback rule with when.always=true.")
 
+    object_source = str(task.get("object_source") or "").strip().lower()
+    source_object = str(task.get("source_object") or "").strip()
+    perception_source = str(task.get("perception_source") or "").strip()
+    if object_source == "perception":
+        if perception.get("enabled") is not True:
+            result.errors.append("task.object_source=perception requires perception.enabled=true.")
+        if not perception_source:
+            result.errors.append("Perception-backed task must declare task.perception_source.")
+    elif object_source in {"self_test", "fixed_object"} or source_object:
+        known_object_ids = {
+            str(item.get("id")) for item in objects if isinstance(item, dict) and item.get("id")
+        }
+        self_test_object = self_test.get("object") if isinstance(self_test.get("object"), dict) else {}
+        if self_test_object.get("id"):
+            known_object_ids.add(str(self_test_object["id"]))
+        if source_object and source_object not in known_object_ids:
+            result.errors.append(
+                f"task.source_object '{source_object}' does not resolve to objects or self_test.object."
+            )
+
     grasp_catalog_dir = Path(__file__).resolve().parents[1] / "catalog" / "grasp_strategies"
     grasp_summary: dict[str, Any] = {"mode": "none", "status": "PASS", "ref": None, "resolved_path": None}
     if grasp is not None:
@@ -643,33 +664,56 @@ def validate_cell_definition(
         if not isinstance(layout_path_value, str) or not layout_path_value.strip():
             result.errors.append("environment.layout must be a non-empty string path when provided.")
         else:
-            layout_path = (Path(__file__).resolve().parents[1] / layout_path_value).resolve()
+            scene_relative_layout = (path.parent / layout_path_value).resolve()
+            repo_relative_layout = (Path(__file__).resolve().parents[1] / layout_path_value).resolve()
+            layout_path = scene_relative_layout if scene_relative_layout.exists() else repo_relative_layout
             if not layout_path.exists():
                 msg = f"environment.layout path not found: {layout_path_value}"
                 (result.errors if strict else result.warnings).append(msg)
             else:
                 try:
-                    import validate_environment_layout as env_layout_validator
+                    layout_document, _, _ = load_yaml(layout_path)
+                    if layout_document.get("schema_version") == "workcell_studio_layout/v1":
+                        items = layout_document.get("items")
+                        if not isinstance(items, list):
+                            result.errors.append("Workcell Studio layout items must be a list.")
+                        result.environment_layout_summary = {
+                            "path": layout_path_value,
+                            "layout_id": layout_document.get("scene_name"),
+                            "asset_count": len(items) if isinstance(items, list) else 0,
+                            "zone_count": sum(
+                                1 for item in items or []
+                                if isinstance(item, dict) and "zone" in str(item.get("type") or "").lower()
+                            ),
+                            "safety_zone_count": sum(
+                                1 for item in items or []
+                                if isinstance(item, dict) and "safety" in str(item.get("type") or "").lower()
+                            ),
+                            "result": "PASS",
+                        }
+                        result.notes.append("environment.layout: validated canonical workcell_studio_layout/v1 metadata.")
+                    else:
+                        import validate_environment_layout as env_layout_validator
 
-                    loaded_layout, layout_parser, layout_notes = env_layout_validator.load_layout(layout_path)
-                    layout_summary = env_layout_validator.validate_layout(
-                        loaded_layout,
-                        layout_path,
-                        layout_parser,
-                        layout_notes,
-                        strict=strict,
-                    )
-                    result.warnings.extend(layout_summary.warnings)
-                    result.errors.extend(layout_summary.errors)
-                    result.notes.extend([f"environment.layout: {note}" for note in layout_summary.notes])
-                    result.environment_layout_summary = {
-                        "path": layout_path_value,
-                        "layout_id": loaded_layout.get("layout_id"),
-                        "asset_count": layout_summary.summary.get("asset_count", 0),
-                        "zone_count": layout_summary.summary.get("zone_count", 0),
-                        "safety_zone_count": layout_summary.summary.get("safety_zone_count", 0),
-                        "result": "PASS" if layout_summary.ok and not layout_summary.warnings else "WARN" if layout_summary.ok else "FAIL",
-                    }
+                        loaded_layout, layout_parser, layout_notes = env_layout_validator.load_layout(layout_path)
+                        layout_summary = env_layout_validator.validate_layout(
+                            loaded_layout,
+                            layout_path,
+                            layout_parser,
+                            layout_notes,
+                            strict=strict,
+                        )
+                        result.warnings.extend(layout_summary.warnings)
+                        result.errors.extend(layout_summary.errors)
+                        result.notes.extend([f"environment.layout: {note}" for note in layout_summary.notes])
+                        result.environment_layout_summary = {
+                            "path": layout_path_value,
+                            "layout_id": loaded_layout.get("layout_id"),
+                            "asset_count": layout_summary.summary.get("asset_count", 0),
+                            "zone_count": layout_summary.summary.get("zone_count", 0),
+                            "safety_zone_count": layout_summary.summary.get("safety_zone_count", 0),
+                            "result": "PASS" if layout_summary.ok and not layout_summary.warnings else "WARN" if layout_summary.ok else "FAIL",
+                        }
                 except Exception as exc:
                     (result.errors if strict else result.warnings).append(
                         f"environment.layout validation failed for '{layout_path_value}': {exc}"
