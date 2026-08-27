@@ -42,10 +42,6 @@ for row in "${package_rows[@]}"; do
     echo "  - $path" >&2
     exit 1
   fi
-  if [[ ! -f "$path/package.xml" ]]; then
-    echo "Discovered package path is missing package.xml: $name -> $path/package.xml" >&2
-    exit 1
-  fi
   seen[$name]="$path"
   present[$name]=1
 done
@@ -54,6 +50,12 @@ for pkg in "${REQUIRED_PACKAGES[@]}"; do
   if [[ -z "${present[$pkg]:-}" ]]; then
     echo "Missing required package from colcon discovery: $pkg" >&2
     echo "Command: colcon list --base-paths $SRC_DIR" >&2
+    exit 1
+  fi
+
+  pkg_path="${seen[$pkg]}"
+  if [[ ! -f "$pkg_path/package.xml" ]]; then
+    echo "Required ROS package is missing package.xml: $pkg -> $pkg_path/package.xml" >&2
     exit 1
   fi
 done
