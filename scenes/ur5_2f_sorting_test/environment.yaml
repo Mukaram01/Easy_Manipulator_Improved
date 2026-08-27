@@ -41,9 +41,17 @@ end_effector:
     - gripper_finger2_finger_tip_link
 objects:
   table:
-    child_link: table
+    id: table_main
+    type: table
+    role: support_surface
+    category: work_surface
+    frame: world
+    pose_xyz: [0.15, 0.0, 0.74]
+    pose_rpy: [0.0, 0.0, 0.0]
+    layout_item_ref: table_main
+    child_link: table_
     links:
-      table:
+      table_:
         visual:
           name: table
           geometry:
@@ -62,7 +70,7 @@ objects:
               scale_z: 0.001
     table_base_joint:
       ext_joint_type: fixed
-      child_link: table
+      child_link: table_
 external joints:
   table:
     parent object: world

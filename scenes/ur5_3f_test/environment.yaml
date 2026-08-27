@@ -31,10 +31,10 @@ camera:
 task:
   template: pick_place
   pick:
-    source_ref: 
+    source_ref: pick_zone_main
     object_ref: 
   place:
-    target_ref: 
+    target_ref: default_drop_zone
   grasp:
     strategy: auto
     approach_axis: z_down
@@ -87,3 +87,33 @@ metadata:
     - Grasp strategy must be selected
     - Pick source is required
     - Place target is required
+task_zones:
+  - id: pick_zone_main
+    type: pick_zone
+    role: pick
+    frame: world
+    shape: box
+    pose_xyz: [0.44, -0.02, 0.08]
+    pose_rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.20, 0.20, 0.10]
+
+  - id: default_drop_zone
+    type: place_zone
+    role: place
+    frame: world
+    shape: box
+    pose_xyz: [0.50, -0.30, 0.10]
+    pose_rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.20, 0.20, 0.10]
+    target_ref: target_bin_default
+    compatible_destination_id: default_drop_zone
+
+assets:
+  - id: target_bin_default
+    type: target_bin
+    role: target_bin
+    category: place_zone
+    frame: world
+    pose_xyz: [0.5, -0.3, 0.1]
+    pose_rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.20, 0.20, 0.10]

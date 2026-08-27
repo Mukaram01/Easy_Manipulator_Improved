@@ -11,7 +11,7 @@
  <xacro:arg name="table_world_rpy" default=""/>
  <xacro:arg name="camera_world_xyz" default=""/>
  <xacro:arg name="camera_world_rpy" default=""/>
- <xacro:arg name="suction_mount_rpy" default="1.5707 -1.5707 0"/>
+ <xacro:arg name="suction_mount_rpy" default="-1.57079632679 3.14159265359 4.71238898038"/>
 
  <link name="$(arg world_frame)"/>
 

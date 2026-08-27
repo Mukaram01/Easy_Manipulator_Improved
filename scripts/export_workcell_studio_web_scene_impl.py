@@ -107,6 +107,10 @@ HELPER_TOKENS = (
     "detection_label",
     "bounds_box",
     "bounding_box",
+    # Wizard/commissioning placeholder geometry is task context, not a
+    # physical workcell asset. It remains exportable through the explicit
+    # debug-overlay layer but must not appear in normal Product View.
+    "commissioning_object",
 )
 GENERATED_OUTPUT_SECTIONS = ("robots", "tools", "assets", "sensors", "zones", "frames")
 RENDERABLE_OUTPUT_SECTIONS = ("robots", "tools", "assets", "sensors", "zones")
@@ -1339,6 +1343,25 @@ def _annotate_generated_ui_selection_refs(
         authored_sensors,
         ("camera", "realsense", "d435"),
     )
+    if not camera_id:
+        configured_camera_ids = {
+            str(item.get("camera_id") or "").strip()
+            for item in authored_sensors
+            if any(token in _identity_text(item) for token in ("camera", "realsense", "d435"))
+            and str(item.get("camera_id") or "").strip()
+            and not str(item.get("camera_id") or "").startswith("UNKNOWN_")
+        }
+        if len(configured_camera_ids) == 1:
+            camera_id = next(iter(configured_camera_ids))
+    if not camera_id:
+        generated_camera_rows = [
+            item for item in generated.get("sensors", [])
+            if isinstance(item, Mapping)
+            and any(token in _identity_text(item) for token in ("camera", "realsense", "d435"))
+            and (_has_mesh_reference(item) or _item_local_bounds(item) is not None)
+        ]
+        if len(generated_camera_rows) == 1:
+            camera_id = "realsense_overhead"
     authored_support_surfaces = []
     for raw in authored_assets:
         if not isinstance(raw, Mapping):
@@ -1402,6 +1425,7 @@ def _selection_owner_registry(
     top_tools: Sequence[Mapping[str, Any]],
     authored_sensors: Sequence[Mapping[str, Any]],
     authored_assets: Sequence[Mapping[str, Any]],
+    generated_sensors: Sequence[Mapping[str, Any]] = (),
 ) -> Tuple[List[Json], str, str]:
     """Declare stable Qt hierarchy identities without restoring shadowed visuals."""
 
@@ -1454,6 +1478,14 @@ def _selection_owner_registry(
         if str(item.get("camera_id") or "").strip()
         and not str(item.get("camera_id") or "").startswith("UNKNOWN_")
     } - {""})
+    if not camera_ids:
+        generated_camera_ids = {
+            str(item.get("camera_id") or item.get("canonical_scene_item_id") or "").strip()
+            for item in generated_sensors
+            if any(token in _identity_text(item) for token in ("camera", "realsense", "d435"))
+        } - {""}
+        if len(generated_camera_ids) == 1:
+            camera_ids = sorted(generated_camera_ids)
     support_surface_ids = sorted({
         str(item.get("id") or "").strip()
         for item in authored_assets
@@ -2141,7 +2173,7 @@ def _authored_sections(data: Dict[str, Any], scene_dir: Path, warnings: List[Jso
 def _entity(src: Mapping[str, Any], fields: Iterable[str], source: str, fallback_id: str) -> Json:
     item = {field: src[field] for field in fields if field in src}
     if not item.get("id"):
-        item["id"] = str(_first_present(item.get("model"), item.get("profile"), item.get("type"), fallback_id))
+        item["id"] = str(_first_present(item.get("name"), item.get("model"), item.get("profile"), item.get("type"), fallback_id))
     item["provenance"] = _provenance(item.keys(), source)
     return item
 
@@ -2154,13 +2186,13 @@ def _top_level_entities(data: Dict[str, Any], warnings: List[Json]) -> Tuple[Lis
         root = _as_map(data.get(key))
         robot = _as_map(root.get("robot"))
         if robot:
-            robots.append(_entity(robot, ("id", "model", "profile", "planning_group", "world_frame", "base_frame", "tool_link", "tool_mount_link", "home_named_target"), source, "robot"))
+            robots.append(_entity(robot, ("id", "name", "model", "profile", "planning_group", "world_frame", "base_frame", "tool_link", "tool_mount_link", "home_named_target"), source, "robot"))
         else:
             if data.get(key) is not None:
                 _warn(warnings, "robot_field_missing", f"{source} has no robot object.", source)
         tool = _as_map(root.get("tool") or root.get("end_effector"))
         if tool:
-            tools.append(_entity(tool, ("id", "type", "model", "profile", "mount_link", "grasp_frame", "allowed_touch_links"), source, "tool"))
+            tools.append(_entity(tool, ("id", "name", "type", "model", "profile", "mount_link", "grasp_frame", "allowed_touch_links"), source, "tool"))
         camera = _as_map(root.get("camera"))
         if camera:
             sensors.append(_entity(camera, ("id", "enabled", "camera_id", "frame_id", "pose", "rgb_topic", "depth_topic", "pointcloud_topic"), source, "camera"))
@@ -3030,6 +3062,20 @@ def _owner_for_primary_item(item: Mapping[str, Any], section: str) -> str:
         text = _identity_text(item)
         if any(token in text for token in ("asset", "tray", "bin", "fixture", "conveyor", "object")):
             return "environment_mesh"
+
+    # Expanded scene URDFs may contain canonical physical environment geometry
+    # expressed directly as primitives rather than mesh files (for example the
+    # sorting-cell bins). These rows are generated, locked physical visuals,
+    # not diagnostic helpers. Keep unknown mesh-backed records strict, but give
+    # finite meshless generated primitives an explicit generated owner.
+    if (
+        section == "assets"
+        and item.get("source_kind") == "generated_preview"
+        and not _has_mesh_reference(item)
+        and _item_local_bounds(item) is not None
+    ):
+        return "generated_urdf_fallback"
+
     return "diagnostic_helper"
 
 
@@ -3046,6 +3092,13 @@ def _apply_render_ownership_contract(payload: Json, *, expanded_urdf_active: boo
         and item.get("source_section") == "items"
         and item.get("id")
         and (_has_mesh_reference(item) or _item_local_bounds(item) is not None)
+    }
+    canonical_support_surface_ids = {
+        str(owner.get("id"))
+        for owner in _as_list(payload.get("ui_selection_owners"))
+        if isinstance(owner, Mapping)
+        and owner.get("type") in {"support_surface", "support_surface_table"}
+        and owner.get("id") in canonical_layout_physical_ids
     }
     for section in RENDERABLE_OUTPUT_SECTIONS:
         for item in _as_list(payload.get(section)):
@@ -3111,6 +3164,22 @@ def _apply_render_ownership_contract(payload: Json, *, expanded_urdf_active: boo
                 continue
 
             category = _core_mesh_category(item, section)
+            if (
+                category == "table_workbench"
+                and item.get("source_kind") == "user_authored"
+                and canonical_support_surface_ids
+                and item_id not in canonical_support_surface_ids
+            ):
+                item["render_policy"] = "diagnostic_only"
+                item["render_owner"] = "editable_layout"
+                item["render_identity"] = _source_identity_for_item(scene_id, section, item, index)
+                item["render_policy_reason"] = "canonical_support_surface_owner_is_authoritative"
+                item["render_expected"] = False
+                item["mesh_load_required"] = False
+                item["selectable"] = False
+                item["exclude_from_fit_bounds"] = True
+                counters["diagnostic_only_records"] += 1
+                continue
             generated_robot_tool = _is_generated_robot_tool_record(item, section)
             if expanded_urdf_active and generated_robot_tool:
                 owner = "expanded_urdf_tool" if category == "gripper_link" else "expanded_urdf_robot"
@@ -3138,7 +3207,11 @@ def _apply_render_ownership_contract(payload: Json, *, expanded_urdf_active: boo
                     )
                     if value not in (None, "")
                 }
-                if logical_keys & authored_physical_keys:
+                canonical_support_ref = {
+                    str(item.get("support_surface_ref") or ""),
+                    str(item.get("canonical_scene_item_id") or ""),
+                } & canonical_support_surface_ids
+                if logical_keys & authored_physical_keys or (category == "table_workbench" and canonical_support_ref):
                     item["render_policy"] = "diagnostic_only"
                     item["render_owner"] = "environment_mesh"
                     item["render_identity"] = _generated_render_identity(scene_id, "environment_mesh", item, index)
@@ -3341,6 +3414,7 @@ def build_web_scene(
         top_tools,
         top_sensors + authored["sensors"],
         authored["assets"],
+        generated["sensors"],
     )
     _annotate_owner_relative_physical_visual_transforms(
         generated,

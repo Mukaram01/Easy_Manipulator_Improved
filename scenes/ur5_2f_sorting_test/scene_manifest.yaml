@@ -35,7 +35,7 @@ end_effector:
     - gripper_finger2_finger_tip_link
 
 environment:
-  support_surface_link: table
+  support_surface_link: table_
 
 perception:
   input_frame_options:

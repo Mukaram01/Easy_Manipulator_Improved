@@ -15,9 +15,9 @@ end_effector:
   brand: onrobot
   grasp_frame: tool0
 camera:
-  enabled: false
-  camera_id: UNKNOWN_CAMERA
-  frame_id: UNKNOWN_FRAME
+  enabled: true
+  camera_id: realsense_overhead
+  frame_id: camera_link
 environment:
   frame: world
   layout: layout/workcell_studio_layout.yaml

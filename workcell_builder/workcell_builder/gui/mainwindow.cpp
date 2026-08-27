@@ -690,9 +690,12 @@ bool is_user_facing_scene_hierarchy_item(const ScenePreviewWidget::PreviewItem &
     metadata.contains(QStringLiteral("drop_zone")) || metadata.contains(QStringLiteral("task_only"));
   if (task_only_semantic || (semantic_primitive && !authored_source)) return false;
 
+  // Retain the established policy name while extending the same canonical
+  // selection-owner path to fixed camera and support-surface owners.
   const bool canonical_robot_or_tool =
     (role == QStringLiteral("robot") || role == QStringLiteral("end_effector") ||
-     role == QStringLiteral("end_effector_tool")) &&
+     role == QStringLiteral("end_effector_tool") || role == QStringLiteral("camera") ||
+     role == QStringLiteral("support_surface") || role == QStringLiteral("support_surface_table")) &&
     source_layer == QStringLiteral("selection_owner_registry") && !generated_visual_identity;
   if (canonical_robot_or_tool) return true;
 
@@ -13328,11 +13331,11 @@ void MainWindow::populate_scene_hierarchy()
         }
       }
       for (const auto & declaration : selection_owner_declarations) {
-        const bool id_already_owned = std::any_of(
+        const bool id_already_owned_by_hierarchy_item = std::any_of(
           all_scene_preview_items_.cbegin(), all_scene_preview_items_.cend(), [&](const auto & item) {
-            return item.id.trimmed() == declaration.id;
+            return item.id.trimmed() == declaration.id && is_user_facing_scene_hierarchy_item(item);
           });
-        if (id_already_owned) continue;
+        if (id_already_owned_by_hierarchy_item) continue;
         ScenePreviewWidget::PreviewItem owner;
         owner.id = declaration.id;
         owner.display_name = declaration.label.isEmpty() ? declaration.id : declaration.label;
