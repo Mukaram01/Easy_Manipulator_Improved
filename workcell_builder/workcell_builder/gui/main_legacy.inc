@@ -319,6 +319,7 @@ struct Scene3DSmokeOptions
   QString screenshot_path;
   bool exit_after_smoke{ false };
   bool new_cell_recommended_layout_smoke{ false };
+  QStringList web3d_scene_sequence;
 };
 
 class Scene3DSmokeRunner : public QObject
@@ -339,6 +340,8 @@ private:
   QJsonObject latest_counters_;
   QJsonObject scene_load_diagnostics_;
   int render_ready_attempts_{0};
+  int web3d_sequence_index_{0};
+  QJsonArray web3d_sequence_results_;
 
   bool runtime_scene3d_diagnostics_matches_requested_scene(const QString & line) const
   {
@@ -383,6 +386,10 @@ private:
       blockers_.append("MainWindow instance is null");
       return finalize();
     }
+    if (!opts_.web3d_scene_sequence.isEmpty()) {
+      load_next_web3d_sequence_scene();
+      return;
+    }
     if (opts_.new_cell_recommended_layout_smoke) {
       trigger_by_text("New Cell");
       QTimer::singleShot(300, this, &Scene3DSmokeRunner::step_trigger_recommended_layout);
@@ -397,6 +404,68 @@ private:
       trigger_by_text("Open Selected Scene");
     }
     QTimer::singleShot(300, this, &Scene3DSmokeRunner::step_wait_scene3d_ready);
+  }
+
+  void load_next_web3d_sequence_scene()
+  {
+    if (web3d_sequence_index_ >= opts_.web3d_scene_sequence.size()) {
+      finalize_web3d_sequence();
+      return;
+    }
+    const QString scene = opts_.web3d_scene_sequence.at(web3d_sequence_index_).trimmed();
+    const QString root = QFileInfo(opts_.scene_path).isDir()
+      ? QFileInfo(opts_.scene_path).absolutePath() : QString();
+    const QString path = root.isEmpty() ? QString() : QDir(root).filePath(scene);
+    QStringList load_blockers;
+    QJsonObject diagnostics;
+    if (!window_->load_scene_for_scene3d_smoke(scene, path, &load_blockers, &diagnostics)) {
+      for (const QString & blocker : load_blockers) blockers_.append(blocker);
+      finalize_web3d_sequence();
+      return;
+    }
+    const qint64 started = QDateTime::currentMSecsSinceEpoch();
+    auto * timer = new QTimer(this);
+    connect(timer, &QTimer::timeout, this, [this, timer, scene, started]() {
+      ScenePreviewWidget * preview = window_ ? window_->active_scene_preview_widget() : nullptr;
+      const bool identity_matches = preview && preview->preview_context().scene_id == scene;
+      const bool ready = identity_matches && preview->runtime_preview_status_text() == QStringLiteral("Web3D Product View — ready");
+      if (ready) {
+        QJsonObject result;
+        result["cycle"] = web3d_sequence_index_ + 1;
+        result["scene"] = scene;
+        result["status"] = preview->runtime_preview_status_text();
+        result["scene_identity_matches"] = true;
+        web3d_sequence_results_.append(result);
+        qInfo().noquote() << QStringLiteral("Web3D switch smoke ready: cycle=%1 scene=%2 status=scene_ready")
+          .arg(web3d_sequence_index_ + 1).arg(scene);
+        timer->stop(); timer->deleteLater();
+        ++web3d_sequence_index_;
+        QTimer::singleShot(100, this, &Scene3DSmokeRunner::load_next_web3d_sequence_scene);
+      } else if (QDateTime::currentMSecsSinceEpoch() - started > 45000) {
+        blockers_.append(QStringLiteral("Web3D scene switch timed out: %1 status=%2 identity=%3")
+          .arg(scene, preview ? preview->runtime_preview_status_text() : QStringLiteral("missing preview"),
+            preview ? preview->preview_context().scene_id : QStringLiteral("missing")));
+        timer->stop(); timer->deleteLater();
+        finalize_web3d_sequence();
+      }
+    });
+    timer->start(100);
+  }
+
+  void finalize_web3d_sequence()
+  {
+    QJsonObject root;
+    root["schema"] = QStringLiteral("workcell_studio_web3d_scene_switch_smoke/v1");
+    root["requested_cycles"] = opts_.web3d_scene_sequence.size();
+    root["completed_cycles"] = web3d_sequence_results_.size();
+    root["results"] = web3d_sequence_results_;
+    root["blockers"] = blockers_;
+    root["pass"] = blockers_.isEmpty() && web3d_sequence_results_.size() == opts_.web3d_scene_sequence.size();
+    QFile output(opts_.smoke_output);
+    if (output.open(QIODevice::WriteOnly | QIODevice::Text))
+      output.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    std::cout << QJsonDocument(root).toJson(QJsonDocument::Indented).toStdString() << std::endl;
+    app_->exit(root.value("pass").toBool() ? 0 : 1);
   }
 
   void step_trigger_recommended_layout()
@@ -1159,6 +1228,7 @@ int main(int argc, char * argv[])
   smoke_opts.screenshot_path = cli_value(args, "--smoke-screenshot");
   smoke_opts.exit_after_smoke = has_cli_flag(args, "--exit-after-smoke");
   smoke_opts.new_cell_recommended_layout_smoke = has_cli_flag(args, "--new-cell-recommended-layout-smoke");
+  smoke_opts.web3d_scene_sequence = cli_value(args, "--web3d-scene-sequence").split(',', Qt::SkipEmptyParts);
 
   if (smoke_opts.enabled) {
     if (smoke_opts.smoke_output.trimmed().isEmpty()) {

@@ -12,7 +12,8 @@ def test_context_navigation_is_installed_after_home_shell_and_preview():
     assert '#include "home_contextual_navigation.hpp"' in MAIN
     assert "configure_target_shell(this, workspace)" in MAIN
     assert "install_home_snapshot_preview(this, workspace)" in MAIN
-    assert "install_contextual_navigation(this)" in MAIN
+    assert "install_contextual_navigation(" in MAIN
+    assert "show_workcells_home();" in MAIN
 
 
 def test_home_is_strictly_sidebar_only_and_hides_every_toolbar_recursively():
@@ -55,16 +56,10 @@ def test_scene_topbar_is_minimal_context_not_another_navigation_system():
 
 
 def test_home_inspector_does_not_repeat_sidebar_workflow_actions():
-    for token in [
-        'studioTargetPrimaryAction',
-        'studioTargetSecondaryAction',
-        'studioTargetSimulateAction',
-        'studioTargetInspectorMore',
-        'button->hide()',
-        'more->hide()',
-        'View details →',
-    ]:
-        assert token in NAV
+    assert 'studioTargetInspectorMore' in NAV
+    assert 'more->show()' in NAV
+    for removed in ['studioTargetPrimaryAction', 'studioTargetSecondaryAction', 'studioTargetSimulateAction']:
+        assert removed not in NAV
 
 
 def test_contextual_shell_does_not_reintroduce_runtime_polish_or_scene_mutation():
@@ -79,3 +74,8 @@ def test_contextual_shell_does_not_reintroduce_runtime_polish_or_scene_mutation(
         'generate_workcell_static_preview.py',
     ]:
         assert forbidden not in NAV
+
+
+def test_workcells_button_delegates_to_canonical_mainwindow_navigation():
+    assert "if (navigate_home) navigate_home();" in NAV
+    assert "pages->setCurrentIndex(0)" not in NAV
