@@ -6,34 +6,32 @@ robot:
   id: ur5
   profile: ur5
 tool:
-  id: robotiq_2f
-  profile: robotiq_2f
+  id: onrobot_airpick4
+  profile: onrobot_airpick4
+  type: suction
+  brand: onrobot_airpick4_description
+  mount_link: tool0
+  grasp_frame: gripper_base_link
 compatibility:
   status: COMPATIBLE
   robot: ur5
-  tool: robotiq_2f
+  tool: onrobot_airpick4
 placed_objects:
 camera:
-  enabled: false
-  camera_id: UNKNOWN_CAMERA
-  frame_id: UNKNOWN_FRAME
-  pose:
-    - -0.55
-    - 0.55
-    - 0.4
-    - 0.0
-    - 0.0
-    - 0.0
+  enabled: true
+  camera_id: realsense_overhead
+  frame_id: camera_link
+  pose: [-0.5924999401340987, 0.2074999668301892, 0.6393999841651311, 3.14159, 1.5707950600208995, 0.0]
   rgb_topic: 
   depth_topic: 
   pointcloud_topic: 
 task:
   template: pick_place
   pick:
-    source_ref: 
+    source_ref: pick_zone_main
     object_ref: 
   place:
-    target_ref: 
+    target_ref: default_drop_zone
   grasp:
     strategy: auto
     approach_axis: z_down
@@ -78,11 +76,35 @@ metadata:
   generated_by: workcell_builder
   scene_schema_version: workcell_scene/v1
   scene_schema_warnings:
-    - camera disabled: no camera selection
-  scene_schema_blockers:
-    - Support surface/table must be selected
-    - Pick area must be selected
-    - Place target must be selected
-    - Grasp strategy must be selected
-    - Pick source is required
-    - Place target is required
+    []
+  scene_schema_blockers: []
+task_zones:
+  - id: pick_zone_main
+    type: pick_zone
+    role: pick
+    frame: world
+    shape: box
+    pose_xyz: [0.46, 0.03, 0.08]
+    pose_rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.20, 0.20, 0.10]
+
+  - id: default_drop_zone
+    type: place_zone
+    role: place
+    frame: world
+    shape: box
+    pose_xyz: [0.50, -0.30, 0.10]
+    pose_rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.20, 0.20, 0.10]
+    target_ref: target_bin_default
+    compatible_destination_id: default_drop_zone
+
+assets:
+  - id: target_bin_default
+    type: target_bin
+    role: target_bin
+    category: place_zone
+    frame: world
+    pose_xyz: [0.5, -0.3, 0.1]
+    pose_rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.20, 0.20, 0.10]

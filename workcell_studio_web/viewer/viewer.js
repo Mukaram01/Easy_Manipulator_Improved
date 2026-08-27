@@ -131,13 +131,24 @@ function isPrimaryAuthoredPhysicalMesh(item) {
 function readinessCategoryForItem(item) {
   if (!item || !isPrimaryRenderableItem(item) || isDebugOverlayItem(item)) return '';
   if (item?.readiness_category || item?.readinessCategory) return String(item.readiness_category || item.readinessCategory);
-  if (isPrimaryAuthoredPhysicalMesh(item)) return 'authored_physical_mesh';
   const category = meshContractCategoryOf(item);
   const identity = viewerGroupIdentity(item);
+  const explicitType = String(item?.type || '').trim().toLowerCase();
+  const explicitRole = String(item?.role || '').trim().toLowerCase();
+
+  // Specific physical roles must win before the generic authored-mesh bucket.
   if (category === 'camera' || isSensor(item)) return 'configured_camera';
-  if (category === 'table' || supportSurfaceDisplayType(item) || /\b(workbench|support surface|tabletop|table)\b/.test(identity)) return 'workbench_support_surface';
+  if (
+    category === 'table' ||
+    explicitType === 'table' ||
+    explicitRole === 'support_surface' ||
+    supportSurfaceDisplayType(item) ||
+    /\b(workbench|support surface|tabletop|table)\b/.test(identity)
+  ) return 'workbench_support_surface';
   if (isGeneratedToolOrGripperItem(item) || category === 'tool') return 'attached_tool_gripper';
   if (isGeneratedRobotItem(item) || category === 'robot') return 'robot_arm';
+
+  if (isPrimaryAuthoredPhysicalMesh(item)) return 'authored_physical_mesh';
   if (itemRequiresMeshBackedVisual(item) && (category === 'object' || viewerGroupFor(item) === 'environment/layout')) return 'authored_physical_mesh';
   return '';
 }
@@ -1698,6 +1709,15 @@ function meshLocalTransformOf(item) {
 function cloneTransform(transform) { return JSON.parse(JSON.stringify(transform)); }
 function sameTransform(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 function renderedById(id) { return state.objects.find(obj => obj.item.id === id) || state.pickRecords.find(obj => obj.item.id === id); }
+function physicalRenderedBySelectionOwnerId(id) {
+  const ownerId = String(id || '').trim();
+  if (!ownerId) return null;
+  const candidates = [...state.pickRecords, ...state.objects].filter(record =>
+    record?.object3d && explicitUiSelectionItemId(record) === ownerId
+  );
+  return candidates.find(record => record.authoritativePhysicalPick === true && isCanvasSelectableRendered(record)) ||
+    candidates.find(record => isCanvasSelectableRendered(record)) || null;
+}
 function resolveCanonicalPhysicalEditBinding(value = state.selected) {
   const record = value?.item ? value : null;
   const candidateIds = [
@@ -5174,7 +5194,9 @@ function selectObject(id) { return selectObjectFromRender(id, null); }
 function selectObjectFromRender(id, renderIdentity = null) {
   const requestedId = String(id || '');
   const rawRequested = requestedId ? renderedById(requestedId) : null;
-  const requested = inspectionSelectionRendered(renderIdentity || rawRequested);
+  const requested = inspectionSelectionRendered(
+    renderIdentity || rawRequested || physicalRenderedBySelectionOwnerId(requestedId) || selectionOwnerRenderedById(requestedId)
+  );
   const selectionId = requested ? explicitUiSelectionItemId(requested) : requestedId;
   const explicitlySelectable = requested && isCanvasSelectableRendered(requested);
   if (requestedId && !explicitlySelectable) {

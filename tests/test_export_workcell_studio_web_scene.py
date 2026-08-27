@@ -1349,3 +1349,32 @@ def test_generated_table_relative_transform_uses_canonical_owner_not_stale_envir
     assert table["owner_relative_visual_transform"]["xyz"] == pytest.approx([0.0, 0.0, 0.0])
     provenance = table["provenance"]["owner_relative_visual_transform"]
     assert provenance["source_owner_pose"]["xyz"] == pytest.approx([0.65, 0.0, 0.06])
+
+def test_generated_urdf_primitive_asset_gets_primary_fallback_render_owner():
+    item = {
+        "id": "urdf_visual_21_bin_a_visual_21",
+        "link": "bin_a",
+        "source_kind": "generated_preview",
+        "geometry_type": "box",
+        "primitive_geometry_type": "box",
+        "dimensions": [0.22, 0.18, 0.01],
+        "render_expected": True,
+    }
+
+    payload = {
+        "scene_id": "sorting_fixture",
+        "robots": [],
+        "tools": [],
+        "assets": [item],
+        "sensors": [],
+        "zones": [],
+    }
+
+    exporter._apply_render_ownership_contract(
+        payload,
+        expanded_urdf_active=True,
+    )
+
+    assert item["render_policy"] == "primary"
+    assert item["render_owner"] == "generated_urdf_fallback"
+    assert item["render_identity"]
