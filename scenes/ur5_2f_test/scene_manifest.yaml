@@ -21,6 +21,7 @@ robot:
 end_effector:
   type: finger
   model: robotiq_85_gripper
+  brand: robotiq_85_gripper
   profile: robotiq_85_gripper
   mount_link: tool0
   grasp_frame: ee_palm
@@ -81,6 +82,7 @@ task_recipe:
   destinations:
   - id: default_drop_zone
     frame: world
+    frame_id: world
     pose_xyz:
     - 0.55
     - -0.28
@@ -89,6 +91,7 @@ task_recipe:
     - 0.0
     - 0.0
     - 0.0
+    action: place
   expected:
     allow_offline_validation: true
     min_valid_destinations: 1

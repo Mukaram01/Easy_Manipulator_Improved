@@ -17,8 +17,22 @@ robot:
   planning_group: manipulator
   base_frame: base_link
   ee_link: gripper_base_link
+  home_named_target: home
 
 end_effector:
   type: finger
   brand: robotiq_85_gripper
   grasp_frame: gripper_base_link
+  allowed_touch_links:
+    - gripper_base_link
+    - gripper_finger1_knuckle_link
+    - gripper_finger2_knuckle_link
+    - gripper_finger1_finger_link
+    - gripper_finger2_finger_link
+    - gripper_finger1_inner_knuckle_link
+    - gripper_finger2_inner_knuckle_link
+    - gripper_finger1_finger_tip_link
+    - gripper_finger2_finger_tip_link
+
+environment:
+  support_surface_link: table_
