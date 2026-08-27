@@ -17,8 +17,12 @@ robot:
   planning_group: manipulator
   base_frame: base_link
   ee_link: suction_cup_link
+  home_named_target: home
 
 end_effector:
   type: suction
   brand: single_suction_gripper
   grasp_frame: suction_cup_link
+
+environment:
+  support_surface_link: table_
