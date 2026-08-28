@@ -153,6 +153,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from rclpy.duration import Duration
     from rclpy.node import Node
     from tf2_ros import Buffer, TransformException, TransformListener
+    import tf2_geometry_msgs  # noqa: F401 - registers PoseStamped TF support
 
     rclpy.init(args=ros_args)
     node = Node("dynamic_object_planning_scene_bridge")
