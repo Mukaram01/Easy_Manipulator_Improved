@@ -49,7 +49,7 @@ scenes:
     scene_path: scenes/suction_test
     support_level: supported
     status: blocked
-    known_blocker: "local Scene3D GUI smoke cannot run because ROS Humble/ament/workcell_builder executable is unavailable in the container; generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable."
+    known_blocker: "Browser Product View reaches scene_ready with complete required visuals; the offline matrix remains blocked until the recorded fake-hardware ROS launch is executed and runtime smoke evidence is attached."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/suction_test --json
@@ -79,7 +79,7 @@ scenes:
     scene_path: scenes/ur10_2f_test
     support_level: supported
     status: blocked
-    known_blocker: "post-regeneration readiness matrix: static cell_definition camera/object contract has been restored; Scene3D runtime smoke evidence remains blocked because generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable. The scene_visual_mesh_index.json artifact has been regenerated with repo-local xacro-lite expansion and is no longer the catalog blocker."
+    known_blocker: "Browser Product View reaches scene_ready with complete required visuals; the offline matrix remains blocked until the recorded fake-hardware ROS launch is executed and runtime smoke evidence is attached."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur10_2f_test --json
@@ -102,7 +102,7 @@ scenes:
     scene_path: scenes/ur3_suction_test
     support_level: supported
     status: blocked
-    known_blocker: "post-regeneration readiness matrix: static cell_definition camera/object contract has been restored; Scene3D runtime smoke evidence remains blocked because generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable. The scene_visual_mesh_index.json artifact has been regenerated with repo-local xacro-lite expansion and is no longer the catalog blocker."
+    known_blocker: "Browser Product View reaches scene_ready with complete required visuals; the offline matrix remains blocked until the recorded fake-hardware ROS launch is executed and runtime smoke evidence is attached."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur3_suction_test --json
@@ -125,7 +125,7 @@ scenes:
     scene_path: scenes/ur5_2f_builder_pick_place_demo
     support_level: supported
     status: blocked
-    known_blocker: "post-regeneration readiness matrix: static cell_definition camera/object contract has been restored; Scene3D runtime smoke evidence remains blocked because generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable. The scene_visual_mesh_index.json artifact has been regenerated with repo-local xacro-lite expansion and is no longer the catalog blocker."
+    known_blocker: "Browser Product View reaches scene_ready with complete required visuals; the offline matrix remains blocked until the recorded fake-hardware ROS launch is executed and runtime smoke evidence is attached."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_builder_pick_place_demo --json
@@ -148,7 +148,7 @@ scenes:
     scene_path: scenes/ur5_2f_sorting_test
     support_level: supported
     status: blocked
-    known_blocker: "post-regeneration readiness matrix: static cell_definition camera/object contract has been restored; Scene3D runtime smoke evidence remains blocked because generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable. The scene_visual_mesh_index.json artifact has been regenerated with repo-local xacro-lite expansion and is no longer the catalog blocker."
+    known_blocker: "Browser Product View reaches scene_ready with complete required visuals; the offline matrix remains blocked until the recorded fake-hardware ROS launch is executed and runtime smoke evidence is attached."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_sorting_test --json
@@ -171,7 +171,7 @@ scenes:
     scene_path: scenes/ur5_2f_test
     support_level: supported
     status: blocked
-    known_blocker: "generated/scene3d_gui_smoke.json currently records missing workcell_builder executable/runtime evidence and must be regenerated in a sourced ROS Humble workspace before this scene can be treated as pass-like."
+    known_blocker: "Browser Product View reaches scene_ready with complete required visuals; the offline matrix remains blocked until the recorded fake-hardware ROS launch is executed and runtime smoke evidence is attached."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_test --json
@@ -201,7 +201,7 @@ scenes:
     scene_path: scenes/ur5_3f_test
     support_level: supported
     status: blocked
-    known_blocker: "3F contract aligned across manifest, cell_definition, environment, and URDF using the bundled robotiq_3f capability/assets; remaining blocker is Scene3D runtime smoke evidence because generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable, so install/source the ROS Humble workcell_builder executable and rerun the scene smoke/readiness matrix."
+    known_blocker: "Browser Product View reaches scene_ready with complete required visuals; the offline matrix remains blocked until the recorded fake-hardware ROS launch is executed and runtime smoke evidence is attached."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_3f_test --json
@@ -224,7 +224,7 @@ scenes:
     scene_path: scenes/ur5_airpick4_test
     support_level: supported
     status: blocked
-    known_blocker: "post-regeneration readiness matrix: static cell_definition camera/object contract has been restored; Scene3D runtime smoke evidence remains blocked because generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable. The scene_visual_mesh_index.json artifact has been regenerated with repo-local xacro-lite expansion and is no longer the catalog blocker."
+    known_blocker: "Browser Product View reaches scene_ready with complete required visuals; the offline matrix remains blocked until the recorded fake-hardware ROS launch is executed and runtime smoke evidence is attached."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_airpick4_test --json

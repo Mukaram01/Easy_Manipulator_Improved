@@ -324,6 +324,22 @@ def test_manifest_local_file_references_accepts_generated_scene3d_smoke_under_sc
     assert len(result["checked"]) == len(manifest_refs)
     assert any(item["reference"] == "generated/scene3d_gui_smoke.json" for item in result["checked"])
 
+
+def test_missing_scene3d_smoke_is_a_runtime_evidence_blocker_not_authored_schema_failure(tmp_path: Path) -> None:
+    scene_dir = tmp_path / "scenes" / "demo"
+    scene_dir.mkdir(parents=True)
+    (scene_dir / "environment.yaml").write_text("{}\n", encoding="utf-8")
+    (scene_dir / "scene_manifest.yaml").write_text(
+        yaml.safe_dump({"files": {"environment": "environment.yaml", "scene3d_gui_smoke": "generated/scene3d_gui_smoke.json"}}),
+        encoding="utf-8",
+    )
+
+    result = matrix._check_manifest_refs(scene_dir)
+
+    assert result["status"] == "BLOCKED"
+    assert "runtime smoke evidence" in result["message"]
+    assert result["missing"][0]["reference"] == "generated/scene3d_gui_smoke.json"
+
 def test_missing_visual_mesh_index_blocks_visual_evidence(tmp_path: Path, minimal_scene_factory: Any) -> None:
     report = _single_scene_report(
         tmp_path,

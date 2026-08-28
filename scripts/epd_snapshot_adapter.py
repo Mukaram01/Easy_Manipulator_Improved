@@ -80,6 +80,14 @@ def validate_normalized_snapshot(snapshot: dict[str, Any], *, expected_scene_id:
         attrs = obj.get("attributes", {})
         if attrs is not None and not isinstance(attrs, dict):
             errors.append(f"objects[{idx}].attributes must be a mapping when present")
+        dimensions = obj.get("dimensions_xyz")
+        if dimensions is not None:
+            parsed_dimensions = _finite_vec(dimensions, 3, f"objects[{idx}].dimensions_xyz", errors)
+            if parsed_dimensions is not None and any(value <= 0.0 for value in parsed_dimensions):
+                errors.append(f"objects[{idx}].dimensions_xyz values must be positive")
+        shape = obj.get("shape")
+        if shape is not None and (not isinstance(shape, str) or not shape.strip()):
+            errors.append(f"objects[{idx}].shape must be a non-empty string when present")
     return errors
 
 def normalize_detected_objects_snapshot(detected: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
@@ -103,6 +111,16 @@ def normalize_detected_objects_snapshot(detected: dict[str, Any], profile: dict[
             "confidence": obj.get("confidence"),
             "attributes": obj.get("attributes", {}),
         }
+        dimensions = obj.get("dimensions_xyz") or obj.get("dimensions")
+        if isinstance(dimensions, dict) and all(axis in dimensions for axis in ("x", "y", "z")):
+            dimensions = [dimensions["x"], dimensions["y"], dimensions["z"]]
+        if dimensions is not None:
+            item["dimensions_xyz"] = dimensions
+        shape = obj.get("shape") or (obj.get("attributes", {}) or {}).get("shape")
+        if isinstance(shape, dict):
+            shape = shape.get("type")
+        if shape is not None:
+            item["shape"] = shape
         pos = pose.get("position") or pose.get("xyz") or obj.get("position")
         quat = pose.get("orientation_xyzw") or pose.get("quaternion_xyzw")
         if pos is not None:
@@ -181,6 +199,8 @@ def main() -> int:
             continue
         if float(o.get('confidence',0.0)) < conf:
             warnings.append(f"low_confidence:{o.get('id')}")
+        if not (o.get('dimensions_xyz') or o.get('dimensions')):
+            warnings.append(f"planning_scene_geometry_unavailable:{o.get('id') or o.get('object_id')}")
         candidates.append(o)
     if not candidates:
         candidates=objects[:]

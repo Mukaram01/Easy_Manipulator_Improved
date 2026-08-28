@@ -589,6 +589,8 @@ if(BUILD_TESTING)
   if(TARGET workcell_new_cell_wizard_test)
     target_link_libraries(workcell_new_cell_wizard_test Qt5::Widgets ${Boost_LIBRARIES})
     target_include_directories(workcell_new_cell_wizard_test PRIVATE ${Boost_INCLUDE_DIRS})
+    target_compile_definitions(workcell_new_cell_wizard_test PRIVATE
+      WORKCELL_BUILDER_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
   endif()
 
   foreach(workcell_builder_yaml_boost_test
@@ -835,6 +837,8 @@ install(PROGRAMS
   ../../scripts/workcell_studio_layout_mesh_preview_node.py
   ../../scripts/generate_moveit_collision_manifest.py
   ../../scripts/workcell_studio_planning_scene_node.py
+  ../../scripts/epd_snapshot_adapter.py
+  ../../scripts/dynamic_object_planning_scene_bridge.py
   DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS

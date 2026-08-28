@@ -6974,7 +6974,11 @@ void MainWindow::refresh_scene_builder_view_chips()
     launch_ready = s.has_launch_demo && s.has_package_xml;
     if (scene_preview_widget_) {
       const QString runtime_preview_status = scene_preview_widget_->runtime_preview_status_text();
-      if (runtime_preview_status == QStringLiteral("Preview available in compatibility mode")) {
+      if (runtime_preview_status == QStringLiteral("Preview failed")) {
+        // A terminal Product View failure is authoritative. Native paint
+        // counters or stale quality evidence must never promote it to Ready.
+        preview_chip_status = QStringLiteral("Failed");
+      } else if (runtime_preview_status == QStringLiteral("Preview available in compatibility mode")) {
         // Web3D may have failed, but the populated native compatibility
         // viewport is still a usable Product View and must not be summarized
         // as a failed or missing 3D preview.

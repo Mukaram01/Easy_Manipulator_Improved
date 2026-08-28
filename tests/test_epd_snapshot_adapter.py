@@ -72,3 +72,34 @@ def test_incomplete_perception_backed_scene_rejected():
         assert "Invalid perception-backed scene metadata" in str(exc)
     else:
         raise AssertionError("expected invalid perception scene to fail")
+
+
+def test_observed_geometry_survives_normalization_and_task_binding():
+    adapter = _load_adapter()
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("run_task_recipe_adapter", "scripts/run_task_recipe_adapter.py")
+    task_adapter = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = task_adapter
+    spec.loader.exec_module(task_adapter)
+    sys.path.insert(0, str(Path("scripts").resolve()))
+    from validate_detected_objects import _load_yaml_or_json
+    detected, _, _ = _load_yaml_or_json(Path("tests/fixtures/detected_objects/valid_epd_single_box.yaml"))
+    profile = {"scene_id":"scene1", "perception":{"camera":{"camera_id":"intel_realsense_d435i", "frame_id":"camera_depth_optical_frame"}}}
+    detected["scene_id"] = "scene1"
+    detected["camera_id"] = "intel_realsense_d435i"
+    detected["timestamp"] = detected["source"]["captured_at"]
+    detected["frame_id"] = detected["source"]["frame_id"]
+
+    normalized = adapter.normalize_detected_objects_snapshot(detected, profile)
+    assert adapter.validate_normalized_snapshot(normalized) == []
+    observed = normalized["objects"][0]
+    assert observed["object_id"] == "obj_001"
+    assert observed["pose"]["position"] == [-0.56, 0.09, 0.13]
+    assert observed["dimensions_xyz"] == [0.08, 0.04, 0.03]
+    assert observed["shape"] == "box"
+
+    bound = task_adapter._normalize_objects(normalized)[0]
+    assert bound["id"] == "obj_001"
+    assert bound["pose"]["position"] == [-0.56, 0.09, 0.13]
+    assert bound["dimensions"] == [0.08, 0.04, 0.03]
+    assert bound["shape"] == "box"

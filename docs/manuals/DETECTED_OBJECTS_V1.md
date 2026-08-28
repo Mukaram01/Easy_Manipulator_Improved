@@ -63,4 +63,12 @@ Workcell Studio now validates EPD payloads through the machine-readable `workcel
 
 Required normalized fields are `scene_id`, `camera_id`, `timestamp`, `frame_id`, and `objects`. Each object requires an `object_id` or `track_id`, `label`, `confidence`, optional `attributes`, and either a finite pose (`position` plus normalized `orientation_xyzw`) or a finite `centroid`. Validation rejects duplicate object IDs, non-finite poses, non-normalized quaternions, confidence outside `[0, 1]`, and scene/camera mismatches.
 
+Normalized objects also preserve optional observed `dimensions_xyz` and `shape`. These values remain perception-owned and are not replaced by authored constants. Their absence is valid for live/replay authoring, but downstream PlanningScene conversion must report that collision geometry is unavailable rather than inventing dimensions. Manual/simulated sources must instead supply positive primitive dimensions and an authored pose/frame.
+
 Generated scene packages write `generated/perception_adapter_config.yaml`. Perception-backed scenes receive camera identity, expected frames, EPD input topic/message type, required object classes, confidence threshold, task binding, and the normalized output contract. Scenes with perception disabled report `NOT_APPLICABLE`; incomplete perception-backed metadata fails generation clearly.
+
+## Dynamic PlanningScene box bridge
+
+`scripts/dynamic_object_planning_scene_bridge.py` converts one normalized observed box into a MoveIt `CollisionObject`. It resolves the observation frame into the configured planning frame through TF2, applies an `ADD` PlanningScene diff using the stable perceived object ID, and queries `/get_planning_scene` to verify exactly one matching object. Repeating an observation with the same ID updates that object; it does not mint a new identity.
+
+Missing observed dimensions or unsupported shape returns `BLOCKED` without invented geometry. Missing TF returns `BLOCKED` without copying camera coordinates into the planning frame. Invalid data or MoveIt application/verification failure returns `FAIL`. Successful insertion does not imply grasp feasibility or Pick & Place runtime readiness.

@@ -44,6 +44,9 @@ def test_failed_embedded_state_still_renders_failed():
     chip_fn = MAINWINDOW_CPP[MAINWINDOW_CPP.index('void MainWindow::refresh_scene_builder_view_chips()'):]
     assert 'runtime_preview_status != QStringLiteral("Preview failed")' in chip_fn
     assert 'preview_chip_status = QStringLiteral("Failed");' in chip_fn
+    terminal_guard = chip_fn.index('runtime_preview_status == QStringLiteral("Preview failed")')
+    compatibility = chip_fn.index('runtime_preview_status == QStringLiteral("Preview available in compatibility mode")')
+    assert terminal_guard < compatibility
 
 
 def test_launch_artifacts_are_not_labeled_fake_hardware_ready():
