@@ -40,9 +40,10 @@ def test_repeated_consumers_share_one_same_scene_snapshot_parse_without_cache_hi
 
 
 def test_revision_change_and_scene_switch_cannot_reuse_old_metadata():
-    assert "cached.scene_dir == key && cached.revision == revision" in CPP
+    assert "cached_by_scene.find(key)" in CPP
+    assert "cached_it->second.revision == revision" in CPP
     assert "file_revision_change" in CPP
-    assert "scene_switch" in CPP
+    assert '"scene_switch"' not in CPP
     assert "canonical_scene_cache_key" in CPP
     assert "weakly_canonical" in CPP
 
@@ -52,14 +53,15 @@ def test_parse_failures_are_not_permanently_cached_after_file_changes():
     assert "if (status.loaded)" in CPP
     assert "snapshot.documents[rel] = doc" in CPP
     assert "content_hash" in CPP
-    assert "cached.revision == revision" in CPP
+    assert "cached_it->second.revision == revision" in CPP
 
 
 def test_explicit_successful_mutations_invalidate_snapshot_once():
     assert "invalidate_workcell_studio_scene_metadata_snapshot" in HPP
     assert 'invalidate_workcell_studio_scene_metadata_snapshot(scene_dir, "save_layout")' in MAIN
     assert 'invalidate_workcell_studio_scene_metadata_snapshot(sc.scene_dir, "generation")' in MAIN
-    assert "if (!state.cached.scene_dir.empty() && state.cached.scene_dir == key) state.cached = SceneMetadataSnapshot{};" in CPP
+    assert "state.cached_by_scene.erase(key);" in CPP
+    assert "state.invalidation_reasons[key]" in CPP
 
 
 def test_snapshot_logging_replaces_per_file_success_noise_with_one_reload_summary():
@@ -71,7 +73,7 @@ def test_snapshot_logging_replaces_per_file_success_noise_with_one_reload_summar
 
 
 def test_fifty_unchanged_cache_reads_do_not_emit_repeated_summary_logs():
-    cache_hit_block = "if (!explicitly_invalidated && !cached.scene_dir.empty() && cached.scene_dir == key && cached.revision == revision)"
+    cache_hit_block = "if (!explicitly_invalidated && cached_it != state.cached_by_scene.end() && cached_it->second.revision == revision)"
     assert cache_hit_block in CPP
     after_cache_hit = CPP.split(cache_hit_block, 1)[1].split("SceneMetadataSnapshot snapshot", 1)[0]
     assert "++cached.cache_hits;" in after_cache_hit
@@ -79,8 +81,8 @@ def test_fifty_unchanged_cache_reads_do_not_emit_repeated_summary_logs():
 
 
 def test_real_file_revision_change_emits_one_new_summary_log():
-    assert "cached.scene_dir == key ? \"file_revision_change\" : \"scene_switch\"" in CPP
-    assert "cached = snapshot;" in CPP
+    assert 'cached_it == state.cached_by_scene.end() ? "initial" : "file_revision_change"' in CPP
+    assert "state.cached_by_scene[key] = snapshot;" in CPP
     assert CPP.count("Workcell Studio scene metadata snapshot: scene_id=") == 1
 
 
@@ -124,3 +126,10 @@ def test_snapshot_loader_has_no_unused_reason_parameter():
     signature = "load_scene_metadata_snapshot(const fs::path & scene_dir, const std::string & scene_id)"
     assert signature in CPP
     assert "load_scene_metadata_snapshot(scene_dir, scene_name, \"scene_selection_refresh\")" not in CPP
+
+
+def test_scene_cache_keeps_unrelated_scene_snapshots_and_invalidations_isolated():
+    assert "std::map<fs::path, SceneMetadataSnapshot> cached_by_scene" in CPP
+    assert "std::map<fs::path, std::string> invalidation_reasons" in CPP
+    assert "state.cached_by_scene.erase(key);" in CPP
+    assert "state.cached_by_scene.clear()" not in CPP

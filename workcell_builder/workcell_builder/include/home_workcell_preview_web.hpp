@@ -161,6 +161,13 @@ inline bool show_preview_file(QLabel * label, const QString & path, const QStrin
   return true;
 }
 
+inline void log_home_preview_event_once(QLabel * label, const QString & event_key, const QString & message)
+{
+  if (!label || label->property("homeSnapshotLastLogEvent").toString() == event_key) return;
+  label->setProperty("homeSnapshotLastLogEvent", event_key);
+  qInfo().noquote() << message;
+}
+
 inline void show_fast_home_preview(
   QTableWidget * table, QLabel * label, const QString & workspace_root)
 {
@@ -180,25 +187,30 @@ inline void show_fast_home_preview(
   if (completed_home_preview_contract(exact, scene_id, fingerprint) &&
       show_preview_file(label, exact, QStringLiteral("Current Product View snapshot"))) {
     label->setProperty("homeSnapshotState", QStringLiteral("current"));
-    qInfo().noquote() << QStringLiteral("Home preview: scene=%1 source=%2 cache=hit revision=%3 state=current")
-      .arg(scene_id, exact, fingerprint);
+    log_home_preview_event_once(label, scene_id + QStringLiteral("|hit|") + fingerprint,
+      QStringLiteral("Home preview: scene=%1 source=%2 cache=hit revision=%3 state=current")
+        .arg(scene_id, exact, fingerprint));
     return;
   }
 
   const QString stale = newest_home_preview_cache_path(scene_id);
   if (!stale.isEmpty() && show_preview_file(
       label, stale, QStringLiteral("Cached Product View snapshot · refreshing in background"))) {
-    label->setProperty("homeSnapshotState", QStringLiteral("stale"));
-    qInfo().noquote() << QStringLiteral("Home preview: scene=%1 source=%2 cache=stale revision=%3 state=stale")
-      .arg(scene_id, stale, fingerprint);
+    // Selection handling immediately asks the existing canonical Product View
+    // capture path for this revision; the old image is only a while-refreshing fallback.
+    label->setProperty("homeSnapshotState", QStringLiteral("refreshing"));
+    log_home_preview_event_once(label, scene_id + QStringLiteral("|stale|") + fingerprint,
+      QStringLiteral("Home preview: scene=%1 source=%2 cache=stale revision=%3 state=regenerating")
+        .arg(scene_id, stale, fingerprint));
     return;
   }
 
   label->setText(QStringLiteral("Preparing scene preview…"));
   label->setToolTip(QStringLiteral("A canonical Product View snapshot is not cached yet."));
   label->setProperty("homeSnapshotState", QStringLiteral("generating"));
-  qInfo().noquote() << QStringLiteral("Home preview: scene=%1 source=canonical-product-view cache=miss revision=%2 state=generating")
-    .arg(scene_id, fingerprint);
+  log_home_preview_event_once(label, scene_id + QStringLiteral("|miss|") + fingerprint,
+    QStringLiteral("Home preview: scene=%1 source=canonical-product-view cache=miss revision=%2 state=generating")
+      .arg(scene_id, fingerprint));
 }
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
@@ -307,6 +319,9 @@ inline void capture_canonical_product_view_snapshot(
           safe_label->property("homePreviewSelectionGeneration").toULongLong() != selection_generation) return;
       safe_label->setProperty("homeSnapshotState", QStringLiteral("current"));
       show_preview_pixmap(safe_label, pixmap, QStringLiteral("Current Product View snapshot"));
+      log_home_preview_event_once(safe_label, scene_id + QStringLiteral("|generated|") + scene_fingerprint,
+        QStringLiteral("Home preview: scene=%1 source=%2 cache=generated revision=%3 state=current")
+          .arg(scene_id, cache_path, scene_fingerprint));
     });
 }
 #endif

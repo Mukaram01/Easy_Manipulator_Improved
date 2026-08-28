@@ -84,6 +84,22 @@ def test_home_preview_uses_current_cache_then_scene_specific_stale_fallback():
     assert "PREPARING LIVE 3D" not in PREVIEW
 
 
+def test_stale_home_preview_is_a_transitional_state_using_existing_capture_path():
+    assert 'homeSnapshotState", QStringLiteral("refreshing")' in PREVIEW
+    assert "cache=stale revision=%3 state=regenerating" in PREVIEW
+    assert "capture_canonical_product_view_snapshot(safe_window, table, safe_label, workspace_root)" in PREVIEW
+    assert 'homeSnapshotState", QStringLiteral("current")' in PREVIEW
+
+
+def test_home_preview_logs_each_scene_revision_cache_event_once():
+    assert "log_home_preview_event_once" in PREVIEW
+    assert 'homeSnapshotLastLogEvent' in PREVIEW
+    assert 'scene_id + QStringLiteral("|hit|") + fingerprint' in PREVIEW
+    assert 'scene_id + QStringLiteral("|stale|") + fingerprint' in PREVIEW
+    assert 'scene_id + QStringLiteral("|miss|") + fingerprint' in PREVIEW
+    assert 'scene_id + QStringLiteral("|generated|") + scene_fingerprint' in PREVIEW
+
+
 def test_late_snapshot_cannot_replace_newer_selection_or_revision():
     for token in [
         'homePreviewSelectionGeneration',
