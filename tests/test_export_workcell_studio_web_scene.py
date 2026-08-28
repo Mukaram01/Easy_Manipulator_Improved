@@ -82,6 +82,14 @@ def test_suction_scene_uses_canonical_editable_environment_and_one_tool_identity
     assert {"table_main", "suction_target_default"} <= set(primary_ids)
     assert len(primary_ids) == len(set(primary_ids))
     assert any(item.get("editable") is True for item in primary if item["id"] == "table_main")
+    target = next(item for item in primary if item["id"] == "suction_target_default")
+    assert target["semantic_role"] == "target_bin"
+    assert target["readiness_category"] == ""
+    assert not any(
+        item.get("readiness_category") == "attached_tool_gripper"
+        for item in payload["assets"]
+        if item.get("type") == "target_bin" or item.get("role") == "target_bin"
+    )
     camera_visuals = [item for item in primary if item.get("id") == "realsense_suction_overhead"]
     assert len(camera_visuals) == 1
     generated_camera = [item for item in payload["sensors"] if item.get("link") == "camera_link"]
@@ -1378,3 +1386,20 @@ def test_generated_urdf_primitive_asset_gets_primary_fallback_render_owner():
     assert item["render_policy"] == "primary"
     assert item["render_owner"] == "generated_urdf_fallback"
     assert item["render_identity"]
+
+
+def test_visual_bounds_checker_ignores_non_authoritative_diagnostic_camera():
+    from scripts import check_workcell_web_scene_visual_bounds as bounds_checker
+
+    payload = {
+        "assets": [{"id": "surface_main", "category": "work_surface", "role": "support_surface", "readiness_category": "workbench_support_surface", "render_policy": "primary", "expected_dimensions_m": [1, 1, 0.1]}],
+        "sensors": [
+            {"id": "camera_main", "role": "camera", "render_policy": "primary", "expected_dimensions_m": [0.1, 0.1, 0.1]},
+            {"id": "generated_camera_mirror", "role": "camera", "render_policy": "diagnostic_only"},
+        ],
+    }
+
+    summary, errors = bounds_checker.check(payload)
+
+    assert errors == []
+    assert summary["camera_item_count"] == 1

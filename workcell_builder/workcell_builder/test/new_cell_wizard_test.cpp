@@ -1,6 +1,37 @@
 #include <gtest/gtest.h>
 
+#include <QApplication>
+#include <QComboBox>
+#include <QLabel>
+#include <QListWidget>
+#include <QMap>
+#include <QDoubleSpinBox>
+#include <QGroupBox>
+#include <QLineEdit>
+
 #include "gui/new_cell_wizard.h"
+
+namespace {
+QApplication * ensure_application()
+{
+  if (auto * app = qobject_cast<QApplication *>(QCoreApplication::instance())) return app;
+  qputenv("QT_QPA_PLATFORM", "offscreen");
+  static int argc = 1;
+  static char app_name[] = "workcell_new_cell_wizard_test";
+  static char * argv[] = {app_name, nullptr};
+  static QApplication app(argc, argv);
+  return &app;
+}
+
+QString repository_root()
+{
+#ifdef WORKCELL_BUILDER_REPO_ROOT
+  return QStringLiteral(WORKCELL_BUILDER_REPO_ROOT);
+#else
+  return QStringLiteral(".");
+#endif
+}
+}  // namespace
 
 TEST(NewCellWizard, ScenePackageNameValidation)
 {
@@ -95,4 +126,105 @@ TEST(NewCellWizard, ScaffoldReadinessClassification)
 {
   EXPECT_EQ(NewCellWizard::default_end_effector_family_readiness("Custom / Placeholder").toStdString(), "SCAFFOLD");
   EXPECT_EQ(NewCellWizard::default_end_effector_family_readiness("Robotiq").toStdString(), "READY");
+}
+
+TEST(NewCellWizard, IndustrialScenarioCatalogDrivesCanonicalChoices)
+{
+  const auto choices = NewCellWizard::load_industrial_scenario_choices(
+    repository_root() + "/catalog/scenarios/industrial_scenarios.yaml");
+  QMap<QString, QString> labels_by_id;
+  for (const auto & choice : choices) labels_by_id.insert(choice.id, choice.label);
+
+  EXPECT_EQ(labels_by_id.value("static_table_pick_place"), "Pick & Place");
+  EXPECT_EQ(labels_by_id.value("palletizing_depalletizing_light"), "Palletizing / Depalletizing");
+  EXPECT_EQ(labels_by_id.value("multi_bin_sorting_cell"), "Sorting");
+  EXPECT_EQ(labels_by_id.value("stacking"), "Stacking");
+  EXPECT_EQ(labels_by_id.value("custom_blank"), "Custom / Blank");
+  EXPECT_GE(choices.size(), 10);
+}
+
+TEST(NewCellWizard, ScenarioSelectionIsCanonicalAcrossTaskIntentAndReview)
+{
+  ensure_application();
+  NewCellWizard wizard(repository_root());
+  auto * scenario_combo = wizard.findChild<QComboBox *>("applicationScenarioCombo");
+  auto * derived_task_scenario = wizard.findChild<QLabel *>("derivedTaskScenario");
+  auto * steps = wizard.findChild<QListWidget *>("newCellWizardSteps");
+  ASSERT_NE(scenario_combo, nullptr);
+  ASSERT_NE(derived_task_scenario, nullptr);
+  ASSERT_NE(steps, nullptr);
+  EXPECT_EQ(wizard.selected_scenario_id(), "static_table_pick_place");
+  EXPECT_TRUE(wizard.pick_place_configuration_available());
+
+  ASSERT_TRUE(wizard.select_scenario_by_id("palletizing_depalletizing_light"));
+  steps->setCurrentRow(4);
+  steps->setCurrentRow(5);
+  EXPECT_EQ(wizard.selected_scenario_id(), "palletizing_depalletizing_light");
+  EXPECT_TRUE(derived_task_scenario->text().contains("palletizing_depalletizing_light"));
+  EXPECT_TRUE(wizard.review_text().contains("Palletizing / Depalletizing"));
+  EXPECT_TRUE(wizard.review_text().contains("palletizing_depalletizing_light"));
+  EXPECT_FALSE(wizard.pick_place_configuration_available());
+
+  ASSERT_TRUE(wizard.select_scenario_by_id("multi_bin_sorting_cell"));
+  steps->setCurrentRow(0);
+  steps->setCurrentRow(4);
+  steps->setCurrentRow(5);
+  EXPECT_EQ(wizard.selected_scenario_id(), "multi_bin_sorting_cell");
+  EXPECT_TRUE(derived_task_scenario->text().contains("multi_bin_sorting_cell"));
+  EXPECT_TRUE(wizard.review_text().contains("Sorting"));
+  EXPECT_TRUE(wizard.review_text().contains("multi_bin_sorting_cell"));
+
+  EXPECT_EQ(wizard.findChildren<QComboBox *>("taskFamilyCombo").size(), 0);
+  EXPECT_EQ(scenario_combo->currentData().toString(), wizard.selected_scenario_id());
+}
+
+TEST(NewCellWizard, PickPlaceConfigurationRemainsAvailable)
+{
+  ensure_application();
+  NewCellWizard wizard(repository_root());
+  ASSERT_TRUE(wizard.select_scenario_by_id("static_table_pick_place"));
+  EXPECT_TRUE(wizard.pick_place_configuration_available());
+  EXPECT_TRUE(wizard.review_text().contains("Pick & Place"));
+  EXPECT_TRUE(wizard.review_text().contains("static_table_pick_place"));
+}
+
+TEST(NewCellWizard, DynamicObjectSourcesDoNotRequireManualGeometry)
+{
+  ensure_application();
+  NewCellWizard wizard(repository_root());
+  ASSERT_TRUE(wizard.select_scenario_by_id("static_table_pick_place"));
+  auto * dimension_x = wizard.findChild<QDoubleSpinBox *>("manualObjectDimensionX");
+  auto * notice = wizard.findChild<QLabel *>("dynamicObjectNotice");
+  ASSERT_NE(dimension_x, nullptr);
+  ASSERT_NE(notice, nullptr);
+  dimension_x->setValue(0.0);
+
+  ASSERT_TRUE(wizard.select_object_source_by_id("live_epd_realsense"));
+  EXPECT_TRUE(wizard.manual_object_geometry_valid());
+  EXPECT_TRUE(notice->text().contains("Fixed manual dimensions are not required"));
+  EXPECT_TRUE(wizard.review_text().contains("Live EPD / RealSense"));
+
+  ASSERT_TRUE(wizard.select_object_source_by_id("recorded_perception"));
+  EXPECT_TRUE(wizard.manual_object_geometry_valid());
+  EXPECT_TRUE(wizard.review_text().contains("Recorded / replayed perception"));
+}
+
+TEST(NewCellWizard, ManualObjectSourceRequiresFallbackGeometry)
+{
+  ensure_application();
+  NewCellWizard wizard(repository_root());
+  ASSERT_TRUE(wizard.select_object_source_by_id("manual_simulated"));
+  auto * manual_card = wizard.findChild<QGroupBox *>("manualObjectCard");
+  auto * dimension_x = wizard.findChild<QDoubleSpinBox *>("manualObjectDimensionX");
+  auto * object_id = wizard.findChild<QLineEdit *>("manualObjectId");
+  ASSERT_NE(manual_card, nullptr);
+  ASSERT_NE(dimension_x, nullptr);
+  ASSERT_NE(object_id, nullptr);
+  EXPECT_FALSE(manual_card->isHidden());
+  EXPECT_TRUE(wizard.manual_object_geometry_valid());
+  dimension_x->setValue(0.0);
+  EXPECT_FALSE(wizard.manual_object_geometry_valid());
+  dimension_x->setValue(0.05);
+  object_id->clear();
+  EXPECT_FALSE(wizard.manual_object_geometry_valid());
 }

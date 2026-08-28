@@ -148,7 +148,7 @@ def _normalize_objects(doc: dict[str, Any]) -> list[dict[str, Any]]:
                 "frame_id": pose_frame,
                 "pose": pose,
                 "centroid": obj.get("centroid") if isinstance(obj.get("centroid"), dict) else {},
-                "dimensions": _as_dimensions_list(obj.get("dimensions")),
+                "dimensions": _as_dimensions_list(obj.get("dimensions") or obj.get("dimensions_xyz")),
                 "preferred_end_effector": obj.get("preferred_end_effector") or obj.get("ee_id"),
                 "attributes": attrs,
                 "source_type": "detected_objects/v1" if is_detected_v1 else "runtime_objects",

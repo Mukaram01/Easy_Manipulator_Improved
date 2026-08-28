@@ -62,6 +62,11 @@ def _iter_items(payload: Mapping[str, Any]) -> Iterable[tuple[str, Json]]:
             continue
         for item in values:
             if isinstance(item, dict):
+                # Generated mirrors and helper overlays are non-authoritative.
+                # They must not introduce a second table/camera requirement or
+                # override the canonical primary authored physical record.
+                if item.get("render_policy") in {"diagnostic_only", "overlay"}:
+                    continue
                 yield section, item
 
 
@@ -81,6 +86,15 @@ def _item_label(section: str, item: Mapping[str, Any]) -> str:
 
 
 def _category(section: str, item: Mapping[str, Any]) -> str:
+    readiness_category = str(item.get("readiness_category") or item.get("readinessCategory") or "").strip().lower()
+    canonical_readiness_types = {
+        "robot_arm": "robot_link",
+        "attached_tool_gripper": "gripper",
+        "workbench_support_surface": "table",
+        "configured_camera": "camera",
+    }
+    if readiness_category in canonical_readiness_types:
+        return canonical_readiness_types[readiness_category]
     raw = item.get("mesh_contract_category") or item.get("core_mesh_category")
     if isinstance(raw, str) and raw.strip():
         return raw.strip().lower()
@@ -103,7 +117,7 @@ def _category(section: str, item: Mapping[str, Any]) -> str:
 
 
 def _is_table(item: Mapping[str, Any], section: str) -> bool:
-    if section == "zones" or str(item.get("category", "")).strip().lower() in HELPER_ZONE_CATEGORIES:
+    if section == "zones":
         return False
     return _category(section, item) == "table" or "table" in _text_for(item, "id", "name", "display_name", "role", "category") or "workbench" in _text_for(item, "id", "name", "display_name", "role", "category")
 

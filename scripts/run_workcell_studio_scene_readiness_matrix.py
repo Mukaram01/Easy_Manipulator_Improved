@@ -227,6 +227,7 @@ def _check_manifest_refs(scene_dir: Path) -> dict[str, Any]:
     else:
         refs = _iter_manifest_refs(payload)
     missing: list[dict[str, str]] = []
+    missing_runtime_evidence: list[dict[str, str]] = []
     checked: list[dict[str, str]] = []
     for key_path, ref in refs:
         # Ignore package names and launch arguments that do not look like relative files.
@@ -242,9 +243,20 @@ def _check_manifest_refs(scene_dir: Path) -> dict[str, Any]:
             missing.append({"field": key_path, "reference": ref, "reason": "referenced file resolves outside scene directory"})
             continue
         if not candidate.exists():
-            missing.append({"field": key_path, "reference": ref, "reason": "referenced file does not exist"})
+            entry = {"field": key_path, "reference": ref, "reason": "referenced file does not exist"}
+            if key_path == "files.scene3d_gui_smoke":
+                missing_runtime_evidence.append(entry)
+            else:
+                missing.append(entry)
     if missing:
         return _result(FAIL, f"{len(missing)} manifest local-file reference(s) are missing or unsafe", checked=checked, missing=missing)
+    if missing_runtime_evidence:
+        return _result(
+            BLOCKED,
+            "Scene3D runtime smoke evidence is not authored scene data and has not been generated on this workstation",
+            checked=checked,
+            missing=missing_runtime_evidence,
+        )
     return _result(PASS, f"manifest local-file references resolved ({len(checked)} checked)", checked=checked)
 
 

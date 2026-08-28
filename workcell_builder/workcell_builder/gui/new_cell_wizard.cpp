@@ -25,6 +25,7 @@
 #include <QVBoxLayout>
 
 #include <array>
+#include <algorithm>
 #include <fstream>
 #include <regex>
 
@@ -43,11 +44,75 @@ QString NewCellWizard::default_end_effector_tcp_link(const QString &m){ return m
 QString NewCellWizard::default_end_effector_type(const QString &m){ if(m=="robotiq_85") return "finger"; if(m=="single_suction") return "suction"; if(m.contains("vacuum")) return "vacuum_array"; return "placeholder"; }
 QString NewCellWizard::default_end_effector_family_readiness(const QString &family){ return family.contains("Custom") ? "SCAFFOLD" : "READY"; }
 
+QList<NewCellScenarioChoice> NewCellWizard::load_industrial_scenario_choices(const QString &catalog_path) {
+  QList<NewCellScenarioChoice> choices;
+  QFile file(catalog_path);
+  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return choices;
+  NewCellScenarioChoice current;
+  auto commit = [&] {
+    if (!current.id.isEmpty() && !current.label.isEmpty() && current.order > 0) choices.push_back(current);
+    current = {};
+  };
+  const QRegularExpression field_re("^\\s*(id|category|new_cell_wizard_label|new_cell_wizard_order):\\s*(.*?)\\s*$");
+  while (!file.atEnd()) {
+    const QString line = QString::fromUtf8(file.readLine());
+    if (line.startsWith("- id:")) commit();
+    const auto match = field_re.match(line.startsWith("- ") ? line.mid(2) : line);
+    if (!match.hasMatch()) continue;
+    QString value = match.captured(2).trimmed();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith('\'') && value.endsWith('\''))) value = value.mid(1, value.size() - 2);
+    const QString key = match.captured(1);
+    if (key == "id") current.id = value;
+    else if (key == "category") current.category = value;
+    else if (key == "new_cell_wizard_label") current.label = value;
+    else if (key == "new_cell_wizard_order") current.order = value.toInt();
+  }
+  commit();
+  std::sort(choices.begin(), choices.end(), [](const auto &a, const auto &b) { return a.order < b.order; });
+  return choices;
+}
+
+QString NewCellWizard::scenario_catalog_path() const {
+  const QStringList candidates = {
+    workspace_root_ + "/catalog/scenarios/industrial_scenarios.yaml",
+    workspace_root_ + "/src/easy_manipulation_deployment/catalog/scenarios/industrial_scenarios.yaml",
+    QDir::current().absoluteFilePath("catalog/scenarios/industrial_scenarios.yaml")};
+  for (const QString &candidate : candidates) if (QFileInfo::exists(candidate)) return candidate;
+  return candidates.front();
+}
+
+QString NewCellWizard::selected_scenario_id() const { return application_scenario_ ? application_scenario_->currentData(Qt::UserRole).toString() : QString(); }
+QString NewCellWizard::selected_scenario_category() const { return application_scenario_ ? application_scenario_->currentData(Qt::UserRole + 1).toString() : QString(); }
+QString NewCellWizard::selected_scenario_label() const { return application_scenario_ ? application_scenario_->currentText() : QString(); }
+bool NewCellWizard::select_scenario_by_id(const QString &scenario_id) {
+  if (!application_scenario_) return false;
+  const int index = application_scenario_->findData(scenario_id, Qt::UserRole);
+  if (index < 0) return false;
+  application_scenario_->setCurrentIndex(index);
+  return true;
+}
+QString NewCellWizard::review_text() const { return summary_ ? summary_->text() : QString(); }
+bool NewCellWizard::pick_place_configuration_available() const { return pick_config_card_ && !pick_config_card_->isHidden(); }
+QString NewCellWizard::selected_object_source_id() const { return object_source_mode_ ? object_source_mode_->currentData().toString() : QString(); }
+bool NewCellWizard::select_object_source_by_id(const QString &source_id) {
+  if (!object_source_mode_) return false;
+  const int index = object_source_mode_->findData(source_id);
+  if (index < 0) return false;
+  object_source_mode_->setCurrentIndex(index);
+  return true;
+}
+bool NewCellWizard::manual_object_geometry_valid() const {
+  if (selected_object_source_id() != "manual_simulated") return true;
+  return manual_object_id_ && !manual_object_id_->text().trimmed().isEmpty()
+    && manual_object_frame_ && !manual_object_frame_->text().trimmed().isEmpty()
+    && manual_object_x_->value() > 0.0 && manual_object_y_->value() > 0.0 && manual_object_z_->value() > 0.0;
+}
+
 void NewCellWizard::build_ui(){
  setWindowTitle("New Cell"); resize(1040,720); auto *root=new QVBoxLayout(this);
  root->addWidget(new QLabel("<h2>New Cell</h2><p><b>Safety badge:</b> Fake hardware default / Real robot locked</p>"));
  auto *body=new QHBoxLayout(); root->addLayout(body,1);
- steps_=new QListWidget(this); steps_->addItems({"1 Basics","2 Robot","3 End Effector","4 Environment","5 Task Intent","6 Review"}); steps_->setFixedWidth(220); body->addWidget(steps_);
+ steps_=new QListWidget(this); steps_->setObjectName("newCellWizardSteps"); steps_->addItems({"1 Basics","2 Robot","3 End Effector","4 Environment","5 Task Intent","6 Review"}); steps_->setFixedWidth(220); body->addWidget(steps_);
  stack_=new QStackedWidget(this); body->addWidget(stack_,1);
  auto mk_page=[&](QWidget*w){auto*c=new QWidget(this); auto*l=new QVBoxLayout(c); l->addWidget(w); l->addStretch(1); stack_->addWidget(c);};
  auto mk_pose_spin=[](int decimals, const QString &suffix, const QString &tooltip){auto*s=new QDoubleSpinBox(); s->setDecimals(decimals); s->setRange(-1000,1000); s->setSuffix(suffix); s->setToolTip(tooltip); return s;};
@@ -66,7 +131,10 @@ void NewCellWizard::build_ui(){
    v->addWidget(pos); v->addWidget(ori); return wrap;
  };
 
- auto *s1=new QWidget(this); auto *f1=new QFormLayout(s1); display_name_=new QLineEdit(); scene_name_=new QLineEdit(); description_=new QTextEdit(); template_=new QComboBox(); template_->addItems({"Pick & Place","Sorting","Inspection","Machine Tending","Conveyor Picking","Blank Cell"}); output_path_=new QLineEdit(QString::fromStdString(scenes_root_path().string())); scene_error_=new QLabel(); scene_warning_=new QLabel(); f1->addRow("Cell display name",display_name_); f1->addRow("Scene/package name",scene_name_); f1->addRow("",scene_error_); f1->addRow("",scene_warning_); f1->addRow("Description",description_); f1->addRow("Template",template_); f1->addRow("Output scenes path",output_path_); mk_page(s1);
+ auto *s1=new QWidget(this); auto *f1=new QFormLayout(s1); display_name_=new QLineEdit(); scene_name_=new QLineEdit(); description_=new QTextEdit(); application_scenario_=new QComboBox(); application_scenario_->setObjectName("applicationScenarioCombo");
+ const auto scenario_choices = load_industrial_scenario_choices(scenario_catalog_path());
+ for (const auto &choice : scenario_choices) { application_scenario_->addItem(choice.label, choice.id); application_scenario_->setItemData(application_scenario_->count()-1, choice.category, Qt::UserRole+1); }
+ output_path_=new QLineEdit(QString::fromStdString(scenes_root_path().string())); scene_error_=new QLabel(); scene_warning_=new QLabel(); f1->addRow("Cell display name",display_name_); f1->addRow("Scene/package name",scene_name_); f1->addRow("",scene_error_); f1->addRow("",scene_warning_); f1->addRow("Description",description_); f1->addRow("Application / Scenario",application_scenario_); f1->addRow("Output scenes path",output_path_); mk_page(s1);
 
  auto *s2=new QWidget(this); auto *f2=new QFormLayout(s2); robot_family_=new QComboBox(); robot_family_->addItems({"Universal Robots / UR","Franka / Panda","Fanuc","ABB","Cartesian / Gantry","Delta","Custom / Placeholder"}); robot_=new QComboBox(); robot_base_link_=new QComboBox(); robot_tip_link_=new QComboBox(); robot_planning_group_=new QComboBox();
  for(auto*c:{robot_base_link_,robot_tip_link_,robot_planning_group_}) c->setEditable(true);
@@ -99,16 +167,20 @@ void NewCellWizard::build_ui(){
  auto *env5=new QWidget(this); auto *env5v=new QVBoxLayout(env5); env_review_table_=new QTableWidget(0,6,this); env_review_table_->setHorizontalHeaderLabels({"Object ID","Asset Type","Parent.Link -> Child Link","Semantic Role","Pose Summary","Status"}); env_review_table_->setWordWrap(true); env_review_table_->horizontalHeader()->setSectionResizeMode(0,QHeaderView::ResizeToContents); env_review_table_->horizontalHeader()->setSectionResizeMode(1,QHeaderView::ResizeToContents); env_review_table_->horizontalHeader()->setSectionResizeMode(2,QHeaderView::Stretch); env_review_table_->horizontalHeader()->setSectionResizeMode(3,QHeaderView::ResizeToContents); env_review_table_->horizontalHeader()->setSectionResizeMode(4,QHeaderView::Stretch); env_review_table_->horizontalHeader()->setSectionResizeMode(5,QHeaderView::ResizeToContents); env_edit_selected_button_=new QPushButton("Edit Selected Asset"); env5v->addWidget(env_review_table_); env5v->addWidget(env_edit_selected_button_); env_substep_stack_->addWidget(env5);
  env_preview_=new QLabel(); env_preview_->setWordWrap(true); v4->addWidget(env_preview_); mk_page(s4);
 
- auto *s5=new QWidget(this); auto *v5=new QVBoxLayout(s5); task_family_=new QComboBox(); task_family_->addItems({"pick_place","sorting","inspection","machine_tending","conveyor_picking","blank"});
+ auto *s5=new QWidget(this); auto *v5=new QVBoxLayout(s5); task_scenario_=new QLabel(); task_scenario_->setObjectName("derivedTaskScenario"); task_scenario_->setWordWrap(true); scenario_configuration_notice_=new QLabel(); scenario_configuration_notice_->setObjectName("scenarioConfigurationNotice"); scenario_configuration_notice_->setWordWrap(true);
  task_intent_text_=new QTextEdit();
- auto *task_template_card=new QGroupBox("Task Template",s5); auto *task_template_form=new QFormLayout(task_template_card); task_template_form->addRow("Task family",task_family_); task_template_form->addRow("Task intent",task_intent_text_);
- pick_zone_source_=new QComboBox(); pick_zone_source_->addItems({"Camera view zone","Source bin","Conveyor tracking zone","Manual bounds"}); pick_camera_=new QComboBox(); pick_detection_source_=new QComboBox(); pick_detection_source_->addItems({"EPD / RealSense","PointCloud2 direct","Simulated/manual"}); pick_source_=new QComboBox(); pick_zone_frame_=new QComboBox(); pick_zone_frame_->addItems({"camera frame","source object frame","world"}); pick_zone_frame_->setEditable(true);
- auto *pick_config_card=new QGroupBox("Pick Configuration",s5); auto *pick_form=new QFormLayout(pick_config_card); pick_form->addRow("Pick zone source",pick_zone_source_); pick_form->addRow("Camera",pick_camera_); pick_form->addRow("Detection source",pick_detection_source_); pick_form->addRow("Pick object source",pick_source_); pick_form->addRow("Zone frame",pick_zone_frame_); pick_form->addRow(new QLabel("Pick zone is where perception searches for objects. By default this is the selected camera view zone. The source bin or conveyor defines where objects are expected."));
+ auto *task_template_card=new QGroupBox("Application Intent",s5); auto *task_template_form=new QFormLayout(task_template_card); task_template_form->addRow("Application / Scenario",task_scenario_); task_template_form->addRow("Task intent",task_intent_text_); task_template_form->addRow("",scenario_configuration_notice_);
+ pick_zone_source_=new QComboBox(); pick_zone_source_->addItems({"Camera view zone","Source bin","Conveyor tracking zone","Manual bounds"}); pick_camera_=new QComboBox();
+ object_source_mode_=new QComboBox(); object_source_mode_->setObjectName("objectSourceMode"); object_source_mode_->addItem("Live EPD / RealSense","live_epd_realsense"); object_source_mode_->addItem("Recorded / replayed perception","recorded_perception"); object_source_mode_->addItem("Manual / simulated object","manual_simulated");
+ perception_binding_=new QLineEdit("/easy_perception_deployment/epd_localize_output"); perception_binding_->setObjectName("perceptionBinding"); required_object_class_=new QLineEdit(); required_object_class_->setPlaceholderText("Optional class label"); minimum_confidence_=new QDoubleSpinBox(); minimum_confidence_->setRange(0.0,1.0); minimum_confidence_->setSingleStep(0.05); minimum_confidence_->setValue(0.5); dynamic_object_notice_=new QLabel(); dynamic_object_notice_->setObjectName("dynamicObjectNotice"); dynamic_object_notice_->setWordWrap(true);
+ pick_source_=new QComboBox(); pick_zone_frame_=new QComboBox(); pick_zone_frame_->addItems({"camera frame","source object frame","world"}); pick_zone_frame_->setEditable(true);
+ pick_config_card_=new QGroupBox("Pick Configuration",s5); auto *pick_form=new QFormLayout(pick_config_card_); pick_form->addRow("Object source",object_source_mode_); pick_form->addRow("Perception binding",perception_binding_); pick_form->addRow("Required class / filter",required_object_class_); pick_form->addRow("Minimum confidence",minimum_confidence_); pick_form->addRow("Pick zone source",pick_zone_source_); pick_form->addRow("Camera",pick_camera_); pick_form->addRow("Source zone / object",pick_source_); pick_form->addRow("Zone frame",pick_zone_frame_); pick_form->addRow(dynamic_object_notice_); pick_form->addRow(new QLabel("The source zone says where to search. Runtime perception owns the observed object's identity, pose, dimensions, shape, and confidence."));
+ manual_object_card_=new QGroupBox("Manual / Simulated Object Fallback",s5); manual_object_card_->setObjectName("manualObjectCard"); auto *manual_form=new QFormLayout(manual_object_card_); manual_object_id_=new QLineEdit("manual_object_01"); manual_object_id_->setObjectName("manualObjectId"); manual_object_shape_=new QComboBox(); manual_object_shape_->addItems({"box","cylinder","sphere"}); manual_object_x_=mk_pose_spin(3," m","Manual object X dimension"); manual_object_y_=mk_pose_spin(3," m","Manual object Y dimension"); manual_object_z_=mk_pose_spin(3," m","Manual object Z dimension"); manual_object_x_->setObjectName("manualObjectDimensionX"); manual_object_y_->setObjectName("manualObjectDimensionY"); manual_object_z_->setObjectName("manualObjectDimensionZ"); manual_object_x_->setRange(0.0,1000.0); manual_object_y_->setRange(0.0,1000.0); manual_object_z_->setRange(0.0,1000.0); manual_object_x_->setValue(0.05); manual_object_y_->setValue(0.05); manual_object_z_->setValue(0.05); manual_object_frame_=new QLineEdit("world"); manual_object_frame_->setObjectName("manualObjectFrame"); manual_pose_x_=mk_pose_spin(3," m","Manual object pose X"); manual_pose_y_=mk_pose_spin(3," m","Manual object pose Y"); manual_pose_z_=mk_pose_spin(3," m","Manual object pose Z"); auto *manual_dims=new QWidget(); auto *manual_dims_layout=new QHBoxLayout(manual_dims); manual_dims_layout->setContentsMargins(0,0,0,0); manual_dims_layout->addWidget(manual_object_x_); manual_dims_layout->addWidget(manual_object_y_); manual_dims_layout->addWidget(manual_object_z_); auto *manual_pose=new QWidget(); auto *manual_pose_layout=new QHBoxLayout(manual_pose); manual_pose_layout->setContentsMargins(0,0,0,0); manual_pose_layout->addWidget(manual_pose_x_); manual_pose_layout->addWidget(manual_pose_y_); manual_pose_layout->addWidget(manual_pose_z_); manual_form->addRow("Object ID / name",manual_object_id_); manual_form->addRow("Primitive shape",manual_object_shape_); manual_form->addRow("Dimensions X / Y / Z",manual_dims); manual_form->addRow("Pose frame",manual_object_frame_); manual_form->addRow("Pose X / Y / Z",manual_pose);
  place_target_=new QComboBox(); place_target_->setEditable(true); place_frame_link_=new QComboBox(); place_frame_link_->setEditable(true); placement_mode_=new QComboBox(); placement_mode_->addItems({"top_of_surface","inside_bin","fixture_alignment","conveyor_dropoff","manual_pose"}); placement_alignment_=new QComboBox(); placement_alignment_->addItems({"none","fixed_yaw","match_object_orientation","feature_based"});
- auto *place_config_card=new QGroupBox("Place Configuration",s5); auto *place_form=new QFormLayout(place_config_card); place_form->addRow("Place target",place_target_); place_form->addRow("Place frame/link",place_frame_link_); place_form->addRow("Placement mode",placement_mode_); place_form->addRow("Alignment",placement_alignment_);
+ place_config_card_=new QGroupBox("Place Configuration",s5); auto *place_form=new QFormLayout(place_config_card_); place_form->addRow("Place target",place_target_); place_form->addRow("Place frame/link",place_frame_link_); place_form->addRow("Placement mode",placement_mode_); place_form->addRow("Alignment",placement_alignment_);
  grasp_strategy_=new QComboBox(); grasp_strategy_->addItems({"auto","top_down_2f","suction_top","side_grasp_placeholder"}); approach_axis_=new QComboBox(); approach_axis_->addItems({"z_down","z_up","x_forward","y_left"}); release_strategy_=new QComboBox(); release_strategy_->addItems({"open_gripper","vacuum_off","none/scaffold"}); approach_distance_=mk_pose_spin(3," m","Approach distance"); retreat_distance_=mk_pose_spin(3," m","Retreat distance"); approach_distance_->setValue(0.10); retreat_distance_->setValue(0.10); task_warning_=new QLabel(); task_warning_->setWordWrap(true); task_readiness_label_=new QLabel(); task_readiness_label_->setWordWrap(true);
- auto *grasp_motion_card=new QGroupBox("Grasp and Motion Intent",s5); auto *grasp_form=new QFormLayout(grasp_motion_card); grasp_form->addRow("Grasp strategy",grasp_strategy_); grasp_form->addRow("Approach axis",approach_axis_); grasp_form->addRow("Release strategy",release_strategy_); grasp_form->addRow("Approach distance",approach_distance_); grasp_form->addRow("Retreat distance",retreat_distance_); grasp_form->addRow("Readiness",task_readiness_label_); grasp_form->addRow("Warnings / blockers",task_warning_);
- v5->addWidget(task_template_card); v5->addWidget(pick_config_card); v5->addWidget(place_config_card); v5->addWidget(grasp_motion_card); mk_page(s5);
+ grasp_motion_card_=new QGroupBox("Grasp and Motion Intent",s5); auto *grasp_form=new QFormLayout(grasp_motion_card_); grasp_form->addRow("Grasp strategy",grasp_strategy_); grasp_form->addRow("Approach axis",approach_axis_); grasp_form->addRow("Release strategy",release_strategy_); grasp_form->addRow("Approach distance",approach_distance_); grasp_form->addRow("Retreat distance",retreat_distance_); grasp_form->addRow("Readiness",task_readiness_label_); grasp_form->addRow("Warnings / blockers",task_warning_);
+ v5->addWidget(task_template_card); v5->addWidget(pick_config_card_); v5->addWidget(manual_object_card_); v5->addWidget(place_config_card_); v5->addWidget(grasp_motion_card_); mk_page(s5);
 
  auto *s6=new QWidget(this); auto *v6=new QVBoxLayout(s6); summary_=new QLabel(); summary_->setWordWrap(true); summary_->setFrameShape(QFrame::StyledPanel); v6->addWidget(summary_); mk_page(s6);
 
@@ -119,7 +191,10 @@ void NewCellWizard::build_ui(){
  connect(rec,&QPushButton::clicked,this,&NewCellWizard::apply_recommended_environment_layout);
  connect(clear,&QPushButton::clicked,this,[this]{env_objects_table_->setRowCount(0); refresh_environment_parent_options(); refresh_summary();});
  connect(env_edit_selected_button_,&QPushButton::clicked,this,&NewCellWizard::refresh_summary);
- connect(task_family_,&QComboBox::currentTextChanged,this,[this](const QString&){apply_task_family_defaults(); refresh_validation();});
+ connect(application_scenario_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){apply_scenario_defaults(); refresh_scenario_ui(); refresh_validation();});
+ connect(object_source_mode_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){refresh_object_source_ui(); refresh_validation();});
+ for(auto *spin:{manual_object_x_,manual_object_y_,manual_object_z_}) connect(spin,QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,[this](double){refresh_validation();});
+ connect(manual_object_id_,&QLineEdit::textChanged,this,[this](const QString&){refresh_validation();}); connect(manual_object_frame_,&QLineEdit::textChanged,this,[this](const QString&){refresh_validation();});
  connect(add_asset,&QPushButton::clicked,this,[this]{ const QString id=env_add_asset_combo_->currentText().trimmed(); if(id.isEmpty()) return; add_environment_asset_row(id,id, "world","world","asset_link","custom"); refresh_environment_parent_options(); refresh_environment_review_table(); });
  connect(env_substeps_,&QListWidget::currentRowChanged,this,&NewCellWizard::select_environment_substep);
  connect(env_edit_selected_button_,&QPushButton::clicked,this,[this]{ if(env_review_table_->currentRow()>=0){ env_substeps_->setCurrentRow(1); }});
@@ -127,7 +202,7 @@ void NewCellWizard::build_ui(){
  connect(robot_,&QComboBox::currentTextChanged,this,[this](const QString&){ refresh_robot_links_for_selection(); refresh_validation();});
  connect(ee_family_,&QComboBox::currentTextChanged,this,[this](const QString&f){ refresh_tool_model_options(f); apply_tool_profile_selection(); refresh_validation();});
  connect(ee_,&QComboBox::currentTextChanged,this,[this](const QString&){ apply_tool_profile_selection(); refresh_validation();});
- robot_family_->setCurrentText("Universal Robots / UR"); refresh_robot_model_options(robot_family_->currentText()); robot_->setCurrentText("UR5"); refresh_robot_links_for_selection(); ee_family_->setCurrentText("Robotiq"); refresh_tool_model_options(ee_family_->currentText()); ee_->setCurrentText("robotiq_85"); apply_tool_profile_selection(); env_substeps_->setCurrentRow(0); apply_recommended_environment_layout();
+ robot_family_->setCurrentText("Universal Robots / UR"); refresh_robot_model_options(robot_family_->currentText()); robot_->setCurrentText("UR5"); refresh_robot_links_for_selection(); ee_family_->setCurrentText("Robotiq"); refresh_tool_model_options(ee_family_->currentText()); ee_->setCurrentText("robotiq_85"); apply_tool_profile_selection(); env_substeps_->setCurrentRow(0); apply_recommended_environment_layout(); select_scenario_by_id("static_table_pick_place"); refresh_scenario_ui(); refresh_object_source_ui();
 }
 QString NewCellWizard::normalize_tool_family(const QString &raw_family) const {
   const QString f = raw_family.toLower();
@@ -246,12 +321,30 @@ QStringList NewCellWizard::discover_environment_asset_catalog() const { QStringL
 void NewCellWizard::select_environment_substep(int index){ if(env_substep_stack_) env_substep_stack_->setCurrentIndex(std::max(0,index)); }
 void NewCellWizard::refresh_environment_review_table(){ env_review_table_->setRowCount(0); for(int r=0;r<env_objects_table_->rowCount();++r){ int rr=env_review_table_->rowCount(); env_review_table_->insertRow(rr); auto id=env_objects_table_->item(r,1)->text(); auto type=env_objects_table_->item(r,2)->text(); auto rel=env_objects_table_->item(r,3)->text()+"."+env_objects_table_->item(r,4)->text()+" -> "+env_objects_table_->item(r,5)->text(); auto role=env_objects_table_->item(r,7)->text(); auto pose=env_objects_table_->item(r,8)->text(); auto *cb=qobject_cast<QCheckBox*>(env_objects_table_->cellWidget(r,0)); auto status=(cb&&cb->isChecked())?"enabled":"disabled"; env_review_table_->setItem(rr,0,new QTableWidgetItem(id)); env_review_table_->setItem(rr,1,new QTableWidgetItem(type)); env_review_table_->setItem(rr,2,new QTableWidgetItem(rel)); env_review_table_->setItem(rr,3,new QTableWidgetItem(role)); env_review_table_->setItem(rr,4,new QTableWidgetItem(pose)); env_review_table_->setItem(rr,5,new QTableWidgetItem(status)); }}
 
-void NewCellWizard::apply_task_family_defaults(){
- const auto family=task_family_->currentText();
- if(family=="pick_place"){ if(place_target_->findText("place_fixture_01")>=0) place_target_->setCurrentText("place_fixture_01"); }
- else if(family=="sorting"){ if(place_target_->findText("reject_bin_01")>=0) place_target_->setCurrentText("reject_bin_01"); }
- else if(family=="inspection"){ if(place_target_->findText("place_fixture_01")>=0) place_target_->setCurrentText("place_fixture_01"); }
- else if(family=="conveyor_picking"){ if(place_target_->findText("place_fixture_01")>=0) place_target_->setCurrentText("place_fixture_01"); if(pick_source_->findText("conveyor_01")>=0) pick_source_->setCurrentText("conveyor_01"); pick_zone_source_->setCurrentText("Conveyor tracking zone"); }
+void NewCellWizard::apply_scenario_defaults(){
+ if(selected_scenario_id()=="static_table_pick_place" && place_target_->findText("place_fixture_01")>=0) place_target_->setCurrentText("place_fixture_01");
+}
+
+void NewCellWizard::refresh_scenario_ui(){
+ const bool pick_place = selected_scenario_id()=="static_table_pick_place";
+ task_scenario_->setText(QString("%1 (%2)").arg(selected_scenario_label(), selected_scenario_id()));
+ scenario_configuration_notice_->setText(pick_place ? QString() : QStringLiteral("Scenario configuration coming in next implementation phase"));
+ pick_config_card_->setVisible(pick_place);
+ place_config_card_->setVisible(pick_place);
+ grasp_motion_card_->setVisible(pick_place);
+ manual_object_card_->setVisible(pick_place && selected_object_source_id()=="manual_simulated");
+}
+
+void NewCellWizard::refresh_object_source_ui(){
+ const bool manual=selected_object_source_id()=="manual_simulated";
+ const bool replay=selected_object_source_id()=="recorded_perception";
+ manual_object_card_->setVisible(manual && selected_scenario_id()=="static_table_pick_place");
+ perception_binding_->setVisible(!manual); minimum_confidence_->setVisible(!manual); required_object_class_->setVisible(!manual);
+ if(replay && perception_binding_->text()=="/easy_perception_deployment/epd_localize_output") perception_binding_->setText("generated/detected_objects_replay.yaml");
+ else if(!replay && !manual && perception_binding_->text()=="generated/detected_objects_replay.yaml") perception_binding_->setText("/easy_perception_deployment/epd_localize_output");
+ dynamic_object_notice_->setText(manual
+   ? "Manual fallback: authored primitive geometry and pose are required because perception is absent."
+   : "Dynamic observation: object ID, pose/centroid, dimensions, shape, and confidence come from perception when available. Fixed manual dimensions are not required.");
 }
 
 QStringList NewCellWizard::readiness_warnings() const{
@@ -264,14 +357,14 @@ QStringList NewCellWizard::readiness_warnings() const{
 
 QStringList NewCellWizard::readiness_blockers() const{
  QStringList blockers;
- const auto family=task_family_->currentText();
+ if(selected_scenario_id()!="static_table_pick_place") return blockers;
  if(pick_source_->currentText().isEmpty()) blockers<<"Pick object source is required.";
- if((family=="pick_place"||family=="sorting"||family=="inspection"||family=="conveyor_picking") && place_target_->currentText().isEmpty()) blockers<<"Place target is required for selected task family.";
- if(family=="inspection" && pick_camera_->currentText().isEmpty()) blockers<<"Inspection requires at least one camera.";
- if(family=="conveyor_picking" && !pick_zone_source_->currentText().contains("Conveyor")) blockers<<"Conveyor picking requires conveyor tracking zone.";
+ if(selected_object_source_id()=="manual_simulated" && !manual_object_geometry_valid()) blockers<<"Manual / simulated object requires an ID, frame, and positive primitive dimensions.";
+ if(selected_object_source_id()!="manual_simulated" && perception_binding_->text().trimmed().isEmpty()) blockers<<"Perception binding is required for live or recorded object sources.";
+ if(place_target_->currentText().isEmpty()) blockers<<"Place target is required for Pick & Place.";
  return blockers;
 }
-void NewCellWizard::refresh_environment_parent_options(){ pick_camera_->clear(); pick_source_->clear(); place_target_->clear(); place_frame_link_->clear(); env_parent_combo_->clear(); for(int r=0;r<env_objects_table_->rowCount();++r){auto*cb=qobject_cast<QCheckBox*>(env_objects_table_->cellWidget(r,0)); if(!cb||!cb->isChecked()) continue; auto role=env_objects_table_->item(r,7)->text().toLower(); auto id=env_objects_table_->item(r,1)->text(); env_parent_combo_->addItem(id); if(role.contains("camera")) pick_camera_->addItem(id); if(role.contains("pick_source")||role.contains("conveyor")) pick_source_->addItem(id); if(role.contains("place_target")||role.contains("reject_target")||role.contains("output_bin")||role.contains("fixture")||role.contains("support")) place_target_->addItem(id);} pick_source_->addItem("manual"); place_frame_link_->addItems({"target_link","top_surface","world"}); if(pick_camera_->findText("camera_01")>=0){ pick_zone_source_->setCurrentText("Camera view zone"); pick_camera_->setCurrentText("camera_01"); } if(pick_source_->findText("source_bin_01")>=0) pick_source_->setCurrentText("source_bin_01"); apply_task_family_defaults(); refresh_environment_review_table(); }
+void NewCellWizard::refresh_environment_parent_options(){ pick_camera_->clear(); pick_source_->clear(); place_target_->clear(); place_frame_link_->clear(); env_parent_combo_->clear(); for(int r=0;r<env_objects_table_->rowCount();++r){auto*cb=qobject_cast<QCheckBox*>(env_objects_table_->cellWidget(r,0)); if(!cb||!cb->isChecked()) continue; auto role=env_objects_table_->item(r,7)->text().toLower(); auto id=env_objects_table_->item(r,1)->text(); env_parent_combo_->addItem(id); if(role.contains("camera")) pick_camera_->addItem(id); if(role.contains("pick_source")||role.contains("conveyor")) pick_source_->addItem(id); if(role.contains("place_target")||role.contains("reject_target")||role.contains("output_bin")||role.contains("fixture")||role.contains("support")) place_target_->addItem(id);} pick_source_->addItem("manual"); place_frame_link_->addItems({"target_link","top_surface","world"}); if(pick_camera_->findText("camera_01")>=0){ pick_zone_source_->setCurrentText("Camera view zone"); pick_camera_->setCurrentText("camera_01"); } if(pick_source_->findText("source_bin_01")>=0) pick_source_->setCurrentText("source_bin_01"); apply_scenario_defaults(); refresh_environment_review_table(); }
 
 fs::path NewCellWizard::scenes_root_path() const { return fs::path(workspace_root_.toStdString()) / "src" / "scenes"; }
 QString NewCellWizard::scene_name_error() const { const QString n=scene_name_->text().trimmed(); if(n.isEmpty()) return "Scene/package name is required."; if(!is_valid_package_name(n)) return "Use lowercase letters, numbers, underscores only; must start with a letter."; return ""; }
@@ -281,7 +374,7 @@ void NewCellWizard::refresh_validation(){
  const int row=steps_->currentRow(); const QString err=scene_name_error(); scene_error_->setText(err); scene_warning_->setText(scene_name_warning());
  const bool name_valid=err.isEmpty()&&scene_name_warning().isEmpty(); back_->setEnabled(row>0); next_->setEnabled(row<5&&(row!=0||name_valid));
  const auto blockers=readiness_blockers(); const auto warnings=readiness_warnings();
- QString readiness="READY"; if(!blockers.isEmpty()) readiness=(task_family_->currentText()=="blank")?"SCAFFOLD":"BLOCKED"; else if(!warnings.isEmpty()) readiness="WARNINGS";
+ QString readiness=selected_scenario_id()=="static_table_pick_place"?"READY":"AUTHORING ONLY"; if(!blockers.isEmpty()) readiness="BLOCKED"; else if(!warnings.isEmpty() && selected_scenario_id()=="static_table_pick_place") readiness="WARNINGS";
  task_readiness_label_->setText(readiness);
  task_warning_->setText((blockers+warnings).join("\n"));
  create_->setEnabled(name_valid); create_open_->setEnabled(name_valid);
@@ -290,7 +383,7 @@ void NewCellWizard::refresh_validation(){
 
 void NewCellWizard::refresh_summary(){
  QString readiness=task_readiness_label_?task_readiness_label_->text():"READY";
- summary_->setText(QString("<b>Robot:</b> family=%1 model=%2 | base=%3 tip=%4 planning=%5<br/><b>Tool:</b> family=%6 model=%7 | attach=%8 | tcp=%9 | type=%10 | mount rpy=%11,%12,%13 | readiness=%14<br/><b>Task:</b> family=%15 pick zone=%16 camera=%17 pick source=%18 place target=%19 place link=%20 grasp=%21 approach=%22m retreat=%23m<br/><b>Readiness:</b> %24<br/><b>Warnings/Blockers:</b><br/>%25").arg(robot_family_->currentText(),robot_->currentText(),robot_base_link_->currentText(),robot_tip_link_->currentText(),robot_planning_group_->currentText(),ee_family_->currentText(),ee_->currentText(),ee_attach_link_->currentText(),ee_tcp_link_->currentText(),ee_type_->currentText(),ee_roll_->text(),ee_pitch_->text(),ee_yaw_->text(),ee_readiness_banner_?ee_readiness_banner_->text():"READY",task_family_->currentText(),pick_zone_source_->currentText(),pick_camera_->currentText(),pick_source_->currentText(),place_target_->currentText(),place_frame_link_->currentText(),grasp_strategy_->currentText(),approach_distance_->text(),retreat_distance_->text(),readiness,task_warning_->text().toHtmlEscaped().replace("\n","<br/>")));
+ summary_->setText(QString("<b>Application / Scenario:</b> %1 (%2)<br/><b>Object source:</b> %3 (%4)<br/><b>Robot:</b> family=%5 model=%6 | base=%7 tip=%8 planning=%9<br/><b>Tool:</b> family=%10 model=%11 | attach=%12 | tcp=%13 | type=%14 | mount rpy=%15,%16,%17 | readiness=%18<br/><b>Authoring status:</b> %19<br/><b>Warnings/Blockers:</b><br/>%20").arg(selected_scenario_label(),selected_scenario_id(),object_source_mode_->currentText(),selected_object_source_id(),robot_family_->currentText(),robot_->currentText(),robot_base_link_->currentText(),robot_tip_link_->currentText(),robot_planning_group_->currentText(),ee_family_->currentText(),ee_->currentText(),ee_attach_link_->currentText(),ee_tcp_link_->currentText(),ee_type_->currentText(),ee_roll_->text(),ee_pitch_->text(),ee_yaw_->text(),ee_readiness_banner_?ee_readiness_banner_->text():"READY",readiness,task_warning_->text().toHtmlEscaped().replace("\n","<br/>")));
 }
 
 bool NewCellWizard::create_scene_scaffold(bool open_in_builder){
@@ -309,9 +402,10 @@ bool NewCellWizard::create_scene_scaffold(bool open_in_builder){
  auto pose_number=[](QDoubleSpinBox *spin){ return spin->value(); };
 
  const QString warning_text=task_warning_->text().trimmed();
- const bool place_target_missing=place_target_->currentText().trimmed().isEmpty();
+ const bool pick_place_scenario=selected_scenario_id()=="static_table_pick_place";
+ const bool place_target_missing=pick_place_scenario && place_target_->currentText().trimmed().isEmpty();
  const bool unknown_links=warning_text.contains("unknown");
- QString readiness="READY";
+ QString readiness=pick_place_scenario?"READY":"AUTHORING_ONLY";
  if(place_target_missing) readiness="BLOCKED";
  else if(unknown_links) readiness="WARNINGS";
 
@@ -320,6 +414,12 @@ bool NewCellWizard::create_scene_scaffold(bool open_in_builder){
  out<<"robot: "<<robot_->currentText().toStdString()<<"\n";
  out<<"end_effector: "<<ee_->currentText().toStdString()<<"\n";
 out<<"workcell_studio:\n";
+ out<<"  scenario:\n";
+ out<<"    id: "<<yaml_scalar(selected_scenario_id())<<"\n";
+ out<<"    category: "<<yaml_scalar(selected_scenario_category())<<"\n";
+ out<<"    label: "<<yaml_scalar(selected_scenario_label())<<"\n";
+ out<<"    authoring_selection_only: true\n";
+ out<<"    runtime_ready: false\n";
  out<<"  robot:\n";
  out<<"    family: "<<yaml_scalar(robot_family_->currentText())<<"\n";
  out<<"    model: "<<yaml_scalar(robot_->currentText())<<"\n";
@@ -362,9 +462,9 @@ out<<"workcell_studio:\n";
    out<<"      rpy: ["<<pose_number(ee_roll_)<<", "<<pose_number(ee_pitch_)<<", "<<pose_number(ee_yaw_)<<"]\n";
 
  out<<"  perception:\n";
- out<<"    mode: "<<yaml_scalar(pick_detection_source_->currentText())<<"\n";
+ out<<"    mode: "<<yaml_scalar(selected_object_source_id())<<"\n";
  out<<"    selected_topics:\n";
- out<<"      detection_source: "<<yaml_scalar(pick_detection_source_->currentText())<<"\n";
+ out<<"      detection_source: "<<yaml_scalar(selected_object_source_id()=="manual_simulated" ? QString() : perception_binding_->text().trimmed())<<"\n";
  out<<"      camera: "<<yaml_scalar(pick_camera_->currentText())<<"\n";
  out<<"    profile_metadata:\n";
  out<<"      pick_zone_source: "<<yaml_scalar(pick_zone_source_->currentText())<<"\n";
@@ -394,27 +494,56 @@ out<<"workcell_studio:\n";
    out<<"        rpy: ["<<pose_values[3]<<", "<<pose_values[4]<<", "<<pose_values[5]<<"]\n";
  }
 
- out<<"  pick_zone:\n";
- out<<"    source: "<<yaml_scalar(pick_zone_source_->currentText())<<"\n";
- out<<"    camera: "<<yaml_scalar(pick_camera_->currentText())<<"\n";
- out<<"    pick_object_source: "<<yaml_scalar(pick_source_->currentText())<<"\n";
- out<<"    zone_frame: "<<yaml_scalar(pick_zone_frame_->currentText())<<"\n";
- out<<"    detection_source: "<<yaml_scalar(pick_detection_source_->currentText())<<"\n";
+ if(pick_place_scenario){
+  out<<"  pick_zone:\n";
+  out<<"    source: "<<yaml_scalar(pick_zone_source_->currentText())<<"\n";
+  out<<"    camera: "<<yaml_scalar(pick_camera_->currentText())<<"\n";
+  out<<"    pick_object_source: "<<yaml_scalar(pick_source_->currentText())<<"\n";
+  out<<"    zone_frame: "<<yaml_scalar(pick_zone_frame_->currentText())<<"\n";
+  out<<"    detection_source: "<<yaml_scalar(selected_object_source_id())<<"\n";
+  out<<"    object_source:\n";
+  out<<"      mode: "<<yaml_scalar(selected_object_source_id())<<"\n";
+  out<<"      observation_contract: "<<yaml_scalar("workcell_perception_snapshot/v1")<<"\n";
+  out<<"      source_zone_ref: "<<yaml_scalar(pick_source_->currentText())<<"\n";
+  out<<"      geometry_origin: "<<yaml_scalar(selected_object_source_id()=="manual_simulated" ? "manual_authored" : "perception_observation")<<"\n";
+  out<<"      dynamic_pose: "<<(selected_object_source_id()=="manual_simulated"?"false":"true")<<"\n";
+  out<<"      dynamic_geometry: "<<(selected_object_source_id()=="manual_simulated"?"false":"true")<<"\n";
+  if(selected_object_source_id()!="manual_simulated"){
+   out<<"      perception_binding: "<<yaml_scalar(perception_binding_->text().trimmed())<<"\n";
+   out<<"      required_class: "<<yaml_scalar(required_object_class_->text().trimmed())<<"\n";
+   out<<"      minimum_confidence: "<<minimum_confidence_->value()<<"\n";
+  } else {
+   out<<"      manual_observation:\n";
+   out<<"        object_id: "<<yaml_scalar(manual_object_id_->text().trimmed())<<"\n";
+   out<<"        shape: "<<yaml_scalar(manual_object_shape_->currentText())<<"\n";
+   out<<"        dimensions: ["<<manual_object_x_->value()<<", "<<manual_object_y_->value()<<", "<<manual_object_z_->value()<<"]\n";
+   out<<"        pose:\n";
+   out<<"          frame_id: "<<yaml_scalar(manual_object_frame_->text().trimmed())<<"\n";
+   out<<"          xyz: ["<<manual_pose_x_->value()<<", "<<manual_pose_y_->value()<<", "<<manual_pose_z_->value()<<"]\n";
+   out<<"          rpy: [0, 0, 0]\n";
+  }
+  out<<"      planning_scene_conversion: pending_runtime_conversion\n";
 
- out<<"  place_zone:\n";
- out<<"    target: "<<yaml_scalar(place_target_->currentText())<<"\n";
- out<<"    place_frame_link: "<<yaml_scalar(place_frame_link_->currentText())<<"\n";
- out<<"    placement_mode: "<<yaml_scalar(placement_mode_->currentText())<<"\n";
- out<<"    placement_alignment: "<<yaml_scalar(placement_alignment_->currentText())<<"\n";
+  out<<"  place_zone:\n";
+  out<<"    target: "<<yaml_scalar(place_target_->currentText())<<"\n";
+  out<<"    place_frame_link: "<<yaml_scalar(place_frame_link_->currentText())<<"\n";
+  out<<"    placement_mode: "<<yaml_scalar(placement_mode_->currentText())<<"\n";
+  out<<"    placement_alignment: "<<yaml_scalar(placement_alignment_->currentText())<<"\n";
+ }
 
  out<<"  task_intent:\n";
- out<<"    task_family: "<<yaml_scalar(task_family_->currentText())<<"\n";
+ out<<"    scenario_id: "<<yaml_scalar(selected_scenario_id())<<"\n";
+ out<<"    task_family: "<<yaml_scalar(selected_scenario_category())<<"\n";
+ out<<"    configuration_status: "<<yaml_scalar(pick_place_scenario?"configured":"coming_next_implementation_phase")<<"\n";
  out<<"    intent_text: "<<yaml_scalar(task_intent_text_->toPlainText().trimmed())<<"\n";
- out<<"    grasp_strategy: "<<yaml_scalar(grasp_strategy_->currentText())<<"\n";
- out<<"    approach_axis: "<<yaml_scalar(approach_axis_->currentText())<<"\n";
- out<<"    release_strategy: "<<yaml_scalar(release_strategy_->currentText())<<"\n";
- out<<"    approach_distance_m: "<<approach_distance_->value()<<"\n";
- out<<"    retreat_distance_m: "<<retreat_distance_->value()<<"\n";
+ if(pick_place_scenario){
+  out<<"    grasp_strategy: "<<yaml_scalar(grasp_strategy_->currentText())<<"\n";
+  out<<"    object_binding_ref: "<<yaml_scalar("workcell_studio.pick_zone.object_source")<<"\n";
+  out<<"    approach_axis: "<<yaml_scalar(approach_axis_->currentText())<<"\n";
+  out<<"    release_strategy: "<<yaml_scalar(release_strategy_->currentText())<<"\n";
+  out<<"    approach_distance_m: "<<approach_distance_->value()<<"\n";
+  out<<"    retreat_distance_m: "<<retreat_distance_->value()<<"\n";
+ }
  out<<"    readiness: "<<yaml_scalar(readiness)<<"\n";
 
  out<<"  warnings:\n";

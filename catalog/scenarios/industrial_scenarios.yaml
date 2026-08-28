@@ -2,6 +2,8 @@ scenarios:
 - id: static_table_pick_place
   name: Static table pick and place
   category: pick_place
+  new_cell_wizard_label: Pick & Place
+  new_cell_wizard_order: 10
   current_status: partial_preview
   required_capabilities:
   - robot_selection
@@ -25,6 +27,8 @@ scenarios:
 - id: conveyor_upstream_detection_downstream_pick
   name: Conveyor upstream detection, downstream pick
   category: conveyor_pick
+  new_cell_wizard_label: Conveyor Picking
+  new_cell_wizard_order: 90
   current_status: supported_preview
   required_capabilities:
   - conveyor_asset
@@ -72,6 +76,8 @@ scenarios:
 - id: bin_tote_picking
   name: Bin picking / tote picking
   category: bin_picking
+  new_cell_wizard_label: Bin / Tote Picking
+  new_cell_wizard_order: 50
   current_status: planned
   required_capabilities:
   - bin_tote_asset
@@ -91,6 +97,8 @@ scenarios:
 - id: kitting_tray_loading
   name: Kitting / tray loading
   category: kitting
+  new_cell_wizard_label: Kitting / Tray Loading
+  new_cell_wizard_order: 60
   current_status: planned
   required_capabilities:
   - tray_fixture_asset
@@ -108,6 +116,8 @@ scenarios:
 - id: machine_tending_load_unload
   name: Machine tending load/unload
   category: machine_tending
+  new_cell_wizard_label: Machine Tending
+  new_cell_wizard_order: 70
   current_status: planned
   required_capabilities:
   - machine_asset
@@ -126,6 +136,8 @@ scenarios:
 - id: inspection_and_reject
   name: Inspection and reject
   category: inspection
+  new_cell_wizard_label: Inspection / Reject
+  new_cell_wizard_order: 80
   current_status: planned
   required_capabilities:
   - inspection_zone
@@ -144,6 +156,8 @@ scenarios:
 - id: palletizing_depalletizing_light
   name: Palletizing / depalletizing light objects
   category: palletizing
+  new_cell_wizard_label: Palletizing / Depalletizing
+  new_cell_wizard_order: 20
   current_status: planned
   required_capabilities:
   - pallet_asset
@@ -176,6 +190,8 @@ scenarios:
 - id: multi_bin_sorting_cell
   name: Multi-bin sorting cell
   category: sorting
+  new_cell_wizard_label: Sorting
+  new_cell_wizard_order: 40
   current_status: supported_preview
   required_capabilities:
   - multiple_place_zones
@@ -193,6 +209,38 @@ scenarios:
   next_pr: multi_bin_routing
   golden_template_available: true
   golden_template: conveyor_sorting_live_epd_preview
+- id: stacking
+  name: Stacking
+  category: stacking
+  new_cell_wizard_label: Stacking
+  new_cell_wizard_order: 30
+  current_status: planned
+  required_capabilities:
+  - stack_pattern_authoring
+  - ordered_place_sequence
+  missing_capabilities:
+  - stack_pattern_editor
+  - sequence_validation
+  live_epd_feed_required: false
+  fake_hardware_preview_supported: false
+  task_intent_preview_supported: false
+  real_hardware_ready: false
+  next_pr: stacking_authoring_contract
+- id: custom_blank
+  name: Custom / blank cell
+  category: custom
+  new_cell_wizard_label: Custom / Blank
+  new_cell_wizard_order: 100
+  current_status: planned
+  required_capabilities:
+  - custom_scene_authoring
+  missing_capabilities:
+  - scenario_specific_task_editor
+  live_epd_feed_required: false
+  fake_hardware_preview_supported: false
+  task_intent_preview_supported: false
+  real_hardware_ready: false
+  next_pr: custom_scenario_authoring_contract
 - id: dual_camera_workcell
   name: Dual-camera workcell
   category: multi_camera

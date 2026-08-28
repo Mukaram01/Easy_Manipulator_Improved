@@ -2599,6 +2599,52 @@ def _stl_mesh_local_bounds(item: Mapping[str, Any]) -> Optional[Tuple[List[float
     return None
 
 
+def _collada_mesh_local_bounds(item: Mapping[str, Any]) -> Optional[Tuple[List[float], List[float], str]]:
+    resolved = item.get("resolved_source_path")
+    if not isinstance(resolved, str) or not resolved:
+        return None
+    path = Path(resolved)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    if path.suffix.lower() != ".dae" or not path.is_file():
+        return None
+    try:
+        root = ET.parse(path).getroot()
+    except (OSError, ET.ParseError):
+        return None
+    positions: List[List[float]] = []
+    for source in root.findall(".//{*}source"):
+        source_id = str(source.get("id") or "")
+        if not source_id:
+            continue
+        used_as_position = any(
+            str(node.get("semantic") or "").upper() == "POSITION"
+            and str(node.get("source") or "").lstrip("#") == source_id
+            for node in root.findall(".//{*}input")
+        )
+        if not used_as_position:
+            continue
+        floats = source.find("{*}float_array")
+        accessor = source.find(".//{*}accessor")
+        if floats is None or not (floats.text or "").strip():
+            continue
+        try:
+            values = [float(value) for value in (floats.text or "").split()]
+            stride = int(accessor.get("stride", "3")) if accessor is not None else 3
+        except (TypeError, ValueError):
+            continue
+        if stride < 3:
+            continue
+        positions.extend(values[index:index + 3] for index in range(0, len(values) - stride + 1, stride))
+    if not positions:
+        return None
+    minimum = [min(point[axis] for point in positions) for axis in range(3)]
+    maximum = [max(point[axis] for point in positions) for axis in range(3)]
+    if all(maximum[axis] > minimum[axis] for axis in range(3)):
+        return minimum, maximum, "resolved_collada_bounds"
+    return None
+
+
 def _stl_mesh_bounds_m(item: Mapping[str, Any]) -> Optional[Dict[str, List[float]]]:
     local = _stl_mesh_local_bounds(item)
     if local is None:
@@ -2610,6 +2656,11 @@ def _stl_mesh_bounds_m(item: Mapping[str, Any]) -> Optional[Dict[str, List[float
 def _stl_mesh_dimensions_m(item: Mapping[str, Any]) -> Optional[List[float]]:
     bounds = _stl_mesh_bounds_m(item)
     return bounds.get("size") if bounds else None
+
+
+def _mesh_dimensions_m(item: Mapping[str, Any]) -> Optional[List[float]]:
+    local = _stl_mesh_local_bounds(item) or _collada_mesh_local_bounds(item)
+    return _bounds_dimensions(_scaled_bounds(local, item)) if local is not None else None
 
 
 def _populate_support_surface_fields(item: Json, category: str, support_defaults: Mapping[str, Any]) -> None:
@@ -2652,8 +2703,15 @@ def _populate_visual_bounds_item_fields(payload: Json, data: Mapping[str, Any]) 
         # This also ensures persisted and in-session imported assets use the
         # same physical geometry contract.
         local = _item_local_bounds(item)
-        mesh_dimensions = _stl_mesh_dimensions_m(item)
-        if not had_explicit_expected_dimensions and mesh_dimensions is not None:
+        mesh_dimensions = _mesh_dimensions_m(item)
+        category = _visual_contract_category(item, section)
+        authored_default_dimensions = _finite_num3(dimension_defaults.get(category))
+        local_is_authoritative = local is not None and local[2] != "dimensions"
+        if not had_explicit_expected_dimensions and local_is_authoritative:
+            item["expected_dimensions_m"] = _bounds_dimensions(_scaled_bounds(local, item))
+        elif not had_explicit_expected_dimensions and authored_default_dimensions is not None:
+            item["expected_dimensions_m"] = authored_default_dimensions
+        elif not had_explicit_expected_dimensions and mesh_dimensions is not None:
             item["expected_dimensions_m"] = mesh_dimensions
         elif not had_explicit_expected_dimensions and local is not None:
             item["expected_dimensions_m"] = _bounds_dimensions(_scaled_bounds(local, item))
@@ -2663,7 +2721,6 @@ def _populate_visual_bounds_item_fields(payload: Json, data: Mapping[str, Any]) 
         rpy = _item_pose_rpy(item)
         if rpy is not None:
             item["expected_pose_rpy"] = rpy
-        category = _visual_contract_category(item, section)
         item["mesh_contract_category"] = category
         if "expected_dimensions_m" not in item and category in dimension_defaults:
             item["expected_dimensions_m"] = dimension_defaults[category]
@@ -3028,6 +3085,22 @@ def _semantic_role_for_item(item: Mapping[str, Any], section: str) -> str:
     if section == "zones" or _is_helper(item):
         role = str(_first_present(item.get("role"), item.get("category"), item.get("type"), "task_overlay"))
         return _render_identity_part(role)
+    canonical_identity = {
+        str(item.get(field) or "").strip().lower()
+        for field in ("type", "role", "category", "semantic_type")
+    }
+    for object_role in ("target_bin", "target_zone", "pick_zone", "place_zone", "fixture", "object", "asset"):
+        if object_role in canonical_identity:
+            return object_role
+    readiness_category = _readiness_category_for_item(item, section)
+    if readiness_category == "robot_arm":
+        return "robot_visual"
+    if readiness_category == "attached_tool_gripper":
+        return "tool_visual"
+    if readiness_category == "workbench_support_surface":
+        return "support_surface"
+    if readiness_category == "configured_camera":
+        return "configured_camera"
     category = _core_mesh_category(item, section) or _visual_contract_category(item, section)
     if category in {"robot_arm_link", "robot_link"}:
         return "robot_visual"
@@ -3038,6 +3111,32 @@ def _semantic_role_for_item(item: Mapping[str, Any], section: str) -> str:
     if category in {"camera_realsense", "camera"}:
         return "configured_camera"
     return _render_identity_part(_first_present(item.get("semantic_type"), item.get("role"), item.get("category"), item.get("type"), "physical_object"))
+
+
+def _readiness_category_for_item(item: Mapping[str, Any], section: str) -> str:
+    """Return readiness identity from canonical collection and authored role.
+
+    Render classification may use mesh/link names to recover legacy visual
+    ownership. Readiness must not: a destination whose ID contains ``suction``
+    is still a target bin, never an attached tool.
+    """
+    if section == "zones" or _is_helper(item):
+        return ""
+    identity = {
+        str(item.get(field) or "").strip().lower()
+        for field in ("type", "role", "category", "semantic_type")
+    }
+    if identity & {"target_bin", "target_zone", "pick_zone", "place_zone", "object", "fixture", "asset"}:
+        return ""
+    if section == "robots" or identity & {"robot", "robot_arm", "robot_link", "robot_static_mesh_visual"}:
+        return "robot_arm"
+    if section == "tools" or identity & {"tool", "gripper", "end_effector", "attached_tool_gripper"}:
+        return "attached_tool_gripper"
+    if identity & {"table", "workbench", "support_surface", "support_surface_table"}:
+        return "workbench_support_surface"
+    if section == "sensors" or identity & {"camera", "realsense", "configured_camera"}:
+        return "configured_camera"
+    return ""
 
 
 def _is_generated_robot_tool_record(item: Mapping[str, Any], section: str) -> bool:
@@ -3245,14 +3344,7 @@ def _apply_render_ownership_contract(payload: Json, *, expanded_urdf_active: boo
                 item["render_identity"] = _generated_render_identity(scene_id, owner, item, index)
             else:
                 item["render_identity"] = _source_identity_for_item(scene_id, section, item, index)
-            if category == "robot_arm_link":
-                item["readiness_category"] = "robot_arm"
-            elif category == "gripper_link":
-                item["readiness_category"] = "attached_tool_gripper"
-            elif category == "table_workbench":
-                item["readiness_category"] = "workbench_support_surface"
-            elif category == "camera_realsense":
-                item["readiness_category"] = "configured_camera"
+            item["readiness_category"] = _readiness_category_for_item(item, section)
             counters["primary_physical_records"] += 1
             ident = str(item.get("render_identity") or "")
             if not ident:

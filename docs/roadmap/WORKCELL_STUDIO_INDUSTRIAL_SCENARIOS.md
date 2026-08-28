@@ -12,6 +12,12 @@ Workcell Studio is currently **preview/fake-hardware-first**. This catalog track
 
 ## Scenario list
 
+The existing New Cell wizard reads its **Application / Scenario** choices from
+`catalog/scenarios/industrial_scenarios.yaml`. Wizard visibility is declared by
+`new_cell_wizard_label` and `new_cell_wizard_order`; the selected catalog ID is
+the canonical authored scenario identity. Selection alone does not imply
+preview, planning, simulation, or runtime readiness.
+
 ### static_table_pick_place
 - Static table pick and place.
 - Preview-ready using snapshot detections and task intent preview.
@@ -48,6 +54,14 @@ Workcell Studio is currently **preview/fake-hardware-first**. This catalog track
 ### palletizing_depalletizing_light
 - Palletizing / depalletizing light objects.
 - Planned.
+
+### stacking
+- Stacking authoring foundation.
+- Planned; detailed stack-pattern and sequence editing are intentionally deferred.
+
+### custom_blank
+- Custom / blank cell authoring foundation.
+- Planned; provides no scenario-specific runtime capability claim.
 
 ### fixture_loading_assembly_assist
 - Fixture loading / assembly assist.

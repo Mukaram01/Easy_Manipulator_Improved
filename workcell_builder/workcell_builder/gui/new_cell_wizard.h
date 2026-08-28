@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDialog>
+#include <QList>
 #include <QStringList>
 #include <boost/filesystem.hpp>
 
@@ -24,6 +25,13 @@ struct NewCellWizardResult {
   boost::filesystem::path scene_dir;
 };
 
+struct NewCellScenarioChoice {
+  QString id;
+  QString label;
+  QString category;
+  int order{0};
+};
+
 class NewCellWizard : public QDialog {
   Q_OBJECT
 public:
@@ -40,6 +48,14 @@ public:
   static QString default_end_effector_tcp_link(const QString &model);
   static QString default_end_effector_type(const QString &model);
   static QString default_end_effector_family_readiness(const QString &family);
+  static QList<NewCellScenarioChoice> load_industrial_scenario_choices(const QString &catalog_path);
+  QString selected_scenario_id() const;
+  bool select_scenario_by_id(const QString &scenario_id);
+  QString review_text() const;
+  bool pick_place_configuration_available() const;
+  QString selected_object_source_id() const;
+  bool select_object_source_by_id(const QString &source_id);
+  bool manual_object_geometry_valid() const;
 
 private:
   struct ToolSelectionReadiness { QString status; QString reason; };
@@ -60,7 +76,12 @@ private:
   void refresh_validation();
   void refresh_summary();
   void refresh_environment_parent_options();
-  void apply_task_family_defaults();
+  void apply_scenario_defaults();
+  void refresh_scenario_ui();
+  void refresh_object_source_ui();
+  QString scenario_catalog_path() const;
+  QString selected_scenario_category() const;
+  QString selected_scenario_label() const;
   QStringList readiness_warnings() const;
   QStringList readiness_blockers() const;
   void apply_recommended_environment_layout();
@@ -95,7 +116,7 @@ private:
   QLineEdit *display_name_{nullptr};
   QLineEdit *scene_name_{nullptr};
   QTextEdit *description_{nullptr};
-  QComboBox *template_{nullptr};
+  QComboBox *application_scenario_{nullptr};
   QLineEdit *output_path_{nullptr};
   QLabel *scene_error_{nullptr};
   QLabel *scene_warning_{nullptr};
@@ -143,10 +164,28 @@ private:
   QPushButton *env_edit_selected_button_{nullptr};
   QLabel *env_preview_{nullptr};
 
-  QComboBox *task_family_{nullptr};
+  QLabel *task_scenario_{nullptr};
+  QLabel *scenario_configuration_notice_{nullptr};
+  QGroupBox *pick_config_card_{nullptr};
+  QGroupBox *place_config_card_{nullptr};
+  QGroupBox *grasp_motion_card_{nullptr};
   QComboBox *pick_zone_source_{nullptr};
   QComboBox *pick_camera_{nullptr};
-  QComboBox *pick_detection_source_{nullptr};
+  QComboBox *object_source_mode_{nullptr};
+  QLineEdit *perception_binding_{nullptr};
+  QLineEdit *required_object_class_{nullptr};
+  QDoubleSpinBox *minimum_confidence_{nullptr};
+  QLabel *dynamic_object_notice_{nullptr};
+  QGroupBox *manual_object_card_{nullptr};
+  QLineEdit *manual_object_id_{nullptr};
+  QComboBox *manual_object_shape_{nullptr};
+  QDoubleSpinBox *manual_object_x_{nullptr};
+  QDoubleSpinBox *manual_object_y_{nullptr};
+  QDoubleSpinBox *manual_object_z_{nullptr};
+  QLineEdit *manual_object_frame_{nullptr};
+  QDoubleSpinBox *manual_pose_x_{nullptr};
+  QDoubleSpinBox *manual_pose_y_{nullptr};
+  QDoubleSpinBox *manual_pose_z_{nullptr};
   QComboBox *pick_source_{nullptr};
   QComboBox *pick_zone_frame_{nullptr};
   QComboBox *place_target_{nullptr};
