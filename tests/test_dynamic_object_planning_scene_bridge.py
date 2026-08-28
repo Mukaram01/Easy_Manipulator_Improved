@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 
 SCRIPT = Path("scripts/dynamic_object_planning_scene_bridge.py")
+sys.path.insert(0, str(SCRIPT.parent.resolve()))
 SPEC = importlib.util.spec_from_file_location("dynamic_object_planning_scene_bridge", SCRIPT)
 BRIDGE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = BRIDGE
@@ -90,3 +91,8 @@ def test_existing_epd_fixture_reaches_collision_object_without_authored_dimensio
 def test_bridge_contains_no_perception_or_grasp_algorithm():
     source = SCRIPT.read_text(encoding="utf-8")
     assert not any(token in source for token in ["segment_point_cloud","detect_objects","classify_object","generate_grasp"])
+
+
+def test_runtime_tf_registers_pose_stamped_transform_support():
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "import tf2_geometry_msgs" in source
