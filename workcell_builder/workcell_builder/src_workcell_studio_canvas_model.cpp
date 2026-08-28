@@ -162,9 +162,8 @@ static std::string scene_metadata_revision_token(const std::map<std::string, Sce
 struct SceneMetadataSnapshotCacheState
 {
   std::mutex mutex;
-  SceneMetadataSnapshot cached;
-  fs::path invalidated_scene_dir;
-  std::string invalidation_reason;
+  std::map<fs::path, SceneMetadataSnapshot> cached_by_scene;
+  std::map<fs::path, std::string> invalidation_reasons;
 };
 
 static SceneMetadataSnapshotCacheState & scene_metadata_snapshot_cache_state()
@@ -178,9 +177,8 @@ void invalidate_workcell_studio_scene_metadata_snapshot(const fs::path & scene_d
   auto & state = scene_metadata_snapshot_cache_state();
   std::lock_guard<std::mutex> lock(state.mutex);
   const fs::path key = canonical_scene_cache_key(scene_dir);
-  if (!state.cached.scene_dir.empty() && state.cached.scene_dir == key) state.cached = SceneMetadataSnapshot{};
-  state.invalidated_scene_dir = key;
-  state.invalidation_reason = reason.empty() ? "explicit_refresh" : reason;
+  state.cached_by_scene.erase(key);
+  state.invalidation_reasons[key] = reason.empty() ? "explicit_refresh" : reason;
 }
 
 static SceneMetadataSnapshot load_scene_metadata_snapshot(const fs::path & scene_dir, const std::string & scene_id)
@@ -191,16 +189,18 @@ static SceneMetadataSnapshot load_scene_metadata_snapshot(const fs::path & scene
   for (const char * rel : kSceneMetadataFiles) revisions[rel] = scene_metadata_file_revision(key / rel);
   const std::string revision = scene_metadata_revision_token(revisions);
   std::lock_guard<std::mutex> lock(state.mutex);
-  const bool explicitly_invalidated = !state.invalidated_scene_dir.empty() && state.invalidated_scene_dir == key;
-  SceneMetadataSnapshot & cached = state.cached;
-  if (!explicitly_invalidated && !cached.scene_dir.empty() && cached.scene_dir == key && cached.revision == revision) {
+  const auto invalidation = state.invalidation_reasons.find(key);
+  const bool explicitly_invalidated = invalidation != state.invalidation_reasons.end();
+  auto cached_it = state.cached_by_scene.find(key);
+  if (!explicitly_invalidated && cached_it != state.cached_by_scene.end() && cached_it->second.revision == revision) {
+    SceneMetadataSnapshot & cached = cached_it->second;
     ++cached.cache_hits;
     return cached;
   }
 
   const std::string reload_reason = explicitly_invalidated ?
-    (state.invalidation_reason.empty() ? "explicit_refresh" : state.invalidation_reason) :
-    (cached.scene_dir.empty() ? "initial" : (cached.scene_dir == key ? "file_revision_change" : "scene_switch"));
+    invalidation->second :
+    (cached_it == state.cached_by_scene.end() ? "initial" : "file_revision_change");
 
   SceneMetadataSnapshot snapshot;
   snapshot.scene_dir = key;
@@ -217,15 +217,14 @@ static SceneMetadataSnapshot load_scene_metadata_snapshot(const fs::path & scene
       ++snapshot.files_parsed;
     }
   }
-  cached = snapshot;
+  state.cached_by_scene[key] = snapshot;
   if (explicitly_invalidated) {
-    state.invalidated_scene_dir.clear();
-    state.invalidation_reason.clear();
+    state.invalidation_reasons.erase(invalidation);
   }
   std::cerr << "Workcell Studio scene metadata snapshot: scene_id=" << scene_id
             << " revision=" << snapshot.revision << " files_parsed=" << snapshot.files_parsed
             << " cache_hits=0 invalidation_reason=" << snapshot.invalidation_reason << std::endl;
-  return cached;
+  return state.cached_by_scene.at(key);
 }
 
 static YamlLoadStatus snapshot_yaml(const SceneMetadataSnapshot & snapshot, const char * relative_path, YAML::Node * out)
