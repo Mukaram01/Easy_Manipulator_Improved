@@ -1124,22 +1124,36 @@ void grasp_planner::GraspScene<T>::trigger_epd_pipeline()
   if (!this->epd_result_future.valid()) {
     RCLCPP_INFO(LOGGER, "Sending EPD trigger request (first request).");
     this->epd_result_future = send_epd_trigger_request(req);
+    epd_request_sent_time = get_current_time();
     return;
   }
 
   if (this->epd_result_future.wait_for(std::chrono::nanoseconds(0)) == std::future_status::timeout) {
-    RCLCPP_INFO(LOGGER, "EPD trigger request already in-flight; skipping duplicate trigger.");
-    return;
+    const double request_age = (get_current_time() - epd_request_sent_time).seconds();
+    const double recovery_timeout = std::max(
+      0.1, node->get_parameter("easy_perception_deployment.epd_msg_timeout_s").as_double());
+    if (request_age <= recovery_timeout) {
+      RCLCPP_INFO(LOGGER, "EPD trigger request already in-flight; skipping duplicate trigger.");
+      return;
+    }
+    RCLCPP_WARN(
+      LOGGER,
+      "EPD trigger request has been in-flight for %.2f s; abandoning it so EPD restart can recover.",
+      request_age);
+    this->epd_result_future = {};
   }
 
-  auto result = this->epd_result_future.get();
-  if (result->success) {
-    RCLCPP_INFO(LOGGER, "Previous EPD trigger request succeeded. Sending next trigger request.");
-  } else {
-    RCLCPP_WARN(LOGGER, "Previous EPD trigger request failed. Sending retry trigger request.");
+  if (this->epd_result_future.valid()) {
+    auto result = this->epd_result_future.get();
+    if (result->success) {
+      RCLCPP_INFO(LOGGER, "Previous EPD trigger request succeeded. Sending next trigger request.");
+    } else {
+      RCLCPP_WARN(LOGGER, "Previous EPD trigger request failed. Sending retry trigger request.");
+    }
   }
 
   this->epd_result_future = send_epd_trigger_request(req);
+  epd_request_sent_time = get_current_time();
 }
 
 template<typename T>
