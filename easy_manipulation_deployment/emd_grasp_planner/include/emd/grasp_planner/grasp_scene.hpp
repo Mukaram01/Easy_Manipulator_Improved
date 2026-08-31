@@ -272,6 +272,8 @@ protected:
   rclcpp::Client<epd_msgs::srv::Perception>::SharedPtr epd_client;
   /*! \brief Futures for EPD service request */
   std::shared_future<rclcpp::Client<epd_msgs::srv::Perception>::SharedResponse> epd_result_future;
+  /*! \brief Time at which the current EPD request was sent */
+  rclcpp::Time epd_request_sent_time;
   /*! \brief Timer that checks for stalled EPD messages */
   rclcpp::TimerBase::SharedPtr epd_msg_timer;
   /*! \brief Last time an EPD message was received */

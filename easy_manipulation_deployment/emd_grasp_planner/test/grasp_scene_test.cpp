@@ -165,11 +165,38 @@ public:
     this->trigger_epd_pipeline();
   }
 
+  void set_execution_busy(const bool busy)
+  {
+    execution_in_progress.store(busy, std::memory_order_release);
+  }
+
+  void set_execution_gate(const bool enabled)
+  {
+    execution_gate_enabled = enabled;
+  }
+
+  void set_pause_triggers_while_busy(const bool pause)
+  {
+    pause_epd_triggers_while_execution_in_progress = pause;
+  }
+
+  void set_now(const rclcpp::Time & now)
+  {
+    now_ = now;
+  }
+
   int trigger_count{0};
   bool service_available{true};
   std::shared_ptr<epd_msgs::srv::Perception::Request> last_request;
+  std::shared_ptr<std::promise<rclcpp::Client<epd_msgs::srv::Perception>::SharedResponse>>
+  delayed_promise;
 
 protected:
+  rclcpp::Time get_current_time() const override
+  {
+    return now_;
+  }
+
   bool wait_for_epd_service(const std::chrono::duration<double> &) override
   {
     return service_available;
@@ -181,6 +208,9 @@ protected:
   {
     ++trigger_count;
     last_request = request;
+    if (delayed_promise && trigger_count == 1) {
+      return delayed_promise->get_future().share();
+    }
     auto promise = std::make_shared<std::promise<
       rclcpp::Client<epd_msgs::srv::Perception>::SharedResponse>>();
     auto response = std::make_shared<epd_msgs::srv::Perception::Response>();
@@ -188,6 +218,9 @@ protected:
     promise->set_value(response);
     return promise->get_future().share();
   }
+
+private:
+  rclcpp::Time now_{0, 0, RCL_ROS_TIME};
 };
 }  // namespace
 
@@ -223,5 +256,43 @@ TEST_F(GraspSceneTest, TriggerEpdPipelineReturnsWhenServiceUnavailable)
   scene.call_trigger_epd_pipeline();
 
   EXPECT_EQ(scene.trigger_count, 0);
+}
+
+TEST_F(GraspSceneTest, BusyExecutionSuppressesOnlyConfiguredEpdTriggers)
+{
+  node->declare_parameter("easy_perception_deployment.epd_service_wait_timeout_s", 0.0);
+  node->declare_parameter("easy_perception_deployment.epd_msg_timeout_s", 1.0);
+  TestableEpdGraspScene scene(node);
+  scene.set_execution_gate(true);
+  scene.set_pause_triggers_while_busy(true);
+  scene.set_execution_busy(true);
+
+  scene.call_trigger_epd_pipeline();
+  EXPECT_EQ(scene.trigger_count, 0);
+
+  scene.set_pause_triggers_while_busy(false);
+  scene.call_trigger_epd_pipeline();
+  EXPECT_EQ(scene.trigger_count, 1);
+}
+
+TEST_F(GraspSceneTest, StaleInflightRequestIsAbandonedAfterEpdRestartWindow)
+{
+  node->declare_parameter("easy_perception_deployment.epd_service_wait_timeout_s", 0.0);
+  node->declare_parameter("easy_perception_deployment.epd_msg_timeout_s", 1.0);
+  TestableEpdGraspScene scene(node);
+  scene.delayed_promise = std::make_shared<std::promise<
+    rclcpp::Client<epd_msgs::srv::Perception>::SharedResponse>>();
+
+  scene.set_now(rclcpp::Time(1000000000LL));
+  scene.call_trigger_epd_pipeline();
+  ASSERT_EQ(scene.trigger_count, 1);
+
+  scene.set_now(rclcpp::Time(1500000000LL));
+  scene.call_trigger_epd_pipeline();
+  EXPECT_EQ(scene.trigger_count, 1);
+
+  scene.set_now(rclcpp::Time(2500000000LL));
+  scene.call_trigger_epd_pipeline();
+  EXPECT_EQ(scene.trigger_count, 2);
 }
 #endif
