@@ -17,7 +17,8 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from capture_epd_detected_objects import convert_epd_message_to_detected_objects
-from dynamic_object_planning_scene_bridge import apply_and_verify, build_collision_object
+from dynamic_object_planning_scene_bridge import (
+    apply_and_verify, build_collision_object, build_remove_collision_object)
 from epd_snapshot_adapter import normalize_detected_objects_snapshot
 
 
@@ -27,9 +28,10 @@ def initial_summary() -> dict[str, Any]:
         "replay_source": True, "realsense_used": False,
         "objects_received": 0, "objects_normalized": 0,
         "objects_applied": 0, "objects_updated": 0, "objects_removed": 0,
+        "lost_ids_received": [], "removed_ids": [], "removal_noops": 0,
         "tf_failures": 0, "geometry_blocked": 0,
         "planning_scene_verified_ids": [], "duplicate_ids": [],
-        "lost_removal_supported": False, "result": "RUNNING",
+        "lost_removal_supported": True, "result": "RUNNING",
     }
 
 
@@ -42,6 +44,16 @@ def record_verified(summary: dict[str, Any], object_id: str) -> None:
         verified.sort()
     summary["objects_applied"] += 1
     summary["duplicate_ids"] = [item for item in set(verified) if verified.count(item) > 1]
+
+
+def should_remove(summary: dict[str, Any], applied_ids: set[str], object_id: str) -> bool:
+    """Record a loss and return whether this process has an object to remove."""
+    if object_id not in summary["lost_ids_received"]:
+        summary["lost_ids_received"].append(object_id)
+    if object_id in applied_ids:
+        return True
+    summary["removal_noops"] += 1
+    return False
 
 
 def write_summary(path: Path, summary: dict[str, Any]) -> None:
@@ -81,6 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     listener = TransformListener(buffer, node)  # noqa: F841
     publisher = node.create_publisher(String, args.normalized_topic, 10)
     summary = initial_summary()
+    applied_ids: set[str] = set()
     seen_message = False
 
     def transform_pose(pose: Any, target: str) -> Any:
@@ -114,9 +127,32 @@ def main(argv: list[str] | None = None) -> int:
                 node, built.collision_object, args.service, args.verify_service, args.timeout_seconds)
             if applied.status == "PASS":
                 record_verified(summary, object_id)
+                applied_ids.add(object_id)
             else:
                 node.get_logger().error(f"{applied.status} {object_id}: {applied.reason}")
-        summary["result"] = "PASS" if summary["objects_applied"] and not summary["duplicate_ids"] else "RUNNING"
+        for raw_id in normalized.get("lost_object_ids", []):
+            object_id = str(raw_id)
+            if not should_remove(summary, applied_ids, object_id):
+                node.get_logger().info(f"REMOVE no-op {object_id}: not applied by this process")
+                continue
+            removal = build_remove_collision_object(object_id)
+            removed = apply_and_verify(
+                node, removal.collision_object, args.service, args.verify_service, args.timeout_seconds)
+            if removed.status == "PASS":
+                applied_ids.remove(object_id)
+                summary["objects_removed"] += 1
+                if object_id not in summary["removed_ids"]:
+                    summary["removed_ids"].append(object_id)
+                summary["planning_scene_verified_ids"] = [
+                    item for item in summary["planning_scene_verified_ids"] if item != object_id]
+            else:
+                node.get_logger().error(f"{removed.status} {object_id}: {removed.reason}")
+        summary["lost_ids_received"].sort()
+        summary["removed_ids"].sort()
+        summary["result"] = (
+            "PASS" if summary["objects_applied"] and not summary["duplicate_ids"]
+            and set(summary["lost_ids_received"]) == set(summary["removed_ids"])
+            and not summary["planning_scene_verified_ids"] else "RUNNING")
         if warnings:
             summary["adapter_warnings"] = warnings
         write_summary(args.summary_output, summary)

@@ -199,6 +199,9 @@ def convert_epd_message_to_detected_objects(
         },
         "objects": objects,
     }
+    lost_ids = _get(msg, "lost_track_ids", None)
+    if lost_ids is not None:
+        payload["lost_object_ids"] = [str(object_id) for object_id in lost_ids]
     return payload, warnings
 
 

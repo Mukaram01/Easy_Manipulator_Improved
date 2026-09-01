@@ -101,6 +101,8 @@ def normalize_detected_objects_snapshot(detected: dict[str, Any], profile: dict[
     timestamp = (detected.get("timestamp") or detected.get("captured_at") or
                  source.get("source_stamp_ns") or source.get("captured_at"))
     out = {"schema_version": NORMALIZED_SNAPSHOT_SCHEMA_VERSION, "scene_id": scene_id, "camera_id": camera_id, "timestamp": timestamp, "frame_id": frame_id, "objects": []}
+    if "lost_object_ids" in detected:
+        out["lost_object_ids"] = [str(object_id) for object_id in (detected.get("lost_object_ids") or [])]
     for obj in detected.get("objects", []):
         if not isinstance(obj, dict):
             continue
