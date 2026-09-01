@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
-summary="${1:-/tmp/p8b_integration_summary.json}"
-scene_log=/tmp/p8b_scene.log
-bridge_log=/tmp/p8b_bridge.log
-replay_summary=/tmp/p8b_epd_replay_summary.json
+summary="${1:-/tmp/p8c2_integration_summary.json}"
+scene_log=/tmp/p8c2_scene.log
+bridge_log=/tmp/p8c2_bridge.log
+replay_summary=/tmp/p8c2_epd_replay_summary.json
 
 source /opt/ros/humble/setup.bash
-source /home/ubuntu/epd_ros2_ws/install/setup.bash
-source /home/ubuntu/workcell_ws/install/setup.bash
+source /home/user/epd_ros2_ws/install/setup.bash
+source /home/user/workcell_ws/install/setup.bash
+set -u
 
 scene_pid=""
 tf_pid=""
@@ -37,7 +38,17 @@ tf_pid=$!
 
 ros2 run workcell_builder epd_dynamic_planning_scene_node.py --summary-output "$summary" >"$bridge_log" 2>&1 &
 bridge_pid=$!
-ros2 launch easy_perception_deployment replay.launch.py mode:=fast summary_output:="$replay_summary"
+sleep "${P8C2_BRIDGE_READY_SECONDS:-2}"
+env -i HOME="$HOME" USER="${USER:-}" DISPLAY="${DISPLAY:-}" \
+  PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+  ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}" bash --noprofile --norc -c '
+  set +u
+  source /opt/ros/humble/setup.bash
+  source /home/user/epd_ros2_ws/install/setup.bash
+  set -u
+  cd /home/user/epd_ros2_ws/src/easy_perception_deployment/easy_perception_deployment
+  exec ros2 launch easy_perception_deployment replay.launch.py mode:=fast summary_output:="$1"
+' _ "$replay_summary"
 
 python3 - "$summary" "$replay_summary" <<'PY'
 import json, sys, time
@@ -52,11 +63,13 @@ while time.monotonic() < deadline:
         continue
     if integration.get("result") == "PASS":
         assert replay.get("result") == "PASS"
-        assert integration["planning_scene_verified_ids"] == ["1", "2"]
+        assert integration["lost_ids_received"] == ["1", "2"]
+        assert integration["removed_ids"] == ["1", "2"]
+        assert integration["planning_scene_verified_ids"] == []
         assert integration["duplicate_ids"] == []
         assert integration["realsense_used"] is False
         print(json.dumps(integration, indent=2, sort_keys=True))
         raise SystemExit(0)
     time.sleep(0.1)
-raise SystemExit("P8-B integration summary did not reach PASS")
+raise SystemExit("P8-C2 integration summary did not reach PASS")
 PY

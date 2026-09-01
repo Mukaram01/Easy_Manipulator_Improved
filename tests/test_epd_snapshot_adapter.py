@@ -39,6 +39,16 @@ def test_valid_localization_and_tracking_snapshots():
     assert mod.validate_normalized_snapshot(snap, expected_scene_id="s1", expected_camera_id="cam1") == []
 
 
+def test_optional_lost_object_ids_survive_normalization():
+    mod = _load_adapter()
+    detected = {"schema_version":"detected_objects/v1", "scene_id":"s1", "camera_id":"cam1",
+                "timestamp":"now", "frame_id":"camera", "objects":[], "lost_object_ids":["1", "2"]}
+    normalized = mod.normalize_detected_objects_snapshot(detected, {})
+    assert normalized["lost_object_ids"] == ["1", "2"]
+    del detected["lost_object_ids"]
+    assert "lost_object_ids" not in mod.normalize_detected_objects_snapshot(detected, {})
+
+
 def test_malformed_snapshot_rejection_and_scene_camera_mismatch():
     mod = _load_adapter()
     snap = {"schema_version":"workcell_perception_snapshot/v1","scene_id":"wrong","camera_id":"wrong_cam","timestamp":"now","frame_id":"camera","objects":[{"object_id":"dup","label":"part","confidence":1.2,"pose":{"frame_id":"camera","position":[0,0,float('nan')],"orientation_xyzw":[0,0,0,2]}},{"object_id":"dup","label":"part","confidence":0.5,"centroid":[0,0,0]}]}

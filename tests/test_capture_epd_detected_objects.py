@@ -76,6 +76,14 @@ class CaptureEPDDetectedObjectsTests(unittest.TestCase):
         self.assertEqual(payload["source"]["source_stamp_ns"], 7_000_000_042)
         self.assertNotIn("confidence", obj)
 
+    def test_lost_tracking_ids_are_preserved_and_optional(self) -> None:
+        msg = self._msg()
+        msg["lost_track_ids"] = ["1", "2"]
+        payload, _ = convert_epd_message_to_detected_objects(msg, "tracking", "ur5_2f_test", "fallback")
+        self.assertEqual(payload["lost_object_ids"], ["1", "2"])
+        payload, _ = convert_epd_message_to_detected_objects(self._msg(), "tracking", "ur5_2f_test", "fallback")
+        self.assertNotIn("lost_object_ids", payload)
+
     def test_output_validates_with_existing_validator(self) -> None:
         payload, _ = convert_epd_message_to_detected_objects(
             self._msg(), "/easy_perception_deployment/epd_localize_output", "ur5_2f_test", "camera_depth_optical_frame"

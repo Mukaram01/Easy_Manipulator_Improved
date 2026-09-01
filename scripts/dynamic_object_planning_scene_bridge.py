@@ -97,11 +97,24 @@ def build_collision_object(snapshot: Mapping[str, Any], object_id: str, planning
     return CollisionObjectResult("PASS", "dynamic object ready for PlanningScene ADD/update", collision_object)
 
 
+def build_remove_collision_object(object_id: str) -> CollisionObjectResult:
+    """Build an identity-only REMOVE; MoveIt does not require pose, geometry, or TF."""
+    from moveit_msgs.msg import CollisionObject
+
+    stable_id = str(object_id).strip()
+    if not stable_id:
+        return CollisionObjectResult("FAIL", "stable object ID is empty")
+    collision_object = CollisionObject()
+    collision_object.id = stable_id
+    collision_object.operation = CollisionObject.REMOVE
+    return CollisionObjectResult("PASS", "dynamic object ready for PlanningScene REMOVE", collision_object)
+
+
 def apply_and_verify(node: Any, collision_object: Any, service: str, verify_service: str,
                      timeout_seconds: float) -> CollisionObjectResult:
-    """Apply ADD/update and verify the stable object ID is queryable in MoveIt."""
+    """Apply a diff and verify ADD exists exactly once or REMOVE is absent."""
     import rclpy
-    from moveit_msgs.msg import PlanningScene, PlanningSceneComponents
+    from moveit_msgs.msg import CollisionObject, PlanningScene, PlanningSceneComponents
     from moveit_msgs.srv import ApplyPlanningScene, GetPlanningScene
 
     client = node.create_client(ApplyPlanningScene, service)
@@ -136,8 +149,12 @@ def apply_and_verify(node: Any, collision_object: Any, service: str, verify_serv
     if not verify_future.done() or verify_future.result() is None:
         return CollisionObjectResult("FAIL", "MoveIt application failure: PlanningScene verification timed out")
     matches = [obj for obj in verify_future.result().scene.world.collision_objects if obj.id == collision_object.id]
-    if len(matches) != 1:
-        return CollisionObjectResult("FAIL", f"MoveIt application failure: expected one object {collision_object.id!r}, found {len(matches)}")
+    expected = 0 if collision_object.operation == CollisionObject.REMOVE else 1
+    if len(matches) != expected:
+        return CollisionObjectResult(
+            "FAIL", f"MoveIt application failure: expected {expected} objects {collision_object.id!r}, found {len(matches)}")
+    if expected == 0:
+        return CollisionObjectResult("PASS", "dynamic object removal verified in PlanningScene")
     return CollisionObjectResult("PASS", "dynamic object inserted/updated and verified in PlanningScene", matches[0])
 
 

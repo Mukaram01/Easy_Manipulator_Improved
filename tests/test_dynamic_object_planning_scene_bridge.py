@@ -96,3 +96,17 @@ def test_bridge_contains_no_perception_or_grasp_algorithm():
 def test_runtime_tf_registers_pose_stamped_transform_support():
     source = SCRIPT.read_text(encoding="utf-8")
     assert "import tf2_geometry_msgs" in source
+
+
+def test_remove_uses_exact_id_without_geometry_pose_or_tf():
+    result = BRIDGE.build_remove_collision_object("1")
+    assert result.status == "PASS"
+    assert result.collision_object.id == "1"
+    assert result.collision_object.operation == result.collision_object.REMOVE
+    assert not result.collision_object.primitives
+    assert not result.collision_object.primitive_poses
+
+
+def test_apply_verifier_imports_collision_object_operation_constants():
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "from moveit_msgs.msg import CollisionObject, PlanningScene" in source

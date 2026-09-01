@@ -30,3 +30,18 @@ def test_runtime_uses_production_tracking_and_existing_seams_only():
     assert "apply_and_verify" in source
     assert "if replay" not in source
     assert "rs_launch" not in source
+    assert "lost_object_ids" in source
+    assert "build_remove_collision_object" in source
+
+
+def test_unknown_and_repeated_loss_are_safe_and_unrelated_id_remains_active():
+    summary = NODE.initial_summary()
+    applied = {"1", "2"}
+    assert NODE.should_remove(summary, applied, "unknown") is False
+    assert applied == {"1", "2"}
+    assert NODE.should_remove(summary, applied, "1") is True
+    applied.remove("1")
+    assert NODE.should_remove(summary, applied, "1") is False
+    assert applied == {"2"}
+    assert summary["lost_ids_received"] == ["unknown", "1"]
+    assert summary["removal_noops"] == 2
