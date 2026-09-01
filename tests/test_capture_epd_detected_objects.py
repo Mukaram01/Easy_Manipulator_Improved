@@ -57,6 +57,25 @@ class CaptureEPDDetectedObjectsTests(unittest.TestCase):
         self.assertEqual(obj["name"], "paper")
         self.assertEqual(obj["class_id"], "paper")
 
+    def test_tracking_ids_pose_dimensions_and_source_stamp_are_preserved(self) -> None:
+        msg = {
+            "header": {"frame_id": "camera_color_optical_frame", "stamp": {"sec": 7, "nanosec": 42}},
+            "object_ids": ["2"],
+            "objects": [{
+                "name": "person", "centroid": {"x": 0.1, "y": 0.2, "z": 1.5},
+                "length": 0.4, "breadth": 0.3, "height": 1.2,
+                "pose": {"orientation": {"x": 0.0, "y": 0.0, "z": 0.5, "w": 0.8660254}},
+            }],
+        }
+        payload, _ = convert_epd_message_to_detected_objects(msg, "tracking", "ur5_2f_test", "fallback")
+        obj = payload["objects"][0]
+        self.assertEqual(obj["object_id"], "2")
+        self.assertEqual(obj["tracking_id"], "2")
+        self.assertEqual(obj["dimensions"], {"x": 0.4, "y": 0.3, "z": 1.2})
+        self.assertEqual(obj["pose"]["orientation_xyzw"], [0.0, 0.0, 0.5, 0.8660254])
+        self.assertEqual(payload["source"]["source_stamp_ns"], 7_000_000_042)
+        self.assertNotIn("confidence", obj)
+
     def test_output_validates_with_existing_validator(self) -> None:
         payload, _ = convert_epd_message_to_detected_objects(
             self._msg(), "/easy_perception_deployment/epd_localize_output", "ur5_2f_test", "camera_depth_optical_frame"

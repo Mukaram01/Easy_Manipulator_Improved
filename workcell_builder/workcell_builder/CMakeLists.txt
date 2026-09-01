@@ -839,6 +839,9 @@ install(PROGRAMS
   ../../scripts/workcell_studio_planning_scene_node.py
   ../../scripts/epd_snapshot_adapter.py
   ../../scripts/dynamic_object_planning_scene_bridge.py
+  ../../scripts/capture_epd_detected_objects.py
+  ../../scripts/epd_dynamic_planning_scene_node.py
+  ../../scripts/run_p8b_replay_planning_scene_smoke.sh
   DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS
