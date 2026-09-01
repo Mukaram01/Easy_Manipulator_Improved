@@ -95,13 +95,24 @@ def _object_to_detected(raw: Any, index: int, frame_id: str) -> tuple[dict[str, 
 
     if dims is None:
         lx = _to_float(_get(raw, "length"))
-        wy = _to_float(_get(raw, "width"))
+        wy = _to_float(_get(raw, "breadth")) or _to_float(_get(raw, "width"))
         hz = _to_float(_get(raw, "height"))
         if lx and wy and hz:
             dims = {"x": lx, "y": wy, "z": hz}
 
-    raw_rpy = [0.0, 0.0, 0.0]
-    raw_pose = {"frame_id": frame_id, "xyz": [x, y, z], "rpy": raw_rpy}
+    message_pose = _get(raw, "pose")
+    orientation = _get(message_pose, "orientation")
+    quaternion = [
+        _to_float(_get(orientation, "x")), _to_float(_get(orientation, "y")),
+        _to_float(_get(orientation, "z")), _to_float(_get(orientation, "w")),
+    ]
+    if any(value is None for value in quaternion):
+        quaternion = [0.0, 0.0, 0.0, 1.0]
+    raw_pose = {
+        "frame_id": frame_id, "xyz": [x, y, z],
+        "rpy": list(_rpy_from_quaternion(*quaternion)),
+        "orientation_xyzw": quaternion,
+    }
     obj = {
         "object_id": f"obj_{index:03d}",
         "name": str(name),
@@ -155,11 +166,26 @@ def convert_epd_message_to_detected_objects(
         warnings.append(f"EPD frame_id missing; using fallback '{frame_fallback}'")
 
     objects = []
+    stable_ids = list(_get(msg, "object_ids", []) or [])
     for idx, raw in enumerate(_message_objects(msg), start=1):
         obj, obj_warnings = _object_to_detected(raw, idx, message_frame)
         warnings.extend(obj_warnings)
         if obj is not None:
+            if idx <= len(stable_ids):
+                stable_id = str(stable_ids[idx - 1])
+                obj["object_id"] = stable_id
+                obj["tracking_id"] = stable_id
+            if obj.get("confidence") is None:
+                obj.pop("confidence", None)
+                obj["attributes"]["confidence_available"] = False
             objects.append(obj)
+
+    stamp = _get(header, "stamp")
+    sec = _get(stamp, "sec")
+    nanosec = _get(stamp, "nanosec")
+    source_stamp_ns = None
+    if sec is not None and nanosec is not None:
+        source_stamp_ns = int(sec) * 1_000_000_000 + int(nanosec)
 
     payload = {
         "schema_version": "detected_objects/v1",
@@ -169,6 +195,7 @@ def convert_epd_message_to_detected_objects(
             "scene_package": scene_package,
             "frame_id": message_frame,
             "captured_at": _now(),
+            "source_stamp_ns": source_stamp_ns,
         },
         "objects": objects,
     }

@@ -112,7 +112,12 @@ def apply_and_verify(node: Any, collision_object: Any, service: str, verify_serv
     request.scene.is_diff = True
     request.scene.world.collision_objects.append(collision_object)
     future = client.call_async(request)
-    rclpy.spin_until_future_complete(node, future, timeout_sec=timeout_seconds)
+    if getattr(node, "_external_executor_spinning", False):
+        deadline = time.monotonic() + timeout_seconds
+        while not future.done() and time.monotonic() < deadline:
+            time.sleep(0.01)
+    else:
+        rclpy.spin_until_future_complete(node, future, timeout_sec=timeout_seconds)
     if not future.done() or future.result() is None or future.result().success is not True:
         return CollisionObjectResult("FAIL", "MoveIt application failure: PlanningScene diff was rejected")
 
@@ -122,7 +127,12 @@ def apply_and_verify(node: Any, collision_object: Any, service: str, verify_serv
     verify_request = GetPlanningScene.Request()
     verify_request.components.components = PlanningSceneComponents.WORLD_OBJECT_GEOMETRY
     verify_future = verifier.call_async(verify_request)
-    rclpy.spin_until_future_complete(node, verify_future, timeout_sec=timeout_seconds)
+    if getattr(node, "_external_executor_spinning", False):
+        deadline = time.monotonic() + timeout_seconds
+        while not verify_future.done() and time.monotonic() < deadline:
+            time.sleep(0.01)
+    else:
+        rclpy.spin_until_future_complete(node, verify_future, timeout_sec=timeout_seconds)
     if not verify_future.done() or verify_future.result() is None:
         return CollisionObjectResult("FAIL", "MoveIt application failure: PlanningScene verification timed out")
     matches = [obj for obj in verify_future.result().scene.world.collision_objects if obj.id == collision_object.id]

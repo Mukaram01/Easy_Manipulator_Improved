@@ -58,12 +58,13 @@ def validate_normalized_snapshot(snapshot: dict[str, Any], *, expected_scene_id:
             seen.add(str(oid))
         if not obj.get("label"):
             errors.append(f"objects[{idx}].label is required")
-        try:
-            conf = float(obj.get("confidence"))
-            if not math.isfinite(conf) or conf < 0.0 or conf > 1.0:
-                errors.append(f"objects[{idx}].confidence must be in [0, 1]")
-        except Exception:
-            errors.append(f"objects[{idx}].confidence is required and numeric")
+        if obj.get("confidence") is not None:
+            try:
+                conf = float(obj.get("confidence"))
+                if not math.isfinite(conf) or conf < 0.0 or conf > 1.0:
+                    errors.append(f"objects[{idx}].confidence must be in [0, 1]")
+            except Exception:
+                errors.append(f"objects[{idx}].confidence must be numeric when present")
         pose = obj.get("pose") if isinstance(obj.get("pose"), dict) else None
         centroid = obj.get("centroid")
         if pose:
@@ -97,7 +98,8 @@ def normalize_detected_objects_snapshot(detected: dict[str, Any], profile: dict[
     camera_id = detected.get("camera_id") or camera.get("camera_id") or camera.get("id") or detected.get("camera")
     frame_id = detected.get("frame_id") or camera.get("frame_id") or camera.get("optical_frame_id")
     source = detected.get("source") if isinstance(detected.get("source"), dict) else {}
-    timestamp = detected.get("timestamp") or detected.get("captured_at") or source.get("captured_at")
+    timestamp = (detected.get("timestamp") or detected.get("captured_at") or
+                 source.get("source_stamp_ns") or source.get("captured_at"))
     out = {"schema_version": NORMALIZED_SNAPSHOT_SCHEMA_VERSION, "scene_id": scene_id, "camera_id": camera_id, "timestamp": timestamp, "frame_id": frame_id, "objects": []}
     for obj in detected.get("objects", []):
         if not isinstance(obj, dict):
