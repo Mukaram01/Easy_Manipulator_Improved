@@ -363,9 +363,12 @@ def _launch_setup(context):
         }
     }
 
+    fake_hardware_enabled = use_fake_hardware.perform(context).lower() == "true"
     trajectory_execution = {
-        "allow_trajectory_execution": False,
+        # Execution is exposed only for the local mock ros2_control system.
+        "allow_trajectory_execution": fake_hardware_enabled,
         "moveit_manage_controllers": False,
+        "use_fake_hardware": fake_hardware_enabled,
     }
 
     planning_scene_monitor_params = {

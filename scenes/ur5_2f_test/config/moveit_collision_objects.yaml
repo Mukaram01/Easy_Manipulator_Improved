@@ -141,36 +141,6 @@ objects:
     fidelity: box_proxy
     review_required: true
     bounds_source: mesh_vertices
-- id: workcell::realsense_overhead
-  source_item_id: realsense_overhead
-  frame_id: world
-  semantic_role: camera
-  operation: ADD
-  pose:
-    xyz:
-    - 0.35
-    - 0.1
-    - 0.85
-    rpy:
-    - 0.0
-    - 1.57
-    - 0.0
-    quaternion_xyzw:
-    - 0.0
-    - 0.706825181105366
-    - 0.0
-    - 0.7073882691671998
-  source_geometry:
-    type: box
-  collision_geometry:
-    type: box
-    dimensions_m:
-    - 0.08
-    - 0.08
-    - 0.06
-    fidelity: primitive_box
-    review_required: false
-    bounds_source: authored_dimensions
 - id: workcell::support_surface_table
   source_item_id: support_surface_table
   frame_id: world
@@ -201,7 +171,7 @@ objects:
     fidelity: primitive_box
     review_required: false
     bounds_source: authored_dimensions
-- id: workcell::target_bin_default
+- id: workcell::target_bin_default::floor
   source_item_id: target_bin_default
   frame_id: world
   semantic_role: target_bin
@@ -210,7 +180,7 @@ objects:
     xyz:
     - 0.25
     - 0.45
-    - 0.2
+    - 0.105
     rpy:
     - 0.0
     - 0.0
@@ -221,21 +191,48 @@ objects:
     - 0.0
     - 1.0
   source_geometry:
-    type: mesh
-    mesh_reference: assets/environment/sorting_bin_description/meshes/sorting_bin.stl
-    mesh_scale:
-    - 0.001
-    - 0.001
-    - 0.001
+    type: box
   collision_geometry:
     type: box
     dimensions_m:
     - 0.3522011268
     - 0.2133871002
-    - 0.2
-    fidelity: box_proxy
-    review_required: true
+    - 0.01
+    fidelity: primitive_box
+    review_required: false
     bounds_source: authored_dimensions
+- id: workcell::target_bin_default::wall_x_min
+  source_item_id: target_bin_default
+  frame_id: world
+  semantic_role: target_bin
+  operation: ADD
+  pose: {xyz: [0.0788994366, 0.45, 0.2], rpy: [0.0, 0.0, 0.0], quaternion_xyzw: [0.0, 0.0, 0.0, 1.0]}
+  source_geometry: {type: box}
+  collision_geometry: {type: box, dimensions_m: [0.01, 0.2133871002, 0.2], fidelity: primitive_box, review_required: false, bounds_source: authored_dimensions}
+- id: workcell::target_bin_default::wall_x_max
+  source_item_id: target_bin_default
+  frame_id: world
+  semantic_role: target_bin
+  operation: ADD
+  pose: {xyz: [0.4211005634, 0.45, 0.2], rpy: [0.0, 0.0, 0.0], quaternion_xyzw: [0.0, 0.0, 0.0, 1.0]}
+  source_geometry: {type: box}
+  collision_geometry: {type: box, dimensions_m: [0.01, 0.2133871002, 0.2], fidelity: primitive_box, review_required: false, bounds_source: authored_dimensions}
+- id: workcell::target_bin_default::wall_y_min
+  source_item_id: target_bin_default
+  frame_id: world
+  semantic_role: target_bin
+  operation: ADD
+  pose: {xyz: [0.25, 0.3483064499, 0.2], rpy: [0.0, 0.0, 0.0], quaternion_xyzw: [0.0, 0.0, 0.0, 1.0]}
+  source_geometry: {type: box}
+  collision_geometry: {type: box, dimensions_m: [0.3322011268, 0.01, 0.2], fidelity: primitive_box, review_required: false, bounds_source: authored_dimensions}
+- id: workcell::target_bin_default::wall_y_max
+  source_item_id: target_bin_default
+  frame_id: world
+  semantic_role: target_bin
+  operation: ADD
+  pose: {xyz: [0.25, 0.5516935501, 0.2], rpy: [0.0, 0.0, 0.0], quaternion_xyzw: [0.0, 0.0, 0.0, 1.0]}
+  source_geometry: {type: box}
+  collision_geometry: {type: box, dimensions_m: [0.3322011268, 0.01, 0.2], fidelity: primitive_box, review_required: false, bounds_source: authored_dimensions}
 excluded_items:
 - id: home_pose_safe
   reason: semantic authoring marker; not physical collision geometry
@@ -246,9 +243,9 @@ excluded_items:
 - id: safety_zone_keepout
   reason: semantic authoring marker; not physical collision geometry
 summary:
-  collision_object_count: 6
+  collision_object_count: 9
   excluded_item_count: 4
-  box_proxy_count: 4
+  box_proxy_count: 3
   exact_mesh_collision_count: 0
 safety:
   publishes_robot_motion: false

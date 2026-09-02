@@ -56,6 +56,26 @@ def should_remove(summary: dict[str, Any], applied_ids: set[str], object_id: str
     return False
 
 
+def same_physical_box(first: Any, second: Any,
+                      position_tolerance: float = 0.08,
+                      dimension_tolerance: float = 0.04) -> bool:
+    """Return whether two collision boxes are the same tracked physical object."""
+    if first is None or second is None or not first.primitives or not second.primitives:
+        return False
+    first_dims = list(first.primitives[0].dimensions)
+    second_dims = list(second.primitives[0].dimensions)
+    if len(first_dims) != 3 or len(second_dims) != 3:
+        return False
+    if any(abs(a - b) > dimension_tolerance for a, b in zip(first_dims, second_dims)):
+        return False
+    first_pose = first.primitive_poses[0] if first.primitive_poses else first.pose
+    second_pose = second.primitive_poses[0] if second.primitive_poses else second.pose
+    a = first_pose.position
+    b = second_pose.position
+    return ((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2
+            <= position_tolerance ** 2)
+
+
 def write_summary(path: Path, summary: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -94,7 +114,26 @@ def main(argv: list[str] | None = None) -> int:
     publisher = node.create_publisher(String, args.normalized_topic, 10)
     summary = initial_summary()
     applied_ids: set[str] = set()
+    latest_objects: dict[str, Any] = {}
+    ownership = {"id": "", "object": None}
     seen_message = False
+
+    node.declare_parameter("owned_object_id", "")
+
+    from rcl_interfaces.msg import SetParametersResult
+
+    def ownership_parameters(parameters: list[Any]) -> SetParametersResult:
+        for parameter in parameters:
+            if parameter.name != "owned_object_id":
+                continue
+            claimed_id = str(parameter.value).strip()
+            ownership["id"] = claimed_id
+            ownership["object"] = latest_objects.get(claimed_id) if claimed_id else None
+            summary["owned_object_id"] = claimed_id
+            summary["ownership_active"] = bool(claimed_id)
+        return SetParametersResult(successful=True)
+
+    node.add_on_set_parameters_callback(ownership_parameters)
 
     def transform_pose(pose: Any, target: str) -> Any:
         try:
@@ -122,6 +161,23 @@ def main(argv: list[str] | None = None) -> int:
                 summary["tf_failures"] += int("TF unavailable" in built.reason)
                 summary["geometry_blocked"] += int("geometry" in built.reason)
                 node.get_logger().warning(f"{built.status} {object_id}: {built.reason}")
+                continue
+            latest_objects[object_id] = built.collision_object
+            if ownership["id"] == object_id and ownership["object"] is None:
+                ownership["object"] = built.collision_object
+            if ownership["object"] is not None and same_physical_box(
+                    built.collision_object, ownership["object"]):
+                summary["ownership_suppressed"] = summary.get("ownership_suppressed", 0) + 1
+                if object_id in applied_ids and object_id != ownership["id"]:
+                    removal = build_remove_collision_object(object_id)
+                    removed = apply_and_verify(
+                        node, removal.collision_object, args.service,
+                        args.verify_service, args.timeout_seconds)
+                    if removed.status == "PASS":
+                        applied_ids.remove(object_id)
+                        summary["planning_scene_verified_ids"] = [
+                            item for item in summary["planning_scene_verified_ids"]
+                            if item != object_id]
                 continue
             applied = apply_and_verify(
                 node, built.collision_object, args.service, args.verify_service, args.timeout_seconds)
