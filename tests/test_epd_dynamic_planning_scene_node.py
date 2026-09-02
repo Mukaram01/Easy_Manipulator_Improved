@@ -1,6 +1,7 @@
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 
 SCRIPT = Path("scripts/epd_dynamic_planning_scene_node.py")
@@ -45,3 +46,25 @@ def test_unknown_and_repeated_loss_are_safe_and_unrelated_id_remains_active():
     assert applied == {"2"}
     assert summary["lost_ids_received"] == ["unknown", "1"]
     assert summary["removal_noops"] == 2
+
+
+def collision_box(object_id, xyz, dimensions):
+    position = SimpleNamespace(x=xyz[0], y=xyz[1], z=xyz[2])
+    pose = SimpleNamespace(position=position)
+    primitive = SimpleNamespace(dimensions=dimensions)
+    return SimpleNamespace(id=object_id, primitives=[primitive],
+                           primitive_poses=[pose], pose=pose)
+
+
+def test_manipulation_ownership_matches_renumbered_same_physical_box_only():
+    claimed = collision_box("9", [0.40, 0.04, 0.32], [0.108, 0.061, 0.047])
+    renumbered = collision_box("18", [0.405, 0.045, 0.318], [0.106, 0.063, 0.047])
+    suitcase = collision_box("3", [0.34, 0.04, 0.29], [0.356, 0.272, 0.046])
+    assert NODE.same_physical_box(claimed, renumbered) is True
+    assert NODE.same_physical_box(claimed, suitcase) is False
+
+
+def test_manipulation_ownership_rejects_nearby_different_box():
+    claimed = collision_box("9", [0.40, 0.04, 0.32], [0.108, 0.061, 0.047])
+    other = collision_box("18", [0.51, 0.04, 0.32], [0.108, 0.061, 0.047])
+    assert NODE.same_physical_box(claimed, other) is False

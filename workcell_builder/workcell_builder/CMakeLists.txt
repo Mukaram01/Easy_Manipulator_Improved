@@ -841,6 +841,8 @@ install(PROGRAMS
   ../../scripts/dynamic_object_planning_scene_bridge.py
   ../../scripts/capture_epd_detected_objects.py
   ../../scripts/epd_dynamic_planning_scene_node.py
+  ../../scripts/perceived_object_grasp_plan.py
+  ../../scripts/perceived_object_grasp_execute.py
   ../../scripts/run_p8b_replay_planning_scene_smoke.sh
   DESTINATION lib/${PROJECT_NAME})
 
