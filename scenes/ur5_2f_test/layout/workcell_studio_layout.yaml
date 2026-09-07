@@ -4,356 +4,235 @@ scene_name: ur5_2f_test
 scene_path: .
 metadata:
   canonical_layout_path: layout/workcell_studio_layout.yaml
-  legacy_import_normalized_keys: items,assets,placed_assets,objects,zones,targets,camera
+  physical_state_source: environment.yaml
 items:
-  - id: support_surface_table
-    type: support_surface
-    role: support_surface
-    category: work_surface
-    display_name: Work Surface
-    editable: true
-    locked: false
-    source_layer: editable_layout
-    source: layout/workcell_studio_layout.yaml
-    pose:
-      xyz:
-        - 0.5
-        - 0
-        - 0
-      rpy:
-        - 0
-        - 0
-        - 0
-    dimensions:
-      - 1.2
-      - 0.80000000000000004
-      - 0.080000000000000002
-    geometry_type: box
-    primitive_geometry_type: box
-    material:
-      color:
-        - 0.55
-        - 0.58
-        - 0.62
-        - 1.0
-    scene_name: ur5_2f_test
-    scene_path: .
-  - id: pick_zone_main
-    type: pick_zone
-    role: pick_zone
-    category: work_surface
-    display_name: Pick Zone
-    editable: true
-    locked: false
-    source_layer: editable_layout
-    source: layout/workcell_studio_layout.yaml
-    pose:
-      xyz:
-        - 0.45000000000000001
-        - 0.25
-        - 0.105
-      rpy:
-        - 0
-        - 0
-        - 0
-    dimensions:
-      - 0.34999999999999998
-      - 0.29999999999999999
-      - 0.01
-    geometry_type: box
-    primitive_geometry_type: box
-    material:
-      color:
-        - 0.12
-        - 0.55
-        - 1.0
-        - 0.45
-    scene_name: ur5_2f_test
-    scene_path: .
-  - id: place_zone_default
-    transform_group: default_drop_destination
-    type: place_zone
-    role: place_zone
-    category: work_surface
-    display_name: Default Place Zone
-    target_ref: target_bin_default
-    editable: true
-    locked: false
-    source_layer: editable_layout
-    source: layout/workcell_studio_layout.yaml
-    pose:
-      xyz:
-        - 0.25
-        - 0.45000000000000001
-        - 0.20000000000000001
-      rpy:
-        - 0
-        - 0
-        - 0
-    dimensions:
-      - 0.35220112679999999
-      - 0.21338710020000001
-      - 0.01
-    geometry_type: box
-    primitive_geometry_type: box
-    material:
-      color:
-        - 0.1
-        - 0.75
-        - 0.35
-        - 0.45
-    scene_name: ur5_2f_test
-    scene_path: .
-  - id: target_bin_default
-    transform_group: default_drop_destination
-    type: target_bin
-    role: target_bin
-    category: place_zone
-    display_name: Default Target Bin
-    editable: true
-    locked: false
-    source_layer: editable_layout
-    source: layout/workcell_studio_layout.yaml
-    pose:
-      xyz:
-        - 0.25
-        - 0.45000000000000001
-        - 0.20000000000000001
-      rpy:
-        - 0
-        - 0
-        - 0
-    dimensions:
-      - 0.35220112679999999
-      - 0.21338710020000001
-      - 0.20000000000000001
-    geometry_type: mesh
-    mesh:
-      path: assets/environment/sorting_bin_description/meshes/sorting_bin.stl
-      scale:
-        - 0.001
-        - 0.001
-        - 0.001
-      rpy:
-        - 1.57079632679
-        - 0.0
-        - 1.57079632679
-      origin_offset:
-        - -0.1738994366
-        - 0.0
-        - -0.1
-    material:
-      color:
-        - 0.05
-        - 0.35
-        - 0.8
-        - 1.0
-    scene_name: ur5_2f_test
-    scene_path: .
-  - id: realsense_overhead
-    type: realsense
-    role: camera
-    category: camera
-    display_name: Overhead RealSense Camera
-    editable: true
-    locked: false
-    source_layer: editable_layout
-    source: layout/workcell_studio_layout.yaml
-    pose:
-      xyz:
-        - 0.34999999999999998
-        - 0.10000000000000001
-        - 0.84999999999999998
-      rpy:
-        - 0
-        - 1.5700000000000001
-        - 0
-    dimensions:
-      - 0.080000000000000002
-      - 0.080000000000000002
-      - 0.059999999999999998
-    geometry_type: box
-    primitive_geometry_type: box
-    material:
-      color:
-        - 0.08
-        - 0.09
-        - 0.1
-        - 1.0
-    scene_name: ur5_2f_test
-    scene_path: .
-  - id: safety_zone_keepout
-    type: safety_zone
-    role: keepout
-    category: safety_zone
-    display_name: Robot/Table Keepout Boundary
-    editable: true
-    locked: false
-    source_layer: editable_layout
-    source: layout/workcell_studio_layout.yaml
-    pose:
-      xyz:
-        - 0.34999999999999998
-        - 0
-        - 0.10199999999999999
-      rpy:
-        - 0
-        - 0
-        - 0
-    dimensions:
-      - 2
-      - 1.6000000000000001
-      - 0.01
-    geometry_type: box
-    primitive_geometry_type: box
-    material:
-      color:
-        - 1.0
-        - 0.15
-        - 0.12
-        - 0.18
-    scene_name: ur5_2f_test
-    scene_path: .
-  - id: home_pose_safe
-    type: home_pose
-    role: home_pose
-    category: safety_zone
-    display_name: Safe Home Pose Marker
-    editable: true
-    locked: false
-    source_layer: editable_layout
-    source: layout/workcell_studio_layout.yaml
-    pose:
-      xyz:
-        - 0.25
-        - 0
-        - 0.45000000000000001
-      rpy:
-        - 0
-        - 0
-        - 0
-    dimensions:
-      - 0.080000000000000002
-      - 0.080000000000000002
-      - 0.080000000000000002
-    geometry_type: sphere
-    primitive_geometry_type: sphere
-    material:
-      color:
-        - 0.55
-        - 0.25
-        - 1.0
-        - 0.85
-    scene_name: ur5_2f_test
-    scene_path: .
-  - id: !<tag:yaml.org,2002:str> object_02
-    display_name: !<tag:yaml.org,2002:str> 2068_001_24
-    type: object
-    category: Imported
-    role: object
-    catalog_asset_id: !<tag:yaml.org,2002:str> imported_2068_001_24
-    source: layout/workcell_studio_layout.yaml
-    source_layer: editable_layout
-    editable: true
-    locked: false
-    source_path: assets/imported/2068_001_24.stl
-    mesh_path: assets/imported/2068_001_24.stl
-    mesh:
-      path: assets/imported/2068_001_24.stl
-      scale:
-        - 0.001
-        - 0.001
-        - 0.001
+- id: support_surface_table
+  type: table
+  role: support_surface
+  display_name: Industrial Workbench
+  category: environment
+  frame: world
+  layout_item_ref: support_surface_table
+  geometry_type: mesh
+  mesh:
+    path: package://workbench_description/meshes/visual/table.stl
     scale:
-      - 0.001
-      - 0.001
-      - 0.001
-    pose:
-      xyz:
-        - 0.90000000000000002
-        - 0.20000000000000001
-        - 0.05602453554376767
-      rpy:
-        - 2.7755575615628914e-17
-        - 0.37489672332838203
-        - 2.7755575615628914e-17
-    dimensions:
-      - 1
-      - 1
-      - 1
-    scene_name: ur5_2f_test
-    scene_path: .
-  - id: !<tag:yaml.org,2002:str> object_01
-    display_name: !<tag:yaml.org,2002:str> 2068_001_24
-    type: object
-    category: Imported
-    role: asset
-    catalog_asset_id: !<tag:yaml.org,2002:str> imported_2068_001_24
-    source: layout/workcell_studio_layout.yaml
-    source_layer: editable_layout
-    editable: true
-    locked: false
-    source_path: assets/imported/2068_001_24.stl
-    mesh_path: assets/imported/2068_001_24.stl
+    - 0.001
+    - 0.001
+    - 0.001
+  asset_class: registered
+  collision:
+    enabled: true
+    mode: box_proxy
     mesh:
-      path: assets/imported/2068_001_24.stl
+      path: package://workbench_description/meshes/collision/table.stl
       scale:
-        - 0.001
-        - 0.001
-        - 0.001
+      - 0.001
+      - 0.001
+      - 0.001
+    review: Conservative mesh bounds contain tabletop and legs; intentionally fill
+      under-bench void. Supplied collision STL duplicates 102734 visual triangles.
+  catalog_asset_id: table_standard_1200
+  surface_z_m: 0.0
+  pose:
+    xyz:
+    - 0.3
+    - -0.2
+    - -0.0008999994993209839
+    rpy:
+    - 0
+    - 0
+    - 0
+  editable: true
+  locked: false
+  source_layer: editable_layout
+  source: environment.yaml
+  scene_name: ur5_2f_test
+  scene_path: .
+- id: robot_mount_plate
+  type: fixture
+  role: fixture
+  display_name: Robot Mounting Plate
+  category: environment
+  frame: world
+  layout_item_ref: robot_mount_plate
+  geometry_type: box
+  dimensions:
+  - 0.2
+  - 0.2
+  - 0.012
+  asset_class: primitive
+  collision:
+    enabled: true
+    mode: primitive_box
+  material:
+    color:
+    - 0.32
+    - 0.34
+    - 0.36
+    - 1
+  pose:
+    xyz:
+    - 0
+    - 0
+    - 0.007
+    rpy:
+    - 0
+    - 0
+    - 0
+  editable: true
+  locked: false
+  source_layer: editable_layout
+  source: environment.yaml
+  scene_name: ur5_2f_test
+  scene_path: .
+- id: target_bin_default
+  type: target_bin
+  role: target_bin
+  display_name: Destination Bin
+  category: environment
+  frame: world
+  layout_item_ref: target_bin_default
+  geometry_type: mesh
+  mesh:
+    path: package://sorting_bin_description/meshes/sorting_bin.stl
     scale:
-      - 0.001
-      - 0.001
-      - 0.001
-    pose:
-      xyz:
-        - 0.94999999999999996
-        - -0.5
-        - 0.10000000000000001
-      rpy:
-        - 0
-        - 0
-        - 0
-    dimensions:
-      - 1
-      - 1
-      - 1
-    scene_name: ur5_2f_test
-    scene_path: .
-  - id: !<tag:yaml.org,2002:str> object_04
-    display_name: !<tag:yaml.org,2002:str> 02030397
-    type: object
-    category: Imported
-    role: asset
-    catalog_asset_id: !<tag:yaml.org,2002:str> imported_02030397
-    source: layout/workcell_studio_layout.yaml
-    source_layer: editable_layout
-    editable: true
-    locked: false
-    source_path: assets/imported/02030397.stl
-    mesh_path: assets/imported/02030397.stl
-    mesh:
-      path: assets/imported/02030397.stl
-      scale:
-        - 0.001
-        - 0.001
-        - 0.001
+    - 0.001
+    - 0.001
+    - 0.001
+    rpy:
+    - 1.5707963267948966
+    - 0
+    - 1.5707963267948966
+    origin_offset:
+    - -0.173899436593
+    - 0
+    - -0.1
+  asset_class: registered
+  collision:
+    enabled: true
+    mode: mesh
+  catalog_asset_id: bin_standard
+  support_surface_ref: support_surface_table
+  task_zone_ref: default_drop_zone
+  pose:
+    xyz:
+    - 0.45
+    - 0.22
+    - 0.1
+    rpy:
+    - 0
+    - 0
+    - 0
+  editable: true
+  locked: false
+  source_layer: editable_layout
+  source: environment.yaml
+  scene_name: ur5_2f_test
+  scene_path: .
+- id: realsense_overhead
+  type: realsense
+  role: camera
+  display_name: Fixed RealSense D435i
+  category: environment
+  frame: world
+  layout_item_ref: realsense_overhead
+  geometry_type: mesh
+  mesh:
+    path: package://realsense2_description/meshes/d435.dae
     scale:
-      - 0.001
-      - 0.001
-      - 0.001
-    pose:
-      xyz:
-        - 0.69999999999999996
-        - -1
-        - 0.2466778404103892
-      rpy:
-        - 0
-        - 0
-        - 0
-    dimensions:
-      - 1
-      - 1
-      - 1
-    scene_name: ur5_2f_test
-    scene_path: .
+    - 1
+    - 1
+    - 1
+  asset_class: registered
+  collision:
+    enabled: true
+    mode: urdf
+    link: camera_link
+  description:
+    package: realsense2_description
+    xacro: urdf/_d435i.urdf.xacro
+    macro: sensor_d435i
+  material:
+    color:
+    - 0.12
+    - 0.13
+    - 0.15
+    - 1
+  pose:
+    xyz:
+    - 0.4
+    - -0.25
+    - 0.8499999999999998
+    rpy:
+    - 0
+    - 1.570000000000127
+    - 0
+  editable: true
+  locked: false
+  source_layer: editable_layout
+  source: environment.yaml
+  scene_name: ur5_2f_test
+  scene_path: .
+- id: pick_zone_main
+  type: pick_zone
+  role: pick_zone
+  display_name: Pick Zone
+  category: zone
+  frame: world
+  layout_item_ref: pick_zone_main
+  geometry_type: box
+  dimensions:
+  - 0.35
+  - 0.3
+  - 0.6
+  asset_class: primitive
+  support_surface_ref: support_surface_table
+  shape: box
+  pose:
+    xyz:
+    - 0.4
+    - -0.2
+    - 0.3
+    rpy:
+    - 0
+    - 0
+    - 0
+  editable: true
+  locked: false
+  source_layer: editable_layout
+  source: environment.yaml
+  scene_name: ur5_2f_test
+  scene_path: .
+- id: place_zone_default
+  type: place_zone
+  role: place_zone
+  display_name: Place Free Region
+  category: zone
+  frame: world
+  layout_item_ref: place_zone_default
+  geometry_type: box
+  dimensions:
+  - 0.25
+  - 0.14
+  - 0.23
+  asset_class: primitive
+  target_ref: target_bin_default
+  support_surface_ref: support_surface_table
+  shape: box
+  bottom_clearance_m: 0.005
+  pose:
+    xyz:
+    - 0.45
+    - 0.22
+    - 0.13
+    rpy:
+    - 0
+    - 0
+    - 0
+  editable: true
+  locked: false
+  source_layer: editable_layout
+  source: environment.yaml
+  scene_name: ur5_2f_test
+  scene_path: .

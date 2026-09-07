@@ -162,20 +162,27 @@ def _resolve_authored_task(
             fail(layout_id or identifier, f"layout_item_ref for task zone '{identifier}' is missing or unresolved")
         return str(identifier), item_by_id[str(layout_id)]
 
-    pick_id, pick_item = intent_ref("pick", "source")
+    # A perception-backed pick has two distinct bindings: source is the
+    # normalized perception stream, while zone is the authored eligibility
+    # region.  Older exports conflated those IDs, which made regeneration try
+    # to find ``detected_objects/v1`` in the physical layout.
+    pick_section = task_intent.get("pick") if isinstance(task_intent.get("pick"), dict) else {}
+    pick_child = "zone" if isinstance(pick_section.get("zone"), dict) else "source"
+    pick_id, pick_item = intent_ref("pick", pick_child)
     place_id, place_zone = intent_ref("place", "target")
     target_ref = place_zone.get("target_ref")
     if not target_ref or str(target_ref) not in item_by_id:
         fail(target_ref or place_zone.get("id"), f"target_ref on place layout item '{place_zone.get('id')}' is missing or unresolved")
     target = item_by_id[str(target_ref)]
+    # The physical bin and the semantic free place region intentionally have
+    # different transforms and are separate authoring entities.  Preserve the
+    # old transform-group check only when a scene explicitly supplies groups;
+    # requiring identical poses here would make a valid bin interior
+    # impossible to author.
     zone_group = place_zone.get("transform_group")
     target_group = target.get("transform_group")
-    if not zone_group or zone_group != target_group:
+    if zone_group is not None and target_group is not None and zone_group != target_group:
         fail(target_ref, f"inconsistent transform_group between '{place_zone.get('id')}' and '{target_ref}'")
-    zone_pose = place_zone.get("pose")
-    target_pose = target.get("pose")
-    if not isinstance(zone_pose, dict) or zone_pose != target_pose:
-        fail(target_ref, f"inconsistent pose in transform_group '{zone_group}'")
     for item_id, item in ((pick_item.get("id"), pick_item), (target_ref, target)):
         pose = item.get("pose")
         if (not isinstance(pose, dict) or not isinstance(pose.get("xyz"), list)
@@ -274,7 +281,18 @@ def _extract_task_zones(environment: dict[str, Any]) -> tuple[list[dict[str, Any
         elif "place" in ztype or "target" in ztype or "bin" in ztype or "place" in zid.lower():
             role="place"; counts["place"] += 1
         ids.append(zid)
-        normalized.append({"id":zid,"type":z.get("type",""),"frame":z.get("frame","world"),"dimensions":z.get("dimensions") or z.get("size") or [0.3,0.3,0.1],"role":role})
+        pose = z.get("pose") if isinstance(z.get("pose"), dict) else {}
+        normalized.append({
+            "id": zid,
+            "type": z.get("type", ""),
+            "frame": z.get("frame", "world"),
+            "pose_xyz": z.get("pose_xyz") or pose.get("xyz") or [0.0, 0.0, 0.0],
+            "pose_rpy": z.get("pose_rpy") or pose.get("rpy") or [0.0, 0.0, 0.0],
+            "dimensions": z.get("dimensions") or z.get("size") or [0.3, 0.3, 0.1],
+            "role": role,
+            "layout_item_ref": z.get("layout_item_ref"),
+            "target_ref": z.get("target_ref"),
+        })
     counts["total"]=len(normalized)
     return normalized, counts, ids
 
@@ -309,23 +327,30 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
     normalized_grasp, grasp_warnings = normalize_grasp_strategy(grasp_meta, ee_meta)
     sensors_meta = meta.get("sensors") if isinstance(meta.get("sensors"), list) else []
 
-    robot_name = robot_env.get("name") or robot_meta.get("selected_name") or "unknown_robot"
-    ee_name = ee_env.get("name") or ee_meta.get("selected_name") or "unknown_end_effector"
+    robot_name = robot_env.get("name") or robot_env.get("model") or robot_meta.get("selected_name") or "unknown_robot"
+    ee_name = ee_env.get("name") or ee_env.get("model") or ee_meta.get("selected_name") or "unknown_end_effector"
     task_type = _task_type_from_meta(meta)
     robot_id = robot_mount.get("id") or robot_env.get("id") or robot_name
     robot_base_link = robot_mount.get("base_link") or robot_env.get("base_link") or "base_link"
     robot_parent_frame = robot_mount.get("parent_frame") or "world"
+    # ``environment.yaml`` is the authored physical source.  Older builder
+    # exports stored this in metadata.robot_mount; accept both shapes while
+    # preserving the authored values in the generated handoff.
     robot_pose = robot_mount.get("pose") if isinstance(robot_mount.get("pose"), dict) else {
-        "xyz": [0.0, 0.0, 0.0],
-        "rpy": [0.0, 0.0, 0.0],
+        "xyz": robot_env.get("pose_xyz", [0.0, 0.0, 0.0]),
+        "rpy": robot_env.get("pose_rpy", [0.0, 0.0, 0.0]),
     }
     ee_id = tool_attachment.get("id") or ee_env.get("id") or ee_name
     ee_parent_link = tool_attachment.get("parent_link") or ee_env.get("parent_link") or "tool0"
     ee_child_link = tool_attachment.get("child_link") or ee_env.get("base_link") or "tool0"
     ee_attach_pose = tool_attachment.get("attach_pose") if isinstance(tool_attachment.get("attach_pose"), dict) else {
-        "xyz": [0.0, 0.0, 0.0],
-        "rpy": [0.0, 0.0, 0.0],
+        "xyz": ee_env.get("mount_pose_xyz", [0.0, 0.0, 0.0]),
+        "rpy": ee_env.get("mount_pose_rpy", [0.0, 0.0, 0.0]),
     }
+
+    authored_camera = env.get("camera") if isinstance(env.get("camera"), dict) else {}
+    authored_task = env.get("task") if isinstance(env.get("task"), dict) else {}
+    authored_perception = env.get("perception") if isinstance(env.get("perception"), dict) else {}
 
     assets: list[dict[str, Any]] = []
     object_entries: list[dict[str, Any]] = []
@@ -419,6 +444,17 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
     if isinstance(authored_layout.get("task_bindings"), dict):
         environment_layout["task_bindings"] = authored_layout["task_bindings"]
 
+    authored_grasp = dict(authored_task.get("grasp")) if isinstance(authored_task.get("grasp"), dict) else {}
+    intent_grasp = task_intent_payload.get("grasp") if isinstance(task_intent_payload.get("grasp"), dict) else {}
+    authored_strategy_ref = str(
+        authored_grasp.get("strategy_ref") or intent_grasp.get("strategy_ref") or ""
+    ).strip()
+    # Cell Definition uses one canonical grasp selector.  Keep detailed intent
+    # fields, but do not emit both the legacy ``strategy`` and ``strategy_ref``
+    # selectors because the validator correctly treats that as ambiguous.
+    authored_grasp.pop("strategy", None)
+    authored_grasp.pop("strategy_ref", None)
+
     cell_def = {
         "schema_version": "cell_definition/v1",
         "cell": {"id": scene_path.name, "name": scene_path.name, "planning_frame": "world"},
@@ -433,56 +469,75 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
             "pose": robot_pose,
             "base_frame": robot_env.get("base_link", "base_link"),
             "tool_link": ee_env.get("parent_link", "tool0"),
-            "home_named_target": "home",
-            "safe_joint_state": [],
+            "home_named_target": robot_env.get("home_named_target", "home"),
+            "safe_joint_state": robot_env.get("safe_joint_state", []),
+            "joint_names": robot_env.get("joint_names", []),
+            "pose_xyz": robot_env.get("pose_xyz", robot_pose.get("xyz", [0.0, 0.0, 0.0])),
+            "pose_rpy": robot_env.get("pose_rpy", robot_pose.get("rpy", [0.0, 0.0, 0.0])),
         },
         "end_effector": {
             "id": ee_id,
             "name": ee_name,
             "capability": ee_meta.get("capability_id"),
-            "type": ee_meta.get("family"),
-            "grasp_frame": ee_env.get("base_link", "tool0"),
+            "type": ee_env.get("type") or ee_meta.get("family") or "custom",
+            "grasp_frame": ee_env.get("grasp_frame", ee_env.get("base_link", "tool0")),
             "parent_link": ee_parent_link,
             "child_link": ee_child_link,
             "attach_pose": ee_attach_pose,
-            "allowed_touch_links": [],
+            "mount_pose_xyz": ee_env.get("mount_pose_xyz", [0.0, 0.0, 0.0]),
+            "mount_pose_rpy": ee_env.get("mount_pose_rpy", [0.0, 0.0, 0.0]),
+            "tcp_pose_xyz": ee_env.get("tcp_pose_xyz", [0.0, 0.0, 0.0]),
+            "tcp_pose_rpy": ee_env.get("tcp_pose_rpy", [0.0, 0.0, 0.0]),
+            "allowed_touch_links": ee_env.get("allowed_touch_links", []),
         },
-        "camera": ({"id": (env.get("camera_placements", [{}])[0].get("name") if isinstance(env.get("camera_placements"), list) and env.get("camera_placements") else (sensors_meta[0].get("capability_id") if sensors_meta and isinstance(sensors_meta[0], dict) else "realsense_d435i")),
-                   "type": (env.get("camera_placements", [{}])[0].get("type") if isinstance(env.get("camera_placements"), list) and env.get("camera_placements") else (sensors_meta[0].get("family") if sensors_meta and isinstance(sensors_meta[0], dict) else "depth_camera")),
-                   "parent_frame": (env.get("camera_placements", [{}])[0].get("parent_frame") if isinstance(env.get("camera_placements"), list) and env.get("camera_placements") else "world"),
-                   "pose": (env.get("camera_placements", [{}])[0].get("pose") if isinstance(env.get("camera_placements"), list) and env.get("camera_placements") else {"xyz": [0.0,0.0,1.0], "rpy": [0.0,0.0,0.0]}),
-                   "frames": {"optical_frame": ((env.get("camera_placements", [{}])[0].get("frames") or {}).get("optical_frame", "camera_01_color_optical_frame"))},
-                   "topics": ((env.get("camera_placements", [{}])[0].get("topics") if isinstance(env.get("camera_placements"), list) and env.get("camera_placements") else {"pointcloud": "/camera/depth/color/points", "color": "/camera/color/image_raw", "depth": "/camera/depth/image_rect_raw", "camera_info": "/camera/color/camera_info"}))
-                   }),
+        "camera": {"id": authored_camera.get("camera_id", "realsense_overhead"),
+                    "type": "realsense_d435i",
+                    "parent_frame": authored_camera.get("parent_frame", "world"),
+                    "frame_id": authored_camera.get("frame_id", "camera_color_optical_frame"),
+                    "pose": {"xyz": authored_camera.get("pose", [0.0, 0.0, 1.0])[:3],
+                             "rpy": authored_camera.get("pose", [0.0, 0.0, 1.0, 0.0, 0.0, 0.0])[3:6]},
+                    "frames": {"optical_frame": authored_camera.get("frame_id", "camera_color_optical_frame")},
+                    "topics": {"color": authored_camera.get("rgb_topic", "/camera/camera/color/image_raw"),
+                               "depth": authored_camera.get("depth_topic", "/camera/camera/aligned_depth_to_color/image_raw"),
+                               "camera_info": "/camera/camera/color/camera_info"}},
         "environment": {
             "frame": "world",
-            "layout": "generated/environment_layout.yaml",
+            "layout": "layout/workcell_studio_layout.yaml",
             "task_zones": task_zones,
             "task_zones_summary": task_zone_counts,
             "support_surfaces": [{"id": a["id"], "type": "table", "frame": "world", "pose_xyz": a["pose"]["xyz"], "pose_rpy": a["pose"]["rpy"], "dimensions": a["dimensions"]} for a in assets],
         },
         "objects": [{"id": o["id"], "class": "part", "shape": "mesh", "color": "unknown", "material": "unknown", "frame": "world", "dimensions": o["dimensions"], "pose_xyz": [0.0,0.0,0.0], "pose_rpy": [0.0,0.0,0.0]} for o in object_entries],
         "task": {
-            "id": ((task_intent_payload.get("task") or {}).get("id")
-                   if isinstance(task_intent_payload.get("task"), dict) else "default_task"),
-            "type": task_type,
-            "source_object": object_entries[0]["id"] if object_entries else "unknown_object",
-            "pick": {"source": {"id": resolved_task["pick_id"], "type": "zone",
-                                  "layout_item_ref": resolved_task["pick_item"]["id"]}},
-            "place": {"target": {"id": resolved_task["place_id"], "type": "zone",
-                                   "layout_item_ref": resolved_task["place_zone"]["id"],
-                                   "target_ref": resolved_task["target_ref"]}},
-            "destinations": [{
+            **authored_task,
+            "id": authored_task.get("id", "default_task"),
+            "type": authored_task.get("type", task_type),
+            "object_source": "perception",
+            # Compatibility scalar retained for older readiness consumers;
+            # the structured pick.source_ref remains authoritative.
+            "pick_zone": resolved_task["pick_id"],
+            "pick": {**(authored_task.get("pick") if isinstance(authored_task.get("pick"), dict) else {}),
+                     "source_ref": resolved_task["pick_id"],
+                     "object_source": "perception"},
+            "place": {**(authored_task.get("place") if isinstance(authored_task.get("place"), dict) else {}),
+                      "target_ref": resolved_task["place_id"],
+                      "region_ref": resolved_task["place_id"]},
+            "destinations": authored_task.get("destinations") or [{
                 "id": resolved_task["place_id"], "target_ref": resolved_task["target_ref"],
                 "frame": authored_layout.get("frame", "world"),
                 "pose_xyz": resolved_task["target"]["pose"]["xyz"],
                 "pose_rpy": resolved_task["target"]["pose"]["rpy"],
             }],
-            "rules": [{"id": "default_rule", "when": {"always": True},
-                       "destination": resolved_task["place_id"]}],
+            "object_filter": authored_task.get("object_filter", {"class_id": "bottle", "min_confidence": None, "max_age_seconds": 2.0}),
+            "grasp": authored_grasp or {"intent": "top_2f", "approach_distance_m": 0.12, "retreat_distance_m": 0.15},
+            "home_pose": authored_task.get("home_pose", robot_env.get("home_named_target", "home")),
         },
-        "grasp": {"strategy_ref": normalized_grasp.get("strategy_id") or "auto"},
-        "commissioning": {"self_test_enabled": True, "export_bundle": False, "generated_by": "workcell_builder", "review_required": True, "fake_hardware_first": True, "runtime_send_disabled_by_default": True},
+        "grasp": {"strategy_ref": authored_strategy_ref or normalized_grasp.get("strategy_id") or "top_2f",
+                   **authored_grasp},
+        "perception": {**authored_perception, "enabled": True, "mode": authored_perception.get("mode", "live_epd"),
+                        "frame_id": authored_camera.get("frame_id", "camera_color_optical_frame"),
+                        "normalized_output_contract": "detected_objects/v1"},
+        "commissioning": {"self_test_enabled": False, "export_bundle": False, "generated_by": "workcell_builder", "review_required": True, "fake_hardware_first": True, "runtime_send_disabled_by_default": True},
     }
 
     warnings.extend(grasp_warnings)

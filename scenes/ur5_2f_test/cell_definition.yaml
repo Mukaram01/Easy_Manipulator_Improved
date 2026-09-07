@@ -2,82 +2,271 @@ schema_version: cell_definition/v1
 cell:
   id: ur5_2f_test
   name: ur5_2f_test
+  planning_frame: world
 robot:
+  id: ur5
+  name: ur5
   model: ur5
+  capability: null
   planning_group: manipulator
-  world_frame: world
+  base_link: base_link
+  parent_frame: world
+  pose:
+    xyz: &id001
+    - 0
+    - 0
+    - 0.0135
+    rpy: &id002
+    - 0
+    - 0
+    - 0
   base_frame: base_link
   tool_link: tool0
   home_named_target: home
-  safe_joint_state: []
+  safe_joint_state:
+  - 0
+  - -1.57079632679
+  - 0
+  - -1.57079632679
+  - 0
+  - 0
+  joint_names:
+  - shoulder_pan_joint
+  - shoulder_lift_joint
+  - elbow_joint
+  - wrist_1_joint
+  - wrist_2_joint
+  - wrist_3_joint
+  pose_xyz: *id001
+  pose_rpy: *id002
 end_effector:
   id: robotiq_85_gripper
+  name: robotiq_85_gripper
+  capability: null
   type: finger
-  model: robotiq_85_gripper
-  profile: robotiq_85_gripper
-  mount_link: tool0
   grasp_frame: ee_palm
+  parent_link: tool0
+  child_link: tool0
+  attach_pose:
+    xyz: &id003
+    - 0
+    - 0
+    - 0
+    rpy: &id004
+    - 1.5707963267948966
+    - -1.5707963267948966
+    - 0
+  mount_pose_xyz: *id003
+  mount_pose_rpy: *id004
+  tcp_pose_xyz:
+  - 0
+  - 0
+  - 0.14
+  tcp_pose_rpy:
+  - 0
+  - 0
+  - 0
+  allowed_touch_links:
+  - gripper_finger1_finger_tip_link
+  - gripper_finger2_finger_tip_link
 camera:
-  enabled: true
-  camera_id: realsense_overhead
-  frame_id: realsense_overhead_frame
-perception:
-  enabled: true
-  mode: epd_snapshot
-  camera_id: realsense_overhead
-  frame_id: realsense_overhead_frame
-  expected_frames:
-  - realsense_overhead_frame
-  - world
-  epd_input:
-    topic: /easy_perception_deployment/epd_localize_output
-    message_type: std_msgs/msg/String
-  required_object_classes:
-  - part
-  confidence_threshold: 0.6
-  normalized_output_contract: detected_objects/v1
+  id: realsense_overhead
+  type: realsense_d435i
+  parent_frame: world
+  frame_id: camera_color_optical_frame
+  pose:
+    xyz:
+    - 0.4
+    - -0.25
+    - 0.8499999999999998
+    rpy:
+    - 0
+    - 1.570000000000127
+    - 0
+  frames:
+    optical_frame: camera_color_optical_frame
+  topics:
+    color: /camera/camera/color/image_raw
+    depth: /camera/camera/aligned_depth_to_color/image_raw
+    camera_info: /camera/camera/color/camera_info
 environment:
   frame: world
   layout: layout/workcell_studio_layout.yaml
-  support_surfaces:
-  - id: support_surface_table
-    type: table
+  task_zones:
+  - id: pick_zone_main
+    type: pick_zone
     frame: world
     pose_xyz:
-    - 0.55
-    - 0.0
-    - 0.0
+    - 0.4
+    - -0.2
+    - 0.3
     pose_rpy:
-    - 0.0
-    - 0.0
-    - 0.0
+    - 0
+    - 0
+    - 0
     dimensions:
-    - 1.2
-    - 0.8
-    - 0.08
+    - 0.35
+    - 0.3
+    - 0.6
+    role: pick
+    layout_item_ref: pick_zone_main
+    target_ref: null
+  - id: default_drop_zone
+    type: place_zone
+    frame: world
+    pose_xyz: &id005
+    - 0.45
+    - 0.22
+    - 0.13
+    pose_rpy:
+    - 0
+    - 0
+    - 0
+    dimensions:
+    - 0.25
+    - 0.14
+    - 0.23
+    role: place
+    layout_item_ref: place_zone_default
+    target_ref: target_bin_default
+  task_zones_summary:
+    total: 2
+    pick: 1
+    place: 1
+  support_surfaces: []
 objects: []
 task:
   id: default_task
+  template: pick_place
   type: pick_place
+  mode: simulation_preview
   object_source: perception
   perception_source: detected_objects/v1
-  pick_zone: pick_zone_main
+  pick:
+    source_ref: pick_zone_main
+    object_source: perception
+    perception_source: detected_objects/v1
+  place:
+    target_ref: default_drop_zone
+    release_strategy: tool_release
+    region_ref: default_drop_zone
+    retreat_distance_m: 0.15
   destinations:
   - id: default_drop_zone
     frame: world
-    pose_xyz:
-    - 0.55
-    - -0.28
-    - 0.1
+    pose_xyz: *id005
     pose_rpy:
-    - 0.0
-    - 0.0
-    - 0.0
+    - 0
+    - 0
+    - 0
+    region_ref: default_drop_zone
+    target_ref: target_bin_default
   rules:
   - id: default_place
     when:
       always: true
     destination: default_drop_zone
+  grasp:
+    approach_axis: z_down
+    orientation_mode: vertical
+    approach_distance_m: 0.12
+    retreat_distance_m: 0.15
+    allowed_roll_angles_deg: &id006
+    - 0.0
+    allowed_yaw_angles_deg: &id007
+    - 0.0
+    - 90.0
+    - 180.0
+    - 270.0
+    tool_offset_xyz: &id008
+    - 0.0
+    - 0.0
+    - 0.0
+    tool_offset_rpy: &id009
+    - 0.0
+    - 0.0
+    - 0.0
+    suction_cups: null
+    intent: top_2f
+  object_filter:
+    class_id: bottle
+    min_confidence: null
+    max_age_seconds: 2.0
+  home_pose: home
+  pick_zone: pick_zone_main
+grasp:
+  strategy_ref: top_2f
+  approach_axis: z_down
+  orientation_mode: vertical
+  approach_distance_m: 0.12
+  retreat_distance_m: 0.15
+  allowed_roll_angles_deg: *id006
+  allowed_yaw_angles_deg: *id007
+  tool_offset_xyz: *id008
+  tool_offset_rpy: *id009
+  suction_cups: null
+  intent: top_2f
+perception:
+  enabled: true
+  mode: live_epd
+  camera_id: realsense_overhead
+  frame_id: camera_color_optical_frame
+  normalized_output_contract: detected_objects/v1
+  epd_input:
+    topic: /easy_perception_deployment/epd_localize_output
+    message_type: epd_msgs/msg/EPDObjectLocalization
+  required_object_classes:
+  - bottle
+  confidence_threshold: null
 commissioning:
   self_test_enabled: false
   export_bundle: false
+  generated_by: workcell_builder
+  review_required: true
+  fake_hardware_first: true
+  runtime_send_disabled_by_default: true
+builder_task_intent:
+  schema: workcell_builder_task_intent/v1
+  source_file: scenes/ur5_2f_test/config/workcell_builder_task_intent.yaml
+  pick:
+    object_source: perception
+    source:
+      type: perception
+      id: detected_objects/v1
+    zone:
+      type: pick_zone
+      id: pick_zone_main
+    object_filter:
+      class_id: bottle
+      min_confidence: null
+      max_age_seconds: 2.0
+  grasp:
+    strategy_ref: top_2f
+    approach_axis: z_down
+    approach_distance_m: 0.12
+    retreat_axis: z_up
+    retreat_distance_m: 0.15
+  place:
+    target:
+      type: destination
+      id: default_drop_zone
+      frame: world
+      region_ref: default_drop_zone
+    release_strategy: tool_release
+    retreat_axis: z_up
+    retreat_distance_m: 0.1
+  routing:
+    rules:
+    - id: default_place
+      when:
+        always: true
+      destination: default_drop_zone
+  safety:
+    preview_only: true
+    use_fake_hardware: true
+    execution_mode: simulation_preview
+    no_robot_motion: true
+    metadata_only: true
+    runtime_io_applied: false
+    motion_started: false
+    ros_launch_started: false

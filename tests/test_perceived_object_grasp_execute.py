@@ -144,3 +144,104 @@ def test_place_detachment_preserves_id_and_restores_one_world_object():
     assert detached.object.operation == CollisionObject.REMOVE
     assert placed.operation == CollisionObject.ADD
     assert [placed.pose.position.x, placed.pose.position.y, placed.pose.position.z] == [0.25, 0.45, 0.20]
+
+
+def matrix_fixture():
+    from moveit_msgs.msg import AllowedCollisionMatrix, AllowedCollisionEntry
+    # Existing adjacent-link allowance must survive the contact transition.
+    return AllowedCollisionMatrix(
+        entry_names=["tip1", "tip2", "palm", "camera", "epd::other"],
+        entry_values=[AllowedCollisionEntry(enabled=row) for row in [
+            [False, False, True, False, False],
+            [False, False, True, False, False],
+            [True, True, False, False, False],
+            [False] * 5, [False] * 5]])
+
+
+def test_target_contact_preserves_existing_acm_and_other_objects():
+    base = matrix_fixture()
+    changed = MODULE.target_contact_matrix(base, "epd::selected", ["tip1", "tip2"])
+    assert len(base.entry_names) == 5
+    for i in range(5):
+        assert changed.entry_values[i].enabled[:5] == base.entry_values[i].enabled
+    assert changed.entry_values[-1].enabled == [True, True, False, False, False, False]
+
+
+@pytest.mark.parametrize("fail_at", ["planning", "execution", "attachment", None])
+def test_contact_acm_is_restored_on_every_exit(fail_at):
+    baseline = matrix_fixture()
+    applied = []
+    def work():
+        with MODULE.temporary_target_contact(baseline, "epd::selected", ["tip1", "tip2"], applied.append):
+            if fail_at:
+                raise RuntimeError(fail_at)
+    if fail_at:
+        with pytest.raises(RuntimeError, match=fail_at):
+            work()
+    else:
+        work()
+    assert applied[-1] == baseline
+
+
+def test_acm_restore_attempted_after_uncertain_apply_failure():
+    baseline = matrix_fixture()
+    applied = []
+    def apply(matrix):
+        applied.append(matrix)
+        if len(applied) == 1:
+            raise RuntimeError("service response lost")
+    with pytest.raises(RuntimeError, match="response lost"):
+        with MODULE.temporary_target_contact(baseline, "epd::selected", ["tip1"], apply):
+            pytest.fail("must not enter contact stage")
+    assert applied[-1] == baseline
+
+
+def test_contact_rejects_unknown_links_and_broad_target_defaults():
+    baseline = matrix_fixture()
+    with pytest.raises(ValueError, match="absent"):
+        MODULE.target_contact_matrix(baseline, "epd::selected", ["missing"])
+    baseline.default_entry_names = ["epd::selected"]
+    baseline.default_entry_values = [True]
+    with pytest.raises(ValueError, match="broad"):
+        MODULE.target_contact_matrix(baseline, "epd::selected", ["tip1"])
+
+
+@pytest.mark.parametrize("pairs", [[], [("epd::selected", "palm")],
+                                    [("epd::other", "tip1")], [("camera", "wrist")]])
+def test_grasp_rejects_missing_or_unintended_contacts(pairs):
+    contacts = [SimpleNamespace(contact_body_1=a, contact_body_2=b) for a, b in pairs]
+    with pytest.raises(RuntimeError, match="contact"):
+        MODULE.verify_selected_contacts(contacts, "epd::selected", ["tip1", "tip2"])
+
+
+def test_grasp_accepts_only_measured_selected_fingertip_contacts():
+    contacts = [SimpleNamespace(contact_body_1="epd::selected", contact_body_2="tip1")]
+    MODULE.verify_selected_contacts(contacts, "epd::selected", ["tip1", "tip2"])
+
+
+def test_long_narrow_bottle_is_not_rejected_by_an_unrelated_length_limit():
+    assert MODULE.select_graspable_box([box("epd::bottle::0", [.229, .065, .042])])["id"] == "epd::bottle::0"
+
+
+def test_fake_guard_rejects_mixed_mock_and_unknown_hardware():
+    with pytest.raises(RuntimeError, match="exclusively"):
+        MODULE.fake_hardware_evidence([parameter(True)], [
+            component("mock_components/GenericSystem"), component("custom/Hardware")])
+
+
+def test_detachment_propagates_actual_tool_rotation_and_preserves_local_geometry():
+    import math
+    from geometry_msgs.msg import Pose
+    from moveit_msgs.msg import CollisionObject
+    original = CollisionObject(id="epd::selected")
+    original.pose.orientation.w = 1.0
+    original.pose.position.x = 0.1
+    start, end = Pose(), Pose()
+    start.orientation.w = 1.0
+    end.position.x = 0.3
+    end.orientation.z = math.sin(math.pi / 4)
+    end.orientation.w = math.cos(math.pi / 4)
+    achieved = MODULE.object_pose_after_motion(original, start, end)
+    assert achieved[:3] == pytest.approx([0.3, 0.1, 0.0])
+    diff = MODULE.place_detachment_diff(original, "ee_palm", achieved[:3], achieved[3:])
+    assert MODULE.pose_values(diff.world.collision_objects[0].pose) == pytest.approx(achieved)

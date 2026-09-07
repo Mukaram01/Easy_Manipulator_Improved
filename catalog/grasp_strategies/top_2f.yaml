@@ -1,0 +1,22 @@
+schema_version: grasp_strategy/v1
+grasp_strategy:
+  id: top_2f
+  label: Robotiq 2F Top Pinch
+  strategy: pinch
+  compatible_tool_families: [finger_gripper]
+  compatible_end_effector_capabilities: [robotiq_2f_85]
+  approach_axis: z_down
+  orientation_mode: vertical
+  approach_distance_m: 0.12
+  retreat_distance_m: 0.15
+  allowed_roll_angles_deg: [0]
+  allowed_yaw_angles_deg: [0, 90, 180, 270]
+  tool_frame_offset_xyz: [0.0, 0.0, 0.0]
+  tool_frame_offset_rpy: [0.0, 0.0, 0.0]
+  contact:
+    type: pinch
+    grip_mode: parallel
+    requires_force_limit_check: true
+  release:
+    type: fingers_open
+    retreat_after_release_m: 0.1

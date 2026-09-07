@@ -2,31 +2,75 @@ schema_version: task_recipe/v1
 task:
   id: default_task
   type: pick_place
-  mode: simulation_preview
-  perception_source: detected_objects/v1
   object_source: perception
-  pick_zone: pick_zone_main
-  inputs:
-    perception_mode: epd_snapshot
+  perception_source: detected_objects/v1
+  source_object: detected_objects/v1
+  object_filter:
+    class_id: bottle
+    color: null
+    min_confidence: null
+    max_age_seconds: 2.0
   destinations:
   - id: default_drop_zone
     frame: world
     pose_xyz:
-    - 0.5
-    - -0.3
-    - 0.1
+    - 0.45
+    - 0.22
+    - 0.13
     pose_rpy:
-    - 0.0
-    - 0.0
-    - 0.0
-  decision_rules:
+    - 0
+    - 0
+    - 0
+  decision_rules: &id001
   - id: default_place
     when:
       always: true
     destination: default_drop_zone
-  notes: Perception-backed pick/place task. Live EPD is required only for live execution.
-provenance:
-  mode: generated_readiness_metadata
-  sources:
-  - cell_definition.yaml
-  - environment.yaml
+  rules: *id001
+grasp:
+  strategy_ref: top_2f
+  orientation_mode: null
+  approach_axis: z_down
+  approach_distance_m: 0.12
+  retreat_distance_m: 0.15
+  allowed_roll_angles_deg: null
+  allowed_yaw_angles_deg: null
+  gripper_tcp_offset: null
+  suction_cups: null
+builder_task_intent:
+  source_file: scenes/ur5_2f_test/config/workcell_builder_task_intent.yaml
+  pick:
+    object_source: perception
+    source:
+      type: perception
+      id: detected_objects/v1
+    zone:
+      type: pick_zone
+      id: pick_zone_main
+    object_filter:
+      class_id: bottle
+      min_confidence: null
+      max_age_seconds: 2.0
+  grasp:
+    strategy_ref: top_2f
+    approach_axis: z_down
+    approach_distance_m: 0.12
+    retreat_axis: z_up
+    retreat_distance_m: 0.15
+  place:
+    target:
+      type: destination
+      id: default_drop_zone
+      frame: world
+      region_ref: default_drop_zone
+    release_strategy: tool_release
+    retreat_axis: z_up
+    retreat_distance_m: 0.1
+  routing:
+    rules: *id001
+  release_strategy: tool_release
+  safety:
+    metadata_only: true
+    runtime_io_applied: false
+    motion_started: false
+    ros_launch_started: false

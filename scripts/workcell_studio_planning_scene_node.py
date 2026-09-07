@@ -41,9 +41,9 @@ def load_manifest(path: Path) -> Mapping[str, Any]:
 
 
 def build_planning_scene(manifest: Mapping[str, Any]):
-    from geometry_msgs.msg import Pose
+    from geometry_msgs.msg import Pose, Point
     from moveit_msgs.msg import CollisionObject, PlanningScene
-    from shape_msgs.msg import SolidPrimitive
+    from shape_msgs.msg import SolidPrimitive, Mesh, MeshTriangle
 
     scene = PlanningScene()
     scene.is_diff = True
@@ -52,15 +52,23 @@ def build_planning_scene(manifest: Mapping[str, Any]):
         collision_object.header.frame_id = str(record["frame_id"])
         collision_object.id = str(record["id"])
         collision_object.operation = CollisionObject.ADD
-        primitive = SolidPrimitive()
-        primitive.type = SolidPrimitive.BOX
-        primitive.dimensions = [float(value) for value in record["collision_geometry"]["dimensions_m"]]
         pose = Pose()
         pose.position.x, pose.position.y, pose.position.z = [float(value) for value in record["pose"]["xyz"]]
         quaternion = [float(value) for value in record["pose"]["quaternion_xyzw"]]
         pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = quaternion
-        collision_object.primitives.append(primitive)
-        collision_object.primitive_poses.append(pose)
+        geometry = record["collision_geometry"]
+        if geometry["type"] == "mesh":
+            mesh = Mesh()
+            mesh.vertices = [Point(x=float(v[0]), y=float(v[1]), z=float(v[2])) for v in geometry["vertices_m"]]
+            mesh.triangles = [MeshTriangle(vertex_indices=t) for t in geometry["triangles"]]
+            collision_object.meshes.append(mesh)
+            collision_object.mesh_poses.append(pose)
+        else:
+            primitive = SolidPrimitive()
+            primitive.type = SolidPrimitive.BOX
+            primitive.dimensions = [float(value) for value in geometry["dimensions_m"]]
+            collision_object.primitives.append(primitive)
+            collision_object.primitive_poses.append(pose)
         scene.world.collision_objects.append(collision_object)
     return scene
 

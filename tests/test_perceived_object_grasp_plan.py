@@ -47,3 +47,37 @@ def test_execution_guard_fails_closed():
     with pytest.raises(RuntimeError, match="forbidden"):
         guard.forbid_execution()
     assert guard.execution_attempted is True
+
+
+def test_tool_goal_keeps_the_authored_clearance_at_the_grasp_frame():
+    contract = MODULE.load_grasp_contract(SCRIPT.parents[1] / "scenes/ur5_2f_test")
+    target = MODULE.build_grasp_target(box())
+    grasp = MODULE.generate_box_grasp_candidates(target, clearance=0.12)[0]
+    tool = MODULE.tool_pose_for_grasp(grasp, contract)
+    assert tool[2] == pytest.approx(grasp[2] + 0.14)
+    assert MODULE.compose_pose(tool, contract["tcp_pose"]) == pytest.approx(grasp)
+
+
+def test_tcp_conversion_handles_lateral_offsets_and_rotated_mounts():
+    grasp = [0.4, -0.2, 0.6] + MODULE.quaternion_from_rpy([0.1, 0.3, -0.6])
+    contract = {"tcp_pose": [0.03, -0.02, 0.14] + MODULE.quaternion_from_rpy([0.3, -0.2, 0.5])}
+    tool = MODULE.tool_pose_for_grasp(grasp, contract)
+    assert MODULE.compose_pose(tool, contract["tcp_pose"]) == pytest.approx(grasp)
+
+
+def test_package_name_resolves_same_contract_as_source_directory(monkeypatch):
+    from ament_index_python import packages
+    directory = SCRIPT.parents[1] / "scenes/ur5_2f_test"
+    monkeypatch.setattr(packages, "get_package_share_directory", lambda name: str(directory))
+    assert MODULE.load_grasp_contract("installed_scene") == MODULE.load_grasp_contract(directory)
+
+
+def test_missing_handoff_does_not_silently_remove_tcp_offset(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        MODULE.load_grasp_contract(tmp_path)
+
+
+def test_invalid_tcp_handoff_is_rejected(tmp_path):
+    (tmp_path / "cell_definition.yaml").write_text("end_effector: {tcp_pose_xyz: [0, 0, .nan]}\n")
+    with pytest.raises(ValueError, match="tcp_pose_xyz"):
+        MODULE.load_grasp_contract(tmp_path)

@@ -144,6 +144,34 @@ def _stl_bounds(path: Path) -> tuple[tuple[float, float, float], tuple[float, fl
     return _bounds_from_points(points)
 
 
+def read_stl_mesh(path: Path) -> tuple[list[list[float]], list[list[int]]]:
+    """Read a bounded collision STL, retaining the actual hollow geometry."""
+    data = path.read_bytes()
+    count = struct.unpack_from("<I", data, 80)[0] if len(data) >= 84 else 0
+    points = []
+    if count and 84 + count * 50 == len(data):
+        if count > 20000:
+            raise CollisionManifestError(f"{path}: collision mesh has {count} triangles; register a simpler collision representation")
+        for triangle in range(count):
+            values = struct.unpack_from("<9f", data, 84 + triangle * 50 + 12)
+            points.extend(tuple(values[i:i + 3]) for i in (0, 3, 6))
+    else:
+        points = [tuple(float(x) for x in m) for m in re.findall(r"vertex\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)", data.decode("utf-8", errors="ignore"))]
+    if not points or len(points) % 3 or len(points) > 60000:
+        raise CollisionManifestError(f"{path}: invalid or excessive collision STL geometry")
+    vertices, indices, triangles = [], {}, []
+    for offset in range(0, len(points), 3):
+        triangle = []
+        for point in points[offset:offset + 3]:
+            _vector3(point, "STL vertex")
+            if point not in indices:
+                indices[point] = len(vertices)
+                vertices.append(list(point))
+            triangle.append(indices[point])
+        triangles.append(triangle)
+    return vertices, triangles
+
+
 def _obj_bounds(path: Path) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
     points: list[tuple[float, float, float]] = []
     for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
@@ -170,7 +198,21 @@ def _resolve_local_mesh(mesh_reference: Any, layout_root: Path | None) -> Path |
     candidate = Path(mesh_reference)
     if candidate.is_absolute():
         return candidate if candidate.is_file() else None
-    if layout_root is None or mesh_reference.startswith("package://"):
+    if mesh_reference.startswith("package://"):
+        package, _, relative = mesh_reference[len("package://"):].partition("/")
+        # Resolve source assets first so generation is independent of install age.
+        repo = Path(__file__).resolve().parents[1]
+        candidates = [p.parent / relative for p in (repo / "assets").rglob("package.xml") if p.parent.name == package]
+        candidates = [p for p in candidates if p.is_file()]
+        if len(candidates) == 1:
+            return candidates[0]
+        try:
+            from ament_index_python.packages import get_package_share_directory
+            candidate = Path(get_package_share_directory(package)) / relative
+            return candidate if candidate.is_file() else None
+        except (ImportError, LookupError):
+            return None
+    if layout_root is None:
         return None
     resolved = (layout_root / mesh_reference).resolve()
     return resolved if resolved.is_file() else None
@@ -180,6 +222,10 @@ def _collision_policy(item: Mapping[str, Any]) -> tuple[bool, str]:
     collision = item.get("collision")
     if isinstance(collision, Mapping) and collision.get("enabled") is False:
         return False, "collision explicitly disabled"
+    if isinstance(collision, Mapping) and collision.get("mode") == "urdf":
+        if not collision.get("link"):
+            raise CollisionManifestError("URDF collision ownership requires a link")
+        return False, "collision supplied by robot_description link " + str(collision["link"])
     role = str(item.get("role") or "").strip().lower()
     item_type = str(item.get("type") or "").strip().lower()
     if role in SEMANTIC_ONLY_ROLES or item_type in SEMANTIC_ONLY_ROLES:
@@ -232,7 +278,9 @@ def build_manifest(layout: Mapping[str, Any], *, scene_name: str, source_path: s
             or raw_item.get("primitive_geometry_type")
             or ("mesh" if mesh_ref else "box")
         ).lower()
-        dimensions = _vector3(raw_item.get("dimensions"), f"item {item_id!r}.dimensions", positive=True)
+        dimensions = None
+        if geometry_type != "mesh":
+            dimensions = _vector3(raw_item.get("dimensions"), f"item {item_id!r}.dimensions", positive=True)
         source_geometry: dict[str, Any] = {"type": geometry_type}
         collision_xyz = xyz
         collision_quaternion = quaternion_from_rpy(rpy)
@@ -267,11 +315,33 @@ def build_manifest(layout: Mapping[str, Any], *, scene_name: str, source_path: s
 
         collision = raw_item.get("collision") if isinstance(raw_item.get("collision"), Mapping) else {}
         collision_mode = str(collision.get("mode") or ("box_proxy" if geometry_type == "mesh" else "primitive_box"))
-        if collision_mode not in {"box_proxy", "primitive_box"}:
+        if collision_mode not in {"box_proxy", "primitive_box", "mesh"}:
             raise CollisionManifestError(
                 f"item {item_id!r} collision mode {collision_mode!r} is unsupported; "
-                "use box_proxy or primitive_box"
+                "use box_proxy, primitive_box or mesh"
             )
+        collision_geometry = {
+            "type": "box", "dimensions_m": list(dimensions) if dimensions else [],
+            "fidelity": collision_mode, "review_required": collision_mode == "box_proxy",
+            "bounds_source": bounds_source,
+        }
+        if collision_mode == "mesh":
+            collision_mesh = collision.get("mesh", mesh)
+            collision_path = _resolve_local_mesh(collision_mesh.get("path") or collision_mesh.get("uri"), layout_root)
+            if collision_path is None:
+                raise CollisionManifestError(f"item {item_id!r}: collision mesh cannot be resolved")
+            vertices, triangles = read_stl_mesh(collision_path)
+            scale = _vector3(collision_mesh.get("scale", [1, 1, 1]), "collision mesh scale", positive=True)
+            offset = _vector3(collision_mesh.get("origin_offset", [0, 0, 0]), "collision mesh origin")
+            local_q = quaternion_from_rpy(_vector3(collision_mesh.get("rpy", [0, 0, 0]), "collision mesh rpy"))
+            vertices = [[offset[a] + _rotate_vector(local_q, [v[i] * scale[i] for i in range(3)])[a] for a in range(3)] for v in vertices]
+            collision_geometry = {"type": "mesh", "vertices_m": vertices, "triangles": triangles,
+                                  "fidelity": "asset_collision_mesh", "review_required": False,
+                                  "mesh_reference": str(collision_mesh.get("path") or collision_mesh.get("uri")),
+                                  "sha256": hashlib.sha256(collision_path.read_bytes()).hexdigest()}
+            collision_xyz, collision_quaternion = xyz, quaternion_from_rpy(rpy)
+        elif dimensions is None:
+            raise CollisionManifestError(f"item {item_id!r}: mesh bounds unavailable; refusing invented dimensions")
         spec = CollisionSpec(
             id=f"workcell::{item_id}",
             source_item_id=item_id,
@@ -280,13 +350,7 @@ def build_manifest(layout: Mapping[str, Any], *, scene_name: str, source_path: s
             operation="ADD",
             pose={"xyz": list(collision_xyz), "rpy": list(rpy), "quaternion_xyzw": collision_quaternion},
             source_geometry=source_geometry,
-            collision_geometry={
-                "type": "box",
-                "dimensions_m": list(dimensions),
-                "fidelity": collision_mode,
-                "review_required": collision_mode == "box_proxy",
-                "bounds_source": bounds_source,
-            },
+            collision_geometry=collision_geometry,
         )
         objects.append(spec)
 
@@ -313,7 +377,7 @@ def build_manifest(layout: Mapping[str, Any], *, scene_name: str, source_path: s
             "collision_object_count": len(objects),
             "excluded_item_count": len(excluded),
             "box_proxy_count": sum(entry.collision_geometry["fidelity"] == "box_proxy" for entry in objects),
-            "exact_mesh_collision_count": 0,
+            "exact_mesh_collision_count": sum(entry.collision_geometry["type"] == "mesh" for entry in objects),
         },
         "safety": {
             "publishes_robot_motion": False,
@@ -362,8 +426,21 @@ def validate_manifest(data: Mapping[str, Any]) -> list[str]:
         else:
             ids.add(object_id)
         geometry = obj.get("collision_geometry")
-        if not isinstance(geometry, Mapping) or geometry.get("type") != "box":
-            errors.append(f"objects[{index}] must use supported box collision geometry")
+        if isinstance(geometry, Mapping) and geometry.get("type") == "mesh":
+            vertices, triangles = geometry.get("vertices_m"), geometry.get("triangles")
+            if not isinstance(vertices, list) or not vertices or not isinstance(triangles, list) or not triangles:
+                errors.append(f"objects[{index}] mesh requires vertices and triangles")
+            else:
+                try:
+                    for vertex in vertices:
+                        _vector3(vertex, "mesh vertex")
+                    for triangle in triangles:
+                        if not isinstance(triangle, list) or len(triangle) != 3 or any(type(i) is not int or i < 0 or i >= len(vertices) for i in triangle):
+                            raise CollisionManifestError("mesh triangle indices are invalid")
+                except CollisionManifestError as exc:
+                    errors.append(str(exc))
+        elif not isinstance(geometry, Mapping) or geometry.get("type") != "box":
+            errors.append(f"objects[{index}] must use supported box or mesh collision geometry")
         else:
             try:
                 _vector3(geometry.get("dimensions_m"), f"objects[{index}].collision_geometry.dimensions_m", positive=True)

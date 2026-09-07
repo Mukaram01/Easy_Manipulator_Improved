@@ -254,6 +254,7 @@ protected:
   std::shared_ptr<tf2_ros::TransformListener> tf_listener;
   /*! \brief Client that provides the GraspRequest information for the Grasp execution component */
   rclcpp::Client<emd_msgs::srv::GraspRequest>::SharedPtr output_client;
+  rclcpp::Publisher<emd_msgs::msg::GraspTask>::SharedPtr candidate_publisher;
   /*! \brief Futures for GraspRequest request */
   std::shared_future<rclcpp::Client<emd_msgs::srv::GraspRequest>::SharedResponse> result_future;
   /*! \brief True while a grasp execution request is in progress */

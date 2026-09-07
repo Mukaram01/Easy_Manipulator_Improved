@@ -16,6 +16,7 @@
 #include "gui/mainwindow.h"
 #include "studio_page_navigation.hpp"
 #include "gui/layout_item_serializer.hpp"
+#include "gui/environment_task_editor.hpp"
 #include "gui/scene3d_viewport_widget.h"
 #include "gui/preview_item_suppression.h"
 #include "visual_mesh_source_resolver.hpp"
@@ -3308,6 +3309,41 @@ void MainWindow::setup_studio_shell()
   task_intent_details_label_ = new QLabel("No scene selected"); task_intent_details_label_->setWordWrap(true); task_intent_layout->addWidget(task_intent_details_label_);
   workflow_tab_layout->addWidget(workflow_card);
   workflow_tab_layout->addWidget(task_intent);
+  environment_task_editor_ = new QGroupBox("Edit task intent", right_panel);
+  environment_task_editor_->setObjectName("environmentTaskEditor");
+  auto * task_edit_form = new QFormLayout(environment_task_editor_);
+  auto task_text = [&](const char * name, const char * label) {
+    auto * field = new QLineEdit(environment_task_editor_); field->setObjectName(name);
+    task_edit_form->addRow(label, field);
+    connect(field, &QLineEdit::textEdited, this, [this](const QString &) {
+      if (!environment_task_editor_loading_) { environment_task_editor_dirty_ = true; mark_layout_dirty("Task intent edit"); }
+    });
+    return field;
+  };
+  auto task_number = [&](const char * name, const char * label, double maximum, const char * suffix) {
+    auto * field = new QDoubleSpinBox(environment_task_editor_); field->setObjectName(name);
+    field->setDecimals(6); field->setRange(0.0, maximum); field->setSingleStep(0.01); field->setSuffix(suffix);
+    task_edit_form->addRow(label, field);
+    connect(field, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double) {
+      if (!environment_task_editor_loading_) { environment_task_editor_dirty_ = true; mark_layout_dirty("Task intent edit"); }
+    });
+    return field;
+  };
+  task_target_class_edit_ = task_text("taskTargetClass", "Target class (perception)");
+  task_min_confidence_edit_ = task_number("taskMinimumConfidence", "Minimum confidence", 1.0, "");
+  task_max_age_edit_ = task_number("taskMaximumAge", "Maximum observation age", 60.0, " s");
+  task_grasp_intent_edit_ = task_text("taskGraspIntent", "Grasp intent");
+  task_approach_edit_ = task_number("taskApproachDistance", "Approach distance", 2.0, " m");
+  task_retreat_edit_ = task_number("taskRetreatDistance", "Retreat distance", 2.0, " m");
+  task_place_roll_edit_ = task_number("taskPlaceRoll", "Placement roll", 6.283185, " rad");
+  task_place_pitch_edit_ = task_number("taskPlacePitch", "Placement pitch", 6.283185, " rad");
+  task_place_yaw_edit_ = task_number("taskPlaceYaw", "Placement yaw", 6.283185, " rad");
+  for (auto * field : {task_place_roll_edit_, task_place_pitch_edit_, task_place_yaw_edit_}) field->setMinimum(-6.283185);
+  task_home_pose_edit_ = task_text("taskHomePose", "Home / safe pose reference");
+  auto * authored_task_notice = new QLabel("Save commits task intent to environment.yaml. Generate refreshes runtime files. Live object poses and dimensions remain perception data.", environment_task_editor_);
+  authored_task_notice->setWordWrap(true); task_edit_form->addRow(authored_task_notice);
+  workflow_tab_layout->addWidget(environment_task_editor_);
+
   auto * setup_checklist_group = new QGroupBox("Setup checklist", readiness_tab);
   setup_checklist_group->setCheckable(true);
   setup_checklist_group->setChecked(false);
@@ -3412,7 +3448,7 @@ void MainWindow::setup_studio_shell()
   inspector_type_->setReadOnly(true);
   metadata_form->addRow("Type", inspector_type_);
   selected_item_card_layout->addLayout(metadata_form);
-  auto * transform_title = new QLabel("<b>Transform</b><br/>Position in metres; rotation in radians.", scene_builder);
+  auto * transform_title = new QLabel("<b>Transform</b><br/>Position in metres; rotation in degrees.", scene_builder);
   transform_title->setWordWrap(true);
   selected_item_card_layout->addWidget(transform_title);
   auto * pose_grid = new QGridLayout();
@@ -3440,7 +3476,7 @@ void MainWindow::setup_studio_shell()
   selected_item_card_layout->addLayout(transform_actions);
   inspector_live_update_box_ = new QCheckBox("Live update", scene_builder); inspector_live_update_box_->setChecked(false); selected_item_card_layout->addWidget(inspector_live_update_box_);
   auto * dim_grid = new QGridLayout();
-  inspector_dim_x_ = new QDoubleSpinBox(scene_builder); inspector_dim_x_->setPrefix("Scale X "); configure_spin(inspector_dim_x_); dim_grid->addWidget(inspector_dim_x_, 0, 0);
+  inspector_dim_x_ = new QDoubleSpinBox(scene_builder); inspector_dim_x_->setPrefix("X "); configure_spin(inspector_dim_x_); dim_grid->addWidget(inspector_dim_x_, 0, 0);
   inspector_dim_y_ = new QDoubleSpinBox(scene_builder); inspector_dim_y_->setPrefix("Y "); configure_spin(inspector_dim_y_); dim_grid->addWidget(inspector_dim_y_, 0, 1);
   inspector_dim_z_ = new QDoubleSpinBox(scene_builder); inspector_dim_z_->setPrefix("Z "); configure_spin(inspector_dim_z_); dim_grid->addWidget(inspector_dim_z_, 0, 2);
   auto * advanced_details_group = new QGroupBox("Advanced details", scene_builder);
@@ -3458,7 +3494,9 @@ void MainWindow::setup_studio_shell()
   advanced_details_layout->addRow("Category", inspector_category_);
   auto * scale_controls = new QWidget(advanced_details_contents);
   scale_controls->setLayout(dim_grid);
-  advanced_details_layout->addRow("Scale", scale_controls);
+  inspector_dimensions_controls_ = scale_controls;
+  inspector_dimensions_label_ = new QLabel("Dimensions (m)", advanced_details_contents);
+  advanced_details_layout->addRow(inspector_dimensions_label_, scale_controls);
   inspector_advanced_details_label_ = new QLabel("No item selected", advanced_details_contents);
   inspector_advanced_details_label_->setObjectName("sceneBuilderInspectorAdvancedDetailsText");
   inspector_advanced_details_label_->setWordWrap(true);
@@ -3788,7 +3826,7 @@ void MainWindow::setup_studio_shell()
   connect_button(robot_base_reset_button_, &MainWindow::reset_robot_base_pose_from_snapshot);
   inspector_x_->setToolTip("X position in metres"); inspector_y_->setToolTip("Y position in metres"); inspector_z_->setToolTip("Z position in metres");
   inspector_roll_->setToolTip("Roll in degrees"); inspector_pitch_->setToolTip("Pitch in degrees"); inspector_yaw_->setToolTip("Yaw in degrees");
-  inspector_dim_x_->setToolTip("Scale X (uniform Scale control for simple mesh assets)"); inspector_dim_y_->setToolTip("Scale Y"); inspector_dim_z_->setToolTip("Scale Z");
+  inspector_dim_x_->setToolTip("Primitive width in metres; mesh geometry is asset-defined"); inspector_dim_y_->setToolTip("Primitive depth in metres"); inspector_dim_z_->setToolTip("Primitive height in metres");
   refresh_robot_base_pose_inspector();
   connect_button(save_layout_button_, &MainWindow::save_layout_changes);
   // Install only after the main preview's WebEngine view and the existing top-level
@@ -4066,8 +4104,100 @@ void MainWindow::refresh_scene_bundle_export_panel()
   scene_bundle_contents_label_->setText("Bundle contents summary:\n- layout/workcell_studio_layout.yaml (authored layout)\n- environment.yaml\n- scene_manifest.yaml\n- cell_definition.yaml\n- task_recipe.yaml\n- config/workcell_builder_task_intent.yaml\n- preview/ artifacts\n- validation/readiness reports\n- launch command notes\n- manifest.json\nLegacy imports may also retain environment_layout.yaml.");
 }
 
+void MainWindow::refresh_environment_task_editor()
+{
+  if (!environment_task_editor_) return;
+  if (!has_selected_scene()) { environment_task_editor_->setEnabled(false); return; }
+  const QString path = selected_scene_path() + "/environment.yaml";
+  if (environment_task_editor_dirty_ && environment_task_editor_path_ == path) return;
+  environment_task_editor_loading_ = true;
+  environment_task_editor_dirty_ = false;
+  environment_task_editor_path_ = path;
+  try {
+    const auto edits = workcell_builder::read_environment_task_edits(YAML::LoadFile(path.toStdString()));
+    task_target_class_edit_->setText(QString::fromStdString(edits.target_class));
+    task_grasp_intent_edit_->setText(QString::fromStdString(edits.grasp_intent));
+    task_home_pose_edit_->setText(QString::fromStdString(edits.home_pose));
+    task_min_confidence_edit_->setValue(edits.min_confidence);
+    task_max_age_edit_->setValue(edits.max_age_seconds);
+    task_approach_edit_->setValue(edits.approach_distance_m);
+    task_retreat_edit_->setValue(edits.retreat_distance_m);
+    task_place_roll_edit_->setValue(edits.placement_rpy[0]);
+    task_place_pitch_edit_->setValue(edits.placement_rpy[1]);
+    task_place_yaw_edit_->setValue(edits.placement_rpy[2]);
+    environment_task_editor_->setEnabled(true);
+    environment_task_editor_->setToolTip("Authoring source: " + path);
+  } catch (const std::exception & exc) {
+    environment_task_editor_->setEnabled(false);
+    environment_task_editor_->setToolTip("Task editing blocked: " + path + ": " + QString::fromStdString(exc.what()));
+  }
+  environment_task_editor_loading_ = false;
+}
+
+bool MainWindow::save_environment_task_editor(QString * error)
+{
+  if (!environment_task_editor_dirty_) return true;
+  const QString path = selected_scene_path() + "/environment.yaml";
+  try {
+    if (path != environment_task_editor_path_) throw std::runtime_error("Task editor belongs to another scene; reopen the selected task before saving");
+    workcell_builder::EnvironmentTaskEdits edits;
+    edits.target_class = task_target_class_edit_->text().trimmed().toStdString();
+    edits.grasp_intent = task_grasp_intent_edit_->text().trimmed().toStdString();
+    edits.home_pose = task_home_pose_edit_->text().trimmed().toStdString();
+    edits.min_confidence = task_min_confidence_edit_->value();
+    edits.max_age_seconds = task_max_age_edit_->value();
+    edits.approach_distance_m = task_approach_edit_->value();
+    edits.retreat_distance_m = task_retreat_edit_->value();
+    edits.placement_rpy = {{task_place_roll_edit_->value(), task_place_pitch_edit_->value(), task_place_yaw_edit_->value()}};
+    const YAML::Node authored = workcell_builder::apply_environment_task_edits(YAML::LoadFile(path.toStdString()), edits);
+    YAML::Emitter emitter; emitter << authored;
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly) || file.write(QByteArray(emitter.c_str(), emitter.size())) < 0 || !file.commit())
+      throw std::runtime_error(file.errorString().toStdString());
+    const auto reopened = workcell_builder::read_environment_task_edits(YAML::LoadFile(path.toStdString()));
+    if (reopened.target_class != edits.target_class || reopened.home_pose != edits.home_pose ||
+        std::abs(reopened.min_confidence - edits.min_confidence) > 1e-12 ||
+        reopened.approach_distance_m != edits.approach_distance_m || reopened.retreat_distance_m != edits.retreat_distance_m ||
+        reopened.placement_rpy != edits.placement_rpy)
+      throw std::runtime_error("Task persistence verification failed");
+    environment_task_editor_dirty_ = false;
+    append_studio_log("Task intent saved and reopened from " + path);
+    return true;
+  } catch (const std::exception & exc) {
+    const QString reason = "Save task intent failed: " + path + ": " + QString::fromStdString(exc.what());
+    append_studio_log(reason); if (error) *error = reason; return false;
+  }
+}
+
+bool MainWindow::save_authored_environment_from_layout(QString * error)
+{
+  // Existing layout projection owns canonical geometry; the editor file remains a view layer.
+  QString script;
+  if (!helper_script_exists("workcell_studio_layout_merge.py", &script)) {
+    if (error) *error = "Save failed: workcell_studio_layout_merge.py is unavailable; environment.yaml was not updated";
+    return false;
+  }
+  QProcess process;
+  // The merge helper takes the scene directory as its positional argument.
+  // Keep this call aligned with the helper used by Generate/Validate.
+  process.start("python3", {script, selected_scene_path()});
+  if (!process.waitForFinished(60000)) {
+    process.kill(); process.waitForFinished(1000);
+    if (error) *error = "Save failed: authored layout projection timed out; inspect environment.yaml and retained layout edits";
+    return false;
+  }
+  if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+    const QString detail = QString::fromUtf8(process.readAllStandardError()) + QString::fromUtf8(process.readAllStandardOutput());
+    if (error) *error = "Save failed: authored layout projection: " + detail.left(1600);
+    return false;
+  }
+  append_studio_log("Save committed physical assets, camera and semantic zones into environment.yaml.");
+  return true;
+}
+
 void MainWindow::refresh_task_intent_panel()
 {
+  refresh_environment_task_editor();
   if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) return;
   const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const auto ti = load_scene_task_intent_summary(sc.scene_dir);
@@ -4522,6 +4652,7 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     if (state.role_or_category.isEmpty()) state.role_or_category = state.type;
     if (state.role_or_category.isEmpty()) state.role_or_category = item->category.trimmed();
     state.source_path = item->source_path.trimmed();
+    state.visual_uri = item->mesh_path.trimmed();
     state.source_layer = item->source_layer.trimmed();
     state.active_visual_source = item->active_visual_source.trimmed();
     state.editable = item->editable && !item->locked;
@@ -8270,6 +8401,10 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
     append_studio_log(QStringLiteral(
       "Save Layout persisted authored YAML only; generated collision/scene artifacts remain stale until explicit Generate/Validate."));
   }
+  if (!save_environment_task_editor(error) || !save_authored_environment_from_layout(error)) {
+    emit_save_layout_failure(error ? *error : QStringLiteral("Authored environment save failed"), QString::fromStdString(effective_layout_path.string()));
+    return false;
+  }
   deleted_layout_item_ids_.clear();
   for (auto * canvas : editable_canvas_items) {
     canvas->setData(RoleMetadataExplicitlyEdited, false);
@@ -8493,6 +8628,8 @@ void MainWindow::create_starter_layout_from_preview()
 
 void MainWindow::revert_layout_changes()
 {
+  environment_task_editor_dirty_ = false;
+  refresh_environment_task_editor();
   rebuild_digital_twin_canvas();
   layout_dirty_ = false;
   if (save_layout_button_) {
@@ -8538,6 +8675,7 @@ void MainWindow::refresh_selection_transform_editor_from_item(QGraphicsItem * it
   state.role = item->data(RoleRole).toString().trimmed();
   state.category = item->data(RoleCategory).toString().trimmed();
   state.type = item->data(RoleType).toString().trimmed();
+  state.source_path = item->data(RoleSource).toString().trimmed();
   state.role_or_category = state.role;
   if (state.role_or_category.isEmpty()) state.role_or_category = state.category;
   if (state.role_or_category.isEmpty()) state.role_or_category = state.type;
@@ -8578,13 +8716,18 @@ void MainWindow::refresh_selection_transform_editor_from_state(const SelectedSce
     return;
   }
   const bool locked = state.locked || !state.editable || !state.linked_to_editable_layout_state;
+  const bool editable_dimensions = workcell_builder::layout_item_dimensions_editable(
+    state.type.toStdString(), state.category.toStdString(),
+    (state.visual_uri.isEmpty() ? state.source_path : state.visual_uri).toStdString());
+  if (inspector_dimensions_controls_) inspector_dimensions_controls_->setVisible(editable_dimensions);
+  if (inspector_dimensions_label_) inspector_dimensions_label_->setVisible(editable_dimensions);
   inspector_update_guard_ = true;
   if (inspector_x_) inspector_x_->setValue(state.pose_x);
   if (inspector_y_) inspector_y_->setValue(state.pose_y);
   if (inspector_z_) inspector_z_->setValue(state.pose_z);
-  if (inspector_roll_) inspector_roll_->setValue(state.roll);
-  if (inspector_pitch_) inspector_pitch_->setValue(state.pitch);
-  if (inspector_yaw_) inspector_yaw_->setValue(state.yaw);
+  if (inspector_roll_) inspector_roll_->setValue(qRadiansToDegrees(state.roll));
+  if (inspector_pitch_) inspector_pitch_->setValue(qRadiansToDegrees(state.pitch));
+  if (inspector_yaw_) inspector_yaw_->setValue(qRadiansToDegrees(state.yaw));
   if (inspector_dim_x_) inspector_dim_x_->setValue(state.dim_x);
   if (inspector_dim_y_) inspector_dim_y_->setValue(state.dim_y);
   if (inspector_dim_z_) inspector_dim_z_->setValue(state.dim_z);
@@ -8607,7 +8750,7 @@ void MainWindow::refresh_selection_transform_editor_from_state(const SelectedSce
     if (sb) { sb->setEnabled(true); sb->setReadOnly(locked); }
   }
   for (auto * sb : {inspector_dim_x_, inspector_dim_y_, inspector_dim_z_}) {
-    if (sb) { sb->setEnabled(true); sb->setReadOnly(locked); }
+    if (sb) { sb->setEnabled(editable_dimensions); sb->setReadOnly(locked || !editable_dimensions); }
   }
   if (inspector_apply_button_) inspector_apply_button_->setEnabled(!locked);
   if (inspector_revert_button_) inspector_revert_button_->setEnabled(!locked);
@@ -8728,9 +8871,11 @@ void MainWindow::apply_inspector_pose_to_item()
     i->setData(RoleRoll, updated_roll);
     i->setData(RolePitch, updated_pitch);
     i->setData(RoleYaw, updated_yaw);
-    i->setData(RoleWidth, inspector_dim_x_->value());
-    i->setData(RoleDepth, inspector_dim_y_->value());
-    i->setData(RoleHeight, inspector_dim_z_->value());
+    if (inspector_dim_x_->isEnabled() && !inspector_dim_x_->isReadOnly()) {
+      i->setData(RoleWidth, inspector_dim_x_->value());
+      i->setData(RoleDepth, inspector_dim_y_->value());
+      i->setData(RoleHeight, inspector_dim_z_->value());
+    }
     if (inspector_display_name_) {
       updated_display_name = inspector_display_name_->text().trimmed();
       if (!updated_display_name.isEmpty()) {
@@ -8759,9 +8904,11 @@ void MainWindow::apply_inspector_pose_to_item()
   refreshed_state.roll = updated_roll;
   refreshed_state.pitch = updated_pitch;
   refreshed_state.yaw = updated_yaw;
-  refreshed_state.dim_x = inspector_dim_x_->value();
-  refreshed_state.dim_y = inspector_dim_y_->value();
-  refreshed_state.dim_z = inspector_dim_z_->value();
+  if (inspector_dim_x_->isEnabled() && !inspector_dim_x_->isReadOnly()) {
+    refreshed_state.dim_x = inspector_dim_x_->value();
+    refreshed_state.dim_y = inspector_dim_y_->value();
+    refreshed_state.dim_z = inspector_dim_z_->value();
+  }
   if (!updated_display_name.isEmpty()) refreshed_state.display_name = updated_display_name;
   refreshed_state.role = updated_semantic_role;
   refreshed_state.category = target.state.category;

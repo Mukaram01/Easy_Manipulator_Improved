@@ -121,6 +121,19 @@ template<typename T>
 void grasp_planner::GraspScene<T>::send_to_execution(
   const emd_msgs::msg::GraspTask & grasp_task)
 {
+  bool planning_only = false;
+  node->get_parameter_or("planning_only", planning_only, false);
+  if (planning_only) {
+    if (!candidate_publisher) {
+      std::string topic;
+      node->get_parameter_or("grasp_candidates_topic", topic,
+        std::string("/workcell_studio/grasp_candidates"));
+      candidate_publisher = node->create_publisher<emd_msgs::msg::GraspTask>(topic, 1);
+    }
+    candidate_publisher->publish(grasp_task);
+    this->grasp_objects.clear();
+    return;
+  }
   if (grasp_task.grasp_targets.empty()) {
     RCLCPP_ERROR(LOGGER, "No grasp tasks generated, Skipping request to grasp execution...");
     this->grasp_objects.clear();
@@ -959,7 +972,11 @@ void grasp_planner::GraspScene<T>::start_planning(const typename T::ConstSharedP
   emd_msgs::msg::GraspTask grasp_task = generate_grasp_task();
   send_to_execution(grasp_task);
   RCLCPP_INFO(LOGGER, "Grasp Planning complete.");
-  trigger_epd_pipeline();
+  bool planning_only = false;
+  node->get_parameter_or("planning_only", planning_only, false);
+  if (!planning_only) {
+    trigger_epd_pipeline();
+  }
 }
 #endif
 
