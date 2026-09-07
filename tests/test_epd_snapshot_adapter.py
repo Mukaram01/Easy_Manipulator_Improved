@@ -84,6 +84,27 @@ def test_incomplete_perception_backed_scene_rejected():
         raise AssertionError("expected invalid perception scene to fail")
 
 
+def test_generator_preserves_null_confidence_and_rejects_invalid_thresholds():
+    import pytest
+    import yaml
+
+    gen = _load_generator()
+    source = Path("scenes/ur5_2f_test/cell_definition.yaml")
+    authored = source.read_bytes()
+    cell = yaml.safe_load(authored)
+    assert cell["perception"]["confidence_threshold"] is None
+    for threshold in (None, 0, 0.6, 1):
+        cell["perception"]["confidence_threshold"] = threshold
+        config = gen._build_perception_adapter_config(cell, {}, [])
+        assert config["confidence_threshold"] == threshold
+        assert yaml.safe_load(yaml.safe_dump(config))["confidence_threshold"] == threshold
+    for threshold in (-0.1, 1.1, float("nan"), float("inf"), "0.6", "invalid", True, [], {}):
+        cell["perception"]["confidence_threshold"] = threshold
+        with pytest.raises(ValueError, match="confidence_threshold"):
+            gen._build_perception_adapter_config(cell, {}, [])
+    assert source.read_bytes() == authored
+
+
 def test_observed_geometry_survives_normalization_and_task_binding():
     adapter = _load_adapter()
     import importlib.util

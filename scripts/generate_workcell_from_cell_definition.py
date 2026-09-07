@@ -335,12 +335,13 @@ def _build_perception_adapter_config(cell_def: dict[str, Any], task_recipe: dict
     if not epd.get("topic"): blockers.append("perception.epd_input.topic is required")
     if not epd.get("message_type"): blockers.append("perception.epd_input.message_type is required")
     if not isinstance(required, list) or not required: blockers.append("required_object_classes must list at least one class")
-    try:
-        threshold = float(threshold)
-        if threshold < 0.0 or threshold > 1.0: blockers.append("confidence_threshold must be in [0, 1]")
-    except Exception:
-        blockers.append("confidence_threshold must be numeric")
-        threshold = 0.5
+    # Null means confidence is unavailable or filtering is disabled. Preserve
+    # it in the generated config rather than inventing a numeric threshold.
+    if threshold is not None:
+        if isinstance(threshold, bool) or not isinstance(threshold, (int, float)):
+            blockers.append("confidence_threshold must be numeric or null")
+        elif not 0.0 <= threshold <= 1.0:
+            blockers.append("confidence_threshold must be in [0, 1]")
     if blockers:
         raise ValueError("Invalid perception-backed scene metadata: " + "; ".join(blockers))
     return {
