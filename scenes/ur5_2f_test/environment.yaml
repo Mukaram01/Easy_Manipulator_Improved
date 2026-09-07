@@ -1,7 +1,7 @@
 schema_version: workcell_scene/v1
 scene:
   id: ur5_2f_test
-  name: ur5_2f_test
+  name: UR5 Industrial Pick & Place
 robot:
   id: ur5
   model: ur5
@@ -10,12 +10,75 @@ robot:
   base_frame: base_link
   planning_group: manipulator
   tool_mount_link: tool0
+  pose_xyz:
+  - 0
+  - 0
+  - 0.0135
+  pose_rpy:
+  - 0
+  - 0
+  - 0
+  home_named_target: home
+  safe_joint_state:
+  - 0
+  - -1.57079632679
+  - 0
+  - -1.57079632679
+  - 0
+  - 0
+  joint_names:
+  - shoulder_pan_joint
+  - shoulder_lift_joint
+  - elbow_joint
+  - wrist_1_joint
+  - wrist_2_joint
+  - wrist_3_joint
+  description:
+    package: ur_description
+    xacro: urdf/ur_macro.xacro
+    macro: ur_robot
+  srdf:
+    package: ur5_moveit_config
+    xacro: config/ur5.srdf.xacro
+    macro: ur5
 tool:
   id: robotiq_85_gripper
+  type: finger
   model: robotiq_85_gripper
   profile: robotiq_85_gripper
   mount_link: tool0
   grasp_frame: ee_palm
+  mount_pose_xyz: &id001
+  - 0
+  - 0
+  - 0
+  mount_pose_rpy: &id002
+  - 1.5707963267948966
+  - -1.5707963267948966
+  - 0
+  tcp_pose_xyz: &id003
+  - 0
+  - 0
+  - 0.14
+  tcp_pose_rpy: &id004
+  - 0
+  - 0
+  - 0
+  allowed_touch_links: &id005
+  - gripper_finger1_finger_tip_link
+  - gripper_finger2_finger_tip_link
+  description: &id006
+    package: robotiq_85_description
+    xacro: urdf/robotiq_85_gripper.urdf.xacro
+    macro: robotiq_85_gripper
+  srdf: &id007
+    package: robotiq_85_moveit_config
+    xacro: config/robotiq_85_gripper.srdf.xacro
+    macro: robotiq_85_gripper
+  actuated_joint: gripper_finger1_joint
+  adjacent_links: &id008
+  - wrist_3_link
+  - gripper_base_link
 end_effector:
   id: robotiq_85_gripper
   type: finger
@@ -23,6 +86,15 @@ end_effector:
   profile: robotiq_85_gripper
   mount_link: tool0
   grasp_frame: ee_palm
+  mount_pose_xyz: *id001
+  mount_pose_rpy: *id002
+  tcp_pose_xyz: *id003
+  tcp_pose_rpy: *id004
+  allowed_touch_links: *id005
+  description: *id006
+  srdf: *id007
+  actuated_joint: gripper_finger1_joint
+  adjacent_links: *id008
 compatibility:
   status: COMPATIBLE
   robot: ur5
@@ -31,117 +103,227 @@ environment:
   frame: world
   layout: layout/workcell_studio_layout.yaml
   support_surfaces:
-  - id: support_surface_table
+  - &id012
+    id: support_surface_table
     type: table
     role: support_surface
-    category: work_surface
+    display_name: Industrial Workbench
+    category: environment
     frame: world
     pose_xyz:
-    - 0.55
-    - 0.0
-    - 0.0
+    - 0.3
+    - -0.2
+    - -0.0008999994993209839
     pose_rpy:
-    - 0.0
-    - 0.0
-    - 0.0
-    dimensions:
-    - 1.2
-    - 0.8
-    - 0.08
+    - 0
+    - 0
+    - 0
     layout_item_ref: support_surface_table
+    geometry_type: mesh
+    mesh:
+      path: package://workbench_description/meshes/visual/table.stl
+      scale:
+      - 0.001
+      - 0.001
+      - 0.001
+    asset_class: registered
+    collision:
+      enabled: true
+      mode: box_proxy
+      mesh:
+        path: package://workbench_description/meshes/collision/table.stl
+        scale:
+        - 0.001
+        - 0.001
+        - 0.001
+      review: Conservative mesh bounds contain tabletop and legs; intentionally fill
+        under-bench void. Supplied collision STL duplicates 102734 visual triangles.
+    catalog_asset_id: table_standard_1200
+    surface_z_m: 0.0
   assets:
-  - id: target_bin_default
+  - &id013
+    id: robot_mount_plate
+    type: fixture
+    role: fixture
+    display_name: Robot Mounting Plate
+    category: environment
+    frame: world
+    pose_xyz:
+    - 0
+    - 0
+    - 0.007
+    pose_rpy:
+    - 0
+    - 0
+    - 0
+    layout_item_ref: robot_mount_plate
+    geometry_type: box
+    dimensions:
+    - 0.2
+    - 0.2
+    - 0.012
+    asset_class: primitive
+    collision:
+      enabled: true
+      mode: primitive_box
+    material:
+      color:
+      - 0.32
+      - 0.34
+      - 0.36
+      - 1
+  - &id014
+    id: target_bin_default
     type: target_bin
     role: target_bin
-    category: place_zone
+    display_name: Destination Bin
+    category: environment
     frame: world
     pose_xyz:
-    - 0.55
-    - -0.28
-    - 0.10
+    - 0.45
+    - 0.22
+    - 0.1
     pose_rpy:
-    - 0.0
-    - 0.0
-    - 0.0
-    dimensions:
-    - 0.352201
-    - 0.213387
-    - 0.20
+    - 0
+    - 0
+    - 0
+    layout_item_ref: target_bin_default
+    geometry_type: mesh
+    mesh:
+      path: package://sorting_bin_description/meshes/sorting_bin.stl
+      scale:
+      - 0.001
+      - 0.001
+      - 0.001
+      rpy:
+      - 1.5707963267948966
+      - 0
+      - 1.5707963267948966
+      origin_offset:
+      - -0.173899436593
+      - 0
+      - -0.1
+    asset_class: registered
+    collision:
+      enabled: true
+      mode: mesh
+    catalog_asset_id: bin_standard
     support_surface_ref: support_surface_table
     task_zone_ref: default_drop_zone
-    layout_item_ref: target_bin_default
-  - id: realsense_overhead
+  - &id015
+    id: realsense_overhead
     type: realsense
     role: camera
-    category: camera
+    display_name: Fixed RealSense D435i
+    category: environment
     frame: world
     pose_xyz:
-    - 0.35
-    - 0.0
-    - 0.85
+    - 0.4
+    - -0.25
+    - 0.8499999999999998
     pose_rpy:
-    - 0.0
-    - 1.5708
-    - 0.0
-    dimensions:
-    - 0.08
-    - 0.08
-    - 0.06
+    - 0
+    - 1.570000000000127
+    - 0
     layout_item_ref: realsense_overhead
-    perception_mode: replayed_snapshot_or_live_epd_when_configured
-  - id: safety_zone_keepout
-    type: safety_zone
-    role: keepout
-    category: safety_zone
+    geometry_type: mesh
+    mesh:
+      path: package://realsense2_description/meshes/d435.dae
+      scale:
+      - 1
+      - 1
+      - 1
+    asset_class: registered
+    collision:
+      enabled: true
+      mode: urdf
+      link: camera_link
+    description:
+      package: realsense2_description
+      xacro: urdf/_d435i.urdf.xacro
+      macro: sensor_d435i
+    material:
+      color:
+      - 0.12
+      - 0.13
+      - 0.15
+      - 1
+  task_zones:
+  - &id010
+    id: pick_zone_main
+    type: pick_zone
+    role: pick_zone
+    display_name: Pick Zone
+    category: zone
     frame: world
     pose_xyz:
+    - 0.4
+    - -0.2
+    - 0.3
+    pose_rpy:
+    - 0
+    - 0
+    - 0
+    layout_item_ref: pick_zone_main
+    geometry_type: box
+    dimensions:
     - 0.35
-    - 0.0
-    - 0.102
-    pose_rpy:
-    - 0.0
-    - 0.0
-    - 0.0
-    dimensions:
-    - 2.0
-    - 1.6
-    - 0.01
-    layout_item_ref: safety_zone_keepout
-    runtime_enforced: false
-  - id: home_pose_safe
-    type: home_pose
-    role: home_pose
-    category: safety_zone
+    - 0.3
+    - 0.6
+    asset_class: primitive
+    support_surface_ref: support_surface_table
+    shape: box
+  - &id011
+    id: default_drop_zone
+    type: place_zone
+    role: place_zone
+    display_name: Place Free Region
+    category: zone
     frame: world
-    pose_xyz:
-    - 0.25
-    - 0.0
+    pose_xyz: &id009
     - 0.45
+    - 0.22
+    - 0.13
     pose_rpy:
-    - 0.0
-    - 0.0
-    - 0.0
+    - 0
+    - 0
+    - 0
+    layout_item_ref: place_zone_default
+    geometry_type: box
     dimensions:
-    - 0.08
-    - 0.08
-    - 0.08
-    layout_item_ref: home_pose_safe
-    runtime_commanded: false
-placed_objects: null
+    - 0.25
+    - 0.14
+    - 0.23
+    asset_class: primitive
+    target_ref: target_bin_default
+    support_surface_ref: support_surface_table
+    shape: box
+    bottom_clearance_m: 0.005
+placed_objects: []
 camera:
   enabled: true
   camera_id: realsense_overhead
-  frame_id: realsense_overhead_frame
+  parent_frame: world
+  frame_id: camera_color_optical_frame
+  link_frame: camera_link
   pose:
-  - 0.35
-  - 0.0
-  - 0.85
-  - 0.0
-  - 1.5708
-  - 0.0
-  rgb_topic: null
-  depth_topic: null
+  - 0.4
+  - -0.25
+  - 0.8499999999999998
+  - 0
+  - 1.570000000000127
+  - 0
+  calibration_status: authored_extrinsics_require_physical_verification
+  rgb_topic: /camera/camera/color/image_raw
+  depth_topic: /camera/camera/aligned_depth_to_color/image_raw
   pointcloud_topic: null
+  acceptance_stream:
+    color_width: 640
+    color_height: 480
+    depth_width: 640
+    depth_height: 480
+    fps: 15
+    infrared_enabled: false
 task:
   id: default_task
   template: pick_place
@@ -156,17 +338,18 @@ task:
   place:
     target_ref: default_drop_zone
     release_strategy: tool_release
+    region_ref: default_drop_zone
+    retreat_distance_m: 0.15
   destinations:
   - id: default_drop_zone
     frame: world
-    pose_xyz:
-    - 0.55
-    - -0.28
-    - 0.1
+    pose_xyz: *id009
     pose_rpy:
-    - 0.0
-    - 0.0
-    - 0.0
+    - 0
+    - 0
+    - 0
+    region_ref: default_drop_zone
+    target_ref: target_bin_default
   rules:
   - id: default_place
     when:
@@ -177,7 +360,7 @@ task:
     approach_axis: z_down
     orientation_mode: vertical
     approach_distance_m: 0.12
-    retreat_distance_m: 0.1
+    retreat_distance_m: 0.15
     allowed_roll_angles_deg:
     - 0.0
     allowed_yaw_angles_deg:
@@ -194,6 +377,12 @@ task:
     - 0.0
     - 0.0
     suction_cups: null
+    intent: top_2f
+  object_filter:
+    class_id: bottle
+    min_confidence: null
+    max_age_seconds: 2.0
+  home_pose: home
 workspace:
   bounds:
     x_min: -1.0
@@ -216,142 +405,27 @@ metadata:
   scene_schema_version: workcell_scene/v1
   scene_schema_warnings: []
   scene_schema_blockers: []
+  source_of_truth: environment.yaml
+  runtime_generation: registered_asset_descriptions
+  generator_version: industrial_cell/v1
 task_zones:
-- id: pick_zone_main
-  type: pick_zone
-  role: pick
-  frame: world
-  shape: box
-  pose_xyz:
-  - 0.45
-  - 0.25
-  - 0.1
-  pose_rpy:
-  - 0.0
-  - 0.0
-  - 0.0
-  dimensions:
-  - 0.2
-  - 0.2
-  - 0.1
-  support_surface_ref: support_surface_table
-  layout_item_ref: pick_zone_main
-- id: default_drop_zone
-  type: place_zone
-  role: place
-  legacy_type: place_target
-  frame: world
-  shape: box
-  pose_xyz:
-  - 0.55
-  - -0.28
-  - 0.1
-  pose_rpy:
-  - 0.0
-  - 0.0
-  - 0.0
-  dimensions:
-  - 0.352201
-  - 0.213387
-  - 0.01
-  target_ref: target_bin_default
-  support_surface_ref: support_surface_table
-  layout_item_ref: place_zone_default
-  compatible_destination_id: default_drop_zone
+- *id010
+- *id011
 support_surfaces:
-- id: support_surface_table
-  type: table
-  role: support_surface
-  category: work_surface
-  frame: world
-  pose_xyz:
-  - 0.55
-  - 0.0
-  - 0.0
-  pose_rpy:
-  - 0.0
-  - 0.0
-  - 0.0
-  dimensions:
-  - 1.2
-  - 0.8
-  - 0.08
-  layout_item_ref: support_surface_table
+- *id012
 assets:
-- id: target_bin_default
-  type: target_bin
-  role: target_bin
-  category: place_zone
-  frame: world
-  pose_xyz:
-  - 0.55
-  - -0.28
-  - 0.10
-  pose_rpy:
-  - 0.0
-  - 0.0
-  - 0.0
-  dimensions:
-  - 0.352201
-  - 0.213387
-  - 0.20
-  support_surface_ref: support_surface_table
-  task_zone_ref: default_drop_zone
-  layout_item_ref: target_bin_default
-- id: realsense_overhead
-  type: realsense
-  role: camera
-  category: camera
-  frame: world
-  pose_xyz:
-  - 0.35
-  - 0.0
-  - 0.85
-  pose_rpy:
-  - 0.0
-  - 1.5708
-  - 0.0
-  dimensions:
-  - 0.08
-  - 0.08
-  - 0.06
-  layout_item_ref: realsense_overhead
-  perception_mode: replayed_snapshot_or_live_epd_when_configured
-- id: safety_zone_keepout
-  type: safety_zone
-  role: keepout
-  category: safety_zone
-  frame: world
-  pose_xyz:
-  - 0.35
-  - 0.0
-  - 0.102
-  pose_rpy:
-  - 0.0
-  - 0.0
-  - 0.0
-  dimensions:
-  - 2.0
-  - 1.6
-  - 0.01
-  layout_item_ref: safety_zone_keepout
-  runtime_enforced: false
-- id: home_pose_safe
-  type: home_pose
-  role: home_pose
-  category: safety_zone
-  frame: world
-  pose_xyz:
-  - 0.25
-  - 0.0
-  - 0.45
-  pose_rpy:
-  - 0.0
-  - 0.0
-  - 0.0
-  dimensions:
-  - 0.08
-  - 0.08
-  - 0.08
-  layout_item_ref: home_pose_safe
-  runtime_commanded: false
+- *id013
+- *id014
+- *id015
+perception:
+  enabled: true
+  mode: live_epd
+  camera_id: realsense_overhead
+  frame_id: camera_color_optical_frame
+  normalized_output_contract: detected_objects/v1
+  epd_input:
+    topic: /easy_perception_deployment/epd_localize_output
+    message_type: epd_msgs/msg/EPDObjectLocalization
+  required_object_classes:
+  - bottle
+  confidence_threshold: null

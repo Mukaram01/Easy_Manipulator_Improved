@@ -14,7 +14,12 @@ pick:
     type: pick_zone
     id: pick_zone_main
   object_filter:
-    class_id: any
+    class_id: bottle
+    # The current EPD localization message does not carry a confidence score.
+    # A null threshold keeps the source contract honest; a numeric threshold
+    # can be authored when the selected perception adapter provides one.
+    min_confidence: null
+    max_age_seconds: 2.0
 perception:
   source_contract: detected_objects/v1
   camera:
@@ -24,23 +29,16 @@ place:
     type: destination
     id: default_drop_zone
     frame: world
-    pose_xyz:
-    - 0.55
-    - -0.28
-    - 0.1
-    pose_rpy:
-    - 0.0
-    - 0.0
-    - 0.0
+    region_ref: default_drop_zone
   release_strategy: tool_release
   retreat_axis: z_up
   retreat_distance_m: 0.1
 grasp:
-  strategy_ref: finger_pinch_basic
+  strategy_ref: top_2f
   approach_axis: z_down
   approach_distance_m: 0.12
   retreat_axis: z_up
-  retreat_distance_m: 0.1
+  retreat_distance_m: 0.15
 safety:
   preview_only: true
   use_fake_hardware: true

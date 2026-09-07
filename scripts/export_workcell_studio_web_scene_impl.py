@@ -292,7 +292,12 @@ def _normalise_active_place_zone(data: Dict[str, Any]) -> None:
         layout_pose = _as_map(layout_target.get("pose"))
         xyz = layout_pose.get("xyz", xyz)
         rpy = layout_pose.get("rpy", rpy)
-        dimensions = layout_target.get("dimensions", dimensions)
+        # Imported/registered meshes deliberately omit editable dimensions in
+        # the layout. Preserve the physical asset dimensions for web-preview
+        # normalization instead of turning a missing editor field into None.
+        layout_dimensions = layout_target.get("dimensions")
+        if isinstance(layout_dimensions, (list, tuple)) and len(layout_dimensions) >= 2:
+            dimensions = layout_dimensions
         asset_source = "layout/workcell_studio_layout.yaml"
     source_file = asset_source if asset_source.endswith(".yaml") else "environment.yaml"
     valid_vector = lambda value, size: (isinstance(value, (list, tuple)) and len(value) >= size and all(
@@ -304,6 +309,11 @@ def _normalise_active_place_zone(data: Dict[str, Any]) -> None:
             f"{source_file}: unresolved ID {target_ref!r}; relationship physical target asset -> valid "
             "world pose failed (requires finite numeric pose_xyz and pose_rpy)"
         )
+    if not valid_vector(dimensions, 2):
+        # Mesh assets need not declare editable box dimensions. The authored
+        # semantic free region is the reviewed footprint for the Web3D
+        # overlay; MoveIt still uses the exact mesh collision manifest.
+        dimensions = zone.get("dimensions")
     if not valid_vector(dimensions, 2) or any(component <= 0 for component in dimensions[:2]):
         raise BlockingExportError(
             f"{source_file}: unresolved ID {target_ref!r}; relationship physical target asset -> positive "

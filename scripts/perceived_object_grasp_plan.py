@@ -5,6 +5,7 @@ import argparse
 import copy
 import json
 import math
+from pathlib import Path
 import time
 
 
@@ -20,10 +21,15 @@ def _finite(values):
 
 
 def select_perceived_box(objects):
-    """Select the lowest stable ID, rejecting incomplete or fabricated geometry."""
+    """Select one live EPD box, rejecting authored/fabricated geometry."""
     valid = []
     for obj in objects:
         object_id = str(obj.get("id", ""))
+        # The bridge owns the ``epd::`` namespace. Keep numeric IDs as a
+        # compatibility path for older replay fixtures, but never select a
+        # workcell-authored collision object as the perceived workpiece.
+        if not (object_id.startswith("epd::") or object_id.isdigit()):
+            continue
         dimensions = obj.get("dimensions")
         pose = obj.get("pose")
         if (not object_id or obj.get("shape") != "BOX"
@@ -35,8 +41,30 @@ def select_perceived_box(objects):
         valid.append(obj)
     if not valid:
         raise ValueError("no perceived BOX has finite positive geometry and pose")
-    return min(valid, key=lambda obj: (not str(obj["id"]).isdigit(),
-                                       int(obj["id"]) if str(obj["id"]).isdigit() else str(obj["id"])))
+    return min(valid, key=lambda obj: str(obj["id"]))
+
+
+def load_grasp_contract(scene_package):
+    """Load authored grasp distances without inventing a workpiece pose."""
+    package = Path(scene_package)
+    source = package / "cell_definition.yaml"
+    if not source.exists():
+        return {"approach_distance_m": 0.12, "retreat_distance_m": 0.15,
+                "tcp_offset_z_m": 0.0}
+    try:
+        import yaml
+        cell = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
+        grasp = cell.get("task", {}).get("grasp") or cell.get("grasp") or {}
+        end_effector = cell.get("end_effector") or {}
+        tcp_xyz = end_effector.get("tcp_pose_xyz") or [0.0, 0.0, 0.0]
+        return {
+            "approach_distance_m": float(grasp.get("approach_distance_m", 0.12)),
+            "retreat_distance_m": float(grasp.get("retreat_distance_m", 0.15)),
+            "tcp_offset_z_m": float(tcp_xyz[2]) if len(tcp_xyz) >= 3 else 0.0,
+        }
+    except Exception:
+        return {"approach_distance_m": 0.12, "retreat_distance_m": 0.15,
+                "tcp_offset_z_m": 0.0}
 
 
 def build_grasp_target(selected):
@@ -50,10 +78,25 @@ def build_grasp_target(selected):
     }
 
 
+def oriented_box_extents(target):
+    """Return the live box extents projected into its planning frame."""
+    _, _, _, qx, qy, qz, qw = target["target_pose"]
+    rotation = [
+        [1 - 2 * (qy*qy + qz*qz), 2 * (qx*qy - qz*qw), 2 * (qx*qz + qy*qw)],
+        [2 * (qx*qy + qz*qw), 1 - 2 * (qx*qx + qz*qz), 2 * (qy*qz - qx*qw)],
+        [2 * (qx*qz - qy*qw), 2 * (qy*qz + qx*qw), 1 - 2 * (qx*qx + qy*qy)],
+    ]
+    return [sum(abs(rotation[axis][index]) * target["target_dimensions"][index]
+                 for index in range(3)) for axis in range(3)]
+
+
 def generate_box_grasp_candidates(target, clearance=0.12):
     """Generate deterministic top approaches; positions always derive from the box."""
-    x, y, z, _, _, _, _ = target["target_pose"]
-    height = target["target_dimensions"][2]
+    x, y, z, qx, qy, qz, qw = target["target_pose"]
+    # EPD dimensions are in the object's local frame.  Use the live
+    # orientation to calculate the world-Z extent instead of assuming the
+    # third dimension is vertical.
+    height = oriented_box_extents(target)[2]
     clearances = [clearance] if isinstance(clearance, (int, float)) else list(clearance)
     # Tool Z down, with four deterministic rotations about world Z.
     candidates = []
@@ -117,6 +160,7 @@ def _collision_object_dict(obj):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--summary-output", required=True)
+    parser.add_argument("--scene-package", default="scenes/ur5_2f_test")
     parser.add_argument("--timeout", type=float, default=45.0)
     args = parser.parse_args()
 
@@ -124,14 +168,19 @@ def main():
     from geometry_msgs.msg import PoseStamped
     from moveit_msgs.msg import Constraints, JointConstraint, MoveItErrorCodes, PlanningSceneComponents
     from moveit_msgs.srv import GetMotionPlan, GetPlanningScene, GetPositionIK
+    from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
+    from rcl_interfaces.srv import SetParameters
 
     rclpy.init()
     node = rclpy.create_node("perceived_object_grasp_plan")
     scene_client = node.create_client(GetPlanningScene, "/get_planning_scene")
     ik_client = node.create_client(GetPositionIK, "/compute_ik")
     plan_client = node.create_client(GetMotionPlan, "/plan_kinematic_path")
+    ownership_client = node.create_client(
+        SetParameters, "/epd_dynamic_planning_scene_bridge/set_parameters")
     guard = ExecutionGuard()
     summary = {"result": "FAIL", "execution_attempted": False}
+    ownership_claimed = False
 
     def call(client, request, timeout=10.0):
         if not client.wait_for_service(timeout_sec=timeout):
@@ -142,9 +191,21 @@ def main():
             raise RuntimeError(f"service timed out: {client.srv_name}")
         return future.result()
 
+    def set_ownership(object_id, timeout=3.0):
+        if not ownership_client.wait_for_service(timeout_sec=timeout):
+            raise RuntimeError("perception bridge ownership service unavailable")
+        parameter = Parameter()
+        parameter.name = "owned_object_id"
+        parameter.value = ParameterValue(
+            type=ParameterType.PARAMETER_STRING, string_value=object_id)
+        response = call(ownership_client, SetParameters.Request(parameters=[parameter]), timeout=timeout)
+        if len(response.results) != 1 or not response.results[0].successful:
+            raise RuntimeError("perception bridge rejected planning ownership")
+
     try:
         deadline = time.monotonic() + args.timeout
         selected = None
+        grasp_contract = load_grasp_contract(args.scene_package)
         scene_response = None
         while time.monotonic() < deadline:
             request = GetPlanningScene.Request()
@@ -153,7 +214,7 @@ def main():
             scene_response = call(scene_client, request)
             objects = [item for item in
                        (_collision_object_dict(obj) for obj in scene_response.scene.world.collision_objects)
-                       if item and item["id"].isdigit()]
+                       if item and (str(item["id"]).startswith("epd::") or str(item["id"]).isdigit())]
             try:
                 selected = select_perceived_box(objects)
                 break
@@ -163,8 +224,47 @@ def main():
             raise RuntimeError("timed out waiting for a valid perceived PlanningScene BOX")
 
         target = build_grasp_target(selected)
-        candidates = generate_box_grasp_candidates(target, clearance=(0.32, 0.42))
-        ids = [obj.id for obj in scene_response.scene.world.collision_objects if obj.id.isdigit()]
+        # Freeze the selected stable ID while MoveIt plans against this exact
+        # collision geometry. The bridge still fail-closes stale/lost objects;
+        # it simply does not replace an object that the planner owns. EPD's
+        # CPU inference can briefly leave a two-second freshness window, so
+        # retry the ownership claim until the same ID is live again.
+        claim_deadline = min(deadline, time.monotonic() + 10.0)
+        while True:
+            try:
+                set_ownership(target["perceived_object_id"], timeout=2.0)
+                ownership_claimed = True
+                break
+            except RuntimeError:
+                if time.monotonic() >= claim_deadline:
+                    raise
+                time.sleep(0.15)
+        # Re-read the scene after the bridge acknowledges ownership so the
+        # subsequent IK and collision plans use the protected object version.
+        refreshed = GetPlanningScene.Request()
+        refreshed.components.components = (PlanningSceneComponents.WORLD_OBJECT_GEOMETRY
+                                           | PlanningSceneComponents.ROBOT_STATE)
+        scene_response = call(scene_client, refreshed)
+        refreshed_objects = [item for item in
+                             (_collision_object_dict(obj) for obj in scene_response.scene.world.collision_objects)
+                             if item and item["id"] == target["perceived_object_id"]]
+        if len(refreshed_objects) != 1:
+            raise RuntimeError("owned perceived object was not unique in the refreshed PlanningScene")
+        selected = refreshed_objects[0]
+        target = build_grasp_target(selected)
+        # The candidate pose is requested for MoveIt's ``tool0`` link.  The
+        # configured TCP offset is already represented by the authored fixed
+        # tool0->grasp-frame joint in the robot model; adding it to the
+        # approach clearance would apply that transform twice and can push a
+        # reachable grasp outside the UR5 workspace.
+        # Keep the authored approach distance exactly. A candidate that
+        # cannot pass full collision checking is reported as blocked rather
+        # than silently shortening the configured approach.
+        clearance_schedule = [grasp_contract["approach_distance_m"]]
+        candidates = generate_box_grasp_candidates(
+            target, clearance=clearance_schedule[0])
+        ids = [obj.id for obj in scene_response.scene.world.collision_objects
+               if str(obj.id).startswith("epd::") or str(obj.id).isdigit()]
         summary.update({
             "selected_object_id": target["perceived_object_id"],
             "object_pose": target["target_pose"],
@@ -172,6 +272,11 @@ def main():
             "planning_frame": target["planning_frame"],
             "planning_group": "manipulator",
             "end_effector": "tool0",
+            "approach_distance_m": grasp_contract["approach_distance_m"],
+            "clearance_schedule_m": clearance_schedule,
+            "retreat_distance_m": grasp_contract["retreat_distance_m"],
+            "tcp_offset_z_m": grasp_contract["tcp_offset_z_m"],
+            "tcp_offset_applied_by_robot_model": True,
             "grasp_candidates_generated": len(candidates),
             "planning_scene_selected_id_count": ids.count(target["perceived_object_id"]),
             "duplicate_ids": sorted({item for item in ids if ids.count(item) > 1}),
@@ -200,7 +305,8 @@ def main():
             ik = call(ik_client, ik_request, timeout=5.0)
             if ik.error_code.val != MoveItErrorCodes.SUCCESS:
                 summary["candidate_results"].append(
-                    {"index": index, "ik_error_code": ik.error_code.val})
+                    {"index": index, "clearance_m": clearance_schedule[0],
+                     "ik_error_code": ik.error_code.val})
                 continue
 
             goal = Constraints()
@@ -209,8 +315,11 @@ def main():
                     constraint = JointConstraint()
                     constraint.joint_name = name
                     constraint.position = position
-                    constraint.tolerance_above = 0.001
-                    constraint.tolerance_below = 0.001
+                    # A milliradian-equivalent joint box is unnecessarily
+                    # brittle for OMPL's goal sampler; keep the live IK goal
+                    # tight while leaving a small collision-checked region.
+                    constraint.tolerance_above = 0.005
+                    constraint.tolerance_below = 0.005
                     constraint.weight = 1.0
                     goal.joint_constraints.append(constraint)
             plan_request = GetMotionPlan.Request()
@@ -219,18 +328,20 @@ def main():
             motion.start_state = copy.deepcopy(scene_response.scene.robot_state)
             motion.start_state.is_diff = True
             motion.goal_constraints = [goal]
-            motion.num_planning_attempts = 3
-            motion.allowed_planning_time = 5.0
+            motion.num_planning_attempts = 5
+            motion.allowed_planning_time = 8.0
             motion.max_velocity_scaling_factor = 0.2
             motion.max_acceleration_scaling_factor = 0.2
-            plan = call(plan_client, plan_request, timeout=10.0).motion_plan_response
+            plan = call(plan_client, plan_request, timeout=14.0).motion_plan_response
             points = len(plan.trajectory.joint_trajectory.points)
             summary["moveit_error_code"] = plan.error_code.val
             summary["candidate_results"].append(
-                {"index": index, "ik_error_code": ik.error_code.val,
+                {"index": index, "clearance_m": clearance_schedule[0],
+                 "ik_error_code": ik.error_code.val,
                  "moveit_error_code": plan.error_code.val, "trajectory_point_count": points})
             if plan.error_code.val == MoveItErrorCodes.SUCCESS and points > 0:
                 summary.update({"result": "PASS", "successful_candidate_index": index,
+                                "successful_candidate_clearance_m": clearance_schedule[0],
                                 "trajectory_point_count": points})
                 break
         if summary["result"] != "PASS":
@@ -240,6 +351,12 @@ def main():
     except Exception as exc:
         summary["failure"] = str(exc)
     finally:
+        if ownership_claimed:
+            try:
+                set_ownership("")
+                summary["ownership_released"] = True
+            except Exception as ownership_exc:
+                summary["ownership_release_failure"] = str(ownership_exc)
         summary["execution_attempted"] = guard.execution_attempted
         with open(args.summary_output, "w", encoding="utf-8") as stream:
             json.dump(summary, stream, indent=2, sort_keys=True)

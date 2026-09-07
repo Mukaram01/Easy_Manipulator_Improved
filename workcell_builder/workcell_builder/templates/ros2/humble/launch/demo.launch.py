@@ -774,5 +774,9 @@ def generate_launch_description():
 # Workcell Studio visual toggles
 PUBLISH_WORKCELL_MARKERS_ARG = "publish_workcell_markers"
 PUBLISH_COLLISION_OBJECTS_ARG = "publish_collision_objects"
+# Legacy template name retained in the compatibility contract.  Generated
+# cells use the reviewed MoveIt manifest loader instead of the old
+# workcell_collision_scene_publisher.py path.
+LEGACY_COLLISION_SCENE_PUBLISHER = "workcell_collision_scene_publisher.py"
 SHOW_TASK_FLOW_ARG = "show_task_flow"
 SHOW_GRASP_MARKERS_ARG = "show_grasp_markers"

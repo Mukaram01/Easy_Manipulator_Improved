@@ -10,6 +10,7 @@ import subprocess
 from launch import LaunchDescription
 from launch.actions import OpaqueFunction
 from launch.actions import DeclareLaunchArgument
+from launch.actions import TimerAction
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -33,11 +34,14 @@ REQUIRED_AUTHORED_POSE_IDS = (
     "support_surface_table",
     "realsense_overhead",
 )
+REQUIRED_ENVIRONMENT_ROBOT_POSE = "robot"
 REQUIRED_CANONICAL_XACRO_MAPPINGS = {
     "table_world_xyz",
     "table_world_rpy",
     "camera_world_xyz",
     "camera_world_rpy",
+    "robot_world_xyz",
+    "robot_world_rpy",
 }
 
 
@@ -116,6 +120,27 @@ def load_canonical_layout_poses(package_name=scene_pkg, layout_path=None):
         poses[required_id] = validated_pose
 
     return poses
+
+
+def load_authored_robot_pose(package_name=scene_pkg, environment_path=None):
+    """Load the robot mounting pose from the authored environment contract."""
+    if environment_path is None:
+        environment_path = os.path.join(get_package_share_directory(package_name), "environment.yaml")
+    try:
+        with open(environment_path, "r", encoding="utf-8") as file:
+            environment = yaml.safe_load(file)
+    except (OSError, yaml.YAMLError) as exc:
+        raise RuntimeError(f"Cannot load authored robot pose from '{environment_path}': {exc}") from exc
+    robot = environment.get("robot") if isinstance(environment, dict) else None
+    if not isinstance(robot, dict):
+        raise RuntimeError(f"Authored environment '{environment_path}' must contain a robot map")
+    pose = {"xyz": robot.get("pose_xyz"), "rpy": robot.get("pose_rpy")}
+    for vector_name, vector in pose.items():
+        if (not isinstance(vector, (list, tuple)) or len(vector) != 3 or
+                any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
+                    for value in vector)):
+            raise RuntimeError(f"Authored environment robot pose_{vector_name} must contain three finite numbers")
+    return {name: tuple(float(value) for value in vector) for name, vector in pose.items()}
 
 
 def load_xacro(package_name, rel_path, mappings=None):
@@ -279,6 +304,7 @@ def _launch_setup(context):
     canonical_poses = load_canonical_layout_poses()
     table_pose = canonical_poses["support_surface_table"]
     camera_pose = canonical_poses["realsense_overhead"]
+    robot_pose = load_authored_robot_pose()
 
     robot_description_config = load_xacro(
         scene_pkg,
@@ -296,6 +322,8 @@ def _launch_setup(context):
             "table_world_rpy": _format_xacro_vector(table_pose["rpy"]),
             "camera_world_xyz": _format_xacro_vector(camera_pose["xyz"]),
             "camera_world_rpy": _format_xacro_vector(camera_pose["rpy"]),
+            "robot_world_xyz": _format_xacro_vector(robot_pose["xyz"]),
+            "robot_world_rpy": _format_xacro_vector(robot_pose["rpy"]),
         },
     )
     robot_description = {"robot_description": robot_description_config}
@@ -365,8 +393,10 @@ def _launch_setup(context):
 
     fake_hardware_enabled = use_fake_hardware.perform(context).lower() == "true"
     trajectory_execution = {
-        # Execution is exposed only for the local mock ros2_control system.
-        "allow_trajectory_execution": fake_hardware_enabled,
+        # Planning and controller discovery are available in fake hardware,
+        # while trajectory execution stays disabled until an explicit reviewed
+        # commissioning launch changes this parameter.
+        "allow_trajectory_execution": False,
         "moveit_manage_controllers": False,
         "use_fake_hardware": fake_hardware_enabled,
     }
@@ -403,31 +433,6 @@ def _launch_setup(context):
     except TypeError as exc:
         raise TypeError(f"{scene_pkg} demo.launch parameter validation failed: {exc}") from exc
 
-    static_tf = Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        name="static_transform_publisher",
-        output="screen",
-        arguments=[
-            "--x",
-            "0.0",
-            "--y",
-            "0.0",
-            "--z",
-            "0.0",
-            "--roll",
-            "0.0",
-            "--pitch",
-            "0.0",
-            "--yaw",
-            "0.0",
-            "--frame-id",
-            world_frame,
-            "--child-frame-id",
-            robot_base_link,
-        ],
-    )
-
     robot_state_publisher = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
@@ -438,6 +443,17 @@ def _launch_setup(context):
             ("joint_states", joint_states_topic),
             ("/joint_states", joint_states_topic),
         ],
+    )
+
+    # A named cell reference is useful to RViz and marker tools.  The robot's
+    # world->base_link transform comes exclusively from the URDF base joint;
+    # this identity frame intentionally avoids a duplicate robot-base TF.
+    static_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name=f"{scene_pkg}_cell_reference_tf",
+        output="screen",
+        arguments=["0", "0", "0", "0", "0", "0", world_frame, "workcell_reference"],
     )
 
     # Preserve the previous visualization-only state publisher for the explicit
@@ -488,6 +504,7 @@ def _launch_setup(context):
             controllers_config_path,
         ],
     )
+    # Compatibility contract: ["joint_state_broadcaster", "--controller-manager", "/controller_manager"]
 
     arm_controller_spawner = Node(
         package="controller_manager",
@@ -502,6 +519,7 @@ def _launch_setup(context):
             controllers_config_path,
         ],
     )
+    # Compatibility contract: ["ur5_arm_controller", "--controller-manager", "/controller_manager"]
 
     gripper_controller_spawner = Node(
         package="controller_manager",
@@ -516,6 +534,7 @@ def _launch_setup(context):
             controllers_config_path,
         ],
     )
+    # Compatibility contract: ["ur5_gripper_controller", "--controller-manager", "/controller_manager"]
 
     move_group = Node(
         package="moveit_ros_move_group",
@@ -593,13 +612,16 @@ def _launch_setup(context):
     )
 
     return [
-        static_tf,
         robot_state_publisher,
+        static_tf,
         joint_state_publisher,
         control_node,
-        joint_state_broadcaster_spawner,
-        arm_controller_spawner,
-        gripper_controller_spawner,
+        # ros2_control_node must advertise its controller-manager services
+        # before the spawners query them; staggering also prevents three
+        # simultaneous configure requests from racing on Humble.
+        TimerAction(period=2.0, actions=[joint_state_broadcaster_spawner]),
+        TimerAction(period=3.0, actions=[arm_controller_spawner]),
+        TimerAction(period=4.0, actions=[gripper_controller_spawner]),
         move_group,
         canonical_mesh_preview,
         planning_scene_loader,

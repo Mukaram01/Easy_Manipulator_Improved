@@ -45,18 +45,53 @@ def convert(task_intent_path: Path, scene_package: Path | None = None) -> tuple[
     routing = payload.get('routing') if isinstance(payload.get('routing'), dict) else {}
     safety = payload.get('safety') if isinstance(payload.get('safety'), dict) else {}
 
+    # Destination poses belong to the authored physical/semantic environment,
+    # not to the task-intent compatibility file.  Resolve the selected place
+    # zone from environment.yaml when this is a scene export; the historical
+    # [0.4, 0, 0.2] fallback is retained only for standalone legacy callers.
+    destination_pose = place_block.get('offset_xyz') or [0.4, 0.0, 0.2]
+    destination_rpy = [0.0, 0.0, 0.0]
+    destination_frame = 'world'
+    if scene_package is not None:
+        try:
+            env = _load(Path(scene_package) / 'environment.yaml')
+            zones = ((env.get('environment') or {}).get('task_zones')
+                     if isinstance(env.get('environment'), dict) else env.get('task_zones'))
+            zones = zones if isinstance(zones, list) else []
+            selected = next((z for z in zones if isinstance(z, dict) and str(z.get('id')) == str(place.get('id'))), None)
+            if selected is not None:
+                destination_pose = selected.get('pose_xyz') or selected.get('pose', {}).get('xyz') or destination_pose
+                destination_rpy = selected.get('pose_rpy') or selected.get('pose', {}).get('rpy') or destination_rpy
+                destination_frame = str(selected.get('frame') or destination_frame)
+            else:
+                warnings.append(f"Place zone '{place.get('id')}' was not found in authored environment.yaml; using task-intent fallback pose.")
+        except Exception as exc:
+            warnings.append(f"Could not read authored environment.yaml for destination pose: {exc}")
+
+    decision_rules = routing.get('rules') if isinstance(routing.get('rules'), list) else []
+    if not decision_rules:
+        decision_rules = [{'id': 'default_route', 'when': {'always': True}, 'destination': place.get('id') or ''}]
+        warnings.append('Routing rules missing; generated default always-true rule.')
+
     recipe = {
         'schema_version': 'task_recipe/v1',
         'task': {
             'id': task.get('id') or 'builder_generated_task',
             'type': task.get('type') or 'pick_place',
+            'object_source': 'perception',
+            'perception_source': 'detected_objects/v1',
             'source_object': pick.get('id') or '',
             'object_filter': {
                 'class_id': pick_filter.get('class_id'),
                 'color': pick_filter.get('color'),
+                'min_confidence': pick_filter.get('min_confidence'),
+                'max_age_seconds': pick_filter.get('max_age_seconds', 2.0),
             },
-            'destinations': [{'id': place.get('id') or '', 'frame': 'world', 'pose_xyz': place_block.get('offset_xyz') or [0.4, 0.0, 0.2], 'pose_rpy': [0.0, 0.0, 0.0]}],
-            'rules': routing.get('rules') if isinstance(routing.get('rules'), list) else [],
+            'destinations': [{'id': place.get('id') or '', 'frame': destination_frame, 'pose_xyz': destination_pose, 'pose_rpy': destination_rpy}],
+            # ``decision_rules`` is the task_recipe/v1 field.  Keep ``rules``
+            # as a compatibility mirror for older preview consumers.
+            'decision_rules': decision_rules,
+            'rules': decision_rules,
         },
         'grasp': {'strategy_ref': grasp.get('strategy_ref'), 'orientation_mode': grasp.get('orientation_mode'), 'approach_axis': grasp.get('approach_axis'), 'approach_distance_m': grasp.get('approach_distance_m'), 'retreat_distance_m': grasp.get('retreat_distance_m'), 'allowed_roll_angles_deg': grasp.get('allowed_roll_angles_deg'), 'allowed_yaw_angles_deg': grasp.get('allowed_yaw_angles_deg'), 'gripper_tcp_offset': grasp.get('gripper_tcp_offset'), 'suction_cups': grasp.get('suction_cups')},
         'builder_task_intent': {
@@ -74,9 +109,6 @@ def convert(task_intent_path: Path, scene_package: Path | None = None) -> tuple[
             }
         }
     }
-    if not recipe['task']['rules']:
-        recipe['task']['rules'] = [{'id': 'default_route', 'when': {'always': True}, 'destination': place.get('id') or ''}]
-        warnings.append('Routing rules missing; generated default always-true rule.')
     return recipe, warnings
 
 

@@ -10,15 +10,13 @@
 
   <xacro:robotiq_85_gripper/>
 
-  <disable_collisions link1="gripper_base_link" link2="base_link" reason="Never" />
-  <disable_collisions link1="gripper_base_link" link2="shoulder_link" reason="Never" />
-  <disable_collisions link1="gripper_base_link" link2="upper_arm_link" reason="Never" />
-  <disable_collisions link1="gripper_base_link" link2="forearm_link" reason="Never" />
-  <disable_collisions link1="gripper_base_link" link2="wrist_1_link" reason="Never" />
-  <disable_collisions link1="gripper_base_link" link2="wrist_2_link" reason="Never" />
-  <disable_collisions link1="gripper_base_link" link2="wrist_3_link" reason="Never" />
+  <!-- Only the rigid mounting interface is exempted here.  The gripper
+       profile supplies its own adjacent-link pairs; broad exemptions against
+       the arm would hide a real self-collision. -->
   <disable_collisions link1="gripper_base_link" link2="tool0" reason="Never" />
-  <disable_collisions link1="gripper_base_link" link2="base" reason="Never" />
+  <!-- Explicit rigid adapter contact; this is the single mount exemption and
+       does not broaden the arm's self-collision matrix. -->
+  <disable_collisions link1="gripper_base_link" link2="wrist_3_link" reason="Adjacent" />
 
 
 </robot>

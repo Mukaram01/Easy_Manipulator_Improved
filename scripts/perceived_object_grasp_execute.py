@@ -19,21 +19,35 @@ ARM_JOINT_SUFFIXES = _PLANNER.ARM_JOINT_SUFFIXES
 select_perceived_box = _PLANNER.select_perceived_box
 build_grasp_target = _PLANNER.build_grasp_target
 generate_box_grasp_candidates = _PLANNER.generate_box_grasp_candidates
+oriented_box_extents = _PLANNER.oriented_box_extents
 collision_object_dict = _PLANNER._collision_object_dict
 
 
 def select_graspable_box(objects, max_aperture=0.085, max_planar_extent=0.20):
     """Select deterministically among boxes that physically fit the 2F gripper."""
-    feasible = [obj for obj in objects
-                if min(obj.get("dimensions", [math.inf])[:2]) <= max_aperture
-                and max(obj.get("dimensions", [math.inf])[:2]) <= max_planar_extent]
+    feasible = []
+    for obj in objects:
+        try:
+            extents = oriented_box_extents(build_grasp_target(obj))
+        except (KeyError, TypeError, ValueError):
+            continue
+        # The aperture constrains the horizontal cross-section after the live
+        # object orientation is applied; its vertical height is irrelevant to
+        # the finger opening.
+        if min(extents[:2]) <= max_aperture and max(extents[:2]) <= max_planar_extent:
+            feasible.append(obj)
     if not feasible:
         raise ValueError("no perceived BOX fits the Robotiq 2F grasp envelope")
     return select_perceived_box(feasible)
 
 
 def support_penetration_correction(selected, objects, clearance=0.001):
-    """Lift a supported box only enough to remove proxy penetration."""
+    """Return a diagnostic support-contact correction for legacy callers.
+
+    The execution path deliberately does not rewrite a live perception pose.
+    Keeping this pure helper preserves the older offline contract while
+    preventing authored or fabricated geometry from entering the PlanningScene.
+    """
     sx, sy, sz = selected["pose"][:3]
     sdx, sdy, sdz = selected["dimensions"]
     selected_bottom = sz - 0.5 * sdz
@@ -56,18 +70,50 @@ def support_penetration_correction(selected, objects, clearance=0.001):
 
 def load_canonical_place_target(package_share):
     import yaml
-
-    layout_path = Path(package_share) / "layout" / "workcell_studio_layout.yaml"
-    layout = yaml.safe_load(layout_path.read_text(encoding="utf-8"))
-    matches = [item for item in layout.get("items", [])
-               if item.get("id") == "target_bin_default"]
-    if len(matches) != 1:
-        raise RuntimeError("canonical target_bin_default is not unique")
-    xyz = matches[0].get("pose", {}).get("xyz")
-    if not isinstance(xyz, list) or len(xyz) != 3 or not all(math.isfinite(v) for v in xyz):
-        raise RuntimeError("canonical target_bin_default pose is invalid")
-    return {"id": "default_drop_zone", "target_id": "target_bin_default",
-            "frame_id": "world", "pose_xyz": [float(v) for v in xyz]}
+    package = Path(package_share)
+    cell_path = package / "cell_definition.yaml"
+    if not cell_path.exists():
+        # Compatibility for older offline fixtures. The generated cell
+        # handoff remains authoritative whenever it exists.
+        layout_path = package / "layout" / "workcell_studio_layout.yaml"
+        if not layout_path.exists():
+            raise RuntimeError(f"generated cell handoff is missing: {cell_path}")
+        layout = yaml.safe_load(layout_path.read_text(encoding="utf-8")) or {}
+        matches = [item for item in layout.get("items", [])
+                   if item.get("id") == "target_bin_default"]
+        if len(matches) != 1:
+            raise RuntimeError("canonical target_bin_default is not unique")
+        xyz = (matches[0].get("pose") or {}).get("xyz")
+        if (not isinstance(xyz, list) or len(xyz) != 3
+                or not all(isinstance(value, (int, float)) and math.isfinite(value)
+                           for value in xyz)):
+            raise RuntimeError("canonical target_bin_default pose is invalid")
+        return {"id": "default_drop_zone", "target_id": "target_bin_default",
+                "frame_id": "world", "pose_xyz": [float(value) for value in xyz]}
+    cell = yaml.safe_load(cell_path.read_text(encoding="utf-8")) or {}
+    task = cell.get("task") or {}
+    target_id = str((task.get("place") or {}).get("target_ref") or "")
+    zones = ((cell.get("environment") or {}).get("task_zones")
+             if isinstance(cell.get("environment"), dict) else []) or []
+    zone = next((item for item in zones if str(item.get("id")) == target_id), None)
+    if not isinstance(zone, dict):
+        raise RuntimeError(f"authored destination zone is missing: {target_id}")
+    xyz = zone.get("pose_xyz") or (zone.get("pose") or {}).get("xyz")
+    dimensions = zone.get("dimensions")
+    if (not isinstance(xyz, list) or len(xyz) != 3 or
+            not all(isinstance(v, (int, float)) and math.isfinite(v) for v in xyz)):
+        raise RuntimeError("authored destination zone pose is invalid")
+    if (not isinstance(dimensions, list) or len(dimensions) != 3 or
+            not all(isinstance(v, (int, float)) and math.isfinite(v) and v > 0 for v in dimensions)):
+        raise RuntimeError("authored destination zone dimensions are invalid")
+    destination = next((item for item in task.get("destinations", [])
+                        if str(item.get("id")) == target_id), {})
+    return {"id": target_id,
+            "target_id": str(destination.get("target_ref") or zone.get("target_ref") or ""),
+            "frame_id": str(zone.get("frame") or "world"),
+            "pose_xyz": [float(v) for v in xyz],
+            "dimensions": [float(v) for v in dimensions],
+            "pose_rpy": [float(v) for v in (zone.get("pose_rpy") or [0.0, 0.0, 0.0])]}
 
 
 def fake_hardware_evidence(parameter_values, hardware_components):
@@ -179,8 +225,9 @@ def candidate_indices(count, preferred=3):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--summary-output", required=True)
+    parser.add_argument("--scene-package", default="ur5_2f_test")
     parser.add_argument("--timeout", type=float, default=90.0)
-    parser.add_argument("--retreat-distance", type=float, default=0.10)
+    parser.add_argument("--retreat-distance", type=float, default=None)
     args = parser.parse_args()
 
     import rclpy
@@ -306,6 +353,13 @@ def main():
         return plan, points
 
     try:
+        scene_package = Path(args.scene_package)
+        if not scene_package.is_dir():
+            scene_package = Path(get_package_share_directory(args.scene_package))
+        grasp_contract = _PLANNER.load_grasp_contract(str(scene_package))
+        retreat_distance = (float(args.retreat_distance)
+                            if args.retreat_distance is not None
+                            else float(grasp_contract["retreat_distance_m"]))
         param_request = GetParameters.Request(names=["use_fake_hardware"])
         params = call(parameter_client, param_request).values
         hardware = call(hardware_client, ListHardwareComponents.Request()).component
@@ -324,7 +378,8 @@ def main():
                           | PlanningSceneComponents.ROBOT_STATE)
             scene = get_scene(components)
             perceived = [(obj, collision_object_dict(obj))
-                         for obj in scene.world.collision_objects if obj.id.isdigit()]
+                         for obj in scene.world.collision_objects
+                         if str(obj.id).startswith("epd::") or str(obj.id).isdigit()]
             valid = [(obj, item) for obj, item in perceived if item]
             try:
                 chosen = select_graspable_box([item for _, item in valid])
@@ -335,39 +390,36 @@ def main():
         if original is None:
             raise RuntimeError("timed out waiting for one valid live perceived object")
 
-        correction = support_penetration_correction(
-            chosen, [item for _, item in valid])
-        if correction:
-            correction_z, support_id = correction
-            original = copy.deepcopy(original)
-            original.pose.position.z += correction_z
-            chosen = copy.deepcopy(chosen)
-            chosen["pose"][2] += correction_z
-            correction_scene = attachment_diff(original, "ee_palm", [], remove_world=False)
-            correction_scene.robot_state.attached_collision_objects.clear()
-            correction_scene.robot_state.is_diff = True
-            correction_scene.world.collision_objects.append(copy.deepcopy(original))
-            if not call(apply_client, ApplyPlanningScene.Request(scene=correction_scene)).success:
-                raise RuntimeError("PlanningScene rejected support penetration correction")
-            summary["support_penetration_correction"] = {
-                "support_object_id": support_id, "z_translation": correction_z}
-
         target = build_grasp_target(chosen)
         selected_id = target["perceived_object_id"]
         summary["ownership_claimed_id"] = set_ownership(selected_id)
-        candidates = generate_box_grasp_candidates(target, clearance=(0.32, 0.42))
-        ids = [obj.id for obj in scene.world.collision_objects if obj.id.isdigit()]
+        # The candidate is a tool0 pose.  The authored fixed tool0->grasp
+        # frame joint carries the configured TCP offset, so do not add it to
+        # the approach distance a second time.
+        candidates = generate_box_grasp_candidates(
+            target, clearance=grasp_contract["approach_distance_m"])
+        ids = [obj.id for obj in scene.world.collision_objects
+               if str(obj.id).startswith("epd::") or str(obj.id).isdigit()]
+        place_target = load_canonical_place_target(scene_package)
+        live_extents = oriented_box_extents(target)
+        if any(extent > limit + 1e-6
+               for extent, limit in zip(live_extents, place_target["dimensions"])):
+            raise RuntimeError(
+                "live perceived box does not fit the authored destination region "
+                f"without a commanded reorientation: extents={live_extents}, "
+                f"region={place_target['dimensions']}")
         summary.update({
             "selected_object_id": selected_id,
             "object_frame": target["planning_frame"],
             "object_pose": target["target_pose"],
             "object_dimensions": target["target_dimensions"],
+            "approach_distance_m": grasp_contract["approach_distance_m"],
+            "retreat_distance_m": retreat_distance,
             "geometry_valid": True,
             "grasp_candidates_generated": len(candidates),
             "planning_scene_selected_id_count": ids.count(selected_id),
             "duplicate_ids": sorted({item for item in ids if ids.count(item) > 1}),
-            "place_target": load_canonical_place_target(
-                get_package_share_directory("ur5_2f_test")),
+            "place_target": place_target,
         })
         if ids.count(selected_id) != 1 or summary["duplicate_ids"]:
             raise RuntimeError("perceived object identity is not unique")
@@ -442,7 +494,7 @@ def main():
         if fk.error_code.val != MoveItErrorCodes.SUCCESS or len(fk.pose_stamped) != 1:
             raise RuntimeError(f"retreat FK failed: {fk.error_code.val}")
         current_tool_pose = copy.deepcopy(fk.pose_stamped[0])
-        lift_pose = translated_pose(current_tool_pose, dz=args.retreat_distance)
+        lift_pose = translated_pose(current_tool_pose, dz=retreat_distance)
         lift_plan, lift_points = plan_pose(attached_scene, lift_pose, "attached lift")
         summary.update({"attached_lift_moveit_error_code": lift_plan.error_code.val,
                         "attached_lift_trajectory_point_count": lift_points,
@@ -456,7 +508,7 @@ def main():
         place_dz = place_target[2] - target["target_pose"][2]
         above_place_pose = translated_pose(
             current_tool_pose, place_dx, place_dy,
-            place_dz + args.retreat_distance)
+            place_dz + retreat_distance)
         transfer_plan, transfer_points = plan_pose(
             lifted_scene, above_place_pose, "above-place transfer")
         summary.update({"transfer_moveit_error_code": transfer_plan.error_code.val,
@@ -495,7 +547,7 @@ def main():
         final_fk_request.robot_state = placed_scene.robot_state
         final_fk = call(fk_client, final_fk_request)
         retreat_pose = copy.deepcopy(final_fk.pose_stamped[0])
-        retreat_pose.pose.position.z += args.retreat_distance
+        retreat_pose.pose.position.z += retreat_distance
         retreat_ik_request = GetPositionIK.Request()
         retreat_ik_request.ik_request.group_name = "manipulator"
         retreat_ik_request.ik_request.ik_link_name = "tool0"

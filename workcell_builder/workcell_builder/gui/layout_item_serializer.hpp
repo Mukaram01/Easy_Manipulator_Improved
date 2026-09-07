@@ -4,6 +4,8 @@
 #include <yaml-cpp/yaml.h>
 
 #include <array>
+#include <algorithm>
+#include <cctype>
 #include <string>
 
 namespace workcell_builder
@@ -24,6 +26,30 @@ inline bool is_scene_layer_token(const std::string & value)
 inline bool is_scene_relative_asset_path(const std::string & value)
 {
   return value.rfind("assets/", 0) == 0 || value.rfind("./assets/", 0) == 0;
+}
+
+// Geometry-backed assets keep their asset dimensions; editor bounds are not scale.
+inline bool layout_asset_has_mesh(const std::string & path)
+{
+  std::string lower = path;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+    [](unsigned char c) {return std::tolower(c);});
+  for (const std::string extension : {".stl", ".dae", ".obj", ".ply", ".glb", ".gltf"}) {
+    if (lower.size() >= extension.size() &&
+        lower.compare(lower.size() - extension.size(), extension.size(), extension) == 0) return true;
+  }
+  return false;
+}
+
+inline bool layout_item_dimensions_editable(
+  const std::string & type, const std::string & category, const std::string & mesh_path)
+{
+  if (layout_asset_has_mesh(mesh_path)) return false;
+  const std::string identity = type + " " + category;
+  for (const std::string locked_geometry : {"robot", "gripper", "tool", "camera", "realsense", "sensor", "mesh", "imported"}) {
+    if (identity.find(locked_geometry) != std::string::npos) return false;
+  }
+  return true;
 }
 
 inline YAML::Node layout_string_scalar(const std::string & value)
@@ -110,7 +136,11 @@ inline YAML::Node serialize_layout_item(
     item["mesh"] = mesh;
   }
   update_layout_item_pose(item, state);
-  update_layout_item_dimensions(item, state);
+  const YAML::Node authored_mesh = static_cast<const YAML::Node &>(item)["mesh"];
+  const bool mesh_geometry = authored_mesh && (authored_mesh.IsMap() || authored_mesh.IsScalar());
+  if (!mesh_geometry && layout_item_dimensions_editable(state.type, state.category, state.mesh_path)) {
+    update_layout_item_dimensions(item, state);
+  }
   return item;
 }
 }  // namespace workcell_builder
