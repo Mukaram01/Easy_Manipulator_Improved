@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <QTemporaryDir>
+#include <filesystem>
 
 #include "include/workcell_builder_command_builders.hpp"
 
@@ -29,6 +31,30 @@ TEST(CommandBuildersTest, generate_workcell_refuses_missing_arguments)
   EXPECT_NE(plan.missing_fields.indexOf("scene directory"), -1);
   EXPECT_NE(plan.missing_fields.indexOf("output directory"), -1);
   EXPECT_NE(plan.missing_fields.indexOf("scene name"), -1);
+}
+
+TEST(CommandBuildersTest, generation_pins_selected_scene_and_output_to_canonical_repository)
+{
+  QTemporaryDir temporary;
+  ASSERT_TRUE(temporary.isValid());
+  namespace fs = std::filesystem;
+  const fs::path root(temporary.path().toStdString());
+  const auto scenes = root / "emd" / "scenes";
+  const auto scene = scenes / "ur5_2f_test";
+  fs::create_directories(scene);
+  const auto alias = root / "compatibility";
+  fs::create_directory_symlink(scenes, alias);
+  const auto plan = workcell_builder::build_generate_workcell_command_plan(
+    "/tmp/generator.py", QString::fromStdString((alias / "ur5_2f_test").string()),
+    QString::fromStdString(alias.string()), "ur5_2f_test");
+  ASSERT_TRUE(plan.ready());
+  const auto canonical = QString::fromStdString(fs::canonical(scene).string());
+  EXPECT_EQ(plan.scene_dir, canonical);
+  EXPECT_EQ(plan.arguments.front(), canonical + "/cell_definition.yaml");
+  EXPECT_EQ(plan.arguments.at(plan.arguments.indexOf("--existing-package-dir") + 1), canonical);
+  EXPECT_EQ(plan.arguments.at(plan.arguments.indexOf("--output-dir") + 1),
+    QString::fromStdString(fs::canonical(scenes).string()));
+  EXPECT_FALSE(plan.display_command().contains(QString::fromStdString(alias.string())));
 }
 
 TEST(CommandBuildersTest, command_text_contains_expected_flags)
