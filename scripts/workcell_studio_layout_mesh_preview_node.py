@@ -214,6 +214,11 @@ def parse_layout_meshes(
     for index, item in enumerate(items):
         if not isinstance(item, Mapping):
             continue
+        collision = item.get("collision")
+        if isinstance(collision, Mapping) and str(collision.get("mode", "")).strip().lower() == "urdf":
+            # robot_description already owns this runtime visual. Publishing the
+            # authored mesh again would create a duplicate RViz representation.
+            continue
         mesh = item.get("mesh")
         if not isinstance(mesh, Mapping):
             continue
