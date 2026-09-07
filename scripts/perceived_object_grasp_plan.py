@@ -298,9 +298,12 @@ def main():
             ik_request.ik_request.ik_link_name = "tool0"
             ik_request.ik_request.pose_stamped = pose
             ik_request.ik_request.robot_state = scene_response.scene.robot_state
-            # IK supplies joint-space goal constraints only. The authoritative
-            # /plan_kinematic_path call below performs collision checking.
-            ik_request.ik_request.avoid_collisions = False
+            # Ask the MoveIt IK service for a collision-free branch before
+            # constraining the authoritative motion plan.  A geometric IK
+            # seed can select a wrist branch that intersects the fixed camera
+            # even when another valid branch reaches the same tool pose.
+            # /plan_kinematic_path still validates the complete motion.
+            ik_request.ik_request.avoid_collisions = True
             ik_request.ik_request.timeout.sec = 2
             ik = call(ik_client, ik_request, timeout=5.0)
             if ik.error_code.val != MoveItErrorCodes.SUCCESS:

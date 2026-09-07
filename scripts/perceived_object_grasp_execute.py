@@ -339,9 +339,10 @@ def main():
         request.ik_request.ik_link_name = "tool0"
         request.ik_request.pose_stamped = pose
         request.ik_request.robot_state = start_scene.robot_state
-        # Match the established grasp path: obtain a geometric IK seed, then
-        # require OMPL to validate the complete attached-object motion.
-        request.ik_request.avoid_collisions = False
+        # Select a collision-free IK branch before constraining the
+        # authoritative motion plan.  OMPL still validates the complete motion
+        # against the current PlanningScene (including the attached object).
+        request.ik_request.avoid_collisions = True
         request.ik_request.timeout.sec = 3
         ik = call(ik_client, request, timeout=6.0)
         if ik.error_code.val != MoveItErrorCodes.SUCCESS:
@@ -437,7 +438,7 @@ def main():
             request.ik_request.ik_link_name = "tool0"
             request.ik_request.pose_stamped = pose
             request.ik_request.robot_state = scene.robot_state
-            request.ik_request.avoid_collisions = False
+            request.ik_request.avoid_collisions = True
             request.ik_request.timeout.sec = 2
             ik = call(ik_client, request, timeout=5.0)
             if ik.error_code.val != MoveItErrorCodes.SUCCESS:
