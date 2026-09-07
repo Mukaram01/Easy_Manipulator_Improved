@@ -191,3 +191,14 @@ def test_error_page_load_cannot_silently_clear_stale_save_guard():
     constructor = _section(source, "EmbeddedWebEditSaveController(", "bool installed() const")
     assert "loadFinished" in constructor
     assert "reload_required_after_save_ = false" not in constructor
+
+
+def test_two_consecutive_saves_use_public_rebase_and_update_both_baselines():
+    viewer = (ROOT / "workcell_studio_web/viewer/viewer.js").read_text(encoding="utf-8")
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    assert "function rebasePersistedPatch(patch)" in viewer
+    assert "rebasePersistedPatch: patch => rebasePersistedPatch(patch)" in viewer
+    assert "rendered.authoredBaselineTransform = cloneTransform(persisted);" in viewer
+    rebase = _section(controller, "static QString persistedPatchRebaseScript", "void logPatchSummary")
+    assert "api.rebasePersistedPatch(patch)" in rebase
+    assert "typeof state === 'object'" not in rebase

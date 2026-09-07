@@ -6809,6 +6809,91 @@ function setVisibleItemIdsFromBridge(ids) {
   return editorState();
 }
 
+// Runs inside the viewer module; Qt must not access module-private editor state.
+function rebasePersistedPatch(patch) {
+  const api = window.__WORKCELL_EDITOR_API_V1__;
+  const editorState = api.getState();
+  if (!patch || patch.schema_version !== 'workcell_studio_web_scene_edit_patch/v1') {
+    return {ok:false,error:'invalid_patch_schema'};
+  }
+  if (String(patch.scene_id || '') !== String(editorState?.sceneId || '')) {
+    return {ok:false,error:'scene_mismatch'};
+  }
+  const edits = Array.isArray(patch.edits) ? patch.edits : [];
+  let clearedCount = 0;
+  let preservedCount = 0;
+  const rebasedItemIds = [];
+  for (const edit of edits) {
+    const itemId = String(edit?.item_id || '');
+    if (!itemId || edit?.operation !== 'update_transform' ||
+        !isFiniteTransform(edit?.old_transform) || !isFiniteTransform(edit?.new_transform)) {
+      return {ok:false,error:'invalid_persisted_edit',itemId};
+    }
+    let rendered = renderedById(itemId);
+    rendered = canonicalTransformOwner(rendered) || rendered;
+    if (!rendered || String(rendered.item?.id || '') !== itemId || !canEditItem(rendered.item)) {
+      return {ok:false,error:'persisted_owner_unavailable',itemId};
+    }
+    const persisted = cloneTransform(edit.new_transform);
+    const dirty = state.dirtyTransforms.get(itemId);
+    const current = cloneTransform(dirty?.newTransform || transformFromObject(rendered.object3d));
+    rendered.originalTransform = cloneTransform(persisted);
+    rendered.authoredBaselineTransform = cloneTransform(persisted);
+    const poseBlock = {
+      xyz: [persisted.pose.xyz.x, persisted.pose.xyz.y, persisted.pose.xyz.z],
+      rpy: [persisted.pose.rpy.x, persisted.pose.rpy.y, persisted.pose.rpy.z]
+    };
+    rendered.item.pose = {xyz: poseBlock.xyz.slice(), rpy: poseBlock.rpy.slice()};
+    rendered.item.pose_xyz = poseBlock.xyz.slice();
+    for (const field of ['final_transform', 'world_from_visual', 'baked_world_visual_pose', 'world_pose']) {
+      if (Object.prototype.hasOwnProperty.call(rendered.item, field)) {
+        rendered.item[field] = {xyz: poseBlock.xyz.slice(), rpy: poseBlock.rpy.slice()};
+      }
+    }
+    rendered.item.scale = [persisted.scale.x, persisted.scale.y, persisted.scale.z];
+    if (dirty && !sameTransform(current, persisted)) {
+      state.dirtyTransforms.set(itemId, {
+        oldTransform: cloneTransform(persisted),
+        newTransform: cloneTransform(current)
+      });
+      applyTransformToObject(rendered.object3d, current);
+      preservedCount += 1;
+    } else {
+      state.dirtyTransforms.delete(itemId);
+      applyTransformToObject(rendered.object3d, persisted);
+      clearedCount += 1;
+    }
+    rebasedItemIds.push(itemId);
+    if (typeof syncInspectorTransformFields === 'function') syncInspectorTransformFields(rendered);
+  }
+  state.undoStack = [];
+  state.redoStack = [];
+  updateDirtyState();
+  updateLabels();
+  const selected = renderedById(String(state.selected || ''));
+  if (selected && typeof populateInspector === 'function') {
+    populateInspector(canonicalTransformOwner(selected) || selected);
+  }
+  emitDirtyChanged();
+  if (typeof pushEditorEvent === 'function') {
+    pushEditorEvent('persisted_patch_rebased', {
+      itemIds: rebasedItemIds,
+      clearedCount,
+      preservedCount
+    });
+  }
+  const finalState = api.getState();
+  return {
+    ok:true,
+    rebasedCount:rebasedItemIds.length,
+    clearedCount,
+    preservedCount,
+    dirty:Boolean(finalState?.dirty),
+    dirtyCount:Number(finalState?.dirtyCount || 0),
+    patch:api.getEditPatch()
+  };
+}
+
 window.__WORKCELL_EDITOR_API_V1__ = {
   apiVersion: '1.1.0',
   getCapabilities: () => Object.freeze({
@@ -6864,6 +6949,7 @@ window.__WORKCELL_EDITOR_API_V1__ = {
   cancelPlacement: () => cancelPlacement(),
   getPlacementState: () => getPlacementState(),
   getEditPatch: () => buildEditPatch(),
+  rebasePersistedPatch: patch => rebasePersistedPatch(patch),
   drainEvents: () => { const events = state.editorEvents.slice(); state.editorEvents.length = 0; return events; },
 };
 
