@@ -553,6 +553,13 @@ def _ros_resolution_env(workspace_root=None):
         workspace_install=Path(workspace_root)/'install'
         if workspace_install.exists():
             ament_prefix_entries.append(str(workspace_install))
+            # Colcon's default isolated install has one ament prefix per package.
+            # Desktop-launched generation need not inherit install/setup.bash.
+            ament_prefix_entries.extend(
+                str(index.parents[3]) for index in sorted(
+                    workspace_install.glob('*/share/ament_index/resource_index/packages')
+                )
+            )
     ros_humble=Path('/opt/ros/humble')
     if ros_humble.exists():
         ament_prefix_entries.append(str(ros_humble))
@@ -891,6 +898,18 @@ def _extract_scene_launch_xacro_request(scene_dir, cli_xacro_args):
                     )
             except (OSError, yaml.YAMLError) as exc:
                 raise RuntimeError(f"Cannot resolve canonical xacro poses from '{canonical_layout}': {exc}") from exc
+        # Runtime launch also reads the authored robot mounting transform.
+        for mapping_key, vector_name in (("robot_world_xyz", "xyz"), ("robot_world_rpy", "rpy")):
+            if mapping_key not in mappings or str(mappings[mapping_key] or "").strip():
+                continue
+            environment_path = Path(scene_dir) / "environment.yaml"
+            environment = yaml.safe_load(environment_path.read_text()) or {}
+            robot = environment.get("robot", {})
+            vector = robot.get("pose_" + vector_name) if isinstance(robot, dict) else None
+            if (not isinstance(vector, (list, tuple)) or len(vector) != 3 or
+                    any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in vector)):
+                raise RuntimeError(f"Authored robot pose_{vector_name} must contain three finite numbers: {environment_path}")
+            mappings[mapping_key] = " ".join(format(float(v), ".17g") for v in vector)
         return {
             "launch_path": _repo_relative_path(launch_path),
             "package_name": package_name or Path(scene_dir).name,
@@ -935,6 +954,13 @@ def xacro_env(scene_dir, workspace_root=None):
         workspace_install=Path(workspace_root)/'install'
         if workspace_install.exists():
             ament_prefix_entries.append(str(workspace_install))
+            # Colcon's default isolated install has one ament prefix per package.
+            # Desktop-launched generation need not inherit install/setup.bash.
+            ament_prefix_entries.extend(
+                str(index.parents[3]) for index in sorted(
+                    workspace_install.glob('*/share/ament_index/resource_index/packages')
+                )
+            )
     ros_humble=Path('/opt/ros/humble')
     if ros_humble.exists():
         ament_prefix_entries.append(str(ros_humble))
@@ -2153,7 +2179,7 @@ def main():
         source_mtime=urdf_path.stat().st_mtime if urdf_path.exists() else None
         renderable_items=[i for i in items if _is_renderable_visual_item(i)]
         has_transform_collapse_warning=bool(renderable_items) and len({tuple((i.get('pose') or {}).get('xyz') or []) for i in renderable_items}) <= 1 and len(renderable_items) > 1
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'urdf_expansion_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_launch_xacro_request':_portable_source_metadata(launch_xacro_request or {}),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'ros_to_viewport_basis_applied':False,'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'robotiq_85_visual_repair_applied':robotiq_visuals_injected,'robotiq_85_visual_repair_added_count':robotiq_visual_repair_added_count,'robotiq_85_expected_visual_count':expanded_preview_visual_diagnostics.get('robotiq_85_expected_visual_count', len(ROBOTIQ_85_VISUAL_MESHES)),'robotiq_85_final_visual_count':expanded_preview_visual_diagnostics.get('robotiq_85_final_visual_count', 0),'expanded_preview_robot_visual_count':expanded_preview_visual_diagnostics.get('expanded_preview_robot_visual_count', 0),'expanded_preview_ur5_visual_count':expanded_preview_visual_diagnostics.get('expanded_preview_ur5_visual_count', 0),'expanded_preview_visual_validation_status':expanded_preview_visual_diagnostics.get('expanded_preview_visual_validation_status', 'not_checked'),'expanded_preview_visual_validation_errors':expanded_preview_visual_diagnostics.get('errors', []),'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'frame_anchor_count':urdf_diagnostics.get('frame_anchor_count', 0),'initial_joint_source':urdf_diagnostics.get('initial_joint_source', ''),'ur5_preview_joint_pose':urdf_diagnostics.get('ur5_preview_joint_pose', {}),'joint_defaults_used':urdf_diagnostics.get('joint_defaults_used', []),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'legacy_static_fallback_metadata':legacy_static_fallback_metadata,'ur5_visual_mesh_diagnostics':_portable_source_metadata(ur5_visual_diagnostics),'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'path_reference_root':'repository','extraction_mode':mode,'urdf_expansion_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':_repo_relative_path(urdf_path),'source_launch_xacro_request':_portable_source_metadata(launch_xacro_request or {}),'source_mtime':source_mtime,'source_expanded_urdf_path':_repo_relative_path(expanded_path),'ros_to_viewport_basis_applied':False,'fallback_reason':fallback_reason,'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'robotiq_85_visual_repair_applied':robotiq_visuals_injected,'robotiq_85_visual_repair_added_count':robotiq_visual_repair_added_count,'robotiq_85_expected_visual_count':expanded_preview_visual_diagnostics.get('robotiq_85_expected_visual_count', len(ROBOTIQ_85_VISUAL_MESHES)),'robotiq_85_final_visual_count':expanded_preview_visual_diagnostics.get('robotiq_85_final_visual_count', 0),'expanded_preview_robot_visual_count':expanded_preview_visual_diagnostics.get('expanded_preview_robot_visual_count', 0),'expanded_preview_ur5_visual_count':expanded_preview_visual_diagnostics.get('expanded_preview_ur5_visual_count', 0),'expanded_preview_visual_validation_status':expanded_preview_visual_diagnostics.get('expanded_preview_visual_validation_status', 'not_checked'),'expanded_preview_visual_validation_errors':expanded_preview_visual_diagnostics.get('errors', []),'root_links':urdf_diagnostics.get('root_links', []),'visual_parent_link_counts':urdf_diagnostics.get('visual_parent_link_counts', {}),'missing_parent_links':urdf_diagnostics.get('missing_parent_links', []),'transform_chain_diagnostics':urdf_diagnostics.get('transform_chain_diagnostics', []),'frame_anchor_count':urdf_diagnostics.get('frame_anchor_count', 0),'initial_joint_source':urdf_diagnostics.get('initial_joint_source', ''),'ur5_preview_joint_pose':urdf_diagnostics.get('ur5_preview_joint_pose', {}),'joint_defaults_used':urdf_diagnostics.get('joint_defaults_used', []),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'static_robot_primitive_fallback_count':static_robot_fallback_count,'static_robot_mesh_visual_count':static_robot_mesh_count,'legacy_static_fallback_metadata':legacy_static_fallback_metadata,'ur5_visual_mesh_diagnostics':_portable_source_metadata(ur5_visual_diagnostics),'static_parent_resolved_count':static_parent_resolved_count,'stale_index':False,'stale_reasons':[],'blockers':preview_blockers,'warnings':preview_warnings,'has_transform_collapse_warning':has_transform_collapse_warning,'visual_items':items,'xacro_command':_portable_source_metadata(xacro_cmd),'package_resolution_diagnostics':_portable_source_metadata(package_diagnostics)}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True)

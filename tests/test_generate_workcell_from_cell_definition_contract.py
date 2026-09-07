@@ -502,6 +502,9 @@ from pathlib import Path
 EXTRACTOR_VERSION = 'test'
 EXPECTED_WORKSPACE_ROOT = Path(os.environ['EXPECTED_WORKSPACE_ROOT'])
 
+def _extract_scene_launch_xacro_request(scene_dir, args):
+    return None
+
 def expand_xacro(urdf_path, scene_dir=None, xacro_args=None, workspace_root=None):
     assert xacro_args == {'use_fake_hardware': 'true', 'robot_prefix': '', 'tool_prefix': ''}
     assert Path(workspace_root) == EXPECTED_WORKSPACE_ROOT
@@ -562,6 +565,9 @@ def test_visual_mesh_index_marks_xacro_lite_ur_robot_macro_as_degraded(
         """
 EXTRACTOR_VERSION = 'test'
 
+def _extract_scene_launch_xacro_request(scene_dir, args):
+    return None
+
 def expand_xacro(urdf_path, scene_dir=None, xacro_args=None, workspace_root=None):
     return (open(urdf_path, encoding='utf-8').read(), True, 'skipped unresolved macros: ur_robot', ['xacro-lite', str(urdf_path)])
 
@@ -616,6 +622,9 @@ def test_visual_mesh_index_warns_when_xacro_expansion_falls_back(
     extractor.write_text(
         """
 EXTRACTOR_VERSION = 'test'
+
+def _extract_scene_launch_xacro_request(scene_dir, args):
+    return None
 
 def expand_xacro(urdf_path, scene_dir=None, xacro_args=None, workspace_root=None):
     return ('', 'best_effort_recursive', 'xacro unavailable in test', [])

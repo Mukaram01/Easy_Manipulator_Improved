@@ -29,7 +29,7 @@ ALLOWED_SOURCES = {
 }
 FORBIDDEN_TARGET_PARTS = {"generated"}
 FORBIDDEN_TARGET_NAMES = {"cell_definition.yaml", "scene_manifest.yaml"}
-ENVIRONMENT_LIST_KEYS = ("support_surfaces", "assets", "sensors", "zones")
+ENVIRONMENT_LIST_KEYS = ("support_surfaces", "assets", "sensors", "zones", "task_zones")
 
 
 @dataclass

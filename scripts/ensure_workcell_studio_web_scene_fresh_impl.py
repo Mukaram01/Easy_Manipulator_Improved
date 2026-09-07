@@ -528,7 +528,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.force or mesh_stale:
         reason = "forced" if args.force else mesh_reason
         print(f"Refreshing mesh index for {scene_id}: {reason}", file=sys.stderr)
-        command = [sys.executable, repo_relative(extractor_script), "--scene", repo_relative(scene_dir), "--prefer-xacro"]
+        command = [sys.executable, repo_relative(extractor_script), "--scene", repo_relative(scene_dir), "--prefer-xacro", "--workspace-root", str(REPO_ROOT.parent.parent)]
         if real_xacro_is_discoverable():
             command.append("--require-xacro")
         run_checked(command)

@@ -1001,6 +1001,9 @@ def _write_scene_visual_mesh_index(
     try:
         extractor = _load_module("generated_scene_visual_mesh_index_extractor", MESH_INDEX_EXTRACTOR_PATH)
         xargs = {"use_fake_hardware": "true", "robot_prefix": "", "tool_prefix": ""}
+        launch_request = extractor._extract_scene_launch_xacro_request(package_dir, xargs)
+        if launch_request:
+            xargs = {**launch_request.get("mappings", {}), **xargs}
         xml_text = ""
         mode = "best_effort_recursive"
         fallback_reason = ""
@@ -1034,7 +1037,7 @@ def _write_scene_visual_mesh_index(
         items = extractor.extract_from_urdf(xml_text, package_map)
         mesh_items = [item for item in items if item.get("geometry_type") == "mesh"]
         if not mesh_items:
-            return write_fallback(f"no meshes were found in {urdf_path}")
+            return write_fallback(fallback_reason or f"no meshes were found in {urdf_path}")
         unresolved = [
             item
             for item in items
@@ -1429,6 +1432,7 @@ def write_scene_package_contract(
     scene_contract: Any | None = None,
     dry_result: Any | None = None,
     readiness_extra: dict[str, Any] | None = None,
+    runtime_source_dir: Path | None = None,
     workspace_root: Path | str | None = None,
 ) -> list[Path]:
     """Write the generated scene package contract from one authoritative helper."""
@@ -1512,6 +1516,13 @@ def write_scene_package_contract(
         _render_scene_urdf_xacro(package_name, env_objects, cell_definition_path),
         encoding="utf-8",
     )
+    if runtime_source_dir is not None:
+        # Refresh keeps the existing runtime contract. Index that same model,
+        # never the generic scaffold which is discarded at publication time.
+        for directory in ("urdf", "launch", "config"):
+            source = runtime_source_dir / directory
+            if source.is_dir():
+                shutil.copytree(source, package_dir / directory, dirs_exist_ok=True)
     _write_scene_visual_mesh_index(package_name, package_dir, warnings, workspace_root=workspace_root)
     if dry_result is not None and scene_contract is not None:
         _write_validation_report(
@@ -1735,6 +1746,7 @@ def generate_package(
         scene_contract=scene_contract,
         dry_result=dry_result,
         workspace_root=workspace_root,
+        runtime_source_dir=existing_package_dir,
         readiness_extra={
             "dry_run_status": getattr(dry_result, "status", "UNKNOWN"),
             "source_inputs": {

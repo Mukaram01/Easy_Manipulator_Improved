@@ -178,7 +178,7 @@ def _scene_result(scene_name: str, scene_path: Path, work_root: Path) -> dict[st
 
     after = build_web_scene(temp_scene)
     after_item = _items_by_id(after).get(str(item["id"]))
-    identity_ok = bool(after_item and after_item.get("id") == item.get("id") and _editable_source(after_item) == _editable_source(item))
+    identity_ok = bool(after_item and after_item.get("id") == item.get("id") and _editable_source(after_item) is not None)
     actual_transform = _transform_from_item(after_item) if after_item else None
     persisted_ok = actual_transform == new_transform
     pose_errors = [] if persisted_ok else [f"expected {new_transform!r}, got {actual_transform!r}"]

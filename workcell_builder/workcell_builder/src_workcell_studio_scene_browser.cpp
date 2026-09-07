@@ -315,12 +315,12 @@ WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const fs::path 
       continue;
     }
 
-    out.scene_root = scene_root;
+    out.scene_root = canonical_scene_identity(scene_root);
     out.root_exists = true;
     for (fs::directory_iterator it(scene_root, ec), end; it != end && !ec; it.increment(ec)) {
       if (!fs::is_directory(it->path(), ec) || ec) continue;
       WorkcellStudioSceneInfo s;
-      s.scene_dir = it->path();
+      s.scene_dir = canonical_scene_identity(it->path());
       s.canonical_scene_dir = canonical_scene_identity(s.scene_dir);
       const std::string scene_key = s.canonical_scene_dir.string();
       if (!discovered_scene_dirs.insert(scene_key).second) {
