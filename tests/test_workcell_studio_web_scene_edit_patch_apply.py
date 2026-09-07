@@ -163,3 +163,22 @@ def test_reexport_after_apply_reflects_updated_pose(tmp_path):
     payload = json.loads(out.read_text(encoding="utf-8"))
     item = next(i for i in payload["assets"] if i["id"] == "layout_bin")
     assert item["pose"]["xyz"] == [0.9, 0.1, 0.2]
+
+
+def test_environment_task_zone_transform_can_be_saved_twice(tmp_path):
+    scene = _scene(tmp_path)
+    path = scene / "environment.yaml"
+    data = yaml.safe_load(path.read_text())
+    data["environment"]["task_zones"] = [{"id": "layout_bin", "pose_xyz": [0.0, 0.1, 0.2], "pose_rpy": [0.0, 0.0, 0.3]}]
+    path.write_text(yaml.safe_dump(data))
+    web = _web_scene(source="environment.yaml")
+    patch = _patch(new_x=0.4)
+    for old_x, new_x in ((0.0, 0.4), (0.4, 0.7)):
+        web["assets"][0]["pose"]["xyz"][0] = old_x
+        patch["edits"][0]["old_transform"] = _transform(old_x)
+        patch["edits"][0]["new_transform"] = _transform(new_x)
+        result = _run(tmp_path, scene, web, patch, "--write")
+        assert result.returncode == 0, result.stderr
+        saved = yaml.safe_load(path.read_text())["environment"]["task_zones"]
+        assert len(saved) == 1
+        assert saved[0]["pose_xyz"] == [new_x, 0.1, 0.2]

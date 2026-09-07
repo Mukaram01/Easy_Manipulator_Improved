@@ -7714,7 +7714,7 @@ static QStringList generation_asset_support_preflight(const fs::path & layout_pa
   YAML::Node placed = workcell_builder::yaml_map_key(root, "items");
   if (!placed || !placed.IsSequence()) placed = workcell_builder::yaml_map_key(root, "placed_assets");
   if (!placed || !placed.IsSequence()) return warnings;
-  const QSet<QString> supported_types = {"asset","object","fixture","support_surface","table","conveyor","camera","sensor","safety_zone","bin","pick_zone","place_zone"};
+  const QSet<QString> supported_types = {"asset","object","fixture","support_surface","table","conveyor","camera","sensor","safety_zone","bin","target_bin","realsense","pick_zone","place_zone"};
   for (const auto & item : placed) {
     if (!item || !item.IsMap()) {
       warnings << "Asset support preflight warning: placed_assets item is not a map; skipping malformed entry.";

@@ -1070,18 +1070,20 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
       m.warnings.push_back(item.mesh_load_warning);
     } else {
       item.mesh_load_warning = "mesh metadata missing or legacy; using primitive preview";
-      if (!(safe_generated_visual_mesh_index_available &&
-            item.provenance == WorkcellStudioItemProvenance::GeneratedOrLegacyPreview &&
-            item.locked)) {
-        m.warnings.push_back(item.mesh_load_warning);
-      }
     }
 
     if (layout_items.IsSequence()) {
       for (const auto & node : layout_items) {
         if (!node.IsMap() || yaml_map_value_or_empty(node, "id") != item.id) continue;
         const YAML::Node mesh = yaml_map_key(node, "mesh");
-        if (!yaml_node_is_defined(mesh) || mesh_node_disabled(mesh)) {
+        const std::string geometry_type = get_optional_string(node, "geometry_type", "");
+        const bool authored_primitive = !yaml_node_is_defined(mesh) &&
+          (geometry_type == "box" || geometry_type == "cylinder" || geometry_type == "sphere");
+        if (authored_primitive) {
+          item.mesh_available = false;
+          item.mesh_path.clear();
+          item.mesh_load_warning.clear();
+        } else if (!yaml_node_is_defined(mesh) || mesh_node_disabled(mesh)) {
           item.mesh_available = false;
           item.mesh_path.clear();
           item.mesh_load_warning = "mesh metadata missing or legacy; using primitive preview";
@@ -1123,6 +1125,14 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
           }
         }
       }
+    }
+  }
+
+  for (const auto & item : m.items) {
+    if (item.mesh_load_warning == "mesh metadata missing or legacy; using primitive preview" &&
+        !(safe_generated_visual_mesh_index_available &&
+          item.provenance == WorkcellStudioItemProvenance::GeneratedOrLegacyPreview && item.locked)) {
+      m.warnings.push_back(item.mesh_load_warning);
     }
   }
 

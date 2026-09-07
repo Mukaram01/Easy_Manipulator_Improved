@@ -1086,3 +1086,13 @@ def test_launch_xacro_request_resolves_canonical_layout_pose_mappings():
     assert mappings["table_world_rpy"] == fmt(items["support_surface_table"]["pose"]["rpy"])
     assert mappings["camera_world_xyz"] == fmt(items["realsense_overhead"]["pose"]["xyz"])
     assert mappings["camera_world_rpy"] == fmt(items["realsense_overhead"]["pose"]["rpy"])
+
+
+def test_xacro_env_discovers_isolated_install_prefixes(monkeypatch, tmp_path):
+    from scripts import extract_scene_urdf_visual_mesh_index as mesh_index
+    prefix = tmp_path / "install" / "tool_description"
+    (prefix / "share/ament_index/resource_index/packages").mkdir(parents=True)
+    monkeypatch.setenv("AMENT_PREFIX_PATH", "/existing/overlay")
+    env = mesh_index.xacro_env(ROOT / "scenes/ur5_2f_test", workspace_root=tmp_path)
+    assert str(prefix) in env["AMENT_PREFIX_PATH"].split(os.pathsep)
+    assert "/existing/overlay" in env["AMENT_PREFIX_PATH"].split(os.pathsep)

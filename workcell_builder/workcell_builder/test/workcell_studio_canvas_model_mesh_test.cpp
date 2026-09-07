@@ -1653,3 +1653,25 @@ TEST(WorkcellStudioCanvasModelMeshTest, DirtyAuthoringSessionSurvivesRepeatedRef
   EXPECT_NE(find_id(refreshed, "object_02"), refreshed.items.end());
   EXPECT_EQ(refreshed.items.size(), 4U);
 }
+
+TEST(WorkcellStudioCanvasMesh, AuthoredPrimitiveIsNotAMissingMesh)
+{
+  const fs::path root = fs::temp_directory_path() / fs::unique_path("wc_primitive_%%%%-%%%%");
+  write_file(root / "environment.yaml", "robot: {name: test_arm}\n");
+  write_file(root / "layout/workcell_studio_layout.yaml",
+    "schema_version: workcell_studio_layout/v1\nitems:\n"
+    "  - id: mounting_plate\n    type: fixture\n    geometry_type: box\n"
+    "    dimensions: [0.2, 0.2, 0.012]\n    pose: {xyz: [0, 0, 0.007], rpy: [0, 0, 0]}\n"
+    "  - id: imported_fixture\n    type: fixture\n    geometry_type: mesh\n"
+    "    mesh: {path: missing.stl}\n    pose: {xyz: [0, 0, 0], rpy: [0, 0, 0]}\n");
+  const auto model = workcell_builder::build_workcell_studio_canvas_model(root, "test_scene");
+  const auto plate = std::find_if(model.items.begin(), model.items.end(), [](const auto & item) { return item.id == "mounting_plate"; });
+  ASSERT_NE(plate, model.items.end());
+  EXPECT_TRUE(plate->mesh_load_warning.empty());
+  EXPECT_FALSE(plate->mesh_available);
+  const auto mesh = std::find_if(model.items.begin(), model.items.end(), [](const auto & item) { return item.id == "imported_fixture"; });
+  ASSERT_NE(mesh, model.items.end());
+  EXPECT_FALSE(mesh->mesh_available);
+  EXPECT_FALSE(mesh->mesh_load_warning.empty());
+  fs::remove_all(root);
+}

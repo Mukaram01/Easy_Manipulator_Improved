@@ -22,6 +22,8 @@ TEST(WorkcellSceneIdentity, RefreshAcrossSymlinkPreservesPhysicalSceneAndAuthore
 
   const auto initial = workcell_builder::discover_workcell_studio_scenes(workspace);
   ASSERT_EQ(initial.scenes.size(), 1U);
+  EXPECT_EQ(initial.scene_root, canonical_root);
+  EXPECT_EQ(initial.scenes.front().scene_dir, canonical_scene);
   const fs::path selected = initial.scenes.front().canonical_scene_dir;
 
   // Model a refresh returning the supported alias spelling.
