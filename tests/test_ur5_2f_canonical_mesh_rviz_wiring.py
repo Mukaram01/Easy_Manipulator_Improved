@@ -113,6 +113,16 @@ def test_target_bin_uses_canonical_mesh_publisher_resolution():
     )
 
 
+def test_layout_preview_publishes_table_and_bin_but_not_urdf_owned_camera():
+    document = yaml.safe_load(LAYOUT.read_text(encoding="utf-8"))
+    specs = _publisher_helper().parse_layout_meshes(document)
+    published_ids = {spec.item_id for spec in specs}
+    assert {"support_surface_table", "target_bin_default"} <= published_ids
+    assert "realsense_overhead" not in published_ids
+    camera = next(item for item in document["items"] if item["id"] == "realsense_overhead")
+    assert camera["collision"]["mode"] == "urdf"
+
+
 def test_existing_canonical_xacro_mapping_and_safety_guards_remain():
     source = LAUNCH.read_text(encoding="utf-8")
     for mapping in (
