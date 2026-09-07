@@ -45,26 +45,74 @@ def select_perceived_box(objects):
 
 
 def load_grasp_contract(scene_package):
-    """Load authored grasp distances without inventing a workpiece pose."""
+    """Resolve a source directory or installed package; reject missing metadata."""
     package = Path(scene_package)
+    if not package.is_dir():
+        from ament_index_python.packages import get_package_share_directory
+        package = Path(get_package_share_directory(str(scene_package)))
     source = package / "cell_definition.yaml"
-    if not source.exists():
-        return {"approach_distance_m": 0.12, "retreat_distance_m": 0.15,
-                "tcp_offset_z_m": 0.0}
-    try:
-        import yaml
-        cell = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
-        grasp = cell.get("task", {}).get("grasp") or cell.get("grasp") or {}
-        end_effector = cell.get("end_effector") or {}
-        tcp_xyz = end_effector.get("tcp_pose_xyz") or [0.0, 0.0, 0.0]
-        return {
-            "approach_distance_m": float(grasp.get("approach_distance_m", 0.12)),
-            "retreat_distance_m": float(grasp.get("retreat_distance_m", 0.15)),
-            "tcp_offset_z_m": float(tcp_xyz[2]) if len(tcp_xyz) >= 3 else 0.0,
-        }
-    except Exception:
-        return {"approach_distance_m": 0.12, "retreat_distance_m": 0.15,
-                "tcp_offset_z_m": 0.0}
+    import yaml
+    cell = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
+    grasp = cell.get("task", {}).get("grasp") or cell.get("grasp") or {}
+    end_effector = cell.get("end_effector") or {}
+    tcp_xyz = end_effector.get("tcp_pose_xyz")
+    tcp_rpy = end_effector.get("tcp_pose_rpy")
+    for name, values in (("tcp_pose_xyz", tcp_xyz), ("tcp_pose_rpy", tcp_rpy)):
+        if not isinstance(values, list) or len(values) != 3 or not _finite(values):
+            raise ValueError(f"{source}: missing or invalid end_effector.{name}")
+    distances = [grasp.get("approach_distance_m"), grasp.get("retreat_distance_m")]
+    if not _finite(distances) or any(v <= 0 for v in distances):
+        raise ValueError(f"{source}: approach/retreat distances must be positive")
+    links = end_effector.get("allowed_touch_links")
+    if not isinstance(links, list) or not links or any(not isinstance(v, str) or not v for v in links):
+        raise ValueError(f"{source}: allowed_touch_links must designate contact links")
+    return {
+        "approach_distance_m": float(distances[0]),
+        "retreat_distance_m": float(distances[1]),
+        "tcp_offset_z_m": float(tcp_xyz[2]),
+        "tcp_pose": list(tcp_xyz) + quaternion_from_rpy(tcp_rpy),
+        "allowed_touch_links": list(dict.fromkeys(links)),
+        "tool_link": cell["robot"]["tool_link"],
+        "grasp_frame": end_effector["grasp_frame"],
+        "planning_group": cell["robot"]["planning_group"],
+        "home_joint_names": cell["robot"]["joint_names"],
+        "home_joint_positions": cell["robot"]["safe_joint_state"],
+    }
+
+
+def quaternion_from_rpy(rpy):
+    r, p, y = [v / 2 for v in rpy]
+    cr, cp, cy = math.cos(r), math.cos(p), math.cos(y)
+    sr, sp, sy = math.sin(r), math.sin(p), math.sin(y)
+    return [sr*cp*cy-cr*sp*sy, cr*sp*cy+sr*cp*sy,
+            cr*cp*sy-sr*sp*cy, cr*cp*cy+sr*sp*sy]
+
+
+def quaternion_product(a, b):
+    x, y, z, w = a
+    X, Y, Z, W = b
+    return [w*X+x*W+y*Z-z*Y, w*Y-x*Z+y*W+z*X,
+            w*Z+x*Y-y*X+z*W, w*W-x*X-y*Y-z*Z]
+
+
+def rotate_vector(q, xyz):
+    return quaternion_product(quaternion_product(q, list(xyz) + [0.0]),
+                              [-q[0], -q[1], -q[2], q[3]])[:3]
+
+
+def compose_pose(parent, local):
+    rotated = rotate_vector(parent[3:], local[:3])
+    return [a+b for a, b in zip(parent[:3], rotated)] + quaternion_product(parent[3:], local[3:])
+
+
+def inverse_pose(pose):
+    q = [-pose[3], -pose[4], -pose[5], pose[6]]
+    return rotate_vector(q, [-v for v in pose[:3]]) + q
+
+
+def tool_pose_for_grasp(grasp_pose, contract):
+    """T_world_tool = T_world_grasp * inverse(T_tool_grasp)."""
+    return compose_pose(grasp_pose, inverse_pose(contract["tcp_pose"]))
 
 
 def build_grasp_target(selected):
@@ -167,7 +215,7 @@ def main():
     import rclpy
     from geometry_msgs.msg import PoseStamped
     from moveit_msgs.msg import Constraints, JointConstraint, MoveItErrorCodes, PlanningSceneComponents
-    from moveit_msgs.srv import GetMotionPlan, GetPlanningScene, GetPositionIK
+    from moveit_msgs.srv import GetMotionPlan, GetPlanningScene, GetPositionIK, GetStateValidity
     from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
     from rcl_interfaces.srv import SetParameters
 
@@ -178,6 +226,7 @@ def main():
     plan_client = node.create_client(GetMotionPlan, "/plan_kinematic_path")
     ownership_client = node.create_client(
         SetParameters, "/epd_dynamic_planning_scene_bridge/set_parameters")
+    validity_client = node.create_client(GetStateValidity, "/check_state_validity")
     guard = ExecutionGuard()
     summary = {"result": "FAIL", "execution_attempted": False}
     ownership_claimed = False
@@ -252,17 +301,11 @@ def main():
             raise RuntimeError("owned perceived object was not unique in the refreshed PlanningScene")
         selected = refreshed_objects[0]
         target = build_grasp_target(selected)
-        # The candidate pose is requested for MoveIt's ``tool0`` link.  The
-        # configured TCP offset is already represented by the authored fixed
-        # tool0->grasp-frame joint in the robot model; adding it to the
-        # approach clearance would apply that transform twice and can push a
-        # reachable grasp outside the UR5 workspace.
-        # Keep the authored approach distance exactly. A candidate that
-        # cannot pass full collision checking is reported as blocked rather
-        # than silently shortening the configured approach.
+        # Generate grasp-frame approaches, then explicitly convert to the IK
+        # tip. A fixed downstream URDF joint does not reinterpret a tool0 goal.
         clearance_schedule = [grasp_contract["approach_distance_m"]]
-        candidates = generate_box_grasp_candidates(
-            target, clearance=clearance_schedule[0])
+        grasp_candidates = generate_box_grasp_candidates(target, clearance=clearance_schedule[0])
+        candidates = [tool_pose_for_grasp(pose, grasp_contract) for pose in grasp_candidates]
         ids = [obj.id for obj in scene_response.scene.world.collision_objects
                if str(obj.id).startswith("epd::") or str(obj.id).isdigit()]
         summary.update({
@@ -270,19 +313,31 @@ def main():
             "object_pose": target["target_pose"],
             "object_dimensions": target["target_dimensions"],
             "planning_frame": target["planning_frame"],
-            "planning_group": "manipulator",
-            "end_effector": "tool0",
+            "planning_group": grasp_contract["planning_group"],
+            "end_effector": grasp_contract["tool_link"],
+            "grasp_frame": grasp_contract["grasp_frame"],
+            "grasp_frame_candidates": grasp_candidates,
+            "tool_frame_candidates": candidates,
             "approach_distance_m": grasp_contract["approach_distance_m"],
             "clearance_schedule_m": clearance_schedule,
             "retreat_distance_m": grasp_contract["retreat_distance_m"],
             "tcp_offset_z_m": grasp_contract["tcp_offset_z_m"],
-            "tcp_offset_applied_by_robot_model": True,
+            "tcp_transform_applied_to_ik_target": True,
             "grasp_candidates_generated": len(candidates),
             "planning_scene_selected_id_count": ids.count(target["perceived_object_id"]),
             "duplicate_ids": sorted({item for item in ids if ids.count(item) > 1}),
             "attempted_candidate_count": 0,
             "candidate_results": [],
         })
+
+        validity = call(validity_client, GetStateValidity.Request(
+            robot_state=scene_response.scene.robot_state, group_name=""))
+        summary["initial_state_valid"] = validity.valid
+        summary["initial_contacts"] = [
+            {"a": c.contact_body_1, "b": c.contact_body_2, "depth_m": c.depth}
+            for c in validity.contacts]
+        if not validity.valid:
+            raise RuntimeError("initial robot state is in collision")
 
         for index, values in enumerate(candidates):
             summary["attempted_candidate_count"] += 1
@@ -292,10 +347,10 @@ def main():
              pose.pose.orientation.x, pose.pose.orientation.y,
              pose.pose.orientation.z, pose.pose.orientation.w) = values
             ik_request = GetPositionIK.Request()
-            ik_request.ik_request.group_name = "manipulator"
+            ik_request.ik_request.group_name = grasp_contract["planning_group"]
             # The manipulator kinematics chain ends at tool0; ee_palm is a fixed
             # downstream grasp frame and is not accepted by the UR IK plugin.
-            ik_request.ik_request.ik_link_name = "tool0"
+            ik_request.ik_request.ik_link_name = grasp_contract["tool_link"]
             ik_request.ik_request.pose_stamped = pose
             ik_request.ik_request.robot_state = scene_response.scene.robot_state
             # Ask the MoveIt IK service for a collision-free branch before
@@ -327,7 +382,7 @@ def main():
                     goal.joint_constraints.append(constraint)
             plan_request = GetMotionPlan.Request()
             motion = plan_request.motion_plan_request
-            motion.group_name = "manipulator"
+            motion.group_name = grasp_contract["planning_group"]
             motion.start_state = copy.deepcopy(scene_response.scene.robot_state)
             motion.start_state.is_diff = True
             motion.goal_constraints = [goal]
