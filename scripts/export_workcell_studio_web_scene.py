@@ -31,21 +31,24 @@ _ORIGINAL_RESOLVE_LOCAL_MESH_URI = _impl._resolve_local_mesh_uri
 
 
 def _resolve_local_mesh_uri(uri: str, scene_dir: Path, repo_root: Path):
-    """Resolve mesh paths while tolerating the workspace ``src/scenes`` alias.
+    """Resolve mesh paths while tolerating stale scene-local asset aliases.
 
     Workcell Studio's editable layout can legitimately reference repository
-    assets such as ``assets/environment/...``.  After a generate/simulate
-    refresh, an unsaved authoring-session item may carry the same asset as a
-    stale absolute path rooted below the workspace scene alias, for example::
+    assets such as ``assets/environment/...`` or ``package://...`` URIs.  An
+    authoring-session overlay may contain a stale absolute alias below the scene
+    directory, for example::
 
-        <workspace>/src/scenes/ur5_2f_test/assets/environment/...
+        <repo>/scenes/ur5_2f_test/assets/environment/...
+        <repo>/scenes/ur5_2f_test/assets/realsense2_description/...
 
-    That absolute leaf does not exist because repository assets live at
-    ``<repo>/assets``.  Re-run the canonical resolver with the portable
-    ``assets/...`` suffix before declaring the authoring overlay invalid.  The
+    Repository assets actually live below ``<repo>/assets`` and package assets
+    can be nested inside category directories.  Recover only an unambiguous
+    existing repository asset before declaring the overlay invalid.  The
     canonical resolver still enforces allowed roots and supported mesh types.
     """
-    resolved = _ORIGINAL_RESOLVE_LOCAL_MESH_URI(uri, Path(scene_dir), Path(repo_root))
+    scene_dir = Path(scene_dir)
+    repo_root = Path(repo_root)
+    resolved = _ORIGINAL_RESOLVE_LOCAL_MESH_URI(uri, scene_dir, repo_root)
     if resolved[0] is not None:
         return resolved
 
@@ -56,12 +59,39 @@ def _resolve_local_mesh_uri(uri: str, scene_dir: Path, repo_root: Path):
     parts = raw.parts
     asset_indexes = [index for index, part in enumerate(parts) if part == "assets"]
     for index in reversed(asset_indexes):
-        portable = Path(*parts[index:]).as_posix()
-        recovered = _ORIGINAL_RESOLVE_LOCAL_MESH_URI(
-            portable, Path(scene_dir), Path(repo_root)
-        )
+        portable_path = Path(*parts[index:])
+        portable = portable_path.as_posix()
+        recovered = _ORIGINAL_RESOLVE_LOCAL_MESH_URI(portable, scene_dir, repo_root)
         if recovered[0] is not None:
             return recovered
+
+        # package:// URIs can be normalized by the live authoring overlay into
+        # ``.../scene/assets/<package>/<tail>`` while the checked-in package is
+        # actually nested below a repository category, e.g.
+        # ``assets/environment/realsense2_description/<tail>``.  Resolve this
+        # only when exactly one matching package asset exists; never guess when
+        # repository contents are ambiguous.
+        rel_parts = portable_path.parts
+        if len(rel_parts) < 3 or rel_parts[0] != "assets":
+            continue
+        package_name = rel_parts[1]
+        package_tail = Path(*rel_parts[2:])
+        assets_root = repo_root / "assets"
+        candidates = []
+        if assets_root.is_dir():
+            for package_dir in assets_root.rglob(package_name):
+                if not package_dir.is_dir() or package_dir.name != package_name:
+                    continue
+                candidate = package_dir / package_tail
+                if candidate.is_file():
+                    candidates.append(candidate.resolve())
+        unique_candidates = sorted(set(candidates))
+        if len(unique_candidates) == 1:
+            recovered = _ORIGINAL_RESOLVE_LOCAL_MESH_URI(
+                str(unique_candidates[0]), scene_dir, repo_root
+            )
+            if recovered[0] is not None:
+                return recovered
 
     return resolved
 
