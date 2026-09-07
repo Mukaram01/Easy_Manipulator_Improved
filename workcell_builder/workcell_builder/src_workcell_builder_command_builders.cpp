@@ -139,10 +139,17 @@ ScriptCommandPlan build_generate_workcell_command_plan(
   append_missing_if_empty(output_dir, "output directory", &plan.missing_fields);
   append_missing_if_empty(scene_name, "scene name", &plan.missing_fields);
   if (plan.ready()) {
-    plan.arguments << (scene_dir + "/cell_definition.yaml")
-                   << "--output-dir" << output_dir
+    // Existing-package generation belongs to the selected physical directory,
+    // even when discovery supplied a workspace compatibility symlink.
+    std::error_code error;
+    const auto canonical_scene = fs::canonical(scene_dir.toStdString(), error);
+    const QString target = error ? scene_dir : QString::fromStdString(canonical_scene.string());
+    const QString target_parent = error ? output_dir : QString::fromStdString(canonical_scene.parent_path().string());
+    plan.scene_dir = target;
+    plan.arguments << (target + "/cell_definition.yaml")
+                   << "--output-dir" << target_parent
                    << "--package-name" << scene_name
-                   << "--existing-package-dir" << scene_dir;
+                   << "--existing-package-dir" << target;
   }
   return plan;
 }

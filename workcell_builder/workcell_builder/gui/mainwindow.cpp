@@ -4280,7 +4280,8 @@ void MainWindow::generate_yaml_draft_for_selected_scene()
   if (!helper_script_exists("create_or_update_builder_task_intent.py", &script)) {
     append_studio_log("Generate YAML: helper script search failed (task intent helper missing).");
   }
-  const fs::path scene_dir = sc.scene_dir;
+  const fs::path scene_dir = workcell_builder::canonical_scene_identity(
+    sc.canonical_scene_dir.empty() ? sc.scene_dir : sc.canonical_scene_dir);
   const fs::path env = scene_dir / "environment.yaml";
   const fs::path cell = scene_dir / "cell_definition.yaml";
   const fs::path manifest = scene_dir / "scene_manifest.yaml";
@@ -4463,8 +4464,8 @@ void MainWindow::generate_scene_package_for_selected_scene() {
   const QString stderr_text = QString::fromUtf8(process.readAllStandardError()).trimmed();
   if (exit_code != 0) {
     append_studio_log(QString("Generate ROS Scene Package failed (exit=%1).").arg(exit_code));
-    if (!stderr_text.isEmpty()) append_studio_log("stderr: " + stderr_text.left(400));
-    if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400));
+    if (!stderr_text.isEmpty()) append_studio_log("stderr: " + stderr_text);
+    if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text);
     launch_artifacts_ready_ = false;
     return;
   }
