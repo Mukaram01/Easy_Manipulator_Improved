@@ -392,14 +392,18 @@ def _launch_setup(context):
     }
 
     fake_hardware_enabled = use_fake_hardware.perform(context).lower() == "true"
+    execution_requested = LaunchConfiguration("allow_trajectory_execution").perform(context).lower() == "true"
+    if execution_requested and not fake_hardware_enabled:
+        raise RuntimeError("This scene permits trajectory execution only with use_fake_hardware:=true")
     trajectory_execution = {
         # Planning and controller discovery are available in fake hardware,
-        # while trajectory execution stays disabled until an explicit reviewed
-        # commissioning launch changes this parameter.
+        # while trajectory execution requires explicit fake-hardware opt-in.
         "allow_trajectory_execution": False,
         "moveit_manage_controllers": False,
         "use_fake_hardware": fake_hardware_enabled,
     }
+    if execution_requested:
+        trajectory_execution["allow_trajectory_execution"] = True
 
     planning_scene_monitor_params = {
         "publish_planning_scene": True,
@@ -632,6 +636,10 @@ def _launch_setup(context):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("use_sim_time", default_value="false"),
+        DeclareLaunchArgument(
+            "allow_trajectory_execution", default_value="false",
+            description="Opt in to fake-hardware trajectory execution; rejected with real hardware.",
+        ),
         DeclareLaunchArgument(
             "launch_rviz",
             default_value="true",
