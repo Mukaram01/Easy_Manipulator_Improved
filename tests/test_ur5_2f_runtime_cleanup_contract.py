@@ -4,6 +4,15 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENE = ROOT / "scenes" / "ur5_2f_test"
+UR_CONTROL_XACRO = (
+    ROOT
+    / "assets"
+    / "robots"
+    / "universal_robot"
+    / "ur_description"
+    / "urdf"
+    / "ur.ros2_control.xacro"
+)
 
 
 def test_fake_hardware_launch_uses_non_deprecated_static_tf_and_intentional_epd_octomap_policy():
@@ -27,3 +36,17 @@ def test_fake_controllers_select_safe_trajectory_end_behavior():
     for name in ("ur5_arm_controller", "ur5_gripper_controller"):
         params = controllers[name]["ros__parameters"]
         assert params["allow_nonzero_velocity_at_trajectory_end"] is False
+
+
+def test_ur_generic_system_uses_current_mock_contract_without_real_driver_io_interfaces():
+    text = UR_CONTROL_XACRO.read_text(encoding="utf-8")
+
+    assert '<plugin>mock_components/GenericSystem</plugin>' in text
+    assert '<param name="mock_sensor_commands">${fake_sensor_commands}</param>' in text
+    assert '<param name="fake_sensor_commands">' not in text
+    assert '<xacro:unless value="${use_fake_hardware or sim_gazebo or sim_ignition}">\n        <sensor name="${tf_prefix}tcp_fts_sensor">' in text
+
+    # Keep the public xacro argument for callers that still use the old UR name;
+    # only the ros2_control GenericSystem parameter is modernized.
+    assert 'use_fake_hardware:=false fake_sensor_commands:=false' in text
+    assert '<plugin>ur_robot_driver/URPositionHardwareInterface</plugin>' in text
