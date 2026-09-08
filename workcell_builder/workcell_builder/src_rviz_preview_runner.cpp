@@ -119,10 +119,11 @@ QString build_launch_shell_command(
   // All generated scenes currently use the global controller-manager namespace.
   // Starting a second preview therefore creates ambiguous ROS services and can
   // make one spawner load a controller on one manager and configure it on
-  // another.  Fail closed instead of launching a conflicting runtime.
+  // another.  Fail closed instead of launching a conflicting runtime.  The
+  // bracketed pgrep pattern intentionally does not match the pgrep process itself.
   return QString(
     "source /opt/ros/humble/setup.bash && source '%1' && "
-    "if pgrep -f '/controller_manager/ros2_control_node|controller_manager/ros2_control_node' >/dev/null 2>&1; "
+    "if pgrep -f '[c]ontroller_manager/ros2_control_node' >/dev/null 2>&1; "
     "then echo 'Workcell Studio BLOCKER: another ros2_control preview is already running. Stop the existing simulation before launching a new one.' >&2; exit 73; fi && "
     "export RCUTILS_COLORIZED_OUTPUT=0 && exec %2")
     .arg(QString::fromStdString((workspace_root / "install" / "setup.bash").string()),
