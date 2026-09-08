@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import sys
+import subprocess
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -15,11 +16,11 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from capability_registry import load_structured_data
 from workcell_studio_layout_source import inspect_saved_layout, resolve_saved_layout_path
-import subprocess
 
 
-VALIDATION_ARTIFACT_RELATIVE_PATH = Path("validation/generated_scene_validation.json")
+VALIDATION_ARTIFACT_RELATIVE_PATH = Path("validation/readiness_report.json")
 VALIDATION_ARTIFACT_SCHEMA = "workcell_builder_generated_scene_validation/v1"
+ACCEPTANCE_ARTIFACT_RELATIVE_PATH = Path("acceptance/generated_scene_acceptance.json")
 
 
 def _load_yaml_like(path: Path) -> dict[str, Any]:
@@ -57,12 +58,53 @@ def _run_generated_validator(path: Path, validator_name: str) -> tuple[dict[str,
     return report, None
 
 
+def _clear_acceptance_artifact(scene_path: Path) -> None:
+    """Remove the browser's durable PASS token when validation is no longer valid."""
+    try:
+        (scene_path / ACCEPTANCE_ARTIFACT_RELATIVE_PATH).unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _sync_acceptance_artifact(scene_path: Path) -> tuple[dict[str, Any], str | None]:
+    """Refresh the Home/browser acceptance contract after the modern validator passes.
+
+    Workcell Studio's Home classifier intentionally keys readiness from
+    ``acceptance/generated_scene_acceptance.json`` and its authored-input
+    fingerprint.  The Validate button historically ran this script instead,
+    which left that browser contract stale even when validation succeeded.
+    Keep both validators synchronized here so one successful Validate action
+    updates the workflow gate and Home status atomically.
+    """
+    run = subprocess.run(
+        ["python3", str(SCRIPT_DIR / "validate_workcell_studio_generated_scene.py"), str(scene_path), "--json"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    try:
+        acceptance = json.loads(run.stdout) if run.stdout.strip() else {}
+    except json.JSONDecodeError as exc:
+        _clear_acceptance_artifact(scene_path)
+        return {}, f"generated-scene acceptance validator returned invalid JSON: {exc}"
+
+    status = str(acceptance.get("status") or "").upper()
+    if run.returncode != 0 or status in {"BLOCKED", "FAIL", "ERROR", "MISSING_ENVIRONMENT_YAML", "MISSING_LAUNCH"}:
+        _clear_acceptance_artifact(scene_path)
+        detail = "; ".join(str(item) for item in acceptance.get("blockers", []) if str(item).strip())
+        if not detail:
+            detail = run.stderr.strip() or run.stdout.strip() or f"exit code {run.returncode}"
+        return acceptance, f"generated-scene acceptance validation failed: {detail}"
+    return acceptance, None
+
+
 def _sync_validation_artifact(scene_path: Path, report: dict[str, Any]) -> Path:
     """Persist only a successful validation result for Workcell Studio workflow state.
 
-    The native UI intentionally treats the presence of this file as the durable
-    validation gate.  A failed validation therefore removes any previous PASS
-    artifact so a stale success can never unlock Plan & Simulate.
+    ``MainWindow::scene_workflow_steps`` already treats
+    ``validation/readiness_report.json`` as the durable validation gate.  A
+    failed validation therefore removes any previous PASS artifact so a stale
+    success can never unlock Plan & Simulate.
     """
     artifact = scene_path / VALIDATION_ARTIFACT_RELATIVE_PATH
     if not report.get("ok"):
@@ -83,6 +125,7 @@ def _sync_validation_artifact(scene_path: Path, report: dict[str, Any]) -> Path:
         "warnings": list(report.get("warnings", [])),
         "errors": [],
         "checks": list(report.get("checks", [])),
+        "acceptance_status": (report.get("acceptance") or {}).get("status"),
     }
     temporary = artifact.with_suffix(artifact.suffix + ".tmp")
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -261,6 +304,16 @@ def main() -> int:
     args = ap.parse_args()
 
     report = validate_scene(args.scene_path, require_generated=args.require_generated)
+    acceptance: dict[str, Any] = {}
+    if report["ok"]:
+        acceptance, acceptance_failure = _sync_acceptance_artifact(args.scene_path)
+        if acceptance_failure:
+            report["errors"].append(acceptance_failure)
+            report["ok"] = False
+    else:
+        _clear_acceptance_artifact(args.scene_path)
+    report["acceptance"] = acceptance
+
     artifact = _sync_validation_artifact(args.scene_path, report)
     report["validation_artifact"] = str(artifact) if report["ok"] else None
     if args.json:
@@ -282,6 +335,8 @@ def main() -> int:
             print(f" - FAIL: {e}")
         if report["ok"]:
             print(f" - PASS artifact: {artifact}")
+            if acceptance:
+                print(f" - Acceptance: {acceptance.get('status', '<unknown>')}")
     return 0 if report["ok"] else 1
 
 
