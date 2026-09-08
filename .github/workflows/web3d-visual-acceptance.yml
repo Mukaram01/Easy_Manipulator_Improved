@@ -21,12 +21,10 @@ jobs:
     name: Browser Product View supported-scenes matrix
     runs-on: ubuntu-22.04
     permissions:
-      contents: write
+      contents: read
     steps:
-      - name: Checkout pull-request head for cleanup bundle refresh
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -108,23 +106,11 @@ jobs:
       - name: Install Playwright Chromium
         run: python3 -m playwright install --with-deps chromium
 
-      - name: Install viewer Node dependencies and build bundle for cleanup branch
+      - name: Install viewer Node dependencies and verify bundle freshness
         working-directory: workcell_studio_web/viewer
         run: |
           npm ci
-          npm run build:web3d
-
-      - name: Commit refreshed viewer bundle to cleanup branch
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add workcell_studio_web/viewer/dist/viewer.bundle.js workcell_studio_web/viewer/dist/viewer.bundle.js.map
-          if git diff --cached --quiet; then
-            echo "Viewer bundle already current."
-          else
-            git commit -m "Refresh Product View bundle"
-            git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
-          fi
+          npm run check:stale-bundle
 
       - name: Run static acceptance tests
         run: |
@@ -190,5 +176,3 @@ jobs:
             build/workcell_studio_web_scene/*.browser_status.json
             build/workcell_studio_web_scene/*.web_scene.json
             build/workcell_studio_web_scene/*.png
-            workcell_studio_web/viewer/dist/viewer.bundle.js
-            workcell_studio_web/viewer/dist/viewer.bundle.js.map
