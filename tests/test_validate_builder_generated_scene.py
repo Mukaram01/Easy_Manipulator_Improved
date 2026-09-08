@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -117,3 +118,35 @@ def test_missing_task_intent_is_warn_and_physical_scene_only(tmp_path: Path) -> 
     assert report["ok"] is True
     assert report["readiness"] == "physical_scene_only"
     assert any("Task intent missing: physical scene only." in w for w in report["warnings"])
+
+
+def test_successful_cli_gate_persists_validation_artifact(tmp_path: Path) -> None:
+    report = {
+        "ok": True,
+        "readiness": "task_recipe_generated",
+        "runtime_readiness": "runtime_possible",
+        "warnings": [],
+        "errors": [],
+        "checks": [{"check": "package.xml exists", "ok": True}],
+    }
+
+    artifact = validator._sync_validation_artifact(tmp_path, report)
+
+    assert artifact == tmp_path / "validation" / "generated_scene_validation.json"
+    payload = json.loads(artifact.read_text(encoding="utf-8"))
+    assert payload["schema"] == "workcell_builder_generated_scene_validation/v1"
+    assert payload["status"] == "PASS"
+    assert payload["ok"] is True
+
+
+def test_failed_cli_gate_removes_stale_success_artifact(tmp_path: Path) -> None:
+    artifact = tmp_path / "validation" / "generated_scene_validation.json"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text('{"status":"PASS"}\n', encoding="utf-8")
+
+    returned = validator._sync_validation_artifact(
+        tmp_path, {"ok": False, "errors": ["broken scene"]}
+    )
+
+    assert returned == artifact
+    assert not artifact.exists()
