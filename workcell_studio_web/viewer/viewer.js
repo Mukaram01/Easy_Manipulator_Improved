@@ -71,8 +71,10 @@ function emitWeb3dReadinessState(readinessState, detail = {}) {
   const navigationKey = detail.navigation_key || detail.navigationKey || web3dNavigationKey();
   if (state.web3dReadiness.terminal) {
     if (state.web3dReadiness.terminalNavigationKey && navigationKey && navigationKey !== state.web3dReadiness.terminalNavigationKey) return window.__WORKCELL_VIEWER_STATUS__;
-    if (readinessState !== state.web3dReadiness.terminalState) return updateViewerStatus();
-    return window.__WORKCELL_VIEWER_STATUS__;
+    if (!(state.web3dReadiness.terminalState === 'scene_ready' && readinessState === 'scene_failed')) {
+      if (readinessState !== state.web3dReadiness.terminalState) return updateViewerStatus();
+      return window.__WORKCELL_VIEWER_STATUS__;
+    }
   }
   const terminalTransition = readinessState === 'scene_ready' || readinessState === 'scene_failed';
   state.web3dReadiness.state = readinessState;
@@ -968,6 +970,31 @@ function failedRequiredMeshUrlFromEntry(entry) {
   const url = entry?.mesh_uri || entry?.meshUri || entry?.url || entry?.source_url || entry?.sourceUrl || '';
   return String(url || '').trim();
 }
+function missingAttachedUrdfVisuals(links) {
+  const result = state.robotPreviewResult;
+  // Before the renderer publishes its result, its load lifecycle owns readiness.
+  if (!result) return [];
+  const root = result.root;
+  return links.filter(name => {
+    const link = result.links?.get(name);
+    if (!root || root.parent !== state.three.scene || !link) return true;
+    let meshVisible = false;
+    link.traverse?.(node => {
+      // Child URDF links must not stand in for this link's own visual.
+      let ancestor = node;
+      while (ancestor && ancestor !== link) {
+        if (ancestor.visible === false) return;
+        if (ancestor !== node && ancestor.isURDFLink) return;
+        ancestor = ancestor.parent;
+      }
+      if (!node.isMesh || node.visible === false) return;
+      for (let parent = link; parent; parent = parent.parent) if (parent.visible === false) return;
+      meshVisible = true;
+    });
+    return !meshVisible;
+  });
+}
+
 function expandedUrdfVisualReadinessDiagnostics() {
   const required = expandedUrdfExpectedVisualSet();
   if (!required) return null;
@@ -1012,6 +1039,10 @@ function expandedUrdfVisualReadinessDiagnostics() {
       if (!urdfLinksWithLoadedVisuals.has(link)) missingTool.push(link);
     }
   }
+  if (rendererLifecycle === 'ready') {
+    for (const link of missingAttachedUrdfVisuals(required.robot_visuals)) if (!missingRobot.includes(link)) missingRobot.push(link);
+    for (const link of missingAttachedUrdfVisuals(required.tool_visuals)) if (!missingTool.includes(link)) missingTool.push(link);
+  }
   const failedLinks = [];
   const failedMeshUrls = [];
   for (const detail of rendererMissingMeshes) {
@@ -1022,7 +1053,7 @@ function expandedUrdfVisualReadinessDiagnostics() {
   const missing = Array.from(new Set(missingRobot.concat(missingTool).filter(Boolean)));
   const failed = Array.from(new Set(failedLinks.filter(Boolean)));
   const duplicatePhysicalIdentities = Array.from(new Set(urdfDedupe.duplicateIdentities.concat(physicalDiagnostics.duplicateIdentities)));
-  const requiredVisualReady = rendererReady || (missing.length === 0 && failed.length === 0);
+  const requiredVisualReady = missing.length === 0 && failed.length === 0;
   return {
     expanded_urdf_expected_visual_set: required,
     expandedUrdfExpectedVisualSet: required,
@@ -4267,8 +4298,8 @@ window.__WORKCELL_VIEWER_LIFECYCLE__ = Object.freeze({
   api: '1.0.0',
   disposeScene: reason => disposeViewerLifecycle(String(reason || 'host_navigation')),
 });
-window.addEventListener('pagehide', () => disposeViewerLifecycle('pagehide'), { once: true });
-window.addEventListener('beforeunload', () => disposeViewerLifecycle('beforeunload'), { once: true });
+window.addEventListener?.('pagehide', () => disposeViewerLifecycle('pagehide'), { once: true });
+window.addEventListener?.('beforeunload', () => disposeViewerLifecycle('beforeunload'), { once: true });
 function renderScene(items) {
   clearSceneObjects();
   const selectionIndex = rebuildSelectionIdentityIndex(state.sceneJson || {});
@@ -6800,11 +6831,13 @@ function removeItemFromBridge(id) {
 function setVisibleItemIdsFromBridge(ids) {
   const visible = new Set(Array.isArray(ids) ? ids.map(id => String(id || '').trim()).filter(Boolean) : []);
   for (const rendered of [...state.objects, ...state.pickRecords]) {
-    const id = String(rendered?.item?.id || '').trim();
+    // Native visibility lists contain authored owners, not URDF link pick IDs.
+    const id = String(explicitUiSelectionItemId(rendered) || rendered?.item?.id || '').trim();
     if (id && rendered?.object3d) rendered.object3d.visible = visible.has(id);
     if (rendered?.labelEl) rendered.labelEl.hidden = !visible.has(id);
   }
   updateLabels();
+  failIfExpandedUrdfExpectedVisualSetInvalid();
   renderSceneSummary();
   return editorState();
 }

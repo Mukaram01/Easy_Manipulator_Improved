@@ -108,28 +108,28 @@ YAML::Node yaml_seq_index(const YAML::Node & node, std::size_t index)
 
 YAML::Node get_map(const YAML::Node & node, const char * key)
 {
-  if (!node.IsDefined() || !node.IsMap() || key == nullptr) return YAML::Node();
+  if (!node.IsDefined() || !node.IsMap() || key == nullptr) return YAML::Node(YAML::NodeType::Undefined);
   YAML::Node child;
-  try { child = node[key]; } catch (...) { return YAML::Node(); }
-  return (child && child.IsMap()) ? child : YAML::Node();
+  try { child = node[key]; } catch (...) { return YAML::Node(YAML::NodeType::Undefined); }
+  return (child && child.IsMap()) ? child : YAML::Node(YAML::NodeType::Undefined);
 }
 YAML::Node optional_map(const YAML::Node & node, const char * key) { return get_map(node, key); }
 
 YAML::Node get_scalar(const YAML::Node & node, const char * key)
 {
-  if (!node.IsDefined() || !node.IsMap() || key == nullptr) return YAML::Node();
+  if (!node.IsDefined() || !node.IsMap() || key == nullptr) return YAML::Node(YAML::NodeType::Undefined);
   YAML::Node child;
-  try { child = node[key]; } catch (...) { return YAML::Node(); }
-  return (child && child.IsScalar()) ? child : YAML::Node();
+  try { child = node[key]; } catch (...) { return YAML::Node(YAML::NodeType::Undefined); }
+  return (child && child.IsScalar()) ? child : YAML::Node(YAML::NodeType::Undefined);
 }
 YAML::Node optional_scalar(const YAML::Node & node, const char * key) { return get_scalar(node, key); }
 
 YAML::Node get_sequence(const YAML::Node & node, const char * key)
 {
-  if (!node.IsDefined() || !node.IsMap() || key == nullptr) return YAML::Node();
+  if (!node.IsDefined() || !node.IsMap() || key == nullptr) return YAML::Node(YAML::NodeType::Undefined);
   YAML::Node child;
-  try { child = node[key]; } catch (...) { return YAML::Node(); }
-  return (child && child.IsSequence()) ? child : YAML::Node();
+  try { child = node[key]; } catch (...) { return YAML::Node(YAML::NodeType::Undefined); }
+  return (child && child.IsSequence()) ? child : YAML::Node(YAML::NodeType::Undefined);
 }
 
 std::string get_optional_string(const YAML::Node & node, const char * key, const std::string & fallback)
@@ -165,11 +165,30 @@ std::optional<bool> get_bool_like(const YAML::Node & node, const char * key)
   return bool_like(get_scalar(node, key));
 }
 
+// Return a detached read view; v1 sections are siblings of task metadata.
+// Never assign through an alias of the authored document.
+YAML::Node task_intent_view(const YAML::Node & root)
+{
+  if (yaml_map_value_or_empty(root, "schema") == "workcell_builder_task_intent/v1") {
+    YAML::Node view = YAML::Clone(root);
+    const YAML::Node metadata = yaml_map_key(root, "task");
+    if (metadata.IsMap()) {
+      for (const auto & entry : metadata) {
+        const std::string key = entry.first.as<std::string>();
+        if (!view[key]) view[key] = YAML::Clone(entry.second);
+      }
+    }
+    view.remove("task");
+    return view;
+  }
+  const YAML::Node task = yaml_map_key(root, "task");
+  return YAML::Clone(task.IsMap() ? task : root);
+}
+
 PerceptionContractSummary parse_perception_contract_summary(const YAML::Node & task_or_root)
 {
   PerceptionContractSummary out;
-  const YAML::Node task = (task_or_root && task_or_root.IsMap() && task_or_root["task"]) ?
-    task_or_root["task"] : task_or_root;
+  const YAML::Node task = task_intent_view(task_or_root);
   if (!task || !task.IsMap()) {
     return out;
   }
