@@ -13,12 +13,13 @@ if str(_SCRIPT_DIR) not in sys.path:
 import ensure_workcell_studio_web_scene_fresh_impl as _impl
 import workcell_studio_scene_refresh_coalescer as _coalescer
 
-# The exporter wrapper, its preserved implementation, and the portability
-# normalizer are all generator inputs. A change to any of them must renew the
-# scene revision and invalidate the coalesced preparation cache.
+# The exporter wrapper, its preserved implementation, portability normalizer,
+# and staged COLLADA axis normalizer are all generator inputs. A change to any
+# of them must renew the scene revision and invalidate the preparation cache.
 _PORTABLE_GENERATOR_INPUTS = (
     "scripts/export_workcell_studio_web_scene_impl.py",
     "scripts/workcell_studio_visual_artifact_portability.py",
+    "scripts/workcell_studio_collada_ros_axis.py",
 )
 _impl.GENERATOR_INPUT_RELS = tuple(dict.fromkeys((*_impl.GENERATOR_INPUT_RELS, *_PORTABLE_GENERATOR_INPUTS)))
 
