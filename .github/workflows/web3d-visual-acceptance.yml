@@ -21,10 +21,12 @@ jobs:
     name: Browser Product View supported-scenes matrix
     runs-on: ubuntu-22.04
     permissions:
-      contents: read
+      contents: write
     steps:
-      - name: Checkout repository
+      - name: Checkout pull-request head for cleanup bundle refresh
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -112,13 +114,26 @@ jobs:
           npm ci
           npm run build:web3d
 
+      - name: Commit refreshed viewer bundle to cleanup branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add workcell_studio_web/viewer/dist/viewer.bundle.js workcell_studio_web/viewer/dist/viewer.bundle.js.map
+          if git diff --cached --quiet; then
+            echo "Viewer bundle already current."
+          else
+            git commit -m "Refresh Product View bundle"
+            git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+          fi
+
       - name: Run static acceptance tests
         run: |
           set +e
           output=$(python3 -m pytest tests/test_workcell_web3d_visual_acceptance.py tests/test_workcell_studio_web_viewer_static.py -q 2>&1)
           rc=$?
           if [ $rc -ne 0 ]; then
-            MATRIX_FAILURE_REASON="Run static acceptance tests failed: $output" python3 - <<'PY'
+            printf '%s\n' "$output"
+            MATRIX_FAILURE_REASON="Run static acceptance tests failed; see job log for details." python3 - <<'PY'
           import json, os
           from pathlib import Path
           path = Path('build/web3d_supported_scenes_matrix.json')
@@ -127,7 +142,6 @@ jobs:
           path.parent.mkdir(parents=True, exist_ok=True)
           path.write_text(json.dumps(report, indent=2, sort_keys=True) + '\n', encoding='utf-8')
           PY
-            printf '%s\n' "$output"
             exit $rc
           fi
           printf '%s\n' "$output"
