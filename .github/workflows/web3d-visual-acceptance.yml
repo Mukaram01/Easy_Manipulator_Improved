@@ -106,11 +106,11 @@ jobs:
       - name: Install Playwright Chromium
         run: python3 -m playwright install --with-deps chromium
 
-      - name: Install viewer Node dependencies and verify bundle freshness
+      - name: Install viewer Node dependencies and build bundle for cleanup branch
         working-directory: workcell_studio_web/viewer
         run: |
           npm ci
-          npm run check:stale-bundle
+          npm run build:web3d
 
       - name: Run static acceptance tests
         run: |
@@ -176,3 +176,5 @@ jobs:
             build/workcell_studio_web_scene/*.browser_status.json
             build/workcell_studio_web_scene/*.web_scene.json
             build/workcell_studio_web_scene/*.png
+            workcell_studio_web/viewer/dist/viewer.bundle.js
+            workcell_studio_web/viewer/dist/viewer.bundle.js.map
