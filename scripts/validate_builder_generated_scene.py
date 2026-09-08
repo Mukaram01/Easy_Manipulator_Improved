@@ -18,6 +18,10 @@ from workcell_studio_layout_source import inspect_saved_layout, resolve_saved_la
 import subprocess
 
 
+VALIDATION_ARTIFACT_RELATIVE_PATH = Path("validation/generated_scene_validation.json")
+VALIDATION_ARTIFACT_SCHEMA = "workcell_builder_generated_scene_validation/v1"
+
+
 def _load_yaml_like(path: Path) -> dict[str, Any]:
     data, _ = load_structured_data(path)
     return data
@@ -51,6 +55,39 @@ def _run_generated_validator(path: Path, validator_name: str) -> tuple[dict[str,
             detail = run.stderr.strip() or run.stdout.strip() or f"exit code {run.returncode}"
         return report, f"{path.relative_to(path.parent.parent)} validation failed: {detail}"
     return report, None
+
+
+def _sync_validation_artifact(scene_path: Path, report: dict[str, Any]) -> Path:
+    """Persist only a successful validation result for Workcell Studio workflow state.
+
+    The native UI intentionally treats the presence of this file as the durable
+    validation gate.  A failed validation therefore removes any previous PASS
+    artifact so a stale success can never unlock Plan & Simulate.
+    """
+    artifact = scene_path / VALIDATION_ARTIFACT_RELATIVE_PATH
+    if not report.get("ok"):
+        try:
+            artifact.unlink()
+        except FileNotFoundError:
+            pass
+        return artifact
+
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema": VALIDATION_ARTIFACT_SCHEMA,
+        "status": "PASS",
+        "ok": True,
+        "scene_path": str(scene_path),
+        "readiness": report.get("readiness"),
+        "runtime_readiness": report.get("runtime_readiness"),
+        "warnings": list(report.get("warnings", [])),
+        "errors": [],
+        "checks": list(report.get("checks", [])),
+    }
+    temporary = artifact.with_suffix(artifact.suffix + ".tmp")
+    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.replace(artifact)
+    return artifact
 
 
 def validate_scene(scene_path: Path, *, require_generated: bool = False) -> dict[str, Any]:
@@ -92,7 +129,6 @@ def validate_scene(scene_path: Path, *, require_generated: bool = False) -> dict
         if isinstance(obj, dict) and isinstance(obj.get("filepath"), str):
             if not (scene_path / obj["filepath"]).exists():
                 warnings.append(f"Object '{obj_name}' references missing asset path '{obj['filepath']}'")
-
 
     exported_cell = scene_path / "generated" / "cell_definition.yaml"
     exported_layout = scene_path / "generated" / "environment_layout.yaml"
@@ -225,6 +261,8 @@ def main() -> int:
     args = ap.parse_args()
 
     report = validate_scene(args.scene_path, require_generated=args.require_generated)
+    artifact = _sync_validation_artifact(args.scene_path, report)
+    report["validation_artifact"] = str(artifact) if report["ok"] else None
     if args.json:
         print(json.dumps(report, indent=2))
     else:
@@ -242,6 +280,8 @@ def main() -> int:
             print(f" - WARN: {w}")
         for e in report["errors"]:
             print(f" - FAIL: {e}")
+        if report["ok"]:
+            print(f" - PASS artifact: {artifact}")
     return 0 if report["ok"] else 1
 
 
