@@ -410,6 +410,17 @@ def _launch_setup(context):
         "publish_geometry_updates": True,
         "publish_state_updates": True,
         "publish_transforms_updates": True,
+        # EPD publishes explicit, lifecycle-managed collision objects into
+        # MoveIt's PlanningScene.  This canonical scene intentionally does not
+        # create a second depth-cloud Octomap.  MoveIt Humble's occupancy-map
+        # middleware otherwise emits ERROR/WARN messages when no 3D plugin is
+        # configured.  A '~' plugin is the middleware's explicit skip contract.
+        "octomap_resolution": 0.1,
+        "octomap_frame": world_frame,
+        "sensors": ["workcell_epd_collision_objects"],
+        "workcell_epd_collision_objects": {
+            "sensor_plugin": "~workcell_epd_collision_objects_are_planning_truth",
+        },
     }
 
     try:
@@ -457,7 +468,12 @@ def _launch_setup(context):
         executable="static_transform_publisher",
         name=f"{scene_pkg}_cell_reference_tf",
         output="screen",
-        arguments=["0", "0", "0", "0", "0", "0", world_frame, "workcell_reference"],
+        arguments=[
+            "--x", "0", "--y", "0", "--z", "0",
+            "--roll", "0", "--pitch", "0", "--yaw", "0",
+            "--frame-id", world_frame,
+            "--child-frame-id", "workcell_reference",
+        ],
     )
 
     # Preserve the previous visualization-only state publisher for the explicit
