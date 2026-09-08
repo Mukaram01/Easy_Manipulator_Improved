@@ -235,3 +235,11 @@ def test_home_browser_uses_the_same_generator_owned_fingerprint_exclusion():
 
     assert 'relative.generic_string() == "urdf/generated_asset_metadata.yaml"' in source
     assert "is_generator_owned_derived_input(candidate)" in source
+
+
+def test_validation_cli_main_uses_durable_artifact_as_success_source_of_truth():
+    source = (REPO_ROOT / "scripts" / "validate_builder_generated_scene.py").read_text(encoding="utf-8")
+
+    assert "artifact = _sync_validation_artifact(args.scene_path, report)" in source
+    assert 'report["validation_artifact"] = str(artifact) if report["ok"] else None' in source
+    assert "return 0 if report[\"ok\"] else 1" in source
