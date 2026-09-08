@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -120,7 +121,7 @@ def test_missing_task_intent_is_warn_and_physical_scene_only(tmp_path: Path) -> 
     assert any("Task intent missing: physical scene only." in w for w in report["warnings"])
 
 
-def test_successful_cli_gate_persists_validation_artifact(tmp_path: Path) -> None:
+def test_successful_cli_gate_persists_existing_workflow_readiness_artifact(tmp_path: Path) -> None:
     report = {
         "ok": True,
         "readiness": "task_recipe_generated",
@@ -128,19 +129,21 @@ def test_successful_cli_gate_persists_validation_artifact(tmp_path: Path) -> Non
         "warnings": [],
         "errors": [],
         "checks": [{"check": "package.xml exists", "ok": True}],
+        "acceptance": {"status": "PASS"},
     }
 
     artifact = validator._sync_validation_artifact(tmp_path, report)
 
-    assert artifact == tmp_path / "validation" / "generated_scene_validation.json"
+    assert artifact == tmp_path / "validation" / "readiness_report.json"
     payload = json.loads(artifact.read_text(encoding="utf-8"))
     assert payload["schema"] == "workcell_builder_generated_scene_validation/v1"
     assert payload["status"] == "PASS"
     assert payload["ok"] is True
+    assert payload["acceptance_status"] == "PASS"
 
 
-def test_failed_cli_gate_removes_stale_success_artifact(tmp_path: Path) -> None:
-    artifact = tmp_path / "validation" / "generated_scene_validation.json"
+def test_failed_cli_gate_removes_stale_workflow_success_artifact(tmp_path: Path) -> None:
+    artifact = tmp_path / "validation" / "readiness_report.json"
     artifact.parent.mkdir(parents=True)
     artifact.write_text('{"status":"PASS"}\n', encoding="utf-8")
 
@@ -149,4 +152,50 @@ def test_failed_cli_gate_removes_stale_success_artifact(tmp_path: Path) -> None:
     )
 
     assert returned == artifact
+    assert not artifact.exists()
+
+
+def test_acceptance_sync_refreshes_home_contract(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    acceptance = {
+        "scene_name": "ur5_2f_test",
+        "status": "PASS",
+        "blockers": [],
+        "authored_input_fingerprint": "abc123",
+    }
+
+    def fake_run(args, capture_output, text, check):
+        assert args[1].endswith("validate_workcell_studio_generated_scene.py")
+        assert args[-1] == "--json"
+        artifact = tmp_path / "acceptance" / "generated_scene_acceptance.json"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_text(json.dumps(acceptance), encoding="utf-8")
+        return subprocess.CompletedProcess(args, 0, json.dumps(acceptance), "")
+
+    monkeypatch.setattr(validator.subprocess, "run", fake_run)
+
+    report, error = validator._sync_acceptance_artifact(tmp_path)
+
+    assert error is None
+    assert report["status"] == "PASS"
+    assert (tmp_path / "acceptance" / "generated_scene_acceptance.json").is_file()
+
+
+def test_acceptance_failure_clears_stale_home_pass(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    artifact = tmp_path / "acceptance" / "generated_scene_acceptance.json"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text('{"status":"PASS"}\n', encoding="utf-8")
+    blocked = {"status": "BLOCKED", "blockers": ["unsafe"]}
+
+    monkeypatch.setattr(
+        validator.subprocess,
+        "run",
+        lambda args, capture_output, text, check: subprocess.CompletedProcess(
+            args, 1, json.dumps(blocked), ""
+        ),
+    )
+
+    report, error = validator._sync_acceptance_artifact(tmp_path)
+
+    assert report["status"] == "BLOCKED"
+    assert "unsafe" in (error or "")
     assert not artifact.exists()
