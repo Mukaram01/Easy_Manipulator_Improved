@@ -421,29 +421,55 @@ Scene3DDetectionSnapshotLoadResult load_scene3d_detection_snapshot_preview(const
     out.warnings << QStringLiteral("malformed snapshot: %1").arg(detail);
   };
 
-  auto parse = [&](const fs::path & file) -> bool {
+  enum class SnapshotCandidateDisposition {
+    Consumed,
+    SkipNonDetection,
+  };
+
+  auto parse = [&](const fs::path & file) -> SnapshotCandidateDisposition {
     QFile in(QString::fromStdString(file.string()));
-    if (!in.open(QIODevice::ReadOnly)) { malformed_warning(QString::fromStdString(file.filename().string())); return false; }
+    if (!in.open(QIODevice::ReadOnly)) {
+      malformed_warning(QString::fromStdString(file.filename().string()));
+      return SnapshotCandidateDisposition::Consumed;
+    }
+
     QJsonParseError err;
     const auto doc = QJsonDocument::fromJson(in.readAll(), &err);
     if (err.error != QJsonParseError::NoError || !doc.isObject()) {
       malformed_warning(QString::fromStdString(file.filename().string()));
-      return false;
+      return SnapshotCandidateDisposition::Consumed;
     }
+
     const QJsonObject root = doc.object();
     const QString schema = root.value("schema").toString();
-    if (!schema.isEmpty() && schema != QStringLiteral("workcell_studio_detection_snapshot/v1")) {
-      malformed_warning(QStringLiteral("schema mismatch"));
-      return false;
+
+    // Bridge report/payload files are valid Workcell Studio artifacts, but they
+    // are not detection snapshots. Skip them and continue looking for a real
+    // detection snapshot instead of reporting a false schema mismatch.
+    if (schema == QStringLiteral("perception_bridge_preview_report/v1") ||
+        schema == QStringLiteral("emd_bridge_payload_preview/v1")) {
+      return SnapshotCandidateDisposition::SkipNonDetection;
     }
+
+    if (!schema.isEmpty() &&
+        schema != QStringLiteral("workcell_studio_detection_snapshot/v1")) {
+      malformed_warning(QStringLiteral("schema mismatch"));
+      return SnapshotCandidateDisposition::Consumed;
+    }
+
     QJsonArray detections = root.value("detections").toArray();
-    if (detections.isEmpty() && root.contains("objects")) detections = root.value("objects").toArray();
+    if (detections.isEmpty() && root.contains("objects")) {
+      detections = root.value("objects").toArray();
+    }
+
     for (const auto & node : detections) {
       if (!node.isObject()) continue;
       const auto o = node.toObject();
       ScenePreviewWidget::EpdDetectionOverlayModel d;
-      d.detection_id = o.value("id").toString(o.value("detection_id").toString("unknown_detection"));
-      d.label = o.value("label").toString(o.value("class").toString("unknown"));
+      d.detection_id = o.value("id").toString(
+        o.value("detection_id").toString("unknown_detection"));
+      d.label = o.value("label").toString(
+        o.value("class").toString("unknown"));
       d.confidence = o.value("confidence").toDouble(0.0);
       const auto pos = o.value("position").toObject();
       d.x = pos.value("x").toDouble(o.value("x").toDouble(0.0));
@@ -453,13 +479,15 @@ Scene3DDetectionSnapshotLoadResult load_scene3d_detection_snapshot_preview(const
       d.source_path = QString::fromStdString(file.string());
       out.detections.push_back(d);
     }
-    return true;
+
+    return SnapshotCandidateDisposition::Consumed;
   };
 
   for (const auto & candidate : candidates) {
     if (!fs::exists(candidate)) continue;
-    parse(candidate);
-    return out;
+    if (parse(candidate) == SnapshotCandidateDisposition::Consumed) {
+      return out;
+    }
   }
   // Optional perception modes intentionally load no detection snapshot and should remain silent.
   // Callers only surface this warning when perception/EPD input is explicitly required.

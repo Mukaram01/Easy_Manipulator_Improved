@@ -47,3 +47,15 @@ def test_scene3d_epd_detection_loader_malformed_snapshot_warns_without_throw_tok
         'model.warnings << snapshot_warning;',
     ]:
         assert tok in MAIN_CPP
+
+
+def test_scene3d_detection_loader_skips_non_detection_bridge_artifacts():
+    for tok in [
+        'perception_bridge_preview_report/v1',
+        'emd_bridge_payload_preview/v1',
+        'SnapshotCandidateDisposition::SkipNonDetection',
+        'SnapshotCandidateDisposition::Consumed',
+    ]:
+        assert tok in MAIN_CPP
+
+    assert 'parse(candidate);\n    return out;' not in MAIN_CPP
