@@ -78,55 +78,81 @@
       <h2>Scene items</h2>
       <details id="scene-details" class="panel-disclosure">
         <summary>Scene details</summary>
-        <div class="panel-disclosure-content">
-          <div id="scene-meta" class="meta-grid"></div>
-        </div>
+        <section id="scene-summary" class="scene-summary state empty" aria-live="polite">
+          <div class="summary-grid">
+            <span>Scene</span><strong data-summary-field="scene-name">No scene loaded</strong>
+            <span>Renderable</span><strong data-summary-field="renderable-count">0</strong>
+            <span>Meshes loaded</span><strong data-summary-field="mesh-loaded-count">0</strong>
+            <span>Fallbacks</span><strong data-summary-field="fallback-count">0</strong>
+            <span>Missing/failed</span><strong data-summary-field="mesh-failed-count">0</strong>
+            <span>Generated/locked</span><strong data-summary-field="generated-locked-count">0</strong>
+            <span>Editable</span><strong data-summary-field="editable-count">0</strong>
+            <span>Robot preview</span><strong data-summary-field="robot-preview-mode">mesh rows</strong>
+          </div>
+        </section>
       </details>
-      <details id="task-status-panel" class="panel-disclosure">
-        <summary>Task status</summary>
-        <div class="panel-disclosure-content">
-          <div id="task-summary"></div>
-        </div>
-      </details>
-      <div class="list-search-row">
-        <input id="object-search" type="search" placeholder="Find scene item" aria-label="Find scene item" />
-      </div>
-      <div id="object-list" class="object-list"></div>
+      <div id="empty-state" class="state empty">Open a scene to start.</div>
+      <ul id="object-list" class="object-list"></ul>
     </aside>
 
-    <section class="viewer-shell" aria-label="3D Product View">
-      <div id="viewer" class="viewer"></div>
-      <div id="viewer-status" class="viewer-status" role="status" aria-live="polite"></div>
-      <div id="selection-actions" class="selection-actions" hidden>
-        <span id="selection-action-label"></span>
-        <button id="selection-move" type="button">Move</button>
-        <button id="selection-rotate" type="button">Rotate</button>
-        <button id="selection-inspect" type="button">Inspect</button>
-      </div>
+    <section class="viewport-panel" aria-label="3D product view">
+      <div id="error-state" class="state error" hidden></div>
+      <div id="dirty-state" class="state dirty" hidden>Unsaved preview edits</div>
+      <div id="initial-pose-status" class="state preview-status" hidden>Initial pose preview</div>
+      <div id="placement-status" class="placement-status" role="status" aria-live="polite" hidden></div>
+      <details id="scene-health" class="scene-health health-loading">
+        <summary aria-label="Scene health details">
+          <span class="health-dot" aria-hidden="true"></span>
+          <span class="health-copy" role="status" aria-live="polite">
+            <strong id="scene-health-title">Preparing Product View</strong>
+            <small id="scene-health-summary">Waiting for scene data.</small>
+          </span>
+          <span id="scene-health-count" class="health-count" hidden>0</span>
+          <span class="health-review">Review</span>
+        </summary>
+        <div class="scene-health-body">
+          <div class="scene-health-heading">
+            <strong>Scene health</strong>
+            <span>What happened and what to do next</span>
+          </div>
+          <div id="scene-health-items" class="scene-health-items">
+            <div class="health-empty">No scene has been loaded yet.</div>
+          </div>
+        </div>
+      </details>
+      <canvas id="scene-canvas"></canvas>
+      <div id="label-layer" class="label-layer" aria-hidden="true"></div>
     </section>
 
-    <aside class="inspector-panel" aria-label="Inspector panel">
-      <h2>Inspector</h2>
-      <div id="inspector-empty" class="empty-state">Select an item to inspect it.</div>
-      <div id="inspector" hidden></div>
+    <aside class="details-panel" aria-label="Selected item and warnings panel">
+      <section class="selected-item-section">
+        <h2>Selected item</h2>
+        <div id="inspector" class="state empty">Select an item from the list or the scene.</div>
+      </section>
+      <details id="warnings-details" class="panel-disclosure warning-disclosure" hidden>
+        <summary>Warnings <span id="warning-count" class="disclosure-count">0</span></summary>
+        <div id="warnings" class="warnings state empty">No scene loaded.</div>
+      </details>
     </aside>
   </main>
 
-  <footer class="statusbar">
-    <span id="status-message">Ready</span>
-    <span id="dirty-state"></span>
-  </footer>
-
   <script type="module">
-    const viewerBuild = 'WORKCELL_VIEWER_BUILD_SHA256';
+    const viewerBuild = new URLSearchParams(window.location.search).get('viewerBuild') || '';
     if (!/^[a-f0-9]{64}$/.test(viewerBuild)) {
-      console.error('Invalid Product View bundle build token:', viewerBuild);
+      throw new Error('Missing or invalid viewerBuild contract; refusing to load an unversioned Product View bundle.');
     }
-    import(`./dist/viewer.bundle.js?v=${viewerBuild}`).catch(error => {
-      console.error('Product View bundle failed to load', error);
-      const status = document.getElementById('viewer-status');
-      if (status) status.textContent = `Product View failed to load: ${error?.message || error}`;
-    });
+    import(`./dist/viewer.bundle.js?v=${viewerBuild}`)
+      .then(() => import('./live_duplicate_visibility_guard.js'))
+      .catch(error => {
+        window.__WORKCELL_VIEWER_STATUS__ = {
+          readiness_contract_version: 1,
+          lifecycle_state: 'scene_failed',
+          terminal: true,
+          failed_stage: 'versioned_bundle_import',
+          fatal_error: String(error?.message || error),
+        };
+        console.error('Versioned Product View bundle import failed:', error);
+      });
   </script>
 </body>
 </html>
