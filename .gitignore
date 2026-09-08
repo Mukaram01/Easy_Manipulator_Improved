@@ -66,3 +66,6 @@ workcell_studio_web_scene/
 
 # Workcell Studio Web viewer dependencies
 workcell_studio_web/viewer/node_modules/
+
+# Generated Workcell Studio URDF metadata
+scenes/*/urdf/generated_asset_metadata.yaml

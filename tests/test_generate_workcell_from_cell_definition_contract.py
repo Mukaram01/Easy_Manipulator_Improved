@@ -666,3 +666,32 @@ def discover_xacro_command():
         "primitive fallback alone" in reason
         for reason in payload["visual_readiness"]["reasons"]
     )
+
+
+def test_existing_package_refresh_owns_generated_asset_metadata():
+    import importlib.util
+    from pathlib import Path
+
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "generate_workcell_from_cell_definition.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "generate_workcell_metadata_ownership_test", script
+    )
+    mod = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(mod)
+
+    assert mod._is_existing_package_generator_owned_output(
+        Path("generated/generated_environment_objects.yaml")
+    )
+    assert mod._is_existing_package_generator_owned_output(
+        Path("urdf/generated_asset_metadata.yaml")
+    )
+
+    # Curated runtime/source URDF files must remain protected.
+    assert not mod._is_existing_package_generator_owned_output(
+        Path("urdf/scene.urdf.xacro")
+    )
