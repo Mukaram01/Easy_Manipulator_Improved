@@ -71,3 +71,31 @@ TEST(WorkcellYamlUtils, PerceptionContractSummaryHandlesScalarAndMissing)
   EXPECT_FALSE(d.enabled); EXPECT_EQ(d.mode, "legacy_disabled"); EXPECT_TRUE(d.warning.empty());
   EXPECT_FALSE(e.enabled); EXPECT_EQ(e.mode, "legacy_disabled"); EXPECT_TRUE(e.warning.empty());
 }
+
+TEST(WorkcellYamlUtils, NestedV1TaskReadViewPreservesAuthoredDocument)
+{
+  const YAML::Node root = YAML::Load(R"(
+schema: workcell_builder_task_intent/v1
+task: {type: pick_place}
+pick:
+  source: {type: perception, id: detected_objects/v1}
+  zone: {id: pick_zone_main}
+  object_filter: {class_id: bottle}
+place: {target: {id: default_drop_zone}}
+grasp: {strategy_ref: top_2f}
+perception: {camera: {id: realsense_overhead}}
+)");
+  const auto before = YAML::Dump(root);
+  for (int i = 0; i < 3; ++i) {
+    const auto task = workcell_builder::task_intent_view(root);
+    EXPECT_EQ(task["type"].as<std::string>(), "pick_place");
+    EXPECT_EQ(task["pick"]["source"]["id"].as<std::string>(), "detected_objects/v1");
+    EXPECT_EQ(task["pick"]["zone"]["id"].as<std::string>(), "pick_zone_main");
+    EXPECT_EQ(task["pick"]["object_filter"]["class_id"].as<std::string>(), "bottle");
+    EXPECT_EQ(task["place"]["target"]["id"].as<std::string>(), "default_drop_zone");
+    EXPECT_EQ(task["grasp"]["strategy_ref"].as<std::string>(), "top_2f");
+    EXPECT_EQ(task["perception"]["camera"]["id"].as<std::string>(), "realsense_overhead");
+    EXPECT_TRUE(workcell_builder::parse_perception_contract_summary(root).enabled);
+    EXPECT_EQ(YAML::Dump(root), before);
+  }
+}

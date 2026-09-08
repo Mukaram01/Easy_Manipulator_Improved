@@ -34,5 +34,6 @@ YAML::Node get_sequence(const YAML::Node & node, const char * key);
 std::string get_optional_string(const YAML::Node & node, const char * key, const std::string & fallback = "");
 std::optional<bool> get_bool_like(const YAML::Node & node, const char * key);
 std::optional<bool> bool_like(const YAML::Node & node);
+YAML::Node task_intent_view(const YAML::Node & root);
 PerceptionContractSummary parse_perception_contract_summary(const YAML::Node & task_or_root);
 }

@@ -1217,6 +1217,9 @@ struct SceneTaskIntentSummary
   QString source_basename{"unknown"};
   QString task_type{"unknown"};
   QString pick_source{"unknown"};
+  QString pick_zone{"unknown"};
+  QString camera_id{"unknown"};
+  QString pick_source_type{"unknown"};
   QString place_target{"unknown"};
   QString reject_target{"unknown"};
   QString object_class{"unknown"};
@@ -1303,7 +1306,7 @@ ActionGate build_export_gate(const workcell_builder::WorkcellStudioSceneInfo & s
 }
 
 static QString ystr(const YAML::Node & n){ return (n && n.IsScalar()) ? QString::fromStdString(n.as<std::string>()) : "unknown"; }
-static QString scalar_path(const YAML::Node & root, std::initializer_list<const char *> keys){ YAML::Node n=root; for(auto *k:keys){ if(!n || !n.IsMap() || !n[k]) return "unknown"; n=n[k]; } return ystr(n); }
+static QString scalar_path(const YAML::Node & root, std::initializer_list<const char *> keys){ YAML::Node n=root; for(auto *k:keys){ if(!n || !n.IsMap() || !n[k]) return "unknown"; n.reset(n[k]); } return ystr(n); }
 static QString normalize_bound_id(QString value){ value=value.trimmed(); if(value.isEmpty()||value=="unknown") return "unknown"; return value; }
 
 static bool read_yaml(const fs::path & p, YAML::Node * out, bool required = false)
@@ -1558,7 +1561,7 @@ static SceneTaskIntentSummary load_scene_task_intent_summary(const fs::path & sc
   if (selected.empty()) return s;
   s.source_file = QString::fromStdString(selected.string()); s.source_basename = QString::fromStdString(selected.filename().string());
   s.status = "INCOMPLETE_TASK";
-  const YAML::Node task = root["task"] ? root["task"] : root;
+  const YAML::Node task = workcell_builder::task_intent_view(root);
   s.task_type = scalar_path(task, {"type"});
   if (s.task_type == "unknown") s.task_type = scalar_path(task, {"family"});
   s.pick_source = scalar_path(task, {"pick","source","id"});
@@ -1569,7 +1572,11 @@ static SceneTaskIntentSummary load_scene_task_intent_summary(const fs::path & sc
   if (s.place_target == "unknown") s.place_target = scalar_path(task, {"place_target"});
   s.reject_target = scalar_path(task, {"reject","target"});
   if (s.reject_target == "unknown") s.reject_target = scalar_path(task, {"reject_target"});
-  s.object_class = scalar_path(task, {"object","class"});
+  s.pick_zone = scalar_path(task, {"pick","zone","id"});
+  s.camera_id = scalar_path(task, {"perception","camera","id"});
+  s.pick_source_type = scalar_path(task, {"pick","source","type"});
+  s.object_class = scalar_path(task, {"pick","object_filter","class_id"});
+  if (s.object_class == "unknown") s.object_class = scalar_path(task, {"object","class"});
   if (s.object_class == "unknown") s.object_class = scalar_path(task, {"object_class"});
   s.grasp_strategy = scalar_path(task, {"grasp","strategy"});
   if (s.grasp_strategy == "unknown") s.grasp_strategy = scalar_path(task, {"grasp","strategy_ref"});
@@ -4237,7 +4244,7 @@ void MainWindow::refresh_task_intent_panel()
   if (ti.pick_source != "unknown" && ti.pick_source == ti.place_target) overlay_warnings << "pick/place overlap";
   if (ti.status == "MISSING_TASK_FILE") overlay_warnings << "Task overlay unavailable: missing task intent";
   const QString missing = ti.status == "MISSING_TASK_FILE" ? QString("\nNo task intent file found.\nSearched:\n - %1").arg(ti.searched_paths.join("\n - ")) : "";
-  task_intent_details_label_->setText(QString("Scene: %1\nTask type: %2\nSource task file: %3\nPick source: %4\nPlace target: %5\nObject/class: %6\nStatus badge: %7%8").arg(QString::fromStdString(sc.scene_name), ti.task_type, ti.source_basename, ti.pick_source, ti.place_target, ti.object_class, ti.status, missing));
+  task_intent_details_label_->setText(QString("Scene: %1\nTask type: %2\nSource task file: %3\nPick source: %4\nPlace target: %5\nObject/class: %6\nStatus badge: %7%8").arg(QString::fromStdString(sc.scene_name), ti.task_type, ti.source_basename, ti.pick_source, ti.place_target, ti.object_class, ti.status, missing) + QString("\nPick zone: %1\nGrasp: %2\nCamera: %3\nSource type: %4").arg(ti.pick_zone, ti.grasp_strategy, ti.camera_id, ti.pick_source_type));
   pick_place_details_label_->setText(QString("Pick source: %1\nPlace target: %2\nReject/bin target: %3\nLinked hierarchy item status: unknown").arg(ti.pick_source, ti.place_target, ti.reject_target));
   grasp_details_label_->setText(QString("Strategy/ref: %1\nTool/End Effector: %2\nApproach axis: %3\nOrientation mode: %4\nAllowed roll/yaw: %5").arg(ti.grasp_strategy, ti.tool_id, ti.approach_axis, ti.orientation_mode, ti.allowed_roll_yaw));
   const QString detection_mode_line = ti.perception_legacy_source.isEmpty() ? ti.perception_mode : QString("%1 (mapped from legacy: %2)").arg(ti.perception_mode, ti.perception_legacy_source);
