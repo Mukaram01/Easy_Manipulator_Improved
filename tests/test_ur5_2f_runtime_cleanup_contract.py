@@ -50,3 +50,11 @@ def test_ur_generic_system_uses_current_mock_contract_without_real_driver_io_int
     # only the ros2_control GenericSystem parameter is modernized.
     assert 'use_fake_hardware:=false fake_sensor_commands:=false' in text
     assert '<plugin>ur_robot_driver/URPositionHardwareInterface</plugin>' in text
+
+
+def test_octomap_skip_contract_matches_moveit_humble_middleware_semantics():
+    # MoveIt Humble explicitly skips updater plugin names whose first character
+    # is '~'. Keep that contract obvious here so nobody replaces it with a fake
+    # plugin class and turns an informational no-Octomap policy into a load error.
+    launch = (SCENE / "launch" / "demo.launch.py").read_text(encoding="utf-8")
+    assert '"sensor_plugin": "~workcell_epd_collision_objects_are_planning_truth"' in launch
