@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -19,6 +21,10 @@ def _load(name: str, path: Path):
 
 
 validator = _load("validate_builder_generated_scene", REPO_ROOT / "scripts" / "validate_builder_generated_scene.py")
+acceptance_validator = _load(
+    "validate_workcell_studio_generated_scene_test",
+    REPO_ROOT / "scripts" / "validate_workcell_studio_generated_scene.py",
+)
 
 
 def _write_required_scene_files(scene_root: Path) -> None:
@@ -117,3 +123,123 @@ def test_missing_task_intent_is_warn_and_physical_scene_only(tmp_path: Path) -> 
     assert report["ok"] is True
     assert report["readiness"] == "physical_scene_only"
     assert any("Task intent missing: physical scene only." in w for w in report["warnings"])
+
+
+def test_successful_cli_gate_persists_existing_workflow_readiness_artifact(tmp_path: Path) -> None:
+    report = {
+        "ok": True,
+        "readiness": "task_recipe_generated",
+        "runtime_readiness": "runtime_possible",
+        "warnings": [],
+        "errors": [],
+        "checks": [{"check": "package.xml exists", "ok": True}],
+        "acceptance": {"status": "PASS"},
+    }
+
+    artifact = validator._sync_validation_artifact(tmp_path, report)
+
+    assert artifact == tmp_path / "validation" / "readiness_report.json"
+    payload = json.loads(artifact.read_text(encoding="utf-8"))
+    assert payload["schema"] == "workcell_builder_generated_scene_validation/v1"
+    assert payload["status"] == "PASS"
+    assert payload["ok"] is True
+    assert payload["acceptance_status"] == "PASS"
+
+
+def test_failed_cli_gate_removes_stale_workflow_success_artifact(tmp_path: Path) -> None:
+    artifact = tmp_path / "validation" / "readiness_report.json"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text('{"status":"PASS"}\n', encoding="utf-8")
+
+    returned = validator._sync_validation_artifact(
+        tmp_path, {"ok": False, "errors": ["broken scene"]}
+    )
+
+    assert returned == artifact
+    assert not artifact.exists()
+
+
+def test_acceptance_sync_refreshes_home_contract(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    acceptance = {
+        "scene_name": "ur5_2f_test",
+        "status": "PASS",
+        "blockers": [],
+        "authored_input_fingerprint": "abc123",
+    }
+
+    def fake_run(args, capture_output, text, check):
+        assert args[1].endswith("validate_workcell_studio_generated_scene.py")
+        assert args[-1] == "--json"
+        artifact = tmp_path / "acceptance" / "generated_scene_acceptance.json"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_text(json.dumps(acceptance), encoding="utf-8")
+        return subprocess.CompletedProcess(args, 0, json.dumps(acceptance), "")
+
+    monkeypatch.setattr(validator.subprocess, "run", fake_run)
+
+    report, error = validator._sync_acceptance_artifact(tmp_path)
+
+    assert error is None
+    assert report["status"] == "PASS"
+    assert (tmp_path / "acceptance" / "generated_scene_acceptance.json").is_file()
+
+
+def test_acceptance_failure_clears_stale_home_pass(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    artifact = tmp_path / "acceptance" / "generated_scene_acceptance.json"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text('{"status":"PASS"}\n', encoding="utf-8")
+    blocked = {"status": "BLOCKED", "blockers": ["unsafe"]}
+
+    monkeypatch.setattr(
+        validator.subprocess,
+        "run",
+        lambda args, capture_output, text, check: subprocess.CompletedProcess(
+            args, 1, json.dumps(blocked), ""
+        ),
+    )
+
+    report, error = validator._sync_acceptance_artifact(tmp_path)
+
+    assert report["status"] == "BLOCKED"
+    assert "unsafe" in (error or "")
+    assert not artifact.exists()
+
+
+def test_generated_asset_metadata_does_not_stale_authored_acceptance_fingerprint(tmp_path: Path) -> None:
+    _write_required_scene_files(tmp_path)
+    (tmp_path / "scene_manifest.yaml").write_text("scene: {package: sample_scene}\n", encoding="utf-8")
+    (tmp_path / "urdf").mkdir()
+    authored_urdf = tmp_path / "urdf" / "scene.urdf.xacro"
+    authored_urdf.write_text("<robot name='sample'/>\n", encoding="utf-8")
+
+    before = acceptance_validator.authored_input_fingerprint(tmp_path)
+    derived = tmp_path / "urdf" / "generated_asset_metadata.yaml"
+    derived.write_text("schema: generated_asset_metadata/v1\nrevision: 1\n", encoding="utf-8")
+    after_create = acceptance_validator.authored_input_fingerprint(tmp_path)
+    derived.write_text("schema: generated_asset_metadata/v1\nrevision: 2\n", encoding="utf-8")
+    after_refresh = acceptance_validator.authored_input_fingerprint(tmp_path)
+
+    assert before == after_create == after_refresh
+
+    authored_urdf.write_text("<robot name='sample_changed'/>\n", encoding="utf-8")
+    assert acceptance_validator.authored_input_fingerprint(tmp_path) != before
+
+
+def test_home_browser_uses_the_same_generator_owned_fingerprint_exclusion():
+    source = (
+        REPO_ROOT
+        / "workcell_builder"
+        / "workcell_builder"
+        / "src_workcell_studio_scene_browser.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert 'relative.generic_string() == "urdf/generated_asset_metadata.yaml"' in source
+    assert "is_generator_owned_derived_input(candidate)" in source
+
+
+def test_validation_cli_main_uses_durable_artifact_as_success_source_of_truth():
+    source = (REPO_ROOT / "scripts" / "validate_builder_generated_scene.py").read_text(encoding="utf-8")
+
+    assert "artifact = _sync_validation_artifact(args.scene_path, report)" in source
+    assert 'report["validation_artifact"] = str(artifact) if report["ok"] else None' in source
+    assert "return 0 if report[\"ok\"] else 1" in source

@@ -26,6 +26,9 @@ ur5_arm_controller:
       - position
       - velocity
     allow_partial_joints_goal: false
+    # Explicitly select the safe future-default behavior and avoid Humble's
+    # deprecation warning about accepting non-zero final trajectory velocity.
+    allow_nonzero_velocity_at_trajectory_end: false
 
 ur5_gripper_controller:
   ros__parameters:
@@ -37,3 +40,4 @@ ur5_gripper_controller:
       - position
       - velocity
     allow_partial_joints_goal: false
+    allow_nonzero_velocity_at_trajectory_end: false

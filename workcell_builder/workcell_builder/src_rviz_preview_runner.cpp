@@ -85,9 +85,21 @@ QString build_selected_package_command(
 {
   const QString package = QString::fromStdString(
     scene_info.launch_package.empty() ? scene_info.scene_name : scene_info.launch_package);
-  return QString("source /opt/ros/humble/setup.bash && cd '%1' && "
-                 "colcon build --symlink-install --packages-up-to '%2'")
-    .arg(QString::fromStdString(workspace_root.string()), package);
+  const QString workspace = QString::fromStdString(workspace_root.string());
+  const QString setup = QString::fromStdString((workspace_root / "install" / "setup.bash").string());
+
+  // Workcell Studio is normally launched from a shell that already sourced this
+  // workspace.  Do not inherit that workspace as its own overlay during a
+  // generated-scene rebuild.  Start from ROS Humble, intentionally add the
+  // existing install as the dependency underlay, and override only the selected
+  // generated package.  This avoids rebuilding unrelated dependency packages
+  // and removes the noisy/unsafe self-overlay warning for every dependency.
+  return QString(
+    "env -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH -u COLCON_PREFIX_PATH "
+    "bash --noprofile --norc -c \"source /opt/ros/humble/setup.bash && "
+    "source '%1' && cd '%2' && "
+    "colcon build --symlink-install --packages-select '%3' --allow-overriding '%3'\"")
+    .arg(setup, workspace, package);
 }
 
 QString package_prefix_check_command(
@@ -104,7 +116,16 @@ QString build_launch_shell_command(
   const WorkcellStudioSceneInfo & scene_info,
   const boost::filesystem::path & workspace_root)
 {
-  return QString("source /opt/ros/humble/setup.bash && source '%1' && exec %2")
+  // All generated scenes currently use the global controller-manager namespace.
+  // Starting a second preview therefore creates ambiguous ROS services and can
+  // make one spawner load a controller on one manager and configure it on
+  // another.  Fail closed instead of launching a conflicting runtime.  The
+  // bracketed pgrep pattern intentionally does not match the pgrep process itself.
+  return QString(
+    "source /opt/ros/humble/setup.bash && source '%1' && "
+    "if pgrep -f '[c]ontroller_manager/ros2_control_node' >/dev/null 2>&1; "
+    "then echo 'Workcell Studio BLOCKER: another ros2_control preview is already running. Stop the existing simulation before launching a new one.' >&2; exit 73; fi && "
+    "export RCUTILS_COLORIZED_OUTPUT=0 && exec %2")
     .arg(QString::fromStdString((workspace_root / "install" / "setup.bash").string()),
       build_command(scene_info));
 }

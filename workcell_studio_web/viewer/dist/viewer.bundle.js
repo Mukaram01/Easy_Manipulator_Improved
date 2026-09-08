@@ -39388,7 +39388,9 @@ function missingAttachedUrdfVisuals(links) {
     link.traverse?.((node) => {
       let ancestor = node;
       while (ancestor && ancestor !== link) {
-        if (ancestor.visible === false || ancestor !== node && ancestor.isURDFLink)
+        if (ancestor.visible === false)
+          return;
+        if (ancestor !== node && ancestor.isURDFLink)
           return;
         ancestor = ancestor.parent;
       }

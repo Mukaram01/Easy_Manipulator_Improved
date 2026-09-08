@@ -104,19 +104,19 @@ TEST(RvizPreviewMetadataCommandTest, FakeHardwareAndRvizRemainDefaultWithoutReal
   EXPECT_EQ(command.indexOf("runtime_execution_enabled:=true"), -1);
 }
 
-TEST(RvizPreviewMetadataCommandTest, BuildsMetadataSelectedPackageDependencyClosureInDerivedWorkspace)
+TEST(RvizPreviewMetadataCommandTest, RebuildsOnlySelectedGeneratedPackageInCleanOverlay)
 {
   auto scene = runnable_scene();
   scene.launch_package = "metadata_selected_scene";
   const QString command = workcell_builder::build_selected_package_command(scene, "/home/user/workcell_ws");
 
-  EXPECT_EQ(
-    command,
-    "source /opt/ros/humble/setup.bash && cd '/home/user/workcell_ws' && "
-    "colcon build --symlink-install --packages-up-to 'metadata_selected_scene'");
-  EXPECT_EQ(command.indexOf("--packages-select"), -1);
+  EXPECT_NE(command.indexOf("env -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH -u COLCON_PREFIX_PATH"), -1);
+  EXPECT_NE(command.indexOf("source /opt/ros/humble/setup.bash"), -1);
+  EXPECT_NE(command.indexOf("source '/home/user/workcell_ws/install/setup.bash'"), -1);
+  EXPECT_NE(command.indexOf("colcon build --symlink-install --packages-select 'metadata_selected_scene'"), -1);
+  EXPECT_NE(command.indexOf("--allow-overriding 'metadata_selected_scene'"), -1);
+  EXPECT_EQ(command.indexOf("--packages-up-to"), -1);
   EXPECT_EQ(command.indexOf("ur5_2f_test"), -1);
-  EXPECT_EQ(command.indexOf("--allow-overriding"), -1);
 }
 
 TEST(RvizPreviewMetadataCommandTest, DiscoveryAndLaunchSourceBuiltOverlay)
@@ -130,6 +130,9 @@ TEST(RvizPreviewMetadataCommandTest, DiscoveryAndLaunchSourceBuiltOverlay)
   const QString launch = workcell_builder::build_launch_shell_command(scene, "/home/user/workcell_ws");
   EXPECT_NE(launch.indexOf("source /opt/ros/humble/setup.bash"), -1);
   EXPECT_NE(launch.indexOf("source '/home/user/workcell_ws/install/setup.bash'"), -1);
+  EXPECT_NE(launch.indexOf("pgrep -f"), -1);
+  EXPECT_NE(launch.indexOf("another ros2_control preview is already running"), -1);
+  EXPECT_NE(launch.indexOf("RCUTILS_COLORIZED_OUTPUT=0"), -1);
   EXPECT_NE(launch.indexOf("exec ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true"), -1);
   EXPECT_TRUE(workcell_builder::launch_command_is_safe(launch));
 }

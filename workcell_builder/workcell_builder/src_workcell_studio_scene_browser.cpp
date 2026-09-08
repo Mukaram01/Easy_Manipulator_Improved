@@ -22,6 +22,11 @@ namespace workcell_builder {
 namespace {
 bool exists_file(const fs::path & p){ boost::system::error_code ec; return fs::exists(p, ec) && !ec; }
 
+bool is_generator_owned_derived_input(const fs::path & relative)
+{
+  return relative.generic_string() == "urdf/generated_asset_metadata.yaml";
+}
+
 std::string authored_input_fingerprint(const fs::path & scene_dir)
 {
   std::vector<fs::path> relative_paths;
@@ -34,8 +39,9 @@ std::string authored_input_fingerprint(const fs::path & scene_dir)
     boost::system::error_code ec;
     if (!fs::is_directory(root, ec) || ec) continue;
     for (fs::recursive_directory_iterator it(root, ec), end; it != end && !ec; it.increment(ec)) {
-      if (fs::is_regular_file(it->path(), ec) && !ec)
-        relative_paths.push_back(fs::relative(it->path(), scene_dir));
+      if (!fs::is_regular_file(it->path(), ec) || ec) continue;
+      const fs::path candidate = fs::relative(it->path(), scene_dir);
+      if (!is_generator_owned_derived_input(candidate)) relative_paths.push_back(candidate);
     }
   }
   std::sort(relative_paths.begin(), relative_paths.end(),
@@ -49,6 +55,7 @@ std::string authored_input_fingerprint(const fs::path & scene_dir)
     }
   };
   for (const auto & relative : relative_paths) {
+    if (is_generator_owned_derived_input(relative)) continue;
     const fs::path path = scene_dir / relative;
     if (!exists_file(path)) continue;
     const std::string relative_bytes = relative.generic_string();
@@ -82,8 +89,10 @@ std::filesystem::file_time_type latest_authored_input_time(const fs::path & scen
     const fs::path root = scene_dir / relative;
     boost::system::error_code ec;
     if (!fs::is_directory(root, ec) || ec) continue;
-    for (fs::recursive_directory_iterator it(root, ec), end; it != end && !ec; it.increment(ec))
-      include_file(it->path());
+    for (fs::recursive_directory_iterator it(root, ec), end; it != end && !ec; it.increment(ec)) {
+      const fs::path candidate = fs::relative(it->path(), scene_dir);
+      if (!is_generator_owned_derived_input(candidate)) include_file(it->path());
+    }
   }
   return latest;
 }

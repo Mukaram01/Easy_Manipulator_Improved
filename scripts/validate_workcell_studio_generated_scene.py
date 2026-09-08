@@ -11,6 +11,7 @@ except Exception:
 
 STATUS_PASS="PASS"; STATUS_WARN="WARNINGS"; STATUS_BLOCKED="BLOCKED"; STATUS_PREVIEW="PREVIEW_ONLY"
 ROS_NAME_RE=re.compile(r"^[a-z][a-z0-9_]*$")
+DERIVED_FINGERPRINT_EXCLUSIONS={Path("urdf/generated_asset_metadata.yaml")}
 
 
 def _load_yaml(path: Path)->dict[str, Any]:
@@ -20,12 +21,11 @@ def _load_yaml(path: Path)->dict[str, Any]:
         out=yaml.safe_load(text)
         return out if isinstance(out, dict) else {}
     return {}
-
 def _has(scene:Path, rel:str)->bool: return (scene/rel).is_file()
 
 
 def authored_input_fingerprint(scene: Path) -> str:
-    """Hash the authored inputs used by Home's acceptance freshness contract."""
+    """Hash authored inputs only; generator-owned metadata must not stale validation."""
     relative_paths = [
         Path(value) for value in (
             "package.xml", "CMakeLists.txt", "environment.yaml", "environment_layout.yaml",
@@ -35,7 +35,11 @@ def authored_input_fingerprint(scene: Path) -> str:
     for root_name in ("config", "launch", "urdf", "assets"):
         root = scene / root_name
         if root.is_dir():
-            relative_paths.extend(path.relative_to(scene) for path in root.rglob("*") if path.is_file())
+            relative_paths.extend(
+                path.relative_to(scene)
+                for path in root.rglob("*")
+                if path.is_file() and path.relative_to(scene) not in DERIVED_FINGERPRINT_EXCLUSIONS
+            )
     digest = 0xcbf29ce484222325
     def update(data: bytes) -> None:
         nonlocal digest
@@ -43,6 +47,8 @@ def authored_input_fingerprint(scene: Path) -> str:
             digest ^= value
             digest = (digest * 0x100000001b3) & 0xffffffffffffffff
     for relative in sorted(set(relative_paths), key=lambda value: value.as_posix()):
+        if relative in DERIVED_FINGERPRINT_EXCLUSIONS:
+            continue
         path = scene / relative
         if not path.is_file():
             continue
@@ -51,7 +57,6 @@ def authored_input_fingerprint(scene: Path) -> str:
         update(path.read_bytes())
         update(b"\0")
     return f"{digest:016x}"
-
 def validate(scene:Path)->dict[str,Any]:
     checks=[]; blockers=[]; warnings=[]
     req=["package.xml","CMakeLists.txt","environment.yaml","scene_manifest.yaml","config/task_recipe.yaml","config/workcell_builder_task_intent.yaml"]
@@ -112,7 +117,6 @@ def validate(scene:Path)->dict[str,Any]:
         rpy_ok="-1.5708 -1.5708 0" in xacro_text
         checks.append({"name":"legacy generated gripper mount RPY marker is present","ok":rpy_ok,"optional":True})
 
-
     merge_report = {}
     acceptance_layout_stale=False
     if (scene/"generated/workcell_studio_layout_merge_report.json").is_file():
@@ -131,7 +135,6 @@ def validate(scene:Path)->dict[str,Any]:
     cmd=f"ros2 launch {scene.name} demo.launch.py use_fake_hardware:=true"
     checks.append({"name":"launch command contains use_fake_hardware:=true","ok":True})
 
-    # mirror browser high-level statuses
     has_env=_has(scene,"environment.yaml"); has_launch=launch_ready
     if not has_env: status="MISSING_ENVIRONMENT_YAML"
     elif not has_launch and preview_ok: status=STATUS_PREVIEW
