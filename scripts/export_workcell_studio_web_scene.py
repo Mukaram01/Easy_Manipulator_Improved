@@ -17,6 +17,7 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 import export_workcell_studio_web_scene_impl as _impl
+import workcell_studio_collada_ros_axis as _collada_axis
 import workcell_studio_visual_artifact_portability as _portability
 
 _EXPORTED_NAMES = {
@@ -112,6 +113,7 @@ def build_web_scene(
     authoring_session_overlay: Optional[Path] = None,
 ):
     _sync_impl_globals()
+    scene_dir = Path(scene_dir)
     payload = _ORIGINAL_BUILD_WEB_SCENE(
         scene_dir,
         stage_assets=stage_assets,
@@ -121,8 +123,13 @@ def build_web_scene(
     )
     _portability.normalize_web_scene_payload(
         payload,
-        scene_dir=Path(scene_dir),
+        scene_dir=scene_dir,
         output_path=output_path,
+        stage_assets=stage_assets,
+    )
+    _collada_axis.normalize_staged_collada_axes(
+        payload,
+        repo_root=_impl._repo_root(scene_dir, output_path),
         stage_assets=stage_assets,
     )
     return payload
