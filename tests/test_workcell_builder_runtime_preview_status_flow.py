@@ -78,6 +78,19 @@ def test_recovered_stale_mesh_paths_not_actionable_warning():
     assert 'source_path_resolution_outcome.contains' in total
 
 
+def test_non_rendered_transform_anchors_are_explicit_nonvisual_contract_rows():
+    extractor_test = (
+        ROOT / 'tests/test_extract_scene_urdf_visual_mesh_index_frame_anchors.py'
+    ).read_text(encoding='utf-8')
+    portability = (
+        ROOT / 'scripts/workcell_studio_visual_artifact_portability.py'
+    ).read_text(encoding='utf-8')
+
+    assert 'anchor["render_expected"] is False' in extractor_test
+    assert 'anchor["mesh_available"] is False' in extractor_test
+    assert 'intentional_non_mesh_transform_anchor' in portability
+
+
 def test_root_resolution_failure_summary_deduplicated():
     assert 'root_resolution_summary_keys_' in H
     assert 'root_resolution_failed' in CPP
