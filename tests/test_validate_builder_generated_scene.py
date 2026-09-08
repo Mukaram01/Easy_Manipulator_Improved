@@ -21,6 +21,10 @@ def _load(name: str, path: Path):
 
 
 validator = _load("validate_builder_generated_scene", REPO_ROOT / "scripts" / "validate_builder_generated_scene.py")
+acceptance_validator = _load(
+    "validate_workcell_studio_generated_scene_test",
+    REPO_ROOT / "scripts" / "validate_workcell_studio_generated_scene.py",
+)
 
 
 def _write_required_scene_files(scene_root: Path) -> None:
@@ -199,3 +203,35 @@ def test_acceptance_failure_clears_stale_home_pass(monkeypatch: pytest.MonkeyPat
     assert report["status"] == "BLOCKED"
     assert "unsafe" in (error or "")
     assert not artifact.exists()
+
+
+def test_generated_asset_metadata_does_not_stale_authored_acceptance_fingerprint(tmp_path: Path) -> None:
+    _write_required_scene_files(tmp_path)
+    (tmp_path / "scene_manifest.yaml").write_text("scene: {package: sample_scene}\n", encoding="utf-8")
+    (tmp_path / "urdf").mkdir()
+    authored_urdf = tmp_path / "urdf" / "scene.urdf.xacro"
+    authored_urdf.write_text("<robot name='sample'/>\n", encoding="utf-8")
+
+    before = acceptance_validator.authored_input_fingerprint(tmp_path)
+    derived = tmp_path / "urdf" / "generated_asset_metadata.yaml"
+    derived.write_text("schema: generated_asset_metadata/v1\nrevision: 1\n", encoding="utf-8")
+    after_create = acceptance_validator.authored_input_fingerprint(tmp_path)
+    derived.write_text("schema: generated_asset_metadata/v1\nrevision: 2\n", encoding="utf-8")
+    after_refresh = acceptance_validator.authored_input_fingerprint(tmp_path)
+
+    assert before == after_create == after_refresh
+
+    authored_urdf.write_text("<robot name='sample_changed'/>\n", encoding="utf-8")
+    assert acceptance_validator.authored_input_fingerprint(tmp_path) != before
+
+
+def test_home_browser_uses_the_same_generator_owned_fingerprint_exclusion():
+    source = (
+        REPO_ROOT
+        / "workcell_builder"
+        / "workcell_builder"
+        / "src_workcell_studio_scene_browser.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert 'relative.generic_string() == "urdf/generated_asset_metadata.yaml"' in source
+    assert "is_generator_owned_derived_input(candidate)" in source
