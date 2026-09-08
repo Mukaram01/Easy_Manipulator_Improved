@@ -218,6 +218,7 @@ QString workcellStudioStyleSheet()
     "QTabBar::tab:selected { background: #ffffff; color: #17202a; border-bottom-color: #ffffff; }"
     "QTabBar::tab:hover { background: #e1eaf3; }"
     "QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTextBrowser, QTextEdit, QPlainTextEdit, QListWidget, QTreeWidget, QTableWidget { background-color: #ffffff; border: 1px solid #c7d3df; border-radius: 4px; selection-background-color: #d7edf7; selection-color: #17202a; }"
+    "QDoubleSpinBox#taskMinimumConfidence { qproperty-specialValueText: 'Unset'; }"
     "QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QListWidget:focus, QTreeWidget:focus, QTableWidget:focus { border: 2px solid #1d5da8; }"
     "QHeaderView::section { background: #eef3f8; color: #17202a; border: 0; border-right: 1px solid #c7d3df; border-bottom: 1px solid #c7d3df; padding: 5px; font-weight: 600; }"
     "QPushButton, QToolButton { min-height: 30px; background-color: #60758a; color: #ffffff; border: 1px solid #4d5b6a; border-radius: 5px; padding: 5px 10px; }"
