@@ -10,6 +10,8 @@
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QUrlQuery>
+#include <QElapsedTimer>
+#include <QThread>
 
 #define private public
 #include "scene_preview_widget.h"
@@ -422,6 +424,34 @@ TEST(ScenePreviewWidgetUi, PostSaveRefreshUsesPersistedCanonicalSourcesWithoutSt
   stop_preparation(widget);
 }
 
+bool wait_until(const std::function<bool()> & predicate)
+{
+  QElapsedTimer timer;
+  timer.start();
+  while (!predicate() && timer.elapsed() < 10000) {
+    QApplication::processEvents();
+    QThread::msleep(1);
+  }
+  return predicate();
+}
+
+bool start_publication_server(ScenePreviewWidget & widget, const QString & root)
+{
+  QDir().mkpath(root + "/scripts");
+  QDir().mkpath(root + "/workcell_studio_web/viewer/dist");
+  if (!QFile::copy(QStringLiteral(WORKCELL_BUILDER_REPO_ROOT) + "/scripts/workcell_product_view_server.py",
+      root + "/scripts/workcell_product_view_server.py")) return false;
+  for (const QString & path : {QStringLiteral("workcell_runtime_marker.json"),
+      QStringLiteral("index.html"), QStringLiteral("dist/viewer.bundle.js")}) {
+    QFile file(root + "/workcell_studio_web/viewer/" + path);
+    if (!file.open(QIODevice::WriteOnly)) return false;
+    file.write("{}");
+  }
+  widget.embedded_web_server_ = new OwnedProductViewServer(&widget);
+  widget.embedded_web_server_->start(root);
+  return wait_until([&]() { return widget.embedded_web_server_->running(); });
+}
+
 TEST(ScenePreviewWidgetUi, CurrentPreparationPublishesAtomicallyToCanonicalBrowserPath)
 {
   ASSERT_NE(ensure_app(), nullptr);
@@ -435,21 +465,18 @@ TEST(ScenePreviewWidgetUi, CurrentPreparationPublishesAtomicallyToCanonicalBrows
   select_identity(widget, identity);
   auto * process = completed_preparation(widget, identity, QStringLiteral("CURRENT_MARKER"));
   widget.embedded_web_prepare_process_ = process;
-  widget.embedded_web_server_process_ = new QProcess(&widget);
-  widget.embedded_web_server_process_->start(
-    QStringLiteral("/bin/sh"), QStringList{QStringLiteral("-c"), QStringLiteral("sleep 30")});
-  ASSERT_TRUE(widget.embedded_web_server_process_->waitForStarted());
-  widget.embedded_web_server_is_owned_ = true;
-  widget.embedded_web_server_session_repo_root_ = root.path();
-  widget.embedded_web_server_session_port_ = identity.selected_server_port;
+  ASSERT_TRUE(start_publication_server(widget, root.path()));
   widget.on_embedded_web_prepare_finished(identity, process, 0, QProcess::NormalExit);
+  ASSERT_TRUE(wait_until([&]() { return !widget.embedded_web_expected_viewer_url_.isEmpty(); }));
+  auto bound_identity = identity;
+  bound_identity.selected_server_port = widget.embedded_web_server_->port();
 
   QFile canonical(QDir(root.path()).filePath(identity.generated_web_scene_path));
   ASSERT_TRUE(canonical.open(QIODevice::ReadOnly));
   EXPECT_TRUE(canonical.readAll().contains("CURRENT_MARKER"));
   EXPECT_EQ(widget.embedded_web_canonical_publications_, 1u);
-  EXPECT_EQ(widget.embedded_web_prepared_identity_, identity);
-  EXPECT_EQ(widget.embedded_web_loading_identity_, identity);
+  EXPECT_EQ(widget.embedded_web_prepared_identity_, bound_identity);
+  EXPECT_EQ(widget.embedded_web_loading_identity_, bound_identity);
   EXPECT_EQ(QUrlQuery(widget.embedded_web_expected_viewer_url_).queryItemValue(QStringLiteral("scene")),
     identity.generated_web_scene_path);
   EXPECT_EQ(widget.embedded_web_preparation_diagnostics_.value(
@@ -477,18 +504,12 @@ TEST(ScenePreviewWidgetUi, LateSupersededCompletionCannotPublishOrNavigate)
   auto * process_b = completed_preparation(widget, identity_b, QStringLiteral("MARKER_B"));
   widget.embedded_web_prepare_process_ = process_b;
 
-  // Reuse a verified owned server so successful B publication immediately
-  // reaches the canonical browser-loading lifecycle without network probes.
-  widget.embedded_web_server_process_ = new QProcess(&widget);
-  widget.embedded_web_server_process_->start(
-    QStringLiteral("/bin/sh"), QStringList{QStringLiteral("-c"), QStringLiteral("sleep 30")});
-  ASSERT_TRUE(widget.embedded_web_server_process_->waitForStarted());
-  widget.embedded_web_server_is_owned_ = true;
-  widget.embedded_web_server_session_repo_root_ = root.path();
-  widget.embedded_web_server_session_port_ = identity_b.selected_server_port;
+  ASSERT_TRUE(start_publication_server(widget, root.path()));
 
   widget.on_embedded_web_prepare_finished(identity_b, process_b, 0, QProcess::NormalExit);
-  QApplication::processEvents();
+  ASSERT_TRUE(wait_until([&]() { return widget.embedded_web_browser_navigations_started_ == 1; }));
+  auto bound_identity_b = identity_b;
+  bound_identity_b.selected_server_port = widget.embedded_web_server_->port();
   const auto prepared_b = widget.embedded_web_prepared_identity_;
   const auto loading_b = widget.embedded_web_loading_identity_;
   const auto readiness_state_b = widget.embedded_product_view_state_;
@@ -507,11 +528,11 @@ TEST(ScenePreviewWidgetUi, LateSupersededCompletionCannotPublishOrNavigate)
     widget.embedded_web_preparation_diagnostic_key(identity_a)).terminal_outcome, QStringLiteral("stale_discarded"));
   EXPECT_EQ(widget.embedded_web_prepared_identity_, prepared_b);
   EXPECT_EQ(widget.embedded_web_loading_identity_, loading_b);
-  EXPECT_EQ(widget.embedded_web_prepared_identity_, identity_b);
-  EXPECT_EQ(widget.embedded_web_loading_identity_, identity_b);
+  EXPECT_EQ(widget.embedded_web_prepared_identity_, bound_identity_b);
+  EXPECT_EQ(widget.embedded_web_loading_identity_, bound_identity_b);
   EXPECT_EQ(widget.embedded_product_view_state_, readiness_state_b);
   EXPECT_EQ(widget.embedded_web_expected_viewer_url_, browser_url_b);
-  EXPECT_EQ(widget.embedded_web_active_identity_, identity_b);
+  EXPECT_EQ(widget.embedded_web_active_identity_, bound_identity_b);
   EXPECT_EQ(widget.embedded_web_canonical_publications_, publications_after_b);
   EXPECT_EQ(publications_after_b, 1u);
   EXPECT_EQ(widget.embedded_web_browser_navigations_started_, navigations_after_b);
@@ -531,8 +552,7 @@ TEST(ScenePreviewWidgetUi, EmbeddedWebNavigationRequiresVerifiedServerReadiness)
   identity.selected_server_port = 18765;
   identity.payload_revision = 1;
   identity.generation = widget.embedded_web_request_generation_;
-  widget.embedded_web_active_identity_ = identity;
-  widget.embedded_web_has_active_identity_ = true;
+  select_identity(widget, identity);
 
   widget.embedded_web_server_lifecycle_ = ScenePreviewWidget::EmbeddedWebServerLifecycle::ServerProbing;
   widget.load_prepared_embedded_web_scene(identity);
@@ -541,6 +561,39 @@ TEST(ScenePreviewWidgetUi, EmbeddedWebNavigationRequiresVerifiedServerReadiness)
   widget.embedded_web_server_lifecycle_ = ScenePreviewWidget::EmbeddedWebServerLifecycle::ServerReady;
   widget.load_prepared_embedded_web_scene(identity);
   EXPECT_EQ(widget.embedded_web_expected_viewer_url_.port(), identity.selected_server_port);
+
+  // Rebinding the same payload is a new server context, not a duplicate load.
+  identity.selected_server_port = 23456;
+  select_identity(widget, identity);
+  widget.embedded_web_server_lifecycle_ = ScenePreviewWidget::EmbeddedWebServerLifecycle::ServerReady;
+  widget.load_prepared_embedded_web_scene(identity);
+  EXPECT_EQ(widget.embedded_web_expected_viewer_url_.port(), identity.selected_server_port);
+}
+
+TEST(ScenePreviewWidgetUi, OwnedServerStartupFailureRetriesOnlyOnce)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+  QTemporaryDir root;
+  ASSERT_TRUE(root.isValid());
+  ASSERT_TRUE(QDir().mkpath(root.path() + "/scripts"));
+  QFile script(root.path() + "/scripts/workcell_product_view_server.py");
+  ASSERT_TRUE(script.open(QIODevice::WriteOnly));
+  script.write("from pathlib import Path\n"
+    "with Path('attempts').open('a') as f: f.write('attempt\\n')\n"
+    "raise RuntimeError('terminal startup failure')\n");
+  script.close();
+  ScenePreviewWidget widget;
+  const auto identity = publication_identity(root.path(), "ur5_2f_test", 1, 1, QByteArrayLiteral("retry"));
+  select_identity(widget, identity);
+  widget.select_owned_embedded_web_server(identity);
+  ASSERT_TRUE(wait_until([&]() {
+    return widget.embedded_product_view_state_ == ScenePreviewWidget::EmbeddedProductViewState::Failed;
+  }));
+  QFile attempts(root.path() + "/attempts");
+  ASSERT_TRUE(attempts.open(QIODevice::ReadOnly));
+  EXPECT_EQ(attempts.readAll(), QByteArray("attempt\nattempt\n"));
+  EXPECT_FALSE(widget.embedded_web_server_->running());
+  EXPECT_TRUE(widget.embedded_web_last_error_.contains("terminal startup failure"));
 }
 
 TEST(ScenePreviewWidgetUi, EmbeddedWebViewerUrlPreservesScenePathAndPayloadRevision)
@@ -553,7 +606,6 @@ TEST(ScenePreviewWidgetUi, EmbeddedWebViewerUrlPreservesScenePathAndPayloadRevis
     widget.preview_scene_name_ = QStringLiteral("ur5_2f_test");
     widget.embedded_web_request_generation_ = 1;
     widget.embedded_web_server_lifecycle_ = ScenePreviewWidget::EmbeddedWebServerLifecycle::ServerReady;
-    widget.embedded_web_server_port_ = 8765;
 
     ScenePreviewWidget::EmbeddedWebRequestIdentity identity;
     identity.scene_id = QStringLiteral("ur5_2f_test");
@@ -561,6 +613,7 @@ TEST(ScenePreviewWidgetUi, EmbeddedWebViewerUrlPreservesScenePathAndPayloadRevis
     identity.selected_server_port = 8765;
     identity.payload_revision = revision;
     identity.generation = widget.embedded_web_request_generation_;
+    select_identity(widget, identity);
     widget.load_prepared_embedded_web_scene(identity);
 
     const QString logical_scene_path = QStringLiteral("build/workcell_studio_web_scene/ur5_2f_test.web_scene.json");

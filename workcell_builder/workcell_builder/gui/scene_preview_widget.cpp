@@ -17,8 +17,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QTimer>
-#include <QTcpServer>
-#include <QHostAddress>
+#include <QPointer>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
@@ -372,7 +371,8 @@ protected:
     const QString script = QStringLiteral(
       "window.__WORKCELL_EDITOR_API_V1__?.commitPlacementPointer?.(%1,%2)")
       .arg(point.x()).arg(point.y());
-    page()->runJavaScript(script, [this](const QVariant & result) {
+    page()->runJavaScript(script, [this, guard = QPointer<QWebEngineView>(this)](const QVariant & result) {
+      if (!guard) return;
       // A rejected support/collision/bounds result ends the native session too.
       // A valid result stays armed only until the existing editor-event poll
       // delivers its single placement_requested event to MainWindow.
@@ -881,6 +881,10 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
 
 ScenePreviewWidget::~ScenePreviewWidget()
 {
+  embedded_web_destroying_ = true;
+  // The containing MainWindow's members may already be destroyed. Retire
+  // outbound UI callbacks before process waits or WebEngine teardown.
+  disconnect(this, nullptr, nullptr, nullptr);
   cancel_embedded_web_lifecycle(true);
 }
 
@@ -1394,13 +1398,6 @@ void ScenePreviewWidget::run_embedded_web_server_probes(
         load_prepared_embedded_web_scene(identity);
         return;
       }
-      if (!embedded_web_server_is_owned_) {
-        // Never reuse or terminate an untrusted endpoint. A marker mismatch
-        // receives an alternate port; a refused endpoint may be claimed.
-        select_owned_embedded_web_server(identity,
-          !embedded_web_server_probe_.failure_detail.contains(QStringLiteral("marker does not match")));
-        return;
-      }
       if (!embedded_web_server_probe_.retryable_failure) {
         fail_embedded_web_server_probe(identity, port, navigation_token, embedded_web_server_probe_.failure_detail);
         return;
@@ -1495,114 +1492,66 @@ bool ScenePreviewWidget::finish_post_save_product_view_refresh(
 
 void ScenePreviewWidget::ensure_embedded_web_server_started(const QString & repo_root, const EmbeddedWebRequestIdentity & identity)
 {
-  if (repo_root.trimmed().isEmpty() || repo_root != identity.absolute_repo_root ||
-      identity.selected_server_port <= 0 || !embedded_web_identity_is_current(identity)) return;
-  EmbeddedWebRequestIdentity session_identity = identity;
-  if (embedded_web_server_is_owned_ && embedded_web_server_process_ &&
-      embedded_web_server_process_->state() != QProcess::NotRunning &&
-      embedded_web_server_session_repo_root_ == repo_root && embedded_web_server_session_port_ > 0) {
-    session_identity.selected_server_port = embedded_web_server_session_port_;
+  if (repo_root.isEmpty() || repo_root != identity.absolute_repo_root || !embedded_web_identity_is_current(identity)) return;
+  if (embedded_web_server_ && embedded_web_server_->running() && embedded_web_server_->root() == repo_root) {
+    EmbeddedWebRequestIdentity session_identity = identity;
+    session_identity.selected_server_port = embedded_web_server_->port();
     embedded_web_active_identity_ = session_identity;
-    embedded_web_server_lifecycle_ = EmbeddedWebServerLifecycle::ServerReady;
-    load_prepared_embedded_web_scene(session_identity);
+    start_embedded_web_server_probes(session_identity, session_identity.selected_server_port,
+      ++embedded_web_navigation_token_, repo_root);
     return;
   }
-  const int port = identity.selected_server_port;
-  const quint64 navigation_token = ++embedded_web_navigation_token_;
-  // This probe is for an endpoint whose ownership is not yet established.
-  // An old owned process remains tracked separately and is never confused with
-  // a listener discovered at the configured port.
-  embedded_web_server_is_owned_ = false;
-  embedded_web_server_probe_ = EmbeddedWebServerProbe{};
-  embedded_web_server_probe_.identity = identity;
-  embedded_web_server_probe_.port = port;
-  embedded_web_server_probe_.navigation_token = navigation_token;
-  // Probe the configured/default endpoint first; it is reusable only after all
-  // resources and the repository marker have been verified.
-  start_embedded_web_server_probes(identity, port, navigation_token, repo_root);
+  select_owned_embedded_web_server(identity);
 }
 
-void ScenePreviewWidget::select_owned_embedded_web_server(
-  const EmbeddedWebRequestIdentity & identity, bool use_current_port)
+void ScenePreviewWidget::select_owned_embedded_web_server(const EmbeddedWebRequestIdentity & identity)
 {
   if (!embedded_web_identity_is_current(identity)) return;
-  int port = identity.selected_server_port;
-  if (!use_current_port) {
-    QTcpServer socket;
-    if (!socket.listen(QHostAddress::LocalHost, 0)) {
-      fail_embedded_web_server_probe(identity, identity.selected_server_port, embedded_web_navigation_token_,
-        QStringLiteral("could not select an alternate loopback port: %1").arg(socket.errorString()));
-      return;
-    }
-    port = socket.serverPort();
-  }
-  EmbeddedWebRequestIdentity owned_identity = identity;
-  owned_identity.selected_server_port = port;
-  // This is a new immutable active request. Delayed callbacks from the
-  // untrusted endpoint are now stale before any owned process is launched.
-  embedded_web_active_identity_ = owned_identity;
-  embedded_web_server_port_ = port;
-  embedded_web_server_probe_ = EmbeddedWebServerProbe{};
-  start_owned_embedded_web_server(owned_identity);
+  EmbeddedWebRequestIdentity pending_identity = identity;
+  pending_identity.selected_server_port = 0;
+  embedded_web_active_identity_ = pending_identity;
+  start_owned_embedded_web_server(pending_identity);
 }
 
 void ScenePreviewWidget::start_owned_embedded_web_server(const EmbeddedWebRequestIdentity & identity)
 {
-  if (!embedded_web_identity_is_current(identity) || identity.absolute_repo_root.isEmpty() || identity.selected_server_port <= 0) return;
-  const QString repo_root = identity.absolute_repo_root;
-  const int port = identity.selected_server_port;
+  if (!embedded_web_identity_is_current(identity) || identity.absolute_repo_root.isEmpty()) return;
+  if (!embedded_web_server_) {
+    embedded_web_server_ = new OwnedProductViewServer(this);
+    embedded_web_server_->diagnostic = [this](const QString & message) {
+      if (!embedded_web_destroying_) emit studio_log_requested(message);
+      qInfo().noquote() << message;
+    };
+    embedded_web_server_->failed = [this](const QString & detail) {
+      // The owner rejects obsolete process epochs. Use the *current* scene
+      // identity because a healthy server session can outlive a scene request.
+      if (!embedded_web_has_active_identity_ || embedded_web_destroying_) return;
+      const auto failed_identity = embedded_web_active_identity_;
+      const QString key = embedded_web_recovery_key(failed_identity);
+      embedded_web_server_->stop();
+      if (!embedded_web_automatic_recovery_attempts_.contains(key)) {
+        embedded_web_automatic_recovery_attempts_.insert(key);
+        emit studio_log_requested(QStringLiteral("Retrying owned Product View server once with a new OS-assigned endpoint."));
+        QTimer::singleShot(0, this, [this, failed_identity]() {
+          if (embedded_web_identity_is_current(failed_identity)) select_owned_embedded_web_server(failed_identity);
+        });
+      } else {
+        handle_embedded_web_runtime_failure(failed_identity, embedded_web_navigation_token_, detail);
+      }
+    };
+  }
   const quint64 navigation_token = ++embedded_web_navigation_token_;
   embedded_web_server_probe_ = EmbeddedWebServerProbe{};
-  embedded_web_server_probe_.identity = identity;
-  embedded_web_server_probe_.port = port;
-  embedded_web_server_probe_.navigation_token = navigation_token;
-  if (embedded_web_server_process_ && embedded_web_server_process_->state() != QProcess::NotRunning) {
-    // This is an earlier owned request, never an arbitrary listener. Retire it
-    // before replacing it; callbacks remain guarded by their old identity.
-    disconnect(embedded_web_server_process_, nullptr, this, nullptr);
-    embedded_web_server_process_->terminate();
-    if (!embedded_web_server_process_->waitForFinished(1000)) {
-      embedded_web_server_process_->kill();
-      embedded_web_server_process_->waitForFinished(1000);
-    }
-    embedded_web_server_process_->deleteLater();
-    embedded_web_server_process_ = nullptr;
-    embedded_web_server_is_owned_ = false;
-  }
   embedded_web_server_lifecycle_ = EmbeddedWebServerLifecycle::ServerStarting;
   set_embedded_product_view_state(EmbeddedProductViewState::StartingServer, QStringLiteral("server_starting"));
-  if (embedded_web_server_process_) embedded_web_server_process_->deleteLater();
-  embedded_web_server_process_ = new QProcess(this);
-  embedded_web_server_is_owned_ = true;
-  embedded_web_server_session_repo_root_ = repo_root;
-  embedded_web_server_session_port_ = port;
-  QProcess * const process = embedded_web_server_process_;
-  process->setProgram(QStringLiteral("python3"));
-  process->setArguments(QStringList{"-m", "http.server", QString::number(port), "--bind", "127.0.0.1", "--directory", repo_root});
-  process->setWorkingDirectory(repo_root);
-  process->setProcessEnvironment(QProcessEnvironment::systemEnvironment());
-  process->setProcessChannelMode(QProcess::MergedChannels);
-  connect(process, &QProcess::started, this, [this, identity, port, navigation_token, process, repo_root]() {
-    if (process != embedded_web_server_process_ || !embedded_web_identity_is_current(identity) || identity.selected_server_port != port ||
-        embedded_web_server_probe_.identity != identity || embedded_web_server_probe_.port != port ||
-        embedded_web_server_probe_.navigation_token != navigation_token) return;
-    emit studio_log_requested(QStringLiteral("Embedded Product View server_starting milestone: port=%1.").arg(port));
-    start_embedded_web_server_probes(identity, port, navigation_token, repo_root);
-  });
-  connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this, identity, port, navigation_token, process](int exit_code, QProcess::ExitStatus) {
-    if (process != embedded_web_server_process_ || !embedded_web_identity_is_current(identity) || identity.selected_server_port != port ||
-        embedded_web_server_probe_.identity != identity || embedded_web_server_probe_.port != port ||
-        embedded_web_server_probe_.navigation_token != navigation_token) return;
-    fail_embedded_web_server_probe(identity, port, navigation_token, QStringLiteral("local server exited with code %1: %2").arg(exit_code).arg(QString::fromUtf8(process->readAll()).trimmed().left(240)));
-  });
-  connect(process, &QProcess::errorOccurred, this, [this, identity, port, navigation_token, process](QProcess::ProcessError error) {
-    if (process != embedded_web_server_process_ || !embedded_web_identity_is_current(identity) || identity.selected_server_port != port ||
-        embedded_web_server_probe_.identity != identity || embedded_web_server_probe_.port != port ||
-        embedded_web_server_probe_.navigation_token != navigation_token) return;
-    fail_embedded_web_server_probe(identity, port, navigation_token,
-      QStringLiteral("local server startup failure (%1): %2").arg(static_cast<int>(error)).arg(process->errorString()));
-  });
-  process->start();
+  embedded_web_server_->ready = [this, identity, navigation_token](int port) {
+    if (!embedded_web_identity_is_current(identity) || navigation_token != embedded_web_navigation_token_) return;
+    EmbeddedWebRequestIdentity bound_identity = identity;
+    bound_identity.selected_server_port = port;
+    embedded_web_active_identity_ = bound_identity;
+    start_embedded_web_server_probes(bound_identity, port, navigation_token, bound_identity.absolute_repo_root);
+  };
+  embedded_web_server_->start(identity.absolute_repo_root);
 }
 
 
@@ -1665,7 +1614,8 @@ main{max-width:42rem;padding:2rem}h1{font-size:1.3rem}code{color:#93c5fd}</style
   embedded_web_view_->page()->runJavaScript(QStringLiteral(
     "window.__WORKCELL_VIEWER_LIFECYCLE__?.disposeScene?.('qt_loading_handoff') || "
     "({disposed:false,reason:'lifecycle_api_unavailable'})"),
-    [this, html, scene_id, teardown_navigation_token](const QVariant & result) {
+    [this, guard = QPointer<ScenePreviewWidget>(this), html, scene_id, teardown_navigation_token](const QVariant & result) {
+      if (!guard || embedded_web_destroying_) return;
       if (!embedded_web_view_ || teardown_navigation_token != embedded_web_navigation_token_) return;
       const QVariantMap details = result.toMap();
       emit studio_log_requested(QStringLiteral(
@@ -1777,21 +1727,8 @@ void ScenePreviewWidget::cancel_embedded_web_lifecycle(bool stop_owned_server)
     process->deleteLater();
   }
 
-  if (stop_owned_server && embedded_web_server_is_owned_ && embedded_web_server_process_) {
-    QProcess * const process = embedded_web_server_process_;
-    disconnect(process, nullptr, this, nullptr);
-    if (process->state() != QProcess::NotRunning) {
-      process->terminate();
-      if (!process->waitForFinished(1000)) {
-        process->kill();
-        process->waitForFinished(1000);
-      }
-    }
-    embedded_web_server_process_ = nullptr;
-    embedded_web_server_is_owned_ = false;
-    embedded_web_server_session_repo_root_.clear();
-    embedded_web_server_session_port_ = 0;
-    process->deleteLater();
+  if (embedded_web_server_ && (stop_owned_server || !embedded_web_server_->running())) {
+    embedded_web_server_->stop();
   }
 }
 
@@ -1987,9 +1924,9 @@ ScenePreviewWidget::EmbeddedWebRequestIdentity ScenePreviewWidget::embedded_web_
   // Resolve the repository before publishing the request identity.  Every
   // asynchronous callback therefore has the exact root it is allowed to use.
   identity.absolute_repo_root = resolve_embedded_web_repo_root(identity.absolute_scene_dir);
-  // Each refresh starts by probing the configured loopback endpoint.  An
-  // alternate port, when needed, replaces the active immutable identity.
-  identity.selected_server_port = 8765;
+  // Zero means no endpoint yet. Only the owned child's handshake can supply
+  // a port; a prepared request adopts it before probes or browser navigation.
+  identity.selected_server_port = 0;
   identity.product_view_backend = product_view_backend_ == ProductViewBackend::EmbeddedWeb3D ?
     QStringLiteral("embedded_web3d") : QStringLiteral("native_scene3d");
   identity.generated_web_scene_path = identity.scene_id.isEmpty() ?
@@ -2005,7 +1942,7 @@ ScenePreviewWidget::EmbeddedWebRequestIdentity ScenePreviewWidget::embedded_web_
 bool ScenePreviewWidget::embedded_web_identity_is_current(const EmbeddedWebRequestIdentity & identity) const
 {
   const QString selected_scene = normalized_preview_context(preview_context_).scene_id;
-  return !selected_scene.isEmpty() && identity.scene_id == selected_scene &&
+  return !embedded_web_destroying_ && !selected_scene.isEmpty() && identity.scene_id == selected_scene &&
     embedded_web_has_active_identity_ && embedded_web_active_identity_ == identity;
 }
 
@@ -2561,7 +2498,8 @@ void ScenePreviewWidget::poll_embedded_web_readiness(const EmbeddedWebRequestIde
   };
 })()
 )JS";
-  embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kStatusScript), [this, identity, navigation_token, readiness_token, expected_json_path, viewer_url](const QVariant & value) {
+  embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kStatusScript), [this, guard = QPointer<ScenePreviewWidget>(this), identity, navigation_token, readiness_token, expected_json_path, viewer_url](const QVariant & value) {
+    if (!guard || embedded_web_destroying_) return;
     if (!embedded_web_identity_is_current(identity) || navigation_token != embedded_web_navigation_token_ ||
         readiness_token != embedded_web_readiness_token_ ||
         embedded_web_view_->url() != QUrl(viewer_url)) {
@@ -2732,8 +2670,8 @@ void ScenePreviewWidget::load_prepared_embedded_web_scene(const EmbeddedWebReque
     activate_native_compatibility_preview(detail);
     return;
   }
-  if (embedded_web_prepared_identity_.matches_effective_request(identity) ||
-      embedded_web_loading_identity_.matches_effective_request(identity)) {
+  if (embedded_web_prepared_identity_.matches_context(identity) ||
+      embedded_web_loading_identity_.matches_context(identity)) {
     ++embedded_web_duplicate_requests_coalesced_;
     return;
   }
@@ -2762,7 +2700,8 @@ void ScenePreviewWidget::load_prepared_embedded_web_scene(const EmbeddedWebReque
     embedded_web_view_->page()->runJavaScript(QStringLiteral(
       "window.__WORKCELL_VIEWER_LIFECYCLE__?.disposeScene?.('qt_scene_navigation') || "
       "({disposed:false,reason:'lifecycle_api_unavailable'})"),
-      [this, identity, queued_navigation_token, viewer_url](const QVariant & result) {
+      [this, guard = QPointer<ScenePreviewWidget>(this), identity, queued_navigation_token, viewer_url](const QVariant & result) {
+        if (!guard || embedded_web_destroying_) return;
         if (!embedded_web_view_ || !embedded_web_identity_is_current(identity) ||
             queued_navigation_token != embedded_web_navigation_token_ ||
             embedded_web_loading_navigation_token_ != queued_navigation_token ||
@@ -2852,7 +2791,8 @@ void ScenePreviewWidget::poll_embedded_editor_contract(
 })()
 )JS";
   embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kContractProbe),
-    [this, identity, navigation_token, browser_load_token, readiness_token, expected_url, attempt](const QVariant & value) {
+    [this, guard = QPointer<ScenePreviewWidget>(this), identity, navigation_token, browser_load_token, readiness_token, expected_url, attempt](const QVariant & value) {
+      if (!guard || embedded_web_destroying_) return;
       if (!embedded_web_view_ || !embedded_web_identity_is_current(identity) ||
           embedded_product_view_state_ != EmbeddedProductViewState::Ready ||
           embedded_editor_contract_state_ != EmbeddedEditorContractState::Pending ||
@@ -2932,7 +2872,8 @@ void ScenePreviewWidget::run_embedded_editor_command(const QString & script)
   }
   const EmbeddedWebRequestIdentity identity = embedded_web_active_identity_;
   const quint64 state_request_token = ++embedded_editor_state_request_token_;
-  embedded_web_view_->page()->runJavaScript(script, [this, identity, state_request_token](const QVariant & value){
+  embedded_web_view_->page()->runJavaScript(script, [this, guard = QPointer<ScenePreviewWidget>(this), identity, state_request_token](const QVariant & value){
+    if (!guard || embedded_web_destroying_) return;
     if (!embedded_web_identity_is_current(identity) ||
         state_request_token != embedded_editor_state_request_token_) return;
     apply_embedded_editor_state(value.toMap());
@@ -3035,7 +2976,8 @@ void ScenePreviewWidget::poll_embedded_editor_events()
   const EmbeddedWebRequestIdentity identity = embedded_web_active_identity_;
   const quint64 state_request_token = ++embedded_editor_state_request_token_;
   static const char kPoll[] = "(() => { const api = window.__WORKCELL_EDITOR_API_V1__; if (!api) return {state:{},events:[]}; return {state:api.getState(),events:api.drainEvents()}; })()";
-  embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kPoll), [this, identity, state_request_token](const QVariant & value){
+  embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kPoll), [this, guard = QPointer<ScenePreviewWidget>(this), identity, state_request_token](const QVariant & value){
+    if (!guard || embedded_web_destroying_) return;
     if (!embedded_web_identity_is_current(identity)) return;
     if (state_request_token != embedded_editor_state_request_token_) {
       if (embedded_editor_polling_) QTimer::singleShot(200, this, [this, identity]() {

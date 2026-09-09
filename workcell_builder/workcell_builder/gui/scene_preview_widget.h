@@ -8,8 +8,7 @@
 #include <QSet>
 #include <QMatrix4x4>
 #include <QProcess>
-#include <QtNetwork/QTcpServer>
-#include <QtNetwork/QHostAddress>
+#include "owned_product_view_server.hpp"
 #include <QHash>
 #include <QDateTime>
 #include <QUrl>
@@ -510,7 +509,7 @@ private:
   QString embedded_web_effective_request_key(const EmbeddedWebRequestIdentity & identity) const;
   void ensure_embedded_web_server_started(const QString & repo_root, const EmbeddedWebRequestIdentity & identity);
   void start_owned_embedded_web_server(const EmbeddedWebRequestIdentity & identity);
-  void select_owned_embedded_web_server(const EmbeddedWebRequestIdentity & identity, bool use_current_port);
+  void select_owned_embedded_web_server(const EmbeddedWebRequestIdentity & identity);
   void start_embedded_web_server_probes(const EmbeddedWebRequestIdentity & identity, int port, quint64 navigation_token,
     const QString & repo_root);
   void run_embedded_web_server_probes(const EmbeddedWebRequestIdentity & identity, int port, quint64 navigation_token);
@@ -614,7 +613,7 @@ private:
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
   QWebEngineView * embedded_web_view_{ nullptr };
 #endif
-  QProcess * embedded_web_server_process_{ nullptr };
+  OwnedProductViewServer * embedded_web_server_{ nullptr };
   QNetworkAccessManager * embedded_web_network_manager_{ nullptr };
   QProcess * embedded_web_prepare_process_{ nullptr };
   QHash<QString, EmbeddedWebPreparationDiagnostic> embedded_web_preparation_diagnostics_;
@@ -648,7 +647,7 @@ private:
   quint64 embedded_web_browser_load_token_{ 0 };
   quint64 embedded_web_loading_browser_load_token_{ 0 };
   QUrl embedded_web_expected_viewer_url_;
-  bool embedded_web_server_is_owned_{ false };
+  bool embedded_web_destroying_{ false };
   bool embedded_web_has_active_identity_{ false };
   bool embedded_web_has_committed_surface_{ false };
   bool pending_embedded_web_request_{ false };
@@ -660,8 +659,6 @@ private:
   bool pending_embedded_web_force_{ false };
   EmbeddedWebSourcePolicy pending_embedded_web_source_policy_{ EmbeddedWebSourcePolicy::AuthoringSession };
   QString embedded_web_last_suppressed_duplicate_key_;
-  QString embedded_web_server_session_repo_root_;
-  int embedded_web_server_session_port_{ 0 };
   quint64 embedded_web_effective_refresh_requests_received_{ 0 };
   quint64 embedded_web_duplicate_requests_coalesced_{ 0 };
   quint64 embedded_web_preparations_started_{ 0 };
@@ -680,11 +677,6 @@ private:
   bool native_compatibility_fallback_active_{ false };
   mutable QSet<QString> root_resolution_summary_keys_;
   QDateTime embedded_web_prepare_started_at_;
-  int embedded_web_server_port_{ []() {
-    QTcpServer socket;
-    if (socket.listen(QHostAddress::LocalHost, 0)) return static_cast<int>(socket.serverPort());
-    return 8765;
-  }() };
   QGraphicsView * fallback_2d_view_{ nullptr };
   QLabel * info_chip_label_{ nullptr };
   QGraphicsProxyWidget * fallback_info_chip_proxy_{ nullptr };
