@@ -1738,7 +1738,13 @@ function meshLocalTransformOf(item) {
   };
 }
 function cloneTransform(transform) { return JSON.parse(JSON.stringify(transform)); }
-function sameTransform(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+function sameTransform(a, b) {
+  if (!isFiniteTransform(a) || !isFiniteTransform(b)) return false;
+  return ['x', 'y', 'z'].every(axis =>
+    Math.abs(a.pose.xyz[axis] - b.pose.xyz[axis]) <= 1e-12 &&
+    Math.abs(a.pose.rpy[axis] - b.pose.rpy[axis]) <= 1e-12 &&
+    Math.abs(a.scale[axis] - b.scale[axis]) <= 1e-12);
+}
 function renderedById(id) { return state.objects.find(obj => obj.item.id === id) || state.pickRecords.find(obj => obj.item.id === id); }
 function physicalRenderedBySelectionOwnerId(id) {
   const ownerId = String(id || '').trim();
@@ -4294,12 +4300,7 @@ function disposeViewerLifecycle(reason = 'host_navigation') {
   state.three = {};
   return { disposed: true, already_disposed: false, reason };
 }
-window.__WORKCELL_VIEWER_LIFECYCLE__ = Object.freeze({
-  api: '1.0.0',
-  disposeScene: reason => disposeViewerLifecycle(String(reason || 'host_navigation')),
-});
-window.addEventListener?.('pagehide', () => disposeViewerLifecycle('pagehide'), { once: true });
-window.addEventListener?.('beforeunload', () => disposeViewerLifecycle('beforeunload'), { once: true });
+window.__WORKCELL_VIEWER_LIFECYCLE__.registerCleanup(disposeViewerLifecycle);
 function renderScene(items) {
   clearSceneObjects();
   const selectionIndex = rebuildSelectionIdentityIndex(state.sceneJson || {});
@@ -6559,6 +6560,7 @@ async function loadSceneUrl(rawUrl) {
     const response = await fetch(repoRootRelativeUrl(sceneUrl), { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
     const json = await response.json();
+    if (viewerLifecycleDisposed) return;
     const items = validateSceneJson(json);
     state.sceneJson = json;
     state.sceneJsonLoaded = true;
@@ -7021,6 +7023,7 @@ async function boot() {
     const colladaModule = await import('three/addons/loaders/ColladaLoader.js');
     const objModule = await import('three/addons/loaders/OBJLoader.js');
     const urdfRobotRendererModule = await import('./urdf_robot_renderer.js');
+    if (viewerLifecycleDisposed) return;
     THREE = threeModule;
     OrbitControls = controlsModule.OrbitControls;
     TransformControls = transformControlsModule.TransformControls;

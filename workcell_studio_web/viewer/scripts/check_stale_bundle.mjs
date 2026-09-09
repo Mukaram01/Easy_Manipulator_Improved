@@ -1,9 +1,12 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { createHash } from 'node:crypto';
+import { promises as fs } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { createHash } from 'crypto';
 import { build } from 'esbuild';
 
+const { mkdtemp, readFile } = fs;
+
+async function main() {
 const repoViewerRoot = new URL('..', import.meta.url);
 const entryPoint = new URL('../src/viewer_entry.js', import.meta.url).pathname;
 const committedBundle = new URL('../dist/viewer.bundle.js', import.meta.url).pathname;
@@ -40,5 +43,9 @@ try {
   }
   console.log(`viewer.bundle.js is current (${actualHash}).`);
 } finally {
-  await rm(tmpRoot, { recursive: true, force: true });
+  await fs.rmdir(tmpRoot, { recursive: true });
 }
+
+}
+
+main().catch(error => { console.error(error); process.exitCode = 1; });

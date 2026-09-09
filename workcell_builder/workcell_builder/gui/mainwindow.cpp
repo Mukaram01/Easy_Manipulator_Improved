@@ -1,3 +1,4 @@
+#include "authored_canvas_position.hpp"
 // Copyright 2026 Mukaram01
 // Compatibility tokens: Selection id missing after refresh, clearing atomically: Locked/generated item edit rejected
 //
@@ -8000,7 +8001,7 @@ bool MainWindow::apply_web_transforms_to_editable_layout_session(
   // Validation is deliberately complete before mutating the native session.
   // Browser position/rotation wins; native state supplies metadata and structure.
   for (const auto & update : validated) {
-    update.canvas->setPos(update.x * 100.0, update.y * 100.0);
+    workcell_builder::set_authored_canvas_position(update.canvas, QPointF(update.x * 100.0, update.y * 100.0));
     update.canvas->setData(RolePoseZ, update.z);
     update.canvas->setData(RoleRoll, update.roll);
     update.canvas->setData(RolePitch, update.pitch);
@@ -8902,7 +8903,7 @@ void MainWindow::apply_inspector_pose_to_item()
   QString updated_semantic_role = target.state.role;
   bool metadata_changed = false;
   if (i) {
-    i->setPos(updated);
+    workcell_builder::set_authored_canvas_position(i, updated);
     i->setData(RolePoseZ, inspector_z_->value());
     i->setData(RoleRoll, updated_roll);
     i->setData(RolePitch, updated_pitch);

@@ -5,234 +5,234 @@ scene_path: .
 metadata:
   canonical_layout_path: layout/workcell_studio_layout.yaml
   physical_state_source: environment.yaml
+  legacy_import_normalized_keys: items,assets,placed_assets,objects,zones,targets,camera
 items:
-- id: support_surface_table
-  type: table
-  role: support_surface
-  display_name: Industrial Workbench
-  category: environment
-  frame: world
-  layout_item_ref: support_surface_table
-  geometry_type: mesh
-  mesh:
-    path: package://workbench_description/meshes/visual/table.stl
-    scale:
-    - 0.001
-    - 0.001
-    - 0.001
-  asset_class: registered
-  collision:
-    enabled: true
-    mode: box_proxy
+  - id: support_surface_table
+    type: table
+    role: support_surface
+    display_name: Industrial Workbench
+    category: environment
+    frame: world
+    layout_item_ref: support_surface_table
+    geometry_type: mesh
     mesh:
-      path: package://workbench_description/meshes/collision/table.stl
+      path: package://workbench_description/meshes/visual/table.stl
       scale:
-      - 0.001
-      - 0.001
-      - 0.001
-    review: Conservative mesh bounds contain tabletop and legs; intentionally fill
-      under-bench void. Supplied collision STL duplicates 102734 visual triangles.
-  catalog_asset_id: table_standard_1200
-  surface_z_m: 0.0
-  pose:
-    xyz:
-    - 0.3
-    - -0.2
-    - -0.0008999994993209839
-    rpy:
-    - 0
-    - 0
-    - 0
-  editable: true
-  locked: false
-  source_layer: editable_layout
-  source: environment.yaml
-  scene_name: ur5_2f_test
-  scene_path: .
-- id: robot_mount_plate
-  type: fixture
-  role: fixture
-  display_name: Robot Mounting Plate
-  category: environment
-  frame: world
-  layout_item_ref: robot_mount_plate
-  geometry_type: box
-  dimensions:
-  - 0.2
-  - 0.2
-  - 0.012
-  asset_class: primitive
-  collision:
-    enabled: true
-    mode: primitive_box
-  material:
-    color:
-    - 0.32
-    - 0.34
-    - 0.36
-    - 1
-  pose:
-    xyz:
-    - 0
-    - 0
-    - 0.007
-    rpy:
-    - 0
-    - 0
-    - 0
-  editable: true
-  locked: false
-  source_layer: editable_layout
-  source: environment.yaml
-  scene_name: ur5_2f_test
-  scene_path: .
-- id: target_bin_default
-  type: target_bin
-  role: target_bin
-  display_name: Destination Bin
-  category: environment
-  frame: world
-  layout_item_ref: target_bin_default
-  geometry_type: mesh
-  mesh:
-    path: package://sorting_bin_description/meshes/sorting_bin.stl
-    scale:
-    - 0.001
-    - 0.001
-    - 0.001
-    rpy:
-    - 1.5707963267948966
-    - 0
-    - 1.5707963267948966
-    origin_offset:
-    - -0.173899436593
-    - 0
-    - -0.1
-  asset_class: registered
-  collision:
-    enabled: true
-    mode: mesh
-  catalog_asset_id: bin_standard
-  support_surface_ref: support_surface_table
-  task_zone_ref: default_drop_zone
-  pose:
-    xyz:
-    - 0.45
-    - 0.22
-    - 0.1
-    rpy:
-    - 0
-    - 0
-    - 0
-  editable: true
-  locked: false
-  source_layer: editable_layout
-  source: environment.yaml
-  scene_name: ur5_2f_test
-  scene_path: .
-- id: realsense_overhead
-  type: realsense
-  role: camera
-  display_name: Fixed RealSense D435i
-  category: environment
-  frame: world
-  layout_item_ref: realsense_overhead
-  geometry_type: mesh
-  mesh:
-    path: package://realsense2_description/meshes/d435.dae
-    scale:
-    - 1
-    - 1
-    - 1
-  asset_class: registered
-  collision:
-    enabled: true
-    mode: urdf
-    link: camera_link
-  description:
-    package: realsense2_description
-    xacro: urdf/_d435i.urdf.xacro
-    macro: sensor_d435i
-  material:
-    color:
-    - 0.12
-    - 0.13
-    - 0.15
-    - 1
-  pose:
-    xyz:
-    - 0.4
-    - -0.25
-    - 0.8499999999999998
-    rpy:
-    - 0
-    - 1.570000000000127
-    - 0
-  editable: true
-  locked: false
-  source_layer: editable_layout
-  source: environment.yaml
-  scene_name: ur5_2f_test
-  scene_path: .
-- id: pick_zone_main
-  type: pick_zone
-  role: pick_zone
-  display_name: Pick Zone
-  category: zone
-  frame: world
-  layout_item_ref: pick_zone_main
-  geometry_type: box
-  dimensions:
-  - 0.35
-  - 0.3
-  - 0.6
-  asset_class: primitive
-  support_surface_ref: support_surface_table
-  shape: box
-  pose:
-    xyz:
-    - 0.4
-    - -0.2
-    - 0.3
-    rpy:
-    - 0
-    - 0
-    - 0
-  editable: true
-  locked: false
-  source_layer: editable_layout
-  source: environment.yaml
-  scene_name: ur5_2f_test
-  scene_path: .
-- id: place_zone_default
-  type: place_zone
-  role: place_zone
-  display_name: Place Free Region
-  category: zone
-  frame: world
-  layout_item_ref: place_zone_default
-  geometry_type: box
-  dimensions:
-  - 0.25
-  - 0.14
-  - 0.23
-  asset_class: primitive
-  target_ref: target_bin_default
-  support_surface_ref: support_surface_table
-  shape: box
-  bottom_clearance_m: 0.005
-  pose:
-    xyz:
-    - 0.45
-    - 0.22
-    - 0.13
-    rpy:
-    - 0
-    - 0
-    - 0
-  editable: true
-  locked: false
-  source_layer: editable_layout
-  source: environment.yaml
-  scene_name: ur5_2f_test
-  scene_path: .
+        - 0.001
+        - 0.001
+        - 0.001
+    asset_class: registered
+    collision:
+      enabled: true
+      mode: box_proxy
+      mesh:
+        path: package://workbench_description/meshes/collision/table.stl
+        scale:
+          - 0.001
+          - 0.001
+          - 0.001
+      review: Conservative mesh bounds contain tabletop and legs; intentionally fill under-bench void. Supplied collision STL duplicates 102734 visual triangles.
+    catalog_asset_id: table_standard_1200
+    surface_z_m: 0.0
+    pose:
+      xyz:
+        - 0.29999999999999999
+        - -0.20000000000000001
+        - -0.00089999949932098393
+      rpy:
+        - 0
+        - 0
+        - 0
+    editable: true
+    locked: false
+    source_layer: editable_layout
+    source: environment.yaml
+    scene_name: ur5_2f_test
+    scene_path: .
+  - id: robot_mount_plate
+    type: fixture
+    role: fixture
+    display_name: Robot Mounting Plate
+    category: environment
+    frame: world
+    layout_item_ref: robot_mount_plate
+    geometry_type: box
+    dimensions:
+      - 0.20000000000000001
+      - 0.20000000000000001
+      - 0.012
+    asset_class: primitive
+    collision:
+      enabled: true
+      mode: primitive_box
+    material:
+      color:
+        - 0.32
+        - 0.34
+        - 0.36
+        - 1
+    pose:
+      xyz:
+        - 0
+        - 0
+        - 0.0070000000000000001
+      rpy:
+        - 0
+        - 0
+        - 0
+    editable: true
+    locked: false
+    source_layer: editable_layout
+    source: environment.yaml
+    scene_name: ur5_2f_test
+    scene_path: .
+  - id: target_bin_default
+    type: target_bin
+    role: target_bin
+    display_name: Destination Bin
+    category: environment
+    frame: world
+    layout_item_ref: target_bin_default
+    geometry_type: mesh
+    mesh:
+      path: package://sorting_bin_description/meshes/sorting_bin.stl
+      scale:
+        - 0.001
+        - 0.001
+        - 0.001
+      rpy:
+        - 1.5707963267948966
+        - 0
+        - 1.5707963267948966
+      origin_offset:
+        - -0.173899436593
+        - 0
+        - -0.1
+    asset_class: registered
+    collision:
+      enabled: true
+      mode: mesh
+    catalog_asset_id: bin_standard
+    support_surface_ref: support_surface_table
+    task_zone_ref: default_drop_zone
+    pose:
+      xyz:
+        - 0.46999999999999997
+        - 0.22
+        - 0.10000000000000001
+      rpy:
+        - 0
+        - 0
+        - 0
+    editable: true
+    locked: false
+    source_layer: editable_layout
+    source: environment.yaml
+    scene_name: ur5_2f_test
+    scene_path: .
+  - id: realsense_overhead
+    type: realsense
+    role: camera
+    display_name: Fixed RealSense D435i
+    category: environment
+    frame: world
+    layout_item_ref: realsense_overhead
+    geometry_type: mesh
+    mesh:
+      path: package://realsense2_description/meshes/d435.dae
+      scale:
+        - 1
+        - 1
+        - 1
+    asset_class: registered
+    collision:
+      enabled: true
+      mode: urdf
+      link: camera_link
+    description:
+      package: realsense2_description
+      xacro: urdf/_d435i.urdf.xacro
+      macro: sensor_d435i
+    material:
+      color:
+        - 0.12
+        - 0.13
+        - 0.15
+        - 1
+    pose:
+      xyz:
+        - 0.40000000000000002
+        - -0.25
+        - 0.84999999999999976
+      rpy:
+        - 0
+        - 1.5700000000001271
+        - 0
+    editable: true
+    locked: false
+    source_layer: editable_layout
+    source: environment.yaml
+    scene_name: ur5_2f_test
+    scene_path: .
+  - id: pick_zone_main
+    type: pick_zone
+    role: pick_zone
+    display_name: Pick Zone
+    category: zone
+    frame: world
+    layout_item_ref: pick_zone_main
+    geometry_type: box
+    dimensions:
+      - 0.34999999999999998
+      - 0.29999999999999999
+      - 0.59999999999999998
+    asset_class: primitive
+    support_surface_ref: support_surface_table
+    shape: box
+    pose:
+      xyz:
+        - 0.40000000000000002
+        - -0.20000000000000001
+        - 0.29999999999999999
+      rpy:
+        - 0
+        - 0
+        - 0
+    editable: true
+    locked: false
+    source_layer: editable_layout
+    source: environment.yaml
+    scene_name: ur5_2f_test
+    scene_path: .
+  - id: place_zone_default
+    type: place_zone
+    role: place_zone
+    display_name: Place Free Region
+    category: zone
+    frame: world
+    layout_item_ref: place_zone_default
+    geometry_type: box
+    dimensions:
+      - 0.25
+      - 0.14000000000000001
+      - 0.23000000000000001
+    asset_class: primitive
+    target_ref: target_bin_default
+    support_surface_ref: support_surface_table
+    shape: box
+    bottom_clearance_m: 0.005
+    pose:
+      xyz:
+        - 0.45000000000000001
+        - 0.22
+        - 0.13
+      rpy:
+        - 0
+        - 0
+        - 0
+    editable: true
+    locked: false
+    source_layer: editable_layout
+    source: environment.yaml
+    scene_name: ur5_2f_test
+    scene_path: .
