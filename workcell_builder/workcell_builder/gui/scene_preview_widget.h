@@ -8,8 +8,8 @@
 #include <QSet>
 #include <QMatrix4x4>
 #include <QProcess>
-#include <QTcpServer>
-#include <QHostAddress>
+#include <QtNetwork/QTcpServer>
+#include <QtNetwork/QHostAddress>
 #include <QHash>
 #include <QDateTime>
 #include <QUrl>
