@@ -8,6 +8,8 @@
 #include <QSet>
 #include <QMatrix4x4>
 #include <QProcess>
+#include <QTcpServer>
+#include <QHostAddress>
 #include <QHash>
 #include <QDateTime>
 #include <QUrl>
@@ -678,7 +680,11 @@ private:
   bool native_compatibility_fallback_active_{ false };
   mutable QSet<QString> root_resolution_summary_keys_;
   QDateTime embedded_web_prepare_started_at_;
-  int embedded_web_server_port_{ 8765 };
+  int embedded_web_server_port_{ []() {
+    QTcpServer socket;
+    if (socket.listen(QHostAddress::LocalHost, 0)) return static_cast<int>(socket.serverPort());
+    return 8765;
+  }() };
   QGraphicsView * fallback_2d_view_{ nullptr };
   QLabel * info_chip_label_{ nullptr };
   QGraphicsProxyWidget * fallback_info_chip_proxy_{ nullptr };
