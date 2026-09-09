@@ -6,8 +6,8 @@ HEADER = Path("workcell_builder/workcell_builder/gui/scene_preview_widget.h").re
 
 def test_product_view_seeds_each_widget_with_a_free_loopback_port():
     """A stale server from a crashed Studio process must not poison the next launch."""
-    assert "#include <QTcpServer>" in HEADER
-    assert "#include <QHostAddress>" in HEADER
+    assert "#include <QtNetwork/QTcpServer>" in HEADER
+    assert "#include <QtNetwork/QHostAddress>" in HEADER
     assert "socket.listen(QHostAddress::LocalHost, 0)" in HEADER
     assert "static_cast<int>(socket.serverPort())" in HEADER
     assert "int embedded_web_server_port_{ 8765 };" not in HEADER
