@@ -157,7 +157,8 @@ private:
     const QString script = QStringLiteral(
       "(() => { const api=window.__WORKCELL_EDITOR_API_V1__; if (!api) return false; "
       "api.selectItem(%1); return api.getState().selectedItemId === %1 && !api.getState().dirty; })()").arg(encoded);
-    view_->page()->runJavaScript(script, [this](const QVariant & restored) {
+    view_->page()->runJavaScript(script, [this, guard = QPointer<EmbeddedWebEditSaveController>(this)](const QVariant & restored) {
+      if (!guard || !preview_ || !view_) return;
       if (!restored.toBool()) setStatus(QStringLiteral("Saved; selection could not be restored"), QStringLiteral("warning"));
       pollEditorState();
     });
@@ -339,7 +340,8 @@ private:
     browser_rebase_pending_ = true;
     setStatus(QStringLiteral("Saved; rebasing editor…"), QStringLiteral("success"));
     view_->page()->runJavaScript(persistedPatchRebaseScript(active_patch_),
-      [this, transaction](const QVariant & value) {
+      [this, guard = QPointer<EmbeddedWebEditSaveController>(this), transaction](const QVariant & value) {
+        if (!guard || !preview_ || !view_) return;
         if (!browser_rebase_pending_ || transaction != active_save_transaction_) return;
         browser_rebase_pending_ = false;
         if (!saveTargetContextIsActive()) {
@@ -511,7 +513,8 @@ private:
   return {ok:true,state:api.getState(),patch:api.getEditPatch()};
 })()
 )JS";
-    view_->page()->runJavaScript(QString::fromUtf8(kPatchScript), [this](const QVariant & value) {
+    view_->page()->runJavaScript(QString::fromUtf8(kPatchScript), [this, guard = QPointer<EmbeddedWebEditSaveController>(this)](const QVariant & value) {
+      if (!guard || !preview_ || !view_) return;
       if (!saveContextIsCurrent()) {
         reportSceneChanged();
         return;
@@ -724,7 +727,8 @@ private:
   return {ready:Boolean(state.ready),dirty:Boolean(state.dirty),dirtyCount:Number(state.dirtyCount||0),sceneId:String(state.sceneId||''),validDirtyTransforms};
 })()
 )JS";
-    view_->page()->runJavaScript(QString::fromUtf8(kStateScript), [this, poll_url](const QVariant & value) {
+    view_->page()->runJavaScript(QString::fromUtf8(kStateScript), [this, guard = QPointer<EmbeddedWebEditSaveController>(this), poll_url](const QVariant & value) {
+      if (!guard || !preview_ || !view_) return;
       state_poll_pending_ = false;
       if (!view_ || view_->url() != poll_url || busy_) return;
       const QVariantMap state = value.toMap();

@@ -15,12 +15,15 @@ def test_lifecycle_cancellation_is_declared_and_used_for_destructor_scene_change
     assert "~ScenePreviewWidget() override;" in HDR
     assert "void cancel_embedded_web_lifecycle(bool stop_owned_server);" in HDR
     assert "void retire_embedded_web_navigation_for_handoff();" in HDR
-    assert "ScenePreviewWidget::~ScenePreviewWidget()\n{\n  cancel_embedded_web_lifecycle(true);" in CPP
+    destructor = _between("ScenePreviewWidget::~ScenePreviewWidget()", "QString ScenePreviewWidget::resolve_embedded_web_repo_root")
+    assert destructor.index("embedded_web_destroying_ = true") < destructor.index("cancel_embedded_web_lifecycle(true)")
+    assert destructor.index("disconnect(this, nullptr, nullptr, nullptr)") < destructor.index("cancel_embedded_web_lifecycle(true)")
 
     context = _between("void ScenePreviewWidget::set_preview_context", "void ScenePreviewWidget::activate_native_compatibility_preview")
     scene_name = _between("void ScenePreviewWidget::set_preview_scene_name", "bool ScenePreviewWidget::diagnostic_debug_logging_enabled")
     refresh = _between("void ScenePreviewWidget::request_embedded_web_product_view_refresh", "ScenePreviewWidget::EmbeddedWebRequestIdentity")
-    assert "if (context_changed) cancel_embedded_web_lifecycle(false);" in context
+    assert "if (scene_identity_changed)" in context
+    assert "invalidate_embedded_web_scene_handoff(normalized.scene_id)" in context
     assert "cancel_embedded_web_lifecycle(false);" in scene_name
     assert "if (force) cancel_embedded_web_lifecycle(false);" in refresh
 
@@ -32,7 +35,7 @@ def test_cancellation_retires_callbacks_and_owns_process_shutdown():
         "++embedded_web_request_generation_",
         "process->terminate()",
         "process->kill()",
-        "stop_owned_server && embedded_web_server_is_owned_",
+        "embedded_web_server_->stop()",
     ]:
         assert token in helper
     for token in [
@@ -51,8 +54,10 @@ def test_async_web_callbacks_guard_their_captured_request_identity():
     editor = _between("void ScenePreviewWidget::run_embedded_editor_command", "QString ScenePreviewWidget::embedded_snap_command")
     editor_poll = _between("void ScenePreviewWidget::poll_embedded_editor_events", "#else\nvoid ScenePreviewWidget::run_embedded_editor_command")
     assert "!embedded_web_identity_is_current(identity)" in prepare
-    assert "[this, identity]" in editor
-    assert "if (!embedded_web_identity_is_current(identity)) return;" in editor
+    assert "guard = QPointer<ScenePreviewWidget>(this)" in editor
+    assert "if (!guard || embedded_web_destroying_) return;" in editor
+    assert "!embedded_web_identity_is_current(identity)" in editor
+    assert "state_request_token != embedded_editor_state_request_token_" in editor
     assert "[this, identity]" in editor_poll
     assert "if (embedded_web_identity_is_current(identity)) poll_embedded_editor_events();" in editor_poll
 
@@ -70,9 +75,10 @@ def test_web_request_identity_binds_root_and_selected_port_for_every_async_gate(
     assert "load_prepared_embedded_web_scene(identity);" in probes
 
     server = _between("void ScenePreviewWidget::start_owned_embedded_web_server", "void ScenePreviewWidget::cancel_embedded_web_lifecycle")
-    assert '"--directory", repo_root' in server
-    assert "identity.selected_server_port != port" in server
-    assert "&QProcess::started" in server
+    assert "embedded_web_server_->start(identity.absolute_repo_root)" in server
+    assert "bound_identity.selected_server_port = port" in server
+    assert "embedded_web_active_identity_ = bound_identity" in server
+    assert "start_embedded_web_server_probes(bound_identity, port" in server
 
     browser = _between("void ScenePreviewWidget::load_prepared_embedded_web_scene", "#ifdef WORKCELL_BUILDER_HAS_WEBENGINE")
     assert "identity.selected_server_port <= 0" in browser
@@ -80,13 +86,9 @@ def test_web_request_identity_binds_root_and_selected_port_for_every_async_gate(
 
 
 def test_server_probe_initialization_preserves_safe_default_state():
-    unowned = _between(
-        "void ScenePreviewWidget::ensure_embedded_web_server_started",
-        "void ScenePreviewWidget::select_owned_embedded_web_server",
-    )
-    owned = _between(
-        "void ScenePreviewWidget::start_owned_embedded_web_server",
-        "void ScenePreviewWidget::retire_embedded_web_navigation_for_handoff",
+    probes = _between(
+        "void ScenePreviewWidget::start_embedded_web_server_probes",
+        "void ScenePreviewWidget::run_embedded_web_server_probes",
     )
     expected_initialization = [
         "embedded_web_server_probe_ = EmbeddedWebServerProbe{};",
@@ -94,9 +96,8 @@ def test_server_probe_initialization_preserves_safe_default_state():
         "embedded_web_server_probe_.port = port;",
         "embedded_web_server_probe_.navigation_token = navigation_token;",
     ]
-    for server_start in (unowned, owned):
-        for statement in expected_initialization:
-            assert statement in server_start
+    for statement in expected_initialization:
+        assert statement in probes
 
     probe = HDR[HDR.index("struct EmbeddedWebServerProbe"):HDR.index("void refresh_embedded_web_product_view")]
     for default in [
@@ -136,17 +137,12 @@ def test_serialized_browser_navigation_handoff_queues_only_current_scene_load():
     assert "embedded_web_expected_viewer_url_ != viewer_url" in browser
     assert "++embedded_web_browser_navigations_started_;" in browser
     assert browser.count("embedded_web_view_->load(viewer_url);") == 1
-    assert "embedded_web_has_committed_surface_ ||" in mode
-    assert "embedded_product_view_state_ == EmbeddedProductViewState::Ready" in mode
+    assert "embedded_web_view_->setVisible(use3d && scene_selected_)" in mode
+    assert "embedded_web_prepared_identity_.matches_context(identity)" in browser
 
 
-def test_first_load_stays_hidden_but_committed_surface_remains_visible_during_handoff():
+def test_loading_document_and_committed_surface_remain_visible_during_handoff():
     mode = _between("void ScenePreviewWidget::refresh_mode_and_state", "QRectF ScenePreviewWidget::rendered_items_bounds_2d")
     assert "bool embedded_web_has_committed_surface_{ false };" in HDR
-    visibility = _between("const bool show_embedded_surface", "if (error_state_label_)")
-    assert "embedded_web_has_committed_surface_ ||" in visibility
-    assert "EmbeddedProductViewState::Ready" in visibility
-    assert "EmbeddedProductViewState::Failed" in visibility
-    assert "EmbeddedProductViewState::Loading" not in visibility
-    assert "EmbeddedProductViewState::WaitingForBrowserReadiness" not in visibility
-    assert "setVisible(use3d && scene_selected_ && show_embedded_surface)" in mode
+    assert "setVisible(use3d && scene_selected_)" in mode
+    assert "show_embedded_web_loading_document(scene_id)" in CPP

@@ -260,10 +260,12 @@ def test_transient_web3d_runtime_failures_keep_web3d_selected_and_never_activate
     assert "handle_embedded_web_runtime_failure(identity, navigation_token, detail);" in server_probe_block
     assert "activate_native_compatibility_preview" not in server_probe_block
 
-    for marker in ("local server exited with code", "local server startup failure"):
-        marker_index = CPP.index(marker)
-        block = CPP[max(0, marker_index - 700):marker_index + 700]
-        assert "fail_embedded_web_server_probe" in block
+    server_start = CPP.index("void ScenePreviewWidget::start_owned_embedded_web_server")
+    server_end = CPP.index("void ScenePreviewWidget::retire_embedded_web_navigation_for_handoff", server_start)
+    server = CPP[server_start:server_end]
+    assert "embedded_web_server_->failed =" in server
+    assert "embedded_web_automatic_recovery_attempts_.contains(key)" in server
+    assert "handle_embedded_web_runtime_failure(failed_identity, embedded_web_navigation_token_, detail)" in server
 
 
 def test_web3d_runtime_failure_does_not_start_automatic_forced_recovery():
@@ -277,7 +279,8 @@ def test_web3d_runtime_failure_does_not_start_automatic_forced_recovery():
     assert "identity.generation" not in key_block
     assert "navigation_token" not in key_block
     assert "Embedded Product View terminal failure accepted" in handler
-    assert "embedded_web_terminal_runtime_failures_.insert(terminal_key)" in handler
+    assert "scene_load_diagnostics_.observe(" in handler
+    assert "if (!failure_report.should_emit) return;" in handler
     assert "request_embedded_web_product_view_refresh(true);" not in handler
     assert "automatic recovery attempt" not in handler
     assert "Retry" in handler
@@ -506,7 +509,7 @@ def test_cpp_scene_handoff_invalidates_every_async_surface_and_renders_scene_doc
     assert "Loading Product View" in CPP
     assert "Product View preparation failed" in CPP
     assert "Correct the scene-authoring blockers" in CPP
-    assert "workcell-retry://%1" in CPP
+    assert 'embedded_fit_button_->setText(QStringLiteral("Retry"))' in CPP
     assert "identity.scene_id == selected_scene" in CPP
     assert "readiness_token != embedded_web_readiness_token_" in CPP
     assert "browser_load_token != embedded_web_browser_load_token_" in CPP
