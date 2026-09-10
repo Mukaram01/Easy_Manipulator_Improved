@@ -16,6 +16,12 @@
  <xacro:arg name="table_world_rpy" default=""/>
  <xacro:arg name="camera_world_xyz" default=""/>
  <xacro:arg name="camera_world_rpy" default=""/>
+ <xacro:arg name="environment_file" default="$(find ur5_2f_test)/environment.yaml"/>
+
+ <!-- The canonical scene-local Robot Home is authored in environment.yaml. -->
+ <xacro:property name="environment_file" default="$(arg environment_file)"/>
+ <xacro:property name="workcell_environment" value="${xacro.load_yaml(environment_file)}"/>
+ <xacro:property name="workcell_home_joint_state" value="${workcell_environment['robot']['home_joint_state']['joints']}"/>
 
  <!-- Contract: world_frame is the scene/world frame; UR creates base_link as the robot base. -->
  <!-- Contract: tool_mount_link is tool0; gripper_profile is robotiq_85_gripper; grasp_frame is ee_palm. -->
@@ -32,7 +38,8 @@
   kinematics_parameters_file="$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml"
   physical_parameters_file="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"
   visual_parameters_file="$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml"
-  use_fake_hardware="$(arg use_fake_hardware)">
+  use_fake_hardware="$(arg use_fake_hardware)"
+  initial_positions="${workcell_home_joint_state}">
   <!-- Authored robot mounting pose; the mounting plate and workbench are
        separate PlanningScene objects generated from the saved environment. -->
   <origin xyz="$(arg robot_world_xyz)" rpy="$(arg robot_world_rpy)"/>
