@@ -133,7 +133,9 @@ TEST(RvizPreviewMetadataCommandTest, DiscoveryAndLaunchSourceBuiltOverlay)
   EXPECT_NE(launch.indexOf("pgrep -f"), -1);
   EXPECT_NE(launch.indexOf("another ros2_control preview is already running"), -1);
   EXPECT_NE(launch.indexOf("RCUTILS_COLORIZED_OUTPUT=0"), -1);
-  EXPECT_NE(launch.indexOf("exec ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true"), -1);
+  EXPECT_NE(launch.indexOf("workcell_preview_process_group.py"), -1);
+  EXPECT_NE(launch.indexOf("exec python3"), -1);
+  EXPECT_NE(launch.indexOf("-- ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true"), -1);
   EXPECT_TRUE(workcell_builder::launch_command_is_safe(launch));
 }
 
